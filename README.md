@@ -11,6 +11,60 @@ or send me some love via paypal or crypto >>
 
 # Quantum-Secure Dynamic Mesh Ledger (QSDM)
 
+Quantum-Secure Dynamic Mesh Ledger (QSDM) is a non-AI, decentralized electronic cash system designed for quantum resistance and hardware-agnostic operation.
+
+## Overview
+
+QSDM is developed in phases:
+
+- **Phase 1: 2D Mesh Launch**  
+  Focus on stability and manual bootstrapping using libp2p for networking, Proof-of-Entanglement consensus, SQLite with Zstandard compression for storage, and CRYSTALS-Dilithium for quantum-safe cryptography.
+
+- **Phase 2: Scalability & Optimization**  
+  Introduces dynamic submeshes, priority-based routing, WASM SDK integration, and ScyllaDB for high throughput.
+
+- **Phase 3: 3D Mesh & Self-Healing**  
+  Adds 3D mesh validation, rule-based quarantines, reputation system, and CUDA acceleration.
+
+## Getting Started
+
+### Prerequisites
+
+- Go 1.20 or higher
+- SQLite3
+- Git
+
+### Build and Run
+
+```bash
+git clone https://github.com/blackbeardONE/QSDM.git
+cd QSDM
+go mod download
+go run cmd/qsmd/main.go
+```
+
+The node will start and initialize libp2p networking. Logs will be written to `qsmd.log`.
+
+## Project Structure
+
+- `cmd/qsmd/` - Main application entry point
+- `pkg/networking/` - libp2p networking setup
+- `pkg/consensus/` - Proof-of-Entanglement consensus implementation
+- `pkg/storage/` - SQLite storage with Zstandard compression
+- `pkg/crypto/` - Quantum-safe cryptography (CRYSTALS-Dilithium)
+- `config/` - YAML configuration for submesh templates
+- `internal/logging/` - Logging setup with rotation and levels
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Developer
+
+Developed by Blackbeard | Ten Titanics | GitHub: blackbeardONE
+
+go run cmd/qsmd/main.go
+
 QSDM is a non-AI, decentralized electronic cash system designed with a focus on quantum security, modularity, and hardware efficiency. It relies on cryptographic protocols and algorithmic consensus without any AI or machine learning dependencies.
 
 ## Core Principles

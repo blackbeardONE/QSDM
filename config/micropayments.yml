@@ -1,0 +1,8 @@
+name: micropayments
+fees: 0.001
+geo_tags:
+  - US
+  - EU
+parameters:
+  max_tx_size: "1024"
+  min_confirmations: "3"
