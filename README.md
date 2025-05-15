@@ -55,76 +55,13 @@ The node will start and initialize libp2p networking. Logs will be written to `q
 - `config/` - YAML configuration for submesh templates
 - `internal/logging/` - Logging setup with rotation and levels
 
-## License
+## Comparative Analysis
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Developer
-
-Developed by Blackbeard | Ten Titanics | GitHub: blackbeardONE
-
-go run cmd/qsmd/main.go
-
-QSDM is a non-AI, decentralized electronic cash system designed with a focus on quantum security, modularity, and hardware efficiency. It relies on cryptographic protocols and algorithmic consensus without any AI or machine learning dependencies.
-
-## Core Principles
-
-- **No AI/ML Dependencies:** Uses cryptographic protocols and algorithmic consensus.
-- **Hardware-Agnostic Design:** Optimized for mid-tier PCs (32GB RAM, GTX 3050, HDD).
-- **Modular Architecture:** Easily extensible for future AI integration if desired.
-
-## System Architecture
-
-QSDM is developed in three phases, each focusing on different aspects of the system:
-
-### Phase 1: 2D Mesh Launch (Stability, Manual Bootstrapping)
-
-| Component          | Tech Stack                      | Description                                  | Hardware Use          |
-|--------------------|--------------------------------|----------------------------------------------|----------------------|
-| Networking         | libp2p (Go)                    | P2P gossip protocol for transaction broadcast | 8GB RAM, 2 CPU cores |
-| Consensus          | Proof-of-Entanglement (PoE)    | Nodes validate 2 parent cells per transaction | GTX 3050 (parallel hashing) |
-| Storage            | SQLite + Zstandard compression | Stores transactions with compression for HDD efficiency | 500GB HDD            |
-| Cryptography       | CRYSTALS-Dilithium (Open Quantum Safe library) | Quantum-safe signatures for transactions | CPU-bound (4 threads) |
-| Submesh Templates  | Predefined YAML config files   | Manual submesh creation (e.g., micropayments.yml) | Minimal overhead     |
-
-**Key Workflow:**
-
-- Users manually define submesh rules (e.g., fees, geographic tags) via YAML.
-- Nodes validate transactions by checking 2 parent cells and signatures.
-- Transactions are stored in SQLite with Zstandard compression.
-
-### Phase 2: Scalability & Optimization (Throughput, Manual Governance)
-
-| Component          | Tech Stack                      | Description                                  | Hardware Use          |
-|--------------------|--------------------------------|----------------------------------------------|----------------------|
-| Dynamic Submeshes  | Priority-based routing (Go)     | Manual rules for redirecting traffic (e.g., high-fee → fast lane) | 16GB RAM              |
-| WASM SDK           | TinyGo + WASMEdge               | WASM modules for wallet/validator integration | 12GB RAM (WASM runtime) |
-| Database           | ScyllaDB                       | Log-structured storage for high throughput   | 800GB HDD             |
-| Governance         | Snapshot-based voting           | Token-weighted voting for submesh changes    | CPU-bound             |
-
-**Key Workflow:**
-
-- Node operators vote to adjust submesh rules (e.g., block size, fees).
-- High-fee transactions are prioritized via manual routing tables.
-- Developers use WASM SDK to build wallets without AI-generated code.
-
-### Phase 3: 3D Mesh & Self-Healing (Autonomy, Security)
-
-| Component          | Tech Stack                      | Description                                  | Hardware Use          |
-|--------------------|--------------------------------|----------------------------------------------|----------------------|
-| 3D Mesh            | Rust + CUDA (GTX 3050)          | Nodes validate 3–5 parent cells in a 3D web | GTX 3050 (parallel validation) |
-| Quarantines        | Rule-based isolation (Rust)     | Nodes vote to isolate submeshes with >50% invalid transactions | 24GB RAM              |
-| Reputation System  | Staked deposits + penalties     | Nodes lose stakes for invalid validations    | Minimal overhead      |
-
-**Key Workflow:**
-
-- Nodes detect malicious submeshes via manual thresholds (e.g., 50% invalid TXs).
-- CUDA accelerates 3D PoE validation on GTX 3050.
-- Reputation penalties deter bad actors.
+See [docs/COMPARATIVE_ANALYSIS.md](docs/COMPARATIVE_ANALYSIS.md) for a detailed comparison of QSDM with Blockchain and DAG technologies.
 
 ## Visualization of QSDM
 
-Below is a mermaid flowchart summarizing how the Quantum-Secure Dynamic Mesh Ledger (QSDM) works across its three development phases:
+Below is a flowchart summarizing how the Quantum-Secure Dynamic Mesh Ledger (QSDM) works across its three development phases:
 
 ```mermaid
 flowchart TD
@@ -183,8 +120,6 @@ flowchart TD
     Phase3 --> HardwareOptimization
 ```
 
-This modular and phased approach ensures stability, scalability, and security in a quantum-safe decentralized ledger system.
-
 ## Hardware Optimization
 
 | Resource | Phase 1           | Phase 2                 | Phase 3                  |
@@ -218,4 +153,4 @@ This modular and phased approach ensures stability, scalability, and security in
 
 Developed by [Blackbeard](https://blackbeard.one) | [Ten Titanics](https://tentitanics.com) | [GitHub](https://github.com/blackbeardONE)
 
-© 2023-2025 Blackbeard. All rights reserved.# QSDM
+© 2023-2025 Blackbeard. All rights reserved.
