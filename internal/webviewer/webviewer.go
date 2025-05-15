@@ -31,7 +31,7 @@ func StartWebLogViewer(logFile string, port string) {
     log.Printf("Starting web log viewer on http://localhost:%s\n", port)
     go func() {
         if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-            log.Fatalf("Web log viewer failed: %v", err)
+            log.Printf("Web log viewer failed: %v", err)
         }
     }()
 }

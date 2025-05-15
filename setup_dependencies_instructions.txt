@@ -1,0 +1,32 @@
+To resolve the build errors related to missing header files, please follow these steps:
+
+1. Install Open Quantum Safe (OQS) library:
+   - Download and install OQS from https://github.com/open-quantum-safe/liboqs
+   - Ensure the header files (oqs/oqs.h) are located in C:\liboqs\include
+   - Ensure the library files are located in C:\liboqs\lib
+
+2. Install NVIDIA CUDA Toolkit:
+   - Download and install CUDA Toolkit from https://developer.nvidia.com/cuda-downloads
+   - Ensure the header files (cuda_runtime.h) are located in C:\CUDA\include
+   - Ensure the library files are located in C:\CUDA\lib\x64
+
+3. Set environment variables in PowerShell or Command Prompt before building:
+   For PowerShell:
+   ```
+   $env:CGO_CFLAGS="-IC:\liboqs\include -IC:\CUDA\include"
+   $env:CGO_LDFLAGS="-LC:\liboqs\lib -LC:\CUDA\lib\x64"
+   go build -o qsmd.exe ./cmd/qsmd
+   ```
+
+   For Command Prompt:
+   ```
+   set CGO_CFLAGS=-IC:\liboqs\include -IC:\CUDA\include
+   set CGO_LDFLAGS=-LC:\liboqs\lib -LC:\CUDA\lib\x64
+   go build -o qsmd.exe ./cmd/qsmd
+   ```
+
+4. Verify the paths and environment variables are correctly set and accessible.
+
+If you want, I can help automate this setup or provide a Docker environment with all dependencies pre-installed.
+
+Please confirm how you would like to proceed.

@@ -4,6 +4,7 @@ import (
     "bytes"
     "database/sql"
     "fmt"
+    "log"
 
     _ "github.com/mattn/go-sqlite3"
     "github.com/klauspost/compress/zstd"
@@ -18,6 +19,19 @@ func NewStorage(dbPath string) (*Storage, error) {
     if err != nil {
         return nil, err
     }
+    // Set SQLite pragmas for performance tuning
+    pragmas := []string{
+        "PRAGMA journal_mode = WAL;",
+        "PRAGMA synchronous = NORMAL;",
+        "PRAGMA busy_timeout = 5000;",
+    }
+    for _, pragma := range pragmas {
+        _, err = db.Exec(pragma)
+        if err != nil {
+            db.Close()
+            return nil, fmt.Errorf("failed to set pragma %s: %v", pragma, err)
+        }
+    }
     // Create transactions table if not exists
     createTableSQL := `CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,8 +39,10 @@ func NewStorage(dbPath string) (*Storage, error) {
     );`
     _, err = db.Exec(createTableSQL)
     if err != nil {
+        db.Close()
         return nil, err
     }
+    log.Println("SQLite storage initialized with WAL mode and performance pragmas")
     return &Storage{db: db}, nil
 }
 
@@ -49,7 +65,7 @@ func (s *Storage) StoreTransaction(data []byte) error {
     if err != nil {
         return err
     }
-    fmt.Println("Stored compressed transaction data")
+    log.Println("Stored compressed transaction data")
     return nil
 }
 
