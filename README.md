@@ -14,6 +14,7 @@ or send me some love via paypal or crypto >>
 Quantum-Secure Dynamic Mesh Ledger (QSDM) is a non-AI, decentralized electronic cash system designed for quantum resistance and hardware-agnostic operation.
 
 ## Overview
+NOTE: Current working build is only for Windows OS 10 and above. Linux and macOS versions are in development.
 
 QSDM is developed in phases:
 
