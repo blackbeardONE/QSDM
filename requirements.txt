@@ -1,0 +1,26 @@
+# QSDM Project Dependencies
+
+# Go dependencies (managed via go.mod)
+# - github.com/blackbeardONE/QSDM/internal/logging
+# - github.com/blackbeardONE/QSDM/internal/webviewer
+# - github.com/blackbeardONE/QSDM/pkg/networking
+# - github.com/blackbeardONE/QSDM/pkg/storage
+# - github.com/blackbeardONE/QSDM/pkg/consensus
+# - github.com/blackbeardONE/QSDM/config
+# - github.com/blackbeardONE/QSDM/pkg/submesh
+# - github.com/blackbeardONE/QSDM/pkg/wasm
+# - github.com/blackbeardONE/QSDM/pkg/mesh3d
+# - github.com/blackbeardONE/QSDM/pkg/quarantine
+
+# Rust dependencies (managed via wasm_module/Cargo.toml)
+# - wasm-bindgen = "0.2"
+
+# External tools:
+# - lumberjack.v2 (for Go logging rotation)
+# - libp2p (Go)
+# - CRYSTALS-Dilithium (Open Quantum Safe library)
+# - SQLite
+# - ScyllaDB
+
+# Note: Use 'go mod tidy' to manage Go dependencies.
+# Use 'cargo build' or 'wasm-pack build' for Rust dependencies.

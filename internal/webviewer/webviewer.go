@@ -1,25 +1,119 @@
+
 package webviewer
 
 import (
+    "bufio"
     "log"
     "net/http"
     "os"
+    "strings"
     "time"
 )
 
-func StartWebLogViewer(logFile string, port string) {
-    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-        file, err := os.ReadFile(logFile)
-        if err != nil {
-            http.Error(w, "Failed to read log file", http.StatusInternalServerError)
+import (
+    "bufio"
+    "log"
+    "net/http"
+    "os"
+    "strings"
+    "time"
+)
+
+func basicAuth(next http.HandlerFunc, username, password string) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        user, pass, ok := r.BasicAuth()
+        if !ok || user != username || pass != password {
+            w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
             return
         }
+        next(w, r)
+    }
+}
+
+func StartWebLogViewer(logFile string, port string) {
+    username := "admin" // TODO: make configurable
+    password := "password" // TODO: make configurable
+
+    http.HandleFunc("/", basicAuth(func(w http.ResponseWriter, r *http.Request) {
+        levelFilter := r.URL.Query().Get("level")
+        keywordFilter := r.URL.Query().Get("keyword")
+
+        file, err := os.Open(logFile)
+        if err != nil {
+            http.Error(w, "Failed to open log file", http.StatusInternalServerError)
+            return
+        }
+        defer file.Close()
+
         w.Header().Set("Content-Type", "text/plain; charset=utf-8")
         w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
         w.Header().Set("Pragma", "no-cache")
         w.Header().Set("Expires", "0")
-        w.Write(file)
-    })
+
+        scanner := bufio.NewScanner(file)
+        for scanner.Scan() {
+            line := scanner.Text()
+            if levelFilter != "" && !strings.Contains(line, levelFilter) {
+                continue
+            }
+            if keywordFilter != "" && !strings.Contains(line, keywordFilter) {
+                continue
+            }
+            w.Write([]byte(line + "\n"))
+        }
+        if err := scanner.Err(); err != nil {
+            log.Printf("Error reading log file: %v", err)
+        }
+    }), username, password)
+
+    http.HandleFunc("/stream", basicAuth(func(w http.ResponseWriter, r *http.Request) {
+        flusher, ok := w.(http.Flusher)
+        if !ok {
+            http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
+            return
+        }
+
+        file, err := os.Open(logFile)
+        if err != nil {
+            http.Error(w, "Failed to open log file", http.StatusInternalServerError)
+            return
+        }
+        defer file.Close()
+
+        w.Header().Set("Content-Type", "text/event-stream")
+        w.Header().Set("Cache-Control", "no-cache")
+        w.Header().Set("Connection", "keep-alive")
+        w.Header().Set("Access-Control-Allow-Origin", "*")
+
+        scanner := bufio.NewScanner(file)
+        for scanner.Scan() {
+            line := scanner.Text()
+            _, err := w.Write([]byte("data: " + line + "\n\n"))
+            if err != nil {
+                break
+            }
+            flusher.Flush()
+        }
+
+        ticker := time.NewTicker(1 * time.Second)
+        defer ticker.Stop()
+
+        for {
+            select {
+            case <-r.Context().Done():
+                return
+            case <-ticker.C:
+                // In a real implementation, read new lines appended to the log file
+                // For simplicity, just send a heartbeat
+                _, err := w.Write([]byte("data: \n\n"))
+                if err != nil {
+                    return
+                }
+                flusher.Flush()
+            }
+        }
+    }), username, password)
 
     srv := &http.Server{
         Addr:         ":" + port,
