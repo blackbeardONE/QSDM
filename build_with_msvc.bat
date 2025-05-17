@@ -1,6 +1,6 @@
 @echo off
 REM Clean previous build artifacts
-if exist qsmd.exe del qsmd.exe
+if exist qsdm.exe del qsdm.exe
 if exist build rd /s /q build
 
 REM Setup MSVC environment for amd64
@@ -14,6 +14,6 @@ set CGO_CFLAGS=/W4 /WX
 set CGO_LDFLAGS=-Lwasmer-go-patched/target/release -lwasmer_go
 
 REM Build the Go project
-go build -o qsmd.exe ./cmd/qsmd
+go build -o qsdm.exe ./cmd/qsdm
 
 pause

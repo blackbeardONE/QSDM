@@ -43,7 +43,7 @@ func SetupLibP2P(ctx context.Context) (*Network, error) {
 
     // Setup mDNS discovery to find local peers
     notifee := &DiscoveryNotifee{h: h}
-    mdnsService := mdns.NewMdnsService(h, "qsmd-mdns", notifee)
+    mdnsService := mdns.NewMdnsService(h, "qsdm-mdns", notifee)
     if mdnsService == nil {
         return nil, fmt.Errorf("failed to start mDNS service")
     }
@@ -53,7 +53,7 @@ func SetupLibP2P(ctx context.Context) (*Network, error) {
         return nil, fmt.Errorf("failed to create pubsub: %w", err)
     }
 
-    topic, err := ps.Join("qsmd-transactions")
+    topic, err := ps.Join("qsdm-transactions")
     if err != nil {
         return nil, fmt.Errorf("failed to join pubsub topic: %w", err)
     }

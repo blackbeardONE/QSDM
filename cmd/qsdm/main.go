@@ -20,12 +20,12 @@ import (
 )
 
 func setupLogging() {
-	logging.SetupLogger("qsmd.log")
+	logging.SetupLogger("qsdm.log")
 	logging.Info.Println("Quantum-Secure Dynamic Mesh Ledger (QSDM) node starting up...")
 }
 
 func startWebViewer() {
-	webviewer.StartWebLogViewer("qsmd.log", "8080")
+	webviewer.StartWebLogViewer("qsdm.log", "8080")
 }
 
 func setupNetwork(ctx context.Context) (*networking.Network, error) {

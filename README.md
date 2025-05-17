@@ -41,14 +41,14 @@ QSDM is developed in phases:
 git clone https://github.com/blackbeardONE/QSDM.git
 cd QSDM
 go mod download
-go run cmd/qsmd/main.go
+go run cmd/qsdm/main.go
 ```
 
-The node will start and initialize libp2p networking. Logs will be written to `qsmd.log`.
+The node will start and initialize libp2p networking. Logs will be written to `qsdm.log`.
 
 ## Project Structure
 
-- `cmd/qsmd/` - Main application entry point
+- `cmd/qsdm/` - Main application entry point
 - `pkg/networking/` - libp2p networking setup
 - `pkg/consensus/` - Proof-of-Entanglement consensus implementation
 - `pkg/storage/` - SQLite storage with Zstandard compression

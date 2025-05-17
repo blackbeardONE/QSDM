@@ -16,10 +16,10 @@ if [ $? -ne 0 ]; then
 fi
 
 # Build Go project
-go build -o qsmd.exe ./cmd/qsmd
+go build -o qsdm.exe ./cmd/qsdm
 if [ $? -ne 0 ]; then
   echo "Go project build failed"
   exit 1
 fi
 
-echo "Build successful. You can now run ./qsmd.exe"
+echo "Build successful. You can now run ./qsdm.exe"

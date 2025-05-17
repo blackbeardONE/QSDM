@@ -13,6 +13,6 @@ echo CGO_CFLAGS=%CGO_CFLAGS%
 echo CGO_LDFLAGS=%CGO_LDFLAGS%
 
 REM Run Go build
-go build -o qsmd.exe -v -x ./cmd/qsmd
+go build -o qsdm.exe -v -x ./cmd/qsdm
 
 pause

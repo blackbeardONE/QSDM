@@ -15,14 +15,14 @@ To resolve the build errors related to missing header files, please follow these
    ```
    $env:CGO_CFLAGS="-IC:\liboqs\include -IC:\CUDA\include"
    $env:CGO_LDFLAGS="-LC:\liboqs\lib -LC:\CUDA\lib\x64"
-   go build -o qsmd.exe ./cmd/qsmd
+   go build -o qsdm.exe ./cmd/qsdm
    ```
 
    For Command Prompt:
    ```
    set CGO_CFLAGS=-IC:\liboqs\include -IC:\CUDA\include
    set CGO_LDFLAGS=-LC:\liboqs\lib -LC:\CUDA\lib\x64
-   go build -o qsmd.exe ./cmd/qsmd
+   go build -o qsdm.exe ./cmd/qsdm
    ```
 
 4. Verify the paths and environment variables are correctly set and accessible.

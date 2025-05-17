@@ -59,7 +59,7 @@ Ensure that `oqs/oqs.h` is present in the include directory and the library file
 - You may need to adjust your Go build flags to include the OQS include and lib paths, for example:
 
 ```bash
-CGO_CFLAGS="-IC:/Program Files/liboqs/include" CGO_LDFLAGS="-LC:/Program Files/liboqs/lib" CGO_ENABLED=1 go run cmd/qsmd/main.go
+CGO_CFLAGS="-IC:/Program Files/liboqs/include" CGO_LDFLAGS="-LC:/Program Files/liboqs/lib" CGO_ENABLED=1 go run cmd/qsdm/main.go
 ```
 
 - For more details, refer to the official OQS repository: https://github.com/open-quantum-safe/liboqs

@@ -12,6 +12,6 @@ set CGO_CXXFLAGS=
 set CGO_LDFLAGS=/DEBUG /LIBPATH:wasmer-go-patched\target\release /LIBPATH:C:\liboqs\liboqs_install\lib wasmer_go.lib oqs.lib
 
 REM Run Go build
-go build -o qsmd.exe -v -x ./cmd/qsmd
+go build -o qsdm.exe -v -x ./cmd/qsdm
 
 pause
