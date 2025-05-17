@@ -39,6 +39,11 @@ func (qm *QuarantineManager) RecordTransaction(submesh string, valid bool) {
     if invalidRate > qm.threshold {
         qm.quarantined[submesh] = true
         fmt.Printf("Submesh %s quarantined due to invalid rate %.2f\n", submesh, invalidRate)
+        // Send alert for quarantine triggered
+        alerting.Send(alerting.Alert{
+            Type:    alerting.AlertQuarantineTriggered,
+            Message: fmt.Sprintf("Submesh %s quarantined due to invalid rate %.2f", submesh, invalidRate),
+        })
     }
 }
 

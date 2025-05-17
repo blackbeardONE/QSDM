@@ -65,4 +65,44 @@ func TestDynamicSubmeshManager(t *testing.T) {
     if err == nil {
         t.Errorf("Expected error for removed submesh, got nil")
     }
+
+    // Additional tests
+
+    // Test GetSubmesh for non-existent submesh
+    _, err = manager.GetSubmesh("nonexistent")
+    if err == nil {
+        t.Errorf("Expected error for non-existent submesh, got nil")
+    }
+
+    // Test AddOrUpdateSubmesh updates existing submesh
+    dsUpdate := &DynamicSubmesh{
+        Name:          "slowlane",
+        FeeThreshold:  0.005,
+        PriorityLevel: 5,
+        GeoTags:       []string{"US", "ASIA"},
+    }
+    manager.AddOrUpdateSubmesh(dsUpdate)
+    updated, err := manager.GetSubmesh("slowlane")
+    if err != nil {
+        t.Fatalf("GetSubmesh failed after update: %v", err)
+    }
+    if updated.FeeThreshold != 0.005 || updated.PriorityLevel != 5 || len(updated.GeoTags) != 2 {
+        t.Errorf("Submesh update failed, got %+v", updated)
+    }
+
+    // Test RouteTransaction with updated submesh
+    ds, err = manager.RouteTransaction(0.004, "ASIA")
+    if err != nil {
+        t.Fatalf("RouteTransaction failed for updated submesh: %v", err)
+    }
+    if ds.Name != "slowlane" {
+        t.Errorf("Expected slowlane for ASIA, got %s", ds.Name)
+    }
+
+    // Test RouteTransaction with empty submesh list
+    emptyManager := NewDynamicSubmeshManager()
+    _, err = emptyManager.RouteTransaction(0.01, "US")
+    if err == nil {
+        t.Errorf("Expected error for empty submesh list, got nil")
+    }
 }

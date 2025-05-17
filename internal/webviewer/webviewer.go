@@ -8,6 +8,8 @@ import (
     "os"
     "strings"
     "time"
+
+    "gopkg.in/natefinch/lumberjack.v2"
 )
 
 import (
@@ -31,9 +33,47 @@ func basicAuth(next http.HandlerFunc, username, password string) http.HandlerFun
     }
 }
 
+import (
+    "bufio"
+    "log"
+    "net/http"
+    "os"
+    "strings"
+    "time"
+    "os"
+)
+
+func basicAuth(next http.HandlerFunc, username, password string) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        user, pass, ok := r.BasicAuth()
+        if !ok || user != username || pass != password {
+            w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return
+        }
+        next(w, r)
+    }
+}
+
 func StartWebLogViewer(logFile string, port string) {
-    username := "admin" // TODO: make configurable
-    password := "password" // TODO: make configurable
+    username := os.Getenv("WEBVIEWER_USERNAME")
+    if username == "" {
+        username = "admin"
+    }
+    password := os.Getenv("WEBVIEWER_PASSWORD")
+    if password == "" {
+        password = "password"
+    }
+
+    // Setup log rotation for the log file
+    logger := &lumberjack.Logger{
+        Filename:   logFile,
+        MaxSize:    100, // megabytes
+        MaxBackups: 7,
+        MaxAge:     30,   // days
+        Compress:   true, // compress rotated files
+    }
+    log.SetOutput(logger)
 
     http.HandleFunc("/", basicAuth(func(w http.ResponseWriter, r *http.Request) {
         levelFilter := r.URL.Query().Get("level")

@@ -40,6 +40,11 @@ func (rm *ReputationManager) Penalize(nodeID string, penalty float64) {
             rm.reputations[nodeID] = 0
         }
         fmt.Printf("Node %s penalized by %.2f, new reputation: %.2f\n", nodeID, penalty, rm.reputations[nodeID])
+        // Send alert for reputation penalty
+        alerting.Send(alerting.Alert{
+            Type:    alerting.AlertReputationPenalty,
+            Message: fmt.Sprintf("Node %s penalized by %.2f, new reputation: %.2f", nodeID, penalty, rm.reputations[nodeID]),
+        })
     }
 }
 

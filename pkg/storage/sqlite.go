@@ -20,6 +20,9 @@ func NewStorage(dbPath string) (*Storage, error) {
         return nil, err
     }
     // Set SQLite pragmas for performance tuning
+    // WAL mode improves write concurrency and crash recovery
+    // synchronous NORMAL balances durability and performance
+    // busy_timeout sets the max wait time for database locks
     pragmas := []string{
         "PRAGMA journal_mode = WAL;",
         "PRAGMA synchronous = NORMAL;",
@@ -47,7 +50,7 @@ func NewStorage(dbPath string) (*Storage, error) {
 }
 
 func (s *Storage) StoreTransaction(data []byte) error {
-    // Compress data using zstd
+    // Compress data using zstd for efficient storage
     var b bytes.Buffer
     encoder, err := zstd.NewWriter(&b)
     if err != nil {
