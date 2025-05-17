@@ -14,6 +14,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/mesh3d"
 	"github.com/blackbeardONE/QSDM/pkg/networking"
 	"github.com/blackbeardONE/QSDM/pkg/quarantine"
+	// Removed separate reputation import since reputation.go is part of quarantine package
 	"github.com/blackbeardONE/QSDM/pkg/storage"
 	"github.com/blackbeardONE/QSDM/pkg/submesh"
 	"github.com/blackbeardONE/QSDM/pkg/wasm"
@@ -37,12 +38,28 @@ func setupNetwork(ctx context.Context) (*networking.Network, error) {
 	return net, nil
 }
 
-func setupStorage() (*storage.Storage, error) {
-	storage, err := storage.NewStorage("transactions.db")
+func setupStorage() (storage.Storage, error) {
+	// Load environment variables from .env file if present
+	_ = godotenv.Load()
+
+	useScylla := os.Getenv("USE_SCYLLA")
+	if useScylla == "true" {
+		hosts := []string{"127.0.0.1"} // Replace with actual ScyllaDB hosts
+		keyspace := "qsdm"
+		scyllaStorage, err := storage.NewScyllaStorage(hosts, keyspace)
+		if err != nil {
+			return nil, err
+		}
+		logging.Info.Println("Using ScyllaDB storage")
+		return scyllaStorage, nil
+	}
+
+	sqliteStorage, err := storage.NewStorage("transactions.db")
 	if err != nil {
 		return nil, err
 	}
-	return storage, nil
+	logging.Info.Println("Using SQLite storage")
+	return sqliteStorage, nil
 }
 
 func setupConsensus() *consensus.ProofOfEntanglement {
@@ -50,19 +67,38 @@ func setupConsensus() *consensus.ProofOfEntanglement {
 }
 
 func setupWASM() (*wasm.WASMSDK, error) {
-	wasmWasmPath := "wasm_module_bg.wasm"
-	wasmBytes, err := wasm.LoadWASMFromFile(wasmWasmPath)
+	// Load wallet WASM module
+	walletWasmPath := "wasm_modules/wallet/wallet.wasm"
+	walletBytes, err := wasm.LoadWASMFromFile(walletWasmPath)
 	if err != nil {
-		logging.Warn.Printf("Failed to load WASM module from %s: %v", wasmWasmPath, err)
-		log.Println("WASM SDK disabled due to missing WASM module")
+		logging.Warn.Printf("Failed to load wallet WASM module from %s: %v", walletWasmPath, err)
+		log.Println("WASM wallet module disabled due to missing WASM file")
 		return nil, nil
 	}
-	wasmSdk, err := wasm.NewWASMSDK(wasmBytes)
+	walletSdk, err := wasm.NewWASMSDK(walletBytes)
 	if err != nil {
+		logging.Error.Printf("Failed to create WASM SDK for wallet: %v", err)
 		return nil, err
 	}
-	logging.Info.Println("WASM SDK initialized")
-	return wasmSdk, nil
+	logging.Info.Println("WASM wallet SDK initialized")
+
+	// Load validator WASM module
+	validatorWasmPath := "wasm_modules/validator/validator.wasm"
+	validatorBytes, err := wasm.LoadWASMFromFile(validatorWasmPath)
+	if err != nil {
+		logging.Warn.Printf("Failed to load validator WASM module from %s: %v", validatorWasmPath, err)
+		log.Println("WASM validator module disabled due to missing WASM file")
+		return walletSdk, nil // Return wallet SDK even if validator missing
+	}
+	validatorSdk, err := wasm.NewWASMSDK(validatorBytes)
+	if err != nil {
+		logging.Error.Printf("Failed to create WASM SDK for validator: %v", err)
+		return walletSdk, nil
+	}
+	logging.Info.Println("WASM validator SDK initialized")
+
+	// For simplicity, return wallet SDK; extend struct to hold both if needed
+	return walletSdk, nil
 }
 
 func handleTransaction(msg []byte, dynamicManager *submesh.DynamicSubmeshManager, wasmSdk *wasm.WASMSDK, consensus *consensus.ProofOfEntanglement, storage *storage.Storage) {
@@ -80,7 +116,7 @@ func handleTransaction(msg []byte, dynamicManager *submesh.DynamicSubmeshManager
 	}
 
 	if wasmSdk != nil {
-		_, err = wasmSdk.CallFunction("validate", tx)
+		_, err = wasmSdk.CallFunction("validateTransaction", tx)
 		if err != nil {
 			logging.Warn.Printf("WASM validation failed: %v", err)
 			return
@@ -114,7 +150,27 @@ func setupPhase3Components() (*mesh3d.Mesh3DValidator, *quarantine.QuarantineMan
 	return mesh3dValidator, quarantineManager
 }
 
-func handlePhase3Transaction(msg []byte, mesh3dValidator *mesh3d.Mesh3DValidator, quarantineManager *quarantine.QuarantineManager, consensus *consensus.ProofOfEntanglement, storage *storage.Storage) {
+import (
+	"context"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/blackbeardONE/QSDM/internal/logging"
+	"github.com/blackbeardONE/QSDM/internal/webviewer"
+	"github.com/blackbeardONE/QSDM/pkg/consensus"
+	"github.com/blackbeardONE/QSDM/pkg/mesh3d"
+	"github.com/blackbeardONE/QSDM/pkg/networking"
+	"github.com/blackbeardONE/QSDM/pkg/quarantine"
+	"github.com/blackbeardONE/QSDM/pkg/storage"
+	"github.com/blackbeardONE/QSDM/pkg/submesh"
+	"github.com/blackbeardONE/QSDM/pkg/wasm"
+	"github.com/blackbeardONE/QSDM/pkg/quarantine/reputation"
+)
+
+func handlePhase3Transaction(msg []byte, mesh3dValidator *mesh3d.Mesh3DValidator, quarantineManager *quarantine.QuarantineManager, reputationManager *quarantine.ReputationManager, consensus *consensus.ProofOfEntanglement, storage *storage.Storage) {
 	tx := &mesh3d.Transaction{
 		ID: "tx1",
 		ParentCells: []mesh3d.ParentCell{
@@ -129,9 +185,15 @@ func handlePhase3Transaction(msg []byte, mesh3dValidator *mesh3d.Mesh3DValidator
 	if err != nil {
 		logging.Error.Printf("3D mesh validation error: %v", err)
 		quarantineManager.RecordTransaction("default-submesh", false)
+		reputationManager.Penalize("default-node")
 		return
 	}
 	quarantineManager.RecordTransaction("default-submesh", valid)
+	if valid {
+		reputationManager.Reward("default-node")
+	} else {
+		reputationManager.Penalize("default-node")
+	}
 
 	if !valid {
 		logging.Warn.Println("Transaction failed 3D mesh validation, discarding")
@@ -165,9 +227,10 @@ func main() {
 	startWebViewer()
 
 	dynamicManager := submesh.NewDynamicSubmeshManager()
-
 	go submeshCLI(dynamicManager)
-	go governanceCLI()
+
+	governanceManager := governance.NewSnapshotVoting()
+	go governanceCLI(governanceManager)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -208,9 +271,12 @@ func main() {
 	}()
 
 	mesh3dValidator, quarantineManager := setupPhase3Components()
+	reputationManager := quarantine.NewReputationManager(10, 5)
+	monitor := quarantine.NewMonitor(quarantineManager, 30*time.Second)
+	monitor.Start()
 
 	net.SetMessageHandler(func(msg []byte) {
-		handlePhase3Transaction(msg, mesh3dValidator, quarantineManager, consensus, storage)
+		handlePhase3Transaction(msg, mesh3dValidator, quarantineManager, reputationManager, consensus, storage)
 	})
 
 	sigs := make(chan os.Signal, 1)

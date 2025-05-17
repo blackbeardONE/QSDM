@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>QSDM WASM Browser Integration Test with WASI Final</title>
+<script src="https://cdn.jsdelivr.net/npm/@wasmer/wasi@0.12.0/lib/index.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@wasmer/wasmfs@0.6.0/lib/index.umd.min.js"></script>
+</head>
+<body>
+<h1>QSDM WASM Browser Integration Test with WASI Final</h1>
+<div id="output"></div>
+<script>
+  async function runWasiWasm(url) {
+    const output = document.getElementById('output');
+    try {
+      // Wait for WasmFs and Wasmer to be available
+      if (!window.WasmFs || !window.Wasmer) {
+        throw new Error('WasmFs or Wasmer not loaded yet');
+      }
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error('Failed to fetch ' + url + ': ' + response.statusText);
+      }
+      const wasmBytes = await response.arrayBuffer();
+
+      const wasmFs = new window.WasmFs.WasmFs();
+
+      const wasi = new window.Wasmer.WASI({
+        args: [],
+        env: {},
+        bindings: {
+          ...window.Wasmer.WASI.defaultBindings,
+          fs: wasmFs.fs,
+        },
+      });
+
+      const { instance } = await WebAssembly.instantiate(wasmBytes, {
+        wasi_snapshot_preview1: wasi.wasiImport,
+      });
+
+      wasi.start(instance);
+
+      output.innerHTML += '<p>WASM module ' + url + ' loaded and started successfully.</p>';
+    } catch (err) {
+      output.innerHTML += '<p style="color:red;">WASM Browser integration test failed: ' + err.message + '</p>';
+      console.error(err);
+    }
+  }
+
+  async function runTests() {
+    await runWasiWasm('../wasm_modules/wallet/wallet.wasm');
+    await runWasiWasm('../wasm_modules/validator/validator.wasm');
+    const output = document.getElementById('output');
+    output.innerHTML += '<p>WASM Browser integration tests with WASI completed.</p>';
+  }
+
+  runTests();
+</script>
+</body>
+</html>

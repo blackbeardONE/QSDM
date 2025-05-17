@@ -9,6 +9,7 @@ package crypto
 import "C"
 import (
 	"errors"
+	"fmt"
 	"unsafe"
 )
 
@@ -21,8 +22,11 @@ type Dilithium struct {
 
 // NewDilithium initializes a new Dilithium instance
 func NewDilithium() *Dilithium {
-	sig := C.OQS_SIG_new(C.CString("Dilithium2"))
+	cname := C.CString("Dilithium2")
+	defer C.free(unsafe.Pointer(cname))
+	sig := C.OQS_SIG_new(cname)
 	if sig == nil {
+		fmt.Println("OQS_SIG_new returned nil")
 		return nil
 	}
 	d := &Dilithium{sig: sig}
@@ -35,6 +39,7 @@ func NewDilithium() *Dilithium {
 		(*C.uchar)(unsafe.Pointer(&sk[0])),
 	)
 	if ret != C.OQS_SUCCESS {
+		fmt.Println("OQS_SIG_keypair failed")
 		return nil
 	}
 	d.pk = pk

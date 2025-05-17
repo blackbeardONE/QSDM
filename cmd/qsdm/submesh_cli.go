@@ -16,7 +16,7 @@ func submeshCLI(manager *submesh.DynamicSubmeshManager) {
     fmt.Println("-------------------")
 
     for {
-        fmt.Print("Enter command (add, update, remove, list, exit): ")
+        fmt.Print("Enter command (add, update, remove, list, apply, exit): ")
         input, _ := reader.ReadString('\n')
         input = strings.TrimSpace(input)
         args := strings.Split(input, " ")
@@ -58,16 +58,34 @@ func submeshCLI(manager *submesh.DynamicSubmeshManager) {
                 fmt.Printf("Submesh %s removed.\n", args[1])
             }
         case "list":
-    manager.Mu.RLock()
-    if len(manager.Submeshes) == 0 {
-        fmt.Println("No submeshes defined.")
-    } else {
-        fmt.Println("Defined submeshes:")
-        for _, ds := range manager.Submeshes {
-            fmt.Printf("- %s: FeeThreshold=%.4f, Priority=%d, GeoTags=%v\n", ds.Name, ds.FeeThreshold, ds.PriorityLevel, ds.GeoTags)
-        }
-    }
-    manager.Mu.RUnlock()
+            manager.Mu.RLock()
+            if len(manager.Submeshes) == 0 {
+                fmt.Println("No submeshes defined.")
+            } else {
+                fmt.Println("Defined submeshes:")
+                for _, ds := range manager.Submeshes {
+                    fmt.Printf("- %s: FeeThreshold=%.4f, Priority=%d, GeoTags=%v\n", ds.Name, ds.FeeThreshold, ds.PriorityLevel, ds.GeoTags)
+                }
+            }
+            manager.Mu.RUnlock()
+        case "apply":
+            // For demonstration, apply a hardcoded governance update
+            updates := []*submesh.DynamicSubmesh{
+                {
+                    Name:          "fastlane",
+                    FeeThreshold:  0.02,
+                    PriorityLevel: 15,
+                    GeoTags:       []string{"US", "EU"},
+                },
+                {
+                    Name:          "slowlane",
+                    FeeThreshold:  0.001,
+                    PriorityLevel: 1,
+                    GeoTags:       []string{"US"},
+                },
+            }
+            manager.ApplyGovernanceUpdate(updates)
+            fmt.Println("Applied governance updates to submeshes.")
         case "exit":
             fmt.Println("Exiting CLI.")
             return

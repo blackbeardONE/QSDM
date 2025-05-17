@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>QSDM WASM Browser Integration Test with WASI Final 2</title>
+<script id="wasi-script" src="../libs/wasmer/index.umd.min.js"></script>
+<script id="wasmfs-script" src="../libs/wasmfs/index.umd.min.js"></script>
+</head>
+<body>
+<h1>QSDM WASM Browser Integration Test with WASI Final 2</h1>
+<div id="output"></div>
+<script>
+  function runTests() {
+    async function runWasiWasm(url) {
+      const output = document.getElementById('output');
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error('Failed to fetch ' + url + ': ' + response.statusText);
+        }
+        const wasmBytes = await response.arrayBuffer();
+
+        const wasmFs = new window.WasmFs.WasmFs();
+
+        const wasi = new window.Wasmer.WASI({
+          args: [],
+          env: {},
+          bindings: {
+            ...window.Wasmer.WASI.defaultBindings,
+            fs: wasmFs.fs,
+          },
+        });
+
+        const { instance } = await WebAssembly.instantiate(wasmBytes, {
+          wasi_snapshot_preview1: wasi.wasiImport,
+        });
+
+        wasi.start(instance);
+
+        // Call an exported function if available, e.g. 'add'
+        if (instance.exports.add) {
+          const result = instance.exports.add(1, 2);
+          output.innerHTML += '<p>Called add(1, 2), result: ' + result + '</p>';
+        } else {
+          output.innerHTML += '<p>No callable exports found in ' + url + '</p>';
+        }
+
+        output.innerHTML += '<p>WASM module ' + url + ' loaded and started successfully.</p>';
+      } catch (err) {
+        output.innerHTML += '<p style="color:red;">WASM Browser integration test failed: ' + err.message + '</p>';
+        console.error(err);
+      }
+    }
+
+    (async () => {
+      await runWasiWasm('../wasm_modules/wallet/wallet.wasm');
+      await runWasiWasm('../wasm_modules/validator/validator.wasm');
+      const output = document.getElementById('output');
+      output.innerHTML += '<p>WASM Browser integration tests with WASI completed.</p>';
+    })();
+  }
+
+  let scriptsLoaded = 0;
+  function scriptLoaded() {
+    scriptsLoaded++;
+    if (scriptsLoaded === 2) {
+      runTests();
+    }
+  }
+
+  document.getElementById('wasi-script').addEventListener('load', scriptLoaded);
+  document.getElementById('wasmfs-script').addEventListener('load', scriptLoaded);
+</script>
+</body>
+</html>

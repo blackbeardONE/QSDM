@@ -27,6 +27,15 @@ func NewDynamicSubmeshManager() *DynamicSubmeshManager {
     }
 }
 
+// ApplyGovernanceUpdate applies governance voting results to update submesh rules.
+func (m *DynamicSubmeshManager) ApplyGovernanceUpdate(updates []*DynamicSubmesh) {
+    m.Mu.Lock()
+    defer m.Mu.Unlock()
+    for _, update := range updates {
+        m.Submeshes[update.Name] = update
+    }
+}
+
 // AddOrUpdateSubmesh adds or updates a dynamic submesh.
 func (m *DynamicSubmeshManager) AddOrUpdateSubmesh(ds *DynamicSubmesh) {
     m.Mu.Lock()

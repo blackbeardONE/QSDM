@@ -1,25 +1,16 @@
 #!/bin/bash
 
-# Set environment variables for CGO to find OQS and CUDA headers and libs
-export CGO_CFLAGS="-IC:/liboqs/include -IC:/CUDA/include"
-export CGO_LDFLAGS="-LC:/liboqs/lib -LC:/CUDA/lib/x64"
-export CGO_ENABLED=1
-
-# Clean previous builds
-go clean -cache -modcache -testcache
-
-# Build Rust wasm_module
-cargo build --release --manifest-path wasm_module/Cargo.toml
+# Build the QSDM project
+echo "Building QSDM project..."
+go build -o qsdm cmd/qsdm/main.go
 if [ $? -ne 0 ]; then
-  echo "Rust wasm_module build failed"
+  echo "Build failed."
   exit 1
 fi
+echo "Build succeeded."
 
-# Build Go project
-go build -o qsdm.exe ./cmd/qsdm
-if [ $? -ne 0 ]; then
-  echo "Go project build failed"
-  exit 1
-fi
+# Run the QSDM node
+echo "Starting QSDM node..."
+./qsdm
 
-echo "Build successful. You can now run ./qsdm.exe"
+# Note: Ensure environment variables are set as needed, e.g. USE_SCYLLA=true for ScyllaDB usage

@@ -14,8 +14,12 @@ type ProofOfEntanglement struct {
 
 // NewProofOfEntanglement creates a new PoE instance with Dilithium crypto
 func NewProofOfEntanglement() *ProofOfEntanglement {
+    d := crypto.NewDilithium()
+    if d == nil {
+        return nil
+    }
     return &ProofOfEntanglement{
-        dilithium: crypto.NewDilithium(),
+        dilithium: d,
     }
 }
 
@@ -26,6 +30,10 @@ func (poe *ProofOfEntanglement) Sign(message []byte) ([]byte, error) {
 
 // ValidateTransaction validates a transaction by checking 2 parent cells and signatures
 func (poe *ProofOfEntanglement) ValidateTransaction(tx []byte, parentCells [][]byte, signatures [][]byte) (bool, error) {
+    if poe == nil || poe.dilithium == nil {
+        logging.Error.Println("ProofOfEntanglement or Dilithium not initialized")
+        return false, errors.New("ProofOfEntanglement or Dilithium not initialized")
+    }
     if len(parentCells) != 2 {
         logging.Error.Println("Invalid number of parent cells, expected 2")
         return false, errors.New("invalid number of parent cells, expected 2")
