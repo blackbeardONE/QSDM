@@ -116,11 +116,46 @@ jobs:
         with:
           go-version-file: QSDM/source/go.mod
 
+      # govulncheck does dataflow analysis on the ENTIRE module, which
+      # means it has to compile every package including the CGO-gated
+      # `pkg/crypto/dilithium.go` (imports `<oqs/oqs.h>`). Without
+      # liboqs on the build path the job dies before govulncheck gets
+      # a chance to report anything real:
+      #
+      #     pkg/crypto/dilithium.go:6:10: fatal error: oqs/oqs.h: No such file or directory
+      #
+      # Mirror the exact setup test-cgo-transaction uses below (shared
+      # cache key so we only build liboqs once per change to
+      # rebuild_liboqs.sh across the whole workflow).
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git libssl-dev
+
+      - name: Cache liboqs install
+        id: liboqs-cache
+        uses: actions/cache@v4
+        with:
+          path: QSDM/liboqs_install
+          key: liboqs-install-${{ runner.os }}-${{ hashFiles('QSDM/scripts/rebuild_liboqs.sh') }}
+
+      - name: Build liboqs
+        if: steps.liboqs-cache.outputs.cache-hit != 'true'
+        working-directory: QSDM
+        run: chmod +x scripts/rebuild_liboqs.sh && ./scripts/rebuild_liboqs.sh
+
       - name: Run govulncheck
         working-directory: QSDM/source
         env:
+          CGO_ENABLED: "1"
           QSDMPLUS_METRICS_REGISTER_STRICT: "1"
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        run: |
+          LIBOQS="${GITHUB_WORKSPACE}/QSDM/liboqs_install"
+          if [ -d "$LIBOQS/lib64" ]; then L="$LIBOQS/lib64"; else L="$LIBOQS/lib"; fi
+          export CGO_CFLAGS="-I${LIBOQS}/include"
+          export CGO_LDFLAGS="-L${L} -loqs"
+          export LD_LIBRARY_PATH="${L}:${LD_LIBRARY_PATH:-}"
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   trivy:
     runs-on: ubuntu-latest
