@@ -65,15 +65,26 @@ func (poe *ProofOfEntanglement) SignCompressed(message []byte) ([]byte, error) {
 	return poe.dilithium.SignCompressed(message)
 }
 
-// ValidateTransaction validates a transaction by checking 2 parent cells and signatures
+// ValidateTransaction validates a transaction by checking that the sender
+// supplied at least two parent cells (the minimum entanglement degree) and
+// that every attached signature verifies over `tx`.
+//
+// Historically this helper required *exactly* two parent cells, which was
+// correct for the pre-mesh3D wallet path but silently rejected every valid
+// Phase-3 / mesh3D payload (those carry three parent cells by protocol, see
+// `pkg/mesh3d`). The field is not actually consumed during cryptographic
+// verification -- only the signatures over `tx` are -- so the count check
+// is only a plausibility guard. Relax it to "at least two" so both the
+// legacy wallet path and the mesh3D Phase-3 path flow through the same
+// consensus entry point.
 func (poe *ProofOfEntanglement) ValidateTransaction(tx []byte, parentCells [][]byte, signatures [][]byte, logger *logging.Logger) (bool, error) {
 	if poe == nil || poe.dilithium == nil {
 		logger.Error("ProofOfEntanglement or Dilithium not initialized", "file", "poe.go")
 		return false, errors.New("ProofOfEntanglement or Dilithium not initialized")
 	}
-	if len(parentCells) != 2 {
-		logger.Error("Invalid number of parent cells, expected 2", "file", "poe.go")
-		return false, errors.New("invalid number of parent cells, expected 2")
+	if len(parentCells) < 2 {
+		logger.Error("Invalid number of parent cells, expected at least 2", "file", "poe.go", "got", len(parentCells))
+		return false, errors.New("invalid number of parent cells, expected at least 2")
 	}
 	if len(signatures) == 0 {
 		logger.Error("No signatures provided", "file", "poe.go")
@@ -98,9 +109,9 @@ func (poe *ProofOfEntanglement) ValidateTransactionCompressed(tx []byte, parentC
 		logger.Error("ProofOfEntanglement or Dilithium not initialized", "file", "poe.go")
 		return false, errors.New("ProofOfEntanglement or Dilithium not initialized")
 	}
-	if len(parentCells) != 2 {
-		logger.Error("Invalid number of parent cells, expected 2", "file", "poe.go")
-		return false, errors.New("invalid number of parent cells, expected 2")
+	if len(parentCells) < 2 {
+		logger.Error("Invalid number of parent cells, expected at least 2", "file", "poe.go", "got", len(parentCells))
+		return false, errors.New("invalid number of parent cells, expected at least 2")
 	}
 	if len(compressedSignatures) == 0 {
 		logger.Error("No signatures provided", "file", "poe.go")
