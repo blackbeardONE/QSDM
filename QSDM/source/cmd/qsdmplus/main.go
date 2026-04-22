@@ -356,7 +356,13 @@ func main() {
 		GateP2P:               cfg.NvidiaLockGateP2P,
 	}, cfg.JWTHMACSecret, cfg.DashboardMetricsScrapeSecret, cfg.DashboardStrictAuth, fmt.Sprintf("http://127.0.0.1:%d", cfg.APIPort), sharedAuth)
 
-	webviewer.StartWebLogViewer(cfg.LogFile, fmt.Sprintf("%d", cfg.LogViewerPort))
+	if err := webviewer.StartWebLogViewer(cfg.LogFile, fmt.Sprintf("%d", cfg.LogViewerPort)); err != nil {
+		logger.Warn("Web log viewer disabled",
+			"port", cfg.LogViewerPort,
+			"reason", err.Error(),
+			"fix", "set WEBVIEWER_USERNAME and WEBVIEWER_PASSWORD env vars (or QSDM_WEBVIEWER_ALLOW_DEFAULT_CREDS=1 for local dev only)",
+		)
+	}
 
 	dynamicManager := submesh.NewDynamicSubmeshManager()
 	if rp := cfg.ResolvedSubmeshConfigPath(); rp != "" {

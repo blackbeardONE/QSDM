@@ -30,13 +30,22 @@ INFO: Another info message
 	}
 	tmpfile.Close()
 
+	// The webviewer now refuses to boot with default admin/password creds
+	// unless an explicit opt-in env var is set. Use the opt-in here so we
+	// don't need to plumb real credentials through every test case.
+	t.Setenv("QSDM_WEBVIEWER_ALLOW_DEFAULT_CREDS", "1")
+
 	// Start the web log viewer server
-	go webviewer.StartWebLogViewer(tmpfile.Name(), "8082")
-	
+	go func() {
+		if err := webviewer.StartWebLogViewer(tmpfile.Name(), "8082"); err != nil {
+			t.Errorf("StartWebLogViewer returned unexpected error: %v", err)
+		}
+	}()
+
 	// Wait for server to start
 	time.Sleep(100 * time.Millisecond)
 
-	// Create HTTP client with basic auth (default: admin/password)
+	// Create HTTP client with basic auth (opt-in default: admin/password)
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", "http://localhost:8082/?level=ERROR", nil)
 	if err != nil {

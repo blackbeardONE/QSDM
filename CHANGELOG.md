@@ -12,6 +12,33 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Security
+
+- **Webviewer refuses to start on insecure default credentials
+  (2026-04-22).** `internal/webviewer` used to silently fall back to
+  `admin` / `password` when `WEBVIEWER_USERNAME` / `WEBVIEWER_PASSWORD`
+  were unset — which was acceptable when the code was private but is
+  now a real foot-gun with QSDM public on GitHub: anyone who clones,
+  builds, and `./qsdmplus`-es without reading the docs gets a wide-open
+  log stream on port `9000` / `LOG_VIEWER_PORT`. `StartWebLogViewer`
+  now returns the new `webviewer.ErrInsecureDefaultCreds` when either
+  var is unset or empty, and `cmd/qsdmplus/main.go` logs a clear
+  remediation message and keeps the node running *without* the log
+  viewer. Operators who explicitly want the old behaviour for local
+  development must now opt in with `QSDM_WEBVIEWER_ALLOW_DEFAULT_CREDS=1`,
+  which also emits a loud `[WEBVIEWER][WARN]` banner on every
+  start-up. Basic-auth compares use `crypto/subtle.ConstantTimeCompare`
+  now to remove the trivial timing side-channel. Covered by seven new
+  unit tests in `internal/webviewer/webviewer_creds_test.go` (with
+  eleven subtest permutations covering both-set, either-unset,
+  truthy/falsey opt-in values, and the opt-in-doesn't-override-real-
+  creds invariant). The existing integration test in
+  `tests/webviewer_test.go` was updated to set the opt-in flag
+  explicitly so its use of `admin`/`password` is intentional rather
+  than accidental. The live VPS is unaffected because both env vars
+  have been provisioned in `/etc/systemd/system/qsdmplus.service.d/secrets.conf`
+  since the 2026-04-22 secret-rotation pass.
+
 ### Changed — repository / licensing
 
 - **MIT license surfaced at the repo root (2026-04-22).** `QSDM/LICENSE`
