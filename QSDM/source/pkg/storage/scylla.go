@@ -187,17 +187,41 @@ func NewScyllaStorage(hosts []string, keyspace string, extra *ScyllaClusterConfi
 
 // initSchema creates necessary tables in ScyllaDB
 func (s *ScyllaStorage) initSchema() error {
-	// Create transactions table (single-partition PK by row id; see MV for tx_id lookups).
+	// Create transactions table.
+	//
+	// NOTE on primary key shape: the natural PK here is just `id` (TimeUUID,
+	// unique per write). However, Scylla 6.x (and Cassandra 4.x) strictly
+	// enforce the materialized-view rule:
+	//
+	//   "The MV primary key must contain every column of the base primary key
+	//    and AT MOST ONE additional non-primary-key column from the base table."
+	//
+	// Our per-wallet MVs need to be partitioned by sender/recipient AND
+	// clustered by timestamp DESC so GetRecentTransactions can stream the N
+	// most recent rows without a full-range scan. With a single-column base PK
+	// (just `id`), those MVs would try to promote TWO new non-PK columns
+	// (e.g. sender + timestamp) into the MV PK, which Scylla rejects with:
+	//
+	//   "Cannot include more than one non-primary key column 'timestamp' in
+	//    materialized view primary key"
+	//
+	// Promoting `timestamp` into the base PK as a CLUSTERING column fixes this
+	// -- `timestamp` becomes part of the base PK, so each per-wallet MV only
+	// adds one truly new non-PK column (sender/recipient/tx_id). Since `id` is
+	// a freshly generated TimeUUID per insert, there is exactly one row per
+	// (id, timestamp) partition in practice, so the clustering column does
+	// not alter read semantics for point-lookups by id.
 	createTransactionsTable := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s.transactions (
-			id UUID PRIMARY KEY,
+			id UUID,
 			tx_id TEXT,
 			data BLOB,
 			sender TEXT,
 			recipient TEXT,
 			amount DOUBLE,
-			timestamp TIMESTAMP
-		)`, s.keyspace)
+			timestamp TIMESTAMP,
+			PRIMARY KEY (id, timestamp)
+		) WITH CLUSTERING ORDER BY (timestamp DESC)`, s.keyspace)
 
 	if err := s.session.Query(createTransactionsTable).Exec(); err != nil {
 		return fmt.Errorf("failed to create transactions table: %w", err)
@@ -240,13 +264,21 @@ func (s *ScyllaStorage) initSchema() error {
 		}
 	}
 
-	// Materialized view: partition by wallet tx_id for efficient GetTransaction (avoids relying only on secondary index).
+	// Materialized view: partition by wallet tx_id for efficient GetTransaction
+	// (avoids relying only on a secondary index).
+	//
+	// The MV PK must include every column of the base PK -- which is now
+	// (id, timestamp) per the note on createTransactionsTable above -- so
+	// `timestamp` is included as a clustering column here too. Logically the
+	// access pattern is a point lookup by tx_id (unique, enforced by the
+	// wallet_tx_id_claim LWT), so the extra clustering columns do not change
+	// observable behavior.
 	createTxByTxIDMV := fmt.Sprintf(`
 		CREATE MATERIALIZED VIEW IF NOT EXISTS %s.transactions_by_tx_id AS
 		SELECT id, tx_id, data, sender, recipient, amount, timestamp
 		FROM %s.transactions
-		WHERE id IS NOT NULL AND tx_id IS NOT NULL
-		PRIMARY KEY (tx_id, id)`, s.keyspace, s.keyspace)
+		WHERE id IS NOT NULL AND tx_id IS NOT NULL AND timestamp IS NOT NULL
+		PRIMARY KEY (tx_id, id, timestamp)`, s.keyspace, s.keyspace)
 	if err := s.session.Query(createTxByTxIDMV).Exec(); err != nil {
 		return fmt.Errorf("transactions_by_tx_id materialized view: %w", err)
 	}
