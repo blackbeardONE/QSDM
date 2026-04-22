@@ -12,6 +12,22 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Changed — repository / licensing
+
+- **MIT license surfaced at the repo root (2026-04-22).** `QSDM/LICENSE`
+  was one level too deep for GitHub's license detector, so the repo
+  page was displaying neither a licence badge nor the "MIT" tag in the
+  sidebar even though the project has always been MIT-licensed. Copied
+  the licence to `/LICENSE` at the repo root (keeping `QSDM/LICENSE`
+  in place so nothing else breaks), bumped the copyright line to
+  `2024-2026` in both copies, and added a `## License` section to the
+  root `README.md` that links to it. Also trimmed the root `README`
+  down to files that actually exist in the public tree — the previous
+  version pointed at several internal docs (`NEXT_STEPS.md`,
+  `Major Update.md`, `nvidia_locked_qsdmplus_blockchain_architecture.md`,
+  `apps/game-integration/`) that are correctly excluded from the
+  public repo by `.gitignore`, so those links were 404s on GitHub.
+
 ### Deployed
 
 - **VPS root password rotated (2026-04-22).** The previous root

@@ -1,15 +1,61 @@
-# QSDM workspace
+# QSDM
 
-> **Rebrand notice (Major Update):** this monorepo is migrating from the transitional name **QSDM+** back to **QSDM**, and introducing the native coin **Cell (CELL)**. Existing folder names (`apps/qsdmplus-landing/`, `apps/qsdmplus-nvidia-ngc/`) and configuration identifiers (`qsdmplus.*` configs, `QSDMPLUS_*` env vars, `X-QSDMPLUS-*` headers) continue to work during the deprecation window. See `QSDM/docs/docs/REBRAND_NOTES.md` for the full migration table.
+**QSDM** (Quantum-Secure Dynamic Mesh ledger) is a post-quantum-secure
+ledger with a two-tier node model — CPU-only validators run the PoE + BFT
+consensus, and GPU-based miners run an additive, Mesh3D-tied
+Proof-of-Work that mints the native coin, **Cell (CELL)**.
 
-Monorepo layout:
+Transaction signatures use **ML-DSA-87** (NIST FIPS 204) — the
+standardised post-quantum replacement for classical Ed25519 / Ed448 —
+so transactions signed today remain unforgeable against cryptographically
+relevant quantum adversaries tomorrow.
+
+> **Rebrand notice.** This monorepo is migrating from the transitional
+> name **QSDM+** back to **QSDM**. Existing folder names
+> (`apps/qsdmplus-landing/`, `apps/qsdmplus-nvidia-ngc/`) and
+> configuration identifiers (`qsdmplus.*` configs, `QSDMPLUS_*` env
+> vars, `X-QSDMPLUS-*` headers) continue to work during the
+> deprecation window. See
+> [`QSDM/docs/docs/REBRAND_NOTES.md`](QSDM/docs/docs/REBRAND_NOTES.md)
+> for the full migration table.
+
+## Repository layout
 
 | Path | What it is |
 |------|------------|
-| **`QSDM/`** | **QSDM ledger node** — Go implementation (consensus, storage, quantum-safe crypto, wallet/token API). This is the cryptocurrency / chain layer (native coin: **Cell / CELL**). |
-| **`apps/`** | **Products and sidecars** that use or complement the node — not required to run the core ledger. |
-| **`apps/qsdmplus-landing/`** | Static marketing / explainer site (folder name retained during rebrand deprecation window; served at `qsdm.tech`). |
-| **`apps/qsdmplus-nvidia-ngc/`** | Optional NVIDIA NGC GPU proof sidecar — consensus-optional, used for validator attestation (see repo root `nvidia_locked_qsdmplus_blockchain_architecture.md`). |
-| **`apps/game-integration/`** | Notes for external game clients (e.g. env, API URLs); see `NEXT_STEPS.md`. |
+| [**`QSDM/`**](QSDM/) | **Ledger node** — Go implementation (consensus, storage, ML-DSA-87 signatures, wallet/token API). This is the cryptocurrency / chain layer; native coin is **Cell (CELL)**. |
+| [**`QSDM/docs/docs/`**](QSDM/docs/docs/) | User-facing documentation: API reference, mining protocol, node-role split, quickstart guides, rebrand notes, roadmap, deployment guides. |
+| [**`apps/`**](apps/) | **Products and sidecars** that use the node but are not required to run the core ledger. |
+| [**`apps/qsdmplus-landing/`**](apps/qsdmplus-landing/) | Static marketing site served at `qsdm.tech`. (Folder name retained during the rebrand deprecation window.) |
+| [**`apps/qsdmplus-nvidia-ngc/`**](apps/qsdmplus-nvidia-ngc/) | Optional NVIDIA NGC GPU attestation sidecar — opt-in, per-operator API policy, **not** a consensus rule. See [`QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md`](QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md). |
 
-Architecture and roadmap for the node live under **`QSDM/docs/`** and **`QSDM/README.md`**. Major Update execution plan: `Major Update.md`. Current phase progress: `NEXT_STEPS.md`.
+## Start here
+
+- **Run a validator (CPU-only):** [`QSDM/docs/docs/VALIDATOR_QUICKSTART.md`](QSDM/docs/docs/VALIDATOR_QUICKSTART.md)
+- **Run a miner (GPU-bound PoW):** [`QSDM/docs/docs/MINER_QUICKSTART.md`](QSDM/docs/docs/MINER_QUICKSTART.md)
+- **API reference:** [`QSDM/docs/docs/API_REFERENCE.md`](QSDM/docs/docs/API_REFERENCE.md) and [`QSDM/docs/docs/openapi.yaml`](QSDM/docs/docs/openapi.yaml)
+- **Protocol specs:** [`QSDM/docs/docs/MINING_PROTOCOL.md`](QSDM/docs/docs/MINING_PROTOCOL.md), [`QSDM/docs/docs/NODE_ROLES.md`](QSDM/docs/docs/NODE_ROLES.md), [`QSDM/docs/docs/CELL_TOKENOMICS.md`](QSDM/docs/docs/CELL_TOKENOMICS.md)
+- **Release notes:** [`CHANGELOG.md`](CHANGELOG.md)
+
+## Trust surface (live reference node)
+
+The reference deployment at `https://api.qsdm.tech/` publishes two
+endpoints that make its own coverage legible:
+
+- `GET /api/v1/trust/attestations/summary` — aggregate
+  `attested / total_public` ratio across the validator set.
+- `GET /api/v1/trust/attestations/recent` — list of recent peer
+  attestations with coarse region/GPU-arch metadata only (no PII).
+
+Consumed by the [landing page](apps/qsdmplus-landing/) and the
+dashboard. See
+[`QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md`](QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md)
+for why NVIDIA-lock is a transparency signal, not a consensus rule.
+
+## License
+
+[MIT](LICENSE) © 2024-2026 Joedel Lopez Dalioan (Blackbeard).
+
+The ledger node and sidecars are permissively licensed. Vendored
+third-party dependencies under `QSDM/source/wasmer-go-patched/` retain
+their own licences (see [`QSDM/source/wasmer-go-patched/LICENSE`](QSDM/source/wasmer-go-patched/LICENSE)).
