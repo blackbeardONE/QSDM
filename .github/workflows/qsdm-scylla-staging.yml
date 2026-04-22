@@ -20,7 +20,11 @@ on:
       - "QSDM/source/cmd/scyllasmoke/**"
       - "QSDM/scripts/scylla-staging-verify.*"
       - "QSDM/scripts/scylla-staging-verify-with-docker.*"
-      - ".github/workflows/qsdmplus-scylla-staging.yml"
+      # Tracks this workflow file. The old path was "qsdmplus-scylla-
+      # staging.yml" (pre-rebrand); the file was renamed to "qsdm-
+      # scylla-staging.yml" but the filter was missed, so self-edits
+      # to this YAML were silently not retriggering the job.
+      - ".github/workflows/qsdm-scylla-staging.yml"
   pull_request:
     paths:
       - "QSDM/source/pkg/storage/scylla.go"
@@ -29,7 +33,7 @@ on:
       - "QSDM/source/cmd/scyllasmoke/**"
       - "QSDM/scripts/scylla-staging-verify.*"
       - "QSDM/scripts/scylla-staging-verify-with-docker.*"
-      - ".github/workflows/qsdmplus-scylla-staging.yml"
+      - ".github/workflows/qsdm-scylla-staging.yml"
 
 jobs:
   scylla-staging-verify:
@@ -41,6 +45,35 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: QSDM/source/go.mod
+
+      # scylla-staging-verify.sh invokes `go build` / `go test` under
+      # the `scylla` build tag. That compiles the full module -- which
+      # transitively drags in pkg/crypto/dilithium.go (CGO-gated import
+      # of <oqs/oqs.h>). Without liboqs on the build path every attempt
+      # fails with:
+      #
+      #     pkg/crypto/dilithium.go:6:10: fatal error: oqs/oqs.h: No
+      #     such file or directory
+      #
+      # which then loops 90 times through the retry budget before the
+      # step gives up. Install liboqs the same way test-cgo-transaction
+      # and govulncheck do so the compile actually succeeds.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git libssl-dev
+
+      - name: Cache liboqs install
+        id: liboqs-cache
+        uses: actions/cache@v4
+        with:
+          path: QSDM/liboqs_install
+          key: liboqs-install-${{ runner.os }}-${{ hashFiles('QSDM/scripts/rebuild_liboqs.sh') }}
+
+      - name: Build liboqs
+        if: steps.liboqs-cache.outputs.cache-hit != 'true'
+        working-directory: QSDM
+        run: chmod +x scripts/rebuild_liboqs.sh && ./scripts/rebuild_liboqs.sh
 
       - name: Start Scylla (single-node, low memory)
         run: |
@@ -55,6 +88,12 @@ jobs:
           QSDMPLUS_METRICS_REGISTER_STRICT: "1"
         run: |
           set -e
+          LIBOQS="${GITHUB_WORKSPACE}/QSDM/liboqs_install"
+          if [ -d "$LIBOQS/lib64" ]; then L="$LIBOQS/lib64"; else L="$LIBOQS/lib"; fi
+          export CGO_ENABLED=1
+          export CGO_CFLAGS="-I${LIBOQS}/include"
+          export CGO_LDFLAGS="-L${L} -loqs"
+          export LD_LIBRARY_PATH="${L}:${LD_LIBRARY_PATH:-}"
           ok=0
           for i in $(seq 1 90); do
             if bash QSDM/scripts/scylla-staging-verify.sh; then ok=1; break; fi
