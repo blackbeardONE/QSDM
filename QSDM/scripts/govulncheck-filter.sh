@@ -56,18 +56,39 @@ if [ -s "${raw_err}" ]; then
   cat "${raw_err}" >&2
 fi
 
-# Human-readable re-render of the JSON findings for the job log.
-echo "==== govulncheck findings ===="
+# Important: govulncheck's -json mode emits TWO kinds of records that
+# carry an OSV id:
+#
+#   1. {"osv": {"id": "GO-...", ...}}     -- a raw advisory database
+#      entry. govulncheck streams the entire catalog that matched by
+#      MODULE VERSION. Most of these are NOT reachable from our call
+#      graph. Filtering on this field alone yields 100+ false positives.
+#
+#   2. {"finding": {"osv": "GO-...", ...}} -- an actual FINDING, i.e.
+#      govulncheck's dataflow analysis has demonstrated a reachable
+#      call path in our code. This is the text-mode equivalent of the
+#      "Vulnerability #N: GO-..." sections the default reporter shows.
+#
+# Only (2) should gate CI. The earlier version of this script keyed off
+# (1) and surfaced GO-2020-0006, GO-2021-0067, and ~150 other advisories
+# that our binary cannot actually reach.
+findings_jq='select(.finding) | .finding.osv'
+
+# Human-readable re-render of the reachable findings for the job log.
+echo "==== govulncheck reachable findings ===="
 if command -v jq >/dev/null 2>&1; then
-  jq -r 'select(.osv) | .osv.id + "  " + (.osv.summary // "(no summary)")' \
-     "${raw_out}" | sort -u || true
+  # Pair each finding id with the first OSV summary we saw for it, so
+  # the log is self-explanatory without having to cross-reference.
+  jq -r --slurp '
+    (map(select(.osv))     | map({(.osv.id): (.osv.summary // "(no summary)")}) | add) as $summaries
+    | (map(select(.finding)) | map(.finding.osv) | unique) as $hits
+    | $hits[] | . + "  " + ($summaries[.] // "(no summary)")
+  ' "${raw_out}" || true
 else
-  # Fallback: grep OSV ids. Works because govulncheck emits each
-  # OSV object with an "id" field on its own line in -json mode.
-  grep -oE '"id":"GO-[0-9]{4}-[0-9]+"' "${raw_out}" \
-    | sed -E 's/"id":"(.*)"/\1/' | sort -u || true
+  grep -oE '"finding":\{"osv":"GO-[0-9]{4}-[0-9]+"' "${raw_out}" \
+    | sed -E 's/.*"osv":"([^"]+)".*/\1/' | sort -u || true
 fi
-echo "=============================="
+echo "========================================"
 
 # If govulncheck itself crashed (exit != 0 AND != 3), propagate.
 # govulncheck exit codes:
@@ -80,12 +101,12 @@ if [ "${rc}" -ne 0 ] && [ "${rc}" -ne 3 ]; then
   exit "${rc}"
 fi
 
-# Collect unique OSV ids actually reported.
+# Collect unique OSV ids actually REACHABLE (not the raw catalog).
 if command -v jq >/dev/null 2>&1; then
-  reported="$(jq -r 'select(.osv) | .osv.id' "${raw_out}" | sort -u)"
+  reported="$(jq -r "${findings_jq}" "${raw_out}" | sort -u)"
 else
-  reported="$(grep -oE '"id":"GO-[0-9]{4}-[0-9]+"' "${raw_out}" \
-              | sed -E 's/"id":"(.*)"/\1/' | sort -u)"
+  reported="$(grep -oE '"finding":\{"osv":"GO-[0-9]{4}-[0-9]+"' "${raw_out}" \
+              | sed -E 's/.*"osv":"([^"]+)".*/\1/' | sort -u)"
 fi
 
 if [ -z "${reported}" ]; then
