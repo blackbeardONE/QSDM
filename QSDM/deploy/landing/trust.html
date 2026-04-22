@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Attestation transparency — QSDM · Cell (CELL)</title>
+<meta name="description" content="QSDM validator-attestation transparency page. Live 'X of Y attested' ratio with the NVIDIA-lock caveat spelled out. Attestation is an opt-in transparency signal, not a consensus rule." />
+<meta name="theme-color" content="#0b1220" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b1220'/%3E%3Cpath d='M12 32l10-10 10 10-10 10z' fill='%2376b900'/%3E%3Cpath d='M32 20l10 12-10 12-10-12z' fill='%2300d1b2' opacity='.85'/%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #0a101d;
+    --panel: #111a2e;
+    --border: #1f2a44;
+    --text: #e6edf7;
+    --text-2: #9fb0c9;
+    --muted: #6d7e99;
+    --accent: #76b900;
+    --accent-2: #00d1b2;
+    --accent-3: #6ea8ff;
+    --danger: #ff6b6b;
+    --warn: #ffb454;
+    --success: #3ddc97;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
+  a { color: var(--accent-3); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .container { max-width: 960px; margin: 0 auto; padding: 36px 20px; }
+  header { border-bottom: 1px solid var(--border); }
+  header .container { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; }
+  .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 700; letter-spacing: 0.2px; }
+  .brand svg { width: 26px; height: 26px; }
+  h1 { font-size: 36px; line-height: 1.1; margin: 0 0 12px; }
+  h2 { font-size: 22px; margin: 32px 0 10px; }
+  .lede { color: var(--text-2); font-size: 17px; line-height: 1.55; max-width: 720px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 24px;
+  }
+  .ratio-big { font-family: var(--mono); font-size: 64px; font-weight: 700; letter-spacing: -1px; }
+  .ratio-big .small { font-size: 28px; color: var(--text-2); font-weight: 500; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px; font-size: 12px;
+    border: 1px solid var(--border); background: rgba(255,255,255,0.02);
+    color: var(--text-2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .status-healthy  { background: var(--success); box-shadow: 0 0 8px var(--success); }
+  .status-degraded { background: var(--warn);    box-shadow: 0 0 8px var(--warn); }
+  .status-outage   { background: var(--danger);  box-shadow: 0 0 8px var(--danger); }
+  .status-unknown  { background: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-2); font-weight: 600; }
+  td.mono { font-family: var(--mono); }
+  .scope-note {
+    padding: 12px 16px; border-left: 3px solid var(--accent);
+    background: rgba(118,185,0,0.04); color: var(--text-2); font-size: 13px; line-height: 1.55;
+    margin: 20px 0;
+  }
+  .scope-note strong { color: var(--text); }
+  footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+  footer .container { padding: 20px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="container">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <rect width="64" height="64" rx="12" fill="#0b1220"/>
+        <path d="M12 32l10-10 10 10-10 10z" fill="#76b900"/>
+        <path d="M32 20l10 12-10 12-10-12z" fill="#00d1b2" opacity=".85"/>
+      </svg>
+      <span>QSDM<span style="color:var(--accent)"> · CELL</span></span>
+    </a>
+    <nav><a href="/">← Back to landing</a></nav>
+  </div>
+</header>
+
+<main class="container">
+  <span class="pill"><span class="dot" id="status-dot"></span> <span id="status-label">loading</span></span>
+  <h1>Attestation transparency</h1>
+  <p class="lede">
+    QSDM validators may optionally publish a signed NVIDIA NGC proof bundle as a
+    transparency signal. The widget below shows how many validators on this network
+    have published a fresh attestation within the last 15&nbsp;minutes, over the
+    total number of publicly-known validators.
+  </p>
+
+  <div class="scope-note" id="scope-note">
+    <strong>Scope:</strong> NVIDIA-lock is an <strong>opt-in, per-operator API policy</strong> —
+    not a consensus rule. Consensus runs on CPU via Proof-of-Entanglement&nbsp;+&nbsp;BFT and
+    admits validators without a GPU. A missing or stale attestation <em>never</em> causes
+    a validator to be excluded from consensus, block proposal, or finality.
+    See <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md">NVIDIA_LOCK_CONSENSUS_SCOPE.md</a>.
+  </div>
+
+  <section class="panel" style="margin: 22px 0;">
+    <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:10px;">
+      <div>
+        <div style="color:var(--text-2); font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">Attested validators</div>
+        <div class="ratio-big" id="ratio"><span class="small">—</span> of <span class="small">—</span></div>
+      </div>
+      <div style="text-align:right; color:var(--text-2); font-size:13px;">
+        <div>Fresh window: <span class="mono" id="fresh-within">—</span></div>
+        <div>Last attested: <span class="mono" id="last-attested">—</span></div>
+        <div>Last checked: <span class="mono" id="last-checked">—</span></div>
+      </div>
+    </div>
+  </section>
+
+  <h2>Recent attestations</h2>
+  <div class="panel" style="padding: 0 0 6px;">
+    <table aria-describedby="recent-desc">
+      <thead>
+        <tr>
+          <th>Node ID (redacted)</th>
+          <th>Age</th>
+          <th>GPU arch.</th>
+          <th>HMAC</th>
+          <th>Region</th>
+        </tr>
+      </thead>
+      <tbody id="recent-body">
+        <tr><td colspan="5" style="color:var(--muted); padding: 14px 10px;">loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p id="recent-desc" style="color:var(--muted); font-size:12.5px; margin-top:10px;">
+    Node IDs are redacted to the first 8 + last 4 characters. Region is coarse-grained
+    (eu / us / apac / other). The scraper aggregates public peer state only; inside the
+    network, each validator holds the same information unredacted for reconciliation.
+  </p>
+</main>
+
+<footer>
+  <div class="container">
+    Source: <span class="mono">GET /api/v1/trust/attestations/summary</span> and
+    <span class="mono">/recent?limit=50</span>.
+    This page refreshes every 60&nbsp;s. © <span id="y"></span> QSDM · Cell (CELL).
+  </div>
+</footer>
+
+<script>
+(function() {
+  document.getElementById('y').textContent = new Date().getFullYear();
+  var endpoints = {
+    summary: ['/api/v1/trust/attestations/summary', 'https://api.qsdm.tech/api/v1/trust/attestations/summary'],
+    recent:  ['/api/v1/trust/attestations/recent?limit=50', 'https://api.qsdm.tech/api/v1/trust/attestations/recent?limit=50']
+  };
+
+  function setStatus(state, label) {
+    var dot = document.getElementById('status-dot');
+    dot.className = 'dot status-' + (state || 'unknown');
+    document.getElementById('status-label').textContent = label || state || 'unknown';
+  }
+
+  function ratioCell(attested, total) {
+    return '<span class="small">' + attested + '</span> of <span class="small">' + total + '</span>';
+  }
+
+  function tryEach(list, i, onData, onStatus) {
+    if (i >= list.length) { onStatus('unknown', 'unavailable'); return; }
+    fetch(list[i], { headers: { 'Accept': 'application/json' } })
+      .then(function(res) {
+        if (res.status === 404) { onStatus('unknown', 'disabled'); return null; }
+        if (res.status === 503) { onStatus('unknown', 'warming up'); return null; }
+        if (!res.ok) throw new Error('http ' + res.status);
+        return res.json();
+      })
+      .then(function(data) { if (data) onData(data); })
+      .catch(function() { tryEach(list, i + 1, onData, onStatus); });
+  }
+
+  function loadSummary() {
+    tryEach(endpoints.summary, 0,
+      function(data) {
+        document.getElementById('ratio').innerHTML = ratioCell(data.attested, data.total_public);
+        document.getElementById('fresh-within').textContent = data.fresh_within || '—';
+        document.getElementById('last-attested').textContent = data.last_attested_at || '—';
+        document.getElementById('last-checked').textContent = data.last_checked_at || '—';
+        setStatus(data.ngc_service_status || 'healthy', data.ngc_service_status || 'healthy');
+      },
+      setStatus
+    );
+  }
+
+  function loadRecent() {
+    tryEach(endpoints.recent, 0,
+      function(data) {
+        var body = document.getElementById('recent-body');
+        if (!data.attestations || data.attestations.length === 0) {
+          body.innerHTML = '<tr><td colspan="5" style="color:var(--muted); padding:14px 10px;">No fresh attestations in the current window.</td></tr>';
+          return;
+        }
+        var rows = data.attestations.map(function(a) {
+          var age = a.fresh_age_seconds;
+          var ageStr = age < 60 ? age + 's' : Math.floor(age / 60) + 'm ' + (age % 60) + 's';
+          return '<tr>'
+            + '<td class="mono">' + a.node_id_prefix + '</td>'
+            + '<td>' + ageStr + '</td>'
+            + '<td>' + (a.gpu_architecture || '—') + '</td>'
+            + '<td>' + (a.ngc_hmac_ok ? '✓' : '✗') + '</td>'
+            + '<td>' + (a.region_hint || 'other') + '</td>'
+            + '</tr>';
+        }).join('');
+        body.innerHTML = rows;
+      },
+      function() { /* summary already carries the error state */ }
+    );
+  }
+
+  loadSummary();
+  loadRecent();
+  setInterval(function() { loadSummary(); loadRecent(); }, 60000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+name: QSDM split-profile build
+
+# Major Update Phase 2.3 ratified that the node ships in two profiles:
+#   - validator (CPU-only, PoE+BFT consensus; default build)
+#   - miner     (adds the GPU miner runtime; requires extra deps)
+# This workflow proves both profiles build cleanly on every push so we
+# catch drift (missing build tags, accidental cross-imports, dependency
+# skew) *before* it reaches the release-container workflow.
+#
+# Scope is deliberately narrow: each job only compiles and runs the
+# tests that are valid for that profile, plus a docker `build` (no push)
+# against the matching Dockerfile. Heavy integration tests stay in the
+# main qsdm-go.yml workflow.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qsdm-split-profile-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "QSDM/source/**"
+      - "QSDM/Dockerfile*"
+      - "QSDM/scripts/**"
+      - ".github/workflows/qsdm-split-profile.yml"
+  pull_request:
+    paths:
+      - "QSDM/source/**"
+      - "QSDM/Dockerfile*"
+      - "QSDM/scripts/**"
+      - ".github/workflows/qsdm-split-profile.yml"
+
+jobs:
+  go-profile-matrix:
+    name: go build+test (${{ matrix.profile }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: validator
+            tags: "validator_only"
+            # Packages to compile+test under the validator profile. The
+            # pkg/mining package stays in the list so we catch any
+            # accidental symbols that cross the validator/miner build
+            # tag boundary. cmd/qsdmminer is excluded because it only
+            # compiles under the default (full) profile.
+            packages: "./pkg/mining/... ./pkg/config/... ./pkg/branding/... ./pkg/chain/... ./pkg/audit/... ./cmd/trustcheck/..."
+          - profile: full
+            tags: ""
+            packages: "./pkg/mining/... ./cmd/qsdmminer/... ./pkg/config/... ./pkg/branding/... ./pkg/chain/... ./pkg/audit/... ./cmd/trustcheck/..."
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - name: go vet (${{ matrix.profile }})
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          if [ -n "${{ matrix.tags }}" ]; then
+            go vet -tags="${{ matrix.tags }}" ${{ matrix.packages }}
+          else
+            go vet ${{ matrix.packages }}
+          fi
+
+      - name: go test -short (${{ matrix.profile }})
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+          QSDM_METRICS_REGISTER_STRICT: "1"
+        run: |
+          if [ -n "${{ matrix.tags }}" ]; then
+            go test -tags="${{ matrix.tags }}" -short -count=1 -timeout 10m ${{ matrix.packages }}
+          else
+            go test -short -count=1 -timeout 10m ${{ matrix.packages }}
+          fi
+
+      - name: go build qsdmplus (${{ matrix.profile }})
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          if [ -n "${{ matrix.tags }}" ]; then
+            go build -tags="${{ matrix.tags }}" -o /tmp/qsdm-${{ matrix.profile }} ./cmd/qsdmplus
+          else
+            go build -o /tmp/qsdm-${{ matrix.profile }} ./cmd/qsdmplus
+          fi
+
+      - name: Report build profile
+        run: |
+          echo "Built QSDM node binary with profile=${{ matrix.profile }} (tags='${{ matrix.tags }}')"
+          ls -la /tmp/qsdm-${{ matrix.profile }}
+
+  trustcheck-integration:
+    name: trustcheck integration (built binary vs fixture)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Runs in a dedicated Linux job because the integration tests
+    # exec the built trustcheck binary as a child process against an
+    # in-process httptest server. Matches the external-scraper path a
+    # third party (e.g. a monitoring service) would exercise from
+    # outside the node.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - name: go test -run Integration ./cmd/trustcheck/...
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+        run: go test -count=1 -timeout 5m -run Integration ./cmd/trustcheck/...
+
+      - name: Build trustcheck with -trimpath (reproducibility smoke)
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go build -trimpath -ldflags "-s -w" -o /tmp/trustcheck ./cmd/trustcheck
+          ls -la /tmp/trustcheck
+          /tmp/trustcheck --help 2>&1 | head -n 40 || true
+
+  docker-validator-build:
+    name: docker build (validator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build validator image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: QSDM
+          file: QSDM/Dockerfile.validator
+          push: false
+          tags: qsdm-validator:ci
+          cache-from: type=gha,scope=qsdm-validator
+          cache-to: type=gha,mode=max,scope=qsdm-validator
+
+  docker-miner-build:
+    name: docker build (miner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build miner image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: QSDM
+          file: QSDM/Dockerfile.miner
+          push: false
+          tags: qsdm-miner:ci
+          cache-from: type=gha,scope=qsdm-miner
+          cache-to: type=gha,mode=max,scope=qsdm-miner

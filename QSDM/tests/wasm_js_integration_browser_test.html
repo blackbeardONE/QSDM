@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>QSDM WASM Browser Integration Test Fixed</title>
+</head>
+<body>
+<h1>QSDM WASM Browser Integration Test Fixed</h1>
+<div id="output"></div>
+<script>
+  async function loadWasmModule(url) {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error('Failed to fetch ' + url + ': ' + response.statusText);
+    }
+    const bytes = await response.arrayBuffer();
+    const result = await WebAssembly.instantiate(bytes, {});
+    return result.instance;
+  }
+
+  async function runTests() {
+    const output = document.getElementById('output');
+    try {
+      const walletInstance = await loadWasmModule('../wasm_modules/wallet/wallet.wasm');
+      output.innerHTML += '<p>Wallet WASM module loaded successfully.</p>';
+
+      const validatorInstance = await loadWasmModule('../wasm_modules/validator/validator.wasm');
+      output.innerHTML += '<p>Validator WASM module loaded successfully.</p>';
+
+      output.innerHTML += '<p>WASM Browser integration tests passed.</p>';
+    } catch (err) {
+      output.innerHTML += '<p style="color:red;">WASM Browser integration tests failed: ' + err.message + '</p>';
+      console.error(err);
+    }
+  }
+
+  runTests();
+</script>
+</body>
+</html>

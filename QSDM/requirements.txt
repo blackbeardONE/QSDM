@@ -1,0 +1,4 @@
+# QSDM Requirements
+
+# Python dependencies (if any)
+# Go dependencies are managed via go.mod

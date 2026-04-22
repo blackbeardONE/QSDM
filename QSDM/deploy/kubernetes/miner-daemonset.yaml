@@ -1,0 +1,133 @@
+# QSDM miner DaemonSet
+# --------------------
+# Deploys the QSDM miner image (built from QSDM/Dockerfile.miner) as a
+# DaemonSet so there is at most one miner pod per GPU node. Miners run the
+# additive Proof-of-Work emission layer that mints Cell coins; they are
+# completely separate from the validator consensus layer.
+#
+# Assumptions encoded in this manifest:
+#
+#   - GPU nodes are labelled `qsdm.tech/node-class=gpu` and optionally tainted
+#     `nvidia.com/gpu=true:NoSchedule` to keep non-miner workloads off them.
+#   - nvidia-device-plugin-daemonset (or GPU Operator) is already running in
+#     the cluster so `nvidia.com/gpu` resources are schedulable.
+#   - The QSDM validator service (from validator-statefulset.yaml) is
+#     reachable at `qsdm-validator-0.qsdm-validator.qsdm.svc.cluster.local`;
+#     miners talk to it over HTTP for epoch / difficulty / proof submission.
+#
+# See QSDM/docs/docs/NODE_ROLES.md and QSDM/docs/docs/MINER_QUICKSTART.md.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: qsdm-miner
+  namespace: qsdm
+  labels:
+    app: qsdm
+    component: miner
+    qsdm.tech/role: miner
+spec:
+  selector:
+    matchLabels:
+      app: qsdm
+      component: miner
+  template:
+    metadata:
+      labels:
+        app: qsdm
+        component: miner
+        qsdm.tech/role: miner
+    spec:
+      nodeSelector:
+        qsdm.tech/node-class: gpu
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+      - key: "qsdm.tech/role"
+        operator: "Equal"
+        value: "miner"
+        effect: "NoSchedule"
+      runtimeClassName: nvidia
+      containers:
+      - name: qsdm-miner
+        image: qsdm/miner:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: network
+          containerPort: 4001
+          protocol: TCP
+        - name: api
+          containerPort: 8080
+          protocol: TCP
+        - name: dashboard
+          containerPort: 8081
+          protocol: TCP
+        env:
+        - name: QSDM_NODE_ROLE
+          value: "miner"
+        - name: QSDM_MINING_ENABLED
+          value: "true"
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: "all"
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: "compute,utility"
+        # Point the miner at the validator service (the miner never runs
+        # consensus; it only submits proofs).
+        - name: QSDM_VALIDATOR_URL
+          value: "http://qsdm-validator-0.qsdm-validator.qsdm.svc.cluster.local:8080"
+        envFrom:
+        - configMapRef:
+            name: qsdm-config
+            optional: true
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+            nvidia.com/gpu: 1
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+            nvidia.com/gpu: 1
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+        - name: logs
+          mountPath: /app/logs
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health/live
+            port: api
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health/ready
+            port: api
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+      volumes:
+      - name: data
+        emptyDir: {}
+      - name: logs
+        emptyDir: {}

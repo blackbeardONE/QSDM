@@ -1,0 +1,112 @@
+# Dockerfile.miner — GPU-enabled QSDM miner node
+# =====================================================
+# This image builds the full QSDM binary (no build tag) PLUS the CUDA runtime
+# required by pkg/mining/cuda (added in Major Update Phase 4). It is intended
+# for operators who want to run a miner node contributing Proof-of-Work
+# emission for the Cell coin.
+#
+# Build:
+#   docker build -f QSDM/Dockerfile.miner -t qsdm/miner:latest QSDM/
+#
+# Runtime:
+#   Requires nvidia-container-toolkit on the host and `--gpus all` (or a
+#   device mapping) when running the container.
+#
+# Notes:
+#   - Base is NVIDIA's official CUDA 12.x devel image on Ubuntu 22.04; this
+#     is significantly larger than the validator image (~4-6 GB) but that is
+#     the cost of shipping the CUDA runtime.
+#   - The `mining_enabled` environment variable is set to true by default;
+#     the startup guard (pkg/mining/roleguard) will refuse role=validator
+#     with mining_enabled=true.
+
+# ---- builder stage ----------------------------------------------------------
+FROM nvidia/cuda:12.3.2-devel-ubuntu22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    build-essential \
+    cmake \
+    make \
+    git \
+    pkg-config \
+    libssl-dev \
+    libsqlite3-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Go toolchain (pinned to match validator image).
+ENV GO_VERSION=1.25.0
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
+        -o /tmp/go.tar.gz && \
+    tar -C /usr/local -xzf /tmp/go.tar.gz && \
+    rm /tmp/go.tar.gz
+ENV PATH=/usr/local/go/bin:${PATH}
+
+# Build & install liboqs.
+WORKDIR /tmp
+RUN git clone --depth 1 https://github.com/open-quantum-safe/liboqs.git && \
+    cd liboqs && \
+    mkdir build && cd build && \
+    cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON .. && \
+    make -j"$(nproc)" && \
+    make install && \
+    rm -rf /tmp/liboqs && \
+    ldconfig
+
+# Build QSDM miner binary (full build profile, includes pkg/mining/cuda when
+# added in Phase 4). We do NOT set the validator_only tag here.
+WORKDIR /app
+COPY source ./source
+RUN cd source && go mod download
+
+RUN cd source && CGO_ENABLED=1 \
+    CGO_CFLAGS="-I/usr/local/include -I/usr/local/cuda/include" \
+    CGO_LDFLAGS="-L/usr/local/lib -L/usr/local/cuda/lib64 -loqs -lssl -lcrypto" \
+    go build -tags "miner cuda" \
+        -o ../qsdm-miner ./cmd/qsdmplus
+
+# ---- runtime stage ---------------------------------------------------------
+FROM nvidia/cuda:12.3.2-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libsqlite3-0 \
+    libssl3 \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/local/lib/liboqs.so* /usr/local/lib/
+COPY --from=builder /app/qsdm-miner /usr/local/bin/qsdm-miner
+RUN ldconfig
+
+# Convenience symlinks for operators running legacy scripts.
+RUN ln -s /usr/local/bin/qsdm-miner /usr/local/bin/qsdm && \
+    ln -s /usr/local/bin/qsdm-miner /usr/local/bin/qsdmplus
+
+WORKDIR /app
+
+# libp2p, API, dashboard, log viewer.
+EXPOSE 4001 8080 8081 9000
+
+ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/local/cuda/lib64
+ENV QSDM_NODE_ROLE=miner
+ENV QSDM_MINING_ENABLED=true
+# Surface NVIDIA visible devices so nvidia-container-toolkit wires them in.
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+  CMD wget -q -O- http://127.0.0.1:8080/api/v1/health/live > /dev/null || exit 1
+
+# Run as a dedicated non-root user. Miner processes do not need root; they
+# only need /dev/nvidia* device access which is provided by the container
+# toolkit with appropriate cgroup permissions.
+RUN groupadd -r qsdm && useradd -r -g qsdm -m -d /home/qsdm qsdm && \
+    mkdir -p /app/data && chown -R qsdm:qsdm /app /home/qsdm
+USER qsdm
+
+CMD ["qsdm-miner"]

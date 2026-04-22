@@ -1,0 +1,17 @@
+# Grafana datasource provisioning (copy into your Grafana provisioning path, e.g.
+#   /etc/grafana/provisioning/datasources/prometheus.yml
+# or Docker: mount as /etc/grafana/provisioning/datasources/prometheus.yml).
+#
+# Using uid "prometheus" lets you map the import UI variable for qsdmplus-overview.json,
+# or bulk-replace "${DS_PROMETHEUS}" with "prometheus" in the dashboard JSON.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    uid: prometheus
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

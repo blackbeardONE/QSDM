@@ -1,0 +1,1125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>QSDM — Quantum-Secure Dynamic Mesh Ledger · Cell (CELL)</title>
+<meta name="description" content="QSDM is a quantum-secure distributed ledger with a dynamic mesh topology and a native coin, Cell (CELL). Post-quantum cryptography (ML-DSA-87, NIST FIPS 204), Proof-of-Entanglement BFT consensus on CPU-only validators, and an additive GPU mining layer for coin emission — purpose-built for high-throughput, non-AI, trust-minimized compute." />
+<meta name="theme-color" content="#0b1220" />
+<meta property="og:title" content="QSDM — Quantum-Secure Dynamic Mesh Ledger · Cell (CELL)" />
+<meta property="og:description" content="Post-quantum signatures. NVIDIA-locked validators. Dynamic mesh consensus. Built for the next decade of distributed trust." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://qsdm.tech/" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b1220'/%3E%3Cpath d='M12 32l10-10 10 10-10 10z' fill='%2376b900'/%3E%3Cpath d='M32 20l10 12-10 12-10-12z' fill='%2300d1b2' opacity='.85'/%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #0a101d;
+    --bg-2: #0f172a;
+    --panel: #111a2e;
+    --panel-2: #152238;
+    --border: #1f2a44;
+    --text: #e6edf7;
+    --text-2: #9fb0c9;
+    --muted: #6d7e99;
+    --accent: #76b900;          /* NVIDIA green */
+    --accent-2: #00d1b2;         /* QSDM teal */
+    --accent-3: #6ea8ff;         /* cool highlight */
+    --danger: #ff6b6b;
+    --success: #3ddc97;
+    --radius: 14px;
+    --radius-sm: 8px;
+    --shadow: 0 10px 30px -12px rgba(0,0,0,.55);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, "Cascadia Mono", Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--text);
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgba(118,185,0,.10), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, rgba(0,209,178,.10), transparent 60%),
+      linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+    min-height: 100vh;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: var(--accent-3); text-decoration: none; }
+  a:hover { color: #a7c5ff; text-decoration: underline; }
+  code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: .9em; }
+
+  /* --- Layout --- */
+  .container { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+  .nav {
+    position: sticky; top: 0; z-index: 20;
+    backdrop-filter: saturate(140%) blur(10px);
+    background: rgba(10,16,29,.72);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-inner {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 64px; gap: 16px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .2px; }
+  .brand svg { width: 28px; height: 28px; display: block; }
+  .brand .plus { color: var(--accent); }
+  .nav ul { list-style: none; display: flex; gap: 22px; padding: 0; margin: 0; }
+  .nav a.navlink { color: var(--text-2); font-size: 14px; }
+  .nav a.navlink:hover { color: var(--text); text-decoration: none; }
+  .nav-cta {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--accent); color: #0a1400; font-weight: 700; font-size: 13px;
+    padding: 8px 14px; border-radius: 999px; border: 1px solid #5d9600;
+  }
+  .nav-cta:hover { background: #85cd08; color: #0a1400; text-decoration: none; }
+
+  /* --- Hero --- */
+  .hero { padding: 72px 0 48px; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px;
+    color: var(--accent-2); font-size: 12px; font-weight: 600; letter-spacing: .8px; text-transform: uppercase;
+    background: rgba(0,209,178,.06);
+  }
+  .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 10px var(--success); }
+  h1 {
+    font-size: clamp(34px, 5vw, 56px); line-height: 1.08; margin: 18px 0 14px;
+    letter-spacing: -0.02em;
+    background: linear-gradient(180deg, #ffffff 0%, #c8d3e6 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  h1 .accent { background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero p.lede { color: var(--text-2); font-size: 18px; max-width: 720px; }
+  .cta-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 22px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 12px 18px; border-radius: 10px; font-weight: 600; font-size: 14px;
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    transition: transform .15s ease, background .15s ease, border-color .15s ease;
+  }
+  .btn:hover { background: var(--panel-2); border-color: #2b3a5e; text-decoration: none; }
+  .btn-primary { background: var(--accent); color: #0a1400; border-color: #5d9600; }
+  .btn-primary:hover { background: #85cd08; color: #0a1400; }
+  .btn-ghost { background: transparent; }
+
+  .hero-grid {
+    margin-top: 56px;
+    display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; align-items: stretch;
+  }
+  @media (max-width: 960px) { .hero-grid { grid-template-columns: 1fr; } }
+  .stat-panel {
+    border: 1px solid var(--border); background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow);
+  }
+  .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .stat {
+    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px;
+    background: rgba(255,255,255,.02);
+  }
+  .stat .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .8px; }
+  .stat .v { color: var(--text); font-weight: 700; font-size: 22px; margin-top: 4px; }
+  .stat .sub { color: var(--text-2); font-size: 12px; margin-top: 2px; }
+
+  /* Live panel on the right */
+  .live-panel {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    padding: 22px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 14px;
+  }
+  .live-title { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+  .live-title .dot { width: 8px; height: 8px; border-radius: 50%; background: #ffaa33; box-shadow: 0 0 10px rgba(255,170,51,.6); }
+  .live-title .dot.ok { background: var(--success); box-shadow: 0 0 10px var(--success); }
+  .live-title .dot.bad { background: var(--danger); box-shadow: 0 0 10px var(--danger); }
+  .endpoint {
+    display: flex; justify-content: space-between; gap: 8px; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm); background: rgba(0,0,0,.15);
+    font-family: var(--mono); font-size: 13px;
+  }
+  .endpoint .host { color: var(--text-2); }
+  .endpoint .status { color: var(--muted); }
+
+  /* --- Sections --- */
+  section { padding: 72px 0; border-top: 1px solid var(--border); }
+  section h2 {
+    font-size: clamp(24px, 3.2vw, 34px); letter-spacing: -0.01em; margin: 0 0 8px;
+  }
+  section p.lead { color: var(--text-2); max-width: 760px; margin: 0 0 28px; }
+
+  /* Products */
+  .products { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 860px) { .products { grid-template-columns: 1fr; } }
+  .product {
+    position: relative; overflow: hidden;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    padding: 24px; box-shadow: var(--shadow);
+  }
+  .product::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(600px 200px at 100% 0%, rgba(118,185,0,.08), transparent 60%);
+  }
+  .product h3 { margin: 0 0 6px; font-size: 22px; }
+  .product .tag {
+    display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px;
+    color: var(--accent-2); background: rgba(0,209,178,.08); border: 1px solid rgba(0,209,178,.25);
+    margin-bottom: 10px; letter-spacing: .6px; text-transform: uppercase; font-weight: 700;
+  }
+  .product .tag.plus { color: var(--accent); background: rgba(118,185,0,.08); border-color: rgba(118,185,0,.3); }
+  .product ul { margin: 14px 0 0; padding: 0 0 0 18px; color: var(--text-2); }
+  .product ul li { margin-bottom: 6px; }
+  .product .foot { margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap; }
+
+  /* NVIDIA Focus */
+  .nvidia {
+    position: relative; border: 1px solid rgba(118,185,0,.35); border-radius: var(--radius);
+    background:
+      radial-gradient(600px 300px at 0% 0%, rgba(118,185,0,.10), transparent 60%),
+      linear-gradient(180deg, var(--panel), var(--panel-2));
+    padding: 28px; box-shadow: var(--shadow);
+  }
+  .nvidia h3 { margin: 0 0 6px; font-size: 22px; color: var(--accent); }
+  .nvidia-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 28px; align-items: start; }
+  @media (max-width: 960px) { .nvidia-grid { grid-template-columns: 1fr; } }
+  .pillars { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .pillar {
+    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px;
+    background: rgba(0,0,0,.20);
+  }
+  .pillar .ico { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: .6px; }
+  .pillar .title { font-weight: 700; margin: 4px 0 4px; }
+  .pillar .desc { color: var(--text-2); font-size: 13.5px; }
+
+  /* Benefits grid */
+  .bens { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  @media (max-width: 1000px) { .bens { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 580px) { .bens { grid-template-columns: 1fr; } }
+  .ben {
+    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px 18px;
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  }
+  .ben h4 { margin: 8px 0 6px; font-size: 15px; }
+  .ben p { margin: 0; color: var(--text-2); font-size: 13.5px; }
+  .ben .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
+    background: rgba(110,168,255,.08); color: var(--accent-3); border: 1px solid rgba(110,168,255,.25);
+    font-weight: 700; letter-spacing: .4px;
+  }
+
+  /* Comparison table */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
+  table.compare {
+    width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; min-width: 760px;
+  }
+  table.compare th, table.compare td {
+    text-align: left; padding: 14px 16px; border-bottom: 1px solid var(--border); vertical-align: top;
+  }
+  table.compare thead th {
+    background: var(--panel-2); color: var(--text); font-weight: 700; font-size: 13px; letter-spacing: .3px;
+    position: sticky; top: 0;
+  }
+  table.compare td.feat { color: var(--text-2); font-weight: 600; white-space: nowrap; }
+  table.compare td.qsdm { color: var(--text); background: rgba(118,185,0,.05); }
+  table.compare tbody tr:last-child td { border-bottom: none; }
+  .tick { color: var(--success); font-weight: 700; }
+  .cross { color: var(--danger); font-weight: 700; }
+  .partial { color: #e8c547; font-weight: 700; }
+
+  /* Roadmap */
+  .phases { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  @media (max-width: 960px) { .phases { grid-template-columns: 1fr; } }
+  .phase {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    padding: 20px 22px; position: relative; overflow: hidden;
+  }
+  .phase::before {
+    content: attr(data-phase); position: absolute; right: 16px; top: 10px;
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+  }
+  .phase h4 { margin: 0 0 6px; font-size: 17px; color: var(--accent-2); }
+  .phase ul { padding-left: 18px; margin: 8px 0 0; color: var(--text-2); font-size: 14px; }
+  .phase .status {
+    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700;
+    letter-spacing: .4px; text-transform: uppercase; margin-top: 10px;
+  }
+  .status.shipped { color: #0a1400; background: var(--accent); }
+  .status.active  { color: #0a1400; background: #f0d36b; }
+  .status.next    { color: var(--text-2); background: rgba(255,255,255,.06); border: 1px solid var(--border); }
+
+  /* Architecture */
+  .arch {
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; background: var(--panel);
+  }
+  .arch svg { width: 100%; height: auto; display: block; }
+
+  /* Footer */
+  footer {
+    margin-top: 40px; padding: 48px 0 64px; border-top: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .footer-grid { display: grid; grid-template-columns: 1.3fr repeat(3, 1fr); gap: 30px; }
+  @media (max-width: 820px) { .footer-grid { grid-template-columns: 1fr 1fr; } }
+  footer h5 { color: var(--text); font-size: 13px; letter-spacing: .6px; text-transform: uppercase; margin: 0 0 10px; }
+  footer ul { list-style: none; padding: 0; margin: 0; }
+  footer ul li { margin: 6px 0; font-size: 14px; }
+  footer ul li a { color: var(--text-2); }
+  footer ul li a:hover { color: var(--text); }
+  .legal { display: flex; justify-content: space-between; align-items: center; margin-top: 32px; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="container nav-inner">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <rect width="64" height="64" rx="12" fill="#0b1220"/>
+        <path d="M12 32l10-10 10 10-10 10z" fill="#76b900"/>
+        <path d="M32 20l10 12-10 12-10-12z" fill="#00d1b2" opacity=".85"/>
+      </svg>
+      <span>QSDM<span class="plus">+</span></span>
+    </a>
+    <nav aria-label="Primary">
+      <ul>
+        <li><a class="navlink" href="#products">Products</a></li>
+        <li><a class="navlink" href="#nvidia">GPU Edge</a></li>
+        <li><a class="navlink" href="#consensus-layer">Consensus</a></li>
+        <li><a class="navlink" href="#mine">Mine</a></li>
+        <li><a class="navlink" href="#validate">Validate</a></li>
+        <li><a class="navlink" href="#tech">Technology</a></li>
+        <li><a class="navlink" href="#compare">Compare</a></li>
+        <li><a class="navlink" href="#roadmap">Roadmap</a></li>
+      </ul>
+    </nav>
+    <a class="nav-cta" href="https://dashboard.qsdm.tech/">Open Dashboard →</a>
+  </div>
+</header>
+
+<main>
+
+<section class="hero" style="border-top:none">
+  <div class="container">
+    <span class="eyebrow"><span class="dot"></span> MAINNET PREVIEW · NIST FIPS 204 · NVIDIA-LOCKED</span>
+    <h1>
+      Post-quantum distributed trust,<br/>
+      <span class="accent">NVIDIA GPU-attested</span> by design.
+    </h1>
+    <p class="lede">
+      <strong>QSDM</strong> is the <strong>Quantum-Secure Dynamic Mesh Ledger</strong> — a non-AI, hardware-agnostic
+      electronic cash and smart-contract fabric with a native coin, <strong>Cell (CELL)</strong>. It is built on
+      ML-DSA-87 post-quantum signatures, a dynamic 2D/3D mesh topology, and <em>Proof-of-Entanglement</em> BFT consensus
+      that runs on CPU-only validators. An additive GPU mining layer is planned for Cell emission and runs independently
+      of consensus; validators can optionally publish NVIDIA NGC proof bundles as a transparency signal, not as a
+      consensus rule.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://dashboard.qsdm.tech/">Open Dashboard</a>
+      <a class="btn" href="https://api.qsdm.tech/api/v1/health">API Health</a>
+      <a class="btn btn-ghost" href="#products">Learn more ↓</a>
+    </div>
+
+    <div class="hero-grid">
+      <div class="stat-panel">
+        <div class="stat-grid">
+          <div class="stat">
+            <div class="k">Signature scheme</div>
+            <div class="v">ML-DSA-87</div>
+            <div class="sub">NIST FIPS 204 · 256-bit PQ security</div>
+          </div>
+          <div class="stat">
+            <div class="k">Verify speed</div>
+            <div class="v">0.19 ms</div>
+            <div class="sub">1.76× faster than ECDSA (0.33 ms)</div>
+          </div>
+          <div class="stat">
+            <div class="k">Sig compression</div>
+            <div class="v">~50%</div>
+            <div class="sub">zstd on signatures; 60–70% on tx storage</div>
+          </div>
+          <div class="stat">
+            <div class="k">Batch signing</div>
+            <div class="v">10–100×</div>
+            <div class="sub">vs single-tx baseline</div>
+          </div>
+          <div class="stat">
+            <div class="k">Consensus</div>
+            <div class="v">Proof-of-Entanglement</div>
+            <div class="sub">CPU validators · no proof-of-work · mesh-native</div>
+          </div>
+          <div class="stat">
+            <div class="k">Storage engines</div>
+            <div class="v">SQLite → ScyllaDB</div>
+            <div class="sub">Zstandard-compressed, linear migration path</div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="live-panel" aria-label="Live endpoints">
+        <div class="live-title"><span class="dot ok"></span> Live endpoints · qsdm.tech</div>
+        <div class="endpoint"><span class="host">GET /api/v1/health</span><span class="status">JSON · 200</span></div>
+        <div class="endpoint"><span class="host">GET /api/v1/status</span><span class="status">Node role · coin · tokenomics</span></div>
+        <div class="endpoint"><span class="host">GET /api/v1/trust/attestations/summary</span><span class="status">X of Y attested</span></div>
+        <div class="endpoint"><span class="host">POST /api/v1/auth/login</span><span class="status">JWT issuance</span></div>
+        <div class="endpoint"><span class="host">POST /api/v1/wallet/send</span><span class="status">Signed · submesh-routed</span></div>
+        <div class="endpoint"><span class="host">GET /api/metrics/prometheus</span><span class="status">Scrape secret · Bearer</span></div>
+        <div class="endpoint"><span class="host">WSS dashboard.qsdm.tech</span><span class="status">Real-time mesh view</span></div>
+        <p style="color:var(--text-2); font-size:13px; margin: 4px 0 0;">
+          TLS terminated by Caddy · HTTP/2 and HTTP/3 (h3) on :443 · Let's Encrypt certificates.
+        </p>
+
+        <!-- §8.5.5 Trust widget. Live-fed from /api/v1/trust/attestations/summary
+             on the currently-open validator. The widget MUST render "X of Y",
+             never just "X", and MUST display the scope-note below so the
+             NVIDIA-lock caveat cannot be stripped visually. -->
+        <div id="trust-widget" class="trust-widget" data-state="loading" aria-live="polite" style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border);">
+          <div class="live-title"><span class="dot" id="trust-dot"></span> Attestation transparency</div>
+          <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:4px;">
+            <span style="color:var(--text-2); font-size:13px;">Validators attested (opt-in):</span>
+            <span id="trust-ratio" style="font-family:var(--mono); font-weight:600;">— of —</span>
+          </div>
+          <div id="trust-meta" style="color:var(--muted); font-size:12px; margin-top:2px;">fetching…</div>
+          <p style="color:var(--muted); font-size:11.5px; margin: 8px 0 0; line-height:1.45;">
+            Opt-in, per-operator transparency signal. <strong>Not</strong> a consensus rule.
+            <a href="/trust.html" style="color:var(--accent-3);">Details →</a>
+          </p>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<section id="products">
+  <div class="container">
+    <span class="eyebrow">PLATFORM</span>
+    <h2>One ledger, two node roles.</h2>
+    <p class="lead">
+      <strong>QSDM</strong> is the unified platform (historically shipped under the transitional name
+      <em>QSDM+</em>); <strong>Cell (CELL)</strong> is its native coin. The node software ships in two roles that share
+      the same cryptography, wire format, and mesh topology: <strong>validators</strong> run Proof-of-Entanglement BFT
+      consensus on CPU-only VPS-class hardware and earn transaction fees, while <strong>miners</strong> run an additive
+      GPU proof-of-work layer that emits Cell from home rigs.
+    </p>
+    <div class="products">
+      <article class="product">
+        <span class="tag">Validator · CPU-only · VPS</span>
+        <h3>QSDM Validator Node</h3>
+        <p style="color:var(--text-2); margin: 6px 0 0;">
+          The consensus tier. A lattice-based, mesh-structured electronic cash system engineered from the first block to
+          be quantum-resistant — no retrofits, no hybrids. Validators never require a GPU; Proof-of-Entanglement BFT
+          runs on CPU. Optional NGC attestation acts as a transparency signal, not as a consensus rule.
+        </p>
+        <ul>
+          <li>ML-DSA-87 signatures (NIST FIPS 204) via <code>liboqs</code></li>
+          <li>libp2p networking with GossipSub + PEX</li>
+          <li>SQLite or ScyllaDB storage with Zstandard compression</li>
+          <li>Proof-of-Entanglement consensus (PoE) with multi-parent cell validation</li>
+          <li>2D/3D mesh topology, submesh profiles, and WASM contract SDK</li>
+          <li>Dashboard, WebSocket topology, Prometheus scrape, audit reports, governance snapshots</li>
+          <li>Ubuntu 24.04+ and Windows 10+ supported; macOS in development</li>
+        </ul>
+        <div class="foot">
+          <a class="btn btn-primary" href="https://dashboard.qsdm.tech/">Launch Dashboard</a>
+          <a class="btn" href="https://github.com/blackbeardONE/QSDM">GitHub</a>
+          <a class="btn" href="#compare">Compare vs. Blockchain/DAG</a>
+        </div>
+      </article>
+
+      <article class="product">
+        <span class="tag plus">Miner · GPU · Home rig · Planned</span>
+        <h3>QSDM Miner (Cell emission) — planned</h3>
+        <p style="color:var(--text-2); margin: 6px 0 0;">
+          The emission tier. An additive proof-of-work layer for <strong>Cell (CELL)</strong> minting that runs
+          independently of consensus. Home-scale GPU operators submit proofs to any QSDM validator and receive Cell
+          rewards per the published emission schedule. The reference CPU miner ships with the node; the CUDA miner is
+          planned to ship after external audit.
+        </p>
+        <ul>
+          <li>Separate <code>qsdmminer</code> binary — does <em>not</em> participate in consensus</li>
+          <li>Candidate PoW: mesh3D-tied useful proof; CPU-safe O(1) verify</li>
+          <li>Native coin <strong>Cell (CELL)</strong>, 8 decimals, smallest unit <em>dust</em></li>
+          <li>Halving emission schedule; 0% pre-mine, treasury cap 10%</li>
+          <li>Reference CPU miner in-tree; CUDA miner gated on external audit</li>
+          <li>NGC attestation is optional and consensus-independent</li>
+        </ul>
+        <div class="foot">
+          <a class="btn" href="https://api.qsdm.tech/api/v1/health">API: /api/v1/health</a>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="nvidia">
+  <div class="container">
+    <div class="nvidia">
+      <div class="nvidia-grid">
+        <div>
+          <span class="eyebrow" style="color:var(--accent); border-color: rgba(118,185,0,.35); background: rgba(118,185,0,.08)">
+            <span class="dot" style="background:var(--accent); box-shadow:0 0 10px var(--accent)"></span>
+            NVIDIA GPU EDGE
+          </span>
+          <h3 style="margin-top:14px">Silicon as a sybil-resistance primitive.</h3>
+          <p style="color:var(--text-2); margin:8px 0 0;">
+            Most ledgers treat validators as interchangeable processes — easy to spin up, easy to fake. QSDM validators
+            can optionally attach a fresh, HMAC-signed NGC proof bundle from a specific NVIDIA GPU as a transparency
+            signal. NGC attestation is <strong>not</strong> a consensus rule — Proof-of-Entanglement runs on CPU and
+            admits validators without a GPU — but operators that publish bundles give the network a cryptographic
+            statement about the silicon behind them. The bundle is produced by a lightweight sidecar
+            (<code>apps/qsdmplus-nvidia-ngc</code>, folder name retained during rebrand) that hashes CUDA device
+            properties, runs a deterministic proof, and signs the result with a per-node secret.
+          </p>
+          <p style="color:var(--text-2); margin:10px 0 0;">
+            The result: identity that is <strong>physically grounded</strong>. You cannot clone a validator without
+            cloning the silicon behind it.
+          </p>
+          <div class="cta-row" style="margin-top:20px">
+            <a class="btn" href="#tech">How it works ↓</a>
+            <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM">Read the spec</a>
+          </div>
+        </div>
+        <div class="pillars">
+          <div class="pillar">
+            <div class="ico">01 · Attestation</div>
+            <div class="title">NGC Proof Bundles</div>
+            <div class="desc">JSON envelopes with architecture, CUDA proof hash, GPU fingerprint, optional HMAC. Replayed-proof detection via nonce + freshness window.</div>
+          </div>
+          <div class="pillar">
+            <div class="ico">02 · Binding</div>
+            <div class="title">Node-ID Lock</div>
+            <div class="desc"><code>nvidia_lock_expected_node_id</code> binds a validator identity to exactly one signed GPU. Strict-secrets mode forbids demo/weak HMACs in production.</div>
+          </div>
+          <div class="pillar">
+            <div class="ico">03 · Enforcement</div>
+            <div class="title">P2P Gate</div>
+            <div class="desc">With <code>nvidia_lock_gate_p2p=true</code>, libp2p drops inbound transactions from peers without a recent valid proof — before consensus, before the mempool.</div>
+          </div>
+          <div class="pillar">
+            <div class="ico">04 · Acceleration</div>
+            <div class="title">CUDA Validation</div>
+            <div class="desc">Phase 3 uses the same GPUs for parallel hash verification and 3D mesh traversal, turning attestation hardware into productive compute.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="consensus-layer">
+  <div class="container">
+    <span class="eyebrow">CONSENSUS BOUNDARY</span>
+    <h2>PoE is consensus. GPUs are not.</h2>
+    <p class="lead">
+      <strong>Proof-of-Entanglement</strong> and BFT finality do every piece of consensus work on QSDM —
+      block proposal, transaction ordering, and finality — on <strong>CPU-only validator nodes</strong>. GPUs on
+      the mesh serve two narrow, additive roles: hardware attestation (today) and coin emission (planned).
+      <strong>Neither role touches consensus.</strong>
+    </p>
+    <div class="pillars" style="grid-template-columns: 1fr 1fr;">
+      <div class="pillar">
+        <div class="ico">CONSENSUS · ALWAYS-ON</div>
+        <div class="title">Proof-of-Entanglement + BFT</div>
+        <div class="desc">
+          Runs on validators (CPU). Multi-parent cell validation, stake-weighted BFT voting, finality-gadget
+          depth checks. No GPU, no proof-of-work, no waste cycles. The chain lives here.
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="ico">ATTESTATION · OPT-IN</div>
+        <div class="title">NVIDIA NGC proofs</div>
+        <div class="desc">
+          Validators can opt into a signed GPU-attestation badge. Purely a transparency signal on the API
+          boundary — it is <em>not</em> a consensus rule; blocks are never rejected for a missing proof.
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="ico">MINING · ADDITIVE (PLANNED)</div>
+        <div class="title">GPU coin emission</div>
+        <div class="desc">
+          A separable reward track under design: home GPU miners submit hash-based proofs to earn newly-issued
+          supply on a published schedule. Mining never proposes blocks, never orders transactions, and can halt
+          with zero effect on chain liveness.
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="ico">HARD GUARANTEE</div>
+        <div class="title">Validators are CPU-only</div>
+        <div class="desc">
+          Validator builds ship without CUDA code, K8s manifests pin CPU-only nodes, and a startup guard
+          fails fast if mining is mistakenly enabled. Running a validator requires zero GPU hardware — now
+          and after the mining layer ships.
+        </div>
+      </div>
+    </div>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:18px;">
+      PoE + BFT consensus is live today. The mining layer is a planned additive subsystem; introducing it will
+      not change validator hardware requirements, consensus rules, or finality guarantees.
+    </p>
+  </div>
+</section>
+
+<!-- §8.2 item 7 "Miner quick-start teaser" + §8.3 /mine skeleton surfaced
+     on the landing page. All copy follows the §8.4 content filters:
+       (1) no promises of financial return ("earn X/day", "ROI", etc.);
+       (2) no GPU vendor lock-in claims that aren't true (says "optimized
+           for NVIDIA", not "NVIDIA-only");
+       (3) no over-claiming of the attestation story (widget already
+           shows "X of Y", never just "X"). -->
+<section id="mine">
+  <div class="container">
+    <span class="eyebrow" style="color:var(--accent); border-color: rgba(118,185,0,.35); background: rgba(118,185,0,.08)">
+      PARTICIPATE · MINE AT HOME · PLANNED
+    </span>
+    <h2>Mine Cell at home — planned.</h2>
+    <p class="lead">
+      The GPU mining layer is the additive emission track for <strong>Cell (CELL)</strong>. It is
+      deliberately separate from consensus: miners never propose blocks, never order transactions, and
+      can halt with zero effect on chain liveness. Mining Cell is how new coins enter circulation —
+      rewards depend on network difficulty and the current block reward, both of which change over time.
+      The reference CPU miner ships with the node today; the CUDA miner is planned to ship after an
+      external audit. A home-scale mining pool directory will arrive alongside the incentivized testnet.
+    </p>
+    <div class="pillars" style="grid-template-columns: 1fr 1fr 1fr;">
+      <div class="pillar">
+        <div class="ico">REFERENCE · IN-TREE</div>
+        <div class="title">CPU reference miner</div>
+        <div class="desc">
+          <code>cmd/qsdmminer</code> builds a real proof under <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL.md">MINING_PROTOCOL.md</a>
+          and runs a <code>--self-test</code>. Good for protocol compliance and one-off validation. Hash
+          rate is low by design — this is not the production miner.
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="ico">PRODUCTION · PLANNED</div>
+        <div class="title">CUDA miner</div>
+        <div class="desc">
+          Optimized for NVIDIA (CUDA 11+, ≥ 8 GB VRAM, RTX&nbsp;20/30/40/50-class). The protocol does
+          not prohibit other vendors; we simply ship NVIDIA-first because that is where the hardware
+          ecosystem is. Gated on external audit before release.
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="ico">HOW YOU EARN</div>
+        <div class="title">Block rewards — halving schedule</div>
+        <div class="desc">
+          New Cell is emitted on every block according to the
+          <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/CELL_TOKENOMICS.md">published emission schedule</a>
+          — 90 M lifetime mining cap, 4-year halvings, 0 % pre-mine, 10 % treasury cap. There are
+          no daily-earnings promises here: difficulty and the block reward are both moving targets.
+        </div>
+      </div>
+    </div>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:18px;">
+      Jurisdictional restrictions, tax treatment, electricity costs, and heat/noise output vary widely
+      by location and hardware. Evaluate your own situation before running a miner. Nothing on this
+      page is financial or legal advice.
+    </p>
+    <div class="cta-row" style="margin-top:14px">
+      <a class="btn btn-primary" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">Read MINER_QUICKSTART.md</a>
+      <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL.md">Mining protocol spec</a>
+      <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/CELL_TOKENOMICS.md">Tokenomics</a>
+    </div>
+  </div>
+</section>
+
+<!-- §8.2 item 1 CTA "Run a validator →" expanded. Validator nodes are
+     CPU-only VPS-class — no GPU required. Copy must not imply attestation
+     is mandatory (§8.4 filter 3) and must not vendor-lock (filter 2). -->
+<section id="validate">
+  <div class="container">
+    <span class="eyebrow">PARTICIPATE · RUN A VALIDATOR</span>
+    <h2>Run a validator — VPS-class, CPU-only.</h2>
+    <p class="lead">
+      Validators are the consensus tier. They run Proof-of-Entanglement + BFT on CPU-only VPS-class
+      hardware and earn transaction fees. <strong>No GPU is required — now or after the mining layer
+      ships.</strong> Startup guards in the validator build refuse to boot if mining is mistakenly
+      enabled, so a validator operator never has to reason about GPU drivers, CUDA, or thermal budgets.
+      NGC attestation is available if you want a transparency badge, but it is <strong>not</strong>
+      required to participate in consensus and does not affect block validity.
+    </p>
+    <div class="pillars" style="grid-template-columns: 1fr 1fr 1fr;">
+      <div class="pillar">
+        <div class="ico">HARDWARE</div>
+        <div class="title">Modest CPU VPS</div>
+        <div class="desc">
+          4–8 vCPU, 8–16 GB RAM, 200 GB NVMe, 1 Gbps symmetric. No GPU. Ubuntu 24.04+ or Windows 10+
+          supported today; macOS in development. Dockerfile and Kubernetes manifests ship CPU-only by
+          default.
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="ico">NETWORK ROLE</div>
+        <div class="title">PoE + BFT consensus</div>
+        <div class="desc">
+          Multi-parent cell validation, stake-weighted BFT voting, finality-gadget depth checks.
+          libp2p + GossipSub networking. Validators earn transaction fees — mining rewards go to the
+          separable miner track.
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="ico">OPTIONAL · TRANSPARENCY</div>
+        <div class="title">NGC attestation opt-in</div>
+        <div class="desc">
+          Opt in to publish a signed NVIDIA NGC proof bundle and earn the "Attested" badge on the public
+          <a href="/trust.html">trust page</a>. This is an API-boundary policy — not a consensus rule —
+          and validators that opt out are fully first-class on the network.
+        </div>
+      </div>
+    </div>
+    <div class="cta-row" style="margin-top:14px">
+      <a class="btn btn-primary" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/VALIDATOR_QUICKSTART.md">Read VALIDATOR_QUICKSTART.md</a>
+      <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/NODE_ROLES.md">Node roles</a>
+      <a class="btn btn-ghost" href="/trust.html">Attestation transparency</a>
+    </div>
+  </div>
+</section>
+
+<section id="tech">
+  <div class="container">
+    <span class="eyebrow">WHY IT MATTERS</span>
+    <h2>Benefits of GPU-anchored, post-quantum mesh.</h2>
+    <p class="lead">
+      Put together, these properties let QSDM offer guarantees that traditional blockchains and DAGs cannot — without
+      resorting to energy-hungry proof-of-work in the consensus path or stake concentrations that reintroduce custodial
+      risk.
+    </p>
+    <div class="bens">
+      <div class="ben">
+        <span class="badge">POST-QUANTUM</span>
+        <h4>Harvest-now-decrypt-later-safe</h4>
+        <p>ML-DSA-87 signatures protect ledger history from quantum adversaries that will break ECDSA and RSA. Today's signatures are still valid in 2040.</p>
+      </div>
+      <div class="ben">
+        <span class="badge">HARDWARE-BOUND</span>
+        <h4>Sybil-resistant by silicon</h4>
+        <p>GPU fingerprints + signed NGC proofs mean each validator is tied to a real device. Cloning a node means cloning a GPU — and we detect that.</p>
+      </div>
+      <div class="ben">
+        <span class="badge">THROUGHPUT</span>
+        <h4>Mesh, not a chain</h4>
+        <p>Cells can have multiple parents. Submeshes route by fee and geotag. There is no global block interval to throttle you.</p>
+      </div>
+      <div class="ben">
+        <span class="badge">ENERGY</span>
+        <h4>No proof-of-work in consensus</h4>
+        <p>Proof-of-Entanglement uses cryptographic linkage, not brute-force hashing. The planned GPU mining
+        layer is an <a href="#consensus-layer">additive emission track</a> — it never proposes or orders blocks.</p>
+      </div>
+      <div class="ben">
+        <span class="badge">NON-AI</span>
+        <h4>Deterministic governance</h4>
+        <p>Rule-based quarantines, snapshot voting, manual submesh templates. Auditable, reproducible, AI-free.</p>
+      </div>
+      <div class="ben">
+        <span class="badge">OPEN</span>
+        <h4>libp2p + WASM + standard APIs</h4>
+        <p>GossipSub transport, WASM smart contracts, REST + Prometheus endpoints. Nothing proprietary at the seams.</p>
+      </div>
+      <div class="ben">
+        <span class="badge">OPERABLE</span>
+        <h4>Single-binary, dual-platform</h4>
+        <p>One Go binary. Ubuntu 24.04+ and Windows 10+ supported today; macOS in development. Systemd + Caddy deploy in under an hour.</p>
+      </div>
+      <div class="ben">
+        <span class="badge">AUDITABLE</span>
+        <h4>Metrics and reports by default</h4>
+        <p>Prometheus <code>/api/metrics/prometheus</code>, audit markdown/JSON reports with severity gates, topology WebSocket, and signed release artifacts.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="compare">
+  <div class="container">
+    <span class="eyebrow">TECHNOLOGY COMPARISON</span>
+    <h2>QSDM vs. traditional blockchains and DAGs.</h2>
+    <p class="lead">
+      A like-for-like comparison against representative systems. Values reflect the default, in-the-box configuration
+      of each technology — not maximal lab setups.
+    </p>
+    <div class="table-wrap">
+      <table class="compare">
+        <thead>
+          <tr>
+            <th>Dimension</th>
+            <th>QSDM</th>
+            <th>Bitcoin · PoW</th>
+            <th>Ethereum · PoS</th>
+            <th>IOTA / Hedera · DAG</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="feat">Data structure</td>
+            <td class="qsdm">Dynamic 2D/3D mesh, multi-parent cells</td>
+            <td>Linear block chain</td>
+            <td>Linear block chain</td>
+            <td>Directed acyclic graph</td>
+          </tr>
+          <tr>
+            <td class="feat">Consensus</td>
+            <td class="qsdm">Proof-of-Entanglement (PoE) + BFT · CPU-only validators</td>
+            <td>Proof-of-Work</td>
+            <td>Proof-of-Stake (Gasper)</td>
+            <td>Tangle / Hashgraph</td>
+          </tr>
+          <tr>
+            <td class="feat">Mining / emission</td>
+            <td class="qsdm">Additive GPU track (planned) · <em>never</em> decides block order or finality</td>
+            <td>Mining <strong>is</strong> consensus</td>
+            <td>No mining; staking = consensus</td>
+            <td>No mining; DAG voting = consensus</td>
+          </tr>
+          <tr>
+            <td class="feat">Quantum-safe signatures</td>
+            <td class="qsdm"><span class="tick">✓</span> ML-DSA-87 (FIPS 204, 256-bit)</td>
+            <td><span class="cross">✗</span> ECDSA (secp256k1)</td>
+            <td><span class="cross">✗</span> BLS12-381 / ECDSA</td>
+            <td><span class="partial">◐</span> varies; mostly classical</td>
+          </tr>
+          <tr>
+            <td class="feat">GPU-attested validators</td>
+            <td class="qsdm"><span class="tick">✓</span> NVIDIA NGC proofs + P2P gate</td>
+            <td><span class="cross">✗</span></td>
+            <td><span class="cross">✗</span></td>
+            <td><span class="cross">✗</span></td>
+          </tr>
+          <tr>
+            <td class="feat">Energy profile</td>
+            <td class="qsdm">Low; CUDA for validation, not PoW</td>
+            <td>Very high (hash mining)</td>
+            <td>Low (staking)</td>
+            <td>Low</td>
+          </tr>
+          <tr>
+            <td class="feat">Throughput scaling</td>
+            <td class="qsdm">Submesh parallelism + fee routing</td>
+            <td>~7 tps mainnet</td>
+            <td>~15–30 tps (L1)</td>
+            <td>High (DAG parallelism)</td>
+          </tr>
+          <tr>
+            <td class="feat">Finality</td>
+            <td class="qsdm">PoE + finality gadget, reorg-bounded</td>
+            <td>Probabilistic (6 blocks)</td>
+            <td>Epoch-based (~12–15 min)</td>
+            <td>Varies; often probabilistic</td>
+          </tr>
+          <tr>
+            <td class="feat">AI/ML dependencies</td>
+            <td class="qsdm"><span class="tick">None</span> — rule-based governance</td>
+            <td>None</td>
+            <td>None (core); apps vary</td>
+            <td>Varies</td>
+          </tr>
+          <tr>
+            <td class="feat">Smart contracts</td>
+            <td class="qsdm">WASM SDK (wallet, validator)</td>
+            <td>Script (non-Turing)</td>
+            <td>EVM</td>
+            <td>EVM (Hedera), limited (IOTA)</td>
+          </tr>
+          <tr>
+            <td class="feat">Storage</td>
+            <td class="qsdm">SQLite + Zstd → ScyllaDB path</td>
+            <td>Flat files / LevelDB</td>
+            <td>Merkle-Patricia trie</td>
+            <td>Custom / DAG pruning</td>
+          </tr>
+          <tr>
+            <td class="feat">Deployment footprint</td>
+            <td class="qsdm">1 Go binary · Linux/Windows</td>
+            <td>Full node required</td>
+            <td>Execution + consensus client</td>
+            <td>Protocol-specific tooling</td>
+          </tr>
+          <tr>
+            <td class="feat">Operator tooling</td>
+            <td class="qsdm">Dashboard, Prometheus, audit reports, mTLS</td>
+            <td>RPC + 3rd party</td>
+            <td>RPC + 3rd party</td>
+            <td>RPC + 3rd party</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="color:var(--muted); font-size:12px; margin-top:14px;">
+      Figures shown are representative of default mainnet configurations. QSDM quantum-safe primitives are based on
+      NIST FIPS 204 (ML-DSA) standardized in 2024.
+    </p>
+  </div>
+</section>
+
+<section id="roadmap">
+  <div class="container">
+    <span class="eyebrow">ROADMAP</span>
+    <h2>Three phases. One mesh.</h2>
+    <p class="lead">
+      QSDM ships in phases, with each phase deliverable and production-usable on its own. Current deployments run
+      Phase 1 infrastructure with Phase 2 submesh routing enabled.
+    </p>
+    <div class="phases">
+      <div class="phase" data-phase="PHASE 1">
+        <h4>2D Mesh Launch</h4>
+        <p style="color:var(--text-2); margin:4px 0 0; font-size:14px;">
+          Stable 2D mesh, manual bootstrapping, Proof-of-Entanglement, ML-DSA-87, SQLite with Zstd.
+        </p>
+        <ul>
+          <li>libp2p + GossipSub networking</li>
+          <li>Optimized signing (memory pool, batch 10–100×)</li>
+          <li>Operator dashboard, HTTPS via Caddy, UFW hardening</li>
+        </ul>
+        <span class="status shipped">Shipped</span>
+      </div>
+      <div class="phase" data-phase="PHASE 2">
+        <h4>Scalability &amp; Optimization</h4>
+        <p style="color:var(--text-2); margin:4px 0 0; font-size:14px;">
+          Dynamic submeshes, priority routing, WASM contract SDK, ScyllaDB migration path.
+        </p>
+        <ul>
+          <li>Fee + geotag submesh rules (loadable .toml profiles)</li>
+          <li>WASM wallet and validator integration</li>
+          <li>SQLite → ScyllaDB migrate with dry-run &amp; stats</li>
+        </ul>
+        <span class="status active">In progress</span>
+      </div>
+      <div class="phase" data-phase="PHASE 3">
+        <h4>3D Mesh &amp; Self-Healing</h4>
+        <p style="color:var(--text-2); margin:4px 0 0; font-size:14px;">
+          3D mesh validation, quarantine auto-recovery, reputation, CUDA acceleration.
+        </p>
+        <ul>
+          <li>NVIDIA-locked validators enforced end-to-end</li>
+          <li>Topology WebSocket + live 3D viewer</li>
+          <li>Reputation + reorg-safe partition heal</li>
+        </ul>
+        <span class="status next">Next</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="architecture">
+  <div class="container">
+    <span class="eyebrow">ARCHITECTURE</span>
+    <h2>How the pieces fit.</h2>
+    <p class="lead">A single QSDM node speaks libp2p to its peers, terminates TLS at Caddy, exposes a REST API and a
+      Prometheus endpoint for operators, and optionally ingests NGC proof bundles from an NVIDIA sidecar.</p>
+    <div class="arch">
+      <svg viewBox="0 0 960 360" role="img" aria-label="QSDM architecture diagram">
+        <defs>
+          <linearGradient id="g1" x1="0" x2="1">
+            <stop offset="0" stop-color="#76b900"/><stop offset="1" stop-color="#00d1b2"/>
+          </linearGradient>
+          <marker id="arr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#6ea8ff"/>
+          </marker>
+        </defs>
+        <style>
+          .b { fill:#152238; stroke:#2b3a5e; stroke-width:1; }
+          .b2 { fill:#111a2e; stroke:#2b3a5e; stroke-width:1; }
+          .t { fill:#e6edf7; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size:13px; }
+          .tt { fill:#9fb0c9; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size:11px; }
+          .line { stroke:#6ea8ff; stroke-width:1.4; fill:none; marker-end:url(#arr); }
+          .dash { stroke-dasharray: 4 4; }
+          .accent { fill:url(#g1); }
+        </style>
+
+        <!-- Clients -->
+        <rect class="b" x="20" y="30" width="170" height="60" rx="10"/>
+        <text class="t" x="35" y="55">Browser / SDKs</text>
+        <text class="tt" x="35" y="75">Go · JS · WASM clients</text>
+
+        <!-- Caddy -->
+        <rect class="b" x="230" y="30" width="170" height="60" rx="10"/>
+        <text class="t" x="245" y="55">Caddy · TLS edge</text>
+        <text class="tt" x="245" y="75">qsdm.tech / api / dashboard</text>
+
+        <!-- API -->
+        <rect class="b2" x="440" y="10" width="220" height="100" rx="10"/>
+        <text class="t" x="455" y="35">QSDM binary · API</text>
+        <text class="tt" x="455" y="55">/api/v1/auth, /wallet, /health</text>
+        <text class="tt" x="455" y="72">JWT · mTLS admin · audit log</text>
+        <text class="tt" x="455" y="89">:8443 (HTTP behind Caddy)</text>
+
+        <!-- Dashboard -->
+        <rect class="b2" x="700" y="10" width="240" height="100" rx="10"/>
+        <text class="t" x="715" y="35">Operator Dashboard</text>
+        <text class="tt" x="715" y="55">WebSocket topology · Prometheus</text>
+        <text class="tt" x="715" y="72">Login → /api/v1/auth proxy</text>
+        <text class="tt" x="715" y="89">:8081</text>
+
+        <!-- Consensus -->
+        <rect class="b" x="440" y="140" width="220" height="80" rx="10"/>
+        <text class="t" x="455" y="165">Proof-of-Entanglement</text>
+        <text class="tt" x="455" y="183">CPU-only · no proof-of-work</text>
+        <text class="tt" x="455" y="200">Mempool · BFT · Finality gadget</text>
+
+        <!-- Storage -->
+        <rect class="b" x="700" y="140" width="240" height="80" rx="10"/>
+        <text class="t" x="715" y="165">Storage</text>
+        <text class="tt" x="715" y="183">SQLite + Zstd  →  ScyllaDB (opt)</text>
+        <text class="tt" x="715" y="200">Row-level compression, MVs</text>
+
+        <!-- libp2p -->
+        <rect class="b" x="230" y="140" width="170" height="80" rx="10"/>
+        <text class="t" x="245" y="165">libp2p · :4001</text>
+        <text class="tt" x="245" y="183">GossipSub · PEX</text>
+        <text class="tt" x="245" y="200">Tx · Blocks · Evidence</text>
+
+        <!-- NVIDIA sidecar -->
+        <rect x="230" y="260" width="430" height="80" rx="10" fill="#0f1a0a" stroke="#76b900" stroke-width="1.4"/>
+        <text class="t" x="245" y="285" fill="#dff3b3">NVIDIA NGC sidecar</text>
+        <text class="tt" x="245" y="303" fill="#bcd790">CUDA fingerprint · signed proof bundle</text>
+        <text class="tt" x="245" y="320" fill="#bcd790">POST /api/v1/monitoring/ngc-proof · HMAC-signed</text>
+
+        <!-- P2P gate note -->
+        <rect x="700" y="260" width="240" height="80" rx="10" fill="#1a1227" stroke="#a06bff" stroke-width="1.2"/>
+        <text class="t" x="715" y="285" fill="#e4d3ff">P2P gate</text>
+        <text class="tt" x="715" y="303" fill="#c6b0ef">Drop tx from peers w/o</text>
+        <text class="tt" x="715" y="320" fill="#c6b0ef">recent valid GPU proof</text>
+
+        <!-- lines -->
+        <path class="line" d="M190 60 H 230"/>
+        <path class="line" d="M400 60 H 440"/>
+        <path class="line" d="M660 60 H 700"/>
+        <path class="line" d="M550 110 V 140"/>
+        <path class="line" d="M820 110 V 140"/>
+        <path class="line" d="M315 220 V 260"/>
+        <path class="line dash" d="M660 180 H 700"/>
+        <path class="line dash" d="M550 340 V 360"/>
+        <path class="line dash" d="M820 260 V 220"/>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<section id="cta" style="border-top:none; padding:56px 0 16px;">
+  <div class="container" style="display:flex; gap:18px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
+    <div>
+      <h2 style="margin:0 0 6px;">Ready to explore?</h2>
+      <p style="color:var(--text-2); margin:0;">Log in to the operator dashboard, hit the public API, or read the source.</p>
+    </div>
+    <div class="cta-row" style="margin:0">
+      <a class="btn btn-primary" href="https://dashboard.qsdm.tech/">Open Dashboard</a>
+      <a class="btn" href="https://api.qsdm.tech/api/v1/health">/api/v1/health</a>
+      <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM">GitHub</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <a class="brand" href="/" style="text-decoration:none">
+          <svg viewBox="0 0 64 64" aria-hidden="true" style="width:28px;height:28px">
+            <rect width="64" height="64" rx="12" fill="#0b1220"/>
+            <path d="M12 32l10-10 10 10-10 10z" fill="#76b900"/>
+            <path d="M32 20l10 12-10 12-10-12z" fill="#00d1b2" opacity=".85"/>
+          </svg>
+          <span style="color:var(--text)">QSDM<span style="color:var(--accent)"> · CELL</span></span>
+        </a>
+        <p style="margin:12px 0 0; color:var(--text-2); font-size:14px; max-width:340px;">
+          Quantum-Secure Dynamic Mesh Ledger. Native coin: <strong>Cell (CELL)</strong>. Post-quantum consensus,
+          optional NVIDIA attestation, non-AI distributed trust.
+        </p>
+      </div>
+      <div>
+        <h5>Platform</h5>
+        <ul>
+          <li><a href="#products">Validator node</a></li>
+          <li><a href="#products">Miner (planned)</a></li>
+          <li><a href="#nvidia">NVIDIA Edge</a></li>
+          <li><a href="#roadmap">Roadmap</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Developers</h5>
+        <ul>
+          <li><a href="https://github.com/blackbeardONE/QSDM">GitHub</a></li>
+          <li><a href="https://api.qsdm.tech/api/v1/health">API health</a></li>
+          <li><a href="https://dashboard.qsdm.tech/">Dashboard</a></li>
+          <li><a href="#compare">Comparison</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Operations</h5>
+        <ul>
+          <li><a href="https://api.qsdm.tech/api/v1/health">/api/v1/health</a></li>
+          <li><a href="https://node.qsdm.tech/api/v1/health">node.qsdm.tech</a></li>
+          <li><a href="https://dashboard.qsdm.tech/">dashboard.qsdm.tech</a></li>
+          <li><a href="mailto:admin@qsdm.tech">admin@qsdm.tech</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="legal">
+      <div>© <span id="y"></span> QSDM · Cell (CELL) · All rights reserved.</div>
+      <div>Built on libp2p · liboqs (ML-DSA-87) · Caddy · Go.</div>
+    </div>
+  </div>
+</footer>
+
+<script>document.getElementById('y').textContent = new Date().getFullYear();</script>
+
+<!-- Trust widget live-fetch. Data source: the same origin as the landing
+     page. If qsdm.tech serves this HTML and the API is on api.qsdm.tech,
+     the widget falls back to /api/v1/... relative to the current origin,
+     then to the canonical https://api.qsdm.tech endpoint. Four states:
+     loading, ok, warmup (503), disabled (404). Never throws; never
+     blocks the page. -->
+<script>
+(function() {
+  var widget  = document.getElementById('trust-widget');
+  if (!widget) return;
+  var dot     = document.getElementById('trust-dot');
+  var ratioEl = document.getElementById('trust-ratio');
+  var metaEl  = document.getElementById('trust-meta');
+  var endpoints = ['/api/v1/trust/attestations/summary', 'https://api.qsdm.tech/api/v1/trust/attestations/summary'];
+
+  function setState(state, ratio, meta) {
+    widget.setAttribute('data-state', state);
+    if (ratio) ratioEl.textContent = ratio;
+    if (meta)  metaEl.textContent  = meta;
+    if (!dot) return;
+    dot.style.background =
+      state === 'healthy' ? '#3ddc97'
+      : state === 'degraded' ? '#ffb454'
+      : state === 'outage' ? '#ff6b6b'
+      : state === 'disabled' ? '#6d7e99'
+      : '#6ea8ff';
+  }
+
+  function fetchOnce(i) {
+    if (i >= endpoints.length) {
+      setState('unknown', '— of —', 'Attestation data not currently available.');
+      return;
+    }
+    fetch(endpoints[i], { headers: { 'Accept': 'application/json' } })
+      .then(function(res) {
+        if (res.status === 404) { setState('disabled', '— of —', 'Attestation disabled on this node.'); return null; }
+        if (res.status === 503) { setState('warmup', '— of —', 'Node is still aggregating peer attestations…'); return null; }
+        if (!res.ok) throw new Error('http ' + res.status);
+        return res.json();
+      })
+      .then(function(data) {
+        if (!data) return;
+        var ratio = data.attested + ' of ' + data.total_public;
+        var status = data.ngc_service_status || 'healthy';
+        var last = data.last_attested_at ? new Date(data.last_attested_at) : null;
+        var meta = 'fresh window ' + (data.fresh_within || '15m0s');
+        if (last) meta += ' · last attested ' + last.toISOString().replace('T',' ').substring(0,19) + 'Z';
+        setState(status, ratio, meta);
+      })
+      .catch(function() { fetchOnce(i + 1); });
+  }
+
+  fetchOnce(0);
+  setInterval(function() { fetchOnce(0); }, 60000);
+})();
+</script>
+</body>
+</html>

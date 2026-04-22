@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>QSDM WASM Browser Integration Test with Go Runtime</title>
+<script src="go_wasm_runtime.js"></script>
+</head>
+<body>
+<h1>QSDM WASM Browser Integration Test with Go Runtime</h1>
+<div id="output"></div>
+<script>
+  async function runTests() {
+    const output = document.getElementById('output');
+    const go = new Go();
+
+    async function runWasmModule(url) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error('Failed to fetch ' + url + ': ' + response.statusText);
+        }
+        const wasmBytes = await response.arrayBuffer();
+        const result = await WebAssembly.instantiate(wasmBytes, go.importObject);
+        const instance = result.instance;
+
+        await go.run(instance);
+
+        output.innerHTML += '<p>WASM module ' + url + ' loaded and started successfully.</p>';
+      } catch (err) {
+        output.innerHTML += '<p style="color:red;">WASM Browser integration test failed: ' + err.message + '</p>';
+        console.error(err);
+      }
+    }
+
+    await runWasmModule('../wasm_modules/wallet/wallet.wasm');
+    await runWasmModule('../wasm_modules/validator/validator.wasm');
+
+    output.innerHTML += '<p>WASM Browser integration tests with Go runtime completed.</p>';
+  }
+
+  runTests();
+</script>
+</body>
+</html>

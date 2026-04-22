@@ -1,0 +1,95 @@
+# Dockerfile.validator — CPU-only QSDM validator node
+# =====================================================
+# This image builds the validator-only profile of the QSDM binary, i.e.
+# `go build -tags validator_only`. The binary:
+#
+#   - Refuses to start if node.role == "miner" or node.mining_enabled == true
+#     (see pkg/mining/roleguard/roleguard_validator.go).
+#   - Is NOT linked against CUDA, cuDNN, or any GPU runtime. This is the image
+#     we recommend for VPS operators and for the public "run a validator"
+#     quickstart in QSDM/docs/docs/NODE_ROLES.md.
+#
+# Build:
+#   docker build -f QSDM/Dockerfile.validator -t qsdm/validator:latest QSDM/
+#
+# Notes:
+#   - Base is Alpine to keep the final image small (~40-60 MB).
+#   - CGO is still required because pkg/crypto links against liboqs for the
+#     post-quantum signature primitives (ML-DSA-87). liboqs itself is
+#     CPU-only; it is fine to include in a validator image.
+
+# ---- builder stage ----------------------------------------------------------
+FROM golang:1.25-alpine AS builder
+
+# Refresh CA certs and package index before installing anything.
+RUN apk update && apk add --no-cache \
+    ca-certificates \
+    gcc \
+    musl-dev \
+    cmake \
+    make \
+    git \
+    sqlite-dev \
+    openssl-dev
+
+# Build & install liboqs (pinned to main; CI should pin a tag for release).
+WORKDIR /tmp
+RUN git clone --depth 1 https://github.com/open-quantum-safe/liboqs.git && \
+    cd liboqs && \
+    mkdir build && cd build && \
+    cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON .. && \
+    make -j$(nproc) && \
+    make install && \
+    rm -rf /tmp/liboqs
+
+# Build QSDM validator binary (validator_only build profile).
+WORKDIR /app
+COPY source ./source
+RUN cd source && go mod download
+
+RUN cd source && CGO_ENABLED=1 \
+    CGO_CFLAGS="-I/usr/local/include" \
+    CGO_LDFLAGS="-L/usr/local/lib -loqs -lssl -lcrypto" \
+    go build -tags validator_only \
+        -o ../qsdm-validator ./cmd/qsdmplus
+
+# ---- runtime stage ---------------------------------------------------------
+FROM alpine:latest
+
+RUN apk update && apk add --no-cache \
+    ca-certificates \
+    sqlite \
+    libstdc++ \
+    openssl \
+    wget
+
+COPY --from=builder /usr/local/lib/liboqs.so* /usr/local/lib/
+COPY --from=builder /app/qsdm-validator /usr/local/bin/qsdm-validator
+
+# Legacy-name symlink so existing orchestration that runs `qsdmplus` still
+# works during the deprecation window; see REBRAND_NOTES.md.
+RUN ln -s /usr/local/bin/qsdm-validator /usr/local/bin/qsdm && \
+    ln -s /usr/local/bin/qsdm-validator /usr/local/bin/qsdmplus
+
+WORKDIR /app
+
+# libp2p, API, dashboard, log viewer.
+EXPOSE 4001 8080 8081 9000
+
+ENV CGO_ENABLED=1
+ENV LD_LIBRARY_PATH=/usr/local/lib
+# Force validator role; operators can still override via config file but the
+# validator_only build will refuse any other role at startup.
+ENV QSDM_NODE_ROLE=validator
+ENV QSDM_MINING_ENABLED=false
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+  CMD wget -q -O- http://127.0.0.1:8080/api/v1/health/live > /dev/null || exit 1
+
+# Minimal non-root user for the runtime stage. The data directory (SQLite /
+# Scylla client state, logs) is expected to be mounted from a volume.
+RUN addgroup -S qsdm && adduser -S -G qsdm qsdm && \
+    mkdir -p /app/data && chown -R qsdm:qsdm /app
+USER qsdm
+
+CMD ["qsdm-validator"]

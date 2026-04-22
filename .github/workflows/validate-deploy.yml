@@ -1,0 +1,47 @@
+# Compose syntax + Kubernetes client-side dry-run (no cluster required).
+name: Validate deploy manifests
+
+on:
+  push:
+    paths:
+      - "QSDM/deploy/**"
+      - ".github/workflows/validate-deploy.yml"
+  pull_request:
+    paths:
+      - "QSDM/deploy/**"
+      - ".github/workflows/validate-deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: validate-deploy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compose-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Docker Compose config (cluster)
+        run: docker compose -f QSDM/deploy/docker-compose.cluster.yml config -q
+
+      - name: Docker Compose config (single / VPS)
+        run: docker compose -f QSDM/deploy/docker-compose.single.yml config -q
+
+  kubernetes-dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.31.0
+
+      - name: kubectl apply --dry-run=client
+        run: |
+          set -euo pipefail
+          K="kubectl apply --dry-run=client -f"
+          for f in namespace.yaml configmap.yaml secret.yaml pvc.yaml deployment.yaml service.yaml statefulset.yaml; do
+            echo "==> $f"
+            $K "QSDM/deploy/kubernetes/$f"
+          done

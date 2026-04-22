@@ -1,0 +1,10 @@
+# Full NGC stack: CUDA + PyTorch (large download). Login: docker login nvcr.io -u '$oauthtoken' --password-stdin
+# docker build -f Dockerfile.ngc -t qsdm-ngc-gpu .
+# docker run --rm --gpus all qsdm-ngc-gpu
+FROM nvcr.io/nvidia/pytorch:24.07-py3
+
+WORKDIR /app
+COPY validator_phase1.py gossip_daemon.py /app/
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python3", "/app/validator_phase1.py"]

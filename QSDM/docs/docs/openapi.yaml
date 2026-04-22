@@ -1,0 +1,874 @@
+openapi: 3.0.3
+info:
+  title: QSDM HTTP API
+  description: |
+    Quantum-Secure Dynamic Mesh Ledger (QSDM, formerly QSDM+) HTTP API with
+    military-grade security. Native coin: Cell (CELL), 8 decimals, smallest
+    unit `dust`.
+    
+    All authenticated endpoints require:
+    - JWT Bearer token in Authorization header
+    - Request signing for POST/PUT/DELETE requests (X-Timestamp, X-Nonce, X-Signature headers)
+    
+    Security Features:
+    - TLS 1.3 encryption
+    - Quantum-safe JWT tokens (CRYSTALS-Dilithium)
+    - Request signing with quantum-safe signatures
+    - Rate limiting: default **100 requests per client per minute** (`[api] rate_limit_max_requests` / `rate_limit_window` or `QSDM_API_RATE_LIMIT_MAX` / `QSDM_API_RATE_LIMIT_WINDOW`; the legacy `QSDMPLUS_*` env vars continue to be accepted during the deprecation window, see `REBRAND_NOTES.md`). Some routes are stricter (e.g. GET /monitoring/ngc-challenge at 15/min). **GET /health** and **/health/*** are exempt so probes are not throttled.
+    - Replay attack protection
+    - Role-based access control
+    
+    **Submesh policy (optional):** When the node loads `[network] submesh_config` / `QSDM_SUBMESH_CONFIG` (legacy alias: `QSDMPLUS_SUBMESH_CONFIG`), some ledger routes may return **422 Unprocessable Entity** if fee+geotag do not match a profile or the serialized payload exceeds `max_tx_size` (wallet send), or mint/token-create exceeds the strictest profile cap. See main README “Submesh profiles”.
+  version: 1.0.0
+  contact:
+    name: QSDM Development Team
+    url: https://github.com/blackbeardONE/QSDM
+
+servers:
+  - url: https://localhost:8443/api/v1
+    description: Production server (HTTPS)
+  - url: http://localhost:8080/api/v1
+    description: Development server (HTTP - insecure)
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Authentication
+    description: User authentication and registration
+  - name: Wallet
+    description: Wallet operations
+  - name: Transactions
+    description: Transaction management
+  - name: Validator
+    description: Transaction validation
+  - name: Monitoring
+    description: NGC proof ingest and operator endpoints (shared ingest secret header; not JWT)
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns API health status (public endpoint)
+      operationId: healthCheck
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  timestamp:
+                    type: integer
+                    format: int64
+                    example: 1234567890
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  nvidia_lock:
+                    type: object
+                    description: Present when configured; includes proof_ok, ingest_nonce flags, http_blocks_total, ngc_challenge_* counters, ngc_ingest_nonce_pool_size (see deploy/README.md).
+
+  /health/live:
+    get:
+      tags:
+        - Health
+      summary: Liveness probe
+      description: Minimal process liveness (always **200** when the API accepts HTTP). Not rate limited.
+      operationId: healthLive
+      responses:
+        '200':
+          description: Alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+                  timestamp:
+                    type: integer
+                    format: int64
+                  product:
+                    type: string
+
+  /health/ready:
+    get:
+      tags:
+        - Health
+      summary: Readiness probe
+      description: |
+        **200** when **storage** `Ready()` succeeds; **503** when storage is unreachable.
+        **wallet_service** is `ok` or `unavailable` (informational; does not flip status alone).
+        Not rate limited.
+      operationId: healthReady
+      responses:
+        '200':
+          description: Ready (storage OK)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+                  timestamp:
+                    type: integer
+                    format: int64
+                  checks:
+                    type: object
+                    additionalProperties:
+                      type: string
+        '503':
+          description: Storage check failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: not_ready
+                  checks:
+                    type: object
+
+  /monitoring/ngc-challenge:
+    get:
+      tags:
+        - Monitoring
+      summary: Issue ingest nonce (NVIDIA-lock nonce mode)
+      description: |
+        Public for JWT purposes; requires `X-QSDMPLUS-NGC-Secret` (or legacy `X-QSDM-NGC-Secret`) matching the node's ingest secret.
+        Returns 404 when `nvidia_lock_require_ingest_nonce` is disabled. Rate limited to **15 requests/minute** per client (IP or X-API-Key).
+        On 429, `Retry-After` is set (seconds).
+      operationId: ngcIngestChallenge
+      parameters:
+        - $ref: '#/components/parameters/NgcIngestSecretPrimary'
+        - $ref: '#/components/parameters/NgcIngestSecretLegacy'
+      responses:
+        '200':
+          description: Nonce issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qsdmplus_ingest_nonce:
+                    type: string
+                  expires_at_unix:
+                    type: integer
+                    format: int64
+                  ttl_seconds:
+                    type: integer
+        '404':
+          description: Ingest nonce challenge disabled
+        '401':
+          description: Missing or invalid ingest secret
+        '429':
+          description: Rate limit exceeded
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+                description: Seconds until the client may retry
+
+  /monitoring/ngc-proof:
+    post:
+      tags:
+        - Monitoring
+      summary: Ingest NGC GPU proof bundle
+      description: |
+        Accepts JSON proof bundles from the NGC sidecar. Requires ingest secret headers.
+        Rate limited (default 30/min per path key). See deploy README for NVIDIA-lock and HMAC/nonce behavior.
+      operationId: ngcProofIngest
+      parameters:
+        - $ref: '#/components/parameters/NgcIngestSecretPrimary'
+        - $ref: '#/components/parameters/NgcIngestSecretLegacy'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Proof bundle (cuda_proof_hash, gpu_fingerprint, optional qsdmplus_* fields)
+      responses:
+        '200':
+          description: Ingest accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          description: Invalid body or proof validation failed
+        '404':
+          description: NGC ingest not configured on node
+        '413':
+          description: Body too large
+        '429':
+          description: Rate limit exceeded
+
+  /monitoring/ngc-proofs:
+    get:
+      tags:
+        - Monitoring
+      summary: List ingested proof summaries
+      description: Operator view of recent ingested bundles (same secret as ingest).
+      operationId: ngcProofList
+      parameters:
+        - $ref: '#/components/parameters/NgcIngestSecretPrimary'
+        - $ref: '#/components/parameters/NgcIngestSecretLegacy'
+      responses:
+        '200':
+          description: Summary list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  proofs:
+                    type: array
+                    items:
+                      type: object
+        '404':
+          description: NGC ingest not configured
+        '429':
+          description: Rate limit exceeded
+
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register new user
+      description: Register a new user account
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - address
+                - password
+              properties:
+                address:
+                  type: string
+                  description: Wallet address
+                  example: "wallet_address_123"
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  description: User password (minimum 8 characters)
+                  example: "Charming123!"
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "user registered successfully"
+                  address:
+                    type: string
+        '400':
+          description: Invalid input
+        '409':
+          description: User already exists
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Authenticate user
+      description: Login and receive JWT tokens
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - address
+                - password
+              properties:
+                address:
+                  type: string
+                  example: "wallet_address_123"
+                password:
+                  type: string
+                  format: password
+                  example: "Charming123!"
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    description: JWT access token (15 minutes)
+                  refresh_token:
+                    type: string
+                    description: JWT refresh token (7 days)
+                  expires_in:
+                    type: integer
+                    description: Access token expiration in seconds
+                    example: 900
+        '401':
+          description: Invalid credentials
+
+  /wallet/create:
+    post:
+      tags:
+        - Wallet
+      summary: Create wallet
+      description: Create a new wallet (requires authentication)
+      operationId: createWallet
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Wallet created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  address:
+                    type: string
+                  balance:
+                    type: number
+                    format: float
+        '401':
+          description: Unauthorized
+        '500':
+          description: Failed to create wallet (e.g. crypto or key generation error; check server logs)
+
+  /wallet/balance:
+    get:
+      tags:
+        - Wallet
+      summary: Get wallet balance
+      description: Get balance for a wallet address
+      operationId: getBalance
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: address
+          in: query
+          description: Wallet address (defaults to authenticated user's address)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Balance retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  address:
+                    type: string
+                  balance:
+                    type: number
+                    format: float
+        '400':
+          description: Missing address (query and no authenticated user address)
+        '401':
+          description: Unauthorized
+        '500':
+          description: Failed to read balance from storage
+
+  /wallet/send:
+    post:
+      tags:
+        - Wallet
+      summary: Send transaction
+      description: |
+        Send a transaction (requires authentication and request signing).
+        When **submesh** profiles are loaded on the node, **422** is returned if **fee** and **geotag** do not match any submesh or the signed transaction JSON exceeds the matched profile's **max_tx_size**.
+      operationId: sendTransaction
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - recipient
+                - amount
+              properties:
+                recipient:
+                  type: string
+                  description: Recipient wallet address
+                amount:
+                  type: number
+                  format: float
+                  minimum: 0
+                  description: Transaction amount
+                fee:
+                  type: number
+                  format: float
+                  description: Transaction fee
+                geotag:
+                  type: string
+                  description: Geographic tag
+                parent_cells:
+                  type: array
+                  items:
+                    type: string
+                  description: Parent cell IDs
+      responses:
+        '201':
+          description: Transaction created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id:
+                    type: string
+                  status:
+                    type: string
+                    example: "pending"
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '422':
+          description: Submesh policy rejected (fee/geotag no match or transaction JSON exceeds max_tx_size when submesh_config is loaded)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                submeshRoute:
+                  summary: No matching submesh
+                  value:
+                    error: Unprocessable Entity
+                    message: 'no matching submesh for fee and geotag: no matching submesh for fee 0.1000 and geoTag '
+                    status: 422
+                submeshSize:
+                  summary: Payload too large
+                  value:
+                    error: Unprocessable Entity
+                    message: 'payload exceeds submesh max_tx_size: transaction size 5000 exceeds submesh "micropayments" max_tx_size 1024'
+                    status: 422
+        '503':
+          $ref: '#/components/responses/WalletService503'
+
+  /wallet/address:
+    get:
+      tags:
+        - Wallet
+      summary: Get wallet address
+      description: Get the authenticated user's wallet address
+      operationId: getAddress
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Address retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  address:
+                    type: string
+        '401':
+          description: Unauthorized
+        '503':
+          $ref: '#/components/responses/WalletService503'
+
+  /wallet/mint:
+    post:
+      tags:
+        - Wallet
+      summary: Mint main coin ($CELL)
+      description: |
+        Mints the main ledger coin to a recipient. When **nvidia_lock** is enabled, requires a recent GPU-attested NGC proof on the node (**403** otherwise).
+        When **submesh_config** is loaded, returns **422** if the stored mint record JSON exceeds the **strictest** profile **max_tx_size**.
+      operationId: mintMainCoin
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - recipient
+                - amount
+              properties:
+                recipient:
+                  type: string
+                  description: Recipient wallet address (hex)
+                amount:
+                  type: number
+                  format: float
+                  minimum: 0
+      responses:
+        '200':
+          description: Mint recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id:
+                    type: string
+                  amount:
+                    type: number
+                  recipient:
+                    type: string
+                  status:
+                    type: string
+                    example: minted
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '403':
+          description: NVIDIA-lock blocked (no qualifying proof)
+        '422':
+          $ref: '#/components/responses/SubmeshPolicy422'
+
+  /tokens/mint:
+    post:
+      tags:
+        - Wallet
+      summary: Mint a named token
+      description: |
+        Mints a secondary token (e.g. $JOLLY). **NVIDIA-lock** and **submesh** **422** rules match **`/wallet/mint`**.
+      operationId: mintToken
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token_symbol
+                - recipient
+                - amount
+              properties:
+                token_symbol:
+                  type: string
+                recipient:
+                  type: string
+                amount:
+                  type: number
+                  format: float
+                  minimum: 0
+      responses:
+        '200':
+          description: Mint recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id:
+                    type: string
+                  token_symbol:
+                    type: string
+                  amount:
+                    type: number
+                  recipient:
+                    type: string
+                  status:
+                    type: string
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '403':
+          description: NVIDIA-lock blocked
+        '422':
+          $ref: '#/components/responses/SubmeshPolicy422'
+
+  /tokens/create:
+    post:
+      tags:
+        - Wallet
+      summary: Create a new token definition
+      description: |
+        Registers token metadata on the ledger. **NVIDIA-lock** applies; **422** when submesh **max_tx_size** cap is exceeded for the stored JSON.
+      operationId: createToken
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - symbol
+                - decimals
+                - total_supply
+              properties:
+                name:
+                  type: string
+                symbol:
+                  type: string
+                decimals:
+                  type: integer
+                  minimum: 0
+                  maximum: 18
+                total_supply:
+                  type: number
+                  format: float
+                description:
+                  type: string
+      responses:
+        '201':
+          description: Token created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token_id:
+                    type: string
+                  name:
+                    type: string
+                  symbol:
+                    type: string
+                  decimals:
+                    type: integer
+                  total_supply:
+                    type: number
+                  status:
+                    type: string
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '403':
+          description: NVIDIA-lock blocked
+        '422':
+          $ref: '#/components/responses/SubmeshPolicy422'
+
+  /transactions:
+    get:
+      tags:
+        - Transactions
+      summary: List transactions
+      description: Get recent transactions for an address
+      operationId: listTransactions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of transactions to return (default: 50, max: 1000)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 50
+      responses:
+        '200':
+          description: Transactions retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transactions:
+                    type: array
+                    items:
+                      type: object
+                  limit:
+                    type: integer
+                  count:
+                    type: integer
+        '401':
+          description: Unauthorized
+        '501':
+          description: Not implemented (storage backend doesn't support this)
+
+  /transactions/{txId}:
+    get:
+      tags:
+        - Transactions
+      summary: Get transaction by ID
+      description: Retrieve a specific transaction by its ID
+      operationId: getTransaction
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: txId
+          in: path
+          required: true
+          description: Transaction ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Transaction retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  sender:
+                    type: string
+                  recipient:
+                    type: string
+                  amount:
+                    type: number
+                  timestamp:
+                    type: string
+        '401':
+          description: Unauthorized
+        '404':
+          description: Transaction not found
+        '501':
+          description: Not implemented (storage backend doesn't support this)
+
+  /validator/validate:
+    post:
+      tags:
+        - Validator
+      summary: Validate transaction
+      description: Validate a transaction using 3D mesh validation
+      operationId: validateTransaction
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - transaction_id
+                - parent_cells
+                - data
+              properties:
+                transaction_id:
+                  type: string
+                parent_cells:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      data:
+                        type: string
+                        format: byte
+                        description: Base64-encoded data
+                data:
+                  type: string
+                  format: byte
+                  description: Base64-encoded transaction data
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+
+components:
+  responses:
+    SubmeshPolicy422:
+      description: Submesh strictest max_tx_size exceeded for this ledger payload (when submesh profiles are loaded)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    WalletService503:
+      description: |
+        The node's wallet service did not initialize at startup (CGO wallet path). Check server logs — often liboqs/OpenSSL or key material.
+        **POST /wallet/create** does not use this path; it creates a wallet per request and may return **500** instead.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Service Unavailable
+            message: wallet service not available (wallet did not initialize at node startup; check logs — e.g. liboqs/OpenSSL on CGO builds)
+            status: 503
+
+  parameters:
+    NgcIngestSecretPrimary:
+      name: X-QSDMPLUS-NGC-Secret
+      in: header
+      required: false
+      schema:
+        type: string
+      description: NGC ingest shared secret (required for challenge/proof routes when ingest is enabled).
+    NgcIngestSecretLegacy:
+      name: X-QSDM-NGC-Secret
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Legacy alias for X-QSDMPLUS-NGC-Secret.
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token signed with CRYSTALS-Dilithium (quantum-safe).
+        Token format: base64(claims) + "." + base64(signature)
+        
+        For POST/PUT/DELETE requests, also include:
+        - X-Timestamp: Unix timestamp (seconds)
+        - X-Nonce: Unique nonce (32 bytes, base64)
+        - X-Signature: Request signature (base64, quantum-safe)
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        status:
+          type: integer
+

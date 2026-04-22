@@ -1,0 +1,11 @@
+{
+  "name": "qsdm-wasm-tests",
+  "version": "1.0.0",
+  "description": "QSDM WASM integration test scripts",
+  "scripts": {
+    "test": "node tests/wasm_js_integration_test_node_final_new.js"
+  },
+  "dependencies": {
+    "wasi": "*"
+  }
+}

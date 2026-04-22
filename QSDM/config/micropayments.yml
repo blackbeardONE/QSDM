@@ -1,0 +1,9 @@
+# Submesh profile: set network.submesh_config or QSDMPLUS_SUBMESH_CONFIG to this path.
+name: micropayments
+fees: 0.001
+priority: 5
+geo_tags:
+  - US
+  - EU
+parameters:
+  max_tx_size: "1024"

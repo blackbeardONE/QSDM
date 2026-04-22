@@ -1,0 +1,79 @@
+# Example Prometheus alerting rules for QSDM+ dashboard metrics (qsdmplus_*).
+# Load with rule_files in prometheus.yml, or use a Prometheus Operator PrometheusRule CRD.
+#
+# Adjust thresholds and `for:` to your fleet; many counters are monotonic — use rate().
+
+groups:
+  - name: qsdmplus-nvidia-lock
+    rules:
+      - alert: QSDMPlusNvidiaLockHTTPBlocksSpike
+        expr: rate(qsdmplus_nvidia_lock_http_blocks_total[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated NVIDIA-lock HTTP blocks"
+          description: "State-changing API calls are returning 403 from NVIDIA-lock faster than threshold."
+
+      - alert: QSDMPlusNvidiaLockP2PRejects
+        expr: increase(qsdmplus_nvidia_lock_p2p_rejects_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P2P transactions rejected by NVIDIA-lock gate"
+          description: "nvidia_lock_gate_p2p is dropping txs without a qualifying proof."
+
+      - alert: QSDMPlusNGCChallengeRateLimited
+        expr: increase(qsdmplus_ngc_challenge_rate_limited_total[10m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Many 429s on ngc-challenge"
+          description: "Sidecars or clients may be polling challenge too aggressively; check Retry-After and jitter."
+
+      - alert: QSDMPlusNGCProofIngestRejectBurst
+        expr: sum(increase(qsdmplus_ngc_proof_ingest_rejected_total[10m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Many rejected POSTs to /monitoring/ngc-proof"
+          description: "Check sidecar logs, HMAC/nonce alignment, body size, and unauthorized probes; see qsdmplus_ngc_proof_ingest_rejected_total by reason."
+
+  - name: qsdmplus-submesh
+    rules:
+      - alert: QSDMPlusSubmeshP2PRejects
+        expr: increase(qsdmplus_submesh_p2p_reject_route_total[15m]) > 0 or increase(qsdmplus_submesh_p2p_reject_size_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P2P transactions dropped by submesh policy"
+          description: "Check fee/geotag vs submesh_config and max_tx_size; see qsdmplus_submesh_p2p_reject_* metrics."
+
+      - alert: QSDMPlusSubmeshAPISustained422
+        expr: |
+          (
+            increase(qsdmplus_submesh_api_wallet_reject_route_total[10m])
+            + increase(qsdmplus_submesh_api_wallet_reject_size_total[10m])
+            + increase(qsdmplus_submesh_api_privileged_reject_size_total[10m])
+          ) >= 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Many HTTP 422s from submesh policy"
+          description: "Wallet send or mint/token-create failing submesh rules; tune profiles or client fee/geotag/payload size."
+
+  - name: qsdmplus-throughput
+    rules:
+      - alert: QSDMPlusNoTransactionsStored
+        expr: rate(qsdmplus_transactions_stored_total[30m]) == 0 and rate(qsdmplus_transactions_processed_total[30m]) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Transactions processed but none stored"
+          description: "Possible validation/storage issue; verify logs and NVIDIA-lock policy."

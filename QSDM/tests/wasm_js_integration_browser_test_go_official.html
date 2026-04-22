@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>QSDM WASM Browser Integration Test with Official Go Runtime</title>
+<script src="https://golang.org/static/gojs/go.wasm.js"></script>
+</head>
+<body>
+<h1>QSDM WASM Browser Integration Test with Official Go Runtime</h1>
+<div id="output"></div>
+<script>
+  async function runTests() {
+    const output = document.getElementById('output');
+    if (typeof Go === 'undefined') {
+      output.innerHTML = '<p style="color:red;">Error: Go runtime not loaded. Please check the go.wasm.js script path.</p>';
+      return;
+    }
+    const go = new Go();
+
+    async function runWasmModule(url) {
+      try {
+        const result = await WebAssembly.instantiateStreaming(fetch(url), go.importObject);
+        go.run(result.instance);
+        output.innerHTML += '<p>WASM module ' + url + ' loaded and started successfully.</p>';
+      } catch (err) {
+        output.innerHTML += '<p style="color:red;">WASM Browser integration test failed: ' + err.message + '</p>';
+        console.error(err);
+      }
+    }
+
+    await runWasmModule('../wasm_modules/wallet/wallet.wasm');
+    await runWasmModule('../wasm_modules/validator/validator.wasm');
+
+    output.innerHTML += '<p>WASM Browser integration tests with official Go runtime completed.</p>';
+  }
+
+  runTests();
+</script>
+</body>
+</html>

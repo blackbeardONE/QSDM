@@ -1,0 +1,144 @@
+# QSDM+ Multi-Node Cluster Deployment
+# This compose file sets up a 3-node QSDM+ cluster for testing and development
+
+services:
+  # Node 1 - Bootstrap node
+  qsdm-node1:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: qsdm-node1
+    hostname: qsdm-node1
+    ports:
+      - "4001:4001"  # libp2p network
+      - "8081:8081"  # Dashboard
+      - "8080:8080"  # API
+      - "9000:9000"  # Log viewer
+    volumes:
+      - node1-data:/app/data
+      - node1-logs:/app/logs
+      - ../config:/app/config:ro
+    environment:
+      - NODE_ID=node1
+      - NETWORK_PORT=4001
+      - API_PORT=8080
+      - DASHBOARD_PORT=8081
+      - LOG_VIEWER_PORT=9000
+      - STORAGE_TYPE=sqlite
+      - SQLITE_PATH=/app/data/qsdmplus.db
+      - LOG_FILE=/app/logs/qsdmplus.log
+      - LOG_LEVEL=INFO
+      - BOOTSTRAP_PEERS=
+      - ENABLE_TLS=false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/v1/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - qsdm-network
+
+  # Node 2 - Regular node
+  qsdm-node2:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: qsdm-node2
+    hostname: qsdm-node2
+    ports:
+      - "4002:4001"  # libp2p network
+      - "8082:8081"  # Dashboard
+      - "8083:8080"  # API
+      - "9001:9000"  # Log viewer
+    volumes:
+      - node2-data:/app/data
+      - node2-logs:/app/logs
+      - ../config:/app/config:ro
+    environment:
+      - NODE_ID=node2
+      - NETWORK_PORT=4001
+      - API_PORT=8080
+      - DASHBOARD_PORT=8081
+      - LOG_VIEWER_PORT=9000
+      - STORAGE_TYPE=sqlite
+      - SQLITE_PATH=/app/data/qsdmplus.db
+      - LOG_FILE=/app/logs/qsdmplus.log
+      - LOG_LEVEL=INFO
+      - BOOTSTRAP_PEERS=qsdm-node1:4001
+      - ENABLE_TLS=false
+    restart: unless-stopped
+    depends_on:
+      - qsdm-node1
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/v1/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - qsdm-network
+
+  # Node 3 - Regular node
+  qsdm-node3:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: qsdm-node3
+    hostname: qsdm-node3
+    ports:
+      - "4003:4001"  # libp2p network
+      - "8084:8081"  # Dashboard
+      - "8085:8080"  # API
+      - "9002:9000"  # Log viewer
+    volumes:
+      - node3-data:/app/data
+      - node3-logs:/app/logs
+      - ../config:/app/config:ro
+    environment:
+      - NODE_ID=node3
+      - NETWORK_PORT=4001
+      - API_PORT=8080
+      - DASHBOARD_PORT=8081
+      - LOG_VIEWER_PORT=9000
+      - STORAGE_TYPE=sqlite
+      - SQLITE_PATH=/app/data/qsdmplus.db
+      - LOG_FILE=/app/logs/qsdmplus.log
+      - LOG_LEVEL=INFO
+      - BOOTSTRAP_PEERS=qsdm-node1:4001,qsdm-node2:4001
+      - ENABLE_TLS=false
+    restart: unless-stopped
+    depends_on:
+      - qsdm-node1
+      - qsdm-node2
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/v1/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - qsdm-network
+
+volumes:
+  node1-data:
+    driver: local
+  node1-logs:
+    driver: local
+  node2-data:
+    driver: local
+  node2-logs:
+    driver: local
+  node3-data:
+    driver: local
+  node3-logs:
+    driver: local
+
+networks:
+  qsdm-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+

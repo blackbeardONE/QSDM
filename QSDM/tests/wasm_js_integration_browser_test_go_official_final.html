@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>QSDM WASM Browser Integration Test with Official Go Runtime - Final</title>
+<script src="./go.wasm.js"></script>
+</head>
+<body>
+<h1>QSDM WASM Browser Integration Test with Official Go Runtime - Final</h1>
+<div id="output"></div>
+<script>
+  async function runGoWasm(url) {
+    const output = document.getElementById('output');
+    if (typeof Go === 'undefined') {
+      output.innerHTML = '<p style="color:red;">Error: Go runtime not loaded. Please check the go.wasm.js script path.</p>';
+      return;
+    }
+    const go = new Go();
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error('Failed to fetch ' + url + ': ' + response.statusText);
+      }
+      const wasmBytes = await response.arrayBuffer();
+      // Create a shallow copy of importObject without wasi_snapshot_preview1
+      const importObject = Object.assign({}, go.importObject);
+      if (importObject.wasi_snapshot_preview1) {
+        delete importObject.wasi_snapshot_preview1;
+      }
+      const { instance } = await WebAssembly.instantiate(wasmBytes, importObject);
+      go.run(instance);
+      output.innerHTML += '<p>WASM module ' + url + ' loaded and started successfully.</p>';
+    } catch (err) {
+      output.innerHTML += '<p style="color:red;">Error running WASM module: ' + err.message + '</p>';
+      console.error(err);
+    }
+  }
+
+  (async () => {
+    await runGoWasm('../wasm_modules/wallet/wallet.wasm');
+    await runGoWasm('../wasm_modules/validator/validator.wasm');
+    const output = document.getElementById('output');
+    output.innerHTML += '<p>Go WASM browser integration tests completed.</p>';
+  })();
+</script>
+</body>
+</html>

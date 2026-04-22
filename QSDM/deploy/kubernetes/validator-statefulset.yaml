@@ -1,0 +1,139 @@
+# QSDM validator StatefulSet
+# ---------------------------
+# Deploys the validator-only QSDM image (built from QSDM/Dockerfile.validator
+# with -tags validator_only). Validators run the BFT + PoE consensus and MUST
+# be scheduled on CPU-only hardware.
+#
+# Important guarantees encoded in this manifest:
+#
+#   - `nodeSelector` pins validators to CPU-only nodes. The canonical label is
+#     `qsdm.tech/node-class=cpu`; cluster operators should apply this label to
+#     their validator node pool and MUST NOT apply it to any GPU node.
+#   - A negative-tolerations stance: we do NOT tolerate the GPU taint so the
+#     scheduler refuses to place a validator pod on a GPU node even if a
+#     cluster administrator mislabels one.
+#   - QSDM_NODE_ROLE / QSDM_MINING_ENABLED are hard-coded for defence-in-depth
+#     against accidental config-map overrides.
+#
+# See QSDM/docs/docs/NODE_ROLES.md for the operator runbook.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: qsdm-validator
+  namespace: qsdm
+  labels:
+    app: qsdm
+    component: validator
+    qsdm.tech/role: validator
+spec:
+  serviceName: qsdm-validator
+  replicas: 3
+  selector:
+    matchLabels:
+      app: qsdm
+      component: validator
+  template:
+    metadata:
+      labels:
+        app: qsdm
+        component: validator
+        qsdm.tech/role: validator
+    spec:
+      nodeSelector:
+        qsdm.tech/node-class: cpu
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: qsdm.tech/node-class
+                operator: In
+                values: ["cpu"]
+              # Explicit negative constraint: never schedule a validator on a
+              # node that advertises an NVIDIA GPU product label.
+              - key: nvidia.com/gpu.product
+                operator: DoesNotExist
+      containers:
+      - name: qsdm-validator
+        image: qsdm/validator:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: network
+          containerPort: 4001
+          protocol: TCP
+        - name: api
+          containerPort: 8080
+          protocol: TCP
+        - name: dashboard
+          containerPort: 8081
+          protocol: TCP
+        - name: logviewer
+          containerPort: 9000
+          protocol: TCP
+        env:
+        - name: QSDM_NODE_ROLE
+          value: "validator"
+        - name: QSDM_MINING_ENABLED
+          value: "false"
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        envFrom:
+        - configMapRef:
+            name: qsdm-config
+        - name: BOOTSTRAP_PEERS
+          value: "qsdm-validator-0.qsdm-validator.qsdm.svc.cluster.local:4001"
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+        - name: logs
+          mountPath: /app/logs
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health/live
+            port: api
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health/ready
+            port: api
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop: ["ALL"]
+      volumes:
+      - name: logs
+        emptyDir: {}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 20Gi

@@ -1,0 +1,91 @@
+name: CUDA Kernel Build
+
+on:
+  push:
+    paths:
+      - 'source/pkg/mesh3d/**'
+  pull_request:
+    paths:
+      - 'source/pkg/mesh3d/**'
+  workflow_dispatch:
+
+jobs:
+  build-cuda-kernels:
+    runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.6.0-devel-ubuntu22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile CUDA kernels
+        working-directory: source/pkg/mesh3d/kernels
+        run: |
+          nvcc --version
+          nvcc -shared -fPIC -o libmesh3d_kernels.so sha256_validate.cu
+          ls -la libmesh3d_kernels.so
+
+      - name: Upload kernel library
+        uses: actions/upload-artifact@v4
+        with:
+          name: mesh3d-cuda-kernels
+          path: source/pkg/mesh3d/kernels/libmesh3d_kernels.so
+
+  build-go-with-cuda:
+    needs: build-cuda-kernels
+    runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.6.0-devel-ubuntu22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Go
+        run: |
+          apt-get update && apt-get install -y wget
+          wget -q https://go.dev/dl/go1.23.4.linux-amd64.tar.gz
+          tar -C /usr/local -xzf go1.23.4.linux-amd64.tar.gz
+          echo "/usr/local/go/bin" >> $GITHUB_PATH
+
+      - name: Download kernel library
+        uses: actions/download-artifact@v4
+        with:
+          name: mesh3d-cuda-kernels
+          path: source/pkg/mesh3d/kernels/
+
+      - name: Install kernel library
+        run: |
+          cp source/pkg/mesh3d/kernels/libmesh3d_kernels.so /usr/local/lib/
+          ldconfig
+
+      - name: Build Go binary with CUDA
+        working-directory: source
+        run: |
+          export PATH="/usr/local/go/bin:$PATH"
+          CGO_ENABLED=1 go build -tags cuda ./cmd/qsdmplus/
+
+      - name: Run mesh3d tests
+        working-directory: source
+        run: |
+          export PATH="/usr/local/go/bin:$PATH"
+          export QSDMPLUS_METRICS_REGISTER_STRICT=1
+          CGO_ENABLED=1 go test -tags cuda ./pkg/mesh3d/... -v -count=1
+
+  test-without-cuda:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Run tests without CGO (stub path)
+        working-directory: source
+        run: |
+          export QSDMPLUS_METRICS_REGISTER_STRICT=1
+          CGO_ENABLED=0 go test ./pkg/mesh3d/... -v -count=1
+
+      - name: Run all package tests
+        working-directory: source
+        run: |
+          export QSDMPLUS_METRICS_REGISTER_STRICT=1
+          CGO_ENABLED=0 go test ./pkg/... -count=1 -timeout=120s

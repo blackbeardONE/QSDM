@@ -1,0 +1,263 @@
+name: QSDM Go
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: qsdm-go-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "QSDM/source/**"
+      - "QSDM/scripts/**"
+      - "QSDM/Dockerfile"
+      - "QSDM/config/**"
+      - "QSDM/deploy/**"
+      - ".github/**"
+  pull_request:
+    paths:
+      - "QSDM/source/**"
+      - "QSDM/scripts/**"
+      - "QSDM/Dockerfile"
+      - "QSDM/config/**"
+      - "QSDM/deploy/**"
+      - ".github/**"
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      # Scripts live in QSDM/scripts; run from repo root so paths stay stable.
+      - name: Build (no CGO)
+        run: bash QSDM/scripts/go-build-no-cgo.sh /tmp/qsdmplus
+
+      # Short tests cover API, monitoring (NVIDIA-lock/HMAC), dashboard, etc. (no GPU required).
+      - name: Test (short, no CGO)
+        run: bash QSDM/scripts/go-test-short-no-cgo.sh
+
+  # Rust wasm_module + wazero validate_raw preflight (no CGO).
+  wasm-preflight-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Build wasm_module
+        run: bash QSDM/scripts/build-wasm-module.sh
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - name: Go test (wasm preflight integration)
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+          QSDMPLUS_METRICS_REGISTER_STRICT: "1"
+          QSDMPLUS_WASM_PREFLIGHT_MODULE: ${{ github.workspace }}/QSDM/source/wasm_module/target/wasm32-unknown-unknown/release/wasm_module.wasm
+        run: |
+          unset CGO_CFLAGS CGO_LDFLAGS || true
+          go test ./pkg/wasm/... -count=1 -timeout 10m -run TestTryPreflightP2PTransactionJSON_rustWasmModule
+
+  wasm-preflight-smoke-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Build wasm_module
+        shell: bash
+        run: bash QSDM/scripts/build-wasm-module.sh
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - name: Go test (wasm preflight integration)
+        shell: bash
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+          QSDMPLUS_METRICS_REGISTER_STRICT: "1"
+          QSDMPLUS_WASM_PREFLIGHT_MODULE: ${{ github.workspace }}/QSDM/source/wasm_module/target/wasm32-unknown-unknown/release/wasm_module.wasm
+        run: |
+          unset CGO_CFLAGS CGO_LDFLAGS || true
+          go test ./pkg/wasm/... -count=1 -timeout 10m -run TestTryPreflightP2PTransactionJSON_rustWasmModule
+
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - name: Run govulncheck
+        working-directory: QSDM/source
+        env:
+          QSDMPLUS_METRICS_REGISTER_STRICT: "1"
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy (filesystem — Go dependencies)
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          scan-type: fs
+          scan-ref: QSDM/source
+          severity: CRITICAL
+          exit-code: "1"
+          vuln-type: os,library
+
+      - name: Trivy (filesystem — HIGH, non-blocking)
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          scan-type: fs
+          scan-ref: QSDM/source
+          severity: HIGH
+          exit-code: "0"
+          vuln-type: os,library
+
+      - name: Trivy (misconfig — Dockerfile)
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          scan-type: config
+          scan-ref: QSDM
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+          hide-progress: true
+
+  # PoE / Dilithium: build liboqs (cached) and run transaction package tests with real signatures.
+  test-cgo-transaction:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: QSDM
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git libssl-dev
+
+      - name: Cache liboqs install
+        id: liboqs-cache
+        uses: actions/cache@v4
+        with:
+          path: QSDM/liboqs_install
+          key: liboqs-install-${{ runner.os }}-${{ hashFiles('QSDM/scripts/rebuild_liboqs.sh') }}
+
+      - name: Build liboqs
+        if: steps.liboqs-cache.outputs.cache-hit != 'true'
+        run: chmod +x scripts/rebuild_liboqs.sh && ./scripts/rebuild_liboqs.sh
+
+      - name: Test CGO packages (liboqs)
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "1"
+          QSDMPLUS_METRICS_REGISTER_STRICT: "1"
+        run: |
+          LIBOQS="${GITHUB_WORKSPACE}/QSDM/liboqs_install"
+          if [ -d "$LIBOQS/lib64" ]; then L="$LIBOQS/lib64"; else L="$LIBOQS/lib"; fi
+          export CGO_CFLAGS="-I${LIBOQS}/include"
+          export CGO_LDFLAGS="-L${L} -loqs"
+          export LD_LIBRARY_PATH="${L}:${LD_LIBRARY_PATH:-}"
+          go test ./cmd/qsdmplus/transaction/... ./pkg/consensus/... ./pkg/crypto/... ./pkg/mesh3d/... ./cmd/migrate/... -count=1 -short -timeout 15m
+
+      - name: Test API mesh companion (CGO + wallet)
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "1"
+          QSDMPLUS_METRICS_REGISTER_STRICT: "1"
+          QSDMPLUS_PUBLISH_MESH_COMPANION: "1"
+        run: |
+          LIBOQS="${GITHUB_WORKSPACE}/QSDM/liboqs_install"
+          if [ -d "$LIBOQS/lib64" ]; then L="$LIBOQS/lib64"; else L="$LIBOQS/lib"; fi
+          export CGO_CFLAGS="-I${LIBOQS}/include"
+          export CGO_LDFLAGS="-L${L} -loqs"
+          export LD_LIBRARY_PATH="${L}:${LD_LIBRARY_PATH:-}"
+          go test ./pkg/api/... -count=1 -short -timeout 10m -run TestSendTransaction_meshCompanionSecondBroadcast
+
+  # Data race detector on hot pure-Go packages (slower than default job). Run via Actions → workflow_dispatch.
+  race-hot-packages:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - name: Install C toolchain (race detector needs CGO)
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+
+      - name: Race tests (short, CGO)
+        run: bash QSDM/scripts/race-hot-packages.sh
+
+  # Full image: liboqs + CGO qsdmplus (matches production Dockerfile). Local builds need a running Docker engine.
+  # Pushes to GHCR on default-branch push and on workflow_dispatch (not on pull_request).
+  docker-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Fixed image name (avoids invalid OCI chars in repo names, e.g. '+').
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/qsdmplus
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=long
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (and push when allowed)
+        uses: docker/build-push-action@v6
+        with:
+          context: QSDM
+          file: QSDM/Dockerfile
+          push: ${{ github.event_name != 'pull_request' && (github.event_name == 'workflow_dispatch' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

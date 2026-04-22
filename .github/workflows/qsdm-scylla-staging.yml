@@ -1,0 +1,71 @@
+# Single-node Scylla in Docker + scyllasmoke + integration test (build tag scylla).
+# Use when Docker is unavailable locally, or to validate storage after Scylla-related changes.
+
+name: QSDM Scylla staging verify
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qsdm-scylla-staging-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "QSDM/source/pkg/storage/scylla.go"
+      - "QSDM/source/pkg/storage/scylla_integration_test.go"
+      - "QSDM/source/pkg/storage/scylla_options_test.go"
+      - "QSDM/source/cmd/scyllasmoke/**"
+      - "QSDM/scripts/scylla-staging-verify.*"
+      - "QSDM/scripts/scylla-staging-verify-with-docker.*"
+      - ".github/workflows/qsdmplus-scylla-staging.yml"
+  pull_request:
+    paths:
+      - "QSDM/source/pkg/storage/scylla.go"
+      - "QSDM/source/pkg/storage/scylla_integration_test.go"
+      - "QSDM/source/pkg/storage/scylla_options_test.go"
+      - "QSDM/source/cmd/scyllasmoke/**"
+      - "QSDM/scripts/scylla-staging-verify.*"
+      - "QSDM/scripts/scylla-staging-verify-with-docker.*"
+      - ".github/workflows/qsdmplus-scylla-staging.yml"
+
+jobs:
+  scylla-staging-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - name: Start Scylla (single-node, low memory)
+        run: |
+          docker run -d --name qsdm-scylla-ci -p 9042:9042 scylladb/scylla:6.2 \
+            --smp 1 --memory 750M --overprovisioned 1 --developer-mode 1
+
+      - name: Wait for cluster + run staging verify
+        env:
+          SCYLLA_HOSTS: 127.0.0.1
+          SCYLLA_KEYSPACE: qsdm
+          SCYLLA_AUTO_CREATE_KEYSPACE: "1"
+          QSDMPLUS_METRICS_REGISTER_STRICT: "1"
+        run: |
+          set -e
+          ok=0
+          for i in $(seq 1 90); do
+            if bash QSDM/scripts/scylla-staging-verify.sh; then ok=1; break; fi
+            echo "staging verify attempt $i/90 failed, sleeping 5s..."
+            sleep 5
+          done
+          if [ "$ok" != 1 ]; then
+            echo "::error::Scylla staging verify did not succeed within retry budget"
+            exit 1
+          fi
+
+      - name: Stop Scylla
+        if: always()
+        run: docker rm -f qsdm-scylla-ci 2>/dev/null || true

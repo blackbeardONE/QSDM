@@ -1,0 +1,311 @@
+# Release workflow — publishes container images AND reproducible Go
+# binaries to a GitHub Release on every semver tag (e.g. `git tag v0.1.0
+# && git push origin v0.1.0`).
+#
+# Major Update Phase 2.3 split the node into validator and miner
+# profiles, and later phases added the external scraper (trustcheck)
+# and the genesis-ceremony dry-run tool. Every one of those needs a
+# predictable, signable release artefact — not only the legacy
+# qsdmplus node image.
+#
+# Artefact layout per tag:
+#
+#   Container images (pushed to GHCR):
+#     ghcr.io/<owner>/qsdmplus:<semver>      — legacy name, Dockerfile
+#     ghcr.io/<owner>/qsdm-validator:<semver> — CPU-only validator image
+#     ghcr.io/<owner>/qsdm-miner:<semver>     — GPU miner image
+#
+#   Binaries (attached to the GitHub Release as assets):
+#     qsdmminer-<os>-<arch>[.exe]            — CPU reference miner
+#     trustcheck-<os>-<arch>[.exe]           — black-box transparency scraper
+#     genesis-ceremony-<os>-<arch>[.exe]     — mainnet genesis dry-run tool
+#     SHA256SUMS                             — canonical hashes over all of the above
+#
+# Reproducibility: every binary is built with `-trimpath` (strip cwd
+# paths from debug info), CGO_ENABLED=0 (static), and `-ldflags="-s -w"`
+# (strip symbol + DWARF tables). Build is deterministic given the
+# same Go toolchain version pinned by QSDM/source/go.mod.
+name: Release container
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Allows tag owners to re-run the release manually without having
+  # to push a new tag if a transient infra failure drops one asset.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to re-release (e.g. v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write # needed to upload release assets
+  packages: write # needed to push to ghcr.io
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Go binaries — cross-compiled, -trimpath, stripped. Uploaded to the
+  # GitHub Release via gh release upload.
+  # ---------------------------------------------------------------------------
+  binaries:
+    name: binaries (${{ matrix.os }}/${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            ext: ""
+          - os: linux
+            arch: arm64
+            ext: ""
+          - os: darwin
+            arch: amd64
+            ext: ""
+          - os: darwin
+            arch: arm64
+            ext: ""
+          - os: windows
+            arch: amd64
+            ext: ".exe"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            # Strip refs/tags/ prefix.
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build reproducible binaries
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          # All three binaries compile under the full profile (no
+          # validator_only tag) because qsdmminer requires the mining
+          # implementation and the tooling binaries are profile-
+          # agnostic. trustcheck and genesis-ceremony are stdlib-only
+          # (plus golang.org/x/crypto for the latter) so they cross-
+          # compile cleanly to every matrix target.
+          mkdir -p /tmp/artefacts
+          suffix="${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
+
+          go build -trimpath -ldflags="-s -w" \
+            -o "/tmp/artefacts/qsdmminer-${suffix}" ./cmd/qsdmminer
+
+          go build -trimpath -ldflags="-s -w" \
+            -o "/tmp/artefacts/trustcheck-${suffix}" ./cmd/trustcheck
+
+          go build -trimpath -ldflags="-s -w" \
+            -o "/tmp/artefacts/genesis-ceremony-${suffix}" ./cmd/genesis-ceremony
+
+          ls -la /tmp/artefacts
+
+      - name: Compute SHA256SUMS for this matrix cell
+        run: |
+          cd /tmp/artefacts
+          sha256sum ./* > "SHA256SUMS-${{ matrix.os }}-${{ matrix.arch }}"
+          cat "SHA256SUMS-${{ matrix.os }}-${{ matrix.arch }}"
+
+      - name: Upload artefacts (for the aggregator job)
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            /tmp/artefacts/qsdmminer-*
+            /tmp/artefacts/trustcheck-*
+            /tmp/artefacts/genesis-ceremony-*
+            /tmp/artefacts/SHA256SUMS-*
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Aggregator: download every matrix cell, produce one canonical
+  # SHA256SUMS, attach everything to the GitHub Release.
+  # ---------------------------------------------------------------------------
+  release-assets:
+    name: attach binaries to release
+    needs: binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download all matrix artefacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          path: /tmp/assets
+          merge-multiple: true
+
+      - name: Consolidate SHA256SUMS
+        run: |
+          cd /tmp/assets
+          # Join per-cell hash files into one canonical list sorted
+          # lexically so operators can diff across releases cleanly.
+          cat SHA256SUMS-* | sort > SHA256SUMS
+          rm -f SHA256SUMS-*
+          echo "=== Final SHA256SUMS ==="
+          cat SHA256SUMS
+
+      - name: Attach assets to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          # Create the release if it doesn't already exist (re-run
+          # from workflow_dispatch is a no-op against an existing
+          # release; upload --clobber replaces assets in place).
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes "Automated release by .github/workflows/release-container.yml. See CHANGELOG.md." \
+              --verify-tag
+          fi
+          cd /tmp/assets
+          gh release upload "$TAG" \
+            --clobber \
+            qsdmminer-* \
+            trustcheck-* \
+            genesis-ceremony-* \
+            SHA256SUMS
+
+  # ---------------------------------------------------------------------------
+  # Container images.
+  # ---------------------------------------------------------------------------
+  ghcr-legacy:
+    name: ghcr qsdmplus (legacy image name)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta (qsdmplus legacy)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/qsdmplus
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - name: Build and push (legacy qsdmplus name)
+        uses: docker/build-push-action@v6
+        with:
+          context: QSDM
+          file: QSDM/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=qsdmplus
+          cache-to: type=gha,mode=max,scope=qsdmplus
+
+  ghcr-validator:
+    name: ghcr qsdm-validator (CPU-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta (qsdm-validator)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/qsdm-validator
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - name: Build and push validator image
+        uses: docker/build-push-action@v6
+        with:
+          context: QSDM
+          file: QSDM/Dockerfile.validator
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=qsdm-validator
+          cache-to: type=gha,mode=max,scope=qsdm-validator
+
+  ghcr-miner:
+    name: ghcr qsdm-miner (GPU miner runtime)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta (qsdm-miner)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/qsdm-miner
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - name: Build and push miner image
+        uses: docker/build-push-action@v6
+        with:
+          context: QSDM
+          file: QSDM/Dockerfile.miner
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=qsdm-miner
+          cache-to: type=gha,mode=max,scope=qsdm-miner

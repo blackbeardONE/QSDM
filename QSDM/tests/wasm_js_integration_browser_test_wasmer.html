@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>QSDM WASM Browser Integration Test with Wasmer</title>
+<script src="libs/wasmer/index.umd.min.js"></script>
+</head>
+<body>
+<h1>QSDM WASM Browser Integration Test with Wasmer</h1>
+<div id="output"></div>
+<script>
+  async function runTests() {
+    const output = document.getElementById('output');
+
+    async function runWasmerWasm(url) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error('Failed to fetch ' + url + ': ' + response.statusText);
+        }
+        const wasmBytes = await response.arrayBuffer();
+
+        const wasmFs = new window.WasmFs.WasmFs();
+
+        const wasi = new window.Wasmer.WASI({
+          args: [],
+          env: {},
+          bindings: {
+            ...window.Wasmer.WASI.defaultBindings,
+            fs: wasmFs.fs,
+          },
+        });
+
+        const { instance } = await WebAssembly.instantiate(wasmBytes, {
+          wasi_snapshot_preview1: wasi.wasiImport,
+        });
+
+        wasi.start(instance);
+
+        // Call an exported function if available, e.g. 'add'
+        if (instance.exports.add) {
+          const result = instance.exports.add(1, 2);
+          output.innerHTML += '<p>Called add(1, 2), result: ' + result + '</p>';
+        } else {
+          output.innerHTML += '<p>No callable exports found in ' + url + '</p>';
+        }
+
+        output.innerHTML += '<p>WASM module ' + url + ' loaded and started successfully.</p>';
+      } catch (err) {
+        output.innerHTML += '<p style="color:red;">WASM Browser integration test failed: ' + err.message + '</p>';
+        console.error(err);
+      }
+    }
+
+    await runWasmerWasm('../wasm_modules/wallet/wallet.wasm');
+    await runWasmerWasm('../wasm_modules/validator/validator.wasm');
+
+    output.innerHTML += '<p>WASM Browser integration tests with Wasmer completed.</p>';
+  }
+
+  runTests();
+</script>
+</body>
+</html>

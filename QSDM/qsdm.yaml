@@ -1,0 +1,40 @@
+# QSDM Configuration for Development (Game Integration)
+# This config disables TLS and uses HTTP on port 8080
+
+# Network Configuration
+network:
+  port: 4001
+  bootstrap_peers: []
+
+# Storage Configuration
+storage:
+  type: "file"  # Use file storage for non-CGO builds
+  sqlite_path: "qsdmplus.db"
+
+# Monitoring Configuration
+monitoring:
+  dashboard_port: 8081
+  log_viewer_port: 8082  # Changed from 8080 to avoid conflict with API
+  log_file: "qsdmplus.log"
+  log_level: "INFO"
+
+# API Server Configuration (HTTP for development)
+api:
+  port: 8080
+  enable_tls: false  # Disable TLS for development
+  tls_cert_file: ""
+  tls_key_file: ""
+
+# Wallet Configuration
+wallet:
+  initial_balance: 1000.0
+
+# Governance Configuration
+governance:
+  proposal_file: "proposals.json"
+
+# Performance Configuration
+performance:
+  transaction_interval: "30s"
+  health_check_interval: "30s"
+

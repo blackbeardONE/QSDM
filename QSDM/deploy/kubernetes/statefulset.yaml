@@ -1,0 +1,149 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: qsdm-node
+  namespace: qsdm
+  labels:
+    app: qsdm
+    component: node
+spec:
+  serviceName: qsdm-service
+  replicas: 3
+  selector:
+    matchLabels:
+      app: qsdm
+      component: node
+  template:
+    metadata:
+      labels:
+        app: qsdm
+        component: node
+    spec:
+      containers:
+      - name: qsdm
+        image: qsdm:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: network
+          containerPort: 4001
+          protocol: TCP
+        - name: api
+          containerPort: 8080
+          protocol: TCP
+        - name: dashboard
+          containerPort: 8081
+          protocol: TCP
+        - name: logviewer
+          containerPort: 9000
+          protocol: TCP
+        env:
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: NETWORK_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: qsdm-config
+              key: network_port
+        - name: API_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: qsdm-config
+              key: api_port
+        - name: DASHBOARD_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: qsdm-config
+              key: dashboard_port
+        - name: LOG_VIEWER_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: qsdm-config
+              key: log_viewer_port
+        - name: STORAGE_TYPE
+          valueFrom:
+            configMapKeyRef:
+              name: qsdm-config
+              key: storage_type
+        - name: SQLITE_PATH
+          valueFrom:
+            configMapKeyRef:
+              name: qsdm-config
+              key: sqlite_path
+        - name: LOG_FILE
+          valueFrom:
+            configMapKeyRef:
+              name: qsdm-config
+              key: log_file
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: qsdm-config
+              key: log_level
+        - name: ENABLE_TLS
+          valueFrom:
+            configMapKeyRef:
+              name: qsdm-config
+              key: enable_tls
+        - name: API_RATE_LIMIT_MAX
+          valueFrom:
+            configMapKeyRef:
+              name: qsdm-config
+              key: api_rate_limit_max
+        - name: API_RATE_LIMIT_WINDOW
+          valueFrom:
+            configMapKeyRef:
+              name: qsdm-config
+              key: api_rate_limit_window
+        # Headless service DNS for StatefulSet peers (override via patch if topology differs)
+        - name: BOOTSTRAP_PEERS
+          value: "qsdm-node-0.qsdm-service.qsdm.svc.cluster.local:4001"
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+        - name: logs
+          mountPath: /app/logs
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health/live
+            port: api
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health/ready
+            port: api
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: logs
+        emptyDir: {}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi
+

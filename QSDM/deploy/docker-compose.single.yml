@@ -1,0 +1,47 @@
+# Single QSDM+ node — typical small VPS (one host, no cluster).
+# From this directory: docker compose -f docker-compose.single.yml up -d --build
+#
+# Host ports: 4001 (libp2p), 8080 (API), 8081 (dashboard), 9000 (log viewer).
+# Add peers later: set BOOTSTRAP_PEERS to multiaddrs, e.g. /ip4/1.2.3.4/tcp/4001/p2p/<peerID>
+
+services:
+  qsdm:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: qsdm
+    hostname: qsdm
+    ports:
+      - "4001:4001"
+      - "8080:8080"
+      - "8081:8081"
+      - "9000:9000"
+    volumes:
+      - qsdm-data:/app/data
+      - qsdm-logs:/app/logs
+      - ../config:/app/config:ro
+    environment:
+      - NODE_ID=node1
+      - NETWORK_PORT=4001
+      - API_PORT=8080
+      - DASHBOARD_PORT=8081
+      - LOG_VIEWER_PORT=9000
+      - STORAGE_TYPE=sqlite
+      - SQLITE_PATH=/app/data/qsdmplus.db
+      - LOG_FILE=/app/logs/qsdmplus.log
+      - LOG_LEVEL=INFO
+      - BOOTSTRAP_PEERS=
+      - ENABLE_TLS=false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/v1/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+volumes:
+  qsdm-data:
+    driver: local
+  qsdm-logs:
+    driver: local

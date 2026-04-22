@@ -1,0 +1,50 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.a
+qsdm
+qsdm-node
+
+# Dependencies
+vendor/
+node_modules/
+
+# Database and logs
+*.db
+*.log
+qsdm.db
+qsdm.log
+transactions.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation (optional - remove if you want docs in image)
+*.md
+docs/
+
+# Test files
+*_test.go
+tests/
+
+# Build directories
+liboqs_build/
+target/
+build/
+
+# Temporary files
+*.tmp
+*.bak
+

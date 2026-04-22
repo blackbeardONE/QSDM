@@ -1,0 +1,229 @@
+# ============================================================
+# .gitignore for the QSDM workspace (public-repo-safe profile)
+#
+# This file is designed with publishing to a PUBLIC GitHub repo
+# in mind. The rule of thumb: if a file is internal development
+# breadcrumb, local operator tooling, or belongs to a different
+# project, it stays out of git — even though it still lives on
+# the operator's disk for their own use.
+#
+# Categories:
+#   1. Secrets & credentials — catastrophic if leaked
+#   2. Internal dev documents — fix memos, status notes, planning
+#   3. Local operator scripts (Windows PowerShell helpers)
+#   4. Projects unrelated to QSDM
+#   5. Build artifacts & runtime state
+#   6. Language / IDE / OS caches
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 1) Secrets & credentials
+# ------------------------------------------------------------
+# VPS IP + root password. Primary SSH is ed25519; this file is a
+# break-glass fallback for the DO web console.
+vps.txt
+
+# Legacy NVIDIA token file (pre-NGC-bundle era).
+Nvidia Token
+
+# NGC sidecar runtime envs (contain QSDMPLUS_NGC_INGEST_SECRET).
+**/ngc.env
+**/ngc.local.env
+
+# Generic .env files, except the committed *.env.example templates.
+*.env
+!*.env.example
+
+# TLS material used during early local testing. Production edge
+# certs live on the VPS, not here.
+QSDM/api_server.crt
+QSDM/api_server.key
+
+# Generic private-key / keystore extensions as a defensive net.
+*.pem
+*.p12
+*.pfx
+*.jks
+
+
+# ------------------------------------------------------------
+# 2) Internal development documents
+#
+# These are engineering breadcrumbs (what we did, what broke, what
+# we fixed) that are useful locally but pollute a public repo.
+# User-facing docs (README, CHANGELOG, LICENSE, MIGRATION_GUIDE,
+# QUICK_START, and everything under QSDM/docs/) are kept.
+# ------------------------------------------------------------
+# Fix memos of the form *_FIX.md — every entry in the tracked tree
+# so far is a one-off post-mortem, not a user-facing doc.
+*_FIX.md
+**/*_FIX.md
+
+# Status / planning / handover notes.
+NEXT_STEPS.md
+**/NEXT_STEPS.md
+BUILD_STATUS.md
+PROJECT_STATUS.md
+STATUS.md
+SUCCESS.md
+READY_TO_START.md
+RESTART_INSTRUCTIONS.md
+PROJECT_STRUCTURE.md
+
+# Local-only build guides. The canonical build docs live in
+# QSDM/README.md and QSDM/docs/.
+BUILD_WINDOWS.md
+QUICK_BUILD.md
+
+# Superseded architecture draft from the pre-Major-Update era where
+# NVIDIA-lock was (incorrectly) framed as a consensus rule. The
+# current, correct architecture lives in
+# QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md and the README.
+nvidia_locked_qsdmplus_blockchain_architecture.md
+
+# Token-system description that still uses stale "QSDM+" branding
+# and whose main example is the external Greed Island game (a
+# separate project — see §4 below).
+QSDM/TOKEN_SYSTEM.md
+
+# Internal-only archive directory — 40+ fix/crash/phase-complete
+# memos from the pre-Major-Update era. Kept locally as a project
+# history, excluded from the public repo as "development documents".
+QSDM/docs/docs/archive/
+
+# Other dev-breadcrumb docs that slipped into QSDM/docs/docs/ itself:
+# anything ending in *_COMPLETE.md / *_FIXES_SUMMARY.md, and the
+# PHASE{N}_IMPLEMENTATION.md notes. User-facing docs (USER_GUIDE,
+# QUICK_START, API_REFERENCE, MINING_PROTOCOL, NODE_ROLES,
+# VALIDATOR_QUICKSTART, MINER_QUICKSTART, ROADMAP, etc.) stay.
+**/*_COMPLETE.md
+**/SECURITY_FIXES_SUMMARY.md
+**/PHASE[0-9]*_IMPLEMENTATION.md
+
+
+# ------------------------------------------------------------
+# 3) Local operator scripts (per-workstation helpers)
+#
+# These are Windows PowerShell one-shots for spinning a local dev
+# instance up/down. They are not part of the project's deploy
+# pipeline (QSDM/deploy/ and QSDM/scripts/ are), and they hard-code
+# paths that only make sense on one machine.
+# ------------------------------------------------------------
+OneClick-PlayAndTrain.ps1
+start-qsdm-local.ps1
+stop-qsdm-local.ps1
+/QSDM/restart.ps1
+/QSDM/setup.ps1
+
+
+# ------------------------------------------------------------
+# 4) Projects unrelated to the QSDM ledger
+#
+# The QSDM node exposes HTTP APIs that external apps (games, wallets,
+# front-ends) can call from their own repos. Those integration
+# scaffolds belong in those repos, not here.
+# ------------------------------------------------------------
+apps/game-integration/
+
+
+# ------------------------------------------------------------
+# Agent-specific rules / tooling (not part of QSDM)
+# ------------------------------------------------------------
+# Cursor agent rule files live at .cursor/rules/*.mdc and configure
+# developer-side AI behaviour, not the ledger. Keep them local.
+.cursor/
+
+
+# ------------------------------------------------------------
+# Scratch files from interactive agent sessions
+# ------------------------------------------------------------
+_tmp_*.py
+**/_tmp_*.py
+
+
+# ------------------------------------------------------------
+# 5) Build artifacts
+# ------------------------------------------------------------
+# Go — Windows build output from local `go build`.
+*.exe
+*.exe~
+
+# Go — Linux/macOS binaries emitted into source dirs. Scoped by
+# path so we don't accidentally mask unrelated files of the same
+# name elsewhere in the tree.
+/QSDM/qsdmplus
+/QSDM/qsdmminer
+/QSDM/qsdmnode
+/QSDM/source/qsdmplus
+/QSDM/source/qsdmplus_local
+/QSDM/source/qsdmminer
+/QSDM/source/qsdmnode
+/QSDM/source/trustcheck
+
+# Go — test binaries / coverage dumps.
+*.test
+coverage.out
+*.cov
+*.coverprofile
+
+# Rust (wasm_module/) — everything under Cargo's target/ is
+# regeneratable and is where the local tree's large .pdb/.rlib
+# accumulate.
+**/target/
+
+
+# ------------------------------------------------------------
+# Runtime state
+# ------------------------------------------------------------
+*.log
+
+# SQLite databases + WAL/journal sidecars produced by local runs.
+# The timestamped *.sql dumps under QSDM/databases/ are runtime
+# artefacts as well (see QSDM/databases/README.txt for context).
+QSDM/databases/*.db
+QSDM/databases/*.db-journal
+QSDM/databases/*.db-wal
+QSDM/databases/*.db-shm
+QSDM/databases/*_[0-9]*.sql
+
+# Per-transaction storage blobs written by the local node.
+QSDM/storage/tx_*.dat
+
+
+# ------------------------------------------------------------
+# 6) Language / IDE / OS caches
+# ------------------------------------------------------------
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node / JS
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# ------------------------------------------------------------
+# Ad-hoc deploy tarballs
+# ------------------------------------------------------------
+# remote_apply_paramiko.py packs the tree into a one-shot snapshot
+# it uploads and deletes. Interrupted runs can leave one behind.
+/qsdm-snapshot-*.tar.gz

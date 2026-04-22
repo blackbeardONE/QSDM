@@ -1,0 +1,79 @@
+# QSDM Configuration File Example (YAML format, post-Major-Update 2026-04).
+# Copy this file to qsdmplus.yaml and customize as needed.
+# Environment variables override config file values.
+#
+# See QSDM/config/qsdmplus.toml.example for the authoritative section-
+# by-section commentary; this file mirrors its structure.
+
+# Node role (Major Update Phase 2.1). Two-tier validator / miner model.
+node:
+  role: "validator"        # "validator" (default) or "miner"; env QSDM_NODE_ROLE
+  mining_enabled: false    # must be true for miner, false for validator
+
+# Network Configuration
+network:
+  port: 4001
+  bootstrap_peers: []
+  # submesh_config: "config/micropayments.yml"  # optional; env QSDMPLUS_SUBMESH_CONFIG overrides
+    # - "127.0.0.1:4001"
+    # - "192.168.1.100:4001"
+
+# Storage Configuration
+storage:
+  type: "sqlite"  # Options: "sqlite" or "scylla"
+  sqlite_path: "qsdmplus.db"
+  scylla_hosts:
+    - "127.0.0.1"
+  scylla_keyspace: "qsdm"
+
+# Monitoring Configuration
+monitoring:
+  dashboard_port: 8081
+  log_viewer_port: 9000  # avoid clashing with api.port when using HTTP on 8080
+  log_file: "qsdmplus.log"
+  log_level: "INFO"  # Options: "DEBUG", "INFO", "WARN", "ERROR"
+  # metrics_scrape_secret: ""  # optional Prometheus scrape auth for /api/metrics/prometheus
+  # strict_dashboard_auth: false  # production: fail closed on JWT init failure (see qsdmplus.toml.example)
+
+# API Server Configuration
+api:
+  port: 8443
+  enable_tls: true
+  tls_cert_file: ""  # Path to TLS certificate file
+  tls_key_file: ""    # Path to TLS private key file
+  # NGC sidecar: QSDMPLUS_NGC_INGEST_SECRET (e.g. Charming123 for local dev) or QSDM_NGC_INGEST_SECRET
+  # NVIDIA-lock: require recent GPU-attested proof for mint/send/create-token
+  # nvidia_lock: false
+  # nvidia_lock_max_proof_age: "15m"
+  # nvidia_lock_expected_node_id: ""  # optional; match QSDMPLUS_NGC_PROOF_NODE_ID on sidecar
+  # nvidia_lock_proof_hmac_secret: "Charming123"  # optional example; match sidecar
+  # nvidia_lock_require_ingest_nonce: false
+  # nvidia_lock_gate_p2p: false  # optional: gate libp2p transaction storage (with nvidia_lock); env QSDMPLUS_NVIDIA_LOCK_GATE_P2P
+  # nvidia_lock_ingest_nonce_ttl: "10m"
+  # jwt_hmac_secret: "Charming123"  # optional example (env: QSDMPLUS_JWT_HMAC_SECRET)
+  # strict_secrets: false  # true: reject weak secrets at startup (env QSDMPLUS_STRICT_SECRETS overrides)
+  # rate_limit_max_requests: 100  # global API limit per client window (health exempt)
+  # rate_limit_window: "1m"
+  # GET /api/v1/monitoring/ngc-challenge: ~15 req/min per client when nonce mode is on
+
+# Wallet Configuration
+wallet:
+  initial_balance: 1000.0
+
+# Governance Configuration
+governance:
+  proposal_file: "proposals.json"
+
+# Performance Configuration
+performance:
+  transaction_interval: "30s"      # Duration between transaction checks
+  health_check_interval: "30s"    # Duration between health checks
+
+# Attestation transparency (Major Update §8.5). Transparency signal only;
+# NOT a consensus rule. See QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md.
+trust:
+  disabled: false            # true -> /api/v1/trust/attestations/* returns 404
+  fresh_within: "15m"        # attestations older than this are treated as stale
+  refresh_interval: "10s"    # background cache rebuild cadence
+  region_hint: ""            # "eu" | "us" | "apac" | "other" | ""
+

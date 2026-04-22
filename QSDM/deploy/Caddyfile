@@ -1,0 +1,121 @@
+# QSDM public edge — Caddy reverse proxy (historically shipped as QSDM+)
+# Let's Encrypt HTTP-01/TLS-ALPN-01 requires the A/AAAA records below to point at this VPS.
+#
+# Recommended DNS records (keep root qsdm.tech on GitHub Pages untouched):
+#   A   node.qsdm.tech      -> 206.189.132.232
+#   A   dashboard.qsdm.tech -> 206.189.132.232
+#   A   api.qsdm.tech       -> 206.189.132.232
+#
+# If you *do* flip the apex, add both:
+#   A   qsdm.tech     -> 206.189.132.232
+#   A   www.qsdm.tech -> 206.189.132.232
+# and remove the `# ` in front of the `qsdm.tech, www.qsdm.tech { ... }` block below.
+
+{
+	# ACME email for LE notifications
+	email admin@qsdm.tech
+	# No client/server telemetry to caddyserver.com
+	admin off
+}
+
+# API on :443 (reverse proxies to qsdmplus API backend on 127.0.0.1:8443).
+# NOTE: the QSDM binary listens :8080 as a log viewer (Basic Auth "admin/password")
+# and :8443 as the real JSON API (HTTP since enable_tls=false — TLS is terminated here at Caddy).
+api.qsdm.tech, node.qsdm.tech {
+	encode zstd gzip
+
+	@health path /api/v1/health /api/v1/health/live /api/v1/health/ready
+	handle @health {
+		reverse_proxy 127.0.0.1:8443
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8443 {
+			header_up X-Forwarded-Proto https
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/api.qsdm.tech.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+	}
+}
+
+# Dashboard on :443 (reverse proxies to qsdmplus on 127.0.0.1:8081)
+dashboard.qsdm.tech {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8081 {
+		header_up X-Forwarded-Proto https
+		header_up X-Real-IP {remote_host}
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+	log {
+		output file /var/log/caddy/dashboard.qsdm.tech.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+	}
+}
+
+# Apex: www -> apex (301), apex serves the QSDM landing + API.
+# DNS prerequisite: A qsdm.tech -> 206.189.132.232  (and A www -> 206.189.132.232).
+www.qsdm.tech {
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+	redir https://qsdm.tech{uri} permanent
+}
+
+qsdm.tech {
+	encode zstd gzip
+	root * /var/www/qsdm
+
+	# /app (+ trailing) goes to the operator dashboard
+	redir /app   https://dashboard.qsdm.tech/ 302
+	redir /app/* https://dashboard.qsdm.tech/ 302
+
+	# Public API pass-through (login/register/wallet/health) -> qsdmplus :8443
+	@api path /api/v1/* /api/metrics /api/metrics/prometheus
+	handle @api {
+		reverse_proxy 127.0.0.1:8443 {
+			header_up X-Forwarded-Proto https
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# Everything else: serve the corporate landing site from /var/www/qsdm
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://api.qsdm.tech https://dashboard.qsdm.tech; frame-ancestors 'none'; upgrade-insecure-requests"
+		X-Frame-Options DENY
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/qsdm.tech.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+	}
+}
