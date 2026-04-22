@@ -10,7 +10,7 @@ require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/gocql/gocql v1.7.0
 	github.com/joho/godotenv v1.5.1
-	github.com/klauspost/compress v1.18.0
+	github.com/klauspost/compress v1.18.5
 	github.com/libp2p/go-libp2p v0.48.0
 	github.com/libp2p/go-libp2p-pubsub v0.15.0
 	github.com/mattn/go-sqlite3 v1.14.28
