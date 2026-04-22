@@ -41,8 +41,9 @@ filippo.io/bigmod v0.1.1-0.20260103110540-f8a47775ebe5 h1:JA0fFr+kxpqTdxR9LOBiTW
 filippo.io/bigmod v0.1.1-0.20260103110540-f8a47775ebe5/go.mod h1:OjOXDNlClLblvXdwgFFOQFJEocLhhtai8vGLy0JCZlI=
 filippo.io/keygen v0.0.0-20260114151900-8e2790ea4c5b h1:REI1FbdW71yO56Are4XAxD+OS/e+BQsB3gE4mZRQEXY=
 filippo.io/keygen v0.0.0-20260114151900-8e2790ea4c5b/go.mod h1:9nnw1SlYHYuPSo/3wjQzNjSbeHlq2NsKo5iEtfJPWP0=
-github.com/BurntSushi/toml v0.3.1 h1:WXkYYl6Yr3qBf1K79EBnL4mak0OimBfB0XUf9Vl28OQ=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
+github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk=
+github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
 github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e/go.mod h1:3U/XgcO3hCbHZ8TKRvWD2dDTCfh9M9ya+I9JpbB7O8o=
