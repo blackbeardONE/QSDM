@@ -21,7 +21,7 @@ require (
 require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/libp2p/go-libp2p-kad-dht v0.39.0
+	github.com/libp2p/go-libp2p-kad-dht v0.39.1
 	github.com/multiformats/go-multiaddr v0.16.1
 	github.com/tetratelabs/wazero v1.11.0
 	golang.org/x/crypto v0.50.0
