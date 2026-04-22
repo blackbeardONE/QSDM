@@ -38,6 +38,12 @@ jobs:
         with:
           go-version-file: QSDM/source/go.mod
 
+      # Guardrail for the qsdmplus_* -> qsdm_* Prometheus metric prefix
+      # migration. Runs before build so it fails fast on regressions
+      # without burning compute on a build that we're about to reject.
+      - name: Check for new legacy qsdmplus_* metric names
+        run: bash QSDM/scripts/check-no-new-legacy-metrics.sh
+
       # Scripts live in QSDM/scripts; run from repo root so paths stay stable.
       - name: Build (no CGO)
         run: bash QSDM/scripts/go-build-no-cgo.sh /tmp/qsdmplus

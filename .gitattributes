@@ -1,0 +1,24 @@
+# Line-ending normalization.
+#
+# The repo is developed on a mix of Windows and Linux. core.autocrlf
+# is set to `false` for this clone, which means whatever bytes are in
+# a file at commit time are the bytes that end up in the git blob. For
+# most files that is fine (Go is line-ending-agnostic), but shell
+# scripts with a `\r` in the shebang line break on Linux:
+#
+#     /usr/bin/env: 'bash\r': No such file or directory
+#
+# ...which silently kills CI jobs. Forcing `*.sh` to LF at the blob
+# level fixes this regardless of the contributor's local autocrlf
+# setting, without forcing any change on working copies that are
+# already LF.
+#
+# `*.py` gets the same treatment because our deploy scripts run on
+# the VPS (Linux) and we ran into the same permission-denied class of
+# bugs when Windows-created `.py` files were rsynced over.
+
+*.sh      text eol=lf
+*.py      text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+Dockerfile text eol=lf

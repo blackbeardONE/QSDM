@@ -39,6 +39,38 @@ attempt to retroactively enumerate that history.
   have been provisioned in `/etc/systemd/system/qsdmplus.service.d/secrets.conf`
   since the 2026-04-22 secret-rotation pass.
 
+### CI
+
+- **Legacy-metric guard in GitHub Actions (2026-04-22).** During the
+  `qsdmplus_*` -> `qsdm_*` Prometheus metric-name prefix migration
+  (Major Update §6), the dual-emit machinery in
+  `pkg/monitoring/prometheus_prefix_migration.go` already publishes
+  every metric under both prefixes, so any new code should register
+  metrics under the canonical `qsdm_*` name only. Added
+  `QSDM/scripts/check-no-new-legacy-metrics.sh` which `rg`-greps the
+  Go tree for hand-written `"qsdmplus_<name>_(total|count|seconds|sum|
+  bucket|bytes|info|ratio|current|last|active|inflight)"` string
+  literals and fails if any appear outside a tight five-file allowlist
+  of files that are part of the dual-emit machinery or test it. The
+  regex is deliberately narrow so it does NOT flag non-metric branding
+  aliases like `qsdmplus_node_id` in `pkg/branding/branding.go`
+  (those are NGC proof JSON field names, not metrics). Wired into
+  `.github/workflows/qsdm-go.yml` `build-test` job as the very first
+  step so regressions fail fast without burning build compute. Has a
+  `git grep` fallback for runners without ripgrep.
+
+### Repository
+
+- **`.gitattributes` forcing LF for scripts + YAML (2026-04-22).** The
+  existing clone has `core.autocrlf=false`, so `.sh` / `.py` files
+  authored on Windows were being committed with CRLF line endings and
+  only working on CI by accident of how `bash script.sh` tolerates
+  trailing `\r`. Added a minimal `.gitattributes` that pins `*.sh`,
+  `*.py`, `*.yml`, `*.yaml`, and `Dockerfile` to LF at the blob level.
+  Does not rewrite existing working copies -- just protects every
+  future checkout and new file from the shebang-breakage class of
+  bug (e.g. `/usr/bin/env: 'bash\r': No such file or directory`).
+
 ### Changed — deploy scripts
 
 - **VPS host/user are now env-configurable (2026-04-22).** Every
