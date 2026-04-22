@@ -62,9 +62,26 @@ WORKDIR /app
 COPY source ./source
 RUN cd source && go mod download
 
+# Compile the CUDA kernel library that pkg/mesh3d/cuda.go links against.
+# Without this step `go build -tags cuda` dies with
+#   /usr/bin/ld: cannot find -lmesh3d_kernels
+# because the cgo LDFLAGS reference `-lmesh3d_kernels` but the shared
+# object is an artefact the repo deliberately does NOT check in (it is
+# produced by nvcc from kernels/sha256_validate.cu; see
+# QSDM/.github/workflows/cuda-build.yml and
+# pkg/mesh3d/kernels/BUILD.md). We are already on an NVIDIA devel
+# image, so nvcc is on PATH here; install the resulting .so to the
+# standard linker search path and run ldconfig so the subsequent
+# `go build -tags "miner cuda"` can resolve the symbol.
+RUN cd source/pkg/mesh3d/kernels && \
+    nvcc -shared -Xcompiler -fPIC \
+         -o libmesh3d_kernels.so sha256_validate.cu && \
+    cp libmesh3d_kernels.so /usr/local/lib/ && \
+    ldconfig
+
 RUN cd source && CGO_ENABLED=1 \
     CGO_CFLAGS="-I/usr/local/include -I/usr/local/cuda/include" \
-    CGO_LDFLAGS="-L/usr/local/lib -L/usr/local/cuda/lib64 -loqs -lssl -lcrypto" \
+    CGO_LDFLAGS="-L/usr/local/lib -L/usr/local/cuda/lib64 -loqs -lssl -lcrypto -lmesh3d_kernels -lcudart" \
     go build -tags "miner cuda" \
         -o ../qsdm-miner ./cmd/qsdmplus
 
@@ -80,6 +97,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/lib/liboqs.so* /usr/local/lib/
+# Ship the nvcc-built mesh3d kernel .so next to liboqs. The Go binary
+# links against it (`-lmesh3d_kernels` in pkg/mesh3d/cuda.go) and will
+# dlopen it at startup; libcudart.so itself is provided by the CUDA
+# runtime base image.
+COPY --from=builder /usr/local/lib/libmesh3d_kernels.so /usr/local/lib/
 COPY --from=builder /app/qsdm-miner /usr/local/bin/qsdm-miner
 RUN ldconfig
 
