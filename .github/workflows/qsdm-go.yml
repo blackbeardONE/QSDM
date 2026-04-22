@@ -144,18 +144,25 @@ jobs:
         working-directory: QSDM
         run: chmod +x scripts/rebuild_liboqs.sh && ./scripts/rebuild_liboqs.sh
 
-      - name: Run govulncheck
+      - name: Run govulncheck (with allowlist filter)
         working-directory: QSDM/source
         env:
           CGO_ENABLED: "1"
           QSDMPLUS_METRICS_REGISTER_STRICT: "1"
+        # Delegates to QSDM/scripts/govulncheck-filter.sh, which:
+        #   - runs `govulncheck -json ./...`
+        #   - fails ONLY when a finding is NOT on the explicit
+        #     unfixable-upstream allowlist (today: GO-2024-3218 in
+        #     go-libp2p-kad-dht, which has Fixed in: N/A)
+        #   - surfaces any NEW OSV id loudly so drift breaks CI
+        # See the script header for the exact allowlist and rationale.
         run: |
           LIBOQS="${GITHUB_WORKSPACE}/QSDM/liboqs_install"
           if [ -d "$LIBOQS/lib64" ]; then L="$LIBOQS/lib64"; else L="$LIBOQS/lib"; fi
           export CGO_CFLAGS="-I${LIBOQS}/include"
           export CGO_LDFLAGS="-L${L} -loqs"
           export LD_LIBRARY_PATH="${L}:${LD_LIBRARY_PATH:-}"
-          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+          bash "${GITHUB_WORKSPACE}/QSDM/scripts/govulncheck-filter.sh"
 
   trivy:
     runs-on: ubuntu-latest
