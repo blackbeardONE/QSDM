@@ -5,7 +5,10 @@ import socket
 import sys
 from paramiko import Transport
 
-HOST = "206.189.132.232"
+from _deploy_host import host as _host, user as _user
+
+HOST = _host()
+USER = _user()
 
 
 def main() -> int:
@@ -22,7 +25,7 @@ def main() -> int:
     sock.connect((HOST, 22))
     t = Transport(sock)
     t.start_client(timeout=30)
-    t.auth_password("root", pw)
+    t.auth_password(USER, pw)
     ch = t.open_session()
     ch.exec_command("bash -s")
     ch.sendall(script.encode())

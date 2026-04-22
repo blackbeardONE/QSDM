@@ -1,11 +1,20 @@
-"""Verify QSDM+ deployment on VPS. Usage: QSDM_VPS_PASS=... python remote_verify_paramiko.py"""
+"""Verify QSDM deployment on VPS.
+
+Usage:
+    QSDM_VPS_PASS=... python remote_verify_paramiko.py
+
+Optionally set QSDM_VPS_HOST to target a different node than the
+reference validator (defaults to 206.189.132.232 / api.qsdm.tech).
+"""
 import os
 import socket
 import sys
 import paramiko
 from paramiko import Transport
 
-HOST = "206.189.132.232"
+from _deploy_host import host as _host
+
+HOST = _host()
 
 CHECKS = r"""
 set +e

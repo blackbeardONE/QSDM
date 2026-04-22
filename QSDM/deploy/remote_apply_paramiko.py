@@ -54,8 +54,10 @@ from pathlib import Path
 import paramiko
 from paramiko import Transport
 
-HOST = "206.189.132.232"
-USER = "root"
+from _deploy_host import host as _host, user as _user
+
+HOST = _host()
+USER = _user()
 BASE = Path(__file__).resolve().parent.parent  # -> QSDM/
 
 EXCLUDE_DIR_NAMES = frozenset(

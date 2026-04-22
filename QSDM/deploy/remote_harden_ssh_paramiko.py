@@ -14,7 +14,9 @@ from pathlib import Path
 import paramiko
 from paramiko import Transport
 
-HOST = "206.189.132.232"
+from _deploy_host import host as _host
+
+HOST = _host()
 BASE = Path(__file__).resolve().parent.parent
 REMOTE_DIR = "/root/qsdm-deploy"
 

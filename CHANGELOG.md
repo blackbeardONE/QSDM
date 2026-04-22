@@ -39,6 +39,25 @@ attempt to retroactively enumerate that history.
   have been provisioned in `/etc/systemd/system/qsdmplus.service.d/secrets.conf`
   since the 2026-04-22 secret-rotation pass.
 
+### Changed — deploy scripts
+
+- **VPS host/user are now env-configurable (2026-04-22).** Every
+  script under `QSDM/deploy/*.py` used to hardcode the reference
+  validator's IP (`206.189.132.232`) and SSH user (`root`) at the top
+  of the file. That made the scripts unusable by anyone forking the
+  repo to run their own QSDM node, and it meant a future VPS
+  migration would be a cross-file sed pass every single time. Added
+  a tiny shared helper at `QSDM/deploy/_deploy_host.py` that reads
+  `QSDM_VPS_HOST` / `QSDM_VPS_USER` from the environment with a
+  sensible fallback to the historical reference-node values (the IP
+  is not a secret — it is the public A record for `api.qsdm.tech` in
+  DNS and is already documented in `QSDM/deploy/Caddyfile`). All
+  seven scripts (`remote_apply`, `remote_verify`, `remote_harden_ssh`,
+  `remote_install_caddy`, `remote_cmd`, `remote_fix_service`,
+  `remote_bootstrap`) now import from `_deploy_host`. Running them
+  against the reference node is unchanged; running them against a
+  different node is now a single `$env:QSDM_VPS_HOST = '...'` away.
+
 ### Changed — repository / licensing
 
 - **MIT license surfaced at the repo root (2026-04-22).** `QSDM/LICENSE`

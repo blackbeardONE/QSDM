@@ -5,8 +5,10 @@ from pathlib import Path
 
 import paramiko
 
-HOST = "206.189.132.232"
-USER = "root"
+from _deploy_host import host as _host, user as _user
+
+HOST = _host()
+USER = _user()
 SERVICE = Path(__file__).resolve().parent.parent / "config" / "qsdmplus.service"
 
 
