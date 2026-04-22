@@ -33,15 +33,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: azure/setup-kubectl@v4
-        with:
-          version: v1.31.0
-
-      - name: kubectl apply --dry-run=client
+      # kubeconform validates Kubernetes manifests against the upstream
+      # OpenAPI schemas fully offline, so we don't need a running
+      # apiserver. The previous `kubectl apply --dry-run=client` step
+      # broke on GitHub-hosted runners because kubectl's client-side
+      # validator tries to fetch /openapi/v2 from a local apiserver
+      # that doesn't exist, producing
+      #   "dial tcp [::1]:8080: connect: connection refused".
+      #
+      # kubeconform is tiny (~10 MB single static binary), has no
+      # dependencies, and catches strictly more regressions than
+      # `--validate=false` (which is the other escape hatch kubectl
+      # itself suggests in that error message).
+      - name: Install kubeconform
         run: |
           set -euo pipefail
-          K="kubectl apply --dry-run=client -f"
+          VERSION="v0.6.7"
+          curl -fsSL -o /tmp/kubeconform.tgz \
+            "https://github.com/yannh/kubeconform/releases/download/${VERSION}/kubeconform-linux-amd64.tar.gz"
+          tar -xzf /tmp/kubeconform.tgz -C /tmp kubeconform
+          sudo mv /tmp/kubeconform /usr/local/bin/kubeconform
+          kubeconform -v
+
+      - name: Validate manifests with kubeconform
+        run: |
+          set -euo pipefail
+          # -strict       : reject fields not in the schema
+          # -summary      : human-readable summary at the end
+          # -schema-location default : upstream Kubernetes schemas
+          # -kubernetes-version: pin to a currently-supported minor
           for f in namespace.yaml configmap.yaml secret.yaml pvc.yaml deployment.yaml service.yaml statefulset.yaml; do
             echo "==> $f"
-            $K "QSDM/deploy/kubernetes/$f"
+            kubeconform -strict -summary \
+              -kubernetes-version 1.31.0 \
+              -schema-location default \
+              "QSDM/deploy/kubernetes/$f"
           done
