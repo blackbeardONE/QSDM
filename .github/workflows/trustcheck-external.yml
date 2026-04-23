@@ -57,6 +57,10 @@ on:
         description: "Treat '404 endpoint disabled' as pass"
         required: false
         default: "false"
+      min_attested:
+        description: "Minimum summary.attested floor (0 = disabled). Default 2 matches our deployed redundancy (DO BLR1 + OCI SGP1); lower to 0 during single-sidecar maintenance."
+        required: false
+        default: "2"
   push:
     # Self-edits to this file or to the tool itself should trigger a run
     # so regressions caused by refactors of cmd/trustcheck surface on the
@@ -99,24 +103,41 @@ jobs:
           base='${{ inputs.base }}'
           allow_warmup='${{ inputs.allow_warmup }}'
           allow_disabled='${{ inputs.allow_disabled }}'
+          min_attested='${{ inputs.min_attested }}'
           [ -z "$base" ] && base="https://api.qsdm.tech"
           [ -z "$allow_warmup" ] && allow_warmup="false"
           [ -z "$allow_disabled" ] && allow_disabled="false"
+          # Default floor when the workflow is triggered outside
+          # workflow_dispatch (schedule, push, pull_request). 2 matches
+          # the deployed "primary validator + second independent sidecar"
+          # invariant we set up on 2026-04-23; if we ever intentionally
+          # drop to one source, bump this back to 0 in the same PR so
+          # the probe stops flagging the expected state.
+          [ -z "$min_attested" ] && min_attested="2"
           echo "base=$base"                     >> "$GITHUB_OUTPUT"
           echo "allow_warmup=$allow_warmup"     >> "$GITHUB_OUTPUT"
           echo "allow_disabled=$allow_disabled" >> "$GITHUB_OUTPUT"
+          echo "min_attested=$min_attested"     >> "$GITHUB_OUTPUT"
 
       - name: trustcheck (human-readable checklist)
         env:
           BASE: ${{ steps.inputs.outputs.base }}
           ALLOW_WARMUP: ${{ steps.inputs.outputs.allow_warmup }}
           ALLOW_DISABLED: ${{ steps.inputs.outputs.allow_disabled }}
+          MIN_ATTESTED: ${{ steps.inputs.outputs.min_attested }}
         run: |
           set -e
           args=( --base "$BASE" --timeout 15s )
           [ "$ALLOW_WARMUP" = "true" ]    && args+=( --allow-warmup )
           [ "$ALLOW_DISABLED" = "true" ]  && args+=( --allow-disabled )
-          echo "::notice title=trustcheck target::$BASE"
+          # Only forward --min-attested when the floor is a positive
+          # integer; "0" or "" leaves the binary in its default
+          # (floor-disabled) mode so the assertion row is absent
+          # from the output entirely rather than emitting a no-op PASS.
+          if [ -n "$MIN_ATTESTED" ] && [ "$MIN_ATTESTED" != "0" ]; then
+            args+=( --min-attested "$MIN_ATTESTED" )
+          fi
+          echo "::notice title=trustcheck target::$BASE (min_attested=${MIN_ATTESTED:-0})"
           # Human-readable run (renders nicely in the job log).
           "$GITHUB_WORKSPACE/trustcheck" "${args[@]}"
 
@@ -126,11 +147,15 @@ jobs:
           BASE: ${{ steps.inputs.outputs.base }}
           ALLOW_WARMUP: ${{ steps.inputs.outputs.allow_warmup }}
           ALLOW_DISABLED: ${{ steps.inputs.outputs.allow_disabled }}
+          MIN_ATTESTED: ${{ steps.inputs.outputs.min_attested }}
         run: |
           set +e
           args=( --base "$BASE" --timeout 15s --json )
           [ "$ALLOW_WARMUP" = "true" ]    && args+=( --allow-warmup )
           [ "$ALLOW_DISABLED" = "true" ]  && args+=( --allow-disabled )
+          if [ -n "$MIN_ATTESTED" ] && [ "$MIN_ATTESTED" != "0" ]; then
+            args+=( --min-attested "$MIN_ATTESTED" )
+          fi
           "$GITHUB_WORKSPACE/trustcheck" "${args[@]}" > trustcheck.json
           code=$?
           echo "trustcheck-exit-code=$code"

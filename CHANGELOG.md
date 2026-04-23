@@ -14,6 +14,55 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Prometheus gauges for the trust-transparency surface
+  (2026-04-23).** The §8.5.x trust numbers (`attested`,
+  `total_public`, `ratio`, `ngc_service_status`, `last_attested_at`,
+  `last_checked_at`, warm-up state) were previously only available
+  via `GET /api/v1/trust/attestations/summary`. Alertmanager and
+  Grafana cannot scrape a bespoke JSON endpoint without bespoke
+  exporters, so a silent drop from `attested=3` back down to
+  `attested=1` was undetectable short of a human checking the
+  widget. New `api.TrustMetricsCollector(*TrustAggregator)`
+  registers a nil-safe, O(1) collector on
+  `monitoring.GlobalScrapePrometheusExporter()` that surfaces:
+
+    - `qsdm_trust_attested`                (gauge)
+    - `qsdm_trust_total_public`            (gauge)
+    - `qsdm_trust_ratio`                   (gauge)
+    - `qsdm_trust_ngc_service_healthy`     (gauge, 0/1)
+    - `qsdm_trust_last_attested_seconds`   (gauge, unix seconds)
+    - `qsdm_trust_last_checked_seconds`    (gauge, unix seconds)
+    - `qsdm_trust_warm`                    (gauge, 0/1)
+
+  The collector reads the aggregator's already-cached summary on
+  every scrape, so there is no new locking, no new ticker, no new
+  wire traffic. It registers unconditionally when
+  `[trust] disabled=false` and emits nothing when the aggregator
+  is disabled (rather than zeroes that would falsely imply a
+  denominator). Grafana alerts gated on `qsdm_trust_warm == 1` stay
+  silent through a restart because the warm bit flips only after
+  the aggregator's first full `Refresh()`. Full gauge shape,
+  HELP text, and timestamp-parse behaviour are covered by
+  `pkg/api/trust_metrics_test.go`.
+
+- **`trustcheck --min-attested N` policy floor (2026-04-23).** The
+  external transparency probe previously only validated the §8.5.x
+  wire contracts (scope-note verbatim, enum membership,
+  ratio-sanity, etc.) — none of which trip when a deployment
+  silently loses attestation sources. Every value of `attested`
+  from 0 through the entire validator set is a legal wire contract,
+  by design. A new operator-policy flag `--min-attested N` lets a
+  deployment declare an intended redundancy floor; the probe fails
+  loudly when `summary.attested < N`. The assertion lives in a
+  standalone `validateMinAttested` helper so running trustcheck
+  without the flag (default `0`) behaves exactly as before. The
+  GitHub-Actions workflow `.github/workflows/trustcheck-external.yml`
+  defaults to `--min-attested 2` on scheduled / push / pull_request
+  runs (matching the deployed "primary validator + OCI sidecar"
+  invariant), and exposes a `min_attested` workflow-dispatch input
+  so ops can drop the floor to `0` during a single-sidecar
+  maintenance window.
+
 - **Trust aggregator now counts distinct CPU-fallback sidecars as
   separate attestation sources (2026-04-23).** Operators who run
   multiple CPU-fallback attestation sidecars — e.g. one on the main

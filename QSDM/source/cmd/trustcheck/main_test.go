@@ -75,6 +75,68 @@ func TestValidateSummary_RatioDrift(t *testing.T) {
 	}
 }
 
+func TestValidateMinAttested_DisabledByDefault(t *testing.T) {
+	// minAttested=0 must not append any row at all — callers that
+	// don't set --min-attested shouldn't see the new assertion in
+	// their output or artifact, preserving backward compatibility.
+	rs := &results{}
+	validateMinAttested(baseSummary(), 0, rs)
+	if len(rs.rows) != 0 {
+		t.Fatalf("expected no rows when minAttested<=0; got %d: %+v", len(rs.rows), rs.rows)
+	}
+}
+
+func TestValidateMinAttested_PassWhenAtOrAboveFloor(t *testing.T) {
+	s := baseSummary()
+	s.Attested = 2
+	rs := &results{}
+	validateMinAttested(s, 2, rs)
+	if !rs.allOK() || len(rs.rows) != 1 {
+		t.Fatalf("expected exactly one PASS row; got %+v", rs.rows)
+	}
+
+	// Strictly above the floor also passes.
+	rs2 := &results{}
+	s.Attested = 5
+	validateMinAttested(s, 2, rs2)
+	if !rs2.allOK() {
+		t.Fatalf("attested>floor should pass; got %+v", rs2.rows)
+	}
+}
+
+func TestValidateMinAttested_FailBelowFloor(t *testing.T) {
+	s := baseSummary()
+	s.Attested = 1
+	rs := &results{}
+	validateMinAttested(s, 2, rs)
+	if rs.allOK() {
+		t.Fatal("expected attested<floor to fail assertion")
+	}
+	// Failure message must cite both numbers so the CI log is
+	// self-describing without cross-referencing the summary.
+	row := rs.rows[0]
+	if row.ok || row.name != "summary/min-attested-floor" {
+		t.Fatalf("unexpected row shape: %+v", row)
+	}
+	for _, substr := range []string{"attested=1", "floor=2"} {
+		if !contains(row.msg, substr) {
+			t.Errorf("failure msg %q missing %q", row.msg, substr)
+		}
+	}
+}
+
+func TestValidateMinAttested_NilSummaryIsHardFail(t *testing.T) {
+	// Defensive: a nil summary should fail cleanly rather than panic.
+	// This can only happen if callers wire the function up incorrectly
+	// — main() never passes nil — but the guard keeps future callers
+	// (tests, library consumers) safe.
+	rs := &results{}
+	validateMinAttested(nil, 1, rs)
+	if rs.allOK() || len(rs.rows) != 1 {
+		t.Fatalf("expected single FAIL row for nil summary; got %+v", rs.rows)
+	}
+}
+
 func TestValidateRecent_Pass(t *testing.T) {
 	s := baseSummary()
 	now := time.Now().UTC()

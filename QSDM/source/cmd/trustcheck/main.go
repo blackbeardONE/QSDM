@@ -104,6 +104,13 @@ func main() {
 	allowWarmup := flag.Bool("allow-warmup", false, "Exit 0 instead of 3 when the aggregator is still warming up (503).")
 	allowDisabled := flag.Bool("allow-disabled", false, "Exit 0 instead of 3 when the operator has disabled trust endpoints (404).")
 	jsonOut := flag.Bool("json", false, "Emit machine-readable JSON instead of the human-friendly checklist.")
+	// minAttested is a deployment-policy knob separate from the §8.5.x
+	// wire contracts. The protocol does not mandate any particular
+	// floor — a single-node bring-up can legitimately report attested=1
+	// — but an operator who has deliberately stood up N attestation
+	// sources wants an alarm the moment that number drops. The default
+	// 0 disables the check so existing users see no behaviour change.
+	minAttested := flag.Int("min-attested", 0, "Minimum summary.attested count required to pass (0 = disabled).")
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
 		fmt.Fprintf(out, "trustcheck — black-box validator for QSDM trust transparency endpoints.\n\n")
@@ -137,6 +144,7 @@ func main() {
 	_ = summaryStatus
 
 	validateSummary(summary, rs)
+	validateMinAttested(summary, *minAttested, rs)
 
 	recent, recentStatus, rErr := fetchRecent(client, cleanBase, *limit)
 	switch {
@@ -295,6 +303,35 @@ func validateSummary(s *trustSummary, rs *results) {
 	} else {
 		rs.pass("summary/ratio-consistency")
 	}
+}
+
+// validateMinAttested is an *operator-policy* check, not a protocol
+// contract. It exists so a deployment that has deliberately stood up
+// multiple attestation sources (e.g. a primary validator, a CPU-
+// fallback sidecar on a second VPS, and a distinct cloud-region
+// sidecar) can be alarmed the moment the observed attested count
+// drops below the intended redundancy floor. A minAttested of 0
+// (the default) disables the check entirely; any positive value is
+// required as a >= lower bound.
+//
+// The check is intentionally kept outside validateSummary so the
+// protocol-level assertions remain pure wire-contract validators —
+// running trustcheck without --min-attested must behave exactly as
+// it did before this flag existed.
+func validateMinAttested(s *trustSummary, minAttested int, rs *results) {
+	if minAttested <= 0 {
+		return
+	}
+	name := "summary/min-attested-floor"
+	if s == nil {
+		rs.fail(name, "summary is nil; cannot evaluate floor")
+		return
+	}
+	if s.Attested < minAttested {
+		rs.fail(name, fmt.Sprintf("attested=%d < required floor=%d", s.Attested, minAttested))
+		return
+	}
+	rs.pass(name)
 }
 
 func validateRecent(r *trustRecent, s *trustSummary, rs *results) {

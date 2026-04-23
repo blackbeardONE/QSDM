@@ -1027,6 +1027,16 @@ func main() {
 		// window is separate and still governs the 200 / 503 split.
 		trustAgg.Refresh()
 		api.SetTrustAggregator(trustAgg, false)
+		// Expose the aggregator's cached numbers on /metrics so
+		// Alertmanager can page on attested-count drops without
+		// having to poll the JSON endpoint. Registered
+		// unconditionally whenever the trust surface is enabled —
+		// the collector is nil-safe and O(1), so there is no reason
+		// to gate it behind the dashboard UI.
+		monitoring.GlobalScrapePrometheusExporter().RegisterCollector(
+			"trust_aggregator",
+			api.TrustMetricsCollector(trustAgg),
+		)
 		logger.Info("Trust transparency endpoints wired",
 			"node_id", localNodeID,
 			"region_hint", cfg.TrustRegionHint,
