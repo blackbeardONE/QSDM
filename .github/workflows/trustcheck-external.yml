@@ -1,0 +1,151 @@
+# External transparency probe.
+#
+# Every 30 minutes (and on demand via workflow_dispatch), build cmd/trustcheck
+# from the current main and point it at the live reference validator
+# (https://api.qsdm.tech by default). The binary validates every §8.5.x
+# contract on /api/v1/trust/attestations/{summary,recent}:
+#
+#   * scope_note is verbatim
+#   * fresh_within parses as a time.Duration
+#   * ngc_service_status is in {healthy,degraded,outage}
+#   * last_checked_at is RFC3339 and within 1h of the runner's clock
+#   * ratio is consistent with attested/total_public (within 0.01)
+#   * recent.count matches the slice length and is <= summary.attested
+#   * every recent row redacts node_id_prefix with an ellipsis, uses a
+#     valid region enum, and ages monotonically
+#
+# The intent is that if we ever silently break the transparency surface
+# (schema drift, accidental cache, aggregator deadlock), this job turns
+# red within 30 minutes without anyone having to remember to look at the
+# dashboard. Failures also page via GitHub's built-in watch/notification
+# plumbing, which is cheaper than standing up our own external cron.
+#
+# This workflow only READS the public endpoints; it has no VPS credentials
+# and is safe to run from any fork targeting any QSDM-shaped validator via
+# the TRUSTCHECK_BASE input. The default target is the reference node we
+# operate.
+
+name: Trust transparency external probe
+
+permissions:
+  contents: read
+
+concurrency:
+  # Serialize runs per ref so an in-flight probe never races a scheduled
+  # one -- the last scheduled probe is the authoritative "is the surface
+  # healthy right now" signal.
+  group: trustcheck-external-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  # 30-minute cadence. Tight enough that a silent regression is seen within
+  # the next redeploy window; loose enough that we don't spam the node with
+  # ~50 probes/day just to catch the rare incident.
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "Base URL to probe (default: https://api.qsdm.tech)"
+        required: false
+        default: "https://api.qsdm.tech"
+      allow_warmup:
+        description: "Treat '503 warming up' as pass (for right after a redeploy)"
+        required: false
+        default: "false"
+      allow_disabled:
+        description: "Treat '404 endpoint disabled' as pass"
+        required: false
+        default: "false"
+  push:
+    # Self-edits to this file or to the tool itself should trigger a run
+    # so regressions caused by refactors of cmd/trustcheck surface on the
+    # PR that introduced them, not on the next cron tick.
+    paths:
+      - "QSDM/source/cmd/trustcheck/**"
+      - ".github/workflows/trustcheck-external.yml"
+  pull_request:
+    paths:
+      - "QSDM/source/cmd/trustcheck/**"
+      - ".github/workflows/trustcheck-external.yml"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      # trustcheck is deliberately stdlib-only (see the package doc) so
+      # CGO_ENABLED=0 keeps the build hermetic -- liboqs is not needed here.
+      - name: Build trustcheck
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go build -trimpath -ldflags="-s -w" -o "$GITHUB_WORKSPACE/trustcheck" ./cmd/trustcheck
+          ls -l "$GITHUB_WORKSPACE/trustcheck"
+
+      - name: Resolve inputs
+        id: inputs
+        run: |
+          # schedule + push + pull_request events carry no `inputs.*`, so
+          # fall back to the reference validator + strict defaults.
+          base='${{ inputs.base }}'
+          allow_warmup='${{ inputs.allow_warmup }}'
+          allow_disabled='${{ inputs.allow_disabled }}'
+          [ -z "$base" ] && base="https://api.qsdm.tech"
+          [ -z "$allow_warmup" ] && allow_warmup="false"
+          [ -z "$allow_disabled" ] && allow_disabled="false"
+          echo "base=$base"                     >> "$GITHUB_OUTPUT"
+          echo "allow_warmup=$allow_warmup"     >> "$GITHUB_OUTPUT"
+          echo "allow_disabled=$allow_disabled" >> "$GITHUB_OUTPUT"
+
+      - name: trustcheck (human-readable checklist)
+        env:
+          BASE: ${{ steps.inputs.outputs.base }}
+          ALLOW_WARMUP: ${{ steps.inputs.outputs.allow_warmup }}
+          ALLOW_DISABLED: ${{ steps.inputs.outputs.allow_disabled }}
+        run: |
+          set -e
+          args=( --base "$BASE" --timeout 15s )
+          [ "$ALLOW_WARMUP" = "true" ]    && args+=( --allow-warmup )
+          [ "$ALLOW_DISABLED" = "true" ]  && args+=( --allow-disabled )
+          echo "::notice title=trustcheck target::$BASE"
+          # Human-readable run (renders nicely in the job log).
+          "$GITHUB_WORKSPACE/trustcheck" "${args[@]}"
+
+      - name: trustcheck (machine-readable, for artifact)
+        if: always()
+        env:
+          BASE: ${{ steps.inputs.outputs.base }}
+          ALLOW_WARMUP: ${{ steps.inputs.outputs.allow_warmup }}
+          ALLOW_DISABLED: ${{ steps.inputs.outputs.allow_disabled }}
+        run: |
+          set +e
+          args=( --base "$BASE" --timeout 15s --json )
+          [ "$ALLOW_WARMUP" = "true" ]    && args+=( --allow-warmup )
+          [ "$ALLOW_DISABLED" = "true" ]  && args+=( --allow-disabled )
+          "$GITHUB_WORKSPACE/trustcheck" "${args[@]}" > trustcheck.json
+          code=$?
+          echo "trustcheck-exit-code=$code"
+          # Make the JSON visible in the log, truncated if huge.
+          head -c 8192 trustcheck.json
+          echo
+          # Bubble the exit code up so the step still fails on a contract
+          # violation even though we disabled errexit for the command.
+          exit $code
+
+      - name: Upload trustcheck JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustcheck-${{ github.run_id }}-${{ github.run_attempt }}
+          path: trustcheck.json
+          if-no-files-found: ignore
+          retention-days: 30

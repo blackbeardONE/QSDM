@@ -192,6 +192,16 @@ echo '===[ local HTTP probes ]==='
 #   :8081  -> dashboard
 #   :8443  -> JSON API (HTTP; Caddy terminates TLS on :443 and proxies here)
 # Health + trust endpoints are on :8443 and are public by design (§8.5).
+#
+# TrustAggregator warm-up: the /api/v1/trust/attestations/* routes answer
+# 503 {"error":"trust aggregator warming up"} until the first refresh tick
+# fires (~10s cadence, configurable in [trust] refresh_interval). The
+# earlier probe invocation landed inside that window and reported 503 in
+# the deploy log even though the redeploy was healthy. Wait out the tick
+# once here; real requests through Caddy get the right answer without a
+# synthetic sleep because the edge only sees traffic after DNS propagates
+# + user clicks.
+sleep 15
 for url in \
   http://127.0.0.1:8443/api/v1/health/live \
   http://127.0.0.1:8443/api/v1/health/ready \
