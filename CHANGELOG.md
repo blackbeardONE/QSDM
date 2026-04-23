@@ -12,6 +12,30 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Added
+
+- **`cmd/trustcheck` JSON output schema is now pinned by tests
+  (2026-04-24).** The `--json` flag and the `trustcheck.json`
+  artifact upload in `trustcheck-external.yml` have shipped for
+  several sessions, but the wire shape (top-level `summary`,
+  `recent`, `assertions`, `pass` keys; per-row `name`/`pass`/
+  optional `detail`; summary mirror of `attested`/`total_public`/
+  `ratio`/`fresh_within`/`last_attested_at`/`last_checked_at`/
+  `ngc_service_status`/`scope_note`) was not covered by tests, so a
+  rename of any JSON tag would have silently broken every Datadog /
+  Grafana / `jq` pipe consuming the artifact. Refactored
+  `emitJSON(...)` in `cmd/trustcheck/main.go` to delegate to a pure
+  `buildJSONReport(...)` helper, then added five schema tests in
+  `main_test.go` covering (a) the top-level required keys, (b)
+  per-row `name`/`pass` shape with `detail` omitted on pass rows,
+  (c) top-level `pass` mirroring `rs.allOK()`, (d) `summary` and
+  `recent` sub-objects being omitted when nil (the warming-up /
+  disabled informational paths), and (e) the summary wire-field
+  names matching the server-side `pkg/api.TrustSummary` JSON tags.
+  Any future rename now fails the test and forces the contract
+  change to be explicit in the diff. 23 tests pass
+  (18 existing + 5 new).
+
 ### Changed
 
 - **Landing-page roadmap widget synced with reality (2026-04-23).**

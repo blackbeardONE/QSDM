@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -280,4 +281,153 @@ func TestBuildUsageString(t *testing.T) {
 	if s == "" {
 		t.Fatal("usage composition produced empty string")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// JSON output schema — locks the wire contract for downstream consumers
+// (Datadog, Grafana, jq pipelines, the trustcheck-external GitHub Actions
+// artifact). A rename in any of these field names is a breaking change
+// and must move the test in the same commit.
+// ---------------------------------------------------------------------------
+
+func TestEmitJSON_Schema_TopLevelKeys(t *testing.T) {
+	// Round-trip through a bytes buffer so we assert on the *wire*
+	// JSON, not just the Go struct. Tools in the wild key off the
+	// JSON-tag casing (`summary`, not `Summary`), so we compare
+	// against the marshalled key set directly.
+	rs := &results{}
+	rs.pass("ok-row")
+	report := buildJSONReport(rs, baseSummary(), nil)
+	b, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatalf("re-unmarshal to map: %v", err)
+	}
+
+	for _, k := range []string{"summary", "assertions", "pass"} {
+		if _, ok := raw[k]; !ok {
+			t.Errorf("top-level JSON missing required key %q; got keys=%v", k, keysOf(raw))
+		}
+	}
+}
+
+func TestEmitJSON_Schema_AssertionRowShape(t *testing.T) {
+	rs := &results{}
+	rs.pass("a/pass")
+	rs.fail("b/fail", "because")
+
+	b, err := json.Marshal(buildJSONReport(rs, nil, nil))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var raw struct {
+		Assertions []map[string]any `json:"assertions"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(raw.Assertions) != 2 {
+		t.Fatalf("expected 2 assertions, got %d", len(raw.Assertions))
+	}
+	// Pass row: detail must be absent (omitempty).
+	if _, has := raw.Assertions[0]["detail"]; has {
+		t.Errorf("passing row should omit \"detail\"; got %+v", raw.Assertions[0])
+	}
+	if raw.Assertions[0]["name"] != "a/pass" || raw.Assertions[0]["pass"] != true {
+		t.Errorf("pass row shape wrong: %+v", raw.Assertions[0])
+	}
+	// Fail row: detail must be present with the original message.
+	if raw.Assertions[1]["detail"] != "because" {
+		t.Errorf("fail row should include \"detail\"; got %+v", raw.Assertions[1])
+	}
+	if raw.Assertions[1]["pass"] != false {
+		t.Errorf("fail row pass field should be false; got %+v", raw.Assertions[1])
+	}
+}
+
+func TestEmitJSON_Schema_PassReflectsAllOK(t *testing.T) {
+	// The top-level `pass` field is what CI gates and dashboards
+	// key off. Drift between per-row fail flags and the aggregate
+	// pass field would silently break those alarms.
+	okRs := &results{}
+	okRs.pass("only-pass")
+	if !buildJSONReport(okRs, nil, nil).Pass {
+		t.Error("all-pass results should set top-level Pass=true")
+	}
+
+	badRs := &results{}
+	badRs.pass("one-pass")
+	badRs.fail("one-fail", "detail")
+	if buildJSONReport(badRs, nil, nil).Pass {
+		t.Error("mixed pass/fail results should set top-level Pass=false")
+	}
+}
+
+func TestEmitJSON_Schema_NilSummaryAndRecentAreOmitted(t *testing.T) {
+	// Informational exit paths (warming-up, disabled) emit neither a
+	// summary nor a recent sub-object. omitempty must honor that so
+	// a downstream consumer can trivially detect the no-data case
+	// without a presence test on every nested field.
+	rs := &results{}
+	rs.pass("row")
+	b, err := json.Marshal(buildJSONReport(rs, nil, nil))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, has := raw["summary"]; has {
+		t.Errorf("nil summary must be omitted; got %+v", raw)
+	}
+	if _, has := raw["recent"]; has {
+		t.Errorf("nil recent must be omitted; got %+v", raw)
+	}
+}
+
+func TestEmitJSON_Schema_SummaryFieldNamesMatchWireContract(t *testing.T) {
+	// The summary sub-object is a mirror of pkg/api.TrustSummary's
+	// JSON shape. If we ever rename a server-side tag we need the
+	// scraper's local mirror (trustSummary in main.go) to move in
+	// lockstep. This test guards against silent drift: it names the
+	// fields a jq pipeline is known to read and fails the build if
+	// any of them disappears from the trustcheck --json artifact.
+	b, err := json.Marshal(buildJSONReport(&results{}, baseSummary(), nil))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var raw struct {
+		Summary map[string]any `json:"summary"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	expected := []string{
+		"attested",
+		"total_public",
+		"ratio",
+		"fresh_within",
+		"last_attested_at",
+		"last_checked_at",
+		"ngc_service_status",
+		"scope_note",
+	}
+	for _, k := range expected {
+		if _, has := raw.Summary[k]; !has {
+			t.Errorf("summary sub-object missing required wire field %q; got keys=%v", k, keysOf(raw.Summary))
+		}
+	}
+}
+
+func keysOf(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }

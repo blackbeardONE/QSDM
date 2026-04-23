@@ -444,23 +444,51 @@ func emit(rs *results, s *trustSummary, r *trustRecent, asJSON bool) {
 	fmt.Printf("  %d/%d assertions passed\n", total-fail, total)
 }
 
-func emitJSON(rs *results, s *trustSummary, r *trustRecent) {
-	type row struct {
-		Name   string `json:"name"`
-		Pass   bool   `json:"pass"`
-		Detail string `json:"detail,omitempty"`
-	}
-	out := struct {
-		Summary *trustSummary `json:"summary,omitempty"`
-		Recent  *trustRecent  `json:"recent,omitempty"`
-		Rows    []row         `json:"assertions"`
-		Pass    bool          `json:"pass"`
-	}{Summary: s, Recent: r}
+// jsonAssertionRow is one row of the machine-readable `--json` output.
+//
+// The field tags on this struct (and on jsonReport below) are the
+// *public contract* that Datadog / Grafana / jq pipelines pin to.
+// Renaming any tag is a breaking change for every downstream consumer
+// that has already wired a dashboard to trustcheck artifacts
+// (trustcheck-external.yml uploads one per run as `trustcheck.json`).
+// TestEmitJSON_* in main_test.go locks this schema in place — a
+// breaking rename must update the tests in the same commit so the
+// diff makes the contract change explicit.
+type jsonAssertionRow struct {
+	Name   string `json:"name"`
+	Pass   bool   `json:"pass"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// jsonReport is the top-level shape emitted on stdout under `--json`.
+// The `pass` field reflects rs.allOK() at report-build time and is
+// what a CI gate or dashboard should key on; per-row drill-down lives
+// under `assertions`.
+type jsonReport struct {
+	Summary *trustSummary      `json:"summary,omitempty"`
+	Recent  *trustRecent       `json:"recent,omitempty"`
+	Rows    []jsonAssertionRow `json:"assertions"`
+	Pass    bool               `json:"pass"`
+}
+
+// buildJSONReport is a pure function that produces the machine-
+// readable report without touching os.Stdout. Splitting the payload
+// construction from the IO lets TestEmitJSON_* assert on the report
+// shape directly (and round-trip through json.Marshal to verify the
+// wire bytes) without shelling out to a subprocess or redirecting
+// stdout. emitJSON below is a thin 3-liner that marshals this and
+// writes to stdout.
+func buildJSONReport(rs *results, s *trustSummary, r *trustRecent) jsonReport {
+	out := jsonReport{Summary: s, Recent: r}
 	for _, rr := range rs.rows {
-		out.Rows = append(out.Rows, row{Name: rr.name, Pass: rr.ok, Detail: rr.msg})
+		out.Rows = append(out.Rows, jsonAssertionRow{Name: rr.name, Pass: rr.ok, Detail: rr.msg})
 	}
 	out.Pass = rs.allOK()
-	_ = json.NewEncoder(os.Stdout).Encode(out)
+	return out
+}
+
+func emitJSON(rs *results, s *trustSummary, r *trustRecent) {
+	_ = json.NewEncoder(os.Stdout).Encode(buildJSONReport(rs, s, r))
 }
 
 func handleInformational(allow bool, code int, label string, asJSON bool, rs *results) {
