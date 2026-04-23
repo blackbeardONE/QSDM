@@ -1,5 +1,9 @@
 # QSDM NVIDIA NGC sidecar
 
+> **New operator?** Start with [`QUICKSTART.md`](./QUICKSTART.md) — it walks
+> a third-party operator from zero to a signed bundle hitting their
+> validator's `/api/v1/monitoring/ngc-proof` in ~10 minutes.
+
 This folder implements **Phase 1–3 prototype** workloads described in `../../nvidia_locked_qsdmplus_blockchain_architecture.md`: deterministic CUDA-adjacent PoW simulation, AI/tensor proofs (PyTorch), replay-style computation hash, optional UDP gossip, and optional push of proof bundles into the main **QSDM+** Go node.
 
 It aligns with **`../../QSDM/docs/docs/ROADMAP.md`** items: deployment automation, monitoring visibility, and enhanced GPU validation (via the sidecar until native CUDA kernels land in `pkg/mesh3d`).

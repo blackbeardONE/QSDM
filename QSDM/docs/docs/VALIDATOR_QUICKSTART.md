@@ -8,6 +8,13 @@ fees in Cell (`dust`-denominated).
 > **Scope.** This is the runbook for the **validator** role only. It will
 > not help you mine Cell. For mining, see `MINER_QUICKSTART.md` (Phase 4
 > deliverable) and `NODE_ROLES.md §4.2`.
+>
+> **Standing up a SECOND validator on an existing host?** Use the
+> self-contained
+> [`../../deploy/bring-up-validator.sh`](../../deploy/bring-up-validator.sh)
+> script instead — it scopes every port, user, systemd unit, and data dir
+> to a `--index N` so two validators never collide. This document assumes
+> you are installing the first validator on a fresh box.
 
 ---
 
