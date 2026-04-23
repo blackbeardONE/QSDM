@@ -64,8 +64,23 @@ func NewServer(cfg *config.Config, logger *logging.Logger, walletService *wallet
 		authManager.SetJWTHMACFallbackSecret(cfg.JWTHMACSecret)
 	}
 
-	// Initialize user store
-	userStore := NewUserStore()
+	// Initialize user store. When UserStorePath is configured (the
+	// normal case in production), load any accounts that were
+	// registered before the last restart. Without this, every redeploy
+	// silently wipes every dashboard login — see the 2026-04-23
+	// incident. Tests and embedded callers can leave UserStorePath
+	// empty to keep the old volatile behaviour.
+	var userStore *UserStore
+	if cfg.UserStorePath != "" {
+		userStore, err = LoadOrNewUserStore(cfg.UserStorePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load user store at %s: %w", cfg.UserStorePath, err)
+		}
+		logger.Info("User store persistence", "path", cfg.UserStorePath, "users_loaded", userStore.Count())
+	} else {
+		userStore = NewUserStore()
+		logger.Warn("User store persistence is DISABLED (UserStorePath empty); every restart will wipe dashboard accounts")
+	}
 
 	maxRL := cfg.APIRateLimitMaxRequests
 	winRL := cfg.APIRateLimitWindow

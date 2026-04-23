@@ -43,6 +43,14 @@ type Config struct {
 	// Storage
 	StorageType      string // "sqlite", "scylla", or "file" (for non-CGO builds)
 	SQLitePath       string
+	// UserStorePath: path to the JSON file that persists the dashboard
+	// user map (Argon2id password hashes). When empty the store is in-
+	// memory only, which matches legacy test behaviour but is unsafe in
+	// production: every service restart wipes every account (see the
+	// 2026-04-23 wipe incident). In production this defaults to
+	// <state_dir>/qsdmplus_users.json where state_dir = filepath.Dir(SQLitePath).
+	// Env override: QSDMPLUS_USER_STORE_PATH / QSDM_USER_STORE_PATH.
+	UserStorePath    string
 	ScyllaHosts      []string
 	ScyllaKeyspace   string
 	ScyllaUsername   string
@@ -511,6 +519,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if val := getEnvString("SQLITE_PATH", ""); val != "" {
 		cfg.SQLitePath = val
+	}
+	if val := strings.TrimSpace(envPreferred("QSDM_USER_STORE_PATH", "QSDMPLUS_USER_STORE_PATH")); val != "" {
+		cfg.UserStorePath = val
 	}
 	if val := getEnvString("SCYLLA_HOSTS", ""); val != "" {
 		cfg.ScyllaHosts = getEnvStringSlice("SCYLLA_HOSTS", cfg.ScyllaHosts)

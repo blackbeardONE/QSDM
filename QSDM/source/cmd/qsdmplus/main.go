@@ -610,6 +610,13 @@ func main() {
 	bridgeStatePath := filepath.Join(stateDir, "qsdmplus_bridge_state.json")
 	tokenRegistryPath := filepath.Join(stateDir, "qsdmplus_tokens.json")
 	stakingPath := filepath.Join(stateDir, "qsdmplus_staking.json")
+	// User store persistence: fall back to <stateDir>/qsdmplus_users.json
+	// when nothing was set explicitly (config file or env). This matches
+	// the sibling staking/bridge JSON files and keeps all ledger-local
+	// state under /opt/qsdmplus on the default systemd layout.
+	if strings.TrimSpace(cfg.UserStorePath) == "" {
+		cfg.UserStorePath = filepath.Join(stateDir, "qsdmplus_users.json")
+	}
 
 	tracePath := filepath.Join(stateDir, "contract_traces.ndjson")
 	contractEngine.Tracer().ConfigureRetention(tracePath, 7*24*time.Hour)

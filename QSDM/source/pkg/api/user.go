@@ -20,13 +20,21 @@ type User struct {
 	CreatedAt  time.Time
 }
 
-// UserStore manages user storage and authentication
+// UserStore manages user storage and authentication. When persistPath is
+// non-empty, every mutation is flushed to disk via saveLocked (defined in
+// user_persist.go). When empty, the store is in-memory only — this shape
+// stays reserved for tests that want fresh state per run.
 type UserStore struct {
-	users map[string]*User
-	mu    sync.RWMutex
+	users       map[string]*User
+	mu          sync.RWMutex
+	persistPath string
 }
 
-// NewUserStore creates a new user store
+// NewUserStore creates a new, in-memory user store. Production callers
+// should prefer LoadOrNewUserStore(path) so that registered users
+// survive a service restart; otherwise every redeploy wipes the auth
+// surface (see the 2026-04-23 account-wipe incident documented in
+// docs/docs/USER_STORE_PERSISTENCE.md).
 func NewUserStore() *UserStore {
 	return &UserStore{
 		users: make(map[string]*User),
@@ -80,28 +88,35 @@ func VerifyPassword(password, hash string) (bool, error) {
 	return subtle.ConstantTimeCompare(storedHash, computedHash) == 1, nil
 }
 
-// RegisterUser registers a new user
+// RegisterUser registers a new user. When persistence is configured
+// (persistPath != ""), the resulting account is flushed to disk via an
+// atomic temp-file-rename before the call returns. A disk failure rolls
+// the in-memory map back so callers never observe a "registered but not
+// persisted" half-state — that shape is the whole point of the
+// persistence fix.
 func (us *UserStore) RegisterUser(address, password, role string) error {
 	us.mu.Lock()
 	defer us.mu.Unlock()
 
-	// Check if user already exists
 	if _, exists := us.users[address]; exists {
 		return errors.New("user already exists")
 	}
 
-	// Hash password
 	passwordHash, err := HashPassword(password)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	// Create user
 	us.users[address] = &User{
-		Address:     address,
+		Address:      address,
 		PasswordHash: passwordHash,
-		Role:        role,
-		CreatedAt:   time.Now(),
+		Role:         role,
+		CreatedAt:    time.Now(),
+	}
+
+	if err := us.saveLocked(); err != nil {
+		delete(us.users, address)
+		return fmt.Errorf("user store persist: %w", err)
 	}
 
 	return nil
@@ -127,6 +142,14 @@ func (us *UserStore) AuthenticateUser(address, password string) (*User, error) {
 	}
 
 	return user, nil
+}
+
+// Count returns the number of users currently loaded into the store.
+// Useful for startup logs and admin diagnostics.
+func (us *UserStore) Count() int {
+	us.mu.RLock()
+	defer us.mu.RUnlock()
+	return len(us.users)
 }
 
 // GetUser retrieves a user by address
