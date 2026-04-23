@@ -12,6 +12,90 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Dashboard user accounts now survive a service restart
+  (2026-04-23).** `pkg/api.UserStore` used to be an in-memory
+  `map[string]*User` with no persistence layer, so every
+  `systemctl restart qsdmplus` (routine during redeploys) silently
+  wiped every registered dashboard login. `AuthenticateUser` returned
+  "user not found", which the handler then mapped to a generic
+  `401 invalid credentials` — so the symptom an operator saw was
+  "I swear I registered yesterday, why am I locked out?". Ledger
+  state (transactions, balances, staking, bridge) was already
+  persisted; only the dashboard-login credential map was affected.
+
+  Fix in `pkg/api/user_persist.go`: versioned JSON file
+  (`/opt/qsdmplus/qsdmplus_users.json`, mode `0600`), atomic
+  temp-file-rename on every mutation, loader fail-closed on unknown
+  version / malformed JSON (never silently reset). `RegisterUser`
+  rolls back the in-memory insert when the disk write fails, so
+  callers never observe a "registered but not persisted" half-state.
+
+  Configured via `Config.UserStorePath`
+  (TOML `[api] user_store_path`) with env overrides
+  `QSDM_USER_STORE_PATH` / legacy `QSDMPLUS_USER_STORE_PATH`. The
+  default in `cmd/qsdmplus/main.go` is
+  `<dirname(SQLitePath)>/qsdmplus_users.json`, matching the sibling
+  `qsdmplus_staking.json` / `qsdmplus_bridge_state.json` layout.
+
+  Tests in `pkg/api/user_persist_test.go` cover the round-trip
+  (register → reopen → auth), persist-failure rollback, unknown-
+  version fail-closed, and malformed-JSON fail-closed. Verified
+  end-to-end against the live VPS on 2026-04-23: registered,
+  `systemctl restart qsdmplus`, re-logged in successfully from
+  `https://dashboard.qsdm.tech/`.
+
+### Added
+
+- **Live trust pill on `qsdm.tech` navigation bar (2026-04-23).**
+  Compact `trust: 1/2 · healthy` chip next to `Open Dashboard`, poll
+  of `/api/v1/trust/attestations/summary` every 60 s, four visual
+  states (healthy / warming / degraded / offline). Shares the existing
+  trust-widget fetch loop — one HTTP call drives both the pill and
+  the pre-existing full-width widget. Hidden on viewports `<900px` so
+  it does not crowd mobile.
+- **Prometheus alert rules for attestation transparency
+  (2026-04-23).** New group `qsdm-trust-transparency` in
+  `deploy/prometheus/alerts_qsdmplus.example.yml` with two rules on
+  the canonical `qsdm_*` prefix:
+  `QSDMTrustNoAttestationsAccepted` (accepted-rate zero for 20 m) and
+  `QSDMTrustIngestRejectRateElevated` (rejects outpace accepts by
+  >1/s for 10 m). Safe to load on both dual-emit and legacy scrapers.
+- **Grafana panels 16 + 17 in `qsdmplus-overview.json`
+  (2026-04-23).** Stat "NGC attestations in last 15 min" with
+  red/yellow/green thresholds matched to the pill on qsdm.tech
+  (0 = red, ≥1 = orange, ≥3 = green) plus a bar chart
+  "NGC attestations per hour (rolling)" for Scheduled-Task cadence
+  verification. Idempotent patch — panel IDs 1–15 unchanged.
+- **Self-rotating transcript in `local-attest.ps1` (2026-04-23).**
+  New `-LogPath` / `-LogMaxBytes` (default 10 MiB) / `-LogKeep`
+  (default 3) parameters. Rotates ring-style (`.1`, `.2`, `.3`)
+  before opening the transcript and between loop iterations so the
+  10-min refresh cadence does not grow a hundreds-of-MB transcript
+  in a week on the refresh PC. Forwarded by
+  `attest-from-env-file.ps1` as a splat. Documented in
+  `apps/qsdmplus-nvidia-ngc/QUICKSTART.md` §8a.
+- **GitHub Wiki live (2026-04-23).** `QSDM/scripts/sync-wiki.sh`
+  now publishes eight pages to
+  <https://github.com/blackbeardONE/QSDM/wiki> with a shared sidebar
+  and footer: Home (Operator Guide), Node Roles,
+  Validator/Miner Quickstart, Mining Protocol, Cell Tokenomics,
+  NVIDIA Lock Scope, NGC Sidecar Quickstart. Pages auto-update from
+  the canonical markdown under `QSDM/docs/docs/` whenever the script
+  is re-run.
+- **VPS-side CPU-fallback NGC attestation sidecar (2026-04-23).**
+  New installer `QSDM/deploy/install_ngc_sidecar_vps.py` deploys
+  `validator_phase1.py` to `/opt/qsdmplus/ngc-sidecar/`, reuses the
+  existing `QSDMPLUS_NGC_INGEST_SECRET` from the qsdmplus service
+  environment, and installs a systemd oneshot + 10-minute timer
+  (`qsdm-ngc-attest.service` / `.timer`). The script runs without a
+  GPU — `gpu_fingerprint` falls back to `available: false` and the
+  fp16 matmul path degrades to `stub_no_cuda` cleanly. Result: the
+  `/api/v1/trust/attestations/summary` badge stays `healthy` even
+  when the operator's dev PC is offline. Re-running the installer
+  picks up a rotated secret automatically.
+
 ### Security
 
 - **Webviewer refuses to start on insecure default credentials
