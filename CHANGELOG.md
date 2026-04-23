@@ -14,6 +14,38 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`ATTESTATION_SIDECARS.md` operator guide (2026-04-23).** The
+  recipe for getting the trust pill to `N/N` by standing up N
+  attestation sources was previously spread across two CHANGELOG
+  entries, `install_ngc_sidecar_vps.py` docstrings, and session
+  notes. New `QSDM/docs/docs/ATTESTATION_SIDECARS.md` consolidates
+  it: the reference three-source deployment (Windows PC + BLR1 VPS
+  + OCI), the four required invariants (shared ingest URL, shared
+  `QSDMPLUS_NGC_INGEST_SECRET`, **distinct** `QSDMPLUS_NGC_PROOF_NODE_ID`,
+  cadence ≤ `fresh_within`/2), one-command install snippets per
+  platform, a five-step verification ladder
+  (`journalctl` → ingest counter → `qsdm_trust_*` gauges → public
+  summary JSON → external CI probe), and a troubleshooting table
+  keyed on the symptom operators actually see. Cross-linked from
+  the aggregator implementation, Prometheus gauges, alert rule
+  example, and the `trustcheck --min-attested` flag so someone
+  landing in any of those files can find the canonical setup.
+
+### Changed
+
+- **`build_kernels.ps1` defaults to a Turing→Hopper fatbin
+  (2026-04-23).** Previous default `-Arch 'sm_86'` only produced a
+  DLL that worked on Ampere; running the same DLL on an RTX 4090
+  (Ada, sm_89) or an H100 (Hopper, sm_90) silently fell back to a
+  JIT recompile or failed to launch. New default
+  `'sm_75,sm_86,sm_89,sm_90'` emits a fatbin covering Turing, Ampere,
+  Ada, and Hopper in one build — roughly +30 s compile vs. the
+  single-arch default, and no per-card rebuild for the four GPU
+  lineups we've exercised on. Iterating on a known host can still
+  narrow via `-Arch 'sm_86'` explicitly (documented under
+  `.PARAMETER Arch` and in the `MESH3D_GPU_BENCHMARK.md`
+  reproduction steps).
+
 - **Prometheus alert rules for the trust-redundancy surface
   (2026-04-23).** Now that `qsdm_trust_attested` /
   `qsdm_trust_total_public` / `qsdm_trust_last_attested_seconds` /

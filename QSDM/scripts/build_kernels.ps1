@@ -25,10 +25,20 @@
        same terminal Just Works.
 
 .PARAMETER Arch
-  GPU compute capability to target (default `sm_86` = RTX 3050/3080/3090
-  Ampere). Change to `sm_75` for Turing (T4, RTX 20xx), `sm_89` for Ada
-  Lovelace (RTX 40xx), `sm_90` for Hopper. Multi-arch fatbins are
-  supported by passing a comma list, e.g. `-Arch 'sm_75,sm_86,sm_89'`.
+  GPU compute capability to target. Default is a comma-separated
+  fatbin `'sm_75,sm_86,sm_89,sm_90'` covering every current-gen NVIDIA
+  card the QSDM miner has been exercised on:
+
+    sm_75  Turing   (T4, RTX 20xx, Quadro RTX)
+    sm_86  Ampere   (RTX 3050 / 3080 / 3090, A10, A40)
+    sm_89  Ada      (RTX 4060 / 4070 / 4080 / 4090, L4, L40)
+    sm_90  Hopper   (H100, H200)
+
+  Narrow this to a single SM when iterating on a kernel on a known
+  host — single-arch builds are ~2x faster through nvcc. E.g.
+  `-Arch 'sm_86'` on the RTX 3050 dev box cuts compile to ~15 s.
+  You can always widen later; the multi-arch default is only
+  ~30 s slower for the small mesh3d kernels.
 
 .PARAMETER SetEnv
   Also set CGO_CFLAGS / CGO_LDFLAGS / PATH in the current PowerShell
@@ -54,7 +64,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Arch       = 'sm_86',
+    [string]$Arch       = 'sm_75,sm_86,sm_89,sm_90',
     [switch]$SetEnv,
     [switch]$SkipIfExists
 )

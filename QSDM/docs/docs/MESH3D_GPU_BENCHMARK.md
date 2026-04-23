@@ -12,7 +12,9 @@ All results below come from `BenchmarkMesh3DGPUVsCPU_*` in
 ```powershell
 # 1. CUDA toolkit (12.x) must already be installed (we probe CUDA_PATH).
 .\QSDM\scripts\build_liboqs_win.ps1 -SetEnv      # first time only (~2 min)
-.\QSDM\scripts\build_kernels.ps1 -SetEnv         # ~30 s, per cu-source edit
+.\QSDM\scripts\build_kernels.ps1 -SetEnv         # ~60 s, Turing→Hopper fatbin
+#   To iterate faster on a known host, narrow the arch:
+#     .\QSDM\scripts\build_kernels.ps1 -Arch 'sm_86' -SetEnv   # RTX 3050 box
 
 # 2. Compile the test binary — go test itself can't find the DLLs from
 #    its %TEMP% work dir, so we build and run explicitly.
