@@ -32,6 +32,7 @@ relevant quantum adversaries tomorrow.
 ## Start here
 
 - **Operator wiki (end-to-end, pick role → hardware → bootstrap → attestation):** [`QSDM/docs/docs/OPERATOR_GUIDE.md`](QSDM/docs/docs/OPERATOR_GUIDE.md) ⭐ start here if you are new
+- **Live bootstrap peers for Phase 4 testnet:** [`qsdm.tech/validators.html`](https://qsdm.tech/validators.html)
 - **Run a validator (CPU-only):** [`QSDM/docs/docs/VALIDATOR_QUICKSTART.md`](QSDM/docs/docs/VALIDATOR_QUICKSTART.md)
 - **Run a miner (GPU-bound PoW):** [`QSDM/docs/docs/MINER_QUICKSTART.md`](QSDM/docs/docs/MINER_QUICKSTART.md)
 - **Run the NGC attestation sidecar (free NVIDIA NGC tier):** [`apps/qsdmplus-nvidia-ngc/QUICKSTART.md`](apps/qsdmplus-nvidia-ngc/QUICKSTART.md)
