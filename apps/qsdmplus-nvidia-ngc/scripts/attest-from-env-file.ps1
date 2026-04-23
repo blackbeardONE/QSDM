@@ -15,7 +15,13 @@ param(
     [string]$EnvFile,
 
     [string]$NodeId,
-    [switch]$Quiet
+    [switch]$Quiet,
+    # Optional: forwarded to local-attest.ps1. When set, the run is
+    # transcripted to this file with built-in rotation (see
+    # local-attest.ps1 -LogPath / -LogMaxBytes / -LogKeep).
+    [string]$LogPath,
+    [int]$LogMaxBytes = 10485760,
+    [int]$LogKeep = 3
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,8 +55,11 @@ if (-not (Test-Path $wrapper)) {
 # contexts during local testing and caused -Quiet to bind positionally
 # to -Url in the downstream wrapper).
 $splat = @{}
-if ($NodeId) { $splat.NodeId = $NodeId }
-if ($Quiet)  { $splat.Quiet  = $true }
+if ($NodeId)   { $splat.NodeId      = $NodeId }
+if ($Quiet)    { $splat.Quiet       = $true }
+if ($LogPath)  { $splat.LogPath     = $LogPath;
+                 $splat.LogMaxBytes = $LogMaxBytes;
+                 $splat.LogKeep     = $LogKeep }
 
 & $wrapper @splat
 exit $LASTEXITCODE

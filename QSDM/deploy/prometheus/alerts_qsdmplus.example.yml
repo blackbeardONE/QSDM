@@ -77,3 +77,65 @@ groups:
         annotations:
           summary: "Transactions processed but none stored"
           description: "Possible validation/storage issue; verify logs and NVIDIA-lock policy."
+
+  # -----------------------------------------------------------------
+  # Trust / attestation transparency (Major Update §8.5)
+  # -----------------------------------------------------------------
+  # These alerts consume the canonical qsdm_* series. They are safe to
+  # load on legacy-only or dual-emit scrapers because dual-emit
+  # (pkg/monitoring/prometheus_prefix_migration.go) publishes both
+  # prefixes by default. If your fleet has already flipped to qsdm_*
+  # only, nothing changes; if it is still on qsdmplus_* only, swap the
+  # prefix in expr: once.
+  #
+  # The /api/v1/trust/attestations/summary HTTP endpoint is NOT itself
+  # a Prometheus metric, so we alert on the underlying counter
+  # (qsdm_ngc_proof_ingest_accepted_total) instead: if no accepted
+  # proof bundle arrived for 20 min, the summary's "attested" ratio
+  # will have fallen to 0 regardless of how many validators are live,
+  # which is the operator-visible symptom.
+  - name: qsdm-trust-transparency
+    rules:
+      - alert: QSDMTrustNoAttestationsAccepted
+        # Rate == 0 across a 20-minute window = no sidecar (or any
+        # peer) is successfully attesting. Because the freshness window
+        # on /trust/attestations/summary is 15 m by default, 20 m
+        # guarantees the transparency badge has already flipped to
+        # degraded before this alert fires.
+        expr: sum(rate(qsdm_ngc_proof_ingest_accepted_total[20m])) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No accepted NGC proof bundles for 20 minutes"
+          description: |
+            /api/v1/trust/attestations/summary will report attested=0 until a
+            miner or sidecar posts a fresh bundle. Common causes:
+              - The refresh loop (Windows Scheduled Task "QSDM-NGC-Attest",
+                apps/qsdmplus-nvidia-ngc/scripts/attest-from-env-file.ps1)
+                stopped because the host is off / the secret rotated.
+              - Sidecar containers (docker compose --profile gpu) crashed;
+                check qsdm_ngc_proof_ingest_rejected_total by reason.
+              - The node has QSDMPLUS_NGC_INGEST_SECRET unset, which
+                disables the ingest route; the counter then stays pinned
+                at zero by design.
+
+      - alert: QSDMTrustIngestRejectRateElevated
+        # Accepted vs rejected ratio: if rejects outpace accepts over 10 m,
+        # something is misaligned (secret rotated on one side, clock skew,
+        # replay-nonce expired). Use >1.0 so a single rejected probe does
+        # not fire the page.
+        expr: |
+          sum(rate(qsdm_ngc_proof_ingest_rejected_total[10m]))
+          >
+          1 + sum(rate(qsdm_ngc_proof_ingest_accepted_total[10m]))
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "NGC ingest rejections outpacing acceptances"
+          description: |
+            Break out qsdm_ngc_proof_ingest_rejected_total by reason.
+            "hmac_mismatch" / "invalid_nonce" usually means a secret
+            drifted between node and sidecar; "unauthorized" is a third
+            party probing the endpoint.

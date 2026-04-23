@@ -290,9 +290,10 @@ NVIDIA GPU already visible to PyTorch.
      -EnvFile .\apps\qsdmplus-nvidia-ngc\ngc.local.env
    ```
 
-3. Register the scheduled task (user-level, no admin required). The
-   snippet below captures a transcript to
-   `%LOCALAPPDATA%\QSDM\ngc-attest.log`:
+3. Register the scheduled task (user-level, no admin required).
+   `local-attest.ps1` now handles its own transcript + rotation
+   (10 MiB cap, 3 archives) when you pass `-LogPath`, so the command
+   line stays short and the log file never grows unbounded:
 
    ```powershell
    $repo = (Resolve-Path .).Path
@@ -301,9 +302,11 @@ NVIDIA GPU already visible to PyTorch.
    $log     = "$env:LOCALAPPDATA\QSDM\ngc-attest.log"
    New-Item -ItemType Directory -Force -Path (Split-Path $log) | Out-Null
 
-   $cmd = "try { Start-Transcript -Path '$log' -Append -Force | Out-Null } catch {}; & '$script' -EnvFile '$envfile' -Quiet; try { Stop-Transcript | Out-Null } catch {}"
+   $argline = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden " +
+              "-File `"$script`" -EnvFile `"$envfile`" -Quiet " +
+              "-LogPath `"$log`" -LogMaxBytes 10485760 -LogKeep 3"
    $action    = New-ScheduledTaskAction -Execute "powershell.exe" `
-                  -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$cmd`""
+                  -Argument $argline
    $trigger   = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
                   -RepetitionInterval (New-TimeSpan -Minutes 10) `
                   -RepetitionDuration (New-TimeSpan -Days 365)

@@ -24,10 +24,56 @@ param(
     [string]$Secret,
     [string]$NodeId,
     [int]$LoopMinutes = 0,
-    [switch]$Quiet
+    [switch]$Quiet,
+    # When -LogPath is set, the whole run (incl. python stdout/stderr)
+    # is captured with Start-Transcript into that file. The file is
+    # rotated before opening if it is already >= $LogMaxBytes (default
+    # 10 MiB), keeping up to $LogKeep archives as .1, .2, ... This is
+    # what Scheduled Task invocations should use — without rotation,
+    # a long-running refresh loop (every 10 min => ~144 runs/day) grew
+    # the log into the hundreds of MB over a week.
+    [string]$LogPath,
+    [int]$LogMaxBytes = 10485760,
+    [int]$LogKeep = 3
 )
 
 $ErrorActionPreference = "Stop"
+
+function Rotate-LogIfNeeded {
+    param([string]$Path, [int]$MaxBytes, [int]$Keep)
+    if (-not $Path) { return }
+    if (-not (Test-Path $Path)) { return }
+    $size = (Get-Item $Path).Length
+    if ($size -lt $MaxBytes) { return }
+    # Shift ring: .(Keep-1) -> drop, older -> .+1, current -> .1
+    for ($i = $Keep - 1; $i -ge 1; $i--) {
+        $src = "$Path.$i"
+        $dst = "$Path.$($i + 1)"
+        if (Test-Path $src) {
+            if ($i + 1 -gt $Keep) {
+                Remove-Item -LiteralPath $src -Force -ErrorAction SilentlyContinue
+            } else {
+                Move-Item -LiteralPath $src -Destination $dst -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    Move-Item -LiteralPath $Path -Destination "$Path.1" -Force -ErrorAction SilentlyContinue
+}
+
+$transcriptStarted = $false
+if ($LogPath) {
+    $logDir = Split-Path -Path $LogPath -Parent
+    if ($logDir -and -not (Test-Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    }
+    Rotate-LogIfNeeded -Path $LogPath -MaxBytes $LogMaxBytes -Keep $LogKeep
+    try {
+        Start-Transcript -Path $LogPath -Append -IncludeInvocationHeader | Out-Null
+        $transcriptStarted = $true
+    } catch {
+        Write-Host "warn: could not start transcript at $LogPath: $_" -ForegroundColor Yellow
+    }
+}
 
 $scriptRoot = Split-Path $PSScriptRoot -Parent
 $sidecar    = Join-Path $scriptRoot "validator_phase1.py"
@@ -75,14 +121,34 @@ function Invoke-Attestation {
     return $ec
 }
 
-if ($LoopMinutes -le 0) {
-    exit (Invoke-Attestation)
-}
+try {
+    if ($LoopMinutes -le 0) {
+        $rc = Invoke-Attestation
+        if ($transcriptStarted) { try { Stop-Transcript | Out-Null } catch {} }
+        exit $rc
+    }
 
-if (-not $Quiet) {
-    Write-Host ("Attesting every {0} minute(s); Ctrl+C to stop." -f $LoopMinutes) -ForegroundColor Cyan
-}
-while ($true) {
-    [void](Invoke-Attestation)
-    Start-Sleep -Seconds ($LoopMinutes * 60)
+    if (-not $Quiet) {
+        Write-Host ("Attesting every {0} minute(s); Ctrl+C to stop." -f $LoopMinutes) -ForegroundColor Cyan
+    }
+    while ($true) {
+        [void](Invoke-Attestation)
+        # Re-check the log size between iterations so a long-running
+        # loop eventually rotates even without a process restart. We
+        # stop the current transcript, rotate, and reopen — this is
+        # the cheapest way to get "line count" style rolling in PS 5.1.
+        if ($transcriptStarted -and $LogPath) {
+            try { Stop-Transcript | Out-Null } catch {}
+            Rotate-LogIfNeeded -Path $LogPath -MaxBytes $LogMaxBytes -Keep $LogKeep
+            try {
+                Start-Transcript -Path $LogPath -Append -IncludeInvocationHeader | Out-Null
+            } catch {
+                Write-Host "warn: could not reopen transcript at $LogPath: $_" -ForegroundColor Yellow
+                $transcriptStarted = $false
+            }
+        }
+        Start-Sleep -Seconds ($LoopMinutes * 60)
+    }
+} finally {
+    if ($transcriptStarted) { try { Stop-Transcript | Out-Null } catch {} }
 }

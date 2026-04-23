@@ -75,6 +75,36 @@
   }
   .nav-cta:hover { background: #85cd08; color: #0a1400; text-decoration: none; }
 
+  /* --- Live trust pill in the nav (data: /api/v1/trust/attestations/summary) --- */
+  .trust-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    font: 600 12px/1 var(--mono);
+    color: var(--text-2);
+    background: rgba(17, 26, 46, .7);
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    border-radius: 999px;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: border-color .15s ease, color .15s ease;
+  }
+  .trust-pill:hover { color: var(--text); border-color: var(--accent-2); text-decoration: none; }
+  .trust-pill .dot {
+    width: 8px; height: 8px; border-radius: 999px;
+    background: var(--muted);
+    box-shadow: 0 0 0 0 rgba(0,0,0,0);
+  }
+  .trust-pill[data-status="healthy"] { color: var(--text); }
+  .trust-pill[data-status="healthy"] .dot {
+    background: var(--success);
+    box-shadow: 0 0 10px rgba(61, 220, 151, .55);
+  }
+  .trust-pill[data-status="warming"] .dot { background: var(--accent-3); }
+  .trust-pill[data-status="degraded"] .dot { background: #ffb84d; }
+  .trust-pill[data-status="offline"]  .dot { background: var(--danger); }
+  .trust-pill[data-status="unknown"]  .dot { background: var(--muted); }
+  @media (max-width: 900px) { .trust-pill { display: none; } }
+
   /* --- Hero --- */
   .hero { padding: 72px 0 48px; }
   .eyebrow {
@@ -295,6 +325,11 @@
         <li><a class="navlink" href="#roadmap">Roadmap</a></li>
       </ul>
     </nav>
+    <a class="trust-pill" id="trust-pill" href="/trust.html" data-status="unknown"
+       title="Live NGC attestation transparency — click for details">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="trust-pill-text">trust: …</span>
+    </a>
     <a class="nav-cta" href="https://dashboard.qsdm.tech/">Open Dashboard →</a>
   </div>
 </header>
@@ -1184,23 +1219,54 @@
 <script>
 (function() {
   var widget  = document.getElementById('trust-widget');
-  if (!widget) return;
   var dot     = document.getElementById('trust-dot');
   var ratioEl = document.getElementById('trust-ratio');
   var metaEl  = document.getElementById('trust-meta');
+  var pill    = document.getElementById('trust-pill');
+  var pillTxt = document.getElementById('trust-pill-text');
+  if (!widget && !pill) return;
   var endpoints = ['/api/v1/trust/attestations/summary', 'https://api.qsdm.tech/api/v1/trust/attestations/summary'];
 
+  // Map aggregator statuses → pill data-status values. "healthy" keeps
+  // the green dot; everything else dims or warns so a silent badge
+  // regression is visually obvious to repeat visitors.
+  function pillStatusFor(aggStatus, ratio) {
+    if (aggStatus === 'healthy') return 'healthy';
+    if (aggStatus === 'warmup' || aggStatus === 'warming') return 'warming';
+    if (aggStatus === 'degraded') return 'degraded';
+    if (aggStatus === 'outage' || aggStatus === 'offline') return 'offline';
+    if (aggStatus === 'disabled') return 'offline';
+    if (typeof ratio === 'string' && ratio.indexOf('0 of') === 0) return 'degraded';
+    return 'unknown';
+  }
+
   function setState(state, ratio, meta) {
-    widget.setAttribute('data-state', state);
-    if (ratio) ratioEl.textContent = ratio;
-    if (meta)  metaEl.textContent  = meta;
-    if (!dot) return;
-    dot.style.background =
-      state === 'healthy' ? '#3ddc97'
-      : state === 'degraded' ? '#ffb454'
-      : state === 'outage' ? '#ff6b6b'
-      : state === 'disabled' ? '#6d7e99'
-      : '#6ea8ff';
+    if (widget) {
+      widget.setAttribute('data-state', state);
+      if (ratio && ratioEl) ratioEl.textContent = ratio;
+      if (meta  && metaEl)  metaEl.textContent  = meta;
+      if (dot) {
+        dot.style.background =
+          state === 'healthy' ? '#3ddc97'
+          : state === 'degraded' ? '#ffb454'
+          : state === 'outage' ? '#ff6b6b'
+          : state === 'disabled' ? '#6d7e99'
+          : '#6ea8ff';
+      }
+    }
+    if (pill) {
+      pill.setAttribute('data-status', pillStatusFor(state, ratio));
+      if (pillTxt) {
+        // Compact label: "trust: 1/2 · healthy" on good path;
+        // explicit status word on anything else so it is self-explanatory.
+        if (ratio && (state === 'healthy' || state === 'degraded')) {
+          var compact = ratio.replace(' of ', '/');
+          pillTxt.textContent = 'trust: ' + compact + ' · ' + state;
+        } else {
+          pillTxt.textContent = 'trust: ' + state;
+        }
+      }
+    }
   }
 
   function fetchOnce(i) {
