@@ -464,23 +464,26 @@
       </article>
 
       <article class="product">
-        <span class="tag plus">Miner · GPU · Home rig · Planned</span>
-        <h3>QSDM Miner (Cell emission) — planned</h3>
+        <span class="tag plus">Miner · CPU reference shipped · CUDA planned</span>
+        <h3>QSDM Miner (Cell emission)</h3>
         <p style="color:var(--text-2); margin: 6px 0 0;">
           The emission tier. An additive proof-of-work layer for <strong>Cell (CELL)</strong> minting that runs
-          independently of consensus. Home-scale GPU operators submit proofs to any QSDM validator and receive Cell
-          rewards per the published emission schedule. The reference CPU miner ships with the node; the CUDA miner is
-          planned to ship after external audit.
+          independently of consensus. Home operators submit proofs to any QSDM validator and receive Cell
+          rewards per the published emission schedule. Two reference binaries ship in-tree today:
+          <code>qsdmminer</code> (audit-clean CPU reference) and
+          <code>qsdmminer-console</code> (friendly console front-end with a live stats panel and a first-run
+          setup wizard). The CUDA production miner is planned to ship after external audit.
         </p>
         <ul>
-          <li>Separate <code>qsdmminer</code> binary — does <em>not</em> participate in consensus</li>
-          <li>Candidate PoW: mesh3D-tied useful proof; CPU-safe O(1) verify</li>
+          <li>Separate <code>qsdmminer</code> / <code>qsdmminer-console</code> binaries — miners do <em>not</em> participate in consensus</li>
+          <li>CPU-safe O(1) verification; mesh3D-tied useful proof</li>
           <li>Native coin <strong>Cell (CELL)</strong>, 8 decimals, smallest unit <em>dust</em></li>
           <li>Halving emission schedule; 0% pre-mine, treasury cap 10%</li>
-          <li>Reference CPU miner in-tree; CUDA miner gated on external audit</li>
+          <li>CPU reference miner and console front-end shipped today; CUDA miner gated on external audit</li>
           <li>NGC attestation is optional and consensus-independent</li>
         </ul>
         <div class="foot">
+          <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">MINER_QUICKSTART.md</a>
           <a class="btn" href="https://api.qsdm.tech/api/v1/health">API: /api/v1/health</a>
         </div>
       </article>
@@ -571,12 +574,14 @@
         </div>
       </div>
       <div class="pillar">
-        <div class="ico">MINING · ADDITIVE (PLANNED)</div>
+        <div class="ico">MINING · ADDITIVE · CPU REFERENCE SHIPPED</div>
         <div class="title">GPU coin emission</div>
         <div class="desc">
-          A separable reward track under design: home GPU miners submit hash-based proofs to earn newly-issued
-          supply on a published schedule. Mining never proposes blocks, never orders transactions, and can halt
-          with zero effect on chain liveness.
+          A separable reward track: home operators submit hash-based proofs to earn newly-issued supply on a
+          published schedule. The CPU reference miner (<code>qsdmminer</code>) and the friendly console
+          front-end (<code>qsdmminer-console</code>) ship today; the CUDA production miner is gated on
+          external audit. Mining never proposes blocks, never orders transactions, and can halt with zero
+          effect on chain liveness.
         </div>
       </div>
       <div class="pillar">
@@ -590,8 +595,9 @@
       </div>
     </div>
     <p style="color:var(--muted); font-size:12.5px; margin-top:18px;">
-      PoE + BFT consensus is live today. The mining layer is a planned additive subsystem; introducing it will
-      not change validator hardware requirements, consensus rules, or finality guarantees.
+      PoE + BFT consensus is live today. The mining layer is an additive subsystem — the CPU reference miner and
+      a friendly console front-end are shipped in-tree; the CUDA production miner is gated on external audit.
+      Mining does not change validator hardware requirements, consensus rules, or finality guarantees.
     </p>
   </div>
 </section>
@@ -606,29 +612,44 @@
 <section id="mine">
   <div class="container">
     <span class="eyebrow" style="color:var(--accent); border-color: rgba(118,185,0,.35); background: rgba(118,185,0,.08)">
-      PARTICIPATE · MINE AT HOME · PLANNED
+      PARTICIPATE · MINE AT HOME
     </span>
-    <h2>Mine Cell at home — planned.</h2>
+    <h2>Mine Cell at home.</h2>
     <p class="lead">
-      The GPU mining layer is the additive emission track for <strong>Cell (CELL)</strong>. It is
+      The mining layer is the additive emission track for <strong>Cell (CELL)</strong>. It is
       deliberately separate from consensus: miners never propose blocks, never order transactions, and
       can halt with zero effect on chain liveness. Mining Cell is how new coins enter circulation —
       rewards depend on network difficulty and the current block reward, both of which change over time.
-      The reference CPU miner ships with the node today; the CUDA miner is planned to ship after an
-      external audit. A home-scale mining pool directory will arrive alongside the incentivized testnet.
+      Two miner binaries ship today: <code>qsdmminer</code> (audit-clean CPU reference) and
+      <code>qsdmminer-console</code> (friendly console UI with a live stats panel and first-run
+      setup wizard). The CUDA production miner is planned to ship after external audit; a home-scale
+      mining pool directory will arrive alongside the incentivized testnet.
     </p>
-    <div class="pillars" style="grid-template-columns: 1fr 1fr 1fr;">
-      <div class="pillar">
-        <div class="ico">REFERENCE · IN-TREE</div>
-        <div class="title">CPU reference miner</div>
+    <div class="pillars" style="grid-template-columns: 1fr 1fr;">
+      <div class="pillar" style="border-color: rgba(118,185,0,.35); background: rgba(118,185,0,.06);">
+        <div class="ico" style="color:var(--accent)">FRIENDLY CONSOLE · SHIPPED</div>
+        <div class="title"><code>qsdmminer-console</code> — start here</div>
         <div class="desc">
-          <code>cmd/qsdmminer</code> builds a real proof under <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL.md">MINING_PROTOCOL.md</a>
-          and runs a <code>--self-test</code>. Good for protocol compliance and one-off validation. Hash
-          rate is low by design — this is not the production miner.
+          Run with no flags and a setup wizard prompts for your reward address and validator URL, saves
+          the answers to <code>~/.qsdm/miner.toml</code>, then opens a live console panel showing
+          hashrate, accepted/rejected proofs, current epoch, and uptime. <code>--plain</code> switches
+          to a one-line-per-event log mode for <code>systemd</code> / <code>journalctl</code>. Same
+          <code>--self-test</code> as the reference; no GPU required.
         </div>
       </div>
       <div class="pillar">
-        <div class="ico">PRODUCTION · PLANNED</div>
+        <div class="ico">CPU REFERENCE · IN-TREE</div>
+        <div class="title"><code>qsdmminer</code> — protocol truth</div>
+        <div class="desc">
+          The audit-clean single-file reference miner. Builds a real proof under
+          <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL.md">MINING_PROTOCOL.md</a>
+          and runs a <code>--self-test</code>. Good for protocol compliance and one-off validation.
+          Hash rate is low by design — this is not the production miner, and intentionally has no TUI
+          so it can be read top-to-bottom against the spec.
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="ico">CUDA PRODUCTION · PLANNED</div>
         <div class="title">CUDA miner</div>
         <div class="desc">
           Optimized for NVIDIA (CUDA 11+, ≥ 8 GB VRAM, RTX&nbsp;20/30/40/50-class). The protocol does
@@ -1188,7 +1209,7 @@
         <h5>Platform</h5>
         <ul>
           <li><a href="#products">Validator node</a></li>
-          <li><a href="#products">Miner (planned)</a></li>
+          <li><a href="#products">Miner (CPU + console shipped)</a></li>
           <li><a href="#nvidia">NVIDIA Edge</a></li>
           <li><a href="#why-nvidia">Why NVIDIA?</a></li>
           <li><a href="#roadmap">Roadmap</a></li>

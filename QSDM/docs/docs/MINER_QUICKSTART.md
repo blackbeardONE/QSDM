@@ -1,14 +1,16 @@
 # MINER_QUICKSTART — CPU reference miner for QSDM / Cell
 
-> **Status:** Reference implementation (CPU, single-threaded, intentionally slow). The CUDA production miner ships under `pkg/mining/cuda` after the Major Update §11 Phase 6 external security audit. Mainnet Cell emission is **gated** on that audit completing; this quickstart is for testnet participation and protocol validation.
+> **Status:** Two CPU miner binaries ship in-tree today — `qsdmminer` (audit-clean single-file reference) and `qsdmminer-console` (friendly console UI with a setup wizard, live stats panel, and config persistence). Both run on CPU, single-threaded, intentionally slow. The CUDA production miner ships under `pkg/mining/cuda` after the Major Update §11 Phase 6 external security audit. Mainnet Cell emission is **gated** on that audit completing; this quickstart is for testnet participation and protocol validation.
 
 This document walks a home operator through:
 
-1. Installing the `qsdmminer` reference binary.
+1. Installing either miner binary (the friendly console front-end is recommended for first-time users; the reference binary is the protocol-truth).
 2. Self-testing it in 10 seconds to confirm the install works end-to-end.
 3. Pointing it at a live QSDM validator and submitting real proofs.
 
 It assumes you have already read `NODE_ROLES.md` and `MINING_PROTOCOL.md`. If you are running a validator, read `VALIDATOR_QUICKSTART.md` instead — mining and validation are separate binaries on separate machines.
+
+If you just want to mine with zero flag-memorisation, skip to [§2.5 Friendly console miner](#25-friendly-console-miner-recommended-for-home-operators).
 
 ---
 
@@ -57,6 +59,81 @@ self-test OK: proof solved and verified end-to-end via pkg/mining
 The `--self-test` flag builds a synthetic 4-batch work-set and a small in-memory DAG, solves a proof under easy difficulty, then verifies it against the in-process `pkg/mining` verifier. If it passes, your binary is protocol-conformant. If it fails, **do not continue** — open an issue with the exit code and stderr.
 
 This self-test is also the Phase 4.5 acceptance gate in `Major Update.md`; it runs unchanged in CI.
+
+## 2.5 Friendly console miner (recommended for home operators)
+
+If you want to start mining without memorising flags, build the sibling binary **`qsdmminer-console`** instead. It shares the same protocol code (identical `pkg/mining` primitives, identical on-wire behaviour), and adds three ergonomic differences:
+
+1. **First-run setup wizard.** Run the binary with no flags and it prompts for `Validator URL`, `Reward address`, `Batch count per proof`, and `Poll interval`. Answers are saved to `~/.qsdm/miner.toml` (on Windows: `%USERPROFILE%\.qsdm\miner.toml`) so future runs need no flags.
+2. **Live console panel.** An in-place ASCII/ANSI panel shows the reward address, validator, current epoch, rolling hashrate, accepted/rejected counts, uptime, and the last event. Pipe stdout to a file or TTY-less shell and the binary auto-detects the missing terminal and falls back to a one-line-per-event log.
+3. **`--plain`** flag for `systemd` / CI / `journalctl` users who want log lines, not a panel, without depending on `isatty` detection.
+
+Build it the same way:
+
+```bash
+cd QSDM/source
+go build -o qsdmminer-console ./cmd/qsdmminer-console
+```
+
+Run the setup wizard and keep mining after the save:
+
+```bash
+./qsdmminer-console
+# wizard prompts, then enters the live panel
+```
+
+Re-run the wizard to change settings later:
+
+```bash
+./qsdmminer-console --setup
+# saves ~/.qsdm/miner.toml then exits
+./qsdmminer-console          # resume with new settings
+```
+
+Typical wizard session:
+
+```
+QSDM — setting up Cell console miner
+Answers are saved to /home/alice/.qsdm/miner.toml
+Press Enter to accept the [default] shown in brackets.
+
+  Validator URL [https://testnet.qsdm.tech]: 
+  Reward address (CELL): qsdm1YOURADDR
+  Batch count per proof [1]: 
+  Poll interval (e.g. 2s, 500ms) [2s]: 
+
+Saved /home/alice/.qsdm/miner.toml
+```
+
+Once it drops into the panel you'll see something like:
+
+```
+  QSDM miner console · protocol v1
+  ─────────────────────────────────────────────
+  Reward address   qsdm1YOU…ADDR
+  Validator        https://testnet.qsdm.tech  [connected]
+
+  Epoch            3  (DAG ready · N=67108864)
+
+  Hashrate         4.83  H/s
+  Proofs           0 accepted, 0 rejected
+  Uptime           00:02:14
+
+  Last event       work received: height=181442 (3s ago)
+
+  Ctrl-C to stop. Config: /home/alice/.qsdm/miner.toml
+```
+
+Flags override the saved config for one run without rewriting the file:
+
+```bash
+./qsdmminer-console --validator=https://other.example.com
+./qsdmminer-console --plain                         # log mode
+./qsdmminer-console --self-test                     # same gate as qsdmminer
+./qsdmminer-console --config /etc/qsdm/miner.toml   # custom config path
+```
+
+The console miner is the **recommended starting point** for home operators. The single-file `qsdmminer` binary (§2 above) is the protocol-truth reference and remains the preferred choice for conformance testing and CI — it is intentionally read-only-the-spec minimal with no UX layered on top.
 
 ## 3. Connect to a validator
 

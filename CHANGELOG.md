@@ -14,6 +14,58 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`cmd/qsdmminer-console` — friendly console miner binary
+  (2026-04-24).** A sibling of `cmd/qsdmminer` that layers three
+  ergonomic improvements on top of the same `pkg/mining` primitives,
+  without touching the reference miner's audit-clean surface:
+
+    1. **First-run setup wizard.** Running `qsdmminer-console` with
+       no flags prompts for validator URL, reward address, batch
+       count, and poll interval; answers are persisted to
+       `~/.qsdm/miner.toml` (Windows: `%USERPROFILE%\.qsdm\miner.toml`)
+       at mode 0600 and reused by future runs.
+    2. **Live console panel.** In a TTY, the binary redraws a 14-line
+       panel at 2 Hz showing reward address (redacted),
+       validator URL, connection state (colored), current epoch
+       and DAG readiness, 10-second rolling hashrate, accepted /
+       rejected proof counters, uptime, and the last event. Non-TTY
+       stdout (pipe, `journalctl`, CI) auto-detects and falls back
+       to a one-line-per-event log. `--plain` forces the log mode
+       on demand.
+    3. **Flag overrides.** Every config field has a corresponding
+       flag (`--validator`, `--address`, `--batch-count`, `--poll`,
+       `--config`) so an operator can point at a different node for
+       one run without editing the TOML. `--setup` re-runs the
+       wizard. `--self-test` runs the same Phase 4.5 acceptance
+       gate as `qsdmminer --self-test`.
+
+  The mining loop is a targeted port of `cmd/qsdmminer`'s
+  `fetchWork` / `Solve` / `submitProof` flow, emitting typed
+  `Event`s into a channel consumed by the renderer. This keeps the
+  `qsdmminer` reference binary unchanged — that binary remains
+  mappable 1-to-1 against `MINING_PROTOCOL.md` with no TUI layered
+  on top — while giving home operators a less hostile first-run
+  experience. 12 unit tests cover config round-trip, malformed-TOML
+  rejection, `pollDuration` defaulting, the hashrate / duration /
+  address formatters, the `Dashboard` event state machine, the
+  plain renderer's log format, and the `kindLabel` exhaustiveness
+  guard against silently missing an `EventKind` in the log-label
+  switch.
+
+- **Landing page + MINER_QUICKSTART.md reflect that the reference
+  miner is shipped (2026-04-24).** The landing page previously
+  described the mining layer as "planned" (`#products` tile, `#mine`
+  section lead, `#consensus-layer` pillar, footer link). Those have
+  been updated to name both miner binaries and to clarify that only
+  the CUDA production miner is gated on external audit.
+  `MINER_QUICKSTART.md` gains a new `§2.5 Friendly console miner`
+  that walks through build, wizard, panel, and flag overrides, and
+  links the §2 reference-binary section to it as the recommended
+  starting point for home operators. The root `README.md`'s
+  summary paragraph and the "Run a miner" bullet were corrected
+  accordingly (the prior wording implied GPU-bound PoW was the only
+  path, which is untrue).
+
 - **`cmd/trustcheck` JSON output schema is now pinned by tests
   (2026-04-24).** The `--json` flag and the `trustcheck.json`
   artifact upload in `trustcheck-external.yml` have shipped for

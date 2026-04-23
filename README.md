@@ -2,8 +2,10 @@
 
 **QSDM** (Quantum-Secure Dynamic Mesh ledger) is a post-quantum-secure
 ledger with a two-tier node model — CPU-only validators run the PoE + BFT
-consensus, and GPU-based miners run an additive, Mesh3D-tied
-Proof-of-Work that mints the native coin, **Cell (CELL)**.
+consensus, and miners run an additive, Mesh3D-tied Proof-of-Work that
+mints the native coin, **Cell (CELL)**. Two CPU miner binaries ship
+today (`qsdmminer` and the friendlier `qsdmminer-console`); a CUDA
+production miner is planned to ship after external security review.
 
 Transaction signatures use **ML-DSA-87** (NIST FIPS 204) — the
 standardised post-quantum replacement for classical Ed25519 / Ed448 —
@@ -34,7 +36,7 @@ relevant quantum adversaries tomorrow.
 - **Operator wiki (end-to-end, pick role → hardware → bootstrap → attestation):** [`QSDM/docs/docs/OPERATOR_GUIDE.md`](QSDM/docs/docs/OPERATOR_GUIDE.md) ⭐ start here if you are new
 - **Live bootstrap peers for Phase 4 testnet:** [`qsdm.tech/validators.html`](https://qsdm.tech/validators.html)
 - **Run a validator (CPU-only):** [`QSDM/docs/docs/VALIDATOR_QUICKSTART.md`](QSDM/docs/docs/VALIDATOR_QUICKSTART.md)
-- **Run a miner (GPU-bound PoW):** [`QSDM/docs/docs/MINER_QUICKSTART.md`](QSDM/docs/docs/MINER_QUICKSTART.md)
+- **Run a miner (CPU reference + console UI; CUDA planned):** [`QSDM/docs/docs/MINER_QUICKSTART.md`](QSDM/docs/docs/MINER_QUICKSTART.md)
 - **Run the NGC attestation sidecar (free NVIDIA NGC tier):** [`apps/qsdmplus-nvidia-ngc/QUICKSTART.md`](apps/qsdmplus-nvidia-ngc/QUICKSTART.md)
 - **API reference:** [`QSDM/docs/docs/API_REFERENCE.md`](QSDM/docs/docs/API_REFERENCE.md) and [`QSDM/docs/docs/openapi.yaml`](QSDM/docs/docs/openapi.yaml)
 - **Protocol specs:** [`QSDM/docs/docs/MINING_PROTOCOL.md`](QSDM/docs/docs/MINING_PROTOCOL.md), [`QSDM/docs/docs/NODE_ROLES.md`](QSDM/docs/docs/NODE_ROLES.md), [`QSDM/docs/docs/CELL_TOKENOMICS.md`](QSDM/docs/docs/CELL_TOKENOMICS.md)
