@@ -258,6 +258,83 @@ Optional extras, each of which tightens the coupling further:
 
 ---
 
+## 8a. Windows: keep the trust badge fresh with a Scheduled Task
+
+If you don't want to run Docker just to keep a proof flowing, the
+repo now ships two tiny PowerShell wrappers that call
+`validator_phase1.py` directly:
+
+- `scripts/local-attest.ps1` — one-shot (or `-LoopMinutes 12` for an
+  infinite foreground loop).
+- `scripts/attest-from-env-file.ps1` — reads `KEY=VALUE` pairs out of
+  a local env file, then invokes the one-shot wrapper. Designed to be
+  called from Windows Task Scheduler so you don't leak secrets into
+  task arguments.
+
+Example: post one bundle every 10 minutes from a Windows PC with an
+NVIDIA GPU already visible to PyTorch.
+
+1. Put the ingest secret in `apps/qsdmplus-nvidia-ngc/ngc.local.env`
+   (already covered by `.gitignore` → never committed):
+
+   ```dotenv
+   QSDMPLUS_NGC_REPORT_URL=https://<your-node>/api/v1/monitoring/ngc-proof
+   QSDMPLUS_NGC_INGEST_SECRET=<32-byte-hex>
+   QSDMPLUS_NGC_PROOF_NODE_ID=<free-form-label>
+   ```
+
+2. Smoke-test once:
+
+   ```powershell
+   .\apps\qsdmplus-nvidia-ngc\scripts\attest-from-env-file.ps1 `
+     -EnvFile .\apps\qsdmplus-nvidia-ngc\ngc.local.env
+   ```
+
+3. Register the scheduled task (user-level, no admin required). The
+   snippet below captures a transcript to
+   `%LOCALAPPDATA%\QSDM\ngc-attest.log`:
+
+   ```powershell
+   $repo = (Resolve-Path .).Path
+   $script  = "$repo\apps\qsdmplus-nvidia-ngc\scripts\attest-from-env-file.ps1"
+   $envfile = "$repo\apps\qsdmplus-nvidia-ngc\ngc.local.env"
+   $log     = "$env:LOCALAPPDATA\QSDM\ngc-attest.log"
+   New-Item -ItemType Directory -Force -Path (Split-Path $log) | Out-Null
+
+   $cmd = "try { Start-Transcript -Path '$log' -Append -Force | Out-Null } catch {}; & '$script' -EnvFile '$envfile' -Quiet; try { Stop-Transcript | Out-Null } catch {}"
+   $action    = New-ScheduledTaskAction -Execute "powershell.exe" `
+                  -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$cmd`""
+   $trigger   = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+                  -RepetitionInterval (New-TimeSpan -Minutes 10) `
+                  -RepetitionDuration (New-TimeSpan -Days 365)
+   $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+                  -DontStopIfGoingOnBatteries -StartWhenAvailable `
+                  -MultipleInstances IgnoreNew `
+                  -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+   $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME `
+                  -LogonType Interactive -RunLevel Limited
+
+   Register-ScheduledTask -TaskName "QSDM-NGC-Attest" `
+     -Action $action -Trigger $trigger -Settings $settings -Principal $principal
+   Start-ScheduledTask -TaskName "QSDM-NGC-Attest"
+   ```
+
+4. Verify:
+
+   ```powershell
+   Get-ScheduledTaskInfo -TaskName "QSDM-NGC-Attest" |
+     Format-List LastRunTime, LastTaskResult, NextRunTime
+   Invoke-RestMethod -Uri "https://<your-node>/api/v1/trust/attestations/summary"
+   ```
+
+   `last_attested_at` should advance every 10 minutes, and
+   `ngc_service_status` should stay `healthy` as long as the PC is on
+   and can reach the node.
+
+To uninstall: `Unregister-ScheduledTask -TaskName "QSDM-NGC-Attest" -Confirm:$false`.
+
+---
+
 ## 9. Uninstall
 
 ```bash
