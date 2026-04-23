@@ -26,6 +26,22 @@ type stubLocalSource struct {
 func (s *stubLocalSource) LocalLatest() (PeerAttestation, bool) { return s.latest, s.ok }
 func (s *stubLocalSource) LocalNodeID() string                  { return s.id }
 
+// stubDistinctLocalSource implements LocalDistinctAttestationSource so
+// TrustAggregator.Refresh() takes the multi-node-id path. It never
+// expects LocalLatest() to be consulted; returning zero-value is fine.
+type stubDistinctLocalSource struct {
+	id       string
+	distinct []PeerAttestation
+}
+
+func (s *stubDistinctLocalSource) LocalLatest() (PeerAttestation, bool) {
+	return PeerAttestation{}, false
+}
+func (s *stubDistinctLocalSource) LocalNodeID() string { return s.id }
+func (s *stubDistinctLocalSource) LocalDistinctAttestations() []PeerAttestation {
+	return s.distinct
+}
+
 // fixedClock returns a closure that yields a fixed time.
 func fixedClock(t time.Time) func() time.Time { return func() time.Time { return t } }
 
@@ -383,6 +399,103 @@ func TestMergePeer_LocalFlowsInWhenProviderMissing(t *testing.T) {
 	sum, _ := agg.Summary()
 	if sum.Attested != 1 || sum.TotalPublic != 1 {
 		t.Fatalf("want 1 of 1, got %d of %d", sum.Attested, sum.TotalPublic)
+	}
+}
+
+// LocalDistinctAttestationSource: multiple distinct CPU-fallback
+// sidecars each POSTing to /api/v1/monitoring/ngc-proof with a
+// different qsdmplus_node_id must surface as distinct peer rows,
+// driving attested up accordingly.
+func TestLocalDistinctSource_MultipleSidecarsCountSeparately(t *testing.T) {
+	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	cfg := TrustConfig{
+		LocalSource: &stubDistinctLocalSource{
+			id: "local-host-node-id-1234",
+			distinct: []PeerAttestation{
+				{NodeID: "vps-blr1-validator", AttestedAt: now.Add(-1 * time.Minute), GPUAvailable: true, NGCHMACOK: true, RegionHint: "apac"},
+				{NodeID: "vps-oci-sgp1-attest", AttestedAt: now.Add(-2 * time.Minute), GPUAvailable: true, NGCHMACOK: true, RegionHint: "apac"},
+				{NodeID: "dev-pc-windows-rtx3050", AttestedAt: now.Add(-3 * time.Minute), GPUAvailable: true, NGCHMACOK: true, RegionHint: "apac"},
+			},
+		},
+		FreshWithin: 15 * time.Minute,
+		Clock:       fixedClock(now),
+	}
+	agg := NewTrustAggregator(cfg)
+	agg.startedAt = now.Add(-2 * time.Minute)
+	agg.Refresh()
+	sum, _ := agg.Summary()
+	if sum.Attested != 3 || sum.TotalPublic != 3 {
+		t.Fatalf("want 3 of 3 distinct sidecars, got %d of %d", sum.Attested, sum.TotalPublic)
+	}
+	if sum.NGCServiceStatus != "healthy" {
+		t.Errorf("status=%s, want healthy", sum.NGCServiceStatus)
+	}
+}
+
+// Empty-id rows returned by the distinct source must fold onto the
+// local node's identity instead of being dropped or counted separately.
+// This preserves the legacy behaviour for bundles without qsdmplus_node_id.
+func TestLocalDistinctSource_EmptyNodeIDFoldsToLocal(t *testing.T) {
+	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	cfg := TrustConfig{
+		LocalSource: &stubDistinctLocalSource{
+			id: "local-persistent-node-id-xxx",
+			distinct: []PeerAttestation{
+				// Empty NodeID: legacy bundle without id field.
+				{NodeID: "", AttestedAt: now.Add(-1 * time.Minute), GPUAvailable: true, NGCHMACOK: true, RegionHint: "us"},
+			},
+		},
+		FreshWithin: 15 * time.Minute,
+		Clock:       fixedClock(now),
+	}
+	agg := NewTrustAggregator(cfg)
+	agg.startedAt = now.Add(-2 * time.Minute)
+	agg.Refresh()
+	sum, _ := agg.Summary()
+	if sum.Attested != 1 || sum.TotalPublic != 1 {
+		t.Fatalf("want 1 of 1 (empty-id folded to local), got %d of %d", sum.Attested, sum.TotalPublic)
+	}
+	// The recent feed should redact using the local node id, not "local".
+	recent, _ := agg.Recent(10)
+	if len(recent.Attestations) != 1 {
+		t.Fatalf("expected 1 row in /recent, got %d", len(recent.Attestations))
+	}
+	if !strings.Contains(recent.Attestations[0].NodeIDPrefix, "…") {
+		t.Errorf("redaction missing: %q", recent.Attestations[0].NodeIDPrefix)
+	}
+}
+
+// When the distinct source is combined with a PeerProvider, peer rows
+// and distinct local rows must both show up; shared node ids dedupe via
+// mergePeer's NodeID match.
+func TestLocalDistinctSource_MergesWithPeerProvider(t *testing.T) {
+	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	cfg := TrustConfig{
+		PeerProvider: &stubPeerProvider{rows: []PeerAttestation{
+			{NodeID: "validatorA-AAAAAAAA-zz", AttestedAt: now.Add(-4 * time.Minute), GPUAvailable: true, NGCHMACOK: true, RegionHint: "us"},
+			{NodeID: "validatorB-BBBBBBBB-yy"}, // No attestation.
+		}},
+		LocalSource: &stubDistinctLocalSource{
+			id: "local-id-CCCCCCCC",
+			distinct: []PeerAttestation{
+				{NodeID: "sidecar-oci-1", AttestedAt: now.Add(-1 * time.Minute), GPUAvailable: true, NGCHMACOK: true, RegionHint: "apac"},
+				{NodeID: "sidecar-home-pc", AttestedAt: now.Add(-2 * time.Minute), GPUAvailable: true, NGCHMACOK: true, RegionHint: "apac"},
+			},
+		},
+		FreshWithin: 15 * time.Minute,
+		Clock:       fixedClock(now),
+	}
+	agg := NewTrustAggregator(cfg)
+	agg.startedAt = now.Add(-2 * time.Minute)
+	agg.Refresh()
+	sum, _ := agg.Summary()
+	// Peers: A (fresh), B (no att) + distinct sidecars oci-1, home-pc
+	// = 4 unique node IDs total; 3 have fresh attestations.
+	if sum.TotalPublic != 4 {
+		t.Errorf("TotalPublic=%d, want 4", sum.TotalPublic)
+	}
+	if sum.Attested != 3 {
+		t.Errorf("Attested=%d, want 3", sum.Attested)
 	}
 }
 

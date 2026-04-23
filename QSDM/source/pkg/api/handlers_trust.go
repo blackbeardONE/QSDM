@@ -115,6 +115,30 @@ type LocalAttestationSource interface {
 	LocalNodeID() string
 }
 
+// LocalDistinctAttestationSource is an optional extension of
+// LocalAttestationSource that exposes every distinct attestation
+// source present in the local node's ring buffer, keyed by
+// `qsdmplus_node_id`, instead of collapsing all POSTs to
+// /api/v1/monitoring/ngc-proof into a single "local" peer row.
+//
+// When an operator runs multiple CPU-fallback sidecars — e.g. one on
+// the main VPS, one on a laptop, one on a secondary cloud VM — each
+// with its own QSDMPLUS_NGC_PROOF_NODE_ID, implementing this
+// interface lets the trust aggregator count them as distinct
+// attestation sources. PeerAttestation entries returned with an
+// empty NodeID are folded onto the local node's identity by the
+// aggregator so the legacy behaviour is preserved for bundles that
+// omit the id field.
+//
+// Sources that don't implement this interface keep the pre-existing
+// LocalLatest() semantics (one peer row for all local proofs). This
+// is an optional, duck-typed extension: TrustAggregator uses a
+// type assertion and falls back cleanly.
+type LocalDistinctAttestationSource interface {
+	LocalAttestationSource
+	LocalDistinctAttestations() []PeerAttestation
+}
+
 // TrustConfig wires dependencies into the trust subsystem. Both
 // providers are optional:
 //   - If LocalSource is nil, the aggregator reports no local attestation.
@@ -174,10 +198,35 @@ func (a *TrustAggregator) Refresh() {
 		peers = append(peers, a.cfg.PeerProvider.PeerAttestations()...)
 	}
 	if a.cfg.LocalSource != nil {
-		if local, ok := a.cfg.LocalSource.LocalLatest(); ok {
-			// Stamp the local node's own NodeID so it appears with a
-			// stable prefix in the recent feed. Peer-provided entries
-			// already carry their NodeID.
+		// Prefer the distinct-by-node-id view when the source supports
+		// it. Each CPU-fallback sidecar that stamped its own
+		// QSDMPLUS_NGC_PROOF_NODE_ID surfaces as a separate peer row
+		// instead of all of them collapsing onto the local node's
+		// identity (the old LocalLatest() behaviour).
+		if ds, ok := a.cfg.LocalSource.(LocalDistinctAttestationSource); ok {
+			distinct := ds.LocalDistinctAttestations()
+			if len(distinct) > 0 {
+				localID := a.cfg.LocalSource.LocalNodeID()
+				for _, att := range distinct {
+					// Empty-id rows fold onto the local node's identity.
+					// This keeps the legacy behaviour for bundles that
+					// did not include qsdmplus_node_id.
+					if att.NodeID == "" {
+						att.NodeID = localID
+					}
+					if att.NodeID == "" {
+						att.NodeID = "local"
+					}
+					peers = mergePeer(peers, att)
+				}
+			} else if a.cfg.PeerProvider == nil {
+				// No proofs yet and no peer provider — still render
+				// "0 of 1" so the widget never shows a bare "0".
+				peers = mergePeer(peers, PeerAttestation{NodeID: a.cfg.LocalSource.LocalNodeID()})
+			}
+		} else if local, ok := a.cfg.LocalSource.LocalLatest(); ok {
+			// Legacy single-row path for LocalSources that don't yet
+			// implement LocalDistinctAttestationSource.
 			if local.NodeID == "" {
 				local.NodeID = a.cfg.LocalSource.LocalNodeID()
 			}
@@ -510,9 +559,49 @@ func (m *MonitoringLocalSource) LocalLatest() (PeerAttestation, bool) {
 	return p, true
 }
 
+// LocalDistinctAttestations returns one PeerAttestation per distinct
+// `qsdmplus_node_id` present in the NGC proof ring buffer. Each entry
+// reflects the newest bundle seen for that id (newest-wins by the
+// bundle's `timestamp_utc`, falling back to the POST wall-clock when
+// the bundle omitted the field). Rows whose bundle did not include a
+// node id return with an empty NodeID so the aggregator can fold
+// them onto the local node's identity.
+func (m *MonitoringLocalSource) LocalDistinctAttestations() []PeerAttestation {
+	rows := monitoring.NGCProofDistinctByNodeID()
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]PeerAttestation, 0, len(rows))
+	for _, r := range rows {
+		at := r.TimestampUTC
+		if at.IsZero() {
+			at = r.ReceivedAt
+		}
+		if at.IsZero() {
+			continue
+		}
+		p := PeerAttestation{
+			NodeID:       r.NodeID,
+			AttestedAt:   at.UTC(),
+			RegionHint:   m.RegionHint,
+			GPUAvailable: true, // presence of a proof implies a GPU claim
+			NGCHMACOK:    true, // ingest path validates HMAC in strict mode
+		}
+		switch {
+		case m.ArchOverride != "":
+			p.GPUArchitecture = m.ArchOverride
+		case r.GPUArchitecture != "":
+			p.GPUArchitecture = r.GPUArchitecture
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
 // compile-time assertions so interface drift is caught at build time
 var (
-	_ LocalAttestationSource = (*MonitoringLocalSource)(nil)
+	_ LocalAttestationSource         = (*MonitoringLocalSource)(nil)
+	_ LocalDistinctAttestationSource = (*MonitoringLocalSource)(nil)
 )
 
 // humanDuration converts a time.Duration to something that both a human

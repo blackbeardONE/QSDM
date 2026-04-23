@@ -12,7 +12,80 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Added
+
+- **Trust aggregator now counts distinct CPU-fallback sidecars as
+  separate attestation sources (2026-04-23).** Operators who run
+  multiple CPU-fallback attestation sidecars — e.g. one on the main
+  validator VPS, one on an Oracle Cloud VM, one on a local dev PC,
+  each stamping its own `QSDMPLUS_NGC_PROOF_NODE_ID` — were being
+  collapsed into a single "local" peer row by `TrustAggregator`.
+  `MonitoringLocalSource.LocalLatest()` only exposed the newest row
+  from `monitoring.NGCProofSummaries()` and stamped it with the
+  validator's libp2p host id, so ten sidecars looked like one peer
+  and `attested` never climbed past 1 no matter how much redundant
+  CPU attestation was running.
+
+  New `monitoring.NGCProofDistinctByNodeID()` walks the NGC proof
+  ring buffer and groups entries by `qsdmplus_node_id` (or the
+  legacy `qsdm_node_id` alias), keeping the newest-observed bundle
+  for each distinct id. New optional interface
+  `api.LocalDistinctAttestationSource` exposes that view to the
+  aggregator; `MonitoringLocalSource` now implements it, and
+  `TrustAggregator.Refresh` prefers the distinct view when
+  available, folding empty-id rows onto the local node's identity
+  so bundles without an id still behave like before. Sources that
+  don't implement the new interface fall back to the old single-row
+  path — this is a strict addition, not a behaviour swap for legacy
+  embedders.
+
+  Verified live against the reference validator: adding the second
+  and third sidecars (OCI `ap-singapore-1` and DO `blr1`) flipped
+  `GET /api/v1/trust/attestations/summary` on `api.qsdm.tech` from
+  `attested=1, total_public=2` to `attested=3, total_public=4`
+  within one 10 s refresh tick, with each sidecar showing a distinct
+  redacted `node_id_prefix` in `/recent`.
+
+  Semantics note (recorded here, not a regression): anyone holding
+  `QSDMPLUS_NGC_INGEST_SECRET` can drive `attested` up by POSTing
+  from N distinct `qsdmplus_node_id` values. That is acceptable
+  because (a) the ingest secret is already the trust root for this
+  surface, (b) the `scope_note` field in every summary response
+  caveats that these attestations are not consensus, and (c) the
+  aggregator's freshness window (default 15 min) still applies per
+  row, so a one-shot spoof cannot hold the pill green without
+  continuous posts.
+
 ### Fixed
+
+- **mesh3d Windows DLL now exports its host-side entry points
+  (2026-04-23).** `pkg/mesh3d/kernels/sha256_validate.cu` declared
+  `mesh3d_hash_cells` and `mesh3d_validate_cells` inside an
+  `extern "C"` block but without `__declspec(dllexport)`. On Linux
+  this is harmless — ELF exports every non-static symbol by default
+  — but MSVC's PE linker only exports symbols explicitly marked
+  dllexport, so the Windows build of `mesh3d_kernels.dll` shipped
+  with a single `NvOptimusEnablementCuda` export and nothing else.
+  CGO builds with `-tags cuda` then died with
+  `undefined reference to 'mesh3d_hash_cells'` at link time.
+
+  New `MESH3D_API` macro (`__declspec(dllexport)` on `_WIN32`,
+  `__attribute__((visibility("default")))` elsewhere) now decorates
+  both entry points; Linux `.so` behaviour is unchanged, Windows
+  `.dll` now correctly exports the two symbols CGO needs. Verified
+  via `gendef - mesh3d_kernels.dll` showing the symbols and via
+  the `BenchmarkMesh3DGPUVsCPU` linking against them.
+
+- **`pkg/mesh3d/cuda.go` no longer requires a `C:/CUDA` symlink on
+  Windows (2026-04-23).** The old cgo directive block hard-coded
+  `-IC:/CUDA/include -LC:/CUDA/lib/x64`, which is nowhere an
+  NVIDIA installer ever lands. Every fresh Windows dev box failed
+  to build until the operator manually created `C:\CUDA`. Replaced
+  with split platform directives: Linux keeps `/usr/local/cuda`
+  defaults, Windows relies on `CGO_CFLAGS` / `CGO_LDFLAGS` set by
+  `QSDM/scripts/build_kernels.ps1`, which probes `$env:CUDA_PATH`
+  and emits DOS 8.3 short-path forms so cgo's whitespace-splitting
+  directive parser sees no spaces.
 
 - **Dashboard user accounts now survive a service restart
   (2026-04-23).** `pkg/api.UserStore` used to be an in-memory
@@ -47,6 +120,44 @@ attempt to retroactively enumerate that history.
   `https://dashboard.qsdm.tech/`.
 
 ### Added
+
+- **Full mesh3d GPU benchmark runnable on a dev box (2026-04-23).**
+  New `QSDM/source/pkg/mesh3d/mesh3d_gpu_bench_test.go` contains
+  `BenchmarkMesh3DGPUVsCPU_Validate` and `_Hash`, each sweeping
+  n ∈ {16, 256, 4096} across the CUDA and CPU-parallel backends
+  with `b.SetBytes` so `go test -bench` prints MB/s directly.
+  Skips with a clear diagnostic (`build mesh3d_kernels.dll / .so
+  first`) when the GPU path isn't available, so CI runs on the
+  CPU baseline without failing.
+- **`QSDM/scripts/build_kernels.ps1` — Windows CUDA kernel build
+  helper (2026-04-23).** Auto-locates CUDA via `$env:CUDA_PATH`
+  (with a fall-back scan of the canonical install root),
+  auto-locates MSVC via `vswhere.exe`, sources `vcvars64.bat`
+  into a `cmd.exe` subshell for nvcc, compiles
+  `mesh3d_kernels.dll` with per-GPU `-gencode` (default `sm_86`
+  for the RTX 3050, comma-list supported), mirrors the DLL next
+  to the Go source, regenerates a MinGW-compatible
+  `libmesh3d_kernels.dll.a` via `gendef` + `dlltool` so MSYS2 Go
+  + cgo can link it, and prints (or sets with `-SetEnv`) the
+  `CGO_CFLAGS` / `CGO_LDFLAGS` / `PATH` lines the next build
+  needs.
+- **`QSDM/scripts/build_liboqs_win.ps1` — local liboqs build
+  (2026-04-23).** Clones liboqs into
+  `%LOCALAPPDATA%\QSDM\liboqs`, configures with CMake + Ninja +
+  MinGW-w64 gcc + MSYS2 OpenSSL 3, builds the `oqs` target with
+  `-DOQS_OPT_TARGET=generic` (MinGW doesn't assemble the AVX2
+  fast paths), installs to `%LOCALAPPDATA%\QSDM\liboqs_install`,
+  and emits CGO env lines that compose cleanly with the CUDA
+  ones. Total runtime ~2 min on an RTX-3050-class dev box.
+  Matches the Dockerfile.miner production build so local and
+  CI signing/verification produce the same artefacts.
+- **`docs/docs/MESH3D_GPU_BENCHMARK.md` — reference benchmark
+  numbers (2026-04-23).** RTX 3050 + Xeon E5-2670 reference
+  figures (0.04× at n=16, 4.06× at n=4096 for validate; 0.03×
+  / 2.23× for hash) with the reproduction recipe and operator
+  guidance on when a GPU actually helps mesh3d throughput. Cited
+  from `docs/docs/MINER_QUICKSTART.md` so a new miner operator
+  knows whether buying a card is worth it for their fan-out.
 
 - **Live trust pill on `qsdm.tech` navigation bar (2026-04-23).**
   Compact `trust: 1/2 · healthy` chip next to `Open Dashboard`, poll
