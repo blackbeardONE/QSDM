@@ -14,6 +14,42 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Prometheus alert rules for the trust-redundancy surface
+  (2026-04-23).** Now that `qsdm_trust_attested` /
+  `qsdm_trust_total_public` / `qsdm_trust_last_attested_seconds` /
+  `qsdm_trust_last_checked_seconds` / `qsdm_trust_warm` /
+  `qsdm_trust_ngc_service_healthy` gauges are exported by
+  `api.TrustMetricsCollector`, the example rule file
+  `QSDM/deploy/prometheus/alerts_qsdmplus.example.yml` gains a new
+  `qsdm-trust-redundancy` group mirroring the external CI probe's
+  `--min-attested 2` floor from inside Alertmanager:
+
+    - **`QSDMTrustAttestationsBelowFloor`** — fires when a *warm*
+      aggregator reports `qsdm_trust_attested < 2` for 10 min. Gated
+      on `qsdm_trust_warm == 1` so redeploys do not page (the ring
+      buffer is volatile; `attested` recovers on the next sidecar
+      cadence).
+    - **`QSDMTrustNGCServiceDegraded`** — fires when a warm aggregator
+      reports `qsdm_trust_ngc_service_healthy == 0` (mapped from the
+      summary JSON's `ngc_service_status` enum) for 10 min.
+    - **`QSDMTrustLastAttestedStale`** — fires when the newest
+      attestation is older than 30 min (twice the default
+      `fresh_within` of 15 min), catching slow-death scenarios
+      before `attested` itself tips to zero.
+    - **`QSDMTrustAggregatorStale`** (severity `critical`) — fires
+      when `qsdm_trust_last_checked_seconds` has not advanced for
+      > 2 min (Refresh ticker wedged). Default refresh cadence is
+      10 s, so this is unambiguously a stuck goroutine.
+
+  The existing `qsdm-trust-transparency` group (proxy-metric alerts
+  on the accepted/rejected ingest counter) is complementary and
+  retained: it fires when *no* proof is flowing at all, regardless of
+  aggregator state; the new group fires when proofs flow but the
+  aggregator's distinct-source count drops below the operator's
+  declared floor. Both sides — external CI probe + internal
+  Prometheus — now enforce the same `attested >= 2` invariant from
+  independent vantage points.
+
 - **Prometheus gauges for the trust-transparency surface
   (2026-04-23).** The §8.5.x trust numbers (`attested`,
   `total_public`, `ratio`, `ngc_service_status`, `last_attested_at`,
