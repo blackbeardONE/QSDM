@@ -939,6 +939,13 @@ func main() {
 				{Name: "qsdm_bft_follower_append_conflict_total", Help: "TryAppendExternalBlock hash conflicts at same height", Type: monitoring.MetricCounter, Value: float64(cx)},
 			}
 		})
+		// Quarantine transparency surface. Mirrors the trust_aggregator
+		// collector's contract: nil-safe, O(1) per scrape, closes over
+		// live state so /metrics always reflects the latest Stats()
+		// without a parallel update path. Paired with the
+		// qsdm-quarantine alert group in
+		// deploy/prometheus/alerts_qsdmplus.example.yml.
+		pe.RegisterCollector("quarantine_manager", quarantine.MetricsCollector(quarantineManager))
 		dash.SetRealtimeMetricsSource(dashboard.MetricsSource{
 			Prometheus: pe,
 			Accounts:   adminAccounts,

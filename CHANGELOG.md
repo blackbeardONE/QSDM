@@ -14,6 +14,46 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Quarantine Prometheus gauges + alert group (2026-04-23).**
+  `pkg/quarantine/metrics.go` now exports four gauges via a
+  nil-safe `MetricsCollector(*QuarantineManager)` closure, mirroring
+  the `api.TrustMetricsCollector` pattern:
+
+    - `qsdm_quarantine_submeshes` — count of submeshes currently
+      quarantined.
+    - `qsdm_quarantine_submeshes_tracked` — distinct submeshes the
+      manager has ever observed (union of the three internal maps, so
+      a submesh with only 1–9 transactions is counted before the
+      10-tx window boundary writes into `quarantined`).
+    - `qsdm_quarantine_submeshes_ratio` — quarantined / tracked, with
+      `0` when `tracked==0` so ratio-based alerts don't flap on a
+      quiet node.
+    - `qsdm_quarantine_threshold` — the configured invalid-ratio
+      policy threshold, exposed so dashboards render the decision
+      boundary next to the observed state.
+
+  The collector is registered in `cmd/qsdmplus/main.go` alongside the
+  other `pe.RegisterCollector(...)` calls inside the `dash != nil`
+  block. A new method `QuarantineManager.Stats()` returns a consistent
+  snapshot under the existing mutex; collector scrapes are O(1) in
+  the number of tracked submeshes.
+
+  `alerts_qsdmplus.example.yml` gains a new `qsdm-quarantine` group
+  with two rules:
+
+    - **`QSDMQuarantineAnySubmesh`** (warn, 10m) — any non-zero
+      quarantined count worth a human decision on recovery.
+    - **`QSDMQuarantineMajorityIsolated`** (critical, 15m) — fires
+      when `ratio > 0.5` and `tracked >= 4` (the `tracked` guard
+      prevents flap on tiny fleets where 1/2 crosses the ratio).
+
+  No warm-gate is needed (the manager is live from process start, so
+  zero-at-t=0 is literally correct, and the denominator guard inside
+  the collector keeps empty-fleet scrapes from paging). Tests live in
+  `pkg/quarantine/metrics_test.go` covering nil-manager, empty-manager
+  shape, sub-window tracking, full-window quarantine, post-removal
+  gauges, and the `Stats.Quarantined` counts-only-true invariant.
+
 - **`ATTESTATION_SIDECARS.md` operator guide (2026-04-23).** The
   recipe for getting the trust pill to `N/N` by standing up N
   attestation sources was previously spread across two CHANGELOG

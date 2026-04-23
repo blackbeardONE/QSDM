@@ -253,3 +253,66 @@ groups:
             attestations/summary will go stale from a user perspective
             regardless of how many proofs are arriving. Restart the
             qsdmplus service and capture a goroutine dump.
+
+  # -----------------------------------------------------------------
+  # Quarantine subsystem (direct gauges, mirror of trust pattern)
+  # -----------------------------------------------------------------
+  # Companions to qsdmplus-submesh above. The qsdmplus-submesh rules
+  # alert on transaction-level rejection counters ("is the submesh
+  # policy ever kicking in?"). These rules alert on the aggregate
+  # quarantine state ("how many submeshes are currently isolated?") by
+  # consuming the qsdm_quarantine_* gauges emitted by
+  # pkg/quarantine/metrics.go. Together with the trust gauges above,
+  # Alertmanager sees both the attestation denominator and the fraction
+  # of the mesh that is in penalty — the two numbers that most often
+  # move in opposite directions during an incident.
+  #
+  # No warm-gate is needed here: the QuarantineManager is fully live
+  # from process start (no Refresh() equivalent), so zero values at
+  # t=0 are literally correct. The natural-zero denominator case is
+  # handled inside the collector (ratio returns 0 when tracked==0),
+  # so no alert can fire on an empty fleet.
+  - name: qsdm-quarantine
+    rules:
+      - alert: QSDMQuarantineAnySubmesh
+        # A single quarantined submesh for 10+ minutes is worth a
+        # page: auto-recovery (pkg/quarantine/auto_recovery.go) only
+        # activates when wired, and manual RemoveQuarantine is a
+        # decision a human should be making. This is intentionally
+        # chatty in multi-tenant deployments — tune the for: per env.
+        expr: qsdm_quarantine_submeshes > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: {{ $value }} submesh(es) currently quarantined"
+          description: |
+            The QuarantineManager has {{ $value }} submeshes with
+            quarantined[k]=true for 10+ minutes. Inspect
+            qsdmplus_submesh_p2p_reject_* counters and validator logs
+            for the offending submesh key. Resolve by fixing the
+            invalid-tx source, or call QuarantineManager.RemoveQuarantine
+            after confirming the underlying cause is cleared.
+
+      - alert: QSDMQuarantineMajorityIsolated
+        # Ratio-based escalation: if more than half of observed
+        # submeshes are quarantined, this is no longer a local policy
+        # hit but a systemic event (bad software rollout, rotated key,
+        # clock skew). The tracked>=4 guard stops flap on tiny fleets
+        # where one bad submesh out of two already crosses 0.5.
+        expr: |
+          qsdm_quarantine_submeshes_tracked >= 4
+          and qsdm_quarantine_submeshes_ratio > 0.5
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: majority of tracked submeshes quarantined ({{ $value | humanizePercentage }})"
+          description: |
+            {{ $value | humanizePercentage }} of the submeshes this
+            node has observed are currently quarantined. This is
+            almost never a per-submesh problem — suspect a bad
+            rollout, a policy-threshold misconfiguration, or a
+            validator-side bug mis-classifying valid transactions.
+            Cross-check qsdm_quarantine_threshold against the
+            rollout plan before unwinding quarantines.
