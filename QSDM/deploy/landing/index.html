@@ -998,8 +998,10 @@
     <span class="eyebrow">ROADMAP</span>
     <h2>Three phases. One mesh.</h2>
     <p class="lead">
-      QSDM ships in phases, with each phase deliverable and production-usable on its own. Current deployments run
-      Phase 1 infrastructure with Phase 2 submesh routing enabled.
+      QSDM ships in phases, with each phase deliverable and production-usable on its own. All three product
+      phases are shipped: Phase 1 delivers consensus and storage, Phase 2 adds submesh routing and the
+      ScyllaDB migration path, and Phase 3 brings 3D mesh validation with a live topology feed and
+      reorg-safe partition healing.
     </p>
     <div class="phases">
       <div class="phase" data-phase="PHASE 1">
@@ -1024,7 +1026,7 @@
           <li>WASM wallet and validator integration</li>
           <li>SQLite → ScyllaDB migrate with dry-run &amp; stats</li>
         </ul>
-        <span class="status active">In progress</span>
+        <span class="status shipped">Shipped</span>
       </div>
       <div class="phase" data-phase="PHASE 3">
         <h4>3D Mesh &amp; Self-Healing</h4>
@@ -1036,9 +1038,21 @@
           <li>Topology WebSocket + live 3D viewer</li>
           <li>Reputation + reorg-safe partition heal</li>
         </ul>
-        <span class="status next">Next</span>
+        <span class="status shipped">Shipped</span>
       </div>
     </div>
+
+    <p class="lead" style="margin-top:28px;">
+      <strong style="color:var(--text);">After Phase 3:</strong> the in-repo arc continued with the
+      Major Update — a rebrand to plain <em>QSDM</em>, the native coin <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/CELL_TOKENOMICS.md"><strong>Cell (CELL)</strong></a>,
+      a CPU reference miner under
+      <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL.md">MINING_PROTOCOL.md</a>,
+      and the <a href="/trust.html">attestation transparency</a> surface with external CI and Prometheus
+      enforcement. Code for all five extension phases is landed; remaining mainnet gates are
+      wall-clock events owned outside the repo (counsel, independent auditor, incentivized testnet
+      launch) and are tracked in
+      <a href="https://github.com/blackbeardONE/QSDM/blob/main/NEXT_STEPS.md">NEXT_STEPS.md</a>.
+    </p>
   </div>
 </section>
 

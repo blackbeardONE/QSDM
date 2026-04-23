@@ -12,6 +12,26 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Changed
+
+- **Landing-page roadmap widget synced with reality (2026-04-23).**
+  `deploy/landing/index.html` was still showing Phase 2 as "In progress"
+  and Phase 3 as "Next" — both phases have been shipped in-tree for
+  several sessions (submesh rules, Scylla migrate with dry-run,
+  `/api/v1/network/topology`, finality-gadget partition heal, NVIDIA
+  lock enforcement). Flipped the Phase 2 and Phase 3 status pills to
+  `Shipped`, rewrote the lead paragraph to stop claiming deployments
+  are on "Phase 1 infrastructure with Phase 2 submesh routing enabled",
+  and added a post-grid beat linking to `CELL_TOKENOMICS.md`,
+  `MINING_PROTOCOL.md`, and the `/trust.html` surface so the widget
+  doesn't imply development ended at Phase 3 (the in-repo Major Update
+  Phases 1–5 continue the arc, with only wall-clock-blocked gates —
+  trademark filings, `mining-01` external audit, `mining-05`
+  incentivized testnet, and the mainnet genesis ceremony — remaining,
+  as tracked in `NEXT_STEPS.md`). Same phase-card CSS
+  (`repeat(3, 1fr)` grid, `.status.shipped` pill), so no stylesheet
+  changes were needed.
+
 ### Added
 
 - **Quarantine Prometheus gauges + alert group (2026-04-23).**
