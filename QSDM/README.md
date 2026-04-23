@@ -43,6 +43,12 @@ Set **`[network] submesh_config`** (or **`QSDMPLUS_SUBMESH_CONFIG`**) to a **`co
 
 ## Getting Started
 
+> **New to QSDM?** Read the end-to-end operator wiki first:
+> [`docs/docs/OPERATOR_GUIDE.md`](docs/docs/OPERATOR_GUIDE.md). It
+> answers the three questions every new operator asks — *do I need an
+> NVIDIA GPU, do I need a paid NGC plan, and do I have to sync to your
+> VPS?* — before you touch a build command.
+
 ### Prerequisites
 
 - Go 1.20 or higher

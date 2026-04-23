@@ -288,6 +288,7 @@
         <li><a class="navlink" href="#consensus-layer">Consensus</a></li>
         <li><a class="navlink" href="#mine">Mine</a></li>
         <li><a class="navlink" href="#validate">Validate</a></li>
+        <li><a class="navlink" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/OPERATOR_GUIDE.md">Operator guide</a></li>
         <li><a class="navlink" href="#tech">Technology</a></li>
         <li><a class="navlink" href="#compare">Compare</a></li>
         <li><a class="navlink" href="#roadmap">Roadmap</a></li>
@@ -610,13 +611,117 @@
         </div>
       </div>
     </div>
+
+    <!-- §8.2 "Why NVIDIA?" tier table. Honest emphasis on the real
+         advantages of running NVIDIA today without triggering the §8.4
+         content filters:
+           (1) no ROI / "earn $X/day" claims — tiers are qualitative;
+           (2) no vendor-lock lies — explicitly says the protocol does
+               not prohibit other vendors, they're just unshipped;
+           (3) no NGC over-claim — the "free tier" call-out is factual,
+               attestation stays described as a transparency signal. -->
+    <h3 id="why-nvidia" style="margin-top:34px; font-size:22px;">Why NVIDIA for mining? (and what you miss without one)</h3>
+    <p style="color:var(--text-2); margin:6px 0 14px;">
+      QSDM is not NVIDIA-only. The reference CPU miner is always supported and the protocol will
+      accept a valid proof from any device. In practice, though, NVIDIA is the first-class path
+      today — the mesh3D CUDA kernels ship in-tree, the production miner image is built against
+      CUDA in CI, and the <strong>free</strong> NVIDIA NGC tier is the only attestation path
+      currently published. This table is what that means for an operator choosing hardware.
+    </p>
+    <div class="table-wrap">
+      <table class="compare">
+        <thead>
+          <tr>
+            <th>Tier</th>
+            <th>Hardware</th>
+            <th>Relative hashrate</th>
+            <th>Practical use</th>
+            <th>NGC attestation badge?</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Reference CPU</strong></td>
+            <td>Any x86-64, no GPU</td>
+            <td>1× baseline (single-digit H/s)</td>
+            <td>Protocol conformance, self-test, occasional testnet block under low difficulty</td>
+            <td>No GPU to attest</td>
+          </tr>
+          <tr>
+            <td><strong>Entry NVIDIA</strong><br/><span style="color:var(--muted); font-size:12px;">RTX 3050 / 3060</span></td>
+            <td>CUDA 11+, 8 GB+ VRAM, NVIDIA Container Toolkit</td>
+            <td>Thousands× CPU baseline (CUDA kernels unlock)</td>
+            <td>Home miner — occasional mainnet blocks once mainnet ships</td>
+            <td><strong style="color:var(--accent)">Yes — free NGC tier</strong></td>
+          </tr>
+          <tr>
+            <td><strong>Mid-range NVIDIA</strong><br/><span style="color:var(--muted); font-size:12px;">RTX 3080 / 4070</span></td>
+            <td>CUDA 11+, ≥ 10 GB VRAM</td>
+            <td>Scales with SM count and memory bandwidth</td>
+            <td>Serious home miner, longer profitable runway as difficulty rises</td>
+            <td><strong style="color:var(--accent)">Yes — free NGC tier</strong></td>
+          </tr>
+          <tr>
+            <td><strong>High-end NVIDIA</strong><br/><span style="color:var(--muted); font-size:12px;">RTX 4090 / H100-class</span></td>
+            <td>CUDA 12+, ≥ 16 GB VRAM</td>
+            <td>Rack-grade — matches or exceeds farm economics</td>
+            <td>Aggressive difficulty ramps, best power-per-hash, longest runway</td>
+            <td><strong style="color:var(--accent)">Yes — free NGC tier</strong></td>
+          </tr>
+          <tr>
+            <td><strong>Non-NVIDIA GPU</strong><br/><span style="color:var(--muted); font-size:12px;">AMD / Intel</span></td>
+            <td>OpenCL / ROCm / Level Zero — no first-party kernels shipped today</td>
+            <td>Requires community port of <code>pkg/mesh3d</code></td>
+            <td>Research / goodwill contributions only</td>
+            <td>NGC is NVIDIA-only tooling</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="color:var(--muted); font-size:12px; margin:10px 0 0;">
+      Qualitative tiers, not benchmark commits. Actual hashrate depends on driver version,
+      thermal/power budget, DAG size, and the current mesh3D epoch.
+    </p>
+
+    <div class="pillars" style="grid-template-columns: 1fr 1fr 1fr; margin-top:22px;">
+      <div class="pillar">
+        <div class="ico" style="color:var(--accent); border-color: rgba(118,185,0,.35); background: rgba(118,185,0,.08)">FREE NGC TIER</div>
+        <div class="title">No paid NVIDIA plan needed</div>
+        <div class="desc">
+          Sign up at <a href="https://ngc.nvidia.com/setup">ngc.nvidia.com/setup</a> — the free
+          account issues an NGC CLI API key. You do <strong>not</strong> need NVIDIA AI Enterprise
+          or any paid subscription to run attestation. The sidecar image
+          (<code>nvcr.io/nvidia/pytorch</code>) and the NVIDIA Container Toolkit are free too.
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="ico">TRANSPARENCY BADGE</div>
+        <div class="title">Appear on the public trust page</div>
+        <div class="desc">
+          Attested nodes show up on <a href="/trust.html">qsdm.tech/trust</a> with a coarse
+          region + GPU-arch signal — a cryptographic statement tying your node to real silicon.
+          Non-attested nodes stay first-class on the network; the badge is a signal, not a gate.
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="ico">SHIPPED KERNELS</div>
+        <div class="title">CUDA is the supported fast path</div>
+        <div class="desc">
+          <code>pkg/mesh3d/cuda.go</code> links <code>libmesh3d_kernels.so</code>, compiled with
+          <code>nvcc</code> in the miner Dockerfile and built by CI on every <code>main</code>
+          commit. Other vendors are welcome — they will require a community port.
+        </div>
+      </div>
+    </div>
+
     <p style="color:var(--muted); font-size:12.5px; margin-top:18px;">
       Jurisdictional restrictions, tax treatment, electricity costs, and heat/noise output vary widely
       by location and hardware. Evaluate your own situation before running a miner. Nothing on this
       page is financial or legal advice.
     </p>
     <div class="cta-row" style="margin-top:14px">
-      <a class="btn btn-primary" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">Read MINER_QUICKSTART.md</a>
+      <a class="btn btn-primary" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/OPERATOR_GUIDE.md">End-to-end operator guide</a>
+      <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">MINER_QUICKSTART.md</a>
       <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL.md">Mining protocol spec</a>
       <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/CELL_TOKENOMICS.md">Tokenomics</a>
     </div>
@@ -669,6 +774,7 @@
     </div>
     <div class="cta-row" style="margin-top:14px">
       <a class="btn btn-primary" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/VALIDATOR_QUICKSTART.md">Read VALIDATOR_QUICKSTART.md</a>
+      <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/OPERATOR_GUIDE.md">Operator guide (end-to-end)</a>
       <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/NODE_ROLES.md">Node roles</a>
       <a class="btn btn-ghost" href="/trust.html">Attestation transparency</a>
     </div>
@@ -1034,6 +1140,7 @@
           <li><a href="#products">Validator node</a></li>
           <li><a href="#products">Miner (planned)</a></li>
           <li><a href="#nvidia">NVIDIA Edge</a></li>
+          <li><a href="#why-nvidia">Why NVIDIA?</a></li>
           <li><a href="#roadmap">Roadmap</a></li>
         </ul>
       </div>
@@ -1041,6 +1148,7 @@
         <h5>Developers</h5>
         <ul>
           <li><a href="https://github.com/blackbeardONE/QSDM">GitHub</a></li>
+          <li><a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/OPERATOR_GUIDE.md">Operator guide</a></li>
           <li><a href="https://api.qsdm.tech/api/v1/health">API health</a></li>
           <li><a href="https://dashboard.qsdm.tech/">Dashboard</a></li>
           <li><a href="#compare">Comparison</a></li>

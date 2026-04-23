@@ -31,11 +31,19 @@ relevant quantum adversaries tomorrow.
 
 ## Start here
 
+- **Operator wiki (end-to-end, pick role → hardware → bootstrap → attestation):** [`QSDM/docs/docs/OPERATOR_GUIDE.md`](QSDM/docs/docs/OPERATOR_GUIDE.md) ⭐ start here if you are new
 - **Run a validator (CPU-only):** [`QSDM/docs/docs/VALIDATOR_QUICKSTART.md`](QSDM/docs/docs/VALIDATOR_QUICKSTART.md)
 - **Run a miner (GPU-bound PoW):** [`QSDM/docs/docs/MINER_QUICKSTART.md`](QSDM/docs/docs/MINER_QUICKSTART.md)
+- **Run the NGC attestation sidecar (free NVIDIA NGC tier):** [`apps/qsdmplus-nvidia-ngc/QUICKSTART.md`](apps/qsdmplus-nvidia-ngc/QUICKSTART.md)
 - **API reference:** [`QSDM/docs/docs/API_REFERENCE.md`](QSDM/docs/docs/API_REFERENCE.md) and [`QSDM/docs/docs/openapi.yaml`](QSDM/docs/docs/openapi.yaml)
 - **Protocol specs:** [`QSDM/docs/docs/MINING_PROTOCOL.md`](QSDM/docs/docs/MINING_PROTOCOL.md), [`QSDM/docs/docs/NODE_ROLES.md`](QSDM/docs/docs/NODE_ROLES.md), [`QSDM/docs/docs/CELL_TOKENOMICS.md`](QSDM/docs/docs/CELL_TOKENOMICS.md)
 - **Release notes:** [`CHANGELOG.md`](CHANGELOG.md)
+
+> **New?** The operator wiki is a 10-minute read that explicitly answers
+> the three questions every new node operator asks: *do I need an NVIDIA
+> GPU, do I need a paid NGC plan, and do I have to sync to your VPS?*
+> Spoiler: **no, no, and no — but NVIDIA is the first-class path today
+> and `api.qsdm.tech` is the recommended bootstrap peer for Phase 4.**
 
 ## Trust surface (live reference node)
 

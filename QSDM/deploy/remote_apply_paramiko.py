@@ -168,6 +168,24 @@ if ! systemctl is-active --quiet qsdmplus; then
 fi
 echo 'active'
 
+echo '===[ landing sync (deploy/landing/ -> /var/www/qsdm/) ]==='
+# Caddy serves the corporate site from /var/www/qsdm (see Caddyfile).
+# The tarball extract puts the latest HTML under /root/QSDM/deploy/landing/,
+# but Caddy does not read from there. Mirror the files over with
+# install -m0644 (preserves mode, owner = root) so updates to
+# landing/index.html + landing/trust.html appear on qsdm.tech without a
+# separate scp step. Idempotent: re-running copies the same bytes.
+if [ -d /root/QSDM/deploy/landing ] && [ -d /var/www/qsdm ]; then
+  for src in /root/QSDM/deploy/landing/*.html /root/QSDM/deploy/landing/*.css /root/QSDM/deploy/landing/*.js /root/QSDM/deploy/landing/*.svg; do
+    [ -f "$src" ] || continue
+    base=$(basename "$src")
+    install -m0644 -o root -g root "$src" "/var/www/qsdm/$base"
+    echo "  synced $base"
+  done
+else
+  echo "  (skipped: /var/www/qsdm or /root/QSDM/deploy/landing missing)"
+fi
+
 echo '===[ Caddy reload (if installed) ]==='
 if systemctl list-unit-files | grep -q '^caddy\.service'; then
   # Caddy's "reload" returns non-zero on this host whenever its admin
