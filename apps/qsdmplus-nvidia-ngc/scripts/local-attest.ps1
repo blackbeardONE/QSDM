@@ -71,7 +71,7 @@ if ($LogPath) {
         Start-Transcript -Path $LogPath -Append -IncludeInvocationHeader | Out-Null
         $transcriptStarted = $true
     } catch {
-        Write-Host "warn: could not start transcript at $LogPath: $_" -ForegroundColor Yellow
+        Write-Host "warn: could not start transcript at ${LogPath}: $_" -ForegroundColor Yellow
     }
 }
 
@@ -143,7 +143,7 @@ try {
             try {
                 Start-Transcript -Path $LogPath -Append -IncludeInvocationHeader | Out-Null
             } catch {
-                Write-Host "warn: could not reopen transcript at $LogPath: $_" -ForegroundColor Yellow
+                Write-Host "warn: could not reopen transcript at ${LogPath}: $_" -ForegroundColor Yellow
                 $transcriptStarted = $false
             }
         }
