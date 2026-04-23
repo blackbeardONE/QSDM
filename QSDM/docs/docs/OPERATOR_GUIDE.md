@@ -130,9 +130,11 @@ end-to-end. The critical bits:
 1. Drop a `config.toml` with your desired `node.address`,
    `api.port = 8080`, `network.port = 4001`.
 2. Set `bootstrap_peers` to the **current multiaddr** of an existing
-   peer. For Phase 4 testnet that is us; we publish the live
-   multiaddr at `https://qsdm.tech/validators` (and you can always ask
-   us in the project issue tracker). The multiaddr looks like:
+   peer. For Phase 4 testnet that is us; the live multiaddr is
+   published at [`qsdm.tech/validators.html`](https://qsdm.tech/validators.html)
+   and the peer-id is always queryable live at
+   `curl -s https://api.qsdm.tech/api/v1/status | jq -r .node_id`. The
+   multiaddr looks like:
 
    ```
    /ip4/206.189.132.232/tcp/4001/p2p/12D3KooW…
