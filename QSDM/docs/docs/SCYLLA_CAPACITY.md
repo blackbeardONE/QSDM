@@ -172,19 +172,25 @@ serve reads.
 
 ## 5. Observability
 
-Enable QSDM Prometheus exposition (JSON and text) and scrape these series:
+Enable QSDM Prometheus exposition (JSON and text) and scrape these series.
+Metric names are given under the canonical `qsdm_*` prefix; during the
+dual-emit deprecation window (Major Update §6) the same samples are also
+published under the legacy `qsdmplus_*` prefix, so either name resolves:
 
 | Series | Meaning |
 |--------|---------|
-| `qsdmplus_tx_total` | logical transactions processed |
-| `qsdmplus_scylla_store_duration_seconds` | server-side write latency |
-| `qsdmplus_scylla_dedupe_skip_total` | duplicate `tx_id` claims skipped |
-| `qsdmplus_p2p_wallet_ingress_dedupe_skip_total` | cross-transport dedupe hits |
+| `qsdm_tx_total` | logical transactions processed |
+| `qsdm_scylla_store_duration_seconds` | server-side write latency |
+| `qsdm_scylla_dedupe_skip_total` | duplicate `tx_id` claims skipped |
+| `qsdm_p2p_wallet_ingress_dedupe_skip_total` | cross-transport dedupe hits |
 
-Alert suggestions (see `QSDM/deploy/prometheus/alerts_qsdmplus.example.yml`):
+Alert suggestions (see `QSDM/deploy/prometheus/alerts_qsdmplus.example.yml`
+— note: the example file and the rules inside it still use the legacy
+`qsdmplus_*` prefix on purpose, so operators who already pasted it into
+their Prometheus do not have to re-paste mid-migration):
 
-- p95 `qsdmplus_scylla_store_duration_seconds` above 100 ms for 5m.
-- `qsdmplus_scylla_dedupe_skip_total` increasing > 1 Hz for 10m (possible
+- p95 `qsdm_scylla_store_duration_seconds` above 100 ms for 5m.
+- `qsdm_scylla_dedupe_skip_total` increasing > 1 Hz for 10m (possible
   replay attack or relay loop).
 
 ---

@@ -5,6 +5,26 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # go-libp2p ships non-module-compatible major tags (v2.x … v6.x exist
+      # as `+incompatible` pseudo-releases) but the module's import path is
+      # still `github.com/libp2p/go-libp2p` with no `/vN` suffix. Dependabot
+      # therefore proposes "update to v6.0.23+incompatible", which cannot be
+      # applied without rewriting every import in the tree and was observed
+      # to fail the whole updater run with `dependency_file_not_resolvable`:
+      #
+      #   job_1333813327: go: downloading github.com/libp2p/go-libp2p
+      #   v6.0.23+incompatible … Dependabot encountered '1' error(s) during
+      #   execution
+      #
+      # The upstream project treats the v0.x line as canonical; every other
+      # libp2p-family module in this go.mod is still on v0.x for the same
+      # reason. Pin major-version bumps off for the whole family so minor
+      # and patch updates (the actually useful ones, e.g. kad-dht 0.39.0 ->
+      # 0.39.1) keep flowing without taking the major down with them.
+      - dependency-name: "github.com/libp2p/*"
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: github-actions
     directory: /

@@ -180,10 +180,13 @@ Prometheus scrapes (see `VALIDATOR_QUICKSTART.md` §7):
 ```bash
 curl -sS -H "Authorization: Bearer $SCRAPE_TOKEN" \
   http://127.0.0.1:8080/api/metrics/prometheus \
-  | grep -E 'qsdmplus_ngc_proof_ingest_(accepted|rejected)_total'
+  | grep -E '(qsdm|qsdmplus)_ngc_proof_ingest_(accepted|rejected)_total'
 ```
 
-`qsdmplus_ngc_proof_ingest_accepted_total` should be `>= 1`.
+`qsdm_ngc_proof_ingest_accepted_total` should be `>= 1`. During the
+`qsdmplus_*` → `qsdm_*` dual-emit deprecation window (Major Update §6)
+the legacy series `qsdmplus_ngc_proof_ingest_accepted_total` is emitted
+with the same value, so either name works in dashboards and alerts.
 
 ---
 
@@ -241,8 +244,9 @@ Optional extras, each of which tightens the coupling further:
 - [ ] Rotate `QSDMPLUS_NGC_INGEST_SECRET` on a schedule (≤ 90 days
       recommended). Rotation = restart node with new value, then restart
       sidecar with new value. No downtime on the consensus path.
-- [ ] Monitor `qsdmplus_ngc_proof_ingest_rejected_total{reason=...}` — a
-      spike in `reason="hmac_mismatch"` or `"nonce_invalid"` usually means
+- [ ] Monitor `qsdm_ngc_proof_ingest_rejected_total{reason=...}` (legacy
+      alias during the dual-emit window: `qsdmplus_ngc_proof_ingest_rejected_total`)
+      — a spike in `reason="hmac_mismatch"` or `"nonce_invalid"` usually means
       sidecar and node drifted (different secrets, clock skew, or a stale
       container).
 - [ ] Dashboard panel — import
