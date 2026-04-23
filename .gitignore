@@ -167,6 +167,18 @@ coverage.out
 *.cov
 *.coverprofile
 
+# CUDA kernel build artefacts produced by QSDM/scripts/build_kernels.ps1
+# (nvcc + gendef + dlltool). The only checked-in file is the .cu source;
+# every derived product below is regenerated from it per-host.
+QSDM/source/pkg/mesh3d/kernels/mesh3d_kernels.dll
+QSDM/source/pkg/mesh3d/kernels/mesh3d_kernels.lib
+QSDM/source/pkg/mesh3d/kernels/mesh3d_kernels.exp
+QSDM/source/pkg/mesh3d/kernels/mesh3d_kernels.def
+QSDM/source/pkg/mesh3d/kernels/libmesh3d_kernels.dll.a
+QSDM/source/pkg/mesh3d/kernels/libmesh3d_kernels.so
+QSDM/source/mesh3d_kernels.dll
+QSDM/source/libmesh3d_kernels.so
+
 # Rust (wasm_module/) — everything under Cargo's target/ is
 # regeneratable and is where the local tree's large .pdb/.rlib
 # accumulate.

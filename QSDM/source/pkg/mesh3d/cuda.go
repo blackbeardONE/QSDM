@@ -5,8 +5,30 @@
 package mesh3d
 
 /*
-#cgo CFLAGS: -IC:/CUDA/include -Wno-builtin-macro-redefined -Wno-error=builtin-macro-redefined
-#cgo LDFLAGS: -LC:/CUDA/lib/x64 -lcudart -lmesh3d_kernels
+// Cross-platform CGO directives for the CUDA mesh3d backend.
+//
+// Rationale for split platform blocks:
+//   - On Windows the canonical CUDA install path is
+//     "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.x". That
+//     path contains a space, and cgo directive tokenisation splits on
+//     whitespace with no shell-style quoting, so we cannot embed it
+//     here directly. The repo previously hard-coded "C:/CUDA/..." which
+//     is NOT where the NVIDIA installer ever lands — it was a manual
+//     symlink convention from the original author's machine that
+//     broke every fresh dev setup. We now expect Windows builders to
+//     source `CGO_CFLAGS` / `CGO_LDFLAGS` from the build helper
+//     (QSDM/scripts/build_kernels.ps1) which reads `$env:CUDA_PATH`
+//     and emits MSVC-safe short-path forms automatically.
+//   - On Linux the system package manager and upstream .run installer
+//     both place the toolkit at /usr/local/cuda{,-12.x}, so we point
+//     there by default. Distros that install elsewhere (e.g. Conda
+//     envs, nix) must override via CGO_CFLAGS / CGO_LDFLAGS. These
+//     directives APPEND to whatever cgo already has, so an override
+//     works cleanly.
+#cgo CFLAGS: -Wno-builtin-macro-redefined -Wno-error=builtin-macro-redefined
+#cgo windows LDFLAGS: -lcudart -lmesh3d_kernels
+#cgo linux   CFLAGS:  -I/usr/local/cuda/include
+#cgo linux   LDFLAGS: -L/usr/local/cuda/lib64 -lcudart -lmesh3d_kernels
 #include <cuda_runtime.h>
 #include <stdlib.h>
 #include <stdint.h>

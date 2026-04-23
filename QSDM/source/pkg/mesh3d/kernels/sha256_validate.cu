@@ -160,11 +160,24 @@ __global__ void validate_parent_cells(
 
 // --- Host API (called from Go via CGO) ---
 
+// MESH3D_API makes the host-side entry points visible in the produced
+// shared library. On ELF (.so) symbols are public by default; on PE
+// (.dll) MSVC and ld-link ONLY export what is explicitly marked
+// __declspec(dllexport), which is why we used to ship a Windows DLL
+// with a single NvOptimusEnablementCuda export and nothing else —
+// CGO then failed to resolve mesh3d_hash_cells / mesh3d_validate_cells
+// at link time. Keep this macro next to every extern "C" entry point.
+#ifdef _WIN32
+#define MESH3D_API __declspec(dllexport)
+#else
+#define MESH3D_API __attribute__((visibility("default")))
+#endif
+
 extern "C" {
 
 // mesh3d_hash_cells hashes `n` cells on GPU.
 // Returns 0 on success, non-zero on CUDA error.
-int mesh3d_hash_cells(
+MESH3D_API int mesh3d_hash_cells(
     const uint8_t *h_data,    // flat cell data
     const uint32_t *h_offsets,
     const uint32_t *h_lengths,
@@ -204,7 +217,7 @@ int mesh3d_hash_cells(
 // mesh3d_validate_cells validates `n` cells on GPU.
 // h_results: output array of `n` ints (1=valid, 0=invalid).
 // Returns 0 on success.
-int mesh3d_validate_cells(
+MESH3D_API int mesh3d_validate_cells(
     const uint8_t *h_data,
     const uint32_t *h_offsets,
     const uint32_t *h_lengths,
