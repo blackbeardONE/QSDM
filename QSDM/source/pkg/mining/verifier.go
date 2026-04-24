@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"sync"
+	"time"
 )
 
 // RejectReason is a canonical string identifying why a proof was
@@ -29,6 +30,16 @@ const (
 	ReasonBatchFraud     RejectReason = "batch-fraud"
 	ReasonQuarantined    RejectReason = "quarantined"
 	ReasonTooLate        RejectReason = "too-late"
+
+	// ReasonAttestation groups every v2 (NVIDIA-locked) rejection
+	// whose root cause is that the hardware-attestation check
+	// failed: missing attestation on a v2 proof, unknown
+	// attestation type, stale nonce, malformed bundle, or a
+	// cryptographic signature mismatch. Operators who need finer
+	// granularity should inspect the wrapped sentinel in
+	// pkg/mining/fork.go (ErrAttestation*). See
+	// MINING_PROTOCOL_V2 §7 for the full taxonomy.
+	ReasonAttestation RejectReason = "attestation"
 )
 
 // RejectError carries a RejectReason plus optional detail. verifier callers
@@ -222,6 +233,26 @@ type VerifierConfig struct {
 	// GraceWindow overrides the default of 6 blocks. Zero means use the
 	// default.
 	GraceWindow uint64
+
+	// Attestation is the pluggable v2 attestation verifier. It is
+	// consulted only for proofs whose height is at or above
+	// ForkV2Height() — pre-fork proofs skip this hook entirely so
+	// v1 verification stays byte-for-byte identical to its
+	// pre-pivot behaviour.
+	//
+	// If left nil, NewVerifier injects a FailClosedVerifier so a
+	// misconfigured post-fork validator rejects every proof rather
+	// than silently accepting unattested ones. Production
+	// validators MUST wire in the real pkg/mining/attest
+	// implementation before the fork activates (Phase 4).
+	Attestation AttestationVerifier
+
+	// Now is the clock the verifier uses for attestation-freshness
+	// checks. Nil means time.Now — tests override it to pin
+	// deterministic "current time" values. Pre-fork proofs don't
+	// consult the clock at all, so leaving this nil is harmless on
+	// v1-only validators.
+	Now func() time.Time
 }
 
 // Verifier is the stateful acceptance pipeline. It holds no mutable
@@ -260,6 +291,18 @@ func NewVerifier(cfg VerifierConfig) (*Verifier, error) {
 	if cfg.DifficultyAt == nil {
 		return nil, errors.New("mining: VerifierConfig.DifficultyAt is required")
 	}
+	// Default to the fail-closed attestation verifier. This keeps
+	// v1-only configurations unchanged (they never hit the v2 gate
+	// because ForkV2Height defaults to math.MaxUint64) while
+	// ensuring a post-fork validator that forgets to wire in a real
+	// attest implementation rejects every proof rather than
+	// silently accepting them.
+	if cfg.Attestation == nil {
+		cfg.Attestation = FailClosedVerifier{}
+	}
+	if cfg.Now == nil {
+		cfg.Now = time.Now
+	}
 	return &Verifier{cfg: cfg}, nil
 }
 
@@ -290,9 +333,38 @@ func (v *Verifier) Verify(rawProofJSON []byte, acceptHeight uint64) ([32]byte, e
 		return [32]byte{}, reject(ReasonNonCanonical, "bytes differ from canonical encoding")
 	}
 
-	// Step 1: version.
-	if p.Version != ProtocolVersion {
-		return [32]byte{}, reject(ReasonBadVersion, "got %d want %d", p.Version, ProtocolVersion)
+	// Step 1: version + fork gate.
+	//
+	// Pre-fork (p.Height < ForkV2Height): only v1 proofs are
+	// accepted, preserving byte-identical behaviour with the
+	// pre-pivot verifier.
+	//
+	// Post-fork (p.Height >= ForkV2Height): only v2 proofs are
+	// accepted, and the attestation hook must sign off before any
+	// of the remaining steps run. We run the attestation check
+	// here (immediately after the version gate) rather than at the
+	// end so that a misconfigured validator burns minimum CPU on
+	// unattestable proofs — the fail-closed default rejects on
+	// every field except a well-formed proof shape.
+	//
+	// The boundary case — a v2 proof with height exactly equal to
+	// ForkV2Height — is treated as post-fork. This matches the
+	// convention IsV2() encodes and is the definition used in
+	// MINING_PROTOCOL_V2 §2.1.
+	if IsV2(p.Height) {
+		if p.Version != ProtocolVersionV2 {
+			return [32]byte{}, reject(ReasonBadVersion, "post-fork got v%d want v%d", p.Version, ProtocolVersionV2)
+		}
+		if p.Attestation.Type == "" {
+			return [32]byte{}, reject(ReasonAttestation, "%v", ErrAttestationRequired)
+		}
+		if err := v.cfg.Attestation.VerifyAttestation(*p, v.cfg.Now()); err != nil {
+			return [32]byte{}, reject(ReasonAttestation, "%v", err)
+		}
+	} else {
+		if p.Version != ProtocolVersion {
+			return [32]byte{}, reject(ReasonBadVersion, "pre-fork got v%d want v%d", p.Version, ProtocolVersion)
+		}
 	}
 
 	// Step 2: height within grace window.

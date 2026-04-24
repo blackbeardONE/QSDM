@@ -2,6 +2,7 @@ package mining
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"sync/atomic"
 	"time"
@@ -170,3 +171,69 @@ var ErrAttestationSignatureInvalid = errors.New("mining: attestation cryptograph
 // metrics can tell "attacker sent garbage" apart from "operator
 // lost their HMAC key."
 var ErrAttestationBundleMalformed = errors.New("mining: attestation bundle not parseable")
+
+// -----------------------------------------------------------------------------
+// AttestationVerifier interface (pluggable per-type verification)
+// -----------------------------------------------------------------------------
+
+// AttestationVerifier is the contract a v2 verifier depends on
+// for cryptographic attestation checks. The interface lives in
+// pkg/mining (not pkg/mining/attest) so VerifierConfig can embed
+// an implementation without pkg/mining importing its own
+// subpackages — that direction would create an import cycle for
+// any implementation that needs access to Proof.
+//
+// Phase 2c will ship the two production implementations under
+// pkg/mining/attest/cc and pkg/mining/attest/hmac. Phase 2b (the
+// commit that adds this interface) ships FailClosedVerifier as
+// the default — it rejects every v2 proof so that a misconfigured
+// validator that forgets to wire in a real verifier fails safely
+// rather than silently accepting anything.
+//
+// Implementations MUST be safe for concurrent use: a single
+// AttestationVerifier instance is shared across all validator
+// goroutines processing proofs.
+type AttestationVerifier interface {
+	// VerifyAttestation cryptographically validates a v2 proof's
+	// attestation. It is called AFTER the Verifier has confirmed
+	// the proof is well-formed and the height gate has selected
+	// the v2 path, so implementations may assume:
+	//
+	//   - p.Version == ProtocolVersionV2
+	//   - p.Attestation.Type is non-empty
+	//   - now is the validator's current wall-clock time (it is
+	//     passed in rather than read internally so tests are
+	//     deterministic)
+	//
+	// Implementations dispatch on p.Attestation.Type to run the
+	// nvidia-cc-v1 or nvidia-hmac-v1 verification flow described
+	// in MINING_PROTOCOL_V2 §3.2. A nil return means "attested";
+	// any non-nil return means reject. Errors should wrap one of
+	// the ErrAttestation* sentinels in this file so downstream
+	// metrics can group by reason.
+	VerifyAttestation(p Proof, now time.Time) error
+}
+
+// FailClosedVerifier is the default AttestationVerifier. It
+// rejects every proof with ErrAttestationSignatureInvalid and is
+// used when VerifierConfig.Attestation is left nil. The name is
+// deliberately scary so reviewers catch its presence in
+// production configurations.
+//
+// The rationale for fail-closed over fail-open is MINING_PROTOCOL_V2
+// §9.1's attacker model: a misconfigured validator that accepts
+// unattested proofs is worse than one that accepts none, because
+// the former silently erodes the attestation guarantee while the
+// latter surfaces immediately as "nothing validates." Phase 2c
+// replaces FailClosedVerifier with the real dispatch tree.
+type FailClosedVerifier struct{}
+
+// VerifyAttestation on FailClosedVerifier always rejects with a
+// wrapped ErrAttestationSignatureInvalid so validator operators
+// see a distinctive log line if they forget to wire in a real
+// verifier.
+func (FailClosedVerifier) VerifyAttestation(_ Proof, _ time.Time) error {
+	return fmt.Errorf("mining: FailClosedVerifier is the default AttestationVerifier; "+
+		"wire in a real pkg/mining/attest implementation before activating FORK_V2: %w",
+		ErrAttestationSignatureInvalid)
+}
