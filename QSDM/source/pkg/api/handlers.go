@@ -241,6 +241,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// MiningService is installed via api.SetMiningService(...).
 	mux.HandleFunc("/api/v1/mining/work", handlers.MiningWorkHandler)
 	mux.HandleFunc("/api/v1/mining/submit", handlers.MiningSubmitHandler)
+	// Mining challenge endpoint (Phase 2c-iii,
+	// MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §6.2). Returns 503 until
+	// a ChallengeIssuer is installed via api.SetChallengeIssuer(...).
+	// Registered unconditionally so miners can probe readiness.
+	mux.HandleFunc("/api/v1/mining/challenge", handlers.MiningChallengeHandler)
 
 	// Trust / attestation transparency endpoints (Major Update Phase 5.1).
 	// Registered unconditionally. If no aggregator is installed via

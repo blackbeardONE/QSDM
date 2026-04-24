@@ -210,6 +210,13 @@ func isPublicEndpoint(path string) bool {
 		// plus per-address quarantine (MINING_PROTOCOL.md §8.3).
 		"/api/v1/mining/work",
 		"/api/v1/mining/submit",
+		// /mining/challenge mints a fresh per-call nonce and MUST be
+		// publicly reachable — if miners had to authenticate to fetch
+		// a challenge, the validator's identity gating would leak out
+		// of the attestation path into session management and make
+		// bring-up fragile. The endpoint is rate-limited the same way
+		// as /mining/work.
+		"/api/v1/mining/challenge",
 		// Trust transparency endpoints (Major Update §8.5). Intentionally
 		// public so third parties can independently scrape and verify
 		// "X of Y attested" without operator-granted API tokens. The

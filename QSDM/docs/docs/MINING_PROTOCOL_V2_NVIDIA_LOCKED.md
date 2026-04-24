@@ -218,18 +218,32 @@ Bundle is a base64-encoded canonical-JSON object:
 
 ```json
 {
-  "node_id":       "<operator-registered GPU handle, e.g. 'alice-rtx4090-01'>",
-  "gpu_uuid":      "<GPU instance UUID from nvidia-smi, hex>",
-  "gpu_name":      "NVIDIA GeForce RTX 4090",
-  "driver_ver":    "572.16",
-  "cuda_version":  "12.8",
-  "compute_cap":   "8.9",
-  "nonce":         "<same 32-byte hex as Attestation.Nonce>",
-  "issued_at":     <unix seconds>,
-  "challenge_bind": "<hex H(miner_addr || batch_root || mix_digest)>",
-  "hmac":          "<hex HMAC-SHA256(operator_key, canonical_json_without_hmac_field)>"
+  "node_id":              "<operator-registered GPU handle, e.g. 'alice-rtx4090-01'>",
+  "gpu_uuid":             "<GPU instance UUID from nvidia-smi, hex>",
+  "gpu_name":             "NVIDIA GeForce RTX 4090",
+  "driver_ver":           "572.16",
+  "cuda_version":         "12.8",
+  "compute_cap":          "8.9",
+  "nonce":                "<same 32-byte hex as Attestation.Nonce>",
+  "issued_at":            <unix seconds>,
+  "challenge_bind":       "<hex H(miner_addr || batch_root || mix_digest)>",
+  "challenge_sig":        "<hex validator signature over (signer_id, issued_at, nonce)>",
+  "challenge_signer_id":  "<validator identity that issued this challenge>",
+  "hmac":                 "<hex HMAC-SHA256(operator_key, canonical_json_without_hmac_field)>"
 }
 ```
+
+Note: `challenge_sig` and `challenge_signer_id` were added in
+Phase 2c-iii (commits `51e1c5e` + `71ba995`) so the validator can
+prove, before running the expensive HMAC check, that
+`(nonce, issued_at)` was actually minted by some known validator
+rather than being an unsourced value the miner made up.
+Canonical-form field order is alphabetical on the JSON key —
+`challenge_sig` and `challenge_signer_id` land between
+`challenge_bind` and `compute_cap`, not in the order shown above
+(which is the human-reading order, grouped by topic). Reference
+implementation: `pkg/mining/attest/hmac/bundle.go` (wire) +
+`pkg/mining/challenge/` (issuer/verifier crypto).
 
 Verifier flow:
 
@@ -246,8 +260,18 @@ Verifier flow:
    registry. Assert bundle.gpu_uuid matches. Reject on mismatch.
    This is what binds a single operator key to a single GPU —
    absent this check, one key could mine forever on any hardware.
-6. Assert bundle.nonce matches Attestation.Nonce and was issued
-   by this validator within FRESHNESS_WINDOW.
+6a. Assert bundle.nonce matches Attestation.Nonce and
+    bundle.issued_at matches Attestation.IssuedAt.
+6b. If a ChallengeVerifier is configured (production MUST):
+    reconstruct challenge.Challenge{Nonce, IssuedAt, SignerID,
+    Signature} from bundle.{nonce, issued_at, challenge_signer_id,
+    challenge_sig} and verify the signature using the SignerID's
+    registered public key. Reject unknown signer_id or bad
+    signature.
+6c. Assert bundle.issued_at falls within FRESHNESS_WINDOW of the
+    validator's wall clock (and ≤ AllowedFutureSkew ahead).
+6d. Check the nonce-replay cache; reject if (node_id, nonce)
+    already seen.
 7. Assert bundle.gpu_name does NOT contain any of the deny-list
    strings (see §5.3 deny-list — empty at genesis; governance
    can append).
@@ -255,6 +279,27 @@ Verifier flow:
    the claimed gpu_arch — if an RTX 4090 claims to be
    "hopper", reject.
 9. If all pass → proof is attested. Else → reject.
+```
+
+HTTP issuer endpoint (Phase 2c-iii):
+
+```
+GET /api/v1/mining/challenge
+
+Response 200:
+{
+  "nonce":     "<64 hex chars>",
+  "issued_at": <unix seconds>,
+  "signer_id": "<validator identity>",
+  "signature": "<hex signer output>"
+}
+
+Response headers:
+  Cache-Control: no-store    (required — a cached response would
+                              leak the same nonce to two miners)
+
+Response 503 + Retry-After: 5 when no ChallengeIssuer is wired in.
+Response 500 on issuer internal failure (PRNG exhausted, etc.).
 ```
 
 **Why HMAC and not a device key?** See §5 for the full
