@@ -55,6 +55,49 @@ func (as *AccountStore) Get(address string) (*Account, bool) {
 	return &cp, true
 }
 
+// DebitAndBumpNonce atomically validates the sender's nonce, checks
+// balance, debits `amount`, and bumps the sender's nonce by one.
+// Intended for non-transfer transactions (enrollment, future contract
+// calls) that go through AccountStore but don't match the
+// Sender→Recipient transfer shape of ApplyTx.
+//
+// Returns an error — with the store UN-mutated — if:
+//   - the sender account doesn't exist
+//   - tx.Nonce doesn't match the sender's current nonce
+//   - the sender's balance is below `amount`
+//   - `amount` is non-positive (to keep the contract symmetric with
+//     Debit; a zero-amount "just bump the nonce" caller should use a
+//     future dedicated helper, not smuggle it through here)
+//
+// Matches the atomicity guarantee of ApplyTx: either the whole
+// debit-and-bump happens, or nothing changes. Required because
+// consensus receipts reference the post-apply nonce; any code path
+// that bumps the nonce without the debit (or vice-versa) would
+// produce inconsistent state roots across validators.
+func (as *AccountStore) DebitAndBumpNonce(sender string, amount float64, expectedNonce uint64) error {
+	if amount <= 0 {
+		return fmt.Errorf("debit amount must be positive, got %.8f", amount)
+	}
+	as.mu.Lock()
+	defer as.mu.Unlock()
+
+	acc, ok := as.accounts[sender]
+	if !ok {
+		return fmt.Errorf("sender %s not found", sender)
+	}
+	if acc.Nonce != expectedNonce {
+		return fmt.Errorf("nonce mismatch for %s: expected %d, got %d",
+			sender, acc.Nonce, expectedNonce)
+	}
+	if acc.Balance < amount {
+		return fmt.Errorf("insufficient balance: have %.8f, need %.8f",
+			acc.Balance, amount)
+	}
+	acc.Balance -= amount
+	acc.Nonce++
+	return nil
+}
+
 // Debit removes funds if the account exists and has sufficient balance.
 func (as *AccountStore) Debit(address string, amount float64) error {
 	if amount <= 0 {
