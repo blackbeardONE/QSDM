@@ -90,6 +90,20 @@ jobs:
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Resolve build metadata (git SHA, UTC build date)
+        id: meta
+        # The release workflow is the only place GitSHA and BuildDate
+        # get injected into binaries, so `--version` output from a
+        # tagged artefact reliably identifies the exact commit +
+        # build-time pair that produced it. Dev builds (local `go
+        # build`, `go run`) keep their "dev"/"unknown" sentinels.
+        run: |
+          SHA="${GITHUB_SHA:0:7}"
+          DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "date=${DATE}" >> "$GITHUB_OUTPUT"
+          echo "Building with SHA=${SHA} DATE=${DATE} TAG=${{ steps.tag.outputs.tag }}"
+
       - name: Build reproducible binaries
         working-directory: QSDM/source
         env:
@@ -107,22 +121,54 @@ jobs:
           # qsdmminer-console pulls golang.org/x/term for TTY detection
           # and BurntSushi/toml for ~/.qsdm/miner.toml persistence;
           # both are pure-Go deps already in go.mod and stay CGO-free.
+          #
+          # -ldflags -X embeds the release tag, short git SHA, and
+          # build date into pkg/buildinfo so every binary's --version
+          # output maps back to a specific commit + release pair.
+          # All four release artefacts consume these same vars (see
+          # cmd/qsdmminer, cmd/qsdmminer-console, cmd/trustcheck,
+          # cmd/genesis-ceremony — each has a --version flag wired to
+          # pkg/buildinfo.String).
           mkdir -p /tmp/artefacts
           suffix="${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
 
-          go build -trimpath -ldflags="-s -w" \
+          LDFLAGS="-s -w \
+            -X github.com/blackbeardONE/QSDM/pkg/buildinfo.Version=${{ steps.tag.outputs.tag }} \
+            -X github.com/blackbeardONE/QSDM/pkg/buildinfo.GitSHA=${{ steps.meta.outputs.sha }} \
+            -X github.com/blackbeardONE/QSDM/pkg/buildinfo.BuildDate=${{ steps.meta.outputs.date }}"
+
+          go build -trimpath -ldflags="${LDFLAGS}" \
             -o "/tmp/artefacts/qsdmminer-${suffix}" ./cmd/qsdmminer
 
-          go build -trimpath -ldflags="-s -w" \
+          go build -trimpath -ldflags="${LDFLAGS}" \
             -o "/tmp/artefacts/qsdmminer-console-${suffix}" ./cmd/qsdmminer-console
 
-          go build -trimpath -ldflags="-s -w" \
+          go build -trimpath -ldflags="${LDFLAGS}" \
             -o "/tmp/artefacts/trustcheck-${suffix}" ./cmd/trustcheck
 
-          go build -trimpath -ldflags="-s -w" \
+          go build -trimpath -ldflags="${LDFLAGS}" \
             -o "/tmp/artefacts/genesis-ceremony-${suffix}" ./cmd/genesis-ceremony
 
           ls -la /tmp/artefacts
+
+      - name: Smoke-check --version on a native-arch artefact
+        # Only the linux/amd64 matrix cell runs the native binary —
+        # cross-compiled cells cannot exec the binary they produced.
+        # This catches the (easy-to-regress) case where --version
+        # prints "dev"/"unknown" despite the ldflags injection
+        # working — it means a cmd/ main forgot to wire pkg/buildinfo.
+        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+        run: |
+          set -euo pipefail
+          suffix="${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
+          for bin in qsdmminer qsdmminer-console trustcheck genesis-ceremony; do
+            out="$(/tmp/artefacts/${bin}-${suffix} --version)"
+            echo "${bin}: ${out}"
+            echo "${out}" | grep -q "${{ steps.tag.outputs.tag }}" \
+              || { echo "FAIL: ${bin} --version missing tag ${{ steps.tag.outputs.tag }}"; exit 1; }
+            echo "${out}" | grep -q "${{ steps.meta.outputs.sha }}" \
+              || { echo "FAIL: ${bin} --version missing git SHA"; exit 1; }
+          done
 
       - name: Compute SHA256SUMS for this matrix cell
         run: |

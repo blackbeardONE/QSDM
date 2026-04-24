@@ -14,6 +14,77 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Embedded build metadata + `--version` on every release artefact
+  (2026-04-24).** Every one of the four release binaries (`qsdmminer`,
+  `qsdmminer-console`, `trustcheck`, `genesis-ceremony`) now accepts a
+  `--version` flag that prints a single line identifying the exact
+  artefact:
+
+  ```
+  qsdmminer-console v0.1.0 (abc1234, 2026-04-22T10:00:00Z, go1.25.9, linux/amd64)
+  ```
+
+  The values come from a new `pkg/buildinfo` package whose three vars
+  (`Version`, `GitSHA`, `BuildDate`) are injected at link time by
+  `.github/workflows/release-container.yml` via `-ldflags -X`. Local
+  `go build` / `go run` produce `dev` / `unknown` sentinels — a
+  deliberate, inspectable signal that the binary was not produced by
+  the release pipeline. An `IsReleaseBuild()` helper exposes the
+  same distinction to downstream callers that want to gate telemetry
+  or Prometheus labels to released builds only.
+
+  Two CI gates protect the wiring:
+  - `qsdm-split-profile.yml` gains a `--version smoke` step under
+    both profile matrix cells that runs each in-scope binary with
+    synthetic ldflags and asserts the injected tag + SHA appear in
+    the output. This catches a regression where a new `cmd/` binary
+    is added without wiring `--version` to `buildinfo`.
+  - `release-container.yml` runs the same smoke on the native
+    (linux/amd64) matrix cell against the actual release ldflags —
+    so any tag push that would have shipped a "dev" binary fails
+    before the upload step.
+
+  The `pkg/buildinfo` package ships with four dedicated unit tests
+  (default sentinels visible, ldflags injection honoured, short banner
+  stays terse, `IsReleaseBuild` distinguishes all five sentinel
+  combinations). Tests execute under both validator and full CI
+  profiles because every release artefact — including the
+  validator-profile `trustcheck` — depends on it.
+
+- **HTTP integration test for `cmd/qsdmminer-console` (2026-04-24).**
+  Unit tests covered pure helpers; `--self-test` covered the in-process
+  protocol; neither exercised the HTTP pipeline that a real miner uses
+  against a validator. A new `cmd/qsdmminer-console/integration_test.go`
+  drives `fetchWork` / `submitProof` / the full `runLoop` end-to-end
+  against an in-process `httptest.Server` that mimics
+  `/api/v1/mining/{work,submit}`. Five tests:
+
+  - `TestIntegration_FetchWork_RoundTrip` — validator-shaped JSON
+    decodes through `api.MiningWork` with every wire field preserved;
+    asserts the `Accept: application/json` header the miner sends.
+  - `TestIntegration_FetchWork_HTTPErrorSurfacesStatus` — a 503
+    surfaces its status code in the returned error (so rate-limit /
+    warming-up errors don't get mis-logged as decode failures).
+  - `TestIntegration_SubmitProof_AcceptedParsesProofID` — a 200
+    `Accepted=true` populates `ProofID` and the `Content-Type: application/json`
+    header is present on the request.
+  - `TestIntegration_SubmitProof_BadRequestStillDecodesRejection` —
+    the validator returns 400 with a shaped `MiningSubmitResponse`
+    for rejections; the miner must decode the body rather than
+    treat it as a transport error.
+  - `TestIntegration_RunLoop_EndToEnd` — runs the full loop against
+    a fixture server, waits for the first `EvProofAccepted`, and
+    asserts `EvConnected` / `EvEpochChanged` / `EvDAGReady` fired in
+    the right order before it. This is the strongest regression gate
+    in the suite: any break in fetch → DAG build → Solve → submit
+    → event emission causes the test to time out.
+
+  Tests execute in <2s on CI hardware (difficulty=2, `N=128`, same
+  budget as `--self-test`) so they run on every `go test
+  ./cmd/qsdmminer-console/...` without a `-short` gate. No extra CI
+  job needed — they flow through the existing `full` profile of
+  `qsdm-split-profile.yml`.
+
 - **CI + release coverage for `cmd/qsdmminer-console`
   (2026-04-24).** The friendly console miner binary added earlier
   today is now a first-class release artifact and has push-time

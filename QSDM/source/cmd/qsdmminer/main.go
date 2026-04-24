@@ -50,8 +50,14 @@ import (
 
 	"github.com/blackbeardONE/QSDM/pkg/api"
 	"github.com/blackbeardONE/QSDM/pkg/branding"
+	"github.com/blackbeardONE/QSDM/pkg/buildinfo"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
 )
+
+// binaryName is the exec name we advertise via --version. Keeping it
+// as a const (not os.Args[0]) means a user running `./my-renamed-bin
+// --version` still sees a consistent identifier in bug reports.
+const binaryName = "qsdmminer"
 
 func main() {
 	var (
@@ -63,6 +69,7 @@ func main() {
 		pollInterval = flag.Duration("poll", 2*time.Second, "how often to re-fetch /api/v1/mining/work between rounds")
 		httpTimeout  = flag.Duration("http-timeout", 30*time.Second, "per-request HTTP timeout")
 		progress     = flag.Bool("progress", true, "periodically print hashrate on stderr")
+		showVersion  = flag.Bool("version", false, "print build metadata (release tag, git SHA, build date, runtime) and exit")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(),
@@ -73,6 +80,15 @@ func main() {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+
+	// --version is intentionally checked before any other side-effect
+	// (no HTTP, no self-test, no config touch) so it stays usable on a
+	// half-provisioned host. Exit 0 so scripts can detect the binary
+	// with `./qsdmminer --version >/dev/null`.
+	if *showVersion {
+		fmt.Println(buildinfo.String(binaryName))
+		return
+	}
 
 	if *selfTest {
 		if err := runSelfTest(*selfTestEasy); err != nil {

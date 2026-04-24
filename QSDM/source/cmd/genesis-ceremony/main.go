@@ -48,6 +48,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/sha3"
+
+	"github.com/blackbeardONE/QSDM/pkg/buildinfo"
 )
 
 // -----------------------------------------------------------------------
@@ -138,6 +140,7 @@ func main() {
 		treasury     = flag.String("treasury-addr", "qsdm-treasury-DRYRUN-0000000000000000000000", "Treasury address the bundle commits to.")
 		outPath      = flag.String("out", "", "File to write the bundle JSON to (default: stdout).")
 		inPath       = flag.String("in", "", "Bundle JSON to read (verify / schema mode).")
+		showVersion  = flag.Bool("version", false, "Print build metadata (release tag, git SHA, build date, runtime) and exit.")
 	)
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
@@ -151,6 +154,14 @@ func main() {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+
+	// --version is checked before --mode so an operator can introspect
+	// the binary without ever instantiating the (synthetic) ceremony
+	// participants. Same contract as cmd/qsdmminer / cmd/trustcheck.
+	if *showVersion {
+		fmt.Println(buildinfo.String("genesis-ceremony"))
+		return
+	}
 
 	switch *mode {
 	case "run":

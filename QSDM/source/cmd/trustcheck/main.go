@@ -14,7 +14,8 @@
 //	3 — the endpoint legitimately returned 503 warming-up or 404 disabled
 //	    (informational; see --allow-warmup / --allow-disabled to downgrade).
 //
-// The tool is intentionally dependency-free (stdlib only) so it can be
+// The tool is intentionally dependency-free (stdlib only, plus the
+// internal pkg/buildinfo shim for --version output) so it can be
 // cross-compiled for any OS/arch and shipped as a single artifact.
 package main
 
@@ -28,6 +29,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/blackbeardONE/QSDM/pkg/buildinfo"
 )
 
 // ---------------------------------------------------------------------------
@@ -111,6 +114,7 @@ func main() {
 	// sources wants an alarm the moment that number drops. The default
 	// 0 disables the check so existing users see no behaviour change.
 	minAttested := flag.Int("min-attested", 0, "Minimum summary.attested count required to pass (0 = disabled).")
+	showVersion := flag.Bool("version", false, "Print build metadata (release tag, git SHA, build date, runtime) and exit.")
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
 		fmt.Fprintf(out, "trustcheck — black-box validator for QSDM trust transparency endpoints.\n\n")
@@ -119,6 +123,14 @@ func main() {
 		fmt.Fprintf(out, "\nExit codes: 0=pass, 1=usage/network, 2=contract failure, 3=warming-up/disabled.\n")
 	}
 	flag.Parse()
+
+	// --version is intentionally the very first side-effect: a monitoring
+	// service using trustcheck as a probe wants to identify the exact
+	// artefact it deployed without touching the network.
+	if *showVersion {
+		fmt.Println(buildinfo.String("trustcheck"))
+		return
+	}
 
 	cleanBase := strings.TrimRight(*base, "/")
 	if cleanBase == "" {

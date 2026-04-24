@@ -272,6 +272,17 @@ a consolidated `SHA256SUMS` file. If you do not want to install a Go
 toolchain, grab the matching asset, verify the hash, and run the
 binary directly.
 
+Every release artefact accepts `--version` and prints a single line
+identifying itself, e.g.:
+
+```text
+qsdmminer-console v0.1.0 (abc1234, 2026-04-22T10:00:00Z, go1.25.9, linux/amd64)
+```
+
+Include this line in any bug report. Binaries built locally from source
+show `dev` / `unknown` for tag, SHA, and build date — that is the
+expected signal that the binary did not come from the release pipeline.
+
 ### 3.5 Monitoring
 
 The miner exposes `qsdm_miner_*` Prometheus metrics (with

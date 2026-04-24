@@ -50,10 +50,14 @@ jobs:
             # tag boundary. cmd/qsdmminer and cmd/qsdmminer-console are
             # both excluded because they only compile under the default
             # (full) profile.
-            packages: "./pkg/mining/... ./pkg/config/... ./pkg/branding/... ./pkg/chain/... ./pkg/audit/... ./cmd/trustcheck/..."
+            # pkg/buildinfo is in both profiles because every release
+            # artefact (validator-profile trustcheck included) imports
+            # it for --version output; drift here would break the
+            # linux/amd64 "--version smoke" in release-container.yml.
+            packages: "./pkg/mining/... ./pkg/config/... ./pkg/branding/... ./pkg/buildinfo/... ./pkg/chain/... ./pkg/audit/... ./cmd/trustcheck/..."
           - profile: full
             tags: ""
-            packages: "./pkg/mining/... ./cmd/qsdmminer/... ./cmd/qsdmminer-console/... ./pkg/config/... ./pkg/branding/... ./pkg/chain/... ./pkg/audit/... ./cmd/trustcheck/..."
+            packages: "./pkg/mining/... ./cmd/qsdmminer/... ./cmd/qsdmminer-console/... ./pkg/config/... ./pkg/branding/... ./pkg/buildinfo/... ./pkg/chain/... ./pkg/audit/... ./cmd/trustcheck/..."
 
     steps:
       - uses: actions/checkout@v4
@@ -121,6 +125,43 @@ jobs:
           go run ./cmd/qsdmminer --self-test
           echo "=== qsdmminer-console --self-test ==="
           go run ./cmd/qsdmminer-console --self-test
+
+      # --version smoke: every release artefact must accept --version
+      # and honour pkg/buildinfo.-X injection. Catching a missing wire
+      # here (e.g. someone adding a new cmd/ but forgetting the flag)
+      # means the release workflow never ships a "dev"/"unknown"
+      # binary in production.
+      #
+      # The test injects synthetic -X values and asserts they appear
+      # in the output, which is the exact path release-container.yml
+      # takes on every tag push.
+      - name: --version smoke (buildinfo ldflags injection)
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          TEST_VER="v0.0.0-citest"
+          TEST_SHA="citest7"
+          TEST_DATE="2026-04-22T00:00:00Z"
+          LDFLAGS="-X github.com/blackbeardONE/QSDM/pkg/buildinfo.Version=${TEST_VER} \
+                   -X github.com/blackbeardONE/QSDM/pkg/buildinfo.GitSHA=${TEST_SHA} \
+                   -X github.com/blackbeardONE/QSDM/pkg/buildinfo.BuildDate=${TEST_DATE}"
+          # Validator-only profile: the two tooling binaries are in
+          # scope (they build with validator_only). Miner binaries
+          # are added only on full because they require the miner
+          # runtime.
+          if [ "${{ matrix.profile }}" = "full" ]; then
+            BINS="qsdmminer qsdmminer-console trustcheck genesis-ceremony"
+          else
+            BINS="trustcheck genesis-ceremony"
+          fi
+          for bin in $BINS; do
+            out="$(go run -ldflags "${LDFLAGS}" ./cmd/${bin} --version)"
+            echo "${bin}: ${out}"
+            echo "${out}" | grep -q "${TEST_VER}" || { echo "FAIL: ${bin} missing injected version"; exit 1; }
+            echo "${out}" | grep -q "${TEST_SHA}" || { echo "FAIL: ${bin} missing injected sha"; exit 1; }
+          done
 
   trustcheck-integration:
     name: trustcheck integration (built binary vs fixture)

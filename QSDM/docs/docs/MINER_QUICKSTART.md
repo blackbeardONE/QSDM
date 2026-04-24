@@ -131,7 +131,23 @@ Flags override the saved config for one run without rewriting the file:
 ./qsdmminer-console --plain                         # log mode
 ./qsdmminer-console --self-test                     # same gate as qsdmminer
 ./qsdmminer-console --config /etc/qsdm/miner.toml   # custom config path
+./qsdmminer-console --version                       # print release tag, git SHA, build date
 ```
+
+### Identifying your binary when filing a bug
+
+Every release artefact (`qsdmminer`, `qsdmminer-console`, `trustcheck`,
+`genesis-ceremony`) accepts `--version` and emits a single line of the
+form:
+
+```text
+qsdmminer-console v0.1.0 (abc1234, 2026-04-22T10:00:00Z, go1.25.9, linux/amd64)
+```
+
+For binaries built yourself (`go build` without release-time `-ldflags`)
+the tag shows as `dev` and the SHA / build date as `unknown`. That is
+expected — the release pipeline is the only thing that injects those
+values. Always include the `--version` line when filing a miner bug.
 
 The console miner is the **recommended starting point** for home operators. The single-file `qsdmminer` binary (§2 above) is the protocol-truth reference and remains the preferred choice for conformance testing and CI — it is intentionally read-only-the-spec minimal with no UX layered on top.
 
@@ -265,7 +281,7 @@ Use NSSM or the built-in Task Scheduler. The binary is a plain console process; 
 
 The reference miner is the **protocol truth** implementation. Any disagreement between it and a validator is a protocol issue, not a miner-configuration issue. Please file bugs at the QSDM repository with:
 
-1. Build commit hash (`qsdmminer --help` prints it in the banner — or pipe `git rev-parse HEAD` at build time).
+1. Output of `qsdmminer --version` (or `qsdmminer-console --version`) — one line carrying the release tag, short git SHA, build date, Go toolchain, and OS/arch.
 2. Validator URL (may be redacted).
 3. Relevant `journalctl` / stderr extract including the failed proof and the server's reject reason.
 4. Whether `qsdmminer --self-test` still passes on the same binary.

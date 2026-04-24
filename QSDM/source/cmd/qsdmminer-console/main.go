@@ -55,9 +55,15 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/blackbeardONE/QSDM/pkg/api"
 	"github.com/blackbeardONE/QSDM/pkg/branding"
+	"github.com/blackbeardONE/QSDM/pkg/buildinfo"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
 	"golang.org/x/term"
 )
+
+// binaryName is the exec name we advertise via --version. See
+// pkg/buildinfo.String for the full format. Kept const so a renamed
+// binary still identifies itself consistently in bug reports.
+const binaryName = "qsdmminer-console"
 
 // -----------------------------------------------------------------------------
 // Config
@@ -551,6 +557,7 @@ func main() {
 		batchCount   = flag.Uint("batch-count", 0, "override config: batches claimed per proof (0 = use config)")
 		pollInterval = flag.Duration("poll", 0, "override config: work-poll interval (0 = use config)")
 		httpTimeout  = flag.Duration("http-timeout", 30*time.Second, "per-request HTTP timeout")
+		showVersion  = flag.Bool("version", false, "print build metadata (release tag, git SHA, build date, runtime) and exit")
 	)
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
@@ -560,6 +567,14 @@ func main() {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+
+	// --version is handled before config load / wizard / any side
+	// effect, so it's usable on a fresh host that doesn't yet have a
+	// miner.toml. Same contract as cmd/qsdmminer and cmd/trustcheck.
+	if *showVersion {
+		fmt.Println(buildinfo.String(binaryName))
+		return
+	}
 
 	if *selfTest {
 		if err := runSelfTest(); err != nil {
