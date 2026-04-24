@@ -695,6 +695,37 @@ At fork activation (same commit that ships Phase 3):
   `QSDM/Dockerfile.qsdm-miner-cuda`.
 - New `cmd/qsdm-miner-cuda/` ships with the fork commit.
 
+#### 8.4.1 Pre-fork: qsdmminer-console has opt-in v2 support
+
+Until the fork commit lands, `cmd/qsdmminer-console` carries an
+opt-in v2 code path so the validator + enrollment plumbing can
+be exercised end-to-end on testnet without having to wait for
+the CUDA-native miner binary. The v1 path remains the default;
+operators who want to test a forked validator pass:
+
+```
+qsdmminer-console \
+  --protocol=v2 \
+  --node-id=alice-rtx4090-01 \
+  --gpu-uuid=GPU-... \
+  --gpu-name="NVIDIA GeForce RTX 4090" \
+  --gpu-arch=ada \
+  --hmac-key-path=/etc/qsdm/operator.key.hex
+```
+
+The loop between `mining.Solve` and `submitProof` then calls
+`pkg/mining/v2client.FetchChallenge` +
+`v2client.BuildHMACAttestation` (see `cmd/qsdmminer-console/v2.go`)
+so the submitted proof carries a `nvidia-hmac-v1` attestation
+bundle. This does **not** make the CPU miner economically
+viable post-fork — the PoW re-tune of §4 still renders it
+unprofitable — but it lets us exercise the non-PoW half of the
+v2 stack (enrollment → challenge → bundle → verifier) without
+GPU hardware in CI.
+
+This opt-in path is retired in the same commit that removes
+the binary.
+
 ## 9. Attacker model
 
 ### 9.1 In-scope threats

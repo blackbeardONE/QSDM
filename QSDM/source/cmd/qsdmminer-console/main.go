@@ -81,6 +81,39 @@ type Config struct {
 	BatchCount   uint32 `toml:"batch_count"`
 	PollInterval string `toml:"poll_interval"`
 	Plain        bool   `toml:"plain"`
+
+	// v2 NVIDIA-locked protocol fields. All ignored unless
+	// Protocol is exactly "v2" (case-insensitive). See v2.go
+	// for the full resolution + validation logic. Fields are
+	// ,omitempty so miner.toml files written by the v1 wizard
+	// stay clean — only operators who have already enrolled
+	// and edited the file ever see these keys.
+	Protocol    string `toml:"protocol,omitempty"`
+	NodeID      string `toml:"node_id,omitempty"`
+	GPUUUID     string `toml:"gpu_uuid,omitempty"`
+	GPUName     string `toml:"gpu_name,omitempty"`
+	GPUArch     string `toml:"gpu_arch,omitempty"`
+	ComputeCap  string `toml:"compute_cap,omitempty"`
+	CUDAVersion string `toml:"cuda_version,omitempty"`
+	DriverVer   string `toml:"driver_ver,omitempty"`
+	HMACKeyPath string `toml:"hmac_key_path,omitempty"`
+}
+
+// v2Config is the subset of Config that LoadV2Context needs.
+// Factored so the v2 helper can be unit-tested without a full
+// miner.toml fixture.
+func (c Config) v2Config() V2Config {
+	return V2Config{
+		Protocol:    c.Protocol,
+		NodeID:      c.NodeID,
+		GPUUUID:     c.GPUUUID,
+		GPUName:     c.GPUName,
+		GPUArch:     c.GPUArch,
+		ComputeCap:  c.ComputeCap,
+		CUDAVersion: c.CUDAVersion,
+		DriverVer:   c.DriverVer,
+		HMACKeyPath: c.HMACKeyPath,
+	}
 }
 
 func (c Config) pollDuration() time.Duration {
@@ -581,6 +614,21 @@ func main() {
 		pollInterval = flag.Duration("poll", 0, "override config: work-poll interval (0 = use config)")
 		httpTimeout  = flag.Duration("http-timeout", 30*time.Second, "per-request HTTP timeout")
 		showVersion  = flag.Bool("version", false, "print build metadata (release tag, git SHA, build date, runtime) and exit")
+
+		// v2 NVIDIA-locked protocol flags. See v2.go. All empty
+		// by default; passing --protocol=v2 activates the path
+		// and makes the remaining fields required. Kept in a
+		// separate group in --help output via the comment so
+		// operators who aren't on v2 yet aren't confused.
+		protocol    = flag.String("protocol", "", "override config: 'v2' enables NVIDIA-locked attestation, default (empty) keeps v1")
+		nodeID      = flag.String("node-id", "", "v2 only: enrolled node_id (matches pkg/mining/enrollment record)")
+		gpuUUID     = flag.String("gpu-uuid", "", "v2 only: nvidia-smi GPU UUID matching the enrollment record")
+		gpuName     = flag.String("gpu-name", "", "v2 only: human-readable GPU name (e.g. 'NVIDIA GeForce RTX 4090')")
+		gpuArch     = flag.String("gpu-arch", "", "v2 only: GPU arch tag (ada/ampere/hopper/blackwell)")
+		computeCap  = flag.String("compute-cap", "", "v2 only: CUDA compute capability (e.g. '8.9')")
+		cudaVersion = flag.String("cuda-version", "", "v2 only: CUDA toolkit/runtime version (e.g. '12.8')")
+		driverVer   = flag.String("driver-ver", "", "v2 only: NVIDIA driver version (e.g. '572.16')")
+		hmacKeyPath = flag.String("hmac-key-path", "", "v2 only: path to a file containing the operator HMAC key as a single line of hex")
 	)
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
@@ -660,6 +708,57 @@ func main() {
 	}
 	if cfg.BatchCount == 0 {
 		cfg.BatchCount = 1
+	}
+
+	// v2 overrides: CLI wins over config file, same as v1. We
+	// deliberately overwrite empty flags too — keep passing
+	// --node-id="" means "clear the config-file node_id" which
+	// is a legal way to scrub a stale value without editing
+	// miner.toml by hand. Only non-zero flags actually
+	// overwrite; see flag.Visit check below.
+	flag.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "protocol":
+			cfg.Protocol = *protocol
+		case "node-id":
+			cfg.NodeID = *nodeID
+		case "gpu-uuid":
+			cfg.GPUUUID = *gpuUUID
+		case "gpu-name":
+			cfg.GPUName = *gpuName
+		case "gpu-arch":
+			cfg.GPUArch = *gpuArch
+		case "compute-cap":
+			cfg.ComputeCap = *computeCap
+		case "cuda-version":
+			cfg.CUDAVersion = *cudaVersion
+		case "driver-ver":
+			cfg.DriverVer = *driverVer
+		case "hmac-key-path":
+			cfg.HMACKeyPath = *hmacKeyPath
+		}
+	})
+
+	// Build the v2 context exactly once, at startup, so any
+	// misconfiguration aborts before we start burning cycles
+	// on a doomed mining loop. When Protocol != "v2" this
+	// returns a disabled context (no error) and the miner runs
+	// the v1 path unchanged.
+	v2ctx, err := LoadV2Context(cfg.v2Config())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "v2 protocol config: %v\n", err)
+		os.Exit(2)
+	}
+	if v2ctx.IsEnabled() {
+		fmt.Fprintln(os.Stderr, "qsdmminer-console: v2 NVIDIA-locked protocol ENABLED (--protocol=v2)")
+		fmt.Fprintf(os.Stderr, "  node_id  = %s\n", v2ctx.NodeID)
+		fmt.Fprintf(os.Stderr, "  gpu_uuid = %s\n", v2ctx.GPUUUID)
+		if v2ctx.GPUName != "" {
+			fmt.Fprintf(os.Stderr, "  gpu_name = %s\n", v2ctx.GPUName)
+		}
+		if v2ctx.GPUArch != "" {
+			fmt.Fprintf(os.Stderr, "  gpu_arch = %s\n", v2ctx.GPUArch)
+		}
 	}
 
 	if cfg.ValidatorURL == "" {
@@ -751,7 +850,7 @@ func main() {
 	}()
 
 	client := &http.Client{Timeout: *httpTimeout}
-	runLoop(ctx, client, cfg, events, &attempts)
+	runLoop(ctx, client, cfg, v2ctx, events, &attempts)
 
 	events <- Event{Kind: EvShutdown, At: time.Now(), Message: "shutting down"}
 	close(events)
@@ -781,7 +880,7 @@ func cliWantsContinue() bool {
 // this binary can freely evolve its UX.
 // -----------------------------------------------------------------------------
 
-func runLoop(ctx context.Context, client *http.Client, cfg Config, events chan<- Event, attempts *uint64) {
+func runLoop(ctx context.Context, client *http.Client, cfg Config, v2ctx *V2Context, events chan<- Event, attempts *uint64) {
 	var (
 		currentEpoch uint64 = ^uint64(0)
 		currentDAG   mining.DAG
@@ -869,6 +968,31 @@ func runLoop(ctx context.Context, client *http.Client, cfg Config, events chan<-
 			sleepOrCancel(ctx, poll)
 			continue
 		}
+
+		// v2 NVIDIA-locked path: after Solve produced a valid
+		// PoW proof, fetch a fresh challenge and attach an
+		// HMAC attestation bundle before submission. The
+		// challenge ages out after mining.FreshnessWindow, so
+		// we do this POST-solve rather than pre-solve to
+		// minimise the chance of racing against the freshness
+		// deadline on a slow miner.
+		//
+		// On any v2-prepare error we emit an Event and drop
+		// this proof. The miner will loop back to fetchWork
+		// and try again — a transient issuer 503 or a stale
+		// challenge shouldn't kill the binary. Crucially we do
+		// NOT fall back to a v1 submission when v2 was
+		// requested: that would silently send proofs a forked
+		// validator will reject, hiding the real problem from
+		// the operator.
+		if v2ctx.IsEnabled() {
+			if err := V2PrepareAttestation(ctx, client, cfg.ValidatorURL, v2ctx, res.Proof); err != nil {
+				send(Event{Kind: EvError, Message: "v2 prepare: " + err.Error()})
+				sleepOrCancel(ctx, poll)
+				continue
+			}
+		}
+
 		raw, err := res.Proof.CanonicalJSON()
 		if err != nil {
 			send(Event{Kind: EvError, Message: "encode proof: " + err.Error()})

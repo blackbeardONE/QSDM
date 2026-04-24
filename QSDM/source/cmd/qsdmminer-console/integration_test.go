@@ -281,7 +281,7 @@ func TestIntegration_RunLoop_EndToEnd(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runLoop(ctx, &http.Client{Timeout: 5 * time.Second}, cfg, events, &attempts)
+		runLoop(ctx, &http.Client{Timeout: 5 * time.Second}, cfg, &V2Context{}, events, &attempts)
 	}()
 
 	deadline := time.After(30 * time.Second)
