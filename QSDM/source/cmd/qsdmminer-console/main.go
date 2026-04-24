@@ -542,6 +542,29 @@ func uint32OrDefault(v, def uint32) uint32 {
 	return v
 }
 
+// printNvidiaLockDeprecationBanner emits a one-time notice to the
+// given writer warning operators that the CPU reference miner will
+// be retired when the NVIDIA-locked v2 protocol activates. The
+// design is documented in nvidia_locked_qsdmplus_blockchain_architecture.md
+// at the repo root.
+//
+// Writes go to stderr (not stdout) so piping the miner's stdout to
+// a log-aggregator stays clean. The banner is deliberately framed
+// as informational, not as a fatal precondition — the binary still
+// works end-to-end against pre-v2 validators, which is what the
+// testnet currently runs.
+func printNvidiaLockDeprecationBanner(w io.Writer) {
+	fmt.Fprintln(w, "┌─────────────────────────────────────────────────────────────────────┐")
+	fmt.Fprintln(w, "│  qsdmminer-console: NVIDIA-lock pivot in progress                   │")
+	fmt.Fprintln(w, "│                                                                     │")
+	fmt.Fprintln(w, "│  QSDM is moving to a GPU-only protocol (see                         │")
+	fmt.Fprintln(w, "│  nvidia_locked_qsdmplus_blockchain_architecture.md). Once the       │")
+	fmt.Fprintln(w, "│  v2 hard fork activates, CPU proofs will NOT be accepted on         │")
+	fmt.Fprintln(w, "│  mainnet. This binary is kept for testnet replay + reference.       │")
+	fmt.Fprintln(w, "│  Plan your deployment around an NVIDIA CUDA GPU.                    │")
+	fmt.Fprintln(w, "└─────────────────────────────────────────────────────────────────────┘")
+}
+
 // -----------------------------------------------------------------------------
 // main
 // -----------------------------------------------------------------------------
@@ -584,6 +607,19 @@ func main() {
 		fmt.Println("self-test OK: proof solved and verified end-to-end via pkg/mining")
 		return
 	}
+
+	// Deprecation banner — printed on every real mining run (but NOT
+	// on --version / --self-test, which must stay machine-parseable
+	// for CI and `docker inspect`-style checks). The project is
+	// pivoting to the NVIDIA-locked v2 protocol described in
+	// nvidia_locked_qsdmplus_blockchain_architecture.md; once v2
+	// activates, CPU-only miners can no longer produce proofs that
+	// mainnet validators accept. This binary stays in-tree for
+	// testnet replay and algorithmic reference, and shipping it
+	// without a banner would be quietly misleading to any operator
+	// who expects mainnet rewards. Keep the text short — operators
+	// running systemd / journalctl will see it on every restart.
+	printNvidiaLockDeprecationBanner(os.Stderr)
 
 	cfg, err := loadConfig(*configPath)
 	if err != nil {

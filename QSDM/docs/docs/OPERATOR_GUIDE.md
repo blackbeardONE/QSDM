@@ -272,35 +272,17 @@ a consolidated `SHA256SUMS` file. If you do not want to install a Go
 toolchain, grab the matching asset, verify the hash, and run the
 binary directly.
 
-For the console miner there are two one-command install paths that
-handle download, hash verification, and `--version` sanity-check for
-you:
-
-```bash
-# Linux / macOS
-curl -sSL https://raw.githubusercontent.com/blackbeardONE/QSDM/main/scripts/install-qsdmminer-console.sh | bash
-
-# Windows (PowerShell 5.1+)
-iwr https://raw.githubusercontent.com/blackbeardONE/QSDM/main/scripts/install-qsdmminer-console.ps1 -UseBasicParsing | iex
-```
-
-Both scripts refuse to install a binary whose `--version` reports
-`dev` or `unknown` — that is a defence-in-depth signal that the
-download bypassed the release pipeline.
-
-Ops-heavy deployments can pull the matching container image instead
-(CPU-only, distroless, runs as uid 65532):
-
-```bash
-docker run --rm \
-    -v "$HOME/.qsdm:/config" \
-    ghcr.io/blackbeardone/qsdm-miner-console:<tag> \
-    --validator=https://api.qsdm.tech \
-    --address=qsdm1<your-reward-address>
-```
-
-The image is built from the same commit as the tagged binary so
-`docker inspect` labels and `--version` agree.
+> ⚠️ **NVIDIA-lock pivot in progress.** The `qsdmminer` and
+> `qsdmminer-console` CPU binaries are being retired over the next few
+> releases in favour of the GPU-only miner described in
+> [`nvidia_locked_qsdmplus_blockchain_architecture.md`](../../../nvidia_locked_qsdmplus_blockchain_architecture.md).
+> The previous "one-command install" scripts
+> (`install-qsdmminer-console.sh`, `install-qsdmminer-console.ps1`) and
+> the `ghcr.io/<owner>/qsdm-miner-console` Docker image have been
+> withdrawn. Once the `v2` protocol activates, proofs from CPU-only
+> miners will no longer be accepted by mainnet validators. Plan your
+> deployment around an NVIDIA GPU with CUDA support; see
+> `Dockerfile.miner` for the GPU reference image.
 
 Every release artefact accepts `--version` and prints a single line
 identifying itself, e.g.:

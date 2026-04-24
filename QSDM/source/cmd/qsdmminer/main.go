@@ -99,6 +99,18 @@ func main() {
 		return
 	}
 
+	// NVIDIA-lock pivot notice. See cmd/qsdmminer-console/main.go for
+	// the rationale — the banner is deliberately factored as a local
+	// function in both miners rather than a shared helper, because
+	// cmd/qsdmminer stays intentionally dependency-minimal for
+	// protocol-audit purposes (see the package doc comment).
+	fmt.Fprintln(os.Stderr, "┌─────────────────────────────────────────────────────────────────────┐")
+	fmt.Fprintln(os.Stderr, "│  qsdmminer: NVIDIA-lock pivot in progress                           │")
+	fmt.Fprintln(os.Stderr, "│  Once the v2 protocol activates (see                                │")
+	fmt.Fprintln(os.Stderr, "│  nvidia_locked_qsdmplus_blockchain_architecture.md), CPU proofs     │")
+	fmt.Fprintln(os.Stderr, "│  will NOT be accepted on mainnet. Binary kept for testnet/replay.   │")
+	fmt.Fprintln(os.Stderr, "└─────────────────────────────────────────────────────────────────────┘")
+
 	if *minerAddr == "" {
 		fmt.Fprintln(os.Stderr, "--address is required when not running --self-test")
 		os.Exit(2)

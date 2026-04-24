@@ -11,10 +11,14 @@
 # Artefact layout per tag:
 #
 #   Container images (pushed to GHCR):
-#     ghcr.io/<owner>/qsdmplus:<semver>           — legacy name, Dockerfile
-#     ghcr.io/<owner>/qsdm-validator:<semver>      — CPU-only validator image
-#     ghcr.io/<owner>/qsdm-miner:<semver>          — GPU miner image (~4-6 GB, CUDA)
-#     ghcr.io/<owner>/qsdm-miner-console:<semver>  — CPU-only friendly miner (~15 MB, distroless)
+#     ghcr.io/<owner>/qsdmplus:<semver>      — legacy name, Dockerfile
+#     ghcr.io/<owner>/qsdm-validator:<semver> — CPU-only validator image
+#     ghcr.io/<owner>/qsdm-miner:<semver>     — GPU miner image (CUDA / NVIDIA)
+#
+# NOTE: the short-lived `qsdm-miner-console` image (CPU-only, distroless)
+# has been retired as part of the NVIDIA-lock pivot; see
+# nvidia_locked_qsdmplus_blockchain_architecture.md and the deprecation
+# banner in cmd/qsdmminer-console/main.go.
 #
 #   Binaries (attached to the GitHub Release as assets):
 #     qsdmminer-<os>-<arch>[.exe]            — CPU reference miner (audit-clean)
@@ -365,77 +369,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=qsdm-miner
           cache-to: type=gha,mode=max,scope=qsdm-miner
-
-  # ---------------------------------------------------------------------------
-  # ghcr-miner-console: the friendly console miner image. ~15 MB on top
-  # of gcr.io/distroless/static-debian12:nonroot, CPU-only, CGO-free,
-  # running as uid 65532. Pairs with the signed binary released above
-  # (both come from the same commit + same cmd/qsdmminer-console main)
-  # so operators can pick their install path:
-  #   docker run ghcr.io/<owner>/qsdm-miner-console:<tag>  # ops-heavy
-  #   curl … | bash                                        # home VPS
-  # without diverging on protocol behaviour.
-  # ---------------------------------------------------------------------------
-  ghcr-miner-console:
-    name: ghcr qsdm-miner-console (CPU-only friendly miner)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Resolve release tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Resolve build metadata (git SHA, UTC build date)
-        id: meta_build
-        run: |
-          SHA="${GITHUB_SHA:0:7}"
-          DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
-          echo "date=${DATE}" >> "$GITHUB_OUTPUT"
-
-      - name: Docker meta (qsdm-miner-console)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/qsdm-miner-console
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-
-      - name: Build and push miner-console image
-        uses: docker/build-push-action@v6
-        with:
-          context: QSDM
-          file: QSDM/Dockerfile.miner-console
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # -X ldflags come from these three build-args; the Dockerfile
-          # propagates them through to both the builder (for the Go
-          # link step) and the runtime stage (for OCI labels). That
-          # way `docker inspect ghcr.io/.../qsdm-miner-console:<tag>`
-          # surfaces the same version/sha/date the binary reports via
-          # --version, with no extra tooling.
-          build-args: |
-            BUILDINFO_VERSION=${{ steps.tag.outputs.tag }}
-            BUILDINFO_SHA=${{ steps.meta_build.outputs.sha }}
-            BUILDINFO_DATE=${{ steps.meta_build.outputs.date }}
-          cache-from: type=gha,scope=qsdm-miner-console
-          cache-to: type=gha,mode=max,scope=qsdm-miner-console

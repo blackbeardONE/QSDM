@@ -12,7 +12,52 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
-### Added
+### Changed / Deprecated
+
+- **NVIDIA-lock pivot — retire the CPU-miner onboarding UX
+  (2026-04-24).** The project is re-aligning on the architecture
+  described in `nvidia_locked_qsdmplus_blockchain_architecture.md`:
+  the mainline protocol will hard-fork to `v2` which requires a
+  valid NGC attestation bundle on every proof, making CPU-only and
+  non-NVIDIA-GPU mining impossible on mainnet by construction. As
+  a first, fully-reversible step in that rollout we:
+  - **Delete** `scripts/install-qsdmminer-console.sh`,
+    `scripts/install-qsdmminer-console.ps1`, and
+    `QSDM/Dockerfile.miner-console`. Nobody should be onboarded to
+    a mining path that will stop earning rewards in the next major
+    release.
+  - **Remove** the `ghcr-miner-console` job from
+    `release-container.yml` and the companion
+    `docker-miner-console-build` + `install-scripts-lint` jobs
+    from `qsdm-split-profile.yml`. No new `qsdm-miner-console`
+    image will be published on the next tag. Previously-pushed
+    tags remain on GHCR for operators who want to roll forward
+    manually during the deprecation window.
+  - **Add** a startup deprecation banner to `cmd/qsdmminer` and
+    `cmd/qsdmminer-console` pointing at the NVIDIA-lock design
+    doc. The banner is suppressed on `--version` and `--self-test`
+    (machine-parseable paths must stay clean for CI) but fires on
+    every real mining run.
+  - **Update** `MINER_QUICKSTART.md §2.5` and `OPERATOR_GUIDE.md
+    §3.4` — the one-command install block is replaced by a
+    deprecation notice, and the sections are relabelled "testnet /
+    reference only".
+
+  The binaries themselves are **not** deleted in this pass. They
+  continue to ship as release artefacts, build cleanly, and pass
+  `--self-test`, so testnet operators who want to replay the
+  current protocol can still do so. The actual retirement of
+  `cmd/qsdmminer` and `cmd/qsdmminer-console` will land together
+  with the v2 hard fork (phased plan recorded in the issue
+  tracker).
+
+### Withdrawn
+
+- **Docker image `ghcr.io/<owner>/qsdm-miner-console` + one-command
+  install scripts for Linux / macOS / Windows (2026-04-24).**
+  Originally landed in c4bdca5 and now retired without having been
+  tagged — see the "NVIDIA-lock pivot" entry above. Preserving
+  the original entry for historical context:
 
 - **Docker image `ghcr.io/<owner>/qsdm-miner-console` + one-command
   install scripts for Linux / macOS / Windows (2026-04-24).** The
