@@ -16,7 +16,8 @@
 #     ghcr.io/<owner>/qsdm-miner:<semver>     — GPU miner image
 #
 #   Binaries (attached to the GitHub Release as assets):
-#     qsdmminer-<os>-<arch>[.exe]            — CPU reference miner
+#     qsdmminer-<os>-<arch>[.exe]            — CPU reference miner (audit-clean)
+#     qsdmminer-console-<os>-<arch>[.exe]    — friendly console miner (wizard + live panel)
 #     trustcheck-<os>-<arch>[.exe]           — black-box transparency scraper
 #     genesis-ceremony-<os>-<arch>[.exe]     — mainnet genesis dry-run tool
 #     SHA256SUMS                             — canonical hashes over all of the above
@@ -97,17 +98,23 @@ jobs:
           GOARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          # All three binaries compile under the full profile (no
-          # validator_only tag) because qsdmminer requires the mining
-          # implementation and the tooling binaries are profile-
-          # agnostic. trustcheck and genesis-ceremony are stdlib-only
-          # (plus golang.org/x/crypto for the latter) so they cross-
-          # compile cleanly to every matrix target.
+          # All four binaries compile under the full profile (no
+          # validator_only tag) because qsdmminer / qsdmminer-console
+          # require the mining implementation and the tooling binaries
+          # are profile-agnostic. trustcheck and genesis-ceremony are
+          # stdlib-only (plus golang.org/x/crypto for the latter) so
+          # they cross-compile cleanly to every matrix target.
+          # qsdmminer-console pulls golang.org/x/term for TTY detection
+          # and BurntSushi/toml for ~/.qsdm/miner.toml persistence;
+          # both are pure-Go deps already in go.mod and stay CGO-free.
           mkdir -p /tmp/artefacts
           suffix="${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
 
           go build -trimpath -ldflags="-s -w" \
             -o "/tmp/artefacts/qsdmminer-${suffix}" ./cmd/qsdmminer
+
+          go build -trimpath -ldflags="-s -w" \
+            -o "/tmp/artefacts/qsdmminer-console-${suffix}" ./cmd/qsdmminer-console
 
           go build -trimpath -ldflags="-s -w" \
             -o "/tmp/artefacts/trustcheck-${suffix}" ./cmd/trustcheck
@@ -129,6 +136,7 @@ jobs:
           name: binaries-${{ matrix.os }}-${{ matrix.arch }}
           path: |
             /tmp/artefacts/qsdmminer-*
+            /tmp/artefacts/qsdmminer-console-*
             /tmp/artefacts/trustcheck-*
             /tmp/artefacts/genesis-ceremony-*
             /tmp/artefacts/SHA256SUMS-*
@@ -192,6 +200,7 @@ jobs:
           gh release upload "$TAG" \
             --clobber \
             qsdmminer-* \
+            qsdmminer-console-* \
             trustcheck-* \
             genesis-ceremony-* \
             SHA256SUMS

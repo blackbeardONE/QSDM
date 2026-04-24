@@ -14,6 +14,46 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **CI + release coverage for `cmd/qsdmminer-console`
+  (2026-04-24).** The friendly console miner binary added earlier
+  today is now a first-class release artifact and has push-time
+  protocol-drift protection:
+
+  - `.github/workflows/release-container.yml` builds
+    `qsdmminer-console-<os>-<arch>[.exe]` alongside the existing
+    `qsdmminer` / `trustcheck` / `genesis-ceremony` binaries on
+    every `v*` tag (linux amd64/arm64, darwin amd64/arm64,
+    windows amd64). Same `-trimpath -ldflags="-s -w"` CGO-free
+    deterministic build as the other release binaries, folded
+    into the consolidated `SHA256SUMS` asset, and uploaded to
+    the GitHub Release. Non-Go-developer miners can now grab a
+    signed binary instead of installing a toolchain.
+  - `.github/workflows/qsdm-split-profile.yml` runs the new
+    `./cmd/qsdmminer-console/...` unit test suite under the
+    `full` profile matrix cell (12 tests; config round-trip,
+    malformed-TOML rejection, poll defaulting, formatters,
+    dashboard state machine, plain-renderer format, kindLabel
+    exhaustiveness), and the `validator_only` cell explicitly
+    excludes the package because it depends on `pkg/mining`
+    which is absent from the validator tag surface.
+  - Same workflow gains a `Protocol self-test` step under the
+    `full` profile that `go run`s `qsdmminer --self-test` and
+    `qsdmminer-console --self-test` back-to-back. Both exercise
+    the same `pkg/mining.Solve` / `Verify` round-trip against
+    independent `main` packages, so any drift between the
+    reference miner and the console miner relative to
+    `MINING_PROTOCOL.md` surfaces on push instead of at release
+    time.
+
+- **`OPERATOR_GUIDE.md §3.4` rewritten to reflect the two miner
+  binaries (2026-04-24).** Previously named only `qsdmminer` and
+  walked the reader through flag-heavy setup. The new section
+  presents `qsdmminer-console` as the recommended path for home
+  operators (wizard + live panel + config persistence), keeps
+  `qsdmminer` as the protocol-truth reference for conformance
+  testing, and documents that pre-built signed binaries now ship
+  on every tagged release for both.
+
 - **`cmd/qsdmminer-console` — friendly console miner binary
   (2026-04-24).** A sibling of `cmd/qsdmminer` that layers three
   ergonomic improvements on top of the same `pkg/mining` primitives,

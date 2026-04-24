@@ -221,16 +221,41 @@ above uses. Until a community contributes ROCm or Level Zero kernels,
 
 ### 3.4 Install & run
 
-Follow [`MINER_QUICKSTART.md`](./MINER_QUICKSTART.md) end-to-end.
+Follow [`MINER_QUICKSTART.md`](./MINER_QUICKSTART.md) end-to-end. Two
+CPU miner binaries ship in-tree — pick one:
+
+- **`qsdmminer-console`** — recommended for home operators. Interactive
+  first-run wizard asks for your reward address and validator URL,
+  persists the answer to `~/.qsdm/miner.toml` (Windows:
+  `%USERPROFILE%\.qsdm\miner.toml`), then opens a live console panel
+  showing hashrate, accepted/rejected proofs, current epoch, and
+  uptime. Auto-falls back to one-line-per-event logs under
+  `systemd` / `journalctl` / CI (`--plain` forces log mode on a TTY).
+  See [`MINER_QUICKSTART.md §2.5`](./MINER_QUICKSTART.md#25-friendly-console-miner-recommended-for-home-operators).
+- **`qsdmminer`** — the audit-clean single-file reference miner. Use
+  this if you are conformance-testing against `MINING_PROTOCOL.md` or
+  embedding the miner in your own tooling; the binary is intentionally
+  flag-driven with no TUI so it remains readable top-to-bottom against
+  the spec.
+
+Either way:
 
 1. `git clone https://github.com/blackbeardONE/QSDM.git && cd
-   QSDM/source && go build -o qsdmminer ./cmd/qsdmminer`.
-2. `./qsdmminer --self-test` — passes in <10 s on any laptop. This is
-   the Phase 4.5 acceptance gate; if it fails, stop and open an
-   issue.
-3. Point at a validator:
+   QSDM/source`.
+2. `go build -o qsdmminer-console ./cmd/qsdmminer-console` (or swap
+   in `./cmd/qsdmminer` for the reference binary).
+3. `./qsdmminer-console --self-test` (or `./qsdmminer --self-test`) —
+   passes in <10 s on any laptop. This is the Phase 4.5 acceptance
+   gate; if it fails, stop and open an issue. CI runs both self-tests
+   on every push, so a green build means your binary is protocol-
+   conformant if rebuilt from the same tag.
+4. Point at a validator:
 
    ```bash
+   # Console front-end (zero flags — wizard prompts you):
+   ./qsdmminer-console
+
+   # Reference binary (explicit flags — recommended under systemd):
    ./qsdmminer \
      --validator=https://api.qsdm.tech \
      --address=qsdm1<your-reward-address> \
@@ -239,6 +264,13 @@ Follow [`MINER_QUICKSTART.md`](./MINER_QUICKSTART.md) end-to-end.
 
    For production, run under systemd using the unit file in
    [`MINER_QUICKSTART.md §3.3`](./MINER_QUICKSTART.md).
+
+Pre-built, signed binaries for both miners ship on every tagged
+release as `qsdmminer-<os>-<arch>[.exe]` and
+`qsdmminer-console-<os>-<arch>[.exe]` on the GitHub Releases page, with
+a consolidated `SHA256SUMS` file. If you do not want to install a Go
+toolchain, grab the matching asset, verify the hash, and run the
+binary directly.
 
 ### 3.5 Monitoring
 

@@ -47,12 +47,13 @@ jobs:
             # Packages to compile+test under the validator profile. The
             # pkg/mining package stays in the list so we catch any
             # accidental symbols that cross the validator/miner build
-            # tag boundary. cmd/qsdmminer is excluded because it only
-            # compiles under the default (full) profile.
+            # tag boundary. cmd/qsdmminer and cmd/qsdmminer-console are
+            # both excluded because they only compile under the default
+            # (full) profile.
             packages: "./pkg/mining/... ./pkg/config/... ./pkg/branding/... ./pkg/chain/... ./pkg/audit/... ./cmd/trustcheck/..."
           - profile: full
             tags: ""
-            packages: "./pkg/mining/... ./cmd/qsdmminer/... ./pkg/config/... ./pkg/branding/... ./pkg/chain/... ./pkg/audit/... ./cmd/trustcheck/..."
+            packages: "./pkg/mining/... ./cmd/qsdmminer/... ./cmd/qsdmminer-console/... ./pkg/config/... ./pkg/branding/... ./pkg/chain/... ./pkg/audit/... ./cmd/trustcheck/..."
 
     steps:
       - uses: actions/checkout@v4
@@ -99,6 +100,27 @@ jobs:
         run: |
           echo "Built QSDM node binary with profile=${{ matrix.profile }} (tags='${{ matrix.tags }}')"
           ls -la /tmp/qsdm-${{ matrix.profile }}
+
+      # Protocol self-test runs only under the full profile because
+      # both miner binaries depend on pkg/mining (which is absent from
+      # the validator_only tag build surface). The two self-tests
+      # exercise the same pkg/mining.Solve + Verify round-trip against
+      # independent mains, so if one drifts from MINING_PROTOCOL.md
+      # and the other does not, the mismatch shows up here at push
+      # time — not at release-tagging time. Keeping both calls in one
+      # step (set -e is default) means a single exit code captures
+      # both checks.
+      - name: Protocol self-test (qsdmminer + qsdmminer-console)
+        if: matrix.profile == 'full'
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          echo "=== qsdmminer --self-test ==="
+          go run ./cmd/qsdmminer --self-test
+          echo "=== qsdmminer-console --self-test ==="
+          go run ./cmd/qsdmminer-console --self-test
 
   trustcheck-integration:
     name: trustcheck integration (built binary vs fixture)
