@@ -279,7 +279,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       # Fixed image name (avoids invalid OCI chars in repo names, e.g. '+').
       - name: Docker meta
