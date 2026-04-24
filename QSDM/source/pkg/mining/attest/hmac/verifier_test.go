@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/mining"
+	"github.com/blackbeardONE/QSDM/pkg/mining/challenge"
 )
 
 // ----- fixtures ----------------------------------------------------
@@ -424,22 +425,29 @@ func TestVerify_NilRegistry(t *testing.T) {
 // and every non-Go miner must re-sign.
 func TestBundle_CanonicalForMAC_Stable(t *testing.T) {
 	b := Bundle{
-		ChallengeBind: "00112233",
-		ComputeCap:    "8.9",
-		CUDAVersion:   "12.8",
-		DriverVer:     "572.16",
-		GPUName:       "NVIDIA GeForce RTX 4090",
-		GPUUUID:       "GPU-abc",
-		HMAC:          "ignored-by-canonical-form",
-		IssuedAt:      1_700_000_000,
-		NodeID:        "alice-rtx4090-01",
-		Nonce:         "deadbeef",
+		ChallengeBind:     "00112233",
+		ChallengeSig:      "cafe1234",
+		ChallengeSignerID: "validator-01",
+		ComputeCap:        "8.9",
+		CUDAVersion:       "12.8",
+		DriverVer:         "572.16",
+		GPUName:           "NVIDIA GeForce RTX 4090",
+		GPUUUID:           "GPU-abc",
+		HMAC:              "ignored-by-canonical-form",
+		IssuedAt:          1_700_000_000,
+		NodeID:            "alice-rtx4090-01",
+		Nonce:             "deadbeef",
 	}
 	got, err := b.CanonicalForMAC()
 	if err != nil {
 		t.Fatalf("canonical: %v", err)
 	}
-	want := `{"challenge_bind":"00112233","compute_cap":"8.9","cuda_version":"12.8","driver_ver":"572.16","gpu_name":"NVIDIA GeForce RTX 4090","gpu_uuid":"GPU-abc","issued_at":1700000000,"node_id":"alice-rtx4090-01","nonce":"deadbeef"}`
+	// Phase 2c-iii: the canonical form gained challenge_sig and
+	// challenge_signer_id in alphabetical position right after
+	// challenge_bind. Every non-Go miner must be updated to emit
+	// these fields (empty string is legal wire-wise, but rejected
+	// by a verifier that has a ChallengeVerifier wired in).
+	want := `{"challenge_bind":"00112233","challenge_sig":"cafe1234","challenge_signer_id":"validator-01","compute_cap":"8.9","cuda_version":"12.8","driver_ver":"572.16","gpu_name":"NVIDIA GeForce RTX 4090","gpu_uuid":"GPU-abc","issued_at":1700000000,"node_id":"alice-rtx4090-01","nonce":"deadbeef"}`
 	if string(got) != want {
 		t.Fatalf("canonical form drifted:\n got: %s\nwant: %s", got, want)
 	}
@@ -480,3 +488,208 @@ func TestBundle_SignVerifyRoundTrip(t *testing.T) {
 		t.Fatal("different keys produced identical MAC — impossible")
 	}
 }
+
+// -----------------------------------------------------------------------------
+// Phase 2c-iii: ChallengeVerifier collaborator tests
+// -----------------------------------------------------------------------------
+
+// buildChallengeFixture extends buildFixture with a valid
+// validator-issued challenge signature over the bundle's
+// (nonce, issued_at) tuple. Returns the registry, the proof, the
+// signed bundle, and the matching SignerVerifier the test can
+// plug into Verifier.ChallengeVerifier.
+//
+// This is the "happy path" fixture for the new optional check —
+// every rejection test below mutates one piece of it.
+func buildChallengeFixture(t *testing.T, now time.Time) (
+	*InMemoryRegistry, mining.Proof, Bundle, *challenge.HMACSignerVerifier,
+) {
+	t.Helper()
+	reg, p, bundle := buildFixture(t, now)
+
+	// Build the challenge signer / verifier pair. Using HMAC here
+	// because the reference Issuer uses HMAC; in production this
+	// is swapped for an ML-DSA signer but the interface contract
+	// is identical.
+	const signerID = "validator-01"
+	chgKey := bytes.Repeat([]byte{0x99}, 32)
+	signer, err := challenge.NewHMACSigner(signerID, chgKey)
+	if err != nil {
+		t.Fatalf("challenge signer: %v", err)
+	}
+	sv := challenge.NewHMACSignerVerifier()
+	if err := sv.Register(signerID, chgKey); err != nil {
+		t.Fatalf("challenge verifier register: %v", err)
+	}
+
+	// Decode the bundle nonce so we can hand the right 32 bytes to
+	// Challenge.SigningBytes.
+	rawNonce, err := hex.DecodeString(bundle.Nonce)
+	if err != nil {
+		t.Fatalf("decode nonce hex: %v", err)
+	}
+	var nonceArr [32]byte
+	copy(nonceArr[:], rawNonce)
+
+	c := challenge.Challenge{
+		Nonce:    nonceArr,
+		IssuedAt: bundle.IssuedAt,
+		SignerID: signerID,
+	}
+	sig, err := signer.Sign(c.SigningBytes())
+	if err != nil {
+		t.Fatalf("challenge sign: %v", err)
+	}
+
+	bundle.ChallengeSig = hex.EncodeToString(sig)
+	bundle.ChallengeSignerID = signerID
+	reSign(t, &p, bundle, fixtureHMACKey)
+	return reg, p, bundle, sv
+}
+
+// TestVerify_Accepts_WithChallengeVerifier is the happy path with
+// the new check wired in: a valid issuer-signed challenge must
+// pass every step end-to-end.
+func TestVerify_Accepts_WithChallengeVerifier(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	reg, p, _, sv := buildChallengeFixture(t, now)
+	v := NewVerifier(reg)
+	v.ChallengeVerifier = sv
+	if err := v.VerifyAttestation(p, now); err != nil {
+		t.Fatalf("unexpected reject: %v", err)
+	}
+}
+
+// TestVerify_Rejects_ChallengeSignatureTampered confirms that if
+// the signature does not match the (nonce, issued_at) the miner
+// committed to, the bundle is rejected with signature-invalid
+// (NOT nonce-mismatch — the nonce IS what the miner committed to,
+// the signature is what fails).
+func TestVerify_Rejects_ChallengeSignatureTampered(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	reg, p, bundle, sv := buildChallengeFixture(t, now)
+	// Flip one byte of the signature.
+	rawSig, err := hex.DecodeString(bundle.ChallengeSig)
+	if err != nil {
+		t.Fatalf("decode sig: %v", err)
+	}
+	rawSig[0] ^= 0x01
+	bundle.ChallengeSig = hex.EncodeToString(rawSig)
+	reSign(t, &p, bundle, fixtureHMACKey)
+
+	v := NewVerifier(reg)
+	v.ChallengeVerifier = sv
+	mustReject(t, v.VerifyAttestation(p, now), mining.ErrAttestationSignatureInvalid)
+}
+
+// TestVerify_Rejects_ChallengeSignerUnknown checks that when the
+// bundle names a signer the verifier has never heard of, we
+// reject.
+func TestVerify_Rejects_ChallengeSignerUnknown(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	reg, p, bundle, _ := buildChallengeFixture(t, now)
+	bundle.ChallengeSignerID = "not-a-real-validator"
+	reSign(t, &p, bundle, fixtureHMACKey)
+
+	// Empty SignerVerifier — no signer_id registered.
+	sv := challenge.NewHMACSignerVerifier()
+	v := NewVerifier(reg)
+	v.ChallengeVerifier = sv
+	mustReject(t, v.VerifyAttestation(p, now), mining.ErrAttestationSignatureInvalid)
+}
+
+// TestVerify_Rejects_EmptyChallengeSignerID — when the verifier
+// is configured to require challenge sigs, an empty signer_id is
+// malformed.
+func TestVerify_Rejects_EmptyChallengeSignerID(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	reg, p, bundle, sv := buildChallengeFixture(t, now)
+	bundle.ChallengeSignerID = ""
+	reSign(t, &p, bundle, fixtureHMACKey)
+
+	v := NewVerifier(reg)
+	v.ChallengeVerifier = sv
+	mustReject(t, v.VerifyAttestation(p, now), mining.ErrAttestationBundleMalformed)
+}
+
+// TestVerify_Rejects_MalformedChallengeSig — non-hex in the sig
+// field is a malformed bundle.
+func TestVerify_Rejects_MalformedChallengeSig(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	reg, p, bundle, sv := buildChallengeFixture(t, now)
+	bundle.ChallengeSig = "not-hex!"
+	reSign(t, &p, bundle, fixtureHMACKey)
+
+	v := NewVerifier(reg)
+	v.ChallengeVerifier = sv
+	mustReject(t, v.VerifyAttestation(p, now), mining.ErrAttestationBundleMalformed)
+}
+
+// TestVerify_Rejects_EmptyChallengeSig — no signature at all.
+func TestVerify_Rejects_EmptyChallengeSig(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	reg, p, bundle, sv := buildChallengeFixture(t, now)
+	bundle.ChallengeSig = ""
+	reSign(t, &p, bundle, fixtureHMACKey)
+
+	v := NewVerifier(reg)
+	v.ChallengeVerifier = sv
+	mustReject(t, v.VerifyAttestation(p, now), mining.ErrAttestationBundleMalformed)
+}
+
+// TestVerify_Accepts_WithoutChallengeVerifier_BackCompat — when
+// no ChallengeVerifier is wired in (nil), the bundle's
+// challenge_sig / challenge_signer_id fields are carried inertly
+// and the verifier still accepts the proof. This guarantees the
+// introduction of the fields does NOT cascade-break existing
+// validators that haven't opted into the check yet.
+func TestVerify_Accepts_WithoutChallengeVerifier_BackCompat(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	reg, p, _, _ := buildChallengeFixture(t, now)
+	v := NewVerifier(reg) // ChallengeVerifier deliberately nil
+	if err := v.VerifyAttestation(p, now); err != nil {
+		t.Fatalf("nil ChallengeVerifier should skip the check; got %v", err)
+	}
+}
+
+// TestVerify_Rejects_SignatureBoundToDifferentNonce — signature
+// is cryptographically valid for a DIFFERENT (nonce, issued_at)
+// than the miner committed to. This simulates an attacker trying
+// to transplant a valid signature onto their own freshly-computed
+// nonce.
+func TestVerify_Rejects_SignatureBoundToDifferentNonce(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	reg, p, bundle, sv := buildChallengeFixture(t, now)
+
+	// Build a signature over a DIFFERENT nonce but keep the
+	// bundle's nonce the same. The legitimate signer happily
+	// signs the "different" nonce (an attacker would get this
+	// blob by calling GET /challenge and then swapping in the
+	// nonce they computed PoW against).
+	signerID := bundle.ChallengeSignerID
+	chgKey := bytes.Repeat([]byte{0x99}, 32)
+	signer, err := challenge.NewHMACSigner(signerID, chgKey)
+	if err != nil {
+		t.Fatalf("signer: %v", err)
+	}
+	var otherNonce [32]byte
+	for i := range otherNonce {
+		otherNonce[i] = 0xEE
+	}
+	wrong := challenge.Challenge{
+		Nonce:    otherNonce,
+		IssuedAt: bundle.IssuedAt,
+		SignerID: signerID,
+	}
+	wrongSig, err := signer.Sign(wrong.SigningBytes())
+	if err != nil {
+		t.Fatalf("sign wrong: %v", err)
+	}
+	bundle.ChallengeSig = hex.EncodeToString(wrongSig)
+	reSign(t, &p, bundle, fixtureHMACKey)
+
+	v := NewVerifier(reg)
+	v.ChallengeVerifier = sv
+	mustReject(t, v.VerifyAttestation(p, now), mining.ErrAttestationSignatureInvalid)
+}
+

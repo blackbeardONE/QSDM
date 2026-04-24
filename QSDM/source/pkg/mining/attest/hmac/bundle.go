@@ -12,20 +12,33 @@
 // surface area, which matters because it sits on the consensus
 // critical path once FORK_V2 activates.
 //
-// Bundle wire format (spec §3.2.2):
+// Bundle wire format (spec §3.2.2, extended in Phase 2c-iii with
+// challenge_sig / challenge_signer_id):
 //
 //	{
-//	  "challenge_bind": "<64-hex>",  // sha256(miner_addr || batch_root || mix_digest)
-//	  "compute_cap":    "8.9",
-//	  "cuda_version":   "12.8",
-//	  "driver_ver":     "572.16",
-//	  "gpu_name":       "NVIDIA GeForce RTX 4090",
-//	  "gpu_uuid":       "<nvidia-smi hex UUID>",
-//	  "hmac":           "<64-hex>",   // HMAC-SHA256 over canonical JSON without this field
-//	  "issued_at":      1700000000,
-//	  "node_id":        "alice-rtx4090-01",
-//	  "nonce":          "<64-hex, same 32 bytes as Attestation.Nonce>"
+//	  "challenge_bind":       "<64-hex>",  // sha256(miner_addr || batch_root || mix_digest)
+//	  "challenge_sig":        "<hex>",     // validator signature over (signer_id, issued_at, nonce)
+//	  "challenge_signer_id":  "validator-01",
+//	  "compute_cap":          "8.9",
+//	  "cuda_version":         "12.8",
+//	  "driver_ver":           "572.16",
+//	  "gpu_name":             "NVIDIA GeForce RTX 4090",
+//	  "gpu_uuid":             "<nvidia-smi hex UUID>",
+//	  "hmac":                 "<64-hex>",   // HMAC-SHA256 over canonical JSON without this field
+//	  "issued_at":            1700000000,
+//	  "node_id":              "alice-rtx4090-01",
+//	  "nonce":                "<64-hex, same 32 bytes as Attestation.Nonce>"
 //	}
+//
+// challenge_sig + challenge_signer_id are Phase 2c-iii additions
+// that carry the issuer-signed commitment from GET
+// /api/v1/mining/challenge through the miner back to the
+// validator. They are included in the canonical form (so a
+// miner cannot strip them and re-sign), but treated as optional
+// on the verifier side — if the operator has not wired a
+// challenge.SignerVerifier into hmac.Verifier, the fields are
+// carried inertly and the freshness window is the sole
+// anti-replay defence. Production deployments MUST wire one in.
 //
 // The canonical form used for the HMAC is a JSON object with the
 // first 9 fields in strict alphabetical order (the `hmac` field is
@@ -53,16 +66,18 @@ import (
 // canonical form byte-for-byte. Do NOT reorder these fields without
 // updating every cross-implementation test vector.
 type Bundle struct {
-	ChallengeBind string `json:"challenge_bind"`
-	ComputeCap    string `json:"compute_cap"`
-	CUDAVersion   string `json:"cuda_version"`
-	DriverVer     string `json:"driver_ver"`
-	GPUName       string `json:"gpu_name"`
-	GPUUUID       string `json:"gpu_uuid"`
-	HMAC          string `json:"hmac"`
-	IssuedAt      int64  `json:"issued_at"`
-	NodeID        string `json:"node_id"`
-	Nonce         string `json:"nonce"`
+	ChallengeBind     string `json:"challenge_bind"`
+	ChallengeSig      string `json:"challenge_sig"`
+	ChallengeSignerID string `json:"challenge_signer_id"`
+	ComputeCap        string `json:"compute_cap"`
+	CUDAVersion       string `json:"cuda_version"`
+	DriverVer         string `json:"driver_ver"`
+	GPUName           string `json:"gpu_name"`
+	GPUUUID           string `json:"gpu_uuid"`
+	HMAC              string `json:"hmac"`
+	IssuedAt          int64  `json:"issued_at"`
+	NodeID            string `json:"node_id"`
+	Nonce             string `json:"nonce"`
 }
 
 // ParseBundle decodes a base64-encoded bundle into a Bundle
@@ -97,15 +112,17 @@ func ParseBundle(bundleBase64 string) (Bundle, error) {
 // The field order matches Bundle minus HMAC — alphabetical — so
 // json.Marshal emits bytes identical to the spec's canonical form.
 type canonicalBundleForMAC struct {
-	ChallengeBind string `json:"challenge_bind"`
-	ComputeCap    string `json:"compute_cap"`
-	CUDAVersion   string `json:"cuda_version"`
-	DriverVer     string `json:"driver_ver"`
-	GPUName       string `json:"gpu_name"`
-	GPUUUID       string `json:"gpu_uuid"`
-	IssuedAt      int64  `json:"issued_at"`
-	NodeID        string `json:"node_id"`
-	Nonce         string `json:"nonce"`
+	ChallengeBind     string `json:"challenge_bind"`
+	ChallengeSig      string `json:"challenge_sig"`
+	ChallengeSignerID string `json:"challenge_signer_id"`
+	ComputeCap        string `json:"compute_cap"`
+	CUDAVersion       string `json:"cuda_version"`
+	DriverVer         string `json:"driver_ver"`
+	GPUName           string `json:"gpu_name"`
+	GPUUUID           string `json:"gpu_uuid"`
+	IssuedAt          int64  `json:"issued_at"`
+	NodeID            string `json:"node_id"`
+	Nonce             string `json:"nonce"`
 }
 
 // CanonicalForMAC returns the exact byte sequence the HMAC must be
@@ -115,15 +132,17 @@ type canonicalBundleForMAC struct {
 // the MAC without agreeing on their JSON encoders.
 func (b Bundle) CanonicalForMAC() ([]byte, error) {
 	return json.Marshal(canonicalBundleForMAC{
-		ChallengeBind: b.ChallengeBind,
-		ComputeCap:    b.ComputeCap,
-		CUDAVersion:   b.CUDAVersion,
-		DriverVer:     b.DriverVer,
-		GPUName:       b.GPUName,
-		GPUUUID:       b.GPUUUID,
-		IssuedAt:      b.IssuedAt,
-		NodeID:        b.NodeID,
-		Nonce:         b.Nonce,
+		ChallengeBind:     b.ChallengeBind,
+		ChallengeSig:      b.ChallengeSig,
+		ChallengeSignerID: b.ChallengeSignerID,
+		ComputeCap:        b.ComputeCap,
+		CUDAVersion:       b.CUDAVersion,
+		DriverVer:         b.DriverVer,
+		GPUName:           b.GPUName,
+		GPUUUID:           b.GPUUUID,
+		IssuedAt:          b.IssuedAt,
+		NodeID:            b.NodeID,
+		Nonce:             b.Nonce,
 	})
 }
 

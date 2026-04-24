@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/mining"
+	"github.com/blackbeardONE/QSDM/pkg/mining/challenge"
 )
 
 // Verifier implements mining.AttestationVerifier for the
@@ -62,17 +63,32 @@ type Verifier struct {
 	// that a replay attacker can't use it as a time-travel
 	// amplifier, large enough to absorb ordinary NTP skew.
 	AllowedFutureSkew time.Duration
+
+	// ChallengeVerifier cryptographically authenticates the
+	// (nonce, issued_at) pair back to a known validator. When
+	// non-nil, the verifier rejects any bundle whose
+	// challenge_sig / challenge_signer_id fields don't produce a
+	// valid signature over the same (nonce, issued_at) the miner
+	// committed to. When nil, this check is skipped and
+	// freshness-window + replay-cache are the sole anti-replay
+	// defences — acceptable for bring-up and isolated testnets
+	// but NEVER for production.
+	ChallengeVerifier challenge.SignerVerifier
 }
 
 // NewVerifier constructs a Verifier with the required collaborator
-// (Registry) and sensible defaults for the others.
+// (Registry) and sensible defaults for the others. Callers wire in
+// NonceStore and ChallengeVerifier for production — both are nil
+// by default because some test paths intentionally exercise the
+// skip-these-checks behaviour.
 func NewVerifier(registry Registry) *Verifier {
 	return &Verifier{
 		Registry:          registry,
-		NonceStore:        nil, // caller wires one in for production
+		NonceStore:        nil,
 		DenyList:          EmptyDenyList{},
 		FreshnessWindow:   mining.FreshnessWindow,
 		AllowedFutureSkew: 5 * time.Second,
+		ChallengeVerifier: nil,
 	}
 }
 
@@ -164,6 +180,37 @@ func (v *Verifier) VerifyAttestation(p mining.Proof, now time.Time) error {
 	}
 	if bundle.IssuedAt != p.Attestation.IssuedAt {
 		return fmt.Errorf("hmac: bundle.issued_at != Attestation.IssuedAt: %w", mining.ErrAttestationNonceMismatch)
+	}
+
+	// Step 6a-ii: challenge signature. When a ChallengeVerifier is
+	// wired in, prove this (nonce, issued_at) came from a
+	// validator — not from the miner's own PRNG. Performed
+	// BEFORE freshness so an invalid signature fails fast
+	// without the freshness-window check; performed AFTER
+	// nonce/issued_at consistency so we verify the SAME value
+	// the inner HMAC covers.
+	if v.ChallengeVerifier != nil {
+		if bundle.ChallengeSignerID == "" {
+			return fmt.Errorf("hmac: challenge_signer_id missing: %w", mining.ErrAttestationBundleMalformed)
+		}
+		sigBytes, err := hex.DecodeString(bundle.ChallengeSig)
+		if err != nil || len(sigBytes) == 0 {
+			return fmt.Errorf("hmac: challenge_sig not hex: %w", mining.ErrAttestationBundleMalformed)
+		}
+		var nonceArr [32]byte
+		copy(nonceArr[:], bundleNonce)
+		chg := challenge.Challenge{
+			Nonce:     nonceArr,
+			IssuedAt:  bundle.IssuedAt,
+			SignerID:  bundle.ChallengeSignerID,
+			Signature: sigBytes,
+		}
+		if err := v.ChallengeVerifier.VerifySignature(
+			chg.SignerID, chg.SigningBytes(), chg.Signature,
+		); err != nil {
+			return fmt.Errorf("hmac: challenge signature: %w: %w",
+				err, mining.ErrAttestationSignatureInvalid)
+		}
 	}
 
 	// Step 6b: freshness. Reject proofs issued too far in the
