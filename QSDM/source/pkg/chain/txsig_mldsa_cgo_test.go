@@ -21,7 +21,11 @@ func TestSigVerifier_MLDSA_RoundTrip(t *testing.T) {
 	defer d.Free()
 
 	pk := d.GetPublicKey()
-	sender := hex.EncodeToString(sha256.Sum256(pk)[:])
+	// Go does not let you slice the unaddressable return value of
+	// sha256.Sum256 directly (since ~Go 1.22 semantics); assign to
+	// a local first.
+	pkHash := sha256.Sum256(pk)
+	sender := hex.EncodeToString(pkHash[:])
 	tx := &mempool.Tx{
 		ID:        strings.Repeat("z", 32),
 		Sender:    sender,
