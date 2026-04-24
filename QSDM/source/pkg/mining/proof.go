@@ -9,21 +9,57 @@ import (
 	"strconv"
 )
 
-// Attestation carries optional NGC hardware-attestation evidence. Per
-// MINING_PROTOCOL.md §6 this is a transparency signal, not a consensus
-// rule — an absent or stale attestation MUST NOT by itself cause a
-// validator to reject an otherwise-valid proof.
+// Attestation carries hardware-attestation evidence for the proof.
+//
+// Under v1 (Proof.Version == ProtocolVersion == 1) this field is
+// optional: per MINING_PROTOCOL.md §6 it is a transparency signal,
+// not a consensus rule — an absent or stale attestation MUST NOT
+// by itself cause a validator to reject an otherwise-valid proof.
+//
+// Under v2 (Proof.Version == ProtocolVersionV2 == 2, active at or
+// above ForkV2Height) this field is MANDATORY: per
+// MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §3 a v2 proof with an empty
+// or unverifiable attestation is rejected with
+// ErrAttestationRequired or one of the more specific sentinels in
+// fork.go. The verifier dispatches on Attestation.Type to the
+// nvidia-cc-v1 or nvidia-hmac-v1 verifier path.
+//
+// The Nonce and IssuedAt fields were added in v2; they are
+// serialised into the canonical JSON only when Proof.Version >=
+// ProtocolVersionV2, so v1 proofs retain byte-identical encoding
+// to pre-fork canonical form.
 type Attestation struct {
-	Type                 string `json:"type"`                // e.g. "ngc-v1"
-	BundleBase64         string `json:"bundle"`              // base64 NGC proof bundle
-	GPUArch              string `json:"gpu_arch"`            // e.g. "ada-lovelace"
-	ClaimedHashrateHPS   uint64 `json:"claimed_hashrate_hps"`
+	Type               string `json:"type"`
+	BundleBase64       string `json:"bundle"`
+	GPUArch            string `json:"gpu_arch"`
+	ClaimedHashrateHPS uint64 `json:"claimed_hashrate_hps"`
+
+	// Nonce is the 32-byte server-issued challenge the miner
+	// committed to when computing this proof. v2 only; MUST be
+	// zero (and omitted from canonical JSON) for v1 proofs.
+	// Serialised as lowercase hex in canonical JSON.
+	Nonce [32]byte `json:"-"`
+
+	// IssuedAt is the unix-seconds timestamp at which the
+	// validator issued Nonce. v2 only; MUST be zero for v1
+	// proofs. The verifier rejects the proof if IssuedAt is more
+	// than FreshnessWindow before its wall clock or outside the
+	// tolerated future skew.
+	IssuedAt int64 `json:"issued_at,omitempty"`
 }
 
-// Empty reports whether the attestation carries any content. Used by the
-// verifier to decide whether to even attempt NGC bundle verification.
+// Empty reports whether the attestation carries any content. Used
+// by the v1 verifier to decide whether to even attempt NGC bundle
+// verification. v2 uses a different check (Attestation.Type == ""
+// → ErrAttestationRequired) because v2's semantics distinguish
+// "fully empty" from "has Type but nothing else" more sharply.
 func (a Attestation) Empty() bool {
-	return a.Type == "" && a.BundleBase64 == "" && a.GPUArch == "" && a.ClaimedHashrateHPS == 0
+	return a.Type == "" &&
+		a.BundleBase64 == "" &&
+		a.GPUArch == "" &&
+		a.ClaimedHashrateHPS == 0 &&
+		a.Nonce == [32]byte{} &&
+		a.IssuedAt == 0
 }
 
 // Proof is a miner's solution submission. Field order here is normative
@@ -89,17 +125,43 @@ func (p Proof) canonicalBytes(includeAttestation bool) ([]byte, error) {
 	buf = appendJSONField(buf, "mix_digest", hex.EncodeToString(p.MixDigest[:]), true)
 	if includeAttestation {
 		buf = append(buf, ',')
-		attBytes, err := json.Marshal(struct {
-			Type               string `json:"type"`
-			Bundle             string `json:"bundle"`
-			GPUArch            string `json:"gpu_arch"`
-			ClaimedHashrateHPS uint64 `json:"claimed_hashrate_hps"`
-		}{
-			Type:               p.Attestation.Type,
-			Bundle:             p.Attestation.BundleBase64,
-			GPUArch:            p.Attestation.GPUArch,
-			ClaimedHashrateHPS: p.Attestation.ClaimedHashrateHPS,
-		})
+		// v2 adds two fields (nonce + issued_at) to the
+		// attestation's canonical JSON. We gate on
+		// p.Version so v1 proofs retain byte-identical encoding
+		// to pre-fork canonical form — round-trip equality with
+		// pre-fork fixtures is a consensus invariant, not just a
+		// test convenience.
+		var attBytes []byte
+		var err error
+		if p.Version >= ProtocolVersionV2 {
+			attBytes, err = json.Marshal(struct {
+				Type               string `json:"type"`
+				Bundle             string `json:"bundle"`
+				GPUArch            string `json:"gpu_arch"`
+				ClaimedHashrateHPS uint64 `json:"claimed_hashrate_hps"`
+				Nonce              string `json:"nonce"`
+				IssuedAt           int64  `json:"issued_at"`
+			}{
+				Type:               p.Attestation.Type,
+				Bundle:             p.Attestation.BundleBase64,
+				GPUArch:            p.Attestation.GPUArch,
+				ClaimedHashrateHPS: p.Attestation.ClaimedHashrateHPS,
+				Nonce:              hex.EncodeToString(p.Attestation.Nonce[:]),
+				IssuedAt:           p.Attestation.IssuedAt,
+			})
+		} else {
+			attBytes, err = json.Marshal(struct {
+				Type               string `json:"type"`
+				Bundle             string `json:"bundle"`
+				GPUArch            string `json:"gpu_arch"`
+				ClaimedHashrateHPS uint64 `json:"claimed_hashrate_hps"`
+			}{
+				Type:               p.Attestation.Type,
+				Bundle:             p.Attestation.BundleBase64,
+				GPUArch:            p.Attestation.GPUArch,
+				ClaimedHashrateHPS: p.Attestation.ClaimedHashrateHPS,
+			})
+		}
 		if err != nil {
 			return nil, fmt.Errorf("mining: marshal attestation: %w", err)
 		}
@@ -176,24 +238,69 @@ func ParseProof(raw []byte) (*Proof, error) {
 }
 
 type proofWire struct {
-	Version     uint32      `json:"version"`
-	Epoch       json.Number `json:"epoch"`
-	Height      json.Number `json:"height"`
-	HeaderHash  string      `json:"header_hash"`
-	MinerAddr   string      `json:"miner_addr"`
-	BatchRoot   string      `json:"batch_root"`
-	BatchCount  uint32      `json:"batch_count"`
-	Nonce       string      `json:"nonce"`
-	MixDigest   string      `json:"mix_digest"`
-	Attestation Attestation `json:"attestation"`
+	Version     uint32           `json:"version"`
+	Epoch       json.Number      `json:"epoch"`
+	Height      json.Number      `json:"height"`
+	HeaderHash  string           `json:"header_hash"`
+	MinerAddr   string           `json:"miner_addr"`
+	BatchRoot   string           `json:"batch_root"`
+	BatchCount  uint32           `json:"batch_count"`
+	Nonce       string           `json:"nonce"`
+	MixDigest   string           `json:"mix_digest"`
+	Attestation attestationWire `json:"attestation"`
+}
+
+// attestationWire is the on-the-wire shape of Attestation. It uses
+// string-typed hex for Nonce (rather than the Go struct's [32]byte)
+// because encoding/json has no built-in hex codec, and we do not
+// want to attach MarshalJSON / UnmarshalJSON methods directly to
+// Attestation — the canonical serialisation in canonicalBytes is
+// intentionally hand-rolled for byte-stability, and a struct-level
+// method would interfere with that.
+//
+// Both the nonce and issued_at fields are optional on the wire so
+// that a v1 proof (whose attestation lacks them) continues to
+// parse without error. The verifier enforces that v2 proofs MUST
+// carry both — see Verifier.verifyAttestation in a later phase.
+type attestationWire struct {
+	Type               string `json:"type"`
+	Bundle             string `json:"bundle"`
+	GPUArch            string `json:"gpu_arch"`
+	ClaimedHashrateHPS uint64 `json:"claimed_hashrate_hps"`
+	Nonce              string `json:"nonce,omitempty"`     // v2 only, lowercase hex
+	IssuedAt           int64  `json:"issued_at,omitempty"` // v2 only, unix seconds
+}
+
+// toAttestation decodes an attestationWire into the strongly-typed
+// Attestation struct. The Nonce field's hex string is accepted as
+// either empty (v1) or exactly 64 lowercase-hex characters (v2);
+// any other length is a parse error rather than a silent truncation.
+func (aw attestationWire) toAttestation() (Attestation, error) {
+	a := Attestation{
+		Type:               aw.Type,
+		BundleBase64:       aw.Bundle,
+		GPUArch:            aw.GPUArch,
+		ClaimedHashrateHPS: aw.ClaimedHashrateHPS,
+		IssuedAt:           aw.IssuedAt,
+	}
+	if aw.Nonce != "" {
+		if err := decodeHexInto(a.Nonce[:], aw.Nonce, "attestation.nonce"); err != nil {
+			return Attestation{}, err
+		}
+	}
+	return a, nil
 }
 
 func (w proofWire) toProof() (*Proof, error) {
+	att, err := w.Attestation.toAttestation()
+	if err != nil {
+		return nil, err
+	}
 	p := &Proof{
 		Version:     w.Version,
 		MinerAddr:   w.MinerAddr,
 		BatchCount:  w.BatchCount,
-		Attestation: w.Attestation,
+		Attestation: att,
 	}
 	epoch, err := strconv.ParseUint(w.Epoch.String(), 10, 64)
 	if err != nil {

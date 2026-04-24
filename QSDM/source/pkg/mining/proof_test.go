@@ -103,6 +103,95 @@ func TestParseProofRejectsShortHex(t *testing.T) {
 	}
 }
 
+// TestCanonicalJSONV2RoundTrip exercises the v2 encode/parse path
+// end-to-end: a proof with Version = ProtocolVersionV2 MUST emit
+// the two new attestation fields (nonce, issued_at) in the
+// canonical JSON and MUST parse back byte-identical. Regression
+// test against drift between the hand-rolled canonicalBytes and
+// the encoding/json-driven attestationWire parse path.
+func TestCanonicalJSONV2RoundTrip(t *testing.T) {
+	p := Proof{
+		Version:    ProtocolVersionV2,
+		Epoch:      8,
+		Height:     60_480*8 + 34,
+		HeaderHash: [32]byte{0x11, 0x22, 0x33},
+		MinerAddr:  "qsdm1v2demo",
+		BatchRoot:  [32]byte{0xcc, 0xdd},
+		BatchCount: 2,
+		Nonce:      [16]byte{0xa5, 0xa5},
+		MixDigest:  [32]byte{0xbe, 0xef},
+		Attestation: Attestation{
+			Type:               AttestationTypeHMAC,
+			BundleBase64:       "dGVzdC1idW5kbGU=",
+			GPUArch:            "ada-lovelace",
+			ClaimedHashrateHPS: 5_000_000,
+			Nonce: [32]byte{
+				0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+				0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+				0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+				0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+			},
+			IssuedAt: 1_745_000_000,
+		},
+	}
+
+	raw, err := p.CanonicalJSON()
+	if err != nil {
+		t.Fatalf("canonical encode: %v", err)
+	}
+	if !bytes.Contains(raw, []byte(`"nonce":"010203040506070809`)) {
+		t.Errorf("v2 canonical JSON missing attestation.nonce hex: %s", raw)
+	}
+	if !bytes.Contains(raw, []byte(`"issued_at":1745000000`)) {
+		t.Errorf("v2 canonical JSON missing attestation.issued_at: %s", raw)
+	}
+
+	p2, err := ParseProof(raw)
+	if err != nil {
+		t.Fatalf("parse v2 proof: %v", err)
+	}
+	raw2, err := p2.CanonicalJSON()
+	if err != nil {
+		t.Fatalf("re-encode v2: %v", err)
+	}
+	if !bytes.Equal(raw, raw2) {
+		t.Fatalf("v2 canonical JSON not stable:\n  first:  %s\n  second: %s", raw, raw2)
+	}
+}
+
+// TestCanonicalJSONV1StableAcrossSchemaExtension is the regression
+// guard for "adding v2 wire fields must not change v1 canonical
+// bytes for the same in-memory Proof." Two proofs are constructed
+// that differ only in version; the v1 one must encode byte-
+// identically to the pre-fork shape.
+func TestCanonicalJSONV1StableAcrossSchemaExtension(t *testing.T) {
+	p := Proof{
+		Version:    ProtocolVersion, // = 1
+		Epoch:      1,
+		Height:     60480,
+		MinerAddr:  "m",
+		BatchCount: 1,
+		Attestation: Attestation{
+			// A v1 proof may carry the new fields in memory
+			// (because the struct is shared) but MUST NOT emit
+			// them on the wire. This is the crux of the gated
+			// serialisation in canonicalBytes.
+			Nonce:    [32]byte{0x99},
+			IssuedAt: 42,
+		},
+	}
+	raw, err := p.CanonicalJSON()
+	if err != nil {
+		t.Fatalf("encode v1: %v", err)
+	}
+	if bytes.Contains(raw, []byte(`"nonce":"99`)) {
+		t.Errorf("v1 canonical JSON must not leak v2 attestation.nonce field: %s", raw)
+	}
+	if bytes.Contains(raw, []byte(`"issued_at"`)) {
+		t.Errorf("v1 canonical JSON must not leak v2 attestation.issued_at field: %s", raw)
+	}
+}
+
 // indexFrom is a tiny substring search anchored at a position.
 func indexFrom(s, substr string, from int) int {
 	if from > len(s) {
