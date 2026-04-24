@@ -26,12 +26,14 @@ on:
       - "QSDM/source/**"
       - "QSDM/Dockerfile*"
       - "QSDM/scripts/**"
+      - "scripts/**"
       - ".github/workflows/qsdm-split-profile.yml"
   pull_request:
     paths:
       - "QSDM/source/**"
       - "QSDM/Dockerfile*"
       - "QSDM/scripts/**"
+      - "scripts/**"
       - ".github/workflows/qsdm-split-profile.yml"
 
 jobs:
@@ -163,6 +165,49 @@ jobs:
             echo "${out}" | grep -q "${TEST_SHA}" || { echo "FAIL: ${bin} missing injected sha"; exit 1; }
           done
 
+  # ---------------------------------------------------------------------------
+  # install-scripts-lint runs shellcheck against the Linux/macOS
+  # installer and parses the Windows installer with PowerShell. Both
+  # scripts are on the critical path for new-operator onboarding (they
+  # are what a `curl … | bash` / `iwr … | iex` hits), so any syntax
+  # regression must be caught at push time.
+  # ---------------------------------------------------------------------------
+  install-scripts-lint:
+    name: install scripts lint (shellcheck + pwsh parse)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: shellcheck install-qsdmminer-console.sh
+        run: |
+          set -euo pipefail
+          # -x follows source directives; -e SC2086 is NOT suppressed
+          # deliberately, the script already quotes everything.
+          shellcheck --shell=bash --severity=warning \
+            scripts/install-qsdmminer-console.sh
+
+      - name: bash -n install-qsdmminer-console.sh
+        run: bash -n scripts/install-qsdmminer-console.sh
+
+      - name: pwsh parse install-qsdmminer-console.ps1
+        shell: pwsh
+        run: |
+          $code = Get-Content -Raw scripts/install-qsdmminer-console.ps1
+          $errs = $null; $tokens = $null
+          [System.Management.Automation.Language.Parser]::ParseInput(
+              $code, [ref]$tokens, [ref]$errs) | Out-Null
+          if ($errs -and $errs.Count -gt 0) {
+              $errs | ForEach-Object {
+                  Write-Host ("line {0}: {1}" -f $_.Extent.StartLineNumber, $_.Message) -ForegroundColor Red
+              }
+              exit 1
+          }
+          Write-Host "PowerShell parse OK ($($tokens.Count) tokens)"
+
   trustcheck-integration:
     name: trustcheck integration (built binary vs fixture)
     runs-on: ubuntu-latest
@@ -231,3 +276,53 @@ jobs:
           tags: qsdm-miner:ci
           cache-from: type=gha,scope=qsdm-miner
           cache-to: type=gha,mode=max,scope=qsdm-miner
+
+  # ---------------------------------------------------------------------------
+  # docker-miner-console-build verifies the small CPU-only image builds
+  # on every push. Unlike docker-miner-build (which carries a 4-6 GB
+  # CUDA runtime and takes 20+ minutes) this image is ~15 MB on top of
+  # gcr.io/distroless/static-debian12:nonroot, so the build finishes in
+  # ~1-2 minutes and we can include it in the fast CI tier. The
+  # release workflow (release-container.yml ghcr-miner-console) does
+  # the actual GHCR push on semver tags; this job only gates the
+  # Dockerfile for correctness.
+  # ---------------------------------------------------------------------------
+  docker-miner-console-build:
+    name: docker build (miner-console)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build miner-console image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: QSDM
+          file: QSDM/Dockerfile.miner-console
+          push: false
+          tags: qsdm-miner-console:ci
+          # Inject sentinel build args — the smoke test below greps
+          # for them in the container's --version output, which
+          # proves pkg/buildinfo.-X injection worked through the
+          # build-arg → ldflags → runtime path.
+          build-args: |
+            BUILDINFO_VERSION=v0.0.0-citest
+            BUILDINFO_SHA=citest7
+            BUILDINFO_DATE=2026-04-22T00:00:00Z
+          load: true
+          cache-from: type=gha,scope=qsdm-miner-console
+          cache-to: type=gha,mode=max,scope=qsdm-miner-console
+
+      - name: Smoke-check --version inside the image
+        run: |
+          set -euo pipefail
+          out="$(docker run --rm --entrypoint /usr/local/bin/qsdmminer-console qsdm-miner-console:ci --version)"
+          echo "container --version: ${out}"
+          echo "${out}" | grep -q "v0.0.0-citest" || { echo "FAIL: missing injected version"; exit 1; }
+          echo "${out}" | grep -q "citest7" || { echo "FAIL: missing injected git SHA"; exit 1; }
+          # --self-test gates protocol conformance inside the image;
+          # if a future Dockerfile change (e.g. stripping a symbol the
+          # miner relies on) breaks the runtime, this catches it.
+          docker run --rm --entrypoint /usr/local/bin/qsdmminer-console qsdm-miner-console:ci --self-test

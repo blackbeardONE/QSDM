@@ -14,6 +14,55 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Docker image `ghcr.io/<owner>/qsdm-miner-console` + one-command
+  install scripts for Linux / macOS / Windows (2026-04-24).** The
+  console miner now has two frictionless install paths in addition to
+  the signed binaries:
+
+  1. **Container image** — a ~15 MB CPU-only image on
+     `gcr.io/distroless/static-debian12:nonroot`. Built by a new
+     `ghcr-miner-console` job in `release-container.yml` on every
+     `v*` tag, pushed to GHCR with semver, major.minor, and major
+     tags. Build-args propagate the same `BUILDINFO_*` values the
+     binary release workflow injects, so `docker inspect
+     ghcr.io/.../qsdm-miner-console:<tag>` and
+     `docker run ... --version` both surface the exact release tag
+     + commit SHA. Default entrypoint runs with `--plain` and
+     `--config /config/miner.toml`, so the canonical invocation is
+     `docker run -v $HOME/.qsdm:/config ... --validator=… --address=…`.
+     `qsdm-split-profile.yml` gains a companion `docker build
+     (miner-console)` job that builds the image no-push on every
+     push, runs `--version` against a synthetic-tag build to verify
+     the build-arg → ldflags pipeline, and executes `--self-test`
+     inside the container to gate protocol conformance.
+
+  2. **`scripts/install-qsdmminer-console.sh`** — Linux/macOS
+     installer intended for `curl -sSL … | bash`. Detects platform,
+     resolves the latest release via the GitHub API (or honours
+     `QSDM_VERSION=vX.Y.Z`), downloads the matching
+     `qsdmminer-console-<os>-<arch>` binary plus `SHA256SUMS`,
+     verifies the hash (refuses to install on mismatch), installs
+     to `$QSDM_INSTALL_DIR` / `/usr/local/bin` / `~/.local/bin`
+     (whichever is writable without surprise `sudo`), and runs
+     `--version` to confirm the binary identifies as a release
+     build. A `dev` or `unknown` in the `--version` line aborts
+     the install — a defence-in-depth assertion that the download
+     did not bypass the release pipeline.
+
+  3. **`scripts/install-qsdmminer-console.ps1`** — Windows
+     PowerShell 5.1+ equivalent, bootstrappable via `iwr … | iex`.
+     Never elevates (installs under `%LOCALAPPDATA%\Programs\QSDM`
+     by default), performs the same SHA-256 verification with
+     `Get-FileHash`, runs the installed binary's `--version`, and
+     aborts on `dev`/`unknown` metadata identically to the bash
+     installer.
+
+  Both install scripts gain a `install-scripts-lint` CI job
+  (`shellcheck` + `bash -n` for the sh, `PowerShell Parser` for the
+  ps1) so syntax regressions are caught at push time — these are
+  on the critical path for new-operator onboarding so any drift
+  cannot be tolerated.
+
 - **Embedded build metadata + `--version` on every release artefact
   (2026-04-24).** Every one of the four release binaries (`qsdmminer`,
   `qsdmminer-console`, `trustcheck`, `genesis-ceremony`) now accepts a

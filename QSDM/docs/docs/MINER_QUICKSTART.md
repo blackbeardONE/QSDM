@@ -62,13 +62,49 @@ This self-test is also the Phase 4.5 acceptance gate in `Major Update.md`; it ru
 
 ## 2.5 Friendly console miner (recommended for home operators)
 
-If you want to start mining without memorising flags, build the sibling binary **`qsdmminer-console`** instead. It shares the same protocol code (identical `pkg/mining` primitives, identical on-wire behaviour), and adds three ergonomic differences:
+If you want to start mining without memorising flags, use **`qsdmminer-console`**. It shares the same protocol code as `qsdmminer` (identical `pkg/mining` primitives, identical on-wire behaviour), and adds three ergonomic differences:
 
 1. **First-run setup wizard.** Run the binary with no flags and it prompts for `Validator URL`, `Reward address`, `Batch count per proof`, and `Poll interval`. Answers are saved to `~/.qsdm/miner.toml` (on Windows: `%USERPROFILE%\.qsdm\miner.toml`) so future runs need no flags.
 2. **Live console panel.** An in-place ASCII/ANSI panel shows the reward address, validator, current epoch, rolling hashrate, accepted/rejected counts, uptime, and the last event. Pipe stdout to a file or TTY-less shell and the binary auto-detects the missing terminal and falls back to a one-line-per-event log.
 3. **`--plain`** flag for `systemd` / CI / `journalctl` users who want log lines, not a panel, without depending on `isatty` detection.
 
-Build it the same way:
+### One-command install (recommended)
+
+Pick the path that matches your platform — all three pull the same signed binary from the latest GitHub Release, verify its SHA-256 against the consolidated `SHA256SUMS` file, and refuse to install anything that reports `dev` / `unknown` build metadata.
+
+**Linux / macOS** (bash, no Go toolchain needed):
+
+```bash
+curl -sSL https://raw.githubusercontent.com/blackbeardONE/QSDM/main/scripts/install-qsdmminer-console.sh | bash
+```
+
+Pin a specific release:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/blackbeardONE/QSDM/main/scripts/install-qsdmminer-console.sh | QSDM_VERSION=v0.1.0 bash
+```
+
+**Windows** (PowerShell 5.1+, no Go toolchain needed):
+
+```powershell
+iwr https://raw.githubusercontent.com/blackbeardONE/QSDM/main/scripts/install-qsdmminer-console.ps1 -UseBasicParsing | iex
+```
+
+**Docker** (distroless, CPU-only, ~15 MB):
+
+```bash
+docker run --rm -it \
+    -v "$HOME/.qsdm:/config" \
+    ghcr.io/blackbeardone/qsdm-miner-console:latest \
+    --validator=https://api.qsdm.tech \
+    --address=qsdm1<your-reward-address>
+```
+
+The image ships exactly the binary released under the same tag (same commit, same `-ldflags`), so `docker inspect` and the binary's `--version` agree. Default entrypoint includes `--plain` so `docker logs` stays clean.
+
+### Build from source
+
+If you prefer to build yourself:
 
 ```bash
 cd QSDM/source
