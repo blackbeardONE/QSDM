@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
@@ -114,6 +115,18 @@ type BlockProducer struct {
 	OnSealed func()
 	// appendReceipts, when set, stores per-tx receipts after a successful TryAppendExternalBlock (same replay semantics as ProduceBlockWithReceipts).
 	appendReceipts *ReceiptStore
+	// tipHeight mirrors the height of the current tip, updated
+	// under bp.mu but exposed via a lock-free atomic read
+	// (TipHeight) so callers — notably EnrollmentAwareApplier's
+	// HeightFn — can read it from inside bp.applier.ApplyTx
+	// without re-entering bp.mu. Zero is valid (pre-genesis);
+	// callers that need "next block's height" should add 1.
+	tipHeight atomic.Uint64
+	// tipHeightSet marks whether tipHeight has ever been
+	// written. Distinguishes "no blocks sealed yet" (false, so
+	// TipHeight() returns 0 as a floor) from "tip height is
+	// zero" (true, genesis sealed). Atomic so reads are lock-free.
+	tipHeightSet atomic.Bool
 }
 
 // ProducerConfig configures the block producer.
@@ -312,6 +325,8 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 	}
 
 	bp.chain = append(bp.chain, block)
+	bp.tipHeight.Store(block.Height)
+	bp.tipHeightSet.Store(true)
 	runSealedHook = true
 	return block, nil
 }
@@ -460,6 +475,8 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 		return fmt.Errorf("chain: live state_root mismatch after external append")
 	}
 	bp.chain = append(bp.chain, blk)
+	bp.tipHeight.Store(blk.Height)
+	bp.tipHeightSet.Store(true)
 	runSealedHook = true
 	for _, tx := range blk.Transactions {
 		if tx != nil {
@@ -509,6 +526,39 @@ func (bp *BlockProducer) ChainHeight() uint64 {
 		return 0
 	}
 	return bp.chain[len(bp.chain)-1].Height
+}
+
+// TipHeight returns the height of the current tip WITHOUT
+// taking bp.mu. Safe to call from any context, including from
+// inside bp.applier.ApplyTx (where bp.mu is already held by
+// ProduceBlock) — unlike ChainHeight, which would deadlock.
+//
+// Before the first block has been sealed, returns 0 (the
+// canonical "no blocks yet" sentinel — equivalent to a chain
+// with only an implicit genesis at -1). Callers wanting "next
+// block's height" should add 1 unconditionally; tipHeightSet
+// is only needed for callers that must distinguish "pre-genesis"
+// from "genesis at height 0".
+//
+// Updated atomically under bp.mu after each successful seal
+// (ProduceBlock and TryAppendExternalBlock), so readers may
+// observe the value advance by exactly one block at a time
+// with no torn reads.
+func (bp *BlockProducer) TipHeight() uint64 {
+	if bp == nil {
+		return 0
+	}
+	return bp.tipHeight.Load()
+}
+
+// HasTip reports whether any block has been sealed. Useful for
+// callers that must distinguish "pre-genesis, TipHeight is a
+// floor" from "genesis sealed at height 0". Concurrency-safe.
+func (bp *BlockProducer) HasTip() bool {
+	if bp == nil {
+		return false
+	}
+	return bp.tipHeightSet.Load()
 }
 
 // Headers returns block headers for a range of heights.
