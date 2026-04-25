@@ -42,8 +42,8 @@ remove_file "verify_dashboard.exe" "Verify dashboard"
 
 # 3. Database temporary files
 echo "3. Cleaning database temporary files..."
-remove_file "qsdmplus.db-shm" "SQLite shared memory"
-remove_file "qsdmplus.db-wal" "SQLite write-ahead log"
+remove_file "qsdm.db-shm" "SQLite shared memory"
+remove_file "qsdm.db-wal" "SQLite write-ahead log"
 find . -maxdepth 1 -name "*.db-journal" -type f -delete
 
 # 4. Backup files

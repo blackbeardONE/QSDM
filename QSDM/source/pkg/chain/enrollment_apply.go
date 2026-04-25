@@ -102,6 +102,14 @@ type EnrollmentStateMutator interface {
 type EnrollmentApplier struct {
 	Accounts *AccountStore
 	State    EnrollmentStateMutator
+
+	// Publisher receives an EnrollmentEvent for every
+	// outcome (enroll-applied, enroll-rejected,
+	// unenroll-applied, unenroll-rejected, sweep). Defaults
+	// to NoopEventPublisher; opt into structured events by
+	// replacing the field. Calls are synchronous from the
+	// applier's view — see pkg/chain/events.go.
+	Publisher ChainEventPublisher
 }
 
 // NewEnrollmentApplier wires the adapter. Panics on nil fields
@@ -115,7 +123,22 @@ func NewEnrollmentApplier(accounts *AccountStore, state EnrollmentStateMutator) 
 	if state == nil {
 		panic("chain: NewEnrollmentApplier requires non-nil EnrollmentStateMutator")
 	}
-	return &EnrollmentApplier{Accounts: accounts, State: state}
+	return &EnrollmentApplier{
+		Accounts:  accounts,
+		State:     state,
+		Publisher: NoopEventPublisher{},
+	}
+}
+
+// publisher returns the configured ChainEventPublisher,
+// substituting NoopEventPublisher if the field was left nil
+// (e.g. by a test that built an EnrollmentApplier struct
+// literal instead of going through NewEnrollmentApplier).
+func (a *EnrollmentApplier) publisher() ChainEventPublisher {
+	if a == nil || a.Publisher == nil {
+		return NoopEventPublisher{}
+	}
+	return a.Publisher
 }
 
 // ApplyEnrollmentTx validates and applies a single enrollment
@@ -137,14 +160,36 @@ func (a *EnrollmentApplier) ApplyEnrollmentTx(tx *mempool.Tx, height uint64) err
 	if tx == nil {
 		return errors.New("chain: nil enrollment tx")
 	}
+
+	// Top-level reject helper. We don't yet know whether the
+	// payload would dispatch to enroll or unenroll, so route
+	// these top-level rejections through the enroll-rejected
+	// channel by default — there is no separate "unknown
+	// dispatch" event kind, and the WrongContract / decode
+	// failures are most naturally framed as enroll-side
+	// problems for indexers.
+	rejectTop := func(reason string, err error) error {
+		metrics().RecordEnrollmentRejected(reason)
+		a.publisher().PublishEnrollment(EnrollmentEvent{
+			Kind:         EnrollmentEventEnrollRejected,
+			Height:       height,
+			Sender:       tx.Sender,
+			RejectReason: reason,
+			Err:          err,
+		})
+		return err
+	}
+
 	if tx.ContractID != enrollment.ContractID {
-		return fmt.Errorf("%w: got %q, want %q",
-			ErrNotEnrollmentTx, tx.ContractID, enrollment.ContractID)
+		return rejectTop(EnrollRejectReasonWrongContract,
+			fmt.Errorf("%w: got %q, want %q",
+				ErrNotEnrollmentTx, tx.ContractID, enrollment.ContractID))
 	}
 
 	kind, err := enrollment.PeekKind(tx.Payload)
 	if err != nil {
-		return fmt.Errorf("chain: peek enrollment kind: %w", err)
+		return rejectTop(EnrollRejectReasonDecode,
+			fmt.Errorf("chain: peek enrollment kind: %w", err))
 	}
 
 	switch kind {
@@ -153,30 +198,66 @@ func (a *EnrollmentApplier) ApplyEnrollmentTx(tx *mempool.Tx, height uint64) err
 	case enrollment.PayloadKindUnenroll:
 		return a.applyUnenroll(tx, height)
 	default:
-		return fmt.Errorf("chain: unknown enrollment payload kind %q", kind)
+		return rejectTop(EnrollRejectReasonDecode,
+			fmt.Errorf("chain: unknown enrollment payload kind %q", kind))
 	}
 }
 
 // applyEnroll is the Enroll-kind branch of ApplyEnrollmentTx.
 // Atomic: either every mutation happens, or none do.
 func (a *EnrollmentApplier) applyEnroll(tx *mempool.Tx, height uint64) error {
+	rejectEnroll := func(reason string, nodeID string, err error) error {
+		metrics().RecordEnrollmentRejected(reason)
+		a.publisher().PublishEnrollment(EnrollmentEvent{
+			Kind:         EnrollmentEventEnrollRejected,
+			Height:       height,
+			Sender:       tx.Sender,
+			NodeID:       nodeID,
+			RejectReason: reason,
+			Err:          err,
+		})
+		return err
+	}
+
 	payload, err := enrollment.DecodeEnrollPayload(tx.Payload)
 	if err != nil {
-		return fmt.Errorf("chain: decode enroll payload: %w", err)
+		return rejectEnroll(EnrollRejectReasonDecode, "",
+			fmt.Errorf("chain: decode enroll payload: %w", err))
 	}
 
 	if err := enrollment.ValidateEnrollFields(payload, tx.Sender); err != nil {
-		return fmt.Errorf("chain: stateless enroll validation: %w", err)
+		// Best-effort to classify common stateless errors.
+		// Anything else falls back to "decode_failed" for
+		// the same reason: stateless validation failure
+		// means the wire shape is wrong.
+		reason := EnrollRejectReasonDecode
+		if errors.Is(err, enrollment.ErrStakeMismatch) {
+			reason = EnrollRejectReasonStakeMismatch
+		}
+		return rejectEnroll(reason, payload.NodeID,
+			fmt.Errorf("chain: stateless enroll validation: %w", err))
 	}
 
 	senderAcc, ok := a.Accounts.Get(tx.Sender)
 	if !ok {
-		return fmt.Errorf("chain: enroll sender %q has no account", tx.Sender)
+		return rejectEnroll(EnrollRejectReasonInsufficient, payload.NodeID,
+			fmt.Errorf("chain: enroll sender %q has no account", tx.Sender))
 	}
 	senderBalanceDust := balanceToDust(senderAcc.Balance)
 
 	if err := enrollment.ValidateEnrollAgainstState(payload, senderBalanceDust, a.State); err != nil {
-		return fmt.Errorf("chain: stateful enroll validation: %w", err)
+		// Stateful failures map to specific reasons.
+		reason := EnrollRejectReasonOther
+		switch {
+		case errors.Is(err, enrollment.ErrInsufficientBalance):
+			reason = EnrollRejectReasonInsufficient
+		case errors.Is(err, enrollment.ErrGPUUUIDTaken):
+			reason = EnrollRejectReasonGPUBound
+		case errors.Is(err, enrollment.ErrNodeIDTaken):
+			reason = EnrollRejectReasonNodeIDBound
+		}
+		return rejectEnroll(reason, payload.NodeID,
+			fmt.Errorf("chain: stateful enroll validation: %w", err))
 	}
 
 	// Atomic mutation sequence:
@@ -201,7 +282,8 @@ func (a *EnrollmentApplier) applyEnroll(tx *mempool.Tx, height uint64) error {
 	stakeCELL := dustToBalance(payload.StakeDust)
 	totalDebit := stakeCELL + tx.Fee
 	if err := a.Accounts.DebitAndBumpNonce(tx.Sender, totalDebit, tx.Nonce); err != nil {
-		return fmt.Errorf("chain: debit stake+fee: %w", err)
+		return rejectEnroll(EnrollRejectReasonInsufficient, payload.NodeID,
+			fmt.Errorf("chain: debit stake+fee: %w", err))
 	}
 
 	rec := enrollment.EnrollmentRecord{
@@ -223,8 +305,19 @@ func (a *EnrollmentApplier) applyEnroll(tx *mempool.Tx, height uint64) error {
 		// we burn the nonce and return the stake. The sender
 		// re-signs a new tx at Nonce+1 if they want to retry.
 		a.Accounts.Credit(tx.Sender, stakeCELL)
-		return fmt.Errorf("chain: commit enroll (stake refunded, fee burned, nonce consumed): %w", err)
+		return rejectEnroll(EnrollRejectReasonOther, payload.NodeID,
+			fmt.Errorf("chain: commit enroll (stake refunded, fee burned, nonce consumed): %w", err))
 	}
+
+	metrics().RecordEnrollmentApplied()
+	a.publisher().PublishEnrollment(EnrollmentEvent{
+		Kind:      EnrollmentEventEnrollApplied,
+		Height:    height,
+		Sender:    tx.Sender,
+		NodeID:    payload.NodeID,
+		Owner:     tx.Sender,
+		StakeDust: payload.StakeDust,
+	})
 
 	return nil
 }
@@ -235,16 +328,39 @@ func (a *EnrollmentApplier) applyEnroll(tx *mempool.Tx, height uint64) error {
 // the sender's nonce bump (via a zero-amount "apply tx" shape
 // we don't have today — see the inline note).
 func (a *EnrollmentApplier) applyUnenroll(tx *mempool.Tx, height uint64) error {
+	rejectUnenroll := func(reason string, nodeID string, err error) error {
+		metrics().RecordUnenrollmentRejected(reason)
+		a.publisher().PublishEnrollment(EnrollmentEvent{
+			Kind:         EnrollmentEventUnenrollRejected,
+			Height:       height,
+			Sender:       tx.Sender,
+			NodeID:       nodeID,
+			RejectReason: reason,
+			Err:          err,
+		})
+		return err
+	}
+
 	payload, err := enrollment.DecodeUnenrollPayload(tx.Payload)
 	if err != nil {
-		return fmt.Errorf("chain: decode unenroll payload: %w", err)
+		return rejectUnenroll(UnenrollRejectReasonDecode, "",
+			fmt.Errorf("chain: decode unenroll payload: %w", err))
 	}
 
 	if err := enrollment.ValidateUnenrollFields(payload, tx.Sender); err != nil {
-		return fmt.Errorf("chain: stateless unenroll validation: %w", err)
+		return rejectUnenroll(UnenrollRejectReasonDecode, payload.NodeID,
+			fmt.Errorf("chain: stateless unenroll validation: %w", err))
 	}
 	if err := enrollment.ValidateUnenrollAgainstState(payload, tx.Sender, a.State); err != nil {
-		return fmt.Errorf("chain: stateful unenroll validation: %w", err)
+		reason := UnenrollRejectReasonOther
+		switch {
+		case errors.Is(err, enrollment.ErrNodeNotOwned):
+			reason = UnenrollRejectReasonNotOwner
+		case errors.Is(err, enrollment.ErrNodeAlreadyUnenrolled):
+			reason = UnenrollRejectReasonAlreadyRevoked
+		}
+		return rejectUnenroll(reason, payload.NodeID,
+			fmt.Errorf("chain: stateful unenroll validation: %w", err))
 	}
 
 	// Unenroll txs carry no balance transfer. To keep the
@@ -257,10 +373,12 @@ func (a *EnrollmentApplier) applyUnenroll(tx *mempool.Tx, height uint64) error {
 	// rather than letting AccountStore's internal check
 	// produce a less-specific message.
 	if tx.Fee <= 0 {
-		return errors.New("chain: unenroll tx requires a positive Fee for nonce accounting")
+		return rejectUnenroll(UnenrollRejectReasonFee, payload.NodeID,
+			errors.New("chain: unenroll tx requires a positive Fee for nonce accounting"))
 	}
 	if err := a.Accounts.DebitAndBumpNonce(tx.Sender, tx.Fee, tx.Nonce); err != nil {
-		return fmt.Errorf("chain: debit unenroll fee: %w", err)
+		return rejectUnenroll(UnenrollRejectReasonFee, payload.NodeID,
+			fmt.Errorf("chain: debit unenroll fee: %w", err))
 	}
 
 	if err := a.State.ApplyUnenroll(payload.NodeID, height); err != nil {
@@ -271,8 +389,17 @@ func (a *EnrollmentApplier) applyUnenroll(tx *mempool.Tx, height uint64) error {
 		// rolled back for the same replay-resistance reason as
 		// enroll.
 		a.Accounts.Credit(tx.Sender, tx.Fee)
-		return fmt.Errorf("chain: commit unenroll (fee refunded, nonce consumed): %w", err)
+		return rejectUnenroll(UnenrollRejectReasonOther, payload.NodeID,
+			fmt.Errorf("chain: commit unenroll (fee refunded, nonce consumed): %w", err))
 	}
+
+	metrics().RecordUnenrollmentApplied()
+	a.publisher().PublishEnrollment(EnrollmentEvent{
+		Kind:   EnrollmentEventUnenrollApplied,
+		Height: height,
+		Sender: tx.Sender,
+		NodeID: payload.NodeID,
+	})
 	return nil
 }
 
@@ -293,6 +420,9 @@ func (a *EnrollmentApplier) SweepMaturedEnrollments(height uint64) ([]enrollment
 		return nil, errors.New("chain: nil EnrollmentApplier")
 	}
 	released := a.State.SweepMaturedUnbonds(height)
+	if len(released) > 0 {
+		metrics().RecordEnrollmentUnbondSwept(uint64(len(released)))
+	}
 	for _, r := range released {
 		if r.Owner == "" {
 			// An empty Owner means the enrollment record was
@@ -302,6 +432,13 @@ func (a *EnrollmentApplier) SweepMaturedEnrollments(height uint64) ([]enrollment
 			continue
 		}
 		a.Accounts.Credit(r.Owner, dustToBalance(r.StakeDust))
+		a.publisher().PublishEnrollment(EnrollmentEvent{
+			Kind:      EnrollmentEventSweep,
+			Height:    height,
+			NodeID:    r.NodeID,
+			Owner:     r.Owner,
+			StakeDust: r.StakeDust,
+		})
 	}
 	return released, nil
 }

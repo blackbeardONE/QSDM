@@ -6,7 +6,7 @@ Write-Host ""
 $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
 
 # Start the process
-$proc = Start-Process -FilePath ".\qsdmplus.exe" -NoNewWindow -PassThru
+$proc = Start-Process -FilePath ".\qsdm.exe" -NoNewWindow -PassThru
 
 Write-Host "Application started (PID: $($proc.Id))" -ForegroundColor Yellow
 Write-Host "Waiting 15 seconds for full initialization..." -ForegroundColor Gray

@@ -78,9 +78,9 @@ type dashboardLoginRequest struct {
 }
 
 // NewDashboard creates a new dashboard instance.
-// ngcIngestConfigured mirrors whether the API node has NGC ingest secret set (QSDMPLUS_NGC_INGEST_SECRET or QSDM_NGC_INGEST_SECRET).
+// ngcIngestConfigured mirrors whether the API node has NGC ingest secret set (QSDM_NGC_INGEST_SECRET or QSDM_NGC_INGEST_SECRET).
 // If sharedAuth is non-nil, it is used for JWT validation (must match api.Server's AuthManager when using ML-DSA / CGO).
-// If sharedAuth is nil, a separate AuthManager is created (tests only; production qsdmplus passes a shared instance).
+// If sharedAuth is nil, a separate AuthManager is created (tests only; production qsdm passes a shared instance).
 func NewDashboard(metrics *monitoring.Metrics, healthChecker *monitoring.HealthChecker, port string, ngcIngestConfigured bool, nvidiaLock DashboardNvidiaLock, jwtHMACSecret string, metricsScrapeSecret string, strictDashboardAuth bool, apiBackendURL string, sharedAuth *api.AuthManager) *Dashboard {
 	var authManager *api.AuthManager
 	if sharedAuth != nil {
@@ -187,7 +187,7 @@ func (d *Dashboard) buildHandler() (http.Handler, error) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"error":   "Service Unavailable",
-				"message": "Dashboard is not configured with an API backend URL for login/register (use qsdmplus or pass apiBackendURL, e.g. http://127.0.0.1:8080).",
+				"message": "Dashboard is not configured with an API backend URL for login/register (use qsdm or pass apiBackendURL, e.g. http://127.0.0.1:8080).",
 				"status":  http.StatusServiceUnavailable,
 			})
 			return
@@ -480,7 +480,7 @@ func (d *Dashboard) handleMesh3DViz(w http.ResponseWriter, r *http.Request) {
 }
 
 // extractMetricsScrapeCredential returns a bearer token or dedicated header for Prometheus scrape auth.
-// Accepts the preferred X-QSDM-Metrics-Scrape-Secret and the legacy X-QSDMPLUS-Metrics-Scrape-Secret
+// Accepts the preferred X-QSDM-Metrics-Scrape-Secret and the legacy X-QSDM-Metrics-Scrape-Secret
 // during the Major Update rebrand deprecation window.
 func (d *Dashboard) extractMetricsScrapeCredential(r *http.Request) string {
 	if h := strings.TrimSpace(r.Header.Get(branding.MetricsScrapeSecretHeaderPreferred)); h != "" {

@@ -196,7 +196,7 @@ func (s *Server) Start() error {
 
 		return s.httpServer.ListenAndServeTLS(s.config.MTLSNodeCertFile, s.config.MTLSNodeKeyFile)
 	} else if s.config.MTLSAutoGenerate {
-		bundle, genErr := GenerateNodeBundle("qsdmplus-node", []string{"localhost", "127.0.0.1"})
+		bundle, genErr := GenerateNodeBundle("qsdm-node", []string{"localhost", "127.0.0.1"})
 		if genErr != nil {
 			return fmt.Errorf("mTLS auto-generate: %w", genErr)
 		}

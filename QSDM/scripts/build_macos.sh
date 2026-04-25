@@ -1,16 +1,16 @@
 #!/bin/bash
-# Build QSDM+ on macOS (Intel + Apple Silicon) with liboqs-enabled CGO.
+# Build QSDM on macOS (Intel + Apple Silicon) with liboqs-enabled CGO.
 #
 # Looks for liboqs in common locations (./liboqs_install first), falls back to
 # rebuild_liboqs_macos.sh, and links against Homebrew OpenSSL when present.
 #
 # Usage:
-#   ./scripts/build_macos.sh                 # builds ./qsdmplus
+#   ./scripts/build_macos.sh                 # builds ./qsdm
 #   QSDM_NO_CGO=1 ./scripts/build_macos.sh   # pure-Go fallback build
 
 set -euo pipefail
 
-echo "=== Building QSDM+ on macOS ==="
+echo "=== Building QSDM on macOS ==="
 echo ""
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -31,9 +31,9 @@ if [[ "${QSDM_NO_CGO:-0}" == "1" ]]; then
     echo "QSDM_NO_CGO=1 — skipping liboqs / CGO wiring."
     export CGO_ENABLED=0
     unset CGO_CFLAGS CGO_LDFLAGS CGO_CPPFLAGS CGO_CXXFLAGS || true
-    go build -o ./qsdmplus -v ./cmd/qsdmplus
+    go build -o ./qsdm -v ./cmd/qsdm
     echo ""
-    echo "Built no-CGO binary: ./qsdmplus"
+    echo "Built no-CGO binary: ./qsdm"
     exit 0
 fi
 
@@ -97,10 +97,10 @@ echo ""
 # Work from source/ if executed from repo root.
 if [[ -f "source/go.mod" ]]; then
     cd source
-    go build -o ../qsdmplus -v ./cmd/qsdmplus
+    go build -o ../qsdm -v ./cmd/qsdm
     cd ..
 elif [[ -f "go.mod" ]]; then
-    go build -o ../qsdmplus -v ./cmd/qsdmplus
+    go build -o ../qsdm -v ./cmd/qsdm
 else
     echo "ERROR: go.mod not found. Run from QSDM root or source/."
     exit 1
@@ -108,13 +108,13 @@ fi
 
 echo ""
 echo "=== Build successful ==="
-echo "Binary: ./qsdmplus"
+echo "Binary: ./qsdm"
 echo ""
 echo "Runtime linkage:"
-if command -v otool >/dev/null 2>&1 && [[ -f ./qsdmplus ]]; then
-    otool -L ./qsdmplus | head -10 || true
+if command -v otool >/dev/null 2>&1 && [[ -f ./qsdm ]]; then
+    otool -L ./qsdm | head -10 || true
 fi
 echo ""
 echo "To run:"
 echo "  export DYLD_LIBRARY_PATH=\"${LIBOQS_PATH}/lib:\${DYLD_LIBRARY_PATH:-}\""
-echo "  ./qsdmplus"
+echo "  ./qsdm"

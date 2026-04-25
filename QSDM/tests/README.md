@@ -2,6 +2,6 @@ Integration tests were moved into the Go module at **`QSDM/source/tests/`** so `
 
 ```bash
 cd QSDM/source
-export QSDMPLUS_METRICS_REGISTER_STRICT=1
+export QSDM_METRICS_REGISTER_STRICT=1
 CGO_ENABLED=0 go test ./... ./tests/... -short
 ```

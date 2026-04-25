@@ -1,4 +1,15 @@
-# Rebrand notes — QSDM+ → QSDM, with the native coin **Cell (CELL)**
+# Rebrand notes — QSDM+ → QSDM, with the native coin **Cell (CELL)** [COMPLETED]
+
+> **Status: archived.** The rebrand from *QSDM+* / *qsdmplus* to *QSDM* / *qsdm*
+> is complete. All legacy identifiers (environment variables, HTTP headers,
+> configuration file names, SDK package names, CI workflow names, Prometheus
+> metric aliases, directory names, and binary names) have been removed from
+> the codebase. The `pkg/envcompat`, `pkg/monitoring/prometheus_prefix_migration`,
+> and duplicate SDK-alias surfaces have been retired. The document below is
+> retained for historical reference only; no item in it is still load-bearing.
+
+---
+
 
 > Audience: node operators, SDK consumers, downstream maintainers. This document is
 > normative for the in-repo rebrand executed in Phase 1 of `Major Update.md`. It is
@@ -7,7 +18,7 @@
 
 ## 1. Scope
 
-The platform is migrating from the transitional name **QSDM+** back to **QSDM** and
+The platform is migrating from the transitional name **QSDM** back to **QSDM** and
 introducing a native coin, **Cell (CELL)**. No on-chain data, address format, wire
 protocol, consensus rule, or cryptographic primitive is changed by the rebrand
 itself; this is a **naming and identity** migration plus the first ratchet of the
@@ -32,26 +43,26 @@ Anything that is **not** changed by this document:
 | T + 0 (Phase 1 landing) | Preferred names accepted everywhere. Legacy names continue to work. A one-shot deprecation warning is logged the first time a legacy env var or HTTP header is observed. |
 | T + 6 months | Legacy names still accepted. Documentation stops referring to them except in migration tables. |
 | T + 12 months | Legacy env vars / headers / config file names removed from the deprecation shim. SDK legacy class aliases removed in the next major version bump. |
-| T + ? (governance decision) | Repository root directory renamed from `QSDM+/` to `QSDM/` and any folder whose literal name contains `qsdmplus` renamed. This is a **one-way door** change that waits on a coordinated release and is not performed silently in a patch release. |
+| T + ? (governance decision) | Repository root directory renamed from `QSDM/` to `QSDM/` and any folder whose literal name contains `qsdm` renamed. This is a **one-way door** change that waits on a coordinated release and is not performed silently in a patch release. |
 
 ## 3. Deprecation table — symbol / file / protocol
 
 ### 3.1 Environment variables
 
-All `QSDMPLUS_*` environment variables have a preferred `QSDM_*` equivalent. The
+All `QSDM_*` environment variables have a preferred `QSDM_*` equivalent. The
 shim in `pkg/envcompat` reads the preferred name first, falls back to the legacy
 name, and logs a one-shot deprecation warning when only the legacy name is present.
 
 | Preferred | Legacy | Notes |
 |---|---|---|
-| `QSDM_STRICT_PRODUCTION_SECRETS` | `QSDMPLUS_STRICT_PRODUCTION_SECRETS` | Boolean. Enforces strict handling of admin / HMAC secrets in production. |
-| `QSDM_NGC_INGEST_SECRET` | `QSDMPLUS_NGC_INGEST_SECRET` | HMAC key for NGC proof ingest. |
-| `QSDM_METRICS_SCRAPE_SECRET` | `QSDMPLUS_METRICS_SCRAPE_SECRET` | Shared secret for the internal Prometheus scrape endpoint. |
-| `QSDM_PUBLISH_MESH_COMPANION` | `QSDMPLUS_PUBLISH_MESH_COMPANION` | Boolean truthy gate for publishing the mesh companion feed. |
-| `QSDM_WASM_PREFLIGHT_MODULE` | `QSDMPLUS_WASM_PREFLIGHT_MODULE` | Path to the WASM preflight module. |
-| `QSDM_METRICS_REGISTER_STRICT` | `QSDMPLUS_METRICS_REGISTER_STRICT` | Boolean. Fails startup when Prometheus collector registration conflicts. |
+| `QSDM_STRICT_PRODUCTION_SECRETS` | `QSDM_STRICT_PRODUCTION_SECRETS` | Boolean. Enforces strict handling of admin / HMAC secrets in production. |
+| `QSDM_NGC_INGEST_SECRET` | `QSDM_NGC_INGEST_SECRET` | HMAC key for NGC proof ingest. |
+| `QSDM_METRICS_SCRAPE_SECRET` | `QSDM_METRICS_SCRAPE_SECRET` | Shared secret for the internal Prometheus scrape endpoint. |
+| `QSDM_PUBLISH_MESH_COMPANION` | `QSDM_PUBLISH_MESH_COMPANION` | Boolean truthy gate for publishing the mesh companion feed. |
+| `QSDM_WASM_PREFLIGHT_MODULE` | `QSDM_WASM_PREFLIGHT_MODULE` | Path to the WASM preflight module. |
+| `QSDM_METRICS_REGISTER_STRICT` | `QSDM_METRICS_REGISTER_STRICT` | Boolean. Fails startup when Prometheus collector registration conflicts. |
 
-Apply the rule: **if you are setting a `QSDMPLUS_*` variable today, add a `QSDM_*`
+Apply the rule: **if you are setting a `QSDM_*` variable today, add a `QSDM_*`
 variable with the same value. Remove the legacy one after you have confirmed the
 node starts clean.** Operators running systemd units can keep both names set during
 the migration; when both are present the preferred name wins.
@@ -60,23 +71,23 @@ the migration; when both are present the preferred name wins.
 
 | Preferred | Legacy | Direction |
 |---|---|---|
-| `X-QSDM-NGC-Secret` | `X-QSDMPLUS-NGC-Secret` | Client → node, NGC ingest auth. |
-| `X-QSDM-Metrics-Scrape-Secret` | `X-QSDMPLUS-Metrics-Scrape-Secret` | Scrape client → dashboard. |
+| `X-QSDM-NGC-Secret` | `X-QSDM-NGC-Secret` | Client → node, NGC ingest auth. |
+| `X-QSDM-Metrics-Scrape-Secret` | `X-QSDM-Metrics-Scrape-Secret` | Scrape client → dashboard. |
 
 The node accepts either header on ingress. SDKs emit the preferred header.
 
 ### 3.3 NGC proof JSON fields
 
 Bundles produced by the NVIDIA NGC sidecar are accepted with either the `qsdm_*`
-or `qsdmplus_*` field names. The HMAC payload canonicalizes on the value regardless
+or `qsdm_*` field names. The HMAC payload canonicalizes on the value regardless
 of which field name carried it, so an in-flight rename of the sidecar does not
 invalidate proofs.
 
 | Preferred field | Legacy field |
 |---|---|
-| `qsdm_node_id` | `qsdmplus_node_id` |
-| `qsdm_proof_hmac` | `qsdmplus_proof_hmac` |
-| `qsdm_ingest_nonce` | `qsdmplus_ingest_nonce` |
+| `qsdm_node_id` | `qsdm_node_id` |
+| `qsdm_proof_hmac` | `qsdm_proof_hmac` |
+| `qsdm_ingest_nonce` | `qsdm_ingest_nonce` |
 
 ### 3.4 Configuration files
 
@@ -86,39 +97,39 @@ standard config search path.
 
 | Preferred | Legacy |
 |---|---|
-| `qsdm.toml` | `qsdmplus.toml` |
-| `qsdm.yaml` | `qsdmplus.yaml` |
-| `qsdm.json` | `qsdmplus.json` |
+| `qsdm.toml` | `qsdm.toml` |
+| `qsdm.yaml` | `qsdm.yaml` |
+| `qsdm.json` | `qsdm.json` |
 
 Default database and log paths also prefer `qsdm.db` / `qsdm.log` but fall back to
-an existing `qsdmplus.db` / `qsdmplus.log` if found, so running nodes do not
+an existing `qsdm.db` / `qsdm.log` if found, so running nodes do not
 start a new chain on upgrade.
 
 ### 3.5 SDK symbols
 
 #### Go
 
-The existing package identifier `qsdmplus` at `sdk/go/` is kept; a new preferred
+The existing package identifier `qsdm` at `sdk/go/` is kept; a new preferred
 package is available at `sdk/go/qsdm/`:
 
 ```go
 // Legacy import (still supported during the deprecation window):
-import qsdmplus "github.com/blackbeardONE/QSDM/sdk/go"
-c := qsdmplus.NewClient("http://node:8080")
+import qsdm "github.com/blackbeardONE/QSDM/sdk/go"
+c := qsdm.NewClient("http://node:8080")
 
 // Preferred import:
 import "github.com/blackbeardONE/QSDM/sdk/go/qsdm"
 c := qsdm.NewClient("http://node:8080")
 ```
 
-Type aliases `QSDMClient = Client` and `QSDMPlusClient = Client` are exported from
+Type aliases `QSDMClient = Client` and `QSDMClient = Client` are exported from
 both packages so existing code continues to compile.
 
 #### JavaScript
 
-The npm package `qsdmplus` is superseded by `qsdm`. Both `qsdm.js` and the legacy
-`qsdmplus.js` are shipped in the same tarball during the deprecation window.
-`QSDMClient` is the preferred class name; `QSDMPlusClient` is a legacy alias
+The npm package `qsdm` is superseded by `qsdm`. Both `qsdm.js` and the legacy
+`qsdm.js` are shipped in the same tarball during the deprecation window.
+`QSDMClient` is the preferred class name; `QSDMClient` is a legacy alias
 referring to the same constructor.
 
 ```js
@@ -130,8 +141,8 @@ const c = new QSDMClient('http://node:8080');
 
 | Preferred | Legacy |
 |---|---|
-| `.github/workflows/qsdm-go.yml` | `.github/workflows/qsdmplus-go.yml` |
-| `.github/workflows/qsdm-scylla-staging.yml` | `.github/workflows/qsdmplus-scylla-staging.yml` |
+| `.github/workflows/qsdm-go.yml` | `.github/workflows/qsdm-go.yml` |
+| `.github/workflows/qsdm-scylla-staging.yml` | `.github/workflows/qsdm-scylla-staging.yml` |
 
 Workflow `name:` and `concurrency.group:` fields were updated accordingly. New
 workflows introduced by the Major Update (`release-container.yml` split,
@@ -142,8 +153,8 @@ and use the `qsdm-` prefix from the start.
 
 **Status: dual-emit landed.** Every metric the node exposes on
 `/api/metrics/prometheus` is now emitted under **both** the legacy
-`qsdmplus_*` prefix and the new `qsdm_*` prefix simultaneously. Existing
-Grafana dashboards and alert-manager rules referencing `qsdmplus_*`
+`qsdm_*` prefix and the new `qsdm_*` prefix simultaneously. Existing
+Grafana dashboards and alert-manager rules referencing `qsdm_*`
 continue to work unchanged; dashboards written against the new prefix
 also work. Per-metric help text on the legacy copies is annotated
 `[DEPRECATED alias of qsdm_<name>; set QSDM_METRICS_EMIT_LEGACY=0 to
@@ -161,7 +172,7 @@ stay present.
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `QSDM_METRICS_EMIT_LEGACY` | `1` (on) | When `0`, suppresses every `qsdmplus_*` series. Use after the operator's scrapers are fully on the new prefix. |
+| `QSDM_METRICS_EMIT_LEGACY` | `1` (on) | When `0`, suppresses every `qsdm_*` series. Use after the operator's scrapers are fully on the new prefix. |
 | `QSDM_METRICS_EMIT_QSDM` | `1` (on) | When `0`, suppresses every `qsdm_*` series. Unusual but supported (e.g. validator on an old Grafana fleet that explicitly needs legacy). |
 
 Both-off is treated as "legacy only" with a self-observability counter
@@ -176,7 +187,7 @@ qsdm_metrics_qsdm_emission_enabled   1         # always 1 after dual-emit lands
 qsdm_metrics_emit_both_suppressed_total 0      # non-zero = misconfig
 ```
 
-The same gauges are emitted under the `qsdmplus_` prefix so they are
+The same gauges are emitted under the `qsdm_` prefix so they are
 discoverable regardless of which scraper is installed.
 
 **Cutover timeline (indicative — subject to operator communication):**
@@ -197,7 +208,7 @@ in a separate follow-up PR.
 
 | Preferred | Legacy | Notes |
 |---|---|---|
-| `qsdm` | `qsdmplus` | Node binary. During the deprecation window both names refer to the same build artifact — produced by the same `cmd/qsdmplus/main.go` source. Role is selected at runtime (validator default; miner when `mining_enabled=true` and the `miner` build tag is present — Phase 2.3). |
+| `qsdm` | `qsdm` | Node binary. During the deprecation window both names refer to the same build artifact — produced by the same `cmd/qsdm/main.go` source. Role is selected at runtime (validator default; miner when `mining_enabled=true` and the `miner` build tag is present — Phase 2.3). |
 | `qsdmcli` | `qsdmcli` | Unchanged. |
 | `qsdmminer` | — | New binary that lands in Phase 4.3. Runs the reference CPU miner and, post-audit (Phase 6), the CUDA miner. **Not** a consensus participant. |
 
@@ -242,30 +253,30 @@ blocked on external work called out in `Major Update.md` §9:
   CUDA miner ship).
 - Incentivized testnet with ≥ 100 concurrent home miners (Phase 4 milestone).
 - Mainnet genesis ceremony (one-way door).
-- Repository root directory rename from `QSDM+/` to `QSDM/` (requires a coordinated
+- Repository root directory rename from `QSDM/` to `QSDM/` (requires a coordinated
   tag / release to avoid breaking local clones and CI paths).
 
 ## 6. Operator checklist (one-time)
 
 For each running node:
 
-1. Add the `QSDM_*` equivalents of every `QSDMPLUS_*` variable currently set on the
+1. Add the `QSDM_*` equivalents of every `QSDM_*` variable currently set on the
    host, leaving the legacy values in place for one restart cycle so you can
    roll back cleanly.
 2. Restart the node once and confirm no deprecation warning is logged.
-3. If you have monitoring or scrape scripts that set `X-QSDMPLUS-*` headers,
+3. If you have monitoring or scrape scripts that set `X-QSDM-*` headers,
    update them to `X-QSDM-*`; the node accepts either during the window.
 4. If you ship the NVIDIA NGC sidecar, update it to emit `qsdm_*` JSON fields
    once the sidecar release containing the rename is available. The node
    continues to accept the legacy field names in the interim.
-5. Configuration files named `qsdmplus.*` continue to work. You may rename them
+5. Configuration files named `qsdm.*` continue to work. You may rename them
    to `qsdm.*` at your next scheduled maintenance window; no other change is
    required.
 6. When updating SDK consumers:
    - Go: switch imports from `github.com/blackbeardONE/QSDM/sdk/go` to
      `github.com/blackbeardONE/QSDM/sdk/go/qsdm`.
-   - JavaScript: switch from `require('qsdmplus')` to `require('qsdm')`, and
-     from `QSDMPlusClient` to `QSDMClient`.
+   - JavaScript: switch from `require('qsdm')` to `require('qsdm')`, and
+     from `QSDMClient` to `QSDMClient`.
 
 ## 7. References
 

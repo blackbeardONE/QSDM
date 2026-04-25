@@ -53,22 +53,22 @@ function Export-Database {
 }
 
 # Export main database
-$qsdmDb = "qsdmplus.db"
+$qsdmDb = "qsdm.db"
 $qsdmExport = Join-Path $exportDir "qsdm_${timestamp}.sql"
 if (Test-Path $qsdmDb) {
     Export-Database -dbPath $qsdmDb -outputFile $qsdmExport
     
     # Also copy WAL and SHM files if they exist
-    if (Test-Path "qsdmplus.db-wal") {
-        Copy-Item -Path "qsdmplus.db-wal" -Destination (Join-Path $exportDir "qsdm_${timestamp}.db-wal") -Force
-        Write-Host "  Copied WAL file: qsdmplus.db-wal" -ForegroundColor Gray
+    if (Test-Path "qsdm.db-wal") {
+        Copy-Item -Path "qsdm.db-wal" -Destination (Join-Path $exportDir "qsdm_${timestamp}.db-wal") -Force
+        Write-Host "  Copied WAL file: qsdm.db-wal" -ForegroundColor Gray
     }
-    if (Test-Path "qsdmplus.db-shm") {
-        Copy-Item -Path "qsdmplus.db-shm" -Destination (Join-Path $exportDir "qsdm_${timestamp}.db-shm") -Force
-        Write-Host "  Copied SHM file: qsdmplus.db-shm" -ForegroundColor Gray
+    if (Test-Path "qsdm.db-shm") {
+        Copy-Item -Path "qsdm.db-shm" -Destination (Join-Path $exportDir "qsdm_${timestamp}.db-shm") -Force
+        Write-Host "  Copied SHM file: qsdm.db-shm" -ForegroundColor Gray
     }
 } else {
-    Write-Host "Warning: qsdmplus.db not found" -ForegroundColor Yellow
+    Write-Host "Warning: qsdm.db not found" -ForegroundColor Yellow
 }
 
 # Export transactions database
@@ -95,7 +95,7 @@ Files:
    - Main QSDM database
    - Contains transactions, balances, and system data
    - If .db file: Binary copy - use sqlite3 to export on target server
-   - If .sql file: SQL dump - can be imported with: sqlite3 qsdmplus.db < qsdm_${timestamp}.sql
+   - If .sql file: SQL dump - can be imported with: sqlite3 qsdm.db < qsdm_${timestamp}.sql
 
 2. transactions_${timestamp}.sql (or .db)
    - Transactions database (if separate)
@@ -112,7 +112,7 @@ Import Instructions:
 On the target server:
 
 1. If you have .sql files:
-   sqlite3 qsdmplus.db < qsdm_${timestamp}.sql
+   sqlite3 qsdm.db < qsdm_${timestamp}.sql
    sqlite3 transactions.db < transactions_${timestamp}.sql
 
 2. If you have .db files (binary copies):
@@ -121,11 +121,11 @@ On the target server:
    - SQLite will automatically use them
 
 3. Set proper permissions:
-   chmod 644 qsdmplus.db transactions.db
+   chmod 644 qsdm.db transactions.db
 
 4. Verify the import:
-   sqlite3 qsdmplus.db "SELECT COUNT(*) FROM transactions;"
-   sqlite3 qsdmplus.db "SELECT COUNT(*) FROM balances;"
+   sqlite3 qsdm.db "SELECT COUNT(*) FROM transactions;"
+   sqlite3 qsdm.db "SELECT COUNT(*) FROM balances;"
 
 Notes:
 ------

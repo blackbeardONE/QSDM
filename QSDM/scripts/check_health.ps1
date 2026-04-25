@@ -27,7 +27,7 @@ try {
     Write-Host ""
     Write-Host "You can check:" -ForegroundColor Cyan
     Write-Host "  1. Open browser: http://localhost:8081" -ForegroundColor Gray
-    Write-Host "  2. Check if qsdmplus.exe process is running" -ForegroundColor Gray
+    Write-Host "  2. Check if qsdm.exe process is running" -ForegroundColor Gray
     Write-Host "  3. Check application logs" -ForegroundColor Gray
 }
 

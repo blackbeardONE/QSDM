@@ -20,7 +20,7 @@ var nodeStartTime = time.Now()
 
 // StatusResponse is the public shape returned by GET /api/v1/status.
 //
-// Fields match the SDK type qsdmplus.NodeStatus (see sdk/go/qsdmplus.go): node_id,
+// Fields match the SDK type qsdm.NodeStatus (see sdk/go/qsdm.go): node_id,
 // version, uptime, peers, chain_tip. The Major Update extends the response
 // with node_role (validator | miner), coin metadata (name, symbol, decimals,
 // smallest_unit), and legacy-branding hints so SDK consumers can render the
@@ -186,7 +186,7 @@ func (h *Handlers) snapshotChainTip() uint64 {
 // startup from registerRoutes. The role string is validated and normalised;
 // an unknown value is silently coerced to "validator" so the endpoint never
 // reports an invalid role to SDK consumers (the startup guard in
-// `cmd/qsdmplus/main.go` is the authoritative check).
+// `cmd/qsdm/main.go` is the authoritative check).
 func (h *Handlers) SetNodeRole(role config.NodeRole) {
 	if !role.IsValid() {
 		role = config.NodeRoleValidator
@@ -234,13 +234,13 @@ func formatDustAsCell(dust uint64) string {
 }
 
 // statusVersion returns the build version string, preferring the Go version
-// plus any `QSDM_BUILD_VERSION` (or legacy `QSDMPLUS_BUILD_VERSION`) set at
+// plus any `QSDM_BUILD_VERSION` (or legacy `QSDM_BUILD_VERSION`) set at
 // build time.
 func statusVersion() string {
 	if v := strings.TrimSpace(os.Getenv("QSDM_BUILD_VERSION")); v != "" {
 		return v
 	}
-	if v := strings.TrimSpace(os.Getenv("QSDMPLUS_BUILD_VERSION")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("QSDM_BUILD_VERSION")); v != "" {
 		return v
 	}
 	return runtime.Version()

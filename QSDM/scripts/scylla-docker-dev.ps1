@@ -1,5 +1,5 @@
 # One-node Scylla in Docker for local QSDM storage type "scylla".
-# Requires Docker. After container is up, point qsdmplus.toml (or qsdm.toml) at 127.0.0.1:9042 (driver uses native protocol).
+# Requires Docker. After container is up, point qsdm.toml (or qsdm.toml) at 127.0.0.1:9042 (driver uses native protocol).
 
 param(
     [string]$Name = "qsdm-scylla-dev",
@@ -18,7 +18,7 @@ Or detached:
 
   docker run -d --name $Name -p ${Port}:9042 scylladb/scylla
 
-QSDM+ config (qsdmplus.toml preferred):
+QSDM config (qsdm.toml preferred):
 
   [storage]
   type = "scylla"
@@ -31,7 +31,7 @@ Env override:
 
 Migrate SQLite -> Scylla (when ready):
 
-  go run ./cmd/migrate path\\to\\qsdmplus.db 127.0.0.1 qsdm
+  go run ./cmd/migrate path\\to\\qsdm.db 127.0.0.1 qsdm
 
 Smoke (schema + GetRecentTransactions + missing GetTransaction), from QSDM\\source:
 
@@ -57,9 +57,9 @@ One-liner with Docker (starts Scylla, verifies, removes container; needs Docker 
 
 CQL TLS / password auth: set SCYLLA_USERNAME, SCYLLA_PASSWORD, SCYLLA_TLS_* (see SCYLLA_MIGRATION.md §10).
 
-First-time empty cluster: set SCYLLA_AUTO_CREATE_KEYSPACE=1 so qsdmplus/scyllasmoke can CREATE KEYSPACE (dev/CI only; see SCYLLA_MIGRATION.md §10).
+First-time empty cluster: set SCYLLA_AUTO_CREATE_KEYSPACE=1 so qsdm/scyllasmoke can CREATE KEYSPACE (dev/CI only; see SCYLLA_MIGRATION.md §10).
 
-CI: GitHub Actions workflow "QSDM+ Scylla staging verify" (.github/workflows/qsdmplus-scylla-staging.yml).
+CI: GitHub Actions workflow "QSDM Scylla staging verify" (.github/workflows/qsdm-scylla-staging.yml).
 
 See: pkg/storage/scylla.go, cmd/migrate, cmd/scyllasmoke, docs/docs/SCYLLA_MIGRATION.md
 

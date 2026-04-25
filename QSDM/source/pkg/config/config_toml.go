@@ -26,7 +26,7 @@ type TrustConfigTOML struct {
 	// Disabled: when true, the trust endpoints return HTTP 404 and the
 	// aggregator is not wired. Operators set this if they do not want
 	// to publish aggregate attestation data at all.
-	// Env override: QSDM_TRUST_DISABLED (legacy alias: QSDMPLUS_TRUST_DISABLED).
+	// Env override: QSDM_TRUST_DISABLED (legacy alias: QSDM_TRUST_DISABLED).
 	Disabled bool `toml:"disabled" yaml:"disabled"`
 	// FreshWithin: how recent an attestation must be to count as fresh
 	// in the X/Y ratio (Go duration string, e.g. "15m", "5m30s"). Zero
@@ -107,7 +107,7 @@ type APIConfig struct {
 	NvidiaLockIngestNonceTTL     string `toml:"nvidia_lock_ingest_nonce_ttl" yaml:"nvidia_lock_ingest_nonce_ttl"`
 	JWTHMACSecret                string `toml:"jwt_hmac_secret" yaml:"jwt_hmac_secret"`
 	// StrictProductionSecrets: reject short/demo-like NGC/JWT/HMAC secrets at startup
-	// (env QSDM_STRICT_SECRETS, or legacy QSDMPLUS_STRICT_SECRETS, overrides file).
+	// (env QSDM_STRICT_SECRETS, or legacy QSDM_STRICT_SECRETS, overrides file).
 	StrictProductionSecrets bool `toml:"strict_secrets" yaml:"strict_secrets"`
 	// RateLimitMaxRequests / RateLimitWindow: per-IP (or X-API-Key) sliding window on the HTTP API (e.g. 200 and "2m").
 	RateLimitMaxRequests int    `toml:"rate_limit_max_requests" yaml:"rate_limit_max_requests"`

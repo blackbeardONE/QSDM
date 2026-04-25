@@ -18,7 +18,7 @@ This document provides instructions for migrating the QSDM project to a new deve
 - [x] Dependencies removed (node_modules)
 - [x] Log files removed
 - [x] Test files removed
-- [x] Production databases preserved (qsdmplus.db, transactions.db)
+- [x] Production databases preserved (qsdm.db, transactions.db)
 
 ---
 
@@ -46,9 +46,9 @@ This document provides instructions for migrating the QSDM project to a new deve
   - `README.txt` - Import instructions
 
 ### 4. Production Databases (Optional)
-- `qsdmplus.db` - Main production database (if you want to copy directly)
+- `qsdm.db` - Main production database (if you want to copy directly)
 - `transactions.db` - Transactions database (if you want to copy directly)
-- `qsdmplus.db-wal` and `qsdmplus.db-shm` - WAL/SHM files (if present)
+- `qsdm.db-wal` and `qsdm.db-shm` - WAL/SHM files (if present)
 
 **Note:** You can either use the SQL exports or copy the binary database files directly.
 
@@ -58,7 +58,7 @@ This document provides instructions for migrating the QSDM project to a new deve
 
 The following items were removed during cleanup and should NOT be transferred:
 
-- ❌ `qsdmplus.exe` and other executables
+- ❌ `qsdm.exe` and other executables
 - ❌ DLL files (`.dll`)
 - ❌ `node_modules/` directory
 - ❌ `liboqs_build/` and `liboqs_install/` directories
@@ -97,48 +97,48 @@ npm install
 
 ```bash
 # Import main database
-sqlite3 qsdmplus.db < database_exports/qsdm_YYYYMMDD_HHMMSS.sql
+sqlite3 qsdm.db < database_exports/qsdm_YYYYMMDD_HHMMSS.sql
 
 # Import transactions database
 sqlite3 transactions.db < database_exports/transactions_YYYYMMDD_HHMMSS.sql
 
 # Set permissions
-chmod 644 qsdmplus.db transactions.db
+chmod 644 qsdm.db transactions.db
 ```
 
 #### Option B: Using Binary Copy
 
 ```bash
 # Copy database files
-cp database_exports/qsdm_YYYYMMDD_HHMMSS.db qsdmplus.db
+cp database_exports/qsdm_YYYYMMDD_HHMMSS.db qsdm.db
 cp database_exports/transactions_YYYYMMDD_HHMMSS.db transactions.db
 
 # Copy WAL/SHM files if present
-cp database_exports/qsdm_YYYYMMDD_HHMMSS.db-wal qsdmplus.db-wal
-cp database_exports/qsdm_YYYYMMDD_HHMMSS.db-shm qsdmplus.db-shm
+cp database_exports/qsdm_YYYYMMDD_HHMMSS.db-wal qsdm.db-wal
+cp database_exports/qsdm_YYYYMMDD_HHMMSS.db-shm qsdm.db-shm
 
 # Set permissions
-chmod 644 qsdmplus.db transactions.db qsdmplus.db-wal qsdmplus.db-shm
+chmod 644 qsdm.db transactions.db qsdm.db-wal qsdm.db-shm
 ```
 
 ### Step 4: Verify Database Import
 
 ```bash
 # Check transaction count
-sqlite3 qsdmplus.db "SELECT COUNT(*) FROM transactions;"
+sqlite3 qsdm.db "SELECT COUNT(*) FROM transactions;"
 
 # Check balances
-sqlite3 qsdmplus.db "SELECT COUNT(*) FROM balances;"
+sqlite3 qsdm.db "SELECT COUNT(*) FROM balances;"
 
 # List tables
-sqlite3 qsdmplus.db ".tables"
+sqlite3 qsdm.db ".tables"
 ```
 
 ### Step 5: Build the Project
 
 #### Build QSDM
 ```bash
-go build -o qsdmplus ./cmd/qsdmplus
+go build -o qsdm ./cmd/qsdm
 ```
 
 #### Build WASM Modules (if needed)
@@ -153,7 +153,7 @@ cd ..
 1. Review configuration files in `config/`
 2. Copy example config if needed:
    ```bash
-   cp config/qsdmplus.yaml.example config/qsdm.yaml
+   cp config/qsdm.yaml.example config/qsdm.yaml
    ```
 3. Update configuration with server-specific settings
 
@@ -164,7 +164,7 @@ cd ..
 go test ./...
 
 # Start the service (if configured)
-./qsdmplus
+./qsdm
 ```
 
 ---
@@ -224,7 +224,7 @@ sqlite3 --version
 
 ## Database Schema
 
-The main database (`qsdmplus.db`) contains:
+The main database (`qsdm.db`) contains:
 
 - **transactions** table: Transaction data (encrypted and compressed)
 - **balances** table: Address balances
@@ -251,7 +251,7 @@ If you encounter issues during migration:
 
 1. Check the troubleshooting section above
 2. Review the logs (if service was started)
-3. Verify database integrity: `sqlite3 qsdmplus.db "PRAGMA integrity_check;"`
+3. Verify database integrity: `sqlite3 qsdm.db "PRAGMA integrity_check;"`
 4. Check configuration files for errors
 
 ---

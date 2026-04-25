@@ -63,7 +63,7 @@ func NGCProofIngestRejectReason(err error) string {
 		return "missing_cuda_hash"
 	case strings.Contains(s, "ingest nonce"):
 		return "nonce"
-	case strings.Contains(s, "qsdmplus_proof_hmac"), strings.Contains(s, "proof_hmac"):
+	case strings.Contains(s, "qsdm_proof_hmac"), strings.Contains(s, "proof_hmac"):
 		return "hmac"
 	default:
 		return "other"

@@ -145,7 +145,7 @@ identifiable implementation site and at least one test.
 |-----------|--------------|-----------------|-------|
 | I-1 | `pkg/mining/verifier.go` (bounded-time checks) | `pkg/mining/pow.go` (early-reject on target miss) | `verifier_test.go/TestVerifier_RejectsMalformed*`, `pow_test.go` (benchmarks to be added) |
 | I-2 | `pkg/chain/emission.go` | `pkg/mining/verifier.go` (reward assignment) | `pkg/chain/emission_test.go`, `pkg/mining/verifier_test.go/TestVerifier_RewardMatchesSchedule` |
-| I-3 | `pkg/mining/roleguard/roleguard.go` | `cmd/qsdmplus/main.go` startup checks | `roleguard_test.go`, `roleguard_validator_test.go` |
+| I-3 | `pkg/mining/roleguard/roleguard.go` | `cmd/qsdm/main.go` startup checks | `roleguard_test.go`, `roleguard_validator_test.go` |
 | I-4 | `pkg/mining/verifier.go` (no `miner_addr` allow-list) | n/a | `verifier_test.go/TestVerifier_AcceptsAnyAddress` |
 | I-5 | `pkg/mining/proof.go` (`ID()` commits to every field) | `pkg/mining/pow.go` (hash over canonical bytes) | `proof_test.go/TestProof_IDStable`, `TestProof_IDChangesOnFieldChange` |
 | I-6 | `pkg/mining/verifier.go` | n/a | `verifier_test.go/TestVerifier_IdempotentValidatorIsMiner` |
@@ -218,7 +218,7 @@ cd QSDM/source
 GOFLAGS="-trimpath -buildvcs=false" \
 CGO_ENABLED=0 \
 go build -tags=validator_only -ldflags="-buildid=" \
-  -o qsdm-validator ./cmd/qsdmplus
+  -o qsdm-validator ./cmd/qsdm
 sha256sum qsdm-validator
 ```
 

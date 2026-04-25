@@ -105,6 +105,54 @@ func NewInMemoryState() *InMemoryState {
 	}
 }
 
+// Stats holds point-in-time aggregate counts for an
+// EnrollmentState. Used by the monitoring layer to drive the
+// `qsdm_enrollment_*` gauge metrics. Snapshot-style: reading
+// it twice in succession may yield different values if other
+// goroutines mutate the state concurrently.
+type Stats struct {
+	// ActiveCount is the number of records where Active() ==
+	// true (enrolled, not yet revoked).
+	ActiveCount uint64
+
+	// BondedDust is the sum of StakeDust across active records.
+	BondedDust uint64
+
+	// PendingUnbondCount is the number of records that are
+	// revoked (RevokedAtHeight != 0) but whose unbond window
+	// has not yet been swept.
+	PendingUnbondCount uint64
+
+	// PendingUnbondDust is the sum of StakeDust still locked
+	// in pending-unbond records.
+	PendingUnbondDust uint64
+}
+
+// Stats returns a one-shot snapshot of aggregate counts under
+// a single lock acquisition. O(n) in the number of records,
+// which is bounded by the active miner population — fine for
+// scrape cadence (15s+) at any realistic scale.
+func (s *InMemoryState) Stats() Stats {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := Stats{}
+	for _, rec := range s.byNodeID {
+		if rec.Active() {
+			out.ActiveCount++
+			out.BondedDust += rec.StakeDust
+		} else if rec.RevokedAtHeight != 0 {
+			// rec.StakeDust may be 0 here (slash drained, but
+			// record hasn't been swept yet) — that's a valid
+			// pending-unbond entry, just with a zero pending
+			// release. Counting it lets operators see the
+			// "records waiting for sweep" backlog.
+			out.PendingUnbondCount++
+			out.PendingUnbondDust += rec.StakeDust
+		}
+	}
+	return out
+}
+
 // Lookup implements EnrollmentState.
 func (s *InMemoryState) Lookup(nodeID string) (*EnrollmentRecord, error) {
 	s.mu.Lock()
@@ -217,12 +265,12 @@ type UnbondRelease struct {
 // has zero remaining stake" outcome.
 //
 // Does NOT touch the GPU UUID binding or the active flag —
-// slashing reduces the bond but does not auto-revoke. A miner
-// whose stake has been fully drained remains "enrolled" until
-// they unenroll or the chain re-validates the bond against the
-// current minimum at the next epoch (out of scope for this
-// commit). This keeps slashing orthogonal to the unenroll/
-// sweep flow.
+// slashing reduces the bond but does not auto-revoke on its
+// own. The auto-revoke decision is made one level up via
+// RevokeIfUnderBonded, which the slash applier calls
+// immediately after SlashStake. Splitting the two operations
+// keeps the slash arithmetic deterministic and the revoke
+// policy (threshold = MinEnrollStakeDust) injectable.
 //
 // Implements the contract relied on by pkg/chain.SlashApplier.
 func (s *InMemoryState) SlashStake(nodeID string, amount uint64) (uint64, error) {
@@ -238,6 +286,81 @@ func (s *InMemoryState) SlashStake(nodeID string, amount uint64) (uint64, error)
 	}
 	rec.StakeDust -= slashed
 	return slashed, nil
+}
+
+// RevokeIfUnderBonded auto-revokes the named record if its
+// post-mutation StakeDust is strictly less than minStakeDust.
+// Mirrors the effect of ApplyUnenroll on the record (sets
+// RevokedAtHeight + UnbondMaturesAtHeight, releases the
+// gpu_uuid binding so a fresh node_id can re-enroll the same
+// physical card without waiting), but does NOT consume a
+// nonce or burn a fee — the caller (typically SlashApplier)
+// has already done that for the inbound slash tx.
+//
+// Returns:
+//
+//   - (true, remaining, nil) when the record was newly revoked
+//     by this call. `remaining` is the stake still locked in
+//     the record; it will be released to the owner via
+//     SweepMaturedUnbonds at or after the unbond window.
+//
+//   - (false, remaining, nil) when the record is above the
+//     threshold or was already revoked (idempotent — calling
+//     twice is safe and is a no-op the second time).
+//
+//   - (false, 0, error) when the named record does not exist.
+//
+// The threshold is supplied explicitly so tests can probe
+// boundary conditions and the slash applier can in principle
+// tune it via governance later. Production callers pass
+// mining.MinEnrollStakeDust.
+//
+// Why "below the original minimum, not at or below zero":
+// allowing an operator to keep mining with sub-minimum stake
+// lets a deliberately-underbonded attacker rebuild their
+// attack surface for free after every successful slash. The
+// invariant is "an active record is bonded with at least
+// MinEnrollStakeDust." Any post-slash violation of that
+// invariant collapses the record into the unbond window.
+func (s *InMemoryState) RevokeIfUnderBonded(
+	nodeID string,
+	currentHeight uint64,
+	minStakeDust uint64,
+) (bool, uint64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.byNodeID[nodeID]
+	if !ok {
+		return false, 0, fmt.Errorf(
+			"enrollment: RevokeIfUnderBonded: node_id %q not present",
+			nodeID)
+	}
+	// Idempotent on already-revoked records. The caller may
+	// double-revoke on a record that was Unenrolled between
+	// the slash detection and the slash apply; that's not a
+	// programmer error, just a race.
+	if !rec.Active() {
+		return false, rec.StakeDust, nil
+	}
+	// minStakeDust == 0 disables auto-revoke entirely. Useful
+	// for tests that want to exercise the pre-revoke slash
+	// path in isolation, and as the safe default if a future
+	// chain-config flag wants to gate this behaviour off.
+	if minStakeDust == 0 {
+		return false, rec.StakeDust, nil
+	}
+	if rec.StakeDust >= minStakeDust {
+		return false, rec.StakeDust, nil
+	}
+	rec.RevokedAtHeight = currentHeight
+	rec.UnbondMaturesAtHeight = currentHeight + UnbondWindow
+	// Release the gpu_uuid binding immediately on auto-revoke
+	// for the same reason as ApplyUnenroll: a new node_id can
+	// re-enroll the physical card without waiting for the
+	// unbond window. The old record's HMACKey is no longer
+	// Active() and therefore cannot be used to mine.
+	delete(s.byGPUActive, rec.GPUUUID)
+	return true, rec.StakeDust, nil
 }
 
 // MarkEvidenceSeen adds `hash` to the seen-evidence set and

@@ -1,6 +1,6 @@
-# Build cmd/qsdmplus with CGO off (same CGO cleanup as go-test-short-no-cgo.ps1).
+# Build cmd/qsdm with CGO off (same CGO cleanup as go-test-short-no-cgo.ps1).
 param(
-    [string]$OutputPath = "qsdmplus.exe"
+    [string]$OutputPath = "qsdm.exe"
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -34,7 +34,7 @@ Remove-Item Env:CGO_LDFLAGS -ErrorAction SilentlyContinue
 
 Push-Location $sourceDir
 try {
-    & $goExe build -o $OutputPath ./cmd/qsdmplus
+    & $goExe build -o $OutputPath ./cmd/qsdm
     exit $LASTEXITCODE
 } finally {
     Pop-Location

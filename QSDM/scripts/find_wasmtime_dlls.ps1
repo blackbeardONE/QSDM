@@ -47,6 +47,6 @@ if (-not $found) {
 } else {
     Write-Host ""
     Write-Host "✓ All wasmtime DLLs copied successfully!" -ForegroundColor Green
-    Write-Host "Now try running: .\run_qsdmplus.ps1" -ForegroundColor Cyan
+    Write-Host "Now try running: .\run_qsdm.ps1" -ForegroundColor Cyan
 }
 

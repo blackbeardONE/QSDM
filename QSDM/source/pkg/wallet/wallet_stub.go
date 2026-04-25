@@ -11,7 +11,7 @@ import (
 	"fmt"
 )
 
-// WalletService provides wallet functionality for the QSDM+ node.
+// WalletService provides wallet functionality for the QSDM node.
 // Fallback implementation when CGO is disabled (uses SHA256 instead of quantum-safe crypto)
 type WalletService struct {
 	address    string

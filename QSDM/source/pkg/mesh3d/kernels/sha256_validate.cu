@@ -1,4 +1,4 @@
-// CUDA kernels for QSDM+ mesh3d: parallel SHA-256 hashing and parent-cell validation.
+// CUDA kernels for QSDM mesh3d: parallel SHA-256 hashing and parent-cell validation.
 // Compile: nvcc -shared -o mesh3d_kernels.dll sha256_validate.cu (Windows)
 //          nvcc -shared -fPIC -o mesh3d_kernels.so sha256_validate.cu (Linux)
 

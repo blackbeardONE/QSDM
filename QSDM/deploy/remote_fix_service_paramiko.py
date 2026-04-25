@@ -1,4 +1,4 @@
-"""Push fixed qsdmplus.service and restart (uses QSDM_VPS_PASS)."""
+"""Push fixed qsdm.service and restart (uses QSDM_VPS_PASS)."""
 import os
 import sys
 from pathlib import Path
@@ -9,7 +9,7 @@ from _deploy_host import host as _host, user as _user
 
 HOST = _host()
 USER = _user()
-SERVICE = Path(__file__).resolve().parent.parent / "config" / "qsdmplus.service"
+SERVICE = Path(__file__).resolve().parent.parent / "config" / "qsdm.service"
 
 
 def main() -> int:
@@ -23,22 +23,22 @@ def main() -> int:
     raw = SERVICE.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
     sftp = c.open_sftp()
     try:
-        with sftp.open("/etc/systemd/system/qsdmplus.service", "wb") as f:
+        with sftp.open("/etc/systemd/system/qsdm.service", "wb") as f:
             f.write(raw)
     finally:
         sftp.close()
     for cmd in (
         "systemctl daemon-reload",
-        "systemctl restart qsdmplus",
+        "systemctl restart qsdm",
         "sleep 2",
-        "systemctl status qsdmplus --no-pager -l",
-        "ldd /opt/qsdmplus/qsdmplus 2>&1 | head -20",
+        "systemctl status qsdm --no-pager -l",
+        "ldd /opt/qsdm/qsdm 2>&1 | head -20",
     ):
         _, out, err = c.exec_command(cmd, timeout=60)
         o = out.read().decode() + err.read().decode()
         if o.strip():
             print(o)
-    st = c.exec_command("systemctl is-active qsdmplus", timeout=10)[1].read().decode().strip()
+    st = c.exec_command("systemctl is-active qsdm", timeout=10)[1].read().decode().strip()
     c.close()
     print("--- is-active:", st, "---")
     return 0 if st == "active" else 1

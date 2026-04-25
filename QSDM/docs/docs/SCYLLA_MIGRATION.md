@@ -1,6 +1,6 @@
-# ScyllaDB migration notes (QSDM+)
+# ScyllaDB migration notes (QSDM)
 
-Use when upgrading an **existing** keyspace before running a `qsdmplus` build that expects the session 54+ layout (`wallet_tx_id_claim`, materialized views on `transactions`, and valid `transactions` DDL).
+Use when upgrading an **existing** keyspace before running a `qsdm` build that expects the session 54+ layout (`wallet_tx_id_claim`, materialized views on `transactions`, and valid `transactions` DDL).
 
 Replace `your_keyspace` with your keyspace name (same value as Scylla `keyspace` in config).
 
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS your_keyspace.wallet_tx_id_claim (
 
 New installs use a **single-column** primary key on `id` only (no invalid `CLUSTERING ORDER` without clustering columns).
 
-If you created the table earlier with invalid CQL, fix it in a maintenance window (export data if needed, recreate, restore). For a **greenfield** keyspace, `qsdmplus` `initSchema` will create:
+If you created the table earlier with invalid CQL, fix it in a maintenance window (export data if needed, recreate, restore). For a **greenfield** keyspace, `qsdm` `initSchema` will create:
 
 ```cql
 CREATE TABLE IF NOT EXISTS your_keyspace.transactions (
@@ -124,12 +124,12 @@ From a dev machine with Go and cluster reachability, you can run **`go run ./cmd
 Build **`migrate`** with **CGO enabled** so SQLite export works. From `QSDM/source`:
 
 ```bash
-go run ./cmd/migrate /path/to/qsdmplus.db 127.0.0.1 qsdm
+go run ./cmd/migrate /path/to/qsdm.db 127.0.0.1 qsdm
 ```
 
 The tool walks **`transactions`** (decrypt/decompress blobs), inserts each row with **`StoreTransactionMigrate`** (no balance deltas), then copies **`balances`** with **`SetBalance`**. Re-runs skip duplicate wallet `tx_id` rows via Scylla LWT. Use on a maintenance window and verify counts before switching production reads. Each phase prints **wall-clock elapsed** plus **total wall time** at the end (useful when benchmarking large SQLite files).
 
-**Dry stats (no Scylla):** `go run ./cmd/migrate -stats-only /path/to/qsdmplus.db` opens SQLite only, counts transactions (same decrypt walk as migrate) and balance rows, and prints timings—useful to size a large file before you point **`migrate`** at a cluster.
+**Dry stats (no Scylla):** `go run ./cmd/migrate -stats-only /path/to/qsdm.db` opens SQLite only, counts transactions (same decrypt walk as migrate) and balance rows, and prints timings—useful to size a large file before you point **`migrate`** at a cluster.
 
 ## 10. Client TLS and CQL authentication (gocql)
 
@@ -148,11 +148,11 @@ The tool walks **`transactions`** (decrypt/decompress blobs), inserts each row w
 
 ### Environment variables
 
-The same knobs can be set via environment ( **`pkg/config`** applies these when loading `qsdmplus` config; **`cmd/migrate`**, **`scyllasmoke`**, **`benchmark`**, **`profiler`** read them only through `ScyllaClusterConfigFromEnv()`):
+The same knobs can be set via environment ( **`pkg/config`** applies these when loading `qsdm` config; **`cmd/migrate`**, **`scyllasmoke`**, **`benchmark`**, **`profiler`** read them only through `ScyllaClusterConfigFromEnv()`):
 
 | Variable | Maps to |
 |----------|---------|
-| `SCYLLA_HOSTS` | Comma-separated contact points (used by smoke/integration helpers; `qsdmplus` uses config `scylla_hosts`). |
+| `SCYLLA_HOSTS` | Comma-separated contact points (used by smoke/integration helpers; `qsdm` uses config `scylla_hosts`). |
 | `SCYLLA_KEYSPACE` | Keyspace name for smoke/tests. |
 | `SCYLLA_USERNAME` | CQL username. |
 | `SCYLLA_PASSWORD` | CQL password. |
@@ -160,7 +160,7 @@ The same knobs can be set via environment ( **`pkg/config`** applies these when 
 | `SCYLLA_TLS_CERT_PATH` | Client cert PEM path. |
 | `SCYLLA_TLS_KEY_PATH` | Client key PEM path. |
 | `SCYLLA_TLS_INSECURE_SKIP_VERIFY` | If `true` / `1` / `yes` / `on` (case-insensitive), skips server cert verification (**dev only**). |
-| `SCYLLA_AUTO_CREATE_KEYSPACE` | **Dev/CI only:** before opening the app keyspace, runs `CREATE KEYSPACE IF NOT EXISTS` with `SimpleStrategy` / `replication_factor` 1 (keyspace name must match `[a-zA-Z0-9_]+`). Used by **GitHub Actions** `QSDM+ Scylla staging verify` on empty single-node clusters. |
+| `SCYLLA_AUTO_CREATE_KEYSPACE` | **Dev/CI only:** before opening the app keyspace, runs `CREATE KEYSPACE IF NOT EXISTS` with `SimpleStrategy` / `replication_factor` 1 (keyspace name must match `[a-zA-Z0-9_]+`). Used by **GitHub Actions** `QSDM Scylla staging verify` on empty single-node clusters. |
 
 If none of the auth/TLS env vars above are set, `ScyllaClusterConfigFromEnv()` returns nil and the client dials without those options.
 
@@ -168,4 +168,4 @@ If none of the auth/TLS env vars above are set, `ScyllaClusterConfigFromEnv()` r
 
 - Align **native transport** port, **RF/DC**, and TLS with your Scylla operator runbook.
 - Prefer **secrets management** or env injection for passwords and key material rather than committing them in repo config.
-- After enabling TLS on the cluster, verify with **`go run ./cmd/scyllasmoke`** (from `QSDM/source`) using the env table above, or run **`qsdmplus`** with matching `[storage]` / env overrides.
+- After enabling TLS on the cluster, verify with **`go run ./cmd/scyllasmoke`** (from `QSDM/source`) using the env table above, or run **`qsdm`** with matching `[storage]` / env overrides.

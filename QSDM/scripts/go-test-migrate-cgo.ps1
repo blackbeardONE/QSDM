@@ -17,7 +17,7 @@ $libDir = if (Test-Path (Join-Path $LibRoot 'lib64')) { Join-Path $LibRoot 'lib6
 Remove-Item Env:CGO_CFLAGS -ErrorAction SilentlyContinue
 Remove-Item Env:CGO_LDFLAGS -ErrorAction SilentlyContinue
 $env:CGO_ENABLED = '1'
-$env:QSDMPLUS_METRICS_REGISTER_STRICT = '1'
+$env:QSDM_METRICS_REGISTER_STRICT = '1'
 $env:CGO_CFLAGS = "-I$include"
 $env:CGO_LDFLAGS = "-L$libDir -loqs"
 if ($env:OS -match 'Windows') {

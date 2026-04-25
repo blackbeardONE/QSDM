@@ -47,7 +47,7 @@ func LoadOrNewUserStore(path string) (*UserStore, error) {
 	}
 
 	// Make sure the parent directory exists so the first save does not
-	// trip on ENOENT. The mode mirrors what systemd gives /opt/qsdmplus.
+	// trip on ENOENT. The mode mirrors what systemd gives /opt/qsdm.
 	if dir := filepath.Dir(path); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return nil, fmt.Errorf("user store: mkdir %s: %w", dir, err)

@@ -90,7 +90,7 @@ switching to a non-LWT idempotency strategy after a production review.
     ```bash
     cd QSDM/source
     go build -o migrate ./cmd/migrate
-    ./migrate -stats-only ./qsdmplus.db
+    ./migrate -stats-only ./qsdm.db
     ```
 
     Output includes the number of stored transactions and balance rows plus the
@@ -101,12 +101,12 @@ switching to a non-LWT idempotency strategy after a production review.
 
     ```bash
     export SCYLLA_HOSTS=scylla-0.example.com,scylla-1.example.com
-    export SCYLLA_KEYSPACE=qsdmplus
-    export SCYLLA_USERNAME=qsdmplus
+    export SCYLLA_KEYSPACE=qsdm
+    export SCYLLA_USERNAME=qsdm
     export SCYLLA_PASSWORD=... # from secret manager
-    export SCYLLA_TLS_CA_PATH=/etc/qsdmplus/scylla-ca.pem
-    export SCYLLA_TLS_CERT_PATH=/etc/qsdmplus/client.pem  # optional mTLS
-    export SCYLLA_TLS_KEY_PATH=/etc/qsdmplus/client.key
+    export SCYLLA_TLS_CA_PATH=/etc/qsdm/scylla-ca.pem
+    export SCYLLA_TLS_CERT_PATH=/etc/qsdm/client.pem  # optional mTLS
+    export SCYLLA_TLS_KEY_PATH=/etc/qsdm/client.key
     bash QSDM/scripts/scylla-staging-verify.sh
     ```
 
@@ -118,7 +118,7 @@ switching to a non-LWT idempotency strategy after a production review.
 
     ```bash
     ./migrate \
-        -source ./qsdmplus.copy.db \
+        -source ./qsdm.copy.db \
         -scylla-hosts $SCYLLA_HOSTS \
         -scylla-keyspace $SCYLLA_KEYSPACE
     ```
@@ -140,11 +140,11 @@ MVs in Scylla are eventually consistent. After any bulk backfill, run:
 
 ```bash
 # On each node:
-nodetool repair -pr qsdmplus
-nodetool repair -pr qsdmplus transactions
-nodetool repair -pr qsdmplus transactions_by_tx_id
-nodetool repair -pr qsdmplus transactions_by_sender
-nodetool repair -pr qsdmplus transactions_by_recipient
+nodetool repair -pr qsdm
+nodetool repair -pr qsdm transactions
+nodetool repair -pr qsdm transactions_by_tx_id
+nodetool repair -pr qsdm transactions_by_sender
+nodetool repair -pr qsdm transactions_by_recipient
 ```
 
 Schedule weekly primary-range repair during off-peak. After adding a new node
@@ -175,7 +175,7 @@ serve reads.
 Enable QSDM Prometheus exposition (JSON and text) and scrape these series.
 Metric names are given under the canonical `qsdm_*` prefix; during the
 dual-emit deprecation window (Major Update §6) the same samples are also
-published under the legacy `qsdmplus_*` prefix, so either name resolves:
+published under the legacy `qsdm_*` prefix, so either name resolves:
 
 | Series | Meaning |
 |--------|---------|
@@ -184,9 +184,9 @@ published under the legacy `qsdmplus_*` prefix, so either name resolves:
 | `qsdm_scylla_dedupe_skip_total` | duplicate `tx_id` claims skipped |
 | `qsdm_p2p_wallet_ingress_dedupe_skip_total` | cross-transport dedupe hits |
 
-Alert suggestions (see `QSDM/deploy/prometheus/alerts_qsdmplus.example.yml`
+Alert suggestions (see `QSDM/deploy/prometheus/alerts_qsdm.example.yml`
 — note: the example file and the rules inside it still use the legacy
-`qsdmplus_*` prefix on purpose, so operators who already pasted it into
+`qsdm_*` prefix on purpose, so operators who already pasted it into
 their Prometheus do not have to re-paste mid-migration):
 
 - p95 `qsdm_scylla_store_duration_seconds` above 100 ms for 5m.
@@ -197,9 +197,9 @@ their Prometheus do not have to re-paste mid-migration):
 
 ## 6. Rollback plan
 
-1. Stop all QSDM writers (scale `qsdm` deployments — or the legacy `qsdmplus` name — to zero or restart
+1. Stop all QSDM writers (scale `qsdm` deployments — or the legacy `qsdm` name — to zero or restart
    nodes in read-only mode — see admin API `/api/v1/admin/readonly`).
-2. Snapshot Scylla with `nodetool snapshot qsdmplus`.
+2. Snapshot Scylla with `nodetool snapshot qsdm`.
 3. Repoint QSDM at the SQLite backup (set `[storage] backend = "sqlite"` in
    the TOML config or switch the config map / secret).
 4. Resume writers against SQLite; confirm `/api/v1/health/ready` is green.
@@ -217,7 +217,7 @@ A Scylla deployment is considered production-ready when all of the following
 are true:
 
 - [ ] `scylla-staging-verify-with-docker.*` passes locally and in CI
-      (`qsdmplus-scylla-staging.yml` green on `main`).
+      (`qsdm-scylla-staging.yml` green on `main`).
 - [ ] `cmd/migrate` has completed at least one full dry-run against a copy of
       production data and the timing figures meet the targets in §2.
 - [ ] `cmd/auditreport -gate` exits 0 for the current checklist state

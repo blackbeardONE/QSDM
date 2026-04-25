@@ -578,7 +578,7 @@ func uint32OrDefault(v, def uint32) uint32 {
 // printNvidiaLockDeprecationBanner emits a one-time notice to the
 // given writer warning operators that the CPU reference miner will
 // be retired when the NVIDIA-locked v2 protocol activates. The
-// design is documented in nvidia_locked_qsdmplus_blockchain_architecture.md
+// design is documented in nvidia_locked_qsdm_blockchain_architecture.md
 // at the repo root.
 //
 // Writes go to stderr (not stdout) so piping the miner's stdout to
@@ -591,7 +591,7 @@ func printNvidiaLockDeprecationBanner(w io.Writer) {
 	fmt.Fprintln(w, "│  qsdmminer-console: NVIDIA-lock pivot in progress                   │")
 	fmt.Fprintln(w, "│                                                                     │")
 	fmt.Fprintln(w, "│  QSDM is moving to a GPU-only protocol (see                         │")
-	fmt.Fprintln(w, "│  nvidia_locked_qsdmplus_blockchain_architecture.md). Once the       │")
+	fmt.Fprintln(w, "│  nvidia_locked_qsdm_blockchain_architecture.md). Once the       │")
 	fmt.Fprintln(w, "│  v2 hard fork activates, CPU proofs will NOT be accepted on         │")
 	fmt.Fprintln(w, "│  mainnet. This binary is kept for testnet replay + reference.       │")
 	fmt.Fprintln(w, "│  Plan your deployment around an NVIDIA CUDA GPU.                    │")
@@ -660,7 +660,7 @@ func main() {
 	// on --version / --self-test, which must stay machine-parseable
 	// for CI and `docker inspect`-style checks). The project is
 	// pivoting to the NVIDIA-locked v2 protocol described in
-	// nvidia_locked_qsdmplus_blockchain_architecture.md; once v2
+	// nvidia_locked_qsdm_blockchain_architecture.md; once v2
 	// activates, CPU-only miners can no longer produce proofs that
 	// mainnet validators accept. This binary stays in-tree for
 	// testnet replay and algorithmic reference, and shipping it

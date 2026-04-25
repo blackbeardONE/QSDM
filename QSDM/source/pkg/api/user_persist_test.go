@@ -27,7 +27,7 @@ func TestUserStorePersistence_RoundTrip(t *testing.T) {
 
 	// The file must exist and be 0600 after register. We rely on this
 	// posture in production — systemd's PrivateTmp/0750 state dir plus
-	// 0600 file == nobody but the qsdmplus service user reads it.
+	// 0600 file == nobody but the qsdm service user reads it.
 	st, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("stat after register: %v", err)

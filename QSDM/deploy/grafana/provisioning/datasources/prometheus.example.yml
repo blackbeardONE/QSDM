@@ -2,7 +2,7 @@
 #   /etc/grafana/provisioning/datasources/prometheus.yml
 # or Docker: mount as /etc/grafana/provisioning/datasources/prometheus.yml).
 #
-# Using uid "prometheus" lets you map the import UI variable for qsdmplus-overview.json,
+# Using uid "prometheus" lets you map the import UI variable for qsdm-overview.json,
 # or bulk-replace "${DS_PROMETHEUS}" with "prometheus" in the dashboard JSON.
 
 apiVersion: 1

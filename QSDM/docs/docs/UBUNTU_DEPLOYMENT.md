@@ -122,7 +122,7 @@ This will:
 ./build.sh
 ```
 
-This creates the `qsdmplus` binary in the current directory.
+This creates the `qsdm` binary in the current directory.
 
 ---
 
@@ -132,13 +132,13 @@ This creates the `qsdmplus` binary in the current directory.
 
 ```bash
 # Copy example config
-cp config/qsdmplus.toml.example qsdmplus.toml
+cp config/qsdm.toml.example qsdm.toml
 
 # Edit configuration
-vim qsdmplus.toml
+vim qsdm.toml
 ```
 
-**Example `qsdmplus.toml` for VPS:**
+**Example `qsdm.toml` for VPS:**
 
 ```toml
 [network]
@@ -147,12 +147,12 @@ bootstrap_peers = []
 
 [storage]
 type = "sqlite"
-sqlite_path = "/opt/qsdmplus/qsdmplus.db"
+sqlite_path = "/opt/qsdm/qsdm.db"
 
 [monitoring]
 dashboard_port = 8081
 log_viewer_port = 8080
-log_file = "/opt/qsdmplus/qsdmplus.log"
+log_file = "/opt/qsdm/qsdm.log"
 log_level = "INFO"
 
 [api]
@@ -163,7 +163,7 @@ enable_tls = false  # Set to true if you have certificates
 initial_balance = 1000.0
 
 [governance]
-proposal_file = "/opt/qsdmplus/proposals.json"
+proposal_file = "/opt/qsdm/proposals.json"
 
 [performance]
 transaction_interval = "30s"
@@ -178,60 +178,60 @@ health_check_interval = "30s"
 
 ```bash
 # Create system user
-sudo useradd -r -s /bin/false -d /opt/qsdmplus qsdmplus
+sudo useradd -r -s /bin/false -d /opt/qsdm qsdm
 
 # Create directories
-sudo mkdir -p /opt/qsdmplus
-sudo chown qsdmplus:qsdmplus /opt/qsdmplus
+sudo mkdir -p /opt/qsdm
+sudo chown qsdm:qsdm /opt/qsdm
 ```
 
 ### Install QSDM Files
 
 ```bash
 # Copy binary
-sudo cp qsdmplus /opt/qsdmplus/
-sudo chmod +x /opt/qsdmplus/qsdmplus
+sudo cp qsdm /opt/qsdm/
+sudo chmod +x /opt/qsdm/qsdm
 
 # Copy configuration
-sudo cp qsdmplus.toml /opt/qsdmplus/
+sudo cp qsdm.toml /opt/qsdm/
 
 # Copy liboqs libraries
-sudo cp -r liboqs_install /opt/qsdmplus/
+sudo cp -r liboqs_install /opt/qsdm/
 
 # Set ownership
-sudo chown -R qsdmplus:qsdmplus /opt/qsdmplus
+sudo chown -R qsdm:qsdm /opt/qsdm
 ```
 
 ### Create Systemd Service
 
 ```bash
 # Copy service file
-sudo cp config/qsdmplus.service /etc/systemd/system/
+sudo cp config/qsdm.service /etc/systemd/system/
 
 # Edit service file if needed
-sudo vim /etc/systemd/system/qsdmplus.service
+sudo vim /etc/systemd/system/qsdm.service
 
 # Reload systemd
 sudo systemctl daemon-reload
 
 # Enable service (start on boot)
-sudo systemctl enable qsdmplus
+sudo systemctl enable qsdm
 
 # Start service
-sudo systemctl start qsdmplus
+sudo systemctl start qsdm
 
 # Check status
-sudo systemctl status qsdmplus
+sudo systemctl status qsdm
 ```
 
 ### View Logs
 
 ```bash
 # Systemd logs
-sudo journalctl -u qsdmplus -f
+sudo journalctl -u qsdm -f
 
 # Application logs
-sudo tail -f /opt/qsdmplus/qsdmplus.log
+sudo tail -f /opt/qsdm/qsdm.log
 ```
 
 ---
@@ -270,17 +270,17 @@ sudo ufw status
 ### Check Service Status
 
 ```bash
-sudo systemctl status qsdmplus
+sudo systemctl status qsdm
 ```
 
 ### Check Logs
 
 ```bash
 # Systemd logs
-sudo journalctl -u qsdmplus --no-pager -n 50
+sudo journalctl -u qsdm --no-pager -n 50
 
 # Application logs
-sudo tail -n 50 /opt/qsdmplus/qsdmplus.log
+sudo tail -n 50 /opt/qsdm/qsdm.log
 ```
 
 ### Test Endpoints
@@ -306,23 +306,23 @@ Open in browser:
 ### Restart Service
 
 ```bash
-sudo systemctl restart qsdmplus
+sudo systemctl restart qsdm
 ```
 
 ### Stop Service
 
 ```bash
-sudo systemctl stop qsdmplus
+sudo systemctl stop qsdm
 ```
 
 ### Update QSDM
 
 ```bash
 # Stop service
-sudo systemctl stop qsdmplus
+sudo systemctl stop qsdm
 
 # Backup current installation
-sudo cp -r /opt/qsdmplus /opt/qsdmplus.backup
+sudo cp -r /opt/qsdm /opt/qsdm.backup
 
 # Update code
 cd ~/QSDM
@@ -333,14 +333,14 @@ git pull
 ./build.sh
 
 # Install new binary
-sudo cp qsdmplus /opt/qsdmplus/
-sudo chown qsdmplus:qsdmplus /opt/qsdmplus/qsdmplus
+sudo cp qsdm /opt/qsdm/
+sudo chown qsdm:qsdm /opt/qsdm/qsdm
 
 # Start service
-sudo systemctl start qsdmplus
+sudo systemctl start qsdm
 
 # Verify
-sudo systemctl status qsdmplus
+sudo systemctl status qsdm
 ```
 
 ### View Metrics
@@ -361,23 +361,23 @@ curl http://localhost:8081/api/metrics | jq
 
 **Check logs:**
 ```bash
-sudo journalctl -u qsdmplus -n 100
+sudo journalctl -u qsdm -n 100
 ```
 
 **Common issues:**
 1. **Missing liboqs:** Ensure `LD_LIBRARY_PATH` is set in service file
-2. **Port in use:** Change port in `qsdmplus.toml`
-3. **Permission denied:** Check file ownership (`sudo chown -R qsdmplus:qsdmplus /opt/qsdmplus`)
+2. **Port in use:** Change port in `qsdm.toml`
+3. **Permission denied:** Check file ownership (`sudo chown -R qsdm:qsdm /opt/qsdm`)
 
 ### liboqs Not Found
 
 **Check library path:**
 ```bash
 # Find liboqs
-find /opt/qsdmplus -name "liboqs.so*"
+find /opt/qsdm -name "liboqs.so*"
 
 # Update service file
-sudo vim /etc/systemd/system/qsdmplus.service
+sudo vim /etc/systemd/system/qsdm.service
 # Update LD_LIBRARY_PATH
 ```
 
@@ -398,12 +398,12 @@ log_level = "WARN"  # Reduce logging
 
 **Check database:**
 ```bash
-sudo -u qsdmplus sqlite3 /opt/qsdmplus/qsdmplus.db ".tables"
+sudo -u qsdm sqlite3 /opt/qsdm/qsdm.db ".tables"
 ```
 
 **Backup database:**
 ```bash
-sudo -u qsdmplus cp /opt/qsdmplus/qsdmplus.db /opt/qsdmplus/qsdmplus.db.backup
+sudo -u qsdm cp /opt/qsdm/qsdm.db /opt/qsdm/qsdm.db.backup
 ```
 
 ---
@@ -415,8 +415,8 @@ sudo -u qsdmplus cp /opt/qsdmplus/qsdmplus.db /opt/qsdmplus/qsdmplus.db.backup
 ```toml
 [api]
 enable_tls = true
-tls_cert_file = "/etc/ssl/certs/qsdmplus.crt"
-tls_key_file = "/etc/ssl/private/qsdmplus.key"
+tls_cert_file = "/etc/ssl/certs/qsdm.crt"
+tls_key_file = "/etc/ssl/private/qsdm.key"
 ```
 
 ### 2. Restrict Dashboard Access
@@ -444,7 +444,7 @@ cd ~/QSDM && git pull && ./build.sh
 
 ```bash
 # Set up log rotation
-sudo vim /etc/logrotate.d/qsdmplus
+sudo vim /etc/logrotate.d/qsdm
 ```
 
 ---
@@ -457,13 +457,13 @@ sudo vim /etc/logrotate.d/qsdmplus
 # Edit limits
 sudo vim /etc/security/limits.conf
 # Add:
-qsdmplus soft nofile 65536
-qsdmplus hard nofile 65536
+qsdm soft nofile 65536
+qsdm hard nofile 65536
 ```
 
 ### Optimize SQLite
 
-The service file already includes optimizations. For custom tuning, edit `qsdmplus.toml`.
+The service file already includes optimizations. For custom tuning, edit `qsdm.toml`.
 
 ---
 
@@ -471,31 +471,31 @@ The service file already includes optimizations. For custom tuning, edit `qsdmpl
 
 ### Automated Backup Script
 
-Create `/opt/qsdmplus/backup.sh`:
+Create `/opt/qsdm/backup.sh`:
 
 ```bash
 #!/bin/bash
-BACKUP_DIR="/opt/qsdmplus/backups"
+BACKUP_DIR="/opt/qsdm/backups"
 DATE=$(date +%Y%m%d_%H%M%S)
 
 mkdir -p "$BACKUP_DIR"
 
 # Backup database
-cp /opt/qsdmplus/qsdmplus.db "$BACKUP_DIR/qsdmplus_$DATE.db"
+cp /opt/qsdm/qsdm.db "$BACKUP_DIR/qsdm_$DATE.db"
 
 # Backup configuration
-cp /opt/qsdmplus/qsdmplus.toml "$BACKUP_DIR/qsdmplus_$DATE.toml"
+cp /opt/qsdm/qsdm.toml "$BACKUP_DIR/qsdm_$DATE.toml"
 
 # Keep only last 7 days
-find "$BACKUP_DIR" -name "qsdmplus_*.db" -mtime +7 -delete
-find "$BACKUP_DIR" -name "qsdmplus_*.toml" -mtime +7 -delete
+find "$BACKUP_DIR" -name "qsdm_*.db" -mtime +7 -delete
+find "$BACKUP_DIR" -name "qsdm_*.toml" -mtime +7 -delete
 ```
 
 **Add to crontab:**
 ```bash
 sudo crontab -e
 # Add:
-0 2 * * * /opt/qsdmplus/backup.sh
+0 2 * * * /opt/qsdm/backup.sh
 ```
 
 ---
@@ -534,7 +534,7 @@ Set up alerts for:
 ## Support
 
 For issues or questions:
-- Check logs: `sudo journalctl -u qsdmplus`
+- Check logs: `sudo journalctl -u qsdm`
 - Review documentation: `docs/`
 - GitHub Issues: [QSDM Issues](https://github.com/blackbeardONE/QSDM/issues)
 

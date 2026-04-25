@@ -29,29 +29,29 @@ echo
 df -h / /opt 2>/dev/null
 echo
 
-echo '===[ qsdmplus.service ]==='
-systemctl is-enabled qsdmplus
-systemctl is-active qsdmplus
-systemctl status qsdmplus --no-pager -l | sed -n '1,25p'
+echo '===[ qsdm.service ]==='
+systemctl is-enabled qsdm
+systemctl is-active qsdm
+systemctl status qsdm --no-pager -l | sed -n '1,25p'
 echo
 
 echo '===[ systemd unit file ]==='
-cat /etc/systemd/system/qsdmplus.service
+cat /etc/systemd/system/qsdm.service
 echo
 
-echo '===[ ldd qsdmplus (outside unit env) ]==='
-ldd /opt/qsdmplus/qsdmplus 2>&1 | sed -n '1,25p'
+echo '===[ ldd qsdm (outside unit env) ]==='
+ldd /opt/qsdm/qsdm 2>&1 | sed -n '1,25p'
 echo
-echo '===[ ldd qsdmplus (with LD_LIBRARY_PATH) ]==='
-LD_LIBRARY_PATH=/opt/qsdmplus/liboqs_install/lib:/opt/qsdmplus/liboqs_install/lib64 ldd /opt/qsdmplus/qsdmplus 2>&1 | sed -n '1,25p'
+echo '===[ ldd qsdm (with LD_LIBRARY_PATH) ]==='
+LD_LIBRARY_PATH=/opt/qsdm/liboqs_install/lib:/opt/qsdm/liboqs_install/lib64 ldd /opt/qsdm/qsdm 2>&1 | sed -n '1,25p'
 echo
 
-echo '===[ /opt/qsdmplus tree ]==='
-ls -lah /opt/qsdmplus | sed -n '1,40p'
+echo '===[ /opt/qsdm tree ]==='
+ls -lah /opt/qsdm | sed -n '1,40p'
 echo
 echo '===[ liboqs files ]==='
-ls -lah /opt/qsdmplus/liboqs_install/lib 2>/dev/null | sed -n '1,10p'
-ls -lah /opt/qsdmplus/liboqs_install/lib64 2>/dev/null | sed -n '1,10p'
+ls -lah /opt/qsdm/liboqs_install/lib 2>/dev/null | sed -n '1,10p'
+ls -lah /opt/qsdm/liboqs_install/lib64 2>/dev/null | sed -n '1,10p'
 echo
 
 echo '===[ listening sockets ]==='
@@ -106,20 +106,20 @@ done
 echo
 
 echo '===[ journal (last 25 lines) ]==='
-journalctl -u qsdmplus -n 25 --no-pager
+journalctl -u qsdm -n 25 --no-pager
 echo
 
 echo '===[ errors in journal (last 10 min) ]==='
-journalctl -u qsdmplus --since '-10 min' -p err --no-pager | sed -n '1,40p'
+journalctl -u qsdm --since '-10 min' -p err --no-pager | sed -n '1,40p'
 echo
 
-echo '===[ config: /opt/qsdmplus/qsdmplus.toml ]==='
-cat /opt/qsdmplus/qsdmplus.toml
+echo '===[ config: /opt/qsdm/qsdm.toml ]==='
+cat /opt/qsdm/qsdm.toml
 echo
 
 echo '===[ cron for backups ]==='
 crontab -l 2>/dev/null | grep -E 'vps-sqlite-backup' || echo '  (no backup cron installed)'
-ls -lah /opt/qsdmplus/vps-sqlite-backup.sh 2>/dev/null || echo '  (backup script not present)'
+ls -lah /opt/qsdm/vps-sqlite-backup.sh 2>/dev/null || echo '  (backup script not present)'
 echo
 
 echo '===[ ssh hardening ]==='

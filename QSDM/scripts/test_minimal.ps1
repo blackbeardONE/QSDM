@@ -3,8 +3,8 @@ Write-Host "Testing minimal startup..." -ForegroundColor Cyan
 Write-Host ""
 
 # Check if we can even load the executable
-if (-not (Test-Path ".\qsdmplus.exe")) {
-    Write-Host "ERROR: qsdmplus.exe not found!" -ForegroundColor Red
+if (-not (Test-Path ".\qsdm.exe")) {
+    Write-Host "ERROR: qsdm.exe not found!" -ForegroundColor Red
     exit 1
 }
 
@@ -15,7 +15,7 @@ Write-Host ""
 $dumpbin = Get-Command dumpbin -ErrorAction SilentlyContinue
 if ($dumpbin) {
     Write-Host "Checking DLL dependencies..." -ForegroundColor Cyan
-    dumpbin /dependents qsdmplus.exe | Select-String -Pattern "\.dll" | ForEach-Object {
+    dumpbin /dependents qsdm.exe | Select-String -Pattern "\.dll" | ForEach-Object {
         Write-Host "  $_" -ForegroundColor Gray
     }
     Write-Host ""
@@ -33,8 +33,8 @@ Write-Host "PATH: $env:PATH" -ForegroundColor Gray
 Write-Host ""
 
 # Try to run
-Write-Host "Starting qsdmplus.exe..." -ForegroundColor Cyan
-& ".\qsdmplus.exe"
+Write-Host "Starting qsdm.exe..." -ForegroundColor Cyan
+& ".\qsdm.exe"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""

@@ -38,15 +38,15 @@ jobs:
         with:
           go-version-file: QSDM/source/go.mod
 
-      # Guardrail for the qsdmplus_* -> qsdm_* Prometheus metric prefix
+      # Guardrail for the qsdm_* -> qsdm_* Prometheus metric prefix
       # migration. Runs before build so it fails fast on regressions
       # without burning compute on a build that we're about to reject.
-      - name: Check for new legacy qsdmplus_* metric names
+      - name: Check for new legacy qsdm_* metric names
         run: bash QSDM/scripts/check-no-new-legacy-metrics.sh
 
       # Scripts live in QSDM/scripts; run from repo root so paths stay stable.
       - name: Build (no CGO)
-        run: bash QSDM/scripts/go-build-no-cgo.sh /tmp/qsdmplus
+        run: bash QSDM/scripts/go-build-no-cgo.sh /tmp/qsdm
 
       # Short tests cover API, monitoring (NVIDIA-lock/HMAC), dashboard, etc. (no GPU required).
       - name: Test (short, no CGO)
@@ -73,8 +73,8 @@ jobs:
         working-directory: QSDM/source
         env:
           CGO_ENABLED: "0"
-          QSDMPLUS_METRICS_REGISTER_STRICT: "1"
-          QSDMPLUS_WASM_PREFLIGHT_MODULE: ${{ github.workspace }}/QSDM/source/wasm_module/target/wasm32-unknown-unknown/release/wasm_module.wasm
+          QSDM_METRICS_REGISTER_STRICT: "1"
+          QSDM_WASM_PREFLIGHT_MODULE: ${{ github.workspace }}/QSDM/source/wasm_module/target/wasm32-unknown-unknown/release/wasm_module.wasm
         run: |
           unset CGO_CFLAGS CGO_LDFLAGS || true
           go test ./pkg/wasm/... -count=1 -timeout 10m -run TestTryPreflightP2PTransactionJSON_rustWasmModule
@@ -101,8 +101,8 @@ jobs:
         working-directory: QSDM/source
         env:
           CGO_ENABLED: "0"
-          QSDMPLUS_METRICS_REGISTER_STRICT: "1"
-          QSDMPLUS_WASM_PREFLIGHT_MODULE: ${{ github.workspace }}/QSDM/source/wasm_module/target/wasm32-unknown-unknown/release/wasm_module.wasm
+          QSDM_METRICS_REGISTER_STRICT: "1"
+          QSDM_WASM_PREFLIGHT_MODULE: ${{ github.workspace }}/QSDM/source/wasm_module/target/wasm32-unknown-unknown/release/wasm_module.wasm
         run: |
           unset CGO_CFLAGS CGO_LDFLAGS || true
           go test ./pkg/wasm/... -count=1 -timeout 10m -run TestTryPreflightP2PTransactionJSON_rustWasmModule
@@ -148,7 +148,7 @@ jobs:
         working-directory: QSDM/source
         env:
           CGO_ENABLED: "1"
-          QSDMPLUS_METRICS_REGISTER_STRICT: "1"
+          QSDM_METRICS_REGISTER_STRICT: "1"
         # Delegates to QSDM/scripts/govulncheck-filter.sh, which:
         #   - runs `govulncheck -json ./...`
         #   - fails ONLY when a finding is NOT on the explicit
@@ -230,21 +230,21 @@ jobs:
         working-directory: QSDM/source
         env:
           CGO_ENABLED: "1"
-          QSDMPLUS_METRICS_REGISTER_STRICT: "1"
+          QSDM_METRICS_REGISTER_STRICT: "1"
         run: |
           LIBOQS="${GITHUB_WORKSPACE}/QSDM/liboqs_install"
           if [ -d "$LIBOQS/lib64" ]; then L="$LIBOQS/lib64"; else L="$LIBOQS/lib"; fi
           export CGO_CFLAGS="-I${LIBOQS}/include"
           export CGO_LDFLAGS="-L${L} -loqs"
           export LD_LIBRARY_PATH="${L}:${LD_LIBRARY_PATH:-}"
-          go test ./cmd/qsdmplus/transaction/... ./pkg/consensus/... ./pkg/crypto/... ./pkg/mesh3d/... ./cmd/migrate/... -count=1 -short -timeout 15m
+          go test ./cmd/qsdm/transaction/... ./pkg/consensus/... ./pkg/crypto/... ./pkg/mesh3d/... ./cmd/migrate/... -count=1 -short -timeout 15m
 
       - name: Test API mesh companion (CGO + wallet)
         working-directory: QSDM/source
         env:
           CGO_ENABLED: "1"
-          QSDMPLUS_METRICS_REGISTER_STRICT: "1"
-          QSDMPLUS_PUBLISH_MESH_COMPANION: "1"
+          QSDM_METRICS_REGISTER_STRICT: "1"
+          QSDM_PUBLISH_MESH_COMPANION: "1"
         run: |
           LIBOQS="${GITHUB_WORKSPACE}/QSDM/liboqs_install"
           if [ -d "$LIBOQS/lib64" ]; then L="$LIBOQS/lib64"; else L="$LIBOQS/lib"; fi
@@ -271,7 +271,7 @@ jobs:
       - name: Race tests (short, CGO)
         run: bash QSDM/scripts/race-hot-packages.sh
 
-  # Full image: liboqs + CGO qsdmplus (matches production Dockerfile). Local builds need a running Docker engine.
+  # Full image: liboqs + CGO qsdm (matches production Dockerfile). Local builds need a running Docker engine.
   # Pushes to GHCR on default-branch push and on workflow_dispatch (not on pull_request).
   docker-image:
     runs-on: ubuntu-latest
@@ -286,7 +286,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/qsdmplus
+          images: ghcr.io/${{ github.repository_owner }}/qsdm
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,format=long

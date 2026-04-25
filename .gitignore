@@ -27,7 +27,7 @@ vps.txt
 # Legacy NVIDIA token file (pre-NGC-bundle era).
 Nvidia Token
 
-# NGC sidecar runtime envs (contain QSDMPLUS_NGC_INGEST_SECRET).
+# NGC sidecar runtime envs (contain QSDM_NGC_INGEST_SECRET).
 **/ngc.env
 **/ngc.local.env
 
@@ -80,9 +80,9 @@ QUICK_BUILD.md
 # NVIDIA-lock was (incorrectly) framed as a consensus rule. The
 # current, correct architecture lives in
 # QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md and the README.
-nvidia_locked_qsdmplus_blockchain_architecture.md
+nvidia_locked_qsdm_blockchain_architecture.md
 
-# Token-system description that still uses stale "QSDM+" branding
+# Token-system description that still uses stale "QSDM" branding
 # and whose main example is the external Greed Island game (a
 # separate project — see §4 below).
 QSDM/TOKEN_SYSTEM.md
@@ -152,11 +152,11 @@ _tmp_*
 # Go — Linux/macOS binaries emitted into source dirs. Scoped by
 # path so we don't accidentally mask unrelated files of the same
 # name elsewhere in the tree.
-/QSDM/qsdmplus
+/QSDM/qsdm
 /QSDM/qsdmminer
 /QSDM/qsdmnode
-/QSDM/source/qsdmplus
-/QSDM/source/qsdmplus_local
+/QSDM/source/qsdm
+/QSDM/source/qsdm_local
 /QSDM/source/qsdmminer
 /QSDM/source/qsdmnode
 /QSDM/source/trustcheck

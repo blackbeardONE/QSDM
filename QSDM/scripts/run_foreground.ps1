@@ -1,4 +1,4 @@
-# Run qsdmplus.exe in foreground to see all output
+# Run qsdm.exe in foreground to see all output
 Write-Host "Starting QSDM in foreground mode..." -ForegroundColor Cyan
 Write-Host "This will show all output so we can see what's happening"
 Write-Host ""
@@ -27,12 +27,12 @@ if (Test-Path ".\libcrypto-3-x64.dll") {
 }
 
 Write-Host ""
-Write-Host "Starting qsdmplus.exe..." -ForegroundColor Cyan
+Write-Host "Starting qsdm.exe..." -ForegroundColor Cyan
 Write-Host "=" * 70 -ForegroundColor Gray
 Write-Host ""
 
 # Run in foreground - this will show all output
-& ".\qsdmplus.exe"
+& ".\qsdm.exe"
 
 # If we get here, the process exited
 Write-Host ""

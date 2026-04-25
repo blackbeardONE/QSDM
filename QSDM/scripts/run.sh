@@ -8,7 +8,7 @@ echo "=== Starting QSDM ==="
 echo ""
 
 # Check if binary exists
-if [ ! -f "./qsdmplus" ]; then
+if [ ! -f "./qsdm" ]; then
     echo "ERROR: qsdm binary not found!"
     echo "Please build first:"
     echo "  ./build.sh"
@@ -44,5 +44,5 @@ echo ""
 echo "Starting QSDM node..."
 echo ""
 
-./qsdmplus
+./qsdm
 

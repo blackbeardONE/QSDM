@@ -151,7 +151,7 @@ func NewDilithium() *Dilithium {
 	// 	fmt.Println("WARNING: Failed to preload OpenSSL DLLs")
 	// 	fmt.Println("  This may cause OQS_SIG_new to fail")
 	// 	fmt.Println("  Check that libcrypto-3-x64.dll and libssl-3-x64.dll are:")
-	// 	fmt.Println("    - In the same directory as qsdmplus.exe")
+	// 	fmt.Println("    - In the same directory as qsdm.exe")
 	// 	fmt.Println("    - Or in a directory listed in PATH")
 	// 	fmt.Println("  Attempting to continue - liboqs may still find DLLs via other means")
 	// } else if dllsLoaded == 2 {
@@ -213,7 +213,7 @@ func NewDilithium() *Dilithium {
 		fmt.Println("")
 		fmt.Println("  OpenSSL/DLL issues:")
 		fmt.Println("  - Verify OpenSSL DLL version matches build")
-		fmt.Println("  - Ensure DLLs are in same directory as qsdmplus.exe")
+		fmt.Println("  - Ensure DLLs are in same directory as qsdm.exe")
 		fmt.Println("")
 		fmt.Println("DETAILED TROUBLESHOOTING:")
 		fmt.Println("  Possible causes:")

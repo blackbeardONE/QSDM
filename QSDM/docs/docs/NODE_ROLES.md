@@ -52,7 +52,7 @@ before it can advertise itself on the network:
 |---|---|
 | Configuration | `pkg/config.Validate` rejects `role=validator` with `mining_enabled=true` and vice versa. |
 | Build profile | `-tags validator_only` removes `pkg/mining/cuda` from the binary and forces `MustMatchRole` to refuse `role=miner`. |
-| Startup guard | `cmd/qsdmplus/main.go` calls `roleguard.MustMatchRole` BEFORE opening any listeners. |
+| Startup guard | `cmd/qsdm/main.go` calls `roleguard.MustMatchRole` BEFORE opening any listeners. |
 | Deployment | `deploy/kubernetes/validator-statefulset.yaml` pins validators to `node-class=cpu`; `deploy/kubernetes/miner-daemonset.yaml` pins miners to GPU nodes with NVIDIA tolerations. |
 
 See [`SCYLLA_CAPACITY.md §0`](./SCYLLA_CAPACITY.md) for the negative-space

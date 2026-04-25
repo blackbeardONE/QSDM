@@ -71,7 +71,7 @@ while ($retryCount -lt $maxRetries) {
             Write-Host "The application may still be starting. Try:" -ForegroundColor Yellow
             Write-Host "  1. Wait a bit longer and run this script again" -ForegroundColor Gray
             Write-Host "  2. Check http://localhost:8081 in your browser" -ForegroundColor Gray
-            Write-Host "  3. Check if qsdmplus.exe process is still running" -ForegroundColor Gray
+            Write-Host "  3. Check if qsdm.exe process is still running" -ForegroundColor Gray
         }
     }
 }

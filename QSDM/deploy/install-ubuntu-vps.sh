@@ -6,10 +6,10 @@ set -euo pipefail
 QSDM_HOME="${QSDM_HOME:-$HOME/QSDM}"
 QSDM_GIT="${QSDM_GIT:-https://github.com/blackbeardONE/QSDM.git}"
 GO_TGZ="${GO_TGZ:-https://go.dev/dl/go1.23.4.linux-amd64.tar.gz}"
-# Install directory keeps the legacy 'qsdmplus' name during the rebrand
+# Install directory keeps the legacy 'qsdm' name during the rebrand
 # migration window so systemd units and operator bookmarks remain valid.
 # See QSDM/docs/docs/REBRAND_NOTES.md.
-INSTALL_DIR="/opt/qsdmplus"
+INSTALL_DIR="/opt/qsdm"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root (e.g. sudo bash $0)"
@@ -53,36 +53,36 @@ chmod +x scripts/rebuild_liboqs.sh scripts/build.sh 2>/dev/null || true
 echo "=== Building liboqs (long; 10–30+ min on small VPS) ==="
 ./scripts/rebuild_liboqs.sh
 
-echo "=== Building qsdmplus ==="
+echo "=== Building qsdm ==="
 ./scripts/build.sh
-test -f ./qsdmplus
+test -f ./qsdm
 
-if ! getent passwd qsdmplus &>/dev/null; then
-  useradd -r -s /bin/false -d "$INSTALL_DIR" qsdmplus
+if ! getent passwd qsdm &>/dev/null; then
+  useradd -r -s /bin/false -d "$INSTALL_DIR" qsdm
 fi
 mkdir -p "$INSTALL_DIR"
-chown -R qsdmplus:qsdmplus "$INSTALL_DIR"
+chown -R qsdm:qsdm "$INSTALL_DIR"
 
-install -m 0755 ./qsdmplus "$INSTALL_DIR/qsdmplus"
+install -m 0755 ./qsdm "$INSTALL_DIR/qsdm"
 if [[ -d ./liboqs_install ]]; then
   cp -a ./liboqs_install "$INSTALL_DIR/"
-  chown -R qsdmplus:qsdmplus "$INSTALL_DIR/liboqs_install"
+  chown -R qsdm:qsdm "$INSTALL_DIR/liboqs_install"
 fi
 
 # Production config: HTTP API without TLS to avoid cert requirement; paths under /opt
-cat > /tmp/qsdmplus.production.toml <<'EOF'
+cat > /tmp/qsdm.production.toml <<'EOF'
 [network]
 port = 4001
 bootstrap_peers = []
 
 [storage]
 type = "sqlite"
-sqlite_path = "/opt/qsdmplus/qsdmplus.db"
+sqlite_path = "/opt/qsdm/qsdm.db"
 
 [monitoring]
 dashboard_port = 8081
 log_viewer_port = 8080
-log_file = "/opt/qsdmplus/qsdmplus.log"
+log_file = "/opt/qsdm/qsdm.log"
 log_level = "INFO"
 
 [api]
@@ -95,28 +95,28 @@ tls_key_file = ""
 initial_balance = 1000.0
 
 [governance]
-proposal_file = "/opt/qsdmplus/proposals.json"
+proposal_file = "/opt/qsdm/proposals.json"
 
 [performance]
 # Demo/auto-txgen cadence; production should be long or a real client
 transaction_interval = "1h"
 health_check_interval = "30s"
 EOF
-install -m 0644 /tmp/qsdmplus.production.toml "$INSTALL_DIR/qsdmplus.toml"
-rm -f /tmp/qsdmplus.production.toml
-chown qsdmplus:qsdmplus "$INSTALL_DIR/qsdmplus.toml"
+install -m 0644 /tmp/qsdm.production.toml "$INSTALL_DIR/qsdm.toml"
+rm -f /tmp/qsdm.production.toml
+chown qsdm:qsdm "$INSTALL_DIR/qsdm.toml"
 touch "$INSTALL_DIR/proposals.json" 2>/dev/null || true
-chown qsdmplus:qsdmplus "$INSTALL_DIR/proposals.json" 2>/dev/null || true
+chown qsdm:qsdm "$INSTALL_DIR/proposals.json" 2>/dev/null || true
 
-if [[ -f config/qsdmplus.service ]]; then
-  install -m 0644 config/qsdmplus.service /etc/systemd/system/qsdmplus.service
+if [[ -f config/qsdm.service ]]; then
+  install -m 0644 config/qsdm.service /etc/systemd/system/qsdm.service
 else
-  echo "Missing config/qsdmplus.service in repo" >&2
+  echo "Missing config/qsdm.service in repo" >&2
   exit 1
 fi
 systemctl daemon-reload
-systemctl enable qsdmplus
-systemctl restart qsdmplus
+systemctl enable qsdm
+systemctl restart qsdm
 
 echo "=== Firewall (ufw) ==="
 ufw allow 22/tcp
@@ -128,6 +128,6 @@ ufw --force enable || true
 
 echo ""
 echo "=== Done ==="
-systemctl --no-pager -l status qsdmplus || true
+systemctl --no-pager -l status qsdm || true
 echo "Dashboard: http://$(curl -s ifconfig.me 2>/dev/null || echo YOUR_IP):8081"
-echo "Logs: journalctl -u qsdmplus -f"
+echo "Logs: journalctl -u qsdm -f"

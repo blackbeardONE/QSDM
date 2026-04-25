@@ -67,8 +67,8 @@ Remove-File "verify_dashboard.exe" "Verify dashboard"
 
 # 3. Database temporary files
 Write-Host "3. Cleaning database temporary files..." -ForegroundColor Green
-Remove-File "qsdmplus.db-shm" "SQLite shared memory"
-Remove-File "qsdmplus.db-wal" "SQLite write-ahead log"
+Remove-File "qsdm.db-shm" "SQLite shared memory"
+Remove-File "qsdm.db-wal" "SQLite write-ahead log"
 Remove-File "*.db-journal" "SQLite journal"
 
 # 4. Backup files

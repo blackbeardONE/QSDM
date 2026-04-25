@@ -78,9 +78,9 @@ function updateNGCProofs() {
             const configured = data.ingest_configured === true;
             const count = data.count || 0;
             if (!configured) {
-                statusEl.innerHTML = '<strong>Ingest disabled.</strong> Set <code>QSDM_NGC_INGEST_SECRET</code> (legacy <code>QSDMPLUS_NGC_INGEST_SECRET</code> still accepted) on the node and push from <code>apps/qsdm-nvidia-ngc</code> (see README).';
+                statusEl.innerHTML = '<strong>Ingest disabled.</strong> Set <code>QSDM_NGC_INGEST_SECRET</code> (legacy <code>QSDM_NGC_INGEST_SECRET</code> still accepted) on the node and push from <code>apps/qsdm-nvidia-ngc</code> (see README).';
             } else if (count === 0) {
-                statusEl.innerHTML = '<strong>Ingest enabled.</strong> No proof bundles yet — run the NGC validator with <code>QSDM_NGC_REPORT_URL</code> (legacy <code>QSDMPLUS_NGC_REPORT_URL</code> still accepted) + matching secret.';
+                statusEl.innerHTML = '<strong>Ingest enabled.</strong> No proof bundles yet — run the NGC validator with <code>QSDM_NGC_REPORT_URL</code> (legacy <code>QSDM_NGC_REPORT_URL</code> still accepted) + matching secret.';
             } else {
                 statusEl.innerHTML = `<strong>Ingest enabled.</strong> ${count} bundle(s) in ring buffer.`;
             }

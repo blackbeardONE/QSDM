@@ -1,9 +1,9 @@
-# Grafana — QSDM+ starter dashboard
+# Grafana — QSDM starter dashboard
 
 ## Import
 
-1. Add a **Prometheus** data source pointing at your Prometheus server (which scrapes `deploy/prometheus/scrape_qsdmplus.example.yml` or `prometheus.qsdmplus.example.yml`).
-2. In Grafana: **Dashboards → New → Import** → upload **`qsdmplus-overview.json`**.
+1. Add a **Prometheus** data source pointing at your Prometheus server (which scrapes `deploy/prometheus/scrape_qsdm.example.yml` or `prometheus.qsdm.example.yml`).
+2. In Grafana: **Dashboards → New → Import** → upload **`qsdm-overview.json`**.
 3. When asked for **DS_PROMETHEUS**, pick that Prometheus data source.
 
 ### Optional: file provisioning (fixed datasource UID)
@@ -20,6 +20,6 @@ To avoid the import picker and match panel UIDs explicitly:
 
 ## Metrics
 
-Panels use the `qsdmplus_*` series from **`GET /api/metrics/prometheus`** on the node dashboard (see `deploy/prometheus/README.md`). Includes **submesh** stats (`qsdmplus_submesh_*`) when submesh profiles are in use.
+Panels use the `qsdm_*` series from **`GET /api/metrics/prometheus`** on the node dashboard (see `deploy/prometheus/README.md`). Includes **submesh** stats (`qsdm_submesh_*`) when submesh profiles are in use.
 
 Adjust refresh interval and time range in the UI as needed.

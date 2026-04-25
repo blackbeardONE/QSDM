@@ -1,4 +1,4 @@
-# PowerShell script to run qsdmplus.exe with proper environment setup
+# PowerShell script to run qsdm.exe with proper environment setup
 # This ensures all required DLLs are in PATH
 
 Write-Host "Starting QSDM node..." -ForegroundColor Cyan
@@ -56,11 +56,11 @@ if (Test-Path ".\libcrypto-3-x64.dll") {
 }
 
 Write-Host ""
-Write-Host "Running qsdmplus.exe..." -ForegroundColor Cyan
+Write-Host "Running qsdm.exe..." -ForegroundColor Cyan
 Write-Host ""
 
 # Run the executable
-& ".\qsdmplus.exe"
+& ".\qsdm.exe"
 
 # Check exit code
 if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $null) {

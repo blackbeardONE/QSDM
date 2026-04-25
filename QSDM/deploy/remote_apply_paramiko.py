@@ -24,11 +24,11 @@
 #   2. Uploads the tarball to /root/qsdm-local.tar.gz and extracts it
 #      over /root/QSDM with --overwrite (no rm -rf; preserves server-only
 #      files such as liboqs build caches, backup databases, and any
-#      locally-edited qsdmplus.toml).
+#      locally-edited qsdm.toml).
 #   3. Rebuilds, installs, and restarts the validator systemd unit.
 #      Uses the validator_only build tag because the production VPS is
 #      a CPU-only validator per the Major Update two-tier node model.
-#   4. Ensures the server's /opt/qsdmplus/qsdmplus.toml has a [trust]
+#   4. Ensures the server's /opt/qsdm/qsdm.toml has a [trust]
 #      section (non-destructively appended if missing) so the newly
 #      wired transparency endpoints publish on first restart.
 #   5. Reloads the Caddyfile if present so the trust.html page + new
@@ -40,7 +40,7 @@
 #      confirm the trust surface is live.
 #
 # Rollback plan: the previous binary is copied to
-# /opt/qsdmplus/qsdmplus.prev before `install` overwrites it. If the new
+# /opt/qsdm/qsdm.prev before `install` overwrites it. If the new
 # build refuses to start (systemctl is-active != active), the script
 # restores the previous binary and re-enables the unit before exiting
 # non-zero.
@@ -105,26 +105,26 @@ echo '===[ go build (production profile, CGO+liboqs) ]==='
 if [ -n "${QSDM_BUILD_TAGS:-}" ]; then
   echo "  custom build tags: $QSDM_BUILD_TAGS"
   cd source
-  go build -trimpath -ldflags="-s -w" -tags "$QSDM_BUILD_TAGS" -o ../qsdmplus ./cmd/qsdmplus
+  go build -trimpath -ldflags="-s -w" -tags "$QSDM_BUILD_TAGS" -o ../qsdm ./cmd/qsdm
   cd -
 else
   ./scripts/build.sh
 fi
 
 echo '===[ install + systemd restart ]==='
-systemctl stop qsdmplus || true
-if [ -f /opt/qsdmplus/qsdmplus ]; then
-  install -m0755 -o qsdmplus -g qsdmplus /opt/qsdmplus/qsdmplus /opt/qsdmplus/qsdmplus.prev || true
+systemctl stop qsdm || true
+if [ -f /opt/qsdm/qsdm ]; then
+  install -m0755 -o qsdm -g qsdm /opt/qsdm/qsdm /opt/qsdm/qsdm.prev || true
 fi
-install -m0755 -o qsdmplus -g qsdmplus ./qsdmplus /opt/qsdmplus/qsdmplus
-install -m0644 -o qsdmplus -g qsdmplus ./config/qsdmplus.service /etc/systemd/system/qsdmplus.service
+install -m0755 -o qsdm -g qsdm ./qsdm /opt/qsdm/qsdm
+install -m0644 -o qsdm -g qsdm ./config/qsdm.service /etc/systemd/system/qsdm.service
 
 echo '===[ non-destructive [trust] block patch on server config ]==='
 # The wired TrustAggregator serves /api/v1/trust/attestations/* on first
 # start even without a [trust] block (defaults: enabled, 15m freshness,
 # 10s refresh). We still append an explicit block when missing so the
 # operator can edit it in place later rather than hunting the env path.
-CFG=/opt/qsdmplus/qsdmplus.toml
+CFG=/opt/qsdm/qsdm.toml
 if [ -f "$CFG" ] && ! grep -Eq '^\[trust\]' "$CFG"; then
   cat >> "$CFG" <<'TRUST'
 
@@ -147,23 +147,23 @@ if [ -f "$CFG" ]; then
 fi
 
 systemctl daemon-reload
-systemctl start qsdmplus
+systemctl start qsdm
 
 # Backup cron (idempotent).
 (crontab -l 2>/dev/null | grep -v vps-sqlite-backup || true; \
- echo "0 3 * * * /opt/qsdmplus/vps-sqlite-backup.sh") | crontab -
+ echo "0 3 * * * /opt/qsdm/vps-sqlite-backup.sh") | crontab -
 
 sleep 3
 
 echo '===[ systemctl is-active ]==='
-if ! systemctl is-active --quiet qsdmplus; then
-  echo 'FAIL: qsdmplus did not come up; rolling back to previous binary'
-  if [ -f /opt/qsdmplus/qsdmplus.prev ]; then
-    install -m0755 -o qsdmplus -g qsdmplus /opt/qsdmplus/qsdmplus.prev /opt/qsdmplus/qsdmplus
-    systemctl restart qsdmplus || true
+if ! systemctl is-active --quiet qsdm; then
+  echo 'FAIL: qsdm did not come up; rolling back to previous binary'
+  if [ -f /opt/qsdm/qsdm.prev ]; then
+    install -m0755 -o qsdm -g qsdm /opt/qsdm/qsdm.prev /opt/qsdm/qsdm
+    systemctl restart qsdm || true
   fi
-  systemctl status qsdmplus --no-pager -l | sed -n '1,40p'
-  journalctl -u qsdmplus -n 50 --no-pager
+  systemctl status qsdm --no-pager -l | sed -n '1,40p'
+  journalctl -u qsdm -n 50 --no-pager
   exit 1
 fi
 echo 'active'
@@ -248,7 +248,7 @@ for host in api.qsdm.tech qsdm.tech ; do
 done
 
 echo '===[ recent log ]==='
-journalctl -u qsdmplus -n 25 --no-pager
+journalctl -u qsdm -n 25 --no-pager
 """
 
 
@@ -346,7 +346,7 @@ def main() -> int:
             # the QSDM/ tree in the server layout (they live in /etc and
             # /opt respectively), so sftp them explicitly.
             raw_backup = (BASE / "deploy/vps-sqlite-backup.sh").read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
-            with sftp.open("/opt/qsdmplus/vps-sqlite-backup.sh", "wb") as f:
+            with sftp.open("/opt/qsdm/vps-sqlite-backup.sh", "wb") as f:
                 f.write(raw_backup)
         finally:
             sftp.close()
@@ -369,7 +369,7 @@ def main() -> int:
         # the server. Do this once, here, rather than scattering
         # chmod calls throughout the REBUILD block.
         "find /root/QSDM -type f \\( -name \"*.sh\" -o -name \"*.py\" \\) -exec chmod +x {} +; "
-        "chmod +x /opt/qsdmplus/vps-sqlite-backup.sh; "
+        "chmod +x /opt/qsdm/vps-sqlite-backup.sh; "
         "echo extraction-ok'"
     )
     ext_out = b""

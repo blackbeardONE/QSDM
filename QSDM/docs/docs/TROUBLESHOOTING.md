@@ -66,7 +66,7 @@ database is locked
 
 3. **Check file permissions**:
    ```bash
-   chmod 644 qsdmplus.db
+   chmod 644 qsdm.db
    ```
 
 #### Transaction Validation Failures
@@ -344,7 +344,7 @@ host.Network().Notify(&network.NotifyBundle{
 ### Database Inspection
 
 ```bash
-sqlite3 qsdmplus.db
+sqlite3 qsdm.db
 .tables
 SELECT * FROM transactions LIMIT 10;
 SELECT * FROM balances;

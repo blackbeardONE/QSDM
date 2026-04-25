@@ -1,5 +1,5 @@
 // Package walletp2p shares P2P wallet transaction ingress dedupe across transports:
-// legacy pubsub JSON / mesh companion (cmd/qsdmplus/transaction) and signed gossip (pkg/networking).
+// legacy pubsub JSON / mesh companion (cmd/qsdm/transaction) and signed gossip (pkg/networking).
 package walletp2p
 
 import (

@@ -83,7 +83,7 @@ RUN cd source && CGO_ENABLED=1 \
     CGO_CFLAGS="-I/usr/local/include -I/usr/local/cuda/include" \
     CGO_LDFLAGS="-L/usr/local/lib -L/usr/local/cuda/lib64 -loqs -lssl -lcrypto -lmesh3d_kernels -lcudart" \
     go build -tags "miner cuda" \
-        -o ../qsdm-miner ./cmd/qsdmplus
+        -o ../qsdm-miner ./cmd/qsdm
 
 # ---- runtime stage ---------------------------------------------------------
 FROM nvidia/cuda:12.3.2-runtime-ubuntu22.04
@@ -107,7 +107,7 @@ RUN ldconfig
 
 # Convenience symlinks for operators running legacy scripts.
 RUN ln -s /usr/local/bin/qsdm-miner /usr/local/bin/qsdm && \
-    ln -s /usr/local/bin/qsdm-miner /usr/local/bin/qsdmplus
+    ln -s /usr/local/bin/qsdm-miner /usr/local/bin/qsdm
 
 WORKDIR /app
 

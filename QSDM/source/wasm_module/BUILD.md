@@ -1,6 +1,6 @@
 # Building the Rust WASM Module for QSDM
 
-The module exports **`validate_raw(ptr, len) -> i32`** (boolean as 0/1) for Go **wazero** preflight (`QSDMPLUS_WASM_PREFLIGHT_MODULE`). It does **not** require wasm-bindgen in the module binary.
+The module exports **`validate_raw(ptr, len) -> i32`** (boolean as 0/1) for Go **wazero** preflight (`QSDM_WASM_PREFLIGHT_MODULE`). It does **not** require wasm-bindgen in the module binary.
 
 ## Prerequisites
 

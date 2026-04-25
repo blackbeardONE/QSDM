@@ -26,6 +26,6 @@ try {
     Write-Host ""
     Write-Host "To start the application:" -ForegroundColor Cyan
     Write-Host "  $env:PATH = 'C:\msys64\mingw64\bin;$env:PATH'" -ForegroundColor Gray
-    Write-Host "  .\qsdmplus.exe" -ForegroundColor Gray
+    Write-Host "  .\qsdm.exe" -ForegroundColor Gray
 }
 

@@ -1,13 +1,13 @@
-# Simple test to run qsdmplus.exe
+# Simple test to run qsdm.exe
 $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
 
-Write-Host "Testing qsdmplus.exe..." -ForegroundColor Cyan
+Write-Host "Testing qsdm.exe..." -ForegroundColor Cyan
 Write-Host "PATH includes OpenSSL: $($env:PATH -like '*mingw64*bin*')" -ForegroundColor Gray
 Write-Host ""
 
 # Try to run and capture output
 try {
-    $proc = Start-Process -FilePath ".\qsdmplus.exe" -NoNewWindow -PassThru -RedirectStandardOutput "test_stdout.txt" -RedirectStandardError "test_stderr.txt"
+    $proc = Start-Process -FilePath ".\qsdm.exe" -NoNewWindow -PassThru -RedirectStandardOutput "test_stdout.txt" -RedirectStandardError "test_stderr.txt"
     
     Start-Sleep -Seconds 2
     
@@ -45,5 +45,5 @@ try {
 
 Write-Host ""
 Write-Host "Latest log entries:" -ForegroundColor Cyan
-Get-Content "qsdmplus.log" -Tail 3 -ErrorAction SilentlyContinue
+Get-Content "qsdm.log" -Tail 3 -ErrorAction SilentlyContinue
 

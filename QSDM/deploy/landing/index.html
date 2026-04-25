@@ -4,10 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>QSDM — Quantum-Secure Dynamic Mesh Ledger · Cell (CELL)</title>
-<meta name="description" content="QSDM is a quantum-secure distributed ledger with a dynamic mesh topology and a native coin, Cell (CELL). Post-quantum cryptography (ML-DSA-87, NIST FIPS 204), Proof-of-Entanglement BFT consensus on CPU-only validators, and an additive GPU mining layer for coin emission — purpose-built for high-throughput, non-AI, trust-minimized compute." />
+<meta name="description" content="QSDM is a quantum-secure distributed ledger with a dynamic mesh topology and a native coin, Cell (CELL). Post-quantum cryptography (ML-DSA-87, NIST FIPS 204), Proof-of-Entanglement BFT consensus on CPU-only validators, and an NVIDIA-locked GPU mining layer (v2 protocol) for Cell emission with on-chain operator enrollment and slashing — purpose-built for high-throughput, non-AI, trust-minimized compute." />
 <meta name="theme-color" content="#0b1220" />
 <meta property="og:title" content="QSDM — Quantum-Secure Dynamic Mesh Ledger · Cell (CELL)" />
-<meta property="og:description" content="Post-quantum signatures. NVIDIA-locked validators. Dynamic mesh consensus. Built for the next decade of distributed trust." />
+<meta property="og:description" content="Post-quantum signatures. NVIDIA-locked GPU mining (v2). Dynamic mesh consensus on CPU validators. Built for the next decade of distributed trust." />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://qsdm.tech/" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b1220'/%3E%3Cpath d='M12 32l10-10 10 10-10 10z' fill='%2376b900'/%3E%3Cpath d='M32 20l10 12-10 12-10-12z' fill='%2300d1b2' opacity='.85'/%3E%3C/svg%3E" />
@@ -309,7 +309,7 @@
         <path d="M12 32l10-10 10 10-10 10z" fill="#76b900"/>
         <path d="M32 20l10 12-10 12-10-12z" fill="#00d1b2" opacity=".85"/>
       </svg>
-      <span>QSDM<span class="plus">+</span></span>
+      <span>QSDM</span>
     </a>
     <nav aria-label="Primary">
       <ul>
@@ -347,9 +347,9 @@
       <strong>QSDM</strong> is the <strong>Quantum-Secure Dynamic Mesh Ledger</strong> — a non-AI, hardware-agnostic
       electronic cash and smart-contract fabric with a native coin, <strong>Cell (CELL)</strong>. It is built on
       ML-DSA-87 post-quantum signatures, a dynamic 2D/3D mesh topology, and <em>Proof-of-Entanglement</em> BFT consensus
-      that runs on CPU-only validators. An additive GPU mining layer is planned for Cell emission and runs independently
-      of consensus; validators can optionally publish NVIDIA NGC proof bundles as a transparency signal, not as a
-      consensus rule.
+      that runs on CPU-only validators. An additive <strong>NVIDIA-locked GPU mining layer (v2 protocol)</strong>
+      mints Cell via attested proofs from operator-enrolled GPUs; validators can additionally publish NGC bundles
+      as a transparency signal.
     </p>
     <div class="cta-row">
       <a class="btn btn-primary" href="https://dashboard.qsdm.tech/">Open Dashboard</a>
@@ -398,6 +398,9 @@
         <div class="endpoint"><span class="host">GET /api/v1/health</span><span class="status">JSON · 200</span></div>
         <div class="endpoint"><span class="host">GET /api/v1/status</span><span class="status">Node role · coin · tokenomics</span></div>
         <div class="endpoint"><span class="host">GET /api/v1/trust/attestations/summary</span><span class="status">X of Y attested</span></div>
+        <div class="endpoint"><span class="host">GET /api/v1/mining/challenge</span><span class="status">v2 · signed nonce · 60s freshness</span></div>
+        <div class="endpoint"><span class="host">POST /api/v1/mining/enroll</span><span class="status">v2 · 10 CELL bond</span></div>
+        <div class="endpoint"><span class="host">POST /api/v1/mining/unenroll</span><span class="status">v2 · 7-day unbond</span></div>
         <div class="endpoint"><span class="host">POST /api/v1/auth/login</span><span class="status">JWT issuance</span></div>
         <div class="endpoint"><span class="host">POST /api/v1/wallet/send</span><span class="status">Signed · submesh-routed</span></div>
         <div class="endpoint"><span class="host">GET /api/metrics/prometheus</span><span class="status">Scrape secret · Bearer</span></div>
@@ -432,8 +435,7 @@
     <span class="eyebrow">PLATFORM</span>
     <h2>One ledger, two node roles.</h2>
     <p class="lead">
-      <strong>QSDM</strong> is the unified platform (historically shipped under the transitional name
-      <em>QSDM+</em>); <strong>Cell (CELL)</strong> is its native coin. The node software ships in two roles that share
+      <strong>QSDM</strong> is the unified platform; <strong>Cell (CELL)</strong> is its native coin. The node software ships in two roles that share
       the same cryptography, wire format, and mesh topology: <strong>validators</strong> run Proof-of-Entanglement BFT
       consensus on CPU-only VPS-class hardware and earn transaction fees, while <strong>miners</strong> run an additive
       GPU proof-of-work layer that emits Cell from home rigs.
@@ -464,27 +466,31 @@
       </article>
 
       <article class="product">
-        <span class="tag plus">Miner · CPU reference shipped · CUDA planned</span>
+        <span class="tag plus">Miner · v2 NVIDIA-locked · enrollment + slashing</span>
         <h3>QSDM Miner (Cell emission)</h3>
         <p style="color:var(--text-2); margin: 6px 0 0;">
-          The emission tier. An additive proof-of-work layer for <strong>Cell (CELL)</strong> minting that runs
-          independently of consensus. Home operators submit proofs to any QSDM validator and receive Cell
-          rewards per the published emission schedule. Two reference binaries ship in-tree today:
-          <code>qsdmminer</code> (audit-clean CPU reference) and
-          <code>qsdmminer-console</code> (friendly console front-end with a live stats panel and a first-run
-          setup wizard). The CUDA production miner is planned to ship after external audit.
+          The emission tier. An additive GPU proof-of-work layer for <strong>Cell (CELL)</strong> minting that runs
+          independently of consensus. Under the <strong>v2 NVIDIA-locked protocol</strong>, every accepted proof must
+          carry an NVIDIA attestation (<code>nvidia-cc-v1</code> on Hopper/Blackwell Confidential-Compute GPUs, or
+          <code>nvidia-hmac-v1</code> on consumer RTX GPUs via a registered operator key). Miners
+          <strong>enroll on-chain</strong> with a 10 CELL stake bond, receive a validator-signed challenge nonce,
+          and can be <strong>slashed</strong> for forged or replayed attestations. The
+          <code>qsdmminer-console</code> front-end ships the v2 client; the CUDA production miner lands after
+          external audit.
         </p>
         <ul>
-          <li>Separate <code>qsdmminer</code> / <code>qsdmminer-console</code> binaries — miners do <em>not</em> participate in consensus</li>
-          <li>CPU-safe O(1) verification; mesh3D-tied useful proof</li>
+          <li><strong>Mandatory NVIDIA attestation</strong> on every proof (Tiered: CC for datacenter, HMAC for consumer)</li>
+          <li><strong>On-chain enrollment</strong>: 10 CELL stake bond, 7-day unbond window, <code>qsdm/enroll/v1</code> contract</li>
+          <li><strong>Slashing</strong>: <code>qsdm/slash/v1</code> transactions forfeit stake. <em>Forged-attestation</em> and <em>double-mining</em> verifiers are <strong>active</strong>; <em>freshness-cheat</em> awaits BFT-finality</li>
+          <li><strong>60-second freshness window</strong> on validator-signed challenge nonces (replay-proof)</li>
           <li>Native coin <strong>Cell (CELL)</strong>, 8 decimals, smallest unit <em>dust</em></li>
           <li>Halving emission schedule; 0% pre-mine, treasury cap 10%</li>
-          <li>CPU reference miner and console front-end shipped today; CUDA miner gated on external audit</li>
-          <li>NGC attestation is optional and consensus-independent</li>
+          <li>Miners do <em>not</em> participate in consensus; separate <code>qsdmminer-console</code> binary</li>
         </ul>
         <div class="foot">
           <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">MINER_QUICKSTART.md</a>
-          <a class="btn" href="https://api.qsdm.tech/api/v1/health">API: /api/v1/health</a>
+          <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL_V2_NVIDIA_LOCKED.md">v2 Protocol spec</a>
+          <a class="btn" href="https://api.qsdm.tech/api/v1/mining/challenge">API: /api/v1/mining/challenge</a>
         </div>
       </article>
     </div>
@@ -502,17 +508,24 @@
           </span>
           <h3 style="margin-top:14px">Silicon as a sybil-resistance primitive.</h3>
           <p style="color:var(--text-2); margin:8px 0 0;">
-            Most ledgers treat validators as interchangeable processes — easy to spin up, easy to fake. QSDM validators
-            can optionally attach a fresh, HMAC-signed NGC proof bundle from a specific NVIDIA GPU as a transparency
-            signal. NGC attestation is <strong>not</strong> a consensus rule — Proof-of-Entanglement runs on CPU and
-            admits validators without a GPU — but operators that publish bundles give the network a cryptographic
-            statement about the silicon behind them. The bundle is produced by a lightweight sidecar
-            (<code>apps/qsdmplus-nvidia-ngc</code>, folder name retained during rebrand) that hashes CUDA device
-            properties, runs a deterministic proof, and signs the result with a per-node secret.
+            Most ledgers treat nodes as interchangeable processes — easy to spin up, easy to fake. QSDM binds
+            two different node classes to real silicon in two different ways:
           </p>
+          <ul style="color:var(--text-2); margin:10px 0 0; padding-left:18px;">
+            <li style="margin-bottom:6px;">
+              <strong>Validators</strong> (CPU-only BFT consensus) <em>optionally</em> publish HMAC-signed NGC bundles
+              as a <strong>transparency signal</strong>. Attestation is <strong>not</strong> a consensus rule;
+              Proof-of-Entanglement admits validators without a GPU.
+            </li>
+            <li>
+              <strong>Miners</strong> (GPU proof-of-work for Cell emission) <strong>must</strong> attach an NVIDIA
+              attestation on every accepted proof under the <strong>v2 protocol</strong>. Enrollment carries a
+              10 CELL bond; forged, replayed, or freshness-violating proofs are slashable.
+            </li>
+          </ul>
           <p style="color:var(--text-2); margin:10px 0 0;">
-            The result: identity that is <strong>physically grounded</strong>. You cannot clone a validator without
-            cloning the silicon behind it.
+            The result: identity that is <strong>physically grounded</strong>. You cannot clone a miner without
+            cloning the silicon behind it — and if you try, the bond burns.
           </p>
           <div class="cta-row" style="margin-top:20px">
             <a class="btn" href="#tech">How it works ↓</a>
@@ -521,24 +534,29 @@
         </div>
         <div class="pillars">
           <div class="pillar">
-            <div class="ico">01 · Attestation</div>
-            <div class="title">NGC Proof Bundles</div>
-            <div class="desc">JSON envelopes with architecture, CUDA proof hash, GPU fingerprint, optional HMAC. Replayed-proof detection via nonce + freshness window.</div>
+            <div class="ico">01 · Tiered Trust (v2)</div>
+            <div class="title">CC + HMAC attestation</div>
+            <div class="desc"><code>nvidia-cc-v1</code> uses NVIDIA Confidential-Compute AIK quotes on Hopper/Blackwell datacenter GPUs. <code>nvidia-hmac-v1</code> uses a registered operator key for consumer RTX GPUs.</div>
           </div>
           <div class="pillar">
-            <div class="ico">02 · Binding</div>
-            <div class="title">Node-ID Lock</div>
-            <div class="desc"><code>nvidia_lock_expected_node_id</code> binds a validator identity to exactly one signed GPU. Strict-secrets mode forbids demo/weak HMACs in production.</div>
+            <div class="ico">02 · On-chain Enrollment (v2)</div>
+            <div class="title">Stake-bonded operator registry</div>
+            <div class="desc"><code>qsdm/enroll/v1</code> contract. Miners bond <strong>10 CELL</strong> to enroll an operator key; a 7-day (201,600-block) unbond window applies on exit.</div>
           </div>
           <div class="pillar">
-            <div class="ico">03 · Enforcement</div>
-            <div class="title">P2P Gate</div>
-            <div class="desc">With <code>nvidia_lock_gate_p2p=true</code>, libp2p drops inbound transactions from peers without a recent valid proof — before consensus, before the mempool.</div>
+            <div class="ico">03 · Slashing (v2)</div>
+            <div class="title">Evidence-based forfeiture</div>
+            <div class="desc"><code>qsdm/slash/v1</code> transactions forfeit bonded stake. Two of three slashers are <strong>active</strong>: <em>forged-attestation</em> (<code>pkg/mining/slashing/forgedattest</code>) catches HMAC / GPU-UUID / challenge-bind / deny-listed-GPU forgery, and <em>double-mining</em> (<code>pkg/mining/slashing/doublemining</code>) catches any operator that signs two distinct, valid v2 proofs at the same <code>(epoch, height)</code>. The third (<em>freshness-cheat</em>) is wire-reserved pending BFT-finality. Up to 50% of the slashed stake rewards the slasher. Any slash that leaves the offender below the 10 CELL enrollment minimum <strong>auto-revokes</strong> the record into the standard 7-day unbond window — sub-bonded operators cannot keep mining for free.</div>
           </div>
           <div class="pillar">
-            <div class="ico">04 · Acceleration</div>
-            <div class="title">CUDA Validation</div>
-            <div class="desc">Phase 3 uses the same GPUs for parallel hash verification and 3D mesh traversal, turning attestation hardware into productive compute.</div>
+            <div class="ico">04 · Challenge nonce (v2)</div>
+            <div class="title">60-second freshness</div>
+            <div class="desc">Validators mint short-lived, signed challenges (<code>GET /api/v1/mining/challenge</code>). Miners bind each proof to a fresh nonce; replayed proofs fail the freshness gate.</div>
+          </div>
+          <div class="pillar">
+            <div class="ico">05 · Observability (v2)</div>
+            <div class="title">Prometheus + structured events</div>
+            <div class="desc">Every slashing and enrollment transition emits a labeled Prometheus counter (<code>qsdm_slash_applied_total{kind}</code>, <code>qsdm_slash_rejected_total{reason}</code>, <code>qsdm_slash_auto_revoked_total{reason}</code>, <code>qsdm_enrollment_*</code>) AND a typed audit event (<code>MiningSlashEvent</code>, <code>EnrollmentEvent</code>) on <code>chain.ChainEventPublisher</code>. Live gauges (<code>qsdm_enrollment_active_count</code>, <code>qsdm_enrollment_bonded_dust</code>, <code>qsdm_enrollment_pending_unbond_count</code>) snapshot the registry under one mutex per scrape. The <code>pkg/chain</code> ↔ <code>pkg/monitoring</code> seam is dependency-inverted, so binaries without monitoring pay zero overhead.</div>
           </div>
         </div>
       </div>
@@ -549,12 +567,13 @@
 <section id="consensus-layer">
   <div class="container">
     <span class="eyebrow">CONSENSUS BOUNDARY</span>
-    <h2>PoE is consensus. GPUs are not.</h2>
+    <h2>PoE is consensus. GPU mining is emission.</h2>
     <p class="lead">
       <strong>Proof-of-Entanglement</strong> and BFT finality do every piece of consensus work on QSDM —
       block proposal, transaction ordering, and finality — on <strong>CPU-only validator nodes</strong>. GPUs on
-      the mesh serve two narrow, additive roles: hardware attestation (today) and coin emission (planned).
-      <strong>Neither role touches consensus.</strong>
+      the mesh serve one narrow, additive role: <strong>NVIDIA-locked Cell emission</strong> (v2 protocol). Validator
+      NGC bundles remain an optional transparency signal. <strong>Neither mining nor validator attestation gates
+      consensus finality.</strong>
     </p>
     <div class="pillars" style="grid-template-columns: 1fr 1fr;">
       <div class="pillar">
@@ -614,16 +633,16 @@
     <span class="eyebrow" style="color:var(--accent); border-color: rgba(118,185,0,.35); background: rgba(118,185,0,.08)">
       PARTICIPATE · MINE AT HOME
     </span>
-    <h2>Mine Cell at home.</h2>
+    <h2>Mine Cell at home — NVIDIA-locked (v2 protocol).</h2>
     <p class="lead">
       The mining layer is the additive emission track for <strong>Cell (CELL)</strong>. It is
       deliberately separate from consensus: miners never propose blocks, never order transactions, and
-      can halt with zero effect on chain liveness. Mining Cell is how new coins enter circulation —
-      rewards depend on network difficulty and the current block reward, both of which change over time.
-      Two miner binaries ship today: <code>qsdmminer</code> (audit-clean CPU reference) and
-      <code>qsdmminer-console</code> (friendly console UI with a live stats panel and first-run
-      setup wizard). The CUDA production miner is planned to ship after external audit; a home-scale
-      mining pool directory will arrive alongside the incentivized testnet.
+      can halt with zero effect on chain liveness. Under the <strong>v2 NVIDIA-locked protocol</strong>,
+      every accepted proof must carry an NVIDIA attestation bound to an enrolled operator key, and forged
+      or replayed proofs are slashable. Mining Cell is how new coins enter circulation — rewards depend on
+      network difficulty and the current block reward, both of which change over time.
+      <code>qsdmminer-console</code> ships today with a friendly console UI, first-run setup wizard, and
+      the v2 client library; the CUDA production miner lands after external audit.
     </p>
     <div class="pillars" style="grid-template-columns: 1fr 1fr;">
       <div class="pillar" style="border-color: rgba(118,185,0,.35); background: rgba(118,185,0,.06);">
@@ -633,28 +652,29 @@
           Run with no flags and a setup wizard prompts for your reward address and validator URL, saves
           the answers to <code>~/.qsdm/miner.toml</code>, then opens a live console panel showing
           hashrate, accepted/rejected proofs, current epoch, and uptime. <code>--plain</code> switches
-          to a one-line-per-event log mode for <code>systemd</code> / <code>journalctl</code>. Same
-          <code>--self-test</code> as the reference; no GPU required.
+          to a one-line-per-event log mode for <code>systemd</code> / <code>journalctl</code>. Ships
+          opt-in v2 support via <code>--protocol=v2</code> and the <code>pkg/mining/v2client</code>
+          library; <code>--self-test</code> validates the full v2 handshake locally.
         </div>
       </div>
       <div class="pillar">
-        <div class="ico">CPU REFERENCE · IN-TREE</div>
-        <div class="title"><code>qsdmminer</code> — protocol truth</div>
+        <div class="ico">V2 PROTOCOL · CONSENSUS-ENFORCED</div>
+        <div class="title">NVIDIA attestation + enrollment + slashing</div>
         <div class="desc">
-          The audit-clean single-file reference miner. Builds a real proof under
-          <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL.md">MINING_PROTOCOL.md</a>
-          and runs a <code>--self-test</code>. Good for protocol compliance and one-off validation.
-          Hash rate is low by design — this is not the production miner, and intentionally has no TUI
-          so it can be read top-to-bottom against the spec.
+          Tiered trust model: <code>nvidia-cc-v1</code> (AIK-signed quote on Hopper/Blackwell CC GPUs)
+          or <code>nvidia-hmac-v1</code> (operator-HMAC bundle on consumer RTX). Miners enroll on-chain
+          with a 10 CELL bond (<code>qsdm/enroll/v1</code>), fetch a validator-signed challenge nonce
+          (60s freshness), and face <strong>slashing</strong> (<code>qsdm/slash/v1</code>) for forged or
+          replayed proofs. Stake unbonds after 7 days (201,600 blocks).
         </div>
       </div>
       <div class="pillar">
         <div class="ico">CUDA PRODUCTION · PLANNED</div>
         <div class="title">CUDA miner</div>
         <div class="desc">
-          Optimized for NVIDIA (CUDA 11+, ≥ 8 GB VRAM, RTX&nbsp;20/30/40/50-class). The protocol does
-          not prohibit other vendors; we simply ship NVIDIA-first because that is where the hardware
-          ecosystem is. Gated on external audit before release.
+          Optimized for NVIDIA (CUDA 11+, ≥ 8 GB VRAM, RTX&nbsp;20/30/40/50-class and Hopper/Blackwell).
+          Under v2 the protocol is NVIDIA-locked by design: tensor-core PoW re-tuning is the Tier-3
+          scope item. Gated on external audit before release.
         </div>
       </div>
       <div class="pillar">
@@ -677,13 +697,14 @@
                not prohibit other vendors, they're just unshipped;
            (3) no NGC over-claim — the "free tier" call-out is factual,
                attestation stays described as a transparency signal. -->
-    <h3 id="why-nvidia" style="margin-top:34px; font-size:22px;">Why NVIDIA for mining? (and what you miss without one)</h3>
+    <h3 id="why-nvidia" style="margin-top:34px; font-size:22px;">NVIDIA-only mining — hardware tiers</h3>
     <p style="color:var(--text-2); margin:6px 0 14px;">
-      QSDM is not NVIDIA-only. The reference CPU miner is always supported and the protocol will
-      accept a valid proof from any device. In practice, though, NVIDIA is the first-class path
-      today — the mesh3D CUDA kernels ship in-tree, the production miner image is built against
-      CUDA in CI, and the <strong>free</strong> NVIDIA NGC tier is the only attestation path
-      currently published. This table is what that means for an operator choosing hardware.
+      Under the <strong>v2 protocol</strong> QSDM mining is NVIDIA-locked by consensus: every accepted
+      proof carries an NVIDIA attestation. Two tiers of trust anchor exist. The <em>Confidential-Compute</em>
+      tier (<code>nvidia-cc-v1</code>) uses hardware-rooted AIK quotes on Hopper/Blackwell datacenter GPUs
+      — rare in home setups but tamper-resistant end-to-end. The <em>operator-HMAC</em> tier
+      (<code>nvidia-hmac-v1</code>) is the consumer path: operators register a key on-chain with a 10 CELL
+      bond and sign their device-property bundles, backed by slashing.
     </p>
     <div class="table-wrap">
       <table class="compare">
@@ -691,46 +712,46 @@
           <tr>
             <th>Tier</th>
             <th>Hardware</th>
+            <th>Attestation path (v2)</th>
             <th>Relative hashrate</th>
-            <th>Practical use</th>
-            <th>NGC attestation badge?</th>
+            <th>Enrollment / bond</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td><strong>Reference CPU</strong></td>
-            <td>Any x86-64, no GPU</td>
-            <td>1× baseline (single-digit H/s)</td>
-            <td>Protocol conformance, self-test, occasional testnet block under low difficulty</td>
-            <td>No GPU to attest</td>
-          </tr>
-          <tr>
             <td><strong>Entry NVIDIA</strong><br/><span style="color:var(--muted); font-size:12px;">RTX 3050 / 3060</span></td>
             <td>CUDA 11+, 8 GB+ VRAM, NVIDIA Container Toolkit</td>
-            <td>Thousands× CPU baseline (CUDA kernels unlock)</td>
-            <td>Home miner — occasional mainnet blocks once mainnet ships</td>
-            <td><strong style="color:var(--accent)">Yes — free NGC tier</strong></td>
+            <td><code>nvidia-hmac-v1</code> (operator-registered key)</td>
+            <td>1× baseline for v2 mining</td>
+            <td>10 CELL bond · 7-day unbond</td>
           </tr>
           <tr>
             <td><strong>Mid-range NVIDIA</strong><br/><span style="color:var(--muted); font-size:12px;">RTX 3080 / 4070</span></td>
             <td>CUDA 11+, ≥ 10 GB VRAM</td>
-            <td>Scales with SM count and memory bandwidth</td>
-            <td>Serious home miner, longer profitable runway as difficulty rises</td>
-            <td><strong style="color:var(--accent)">Yes — free NGC tier</strong></td>
+            <td><code>nvidia-hmac-v1</code></td>
+            <td>Scales with SM count + memory bandwidth</td>
+            <td>10 CELL bond · 7-day unbond</td>
           </tr>
           <tr>
-            <td><strong>High-end NVIDIA</strong><br/><span style="color:var(--muted); font-size:12px;">RTX 4090 / H100-class</span></td>
+            <td><strong>High-end consumer</strong><br/><span style="color:var(--muted); font-size:12px;">RTX 4090 / 5090</span></td>
             <td>CUDA 12+, ≥ 16 GB VRAM</td>
-            <td>Rack-grade — matches or exceeds farm economics</td>
-            <td>Aggressive difficulty ramps, best power-per-hash, longest runway</td>
-            <td><strong style="color:var(--accent)">Yes — free NGC tier</strong></td>
+            <td><code>nvidia-hmac-v1</code></td>
+            <td>Rack-grade per-GPU economics</td>
+            <td>10 CELL bond · 7-day unbond</td>
           </tr>
           <tr>
-            <td><strong>Non-NVIDIA GPU</strong><br/><span style="color:var(--muted); font-size:12px;">AMD / Intel</span></td>
-            <td>OpenCL / ROCm / Level Zero — no first-party kernels shipped today</td>
-            <td>Requires community port of <code>pkg/mesh3d</code></td>
-            <td>Research / goodwill contributions only</td>
-            <td>NGC is NVIDIA-only tooling</td>
+            <td><strong>Datacenter · CC</strong><br/><span style="color:var(--muted); font-size:12px;">H100 / H200 / B100 (CC mode)</span></td>
+            <td>Hopper/Blackwell in Confidential-Compute mode</td>
+            <td><code>nvidia-cc-v1</code> (hardware AIK quote, no bond required)</td>
+            <td>Highest per-watt; rare in home setups</td>
+            <td>No bond · CC-pinned identity</td>
+          </tr>
+          <tr>
+            <td><strong>Non-NVIDIA / CPU</strong><br/><span style="color:var(--muted); font-size:12px;">AMD · Intel · x86 CPU</span></td>
+            <td>—</td>
+            <td>Not accepted under v2 (consensus reject)</td>
+            <td>n/a</td>
+            <td>n/a</td>
           </tr>
         </tbody>
       </table>
@@ -742,22 +763,22 @@
 
     <div class="pillars" style="grid-template-columns: 1fr 1fr 1fr; margin-top:22px;">
       <div class="pillar">
-        <div class="ico" style="color:var(--accent); border-color: rgba(118,185,0,.35); background: rgba(118,185,0,.08)">FREE NGC TIER</div>
-        <div class="title">No paid NVIDIA plan needed</div>
+        <div class="ico" style="color:var(--accent); border-color: rgba(118,185,0,.35); background: rgba(118,185,0,.08)">CONSUMER PATH · HMAC</div>
+        <div class="title">10 CELL bond, operator-registered key</div>
         <div class="desc">
-          Sign up at <a href="https://ngc.nvidia.com/setup">ngc.nvidia.com/setup</a> — the free
-          account issues an NGC CLI API key. You do <strong>not</strong> need NVIDIA AI Enterprise
-          or any paid subscription to run attestation. The sidecar image
-          (<code>nvcr.io/nvidia/pytorch</code>) and the NVIDIA Container Toolkit are free too.
+          On-chain enrollment via <code>POST /api/v1/mining/enroll</code> (<code>qsdm/enroll/v1</code>
+          contract). Your registered key signs a bundle of CUDA device properties on every proof, and
+          each proof binds to a fresh validator-signed challenge nonce (60 s freshness window).
+          Forged / replayed / stale proofs are slashable — the 10 CELL bond is your skin in the game.
         </div>
       </div>
       <div class="pillar">
-        <div class="ico">TRANSPARENCY BADGE</div>
-        <div class="title">Appear on the public trust page</div>
+        <div class="ico">DATACENTER PATH · CC</div>
+        <div class="title">No bond, AIK-signed hardware quote</div>
         <div class="desc">
-          Attested nodes show up on <a href="/trust.html">qsdm.tech/trust</a> with a coarse
-          region + GPU-arch signal — a cryptographic statement tying your node to real silicon.
-          Non-attested nodes stay first-class on the network; the badge is a signal, not a gate.
+          Hopper/Blackwell in Confidential-Compute mode sign attestation quotes with a hardware-rooted
+          AIK. The validator verifies the quote chain against NVIDIA's root; no operator bond is
+          required because the trust anchor is the silicon itself. Consumer GPUs do not support CC.
         </div>
       </div>
       <div class="pillar">
@@ -766,7 +787,7 @@
         <div class="desc">
           <code>pkg/mesh3d/cuda.go</code> links <code>libmesh3d_kernels.so</code>, compiled with
           <code>nvcc</code> in the miner Dockerfile and built by CI on every <code>main</code>
-          commit. Other vendors are welcome — they will require a community port.
+          commit. Tensor-Core PoW re-tuning is the next tier of v2 work.
         </div>
       </div>
     </div>
@@ -779,7 +800,8 @@
     <div class="cta-row" style="margin-top:14px">
       <a class="btn btn-primary" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/OPERATOR_GUIDE.md">End-to-end operator guide</a>
       <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">MINER_QUICKSTART.md</a>
-      <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL.md">Mining protocol spec</a>
+      <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL_V2_NVIDIA_LOCKED.md">v2 protocol spec</a>
+      <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL.md">v1 protocol spec</a>
       <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/CELL_TOKENOMICS.md">Tokenomics</a>
     </div>
   </div>
@@ -794,11 +816,11 @@
     <h2>Run a validator — VPS-class, CPU-only.</h2>
     <p class="lead">
       Validators are the consensus tier. They run Proof-of-Entanglement + BFT on CPU-only VPS-class
-      hardware and earn transaction fees. <strong>No GPU is required — now or after the mining layer
-      ships.</strong> Startup guards in the validator build refuse to boot if mining is mistakenly
-      enabled, so a validator operator never has to reason about GPU drivers, CUDA, or thermal budgets.
-      NGC attestation is available if you want a transparency badge, but it is <strong>not</strong>
-      required to participate in consensus and does not affect block validity.
+      hardware and earn transaction fees. <strong>No GPU is required</strong> — the NVIDIA lock applies
+      to the mining emission layer, not to consensus. Startup guards in the validator build refuse to
+      boot if mining is mistakenly enabled, so a validator operator never has to reason about GPU drivers,
+      CUDA, or thermal budgets. NGC attestation is available if you want a transparency badge, but it
+      is <strong>not</strong> required to participate in consensus and does not affect block validity.
     </p>
     <div class="pillars" style="grid-template-columns: 1fr 1fr 1fr;">
       <div class="pillar">
@@ -1066,12 +1088,64 @@
     <p class="lead" style="margin-top:28px;">
       <strong style="color:var(--text);">After Phase 3:</strong> the in-repo arc continued with the
       Major Update — a rebrand to plain <em>QSDM</em>, the native coin <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/CELL_TOKENOMICS.md"><strong>Cell (CELL)</strong></a>,
-      a CPU reference miner under
+      a reference miner under
       <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL.md">MINING_PROTOCOL.md</a>,
       and the <a href="/trust.html">attestation transparency</a> surface with external CI and Prometheus
-      enforcement. Code for all five extension phases is landed; remaining mainnet gates are
-      wall-clock events owned outside the repo (counsel, independent auditor, incentivized testnet
-      launch) and are tracked in
+      enforcement.
+    </p>
+    <p class="lead" style="margin-top:14px;">
+      <strong style="color:var(--text);">v2 NVIDIA-locked protocol (landed):</strong> every accepted
+      mining proof now carries an NVIDIA attestation (<code>nvidia-cc-v1</code> or
+      <code>nvidia-hmac-v1</code>), miners enroll on-chain with a 10 CELL stake bond
+      (<code>qsdm/enroll/v1</code>), validators mint challenge nonces with a 60-second freshness window,
+      and forged / replayed / stale proofs are slashable via <code>qsdm/slash/v1</code>. The
+      reference miner client (<code>pkg/mining/v2client</code>) ships in-tree and is wired into
+      <code>qsdmminer-console</code>. Two concrete slashers are
+      <strong>active</strong>: the <em>forged-attestation</em> verifier
+      (<code>pkg/mining/slashing/forgedattest</code>) re-runs the <code>nvidia-hmac-v1</code>
+      acceptance flow against the enrollment registry and drains the offender's bond on
+      HMAC mismatch, GPU-UUID mismatch, challenge-bind mismatch, or deny-listed-GPU offences;
+      the <em>double-mining</em> verifier (<code>pkg/mining/slashing/doublemining</code>) drains
+      the bond of any operator caught signing two distinct, crypto-valid v2 proofs at the same
+      <code>(epoch, height)</code> (the encoder canonicalises pair order so the chain-side
+      replay protection treats <em>(a, b)</em> and <em>(b, a)</em> as the same offence).
+      And any successful slash that leaves the offender's stake below the 10 CELL enrollment
+      minimum now <strong>auto-revokes</strong> the record into the standard 7-day unbond
+      window with the <code>gpu_uuid</code> binding released for re-enrollment — closing the
+      "slash-to-zero, keep mining for free" loophole at the chain layer
+      (<code>pkg/chain/SlashApplier.AutoRevokeMinStakeDust</code>).
+      Slashing and enrollment are now <strong>fully observable</strong>: every applied,
+      rejected, auto-revoked, and swept transition emits both a Prometheus counter
+      (<code>qsdm_slash_applied_total</code>, <code>qsdm_slash_rejected_total{reason}</code>,
+      <code>qsdm_slash_auto_revoked_total{reason}</code>, <code>qsdm_enrollment_*</code>) and a
+      structured <code>MiningSlashEvent</code> / <code>EnrollmentEvent</code> on the
+      <code>chain.ChainEventPublisher</code> bus, with point-in-time gauges
+      (<code>qsdm_enrollment_active_count</code>, <code>qsdm_enrollment_bonded_dust</code>,
+      <code>qsdm_enrollment_pending_unbond_count</code>) backed by an
+      <code>EnrollmentStateProvider</code> that walks the on-chain registry under one mutex
+      acquisition per scrape. The seam between <code>pkg/chain</code> and
+      <code>pkg/monitoring</code> is dependency-inverted (<code>chain.MetricsRecorder</code>),
+      so binaries that omit monitoring pay zero overhead and the historical import cycle
+      that kept slashing under-instrumented is closed.
+      All of this is now <strong>actually wired into the production binary</strong>:
+      <code>cmd/qsdm/main.go</code> calls <code>internal/v2wiring.Wire(...)</code> at boot,
+      which constructs the on-chain enrollment state, the <code>EnrollmentApplier</code>,
+      the production slash dispatcher + <code>SlashApplier</code>, the mempool admission
+      gate, the HTTP <code>/api/v1/mining/{enroll,unenroll}</code> handlers, and the four
+      <code>qsdm_enrollment_*</code> Prometheus gauges in one ordered call &mdash;
+      backed by a 10-test integration suite that mirrors the production wiring shape and
+      catches any drift between <code>main.go</code> and the chain contracts before a
+      regression reaches mainnet. Pre-this commit, every collaborator above was code
+      without a caller in any production binary; <code>grep NewEnrollmentApplier
+      cmd/qsdm/main.go</code> returned zero matches. The Tier-3 milestone is meaningful
+      now because the surface is alive in the binary, not just under <code>go test</code>.
+      Remaining Tier-3 scope (concrete CC verifier backend, Tensor-Core PoW re-tuning, and
+      the <em>freshness-cheat</em> slasher pending BFT-finality) is tracked in
+      <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL_V2_TIER3_SCOPE.md">MINING_PROTOCOL_V2_TIER3_SCOPE.md</a>.
+    </p>
+    <p class="lead" style="margin-top:14px;">
+      Remaining mainnet gates are wall-clock events owned outside the repo (counsel, independent auditor,
+      incentivized testnet launch) and are tracked in
       <a href="https://github.com/blackbeardONE/QSDM/blob/main/NEXT_STEPS.md">NEXT_STEPS.md</a>.
     </p>
   </div>

@@ -73,7 +73,7 @@ func TestPrometheusExporter_Render(t *testing.T) {
 }
 
 func TestPrometheus_RegisterStrictPanicsOnTypeConflict(t *testing.T) {
-	t.Setenv("QSDMPLUS_METRICS_REGISTER_STRICT", "1")
+	t.Setenv("QSDM_METRICS_REGISTER_STRICT", "1")
 	pe := NewPrometheusExporter()
 	pe.RegisterCollector("a", func() []Metric {
 		return []Metric{{Name: "strict_dup", Type: MetricGauge, Value: 1}}
@@ -89,7 +89,7 @@ func TestPrometheus_RegisterStrictPanicsOnTypeConflict(t *testing.T) {
 }
 
 func TestPrometheus_RenderSkipsConflictingMetricTypes(t *testing.T) {
-	t.Setenv("QSDMPLUS_METRICS_REGISTER_STRICT", "0")
+	t.Setenv("QSDM_METRICS_REGISTER_STRICT", "0")
 	pe := NewPrometheusExporter()
 	pe.RegisterCollector("c1", func() []Metric {
 		return []Metric{{Name: "dup_metric", Help: "as gauge", Type: MetricGauge, Value: 1}}

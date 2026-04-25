@@ -12,11 +12,11 @@ go version
 echo.
 echo Building...
 set CGO_ENABLED=0
-go build -o qsdmplus.exe ./cmd/qsdmplus
+go build -o qsdm.exe ./cmd/qsdm
 
 if %ERRORLEVEL% EQU 0 (
     echo.
-    echo Build successful! Executable: qsdmplus.exe
+    echo Build successful! Executable: qsdm.exe
     echo.
     echo Note: This build does not include:
     echo   - WASM module support

@@ -13,7 +13,7 @@ else
 	echo "==> govulncheck (set SKIP_GOVULNCHECK=1 to skip)"
 	export CGO_ENABLED=0
 	unset CGO_CFLAGS CGO_LDFLAGS 2>/dev/null || true
-	export QSDMPLUS_METRICS_REGISTER_STRICT=1
+	export QSDM_METRICS_REGISTER_STRICT=1
 	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 fi
 

@@ -55,7 +55,7 @@ func NewPrometheusExporter() *PrometheusExporter {
 }
 
 func metricsRegisterStrict() bool {
-	return envcompat.Truthy("QSDM_METRICS_REGISTER_STRICT", "QSDMPLUS_METRICS_REGISTER_STRICT")
+	return envcompat.Truthy("QSDM_METRICS_REGISTER_STRICT", "QSDM_METRICS_REGISTER_STRICT")
 }
 
 func (pe *PrometheusExporter) noteCanonMetric(name string, t MetricType) {
@@ -176,16 +176,9 @@ func sortedLabelKeys(m map[string]string) []string {
 
 // Render outputs all metrics in Prometheus text exposition format.
 //
-// Metric names are passed through the prefix-migration emitter (see
-// prometheus_prefix_migration.go) so that every qsdmplus_* metric is
-// also exposed under qsdm_* (and vice versa) during the rebrand
-// deprecation window. The legacy emission can be suppressed per-node
-// via QSDM_METRICS_EMIT_LEGACY=0 once the operator's scrapers have
-// been cut over.
+// All metrics are emitted under the canonical qsdm_* prefix.
 func (pe *PrometheusExporter) Render() string {
-	mode := ReadMetricPrefixMode()
-	metrics := DualEmit(pe.Collect(), mode)
-	metrics = append(metrics, prefixModeSelfObservability(mode)...)
+	metrics := pe.Collect()
 	sort.Slice(metrics, func(i, j int) bool {
 		return metrics[i].Name < metrics[j].Name
 	})

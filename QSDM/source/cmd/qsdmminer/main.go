@@ -107,7 +107,7 @@ func main() {
 	fmt.Fprintln(os.Stderr, "┌─────────────────────────────────────────────────────────────────────┐")
 	fmt.Fprintln(os.Stderr, "│  qsdmminer: NVIDIA-lock pivot in progress                           │")
 	fmt.Fprintln(os.Stderr, "│  Once the v2 protocol activates (see                                │")
-	fmt.Fprintln(os.Stderr, "│  nvidia_locked_qsdmplus_blockchain_architecture.md), CPU proofs     │")
+	fmt.Fprintln(os.Stderr, "│  nvidia_locked_qsdm_blockchain_architecture.md), CPU proofs     │")
 	fmt.Fprintln(os.Stderr, "│  will NOT be accepted on mainnet. Binary kept for testnet/replay.   │")
 	fmt.Fprintln(os.Stderr, "└─────────────────────────────────────────────────────────────────────┘")
 

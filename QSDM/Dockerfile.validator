@@ -51,7 +51,7 @@ RUN cd source && CGO_ENABLED=1 \
     CGO_CFLAGS="-I/usr/local/include" \
     CGO_LDFLAGS="-L/usr/local/lib -loqs -lssl -lcrypto" \
     go build -tags validator_only \
-        -o ../qsdm-validator ./cmd/qsdmplus
+        -o ../qsdm-validator ./cmd/qsdm
 
 # ---- runtime stage ---------------------------------------------------------
 FROM alpine:latest
@@ -66,10 +66,10 @@ RUN apk update && apk add --no-cache \
 COPY --from=builder /usr/local/lib/liboqs.so* /usr/local/lib/
 COPY --from=builder /app/qsdm-validator /usr/local/bin/qsdm-validator
 
-# Legacy-name symlink so existing orchestration that runs `qsdmplus` still
+# Legacy-name symlink so existing orchestration that runs `qsdm` still
 # works during the deprecation window; see REBRAND_NOTES.md.
 RUN ln -s /usr/local/bin/qsdm-validator /usr/local/bin/qsdm && \
-    ln -s /usr/local/bin/qsdm-validator /usr/local/bin/qsdmplus
+    ln -s /usr/local/bin/qsdm-validator /usr/local/bin/qsdm
 
 WORKDIR /app
 

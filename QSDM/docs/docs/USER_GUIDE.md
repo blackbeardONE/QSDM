@@ -1,4 +1,4 @@
-# QSDM+ User Guide
+# QSDM User Guide
 
 **Last Updated:** 2025-01-27
 
@@ -18,7 +18,7 @@
 
 ## Introduction
 
-**QSDM+** (Quantum-Secure Dynamic Mesh Ledger) is a decentralized electronic cash system that uses quantum-safe cryptography and a dynamic mesh architecture for transaction processing.
+**QSDM** (Quantum-Secure Dynamic Mesh Ledger) is a decentralized electronic cash system that uses quantum-safe cryptography and a dynamic mesh architecture for transaction processing.
 
 ### Key Features
 
@@ -40,7 +40,7 @@ See `QUICK_START.md` for installation instructions.
 
 1. Start the node:
    ```bash
-   ./qsdmplus
+   ./qsdm
    ```
 
 2. Access the dashboard:
@@ -211,7 +211,7 @@ http://localhost:8080
 ```
 
 **Log File:**
-- Location: `qsdmplus.log`
+- Location: `qsdm.log`
 - Rotation: Automatic (100MB max, 7 backups)
 
 ---
@@ -246,7 +246,7 @@ http://localhost:8080
 ### Storage Options
 
 **SQLite (Default):**
-- File: `qsdmplus.db`
+- File: `qsdm.db`
 - WAL mode enabled
 - Automatic compression
 

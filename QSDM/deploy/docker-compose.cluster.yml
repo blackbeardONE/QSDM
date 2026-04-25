@@ -1,5 +1,5 @@
-# QSDM+ Multi-Node Cluster Deployment
-# This compose file sets up a 3-node QSDM+ cluster for testing and development
+# QSDM Multi-Node Cluster Deployment
+# This compose file sets up a 3-node QSDM cluster for testing and development
 
 services:
   # Node 1 - Bootstrap node
@@ -25,8 +25,8 @@ services:
       - DASHBOARD_PORT=8081
       - LOG_VIEWER_PORT=9000
       - STORAGE_TYPE=sqlite
-      - SQLITE_PATH=/app/data/qsdmplus.db
-      - LOG_FILE=/app/logs/qsdmplus.log
+      - SQLITE_PATH=/app/data/qsdm.db
+      - LOG_FILE=/app/logs/qsdm.log
       - LOG_LEVEL=INFO
       - BOOTSTRAP_PEERS=
       - ENABLE_TLS=false
@@ -63,8 +63,8 @@ services:
       - DASHBOARD_PORT=8081
       - LOG_VIEWER_PORT=9000
       - STORAGE_TYPE=sqlite
-      - SQLITE_PATH=/app/data/qsdmplus.db
-      - LOG_FILE=/app/logs/qsdmplus.log
+      - SQLITE_PATH=/app/data/qsdm.db
+      - LOG_FILE=/app/logs/qsdm.log
       - LOG_LEVEL=INFO
       - BOOTSTRAP_PEERS=qsdm-node1:4001
       - ENABLE_TLS=false
@@ -103,8 +103,8 @@ services:
       - DASHBOARD_PORT=8081
       - LOG_VIEWER_PORT=9000
       - STORAGE_TYPE=sqlite
-      - SQLITE_PATH=/app/data/qsdmplus.db
-      - LOG_FILE=/app/logs/qsdmplus.log
+      - SQLITE_PATH=/app/data/qsdm.db
+      - LOG_FILE=/app/logs/qsdm.log
       - LOG_LEVEL=INFO
       - BOOTSTRAP_PEERS=qsdm-node1:4001,qsdm-node2:4001
       - ENABLE_TLS=false

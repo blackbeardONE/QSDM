@@ -32,7 +32,7 @@ func TestNvidiaLockP2PGate_enabledNoProofBlocks(t *testing.T) {
 func TestNvidiaLockP2PGate_enabledWithGPUProofAllows(t *testing.T) {
 	ResetNGCProofsForTest()
 	payload := map[string]interface{}{
-		"architecture":    "NVIDIA-Locked QSDM+ test",
+		"architecture":    "NVIDIA-Locked QSDM test",
 		"cuda_proof_hash": "cafe",
 		"gpu_fingerprint": map[string]interface{}{"available": true},
 	}
@@ -49,7 +49,7 @@ func TestNvidiaLockP2PGate_enabledWithGPUProofAllows(t *testing.T) {
 func TestNvidiaLockP2PGate_nonConsuming(t *testing.T) {
 	ResetNGCProofsForTest()
 	payload := map[string]interface{}{
-		"architecture":    "NVIDIA-Locked QSDM+ test",
+		"architecture":    "NVIDIA-Locked QSDM test",
 		"cuda_proof_hash": "beef",
 		"gpu_fingerprint": map[string]interface{}{"available": true},
 	}

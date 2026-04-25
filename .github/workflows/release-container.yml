@@ -6,18 +6,18 @@
 # profiles, and later phases added the external scraper (trustcheck)
 # and the genesis-ceremony dry-run tool. Every one of those needs a
 # predictable, signable release artefact — not only the legacy
-# qsdmplus node image.
+# qsdm node image.
 #
 # Artefact layout per tag:
 #
 #   Container images (pushed to GHCR):
-#     ghcr.io/<owner>/qsdmplus:<semver>      — legacy name, Dockerfile
+#     ghcr.io/<owner>/qsdm:<semver>      — legacy name, Dockerfile
 #     ghcr.io/<owner>/qsdm-validator:<semver> — CPU-only validator image
 #     ghcr.io/<owner>/qsdm-miner:<semver>     — GPU miner image (CUDA / NVIDIA)
 #
 # NOTE: the short-lived `qsdm-miner-console` image (CPU-only, distroless)
 # has been retired as part of the NVIDIA-lock pivot; see
-# nvidia_locked_qsdmplus_blockchain_architecture.md and the deprecation
+# nvidia_locked_qsdm_blockchain_architecture.md and the deprecation
 # banner in cmd/qsdmminer-console/main.go.
 #
 #   Binaries (attached to the GitHub Release as assets):
@@ -260,7 +260,7 @@ jobs:
   # Container images.
   # ---------------------------------------------------------------------------
   ghcr-legacy:
-    name: ghcr qsdmplus (legacy image name)
+    name: ghcr qsdm (legacy image name)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -275,17 +275,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker meta (qsdmplus legacy)
+      - name: Docker meta (qsdm legacy)
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/qsdmplus
+          images: ghcr.io/${{ github.repository_owner }}/qsdm
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
 
-      - name: Build and push (legacy qsdmplus name)
+      - name: Build and push (legacy qsdm name)
         uses: docker/build-push-action@v6
         with:
           context: QSDM
@@ -293,8 +293,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=qsdmplus
-          cache-to: type=gha,mode=max,scope=qsdmplus
+          cache-from: type=gha,scope=qsdm
+          cache-to: type=gha,mode=max,scope=qsdm
 
   ghcr-validator:
     name: ghcr qsdm-validator (CPU-only)

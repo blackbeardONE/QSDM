@@ -114,15 +114,15 @@ func TestApplyEnvOverrides_Trust(t *testing.T) {
 	}
 }
 
-func TestApplyEnvOverrides_Trust_LegacyQSDMPLUSAlias(t *testing.T) {
-	// The env override path must still accept the legacy QSDMPLUS_*
+func TestApplyEnvOverrides_Trust_LegacyQSDMAlias(t *testing.T) {
+	// The env override path must still accept the legacy QSDM_*
 	// names during the rebrand deprecation window, matching every other
 	// knob in this package.
-	t.Setenv("QSDMPLUS_TRUST_DISABLED", "true")
+	t.Setenv("QSDM_TRUST_DISABLED", "true")
 	cfg := &Config{}
 	applyEnvOverrides(cfg)
 	if !cfg.TrustEndpointsDisabled {
-		t.Fatal("QSDMPLUS_TRUST_DISABLED=true should disable trust endpoints (legacy alias)")
+		t.Fatal("QSDM_TRUST_DISABLED=true should disable trust endpoints (legacy alias)")
 	}
 }
 

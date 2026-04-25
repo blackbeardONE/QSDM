@@ -20,7 +20,7 @@ const (
 // ReportOptions tunes the generated audit report.
 type ReportOptions struct {
 	Format       ReportFormat // default: ReportMarkdown
-	Title        string       // default: "QSDM+ Security Audit Report"
+	Title        string       // default: "QSDM Security Audit Report"
 	GeneratedAt  time.Time    // default: time.Now()
 	IncludeNotes bool         // if true, reviewer notes are included verbatim
 }
@@ -31,7 +31,7 @@ func (cl *Checklist) Report(w io.Writer, opts ReportOptions) error {
 		opts.Format = ReportMarkdown
 	}
 	if opts.Title == "" {
-		opts.Title = "QSDM+ Security Audit Report"
+		opts.Title = "QSDM Security Audit Report"
 	}
 	if opts.GeneratedAt.IsZero() {
 		opts.GeneratedAt = time.Now().UTC()

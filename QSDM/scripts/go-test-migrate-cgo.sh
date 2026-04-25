@@ -15,7 +15,7 @@ if [ -d "$LIB_ROOT/lib64" ]; then L="$LIB_ROOT/lib64"; else L="$LIB_ROOT/lib"; f
 
 unset CGO_CFLAGS CGO_LDFLAGS 2>/dev/null || true
 export CGO_ENABLED=1
-export QSDMPLUS_METRICS_REGISTER_STRICT=1
+export QSDM_METRICS_REGISTER_STRICT=1
 export CGO_CFLAGS="-I${LIB_ROOT}/include"
 export CGO_LDFLAGS="-L${L} -loqs"
 export LD_LIBRARY_PATH="${L}:${LD_LIBRARY_PATH:-}"

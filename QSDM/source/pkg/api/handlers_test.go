@@ -123,18 +123,18 @@ func setupTestHandlersNvidiaLockIngestNonce(hmacSecret string, nonceTTL time.Dur
 
 func ngcProofBundleWithHMAC(secret, cudaHash, tsUTC, nodeID, ingestNonce string) []byte {
 	m := map[string]interface{}{
-		"architecture":     "NVIDIA-Locked QSDM+ test",
+		"architecture":     "NVIDIA-Locked QSDM test",
 		"cuda_proof_hash":  cudaHash,
 		"timestamp_utc":    tsUTC,
-		"qsdmplus_node_id": nodeID,
+		"qsdm_node_id": nodeID,
 		"gpu_fingerprint":  map[string]interface{}{"available": true, "devices": []interface{}{map[string]interface{}{"name": "G", "index": "0"}}},
 	}
 	if strings.TrimSpace(ingestNonce) != "" {
-		m["qsdmplus_ingest_nonce"] = ingestNonce
+		m["qsdm_ingest_nonce"] = ingestNonce
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(monitoring.NGCProofHMACPayload(m)))
-	m["qsdmplus_proof_hmac"] = hex.EncodeToString(mac.Sum(nil))
+	m["qsdm_proof_hmac"] = hex.EncodeToString(mac.Sum(nil))
 	raw, _ := json.Marshal(m)
 	return raw
 }
@@ -354,7 +354,7 @@ func TestNvidiaLockMintMainCoin_OKWithGPUProof(t *testing.T) {
 	t.Cleanup(monitoring.ResetNGCProofsForTest)
 
 	proof := map[string]interface{}{
-		"architecture":    "NVIDIA-Locked QSDM+ test",
+		"architecture":    "NVIDIA-Locked QSDM test",
 		"cuda_proof_hash": "integration-deadbeef",
 		"gpu_fingerprint": map[string]interface{}{
 			"available": true,
@@ -388,9 +388,9 @@ func TestNvidiaLockMintMainCoin_403WrongProofNodeID(t *testing.T) {
 	t.Cleanup(monitoring.ResetNGCProofsForTest)
 
 	proof := map[string]interface{}{
-		"architecture":     "NVIDIA-Locked QSDM+ test",
+		"architecture":     "NVIDIA-Locked QSDM test",
 		"cuda_proof_hash":  "h1",
-		"qsdmplus_node_id": "other-node",
+		"qsdm_node_id": "other-node",
 		"gpu_fingerprint":  map[string]interface{}{"available": true},
 	}
 	raw, _ := json.Marshal(proof)
@@ -415,9 +415,9 @@ func TestNvidiaLockMintMainCoin_OKWithBoundNodeID(t *testing.T) {
 	t.Cleanup(monitoring.ResetNGCProofsForTest)
 
 	proof := map[string]interface{}{
-		"architecture":     "NVIDIA-Locked QSDM+ test",
+		"architecture":     "NVIDIA-Locked QSDM test",
 		"cuda_proof_hash":  "h2",
-		"qsdmplus_node_id": "prod-validator-1",
+		"qsdm_node_id": "prod-validator-1",
 		"gpu_fingerprint":  map[string]interface{}{"available": true, "devices": []interface{}{map[string]interface{}{"name": "T", "index": "0"}}},
 	}
 	raw, _ := json.Marshal(proof)
@@ -442,7 +442,7 @@ func TestNvidiaLockMintMainCoin_403WithoutHMACWhenRequired(t *testing.T) {
 	t.Cleanup(monitoring.ResetNGCProofsForTest)
 
 	proof := map[string]interface{}{
-		"architecture":    "NVIDIA-Locked QSDM+ test",
+		"architecture":    "NVIDIA-Locked QSDM test",
 		"cuda_proof_hash": "no-hmac",
 		"timestamp_utc":   "2026-04-01T12:00:00+00:00",
 		"gpu_fingerprint": map[string]interface{}{"available": true},
@@ -561,7 +561,7 @@ func TestNGCIngestChallenge_okWhenEnabled(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatal(err)
 	}
-	ns, _ := resp["qsdmplus_ingest_nonce"].(string)
+	ns, _ := resp["qsdm_ingest_nonce"].(string)
 	if ns == "" {
 		t.Fatalf("missing nonce: %#v", resp)
 	}
@@ -630,7 +630,7 @@ func TestSendTransaction_meshCompanionSecondBroadcast(t *testing.T) {
 	if err != nil {
 		t.Skip("wallet requires CGO / Dilithium")
 	}
-	t.Setenv("QSDMPLUS_PUBLISH_MESH_COMPANION", "1")
+	t.Setenv("QSDM_PUBLISH_MESH_COMPANION", "1")
 	before := monitoring.MeshCompanionPublishCount()
 
 	dm := submesh.NewDynamicSubmeshManager()

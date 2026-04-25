@@ -11,12 +11,12 @@ import (
 //go:embed testdata/mldsa87_preflight_golden.json
 var mldsa87PreflightGoldenJSON []byte
 
-// TestTryPreflightP2PTransactionJSON_rustWasmModule runs when QSDMPLUS_WASM_PREFLIGHT_MODULE points at
+// TestTryPreflightP2PTransactionJSON_rustWasmModule runs when QSDM_WASM_PREFLIGHT_MODULE points at
 // wasm_module.wasm (see QSDM/scripts/build-wasm-module.sh). CI sets this after `cargo build`.
 func TestTryPreflightP2PTransactionJSON_rustWasmModule(t *testing.T) {
-	path := strings.TrimSpace(os.Getenv("QSDMPLUS_WASM_PREFLIGHT_MODULE"))
+	path := strings.TrimSpace(os.Getenv("QSDM_WASM_PREFLIGHT_MODULE"))
 	if path == "" {
-		t.Skip("QSDMPLUS_WASM_PREFLIGHT_MODULE not set")
+		t.Skip("QSDM_WASM_PREFLIGHT_MODULE not set")
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Skip("wasm module not found:", path, err)

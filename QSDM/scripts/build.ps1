@@ -177,7 +177,7 @@ Start-Sleep -Seconds 1
 # Use -ldflags to increase stack size (fixes stack overflow during CGO init)
 # Increased to 32MB to handle OpenSSL DLL initialization
 Write-Host "Compiling with CGO..." -ForegroundColor Cyan
-go build -mod=mod -ldflags "-extldflags=-Wl,--stack,33554432" -o qsdmplus.exe ./cmd/qsdmplus
+go build -mod=mod -ldflags "-extldflags=-Wl,--stack,33554432" -o qsdm.exe ./cmd/qsdm
 
 # After build, copy required DLLs to executable directory if needed
 Write-Host ""
@@ -313,7 +313,7 @@ if ($cudaFound) {
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host ""
-    Write-Host "Build successful! Executable: qsdmplus.exe" -ForegroundColor Green
+    Write-Host "Build successful! Executable: qsdm.exe" -ForegroundColor Green
     Write-Host ""
     Write-Host "Features enabled:" -ForegroundColor Green
     if ($liboqsFound) {
@@ -331,7 +331,7 @@ if ($LASTEXITCODE -eq 0) {
         Write-Host "  ⚠️  3D mesh (CPU-based, CUDA not available)"
     }
     Write-Host ""
-    Write-Host "You can now run: .\qsdmplus.exe" -ForegroundColor Cyan
+    Write-Host "You can now run: .\qsdm.exe" -ForegroundColor Cyan
 } else {
     Write-Host ""
     Write-Host "Build failed." -ForegroundColor Red

@@ -1,4 +1,4 @@
-# Feature Summary of Quantum-Secure Dynamic Mesh Ledger (QSDM+)
+# Feature Summary of Quantum-Secure Dynamic Mesh Ledger (QSDM)
 
 - **Quantum-Safe Cryptography:** Utilizes CRYSTALS-Dilithium for quantum-resistant digital signatures.
 - **Modular Architecture:** Developed in phases with clear separation of concerns for networking, consensus, storage, and governance.
@@ -15,4 +15,4 @@
 - **Hardware-Agnostic Design:** Optimized for a range of hardware configurations without AI/ML dependencies.
 - **Scalable and Extensible:** Designed to evolve through phases, adding scalability, self-healing, and advanced security features.
 
-This feature set positions QSDM+ as a secure, scalable, and transparent decentralized ledger system resistant to quantum attacks and suitable for diverse hardware environments.
+This feature set positions QSDM as a secure, scalable, and transparent decentralized ledger system resistant to quantum attacks and suitable for diverse hardware environments.

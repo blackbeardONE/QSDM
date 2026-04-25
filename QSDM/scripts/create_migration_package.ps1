@@ -69,17 +69,17 @@ if (Test-Path "database_exports") {
 }
 
 # Also copy production databases
-if (Test-Path "qsdmplus.db") {
-    Copy-Item -Path "qsdmplus.db" -Destination "$packageDir\databases\" -Force
-    Write-Host "  Copied: qsdmplus.db" -ForegroundColor Gray
+if (Test-Path "qsdm.db") {
+    Copy-Item -Path "qsdm.db" -Destination "$packageDir\databases\" -Force
+    Write-Host "  Copied: qsdm.db" -ForegroundColor Gray
 }
-if (Test-Path "qsdmplus.db-wal") {
-    Copy-Item -Path "qsdmplus.db-wal" -Destination "$packageDir\databases\" -Force
-    Write-Host "  Copied: qsdmplus.db-wal" -ForegroundColor Gray
+if (Test-Path "qsdm.db-wal") {
+    Copy-Item -Path "qsdm.db-wal" -Destination "$packageDir\databases\" -Force
+    Write-Host "  Copied: qsdm.db-wal" -ForegroundColor Gray
 }
-if (Test-Path "qsdmplus.db-shm") {
-    Copy-Item -Path "qsdmplus.db-shm" -Destination "$packageDir\databases\" -Force
-    Write-Host "  Copied: qsdmplus.db-shm" -ForegroundColor Gray
+if (Test-Path "qsdm.db-shm") {
+    Copy-Item -Path "qsdm.db-shm" -Destination "$packageDir\databases\" -Force
+    Write-Host "  Copied: qsdm.db-shm" -ForegroundColor Gray
 }
 if (Test-Path "transactions.db") {
     Copy-Item -Path "transactions.db" -Destination "$packageDir\databases\" -Force
@@ -196,8 +196,8 @@ echo "Importing databases..."
 if [ -f "databases/qsdm_*.sql" ]; then
     DB_FILE=`ls databases/qsdm_*.sql | head -1`
     echo "Importing main database from `$DB_FILE..."
-    sqlite3 databases/qsdmplus.db < `$DB_FILE
-    chmod 644 databases/qsdmplus.db
+    sqlite3 databases/qsdm.db < `$DB_FILE
+    chmod 644 databases/qsdm.db
 fi
 
 if [ -f "databases/transactions_*.sql" ]; then
@@ -208,9 +208,9 @@ if [ -f "databases/transactions_*.sql" ]; then
 fi
 
 # Or copy binary databases if SQL dumps don't exist
-if [ ! -f "databases/qsdmplus.db" ] && [ -f "databases/qsdmplus.db" ]; then
+if [ ! -f "databases/qsdm.db" ] && [ -f "databases/qsdm.db" ]; then
     echo "Copying binary database files..."
-    cp databases/qsdmplus.db* . 2>/dev/null || true
+    cp databases/qsdm.db* . 2>/dev/null || true
     cp databases/transactions.db . 2>/dev/null || true
     chmod 644 *.db* 2>/dev/null || true
 fi
@@ -221,7 +221,7 @@ echo ""
 # Build the project
 echo "Building QSDM..."
 cd source
-go build -o ../qsdmplus ./cmd/qsdmplus
+go build -o ../qsdm ./cmd/qsdm
 cd ..
 echo "Build complete"
 echo ""
@@ -234,10 +234,10 @@ else
     echo "✗ QSDM binary not found"
 fi
 
-if [ -f "databases/qsdmplus.db" ] || [ -f "qsdmplus.db" ]; then
+if [ -f "databases/qsdm.db" ] || [ -f "qsdm.db" ]; then
     echo "✓ Database files present"
     if command -v sqlite3 >/dev/null 2>&1; then
-        TX_COUNT=`sqlite3 databases/qsdmplus.db "SELECT COUNT(*) FROM transactions;" 2>/dev/null || sqlite3 qsdmplus.db "SELECT COUNT(*) FROM transactions;" 2>/dev/null || echo "0"`
+        TX_COUNT=`sqlite3 databases/qsdm.db "SELECT COUNT(*) FROM transactions;" 2>/dev/null || sqlite3 qsdm.db "SELECT COUNT(*) FROM transactions;" 2>/dev/null || echo "0"`
         echo "  Transactions in database: `$TX_COUNT"
     fi
 else
@@ -249,7 +249,7 @@ echo "=== Setup Complete ==="
 echo ""
 echo "Next steps:"
 echo "1. Review and update configuration files in config/"
-echo "2. Test the installation: ./qsdmplus --help"
+echo "2. Test the installation: ./qsdm --help"
 echo "3. Start the service as needed"
 echo ""
 "@
@@ -306,7 +306,7 @@ Write-Host "Importing databases..." -ForegroundColor Yellow
 if (`$dbFiles) {
     `$dbFile = `$dbFiles[0].FullName
     Write-Host "  Importing main database from `$dbFile..." -ForegroundColor Gray
-    sqlite3 databases\qsdmplus.db < `$dbFile
+    sqlite3 databases\qsdm.db < `$dbFile
 }
 
 `$txFiles = Get-ChildItem -Path "databases" -Filter "transactions_*.sql"
@@ -317,9 +317,9 @@ if (`$txFiles) {
 }
 
 # Or copy binary databases
-if (-not (Test-Path "databases\qsdmplus.db") -and (Test-Path "databases\qsdmplus.db")) {
+if (-not (Test-Path "databases\qsdm.db") -and (Test-Path "databases\qsdm.db")) {
     Write-Host "  Copying binary database files..." -ForegroundColor Gray
-    Copy-Item -Path "databases\qsdmplus.db*" -Destination "." -Force
+    Copy-Item -Path "databases\qsdm.db*" -Destination "." -Force
     Copy-Item -Path "databases\transactions.db" -Destination "." -Force -ErrorAction SilentlyContinue
 }
 
@@ -329,20 +329,20 @@ Write-Host ""
 # Build the project
 Write-Host "Building QSDM..." -ForegroundColor Yellow
 Set-Location source
-go build -o ..\qsdmplus.exe .\cmd\qsdmplus
+go build -o ..\qsdm.exe .\cmd\qsdm
 Set-Location ..
 Write-Host "Build complete" -ForegroundColor Green
 Write-Host ""
 
 # Verify installation
 Write-Host "Verifying installation..." -ForegroundColor Yellow
-if (Test-Path "qsdmplus.exe") {
+if (Test-Path "qsdm.exe") {
     Write-Host "  QSDM binary created successfully" -ForegroundColor Green
 } else {
     Write-Host "  QSDM binary not found" -ForegroundColor Red
 }
 
-if ((Test-Path "databases\qsdmplus.db") -or (Test-Path "qsdmplus.db")) {
+if ((Test-Path "databases\qsdm.db") -or (Test-Path "qsdm.db")) {
     Write-Host "  Database files present" -ForegroundColor Green
 } else {
     Write-Host "  Database files not found" -ForegroundColor Red
@@ -353,7 +353,7 @@ Write-Host "=== Setup Complete ===" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "1. Review and update configuration files in config\" -ForegroundColor White
-Write-Host "2. Test the installation: .\qsdmplus.exe --help" -ForegroundColor White
+Write-Host "2. Test the installation: .\qsdm.exe --help" -ForegroundColor White
 Write-Host "3. Start the service as needed" -ForegroundColor White
 Write-Host ""
 "@
@@ -410,7 +410,7 @@ Manual Setup:
 
 3. Build the project:
    - cd source
-   - go build -o ../qsdmplus ./cmd/qsdmplus
+   - go build -o ../qsdm ./cmd/qsdm
 
 4. Configure:
    - Review config/ directory

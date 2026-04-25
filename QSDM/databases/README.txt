@@ -10,7 +10,7 @@ Files:
    - Main QSDM database
    - Contains transactions, balances, and system data
    - If .db file: Binary copy - use sqlite3 to export on target server
-   - If .sql file: SQL dump - can be imported with: sqlite3 qsdmplus.db < qsdm_20251225_182540.sql
+   - If .sql file: SQL dump - can be imported with: sqlite3 qsdm.db < qsdm_20251225_182540.sql
 
 2. transactions_20251225_182540.sql (or .db)
    - Transactions database (if separate)
@@ -27,7 +27,7 @@ Import Instructions:
 On the target server:
 
 1. If you have .sql files:
-   sqlite3 qsdmplus.db < qsdm_20251225_182540.sql
+   sqlite3 qsdm.db < qsdm_20251225_182540.sql
    sqlite3 transactions.db < transactions_20251225_182540.sql
 
 2. If you have .db files (binary copies):
@@ -36,11 +36,11 @@ On the target server:
    - SQLite will automatically use them
 
 3. Set proper permissions:
-   chmod 644 qsdmplus.db transactions.db
+   chmod 644 qsdm.db transactions.db
 
 4. Verify the import:
-   sqlite3 qsdmplus.db "SELECT COUNT(*) FROM transactions;"
-   sqlite3 qsdmplus.db "SELECT COUNT(*) FROM balances;"
+   sqlite3 qsdm.db "SELECT COUNT(*) FROM transactions;"
+   sqlite3 qsdm.db "SELECT COUNT(*) FROM balances;"
 
 Notes:
 ------

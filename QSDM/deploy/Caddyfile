@@ -1,4 +1,4 @@
-# QSDM public edge — Caddy reverse proxy (historically shipped as QSDM+)
+# QSDM public edge — Caddy reverse proxy (historically shipped as QSDM)
 # Let's Encrypt HTTP-01/TLS-ALPN-01 requires the A/AAAA records below to point at this VPS.
 #
 # Recommended DNS records (keep root qsdm.tech on GitHub Pages untouched):
@@ -18,7 +18,7 @@
 	admin off
 }
 
-# API on :443 (reverse proxies to qsdmplus API backend on 127.0.0.1:8443).
+# API on :443 (reverse proxies to qsdm API backend on 127.0.0.1:8443).
 # NOTE: the QSDM binary listens :8080 as a log viewer (Basic Auth "admin/password")
 # and :8443 as the real JSON API (HTTP since enable_tls=false — TLS is terminated here at Caddy).
 api.qsdm.tech, node.qsdm.tech {
@@ -51,7 +51,7 @@ api.qsdm.tech, node.qsdm.tech {
 	}
 }
 
-# Dashboard on :443 (reverse proxies to qsdmplus on 127.0.0.1:8081)
+# Dashboard on :443 (reverse proxies to qsdm on 127.0.0.1:8081)
 dashboard.qsdm.tech {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:8081 {
@@ -87,7 +87,7 @@ qsdm.tech {
 	redir /app   https://dashboard.qsdm.tech/ 302
 	redir /app/* https://dashboard.qsdm.tech/ 302
 
-	# Public API pass-through (login/register/wallet/health) -> qsdmplus :8443
+	# Public API pass-through (login/register/wallet/health) -> qsdm :8443
 	@api path /api/v1/* /api/metrics /api/metrics/prometheus
 	handle @api {
 		reverse_proxy 127.0.0.1:8443 {

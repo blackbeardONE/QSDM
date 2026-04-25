@@ -5,13 +5,13 @@ What this does
 --------------
 On the target VPS (default: `api.qsdm.tech`, root over ed25519) we:
 
-  1. Create /opt/qsdmplus/ngc-sidecar/ (mode 0750) and upload
-     apps/qsdmplus-nvidia-ngc/validator_phase1.py into it.
-  2. Read the existing `QSDMPLUS_NGC_INGEST_SECRET` / `QSDM_NGC_INGEST_SECRET`
-     from the qsdmplus systemd service environment so the sidecar posts
+  1. Create /opt/qsdm/ngc-sidecar/ (mode 0750) and upload
+     apps/qsdm-nvidia-ngc/validator_phase1.py into it.
+  2. Read the existing `QSDM_NGC_INGEST_SECRET` / `QSDM_NGC_INGEST_SECRET`
+     from the qsdm systemd service environment so the sidecar posts
      with the same HMAC the ingest endpoint already trusts. The secret
      is never logged to the local shell.
-  3. Write /opt/qsdmplus/ngc-sidecar/ngc.env (mode 0600, root-owned)
+  3. Write /opt/qsdm/ngc-sidecar/ngc.env (mode 0600, root-owned)
      with that secret, the loopback ingest URL, and a free-form node-id
      label for operator bookkeeping.
   4. Install systemd units `qsdm-ngc-attest.service` (oneshot) and
@@ -24,7 +24,7 @@ On the target VPS (default: `api.qsdm.tech`, root over ed25519) we:
 Why
 ---
 The original attestation refresher is the Windows Scheduled Task on
-the operator's dev PC (apps/qsdmplus-nvidia-ngc/scripts/
+the operator's dev PC (apps/qsdm-nvidia-ngc/scripts/
 attest-from-env-file.ps1). When that PC goes offline, the trust pill
 on qsdm.tech degrades to `attested=0/N` within 15 min. This sidecar
 ensures the VPS keeps self-attesting even when no external operator
@@ -48,21 +48,21 @@ import sys
 
 import paramiko
 
-LOCAL_SIDECAR = "apps/qsdmplus-nvidia-ngc/validator_phase1.py"
+LOCAL_SIDECAR = "apps/qsdm-nvidia-ngc/validator_phase1.py"
 
 SERVICE_UNIT = """\
 [Unit]
 Description=QSDM CPU-fallback NGC attestation sidecar
-After=network-online.target qsdmplus.service
+After=network-online.target qsdm.service
 Wants=network-online.target
-Requires=qsdmplus.service
+Requires=qsdm.service
 
 [Service]
 Type=oneshot
-EnvironmentFile=/opt/qsdmplus/ngc-sidecar/ngc.env
-ExecStart=/usr/bin/python3 /opt/qsdmplus/ngc-sidecar/validator_phase1.py
+EnvironmentFile=/opt/qsdm/ngc-sidecar/ngc.env
+ExecStart=/usr/bin/python3 /opt/qsdm/ngc-sidecar/validator_phase1.py
 User=root
-WorkingDirectory=/opt/qsdmplus/ngc-sidecar
+WorkingDirectory=/opt/qsdm/ngc-sidecar
 StandardOutput=journal
 StandardError=journal
 TimeoutStartSec=90
@@ -101,7 +101,7 @@ def main() -> int:
     parser.add_argument("--user", default="root")
     parser.add_argument("--key",  default=os.path.expanduser("~/.ssh/id_ed25519"))
     parser.add_argument("--node-id", default="vps-blr1-validator",
-                        help="Free-form label (QSDMPLUS_NGC_PROOF_NODE_ID).")
+                        help="Free-form label (QSDM_NGC_PROOF_NODE_ID).")
     parser.add_argument("--report-url",
                         default="http://127.0.0.1:8443/api/v1/monitoring/ngc-proof",
                         help="POST target; default is loopback on the VPS.")
@@ -113,22 +113,22 @@ def main() -> int:
     c.connect(args.host, username=args.user, pkey=key, timeout=20, banner_timeout=20)
 
     try:
-        print("=== 1. /opt/qsdmplus/ngc-sidecar ===")
-        ssh_run(c, "mkdir -p /opt/qsdmplus/ngc-sidecar && "
-                   "chmod 0750 /opt/qsdmplus/ngc-sidecar")
+        print("=== 1. /opt/qsdm/ngc-sidecar ===")
+        ssh_run(c, "mkdir -p /opt/qsdm/ngc-sidecar && "
+                   "chmod 0750 /opt/qsdm/ngc-sidecar")
 
         print("\n=== 2. upload validator_phase1.py ===")
         sftp = c.open_sftp()
         try:
-            sftp.put(LOCAL_SIDECAR, "/opt/qsdmplus/ngc-sidecar/validator_phase1.py")
+            sftp.put(LOCAL_SIDECAR, "/opt/qsdm/ngc-sidecar/validator_phase1.py")
         finally:
             sftp.close()
-        ssh_run(c, "chmod 0755 /opt/qsdmplus/ngc-sidecar/validator_phase1.py")
+        ssh_run(c, "chmod 0755 /opt/qsdm/ngc-sidecar/validator_phase1.py")
 
         print("\n=== 3. read existing NGC ingest secret from systemd env ===")
         envline = ssh_run(c,
-            "systemctl show qsdmplus --property=Environment --value | tr ' ' '\\n' "
-            "| grep -E '^QSDMPLUS_NGC_INGEST_SECRET=|^QSDM_NGC_INGEST_SECRET='")
+            "systemctl show qsdm --property=Environment --value | tr ' ' '\\n' "
+            "| grep -E '^QSDM_NGC_INGEST_SECRET=|^QSDM_NGC_INGEST_SECRET='")
         secret = ""
         for line in envline.splitlines():
             if "=" in line:
@@ -138,28 +138,28 @@ def main() -> int:
                     break
         if not secret:
             raise SystemExit(
-                "could not find NGC_INGEST_SECRET on the qsdmplus service. "
-                "Set it in /etc/systemd/system/qsdmplus.service.d/secrets.conf "
+                "could not find NGC_INGEST_SECRET on the qsdm service. "
+                "Set it in /etc/systemd/system/qsdm.service.d/secrets.conf "
                 "first, then re-run this installer."
             )
         print(f"  got secret (len={len(secret)}, not logged)")
 
         print("\n=== 4. write ngc.env (mode 0600) ===")
         env_body = (
-            "# /opt/qsdmplus/ngc-sidecar/ngc.env — CPU-fallback NGC attestation.\n"
+            "# /opt/qsdm/ngc-sidecar/ngc.env — CPU-fallback NGC attestation.\n"
             "# Generated by QSDM/deploy/install_ngc_sidecar_vps.py.\n"
             "# Re-running the installer regenerates this file from the current\n"
-            "# qsdmplus service secret, so a rotation only needs one touch.\n"
-            f"QSDMPLUS_NGC_REPORT_URL={args.report_url}\n"
-            f"QSDMPLUS_NGC_INGEST_SECRET={secret}\n"
-            f"QSDMPLUS_NGC_PROOF_NODE_ID={args.node_id}\n"
+            "# qsdm service secret, so a rotation only needs one touch.\n"
+            f"QSDM_NGC_REPORT_URL={args.report_url}\n"
+            f"QSDM_NGC_INGEST_SECRET={secret}\n"
+            f"QSDM_NGC_PROOF_NODE_ID={args.node_id}\n"
         )
         ssh_run(c,
-            "umask 0077 && cat > /opt/qsdmplus/ngc-sidecar/ngc.env <<'QSDM_EOF_ENV'\n"
+            "umask 0077 && cat > /opt/qsdm/ngc-sidecar/ngc.env <<'QSDM_EOF_ENV'\n"
             + env_body
             + "QSDM_EOF_ENV\n"
-            "chmod 0600 /opt/qsdmplus/ngc-sidecar/ngc.env")
-        ssh_run(c, "ls -la /opt/qsdmplus/ngc-sidecar/ngc.env")
+            "chmod 0600 /opt/qsdm/ngc-sidecar/ngc.env")
+        ssh_run(c, "ls -la /opt/qsdm/ngc-sidecar/ngc.env")
 
         print("\n=== 5. install systemd units ===")
         ssh_run(c,

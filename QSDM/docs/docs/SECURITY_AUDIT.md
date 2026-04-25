@@ -1,4 +1,4 @@
-# QSDM+ Security Audit Report
+# QSDM Security Audit Report
 
 **Date:** December 2024  
 **Status:** In Progress  
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-This document outlines the security audit findings for **QSDM+** (Quantum-Secure Dynamic Mesh Ledger). The audit covers code review, vulnerability assessment, and security hardening recommendations.
+This document outlines the security audit findings for **QSDM** (Quantum-Secure Dynamic Mesh Ledger). The audit covers code review, vulnerability assessment, and security hardening recommendations.
 
 **Overall Security Posture:** ⚠️ **Needs Improvement**
 
@@ -73,7 +73,7 @@ This document outlines the security audit findings for **QSDM+** (Quantum-Secure
 
 **Severity:** 🔴 **CRITICAL** → ✅ **FIXED**
 
-**Location:** `pkg/api/validation.go`, `pkg/api/handlers.go`, `cmd/qsdmplus/transaction/transaction.go`
+**Location:** `pkg/api/validation.go`, `pkg/api/handlers.go`, `cmd/qsdm/transaction/transaction.go`
 
 **Status:** ✅ **RESOLVED**
 
@@ -94,7 +94,7 @@ This document outlines the security audit findings for **QSDM+** (Quantum-Secure
 **Files Modified:**
 - `pkg/api/validation.go` (new file)
 - `pkg/api/handlers.go` (updated with validation)
-- `cmd/qsdmplus/transaction/transaction.go` (updated with validation)
+- `cmd/qsdm/transaction/transaction.go` (updated with validation)
 
 ---
 
@@ -250,7 +250,7 @@ This document outlines the security audit findings for **QSDM+** (Quantum-Secure
 
 **Severity:** 🟡 **MEDIUM**
 
-**Location:** `pkg/api/handlers.go`, `cmd/qsdmplus/transaction/transaction.go`
+**Location:** `pkg/api/handlers.go`, `cmd/qsdm/transaction/transaction.go`
 
 **Issue:**
 - User inputs not sanitized before logging
@@ -272,7 +272,7 @@ This document outlines the security audit findings for **QSDM+** (Quantum-Secure
 
 **Severity:** 🟡 **MEDIUM**
 
-**Location:** `cmd/qsdmplus/transaction/transaction.go`
+**Location:** `cmd/qsdm/transaction/transaction.go`
 
 **Issue:**
 - Transaction amounts: No maximum limit

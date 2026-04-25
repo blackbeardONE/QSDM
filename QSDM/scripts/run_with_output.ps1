@@ -1,4 +1,4 @@
-# Run qsdmplus.exe and show output in real-time
+# Run qsdm.exe and show output in real-time
 Write-Host "Starting QSDM with real-time output..." -ForegroundColor Cyan
 Write-Host ""
 
@@ -25,14 +25,14 @@ if (Test-Path ".\libcrypto-3-x64.dll") {
 }
 
 Write-Host ""
-Write-Host "Starting qsdmplus.exe (output will appear below)..." -ForegroundColor Cyan
+Write-Host "Starting qsdm.exe (output will appear below)..." -ForegroundColor Cyan
 Write-Host "Press Ctrl+C to stop" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "=" * 60 -ForegroundColor Gray
 Write-Host ""
 
 # Run directly to see output
-& ".\qsdmplus.exe"
+& ".\qsdm.exe"
 
 # Check exit code
 if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $null) {

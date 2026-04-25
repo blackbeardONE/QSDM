@@ -49,7 +49,7 @@ type ValidatorEnumerator interface {
 }
 
 // ValidatorSetPeerProvider is the concrete TrustPeerProvider used by the
-// validator daemon in cmd/qsdmplus/main.go. It enumerates the currently
+// validator daemon in cmd/qsdm/main.go. It enumerates the currently
 // active validator set and returns one PeerAttestation per validator
 // address, with AttestedAt=zero (see file header for why that is the
 // correct behaviour in the pre-gossip world).
@@ -81,7 +81,7 @@ func NewValidatorSetPeerProvider(e ValidatorEnumerator) *ValidatorSetPeerProvide
 // must never appear in the trust transparency denominator: counting
 // them would inflate total_public and make a 0/2 ratio look like a
 // meaningful minority when it is actually "one real validator, one
-// placeholder". See cmd/qsdmplus/main.go where "bootstrap" is
+// placeholder". See cmd/qsdm/main.go where "bootstrap" is
 // registered against the set right after construction.
 var sentinelValidatorAddresses = map[string]struct{}{
 	"bootstrap": {},
@@ -119,7 +119,7 @@ func (p *ValidatorSetPeerProvider) PeerAttestations() []PeerAttestation {
 }
 
 // ValidatorEnumeratorFunc adapts an ordinary closure into a
-// ValidatorEnumerator. Useful at the call site in cmd/qsdmplus/main.go
+// ValidatorEnumerator. Useful at the call site in cmd/qsdm/main.go
 // where the "enumerator" is really just
 //
 //	func() []string { return vs.RegisteredAddresses() }

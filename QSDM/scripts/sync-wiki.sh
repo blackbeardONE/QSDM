@@ -6,7 +6,7 @@
 #   only materialised AFTER someone clicks "Wiki → Create the first page"
 #   in the web UI; the API cannot bootstrap it. Once the first page
 #   exists, this script keeps the wiki in sync with the canonical docs
-#   under QSDM/docs/docs/ and apps/qsdmplus-nvidia-ngc/.
+#   under QSDM/docs/docs/ and apps/qsdm-nvidia-ngc/.
 #
 # Usage:
 #   1. One-time: go to https://github.com/blackbeardONE/QSDM/wiki and
@@ -23,10 +23,10 @@
 #   - QSDM/docs/docs/MINING_PROTOCOL.md         -> Mining-Protocol.md
 #   - QSDM/docs/docs/CELL_TOKENOMICS.md         -> Cell-Tokenomics.md
 #   - QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md -> NVIDIA-Lock-Scope.md
-#   - apps/qsdmplus-nvidia-ngc/QUICKSTART.md    -> NGC-Sidecar-Quickstart.md
+#   - apps/qsdm-nvidia-ngc/QUICKSTART.md    -> NGC-Sidecar-Quickstart.md
 #
 # Source of truth remains the markdown under QSDM/docs/docs/ and
-# apps/qsdmplus-nvidia-ngc/. Do NOT edit the wiki pages directly — any
+# apps/qsdm-nvidia-ngc/. Do NOT edit the wiki pages directly — any
 # web-UI edit gets overwritten on the next sync.
 
 set -euo pipefail
@@ -69,8 +69,8 @@ copy_page() {
     # Strip the source's top-level # heading (we'll rely on the wiki title).
     awk 'NR==1 && /^# / {next} {print}' "$src_abs" \
       | sed -E 's|\]\((\./)?([A-Z_]+)\.md\)|](\2)|g' \
-      | sed -E 's|\]\(\.\./\.\./\.\./apps/qsdmplus-nvidia-ngc/QUICKSTART\.md\)|](NGC-Sidecar-Quickstart)|g' \
-      | sed -E 's|\]\(\.\./apps/qsdmplus-nvidia-ngc/QUICKSTART\.md\)|](NGC-Sidecar-Quickstart)|g'
+      | sed -E 's|\]\(\.\./\.\./\.\./apps/qsdm-nvidia-ngc/QUICKSTART\.md\)|](NGC-Sidecar-Quickstart)|g' \
+      | sed -E 's|\]\(\.\./apps/qsdm-nvidia-ngc/QUICKSTART\.md\)|](NGC-Sidecar-Quickstart)|g'
   } > "$dst_abs"
 
   echo "[sync-wiki] wrote ${dst} (<- ${src})"
@@ -87,7 +87,7 @@ copy_page "QSDM/docs/docs/MINER_QUICKSTART.md"         "Miner-Quickstart.md"    
 copy_page "QSDM/docs/docs/MINING_PROTOCOL.md"          "Mining-Protocol.md"            "Mining Protocol"
 copy_page "QSDM/docs/docs/CELL_TOKENOMICS.md"          "Cell-Tokenomics.md"            "Cell Tokenomics"
 copy_page "QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md" "NVIDIA-Lock-Scope.md"       "NVIDIA Lock Scope"
-copy_page "apps/qsdmplus-nvidia-ngc/QUICKSTART.md"     "NGC-Sidecar-Quickstart.md"     "NGC Sidecar Quickstart"
+copy_page "apps/qsdm-nvidia-ngc/QUICKSTART.md"     "NGC-Sidecar-Quickstart.md"     "NGC Sidecar Quickstart"
 
 # Build a top-level sidebar (shown on every wiki page).
 cat > "${WIKI_DIR}/_Sidebar.md" <<'EOF'

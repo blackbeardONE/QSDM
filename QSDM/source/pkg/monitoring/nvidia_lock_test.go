@@ -25,7 +25,7 @@ func TestNvidiaLockProofOK_cpuFingerprintRejected(t *testing.T) {
 	ResetNGCProofsForTest()
 
 	payload := map[string]interface{}{
-		"architecture":    "NVIDIA-Locked QSDM+ test",
+		"architecture":    "NVIDIA-Locked QSDM test",
 		"cuda_proof_hash": "abc",
 		"gpu_fingerprint": map[string]interface{}{"available": false, "error": "no gpu"},
 	}
@@ -43,7 +43,7 @@ func TestNvidiaLockProofOK_gpuAccepted(t *testing.T) {
 	ResetNGCProofsForTest()
 
 	payload := map[string]interface{}{
-		"architecture":    "NVIDIA-Locked QSDM+ test",
+		"architecture":    "NVIDIA-Locked QSDM test",
 		"cuda_proof_hash": "deadbeef",
 		"gpu_fingerprint": map[string]interface{}{
 			"available": true,
@@ -65,9 +65,9 @@ func TestNvidiaLockProofOK_gpuAccepted(t *testing.T) {
 func TestNvidiaLockProofOK_expectedNodeIDMismatch(t *testing.T) {
 	ResetNGCProofsForTest()
 	payload := map[string]interface{}{
-		"architecture":    "NVIDIA-Locked QSDM+ test",
+		"architecture":    "NVIDIA-Locked QSDM test",
 		"cuda_proof_hash": "x",
-		"qsdmplus_node_id": "a",
+		"qsdm_node_id": "a",
 		"gpu_fingerprint": map[string]interface{}{"available": true},
 	}
 	raw, _ := json.Marshal(payload)
@@ -76,16 +76,16 @@ func TestNvidiaLockProofOK_expectedNodeIDMismatch(t *testing.T) {
 	}
 	ok, _ := NvidiaLockProofOK(time.Hour, "b", "", false)
 	if ok {
-		t.Fatal("expected mismatch on qsdmplus_node_id")
+		t.Fatal("expected mismatch on qsdm_node_id")
 	}
 }
 
 func TestNvidiaLockProofOK_expectedNodeIDMatch(t *testing.T) {
 	ResetNGCProofsForTest()
 	payload := map[string]interface{}{
-		"architecture":     "NVIDIA-Locked QSDM+ test",
+		"architecture":     "NVIDIA-Locked QSDM test",
 		"cuda_proof_hash":  "y",
-		"qsdmplus_node_id": "validator-7",
+		"qsdm_node_id": "validator-7",
 		"gpu_fingerprint": map[string]interface{}{
 			"available": true,
 			"devices":   []interface{}{map[string]interface{}{"name": "G", "index": "0"}},
@@ -105,12 +105,12 @@ func TestNvidiaLockProofOK_hmacRequiredInvalid(t *testing.T) {
 	ResetNGCProofsForTest()
 	secret := "Charming123"
 	payload := map[string]interface{}{
-		"architecture":     "NVIDIA-Locked QSDM+ test",
+		"architecture":     "NVIDIA-Locked QSDM test",
 		"cuda_proof_hash":  "c1",
 		"timestamp_utc":    "2026-04-01T12:00:00+00:00",
-		"qsdmplus_node_id": "",
+		"qsdm_node_id": "",
 		"gpu_fingerprint":  map[string]interface{}{"available": true},
-		"qsdmplus_proof_hmac": "deadbeef",
+		"qsdm_proof_hmac": "deadbeef",
 	}
 	raw, _ := json.Marshal(payload)
 	if err := RecordNGCProofBundle(raw); err != nil {
@@ -126,15 +126,15 @@ func TestNvidiaLockProofOK_hmacRequiredValid(t *testing.T) {
 	ResetNGCProofsForTest()
 	secret := "Charming123"
 	payload := map[string]interface{}{
-		"architecture":     "NVIDIA-Locked QSDM+ test",
+		"architecture":     "NVIDIA-Locked QSDM test",
 		"cuda_proof_hash":  "c2",
 		"timestamp_utc":    "2026-04-01T12:00:00+00:00",
-		"qsdmplus_node_id": "n1",
+		"qsdm_node_id": "n1",
 		"gpu_fingerprint":  map[string]interface{}{"available": true},
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(NGCProofHMACPayload(payload)))
-	payload["qsdmplus_proof_hmac"] = hex.EncodeToString(mac.Sum(nil))
+	payload["qsdm_proof_hmac"] = hex.EncodeToString(mac.Sum(nil))
 	raw, _ := json.Marshal(payload)
 	if err := RecordNGCProofBundle(raw); err != nil {
 		t.Fatal(err)
@@ -148,7 +148,7 @@ func TestNvidiaLockProofOK_hmacRequiredValid(t *testing.T) {
 func TestNvidiaLockProofOK_consumeRemovesProof(t *testing.T) {
 	ResetNGCProofsForTest()
 	payload := map[string]interface{}{
-		"architecture":    "NVIDIA-Locked QSDM+ test",
+		"architecture":    "NVIDIA-Locked QSDM test",
 		"cuda_proof_hash": "consume-me",
 		"gpu_fingerprint": map[string]interface{}{"available": true},
 	}

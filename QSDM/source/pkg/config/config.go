@@ -48,8 +48,8 @@ type Config struct {
 	// memory only, which matches legacy test behaviour but is unsafe in
 	// production: every service restart wipes every account (see the
 	// 2026-04-23 wipe incident). In production this defaults to
-	// <state_dir>/qsdmplus_users.json where state_dir = filepath.Dir(SQLitePath).
-	// Env override: QSDMPLUS_USER_STORE_PATH / QSDM_USER_STORE_PATH.
+	// <state_dir>/qsdm_users.json where state_dir = filepath.Dir(SQLitePath).
+	// Env override: QSDM_USER_STORE_PATH / QSDM_USER_STORE_PATH.
 	UserStorePath    string
 	ScyllaHosts      []string
 	ScyllaKeyspace   string
@@ -66,11 +66,11 @@ type Config struct {
 	LogFile          string
 	LogLevel         string
 	// DashboardMetricsScrapeSecret: when set, GET /api/metrics/prometheus accepts this via Bearer or
-	// X-QSDM-Metrics-Scrape-Secret header (legacy X-QSDMPLUS-Metrics-Scrape-Secret also accepted).
-	// Env: prefer QSDM_DASHBOARD_METRICS_SCRAPE_SECRET; legacy QSDMPLUS_DASHBOARD_METRICS_SCRAPE_SECRET still works.
+	// X-QSDM-Metrics-Scrape-Secret header (legacy X-QSDM-Metrics-Scrape-Secret also accepted).
+	// Env: prefer QSDM_DASHBOARD_METRICS_SCRAPE_SECRET; legacy QSDM_DASHBOARD_METRICS_SCRAPE_SECRET still works.
 	DashboardMetricsScrapeSecret string
 	// DashboardStrictAuth: when true ([monitoring] strict_dashboard_auth or QSDM_DASHBOARD_STRICT_AUTH
-	// / legacy QSDMPLUS_DASHBOARD_STRICT_AUTH), JWT routes return 503 if auth manager failed to init;
+	// / legacy QSDM_DASHBOARD_STRICT_AUTH), JWT routes return 503 if auth manager failed to init;
 	// Prometheus still works if metrics_scrape_secret is set.
 	DashboardStrictAuth bool
 	
@@ -104,7 +104,7 @@ type Config struct {
 	HealthCheckInterval time.Duration
 
 	// NGC sidecar: shared secret for POST /api/v1/monitoring/ngc-proof.
-	// Prefer env QSDM_NGC_INGEST_SECRET; QSDMPLUS_NGC_INGEST_SECRET is still accepted
+	// Prefer env QSDM_NGC_INGEST_SECRET; QSDM_NGC_INGEST_SECRET is still accepted
 	// (deprecated; to be removed after the Major Update deprecation window).
 	NGCIngestSecret string
 
@@ -114,14 +114,14 @@ type Config struct {
 	// NvidiaLockMaxProofAge: proofs older than this (from ingest time) do not satisfy the lock.
 	NvidiaLockMaxProofAge time.Duration
 	// NvidiaLockExpectedNodeID: when non-empty and nvidia_lock is on, ingested proofs must include
-	// JSON string qsdm_node_id (or legacy qsdmplus_node_id) equal to this value (set
-	// QSDM_NGC_PROOF_NODE_ID on the sidecar; QSDMPLUS_NGC_PROOF_NODE_ID is still accepted).
+	// JSON string qsdm_node_id (or legacy qsdm_node_id) equal to this value (set
+	// QSDM_NGC_PROOF_NODE_ID on the sidecar; QSDM_NGC_PROOF_NODE_ID is still accepted).
 	NvidiaLockExpectedNodeID string
 	// NvidiaLockProofHMACSecret: when non-empty and nvidia_lock is on, proofs must include a valid
-	// qsdm_proof_hmac (or legacy qsdmplus_proof_hmac) HMAC-SHA256 field.
+	// qsdm_proof_hmac (or legacy qsdm_proof_hmac) HMAC-SHA256 field.
 	NvidiaLockProofHMACSecret string
 	// NvidiaLockRequireIngestNonce: proofs must include a fresh server-issued qsdm_ingest_nonce (or
-	// legacy qsdmplus_ingest_nonce) from GET .../ngc-challenge; each nonce is single-use at ingest;
+	// legacy qsdm_ingest_nonce) from GET .../ngc-challenge; each nonce is single-use at ingest;
 	// each ingested proof satisfies at most one lock check (proof consumed).
 	NvidiaLockRequireIngestNonce bool
 	// NvidiaLockIngestNonceTTL: lifetime for issued nonces (default 10m when require is on).
@@ -141,7 +141,7 @@ type Config struct {
 	AlertWebhookURL string
 
 	// StrictProductionSecrets: when true ([api] strict_secrets or env QSDM_STRICT_SECRETS / legacy
-	// QSDMPLUS_STRICT_SECRETS), reject short or demo-like NGC/JWT/HMAC secrets at startup.
+	// QSDM_STRICT_SECRETS), reject short or demo-like NGC/JWT/HMAC secrets at startup.
 	StrictProductionSecrets bool
 
 	// ---- Trust / attestation transparency (Major Update §8.5) ----
@@ -176,12 +176,12 @@ func LoadConfig() (*Config, error) {
 	configFile := getEnvString("CONFIG_FILE", "")
 	
 	// If no config file specified, try common names. The post-rebrand qsdm.*
-	// names are preferred; the legacy qsdmplus.* names are still probed so
+	// names are preferred; the legacy qsdm.* names are still probed so
 	// existing deployments continue to work through the deprecation window.
 	if configFile == "" {
 		configFiles := []string{
 			"qsdm.yaml", "qsdm.yml", "qsdm.toml",
-			"qsdmplus.yaml", "qsdmplus.yml", "qsdmplus.toml",
+			"qsdm.yaml", "qsdm.yml", "qsdm.toml",
 		}
 		for _, f := range configFiles {
 			if _, err := os.Stat(f); err == nil {
@@ -413,12 +413,12 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.SQLitePath == "" {
 		// Default filename: prefer qsdm.db for new deployments, but if a pre-rebrand
-		// qsdmplus.db exists in the CWD and no qsdm.db exists yet, continue to use it
+		// qsdm.db exists in the CWD and no qsdm.db exists yet, continue to use it
 		// so existing operators aren't silently switched to a fresh empty database.
 		if _, err := os.Stat("qsdm.db"); err == nil {
 			cfg.SQLitePath = "qsdm.db"
-		} else if _, err := os.Stat("qsdmplus.db"); err == nil {
-			cfg.SQLitePath = "qsdmplus.db"
+		} else if _, err := os.Stat("qsdm.db"); err == nil {
+			cfg.SQLitePath = "qsdm.db"
 		} else {
 			cfg.SQLitePath = "qsdm.db"
 		}
@@ -438,11 +438,11 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.LogFile == "" {
 		// As with SQLitePath, default to qsdm.log but keep appending to a pre-existing
-		// qsdmplus.log if that's where operators have historical events already.
+		// qsdm.log if that's where operators have historical events already.
 		if _, err := os.Stat("qsdm.log"); err == nil {
 			cfg.LogFile = "qsdm.log"
-		} else if _, err := os.Stat("qsdmplus.log"); err == nil {
-			cfg.LogFile = "qsdmplus.log"
+		} else if _, err := os.Stat("qsdm.log"); err == nil {
+			cfg.LogFile = "qsdm.log"
 		} else {
 			cfg.LogFile = "qsdm.log"
 		}
@@ -500,13 +500,13 @@ func applyDefaults(cfg *Config) {
 
 // applyEnvOverrides applies environment variable overrides (highest priority)
 func applyEnvOverrides(cfg *Config) {
-	if val := strings.TrimSpace(envPreferred("QSDM_NODE_ROLE", "QSDMPLUS_NODE_ROLE")); val != "" {
+	if val := strings.TrimSpace(envPreferred("QSDM_NODE_ROLE", "QSDM_NODE_ROLE")); val != "" {
 		if r, err := ParseNodeRole(val); err == nil {
 			cfg.NodeRole = r
 		}
 	}
-	if val := strings.TrimSpace(envPreferred("QSDM_MINING_ENABLED", "QSDMPLUS_MINING_ENABLED")); val != "" {
-		cfg.MiningEnabled = envcompat.Truthy("QSDM_MINING_ENABLED", "QSDMPLUS_MINING_ENABLED")
+	if val := strings.TrimSpace(envPreferred("QSDM_MINING_ENABLED", "QSDM_MINING_ENABLED")); val != "" {
+		cfg.MiningEnabled = envcompat.Truthy("QSDM_MINING_ENABLED", "QSDM_MINING_ENABLED")
 	}
 	if val := getEnvString("NETWORK_PORT", ""); val != "" {
 		cfg.NetworkPort = getEnvInt("NETWORK_PORT", cfg.NetworkPort)
@@ -520,7 +520,7 @@ func applyEnvOverrides(cfg *Config) {
 	if val := getEnvString("SQLITE_PATH", ""); val != "" {
 		cfg.SQLitePath = val
 	}
-	if val := strings.TrimSpace(envPreferred("QSDM_USER_STORE_PATH", "QSDMPLUS_USER_STORE_PATH")); val != "" {
+	if val := strings.TrimSpace(envPreferred("QSDM_USER_STORE_PATH", "QSDM_USER_STORE_PATH")); val != "" {
 		cfg.UserStorePath = val
 	}
 	if val := getEnvString("SCYLLA_HOSTS", ""); val != "" {
@@ -559,32 +559,32 @@ func applyEnvOverrides(cfg *Config) {
 	if val := getEnvString("LOG_LEVEL", ""); val != "" {
 		cfg.LogLevel = val
 	}
-	if val := envPreferred("QSDM_DASHBOARD_METRICS_SCRAPE_SECRET", "QSDMPLUS_DASHBOARD_METRICS_SCRAPE_SECRET"); val != "" {
+	if val := envPreferred("QSDM_DASHBOARD_METRICS_SCRAPE_SECRET", "QSDM_DASHBOARD_METRICS_SCRAPE_SECRET"); val != "" {
 		cfg.DashboardMetricsScrapeSecret = val
 	}
-	if val := envPreferred("QSDM_DASHBOARD_STRICT_AUTH", "QSDMPLUS_DASHBOARD_STRICT_AUTH"); val != "" {
+	if val := envPreferred("QSDM_DASHBOARD_STRICT_AUTH", "QSDM_DASHBOARD_STRICT_AUTH"); val != "" {
 		cfg.DashboardStrictAuth = val == "true" || val == "1" || strings.EqualFold(val, "yes")
 	}
-	if val := envPreferred("QSDM_ADMIN_REQUIRE_ROLE", "QSDMPLUS_ADMIN_REQUIRE_ROLE"); val != "" {
+	if val := envPreferred("QSDM_ADMIN_REQUIRE_ROLE", "QSDM_ADMIN_REQUIRE_ROLE"); val != "" {
 		cfg.AdminAPIRequireRole = val == "true" || val == "1" || strings.EqualFold(val, "yes")
 	}
-	if val := envPreferred("QSDM_ADMIN_REQUIRE_MTLS", "QSDMPLUS_ADMIN_REQUIRE_MTLS"); val != "" {
+	if val := envPreferred("QSDM_ADMIN_REQUIRE_MTLS", "QSDM_ADMIN_REQUIRE_MTLS"); val != "" {
 		cfg.AdminAPIRequireMTLS = val == "true" || val == "1" || strings.EqualFold(val, "yes")
 	}
-	if val := strings.TrimSpace(envPreferred("QSDM_SUBMESH_CONFIG", "QSDMPLUS_SUBMESH_CONFIG")); val != "" {
+	if val := strings.TrimSpace(envPreferred("QSDM_SUBMESH_CONFIG", "QSDM_SUBMESH_CONFIG")); val != "" {
 		cfg.SubmeshConfigPath = val
 	}
 	if val := getEnvString("API_PORT", ""); val != "" {
 		cfg.APIPort = getEnvInt("API_PORT", cfg.APIPort)
 	}
-	if val := envPreferred("QSDM_API_RATE_LIMIT_MAX", "QSDMPLUS_API_RATE_LIMIT_MAX"); val != "" {
+	if val := envPreferred("QSDM_API_RATE_LIMIT_MAX", "QSDM_API_RATE_LIMIT_MAX"); val != "" {
 		if n, err := strconv.Atoi(val); err == nil && n > 0 {
 			cfg.APIRateLimitMaxRequests = n
 		}
 	} else if val := getEnvString("API_RATE_LIMIT_MAX", ""); val != "" {
 		cfg.APIRateLimitMaxRequests = getEnvInt("API_RATE_LIMIT_MAX", cfg.APIRateLimitMaxRequests)
 	}
-	if val := envPreferred("QSDM_API_RATE_LIMIT_WINDOW", "QSDMPLUS_API_RATE_LIMIT_WINDOW"); val != "" {
+	if val := envPreferred("QSDM_API_RATE_LIMIT_WINDOW", "QSDM_API_RATE_LIMIT_WINDOW"); val != "" {
 		if d, err := time.ParseDuration(val); err == nil {
 			cfg.APIRateLimitWindow = d
 		}
@@ -638,58 +638,58 @@ func applyEnvOverrides(cfg *Config) {
 	if val := getEnvString("HEALTH_CHECK_INTERVAL", ""); val != "" {
 		cfg.HealthCheckInterval = getEnvDuration("HEALTH_CHECK_INTERVAL", cfg.HealthCheckInterval)
 	}
-	if val := envPreferred("QSDM_NGC_INGEST_SECRET", "QSDMPLUS_NGC_INGEST_SECRET"); val != "" {
+	if val := envPreferred("QSDM_NGC_INGEST_SECRET", "QSDM_NGC_INGEST_SECRET"); val != "" {
 		cfg.NGCIngestSecret = val
 	}
-	if val := envPreferred("QSDM_NVIDIA_LOCK", "QSDMPLUS_NVIDIA_LOCK"); val != "" {
+	if val := envPreferred("QSDM_NVIDIA_LOCK", "QSDM_NVIDIA_LOCK"); val != "" {
 		cfg.NvidiaLockEnabled = val == "true" || val == "1"
 	}
-	if val := envPreferred("QSDM_NVIDIA_LOCK_MAX_PROOF_AGE", "QSDMPLUS_NVIDIA_LOCK_MAX_PROOF_AGE"); val != "" {
+	if val := envPreferred("QSDM_NVIDIA_LOCK_MAX_PROOF_AGE", "QSDM_NVIDIA_LOCK_MAX_PROOF_AGE"); val != "" {
 		if d, err := time.ParseDuration(val); err == nil {
 			cfg.NvidiaLockMaxProofAge = d
 		}
 	}
-	if val := envPreferred("QSDM_NVIDIA_LOCK_EXPECTED_NODE_ID", "QSDMPLUS_NVIDIA_LOCK_EXPECTED_NODE_ID"); val != "" {
+	if val := envPreferred("QSDM_NVIDIA_LOCK_EXPECTED_NODE_ID", "QSDM_NVIDIA_LOCK_EXPECTED_NODE_ID"); val != "" {
 		cfg.NvidiaLockExpectedNodeID = val
 	}
-	if val := envPreferred("QSDM_NVIDIA_LOCK_PROOF_HMAC_SECRET", "QSDMPLUS_NVIDIA_LOCK_PROOF_HMAC_SECRET"); val != "" {
+	if val := envPreferred("QSDM_NVIDIA_LOCK_PROOF_HMAC_SECRET", "QSDM_NVIDIA_LOCK_PROOF_HMAC_SECRET"); val != "" {
 		cfg.NvidiaLockProofHMACSecret = val
 	}
-	if val := envPreferred("QSDM_JWT_HMAC_SECRET", "QSDMPLUS_JWT_HMAC_SECRET"); val != "" {
+	if val := envPreferred("QSDM_JWT_HMAC_SECRET", "QSDM_JWT_HMAC_SECRET"); val != "" {
 		cfg.JWTHMACSecret = val
 	}
-	if val := envPreferred("QSDM_NVIDIA_LOCK_REQUIRE_INGEST_NONCE", "QSDMPLUS_NVIDIA_LOCK_REQUIRE_INGEST_NONCE"); val != "" {
+	if val := envPreferred("QSDM_NVIDIA_LOCK_REQUIRE_INGEST_NONCE", "QSDM_NVIDIA_LOCK_REQUIRE_INGEST_NONCE"); val != "" {
 		cfg.NvidiaLockRequireIngestNonce = val == "true" || val == "1"
 	}
-	if val := envPreferred("QSDM_NVIDIA_LOCK_INGEST_NONCE_TTL", "QSDMPLUS_NVIDIA_LOCK_INGEST_NONCE_TTL"); val != "" {
+	if val := envPreferred("QSDM_NVIDIA_LOCK_INGEST_NONCE_TTL", "QSDM_NVIDIA_LOCK_INGEST_NONCE_TTL"); val != "" {
 		if d, err := time.ParseDuration(val); err == nil {
 			cfg.NvidiaLockIngestNonceTTL = d
 		}
 	}
-	if val := envPreferred("QSDM_NVIDIA_LOCK_GATE_P2P", "QSDMPLUS_NVIDIA_LOCK_GATE_P2P"); val != "" {
+	if val := envPreferred("QSDM_NVIDIA_LOCK_GATE_P2P", "QSDM_NVIDIA_LOCK_GATE_P2P"); val != "" {
 		cfg.NvidiaLockGateP2P = val == "true" || val == "1"
 	}
-	if val := envPreferred("QSDM_STRICT_SECRETS", "QSDMPLUS_STRICT_SECRETS"); val != "" {
+	if val := envPreferred("QSDM_STRICT_SECRETS", "QSDM_STRICT_SECRETS"); val != "" {
 		cfg.StrictProductionSecrets = val == "true" || val == "1" || strings.EqualFold(val, "yes")
 	}
 	if val := getEnvString("QSDM_ALERT_WEBHOOK", ""); val != "" {
 		cfg.AlertWebhookURL = val
 	}
 
-	if val := envPreferred("QSDM_TRUST_DISABLED", "QSDMPLUS_TRUST_DISABLED"); val != "" {
+	if val := envPreferred("QSDM_TRUST_DISABLED", "QSDM_TRUST_DISABLED"); val != "" {
 		cfg.TrustEndpointsDisabled = val == "true" || val == "1" || strings.EqualFold(val, "yes")
 	}
-	if val := envPreferred("QSDM_TRUST_FRESH_WITHIN", "QSDMPLUS_TRUST_FRESH_WITHIN"); val != "" {
+	if val := envPreferred("QSDM_TRUST_FRESH_WITHIN", "QSDM_TRUST_FRESH_WITHIN"); val != "" {
 		if d, err := time.ParseDuration(val); err == nil {
 			cfg.TrustFreshWithin = d
 		}
 	}
-	if val := envPreferred("QSDM_TRUST_REFRESH_INTERVAL", "QSDMPLUS_TRUST_REFRESH_INTERVAL"); val != "" {
+	if val := envPreferred("QSDM_TRUST_REFRESH_INTERVAL", "QSDM_TRUST_REFRESH_INTERVAL"); val != "" {
 		if d, err := time.ParseDuration(val); err == nil {
 			cfg.TrustRefreshInterval = d
 		}
 	}
-	if val := envPreferred("QSDM_TRUST_REGION", "QSDMPLUS_TRUST_REGION"); val != "" {
+	if val := envPreferred("QSDM_TRUST_REGION", "QSDM_TRUST_REGION"); val != "" {
 		cfg.TrustRegionHint = strings.TrimSpace(val)
 	}
 }
@@ -771,7 +771,7 @@ func (c *Config) Validate() error {
 
 	if c.NvidiaLockEnabled {
 		if c.NGCIngestSecret == "" {
-			return fmt.Errorf("nvidia_lock is enabled but NGC ingest secret is empty; set QSDM_NGC_INGEST_SECRET (legacy QSDMPLUS_NGC_INGEST_SECRET still accepted) so the node can receive GPU proof bundles")
+			return fmt.Errorf("nvidia_lock is enabled but NGC ingest secret is empty; set QSDM_NGC_INGEST_SECRET (legacy QSDM_NGC_INGEST_SECRET still accepted) so the node can receive GPU proof bundles")
 		}
 		if c.NvidiaLockMaxProofAge <= 0 {
 			return fmt.Errorf("nvidia_lock_max_proof_age must be positive")

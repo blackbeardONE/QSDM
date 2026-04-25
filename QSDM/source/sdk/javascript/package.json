@@ -1,15 +1,14 @@
 {
   "name": "qsdm",
   "version": "0.2.0",
-  "description": "Official JavaScript / Node.js SDK for the QSDM HTTP API (native coin: Cell / CELL). Feature parity with sdk/go. Legacy package name: qsdmplus.",
+  "description": "Official JavaScript / Node.js SDK for the QSDM HTTP API (native coin: Cell / CELL). Feature parity with sdk/go.",
   "main": "qsdm.js",
   "types": "qsdm.d.ts",
   "scripts": {
-    "test": "node --test qsdmplus.test.js qsdm.test.js"
+    "test": "node --test qsdm.test.js"
   },
   "keywords": [
     "qsdm",
-    "qsdmplus",
     "cell",
     "blockchain",
     "quantum-safe",
@@ -23,8 +22,6 @@
   "files": [
     "qsdm.js",
     "qsdm.d.ts",
-    "qsdmplus.js",
-    "qsdmplus.d.ts",
     "README.md"
   ]
 }

@@ -49,7 +49,7 @@ function Remove-ItemSafely {
 
 # 1. Remove executables
 Write-Host "1. Removing executables..." -ForegroundColor Cyan
-Remove-ItemSafely -path "qsdmplus.exe" -description "qsdmplus.exe"
+Remove-ItemSafely -path "qsdm.exe" -description "qsdm.exe"
 Get-ChildItem -Path . -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
     if ($_.FullName -notlike "*\node_modules\*" -and $_.FullName -notlike "*\wasmer-go-patched\*") {
         Remove-ItemSafely -path $_.FullName -description $_.Name
@@ -90,7 +90,7 @@ Get-ChildItem -Path . -Filter "*.log" -Recurse -ErrorAction SilentlyContinue | F
         Remove-ItemSafely -path $_.FullName -description $_.Name
     }
 }
-Remove-ItemSafely -path "qsdmplus.log" -description "qsdmplus.log"
+Remove-ItemSafely -path "qsdm.log" -description "qsdm.log"
 
 # 7. Remove test databases (keep production databases)
 Write-Host ""
@@ -148,7 +148,7 @@ if ($errors.Count -gt 0) {
 
 Write-Host ""
 Write-Host "=== Important Notes ===" -ForegroundColor Yellow
-Write-Host "1. Production databases (qsdmplus.db, transactions.db) were NOT removed" -ForegroundColor Yellow
+Write-Host "1. Production databases (qsdm.db, transactions.db) were NOT removed" -ForegroundColor Yellow
 Write-Host "2. Source code and configuration files were preserved" -ForegroundColor Yellow
 Write-Host "3. Run 'scripts\export_databases.ps1' to export databases before migration" -ForegroundColor Yellow
 Write-Host "4. On the new server, you'll need to:" -ForegroundColor Yellow

@@ -1,4 +1,4 @@
-# QSDM+ Use Cases
+# QSDM Use Cases
 
 **Last Updated:** December 2024
 
@@ -6,7 +6,7 @@
 
 ## Overview
 
-**QSDM+** (Quantum-Secure Dynamic Mesh Ledger) is a quantum-resistant, mesh-based distributed ledger system designed for secure, scalable, and future-proof decentralized applications. This document outlines the primary use cases where QSDM+ provides significant advantages.
+**QSDM** (Quantum-Secure Dynamic Mesh Ledger) is a quantum-resistant, mesh-based distributed ledger system designed for secure, scalable, and future-proof decentralized applications. This document outlines the primary use cases where QSDM provides significant advantages.
 
 ---
 

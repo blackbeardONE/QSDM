@@ -1,0 +1,318 @@
+# Example Prometheus alerting rules for QSDM dashboard metrics (qsdm_*).
+# Load with rule_files in prometheus.yml, or use a Prometheus Operator PrometheusRule CRD.
+#
+# Adjust thresholds and `for:` to your fleet; many counters are monotonic — use rate().
+
+groups:
+  - name: qsdm-nvidia-lock
+    rules:
+      - alert: QSDMNvidiaLockHTTPBlocksSpike
+        expr: rate(qsdm_nvidia_lock_http_blocks_total[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated NVIDIA-lock HTTP blocks"
+          description: "State-changing API calls are returning 403 from NVIDIA-lock faster than threshold."
+
+      - alert: QSDMNvidiaLockP2PRejects
+        expr: increase(qsdm_nvidia_lock_p2p_rejects_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P2P transactions rejected by NVIDIA-lock gate"
+          description: "nvidia_lock_gate_p2p is dropping txs without a qualifying proof."
+
+      - alert: QSDMNGCChallengeRateLimited
+        expr: increase(qsdm_ngc_challenge_rate_limited_total[10m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Many 429s on ngc-challenge"
+          description: "Sidecars or clients may be polling challenge too aggressively; check Retry-After and jitter."
+
+      - alert: QSDMNGCProofIngestRejectBurst
+        expr: sum(increase(qsdm_ngc_proof_ingest_rejected_total[10m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Many rejected POSTs to /monitoring/ngc-proof"
+          description: "Check sidecar logs, HMAC/nonce alignment, body size, and unauthorized probes; see qsdm_ngc_proof_ingest_rejected_total by reason."
+
+  - name: qsdm-submesh
+    rules:
+      - alert: QSDMSubmeshP2PRejects
+        expr: increase(qsdm_submesh_p2p_reject_route_total[15m]) > 0 or increase(qsdm_submesh_p2p_reject_size_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P2P transactions dropped by submesh policy"
+          description: "Check fee/geotag vs submesh_config and max_tx_size; see qsdm_submesh_p2p_reject_* metrics."
+
+      - alert: QSDMSubmeshAPISustained422
+        expr: |
+          (
+            increase(qsdm_submesh_api_wallet_reject_route_total[10m])
+            + increase(qsdm_submesh_api_wallet_reject_size_total[10m])
+            + increase(qsdm_submesh_api_privileged_reject_size_total[10m])
+          ) >= 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Many HTTP 422s from submesh policy"
+          description: "Wallet send or mint/token-create failing submesh rules; tune profiles or client fee/geotag/payload size."
+
+  - name: qsdm-throughput
+    rules:
+      - alert: QSDMNoTransactionsStored
+        expr: rate(qsdm_transactions_stored_total[30m]) == 0 and rate(qsdm_transactions_processed_total[30m]) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Transactions processed but none stored"
+          description: "Possible validation/storage issue; verify logs and NVIDIA-lock policy."
+
+  # -----------------------------------------------------------------
+  # Trust / attestation transparency (Major Update §8.5)
+  # -----------------------------------------------------------------
+  # These alerts consume the canonical qsdm_* series. They are safe to
+  # load on legacy-only or dual-emit scrapers because dual-emit
+  # (pkg/monitoring/prometheus_prefix_migration.go) publishes both
+  # prefixes by default. If your fleet has already flipped to qsdm_*
+  # only, nothing changes; if it is still on qsdm_* only, swap the
+  # prefix in expr: once.
+  #
+  # The /api/v1/trust/attestations/summary HTTP endpoint is NOT itself
+  # a Prometheus metric, so we alert on the underlying counter
+  # (qsdm_ngc_proof_ingest_accepted_total) instead: if no accepted
+  # proof bundle arrived for 20 min, the summary's "attested" ratio
+  # will have fallen to 0 regardless of how many validators are live,
+  # which is the operator-visible symptom.
+  - name: qsdm-trust-transparency
+    rules:
+      - alert: QSDMTrustNoAttestationsAccepted
+        # Rate == 0 across a 20-minute window = no sidecar (or any
+        # peer) is successfully attesting. Because the freshness window
+        # on /trust/attestations/summary is 15 m by default, 20 m
+        # guarantees the transparency badge has already flipped to
+        # degraded before this alert fires.
+        expr: sum(rate(qsdm_ngc_proof_ingest_accepted_total[20m])) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No accepted NGC proof bundles for 20 minutes"
+          description: |
+            /api/v1/trust/attestations/summary will report attested=0 until a
+            miner or sidecar posts a fresh bundle. Common causes:
+              - The refresh loop (Windows Scheduled Task "QSDM-NGC-Attest",
+                apps/qsdm-nvidia-ngc/scripts/attest-from-env-file.ps1)
+                stopped because the host is off / the secret rotated.
+              - Sidecar containers (docker compose --profile gpu) crashed;
+                check qsdm_ngc_proof_ingest_rejected_total by reason.
+              - The node has QSDM_NGC_INGEST_SECRET unset, which
+                disables the ingest route; the counter then stays pinned
+                at zero by design.
+
+      - alert: QSDMTrustIngestRejectRateElevated
+        # Accepted vs rejected ratio: if rejects outpace accepts over 10 m,
+        # something is misaligned (secret rotated on one side, clock skew,
+        # replay-nonce expired). Use >1.0 so a single rejected probe does
+        # not fire the page.
+        expr: |
+          sum(rate(qsdm_ngc_proof_ingest_rejected_total[10m]))
+          >
+          1 + sum(rate(qsdm_ngc_proof_ingest_accepted_total[10m]))
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "NGC ingest rejections outpacing acceptances"
+          description: |
+            Break out qsdm_ngc_proof_ingest_rejected_total by reason.
+            "hmac_mismatch" / "invalid_nonce" usually means a secret
+            drifted between node and sidecar; "unauthorized" is a third
+            party probing the endpoint.
+
+  # -----------------------------------------------------------------
+  # Trust / attestation redundancy (direct gauges, Major Update §8.5.4)
+  # -----------------------------------------------------------------
+  # The rules above alert on the underlying counter (proofs flowing at
+  # all). These rules alert on the aggregator-level view: how many
+  # *distinct* attestation sources are currently inside fresh_within,
+  # and how fresh the newest one is. Both are exposed by the
+  # TrustMetricsCollector in pkg/api/trust_metrics.go and are the exact
+  # numbers rendered on the qsdm.tech/trust.html pill.
+  #
+  # Mirror of the external CI side: .github/workflows/trustcheck-external.yml
+  # passes --min-attested 2 to cmd/trustcheck. These rules enforce the
+  # same floor from inside Prometheus, so Alertmanager pages whether
+  # the operator's CI runs fire or not (or when CI is off-hours).
+  #
+  # IMPORTANT: every expression is gated on qsdm_trust_warm == 1. The
+  # aggregator publishes 0 for attested/ratio/last_attested_seconds
+  # during the ~1 Refresh tick of warm-up after a restart, and a naive
+  # "attested < 2" rule would fire on every redeploy. Gating on warm
+  # lets redeploys complete silently and only alerts when a warm
+  # aggregator reports insufficient redundancy.
+  - name: qsdm-trust-redundancy
+    rules:
+      - alert: QSDMTrustAttestationsBelowFloor
+        # One-source operation is legitimate for a single-node bring-up
+        # but once you have stood up N >= 2 sources you want a page the
+        # moment that number drops. 10m of for: gives a sidecar one
+        # full attestation cadence to recover before pinging a human.
+        expr: qsdm_trust_warm == 1 and qsdm_trust_attested < 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: only {{ $value }} fresh attestation source(s)"
+          description: |
+            /api/v1/trust/attestations/summary reports attested={{ $value }}
+            (< 2). The external GitHub-Actions probe (.github/workflows/
+            trustcheck-external.yml with --min-attested 2) will also fail
+            on its next schedule. Common causes:
+              - One of the sidecars (Windows PC / VPS / OCI) is offline
+                or its systemd timer stopped.
+              - QSDM_NGC_PROOF_NODE_ID collision between sidecars
+                (they then collapse to a single attestation in the
+                aggregator — see pkg/api/handlers_trust.go
+                LocalDistinctAttestationSource).
+              - A rotated QSDM_NGC_INGEST_SECRET on one side; cross-
+                reference qsdm_ngc_proof_ingest_rejected_total by reason.
+
+      - alert: QSDMTrustNGCServiceDegraded
+        # Mirrors the string field ngc_service_status on the summary
+        # JSON. 0 here means either "degraded" or "outage". The
+        # aggregator sets this on its own classification of proof
+        # arrival cadence, so it fires before attested hits 0 in a
+        # slow-death scenario.
+        expr: qsdm_trust_warm == 1 and qsdm_trust_ngc_service_healthy == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: NGC service status is not 'healthy'"
+          description: |
+            /api/v1/trust/attestations/summary ngc_service_status is
+            either "degraded" or "outage" for 10+ minutes. The trust
+            pill on qsdm.tech will be amber/red. Check sidecar logs
+            and qsdm_ngc_proof_ingest_rejected_total first.
+
+      - alert: QSDMTrustLastAttestedStale
+        # Belt and braces for the attested<2 rule: even if we have two
+        # sources, if the newest one is >30m old the aggregator will
+        # eventually tip to attested=0 (fresh_within defaults to 15m).
+        # Alert halfway through the degradation window so an operator
+        # can act before the summary flips.
+        #
+        # time() - 0 during warm-up is a huge number, so we gate on
+        # qsdm_trust_last_attested_seconds > 0 as well.
+        expr: |
+          qsdm_trust_warm == 1
+          and qsdm_trust_last_attested_seconds > 0
+          and (time() - qsdm_trust_last_attested_seconds) > 1800
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: newest attestation is >30m old"
+          description: |
+            Newest attestation timestamp is {{ $value | humanizeDuration }}
+            ago (> 30m). fresh_within is 15m by default, so the summary
+            will flip to attested=0 shortly if no new proof arrives.
+            Check sidecar timers and QSDM_NGC_INGEST_SECRET alignment.
+
+      - alert: QSDMTrustAggregatorStale
+        # qsdm_trust_last_checked_seconds is the last Refresh() tick.
+        # If it stops advancing, the aggregator goroutine is wedged
+        # (not the proofs themselves — those are a separate path).
+        # Default refresh_interval is 10s, so >2m with no tick is
+        # unambiguously broken. Warm gate for the same reason as above.
+        expr: |
+          qsdm_trust_warm == 1
+          and qsdm_trust_last_checked_seconds > 0
+          and (time() - qsdm_trust_last_checked_seconds) > 120
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: TrustAggregator Refresh() is stuck"
+          description: |
+            qsdm_trust_last_checked_seconds has not advanced in >2m
+            but refresh_interval is {{ with query "scalar(qsdm_trust_warm)" }}10s{{ end }}
+            by default. The aggregator ticker is wedged (probably a
+            blocked peer provider call or storage read). /api/v1/trust/
+            attestations/summary will go stale from a user perspective
+            regardless of how many proofs are arriving. Restart the
+            qsdm service and capture a goroutine dump.
+
+  # -----------------------------------------------------------------
+  # Quarantine subsystem (direct gauges, mirror of trust pattern)
+  # -----------------------------------------------------------------
+  # Companions to qsdm-submesh above. The qsdm-submesh rules
+  # alert on transaction-level rejection counters ("is the submesh
+  # policy ever kicking in?"). These rules alert on the aggregate
+  # quarantine state ("how many submeshes are currently isolated?") by
+  # consuming the qsdm_quarantine_* gauges emitted by
+  # pkg/quarantine/metrics.go. Together with the trust gauges above,
+  # Alertmanager sees both the attestation denominator and the fraction
+  # of the mesh that is in penalty — the two numbers that most often
+  # move in opposite directions during an incident.
+  #
+  # No warm-gate is needed here: the QuarantineManager is fully live
+  # from process start (no Refresh() equivalent), so zero values at
+  # t=0 are literally correct. The natural-zero denominator case is
+  # handled inside the collector (ratio returns 0 when tracked==0),
+  # so no alert can fire on an empty fleet.
+  - name: qsdm-quarantine
+    rules:
+      - alert: QSDMQuarantineAnySubmesh
+        # A single quarantined submesh for 10+ minutes is worth a
+        # page: auto-recovery (pkg/quarantine/auto_recovery.go) only
+        # activates when wired, and manual RemoveQuarantine is a
+        # decision a human should be making. This is intentionally
+        # chatty in multi-tenant deployments — tune the for: per env.
+        expr: qsdm_quarantine_submeshes > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: {{ $value }} submesh(es) currently quarantined"
+          description: |
+            The QuarantineManager has {{ $value }} submeshes with
+            quarantined[k]=true for 10+ minutes. Inspect
+            qsdm_submesh_p2p_reject_* counters and validator logs
+            for the offending submesh key. Resolve by fixing the
+            invalid-tx source, or call QuarantineManager.RemoveQuarantine
+            after confirming the underlying cause is cleared.
+
+      - alert: QSDMQuarantineMajorityIsolated
+        # Ratio-based escalation: if more than half of observed
+        # submeshes are quarantined, this is no longer a local policy
+        # hit but a systemic event (bad software rollout, rotated key,
+        # clock skew). The tracked>=4 guard stops flap on tiny fleets
+        # where one bad submesh out of two already crosses 0.5.
+        expr: |
+          qsdm_quarantine_submeshes_tracked >= 4
+          and qsdm_quarantine_submeshes_ratio > 0.5
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: majority of tracked submeshes quarantined ({{ $value | humanizePercentage }})"
+          description: |
+            {{ $value | humanizePercentage }} of the submeshes this
+            node has observed are currently quarantined. This is
+            almost never a per-submesh problem — suspect a bad
+            rollout, a policy-threshold misconfiguration, or a
+            validator-side bug mis-classifying valid transactions.
+            Cross-check qsdm_quarantine_threshold against the
+            rollout plan before unwinding quarantines.

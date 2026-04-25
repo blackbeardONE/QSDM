@@ -26,9 +26,9 @@ QSDM now supports configuration files in TOML or YAML format, with environment v
 
 1. **Copy example config:**
    ```powershell
-   Copy-Item config/qsdmplus.toml.example qsdm.toml
+   Copy-Item config/qsdm.toml.example qsdm.toml
    # Or for YAML:
-   Copy-Item config/qsdmplus.yaml.example qsdm.yaml
+   Copy-Item config/qsdm.yaml.example qsdm.yaml
    ```
 
 2. **Customize configuration:**
@@ -51,12 +51,12 @@ bootstrap_peers = ["127.0.0.1:4001"]
 
 [storage]
 type = "sqlite"
-sqlite_path = "qsdmplus.db"
+sqlite_path = "qsdm.db"
 
 [monitoring]
 dashboard_port = 8081
 log_viewer_port = 8080
-log_file = "qsdmplus.log"
+log_file = "qsdm.log"
 log_level = "INFO"  # DEBUG, INFO, WARN, ERROR
 
 [api]
@@ -73,12 +73,12 @@ network:
 
 storage:
   type: "sqlite"
-  sqlite_path: "qsdmplus.db"
+  sqlite_path: "qsdm.db"
 
 monitoring:
   dashboard_port: 8081
   log_viewer_port: 8080
-  log_file: "qsdmplus.log"
+  log_file: "qsdm.log"
   log_level: "INFO"  # DEBUG, INFO, WARN, ERROR
 ```
 
@@ -216,7 +216,7 @@ port = 4001
 ```toml
 [monitoring]
 log_level = "INFO"
-log_file = "/var/log/qsdm/qsdmplus.log"
+log_file = "/var/log/qsdm/qsdm.log"
 
 [network]
 port = 4001
@@ -260,7 +260,7 @@ logger.Info("Transaction stored", "tx_id", tx.ID)
    - Use environment variables for deployment-specific overrides
 
 2. **Version control:**
-   - Commit `qsdmplus.toml.example` to version control
+   - Commit `qsdm.toml.example` to version control
    - Don't commit `qsdm.toml` with sensitive data
    - Use environment variables for secrets
 
@@ -387,5 +387,5 @@ logger.Debug("Debug message")  // New: DEBUG level
 *For more information, see:*
 - `docs/QUICK_START.md` - Quick start guide
 - `docs/NEXT_STEPS.md` - Next development steps
-- `qsdmplus.toml.example` - Example configuration
+- `qsdm.toml.example` - Example configuration
 

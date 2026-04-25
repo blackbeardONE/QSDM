@@ -1,6 +1,6 @@
 # QSDM Roadmap
 
-> Historical note: this document was authored during the transitional **QSDM+** naming window. The platform has reverted to **QSDM** and introduced the native coin **Cell (CELL)** per the Major Update plan; see `REBRAND_NOTES.md` and `CELL_TOKENOMICS.md`. References to "QSDM+" below are historical and remain in place to keep roadmap milestones verifiable against the commits that delivered them.
+> Historical note: this document was authored during the transitional **QSDM** naming window. The platform has reverted to **QSDM** and introduced the native coin **Cell (CELL)** per the Major Update plan; see `REBRAND_NOTES.md` and `CELL_TOKENOMICS.md`. References to "QSDM" below are historical and remain in place to keep roadmap milestones verifiable against the commits that delivered them.
 
 **Last Updated:** April 2026 (session 70)
 **Current Status:** Phase 1-3 Core Features Complete; in-repo scope ~99% complete. Remaining work requires external environments (auditor, real clusters, platform packaging).
@@ -46,18 +46,18 @@
 
 ## NVIDIA NGC sidecar & GPU attestation (architecture bridge)
 
-**Scope today:** NVIDIA-lock **primarily gates state-changing ledger HTTP APIs** (`mint` / `send` / token create, etc.). Optional **`nvidia_lock_gate_p2p`** (`QSDMPLUS_NVIDIA_LOCK_GATE_P2P`) additionally drops **libp2p-received** transactions after PoE validation when no qualifying ingested proof is present (same proof criteria as HTTP, **non-consuming** ring check so HTTP single-use nonce paths stay independent). **Full consensus / block-header attestation** (network-wide agreement on GPU proofs) is **not** implemented—treat P2P gate as a **node-local policy** on what this process stores/forwards. See **`NVIDIA_LOCK_CONSENSUS_SCOPE.md`** for the same distinction in short form.
+**Scope today:** NVIDIA-lock **primarily gates state-changing ledger HTTP APIs** (`mint` / `send` / token create, etc.). Optional **`nvidia_lock_gate_p2p`** (`QSDM_NVIDIA_LOCK_GATE_P2P`) additionally drops **libp2p-received** transactions after PoE validation when no qualifying ingested proof is present (same proof criteria as HTTP, **non-consuming** ring check so HTTP single-use nonce paths stay independent). **Full consensus / block-header attestation** (network-wide agreement on GPU proofs) is **not** implemented—treat P2P gate as a **node-local policy** on what this process stores/forwards. See **`NVIDIA_LOCK_CONSENSUS_SCOPE.md`** for the same distinction in short form.
 
-Aligned with `nvidia_locked_qsdmplus_blockchain_architecture.md` (CUDA/AI/tensor proofs, gossip, NGC containers) and **Priority 2** (enhanced validation / monitoring):
+Aligned with `nvidia_locked_qsdm_blockchain_architecture.md` (CUDA/AI/tensor proofs, gossip, NGC containers) and **Priority 2** (enhanced validation / monitoring):
 
 | Deliverable | Location | Notes |
 |-------------|----------|--------|
-| Phase 1–3 proof prototype | `apps/qsdmplus-nvidia-ngc/validator_phase1.py` | Simulated PoW hash, deterministic PyTorch AI proof, FP16 CUDA matmul when GPU image is used, replay digest, `nvidia-smi` fingerprint |
-| UDP gossip | `apps/qsdmplus-nvidia-ngc/gossip_daemon.py` + `docker-compose.yml` | Optional mesh summaries |
-| NGC PyTorch image | `apps/qsdmplus-nvidia-ngc/Dockerfile.ngc` | Requires `docker login nvcr.io` (use env file; never commit keys) |
+| Phase 1–3 proof prototype | `apps/qsdm-nvidia-ngc/validator_phase1.py` | Simulated PoW hash, deterministic PyTorch AI proof, FP16 CUDA matmul when GPU image is used, replay digest, `nvidia-smi` fingerprint |
+| UDP gossip | `apps/qsdm-nvidia-ngc/gossip_daemon.py` + `docker-compose.yml` | Optional mesh summaries |
+| NGC PyTorch image | `apps/qsdm-nvidia-ngc/Dockerfile.ngc` | Requires `docker login nvcr.io` (use env file; never commit keys) |
 | Ingest into QSDM node | `QSDM/source/pkg/monitoring/ngc_proofs.go`, API `POST /api/v1/monitoring/ngc-proof` | Enable with env `QSDM_NGC_INGEST_SECRET`; sidecar sets `QSDM_NGC_REPORT_URL` + same secret |
-| Metrics (JSON + Prometheus text) | Dashboard `GET /api/metrics`, `GET /api/metrics/prometheus` (JWT) | `qsdmplus_*` series for NVIDIA/NGC counters and tx/network totals |
-| Optional P2P drop | `cmd/qsdmplus/transaction`, `pkg/monitoring/nvidia_p2p_gate.go` | `[api] nvidia_lock_gate_p2p` + `nvidia_lock` |
+| Metrics (JSON + Prometheus text) | Dashboard `GET /api/metrics`, `GET /api/metrics/prometheus` (JWT) | `qsdm_*` series for NVIDIA/NGC counters and tx/network totals |
+| Optional P2P drop | `cmd/qsdm/transaction`, `pkg/monitoring/nvidia_p2p_gate.go` | `[api] nvidia_lock_gate_p2p` + `nvidia_lock` |
 
 The main Go ledger remains **PoE + quantum-safe**; the sidecar is an **optional attestation and monitoring path** until native CUDA kernels in `pkg/mesh3d` are completed.
 
@@ -87,10 +87,10 @@ The main Go ledger remains **PoE + quantum-safe**; the sidecar is an **optional 
 - **Kubernetes manifests** - **`QSDM/deploy/kubernetes/`**; ConfigMap-driven ports and rate limits
 - **Deployment scripts** - **`QSDM/deploy/scripts/`**; extend for your registry and environments
 - **Health monitoring** - **`/api/v1/health/live`** and **`/api/v1/health/ready`**; align orchestration probes
-- **CI/CD** - **`.github/workflows/qsdmplus-go.yml`** (build, tests, **`docker-image`**); add publish/sign/deploy stages as needed
+- **CI/CD** - **`.github/workflows/qsdm-go.yml`** (build, tests, **`docker-image`**); add publish/sign/deploy stages as needed
 
 **Impact:** Easier deployment and scaling  
-**Files:** **`QSDM/deploy/`**, **`QSDM/Dockerfile`**, **`.github/workflows/qsdmplus-go.yml`**
+**Files:** **`QSDM/deploy/`**, **`QSDM/Dockerfile`**, **`.github/workflows/qsdm-go.yml`**
 
 ---
 
@@ -111,7 +111,7 @@ The main Go ledger remains **PoE + quantum-safe**; the sidecar is an **optional 
 **Improve existing features:**
 
 #### 1. ScyllaDB Integration — **Feature complete in repo**
-- **Status:** Core integration in tree (`pkg/storage/scylla.go`): LWT dedupe, MVs (`transactions_by_tx_id`, `transactions_by_sender`, `transactions_by_recipient`), `cmd/scyllasmoke`, `cmd/migrate` (with `-stats-only` + per-phase timing), TLS + CQL password auth via `ScyllaClusterConfig` (env + TOML/YAML), `SCYLLA_AUTO_CREATE_KEYSPACE` for dev/CI, `SCYLLA_MIGRATION.md`, **`SCYLLA_CAPACITY.md`** operator runbook (session 70), `scylla-staging-verify{,-with-docker}.{ps1,sh}`, and the `qsdmplus-scylla-staging` CI workflow.
+- **Status:** Core integration in tree (`pkg/storage/scylla.go`): LWT dedupe, MVs (`transactions_by_tx_id`, `transactions_by_sender`, `transactions_by_recipient`), `cmd/scyllasmoke`, `cmd/migrate` (with `-stats-only` + per-phase timing), TLS + CQL password auth via `ScyllaClusterConfig` (env + TOML/YAML), `SCYLLA_AUTO_CREATE_KEYSPACE` for dev/CI, `SCYLLA_MIGRATION.md`, **`SCYLLA_CAPACITY.md`** operator runbook (session 70), `scylla-staging-verify{,-with-docker}.{ps1,sh}`, and the `qsdm-scylla-staging` CI workflow.
 - **Remaining (external):** run the full `cmd/migrate` dry-run against a copy of production SQLite + multi-node Scylla staging cluster following `SCYLLA_CAPACITY.md` §2; verify TLS/auth end-to-end; run the rollback rehearsal in §6.
 
 **Impact:** High throughput for production workloads
@@ -214,7 +214,7 @@ The main Go ledger remains **PoE + quantum-safe**; the sidecar is an **optional 
 ---
 
 #### 3. SDK Improvements — **Go SDK complete in repo**
-- **Status (session 70):** `sdk/go/qsdmplus.go` now exposes a context-aware, typed API — `GetBalance`, `SendTransaction`, `GetTransaction`, `GetLiveness`, `GetReadiness`, `GetNodeStatus`, `GetPeers`, `GetMetricsJSON`, `GetMetricsPrometheus`, `ErrAPI`, `IsNotFound`, `IsUnauthorized`; covered by `httptest`-backed tests in `sdk/go/qsdmplus_test.go`.
+- **Status (session 70):** `sdk/go/qsdm.go` now exposes a context-aware, typed API — `GetBalance`, `SendTransaction`, `GetTransaction`, `GetLiveness`, `GetReadiness`, `GetNodeStatus`, `GetPeers`, `GetMetricsJSON`, `GetMetricsPrometheus`, `ErrAPI`, `IsNotFound`, `IsUnauthorized`; covered by `httptest`-backed tests in `sdk/go/qsdm_test.go`.
 - **Remaining:** JS / Python SDKs at feature-parity with Go, WASM SDK enhancements, and packaged module publication.
 
 **Impact:** Easier integration
@@ -250,7 +250,7 @@ The main Go ledger remains **PoE + quantum-safe**; the sidecar is an **optional 
    - Penetration testing
 
 ### Option B: Validate delivery 🚀
-1. **CI** — Confirm **QSDM+ Go** (including **`docker-image`**) is green
+1. **CI** — Confirm **QSDM Go** (including **`docker-image`**) is green
 2. **Local or staging** — `docker build` / Compose or K8s smoke using **`QSDM/deploy/README.md`**
 3. **CD** — Wire registry push and environment deploy from your pipeline (not one-size-fits-all in-repo)
 
@@ -346,5 +346,5 @@ The main Go ledger remains **PoE + quantum-safe**; the sidecar is an **optional 
 
 ---
 
-*QSDM+: Building the Future of Quantum-Safe Distributed Ledgers* 🚀
+*QSDM: Building the Future of Quantum-Safe Distributed Ledgers* 🚀
 

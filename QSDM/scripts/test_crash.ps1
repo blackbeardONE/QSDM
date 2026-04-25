@@ -1,5 +1,5 @@
 # Test script to capture crash details
-Write-Host "Testing qsdmplus.exe startup..." -ForegroundColor Cyan
+Write-Host "Testing qsdm.exe startup..." -ForegroundColor Cyan
 Write-Host ""
 
 # Set up environment
@@ -33,11 +33,11 @@ if (Test-Path ".\libssl-3-x64.dll") {
 }
 
 Write-Host ""
-Write-Host "Starting qsdmplus.exe and capturing output..." -ForegroundColor Cyan
+Write-Host "Starting qsdm.exe and capturing output..." -ForegroundColor Cyan
 Write-Host ""
 
 # Start process with output redirection
-$process = Start-Process -FilePath ".\qsdmplus.exe" -NoNewWindow -PassThru -RedirectStandardOutput "crash_stdout.txt" -RedirectStandardError "crash_stderr.txt"
+$process = Start-Process -FilePath ".\qsdm.exe" -NoNewWindow -PassThru -RedirectStandardOutput "crash_stdout.txt" -RedirectStandardError "crash_stderr.txt"
 
 # Wait a moment
 Start-Sleep -Seconds 2

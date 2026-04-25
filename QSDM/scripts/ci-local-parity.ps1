@@ -1,4 +1,4 @@
-# Local parity with QSDM+ Go + Validate deploy workflows. Run from monorepo root (folder that contains QSDM/).
+# Local parity with QSDM Go + Validate deploy workflows. Run from monorepo root (folder that contains QSDM/).
 # Requires: go. Optional: docker.
 # Usage: pwsh -File QSDM/scripts/ci-local-parity.ps1
 $ErrorActionPreference = 'Stop'
@@ -22,13 +22,13 @@ if (Get-Command docker -ErrorAction SilentlyContinue) {
 $env:CGO_ENABLED = '0'
 Remove-Item Env:CGO_CFLAGS -ErrorAction SilentlyContinue
 Remove-Item Env:CGO_LDFLAGS -ErrorAction SilentlyContinue
-$env:QSDMPLUS_METRICS_REGISTER_STRICT = '1'
+$env:QSDM_METRICS_REGISTER_STRICT = '1'
 
-$outExe = Join-Path $env:TEMP 'qsdmplus-ci-local.exe'
+$outExe = Join-Path $env:TEMP 'qsdm-ci-local.exe'
 Write-Host '==> go build (no CGO)'
 Push-Location $SourceDir
 try {
-	& go build -o $outExe ./cmd/qsdmplus
+	& go build -o $outExe ./cmd/qsdm
 	if ($LASTEXITCODE -ne 0) {
 		throw "go build failed (exit $LASTEXITCODE)"
 	}

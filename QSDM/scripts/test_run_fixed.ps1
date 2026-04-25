@@ -6,7 +6,7 @@ Write-Host ""
 $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
 
 # Start the process
-$proc = Start-Process -FilePath ".\qsdmplus.exe" -NoNewWindow -PassThru -RedirectStandardOutput "test_out.txt" -RedirectStandardError "test_err.txt"
+$proc = Start-Process -FilePath ".\qsdm.exe" -NoNewWindow -PassThru -RedirectStandardOutput "test_out.txt" -RedirectStandardError "test_err.txt"
 
 Write-Host "Process started (PID: $($proc.Id))" -ForegroundColor Yellow
 Write-Host "Waiting 8 seconds for initialization..." -ForegroundColor Gray

@@ -1,4 +1,4 @@
-# Example: fetch dashboard /api/metrics/prometheus and list qsdmplus_ngc_proof_ingest_* lines.
+# Example: fetch dashboard /api/metrics/prometheus and list qsdm_ngc_proof_ingest_* lines.
 # Usage:
 #   .\scripts\verify-ngc-ingest-metrics.example.ps1
 #   $env:DASHBOARD_URL = 'http://127.0.0.1:8081'; $env:METRICS_SECRET = '...'; .\scripts\verify-ngc-ingest-metrics.example.ps1
@@ -16,9 +16,9 @@ try {
     Write-Error "Request failed: $_"
     exit 1
 }
-$lines = ($text -split "`r?`n") | Where-Object { $_ -match '^qsdmplus_ngc_proof_ingest_' }
+$lines = ($text -split "`r?`n") | Where-Object { $_ -match '^qsdm_ngc_proof_ingest_' }
 if (-not $lines) {
-    Write-Error "No qsdmplus_ngc_proof_ingest_* lines (JWT or METRICS_SECRET may be required)."
+    Write-Error "No qsdm_ngc_proof_ingest_* lines (JWT or METRICS_SECRET may be required)."
     exit 1
 }
 $lines | ForEach-Object { Write-Output $_ }

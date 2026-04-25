@@ -54,7 +54,7 @@ RUN cd source && go mod download
 RUN cd source && CGO_ENABLED=1 \
     CGO_CFLAGS="-I/usr/local/include" \
     CGO_LDFLAGS="-L/usr/local/lib -loqs -lssl -lcrypto" \
-    go build -tags validator_only -o ../qsdm ./cmd/qsdmplus
+    go build -tags validator_only -o ../qsdm ./cmd/qsdm
 
 FROM alpine:latest
 
@@ -69,7 +69,7 @@ COPY --from=builder /usr/local/lib/liboqs.so* /usr/local/lib/
 COPY --from=builder /app/qsdm /usr/local/bin/qsdm
 
 # Legacy binary name so existing CMD/scripts continue to work.
-RUN ln -s /usr/local/bin/qsdm /usr/local/bin/qsdmplus
+RUN ln -s /usr/local/bin/qsdm /usr/local/bin/qsdm
 
 WORKDIR /app
 

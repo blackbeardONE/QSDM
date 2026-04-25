@@ -1,5 +1,5 @@
-# QSDM+ Deployment Script (PowerShell)
-# Deploys QSDM+ cluster using Docker Compose
+# QSDM Deployment Script (PowerShell)
+# Deploys QSDM cluster using Docker Compose
 
 param(
     [string]$Method = "docker",
@@ -13,7 +13,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $DeployDir = Split-Path -Parent $ScriptDir
 $ProjectRoot = Split-Path -Parent $DeployDir
 
-Write-Host "=== QSDM+ Deployment Script ===" -ForegroundColor Green
+Write-Host "=== QSDM Deployment Script ===" -ForegroundColor Green
 Write-Host "Deployment method: $Method"
 Write-Host "Node count: $NodeCount"
 Write-Host ""
@@ -48,7 +48,7 @@ function Deploy-Docker {
         docker-compose -f docker-compose.cluster.yml build
         
         # Start services
-        Write-Host "Starting QSDM+ cluster..."
+        Write-Host "Starting QSDM cluster..."
         docker-compose -f docker-compose.cluster.yml up -d
         
         # Wait for services

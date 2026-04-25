@@ -60,13 +60,13 @@ jobs:
         working-directory: source
         run: |
           export PATH="/usr/local/go/bin:$PATH"
-          CGO_ENABLED=1 go build -tags cuda ./cmd/qsdmplus/
+          CGO_ENABLED=1 go build -tags cuda ./cmd/qsdm/
 
       - name: Run mesh3d tests
         working-directory: source
         run: |
           export PATH="/usr/local/go/bin:$PATH"
-          export QSDMPLUS_METRICS_REGISTER_STRICT=1
+          export QSDM_METRICS_REGISTER_STRICT=1
           CGO_ENABLED=1 go test -tags cuda ./pkg/mesh3d/... -v -count=1
 
   test-without-cuda:
@@ -81,11 +81,11 @@ jobs:
       - name: Run tests without CGO (stub path)
         working-directory: source
         run: |
-          export QSDMPLUS_METRICS_REGISTER_STRICT=1
+          export QSDM_METRICS_REGISTER_STRICT=1
           CGO_ENABLED=0 go test ./pkg/mesh3d/... -v -count=1
 
       - name: Run all package tests
         working-directory: source
         run: |
-          export QSDMPLUS_METRICS_REGISTER_STRICT=1
+          export QSDM_METRICS_REGISTER_STRICT=1
           CGO_ENABLED=0 go test ./pkg/... -count=1 -timeout=120s

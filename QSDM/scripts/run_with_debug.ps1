@@ -1,7 +1,7 @@
-# PowerShell script to run qsdmplus.exe with detailed debugging
+# PowerShell script to run qsdm.exe with detailed debugging
 # This helps diagnose silent crashes
 
-Write-Host "Running qsdmplus.exe with debug output..." -ForegroundColor Cyan
+Write-Host "Running qsdm.exe with debug output..." -ForegroundColor Cyan
 Write-Host ""
 
 # Set PATH to include OpenSSL DLLs FIRST (critical for liboqs)
@@ -47,11 +47,11 @@ if (-not $liboqsFound) {
 }
 
 Write-Host ""
-Write-Host "Starting qsdmplus.exe..." -ForegroundColor Cyan
+Write-Host "Starting qsdm.exe..." -ForegroundColor Cyan
 Write-Host ""
 
 # Run with output capture
-$process = Start-Process -FilePath ".\qsdmplus.exe" -NoNewWindow -PassThru -RedirectStandardOutput "stdout_debug.txt" -RedirectStandardError "stderr_debug.txt"
+$process = Start-Process -FilePath ".\qsdm.exe" -NoNewWindow -PassThru -RedirectStandardOutput "stdout_debug.txt" -RedirectStandardError "stderr_debug.txt"
 
 # Wait a moment to see if it crashes immediately
 Start-Sleep -Seconds 3

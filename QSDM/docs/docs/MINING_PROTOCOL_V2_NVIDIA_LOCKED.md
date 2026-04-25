@@ -20,7 +20,7 @@
 > **Does not supersede:** `CELL_TOKENOMICS.md` on issuance
 > schedule (the fork resets the chain — see §8 — but the emission
 > curve stays). `NODE_ROLES.md` on the validator/miner split.
-> `nvidia_locked_qsdmplus_blockchain_architecture.md`, which is the
+> `nvidia_locked_qsdm_blockchain_architecture.md`, which is the
 > high-level vision document this spec operationalises.
 >
 > **Why a standalone doc:** The v1 spec explicitly states
@@ -122,7 +122,7 @@ All references below are to the v1 spec file
    batch_root)` and different attestation bundles share a
    proof-id. The verifier will reject the second one for
    duplicate-proof reasons, not for attestation reasons.
-5. The separate `apps/qsdmplus-nvidia-ngc/` sidecar keeps
+5. The separate `apps/qsdm-nvidia-ngc/` sidecar keeps
    operating and keeps pushing to
    `/api/v1/monitoring/ngc-proof`. That path is dashboards and
    transparency surface; it does not feed consensus. Operators

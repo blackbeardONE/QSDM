@@ -6,7 +6,7 @@ echo "Testing QSDM Dashboard..."
 # Test if node is running
 if ! pgrep -f qsdm > /dev/null; then
     echo "ERROR: QSDM node is not running!"
-    echo "Please start the node first: ./qsdmplus"
+    echo "Please start the node first: ./qsdm"
     exit 1
 fi
 

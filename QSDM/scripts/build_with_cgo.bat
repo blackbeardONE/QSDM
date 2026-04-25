@@ -64,11 +64,11 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo.
 echo Building...
-go build -o qsdmplus.exe ./cmd/qsdmplus
+go build -o qsdm.exe ./cmd/qsdm
 
 if %ERRORLEVEL% EQU 0 (
     echo.
-    echo Build successful! Executable: qsdmplus.exe
+    echo Build successful! Executable: qsdm.exe
     echo.
     echo All features enabled:
     echo   - Quantum-safe consensus (Proof-of-Entanglement)

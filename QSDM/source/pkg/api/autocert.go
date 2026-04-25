@@ -12,7 +12,7 @@ import (
 
 // ACMEConfig holds configuration for automatic TLS certificate provisioning.
 type ACMEConfig struct {
-	Domains  []string // e.g. ["api.qsdmplus.io"]
+	Domains  []string // e.g. ["api.qsdm.io"]
 	Email    string   // contact email for Let's Encrypt
 	CacheDir string   // directory to cache certificates (default: "certs")
 }

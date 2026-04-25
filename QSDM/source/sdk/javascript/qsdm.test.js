@@ -1,15 +1,10 @@
-// Node.js built-in test for the preferred QSDM SDK entry point.
+// Node.js built-in test for the QSDM SDK.
 // Run with: node --test qsdm.test.js
-//
-// Confirms that qsdm.js exposes the same wire behaviour as qsdmplus.js and that
-// QSDMClient and QSDMPlusClient refer to the same constructor during the
-// deprecation window.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const qsdm = require('./qsdm.js');
-const qsdmplus = require('./qsdmplus.js');
 
 function startServer(handler) {
     return new Promise((resolve) => {
@@ -25,9 +20,8 @@ function stopServer(srv) {
     return new Promise((resolve) => srv.close(() => resolve()));
 }
 
-test('QSDMClient is the same constructor as QSDMPlusClient', () => {
-    assert.equal(qsdm.QSDMClient, qsdmplus.QSDMPlusClient);
-    assert.equal(qsdm.QSDMPlusClient, qsdmplus.QSDMPlusClient);
+test('QSDMClient exported', () => {
+    assert.equal(typeof qsdm.QSDMClient, 'function');
 });
 
 test('QSDMClient performs a wallet balance request', async () => {
@@ -46,11 +40,10 @@ test('QSDMClient performs a wallet balance request', async () => {
     }
 });
 
-test('ApiError, isNotFound, isUnauthorized are re-exported', async () => {
+test('ApiError, isNotFound, isUnauthorized are re-exported', () => {
     assert.equal(typeof qsdm.ApiError, 'function');
-    assert.equal(qsdm.ApiError, qsdmplus.ApiError);
-    assert.equal(qsdm.isNotFound, qsdmplus.isNotFound);
-    assert.equal(qsdm.isUnauthorized, qsdmplus.isUnauthorized);
+    assert.equal(typeof qsdm.isNotFound, 'function');
+    assert.equal(typeof qsdm.isUnauthorized, 'function');
 
     const err = new qsdm.ApiError(404, 'http://x/y', 'not found');
     assert.ok(qsdm.isNotFound(err));

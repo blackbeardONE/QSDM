@@ -41,10 +41,10 @@ Write-Host ""
 Write-Host "=== QSDM Process Status ===" -ForegroundColor Cyan
 $qsdmProcess = Get-Process qsdm -ErrorAction SilentlyContinue
 if ($qsdmProcess) {
-    Write-Host "✅ qsdmplus.exe is running (PID: $($qsdmProcess.Id))" -ForegroundColor Green
+    Write-Host "✅ qsdm.exe is running (PID: $($qsdmProcess.Id))" -ForegroundColor Green
     Write-Host "   Started: $($qsdmProcess.StartTime)" -ForegroundColor Gray
 } else {
-    Write-Host "❌ qsdmplus.exe is NOT running" -ForegroundColor Red
+    Write-Host "❌ qsdm.exe is NOT running" -ForegroundColor Red
     Write-Host ""
     Write-Host "If port $dashboardPort is in use, QSDM may have failed to start the dashboard." -ForegroundColor Yellow
     Write-Host "Check the application output for errors." -ForegroundColor Gray

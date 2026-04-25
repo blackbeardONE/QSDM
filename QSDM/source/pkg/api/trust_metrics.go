@@ -41,7 +41,7 @@ import (
 // update path.
 //
 // Nil-safety: if agg is nil (e.g. operator has set [trust] disabled=true
-// in qsdmplus.toml so the aggregator never gets constructed), the
+// in qsdm.toml so the aggregator never gets constructed), the
 // collector returns an empty slice rather than panicking. This keeps
 // the /metrics surface clean on no-trust nodes — absent gauges are
 // correct, emitting zeroes would falsely imply the floor assertions

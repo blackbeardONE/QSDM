@@ -39,7 +39,7 @@
 #   --qsdm-home DIR       Source checkout to build from.
 #                         Default: $HOME/QSDM (git-cloned if missing)
 #   --skip-liboqs         Re-use an existing $QSDM_HOME/liboqs_install.
-#   --skip-build          Re-use an existing $QSDM_HOME/qsdmplus binary.
+#   --skip-build          Re-use an existing $QSDM_HOME/qsdm binary.
 #   --skip-firewall       Do not touch ufw.
 #   --health-timeout SEC  How long to wait for ready + peer-count>=1.
 #                         Default: 180
@@ -147,11 +147,11 @@ printf "    qsdm_home        = %s\n" "$QSDM_HOME"
 printf "    dry_run          = %s\n" "$DRY_RUN"
 
 # Guard against running against the index-1 primary by mistake.
-if [[ "$INSTALL_DIR" == "/opt/qsdmplus" ]]; then
-    die "Refusing to overwrite the primary validator at /opt/qsdmplus"
+if [[ "$INSTALL_DIR" == "/opt/qsdm" ]]; then
+    die "Refusing to overwrite the primary validator at /opt/qsdm"
 fi
-if systemctl is-active --quiet qsdmplus 2>/dev/null; then
-    log "Primary validator (qsdmplus.service) is active -- proceeding as a second node."
+if systemctl is-active --quiet qsdm 2>/dev/null; then
+    log "Primary validator (qsdm.service) is active -- proceeding as a second node."
 fi
 
 # Check the requested ports are not in use by another process.
@@ -214,12 +214,12 @@ else
 fi
 
 # --- 5. binary --------------------------------------------------------------
-if [[ "$SKIP_BUILD" == "1" && -x "$QSDM_HOME/qsdmplus" ]]; then
-    log "Skipping Go build (reusing $QSDM_HOME/qsdmplus)"
+if [[ "$SKIP_BUILD" == "1" && -x "$QSDM_HOME/qsdm" ]]; then
+    log "Skipping Go build (reusing $QSDM_HOME/qsdm)"
 else
     log "Building qsdm-validator binary..."
     run ./scripts/build.sh
-    [[ "$DRY_RUN" == "1" ]] || test -x "./qsdmplus" || die "Build produced no binary at $QSDM_HOME/qsdmplus"
+    [[ "$DRY_RUN" == "1" ]] || test -x "./qsdm" || die "Build produced no binary at $QSDM_HOME/qsdm"
 fi
 
 # --- 6. install dir + user --------------------------------------------------
@@ -230,7 +230,7 @@ fi
 run mkdir -p "$INSTALL_DIR" "$DATA_DIR"
 run chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR" "$DATA_DIR"
 
-run install -m 0755 "$QSDM_HOME/qsdmplus" "$INSTALL_DIR/qsdm-validator"
+run install -m 0755 "$QSDM_HOME/qsdm" "$INSTALL_DIR/qsdm-validator"
 if [[ -d "$QSDM_HOME/liboqs_install" ]]; then
     run cp -a "$QSDM_HOME/liboqs_install" "$INSTALL_DIR/"
     run chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/liboqs_install"
@@ -397,6 +397,6 @@ Next steps:
   * Front the API with Caddy / nginx (see docs/docs/VALIDATOR_QUICKSTART.md §6).
   * Back up ${DATA_DIR} *before* exposing this node to the public network.
     The ML-DSA-87 signing key lives there and is unique to this validator.
-  * (Optional) Enable NGC attestation -- see apps/qsdmplus-nvidia-ngc/QUICKSTART.md.
+  * (Optional) Enable NGC attestation -- see apps/qsdm-nvidia-ngc/QUICKSTART.md.
 
 EOF

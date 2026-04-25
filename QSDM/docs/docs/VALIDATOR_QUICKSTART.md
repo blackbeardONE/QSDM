@@ -236,7 +236,7 @@ curl -s https://validator.example.com/api/v1/status | jq
 
 You should get a JSON body with `node_role: "validator"`,
 `coin.symbol: "CELL"`, `branding.name: "QSDM"`, `branding.legacy_name:
-"QSDM+"`, and a non-empty `version`.
+"QSDM"`, and a non-empty `version`.
 
 ---
 
@@ -249,7 +249,7 @@ You should get a JSON body with `node_role: "validator"`,
   Use this to assert in CI that your validator reports the correct role.
 - `/api/metrics/prometheus` — full Prometheus scrape. Requires either a
   Bearer token OR the `X-QSDM-Metrics-Scrape-Secret` header (legacy
-  `X-QSDMPLUS-Metrics-Scrape-Secret` still accepted during the deprecation
+  `X-QSDM-Metrics-Scrape-Secret` still accepted during the deprecation
   window; see [`REBRAND_NOTES.md`](./REBRAND_NOTES.md)).
 
 ---

@@ -11,7 +11,7 @@
 
 ```bash
 cd QSDM
-./qsdmplus.exe
+./qsdm.exe
 ```
 
 The API will be available at: **http://localhost:8080/api/v1**

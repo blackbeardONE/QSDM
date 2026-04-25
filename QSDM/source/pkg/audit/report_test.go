@@ -54,7 +54,7 @@ func TestChecklist_Report_Markdown_IncludesSummaryAndCategories(t *testing.T) {
 	}
 	out := buf.String()
 	for _, want := range []string{
-		"# QSDM+ Security Audit Report",
+		"# QSDM Security Audit Report",
 		"## Summary",
 		"**Completion score:**",
 		"### Cryptography",

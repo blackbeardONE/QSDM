@@ -15,7 +15,7 @@ try {
 		$env:CGO_ENABLED = '0'
 		Remove-Item Env:CGO_CFLAGS -ErrorAction SilentlyContinue
 		Remove-Item Env:CGO_LDFLAGS -ErrorAction SilentlyContinue
-		$env:QSDMPLUS_METRICS_REGISTER_STRICT = '1'
+		$env:QSDM_METRICS_REGISTER_STRICT = '1'
 		& go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 		if ($LASTEXITCODE -ne 0) {
 			exit $LASTEXITCODE

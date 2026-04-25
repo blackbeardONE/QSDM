@@ -11,9 +11,9 @@ or send me some love via paypal or crypto >>
 
 # Quantum-Secure Dynamic Mesh Ledger (QSDM)
 
-> **Rebrand notice (Major Update):** the platform is migrating from the transitional name **QSDM+** back to **QSDM**, and introducing the native coin **Cell (CELL)**. Configuration files, environment variables, and HTTP headers that used the `qsdmplus` / `QSDMPLUS_*` / `X-QSDMPLUS-*` names continue to work during the deprecation window. See [`docs/docs/REBRAND_NOTES.md`](docs/docs/REBRAND_NOTES.md) for the full migration table and [`docs/docs/CELL_TOKENOMICS.md`](docs/docs/CELL_TOKENOMICS.md) for the coin specification.
+> **Rebrand notice (Major Update):** the platform is migrating from the transitional name **QSDM** back to **QSDM**, and introducing the native coin **Cell (CELL)**. Configuration files, environment variables, and HTTP headers that used the `qsdm` / `QSDM_*` / `X-QSDM-*` names continue to work during the deprecation window. See [`docs/docs/REBRAND_NOTES.md`](docs/docs/REBRAND_NOTES.md) for the full migration table and [`docs/docs/CELL_TOKENOMICS.md`](docs/docs/CELL_TOKENOMICS.md) for the coin specification.
 
-**QSDM** is the public product name (previously transitionally **QSDM+**). Quantum-Secure Dynamic Mesh Ledger (QSDM) is a non-AI, decentralized electronic cash system designed for quantum resistance and hardware-agnostic operation. The native coin is **Cell (CELL)** — see `docs/docs/CELL_TOKENOMICS.md`.
+**QSDM** is the public product name (previously transitionally **QSDM**). Quantum-Secure Dynamic Mesh Ledger (QSDM) is a non-AI, decentralized electronic cash system designed for quantum resistance and hardware-agnostic operation. The native coin is **Cell (CELL)** — see `docs/docs/CELL_TOKENOMICS.md`.
 
 ## Overview
 QSDM supports both **Windows 10+** and **Linux (Ubuntu 24.04+)**. macOS support is in development.
@@ -35,11 +35,11 @@ This directory (**`QSDM/`**) is the **QSDM ledger node** (electronic cash / toke
 
 ### Optional: NGC sidecar and NVIDIA-lock (HTTP API)
 
-The **`apps/qsdmplus-nvidia-ngc`** sidecar can push GPU proof bundles to the node. Enable **`[api] nvidia_lock`** in config (and **`QSDMPLUS_NGC_INGEST_SECRET`**) so selected ledger HTTP routes require a recent GPU-attested proof. Optional **`nvidia_lock_expected_node_id`** / **`QSDMPLUS_NVIDIA_LOCK_EXPECTED_NODE_ID`** must match **`QSDMPLUS_NGC_PROOF_NODE_ID`** on the sidecar when you use proof binding. Optional **`nvidia_lock_proof_hmac_secret`** / **`QSDMPLUS_NVIDIA_LOCK_PROOF_HMAC_SECRET`** pairs with **`QSDMPLUS_NGC_PROOF_HMAC_SECRET`** on the sidecar for **`qsdmplus_proof_hmac`**. For non-CGO builds, set **`QSDMPLUS_JWT_HMAC_SECRET`** (or **`jwt_hmac_secret`** in config) for JWT HMAC. Production: **`strict_secrets`** / **`QSDMPLUS_STRICT_SECRETS`**, optional **`nvidia_lock_gate_p2p`** / **`QSDMPLUS_NVIDIA_LOCK_GATE_P2P`** (libp2p tx drops when no proof), dashboard **`/api/metrics/prometheus`** for scraping (**JWT** or **`metrics_scrape_secret`** / **`QSDMPLUS_DASHBOARD_METRICS_SCRAPE_SECRET`** with **`X-QSDMPLUS-Metrics-Scrape-Secret`** or **Bearer**), and **15/min** on **`GET .../ngc-challenge`** (sidecar honors **429** **`Retry-After`**; stagger validators if many share one NAT IP). Operator notes: [deploy/README.md](deploy/README.md); roadmap scope: [docs/docs/ROADMAP.md](docs/docs/ROADMAP.md); sidecar: [../apps/qsdmplus-nvidia-ngc/README.md](../apps/qsdmplus-nvidia-ngc/README.md).
+The **`apps/qsdm-nvidia-ngc`** sidecar can push GPU proof bundles to the node. Enable **`[api] nvidia_lock`** in config (and **`QSDM_NGC_INGEST_SECRET`**) so selected ledger HTTP routes require a recent GPU-attested proof. Optional **`nvidia_lock_expected_node_id`** / **`QSDM_NVIDIA_LOCK_EXPECTED_NODE_ID`** must match **`QSDM_NGC_PROOF_NODE_ID`** on the sidecar when you use proof binding. Optional **`nvidia_lock_proof_hmac_secret`** / **`QSDM_NVIDIA_LOCK_PROOF_HMAC_SECRET`** pairs with **`QSDM_NGC_PROOF_HMAC_SECRET`** on the sidecar for **`qsdm_proof_hmac`**. For non-CGO builds, set **`QSDM_JWT_HMAC_SECRET`** (or **`jwt_hmac_secret`** in config) for JWT HMAC. Production: **`strict_secrets`** / **`QSDM_STRICT_SECRETS`**, optional **`nvidia_lock_gate_p2p`** / **`QSDM_NVIDIA_LOCK_GATE_P2P`** (libp2p tx drops when no proof), dashboard **`/api/metrics/prometheus`** for scraping (**JWT** or **`metrics_scrape_secret`** / **`QSDM_DASHBOARD_METRICS_SCRAPE_SECRET`** with **`X-QSDM-Metrics-Scrape-Secret`** or **Bearer**), and **15/min** on **`GET .../ngc-challenge`** (sidecar honors **429** **`Retry-After`**; stagger validators if many share one NAT IP). Operator notes: [deploy/README.md](deploy/README.md); roadmap scope: [docs/docs/ROADMAP.md](docs/docs/ROADMAP.md); sidecar: [../apps/qsdm-nvidia-ngc/README.md](../apps/qsdm-nvidia-ngc/README.md).
 
 ### Submesh profiles (optional)
 
-Set **`[network] submesh_config`** (or **`QSDMPLUS_SUBMESH_CONFIG`**) to a **`config/micropayments.toml`**-style file (see **`config/qsdmplus.toml.example`**). Relative paths resolve next to your main config file. **Multiple profiles** use **`[[submeshes]]`** in TOML or **`submeshes:`** in YAML. When **any** submesh is loaded, **HTTP** **`POST /api/v1/wallet/send`** and **libp2p** ingress use the same rules: **fee + geotag** must match a submesh, and **max_tx_size** applies to the serialized payload. **Mint / token-create** HTTP routes use the **strictest** **max_tx_size** across loaded submeshes. Failures return **422** on the API and **drop** P2P messages before validation. **Interactive submesh CLI** (when stdin is a TTY) **adds or updates** entries in the same in-memory manager as the file seed—both apply together at runtime. **Prometheus** (dashboard **`/api/metrics/prometheus`**) exposes **`qsdmplus_submesh_*`** counters for P2P and API reject reasons.
+Set **`[network] submesh_config`** (or **`QSDM_SUBMESH_CONFIG`**) to a **`config/micropayments.toml`**-style file (see **`config/qsdm.toml.example`**). Relative paths resolve next to your main config file. **Multiple profiles** use **`[[submeshes]]`** in TOML or **`submeshes:`** in YAML. When **any** submesh is loaded, **HTTP** **`POST /api/v1/wallet/send`** and **libp2p** ingress use the same rules: **fee + geotag** must match a submesh, and **max_tx_size** applies to the serialized payload. **Mint / token-create** HTTP routes use the **strictest** **max_tx_size** across loaded submeshes. Failures return **422** on the API and **drop** P2P messages before validation. **Interactive submesh CLI** (when stdin is a TTY) **adds or updates** entries in the same in-memory manager as the file seed—both apply together at runtime. **Prometheus** (dashboard **`/api/metrics/prometheus`**) exposes **`qsdm_submesh_*`** counters for P2P and API reject reasons.
 
 ## Getting Started
 
@@ -63,7 +63,7 @@ Set **`[network] submesh_config`** (or **`QSDMPLUS_SUBMESH_CONFIG`**) to a **`co
 .\scripts\build.ps1
 
 # Run the node
-.\qsdmplus.exe
+.\qsdm.exe
 ```
 
 **Linux (Ubuntu 24.04+):**
@@ -90,7 +90,7 @@ grep
 
 **For production deployment on Ubuntu VPS, see:** [docs/UBUNTU_DEPLOYMENT.md](docs/UBUNTU_DEPLOYMENT.md)
 
-The node will start and initialize libp2p networking. Logs will be written to `qsdmplus.log`.
+The node will start and initialize libp2p networking. Logs will be written to `qsdm.log`.
 
 **Note**: The main `build.ps1` script automatically enables CGO and liboqs for full feature support, including quantum-safe cryptography (ML-DSA-87), SQLite storage, and API server.
 
@@ -108,7 +108,7 @@ See [docs/PERFORMANCE_BENCHMARK_REPORT.md](docs/PERFORMANCE_BENCHMARK_REPORT.md)
 
 ## Project Structure
 
-- `cmd/qsdmplus/` - Main application entry point
+- `cmd/qsdm/` - Main application entry point
 - `pkg/networking/` - libp2p networking setup
 - `pkg/consensus/` - Proof-of-Entanglement consensus implementation
 - `pkg/storage/` - SQLite storage with Zstandard compression

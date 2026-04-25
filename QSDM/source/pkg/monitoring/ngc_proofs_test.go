@@ -12,7 +12,7 @@ func makeBundle(nodeID string, ts time.Time, extra map[string]interface{}) []byt
 		"cuda_proof_hash": "deadbeef",
 	}
 	if nodeID != "" {
-		m["qsdmplus_node_id"] = nodeID
+		m["qsdm_node_id"] = nodeID
 	}
 	if !ts.IsZero() {
 		m["timestamp_utc"] = ts.UTC().Format(time.RFC3339)
@@ -99,7 +99,7 @@ func TestNGCProofDistinctByNodeID_LegacyQSDMAlias(t *testing.T) {
 	t.Cleanup(ResetNGCProofsForTest)
 	ResetNGCProofsForTest()
 
-	// Bundle uses the legacy qsdm_node_id field (no qsdmplus_ prefix).
+	// Bundle uses the legacy qsdm_node_id field (no qsdm_ prefix).
 	// The distinct view should still pick it up.
 	b := map[string]interface{}{
 		"cuda_proof_hash": "cafebabe",

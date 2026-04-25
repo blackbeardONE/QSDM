@@ -1,13 +1,13 @@
-# QSDM+ Quick Start Guide
+# QSDM Quick Start Guide
 
 **Last Updated:** December 2024  
-**Version:** QSDM+ with ML-DSA-87 Optimizations
+**Version:** QSDM with ML-DSA-87 Optimizations
 
 ---
 
 ## Overview
 
-**QSDM+** (Quantum-Secure Dynamic Mesh Ledger) is a quantum-resistant blockchain using ML-DSA-87 (NIST FIPS 204) for 256-bit quantum-safe security. This guide will help you get started quickly.
+**QSDM** (Quantum-Secure Dynamic Mesh Ledger) is a quantum-resistant blockchain using ML-DSA-87 (NIST FIPS 204) for 256-bit quantum-safe security. This guide will help you get started quickly.
 
 ---
 
@@ -109,12 +109,12 @@ $env:BOOTSTRAP_PEERS = "peer1,peer2"
 
 # Storage
 $env:STORAGE_TYPE = "sqlite"
-$env:SQLITE_PATH = "qsdmplus.db"
+$env:SQLITE_PATH = "qsdm.db"
 
 # Monitoring
 $env:DASHBOARD_PORT = "8081"
 $env:LOG_VIEWER_PORT = "8080"
-$env:LOG_FILE = "qsdmplus.log"
+$env:LOG_FILE = "qsdm.log"
 $env:LOG_LEVEL = "INFO"
 
 # API
@@ -136,7 +136,7 @@ $env:ENABLE_TLS = "true"
 
 ```powershell
 # View logs
-Get-Content qsdmplus.log -Tail 50
+Get-Content qsdm.log -Tail 50
 
 # Check dashboard
 Start-Process "http://localhost:8081"

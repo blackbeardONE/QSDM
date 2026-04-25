@@ -22,7 +22,7 @@ func TestRequireMetricsScrapeOrAuth_validHeader(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "qsdmplus_nvidia_lock_http_blocks_total") {
+	if !strings.Contains(w.Body.String(), "qsdm_nvidia_lock_http_blocks_total") {
 		t.Fatal("expected prometheus exposition")
 	}
 }

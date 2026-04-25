@@ -75,7 +75,7 @@ func main() {
 	}
 }
 
-// CLI wraps HTTP calls to the QSDM+ API.
+// CLI wraps HTTP calls to the QSDM API.
 type CLI struct {
 	baseURL string
 	token   string
@@ -318,7 +318,7 @@ func prettyPrint(data []byte) {
 }
 
 func printUsage() {
-	fmt.Println(`QSDM+ CLI — Command-line client for the QSDM+ blockchain
+	fmt.Println(`QSDM CLI — Command-line client for the QSDM blockchain
 
 Usage: qsdmcli <command> [args...]
 

@@ -222,8 +222,8 @@ func TestApplyEnvOverrides_NodeRole(t *testing.T) {
 }
 
 func TestApplyEnvOverrides_NodeRole_LegacyEnvAccepted(t *testing.T) {
-	t.Setenv("QSDMPLUS_NODE_ROLE", "miner")
-	t.Setenv("QSDMPLUS_MINING_ENABLED", "1")
+	t.Setenv("QSDM_NODE_ROLE", "miner")
+	t.Setenv("QSDM_MINING_ENABLED", "1")
 	cfg := &Config{NodeRole: NodeRoleValidator, MiningEnabled: false}
 	applyEnvOverrides(cfg)
 	if cfg.NodeRole != NodeRoleMiner {

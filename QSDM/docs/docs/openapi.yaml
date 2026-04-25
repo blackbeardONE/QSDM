@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: QSDM HTTP API
   description: |
-    Quantum-Secure Dynamic Mesh Ledger (QSDM, formerly QSDM+) HTTP API with
+    Quantum-Secure Dynamic Mesh Ledger (QSDM, formerly QSDM) HTTP API with
     military-grade security. Native coin: Cell (CELL), 8 decimals, smallest
     unit `dust`.
     
@@ -14,11 +14,11 @@ info:
     - TLS 1.3 encryption
     - Quantum-safe JWT tokens (CRYSTALS-Dilithium)
     - Request signing with quantum-safe signatures
-    - Rate limiting: default **100 requests per client per minute** (`[api] rate_limit_max_requests` / `rate_limit_window` or `QSDM_API_RATE_LIMIT_MAX` / `QSDM_API_RATE_LIMIT_WINDOW`; the legacy `QSDMPLUS_*` env vars continue to be accepted during the deprecation window, see `REBRAND_NOTES.md`). Some routes are stricter (e.g. GET /monitoring/ngc-challenge at 15/min). **GET /health** and **/health/*** are exempt so probes are not throttled.
+    - Rate limiting: default **100 requests per client per minute** (`[api] rate_limit_max_requests` / `rate_limit_window` or `QSDM_API_RATE_LIMIT_MAX` / `QSDM_API_RATE_LIMIT_WINDOW`; the legacy `QSDM_*` env vars continue to be accepted during the deprecation window, see `REBRAND_NOTES.md`). Some routes are stricter (e.g. GET /monitoring/ngc-challenge at 15/min). **GET /health** and **/health/*** are exempt so probes are not throttled.
     - Replay attack protection
     - Role-based access control
     
-    **Submesh policy (optional):** When the node loads `[network] submesh_config` / `QSDM_SUBMESH_CONFIG` (legacy alias: `QSDMPLUS_SUBMESH_CONFIG`), some ledger routes may return **422 Unprocessable Entity** if fee+geotag do not match a profile or the serialized payload exceeds `max_tx_size` (wallet send), or mint/token-create exceeds the strictest profile cap. See main README “Submesh profiles”.
+    **Submesh policy (optional):** When the node loads `[network] submesh_config` / `QSDM_SUBMESH_CONFIG` (legacy alias: `QSDM_SUBMESH_CONFIG`), some ledger routes may return **422 Unprocessable Entity** if fee+geotag do not match a profile or the serialized payload exceeds `max_tx_size` (wallet send), or mint/token-create exceeds the strictest profile cap. See main README “Submesh profiles”.
   version: 1.0.0
   contact:
     name: QSDM Development Team
@@ -145,7 +145,7 @@ paths:
         - Monitoring
       summary: Issue ingest nonce (NVIDIA-lock nonce mode)
       description: |
-        Public for JWT purposes; requires `X-QSDMPLUS-NGC-Secret` (or legacy `X-QSDM-NGC-Secret`) matching the node's ingest secret.
+        Public for JWT purposes; requires `X-QSDM-NGC-Secret` (or legacy `X-QSDM-NGC-Secret`) matching the node's ingest secret.
         Returns 404 when `nvidia_lock_require_ingest_nonce` is disabled. Rate limited to **15 requests/minute** per client (IP or X-API-Key).
         On 429, `Retry-After` is set (seconds).
       operationId: ngcIngestChallenge
@@ -160,7 +160,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  qsdmplus_ingest_nonce:
+                  qsdm_ingest_nonce:
                     type: string
                   expires_at_unix:
                     type: integer
@@ -197,7 +197,7 @@ paths:
           application/json:
             schema:
               type: object
-              description: Proof bundle (cuda_proof_hash, gpu_fingerprint, optional qsdmplus_* fields)
+              description: Proof bundle (cuda_proof_hash, gpu_fingerprint, optional qsdm_* fields)
       responses:
         '200':
           description: Ingest accepted
@@ -833,7 +833,7 @@ components:
 
   parameters:
     NgcIngestSecretPrimary:
-      name: X-QSDMPLUS-NGC-Secret
+      name: X-QSDM-NGC-Secret
       in: header
       required: false
       schema:
@@ -845,7 +845,7 @@ components:
       required: false
       schema:
         type: string
-      description: Legacy alias for X-QSDMPLUS-NGC-Secret.
+      description: Legacy alias for X-QSDM-NGC-Secret.
 
   securitySchemes:
     bearerAuth:

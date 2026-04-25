@@ -300,13 +300,13 @@ Uncomment `ClientAuth: tls.RequireAndVerifyClientCert` in `pkg/api/server.go` fo
 ### Development Mode
 ```bash
 # HTTP mode (INSECURE - development only)
-ENABLE_TLS=false API_PORT=8080 ./qsdmplus.exe
+ENABLE_TLS=false API_PORT=8080 ./qsdm.exe
 ```
 
 ### Production Mode
 ```bash
 # HTTPS mode with TLS 1.3
-ENABLE_TLS=true API_PORT=8443 TLS_CERT_FILE=/path/to/cert.pem TLS_KEY_FILE=/path/to/key.pem ./qsdmplus.exe
+ENABLE_TLS=true API_PORT=8443 TLS_CERT_FILE=/path/to/cert.pem TLS_KEY_FILE=/path/to/key.pem ./qsdm.exe
 ```
 
 ## Compliance

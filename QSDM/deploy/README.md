@@ -1,4 +1,4 @@
-# QSDM+ Deployment Guide
+# QSDM Deployment Guide
 
 **Last Updated:** December 2024
 
@@ -6,7 +6,7 @@
 
 ## Overview
 
-This directory contains deployment configurations and scripts for **QSDM+**, including Docker Compose and Kubernetes deployments.
+This directory contains deployment configurations and scripts for **QSDM**, including Docker Compose and Kubernetes deployments.
 
 ---
 
@@ -102,12 +102,12 @@ deploy/
 │   └── undeploy.sh
 ├── prometheus/                  # Example Prometheus scrape configs (dashboard metrics)
 │   ├── README.md
-│   ├── scrape_qsdmplus.example.yml
-│   ├── prometheus.qsdmplus.example.yml   # minimal full config + rule_files
-│   └── alerts_qsdmplus.example.yml
+│   ├── scrape_qsdm.example.yml
+│   ├── prometheus.qsdm.example.yml   # minimal full config + rule_files
+│   └── alerts_qsdm.example.yml
 ├── grafana/                     # Starter Grafana dashboard (import JSON)
 │   ├── README.md
-│   ├── qsdmplus-overview.json
+│   ├── qsdm-overview.json
 │   └── provisioning/datasources/prometheus.example.yml
 └── README.md                    # This file
 ```
@@ -116,7 +116,7 @@ deploy/
 
 ## Container image (`QSDM/Dockerfile`)
 
-- **Entrypoint:** `qsdmplus` (built from `source/cmd/qsdmplus`).
+- **Entrypoint:** `qsdm` (built from `source/cmd/qsdm`).
 - **HEALTHCHECK:** `GET http://127.0.0.1:8080/api/v1/health/live` — if you change **`API_PORT`**, override the image healthcheck in Compose/K8s or align **`API_PORT=8080`** in the container.
 - **Build** (from repo root that contains the `QSDM` folder):
 
@@ -126,9 +126,9 @@ docker build -t qsdm:latest -f QSDM/Dockerfile QSDM
 
 Helpers: **`QSDM/scripts/docker-build.example.sh`** / **`docker-build.example.ps1`**.
 
-- **Local:** the Docker CLI must reach a running engine (e.g. Docker Desktop on Windows/macOS). The same **`QSDM/Dockerfile`** is built in CI (**`docker-image`** job in **`.github/workflows/qsdmplus-go.yml`**) when workflow paths match.
-- **CI publish (GHCR):** On pushes to the repository **default branch** and on **workflow_dispatch**, CI logs into **`ghcr.io`** with **`GITHUB_TOKEN`** and pushes **`ghcr.io/<owner>/qsdmplus`** with tags **`latest`** (default branch only) and **`sha-<full_commit>`**. Pull requests build only (no push). Adjust package visibility under the repo’s **Packages** settings if you need anonymous `docker pull`.
-- **Release tags:** Push a semver tag such as **`v1.2.3`** to run **`.github/workflows/release-container.yml`** and publish **`ghcr.io/<owner>/qsdmplus:1.2.3`** (and **`1.2`**, **`1`** aliases).
+- **Local:** the Docker CLI must reach a running engine (e.g. Docker Desktop on Windows/macOS). The same **`QSDM/Dockerfile`** is built in CI (**`docker-image`** job in **`.github/workflows/qsdm-go.yml`**) when workflow paths match.
+- **CI publish (GHCR):** On pushes to the repository **default branch** and on **workflow_dispatch**, CI logs into **`ghcr.io`** with **`GITHUB_TOKEN`** and pushes **`ghcr.io/<owner>/qsdm`** with tags **`latest`** (default branch only) and **`sha-<full_commit>`**. Pull requests build only (no push). Adjust package visibility under the repo’s **Packages** settings if you need anonymous `docker pull`.
+- **Release tags:** Push a semver tag such as **`v1.2.3`** to run **`.github/workflows/release-container.yml`** and publish **`ghcr.io/<owner>/qsdm:1.2.3`** (and **`1.2`**, **`1`** aliases).
 - **Manifest checks:** **`.github/workflows/validate-deploy.yml`** validates Compose config and Kubernetes YAML with **client dry-run** (no cluster).
 
 ---
@@ -153,7 +153,7 @@ Edit `docker-compose.cluster.yml` to customize:
 - `SQLITE_PATH` - SQLite database path
 - `LOG_LEVEL` - Logging level (DEBUG/INFO/WARN/ERROR)
 - `BOOTSTRAP_PEERS` - Comma-separated list of bootstrap peers
-- `API_RATE_LIMIT_MAX` / `API_RATE_LIMIT_WINDOW` (or `QSDMPLUS_API_RATE_LIMIT_*`) — global API rate limit per client window
+- `API_RATE_LIMIT_MAX` / `API_RATE_LIMIT_WINDOW` (or `QSDM_API_RATE_LIMIT_*`) — global API rate limit per client window
 
 ### Volumes
 
@@ -325,7 +325,7 @@ kubectl get events -n qsdm --sort-by='.lastTimestamp'
 - ✅ Configure firewall rules
 - ✅ Enable authentication on dashboard
 - ✅ Use secrets for sensitive data
-- ✅ Production: set `[monitoring] strict_dashboard_auth = true` (or `QSDMPLUS_DASHBOARD_STRICT_AUTH`) so the dashboard does not fall back to an open UI if JWT init fails; keep `[monitoring] metrics_scrape_secret` set so Prometheus can still scrape `/api/metrics/prometheus`
+- ✅ Production: set `[monitoring] strict_dashboard_auth = true` (or `QSDM_DASHBOARD_STRICT_AUTH`) so the dashboard does not fall back to an open UI if JWT init fails; keep `[monitoring] metrics_scrape_secret` set so Prometheus can still scrape `/api/metrics/prometheus`
 
 ### Performance
 
@@ -367,33 +367,33 @@ Or use the undeploy script:
 
 ## NGC proof ingest (optional)
 
-When the node has `QSDMPLUS_NGC_INGEST_SECRET` (or legacy `QSDM_NGC_INGEST_SECRET`) set, the API accepts proof bundles from the **`apps/qsdmplus-nvidia-ngc`** sidecar. Operators can view summaries on the monitoring dashboard (**NGC GPU proofs** panel) or via `GET /api/v1/monitoring/ngc-proofs` with header `X-QSDMPLUS-NGC-Secret` (legacy: `X-QSDM-NGC-Secret`).
+When the node has `QSDM_NGC_INGEST_SECRET` (or legacy `QSDM_NGC_INGEST_SECRET`) set, the API accepts proof bundles from the **`apps/qsdm-nvidia-ngc`** sidecar. Operators can view summaries on the monitoring dashboard (**NGC GPU proofs** panel) or via `GET /api/v1/monitoring/ngc-proofs` with header `X-QSDM-NGC-Secret` (legacy: `X-QSDM-NGC-Secret`).
 
-**NVIDIA-lock (optional):** set `[api] nvidia_lock = true` (or env `QSDMPLUS_NVIDIA_LOCK=true`) and keep ingest secret set. **HTTP scope:** gates routes that persist wallet/token ledger data (`/api/v1/wallet/send`, `/wallet/mint`, `/tokens/mint`, `/tokens/create`); they return **403** unless a **recent** ingested proof has NVIDIA architecture and `gpu_fingerprint.available == true` (use the **GPU** profile sidecar). Tune freshness with `nvidia_lock_max_proof_age` / `QSDMPLUS_NVIDIA_LOCK_MAX_PROOF_AGE`.
+**NVIDIA-lock (optional):** set `[api] nvidia_lock = true` (or env `QSDM_NVIDIA_LOCK=true`) and keep ingest secret set. **HTTP scope:** gates routes that persist wallet/token ledger data (`/api/v1/wallet/send`, `/wallet/mint`, `/tokens/mint`, `/tokens/create`); they return **403** unless a **recent** ingested proof has NVIDIA architecture and `gpu_fingerprint.available == true` (use the **GPU** profile sidecar). Tune freshness with `nvidia_lock_max_proof_age` / `QSDM_NVIDIA_LOCK_MAX_PROOF_AGE`.
 
-**P2P scope (optional, off by default):** set `[api] nvidia_lock_gate_p2p = true` or `QSDMPLUS_NVIDIA_LOCK_GATE_P2P=true` **with** `nvidia_lock` so **libp2p-received** transactions are **dropped after PoE validation** if no qualifying proof is present. This uses the **same proof criteria** as HTTP but does **not** consume ring-buffer rows (HTTP single-use nonce behavior stays separate). It is **node-local storage policy**, not network-wide consensus attestation.
+**P2P scope (optional, off by default):** set `[api] nvidia_lock_gate_p2p = true` or `QSDM_NVIDIA_LOCK_GATE_P2P=true` **with** `nvidia_lock` so **libp2p-received** transactions are **dropped after PoE validation** if no qualifying proof is present. This uses the **same proof criteria** as HTTP but does **not** consume ring-buffer rows (HTTP single-use nonce behavior stays separate). It is **node-local storage policy**, not network-wide consensus attestation.
 
-**Proof binding (optional):** set `[api] nvidia_lock_expected_node_id = "your-id"` or `QSDMPLUS_NVIDIA_LOCK_EXPECTED_NODE_ID` so proofs must include JSON string `qsdmplus_node_id` with the same value. On the sidecar set `QSDMPLUS_NGC_PROOF_NODE_ID` (or `QSDM_NGC_PROOF_NODE_ID`) to match.
+**Proof binding (optional):** set `[api] nvidia_lock_expected_node_id = "your-id"` or `QSDM_NVIDIA_LOCK_EXPECTED_NODE_ID` so proofs must include JSON string `qsdm_node_id` with the same value. On the sidecar set `QSDM_NGC_PROOF_NODE_ID` (or `QSDM_NGC_PROOF_NODE_ID`) to match.
 
 `GET /api/v1/health` includes `nvidia_lock` (same fields as above, plus `ngc_proof_ingest` counters and `ngc_challenge_*` / `ngc_ingest_nonce_pool_size`). For probes use **`/api/v1/health/live`** and **`/api/v1/health/ready`** (public, on the API port).
 
-**Prometheus scrape (dashboard):** `GET http://<dashboard-host>:<dashboard_port>/api/metrics/prometheus` returns text exposition (`qsdmplus_nvidia_lock_*`, `qsdmplus_ngc_*`, transaction/network counters). Either use a normal **dashboard JWT** (same as `/api/metrics`) or set **`[monitoring] metrics_scrape_secret`** / env **`QSDMPLUS_DASHBOARD_METRICS_SCRAPE_SECRET`** (legacy **`QSDM_DASHBOARD_METRICS_SCRAPE_SECRET`**) and scrape with header **`X-QSDMPLUS-Metrics-Scrape-Secret: <secret>`** or **`Authorization: Bearer <secret>`**. If a scrape secret is configured, a **wrong** Bearer/header value returns **401** (it is not treated as a JWT).
+**Prometheus scrape (dashboard):** `GET http://<dashboard-host>:<dashboard_port>/api/metrics/prometheus` returns text exposition (`qsdm_nvidia_lock_*`, `qsdm_ngc_*`, transaction/network counters). Either use a normal **dashboard JWT** (same as `/api/metrics`) or set **`[monitoring] metrics_scrape_secret`** / env **`QSDM_DASHBOARD_METRICS_SCRAPE_SECRET`** (legacy **`QSDM_DASHBOARD_METRICS_SCRAPE_SECRET`**) and scrape with header **`X-QSDM-Metrics-Scrape-Secret: <secret>`** or **`Authorization: Bearer <secret>`**. If a scrape secret is configured, a **wrong** Bearer/header value returns **401** (it is not treated as a JWT).
 
 **Many validators, one NAT IP:** `GET /api/v1/monitoring/ngc-challenge` is **15/min per client key** (IP or `X-API-Key`). Sidecars behind the same egress IP should **stagger** polls, lower validator frequency, or use **per-host** challenge URLs so each node has its own rate bucket.
 
-**Prometheus / Grafana:** **`deploy/prometheus/`** (scrape examples) and **`deploy/grafana/`** (import **`qsdmplus-overview.json`** after Prometheus is wired).
+**Prometheus / Grafana:** **`deploy/prometheus/`** (scrape examples) and **`deploy/grafana/`** (import **`qsdm-overview.json`** after Prometheus is wired).
 
-**Proof HMAC (optional):** set `nvidia_lock_proof_hmac_secret` / `QSDMPLUS_NVIDIA_LOCK_PROOF_HMAC_SECRET` on the node (requires `nvidia_lock` enabled). The sidecar must set the same value as `QSDMPLUS_NGC_PROOF_HMAC_SECRET` so each bundle includes `qsdmplus_proof_hmac` (HMAC-SHA256 over UTF-8 lines: `v1`, node id, `cuda_proof_hash`, `timestamp_utc`, each line newline-terminated — see `pkg/monitoring/nvidia_hmac.go`). When an ingest nonce is present, the payload version is **`v2`** and appends the nonce line (see the same file).
+**Proof HMAC (optional):** set `nvidia_lock_proof_hmac_secret` / `QSDM_NVIDIA_LOCK_PROOF_HMAC_SECRET` on the node (requires `nvidia_lock` enabled). The sidecar must set the same value as `QSDM_NGC_PROOF_HMAC_SECRET` so each bundle includes `qsdm_proof_hmac` (HMAC-SHA256 over UTF-8 lines: `v1`, node id, `cuda_proof_hash`, `timestamp_utc`, each line newline-terminated — see `pkg/monitoring/nvidia_hmac.go`). When an ingest nonce is present, the payload version is **`v2`** and appends the nonce line (see the same file).
 
-**Ingest nonce / replay hardening (optional):** set `nvidia_lock_require_ingest_nonce = true` / `QSDMPLUS_NVIDIA_LOCK_REQUIRE_INGEST_NONCE=true` (requires `nvidia_lock` and **`nvidia_lock_proof_hmac_secret`**). The sidecar calls **`GET /api/v1/monitoring/ngc-challenge`** with the same ingest-secret headers; the JSON field `qsdmplus_ingest_nonce` must be embedded in the bundle. Each nonce is **single-use at ingest**; with this mode enabled, each ingested proof also satisfies **at most one** successful NVIDIA-lock-gated API call (the proof row is removed after use). Tune TTL with `nvidia_lock_ingest_nonce_ttl` / `QSDMPLUS_NVIDIA_LOCK_INGEST_NONCE_TTL`. Sidecar: set **`QSDMPLUS_NGC_FETCH_CHALLENGE=true`** (or legacy `QSDM_NGC_FETCH_CHALLENGE`).
+**Ingest nonce / replay hardening (optional):** set `nvidia_lock_require_ingest_nonce = true` / `QSDM_NVIDIA_LOCK_REQUIRE_INGEST_NONCE=true` (requires `nvidia_lock` and **`nvidia_lock_proof_hmac_secret`**). The sidecar calls **`GET /api/v1/monitoring/ngc-challenge`** with the same ingest-secret headers; the JSON field `qsdm_ingest_nonce` must be embedded in the bundle. Each nonce is **single-use at ingest**; with this mode enabled, each ingested proof also satisfies **at most one** successful NVIDIA-lock-gated API call (the proof row is removed after use). Tune TTL with `nvidia_lock_ingest_nonce_ttl` / `QSDM_NVIDIA_LOCK_INGEST_NONCE_TTL`. Sidecar: set **`QSDM_NGC_FETCH_CHALLENGE=true`** (or legacy `QSDM_NGC_FETCH_CHALLENGE`).
 
 **Challenge rate limit:** `GET /api/v1/monitoring/ngc-challenge` is capped at **15 requests per minute per client** (per-IP or `X-API-Key` bucket), separate from the global API rate limit.
 
-**Strict secrets (production):** set `QSDMPLUS_STRICT_SECRETS=true` (or `1` / `yes`) so startup **fails** if any configured secret is shorter than **16** characters or starts with the demo prefix `charming123` (case-insensitive), for non-empty `QSDMPLUS_NGC_INGEST_SECRET`, `nvidia_lock_proof_hmac_secret`, and `QSDMPLUS_JWT_HMAC_SECRET`.
+**Strict secrets (production):** set `QSDM_STRICT_SECRETS=true` (or `1` / `yes`) so startup **fails** if any configured secret is shorter than **16** characters or starts with the demo prefix `charming123` (case-insensitive), for non-empty `QSDM_NGC_INGEST_SECRET`, `nvidia_lock_proof_hmac_secret`, and `QSDM_JWT_HMAC_SECRET`.
 
-**Non-CGO JWT HMAC:** set `jwt_hmac_secret` or `QSDMPLUS_JWT_HMAC_SECRET` so JWT and request-signing fallbacks use your key instead of the built-in dev default.
+**Non-CGO JWT HMAC:** set `jwt_hmac_secret` or `QSDM_JWT_HMAC_SECRET` so JWT and request-signing fallbacks use your key instead of the built-in dev default.
 
-Local wiring: `apps/qsdmplus-nvidia-ngc/scripts/wire-qsdmplus.ps1` (Windows) or `wire-qsdmplus.sh` (Linux/macOS; optional 4th arg for HMAC secret). Validators use `extra_hosts: host.docker.internal:host-gateway` so Linux Docker can reach the host API. Then `docker compose up` in `apps/qsdmplus-nvidia-ngc/`.
+Local wiring: `apps/qsdm-nvidia-ngc/scripts/wire-qsdm.ps1` (Windows) or `wire-qsdm.sh` (Linux/macOS; optional 4th arg for HMAC secret). Validators use `extra_hosts: host.docker.internal:host-gateway` so Linux Docker can reach the host API. Then `docker compose up` in `apps/qsdm-nvidia-ngc/`.
 
 ## ScyllaDB (local dev)
 

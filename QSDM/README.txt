@@ -43,7 +43,7 @@ Manual Setup:
 
 3. Build the project:
    - cd source
-   - go build -o ../qsdmplus ./cmd/qsdmplus
+   - go build -o ../qsdm ./cmd/qsdm
 
 4. Configure:
    - Review config/ directory

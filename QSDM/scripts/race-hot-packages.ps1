@@ -4,7 +4,7 @@ $SourceDir = Resolve-Path (Join-Path $PSScriptRoot '..\source')
 $env:CGO_ENABLED = '1'
 Remove-Item Env:CGO_CFLAGS -ErrorAction SilentlyContinue
 Remove-Item Env:CGO_LDFLAGS -ErrorAction SilentlyContinue
-$env:QSDMPLUS_METRICS_REGISTER_STRICT = '1'
+$env:QSDM_METRICS_REGISTER_STRICT = '1'
 
 Write-Host '==> go test -race -short (mempool, networking, alerting, contracts, state, reputation)'
 Push-Location $SourceDir

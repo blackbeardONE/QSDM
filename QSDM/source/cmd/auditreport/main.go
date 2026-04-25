@@ -1,4 +1,4 @@
-// Command auditreport renders the QSDM+ security audit checklist as Markdown or JSON.
+// Command auditreport renders the QSDM security audit checklist as Markdown or JSON.
 //
 // Typical usage:
 //
@@ -32,7 +32,7 @@ func main() {
 	format := flag.String("format", "markdown", "output format: markdown|json")
 	out := flag.String("out", "", "output path (default: stdout)")
 	input := flag.String("input", "", "optional JSON input with reviewed statuses")
-	title := flag.String("title", "", "report title (default: QSDM+ Security Audit Report)")
+	title := flag.String("title", "", "report title (default: QSDM Security Audit Report)")
 	notes := flag.Bool("notes", true, "include reviewer notes in markdown output")
 	gate := flag.Bool("gate", true, "exit 2 if critical/high items are pending or failed")
 	flag.Parse()

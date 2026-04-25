@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# QSDM+ Undeployment Script
-# Removes QSDM+ cluster deployment
+# QSDM Undeployment Script
+# Removes QSDM cluster deployment
 
 set -e
 
@@ -16,7 +16,7 @@ NC='\033[0m'
 DEPLOY_METHOD="${1:-docker}"
 NAMESPACE="${2:-qsdm}"
 
-echo -e "${YELLOW}=== QSDM+ Undeployment ===${NC}"
+echo -e "${YELLOW}=== QSDM Undeployment ===${NC}"
 echo "Method: $DEPLOY_METHOD"
 echo ""
 

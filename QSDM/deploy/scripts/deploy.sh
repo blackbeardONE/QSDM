@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# QSDM+ Deployment Script
-# Deploys QSDM+ cluster using Docker Compose or Kubernetes
+# QSDM Deployment Script
+# Deploys QSDM cluster using Docker Compose or Kubernetes
 
 set -e
 
@@ -52,7 +52,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo -e "${GREEN}=== QSDM+ Deployment Script ===${NC}"
+echo -e "${GREEN}=== QSDM Deployment Script ===${NC}"
 echo "Deployment method: $DEPLOY_METHOD"
 echo "Node count: $NODE_COUNT"
 echo ""
@@ -91,7 +91,7 @@ deploy_docker() {
     docker-compose -f docker-compose.cluster.yml build
     
     # Start services
-    echo "Starting QSDM+ cluster..."
+    echo "Starting QSDM cluster..."
     docker-compose -f docker-compose.cluster.yml up -d
     
     # Wait for services to be healthy

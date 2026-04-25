@@ -100,7 +100,7 @@ func TestStrictDashboardAuthWithoutManager(t *testing.T) {
 		strictDashboardAuth:   true,
 	}
 	req2 := httptest.NewRequest(http.MethodGet, "/api/metrics/prometheus", nil)
-	req2.Header.Set("X-QSDMPLUS-Metrics-Scrape-Secret", "prom-secret-xyz")
+	req2.Header.Set("X-QSDM-Metrics-Scrape-Secret", "prom-secret-xyz")
 	rr2 := httptest.NewRecorder()
 	d2.requireMetricsScrapeOrAuth(d2.handleMetricsPrometheus)(rr2, req2)
 	if rr2.Code != http.StatusOK {

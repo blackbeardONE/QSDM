@@ -9,8 +9,8 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./qsdmplus.db:/app/qsdmplus.db
-      - ./qsdmplus.log:/app/qsdmplus.log
+      - ./qsdm.db:/app/qsdm.db
+      - ./qsdm.log:/app/qsdm.log
       - ./config:/app/config
     environment:
       - USE_SCYLLA=false

@@ -93,12 +93,12 @@ if (-not $opensslInPath) {
 # Check DLL dependencies
 Write-Host ""
 Write-Host "4. Checking DLL dependencies..." -ForegroundColor Yellow
-if (Test-Path ".\qsdmplus.exe") {
-    Write-Host "  ✅ qsdmplus.exe found" -ForegroundColor Green
+if (Test-Path ".\qsdm.exe") {
+    Write-Host "  ✅ qsdm.exe found" -ForegroundColor Green
     Write-Host "     Note: Use Dependency Walker or dumpbin to check DLL dependencies" -ForegroundColor Gray
-    Write-Host "     Command: dumpbin /dependents qsdmplus.exe" -ForegroundColor Gray
+    Write-Host "     Command: dumpbin /dependents qsdm.exe" -ForegroundColor Gray
 } else {
-    Write-Host "  ⚠️  qsdmplus.exe not found - build first" -ForegroundColor Yellow
+    Write-Host "  ⚠️  qsdm.exe not found - build first" -ForegroundColor Yellow
 }
 
 # Test OpenSSL DLL loading
@@ -136,7 +136,7 @@ public class DllTest {
 # Recommendations
 Write-Host ""
 Write-Host "6. Recommendations..." -ForegroundColor Yellow
-Write-Host "  - Ensure OpenSSL DLLs are in the same directory as qsdmplus.exe" -ForegroundColor Cyan
+Write-Host "  - Ensure OpenSSL DLLs are in the same directory as qsdm.exe" -ForegroundColor Cyan
 Write-Host "  - Or add OpenSSL bin directory to system PATH" -ForegroundColor Cyan
 Write-Host "  - Verify liboqs was built with compatible OpenSSL version" -ForegroundColor Cyan
 Write-Host "  - Check Event Viewer for DLL loading errors" -ForegroundColor Cyan

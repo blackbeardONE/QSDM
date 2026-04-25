@@ -90,22 +90,22 @@ func TestValidate_NvidiaLockGateP2PRequiresLock(t *testing.T) {
 }
 
 func TestApplyEnvOverrides_StrictSecrets(t *testing.T) {
-	t.Setenv("QSDMPLUS_STRICT_SECRETS", "")
+	t.Setenv("QSDM_STRICT_SECRETS", "")
 	cfg := &Config{}
 	applyEnvOverrides(cfg)
 	if cfg.StrictProductionSecrets {
 		t.Fatal("expected false when env empty")
 	}
-	t.Setenv("QSDMPLUS_STRICT_SECRETS", "1")
+	t.Setenv("QSDM_STRICT_SECRETS", "1")
 	cfg2 := &Config{}
 	applyEnvOverrides(cfg2)
 	if !cfg2.StrictProductionSecrets {
-		t.Fatal("expected true for QSDMPLUS_STRICT_SECRETS=1")
+		t.Fatal("expected true for QSDM_STRICT_SECRETS=1")
 	}
 }
 
 func TestResolvedSubmeshConfigPath_relativeToMainConfig(t *testing.T) {
-	base := filepath.Join(t.TempDir(), "repo", "qsdmplus.toml")
+	base := filepath.Join(t.TempDir(), "repo", "qsdm.toml")
 	cfg := &Config{
 		ConfigFileUsed:      base,
 		SubmeshConfigPath:   "config/micropayments.toml",
@@ -131,8 +131,8 @@ func TestValidate_SubmeshConfig_missingFile(t *testing.T) {
 }
 
 func TestApplyEnvOverrides_APIRateLimit(t *testing.T) {
-	t.Setenv("QSDMPLUS_API_RATE_LIMIT_MAX", "250")
-	t.Setenv("QSDMPLUS_API_RATE_LIMIT_WINDOW", "2m")
+	t.Setenv("QSDM_API_RATE_LIMIT_MAX", "250")
+	t.Setenv("QSDM_API_RATE_LIMIT_WINDOW", "2m")
 	cfg := &Config{}
 	applyDefaults(cfg)
 	applyEnvOverrides(cfg)

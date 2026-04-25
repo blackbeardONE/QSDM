@@ -35,8 +35,8 @@ echo "Importing databases..."
 if [ -f "databases/qsdm_*.sql" ]; then
     DB_FILE=ls databases/qsdm_*.sql | head -1
     echo "Importing main database from $DB_FILE..."
-    sqlite3 databases/qsdmplus.db < $DB_FILE
-    chmod 644 databases/qsdmplus.db
+    sqlite3 databases/qsdm.db < $DB_FILE
+    chmod 644 databases/qsdm.db
 fi
 
 if [ -f "databases/transactions_*.sql" ]; then
@@ -47,9 +47,9 @@ if [ -f "databases/transactions_*.sql" ]; then
 fi
 
 # Or copy binary databases if SQL dumps don't exist
-if [ ! -f "databases/qsdmplus.db" ] && [ -f "databases/qsdmplus.db" ]; then
+if [ ! -f "databases/qsdm.db" ] && [ -f "databases/qsdm.db" ]; then
     echo "Copying binary database files..."
-    cp databases/qsdmplus.db* . 2>/dev/null || true
+    cp databases/qsdm.db* . 2>/dev/null || true
     cp databases/transactions.db . 2>/dev/null || true
     chmod 644 *.db* 2>/dev/null || true
 fi
@@ -60,7 +60,7 @@ echo ""
 # Build the project
 echo "Building QSDM..."
 cd source
-go build -o ../qsdmplus ./cmd/qsdmplus
+go build -o ../qsdm ./cmd/qsdm
 cd ..
 echo "Build complete"
 echo ""
@@ -73,10 +73,10 @@ else
     echo "鉁?QSDM binary not found"
 fi
 
-if [ -f "databases/qsdmplus.db" ] || [ -f "qsdmplus.db" ]; then
+if [ -f "databases/qsdm.db" ] || [ -f "qsdm.db" ]; then
     echo "鉁?Database files present"
     if command -v sqlite3 >/dev/null 2>&1; then
-        TX_COUNT=sqlite3 databases/qsdmplus.db "SELECT COUNT(*) FROM transactions;" 2>/dev/null || sqlite3 qsdmplus.db "SELECT COUNT(*) FROM transactions;" 2>/dev/null || echo "0"
+        TX_COUNT=sqlite3 databases/qsdm.db "SELECT COUNT(*) FROM transactions;" 2>/dev/null || sqlite3 qsdm.db "SELECT COUNT(*) FROM transactions;" 2>/dev/null || echo "0"
         echo "  Transactions in database: $TX_COUNT"
     fi
 else
@@ -88,6 +88,6 @@ echo "=== Setup Complete ==="
 echo ""
 echo "Next steps:"
 echo "1. Review and update configuration files in config/"
-echo "2. Test the installation: ./qsdmplus --help"
+echo "2. Test the installation: ./qsdm --help"
 echo "3. Start the service as needed"
 echo ""

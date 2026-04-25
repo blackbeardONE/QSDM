@@ -7,7 +7,7 @@ import (
 )
 
 func TestTryPreflightP2PTransactionJSON_missingModuleFile(t *testing.T) {
-	t.Setenv("QSDMPLUS_WASM_PREFLIGHT_MODULE", filepath.Join(t.TempDir(), "nonexistent.wasm"))
+	t.Setenv("QSDM_WASM_PREFLIGHT_MODULE", filepath.Join(t.TempDir(), "nonexistent.wasm"))
 	t.Cleanup(ResetModulePreflightCache)
 
 	_, err := TryPreflightP2PTransactionJSON(nil, []byte(`{"x":1}`))
@@ -17,7 +17,7 @@ func TestTryPreflightP2PTransactionJSON_missingModuleFile(t *testing.T) {
 }
 
 func TestTryPreflightP2PTransactionJSON_noEnvNoSDK(t *testing.T) {
-	t.Setenv("QSDMPLUS_WASM_PREFLIGHT_MODULE", "")
+	t.Setenv("QSDM_WASM_PREFLIGHT_MODULE", "")
 	t.Cleanup(ResetModulePreflightCache)
 
 	ok, err := TryPreflightP2PTransactionJSON(nil, []byte(`{"id":"`+strings.Repeat("a", 32)+`"}`))

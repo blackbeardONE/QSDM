@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	fmt.Println("Starting QSDM+ Dashboard Test Server...")
+	fmt.Println("Starting QSDM Dashboard Test Server...")
 	fmt.Println("This will test if the dashboard works independently")
 	fmt.Println()
 

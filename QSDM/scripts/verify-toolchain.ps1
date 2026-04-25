@@ -1,4 +1,4 @@
-# Verify tooling for building QSDM (run from repo: QSDM/scripts or QSDM+ root).
+# Verify tooling for building QSDM (run from repo: QSDM/scripts or QSDM root).
 # QSDM requires the standard Go toolchain (1.20+). TinyGo is optional for WASM targets only.
 
 $ErrorActionPreference = "Continue"
@@ -33,11 +33,11 @@ if (-not $srcRoot -or -not (Test-Path (Join-Path $srcRoot.Path "go.mod"))) {
     Write-Host "`n--- compile check (CGO_ENABLED=0) ---" -ForegroundColor Cyan
     $outExe = Join-Path $env:TEMP "qsdm-toolcheck.exe"
     $env:CGO_ENABLED = "0"
-    go build -o $outExe ./cmd/qsdmplus 2>&1
+    go build -o $outExe ./cmd/qsdm 2>&1
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "[WARN] go build ./cmd/qsdmplus failed." -ForegroundColor Yellow
+        Write-Host "[WARN] go build ./cmd/qsdm failed." -ForegroundColor Yellow
     } else {
-        Write-Host "[OK] go build ./cmd/qsdmplus" -ForegroundColor Green
+        Write-Host "[OK] go build ./cmd/qsdm" -ForegroundColor Green
         Remove-Item $outExe -ErrorAction SilentlyContinue
     }
     Remove-Item Env:CGO_ENABLED -ErrorAction SilentlyContinue

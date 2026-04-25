@@ -23,7 +23,7 @@ sudo ldconfig
 
 ## Build the Go binary with CUDA support
 ```bash
-CGO_ENABLED=1 go build -tags cuda ./cmd/qsdmplus/
+CGO_ENABLED=1 go build -tags cuda ./cmd/qsdm/
 ```
 
 ## Without CUDA

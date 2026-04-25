@@ -16,7 +16,7 @@ attempt to retroactively enumerate that history.
 
 - **NVIDIA-lock pivot — retire the CPU-miner onboarding UX
   (2026-04-24).** The project is re-aligning on the architecture
-  described in `nvidia_locked_qsdmplus_blockchain_architecture.md`:
+  described in `nvidia_locked_qsdm_blockchain_architecture.md`:
   the mainline protocol will hard-fork to `v2` which requires a
   valid NGC attestation bundle on every proof, making CPU-only and
   non-NVIDIA-GPU mining impossible on mainnet by construction. As
@@ -333,13 +333,13 @@ attempt to retroactively enumerate that history.
       policy threshold, exposed so dashboards render the decision
       boundary next to the observed state.
 
-  The collector is registered in `cmd/qsdmplus/main.go` alongside the
+  The collector is registered in `cmd/qsdm/main.go` alongside the
   other `pe.RegisterCollector(...)` calls inside the `dash != nil`
   block. A new method `QuarantineManager.Stats()` returns a consistent
   snapshot under the existing mutex; collector scrapes are O(1) in
   the number of tracked submeshes.
 
-  `alerts_qsdmplus.example.yml` gains a new `qsdm-quarantine` group
+  `alerts_qsdm.example.yml` gains a new `qsdm-quarantine` group
   with two rules:
 
     - **`QSDMQuarantineAnySubmesh`** (warn, 10m) — any non-zero
@@ -362,7 +362,7 @@ attempt to retroactively enumerate that history.
   notes. New `QSDM/docs/docs/ATTESTATION_SIDECARS.md` consolidates
   it: the reference three-source deployment (Windows PC + BLR1 VPS
   + OCI), the four required invariants (shared ingest URL, shared
-  `QSDMPLUS_NGC_INGEST_SECRET`, **distinct** `QSDMPLUS_NGC_PROOF_NODE_ID`,
+  `QSDM_NGC_INGEST_SECRET`, **distinct** `QSDM_NGC_PROOF_NODE_ID`,
   cadence ≤ `fresh_within`/2), one-command install snippets per
   platform, a five-step verification ladder
   (`journalctl` → ingest counter → `qsdm_trust_*` gauges → public
@@ -393,7 +393,7 @@ attempt to retroactively enumerate that history.
   `qsdm_trust_last_checked_seconds` / `qsdm_trust_warm` /
   `qsdm_trust_ngc_service_healthy` gauges are exported by
   `api.TrustMetricsCollector`, the example rule file
-  `QSDM/deploy/prometheus/alerts_qsdmplus.example.yml` gains a new
+  `QSDM/deploy/prometheus/alerts_qsdm.example.yml` gains a new
   `qsdm-trust-redundancy` group mirroring the external CI probe's
   `--min-attested 2` floor from inside Alertmanager:
 
@@ -476,7 +476,7 @@ attempt to retroactively enumerate that history.
   separate attestation sources (2026-04-23).** Operators who run
   multiple CPU-fallback attestation sidecars — e.g. one on the main
   validator VPS, one on an Oracle Cloud VM, one on a local dev PC,
-  each stamping its own `QSDMPLUS_NGC_PROOF_NODE_ID` — were being
+  each stamping its own `QSDM_NGC_PROOF_NODE_ID` — were being
   collapsed into a single "local" peer row by `TrustAggregator`.
   `MonitoringLocalSource.LocalLatest()` only exposed the newest row
   from `monitoring.NGCProofSummaries()` and stamped it with the
@@ -485,7 +485,7 @@ attempt to retroactively enumerate that history.
   CPU attestation was running.
 
   New `monitoring.NGCProofDistinctByNodeID()` walks the NGC proof
-  ring buffer and groups entries by `qsdmplus_node_id` (or the
+  ring buffer and groups entries by `qsdm_node_id` (or the
   legacy `qsdm_node_id` alias), keeping the newest-observed bundle
   for each distinct id. New optional interface
   `api.LocalDistinctAttestationSource` exposes that view to the
@@ -505,8 +505,8 @@ attempt to retroactively enumerate that history.
   redacted `node_id_prefix` in `/recent`.
 
   Semantics note (recorded here, not a regression): anyone holding
-  `QSDMPLUS_NGC_INGEST_SECRET` can drive `attested` up by POSTing
-  from N distinct `qsdmplus_node_id` values. That is acceptable
+  `QSDM_NGC_INGEST_SECRET` can drive `attested` up by POSTing
+  from N distinct `qsdm_node_id` values. That is acceptable
   because (a) the ingest secret is already the trust root for this
   surface, (b) the `scope_note` field in every summary response
   caveats that these attestations are not consensus, and (c) the
@@ -548,7 +548,7 @@ attempt to retroactively enumerate that history.
 - **Dashboard user accounts now survive a service restart
   (2026-04-23).** `pkg/api.UserStore` used to be an in-memory
   `map[string]*User` with no persistence layer, so every
-  `systemctl restart qsdmplus` (routine during redeploys) silently
+  `systemctl restart qsdm` (routine during redeploys) silently
   wiped every registered dashboard login. `AuthenticateUser` returned
   "user not found", which the handler then mapped to a generic
   `401 invalid credentials` — so the symptom an operator saw was
@@ -557,7 +557,7 @@ attempt to retroactively enumerate that history.
   persisted; only the dashboard-login credential map was affected.
 
   Fix in `pkg/api/user_persist.go`: versioned JSON file
-  (`/opt/qsdmplus/qsdmplus_users.json`, mode `0600`), atomic
+  (`/opt/qsdm/qsdm_users.json`, mode `0600`), atomic
   temp-file-rename on every mutation, loader fail-closed on unknown
   version / malformed JSON (never silently reset). `RegisterUser`
   rolls back the in-memory insert when the disk write fails, so
@@ -565,16 +565,16 @@ attempt to retroactively enumerate that history.
 
   Configured via `Config.UserStorePath`
   (TOML `[api] user_store_path`) with env overrides
-  `QSDM_USER_STORE_PATH` / legacy `QSDMPLUS_USER_STORE_PATH`. The
-  default in `cmd/qsdmplus/main.go` is
-  `<dirname(SQLitePath)>/qsdmplus_users.json`, matching the sibling
-  `qsdmplus_staking.json` / `qsdmplus_bridge_state.json` layout.
+  `QSDM_USER_STORE_PATH` / legacy `QSDM_USER_STORE_PATH`. The
+  default in `cmd/qsdm/main.go` is
+  `<dirname(SQLitePath)>/qsdm_users.json`, matching the sibling
+  `qsdm_staking.json` / `qsdm_bridge_state.json` layout.
 
   Tests in `pkg/api/user_persist_test.go` cover the round-trip
   (register → reopen → auth), persist-failure rollback, unknown-
   version fail-closed, and malformed-JSON fail-closed. Verified
   end-to-end against the live VPS on 2026-04-23: registered,
-  `systemctl restart qsdmplus`, re-logged in successfully from
+  `systemctl restart qsdm`, re-logged in successfully from
   `https://dashboard.qsdm.tech/`.
 
 ### Added
@@ -626,12 +626,12 @@ attempt to retroactively enumerate that history.
   it does not crowd mobile.
 - **Prometheus alert rules for attestation transparency
   (2026-04-23).** New group `qsdm-trust-transparency` in
-  `deploy/prometheus/alerts_qsdmplus.example.yml` with two rules on
+  `deploy/prometheus/alerts_qsdm.example.yml` with two rules on
   the canonical `qsdm_*` prefix:
   `QSDMTrustNoAttestationsAccepted` (accepted-rate zero for 20 m) and
   `QSDMTrustIngestRejectRateElevated` (rejects outpace accepts by
   >1/s for 10 m). Safe to load on both dual-emit and legacy scrapers.
-- **Grafana panels 16 + 17 in `qsdmplus-overview.json`
+- **Grafana panels 16 + 17 in `qsdm-overview.json`
   (2026-04-23).** Stat "NGC attestations in last 15 min" with
   red/yellow/green thresholds matched to the pill on qsdm.tech
   (0 = red, ≥1 = orange, ≥3 = green) plus a bar chart
@@ -644,7 +644,7 @@ attempt to retroactively enumerate that history.
   10-min refresh cadence does not grow a hundreds-of-MB transcript
   in a week on the refresh PC. Forwarded by
   `attest-from-env-file.ps1` as a splat. Documented in
-  `apps/qsdmplus-nvidia-ngc/QUICKSTART.md` §8a.
+  `apps/qsdm-nvidia-ngc/QUICKSTART.md` §8a.
 - **GitHub Wiki live (2026-04-23).** `QSDM/scripts/sync-wiki.sh`
   now publishes eight pages to
   <https://github.com/blackbeardONE/QSDM/wiki> with a shared sidebar
@@ -655,8 +655,8 @@ attempt to retroactively enumerate that history.
   is re-run.
 - **VPS-side CPU-fallback NGC attestation sidecar (2026-04-23).**
   New installer `QSDM/deploy/install_ngc_sidecar_vps.py` deploys
-  `validator_phase1.py` to `/opt/qsdmplus/ngc-sidecar/`, reuses the
-  existing `QSDMPLUS_NGC_INGEST_SECRET` from the qsdmplus service
+  `validator_phase1.py` to `/opt/qsdm/ngc-sidecar/`, reuses the
+  existing `QSDM_NGC_INGEST_SECRET` from the qsdm service
   environment, and installs a systemd oneshot + 10-minute timer
   (`qsdm-ngc-attest.service` / `.timer`). The script runs without a
   GPU — `gpu_fingerprint` falls back to `available: false` and the
@@ -672,10 +672,10 @@ attempt to retroactively enumerate that history.
   `admin` / `password` when `WEBVIEWER_USERNAME` / `WEBVIEWER_PASSWORD`
   were unset — which was acceptable when the code was private but is
   now a real foot-gun with QSDM public on GitHub: anyone who clones,
-  builds, and `./qsdmplus`-es without reading the docs gets a wide-open
+  builds, and `./qsdm`-es without reading the docs gets a wide-open
   log stream on port `9000` / `LOG_VIEWER_PORT`. `StartWebLogViewer`
   now returns the new `webviewer.ErrInsecureDefaultCreds` when either
-  var is unset or empty, and `cmd/qsdmplus/main.go` logs a clear
+  var is unset or empty, and `cmd/qsdm/main.go` logs a clear
   remediation message and keeps the node running *without* the log
   viewer. Operators who explicitly want the old behaviour for local
   development must now opt in with `QSDM_WEBVIEWER_ALLOW_DEFAULT_CREDS=1`,
@@ -689,24 +689,24 @@ attempt to retroactively enumerate that history.
   `tests/webviewer_test.go` was updated to set the opt-in flag
   explicitly so its use of `admin`/`password` is intentional rather
   than accidental. The live VPS is unaffected because both env vars
-  have been provisioned in `/etc/systemd/system/qsdmplus.service.d/secrets.conf`
+  have been provisioned in `/etc/systemd/system/qsdm.service.d/secrets.conf`
   since the 2026-04-22 secret-rotation pass.
 
 ### CI
 
 - **Legacy-metric guard in GitHub Actions (2026-04-22).** During the
-  `qsdmplus_*` -> `qsdm_*` Prometheus metric-name prefix migration
+  `qsdm_*` -> `qsdm_*` Prometheus metric-name prefix migration
   (Major Update §6), the dual-emit machinery in
   `pkg/monitoring/prometheus_prefix_migration.go` already publishes
   every metric under both prefixes, so any new code should register
   metrics under the canonical `qsdm_*` name only. Added
   `QSDM/scripts/check-no-new-legacy-metrics.sh` which `rg`-greps the
-  Go tree for hand-written `"qsdmplus_<name>_(total|count|seconds|sum|
+  Go tree for hand-written `"qsdm_<name>_(total|count|seconds|sum|
   bucket|bytes|info|ratio|current|last|active|inflight)"` string
   literals and fails if any appear outside a tight five-file allowlist
   of files that are part of the dual-emit machinery or test it. The
   regex is deliberately narrow so it does NOT flag non-metric branding
-  aliases like `qsdmplus_node_id` in `pkg/branding/branding.go`
+  aliases like `qsdm_node_id` in `pkg/branding/branding.go`
   (those are NGC proof JSON field names, not metrics). Wired into
   `.github/workflows/qsdm-go.yml` `build-test` job as the very first
   step so regressions fail fast without burning build compute. Has a
@@ -755,7 +755,7 @@ attempt to retroactively enumerate that history.
   root `README.md` that links to it. Also trimmed the root `README`
   down to files that actually exist in the public tree — the previous
   version pointed at several internal docs (`NEXT_STEPS.md`,
-  `Major Update.md`, `nvidia_locked_qsdmplus_blockchain_architecture.md`,
+  `Major Update.md`, `nvidia_locked_qsdm_blockchain_architecture.md`,
   `apps/game-integration/`) that are correctly excluded from the
   public repo by `.gitignore`, so those links were 404s on GitHub.
 
@@ -781,7 +781,7 @@ attempt to retroactively enumerate that history.
   excludes `vps.txt`, the legacy `Nvidia Token` file, all `*.env`
   (except committed `*.env.example` templates), TLS material
   (`QSDM/api_server.crt`/`.key`), Go build artifacts (`*.exe`,
-  `*.test`, explicit `qsdmplus`/`qsdmminer`/`trustcheck` paths),
+  `*.test`, explicit `qsdm`/`qsdmminer`/`trustcheck` paths),
   `target/` trees (Rust), runtime state (`*.log`, `QSDM/databases/*.db`,
   timestamped SQL dumps, `QSDM/storage/tx_*.dat`), and the usual
   Python/Node/IDE/OS caches. Vendored third-party binaries (notably
@@ -797,17 +797,17 @@ attempt to retroactively enumerate that history.
   hex chars — comfortably above the 16-char strict-secrets floor and
   obviously not a `charming123*` dev placeholder) and installed it as a
   systemd drop-in at
-  `/etc/systemd/system/qsdmplus.service.d/ngc-secret.conf` (mode `0600`,
-  owner `root:root`). Both the canonical `QSDMPLUS_NGC_INGEST_SECRET`
+  `/etc/systemd/system/qsdm.service.d/ngc-secret.conf` (mode `0600`,
+  owner `root:root`). Both the canonical `QSDM_NGC_INGEST_SECRET`
   and the legacy `QSDM_NGC_INGEST_SECRET` env keys are exported so the
   deprecation window for older sidecars is honoured. The drop-in path
   is chosen deliberately: subsequent runs of
   `deploy/remote_apply_paramiko.py` rewrite the unit file at
-  `/etc/systemd/system/qsdmplus.service` but leave the `.service.d/`
+  `/etc/systemd/system/qsdm.service` but leave the `.service.d/`
   directory untouched, so the secret survives redeploys without ever
   entering the repo or the tarball. Post-install probes:
   `GET /api/v1/monitoring/ngc-proofs` with the correct
-  `X-QSDMPLUS-NGC-Secret` returns `HTTP 200 {"count":0,"proofs":[]}`,
+  `X-QSDM-NGC-Secret` returns `HTTP 200 {"count":0,"proofs":[]}`,
   a wrong secret returns `HTTP 401`, and no NGC-related errors appear
   in the journal. The ingest surface is now gated-live, but the
   `attested/total_public` ratio stays at `0/1` until a sidecar with
@@ -815,7 +815,7 @@ attempt to retroactively enumerate that history.
   proof — that's a separate bring-up gated on having a GPU host, not
   on anything in this repo.
 - **Trust surface denominator fix — `total_public` 2 → 1 (2026-04-22).**
-  The `"bootstrap"` placeholder address, which `cmd/qsdmplus/main.go`
+  The `"bootstrap"` placeholder address, which `cmd/qsdm/main.go`
   registers against `nodeValidatorSet` purely to satisfy BFT quorum on
   a single-node network, was being counted by the transparency widget
   as if it were a public peer. The new `sentinelValidatorAddresses`
@@ -865,14 +865,14 @@ attempt to retroactively enumerate that history.
   (Windows-safe); keeps the existing CGO+liboqs production profile by
   default and exposes `QSDM_BUILD_TAGS=validator_only` as an opt-in
   cutover lever; non-destructively appends a `[trust]` block to
-  `/opt/qsdmplus/qsdmplus.toml` on servers that predate the aggregator
-  wiring; rolls back to `/opt/qsdmplus/qsdmplus.prev` if the new binary
+  `/opt/qsdm/qsdm.toml` on servers that predate the aggregator
+  wiring; rolls back to `/opt/qsdm/qsdm.prev` if the new binary
   fails systemd's `is-active` gate; probes health, trust, dashboard,
   and the Caddy edge (`api.qsdm.tech`, `qsdm.tech` via
   `curl --resolve`) at the end so the operator sees green probes
   inline with the deploy log. `remote_verify_paramiko.py` gained the
   matching trust-endpoint probe block.
-- **`QSDM/config/qsdmplus.toml.example` + `qsdmplus.yaml.example`**
+- **`QSDM/config/qsdm.toml.example` + `qsdm.yaml.example`**
   now ship `[node]` (two-tier role gate) and `[trust]` (attestation
   transparency) sections with inline commentary, so fresh installs get
   the correct scaffolding without needing to cross-reference the
@@ -880,7 +880,7 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
-- **Trust aggregator wired into node startup.** `cmd/qsdmplus/main.go`
+- **Trust aggregator wired into node startup.** `cmd/qsdm/main.go`
   now constructs a live `TrustAggregator` fed by a
   `ValidatorSetPeerProvider` (wrapping `ActiveValidators()`) and a
   `MonitoringLocalSource` (NGC ring buffer), and runs a background
@@ -890,10 +890,10 @@ attempt to retroactively enumerate that history.
   `[trust]` config section (TOML/YAML) and env knobs
   `QSDM_TRUST_DISABLED`, `QSDM_TRUST_FRESH_WITHIN`,
   `QSDM_TRUST_REFRESH_INTERVAL`, `QSDM_TRUST_REGION` (legacy
-  `QSDMPLUS_*` still accepted). Setting `disabled=true` makes the
+  `QSDM_*` still accepted). Setting `disabled=true` makes the
   endpoints return HTTP 404 per §8.5.3. (`pkg/api/trust_peer_provider.go`,
   `pkg/config/config.go`, `pkg/config/config_toml.go`,
-  `cmd/qsdmplus/main.go`, audit item `rebrand-07`.)
+  `cmd/qsdm/main.go`, audit item `rebrand-07`.)
 - **Major Update Phase 5 — trust transparency surface.** New public
   endpoints `GET /api/v1/trust/attestations/summary` and
   `GET /api/v1/trust/attestations/recent` expose aggregate NGC
@@ -904,7 +904,7 @@ attempt to retroactively enumerate that history.
   the operator dashboard. (`pkg/api/handlers_trust.go`,
   `deploy/landing/trust.html`, `internal/dashboard/static/dashboard.js`.)
 - **Major Update Phase 1–4 deliverables landed in-repo.** Rebrand
-  (`QSDM+ → QSDM`, native coin `Cell (CELL)`, `dust` smallest unit),
+  (`QSDM → QSDM`, native coin `Cell (CELL)`, `dust` smallest unit),
   two-tier node roles (validator / miner) with role-guard startup
   enforcement, emission schedule calculator, reference CPU miner
   (`cmd/qsdmminer`), split Dockerfiles (`Dockerfile.validator`,
@@ -936,7 +936,7 @@ attempt to retroactively enumerate that history.
 
 - **OpenAPI spec refresh.** `QSDM/docs/docs/openapi.yaml` title,
   contact, and env-var references now lead with the `QSDM` name, with
-  the legacy `QSDMPLUS_*` names documented as aliases during the
+  the legacy `QSDM_*` names documented as aliases during the
   deprecation window.
 - **`NVIDIA_LOCK_CONSENSUS_SCOPE.md` refresh.** Aligned to the Major
   Update §5.4 Stance 1 ("NVIDIA-favored, not NVIDIA-exclusive") and
@@ -945,20 +945,20 @@ attempt to retroactively enumerate that history.
   not a consensus rule" — is preserved byte-for-byte because
   `pkg/api/handlers_trust.go` emits it verbatim.
 - **`start-qsdm-local.ps1`.** Artefact now named `qsdm_local.exe`,
-  with an automatic move of the legacy `qsdmplus_local.exe` path so
+  with an automatic move of the legacy `qsdm_local.exe` path so
   operators' PID files and launch scripts keep working.
 
 ### Deprecated (migration window, one minor release)
 
-- `QSDMPLUS_*` environment variables. Continue to work; log a single
+- `QSDM_*` environment variables. Continue to work; log a single
   deprecation warning per process. Prefer `QSDM_*`. See
   `REBRAND_NOTES.md` §3.1.
-- `X-QSDMPLUS-*` HTTP headers. Continue to be accepted. Prefer
+- `X-QSDM-*` HTTP headers. Continue to be accepted. Prefer
   `X-QSDM-*`. See `REBRAND_NOTES.md` §3.2.
-- `qsdmplus_*` Prometheus metric prefix. **Not yet renamed** — a
+- `qsdm_*` Prometheus metric prefix. **Not yet renamed** — a
   cutover plan for dual-emit is staged under `REBRAND_NOTES.md` §3.7
   because the rename is breaking for Grafana/alert pipelines.
-- `sdk/javascript/qsdmplus.*`, `sdk/go/qsdmplus*.go`. Shim packages
+- `sdk/javascript/qsdm.*`, `sdk/go/qsdm*.go`. Shim packages
   that re-export from the new `qsdm` module path.
 
 ### Not changed

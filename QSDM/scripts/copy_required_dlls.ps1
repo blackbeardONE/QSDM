@@ -62,5 +62,5 @@ foreach ($dll in $copied) {
 }
 
 Write-Host ""
-Write-Host "Now try running: .\run_qsdmplus.ps1" -ForegroundColor Cyan
+Write-Host "Now try running: .\run_qsdm.ps1" -ForegroundColor Cyan
 

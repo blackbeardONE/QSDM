@@ -8,7 +8,7 @@ import (
 // NodeRole enumerates the two canonical roles a QSDM node can run in.
 //
 // The roles are declared by configuration, but also guarded by build tags and
-// startup checks in `cmd/qsdmplus/main.go`:
+// startup checks in `cmd/qsdm/main.go`:
 //
 //   - NodeRoleValidator runs Proof-of-Entanglement + BFT consensus on CPU-only
 //     hardware. Validators never require a GPU. They may optionally publish

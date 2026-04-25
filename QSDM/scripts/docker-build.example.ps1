@@ -1,4 +1,4 @@
-# Build the QSDM+ image. Run: .\scripts\docker-build.example.ps1
+# Build the QSDM image. Run: .\scripts\docker-build.example.ps1
 # Optional: pass extra docker build args after the script name.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot

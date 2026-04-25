@@ -1,14 +1,14 @@
-# Check Windows Event Viewer for qsdmplus.exe crash details
-Write-Host "Checking Event Viewer for qsdmplus.exe crashes..." -ForegroundColor Cyan
+# Check Windows Event Viewer for qsdm.exe crash details
+Write-Host "Checking Event Viewer for qsdm.exe crashes..." -ForegroundColor Cyan
 Write-Host ""
 
-# Get recent application errors for qsdmplus.exe
+# Get recent application errors for qsdm.exe
 $events = Get-WinEvent -FilterHashtable @{
     LogName = 'Application'
     ProviderName = 'Application Error'
     StartTime = (Get-Date).AddHours(-1)
 } -ErrorAction SilentlyContinue | Where-Object {
-    $_.Message -like '*qsdmplus.exe*'
+    $_.Message -like '*qsdm.exe*'
 } | Select-Object -First 5
 
 if ($events) {
@@ -31,7 +31,7 @@ if ($events) {
     Write-Host "To check manually:" -ForegroundColor Cyan
     Write-Host "  1. Open Event Viewer (eventvwr.msc)" -ForegroundColor Gray
     Write-Host "  2. Go to Windows Logs > Application" -ForegroundColor Gray
-    Write-Host "  3. Look for errors related to qsdmplus.exe" -ForegroundColor Gray
+    Write-Host "  3. Look for errors related to qsdm.exe" -ForegroundColor Gray
     Write-Host "  4. Check the 'Faulting Module' field" -ForegroundColor Gray
 }
 

@@ -1,5 +1,5 @@
-# Submesh profile: load at node startup with [network] submesh_config in qsdmplus.toml
-# or env QSDMPLUS_SUBMESH_CONFIG (path may be relative to the main config file).
+# Submesh profile: load at node startup with [network] submesh_config in qsdm.toml
+# or env QSDM_SUBMESH_CONFIG (path may be relative to the main config file).
 
 name = "micropayments"
 fees = 0.001

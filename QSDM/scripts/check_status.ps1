@@ -1,11 +1,11 @@
-# Simple status check for qsdmplus.exe
+# Simple status check for qsdm.exe
 Write-Host "=== QSDM Status Check ===" -ForegroundColor Cyan
 Write-Host ""
 
 # Check if process is running
 $process = Get-Process -Name "qsdm" -ErrorAction SilentlyContinue
 if ($process) {
-    Write-Host "✅ qsdmplus.exe is RUNNING" -ForegroundColor Green
+    Write-Host "✅ qsdm.exe is RUNNING" -ForegroundColor Green
     Write-Host "   PID: $($process.Id)" -ForegroundColor Gray
     Write-Host "   Started: $($process.StartTime)" -ForegroundColor Gray
     Write-Host ""
@@ -42,10 +42,10 @@ if ($process) {
         Write-Host "   The application may still be starting up..." -ForegroundColor Gray
     }
 } else {
-    Write-Host "❌ qsdmplus.exe is NOT running" -ForegroundColor Red
+    Write-Host "❌ qsdm.exe is NOT running" -ForegroundColor Red
     Write-Host ""
     Write-Host "To start it, run:" -ForegroundColor Yellow
-    Write-Host "  .\start_qsdmplus.ps1" -ForegroundColor Gray
+    Write-Host "  .\start_qsdm.ps1" -ForegroundColor Gray
     Write-Host "  or" -ForegroundColor Gray
     Write-Host "  .\run.ps1" -ForegroundColor Gray
 }

@@ -20,7 +20,7 @@ on:
       - "QSDM/source/cmd/scyllasmoke/**"
       - "QSDM/scripts/scylla-staging-verify.*"
       - "QSDM/scripts/scylla-staging-verify-with-docker.*"
-      # Tracks this workflow file. The old path was "qsdmplus-scylla-
+      # Tracks this workflow file. The old path was "qsdm-scylla-
       # staging.yml" (pre-rebrand); the file was renamed to "qsdm-
       # scylla-staging.yml" but the filter was missed, so self-edits
       # to this YAML were silently not retriggering the job.
@@ -85,7 +85,7 @@ jobs:
           SCYLLA_HOSTS: 127.0.0.1
           SCYLLA_KEYSPACE: qsdm
           SCYLLA_AUTO_CREATE_KEYSPACE: "1"
-          QSDMPLUS_METRICS_REGISTER_STRICT: "1"
+          QSDM_METRICS_REGISTER_STRICT: "1"
         run: |
           set -e
           LIBOQS="${GITHUB_WORKSPACE}/QSDM/liboqs_install"

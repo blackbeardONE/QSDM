@@ -160,11 +160,11 @@ if [ -f "source/go.mod" ]; then
     # We're in root, build from source directory
     echo "Building from source/ directory..."
     cd source
-    go build -o ../qsdmplus -v ./cmd/qsdmplus
+    go build -o ../qsdm -v ./cmd/qsdm
     cd ..
 elif [ -f "go.mod" ]; then
     # We're already in source directory
-    go build -o ../qsdmplus -v ./cmd/qsdmplus
+    go build -o ../qsdm -v ./cmd/qsdm
 else
     echo "ERROR: go.mod not found. Please run from QSDM root or source directory."
     exit 1
@@ -174,12 +174,12 @@ if [ $? -eq 0 ]; then
     echo ""
     echo "=== Build Successful! ===" | grep -v "^$"
     echo ""
-    echo "Binary: ./qsdmplus"
+    echo "Binary: ./qsdm"
     echo ""
     echo "To run QSDM:"
     echo "  ./run.sh"
     echo "  # Or directly:"
-    echo "  ./qsdmplus"
+    echo "  ./qsdm"
     echo ""
     
     # Check if binary needs liboqs at runtime

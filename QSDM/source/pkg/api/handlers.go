@@ -232,7 +232,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Network topology (live JSON projection, consumed by the dashboard WebGL view)
 	mux.HandleFunc("/api/v1/network/topology", handlers.GetNetworkTopology)
 
-	// NGC GPU proof sidecar (shared secret; prefer QSDM_NGC_INGEST_SECRET, legacy QSDMPLUS_NGC_INGEST_SECRET still accepted)
+	// NGC GPU proof sidecar (shared secret; prefer QSDM_NGC_INGEST_SECRET, legacy QSDM_NGC_INGEST_SECRET still accepted)
 	mux.HandleFunc("/api/v1/monitoring/ngc-proof", handlers.NGCProofIngest)
 	mux.HandleFunc("/api/v1/monitoring/ngc-challenge", handlers.NGCIngestChallenge)
 	mux.HandleFunc("/api/v1/monitoring/ngc-proofs", handlers.NGCProofList)
@@ -727,7 +727,7 @@ func (h *Handlers) SendTransaction(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if envcompat.Truthy("QSDM_PUBLISH_MESH_COMPANION", "QSDMPLUS_PUBLISH_MESH_COMPANION") && h.p2pTxBroadcast != nil && len(req.ParentCells) >= 2 {
+	if envcompat.Truthy("QSDM_PUBLISH_MESH_COMPANION", "QSDM_PUBLISH_MESH_COMPANION") && h.p2pTxBroadcast != nil && len(req.ParentCells) >= 2 {
 		sm := companionSubmeshName(h.submeshManager, req.Fee, req.GeoTag, txBytes)
 		companion, err := mesh3d.BuildMeshCompanionFromWalletJSON(txBytes, req.ParentCells[:2], sm)
 		if err != nil {
@@ -1264,7 +1264,7 @@ func (h *Handlers) ngcIngestAuthFailureResponse(w http.ResponseWriter, o ngcInge
 	}
 }
 
-// NGCProofIngest accepts JSON proof bundles from the apps/qsdmplus-nvidia-ngc validator (nvidia_locked_qsdmplus_blockchain_architecture.md).
+// NGCProofIngest accepts JSON proof bundles from the apps/qsdm-nvidia-ngc validator (nvidia_locked_qsdm_blockchain_architecture.md).
 func (h *Handlers) NGCProofIngest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -1330,7 +1330,7 @@ func (h *Handlers) NGCIngestChallenge(w http.ResponseWriter, r *http.Request) {
 	}
 	monitoring.RecordNGCChallengeIssued()
 	writeJSONResponse(w, http.StatusOK, map[string]interface{}{
-		"qsdmplus_ingest_nonce": nonce,
+		"qsdm_ingest_nonce": nonce,
 		"expires_at_unix":       exp,
 		"ttl_seconds":           int(ttl.Seconds()),
 	})

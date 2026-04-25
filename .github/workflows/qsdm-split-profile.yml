@@ -89,15 +89,15 @@ jobs:
             go test -short -count=1 -timeout 10m ${{ matrix.packages }}
           fi
 
-      - name: go build qsdmplus (${{ matrix.profile }})
+      - name: go build qsdm (${{ matrix.profile }})
         working-directory: QSDM/source
         env:
           CGO_ENABLED: "0"
         run: |
           if [ -n "${{ matrix.tags }}" ]; then
-            go build -tags="${{ matrix.tags }}" -o /tmp/qsdm-${{ matrix.profile }} ./cmd/qsdmplus
+            go build -tags="${{ matrix.tags }}" -o /tmp/qsdm-${{ matrix.profile }} ./cmd/qsdm
           else
-            go build -o /tmp/qsdm-${{ matrix.profile }} ./cmd/qsdmplus
+            go build -o /tmp/qsdm-${{ matrix.profile }} ./cmd/qsdm
           fi
 
       - name: Report build profile

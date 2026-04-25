@@ -1,21 +1,21 @@
-# qsdmplus — JavaScript / Node.js SDK
+# qsdm — JavaScript / Node.js SDK
 
-Official JavaScript client for the QSDM+ HTTP API. Mirrors `sdk/go` feature-for-feature.
+Official JavaScript client for the QSDM HTTP API. Mirrors `sdk/go` feature-for-feature.
 
 ## Install
 
 ```bash
-npm install qsdmplus
+npm install qsdm
 ```
 
-(Or vendor `qsdmplus.js` + `qsdmplus.d.ts` directly — the SDK has no runtime dependencies.)
+(Or vendor `qsdm.js` + `qsdm.d.ts` directly — the SDK has no runtime dependencies.)
 
 ## Quick start
 
 ```js
-const { QSDMPlusClient, isUnauthorized } = require('qsdmplus');
+const { QSDMClient, isUnauthorized } = require('qsdm');
 
-const client = new QSDMPlusClient('http://node.example.com:8080');
+const client = new QSDMClient('http://node.example.com:8080');
 client.setToken(process.env.QSDM_JWT); // or client.setAPIKey(...)
 
 try {
@@ -54,7 +54,7 @@ helpers for common cases.
 ## Options
 
 ```js
-new QSDMPlusClient('http://node:8080', {
+new QSDMClient('http://node:8080', {
     fetch: myFetchImpl,     // override global fetch (useful for Node < 18)
     timeoutMs: 10_000,      // per-request timeout; 0 disables
 });
@@ -64,7 +64,7 @@ new QSDMPlusClient('http://node:8080', {
 
 ```bash
 cd sdk/javascript
-node --test qsdmplus.test.js
+node --test qsdm.test.js
 ```
 
 Requires Node 18+ (built-in `fetch` and `node:test`).

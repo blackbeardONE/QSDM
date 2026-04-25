@@ -404,7 +404,7 @@ func TestMergePeer_LocalFlowsInWhenProviderMissing(t *testing.T) {
 
 // LocalDistinctAttestationSource: multiple distinct CPU-fallback
 // sidecars each POSTing to /api/v1/monitoring/ngc-proof with a
-// different qsdmplus_node_id must surface as distinct peer rows,
+// different qsdm_node_id must surface as distinct peer rows,
 // driving attested up accordingly.
 func TestLocalDistinctSource_MultipleSidecarsCountSeparately(t *testing.T) {
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
@@ -434,7 +434,7 @@ func TestLocalDistinctSource_MultipleSidecarsCountSeparately(t *testing.T) {
 
 // Empty-id rows returned by the distinct source must fold onto the
 // local node's identity instead of being dropped or counted separately.
-// This preserves the legacy behaviour for bundles without qsdmplus_node_id.
+// This preserves the legacy behaviour for bundles without qsdm_node_id.
 func TestLocalDistinctSource_EmptyNodeIDFoldsToLocal(t *testing.T) {
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 	cfg := TrustConfig{

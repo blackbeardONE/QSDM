@@ -14,7 +14,7 @@ if "%HTTP_CODE%"=="200" (
     echo Dashboard endpoint responding (HTTP %HTTP_CODE%)
 ) else (
     echo Dashboard endpoint failed (HTTP %HTTP_CODE%)
-    echo Make sure the node is running: qsdmplus.exe
+    echo Make sure the node is running: qsdm.exe
     exit /b 1
 )
 

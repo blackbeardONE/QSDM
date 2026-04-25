@@ -13,10 +13,10 @@ so transactions signed today remain unforgeable against cryptographically
 relevant quantum adversaries tomorrow.
 
 > **Rebrand notice.** This monorepo is migrating from the transitional
-> name **QSDM+** back to **QSDM**. Existing folder names
-> (`apps/qsdmplus-landing/`, `apps/qsdmplus-nvidia-ngc/`) and
-> configuration identifiers (`qsdmplus.*` configs, `QSDMPLUS_*` env
-> vars, `X-QSDMPLUS-*` headers) continue to work during the
+> name **QSDM** back to **QSDM**. Existing folder names
+> (`apps/qsdm-landing/`, `apps/qsdm-nvidia-ngc/`) and
+> configuration identifiers (`qsdm.*` configs, `QSDM_*` env
+> vars, `X-QSDM-*` headers) continue to work during the
 > deprecation window. See
 > [`QSDM/docs/docs/REBRAND_NOTES.md`](QSDM/docs/docs/REBRAND_NOTES.md)
 > for the full migration table.
@@ -28,8 +28,8 @@ relevant quantum adversaries tomorrow.
 | [**`QSDM/`**](QSDM/) | **Ledger node** — Go implementation (consensus, storage, ML-DSA-87 signatures, wallet/token API). This is the cryptocurrency / chain layer; native coin is **Cell (CELL)**. |
 | [**`QSDM/docs/docs/`**](QSDM/docs/docs/) | User-facing documentation: API reference, mining protocol, node-role split, quickstart guides, rebrand notes, roadmap, deployment guides. |
 | [**`apps/`**](apps/) | **Products and sidecars** that use the node but are not required to run the core ledger. |
-| [**`apps/qsdmplus-landing/`**](apps/qsdmplus-landing/) | Static marketing site served at `qsdm.tech`. (Folder name retained during the rebrand deprecation window.) |
-| [**`apps/qsdmplus-nvidia-ngc/`**](apps/qsdmplus-nvidia-ngc/) | Optional NVIDIA NGC GPU attestation sidecar — opt-in, per-operator API policy, **not** a consensus rule. See [`QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md`](QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md). |
+| [**`apps/qsdm-landing/`**](apps/qsdm-landing/) | Static marketing site served at `qsdm.tech`. (Folder name retained during the rebrand deprecation window.) |
+| [**`apps/qsdm-nvidia-ngc/`**](apps/qsdm-nvidia-ngc/) | Optional NVIDIA NGC GPU attestation sidecar — opt-in, per-operator API policy, **not** a consensus rule. See [`QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md`](QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md). |
 
 ## Start here
 
@@ -37,7 +37,7 @@ relevant quantum adversaries tomorrow.
 - **Live bootstrap peers for Phase 4 testnet:** [`qsdm.tech/validators.html`](https://qsdm.tech/validators.html)
 - **Run a validator (CPU-only):** [`QSDM/docs/docs/VALIDATOR_QUICKSTART.md`](QSDM/docs/docs/VALIDATOR_QUICKSTART.md)
 - **Run a miner (CPU reference + console UI; CUDA planned):** [`QSDM/docs/docs/MINER_QUICKSTART.md`](QSDM/docs/docs/MINER_QUICKSTART.md)
-- **Run the NGC attestation sidecar (free NVIDIA NGC tier):** [`apps/qsdmplus-nvidia-ngc/QUICKSTART.md`](apps/qsdmplus-nvidia-ngc/QUICKSTART.md)
+- **Run the NGC attestation sidecar (free NVIDIA NGC tier):** [`apps/qsdm-nvidia-ngc/QUICKSTART.md`](apps/qsdm-nvidia-ngc/QUICKSTART.md)
 - **API reference:** [`QSDM/docs/docs/API_REFERENCE.md`](QSDM/docs/docs/API_REFERENCE.md) and [`QSDM/docs/docs/openapi.yaml`](QSDM/docs/docs/openapi.yaml)
 - **Protocol specs:** [`QSDM/docs/docs/MINING_PROTOCOL.md`](QSDM/docs/docs/MINING_PROTOCOL.md), [`QSDM/docs/docs/NODE_ROLES.md`](QSDM/docs/docs/NODE_ROLES.md), [`QSDM/docs/docs/CELL_TOKENOMICS.md`](QSDM/docs/docs/CELL_TOKENOMICS.md)
 - **Release notes:** [`CHANGELOG.md`](CHANGELOG.md)
@@ -58,7 +58,7 @@ endpoints that make its own coverage legible:
 - `GET /api/v1/trust/attestations/recent` — list of recent peer
   attestations with coarse region/GPU-arch metadata only (no PII).
 
-Consumed by the [landing page](apps/qsdmplus-landing/) and the
+Consumed by the [landing page](apps/qsdm-landing/) and the
 dashboard. See
 [`QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md`](QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md)
 for why NVIDIA-lock is a transparency signal, not a consensus rule.

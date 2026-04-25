@@ -275,7 +275,7 @@ binary directly.
 > ⚠️ **NVIDIA-lock pivot in progress.** The `qsdmminer` and
 > `qsdmminer-console` CPU binaries are being retired over the next few
 > releases in favour of the GPU-only miner described in
-> [`nvidia_locked_qsdmplus_blockchain_architecture.md`](../../../nvidia_locked_qsdmplus_blockchain_architecture.md).
+> [`nvidia_locked_qsdm_blockchain_architecture.md`](../../../nvidia_locked_qsdm_blockchain_architecture.md).
 > The previous "one-command install" scripts
 > (`install-qsdmminer-console.sh`, `install-qsdmminer-console.ps1`) and
 > the `ghcr.io/<owner>/qsdm-miner-console` Docker image have been
@@ -298,7 +298,7 @@ expected signal that the binary did not come from the release pipeline.
 ### 3.5 Monitoring
 
 The miner exposes `qsdm_miner_*` Prometheus metrics (with
-`qsdmplus_miner_*` dual-emitted during the deprecation window per
+`qsdm_miner_*` dual-emitted during the deprecation window per
 [`REBRAND_NOTES.md`](./REBRAND_NOTES.md)). Validator-side you'll see
 your accepted proofs in `/api/v1/mining/recent-proofs` and — if
 you turn on NGC attestation — in `/api/v1/trust/attestations/recent`.
@@ -347,11 +347,11 @@ participate in attestation transparency.
 
 ### 4.4 Run it
 
-Follow [`../apps/qsdmplus-nvidia-ngc/QUICKSTART.md`](../../../apps/qsdmplus-nvidia-ngc/QUICKSTART.md).
+Follow [`../apps/qsdm-nvidia-ngc/QUICKSTART.md`](../../../apps/qsdm-nvidia-ngc/QUICKSTART.md).
 Five steps, ~10 minutes on a live node:
 
 1. Generate a shared ingest secret (`openssl rand -hex 32`).
-2. Turn ingest ON on your validator (`QSDMPLUS_NGC_INGEST_SECRET=…`
+2. Turn ingest ON on your validator (`QSDM_NGC_INGEST_SECRET=…`
    in the systemd drop-in, then `systemctl restart`).
 3. Fill `ngc.env` with your NGC CLI API key + the same secret.
 4. `docker compose up -d` — the sidecar posts bundles every
@@ -379,7 +379,7 @@ topology we run for the reference deployment.
   │  ─ qsdm/validator:latest (no CUDA)           │
   │  ─ bootstrap_peers = [api.qsdm.tech/…]      │
   │  ─ :4001 tcp libp2p + :8080 http → Caddy     │
-  │  ─ QSDMPLUS_NGC_INGEST_SECRET=****           │
+  │  ─ QSDM_NGC_INGEST_SECRET=****           │
   └───────▲─────────────────────────┬────────────┘
           │                         │
  libp2p   │                         │ HTTPS (your-node.example)
@@ -387,7 +387,7 @@ topology we run for the reference deployment.
           │                         ▼
   ┌───────┴────────────┐   ┌────────────────────────────┐
   │  The mesh          │   │  NGC SIDECAR (GPU host)    │
-  │  (api.qsdm.tech,   │   │  ─ apps/qsdmplus-nvidia-ngc │
+  │  (api.qsdm.tech,   │   │  ─ apps/qsdm-nvidia-ngc │
   │   other peers)     │   │  ─ posts proofs every ~60s │
   └────────────────────┘   └────────────────────────────┘
                                     ▲
@@ -455,7 +455,7 @@ A few practical notes:
 ### 6.3 NGC sidecar launch checklist
 
 - [ ] Ingest secret set on the node
-      (`QSDMPLUS_NGC_INGEST_SECRET`), 256-bit random, never reused
+      (`QSDM_NGC_INGEST_SECRET`), 256-bit random, never reused
       across validators you do not own.
 - [ ] `ngc.env` filled, `NGC_CLI_API_KEY` from the free tier,
       ingest secret matches the node's.
@@ -477,7 +477,7 @@ A few practical notes:
 | Miner `--self-test` fails | Build mismatch / corrupt tree | Rebuild from a clean `git clone`, open an issue with the exit code |
 | Miner runs but no `proof ACCEPTED` | Easy: wrong validator / clock drift / too slow; hard: you ARE submitting but `too-late` | Inspect stderr rejection reasons per [`MINER_QUICKSTART.md §3.2`](./MINER_QUICKSTART.md) |
 | NGC sidecar logs `401` on POST | Ingest secret mismatch between node and sidecar | Verify both sides — secrets must be byte-identical, no trailing whitespace |
-| NGC sidecar logs `429 Retry-After` | Node is rate-limiting challenge fetches (many-validators case) | Set `QSDMPLUS_NGC_CHALLENGE_JITTER_MAX_SEC=8` per [`ngc.env.example`](../../../apps/qsdmplus-nvidia-ngc/ngc.env.example) |
+| NGC sidecar logs `429 Retry-After` | Node is rate-limiting challenge fetches (many-validators case) | Set `QSDM_NGC_CHALLENGE_JITTER_MAX_SEC=8` per [`ngc.env.example`](../../../apps/qsdm-nvidia-ngc/ngc.env.example) |
 | Trust page shows `— of —` permanently | TrustAggregator warm-up or upstream peer unreachable | Wait 30 s after a redeploy (we `sleep 15` in `remote_apply_paramiko.py` for exactly this); then check `/api/v1/trust/attestations/summary` directly |
 
 ---
@@ -496,9 +496,9 @@ A few practical notes:
   halving, treasury cap.
 - [`NVIDIA_LOCK_CONSENSUS_SCOPE.md`](./NVIDIA_LOCK_CONSENSUS_SCOPE.md)
   — why NVIDIA-lock is a transparency signal, not a consensus rule.
-- [`../../../apps/qsdmplus-nvidia-ngc/QUICKSTART.md`](../../../apps/qsdmplus-nvidia-ngc/QUICKSTART.md)
+- [`../../../apps/qsdm-nvidia-ngc/QUICKSTART.md`](../../../apps/qsdm-nvidia-ngc/QUICKSTART.md)
   — NGC sidecar runbook.
-- [`REBRAND_NOTES.md`](./REBRAND_NOTES.md) — QSDM+ → QSDM migration
+- [`REBRAND_NOTES.md`](./REBRAND_NOTES.md) — QSDM → QSDM migration
   table (env vars, metrics, headers).
 
 > **Corrections welcome.** If this guide contradicts any of the

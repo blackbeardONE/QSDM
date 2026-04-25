@@ -5,8 +5,8 @@ uptime; hostname; date -u
 
 echo
 echo '===== systemd services ====='
-systemctl is-active qsdmplus caddy ssh
-systemctl --no-pager --full status qsdmplus | head -n 10
+systemctl is-active qsdm caddy ssh
+systemctl --no-pager --full status qsdm | head -n 10
 echo '---'
 systemctl --no-pager --full status caddy | head -n 10
 
@@ -24,12 +24,12 @@ sshd -T -C user=root,host=localhost,addr=127.0.0.1 \
   | grep -E '^(permitrootlogin|passwordauthentication|pubkeyauthentication|kbdinteractiveauthentication|permitemptypasswords|maxauthtries)' | sort
 
 echo
-echo '===== qsdmplus config (key lines) ====='
-grep -E '^(transaction_interval|port|enable_tls|\[)' /opt/qsdmplus/qsdmplus.toml | head -n 40
+echo '===== qsdm config (key lines) ====='
+grep -E '^(transaction_interval|port|enable_tls|\[)' /opt/qsdm/qsdm.toml | head -n 40
 
 echo
-echo '===== qsdmplus recent log (tx cadence / libp2p port) ====='
-journalctl -u qsdmplus -n 20 --no-pager | tail -n 20
+echo '===== qsdm recent log (tx cadence / libp2p port) ====='
+journalctl -u qsdm -n 20 --no-pager | tail -n 20
 
 echo
 echo '===== Caddy TLS status ====='

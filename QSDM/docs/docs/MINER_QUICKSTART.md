@@ -64,7 +64,7 @@ This self-test is also the Phase 4.5 acceptance gate in `Major Update.md`; it ru
 
 > ⚠️ **Deprecation notice — NVIDIA-lock in progress.** The project is
 > pivoting to the protocol described in
-> [`nvidia_locked_qsdmplus_blockchain_architecture.md`](../../../nvidia_locked_qsdmplus_blockchain_architecture.md):
+> [`nvidia_locked_qsdm_blockchain_architecture.md`](../../../nvidia_locked_qsdm_blockchain_architecture.md):
 > once the `v2` protocol activates, CPU-only miners will no longer produce
 > proofs that mainnet validators accept. The `qsdmminer-console` binary is
 > kept for testnet replay and for algorithmic reference, but **do not

@@ -1,11 +1,11 @@
-# Simple test script to run qsdmplus.exe and capture output
+# Simple test script to run qsdm.exe and capture output
 $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
 
-Write-Host "Running qsdmplus.exe with OpenSSL in PATH..."
+Write-Host "Running qsdm.exe with OpenSSL in PATH..."
 Write-Host ""
 
 # Run with output redirection
-$proc = Start-Process -FilePath ".\qsdmplus.exe" -NoNewWindow -PassThru -RedirectStandardOutput "stdout.txt" -RedirectStandardError "stderr.txt"
+$proc = Start-Process -FilePath ".\qsdm.exe" -NoNewWindow -PassThru -RedirectStandardOutput "stdout.txt" -RedirectStandardError "stderr.txt"
 
 Start-Sleep -Seconds 3
 
@@ -33,5 +33,5 @@ if ($running) {
 
 Write-Host ""
 Write-Host "Latest log entries:"
-Get-Content "qsdmplus.log" -Tail 5 -ErrorAction SilentlyContinue
+Get-Content "qsdm.log" -Tail 5 -ErrorAction SilentlyContinue
 

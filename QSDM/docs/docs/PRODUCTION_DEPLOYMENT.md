@@ -112,27 +112,27 @@ powershell -ExecutionPolicy Bypass -File build_with_cgo_no_cuda.ps1
 
 # Run
 $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
-.\qsdmplus.exe
+.\qsdm.exe
 ```
 
 #### Linux
 
 ```bash
 # Build
-CGO_ENABLED=1 go build -o qsdmplus ./cmd/qsdmplus
+CGO_ENABLED=1 go build -o qsdm ./cmd/qsdm
 
 # Run
-./qsdmplus
+./qsdm
 ```
 
 #### macOS
 
 ```bash
 # Build
-CGO_ENABLED=1 go build -o qsdmplus ./cmd/qsdmplus
+CGO_ENABLED=1 go build -o qsdm ./cmd/qsdm
 
 # Run
-./qsdmplus
+./qsdm
 ```
 
 ---
@@ -149,7 +149,7 @@ LOG_VIEWER_PORT=8082           # Log viewer port
 
 # Storage Configuration
 STORAGE_TYPE=sqlite            # sqlite or scylladb
-STORAGE_PATH=/data/qsdmplus.db     # SQLite database path
+STORAGE_PATH=/data/qsdm.db     # SQLite database path
 SCYLLADB_HOSTS=localhost       # ScyllaDB hosts (comma-separated)
 
 # Consensus Configuration
@@ -179,7 +179,7 @@ network:
 
 storage:
   type: sqlite
-  path: /data/qsdmplus.db
+  path: /data/qsdm.db
   compression: zstandard
   encryption: aes-gcm
 
@@ -259,7 +259,7 @@ curl http://localhost:8081/api/metrics
 ### Logging
 
 Logs are written to:
-- `qsdmplus.log` - Main application log
+- `qsdm.log` - Main application log
 - `qsdm-error.log` - Error log (if configured)
 
 **Log Viewer:**
@@ -276,10 +276,10 @@ http://localhost:8082
 **SQLite:**
 ```bash
 # Backup database
-cp /data/qsdmplus.db /backup/qsdm-$(date +%Y%m%d).db
+cp /data/qsdm.db /backup/qsdm-$(date +%Y%m%d).db
 
 # Compressed backup
-tar -czf /backup/qsdm-$(date +%Y%m%d).tar.gz /data/qsdmplus.db
+tar -czf /backup/qsdm-$(date +%Y%m%d).tar.gz /data/qsdm.db
 ```
 
 **ScyllaDB:**
@@ -292,7 +292,7 @@ nodetool snapshot qsdm_keyspace
 
 ```bash
 # Restore from backup
-cp /backup/qsdm-20251214.db /data/qsdmplus.db
+cp /backup/qsdm-20251214.db /data/qsdm.db
 
 # Restart node
 systemctl restart qsdm
@@ -312,7 +312,7 @@ sudo useradd -r -s /bin/false qsdm
 sudo chown -R qsdm:qsdm /data
 
 # Run as user
-sudo -u qsdm ./qsdmplus
+sudo -u qsdm ./qsdm
 ```
 
 ### 2. Firewall Configuration
@@ -407,7 +407,7 @@ nvcc --version
 df -h
 
 # Check file permissions
-ls -la /data/qsdmplus.db
+ls -la /data/qsdm.db
 ```
 
 **4. Network Connectivity**

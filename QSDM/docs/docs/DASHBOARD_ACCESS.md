@@ -188,7 +188,7 @@ netstat -ano | findstr :8081
 **Check 3: Check logs**
 ```bash
 # Look for dashboard startup messages
-tail -f qsdmplus.log | grep -i dashboard
+tail -f qsdm.log | grep -i dashboard
 ```
 
 **Check 4: Test API endpoint**

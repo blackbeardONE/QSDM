@@ -121,11 +121,11 @@ Start-Sleep -Seconds 1
 # Use -mod=mod to ignore vendor directory (wasmtime-go removed from go.mod)
 # Add -ldflags to increase stack size (fixes stack overflow during CGO init)
 # Use 16MB stack size (16777216 bytes) to handle deep CGO initialization
-go build -mod=mod -ldflags "-extldflags=-Wl,--stack,16777216" -o qsdmplus.exe ./cmd/qsdmplus
+go build -mod=mod -ldflags "-extldflags=-Wl,--stack,16777216" -o qsdm.exe ./cmd/qsdm
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host ""
-    Write-Host "Build successful! Executable: qsdmplus.exe" -ForegroundColor Green
+    Write-Host "Build successful! Executable: qsdm.exe" -ForegroundColor Green
     Write-Host ""
     Write-Host "Features enabled:" -ForegroundColor Green
     Write-Host "  - Quantum-safe consensus (Proof-of-Entanglement)"

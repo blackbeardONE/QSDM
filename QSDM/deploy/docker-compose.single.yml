@@ -1,4 +1,4 @@
-# Single QSDM+ node — typical small VPS (one host, no cluster).
+# Single QSDM node — typical small VPS (one host, no cluster).
 # From this directory: docker compose -f docker-compose.single.yml up -d --build
 #
 # Host ports: 4001 (libp2p), 8080 (API), 8081 (dashboard), 9000 (log viewer).
@@ -27,8 +27,8 @@ services:
       - DASHBOARD_PORT=8081
       - LOG_VIEWER_PORT=9000
       - STORAGE_TYPE=sqlite
-      - SQLITE_PATH=/app/data/qsdmplus.db
-      - LOG_FILE=/app/logs/qsdmplus.log
+      - SQLITE_PATH=/app/data/qsdm.db
+      - LOG_FILE=/app/logs/qsdm.log
       - LOG_LEVEL=INFO
       - BOOTSTRAP_PEERS=
       - ENABLE_TLS=false

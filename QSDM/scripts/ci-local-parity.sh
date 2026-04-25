@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local parity with .github/workflows/qsdmplus-go.yml (build-test + govulncheck)
+# Local parity with .github/workflows/qsdm-go.yml (build-test + govulncheck)
 # and validate-deploy.yml (compose + kubectl dry-run). Run from monorepo root (parent of QSDM/).
 # Usage: bash QSDM/scripts/ci-local-parity.sh
 set -euo pipefail
@@ -21,7 +21,7 @@ else
 fi
 
 echo "==> go build (no CGO)"
-bash "$QSDM_ROOT/scripts/go-build-no-cgo.sh" "/tmp/qsdmplus-ci-local"
+bash "$QSDM_ROOT/scripts/go-build-no-cgo.sh" "/tmp/qsdm-ci-local"
 
 echo "==> go test -short (no CGO)"
 bash "$QSDM_ROOT/scripts/go-test-short-no-cgo.sh"
@@ -39,7 +39,7 @@ if [ "${SKIP_GOVULNCHECK:-}" = "1" ]; then
 else
 	echo "==> govulncheck (set SKIP_GOVULNCHECK=1 to skip, e.g. known transitive advisories)"
 	cd "$QSDM_ROOT/source"
-	export QSDMPLUS_METRICS_REGISTER_STRICT=1
+	export QSDM_METRICS_REGISTER_STRICT=1
 	unset CGO_CFLAGS CGO_LDFLAGS 2>/dev/null || true
 	export CGO_ENABLED=0
 	go run golang.org/x/vuln/cmd/govulncheck@latest ./...

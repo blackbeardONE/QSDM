@@ -118,12 +118,12 @@ type LocalAttestationSource interface {
 // LocalDistinctAttestationSource is an optional extension of
 // LocalAttestationSource that exposes every distinct attestation
 // source present in the local node's ring buffer, keyed by
-// `qsdmplus_node_id`, instead of collapsing all POSTs to
+// `qsdm_node_id`, instead of collapsing all POSTs to
 // /api/v1/monitoring/ngc-proof into a single "local" peer row.
 //
 // When an operator runs multiple CPU-fallback sidecars — e.g. one on
 // the main VPS, one on a laptop, one on a secondary cloud VM — each
-// with its own QSDMPLUS_NGC_PROOF_NODE_ID, implementing this
+// with its own QSDM_NGC_PROOF_NODE_ID, implementing this
 // interface lets the trust aggregator count them as distinct
 // attestation sources. PeerAttestation entries returned with an
 // empty NodeID are folded onto the local node's identity by the
@@ -200,7 +200,7 @@ func (a *TrustAggregator) Refresh() {
 	if a.cfg.LocalSource != nil {
 		// Prefer the distinct-by-node-id view when the source supports
 		// it. Each CPU-fallback sidecar that stamped its own
-		// QSDMPLUS_NGC_PROOF_NODE_ID surfaces as a separate peer row
+		// QSDM_NGC_PROOF_NODE_ID surfaces as a separate peer row
 		// instead of all of them collapsing onto the local node's
 		// identity (the old LocalLatest() behaviour).
 		if ds, ok := a.cfg.LocalSource.(LocalDistinctAttestationSource); ok {
@@ -210,7 +210,7 @@ func (a *TrustAggregator) Refresh() {
 				for _, att := range distinct {
 					// Empty-id rows fold onto the local node's identity.
 					// This keeps the legacy behaviour for bundles that
-					// did not include qsdmplus_node_id.
+					// did not include qsdm_node_id.
 					if att.NodeID == "" {
 						att.NodeID = localID
 					}
@@ -560,7 +560,7 @@ func (m *MonitoringLocalSource) LocalLatest() (PeerAttestation, bool) {
 }
 
 // LocalDistinctAttestations returns one PeerAttestation per distinct
-// `qsdmplus_node_id` present in the NGC proof ring buffer. Each entry
+// `qsdm_node_id` present in the NGC proof ring buffer. Each entry
 // reflects the newest bundle seen for that id (newest-wins by the
 // bundle's `timestamp_utc`, falling back to the POST wall-clock when
 // the bundle omitted the field). Rows whose bundle did not include a

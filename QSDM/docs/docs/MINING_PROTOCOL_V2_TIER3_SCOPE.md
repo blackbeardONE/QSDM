@@ -183,14 +183,18 @@ miners are directed to wait for `cmd/qsdm-miner-cuda`.
 - Stateless field validation.
 - `EvidenceVerifier` interface + `Dispatcher` registry.
 - `StubVerifier` (always rejects).
+- **`NewProductionDispatcher`** (production.go) — assembles a
+  fully-wired dispatcher with the forged-attestation AND
+  double-mining verifiers registered against the on-chain
+  registry, and a stub for the one remaining deferred kind.
 
 Three `EvidenceKind`s are reserved:
 
-| Kind | Detects |
-|---|---|
-| `forged-attestation` | An HMAC bundle whose MAC verifies but whose `gpu_uuid` is in the deny-list, OR whose enrolled key was never bonded. |
-| `double-mining` | Two distinct accepted proofs from the same `(node_id, height)` within the same epoch. |
-| `freshness-cheat` | A proof whose `challenge.issued_at` is older than `FRESHNESS_WINDOW` and was nonetheless accepted (i.e. retroactive evidence of validator collusion or clock skew). |
+| Kind | Detects | Verifier status |
+|---|---|---|
+| `forged-attestation` | An HMAC bundle whose MAC fails verification, whose `gpu_uuid` mismatches the enrolled record, whose `challenge_bind` mismatches the proof, or whose `gpu_name` matches the governance deny-list. | **Landed** (`pkg/mining/slashing/forgedattest`). |
+| `double-mining` | Two distinct accepted proofs from the same `(node_id, epoch, height)`, both crypto-valid under the registered HMAC key. | **Landed** (`pkg/mining/slashing/doublemining`). |
+| `freshness-cheat` | A proof whose `challenge.issued_at` is older than `FRESHNESS_WINDOW` and was nonetheless accepted (i.e. retroactive evidence of validator collusion or clock skew). | Stubbed. |
 
 ### 4.2 What "done" looks like
 
@@ -225,22 +229,50 @@ For each kind, ship a verifier that:
 
 ### 4.4 Gating
 
-`StubVerifier` is registered for all three kinds at v2 genesis,
-which means **no slashing is possible** until concrete verifiers
-land. This is intentional: it lets the wire format and applier
-infrastructure mature on testnet before any real economic
-penalty is dispensed.
+As of the most recent commit, both `forged-attestation` AND
+`double-mining` ship real verifiers; only `freshness-cheat`
+remains stubbed. This means slashing is **active** for:
+
+- HMAC forgery / GPU-UUID forgery / challenge-bind forgery /
+  deny-listed-GPU offences (`forged-attestation`).
+- Equivocation: any operator that signs two distinct, valid v2
+  proofs at the same `(epoch, height)` is slashable
+  (`double-mining`). The encoder canonicalises pair order so the
+  per-fingerprint replay protection in `pkg/chain/slash_apply.go`
+  treats `(a, b)` and `(b, a)` as the same offence.
+
+Slashing now also enforces a **post-slash auto-revoke** at the
+chain layer: if a successful slash leaves the offender with
+strictly less than `MinEnrollStakeDust` (default 10 CELL),
+`pkg/chain.SlashApplier` calls
+`enrollment.InMemoryState.RevokeIfUnderBonded`, which sets the
+record's `RevokedAtHeight + UnbondMaturesAtHeight` and releases
+the `gpu_uuid` binding so a fresh `node_id` can re-enroll the
+physical card without waiting. This closes the
+"slash-to-zero, keep mining for free" loophole: an operator
+whose bond drops below the original enrollment minimum is
+automatically retired with the remaining stake locked through
+the standard unbond window. The threshold is configurable via
+`SlashApplier.AutoRevokeMinStakeDust` (set to 0 to disable;
+default is the protocol's `MinEnrollStakeDust`).
+
+The remaining inert kind, `freshness-cheat`, still depends on
+BFT finality; see §5 for ordering. The wire format and applier
+infrastructure are otherwise complete and exercised end-to-end
+in `pkg/chain/slash_forgedattest_e2e_test.go` and
+`pkg/chain/slash_doublemining_e2e_test.go`.
 
 ### 4.5 Scope-of-work estimate
 
-- `forged-attestation` verifier (HMAC re-verification): **2 days**
-- `double-mining` verifier (epoch-indexed seen-proofs cache): **3 days**
+- ~~`forged-attestation` verifier (HMAC re-verification): **2 days**~~ **Landed** in `pkg/mining/slashing/forgedattest` with table-driven verifier tests, a production dispatcher (`pkg/mining/slashing/production.go`), and an end-to-end stake-drain test (`pkg/chain/slash_forgedattest_e2e_test.go`).
+- ~~`double-mining` verifier (epoch-indexed seen-proofs cache): **3 days**~~ **Landed** in `pkg/mining/slashing/doublemining` with table-driven verifier tests, an `OPTIONAL` slot in `slashing.ProductionConfig.DoubleMining`, a convenience factory (`doublemining.NewProductionSlashingDispatcher`), and an end-to-end stake-drain test (`pkg/chain/slash_doublemining_e2e_test.go`). Note: an *epoch-indexed seen-proofs cache* is intentionally NOT used — the verifier is purely transactional, accepting any pair of distinct, valid proofs at the same `(epoch, height)` regardless of whether the chain previously saw them. Replay-protection lives one level up in `pkg/chain/slash_apply.go` and keys on the canonical evidence fingerprint.
 - `freshness-cheat` verifier (validator-set quorum proof): **4 days,
   plus design review** — this one assumes the chain has BFT
   finality, which we do not yet ship.
-- Chain-side `qsdm/slash/v1` applier + replay protection: **3 days**
-- Slasher reward economics + governance hook: **2 days**
-- Total: **~14 days** assuming the BFT finality layer is in place.
+- ~~Chain-side `qsdm/slash/v1` applier + replay protection: **3 days**~~ **Landed** in `pkg/chain/slash_apply.go` (commit `5f5fce7`).
+- ~~Slasher reward economics + governance hook: **2 days**~~ **Reward economics landed** (RewardBPS, `SlashRewardCap=5000`); on-chain governance hook for tuning RewardBPS at runtime is still future work.
+- ~~Post-slash auto-revoke for under-bonded records: **1 day**~~ **Landed** in `pkg/mining/enrollment/registry.go` (`InMemoryState.RevokeIfUnderBonded`) and `pkg/chain/slash_apply.go` (`SlashApplier.AutoRevokeMinStakeDust`, default = `mining.MinEnrollStakeDust`). Unit tests in `pkg/mining/enrollment/revoke_underbonded_test.go` and `pkg/chain/slash_apply_autorevoke_test.go`; e2e auto-revoke assertions added to `pkg/chain/slash_forgedattest_e2e_test.go` and `pkg/chain/slash_doublemining_e2e_test.go`.
+- Remaining work: **~4 days** for `freshness-cheat`, plus the BFT-finality dependency it inherits, and **~2 days** for the `qsdm/gov/v1` runtime tuning hook for `RewardBPS` / `AutoRevokeMinStakeDust`.
 
 ---
 
@@ -252,16 +284,200 @@ If/when Tier-3 work resumes, the recommended order is:
    main reason consumer GPUs have any reason to exist on this
    chain. Highest market value, lowest external blocker (only
    needs hardware).
-2. **`forged-attestation` slasher (§4)** — the cheapest of the
-   three slashing verifiers, and the one most likely to be
-   exercised in practice (attack surface = full consumer-GPU
-   population).
-3. **`nvidia-cc-v1` verifier (§2)** — only valuable once we have a
+2. ~~**`forged-attestation` slasher (§4)**~~ — **Landed.** Lives
+   in `pkg/mining/slashing/forgedattest`; wired into the
+   production dispatcher; covered end-to-end by
+   `pkg/chain/slash_forgedattest_e2e_test.go`.
+3. ~~**`double-mining` slasher (§4)**~~ — **Landed.** Lives in
+   `pkg/mining/slashing/doublemining`; injectable through
+   `slashing.ProductionConfig.DoubleMining`; covered end-to-end
+   by `pkg/chain/slash_doublemining_e2e_test.go`. Note that
+   double-mining is purely a *transactional* check (pair of
+   crypto-valid distinct proofs at the same `(epoch, height)`)
+   and therefore does NOT depend on BFT finality — that
+   dependency was an over-cautious read of the original spec.
+4. **`nvidia-cc-v1` verifier (§2)** — only valuable once we have a
    real datacenter customer. Until then, every line of code here is
    speculative.
-4. **`double-mining` + `freshness-cheat` slashers (§4)** — depend
-   on BFT finality and on a sufficient validator set to detect
-   collusion, neither of which is testnet-day-1.
+5. **`freshness-cheat` slasher (§4)** — depends on BFT finality
+   and on a sufficient validator set to detect retroactive
+   acceptance of stale-nonce proofs. Last item in the slashing
+   trilogy; gated on BFT-finality landing first.
+
+---
+
+## 5a. Observability for slashing + enrollment
+
+> **Status:** Landed (this section is descriptive, not deferred).
+> Lives at the same Tier-3 scope level as the verifiers because it
+> directly observes the §4 surface area.
+
+The slashing applier and the enrollment applier emit two
+parallel observability streams. **Both are wired through a
+dependency-inverted seam (`chain.MetricsRecorder`,
+`chain.ChainEventPublisher`) so `pkg/chain` does not import
+`pkg/monitoring`** — that import cycle is what historically kept
+slashing observability under-instrumented. The seam is
+populated automatically when `pkg/monitoring` is loaded into a
+binary (`init()` in `pkg/monitoring/chain_recorder.go`); a
+binary that does not import `pkg/monitoring` falls back to
+`noopRecorder{}` and `NoopEventPublisher{}` and pays no
+overhead.
+
+### 5a.1 Prometheus metrics
+
+Exposed by `pkg/monitoring/prometheus_scrape.go` on the
+node's `/api/metrics/prometheus` endpoint. All counters reset
+to zero on process restart (single-counter convention; the
+delta-over-time semantics are the operator's responsibility).
+
+| Metric | Type | Labels | Source |
+|---|---|---|---|
+| `qsdm_slash_applied_total` | counter | `kind` (`forged-attestation`, `double-mining`, `freshness-cheat`, `unknown`) | Successful slash transitions, per evidence kind. |
+| `qsdm_slash_drained_dust_total` | counter | `kind` | Dust drained from offenders, per evidence kind. Equals `min(SlashAmountDust, record.StakeDust)`. |
+| `qsdm_slash_rewarded_dust_total` | counter | — | Dust paid to slashers across all kinds. |
+| `qsdm_slash_burned_dust_total` | counter | — | Dust burned (not rewarded) across all kinds. |
+| `qsdm_slash_rejected_total` | counter | `reason` (`verifier_failed`, `evidence_replayed`, `node_not_enrolled`, `decode_failed`, `fee_invalid`, `wrong_contract`, `state_lookup_failed`, `stake_mutation_failed`, `other`) | Per-reason rejection of slash transactions. |
+| `qsdm_slash_auto_revoked_total` | counter | `reason` (`fully_drained`, `under_bonded`) | Auto-revokes triggered by §4.4 post-slash logic. |
+| `qsdm_enrollment_applied_total` | counter | — | Successful enroll transactions. |
+| `qsdm_unenrollment_applied_total` | counter | — | Successful unenroll transactions. |
+| `qsdm_enrollment_rejected_total` | counter | `reason` (`stake_mismatch`, `gpu_bound`, `key_invalid`, `payload_invalid`, `decode_failed`, `wrong_contract`, `nonce_invalid`, `fee_invalid`, `account_lookup_failed`, `debit_failed`, `state_apply_failed`, `other`) | Per-reason rejection of enroll txs. |
+| `qsdm_unenrollment_rejected_total` | counter | `reason` (subset of enrollment, plus `not_enrolled`) | Per-reason rejection of unenroll txs. |
+| `qsdm_enrollment_unbond_swept_total` | counter | — | Unbond windows that matured and released stake. |
+| `qsdm_enrollment_active_count` | gauge | — | Records where `Active() == true`. Snapshot per scrape. |
+| `qsdm_enrollment_bonded_dust` | gauge | — | Sum of `StakeDust` across active records. Snapshot per scrape. |
+| `qsdm_enrollment_pending_unbond_count` | gauge | — | Records that have been revoked but whose unbond window has not yet matured. |
+| `qsdm_enrollment_pending_unbond_dust` | gauge | — | Dust still locked in pending-unbond records (zero-dust pending records are still counted in `pending_unbond_count`). |
+
+Gauges are **callback-driven**: `pkg/monitoring/enrollment_metrics.go`
+holds an `EnrollmentStateProvider` set at boot via
+`SetEnrollmentStateProvider(...)`. The default provider in
+`pkg/monitoring/enrollment_state_provider.go` wraps an
+`enrollment.InMemoryState` and walks the record map under a
+single mutex acquisition per scrape (O(n) in active miners).
+A node operator that runs without enrollment (e.g. legacy v1
+binary) leaves the provider unset and the gauges read as 0.
+
+### 5a.2 Structured events
+
+`pkg/chain/events.go` defines two event types:
+
+- `MiningSlashEvent{Kind, Outcome, Offender, Slasher, EvidenceFingerprint, RejectReason, AppliedHeight, BondedDust, SlashedDust, DrainedDust, RewardedDust, BurnedDust, AutoRevoked}`
+- `EnrollmentEvent{Kind, NodeID, Owner, GPUUUID, RejectReason, StakeDelta, AppliedHeight}`
+
+Outcomes:
+- `MiningSlashOutcomeApplied` — emitted exactly once per
+  successful slash, AFTER the offender's stake has been
+  mutated, AFTER any auto-revoke, and AFTER the metric
+  counters have been incremented.
+- `MiningSlashOutcomeRejected` — emitted exactly once per
+  rejection path with the canonical `reason` label.
+- `EnrollmentEventEnrollApplied` / `EnrollmentEventEnrollRejected`
+  / `EnrollmentEventUnenrollApplied` / `EnrollmentEventUnenrollRejected`
+  / `EnrollmentEventSweep` — symmetric coverage of the four
+  enrollment transitions.
+
+Events are published via `ChainEventPublisher`. Default
+implementation is `NoopEventPublisher{}`. Production deployments
+attach a publisher (Kafka, NATS, on-chain log emitter, audit
+sink) by setting the `Publisher` field on `EnrollmentApplier` /
+`SlashApplier` at construction. `CompositePublisher` lets
+multiple sinks subscribe.
+
+### 5a.3 Why both metrics AND events
+
+Metrics are sufficient for SLO dashboards but discard per-event
+detail (which `node_id` was slashed, which evidence
+fingerprint, etc.). Events are the audit trail, but expensive
+to store and slow to query in aggregate. Both layers share the
+same canonical reason-tag string set
+(`SlashRejectReason*`, `EnrollRejectReason*`) so a metric spike
+on `qsdm_slash_rejected_total{reason="evidence_replayed"}`
+maps 1:1 onto the corresponding `MiningSlashEvent` records in
+the audit sink.
+
+### 5a.4 Test coverage
+
+- `pkg/chain/events_test.go` — unit tests with fake
+  `MetricsRecorder` and `ChainEventPublisher` that verify
+  every applied / rejected path emits exactly one metric
+  observation and one event.
+- `pkg/mining/enrollment/stats_test.go` — covers the gauge
+  source-of-truth (`InMemoryState.Stats()`) across enroll,
+  unenroll, slash-to-zero, and sweep transitions.
+- Existing e2e tests
+  (`slash_forgedattest_e2e_test.go`,
+  `slash_doublemining_e2e_test.go`) continue to pass — the
+  metrics and event seams default to noop and impose zero
+  observable change in those tests.
+
+---
+
+## 5b. Production boot wiring (`internal/v2wiring`)
+
+The v2 mining surface is now wired into `cmd/qsdm/main.go` at
+boot through a single helper, `internal/v2wiring.Wire(...)`.
+Before this commit, every collaborator built in §§2–5 (the
+on-chain enrollment state, the `EnrollmentApplier`, the
+`SlashApplier`, the production slash dispatcher, the mempool
+admission gate, the HTTP enroll/unenroll handlers, the four
+Prometheus enrollment gauges) was code without a caller in any
+production binary — `grep NewEnrollmentApplier cmd/qsdm/main.go`
+returned zero matches. The Tier-3 milestone is meaningless if
+none of it runs outside `go test`, so this seam closes the gap.
+
+### 5b.1 What `Wire` constructs
+
+In a single call ordered before `chain.NewBlockProducer`:
+
+- `enrollment.NewInMemoryState()` — the on-chain registry.
+- `chain.NewEnrollmentApplier(accounts, state)` — the
+  applier consumed by `EnrollmentAwareApplier`.
+- `chain.NewEnrollmentAwareApplier(accounts, enroll)` — the
+  `chain.StateApplier` shim that drops directly into
+  `NewBlockProducer` in place of the bare `*AccountStore`.
+- `doublemining.NewProductionSlashingDispatcher(...)` +
+  `chain.NewSlashApplier(...)` attached via
+  `aware.SetSlashApplier(...)`. Slashing wiring failure is a
+  hard boot error rather than a silent degrade — the operator
+  cannot accidentally run a node that drops slash txs.
+- `monitoring.SetEnrollmentStateProvider(...)` — populates
+  the four `qsdm_enrollment_*` gauges.
+- `pool.SetAdmissionChecker(enrollment.AdmissionChecker(prev))`
+  — the mempool admission gate. `prev` is supplied by the
+  caller (POL/BFT extension predicate in `cmd/qsdm/main.go`)
+  and runs first for non-enrollment txs; enrollment-tagged
+  txs go through the stateless validators.
+- `api.SetEnrollmentMempool(pool)` — the HTTP handler hookup.
+  `/api/v1/mining/enroll` and `/api/v1/mining/unenroll`
+  return 503 until this is called.
+
+### 5b.2 Post-construction `AttachToProducer`
+
+`SetHeightFn` and `OnSealedBlock = SealedBlockHook(...)` close
+back over the producer, which is constructed *after* the
+applier. `Wired.AttachToProducer(bp)` does both in one call,
+keeping the knot tying explicit and idempotent.
+
+### 5b.3 Test coverage
+
+`internal/v2wiring/v2wiring_test.go` exercises:
+
+- input validation (missing accounts, missing pool,
+  reward-over-cap),
+- end-to-end enroll flow (admission → pool → producer →
+  applier → registry + gauges),
+- admission gate (rejects malformed enroll, accepts
+  ordinary transfer, supports `ReinstallAdmissionGate` for
+  late-bound POL/BFT predicates),
+- `OnSealedBlock` auto-sweep at unbond maturity,
+- monitoring state provider replacement on a second `Wire`
+  call (no aliasing across boots), and
+- slasher routability.
+
+These ten tests are the contract `cmd/qsdm/main.go` must
+honour. Any drift between `Wire` and the production boot
+sequence is caught here, not on mainnet.
 
 ---
 
@@ -269,7 +485,15 @@ If/when Tier-3 work resumes, the recommended order is:
 
 - v2 spec: [`MINING_PROTOCOL_V2_NVIDIA_LOCKED.md`](./MINING_PROTOCOL_V2_NVIDIA_LOCKED.md)
 - Phase 0 retirement decision: commit `19e756a`
-- Stub verifiers: `pkg/mining/attest/cc/stub.go`, `pkg/mining/slashing/verifier.go`
+- Stub verifiers: `pkg/mining/attest/cc/stub.go`, `pkg/mining/slashing/verifier.go` (StubVerifier remains in use for the one remaining deferred kind, `freshness-cheat`)
+- Concrete `forged-attestation` verifier: `pkg/mining/slashing/forgedattest/forgedattest.go`
+- Concrete `double-mining` verifier: `pkg/mining/slashing/doublemining/doublemining.go`
+- Production slashing wiring: `pkg/mining/slashing/production.go` + `pkg/mining/slashing/forgedattest/production.go` + `pkg/mining/slashing/doublemining/production.go`
+- End-to-end slash tests: `pkg/chain/slash_forgedattest_e2e_test.go`, `pkg/chain/slash_doublemining_e2e_test.go`
+- Post-slash auto-revoke: `pkg/mining/enrollment/registry.go` (`RevokeIfUnderBonded`), `pkg/chain/slash_apply.go` (`SlashApplier.AutoRevokeMinStakeDust`); tests in `pkg/mining/enrollment/revoke_underbonded_test.go` and `pkg/chain/slash_apply_autorevoke_test.go`
+- Slashing + enrollment Prometheus metrics: `pkg/monitoring/slashing_metrics.go`, `pkg/monitoring/enrollment_metrics.go`, `pkg/monitoring/prometheus_scrape.go`, `pkg/monitoring/enrollment_state_provider.go`
+- Slashing + enrollment structured events: `pkg/chain/events.go`, `pkg/monitoring/chain_recorder.go`; tests in `pkg/chain/events_test.go` and `pkg/mining/enrollment/stats_test.go`
+- Production boot wiring: `internal/v2wiring/v2wiring.go` + tests in `internal/v2wiring/v2wiring_test.go`; consumed by `cmd/qsdm/main.go`
 - Reserved wire keys: §3.1, §3.2, §3.3 of the v2 spec.
 
 ---

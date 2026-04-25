@@ -15,7 +15,7 @@ func TestNGCProofIngestRejectReason(t *testing.T) {
 		{errors.New("ngc proof body size invalid"), "body_too_large"},
 		{errors.New("ngc proof missing cuda_proof_hash"), "missing_cuda_hash"},
 		{errors.New("invalid, expired, or reused ingest nonce"), "nonce"},
-		{errors.New("invalid qsdmplus_proof_hmac (required"), "hmac"},
+		{errors.New("invalid qsdm_proof_hmac (required"), "hmac"},
 		{fmt.Errorf("wrap: %w", errors.New("not valid JSON")), "invalid_json"},
 		{errors.New("something else"), "other"},
 	}

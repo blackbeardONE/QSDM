@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Example: curl dashboard Prometheus text and show qsdmplus_submesh_* lines.
+# Example: curl dashboard Prometheus text and show qsdm_submesh_* lines.
 # Prerequisites: node running, dashboard up (default port 8081).
 #
 # Usage:
@@ -14,8 +14,8 @@ if [[ -n "${METRICS_SECRET:-}" ]]; then
 else
   OUT="$(curl -sfS "$URL")"
 fi
-echo "$OUT" | grep -E '^qsdmplus_submesh_' || {
-  echo "No qsdmplus_submesh_* lines found (need JWT or metrics_scrape_secret for this URL?)." >&2
+echo "$OUT" | grep -E '^qsdm_submesh_' || {
+  echo "No qsdm_submesh_* lines found (need JWT or metrics_scrape_secret for this URL?)." >&2
   exit 1
 }
 echo "OK: submesh metrics visible in exposition."

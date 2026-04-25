@@ -10,18 +10,18 @@ data:
   
   # Storage configuration
   storage_type: "sqlite"
-  sqlite_path: "/app/data/qsdmplus.db"
+  sqlite_path: "/app/data/qsdm.db"
   
   # Monitoring configuration
   dashboard_port: "8081"
   log_viewer_port: "9000"
-  log_file: "/app/logs/qsdmplus.log"
+  log_file: "/app/logs/qsdm.log"
   log_level: "INFO"
   
   # API configuration
   api_port: "8080"
   enable_tls: "false"
-  # Per-client sliding window (env API_RATE_LIMIT_* / QSDMPLUS_API_RATE_LIMIT_*)
+  # Per-client sliding window (env API_RATE_LIMIT_* / QSDM_API_RATE_LIMIT_*)
   api_rate_limit_max: "100"
   api_rate_limit_window: "1m"
   

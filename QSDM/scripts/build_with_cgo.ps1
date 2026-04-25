@@ -246,14 +246,14 @@ while ($buildAttempts -lt $maxAttempts -and -not $buildSuccess) {
     
     # Capture both stdout and stderr, suppress PowerShell exceptions during retries
     try {
-        $buildOutput = go build -o qsdmplus.exe ./cmd/qsdmplus 2>&1 | Out-String
+        $buildOutput = go build -o qsdm.exe ./cmd/qsdm 2>&1 | Out-String
         $buildExitCode = $LASTEXITCODE
     } catch {
         $buildOutput = $_.Exception.Message
         $buildExitCode = 1
     }
     
-    if ($buildExitCode -eq 0 -and (Test-Path "qsdmplus.exe")) {
+    if ($buildExitCode -eq 0 -and (Test-Path "qsdm.exe")) {
         $buildSuccess = $true
     } elseif ($buildOutput -match "Access is denied" -or $buildOutput -match "fork/exec.*Access is denied" -or $_.Exception.Message -match "Access is denied") {
         Write-Host ""
@@ -303,11 +303,11 @@ while ($buildAttempts -lt $maxAttempts -and -not $buildSuccess) {
 
 if ($buildSuccess) {
     Write-Host ""
-    Write-Host "✓ Build successful! Executable: qsdmplus.exe" -ForegroundColor Green
+    Write-Host "✓ Build successful! Executable: qsdm.exe" -ForegroundColor Green
     
     # Verify the executable exists and show its size
-    if (Test-Path "qsdmplus.exe") {
-        $exeInfo = Get-Item "qsdmplus.exe"
+    if (Test-Path "qsdm.exe") {
+        $exeInfo = Get-Item "qsdm.exe"
         Write-Host "  File size: $([math]::Round($exeInfo.Length / 1MB, 2)) MB" -ForegroundColor Gray
         Write-Host "  Created: $($exeInfo.CreationTime)" -ForegroundColor Gray
     }
@@ -322,6 +322,6 @@ if ($buildSuccess) {
         Write-Host "  ✓ CUDA acceleration (3D mesh)" -ForegroundColor Green
     }
     Write-Host ""
-    Write-Host "You can now run: .\qsdmplus.exe" -ForegroundColor Cyan
+    Write-Host "You can now run: .\qsdm.exe" -ForegroundColor Cyan
 }
 

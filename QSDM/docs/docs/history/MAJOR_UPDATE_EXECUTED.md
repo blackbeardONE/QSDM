@@ -29,7 +29,7 @@
 
 ## 1. Executive summary
 
-QSDM+ becomes **QSDM**, a quantum-secure dynamic mesh ledger with a home-miner-driven native coin called **Cell (CELL)**.
+QSDM becomes **QSDM**, a quantum-secure dynamic mesh ledger with a home-miner-driven native coin called **Cell (CELL)**.
 
 The product identity changes along three axes at once:
 
@@ -45,9 +45,9 @@ The "buy an NVIDIA GPU to mine Cell" pitch drives retail GPU demand. Validators'
 
 ## 2. Before vs. after — the mental model
 
-| Dimension | **Before (QSDM+)** | **After (QSDM with Cell)** |
+| Dimension | **Before (QSDM)** | **After (QSDM with Cell)** |
 |---|---|---|
-| Product name | QSDM+ | **QSDM** |
+| Product name | QSDM | **QSDM** |
 | Native coin | (unnamed, functional) | **Cell (CELL)** — minted, emitted, fee-denominated |
 | Who produces blocks | Validators (PoE + BFT selection) | **Validators (VPS, CPU only)** — unchanged |
 | Who earns by securing the chain | Validators (tx fees) | **Validators** earn Cell tx fees |
@@ -63,11 +63,11 @@ The "buy an NVIDIA GPU to mine Cell" pitch drives retail GPU demand. Validators'
 
 ## 3. Goals in this update
 
-1. **Rename** everything user-facing from "QSDM+" to "QSDM". Repo directories, Go module path, binaries, docs, dashboards, CI workflows, website, SDKs.
+1. **Rename** everything user-facing from "QSDM" to "QSDM". Repo directories, Go module path, binaries, docs, dashboards, CI workflows, website, SDKs.
 2. **Introduce Cell as the native coin** with a fair-launch, fixed-supply tokenomics model. No pre-mine. No team allocation larger than 10% (with vesting).
 3. **Split node roles** explicitly into *primary/validator nodes* (VPS, CPU) and *miner nodes* (home, GPU). Document hardware profiles for both. Make it impossible to misconfigure.
 4. **Design and ship a CUDA-optimized mining algorithm** that issues Cell on a published emission schedule.
-5. **Overhaul documentation** — `ROADMAP.md`, `NEXT_STEPS_QSDMPLUS.md` → `NEXT_STEPS.md`, every `README.md`, `SCYLLA_CAPACITY.md`, `NVIDIA_LOCK_CONSENSUS_SCOPE.md`, and produce new docs for tokenomics, mining, home-miner setup, validator operator runbook.
+5. **Overhaul documentation** — `ROADMAP.md`, `NEXT_STEPS_QSDM.md` → `NEXT_STEPS.md`, every `README.md`, `SCYLLA_CAPACITY.md`, `NVIDIA_LOCK_CONSENSUS_SCOPE.md`, and produce new docs for tokenomics, mining, home-miner setup, validator operator runbook.
 6. **Overhaul `qsdm.tech`** — landing page, product pitch, miner quick-start, validator quick-start, tokenomics page, block explorer, brand kit.
 
 Non-goals (explicitly out of scope for this update):
@@ -218,7 +218,7 @@ To make the "VPS = no GPU" rule real (not just documentation):
 
 ---
 
-## 7. Rebrand — QSDM+ → QSDM
+## 7. Rebrand — QSDM → QSDM
 
 This is a large mechanical change touching every layer. Below is the complete inventory.
 
@@ -227,21 +227,21 @@ This is a large mechanical change touching every layer. Below is the complete in
 | Target | Current | After |
 |---|---|---|
 | Go module path | `github.com/blackbeardONE/QSDM` | **unchanged** (already `QSDM`, no `+`) |
-| Root directory | `e:\Projects\QSDM+\` | `e:\Projects\QSDM\` |
-| `pkg/branding/branding.go` `Name` | `QSDM+` | `QSDM` |
+| Root directory | `e:\Projects\QSDM\` | `e:\Projects\QSDM\` |
+| `pkg/branding/branding.go` `Name` | `QSDM` | `QSDM` |
 | `pkg/branding` — new constants | — | `CoinName = "Cell"`, `CoinSymbol = "CELL"`, `CoinDecimals = 8` |
-| Env var prefix | `QSDMPLUS_*` / `QSDM_*` (mixed) | **`QSDM_*` only** — legacy `QSDMPLUS_*` accepted with a deprecation warning for 6 months, then removed |
-| HTTP header `X-QSDMPLUS-NGC-Secret` | preferred | deprecated; `X-QSDM-NGC-Secret` is now preferred |
-| Binary names | `qsdmplus`, `qsdmcli` | **`qsdm`, `qsdmcli`**; add new `qsdmminer` |
-| Log prefix | `QSDM+: ` | `QSDM: ` |
-| `NEXT_STEPS_QSDMPLUS.md` | filename | rename to `NEXT_STEPS.md` |
-| Go SDK package name | `qsdmplus` | **`qsdm`** (breaking; version bump to v2.0) |
-| JS SDK package name | `qsdmplus` | **`qsdm`** (breaking; version bump to v2.0) |
-| `QSDMPlusClient` class | name | `QSDMClient` — keep `QSDMPlusClient` as a deprecated alias for one minor release |
+| Env var prefix | `QSDM_*` / `QSDM_*` (mixed) | **`QSDM_*` only** — legacy `QSDM_*` accepted with a deprecation warning for 6 months, then removed |
+| HTTP header `X-QSDM-NGC-Secret` | preferred | deprecated; `X-QSDM-NGC-Secret` is now preferred |
+| Binary names | `qsdm`, `qsdmcli` | **`qsdm`, `qsdmcli`**; add new `qsdmminer` |
+| Log prefix | `QSDM: ` | `QSDM: ` |
+| `NEXT_STEPS_QSDM.md` | filename | rename to `NEXT_STEPS.md` |
+| Go SDK package name | `qsdm` | **`qsdm`** (breaking; version bump to v2.0) |
+| JS SDK package name | `qsdm` | **`qsdm`** (breaking; version bump to v2.0) |
+| `QSDMClient` class | name | `QSDMClient` — keep `QSDMClient` as a deprecated alias for one minor release |
 
 ### 7.2 Documentation
 
-Files that must be updated (every mention of "QSDM+", every mention of absent coin, every mention of "optional GPU" where it's now role-specific):
+Files that must be updated (every mention of "QSDM", every mention of absent coin, every mention of "optional GPU" where it's now role-specific):
 
 - `README.md` (root)
 - `QSDM/README.md`
@@ -250,7 +250,7 @@ Files that must be updated (every mention of "QSDM+", every mention of absent co
 - `QSDM/docs/docs/SCYLLA_CAPACITY.md`
 - `QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md` — **rewrite** to reflect the new two-tier model
 - `QSDM/docs/docs/FEATURE_ENHANCEMENTS_COMPLETE.md`
-- `NEXT_STEPS_QSDMPLUS.md` → rename to `NEXT_STEPS.md`
+- `NEXT_STEPS_QSDM.md` → rename to `NEXT_STEPS.md`
 - `Major Update.md` (this file — archive after execution)
 
 New files to create:
@@ -265,8 +265,8 @@ New files to create:
 
 ### 7.3 CI / CD
 
-- `.github/workflows/qsdmplus-go.yml` → `qsdm-go.yml`
-- `.github/workflows/qsdmplus-scylla-staging.yml` → `qsdm-scylla-staging.yml`
+- `.github/workflows/qsdm-go.yml` → `qsdm-go.yml`
+- `.github/workflows/qsdm-scylla-staging.yml` → `qsdm-scylla-staging.yml`
 - `release-container.yml` — split into **two** publishing lanes: `qsdm-validator:*` and `qsdm-miner:*`.
 - Add **`mining-kernels.yml`** — builds and tests the CUDA kernels on a CUDA-capable runner (GitHub Actions `gpu` runner, self-hosted if needed).
 - Add **`sdk-js.yml`** — runs `node --test` on every push to `sdk/javascript/**`.
@@ -748,14 +748,14 @@ The aggregator's `Summary` method returns the struct shape in §8.5.3; its `Rece
 
 ### Phase 1 — Rebrand (Week 1–2, non-breaking path first)
 
-- [ ] Rename `NEXT_STEPS_QSDMPLUS.md` → `NEXT_STEPS.md`.
+- [ ] Rename `NEXT_STEPS_QSDM.md` → `NEXT_STEPS.md`.
 - [ ] Update `pkg/branding/branding.go` — `Name = "QSDM"`, add `CoinName`, `CoinSymbol`, `CoinDecimals`.
 - [ ] Thread coin symbol through: API responses, Go SDK, JS SDK, dashboard labels.
-- [ ] Replace "QSDM+" with "QSDM" in every `.md`, every log line, every dashboard string. Keep technical compatibility: `QSDMPLUS_*` env vars still accepted but emit a deprecation warning.
-- [ ] Rename binaries: `qsdmplus` → `qsdm`. Keep `qsdmplus` as a symlink for one release.
+- [ ] Replace "QSDM" with "QSDM" in every `.md`, every log line, every dashboard string. Keep technical compatibility: `QSDM_*` env vars still accepted but emit a deprecation warning.
+- [ ] Rename binaries: `qsdm` → `qsdm`. Keep `qsdm` as a symlink for one release.
 - [ ] Rename CI workflows.
 - [ ] Add `REBRAND_NOTES.md` documenting every deprecated name and its migration path.
-- [ ] **Milestone:** `grep -r "QSDM+" docs/ sdk/ internal/ pkg/ cmd/` returns zero hits. `go test ./... -short` stays green. JS SDK tests stay green.
+- [ ] **Milestone:** `grep -r "QSDM" docs/ sdk/ internal/ pkg/ cmd/` returns zero hits. `go test ./... -short` stays green. JS SDK tests stay green.
 
 ### Phase 2 — Node roles + VPS hard guarantee (Week 2–3)
 
@@ -893,25 +893,25 @@ This is a paste-ready checklist the engineering team can open as a tracking issu
 [ ] pkg/api/handlers.go — /api/v1/status includes node_role + coin symbol
 [ ] pkg/api/handlers_trust.go — NEW: GET /api/v1/trust/attestations/summary + /recent (public, §8.5.1)
 [ ] pkg/monitoring/nvidia_lock.go — expose an aggregator helper for the trust endpoints (fresh count, last-seen, per-peer ring)
-[ ] sdk/go/qsdmplus.go → sdk/go/qsdm.go  (keep shim for v1)
-[ ] sdk/go/qsdmplus_test.go → sdk/go/qsdm_test.go
+[ ] sdk/go/qsdm.go → sdk/go/qsdm.go  (keep shim for v1)
+[ ] sdk/go/qsdm_test.go → sdk/go/qsdm_test.go
 [ ] sdk/javascript/package.json — name → "qsdm"
-[ ] sdk/javascript/qsdmplus.js → sdk/javascript/qsdm.js
-[ ] sdk/javascript/qsdmplus.test.js → sdk/javascript/qsdm.test.js
-[ ] sdk/javascript/qsdmplus.d.ts → sdk/javascript/qsdm.d.ts
-[ ] cmd/qsdmplus/ → cmd/qsdm/
-[ ] cmd/qsdmplus/transaction/ (references update)
+[ ] sdk/javascript/qsdm.js → sdk/javascript/qsdm.js
+[ ] sdk/javascript/qsdm.test.js → sdk/javascript/qsdm.test.js
+[ ] sdk/javascript/qsdm.d.ts → sdk/javascript/qsdm.d.ts
+[ ] cmd/qsdm/ → cmd/qsdm/
+[ ] cmd/qsdm/transaction/ (references update)
 [ ] NEW cmd/qsdmminer/ — scaffolding only in Phase 1
-[ ] .github/workflows/qsdmplus-go.yml → qsdm-go.yml
-[ ] .github/workflows/qsdmplus-scylla-staging.yml → qsdm-scylla-staging.yml
+[ ] .github/workflows/qsdm-go.yml → qsdm-go.yml
+[ ] .github/workflows/qsdm-scylla-staging.yml → qsdm-scylla-staging.yml
 [ ] NEW .github/workflows/sdk-js.yml
 [ ] NEW .github/workflows/audit-gate.yml
 [ ] NEW .github/workflows/mining-kernels.yml
 [ ] Dockerfile → Dockerfile.validator + NEW Dockerfile.miner
 [ ] QSDM/deploy/ — kubernetes manifests updated, add miner manifests
 [ ] QSDM/scripts/ — rebrand script names + log prefixes
-[ ] All *.md files: "QSDM+" → "QSDM"
-[ ] NEXT_STEPS_QSDMPLUS.md → NEXT_STEPS.md
+[ ] All *.md files: "QSDM" → "QSDM"
+[ ] NEXT_STEPS_QSDM.md → NEXT_STEPS.md
 ```
 
 ### 14.2 Documentation checklist

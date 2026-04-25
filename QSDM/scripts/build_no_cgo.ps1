@@ -10,11 +10,11 @@ $env:PATH = "C:\Program Files\Go\bin;$env:PATH"
 $env:CGO_ENABLED = "0"
 
 # Build
-go build -o qsdmplus.exe ./cmd/qsdmplus
+go build -o qsdm.exe ./cmd/qsdm
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host ""
-    Write-Host "Build successful! Executable: qsdmplus.exe" -ForegroundColor Green
+    Write-Host "Build successful! Executable: qsdm.exe" -ForegroundColor Green
     Write-Host ""
     Write-Host "Note: This build does not include:" -ForegroundColor Yellow
     Write-Host "  - WASM module support"

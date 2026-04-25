@@ -4,7 +4,7 @@
 		bad_token: 'Your session is invalid or expired. Sign in again.',
 		forbidden: 'This account role cannot use the dashboard.',
 		credentials_in_url:
-			'Your address or password was in the page URL (the browser submitted the form with GET). That cannot sign you in and is unsafe. The address bar has been cleared — enter address and password only in the boxes below and click Login. If this page still shows an old blue "Note: use API…" box, rebuild/restart qsdmplus (Docker or binary) so you get the current login page and scripts.'
+			'Your address or password was in the page URL (the browser submitted the form with GET). That cannot sign you in and is unsafe. The address bar has been cleared — enter address and password only in the boxes below and click Login. If this page still shows an old blue "Note: use API…" box, rebuild/restart qsdm (Docker or binary) so you get the current login page and scripts.'
 	};
 
 	function showFromQuery() {
