@@ -25,13 +25,15 @@ package v2wiring
 //     *EnrollmentAwareApplier, optional *SlashApplier.
 //   - Registers the monitoring state-provider so the four
 //     `qsdm_enrollment_*` gauges populate.
-//   - Composes a mempool admission gate via
-//     enrollment.AdmissionChecker, taking a caller-supplied
-//     base predicate (the operator's existing POL/BFT gate).
+//   - Composes a stacked mempool admission gate
+//     (slashing > enrollment > base predicate) so each ContractID
+//     family hits its own stateless validators before the
+//     operator's POL/BFT gate.
 //   - Wires the producer via SetHeightFn and assigns the
 //     SealedBlockHook for matured-stake auto-sweep.
 //   - Exposes the live mempool to the api/v1/mining/{enroll,
-//     unenroll} HTTP handlers via api.SetEnrollmentMempool.
+//     unenroll, slash} HTTP handlers via the matching
+//     api.Set*Mempool() helpers.
 //
 // Out of scope:
 //
@@ -48,6 +50,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
+	"github.com/blackbeardONE/QSDM/pkg/mining/slashing"
 	"github.com/blackbeardONE/QSDM/pkg/mining/slashing/doublemining"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 )
@@ -165,17 +168,31 @@ func Wire(cfg Config) (*Wired, error) {
 		monitoring.NewEnrollmentInMemoryStateProvider(state),
 	)
 
-	// Mempool admission. Pre-existing base predicate runs
-	// FIRST for non-enrollment txs (preserves POL/BFT
-	// semantics); enrollment-tagged txs go through the
-	// stateless enroll/unenroll validators.
-	cfg.Pool.SetAdmissionChecker(enrollment.AdmissionChecker(cfg.BaseAdmit))
+	// Mempool admission. Two stateless layers stacked on top of
+	// the operator-supplied base predicate:
+	//
+	//   - slashing.AdmissionChecker  (slash txs)
+	//   - enrollment.AdmissionChecker (enroll/unenroll txs)
+	//   - cfg.BaseAdmit               (everything else: POL/BFT)
+	//
+	// Each layer only intercepts its own ContractID and
+	// delegates other contracts down the chain, so layer order
+	// is structurally safe but kept stable for readability:
+	// slash > enroll > base mirrors the conceptual blast radius
+	// (a slash tx is the most consequential so its validators
+	// run first).
+	cfg.Pool.SetAdmissionChecker(
+		slashing.AdmissionChecker(
+			enrollment.AdmissionChecker(cfg.BaseAdmit)))
 
-	// HTTP handler hookup. The /api/v1/mining/{enroll,unenroll}
-	// endpoints are no-ops without this — they return
-	// 503 Service Unavailable until SetEnrollmentMempool is
-	// called.
+	// HTTP handler hookup. Both /api/v1/mining/{enroll,unenroll}
+	// AND /api/v1/mining/slash are no-ops without their
+	// respective MempoolSubmitter installs — each returns
+	// 503 Service Unavailable until set. Wired together so a
+	// validator that brings up v2 enrollment also brings up the
+	// slash submission path.
 	api.SetEnrollmentMempool(cfg.Pool)
+	api.SetSlashMempool(cfg.Pool)
 
 	hook := aware.SealedBlockHook(cfg.LogSweepError)
 
@@ -201,7 +218,10 @@ func ReinstallAdmissionGate(pool *mempool.Mempool, prev func(*mempool.Tx) error)
 	if pool == nil {
 		return
 	}
-	pool.SetAdmissionChecker(enrollment.AdmissionChecker(prev))
+	// Mirror Wire()'s stack: slashing > enrollment > prev.
+	pool.SetAdmissionChecker(
+		slashing.AdmissionChecker(
+			enrollment.AdmissionChecker(prev)))
 }
 
 // AttachToProducer wires the post-construction half of the

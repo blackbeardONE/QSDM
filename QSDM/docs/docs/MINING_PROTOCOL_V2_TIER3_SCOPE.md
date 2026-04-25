@@ -443,14 +443,22 @@ In a single call ordered before `chain.NewBlockProducer`:
   cannot accidentally run a node that drops slash txs.
 - `monitoring.SetEnrollmentStateProvider(...)` — populates
   the four `qsdm_enrollment_*` gauges.
-- `pool.SetAdmissionChecker(enrollment.AdmissionChecker(prev))`
-  — the mempool admission gate. `prev` is supplied by the
-  caller (POL/BFT extension predicate in `cmd/qsdm/main.go`)
-  and runs first for non-enrollment txs; enrollment-tagged
-  txs go through the stateless validators.
-- `api.SetEnrollmentMempool(pool)` — the HTTP handler hookup.
-  `/api/v1/mining/enroll` and `/api/v1/mining/unenroll`
-  return 503 until this is called.
+- `pool.SetAdmissionChecker(slashing.AdmissionChecker(
+  enrollment.AdmissionChecker(prev)))` — the stacked mempool
+  admission gate. `prev` is supplied by the caller (POL/BFT
+  extension predicate in `cmd/qsdm/main.go`) and runs last,
+  for non-enrollment, non-slash txs. Slash- and enroll-tagged
+  txs go through their respective stateless validators
+  before delegating to `prev`. Layer order is structurally
+  safe (each layer only intercepts its own ContractID) but
+  fixed at slashing > enrollment > base for readability and
+  blast-radius ordering.
+- `api.SetEnrollmentMempool(pool)` — HTTP handler hookup
+  for `/api/v1/mining/enroll` and `/api/v1/mining/unenroll`.
+- `api.SetSlashMempool(pool)` — HTTP handler hookup for
+  `/api/v1/mining/slash`. All three endpoints return 503
+  until their respective `Set*Mempool` is called; `Wire`
+  installs both atomically.
 
 ### 5b.2 Post-construction `AttachToProducer`
 
@@ -467,15 +475,19 @@ keeping the knot tying explicit and idempotent.
   reward-over-cap),
 - end-to-end enroll flow (admission → pool → producer →
   applier → registry + gauges),
-- admission gate (rejects malformed enroll, accepts
-  ordinary transfer, supports `ReinstallAdmissionGate` for
-  late-bound POL/BFT predicates),
+- enrollment admission gate (rejects malformed enroll,
+  accepts ordinary transfer, supports
+  `ReinstallAdmissionGate` for late-bound POL/BFT
+  predicates),
+- slashing admission gate (rejects malformed slash, accepts
+  well-formed slash into the pool — confirms the stacked
+  gate has the slashing layer present),
 - `OnSealedBlock` auto-sweep at unbond maturity,
 - monitoring state provider replacement on a second `Wire`
   call (no aliasing across boots), and
-- slasher routability.
+- slasher routability through the aware applier.
 
-These ten tests are the contract `cmd/qsdm/main.go` must
+These twelve tests are the contract `cmd/qsdm/main.go` must
 honour. Any drift between `Wire` and the production boot
 sequence is caught here, not on mainnet.
 
@@ -494,6 +506,7 @@ sequence is caught here, not on mainnet.
 - Slashing + enrollment Prometheus metrics: `pkg/monitoring/slashing_metrics.go`, `pkg/monitoring/enrollment_metrics.go`, `pkg/monitoring/prometheus_scrape.go`, `pkg/monitoring/enrollment_state_provider.go`
 - Slashing + enrollment structured events: `pkg/chain/events.go`, `pkg/monitoring/chain_recorder.go`; tests in `pkg/chain/events_test.go` and `pkg/mining/enrollment/stats_test.go`
 - Production boot wiring: `internal/v2wiring/v2wiring.go` + tests in `internal/v2wiring/v2wiring_test.go`; consumed by `cmd/qsdm/main.go`
+- Slashing admission + HTTP submission: `pkg/mining/slashing/admit.go`, `pkg/mining/slashing/admit_test.go`, `pkg/api/handlers_slashing.go`, `pkg/api/handlers_slashing_test.go` (`POST /api/v1/mining/slash`)
 - Reserved wire keys: §3.1, §3.2, §3.3 of the v2 spec.
 
 ---

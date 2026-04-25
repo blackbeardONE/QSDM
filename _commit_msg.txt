@@ -1,0 +1,50 @@
+slashing: stateless admission gate + POST /api/v1/mining/slash
+
+Closes the last gap in the v2 slashing surface: peers can now
+submit slash transactions via the public HTTP API, and the
+mempool drops malformed slash traffic before any per-evidence
+verifier (which CAN be expensive — re-running HMAC checks,
+double-mine equivocation analysis) ever runs.
+
+Stateless admission gate
+- pkg/mining/slashing/admit.go: AdmissionChecker(prev) returns
+  a chained mempool predicate that decodes + ValidateSlashFields
+  on slashing.ContractID txs, requires positive Fee, and
+  delegates everything else to prev. Mirrors enrollment.Admission
+  Checker in shape; composing both layers is a no-op for
+  unrelated contract IDs (each layer only intercepts its own).
+- pkg/mining/slashing/admit_test.go: 12 cases covering happy
+  path, nil tx, empty payload, bad decode, unknown kind, zero
+  slash amount, oversized evidence, zero/negative fee, transfer
+  delegation, nil-prev fallthrough, prev-error propagation,
+  empty sender.
+
+HTTP submission
+- pkg/api/handlers_slashing.go: POST /api/v1/mining/slash
+  endpoint symmetric to handlers_enrollment.go. Reconstructs
+  the mempool.Tx exactly (preserves the off-line tx hash),
+  defence-in-depth decodes + validates before pool.Add, and
+  maps mempool errors to HTTP codes (202 accept, 400 bad
+  payload, 405 wrong method, 409 duplicate, 503 mempool full
+  / no submitter). SetSlashMempool installs the process-wide
+  submitter; until called the endpoint returns 503 with a
+  clear "not configured" message.
+- pkg/api/handlers_slashing_test.go: 10 handler tests covering
+  every status code path.
+- pkg/api/handlers.go: route registration alongside the
+  enrollment endpoints.
+
+Production wiring
+- internal/v2wiring/v2wiring.go: Wire() now stacks
+  slashing.AdmissionChecker on top of enrollment.AdmissionChecker
+  on top of the operator's BaseAdmit, and calls
+  api.SetSlashMempool(pool) alongside SetEnrollmentMempool.
+  ReinstallAdmissionGate mirrors the same stack so late-bound
+  POL/BFT predicates compose correctly. Tier-3 doc + landing
+  page updated.
+- internal/v2wiring/v2wiring_test.go: 2 new tests
+  (admission rejects malformed slash, accepts well-formed
+  slash into the pool) bring the suite to 12 integration
+  tests — the contract cmd/qsdm/main.go must honour.
+
+Tests: 1348 pass across 64 packages, build clean, vet clean.

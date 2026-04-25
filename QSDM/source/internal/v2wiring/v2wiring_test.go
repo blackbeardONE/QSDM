@@ -47,6 +47,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
 	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
+	"github.com/blackbeardONE/QSDM/pkg/mining/slashing"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 )
 
@@ -403,5 +404,73 @@ func TestWire_SlashApplierIsRoutable(t *testing.T) {
 	}
 	if r.w.Aware.SlashApplier() == nil {
 		t.Error("aware.SlashApplier() returned nil after Wire")
+	}
+}
+
+// slashTx mints a well-formed slash payload. Used for admission
+// gate tests — does not assert anything about applier semantics
+// (real evidence verification requires the offender to be
+// enrolled, the evidence blob to be a valid v2 proof, etc.).
+// The admission gate is purely stateless, so this fixture is
+// sufficient to exercise it.
+func slashTx(t *testing.T, sender, txID string, nonce uint64) *mempool.Tx {
+	t.Helper()
+	raw, err := slashing.EncodeSlashPayload(slashing.SlashPayload{
+		NodeID:          tNodeID,
+		EvidenceKind:    slashing.EvidenceKindForgedAttestation,
+		EvidenceBlob:    []byte("opaque-evidence-blob"),
+		SlashAmountDust: 5 * 100_000_000,
+		Memo:            "v2wiring-slash",
+	})
+	if err != nil {
+		t.Fatalf("EncodeSlashPayload: %v", err)
+	}
+	return &mempool.Tx{
+		ID:         txID,
+		Sender:     sender,
+		Nonce:      nonce,
+		Fee:        0.001,
+		Payload:    raw,
+		ContractID: slashing.ContractID,
+	}
+}
+
+// TestWire_AdmissionGateRejectsMalformedSlash proves the
+// slashing layer of the stacked admission gate is actually
+// present in the pool's checker chain. Skipping this stack
+// would let junk slash txs into the pool, where the per-evidence
+// verifiers (which CAN be expensive — re-running HMAC checks,
+// proof comparisons) would chew CPU on garbage.
+func TestWire_AdmissionGateRejectsMalformedSlash(t *testing.T) {
+	r := buildRig(t, 20)
+
+	bad := &mempool.Tx{
+		ID:         "tx-malformed-slash",
+		Sender:     tAlice,
+		Nonce:      0,
+		Fee:        0.001,
+		ContractID: slashing.ContractID,
+		Payload:    []byte(`{"node_id":"","evidence_kind":""}`),
+	}
+	if err := r.pool.Add(bad); err == nil {
+		t.Fatalf("admission gate accepted malformed slash tx; expected rejection")
+	}
+}
+
+// TestWire_AdmissionGateAcceptsWellFormedSlash proves a slash
+// envelope that passes stateless validation actually makes it
+// into the pool. The block-apply path is intentionally NOT run
+// here — that requires the offender to be enrolled and the
+// evidence blob to verify, which is the SlashApplier's
+// responsibility (covered separately in pkg/chain).
+func TestWire_AdmissionGateAcceptsWellFormedSlash(t *testing.T) {
+	r := buildRig(t, 20)
+
+	tx := slashTx(t, tAlice, "tx-slash-admit-1", 0)
+	if err := r.pool.Add(tx); err != nil {
+		t.Fatalf("admission gate rejected well-formed slash tx: %v", err)
+	}
+	if got := r.pool.Size(); got != 1 {
+		t.Errorf("pool size after slash admit: got %d, want 1", got)
 	}
 }

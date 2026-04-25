@@ -258,6 +258,18 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/mining/enroll", handlers.EnrollmentSubmitHandler)
 	mux.HandleFunc("/api/v1/mining/unenroll", handlers.UnenrollmentSubmitHandler)
 
+	// Mining slashing endpoint (Phase 2c-xi,
+	// MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §8). Symmetric to the
+	// enrollment endpoints: accepts a signed mempool.Tx envelope
+	// carrying a slashing payload (qsdm/slash/v1). Returns 503
+	// until a MempoolSubmitter is installed via
+	// api.SetSlashMempool(...). Stateless payload validation runs
+	// in the mempool admission gate (slashing.AdmissionChecker);
+	// stateful checks (registry lookup, evidence verification,
+	// stake debit) happen at block-apply time in
+	// chain.SlashApplier.
+	mux.HandleFunc("/api/v1/mining/slash", handlers.SlashSubmitHandler)
+
 	// Trust / attestation transparency endpoints (Major Update Phase 5.1).
 	// Registered unconditionally. If no aggregator is installed via
 	// api.SetTrustAggregator, the handlers return 503 warming-up; if the

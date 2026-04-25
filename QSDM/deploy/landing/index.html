@@ -401,6 +401,7 @@
         <div class="endpoint"><span class="host">GET /api/v1/mining/challenge</span><span class="status">v2 · signed nonce · 60s freshness</span></div>
         <div class="endpoint"><span class="host">POST /api/v1/mining/enroll</span><span class="status">v2 · 10 CELL bond</span></div>
         <div class="endpoint"><span class="host">POST /api/v1/mining/unenroll</span><span class="status">v2 · 7-day unbond</span></div>
+        <div class="endpoint"><span class="host">POST /api/v1/mining/slash</span><span class="status">v2 · forged-attest · double-mine</span></div>
         <div class="endpoint"><span class="host">POST /api/v1/auth/login</span><span class="status">JWT issuance</span></div>
         <div class="endpoint"><span class="host">POST /api/v1/wallet/send</span><span class="status">Signed · submesh-routed</span></div>
         <div class="endpoint"><span class="host">GET /api/metrics/prometheus</span><span class="status">Scrape secret · Bearer</span></div>
@@ -1130,10 +1131,13 @@
       All of this is now <strong>actually wired into the production binary</strong>:
       <code>cmd/qsdm/main.go</code> calls <code>internal/v2wiring.Wire(...)</code> at boot,
       which constructs the on-chain enrollment state, the <code>EnrollmentApplier</code>,
-      the production slash dispatcher + <code>SlashApplier</code>, the mempool admission
-      gate, the HTTP <code>/api/v1/mining/{enroll,unenroll}</code> handlers, and the four
+      the production slash dispatcher + <code>SlashApplier</code>, the
+      <em>stacked</em> mempool admission gate
+      (<code>slashing.AdmissionChecker</code> &gt; <code>enrollment.AdmissionChecker</code>
+      &gt; operator&rsquo;s POL/BFT base predicate), the HTTP
+      <code>/api/v1/mining/{enroll,unenroll,slash}</code> handlers, and the four
       <code>qsdm_enrollment_*</code> Prometheus gauges in one ordered call &mdash;
-      backed by a 10-test integration suite that mirrors the production wiring shape and
+      backed by a 12-test integration suite that mirrors the production wiring shape and
       catches any drift between <code>main.go</code> and the chain contracts before a
       regression reaches mainnet. Pre-this commit, every collaborator above was code
       without a caller in any production binary; <code>grep NewEnrollmentApplier
