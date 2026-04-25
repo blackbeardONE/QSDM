@@ -61,6 +61,7 @@ import (
 
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
+	"github.com/blackbeardONE/QSDM/pkg/mining/slashing"
 )
 
 // EnrollmentAwareApplier is a StateApplier that dispatches on
@@ -73,6 +74,7 @@ import (
 type EnrollmentAwareApplier struct {
 	accounts   *AccountStore
 	enrollment *EnrollmentApplier
+	slasher    *SlashApplier
 
 	mu       sync.RWMutex
 	heightFn func() uint64
@@ -150,7 +152,48 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 		}
 		return a.enrollment.ApplyEnrollmentTx(tx, h)
 	}
+	if tx.ContractID == slashing.ContractID {
+		if a.slasher == nil {
+			return ErrSlashingNotWired
+		}
+		h, ok := a.currentHeight()
+		if !ok {
+			return ErrEnrollmentHeightUnset
+		}
+		return a.slasher.ApplySlashTx(tx, h)
+	}
 	return a.accounts.ApplyTx(tx)
+}
+
+// SetSlashApplier installs (or clears) the slashing applier.
+// Opt-in — callers that don't set it reject all slash txs with
+// ErrSlashingNotWired, matching the enrollment opt-in pattern.
+//
+// The slash applier MUST share the same *AccountStore and
+// EnrollmentState (via its SlasherStateMutator contract) as
+// this shim's enrollment applier, otherwise routing would read
+// from one state tree and mutate another. The constructor does
+// not (cannot) enforce this — it's a wiring invariant the caller
+// owns. Production wiring uses a single *enrollment.InMemoryState
+// passed to both NewEnrollmentApplier and NewSlashApplier.
+func (a *EnrollmentAwareApplier) SetSlashApplier(sa *SlashApplier) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.slasher = sa
+}
+
+// SlashApplier returns the configured slashing applier, or nil
+// if slashing is not wired on this node.
+func (a *EnrollmentAwareApplier) SlashApplier() *SlashApplier {
+	if a == nil {
+		return nil
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.slasher
 }
 
 // StateRoot implements StateApplier. Today the state root is
@@ -257,6 +300,13 @@ var (
 	// (the post-construction SetHeightFn call was missed) and
 	// always fatal for the offending tx.
 	ErrEnrollmentHeightUnset = errors.New("chain: EnrollmentAwareApplier has no HeightFn set")
+
+	// ErrSlashingNotWired is returned when a slash tx arrives
+	// at a node that has no SlashApplier configured. Symmetric
+	// to ErrEnrollmentNotWired; typical cause is a v2-aware
+	// peer submitting to a validator that hasn't enabled
+	// slashing yet.
+	ErrSlashingNotWired = errors.New("chain: slash tx received but no SlashApplier is wired")
 )
 
 // Compile-time interface assertions.
@@ -283,6 +333,12 @@ func (a *EnrollmentAwareApplier) ChainReplayClone() ChainReplayApplier {
 	clone := &EnrollmentAwareApplier{
 		accounts: a.accounts.Clone(),
 	}
+	// Clone the enrollment state exactly once and share it
+	// between the enrollment applier and the slasher so both
+	// routes see a single consistent snapshot. If they each
+	// got a fresh clone, enroll/unenroll and slash would
+	// diverge on the same speculative block.
+	var sharedMutator EnrollmentStateMutator
 	if a.enrollment != nil {
 		ces, ok := a.enrollment.State.(enrollment.CloneableState)
 		if !ok {
@@ -291,21 +347,48 @@ func (a *EnrollmentAwareApplier) ChainReplayClone() ChainReplayApplier {
 				"enrollment.CloneableState — speculative replay is unsafe")
 		}
 		stateClone := ces.Clone()
-		// The cloned state value MUST also satisfy
-		// EnrollmentStateMutator (it's the same concrete type
-		// as the live state, just a copy). The assertion is a
-		// belt — a buggy Clone returning a wrong type would
-		// corrupt the speculative apply.
 		clonedMutator, ok := stateClone.(EnrollmentStateMutator)
 		if !ok {
 			panic("chain: EnrollmentAwareApplier.ChainReplayClone: " +
 				"cloned state does not satisfy EnrollmentStateMutator")
 		}
-		clone.enrollment = NewEnrollmentApplier(clone.accounts, clonedMutator)
+		sharedMutator = clonedMutator
+		clone.enrollment = NewEnrollmentApplier(clone.accounts, sharedMutator)
 	}
+	// Mirror the slasher against the cloned account store and
+	// the same state snapshot. Dispatcher + RewardBPS are
+	// deterministic / stateless so they pass through by value.
 	a.mu.RLock()
+	liveSlasher := a.slasher
 	clone.heightFn = a.heightFn
 	a.mu.RUnlock()
+	if liveSlasher != nil {
+		sm, ok := sharedMutator.(SlasherStateMutator)
+		if !ok {
+			// If enrollment was NOT wired but slashing was,
+			// we must clone the slasher's own state. This
+			// path is atypical (slashing without enrollment
+			// is nonsensical) but we defend against it.
+			if sharedMutator == nil {
+				if ces, ok := liveSlasher.State.(enrollment.CloneableState); ok {
+					clonedState := ces.Clone()
+					if m, ok := clonedState.(SlasherStateMutator); ok {
+						sm = m
+					}
+				}
+			}
+			if sm == nil {
+				panic("chain: EnrollmentAwareApplier.ChainReplayClone: " +
+					"wired SlasherStateMutator cannot be cloned")
+			}
+		}
+		clone.slasher = NewSlashApplier(
+			clone.accounts,
+			sm,
+			liveSlasher.Dispatcher,
+			liveSlasher.RewardBPS,
+		)
+	}
 	return clone
 }
 

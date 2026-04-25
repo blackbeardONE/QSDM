@@ -83,17 +83,25 @@ var _ hmac.Registry = (*StateBackedRegistry)(nil)
 // EnrollmentState. Exposed (rather than kept _test.go-only) so
 // downstream callers (e.g. devnet orchestration, integration
 // harnesses) can reuse it without re-implementing.
+//
+// Also carries the slashing replay-protection set
+// (seenEvidence) and supports stake forfeiture via SlashStake.
+// Both are part of the in-memory state because slashing
+// transitions need the same lock as enroll/unenroll to keep
+// SlashStake atomic with the rest of the record-mutating ops.
 type InMemoryState struct {
-	mu          sync.Mutex
-	byNodeID    map[string]*EnrollmentRecord
-	byGPUActive map[string]string // gpu_uuid -> currently-active node_id
+	mu            sync.Mutex
+	byNodeID      map[string]*EnrollmentRecord
+	byGPUActive   map[string]string  // gpu_uuid -> currently-active node_id
+	seenEvidence  map[[32]byte]bool  // dedup key for slash evidence (replay protection)
 }
 
 // NewInMemoryState returns an empty InMemoryState.
 func NewInMemoryState() *InMemoryState {
 	return &InMemoryState{
-		byNodeID:    make(map[string]*EnrollmentRecord),
-		byGPUActive: make(map[string]string),
+		byNodeID:     make(map[string]*EnrollmentRecord),
+		byGPUActive:  make(map[string]string),
+		seenEvidence: make(map[[32]byte]bool),
 	}
 }
 
@@ -202,6 +210,70 @@ type UnbondRelease struct {
 	StakeDust uint64
 }
 
+// SlashStake reduces the StakeDust of the named EnrollmentRecord
+// by min(amount, record.StakeDust) and returns the actually-
+// forfeited amount. Returns (0, error) if the record does not
+// exist; (0, nil) is the legitimate "record exists but already
+// has zero remaining stake" outcome.
+//
+// Does NOT touch the GPU UUID binding or the active flag —
+// slashing reduces the bond but does not auto-revoke. A miner
+// whose stake has been fully drained remains "enrolled" until
+// they unenroll or the chain re-validates the bond against the
+// current minimum at the next epoch (out of scope for this
+// commit). This keeps slashing orthogonal to the unenroll/
+// sweep flow.
+//
+// Implements the contract relied on by pkg/chain.SlashApplier.
+func (s *InMemoryState) SlashStake(nodeID string, amount uint64) (uint64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.byNodeID[nodeID]
+	if !ok {
+		return 0, fmt.Errorf("enrollment: SlashStake: node_id %q not present", nodeID)
+	}
+	slashed := amount
+	if slashed > rec.StakeDust {
+		slashed = rec.StakeDust
+	}
+	rec.StakeDust -= slashed
+	return slashed, nil
+}
+
+// MarkEvidenceSeen adds `hash` to the seen-evidence set and
+// returns true if the hash was newly inserted, false if it had
+// already been seen. Used by the slashing applier to enforce
+// "one slash per evidence hash" — without this, the same proof
+// of misbehaviour could be replayed by a thousand peers and
+// drain a miner's stake N× times for one offence.
+//
+// Hash key is opaque to the state — the SlashApplier picks the
+// hashing scheme. Today: SHA-256(EvidenceKind || EvidenceBlob).
+//
+// Concurrency: same mutex as the rest of the state, so
+// MarkEvidenceSeen + SlashStake within the same applier path
+// MUST be issued in that order from the SAME goroutine for
+// atomicity. Two concurrent slashers on the same evidence will
+// see exactly one of them succeed via the bool return.
+func (s *InMemoryState) MarkEvidenceSeen(hash [32]byte) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.seenEvidence[hash] {
+		return false
+	}
+	s.seenEvidence[hash] = true
+	return true
+}
+
+// EvidenceSeen reports whether the given hash has already been
+// recorded by MarkEvidenceSeen. Read-only — does not mutate the
+// set. Useful for diagnostics and pre-flight checks.
+func (s *InMemoryState) EvidenceSeen(hash [32]byte) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.seenEvidence[hash]
+}
+
 // CloneableState is the optional extension EnrollmentState
 // implementations can satisfy to support speculative replay
 // (pre-seal BFT, TryAppendExternalBlock). The interface lives
@@ -239,8 +311,9 @@ func (s *InMemoryState) Clone() CloneableState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cp := &InMemoryState{
-		byNodeID:    make(map[string]*EnrollmentRecord, len(s.byNodeID)),
-		byGPUActive: make(map[string]string, len(s.byGPUActive)),
+		byNodeID:     make(map[string]*EnrollmentRecord, len(s.byNodeID)),
+		byGPUActive:  make(map[string]string, len(s.byGPUActive)),
+		seenEvidence: make(map[[32]byte]bool, len(s.seenEvidence)),
 	}
 	for k, rec := range s.byNodeID {
 		// Deep-copy each record. EnrollmentRecord.HMACKey is a
@@ -257,6 +330,9 @@ func (s *InMemoryState) Clone() CloneableState {
 	}
 	for k, v := range s.byGPUActive {
 		cp.byGPUActive[k] = v
+	}
+	for k := range s.seenEvidence {
+		cp.seenEvidence[k] = true
 	}
 	return cp
 }
@@ -285,6 +361,7 @@ func (s *InMemoryState) Restore(from CloneableState) error {
 	src.mu.Lock()
 	srcByNodeID := make(map[string]*EnrollmentRecord, len(src.byNodeID))
 	srcByGPUActive := make(map[string]string, len(src.byGPUActive))
+	srcSeen := make(map[[32]byte]bool, len(src.seenEvidence))
 	for k, rec := range src.byNodeID {
 		dup := *rec
 		if rec.HMACKey != nil {
@@ -295,12 +372,16 @@ func (s *InMemoryState) Restore(from CloneableState) error {
 	for k, v := range src.byGPUActive {
 		srcByGPUActive[k] = v
 	}
+	for k := range src.seenEvidence {
+		srcSeen[k] = true
+	}
 	src.mu.Unlock()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.byNodeID = srcByNodeID
 	s.byGPUActive = srcByGPUActive
+	s.seenEvidence = srcSeen
 	return nil
 }
 
