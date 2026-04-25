@@ -201,3 +201,108 @@ type UnbondRelease struct {
 	Owner     string
 	StakeDust uint64
 }
+
+// CloneableState is the optional extension EnrollmentState
+// implementations can satisfy to support speculative replay
+// (pre-seal BFT, TryAppendExternalBlock). The interface lives
+// in this package so concrete types can implement it without
+// pulling in pkg/chain (which would form an import cycle).
+//
+// Implementers must ensure:
+//
+//   - Clone() returns a fully independent snapshot. Mutations
+//     to the snapshot must NOT be visible on the receiver and
+//     vice versa.
+//   - Restore(from) overwrites the receiver atomically with the
+//     contents of `from`. Errors on type mismatch.
+type CloneableState interface {
+	Clone() CloneableState
+	Restore(from CloneableState) error
+}
+
+// Clone returns a deep copy of the InMemoryState. Implements
+// CloneableState — used by ChainReplayApplier-style speculative
+// replay (pre-seal BFT, TryAppendExternalBlock). The clone
+// receives ApplyEnroll / ApplyUnenroll mutations against the
+// same on-chain semantics as the live state but without touching
+// it. The caller may discard the clone to abandon the
+// speculative work, or promote it via Restore.
+//
+// Concurrency note: Clone snapshots under the same mutex that
+// guards mutations, so a caller racing with an ApplyEnroll
+// will see either the pre- or post-mutation state but never a
+// torn map.
+func (s *InMemoryState) Clone() CloneableState {
+	if s == nil {
+		return NewInMemoryState()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := &InMemoryState{
+		byNodeID:    make(map[string]*EnrollmentRecord, len(s.byNodeID)),
+		byGPUActive: make(map[string]string, len(s.byGPUActive)),
+	}
+	for k, rec := range s.byNodeID {
+		// Deep-copy each record. EnrollmentRecord.HMACKey is a
+		// slice; failing to copy it would let the clone share
+		// the byte buffer with the live state and any later
+		// mutation in the live state (e.g. a re-enroll that
+		// overwrites the same node_id) would leak into the
+		// snapshot.
+		dup := *rec
+		if rec.HMACKey != nil {
+			dup.HMACKey = append([]byte(nil), rec.HMACKey...)
+		}
+		cp.byNodeID[k] = &dup
+	}
+	for k, v := range s.byGPUActive {
+		cp.byGPUActive[k] = v
+	}
+	return cp
+}
+
+// Restore replaces the receiver's contents with a snapshot
+// produced by Clone. Implements CloneableState. Used as the
+// rollback step when speculative replay fails
+// (TryAppendExternalBlock state-root mismatch, pre-seal BFT
+// abort). The replacement is atomic under the receiver's lock,
+// so concurrent readers see a consistent map state at all times.
+//
+// Returns an error if `from` is nil or the wrong concrete type
+// — Restore semantics require an explicit, type-matched
+// snapshot, never a silent reset to empty.
+func (s *InMemoryState) Restore(from CloneableState) error {
+	if s == nil {
+		return fmt.Errorf("enrollment: Restore on nil InMemoryState")
+	}
+	if from == nil {
+		return fmt.Errorf("enrollment: Restore requires non-nil source")
+	}
+	src, ok := from.(*InMemoryState)
+	if !ok {
+		return fmt.Errorf("enrollment: Restore expects *InMemoryState snapshot, got %T", from)
+	}
+	src.mu.Lock()
+	srcByNodeID := make(map[string]*EnrollmentRecord, len(src.byNodeID))
+	srcByGPUActive := make(map[string]string, len(src.byGPUActive))
+	for k, rec := range src.byNodeID {
+		dup := *rec
+		if rec.HMACKey != nil {
+			dup.HMACKey = append([]byte(nil), rec.HMACKey...)
+		}
+		srcByNodeID[k] = &dup
+	}
+	for k, v := range src.byGPUActive {
+		srcByGPUActive[k] = v
+	}
+	src.mu.Unlock()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.byNodeID = srcByNodeID
+	s.byGPUActive = srcByGPUActive
+	return nil
+}
+
+// Compile-time guard that *InMemoryState satisfies CloneableState.
+var _ CloneableState = (*InMemoryState)(nil)

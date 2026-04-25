@@ -783,8 +783,11 @@ the binary.
 | **Phase 3** | `cmd/qsdm-miner-cuda`, Tensor-Core CUDA kernel, delete `cmd/qsdmminer*`. | Phase 2 | 2-3 days |
 | **Phase 4** | Genesis ceremony extension, testnet reset, FORK_V2_HEIGHT=0 activation. | Phase 3 | 1 day |
 | **Phase 5** | Docs / landing page rewrite. CHANGELOG final. | Phase 4 | 1 day |
+| **Tier 3 (deferred)** | `nvidia-cc-v1` verifier, Tensor-Core PoW kernel, concrete `EvidenceVerifier`s. See [`MINING_PROTOCOL_V2_TIER3_SCOPE.md`](./MINING_PROTOCOL_V2_TIER3_SCOPE.md). | Phase 4 + hardware | ~5-6 weeks |
 
 Total: ~8-10 days wall-clock after this spec is ratified.
+Tier-3 work (deferred) is scoped separately and is not on the v2
+activation critical path.
 
 ## 11. OPEN_QUESTION summary
 

@@ -181,21 +181,27 @@ func (a *EnrollmentApplier) applyEnroll(tx *mempool.Tx, height uint64) error {
 
 	// Atomic mutation sequence:
 	//
-	//   1. Debit + nonce-bump the sender. If this fails (nonce
-	//      race, balance drained out from under us between the
-	//      Get and now), we abort before touching enrollment
-	//      state, leaving everything untouched.
+	//   1. Debit stake + tx.Fee + bump-nonce on the sender in
+	//      one call. If this fails (nonce race, balance drained
+	//      out from under us between the Get and now), we abort
+	//      before touching enrollment state, leaving everything
+	//      untouched. The fee is burned (matches transfer
+	//      ApplyTx semantics: fees are not credited anywhere).
 	//
 	//   2. Commit the EnrollmentRecord. If this fails — which
 	//      is a programming-error path because validation
-	//      already passed — we roll back the debit and return
-	//      the error. A pure duplicate would have been caught
-	//      by ValidateEnrollAgainstState, so reaching the
-	//      post-validation ApplyEnroll failure means concurrent
-	//      writes against the same state, which is a bug upstream.
+	//      already passed — we roll back the STAKE only and
+	//      return the error. A pure duplicate would have been
+	//      caught by ValidateEnrollAgainstState, so reaching
+	//      the post-validation ApplyEnroll failure means
+	//      concurrent writes against the same state, which is
+	//      a bug upstream. The fee is NOT refunded: validator
+	//      work has been performed, matching the
+	//      "fee-on-acceptance" model used everywhere else.
 	stakeCELL := dustToBalance(payload.StakeDust)
-	if err := a.Accounts.DebitAndBumpNonce(tx.Sender, stakeCELL, tx.Nonce); err != nil {
-		return fmt.Errorf("chain: debit stake: %w", err)
+	totalDebit := stakeCELL + tx.Fee
+	if err := a.Accounts.DebitAndBumpNonce(tx.Sender, totalDebit, tx.Nonce); err != nil {
+		return fmt.Errorf("chain: debit stake+fee: %w", err)
 	}
 
 	rec := enrollment.EnrollmentRecord{
@@ -207,7 +213,8 @@ func (a *EnrollmentApplier) applyEnroll(tx *mempool.Tx, height uint64) error {
 		EnrolledAtHeight: height,
 	}
 	if err := a.State.ApplyEnroll(rec); err != nil {
-		// Roll back the debit. Credit is mutex-safe and never
+		// Roll back the STAKE only. Fee remains burned (validator
+		// work was performed). Credit is mutex-safe and never
 		// fails; the nonce bump is NOT rolled back because doing
 		// so would re-open the sender to a replay of this exact
 		// tx — an attacker who forced the ApplyEnroll failure
@@ -216,7 +223,7 @@ func (a *EnrollmentApplier) applyEnroll(tx *mempool.Tx, height uint64) error {
 		// we burn the nonce and return the stake. The sender
 		// re-signs a new tx at Nonce+1 if they want to retry.
 		a.Accounts.Credit(tx.Sender, stakeCELL)
-		return fmt.Errorf("chain: commit enroll (stake refunded, nonce consumed): %w", err)
+		return fmt.Errorf("chain: commit enroll (stake refunded, fee burned, nonce consumed): %w", err)
 	}
 
 	return nil

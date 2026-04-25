@@ -113,6 +113,16 @@ type BlockProducer struct {
 	preSealBFTRound func(tentative *Block) error
 	// OnSealed runs after a block is appended and the producer lock is released (best-effort hooks).
 	OnSealed func()
+	// OnSealedBlock runs after a block is appended and bp.mu is
+	// released, with the sealed block as the argument. Use this
+	// for hooks that need to know the just-sealed height — most
+	// notably EnrollmentAwareApplier.Sweep, which scans the
+	// enrollment registry for entries that have matured at the
+	// new tip and credits stake back. Both OnSealed and
+	// OnSealedBlock fire if both are set; failures are best-effort
+	// (panics are NOT recovered — bugs must surface, not silently
+	// corrupt the state machine).
+	OnSealedBlock func(*Block)
 	// appendReceipts, when set, stores per-tx receipts after a successful TryAppendExternalBlock (same replay semantics as ProduceBlockWithReceipts).
 	appendReceipts *ReceiptStore
 	// tipHeight mirrors the height of the current tip, updated
@@ -206,8 +216,13 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 	runSealedHook := false
 	defer func() {
 		bp.mu.Unlock()
-		if runSealedHook && bp.OnSealed != nil {
-			bp.OnSealed()
+		if runSealedHook {
+			if bp.OnSealed != nil {
+				bp.OnSealed()
+			}
+			if bp.OnSealedBlock != nil && block != nil {
+				bp.OnSealedBlock(block)
+			}
 		}
 	}()
 
@@ -490,8 +505,13 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 		storeExternalAppendReceipts(rs, blk, backup, time.Now())
 	}
 
-	if runSealedHook && bp.OnSealed != nil {
-		bp.OnSealed()
+	if runSealedHook {
+		if bp.OnSealed != nil {
+			bp.OnSealed()
+		}
+		if bp.OnSealedBlock != nil {
+			bp.OnSealedBlock(blk)
+		}
 	}
 	return nil
 }

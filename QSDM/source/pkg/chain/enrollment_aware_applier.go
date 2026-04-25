@@ -25,23 +25,35 @@ package chain
 //     for this call site.
 //   - Sweep is a separate public call intended to run once per
 //     sealed block, after the block's transactions are applied.
-//     Today's BlockProducer does not have a typed post-seal hook
-//     that carries the block height, so operators invoke
-//     Sweep(h) themselves from their own finalisation logic (see
-//     the integration test for the canonical pattern).
+//     The canonical wiring is via BlockProducer.OnSealedBlock,
+//     either with the SealedBlockHook helper on this type:
 //
-// Explicitly out of scope for this commit:
+//	    bp.OnSealedBlock = aware.SealedBlockHook(nil)
 //
-//   - ChainReplayApplier semantics. Cloning the EnrollmentState
-//     for speculative replay (pre-seal BFT or TryAppendExternalBlock)
-//     is a future commit. The shim deliberately does NOT implement
-//     ChainReplayApplier so the producer's type-assert fails fast
-//     with ErrExternalAppendNeedsAccountStore instead of silently
-//     producing a divergent state root.
+//     or by passing a custom error handler:
 //
-//   - Mempool admission gate. PoolValidator integration is an
-//     orthogonal change (stateless ValidateEnrollFields /
-//     ValidateUnenrollFields) that can land independently.
+//	    bp.OnSealedBlock = aware.SealedBlockHook(func(h uint64, err error) {
+//	        log.Printf("sweep at height %d failed: %v", h, err)
+//	    })
+//
+//     Operators that need fully custom sweep policy can still
+//     call Sweep(h) directly from their own finalisation logic.
+//
+// Explicitly out of scope for this file:
+//
+//   - Mempool admission gate. Stateless validation
+//     (ValidateEnrollFields / ValidateUnenrollFields) lives in
+//     pkg/mining/enrollment/admit.go and is wired via
+//     mempool.SetAdmissionChecker, independently of this shim.
+//
+// Updates from prior phases:
+//
+//   - ChainReplayApplier IS now satisfied. ChainReplayClone +
+//     RestoreFromChainReplay deep-copy both the AccountStore
+//     and the EnrollmentState (the latter via the optional
+//     enrollment.CloneableState contract; *InMemoryState
+//     satisfies it). Pre-seal BFT and TryAppendExternalBlock
+//     therefore work end-to-end with enrollment txs.
 
 import (
 	"errors"
@@ -169,6 +181,31 @@ func (a *EnrollmentAwareApplier) Sweep(height uint64) ([]enrollment.UnbondReleas
 	return a.enrollment.SweepMaturedEnrollments(height)
 }
 
+// SealedBlockHook returns a function suitable for assignment to
+// BlockProducer.OnSealedBlock that automatically invokes
+// Sweep(blk.Height) after every sealed block. Pass `onErr` to
+// observe sweep failures (which are otherwise swallowed because
+// the post-seal hook contract has no error path); nil drops
+// errors silently, matching the legacy OnSealed behaviour.
+//
+// The returned hook is concurrency-safe (BlockProducer fires it
+// outside bp.mu, and Sweep takes its own locks via the
+// EnrollmentApplier / EnrollmentState).
+//
+// If the shim has no enrollment applier wired, the hook is a
+// no-op and never calls onErr — installing it on a v1-only node
+// is therefore safe and idempotent.
+func (a *EnrollmentAwareApplier) SealedBlockHook(onErr func(height uint64, err error)) func(*Block) {
+	return func(blk *Block) {
+		if a == nil || a.enrollment == nil || blk == nil {
+			return
+		}
+		if _, err := a.Sweep(blk.Height); err != nil && onErr != nil {
+			onErr(blk.Height, err)
+		}
+	}
+}
+
 // Accounts exposes the underlying account store for callers
 // that need to observe balance state directly (e.g. tests,
 // genesis wiring, wallet RPC). NOT for general mutation — use
@@ -224,11 +261,88 @@ var (
 
 // Compile-time interface assertions.
 var (
-	_ StateApplier = (*EnrollmentAwareApplier)(nil)
+	_ StateApplier       = (*EnrollmentAwareApplier)(nil)
+	_ ChainReplayApplier = (*EnrollmentAwareApplier)(nil)
 )
 
-// NOTE (deliberate non-implementation): we do NOT satisfy
-// ChainReplayApplier. See the file-header comment for rationale.
-// The producer's type assertions in TryAppendExternalBlock and
-// SetPreSealBFTRound will therefore refuse this applier, which
-// is the intended safety behaviour for this phase.
+// ChainReplayClone implements ChainReplayApplier. Returns a new
+// EnrollmentAwareApplier whose AccountStore and EnrollmentState
+// are deep copies of the receiver's. Mutations on the clone do
+// NOT affect the live applier; abandoning the clone (no Restore)
+// is the speculative-rollback path.
+//
+// Panics if the wired EnrollmentStateMutator does not satisfy
+// enrollment.CloneableState — that's a wiring bug that must
+// surface at boot or BFT-replay setup, not silently degrade
+// finality. Production wiring uses *enrollment.InMemoryState
+// (or any future state implementation that adds Clone/Restore).
+func (a *EnrollmentAwareApplier) ChainReplayClone() ChainReplayApplier {
+	if a == nil {
+		return nil
+	}
+	clone := &EnrollmentAwareApplier{
+		accounts: a.accounts.Clone(),
+	}
+	if a.enrollment != nil {
+		ces, ok := a.enrollment.State.(enrollment.CloneableState)
+		if !ok {
+			panic("chain: EnrollmentAwareApplier.ChainReplayClone: " +
+				"wired EnrollmentStateMutator does not implement " +
+				"enrollment.CloneableState — speculative replay is unsafe")
+		}
+		stateClone := ces.Clone()
+		// The cloned state value MUST also satisfy
+		// EnrollmentStateMutator (it's the same concrete type
+		// as the live state, just a copy). The assertion is a
+		// belt — a buggy Clone returning a wrong type would
+		// corrupt the speculative apply.
+		clonedMutator, ok := stateClone.(EnrollmentStateMutator)
+		if !ok {
+			panic("chain: EnrollmentAwareApplier.ChainReplayClone: " +
+				"cloned state does not satisfy EnrollmentStateMutator")
+		}
+		clone.enrollment = NewEnrollmentApplier(clone.accounts, clonedMutator)
+	}
+	a.mu.RLock()
+	clone.heightFn = a.heightFn
+	a.mu.RUnlock()
+	return clone
+}
+
+// RestoreFromChainReplay implements ChainReplayApplier. Replaces
+// the receiver's contents with those of `from`, which MUST be a
+// snapshot returned by ChainReplayClone on the same applier
+// (or one in the same family — same concrete EnrollmentState
+// type). Errors on type mismatch.
+//
+// Used as the abort path for TryAppendExternalBlock when live
+// apply diverges from the replay state root, and for any
+// operator-driven rollback. Atomic: AccountStore restore is
+// done first; if it fails, the EnrollmentState is not touched.
+func (a *EnrollmentAwareApplier) RestoreFromChainReplay(from ChainReplayApplier) error {
+	if a == nil {
+		return errors.New("chain: nil EnrollmentAwareApplier on RestoreFromChainReplay")
+	}
+	other, ok := from.(*EnrollmentAwareApplier)
+	if !ok || other == nil {
+		return errors.New("chain: RestoreFromChainReplay expects *EnrollmentAwareApplier snapshot")
+	}
+	if err := a.accounts.RestoreFromChainReplay(other.accounts); err != nil {
+		return err
+	}
+	if a.enrollment == nil && other.enrollment == nil {
+		return nil
+	}
+	if a.enrollment == nil || other.enrollment == nil {
+		return errors.New("chain: RestoreFromChainReplay enrollment applier presence mismatch")
+	}
+	srcState, ok := other.enrollment.State.(enrollment.CloneableState)
+	if !ok {
+		return errors.New("chain: source enrollment state does not implement enrollment.CloneableState")
+	}
+	dstState, ok := a.enrollment.State.(enrollment.CloneableState)
+	if !ok {
+		return errors.New("chain: live enrollment state does not implement enrollment.CloneableState")
+	}
+	return dstState.Restore(srcState)
+}

@@ -130,8 +130,9 @@ func TestEnrollmentAwareApplier_ApplyTx_EnrollmentPath(t *testing.T) {
 	}
 
 	alice, _ := accounts.Get(fxAlice)
-	wantBalance := float64(100) - dustToBalance(mining.MinEnrollStakeDust)
-	if alice.Balance != wantBalance {
+	// 100 - 10 (stake) - 0.01 (enroll fee burned).
+	wantBalance := float64(100) - dustToBalance(mining.MinEnrollStakeDust) - 0.01
+	if !approxEqual(alice.Balance, wantBalance) {
 		t.Errorf("alice balance: got %v, want %v", alice.Balance, wantBalance)
 	}
 	if alice.Nonce != 1 {
@@ -367,14 +368,12 @@ func TestIntegration_BlockProducer_RoutesBothTxShapes(t *testing.T) {
 		t.Fatalf("block included %d txs, want 2", got)
 	}
 
-	// Verify final state. Note: applyEnroll debits ONLY the
-	// stake, NOT tx.Fee (existing semantics from
-	// enrollment_apply.go — enroll fees are currently free;
-	// see the protocol-doc follow-up). applyUnenroll, by
-	// contrast, debits tx.Fee for nonce-bump accounting.
+	// Verify final state. applyEnroll now debits stake AND
+	// tx.Fee atomically (Phase 2c-ix), matching transfer-tx
+	// fee semantics — fees burned on acceptance.
 	alice, _ := accounts.Get(fxAlice)
 	stakeCELL := dustToBalance(mining.MinEnrollStakeDust)
-	wantAlice := 100 - 5 - 0.1 - stakeCELL
+	wantAlice := 100 - 5 - 0.1 - stakeCELL - enrol.Fee
 	if approxEqual(alice.Balance, wantAlice) == false {
 		t.Errorf("alice balance: got %v, want %v", alice.Balance, wantAlice)
 	}
@@ -420,12 +419,12 @@ func TestIntegration_BlockProducer_RoutesBothTxShapes(t *testing.T) {
 		t.Errorf("stake credited too early: balance=%v", aliceMid.Balance)
 	}
 
-	// Simulated post-block sweep at the matured height. In
-	// production this is invoked from the node's block-finalise
-	// hook; here we call it directly because that hook is the
-	// next commit's scope. The unenroll tx applied at
-	// blk2.Height (HasTip was true so HeightFn returned
-	// TipHeight+1 == blk2.Height).
+	// Simulated post-block sweep at the matured height. The
+	// production wiring is BlockProducer.OnSealedBlock =
+	// aware.SealedBlockHook(...), exercised by
+	// TestEnrollmentAwareApplier_SealedBlockHook_AutoSweep.
+	// Here we call Sweep directly to keep this integration
+	// test focused on tx-routing, not block-finalisation hooks.
 	matureHeight := blk2.Height + enrollment.UnbondWindow
 	released, err := aware.Sweep(matureHeight)
 	if err != nil {
@@ -439,6 +438,136 @@ func TestIntegration_BlockProducer_RoutesBothTxShapes(t *testing.T) {
 	wantFinal := wantAlice - unenrol.Fee + stakeCELL
 	if approxEqual(aliceFinal.Balance, wantFinal) == false {
 		t.Errorf("alice final balance: got %v, want %v", aliceFinal.Balance, wantFinal)
+	}
+}
+
+// TestEnrollmentAwareApplier_SealedBlockHook_AutoSweep verifies
+// that wiring `bp.OnSealedBlock = aware.SealedBlockHook(...)`
+// causes matured unbonds to be released automatically without
+// any explicit Sweep call from the operator. The hook contract:
+//
+//   - Fires on every sealed block (post-mu, post-OnSealed).
+//   - Receives the just-sealed *Block.
+//   - Calls aware.Sweep(blk.Height); pre-maturity blocks return
+//     zero releases and are no-ops.
+//   - On error from Sweep, calls the operator-supplied onErr,
+//     which mirrors the legacy log-and-continue semantics.
+//
+// Without this hook, stake would remain locked indefinitely
+// after unbonding because nothing in the producer drives Sweep.
+func TestEnrollmentAwareApplier_SealedBlockHook_AutoSweep(t *testing.T) {
+	accounts := NewAccountStore()
+	accounts.Credit(fxAlice, 100)
+	state := enrollment.NewInMemoryState()
+	ea := NewEnrollmentApplier(accounts, state)
+	aware := NewEnrollmentAwareApplier(accounts, ea)
+
+	pool := mempool.New(mempool.DefaultConfig())
+	defer pool.Stop()
+
+	bp := NewBlockProducer(pool, aware, DefaultProducerConfig())
+	aware.SetHeightFn(func() uint64 {
+		h := bp.TipHeight()
+		if !bp.HasTip() {
+			return h
+		}
+		return h + 1
+	})
+	// Install the auto-sweep hook. This is the canonical
+	// production wiring exercised by this test.
+	var sweepErrs []error
+	bp.OnSealedBlock = aware.SealedBlockHook(func(_ uint64, err error) {
+		sweepErrs = append(sweepErrs, err)
+	})
+
+	// Block 0: enroll.
+	enrol := fxEnrollTx(t, fxAlice, 0)
+	enrol.ID = "tx-enroll"
+	enrol.AddedAt = time.Now()
+	if err := pool.Add(enrol); err != nil {
+		t.Fatalf("add enroll: %v", err)
+	}
+	blk0, err := bp.ProduceBlock()
+	if err != nil {
+		t.Fatalf("ProduceBlock(enroll): %v", err)
+	}
+
+	// Block 1: unenroll.
+	unenrol := fxUnenrollTx(t, fxAlice, fxNodeID, 1, 0.01)
+	unenrol.ID = "tx-unenroll"
+	unenrol.AddedAt = time.Now()
+	if err := pool.Add(unenrol); err != nil {
+		t.Fatalf("add unenroll: %v", err)
+	}
+	blk1, err := bp.ProduceBlock()
+	if err != nil {
+		t.Fatalf("ProduceBlock(unenroll): %v", err)
+	}
+	if blk1.Height != blk0.Height+1 {
+		t.Fatalf("block heights not contiguous: blk0=%d blk1=%d", blk0.Height, blk1.Height)
+	}
+
+	// Pre-sweep assertion: stake is still locked after the
+	// unenroll block landed (the hook for blk1 ran but the
+	// unbond window has not matured).
+	stakeCELL := dustToBalance(mining.MinEnrollStakeDust)
+	aliceMid, _ := accounts.Get(fxAlice)
+	wantMid := 100.0 - stakeCELL - enrol.Fee - unenrol.Fee
+	if !approxEqual(aliceMid.Balance, wantMid) {
+		t.Fatalf("pre-sweep balance: got %v, want %v (stake should still be locked)", aliceMid.Balance, wantMid)
+	}
+	if rec, _ := state.Lookup(fxNodeID); rec == nil || rec.Active() {
+		t.Fatalf("record should be revoked-but-locked; rec=%+v", rec)
+	}
+
+	// UnbondWindow is ~201600 blocks (7 days @ 3s blocks); we
+	// can't drive that many in a unit test. Instead, simulate
+	// the producer's hook firing on a future, matured block by
+	// invoking the SAME function that BlockProducer would call.
+	// This proves the hook wiring is correct — anything that
+	// goes wrong here would also go wrong in production.
+	matureHeight := blk1.Height + enrollment.UnbondWindow
+	syntheticMaturedBlock := &Block{Height: matureHeight}
+	if bp.OnSealedBlock == nil {
+		t.Fatal("OnSealedBlock hook should have been set above")
+	}
+	bp.OnSealedBlock(syntheticMaturedBlock)
+
+	aliceFinal, _ := accounts.Get(fxAlice)
+	// Hook re-credited stake; fees stay burned.
+	wantFinal := 100.0 - enrol.Fee - unenrol.Fee
+	if !approxEqual(aliceFinal.Balance, wantFinal) {
+		t.Errorf("post-auto-sweep balance: got %v, want %v", aliceFinal.Balance, wantFinal)
+	}
+	if rec, _ := state.Lookup(fxNodeID); rec != nil {
+		t.Errorf("record should have been auto-swept; rec=%+v", rec)
+	}
+	if len(sweepErrs) != 0 {
+		t.Errorf("auto-sweep produced errors: %v", sweepErrs)
+	}
+
+	// And: a hook firing on a pre-maturity block must be a
+	// no-op (no double-credit, no spurious errors).
+	preMatureBalance := aliceFinal.Balance
+	bp.OnSealedBlock(&Block{Height: matureHeight + 1})
+	aliceAfter, _ := accounts.Get(fxAlice)
+	if aliceAfter.Balance != preMatureBalance {
+		t.Errorf("post-maturity hook re-credited: %v -> %v", preMatureBalance, aliceAfter.Balance)
+	}
+}
+
+// TestEnrollmentAwareApplier_SealedBlockHook_NilEnrollmentApplier
+// confirms the hook is a safe no-op when constructed without an
+// EnrollmentApplier (v1-only nodes can install the wiring
+// unconditionally).
+func TestEnrollmentAwareApplier_SealedBlockHook_NilEnrollmentApplier(t *testing.T) {
+	accounts := NewAccountStore()
+	aware := NewEnrollmentAwareApplier(accounts, nil)
+	called := false
+	hook := aware.SealedBlockHook(func(uint64, error) { called = true })
+	hook(&Block{Height: 42})
+	if called {
+		t.Error("onErr should not be invoked when no enrollment applier is wired")
 	}
 }
 

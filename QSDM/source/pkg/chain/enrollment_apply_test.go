@@ -294,8 +294,10 @@ func TestApplyEnrollmentTx_Enroll_HappyPath(t *testing.T) {
 	}
 
 	acc, _ := a.Accounts.Get(fxAlice)
-	wantBal := 100.0 - dustToBalance(mining.MinEnrollStakeDust)
-	if acc.Balance != wantBal {
+	// Stake (10 CELL) AND fee (0.01) are debited atomically.
+	// Fee is burned, matching transfer-tx semantics.
+	wantBal := 100.0 - dustToBalance(mining.MinEnrollStakeDust) - 0.01
+	if !approxEqual(acc.Balance, wantBal) {
 		t.Errorf("alice balance: got %v, want %v", acc.Balance, wantBal)
 	}
 	if acc.Nonce != 1 {
@@ -376,10 +378,11 @@ func TestApplyEnrollmentTx_Enroll_DuplicateNodeID(t *testing.T) {
 		t.Errorf("want ErrNodeIDTaken, got %v", err)
 	}
 
-	// Stake debit must NOT have happened for the duplicate.
+	// Stake+fee debit must NOT have happened for the duplicate
+	// (validation rejects BEFORE DebitAndBumpNonce is called).
 	acc, _ := a.Accounts.Get(fxAlice)
-	wantBal := 100.0 - dustToBalance(mining.MinEnrollStakeDust)
-	if acc.Balance != wantBal {
+	wantBal := 100.0 - dustToBalance(mining.MinEnrollStakeDust) - 0.01
+	if !approxEqual(acc.Balance, wantBal) {
 		t.Errorf("balance should only reflect the first enroll: got %v want %v", acc.Balance, wantBal)
 	}
 	if acc.Nonce != 1 {
@@ -415,7 +418,8 @@ func TestApplyEnrollmentTx_Unenroll_HappyPath(t *testing.T) {
 	if err := a.ApplyEnrollmentTx(fxEnrollTx(t, fxAlice, 0), 10); err != nil {
 		t.Fatalf("setup enroll: %v", err)
 	}
-	// Alice's balance post-enroll: 100 - 10 = 90; nonce = 1.
+	// Alice's balance post-enroll: 100 - 10 - 0.01 (enroll fee
+	// burned) = 89.99; nonce = 1.
 	tx := fxUnenrollTx(t, fxAlice, fxNodeID, 1, 0.001)
 	if err := a.ApplyEnrollmentTx(tx, 50); err != nil {
 		t.Fatalf("unenroll: %v", err)
@@ -433,9 +437,10 @@ func TestApplyEnrollmentTx_Unenroll_HappyPath(t *testing.T) {
 	}
 
 	acc, _ := a.Accounts.Get(fxAlice)
-	// balance = 90 - 0.001 (fee only; stake stays locked in record)
-	wantBal := 100.0 - dustToBalance(mining.MinEnrollStakeDust) - 0.001
-	if diff := acc.Balance - wantBal; diff > 1e-9 || diff < -1e-9 {
+	// balance = 89.99 (post-enroll) - 0.001 (unenroll fee).
+	// Stake stays locked in record until sweep.
+	wantBal := 100.0 - dustToBalance(mining.MinEnrollStakeDust) - 0.01 - 0.001
+	if !approxEqual(acc.Balance, wantBal) {
 		t.Errorf("balance: got %v, want ~%v", acc.Balance, wantBal)
 	}
 	if acc.Nonce != 2 {
@@ -575,8 +580,9 @@ func TestIntegration_EnrollUnenrollMatureSweep(t *testing.T) {
 		t.Fatal("after enroll, record should be active")
 	}
 	aliceAfterEnroll, _ := a.Accounts.Get(fxAlice)
-	wantBalAfterEnroll := 50.0 - dustToBalance(mining.MinEnrollStakeDust)
-	if aliceAfterEnroll.Balance != wantBalAfterEnroll {
+	// 50 (start) - 10 (stake) - 0.01 (enroll fee burned).
+	wantBalAfterEnroll := 50.0 - dustToBalance(mining.MinEnrollStakeDust) - 0.01
+	if !approxEqual(aliceAfterEnroll.Balance, wantBalAfterEnroll) {
 		t.Errorf("balance after enroll: got %v, want %v", aliceAfterEnroll.Balance, wantBalAfterEnroll)
 	}
 
@@ -607,10 +613,11 @@ func TestIntegration_EnrollUnenrollMatureSweep(t *testing.T) {
 		t.Fatalf("want 1 release, got %d", len(rel))
 	}
 
-	// Alice got her stake back (less the unenroll fee).
+	// Alice got her stake back (less BOTH the enroll and
+	// unenroll fees, both burned).
 	aliceFinal, _ := a.Accounts.Get(fxAlice)
-	wantFinal := 50.0 - 0.01
-	if diff := aliceFinal.Balance - wantFinal; diff > 1e-9 || diff < -1e-9 {
+	wantFinal := 50.0 - 0.01 - 0.01
+	if !approxEqual(aliceFinal.Balance, wantFinal) {
 		t.Errorf("final balance: got %v, want %v", aliceFinal.Balance, wantFinal)
 	}
 	if aliceFinal.Nonce != 2 {

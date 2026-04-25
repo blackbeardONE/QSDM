@@ -247,6 +247,17 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Registered unconditionally so miners can probe readiness.
 	mux.HandleFunc("/api/v1/mining/challenge", handlers.MiningChallengeHandler)
 
+	// Mining enrollment endpoints (Phase 2c-x,
+	// MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §7). Two symmetric
+	// POSTs accept signed mempool.Tx envelopes carrying enrollment
+	// payloads (qsdm/enroll/v1). Return 503 until a MempoolSubmitter
+	// is installed via api.SetEnrollmentMempool(...). Stateless
+	// payload validation runs in the mempool admission gate
+	// (enrollment.AdmissionChecker); stateful checks (balance,
+	// node_id uniqueness) happen at block-apply time.
+	mux.HandleFunc("/api/v1/mining/enroll", handlers.EnrollmentSubmitHandler)
+	mux.HandleFunc("/api/v1/mining/unenroll", handlers.UnenrollmentSubmitHandler)
+
 	// Trust / attestation transparency endpoints (Major Update Phase 5.1).
 	// Registered unconditionally. If no aggregator is installed via
 	// api.SetTrustAggregator, the handlers return 503 warming-up; if the
