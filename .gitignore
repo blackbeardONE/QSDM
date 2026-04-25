@@ -24,6 +24,11 @@
 # break-glass fallback for the DO web console.
 vps.txt
 
+# Scratch commit-message buffer used for HEREDOC-free git commits
+# on Windows/PowerShell shells. The actual commit body lives in
+# git history; the buffer is throwaway.
+_commit_msg.txt
+
 # Legacy NVIDIA token file (pre-NGC-bundle era).
 Nvidia Token
 
