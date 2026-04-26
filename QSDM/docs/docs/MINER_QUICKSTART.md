@@ -353,6 +353,35 @@ If you observe a peer forging an attestation or double-mining, post evidence so 
 
 The reward (`SlashRewardCap = 200 bps` of the slashed amount, capped) is credited to your sender on inclusion. If the offender's bond falls below `mining.MinEnrollStakeDust` after the slash, `RevokeIfUnderBonded` automatically transitions the record to `revoked` so they cannot keep mining on a stub bond.
 
+### Reading the slash receipt
+
+Every slash that reaches the applier — applied or rejected — produces a receipt that the validator caches in a bounded in-memory store. Look it up by tx id to confirm the chain accepted (or rejected) your submission without scraping logs:
+
+```bash
+./qsdmcli slash-receipt <tx-id>
+```
+
+A successful applied receipt looks like:
+
+```json
+{
+  "tx_id": "8f3c…",
+  "outcome": "applied",
+  "recorded_at": "2026-04-26T22:55:35Z",
+  "height": 1421,
+  "slasher": "qsdm1WATCHER",
+  "node_id": "rig-cheater",
+  "evidence_kind": "forged-attestation",
+  "slashed_dust": 500000000,
+  "rewarded_dust": 10000000,
+  "burned_dust": 490000000,
+  "auto_revoked": true,
+  "auto_revoke_remaining_dust": 100000000
+}
+```
+
+A rejected receipt carries the reason tag (`verifier_failed`, `evidence_replayed`, `node_not_enrolled`, etc.) and an `error` string for debugging. `404` from this endpoint means the receipt is unknown OR has aged out of the bounded store (default cap: 10000 receipts, FIFO eviction); `503` means the node is v1-only.
+
 ### Tooling notes
 
 - All three write subcommands accept `--id` for an idempotent client-supplied tx id; if omitted, `qsdmcli` generates a 16-byte random hex id.

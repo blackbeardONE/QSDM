@@ -80,6 +80,7 @@ func buildRig(t *testing.T, aliceCELL float64) *rig {
 		api.SetEnrollmentRegistry(nil)
 		api.SetEnrollmentMempool(nil)
 		api.SetSlashMempool(nil)
+		api.SetSlashReceiptStore(nil)
 	})
 
 	accounts := chain.NewAccountStore()
@@ -479,6 +480,114 @@ func TestWire_AdmissionGateAcceptsWellFormedSlash(t *testing.T) {
 	}
 	if got := r.pool.Size(); got != 1 {
 		t.Errorf("pool size after slash admit: got %d, want 1", got)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Read-side: GET /api/v1/mining/slash/{tx_id}  (slash receipt)
+// -----------------------------------------------------------------------------
+
+// TestWire_SlashReceiptStoreReachable confirms Wire() exposes
+// the chain receipt store on the Wired bundle so call sites
+// (cmd/qsdm/main.go, indexers, tests) can interact with it
+// without going through the api package's process-wide holder.
+func TestWire_SlashReceiptStoreReachable(t *testing.T) {
+	r := buildRig(t, 20)
+	if r.w.SlashReceipts == nil {
+		t.Fatal("Wired.SlashReceipts is nil; receipt store not constructed")
+	}
+	if r.w.SlashReceipts.Len() != 0 {
+		t.Errorf("fresh store should be empty; got %d entries", r.w.SlashReceipts.Len())
+	}
+}
+
+// TestWire_SlashReceiptEndpoint_RoundTrip drives the full
+// production write→receipt→read path:
+//
+//	pool.Add(slashTx) → ProduceBlock() →
+//	    SlashApplier.ApplySlashTx (rejected: node_not_enrolled) →
+//	    CompositePublisher.PublishMiningSlash →
+//	    SlashReceiptStore.PublishMiningSlash →
+//	    GET /api/v1/mining/slash/{tx-id}
+//
+// Uses an unenrolled offender so the slash deterministically
+// rejects at the lookup stage. The rejection event still flows
+// through the publisher chain — the receipt MUST be stored
+// regardless of the outcome.
+//
+// A bug where Wire() forgets to install the receipt store (or
+// composes the publisher chain wrong, dropping events) makes
+// this test fail with a 404 or 503 instead of 200.
+func TestWire_SlashReceiptEndpoint_RoundTrip(t *testing.T) {
+	r := buildRig(t, 20)
+
+	const txID = "tx-slash-receipt-roundtrip"
+	tx := slashTx(t, tAlice, txID, 0)
+	if err := r.pool.Add(tx); err != nil {
+		t.Fatalf("admission gate rejected slash: %v", err)
+	}
+	// ProduceBlock returns "all transactions failed state
+	// application" when no tx applies — expected, since the
+	// slash rejects at lookup. The publisher still fires from
+	// inside ApplySlashTx BEFORE the error returns, so the
+	// receipt is in the store regardless of block production
+	// succeeding. Ignore the error and assert via the store.
+	_, _ = r.producer.ProduceBlock()
+
+	if got := r.w.SlashReceipts.Len(); got != 1 {
+		t.Fatalf("receipt store len after produce: got %d, want 1", got)
+	}
+
+	h := &api.Handlers{}
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/mining/slash/"+txID, nil)
+	rec := httptest.NewRecorder()
+	h.SlashReceiptHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("receipt status: got %d, want 200; body=%s",
+			rec.Code, rec.Body.String())
+	}
+	var view api.SlashReceiptView
+	if err := json.NewDecoder(rec.Body).Decode(&view); err != nil {
+		t.Fatalf("decode receipt view: %v", err)
+	}
+	if view.TxID != txID {
+		t.Errorf("view TxID: got %q, want %q", view.TxID, txID)
+	}
+	if view.Outcome != chain.SlashOutcomeRejected {
+		t.Errorf("view Outcome: got %q, want %q",
+			view.Outcome, chain.SlashOutcomeRejected)
+	}
+	if view.RejectReason != chain.SlashRejectReasonNodeNotEnrolled {
+		t.Errorf("view RejectReason: got %q, want %q",
+			view.RejectReason, chain.SlashRejectReasonNodeNotEnrolled)
+	}
+	if view.Slasher != tAlice {
+		t.Errorf("view Slasher: got %q, want %q", view.Slasher, tAlice)
+	}
+	if view.NodeID != tNodeID {
+		t.Errorf("view NodeID: got %q, want %q", view.NodeID, tNodeID)
+	}
+}
+
+// TestWire_SlashReceipt_NotConfiguredReturns503 mirrors the
+// 503 contract for the receipt endpoint: a node booted WITHOUT
+// v2wiring.Wire() has no receipt store wired, and the read
+// handler must say so distinctly from "tx_id not found".
+func TestWire_SlashReceipt_NotConfiguredReturns503(t *testing.T) {
+	api.SetSlashReceiptStore(nil)
+	t.Cleanup(func() { api.SetSlashReceiptStore(nil) })
+
+	h := &api.Handlers{}
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/mining/slash/anything", nil)
+	rec := httptest.NewRecorder()
+	h.SlashReceiptHandler(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status: got %d, want 503; body=%s",
+			rec.Code, rec.Body.String())
 	}
 }
 

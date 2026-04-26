@@ -403,7 +403,8 @@
         <div class="endpoint"><span class="host">POST /api/v1/mining/unenroll</span><span class="status">v2 · 7-day unbond</span></div>
         <div class="endpoint"><span class="host">POST /api/v1/mining/slash</span><span class="status">v2 · forged-attest · double-mine</span></div>
         <div class="endpoint"><span class="host">GET /api/v1/mining/enrollment/{node_id}</span><span class="status">phase · slashable · bond</span></div>
-        <div class="endpoint"><span class="host">qsdmcli enroll · unenroll · slash · enrollment-status</span><span class="status">v2 · canonical-codec CLI</span></div>
+        <div class="endpoint"><span class="host">GET /api/v1/mining/slash/{tx_id}</span><span class="status">applied · rejected · auto-revoked</span></div>
+        <div class="endpoint"><span class="host">qsdmcli enroll · unenroll · slash · enrollment-status · slash-receipt</span><span class="status">v2 · canonical-codec CLI</span></div>
         <div class="endpoint"><span class="host">POST /api/v1/auth/login</span><span class="status">JWT issuance</span></div>
         <div class="endpoint"><span class="host">POST /api/v1/wallet/send</span><span class="status">Signed · submesh-routed</span></div>
         <div class="endpoint"><span class="host">GET /api/metrics/prometheus</span><span class="status">Scrape secret · Bearer</span></div>
@@ -1138,19 +1139,26 @@
       (<code>slashing.AdmissionChecker</code> &gt; <code>enrollment.AdmissionChecker</code>
       &gt; operator&rsquo;s POL/BFT base predicate), the full HTTP mining surface
       (<code>POST /api/v1/mining/{enroll,unenroll,slash}</code> for writes,
-      <code>GET /api/v1/mining/enrollment/{node_id}</code> for reads &mdash; with
-      <code>phase</code> + <code>slashable</code> derived so slash submitters can confirm
-      a target carries real stake before posting evidence), and the four
-      <code>qsdm_enrollment_*</code> Prometheus gauges in one ordered call &mdash;
-      backed by a 14-test integration suite that mirrors the production wiring shape and
-      catches any drift between <code>main.go</code> and the chain contracts before a
-      regression reaches mainnet. The four lifecycle operations are also exposed through
+      <code>GET /api/v1/mining/enrollment/{node_id}</code> and
+      <code>GET /api/v1/mining/slash/{tx_id}</code> for reads &mdash; the
+      former with <code>phase</code> + <code>slashable</code> derived so slash submitters
+      can confirm a target carries real stake before posting evidence; the latter
+      backed by a bounded in-memory <code>SlashReceiptStore</code> that subscribes to the
+      <code>SlashApplier.Publisher</code> chain via composition, so every applied or
+      rejected slash leaves an auditable receipt without operators having to scrape logs
+      or Prometheus to back-correlate <code>height</code> &harr; <code>tx_id</code>),
+      and the four <code>qsdm_enrollment_*</code> Prometheus gauges in one ordered call &mdash;
+      backed by an integration suite that mirrors the production wiring shape (write &rarr;
+      applier &rarr; publisher &rarr; receipt store &rarr; HTTP read) and catches any drift
+      between <code>main.go</code> and the chain contracts before a regression reaches
+      mainnet. The lifecycle operations are also exposed through
       <code>qsdmcli</code>: <code>qsdmcli enroll</code>, <code>unenroll</code>,
-      <code>slash</code>, and <code>enrollment-status</code> build canonical payloads
-      through the same <code>pkg/mining/{enrollment,slashing}</code> codecs the mempool
-      admission gate validates against &mdash; one source of truth, no parallel hand-rolled
-      JSON. 23 CLI tests cover envelope shape, base64 round-trip, missing-flag rejection,
-      hex-decode failure surfacing, HTTP path escaping, and 4xx propagation. Pre-this commit, every collaborator above was code
+      <code>slash</code>, <code>enrollment-status</code>, and <code>slash-receipt</code>
+      build canonical payloads through the same <code>pkg/mining/{enrollment,slashing}</code>
+      codecs the mempool admission gate validates against &mdash; one source of truth, no
+      parallel hand-rolled JSON. CLI tests cover envelope shape, base64 round-trip,
+      missing-flag rejection, hex-decode failure surfacing, HTTP path escaping, and 4xx
+      propagation across all five subcommands. Pre-this commit, every collaborator above was code
       without a caller in any production binary; <code>grep NewEnrollmentApplier
       cmd/qsdm/main.go</code> returned zero matches. The Tier-3 milestone is meaningful
       now because the surface is alive in the binary, not just under <code>go test</code>.

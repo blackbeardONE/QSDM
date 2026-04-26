@@ -334,6 +334,66 @@ func TestMiningEnrollmentStatus_RejectsSlashInNodeID(t *testing.T) {
 	}
 }
 
+func TestMiningSlashReceipt_HitsGetEndpoint(t *testing.T) {
+	cs := newCaptureServer(t, http.StatusOK,
+		`{"tx_id":"tx-abc","outcome":"applied","height":42}`)
+	defer cs.close()
+
+	if err := cs.cli().miningSlashReceipt([]string{"tx-abc"}); err != nil {
+		t.Fatalf("miningSlashReceipt: %v", err)
+	}
+	if cs.method != http.MethodGet {
+		t.Errorf("method: got %s, want GET", cs.method)
+	}
+	if cs.path != "/api/v1/mining/slash/tx-abc" {
+		t.Errorf("path: got %s, want /api/v1/mining/slash/tx-abc", cs.path)
+	}
+}
+
+func TestMiningSlashReceipt_TxIDIsPathEscaped(t *testing.T) {
+	cs := newCaptureServer(t, http.StatusOK, `{}`)
+	defer cs.close()
+
+	// Tx ids in the wild are usually hex, but the CLI must
+	// still escape correctly so a hypothetical '%' or space
+	// doesn't break the request.
+	if err := cs.cli().miningSlashReceipt([]string{"tx with space"}); err != nil {
+		t.Fatalf("miningSlashReceipt: %v", err)
+	}
+	if !strings.Contains(cs.rawPath, "tx%20with%20space") {
+		t.Errorf("tx-id not URL-escaped in path: rawPath=%q path=%q", cs.rawPath, cs.path)
+	}
+}
+
+func TestMiningSlashReceipt_RejectsEmptyTxID(t *testing.T) {
+	cs := newCaptureServer(t, http.StatusOK, `{}`)
+	defer cs.close()
+	if err := cs.cli().miningSlashReceipt(nil); err == nil {
+		t.Error("missing positional accepted")
+	}
+	if err := cs.cli().miningSlashReceipt([]string{""}); err == nil {
+		t.Error("empty positional accepted")
+	}
+}
+
+func TestMiningSlashReceipt_RejectsSlashInTxID(t *testing.T) {
+	cs := newCaptureServer(t, http.StatusOK, `{}`)
+	defer cs.close()
+	if err := cs.cli().miningSlashReceipt([]string{"foo/bar"}); err == nil {
+		t.Error("nested tx-id accepted; should reject early")
+	}
+}
+
+func TestMiningSlashReceipt_PropagatesHTTPError(t *testing.T) {
+	cs := newCaptureServer(t, http.StatusNotFound, "no slash receipt for tx_id (unknown or evicted)")
+	defer cs.close()
+
+	err := cs.cli().miningSlashReceipt([]string{"tx-missing"})
+	if err == nil || !strings.Contains(err.Error(), "404") {
+		t.Errorf("404 not propagated: %v", err)
+	}
+}
+
 func TestMiningEnroll_PropagatesHTTPError(t *testing.T) {
 	cs := newCaptureServer(t, http.StatusBadRequest, "bad payload")
 	defer cs.close()

@@ -280,6 +280,18 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// chain.SlashApplier.
 	mux.HandleFunc("/api/v1/mining/slash", handlers.SlashSubmitHandler)
 
+	// Mining slashing READ endpoint — receipts. Companion to
+	// the POST /api/v1/mining/slash write endpoint. Returns the
+	// applied/rejected outcome captured by the SlashReceiptStore
+	// the chain wires up at boot. Returns 503 until a store is
+	// installed via api.SetSlashReceiptStore(...). 404 if the tx
+	// id is unknown or has been FIFO-evicted (the store is
+	// bounded for OOM safety). Mounted on the trailing-slash
+	// prefix so {tx_id} can carry hyphens, hex, etc., without
+	// per-segment routing — same idiom as the enrollment query
+	// route above.
+	mux.HandleFunc("/api/v1/mining/slash/", handlers.SlashReceiptHandler)
+
 	// Trust / attestation transparency endpoints (Major Update Phase 5.1).
 	// Registered unconditionally. If no aggregator is installed via
 	// api.SetTrustAggregator, the handlers return 503 warming-up; if the

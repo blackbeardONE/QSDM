@@ -33,10 +33,12 @@ package v2wiring
 //     SealedBlockHook for matured-stake auto-sweep.
 //   - Exposes the live mempool to the api/v1/mining/{enroll,
 //     unenroll, slash} HTTP handlers via the matching
-//     api.Set*Mempool() helpers, and the live registry to
+//     api.Set*Mempool() helpers, the live registry to
 //     api/v1/mining/enrollment/{node_id} via
-//     api.SetEnrollmentRegistry. One Wire() call lights up
-//     the entire v2 mining HTTP surface.
+//     api.SetEnrollmentRegistry, and the live receipt store
+//     to api/v1/mining/slash/{tx_id} via
+//     api.SetSlashReceiptStore. One Wire() call lights up
+//     the entire v2 mining HTTP surface (read + write).
 //
 // Out of scope:
 //
@@ -102,15 +104,18 @@ type Config struct {
 //     constructed (canonical Phase 2c-vii pattern).
 //   - .SealedBlockHook to assign to producer.OnSealedBlock.
 //
-// .EnrollmentState and .Slasher are exposed for tests and for
-// future call sites that need direct registry access (e.g. a
-// /api/v1/mining/enrollment/{node_id} GET).
+// .EnrollmentState, .Slasher, and .SlashReceipts are exposed
+// for tests and for future call sites that need direct
+// registry access (e.g. a /api/v1/mining/enrollment/{node_id}
+// GET, or an indexer that wants to drain receipts via the
+// chain store directly).
 type Wired struct {
 	StateApplier    chain.StateApplier
 	Aware           *chain.EnrollmentAwareApplier
 	EnrollmentState *enrollment.InMemoryState
 	Enrollment      *chain.EnrollmentApplier
 	Slasher         *chain.SlashApplier
+	SlashReceipts   *chain.SlashReceiptStore
 	SealedBlockHook func(*chain.Block)
 }
 
@@ -162,6 +167,17 @@ func Wire(cfg Config) (*Wired, error) {
 	)
 	aware.SetSlashApplier(slasher)
 
+	// Slash receipt store. Bounded in-memory keyed by tx_id;
+	// installed as a ChainEventPublisher on the slash applier
+	// so every "applied" / "rejected" outcome lands here. The
+	// existing applier publisher (NoopEventPublisher by
+	// default — pkg/monitoring's structured-event consumer is
+	// the only other current subscriber) is preserved via
+	// composition. Attach BEFORE any tx flows through so the
+	// receipt for the very first slash is captured.
+	slashReceipts := chain.NewSlashReceiptStore(0, nil)
+	slasher.Publisher = chain.NewCompositePublisher(slasher.Publisher, slashReceipts)
+
 	// Monitoring gauge provider. Replaces any prior provider
 	// installed by an earlier boot — the underlying atomic.Value
 	// is overwrite-on-set, so multiple Wire() calls in the same
@@ -206,6 +222,7 @@ func Wire(cfg Config) (*Wired, error) {
 	api.SetEnrollmentMempool(cfg.Pool)
 	api.SetSlashMempool(cfg.Pool)
 	api.SetEnrollmentRegistry(state)
+	api.SetSlashReceiptStore(slashReceiptAdapter{store: slashReceipts})
 
 	hook := aware.SealedBlockHook(cfg.LogSweepError)
 
@@ -215,8 +232,54 @@ func Wire(cfg Config) (*Wired, error) {
 		EnrollmentState: state,
 		Enrollment:      enrollAp,
 		Slasher:         slasher,
+		SlashReceipts:   slashReceipts,
 		SealedBlockHook: hook,
 	}, nil
+}
+
+// slashReceiptAdapter bridges the chain-side
+// *SlashReceiptStore (which knows about chain.SlashReceipt) to
+// the api-side SlashReceiptStore interface (which knows about
+// api.SlashReceiptView). The adapter is the right size to
+// keep pkg/api decoupled from pkg/chain — without it, pkg/api
+// would have to import pkg/chain for the receipt struct, which
+// would re-introduce the import-cycle pressure that
+// dependency-inverted MetricsRecorder + EnrollmentRegistry
+// were designed to avoid.
+//
+// One-method interface; lookup is the only call the handler
+// makes.
+type slashReceiptAdapter struct {
+	store *chain.SlashReceiptStore
+}
+
+// Lookup implements api.SlashReceiptStore by translating the
+// chain receipt into the api wire view. Returns ok=false on
+// nil store, missing tx, or empty tx_id.
+func (a slashReceiptAdapter) Lookup(txID string) (api.SlashReceiptView, bool) {
+	if a.store == nil {
+		return api.SlashReceiptView{}, false
+	}
+	rec, ok := a.store.Lookup(txID)
+	if !ok {
+		return api.SlashReceiptView{}, false
+	}
+	return api.SlashReceiptView{
+		TxID:                    rec.TxID,
+		Outcome:                 rec.Outcome,
+		RecordedAt:              rec.RecordedAt,
+		Height:                  rec.Height,
+		Slasher:                 rec.Slasher,
+		NodeID:                  rec.NodeID,
+		EvidenceKind:            string(rec.EvidenceKind),
+		SlashedDust:             rec.SlashedDust,
+		RewardedDust:            rec.RewardedDust,
+		BurnedDust:              rec.BurnedDust,
+		AutoRevoked:             rec.AutoRevoked,
+		AutoRevokeRemainingDust: rec.AutoRevokeRemainingDust,
+		RejectReason:            rec.RejectReason,
+		Err:                     rec.Err,
+	}, true
 }
 
 // ReinstallAdmissionGate replaces the pool's admission checker

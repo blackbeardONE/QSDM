@@ -231,6 +231,7 @@ func (a *SlashApplier) ApplySlashTx(tx *mempool.Tx, currentHeight uint64) error 
 		ev.Err = err
 		ev.Height = currentHeight
 		ev.Slasher = tx.Sender
+		ev.TxID = tx.ID
 		a.publisher().PublishMiningSlash(ev)
 		return err
 	}
@@ -375,6 +376,7 @@ func (a *SlashApplier) ApplySlashTx(tx *mempool.Tx, currentHeight uint64) error 
 	metrics().RecordSlashApplied(string(payload.EvidenceKind), slashed)
 	metrics().RecordSlashReward(rewardDust, burnedDust)
 	a.publisher().PublishMiningSlash(MiningSlashEvent{
+		TxID:                    tx.ID,
 		Outcome:                 SlashOutcomeApplied,
 		Height:                  currentHeight,
 		Slasher:                 tx.Sender,

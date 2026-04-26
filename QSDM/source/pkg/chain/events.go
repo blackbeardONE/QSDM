@@ -179,6 +179,16 @@ func metrics() MetricsRecorder {
 // in slash_apply.go. Both can coexist on a single chain because
 // they map to disjoint state machines.
 type MiningSlashEvent struct {
+	// TxID is the mempool tx id of the slash transaction —
+	// the same string the submitter posted as
+	// SlashSubmitRequest.ID. Always populated; carried so the
+	// /api/v1/mining/slash/{tx_id} receipt store can key
+	// receipts by client-known id without a separate lookup.
+	// Empty only for synthetic events emitted before the tx
+	// envelope was inspected (currently none — the wrong-
+	// contract reject path also has the id available).
+	TxID string
+
 	// Outcome is "applied" for a successful slash, or
 	// "rejected" for any pre-mutation rejection. Subscribers
 	// MUST switch on Outcome before reading the per-outcome

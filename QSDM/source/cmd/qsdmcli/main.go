@@ -69,6 +69,8 @@ func main() {
 		err = cli.miningSlash(args)
 	case "enrollment-status":
 		err = cli.miningEnrollmentStatus(args)
+	case "slash-receipt":
+		err = cli.miningSlashReceipt(args)
 	case "help":
 		printUsage()
 	default:
@@ -352,6 +354,7 @@ v2 mining:
   unenroll [flags]                    Begin 7-day unbond on a NodeID
   slash [flags]                       Submit slashing evidence against a NodeID
   enrollment-status <node-id>         Query on-chain enrollment record
+  slash-receipt <tx-id>               Query slash transaction outcome
 
   help                                Show this help
 

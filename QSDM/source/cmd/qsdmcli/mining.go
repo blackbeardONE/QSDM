@@ -330,3 +330,40 @@ func (c *CLI) miningEnrollmentStatus(args []string) error {
 	prettyPrint(body)
 	return nil
 }
+
+// -----------------------------------------------------------------------------
+// slash-receipt
+// -----------------------------------------------------------------------------
+
+// miningSlashReceipt handles `qsdmcli slash-receipt <tx-id>`.
+// Hits the GET /mining/slash/{tx_id} read endpoint and
+// pretty-prints the SlashReceiptView. The receipt captures
+// whether the slash applied or rejected, the dust amounts on
+// success, the reason tag on rejection, and the post-slash
+// auto-revoke flag.
+//
+// Same positional-argument shape as enrollment-status: one
+// required input, no flags.
+//
+// Operationally this is the answer to "did my slash work?".
+// 200 means the chain processed the tx (inspect Outcome to
+// see applied vs rejected); 404 means the tx_id is unknown
+// or has been FIFO-evicted from the bounded receipt store
+// (resubmit if you still have the evidence); 503 means the
+// node has no v2 receipt store wired (point at a v2-aware
+// peer).
+func (c *CLI) miningSlashReceipt(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: qsdmcli slash-receipt <tx-id>")
+	}
+	txID := args[0]
+	if txID == "" || strings.Contains(txID, "/") {
+		return fmt.Errorf("tx-id must be non-empty and not contain '/'")
+	}
+	body, err := c.get("/mining/slash/" + url.PathEscape(txID))
+	if err != nil {
+		return err
+	}
+	prettyPrint(body)
+	return nil
+}
