@@ -268,6 +268,15 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// and other URL-safe characters without per-segment routing.
 	mux.HandleFunc("/api/v1/mining/enrollment/", handlers.EnrollmentQueryHandler)
 
+	// Mining enrollment LIST endpoint — paginated walk over the
+	// on-chain registry. Companion to the per-record query
+	// route above. Cursor + limit + optional phase filter
+	// (active | pending_unbond | revoked). Returns 503 until a
+	// lister is installed via api.SetEnrollmentLister(...). No
+	// trailing slash because there is no path component — the
+	// page parameters travel as URL query.
+	mux.HandleFunc("/api/v1/mining/enrollments", handlers.EnrollmentListHandler)
+
 	// Mining slashing endpoint (Phase 2c-xi,
 	// MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §8). Symmetric to the
 	// enrollment endpoints: accepts a signed mempool.Tx envelope

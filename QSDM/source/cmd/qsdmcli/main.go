@@ -69,6 +69,8 @@ func main() {
 		err = cli.miningSlash(args)
 	case "enrollment-status":
 		err = cli.miningEnrollmentStatus(args)
+	case "enrollments":
+		err = cli.miningEnrollmentsList(args)
 	case "slash-receipt":
 		err = cli.miningSlashReceipt(args)
 	case "help":
@@ -354,6 +356,7 @@ v2 mining:
   unenroll [flags]                    Begin 7-day unbond on a NodeID
   slash [flags]                       Submit slashing evidence against a NodeID
   enrollment-status <node-id>         Query on-chain enrollment record
+  enrollments [flags]                 Page over the on-chain enrollment registry
   slash-receipt <tx-id>               Query slash transaction outcome
 
   help                                Show this help
@@ -372,5 +375,11 @@ v2 mining flags (enroll | unenroll | slash):
               [--memo STR] [--nonce N] [--fee CELL] [--id STR]
 
   KIND ∈ {forged-attestation, double-mining, freshness-cheat}
-  '--evidence-file -' reads the evidence blob from stdin.`)
+  '--evidence-file -' reads the evidence blob from stdin.
+
+enrollments flags:
+  --phase=PHASE   filter to active | pending_unbond | revoked
+  --limit=N       page size (0 = server default; max 500)
+  --cursor=ID     exclusive lower bound on node_id (empty starts at beginning)
+  --all           follow next_cursor until exhausted; print one aggregate page`)
 }

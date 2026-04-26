@@ -26,9 +26,21 @@ type captureServer struct {
 	method      string
 	path        string // url.Path — host-decoded, useful for routing assertions
 	rawPath     string // url.EscapedPath() — preserves percent-encoding
+	rawQuery    string // r.URL.RawQuery — preserves query-string ordering
 	contentType string
 	body        []byte
 	status      int
+
+	// hits counts every request the server has answered.
+	// Used by --all walk tests to assert the CLI paged the
+	// expected number of times.
+	hits int
+
+	// responses, if non-nil, supplies a different body per
+	// request (responses[hits-1]). Tests for --all walks
+	// install successive page bodies so the CLI sees a
+	// realistic multi-page sequence.
+	responses []string
 }
 
 func newCaptureServer(t *testing.T, status int, response string) *captureServer {
@@ -38,6 +50,7 @@ func newCaptureServer(t *testing.T, status int, response string) *captureServer 
 		cs.method = r.Method
 		cs.path = r.URL.Path
 		cs.rawPath = r.URL.EscapedPath()
+		cs.rawQuery = r.URL.RawQuery
 		cs.contentType = r.Header.Get("Content-Type")
 		buf := make([]byte, r.ContentLength)
 		if r.ContentLength > 0 {
@@ -45,7 +58,17 @@ func newCaptureServer(t *testing.T, status int, response string) *captureServer 
 		}
 		cs.body = buf
 		w.WriteHeader(status)
-		_, _ = w.Write([]byte(response))
+		// Supply per-request bodies if configured; otherwise
+		// fall back to the static response from construction.
+		// Tests that drive --all walks rely on this so each
+		// hit returns the next page.
+		idx := cs.hits
+		cs.hits++
+		body := response
+		if idx < len(cs.responses) {
+			body = cs.responses[idx]
+		}
+		_, _ = w.Write([]byte(body))
 	}))
 	return cs
 }
@@ -433,5 +456,126 @@ func TestReadEvidenceBytes_RejectsMissing(t *testing.T) {
 	_, err := readEvidenceBytes("", "")
 	if err == nil {
 		t.Error("missing evidence flags accepted")
+	}
+}
+
+// -----------------------------------------------------------------------------
+// enrollments (paginated list)
+// -----------------------------------------------------------------------------
+
+func TestMiningEnrollmentsList_HitsGetEndpoint(t *testing.T) {
+	cs := newCaptureServer(t, http.StatusOK,
+		`{"records":[],"has_more":false,"total_matches":0}`)
+	defer cs.close()
+
+	if err := cs.cli().miningEnrollmentsList(nil); err != nil {
+		t.Fatalf("miningEnrollmentsList: %v", err)
+	}
+	if cs.method != http.MethodGet {
+		t.Errorf("method: got %s, want GET", cs.method)
+	}
+	if cs.path != "/api/v1/mining/enrollments" {
+		t.Errorf("path: got %s, want /api/v1/mining/enrollments", cs.path)
+	}
+	if cs.rawQuery != "" {
+		t.Errorf("query: got %q, want empty for default invocation", cs.rawQuery)
+	}
+}
+
+func TestMiningEnrollmentsList_PassesAllFlagsAsQueryParams(t *testing.T) {
+	cs := newCaptureServer(t, http.StatusOK,
+		`{"records":[],"has_more":false,"total_matches":0}`)
+	defer cs.close()
+
+	args := []string{
+		"--phase", "active",
+		"--limit", "25",
+		"--cursor", "rig-077",
+	}
+	if err := cs.cli().miningEnrollmentsList(args); err != nil {
+		t.Fatalf("miningEnrollmentsList: %v", err)
+	}
+	q := cs.rawQuery
+	for _, want := range []string{"phase=active", "limit=25", "cursor=rig-077"} {
+		if !strings.Contains(q, want) {
+			t.Errorf("query missing %q: got %q", want, q)
+		}
+	}
+}
+
+func TestMiningEnrollmentsList_AllWalksUntilHasMoreFalse(t *testing.T) {
+	cs := newCaptureServer(t, http.StatusOK, "")
+	defer cs.close()
+	cs.responses = []string{
+		`{"records":[{"node_id":"rig-1"}],"next_cursor":"rig-1","has_more":true,"total_matches":3}`,
+		`{"records":[{"node_id":"rig-2"}],"next_cursor":"rig-2","has_more":true,"total_matches":3}`,
+		`{"records":[{"node_id":"rig-3"}],"next_cursor":"","has_more":false,"total_matches":3}`,
+	}
+
+	if err := cs.cli().miningEnrollmentsList([]string{"--all"}); err != nil {
+		t.Fatalf("miningEnrollmentsList: %v", err)
+	}
+	if cs.hits != 3 {
+		t.Errorf("expected 3 server hits, got %d", cs.hits)
+	}
+}
+
+func TestMiningEnrollmentsList_AllForwardsNextCursor(t *testing.T) {
+	cs := newCaptureServer(t, http.StatusOK, "")
+	defer cs.close()
+	type req struct{ rawQuery string }
+	requests := make([]req, 0, 3)
+	cs.server.Close() // rebuild the server so we can record per-request queries
+	cs.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, req{rawQuery: r.URL.RawQuery})
+		idx := len(requests) - 1
+		bodies := []string{
+			`{"records":[{"node_id":"rig-1"}],"next_cursor":"rig-1","has_more":true,"total_matches":2}`,
+			`{"records":[{"node_id":"rig-2"}],"next_cursor":"","has_more":false,"total_matches":2}`,
+		}
+		body := `{"records":[],"has_more":false,"total_matches":0}`
+		if idx < len(bodies) {
+			body = bodies[idx]
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+
+	if err := cs.cli().miningEnrollmentsList([]string{"--all"}); err != nil {
+		t.Fatalf("miningEnrollmentsList: %v", err)
+	}
+	if len(requests) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(requests))
+	}
+	if requests[0].rawQuery != "" {
+		t.Errorf("first request must omit cursor; got %q", requests[0].rawQuery)
+	}
+	if !strings.Contains(requests[1].rawQuery, "cursor=rig-1") {
+		t.Errorf("second request must carry cursor=rig-1; got %q", requests[1].rawQuery)
+	}
+}
+
+func TestMiningEnrollmentsList_AllRejectsBuggyServer(t *testing.T) {
+	// Server returns has_more=true with empty next_cursor —
+	// the CLI must surface this as an error rather than spin.
+	cs := newCaptureServer(t, http.StatusOK,
+		`{"records":[{"node_id":"rig-1"}],"next_cursor":"","has_more":true,"total_matches":99}`)
+	defer cs.close()
+	err := cs.cli().miningEnrollmentsList([]string{"--all"})
+	if err == nil {
+		t.Fatal("CLI accepted has_more=true with empty next_cursor; would spin")
+	}
+	if !strings.Contains(err.Error(), "next_cursor") {
+		t.Errorf("error should mention next_cursor: %v", err)
+	}
+}
+
+func TestMiningEnrollmentsList_PropagatesHTTPError(t *testing.T) {
+	cs := newCaptureServer(t, http.StatusServiceUnavailable,
+		"v2 enrollment lister not configured on this node")
+	defer cs.close()
+	err := cs.cli().miningEnrollmentsList(nil)
+	if err == nil || !strings.Contains(err.Error(), "503") {
+		t.Errorf("503 not propagated: %v", err)
 	}
 }

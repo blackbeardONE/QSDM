@@ -12,6 +12,7 @@ package enrollment
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/blackbeardONE/QSDM/pkg/mining/attest/hmac"
@@ -167,6 +168,206 @@ func (s *InMemoryState) Lookup(nodeID string) (*EnrollmentRecord, error) {
 	// only by convention in both hmac.Entry and here.)
 	cp := *rec
 	return &cp, nil
+}
+
+// ListPhase narrows the List() result set to records whose
+// derived phase matches. Empty value (PhaseAny) returns
+// records of every phase. The phase model mirrors the wire
+// shape exposed by api.EnrollmentRecordView.Phase: a record
+// is "active" while RevokedAtHeight==0; "pending_unbond"
+// after revocation while StakeDust still locked;
+// "revoked" once the stake has been fully drained or swept.
+type ListPhase string
+
+const (
+	// PhaseAny is the zero-value sentinel: no phase filter,
+	// every record is returned.
+	PhaseAny ListPhase = ""
+
+	// PhaseActive returns only records where Active() is true.
+	PhaseActive ListPhase = "active"
+
+	// PhasePendingUnbond returns only records that have been
+	// revoked (RevokedAtHeight != 0) and still carry locked
+	// stake.
+	PhasePendingUnbond ListPhase = "pending_unbond"
+
+	// PhaseRevoked returns only records whose stake has been
+	// drained (StakeDust == 0) but the record itself is
+	// retained on-chain (e.g. fully slashed).
+	PhaseRevoked ListPhase = "revoked"
+)
+
+// ListOptions parameterises a paginated walk over the
+// enrollment registry. Construct with zero values for
+// "list everything from the beginning"; tune as needed.
+//
+// Pagination model: cursor is the *exclusive* lower bound on
+// node_id, sorted lexicographically. Empty cursor starts from
+// the beginning. Each ListPage returned carries NextCursor —
+// pass that back unchanged to fetch the next page. HasMore
+// signals whether further pages exist; when false, NextCursor
+// is empty.
+//
+// Why cursor (not offset): the registry mutates while clients
+// page. Offset-based pagination would silently skip or
+// duplicate records when a record near the cursor's height
+// is enrolled or revoked between calls. Cursor-by-node_id is
+// stable: an inserted node_id either lands inside the next
+// page (new ones) or has been seen already (lexicographic
+// ordering).
+type ListOptions struct {
+	// Cursor is the exclusive lower bound on node_id. Empty
+	// starts from the lexicographic beginning.
+	Cursor string
+
+	// Limit caps the number of records returned in this
+	// page. Values <=0 substitute DefaultListLimit. Values
+	// above MaxListLimit are clamped to MaxListLimit so a
+	// client cannot drain the full registry in one call
+	// (denial-of-service protection on the public HTTP
+	// surface).
+	Limit int
+
+	// Phase filters the result set. PhaseAny ("") returns
+	// every phase.
+	Phase ListPhase
+}
+
+// ListPage carries one page of List() results plus the
+// cursor + has-more bookkeeping the client needs to fetch
+// the next page.
+type ListPage struct {
+	// Records is the page contents. Each record is a deep-
+	// enough copy that the caller cannot mutate registry
+	// state through the slice.
+	Records []EnrollmentRecord
+
+	// NextCursor is the cursor to pass on the next List()
+	// call to fetch the page immediately after this one.
+	// Empty when HasMore is false.
+	NextCursor string
+
+	// HasMore is true when at least one more record matches
+	// ListOptions beyond this page. When false, NextCursor
+	// is empty.
+	HasMore bool
+
+	// TotalMatches is the total count of records matching
+	// ListOptions.Phase (independent of Cursor / Limit).
+	// Useful for clients that want to render "page 1 of N"
+	// or "showing 50 of 137" without driving every page.
+	TotalMatches uint64
+}
+
+const (
+	// DefaultListLimit is the page size used when
+	// ListOptions.Limit is zero or negative. Tuned so a
+	// single page comfortably fits in one TCP segment of
+	// JSON.
+	DefaultListLimit = 50
+
+	// MaxListLimit caps a single page so a client cannot
+	// drain the full registry in one call. Operators that
+	// need a complete dump can paginate.
+	MaxListLimit = 500
+)
+
+// List walks the registry under one lock acquisition,
+// applying the phase filter and slicing into a page bounded
+// by Limit. O(n) on the total registry size — fine because
+// the registry size is bounded by the active miner
+// population. A future on-disk implementation can swap to a
+// real index without changing the public contract.
+//
+// Returned records are full copies (not pointers into the
+// registry map) so callers cannot mutate state through them.
+// HMACKey slice headers are shared with the underlying record
+// — the hmac key is read-only by convention; api-side code
+// MUST omit it from public wire shapes.
+func (s *InMemoryState) List(opts ListOptions) ListPage {
+	if opts.Limit <= 0 {
+		opts.Limit = DefaultListLimit
+	}
+	if opts.Limit > MaxListLimit {
+		opts.Limit = MaxListLimit
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Materialise the matching node_ids in sorted order.
+	// O(n log n) on every call; acceptable at the scale of
+	// active miner populations and isolated to this method.
+	matched := make([]string, 0, len(s.byNodeID))
+	for id, rec := range s.byNodeID {
+		if matchesPhase(rec, opts.Phase) {
+			matched = append(matched, id)
+		}
+	}
+	sort.Strings(matched)
+	totalMatches := uint64(len(matched))
+
+	// Skip past the cursor (exclusive). Binary search since
+	// matched is sorted.
+	startIdx := 0
+	if opts.Cursor != "" {
+		startIdx = sort.SearchStrings(matched, opts.Cursor)
+		// SearchStrings returns the index where Cursor would
+		// be inserted. If Cursor is present, that index points
+		// at the cursor — advance by one for "exclusive".
+		if startIdx < len(matched) && matched[startIdx] == opts.Cursor {
+			startIdx++
+		}
+	}
+
+	end := startIdx + opts.Limit
+	if end > len(matched) {
+		end = len(matched)
+	}
+	page := matched[startIdx:end]
+
+	out := ListPage{
+		Records:      make([]EnrollmentRecord, 0, len(page)),
+		TotalMatches: totalMatches,
+	}
+	for _, id := range page {
+		rec := s.byNodeID[id]
+		// Defensive copy: the caller gets an EnrollmentRecord
+		// value, not a pointer into s.byNodeID. HMACKey shares
+		// the slice header — that's intentional (avoids a
+		// pointless allocation; api-side code must omit it
+		// before serialising).
+		out.Records = append(out.Records, *rec)
+	}
+	if end < len(matched) {
+		out.HasMore = true
+		out.NextCursor = page[len(page)-1]
+	}
+	return out
+}
+
+// matchesPhase tests whether rec falls into the requested
+// phase. Mirrors the derivation api.viewFromRecord uses to
+// populate EnrollmentRecordView.Phase, so wire-side phase
+// filtering and registry-side phase filtering agree on every
+// edge case (active, pending_unbond, revoked).
+func matchesPhase(rec *EnrollmentRecord, phase ListPhase) bool {
+	switch phase {
+	case PhaseAny:
+		return true
+	case PhaseActive:
+		return rec.Active()
+	case PhasePendingUnbond:
+		return !rec.Active() && rec.StakeDust > 0
+	case PhaseRevoked:
+		return !rec.Active() && rec.StakeDust == 0
+	default:
+		// Unknown phase tags match nothing. The api handler
+		// rejects unknowns with 400 before they reach here,
+		// so this branch is defensive.
+		return false
+	}
 }
 
 // GPUUUIDBound implements EnrollmentState.

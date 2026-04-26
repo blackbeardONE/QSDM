@@ -78,6 +78,7 @@ func buildRig(t *testing.T, aliceCELL float64) *rig {
 	t.Cleanup(func() {
 		monitoring.SetEnrollmentStateProvider(nil)
 		api.SetEnrollmentRegistry(nil)
+		api.SetEnrollmentLister(nil)
 		api.SetEnrollmentMempool(nil)
 		api.SetSlashMempool(nil)
 		api.SetSlashReceiptStore(nil)
@@ -640,6 +641,74 @@ func TestWire_EnrollmentQueryEndpoint_RoundTrip(t *testing.T) {
 	if view.StakeDust != mining.MinEnrollStakeDust {
 		t.Errorf("view StakeDust: got %d, want %d",
 			view.StakeDust, mining.MinEnrollStakeDust)
+	}
+}
+
+// TestWire_EnrollmentListEndpoint_RoundTrip drives the
+// production list path: Wire() → api.SetEnrollmentLister →
+// EnrollmentListHandler → derived view. After an enroll lands,
+// hitting the GET-list endpoint must return one record with
+// the same node_id and phase=active.
+//
+// Catches drift between Wire() and the lister surface — a
+// missing api.SetEnrollmentLister(state) call would 503 here
+// instead of returning the live page.
+func TestWire_EnrollmentListEndpoint_RoundTrip(t *testing.T) {
+	r := buildRig(t, 20)
+
+	if err := r.pool.Add(enrollTx(t, tAlice, 0, "tx-q-list-1")); err != nil {
+		t.Fatalf("enroll Add: %v", err)
+	}
+	produce(t, r)
+
+	h := &api.Handlers{}
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/mining/enrollments", nil)
+	rec := httptest.NewRecorder()
+	h.EnrollmentListHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list status: got %d, want 200; body=%s",
+			rec.Code, rec.Body.String())
+	}
+	var view api.EnrollmentListPageView
+	if err := json.NewDecoder(rec.Body).Decode(&view); err != nil {
+		t.Fatalf("decode list view: %v", err)
+	}
+	if len(view.Records) != 1 {
+		t.Fatalf("records len: got %d, want 1", len(view.Records))
+	}
+	if view.Records[0].NodeID != tNodeID {
+		t.Errorf("rec[0].NodeID: got %q, want %q",
+			view.Records[0].NodeID, tNodeID)
+	}
+	if view.Records[0].Phase != "active" {
+		t.Errorf("rec[0].Phase: got %q, want active", view.Records[0].Phase)
+	}
+	if view.TotalMatches != 1 {
+		t.Errorf("TotalMatches: got %d, want 1", view.TotalMatches)
+	}
+	if view.HasMore {
+		t.Errorf("HasMore: got true, want false (single record fits one page)")
+	}
+}
+
+// TestWire_EnrollmentList_NotConfiguredReturns503 mirrors the
+// 503 contract for the list endpoint: a node booted WITHOUT
+// v2wiring.Wire() has no lister installed.
+func TestWire_EnrollmentList_NotConfiguredReturns503(t *testing.T) {
+	api.SetEnrollmentLister(nil)
+	t.Cleanup(func() { api.SetEnrollmentLister(nil) })
+
+	h := &api.Handlers{}
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/mining/enrollments", nil)
+	rec := httptest.NewRecorder()
+	h.EnrollmentListHandler(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status: got %d, want 503; body=%s",
+			rec.Code, rec.Body.String())
 	}
 }
 

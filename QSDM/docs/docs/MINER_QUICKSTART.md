@@ -382,6 +382,38 @@ A successful applied receipt looks like:
 
 A rejected receipt carries the reason tag (`verifier_failed`, `evidence_replayed`, `node_not_enrolled`, etc.) and an `error` string for debugging. `404` from this endpoint means the receipt is unknown OR has aged out of the bounded store (default cap: 10000 receipts, FIFO eviction); `503` means the node is v1-only.
 
+### Browsing the enrollment registry
+
+Operators, indexers, and dashboards that need to see the whole on-chain registry — not just one record — can page through it via `qsdmcli enrollments`:
+
+```bash
+# First page (server default page size, no filter):
+./qsdmcli enrollments
+
+# Filter to currently-active rigs only, 100 per page:
+./qsdmcli enrollments --phase=active --limit=100
+
+# Resume from a previous next_cursor:
+./qsdmcli enrollments --cursor=rig-077 --limit=100
+
+# Walk every page and print one aggregate envelope:
+./qsdmcli enrollments --all --phase=pending_unbond
+```
+
+Each response is an `EnrollmentListPageView`:
+
+```json
+{
+  "records": [ /* EnrollmentRecordView */ ],
+  "next_cursor": "rig-077",
+  "has_more": true,
+  "total_matches": 137,
+  "phase": "active"
+}
+```
+
+`--all` follows `next_cursor` until `has_more` is `false`, concatenating records into a single envelope. Pagination is **cursor-based** (not offset) so a record enrolled or revoked between pages does not silently shift the page boundaries — the cursor is the exclusive lower bound on `node_id`, sorted lexicographically. `phase` ∈ `{active, pending_unbond, revoked}` (omit for "every record"). The handler clamps `--limit` to `MaxListLimit = 500` so a single call cannot drain the registry; use `--all` for full dumps. `503` means the node is v1-only (no lister wired).
+
 ### Tooling notes
 
 - All three write subcommands accept `--id` for an idempotent client-supplied tx id; if omitted, `qsdmcli` generates a 16-byte random hex id.

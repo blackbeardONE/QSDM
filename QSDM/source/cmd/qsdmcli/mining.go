@@ -48,6 +48,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -328,6 +329,108 @@ func (c *CLI) miningEnrollmentStatus(args []string) error {
 		return err
 	}
 	prettyPrint(body)
+	return nil
+}
+
+// -----------------------------------------------------------------------------
+// enrollments  (paginated list)
+// -----------------------------------------------------------------------------
+
+// miningEnrollmentsList handles `qsdmcli enrollments
+// [--phase=...] [--limit=...] [--cursor=...] [--all]`.
+// Pages over the on-chain enrollment registry via the
+// GET /mining/enrollments endpoint.
+//
+// --all walks every page until HasMore is false, concatenating
+// records into a single output. Useful for dashboards and
+// dump scripts; without it, only the first page is returned.
+//
+// Cursor is passed through to the server unmodified, so a
+// caller scripting an external pagination loop can request
+// `qsdmcli enrollments --cursor=$prev_next_cursor`.
+func (c *CLI) miningEnrollmentsList(args []string) error {
+	fs := flag.NewFlagSet("enrollments", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	var (
+		phase  = fs.String("phase", "", "phase filter: active | pending_unbond | revoked")
+		limit  = fs.Int("limit", 0, "page size (0 = server default)")
+		cursor = fs.String("cursor", "", "exclusive lower bound on node_id")
+		all    = fs.Bool("all", false, "follow next_cursor until HasMore=false")
+	)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	buildPath := func(cur string) string {
+		v := url.Values{}
+		if *phase != "" {
+			v.Set("phase", *phase)
+		}
+		if *limit > 0 {
+			v.Set("limit", fmt.Sprintf("%d", *limit))
+		}
+		if cur != "" {
+			v.Set("cursor", cur)
+		}
+		path := "/mining/enrollments"
+		if encoded := v.Encode(); encoded != "" {
+			path += "?" + encoded
+		}
+		return path
+	}
+
+	if !*all {
+		body, err := c.get(buildPath(*cursor))
+		if err != nil {
+			return err
+		}
+		prettyPrint(body)
+		return nil
+	}
+
+	// --all: stitch pages into a single aggregate envelope.
+	type page struct {
+		Records      []map[string]interface{} `json:"records"`
+		NextCursor   string                   `json:"next_cursor"`
+		HasMore      bool                     `json:"has_more"`
+		TotalMatches uint64                   `json:"total_matches"`
+		Phase        string                   `json:"phase,omitempty"`
+	}
+	type aggregate struct {
+		Records      []map[string]interface{} `json:"records"`
+		TotalMatches uint64                   `json:"total_matches"`
+		Phase        string                   `json:"phase,omitempty"`
+		PagesWalked  int                      `json:"pages_walked"`
+	}
+	agg := aggregate{Phase: *phase}
+	cur := *cursor
+	for i := 0; i < 10000; i++ { // hard upper bound; defends against server misbehaviour
+		body, err := c.get(buildPath(cur))
+		if err != nil {
+			return err
+		}
+		var p page
+		if err := json.Unmarshal(body, &p); err != nil {
+			return fmt.Errorf("decode page: %w", err)
+		}
+		agg.Records = append(agg.Records, p.Records...)
+		agg.TotalMatches = p.TotalMatches
+		agg.PagesWalked++
+		if !p.HasMore {
+			break
+		}
+		cur = p.NextCursor
+		if cur == "" {
+			// Server bug: HasMore=true but empty next_cursor.
+			// Surface as an error rather than spin forever.
+			return fmt.Errorf("server returned has_more=true with empty next_cursor")
+		}
+	}
+	out, err := json.MarshalIndent(agg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode aggregate: %w", err)
+	}
+	fmt.Println(string(out))
 	return nil
 }
 

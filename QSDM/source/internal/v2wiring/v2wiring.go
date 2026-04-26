@@ -33,9 +33,11 @@ package v2wiring
 //     SealedBlockHook for matured-stake auto-sweep.
 //   - Exposes the live mempool to the api/v1/mining/{enroll,
 //     unenroll, slash} HTTP handlers via the matching
-//     api.Set*Mempool() helpers, the live registry to
+//     api.Set*Mempool() helpers; the live registry to
 //     api/v1/mining/enrollment/{node_id} via
-//     api.SetEnrollmentRegistry, and the live receipt store
+//     api.SetEnrollmentRegistry; the live lister to
+//     api/v1/mining/enrollments (paginated) via
+//     api.SetEnrollmentLister; and the live receipt store
 //     to api/v1/mining/slash/{tx_id} via
 //     api.SetSlashReceiptStore. One Wire() call lights up
 //     the entire v2 mining HTTP surface (read + write).
@@ -222,6 +224,7 @@ func Wire(cfg Config) (*Wired, error) {
 	api.SetEnrollmentMempool(cfg.Pool)
 	api.SetSlashMempool(cfg.Pool)
 	api.SetEnrollmentRegistry(state)
+	api.SetEnrollmentLister(state)
 	api.SetSlashReceiptStore(slashReceiptAdapter{store: slashReceipts})
 
 	hook := aware.SealedBlockHook(cfg.LogSweepError)
