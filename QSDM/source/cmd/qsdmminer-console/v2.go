@@ -41,11 +41,13 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/blackbeardONE/QSDM/pkg/mining"
@@ -212,6 +214,67 @@ func loadHMACKeyFromFile(path string) ([]byte, error) {
 	key, err := hex.DecodeString(trimmed)
 	if err != nil {
 		return nil, fmt.Errorf("decode hex in %s: %w", path, err)
+	}
+	return key, nil
+}
+
+// generatedHMACKeyLen is the standard HMAC key length we
+// produce on the operator's behalf when --gen-hmac-key is
+// invoked. 32 bytes is the consensus minimum (enforced in
+// LoadV2Context above and by pkg/mining/enrollment), so
+// generating exactly the floor avoids any "did I pick the
+// right size?" question. Operators who want longer keys can
+// continue to bring their own.
+const generatedHMACKeyLen = 32
+
+// GenerateHMACKeyFile produces a fresh 32-byte random HMAC
+// key, hex-encodes it, and writes it to path with 0o600
+// permissions. The parent directory is created (0o700) if
+// missing — same convention as saveConfig — so a fresh host
+// running `qsdmminer-console --gen-hmac-key ~/.qsdm/hmac.key`
+// works without the operator first running mkdir.
+//
+// Refuses to overwrite an existing file: HMAC keys are the
+// operator's slashable secret. If the file exists, the caller
+// must delete it explicitly. This matches how `ssh-keygen`
+// guards key files.
+//
+// Returns the raw bytes (NOT hex-encoded) so callers can
+// reuse the key for in-process flows (e.g. emitting a
+// matching `qsdmcli enroll --hmac-key` line) without re-
+// reading the file. The hex form is what landed on disk.
+func GenerateHMACKeyFile(path string) ([]byte, error) {
+	if path == "" {
+		return nil, errors.New("gen-hmac-key: path must not be empty")
+	}
+	if _, err := os.Stat(path); err == nil {
+		return nil, fmt.Errorf(
+			"gen-hmac-key: refusing to overwrite existing file %s "+
+				"(delete it first if you really want to rotate the key)",
+			path,
+		)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("gen-hmac-key: stat %s: %w", path, err)
+	}
+
+	dir := filepath.Dir(path)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return nil, fmt.Errorf("gen-hmac-key: mkdir %s: %w", dir, err)
+		}
+	}
+
+	key := make([]byte, generatedHMACKeyLen)
+	if _, err := rand.Read(key); err != nil {
+		return nil, fmt.Errorf("gen-hmac-key: read random: %w", err)
+	}
+
+	// Trailing newline is tolerated by loadHMACKeyFromFile;
+	// we add one so `cat hmac.key` is friendly on a terminal
+	// without leaving the prompt glued to the hex.
+	hexKey := hex.EncodeToString(key) + "\n"
+	if err := os.WriteFile(path, []byte(hexKey), 0o600); err != nil {
+		return nil, fmt.Errorf("gen-hmac-key: write %s: %w", path, err)
 	}
 	return key, nil
 }

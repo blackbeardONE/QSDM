@@ -36,6 +36,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -194,6 +195,13 @@ const (
 	EvError
 	EvInfo
 	EvShutdown
+
+	// EvV2ChallengeOK is emitted by runLoop after a successful
+	// v2 challenge fetch + HMAC bundle build, immediately before
+	// the proof is submitted. Carries the challenge issue time
+	// in IssuedAt so the dashboard can show how fresh the bundle
+	// is. Only emitted when V2Context.IsEnabled() is true.
+	EvV2ChallengeOK
 )
 
 type Event struct {
@@ -210,6 +218,13 @@ type Event struct {
 	Attempts uint64
 	ProofID  string
 	Reason   string // rejection reason or HTTP error detail
+
+	// Populated for EvV2ChallengeOK.
+	// IssuedAt is the validator-reported challenge issue time
+	// (Unix seconds). The dashboard uses (now - IssuedAt) to
+	// display "challenge age" as a sanity check that we're
+	// staying inside mining.FreshnessWindow.
+	IssuedAt int64
 }
 
 // -----------------------------------------------------------------------------
@@ -230,6 +245,17 @@ type Dashboard struct {
 	Rejected     uint64
 	LastEvent    string
 	LastEventAt  time.Time
+
+	// v2 NVIDIA-locked fields, populated only when the runtime
+	// V2Context is enabled. Zero values render as "—" so the
+	// v1 path's panel layout is unchanged. V2NodeID is set once
+	// at boot from V2Context; the rest mutate as the loop runs.
+	V2Enabled            bool
+	V2NodeID             string
+	V2GPUArch            string
+	V2LastChallengeAt    time.Time // wall time we built the bundle
+	V2LastChallengeIssue int64     // validator-reported issued_at
+	V2Attestations       uint64    // count of successful v2 prepares
 }
 
 func (d *Dashboard) applyEvent(e Event) {
@@ -255,6 +281,13 @@ func (d *Dashboard) applyEvent(e Event) {
 	case EvError:
 		d.Status = "error"
 		d.StatusDetail = e.Message
+	case EvV2ChallengeOK:
+		// Wall-clock-driven so the panel can show "12s ago"
+		// without depending on the validator's clock; the
+		// IssuedAt field is the validator-side check.
+		d.V2LastChallengeAt = e.At
+		d.V2LastChallengeIssue = e.IssuedAt
+		d.V2Attestations++
 	}
 }
 
@@ -354,6 +387,8 @@ func kindLabel(k EventKind) string {
 		return "[err] "
 	case EvShutdown:
 		return "[bye] "
+	case EvV2ChallengeOK:
+		return "[v2]  "
 	default:
 		return "[info]"
 	}
@@ -368,10 +403,21 @@ type consoleRenderer struct {
 	w           io.Writer
 	firstRender bool
 	lines       int // number of lines the panel occupies
+	v2          bool
 }
 
 func newConsoleRenderer(w io.Writer) *consoleRenderer {
 	return &consoleRenderer{w: w, firstRender: true, lines: 14}
+}
+
+// newConsoleRendererV2 reserves two extra lines for the v2
+// status row + spacer. Choosing the line count once at
+// construction (rather than re-flowing per Render) keeps the
+// "cursor up N, repaint N" idiom intact — variable-height
+// panels would race against any concurrent scroll, e.g. a
+// stderr deprecation banner appearing mid-run.
+func newConsoleRendererV2(w io.Writer) *consoleRenderer {
+	return &consoleRenderer{w: w, firstRender: true, lines: 16, v2: true}
 }
 
 const (
@@ -440,9 +486,39 @@ func (c *consoleRenderer) Render(d *Dashboard, hps float64) {
 		lastEvtAge = fmt.Sprintf(" (%s ago)", shortAge(time.Since(d.LastEventAt)))
 	}
 	writeLine(fmt.Sprintf("  %-16s %s%s", "Last event", truncateForLine(d.LastEvent, 80), lastEvtAge))
+	if c.v2 {
+		v2Line := formatV2Line(d)
+		writeLine(fmt.Sprintf("  %-16s %s%s%s", "v2 NVIDIA", ansiCyan, v2Line, ansiReset))
+		writeLine("")
+	}
 	writeLine("")
 	writeLine(ansiDim + "  Ctrl-C to stop. Config: " + ansiReset + ansiCyan + os.Getenv("QSDM_MINER_CONFIG_DISPLAY") + ansiReset)
 	_, _ = c.w.Write(buf.Bytes())
+}
+
+// formatV2Line renders the single-row v2 summary that the
+// console panel paints. Pure helper, easy to unit-test:
+//
+//	"node=alice-rtx4090-01 arch=ada attestations=42 challenge=12s ago"
+//
+// When no challenge has been built yet the age column reads
+// "—" so the operator can spot a v2-enabled miner that's
+// stuck before the first prepare.
+func formatV2Line(d *Dashboard) string {
+	node := d.V2NodeID
+	if node == "" {
+		node = "—"
+	}
+	arch := d.V2GPUArch
+	if arch == "" {
+		arch = "—"
+	}
+	age := "—"
+	if !d.V2LastChallengeAt.IsZero() {
+		age = shortAge(time.Since(d.V2LastChallengeAt)) + " ago"
+	}
+	return fmt.Sprintf("node=%s arch=%s attestations=%d challenge=%s",
+		node, arch, d.V2Attestations, age)
 }
 
 func (c *consoleRenderer) Event(_ Event) {
@@ -521,13 +597,160 @@ func runSetup(path string, cur Config) (Config, error) {
 		BatchCount:   batch,
 		PollInterval: poll,
 		Plain:        cur.Plain,
+
+		// Carry forward the v2 fields untouched. The v2 sub-
+		// wizard below (opt-in) is the only path that mutates
+		// them, so an operator re-running --setup just to bump
+		// the validator URL doesn't lose their existing v2
+		// configuration.
+		Protocol:    cur.Protocol,
+		NodeID:      cur.NodeID,
+		GPUUUID:     cur.GPUUUID,
+		GPUName:     cur.GPUName,
+		GPUArch:     cur.GPUArch,
+		ComputeCap:  cur.ComputeCap,
+		CUDAVersion: cur.CUDAVersion,
+		DriverVer:   cur.DriverVer,
+		HMACKeyPath: cur.HMACKeyPath,
+	}
+
+	// Optional v2 sub-wizard. We ask up-front because the
+	// protocol mode shapes everything else (key file, node id,
+	// gpu metadata) and operators who skip it cleanly drop into
+	// the unchanged v1 path. Default is "no" so a returning v1
+	// user just hits Enter and gets the legacy flow.
+	defaultV2 := "no"
+	if strings.EqualFold(cur.Protocol, "v2") {
+		defaultV2 = "yes"
+	}
+	wantV2 := strings.EqualFold(strings.TrimSpace(prompt(
+		"Enable v2 NVIDIA-locked protocol? (yes/no)", defaultV2)), "yes")
+	if wantV2 {
+		updated, err := runV2SetupSubwizard(filepath.Dir(path), newCfg)
+		if err != nil {
+			return cur, fmt.Errorf("v2 setup: %w", err)
+		}
+		newCfg = updated
+	} else if strings.EqualFold(cur.Protocol, "v2") {
+		// Operator explicitly opted out of v2 in this re-run;
+		// scrub the protocol so the next start runs v1.
+		newCfg.Protocol = ""
 	}
 
 	if err := saveConfig(path, newCfg); err != nil {
 		return cur, err
 	}
 	fmt.Printf("\nSaved %s\n", path)
+	if strings.EqualFold(newCfg.Protocol, "v2") {
+		printEnrollHint(newCfg)
+	}
 	return newCfg, nil
+}
+
+// runV2SetupSubwizard prompts the operator for the v2-only
+// fields, generating a fresh HMAC key on disk if one isn't
+// already configured. Defaults are pre-filled from the
+// (possibly v1-only) Config we were called with so a re-run
+// of --setup converges idempotently.
+//
+// The wizard MUST NOT abort on missing nvidia-smi or other
+// host introspection; we deliberately ask the operator to
+// type the GPU UUID rather than calling out to the binary.
+// nvidia-smi may not be in PATH on a fresh host, and shelling
+// out from the wizard would force a CGO-or-exec dependency
+// just for "save four strings to a TOML file".
+//
+// Default key location is <configDir>/hmac.key — same dir as
+// the config so backups copy them atomically.
+func runV2SetupSubwizard(configDir string, cur Config) (Config, error) {
+	defaultKeyPath := filepath.Join(configDir, "hmac.key")
+	keyPath := strings.TrimSpace(prompt(
+		"HMAC key file path",
+		orDefault(cur.HMACKeyPath, defaultKeyPath)))
+	if keyPath == "" {
+		return cur, errors.New("HMAC key path must not be empty")
+	}
+
+	// Auto-generate the file if it doesn't exist. We don't ask
+	// "do you want to generate?" because the only operators who
+	// hit "no" here are those who already wrote a key elsewhere,
+	// and they would have typed that other path at the prompt.
+	if _, err := os.Stat(keyPath); errors.Is(err, os.ErrNotExist) {
+		fmt.Printf("  no key at %s — generating a fresh 32-byte HMAC key…\n", keyPath)
+		if _, err := GenerateHMACKeyFile(keyPath); err != nil {
+			return cur, fmt.Errorf("generate hmac key: %w", err)
+		}
+		fmt.Printf("  wrote %s (0o600)\n", keyPath)
+	} else if err != nil {
+		return cur, fmt.Errorf("stat hmac key: %w", err)
+	} else {
+		fmt.Printf("  reusing existing key at %s (will not overwrite)\n", keyPath)
+	}
+
+	nodeID := strings.TrimSpace(prompt("NodeID (operator-chosen tag)",
+		orDefault(cur.NodeID, "")))
+	if nodeID == "" {
+		return cur, errors.New("NodeID must not be empty")
+	}
+	gpuUUID := strings.TrimSpace(prompt("GPU UUID (`nvidia-smi -L`)", cur.GPUUUID))
+	if gpuUUID == "" {
+		return cur, errors.New("GPU UUID must not be empty")
+	}
+	gpuArch := strings.ToLower(strings.TrimSpace(prompt(
+		"GPU arch (ada/ampere/hopper/blackwell)",
+		orDefault(cur.GPUArch, "ada"))))
+	gpuName := strings.TrimSpace(prompt(
+		"GPU human-readable name", cur.GPUName))
+	computeCap := strings.TrimSpace(prompt(
+		"CUDA compute capability (optional, e.g. 8.9)", cur.ComputeCap))
+	cudaVersion := strings.TrimSpace(prompt(
+		"CUDA toolkit/runtime version (optional, e.g. 12.8)", cur.CUDAVersion))
+	driverVer := strings.TrimSpace(prompt(
+		"NVIDIA driver version (optional, e.g. 572.16)", cur.DriverVer))
+
+	cur.Protocol = "v2"
+	cur.NodeID = nodeID
+	cur.GPUUUID = gpuUUID
+	cur.GPUArch = gpuArch
+	cur.GPUName = gpuName
+	cur.ComputeCap = computeCap
+	cur.CUDAVersion = cudaVersion
+	cur.DriverVer = driverVer
+	cur.HMACKeyPath = keyPath
+	return cur, nil
+}
+
+// printEnrollHint prints a copy-pasteable `qsdmcli enroll`
+// command for the operator to run once their reward address
+// has 10 CELL on-chain. The HMAC key bytes are read fresh
+// from disk so the snippet is always in sync with what the
+// miner will sign with.
+//
+// We deliberately do NOT submit the enroll transaction
+// automatically. Bonding 10 CELL is a real on-chain side
+// effect; making it a manual step keeps the wizard
+// idempotent and lets ops review the snippet against any
+// internal change-control process.
+func printEnrollHint(cfg Config) {
+	keyHex := ""
+	if raw, err := os.ReadFile(cfg.HMACKeyPath); err == nil {
+		keyHex = strings.TrimSpace(string(raw))
+	}
+	fmt.Println()
+	fmt.Println("v2 mining is enabled in the config. To bond your key on-chain, run:")
+	fmt.Println()
+	fmt.Printf("  qsdmcli enroll \\\n")
+	fmt.Printf("    --validator %s \\\n", cfg.ValidatorURL)
+	fmt.Printf("    --sender   %s \\\n", cfg.RewardAddr)
+	fmt.Printf("    --node-id  %s \\\n", cfg.NodeID)
+	fmt.Printf("    --gpu-uuid %s \\\n", cfg.GPUUUID)
+	if keyHex != "" {
+		fmt.Printf("    --hmac-key %s\n", keyHex)
+	} else {
+		fmt.Printf("    --hmac-key <hex from %s>\n", cfg.HMACKeyPath)
+	}
+	fmt.Println()
+	fmt.Println("After the enroll tx is mined, restart `qsdmminer-console` to begin v2 mining.")
 }
 
 func prompt(label, def string) string {
@@ -629,6 +852,7 @@ func main() {
 		cudaVersion = flag.String("cuda-version", "", "v2 only: CUDA toolkit/runtime version (e.g. '12.8')")
 		driverVer   = flag.String("driver-ver", "", "v2 only: NVIDIA driver version (e.g. '572.16')")
 		hmacKeyPath = flag.String("hmac-key-path", "", "v2 only: path to a file containing the operator HMAC key as a single line of hex")
+		genHMACKey  = flag.String("gen-hmac-key", "", "generate a fresh 32-byte HMAC key, write it as hex to this path (0o600), print the matching qsdmcli enroll snippet, and exit")
 	)
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
@@ -653,6 +877,35 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("self-test OK: proof solved and verified end-to-end via pkg/mining")
+		return
+	}
+
+	// --gen-hmac-key path runs before any config / wizard side
+	// effect so it works on a fresh host. The flag value is the
+	// destination file for the new key. The exit-on-success keeps
+	// the command machine-friendly: a script that wants to
+	// generate, enroll, then start mining can chain the calls.
+	if *genHMACKey != "" {
+		key, err := GenerateHMACKeyFile(*genHMACKey)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "gen-hmac-key: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Wrote 32-byte HMAC key (hex) to %s\n", *genHMACKey)
+		fmt.Println("Permissions: 0o600 (POSIX) / restrict via NTFS ACLs on Windows.")
+		fmt.Println()
+		fmt.Println("Next: bond the key on-chain so validators will accept your v2 proofs.")
+		fmt.Println("Example (replace placeholders):")
+		fmt.Printf("  qsdmcli enroll \\\n")
+		fmt.Printf("    --validator https://testnet.qsdm.tech \\\n")
+		fmt.Printf("    --sender   <YOUR_REWARD_ADDRESS> \\\n")
+		fmt.Printf("    --node-id  <NODE_ID>          \\\n")
+		fmt.Printf("    --gpu-uuid <GPU_UUID>         \\\n")
+		fmt.Printf("    --hmac-key %s\n", hex.EncodeToString(key))
+		fmt.Println()
+		fmt.Println("Then start mining with:")
+		fmt.Printf("  qsdmminer-console --protocol=v2 --hmac-key-path=%s \\\n", *genHMACKey)
+		fmt.Println("    --node-id=<NODE_ID> --gpu-uuid=<GPU_UUID> --gpu-arch=<ada|ampere|hopper|blackwell>")
 		return
 	}
 
@@ -784,7 +1037,11 @@ func main() {
 
 	var rend renderer
 	if usePanel {
-		rend = newConsoleRenderer(os.Stdout)
+		if v2ctx.IsEnabled() {
+			rend = newConsoleRendererV2(os.Stdout)
+		} else {
+			rend = newConsoleRenderer(os.Stdout)
+		}
 	} else {
 		rend = &plainRenderer{w: os.Stdout}
 	}
@@ -795,6 +1052,9 @@ func main() {
 		Validator: cfg.ValidatorURL,
 		Address:   cfg.RewardAddr,
 		Status:    "connecting",
+		V2Enabled: v2ctx.IsEnabled(),
+		V2NodeID:  v2ctx.NodeID,
+		V2GPUArch: v2ctx.GPUArch,
 	}
 	events := make(chan Event, 32)
 	var attempts uint64
@@ -991,6 +1251,12 @@ func runLoop(ctx context.Context, client *http.Client, cfg Config, v2ctx *V2Cont
 				sleepOrCancel(ctx, poll)
 				continue
 			}
+			send(Event{
+				Kind:     EvV2ChallengeOK,
+				IssuedAt: res.Proof.Attestation.IssuedAt,
+				Message: fmt.Sprintf("v2 attestation built (issued_at=%d, type=%s)",
+					res.Proof.Attestation.IssuedAt, res.Proof.Attestation.Type),
+			})
 		}
 
 		raw, err := res.Proof.CanonicalJSON()

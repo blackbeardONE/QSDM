@@ -420,6 +420,64 @@ Each response is an `EnrollmentListPageView`:
 - `--fee` defaults to `0.001 CELL` and must be `> 0` to clear the slashing admission gate.
 - The CLI does not sign envelopes today (matching the existing `qsdmcli tx` shape); the validator-side `AccountStore` identifies sender by string and enforces nonce ordering. When Dilithium-signed envelopes land (per `MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §11`), `qsdmcli` will gain a single signing call inside `buildEnvelope()` — no flag changes.
 
+## 5c. Mining v2 from the console miner
+
+Once your enrollment record is on-chain, `qsdmminer-console` can mine v2 directly. The full loop is wired and tested end-to-end (`v2_integration_test.go`): every solved share fetches a fresh `/api/v1/mining/challenge` from the validator, builds an `nvidia-hmac-v1` attestation bundle bound to that challenge, and POSTs a `Version=2` proof. The console reuses the same `pkg/mining/v2client` module the eventual native CUDA miner will, so the end-to-end shape will not change when GPU support lands.
+
+### Generating an HMAC key
+
+Use the binary's built-in helper instead of `openssl rand`:
+
+```bash
+./qsdmminer-console --gen-hmac-key=$HOME/.qsdm/hmac.key
+```
+
+The file is written `0o600` (POSIX) with a single hex line, so it is readable by `loadHMACKeyFromFile`. The command refuses to overwrite an existing file — rotating a key is a deliberate, manual step. After writing, the helper prints a copy-pasteable `qsdmcli enroll …` snippet pre-populated with the new key's hex form.
+
+### One-shot v2 setup wizard
+
+Re-running `--setup` now offers an opt-in v2 sub-wizard:
+
+```text
+Enable v2 NVIDIA-locked protocol? (yes/no) [no]: yes
+  HMAC key file path [/home/alice/.qsdm/hmac.key]:
+  no key at /home/alice/.qsdm/hmac.key — generating a fresh 32-byte HMAC key…
+  wrote /home/alice/.qsdm/hmac.key (0o600)
+  NodeID (operator-chosen tag):                rig-77
+  GPU UUID (`nvidia-smi -L`):                  GPU-1234…abc
+  GPU arch (ada/ampere/hopper/blackwell) [ada]: ada
+  …
+
+v2 mining is enabled in the config. To bond your key on-chain, run:
+
+  qsdmcli enroll \
+    --validator https://testnet.qsdm.tech \
+    --sender   qsdm1YOURADDR \
+    --node-id  rig-77 \
+    --gpu-uuid GPU-1234…abc \
+    --hmac-key 5d3a...
+```
+
+The wizard never submits the enroll transaction itself — bonding 10 CELL is a real on-chain side effect, so it stays a deliberate manual step. After the enroll tx is mined, restart `qsdmminer-console` and it picks up `protocol = "v2"` from the saved config.
+
+### Mining loop with v2 enabled
+
+```bash
+./qsdmminer-console --protocol=v2 \
+  --hmac-key-path=$HOME/.qsdm/hmac.key \
+  --node-id=rig-77 --gpu-uuid=GPU-1234…abc --gpu-arch=ada
+```
+
+The console panel grows two extra lines when v2 is active:
+
+```text
+  v2 NVIDIA       node=rig-77 arch=ada attestations=42 challenge=4s ago
+```
+
+`challenge=Ns ago` is the wall-clock age of the most recent successfully built attestation; if it climbs past the consensus `mining.FreshnessWindow` (60 s) it means the validator's challenge endpoint is stalling and submissions will start failing. In `--plain` mode, the same information shows up as `[v2]` events in the log stream.
+
+If the validator's `/api/v1/mining/challenge` endpoint is unreachable (503, network outage), the loop emits an `EvError` with `v2 prepare:` and refuses to fall back to v1 — silently submitting v1 proofs to a forked validator would waste solve cycles and hide the misconfiguration. Once the endpoint recovers, the next iteration succeeds without manual intervention.
+
 ## 6. Troubleshooting
 
 | Symptom | Likely cause | Fix |

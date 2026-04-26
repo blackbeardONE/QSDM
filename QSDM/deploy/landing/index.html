@@ -406,6 +406,7 @@
         <div class="endpoint"><span class="host">GET /api/v1/mining/enrollments</span><span class="status">cursor · phase filter · paginated</span></div>
         <div class="endpoint"><span class="host">GET /api/v1/mining/slash/{tx_id}</span><span class="status">applied · rejected · auto-revoked</span></div>
         <div class="endpoint"><span class="host">qsdmcli enroll · unenroll · slash · enrollment-status · enrollments · slash-receipt</span><span class="status">v2 · canonical-codec CLI</span></div>
+        <div class="endpoint"><span class="host">qsdmminer-console --protocol=v2</span><span class="status">v2 · challenge → HMAC bundle → submit, end-to-end</span></div>
         <div class="endpoint"><span class="host">POST /api/v1/auth/login</span><span class="status">JWT issuance</span></div>
         <div class="endpoint"><span class="host">POST /api/v1/wallet/send</span><span class="status">Signed · submesh-routed</span></div>
         <div class="endpoint"><span class="host">GET /api/metrics/prometheus</span><span class="status">Scrape secret · Bearer</span></div>
@@ -651,15 +652,20 @@
     </p>
     <div class="pillars" style="grid-template-columns: 1fr 1fr;">
       <div class="pillar" style="border-color: rgba(118,185,0,.35); background: rgba(118,185,0,.06);">
-        <div class="ico" style="color:var(--accent)">FRIENDLY CONSOLE · SHIPPED</div>
+        <div class="ico" style="color:var(--accent)">FRIENDLY CONSOLE · v2 SHIPPED</div>
         <div class="title"><code>qsdmminer-console</code> — start here</div>
         <div class="desc">
           Run with no flags and a setup wizard prompts for your reward address and validator URL, saves
           the answers to <code>~/.qsdm/miner.toml</code>, then opens a live console panel showing
           hashrate, accepted/rejected proofs, current epoch, and uptime. <code>--plain</code> switches
-          to a one-line-per-event log mode for <code>systemd</code> / <code>journalctl</code>. Ships
-          opt-in v2 support via <code>--protocol=v2</code> and the <code>pkg/mining/v2client</code>
-          library; <code>--self-test</code> validates the full v2 handshake locally.
+          to a one-line-per-event log mode for <code>systemd</code> / <code>journalctl</code>. The
+          v2 NVIDIA-locked path is now <strong>fully wired end-to-end</strong>:
+          <code>--gen-hmac-key</code> produces a 0o600 hex key file plus a copy-pasteable
+          <code>qsdmcli enroll</code> snippet, an opt-in v2 sub-wizard walks operators through key
+          generation and enrollment, and <code>--protocol=v2</code> drives the runLoop through
+          <code>/api/v1/mining/challenge</code> → HMAC bundle → <code>Version=2</code> submit. The
+          console panel grows a live <em>v2 NVIDIA</em> row carrying node, arch, attestation count,
+          and challenge age. Coverage gated by <code>TestIntegration_RunLoop_v2_EndToEnd</code>.
         </div>
       </div>
       <div class="pillar">

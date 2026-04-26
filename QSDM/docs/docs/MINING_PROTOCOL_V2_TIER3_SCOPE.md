@@ -105,7 +105,7 @@ this item.
 | Wire format `Proof.Version` | v2-aware. v1 proofs continue to validate pre-fork. |
 | PoW mixin spec §4 | Documented. Not yet implemented. |
 | `cmd/qsdm-miner-cuda` | Does NOT exist yet. |
-| `cmd/qsdmminer-console` | v1 default; opt-in v2 attestation only (no Tensor-Core mixin). |
+| `cmd/qsdmminer-console` | v1 default; opt-in v2 attestation **fully wired end-to-end** (challenge fetch → HMAC bundle → v2 submit), built-in `--gen-hmac-key`, v2 sub-wizard, live "v2 NVIDIA" panel row. No Tensor-Core mixin. |
 
 ### 3.2 What "done" looks like
 
@@ -154,11 +154,37 @@ ready. In that case:
 
 ### 3.5 Migration path for existing CPU/v1 miners
 
-`cmd/qsdmminer-console` is **frozen at v1** for the duration of
-Tier-3 development. It will not be re-shipped against v2 PoW. Per
-the Phase-0 retirement decision (commit `19e756a`), the CPU miner
-remains in the repo only as the reference v1 implementation; new
-miners are directed to wait for `cmd/qsdm-miner-cuda`.
+`cmd/qsdmminer-console` is **frozen at the v1 PoW algorithm** for
+the duration of Tier-3 development. It will not be re-shipped
+against the v2 Tensor-Core PoW. Per the Phase-0 retirement
+decision (commit `19e756a`), the CPU miner remains in the repo
+only as the reference v1 PoW implementation; new miners are
+directed to wait for `cmd/qsdm-miner-cuda` for production v2 PoW.
+
+**Important nuance** — "frozen at v1 PoW" does *not* mean
+"frozen at v1 protocol". The console binary now ships a fully
+wired v2 attestation path (`v2.go`, `v2_integration_test.go`):
+
+- `--gen-hmac-key=PATH` produces a 0o600 hex key file and prints
+  the matching `qsdmcli enroll …` snippet.
+- `--setup` offers an opt-in v2 sub-wizard that drives operators
+  end-to-end through key generation → field collection → bond
+  command emission.
+- With `--protocol=v2` set, the runLoop fetches a fresh
+  `/api/v1/mining/challenge`, builds an `nvidia-hmac-v1` bundle
+  via `pkg/mining/v2client`, and submits a `Version=2` proof —
+  with the live console panel showing a `v2 NVIDIA` row carrying
+  `node`, `arch`, `attestations`, and `challenge=Ns ago` so
+  operators can spot freshness-window drift.
+- A challenge-endpoint outage produces a clear `EvError` and
+  refuses to fall back to v1, preventing accidental v1
+  submissions to a forked validator.
+
+This means the console miner is suitable today for
+**testnet v2 attestation participation** (post-fork, pre-
+Tensor-Core-mixin), even though it remains unsuitable for v2
+*PoW* mining once the second fork height (`FORK_V2_TC_HEIGHT`)
+activates. Coverage is gated by `TestIntegration_RunLoop_v2_EndToEnd`.
 
 ### 3.6 Scope-of-work estimate (post-hardware)
 

@@ -199,6 +199,56 @@ func TestDashboard_ApplyEvent(t *testing.T) {
 	if d.Status != "error" || d.StatusDetail != "boom" {
 		t.Errorf("EvError should set status=error and surface detail; got status=%q detail=%q", d.Status, d.StatusDetail)
 	}
+
+	// EvV2ChallengeOK should bump V2Attestations + record both
+	// the wall-clock and validator-side issued_at. Verifying
+	// here means the dashboard's v2 row updates at the same
+	// moment the loop receives the event, not on the next
+	// renderer tick.
+	t0 := time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC)
+	d.applyEvent(Event{Kind: EvV2ChallengeOK, At: t0, IssuedAt: 1745496000, Message: "v2 ok"})
+	if d.V2Attestations != 1 {
+		t.Errorf("EvV2ChallengeOK must bump V2Attestations: got %d", d.V2Attestations)
+	}
+	if !d.V2LastChallengeAt.Equal(t0) {
+		t.Errorf("V2LastChallengeAt: got %v want %v", d.V2LastChallengeAt, t0)
+	}
+	if d.V2LastChallengeIssue != 1745496000 {
+		t.Errorf("V2LastChallengeIssue: got %d", d.V2LastChallengeIssue)
+	}
+}
+
+// formatV2Line must show "—" placeholders before the first
+// challenge has been built. This is what the operator sees
+// during the gap between launching --protocol=v2 and the
+// first successful prepare.
+func TestFormatV2Line_PreFirstChallenge(t *testing.T) {
+	d := &Dashboard{V2Enabled: true, V2NodeID: "alice", V2GPUArch: "ada"}
+	got := formatV2Line(d)
+	for _, want := range []string{"node=alice", "arch=ada", "attestations=0", "challenge=—"} {
+		if !contains(got, want) {
+			t.Errorf("expected %q in %q", want, got)
+		}
+	}
+}
+
+// formatV2Line must surface the challenge age in seconds when
+// a recent challenge has been built. Operators rely on this
+// to spot drift past mining.FreshnessWindow (60s).
+func TestFormatV2Line_RecentChallenge(t *testing.T) {
+	d := &Dashboard{
+		V2Enabled:         true,
+		V2NodeID:          "bob",
+		V2GPUArch:         "hopper",
+		V2LastChallengeAt: time.Now().Add(-3 * time.Second),
+		V2Attestations:    7,
+	}
+	got := formatV2Line(d)
+	for _, want := range []string{"node=bob", "arch=hopper", "attestations=7", "challenge="} {
+		if !contains(got, want) {
+			t.Errorf("expected %q in %q", want, got)
+		}
+	}
 }
 
 // The plain renderer must emit one line per event with the expected
@@ -235,6 +285,7 @@ func TestKindLabel_AllKindsLabelled(t *testing.T) {
 		EvError,
 		EvInfo,
 		EvShutdown,
+		EvV2ChallengeOK,
 	}
 	seen := map[string]bool{}
 	for _, k := range kinds {

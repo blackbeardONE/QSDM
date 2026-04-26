@@ -462,6 +462,72 @@ func TestConfig_V2Config_CopiesAllFields(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
+// GenerateHMACKeyFile
+// -----------------------------------------------------------------------------
+
+func TestGenerateHMACKeyFile_HappyPath(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "fresh.hex")
+	key, err := GenerateHMACKeyFile(p)
+	if err != nil {
+		t.Fatalf("GenerateHMACKeyFile: %v", err)
+	}
+	if len(key) != 32 {
+		t.Errorf("returned key len: got %d want 32", len(key))
+	}
+	// Round-trip: the file must be loadable by the existing
+	// v2 path. Otherwise an operator who runs --gen-hmac-key
+	// then --protocol=v2 would hit a startup error.
+	got, err := loadHMACKeyFromFile(p)
+	if err != nil {
+		t.Fatalf("loadHMACKeyFromFile: %v", err)
+	}
+	if !equalBytes(got, key) {
+		t.Error("on-disk key does not match returned bytes")
+	}
+}
+
+func TestGenerateHMACKeyFile_RefusesOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "exists.hex")
+	if err := os.WriteFile(p, []byte("previous-content"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := GenerateHMACKeyFile(p); err == nil {
+		t.Fatal("expected refusal to overwrite, got nil")
+	} else if !strings.Contains(err.Error(), "refusing to overwrite") {
+		t.Errorf("error must mention refusal: %v", err)
+	}
+	// Original content must be untouched. A regression where
+	// the function half-writes then errors would silently
+	// rotate the operator's HMAC key.
+	got, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(got) != "previous-content" {
+		t.Errorf("file mutated despite error: got %q", string(got))
+	}
+}
+
+func TestGenerateHMACKeyFile_CreatesParentDir(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "nested", "more", "hmac.key")
+	if _, err := GenerateHMACKeyFile(p); err != nil {
+		t.Fatalf("GenerateHMACKeyFile: %v", err)
+	}
+	if _, err := os.Stat(p); err != nil {
+		t.Errorf("expected file at %s: %v", p, err)
+	}
+}
+
+func TestGenerateHMACKeyFile_EmptyPathRejected(t *testing.T) {
+	if _, err := GenerateHMACKeyFile(""); err == nil {
+		t.Fatal("expected error on empty path, got nil")
+	}
+}
+
+// -----------------------------------------------------------------------------
 // Local helpers
 // -----------------------------------------------------------------------------
 
