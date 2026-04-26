@@ -69,3 +69,37 @@ jobs:
               -schema-location default \
               "QSDM/deploy/kubernetes/$f"
           done
+
+  # promtool check rules guards against silent breakage of the
+  # Prometheus alert rules under QSDM/deploy/prometheus/. The file
+  # ships as the customer-facing example; if a contributor lands a
+  # rule with a malformed PromQL expression or an unbalanced template
+  # the operators would only find out at scrape time. promtool
+  # tokenises every expression at validation time, so syntax drift
+  # fails CI before a release tag.
+  prometheus-rules-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install promtool
+        run: |
+          set -euo pipefail
+          # Pin to a current Prometheus LTS — promtool semantics for
+          # rule validation have been stable since 2.30 but we still
+          # pin to keep the failure surface deterministic across CI
+          # runs.
+          VERSION="2.55.1"
+          curl -fsSL -o /tmp/prometheus.tgz \
+            "https://github.com/prometheus/prometheus/releases/download/v${VERSION}/prometheus-${VERSION}.linux-amd64.tar.gz"
+          tar -xzf /tmp/prometheus.tgz -C /tmp
+          sudo mv "/tmp/prometheus-${VERSION}.linux-amd64/promtool" /usr/local/bin/promtool
+          promtool --version
+
+      - name: Validate alert rule files
+        run: |
+          set -euo pipefail
+          for f in QSDM/deploy/prometheus/alerts_qsdm.example.yml; do
+            echo "==> $f"
+            promtool check rules "$f"
+          done

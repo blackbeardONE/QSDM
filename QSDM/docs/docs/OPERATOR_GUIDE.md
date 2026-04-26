@@ -435,6 +435,13 @@ A few practical notes:
 - [ ] `/api/v1/health` is `200`.
 - [ ] Prometheus scrape on `/api/metrics/prometheus` reports
       `qsdm_chain_tip_height` advancing.
+- [ ] (v2 mining) Prometheus alert rules from
+      [`QSDM/deploy/prometheus/alerts_qsdm.example.yml`](../../deploy/prometheus/alerts_qsdm.example.yml)
+      loaded — specifically the four `qsdm-v2-mining-*` groups
+      (slashing, enrollment, liveness). Alertmanager routing keyed on
+      the `subsystem: v2-mining` label. CI smoke test
+      (`promtool check rules`) runs on every push that touches
+      `QSDM/deploy/prometheus/**` via `.github/workflows/validate-deploy.yml`.
 - [ ] (Optional) NGC sidecar running, `attestations/recent` shows
       your node.
 

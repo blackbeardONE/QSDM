@@ -316,3 +316,342 @@ groups:
             validator-side bug mis-classifying valid transactions.
             Cross-check qsdm_quarantine_threshold against the
             rollout plan before unwinding quarantines.
+
+  # -----------------------------------------------------------------
+  # v2 mining — slashing
+  # -----------------------------------------------------------------
+  # Consumes the qsdm_slash_* counters emitted by
+  # pkg/monitoring/slashing_metrics.go (recorder pattern, recorded
+  # from pkg/chain/slash_apply.go). Together with the enrollment
+  # group below, these are the primary economic-safety pages for
+  # the v2 NVIDIA-locked mining protocol.
+  #
+  # Threshold rationale: a healthy fleet emits a handful of slashes
+  # per day at most — verifier disagreement rate floor + double-mine
+  # accidents combined. Anything above that signals coordinated
+  # cheating (which we WANT to slash, but operators want a heads-up)
+  # OR a verifier regression (false-positive slashes in CI of a new
+  # release). Either way the operator wants to know.
+  #
+  # All thresholds are a starting point — tune per-fleet after one
+  # week of baseline. The annotations name the underlying labelled
+  # series so the runbook query is one click away from the page.
+  - name: qsdm-v2-mining-slashing
+    rules:
+      - alert: QSDMMiningSlashApplied
+        # ANY successful slash is page-worthy until you have grown
+        # comfortable with the noise floor. Tune for: longer once
+        # baseline rate is known. Counter is monotonic — increase()
+        # gives the count over the lookback regardless of restarts.
+        expr: sum(increase(qsdm_slash_applied_total[15m])) >= 1
+        for: 1m
+        labels:
+          severity: warning
+          subsystem: v2-mining
+        annotations:
+          summary: "{{ $labels.instance }}: slash transaction applied"
+          description: |
+            At least one qsdm_slash_applied_total has incremented
+            in the last 15m. Break out by kind:
+              sum by (kind) (increase(qsdm_slash_applied_total[15m]))
+            Cross-reference the transaction id via:
+              GET /api/v1/mining/slash/{tx_id}
+            (the qsdm CLI: `qsdmcli slash-receipt <tx-id>`).
+            Confirm the offender's NodeID, EvidenceKind, and that
+            auto_revoked behaved as expected. If kind="forged-attestation"
+            in volume, suspect a CC-AIK verifier regression in the
+            release first (false positives) before assuming widespread
+            cheating.
+
+      - alert: QSDMMiningSlashedDustBurst
+        # Mass-slash event in CELL terms. 1 CELL = 1_000_000_000 dust.
+        # Threshold is 50 CELL drained in 15m — below
+        # MIN_ENROLL_STAKE * 5 — i.e. five rigs going down. Tune for
+        # your fleet size: a 1000-rig testnet might want 500 CELL,
+        # a single-validator devnet wants 10 CELL.
+        expr: sum(increase(qsdm_slash_drained_dust_total[15m])) > 5e10
+        for: 5m
+        labels:
+          severity: critical
+          subsystem: v2-mining
+        annotations:
+          summary: "{{ $labels.instance }}: >50 CELL slashed in 15m"
+          description: |
+            qsdm_slash_drained_dust_total has increased by
+            {{ humanize $value }} dust in 15m (>50 CELL). Multiple
+            rigs being slashed at once is almost never coincidental —
+            suspect either a coordinated cheat ring (great, ratify
+            and continue) OR a verifier regression that just shipped
+            in the latest release (bad, roll back).
+
+            Triage:
+              - Group by EvidenceKind:
+                  sum by (kind) (increase(qsdm_slash_drained_dust_total[15m]))
+                A single dominant kind = single-source bug.
+              - Compare against pre-release baseline:
+                  sum(rate(qsdm_slash_drained_dust_total[1d] offset 1d))
+              - Spot-check a recent slash receipt:
+                  qsdmcli slash-receipt <tx-id>
+                If outcome=applied but the operator was clean, halt
+                rollout and roll back the verifier release.
+
+      - alert: QSDMMiningSlashRejectionsBurst
+        # Rejected slashes outpacing applied slashes signals one of:
+        #   - probe / DoS attack against the slashing endpoint
+        #   - slasher tooling emitting malformed evidence
+        #   - replay flood ("evidence_replayed" reason)
+        #   - mass attempts to slash unenrolled NodeIDs
+        # Break out by reason in the runbook query — the reason
+        # label is the quickest diagnostic.
+        expr: sum(increase(qsdm_slash_rejected_total[10m])) >= 10
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: v2-mining
+        annotations:
+          summary: "{{ $labels.instance }}: ≥10 slash transactions rejected in 10m"
+          description: |
+            qsdm_slash_rejected_total grew by {{ $value }} in 10m.
+            Break out by reason:
+              sum by (reason) (increase(qsdm_slash_rejected_total[10m]))
+            Common reasons and what they mean:
+              evidence_replayed   — replay protection working;
+                                    likely a buggy slasher retrying.
+              verifier_failed     — evidence didn't pass the
+                                    EvidenceVerifier; either malformed
+                                    or a probe.
+              node_not_enrolled   — slash submitted against an
+                                    unknown NodeID; client bug or
+                                    spam.
+              insufficient_stake  — slash amount exceeded available
+                                    bond; clamp client-side.
+            Sustained "verifier_failed" with no applied slashes
+            suggests an outsider probing the endpoint — fine, but
+            consider rate-limiting upstream of admission.
+
+      - alert: QSDMMiningAutoRevokeBurst
+        # Surge of auto-revokes = many miners pushed under
+        # MIN_ENROLL_STAKE in a short window. Either coordinated
+        # stake-stripping attack OR a software bug that pushed
+        # everyone below the line. Either is severe.
+        expr: sum(increase(qsdm_slash_auto_revoked_total[15m])) >= 3
+        for: 5m
+        labels:
+          severity: critical
+          subsystem: v2-mining
+        annotations:
+          summary: "{{ $labels.instance }}: ≥3 records auto-revoked by SlashApplier in 15m"
+          description: |
+            SlashApplier.RevokeIfUnderBonded fired for {{ $value }}
+            records in 15m. Each fire means the slashed miner's
+            remaining bond fell below mining.MinEnrollStakeDust
+            (10 CELL). Three+ in 15m is unusual — investigate
+            whether the slash amounts were correctly clamped to
+            individual rig stake or whether the ApplySlashTx path
+            is double-debiting.
+
+  # -----------------------------------------------------------------
+  # v2 mining — enrollment registry
+  # -----------------------------------------------------------------
+  # Consumes qsdm_enrollment_* gauges + counters emitted by
+  # pkg/monitoring/enrollment_metrics.go (callback-driven for the
+  # gauges, recorder for the counters). The gauges are the chain's
+  # economic-safety thermometer: active miners, bonded dust, pending
+  # unbond pressure.
+  - name: qsdm-v2-mining-enrollment
+    rules:
+      - alert: QSDMMiningRegistryEmpty
+        # Active enrollment count == 0 on a node that has been up
+        # long enough to have processed enrollments. Gated on
+        # qsdm_uptime_seconds > 600 so testnet bring-ups don't page
+        # while the first miner is still flashing their HMAC key.
+        # On a v1-only node this gauge is also 0 — but v1-only
+        # nodes don't load this rule group; deployments running
+        # only v1 should drop the qsdm-v2-mining-* groups.
+        expr: |
+          qsdm_enrollment_active_count == 0
+          and qsdm_process_uptime_seconds > 600
+        for: 15m
+        labels:
+          severity: warning
+          subsystem: v2-mining
+        annotations:
+          summary: "{{ $labels.instance }}: zero active enrollments for 15m"
+          description: |
+            qsdm_enrollment_active_count is 0 on a node that has
+            been up >10m. Either:
+              - All miners legitimately unenrolled (check
+                qsdm_unenrollment_applied_total rate over the last
+                hour).
+              - The mempool admission gate is rejecting every
+                enrollment (check qsdm_enrollment_rejected_total
+                by reason).
+              - The block producer stopped sealing — cross-check
+                with QSDMMiningChainStuck below.
+            Production v2 mainnet should never sit at active=0;
+            on testnet this may be acceptable during quiet periods.
+
+      - alert: QSDMMiningRegistryShrinkingFast
+        # Active count fell by >25% in 1h on a node that started
+        # with at least 4 active records (avoid flap on tiny
+        # fleets where one unenroll crosses 25%). Coordinated
+        # exit signals operator unrest, a chain incident, or a
+        # release regression that broke the miner binaries.
+        expr: |
+          (
+            (qsdm_enrollment_active_count offset 1h) - qsdm_enrollment_active_count
+          ) / (qsdm_enrollment_active_count offset 1h) > 0.25
+          and (qsdm_enrollment_active_count offset 1h) >= 4
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: v2-mining
+        annotations:
+          summary: "{{ $labels.instance }}: active enrollments fell {{ $value | humanizePercentage }} in 1h"
+          description: |
+            qsdm_enrollment_active_count dropped by {{ $value | humanizePercentage }}
+            in 1h (relative to the 1h-prior reading). Cross-correlate with:
+              - rate(qsdm_unenrollment_applied_total[1h])  — voluntary exits
+              - rate(qsdm_slash_applied_total[1h])         — forced exits
+              - rate(qsdm_enrollment_unbond_swept_total[1h]) — final-stage sweeps
+            If voluntary exits dominate, suspect either a release
+            regression (miners hitting a v2-incompatible build) or
+            an external incident (e.g. NVIDIA driver rollout). If
+            slash-driven, switch to the slashing-group runbook.
+
+      - alert: QSDMMiningPendingUnbondMajority
+        # More than half the bonded population is in pending_unbond.
+        # That's a coordinated-exit signal — single-rig issues
+        # never flip the ratio. The denominator guard keeps the
+        # ratio sane on tiny fleets.
+        expr: |
+          (
+            qsdm_enrollment_pending_unbond_count
+            /
+            (qsdm_enrollment_active_count + qsdm_enrollment_pending_unbond_count)
+          ) > 0.5
+          and (qsdm_enrollment_active_count + qsdm_enrollment_pending_unbond_count) >= 4
+        for: 30m
+        labels:
+          severity: warning
+          subsystem: v2-mining
+        annotations:
+          summary: "{{ $labels.instance }}: {{ $value | humanizePercentage }} of bonded miners pending unbond"
+          description: |
+            More than half of the bonded population is in the 7-day
+            unbond window. Compare:
+              qsdm_enrollment_pending_unbond_count
+              qsdm_enrollment_active_count
+              qsdm_enrollment_pending_unbond_dust  (CELL locked)
+              qsdm_enrollment_bonded_dust          (CELL active)
+            Coordinated exit usually precedes a fork-vote, a
+            client-software regression, or a known driver rollout
+            incompatibility. Investigate before the 7-day sweep
+            window closes — once balances credit back, recovery
+            requires re-enrollment with fresh bond.
+
+      - alert: QSDMMiningEnrollmentRejectionsBurst
+        # Rejected enrollments climbing fast = either a misconfigured
+        # client, a probe, or admission-gate regression.
+        expr: sum(increase(qsdm_enrollment_rejected_total[10m])) >= 20
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: v2-mining
+        annotations:
+          summary: "{{ $labels.instance }}: ≥20 enrollment rejections in 10m"
+          description: |
+            qsdm_enrollment_rejected_total grew by {{ $value }} in
+            10m. Break out by reason:
+              sum by (reason) (increase(qsdm_enrollment_rejected_total[10m]))
+            Common reasons:
+              insufficient_stake — client offered <10 CELL bond.
+              gpu_uuid_collision — two NodeIDs claimed the same GPU.
+              malformed_payload  — old client / canonicaljson drift.
+              duplicate_node_id  — re-enroll without unbond first.
+            Sustained "malformed_payload" after a release suggests
+            client-server skew — pin client minimum version in the
+            quickstart docs.
+
+      - alert: QSDMMiningBondedDustDropped
+        # Sudden drop in bonded dust = mass unbond OR mass slash.
+        # Threshold of 50 CELL — same calibration as the slash-burst
+        # rule so the two pages align in time-series view.
+        expr: |
+          (qsdm_enrollment_bonded_dust offset 30m) - qsdm_enrollment_bonded_dust > 5e10
+          and (qsdm_enrollment_bonded_dust offset 30m) > 0
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: v2-mining
+        annotations:
+          summary: "{{ $labels.instance }}: bonded stake dropped >50 CELL in 30m"
+          description: |
+            Total active bond fell by {{ humanize $value }} dust
+            (>50 CELL) in 30m. Decompose:
+              - Voluntary: rate(qsdm_unenrollment_applied_total[30m])
+              - Forced:    rate(qsdm_slash_drained_dust_total[30m])
+              - Sweep:     rate(qsdm_enrollment_unbond_swept_total[30m])
+            If neither driver explains the magnitude, suspect a
+            metric callback regression (the gauge is read live from
+            EnrollmentStateProvider — a stale provider will read
+            stale numbers).
+
+  # -----------------------------------------------------------------
+  # v2 mining — chain liveness sanity
+  # -----------------------------------------------------------------
+  # Belt-and-braces companion to the v2-mining groups above.
+  # qsdm_chain_height stuck while qsdm_mempool_size grows is the
+  # operator-observable shape of "validator wedged" — most v2
+  # mining alerts will silently come along for the ride if this
+  # one fires, so we keep it terse.
+  - name: qsdm-v2-mining-liveness
+    rules:
+      - alert: QSDMMiningChainStuck
+        # Height has not advanced in 5m AND uptime allows. Gauge
+        # is monotonic on a healthy node — delta == 0 over 5m on a
+        # production block-time of seconds is unambiguous.
+        expr: |
+          delta(qsdm_chain_height[5m]) == 0
+          and qsdm_process_uptime_seconds > 300
+        for: 3m
+        labels:
+          severity: critical
+          subsystem: v2-mining
+        annotations:
+          summary: "{{ $labels.instance }}: qsdm_chain_height has not advanced in 5m"
+          description: |
+            Block production has stalled. v2 mining alerts above
+            (slash, enrollment) will go quiet because the applier
+            is the consumer of these counters. Triage in this
+            order:
+              1. qsdm_mempool_size — growing? validator stuck on
+                 admission. Empty? validator never built a block.
+              2. qsdm_validators_active — quorum?
+              3. Process logs for "ProduceBlock" errors — the
+                 "all transactions failed" path silently freezes
+                 the producer when no tx applies.
+
+      - alert: QSDMMiningMempoolBacklog
+        # Mempool > 10k pending txs for 10m = admission gate is
+        # accepting faster than the producer can drain. On a
+        # stack-default config this means the slash/enroll
+        # AdmissionCheckers are letting payloads through that
+        # the consensus-time applier will reject — costing block
+        # space.
+        expr: qsdm_mempool_size > 10000
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: v2-mining
+        annotations:
+          summary: "{{ $labels.instance }}: mempool >10k pending for 10m"
+          description: |
+            qsdm_mempool_size is {{ $value }}. Either traffic spiked
+            past producer throughput, or the admission gate is
+            letting through txs that ApplySlashTx / ApplyEnrollTx
+            reject at apply time (admission stateless, applier
+            stateful — a known divergence vector).
+            Cross-check qsdm_slash_rejected_total and
+            qsdm_enrollment_rejected_total; high rejection rate
+            means admission is not catching what apply does.
