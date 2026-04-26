@@ -278,6 +278,87 @@ Use NSSM or the built-in Task Scheduler. The binary is a plain console process; 
 - The miner performs no measurement of your host hardware, network, or clock beyond what is needed to solve a proof. It does not phone home.
 - If you run the miner against a validator you do not control, treat the validator like any other untrusted RPC endpoint: it can censor your proofs and lie about difficulty. Cross-check `/api/v1/status` on at least two independent validators if you care about the latter.
 
+## 5b. v2 mining lifecycle — `qsdmcli` subcommands
+
+Once the v2 protocol activates, mining requires an on-chain enrollment record (NodeID + GPU UUID + bonded stake). The four lifecycle operations — enroll, unenroll, slash, and read — are surfaced as `qsdmcli` subcommands so operators do not need to hand-build canonical payloads or remember endpoint paths.
+
+Build the CLI once:
+
+```bash
+cd QSDM/source
+go build -o qsdmcli ./cmd/qsdmcli
+```
+
+Then point it at any validator that exposes the v2 mining HTTP surface (anything past commit `7f45be7` running `cmd/qsdm`):
+
+```bash
+export QSDM_API_URL=https://testnet.qsdm.tech/api/v1
+```
+
+### Enroll a NodeID
+
+```bash
+./qsdmcli enroll \
+  --sender=qsdm1YOURADDR \
+  --node-id=rig-77 \
+  --gpu-uuid=GPU-12345678-1234-1234-1234-123456789abc \
+  --hmac-key=$(openssl rand -hex 32) \
+  --nonce=<your-current-account-nonce>
+```
+
+The CLI builds a canonical `EnrollPayload` through `pkg/mining/enrollment.EncodeEnrollPayload` (the exact codec the mempool admission gate uses for verification) and POSTs it to `/api/v1/mining/enroll`. `--stake` defaults to `mining.MinEnrollStakeDust` (10 CELL = 1_000_000_000 dust) — the value the v2 spec ratifies as the minimum bond.
+
+The validator returns HTTP 202 Accepted with a `tx_id`. The bond is debited from your account at block-inclusion time, and the resulting `EnrollmentRecord` is keyed by `node-id`.
+
+### Check status
+
+```bash
+./qsdmcli enrollment-status rig-77
+```
+
+Returns the sanitized `EnrollmentRecordView`:
+
+- `phase`: `active`, `pending_unbond`, or `revoked`
+- `slashable`: whether the bond is still locked (and therefore the rig can still be punished)
+- `gpu_uuid`, `owner`, `enrolled_height`, `bond_dust`, `unbond_height`
+
+`hmac_key` is omitted by design — the value is public chain state, but the read endpoint follows least-privilege defaults so a casual `curl` does not surface live operator secrets.
+
+### Begin unbond
+
+```bash
+./qsdmcli unenroll \
+  --sender=qsdm1YOURADDR \
+  --node-id=rig-77 \
+  --reason="upgrading to 5090"
+```
+
+This starts the 7-day unbond window. The bond is **not** released immediately — auto-sweep happens at maturity inside the block producer's `OnSealedBlock` hook. Until the sweep, the record stays in `phase=pending_unbond` and remains `slashable=true`. After sweep, balance is credited back and the record moves to `revoked`.
+
+### Submit slashing evidence
+
+If you observe a peer forging an attestation or double-mining, post evidence so the chain can punish them:
+
+```bash
+./qsdmcli slash \
+  --sender=qsdm1WATCHER \
+  --node-id=rig-cheater \
+  --evidence-kind=forged-attestation \
+  --evidence-file=./evidence.bin \
+  --amount=500000000 \
+  --memo="caught at height 24117"
+```
+
+`--evidence-kind` ∈ `{forged-attestation, double-mining, freshness-cheat}`. Use `--evidence-file -` to read evidence bytes from stdin (handy for piping a slasher tool's output) or `--evidence-hex=<HEX>` for short inline blobs.
+
+The reward (`SlashRewardCap = 200 bps` of the slashed amount, capped) is credited to your sender on inclusion. If the offender's bond falls below `mining.MinEnrollStakeDust` after the slash, `RevokeIfUnderBonded` automatically transitions the record to `revoked` so they cannot keep mining on a stub bond.
+
+### Tooling notes
+
+- All three write subcommands accept `--id` for an idempotent client-supplied tx id; if omitted, `qsdmcli` generates a 16-byte random hex id.
+- `--fee` defaults to `0.001 CELL` and must be `> 0` to clear the slashing admission gate.
+- The CLI does not sign envelopes today (matching the existing `qsdmcli tx` shape); the validator-side `AccountStore` identifies sender by string and enforces nonce ordering. When Dilithium-signed envelopes land (per `MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §11`), `qsdmcli` will gain a single signing call inside `buildEnvelope()` — no flag changes.
+
 ## 6. Troubleshooting
 
 | Symptom | Likely cause | Fix |

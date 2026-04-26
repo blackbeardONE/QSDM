@@ -61,6 +61,14 @@ func main() {
 		err = cli.auditSummary()
 	case "health":
 		err = cli.healthCheck()
+	case "enroll":
+		err = cli.miningEnroll(args)
+	case "unenroll":
+		err = cli.miningUnenroll(args)
+	case "slash":
+		err = cli.miningSlash(args)
+	case "enrollment-status":
+		err = cli.miningEnrollmentStatus(args)
 	case "help":
 		printUsage()
 	default:
@@ -338,9 +346,28 @@ Commands:
   bridge                              Show bridge locks
   lock <src> <dst> <asset> <amt>      Lock asset for cross-chain transfer
   audit                               Show audit checklist summary
+
+v2 mining:
+  enroll [flags]                      Enroll a NodeID with bonded stake
+  unenroll [flags]                    Begin 7-day unbond on a NodeID
+  slash [flags]                       Submit slashing evidence against a NodeID
+  enrollment-status <node-id>         Query on-chain enrollment record
+
   help                                Show this help
 
 Environment:
   QSDM_API_URL    Base API URL (default: http://localhost:8080/api/v1)
-  QSDM_TOKEN      Bearer token for authentication`)
+  QSDM_TOKEN      Bearer token for authentication
+
+v2 mining flags (enroll | unenroll | slash):
+  enroll      --sender STR --node-id STR --gpu-uuid STR --hmac-key HEX
+              [--stake DUST] [--nonce N] [--fee CELL] [--memo STR] [--id STR]
+  unenroll    --sender STR --node-id STR
+              [--reason STR] [--nonce N] [--fee CELL] [--id STR]
+  slash       --sender STR --node-id STR --evidence-kind KIND --amount DUST
+              (--evidence-file PATH | --evidence-hex HEX)
+              [--memo STR] [--nonce N] [--fee CELL] [--id STR]
+
+  KIND ∈ {forged-attestation, double-mining, freshness-cheat}
+  '--evidence-file -' reads the evidence blob from stdin.`)
 }
