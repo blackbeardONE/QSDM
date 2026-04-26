@@ -456,9 +456,19 @@ In a single call ordered before `chain.NewBlockProducer`:
 - `api.SetEnrollmentMempool(pool)` — HTTP handler hookup
   for `/api/v1/mining/enroll` and `/api/v1/mining/unenroll`.
 - `api.SetSlashMempool(pool)` — HTTP handler hookup for
-  `/api/v1/mining/slash`. All three endpoints return 503
-  until their respective `Set*Mempool` is called; `Wire`
-  installs both atomically.
+  `/api/v1/mining/slash`.
+- `api.SetEnrollmentRegistry(state)` — HTTP handler hookup
+  for the read endpoint
+  `GET /api/v1/mining/enrollment/{node_id}`. Returns a
+  sanitized `EnrollmentRecordView` (HMACKey omitted by
+  design — least-privilege on a hot operator value) with a
+  derived `phase ∈ {active, pending_unbond, revoked}` and a
+  `slashable` boolean so slash-evidence submitters can confirm
+  a target carries real stake before posting evidence. All
+  four endpoints return 503 until their respective `Set*` is
+  called; `Wire` installs all of them atomically off the same
+  `*InMemoryState` (one source of truth — no read replica or
+  cache).
 
 ### 5b.2 Post-construction `AttachToProducer`
 
@@ -484,12 +494,16 @@ keeping the knot tying explicit and idempotent.
   gate has the slashing layer present),
 - `OnSealedBlock` auto-sweep at unbond maturity,
 - monitoring state provider replacement on a second `Wire`
-  call (no aliasing across boots), and
-- slasher routability through the aware applier.
+  call (no aliasing across boots),
+- slasher routability through the aware applier, and
+- enrollment query round-trip
+  (`GET /api/v1/mining/enrollment/{node_id}` returns a
+  fresh `active` view immediately after the enroll lands;
+  503 is returned when the registry is not wired).
 
-These twelve tests are the contract `cmd/qsdm/main.go` must
-honour. Any drift between `Wire` and the production boot
-sequence is caught here, not on mainnet.
+These fourteen tests are the contract `cmd/qsdm/main.go`
+must honour. Any drift between `Wire` and the production
+boot sequence is caught here, not on mainnet.
 
 ---
 
@@ -507,6 +521,7 @@ sequence is caught here, not on mainnet.
 - Slashing + enrollment structured events: `pkg/chain/events.go`, `pkg/monitoring/chain_recorder.go`; tests in `pkg/chain/events_test.go` and `pkg/mining/enrollment/stats_test.go`
 - Production boot wiring: `internal/v2wiring/v2wiring.go` + tests in `internal/v2wiring/v2wiring_test.go`; consumed by `cmd/qsdm/main.go`
 - Slashing admission + HTTP submission: `pkg/mining/slashing/admit.go`, `pkg/mining/slashing/admit_test.go`, `pkg/api/handlers_slashing.go`, `pkg/api/handlers_slashing_test.go` (`POST /api/v1/mining/slash`)
+- Enrollment read endpoint: `pkg/api/handlers_enrollment_query.go` + `pkg/api/handlers_enrollment_query_test.go` (`GET /api/v1/mining/enrollment/{node_id}`)
 - Reserved wire keys: §3.1, §3.2, §3.3 of the v2 spec.
 
 ---

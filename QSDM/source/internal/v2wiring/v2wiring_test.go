@@ -40,9 +40,13 @@ package v2wiring_test
 
 import (
 	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/blackbeardONE/QSDM/internal/v2wiring"
+	"github.com/blackbeardONE/QSDM/pkg/api"
 	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
@@ -73,6 +77,9 @@ func buildRig(t *testing.T, aliceCELL float64) *rig {
 	t.Helper()
 	t.Cleanup(func() {
 		monitoring.SetEnrollmentStateProvider(nil)
+		api.SetEnrollmentRegistry(nil)
+		api.SetEnrollmentMempool(nil)
+		api.SetSlashMempool(nil)
 	})
 
 	accounts := chain.NewAccountStore()
@@ -472,5 +479,77 @@ func TestWire_AdmissionGateAcceptsWellFormedSlash(t *testing.T) {
 	}
 	if got := r.pool.Size(); got != 1 {
 		t.Errorf("pool size after slash admit: got %d, want 1", got)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Read-side: GET /api/v1/mining/enrollment/{node_id}
+// -----------------------------------------------------------------------------
+
+// TestWire_EnrollmentQueryEndpoint_RoundTrip drives the full
+// production read path: Wire() → api.SetEnrollmentRegistry →
+// EnrollmentQueryHandler. After an enroll lands on-chain,
+// hitting the GET endpoint must return the fresh record.
+//
+// This is the contract that turns "v2 wiring works" into
+// "v2 wiring is observable". A bug where Wire() forgets to
+// call SetEnrollmentRegistry — or aliases a stale state —
+// makes this test fail with a 503/404 instead of 200.
+//
+// Handler-level edge cases (404, 405, 503, oversized
+// node_id) live in pkg/api/handlers_enrollment_query_test.go;
+// this test only covers the production-wiring round trip.
+func TestWire_EnrollmentQueryEndpoint_RoundTrip(t *testing.T) {
+	r := buildRig(t, 20)
+
+	if err := r.pool.Add(enrollTx(t, tAlice, 0, "tx-q-enroll-1")); err != nil {
+		t.Fatalf("enroll Add: %v", err)
+	}
+	produce(t, r)
+
+	h := &api.Handlers{}
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/mining/enrollment/"+tNodeID, nil)
+	rec := httptest.NewRecorder()
+	h.EnrollmentQueryHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("query status: got %d, want 200; body=%s",
+			rec.Code, rec.Body.String())
+	}
+	var view api.EnrollmentRecordView
+	if err := json.NewDecoder(rec.Body).Decode(&view); err != nil {
+		t.Fatalf("decode view: %v", err)
+	}
+	if view.NodeID != tNodeID {
+		t.Errorf("view NodeID: got %q, want %q", view.NodeID, tNodeID)
+	}
+	if view.Phase != "active" || !view.Slashable {
+		t.Errorf("post-enroll view phase=%q slashable=%v; want active+slashable",
+			view.Phase, view.Slashable)
+	}
+	if view.StakeDust != mining.MinEnrollStakeDust {
+		t.Errorf("view StakeDust: got %d, want %d",
+			view.StakeDust, mining.MinEnrollStakeDust)
+	}
+}
+
+// TestWire_EnrollmentQuery_NotConfiguredReturns503 mirrors the
+// 503 contract: a node booted WITHOUT v2wiring.Wire() has no
+// registry installed, and the read handler must say so
+// distinctly from "node_id not found".
+func TestWire_EnrollmentQuery_NotConfiguredReturns503(t *testing.T) {
+	api.SetEnrollmentRegistry(nil)
+	t.Cleanup(func() { api.SetEnrollmentRegistry(nil) })
+
+	h := &api.Handlers{}
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/mining/enrollment/anything", nil)
+	rec := httptest.NewRecorder()
+	h.EnrollmentQueryHandler(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status: got %d, want 503; body=%s",
+			rec.Code, rec.Body.String())
 	}
 }

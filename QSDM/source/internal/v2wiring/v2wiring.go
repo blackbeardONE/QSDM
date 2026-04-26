@@ -33,7 +33,10 @@ package v2wiring
 //     SealedBlockHook for matured-stake auto-sweep.
 //   - Exposes the live mempool to the api/v1/mining/{enroll,
 //     unenroll, slash} HTTP handlers via the matching
-//     api.Set*Mempool() helpers.
+//     api.Set*Mempool() helpers, and the live registry to
+//     api/v1/mining/enrollment/{node_id} via
+//     api.SetEnrollmentRegistry. One Wire() call lights up
+//     the entire v2 mining HTTP surface.
 //
 // Out of scope:
 //
@@ -185,14 +188,24 @@ func Wire(cfg Config) (*Wired, error) {
 		slashing.AdmissionChecker(
 			enrollment.AdmissionChecker(cfg.BaseAdmit)))
 
-	// HTTP handler hookup. Both /api/v1/mining/{enroll,unenroll}
-	// AND /api/v1/mining/slash are no-ops without their
-	// respective MempoolSubmitter installs — each returns
-	// 503 Service Unavailable until set. Wired together so a
-	// validator that brings up v2 enrollment also brings up the
-	// slash submission path.
+	// HTTP handler hookup. All four mining endpoints
+	//
+	//   POST /api/v1/mining/enroll
+	//   POST /api/v1/mining/unenroll
+	//   POST /api/v1/mining/slash
+	//   GET  /api/v1/mining/enrollment/{node_id}
+	//
+	// are no-ops without their respective Set*() install —
+	// each returns 503 Service Unavailable until set. Wired
+	// together so a validator that brings up v2 enrollment
+	// brings up the full read+write surface in one call.
+	//
+	// SetEnrollmentRegistry exposes the same *InMemoryState
+	// the appliers mutate — one source of truth for chain
+	// state, no separate read replica or cache.
 	api.SetEnrollmentMempool(cfg.Pool)
 	api.SetSlashMempool(cfg.Pool)
+	api.SetEnrollmentRegistry(state)
 
 	hook := aware.SealedBlockHook(cfg.LogSweepError)
 

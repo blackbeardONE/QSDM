@@ -258,6 +258,16 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/mining/enroll", handlers.EnrollmentSubmitHandler)
 	mux.HandleFunc("/api/v1/mining/unenroll", handlers.UnenrollmentSubmitHandler)
 
+	// Mining enrollment READ endpoint (Phase 2c-xii). Companion
+	// to the write endpoints above. Returns the on-chain record
+	// for {node_id} with a sanitized view (HMACKey omitted) plus
+	// a derived Phase/Slashable signal so clients don't have to
+	// re-derive lifecycle state. Returns 503 until a registry is
+	// installed via api.SetEnrollmentRegistry(...). Mounted on
+	// the trailing-slash prefix so {node_id} can carry hyphens
+	// and other URL-safe characters without per-segment routing.
+	mux.HandleFunc("/api/v1/mining/enrollment/", handlers.EnrollmentQueryHandler)
+
 	// Mining slashing endpoint (Phase 2c-xi,
 	// MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §8). Symmetric to the
 	// enrollment endpoints: accepts a signed mempool.Tx envelope
