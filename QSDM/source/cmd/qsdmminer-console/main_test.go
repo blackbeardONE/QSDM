@@ -286,6 +286,7 @@ func TestKindLabel_AllKindsLabelled(t *testing.T) {
 		EvInfo,
 		EvShutdown,
 		EvV2ChallengeOK,
+		EvEnrollment,
 	}
 	seen := map[string]bool{}
 	for _, k := range kinds {

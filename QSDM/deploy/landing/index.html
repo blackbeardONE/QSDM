@@ -407,6 +407,7 @@
         <div class="endpoint"><span class="host">GET /api/v1/mining/slash/{tx_id}</span><span class="status">applied · rejected · auto-revoked</span></div>
         <div class="endpoint"><span class="host">qsdmcli enroll · unenroll · slash · enrollment-status · enrollments · slash-receipt</span><span class="status">v2 · canonical-codec CLI</span></div>
         <div class="endpoint"><span class="host">qsdmminer-console --protocol=v2</span><span class="status">v2 · challenge → HMAC bundle → submit, end-to-end</span></div>
+        <div class="endpoint"><span class="host">qsdmminer-console · EnrollmentPoller</span><span class="status">v2 · phase / stake / slashable in-panel · 30 s default</span></div>
         <div class="endpoint"><span class="host">attest/cc/Verifier (nvidia-cc-v1)</span><span class="status">v2 · AIK chain · ECDSA quote · PCR floor · replay · 28 tests</span></div>
         <div class="endpoint"><span class="host">POST /api/v1/auth/login</span><span class="status">JWT issuance</span></div>
         <div class="endpoint"><span class="host">POST /api/v1/wallet/send</span><span class="status">Signed · submesh-routed</span></div>
@@ -666,7 +667,16 @@
           generation and enrollment, and <code>--protocol=v2</code> drives the runLoop through
           <code>/api/v1/mining/challenge</code> → HMAC bundle → <code>Version=2</code> submit. The
           console panel grows a live <em>v2 NVIDIA</em> row carrying node, arch, attestation count,
-          and challenge age. Coverage gated by <code>TestIntegration_RunLoop_v2_EndToEnd</code>.
+          and challenge age, plus a sibling <em>v2 enroll</em> row painted by the in-binary
+          <code>EnrollmentPoller</code> (<code>--enrollment-poll</code>, default 30 s, floor 5 s)
+          which watches <code>GET /api/v1/mining/enrollment/{node_id}</code> and surfaces
+          phase / stake / slashable inline &mdash; green for <code>active</code>, yellow for
+          <code>pending_unbond</code>, red for <code>revoked</code> / <code>not_found</code>;
+          phase transitions emit dedicated dashboard events so a slash-driven auto-revoke or a
+          mistyped <code>node_id</code> shows up in seconds, not whenever proofs start failing.
+          Coverage gated by <code>TestIntegration_RunLoop_v2_EndToEnd</code> and
+          <code>enrollment_poller_test.go</code> (15 cases incl. a build-time
+          <code>api.EnrollmentRecordView</code> wire-shape lock-in).
         </div>
       </div>
       <div class="pillar">

@@ -468,13 +468,33 @@ The wizard never submits the enroll transaction itself — bonding 10 CELL is a 
   --node-id=rig-77 --gpu-uuid=GPU-1234…abc --gpu-arch=ada
 ```
 
-The console panel grows two extra lines when v2 is active:
+The console panel grows three extra lines when v2 is active:
 
 ```text
   v2 NVIDIA       node=rig-77 arch=ada attestations=42 challenge=4s ago
+  v2 enroll       phase=active stake=10.000 CELL slashable=yes polled=12s ago
 ```
 
 `challenge=Ns ago` is the wall-clock age of the most recent successfully built attestation; if it climbs past the consensus `mining.FreshnessWindow` (60 s) it means the validator's challenge endpoint is stalling and submissions will start failing. In `--plain` mode, the same information shows up as `[v2]` events in the log stream.
+
+The `v2 enroll` row is painted by the **background enrollment poller**, which polls `GET /api/v1/mining/enrollment/{node_id}` every 30 s (configurable via `--enrollment-poll`). It surfaces:
+
+| Phase | Color | Meaning |
+|---|---|---|
+| `active` | green | Bond is locked, validator will accept v2 proofs from this node_id. |
+| `pending_unbond` | yellow | Manual unbond initiated — stake still slashable until `unbond_matures_at_height`. |
+| `revoked` | red | Slashed, fully drained, or unbond matured. **Mining will be rejected.** |
+| `not_found` | red | Validator has no record for this `node_id`. Either the enroll tx hasn't been mined yet or you typed the wrong tag. |
+| `unconfigured` | cyan | Validator is v1-only (503 from `/enrollment/`); the read endpoint isn't wired here. |
+| `unknown` | cyan | First poll hasn't completed yet, or transient HTTP error. The dashboard remembers the last successful phase between cycles, so a flapping validator does NOT clear the row. |
+
+Phase **transitions** between successful cycles emit a separate event into the panel's "Last event" line:
+
+- `not_found → active` (`[info]`): your enroll tx landed.
+- `active → pending_unbond` (`[err]`): either you unbonded, or you got auto-revoked by a slash. Check `qsdmcli slash` activity around the same height.
+- `* → revoked` (`[err]`): terminal state. The miner keeps running but its proofs will be rejected; restart after re-enrolling.
+
+Disable the poller with `--enrollment-poll=0` if you're running against a validator without the v2 read surface (the row will stay at `phase=—` and not spam errors). Intervals below 5 s are silently rounded up to 5 s to prevent accidental DDoS during operator debugging.
 
 If the validator's `/api/v1/mining/challenge` endpoint is unreachable (503, network outage), the loop emits an `EvError` with `v2 prepare:` and refuses to fall back to v1 — silently submitting v1 proofs to a forked validator would waste solve cycles and hide the misconfiguration. Once the endpoint recovers, the next iteration succeeds without manual intervention.
 

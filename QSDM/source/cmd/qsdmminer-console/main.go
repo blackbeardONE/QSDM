@@ -202,6 +202,16 @@ const (
 	// in IssuedAt so the dashboard can show how fresh the bundle
 	// is. Only emitted when V2Context.IsEnabled() is true.
 	EvV2ChallengeOK
+
+	// EvEnrollment is emitted by the EnrollmentPoller after
+	// every successful poll cycle (Phase populated) AND on phase
+	// transitions detected between cycles. Only emitted when
+	// V2Context.IsEnabled() is true and the operator hasn't
+	// disabled the poller via --enrollment-poll=0. The Enrollment
+	// field carries the freshly-polled status; the Message field
+	// carries a human-readable summary suitable for plain-mode
+	// log lines.
+	EvEnrollment
 )
 
 type Event struct {
@@ -225,6 +235,11 @@ type Event struct {
 	// display "challenge age" as a sanity check that we're
 	// staying inside mining.FreshnessWindow.
 	IssuedAt int64
+
+	// Populated for EvEnrollment. Carries the most recent
+	// EnrollmentStatus from the poller. Other event kinds
+	// leave this as the zero value.
+	Enrollment EnrollmentStatus
 }
 
 // -----------------------------------------------------------------------------
@@ -256,6 +271,16 @@ type Dashboard struct {
 	V2LastChallengeAt    time.Time // wall time we built the bundle
 	V2LastChallengeIssue int64     // validator-reported issued_at
 	V2Attestations       uint64    // count of successful v2 prepares
+
+	// V2Enrollment* fields are populated by EvEnrollment events
+	// from the background EnrollmentPoller. Zero values render
+	// as "—" so a panel with the poller disabled (e.g.
+	// --enrollment-poll=0) still paints cleanly.
+	V2EnrollmentPhase     EnrollmentPhase
+	V2EnrollmentStakeDust uint64
+	V2EnrollmentSlashable bool
+	V2EnrollmentLastPoll  time.Time
+	V2EnrollmentError     string
 }
 
 func (d *Dashboard) applyEvent(e Event) {
@@ -288,6 +313,17 @@ func (d *Dashboard) applyEvent(e Event) {
 		d.V2LastChallengeAt = e.At
 		d.V2LastChallengeIssue = e.IssuedAt
 		d.V2Attestations++
+	case EvEnrollment:
+		// One-shot copy of the polled status — the renderer
+		// reads these fields directly so it never has to call
+		// back into the poller. LastPolledAt comes from the
+		// poller's wall clock (the moment the cycle finished),
+		// which the dashboard surfaces verbatim.
+		d.V2EnrollmentPhase = e.Enrollment.Phase
+		d.V2EnrollmentStakeDust = e.Enrollment.StakeDust
+		d.V2EnrollmentSlashable = e.Enrollment.Slashable
+		d.V2EnrollmentLastPoll = e.Enrollment.LastPolledAt
+		d.V2EnrollmentError = e.Enrollment.LastError
 	}
 }
 
@@ -389,6 +425,8 @@ func kindLabel(k EventKind) string {
 		return "[bye] "
 	case EvV2ChallengeOK:
 		return "[v2]  "
+	case EvEnrollment:
+		return "[enrl]"
 	default:
 		return "[info]"
 	}
@@ -410,14 +448,15 @@ func newConsoleRenderer(w io.Writer) *consoleRenderer {
 	return &consoleRenderer{w: w, firstRender: true, lines: 14}
 }
 
-// newConsoleRendererV2 reserves two extra lines for the v2
-// status row + spacer. Choosing the line count once at
-// construction (rather than re-flowing per Render) keeps the
-// "cursor up N, repaint N" idiom intact — variable-height
-// panels would race against any concurrent scroll, e.g. a
-// stderr deprecation banner appearing mid-run.
+// newConsoleRendererV2 reserves three extra lines for the v2
+// status rows (NVIDIA + enrollment) + a single spacer.
+// Choosing the line count once at construction (rather than
+// re-flowing per Render) keeps the "cursor up N, repaint N"
+// idiom intact — variable-height panels would race against
+// any concurrent scroll, e.g. a stderr deprecation banner
+// appearing mid-run.
 func newConsoleRendererV2(w io.Writer) *consoleRenderer {
-	return &consoleRenderer{w: w, firstRender: true, lines: 16, v2: true}
+	return &consoleRenderer{w: w, firstRender: true, lines: 17, v2: true}
 }
 
 const (
@@ -489,6 +528,8 @@ func (c *consoleRenderer) Render(d *Dashboard, hps float64) {
 	if c.v2 {
 		v2Line := formatV2Line(d)
 		writeLine(fmt.Sprintf("  %-16s %s%s%s", "v2 NVIDIA", ansiCyan, v2Line, ansiReset))
+		enrollColor, enrollLine := formatV2EnrollLine(d)
+		writeLine(fmt.Sprintf("  %-16s %s%s%s", "v2 enroll", enrollColor, enrollLine, ansiReset))
 		writeLine("")
 	}
 	writeLine("")
@@ -519,6 +560,85 @@ func formatV2Line(d *Dashboard) string {
 	}
 	return fmt.Sprintf("node=%s arch=%s attestations=%d challenge=%s",
 		node, arch, d.V2Attestations, age)
+}
+
+// formatV2EnrollLine renders the single-row enrollment summary
+// the console panel paints beneath formatV2Line. Returns the
+// ANSI color prefix the row should be drawn in plus the body
+// text — colored separately so a "revoked" state pops in red
+// without forcing the whole row through string concatenation
+// at the call site.
+//
+// Layout:
+//
+//	"phase=active stake=10.000 CELL slashable=yes polled=12s ago"
+//
+// Pre-first-poll the line shows "phase=— polled=—" so the
+// operator can tell the poller hasn't ticked yet vs polled-but-
+// got-error.
+//
+// LastError is appended in dim grey when set, so a "validator
+// unreachable" state stays visible without dominating the row.
+func formatV2EnrollLine(d *Dashboard) (string, string) {
+	color := ansiCyan
+	phase := string(d.V2EnrollmentPhase)
+	if phase == "" {
+		phase = "—"
+	}
+	switch d.V2EnrollmentPhase {
+	case PhaseActive:
+		color = ansiGreen
+	case PhasePending:
+		color = ansiYellow
+	case PhaseRevoked, PhaseNotFound:
+		color = ansiRed
+	}
+	stake := "—"
+	if d.V2EnrollmentLastPoll.IsZero() {
+		stake = "—"
+	} else {
+		stake = formatStakeDust(d.V2EnrollmentStakeDust)
+	}
+	slashable := "—"
+	if !d.V2EnrollmentLastPoll.IsZero() {
+		if d.V2EnrollmentSlashable {
+			slashable = "yes"
+		} else {
+			slashable = "no"
+		}
+	}
+	polled := "—"
+	if !d.V2EnrollmentLastPoll.IsZero() {
+		polled = shortAge(time.Since(d.V2EnrollmentLastPoll)) + " ago"
+	}
+	body := fmt.Sprintf("phase=%s stake=%s slashable=%s polled=%s",
+		phase, stake, slashable, polled)
+	if d.V2EnrollmentError != "" {
+		// Dim the trailing error so the operator's eye stays
+		// on the structured fields. The truncate cap (60) is
+		// the same width budget the "Last event" row uses;
+		// going wider would push the panel past 80 cols on
+		// narrow terminals.
+		body += " " + ansiDim + "(" + truncateForLine(d.V2EnrollmentError, 60) + ")" + ansiReset
+	}
+	return color, body
+}
+
+// formatStakeDust renders a CELL stake amount from raw dust.
+// 1 CELL = 1e9 dust per pkg/chain/units.go. Three decimals are
+// enough granularity for the dashboard — operators who want
+// exact dust can read it from `qsdmcli enrollment-status`.
+//
+// We avoid pulling pkg/chain/units into the miner binary just
+// for one constant; instead the divisor is duplicated as a
+// const here with a comment pointing back to the source of
+// truth. If the chain ever changes the dust scale this miner
+// would print a stale unit, but the test suite asserts on the
+// formatted string so a regression there fires CI.
+func formatStakeDust(dust uint64) string {
+	const cellPerDust = 1_000_000_000.0
+	cells := float64(dust) / cellPerDust
+	return fmt.Sprintf("%.3f CELL", cells)
 }
 
 func (c *consoleRenderer) Event(_ Event) {
@@ -853,6 +973,7 @@ func main() {
 		driverVer   = flag.String("driver-ver", "", "v2 only: NVIDIA driver version (e.g. '572.16')")
 		hmacKeyPath = flag.String("hmac-key-path", "", "v2 only: path to a file containing the operator HMAC key as a single line of hex")
 		genHMACKey  = flag.String("gen-hmac-key", "", "generate a fresh 32-byte HMAC key, write it as hex to this path (0o600), print the matching qsdmcli enroll snippet, and exit")
+		enrollPoll  = flag.Duration("enrollment-poll", DefaultEnrollmentPollInterval, "v2 only: cadence the background poller re-fetches the on-chain enrollment record (set to 0 to disable; <5s rounded up to 5s)")
 	)
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
@@ -1110,7 +1231,68 @@ func main() {
 	}()
 
 	client := &http.Client{Timeout: *httpTimeout}
+
+	// Background enrollment poller: only spun up when v2 is
+	// enabled AND the operator hasn't disabled it via
+	// --enrollment-poll=0. Lives on a dedicated goroutine so a
+	// stuck validator on the read path can't block the mining
+	// loop's HTTP traffic. Uses the same events channel as the
+	// loop so phase transitions repaint the dashboard at the
+	// same cadence (2 Hz) as everything else.
+	var pollerWG sync.WaitGroup
+	if v2ctx.IsEnabled() && *enrollPoll > 0 {
+		poller, err := NewEnrollmentPoller(client, cfg.ValidatorURL, v2ctx.NodeID, *enrollPoll)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "enrollment poller: %v\n", err)
+			os.Exit(2)
+		}
+		// emitEvent posts onto the shared events channel,
+		// honouring ctx so a shutdown mid-poll doesn't leak.
+		emitEvent := func(e Event) {
+			e.At = time.Now()
+			select {
+			case events <- e:
+			case <-ctx.Done():
+			}
+		}
+		poller.OnStatus = func(st EnrollmentStatus) {
+			emitEvent(Event{
+				Kind:       EvEnrollment,
+				Enrollment: st,
+				Message:    fmt.Sprintf("enrollment phase=%s stake=%d slashable=%v", st.Phase, st.StakeDust, st.Slashable),
+			})
+		}
+		poller.OnPhaseChange = func(prev, next EnrollmentStatus) {
+			sev := SeverityForTransition(prev.Phase, next.Phase)
+			kind := EvInfo
+			if sev != SeverityInfo {
+				kind = EvError
+			}
+			emitEvent(Event{
+				Kind: kind,
+				Message: fmt.Sprintf("enrollment phase changed: %s → %s (stake=%d slashable=%v)",
+					prev.Phase, next.Phase, next.StakeDust, next.Slashable),
+			})
+		}
+		poller.LogError = func(err error) {
+			// Errors are already surfaced via OnStatus's
+			// LastError field which paints into the v2 enroll
+			// row. We deliberately do NOT push them through
+			// emitEvent: a flapping validator would otherwise
+			// fill the "Last event" panel and bury more
+			// important loop events. The poller itself
+			// guarantees forward progress on the next tick.
+			_ = err
+		}
+		pollerWG.Add(1)
+		go func() {
+			defer pollerWG.Done()
+			poller.Run(ctx)
+		}()
+	}
+
 	runLoop(ctx, client, cfg, v2ctx, events, &attempts)
+	pollerWG.Wait()
 
 	events <- Event{Kind: EvShutdown, At: time.Now(), Message: "shutting down"}
 	close(events)

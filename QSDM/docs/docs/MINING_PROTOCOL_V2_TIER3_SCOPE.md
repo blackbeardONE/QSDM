@@ -121,7 +121,7 @@ operator-registry consensus on a trust anchor lands.
 | Wire format `Proof.Version` | v2-aware. v1 proofs continue to validate pre-fork. |
 | PoW mixin spec §4 | Documented. Not yet implemented. |
 | `cmd/qsdm-miner-cuda` | Does NOT exist yet. |
-| `cmd/qsdmminer-console` | v1 default; opt-in v2 attestation **fully wired end-to-end** (challenge fetch → HMAC bundle → v2 submit), built-in `--gen-hmac-key`, v2 sub-wizard, live "v2 NVIDIA" panel row. No Tensor-Core mixin. |
+| `cmd/qsdmminer-console` | v1 default; opt-in v2 attestation **fully wired end-to-end** (challenge fetch → HMAC bundle → v2 submit), built-in `--gen-hmac-key`, v2 sub-wizard, live "v2 NVIDIA" panel row, **background `EnrollmentPoller`** (30 s default, `--enrollment-poll`) that paints `phase` / `stake` / `slashable` and emits phase-transition events. No Tensor-Core mixin. |
 
 ### 3.2 What "done" looks like
 
