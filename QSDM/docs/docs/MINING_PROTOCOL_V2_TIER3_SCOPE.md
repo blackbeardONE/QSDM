@@ -43,55 +43,71 @@ trust later.
 
 | Component | Status |
 |---|---|
-| `pkg/mining/attest/cc/StubVerifier` | Stub. Always returns `ErrNotYetAvailable`. |
-| Wire format `Attestation.Type = "nvidia-cc-v1"` | Reserved in spec §3.2.1. |
-| Dispatcher routing | `pkg/mining/attest/dispatcher.go` accepts the type key. |
-| Production wiring | `pkg/mining/attest/production.go` — CC path is a no-op factory hook. |
+| `pkg/mining/attest/cc/StubVerifier` | **Now a fall-through.** Used only when no pinned NVIDIA root is configured. Still always returns `ErrNotYetAvailable`. |
+| `pkg/mining/attest/cc/Verifier` | **Phase 2c-iv landed.** Full eight-step acceptance flow: cert-chain-rooted-in-pinned-CA → ECDSA AIK quote verify → nonce/issued_at binding → optional `challenge_sig` cross-check → freshness window → replay cache → PCR firmware/driver floor. Reference: [`pkg/mining/attest/cc/verifier.go`](../../QSDM/source/pkg/mining/attest/cc/verifier.go). |
+| Bundle wire format | Defined in [`pkg/mining/attest/cc/bundle.go`](../../QSDM/source/pkg/mining/attest/cc/bundle.go). Length-prefixed binary preimage covering `(device_uuid, challenge_nonce, issued_at, miner_addr, batch_root, mix_digest, challenge_signer_id, challenge_sig)` — same anti-replay strength as the §3.2.2 HMAC path. |
+| Test vectors | [`pkg/mining/attest/cc/testvectors.go`](../../QSDM/source/pkg/mining/attest/cc/testvectors.go) — deterministic in-process generator (seeded PRNG, no testdata files). Verifier test suite covers happy + 13 negative cases (tampered signature, wrong root, expired leaf, nonce mismatch, issued_at mismatch, miner_addr/mix_digest tamper, stale, future-dated, below firmware floor, below driver floor, replay, malformed base64, unknown JSON field, over-length cert chain). |
+| Production wiring | `attest.ProductionConfig.CCConfig` builds the real verifier from a `cc.VerifierConfig` (pinned roots + min firmware + replay store + optional `ChallengeVerifier`). `attest.ProductionConfig.CCVerifier` remains the escape hatch for HSM-backed builds. Both nil → fall back to the stub. |
+| Dispatcher routing | `pkg/mining/attest/dispatcher.go` accepts the type key (unchanged). |
 
-### 2.2 What "done" looks like
+### 2.2 What's still deferred
 
-Replace `cc.StubVerifier` with `cc.RemoteVerifier` that:
+The Phase 2c-iv verifier is consensus-complete against the
+spec's verifier flow. What's NOT yet shipped:
 
-1. **Parses the NVIDIA AIK quote** from `Attestation.Bundle` per
-   spec §3.2.1 (CBOR-tagged COSE_Sign1 over a TPM-shape quote).
-2. **Verifies the AIK certificate chain** terminates in NVIDIA's
-   public Hopper/Blackwell root CA (pinned, fetched out-of-band, not
-   from the proof itself).
-3. **Verifies PCR / RIM measurements** match the
-   `policy.allowed_rim_digests` list shipped in `genesis.json`
-   under `v2.cc_policy`.
-4. **Verifies challenge-nonce binding** — same `Challenge` mechanism
-   already used by `nvidia-hmac-v1`, just with the CC-side signing
-   key being the AIK instead of an enrolled HMAC secret.
-5. **Verifies freshness** against the same `FRESHNESS_WINDOW = 60s`.
+1. **NVIDIA-issued real-world test vectors.** Determinism in
+   `cc/testvectors.go` is enough for CI and protocol regression
+   testing, but a real H100 / B100 produces an AIK quote whose
+   on-the-wire framing is NVIDIA-proprietary. The current
+   `cc.Bundle` shape is a Go-native canonicalisation that
+   mirrors what an `nvtrust` quote would contain (cert chain +
+   AIK signature over the spec preimage + PCR-equivalent
+   versions). The seam to swap in real `nvtrust` framing is a
+   single `ParseBundle` reimplementation; the verifier code does
+   NOT change.
+2. **Genesis-pinned NVIDIA root rotation.** `VerifierConfig.PinnedRoots`
+   is plumbed end-to-end; ratifying the actual NVIDIA-issued
+   Hopper/Blackwell root cert at v2 fork-time is a separate
+   governance decision and is tracked in the genesis-state
+   schedule, not in code.
+3. **CUDA-side miner integration.** Once `cmd/qsdm-miner-cuda`
+   ships (see §3 below), it will produce live CC bundles using
+   the on-host nvtrust SDK; today only `cmd/qsdmminer-console`
+   produces v2 attestations and it produces `nvidia-hmac-v1`
+   only.
 
 ### 2.3 Hard external dependencies
 
 - **NGC Attestation Service contract.** NVIDIA gates programmatic
   AIK chain verification behind a paid datacenter relationship.
-  Until that contract exists, `cc.RemoteVerifier` cannot validate
-  the chain root. Workaround: ship with the chain root pinned to
-  the public NVIDIA cert published with each driver release, accept
-  some staleness risk.
-- **A physical Hopper or Blackwell GPU** for end-to-end test
-  vectors. Mock vectors are insufficient because the AIK quote
-  format has changed at least twice between H100 driver branches.
+  The current verifier sidesteps this by accepting any
+  ECDSA-keyed leaf cert that chains to a pinned root —
+  governance can pin NVIDIA's published Hopper/Blackwell roots
+  the day the contract is signed, no code change needed.
+- **A physical Hopper or Blackwell GPU** for swap-in real-world
+  test vectors (see §2.2 item 1). The deterministic in-process
+  vectors handle every consensus-relevant code path without
+  hardware.
 
 ### 2.4 Gating
 
-Until §2.2 is delivered, the chain MUST reject `nvidia-cc-v1`
-proofs at the verifier layer. The current `StubVerifier` already
-does this. The v2 hard fork is therefore safe to activate without
-this item.
+Validators that do NOT configure a CC trust anchor continue to
+reject every `nvidia-cc-v1` proof via `StubVerifier`'s
+`ErrNotYetAvailable`. Operators opt in by populating
+`attest.ProductionConfig.CCConfig.PinnedRoots`. The v2 hard fork
+remains safe to activate with the stub posture; flipping to the
+real verifier is a per-validator opt-in until the genesis
+operator-registry consensus on a trust anchor lands.
 
-### 2.5 Scope-of-work estimate (post-hardware)
+### 2.5 Remaining scope-of-work estimate (post-hardware)
 
-- AIK quote parser + COSE_Sign1 verify: **3 days**
-- Cert chain pinning + rotation policy: **2 days**
-- RIM digest policy genesis extension + tests: **1 day**
+- Real-world `nvtrust` bundle framing in `ParseBundle`: **2 days**
+- Genesis trust-anchor rotation policy: **1 day**
 - E2E vectors against a real H100 / B100: **2 days**
-- Total: **~8 days** assuming hardware + NVIDIA contract are in hand
-  on day 1.
+- Total: **~5 days** to swap from in-process test vectors to
+  hardware-issued vectors. Down from the original **~8 days**
+  estimate because the cert-chain + signature + freshness +
+  replay + PCR-floor pipeline is already done and tested.
 
 ---
 
@@ -322,9 +338,16 @@ If/when Tier-3 work resumes, the recommended order is:
    crypto-valid distinct proofs at the same `(epoch, height)`)
    and therefore does NOT depend on BFT finality — that
    dependency was an over-cautious read of the original spec.
-4. **`nvidia-cc-v1` verifier (§2)** — only valuable once we have a
-   real datacenter customer. Until then, every line of code here is
-   speculative.
+4. ~~**`nvidia-cc-v1` verifier (§2)**~~ — **Landed (Phase 2c-iv).**
+   Real `cc.Verifier` lives in `pkg/mining/attest/cc/verifier.go`;
+   buildable via `attest.ProductionConfig.CCConfig`; covered by
+   28 unit tests including 13 negative cases (tampered sig, wrong
+   root, expired leaf, nonce/issued_at mismatch, preimage tamper,
+   stale, future-dated, PCR floor, replay, malformed bundle,
+   unknown JSON field, over-length chain). Only consensus-
+   speculative work that remains is swapping the in-process
+   bundle framing for real `nvtrust` bytes — every other line is
+   now hardened.
 5. **`freshness-cheat` slasher (§4)** — depends on BFT finality
    and on a sufficient validator set to detect retroactive
    acceptance of stale-nonce proofs. Last item in the slashing
@@ -537,7 +560,7 @@ boot sequence is caught here, not on mainnet.
 
 - v2 spec: [`MINING_PROTOCOL_V2_NVIDIA_LOCKED.md`](./MINING_PROTOCOL_V2_NVIDIA_LOCKED.md)
 - Phase 0 retirement decision: commit `19e756a`
-- Stub verifiers: `pkg/mining/attest/cc/stub.go`, `pkg/mining/slashing/verifier.go` (StubVerifier remains in use for the one remaining deferred kind, `freshness-cheat`)
+- Stub verifiers: `pkg/mining/attest/cc/stub.go` (now a fall-through used only when no NVIDIA root is pinned — superseded by `pkg/mining/attest/cc/verifier.go` whenever `attest.ProductionConfig.CCConfig` is populated), `pkg/mining/slashing/verifier.go` (StubVerifier remains in use for the one remaining deferred kind, `freshness-cheat`)
 - Concrete `forged-attestation` verifier: `pkg/mining/slashing/forgedattest/forgedattest.go`
 - Concrete `double-mining` verifier: `pkg/mining/slashing/doublemining/doublemining.go`
 - Production slashing wiring: `pkg/mining/slashing/production.go` + `pkg/mining/slashing/forgedattest/production.go` + `pkg/mining/slashing/doublemining/production.go`

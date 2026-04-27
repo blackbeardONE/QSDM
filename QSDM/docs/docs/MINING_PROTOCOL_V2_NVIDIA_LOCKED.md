@@ -212,6 +212,22 @@ Verifier flow:
 6. If all pass → proof is attested. Else → reject.
 ```
 
+**Reference implementation status (Phase 2c-iv).**
+[`pkg/mining/attest/cc/verifier.go`](../../QSDM/source/pkg/mining/attest/cc/verifier.go)
+ships the full eight-step acceptance flow above with one
+addition: the bundle ALSO carries `challenge_signer_id` +
+`challenge_sig` (mirroring §3.2.2 of the consumer-GPU path
+added in Phase 2c-iii), and the AIK-signed preimage covers
+those fields too. This binds CC bundles to validator-issued
+nonces with the same anti-replay strength the HMAC path got
+in commits `51e1c5e` + `71ba995`. Operators wire the verifier
+through `attest.ProductionConfig.CCConfig` (the Phase 2c-iv
+escape hatch is still `attest.ProductionConfig.CCVerifier` for
+HSM-backed builds) — leaving both nil keeps the
+`cc.NewStubVerifier()` fail-closed default. Test vectors are
+generated deterministically in-process by
+`pkg/mining/attest/cc/testvectors.go`; see §7.3 below.
+
 #### 3.2.2 `type = "nvidia-hmac-v1"` (consumer GPUs)
 
 Bundle is a base64-encoded canonical-JSON object:
@@ -618,8 +634,13 @@ func (v *Verifier) verifyAttestation(p Proof) error {
 
 ### 7.2 New packages
 
-- `pkg/mining/attest/cc/` — CC cert-chain parsing + quote
-  verification. ~300 Go lines on top of `crypto/x509`.
+- `pkg/mining/attest/cc/` — CC cert-chain parsing + AIK quote
+  verification (Phase 2c-iv: SHIPPED). ~700 Go lines on top of
+  `crypto/x509` + `crypto/ecdsa`. Files:
+  - `bundle.go` — wire format + canonical preimage layout
+  - `verifier.go` — eight-step acceptance flow
+  - `testvectors.go` — deterministic in-process bundle generator
+  - `stub.go` — fall-through used when no NVIDIA root is pinned
 - `pkg/mining/attest/hmac/` — consumer-GPU HMAC verification and
   registry lookup. ~200 Go lines; reuses
   `pkg/monitoring/nvidia_hmac.go`'s payload canonicalisation.
@@ -629,7 +650,27 @@ func (v *Verifier) verifyAttestation(p Proof) error {
 
 ### 7.3 Test vectors
 
-Phase 2 ships: a fixture `testdata/fork_v2/` with:
+Phase 2c-iv ships test vectors **inline, not as testdata files** —
+[`pkg/mining/attest/cc/testvectors.go`](../../QSDM/source/pkg/mining/attest/cc/testvectors.go)
+is a deterministic in-process generator (seeded PRNG, fresh
+self-signed root + AIK leaf per call) so CI runs on machines
+without GPU hardware. Coverage in the verifier test suite:
+
+- 1 happy path
+- 13 negative cases: tampered AIK signature, wrong root, expired
+  leaf, nonce mismatch, issued_at mismatch, miner_addr/mix_digest
+  preimage tamper, stale (past freshness window), future-dated
+  (past skew tolerance), below firmware floor, below driver
+  floor, replay through `NonceStore`, malformed base64,
+  unknown JSON field, over-length cert chain.
+
+When NVIDIA-issued real-world H100 / B100 bundles become
+available, the swap is a single `ParseBundle` reimplementation
+(the verifier code stays the same) — the spec preimage tuple in
+§3.2.1 is what the AIK signs over either way.
+
+The historical Phase 2 plan called for a `testdata/fork_v2/`
+directory with:
 
 - A valid `nvidia-cc-v1` bundle + chain + quote, extracted from
   a real H100.

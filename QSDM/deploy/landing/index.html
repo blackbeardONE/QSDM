@@ -407,6 +407,7 @@
         <div class="endpoint"><span class="host">GET /api/v1/mining/slash/{tx_id}</span><span class="status">applied · rejected · auto-revoked</span></div>
         <div class="endpoint"><span class="host">qsdmcli enroll · unenroll · slash · enrollment-status · enrollments · slash-receipt</span><span class="status">v2 · canonical-codec CLI</span></div>
         <div class="endpoint"><span class="host">qsdmminer-console --protocol=v2</span><span class="status">v2 · challenge → HMAC bundle → submit, end-to-end</span></div>
+        <div class="endpoint"><span class="host">attest/cc/Verifier (nvidia-cc-v1)</span><span class="status">v2 · AIK chain · ECDSA quote · PCR floor · replay · 28 tests</span></div>
         <div class="endpoint"><span class="host">POST /api/v1/auth/login</span><span class="status">JWT issuance</span></div>
         <div class="endpoint"><span class="host">POST /api/v1/wallet/send</span><span class="status">Signed · submesh-routed</span></div>
         <div class="endpoint"><span class="host">GET /api/metrics/prometheus</span><span class="status">Scrape secret · Bearer</span></div>
@@ -542,7 +543,7 @@
           <div class="pillar">
             <div class="ico">01 · Tiered Trust (v2)</div>
             <div class="title">CC + HMAC attestation</div>
-            <div class="desc"><code>nvidia-cc-v1</code> uses NVIDIA Confidential-Compute AIK quotes on Hopper/Blackwell datacenter GPUs. <code>nvidia-hmac-v1</code> uses a registered operator key for consumer RTX GPUs.</div>
+            <div class="desc"><code>nvidia-cc-v1</code> uses NVIDIA Confidential-Compute AIK quotes on Hopper/Blackwell datacenter GPUs &mdash; the Phase 2c-iv verifier (<code>pkg/mining/attest/cc/verifier.go</code>) is now <strong>fully wired</strong>: cert chain rooted in genesis-pinned NVIDIA roots, ECDSA AIK quote verify, nonce/issued_at binding, freshness window, replay cache, PCR firmware floor, with 28 unit tests covering happy + 13 negative cases. <code>nvidia-hmac-v1</code> uses a registered operator key for consumer RTX GPUs.</div>
           </div>
           <div class="pillar">
             <div class="ico">02 · On-chain Enrollment (v2)</div>
@@ -1179,8 +1180,9 @@
       without a caller in any production binary; <code>grep NewEnrollmentApplier
       cmd/qsdm/main.go</code> returned zero matches. The Tier-3 milestone is meaningful
       now because the surface is alive in the binary, not just under <code>go test</code>.
-      Remaining Tier-3 scope (concrete CC verifier backend, Tensor-Core PoW re-tuning, and
-      the <em>freshness-cheat</em> slasher pending BFT-finality) is tracked in
+      Remaining Tier-3 scope (Tensor-Core PoW re-tuning, swap-in real <code>nvtrust</code> bundle
+      framing for the now-shipped CC verifier, and the <em>freshness-cheat</em> slasher pending
+      BFT-finality) is tracked in
       <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL_V2_TIER3_SCOPE.md">MINING_PROTOCOL_V2_TIER3_SCOPE.md</a>.
     </p>
     <p class="lead" style="margin-top:14px;">

@@ -85,11 +85,28 @@ type ProductionConfig struct {
 	// Zero = default (5 seconds, matching hmac.NewVerifier).
 	AllowedFutureSkew time.Duration
 
-	// CCVerifier is the nvidia-cc-v1 verifier. Optional: if nil,
-	// cc.NewStubVerifier() is registered, which rejects every
-	// nvidia-cc-v1 proof with ErrNotYetAvailable. Override only
-	// when Phase 2c-iv ships the real AIK-chain verifier.
+	// CCVerifier is the nvidia-cc-v1 verifier. Optional: if nil
+	// AND CCConfig is also nil, cc.NewStubVerifier() is
+	// registered, which rejects every nvidia-cc-v1 proof with
+	// ErrNotYetAvailable. Set this to a fully-built verifier
+	// (e.g. one returned by cc.NewVerifier) when you've
+	// constructed it externally.
 	CCVerifier mining.AttestationVerifier
+
+	// CCConfig is the convenience knob for the canonical CC
+	// production wiring: pass a populated cc.VerifierConfig
+	// (genesis-pinned roots + min firmware + replay store)
+	// and NewProductionDispatcher will build the
+	// *cc.Verifier for you. Mutually exclusive with CCVerifier:
+	// setting both returns an error.
+	//
+	// Pass nil to keep the stub (fail-closed) — the right
+	// posture for validators that haven't yet ratified an
+	// NVIDIA CC trust anchor on chain. The day the trust
+	// anchor lands, flipping CCConfig from nil to a populated
+	// struct is the single-line change to start accepting
+	// nvidia-cc-v1 proofs.
+	CCConfig *cc.VerifierConfig
 }
 
 // Validate checks for the required collaborators. Returns an
@@ -107,6 +124,10 @@ func (cfg ProductionConfig) Validate() error {
 	if cfg.NonceStore == nil {
 		return errors.New("attest: ProductionConfig.NonceStore is required in production — " +
 			"without it, a single valid bundle can be replayed across blocks")
+	}
+	if cfg.CCVerifier != nil && cfg.CCConfig != nil {
+		return errors.New("attest: ProductionConfig.CCVerifier and CCConfig are mutually exclusive — " +
+			"pass one or the other (or neither, to use the stub)")
 	}
 	return nil
 }
@@ -138,11 +159,24 @@ func NewProductionDispatcher(cfg ProductionConfig) (*Dispatcher, error) {
 		hmacV.AllowedFutureSkew = cfg.AllowedFutureSkew
 	}
 
-	// CC verifier — real implementation if provided, else the
-	// stub that fail-closes every proof.
+	// CC verifier — three-way pick:
+	//   1. caller-supplied verifier (escape hatch for custom
+	//      builds, e.g. an HSM-backed AIK validator);
+	//   2. caller-supplied config → build a real cc.Verifier
+	//      via the canonical factory;
+	//   3. neither → fall back to cc.NewStubVerifier (the fail-
+	//      closed default until governance pins a CC trust
+	//      anchor).
 	var ccV mining.AttestationVerifier = cc.NewStubVerifier()
-	if cfg.CCVerifier != nil {
+	switch {
+	case cfg.CCVerifier != nil:
 		ccV = cfg.CCVerifier
+	case cfg.CCConfig != nil:
+		built, err := cc.NewVerifier(*cfg.CCConfig)
+		if err != nil {
+			return nil, fmt.Errorf("attest: build cc verifier: %w", err)
+		}
+		ccV = built
 	}
 
 	d := NewDispatcher()
