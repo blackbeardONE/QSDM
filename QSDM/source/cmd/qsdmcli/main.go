@@ -73,6 +73,8 @@ func main() {
 		err = cli.miningEnrollmentsList(args)
 	case "slash-receipt":
 		err = cli.miningSlashReceipt(args)
+	case "slash-helper":
+		err = cli.slashHelper(args)
 	case "help":
 		printUsage()
 	default:
@@ -358,6 +360,8 @@ v2 mining:
   enrollment-status <node-id>         Query on-chain enrollment record
   enrollments [flags]                 Page over the on-chain enrollment registry
   slash-receipt <tx-id>               Query slash transaction outcome
+  slash-helper <kind> [flags]         Build / inspect slashing evidence blobs offline
+                                        kind ∈ {forged-attestation, double-mining, inspect}
 
   help                                Show this help
 
@@ -381,5 +385,16 @@ enrollments flags:
   --phase=PHASE   filter to active | pending_unbond | revoked
   --limit=N       page size (0 = server default; max 500)
   --cursor=ID     exclusive lower bound on node_id (empty starts at beginning)
-  --all           follow next_cursor until exhausted; print one aggregate page`)
+  --all           follow next_cursor until exhausted; print one aggregate page
+
+slash-helper subcommands (offline evidence-bundle assembly):
+  forged-attestation --proof=PATH [--fault-class=KIND] [--memo=STR]
+                     [--node-id=ID] [--out=PATH] [--print-cmd]
+  double-mining      --proof-a=PATH --proof-b=PATH [--memo=STR]
+                     [--node-id=ID] [--out=PATH] [--print-cmd]
+  inspect            --kind=KIND (--evidence-file=PATH | --evidence-hex=HEX)
+
+  Use '-' for the path to read a proof / evidence blob from stdin.
+  --print-cmd echoes a placeholder 'qsdmcli slash …' invocation to stderr
+  after the evidence bytes are written, suitable for copy-paste into a script.`)
 }

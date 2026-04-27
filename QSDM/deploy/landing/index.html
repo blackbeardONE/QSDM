@@ -406,6 +406,7 @@
         <div class="endpoint"><span class="host">GET /api/v1/mining/enrollments</span><span class="status">cursor · phase filter · paginated</span></div>
         <div class="endpoint"><span class="host">GET /api/v1/mining/slash/{tx_id}</span><span class="status">applied · rejected · auto-revoked</span></div>
         <div class="endpoint"><span class="host">qsdmcli enroll · unenroll · slash · enrollment-status · enrollments · slash-receipt</span><span class="status">v2 · canonical-codec CLI</span></div>
+        <div class="endpoint"><span class="host">qsdmcli slash-helper · forged-attestation · double-mining · inspect</span><span class="status">v2 · offline evidence-bundle assembly · 21 tests</span></div>
         <div class="endpoint"><span class="host">qsdmminer-console --protocol=v2</span><span class="status">v2 · challenge → HMAC bundle → submit, end-to-end</span></div>
         <div class="endpoint"><span class="host">qsdmminer-console · EnrollmentPoller</span><span class="status">v2 · phase / stake / slashable in-panel · 30 s default</span></div>
         <div class="endpoint"><span class="host">attest/cc/Verifier (nvidia-cc-v1)</span><span class="status">v2 · AIK chain · ECDSA quote · PCR floor · replay · 28 tests</span></div>
@@ -1184,9 +1185,21 @@
       until <code>has_more</code> is false), and <code>slash-receipt</code>
       build canonical payloads through the same <code>pkg/mining/{enrollment,slashing}</code>
       codecs the mempool admission gate validates against &mdash; one source of truth, no
-      parallel hand-rolled JSON. CLI tests cover envelope shape, base64 round-trip,
+      parallel hand-rolled JSON. <code>qsdmcli slash-helper</code> closes the last
+      "users would have to write Go to do this" gap with three offline subcommands
+      (<code>forged-attestation</code>, <code>double-mining</code>, <code>inspect</code>)
+      that emit the canonical <code>EvidenceBlob</code> bytes the chain-side
+      <code>forgedattest</code> / <code>doublemining</code> decoders consume, run pre-flight
+      checks (proof version, NodeID binding, equal <code>(Epoch, Height)</code>, distinct
+      canonical bytes) so a watcher-bot doesn't burn a tx fee on a guaranteed
+      <code>verifier_failed</code>, and canonicalise <code>(proof_a, proof_b)</code> ordering
+      so two slashers observing the same equivocation produce byte-identical evidence.
+      <code>--print-cmd</code> emits a copy-pasteable <code>qsdmcli slash …</code> snippet
+      to stderr (never stdout, so the bytes pipe stays clean). CLI tests cover envelope shape, base64 round-trip,
       missing-flag rejection, hex-decode failure surfacing, HTTP path escaping,
-      multi-page <code>--all</code> walks, and 4xx propagation across all six subcommands. Pre-this commit, every collaborator above was code
+      multi-page <code>--all</code> walks, and 4xx propagation across all six subcommands,
+      plus 21 dedicated cases for <code>slash-helper</code>'s happy paths, every pre-flight
+      rejection, encoder round-trip, and stdout/stderr stream-safety guarantees. Pre-this commit, every collaborator above was code
       without a caller in any production binary; <code>grep NewEnrollmentApplier
       cmd/qsdm/main.go</code> returned zero matches. The Tier-3 milestone is meaningful
       now because the surface is alive in the binary, not just under <code>go test</code>.

@@ -353,6 +353,57 @@ If you observe a peer forging an attestation or double-mining, post evidence so 
 
 The reward (`SlashRewardCap = 200 bps` of the slashed amount, capped) is credited to your sender on inclusion. If the offender's bond falls below `mining.MinEnrollStakeDust` after the slash, `RevokeIfUnderBonded` automatically transitions the record to `revoked` so they cannot keep mining on a stub bond.
 
+### Building evidence with `slash-helper`
+
+The `--evidence-file` argument above expects raw, canonical-JSON-wrapped bytes that the chain-side `forgedattest` / `doublemining` decoders will accept. Building those by hand is a footgun: a `json.Marshal(proof)` silently drops four binary fields (`HeaderHash`, `BatchRoot`, `Nonce`, `MixDigest` are all tagged `json:"-"`), so the wrong helper produces evidence that admits-fine but ends up rejected mid-flight as `verifier_failed`, costing you the submission fee with nothing to show for it.
+
+`qsdmcli slash-helper` owns exactly the `EncodeEvidence` calls the chain consumes, so the bytes it emits ARE the bytes consensus accepts. Three subcommands:
+
+```bash
+# Forged attestation — one offending proof:
+./qsdmcli slash-helper forged-attestation \
+  --proof=offending-proof.json \
+  --fault-class=hmac_mismatch \
+  --node-id=rig-cheater \
+  --memo="caught by watcher #4" \
+  --out=evidence.bin \
+  --print-cmd
+
+# Double mining — two equivocating proofs at the same height:
+./qsdmcli slash-helper double-mining \
+  --proof-a=fork-validator-1.json \
+  --proof-b=fork-validator-3.json \
+  --node-id=rig-cheater \
+  --memo="fan-out across two validators" \
+  --out=evidence.bin
+
+# Inspect an evidence blob someone else built:
+./qsdmcli slash-helper inspect \
+  --kind=forged-attestation \
+  --evidence-file=./evidence.bin
+```
+
+Pass `-` as a path to read a proof or evidence blob from stdin so you can pipe directly:
+
+```bash
+./qsdmcli slash-helper forged-attestation --proof=p.json | \
+  ./qsdmcli slash --sender=qsdm1WATCHER --node-id=rig-cheater \
+                  --evidence-kind=forged-attestation --evidence-file=- \
+                  --amount=1000000000
+```
+
+`--print-cmd` (build subcommands) emits a placeholder `qsdmcli slash …` invocation to **stderr** after the evidence bytes are written, so the snippet doesn't corrupt your `--out=-` stdout pipe. Pre-flight checks fire before encoding to save you a round trip:
+
+| Check | Subcommand | Surfaces |
+| --- | --- | --- |
+| `proof.version >= 2` | both | non-v2 proofs are not slashable as forged-attestation / double-mining |
+| `bundle.node_id == --node-id` | both | binds the slasher's claim to the bundle the offender signed |
+| same `(Epoch, Height)` | double-mining | a height/epoch mismatch isn't equivocation |
+| distinct canonical bytes | double-mining | two copies of one proof aren't equivocation either |
+| Decode round-trip | both | encoder bug detection — refuses to emit bytes the verifier would reject |
+
+The encoder also canonicalises `(proof_a, proof_b)` order in `double-mining` so two slashers who independently observe the same equivocation pair produce **byte-identical** evidence — preserving the chain-side per-fingerprint replay protection in `slash_apply.go`.
+
 ### Reading the slash receipt
 
 Every slash that reaches the applier — applied or rejected — produces a receipt that the validator caches in a bounded in-memory store. Look it up by tx id to confirm the chain accepted (or rejected) your submission without scraping logs:
