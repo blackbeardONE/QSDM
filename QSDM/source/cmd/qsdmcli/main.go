@@ -75,6 +75,8 @@ func main() {
 		err = cli.miningSlashReceipt(args)
 	case "slash-helper":
 		err = cli.slashHelper(args)
+	case "watch":
+		err = cli.watchCommand(args)
 	case "help":
 		printUsage()
 	default:
@@ -362,6 +364,8 @@ v2 mining:
   slash-receipt <tx-id>               Query slash transaction outcome
   slash-helper <kind> [flags]         Build / inspect slashing evidence blobs offline
                                         kind ∈ {forged-attestation, double-mining, inspect}
+  watch <subcommand> [flags]          Stream phase-change / stake-delta events to stdout
+                                        subcommand ∈ {enrollments}
 
   help                                Show this help
 
@@ -396,5 +400,26 @@ slash-helper subcommands (offline evidence-bundle assembly):
 
   Use '-' for the path to read a proof / evidence blob from stdin.
   --print-cmd echoes a placeholder 'qsdmcli slash …' invocation to stderr
-  after the evidence bytes are written, suitable for copy-paste into a script.`)
+  after the evidence bytes are written, suitable for copy-paste into a script.
+
+watch subcommands (operator surveillance, polling-only, no key required):
+  enrollments [flags]                 Stream phase-change / stake-delta events
+
+  Flags:
+    --interval=DUR        polling cadence (default 30s, floor 5s)
+    --phase=PHASE         server-side filter: active | pending_unbond | revoked
+    --node-id=ID          single-node mode (mutually exclusive with --phase)
+    --limit=N             list-mode page size (0 = server default)
+    --once                emit one snapshot and exit (useful for cron)
+    --json                JSON-Lines output (one event per line)
+    --include-existing    on first poll, emit a synthetic 'new' event per record
+
+  Output (human, default):
+    <RFC3339> <KIND> node=<id> <phase-summary> [stake fields]
+  Output (--json): one JSON object per line, fields:
+    {ts, event, node_id, phase, prev_phase, stake_dust, prev_stake_dust,
+     delta_dust, slashable, enrolled_at_height, unbond_matures_at_height,
+     revoked_at_height, error}
+  Exits 0 on Ctrl-C / SIGTERM. Exits non-zero only on initial-snapshot
+  failure; subsequent poll failures emit an 'error' event and continue.`)
 }

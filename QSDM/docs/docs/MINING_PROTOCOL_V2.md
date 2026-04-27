@@ -838,6 +838,7 @@ Source: [`cmd/qsdmcli/`](../../source/cmd/qsdmcli/). Subcommands:
 | `qsdmcli enrollments` | Paginated list, with `--phase`, `--limit`, `--cursor`, `--all` flags. |
 | `qsdmcli slash-receipt` | Query `/api/v1/mining/slash/{tx_id}`. |
 | `qsdmcli slash-helper {forged-attestation,double-mining,inspect}` | Offline evidence-bundle assembly (see §9.3). |
+| `qsdmcli watch enrollments [--phase --node-id --interval --json --once --include-existing]` | Stream phase-change / stake-delta events. Polling-only, no key required. Single-node and list modes. Emits `new`/`transition`/`stake_delta`/`dropped`/`error` events on stdout (human or JSON-Lines). See [`MINER_QUICKSTART.md` "Streaming phase-change events"](./MINER_QUICKSTART.md#streaming-phase-change-events-with-qsdmcli-watch). |
 
 The CLI builds canonical payloads through `pkg/mining/{enrollment,
 slashing}` so it shares the exact codec the mempool admission

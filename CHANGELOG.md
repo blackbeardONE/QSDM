@@ -12,6 +12,67 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Added
+
+- **`qsdmcli watch enrollments` — operator-facing surveillance
+  subcommand (2026-04-28).** A new diff-based polling tool that
+  streams enrollment phase-change events to stdout, mirroring the
+  signal that `qsdmminer-console`'s `EnrollmentPoller` already
+  surfaces internally on its dashboard. Designed for fleet
+  operators, indexers, and dashboard / alerting pipelines that
+  want a composable building block (systemd, cron, log shippers)
+  rather than a per-rig embedded poller.
+  - Two modes: **list mode** (default) walks
+    `/api/v1/mining/enrollments` with cursor pagination and
+    supports `--phase=active|pending_unbond|revoked` server-side
+    filtering; **single-node mode** (`--node-id=…`) hits
+    `/api/v1/mining/enrollment/{node_id}` and treats `404` as
+    "no record".
+  - Five event kinds, all sharing one `WatchEvent` wire shape:
+    `new`, `transition`, `stake_delta`, `dropped`, `error`. The
+    `transition` event wins over `stake_delta` when both apply
+    in the same poll (e.g. a partial slash that crosses
+    auto-revoke), so an operator never has to reconcile two
+    events about the same node_id from one cycle.
+  - Two output modes: **human** (column-aligned RFC3339 + kind
+    + `node=…` + phase/stake summary, default) and **`--json`**
+    (JSON-Lines, one event per line, including `error` events
+    so log shippers see the error stream in-line).
+  - Deterministic ordering: events from a single tick are
+    sorted by `node_id` ASC, so two consecutive runs over the
+    same data produce byte-identical output. Diff captures
+    against expected logs work without filtering.
+  - Operational defaults match the embedded poller:
+    `--interval` defaults to 30s, clamped to ≥ 5s; the same
+    `MaxWatchPages = 10000` defence as `qsdmcli enrollments
+    --all` against a misbehaving server returning
+    `has_more=true` forever; 1 MiB body cap per request.
+  - Exit codes: `0` on `SIGINT`/`SIGTERM`. Non-zero **only**
+    when the very first snapshot fails (so the operator catches
+    URL typos and v1-only validators at startup); subsequent
+    poll failures emit a `WatchKindError` event and the loop
+    continues.
+  - `--once` (single snapshot then exit) and
+    `--include-existing` (synthesise a `new` event per existing
+    record on the first poll) compose for a one-shot dump:
+    `qsdmcli watch enrollments --once --include-existing --json`
+    is the canonical "give me every enrolled node_id right now,
+    in JSON-Lines, in one process" call.
+
+  No new validator-side endpoints: this is a pure-client
+  consumer of the existing `/api/v1/mining/enrollment*` reads.
+  Coverage: 35 new tests (`cmd/qsdmcli/watch_test.go`) — flag
+  normalisation, the pure-function diff core, human / JSON
+  formatting, end-to-end `httptest`-driven scenarios for
+  initial-failure-is-fatal, single-node 404, single-node happy
+  path, list-mode `--once`, list-mode `--include-existing`, and
+  diff-loop phase-transition observation. Wire-shape parity
+  with `api.EnrollmentRecordView` is asserted by
+  `TestWatchRecordWireMatchesAPI`. Documentation: new
+  "Streaming phase-change events" section in
+  `MINER_QUICKSTART.md` and a row in `MINING_PROTOCOL_V2.md`
+  §9.2 (operator surface table).
+
 ### Documentation
 
 - **v2 mining-protocol spec consolidation (2026-04-28).** The three

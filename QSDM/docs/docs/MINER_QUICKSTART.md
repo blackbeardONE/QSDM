@@ -465,6 +465,51 @@ Each response is an `EnrollmentListPageView`:
 
 `--all` follows `next_cursor` until `has_more` is `false`, concatenating records into a single envelope. Pagination is **cursor-based** (not offset) so a record enrolled or revoked between pages does not silently shift the page boundaries — the cursor is the exclusive lower bound on `node_id`, sorted lexicographically. `phase` ∈ `{active, pending_unbond, revoked}` (omit for "every record"). The handler clamps `--limit` to `MaxListLimit = 500` so a single call cannot drain the registry; use `--all` for full dumps. `503` means the node is v1-only (no lister wired).
 
+### Streaming phase-change events with `qsdmcli watch`
+
+`qsdmcli enrollments` is a one-shot snapshot. For dashboards / alerting / fleet operators who need to see lifecycle transitions **as they happen**, `qsdmcli watch enrollments` polls the same endpoints in a loop and prints one line per detected change:
+
+```bash
+# Stream every active rig; default 30s cadence, human format on stdout:
+./qsdmcli watch enrollments --phase=active
+
+# Watch one specific rig (single-node mode hits /enrollment/{node_id} instead):
+./qsdmcli watch enrollments --node-id=rig-77
+
+# JSON-Lines for log shippers (Loki, ELK, etc.); 10-second cadence:
+./qsdmcli watch enrollments --json --interval=10s | tee enrollments.jsonl
+
+# Cron-friendly: snapshot once and exit, including every existing record:
+./qsdmcli watch enrollments --once --include-existing --json
+```
+
+Five event kinds are emitted (`new`, `transition`, `stake_delta`, `dropped`, `error`), all sharing one wire shape. Example human-format output:
+
+```text
+2026-04-28T03:51:42Z NEW         node=alpha-rtx4090-01  phase=active                       stake=10.0000 CELL  enrolled_at=1234567
+2026-04-28T03:52:12Z TRANSITION  node=beta-rtx3090-02   phase=active->pending_unbond       matures_at=1235000
+2026-04-28T03:55:42Z STAKE_DELTA node=alpha-rtx4090-01  phase=active  stake=10.0000 CELL->5.0000 CELL  delta=5.0000 CELL
+2026-04-28T03:56:12Z DROPPED     node=gamma-rtx5090-03  last_phase=pending_unbond
+```
+
+Same data under `--json`:
+
+```json
+{"ts":"2026-04-28T03:51:42Z","event":"new","node_id":"alpha-rtx4090-01","phase":"active","stake_dust":1000000000,"slashable":true,"enrolled_at_height":1234567}
+{"ts":"2026-04-28T03:52:12Z","event":"transition","node_id":"beta-rtx3090-02","phase":"pending_unbond","prev_phase":"active","unbond_matures_at_height":1235000}
+{"ts":"2026-04-28T03:55:42Z","event":"stake_delta","node_id":"alpha-rtx4090-01","phase":"active","stake_dust":500000000,"prev_stake_dust":1000000000,"delta_dust":-500000000,"slashable":true}
+{"ts":"2026-04-28T03:56:12Z","event":"dropped","node_id":"gamma-rtx5090-03","prev_phase":"pending_unbond"}
+```
+
+Operational notes:
+
+- **Polling-only, no key required.** `qsdmcli watch` never submits a transaction — safe to run on a low-trust admin host pointing at a public RPC node.
+- **Diff-based.** First poll holds the initial snapshot in memory and emits nothing (or one `new` per record under `--include-existing`); every subsequent poll diffs against the previous and emits one event per change. Process restart re-snapshots from scratch.
+- **Deterministic ordering.** Within one poll cycle, events are sorted by `node_id` ASC so two consecutive runs over identical data produce byte-identical output. Useful for diffing log captures across runs.
+- **Exit codes.** `0` on `Ctrl-C` / `SIGTERM` (operator-driven exit). Non-zero **only** on initial-snapshot failure (e.g. validator unreachable from the start, validator returns 503 = v1-only). Subsequent poll failures are emitted as `error` events on stderr (or stdout under `--json`) and the loop continues.
+- **Cadence floor.** `--interval` is clamped to ≥ 5 seconds; the read endpoints are hot in-memory map lookups so sub-second polling is not necessary and just pressures the validator.
+- **Single-node vs list mode.** `--node-id` and `--phase` are mutually exclusive. Single-node mode polls `/api/v1/mining/enrollment/{node_id}` and treats `404` as "no record" (emits `dropped` if a record was previously seen, nothing otherwise). List mode walks `/api/v1/mining/enrollments` with cursor pagination and supports `--phase` server-side filtering.
+
 ### Tooling notes
 
 - All three write subcommands accept `--id` for an idempotent client-supplied tx id; if omitted, `qsdmcli` generates a 16-byte random hex id.
