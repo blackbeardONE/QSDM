@@ -510,6 +510,60 @@ Operational notes:
 - **Cadence floor.** `--interval` is clamped to ≥ 5 seconds; the read endpoints are hot in-memory map lookups so sub-second polling is not necessary and just pressures the validator.
 - **Single-node vs list mode.** `--node-id` and `--phase` are mutually exclusive. Single-node mode polls `/api/v1/mining/enrollment/{node_id}` and treats `404` as "no record" (emits `dropped` if a record was previously seen, nothing otherwise). List mode walks `/api/v1/mining/enrollments` with cursor pagination and supports `--phase` server-side filtering.
 
+### Streaming slash-receipt events with `qsdmcli watch slashes`
+
+The symmetric tool for the slashing surface. `qsdmcli watch slashes` polls `/api/v1/mining/slash/{tx_id}` for a caller-supplied set of slash transaction ids and prints one event per resolution / eviction / outcome change. Use case: an operator submits a slash with `qsdmcli slash` (or assembles evidence with `qsdmcli slash-helper`), captures the returned `tx_id`, and wants the watcher to surface "did it apply?" without manually polling.
+
+```bash
+# Track a single slash; default 30s cadence, human format on stdout:
+./qsdmcli watch slashes --tx-id=tx-deadbeef-001
+
+# Track several at once (repeatable flag):
+./qsdmcli watch slashes \
+  --tx-id=tx-deadbeef-001 \
+  --tx-id=tx-deadbeef-002 \
+  --tx-id=tx-cafef00d-003
+
+# Read tx ids from a file (one per line; '#' starts a comment); '-' = stdin:
+./qsdmcli watch slashes --tx-ids-file=./pending-slashes.txt --json
+
+# CI / cron pattern: snapshot once, exit cleanly when every tx is terminal:
+./qsdmcli watch slashes --tx-id=tx-001 --tx-id=tx-002 --exit-on-resolved --json
+
+# Verbose mode: echo a `slash_pending` event each cycle for unresolved tx ids
+# (useful when debugging "why isn't my slash landing?"):
+./qsdmcli watch slashes --tx-id=tx-001 --include-pending --interval=10s
+```
+
+Five event kinds are emitted (`slash_resolved`, `slash_pending`, `slash_evicted`, `slash_outcome_change`, `error`), all sharing the same JSON wire shape as `watch enrollments`. Example human-format output:
+
+```text
+2026-04-28T04:20:42Z SLASH_RESOLVED      tx=tx-deadbeef-001  outcome=applied   node=rig-77  kind=forged-attestation  height=42  slashed=5.0000 CELL  rewarded=0.1000 CELL  burned=4.9000 CELL  auto_revoked=true
+2026-04-28T04:21:12Z SLASH_RESOLVED      tx=tx-deadbeef-002  outcome=rejected  node=rig-99  kind=double-mining  height=43  reason=verifier_failed  err=verifier said no
+2026-04-28T04:25:42Z SLASH_PENDING       tx=tx-cafef00d-003
+2026-04-28T05:30:00Z SLASH_EVICTED       tx=tx-old-004        last_outcome=applied
+```
+
+Same data under `--json`:
+
+```json
+{"ts":"2026-04-28T04:20:42Z","event":"slash_resolved","node_id":"rig-77","tx_id":"tx-deadbeef-001","outcome":"applied","height":42,"evidence_kind":"forged-attestation","slasher":"alice","slashed_dust":500000000,"rewarded_dust":10000000,"burned_dust":490000000,"auto_revoked":true,"auto_revoke_remaining_dust":100000000}
+{"ts":"2026-04-28T04:21:12Z","event":"slash_resolved","node_id":"rig-99","tx_id":"tx-deadbeef-002","outcome":"rejected","height":43,"evidence_kind":"double-mining","slasher":"bob","reject_reason":"verifier_failed","error":"verifier said no"}
+{"ts":"2026-04-28T04:25:42Z","event":"slash_pending","tx_id":"tx-cafef00d-003"}
+{"ts":"2026-04-28T05:30:00Z","event":"slash_evicted","tx_id":"tx-old-004","prev_outcome":"applied"}
+```
+
+Operational notes:
+
+- **Polling-only, no key required.** Same posture as `watch enrollments` — safe on a low-trust admin host.
+- **Inputs.** At least one tx id must be supplied via `--tx-id` (repeatable) **or** `--tx-ids-file`. Both can be combined; the flag-supplied ids are merged with the file contents and de-duplicated. Maximum 1000 distinct tx ids per watcher process; for larger fleets run multiple processes.
+- **Default first-poll behaviour.** If a tx id is already terminal at startup (operator restarted the watcher after a slash had landed), one `slash_resolved` event fires immediately. Pending tx ids are silently tracked — no events fire for them until they resolve. Pass `--include-pending` to override this and echo a `slash_pending` event every cycle for unresolved ids.
+- **`--exit-on-resolved`.** Returns `0` once every tracked tx id has reached a terminal outcome (`applied` or `rejected`). Mutually exclusive with `--include-pending` (the combination is a footgun). Ideal for CI pipelines that submit a slash and need to wait for the apply.
+- **Eviction surfacing.** The validator's `SlashReceiptStore` is bounded (default cap 10 000 receipts, FIFO). If a previously-resolved tx ages out of the store, the next poll surfaces a `slash_evicted` event so the operator stops expecting the receipt to be queryable. Under chain reorg the same event fires (extremely rare on a healthy single-chain network).
+- **Outcome change.** The `slash_outcome_change` kind is defensive: receipts are immutable once recorded, so this should never fire on a healthy network. Surfaces a chain reorg, a buggy receipt store, or a node syncing from a stale checkpoint.
+- **Per-cycle partial failures are non-fatal.** A transient HTTP error on one tx id does not tear down the loop; the id is silently dropped from this cycle and retried next. Only a *total* failure (every id errors) triggers an `error` event on stderr / stdout-under-`--json`. The initial cycle is the exception: total failure there exits non-zero so misconfigured watcher invocations fail loudly.
+- **Cadence floor.** `--interval` is clamped to ≥ 5 seconds, same as `watch enrollments`.
+
 ### Tooling notes
 
 - All three write subcommands accept `--id` for an idempotent client-supplied tx id; if omitted, `qsdmcli` generates a 16-byte random hex id.

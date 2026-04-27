@@ -839,6 +839,7 @@ Source: [`cmd/qsdmcli/`](../../source/cmd/qsdmcli/). Subcommands:
 | `qsdmcli slash-receipt` | Query `/api/v1/mining/slash/{tx_id}`. |
 | `qsdmcli slash-helper {forged-attestation,double-mining,inspect}` | Offline evidence-bundle assembly (see §9.3). |
 | `qsdmcli watch enrollments [--phase --node-id --interval --json --once --include-existing]` | Stream phase-change / stake-delta events. Polling-only, no key required. Single-node and list modes. Emits `new`/`transition`/`stake_delta`/`dropped`/`error` events on stdout (human or JSON-Lines). See [`MINER_QUICKSTART.md` "Streaming phase-change events"](./MINER_QUICKSTART.md#streaming-phase-change-events-with-qsdmcli-watch). |
+| `qsdmcli watch slashes [--tx-id --tx-ids-file --interval --json --once --include-pending --exit-on-resolved]` | Stream slash-receipt resolution events for a caller-supplied set of slash tx ids. Polling-only, no key required. Emits `slash_resolved`/`slash_pending`/`slash_evicted`/`slash_outcome_change`/`error` events. Default first-poll behaviour emits only already-resolved receipts; `--include-pending` echoes every still-pending tx each cycle; `--exit-on-resolved` terminates once every tracked tx has reached a terminal outcome (good for CI / cron). See [`MINER_QUICKSTART.md` "Streaming slash-receipt events"](./MINER_QUICKSTART.md#streaming-slash-receipt-events-with-qsdmcli-watch-slashes). |
 
 The CLI builds canonical payloads through `pkg/mining/{enrollment,
 slashing}` so it shares the exact codec the mempool admission

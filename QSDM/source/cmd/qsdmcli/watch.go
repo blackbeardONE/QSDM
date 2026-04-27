@@ -111,19 +111,83 @@ const (
 	// mode; emitted on stdout (alongside data events) in
 	// --json mode so log shippers see the error stream.
 	WatchKindError WatchEventKind = "error"
+
+	// --- slash-receipt watcher kinds (see watch_slashes.go) ---
+	//
+	// The slash watcher uses the same WatchEvent envelope so
+	// JSON-Lines consumers can decode either stream with one
+	// struct and switch on `event`. These kinds NEVER appear
+	// in `qsdmcli watch enrollments` output and vice versa.
+
+	// WatchKindSlashPending — a tx_id is currently 404 at
+	// the validator. Emitted on the very first poll for any
+	// tx_id the operator asked us to watch (so they can see
+	// "yes, the watcher is tracking it") and on every
+	// subsequent poll where the receipt has not yet landed.
+	// Suppressed unless --include-pending is set, otherwise
+	// the watcher would emit one event per tx per cycle until
+	// the slash applies — way too noisy.
+	WatchKindSlashPending WatchEventKind = "slash_pending"
+
+	// WatchKindSlashResolved — the canonical "the slash
+	// landed" event. Emitted exactly once per tx_id, at the
+	// poll where the validator transitions from 404 to a
+	// terminal SlashReceiptView. Carries every wire-shape
+	// field of the receipt so the operator does not have to
+	// re-fetch.
+	WatchKindSlashResolved WatchEventKind = "slash_resolved"
+
+	// WatchKindSlashEvicted — a tx_id was observed as
+	// resolved in a prior poll but the validator now
+	// returns 404. Almost always means FIFO eviction from
+	// the bounded SlashReceiptStore; under chain reorg it
+	// could also mean the receipt was rolled back. Either
+	// way, surface it loudly so the operator stops
+	// expecting the receipt to be queryable.
+	WatchKindSlashEvicted WatchEventKind = "slash_evicted"
+
+	// WatchKindSlashOutcomeChange — a tx_id's `outcome`
+	// string changed across two consecutive successful
+	// polls. Should never happen on a healthy single-chain
+	// network (receipts are immutable once recorded), but
+	// could surface a chain reorg or a buggy receipt store
+	// rebuilding from a stale checkpoint. Defensive event,
+	// always emitted.
+	WatchKindSlashOutcomeChange WatchEventKind = "slash_outcome_change"
 )
 
-// WatchEvent is the unified wire shape of one diff output. Field
-// presence depends on Kind (see WatchEventKind doc); zero-valued
-// fields are omitted from --json via omitempty so consumers can
-// switch on Kind without branching on Go zero-values.
+// WatchEvent is the unified wire shape of one diff output across
+// every `qsdmcli watch *` subcommand. Field presence depends on
+// Kind (see WatchEventKind doc); zero-valued fields are omitted
+// from --json via omitempty so consumers can switch on Kind
+// without branching on Go zero-values.
+//
+// Field set is grouped by which subcommand populates it:
+//
+//   - Always populated: Timestamp, Kind.
+//   - Enrollment-only: Phase, PrevPhase, StakeDust, PrevStakeDust,
+//     DeltaDust, Slashable, EnrolledAtHeight, UnbondMaturesAtHeight,
+//     RevokedAtHeight. NodeID identifies the rig.
+//   - Slash-only: TxID, Outcome, PrevOutcome, Height, EvidenceKind,
+//     Slasher, SlashedDust, RewardedDust, BurnedDust, AutoRevoked,
+//     AutoRevokeRemainingDust, RejectReason. NodeID identifies the
+//     slashed rig (same field, different role — semantically a
+//     node_id either way).
+//   - Error events: Error.
 //
 // Adding fields is non-breaking. Renaming JSON tags is a wire-
 // format change.
 type WatchEvent struct {
 	Timestamp time.Time      `json:"ts"`
 	Kind      WatchEventKind `json:"event"`
-	NodeID    string         `json:"node_id,omitempty"`
+
+	// NodeID — the rig identifier. For enrollment events it
+	// is the watched rig; for slash events it is the rig
+	// against which the slash was filed (the receipt's
+	// `node_id` field).
+	NodeID string `json:"node_id,omitempty"`
+
+	// --- enrollment-watcher payload ---
 
 	Phase     string `json:"phase,omitempty"`
 	PrevPhase string `json:"prev_phase,omitempty"`
@@ -136,6 +200,55 @@ type WatchEvent struct {
 	EnrolledAtHeight      uint64 `json:"enrolled_at_height,omitempty"`
 	UnbondMaturesAtHeight uint64 `json:"unbond_matures_at_height,omitempty"`
 	RevokedAtHeight       uint64 `json:"revoked_at_height,omitempty"`
+
+	// --- slash-watcher payload ---
+
+	// TxID is the slash transaction id the operator asked
+	// the watcher to track. Always populated on slash_*
+	// events; never populated on enrollment events.
+	TxID string `json:"tx_id,omitempty"`
+
+	// Outcome / PrevOutcome — the receipt's `outcome` field
+	// ("applied" | "rejected"). PrevOutcome is set only on
+	// WatchKindSlashOutcomeChange.
+	Outcome     string `json:"outcome,omitempty"`
+	PrevOutcome string `json:"prev_outcome,omitempty"`
+
+	// Height — block height at which the receipt was
+	// recorded. Only populated on slash_resolved /
+	// slash_outcome_change.
+	Height uint64 `json:"height,omitempty"`
+
+	// EvidenceKind — the receipt's `evidence_kind` field
+	// ("forged-attestation" | "double-mining" |
+	// "freshness-cheat"). Surfaced so dashboards can group
+	// or color-code by offence kind.
+	EvidenceKind string `json:"evidence_kind,omitempty"`
+
+	// Slasher — address that submitted the slash transaction.
+	Slasher string `json:"slasher,omitempty"`
+
+	// Slash-applied financial outcome. All three are
+	// populated only on the applied path (slash_resolved
+	// with Outcome=="applied"). On rejected receipts they
+	// are zero, hence omitempty.
+	SlashedDust  uint64 `json:"slashed_dust,omitempty"`
+	RewardedDust uint64 `json:"rewarded_dust,omitempty"`
+	BurnedDust   uint64 `json:"burned_dust,omitempty"`
+
+	// AutoRevoked + AutoRevokeRemainingDust — the post-slash
+	// auto-revoke signal. AutoRevoked is true iff the slash
+	// drained the rig's stake below the auto-revoke
+	// threshold; AutoRevokeRemainingDust is the residual
+	// stake at the moment the auto-revoke fired.
+	AutoRevoked             bool   `json:"auto_revoked,omitempty"`
+	AutoRevokeRemainingDust uint64 `json:"auto_revoke_remaining_dust,omitempty"`
+
+	// RejectReason — the receipt's `reject_reason` field
+	// ("verifier_failed", "evidence_replayed", etc.).
+	// Populated only on the rejected path (slash_resolved
+	// with Outcome=="rejected").
+	RejectReason string `json:"reject_reason,omitempty"`
 
 	// Error carries the trimmed error message for
 	// WatchKindError events. Empty for all other kinds.
@@ -183,19 +296,21 @@ type watchOptions struct {
 }
 
 // watchCommand handles `qsdmcli watch <subcommand> [flags...]`.
-// Currently only `enrollments` is implemented; future
-// subcommands (`slashes`, `proofs`) plug in here.
+// Currently `enrollments` and `slashes` are implemented; future
+// subcommands (`proofs`, etc.) plug in here.
 func (c *CLI) watchCommand(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: qsdmcli watch <subcommand> [flags]\n\nSubcommands:\n  enrollments    stream enrollment phase-change events")
+		return fmt.Errorf("usage: qsdmcli watch <subcommand> [flags]\n\nSubcommands:\n  enrollments    stream enrollment phase-change events\n  slashes        stream slash-receipt resolution events")
 	}
 	sub := args[0]
 	rest := args[1:]
 	switch sub {
 	case "enrollments":
 		return c.watchEnrollments(rest)
+	case "slashes":
+		return c.watchSlashes(rest)
 	default:
-		return fmt.Errorf("unknown watch subcommand: %q (known: enrollments)", sub)
+		return fmt.Errorf("unknown watch subcommand: %q (known: enrollments, slashes)", sub)
 	}
 }
 
@@ -622,9 +737,12 @@ func emitEvents(stdout, stderr io.Writer, jsonMode bool, events []WatchEvent) {
 func formatEventHuman(ev WatchEvent) string {
 	ts := ev.Timestamp.Format(time.RFC3339)
 	kind := strings.ToUpper(string(ev.Kind))
-	// Pad to width 11 so columns line up across all kinds:
-	// NEW(3), TRANSITION(10), STAKE_DELTA(11), DROPPED(7), ERROR(5).
-	for len(kind) < 11 {
+	// Pad to width 20 so columns line up across all kinds:
+	// enrollment kinds NEW(3), TRANSITION(10), STAKE_DELTA(11),
+	// DROPPED(7), ERROR(5); slash kinds SLASH_PENDING(13),
+	// SLASH_RESOLVED(14), SLASH_EVICTED(13), SLASH_OUTCOME_CHANGE(20).
+	// Picked the max so mixed-stream tee'd output stays aligned.
+	for len(kind) < 20 {
 		kind += " "
 	}
 	switch ev.Kind {
@@ -657,6 +775,53 @@ func formatEventHuman(ev WatchEvent) string {
 	case WatchKindDropped:
 		return fmt.Sprintf("%s %s node=%s  last_phase=%s",
 			ts, kind, ev.NodeID, ev.PrevPhase)
+	case WatchKindSlashPending:
+		return fmt.Sprintf("%s %s tx=%s",
+			ts, kind, ev.TxID)
+	case WatchKindSlashResolved:
+		s := fmt.Sprintf("%s %s tx=%s  outcome=%s",
+			ts, kind, ev.TxID, ev.Outcome)
+		if ev.NodeID != "" {
+			s += "  node=" + ev.NodeID
+		}
+		if ev.EvidenceKind != "" {
+			s += "  kind=" + ev.EvidenceKind
+		}
+		if ev.Height != 0 {
+			s += fmt.Sprintf("  height=%d", ev.Height)
+		}
+		switch ev.Outcome {
+		case "applied":
+			s += fmt.Sprintf("  slashed=%s  rewarded=%s  burned=%s",
+				formatCELL(ev.SlashedDust),
+				formatCELL(ev.RewardedDust),
+				formatCELL(ev.BurnedDust))
+			if ev.AutoRevoked {
+				s += "  auto_revoked=true"
+				if ev.AutoRevokeRemainingDust != 0 {
+					s += fmt.Sprintf("(remaining=%s)",
+						formatCELL(ev.AutoRevokeRemainingDust))
+				}
+			}
+		case "rejected":
+			if ev.RejectReason != "" {
+				s += "  reason=" + ev.RejectReason
+			}
+			if ev.Error != "" {
+				s += "  err=" + truncateForLine(ev.Error, 80)
+			}
+		}
+		return s
+	case WatchKindSlashEvicted:
+		s := fmt.Sprintf("%s %s tx=%s",
+			ts, kind, ev.TxID)
+		if ev.PrevOutcome != "" {
+			s += "  last_outcome=" + ev.PrevOutcome
+		}
+		return s
+	case WatchKindSlashOutcomeChange:
+		return fmt.Sprintf("%s %s tx=%s  outcome=%s->%s",
+			ts, kind, ev.TxID, ev.PrevOutcome, ev.Outcome)
 	default:
 		// Defensive — unreachable in normal flow because
 		// WatchKindError takes the stderr path before

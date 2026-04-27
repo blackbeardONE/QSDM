@@ -364,8 +364,8 @@ v2 mining:
   slash-receipt <tx-id>               Query slash transaction outcome
   slash-helper <kind> [flags]         Build / inspect slashing evidence blobs offline
                                         kind ∈ {forged-attestation, double-mining, inspect}
-  watch <subcommand> [flags]          Stream phase-change / stake-delta events to stdout
-                                        subcommand ∈ {enrollments}
+  watch <subcommand> [flags]          Stream phase-change / stake-delta / slash-resolution events to stdout
+                                        subcommand ∈ {enrollments, slashes}
 
   help                                Show this help
 
@@ -404,8 +404,9 @@ slash-helper subcommands (offline evidence-bundle assembly):
 
 watch subcommands (operator surveillance, polling-only, no key required):
   enrollments [flags]                 Stream phase-change / stake-delta events
+  slashes     [flags]                 Stream slash-receipt resolution events
 
-  Flags:
+  enrollments flags:
     --interval=DUR        polling cadence (default 30s, floor 5s)
     --phase=PHASE         server-side filter: active | pending_unbond | revoked
     --node-id=ID          single-node mode (mutually exclusive with --phase)
@@ -414,12 +415,32 @@ watch subcommands (operator surveillance, polling-only, no key required):
     --json                JSON-Lines output (one event per line)
     --include-existing    on first poll, emit a synthetic 'new' event per record
 
+  slashes flags:
+    --tx-id=ID            slash tx_id to track (repeatable; merges with --tx-ids-file)
+    --tx-ids-file=PATH    file with one tx_id per line ('-' = stdin); '#' starts a comment
+    --interval=DUR        polling cadence (default 30s, floor 5s)
+    --once                snapshot once and exit (useful for cron)
+    --json                JSON-Lines output (one event per line)
+    --include-pending     emit 'slash_pending' events on every cycle until tx resolves
+    --exit-on-resolved    exit cleanly once every tracked tx has resolved
+
   Output (human, default):
-    <RFC3339> <KIND> node=<id> <phase-summary> [stake fields]
-  Output (--json): one JSON object per line, fields:
-    {ts, event, node_id, phase, prev_phase, stake_dust, prev_stake_dust,
-     delta_dust, slashable, enrolled_at_height, unbond_matures_at_height,
-     revoked_at_height, error}
+    <RFC3339> <KIND> [node=<id>|tx=<id>] <kind-specific summary>
+  Output (--json): one JSON object per line; the union of:
+    enrollment fields {ts, event, node_id, phase, prev_phase, stake_dust,
+      prev_stake_dust, delta_dust, slashable, enrolled_at_height,
+      unbond_matures_at_height, revoked_at_height, error}
+    slash fields      {ts, event, tx_id, outcome, prev_outcome, height,
+      evidence_kind, slasher, node_id, slashed_dust, rewarded_dust,
+      burned_dust, auto_revoked, auto_revoke_remaining_dust,
+      reject_reason, error}
+  All non-applicable fields are elided via omitempty so consumers can
+  decode either stream with one struct definition.
+
+  Event kinds (enrollments): new, transition, stake_delta, dropped, error
+  Event kinds (slashes):     slash_resolved, slash_pending, slash_evicted,
+                             slash_outcome_change, error
+
   Exits 0 on Ctrl-C / SIGTERM. Exits non-zero only on initial-snapshot
   failure; subsequent poll failures emit an 'error' event and continue.`)
 }

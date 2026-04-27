@@ -14,6 +14,110 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`qsdmcli watch slashes` — symmetric operator-facing
+  surveillance subcommand (2026-04-28).** Polls
+  `/api/v1/mining/slash/{tx_id}` for a caller-supplied set of
+  slash transaction ids and streams resolution events to
+  stdout. Mirrors `qsdmcli watch enrollments` in flag surface
+  and wire shape so operators get matched tooling across the
+  enrollment + slashing surfaces in one place. Use case: an
+  operator submits a slash with `qsdmcli slash` (or assembles
+  evidence offline with `qsdmcli slash-helper`), captures the
+  returned `tx_id`, and the watcher surfaces "did it apply?"
+  without manual polling.
+  - Inputs: `--tx-id=ID` (repeatable) and/or
+    `--tx-ids-file=PATH` (one tx id per line; `'#'` starts
+    a comment; `-` reads from stdin); both merge and
+    deduplicate. Capped at 1000 distinct tx ids per
+    process; tx ids are validated against the same 256-byte
+    cap and `'/'`-rejection rule the validator enforces.
+  - Four slash event kinds plus shared `error`, all in the
+    unified `WatchEvent` envelope so JSON-Lines consumers
+    decode either watcher's stream with one struct:
+    `slash_resolved` (tx transitioned from 404 → applied/
+    rejected; the canonical "the slash landed" event,
+    fires exactly once per id), `slash_pending` (tx is
+    still 404; suppressed by default to keep the stream
+    quiet, opt in via `--include-pending`),
+    `slash_evicted` (tx was resolved earlier but the
+    bounded `SlashReceiptStore` evicted it under FIFO
+    pressure), `slash_outcome_change` (defensive — fires
+    if the same tx returns a different `outcome` across
+    polls; should never happen on a healthy network).
+  - `--exit-on-resolved` returns `0` once every tracked
+    tx has reached a terminal outcome; ideal for CI
+    pipelines that submit a slash and need to wait for
+    the apply. Mutually exclusive with `--include-pending`
+    (the combination is a footgun and we error at flag
+    parse time rather than guessing intent).
+  - First-poll behaviour matches operator intuition by
+    default: only already-resolved receipts emit events
+    (covers the "watcher restarted after the slash
+    landed" case); pending tx ids are silently tracked
+    until they resolve. Pass `--include-pending` to also
+    echo a `slash_pending` event each cycle for unresolved
+    ids (useful when debugging "why isn't my slash
+    landing?").
+  - Per-cycle partial failures are non-fatal: a transient
+    HTTP error on one tx id silently drops it from the
+    snapshot and retries next cycle. Only a *total*
+    failure (every id errors, e.g. validator unreachable
+    or pointed at a v1-only node) emits an `error` event;
+    on the very first cycle, total failure exits non-zero
+    so misconfigured invocations fail loudly at startup.
+  - Diff core (`diffSlashSnapshots`) is a pure function;
+    initial-snapshot helper (`slashSnapshotInitialResolvedOnly`
+    / `slashSnapshotAsInitialEvents`) and the resolved-event
+    canonicaliser (`slashReceiptToResolvedEvent`) are
+    likewise pure and unit-tested.
+  - `WatchEvent` extended with slash-specific fields
+    (`tx_id`, `outcome`, `prev_outcome`, `height`,
+    `evidence_kind`, `slasher`, `slashed_dust`,
+    `rewarded_dust`, `burned_dust`, `auto_revoked`,
+    `auto_revoke_remaining_dust`, `reject_reason`); all
+    omitempty so enrollment events still marshal to the
+    same byte stream they did before. The kind enum
+    gained `slash_resolved` / `slash_pending` /
+    `slash_evicted` / `slash_outcome_change`. The
+    human-format kind-pad width was bumped from 11 to 20
+    chars so columns line up across both watcher streams
+    when piped to one log file.
+  - `formatEventHuman` switch dispatches on Kind so each
+    event renders the field set the operator expects:
+    applied receipts show `slashed`/`rewarded`/`burned`
+    in CELL plus `auto_revoked=true(remaining=…)`;
+    rejected receipts show `reason=…  err=…`; evictions
+    show `last_outcome=…`; outcome changes show
+    `outcome=A->B`.
+
+  No new validator-side endpoints: pure-client consumer of
+  the existing `/api/v1/mining/slash/{tx_id}` GET handler
+  introduced in `pkg/api/handlers_slash_query.go`. Coverage:
+  39 new tests (`cmd/qsdmcli/watch_slashes_test.go`) — flag
+  validation (zero-id rejection, `'/'` rejection, oversize
+  rejection, cap rejection, interval clamp, footgun-combo
+  rejection, file + stdin merge, default first-poll filter),
+  `allResolved` truth table (empty / all-pending / mixed /
+  all-resolved), `diffSlashSnapshots` truth table (pending →
+  resolved, resolved → pending = eviction, outcome change,
+  pending steady state with and without `--include-pending`,
+  resolved steady state, deterministic ordering, prev-missing
+  → no event), `slashReceiptToResolvedEvent` field-mapping
+  for both applied and rejected paths, both initial-snapshot
+  helpers, all four slash human-format kinds (with applied-
+  path / rejected-path field guards), and end-to-end
+  `httptest` scenarios for `--once` empty / `--once`
+  resolved-only / `--once --include-pending` / diff-loop
+  pending → resolved transition / `--exit-on-resolved`
+  cleanup / initial-failure-is-fatal / partial-cycle-error.
+  Wire-shape parity with `api.SlashReceiptView` is asserted
+  by `TestSlashReceiptWireMatchesAPI` (mirrors the
+  `TestWatchRecordWireMatchesAPI` pattern). Documentation:
+  new "Streaming slash-receipt events" section in
+  `MINER_QUICKSTART.md` and a second row in
+  `MINING_PROTOCOL_V2.md` §9.2 (operator-surface table). All
+  90+ pre-existing `cmd/qsdmcli` tests remain green.
+
 - **`qsdmcli watch enrollments` — operator-facing surveillance
   subcommand (2026-04-28).** A new diff-based polling tool that
   streams enrollment phase-change events to stdout, mirroring the
