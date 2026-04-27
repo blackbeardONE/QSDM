@@ -102,11 +102,13 @@ single validator.
    `pkg/mining/enrollment/`.
 6. **On-chain slashing.** A `qsdm/slash/v1` transaction can
    drain bonded stake by submitting verifier-checked evidence.
-   Two evidence kinds ship today: `forged-attestation` and
-   `double-mining` (both with end-to-end tests). One,
-   `freshness-cheat`, is deferred behind BFT finality.
-   Implementation in `pkg/mining/slashing/` and the chain-side
-   applier in `pkg/chain/slash_apply.go`.
+   All three evidence kinds now ship with concrete verifiers:
+   `forged-attestation`, `double-mining`, and `freshness-cheat`
+   (the last gated on a `BlockInclusionWitness`; the production
+   default `RejectAllWitness` rejects all such slashes pending
+   BFT finality — see §12.3). Implementation in
+   `pkg/mining/slashing/` and the chain-side applier in
+   `pkg/chain/slash_apply.go`.
 7. **Miner UX.** `cmd/qsdmminer-console` ships an opt-in v2 path
    (`--protocol=v2`) that drives the full enrollment → challenge
    → HMAC-bundle → submit loop, with a built-in setup wizard, a
@@ -663,7 +665,7 @@ registry mapping `Attestation.Type` to a concrete
 | [`pkg/mining/attest/dispatcher.go`](../../source/pkg/mining/attest/dispatcher.go) | Type-keyed verifier registry | **Shipped.** |
 | [`pkg/mining/challenge/`](../../source/pkg/mining/challenge/) | Validator-issued nonce challenge crypto | **Shipped.** |
 | [`pkg/mining/enrollment/`](../../source/pkg/mining/enrollment/) | On-chain operator registry, admission gate, sweep | **Shipped.** |
-| [`pkg/mining/slashing/`](../../source/pkg/mining/slashing/) | Slashing data model + dispatcher + admission | **Shipped** (`forged-attestation` + `double-mining`); `freshness-cheat` deferred. |
+| [`pkg/mining/slashing/`](../../source/pkg/mining/slashing/) | Slashing data model + dispatcher + admission | **Shipped** (`forged-attestation` + `double-mining` + `freshness-cheat`); the freshness-cheat verifier ships with a `BlockInclusionWitness` abstraction whose production default rejects pending BFT finality (§12.3). |
 
 ### 7.3 Test vectors
 
@@ -772,7 +774,7 @@ Concrete `EvidenceVerifier` implementations:
 |---|---|---|
 | `forged-attestation` | An HMAC bundle whose MAC fails verification, whose `gpu_uuid` mismatches the enrolled record, whose `challenge_bind` mismatches the proof, or whose `gpu_name` matches the deny-list. | **Shipped** in [`pkg/mining/slashing/forgedattest`](../../source/pkg/mining/slashing/forgedattest/). |
 | `double-mining` | Two distinct accepted proofs from the same `(node_id, epoch, height)`, both crypto-valid under the registered HMAC key. | **Shipped** in [`pkg/mining/slashing/doublemining`](../../source/pkg/mining/slashing/doublemining/). Encoder canonicalises proof order so two slashers observing the same equivocation produce byte-identical evidence. |
-| `freshness-cheat` | A proof whose `challenge.issued_at` is older than `FRESHNESS_WINDOW` and was nonetheless accepted (i.e. retroactive evidence of validator collusion or clock skew). | **Stubbed.** Depends on BFT finality — see §12.3. |
+| `freshness-cheat` | A proof whose `bundle.issued_at` is older than `FRESHNESS_WINDOW + grace` (default 60 s + 30 s) when measured against the chain block-time of the inclusion height, i.e. retroactive evidence of validator collusion or clock skew. | **Shipped** in [`pkg/mining/slashing/freshnesscheat`](../../source/pkg/mining/slashing/freshnesscheat/). The verifier is fully implemented; on-chain acceptance is gated on the injected `BlockInclusionWitness`. Production binaries ship `RejectAllWitness` (every slash rejected with a kind-specific `ErrEvidenceVerification`), pending the BFT-finality dependency in §12.3. Testnets MAY wire `TrustingTestWitness` to exercise the path end-to-end. |
 
 Production dispatcher:
 [`pkg/mining/slashing/production.go`](../../source/pkg/mining/slashing/production.go).
@@ -1191,18 +1193,40 @@ fork.
 
 Estimated work: **~14 days** post-hardware.
 
-### 12.3 `freshness-cheat` slasher
+### 12.3 `freshness-cheat` slasher — verifier shipped, witness deferred
 
-Detects a proof whose `challenge.issued_at` is older than
-`FRESHNESS_WINDOW` and was nonetheless accepted (i.e.
-retroactive evidence of validator collusion or clock skew).
-Last item in the slashing trilogy; gated on BFT finality
-landing first, because the verifier needs a quorum statement
-of-the-form "block at height H accepted proof P that was stale
-relative to its parent block's wall-clock anchor".
+Detects a proof whose `bundle.issued_at` is older than
+`FRESHNESS_WINDOW + grace` measured against the chain
+block-time of the inclusion height (i.e. retroactive evidence
+of validator collusion or clock skew). The verifier itself is
+**shipped** in
+[`pkg/mining/slashing/freshnesscheat`](../../source/pkg/mining/slashing/freshnesscheat/),
+along with a `qsdmcli slash-helper freshness-cheat`
+subcommand that constructs evidence locally with full
+client-side validation.
 
-Estimated work: **~4 days** plus design review, plus the BFT
-finality dependency.
+What is still deferred is the `BlockInclusionWitness`
+collaborator that authenticates the slasher's claimed
+`(height, block_time, proof_id)` tuple. Without BFT finality
+(or an equivalent quorum-attested block-header feed) there is
+no chain-internal way to certify such a tuple, so production
+binaries wire `freshnesscheat.RejectAllWitness{}`: the verifier
+runs all of its structural / staleness / registry-binding
+checks, then rejects the slash with a kind-specific
+`ErrEvidenceVerification` ("witness layer not configured").
+End-user behaviour matches the previous `StubVerifier` posture
+but with materially better diagnostics, and the path is fully
+exercised on testnets that wire
+`freshnesscheat.TrustingTestWitness{}`.
+
+Once BFT finality lands, a real `quorum.HeaderWitness` (or
+similar) implementation plugs into the same interface and
+freshness-cheat starts slashing for real with no other code
+changes.
+
+Estimated remaining work: **~2 days** to wire the
+quorum-header witness once the BFT pipeline exposes finalised
+headers.
 
 ### 12.4 `qsdm/gov/v1` runtime tuning hook
 

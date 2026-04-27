@@ -31,6 +31,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/mining/slashing"
 	"github.com/blackbeardONE/QSDM/pkg/mining/slashing/doublemining"
 	"github.com/blackbeardONE/QSDM/pkg/mining/slashing/forgedattest"
+	"github.com/blackbeardONE/QSDM/pkg/mining/slashing/freshnesscheat"
 )
 
 const (
@@ -539,6 +540,260 @@ func TestSlashHelperDoubleMining_RejectsMissingFlags(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
+// freshness-cheat
+// -----------------------------------------------------------------------------
+
+// TestSlashHelperFreshnessCheat_HappyPath drives the subcommand
+// against a v2 proof and a far-stale anchor, then round-trips
+// the produced evidence through freshnesscheat.DecodeEvidence
+// to confirm we emit consensus-compatible bytes.
+func TestSlashHelperFreshnessCheat_HappyPath(t *testing.T) {
+	cli := &CLI{}
+	p := buildSignedProofForCLI(t, 5, 100, 0x33)
+	path := writeProof(t, p)
+
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "evidence.bin")
+	// Anchor 10 minutes past the bundle.IssuedAt — well past
+	// the 90-second (window+grace) threshold.
+	anchorTime := p.Attestation.IssuedAt + 600
+
+	stderr := captureStderr(t, func() {
+		err := cli.slashHelper([]string{
+			"freshness-cheat",
+			"--proof", path,
+			"--anchor-height", "12345",
+			"--anchor-block-time", strItoa(anchorTime),
+			"--node-id", tNodeID,
+			"--memo", "watcher-7 caught H=12345 stale",
+			"--out", outPath,
+		})
+		if err != nil {
+			t.Fatalf("slashHelper: %v", err)
+		}
+	})
+
+	if !bytes.Contains(stderr, []byte("freshness-cheat evidence:")) {
+		t.Errorf("stderr summary missing; got %q", stderr)
+	}
+	if !bytes.Contains(stderr, []byte("BFT finality")) {
+		t.Errorf("stderr should warn about BFT-finality dependency; got %q", stderr)
+	}
+
+	blob, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	ev, err := freshnesscheat.DecodeEvidence(blob)
+	if err != nil {
+		t.Fatalf("decode round-trip: %v", err)
+	}
+	if ev.AnchorHeight != 12345 {
+		t.Errorf("AnchorHeight: got %d want 12345", ev.AnchorHeight)
+	}
+	if ev.AnchorBlockTime != anchorTime {
+		t.Errorf("AnchorBlockTime: got %d want %d", ev.AnchorBlockTime, anchorTime)
+	}
+	if ev.Memo != "watcher-7 caught H=12345 stale" {
+		t.Errorf("memo lost: got %q", ev.Memo)
+	}
+}
+
+// TestSlashHelperFreshnessCheat_RejectsMissingFlags exercises
+// the --proof / --anchor-height / --anchor-block-time required
+// gates.
+func TestSlashHelperFreshnessCheat_RejectsMissingFlags(t *testing.T) {
+	cli := &CLI{}
+	cases := [][]string{
+		{"freshness-cheat"},
+		{"freshness-cheat", "--anchor-height", "1", "--anchor-block-time", "1"},                 // missing --proof
+		{"freshness-cheat", "--proof", "x", "--anchor-block-time", "1"},                         // missing --anchor-height
+		{"freshness-cheat", "--proof", "x", "--anchor-height", "1"},                             // missing --anchor-block-time
+		{"freshness-cheat", "--proof", "x", "--anchor-height", "1", "--anchor-block-time", "0"}, // zero anchor time
+	}
+	for _, args := range cases {
+		if err := cli.slashHelper(args); err == nil {
+			t.Errorf("missing-required-flag set accepted: %v", args)
+		}
+	}
+}
+
+// TestSlashHelperFreshnessCheat_RejectsAnchorBeforeIssuedAt
+// fires the local mirror of the verifier's anchor-sanity
+// check. Anchor before IssuedAt is non-physical and should be
+// rejected before the slasher burns a tx fee.
+func TestSlashHelperFreshnessCheat_RejectsAnchorBeforeIssuedAt(t *testing.T) {
+	cli := &CLI{}
+	p := buildSignedProofForCLI(t, 5, 100, 0x33)
+	path := writeProof(t, p)
+
+	err := cli.slashHelper([]string{
+		"freshness-cheat",
+		"--proof", path,
+		"--anchor-height", "100",
+		"--anchor-block-time", strItoa(p.Attestation.IssuedAt - 1),
+	})
+	if err == nil || !strings.Contains(err.Error(), "issued_at") {
+		t.Errorf("anchor-before-issued_at should be rejected; got %v", err)
+	}
+}
+
+// TestSlashHelperFreshnessCheat_RejectsBorderlineStale fires
+// the local mirror of the verifier's freshness-window check.
+// Submitting borderline-stale evidence wastes the slasher's
+// tx fee, so we refuse to encode it.
+func TestSlashHelperFreshnessCheat_RejectsBorderlineStale(t *testing.T) {
+	cli := &CLI{}
+	p := buildSignedProofForCLI(t, 5, 100, 0x33)
+	path := writeProof(t, p)
+	// Exactly at the threshold: window(60) + grace(30) = 90s.
+	// The verifier uses strict >, so 90s is rejected.
+	err := cli.slashHelper([]string{
+		"freshness-cheat",
+		"--proof", path,
+		"--anchor-height", "100",
+		"--anchor-block-time", strItoa(p.Attestation.IssuedAt + 90),
+	})
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "freshness") {
+		t.Errorf("borderline-stale should be rejected; got %v", err)
+	}
+}
+
+// TestSlashHelperFreshnessCheat_RejectsNodeIDMismatch fires
+// the local --node-id mirror of the verifier's
+// ErrBundleNodeIDMismatch.
+func TestSlashHelperFreshnessCheat_RejectsNodeIDMismatch(t *testing.T) {
+	cli := &CLI{}
+	p := buildSignedProofForCLI(t, 5, 100, 0x33)
+	path := writeProof(t, p)
+	err := cli.slashHelper([]string{
+		"freshness-cheat",
+		"--proof", path,
+		"--anchor-height", "100",
+		"--anchor-block-time", strItoa(p.Attestation.IssuedAt + 600),
+		"--node-id", "different-rig",
+	})
+	if err == nil || !strings.Contains(err.Error(), "node_id") {
+		t.Errorf("node_id mismatch should be rejected; got %v", err)
+	}
+}
+
+// TestSlashHelperFreshnessCheat_PrintCmd asserts the
+// --print-cmd flag emits a copy-pasteable `qsdmcli slash`
+// snippet to stderr referencing the freshness-cheat kind and
+// the freshnesscheat-package default cap.
+func TestSlashHelperFreshnessCheat_PrintCmd(t *testing.T) {
+	cli := &CLI{}
+	p := buildSignedProofForCLI(t, 5, 100, 0x33)
+	path := writeProof(t, p)
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "evidence.bin")
+	anchorTime := p.Attestation.IssuedAt + 600
+
+	stderr := captureStderr(t, func() {
+		err := cli.slashHelper([]string{
+			"freshness-cheat",
+			"--proof", path,
+			"--anchor-height", "100",
+			"--anchor-block-time", strItoa(anchorTime),
+			"--out", outPath,
+			"--print-cmd",
+		})
+		if err != nil {
+			t.Fatalf("slashHelper: %v", err)
+		}
+	})
+
+	wantSnippets := []string{
+		"--evidence-kind=freshness-cheat",
+		"--node-id=" + tNodeID,
+	}
+	for _, s := range wantSnippets {
+		if !bytes.Contains(stderr, []byte(s)) {
+			t.Errorf("stderr missing %q; got %q", s, stderr)
+		}
+	}
+}
+
+// TestSlashHelperInspect_FreshnessCheat drives the inspect
+// subcommand against a real freshness-cheat evidence blob and
+// confirms the operator-facing JSON view recovers the anchor
+// fields, staleness, and proof summary.
+func TestSlashHelperInspect_FreshnessCheat(t *testing.T) {
+	cli := &CLI{}
+	p := buildSignedProofForCLI(t, 5, 100, 0x55)
+	anchorTime := p.Attestation.IssuedAt + 600
+	blob, err := freshnesscheat.EncodeEvidence(freshnesscheat.Evidence{
+		Proof:           p,
+		AnchorHeight:    7777,
+		AnchorBlockTime: anchorTime,
+		Memo:            "ten-minute stale",
+	})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	dir := t.TempDir()
+	evPath := filepath.Join(dir, "ev.bin")
+	if err := os.WriteFile(evPath, blob, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	stdout := captureStdout(t, func() {
+		err := cli.slashHelper([]string{
+			"inspect",
+			"--kind", string(slashing.EvidenceKindFreshnessCheat),
+			"--evidence-file", evPath,
+		})
+		if err != nil {
+			t.Fatalf("slashHelper inspect: %v", err)
+		}
+	})
+
+	var view map[string]interface{}
+	if err := json.Unmarshal(stdout, &view); err != nil {
+		t.Fatalf("json unmarshal stdout: %v\nstdout=%s", err, stdout)
+	}
+	if got := view["kind"]; got != string(slashing.EvidenceKindFreshnessCheat) {
+		t.Errorf("kind: got %v want %s", got, slashing.EvidenceKindFreshnessCheat)
+	}
+	if got := view["anchor_height"]; got != float64(7777) {
+		t.Errorf("anchor_height: got %v want 7777", got)
+	}
+	if got := view["anchor_block_time"]; got != float64(anchorTime) {
+		t.Errorf("anchor_block_time: got %v want %d", got, anchorTime)
+	}
+	if got := view["staleness_secs"]; got != float64(600) {
+		t.Errorf("staleness_secs: got %v want 600", got)
+	}
+	if view["proof_a"] == nil {
+		t.Error("proof_a missing from inspect view")
+	}
+}
+
+// strItoa is a tiny helper that mirrors strconv.FormatInt — kept
+// local so the test file's imports stay minimal.
+func strItoa(v int64) string {
+	if v == 0 {
+		return "0"
+	}
+	negative := false
+	if v < 0 {
+		negative = true
+		v = -v
+	}
+	digits := []byte{}
+	for v > 0 {
+		digits = append([]byte{byte('0' + v%10)}, digits...)
+		v /= 10
+	}
+	if negative {
+		digits = append([]byte{'-'}, digits...)
+	}
+	return string(digits)
+}
+
+// -----------------------------------------------------------------------------
 // inspect
 // -----------------------------------------------------------------------------
 
@@ -654,6 +909,11 @@ func TestSlashHelperInspect_RejectsMissingFlags(t *testing.T) {
 // subcommand only handles kinds it understands. Adding a new
 // EvidenceKind in the future is intentionally a code change
 // here, not silent passthrough.
+//
+// As of the freshness-cheat slasher landing, all three reserved
+// EvidenceKinds (forged-attestation, double-mining,
+// freshness-cheat) are inspectable. We use a deliberately-
+// unregistered kind string here to exercise the default path.
 func TestSlashHelperInspect_RejectsBadKind(t *testing.T) {
 	cli := &CLI{}
 	dir := t.TempDir()
@@ -662,7 +922,7 @@ func TestSlashHelperInspect_RejectsBadKind(t *testing.T) {
 
 	err := cli.slashHelper([]string{
 		"inspect",
-		"--kind", "freshness-cheat", // not yet supported
+		"--kind", "not-a-real-kind", // intentionally unregistered
 		"--evidence-file", evPath,
 	})
 	if err == nil || !strings.Contains(err.Error(), "unsupported") {

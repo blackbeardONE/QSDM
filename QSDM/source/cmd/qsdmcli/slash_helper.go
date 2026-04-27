@@ -87,6 +87,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/mining/slashing"
 	"github.com/blackbeardONE/QSDM/pkg/mining/slashing/doublemining"
 	"github.com/blackbeardONE/QSDM/pkg/mining/slashing/forgedattest"
+	"github.com/blackbeardONE/QSDM/pkg/mining/slashing/freshnesscheat"
 )
 
 // readProofFile loads a canonical mining.Proof from the named
@@ -184,7 +185,7 @@ func quoteIfEmpty(s string) string {
 // confuse a forged-attestation user.
 func (c *CLI) slashHelper(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: qsdmcli slash-helper <kind> [flags]\n  kind ∈ {forged-attestation, double-mining, inspect}")
+		return fmt.Errorf("usage: qsdmcli slash-helper <kind> [flags]\n  kind ∈ {forged-attestation, double-mining, freshness-cheat, inspect}")
 	}
 	sub := args[0]
 	rest := args[1:]
@@ -193,10 +194,12 @@ func (c *CLI) slashHelper(args []string) error {
 		return c.slashHelperForgedAttestation(rest)
 	case "double-mining":
 		return c.slashHelperDoubleMining(rest)
+	case "freshness-cheat":
+		return c.slashHelperFreshnessCheat(rest)
 	case "inspect":
 		return c.slashHelperInspect(rest)
 	default:
-		return fmt.Errorf("unknown slash-helper kind %q (want forged-attestation | double-mining | inspect)", sub)
+		return fmt.Errorf("unknown slash-helper kind %q (want forged-attestation | double-mining | freshness-cheat | inspect)", sub)
 	}
 }
 
@@ -438,6 +441,164 @@ func (c *CLI) slashHelperDoubleMining(args []string) error {
 }
 
 // -----------------------------------------------------------------------------
+// slash-helper freshness-cheat
+// -----------------------------------------------------------------------------
+
+// slashHelperFreshnessCheat builds a freshnesscheat.Evidence
+// from one offending proof file plus a chain-anchored
+// (height, block_time) pair the slasher claims sealed the
+// inclusion of that proof. Emits the encoded bytes.
+//
+// Why the slasher must supply the anchor pair: the freshness-
+// cheat offence is "this proof was on-chain at H, and at H the
+// chain's wall-clock anchor was T, and (T − bundle.IssuedAt)
+// exceeds the freshness window". The proof itself does not
+// carry T (block time is a chain-level property, not a proof
+// field), so the slasher provides it. On a v2-real-time mainnet
+// the slasher reads (H, T) from `qsdmcli block-info` (future
+// work); on testnets they pick a (H, T) consistent with their
+// observation and trust their `freshnesscheat.TrustingTestWitness`
+// to accept it.
+//
+// Sanity checks performed BEFORE encoding:
+//
+//   - Proof.Version must be ≥ ProtocolVersionV2 (freshness-cheat
+//     is a v2-only offence).
+//   - Proof.Attestation.BundleBase64 must parse as an
+//     hmac.Bundle (a malformed bundle is forged-attestation,
+//     not freshness-cheat).
+//   - The supplied --anchor-block-time must sit strictly after
+//     bundle.IssuedAt and within MaxAnchorAgeSeconds. Mirrors
+//     the chain-side rules so an operator gets a clear error
+//     locally rather than a far-flung consensus rejection.
+//   - The resulting staleness (anchor_time − issued_at) must
+//     exceed FreshnessWindow + DefaultGraceWindow. Submitting
+//     borderline-stale evidence wastes the slasher's tx fee
+//     because the chain rejects with ErrNotStaleEnough; we
+//     refuse to encode it locally.
+//   - If --node-id is set, bundle.NodeID must equal it. The
+//     verifier requires this binding; failing the check locally
+//     avoids a guaranteed slashing.ErrEvidenceVerification.
+func (c *CLI) slashHelperFreshnessCheat(args []string) error {
+	fs := flag.NewFlagSet("slash-helper freshness-cheat", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	var (
+		proofPath       = fs.String("proof", "", "path to the offending mining.Proof canonical JSON ('-' for stdin) (required)")
+		anchorHeight    = fs.Uint64("anchor-height", 0, "chain block height that included the offending proof (required)")
+		anchorBlockTime = fs.Int64("anchor-block-time", 0, "wall-clock seal time of the anchor block (unix seconds) (required)")
+		memo            = fs.String("memo", "", "optional human-readable memo (≤256 bytes)")
+		out             = fs.String("out", "-", "output path for the encoded evidence ('-' for stdout)")
+		nodeID          = fs.String("node-id", "", "if set, verify the proof's bundle.node_id matches before encoding")
+		printCmd        = fs.Bool("print-cmd", false, "after writing the evidence, print a placeholder `qsdmcli slash` invocation to stderr")
+	)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *proofPath == "" {
+		fs.Usage()
+		return fmt.Errorf("--proof is required")
+	}
+	if *anchorHeight == 0 {
+		fs.Usage()
+		return fmt.Errorf("--anchor-height is required (and must be non-zero; height 0 is genesis and cannot include a proof)")
+	}
+	if *anchorBlockTime <= 0 {
+		fs.Usage()
+		return fmt.Errorf("--anchor-block-time is required (positive unix seconds)")
+	}
+
+	proof, err := readProofFile(*proofPath)
+	if err != nil {
+		return err
+	}
+
+	if proof.Version < mining.ProtocolVersionV2 {
+		return fmt.Errorf(
+			"proof.version=%d is pre-v2; freshness-cheat is a v2-only offence",
+			proof.Version)
+	}
+	if proof.Attestation.Type == "" {
+		return errors.New("proof has no attestation block; cannot be a freshness-cheat case")
+	}
+	if proof.Attestation.BundleBase64 == "" {
+		return errors.New("proof.attestation.bundle is empty; cannot be a freshness-cheat case")
+	}
+	bundle, err := hmac.ParseBundle(proof.Attestation.BundleBase64)
+	if err != nil {
+		// A malformed bundle would route to forged-attestation,
+		// not freshness-cheat. We reject loudly so the slasher
+		// switches sub-commands.
+		return fmt.Errorf(
+			"bundle parse failed (%w); a malformed bundle is forged-attestation, "+
+				"not freshness-cheat — use `qsdmcli slash-helper forged-attestation` instead",
+			err)
+	}
+	if *nodeID != "" && bundle.NodeID != *nodeID {
+		return fmt.Errorf(
+			"proof.bundle.node_id=%q does not match --node-id=%q; chain-side verifier would reject",
+			bundle.NodeID, *nodeID)
+	}
+
+	// Local mirror of the verifier's anchor-sanity checks. We
+	// fail loudly here so the slasher doesn't burn a tx fee on
+	// guaranteed-rejection evidence.
+	if *anchorBlockTime <= bundle.IssuedAt {
+		return fmt.Errorf(
+			"--anchor-block-time=%d must be strictly greater than bundle.issued_at=%d "+
+				"(anchor cannot precede the proof being slashed)",
+			*anchorBlockTime, bundle.IssuedAt)
+	}
+	if *anchorBlockTime-bundle.IssuedAt > freshnesscheat.MaxAnchorAgeSeconds {
+		return fmt.Errorf(
+			"anchor age %ds exceeds 1-year sanity bound; check --anchor-block-time / proof.bundle.issued_at",
+			*anchorBlockTime-bundle.IssuedAt)
+	}
+	staleness := *anchorBlockTime - bundle.IssuedAt
+	threshold := int64(mining.FreshnessWindow.Seconds()) + int64(freshnesscheat.DefaultGraceWindow.Seconds())
+	if staleness <= threshold {
+		return fmt.Errorf(
+			"staleness %ds does not exceed FreshnessWindow+Grace=%ds; "+
+				"proof was within the freshness window at anchor time and is NOT a slashable freshness-cheat",
+			staleness, threshold)
+	}
+
+	ev := freshnesscheat.Evidence{
+		Proof:           *proof,
+		AnchorHeight:    *anchorHeight,
+		AnchorBlockTime: *anchorBlockTime,
+		Memo:            *memo,
+	}
+	blob, err := freshnesscheat.EncodeEvidence(ev)
+	if err != nil {
+		return fmt.Errorf("encode evidence: %w", err)
+	}
+	if _, err := freshnesscheat.DecodeEvidence(blob); err != nil {
+		return fmt.Errorf("encoder produced bytes that fail Decode round-trip: %w", err)
+	}
+
+	if err := writeEvidence(*out, blob); err != nil {
+		return fmt.Errorf("write evidence: %w", err)
+	}
+
+	resolvedNode := bundle.NodeID
+	if *nodeID != "" {
+		resolvedNode = *nodeID
+	}
+	fmt.Fprintf(os.Stderr,
+		"freshness-cheat evidence: %d bytes, node_id=%q anchor_height=%d staleness=%ds memo=%dB\n",
+		len(blob), resolvedNode, *anchorHeight, staleness, len(*memo))
+	fmt.Fprintf(os.Stderr,
+		"note: chain-side acceptance still requires a configured BlockInclusionWitness "+
+			"(production today rejects all freshness-cheat slashes pending BFT finality; see MINING_PROTOCOL_V2.md §12.3)\n")
+
+	if *printCmd {
+		printSlashCmd(slashing.EvidenceKindFreshnessCheat,
+			resolvedNode, *out, freshnesscheat.DefaultMaxSlashDust)
+	}
+	return nil
+}
+
+// -----------------------------------------------------------------------------
 // slash-helper inspect
 // -----------------------------------------------------------------------------
 
@@ -461,6 +622,10 @@ type inspectView struct {
 	Memo string                 `json:"memo,omitempty"`
 	// Only populated for forged-attestation:
 	FaultClass forgedattest.FaultClass `json:"fault_class,omitempty"`
+	// Only populated for freshness-cheat:
+	AnchorHeight    uint64 `json:"anchor_height,omitempty"`
+	AnchorBlockTime int64  `json:"anchor_block_time,omitempty"`
+	StalenessSecs   int64  `json:"staleness_secs,omitempty"`
 }
 
 // proofSummary maps a mining.Proof to a small dict of operator-
@@ -497,7 +662,7 @@ func (c *CLI) slashHelperInspect(args []string) error {
 	fs := flag.NewFlagSet("slash-helper inspect", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var (
-		kind         = fs.String("kind", "", "evidence kind: forged-attestation | double-mining (required)")
+		kind         = fs.String("kind", "", "evidence kind: forged-attestation | double-mining | freshness-cheat (required)")
 		evidenceFile = fs.String("evidence-file", "", "path to evidence blob ('-' for stdin)")
 		evidenceHex  = fs.String("evidence-hex", "", "hex-encoded evidence blob")
 	)
@@ -548,9 +713,22 @@ func (c *CLI) slashHelperInspect(args []string) error {
 		view.A = proofSummary(ev.ProofA)
 		view.B = proofSummary(ev.ProofB)
 		view.Memo = ev.Memo
+	case slashing.EvidenceKindFreshnessCheat:
+		ev, err := freshnesscheat.DecodeEvidence(blob)
+		if err != nil {
+			return fmt.Errorf("decode freshness-cheat evidence: %w", err)
+		}
+		view.A = proofSummary(ev.Proof)
+		view.AnchorHeight = ev.AnchorHeight
+		view.AnchorBlockTime = ev.AnchorBlockTime
+		// Staleness is the operator-meaningful number — surface
+		// it explicitly so an inspector can confirm at a glance
+		// "yes, this is well past the freshness window".
+		view.StalenessSecs = ev.AnchorBlockTime - ev.Proof.Attestation.IssuedAt
+		view.Memo = ev.Memo
 	default:
 		return fmt.Errorf(
-			"unsupported --kind %q (slash-helper inspect supports forged-attestation and double-mining)",
+			"unsupported --kind %q (slash-helper inspect supports forged-attestation, double-mining, freshness-cheat)",
 			*kind)
 	}
 

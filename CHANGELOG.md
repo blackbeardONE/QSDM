@@ -14,6 +14,77 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`freshness-cheat` slasher — verifier shipped, witness
+  deferred (2026-04-28).** Closes the v2 slashing trilogy:
+  `forged-attestation` + `double-mining` + `freshness-cheat`
+  all now ship with concrete `EvidenceVerifier`
+  implementations. Lives in
+  [`pkg/mining/slashing/freshnesscheat`](QSDM/source/pkg/mining/slashing/freshnesscheat/).
+  - **What it detects**: a v2 proof whose `bundle.issued_at`
+    is older than `FRESHNESS_WINDOW + grace` (default 60 s +
+    30 s) measured against the chain block-time of the
+    inclusion height, i.e. retroactive evidence of validator
+    collusion or clock skew.
+  - **`BlockInclusionWitness` abstraction**: rather than ship
+    a permanent `StubVerifier`, the package factors the
+    BFT-finality dependency into a `BlockInclusionWitness`
+    interface that callers wire to whatever observability
+    layer they have. Three implementations ship today:
+    `RejectAllWitness` (production default — rejects every
+    slash with a kind-specific `ErrEvidenceVerification`
+    naming the missing dependency, matching the previous
+    `StubVerifier` end-user behaviour with materially better
+    diagnostics), `TrustingTestWitness` (testnet / dev — lets
+    the slashing path run end-to-end so bugs surface before
+    mainnet), and `FixedAnchorWitness` (ops — certifies one
+    pre-registered `(height, block_time, proof_id)` tuple).
+    Once BFT finality lands, a real `quorum.HeaderWitness`
+    plugs into the same interface and freshness-cheat starts
+    slashing for real with no other code changes.
+  - **Verifier checks**: protocol version (`Version ≥ 2`),
+    structural attestation presence, bundle parse, bundle
+    `node_id` ↔ payload `node_id` binding, anchor sanity
+    (anchor strictly post-`IssuedAt`, ≤ 1 year delta),
+    staleness threshold (strict `>` against window + grace
+    so borderline cases are not slashed), registry binding,
+    and finally `Witness.VerifyAnchor`. Per-offence cap
+    matches the rest of the trilogy at `10 CELL` (full
+    `MIN_ENROLL_STAKE` bond drain).
+  - **Wire format**: `evidenceWire = { proof: <canonical-JSON>,
+    anchor_height: <uint64-as-string>, anchor_block_time:
+    <int64 unix seconds>, memo?: <≤256 B> }`. Proof is
+    serialised via `mining.Proof.CanonicalJSON()` so the
+    bytes the verifier hashes are byte-identical to what the
+    chain accepted. `DisallowUnknownFields` is set so wire
+    drift is rejected loudly.
+  - **Production wiring**: `slashing.ProductionConfig` gains
+    a `FreshnessCheat` slot with the same kind-mismatch guard
+    as the other two; leaving it nil keeps a `StubVerifier`
+    in place for binaries that don't import the freshnesscheat
+    package. A convenience factory
+    `freshnesscheat.NewProductionSlashingDispatcher` wires all
+    three verifiers in one call.
+  - **CLI**: `qsdmcli slash-helper freshness-cheat` constructs
+    evidence locally with the same staleness / anchor-sanity
+    / node_id checks the chain runs (so an operator does not
+    burn a tx fee on guaranteed-rejection evidence). Includes
+    a `--print-cmd` mode that emits a copy-pasteable
+    `qsdmcli slash` invocation. `qsdmcli slash-helper inspect
+    --kind=freshness-cheat` decodes evidence and renders the
+    operator-facing JSON view (proof summary + anchor height +
+    anchor block-time + computed staleness).
+  - **Tests**: 30+ unit tests in `freshnesscheat_test.go`
+    (happy path, every rejection path, every witness flavour,
+    encode/decode round-trip, production-dispatcher
+    integration) plus 6 new CLI tests covering the
+    `slash-helper freshness-cheat` and
+    `slash-helper inspect --kind=freshness-cheat` surfaces.
+    All pass alongside the existing repo suite.
+  - **Spec update**: `MINING_PROTOCOL_V2.md` §1 (overview),
+    §6 (component table), §8.2 (slashing-table row), and
+    §12.3 (deferred-work register) updated to reflect the
+    new posture.
+
 - **`qsdmcli watch slashes` — symmetric operator-facing
   surveillance subcommand (2026-04-28).** Polls
   `/api/v1/mining/slash/{tx_id}` for a caller-supplied set of
