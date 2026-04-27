@@ -39,7 +39,7 @@ relevant quantum adversaries tomorrow.
 - **Run a miner (CPU reference + console UI; CUDA planned):** [`QSDM/docs/docs/MINER_QUICKSTART.md`](QSDM/docs/docs/MINER_QUICKSTART.md)
 - **Run the NGC attestation sidecar (free NVIDIA NGC tier):** [`apps/qsdm-nvidia-ngc/QUICKSTART.md`](apps/qsdm-nvidia-ngc/QUICKSTART.md)
 - **API reference:** [`QSDM/docs/docs/API_REFERENCE.md`](QSDM/docs/docs/API_REFERENCE.md) and [`QSDM/docs/docs/openapi.yaml`](QSDM/docs/docs/openapi.yaml)
-- **Protocol specs:** [`QSDM/docs/docs/MINING_PROTOCOL.md`](QSDM/docs/docs/MINING_PROTOCOL.md), [`QSDM/docs/docs/NODE_ROLES.md`](QSDM/docs/docs/NODE_ROLES.md), [`QSDM/docs/docs/CELL_TOKENOMICS.md`](QSDM/docs/docs/CELL_TOKENOMICS.md)
+- **Protocol specs:** [`QSDM/docs/docs/MINING_PROTOCOL_V2.md`](QSDM/docs/docs/MINING_PROTOCOL_V2.md) (canonical v2 spec), [`QSDM/docs/docs/MINING_PROTOCOL.md`](QSDM/docs/docs/MINING_PROTOCOL.md) (frozen v1), [`QSDM/docs/docs/NODE_ROLES.md`](QSDM/docs/docs/NODE_ROLES.md), [`QSDM/docs/docs/CELL_TOKENOMICS.md`](QSDM/docs/docs/CELL_TOKENOMICS.md)
 - **Release notes:** [`CHANGELOG.md`](CHANGELOG.md)
 
 > **New?** The operator wiki is a 10-minute read that explicitly answers

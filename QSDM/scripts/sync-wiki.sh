@@ -20,7 +20,8 @@
 #   - QSDM/docs/docs/NODE_ROLES.md              -> Node-Roles.md
 #   - QSDM/docs/docs/VALIDATOR_QUICKSTART.md    -> Validator-Quickstart.md
 #   - QSDM/docs/docs/MINER_QUICKSTART.md        -> Miner-Quickstart.md
-#   - QSDM/docs/docs/MINING_PROTOCOL.md         -> Mining-Protocol.md
+#   - QSDM/docs/docs/MINING_PROTOCOL_V2.md      -> Mining-Protocol-V2.md  (canonical v2 spec)
+#   - QSDM/docs/docs/MINING_PROTOCOL.md         -> Mining-Protocol.md     (frozen v1 spec)
 #   - QSDM/docs/docs/CELL_TOKENOMICS.md         -> Cell-Tokenomics.md
 #   - QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md -> NVIDIA-Lock-Scope.md
 #   - apps/qsdm-nvidia-ngc/QUICKSTART.md    -> NGC-Sidecar-Quickstart.md
@@ -84,7 +85,8 @@ copy_page "QSDM/docs/docs/OPERATOR_GUIDE.md"           "Home.md"                
 copy_page "QSDM/docs/docs/NODE_ROLES.md"               "Node-Roles.md"                 "Node Roles"
 copy_page "QSDM/docs/docs/VALIDATOR_QUICKSTART.md"     "Validator-Quickstart.md"       "Validator Quickstart"
 copy_page "QSDM/docs/docs/MINER_QUICKSTART.md"         "Miner-Quickstart.md"           "Miner Quickstart"
-copy_page "QSDM/docs/docs/MINING_PROTOCOL.md"          "Mining-Protocol.md"            "Mining Protocol"
+copy_page "QSDM/docs/docs/MINING_PROTOCOL_V2.md"       "Mining-Protocol-V2.md"         "Mining Protocol v2 (Canonical)"
+copy_page "QSDM/docs/docs/MINING_PROTOCOL.md"          "Mining-Protocol.md"            "Mining Protocol (v1, frozen)"
 copy_page "QSDM/docs/docs/CELL_TOKENOMICS.md"          "Cell-Tokenomics.md"            "Cell Tokenomics"
 copy_page "QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md" "NVIDIA-Lock-Scope.md"       "NVIDIA Lock Scope"
 copy_page "apps/qsdm-nvidia-ngc/QUICKSTART.md"     "NGC-Sidecar-Quickstart.md"     "NGC Sidecar Quickstart"
@@ -97,7 +99,8 @@ cat > "${WIKI_DIR}/_Sidebar.md" <<'EOF'
 - [Node Roles](Node-Roles)
 - [Validator Quickstart](Validator-Quickstart)
 - [Miner Quickstart](Miner-Quickstart)
-- [Mining Protocol](Mining-Protocol)
+- [Mining Protocol v2 (Canonical)](Mining-Protocol-V2)
+- [Mining Protocol (v1, frozen)](Mining-Protocol)
 - [Cell Tokenomics](Cell-Tokenomics)
 - [NVIDIA Lock Scope](NVIDIA-Lock-Scope)
 - [NGC Sidecar Quickstart](NGC-Sidecar-Quickstart)

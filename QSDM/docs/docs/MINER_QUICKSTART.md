@@ -469,7 +469,7 @@ Each response is an `EnrollmentListPageView`:
 
 - All three write subcommands accept `--id` for an idempotent client-supplied tx id; if omitted, `qsdmcli` generates a 16-byte random hex id.
 - `--fee` defaults to `0.001 CELL` and must be `> 0` to clear the slashing admission gate.
-- The CLI does not sign envelopes today (matching the existing `qsdmcli tx` shape); the validator-side `AccountStore` identifies sender by string and enforces nonce ordering. When Dilithium-signed envelopes land (per `MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §11`), `qsdmcli` will gain a single signing call inside `buildEnvelope()` — no flag changes.
+- The CLI does not sign envelopes today (matching the existing `qsdmcli tx` shape); the validator-side `AccountStore` identifies sender by string and enforces nonce ordering. When Dilithium-signed envelopes land (per [`MINING_PROTOCOL_V2.md §13`](./MINING_PROTOCOL_V2.md#13-historical-decision-record) and the wallet roadmap), `qsdmcli` will gain a single signing call inside `buildEnvelope()` — no flag changes.
 
 ## 5c. Mining v2 from the console miner
 

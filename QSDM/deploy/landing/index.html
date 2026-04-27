@@ -498,7 +498,7 @@
         </ul>
         <div class="foot">
           <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">MINER_QUICKSTART.md</a>
-          <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL_V2_NVIDIA_LOCKED.md">v2 Protocol spec</a>
+          <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL_V2.md">v2 Protocol spec</a>
           <a class="btn" href="https://api.qsdm.tech/api/v1/mining/challenge">API: /api/v1/mining/challenge</a>
         </div>
       </article>
@@ -823,7 +823,7 @@
     <div class="cta-row" style="margin-top:14px">
       <a class="btn btn-primary" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/OPERATOR_GUIDE.md">End-to-end operator guide</a>
       <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">MINER_QUICKSTART.md</a>
-      <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL_V2_NVIDIA_LOCKED.md">v2 protocol spec</a>
+      <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL_V2.md">v2 protocol spec</a>
       <a class="btn" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL.md">v1 protocol spec</a>
       <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/CELL_TOKENOMICS.md">Tokenomics</a>
     </div>
@@ -1203,10 +1203,10 @@
       without a caller in any production binary; <code>grep NewEnrollmentApplier
       cmd/qsdm/main.go</code> returned zero matches. The Tier-3 milestone is meaningful
       now because the surface is alive in the binary, not just under <code>go test</code>.
-      Remaining Tier-3 scope (Tensor-Core PoW re-tuning, swap-in real <code>nvtrust</code> bundle
-      framing for the now-shipped CC verifier, and the <em>freshness-cheat</em> slasher pending
-      BFT-finality) is tracked in
-      <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL_V2_TIER3_SCOPE.md">MINING_PROTOCOL_V2_TIER3_SCOPE.md</a>.
+      Remaining deferred scope (Tensor-Core PoW kernel, swap-in real <code>nvtrust</code> bundle
+      framing for the now-shipped CC verifier, the <em>freshness-cheat</em> slasher pending
+      BFT-finality, and the <code>qsdm/gov/v1</code> runtime tuning hook) is tracked in
+      <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL_V2.md#12-deferred-work-register">MINING_PROTOCOL_V2.md §12</a>.
     </p>
     <p class="lead" style="margin-top:14px;">
       Remaining mainnet gates are wall-clock events owned outside the repo (counsel, independent auditor,
