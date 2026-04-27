@@ -2,8 +2,8 @@ package cc
 
 // verifier.go — production nvidia-cc-v1 verifier.
 //
-// This file implements the §3.2.1 acceptance flow from
-// MINING_PROTOCOL_V2_NVIDIA_LOCKED.md as a concrete
+// This file implements the §3.2 acceptance flow from
+// MINING_PROTOCOL_V2.md as a concrete
 // mining.AttestationVerifier. It is the consensus-side half
 // of the datacenter / Confidential Computing path, in
 // contrast to pkg/mining/attest/hmac (consumer-GPU HMAC).

@@ -40,9 +40,10 @@ package main
 // by string and debits balance + nonce; replay protection is
 // provided by the mempool's tx-id deduplication + the chain's
 // nonce ordering. This matches the existing `qsdmcli tx` shape.
-// Future work (MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §11) may
-// add Dilithium-signed envelopes; when it does, this file
-// gains a single signing call inside buildEnvelope().
+// Future work (wallet / envelope-signing roadmap; tracked
+// alongside MINING_PROTOCOL_V2.md §13.5) may add Dilithium-signed
+// envelopes; when it does, this file gains a single signing call
+// inside buildEnvelope().
 
 import (
 	"crypto/rand"

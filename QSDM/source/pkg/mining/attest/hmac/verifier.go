@@ -1,7 +1,7 @@
 package hmac
 
 // This file implements the 9-step acceptance flow from
-// MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §3.2.2 as a concrete
+// MINING_PROTOCOL_V2.md §3.3 as a concrete
 // implementation of pkg/mining.AttestationVerifier. It is the
 // consensus-critical half of the consumer-GPU attestation path —
 // every byte that reaches this code has already been accepted as

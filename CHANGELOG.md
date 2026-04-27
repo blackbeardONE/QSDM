@@ -12,6 +12,36 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Documentation
+
+- **v2 mining-protocol spec consolidation (2026-04-28).** The three
+  historical fragments
+  [`MINING_PROTOCOL_V2_NVIDIA_LOCKED.md`](QSDM/docs/docs/MINING_PROTOCOL_V2_NVIDIA_LOCKED.md)
+  (Phase-1 design draft),
+  [`MINING_PROTOCOL_V2_RATIFICATION.md`](QSDM/docs/docs/MINING_PROTOCOL_V2_RATIFICATION.md)
+  (2026-04-24 owner sign-off), and
+  [`MINING_PROTOCOL_V2_TIER3_SCOPE.md`](QSDM/docs/docs/MINING_PROTOCOL_V2_TIER3_SCOPE.md)
+  (rolling shipped-vs-deferred register) have been merged into a
+  single canonical spec at
+  [`MINING_PROTOCOL_V2.md`](QSDM/docs/docs/MINING_PROTOCOL_V2.md).
+  The new spec carries an unambiguous §0–§14 numbering scheme,
+  inline shipped/deferred status against concrete Go files in
+  every §§5–9 table, a consolidated deferred-work register at §12,
+  and the historical decision record at §13. The three superseded
+  fragments are retained as redirect stubs with section-by-section
+  mapping tables, so existing PR / issue / landing-page / source-
+  comment references keep resolving. Cross-references in
+  [`README.md`](README.md), the landing page
+  ([`QSDM/deploy/landing/index.html`](QSDM/deploy/landing/index.html)),
+  [`MINER_QUICKSTART.md`](QSDM/docs/docs/MINER_QUICKSTART.md), the
+  wiki sync script
+  ([`QSDM/scripts/sync-wiki.sh`](QSDM/scripts/sync-wiki.sh)), and
+  ~13 Go source-comment sites
+  (`pkg/mining/{fork,proof,challenge,enrollment,attest/cc,attest/hmac,slashing}`,
+  `pkg/api/handlers.go`, `pkg/chain/slash_apply.go`,
+  `cmd/qsdmcli/mining.go`) now point at the canonical doc and the
+  correct anchors. No consensus or wire-format change.
+
 ### Changed / Deprecated
 
 - **NVIDIA-lock pivot — retire the CPU-miner onboarding UX

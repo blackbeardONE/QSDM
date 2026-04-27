@@ -18,7 +18,7 @@ import (
 //
 // Under v2 (Proof.Version == ProtocolVersionV2 == 2, active at or
 // above ForkV2Height) this field is MANDATORY: per
-// MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §3 a v2 proof with an empty
+// MINING_PROTOCOL_V2.md §3 a v2 proof with an empty
 // or unverifiable attestation is rejected with
 // ErrAttestationRequired or one of the more specific sentinels in
 // fork.go. The verifier dispatches on Attestation.Type to the

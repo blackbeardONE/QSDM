@@ -1,6 +1,6 @@
 // Package challenge implements the validator-side challenge
 // issuer and verifier described in
-// MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §6. Before a miner computes
+// MINING_PROTOCOL_V2.md §6. Before a miner computes
 // a v2 proof, it fetches a fresh challenge from some validator's
 // GET /api/v1/mining/challenge endpoint, commits to that
 // challenge inside its Attestation.Nonce / IssuedAt fields, and

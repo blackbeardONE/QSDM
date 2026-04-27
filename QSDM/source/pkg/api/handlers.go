@@ -242,13 +242,13 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/mining/work", handlers.MiningWorkHandler)
 	mux.HandleFunc("/api/v1/mining/submit", handlers.MiningSubmitHandler)
 	// Mining challenge endpoint (Phase 2c-iii,
-	// MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §6.2). Returns 503 until
+	// MINING_PROTOCOL_V2.md §6.2). Returns 503 until
 	// a ChallengeIssuer is installed via api.SetChallengeIssuer(...).
 	// Registered unconditionally so miners can probe readiness.
 	mux.HandleFunc("/api/v1/mining/challenge", handlers.MiningChallengeHandler)
 
 	// Mining enrollment endpoints (Phase 2c-x,
-	// MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §7). Two symmetric
+	// MINING_PROTOCOL_V2.md §8.1 + §9.1). Two symmetric
 	// POSTs accept signed mempool.Tx envelopes carrying enrollment
 	// payloads (qsdm/enroll/v1). Return 503 until a MempoolSubmitter
 	// is installed via api.SetEnrollmentMempool(...). Stateless
@@ -278,7 +278,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/mining/enrollments", handlers.EnrollmentListHandler)
 
 	// Mining slashing endpoint (Phase 2c-xi,
-	// MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §8). Symmetric to the
+	// MINING_PROTOCOL_V2.md §8.2 + §9.1). Symmetric to the
 	// enrollment endpoints: accepts a signed mempool.Tx envelope
 	// carrying a slashing payload (qsdm/slash/v1). Returns 503
 	// until a MempoolSubmitter is installed via

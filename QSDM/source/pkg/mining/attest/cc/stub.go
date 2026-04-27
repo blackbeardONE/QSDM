@@ -1,7 +1,7 @@
 // Package cc is the consensus-side verifier for the
 // "nvidia-cc-v1" attestation path — datacenter GPUs signing
 // quotes with their hardware AIK against genesis-pinned NVIDIA
-// roots (MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §3.2.1).
+// roots (MINING_PROTOCOL_V2.md §3.2).
 //
 // This file ships the StubVerifier: a placeholder that
 // cryptographically rejects every nvidia-cc-v1 proof with a

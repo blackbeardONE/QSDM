@@ -1,6 +1,6 @@
 // Package enrollment is the on-chain data model + consensus
 // rules for the nvidia-hmac-v1 operator registry
-// (MINING_PROTOCOL_V2_NVIDIA_LOCKED.md §5.2, §5.4).
+// (MINING_PROTOCOL_V2.md §5.2, §5.4).
 //
 // SECURITY MODEL — READ THIS FIRST
 //

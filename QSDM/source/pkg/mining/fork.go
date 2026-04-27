@@ -11,9 +11,8 @@ import (
 // This file defines the compile-time constants and runtime-settable
 // fork height that govern the v2 ("NVIDIA-locked") upgrade of the
 // mining sub-protocol. The full spec is
-// QSDM/docs/docs/MINING_PROTOCOL_V2_NVIDIA_LOCKED.md; the three
-// parameter values below are ratified in
-// QSDM/docs/docs/MINING_PROTOCOL_V2_RATIFICATION.md (2026-04-24).
+// QSDM/docs/docs/MINING_PROTOCOL_V2.md; the three parameter values
+// below are ratified in §13 of that doc (2026-04-24 owner sign-off).
 //
 // Phase 2 of the pivot (this file is part of it) introduces v2 as
 // a compile-time concept only — ForkV2Height defaults to
@@ -35,8 +34,8 @@ import (
 // value and additionally enforce the mandatory-attestation rules of
 // MINING_PROTOCOL_V2 §3 and §7.
 //
-// Bumping this is a hard fork; see MINING_PROTOCOL_V2_NVIDIA_LOCKED.md
-// §1 for the full list of consensus-visible changes it implies.
+// Bumping this is a hard fork; see MINING_PROTOCOL_V2.md §1 for
+// the full list of consensus-visible changes it implies.
 const ProtocolVersionV2 uint32 = 2
 
 // FreshnessWindow is the maximum age of an attestation nonce

@@ -22,11 +22,11 @@ package chain
 //     reward.
 //
 // The actual offence verification is delegated to
-// slashing.Dispatcher. At v2 genesis, all evidence kinds are
-// wired to slashing.StubVerifier, so slash transactions are
-// REJECTED with ErrEvidenceVerification regardless of reward
-// configuration. Concrete verifiers ship in follow-on commits
-// (see MINING_PROTOCOL_V2_TIER3_SCOPE.md §4).
+// slashing.Dispatcher. The forged-attestation and double-mining
+// verifiers ship as concrete implementations; the freshness-cheat
+// verifier remains a slashing.StubVerifier (the wire is reserved,
+// the impl is gated on BFT finality). See MINING_PROTOCOL_V2.md
+// §8.2 + §12.3 for the deferred-work register.
 //
 // Out of scope:
 //

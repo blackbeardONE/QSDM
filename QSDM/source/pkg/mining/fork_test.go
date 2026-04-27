@@ -9,10 +9,10 @@ import (
 
 // TestForkConstantsRatified locks the values of the three ratified
 // v2 protocol parameters. Every one of these values is pinned in
-// QSDM/docs/docs/MINING_PROTOCOL_V2_RATIFICATION.md (2026-04-24
+// QSDM/docs/docs/MINING_PROTOCOL_V2.md §13 (2026-04-24 owner
 // sign-off); changing any of them at this layer is a consensus
 // change and must be accompanied by a new ratification entry in
-// that doc and a companion CHANGELOG note. The test exists so
+// §13 and a companion CHANGELOG note. The test exists so
 // that change shows up as a failing test in every CI run, not as
 // a quiet two-line diff.
 func TestForkConstantsRatified(t *testing.T) {

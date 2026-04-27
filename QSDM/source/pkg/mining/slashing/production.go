@@ -28,8 +28,8 @@ package slashing
 // transactions of that kind receive a clean
 // ErrEvidenceVerification rather than the more-ambiguous
 // ErrUnknownEvidenceKind. This is the "wire is reserved, impl
-// is deferred" posture documented in
-// MINING_PROTOCOL_V2_TIER3_SCOPE.md §4.
+// is deferred" posture documented in MINING_PROTOCOL_V2.md
+// §8.2 (the freshness-cheat row) + §12.3 (deferred-work register).
 
 import (
 	"errors"

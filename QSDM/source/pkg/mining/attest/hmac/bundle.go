@@ -1,9 +1,9 @@
 // Package hmac implements the nvidia-hmac-v1 attestation path for
 // consumer-class NVIDIA GPUs (Turing through Ada). It is one of the
 // two pluggable pkg/mining.AttestationVerifier implementations
-// specified in QSDM/docs/docs/MINING_PROTOCOL_V2_NVIDIA_LOCKED.md
-// §3.2.2; the other is pkg/mining/attest/cc (Hopper/Blackwell CC
-// GPUs, shipping later in Phase 2c).
+// specified in QSDM/docs/docs/MINING_PROTOCOL_V2.md §3.3; the other
+// is pkg/mining/attest/cc (Hopper/Blackwell CC GPUs, shipped in
+// Phase 2c-iv — see §3.2 of the same doc).
 //
 // The package is deliberately light on external dependencies — the
 // only crypto primitives used are crypto/hmac, crypto/sha256, and
