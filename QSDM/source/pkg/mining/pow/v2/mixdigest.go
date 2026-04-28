@@ -63,6 +63,11 @@ func ComputeMixDigestV2(headerHash [32]byte, nonce [16]byte, dag DAG) ([32]byte,
 		return [32]byte{}, errEmptyDAG
 	}
 
+	// One SHA3-256 state reused across all 64 iterations via Reset();
+	// the SHAKE256 state inside MatrixFromMix is freshly allocated
+	// per iteration but stays on the stack via escape analysis (a
+	// previous attempt to reuse it across iterations forced it to
+	// the heap and netted slower).
 	var digest [32]byte
 	for s := 0; s < NumWalkSteps; s++ {
 		idx := binary.BigEndian.Uint32(mix[0:4]) % n

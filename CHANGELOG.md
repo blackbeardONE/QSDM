@@ -12,6 +12,58 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Performance
+
+- **`pkg/mining/pow/v2` — 22% faster validator hot path
+  (2026-04-28).** A 256 KB FP16→FP32 lookup table populated at
+  package init, plus a benchmark scaffold that pins the
+  per-stage breakdown so future regressions are loud:
+
+  | Benchmark                | Before  | After  | Speedup |
+  |--------------------------|--------:|-------:|--------:|
+  | `ComputeMixDigestV2`     | 384 µs  | 298 µs | 1.29×   |
+  | `TensorMul`              | 1 667 ns| 528 ns | 3.16×   |
+  | `FP16ToFloat32`          | 6.7 ns  | 1.92 ns| 3.49×   |
+  | `MatrixFromMix`          | 3 224 ns| 3 167 ns | (noise) |
+  | `Float32ToFP16RNE`       | 11.6 ns | 11.3 ns| (untouched) |
+
+  Numbers are on the user's Xeon E5-2670 (Sandy Bridge, 2.6 GHz,
+  2012). All allocations preserved at 1 / 32 B per
+  `ComputeMixDigestV2` call (the digest copy); no new heap
+  pressure introduced.
+
+  - **LUT impl**:
+    [`pkg/mining/pow/v2/fp16_lut.go`](QSDM/source/pkg/mining/pow/v2/fp16_lut.go)
+    populates `fp16ToFP32LUT [65536]float32` from the unrolled
+    IEEE-754 reference (`fp16ToFloat32Slow`) at init time, then
+    self-checks against a hand-picked boundary set
+    (signed zero, smallest subnormal, smallest normal, 1.0
+    neighbourhood, largest finite, ±Inf, NaN). A misconfigured
+    table panics at startup — silently producing wrong
+    mix-digests would be a much worse failure mode than refusing
+    to start.
+  - **Equivalence guard**:
+    `TestFP16ToFP32_LUTMatchesSlow` in
+    [`pkg/mining/pow/v2/fp16_test.go`](QSDM/source/pkg/mining/pow/v2/fp16_test.go)
+    asserts the LUT is bit-identical to the slow reference for
+    every one of the 65,536 possible FP16 inputs. Combined with
+    the frozen byte-exact golden mix-digest vector
+    (`ef9319a6…53f4`) this is two independent locks on
+    correctness.
+  - **Benchmarks**:
+    [`pkg/mining/pow/v2/bench_test.go`](QSDM/source/pkg/mining/pow/v2/bench_test.go)
+    establishes per-stage baselines for
+    `ComputeMixDigestV2`, `MatrixFromMix`, `TensorMul`,
+    `FP16ToFloat32`, `Float32ToFP16RNE`. Run with
+    `go test -bench=. -benchtime=2s ./pkg/mining/pow/v2/...`.
+  - **Spec update**:
+    [`MINING_PROTOCOL_V2.md`](QSDM/docs/docs/MINING_PROTOCOL_V2.md)
+    §4.3 now lists the per-stage cost breakdown and explains
+    the two micro-optimizations (LUT + stack-friendly SHAKE
+    allocation pattern), so future SIMD/BLAS or assembly
+    fast-paths know exactly which budget they're trying to
+    beat.
+
 ### Added
 
 - **Verifier + reference solver wired through

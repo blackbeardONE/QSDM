@@ -23,6 +23,14 @@ const matrixBytes = 16 * 16 * 2
 // output bytes and decode them in row-major big-endian FP16 order
 // (M[0][0] takes the first 2 bytes, M[0][1] the next, ..., M[15][15]
 // the last). Decoding canonicalizes any FP16 NaN payload to FP16Qnan.
+//
+// Performance: the SHAKE256 state allocated here stays on the stack
+// thanks to Go's escape analysis (the local `h` variable does not
+// escape this function frame), so the benchmark reports 0 allocs/op.
+// Earlier attempts to "reuse" the state across iterations of
+// ComputeMixDigestV2 by holding it in a struct caused the state to
+// escape to the heap and net out slower; the per-call allocation
+// pattern is genuinely the right shape for this workload.
 func MatrixFromMix(mix [32]byte) [16][16]FP16 {
 	h := sha3.NewShake256()
 	_, _ = h.Write([]byte(MatrixDomainSeparator))

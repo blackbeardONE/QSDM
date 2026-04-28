@@ -33,6 +33,13 @@ func newTestDAG(t *testing.T, epoch uint64, workSetRoot [32]byte, n uint32) *tes
 	if n < 2 {
 		t.Fatalf("test DAG: N must be >= 2, got %d", n)
 	}
+	return buildBenchDAG(epoch, workSetRoot, n)
+}
+
+// buildBenchDAG is the testing-arg-free constructor shared by
+// newTestDAG (in this file) and newBenchDAG (in bench_test.go).
+// Callers MUST precondition n >= 2.
+func buildBenchDAG(epoch uint64, workSetRoot [32]byte, n uint32) *testInMemoryDAG {
 	d := &testInMemoryDAG{n: n, data: make([]byte, uint64(n)*32)}
 
 	h := sha3.New256()

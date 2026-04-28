@@ -80,6 +80,23 @@ func TestFP16ToFloat32_Specials(t *testing.T) {
 	}
 }
 
+// TestFP16ToFP32_LUTMatchesSlow asserts that the 65,536-entry LUT
+// populated by init() is byte-identical to the unrolled IEEE-754
+// reference (fp16ToFloat32Slow) for every possible FP16 input. If
+// this ever fails, FP16ToFloat32 is silently producing wrong values
+// on whatever subset of inputs slipped through, and every downstream
+// mix-digest is wrong by a corresponding amount.
+func TestFP16ToFP32_LUTMatchesSlow(t *testing.T) {
+	for u := 0; u < 65536; u++ {
+		want := fp16ToFloat32Slow(FP16(u))
+		got := FP16ToFloat32(FP16(u))
+		if !bitEqualFloat32(got, want) {
+			t.Fatalf("FP16ToFloat32(%#04x): LUT %#08x, slow %#08x",
+				u, math.Float32bits(got), math.Float32bits(want))
+		}
+	}
+}
+
 // TestFP16_RoundTrip16Bit asserts that for every finite 16-bit value v,
 // the FP16 -> FP32 -> FP16 round-trip is the identity. This is the
 // strongest determinism check: if it fails, no upper-layer code can

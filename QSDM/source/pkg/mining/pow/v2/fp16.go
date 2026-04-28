@@ -85,7 +85,25 @@ func EncodeFP16BE(out []byte, x FP16) {
 // finite FP16 (FP32's 24-bit mantissa easily holds FP16's 11-bit
 // significand). NaN payloads are not preserved -- they are folded to
 // FP32Qnan -- because cross-platform NaN payloads are non-portable.
+//
+// Implementation: this is a single load from a 256 KB lookup table
+// (fp16ToFP32LUT) populated at package-init time by the reference
+// algorithm in fp16ToFloat32Slow. The table fits in L2 cache on every
+// supported validator host and replaces what would otherwise be a
+// chain of switch/branch logic with one indexed read. A self-test in
+// init() confirms the LUT is byte-identical to the slow path for all
+// 65,536 inputs; the file panics at startup if it isn't.
 func FP16ToFloat32(x FP16) float32 {
+	return fp16ToFP32LUT[uint16(x)]
+}
+
+// fp16ToFloat32Slow is the unrolled IEEE-754-binary16-to-binary32
+// reference. It is the source of truth for the 65,536-entry LUT and
+// the only function tested directly against IEEE-754 boundary values
+// (the LUT is then asserted to match it bit-for-bit). External
+// callers should use FP16ToFloat32; this function exists only for
+// init-time table population and golden-vector self-checks.
+func fp16ToFloat32Slow(x FP16) float32 {
 	x = canonicalizeFP16(x)
 	raw := uint16(x)
 

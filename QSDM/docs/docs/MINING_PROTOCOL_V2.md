@@ -530,16 +530,45 @@ when the matmul output happens to land near 2^-14.
 
 ### 4.3 Validator cost
 
-Single-proof CPU verify budget moves from ~60 µs (sha3 only) to
-~700 µs (sha3 + 64 × 16×16 FP16 matmul). The pure-Go reference
-in `pkg/mining/pow/v2/` is ~10× slower than `gonum/blas` would
-be on the same input, but still inside the `MINING_PROTOCOL.md
-§1.1(4) < 100 ms` validator SLO with comfortable margin.
+Single-proof CPU verify budget on a Sandy Bridge-era Xeon E5-2670
+(2.6 GHz, 2012-vintage), measured by
+`pkg/mining/pow/v2/bench_test.go`:
 
-A SIMD/BLAS-backed validator fast-path is a future optimization
-(§12.6) and MUST be byte-exact-equivalent to the reference; the
-golden vector in `pkg/mining/pow/v2/mixdigest_test.go` is the
-conformance bar.
+| Stage                      | Per-step | × 64 | Share |
+|----------------------------|----------|------|-------|
+| `MatrixFromMix` (SHAKE256) | 3.17 µs  | 203 µs | 68 %  |
+| `TensorMul`                | 0.53 µs  | 34 µs  | 11 %  |
+| `SHA3-256` step body + DAG | ~0.95 µs | 61 µs  | 21 %  |
+| **Total `ComputeMixDigestV2`** | — | **~298 µs** | 100 % |
+
+That's well inside the original §1.1(4) `< 100 ms` SLO and inside
+this protocol's tighter ~700 µs informal budget by a factor of two
+on a 13-year-old CPU. Newer hardware (post-Skylake) cuts the total
+roughly in half again.
+
+The reference implementation is pure Go, no CGO, no assembly, no
+build tags. The two non-trivial micro-optimizations are:
+
+* **`fp16ToFP32LUT`** — a 256 KB read-only table populated at
+  package init from the unrolled IEEE-754 reference
+  (`fp16ToFloat32Slow`). `FP16ToFloat32(x)` is then a single
+  indexed load, ~2 ns vs ~7 ns for the branch-tree version.
+  An init-time self-check panics if the table disagrees with the
+  reference on a hand-picked set of boundary inputs; an
+  exhaustive 65,536-entry equivalence test
+  (`TestFP16ToFP32_LUTMatchesSlow`) is the regression bar in CI.
+* Stack-friendly per-step SHAKE256 allocation. Earlier attempts
+  to "reuse" the SHAKE state across the 64 outer-loop iterations
+  via a struct caused the underlying Keccak state to escape to
+  the heap (132 allocs/op) and net out slower; the current
+  per-call form keeps allocations to a single 32-byte digest
+  copy on the entire 64-step walk.
+
+A future SIMD/BLAS-backed fast-path (e.g. AVX-512 F16C, Apple
+NEON `vcvt_f32_f16`, or a CGO-bridged `gonum/blas` for batch
+verification) MUST be byte-exact-equivalent to the reference;
+the frozen golden vector in
+`pkg/mining/pow/v2/mixdigest_test.go` is the conformance bar.
 
 ### 4.4 Miner cost
 
