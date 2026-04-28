@@ -14,6 +14,80 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Governance production-readiness: persistent `ParamStore` + end-to-end integration tests (2026-04-28).**
+  Closes the two production gaps in the freshly-shipped
+  `qsdm/gov/v1` runtime tuning hook: state is now durable
+  across node restarts, and the full chain-side glue
+  (admit → stage → promote → SlashApplier reads new value)
+  is now exercised by integration tests through the real
+  `internal/v2wiring` boot path.
+  - **Persistence**:
+    [`pkg/governance/chainparams/persist.go`](QSDM/source/pkg/governance/chainparams/persist.go)
+    ships `SaveSnapshot(store, path)` and
+    `LoadOrNew(path)` free functions, mirroring the shape
+    of `pkg/chain/staking_persist.go`. Snapshot format is
+    a version-tagged JSON document with `active` map +
+    `pending[]` array, written atomically through a `.tmp`
+    file + rename. Forward/backward compat: unknown params
+    in the snapshot are dropped silently; out-of-bounds
+    values are clamped to registry defaults; an unknown
+    version refuses to load (no silent downgrade). A
+    missing file is treated as first-boot and returns a
+    fresh defaults-seeded store.
+  - **Wiring**: `internal/v2wiring.Config` grows two new
+    optional fields:
+    - `GovParamStorePath string` — when non-empty, `Wire()`
+      calls `LoadOrNew(path)` at boot, and the
+      `SealedBlockHook` saves a fresh snapshot AFTER each
+      block's `PromotePending` runs. The genesis-seed for
+      `reward_bps` from `Config.SlashRewardBPS` is now
+      conditional on the loaded value being equal to the
+      registry default — preserving previously-activated
+      governance state across restarts.
+    - `LogSnapshotError func(uint64, error)` — operator
+      hook for save failures. The chain continues; the
+      next sealed block re-saves and recovers.
+    - When `GovParamStorePath` is empty, behaviour is
+      byte-identical to the prior in-memory-only posture
+      (fine for ephemeral testnets, NOT for production).
+  - **Integration tests**:
+    [`internal/v2wiring/v2wiring_gov_test.go`](QSDM/source/internal/v2wiring/v2wiring_gov_test.go)
+    drives the full lifecycle through the real production
+    boot path. 8 new tests cover:
+    - Proposal activates at effective_height (the canonical
+      regression test — a bug in `SetGovApplier`,
+      `SealedBlockHook` composition, or
+      `chainparams.AdmissionChecker` ordering breaks this).
+    - Future-effective-height stays pending across multiple
+      blocks and flips on the right one.
+    - Non-authority sender rejected at apply time (admission
+      stateless, authority check stateful in `GovApplier`).
+    - Two authorities; carol supersedes alice's pending
+      entry; supersede activates correctly.
+    - HTTP read-API surface reflects live chain state.
+    - Persistence: post-promote active value preserved
+      across simulated restart.
+    - Persistence: pending entry replayed across restart;
+      promotes correctly on the post-restart chain.
+    - Persistence: corrupted snapshot causes `Wire()` to
+      return a hard error (no silent state corruption).
+  - **Persistence unit tests**:
+    [`pkg/governance/chainparams/persist_test.go`](QSDM/source/pkg/governance/chainparams/persist_test.go)
+    adds 14 test cases covering save/load round-trip
+    (actives + pending), defaults fallback for partial
+    snapshots, missing-file → fresh-store, no-op on nil
+    store / empty path, unknown-param drop, out-of-bounds
+    clamp, version reject, malformed JSON reject, atomic
+    cleanup of `.tmp`, overwrite of stale snapshot, and
+    full stage → save → load → promote → save → load
+    lifecycle.
+  - **Documentation**: `MINING_PROTOCOL_V2.md` §9.4 grows a
+    "Persistence — `GovParamStorePath`" subsection covering
+    the boot-load + per-sealed-block-save flow, the atomic
+    write contract, the snapshot wire format, and the
+    "missing path = ephemeral testnet only" deployment
+    rule.
+
 - **Governance read-API + `qsdmcli watch params` (2026-04-28).**
   Operator-facing surface for the on-chain `qsdm/gov/v1` runtime
   tuning hook. The chain side has been live since the prior

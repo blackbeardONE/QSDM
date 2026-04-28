@@ -118,6 +118,34 @@ type Config struct {
 	// governors" surface is dangerous.
 	GovernanceAuthorities []string
 
+	// GovParamStorePath is the optional filesystem path the
+	// governance parameter store snapshots itself to after every
+	// sealed block. When set, Wire() loads the snapshot at boot
+	// (creating a fresh store with registry defaults if the path
+	// is missing) and the SealedBlockHook saves a fresh
+	// snapshot post-Promote so a subsequent restart resumes
+	// exactly where the prior process left off. When empty
+	// (default), governance state is in-memory only and lost on
+	// restart — fine for ephemeral testnets, NOT acceptable for
+	// production.
+	//
+	// Atomic write: the snapshot is written to <path>.tmp and
+	// atomically renamed to <path>. A crash between Remove and
+	// Rename leaves <path> missing; LoadOrNew handles that as
+	// "first boot" (registry defaults), and an operator can
+	// recover the prior snapshot by hand-renaming <path>.tmp.
+	//
+	// LogSnapshotError (below) wraps any save failure so the
+	// node operator gets visibility without aborting the chain.
+	GovParamStorePath string
+
+	// LogSnapshotError is invoked when SaveSnapshot in the
+	// post-seal hook returns an error (disk full, permission
+	// denied, etc.). The chain continues; persistence drift
+	// on a single block is recoverable on the next save.
+	// Nil = drop silently. Mirrors LogSweepError's posture.
+	LogSnapshotError func(height uint64, err error)
+
 	// LogSweepError is invoked when the post-seal hook's call
 	// to SweepMaturedEnrollments returns an error. Nil = drop
 	// silently (matches the legacy OnSealed contract). Used
@@ -212,13 +240,32 @@ func Wire(cfg Config) (*Wired, error) {
 	// populated. With governance disabled the active values
 	// never change, so SlashApplier behaviour is byte-identical
 	// to the pre-governance posture.
-	govStore := chainparams.NewInMemoryParamStore()
+	// Load from snapshot if a persistence path is configured.
+	// Empty path → fresh in-memory store with registry defaults;
+	// missing file at the path → same; present file → replay
+	// active+pending state. A version mismatch or corrupted JSON
+	// returns a hard error here rather than silently wiping
+	// state; the operator must explicitly intervene.
+	govStore, err := chainparams.LoadOrNew(cfg.GovParamStorePath)
+	if err != nil {
+		return nil, fmt.Errorf("v2wiring: gov param store: %w", err)
+	}
 	if cfg.SlashRewardBPS > 0 {
 		// Seed reward_bps from the operator-supplied genesis
-		// value. Bounds were already checked above.
-		govStore.SetForTesting(
-			string(chainparams.ParamRewardBPS),
-			uint64(cfg.SlashRewardBPS))
+		// value ONLY when no snapshot already provided one —
+		// otherwise we'd silently overwrite a previously-
+		// activated governance change every time the binary
+		// restarts. The "did the snapshot supply this?" check
+		// is "is the loaded value still equal to the registry
+		// default?". When governance has never run, that's
+		// always true; once a tx promotes, it diverges.
+		spec, _ := chainparams.Lookup(string(chainparams.ParamRewardBPS))
+		current, _ := govStore.ActiveValue(string(chainparams.ParamRewardBPS))
+		if current == spec.DefaultValue {
+			govStore.SetForTesting(
+				string(chainparams.ParamRewardBPS),
+				uint64(cfg.SlashRewardBPS))
+		}
 	}
 	slasher.SetParamStore(govStore)
 
@@ -326,6 +373,23 @@ func Wire(cfg Config) (*Wired, error) {
 			return
 		}
 		govApplier.PromotePending(blk.Height)
+
+		// Persist the post-promote store snapshot if a
+		// persistence path is configured. Save AFTER Promote
+		// so a crash between two blocks always replays a
+		// snapshot that reflects every promotion the chain
+		// committed up to and including the just-sealed
+		// block. Save errors are surfaced via
+		// LogSnapshotError but do NOT block the chain — the
+		// next sealed block re-saves and recovers the state.
+		if cfg.GovParamStorePath == "" {
+			return
+		}
+		if err := chainparams.SaveSnapshot(govStore, cfg.GovParamStorePath); err != nil {
+			if cfg.LogSnapshotError != nil {
+				cfg.LogSnapshotError(blk.Height, err)
+			}
+		}
 	}
 
 	return &Wired{

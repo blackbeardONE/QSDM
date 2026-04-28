@@ -1112,6 +1112,66 @@ is uniform) but the values never change because no
 one-line config edit (populate `GovernanceAuthorities`) and
 takes effect at the next boot.
 
+#### Persistence — `GovParamStorePath`
+
+The on-chain `ParamStore` interface (`pkg/governance/chainparams.ParamStore`)
+mandates that production implementations persist `active` +
+`pending` state across node restarts. The reference
+`InMemoryParamStore` is non-persistent on its own; the
+`pkg/governance/chainparams/persist.go` companion ships
+free functions (`SaveSnapshot`, `LoadOrNew`) that the host
+orchestrates from a natural commit boundary.
+
+`internal/v2wiring.Config.GovParamStorePath` is that
+orchestration. When set:
+
+- **Boot**: `Wire()` calls `chainparams.LoadOrNew(path)`. The
+  file is parsed and replayed into a fresh
+  `InMemoryParamStore`; `active` values for unknown params and
+  out-of-bounds values are silently dropped (forward/backward
+  compat). A version mismatch or malformed JSON returns a
+  hard error so the operator notices state corruption rather
+  than silently downgrading.
+- **Per sealed block**: the `SealedBlockHook` calls
+  `chainparams.SaveSnapshot(govStore, path)` AFTER
+  `GovApplier.PromotePending` runs. So a snapshot always
+  reflects every promotion the chain committed up to and
+  including the just-sealed block.
+- **Atomic write**: `SaveSnapshot` writes to `<path>.tmp`
+  then atomically renames over `<path>` (with a `Remove`
+  beforehand on Windows). A crash between Remove and Rename
+  leaves `<path>` missing; the next boot's `LoadOrNew`
+  treats that as a first-boot scenario, and an operator can
+  hand-recover by renaming `<path>.tmp`.
+- **Save errors**: surfaced via `Config.LogSnapshotError`;
+  the chain continues. Persistence drift on a single block
+  recovers on the next save.
+
+When `GovParamStorePath` is empty (default) the store is
+in-memory only. That's fine for ephemeral testnets but NOT
+acceptable for production: a validator restart loses every
+pending change and resets `active` values to the registry
+defaults, which is a consensus-divergence risk on multi-node
+networks.
+
+Snapshot format (JSON, version-tagged):
+
+```json
+{
+  "version": 1,
+  "saved_at": "2026-04-28T16:20:00Z",
+  "active": {"reward_bps": 2500, "auto_revoke_min_stake_dust": 1000000000},
+  "pending": [
+    {"param":"reward_bps","value":3000,"effective_height":12345,
+     "submitted_at_height":12000,"authority":"alice","memo":"…"}
+  ]
+}
+```
+
+Bumping `SnapshotVersion` is a breaking deployment change;
+the load path refuses unknown versions rather than silently
+downgrading.
+
 ### 9.5 Production boot wiring (`internal/v2wiring`)
 
 [`internal/v2wiring/v2wiring.go`](../../source/internal/v2wiring/v2wiring.go)
