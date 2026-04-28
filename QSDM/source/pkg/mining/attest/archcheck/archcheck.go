@@ -59,10 +59,29 @@
 //     ValidateBundleArchConsistencyCC (a no-op stub) so the
 //     wiring point is reserved.
 //
-//   - Hashrate plausibility per arch (claimed_hashrate_hps vs
-//     known per-arch peak FP16 throughput). Belongs in a
-//     separate hashrate-band check; arch-spoof is sufficient
-//     to reject the more egregious spoofs by itself.
+// # Hashrate-band plausibility
+//
+// `Attestation.ClaimedHashrateHPS` is operator-supplied and
+// ungated by any cryptographic check — the miner can put any
+// number they want there. It feeds the leaderboard / pool
+// telemetry surface, not consensus, so the worst case is
+// reputational manipulation rather than block-acceptance
+// manipulation. Even so, an obviously-implausible value is a
+// strong signal that the rest of the attestation is suspect:
+//
+//   - A claimed 100 MH/s on `gpu_arch=turing` (T4 peaks ~0.5
+//     MH/s for the v2 mixin) almost certainly means the
+//     miner is lying about something.
+//   - A claimed 0.05 MH/s on `gpu_arch=hopper` (H100 should be
+//     ~20-40 MH/s) suggests CPU mining with a forged
+//     attestation.
+//
+// Bounds are intentionally GENEROUS (≈100x range per arch)
+// so legitimate variation across a product family doesn't
+// trip false positives. The check rejects only the obvious
+// lies; subtler manipulation is left to off-chain analysis.
+// `ClaimedHashrateHPS == 0` is treated as "not asserted" and
+// passes through — see `ValidateClaimedHashrate` for why.
 package archcheck
 
 import (
@@ -143,6 +162,51 @@ var aliases = map[string]Architecture{
 	"ada": ArchAdaLovelace,
 }
 
+// HashrateBand is the inclusive [Min, Max] range, in
+// hashes-per-second of the v2 PoW mixin, that a self-reported
+// `Attestation.ClaimedHashrateHPS` is permitted to fall within
+// for a given Architecture. Bounds are deliberately wide — the
+// goal is to catch obvious lies (RTX 4090 claiming 200 MH/s)
+// without rejecting legitimate variation across a product
+// family (RTX 4060 to RTX 4090 spans ~10x).
+type HashrateBand struct {
+	// Min is the lower inclusive bound. Below this is treated
+	// as "implausibly slow" — typically a CPU mining attempt
+	// dressed up as a GPU proof.
+	Min uint64
+
+	// Max is the upper inclusive bound. Above this is treated
+	// as "implausibly fast" — typically a leaderboard-stuffing
+	// attempt or a confused unit.
+	Max uint64
+}
+
+// hashrateBands associates each canonical Architecture with
+// its accepted ClaimedHashrateHPS range. Numbers are derived
+// from the §4.4 "Miner cost" estimates rounded out to ~100x
+// range per arch:
+//
+//   - Turing  (T4 ~0.5 MH/s):       [10 KH/s,    5 MH/s]
+//   - Ampere  (RTX 30 ~1 MH/s,
+//              A100 ~5 MH/s):       [50 KH/s,   50 MH/s]
+//   - Ada     (RTX 4090 ~5 MH/s,
+//              L40S  ~6-8 MH/s):    [100 KH/s,  50 MH/s]
+//   - Hopper  (H100 ~20-40 MH/s):   [1 MH/s,   200 MH/s]
+//   - Blackw. (B200 ~40-80 MH/s,
+//              GB200 NVL72 higher): [5 MH/s,   500 MH/s]
+//
+// Updates to these numbers are consensus-affecting in the same
+// sense the gpu_name patterns are: tightening either end can
+// reject proofs the rest of the network accepts. Loosen freely;
+// tighten only by spec amendment + matching test bump.
+var hashrateBands = map[Architecture]HashrateBand{
+	ArchTuring:      {Min: 10_000, Max: 5_000_000},
+	ArchAmpere:      {Min: 50_000, Max: 50_000_000},
+	ArchAdaLovelace: {Min: 100_000, Max: 50_000_000},
+	ArchHopper:      {Min: 1_000_000, Max: 200_000_000},
+	ArchBlackwell:   {Min: 5_000_000, Max: 500_000_000},
+}
+
 // gpuNamePatterns associates each canonical Architecture with
 // a list of case-insensitive substring patterns that should
 // appear in bundle.gpu_name for an honest miner. A miner
@@ -193,14 +257,28 @@ var gpuNamePatterns = map[Architecture][]string{
 }
 
 // init verifies every canonical Architecture has at least one
-// gpu_name pattern. A programmer-error mismatch (adding a new
-// arch but forgetting the patterns) would otherwise silently
-// reject every honest proof of that arch. Crash at boot is
-// the right failure mode here.
+// gpu_name pattern AND a HashrateBand. A programmer-error
+// mismatch (adding a new arch but forgetting either half)
+// would otherwise silently reject every honest proof of that
+// arch. Crash at boot is the right failure mode here.
 func init() {
 	for _, a := range canonical {
 		if len(gpuNamePatterns[a]) == 0 {
 			panic(fmt.Sprintf("archcheck: Architecture %q has no gpu_name patterns", a))
+		}
+		band, ok := hashrateBands[a]
+		if !ok {
+			panic(fmt.Sprintf("archcheck: Architecture %q has no HashrateBand", a))
+		}
+		if band.Min > band.Max {
+			panic(fmt.Sprintf("archcheck: Architecture %q HashrateBand %v has Min > Max", a, band))
+		}
+		if band.Min == 0 {
+			// A zero Min would make the "claimed_hashrate_hps == 0
+			// = not asserted" sentinel ambiguous (is 0 inside the
+			// band, or is it the sentinel?). Forbid a zero Min so
+			// the sentinel semantics stay clean.
+			panic(fmt.Sprintf("archcheck: Architecture %q has Min=0 which collides with the not-asserted sentinel", a))
 		}
 	}
 	// Every alias must point to a canonical arch.
@@ -230,6 +308,13 @@ var ErrArchUnknown = errors.New("archcheck: unknown gpu_arch")
 // with the proof's claimed Architecture. The "spoof was caught"
 // signal.
 var ErrArchGPUNameMismatch = errors.New("archcheck: gpu_name does not match claimed gpu_arch")
+
+// ErrHashrateOutOfBand is returned by ValidateClaimedHashrate
+// when ClaimedHashrateHPS is non-zero and falls outside the
+// per-arch HashrateBand. Distinct sentinel from
+// ErrArchGPUNameMismatch so dashboards and metrics can tell
+// "lying about gpu_name" apart from "lying about hashrate".
+var ErrHashrateOutOfBand = errors.New("archcheck: claimed_hashrate_hps outside per-arch band")
 
 // KnownArchitectures returns the closed-enum allowlist of
 // canonical Architecture values, in protocol-spec order. Used
@@ -346,6 +431,60 @@ func normaliseGPUName(s string) string {
 	// (regular space, tab, newline, etc.) so we don't
 	// need a Unicode-aware regex.
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// HashrateBandFor returns the [Min, Max] hashrate range for
+// the given Architecture, or (zero, false) if the arch is not
+// in the canonical set. Exposed so dashboards and the CLI's
+// `qsdmcli gov params` listing can surface the live band
+// without re-deriving the table.
+func HashrateBandFor(arch Architecture) (HashrateBand, bool) {
+	band, ok := hashrateBands[arch]
+	return band, ok
+}
+
+// ValidateClaimedHashrate enforces the per-arch HashrateBand on
+// a self-reported `Attestation.ClaimedHashrateHPS`. Returns nil
+// in two cases:
+//
+//   - claimed == 0. The protocol treats zero as "miner declined
+//     to assert" (existing test fixtures predate this check use
+//     0 idiomatically, and the wire format gives no other
+//     unambiguous way to mean "absent" for a uint64). Tightening
+//     to require non-zero is a future fork concern; for now,
+//     0 passes the band check.
+//
+//   - claimed is in the band [Min, Max] inclusive on both ends.
+//
+// Returns ErrHashrateOutOfBand wrapped with both endpoints so
+// the operator log line tells them what they claimed against
+// what the band allows. Returns ErrArchUnknown if `arch` is
+// not in the canonical set (programmer error — caller should
+// have called Canonicalise first).
+//
+// This is informational integrity, not a security boundary:
+// ClaimedHashrateHPS feeds telemetry / leaderboards, not block
+// acceptance arithmetic. So the bounds err on the side of
+// generosity (~100x range per arch) and the failure mode
+// (ErrHashrateOutOfBand) wraps a soft sentinel rather than the
+// hard `mining.ErrAttestationSignatureInvalid`. Wiring sites
+// choose whether to reject the proof or merely log; the outer
+// verifier rejects post-fork because anything failing here is
+// almost certainly compounding another lie.
+func ValidateClaimedHashrate(arch Architecture, claimedHPS uint64) error {
+	band, ok := hashrateBands[arch]
+	if !ok {
+		return fmt.Errorf("%w: arch %q has no HashrateBand", ErrArchUnknown, arch)
+	}
+	if claimedHPS == 0 {
+		// "Not asserted" sentinel — passes through.
+		return nil
+	}
+	if claimedHPS < band.Min || claimedHPS > band.Max {
+		return fmt.Errorf("%w: arch=%q claimed=%d band=[%d, %d]",
+			ErrHashrateOutOfBand, arch, claimedHPS, band.Min, band.Max)
+	}
+	return nil
 }
 
 // ValidateBundleArchConsistencyCC is the placeholder hook for

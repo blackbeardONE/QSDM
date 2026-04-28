@@ -692,7 +692,58 @@ as the long-deferred step 8 of the §3.3 acceptance flow,
 check (step 7) — so a determined spoofer has to clear every
 upstream gate before being trapped here.
 
-#### 4.6.3 CC-path placeholder
+#### 4.6.3 Hashrate-band plausibility
+
+`Attestation.ClaimedHashrateHPS` is operator-supplied and
+ungated by any cryptographic check — the miner can put any
+number they want there. It feeds the leaderboard / pool
+telemetry surface, not consensus, so the worst case is
+reputational manipulation rather than block-acceptance
+manipulation. Even so, an obviously-implausible value is a
+strong signal that the rest of the attestation is suspect:
+
+| Canonical arch | Min H/s | Max H/s | Reference cards |
+|---|---:|---:|---|
+| `turing` | 10 000 | 5 000 000 | T4 ~0.5 MH/s, GTX 16 lower |
+| `ampere` | 50 000 | 50 000 000 | RTX 30 ~1-2 MH/s, A100 ~5-10 MH/s |
+| `ada-lovelace` | 100 000 | 50 000 000 | RTX 40 ~3-5 MH/s, L40S ~6-8 MH/s |
+| `hopper` | 1 000 000 | 200 000 000 | H100 ~20-40 MH/s, H200 higher |
+| `blackwell` | 5 000 000 | 500 000 000 | B200 ~40-80 MH/s, GB200 NVL72 higher |
+
+Bounds are inclusive on both ends and intentionally **wide**
+(≈100x range per arch) so legitimate variation across a
+product family doesn't trip false positives. The check
+rejects only the obvious lies; subtler manipulation is left
+to off-chain analysis.
+
+`ClaimedHashrateHPS == 0` is treated as **"not asserted"**
+and passes through. This preserves backward compat with miners
+and test fixtures that don't populate the field. Tightening
+to require a non-zero value is a future fork concern.
+
+This check fires in the OUTER verifier (same site as §4.6.1
+allowlist), AFTER `ValidateOuterArch` succeeds and BEFORE
+dispatching to the per-type cryptographic verifier — so an
+implausible-hashrate proof never pays the HMAC or X.509
+work. Source:
+[`pkg/mining/attest/archcheck/archcheck.go::ValidateClaimedHashrate`](../../source/pkg/mining/attest/archcheck/archcheck.go).
+
+#### 4.6.4 Operator metrics
+
+Two Prometheus counter families surface the §4.6 rejection
+rate to dashboards and alerting:
+
+```
+qsdm_attest_archspoof_rejected_total{reason="unknown_arch" | "gpu_name_mismatch"}
+qsdm_attest_hashrate_rejected_total{arch="hopper" | "blackwell" | "ada-lovelace" | "ampere" | "turing" | "unknown"}
+```
+
+Cardinality stays bounded (≤ 8 series total). Both counters
+are wired through the dependency-inverted
+`mining.SetMiningMetricsRecorder` registration pattern (see
+`pkg/mining/metrics.go` and `pkg/monitoring/mining_recorder.go`).
+
+#### 4.6.5 CC-path placeholder
 
 The CC path (`nvidia-cc-v1`) cryptographically binds the
 device certificate chain to a specific physical Hopper /
@@ -703,7 +754,7 @@ exists as a fixed wiring point for a future strict
 cert-subject ↔ arch comparison; today it is a no-op. Adding
 that comparison is a separate change tracked under §12.2.
 
-#### 4.6.4 Activation height
+#### 4.6.6 Activation height
 
 This whole section is gated by `FORK_V2_HEIGHT` (the v2
 attestation flow), **not** `FORK_V2_TC_HEIGHT`. The

@@ -127,6 +127,22 @@ func corePrometheusMetrics() []Metric {
 			MetricCounter, float64(p.Val), map[string]string{"reason": p.Reason})
 	}
 
+	// ---- v2 attestation arch-spoof rejection (§4.6) -------------
+	// Counters for the closed-enum allowlist (unknown_arch) and
+	// the arch <-> gpu_name cross-check (gpu_name_mismatch). See
+	// pkg/mining/attest/archcheck and the rewritten
+	// MINING_PROTOCOL_V2.md §4.6 for the rejection model.
+	for _, p := range ArchSpoofRejectedLabeled() {
+		add("qsdm_attest_archspoof_rejected_total",
+			"v2 proofs rejected by the arch-spoof gate (§4.6), by reason.",
+			MetricCounter, float64(p.Val), map[string]string{"reason": p.Reason})
+	}
+	for _, p := range HashrateRejectedLabeled() {
+		add("qsdm_attest_hashrate_rejected_total",
+			"v2 proofs rejected because Attestation.ClaimedHashrateHPS is outside the per-arch HashrateBand (§4.6).",
+			MetricCounter, float64(p.Val), map[string]string{"arch": p.Arch})
+	}
+
 	// ---- v2 enrollment registry --------------------------------
 	add("qsdm_enrollment_applied_total",
 		"Successful qsdm/enroll/v1 applications.",

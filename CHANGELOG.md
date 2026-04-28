@@ -14,6 +14,53 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Hashrate-band plausibility check + Prometheus telemetry for
+  the §4.6 arch-spoof gate (2026-04-29).** The §4.6 closed-enum
+  + arch ↔ `gpu_name` rejection from earlier today now has a
+  third leg: per-arch [Min, Max] bounds on
+  `Attestation.ClaimedHashrateHPS`. A claim outside the band
+  rejects with `archcheck.ErrHashrateOutOfBand` (wrapped in
+  `mining.ErrAttestationSignatureInvalid`) BEFORE the per-type
+  dispatcher fires, so an implausible-hashrate proof never
+  pays the HMAC or X.509 work. `ClaimedHashrateHPS == 0` is
+  treated as "not asserted" and passes through — preserves
+  backward compat with miners and fixtures that don't populate
+  the field.
+  - **Bands** ([`archcheck.HashrateBandFor`](QSDM/source/pkg/mining/attest/archcheck/archcheck.go))
+    are deliberately wide (~100x range per arch) so legitimate
+    variation across a product family doesn't false-positive.
+    Catches obvious lies — RTX 4090 claiming 200 MH/s, H100
+    claiming 100 H/s, the 18 PH/s units-confusion typo.
+  - **Prometheus telemetry** for the whole §4.6 rejection gate:
+    - `qsdm_attest_archspoof_rejected_total{reason}` —
+      `unknown_arch` | `gpu_name_mismatch`. Counts the §4.6.1
+      allowlist rejects + §4.6.2 HMAC step-8 cross-check
+      rejects.
+    - `qsdm_attest_hashrate_rejected_total{arch}` — labelled by
+      the canonical arch the claim was made against. Counts
+      the §4.6.3 hashrate-band rejects.
+    - Cardinality stays ≤ 8 series total. Both wire through
+      a new dependency-inverted recorder
+      ([`pkg/mining/metrics.go`](QSDM/source/pkg/mining/metrics.go) +
+       [`pkg/monitoring/mining_recorder.go`](QSDM/source/pkg/monitoring/mining_recorder.go))
+      mirroring the `pkg/chain.SetChainMetricsRecorder`
+      pattern, so pkg/mining stays free of pkg/monitoring
+      imports.
+  - **Tests**: 6 new archcheck unit tests (zero-as-sentinel,
+    happy-path, inclusive bounds, lazy-spoof, low-CPU
+    spoof, unknown-arch programmer-error path) + 4 new
+    verifier wiring tests in
+    [`verifier_hashrate_test.go`](QSDM/source/pkg/mining/verifier_hashrate_test.go) (zero passes,
+    high-spoof rejects, low-spoof rejects, in-band accepts) +
+    5 new monitoring tests in
+    [`archcheck_metrics_test.go`](QSDM/source/pkg/monitoring/archcheck_metrics_test.go) (per-reason and
+    per-arch counter routing, unknown-bucketing for both,
+    init-time adapter registration). 1870 / 1870 tests
+    passing across 68 packages.
+  - **Docs**: `MINING_PROTOCOL_V2.md` §4.6 now has §4.6.3
+    (hashrate band table + rationale) and §4.6.4 (operator
+    metrics).
+
 - **Arch-spoof rejection (§4.6 / §3.3 step 8) — closed-enum
   allowlist + arch ↔ `gpu_name` cross-check (2026-04-29).** The
   long-deferred step 8 of the HMAC verifier acceptance flow now

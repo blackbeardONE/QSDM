@@ -249,6 +249,131 @@ func TestValidateBundleArchConsistencyHMAC_RejectsUnknownArch(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
+// ValidateClaimedHashrate
+// -----------------------------------------------------------------------------
+
+// TestValidateClaimedHashrate_ZeroIsNotAsserted locks the
+// "not asserted" sentinel: a literal 0 passes through for every
+// canonical arch. This is critical for backward compatibility
+// with the existing test fixtures and miners that don't
+// populate the field.
+func TestValidateClaimedHashrate_ZeroIsNotAsserted(t *testing.T) {
+	for _, a := range KnownArchitectures() {
+		if err := ValidateClaimedHashrate(a, 0); err != nil {
+			t.Errorf("(%q, 0) should be a no-op (sentinel); got %v", a, err)
+		}
+	}
+}
+
+// TestValidateClaimedHashrate_HappyPath confirms each per-arch
+// band accepts plausible mid-range values. Numbers are pinned
+// to the §4.4 "Miner cost" estimates so a future loosening of
+// the bands lands as a deliberate test diff, not silent drift.
+func TestValidateClaimedHashrate_HappyPath(t *testing.T) {
+	cases := []struct {
+		arch    Architecture
+		claimed uint64
+		desc    string
+	}{
+		{ArchTuring, 500_000, "T4 ~0.5 MH/s"},
+		{ArchAmpere, 1_500_000, "RTX 3090 ~1.5 MH/s"},
+		{ArchAmpere, 5_000_000, "A100 ~5 MH/s"},
+		{ArchAdaLovelace, 5_000_000, "RTX 4090 ~5 MH/s"},
+		{ArchAdaLovelace, 7_000_000, "L40S ~7 MH/s"},
+		{ArchHopper, 30_000_000, "H100 ~30 MH/s"},
+		{ArchBlackwell, 60_000_000, "B200 ~60 MH/s"},
+	}
+	for _, c := range cases {
+		if err := ValidateClaimedHashrate(c.arch, c.claimed); err != nil {
+			t.Errorf("(%q, %d) [%s] should be in band; got %v",
+				c.arch, c.claimed, c.desc, err)
+		}
+	}
+}
+
+// TestValidateClaimedHashrate_BoundsInclusive verifies both
+// endpoints of every band accept exactly. A naive `< Min` or
+// `> Max` regression would break this; the inclusive-on-both-
+// ends rule is consensus-relevant.
+func TestValidateClaimedHashrate_BoundsInclusive(t *testing.T) {
+	for _, a := range KnownArchitectures() {
+		band, ok := HashrateBandFor(a)
+		if !ok {
+			t.Fatalf("HashrateBandFor(%q) returned false", a)
+		}
+		if err := ValidateClaimedHashrate(a, band.Min); err != nil {
+			t.Errorf("(%q, Min=%d) inclusive lower bound rejected: %v",
+				a, band.Min, err)
+		}
+		if err := ValidateClaimedHashrate(a, band.Max); err != nil {
+			t.Errorf("(%q, Max=%d) inclusive upper bound rejected: %v",
+				a, band.Max, err)
+		}
+	}
+}
+
+// TestValidateClaimedHashrate_RejectsLazyHashrateSpoof is THE
+// load-bearing test for this feature: an obvious downgrade or
+// upgrade lie. Each case is a real-world spoof shape an
+// attacker would attempt — claiming H100 throughput on a
+// consumer card, claiming MH-scale hashrate on a CPU, etc.
+func TestValidateClaimedHashrate_RejectsLazyHashrateSpoof(t *testing.T) {
+	cases := []struct {
+		arch    Architecture
+		claimed uint64
+		desc    string
+	}{
+		{ArchTuring, 100_000_000, "T4 claiming 100 MH/s (200x peak)"},
+		{ArchAdaLovelace, 200_000_000, "RTX 4090 claiming 200 MH/s (40x peak)"},
+		{ArchAmpere, 500_000_000, "A100 claiming 500 MH/s (100x peak)"},
+		{ArchHopper, 100, "H100 claiming 100 H/s (CPU territory)"},
+		{ArchBlackwell, 1, "GB200 claiming 1 H/s (typo)"},
+		{ArchHopper, 18_000_000_000_000_000,
+			"obvious typo: 18 PB/s units confusion"},
+	}
+	for _, c := range cases {
+		err := ValidateClaimedHashrate(c.arch, c.claimed)
+		if err == nil {
+			t.Errorf("(%q, %d) [%s] should reject; got nil",
+				c.arch, c.claimed, c.desc)
+			continue
+		}
+		if !errors.Is(err, ErrHashrateOutOfBand) {
+			t.Errorf("(%q, %d) [%s] error %v does not wrap ErrHashrateOutOfBand",
+				c.arch, c.claimed, c.desc, err)
+		}
+	}
+}
+
+// TestValidateClaimedHashrate_RejectsUnknownArch covers the
+// programmer-error path: caller passes an Architecture that's
+// not in the canonical set. Returns ErrArchUnknown rather than
+// panicking on the consensus path.
+func TestValidateClaimedHashrate_RejectsUnknownArch(t *testing.T) {
+	err := ValidateClaimedHashrate(Architecture("not-an-arch"), 1_000_000)
+	if err == nil {
+		t.Fatal("expected error for non-canonical arch")
+	}
+	if !errors.Is(err, ErrArchUnknown) {
+		t.Errorf("error %v does not wrap ErrArchUnknown", err)
+	}
+}
+
+// TestHashrateBandFor_KnownAndUnknown spot-checks the lookup
+// API: every canonical arch returns a band; an arbitrary
+// non-canonical name returns ok=false.
+func TestHashrateBandFor_KnownAndUnknown(t *testing.T) {
+	for _, a := range KnownArchitectures() {
+		if _, ok := HashrateBandFor(a); !ok {
+			t.Errorf("HashrateBandFor(%q): ok=false; want true", a)
+		}
+	}
+	if _, ok := HashrateBandFor(Architecture("voltA")); ok {
+		t.Error(`HashrateBandFor("voltA"): ok=true; want false`)
+	}
+}
+
+// -----------------------------------------------------------------------------
 // ValidateBundleArchConsistencyCC (placeholder)
 // -----------------------------------------------------------------------------
 

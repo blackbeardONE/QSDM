@@ -371,10 +371,31 @@ func (v *Verifier) Verify(rawProofJSON []byte, acceptHeight uint64) ([32]byte, e
 		// gpu_name consistency check lives inside the per-type
 		// verifier (see pkg/mining/attest/hmac/verifier.go
 		// step 8) where the bundle is already parsed.
-		if _, err := archcheck.ValidateOuterArch(p.Attestation.GPUArch); err != nil {
+		arch, err := archcheck.ValidateOuterArch(p.Attestation.GPUArch)
+		if err != nil {
+			recordArchSpoofRejection(err)
+			return [32]byte{}, reject(ReasonAttestation, "%v", err)
+		}
+		// Hashrate-band plausibility (§4.6 hashrate paragraph).
+		// Operator-supplied claimed_hashrate_hps is leaderboard
+		// telemetry, not consensus arithmetic, so the bounds
+		// are deliberately wide (~100x range per arch). A claim
+		// outside the band is a strong signal the rest of the
+		// attestation is suspect, so we treat it as a hard
+		// reject post-fork. ClaimedHashrateHPS == 0 is the
+		// "not asserted" sentinel and passes through — see
+		// archcheck.ValidateClaimedHashrate for why.
+		if err := archcheck.ValidateClaimedHashrate(arch, p.Attestation.ClaimedHashrateHPS); err != nil {
+			recordHashrateRejection(arch)
 			return [32]byte{}, reject(ReasonAttestation, "%v", err)
 		}
 		if err := v.cfg.Attestation.VerifyAttestation(*p, v.cfg.Now()); err != nil {
+			// The HMAC verifier's step-8 (gpu_name <-> arch)
+			// rejection wraps archcheck.ErrArchGPUNameMismatch.
+			// Pluck that out for the dedicated counter so
+			// dashboards can plot the spoof catch separately
+			// from generic crypto failures.
+			recordArchSpoofRejection(err)
 			return [32]byte{}, reject(ReasonAttestation, "%v", err)
 		}
 	} else {
