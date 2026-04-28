@@ -374,16 +374,163 @@ func TestHashrateBandFor_KnownAndUnknown(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// ValidateBundleArchConsistencyCC (placeholder)
+// ValidateBundleArchConsistencyCC
 // -----------------------------------------------------------------------------
 
-func TestValidateBundleArchConsistencyCC_AlwaysNilForNow(t *testing.T) {
-	// Reservation point — explicit acknowledgement that the CC
-	// path is currently a no-op. When this stops being a no-op,
-	// this test must be replaced with cert-subject coverage.
+// TestValidateBundleArchConsistencyCC_HappyPath: cert subjects
+// emitted by an NVIDIA-issued AIK leaf for each canonical arch.
+// Each MUST pass — the subject contains positive product
+// evidence that aligns with the claimed arch.
+func TestValidateBundleArchConsistencyCC_HappyPath(t *testing.T) {
+	cases := []struct {
+		arch    Architecture
+		subject string
+	}{
+		{ArchHopper, "NVIDIA H100 80GB HBM3"},
+		{ArchHopper, "Tesla H200 SXM"},
+		{ArchHopper, "CN=NVIDIA H800,O=NVIDIA Corporation"},
+		{ArchBlackwell, "NVIDIA B200 192GB HBM3e"},
+		{ArchBlackwell, "CN=NVIDIA GB200 NVL72,O=NVIDIA"},
+		{ArchAdaLovelace, "NVIDIA L40S"},
+		{ArchAdaLovelace, "NVIDIA RTX 6000 Ada Generation"},
+		{ArchAmpere, "NVIDIA A100-SXM4-80GB"},
+		{ArchTuring, "NVIDIA Tesla T4"},
+	}
+	for _, c := range cases {
+		if err := ValidateBundleArchConsistencyCC(c.arch, c.subject); err != nil {
+			t.Errorf("(%q, %q) should pass; got %v",
+				c.arch, c.subject, err)
+		}
+	}
+}
+
+// TestValidateBundleArchConsistencyCC_NoEvidencePassesThrough:
+// a leaf cert whose subject contains NO known NVIDIA product
+// substring (test fixtures, generic AIK CN's, OID-based model
+// encodings) must pass through. This is the explicit
+// "evidence-based, not strict" semantic — see the function doc.
+func TestValidateBundleArchConsistencyCC_NoEvidencePassesThrough(t *testing.T) {
+	cases := []struct {
+		arch    Architecture
+		subject string
+		desc    string
+	}{
+		{ArchHopper, "qsdm-test-nvidia-aik",
+			"existing test fixture default CN"},
+		{ArchHopper, "CN=NVIDIA Confidential Computing AIK",
+			"corporate CN with no model token"},
+		{ArchAdaLovelace, "",
+			"empty subject (no CN at all)"},
+		{ArchAmpere, "   ",
+			"whitespace-only"},
+		{ArchHopper, "CN=Quadro Reserve",
+			"NVIDIA-themed but no model token"},
+		{ArchBlackwell, "CN=qsdm-test-nvidia-root",
+			"root-style label without product"},
+	}
+	for _, c := range cases {
+		if err := ValidateBundleArchConsistencyCC(c.arch, c.subject); err != nil {
+			t.Errorf("(%q, %q) [%s] should pass through; got %v",
+				c.arch, c.subject, c.desc, err)
+		}
+	}
+}
+
+// TestValidateBundleArchConsistencyCC_RejectsContradiction is
+// THE load-bearing test: the cert subject contains positive
+// product evidence that contradicts the claimed Architecture.
+// This catches the "fabricated AIK" attacker (assuming they
+// somehow got past the cert-chain pin) AND honest miners who
+// misconfigured `gpu_arch` after a hardware swap.
+func TestValidateBundleArchConsistencyCC_RejectsContradiction(t *testing.T) {
+	cases := []struct {
+		arch    Architecture
+		subject string
+		desc    string
+	}{
+		{ArchHopper, "NVIDIA GeForce RTX 4090",
+			"4090 cert claiming Hopper"},
+		{ArchAdaLovelace, "NVIDIA H100 80GB",
+			"H100 cert claiming Ada"},
+		{ArchTuring, "NVIDIA B200",
+			"B200 cert claiming Turing"},
+		{ArchAmpere, "NVIDIA L40S",
+			"L40S (Ada) cert claiming Ampere"},
+		{ArchBlackwell, "NVIDIA Tesla T4",
+			"T4 (Turing) cert claiming Blackwell"},
+	}
+	for _, c := range cases {
+		err := ValidateBundleArchConsistencyCC(c.arch, c.subject)
+		if err == nil {
+			t.Errorf("(%q, %q) [%s] should reject; got nil",
+				c.arch, c.subject, c.desc)
+			continue
+		}
+		if !errors.Is(err, ErrArchCertSubjectMismatch) {
+			t.Errorf("(%q, %q) [%s] error %v does not wrap ErrArchCertSubjectMismatch",
+				c.arch, c.subject, c.desc, err)
+		}
+	}
+}
+
+// TestValidateBundleArchConsistencyCC_LongestPatternWins locks
+// the overlap-resolution rule: the substring "rtx 6000" (Quadro
+// RTX 6000, Turing) is contained in "rtx 6000 ada" (RTX 6000
+// Ada Generation, Ada). A claimed_arch=turing on an
+// "RTX 6000 Ada" cert MUST reject because the longer-pattern
+// ("rtx 6000 ada") attribution wins. Conversely the same cert
+// with claimed_arch=ada-lovelace MUST pass.
+func TestValidateBundleArchConsistencyCC_LongestPatternWins(t *testing.T) {
+	subject := "NVIDIA RTX 6000 Ada Generation"
+
+	if err := ValidateBundleArchConsistencyCC(ArchAdaLovelace, subject); err != nil {
+		t.Errorf("Ada cert with Ada arch should pass; got %v", err)
+	}
+	err := ValidateBundleArchConsistencyCC(ArchTuring, subject)
+	if err == nil {
+		t.Fatal("Ada cert with Turing arch should reject; got nil")
+	}
+	if !errors.Is(err, ErrArchCertSubjectMismatch) {
+		t.Errorf("error %v does not wrap ErrArchCertSubjectMismatch", err)
+	}
+
+	// And the genuinely Turing-era card SHOULD match Turing.
 	if err := ValidateBundleArchConsistencyCC(
-		ArchHopper, "CN=NVIDIA H100",
+		ArchTuring, "NVIDIA Quadro RTX 6000",
 	); err != nil {
-		t.Errorf("CC consistency check is currently a no-op; got %v", err)
+		t.Errorf("Quadro RTX 6000 (Turing) with Turing arch should pass; got %v", err)
+	}
+}
+
+// TestValidateBundleArchConsistencyCC_CaseInsensitive is the
+// counterpart to the HMAC case-insensitivity test: real cert
+// subjects come back as `pkix.Name.String()` which preserves
+// whatever case the issuer used. We canonicalise on read.
+func TestValidateBundleArchConsistencyCC_CaseInsensitive(t *testing.T) {
+	if err := ValidateBundleArchConsistencyCC(
+		ArchHopper, "nvidia h100",
+	); err != nil {
+		t.Errorf(`lowercased "nvidia h100" should match Hopper; got %v`, err)
+	}
+	if err := ValidateBundleArchConsistencyCC(
+		ArchAdaLovelace, "  NVIDIA  GeForce  RTX  4090  ",
+	); err != nil {
+		t.Errorf("padded subject should match Ada-Lovelace; got %v", err)
+	}
+}
+
+// TestValidateBundleArchConsistencyCC_RejectsUnknownArch covers
+// the programmer-error path. Returns ErrArchUnknown not
+// ErrArchCertSubjectMismatch so the call site can distinguish
+// "you misconfigured the verifier" from "the bundle lied".
+func TestValidateBundleArchConsistencyCC_RejectsUnknownArch(t *testing.T) {
+	err := ValidateBundleArchConsistencyCC(
+		Architecture("not-an-arch"), "NVIDIA H100",
+	)
+	if err == nil {
+		t.Fatal("expected error for non-canonical arch")
+	}
+	if !errors.Is(err, ErrArchUnknown) {
+		t.Errorf("error %v does not wrap ErrArchUnknown", err)
 	}
 }

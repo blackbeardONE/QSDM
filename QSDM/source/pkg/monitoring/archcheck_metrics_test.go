@@ -34,6 +34,9 @@ func TestArchSpoofRejected_CounterByReason(t *testing.T) {
 	RecordArchSpoofRejected(ArchSpoofRejectReasonUnknownArch)
 	RecordArchSpoofRejected(ArchSpoofRejectReasonUnknownArch)
 	RecordArchSpoofRejected(ArchSpoofRejectReasonGPUNameMismatch)
+	RecordArchSpoofRejected(ArchSpoofRejectReasonCCSubjectMismatch)
+	RecordArchSpoofRejected(ArchSpoofRejectReasonCCSubjectMismatch)
+	RecordArchSpoofRejected(ArchSpoofRejectReasonCCSubjectMismatch)
 
 	got := indexArchSpoofRejected(t)
 	if got[ArchSpoofRejectReasonUnknownArch] != 2 {
@@ -41,6 +44,9 @@ func TestArchSpoofRejected_CounterByReason(t *testing.T) {
 	}
 	if got[ArchSpoofRejectReasonGPUNameMismatch] != 1 {
 		t.Errorf("gpu_name_mismatch = %d, want 1", got[ArchSpoofRejectReasonGPUNameMismatch])
+	}
+	if got[ArchSpoofRejectReasonCCSubjectMismatch] != 3 {
+		t.Errorf("cc_subject_mismatch = %d, want 3", got[ArchSpoofRejectReasonCCSubjectMismatch])
 	}
 }
 

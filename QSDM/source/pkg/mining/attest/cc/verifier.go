@@ -26,6 +26,9 @@ package cc
 //      → ErrAttestationNonceMismatch
 //   8. PCR floor (firmware/driver minimums)
 //      → ErrAttestationSignatureInvalid
+//   9. Arch ↔ leaf cert subject consistency (§4.6.5)
+//      → ErrAttestationSignatureInvalid (wraps
+//        archcheck.ErrArchCertSubjectMismatch)
 //
 // Step 8 is the only step that doesn't have a perfectly
 // natural error sentinel — a downgraded firmware isn't
@@ -48,6 +51,7 @@ import (
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/mining"
+	"github.com/blackbeardONE/QSDM/pkg/mining/attest/archcheck"
 	"github.com/blackbeardONE/QSDM/pkg/mining/attest/hmac"
 	"github.com/blackbeardONE/QSDM/pkg/mining/challenge"
 )
@@ -378,6 +382,51 @@ func (v *Verifier) VerifyAttestation(p mining.Proof, now time.Time) error {
 			return fmt.Errorf("cc: pcr.driver_ver %s < min %s: %w",
 				b.PCR.DriverVer, v.minFirmware.Driver,
 				mining.ErrAttestationSignatureInvalid)
+		}
+	}
+
+	// Step 9 (MINING_PROTOCOL_V2 §4.6.5): leaf cert subject
+	// ↔ arch consistency. The outer Verifier (pkg/mining/
+	// verifier.go) has already canonicalised
+	// p.Attestation.GPUArch via archcheck.ValidateOuterArch
+	// before dispatching here, so for any post-fork v2 proof
+	// arriving via the dispatcher GPUArch is guaranteed to be
+	// canonical or alias-valid. A standalone caller that
+	// invokes VerifyAttestation directly with an empty GPUArch
+	// (test fixtures, diagnostic tooling, pre-fork bring-up
+	// vectors) skips this check — the cert-chain pin (step 3)
+	// + AIK signature (step 4) remain the cryptographic
+	// locks.
+	//
+	// We pass leaf.Subject.CommonName as the candidate string
+	// today. Production NVIDIA AIK certs carry the GPU model
+	// in CN; if a future revision moves the model into a
+	// custom OID extension or an OU field, ValidateBundleArch
+	// ConsistencyCC's evidence-based rule lets us extend the
+	// candidate string set (e.g. CN + " " + OU joined) without
+	// re-shaping the package boundary.
+	if p.Attestation.GPUArch != "" {
+		arch, ok := archcheck.Canonicalise(p.Attestation.GPUArch)
+		if !ok {
+			// Defensive: outer verifier should have rejected
+			// this already with ErrArchUnknown. If we reach
+			// here standalone, surface as a signature-invalid
+			// (the bundle's claim of arch X cannot be
+			// validated).
+			return fmt.Errorf("cc: gpu_arch %q not in allowlist: %w",
+				p.Attestation.GPUArch, mining.ErrAttestationSignatureInvalid)
+		}
+		if err := archcheck.ValidateBundleArchConsistencyCC(
+			arch, leaf.Subject.CommonName,
+		); err != nil {
+			// Double-wrap so callers can errors.Is against
+			// EITHER the archcheck sentinel (for the
+			// dedicated archspoof_rejected{cc_subject_mismatch}
+			// counter) OR the mining sentinel (for generic
+			// signature-invalid grouping). Go 1.20+ %w / %w
+			// multiple wrap.
+			return fmt.Errorf("cc: arch consistency: %w: %w",
+				err, mining.ErrAttestationSignatureInvalid)
 		}
 	}
 

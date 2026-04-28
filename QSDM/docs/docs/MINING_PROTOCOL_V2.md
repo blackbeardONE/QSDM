@@ -252,7 +252,7 @@ length-prefixed binary blob carrying:
    version + driver version, recorded by the CC subsystem so a
    downgrade-to-vulnerable-firmware attack is detectable.
 
-#### Verifier flow (8 steps, all enforced)
+#### Verifier flow (9 steps, all enforced)
 
 ```
 1. Parse the cert chain; verify it terminates in a
@@ -271,7 +271,13 @@ length-prefixed binary blob carrying:
    pinned minimum floor for the claimed gpu_arch.
 7. Look up (device_uuid, challenge_nonce) in the replay cache;
    reject if seen.
-8. If all pass → proof is attested. Else → reject with the
+8. Leaf cert `Subject.CommonName` ↔ `gpu_arch` consistency
+   per §4.6.5 — evidence-based, see that section for the
+   accept/reject table and the longest-pattern tie-breaker
+   rule. (Implemented as Step 9 in `cc/verifier.go`; this
+   spec lists it as #8 because the freshness + replay
+   sub-steps above are grouped.)
+9. If all pass → proof is attested. Else → reject with the
    precise reason.
 ```
 
@@ -734,25 +740,57 @@ Two Prometheus counter families surface the §4.6 rejection
 rate to dashboards and alerting:
 
 ```
-qsdm_attest_archspoof_rejected_total{reason="unknown_arch" | "gpu_name_mismatch"}
+qsdm_attest_archspoof_rejected_total{reason="unknown_arch" | "gpu_name_mismatch" | "cc_subject_mismatch"}
 qsdm_attest_hashrate_rejected_total{arch="hopper" | "blackwell" | "ada-lovelace" | "ampere" | "turing" | "unknown"}
 ```
 
-Cardinality stays bounded (≤ 8 series total). Both counters
+Cardinality stays bounded (≤ 9 series total). Both counters
 are wired through the dependency-inverted
 `mining.SetMiningMetricsRecorder` registration pattern (see
 `pkg/mining/metrics.go` and `pkg/monitoring/mining_recorder.go`).
 
-#### 4.6.5 CC-path placeholder
+#### 4.6.5 CC-path leaf cert subject ↔ arch consistency
 
-The CC path (`nvidia-cc-v1`) cryptographically binds the
-device certificate chain to a specific physical Hopper /
-Blackwell GPU at the protocol level (§3.2 step 1), so the
-device cert itself is the consistency check today.
+The CC path (`nvidia-cc-v1`) already binds the device
+certificate chain to a specific physical GPU at the
+cryptographic level (§3.2 step 1 cert-chain pin + §3.2 step 4
+AIK signature). On top of that, the verifier runs a Step 9
+**evidence-based** consistency check between
+`Attestation.GPUArch` and the leaf cert's
+`Subject.CommonName`:
+
+| Leaf CN content | Outcome |
+|---|---|
+| Contains a substring matching THIS arch's pattern table (e.g. `"NVIDIA H100 80GB HBM3"` with `gpu_arch=hopper`) | **accept** — positive evidence agrees with claim |
+| Contains a substring matching ANOTHER arch's pattern table (e.g. `"NVIDIA H100"` with `gpu_arch=ada-lovelace`) | **reject** with `archcheck.ErrArchCertSubjectMismatch` wrapped under `mining.ErrAttestationSignatureInvalid` |
+| Contains NO substring from any arch's pattern table (test fixtures, corporate AIK label like `"NVIDIA Confidential Computing AIK"`, OID-based model encoding) | **accept** — no evidence to evaluate; cert-chain pin + AIK signature are the locks |
+| `Attestation.GPUArch` is empty (standalone-call path, pre-fork bring-up vectors) | **accept** — Step 9 skipped |
+
+**Why "evidence-based, not strict".** Production NVIDIA CC
+chains have not yet been audited end-to-end for where they
+encode the GPU model — it could be the Subject CN, an OU
+field, a custom OID extension, or nowhere on the leaf at all
+(model only inferable from the issuing intermediate). A
+strict "must contain a known product string" rule would
+false-reject honest validators whose cert format hasn't
+landed in the codebase yet. The evidence-based rule rejects
+only positive contradictions and falls back on the
+cryptographic locks otherwise.
+
+**Pattern overlap resolution.** When the subject matches
+multiple arch patterns (e.g. `"RTX 6000 Ada Generation"`
+matches both `"rtx 6000 ada"` (Ada) and `"rtx 6000"`
+(Turing) as substrings), the **longest-pattern match wins**.
+The Ada attribution dominates and a `gpu_arch=turing` claim
+on that subject is rejected.
+
+**Source.**
 [`archcheck.ValidateBundleArchConsistencyCC`](../../source/pkg/mining/attest/archcheck/archcheck.go)
-exists as a fixed wiring point for a future strict
-cert-subject ↔ arch comparison; today it is a no-op. Adding
-that comparison is a separate change tracked under §12.2.
+implements the rule;
+[`pkg/mining/attest/cc/verifier.go`](../../source/pkg/mining/attest/cc/verifier.go)
+wires it as Step 9, after Step 8 (PCR floor). Rejection
+metric:
+`qsdm_attest_archspoof_rejected_total{reason="cc_subject_mismatch"}`.
 
 #### 4.6.6 Activation height
 

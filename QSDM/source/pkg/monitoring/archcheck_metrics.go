@@ -9,13 +9,17 @@ package monitoring
 //
 //     Increments on every proof rejected by the
 //     pkg/mining/attest/archcheck validators. Reason values:
-//       - "unknown_arch":      Attestation.GPUArch not in the
-//                              closed-enum allowlist (or
-//                              empty post-fork).
-//       - "gpu_name_mismatch": HMAC bundle's gpu_name does not
-//                              match any pattern for the
-//                              claimed arch (the "lazy spoof"
-//                              catch).
+//       - "unknown_arch":         Attestation.GPUArch not in the
+//                                 closed-enum allowlist (or
+//                                 empty post-fork).
+//       - "gpu_name_mismatch":    HMAC bundle's gpu_name does not
+//                                 match any pattern for the
+//                                 claimed arch (the "lazy spoof"
+//                                 catch).
+//       - "cc_subject_mismatch":  CC bundle's leaf cert Subject
+//                                 contains positive product
+//                                 evidence that contradicts the
+//                                 claimed arch (§4.6.5).
 //
 //   qsdm_attest_hashrate_rejected_total{arch}
 //
@@ -32,16 +36,19 @@ import "sync/atomic"
 // ---------- arch-spoof rejection ----------
 
 var (
-	archSpoofRejectUnknownArch     atomic.Uint64
-	archSpoofRejectGPUNameMismatch atomic.Uint64
+	archSpoofRejectUnknownArch       atomic.Uint64
+	archSpoofRejectGPUNameMismatch   atomic.Uint64
+	archSpoofRejectCCSubjectMismatch atomic.Uint64
 )
 
 // Archspoof reject reason tags. Kept narrow so cardinality
 // stays bounded and reasons map 1:1 to the rejection branches
-// in pkg/mining/verifier.go and pkg/mining/attest/hmac/verifier.go.
+// in pkg/mining/verifier.go, pkg/mining/attest/hmac/verifier.go,
+// and pkg/mining/attest/cc/verifier.go.
 const (
-	ArchSpoofRejectReasonUnknownArch     = "unknown_arch"
-	ArchSpoofRejectReasonGPUNameMismatch = "gpu_name_mismatch"
+	ArchSpoofRejectReasonUnknownArch       = "unknown_arch"
+	ArchSpoofRejectReasonGPUNameMismatch   = "gpu_name_mismatch"
+	ArchSpoofRejectReasonCCSubjectMismatch = "cc_subject_mismatch"
 )
 
 // RecordArchSpoofRejected increments the arch-spoof reject
@@ -52,6 +59,8 @@ func RecordArchSpoofRejected(reason string) {
 	switch reason {
 	case ArchSpoofRejectReasonGPUNameMismatch:
 		archSpoofRejectGPUNameMismatch.Add(1)
+	case ArchSpoofRejectReasonCCSubjectMismatch:
+		archSpoofRejectCCSubjectMismatch.Add(1)
 	default:
 		archSpoofRejectUnknownArch.Add(1)
 	}
@@ -69,6 +78,7 @@ func ArchSpoofRejectedLabeled() []struct {
 	}{
 		{ArchSpoofRejectReasonUnknownArch, archSpoofRejectUnknownArch.Load()},
 		{ArchSpoofRejectReasonGPUNameMismatch, archSpoofRejectGPUNameMismatch.Load()},
+		{ArchSpoofRejectReasonCCSubjectMismatch, archSpoofRejectCCSubjectMismatch.Load()},
 	}
 }
 
@@ -130,6 +140,7 @@ func HashrateRejectedLabeled() []struct {
 func ResetArchcheckMetricsForTest() {
 	archSpoofRejectUnknownArch.Store(0)
 	archSpoofRejectGPUNameMismatch.Store(0)
+	archSpoofRejectCCSubjectMismatch.Store(0)
 	hashrateRejectHopper.Store(0)
 	hashrateRejectBlackwell.Store(0)
 	hashrateRejectAdaLovelace.Store(0)

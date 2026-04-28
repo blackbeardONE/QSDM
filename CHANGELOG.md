@@ -14,6 +14,70 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **CC-path leaf cert subject ↔ `gpu_arch` consistency check
+  (§4.6.5, 2026-04-29).** Replaces the earlier no-op stub
+  `archcheck.ValidateBundleArchConsistencyCC` with a real
+  evidence-based rule wired as Step 9 of the
+  [`cc.Verifier`](QSDM/source/pkg/mining/attest/cc/verifier.go)
+  flow, after the PCR floor. Completes the symmetry with the
+  HMAC path's §3.3 step-8 `gpu_name` cross-check.
+  - **Evidence-based, not strict.** If the leaf cert's
+    `Subject.CommonName` contains a substring matching ANY
+    canonical NVIDIA product pattern, the claimed `gpu_arch`
+    must match the longest-pattern attribution (rejection
+    wraps `archcheck.ErrArchCertSubjectMismatch` under
+    `mining.ErrAttestationSignatureInvalid`). If the CN
+    contains NO product evidence (test fixtures, corporate
+    AIK labels like `"NVIDIA Confidential Computing AIK"`,
+    OID-based model encodings), Step 9 passes through — the
+    cert-chain pin (Step 3) and AIK signature (Step 4)
+    remain the cryptographic locks. If
+    `Attestation.GPUArch` is empty (standalone-call path /
+    pre-fork bring-up), Step 9 is skipped.
+  - **Longest-pattern overlap rule.** A subject like
+    `"RTX 6000 Ada Generation"` matches both `"rtx 6000 ada"`
+    (Ada) and `"rtx 6000"` (Turing) as substrings. The longer
+    pattern wins, so the Ada attribution dominates and a
+    `gpu_arch=turing` claim on that cert rejects. Locked
+    down by
+    [`TestVerifier_ArchCheck_LongestPatternWins`](QSDM/source/pkg/mining/attest/cc/verifier_archcheck_test.go).
+  - **New Prometheus reason** for the `archspoof_rejected`
+    counter:
+    `qsdm_attest_archspoof_rejected_total{reason="cc_subject_mismatch"}`
+    — distinct from `gpu_name_mismatch` so dashboards can
+    split CC-path leaf-cert contradictions from HMAC-path
+    lazy spoofs (different remediation playbooks). Cardinality
+    is now ≤ 9 series total; the
+    `mining.SetMiningMetricsRecorder` adapter forwards via
+    `errors.Is(err, archcheck.ErrArchCertSubjectMismatch)` in
+    [`pkg/mining/metrics.go`](QSDM/source/pkg/mining/metrics.go).
+  - **Test scaffolding.**
+    [`BuildOpts.LeafSubjectCN`](QSDM/source/pkg/mining/attest/cc/testvectors.go)
+    (and `RootSubjectCN`) now lets test code mint
+    product-named leaves; existing fixtures default to
+    `"qsdm-test-nvidia-aik"` (product-free), so every
+    pre-existing CC test passes through Step 9 unchanged.
+    `cc.Verifier` wraps the rejection with double-`%w`
+    (Go 1.20+) so callers can `errors.Is` against EITHER
+    sentinel.
+  - **Tests**: 6 new archcheck unit tests
+    (`HappyPath`, `NoEvidencePassesThrough`,
+    `RejectsContradiction`, `LongestPatternWins`,
+    `CaseInsensitive`, `RejectsUnknownArch`) + 8 new CC
+    verifier integration tests
+    ([`verifier_archcheck_test.go`](QSDM/source/pkg/mining/attest/cc/verifier_archcheck_test.go))
+    covering both spoof shapes, no-evidence pass-through for
+    test fixture + corporate CNs, alias acceptance, longest-
+    pattern wins, and the `GPUArch=""` skip-Step-9 path.
+    Monitoring counter test extended to cover the new
+    `cc_subject_mismatch` reason. Full suite (`go test ./...`)
+    passes; `go vet ./...` clean.
+  - **Docs**: `MINING_PROTOCOL_V2.md` §4.6.5 rewritten from
+    "placeholder" to a full design with accept/reject table,
+    overlap-resolution rule, and source links; §3.2 verifier
+    flow renumbered to 9 steps; §4.6.4 metric reason set
+    extended to include `cc_subject_mismatch`.
+
 - **Hashrate-band plausibility check + Prometheus telemetry for
   the §4.6 arch-spoof gate (2026-04-29).** The §4.6 closed-enum
   + arch ↔ `gpu_name` rejection from earlier today now has a

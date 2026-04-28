@@ -50,8 +50,9 @@ type MiningMetricsRecorder interface {
 // strings. Kept in sync with monitoring.ArchSpoofRejectReason*
 // by the cross-package test (TODO).
 const (
-	ArchSpoofRejectReasonUnknownArch     = "unknown_arch"
-	ArchSpoofRejectReasonGPUNameMismatch = "gpu_name_mismatch"
+	ArchSpoofRejectReasonUnknownArch       = "unknown_arch"
+	ArchSpoofRejectReasonGPUNameMismatch   = "gpu_name_mismatch"
+	ArchSpoofRejectReasonCCSubjectMismatch = "cc_subject_mismatch"
 )
 
 // noopMiningRecorder is the package-default. Every method is a
@@ -121,6 +122,8 @@ func recordArchSpoofRejection(err error) {
 		miningMetrics().RecordArchSpoofRejected(ArchSpoofRejectReasonUnknownArch)
 	case errors.Is(err, archcheck.ErrArchGPUNameMismatch):
 		miningMetrics().RecordArchSpoofRejected(ArchSpoofRejectReasonGPUNameMismatch)
+	case errors.Is(err, archcheck.ErrArchCertSubjectMismatch):
+		miningMetrics().RecordArchSpoofRejected(ArchSpoofRejectReasonCCSubjectMismatch)
 	default:
 		// Not an archcheck rejection; do not bucket into the
 		// "unknown_arch" counter (which would conflate

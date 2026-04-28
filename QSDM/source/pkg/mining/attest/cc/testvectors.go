@@ -115,6 +115,20 @@ type BuildOpts struct {
 	// a "wrong root" negative vector (build two bundles, swap
 	// the chains).
 	PreSignedRoot *TestRoot
+
+	// LeafSubjectCN sets the CommonName on the leaf cert minted
+	// by BuildTestBundle. Defaults to "qsdm-test-nvidia-aik" —
+	// a deliberately product-free string so the §4.6.5 evidence-
+	// based arch-consistency check passes through. Tests
+	// targeting the CC arch-spoof gate should set this to a
+	// product string like "NVIDIA H100 80GB HBM3".
+	LeafSubjectCN string
+
+	// RootSubjectCN sets the CommonName on the freshly-minted
+	// pinned root. Defaults to "qsdm-test-nvidia-root". Rarely
+	// needs to be overridden — the arch consistency check
+	// targets the LEAF, not the root.
+	RootSubjectCN string
 }
 
 // BuildTestBundle constructs a fully-signed, validator-
@@ -205,6 +219,12 @@ func normaliseOpts(o BuildOpts) BuildOpts {
 	if o.DriverVer == "" {
 		o.DriverVer = "550.54.14"
 	}
+	if o.LeafSubjectCN == "" {
+		o.LeafSubjectCN = "qsdm-test-nvidia-aik"
+	}
+	if o.RootSubjectCN == "" {
+		o.RootSubjectCN = "qsdm-test-nvidia-root"
+	}
 	return o
 }
 
@@ -224,7 +244,7 @@ func mintTestRoot(o BuildOpts) (*TestRoot, error) {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "qsdm-test-nvidia-root"},
+		Subject:      pkix.Name{CommonName: o.RootSubjectCN},
 		NotBefore:    o.Now.Add(-time.Hour),
 		NotAfter:     o.Now.Add(o.CertValidity * 2),
 		KeyUsage:     x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
@@ -249,7 +269,7 @@ func mintTestLeaf(o BuildOpts, root *TestRoot) (*TestKeyPair, error) {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(2),
-		Subject:      pkix.Name{CommonName: "qsdm-test-nvidia-aik"},
+		Subject:      pkix.Name{CommonName: o.LeafSubjectCN},
 		NotBefore:    o.Now.Add(-time.Minute),
 		NotAfter:     o.Now.Add(o.CertValidity),
 		KeyUsage:     x509.KeyUsageDigitalSignature,

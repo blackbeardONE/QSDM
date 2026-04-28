@@ -51,13 +51,18 @@
 // is the single source of truth callers use; the validator
 // then matches against the canonical name.
 //
-// # Out of scope
+// # CC-path cert subject check
 //
-//   - The CC path's certificate-subject ↔ arch cross-check.
-//     X.509 subject parsing is implementation-specific and
-//     belongs in pkg/mining/attest/cc; this package exposes
-//     ValidateBundleArchConsistencyCC (a no-op stub) so the
-//     wiring point is reserved.
+// The CC path has its own consistency function,
+// ValidateBundleArchConsistencyCC, that mirrors the HMAC
+// gpu_name idea but evidence-based: if the leaf cert's Subject
+// (e.g. CommonName) mentions a known NVIDIA product, the
+// claimed arch must match the longest-matching pattern; if the
+// Subject is opaque (test-only CN, corporate label, OID-based
+// model encoding) we pass through and let the cert-chain pin +
+// AIK signature carry the cryptographic guarantee. See the
+// function's doc-comment for the full design rationale and
+// MINING_PROTOCOL_V2.md §4.6.5 for the spec text.
 //
 // # Hashrate-band plausibility
 //
@@ -316,6 +321,16 @@ var ErrArchGPUNameMismatch = errors.New("archcheck: gpu_name does not match clai
 // "lying about gpu_name" apart from "lying about hashrate".
 var ErrHashrateOutOfBand = errors.New("archcheck: claimed_hashrate_hps outside per-arch band")
 
+// ErrArchCertSubjectMismatch is returned by
+// ValidateBundleArchConsistencyCC when the CC-path leaf cert's
+// Subject contains positive NVIDIA product evidence (e.g.
+// "H100" in the CN) that contradicts the claimed Architecture.
+// Distinct sentinel from ErrArchGPUNameMismatch so dashboards
+// can split "HMAC-path lazy spoof" from "CC-path leaf-cert
+// contradiction" — the two attack shapes have different
+// remediation playbooks.
+var ErrArchCertSubjectMismatch = errors.New("archcheck: leaf cert subject does not match claimed gpu_arch")
+
 // KnownArchitectures returns the closed-enum allowlist of
 // canonical Architecture values, in protocol-spec order. Used
 // by docs / dashboards / the qsdmcli help output.
@@ -487,23 +502,138 @@ func ValidateClaimedHashrate(arch Architecture, claimedHPS uint64) error {
 	return nil
 }
 
-// ValidateBundleArchConsistencyCC is the placeholder hook for
-// the CC path's certificate-subject ↔ arch cross-check. Today
-// the CC verifier already binds the device certificate chain
-// to a specific physical Hopper / Blackwell GPU at the
-// cryptographic level (§3.2 step 1), so the device cert
-// itself is the consistency check. This function exists so
-// pkg/mining/attest/cc has a fixed wiring point for future
-// strict cert-subject parsing without re-shaping the package
-// boundary.
+// ValidateBundleArchConsistencyCC enforces the §4.6.5 CC-path
+// "leaf cert subject ↔ gpu_arch" consistency check.
 //
-// Currently always nil. A future revision parses
-// `cert.Subject.CommonName` for "H100" / "B200" patterns and
-// verifies the result against `arch`.
+// # Evidence-based, not strict
+//
+// Unlike the HMAC path's gpu_name check (§4.6.2) — where every
+// honest miner emits a known nvidia-smi product string and an
+// empty value is itself a rejection signal — the CC path's
+// device certificate Subject does NOT have a universally fixed
+// shape. NVIDIA's production CC chains may encode the GPU
+// model in:
+//
+//   - Subject.CommonName as a free-form product string
+//     ("NVIDIA H100 80GB HBM3"), OR
+//   - Subject.OrganizationalUnit (less common), OR
+//   - A custom OID extension we do not yet parse, OR
+//   - Nowhere on the leaf at all (the model is only inferable
+//     from the issuing intermediate's name).
+//
+// We DON'T know which shape the production NVIDIA chain uses
+// until we have a real fixture, and we don't want a strict
+// "must contain a known product string" rule to false-reject
+// honest validators because their cert format doesn't include
+// the model in CN. So this function uses an EVIDENCE-BASED
+// rule:
+//
+//  1. Normalise the candidate subject string (lowercase,
+//     collapse whitespace; the same shape as the HMAC path's
+//     normaliseGPUName).
+//  2. Scan the normalised string for ANY product substring
+//     across ALL canonical architectures.
+//
+//     - If NONE found: the cert subject contains no product
+//       evidence. Pass through. The cert chain root pin
+//       (§3.2 step 3) and the AIK signature (§3.2 step 4)
+//       remain the cryptographic locks; this layer is
+//       supplementary soft verification.
+//
+//     - If at least one found: the cert subject is making a
+//       positive claim about the hardware. Verify the
+//       evidence is consistent with `arch`. Returns
+//       ErrArchCertSubjectMismatch on contradiction.
+//
+// # Why this isn't a backdoor
+//
+// "Pass through on no evidence" sounds like a free pass for an
+// attacker who controls the cert content. It is not, because
+// step 3 (cert chain rooted in pinned NVIDIA CA) means the
+// attacker cannot mint a leaf at all unless they ALREADY have
+// an NVIDIA-issued AIK — which is bound to a specific physical
+// device by NVIDIA's manufacturing process. So the worst case
+// here is an honest leaf whose CN happens to be opaque, which
+// we accept; the attacker shape "spoof an arch with a
+// fabricated leaf" is locked out one layer up.
+//
+// # Why we reuse the HMAC patterns
+//
+// The substring patterns are the same NVIDIA product strings
+// nvidia-smi emits and the same strings any reasonable cert
+// subject would carry — there's no need to maintain a second
+// table. Both paths therefore stay consistent in what they
+// consider "evidence of arch X".
+//
+// Production wiring callers pass `cert.Subject.CommonName`
+// here today; future revisions can pass the full Subject.String()
+// or join CN + OU once we have real fixtures showing where the
+// model is encoded.
 func ValidateBundleArchConsistencyCC(arch Architecture, certSubject string) error {
-	_ = arch
-	_ = certSubject
-	return nil
+	if _, ok := gpuNamePatterns[arch]; !ok {
+		return fmt.Errorf("%w: arch %q has no patterns", ErrArchUnknown, arch)
+	}
+	subject := normaliseGPUName(certSubject)
+	if subject == "" {
+		// No subject content to evaluate — pass through (the
+		// chain pin + AIK signature are the locks).
+		return nil
+	}
+	// Scan for product evidence across every canonical arch.
+	// "Evidence" = a substring from some arch's gpu_name
+	// pattern table appears in `subject`.
+	//
+	// Pattern overlap matters: e.g. "rtx 6000 ada" (Ada)
+	// CONTAINS "rtx 6000" (Turing's Quadro RTX 6000) as a
+	// substring. A subject "RTX 6000 Ada Generation" therefore
+	// matches BOTH the Ada and Turing pattern tables. Naïvely
+	// accepting "any matched arch" would let a Turing spoof
+	// slip past an honest Ada cert.
+	//
+	// Resolution rule: longest-pattern match wins. The pattern
+	// "rtx 6000 ada" (12 chars) is more specific than "rtx
+	// 6000" (8 chars), so the Ada attribution dominates. This
+	// mirrors how a human reads the subject — the more
+	// specific token reveals the arch — and falls back to
+	// "list everything that tied for the longest match" for
+	// genuinely ambiguous strings.
+	type match struct {
+		arch    Architecture
+		pattern string
+	}
+	var matches []match
+	for _, a := range canonical {
+		for _, p := range gpuNamePatterns[a] {
+			if strings.Contains(subject, p) {
+				matches = append(matches, match{a, p})
+			}
+		}
+	}
+	if len(matches) == 0 {
+		// No NVIDIA product mentioned anywhere in the subject.
+		// Common case for test fixtures and corporate-style
+		// CN's like "NVIDIA Confidential Computing AIK".
+		return nil
+	}
+	maxLen := 0
+	for _, m := range matches {
+		if len(m.pattern) > maxLen {
+			maxLen = len(m.pattern)
+		}
+	}
+	bestArches := make(map[Architecture]struct{}, 2)
+	bestPatterns := make([]string, 0, 2)
+	for _, m := range matches {
+		if len(m.pattern) == maxLen {
+			bestArches[m.arch] = struct{}{}
+			bestPatterns = append(bestPatterns, fmt.Sprintf("%s(%q)", m.arch, m.pattern))
+		}
+	}
+	if _, ok := bestArches[arch]; ok {
+		return nil
+	}
+	return fmt.Errorf("%w: cert subject=%q strongest-evidence patterns=%v but claimed arch=%q",
+		ErrArchCertSubjectMismatch, certSubject, bestPatterns, arch)
 }
 
 // allowedNamesForError returns a comma-joined list of
