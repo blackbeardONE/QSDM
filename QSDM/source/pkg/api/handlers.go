@@ -301,6 +301,22 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// route above.
 	mux.HandleFunc("/api/v1/mining/slash/", handlers.SlashReceiptHandler)
 
+	// v2 governance — runtime parameter tuning (MINING_PROTOCOL_V2.md
+	// §9.4). Companion to the off-chain qsdm/gov/v1 write path
+	// that flows through /api/v1/transactions. Two read routes:
+	//
+	//   GET /api/v1/governance/params           (full snapshot)
+	//   GET /api/v1/governance/params/{name}    (single param)
+	//
+	// Both return 503 until a provider is installed via
+	// api.SetGovernanceProvider(...). The mux pattern order
+	// matters: the trailing-slash variant MUST come first so
+	// /params/{name} routes through GovernanceParamHandler;
+	// /params with no path tail falls through to
+	// GovernanceParamsHandler.
+	mux.HandleFunc("/api/v1/governance/params/", handlers.GovernanceParamHandler)
+	mux.HandleFunc("/api/v1/governance/params", handlers.GovernanceParamsHandler)
+
 	// Trust / attestation transparency endpoints (Major Update Phase 5.1).
 	// Registered unconditionally. If no aggregator is installed via
 	// api.SetTrustAggregator, the handlers return 503 warming-up; if the

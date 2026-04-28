@@ -298,6 +298,17 @@ func Wire(cfg Config) (*Wired, error) {
 	api.SetEnrollmentLister(state)
 	api.SetSlashReceiptStore(slashReceiptAdapter{store: slashReceipts})
 
+	// Governance read API. Provider snapshots the live
+	// ParamStore + GovApplier authority list; both live
+	// behind their own locks so the snapshot is point-in-time
+	// consistent. Same indirection-via-adapter pattern as
+	// slashReceiptAdapter so pkg/api stays free of
+	// pkg/governance/chainparams + pkg/chain imports.
+	api.SetGovernanceProvider(governanceProviderAdapter{
+		store:    govStore,
+		applier:  govApplier,
+	})
+
 	enrollHook := aware.SealedBlockHook(cfg.LogSweepError)
 	// Compose: run the enrollment sweep first (releases
 	// matured stake for the upcoming Promote arithmetic) and
@@ -373,6 +384,72 @@ func (a slashReceiptAdapter) Lookup(txID string) (api.SlashReceiptView, bool) {
 		RejectReason:            rec.RejectReason,
 		Err:                     rec.Err,
 	}, true
+}
+
+// governanceProviderAdapter bridges the on-chain governance
+// runtime (chainparams.ParamStore + chain.GovApplier) to the
+// pkg/api governance read endpoints. Same boundary discipline
+// as slashReceiptAdapter — keeps pkg/api free of imports on
+// pkg/chain and pkg/governance/chainparams while still
+// surfacing a self-consistent point-in-time snapshot.
+//
+// Both store and applier may be nil if v2wiring was called
+// with empty cfg.GovernanceAuthorities (governance disabled
+// posture). The adapter handles that gracefully — every field
+// of the returned view is empty and GovernanceEnabled is false
+// — so dashboards can render "governance not configured"
+// without a separate null check.
+type governanceProviderAdapter struct {
+	store   chainparams.ParamStore
+	applier *chain.GovApplier
+}
+
+// SnapshotGovernanceParams implements api.GovernanceParamsProvider.
+//
+// Each access against the store and the applier takes its
+// own RLock; in the worst case (a Stage between the two
+// reads) the snapshot will surface the post-stage Pending
+// view without the post-stage Active view, which is harmless
+// — Active for a staged param is unchanged until Promote
+// fires. We do NOT need a global snapshot lock.
+func (a governanceProviderAdapter) SnapshotGovernanceParams() api.GovernanceParamsView {
+	view := api.GovernanceParamsView{
+		Active:      map[string]uint64{},
+		Pending:     []api.GovernancePendingView{},
+		Registry:    []api.GovernanceRegistryView{},
+		Authorities: []string{},
+	}
+	registry := chainparams.Registry()
+	for _, spec := range registry {
+		view.Registry = append(view.Registry, api.GovernanceRegistryView{
+			Name:         string(spec.Name),
+			Description:  spec.Description,
+			MinValue:     spec.MinValue,
+			MaxValue:     spec.MaxValue,
+			DefaultValue: spec.DefaultValue,
+			Unit:         spec.Unit,
+		})
+	}
+	if a.store != nil {
+		for name, value := range a.store.AllActive() {
+			view.Active[string(name)] = value
+		}
+		for _, pending := range a.store.AllPending() {
+			view.Pending = append(view.Pending, api.GovernancePendingView{
+				Param:             string(pending.Param),
+				Value:             pending.Value,
+				EffectiveHeight:   pending.EffectiveHeight,
+				SubmittedAtHeight: pending.SubmittedAtHeight,
+				Authority:         pending.Authority,
+				Memo:              pending.Memo,
+			})
+		}
+	}
+	if a.applier != nil {
+		view.Authorities = append(view.Authorities, a.applier.AuthorityList()...)
+	}
+	view.GovernanceEnabled = len(view.Authorities) > 0
+	return view
 }
 
 // ReinstallAdmissionGate replaces the pool's admission checker

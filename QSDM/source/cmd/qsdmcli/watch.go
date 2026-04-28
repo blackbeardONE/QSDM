@@ -154,6 +154,58 @@ const (
 	// rebuilding from a stale checkpoint. Defensive event,
 	// always emitted.
 	WatchKindSlashOutcomeChange WatchEventKind = "slash_outcome_change"
+
+	// --- governance-params watcher kinds (see watch_params.go) ---
+	//
+	// The params watcher polls /api/v1/governance/params and
+	// emits one event per state transition. It uses the same
+	// WatchEvent envelope as the other watchers so JSON-Lines
+	// consumers can decode any stream with a single struct.
+
+	// WatchKindParamStaged — a new pending change appeared in
+	// the snapshot for a parameter that previously had no
+	// pending entry (or had a different pending entry; the
+	// supersede case is reported as ParamSuperseded). The
+	// canonical "an authority just submitted a proposal" signal.
+	WatchKindParamStaged WatchEventKind = "param_staged"
+
+	// WatchKindParamSuperseded — a parameter had a pending
+	// change in the prior snapshot AND has a (different)
+	// pending change in the current snapshot, and the
+	// pending entry was REPLACED rather than promoted (we
+	// detect this by checking that the prior pending value is
+	// not what currently sits in `active`). Represents the
+	// "one authority overrode another's still-pending
+	// proposal" lifecycle.
+	WatchKindParamSuperseded WatchEventKind = "param_superseded"
+
+	// WatchKindParamActivated — a parameter's active value
+	// changed across two consecutive successful polls. Almost
+	// always means a pending change just promoted at its
+	// EffectiveHeight; could also mean a binary upgrade
+	// rotated the active value through a non-governance path
+	// (rare). The canonical "your proposal landed" signal.
+	WatchKindParamActivated WatchEventKind = "param_activated"
+
+	// WatchKindParamRemoved — a parameter that had a pending
+	// change in the prior snapshot has no pending change in
+	// the current snapshot AND its active value is unchanged.
+	// Means the change was rejected / dropped from the
+	// pending slot via some path that is not promotion. Today
+	// the chain has no such path (pending entries either
+	// supersede or promote), but the watcher emits this
+	// defensively so an operator notices unexpected store
+	// churn.
+	WatchKindParamRemoved WatchEventKind = "param_removed"
+
+	// WatchKindParamAuthoritiesChanged — the validator's
+	// reported authority list differs across two snapshots.
+	// Today the list is binary-baked, so this should never
+	// fire under normal operation; emitting it loudly is a
+	// signal that the validator restarted with a different
+	// chain config (or a future binary added a multisig-gated
+	// rotation tx and the operator missed the announcement).
+	WatchKindParamAuthoritiesChanged WatchEventKind = "param_authorities_changed"
 )
 
 // WatchEvent is the unified wire shape of one diff output across
@@ -253,6 +305,45 @@ type WatchEvent struct {
 	// Error carries the trimmed error message for
 	// WatchKindError events. Empty for all other kinds.
 	Error string `json:"error,omitempty"`
+
+	// --- governance-params watcher payload ---
+	//
+	// Param identifies the governance parameter the event
+	// describes (e.g. "reward_bps"). Always populated on
+	// WatchKindParam* events; never on enrollment / slash
+	// events.
+	Param string `json:"param,omitempty"`
+
+	// ActiveValue / PrevActiveValue — the active value of the
+	// parameter on the current and prior snapshot. Both are
+	// populated on WatchKindParamActivated; only ActiveValue
+	// is populated on staged / superseded / removed events.
+	ActiveValue     uint64 `json:"active_value,omitempty"`
+	PrevActiveValue uint64 `json:"prev_active_value,omitempty"`
+
+	// PendingValue / PendingEffectiveHeight — the pending
+	// change's value and activation height. Both populated on
+	// WatchKindParamStaged and WatchKindParamSuperseded.
+	PendingValue           uint64 `json:"pending_value,omitempty"`
+	PendingEffectiveHeight uint64 `json:"pending_effective_height,omitempty"`
+
+	// PrevPendingValue — the pending value the supersede
+	// replaced (only on WatchKindParamSuperseded /
+	// WatchKindParamRemoved).
+	PrevPendingValue uint64 `json:"prev_pending_value,omitempty"`
+
+	// Authority — the address that submitted the pending
+	// change. Empty when not applicable.
+	Authority string `json:"authority,omitempty"`
+
+	// Memo — the operator-supplied memo on the pending
+	// change. Empty when not applicable.
+	Memo string `json:"memo,omitempty"`
+
+	// AuthoritiesAdded / AuthoritiesRemoved — set on
+	// WatchKindParamAuthoritiesChanged. Sorted ASC.
+	AuthoritiesAdded   []string `json:"authorities_added,omitempty"`
+	AuthoritiesRemoved []string `json:"authorities_removed,omitempty"`
 }
 
 // watchRecord mirrors api.EnrollmentRecordView. Kept local to
@@ -300,7 +391,7 @@ type watchOptions struct {
 // subcommands (`proofs`, etc.) plug in here.
 func (c *CLI) watchCommand(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: qsdmcli watch <subcommand> [flags]\n\nSubcommands:\n  enrollments    stream enrollment phase-change events\n  slashes        stream slash-receipt resolution events")
+		return fmt.Errorf("usage: qsdmcli watch <subcommand> [flags]\n\nSubcommands:\n  enrollments    stream enrollment phase-change events\n  slashes        stream slash-receipt resolution events\n  params         stream governance-parameter staging/activation events")
 	}
 	sub := args[0]
 	rest := args[1:]
@@ -309,8 +400,10 @@ func (c *CLI) watchCommand(args []string) error {
 		return c.watchEnrollments(rest)
 	case "slashes":
 		return c.watchSlashes(rest)
+	case "params":
+		return c.watchParams(rest)
 	default:
-		return fmt.Errorf("unknown watch subcommand: %q (known: enrollments, slashes)", sub)
+		return fmt.Errorf("unknown watch subcommand: %q (known: enrollments, slashes, params)", sub)
 	}
 }
 
@@ -822,6 +915,41 @@ func formatEventHuman(ev WatchEvent) string {
 	case WatchKindSlashOutcomeChange:
 		return fmt.Sprintf("%s %s tx=%s  outcome=%s->%s",
 			ts, kind, ev.TxID, ev.PrevOutcome, ev.Outcome)
+	case WatchKindParamStaged:
+		s := fmt.Sprintf("%s %s param=%s  active=%d  pending=%d@H+%d",
+			ts, kind, ev.Param, ev.ActiveValue,
+			ev.PendingValue, ev.PendingEffectiveHeight)
+		if ev.Authority != "" {
+			s += "  by=" + ev.Authority
+		}
+		if ev.Memo != "" {
+			s += "  memo=" + truncateForLine(ev.Memo, 80)
+		}
+		return s
+	case WatchKindParamSuperseded:
+		s := fmt.Sprintf("%s %s param=%s  pending=%d->%d  effective=H+%d",
+			ts, kind, ev.Param,
+			ev.PrevPendingValue, ev.PendingValue, ev.PendingEffectiveHeight)
+		if ev.Authority != "" {
+			s += "  by=" + ev.Authority
+		}
+		return s
+	case WatchKindParamActivated:
+		return fmt.Sprintf("%s %s param=%s  active=%d->%d",
+			ts, kind, ev.Param,
+			ev.PrevActiveValue, ev.ActiveValue)
+	case WatchKindParamRemoved:
+		return fmt.Sprintf("%s %s param=%s  active=%d  prev_pending=%d (dropped without activation)",
+			ts, kind, ev.Param, ev.ActiveValue, ev.PrevPendingValue)
+	case WatchKindParamAuthoritiesChanged:
+		s := fmt.Sprintf("%s %s authorities_changed", ts, kind)
+		if len(ev.AuthoritiesAdded) > 0 {
+			s += "  added=" + strings.Join(ev.AuthoritiesAdded, ",")
+		}
+		if len(ev.AuthoritiesRemoved) > 0 {
+			s += "  removed=" + strings.Join(ev.AuthoritiesRemoved, ",")
+		}
+		return s
 	default:
 		// Defensive — unreachable in normal flow because
 		// WatchKindError takes the stderr path before

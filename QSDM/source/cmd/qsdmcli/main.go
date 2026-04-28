@@ -368,8 +368,8 @@ v2 mining:
                                         kind ∈ {forged-attestation, double-mining, freshness-cheat, inspect}
   gov-helper <sub> [flags]            Build / inspect governance parameter-tuning payloads offline
                                         sub ∈ {propose-param, params, inspect}
-  watch <subcommand> [flags]          Stream phase-change / stake-delta / slash-resolution events to stdout
-                                        subcommand ∈ {enrollments, slashes}
+  watch <subcommand> [flags]          Stream phase-change / slash-resolution / governance-param events to stdout
+                                        subcommand ∈ {enrollments, slashes, params}
 
   help                                Show this help
 
@@ -411,7 +411,7 @@ slash-helper subcommands (offline evidence-bundle assembly):
 gov-helper subcommands (offline governance-payload assembly):
   propose-param   --param=NAME --value=N --effective-height=H
                   [--memo=STR] [--out=PATH] [--print-cmd]
-  params          [--json]
+  params          [--json] [--remote]
   inspect         (--payload-file=PATH | --payload-hex=HEX)
 
   propose-param  builds a canonical chainparams.ParamSetPayload (qsdm/gov/v1)
@@ -421,6 +421,10 @@ gov-helper subcommands (offline governance-payload assembly):
                  still requires the sender to be on the AuthorityList.
   params         lists the registered governance-tunable parameters with
                  their bounds, defaults and units. Source: chainparams.Registry.
+                 With --remote, queries $QSDM_API_URL/governance/params and
+                 merges the validator's live active value + any pending
+                 change into the table (best-effort: 503 / network error
+                 falls back to the offline registry view with a stderr warning).
   inspect        decodes a previously-built propose-param payload and pretty-
                  prints the structured view (kind, param, value, effective
                  height, memo, registry entry).
@@ -428,6 +432,7 @@ gov-helper subcommands (offline governance-payload assembly):
 watch subcommands (operator surveillance, polling-only, no key required):
   enrollments [flags]                 Stream phase-change / stake-delta events
   slashes     [flags]                 Stream slash-receipt resolution events
+  params      [flags]                 Stream governance-param staging / activation events
 
   enrollments flags:
     --interval=DUR        polling cadence (default 30s, floor 5s)
@@ -447,6 +452,13 @@ watch subcommands (operator surveillance, polling-only, no key required):
     --include-pending     emit 'slash_pending' events on every cycle until tx resolves
     --exit-on-resolved    exit cleanly once every tracked tx has resolved
 
+  params flags:
+    --interval=DUR        polling cadence (default 30s, floor 5s)
+    --param=NAME          limit emitted events to a single registered param
+    --once                snapshot once and exit (useful for cron)
+    --json                JSON-Lines output (one event per line)
+    --include-existing    on first poll, emit a 'param_staged' event per existing pending change
+
   Output (human, default):
     <RFC3339> <KIND> [node=<id>|tx=<id>] <kind-specific summary>
   Output (--json): one JSON object per line; the union of:
@@ -463,6 +475,8 @@ watch subcommands (operator surveillance, polling-only, no key required):
   Event kinds (enrollments): new, transition, stake_delta, dropped, error
   Event kinds (slashes):     slash_resolved, slash_pending, slash_evicted,
                              slash_outcome_change, error
+  Event kinds (params):      param_staged, param_superseded, param_activated,
+                             param_removed, param_authorities_changed, error
 
   Exits 0 on Ctrl-C / SIGTERM. Exits non-zero only on initial-snapshot
   failure; subsequent poll failures emit an 'error' event and continue.`)

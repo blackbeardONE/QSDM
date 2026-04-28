@@ -175,16 +175,57 @@ func (c *CLI) govHelperProposeParam(args []string) error {
 // gov-helper params (registry listing)
 // -----------------------------------------------------------------------------
 
+// govHelperListParams renders the chainparams registry as a
+// table or JSON. When --remote is passed, the offline registry
+// is merged with the running validator's
+// `/api/v1/governance/params` snapshot, surfacing live `active`
+// values and any pending changes alongside the static bounds /
+// defaults.
+//
+// --remote is best-effort: a 503 (v1-only node) or transport
+// error degrades gracefully to an offline-only view with a
+// stderr warning, so an authority running this against an
+// unreachable validator still gets the registry table they need
+// to author a proposal.
 func (c *CLI) govHelperListParams(args []string) error {
 	fs := flag.NewFlagSet("gov-helper params", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	asJSON := fs.Bool("json", false, "emit registry as JSON (one object per param)")
+	remote := fs.Bool("remote", false,
+		"query the validator at $QSDM_API_URL and merge live active/pending values into the table")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	specs := chainparams.Registry()
+
+	// Best-effort live lookup. live==nil means we render the
+	// registry-only view; live!=nil means we merge values.
+	var live *govParamsRemoteView
+	if *remote {
+		v, err := c.fetchGovernanceParams()
+		if err != nil {
+			fmt.Fprintf(os.Stderr,
+				"warning: --remote query failed: %v (falling back to offline registry view)\n",
+				err)
+		} else {
+			live = v
+		}
+	}
+
 	if *asJSON {
+		// JSON path: with --remote we emit the validator's
+		// snapshot verbatim if available (that's what dashboards
+		// consume); without --remote we emit the static
+		// registry, identical to the prior behaviour.
+		if live != nil {
+			out, err := json.MarshalIndent(live, "", "  ")
+			if err != nil {
+				return fmt.Errorf("marshal remote view: %w", err)
+			}
+			fmt.Println(string(out))
+			return nil
+		}
 		out, err := json.MarshalIndent(specs, "", "  ")
 		if err != nil {
 			return fmt.Errorf("marshal registry: %w", err)
@@ -194,12 +235,94 @@ func (c *CLI) govHelperListParams(args []string) error {
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	if live != nil {
+		// Live merge: ACTIVE column shows the on-chain value,
+		// PENDING column collapses to a one-line summary
+		// "value@height" when a change is staged. Empty PENDING
+		// cell means no pending change.
+		fmt.Fprintln(tw, "PARAM\tACTIVE\tPENDING\tDEFAULT\tMIN\tMAX\tUNIT\tDESCRIPTION")
+		for _, s := range specs {
+			active := "—"
+			if v, ok := live.Active[string(s.Name)]; ok {
+				active = strconv.FormatUint(v, 10)
+			}
+			pending := ""
+			for _, p := range live.Pending {
+				if p.Param == string(s.Name) {
+					pending = fmt.Sprintf("%d@H+%d", p.Value, p.EffectiveHeight)
+					break
+				}
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%s\t%s\n",
+				s.Name, active, pending, s.DefaultValue,
+				s.MinValue, s.MaxValue, s.Unit, s.Description)
+		}
+		if err := tw.Flush(); err != nil {
+			return err
+		}
+		// Footer with authority list + governance-enabled flag.
+		// Helps the operator confirm "yes, I'm one of the
+		// authorities, my proposal will admit" before they
+		// build a payload.
+		fmt.Fprintf(os.Stderr,
+			"governance_enabled=%t  authorities=%s\n",
+			live.GovernanceEnabled,
+			strings.Join(live.Authorities, ","))
+		return nil
+	}
+
 	fmt.Fprintln(tw, "PARAM\tDEFAULT\tMIN\tMAX\tUNIT\tDESCRIPTION")
 	for _, s := range specs {
 		fmt.Fprintf(tw, "%s\t%d\t%d\t%d\t%s\t%s\n",
 			s.Name, s.DefaultValue, s.MinValue, s.MaxValue, s.Unit, s.Description)
 	}
 	return tw.Flush()
+}
+
+// govParamsRemoteView mirrors api.GovernanceParamsView. Kept
+// local to avoid pulling pkg/api into the CLI binary (same
+// posture as watch.go's watchRecord and watch_slashes.go's
+// slashReceiptWire). JSON tags MUST stay byte-identical to the
+// canonical view; tests pin this.
+type govParamsRemoteView struct {
+	Active            map[string]uint64           `json:"active"`
+	Pending           []govParamsPendingWire      `json:"pending"`
+	Registry          []govParamsRegistryWire     `json:"registry"`
+	Authorities       []string                    `json:"authorities"`
+	GovernanceEnabled bool                        `json:"governance_enabled"`
+}
+
+type govParamsPendingWire struct {
+	Param             string `json:"param"`
+	Value             uint64 `json:"value"`
+	EffectiveHeight   uint64 `json:"effective_height"`
+	SubmittedAtHeight uint64 `json:"submitted_at_height"`
+	Authority         string `json:"authority"`
+	Memo              string `json:"memo,omitempty"`
+}
+
+type govParamsRegistryWire struct {
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	MinValue     uint64 `json:"min_value"`
+	MaxValue     uint64 `json:"max_value"`
+	DefaultValue uint64 `json:"default_value"`
+	Unit         string `json:"unit"`
+}
+
+// fetchGovernanceParams hits GET /governance/params and decodes
+// the snapshot. Returns a typed wrapper around HTTP-level
+// failures so the caller can degrade gracefully on 503 / 5xx.
+func (c *CLI) fetchGovernanceParams() (*govParamsRemoteView, error) {
+	body, err := c.get("/governance/params")
+	if err != nil {
+		return nil, err
+	}
+	var view govParamsRemoteView
+	if err := json.Unmarshal(body, &view); err != nil {
+		return nil, fmt.Errorf("decode governance/params: %w", err)
+	}
+	return &view, nil
 }
 
 // -----------------------------------------------------------------------------

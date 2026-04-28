@@ -14,6 +14,72 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Governance read-API + `qsdmcli watch params` (2026-04-28).**
+  Operator-facing surface for the on-chain `qsdm/gov/v1` runtime
+  tuning hook. The chain side has been live since the prior
+  release; this round wires up the read-only HTTP / CLI plumbing
+  authorities and dashboards need to see what's active, what's
+  pending, and when proposals land.
+  - **HTTP**: two new read endpoints in
+    [`pkg/api/handlers_governance.go`](QSDM/source/pkg/api/handlers_governance.go),
+    routed in [`pkg/api/handlers.go`](QSDM/source/pkg/api/handlers.go):
+    - `GET /api/v1/governance/params` returns a
+      `GovernanceParamsView` (active map, pending list sorted
+      by `(effective_height ASC, param ASC)`, registry list
+      sorted by name, authorities list sorted ASC,
+      `governance_enabled` bool). Empty slices/maps are
+      normalised to `[]` / `{}` so diff-driven consumers don't
+      branch on null.
+    - `GET /api/v1/governance/params/{name}` returns a
+      `GovernanceParamView` (active value, optional pending
+      entry, registry entry). 400 on empty / over-long name,
+      404 on unknown param.
+    - Both return **503** until the validator wires a
+      `GovernanceParamsProvider` via `api.SetGovernanceProvider`,
+      matching the posture of the existing v2 enrollment /
+      slash read endpoints (v1-only nodes return a clean
+      "not configured" rather than ambiguous 404s).
+  - **Wiring**: `internal/v2wiring` grows a
+    `governanceProviderAdapter` that bridges the live
+    `chainparams.ParamStore` + `chain.GovApplier` to the
+    pkg/api provider interface, snapshotting active values,
+    pending changes, and the authority list under each
+    component's own RWMutex (no global snapshot lock; pending
+    promotions are atomic in `Promote`).
+  - **CLI — `qsdmcli gov-helper params --remote`**: the
+    existing offline `params` listing now optionally queries
+    the running validator and merges live `active` + `pending`
+    columns into the table. Best-effort: 503 / network error
+    falls back to the offline view with a stderr warning. The
+    JSON output (`--json --remote`) emits the validator's
+    snapshot verbatim. A stderr footer reports
+    `governance_enabled` plus the authority list so a proposer
+    can confirm "yes, my key admits" before building a
+    payload.
+  - **CLI — `qsdmcli watch params`**: third sibling of
+    `watch enrollments` and `watch slashes`. Polls
+    `/governance/params` and emits one event per parameter
+    transition across consecutive snapshots. Event kinds:
+    `param_staged`, `param_superseded`, `param_activated`,
+    `param_removed` (defensive), `param_authorities_changed`
+    (defensive), `error`. Same flag surface as the other
+    watchers (`--interval` floored at 5s, `--once`, `--json`,
+    `--include-existing`) plus a `--param=NAME` filter.
+    SIGINT/SIGTERM exits 0; first-poll fatal exits non-zero.
+  - **Tests**: 14 new unit tests across
+    `pkg/api/handlers_governance_test.go` (503-when-unwired,
+    happy path, disabled-posture rendering, single-param 404 /
+    400, GET-only methods) and
+    `cmd/qsdmcli/watch_params_test.go` (diff engine for every
+    transition kind, deterministic ordering, param filter,
+    initial-events synthesis, JSON-Lines wire-format pin,
+    options normalisation).
+  - **Documentation**: `MINING_PROTOCOL_V2.md` §9.2 watcher
+    table grows a `watch params` row; §9.4 grows
+    "HTTP read API" + "`qsdmcli watch params`" subsections;
+    §12.4 deferred-work register marks the operator-facing
+    surface as **SHIPPED**.
+
 - **`qsdm/gov/v1` runtime parameter-tuning hook (2026-04-28).**
   Two protocol-economy parameters that previously lived as
   construction-time arguments to `chain.SlashApplier` —

@@ -844,6 +844,7 @@ Source: [`cmd/qsdmcli/`](../../source/cmd/qsdmcli/). Subcommands:
 | `qsdmcli slash-helper {forged-attestation,double-mining,inspect}` | Offline evidence-bundle assembly (see §9.3). |
 | `qsdmcli watch enrollments [--phase --node-id --interval --json --once --include-existing]` | Stream phase-change / stake-delta events. Polling-only, no key required. Single-node and list modes. Emits `new`/`transition`/`stake_delta`/`dropped`/`error` events on stdout (human or JSON-Lines). See [`MINER_QUICKSTART.md` "Streaming phase-change events"](./MINER_QUICKSTART.md#streaming-phase-change-events-with-qsdmcli-watch). |
 | `qsdmcli watch slashes [--tx-id --tx-ids-file --interval --json --once --include-pending --exit-on-resolved]` | Stream slash-receipt resolution events for a caller-supplied set of slash tx ids. Polling-only, no key required. Emits `slash_resolved`/`slash_pending`/`slash_evicted`/`slash_outcome_change`/`error` events. Default first-poll behaviour emits only already-resolved receipts; `--include-pending` echoes every still-pending tx each cycle; `--exit-on-resolved` terminates once every tracked tx has reached a terminal outcome (good for CI / cron). See [`MINER_QUICKSTART.md` "Streaming slash-receipt events"](./MINER_QUICKSTART.md#streaming-slash-receipt-events-with-qsdmcli-watch-slashes). |
+| `qsdmcli watch params [--param --interval --json --once --include-existing]` | Stream governance-parameter staging / activation events. Polls `GET /api/v1/governance/params` and diffs successive snapshots. Polling-only, no key required. Emits `param_staged`/`param_superseded`/`param_activated`/`param_removed`/`param_authorities_changed`/`error` events on stdout (human or JSON-Lines). `--param=NAME` narrows the stream to a single registered param; `--include-existing` synthesises a `param_staged` event for every pending change visible at the first poll. Authorities and the off-chain multisig surface live in §9.4. |
 
 The CLI builds canonical payloads through `pkg/mining/{enrollment,
 slashing}` so it shares the exact codec the mempool admission
@@ -1023,6 +1024,24 @@ do not have to grow a no-op handler):
 | `param-activated` | when `Promote(height)` flips pending → active |
 | `param-rejected` | once per pre-mutation rejection, with `RejectReason` matching the metrics enum |
 
+#### HTTP read API
+
+Operators, dashboards, and `qsdmcli watch params` consume two
+read-only endpoints, both registered unconditionally and
+returning **503 Service Unavailable** until
+`api.SetGovernanceProvider(...)` is called by `internal/v2wiring`
+at boot:
+
+| Method + path | Returns | Notes |
+|---|---|---|
+| `GET /api/v1/governance/params` | `GovernanceParamsView` | Full snapshot: `active` (param→value), `pending[]` sorted by `(effective_height ASC, param ASC)`, `registry[]` sorted by `name`, `authorities[]` sorted ASC, `governance_enabled` bool. Empty slices/maps are normalised to `[]` / `{}` so diff-driven consumers don't branch on null. |
+| `GET /api/v1/governance/params/{name}` | `GovernanceParamView` | Single-param view: `active_value`, optional `pending` (omitted when no staged change), `registry` entry. **400** when name is empty or > 64 bytes; **404** when the name is not in the registry. |
+
+Both endpoints are **READ-only**. Submitting a parameter change
+goes through the same signed-tx envelope as every other
+`qsdm/...` ContractID via `POST /api/v1/transactions`, with
+payload constructed by `qsdmcli gov-helper propose-param`.
+
 #### CLI — `qsdmcli gov-helper`
 
 [`cmd/qsdmcli/gov_helper.go`](../../source/cmd/qsdmcli/gov_helper.go)
@@ -1032,7 +1051,7 @@ ships an offline assembly tool symmetric to `slash-helper`:
 qsdmcli gov-helper propose-param --param=NAME --value=N \
                                   --effective-height=H \
                                   [--memo=STR] [--out=PATH] [--print-cmd]
-qsdmcli gov-helper params [--json]
+qsdmcli gov-helper params [--json] [--remote]
 qsdmcli gov-helper inspect (--payload-file=PATH | --payload-hex=HEX)
 ```
 
@@ -1043,9 +1062,45 @@ rejections locally before submitting. The produced bytes are
 consumed by whatever signing pipeline the authority has
 (multisig orchestrator, hardware wallet, etc.) and submitted
 via `qsdmcli tx … --contract-id=qsdm/gov/v1 --payload-file=…`.
+
 `params` lists the registered tunables with bounds and defaults
-(table or `--json`); `inspect` decodes a previously-built
-payload and pretty-prints it with the matched registry entry.
+(table or `--json`). With `--remote`, the offline registry is
+merged with the validator's live `/api/v1/governance/params`
+snapshot — the table grows `ACTIVE` and `PENDING` columns
+(`PENDING` collapses to `value@H+effective_height` when a change
+is staged) and a stderr footer reports `governance_enabled`
+plus the authority list, so an authority can confirm "yes, my
+key is on the list, my proposal will admit" before they
+build a payload. `--remote` is best-effort: a 503 / network
+error degrades gracefully to the offline view with a stderr
+warning.
+
+`inspect` decodes a previously-built payload and pretty-prints
+it with the matched registry entry.
+
+#### CLI — `qsdmcli watch params`
+
+Polling-only event streamer parallel to `watch enrollments` /
+`watch slashes`. Hits `GET /api/v1/governance/params` once per
+cycle and diffs successive snapshots; emits one event per
+parameter per cycle plus a single `param_authorities_changed`
+event per cycle when the validator's authority list shifts.
+Same `--interval` / `--once` / `--json` / `--include-existing`
+flag surface as the other watchers, plus a `--param=NAME`
+filter that narrows the stream to a single registered param.
+Event kinds:
+
+| Kind | When it fires |
+|---|---|
+| `param_staged` | a pending change appeared where none existed (or, with `--include-existing`, on the first poll for every pre-existing pending change) |
+| `param_superseded` | a pending entry was replaced by a different pending entry without activating — the "another authority overrode my proposal" lifecycle |
+| `param_activated` | an active value changed across two snapshots — the canonical "your proposal landed" signal |
+| `param_removed` | a pending entry vanished without activation (defensive; today the chain has no path that produces this, so emitting it loudly surfaces unexpected store churn) |
+| `param_authorities_changed` | the validator's reported authority list differs across snapshots (today binary-baked, so this should never fire under normal operation) |
+| `error` | a poll cycle failed (network / HTTP / decode); always emitted on stderr in human mode |
+
+Same exit semantics as the other watchers: SIGINT/SIGTERM
+returns 0, only initial-snapshot failure exits non-zero.
 
 #### Migration posture
 
@@ -1400,10 +1455,12 @@ type. See §10 for the complete specification. A binary upgrade
 is no longer required to retune these economic parameters; an
 authority address on the configured `AuthorityList` submits a
 single signed gov tx and the change activates at a chosen
-future block height. The HTTP read-API surface
-(`/api/v1/governance/params`) and a `qsdmcli watch params`
-streamer are queued as a follow-on once an operator-facing
-event is reported in the field.
+future block height. The operator-facing HTTP read-API surface
+(`GET /api/v1/governance/params`,
+`GET /api/v1/governance/params/{name}`),
+the `qsdmcli gov-helper params --remote` live-table render,
+and the `qsdmcli watch params` event streamer are also
+**SHIPPED** — see §9.4 for the full surface.
 
 ---
 
