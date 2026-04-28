@@ -945,19 +945,17 @@ addresses authorised to submit `qsdm/gov/v1` txs. Empty slice
 **disables** on-chain governance entirely (every gov tx
 rejects with `chainparams.ErrGovernanceNotConfigured`); this
 is the genesis posture for chains that have not yet bootstrapped
-a governance authority. The authority list is itself NOT
-governance-tunable in this revision — modifying it requires a
-binary upgrade or a chain-config reload. That's deliberate: a
-circular "governance can change the list of governors" surface
-would let a captured authority lock out the rest, which is the
-nightmare scenario for this kind of subsystem. Adding a
-multisig-gated authority-rotation tx is queued behind the
-basic surface getting battle-tested.
+a governance authority. The genesis list is binary-baked, but
+the live AuthorityList is now itself rotatable via the
+**M-of-N gated `authority-set` payload kind** described
+in §9.4.7 — a captured authority cannot unilaterally change
+membership.
 
-The off-chain `pkg/governance/{voting,multisig}` package owns
-the proposal-and-signing workflow; once enough signatures are
-collected, the multisig orchestrator submits a single signed
-gov tx via the same mempool any client uses.
+The off-chain `pkg/governance/{voting,multisig}` package
+remains useful for off-chain proposal coordination, but on-
+chain rotations no longer require a binary redeploy: each
+authority submits a vote tx and the chain stages the
+rotation once threshold votes accumulate.
 
 #### Activation
 
@@ -1158,19 +1156,176 @@ Snapshot format (JSON, version-tagged):
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "saved_at": "2026-04-28T16:20:00Z",
   "active": {"reward_bps": 2500, "auto_revoke_min_stake_dust": 1000000000},
   "pending": [
     {"param":"reward_bps","value":3000,"effective_height":12345,
      "submitted_at_height":12000,"authority":"alice","memo":"…"}
+  ],
+  "authority_proposals": [
+    {"op":"add","address":"qsdm1new","effective_height":15000,
+     "voters":[{"voter":"alice","submitted_at_height":14800}],
+     "crossed":false}
   ]
 }
 ```
 
-Bumping `SnapshotVersion` is a breaking deployment change;
-the load path refuses unknown versions rather than silently
-downgrading.
+The current writer always emits `version=2`. The reader
+accepts `version` ∈ {1, 2} so v2 binaries replay v1 snapshots
+cleanly (the `authority_proposals` field is absent — vote
+store boots empty); a v1 binary reading a v2 snapshot is
+correctly refused (silently dropping in-flight rotations
+across a downgrade is the wrong default). Future bumps
+extend the supported range or hard-cut: the load path
+refuses unknown versions rather than silently downgrading.
+
+#### 9.4.7 Authority rotation — `authority-set` payload kind
+
+The `qsdm/gov/v1` ContractID carries TWO payload kinds —
+`param-set` (§9.4.1–9.4.6 above) and `authority-set` (this
+subsection). The kind tag is the dispatch discriminator for
+both the admission gate
+(`chainparams.AdmissionChecker.PeekKind`) and the chain
+applier (`chain.GovApplier.ApplyGovTx`).
+
+**Wire format**:
+
+```json
+{
+  "kind": "authority-set",
+  "op":   "add",
+  "address": "qsdm1new-authority",
+  "effective_height": 15000,
+  "memo": "onboarding dave per board resolution 2026-04"
+}
+```
+
+`op ∈ {add, remove}`. `address` is bounded at
+`MaxAuthorityAddressLen=128` ASCII-printable bytes (no
+whitespace, no control bytes — addresses are compared as
+exact strings, so a sloppy trailing newline must reject).
+`effective_height` follows the same window as `param-set`:
+`[currentHeight, currentHeight + MaxActivationDelay]`.
+
+**M-of-N tally**:
+
+Each tx is one authority's VOTE on a proposal tuple
+`(op, address, effective_height)`. Different effective
+heights name different proposals, even for the same
+address. The chain accumulates votes in
+`pkg/governance/chainparams.AuthorityVoteStore`; the
+threshold computed at vote-application time is
+
+```
+threshold = max(1, N/2 + 1)
+```
+
+where `N` is the live AuthorityList size. So:
+
+| N | threshold | comment |
+|---|-----------|---------|
+| 1 | 1 | bootstrap: a single authority can act unilaterally |
+| 2 | 2 | unanimity |
+| 3 | 2 | simple majority |
+| 4 | 3 | strict majority |
+| 5 | 3 | strict majority |
+
+A captured single authority is no worse than the prior
+posture (they could already grief the chain). Past `N=1`,
+the strictly-greater-than-half rule keeps a captured
+minority from rotating themselves into majority.
+
+**Activation**:
+
+When the Mth vote crosses the threshold, the proposal is
+flagged `Crossed=true` (sticky — never un-crosses on
+subsequent votes). The post-seal `PromotePending(height)`
+hook then activates every Crossed proposal whose
+`effective_height` has been reached:
+
+- `add` → inserts the address into the live AuthorityList
+  under `authorityMu`. A subsequent param-set or
+  authority-set tx from the new authority is now eligible.
+- `remove` → drops the address from the AuthorityList.
+  ALSO drops every still-OPEN proposal's vote cast by the
+  removed authority; if a proposal loses its last voter
+  it is abandoned (an `authority-abandoned` event records
+  it). Then `RecomputeCrossed` re-evaluates open
+  proposals against the new (smaller) threshold — a
+  proposal that was one vote short under the old `N` may
+  now satisfy the smaller `N`.
+- `remove` that would empty the AuthorityList → REFUSED at
+  promotion. An `authority-rejected` event with reason
+  `authority_would_empty` is emitted; governance cannot
+  rotate itself into the disabled posture from on-chain.
+
+**Stateless validation** (admit gate):
+
+- `kind == authority-set`
+- `op ∈ {add, remove}`
+- `address` non-empty, ≤128 bytes, ASCII-printable
+- `effective_height > 0`
+- `len(memo) ≤ 256`
+- `Fee > 0` (nonce accounting)
+
+**Stateful validation** (applier):
+
+- `tx.Sender ∈ AuthorityList` (otherwise `ErrUnauthorized`)
+- `effective_height ∈ [currentHeight, currentHeight + MaxActivationDelay]`
+- For `op=add`: target NOT already on AuthorityList
+  (`ErrAuthorityAlreadyPresent`)
+- For `op=remove`: target IS on AuthorityList
+  (`ErrAuthorityNotPresent`)
+- `tx.Sender` has not voted on this proposal tuple before
+  (`ErrDuplicateVote`)
+
+**Events** (`chain.GovEventPublisher.PublishGovAuthority`):
+
+| Kind | When |
+|---|---|
+| `authority-voted` | fires once per accepted vote tx |
+| `authority-staged` | fires exactly once per proposal that crosses threshold |
+| `authority-activated` | fires when Promote applies the rotation |
+| `authority-abandoned` | fires when an open proposal loses its last voter |
+| `authority-rejected` | fires on every pre-mutation rejection |
+
+**Metrics** (`pkg/monitoring/gov_metrics.go`):
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `qsdm_gov_authority_voted_total` | counter | `op` | accepted vote txs per op |
+| `qsdm_gov_authority_crossed_total` | counter | `op` | threshold crossings per op |
+| `qsdm_gov_authority_activated_total` | counter | `op` | Promote-driven activations per op |
+| `qsdm_gov_authority_count` | gauge | — | current AuthorityList size |
+| `qsdm_gov_authority_rejected_total` | counter | `reason` | rejections by reason (already_present, not_present, would_empty, duplicate_vote, vote_rejected) |
+
+**Persistence**:
+
+Authority proposals + their voter sets ride along in the
+`pkg/governance/chainparams` snapshot file at
+`Config.GovParamStorePath` (snapshot version 2 — see
+the snapshot format above). A node crash between
+threshold-crossing and activation replays correctly: the
+restored proposal still carries `Crossed=true` and
+activates at its original `effective_height`.
+
+**CLI**:
+
+```
+qsdmcli gov-helper propose-authority \
+    --op=add --address=qsdm1new \
+    --effective-height=15000 \
+    --memo="onboarding dave"
+```
+
+Emits the canonical-JSON `AuthoritySetPayload` to stdout
+(or `--out=PATH`); each authority runs this independently
+to produce their vote, then signs + submits via the
+operator's normal `qsdmcli tx --contract-id=qsdm/gov/v1`
+pipeline. `qsdmcli gov-helper inspect` decodes either
+payload kind transparently — it dispatches on the
+on-disk `kind` tag.
 
 ### 9.5 Production boot wiring (`internal/v2wiring`)
 
@@ -1521,6 +1676,18 @@ future block height. The operator-facing HTTP read-API surface
 the `qsdmcli gov-helper params --remote` live-table render,
 and the `qsdmcli watch params` event streamer are also
 **SHIPPED** — see §9.4 for the full surface.
+
+### 12.5 ~~Multisig-gated authority rotation~~ — SHIPPED
+
+The `qsdm/gov/v1` ContractID's `authority-set` payload kind
+ships as a second variant alongside `param-set`. Authorities
+rotate via on-chain M-of-N votes (threshold = `N/2 + 1`,
+minimum 1) on `(op, address, effective_height)` tuples;
+crossed proposals stage and activate at the chosen height,
+with full persistence across snapshots (snapshot version 2,
+backwards-compatible with v1) and a `qsdmcli gov-helper
+propose-authority` CLI surface. See §9.4.7 for the full
+specification.
 
 ---
 

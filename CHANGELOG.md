@@ -14,6 +14,104 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Multisig-gated authority rotation — `qsdm/gov/v1` `authority-set` payload kind (2026-04-28).**
+  The `qsdm/gov/v1` ContractID now carries TWO payload
+  kinds: `param-set` (already shipped) and `authority-set`.
+  Each `authority-set` tx is one authority's vote on a
+  proposal tuple `(op, address, effective_height)`; the
+  chain accumulates votes and stages the rotation when
+  M-of-N threshold is crossed (`threshold = max(1, N/2 + 1)`).
+  The on-chain AuthorityList is now itself rotatable
+  without a binary redeploy, closing the prior posture's
+  "captured single authority can self-disable" hazard.
+  - **Wire format**:
+    [`pkg/governance/chainparams/types.go`](QSDM/source/pkg/governance/chainparams/types.go)
+    adds `AuthoritySetPayload` (with `Op ∈ {add, remove}`,
+    `Address`, `EffectiveHeight`, `Memo`) and the
+    `PayloadKindAuthoritySet` discriminator. The kind tag
+    is the dispatch axis the admit gate
+    (`PeekKind` in
+    [`pkg/governance/chainparams/validate.go`](QSDM/source/pkg/governance/chainparams/validate.go))
+    and the chain applier
+    ([`pkg/chain/gov_apply.go`](QSDM/source/pkg/chain/gov_apply.go))
+    use to route to per-shape validators / handlers.
+  - **Vote-tally store**:
+    [`pkg/governance/chainparams/authority.go`](QSDM/source/pkg/governance/chainparams/authority.go)
+    introduces `AuthorityVoteStore` (interface +
+    `InMemoryAuthorityVoteStore` reference impl). Tracks
+    proposals keyed by `(op, address, effective_height)`,
+    each carrying an ordered voter set + sticky `Crossed`
+    flag. `RecordVote` is idempotent on duplicate voters
+    (returns `ErrDuplicateVote`) and the threshold helper
+    `AuthorityThreshold(n)` is exported so the CLI / API
+    can render the same "M of N" string the chain uses.
+  - **Activation semantics**: the existing
+    `GovApplier.PromotePending(height)` now ALSO promotes
+    crossed authority proposals — `add` inserts into the
+    AuthorityList under a new `authorityMu` RWMutex,
+    `remove` drops the address AND drops the removed
+    authority's votes from every still-open proposal
+    (`DropVotesByAuthority` + `RecomputeCrossed` re-
+    evaluates which open proposals now satisfy the
+    smaller threshold). A `remove` that would empty the
+    AuthorityList is REFUSED at promotion (governance
+    cannot disable itself from on-chain — the operator
+    must redeploy binaries for that).
+  - **Events**: a new `GovAuthorityEvent` family with
+    kinds `authority-voted`, `authority-staged`,
+    `authority-activated`, `authority-abandoned`, and
+    `authority-rejected` rides on the existing
+    `GovEventPublisher` (a new `PublishGovAuthority`
+    method; existing implementations grow a no-op).
+  - **Metrics**:
+    [`pkg/monitoring/gov_metrics.go`](QSDM/source/pkg/monitoring/gov_metrics.go)
+    adds five Prometheus surfaces:
+    `qsdm_gov_authority_voted_total{op}`,
+    `qsdm_gov_authority_crossed_total{op}`,
+    `qsdm_gov_authority_activated_total{op}`,
+    `qsdm_gov_authority_count` (gauge),
+    `qsdm_gov_authority_rejected_total{reason}`.
+    `MetricsRecorder` grows the matching four methods.
+  - **Persistence**: snapshot format bumps to
+    `SnapshotVersion=2` (backwards-compatible read of
+    v1). New `SaveSnapshotWith(store, votes, path)` and
+    `LoadOrNewWith(path)` entry points carry the
+    authority-rotation state through restarts; a node
+    that crashes between threshold-crossing and the
+    activation block replays correctly under the fresh
+    binary. v1 snapshots load cleanly under v2 binaries
+    (vote store boots empty); v2 snapshots refuse to
+    load on v1 binaries (silently dropping in-flight
+    rotations across a downgrade is the wrong default).
+  - **CLI**:
+    [`cmd/qsdmcli/gov_helper.go`](QSDM/source/cmd/qsdmcli/gov_helper.go)
+    grows a `propose-authority` subcommand
+    (`--op`, `--address`, `--effective-height`, `--memo`,
+    `--out`, `--print-cmd`) and the existing `inspect`
+    subcommand now dispatches on the wire-kind tag so
+    both payload kinds round-trip through the same
+    helper.
+  - **Tests**: ~50 new test cases across the layers —
+    threshold table, vote-store record / promote / drop /
+    recompute mechanics, validate / admit kind dispatch,
+    applier rejection branches, persistence round-trip
+    + v1↔v2 compatibility, and an end-to-end integration
+    rig in
+    [`internal/v2wiring/v2wiring_authority_test.go`](QSDM/source/internal/v2wiring/v2wiring_authority_test.go)
+    that drives a real chain through `vote → cross →
+    activate → AuthorityList expanded` AND a
+    `crash-between-cross-and-activate` persistence-replay
+    scenario.
+  - **Docs**: §9.4.7 of
+    [`MINING_PROTOCOL_V2.md`](QSDM/docs/docs/MINING_PROTOCOL_V2.md)
+    is the new operator-facing specification (wire
+    format, threshold rule, activation semantics,
+    rejection branches, events, metrics, persistence,
+    CLI). The deferred-work register's §12.5 marks
+    multisig-gated rotation as **SHIPPED**, completing
+    the "authority list is itself NOT governance-tunable
+    in this revision" caveat from the prior commit.
+
 - **Governance production-readiness: persistent `ParamStore` + end-to-end integration tests (2026-04-28).**
   Closes the two production gaps in the freshly-shipped
   `qsdm/gov/v1` runtime tuning hook: state is now durable

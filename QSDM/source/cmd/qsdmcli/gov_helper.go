@@ -53,20 +53,23 @@ import (
 func (c *CLI) govHelper(args []string) error {
 	if len(args) < 1 {
 		return errors.New(
-			"usage: qsdmcli gov-helper <sub> [flags]\n  sub ∈ {propose-param, params, inspect}")
+			"usage: qsdmcli gov-helper <sub> [flags]\n" +
+				"  sub ∈ {propose-param, propose-authority, params, inspect}")
 	}
 	sub := args[0]
 	rest := args[1:]
 	switch sub {
 	case "propose-param":
 		return c.govHelperProposeParam(rest)
+	case "propose-authority":
+		return c.govHelperProposeAuthority(rest)
 	case "params":
 		return c.govHelperListParams(rest)
 	case "inspect":
 		return c.govHelperInspect(rest)
 	default:
 		return fmt.Errorf(
-			"unknown gov-helper subcommand %q (want propose-param | params | inspect)", sub)
+			"unknown gov-helper subcommand %q (want propose-param | propose-authority | params | inspect)", sub)
 	}
 }
 
@@ -330,7 +333,9 @@ func (c *CLI) fetchGovernanceParams() (*govParamsRemoteView, error) {
 // -----------------------------------------------------------------------------
 
 // govHelperInspectView is the human-readable wire shape printed
-// by the inspect subcommand.
+// by the inspect subcommand for a param-set payload. Kept for
+// the param-set path; authority-set payloads use
+// govHelperInspectAuthorityView so the JSON is shape-clean.
 type govHelperInspectView struct {
 	Kind            string                 `json:"kind"`
 	Param           string                 `json:"param"`
@@ -339,6 +344,18 @@ type govHelperInspectView struct {
 	Memo            string                 `json:"memo,omitempty"`
 	SizeBytes       int                    `json:"size_bytes"`
 	RegistryEntry   *chainparams.ParamSpec `json:"registry_entry,omitempty"`
+}
+
+// govHelperInspectAuthorityView is the human-readable wire
+// shape printed by the inspect subcommand for an authority-set
+// payload.
+type govHelperInspectAuthorityView struct {
+	Kind            string `json:"kind"`
+	Op              string `json:"op"`
+	Address         string `json:"address"`
+	EffectiveHeight uint64 `json:"effective_height"`
+	Memo            string `json:"memo,omitempty"`
+	SizeBytes       int    `json:"size_bytes"`
 }
 
 func (c *CLI) govHelperInspect(args []string) error {
@@ -377,26 +394,151 @@ func (c *CLI) govHelperInspect(args []string) error {
 		blob = decoded
 	}
 
-	parsed, err := chainparams.ParseParamSet(blob)
+	// Dispatch on payload kind so the right view shape is
+	// emitted. Same kind-peek the chain admit gate uses.
+	kind, err := chainparams.PeekKind(blob)
 	if err != nil {
-		return fmt.Errorf("parse payload: %w", err)
+		return fmt.Errorf("peek payload kind: %w", err)
 	}
-	view := govHelperInspectView{
-		Kind:            string(parsed.Kind),
-		Param:           parsed.Param,
-		Value:           parsed.Value,
-		EffectiveHeight: parsed.EffectiveHeight,
-		Memo:            parsed.Memo,
-		SizeBytes:       len(blob),
+	switch kind {
+	case chainparams.PayloadKindParamSet:
+		parsed, err := chainparams.ParseParamSet(blob)
+		if err != nil {
+			return fmt.Errorf("parse param-set payload: %w", err)
+		}
+		view := govHelperInspectView{
+			Kind:            string(parsed.Kind),
+			Param:           parsed.Param,
+			Value:           parsed.Value,
+			EffectiveHeight: parsed.EffectiveHeight,
+			Memo:            parsed.Memo,
+			SizeBytes:       len(blob),
+		}
+		if spec, ok := chainparams.Lookup(parsed.Param); ok {
+			view.RegistryEntry = &spec
+		}
+		out, err := json.MarshalIndent(view, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal inspect view: %w", err)
+		}
+		fmt.Println(string(out))
+		return nil
+	case chainparams.PayloadKindAuthoritySet:
+		parsed, err := chainparams.ParseAuthoritySet(blob)
+		if err != nil {
+			return fmt.Errorf("parse authority-set payload: %w", err)
+		}
+		view := govHelperInspectAuthorityView{
+			Kind:            string(parsed.Kind),
+			Op:              string(parsed.Op),
+			Address:         parsed.Address,
+			EffectiveHeight: parsed.EffectiveHeight,
+			Memo:            parsed.Memo,
+			SizeBytes:       len(blob),
+		}
+		out, err := json.MarshalIndent(view, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal inspect view: %w", err)
+		}
+		fmt.Println(string(out))
+		return nil
+	default:
+		return fmt.Errorf("unsupported payload kind %q", kind)
 	}
-	if spec, ok := chainparams.Lookup(parsed.Param); ok {
-		view.RegistryEntry = &spec
+}
+
+// -----------------------------------------------------------------------------
+// gov-helper propose-authority
+// -----------------------------------------------------------------------------
+
+// govHelperProposeAuthority constructs an AuthoritySetPayload
+// from command-line flags, validates it locally, and writes
+// the encoded JSON to --out (default stdout).
+//
+// A rotation requires M-of-N approval — each authority runs
+// this command independently to produce their VOTE, then signs
+// + submits via the same `qsdmcli tx --contract-id=qsdm/gov/v1`
+// path used for param-set proposals. The chain accumulates
+// votes by (op, address, effective-height) tuple and stages
+// the rotation when the threshold is crossed.
+//
+// Sanity checks performed BEFORE encoding:
+//
+//   - --op is "add" or "remove".
+//   - --address is non-empty, ≤MaxAuthorityAddressLen, ASCII
+//     printable (no whitespace, no control bytes).
+//   - --effective-height is positive.
+//   - --memo length cap.
+//
+// The chain-side height window and AuthorityList membership
+// rules cannot be checked offline; they fire at applier time.
+func (c *CLI) govHelperProposeAuthority(args []string) error {
+	fs := flag.NewFlagSet("gov-helper propose-authority", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	var (
+		op              = fs.String("op", "", `rotation kind: "add" or "remove" (required)`)
+		address         = fs.String("address", "", "target address being added/removed (required)")
+		effectiveHeight = fs.Uint64("effective-height", 0, "chain block height at which the rotation must be visible (required; ≥ currentHeight at submission)")
+		memo            = fs.String("memo", "", "optional human-readable memo (≤256 bytes)")
+		out             = fs.String("out", "-", "output path for the encoded payload ('-' for stdout)")
+		printCmd        = fs.Bool("print-cmd", false, "after writing, print a placeholder `qsdmcli tx` invocation to stderr")
+	)
+	if err := fs.Parse(args); err != nil {
+		return err
 	}
-	out, err := json.MarshalIndent(view, "", "  ")
+	if *op == "" {
+		fs.Usage()
+		return errors.New(`--op is required ("add" or "remove")`)
+	}
+	if *address == "" {
+		fs.Usage()
+		return errors.New("--address is required")
+	}
+	if *effectiveHeight == 0 {
+		fs.Usage()
+		return errors.New("--effective-height is required and must be positive")
+	}
+
+	payload := chainparams.AuthoritySetPayload{
+		Kind:            chainparams.PayloadKindAuthoritySet,
+		Op:              chainparams.AuthorityOp(*op),
+		Address:         *address,
+		EffectiveHeight: *effectiveHeight,
+		Memo:            *memo,
+	}
+	if err := chainparams.ValidateAuthoritySetFields(&payload); err != nil {
+		return fmt.Errorf("payload rejected: %w", err)
+	}
+	blob, err := chainparams.EncodeAuthoritySet(payload)
 	if err != nil {
-		return fmt.Errorf("marshal inspect view: %w", err)
+		return fmt.Errorf("encode payload: %w", err)
 	}
-	fmt.Println(string(out))
+	if _, err := chainparams.ParseAuthoritySet(blob); err != nil {
+		return fmt.Errorf("encoder produced bytes that fail Parse round-trip: %w", err)
+	}
+
+	if err := writeBytes(*out, blob); err != nil {
+		return fmt.Errorf("write payload: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr,
+		"gov authority-set payload: %d bytes, op=%q address=%q effective_height=%d memo=%dB\n",
+		len(blob), *op, *address, *effectiveHeight, len(*memo))
+	fmt.Fprintf(os.Stderr,
+		"note: chain-side acceptance still requires (a) sender on AuthorityList, "+
+			"(b) effective_height ≥ currentHeight at submission, "+
+			"(c) effective_height ≤ currentHeight + %d blocks (~%dh), "+
+			"and (d) M-of-N votes on the same (op, address, effective_height) tuple.\n",
+		chainparams.MaxActivationDelay,
+		chainparams.MaxActivationDelay*3/3600)
+
+	if *printCmd {
+		fmt.Fprintln(os.Stderr,
+			"submit via your signed-tx pipeline with ContractID=qsdm/gov/v1 and Payload=<bytes-above>")
+		fmt.Fprintf(os.Stderr,
+			"# example: qsdmcli tx <authority-addr> <validator> 0 --contract-id=%s --payload-file=%s\n",
+			chainparams.ContractID, resolveOutPath(*out))
+	}
 	return nil
 }
 

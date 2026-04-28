@@ -65,16 +65,56 @@ import (
 const ContractID = "qsdm/gov/v1"
 
 // PayloadKind tags the supported payload shapes that share the
-// same ContractID. Today there is only one kind (param-set);
-// the field is encoded as the first JSON field so the decoder
-// can dispatch before accessing variant-specific fields.
+// same ContractID. The field is encoded as the first JSON field
+// so the decoder can dispatch before accessing variant-specific
+// fields.
 type PayloadKind string
 
 const (
 	// PayloadKindParamSet stages a single-parameter update
 	// for activation at a specified future block height.
 	PayloadKindParamSet PayloadKind = "param-set"
+
+	// PayloadKindAuthoritySet stages an addition or removal of
+	// a governance authority. Unlike param-set, which
+	// activates on a single signed proposal, authority-set
+	// requires M-of-N approval: each authority submits its
+	// own vote tx for the same (op, address, effective_height)
+	// tuple, and the change is staged for activation only
+	// after `threshold` votes are tallied.
+	//
+	// See pkg/governance/chainparams/authority.go for the
+	// vote-store and threshold semantics, and
+	// pkg/chain/gov_apply.go for the applier dispatch +
+	// promotion path.
+	PayloadKindAuthoritySet PayloadKind = "authority-set"
 )
+
+// AuthorityOp names the kind of mutation an authority-set
+// payload requests against the live AuthorityList.
+type AuthorityOp string
+
+const (
+	// AuthorityOpAdd inserts the address into the
+	// AuthorityList at activation time. A no-op if the
+	// address is already present at promotion (the applier
+	// emits an `authority-rejected` event with reason
+	// `already_present` and skips the mutation).
+	AuthorityOpAdd AuthorityOp = "add"
+
+	// AuthorityOpRemove drops the address from the
+	// AuthorityList at activation time. Refused at promotion
+	// if it would leave the list empty (governance cannot
+	// rotate itself into the disabled posture; binaries must
+	// be redeployed for that).
+	AuthorityOpRemove AuthorityOp = "remove"
+)
+
+// MaxAuthorityAddressLen bounds the on-wire address byte
+// length carried by an AuthoritySetPayload. Mirrors the
+// enrollment payload's address-length cap so a hand-crafted
+// JSON cannot inject pathological state.
+const MaxAuthorityAddressLen = 128
 
 // MaxMemoLen bounds the optional memo on a param-set tx. The
 // memo is stored verbatim on the chain receipt so an inflated
@@ -171,6 +211,124 @@ type ParamChange struct {
 	Memo string
 }
 
+// AuthoritySetPayload is the consensus-critical wire format of
+// a `qsdm/gov/v1` authority-rotation transaction (the one whose
+// Kind == PayloadKindAuthoritySet). Each instance is one
+// authority's VOTE on a single proposal; the chain tallies
+// votes and stages the rotation when the M-of-N threshold is
+// crossed.
+//
+// The proposal identity is the tuple
+// (Op, Address, EffectiveHeight). Two votes on the same tuple
+// from different authorities accumulate into a single staged
+// change; two votes on the same tuple from the SAME authority
+// reject as ErrDuplicateVote.
+//
+// Memo is purely informational and is recorded verbatim on the
+// `authority-voted` / `authority-staged` events; it is included
+// in the canonical hash so tampering invalidates the signature.
+//
+// Field naming mirrors ParamSetPayload to make canonical-JSON
+// inspection consistent across the two payload shapes.
+type AuthoritySetPayload struct {
+	// Kind MUST equal PayloadKindAuthoritySet. Belt-and-braces
+	// dispatch tag — a client that gets ContractID right and
+	// Kind wrong gets a clean rejection rather than an
+	// ambiguous decode failure.
+	Kind PayloadKind `json:"kind"`
+
+	// Op names the requested AuthorityList mutation.
+	// Validators reject any value not in {add, remove}.
+	Op AuthorityOp `json:"op"`
+
+	// Address is the target of the rotation. For Op=add it
+	// is the new authority being onboarded; for Op=remove it
+	// is the existing authority being retired. Validated for
+	// non-emptiness and length cap (MaxAuthorityAddressLen);
+	// existence checks happen at applier time against the
+	// live AuthorityList.
+	Address string `json:"address"`
+
+	// EffectiveHeight is the chain block height at which the
+	// rotation MUST be visible to consensus. Same window as
+	// ParamSetPayload — must satisfy
+	//
+	//   currentHeight <= EffectiveHeight <= currentHeight + MaxActivationDelay
+	//
+	// Each vote MUST carry the same EffectiveHeight to count
+	// toward the same proposal tuple — different effective
+	// heights name different proposals.
+	EffectiveHeight uint64 `json:"effective_height"`
+
+	// Memo is optional human-readable context (e.g.
+	// "carol stepping down, dave taking over per board
+	// resolution 2026-04"). Bounded by MaxMemoLen.
+	Memo string `json:"memo,omitempty"`
+}
+
+// AuthorityVote captures one authority's casting of a vote on
+// a proposal tuple. Stored in AuthorityProposal.Voters and
+// emitted on `authority-voted` events.
+type AuthorityVote struct {
+	// Voter is the authority address that cast the vote
+	// (i.e. tx.Sender). Must be on the AuthorityList at the
+	// time the vote was applied.
+	Voter string
+
+	// SubmittedAtHeight is the chain height at which the vote
+	// tx was applied. Used for receipt chronology and for
+	// expiring stale votes (today votes don't expire pre-
+	// activation; the field is reserved for a future
+	// expiry-window extension).
+	SubmittedAtHeight uint64
+
+	// Memo is the operator-supplied memo, verbatim.
+	Memo string
+}
+
+// AuthorityProposal is the post-tally state of a single
+// (Op, Address, EffectiveHeight) tuple. Held in the
+// AuthorityVoteStore and persisted alongside the param store.
+//
+// Lifecycle:
+//
+//  1. First vote: proposal created with one entry in Voters.
+//     Crossed=false until threshold is reached.
+//  2. Subsequent votes (different voters): appended to Voters.
+//     If the new tally meets threshold, Crossed flips to true
+//     and CrossedAtHeight is recorded.
+//  3. Promotion: when the chain reaches EffectiveHeight, a
+//     Crossed proposal is applied to the AuthorityList and
+//     deleted from the store. Non-crossed proposals never
+//     activate (votes accumulated short of threshold are
+//     discarded silently when the chain passes EffectiveHeight).
+type AuthorityProposal struct {
+	// Op is the rotation kind.
+	Op AuthorityOp
+
+	// Address is the rotation target.
+	Address string
+
+	// EffectiveHeight is the activation height — same value
+	// every voter must have submitted.
+	EffectiveHeight uint64
+
+	// Voters is the set of authorities that have cast a vote
+	// on this tuple. Ordered by SubmittedAtHeight ascending,
+	// then voter address ascending, so two nodes' snapshots
+	// of the same proposal are byte-stable.
+	Voters []AuthorityVote
+
+	// Crossed is true once len(Voters) reached the threshold
+	// at the time of the latest vote. Once true, never flips
+	// back to false (a captured authority cannot un-vote).
+	Crossed bool
+
+	// CrossedAtHeight is the height at which Crossed flipped.
+	// Zero before crossing; non-zero after.
+	CrossedAtHeight uint64
+}
+
 // Sentinel errors. All exported so callers can errors.Is
 // against them.
 var (
@@ -211,6 +369,36 @@ var (
 	// (governance disabled).
 	ErrGovernanceNotConfigured = errors.New(
 		"chainparams: governance not configured (empty authority list)")
+
+	// ErrAuthorityAlreadyPresent is returned by the applier
+	// when an `authority-set / add` proposal targets an
+	// address already on the AuthorityList. Catching this at
+	// admit-or-apply time prevents wasted votes on no-ops.
+	ErrAuthorityAlreadyPresent = errors.New(
+		"chainparams: authority already on the list")
+
+	// ErrAuthorityNotPresent is returned when an
+	// `authority-set / remove` proposal targets an address
+	// not on the current AuthorityList. Same rationale as
+	// ErrAuthorityAlreadyPresent.
+	ErrAuthorityNotPresent = errors.New(
+		"chainparams: authority not on the list")
+
+	// ErrAuthorityListWouldEmpty is returned at promotion
+	// time when applying a remove would leave the
+	// AuthorityList empty. Governance cannot rotate itself
+	// into the disabled posture from on-chain — the operator
+	// must redeploy binaries.
+	ErrAuthorityListWouldEmpty = errors.New(
+		"chainparams: authority list cannot drop to zero via on-chain rotation")
+
+	// ErrDuplicateVote is returned by the applier when an
+	// authority casts a second vote on the same proposal
+	// tuple. The mempool has its own dedup but cross-block
+	// resubmission would still slip through without this
+	// check.
+	ErrDuplicateVote = errors.New(
+		"chainparams: authority has already voted on this proposal")
 )
 
 // MaxPendingPerParam is the maximum number of pending entries

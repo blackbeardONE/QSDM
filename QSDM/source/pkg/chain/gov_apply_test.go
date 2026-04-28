@@ -33,11 +33,16 @@ import (
 // -----------------------------------------------------------------------------
 
 type recordingGovPublisher struct {
-	events []GovParamEvent
+	events     []GovParamEvent
+	authEvents []GovAuthorityEvent
 }
 
 func (p *recordingGovPublisher) PublishGovParam(ev GovParamEvent) {
 	p.events = append(p.events, ev)
+}
+
+func (p *recordingGovPublisher) PublishGovAuthority(ev GovAuthorityEvent) {
+	p.authEvents = append(p.authEvents, ev)
 }
 
 // buildGovFixture returns a (Accounts, ParamStore, GovApplier)

@@ -1,0 +1,42 @@
+feat(gov): multisig-gated authority rotation via qsdm/gov/v1 authority-set payload kind
+
+The qsdm/gov/v1 ContractID now carries TWO payload kinds: param-set
+(already shipped) and authority-set. Each authority-set tx is one
+authority's vote on a (op, address, effective_height) tuple; the
+chain accumulates votes and stages the rotation when the M-of-N
+threshold is crossed (threshold = max(1, N/2 + 1)). The on-chain
+AuthorityList is now itself rotatable without a binary redeploy.
+
+Layers:
+- pkg/governance/chainparams/{types,validate,admit,authority,persist}
+  - AuthoritySetPayload + AuthorityVoteStore + threshold helper
+  - PeekKind dispatch in admit gate
+  - Snapshot version bump to 2 (backwards-compatible read of v1)
+- pkg/chain/{gov_apply,events}
+  - GovApplier dispatches on PayloadKind
+  - applyAuthoritySet: vote tally + threshold-cross detection
+  - PromotePending now also activates crossed authority proposals,
+    mutates authoritySet under authorityMu, drops orphan votes on
+    remove, refuses would-empty
+  - GovAuthorityEvent family + PublishGovAuthority publisher method
+  - 4 new MetricsRecorder methods
+- pkg/monitoring/{chain_recorder,gov_metrics}
+  - 5 new Prometheus surfaces: voted/crossed/activated counters,
+    authority_count gauge, rejected counter
+- internal/v2wiring
+  - Wires AuthorityVoteStore alongside ParamStore
+  - LoadOrNewWith / SaveSnapshotWith for joint persistence
+- cmd/qsdmcli/gov_helper
+  - propose-authority subcommand
+  - inspect now dispatches on wire kind tag
+
+Tests: 50+ new cases across authority store, validate/admit
+dispatch, applier rejection branches, persistence round-trip
+including v1<->v2 compat, plus an end-to-end integration test
+through v2wiring covering a vote -> cross -> activate flow and
+a crash-between-cross-and-activate persistence-replay scenario.
+
+Docs: MINING_PROTOCOL_V2.md gains §9.4.7 "Authority rotation" with
+wire format, threshold rule, activation semantics, rejection
+branches, events, metrics, persistence, CLI. §12.5 of the
+deferred-work register marks multisig-gated rotation as SHIPPED.

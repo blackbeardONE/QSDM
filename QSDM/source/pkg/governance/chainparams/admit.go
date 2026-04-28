@@ -67,12 +67,36 @@ func AdmissionChecker(prev func(*mempool.Tx) error) func(*mempool.Tx) error {
 		if len(tx.Payload) == 0 {
 			return fmt.Errorf("%w: gov tx missing Payload", ErrPayloadInvalid)
 		}
-		p, err := ParseParamSet(tx.Payload)
+		// Dispatch on payload kind. Both variants share
+		// ContractID, so the kind tag is the discriminator
+		// the admit gate uses to pick a per-shape validator.
+		// Wire drift (unknown kind, missing kind) surfaces
+		// here at the cheapest possible point.
+		kind, err := PeekKind(tx.Payload)
 		if err != nil {
 			return fmt.Errorf("chainparams admit: %w", err)
 		}
-		if err := ValidateParamSetFields(p); err != nil {
-			return fmt.Errorf("chainparams admit: %w", err)
+		switch kind {
+		case PayloadKindParamSet:
+			p, err := ParseParamSet(tx.Payload)
+			if err != nil {
+				return fmt.Errorf("chainparams admit: %w", err)
+			}
+			if err := ValidateParamSetFields(p); err != nil {
+				return fmt.Errorf("chainparams admit: %w", err)
+			}
+		case PayloadKindAuthoritySet:
+			p, err := ParseAuthoritySet(tx.Payload)
+			if err != nil {
+				return fmt.Errorf("chainparams admit: %w", err)
+			}
+			if err := ValidateAuthoritySetFields(p); err != nil {
+				return fmt.Errorf("chainparams admit: %w", err)
+			}
+		default:
+			return fmt.Errorf(
+				"chainparams admit: %w: unsupported kind %q",
+				ErrPayloadInvalid, kind)
 		}
 		// Gov txs MUST carry a positive Fee. Without one,
 		// nonce accounting in chain.GovApplier would break

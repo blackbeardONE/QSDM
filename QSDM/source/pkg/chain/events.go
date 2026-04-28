@@ -88,6 +88,28 @@ type MetricsRecorder interface {
 	// RecordGovParamRejected increments the
 	// `qsdm_gov_param_rejected_total{reason}` counter.
 	RecordGovParamRejected(reason string)
+
+	// RecordGovAuthorityVoted increments the
+	// `qsdm_gov_authority_voted_total{op}` counter. Fires
+	// once per accepted vote tx (Op ∈ {add, remove}).
+	RecordGovAuthorityVoted(op string)
+
+	// RecordGovAuthorityCrossed increments the
+	// `qsdm_gov_authority_crossed_total{op}` counter. Fires
+	// exactly once per proposal whose vote tally reaches
+	// threshold (M-of-N).
+	RecordGovAuthorityCrossed(op string)
+
+	// RecordGovAuthorityActivated increments the
+	// `qsdm_gov_authority_activated_total{op}` counter and
+	// updates the `qsdm_gov_authority_count` gauge to the
+	// post-activation set size. Fires once per Promote-
+	// driven activation.
+	RecordGovAuthorityActivated(op string, postCount uint64)
+
+	// RecordGovAuthorityRejected increments the
+	// `qsdm_gov_authority_rejected_total{reason}` counter.
+	RecordGovAuthorityRejected(reason string)
 }
 
 // Slash reject reason tags. Stable, narrow, mapped 1:1 to the
@@ -146,6 +168,10 @@ func (noopRecorder) RecordEnrollmentUnbondSwept(uint64)      {}
 func (noopRecorder) RecordGovParamStaged(string)             {}
 func (noopRecorder) RecordGovParamActivated(string, uint64)  {}
 func (noopRecorder) RecordGovParamRejected(string)           {}
+func (noopRecorder) RecordGovAuthorityVoted(string)          {}
+func (noopRecorder) RecordGovAuthorityCrossed(string)        {}
+func (noopRecorder) RecordGovAuthorityActivated(string, uint64) {}
+func (noopRecorder) RecordGovAuthorityRejected(string)       {}
 
 // recorderHolder wraps a MetricsRecorder so atomic.Value's
 // "all stored values must share an identical concrete type"
@@ -455,15 +481,145 @@ const (
 	GovRejectReasonHeightTooFar   = "effective_height_too_far"
 	GovRejectReasonStageRejected  = "stage_rejected"
 	GovRejectReasonNonceFee       = "nonce_or_fee_failed"
-	GovRejectReasonOther          = "other"
+	// GovRejectReasonAuthorityAlreadyPresent is emitted when
+	// an `authority-set / add` proposal targets an address
+	// already on the live AuthorityList.
+	GovRejectReasonAuthorityAlreadyPresent = "authority_already_present"
+	// GovRejectReasonAuthorityNotPresent is emitted when an
+	// `authority-set / remove` proposal targets an address
+	// not on the live AuthorityList.
+	GovRejectReasonAuthorityNotPresent = "authority_not_present"
+	// GovRejectReasonAuthorityWouldEmpty is emitted at
+	// promotion time when applying a remove would leave the
+	// AuthorityList empty (governance cannot self-disable
+	// from on-chain).
+	GovRejectReasonAuthorityWouldEmpty = "authority_would_empty"
+	// GovRejectReasonDuplicateVote is emitted when the same
+	// authority casts a second vote on the same proposal.
+	GovRejectReasonDuplicateVote = "duplicate_vote"
+	// GovRejectReasonAuthorityVoteRejected is the catch-all
+	// for vote-store mutation failures (e.g. an empty voter
+	// addr that survived earlier validation).
+	GovRejectReasonAuthorityVoteRejected = "authority_vote_rejected"
+	GovRejectReasonOther                 = "other"
 )
+
+// GovAuthorityEventKind enumerates the events emitted around
+// the authority-rotation lifecycle. Distinct from
+// GovParamEventKind because the field shapes are different —
+// param events carry (param, value); authority events carry
+// (op, address, voters, threshold). A subscriber that cares
+// only about parameters does not have to grow an op-switch.
+type GovAuthorityEventKind string
+
+const (
+	// GovAuthorityEventVoted fires once per accepted
+	// `authority-set` vote tx, regardless of whether the
+	// vote crossed threshold. Voters slice on the event
+	// includes the just-cast vote.
+	GovAuthorityEventVoted GovAuthorityEventKind = "authority-voted"
+
+	// GovAuthorityEventStaged fires exactly once per
+	// proposal whose vote tally reaches threshold. The
+	// proposal is now scheduled for activation at
+	// EffectiveHeight.
+	GovAuthorityEventStaged GovAuthorityEventKind = "authority-staged"
+
+	// GovAuthorityEventActivated fires when Promote
+	// transitions a Crossed proposal into the live
+	// AuthorityList — the chain now reflects the rotated
+	// set.
+	GovAuthorityEventActivated GovAuthorityEventKind = "authority-activated"
+
+	// GovAuthorityEventAbandoned fires when a non-Crossed
+	// proposal loses its last voter (the voter was removed
+	// by an earlier rotation activation). The proposal is
+	// dropped; subscribers see this event so post-mortems
+	// can reconcile "where did proposal X go?" to a
+	// concrete cause.
+	GovAuthorityEventAbandoned GovAuthorityEventKind = "authority-abandoned"
+
+	// GovAuthorityEventRejected fires on every pre-mutation
+	// rejection (decode, unauthorized, height window,
+	// duplicate vote, would-empty). Mirrors
+	// GovParamEventRejected.
+	GovAuthorityEventRejected GovAuthorityEventKind = "authority-rejected"
+)
+
+// GovAuthorityEvent is the structured event for every
+// authority-rotation outcome. Pass-by-value; subscribers MUST
+// NOT retain a pointer.
+type GovAuthorityEvent struct {
+	// Kind names the event flavour.
+	Kind GovAuthorityEventKind
+
+	// TxID is the mempool tx id of the originating vote tx.
+	// Empty for activated / abandoned (those are driven by
+	// Promote / cleanup, not by a tx).
+	TxID string
+
+	// Height is the chain height at which the event fired.
+	// For activated events this is the height that crossed
+	// EffectiveHeight, NOT EffectiveHeight itself.
+	Height uint64
+
+	// Voter is the tx.Sender on voted / rejected events.
+	// Empty on staged / activated / abandoned.
+	Voter string
+
+	// Op names the rotation kind ("add" or "remove").
+	Op string
+
+	// Address is the rotation target.
+	Address string
+
+	// EffectiveHeight is the proposal's activation height.
+	EffectiveHeight uint64
+
+	// Voters is the post-event voter set for the proposal,
+	// ordered (SubmittedAtHeight asc, voter asc). Always
+	// populated for voted / staged / activated; empty for
+	// rejected events that didn't reach the vote-store.
+	Voters []string
+
+	// Threshold is the M-of-N threshold computed at the
+	// time of the event (= AuthorityThreshold(N)). Lets
+	// dashboards render "3 / 5 votes" without a separate
+	// state lookup.
+	Threshold int
+
+	// AuthorityCount is the size of the live AuthorityList
+	// at the time of the event. For activated events, this
+	// is the POST-activation size (so a remove drops the
+	// number, an add raises it).
+	AuthorityCount int
+
+	// Memo is the operator-supplied memo, verbatim.
+	Memo string
+
+	// RejectReason names the rejection branch on
+	// `authority-rejected`; matches the GovRejectReason*
+	// tags above. Empty on other kinds.
+	RejectReason string
+
+	// Err carries the underlying error on rejected events.
+	// Subscribers MUST NOT retain a reference past the call.
+	Err error
+}
 
 // GovEventPublisher is the consumer-facing surface for
 // governance events. Kept distinct from ChainEventPublisher so
 // existing slash / enrollment subscribers do not have to grow
-// a no-op PublishGovParam method.
+// no-op handlers.
+//
+// Authority-rotation events ride on the same publisher because
+// they share the gov audit audience (CLI watchers, audit
+// indexers). PublishGovAuthority was added in tandem with the
+// `authority-set` payload kind; existing implementations
+// upgrade by adding a no-op method.
 type GovEventPublisher interface {
 	PublishGovParam(GovParamEvent)
+	PublishGovAuthority(GovAuthorityEvent)
 }
 
 // NoopGovEventPublisher is the default. Implementations that
@@ -472,6 +628,9 @@ type NoopGovEventPublisher struct{}
 
 // PublishGovParam implements GovEventPublisher.
 func (NoopGovEventPublisher) PublishGovParam(GovParamEvent) {}
+
+// PublishGovAuthority implements GovEventPublisher.
+func (NoopGovEventPublisher) PublishGovAuthority(GovAuthorityEvent) {}
 
 // CompositeGovPublisher fans out gov events to every wrapped
 // publisher in registration order. Mirrors CompositePublisher
@@ -499,6 +658,16 @@ func (c *CompositeGovPublisher) PublishGovParam(ev GovParamEvent) {
 	}
 	for _, p := range c.publishers {
 		p.PublishGovParam(ev)
+	}
+}
+
+// PublishGovAuthority fans out to every wrapped publisher.
+func (c *CompositeGovPublisher) PublishGovAuthority(ev GovAuthorityEvent) {
+	if c == nil {
+		return
+	}
+	for _, p := range c.publishers {
+		p.PublishGovAuthority(ev)
 	}
 }
 

@@ -71,3 +71,19 @@ func (chainMetricsAdapter) RecordGovParamActivated(param string, value uint64) {
 func (chainMetricsAdapter) RecordGovParamRejected(reason string) {
 	RecordGovParamRejected(reason)
 }
+
+func (chainMetricsAdapter) RecordGovAuthorityVoted(op string) {
+	RecordGovAuthorityVoted(op)
+}
+
+func (chainMetricsAdapter) RecordGovAuthorityCrossed(op string) {
+	RecordGovAuthorityCrossed(op)
+}
+
+func (chainMetricsAdapter) RecordGovAuthorityActivated(op string, postCount uint64) {
+	RecordGovAuthorityActivated(op, postCount)
+}
+
+func (chainMetricsAdapter) RecordGovAuthorityRejected(reason string) {
+	RecordGovAuthorityRejected(reason)
+}

@@ -238,3 +238,194 @@ func GovRejectedLabeled() []struct {
 		{GovRejectReasonOther, govRejectOther.Load()},
 	}
 }
+
+// ---------- authority-rotation counters ----------
+//
+// Per-op (add/remove) counters for the authority rotation
+// pipeline. Cardinality is a hard {add, remove} for op-keyed
+// counters and a finite reason enum for rejected — well below
+// any Prometheus best-practice ceiling.
+
+var (
+	govAuthVotedMu       sync.RWMutex
+	govAuthVotedTotal    = make(map[string]*atomic.Uint64)
+	govAuthCrossedMu     sync.RWMutex
+	govAuthCrossedTotal  = make(map[string]*atomic.Uint64)
+	govAuthActivatedMu   sync.RWMutex
+	govAuthActivatedTotal = make(map[string]*atomic.Uint64)
+
+	// Single gauge for the active AuthorityList size. Updated
+	// on every add/remove activation.
+	govAuthorityCountGauge atomic.Uint64
+)
+
+// RecordGovAuthorityVoted bumps the per-op vote-accepted
+// counter. `op` is "add" or "remove"; unknown values fall
+// into "other" so cardinality stays bounded.
+func RecordGovAuthorityVoted(op string) {
+	c := ensureCounter(govAuthVotedTotal, &govAuthVotedMu, normaliseAuthOp(op))
+	c.Add(1)
+}
+
+// RecordGovAuthorityCrossed bumps the per-op threshold-cross
+// counter. Fires exactly once per proposal that reaches
+// M-of-N, regardless of whether it later activates.
+func RecordGovAuthorityCrossed(op string) {
+	c := ensureCounter(govAuthCrossedTotal, &govAuthCrossedMu, normaliseAuthOp(op))
+	c.Add(1)
+}
+
+// RecordGovAuthorityActivated bumps the per-op activation
+// counter and updates the AuthorityList-size gauge to
+// `postCount`.
+func RecordGovAuthorityActivated(op string, postCount uint64) {
+	c := ensureCounter(govAuthActivatedTotal, &govAuthActivatedMu, normaliseAuthOp(op))
+	c.Add(1)
+	govAuthorityCountGauge.Store(postCount)
+}
+
+// SetAuthorityCountGauge sets the gauge directly. Used by the
+// v2wiring boot path so a /metrics scrape before any rotation
+// fires shows the genesis authority count.
+func SetAuthorityCountGauge(n uint64) {
+	govAuthorityCountGauge.Store(n)
+}
+
+// AuthorityCountGauge returns the current value of the
+// `qsdm_gov_authority_count` gauge.
+func AuthorityCountGauge() uint64 {
+	return govAuthorityCountGauge.Load()
+}
+
+// GovAuthorityVotedLabeled returns (op, count) pairs in stable
+// order for Prometheus exposition.
+func GovAuthorityVotedLabeled() []struct {
+	Op  string
+	Val uint64
+} {
+	return labeledOpSnapshot(govAuthVotedTotal, &govAuthVotedMu)
+}
+
+// GovAuthorityCrossedLabeled mirrors GovAuthorityVotedLabeled
+// for the `authority-staged` counter.
+func GovAuthorityCrossedLabeled() []struct {
+	Op  string
+	Val uint64
+} {
+	return labeledOpSnapshot(govAuthCrossedTotal, &govAuthCrossedMu)
+}
+
+// GovAuthorityActivatedLabeled mirrors GovAuthorityVotedLabeled
+// for the `authority-activated` counter.
+func GovAuthorityActivatedLabeled() []struct {
+	Op  string
+	Val uint64
+} {
+	return labeledOpSnapshot(govAuthActivatedTotal, &govAuthActivatedMu)
+}
+
+// labeledOpSnapshot is the op-keyed sibling of labeledSnapshot.
+// Kept distinct so the param-flavoured exposition sites don't
+// have to grow an "Op" struct field.
+func labeledOpSnapshot(m map[string]*atomic.Uint64, mu *sync.RWMutex) []struct {
+	Op  string
+	Val uint64
+} {
+	mu.RLock()
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	mu.RUnlock()
+	sortStrings(keys)
+	out := make([]struct {
+		Op  string
+		Val uint64
+	}, len(keys))
+	mu.RLock()
+	defer mu.RUnlock()
+	for i, k := range keys {
+		c, ok := m[k]
+		if !ok {
+			continue
+		}
+		out[i] = struct {
+			Op  string
+			Val uint64
+		}{Op: k, Val: c.Load()}
+	}
+	return out
+}
+
+// normaliseAuthOp coerces unrecognised op tags into "other"
+// so the metric label set is bounded.
+func normaliseAuthOp(op string) string {
+	switch op {
+	case "add", "remove":
+		return op
+	default:
+		return "other"
+	}
+}
+
+// ---------- authority-rejected counters ----------
+
+var (
+	govAuthRejectAlreadyPresent atomic.Uint64
+	govAuthRejectNotPresent     atomic.Uint64
+	govAuthRejectWouldEmpty     atomic.Uint64
+	govAuthRejectDuplicateVote  atomic.Uint64
+	govAuthRejectVoteRejected   atomic.Uint64
+	govAuthRejectOther          atomic.Uint64
+)
+
+// Authority-specific reject reason tags. Mirror the
+// chain.GovRejectReasonAuthority* enum.
+const (
+	GovRejectReasonAuthorityAlreadyPresent = "authority_already_present"
+	GovRejectReasonAuthorityNotPresent     = "authority_not_present"
+	GovRejectReasonAuthorityWouldEmpty     = "authority_would_empty"
+	GovRejectReasonDuplicateVote           = "duplicate_vote"
+	GovRejectReasonAuthorityVoteRejected   = "authority_vote_rejected"
+)
+
+// RecordGovAuthorityRejected increments the reject counter
+// for the supplied authority-rotation reason. Param-side
+// reject reasons (decode_failed, unauthorized, etc.) continue
+// to flow through RecordGovParamRejected because the wire
+// path before kind-dispatch is shared.
+func RecordGovAuthorityRejected(reason string) {
+	switch reason {
+	case GovRejectReasonAuthorityAlreadyPresent:
+		govAuthRejectAlreadyPresent.Add(1)
+	case GovRejectReasonAuthorityNotPresent:
+		govAuthRejectNotPresent.Add(1)
+	case GovRejectReasonAuthorityWouldEmpty:
+		govAuthRejectWouldEmpty.Add(1)
+	case GovRejectReasonDuplicateVote:
+		govAuthRejectDuplicateVote.Add(1)
+	case GovRejectReasonAuthorityVoteRejected:
+		govAuthRejectVoteRejected.Add(1)
+	default:
+		govAuthRejectOther.Add(1)
+	}
+}
+
+// GovAuthorityRejectedLabeled returns (reason, count) pairs
+// in stable order for Prometheus exposition.
+func GovAuthorityRejectedLabeled() []struct {
+	Reason string
+	Val    uint64
+} {
+	return []struct {
+		Reason string
+		Val    uint64
+	}{
+		{GovRejectReasonAuthorityAlreadyPresent, govAuthRejectAlreadyPresent.Load()},
+		{GovRejectReasonAuthorityNotPresent, govAuthRejectNotPresent.Load()},
+		{GovRejectReasonAuthorityWouldEmpty, govAuthRejectWouldEmpty.Load()},
+		{GovRejectReasonDuplicateVote, govAuthRejectDuplicateVote.Load()},
+		{GovRejectReasonAuthorityVoteRejected, govAuthRejectVoteRejected.Load()},
+		{GovRejectReasonOther, govAuthRejectOther.Load()},
+	}
+}

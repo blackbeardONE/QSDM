@@ -74,17 +74,31 @@ import (
 
 // SnapshotVersion is the on-disk format version. Bumping it is
 // a breaking change to operator deployments — a node restarting
-// against a snapshot from a newer binary refuses to load rather
+// against a snapshot from a NEWER binary refuses to load rather
 // than silently corrupt state.
-const SnapshotVersion = 1
+//
+// v1 (initial): { version, saved_at, active, pending }
+// v2 (rotation): adds `authority_proposals`. Loader accepts
+// both v1 and v2; writer always emits v2. A v1 binary reading
+// a v2 snapshot rejects with "unsupported version" (see
+// LoadOrNew); that's intentional — silently dropping authority
+// state would mask in-flight rotations across a downgrade.
+const SnapshotVersion = 2
+
+// snapshotMinSupportedVersion is the lowest snapshot version a
+// current binary will load. Bumped only when a hard
+// incompatibility (renamed fields, removed parameters with
+// no migration path) makes older snapshots unreplay-able.
+const snapshotMinSupportedVersion = 1
 
 // snapshotDoc is the on-disk JSON shape. JSON tags are the wire
 // contract; renaming them is a breaking change.
 type snapshotDoc struct {
-	Version int                `json:"version"`
-	SavedAt string             `json:"saved_at"`
-	Active  map[string]uint64  `json:"active"`
-	Pending []snapshotPending  `json:"pending"`
+	Version             int                          `json:"version"`
+	SavedAt             string                       `json:"saved_at"`
+	Active              map[string]uint64            `json:"active"`
+	Pending             []snapshotPending            `json:"pending"`
+	AuthorityProposals  []snapshotAuthorityProposal  `json:"authority_proposals,omitempty"`
 }
 
 // snapshotPending mirrors ParamChange but with explicit JSON
@@ -99,18 +113,49 @@ type snapshotPending struct {
 	Memo              string `json:"memo,omitempty"`
 }
 
+// snapshotAuthorityProposal mirrors AuthorityProposal — same
+// rationale as snapshotPending. Voters carry their full
+// metadata so a replay reconstructs the deterministic order
+// the in-memory store enforces.
+type snapshotAuthorityProposal struct {
+	Op              AuthorityOp           `json:"op"`
+	Address         string                `json:"address"`
+	EffectiveHeight uint64                `json:"effective_height"`
+	Voters          []snapshotAuthVote    `json:"voters"`
+	Crossed         bool                  `json:"crossed"`
+	CrossedAtHeight uint64                `json:"crossed_at_height,omitempty"`
+}
+
+// snapshotAuthVote mirrors AuthorityVote.
+type snapshotAuthVote struct {
+	Voter             string `json:"voter"`
+	SubmittedAtHeight uint64 `json:"submitted_at_height"`
+	Memo              string `json:"memo,omitempty"`
+}
+
 // SaveSnapshot writes the current state of `store` to `path`
-// atomically (temp file + rename). Returns nil on store==nil
-// or path=="" (the "persistence disabled" no-op). Returns an
-// error on any I/O or marshal failure; the on-disk file is
-// either fully old or fully new — never half-written.
+// atomically (temp file + rename). Authority proposals are
+// omitted from the snapshot — call SaveSnapshotWith for the
+// rotation-aware variant. Returns nil on store==nil or
+// path=="" (the "persistence disabled" no-op).
 //
-// SaveSnapshot is safe to call concurrently with reads against
-// the store (AllActive / AllPending take RLock internally).
-// Calling SaveSnapshot concurrently with itself against the
-// same path is racy and SHOULD NOT be done — the host is
-// expected to serialise saves through the chain's apply path.
+// Kept as the primary entry point so callers that only know
+// about ParamStore continue to work unchanged.
 func SaveSnapshot(store ParamStore, path string) error {
+	return SaveSnapshotWith(store, nil, path)
+}
+
+// SaveSnapshotWith writes both the parameter state and the
+// authority-rotation vote tally to `path` atomically. Pass a
+// nil `votes` store to behave identically to SaveSnapshot.
+//
+// On-disk file is either fully old or fully new — never
+// half-written. Safe to call concurrently with reads against
+// either store (AllActive / AllPending / AllProposals take
+// RLock internally). Calling concurrently with itself against
+// the same path is racy and SHOULD NOT be done — the host is
+// expected to serialise saves through the chain's apply path.
+func SaveSnapshotWith(store ParamStore, votes AuthorityVoteStore, path string) error {
 	if store == nil || path == "" {
 		return nil
 	}
@@ -140,6 +185,30 @@ func SaveSnapshot(store ParamStore, path string) error {
 		return doc.Pending[i].Param < doc.Pending[j].Param
 	})
 
+	if votes != nil {
+		for _, p := range votes.AllProposals() {
+			vs := make([]snapshotAuthVote, 0, len(p.Voters))
+			for _, v := range p.Voters {
+				vs = append(vs, snapshotAuthVote{
+					Voter:             v.Voter,
+					SubmittedAtHeight: v.SubmittedAtHeight,
+					Memo:              v.Memo,
+				})
+			}
+			doc.AuthorityProposals = append(doc.AuthorityProposals,
+				snapshotAuthorityProposal{
+					Op:              p.Op,
+					Address:         p.Address,
+					EffectiveHeight: p.EffectiveHeight,
+					Voters:          vs,
+					Crossed:         p.Crossed,
+					CrossedAtHeight: p.CrossedAtHeight,
+				})
+		}
+		// AllProposals already returns deterministic order;
+		// no extra sort needed here.
+	}
+
 	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return fmt.Errorf("chainparams: marshal snapshot: %w", err)
@@ -162,50 +231,52 @@ func SaveSnapshot(store ParamStore, path string) error {
 }
 
 // LoadOrNew constructs an InMemoryParamStore from a snapshot
-// file at `path`. Behaviour by file state:
+// file at `path`. Authority-rotation state in the snapshot is
+// silently ignored — call LoadOrNewWith to materialise the
+// vote store too. Compatibility entry point for callers that
+// only care about parameter state.
+func LoadOrNew(path string) (*InMemoryParamStore, error) {
+	store, _, err := LoadOrNewWith(path)
+	return store, err
+}
+
+// LoadOrNewWith constructs an InMemoryParamStore AND an
+// InMemoryAuthorityVoteStore from the snapshot file at `path`.
+// Behaviour by file state:
 //
-//   - File missing → returns a fresh store seeded with registry
-//     defaults (NewInMemoryParamStore output) and nil error.
-//     This is the "first boot" path; the host will call
-//     SaveSnapshot at the next sealed block.
-//   - File present, parses, version matches → returns a store
-//     whose actives + pendings reflect the snapshot. Active
-//     values for params NOT in the snapshot remain at their
-//     registry default. Active values for params in the
-//     snapshot but NOT in the registry are dropped silently.
-//     Pending entries for unknown params are also dropped.
-//   - File present, parses, version does NOT match → returns
-//     a clear error so the operator can decide whether to
-//     migrate or wipe the snapshot. We refuse to silently
-//     downgrade — wrong version means wrong shape.
+//   - File missing → returns fresh stores (registry defaults,
+//     empty vote tally) and nil error. The "first boot" path.
+//   - File present, parses, version supported → returns
+//     stores whose state reflects the snapshot. Forward/back-
+//     ward compat: unknown params are dropped, out-of-bounds
+//     values are clamped, malformed authority proposals are
+//     skipped without aborting the load.
+//   - File present, parses, version unsupported → returns a
+//     clear error so the operator can decide whether to
+//     migrate or wipe.
 //   - File present, JSON malformed → returns a clear error.
 //
-// On any error path, the receiver is left as nil (never a
-// half-loaded store).
-//
-// LoadOrNew is intentionally a free function rather than a
-// constructor method on InMemoryParamStore: it lives in the
-// persistence layer and the in-memory store stays free of
-// I/O concerns.
-func LoadOrNew(path string) (*InMemoryParamStore, error) {
+// On any error path the returned stores are nil (never half-
+// loaded).
+func LoadOrNewWith(path string) (*InMemoryParamStore, *InMemoryAuthorityVoteStore, error) {
 	if path == "" {
-		return NewInMemoryParamStore(), nil
+		return NewInMemoryParamStore(), NewInMemoryAuthorityVoteStore(), nil
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return NewInMemoryParamStore(), nil
+			return NewInMemoryParamStore(), NewInMemoryAuthorityVoteStore(), nil
 		}
-		return nil, fmt.Errorf("chainparams: read snapshot %q: %w", path, err)
+		return nil, nil, fmt.Errorf("chainparams: read snapshot %q: %w", path, err)
 	}
 	var doc snapshotDoc
 	if err := json.Unmarshal(b, &doc); err != nil {
-		return nil, fmt.Errorf("chainparams: parse snapshot %q: %w", path, err)
+		return nil, nil, fmt.Errorf("chainparams: parse snapshot %q: %w", path, err)
 	}
-	if doc.Version != SnapshotVersion {
-		return nil, fmt.Errorf(
-			"chainparams: snapshot %q has unsupported version %d (want %d) — refusing to load to avoid state corruption",
-			path, doc.Version, SnapshotVersion)
+	if doc.Version < snapshotMinSupportedVersion || doc.Version > SnapshotVersion {
+		return nil, nil, fmt.Errorf(
+			"chainparams: snapshot %q has unsupported version %d (supported range %d..%d) — refusing to load to avoid state corruption",
+			path, doc.Version, snapshotMinSupportedVersion, SnapshotVersion)
 	}
 
 	store := NewInMemoryParamStore()
@@ -258,5 +329,51 @@ func LoadOrNew(path string) (*InMemoryParamStore, error) {
 		// the face of registry edge cases.
 		_, _, _ = store.Stage(change)
 	}
-	return store, nil
+
+	// Load authority proposals. v1 snapshots have an empty /
+	// missing AuthorityProposals slice — that's expected, the
+	// vote store remains empty and gov rotation starts from
+	// scratch on first boot under the v2 binary.
+	votes := NewInMemoryAuthorityVoteStore()
+	for _, sp := range doc.AuthorityProposals {
+		if sp.EffectiveHeight == 0 || sp.Address == "" {
+			continue
+		}
+		if sp.Op != AuthorityOpAdd && sp.Op != AuthorityOpRemove {
+			continue
+		}
+		key := AuthorityVoteKey{
+			Op:              sp.Op,
+			Address:         sp.Address,
+			EffectiveHeight: sp.EffectiveHeight,
+		}
+		// Re-record each vote against the empty store so
+		// internal invariants (sorted Voters, Crossed flag)
+		// are reconstructed from the same code path that
+		// applies them at runtime. Threshold pegged to the
+		// proposal's pre-snapshot Crossed flag — pass a
+		// huge authorityCount so RecordVote never auto-
+		// crosses, then we explicitly restore Crossed below.
+		for _, v := range sp.Voters {
+			if v.Voter == "" {
+				continue
+			}
+			_, _, _ = votes.RecordVote(key, AuthorityVote{
+				Voter:             v.Voter,
+				SubmittedAtHeight: v.SubmittedAtHeight,
+				Memo:              v.Memo,
+			}, 1<<30 /* never auto-cross */)
+		}
+		if sp.Crossed {
+			// Forge the Crossed flag back to true via a
+			// direct mutation. RecomputeCrossed with the
+			// proposal's voter count + threshold=1 would
+			// also work, but a direct setter keeps the
+			// post-snapshot state byte-identical to the
+			// pre-snapshot state without needing an
+			// "authorityCount" estimate.
+			votes.markCrossedForTesting(key, sp.CrossedAtHeight)
+		}
+	}
+	return store, votes, nil
 }

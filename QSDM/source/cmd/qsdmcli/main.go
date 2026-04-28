@@ -366,8 +366,8 @@ v2 mining:
   slash-receipt <tx-id>               Query slash transaction outcome
   slash-helper <kind> [flags]         Build / inspect slashing evidence blobs offline
                                         kind ∈ {forged-attestation, double-mining, freshness-cheat, inspect}
-  gov-helper <sub> [flags]            Build / inspect governance parameter-tuning payloads offline
-                                        sub ∈ {propose-param, params, inspect}
+  gov-helper <sub> [flags]            Build / inspect governance payloads offline
+                                        sub ∈ {propose-param, propose-authority, params, inspect}
   watch <subcommand> [flags]          Stream phase-change / slash-resolution / governance-param events to stdout
                                         subcommand ∈ {enrollments, slashes, params}
 
@@ -409,25 +409,34 @@ slash-helper subcommands (offline evidence-bundle assembly):
   after the evidence bytes are written, suitable for copy-paste into a script.
 
 gov-helper subcommands (offline governance-payload assembly):
-  propose-param   --param=NAME --value=N --effective-height=H
-                  [--memo=STR] [--out=PATH] [--print-cmd]
-  params          [--json] [--remote]
-  inspect         (--payload-file=PATH | --payload-hex=HEX)
+  propose-param      --param=NAME --value=N --effective-height=H
+                     [--memo=STR] [--out=PATH] [--print-cmd]
+  propose-authority  --op=OP --address=ADDR --effective-height=H
+                     [--memo=STR] [--out=PATH] [--print-cmd]
+  params             [--json] [--remote]
+  inspect            (--payload-file=PATH | --payload-hex=HEX)
 
-  propose-param  builds a canonical chainparams.ParamSetPayload (qsdm/gov/v1)
-                 and writes the encoded JSON to --out (default stdout). The
-                 produced bytes are submitted via the operator's signed-tx
-                 pipeline with ContractID=qsdm/gov/v1; chain-side acceptance
-                 still requires the sender to be on the AuthorityList.
-  params         lists the registered governance-tunable parameters with
-                 their bounds, defaults and units. Source: chainparams.Registry.
-                 With --remote, queries $QSDM_API_URL/governance/params and
-                 merges the validator's live active value + any pending
-                 change into the table (best-effort: 503 / network error
-                 falls back to the offline registry view with a stderr warning).
-  inspect        decodes a previously-built propose-param payload and pretty-
-                 prints the structured view (kind, param, value, effective
-                 height, memo, registry entry).
+  propose-param      builds a canonical chainparams.ParamSetPayload
+                     (qsdm/gov/v1, kind=param-set) and writes the encoded
+                     JSON to --out (default stdout). Single-signer surface:
+                     the chain stages the change after one accepted tx.
+  propose-authority  builds a canonical chainparams.AuthoritySetPayload
+                     (qsdm/gov/v1, kind=authority-set). M-of-N gated: each
+                     authority runs this command independently to produce
+                     their VOTE on a (op, address, effective-height) tuple.
+                     OP ∈ {add, remove}. The chain stages the rotation
+                     once threshold votes (= floor(N/2)+1, minimum 1)
+                     accumulate on the same tuple.
+  params             lists the registered governance-tunable parameters with
+                     their bounds, defaults and units. Source:
+                     chainparams.Registry. With --remote, queries
+                     $QSDM_API_URL/governance/params and merges the
+                     validator's live active value + any pending change
+                     into the table (best-effort: 503 / network error falls
+                     back to the offline registry view with a stderr warning).
+  inspect            decodes a previously-built payload (param-set or
+                     authority-set) and pretty-prints the structured view.
+                     Dispatches on the wire kind tag.
 
 watch subcommands (operator surveillance, polling-only, no key required):
   enrollments [flags]                 Stream phase-change / stake-delta events

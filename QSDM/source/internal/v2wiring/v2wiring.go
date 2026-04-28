@@ -176,6 +176,7 @@ type Wired struct {
 	SlashReceipts   *chain.SlashReceiptStore
 	Gov             *chain.GovApplier
 	GovParams       *chainparams.InMemoryParamStore
+	GovAuthVotes    *chainparams.InMemoryAuthorityVoteStore
 	SealedBlockHook func(*chain.Block)
 }
 
@@ -246,7 +247,7 @@ func Wire(cfg Config) (*Wired, error) {
 	// active+pending state. A version mismatch or corrupted JSON
 	// returns a hard error here rather than silently wiping
 	// state; the operator must explicitly intervene.
-	govStore, err := chainparams.LoadOrNew(cfg.GovParamStorePath)
+	govStore, govVotes, err := chainparams.LoadOrNewWith(cfg.GovParamStorePath)
 	if err != nil {
 		return nil, fmt.Errorf("v2wiring: gov param store: %w", err)
 	}
@@ -284,7 +285,13 @@ func Wire(cfg Config) (*Wired, error) {
 	govApplier := chain.NewGovApplier(
 		cfg.Accounts, govStore, cfg.GovernanceAuthorities,
 	)
+	govApplier.SetAuthorityVoteStore(govVotes)
 	aware.SetGovApplier(govApplier)
+
+	// Seed the authority-count gauge so a /metrics scrape
+	// before any rotation activates shows the genesis size,
+	// not zero.
+	monitoring.SetAuthorityCountGauge(uint64(len(govApplier.AuthorityList())))
 
 	// Slash receipt store. Bounded in-memory keyed by tx_id;
 	// installed as a ChainEventPublisher on the slash applier
@@ -385,7 +392,9 @@ func Wire(cfg Config) (*Wired, error) {
 		if cfg.GovParamStorePath == "" {
 			return
 		}
-		if err := chainparams.SaveSnapshot(govStore, cfg.GovParamStorePath); err != nil {
+		if err := chainparams.SaveSnapshotWith(
+			govStore, govVotes, cfg.GovParamStorePath,
+		); err != nil {
 			if cfg.LogSnapshotError != nil {
 				cfg.LogSnapshotError(blk.Height, err)
 			}
@@ -401,6 +410,7 @@ func Wire(cfg Config) (*Wired, error) {
 		SlashReceipts:   slashReceipts,
 		Gov:             govApplier,
 		GovParams:       govStore,
+		GovAuthVotes:    govVotes,
 		SealedBlockHook: hook,
 	}, nil
 }
