@@ -20,6 +20,7 @@ package chainparams
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -43,6 +44,7 @@ func TestRegistry_NamesUniqueAndKnown(t *testing.T) {
 	want := map[string]bool{
 		string(ParamRewardBPS):              true,
 		string(ParamAutoRevokeMinStakeDust): true,
+		string(ParamForkV2TCHeight):         true,
 	}
 	got := make(map[string]bool, len(Registry()))
 	for _, spec := range Registry() {
@@ -80,6 +82,33 @@ func TestRegistry_LookupAndCheckBounds(t *testing.T) {
 
 	if _, ok := Lookup("does-not-exist"); ok {
 		t.Error("Lookup of unknown param returned ok=true")
+	}
+}
+
+// TestForkV2TCHeight_BoundsAccept covers the boundary endpoints of
+// the fork_v2_tc_height parameter spec: 0 (TC active from genesis),
+// 1 (smallest non-genesis activation), an arbitrary mid-range value,
+// and math.MaxUint64 (TC explicitly disabled). Any of these values
+// MUST pass CheckBounds; if a future registry change introduces a
+// stricter bound, this test is the regression bar.
+func TestForkV2TCHeight_BoundsAccept(t *testing.T) {
+	spec, ok := Lookup(string(ParamForkV2TCHeight))
+	if !ok {
+		t.Fatalf("Lookup(%q) returned false", ParamForkV2TCHeight)
+	}
+	if spec.DefaultValue != math.MaxUint64 {
+		t.Errorf("default = %d; want math.MaxUint64 (TC disabled)", spec.DefaultValue)
+	}
+	if spec.MinValue != 0 {
+		t.Errorf("min = %d; want 0", spec.MinValue)
+	}
+	if spec.MaxValue != math.MaxUint64 {
+		t.Errorf("max = %d; want math.MaxUint64", spec.MaxValue)
+	}
+	for _, v := range []uint64{0, 1, 1_000, math.MaxUint64} {
+		if err := spec.CheckBounds(v); err != nil {
+			t.Errorf("CheckBounds(%d): %v", v, err)
+		}
 	}
 }
 

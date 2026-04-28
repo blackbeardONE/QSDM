@@ -39,6 +39,7 @@ package chainparams
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -68,6 +69,38 @@ const (
 	// would auto-revoke perfectly-bonded operators which is
 	// nonsensical.
 	ParamAutoRevokeMinStakeDust ParamName = "auto_revoke_min_stake_dust"
+
+	// ParamForkV2TCHeight is the block height at which the
+	// Tensor-Core PoW mixin (MINING_PROTOCOL_V2 §4) activates.
+	// Read by the chain at boot and after every Promote() in
+	// the SealedBlockHook; pushed into the mining package's
+	// runtime knob via mining.SetForkV2TCHeight() so
+	// pkg/mining/verifier.go's Step-10 dispatcher and
+	// pkg/mining/solver.go's per-attempt loop both see the
+	// same fork height.
+	//
+	// Default: math.MaxUint64 (TC disabled). A network
+	// operator either bakes a non-default value into genesis
+	// (via v2wiring.Config.ForkV2TCHeight) OR schedules an
+	// activation post-launch via a `qsdm/gov/v1` param-set tx.
+	//
+	// Allowed range: [0, math.MaxUint64]:
+	//   * 0 = TC active from block 0 (used by integration tests
+	//         and ephemeral testnets that want the v2 path on
+	//         every block)
+	//   * N > 0 = TC active at and beyond block N
+	//   * math.MaxUint64 = TC explicitly disabled
+	//
+	// The chain does NOT enforce monotonicity (i.e. governance
+	// can move the fork later or earlier than a previously
+	// staged value, even reverting it to MaxUint64 to "un-fork"
+	// future blocks). Already-mined blocks past a v2 activation
+	// remain v2-mined regardless; un-forking only affects the
+	// algorithm chosen for blocks ahead of the new fork point.
+	// Operators who want a one-way fork can either lock the
+	// value via the genesis-config field or restrict the
+	// AuthorityList that can submit param-set txs.
+	ParamForkV2TCHeight ParamName = "fork_v2_tc_height"
 )
 
 // dustPerCELL mirrors pkg/chain.dustPerCELL. Duplicated here
@@ -172,6 +205,16 @@ var registry = []ParamSpec{
 		MaxValue:     minEnrollStakeDust,
 		DefaultValue: minEnrollStakeDust,
 		Unit:         "dust",
+	},
+	{
+		Name: ParamForkV2TCHeight,
+		Description: "Block height at which the Tensor-Core PoW mixin (MINING_PROTOCOL_V2 §4) activates. " +
+			"math.MaxUint64 disables the mixin; 0 activates it from genesis; N > 0 activates at block N. " +
+			"Read by v2wiring at boot + after every Promote and pushed into pkg/mining via SetForkV2TCHeight.",
+		MinValue:     0,
+		MaxValue:     math.MaxUint64,
+		DefaultValue: math.MaxUint64,
+		Unit:         "block_height",
 	},
 }
 

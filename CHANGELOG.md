@@ -12,6 +12,37 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Added
+
+- **`fork_v2_tc_height` is now a governance-tunable chain parameter
+  (2026-04-28).** The Tensor-Core PoW mixin activation height is
+  registered as `chainparams.ParamForkV2TCHeight` (bounds
+  `[0, math.MaxUint64]`, default `MaxUint64` = TC disabled).
+  `v2wiring.Wire()` reads the active value from the `ParamStore`
+  at chain init and pins it into `pkg/mining` via
+  `SetForkV2TCHeight`; after every `PromotePending` call inside
+  the `SealedBlockHook` it re-pins from the (possibly just-
+  promoted) value, so a successful `qsdm/gov/v1` `param-set` tx
+  makes the new fork height visible to the verifier and reference
+  solver on the very next sealed block — without a binary restart.
+  Genesis bake-in is supported via the new
+  `v2wiring.Config.ForkV2TCHeight *uint64` field; the snapshot
+  replay path takes precedence over the genesis seed across
+  restarts so the chain's committed governance history cannot be
+  silently overwritten by a config change. Closes the operational
+  side of the §12.2 deployment readiness work; the cryptographic
+  side (`pkg/mining/pow/v2`) was shipped earlier.
+  - **Registry**: [`pkg/governance/chainparams/params.go`](QSDM/source/pkg/governance/chainparams/params.go)
+    appends `ParamForkV2TCHeight` with the new bounds.
+  - **Wiring**: [`internal/v2wiring/v2wiring.go`](QSDM/source/internal/v2wiring/v2wiring.go)
+    seeds, pins, and re-pins the runtime mining knob.
+  - **Tests**: [`internal/v2wiring/v2wiring_tcfork_test.go`](QSDM/source/internal/v2wiring/v2wiring_tcfork_test.go)
+    locks the four lifecycle paths — default-disabled, genesis
+    seed (zero + future activation), governance-driven re-pin
+    on promote, and snapshot replay across simulated restart.
+  - **Docs**: `MINING_PROTOCOL_V2.md` §4, §10 registry table, and
+    §12.2 deliverable updated.
+
 ### Performance
 
 - **`pkg/mining/pow/v2` — 22% faster validator hot path

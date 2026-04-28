@@ -411,12 +411,19 @@ type Proof struct {
 ## 4. Tensor-Core PoW mixin
 
 > **Status as of this revision:** byte-exact validator-side reference
-> shipped in `pkg/mining/pow/v2/`, AND wired into the verifier and
+> shipped in `pkg/mining/pow/v2/`, wired into the verifier and
 > reference solver behind a runtime-settable height gate
 > (`pkg/mining.SetForkV2TCHeight`, default `math.MaxUint64` =
-> disabled). Pre-fork, a `Version=2` proof is accepted under the
-> legacy v1 walk in `pkg/mining/pow.go::ComputeMixDigest`. Post-fork
-> (block height ≥ `ForkV2TCHeight()`), validators switch to
+> disabled), AND exposed as the `fork_v2_tc_height` governance
+> parameter so the activation height is operator-tunable post-launch
+> via `qsdm/gov/v1` `param-set` transactions. Production networks
+> bake the genesis activation height into chain config via
+> `v2wiring.Config.ForkV2TCHeight`; subsequent moves (defer the
+> fork, advance it, or revert to disabled) require an M-of-N
+> AuthorityList vote per §9.4.7. Pre-fork, a `Version=2` proof is
+> accepted under the legacy v1 walk in
+> `pkg/mining/pow.go::ComputeMixDigest`. Post-fork (block height ≥
+> `ForkV2TCHeight()`), validators switch to
 > `powv2.ComputeMixDigestV2`. The two algorithms produce different
 > 32-byte mix-digests for identical inputs, so a proof mined under
 > the wrong algorithm fails Step 10 (`mix_digest mismatch`) — the
@@ -768,7 +775,7 @@ registry mapping `Attestation.Type` to a concrete
 | [`pkg/mining/challenge/`](../../source/pkg/mining/challenge/) | Validator-issued nonce challenge crypto | **Shipped.** |
 | [`pkg/mining/enrollment/`](../../source/pkg/mining/enrollment/) | On-chain operator registry, admission gate, sweep | **Shipped.** |
 | [`pkg/mining/slashing/`](../../source/pkg/mining/slashing/) | Slashing data model + dispatcher + admission | **Shipped** (`forged-attestation` + `double-mining` + `freshness-cheat`); the freshness-cheat verifier ships with a `BlockInclusionWitness` abstraction whose production default rejects pending BFT finality (§12.3). |
-| [`pkg/governance/chainparams/`](../../source/pkg/governance/chainparams/) | `qsdm/gov/v1` parameter-tuning tx type, registry, ParamStore, admission | **Shipped.** Two tunables: `reward_bps`, `auto_revoke_min_stake_dust`. See §9.4. |
+| [`pkg/governance/chainparams/`](../../source/pkg/governance/chainparams/) | `qsdm/gov/v1` parameter-tuning tx type, registry, ParamStore, admission | **Shipped.** Three tunables: `reward_bps`, `auto_revoke_min_stake_dust`, `fork_v2_tc_height`. See §9.4 + §4 / §12.2. |
 | [`pkg/chain/gov_apply.go`](../../source/pkg/chain/gov_apply.go) | Chain-side `GovApplier` adapter routing `qsdm/gov/v1` txs | **Shipped.** Stages → promotes via `SealedBlockHook`. |
 
 ### 7.3 Test vectors
@@ -1013,6 +1020,7 @@ governance-tunable at runtime:
 |---|---|---|---|
 | `reward_bps` | `SlashApplier.activeRewardBPS()` | `[0, 5000]` (clamped at `chain.SlashRewardCap`) | `cfg.SlashRewardBPS` (binary-supplied) |
 | `auto_revoke_min_stake_dust` | `SlashApplier.activeAutoRevokeMinStakeDust()` | `[1·CELL, MIN_ENROLL_STAKE]` | `MIN_ENROLL_STAKE` |
+| `fork_v2_tc_height` | runtime `pkg/mining.ForkV2TCHeight()`, repinned by `v2wiring`'s `SealedBlockHook` after each `Promote` (§4 / §12.2) | `[0, math.MaxUint64]` | `cfg.ForkV2TCHeight` (binary-supplied; `nil` = `MaxUint64` = TC disabled) |
 
 Tunable parameters are an explicit whitelist
 (`chainparams.Registry`); anything else requires a binary
@@ -1721,7 +1729,27 @@ Specified in §4. Three deliverables, two shipped:
    either the v1 walk or the v2 mixin based on the proof's
    block height. The default is `math.MaxUint64` (TC disabled),
    so existing behaviour is unchanged until a network operator
-   explicitly opts in. Boundary semantics
+   explicitly opts in.
+
+   ~~**Operational deployment: governance + genesis-config
+   wiring for `fork_v2_tc_height`.**~~ — **SHIPPED.** The
+   activation height is now a registered governance parameter
+   (`chainparams.ParamForkV2TCHeight`, bounds `[0, MaxUint64]`,
+   default `MaxUint64`). At chain init `v2wiring.Wire()` reads
+   the active value from the `ParamStore` and pins it into
+   `pkg/mining` via `SetForkV2TCHeight`; after every
+   `PromotePending` in the `SealedBlockHook` it re-pins from
+   the (possibly just-promoted) store value, so a successful
+   `qsdm/gov/v1` `param-set` tx makes the new fork height
+   visible to the verifier on the very next sealed block —
+   without a binary restart. A genesis-seed field
+   (`v2wiring.Config.ForkV2TCHeight *uint64`) lets operators
+   bake an initial activation into the genesis config; the
+   snapshot replay path takes precedence over the seed on
+   restart so the chain's committed governance history
+   cannot be silently overwritten by a config change.
+
+   Boundary semantics
    (`pkg/mining/verifier_v2tc_test.go`):
 
    - **Default (TC disabled)**: every proof verifies under v1;

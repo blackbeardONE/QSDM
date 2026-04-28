@@ -57,6 +57,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/governance/chainparams"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
+	mining "github.com/blackbeardONE/QSDM/pkg/mining"
 	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
 	"github.com/blackbeardONE/QSDM/pkg/mining/slashing"
 	"github.com/blackbeardONE/QSDM/pkg/mining/slashing/doublemining"
@@ -145,6 +146,28 @@ type Config struct {
 	// on a single block is recoverable on the next save.
 	// Nil = drop silently. Mirrors LogSweepError's posture.
 	LogSnapshotError func(height uint64, err error)
+
+	// ForkV2TCHeight, when non-nil, seeds the genesis value of
+	// the fork_v2_tc_height governance parameter
+	// (MINING_PROTOCOL_V2 §4) at chain init. Pass nil to use
+	// the registry default (math.MaxUint64 = TC disabled).
+	// Pass a pointer to 0 to activate the Tensor-Core mixin
+	// from genesis (the integration-test mode). Pass a pointer
+	// to N for activation at block N.
+	//
+	// The seed is one-shot, equivalent to SlashRewardBPS: it
+	// is applied ONLY when the loaded ParamStore is at the
+	// registry default for fork_v2_tc_height. Once a governance
+	// tx has activated a different value, restarts ignore this
+	// field so a node operator does not silently re-overwrite
+	// the chain's committed history on every reboot.
+	//
+	// Production mainnets bake the activation height into
+	// genesis via this field once. Subsequent re-tuning (push
+	// the height earlier or later) happens via `qsdm/gov/v1`
+	// param-set txs and the post-Promote hook in this package
+	// re-pins the runtime mining.SetForkV2TCHeight knob.
+	ForkV2TCHeight *uint64
 
 	// LogSweepError is invoked when the post-seal hook's call
 	// to SweepMaturedEnrollments returns an error. Nil = drop
@@ -268,6 +291,33 @@ func Wire(cfg Config) (*Wired, error) {
 				uint64(cfg.SlashRewardBPS))
 		}
 	}
+
+	// Same one-shot genesis-seed pattern for fork_v2_tc_height:
+	// apply the operator-supplied value only if the loaded
+	// store is still at the registry default. Once a governance
+	// tx has promoted a different value the snapshot replays
+	// it on every boot and Config.ForkV2TCHeight is ignored —
+	// preserving the chain's committed activation history.
+	if cfg.ForkV2TCHeight != nil {
+		spec, _ := chainparams.Lookup(string(chainparams.ParamForkV2TCHeight))
+		current, _ := govStore.ActiveValue(string(chainparams.ParamForkV2TCHeight))
+		if current == spec.DefaultValue {
+			govStore.SetForTesting(
+				string(chainparams.ParamForkV2TCHeight),
+				*cfg.ForkV2TCHeight)
+		}
+	}
+
+	// Pin the runtime mining knob from whatever the ParamStore
+	// considers active right now (genesis seed, or a previously-
+	// activated governance change replayed from snapshot, or
+	// the registry default = MaxUint64 = TC disabled). The
+	// SealedBlockHook below re-pins after every Promote so
+	// pkg/mining.IsV2TC stays consistent with on-chain state.
+	if v, ok := govStore.ActiveValue(string(chainparams.ParamForkV2TCHeight)); ok {
+		mining.SetForkV2TCHeight(v)
+	}
+
 	slasher.SetParamStore(govStore)
 
 	// Seed monitoring gauges so a /metrics scrape before any
@@ -380,6 +430,19 @@ func Wire(cfg Config) (*Wired, error) {
 			return
 		}
 		govApplier.PromotePending(blk.Height)
+
+		// Re-pin the runtime mining knob from the (possibly
+		// just-promoted) ParamStore. Cheap (one atomic Store)
+		// and idempotent — when no fork_v2_tc_height change
+		// promoted on this block, the value is unchanged and
+		// the Store call is a no-op-equivalent. Doing this
+		// every block (rather than inspecting the promote
+		// list) keeps the runtime knob authoritatively
+		// in sync with the consensus-layer ParamStore even
+		// across restarts that replay a snapshot.
+		if v, ok := govStore.ActiveValue(string(chainparams.ParamForkV2TCHeight)); ok {
+			mining.SetForkV2TCHeight(v)
+		}
 
 		// Persist the post-promote store snapshot if a
 		// persistence path is configured. Save AFTER Promote

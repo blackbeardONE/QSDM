@@ -147,11 +147,17 @@ func IsV2(height uint64) bool {
 // every miner to upgrade to compatible hardware/firmware, the
 // former does not.
 //
-// Both heights default to math.MaxUint64. A network operator activates
-// each one independently via SetForkV2Height / SetForkV2TCHeight at
-// chain-init time. Calling either mid-execution is a bug; validators
-// MUST NOT be able to move a fork height at runtime in response to
-// adversarial input.
+// Both heights default to math.MaxUint64.
+//
+// SetForkV2Height is intended to be called at chain-init time only.
+// SetForkV2TCHeight, by contrast, is ALSO called from the governance
+// SealedBlockHook (see internal/v2wiring) after each Promote so a
+// `qsdm/gov/v1` param-set transaction can move the activation height
+// at runtime. Governance is gated by the chain's M-of-N AuthorityList
+// and stateless admission validators, so "moveable at runtime" does
+// NOT mean "movable in response to adversarial input": a captured
+// single authority cannot move the fork; the threshold is enforced by
+// pkg/governance/chainparams + pkg/chain/gov_apply.go.
 //
 // The TC fork is a soft-tightening fork: pre-TC validators accept v1
 // mix-digests, post-TC validators reject them. Because the proof wire
