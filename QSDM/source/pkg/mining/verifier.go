@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blackbeardONE/QSDM/pkg/mining/attest/archcheck"
 	powv2 "github.com/blackbeardONE/QSDM/pkg/mining/pow/v2"
 )
 
@@ -359,6 +360,19 @@ func (v *Verifier) Verify(rawProofJSON []byte, acceptHeight uint64) ([32]byte, e
 		}
 		if p.Attestation.Type == "" {
 			return [32]byte{}, reject(ReasonAttestation, "%v", ErrAttestationRequired)
+		}
+		// MINING_PROTOCOL_V2 §4.6 / §3.3 step 8 arch-spoof
+		// rejection: enforce the closed-enum allowlist on
+		// Attestation.GPUArch BEFORE the (more expensive)
+		// per-type cryptographic dispatch. An arch outside the
+		// allowlist is a syntactic / typo / future-arch sneak;
+		// rejecting cheaply here saves the validator the
+		// HMAC / X.509 work on garbage. The deeper arch <->
+		// gpu_name consistency check lives inside the per-type
+		// verifier (see pkg/mining/attest/hmac/verifier.go
+		// step 8) where the bundle is already parsed.
+		if _, err := archcheck.ValidateOuterArch(p.Attestation.GPUArch); err != nil {
+			return [32]byte{}, reject(ReasonAttestation, "%v", err)
 		}
 		if err := v.cfg.Attestation.VerifyAttestation(*p, v.cfg.Now()); err != nil {
 			return [32]byte{}, reject(ReasonAttestation, "%v", err)

@@ -351,8 +351,12 @@ order is alphabetical on the JSON key** — `challenge_sig` and
     already seen.
 7. Assert bundle.gpu_name does NOT contain any deny-list
    substring (§5.3 — empty at genesis).
-8. Verify the Tensor-Core mix_digest (§4) is consistent with
-   the claimed gpu_arch. (Soft check pre-mixin — see §4.6.)
+8. Verify the proof's `gpu_arch` is on the closed-enum
+   allowlist AND the bundle's `gpu_name` is consistent with it
+   (`pkg/mining/attest/archcheck`). The arch enum check fires
+   in the outer verifier before this dispatcher; the
+   gpu_arch ↔ gpu_name cross-check fires here. See §4.6 for
+   the full rationale + table.
 9. If all pass → proof is attested. Else → reject.
 ```
 
@@ -596,15 +600,118 @@ proof wire format changes (the existing `Proof.Version=2` field
 already covers it — pre-fork v2 proofs simply happen to use the
 v1 walk for `mix_digest`).
 
-### 4.6 Pre-mixin soft check
+### 4.6 Arch-spoof rejection (§3.3 step 8)
 
-Step 8 of the HMAC verifier flow ("Tensor-Core mix_digest
-consistent with claimed gpu_arch") is a no-op until
-`FORK_V2_TC_HEIGHT` activates, because there is nothing
-arch-specific in the v1 PoW output. Post-`FORK_V2_TC_HEIGHT`
-the mixin's deterministic FP16 path lets the verifier reject
-arch-spoof attempts (e.g. "RTX 4090 claiming to be H100" — the
-matmul rounding fingerprint differs).
+> **Correction (2026-04-29):** an earlier draft of this section
+> proposed using a "matmul rounding fingerprint" to detect
+> arch-spoof — i.e. inferring the actual GPU architecture from
+> arch-specific FP16 rounding artefacts in the mix digest. That
+> approach was abandoned when §4.3's byte-exact IEEE-754 RNE
+> + canonical-NaN + left-to-right FP32 accumulation rules were
+> ratified: those rules deliberately make `ComputeMixDigestV2`
+> produce **the same digest on every architecture that can
+> run the spec**. Without that conformance bar, byte-exact
+> validation across heterogeneous miner hardware would be
+> impossible. Consequently there IS no rounding fingerprint to
+> lean on, and the v2 ship of step 8 takes a different shape.
+
+Step 8 ("`mix_digest` consistent with claimed `gpu_arch`") is
+implemented today as **two cross-checks against the parts of
+the attestation surface a casual spoofer cannot freely swap**:
+
+#### 4.6.1 Closed-enum allowlist for `Attestation.GPUArch`
+
+`Attestation.GPUArch` MUST canonicalise to one of:
+
+| Canonical | Aliases | Compute capability | Family |
+|---|---|---|---|
+| `hopper` | — | SM 9.0 | Datacenter (H100, H200, H800) |
+| `blackwell` | — | SM 10.0 | Datacenter + consumer (B100, B200, GB200, RTX 50) |
+| `ada-lovelace` | `ada` | SM 8.9 | Consumer + workstation (RTX 40, L40, L40S, RTX 6000 Ada) |
+| `ampere` | — | SM 8.0 / 8.6 | Datacenter + consumer (A100, A40, A30, RTX 30, RTX A) |
+| `turing` | — | SM 7.5 | Consumer + workstation (RTX 20, GTX 16, T4, RTX 6000) |
+
+Older arches (Volta, Pascal, Maxwell, Kepler) are intentionally
+**off** the allowlist — their compute-capability and driver
+floors no longer satisfy the per-arch §5.1 minima reliably.
+The `ada` short form is accepted as an alias for backward
+compatibility with the qsdmminer-console output that predates
+the `ada-lovelace` long form; a future fork may tighten this.
+
+The allowlist is the closed enum in
+[`pkg/mining/attest/archcheck/archcheck.go`](../../source/pkg/mining/attest/archcheck/archcheck.go).
+Adding a new arch is consensus-affecting and lands as a single
+registry append plus the matching `gpu_name` patterns in the
+same package — an `init()` self-check panics at boot if the
+two halves disagree.
+
+This check fires in the OUTER verifier
+([`pkg/mining/verifier.go`](../../source/pkg/mining/verifier.go))
+**before** dispatching to the per-type cryptographic verifier,
+so a malformed / typo / future-arch-sneak proof costs a single
+map lookup and never pays the HMAC or X.509 work.
+
+#### 4.6.2 `gpu_arch` ↔ `bundle.gpu_name` consistency (HMAC path)
+
+For the HMAC path, the bundle's `gpu_name` field is HMAC-bound
+under the operator's enrollment-time secret (covered by
+`Bundle.CanonicalForMAC`). An attacker who has already forged
+a valid HMAC cannot **also** flip `gpu_name` post-hoc — they
+had to choose at sign time. So we cross-check the canonical
+arch against a substring-pattern table of real shipping NVIDIA
+product names:
+
+| Canonical arch | Accepted `gpu_name` substrings |
+|---|---|
+| `hopper` | `h100`, `h200`, `h800` |
+| `blackwell` | `b100`, `b200`, `gb200`, `rtx 50` |
+| `ada-lovelace` | `rtx 40`, `l4`, `l40`, `rtx 6000 ada`, `rtx 5000 ada`, `rtx 4500 ada`, `rtx 4000 ada`, `rtx 2000 ada` |
+| `ampere` | `a100`, `a40`, `a30`, `a16`, `a10`, `a2`, `rtx 30`, `rtx a` |
+| `turing` | `rtx 20`, `gtx 16`, `t4`, `quadro rtx`, `rtx 8000`, `rtx 6000` |
+
+Patterns are matched case-insensitively after whitespace
+collapse. A bundle whose `gpu_name` does not contain any of
+the patterns for its claimed arch is rejected with
+`ErrArchGPUNameMismatch` (wrapped in
+`mining.ErrAttestationSignatureInvalid` so the `attestation`
+reason metric still groups it).
+
+This catches the **lazy spoof** — an attacker who flips
+`gpu_arch=hopper` but forgot to also lie about the
+`nvidia-smi` name on their consumer Ada card. The
+**determined spoof** (operator colluding with a non-NVIDIA or
+wrong-arch card and lying about both fields) is still trapped
+by the on-chain registry's `(gpu_uuid, hmac_key)` pairing
+(§5.2) and economically by §5.4 stake bonding plus §8 slashing
+risk (`forged-attestation`, `freshness-cheat`).
+
+This check fires in the HMAC verifier
+([`pkg/mining/attest/hmac/verifier.go`](../../source/pkg/mining/attest/hmac/verifier.go))
+as the long-deferred step 8 of the §3.3 acceptance flow,
+**after** the HMAC field check (step 4) and the deny-list
+check (step 7) — so a determined spoofer has to clear every
+upstream gate before being trapped here.
+
+#### 4.6.3 CC-path placeholder
+
+The CC path (`nvidia-cc-v1`) cryptographically binds the
+device certificate chain to a specific physical Hopper /
+Blackwell GPU at the protocol level (§3.2 step 1), so the
+device cert itself is the consistency check today.
+[`archcheck.ValidateBundleArchConsistencyCC`](../../source/pkg/mining/attest/archcheck/archcheck.go)
+exists as a fixed wiring point for a future strict
+cert-subject ↔ arch comparison; today it is a no-op. Adding
+that comparison is a separate change tracked under §12.2.
+
+#### 4.6.4 Activation height
+
+This whole section is gated by `FORK_V2_HEIGHT` (the v2
+attestation flow), **not** `FORK_V2_TC_HEIGHT`. The
+arch-spoof checks are part of the attestation surface, so
+they must be active wherever the attestation surface is
+active — which is from v2 launch onwards. The TC-mixin fork
+height is independent (it controls only the §10 PoW algorithm
+selection).
 
 ---
 

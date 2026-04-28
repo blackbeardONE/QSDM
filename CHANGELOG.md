@@ -14,6 +14,52 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Arch-spoof rejection (§4.6 / §3.3 step 8) — closed-enum
+  allowlist + arch ↔ `gpu_name` cross-check (2026-04-29).** The
+  long-deferred step 8 of the HMAC verifier acceptance flow now
+  ships, replacing an earlier draft that proposed using a
+  "matmul rounding fingerprint" — a non-starter once §4.3's
+  byte-exact IEEE-754 RNE rules made `ComputeMixDigestV2`
+  produce the same digest on every conforming arch.
+  - **Allowlist** ([`pkg/mining/attest/archcheck`](QSDM/source/pkg/mining/attest/archcheck/archcheck.go))
+    fixes the canonical set to `hopper`, `blackwell`,
+    `ada-lovelace`, `ampere`, `turing`. Older arches (Volta,
+    Pascal, Maxwell, Kepler) are intentionally OFF; future
+    arches require a registry append plus matching `gpu_name`
+    patterns in the same change. The qsdmminer-console-emitted
+    `ada` short form is accepted as an alias for backward
+    compat. The closed-enum check fires in the outer
+    `pkg/mining/verifier.go` BEFORE per-type dispatch, so a
+    malformed / typo / future-arch-sneak proof costs a single
+    map lookup and never pays the HMAC or X.509 work.
+  - **arch ↔ `bundle.gpu_name` consistency** fires inside the
+    HMAC verifier ([`pkg/mining/attest/hmac/verifier.go`](QSDM/source/pkg/mining/attest/hmac/verifier.go))
+    as step 8. Catches the lazy spoof — an attacker who flips
+    `gpu_arch=hopper` but forgot to also lie about the
+    `nvidia-smi` name on their consumer Ada card. Bundle
+    `gpu_name` is HMAC-bound, so a determined attacker still
+    has to forge a valid HMAC and choose at sign time; the
+    on-chain registry's `(gpu_uuid, hmac_key)` pairing (§5.2)
+    + §5.4 stake bonding + §8 slashing surface are the
+    economic locks behind it.
+  - **CC-path placeholder** (`ValidateBundleArchConsistencyCC`)
+    is a no-op today — the device certificate chain itself
+    binds to a specific physical Hopper / Blackwell GPU at
+    the protocol level. Reserved as a fixed wiring point for
+    a future strict cert-subject parsing pass.
+  - **Tests**: 15 unit tests in `archcheck_test.go` (every
+    canonical, alias, all-known-product happy path, every
+    cross-family lazy-spoof + AMD spoof + downgrade spoof) +
+    5 integration tests in [`hmac/verifier_archcheck_test.go`](QSDM/source/pkg/mining/attest/hmac/verifier_archcheck_test.go) (lazy spoof
+    re-using fixture, determined spoof with re-signed bundle,
+    cross-family rejection, alias acceptance, unknown-arch
+    rejection) + 3 wiring tests in [`verifier_archspoof_test.go`](QSDM/source/pkg/mining/verifier_archspoof_test.go) (cheap
+    reject before dispatch, alias acceptance, pre-fork
+    bypass). 1850 / 1850 tests passing across 68 packages.
+  - **Docs**: `MINING_PROTOCOL_V2.md` §3.3 step 8 + a
+    rewritten §4.6 with the design correction prominently
+    flagged.
+
 - **`fork_v2_tc_height` is now a governance-tunable chain parameter
   (2026-04-28).** The Tensor-Core PoW mixin activation height is
   registered as `chainparams.ParamForkV2TCHeight` (bounds

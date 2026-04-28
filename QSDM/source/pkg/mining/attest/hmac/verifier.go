@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/mining"
+	"github.com/blackbeardONE/QSDM/pkg/mining/attest/archcheck"
 	"github.com/blackbeardONE/QSDM/pkg/mining/challenge"
 )
 
@@ -251,11 +252,33 @@ func (v *Verifier) VerifyAttestation(p mining.Proof, now time.Time) error {
 			bundle.GPUName, mining.ErrAttestationSignatureInvalid)
 	}
 
-	// Step 8: Tensor-Core mix_digest cross-check — deferred to
-	// Phase 2c-iv where the PoW mixin itself lands. When that
-	// lands, add a call here that asserts the mix_digest is
-	// consistent with the claimed_hashrate_hps and gpu_arch.
-	// For now, we trust the outer PoW check.
+	// Step 8: arch-spoof rejection (§4.6 / §3.3 step 8). Cross-
+	// check that the claimed Attestation.GPUArch is consistent
+	// with the bundle's gpu_name. The bundle's gpu_name is
+	// HMAC-bound under the operator's enrollment-time key
+	// (covered by Bundle.CanonicalForMAC), so an attacker who
+	// has just successfully forged the HMAC cannot also flip
+	// gpu_name post-hoc — they had to choose at sign time. The
+	// "lazy spoof" (RTX 4090 claiming gpu_arch=hopper but
+	// nvidia-smi reporting "GeForce RTX 4090") is rejected here.
+	// A determined attacker who lies about BOTH is still trapped
+	// by the on-chain registry's (gpu_uuid, hmac_key) pairing
+	// and economically by §5.4 stake bonding + §8 slashing.
+	//
+	// The outer Verifier already accepted Attestation.GPUArch
+	// against the closed-enum allowlist before dispatching to
+	// us, so Canonicalise here is guaranteed to succeed in
+	// production. Defensive re-validation kept so this verifier
+	// is also safe to use standalone.
+	arch, ok := archcheck.Canonicalise(p.Attestation.GPUArch)
+	if !ok {
+		return fmt.Errorf("hmac: gpu_arch %q not in allowlist: %w",
+			p.Attestation.GPUArch, mining.ErrAttestationSignatureInvalid)
+	}
+	if err := archcheck.ValidateBundleArchConsistencyHMAC(arch, bundle.GPUName); err != nil {
+		return fmt.Errorf("hmac: %w: %w",
+			err, mining.ErrAttestationSignatureInvalid)
+	}
 
 	return nil
 }
