@@ -59,6 +59,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/blackbeardONE/QSDM/pkg/governance/chainparams"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
 	"github.com/blackbeardONE/QSDM/pkg/mining/slashing"
@@ -75,6 +76,7 @@ type EnrollmentAwareApplier struct {
 	accounts   *AccountStore
 	enrollment *EnrollmentApplier
 	slasher    *SlashApplier
+	gov        *GovApplier
 
 	mu       sync.RWMutex
 	heightFn func() uint64
@@ -162,7 +164,47 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 		}
 		return a.slasher.ApplySlashTx(tx, h)
 	}
+	if tx.ContractID == chainparams.ContractID {
+		if a.gov == nil {
+			return ErrGovernanceNotWired
+		}
+		h, ok := a.currentHeight()
+		if !ok {
+			return ErrEnrollmentHeightUnset
+		}
+		return a.gov.ApplyGovTx(tx, h)
+	}
 	return a.accounts.ApplyTx(tx)
+}
+
+// SetGovApplier installs (or clears) the governance applier.
+// Opt-in — callers that don't set it reject all gov txs with
+// ErrGovernanceNotWired, matching the slashing opt-in pattern.
+//
+// The gov applier MUST share the same *AccountStore as this
+// shim's enrollment / slashing appliers, otherwise routing
+// would debit fees from one ledger and bump nonces on another.
+// The constructor does not (cannot) enforce this — it's a
+// wiring invariant the caller owns. Production wiring uses a
+// single *AccountStore passed to all three appliers.
+func (a *EnrollmentAwareApplier) SetGovApplier(ga *GovApplier) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.gov = ga
+}
+
+// GovApplier returns the configured governance applier, or nil
+// if governance is not wired on this node.
+func (a *EnrollmentAwareApplier) GovApplier() *GovApplier {
+	if a == nil {
+		return nil
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.gov
 }
 
 // SetSlashApplier installs (or clears) the slashing applier.
@@ -307,6 +349,13 @@ var (
 	// peer submitting to a validator that hasn't enabled
 	// slashing yet.
 	ErrSlashingNotWired = errors.New("chain: slash tx received but no SlashApplier is wired")
+
+	// ErrGovernanceNotWired is returned when a gov tx arrives
+	// at a node that has no GovApplier configured. Symmetric
+	// to ErrSlashingNotWired; typical cause is a multisig
+	// authority submitting against a validator that hasn't
+	// enabled the v2 governance surface yet.
+	ErrGovernanceNotWired = errors.New("chain: gov tx received but no GovApplier is wired")
 )
 
 // Compile-time interface assertions.

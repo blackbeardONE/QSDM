@@ -59,3 +59,15 @@ func (chainMetricsAdapter) RecordUnenrollmentRejected(reason string) {
 func (chainMetricsAdapter) RecordEnrollmentUnbondSwept(count uint64) {
 	RecordEnrollmentUnbondSwept(count)
 }
+
+func (chainMetricsAdapter) RecordGovParamStaged(param string) {
+	RecordGovParamStaged(param)
+}
+
+func (chainMetricsAdapter) RecordGovParamActivated(param string, value uint64) {
+	RecordGovParamActivated(param, value)
+}
+
+func (chainMetricsAdapter) RecordGovParamRejected(reason string) {
+	RecordGovParamRejected(reason)
+}

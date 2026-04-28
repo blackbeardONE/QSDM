@@ -160,6 +160,31 @@ func corePrometheusMetrics() []Metric {
 		"Stake dust locked in pending-unbond records, point-in-time.",
 		MetricGauge, float64(EnrollmentStatePendingUnbondDust()), nil)
 
+	// ---- v2 governance parameter pipeline ----------------------
+	// Counters keyed by param name; param-set is a tightly
+	// bounded enum (currently {reward_bps, auto_revoke_min_stake_dust})
+	// so cardinality is fine.
+	for _, p := range GovStagedLabeled() {
+		add("qsdm_gov_param_staged_total",
+			"qsdm/gov/v1 param-set transactions accepted (staged for activation), by param.",
+			MetricCounter, float64(p.Val), map[string]string{"param": p.Param})
+	}
+	for _, p := range GovActivatedLabeled() {
+		add("qsdm_gov_param_activated_total",
+			"qsdm/gov/v1 staged changes promoted to active by Promote(), by param.",
+			MetricCounter, float64(p.Val), map[string]string{"param": p.Param})
+	}
+	for _, p := range GovParamValueLabeled() {
+		add("qsdm_gov_param_value",
+			"Currently-active value for each governance-tunable parameter.",
+			MetricGauge, float64(p.Val), map[string]string{"param": p.Param})
+	}
+	for _, p := range GovRejectedLabeled() {
+		add("qsdm_gov_param_rejected_total",
+			"qsdm/gov/v1 param-set transactions rejected before staging, by reason.",
+			MetricCounter, float64(p.Val), map[string]string{"reason": p.Reason})
+	}
+
 	return out
 }
 

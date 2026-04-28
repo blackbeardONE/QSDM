@@ -109,6 +109,10 @@ func (r *recordingRecorder) RecordEnrollmentUnbondSwept(count uint64) {
 	r.mu.Unlock()
 }
 
+func (r *recordingRecorder) RecordGovParamStaged(string)            {}
+func (r *recordingRecorder) RecordGovParamActivated(string, uint64) {}
+func (r *recordingRecorder) RecordGovParamRejected(string)          {}
+
 // recordingPublisher captures every event for inspection.
 type recordingPublisher struct {
 	mu     sync.Mutex

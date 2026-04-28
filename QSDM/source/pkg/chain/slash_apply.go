@@ -50,6 +50,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/blackbeardONE/QSDM/pkg/governance/chainparams"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
 	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
@@ -117,20 +118,42 @@ type SlashApplier struct {
 	State      SlasherStateMutator
 	Dispatcher *slashing.Dispatcher
 
-	// RewardBPS is the slasher reward fraction in basis points
-	// of the forfeited stake. 0 means burn-everything; 10000
-	// would mean reward-everything (clamped to SlashRewardCap
-	// at construction).
+	// RewardBPS is the static fallback slasher reward fraction
+	// in basis points of the forfeited stake. Used only when
+	// `Params` is nil or does not have an active value for
+	// `chainparams.ParamRewardBPS` (the latter is a programmer
+	// error — every InMemoryParamStore initialises every
+	// registered param to its DefaultValue).
+	//
+	// 0 means burn-everything; 10000 would mean reward-
+	// everything (clamped to SlashRewardCap at construction).
+	//
+	// Once governance ships, the Params lookup is the source
+	// of truth; this field is kept for backward compatibility
+	// with binaries that have not yet wired a ParamStore.
 	RewardBPS uint16
 
-	// AutoRevokeMinStakeDust is the threshold below which a
-	// post-slash record is auto-revoked into the unbond
-	// window. NewSlashApplier defaults this to
-	// mining.MinEnrollStakeDust; callers can override (e.g.
-	// tests probing boundary conditions, or a future
-	// chain-config flag that wants a different threshold).
-	// Setting this to 0 disables auto-revoke entirely.
+	// AutoRevokeMinStakeDust is the static fallback for the
+	// auto-revoke threshold. Used only when `Params` is nil
+	// or does not have an active value for
+	// `chainparams.ParamAutoRevokeMinStakeDust`. Setting this
+	// to 0 disables auto-revoke entirely (the same effect as
+	// configuring the governance param to 0, though governance
+	// rejects 0 as out-of-bounds — see chainparams.Registry).
+	//
+	// NewSlashApplier defaults this to mining.MinEnrollStakeDust.
 	AutoRevokeMinStakeDust uint64
+
+	// Params is the runtime governance parameter store. When
+	// non-nil, ApplySlashTx reads RewardBPS and
+	// AutoRevokeMinStakeDust from here at apply time, ignoring
+	// the static fields above. Set via SetParamStore (preferred)
+	// or by direct field assignment in tests.
+	//
+	// Lookups are O(1) atomic reads under the store's RWMutex;
+	// the slash-apply hot path calls each lookup at most once
+	// per tx so the overhead is negligible.
+	Params chainparams.ParamStore
 
 	// Publisher receives a MiningSlashEvent for every slash outcome
 	// (applied + each rejection path). Defaults to
@@ -138,6 +161,60 @@ type SlashApplier struct {
 	// out to indexers, audit logs, etc. Calls are synchronous
 	// from the applier's view — see pkg/chain/events.go.
 	Publisher ChainEventPublisher
+}
+
+// SetParamStore wires the runtime governance parameter store.
+// Once set, every subsequent ApplySlashTx call reads RewardBPS
+// and AutoRevokeMinStakeDust from `params` at apply time
+// (ignoring the static fields). Pass nil to revert to the
+// static-fields-only posture (typical use: tests).
+//
+// Concurrency: safe to call any time, including from another
+// goroutine while ApplySlashTx is in flight, because the
+// atomic Go memory model on a single pointer write is
+// sufficient for the read-only lookups in ApplySlashTx.
+func (a *SlashApplier) SetParamStore(params chainparams.ParamStore) {
+	if a == nil {
+		return
+	}
+	a.Params = params
+}
+
+// activeRewardBPS returns the slasher reward fraction in basis
+// points, sourcing from Params when available and clamping at
+// SlashRewardCap. Falls back to the static field when Params
+// is nil or the lookup misses.
+func (a *SlashApplier) activeRewardBPS() uint16 {
+	if a == nil {
+		return 0
+	}
+	if a.Params != nil {
+		if v, ok := a.Params.ActiveValue(string(chainparams.ParamRewardBPS)); ok {
+			if v > uint64(SlashRewardCap) {
+				return SlashRewardCap
+			}
+			return uint16(v)
+		}
+	}
+	if a.RewardBPS > SlashRewardCap {
+		return SlashRewardCap
+	}
+	return a.RewardBPS
+}
+
+// activeAutoRevokeMinStakeDust returns the auto-revoke
+// threshold, sourcing from Params when available. Falls back
+// to the static field when Params is nil or the lookup misses.
+func (a *SlashApplier) activeAutoRevokeMinStakeDust() uint64 {
+	if a == nil {
+		return 0
+	}
+	if a.Params != nil {
+		if v, ok := a.Params.ActiveValue(string(chainparams.ParamAutoRevokeMinStakeDust)); ok {
+			return v
+		}
+	}
+	return a.AutoRevokeMinStakeDust
 }
 
 // NewSlashApplier wires the adapter. Panics on nil fields and
@@ -335,11 +412,15 @@ func (a *SlashApplier) ApplySlashTx(tx *mempool.Tx, currentHeight uint64) error 
 		return fmt.Errorf("chain: slash stake: %w", err)
 	}
 
-	// Step 9: pay the slasher reward, burn the rest.
+	// Step 9: pay the slasher reward, burn the rest. Reward
+	// share is sourced from the governance ParamStore when
+	// wired (chainparams.ParamRewardBPS); otherwise from the
+	// static struct field. Either way, capped at SlashRewardCap.
+	rewardBPS := a.activeRewardBPS()
 	rewardDust := uint64(0)
-	if slashed > 0 && a.RewardBPS > 0 {
-		// 64-bit safe: slashed <= 2^64-1, RewardBPS <= 5000.
-		rewardDust = slashed * uint64(a.RewardBPS) / 10000
+	if slashed > 0 && rewardBPS > 0 {
+		// 64-bit safe: slashed <= 2^64-1, rewardBPS <= 5000.
+		rewardDust = slashed * uint64(rewardBPS) / 10000
 		if rewardDust > 0 {
 			a.Accounts.Credit(tx.Sender, dustToBalance(rewardDust))
 		}
@@ -355,11 +436,12 @@ func (a *SlashApplier) ApplySlashTx(tx *mempool.Tx, currentHeight uint64) error 
 	// enrollment.InMemoryState.RevokeIfUnderBonded.
 	autoRevoked := false
 	autoRevokeRemaining := uint64(0)
-	if a.AutoRevokeMinStakeDust > 0 {
+	autoRevokeThreshold := a.activeAutoRevokeMinStakeDust()
+	if autoRevokeThreshold > 0 {
 		revoked, remaining, _ := a.State.RevokeIfUnderBonded(
 			payload.NodeID,
 			currentHeight,
-			a.AutoRevokeMinStakeDust,
+			autoRevokeThreshold,
 		)
 		autoRevoked = revoked
 		autoRevokeRemaining = remaining

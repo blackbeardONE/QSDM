@@ -73,6 +73,21 @@ type MetricsRecorder interface {
 	RecordEnrollmentRejected(reason string)
 	RecordUnenrollmentRejected(reason string)
 	RecordEnrollmentUnbondSwept(count uint64)
+
+	// RecordGovParamStaged increments the
+	// `qsdm_gov_param_staged_total{param}` counter. Fires
+	// once per accepted `qsdm/gov/v1` param-set tx.
+	RecordGovParamStaged(param string)
+
+	// RecordGovParamActivated increments the
+	// `qsdm_gov_param_activated_total{param}` counter and
+	// updates the `qsdm_gov_param_value{param}` gauge to the
+	// new value. Fires once per Promote-driven activation.
+	RecordGovParamActivated(param string, value uint64)
+
+	// RecordGovParamRejected increments the
+	// `qsdm_gov_param_rejected_total{reason}` counter.
+	RecordGovParamRejected(reason string)
 }
 
 // Slash reject reason tags. Stable, narrow, mapped 1:1 to the
@@ -128,6 +143,9 @@ func (noopRecorder) RecordUnenrollmentApplied()              {}
 func (noopRecorder) RecordEnrollmentRejected(string)         {}
 func (noopRecorder) RecordUnenrollmentRejected(string)       {}
 func (noopRecorder) RecordEnrollmentUnbondSwept(uint64)      {}
+func (noopRecorder) RecordGovParamStaged(string)             {}
+func (noopRecorder) RecordGovParamActivated(string, uint64)  {}
+func (noopRecorder) RecordGovParamRejected(string)           {}
 
 // recorderHolder wraps a MetricsRecorder so atomic.Value's
 // "all stored values must share an identical concrete type"
@@ -328,6 +346,161 @@ func (NoopEventPublisher) PublishMiningSlash(MiningSlashEvent) {}
 
 // PublishEnrollment implements ChainEventPublisher.
 func (NoopEventPublisher) PublishEnrollment(EnrollmentEvent) {}
+
+// GovParamEventKind enumerates the v2-governance parameter
+// event flavours emitted by GovApplier (see gov_apply.go) and
+// by the post-seal Promote hook on the ParamStore.
+//
+// Distinct from MiningSlashEvent / EnrollmentEvent because
+// governance has its own subscriber audience (CLI watchers,
+// audit indexers, monitoring gauges) and a separate publisher
+// surface keeps existing consumers from having to implement a
+// no-op handler.
+type GovParamEventKind string
+
+const (
+	// GovParamEventStaged fires once per accepted
+	// `qsdm/gov/v1` param-set tx. The change is now in the
+	// pending slot for its parameter; activation happens at
+	// `EffectiveHeight`.
+	GovParamEventStaged GovParamEventKind = "param-staged"
+
+	// GovParamEventSuperseded fires when a Stage call
+	// replaced an existing pending change for the same
+	// parameter. The PriorValue / PriorEffectiveHeight fields
+	// describe what was overwritten.
+	GovParamEventSuperseded GovParamEventKind = "param-superseded"
+
+	// GovParamEventActivated fires when Promote(currentHeight)
+	// transitions a pending change into active state — the
+	// chain now reads the new value.
+	GovParamEventActivated GovParamEventKind = "param-activated"
+
+	// GovParamEventRejected fires on every pre-mutation
+	// rejection (decode, unauthorized, bounds, height window,
+	// fee). Mirrors MiningSlashEvent's rejected path so audit
+	// consumers see attempted-but-blocked governance activity.
+	GovParamEventRejected GovParamEventKind = "param-rejected"
+)
+
+// GovParamEvent is the structured event emitted by the
+// governance subsystem. Pass-by-value; subscribers MUST NOT
+// retain a pointer into the event.
+type GovParamEvent struct {
+	// Kind names the event flavour.
+	Kind GovParamEventKind
+
+	// TxID is the mempool tx id of the originating gov tx.
+	// Empty for `param-activated` (the activation is driven
+	// by the post-seal hook, not by a tx).
+	TxID string
+
+	// Height is the chain height at which the event fired.
+	// For `param-activated` this is the height that crossed
+	// the change's EffectiveHeight, NOT the EffectiveHeight
+	// itself (those can differ if a height advances by more
+	// than one in a single sealed block, e.g. during catch-up).
+	Height uint64
+
+	// Authority is the tx.Sender on staged / superseded /
+	// rejected events. Empty for `param-activated`.
+	Authority string
+
+	// Param is the parameter name. Always populated except
+	// on rejected events that failed before payload decode.
+	Param string
+
+	// Value is the new value the change carries. Always
+	// populated except on rejected-decode events.
+	Value uint64
+
+	// EffectiveHeight is the change's activation height.
+	// Always populated when known (the rejected paths that
+	// don't reach decode leave it 0).
+	EffectiveHeight uint64
+
+	// PriorValue is the value that was just superseded /
+	// activated-over. Zero when no prior value existed.
+	PriorValue uint64
+
+	// PriorEffectiveHeight is the prior change's
+	// EffectiveHeight on `param-superseded`. Zero on other
+	// kinds.
+	PriorEffectiveHeight uint64
+
+	// Memo is the operator-supplied memo, verbatim. Empty
+	// when the event has no associated tx (activated) or the
+	// payload didn't carry one.
+	Memo string
+
+	// RejectReason names the rejection branch on
+	// `param-rejected`; matches the GovRejectReason* tags
+	// below. Empty on other kinds.
+	RejectReason string
+
+	// Err carries the underlying error on `param-rejected`.
+	// Subscribers MUST NOT retain a reference past the call.
+	Err error
+}
+
+// Gov reject reason tags. Stable, narrow, mapped 1:1 to the
+// rejection branches in gov_apply.go.
+const (
+	GovRejectReasonDecode         = "decode_failed"
+	GovRejectReasonWrongContract  = "wrong_contract"
+	GovRejectReasonFee            = "fee_invalid"
+	GovRejectReasonUnauthorized   = "unauthorized"
+	GovRejectReasonNotConfigured  = "not_configured"
+	GovRejectReasonHeightInPast   = "effective_height_in_past"
+	GovRejectReasonHeightTooFar   = "effective_height_too_far"
+	GovRejectReasonStageRejected  = "stage_rejected"
+	GovRejectReasonNonceFee       = "nonce_or_fee_failed"
+	GovRejectReasonOther          = "other"
+)
+
+// GovEventPublisher is the consumer-facing surface for
+// governance events. Kept distinct from ChainEventPublisher so
+// existing slash / enrollment subscribers do not have to grow
+// a no-op PublishGovParam method.
+type GovEventPublisher interface {
+	PublishGovParam(GovParamEvent)
+}
+
+// NoopGovEventPublisher is the default. Implementations that
+// want the events should install themselves on GovApplier.
+type NoopGovEventPublisher struct{}
+
+// PublishGovParam implements GovEventPublisher.
+func (NoopGovEventPublisher) PublishGovParam(GovParamEvent) {}
+
+// CompositeGovPublisher fans out gov events to every wrapped
+// publisher in registration order. Mirrors CompositePublisher
+// for gov-only subscribers.
+type CompositeGovPublisher struct {
+	publishers []GovEventPublisher
+}
+
+// NewCompositeGovPublisher returns a fan-out publisher.
+func NewCompositeGovPublisher(subs ...GovEventPublisher) *CompositeGovPublisher {
+	out := &CompositeGovPublisher{}
+	for _, s := range subs {
+		if s == nil {
+			continue
+		}
+		out.publishers = append(out.publishers, s)
+	}
+	return out
+}
+
+// PublishGovParam fans out to every wrapped publisher.
+func (c *CompositeGovPublisher) PublishGovParam(ev GovParamEvent) {
+	if c == nil {
+		return
+	}
+	for _, p := range c.publishers {
+		p.PublishGovParam(ev)
+	}
+}
 
 // CompositePublisher dispatches each event to every wrapped
 // publisher in registration order. Failures inside one

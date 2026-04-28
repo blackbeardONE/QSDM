@@ -14,6 +14,106 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`qsdm/gov/v1` runtime parameter-tuning hook (2026-04-28).**
+  Two protocol-economy parameters that previously lived as
+  construction-time arguments to `chain.SlashApplier` —
+  `reward_bps` (slasher reward share) and
+  `auto_revoke_min_stake_dust` (auto-revoke threshold) — are
+  now governance-tunable at runtime. No more coordinated
+  binary swaps to retune economic knobs.
+  - **New package**:
+    [`pkg/governance/chainparams/`](QSDM/source/pkg/governance/chainparams/)
+    ships the `ParamSetPayload` wire format, the param
+    `Registry` (whitelist + bounds + defaults + units), the
+    `ParamStore` interface with an `InMemoryParamStore`
+    reference implementation, the stateless mempool
+    `AdmissionChecker`, and the codec / validator pair.
+  - **Chain-side applier**:
+    [`pkg/chain/gov_apply.go`](QSDM/source/pkg/chain/gov_apply.go)
+    ships `GovApplier` with the same shape as the existing
+    `SlashApplier` / `EnrollmentApplier`. Routing is wired
+    through `EnrollmentAwareApplier.SetGovApplier(...)`.
+  - **Authority model**: applier holds an
+    `AuthorityList []string`. Tx sender must be on it; an
+    empty list disables on-chain governance entirely
+    (every gov tx rejects with
+    `chainparams.ErrGovernanceNotConfigured`). The list is
+    NOT itself governance-tunable in this revision —
+    modifying it requires a binary upgrade or a chain-config
+    reload, by deliberate design (a circular "governance can
+    change the list of governors" surface lets a captured
+    authority lock out the rest).
+  - **Activation semantics**: the tx field
+    `effective_height` MUST satisfy
+    `currentHeight ≤ effective_height ≤ currentHeight + MaxActivationDelay`
+    (~3 days at 3-second blocks). The applier stages the
+    change in a per-param "pending" slot; the
+    `SealedBlockHook` calls
+    `GovApplier.PromotePending(blockHeight)` after each
+    block, which atomically promotes any pending changes
+    whose `effective_height` has been reached. Promotion
+    order is deterministic across nodes (by height ascending,
+    then by name ascending). One pending change per parameter
+    at a time; subsequent submissions for the same parameter
+    SUPERSEDE the prior pending entry.
+  - **`SlashApplier` refactor**: the existing struct fields
+    (`RewardBPS`, `AutoRevokeMinStakeDust`) become static
+    fallbacks read only when no `ParamStore` is wired. With a
+    store wired (the production posture from
+    `internal/v2wiring`), every `ApplySlashTx` call reads the
+    active value from the store. Backward-compatible: tests
+    and binaries that don't set a store keep their existing
+    behaviour byte-for-byte.
+  - **Mempool admission**: layered above the slashing /
+    enrollment gates, mirroring the existing stack — `gov >
+    slash > enroll > base`.
+  - **CLI**:
+    [`qsdmcli gov-helper`](QSDM/source/cmd/qsdmcli/gov_helper.go)
+    ships three offline subcommands (no key required;
+    governance authorities typically run from air-gapped
+    hosts):
+    - `propose-param --param=NAME --value=N --effective-height=H [--memo=STR] [--out=PATH] [--print-cmd]`
+      builds a canonical `ParamSetPayload` and writes the
+      encoded JSON. Pre-flight checks mirror the chain-side
+      admission so an authority sees out-of-bounds /
+      unknown-param rejections locally.
+    - `params [--json]` lists the registered tunables with
+      bounds, defaults, units, and descriptions.
+    - `inspect (--payload-file=PATH | --payload-hex=HEX)`
+      decodes a previously-built payload and pretty-prints
+      the structured view with the matched registry entry.
+  - **Observability**: four new Prometheus metrics in
+    `pkg/monitoring/gov_metrics.go`:
+    `qsdm_gov_param_staged_total{param}`,
+    `qsdm_gov_param_activated_total{param}`,
+    `qsdm_gov_param_value{param}` (gauge),
+    `qsdm_gov_param_rejected_total{reason}`. Plus a new
+    `GovEventPublisher` interface (separate from
+    `ChainEventPublisher` to avoid forcing existing slash /
+    enrollment subscribers to grow no-op handlers) emitting
+    four `GovParamEvent` flavours: `param-staged`,
+    `param-superseded`, `param-activated`, `param-rejected`.
+  - **v2wiring extension**: `Config.GovernanceAuthorities`
+    is the single new knob; populating it activates governance.
+    The `InMemoryParamStore` is wired UNCONDITIONALLY (so the
+    `SlashApplier` reads always route through it), seeded
+    with `cfg.SlashRewardBPS` as the genesis active value.
+    Migration cost for existing operators is zero: leaving
+    `GovernanceAuthorities` empty is byte-identical to the
+    pre-governance posture.
+  - **Tests**: 30+ unit tests across `chainparams_test.go`
+    (registry, codec, store, admission), `gov_apply_test.go`
+    (applier construction, every rejection path, supersede,
+    promote, slash-applier integration with both reward_bps
+    and auto_revoke_min_stake_dust scenarios), and
+    `gov_helper_test.go` (CLI happy paths, every flag-
+    rejection, --print-cmd, --json table, inspect
+    round-trip). Full repo `go test ./...` green.
+  - **Spec update**: `MINING_PROTOCOL_V2.md` §6 (component
+    table), §9.4 (governance — runtime parameter tuning,
+    new section), and §12.4 (deferred-work register, marked
+    SHIPPED).
+
 - **`freshness-cheat` slasher — verifier shipped, witness
   deferred (2026-04-28).** Closes the v2 slashing trilogy:
   `forged-attestation` + `double-mining` + `freshness-cheat`

@@ -55,6 +55,7 @@ import (
 
 	"github.com/blackbeardONE/QSDM/pkg/api"
 	"github.com/blackbeardONE/QSDM/pkg/chain"
+	"github.com/blackbeardONE/QSDM/pkg/governance/chainparams"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
 	"github.com/blackbeardONE/QSDM/pkg/mining/slashing"
@@ -88,7 +89,34 @@ type Config struct {
 	// chain.SlashRewardCap (50%); higher values cause
 	// NewSlashApplier to panic. Use 0 for "burn everything"
 	// or chain.SlashRewardCap for "max reward".
+	//
+	// Once governance ships (GovernanceAuthorities non-empty),
+	// this is the GENESIS value seeded into the ParamStore;
+	// runtime tuning happens via `qsdm/gov/v1` txs and the
+	// actual SlashApplier reads come from the store. With
+	// governance disabled (empty AuthorityList) this remains
+	// the static value the applier uses forever.
 	SlashRewardBPS uint16
+
+	// GovernanceAuthorities is the set of addresses authorised
+	// to submit `qsdm/gov/v1` parameter-set transactions. An
+	// empty / nil slice DISABLES on-chain governance: gov txs
+	// reject with chainparams.ErrGovernanceNotConfigured and
+	// the SlashApplier reads from the static
+	// SlashRewardBPS / mining.MinEnrollStakeDust defaults
+	// forever (the previous, non-governance posture).
+	//
+	// Production wiring populates this from a chain-config
+	// file or a multisig address that orchestrates the off-
+	// chain proposal lifecycle. The list is dedup'd at
+	// applier construction; empty strings are silently
+	// dropped.
+	//
+	// Deliberately NOT itself governance-tunable in this
+	// revision — see pkg/governance/chainparams package doc
+	// for why a circular "governance can change the list of
+	// governors" surface is dangerous.
+	GovernanceAuthorities []string
 
 	// LogSweepError is invoked when the post-seal hook's call
 	// to SweepMaturedEnrollments returns an error. Nil = drop
@@ -118,6 +146,8 @@ type Wired struct {
 	Enrollment      *chain.EnrollmentApplier
 	Slasher         *chain.SlashApplier
 	SlashReceipts   *chain.SlashReceiptStore
+	Gov             *chain.GovApplier
+	GovParams       *chainparams.InMemoryParamStore
 	SealedBlockHook func(*chain.Block)
 }
 
@@ -169,6 +199,46 @@ func Wire(cfg Config) (*Wired, error) {
 	)
 	aware.SetSlashApplier(slasher)
 
+	// v2 governance arm. Construct an InMemoryParamStore and
+	// seed it with the genesis defaults derived from cfg —
+	// SlashRewardBPS becomes the active reward_bps, and
+	// auto_revoke_min_stake_dust starts at the registry
+	// default (= MIN_ENROLL_STAKE).
+	//
+	// The store is wired into the slash applier UNCONDITIONALLY,
+	// even when GovernanceAuthorities is empty; that way the
+	// reads route through ParamStore consistently and a future
+	// activation of governance just needs the AuthorityList
+	// populated. With governance disabled the active values
+	// never change, so SlashApplier behaviour is byte-identical
+	// to the pre-governance posture.
+	govStore := chainparams.NewInMemoryParamStore()
+	if cfg.SlashRewardBPS > 0 {
+		// Seed reward_bps from the operator-supplied genesis
+		// value. Bounds were already checked above.
+		govStore.SetForTesting(
+			string(chainparams.ParamRewardBPS),
+			uint64(cfg.SlashRewardBPS))
+	}
+	slasher.SetParamStore(govStore)
+
+	// Seed monitoring gauges so a /metrics scrape before any
+	// gov tx fires shows the genesis-time value (not zero).
+	// SetGovParamValue is keyed-by-name and overwrite-safe;
+	// the per-name atomic.Uint64 is created lazily.
+	for _, spec := range chainparams.Registry() {
+		v, ok := govStore.ActiveValue(string(spec.Name))
+		if !ok {
+			continue
+		}
+		monitoring.SetGovParamValue(string(spec.Name), v)
+	}
+
+	govApplier := chain.NewGovApplier(
+		cfg.Accounts, govStore, cfg.GovernanceAuthorities,
+	)
+	aware.SetGovApplier(govApplier)
+
 	// Slash receipt store. Bounded in-memory keyed by tx_id;
 	// installed as a ChainEventPublisher on the slash applier
 	// so every "applied" / "rejected" outcome lands here. The
@@ -203,8 +273,9 @@ func Wire(cfg Config) (*Wired, error) {
 	// (a slash tx is the most consequential so its validators
 	// run first).
 	cfg.Pool.SetAdmissionChecker(
-		slashing.AdmissionChecker(
-			enrollment.AdmissionChecker(cfg.BaseAdmit)))
+		chainparams.AdmissionChecker(
+			slashing.AdmissionChecker(
+				enrollment.AdmissionChecker(cfg.BaseAdmit))))
 
 	// HTTP handler hookup. All four mining endpoints
 	//
@@ -227,7 +298,24 @@ func Wire(cfg Config) (*Wired, error) {
 	api.SetEnrollmentLister(state)
 	api.SetSlashReceiptStore(slashReceiptAdapter{store: slashReceipts})
 
-	hook := aware.SealedBlockHook(cfg.LogSweepError)
+	enrollHook := aware.SealedBlockHook(cfg.LogSweepError)
+	// Compose: run the enrollment sweep first (releases
+	// matured stake for the upcoming Promote arithmetic) and
+	// then promote any governance changes whose
+	// EffectiveHeight has been reached. Promote firing AFTER
+	// the sweep matters when a `auto_revoke_min_stake_dust`
+	// change activates at the same height as a record
+	// matures — the next slash on the next block sees the
+	// activated value, not the stale default.
+	hook := func(blk *chain.Block) {
+		if enrollHook != nil {
+			enrollHook(blk)
+		}
+		if blk == nil || govApplier == nil {
+			return
+		}
+		govApplier.PromotePending(blk.Height)
+	}
 
 	return &Wired{
 		StateApplier:    aware,
@@ -236,6 +324,8 @@ func Wire(cfg Config) (*Wired, error) {
 		Enrollment:      enrollAp,
 		Slasher:         slasher,
 		SlashReceipts:   slashReceipts,
+		Gov:             govApplier,
+		GovParams:       govStore,
 		SealedBlockHook: hook,
 	}, nil
 }
@@ -297,10 +387,14 @@ func ReinstallAdmissionGate(pool *mempool.Mempool, prev func(*mempool.Tx) error)
 	if pool == nil {
 		return
 	}
-	// Mirror Wire()'s stack: slashing > enrollment > prev.
+	// Mirror Wire()'s stack: gov > slashing > enrollment > prev.
+	// Each layer only intercepts its own ContractID, so the
+	// order is structurally safe but kept stable for
+	// readability and ease of comparison with Wire().
 	pool.SetAdmissionChecker(
-		slashing.AdmissionChecker(
-			enrollment.AdmissionChecker(prev)))
+		chainparams.AdmissionChecker(
+			slashing.AdmissionChecker(
+				enrollment.AdmissionChecker(prev))))
 }
 
 // AttachToProducer wires the post-construction half of the

@@ -75,6 +75,8 @@ func main() {
 		err = cli.miningSlashReceipt(args)
 	case "slash-helper":
 		err = cli.slashHelper(args)
+	case "gov-helper":
+		err = cli.govHelper(args)
 	case "watch":
 		err = cli.watchCommand(args)
 	case "help":
@@ -363,7 +365,9 @@ v2 mining:
   enrollments [flags]                 Page over the on-chain enrollment registry
   slash-receipt <tx-id>               Query slash transaction outcome
   slash-helper <kind> [flags]         Build / inspect slashing evidence blobs offline
-                                        kind ∈ {forged-attestation, double-mining, inspect}
+                                        kind ∈ {forged-attestation, double-mining, freshness-cheat, inspect}
+  gov-helper <sub> [flags]            Build / inspect governance parameter-tuning payloads offline
+                                        sub ∈ {propose-param, params, inspect}
   watch <subcommand> [flags]          Stream phase-change / stake-delta / slash-resolution events to stdout
                                         subcommand ∈ {enrollments, slashes}
 
@@ -396,11 +400,30 @@ slash-helper subcommands (offline evidence-bundle assembly):
                      [--node-id=ID] [--out=PATH] [--print-cmd]
   double-mining      --proof-a=PATH --proof-b=PATH [--memo=STR]
                      [--node-id=ID] [--out=PATH] [--print-cmd]
+  freshness-cheat    --proof=PATH --anchor-height=H --anchor-block-time=T
+                     [--memo=STR] [--node-id=ID] [--out=PATH] [--print-cmd]
   inspect            --kind=KIND (--evidence-file=PATH | --evidence-hex=HEX)
 
   Use '-' for the path to read a proof / evidence blob from stdin.
   --print-cmd echoes a placeholder 'qsdmcli slash …' invocation to stderr
   after the evidence bytes are written, suitable for copy-paste into a script.
+
+gov-helper subcommands (offline governance-payload assembly):
+  propose-param   --param=NAME --value=N --effective-height=H
+                  [--memo=STR] [--out=PATH] [--print-cmd]
+  params          [--json]
+  inspect         (--payload-file=PATH | --payload-hex=HEX)
+
+  propose-param  builds a canonical chainparams.ParamSetPayload (qsdm/gov/v1)
+                 and writes the encoded JSON to --out (default stdout). The
+                 produced bytes are submitted via the operator's signed-tx
+                 pipeline with ContractID=qsdm/gov/v1; chain-side acceptance
+                 still requires the sender to be on the AuthorityList.
+  params         lists the registered governance-tunable parameters with
+                 their bounds, defaults and units. Source: chainparams.Registry.
+  inspect        decodes a previously-built propose-param payload and pretty-
+                 prints the structured view (kind, param, value, effective
+                 height, memo, registry entry).
 
 watch subcommands (operator surveillance, polling-only, no key required):
   enrollments [flags]                 Stream phase-change / stake-delta events

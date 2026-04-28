@@ -666,6 +666,8 @@ registry mapping `Attestation.Type` to a concrete
 | [`pkg/mining/challenge/`](../../source/pkg/mining/challenge/) | Validator-issued nonce challenge crypto | **Shipped.** |
 | [`pkg/mining/enrollment/`](../../source/pkg/mining/enrollment/) | On-chain operator registry, admission gate, sweep | **Shipped.** |
 | [`pkg/mining/slashing/`](../../source/pkg/mining/slashing/) | Slashing data model + dispatcher + admission | **Shipped** (`forged-attestation` + `double-mining` + `freshness-cheat`); the freshness-cheat verifier ships with a `BlockInclusionWitness` abstraction whose production default rejects pending BFT finality (§12.3). |
+| [`pkg/governance/chainparams/`](../../source/pkg/governance/chainparams/) | `qsdm/gov/v1` parameter-tuning tx type, registry, ParamStore, admission | **Shipped.** Two tunables: `reward_bps`, `auto_revoke_min_stake_dust`. See §9.4. |
+| [`pkg/chain/gov_apply.go`](../../source/pkg/chain/gov_apply.go) | Chain-side `GovApplier` adapter routing `qsdm/gov/v1` txs | **Shipped.** Stages → promotes via `SealedBlockHook`. |
 
 ### 7.3 Test vectors
 
@@ -823,7 +825,7 @@ End-to-end coverage:
 
 All endpoints wired in
 [`internal/v2wiring/v2wiring.go`](../../source/internal/v2wiring/v2wiring.go)
-(see §9.4). Each endpoint returns 503 until its `Set*` is called,
+(see §9.5). Each endpoint returns 503 until its `Set*` is called,
 so a misconfigured boot fails loudly rather than silently
 degrading.
 
@@ -893,7 +895,169 @@ rejection, encoder round-trip, and `inspect` against
 forged-attestation + double-mining blobs supplied as either
 `--evidence-file` or `--evidence-hex`.
 
-### 9.4 Production boot wiring (`internal/v2wiring`)
+### 9.4 Governance — runtime parameter tuning (`qsdm/gov/v1`)
+
+Source:
+[`pkg/governance/chainparams/`](../../source/pkg/governance/chainparams/)
++ [`pkg/chain/gov_apply.go`](../../source/pkg/chain/gov_apply.go)
++ [`cmd/qsdmcli/gov_helper.go`](../../source/cmd/qsdmcli/gov_helper.go).
+
+Two protocol-economy parameters that previously lived as
+construction-time arguments to `chain.SlashApplier` are now
+governance-tunable at runtime:
+
+| Param name (wire) | Reader | Bounds | Genesis default |
+|---|---|---|---|
+| `reward_bps` | `SlashApplier.activeRewardBPS()` | `[0, 5000]` (clamped at `chain.SlashRewardCap`) | `cfg.SlashRewardBPS` (binary-supplied) |
+| `auto_revoke_min_stake_dust` | `SlashApplier.activeAutoRevokeMinStakeDust()` | `[1·CELL, MIN_ENROLL_STAKE]` | `MIN_ENROLL_STAKE` |
+
+Tunable parameters are an explicit whitelist
+(`chainparams.Registry`); anything else requires a binary
+upgrade. Adding a new tunable lands as a single registry append
+plus a chain-side reader — every other layer (admission,
+applier, ParamStore, CLI help, metrics labels) auto-discovers
+the addition.
+
+#### Wire format
+
+`qsdm/gov/v1` `ParamSetPayload`, canonical JSON, encoded into
+`mempool.Tx.Payload`:
+
+```json
+{
+  "kind": "param-set",
+  "param": "reward_bps",
+  "value": 2500,
+  "effective_height": 12345,
+  "memo": "post-mortem #14: lower reward share"
+}
+```
+
+`memo` is bounded at 256 bytes. `DisallowUnknownFields` is set
+so wire drift is rejected loudly.
+
+#### Authority model
+
+`chain.GovApplier` is constructed with
+`v2wiring.Config.GovernanceAuthorities []string` — a set of
+addresses authorised to submit `qsdm/gov/v1` txs. Empty slice
+**disables** on-chain governance entirely (every gov tx
+rejects with `chainparams.ErrGovernanceNotConfigured`); this
+is the genesis posture for chains that have not yet bootstrapped
+a governance authority. The authority list is itself NOT
+governance-tunable in this revision — modifying it requires a
+binary upgrade or a chain-config reload. That's deliberate: a
+circular "governance can change the list of governors" surface
+would let a captured authority lock out the rest, which is the
+nightmare scenario for this kind of subsystem. Adding a
+multisig-gated authority-rotation tx is queued behind the
+basic surface getting battle-tested.
+
+The off-chain `pkg/governance/{voting,multisig}` package owns
+the proposal-and-signing workflow; once enough signatures are
+collected, the multisig orchestrator submits a single signed
+gov tx via the same mempool any client uses.
+
+#### Activation
+
+The tx field `effective_height` MUST satisfy:
+
+```
+currentHeight ≤ effective_height ≤ currentHeight + MaxActivationDelay
+```
+
+with `MaxActivationDelay = 86,400 blocks (~3 days at 3-second
+block time)`. The applier stages the change in a per-param
+"pending" slot; the `SealedBlockHook` calls
+`GovApplier.PromotePending(blockHeight)` after each block,
+which atomically promotes any pending changes whose
+`effective_height` has been reached. Promotion order is
+deterministic across nodes (by `effective_height` ascending,
+then by name ascending). Setting
+`effective_height == currentHeight` is the "apply at the next
+block" knob.
+
+One pending change per parameter at a time; subsequent
+submissions for the same parameter SUPERSEDE the prior pending
+entry (with a `param-superseded` event for audit trails).
+
+#### Mempool admission
+
+`chainparams.AdmissionChecker` is layered above the slashing
+admission gate, mirroring the slashing > enrollment > base
+stack:
+
+```go
+pool.SetAdmissionChecker(
+    chainparams.AdmissionChecker(
+        slashing.AdmissionChecker(
+            enrollment.AdmissionChecker(baseAdmit))))
+```
+
+Admission performs every stateless check: kind tag, registry
+membership, bounds, memo cap, fee floor. Stateful checks
+(authority list, height window) live in the applier where
+`AccountStore` and `currentHeight` are available.
+
+#### Observability
+
+Four Prometheus counters / gauges, all exported by
+`pkg/monitoring/gov_metrics.go`:
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `qsdm_gov_param_staged_total` | counter | `param` | `qsdm/gov/v1` param-set txs accepted, by parameter. |
+| `qsdm_gov_param_activated_total` | counter | `param` | Staged changes promoted to active by `Promote()`, by parameter. |
+| `qsdm_gov_param_value` | gauge | `param` | Currently-active value for each governance-tunable parameter. |
+| `qsdm_gov_param_rejected_total` | counter | `reason` | Param-set txs rejected before staging, by reason (decode, unauthorized, height_in_past, height_too_far, fee_invalid, …). |
+
+Plus four `GovParamEvent` flavours emitted on the
+`GovEventPublisher` interface (a separate publisher from
+`ChainEventPublisher` so existing slash / enrollment subscribers
+do not have to grow a no-op handler):
+
+| Kind | When it fires |
+|---|---|
+| `param-staged` | once per accepted gov tx |
+| `param-superseded` | when the staged change overwrites a prior pending entry for the same parameter |
+| `param-activated` | when `Promote(height)` flips pending → active |
+| `param-rejected` | once per pre-mutation rejection, with `RejectReason` matching the metrics enum |
+
+#### CLI — `qsdmcli gov-helper`
+
+[`cmd/qsdmcli/gov_helper.go`](../../source/cmd/qsdmcli/gov_helper.go)
+ships an offline assembly tool symmetric to `slash-helper`:
+
+```
+qsdmcli gov-helper propose-param --param=NAME --value=N \
+                                  --effective-height=H \
+                                  [--memo=STR] [--out=PATH] [--print-cmd]
+qsdmcli gov-helper params [--json]
+qsdmcli gov-helper inspect (--payload-file=PATH | --payload-hex=HEX)
+```
+
+`propose-param` builds a canonical `ParamSetPayload` and writes
+the encoded JSON; pre-flight checks mirror the chain-side
+admission so an authority sees out-of-bounds / unknown-param
+rejections locally before submitting. The produced bytes are
+consumed by whatever signing pipeline the authority has
+(multisig orchestrator, hardware wallet, etc.) and submitted
+via `qsdmcli tx … --contract-id=qsdm/gov/v1 --payload-file=…`.
+`params` lists the registered tunables with bounds and defaults
+(table or `--json`); `inspect` decodes a previously-built
+payload and pretty-prints it with the matched registry entry.
+
+#### Migration posture
+
+Binaries that have not yet wired `GovernanceAuthorities` keep
+the old construction-time-only behaviour: `SlashApplier` reads
+from a default-seeded `InMemoryParamStore` (so the read path
+is uniform) but the values never change because no
+`qsdm/gov/v1` tx is ever accepted. Activating governance is a
+one-line config edit (populate `GovernanceAuthorities`) and
+takes effect at the next boot.
+
+### 9.5 Production boot wiring (`internal/v2wiring`)
 
 [`internal/v2wiring/v2wiring.go`](../../source/internal/v2wiring/v2wiring.go)
 constructs the entire v2 surface in one call ordered before
@@ -921,7 +1085,7 @@ is the contract `cmd/qsdm/main.go` must honour. Any drift
 between `Wire` and the production boot sequence is caught here,
 not on mainnet.
 
-### 9.5 Reference miner — `cmd/qsdmminer-console`
+### 9.6 Reference miner — `cmd/qsdmminer-console`
 
 Source: [`cmd/qsdmminer-console/`](../../source/cmd/qsdmminer-console/).
 This binary is the v1 reference miner with an opt-in v2
@@ -954,7 +1118,7 @@ Operational flow with `--protocol=v2`:
 
 Coverage gated by `TestIntegration_RunLoop_v2_EndToEnd`.
 
-### 9.6 Observability
+### 9.7 Observability
 
 The slashing applier and the enrollment applier emit two
 parallel observability streams, **both wired through a
@@ -1068,7 +1232,7 @@ At the same commit that ships `cmd/qsdm-miner-cuda` (deferred —
 - New `cmd/qsdm-miner-cuda/` ships with the fork commit.
 
 Until then, `cmd/qsdmminer-console` remains the reference miner
-for testnet v2 attestation participation (§9.5).
+for testnet v2 attestation participation (§9.6).
 
 ### 10.5 Backward compatibility — `ComputeMixDigestV1`
 
@@ -1228,12 +1392,18 @@ Estimated remaining work: **~2 days** to wire the
 quorum-header witness once the BFT pipeline exposes finalised
 headers.
 
-### 12.4 `qsdm/gov/v1` runtime tuning hook
+### 12.4 ~~`qsdm/gov/v1` runtime tuning hook~~ — SHIPPED
 
-`SlashApplier.RewardBPS` and `AutoRevokeMinStakeDust` are
-construction-time parameters today. A `qsdm/gov/v1` transaction
-type would let governance retune them at runtime. Estimated
-work: **~2 days** once the governance contract type is defined.
+`SlashApplier.RewardBPS` and `AutoRevokeMinStakeDust` are now
+governance-tunable at runtime via the `qsdm/gov/v1` transaction
+type. See §10 for the complete specification. A binary upgrade
+is no longer required to retune these economic parameters; an
+authority address on the configured `AuthorityList` submits a
+single signed gov tx and the change activates at a chosen
+future block height. The HTTP read-API surface
+(`/api/v1/governance/params`) and a `qsdmcli watch params`
+streamer are queued as a follow-on once an operator-facing
+event is reported in the field.
 
 ---
 
