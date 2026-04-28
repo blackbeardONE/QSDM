@@ -408,13 +408,15 @@ type Proof struct {
 
 ---
 
-## 4. Tensor-Core PoW mixin (deferred)
+## 4. Tensor-Core PoW mixin
 
-> **Status as of this revision:** specified, not implemented.
-> Pre-mixin, a `Version=2` proof is accepted under the legacy
-> double-SHA256 PoW. The Tensor-Core mixin activates at a future
-> `FORK_V2_TC_HEIGHT` as a soft-tightening fork (validators get
-> stricter; no chain reset). Tracking: §12.2.
+> **Status as of this revision:** byte-exact validator-side reference
+> shipped in `pkg/mining/pow/v2/`. Activation still gated on
+> `FORK_V2_TC_HEIGHT`; pre-fork, a `Version=2` proof is accepted under
+> the legacy v1 walk in `pkg/mining/pow.go::ComputeMixDigest`.
+> Post-fork, validators switch to `powv2.ComputeMixDigestV2`.
+> Soft-tightening fork (validators get stricter; no chain reset).
+> Tracking: §12.2.
 
 ### 4.1 Why a PoW mixin at all
 
@@ -437,40 +439,102 @@ for s in 0..64:
 return mix
 ```
 
-v2 hash:
+v2 hash (reference: `pkg/mining/pow/v2/`):
 
 ```
 seed := SHA3-256(header_hash || nonce)
 mix  := seed
 for s in 0..64:
-    idx      := uint32(BE(mix[0..4])) mod N
-    entry    := D_e[idx]
-
-    // --- NEW ---
-    // Deterministic 16x16 FP16 matmul over the matrix M(mix)
-    // and the vector v(entry). Result is a 16-element FP16
-    // vector converted back to a 32-byte canonical IEEE-754
-    // big-endian byte string.
-    M := unpack_matrix_fp16(mix)        // 16x16 FP16 matrix
-    v := unpack_vector_fp16(entry)      // 16 FP16 elements
-    r := (M * v) mod FP16_CANONICAL     // 16-element FP16 result
-    tc := pack_canonical_fp16(r)        // 32 bytes
-    // --- /NEW ---
-
-    mix := SHA3-256(mix || entry || tc)
+    idx   := uint32(BE(mix[0..4])) mod N
+    entry := D_e[idx]
+    M     := MatrixFromMix(mix)        // 16x16 FP16, see §4.2.1
+    v     := VectorFromEntry(entry)    // 16 FP16 elements, see §4.2.2
+    r     := TensorMul(M, v)           // 16 FP16 elements, see §4.2.3
+    tc    := PackFP16VectorBE(r)       // 32 bytes
+    mix   := SHA3-256(mix || entry || tc)
 return mix
 ```
 
 The matmul output is deterministic IEEE-754 FP16 with a pinned
-rounding mode (`round-to-nearest-even`, CUDA default), so the
-validator's CPU reference produces bit-identical `tc` to the
-miner's Tensor Core.
+rounding mode (`round-to-nearest-even`), so the validator's CPU
+reference produces bit-identical `tc` to a compliant miner. The
+following four byte-exact decisions (locked, hard-fork-only to
+change) make the spec testable across CPU, CUDA, and any future
+accelerator:
+
+#### 4.2.1 Matrix expansion (mix → 16×16 FP16)
+
+```
+M_bytes := SHAKE256("qsdm/pow/v2/matrix\x00" || mix), read 512 bytes
+for i,j in 0..16:
+    M[i][j] := DecodeFP16BE(M_bytes[ 2*(16*i + j) : 2*(16*i + j) + 2 ])
+```
+
+The 32-byte mix is too small to fill a 16×16 FP16 matrix
+(4096 bits) directly; SHAKE256 is the FIPS-202 XOF used to fan
+it out. The domain-separator byte string keeps this expansion
+disjoint from every other SHA3 use in the protocol.
+
+#### 4.2.2 Vector unpack (entry → 16 FP16)
+
+```
+for k in 0..16:
+    v[k] := DecodeFP16BE(D_e[idx][ 2k : 2k+2 ])
+```
+
+The 32-byte DAG entry is exactly 16 FP16 elements wide, so no
+expansion is needed.
+
+#### 4.2.3 Matmul (per output element r[i])
+
+```
+acc := float32(0)                                      // +0, IEEE-754 FP32
+for j in 0..16:
+    acc = acc + (float32(M[i][j]) * float32(v[j]))     // RNE, left-to-right
+r[i] := Float32ToFP16RNE(acc)                          // RNE down-convert
+```
+
+* FP16×FP16 multiplication is performed by widening both
+  operands to FP32 (exact, since 22-bit products fit in FP32's
+  24-bit mantissa) and using the platform's IEEE-754 FP32
+  multiply.
+* Accumulation is **strict left-to-right in FP32**, NOT
+  tree-reduction. This is the most common point of divergence
+  from naive CUDA WMMA implementations; miners using the WMMA
+  fast-path must emulate this loop's reduction order in software
+  (one mac per thread) to stay bit-compatible. The validator is
+  authoritative.
+* Final FP16 down-convert uses round-to-nearest, ties-to-even,
+  with the canonical NaN payload of §4.2.4.
+
+#### 4.2.4 NaN canonicalization
+
+IEEE-754 leaves the NaN payload (1022 distinct FP16 patterns,
+millions of FP32 patterns) implementation-defined; CUDA, x86,
+and ARM each emit different ones, so we cannot allow them
+through to SHA3-256. Therefore, at every encode boundary
+(`DecodeFP16BE`, `EncodeFP16BE`, `Float32ToFP16RNE`):
+
+* Any FP16 NaN is rewritten to `FP16Qnan = 0x7E00` (sign 0,
+  exp all-ones, mantissa `1100000000`).
+* Any FP32 NaN is rewritten to `FP32Qnan = 0x7FC00000`.
+
+Subnormals and signed zero are **preserved**, no flush-to-zero,
+no -0 collapse — these are determinable bit patterns and matter
+when the matmul output happens to land near 2^-14.
 
 ### 4.3 Validator cost
 
 Single-proof CPU verify budget moves from ~60 µs (sha3 only) to
-~700 µs (sha3 + 64 × 16×16 FP16 matmul on `gonum/blas`). Still
-inside the `MINING_PROTOCOL.md §1.1(4) < 100 ms` validator SLO.
+~700 µs (sha3 + 64 × 16×16 FP16 matmul). The pure-Go reference
+in `pkg/mining/pow/v2/` is ~10× slower than `gonum/blas` would
+be on the same input, but still inside the `MINING_PROTOCOL.md
+§1.1(4) < 100 ms` validator SLO with comfortable margin.
+
+A SIMD/BLAS-backed validator fast-path is a future optimization
+(§12.6) and MUST be byte-exact-equivalent to the reference; the
+golden vector in `pkg/mining/pow/v2/mixdigest_test.go` is the
+conformance bar.
 
 ### 4.4 Miner cost
 
@@ -482,10 +546,14 @@ economic lock.
 
 ### 4.5 Backward compatibility
 
-The v1 function is renamed `ComputeMixDigestV1` and kept in-tree
-for replaying pre-fork blocks (audit), protocol-conformance
-tests, and any future soft-unlock if governance ever wants to
-re-enable non-NVIDIA mining.
+The v1 function `pkg/mining.ComputeMixDigest` stays in-tree
+unchanged for replaying pre-fork blocks (audit), protocol-
+conformance tests, and any future soft-unlock if governance ever
+wants to re-enable non-NVIDIA mining. Selection between v1 and
+v2 is height-gated on `FORK_V2_TC_HEIGHT`; nothing about the
+proof wire format changes (the existing `Proof.Version=2` field
+already covers it — pre-fork v2 proofs simply happen to use the
+v1 walk for `mix_digest`).
 
 ### 4.6 Pre-mixin soft check
 
@@ -1596,27 +1664,37 @@ test vectors. Estimated remaining work post-hardware: **~5
 days** (down from the original ~8 — verifier pipeline is
 already done).
 
-### 12.2 Tensor-Core PoW kernel
+### 12.2 Tensor-Core PoW kernel — reference shipped, CUDA deferred
 
-Specified in §4. Ships as `cmd/qsdm-miner-cuda` containing:
+Specified in §4. Three deliverables:
 
-1. A CUDA kernel performing the §4.2 mixin (per nonce attempt,
-   16 dependent `mma.m16n8k16.f16` Tensor-Core ops over a
-   deterministic matrix derived from `(prev_block_hash ||
-   nonce_high)`, then folded into the standard double-SHA256
-   outer hash).
-2. A non-CUDA fallback (slow, ~1000× slower than RTX 4090) for
-   validator use.
-3. A pure-Go validator-side reference impl in
-   `pkg/mining/pow/v2/`.
-4. A calibration suite that pins difficulty so an RTX 4090
+1. ~~A pure-Go validator-side reference impl in
+   `pkg/mining/pow/v2/`.~~ — **SHIPPED.** Locks the byte-exact
+   semantics of §4.2 (matrix expansion via SHAKE256, FP16
+   endianness, NaN canonicalization, strict left-to-right FP32
+   accumulation). Includes an exhaustive 16-bit FP16 round-trip
+   test, an identity-matmul test, a known-row hand-computed
+   matmul test, a determinism test, a v1≠v2 sanity test, an
+   avalanche/diffusion test, and a frozen golden mix-digest
+   vector that any future CUDA miner MUST match bit-exact. This
+   is the conformance bar.
+
+2. A CUDA kernel performing the §4.2 mixin (per nonce attempt,
+   16 dependent `mma.m16n8k16.f16` Tensor-Core ops over the
+   matrix expanded from the running mix). The CUDA fast-path
+   MUST emulate the reference impl's strict left-to-right
+   FP32 accumulation order — naive WMMA tree-reduction will
+   diverge on the last bit and produce wrong mix-digests. (See
+   §4.2.3.) **DEFERRED** until the CUDA build chain is in CI.
+
+3. A calibration suite that pins difficulty so an RTX 4090
    hits ~1 block / 30 s on a ~1000-validator testnet (numbers
-   TBD against real hardware).
+   TBD against real hardware). **DEFERRED.**
 
-Hard external dependencies: working CUDA Toolkit 12.x in CI
-(self-hosted GPU runner OR cross-compile + offline smoke
-test); at least one RTX 4090 for difficulty calibration. The
-mixin is gated behind a second fork height
+Hard external dependencies for (2)/(3): working CUDA Toolkit
+12.x in CI (self-hosted GPU runner OR cross-compile + offline
+smoke test); at least one RTX 4090 for difficulty calibration.
+The mixin is gated behind a second fork height
 (`FORK_V2_TC_HEIGHT`) so it can activate as a soft-rejection
 fork (validators get stricter), no chain reset required.
 
@@ -1625,7 +1703,8 @@ fork (validators get stricter), no chain reset required.
 miners a deprecation notice for pre-Ampere cards before the
 fork.
 
-Estimated work: **~14 days** post-hardware.
+Estimated remaining work for the CUDA kernel + calibration:
+**~10 days** post-hardware.
 
 ### 12.3 `freshness-cheat` slasher — verifier shipped, witness deferred
 

@@ -14,6 +14,63 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Pure-Go Tensor-Core PoW v2 reference implementation —
+  `pkg/mining/pow/v2/` (2026-04-28).** The validator-side byte-
+  exact reference for the §4 Tensor-Core mixin specified in
+  [`MINING_PROTOCOL_V2.md`](QSDM/docs/docs/MINING_PROTOCOL_V2.md).
+  Locks down four implementation-defined IEEE-754 details that
+  any future CUDA miner MUST match bit-for-bit:
+  - **Matrix expansion**: `MatrixFromMix(mix [32]byte)` uses
+    SHAKE256 with the domain separator
+    `"qsdm/pow/v2/matrix\x00"` to fan the 32-byte running mix
+    out to a 16×16 FP16 matrix in row-major big-endian.
+    Implemented in
+    [`pkg/mining/pow/v2/matrix.go`](QSDM/source/pkg/mining/pow/v2/matrix.go).
+  - **FP16 codec**: self-contained 16-bit-exact
+    encode/decode + RNE FP32↔FP16 conversion + canonical NaN
+    handling (FP16 NaN → `0x7E00`, FP32 NaN → `0x7FC00000`)
+    so platform-specific NaN payloads never leak into SHA3.
+    Implemented in
+    [`pkg/mining/pow/v2/fp16.go`](QSDM/source/pkg/mining/pow/v2/fp16.go).
+  - **Matmul**: `TensorMul` performs FP16×FP16 widened to
+    FP32 (exact), accumulates in **strict left-to-right FP32**
+    (NOT tree-reduction; CUDA WMMA users must emulate this
+    order in software), and down-converts to FP16 with RNE.
+  - **Step body**: `ComputeMixDigestV2` runs the 64-step DAG
+    walk with the v2 step body
+    `mix := SHA3-256(mix || entry || tc)` where `tc` is the
+    32-byte BE-packed result vector. Implemented in
+    [`pkg/mining/pow/v2/mixdigest.go`](QSDM/source/pkg/mining/pow/v2/mixdigest.go).
+  - **Tests**:
+    [`fp16_test.go`](QSDM/source/pkg/mining/pow/v2/fp16_test.go)
+    exhaustively covers all 65,536 FP16 bit patterns (decode/
+    encode round-trip + FP16→FP32→FP16 round-trip for every
+    non-NaN value) plus boundary specials (signed zero,
+    smallest subnormal, smallest normal, largest finite, ±Inf,
+    halfway-tie rounding, overflow to Inf, NaN
+    canonicalization).
+    [`mixdigest_test.go`](QSDM/source/pkg/mining/pow/v2/mixdigest_test.go)
+    covers matrix-expansion determinism, vector unpack with
+    NaN canonicalization, identity matmul, hand-computed row,
+    full v2 determinism, v1≠v2 sanity, avalanche/diffusion
+    against a 1-bit nonce change, and a frozen byte-exact
+    **golden mix-digest vector**
+    (`ef9319a6134aeb9b77f315427ec81cdbc40a03c60414284864a3e9bbd68153f4`)
+    that any compliant CUDA miner MUST reproduce bit-for-bit.
+  - **Documentation**:
+    [`MINING_PROTOCOL_V2.md`](QSDM/docs/docs/MINING_PROTOCOL_V2.md)
+    §4 status flips from "specified, not implemented" to
+    "byte-exact validator-side reference shipped"; new
+    subsections §4.2.1–4.2.4 lock the matrix expansion,
+    vector unpack, matmul order, and NaN canonicalization in
+    the spec itself. §12.2 deferred-work register splits into
+    "reference shipped" + "CUDA kernel deferred"; remaining
+    estimate trimmed from 14d to 10d post-hardware.
+  - **Activation**: still gated behind `FORK_V2_TC_HEIGHT`;
+    pre-fork validators continue to use the v1 walk in
+    `pkg/mining.ComputeMixDigest`. The v1 path is unchanged
+    and stays in-tree for replaying pre-fork blocks.
+
 - **Multisig-gated authority rotation — `qsdm/gov/v1` `authority-set` payload kind (2026-04-28).**
   The `qsdm/gov/v1` ContractID now carries TWO payload
   kinds: `param-set` (already shipped) and `authority-set`.
