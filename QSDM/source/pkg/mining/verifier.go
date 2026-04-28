@@ -8,6 +8,8 @@ import (
 	"math/big"
 	"sync"
 	"time"
+
+	powv2 "github.com/blackbeardONE/QSDM/pkg/mining/pow/v2"
 )
 
 // RejectReason is a canonical string identifying why a proof was
@@ -443,12 +445,24 @@ func (v *Verifier) Verify(rawProofJSON []byte, acceptHeight uint64) ([32]byte, e
 		return proofID, reject(ReasonBatchRoot, "batch_root mismatch")
 	}
 
-	// Step 10: PoW.
+	// Step 10: PoW. The mix-digest algorithm is height-gated by
+	// FORK_V2_TC_HEIGHT (MINING_PROTOCOL_V2 §4): pre-TC blocks use
+	// the v1 SHA3-only walk; at-or-above the TC height blocks must
+	// use the byte-exact Tensor-Core mixin reference in
+	// pkg/mining/pow/v2. The two algorithms produce different
+	// 32-byte digests for the same inputs, so a v1 proof submitted
+	// at a post-TC height fails this check by mix mismatch (correct
+	// outcome under a soft-tightening fork).
 	dag, err := v.cfg.DAGProvider(p.Epoch)
 	if err != nil {
 		return proofID, reject(ReasonWork, "dag lookup: %v", err)
 	}
-	mix, err := ComputeMixDigest(p.HeaderHash, p.Nonce, dag)
+	var mix [32]byte
+	if IsV2TC(p.Height) {
+		mix, err = powv2.ComputeMixDigestV2(p.HeaderHash, p.Nonce, dag)
+	} else {
+		mix, err = ComputeMixDigest(p.HeaderHash, p.Nonce, dag)
+	}
 	if err != nil {
 		return proofID, reject(ReasonWork, "mix: %v", err)
 	}

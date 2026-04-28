@@ -411,12 +411,17 @@ type Proof struct {
 ## 4. Tensor-Core PoW mixin
 
 > **Status as of this revision:** byte-exact validator-side reference
-> shipped in `pkg/mining/pow/v2/`. Activation still gated on
-> `FORK_V2_TC_HEIGHT`; pre-fork, a `Version=2` proof is accepted under
-> the legacy v1 walk in `pkg/mining/pow.go::ComputeMixDigest`.
-> Post-fork, validators switch to `powv2.ComputeMixDigestV2`.
-> Soft-tightening fork (validators get stricter; no chain reset).
-> Tracking: §12.2.
+> shipped in `pkg/mining/pow/v2/`, AND wired into the verifier and
+> reference solver behind a runtime-settable height gate
+> (`pkg/mining.SetForkV2TCHeight`, default `math.MaxUint64` =
+> disabled). Pre-fork, a `Version=2` proof is accepted under the
+> legacy v1 walk in `pkg/mining/pow.go::ComputeMixDigest`. Post-fork
+> (block height ≥ `ForkV2TCHeight()`), validators switch to
+> `powv2.ComputeMixDigestV2`. The two algorithms produce different
+> 32-byte mix-digests for identical inputs, so a proof mined under
+> the wrong algorithm fails Step 10 (`mix_digest mismatch`) — the
+> soft-tightening fork behaviour. No chain reset, no proof-format
+> change. Tracking: §12.2.
 
 ### 4.1 Why a PoW mixin at all
 
@@ -1664,9 +1669,9 @@ test vectors. Estimated remaining work post-hardware: **~5
 days** (down from the original ~8 — verifier pipeline is
 already done).
 
-### 12.2 Tensor-Core PoW kernel — reference shipped, CUDA deferred
+### 12.2 Tensor-Core PoW kernel — reference + height gate shipped, CUDA deferred
 
-Specified in §4. Three deliverables:
+Specified in §4. Three deliverables, two shipped:
 
 1. ~~A pure-Go validator-side reference impl in
    `pkg/mining/pow/v2/`.~~ — **SHIPPED.** Locks the byte-exact
@@ -1678,6 +1683,30 @@ Specified in §4. Three deliverables:
    avalanche/diffusion test, and a frozen golden mix-digest
    vector that any future CUDA miner MUST match bit-exact. This
    is the conformance bar.
+
+   ~~**Wire reference into the verifier behind
+   `FORK_V2_TC_HEIGHT`.**~~ — **SHIPPED.** A runtime-settable
+   gate (`pkg/mining.ForkV2TCHeight()` /
+   `SetForkV2TCHeight()` / `IsV2TC(height)`) routes Step 10 of
+   `Verifier.Verify` and the per-attempt loop of `Solve` through
+   either the v1 walk or the v2 mixin based on the proof's
+   block height. The default is `math.MaxUint64` (TC disabled),
+   so existing behaviour is unchanged until a network operator
+   explicitly opts in. Boundary semantics
+   (`pkg/mining/verifier_v2tc_test.go`):
+
+   - **Default (TC disabled)**: every proof verifies under v1;
+     all pre-existing verifier tests keep passing untouched.
+   - **Post-TC happy path**: with `SetForkV2TCHeight(0)`, both
+     `Solve` and `Verify` route through the powv2 mixin and the
+     proof validates end-to-end.
+   - **v1 mix at post-TC height**: rejected with `ReasonWork`
+     and message `mix_digest mismatch` — soft-tightening fork
+     correct outcome.
+   - **v2 mix at pre-TC height**: rejected symmetrically.
+   - **Boundary inclusivity**: `IsV2TC(H)` is `false` at
+     `H = ForkV2TCHeight() - 1`, `true` at `H = ForkV2TCHeight()`,
+     `true` at `H = ForkV2TCHeight() + 1`.
 
 2. A CUDA kernel performing the §4.2 mixin (per nonce attempt,
    16 dependent `mma.m16n8k16.f16` Tensor-Core ops over the

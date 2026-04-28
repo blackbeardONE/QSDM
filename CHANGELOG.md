@@ -14,6 +14,46 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Verifier + reference solver wired through
+  `FORK_V2_TC_HEIGHT` (2026-04-28).** The pure-Go Tensor-Core
+  mix-digest reference is no longer dead code: Step 10 of
+  [`pkg/mining/verifier.go`](QSDM/source/pkg/mining/verifier.go)
+  and the per-attempt loop of
+  [`pkg/mining/solver.go`](QSDM/source/pkg/mining/solver.go) now
+  height-gate between the v1 SHA3 walk and the v2 mixin
+  (`powv2.ComputeMixDigestV2`) using a new runtime-settable
+  knob in [`pkg/mining/fork.go`](QSDM/source/pkg/mining/fork.go):
+  - `ForkV2TCHeight() uint64` — current activation height
+    (default `math.MaxUint64` = TC disabled, safe).
+  - `SetForkV2TCHeight(h uint64)` — pin the activation height
+    at chain-init time. Calling mid-execution is a bug;
+    validators MUST NOT be able to move the gate at runtime in
+    response to adversarial input.
+  - `IsV2TC(height uint64) bool` — boundary-inclusive helper
+    (`true` at `height == ForkV2TCHeight()`).
+  - **Independent of `ForkV2Height`**: the two fork heights are
+    deliberately separate so the v2 attestation fork can ship
+    independently of the PoW-algorithm change.
+  - **Soft-tightening fork**: a v1 proof at a post-TC height
+    fails Step 10 with `ReasonWork` /
+    `"mix_digest mismatch"`; a v2 proof at a pre-TC height
+    fails the same way. No proof-wire-format change, no chain
+    reset.
+  - **Import-cycle break**: `pkg/mining/pow/v2/mixdigest.go`
+    now defines `DAG` as a local minimal interface
+    (`N() uint32; Get(uint32) ([32]byte, error)`) so it does
+    not import `pkg/mining`. Go's structural interfaces mean
+    `*mining.InMemoryDAG` and `*mining.LazyDAG` still satisfy
+    it for free.
+  - **Tests**: six new cases in
+    [`pkg/mining/verifier_v2tc_test.go`](QSDM/source/pkg/mining/verifier_v2tc_test.go)
+    cover the default-disabled invariant, boundary inclusivity
+    at `H-1 / H / H+1`, the post-TC happy path (Solve + Verify
+    both routed through v2), and both algorithm-mismatch
+    rejection directions. The pre-existing
+    `TestVerifyAcceptsValidProof` keeps passing untouched —
+    the safety guarantee of the default.
+
 - **Pure-Go Tensor-Core PoW v2 reference implementation —
   `pkg/mining/pow/v2/` (2026-04-28).** The validator-side byte-
   exact reference for the §4 Tensor-Core mixin specified in

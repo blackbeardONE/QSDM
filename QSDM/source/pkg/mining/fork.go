@@ -134,6 +134,63 @@ func IsV2(height uint64) bool {
 	return height >= ForkV2Height()
 }
 
+// -----------------------------------------------------------------------------
+// FORK_V2_TC_HEIGHT — Tensor-Core PoW mixin activation
+// -----------------------------------------------------------------------------
+//
+// MINING_PROTOCOL_V2 §4 specifies a SECOND fork height that gates the
+// switch from the v1 SHA3-only mix-digest walk
+// (pkg/mining.ComputeMixDigest) to the byte-exact Tensor-Core mixin
+// (pkg/mining/pow/v2.ComputeMixDigestV2). This is deliberately
+// separate from ForkV2Height so the attestation fork can ship
+// independently of the PoW-algorithm change — the latter requires
+// every miner to upgrade to compatible hardware/firmware, the
+// former does not.
+//
+// Both heights default to math.MaxUint64. A network operator activates
+// each one independently via SetForkV2Height / SetForkV2TCHeight at
+// chain-init time. Calling either mid-execution is a bug; validators
+// MUST NOT be able to move a fork height at runtime in response to
+// adversarial input.
+//
+// The TC fork is a soft-tightening fork: pre-TC validators accept v1
+// mix-digests, post-TC validators reject them. Because the proof wire
+// format is unchanged (Proof.MixDigest is still 32 bytes), no hard
+// reset is required.
+
+var forkV2TCHeight atomic.Uint64
+
+func init() {
+	forkV2TCHeight.Store(math.MaxUint64)
+}
+
+// ForkV2TCHeight returns the current activation height of the
+// Tensor-Core PoW mixin (MINING_PROTOCOL_V2 §4). The default
+// (math.MaxUint64) means "TC mixin not yet scheduled"; callers
+// MUST treat that value as "use v1 walk for all heights".
+func ForkV2TCHeight() uint64 {
+	return forkV2TCHeight.Load()
+}
+
+// SetForkV2TCHeight pins the block height at which the Tensor-Core
+// PoW mixin activates. Pass 0 to activate from genesis (used by
+// integration tests that want the v2 path on every block); pass
+// math.MaxUint64 to disable TC entirely (the default). Safe for
+// concurrent use; intended to be called exactly once at process
+// startup by chain-init code.
+func SetForkV2TCHeight(h uint64) {
+	forkV2TCHeight.Store(h)
+}
+
+// IsV2TC reports whether a block at the given chain height is
+// governed by the Tensor-Core PoW mixin. Callers SHOULD use this
+// in preference to open-coded comparisons so the "boundary-
+// inclusive" semantics stay consistent across the verifier and
+// the reference miner.
+func IsV2TC(height uint64) bool {
+	return height >= ForkV2TCHeight()
+}
+
 // ErrAttestationRequired is returned by the verifier when a proof
 // at or above ForkV2Height carries an empty or zero-value
 // Attestation. v1 proofs with an absent attestation are

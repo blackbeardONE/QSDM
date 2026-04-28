@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"math/big"
 	"sync/atomic"
+
+	powv2 "github.com/blackbeardONE/QSDM/pkg/mining/pow/v2"
 )
 
 // SolverParams bundles everything a miner needs to search for a nonce.
@@ -83,7 +85,20 @@ func Solve(ctx context.Context, p SolverParams, startNonce *[16]byte, attemptsSi
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		mix, err := ComputeMixDigest(p.HeaderHash, nonce, p.DAG)
+		// Mix-digest algorithm switches on FORK_V2_TC_HEIGHT
+		// (MINING_PROTOCOL_V2 §4). Pre-TC: the v1 SHA3 walk; at-or-
+		// above the TC height: the byte-exact Tensor-Core mixin in
+		// pkg/mining/pow/v2. Mining the wrong algorithm for the
+		// target height produces a digest the verifier will reject
+		// at step 10, so we dispatch here to keep the reference
+		// solver useful on both sides of the fork boundary.
+		var mix [32]byte
+		var err error
+		if IsV2TC(p.Height) {
+			mix, err = powv2.ComputeMixDigestV2(p.HeaderHash, nonce, p.DAG)
+		} else {
+			mix, err = ComputeMixDigest(p.HeaderHash, nonce, p.DAG)
+		}
 		if err != nil {
 			return nil, err
 		}

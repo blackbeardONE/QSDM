@@ -3,9 +3,23 @@ package powv2
 import (
 	"encoding/binary"
 
-	mining "github.com/blackbeardONE/QSDM/pkg/mining"
 	"golang.org/x/crypto/sha3"
 )
+
+// DAG is the per-mining-epoch dataset interface this package depends
+// on. It is intentionally a minimal local type rather than an import
+// of pkg/mining.DAG so this package can be imported by the verifier
+// itself without creating a cycle. Go's structural interfaces mean
+// any concrete DAG implementation that satisfies pkg/mining.DAG
+// (e.g. *mining.InMemoryDAG, *mining.LazyDAG) also satisfies this
+// interface for free.
+//
+// The method set MUST stay byte-identical to pkg/mining.DAG; if
+// either side grows a new method the other must follow.
+type DAG interface {
+	N() uint32
+	Get(idx uint32) ([32]byte, error)
+}
 
 // NumWalkSteps is the post-fork DAG-walk length. It is identical to
 // the v1 constant -- §4 of the protocol changes only the per-step
@@ -33,7 +47,7 @@ const NumWalkSteps = 64
 // global state, no time, no I/O) and returns an error only when the
 // supplied DAG implementation fails -- in which case the proof must
 // be rejected outright.
-func ComputeMixDigestV2(headerHash [32]byte, nonce [16]byte, dag mining.DAG) ([32]byte, error) {
+func ComputeMixDigestV2(headerHash [32]byte, nonce [16]byte, dag DAG) ([32]byte, error) {
 	if dag == nil {
 		return [32]byte{}, errNilDAG
 	}

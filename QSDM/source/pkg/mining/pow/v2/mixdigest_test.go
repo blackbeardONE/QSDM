@@ -2,11 +2,99 @@ package powv2
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"testing"
 
-	mining "github.com/blackbeardONE/QSDM/pkg/mining"
+	"golang.org/x/crypto/sha3"
 )
+
+// -----------------------------------------------------------------------------
+// Local helpers (avoid importing pkg/mining, which would create a cycle once
+// pkg/mining itself imports powv2 via the verifier dispatch).
+// -----------------------------------------------------------------------------
+
+// testInMemoryDAG mirrors pkg/mining.NewInMemoryDAG byte-for-byte:
+//
+//	D[0] = SHA3-256("QSDM/mesh3d-pow/v1" || LE64(epoch) || workSetRoot)
+//	D[i] = SHA3-256(D[i-1] || LE32(i))
+//
+// The recurrence and domain separator are normative (MINING_PROTOCOL §3.3),
+// so any change here is a hard fork shared with pkg/mining.
+type testInMemoryDAG struct {
+	n    uint32
+	data []byte
+}
+
+func newTestDAG(t *testing.T, epoch uint64, workSetRoot [32]byte, n uint32) *testInMemoryDAG {
+	t.Helper()
+	if n < 2 {
+		t.Fatalf("test DAG: N must be >= 2, got %d", n)
+	}
+	d := &testInMemoryDAG{n: n, data: make([]byte, uint64(n)*32)}
+
+	h := sha3.New256()
+	_, _ = h.Write([]byte("QSDM/mesh3d-pow/v1"))
+	var le64 [8]byte
+	binary.LittleEndian.PutUint64(le64[:], epoch)
+	_, _ = h.Write(le64[:])
+	_, _ = h.Write(workSetRoot[:])
+	copy(d.data[:32], h.Sum(nil))
+
+	var le32 [4]byte
+	for i := uint32(1); i < n; i++ {
+		h.Reset()
+		_, _ = h.Write(d.data[uint64(i-1)*32 : uint64(i)*32])
+		binary.LittleEndian.PutUint32(le32[:], i)
+		_, _ = h.Write(le32[:])
+		copy(d.data[uint64(i)*32:uint64(i+1)*32], h.Sum(nil))
+	}
+	return d
+}
+
+func (d *testInMemoryDAG) N() uint32 { return d.n }
+func (d *testInMemoryDAG) Get(idx uint32) ([32]byte, error) {
+	if idx >= d.n {
+		return [32]byte{}, fmt.Errorf("test DAG: index %d >= N %d", idx, d.n)
+	}
+	var out [32]byte
+	copy(out[:], d.data[uint64(idx)*32:uint64(idx+1)*32])
+	return out, nil
+}
+
+// testComputeMixDigestV1 mirrors pkg/mining.ComputeMixDigest exactly. We
+// inline it here so this package's tests never import pkg/mining.
+func testComputeMixDigestV1(headerHash [32]byte, nonce [16]byte, dag DAG) ([32]byte, error) {
+	h := sha3.New256()
+	_, _ = h.Write(headerHash[:])
+	_, _ = h.Write(nonce[:])
+	var mix [32]byte
+	copy(mix[:], h.Sum(nil))
+
+	n := dag.N()
+	if n == 0 {
+		return [32]byte{}, errors.New("test v1: empty DAG")
+	}
+	var digest [32]byte
+	for s := 0; s < 64; s++ {
+		idx := binary.BigEndian.Uint32(mix[0:4]) % n
+		entry, err := dag.Get(idx)
+		if err != nil {
+			return [32]byte{}, err
+		}
+		h.Reset()
+		_, _ = h.Write(mix[:])
+		_, _ = h.Write(entry[:])
+		copy(mix[:], h.Sum(digest[:0]))
+	}
+	return mix, nil
+}
+
+// -----------------------------------------------------------------------------
+// Tests
+// -----------------------------------------------------------------------------
 
 // TestMatrixFromMix_Determinism asserts that the same mix always
 // expands to the same matrix, and that one-byte changes in the mix
@@ -26,9 +114,6 @@ func TestMatrixFromMix_Determinism(t *testing.T) {
 		t.Fatalf("MatrixFromMix not deterministic for identical input")
 	}
 	c := MatrixFromMix(mix2)
-	// SHAKE256 over a 1-byte XOR gives an essentially uniform new
-	// 512-byte stream, so collisions in any cell should be
-	// astronomically unlikely (P ~ 256 * 2^-16 < 1%).
 	matches := 0
 	for i := 0; i < 16; i++ {
 		for j := 0; j < 16; j++ {
@@ -47,17 +132,16 @@ func TestMatrixFromMix_Determinism(t *testing.T) {
 func TestVectorFromEntry(t *testing.T) {
 	var entry [32]byte
 	for k := 0; k < 16; k++ {
-		entry[2*k] = byte(0x3C) // sign 0, exp 01111, frac 0000000000 -> 1.0
+		entry[2*k] = byte(0x3C)
 		entry[2*k+1] = 0x00
 	}
-	// Override slot 5 with a NaN payload that should be canonicalized.
 	entry[10] = 0x7F
 	entry[11] = 0x55
 
 	v := VectorFromEntry(entry)
 	for k, want := range []FP16{
 		0x3C00, 0x3C00, 0x3C00, 0x3C00, 0x3C00,
-		FP16Qnan, // canonicalized
+		FP16Qnan,
 		0x3C00, 0x3C00, 0x3C00, 0x3C00,
 		0x3C00, 0x3C00, 0x3C00, 0x3C00, 0x3C00, 0x3C00,
 	} {
@@ -72,25 +156,11 @@ func TestVectorFromEntry(t *testing.T) {
 func TestTensorMul_Identity(t *testing.T) {
 	var I [16][16]FP16
 	for i := 0; i < 16; i++ {
-		I[i][i] = 0x3C00 // 1.0
+		I[i][i] = 0x3C00
 	}
 	v := [16]FP16{
-		0x0000, // 0
-		0x3C00, // 1
-		0xBC00, // -1
-		0x4000, // 2
-		0xC000, // -2
-		0x4900, // 10
-		0x0001, // smallest subnormal
-		0x0400, // smallest normal
-		0x7BFF, // largest finite
-		0x3555, // ~1/3
-		0x3266, // ~0.2
-		0x4248, // 3.14
-		0xC248, // -3.14
-		0x0000,
-		0x3C00,
-		0x3C00,
+		0x0000, 0x3C00, 0xBC00, 0x4000, 0xC000, 0x4900, 0x0001, 0x0400,
+		0x7BFF, 0x3555, 0x3266, 0x4248, 0xC248, 0x0000, 0x3C00, 0x3C00,
 	}
 	r := TensorMul(I, v)
 	for k := range v {
@@ -101,25 +171,21 @@ func TestTensorMul_Identity(t *testing.T) {
 }
 
 // TestTensorMul_KnownRow hand-computes one row of a small matmul and
-// asserts byte-equality. This is the closest thing to a Tensor-Core
-// reference vector we have at the spec layer.
+// asserts byte-equality.
 func TestTensorMul_KnownRow(t *testing.T) {
 	var M [16][16]FP16
-	// Row 0: alternating 1, 0.5
 	for j := 0; j < 16; j++ {
 		if j%2 == 0 {
-			M[0][j] = 0x3C00 // 1.0
+			M[0][j] = 0x3C00
 		} else {
-			M[0][j] = 0x3800 // 0.5
+			M[0][j] = 0x3800
 		}
 	}
-	// All other rows zero.
 	v := [16]FP16{
 		0x3C00, 0x3C00, 0x3C00, 0x3C00, 0x3C00, 0x3C00, 0x3C00, 0x3C00,
 		0x3C00, 0x3C00, 0x3C00, 0x3C00, 0x3C00, 0x3C00, 0x3C00, 0x3C00,
 	}
 	r := TensorMul(M, v)
-	// Sum: 8 * 1 + 8 * 0.5 = 12 -> FP16 0x4A00.
 	if r[0] != 0x4A00 {
 		t.Fatalf("row-0 dot: got %#04x, want %#04x", uint16(r[0]), 0x4A00)
 	}
@@ -133,10 +199,7 @@ func TestTensorMul_KnownRow(t *testing.T) {
 // TestComputeMixDigestV2_Determinism verifies that ComputeMixDigestV2
 // is pure: identical inputs always return the identical 32-byte mix.
 func TestComputeMixDigestV2_Determinism(t *testing.T) {
-	dag, err := mining.NewInMemoryDAG(0, [32]byte{}, 64)
-	if err != nil {
-		t.Fatalf("NewInMemoryDAG: %v", err)
-	}
+	dag := newTestDAG(t, 0, [32]byte{}, 64)
 	var hh [32]byte
 	for i := range hh {
 		hh[i] = byte(i)
@@ -163,14 +226,11 @@ func TestComputeMixDigestV2_Determinism(t *testing.T) {
 // This is the bare minimum sanity check that the post-fork validator
 // is doing something different from pre-fork.
 func TestComputeMixDigestV2_DiffersFromV1(t *testing.T) {
-	dag, err := mining.NewInMemoryDAG(0, [32]byte{}, 64)
-	if err != nil {
-		t.Fatalf("NewInMemoryDAG: %v", err)
-	}
+	dag := newTestDAG(t, 0, [32]byte{}, 64)
 	var hh [32]byte
 	var nonce [16]byte
 
-	v1, err := mining.ComputeMixDigest(hh, nonce, dag)
+	v1, err := testComputeMixDigestV1(hh, nonce, dag)
 	if err != nil {
 		t.Fatalf("v1: %v", err)
 	}
@@ -185,14 +245,8 @@ func TestComputeMixDigestV2_DiffersFromV1(t *testing.T) {
 
 // TestComputeMixDigestV2_SmallChangeDiffuses asserts that a 1-bit
 // change in the nonce flips ~half the bits of the resulting digest.
-// This is a fundamental hash-soundness property and would catch
-// catastrophic bugs in the loop body that fail to fold one of the
-// inputs into the running mix.
 func TestComputeMixDigestV2_SmallChangeDiffuses(t *testing.T) {
-	dag, err := mining.NewInMemoryDAG(0, [32]byte{}, 64)
-	if err != nil {
-		t.Fatalf("NewInMemoryDAG: %v", err)
-	}
+	dag := newTestDAG(t, 0, [32]byte{}, 64)
 	var hh [32]byte
 	var n1, n2 [16]byte
 	n2[0] = 0x01
@@ -212,7 +266,6 @@ func TestComputeMixDigestV2_SmallChangeDiffuses(t *testing.T) {
 			diffBits++
 		}
 	}
-	// 256 bits, expected ~128. Allow a generous +/- 64 envelope.
 	if diffBits < 64 || diffBits > 192 {
 		t.Errorf("nonce diffuses to only %d bit-differences (expected ~128)", diffBits)
 	}
@@ -229,12 +282,10 @@ func TestComputeMixDigestV2_SmallChangeDiffuses(t *testing.T) {
 //
 //	header_hash = 0x00..1F
 //	nonce       = 0xA0..AF
-//	dag         = NewInMemoryDAG(epoch=0, workSetRoot=zero, N=64)
+//	dag         = MINING_PROTOCOL §3.3 in-memory DAG, epoch=0,
+//	              workSetRoot=zero, N=64
 func TestComputeMixDigestV2_GoldenVector(t *testing.T) {
-	dag, err := mining.NewInMemoryDAG(0, [32]byte{}, 64)
-	if err != nil {
-		t.Fatalf("NewInMemoryDAG: %v", err)
-	}
+	dag := newTestDAG(t, 0, [32]byte{}, 64)
 	var hh [32]byte
 	for i := range hh {
 		hh[i] = byte(i)
@@ -249,8 +300,6 @@ func TestComputeMixDigestV2_GoldenVector(t *testing.T) {
 	}
 	t.Logf("golden mix-digest: %s", hex.EncodeToString(got[:]))
 
-	// The golden value is generated by this very test's first run;
-	// embed it once stable to lock the wire format.
 	want, _ := hex.DecodeString(goldenMixDigestV2Hex)
 	if len(want) != 32 || !bytes.Equal(got[:], want) {
 		t.Fatalf("golden mix-digest mismatch:\n  got  %x\n  want %x", got, want)
