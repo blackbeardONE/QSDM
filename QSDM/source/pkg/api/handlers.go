@@ -232,7 +232,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Network topology (live JSON projection, consumed by the dashboard WebGL view)
 	mux.HandleFunc("/api/v1/network/topology", handlers.GetNetworkTopology)
 
-	// NGC GPU proof sidecar (shared secret; prefer QSDM_NGC_INGEST_SECRET, legacy QSDM_NGC_INGEST_SECRET still accepted)
+	// NGC GPU proof sidecar (shared secret; QSDM_NGC_INGEST_SECRET — the pre-rebrand QSDMPLUS_NGC_INGEST_SECRET env var is no longer read, see pkg/audit/checklist.go rebrand-02)
 	mux.HandleFunc("/api/v1/monitoring/ngc-proof", handlers.NGCProofIngest)
 	mux.HandleFunc("/api/v1/monitoring/ngc-challenge", handlers.NGCIngestChallenge)
 	mux.HandleFunc("/api/v1/monitoring/ngc-proofs", handlers.NGCProofList)

@@ -49,7 +49,8 @@ type Config struct {
 	// production: every service restart wipes every account (see the
 	// 2026-04-23 wipe incident). In production this defaults to
 	// <state_dir>/qsdm_users.json where state_dir = filepath.Dir(SQLitePath).
-	// Env override: QSDM_USER_STORE_PATH / QSDM_USER_STORE_PATH.
+	// Env override: QSDM_USER_STORE_PATH (the pre-rebrand QSDMPLUS_USER_STORE_PATH env var
+	// is no longer read; see pkg/envcompat godoc).
 	UserStorePath    string
 	ScyllaHosts      []string
 	ScyllaKeyspace   string
@@ -66,12 +67,14 @@ type Config struct {
 	LogFile          string
 	LogLevel         string
 	// DashboardMetricsScrapeSecret: when set, GET /api/metrics/prometheus accepts this via Bearer or
-	// X-QSDM-Metrics-Scrape-Secret header (legacy X-QSDM-Metrics-Scrape-Secret also accepted).
-	// Env: prefer QSDM_DASHBOARD_METRICS_SCRAPE_SECRET; legacy QSDM_DASHBOARD_METRICS_SCRAPE_SECRET still works.
+	// X-QSDM-Metrics-Scrape-Secret header (legacy X-QSDMPLUS-Metrics-Scrape-Secret also accepted).
+	// Env: QSDM_DASHBOARD_METRICS_SCRAPE_SECRET (the pre-rebrand QSDMPLUS_DASHBOARD_METRICS_SCRAPE_SECRET
+	// env var is no longer read; pkg/envcompat is now a no-op trim helper after db9b590).
 	DashboardMetricsScrapeSecret string
-	// DashboardStrictAuth: when true ([monitoring] strict_dashboard_auth or QSDM_DASHBOARD_STRICT_AUTH
-	// / legacy QSDM_DASHBOARD_STRICT_AUTH), JWT routes return 503 if auth manager failed to init;
-	// Prometheus still works if metrics_scrape_secret is set.
+	// DashboardStrictAuth: when true ([monitoring] strict_dashboard_auth or QSDM_DASHBOARD_STRICT_AUTH),
+	// JWT routes return 503 if auth manager failed to init; Prometheus still works if
+	// metrics_scrape_secret is set. (The pre-rebrand QSDMPLUS_DASHBOARD_STRICT_AUTH env var is no
+	// longer read; see pkg/envcompat godoc.)
 	DashboardStrictAuth bool
 	
 	// API Server
@@ -771,7 +774,7 @@ func (c *Config) Validate() error {
 
 	if c.NvidiaLockEnabled {
 		if c.NGCIngestSecret == "" {
-			return fmt.Errorf("nvidia_lock is enabled but NGC ingest secret is empty; set QSDM_NGC_INGEST_SECRET (legacy QSDM_NGC_INGEST_SECRET still accepted) so the node can receive GPU proof bundles")
+			return fmt.Errorf("nvidia_lock is enabled but NGC ingest secret is empty; set QSDM_NGC_INGEST_SECRET so the node can receive GPU proof bundles")
 		}
 		if c.NvidiaLockMaxProofAge <= 0 {
 			return fmt.Errorf("nvidia_lock_max_proof_age must be positive")

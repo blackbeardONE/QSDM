@@ -234,13 +234,13 @@ func formatDustAsCell(dust uint64) string {
 }
 
 // statusVersion returns the build version string, preferring the Go version
-// plus any `QSDM_BUILD_VERSION` (or legacy `QSDM_BUILD_VERSION`) set at
+// plus any `QSDM_BUILD_VERSION` (or legacy `QSDMPLUS_BUILD_VERSION`) set at
 // build time.
 func statusVersion() string {
 	if v := strings.TrimSpace(os.Getenv("QSDM_BUILD_VERSION")); v != "" {
 		return v
 	}
-	if v := strings.TrimSpace(os.Getenv("QSDM_BUILD_VERSION")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("QSDMPLUS_BUILD_VERSION")); v != "" {
 		return v
 	}
 	return runtime.Version()

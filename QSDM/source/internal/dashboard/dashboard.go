@@ -78,7 +78,7 @@ type dashboardLoginRequest struct {
 }
 
 // NewDashboard creates a new dashboard instance.
-// ngcIngestConfigured mirrors whether the API node has NGC ingest secret set (QSDM_NGC_INGEST_SECRET or QSDM_NGC_INGEST_SECRET).
+// ngcIngestConfigured mirrors whether the API node has NGC ingest secret set (QSDM_NGC_INGEST_SECRET; the pre-rebrand QSDMPLUS_NGC_INGEST_SECRET env var is no longer read, see pkg/audit/checklist.go rebrand-02).
 // If sharedAuth is non-nil, it is used for JWT validation (must match api.Server's AuthManager when using ML-DSA / CGO).
 // If sharedAuth is nil, a separate AuthManager is created (tests only; production qsdm passes a shared instance).
 func NewDashboard(metrics *monitoring.Metrics, healthChecker *monitoring.HealthChecker, port string, ngcIngestConfigured bool, nvidiaLock DashboardNvidiaLock, jwtHMACSecret string, metricsScrapeSecret string, strictDashboardAuth bool, apiBackendURL string, sharedAuth *api.AuthManager) *Dashboard {
@@ -480,7 +480,7 @@ func (d *Dashboard) handleMesh3DViz(w http.ResponseWriter, r *http.Request) {
 }
 
 // extractMetricsScrapeCredential returns a bearer token or dedicated header for Prometheus scrape auth.
-// Accepts the preferred X-QSDM-Metrics-Scrape-Secret and the legacy X-QSDM-Metrics-Scrape-Secret
+// Accepts the preferred X-QSDM-Metrics-Scrape-Secret and the legacy X-QSDMPLUS-Metrics-Scrape-Secret
 // during the Major Update rebrand deprecation window.
 func (d *Dashboard) extractMetricsScrapeCredential(r *http.Request) string {
 	if h := strings.TrimSpace(r.Header.Get(branding.MetricsScrapeSecretHeaderPreferred)); h != "" {
