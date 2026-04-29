@@ -54,6 +54,8 @@
 package recentrejects
 
 import (
+	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -164,11 +166,21 @@ type Rejection struct {
 // Zero value is NOT usable; the unexported fields require
 // initialisation through the constructor.
 type Store struct {
-	mu     sync.RWMutex
-	max    int
-	seq    uint64
-	buf    []Rejection // append-order; index 0 is oldest
-	nowFn  func() time.Time
+	mu        sync.RWMutex
+	max       int
+	seq       uint64
+	buf       []Rejection // append-order; index 0 is oldest
+	nowFn     func() time.Time
+	persister Persister // see persistence.go; defaults to noopPersister
+	restored  bool      // RestoreFromPersister called exactly once
+
+	// persistErrCount is incremented (atomically under mu) on
+	// every Append failure so an operator can dashboard
+	// "persistence is broken on this validator" without us
+	// crashing the rejection hot path. The counter is exposed
+	// via PersistErrorCount; a Prometheus mirror lives in
+	// pkg/monitoring (recentrejects_metrics.go).
+	persistErrCount uint64
 }
 
 // NewStore constructs an empty store with a FIFO-eviction cap
@@ -185,10 +197,133 @@ func NewStore(max int, nowFn func() time.Time) *Store {
 		nowFn = time.Now
 	}
 	return &Store{
-		max:   max,
-		buf:   make([]Rejection, 0, max),
-		nowFn: nowFn,
+		max:       max,
+		buf:       make([]Rejection, 0, max),
+		nowFn:     nowFn,
+		persister: noopPersister{},
 	}
+}
+
+// SetPersister installs an on-disk durability hook. Subsequent
+// Record() calls will Append the new record to the persister
+// after the in-memory ring update; the in-memory ring itself
+// is unaffected by Append failures (best-effort persistence,
+// see PersistErrorCount).
+//
+// Pass nil to detach (reverts to the package-default no-op).
+//
+// Production wiring constructs a FilePersister in
+// internal/v2wiring.Wire() and SetPersister-installs it on
+// the same Store instance handed to the verifier via
+// mining.SetRejectionRecorder.
+//
+// Safe to call at any time, but production callers SHOULD
+// call once at boot before any Record() fires; calling after
+// records are already in the ring leaves those records
+// in-memory only — Append is forward-looking from the call.
+func (s *Store) SetPersister(p Persister) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p == nil {
+		s.persister = noopPersister{}
+		return
+	}
+	s.persister = p
+}
+
+// Persister returns the currently-installed persister.
+// Exposed for tests and for v2wiring assertions; production
+// callers should not depend on the concrete type.
+func (s *Store) Persister() Persister {
+	if s == nil {
+		return noopPersister{}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.persister
+}
+
+// RestoreFromPersister replays the persisted rejection log
+// into the in-memory ring. Call exactly once at boot AFTER
+// SetPersister; subsequent calls fail loud (returning a
+// non-nil error) so a double-restore bug is visible rather
+// than silently doubling Seq counters.
+//
+// Returns the number of records loaded into the ring (after
+// applying the FIFO cap; persisted files larger than Cap()
+// truncate to the most recent Cap() records). A nil
+// persister is a no-op that returns (0, nil).
+//
+// Errors from the persister's LoadAll are wrapped and
+// returned; the in-memory ring is left in its pre-call
+// state on error so the caller can decide whether to abort
+// boot or continue with an empty ring.
+func (s *Store) RestoreFromPersister() (int, error) {
+	if s == nil {
+		return 0, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.restored {
+		return 0, errors.New("recentrejects: RestoreFromPersister already called")
+	}
+	s.restored = true
+	if IsNoopPersister(s.persister) {
+		return 0, nil
+	}
+	recs, err := s.persister.LoadAll()
+	if err != nil {
+		return 0, fmt.Errorf("recentrejects: load: %w", err)
+	}
+	if len(recs) == 0 {
+		return 0, nil
+	}
+	// Ring is bounded; only the most recent `max` records can
+	// fit. Trim the head BEFORE the slice copy so we don't
+	// allocate scratch space for records that would be FIFO'd
+	// out immediately.
+	if len(recs) > s.max {
+		recs = recs[len(recs)-s.max:]
+	}
+	// Reset and re-pin the buffer. Cap-preserving copy keeps
+	// the internal capacity at s.max so steady-state allocs
+	// after restore match the no-restore path.
+	s.buf = append(s.buf[:0], recs...)
+
+	// Restore the monotonic Seq to the highest value seen on
+	// disk so future Record() calls do not collide with
+	// already-persisted Seqs. Records written before this
+	// boot retain their original Seq; records written after
+	// continue strictly above maxSeq.
+	var maxSeq uint64
+	for _, r := range recs {
+		if r.Seq > maxSeq {
+			maxSeq = r.Seq
+		}
+	}
+	if maxSeq > s.seq {
+		s.seq = maxSeq
+	}
+	return len(recs), nil
+}
+
+// PersistErrorCount returns the cumulative count of
+// persister.Append failures observed by Record. Monotonic;
+// reset only on process restart. A non-zero value almost
+// always indicates a filesystem problem (disk full,
+// permission flap) — the in-memory ring continues to operate
+// regardless, but operators should alert on
+// rate(persist_errors) > 0.
+func (s *Store) PersistErrorCount() uint64 {
+	if s == nil {
+		return 0
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.persistErrCount
 }
 
 // Per-field rune caps. Defined as named constants so the
@@ -244,6 +379,17 @@ func (s *Store) Record(rec Rejection) uint64 {
 		s.buf = s.buf[:len(s.buf)-1]
 	}
 	s.buf = append(s.buf, rec)
+
+	// Persist last so an Append failure does NOT roll back the
+	// in-memory record — operators can still see the rejection
+	// live via /api/v1/attest/recent-rejections, and the
+	// persistErrCount + Prometheus mirror surface the
+	// filesystem failure independently. Fast path: noopPersister
+	// returns nil with one interface dispatch.
+	if err := s.persister.Append(rec); err != nil {
+		s.persistErrCount++
+		notePersistError(err)
+	}
 	return rec.Seq
 }
 

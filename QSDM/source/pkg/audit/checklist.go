@@ -235,6 +235,7 @@ func defaultItems() []ChecklistItem {
 		{ID: "store-01", Category: CatStorage, Severity: SevHigh, Title: "State persistence integrity", Description: "Verify contract/bridge/governance JSON files use atomic writes (tmp + rename)."},
 		{ID: "store-02", Category: CatStorage, Severity: SevMedium, Title: "Snapshot hash verification", Description: "Confirm snapshot hashes are verified on load to detect corruption."},
 		{ID: "store-03", Category: CatStorage, Severity: SevLow, Title: "File permission hardening", Description: "Verify sensitive files (certs, keys, state) are written with restrictive permissions (0600/0644)."},
+		{ID: "store-04", Category: CatStorage, Severity: SevMedium, Title: "Recent-rejection ring persistence bounded + corruption-tolerant", Description: "Verify recentrejects.FilePersister: (a) opens with mode 0600; (b) JSONL append-only with atomic-rename compaction at 2x soft-cap; (c) LoadAll skips malformed lines after a hard kill; (d) qsdm_attest_rejection_persist_errors_total fires on filesystem failure without disrupting the in-memory ring. Default cap = 1024 records ≈ 256-512 KiB on disk. Wired via Config.RecentRejectionsPath in internal/v2wiring."},
 
 		// API
 		{ID: "api-01", Category: CatAPI, Severity: SevHigh, Title: "Input validation", Description: "Verify all API inputs (addresses, amounts, IDs) are validated with length/format/range checks."},

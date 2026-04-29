@@ -57,6 +57,39 @@ type MetricsRecorder interface {
 	ObserveField(fieldName string, runes int, truncated bool)
 }
 
+// PersistErrorRecorder is the OPTIONAL extension surface a
+// MetricsRecorder implementation MAY satisfy to receive
+// notifications when the on-disk persister.Append fails. The
+// Store detects support via type assertion (see
+// notePersistError) — recorders that don't implement it
+// simply skip the call, keeping the original
+// ObserveField-only contract intact.
+//
+// Production wiring: pkg/monitoring's adapter implements
+// both MetricsRecorder and PersistErrorRecorder so a
+// failed Append increments
+// qsdm_attest_rejection_persist_errors_total.
+//
+// The error is passed through verbatim so a future
+// implementation could log it; the default Prometheus mirror
+// only counts.
+type PersistErrorRecorder interface {
+	RecordPersistError(error)
+}
+
+// notePersistError forwards err to the active recorder iff
+// it implements PersistErrorRecorder. Hot path: one
+// atomic.Load + one type assertion per persistence failure
+// — failures are rare so the cost is negligible.
+func notePersistError(err error) {
+	if err == nil {
+		return
+	}
+	if pr, ok := currentMetricsRecorder().(PersistErrorRecorder); ok {
+		pr.RecordPersistError(err)
+	}
+}
+
 // Field name constants. Pinned to the exact set of fields the
 // store truncates so a future store change (e.g. a new
 // length-clamped field) is a deliberate, three-line update

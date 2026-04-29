@@ -18,12 +18,22 @@ func init() {
 	recentrejects.SetMetricsRecorder(recentRejectsMetricsAdapter{})
 }
 
-// recentRejectsMetricsAdapter implements
-// recentrejects.MetricsRecorder by forwarding to the package-
-// level RecordRecentRejectField function defined in
-// recentrejects_metrics.go.
+// recentRejectsMetricsAdapter implements both
+// recentrejects.MetricsRecorder and the optional
+// recentrejects.PersistErrorRecorder by forwarding to the
+// package-level Record* functions in recentrejects_metrics.go.
+//
+// PersistErrorRecorder is the optional extension surface the
+// Store probes via type-assertion; implementing it here lets
+// the recentrejects ring's filesystem failures surface as
+// qsdm_attest_rejection_persist_errors_total without us
+// breaking the original ObserveField-only interface.
 type recentRejectsMetricsAdapter struct{}
 
 func (recentRejectsMetricsAdapter) ObserveField(field string, runes int, truncated bool) {
 	RecordRecentRejectField(field, runes, truncated)
+}
+
+func (recentRejectsMetricsAdapter) RecordPersistError(err error) {
+	RecordRecentRejectPersistError(err)
 }

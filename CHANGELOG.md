@@ -14,6 +14,120 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Recent-rejection ring on-disk persistence — restart no
+  longer wipes §4.6 forensic record (2026-04-29).**
+  Closes the explicit "out of scope" placeholder in
+  `pkg/mining/attest/recentrejects`'s package doc: the ring
+  was volatile by design, and every restart wiped the entire
+  forensic record of arch-spoof / hashrate-band / CC-subject
+  rejections. Production validators now configure
+  `Config.RecentRejectionsPath` in `internal/v2wiring` to
+  point the ring at a JSONL log under the state directory;
+  Wire() opens or creates the file, attaches it to the
+  `recentrejects.Store`, and replays prior records into the
+  in-memory ring at boot. Empty path = legacy in-memory-only
+  posture, fine for ephemeral testnets.
+  - **New `recentrejects.Persister` interface + no-op default
+    + `FilePersister` implementation in
+    `pkg/mining/attest/recentrejects/persistence.go`.** The
+    Persister is narrow (Append / LoadAll / Close), mirrors
+    the dependency-inversion shape of `MetricsRecorder`, and
+    keeps a future SQLite or rotation-aware backend behind
+    the same surface without touching the Store's call sites.
+    `FilePersister` is the production implementation:
+    append-only JSONL, per-call open/close (≈10 µs syscall
+    overhead per record — 0.1% CPU at 100 rejections/s),
+    crash-recovery framing that prepends a leading newline if
+    the prior write tailed mid-record, and corruption-tolerant
+    `LoadAll` that skips malformed JSON lines so a partial
+    write at the file's tail does not block boot.
+  - **Bounded growth via soft-cap compaction.** Default
+    `softCap = recentrejects.DefaultMaxRejections` (1024
+    records). Every 1024 successful Appends the persister
+    rewrites the file, keeping only the most recent 1024
+    records (write to `<path>.tmp`, atomic rename onto
+    `<path>` — same crash-safe pattern as
+    `chainparams.SaveSnapshotWith`). Worst-case on-disk
+    footprint is ≈ 512 KiB before compaction fires; recovered
+    footprint is ≈ 256 KiB. A malicious miner cannot use the
+    persister as a DoS vector to fill the disk.
+  - **`Store.SetPersister(p)` + `Store.RestoreFromPersister()`
+    + `Store.PersistErrorCount()` API surface.** Setter is
+    idempotent and accepts nil to revert to the no-op
+    default; `RestoreFromPersister` is the explicit one-shot
+    boot replay that fails loud on a second invocation
+    (catches double-restore wiring bugs); `PersistErrorCount`
+    returns the cumulative count of `Persister.Append`
+    failures observed by `Record()` (forensic dashboards
+    join this with the new Prometheus mirror counter).
+  - **Best-effort persistence semantics.** A failed Append
+    does NOT roll back the in-memory record — operators can
+    still see the rejection live via
+    `GET /api/v1/attest/recent-rejections`, and the
+    `qsdm_attest_rejection_persist_errors_total` counter +
+    `Store.PersistErrorCount()` accessor surface the
+    filesystem failure independently. The forensic ring is
+    operator telemetry, not consensus state; degraded
+    durability is recoverable on the next successful Append.
+  - **New Prometheus series
+    `qsdm_attest_rejection_persist_errors_total`** in
+    `pkg/monitoring/recentrejects_metrics.go`. Unlabeled
+    (filesystem failures are not field-keyed). The
+    monitoring adapter implements the new optional
+    `recentrejects.PersistErrorRecorder` interface alongside
+    the existing `MetricsRecorder` so a method drop is a
+    compile-time error rather than a silent dashboard gap.
+  - **`internal/v2wiring.Wire()` integration.** Two new
+    Config fields:
+    - `RecentRejectionsPath string` — empty = legacy in-memory-only
+      ring; non-empty = construct `FilePersister`,
+      `SetPersister`, `RestoreFromPersister`. Construction
+      failure is non-fatal and routed through
+      `LogRecentRejectionsError`; the ring degrades to
+      in-memory-only rather than aborting boot.
+    - `LogRecentRejectionsError func(error)` — invoked on
+      construction failure and on boot-time restore failure.
+      Per-record Append failures are NOT routed here (too
+      noisy under filesystem flap); they bump
+      `qsdm_attest_rejection_persist_errors_total` for
+      dashboard / alert use.
+  - **New audit checklist row** `store-04` under
+    `CatStorage` (severity Medium): "Recent-rejection ring
+    persistence bounded + corruption-tolerant" with explicit
+    acceptance criteria for the 0600 file mode, JSONL
+    framing, atomic-rename compaction, hard-kill recovery
+    behaviour, and the persist-errors metric coverage.
+  - **Test coverage:**
+    - `pkg/mining/attest/recentrejects/persistence_test.go`
+      (16 tests): round-trip Append/LoadAll, missing-file
+      tolerance, corrupt-line tolerance after a simulated
+      hard kill, soft-cap compaction (both no-trim and
+      trim paths), Store restore populates the ring,
+      Restore respects in-memory cap (drops oldest beyond
+      `Cap()`), Restore reseeds the Seq counter, Restore
+      double-call fails loud, no-op persister default,
+      Record fires Append, PersistErrorCount increments on
+      failing persister, concurrent Append (8 workers ×
+      50 iterations under `-race`), empty-path rejection,
+      default soft-cap, SetPersister(nil) reverts to noop.
+    - `pkg/monitoring/recentrejects_metrics_test.go`
+      (3 new tests): persist-error counter increments on
+      non-nil error, nil error is a no-op, end-to-end
+      adapter routing from `Store.Record` through the
+      dependency-inverted chain to the Prometheus counter.
+    - `internal/v2wiring/v2wiring_recentrejects_persist_test.go`
+      (4 tests): empty path → no-op persister, non-empty
+      path → on-disk Append, restart survival across two
+      Wire() calls, unwritable path surfaces via
+      `LogRecentRejectionsError` without crashing boot.
+  - **Backward compatibility.** Pre-existing
+    `recentrejects.MetricsRecorder` implementations need no
+    change — `PersistErrorRecorder` is a separate optional
+    interface the Store probes via type assertion. Tests
+    that construct a Store without setting a persister
+    continue to behave exactly as before (no filesystem
+    dependency, no behavioural change).
+
 - **Recent-rejection ring truncation telemetry — operators can
   now alert on cap pressure before it goes silent (2026-04-29).**
   Closes the observability gap on the

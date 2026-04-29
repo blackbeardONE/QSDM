@@ -176,6 +176,50 @@ type Config struct {
 	// for operational visibility, not for retry — the next
 	// sealed block re-runs the sweep.
 	LogSweepError func(height uint64, err error)
+
+	// RecentRejectionsPath is the optional filesystem path the
+	// recent-rejections ring (§4.6 forensic record) persists
+	// itself to. When set, Wire() opens or creates a JSONL
+	// file at the path, installs it as the
+	// recentrejects.Store's Persister, and replays any
+	// previously-persisted records into the in-memory ring at
+	// boot. When empty (default), the ring is in-memory only
+	// — fine for ephemeral testnets, NOT acceptable for
+	// production validators where every restart wipes
+	// forensic record continuity.
+	//
+	// The file is bounded by a soft cap equal to the in-memory
+	// ring's DefaultMaxRejections (1024 records) — when the
+	// file grows past that, the next Append triggers an
+	// in-place compaction (read, keep last 1024, atomic
+	// rename rewrite). Worst-case on-disk footprint is ≈ 512
+	// KiB before compaction fires; recovered footprint is ≈
+	// 256 KiB. See pkg/mining/attest/recentrejects/persistence.go
+	// for the full design rationale.
+	//
+	// Atomic-write posture matches GovParamStorePath: the
+	// compaction step writes to <path>.tmp then renames over
+	// <path>; a crash between write and rename leaves <path>
+	// unchanged (operator can recover by hand).
+	//
+	// LogRecentRejectionsError (below) wraps any restore /
+	// persist failure so the operator gets visibility without
+	// us crashing the rejection hot path. Persistence errors
+	// also increment qsdm_attest_rejection_persist_errors_total
+	// independently for dashboard / alert use.
+	RecentRejectionsPath string
+
+	// LogRecentRejectionsError is invoked on
+	// RestoreFromPersister failure (boot-time replay errored)
+	// and on FilePersister construction failure. Per-record
+	// Append failures are NOT routed here — they fire too
+	// frequently under filesystem flap to log per-event;
+	// instead they bump
+	// qsdm_attest_rejection_persist_errors_total which
+	// dashboards / alerts consume.
+	//
+	// Nil = drop silently. Mirrors LogSnapshotError's posture.
+	LogRecentRejectionsError func(error)
 }
 
 // Wired is the output bundle. cmd/qsdm/main.go consumes:
@@ -370,6 +414,35 @@ func Wire(cfg Config) (*Wired, error) {
 	// Construct BEFORE the api.Set* registrations below so the
 	// adapter hand-off is atomic from the boot perspective.
 	rejectionStore := recentrejects.NewStore(0, nil)
+
+	// Optional on-disk persistence for the rejection ring.
+	// When configured, every Record() additionally appends to
+	// a JSONL log under cfg.RecentRejectionsPath, and the
+	// ring is replayed from disk at boot so a restart does
+	// not wipe forensic continuity. When unset, the ring is
+	// in-memory only (the pre-2026-04-29 posture).
+	//
+	// FilePersister construction failure is non-fatal: we
+	// surface via LogRecentRejectionsError and continue with
+	// the in-memory-only ring. A persistence-broken
+	// validator is a degraded operator-experience problem,
+	// not a chain-correctness problem.
+	if cfg.RecentRejectionsPath != "" {
+		fp, err := recentrejects.NewFilePersister(cfg.RecentRejectionsPath, 0)
+		if err != nil {
+			if cfg.LogRecentRejectionsError != nil {
+				cfg.LogRecentRejectionsError(fmt.Errorf("v2wiring: recent-rejections persister: %w", err))
+			}
+		} else {
+			rejectionStore.SetPersister(fp)
+			if _, err := rejectionStore.RestoreFromPersister(); err != nil {
+				if cfg.LogRecentRejectionsError != nil {
+					cfg.LogRecentRejectionsError(fmt.Errorf("v2wiring: recent-rejections restore: %w", err))
+				}
+			}
+		}
+	}
+
 	mining.SetRejectionRecorder(miningRejectionRecorderAdapter{store: rejectionStore})
 
 	// Monitoring gauge provider. Replaces any prior provider

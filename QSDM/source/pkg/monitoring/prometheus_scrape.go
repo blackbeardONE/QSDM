@@ -163,6 +163,13 @@ func corePrometheusMetrics() []Metric {
 			"Process-lifetime monotonic max of the pre-truncation rune count for the recent-rejection ring field. Resets only on process restart.",
 			MetricGauge, float64(p.RunesMax), map[string]string{"field": p.Field})
 	}
+	// On-disk persister durability: increments on every
+	// FilePersister.Append failure (disk full, permission flap,
+	// compaction error). Operators alert on rate > 0; the
+	// in-memory ring continues to receive records regardless.
+	add("qsdm_attest_rejection_persist_errors_total",
+		"On-disk persister failures observed by the recent-rejection ring (Append / compaction). The in-memory ring is unaffected; this measures forensic-record durability only.",
+		MetricCounter, float64(recentRejectPersistErrorsCount()), nil)
 
 	// ---- v2 enrollment registry --------------------------------
 	add("qsdm_enrollment_applied_total",

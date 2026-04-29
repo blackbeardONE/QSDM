@@ -237,4 +237,100 @@ func TestRecentRejectsMetricsAdapter_IsRegistered(t *testing.T) {
 // other recorder tests.
 func TestRecentRejectsMetricsAdapter_ImplementsInterface(t *testing.T) {
 	var _ recentrejects.MetricsRecorder = recentRejectsMetricsAdapter{}
+	// New surface (2026-04-29): persist-error reporting is
+	// optional. The adapter must satisfy both interfaces —
+	// the Store probes via type assertion, so a method
+	// drop here would silently break alerting without
+	// failing the build. Compile-time assertion catches it.
+	var _ recentrejects.PersistErrorRecorder = recentRejectsMetricsAdapter{}
 }
+
+// TestRecordRecentRejectPersistError_IncrementsCounter locks
+// the persist-error counter contract: a non-nil error
+// increments qsdm_attest_rejection_persist_errors_total by
+// exactly one; a nil error is a no-op (defensive against
+// callers passing through zero values).
+func TestRecordRecentRejectPersistError_IncrementsCounter(t *testing.T) {
+	t.Cleanup(ResetRecentRejectMetricsForTest)
+	ResetRecentRejectMetricsForTest()
+
+	if got := RecentRejectPersistErrorsForTest(); got != 0 {
+		t.Fatalf("baseline counter: got %d, want 0", got)
+	}
+
+	RecordRecentRejectPersistError(nil) // nil drops silently
+	if got := RecentRejectPersistErrorsForTest(); got != 0 {
+		t.Errorf("nil error bumped counter: got %d, want 0", got)
+	}
+
+	RecordRecentRejectPersistError(errFakePersistError("disk full"))
+	RecordRecentRejectPersistError(errFakePersistError("disk full"))
+	RecordRecentRejectPersistError(errFakePersistError("permission denied"))
+
+	if got := RecentRejectPersistErrorsForTest(); got != 3 {
+		t.Errorf("counter after 3 errors: got %d, want 3", got)
+	}
+}
+
+// errFakePersistError is a minimal error type that lets the
+// test express "any non-nil error" without depending on the
+// errors package or fmt.Errorf (avoids extra imports for one
+// test).
+type errFakePersistError string
+
+func (e errFakePersistError) Error() string { return string(e) }
+
+// TestRecentRejectsMetricsAdapter_PersistErrorRoutes drives
+// the dependency-inversion chain end-to-end for persist
+// errors: install the adapter via the recentrejects setter,
+// trigger a persister.Append failure through Store.Record,
+// and observe the monitoring-side counter increment.
+//
+// Without this test, the wiring chain
+//
+//	Store.Record -> Persister.Append (err)
+//	             -> notePersistError (recentrejects)
+//	             -> recordersAtomic.Load (interface lookup)
+//	             -> PersistErrorRecorder type assertion
+//	             -> recentRejectsMetricsAdapter.RecordPersistError
+//	             -> RecordRecentRejectPersistError
+//	             -> rrPersistErrors.Add(1)
+//
+// could silently break at any step and the only operator
+// signal would be a flat dashboard.
+func TestRecentRejectsMetricsAdapter_PersistErrorRoutes(t *testing.T) {
+	t.Cleanup(func() {
+		recentrejects.SetMetricsRecorder(recentRejectsMetricsAdapter{})
+		ResetRecentRejectMetricsForTest()
+	})
+	ResetRecentRejectMetricsForTest()
+	recentrejects.SetMetricsRecorder(recentRejectsMetricsAdapter{})
+
+	s := recentrejects.NewStore(8, nil)
+	s.SetPersister(failingPersister{err: errFakePersistError("simulated disk full")})
+
+	s.Record(recentrejects.Rejection{Kind: recentrejects.KindArchSpoofUnknown, Reason: "test"})
+	s.Record(recentrejects.Rejection{Kind: recentrejects.KindArchSpoofUnknown, Reason: "test"})
+
+	if got := RecentRejectPersistErrorsForTest(); got != 2 {
+		t.Errorf("end-to-end persist-error count: got %d, want 2 (chain broken at one of: notePersistError / type-assertion / adapter / counter)", got)
+	}
+	if got := s.PersistErrorCount(); got != 2 {
+		t.Errorf("Store-internal PersistErrorCount: got %d, want 2", got)
+	}
+}
+
+// failingPersister is a recentrejects.Persister that always
+// fails on Append. Identical shape to the version in
+// pkg/mining/attest/recentrejects/persistence_test.go but
+// duplicated here because Go's test files in different
+// packages cannot share helpers.
+type failingPersister struct {
+	err error
+}
+
+func (p failingPersister) Append(recentrejects.Rejection) error { return p.err }
+func (p failingPersister) LoadAll() ([]recentrejects.Rejection, error) {
+	return nil, nil
+}
+func (p failingPersister) Close() error { return nil }

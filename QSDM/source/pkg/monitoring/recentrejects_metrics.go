@@ -58,6 +58,16 @@ var (
 	rrFieldRunesMaxDetail      atomic.Uint64
 	rrFieldRunesMaxGPUName     atomic.Uint64
 	rrFieldRunesMaxCertSubject atomic.Uint64
+
+	// rrPersistErrors counts on-disk persister.Append
+	// failures observed by the recentrejects.Store. Exposed
+	// as qsdm_attest_rejection_persist_errors_total. The
+	// in-memory ring continues to receive records regardless
+	// — this counter measures forensic-record durability,
+	// not throughput. Unlabeled because filesystem failures
+	// are not field-keyed (the same "disk full" affects all
+	// fields uniformly).
+	rrPersistErrors atomic.Uint64
 )
 
 // RecordRecentRejectField is the package-level entry point
@@ -94,6 +104,37 @@ func RecordRecentRejectField(field string, runes int, truncated bool) {
 		// Unknown field — silently ignored. Cardinality stays
 		// bounded if recentrejects ever introduces a typo.
 	}
+}
+
+// RecordRecentRejectPersistError increments the
+// qsdm_attest_rejection_persist_errors_total counter.
+// Invoked by the recentrejects→monitoring adapter when the
+// on-disk Persister.Append fails. The error is intentionally
+// dropped here — operators care about the rate, not the
+// individual error strings (which would expand cardinality
+// without value); per-error context is tracked in the
+// validator's structured logs.
+func RecordRecentRejectPersistError(err error) {
+	if err == nil {
+		return
+	}
+	rrPersistErrors.Add(1)
+}
+
+// recentRejectPersistErrorsCount returns the current value of
+// qsdm_attest_rejection_persist_errors_total for the
+// Prometheus scrape path. Unexported because the only legitimate
+// reader is prometheus_scrape.go; tests call
+// RecentRejectPersistErrorsForTest below.
+func recentRejectPersistErrorsCount() uint64 {
+	return rrPersistErrors.Load()
+}
+
+// RecentRejectPersistErrorsForTest exposes the current value
+// of qsdm_attest_rejection_persist_errors_total for unit
+// tests. Production code reads via recentRejectPersistErrorsCount.
+func RecentRejectPersistErrorsForTest() uint64 {
+	return rrPersistErrors.Load()
 }
 
 // recentRejectFieldLabeled returns the (field, observed,
@@ -158,4 +199,5 @@ func ResetRecentRejectMetricsForTest() {
 	rrFieldRunesMaxDetail.Store(0)
 	rrFieldRunesMaxGPUName.Store(0)
 	rrFieldRunesMaxCertSubject.Store(0)
+	rrPersistErrors.Store(0)
 }

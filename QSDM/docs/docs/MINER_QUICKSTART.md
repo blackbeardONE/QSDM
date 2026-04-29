@@ -673,6 +673,29 @@ Operational notes:
 
   If sustained truncation indicates a real cap bump (rather than a hostile miner), edit the per-field constants in [`pkg/mining/attest/recentrejects/recentrejects.go`](../../source/pkg/mining/attest/recentrejects/recentrejects.go) — the values `maxDetailRunes`, `maxGPUNameRunes`, `maxCertSubjectRunes` are pinned in one place specifically so a future change is a one-line edit + a CHANGELOG note.
 
+- **§4.6 ring durability — restart no longer wipes forensic record (2026-04-29).** The recent-rejections ring was volatile by design until 2026-04-29; every restart wiped the entire history of arch-spoof / hashrate-band / CC-subject rejections. Production validators now persist the ring to a JSONL log under the state directory, and Wire() replays it at boot.
+
+  Wiring: pass `Config.RecentRejectionsPath` to `internal/v2wiring.Wire()`. The recommended location follows the same pattern as the governance snapshot:
+
+  ```toml
+  # qsdm.toml
+  [state]
+  dir            = "/var/lib/qsdm"
+  recent_rejections_path = "/var/lib/qsdm/recentrejects.jsonl"
+  ```
+
+  When set, every `Store.Record()` call additionally appends one JSON-encoded record to the file. The file is bounded by a soft cap (1024 records ≈ 256 KiB); when the file exceeds 2× the soft cap, the next Append triggers an in-place compaction (atomic-rename rewrite keeping the most recent 1024 records). Worst-case on-disk footprint is ≈ 512 KiB before compaction, ≈ 256 KiB after. Per-call open/close keeps the syscall budget at ≈ 10 µs/record (0.1% CPU at 100 rejections/s).
+
+  Crash-recovery framing is automatic: if the prior process was hard-killed mid-write, the next Append prepends a leading newline so the corrupt fragment cannot run together with this record. `LoadAll` skips malformed JSON lines so boot succeeds even with a partial-write tail.
+
+  Empty path = legacy in-memory-only posture (no filesystem dependency, fine for ephemeral testnets and CI).
+
+  Persistence health is observable via two surfaces:
+  - `qsdm_attest_rejection_persist_errors_total` — Prometheus counter that increments on every `Persister.Append` failure (disk full, permission flap, compaction error). The in-memory ring continues to receive records regardless. Alert on `rate(qsdm_attest_rejection_persist_errors_total[5m]) > 0` for any sustained period.
+  - `recentrejects.Store.PersistErrorCount()` — Go-side accessor returning the same counter for in-process inspection (e.g. by an `auditreport` tool that wants to surface persistence health without an HTTP scrape).
+
+  File-permission posture is restrictive (mode 0600); the file contains operator-facing forensic data which mirrors the same posture as the `chainparams` governance snapshot.
+
 - **Counter mode is still useful.** The default mode (no `--detailed`) is the right choice for steady-state alerting and dashboards: it never falls behind even if the ring overflows, and it's the same data Prometheus alert rules trigger on. `--detailed` is the right choice for incident response and forensic correlation — pair the two on adjacent terminal panes.
 
 - **Cadence floor.** `--interval` is clamped to ≥ 5 seconds, same as the other watchers.
