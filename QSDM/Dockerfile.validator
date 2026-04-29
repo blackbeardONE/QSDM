@@ -66,10 +66,12 @@ RUN apk update && apk add --no-cache \
 COPY --from=builder /usr/local/lib/liboqs.so* /usr/local/lib/
 COPY --from=builder /app/qsdm-validator /usr/local/bin/qsdm-validator
 
-# Legacy-name symlink so existing orchestration that runs `qsdm` still
-# works during the deprecation window; see REBRAND_NOTES.md.
-RUN ln -s /usr/local/bin/qsdm-validator /usr/local/bin/qsdm && \
-    ln -s /usr/local/bin/qsdm-validator /usr/local/bin/qsdm
+# Legacy-name symlink so existing orchestration that runs `qsdm`
+# still works against the role-scoped validator image; see
+# REBRAND_NOTES.md. (The rebrand commit's search-and-replace left
+# a duplicate symlink line here that aborted the docker build with
+# "File exists" — collapsed back to a single ln.)
+RUN ln -s /usr/local/bin/qsdm-validator /usr/local/bin/qsdm
 
 WORKDIR /app
 

@@ -68,8 +68,12 @@ RUN apk update && apk add --no-cache \
 COPY --from=builder /usr/local/lib/liboqs.so* /usr/local/lib/
 COPY --from=builder /app/qsdm /usr/local/bin/qsdm
 
-# Legacy binary name so existing CMD/scripts continue to work.
-RUN ln -s /usr/local/bin/qsdm /usr/local/bin/qsdm
+# (No legacy-name symlink: the rebrand commit's search-and-replace
+# collapsed the original `ln -s /usr/local/bin/qsdm
+# /usr/local/bin/qsdmplus` into a self-symlink that fails the docker
+# build with "File exists". Since the canonical binary is already at
+# /usr/local/bin/qsdm via the COPY above, no symlink is needed for
+# the documented `qsdm` entrypoint.)
 
 WORKDIR /app
 

@@ -105,9 +105,12 @@ COPY --from=builder /usr/local/lib/libmesh3d_kernels.so /usr/local/lib/
 COPY --from=builder /app/qsdm-miner /usr/local/bin/qsdm-miner
 RUN ldconfig
 
-# Convenience symlinks for operators running legacy scripts.
-RUN ln -s /usr/local/bin/qsdm-miner /usr/local/bin/qsdm && \
-    ln -s /usr/local/bin/qsdm-miner /usr/local/bin/qsdm
+# Convenience symlink so operators running legacy scripts that
+# expect a `qsdm` entrypoint continue to work against the role-
+# scoped miner image. (The rebrand commit's search-and-replace
+# left a duplicate symlink line here that aborted the docker
+# build with "File exists" — collapsed back to a single ln.)
+RUN ln -s /usr/local/bin/qsdm-miner /usr/local/bin/qsdm
 
 WORKDIR /app
 

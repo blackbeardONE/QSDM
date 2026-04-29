@@ -1,25 +1,26 @@
 #!/usr/bin/env bash
 # check-no-new-legacy-metrics.sh
 #
-# Guardrail for the Prometheus metric-name prefix migration from
-# `qsdm_*` to `qsdm_*` (Major Update §6, dual-emit deprecation
-# window).
+# Guardrail against re-introducing the retired Prometheus metric-name
+# prefix `qsdmplus_*` (Major Update §6, "qsdmplus -> qsdm" rebrand,
+# completed in commit db9b590).
 #
-# The dual-emit machinery in `pkg/monitoring/prometheus_prefix_migration.go`
-# automatically publishes every new metric under BOTH prefixes during
-# the deprecation window, so any new metric introduced in code should
-# be registered with its canonical `qsdm_*` name only. Hand-writing a
-# `qsdm_<subsystem>_<suffix>` string in a NEW file is therefore
-# almost certainly a regression -- either the author is unaware of the
-# dual-emit path, or they are reviving a legacy name that the migration
-# machinery is already handling.
+# The dual-emit window closed with the rebrand: `pkg/monitoring/
+# prometheus_prefix_migration.go` was deleted, every canonical metric
+# now uses the `qsdm_*` prefix only, and no `qsdmplus_*` literals remain
+# in the source tree. This script's job is to keep it that way -- a
+# new file containing a `qsdmplus_<subsystem>_<suffix>` literal is
+# almost certainly a regression, either a stale rebase from a
+# pre-rebrand branch or a paste from an outdated runbook.
+#
+# Hand-written `qsdm_*` literals are EXPECTED and not flagged: the
+# canonical prefix is the only prefix we publish today.
 #
 # Scope:
 #   1) Match only Prometheus-style metric-name literals (suffixed with
 #      `_total` / `_seconds` / `_bucket` etc.) to avoid tripping on
-#      branding aliases like `qsdm_node_id` in
-#      `pkg/branding/branding.go`, which are NGC proof JSON field
-#      names, not metrics.
+#      branding aliases like `qsdmplus_node_id` historically present
+#      in NGC proof JSON field names (no metric suffix).
 #   2) Two passes:
 #        (a) Go sources under QSDM/source/ (includes *.go AND *_test.go
 #            because the `*.go` glob matches both; test files are NOT
@@ -35,63 +36,30 @@
 
 set -euo pipefail
 
-# Files that are explicitly allowed to contain `qsdm_*` metric
-# names. Expand this ONLY when adding a new part of the dual-emit
-# machinery, a test that asserts the legacy prefix is still being
-# published, or a document that deliberately references the legacy
-# prefix as a migration signpost.
+# Files that are explicitly allowed to contain `qsdmplus_*` metric
+# names. With the rebrand complete, no in-tree files actually need
+# this exemption today (every Go source / dashboard / alert rule
+# uses the canonical `qsdm_*` prefix). The allowlist is preserved as
+# documentation: if a future migration ever needs to re-emit the
+# retired prefix from a specific test or operator runbook, this is
+# where it goes.
 ALLOWLIST=(
-  # --- Go: dual-emit machinery + tests that assert it still works ---
-  "QSDM/source/pkg/monitoring/prometheus_prefix_migration_test.go"
-  "QSDM/source/pkg/monitoring/prometheus_exp_test.go"
-  "QSDM/source/pkg/monitoring/prometheus_scrape.go"
-  "QSDM/source/internal/dashboard/dashboard_metrics_scrape_test.go"
-  "QSDM/source/sdk/go/qsdm_test.go"
-  # --- non-Go: intentional migration artefacts ---
-  # JS SDK test asserts the scraper passes legacy-prefixed series
-  # through unchanged (it is a transport-layer test, not a metric
-  # producer).
-  "QSDM/source/sdk/javascript/qsdm.test.js"
-  # Example Prometheus alert rules. The file NAME itself encodes the
-  # legacy prefix and the rules inside deliberately target the legacy
-  # series so operators who pasted this file into their Prometheus
-  # before the migration do not need to re-paste -- both prefixes
-  # resolve during the dual-emit window.
-  "QSDM/deploy/prometheus/alerts_qsdm.example.yml"
-  # Prometheus deploy README documents that "series names use the
-  # qsdm_ prefix". Keeping this in place until the legacy prefix
-  # is actually retired; updating it before then would mislead
-  # operators running mixed-version clusters.
-  "QSDM/deploy/prometheus/README.md"
-  # Starter Grafana dashboard. Same rationale as the alerts YAML: the
-  # filename is `qsdm-overview.json`, it was imported by operators
-  # before the rename, and every panel query targets the legacy
-  # series. Re-importing mid-migration would reset panel IDs / break
-  # saved links, so the dashboard stays on the legacy prefix until
-  # the dual-emit window closes, at which point a v2 dashboard with
-  # `qsdm_*` queries will ship as a separate file.
-  "QSDM/deploy/grafana/qsdm-overview.json"
-  # NGC sidecar operator QUICKSTART deliberately mentions the legacy
-  # series names alongside the canonical ones as migration signposts
-  # ("`qsdm_ngc_proof_ingest_accepted_total`, legacy alias
-  # `qsdm_ngc_proof_ingest_accepted_total`"). Operators running
-  # mixed-version clusters need both names in the doc; once the
-  # legacy prefix is retired this file will drop the parenthetical
-  # refs and the allowlist entry can go with it.
-  "apps/qsdm-nvidia-ngc/QUICKSTART.md"
-  # CHANGELOG is an append-only historical record; references to the
-  # legacy prefix there are documenting the migration, not configuring
-  # anything.
+  # CHANGELOG is an append-only historical record; documenting the
+  # retired prefix (e.g. "renamed qsdmplus_foo to qsdm_foo") is
+  # legitimate use that should not trip the guard.
   "CHANGELOG.md"
+  # Rebrand notes documents the migration verbatim, including
+  # before/after metric examples.
+  "QSDM/docs/docs/REBRAND_NOTES.md"
 )
 
 # Regex: no leading `"` anchor so this matches both Go string literals
-# ("qsdm_foo_total") and bare metric names in Prometheus alert
-# rules / Grafana dashboards / operator docs (qsdm_foo_total).
+# ("qsdmplus_foo_total") and bare metric names in Prometheus alert
+# rules / Grafana dashboards / operator docs (qsdmplus_foo_total).
 # The `\b` end anchor + closed suffix list keeps it narrow enough not
-# to flag non-metric identifiers like `qsdm_node_id` in the NGC
-# proof wire format (no metric suffix).
-REGEX='qsdm_[a-z_]+_(total|count|seconds|sum|bucket|bytes|info|ratio|current|last|active|inflight)\b'
+# to flag non-metric identifiers like `qsdmplus_node_id` in the
+# (historical) NGC proof wire format (no metric suffix).
+REGEX='qsdmplus_[a-z_]+_(total|count|seconds|sum|bucket|bytes|info|ratio|current|last|active|inflight)\b'
 
 # Two search commands, one per scope. Prefer ripgrep when available;
 # fall back to git grep.
@@ -142,7 +110,7 @@ MATCHES_NONGO="$("${SEARCH_NONGO[@]}" 2>/dev/null || true)"
 MATCHES="$(printf '%s\n%s\n' "$MATCHES_GO" "$MATCHES_NONGO" | tr -d '\r' | awk 'NF && !seen[$0]++' || true)"
 
 if [ -z "$MATCHES" ]; then
-  echo "check-no-new-legacy-metrics: no legacy qsdm_* metric names found (clean)"
+  echo "check-no-new-legacy-metrics: no legacy qsdmplus_* metric names found (clean)"
   exit 0
 fi
 
@@ -168,24 +136,21 @@ done <<< "$MATCHES"
 if [ -n "$UNEXPECTED" ]; then
   echo "check-no-new-legacy-metrics: FAIL" >&2
   echo "" >&2
-  echo "The following file(s) contain legacy qsdm_* Prometheus metric" >&2
+  echo "The following file(s) contain legacy qsdmplus_* Prometheus metric" >&2
   echo "names but are not on the allowlist in QSDM/scripts/check-no-new-legacy-metrics.sh:" >&2
   echo "" >&2
   printf '  %s\n' $UNEXPECTED >&2
   echo "" >&2
-  echo "During the dual-emit deprecation window (Major Update, section 6)," >&2
-  echo "new metrics must be registered with the canonical qsdm_* prefix." >&2
-  echo "The dual-emit machinery in pkg/monitoring/prometheus_prefix_migration.go" >&2
-  echo "will automatically publish them under the legacy qsdm_* prefix" >&2
-  echo "too for the duration of the window -- no hand-written legacy names" >&2
-  echo "are needed in operator runbooks, dashboards, or alert rules." >&2
+  echo "The qsdmplus_* prefix was retired in the Major Update rebrand" >&2
+  echo "(commit db9b590). Every canonical Prometheus series now uses" >&2
+  echo "the qsdm_* prefix; no hand-written legacy names are needed in" >&2
+  echo "Go sources, operator runbooks, dashboards, or alert rules." >&2
   echo "" >&2
-  echo "If this literal is genuinely part of the dual-emit machinery" >&2
-  echo "(e.g. a new test asserting legacy names are still published, an" >&2
-  echo "example alert-rules file whose operators haven't migrated yet)," >&2
-  echo "add the file to ALLOWLIST in the script." >&2
+  echo "If this literal is genuinely required (e.g. a CHANGELOG entry" >&2
+  echo "documenting the rename, an operator runbook documenting the" >&2
+  echo "retired prefix), add the file to ALLOWLIST in the script." >&2
   exit 1
 fi
 
-echo "check-no-new-legacy-metrics: all legacy qsdm_* metric references are in the allowlist"
+echo "check-no-new-legacy-metrics: all legacy qsdmplus_* metric references are in the allowlist"
 exit 0
