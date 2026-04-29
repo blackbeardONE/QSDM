@@ -143,6 +143,27 @@ func corePrometheusMetrics() []Metric {
 			MetricCounter, float64(p.Val), map[string]string{"arch": p.Arch})
 	}
 
+	// ---- v2 recent-rejection ring truncation telemetry ---------
+	// Surfaces how often the in-memory ring's defensive rune
+	// caps (200 for Detail, 256 for GPUName / CertSubject) fire.
+	// Operators tuning the caps query
+	// rate(qsdm_attest_rejection_field_truncated_total{field="detail"}[5m])
+	// /
+	// rate(qsdm_attest_rejection_field_runes_observed_total{field="detail"}[5m])
+	// for the truncation rate, and the runes_max gauge for the
+	// "how close are we?" headroom signal. See pkg/mining/attest/recentrejects.
+	for _, p := range recentRejectFieldsLabeled() {
+		add("qsdm_attest_rejection_field_runes_observed_total",
+			"Total non-empty observations of a recent-rejection ring field (denominator for the truncation rate).",
+			MetricCounter, float64(p.Observed), map[string]string{"field": p.Field})
+		add("qsdm_attest_rejection_field_truncated_total",
+			"Recent-rejection ring observations where the pre-truncation rune count exceeded the in-store cap (numerator for the truncation rate).",
+			MetricCounter, float64(p.Truncated), map[string]string{"field": p.Field})
+		add("qsdm_attest_rejection_field_runes_max",
+			"Process-lifetime monotonic max of the pre-truncation rune count for the recent-rejection ring field. Resets only on process restart.",
+			MetricGauge, float64(p.RunesMax), map[string]string{"field": p.Field})
+	}
+
 	// ---- v2 enrollment registry --------------------------------
 	add("qsdm_enrollment_applied_total",
 		"Successful qsdm/enroll/v1 applications.",

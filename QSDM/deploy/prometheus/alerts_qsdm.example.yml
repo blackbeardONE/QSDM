@@ -927,3 +927,127 @@ groups:
                   GET /api/v1/governance/authority/list
                 If the list has >=2 members but the gauge says
                 0, file a metric-wiring bug.
+
+  # -----------------------------------------------------------------
+  # v2 attestation — recent-rejection ring truncation telemetry
+  # -----------------------------------------------------------------
+  # Consumes the qsdm_attest_rejection_field_* series emitted by
+  # pkg/monitoring/recentrejects_metrics.go (recorder pattern,
+  # recorded from pkg/mining/attest/recentrejects.Store.Record).
+  # The ring defensively truncates three operator-facing fields
+  # before storing them so a malicious miner stuffing the proof
+  # envelope cannot OOM the validator:
+  #
+  #   field="detail"        cap = 200 runes  (verifier RejectError detail)
+  #   field="gpu_name"      cap = 256 runes  (HMAC bundle gpu_name)
+  #   field="cert_subject"  cap = 256 runes  (CC leaf cert Subject CN)
+  #
+  # Sustained truncation is normally a sign of one of:
+  #   - a hostile miner blowing past the cap to drown signal
+  #     (worth a heads-up so operators can correlate with a
+  #     slashing-evidence-burst page from the v2-mining group);
+  #   - a verifier release that started emitting longer detail
+  #     strings and now needs the cap raised — bumping the
+  #     constants in pkg/mining/attest/recentrejects/recentrejects.go
+  #     (maxDetailRunes / maxGPUNameRunes / maxCertSubjectRunes)
+  #     is a 1-line change and a CHANGELOG entry;
+  #   - a unicode payload where rune count differs significantly
+  #     from byte count — the cap is rune-based by design but
+  #     operators sometimes assume bytes; the runes_max gauge is
+  #     the diagnostic for this.
+  #
+  # The truncation rate alert is rate(truncated)/rate(observed)
+  # so a low-traffic node firing one rejection at exactly the
+  # cap does not page; only a sustained truncation fraction
+  # crosses the threshold.
+  - name: qsdm-v2-attest-recent-rejections
+    rules:
+      - alert: QSDMAttestRejectionFieldTruncationSustained
+        # Truncation rate over 10m exceeds 25% of observations
+        # for a given field. The denominator guard
+        # (rate(observed) > 0) avoids 0/0 = NaN on quiet nodes.
+        # 25% is permissive — a healthy fleet typically sits at
+        # < 1% (mostly the off-by-one cases on multi-byte unicode
+        # cert subjects). Tune downwards once you have a week of
+        # baseline.
+        expr: |
+          (
+            rate(qsdm_attest_rejection_field_truncated_total[10m])
+            /
+            rate(qsdm_attest_rejection_field_runes_observed_total[10m])
+          ) > 0.25
+          and rate(qsdm_attest_rejection_field_runes_observed_total[10m]) > 0
+        for: 15m
+        labels:
+          severity: warning
+          subsystem: v2-attest
+        annotations:
+          summary: "{{ $labels.instance }}: recent-rejection ring is truncating {{ $labels.field }} >25% of the time"
+          description: |
+            qsdm_attest_rejection_field_truncated_total{field="{{ $labels.field }}"}
+            is firing on {{ $value | humanizePercentage }} of observed
+            rejections over the last 10 minutes. Possible causes:
+              - A miner is stuffing the proof envelope with an
+                oversized payload to drown debugging signal —
+                cross-check qsdm_attest_archspoof_rejected_total
+                and the v2-mining-slashing group; if the offender
+                is identifiable, slash via the §8 evidence path.
+              - A recent verifier release emits longer
+                RejectError.Detail strings than the cap allows —
+                check the latest qsdm release notes for any
+                §4.6 verifier change, then raise the cap in
+                pkg/mining/attest/recentrejects/recentrejects.go
+                (maxDetailRunes / maxGPUNameRunes /
+                maxCertSubjectRunes) and ship a CHANGELOG entry.
+              - A cert_subject containing significant non-ASCII
+                content (multi-byte unicode in CN/SAN) — verify
+                via qsdm_attest_rejection_field_runes_max and
+                the operator's NVIDIA cert chain.
+            Triage:
+              - Identify the worst offender field:
+                  topk(3, rate(qsdm_attest_rejection_field_truncated_total[10m]))
+              - Check headroom against the cap:
+                  qsdm_attest_rejection_field_runes_max{field="{{ $labels.field }}"}
+              - Inspect a recent rejection record for the offending
+                payload directly:
+                  GET /api/v1/attest/recent-rejections?limit=20
+                or:
+                  qsdmcli watch archspoof --detailed
+
+      - alert: QSDMAttestRejectionFieldRunesMaxNearCap
+        # Process-lifetime max sitting within 10% of the cap
+        # for >30m means we are seeing real cap pressure even
+        # if the rate has not crossed the truncation-fraction
+        # alert above. Acts as a leading indicator before the
+        # truncation-rate alert paints. Caps are pinned in code:
+        #   detail        200
+        #   gpu_name      256
+        #   cert_subject  256
+        # Hard-coding the cap-1 values in the expression keeps
+        # the alert independent of the recordkeeping code.
+        expr: |
+          (
+            (qsdm_attest_rejection_field_runes_max{field="detail"} >= 180)
+            or
+            (qsdm_attest_rejection_field_runes_max{field="gpu_name"} >= 230)
+            or
+            (qsdm_attest_rejection_field_runes_max{field="cert_subject"} >= 230)
+          )
+        for: 30m
+        labels:
+          severity: info
+          subsystem: v2-attest
+        annotations:
+          summary: "{{ $labels.instance }}: recent-rejection ring {{ $labels.field }} runes_max within 10% of cap"
+          description: |
+            qsdm_attest_rejection_field_runes_max{field="{{ $labels.field }}"}
+            has reached {{ $value }} runes — within 10% of the
+            in-store cap (200 runes for detail, 256 for gpu_name
+            and cert_subject). The ring will continue to truncate
+            harmlessly, but if observed proofs are getting close
+            to the cap consider whether the cap should be raised
+            in pkg/mining/attest/recentrejects/recentrejects.go.
+            This alert is informational — it should not page;
+            wire it to a passive channel (chat ping) so operators
+            see the ramp before the truncation-rate alert above
+            crosses 25%.

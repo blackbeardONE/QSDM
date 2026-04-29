@@ -191,6 +191,16 @@ func NewStore(max int, nowFn func() time.Time) *Store {
 	}
 }
 
+// Per-field rune caps. Defined as named constants so the
+// metrics adapter and tests can reference the exact same
+// numbers the store enforces — a future bump to e.g. 400
+// runes for Detail must update only this one location.
+const (
+	maxDetailRunes      = 200
+	maxGPUNameRunes     = 256
+	maxCertSubjectRunes = 256
+)
+
 // Record appends a new rejection to the ring, evicting the
 // oldest if the cap is reached. Returns the assigned Seq.
 //
@@ -198,6 +208,11 @@ func NewStore(max int, nowFn func() time.Time) *Store {
 // GPUName / CertSubject to 256 runes (defending against a
 // malicious miner stuffing the store with megabyte attestation
 // fields).
+//
+// The pre-truncation rune count of every non-empty observed
+// field is reported to the package-level MetricsRecorder
+// (see metrics.go). Operators use this telemetry to size the
+// caps; production wiring lives in pkg/monitoring.
 func (s *Store) Record(rec Rejection) uint64 {
 	if s == nil {
 		return 0
@@ -210,9 +225,16 @@ func (s *Store) Record(rec Rejection) uint64 {
 	if rec.RecordedAt.IsZero() {
 		rec.RecordedAt = s.nowFn()
 	}
-	rec.Detail = truncateRunes(rec.Detail, 200)
-	rec.GPUName = truncateRunes(rec.GPUName, 256)
-	rec.CertSubject = truncateRunes(rec.CertSubject, 256)
+
+	// Observe pre-truncation lengths BEFORE we mutate the
+	// fields, so the metrics layer sees the true cap pressure.
+	// observeAndTruncate is a tiny helper that does the rune
+	// count + cap comparison once, calls the recorder iff the
+	// field is non-empty, and returns the (possibly truncated)
+	// string.
+	rec.Detail = observeAndTruncate(FieldDetail, rec.Detail, maxDetailRunes)
+	rec.GPUName = observeAndTruncate(FieldGPUName, rec.GPUName, maxGPUNameRunes)
+	rec.CertSubject = observeAndTruncate(FieldCertSubject, rec.CertSubject, maxCertSubjectRunes)
 
 	if len(s.buf) >= s.max {
 		// FIFO eviction: drop the oldest record. Single slice
@@ -357,10 +379,40 @@ func rejectionMatches(r Rejection, opts ListOptions) bool {
 	return true
 }
 
+// observeAndTruncate is the metrics-aware truncation helper
+// used by Store.Record. It:
+//
+//  1. Skips empty inputs entirely (no metric, no allocation —
+//     empty fields are the common case for HMAC-only paths
+//     missing a CertSubject and vice versa, and folding them
+//     into the "observed" denominator would skew the
+//     truncation rate).
+//  2. Counts pre-truncation runes once.
+//  3. Reports (fieldName, runes, truncated) to the recorder.
+//  4. Delegates to truncateRunes for the actual clamp.
+//
+// Hot path: one rune slice allocation per non-empty field
+// (matching the pre-existing truncateRunes cost) plus an
+// atomic.Value load + interface dispatch.
+func observeAndTruncate(fieldName, s string, cap int) string {
+	if s == "" {
+		return ""
+	}
+	r := []rune(s)
+	runes := len(r)
+	truncated := runes > cap
+	currentMetricsRecorder().ObserveField(fieldName, runes, truncated)
+	if !truncated {
+		return s
+	}
+	return string(r[:cap]) + "…"
+}
+
 // truncateRunes clamps s to at most n runes, appending a
-// horizontal ellipsis when truncation occurred. Keeps the
-// store immune to a megabyte gpu_name stuffed in by a
-// malicious miner.
+// horizontal ellipsis when truncation occurred. Retained for
+// callers outside Store.Record; Store.Record itself now uses
+// observeAndTruncate so the metrics layer sees the cap
+// pressure.
 func truncateRunes(s string, n int) string {
 	if s == "" {
 		return ""

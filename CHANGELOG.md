@@ -14,6 +14,114 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Recent-rejection ring truncation telemetry — operators can
+  now alert on cap pressure before it goes silent (2026-04-29).**
+  Closes the observability gap on the
+  `pkg/mining/attest/recentrejects` ring's defensive
+  rune-truncation layer: every Record() call truncates
+  `Detail` to 200 runes, `GPUName` and `CertSubject` to 256
+  runes (defending the validator against a malicious miner
+  stuffing megabyte attestation fields), but until now those
+  truncations were invisible — operators discovered them by
+  noticing `qsdmcli watch archspoof --detailed` output ended
+  with `…` and grep'ing source for the cap.
+  - **New dependency-inverted
+    `recentrejects.MetricsRecorder` interface + no-op default
+    + `SetMetricsRecorder` setter** mirrors the
+    `mining.MiningMetricsRecorder` and
+    `mining.RejectionRecorder` posture: pkg/mining/attest/recentrejects
+    declares the narrow surface in `metrics.go` so it stays
+    independent of pkg/monitoring (the import cycle the
+    inversion exists to break), and pkg/monitoring's new
+    `recentrejects_recorder.go` registers a Prometheus-backed
+    adapter at `init()` time.
+  - **`Store.Record()` now observes pre-truncation rune
+    counts on every non-empty observed field.** New
+    `observeAndTruncate(fieldName, s, cap)` helper wraps the
+    existing `truncateRunes` clamp with a single
+    `atomic.Value`-backed recorder call; one rune-slice
+    allocation per non-empty field (matching the prior cost)
+    plus an interface dispatch. Empty fields skip the
+    recorder entirely so HMAC-only paths (CertSubject empty)
+    and CC-only paths (GPUName empty) do not skew the
+    truncation-rate denominator.
+  - **Three new Prometheus series in
+    `pkg/monitoring/recentrejects_metrics.go`:**
+    - `qsdm_attest_rejection_field_runes_observed_total{field}`
+      — denominator for the truncation rate; one increment
+      per non-empty observed field per `Record()` call.
+    - `qsdm_attest_rejection_field_truncated_total{field}`
+      — numerator; only increments when the pre-truncation
+      rune count exceeded the in-store cap.
+    - `qsdm_attest_rejection_field_runes_max{field}`
+      — process-lifetime monotonic max gauge (CAS loop on
+      `atomic.Uint64`); the "how close are we to the cap?"
+      headroom signal. Resets only on process restart.
+    Cardinality: 3 series families × 3 fields = 9 series,
+    well under any best-practice ceiling. Unknown field
+    names from a future code path are silently ignored so
+    the cardinality bound holds even under a typo regression.
+    Negative rune counts are clamped to 0 so an
+    arithmetic-bug under-flow cannot wedge the gauge at
+    `MaxUint64`.
+  - **`prometheus_scrape.go` integration.** `corePrometheusMetrics()`
+    now emits the three new series families next to the
+    existing `qsdm_attest_archspoof_rejected_total{reason}` and
+    `qsdm_attest_hashrate_rejected_total{arch}` counters, in a
+    stable (detail, gpu_name, cert_subject) order so dashboard
+    PromQL expressions can rely on a fixed series shape.
+  - **Two new example Prometheus alert rules in
+    `QSDM/deploy/prometheus/alerts_qsdm.example.yml`** under
+    a new `qsdm-v2-attest-recent-rejections` group:
+    - `QSDMAttestRejectionFieldTruncationSustained` — fires
+      when `rate(truncated)/rate(observed) > 25%` over 10m
+      for any field, with a denominator guard (rate(observed)
+      > 0) so quiet nodes do not page on 0/0.
+    - `QSDMAttestRejectionFieldRunesMaxNearCap` — info-only
+      leading indicator: fires when `runes_max` is within 10%
+      of the cap (180/200 for detail, 230/256 for gpu_name
+      and cert_subject) for >30m, so operators see the ramp
+      before the truncation-rate alert paints.
+  - **Test coverage.** 19 new unit tests:
+    - 9 in `pkg/mining/attest/recentrejects/metrics_test.go`
+      covering observeAndTruncate firing on non-empty fields,
+      skipping empty fields, pre-truncation rune count
+      preservation, the cap-vs-cap+1 boundary on the
+      truncated flag, the no-op default, the
+      `SetMetricsRecorder(nil)` revert path, full
+      `Store.Record()` integration with all three fields,
+      absent-field skipping on HMAC-only rejections,
+      cap-pressure on a CC mismatch, and an `atomic.Value`
+      concurrent-swap smoke (1000 records × 50 swaps with no
+      lost ObserveField calls).
+    - 6 in
+      `pkg/monitoring/recentrejects_metrics_test.go`
+      covering observed/truncated/runes_max bucketing by
+      field, unknown-field cardinality bound, negative-rune
+      clamp, runes_max monotonicity (CAS loop), labelled-
+      output stable ordering, and the init()-time adapter
+      registration smoke (drives a real `Store.Record()`
+      through the production wiring and asserts the
+      monitoring counters incremented).
+    - Plus a compile-time assertion that the adapter
+      satisfies the recorder interface.
+    Total: `pkg/mining/attest/recentrejects` 18 → 27 tests;
+    `pkg/monitoring` adds 6 tests (recentrejects-side).
+  - **MINER_QUICKSTART note.** New `## §4.6 telemetry — recent-
+    rejection ring truncation` operator subsection documents
+    the three series, how to derive the truncation rate via
+    PromQL, and which constants to bump in
+    `pkg/mining/attest/recentrejects/recentrejects.go` if
+    sustained truncation indicates the caps are too tight.
+  - **Backward-compatible.** A pure-recentrejects build
+    (e.g. a unit test that depends only on
+    `pkg/mining/attest/recentrejects` without
+    `pkg/monitoring`) keeps the no-op default recorder and
+    runs unchanged. Production binaries that link
+    `pkg/monitoring` get the Prometheus-backed adapter the
+    moment the binary's `init()` chain fires; no
+    configuration change required.
+
 - **Structured `*archcheck.RejectionDetail` wrapper — `gpu_name`
   and `cert_subject` now populate end-to-end on §4.6 rejections
   (2026-04-29).** Closes the "GPUName / CertSubject empty

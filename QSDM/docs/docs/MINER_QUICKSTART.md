@@ -645,6 +645,34 @@ Operational notes:
 
   `--detailed` requires a v2-aware validator with the recent-rejections store wired (every node bootstrapped via `internal/v2wiring.Wire()` qualifies). Older nodes return `503 Service Unavailable` from the endpoint and the watcher exits with a clear message hinting to drop `--detailed` for counter mode.
 
+- **§4.6 telemetry — recent-rejection ring truncation (2026-04-29).** The recent-rejections ring defensively clamps three operator-facing fields before storing them so a malicious miner stuffing the proof envelope cannot blow up validator memory:
+
+  | Field | Cap (runes) | Source |
+  |---|---|---|
+  | `detail` | 200 | verifier `RejectError.Detail` |
+  | `gpu_name` | 256 | HMAC bundle's reported GPU name |
+  | `cert_subject` | 256 | CC leaf cert `Subject.CommonName` |
+
+  Every `Store.Record()` call now exports three Prometheus series per field — pre-truncation observation count, truncated-this-time count, and a process-lifetime `runes_max` gauge:
+
+  ```text
+  qsdm_attest_rejection_field_runes_observed_total{field="detail"}        345
+  qsdm_attest_rejection_field_truncated_total{field="detail"}              4
+  qsdm_attest_rejection_field_runes_max{field="detail"}                  217
+  ```
+
+  The truncation rate is the rate-quotient:
+
+  ```promql
+  rate(qsdm_attest_rejection_field_truncated_total{field="detail"}[5m])
+  /
+  rate(qsdm_attest_rejection_field_runes_observed_total{field="detail"}[5m])
+  ```
+
+  Empty fields skip the recorder entirely so HMAC-only paths (no `cert_subject`) and CC-only paths (no `gpu_name`) do not pollute the denominator. Two example alert rules ship in [`QSDM/deploy/prometheus/alerts_qsdm.example.yml`](../../deploy/prometheus/alerts_qsdm.example.yml) under `qsdm-v2-attest-recent-rejections`: one fires at >25% sustained truncation rate, one is an info-only leading indicator that fires when `runes_max` is within 10% of the cap.
+
+  If sustained truncation indicates a real cap bump (rather than a hostile miner), edit the per-field constants in [`pkg/mining/attest/recentrejects/recentrejects.go`](../../source/pkg/mining/attest/recentrejects/recentrejects.go) — the values `maxDetailRunes`, `maxGPUNameRunes`, `maxCertSubjectRunes` are pinned in one place specifically so a future change is a one-line edit + a CHANGELOG note.
+
 - **Counter mode is still useful.** The default mode (no `--detailed`) is the right choice for steady-state alerting and dashboards: it never falls behind even if the ring overflows, and it's the same data Prometheus alert rules trigger on. `--detailed` is the right choice for incident response and forensic correlation — pair the two on adjacent terminal panes.
 
 - **Cadence floor.** `--interval` is clamped to ≥ 5 seconds, same as the other watchers.
