@@ -374,6 +374,7 @@ func (v *Verifier) Verify(rawProofJSON []byte, acceptHeight uint64) ([32]byte, e
 		arch, err := archcheck.ValidateOuterArch(p.Attestation.GPUArch)
 		if err != nil {
 			recordArchSpoofRejection(err)
+			recordRejectionForArchSpoof(err, p, "", "")
 			return [32]byte{}, reject(ReasonAttestation, "%v", err)
 		}
 		// Hashrate-band plausibility (§4.6 hashrate paragraph).
@@ -387,15 +388,22 @@ func (v *Verifier) Verify(rawProofJSON []byte, acceptHeight uint64) ([32]byte, e
 		// archcheck.ValidateClaimedHashrate for why.
 		if err := archcheck.ValidateClaimedHashrate(arch, p.Attestation.ClaimedHashrateHPS); err != nil {
 			recordHashrateRejection(arch)
+			recordRejectionForHashrate(arch, p, err)
 			return [32]byte{}, reject(ReasonAttestation, "%v", err)
 		}
 		if err := v.cfg.Attestation.VerifyAttestation(*p, v.cfg.Now()); err != nil {
 			// The HMAC verifier's step-8 (gpu_name <-> arch)
-			// rejection wraps archcheck.ErrArchGPUNameMismatch.
-			// Pluck that out for the dedicated counter so
+			// rejection wraps archcheck.ErrArchGPUNameMismatch;
+			// the CC verifier's step-9 (subject <-> arch)
+			// rejection wraps archcheck.ErrArchCertSubjectMismatch.
+			// Pluck either out for the dedicated counter so
 			// dashboards can plot the spoof catch separately
-			// from generic crypto failures.
+			// from generic crypto failures, and feed the
+			// structured detail into the recent-rejections
+			// ring so operators can answer "who got bounced"
+			// without round-tripping the metrics endpoint.
 			recordArchSpoofRejection(err)
+			recordRejectionForArchSpoof(err, p, "", "")
 			return [32]byte{}, reject(ReasonAttestation, "%v", err)
 		}
 	} else {

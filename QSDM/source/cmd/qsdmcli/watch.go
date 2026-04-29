@@ -238,6 +238,18 @@ const (
 	// names (ada / hopper / blackwell / blackwell_ultra /
 	// rubin / rubin_ultra) or "unknown" for arch-less hits.
 	WatchKindHashrateBurst WatchEventKind = "hashrate_burst"
+
+	// WatchKindArchSpoofRejection — emitted by `watch archspoof
+	// --detailed`. ONE event per actual §4.6 rejection record
+	// from /api/v1/attest/recent-rejections, with the per-event
+	// detail the metrics layer is structurally unable to carry:
+	// miner address, GPU name, leaf cert subject, full reject
+	// detail string, Seq for cursor pagination.
+	//
+	// Distinct from WatchKindArchSpoofBurst so JSON-Lines
+	// consumers can switch on `event` and tell the two streams
+	// apart even when both modes run against the same binary.
+	WatchKindArchSpoofRejection WatchEventKind = "archspoof_rejection"
 )
 
 // WatchEvent is the unified wire shape of one diff output across
@@ -403,6 +415,33 @@ type WatchEvent struct {
 	// monotonic series without re-fetching the metrics
 	// endpoint.
 	TotalCount uint64 `json:"total_count,omitempty"`
+
+	// --- archspoof_rejection (--detailed mode) payload ---
+	//
+	// Populated only on WatchKindArchSpoofRejection. Field shape
+	// mirrors api.RecentRejectionView so a JSON-Lines consumer
+	// can decode either the watcher event OR the raw API view
+	// with the same struct.
+
+	// Seq is the store-assigned monotonic sequence (cursor
+	// pagination handle).
+	Seq uint64 `json:"seq,omitempty"`
+
+	// MinerAddr is the proof's miner_addr — the address that
+	// would have received the block reward had the proof been
+	// accepted.
+	MinerAddr string `json:"miner_addr,omitempty"`
+
+	// GPUName is the bundle-reported GPU model (HMAC paths only).
+	GPUName string `json:"gpu_name,omitempty"`
+
+	// CertSubject is the leaf certificate Subject.CommonName
+	// (CC paths only).
+	CertSubject string `json:"cert_subject,omitempty"`
+
+	// Detail is the verifier's RejectError detail string,
+	// truncated server-side to 200 runes.
+	Detail string `json:"detail,omitempty"`
 }
 
 // watchRecord mirrors api.EnrollmentRecordView. Kept local to
@@ -1024,6 +1063,30 @@ func formatEventHuman(ev WatchEvent) string {
 		}
 		return fmt.Sprintf("%s %s arch=%s  delta=+%d  total=%d",
 			ts, kind, arch, ev.DeltaCount, ev.TotalCount)
+	case WatchKindArchSpoofRejection:
+		s := fmt.Sprintf("%s %s seq=%d", ts, kind, ev.Seq)
+		if ev.Reason != "" {
+			s += "  reason=" + ev.Reason
+		}
+		if ev.Arch != "" {
+			s += "  arch=" + ev.Arch
+		}
+		if ev.MinerAddr != "" {
+			s += "  miner=" + ev.MinerAddr
+		}
+		if ev.Height != 0 {
+			s += fmt.Sprintf("  height=%d", ev.Height)
+		}
+		if ev.GPUName != "" {
+			s += "  gpu=" + truncateForLine(ev.GPUName, 40)
+		}
+		if ev.CertSubject != "" {
+			s += "  cert_cn=" + truncateForLine(ev.CertSubject, 40)
+		}
+		if ev.Detail != "" {
+			s += "  detail=" + truncateForLine(ev.Detail, 80)
+		}
+		return s
 	default:
 		// Defensive — unreachable in normal flow because
 		// WatchKindError takes the stderr path before

@@ -14,6 +14,118 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`/api/v1/attest/recent-rejections` endpoint — per-event detail
+  companion to the §4.6 archspoof / hashrate Prometheus counters
+  (2026-04-29).** Closes the "out of scope" caveat shipped with
+  `qsdmcli watch archspoof`: where the counters answer "how
+  many rejections by reason/arch?" the new endpoint answers
+  "*who* got bounced, *what* did they claim, *which* leaf cert
+  subject was rejected?" without round-tripping through metrics
+  scrape or grepping validator logs.
+  - **New package `pkg/mining/attest/recentrejects`** — bounded
+    FIFO ring of structured `Rejection{Seq, RecordedAt, Kind,
+    Reason, Arch, Height, MinerAddr, GPUName, CertSubject,
+    Detail}` records (default cap 1024, ~256 KiB saturated).
+    Cursor-based pagination via monotonic `Seq`; binary-search
+    cursor lookup keeps page reads O(log n + page_size). All
+    string fields are length-clamped at write time (Detail at
+    200 runes, GPUName/CertSubject at 256) so a malicious
+    miner cannot OOM the validator with megabyte attestation
+    payloads.
+  - **Dependency-inverted `mining.RejectionRecorder` hook** —
+    new `mining.SetRejectionRecorder(...)` mirrors the existing
+    `MiningMetricsRecorder` posture: pkg/mining declares the
+    narrow interface + a no-op default, internal/v2wiring
+    installs the bounded ring at boot. Verifier hot path adds
+    one atomic.Load + interface dispatch per §4.6 rejection
+    alongside the existing metrics-counter call. Fires on
+    `archcheck.ValidateOuterArch` failure (kind
+    `archspoof_unknown_arch`),
+    `archcheck.ValidateClaimedHashrate` failure
+    (`hashrate_out_of_band`), and per-type verifier
+    `ErrArchGPUNameMismatch` /
+    `ErrArchCertSubjectMismatch` returns
+    (`archspoof_gpu_name_mismatch` /
+    `archspoof_cc_subject_mismatch`). Generic crypto errors
+    (HMAC tag mismatch, expired cert) deliberately do NOT
+    bucket — same posture as the metrics counters.
+  - **`GET /api/v1/attest/recent-rejections` HTTP handler.**
+    Cursor-paginated list endpoint with closed-enum filter
+    validation: `?cursor=<seq>`, `?limit=N` (clamped to
+    [1, 500]), `?kind=`, `?reason=`, `?arch=`,
+    `?since=<unix-secs>`. Bad filter values return 400 with a
+    helpful message (so a typo'd `kind` doesn't silently
+    degrade to "no filter"); empty store returns 200 with
+    `records: []` (distinct from 503 = "store not wired").
+    Echoes the parsed filters back in the response so clients
+    can audit what the server applied. Mounted in
+    `pkg/api/handlers.go` next to the slash / enrollment read
+    endpoints.
+  - **`qsdmcli watch archspoof --detailed` operator UX.**
+    New flag flips the watcher from counter-bucket diffing to
+    per-record streaming via the new endpoint. Emits one
+    `WatchKindArchSpoofRejection` event per actual store
+    record with `seq`, `reason`, `arch`, `height`,
+    `miner_addr`, `gpu_name`, `cert_subject`, and `detail`.
+    Cursor-based: the watcher tracks the highest `Seq`
+    observed across polls; default mode (no
+    `--include-existing`) starts from "now" so operators
+    don't replay history at startup. 503 from the endpoint
+    fails loudly with a fallback hint ("drop --detailed to
+    use counter mode") rather than silently looping.
+    Server-side single-value `?reason=` / `?arch=` filters
+    forward when exactly one value is set; multi-value
+    filter sets fall back to client-side filtering (server
+    only accepts one filter value per parameter).
+  - **`internal/v2wiring` integration.** `Wire()` constructs
+    one `recentrejects.Store` and installs it under both the
+    producer-side (`mining.SetRejectionRecorder`) and the
+    consumer-side (`api.SetRecentRejectionLister`) adapters.
+    A new `Wired.RecentRejections` field exposes the store
+    handle for tests + future call sites.
+    `miningRejectionRecorderAdapter` and
+    `recentRejectionListerAdapter` keep `pkg/api` and
+    `pkg/mining` free of cross-imports.
+  - **Test coverage.** 51 new unit / integration tests
+    (1922 → 1973 module-wide):
+    - 18 in `pkg/mining/attest/recentrejects` covering
+      ring construction, FIFO eviction at the cap, monotonic
+      `Seq`, RecordedAt fill, defensive truncation, filter
+      matrix (kind / reason / arch / since / combined),
+      cursor pagination, nil-store safety, and concurrent-
+      writer correctness with sequence monotonicity assertion.
+    - 6 in `pkg/mining/verifier_recentrejects_test.go`
+      driving the verifier hot path against a capturing
+      recorder: each of the four kinds plus a no-bucket-on-
+      generic-crypto-error pin and a nil-recorder fallback
+      smoke test.
+    - 14 in `pkg/api/handlers_recent_rejections_test.go`
+      covering happy-path, empty-store-returns-200,
+      503/405/400 paths, all four filter validations, limit
+      clamping, filter forwarding, echoed-filters response,
+      and Content-Type pin.
+    - 4 in
+      `internal/v2wiring/v2wiring_recentrejects_test.go`
+      driving Wire() → store → handler round trip,
+      kind-filter forwarding through the production
+      adapter, multi-page pagination round trip, and the
+      503 fallback when Wire() never ran.
+    - 9 in `cmd/qsdmcli/watch_archspoof_test.go` covering
+      `--detailed` once-mode no-events, drain-on-include-
+      existing with two records, 503 fail-loud, human-
+      readable formatting with all populated fields, and
+      `buildRecentRejectionsPath` filter / cursor wiring.
+    Total `qsdmcli` tests 195 → 204; total `pkg/mining`
+    tests 479 → 485; total `internal/v2wiring` tests
+    36 → 40.
+  - **Out of scope.** Persistence — the ring is volatile;
+    a restart wipes it. The same boundary is documented for
+    `chain.SlashReceiptStore`. A future on-disk
+    implementation can plug behind the
+    `mining.RejectionRecorder` and
+    `api.RecentRejectionLister` interfaces without changing
+    the verifier or the handler.
+
 - **`qsdmcli watch archspoof` — operator-facing live stream of
   arch-spoof and hashrate-band rejection bursts (2026-04-29).**
   Fourth member of the `qsdmcli watch *` family alongside

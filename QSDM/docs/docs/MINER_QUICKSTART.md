@@ -615,7 +615,36 @@ Operational notes:
 - **Auth.** `/api/metrics/prometheus` accepts either a dashboard JWT (Bearer, the path `qsdmcli` uses) or a metrics-scrape secret header. Set the JWT via the standard `QSDM_TOKEN` plumbing or run unauthenticated against an internal node.
 - **Counter rollback handling.** Counters monotonically increase under normal operation; a decrease across two polls (process restart wiping in-memory state) snaps the snapshot to the new baseline silently. The watcher errs toward under-counting one cycle rather than synthesising a fake "burst" the moment the validator restarts.
 - **Filters validate at parse time.** `--reason` only accepts `unknown_arch`, `gpu_name_mismatch`, `cc_subject_mismatch` (per `MINING_PROTOCOL_V2 §4.6.4`); `--arch` only accepts the canonical NVIDIA family names plus `unknown`. Typos surface immediately rather than as silent no-matches across hours of polling.
-- **What is NOT in the stream.** The metrics layer is label-coarse on purpose: this watcher does not surface per-rejection `node_id` / GPU name / raw error message. For incident response that needs that detail, correlate the watcher bursts against the validator's structured log (a future `/api/v1/attest/recent-rejections` endpoint is queued behind the watcher-bot reference impl).
+- **Per-event detail with `--detailed`.** Counter mode (the default) is label-coarse on purpose: it surfaces `(reason, arch)` deltas, not per-rejection identity. To see *who* got bounced — the proof's `miner_addr`, the bundle-reported `gpu_name`, the leaf cert subject CN, and the verifier's `RejectError` detail — pass `--detailed`. This switches the watcher from polling `/api/metrics/prometheus` to polling `/api/v1/attest/recent-rejections`, and emits one `archspoof_rejection` event per actual store record:
+
+  ```bash
+  # Stream the per-record detail. Bearer auth, cursor-paginated:
+  ./qsdmcli watch archspoof --detailed
+
+  # Drain everything currently in the ring at startup, then stream new ones:
+  ./qsdmcli watch archspoof --detailed --include-existing --json
+
+  # Combine with --reason to filter the stream server-side. Single-value
+  # filters forward to the API; multi-value sets fall back to client-side:
+  ./qsdmcli watch archspoof --detailed --reason=cc_subject_mismatch
+  ```
+
+  Sample human output:
+
+  ```
+  2026-04-29T13:21:07Z ARCHSPOOF_REJECTION         seq=42  reason=cc_subject_mismatch  arch=ada  miner=qsdm1critical  height=9000  cert_cn=NVIDIA H100 80GB  detail=leaf cn contradicts claimed gpu_arch
+  ```
+
+  Sample JSON-Lines output:
+
+  ```json
+  {"timestamp":"2026-04-29T13:21:07Z","event":"archspoof_rejection","seq":42,"reason":"cc_subject_mismatch","arch":"ada","height":9000,"miner_addr":"qsdm1critical","cert_subject":"NVIDIA H100 80GB","detail":"leaf cn contradicts claimed gpu_arch"}
+  ```
+
+  `--detailed` requires a v2-aware validator with the recent-rejections store wired (every node bootstrapped via `internal/v2wiring.Wire()` qualifies). Older nodes return `503 Service Unavailable` from the endpoint and the watcher exits with a clear message hinting to drop `--detailed` for counter mode.
+
+- **Counter mode is still useful.** The default mode (no `--detailed`) is the right choice for steady-state alerting and dashboards: it never falls behind even if the ring overflows, and it's the same data Prometheus alert rules trigger on. `--detailed` is the right choice for incident response and forensic correlation — pair the two on adjacent terminal panes.
+
 - **Cadence floor.** `--interval` is clamped to ≥ 5 seconds, same as the other watchers.
 
 ### Tooling notes

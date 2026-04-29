@@ -64,6 +64,8 @@ func buildTCRig(t *testing.T, seed *uint64, storePath string) *tcRig {
 		api.SetSlashMempool(nil)
 		api.SetSlashReceiptStore(nil)
 		api.SetGovernanceProvider(nil)
+		api.SetRecentRejectionLister(nil)
+		mining.SetRejectionRecorder(nil)
 	})
 
 	accounts := chain.NewAccountStore()

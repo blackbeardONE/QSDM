@@ -58,6 +58,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/governance/chainparams"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 	mining "github.com/blackbeardONE/QSDM/pkg/mining"
+	"github.com/blackbeardONE/QSDM/pkg/mining/attest/recentrejects"
 	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
 	"github.com/blackbeardONE/QSDM/pkg/mining/slashing"
 	"github.com/blackbeardONE/QSDM/pkg/mining/slashing/doublemining"
@@ -200,6 +201,15 @@ type Wired struct {
 	Gov             *chain.GovApplier
 	GovParams       *chainparams.InMemoryParamStore
 	GovAuthVotes    *chainparams.InMemoryAuthorityVoteStore
+
+	// RecentRejections is the bounded ring of §4.6 attestation
+	// rejections (arch-spoof / hashrate-band / cc-cert-subject).
+	// Operator-facing telemetry only — not part of consensus
+	// state. Powers GET /api/v1/attest/recent-rejections and
+	// the dependency-inverted mining.RejectionRecorder hook the
+	// verifier feeds on every rejection.
+	RecentRejections *recentrejects.Store
+
 	SealedBlockHook func(*chain.Block)
 }
 
@@ -354,6 +364,14 @@ func Wire(cfg Config) (*Wired, error) {
 	slashReceipts := chain.NewSlashReceiptStore(0, nil)
 	slasher.Publisher = chain.NewCompositePublisher(slasher.Publisher, slashReceipts)
 
+	// Bounded ring buffer of recent §4.6 attestation rejections.
+	// Powers the per-event detail companion to the
+	// qsdm_attest_archspoof_rejected_total / hashrate counters.
+	// Construct BEFORE the api.Set* registrations below so the
+	// adapter hand-off is atomic from the boot perspective.
+	rejectionStore := recentrejects.NewStore(0, nil)
+	mining.SetRejectionRecorder(miningRejectionRecorderAdapter{store: rejectionStore})
+
 	// Monitoring gauge provider. Replaces any prior provider
 	// installed by an earlier boot — the underlying atomic.Value
 	// is overwrite-on-set, so multiple Wire() calls in the same
@@ -401,6 +419,7 @@ func Wire(cfg Config) (*Wired, error) {
 	api.SetEnrollmentRegistry(state)
 	api.SetEnrollmentLister(state)
 	api.SetSlashReceiptStore(slashReceiptAdapter{store: slashReceipts})
+	api.SetRecentRejectionLister(recentRejectionListerAdapter{store: rejectionStore})
 
 	// Governance read API. Provider snapshots the live
 	// ParamStore + GovApplier authority list; both live
@@ -465,16 +484,17 @@ func Wire(cfg Config) (*Wired, error) {
 	}
 
 	return &Wired{
-		StateApplier:    aware,
-		Aware:           aware,
-		EnrollmentState: state,
-		Enrollment:      enrollAp,
-		Slasher:         slasher,
-		SlashReceipts:   slashReceipts,
-		Gov:             govApplier,
-		GovParams:       govStore,
-		GovAuthVotes:    govVotes,
-		SealedBlockHook: hook,
+		StateApplier:     aware,
+		Aware:            aware,
+		EnrollmentState:  state,
+		Enrollment:       enrollAp,
+		Slasher:          slasher,
+		SlashReceipts:    slashReceipts,
+		Gov:              govApplier,
+		GovParams:        govStore,
+		GovAuthVotes:     govVotes,
+		RecentRejections: rejectionStore,
+		SealedBlockHook:  hook,
 	}, nil
 }
 
@@ -521,6 +541,95 @@ func (a slashReceiptAdapter) Lookup(txID string) (api.SlashReceiptView, bool) {
 		RejectReason:            rec.RejectReason,
 		Err:                     rec.Err,
 	}, true
+}
+
+// miningRejectionRecorderAdapter wraps a recentrejects.Store so
+// the verifier can call mining.RejectionRecorder.Record without
+// pkg/mining importing the concrete store package (which would
+// close an import cycle through archcheck.Architecture).
+//
+// Translation is one-to-one: every wire field of
+// mining.RejectionEvent maps to the same-named field on
+// recentrejects.Rejection. The truncation that the store applies
+// (Detail, GPUName, CertSubject) is the authoritative defence
+// against malicious-miner storage stuffing — the verifier may
+// pass arbitrary-length strings and the store clamps.
+type miningRejectionRecorderAdapter struct {
+	store *recentrejects.Store
+}
+
+// Record implements mining.RejectionRecorder. Drops silently if
+// the store is nil (defensive — Wire constructs the store before
+// SetRejectionRecorder, but a future re-wire path could set the
+// recorder to nil mid-flight).
+func (a miningRejectionRecorderAdapter) Record(ev mining.RejectionEvent) {
+	if a.store == nil {
+		return
+	}
+	a.store.Record(recentrejects.Rejection{
+		Kind:        recentrejects.RejectionKind(string(ev.Kind)),
+		Reason:      ev.Reason,
+		Arch:        ev.Arch,
+		RecordedAt:  ev.RecordedAt,
+		Height:      ev.Height,
+		MinerAddr:   ev.MinerAddr,
+		GPUName:     ev.GPUName,
+		CertSubject: ev.CertSubject,
+		Detail:      ev.Detail,
+	})
+}
+
+// recentRejectionListerAdapter wraps a recentrejects.Store so
+// the GET /api/v1/attest/recent-rejections handler can list
+// without pkg/api importing the concrete store package.
+//
+// The adapter mirrors slashReceiptAdapter's posture: small,
+// purely translational, no business logic. Filter validation
+// happens upstream in the handler; the store applies the
+// AND'd filters and returns a page.
+type recentRejectionListerAdapter struct {
+	store *recentrejects.Store
+}
+
+// List implements api.RecentRejectionLister. Translates the
+// pkg/api options shape into the store options shape, calls
+// the store, and translates the page back. nil-store guard
+// returns an empty page (handler treats this as "200 with
+// records=[]" — same posture as a saturated store with no
+// matches).
+func (a recentRejectionListerAdapter) List(opts api.RecentRejectionListOptions) api.RecentRejectionListPage {
+	if a.store == nil {
+		return api.RecentRejectionListPage{Records: []api.RecentRejectionView{}}
+	}
+	page := a.store.List(recentrejects.ListOptions{
+		Cursor:       opts.Cursor,
+		Limit:        opts.Limit,
+		Kind:         recentrejects.RejectionKind(opts.Kind),
+		Reason:       opts.Reason,
+		Arch:         opts.Arch,
+		SinceUnixSec: opts.SinceUnixSec,
+	})
+	out := api.RecentRejectionListPage{
+		Records:      make([]api.RecentRejectionView, 0, len(page.Records)),
+		NextCursor:   page.NextCursor,
+		HasMore:      page.HasMore,
+		TotalMatches: page.TotalMatches,
+	}
+	for _, r := range page.Records {
+		out.Records = append(out.Records, api.RecentRejectionView{
+			Seq:         r.Seq,
+			RecordedAt:  r.RecordedAt,
+			Kind:        string(r.Kind),
+			Reason:      r.Reason,
+			Arch:        r.Arch,
+			Height:      r.Height,
+			MinerAddr:   r.MinerAddr,
+			GPUName:     r.GPUName,
+			CertSubject: r.CertSubject,
+			Detail:      r.Detail,
+		})
+	}
+	return out
 }
 
 // governanceProviderAdapter bridges the on-chain governance

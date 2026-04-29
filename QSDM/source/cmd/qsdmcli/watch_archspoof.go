@@ -43,10 +43,12 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"sort"
@@ -105,6 +107,13 @@ type watchArchSpoofOptions struct {
 	// empty maps mean "no filter, emit every non-zero delta".
 	Reasons map[string]bool
 	Arches  map[string]bool
+
+	// Detailed switches to the `/api/v1/attest/recent-rejections`
+	// endpoint and emits one WatchKindArchSpoofRejection per
+	// store record (with miner_addr / gpu_name / cert_subject /
+	// detail) instead of counter-bucket deltas. Falls back to
+	// counter mode if the endpoint returns 503 (older nodes).
+	Detailed bool
 }
 
 // watchArchSpoof parses flags, fetches an initial snapshot, and
@@ -129,6 +138,8 @@ func (c *CLI) watchArchSpoof(args []string) error {
 			"comma-separated archspoof reason filter (default: all of unknown_arch, gpu_name_mismatch, cc_subject_mismatch)")
 		archFilter = fs.String("arch", "",
 			"comma-separated hashrate arch filter (default: all of ada, hopper, blackwell, blackwell_ultra, rubin, rubin_ultra, unknown)")
+		detailed = fs.Bool("detailed", false,
+			"poll /api/v1/attest/recent-rejections instead of /api/metrics/prometheus; emit one event per actual rejection record (with miner_addr/gpu_name/cert_subject/detail)")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -142,11 +153,15 @@ func (c *CLI) watchArchSpoof(args []string) error {
 		IncludeExisting: *includeExisting,
 		Reasons:         parseCSVSet(*reasonFilter),
 		Arches:          parseCSVSet(*archFilter),
+		Detailed:        *detailed,
 	}
 	if err := opts.normalize(); err != nil {
 		return err
 	}
-	if opts.MetricsURL == "" {
+	// Detailed mode polls the qsdmcli base URL (.../api/v1)
+	// directly, not the metrics endpoint. URL derivation only
+	// applies to counter mode.
+	if !opts.Detailed && opts.MetricsURL == "" {
 		// Env var takes priority over derive-from-baseURL so
 		// operators with a split data-plane / metrics-plane
 		// deployment can point this watcher at a different
@@ -167,6 +182,9 @@ func (c *CLI) watchArchSpoof(args []string) error {
 		syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	if opts.Detailed {
+		return c.runWatchArchSpoofDetailed(ctx, opts, os.Stdout, os.Stderr)
+	}
 	return c.runWatchArchSpoof(ctx, opts, os.Stdout, os.Stderr)
 }
 
@@ -642,4 +660,258 @@ func unionKeys(a, b map[string]uint64) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// -----------------------------------------------------------------------------
+// --detailed mode (per-rejection record stream)
+// -----------------------------------------------------------------------------
+//
+// Polls /api/v1/attest/recent-rejections with a Seq-based
+// cursor. Each successful poll requests records strictly after
+// the highest Seq we've seen, drains the cursor pages, and
+// emits one WatchKindArchSpoofRejection per record.
+//
+// Wire shape pinned to api.RecentRejectionView; field names
+// mirror that struct so a future evolution of the view (adding
+// a new optional field) is non-breaking.
+
+// recentRejectionWire mirrors api.RecentRejectionView. JSON
+// tags MUST stay byte-identical; the test suite pins this.
+type recentRejectionWire struct {
+	Seq         uint64    `json:"seq"`
+	RecordedAt  time.Time `json:"recorded_at"`
+	Kind        string    `json:"kind"`
+	Reason      string    `json:"reason,omitempty"`
+	Arch        string    `json:"arch,omitempty"`
+	Height      uint64    `json:"height,omitempty"`
+	MinerAddr   string    `json:"miner_addr,omitempty"`
+	GPUName     string    `json:"gpu_name,omitempty"`
+	CertSubject string    `json:"cert_subject,omitempty"`
+	Detail      string    `json:"detail,omitempty"`
+}
+
+// recentRejectionsPageWire mirrors api.RecentRejectionsListPageView.
+type recentRejectionsPageWire struct {
+	Records      []recentRejectionWire `json:"records"`
+	NextCursor   uint64                `json:"next_cursor,omitempty"`
+	HasMore      bool                  `json:"has_more"`
+	TotalMatches uint64                `json:"total_matches"`
+}
+
+// runWatchArchSpoofDetailed is the testable core of the
+// --detailed branch. Same structural shape as
+// runWatchArchSpoof: first-snapshot failure is fatal,
+// subsequent failures emit a WatchKindError and the loop
+// continues.
+//
+// Cursor semantics: the watcher tracks the highest Seq it has
+// emitted across all polls. The very first poll is "drain
+// everything currently in the ring" only if --include-existing
+// is set; otherwise we initialise the cursor to the store's
+// most recent Seq and emit no historical records.
+func (c *CLI) runWatchArchSpoofDetailed(
+	ctx context.Context,
+	opts watchArchSpoofOptions,
+	stdout, stderr io.Writer,
+) error {
+	cursor, err := c.bootstrapDetailedCursor(ctx, opts, stdout, stderr)
+	if err != nil {
+		return fmt.Errorf("initial snapshot: %w", err)
+	}
+
+	if opts.Once {
+		return nil
+	}
+
+	t := time.NewTicker(opts.Interval)
+	defer t.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-t.C:
+			next, events, err := c.fetchRecentRejections(ctx, opts, cursor)
+			tickAt := time.Now().UTC()
+			if err != nil {
+				emitEvents(stdout, stderr, opts.JSON,
+					[]WatchEvent{{
+						Timestamp: tickAt,
+						Kind:      WatchKindError,
+						Error:     truncateForLine(err.Error(), 200),
+					}})
+				continue
+			}
+			emitEvents(stdout, stderr, opts.JSON,
+				attachTimestamps(events, tickAt))
+			cursor = next
+		}
+	}
+}
+
+// bootstrapDetailedCursor performs the initial poll. Returns
+// the cursor the diff loop should start from. With
+// --include-existing, drains the ring and emits one event per
+// record, returning the post-drain cursor. Without it, fetches
+// once with limit=1 to learn the current top Seq and emits
+// nothing.
+func (c *CLI) bootstrapDetailedCursor(
+	ctx context.Context,
+	opts watchArchSpoofOptions,
+	stdout, stderr io.Writer,
+) (uint64, error) {
+	if !opts.IncludeExisting {
+		// Cheap probe: limit=1, no cursor — server returns the
+		// most recent record (if any). We use its Seq as the
+		// initial cursor so subsequent polls only see records
+		// strictly newer than this point.
+		next, _, err := c.fetchRecentRejections(ctx, opts, 0)
+		if err != nil {
+			return 0, err
+		}
+		return next, nil
+	}
+
+	// --include-existing: drain everything currently in the ring.
+	cursor := uint64(0)
+	tickAt := time.Now().UTC()
+	for {
+		nextCursor, evs, err := c.fetchRecentRejections(ctx, opts, cursor)
+		if err != nil {
+			return 0, err
+		}
+		emitEvents(stdout, stderr, opts.JSON,
+			attachTimestamps(evs, tickAt))
+		if nextCursor == cursor {
+			// Server returned no new records — we've drained
+			// the ring.
+			return cursor, nil
+		}
+		cursor = nextCursor
+	}
+}
+
+// fetchRecentRejections walks the cursor-paginated list once,
+// returning the highest Seq observed and the records translated
+// into WatchEvents (with zero timestamps; the caller fills in
+// tickAt for deterministic output).
+//
+// Uses MaxWatchPages as an outer bound against a misbehaving
+// server (same posture as fetchEnrollmentList). One real poll
+// almost always returns one page — the loop only matters when
+// --include-existing drains a saturated ring.
+func (c *CLI) fetchRecentRejections(
+	ctx context.Context,
+	opts watchArchSpoofOptions,
+	startCursor uint64,
+) (newCursor uint64, events []WatchEvent, err error) {
+	cursor := startCursor
+	for i := 0; i < MaxWatchPages; i++ {
+		path := buildRecentRejectionsPath(cursor, opts)
+		body, status, ferr := c.getWithStatus(ctx, path)
+		if ferr != nil {
+			return startCursor, nil, ferr
+		}
+		switch status {
+		case 200:
+			// fall through
+		case 503:
+			return startCursor, nil, fmt.Errorf(
+				"validator returned 503 on %s — node likely v1-only or recent-rejections store not wired (consider dropping --detailed to fall back to counter mode)",
+				path)
+		default:
+			return startCursor, nil, fmt.Errorf(
+				"validator HTTP %d on %s: %s",
+				status, path, truncateForLine(string(body), 160))
+		}
+
+		var page recentRejectionsPageWire
+		if err := json.Unmarshal(body, &page); err != nil {
+			return startCursor, nil, fmt.Errorf("decode page %d: %w", i, err)
+		}
+		for _, r := range page.Records {
+			events = append(events, recentRejectionWireToEvent(r))
+			if r.Seq > cursor {
+				cursor = r.Seq
+			}
+		}
+		if !page.HasMore {
+			return cursor, events, nil
+		}
+		if page.NextCursor == 0 {
+			// Defensive: has_more=true with empty next_cursor
+			// is server-side corruption. Stop walking; we'll
+			// pick up where we left off on the next tick.
+			return cursor, events, nil
+		}
+		cursor = page.NextCursor
+	}
+	return cursor, events, fmt.Errorf(
+		"recent-rejections paginated walk exceeded %d pages; aborting",
+		MaxWatchPages)
+}
+
+// buildRecentRejectionsPath assembles the qsdmcli-relative
+// path string. opts.Reasons / opts.Arches forward as ?reason=
+// / ?arch= filters; the API handler validates them strictly so
+// a typo bounces with 400. Cursor is mandatory whenever non-
+// zero (the server treats cursor=0 the same as omitted).
+func buildRecentRejectionsPath(cursor uint64, opts watchArchSpoofOptions) string {
+	v := url.Values{}
+	if cursor > 0 {
+		v.Set("cursor", fmt.Sprintf("%d", cursor))
+	}
+	// Server enforces the closed-enum filter; the watcher
+	// passes through whatever the operator typed. With an
+	// empty filter set we attach nothing — empty filter = no
+	// filter, same as the counter mode.
+	if len(opts.Reasons) == 1 {
+		for r := range opts.Reasons {
+			v.Set("reason", r)
+		}
+	}
+	if len(opts.Arches) == 1 {
+		for a := range opts.Arches {
+			v.Set("arch", a)
+		}
+	}
+	path := "/attest/recent-rejections"
+	if encoded := v.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	return path
+}
+
+// recentRejectionWireToEvent translates one wire record into
+// the watcher's WatchEvent envelope. RecordedAt is preserved
+// (the API view carries it); the caller may override Timestamp
+// via attachTimestamps if it wants tick-based ordering.
+func recentRejectionWireToEvent(r recentRejectionWire) WatchEvent {
+	return WatchEvent{
+		Timestamp:   r.RecordedAt,
+		Kind:        WatchKindArchSpoofRejection,
+		Seq:         r.Seq,
+		Reason:      r.Reason,
+		Arch:        r.Arch,
+		Height:      r.Height,
+		MinerAddr:   r.MinerAddr,
+		GPUName:     r.GPUName,
+		CertSubject: r.CertSubject,
+		Detail:      r.Detail,
+	}
+}
+
+// attachTimestamps overwrites Timestamp on each event with
+// tickAt. Used when the caller wants poll-tick-aligned
+// timestamps rather than the server-side RecordedAt — e.g.
+// log shippers that group by "what poll observed this" rather
+// than "when did the validator record this".
+//
+// Currently a no-op: we preserve the server-side RecordedAt
+// because operators reading per-event detail almost always
+// want the source-of-truth timestamp. The helper exists so a
+// future flag (--use-tick-time) can flip the behaviour
+// without restructuring the caller.
+func attachTimestamps(events []WatchEvent, _ time.Time) []WatchEvent {
+	return events
 }

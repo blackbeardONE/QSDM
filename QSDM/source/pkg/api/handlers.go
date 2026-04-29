@@ -317,6 +317,15 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/governance/params/", handlers.GovernanceParamHandler)
 	mux.HandleFunc("/api/v1/governance/params", handlers.GovernanceParamsHandler)
 
+	// v2 attestation rejection ring (MINING_PROTOCOL_V2.md §4.6).
+	// Per-event detail companion to the
+	// qsdm_attest_archspoof_rejected_total / hashrate counters.
+	// Returns 503 until a lister is installed via
+	// api.SetRecentRejectionLister(...). Collection-only — there
+	// is no /{id} variant because rejections have no external
+	// primary key (the Seq is store-internal).
+	mux.HandleFunc("/api/v1/attest/recent-rejections", handlers.RecentRejectionsHandler)
+
 	// Trust / attestation transparency endpoints (Major Update Phase 5.1).
 	// Registered unconditionally. If no aggregator is installed via
 	// api.SetTrustAggregator, the handlers return 503 warming-up; if the

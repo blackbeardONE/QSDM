@@ -40,6 +40,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/governance/chainparams"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
+	"github.com/blackbeardONE/QSDM/pkg/mining"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 )
 
@@ -75,6 +76,8 @@ func buildGovRig(t *testing.T, seedCELL float64, storePath string) *govRig {
 		api.SetSlashMempool(nil)
 		api.SetSlashReceiptStore(nil)
 		api.SetGovernanceProvider(nil)
+		api.SetRecentRejectionLister(nil)
+		mining.SetRejectionRecorder(nil)
 	})
 
 	accounts := chain.NewAccountStore()

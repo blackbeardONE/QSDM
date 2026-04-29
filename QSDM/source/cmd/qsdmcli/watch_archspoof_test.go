@@ -646,3 +646,219 @@ func TestWatchCommand_UnknownSubcommandLists_Archspoof(t *testing.T) {
 		t.Errorf("error message should advertise archspoof in known list: %v", err)
 	}
 }
+
+// -----------------------------------------------------------------------------
+// --detailed mode
+// -----------------------------------------------------------------------------
+
+// fakeRecentRejectionsServer hands out sequential page snapshots
+// for /api/v1/attest/recent-rejections so the run loop can step
+// through deterministic timelines.
+type fakeRecentRejectionsServer struct {
+	srv      *httptest.Server
+	pages    []recentRejectionsPageWire
+	served   int
+	requests []string
+}
+
+func newFakeRecentRejectionsServer(pages []recentRejectionsPageWire) *fakeRecentRejectionsServer {
+	f := &fakeRecentRejectionsServer{pages: pages}
+	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
+	return f
+}
+
+func (f *fakeRecentRejectionsServer) handle(w http.ResponseWriter, r *http.Request) {
+	if !strings.HasPrefix(r.URL.Path, "/api/v1/attest/recent-rejections") {
+		http.NotFound(w, r)
+		return
+	}
+	f.requests = append(f.requests, r.URL.RequestURI())
+
+	page := recentRejectionsPageWire{Records: []recentRejectionWire{}}
+	if f.served < len(f.pages) {
+		page = f.pages[f.served]
+		f.served++
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(page)
+}
+
+func (f *fakeRecentRejectionsServer) Close()        { f.srv.Close() }
+func (f *fakeRecentRejectionsServer) BaseURL() string { return f.srv.URL + "/api/v1" }
+
+func TestRunWatchArchSpoofDetailed_OnceMode_NoEvents(t *testing.T) {
+	// Empty page on the first poll → no events, no error.
+	srv := newFakeRecentRejectionsServer([]recentRejectionsPageWire{
+		{Records: []recentRejectionWire{}},
+	})
+	defer srv.Close()
+
+	cli := &CLI{baseURL: srv.BaseURL(), client: &http.Client{Timeout: 5 * time.Second}}
+	var stdout, stderr bytes.Buffer
+	opts := watchArchSpoofOptions{
+		Once:     true,
+		Detailed: true,
+	}
+	_ = opts.normalize()
+	if err := cli.runWatchArchSpoofDetailed(context.Background(), opts, &stdout, &stderr); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout (no --include-existing): %q", stdout.String())
+	}
+}
+
+func TestRunWatchArchSpoofDetailed_IncludeExisting_DrainsRing(t *testing.T) {
+	t0 := time.Date(2026, 4, 29, 10, 0, 0, 0, time.UTC)
+	srv := newFakeRecentRejectionsServer([]recentRejectionsPageWire{
+		{
+			Records: []recentRejectionWire{
+				{Seq: 1, RecordedAt: t0, Kind: "archspoof_unknown_arch", Reason: "unknown_arch", Arch: "rubin", Height: 100, MinerAddr: "qsdm1a", Detail: "future-arch"},
+				{Seq: 2, RecordedAt: t0.Add(time.Second), Kind: "hashrate_out_of_band", Arch: "hopper", Height: 101, MinerAddr: "qsdm1b"},
+			},
+			HasMore:    false,
+			NextCursor: 2,
+		},
+	})
+	defer srv.Close()
+
+	cli := &CLI{baseURL: srv.BaseURL(), client: &http.Client{Timeout: 5 * time.Second}}
+	var stdout, stderr bytes.Buffer
+	opts := watchArchSpoofOptions{
+		Once:            true,
+		IncludeExisting: true,
+		JSON:            true,
+		Detailed:        true,
+	}
+	_ = opts.normalize()
+	if err := cli.runWatchArchSpoofDetailed(context.Background(), opts, &stdout, &stderr); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 JSON lines, got %d:\n%s", len(lines), stdout.String())
+	}
+	var ev0, ev1 WatchEvent
+	if err := json.Unmarshal([]byte(lines[0]), &ev0); err != nil {
+		t.Fatalf("ev0: %v", err)
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &ev1); err != nil {
+		t.Fatalf("ev1: %v", err)
+	}
+	if ev0.Kind != WatchKindArchSpoofRejection {
+		t.Errorf("ev0 kind: got %q", ev0.Kind)
+	}
+	if ev0.Seq != 1 || ev0.MinerAddr != "qsdm1a" || ev0.Arch != "rubin" {
+		t.Errorf("ev0 payload: %+v", ev0)
+	}
+	if ev1.Seq != 2 || ev1.Arch != "hopper" || ev1.Kind != WatchKindArchSpoofRejection {
+		t.Errorf("ev1 payload: %+v", ev1)
+	}
+}
+
+func TestRunWatchArchSpoofDetailed_503FailsLoudly(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "v2 recent-rejections not configured", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	cli := &CLI{baseURL: srv.URL + "/api/v1", client: &http.Client{Timeout: 5 * time.Second}}
+	var stdout, stderr bytes.Buffer
+	opts := watchArchSpoofOptions{
+		Once:     true,
+		Detailed: true,
+	}
+	_ = opts.normalize()
+	err := cli.runWatchArchSpoofDetailed(context.Background(), opts, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected fatal error on 503")
+	}
+	if !strings.Contains(err.Error(), "v1-only") && !strings.Contains(err.Error(), "503") {
+		t.Errorf("error msg should hint at fallback: %v", err)
+	}
+}
+
+func TestRunWatchArchSpoofDetailed_HumanFormat(t *testing.T) {
+	t0 := time.Date(2026, 4, 29, 10, 0, 0, 0, time.UTC)
+	srv := newFakeRecentRejectionsServer([]recentRejectionsPageWire{
+		{
+			Records: []recentRejectionWire{
+				{
+					Seq: 7, RecordedAt: t0, Kind: "archspoof_cc_subject_mismatch",
+					Reason: "cc_subject_mismatch", Arch: "ada",
+					Height: 9000, MinerAddr: "qsdm1critical",
+					CertSubject: "NVIDIA H100 80GB",
+					Detail:      "leaf cn contradicts claimed gpu_arch",
+				},
+			},
+		},
+	})
+	defer srv.Close()
+
+	cli := &CLI{baseURL: srv.BaseURL(), client: &http.Client{Timeout: 5 * time.Second}}
+	var stdout, stderr bytes.Buffer
+	opts := watchArchSpoofOptions{
+		Once:            true,
+		IncludeExisting: true,
+		Detailed:        true,
+	}
+	_ = opts.normalize()
+	if err := cli.runWatchArchSpoofDetailed(context.Background(), opts, &stdout, &stderr); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	out := stdout.String()
+	for _, want := range []string{
+		"ARCHSPOOF_REJECTION", "seq=7",
+		"reason=cc_subject_mismatch", "arch=ada",
+		"miner=qsdm1critical", "height=9000",
+		"cert_cn=NVIDIA H100 80GB",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("human output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestBuildRecentRejectionsPath_NoFiltersNoCursor(t *testing.T) {
+	got := buildRecentRejectionsPath(0, watchArchSpoofOptions{})
+	if got != "/attest/recent-rejections" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestBuildRecentRejectionsPath_WithCursor(t *testing.T) {
+	got := buildRecentRejectionsPath(42, watchArchSpoofOptions{})
+	if !strings.Contains(got, "cursor=42") {
+		t.Errorf("missing cursor=42: %q", got)
+	}
+}
+
+func TestBuildRecentRejectionsPath_SingleReasonForwarded(t *testing.T) {
+	opts := watchArchSpoofOptions{Reasons: map[string]bool{"cc_subject_mismatch": true}}
+	got := buildRecentRejectionsPath(0, opts)
+	if !strings.Contains(got, "reason=cc_subject_mismatch") {
+		t.Errorf("missing reason: %q", got)
+	}
+}
+
+func TestBuildRecentRejectionsPath_SingleArchForwarded(t *testing.T) {
+	opts := watchArchSpoofOptions{Arches: map[string]bool{"hopper": true}}
+	got := buildRecentRejectionsPath(0, opts)
+	if !strings.Contains(got, "arch=hopper") {
+		t.Errorf("missing arch: %q", got)
+	}
+}
+
+func TestBuildRecentRejectionsPath_MultipleReasonsNotForwarded(t *testing.T) {
+	// Server only accepts one reason at a time. With a multi-
+	// element set we deliberately drop the filter rather than
+	// pick one — the watcher does client-side filtering on the
+	// emitted events instead.
+	opts := watchArchSpoofOptions{Reasons: map[string]bool{
+		"unknown_arch": true, "gpu_name_mismatch": true,
+	}}
+	got := buildRecentRejectionsPath(0, opts)
+	if strings.Contains(got, "reason=") {
+		t.Errorf("multi-reason should not forward: %q", got)
+	}
+}

@@ -82,6 +82,8 @@ func buildRig(t *testing.T, aliceCELL float64) *rig {
 		api.SetEnrollmentMempool(nil)
 		api.SetSlashMempool(nil)
 		api.SetSlashReceiptStore(nil)
+		api.SetRecentRejectionLister(nil)
+		mining.SetRejectionRecorder(nil)
 	})
 
 	accounts := chain.NewAccountStore()
