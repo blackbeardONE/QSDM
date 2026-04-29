@@ -72,7 +72,7 @@ func RecordNGCProofBundleForIngest(data []byte, requireNonce bool, hmacSecret st
 		return fmt.Errorf("invalid, expired, or reused ingest nonce; GET /api/v1/monitoring/ngc-challenge with ingest secret")
 	}
 	if strings.TrimSpace(hmacSecret) == "" || !NGCProofHMACValid(head, hmacSecret) {
-		return fmt.Errorf("invalid qsdm_proof_hmac / qsdm_proof_hmac (required with ingest nonce; use v2 payload when nonce is set)")
+		return fmt.Errorf("invalid qsdm_proof_hmac / qsdmplus_proof_hmac (required with ingest nonce; use v2 payload when nonce is set)")
 	}
 
 	ngcMu.Lock()
@@ -131,15 +131,15 @@ func ResetNGCProofsForTest() {
 // NGCProofNodeAttestation is one row of the "distinct by node id" view
 // over the NGC proof ring buffer. Each entry represents the newest
 // proof bundle observed for a given `qsdm_node_id` (or
-// `qsdm_node_id` legacy alias). Rows whose bundle did not carry a
-// node id are grouped under NodeID == "" so the caller can fold them
-// into the local node's identity.
+// `qsdmplus_node_id` legacy alias). Rows whose bundle did not carry
+// a node id are grouped under NodeID == "" so the caller can fold
+// them into the local node's identity.
 //
 // This exists so api.TrustAggregator can surface multiple
 // CPU-fallback sidecars (each running on a different operator host
-// and stamping a different QSDM_NGC_PROOF_NODE_ID) as distinct
-// attestation sources instead of collapsing them into a single
-// "local" peer row. The previous NGCProofSummaries() path only
+// and stamping a different QSDM_NGC_PROOF_NODE_ID, or the pre-rebrand
+// QSDMPLUS_NGC_PROOF_NODE_ID) as distinct attestation sources instead
+// of collapsing them into a single "local" peer row. The previous NGCProofSummaries() path only
 // returned the ring buffer in insertion order and did not attempt
 // any deduplication.
 type NGCProofNodeAttestation struct {
@@ -152,9 +152,10 @@ type NGCProofNodeAttestation struct {
 }
 
 // NGCProofDistinctByNodeID walks the ring buffer and returns one
-// attestation per distinct qsdm_node_id using the newest row
-// seen for each id (newest-wins by TimestampUTC, falling back to
-// ReceivedAt when the bundle does not expose a canonical timestamp).
+// attestation per distinct qsdm_node_id (or pre-rebrand legacy
+// qsdmplus_node_id) using the newest row seen for each id
+// (newest-wins by TimestampUTC, falling back to ReceivedAt when
+// the bundle does not expose a canonical timestamp).
 //
 // The ordering of the returned slice is arbitrary — callers that
 // need deterministic ordering should sort by AttestedAt or NodeID
@@ -173,11 +174,11 @@ func NGCProofDistinctByNodeID() []NGCProofNodeAttestation {
 			continue
 		}
 		row := NGCProofNodeAttestation{ReceivedAt: e.ReceivedAt}
-		if s, ok := m["qsdm_node_id"].(string); ok {
+		if s, ok := m[branding.ProofNodeIDFieldPreferred].(string); ok {
 			row.NodeID = strings.TrimSpace(s)
 		}
 		if row.NodeID == "" {
-			if s, ok := m["qsdm_node_id"].(string); ok {
+			if s, ok := m[branding.ProofNodeIDFieldLegacy].(string); ok {
 				row.NodeID = strings.TrimSpace(s)
 			}
 		}

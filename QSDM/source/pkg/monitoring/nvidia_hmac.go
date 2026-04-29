@@ -10,7 +10,7 @@ import (
 )
 
 // NGCProofHMACPayload builds the canonical UTF-8 message over which an NGC
-// proof's HMAC is computed. Both pre-rebrand (qsdm_*) and post-rebrand
+// proof's HMAC is computed. Both pre-rebrand (qsdmplus_*) and post-rebrand
 // (qsdm_*) bundle field names are accepted; the preferred name wins when
 // both are present. The signature is taken over the *value* of the node ID,
 // not over the field name, so old sidecars continue to validate under the
@@ -31,7 +31,7 @@ func NGCProofHMACPayload(m map[string]interface{}) string {
 
 // NGCProofHMACValid reports whether the proof bundle's HMAC field matches
 // NGCProofHMACPayload under the given secret. Preferred field name is
-// qsdm_proof_hmac; legacy qsdm_proof_hmac is still accepted.
+// qsdm_proof_hmac; legacy qsdmplus_proof_hmac is still accepted.
 // If secret is empty, returns true (caller enforces requiring HMAC only when
 // secret is configured on the node).
 func NGCProofHMACValid(m map[string]interface{}, secret string) bool {

@@ -95,16 +95,23 @@ func TestNGCProofDistinctByNodeID_EmptyNodeIDGroup(t *testing.T) {
 	}
 }
 
-func TestNGCProofDistinctByNodeID_LegacyQSDMAlias(t *testing.T) {
+func TestNGCProofDistinctByNodeID_LegacyQSDMPlusAlias(t *testing.T) {
 	t.Cleanup(ResetNGCProofsForTest)
 	ResetNGCProofsForTest()
 
-	// Bundle uses the legacy qsdm_node_id field (no qsdm_ prefix).
-	// The distinct view should still pick it up.
+	// Bundle uses ONLY the pre-rebrand qsdmplus_node_id field (no
+	// qsdm_node_id present). The distinct view should fall back to
+	// the legacy alias and still pick it up.
+	//
+	// Regression: the rebrand commit (db9b590) flattened both the
+	// production fallback in NGCProofDistinctByNodeID and this test
+	// bundle to the canonical "qsdm_node_id" key, which made the
+	// test pass for the wrong reason — it was no longer exercising
+	// the legacy fallback at all. Restored alongside the code fix.
 	b := map[string]interface{}{
-		"cuda_proof_hash": "cafebabe",
-		"qsdm_node_id":    "legacy-node-42",
-		"timestamp_utc":   time.Now().UTC().Format(time.RFC3339),
+		"cuda_proof_hash":  "cafebabe",
+		"qsdmplus_node_id": "legacy-node-42",
+		"timestamp_utc":    time.Now().UTC().Format(time.RFC3339),
 	}
 	raw, _ := json.Marshal(b)
 	if err := RecordNGCProofBundle(raw); err != nil {
@@ -112,7 +119,10 @@ func TestNGCProofDistinctByNodeID_LegacyQSDMAlias(t *testing.T) {
 	}
 	rows := NGCProofDistinctByNodeID()
 	if len(rows) != 1 || rows[0].NodeID != "legacy-node-42" {
-		t.Fatalf("legacy alias not honoured; rows=%+v", rows)
+		t.Fatalf("legacy alias not honoured; rows=%+v "+
+			"(pre-rebrand sidecars stamping qsdmplus_node_id should be "+
+			"distinct attestation sources, not folded into the empty-id "+
+			"local-node bucket)", rows)
 	}
 }
 
