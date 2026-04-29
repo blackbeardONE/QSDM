@@ -78,9 +78,9 @@ function updateNGCProofs() {
             const configured = data.ingest_configured === true;
             const count = data.count || 0;
             if (!configured) {
-                statusEl.innerHTML = '<strong>Ingest disabled.</strong> Set <code>QSDM_NGC_INGEST_SECRET</code> (legacy <code>QSDM_NGC_INGEST_SECRET</code> still accepted) on the node and push from <code>apps/qsdm-nvidia-ngc</code> (see README).';
+                statusEl.innerHTML = '<strong>Ingest disabled.</strong> Set <code>QSDM_NGC_INGEST_SECRET</code> on the node and push from <code>apps/qsdm-nvidia-ngc</code> (see README).';
             } else if (count === 0) {
-                statusEl.innerHTML = '<strong>Ingest enabled.</strong> No proof bundles yet — run the NGC validator with <code>QSDM_NGC_REPORT_URL</code> (legacy <code>QSDM_NGC_REPORT_URL</code> still accepted) + matching secret.';
+                statusEl.innerHTML = '<strong>Ingest enabled.</strong> No proof bundles yet — run the NGC validator with <code>QSDM_NGC_REPORT_URL</code> + matching secret.';
             } else {
                 statusEl.innerHTML = `<strong>Ingest enabled.</strong> ${count} bundle(s) in ring buffer.`;
             }
@@ -144,6 +144,132 @@ function updateNGCProofs() {
             const lockEl = document.getElementById('nvidia-lock-ngc-summary');
             if (lockEl) {
                 lockEl.textContent = '';
+            }
+        });
+}
+
+// updateAttestRejections renders the recent-attestation-rejection tile.
+// Wire shape comes from internal/dashboard/attest_rejections.go and
+// pkg/api.RecentRejectionView. Records arrive newest-first (server
+// reverses the lister's ascending-Seq output before encoding).
+//
+// SECURITY: kind/reason/arch/recorded_at are server-derived (closed
+// allowlists or RFC 3339 timestamps) and safe to render as text. The
+// miner address comes from rejected miners, so we always populate the
+// rendered cells via textContent rather than innerHTML to avoid an XSS
+// vector if a malicious miner ever submits HTML in their address bytes.
+function updateAttestRejections() {
+    fetch('/api/attest/rejections?limit=50', dashFetchOpts)
+        .then(response => response.json())
+        .then(data => {
+            const statusEl = document.getElementById('attest-rejections-status');
+            const countersEl = document.getElementById('attest-rejections-counters');
+            const table = document.getElementById('attest-rejections-table');
+            const tbody = document.getElementById('attest-rejections-tbody');
+            if (!statusEl || !countersEl || !table || !tbody) return;
+
+            const records = data.records || [];
+            if (data.available !== true) {
+                statusEl.innerHTML = '<strong>Store not wired.</strong> v1-only deployment, or v2 store disabled at boot. Counter and history rows below remain empty until <code>v2wiring.Wire</code> attaches the recent-rejections store.';
+            } else {
+                const total = data.total_matches || 0;
+                statusEl.textContent = 'Store wired. ' + total + ' rejection(s) tracked · showing ' + records.length + ' newest.';
+            }
+
+            // Counter grid: per-field observed/truncated/max + persist errors.
+            const metrics = data.metrics || { fields: [], persist_errors_total: 0 };
+            countersEl.innerHTML = '';
+            (metrics.fields || []).forEach(row => {
+                const obs = row.observed_total || 0;
+                const trunc = row.truncated_total || 0;
+                const max = row.runes_max || 0;
+                const truncRate = obs > 0 ? ((trunc / obs) * 100).toFixed(1) + '%' : '0.0%';
+                const truncColor = trunc > 0 ? '#f5a623' : '#7ed321';
+
+                const cell = document.createElement('div');
+                cell.style.cssText = 'background:#0f1419;border:1px solid #2a3441;border-radius:4px;padding:10px;';
+
+                const head = document.createElement('div');
+                head.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;';
+                const label = document.createElement('span');
+                label.className = 'metric-label';
+                label.style.fontFamily = 'ui-monospace, monospace';
+                label.textContent = row.field || '?';
+                const value = document.createElement('span');
+                value.className = 'metric-value';
+                value.style.fontSize = '14px';
+                value.textContent = obs + ' obs';
+                head.appendChild(label);
+                head.appendChild(value);
+
+                const detail = document.createElement('div');
+                detail.style.cssText = 'font-size:11px;color:#a0a0a0;margin-top:6px;';
+                const truncSpan = document.createElement('span');
+                truncSpan.style.color = truncColor;
+                truncSpan.textContent = String(trunc);
+                detail.append('truncated: ', truncSpan, ' (' + truncRate + ') · max ' + max + ' runes');
+
+                cell.appendChild(head);
+                cell.appendChild(detail);
+                countersEl.appendChild(cell);
+            });
+
+            const persistErrs = metrics.persist_errors_total || 0;
+            const persistColor = persistErrs > 0 ? '#d0021b' : '#7ed321';
+            const persistCell = document.createElement('div');
+            persistCell.style.cssText = 'background:#0f1419;border:1px solid #2a3441;border-radius:4px;padding:10px;';
+            const persistHead = document.createElement('div');
+            persistHead.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;';
+            const persistLabel = document.createElement('span');
+            persistLabel.className = 'metric-label';
+            persistLabel.textContent = 'persist errors';
+            const persistValue = document.createElement('span');
+            persistValue.className = 'metric-value';
+            persistValue.style.cssText = 'font-size:14px;color:' + persistColor + ';';
+            persistValue.textContent = String(persistErrs);
+            persistHead.appendChild(persistLabel);
+            persistHead.appendChild(persistValue);
+            const persistDetail = document.createElement('div');
+            persistDetail.style.cssText = 'font-size:11px;color:#a0a0a0;margin-top:6px;';
+            persistDetail.textContent = 'on-disk Append() failures (in-memory ring unaffected)';
+            persistCell.appendChild(persistHead);
+            persistCell.appendChild(persistDetail);
+            countersEl.appendChild(persistCell);
+
+            // Records table.
+            tbody.innerHTML = '';
+            if (records.length === 0) {
+                table.style.display = 'none';
+                return;
+            }
+            table.style.display = 'table';
+            records.forEach(rec => {
+                const tr = document.createElement('tr');
+                const minerFull = rec.miner_addr || '';
+                const minerShort = minerFull
+                    ? (minerFull.length > 18 ? minerFull.slice(0, 18) + '…' : minerFull)
+                    : '—';
+                const cells = [
+                    { text: rec.recorded_at || '—' },
+                    { text: rec.kind || '—' },
+                    { text: rec.reason || rec.arch || rec.detail || '—' },
+                    { text: minerShort, title: minerFull, cls: 'ngc-hash' },
+                    { text: rec.height != null ? String(rec.height) : '—' },
+                ];
+                cells.forEach(c => {
+                    const td = document.createElement('td');
+                    td.textContent = c.text;
+                    if (c.cls) td.className = c.cls;
+                    if (c.title) td.title = c.title;
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+        })
+        .catch(() => {
+            const statusEl = document.getElementById('attest-rejections-status');
+            if (statusEl) {
+                statusEl.textContent = 'Could not load attestation rejections (check dashboard auth / network).';
             }
         });
 }
@@ -721,6 +847,7 @@ function startPolling() {
         updateMetrics();
         updateHealth();
         updateNGCProofs();
+        updateAttestRejections();
         updateContracts();
         updateBridge();
         updateTopology();
@@ -733,6 +860,7 @@ function startUpdates() {
     updateMetrics();
     updateHealth();
     updateNGCProofs();
+    updateAttestRejections();
     updateContracts();
     updateBridge();
     loadContractTemplates();

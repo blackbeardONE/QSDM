@@ -470,7 +470,7 @@
                 <div id="bridge-status-msg" style="font-size:12px;margin-top:6px;color:#a0a0a0;"></div>
             </div>
 
-        <!-- NGC sidecar proofs (ingested when QSDM_NGC_INGEST_SECRET or QSDM_NGC_INGEST_SECRET is set) -->
+        <!-- NGC sidecar proofs (ingested when QSDM_NGC_INGEST_SECRET is set) -->
             <div class="card ngc-panel" style="grid-column: 1 / -1;">
                 <h2>🎮 NGC GPU proofs</h2>
                 <div id="ngc-status" class="ngc-status">Loading…</div>
@@ -489,6 +489,32 @@
                         <tbody id="ngc-tbody"></tbody>
                     </table>
                 </div>
+            </div>
+
+            <!-- Attestation rejection ring + truncation telemetry.
+                 Backed by /api/attest/rejections (handleAttestRejections); see
+                 internal/dashboard/attest_rejections.go for the wire shape. -->
+            <div class="card ngc-panel" style="grid-column: 1 / -1;">
+                <h2>🛑 Attestation Rejections</h2>
+                <div id="attest-rejections-status" class="ngc-status">Loading…</div>
+                <div id="attest-rejections-counters" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 12px 0;"></div>
+                <div class="ngc-table-wrap">
+                    <table class="ngc-table" id="attest-rejections-table" style="display: none;">
+                        <thead>
+                            <tr>
+                                <th>Recorded</th>
+                                <th>Kind</th>
+                                <th>Reason / Arch</th>
+                                <th>Miner</th>
+                                <th>Height</th>
+                            </tr>
+                        </thead>
+                        <tbody id="attest-rejections-tbody"></tbody>
+                    </table>
+                </div>
+                <p style="color: #888; font-size: 11px; margin-top: 10px; line-height: 1.45;">
+                    Bounded ring buffer of the most recent rejection records plus per-field rune-truncation counters and on-disk persist errors. Truncation is applied <strong>before</strong> records reach the ring, so high <em>truncated</em> counts indicate possible hostile input — not data loss in the buffer itself. See <code>qsdm_attest_rejection_field_*</code> / <code>qsdm_attest_rejection_persist_errors_total</code> for Prometheus equivalents.
+                </p>
             </div>
         </div>
 

@@ -51,6 +51,20 @@ func TestDashboardIntegration(t *testing.T) {
 		if !strings.Contains(body, "Transaction Metrics") {
 			t.Error("Dashboard HTML missing transaction metrics section")
 		}
+		// Attestation-rejections tile container IDs that the new
+		// updateAttestRejections() poller writes into. If any of
+		// these go missing the polling loop will silently no-op,
+		// so guard them at build time.
+		for _, id := range []string{
+			`id="attest-rejections-status"`,
+			`id="attest-rejections-counters"`,
+			`id="attest-rejections-table"`,
+			`id="attest-rejections-tbody"`,
+		} {
+			if !strings.Contains(body, id) {
+				t.Errorf("Dashboard HTML missing attestation-rejections tile element %s", id)
+			}
+		}
 	})
 
 	// Test 2: Metrics API
@@ -125,6 +139,15 @@ func TestDashboardIntegration(t *testing.T) {
 		}
 		if !strings.Contains(string(body), "fetch") {
 			t.Error("JavaScript file missing fetch calls")
+		}
+		// Attestation-rejections poller must be present and wired
+		// into both the initial-load and the recurring polling
+		// loops. Ship-stop if a refactor unhooks either path.
+		if !strings.Contains(string(body), "function updateAttestRejections") {
+			t.Error("JavaScript file missing updateAttestRejections function")
+		}
+		if !strings.Contains(string(body), "/api/attest/rejections") {
+			t.Error("JavaScript file missing /api/attest/rejections fetch target")
 		}
 	})
 

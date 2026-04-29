@@ -14,6 +14,62 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Operator dashboard tile: recent attestation rejections + truncation
+  telemetry (2026-04-29, frontend slice).**
+  Renders the `/api/attest/rejections` envelope landed in commit
+  `d3a1a54` as a full dashboard panel. Tile shows the per-field
+  rune-truncation grid (Detail / GPUName / CertSubject — observed
+  total, truncated total, max-runes-seen, computed truncation rate),
+  the `qsdm_attest_rejection_persist_errors_total` counter colour-coded
+  red on any non-zero value, and the newest 50 rows of the
+  recent-rejection ring (recorded-at, kind, reason/arch, miner short
+  address with full address on hover, height). Polls every 2 s on the
+  same `setInterval` loop as the existing tiles and is also fired once
+  during `startUpdates()` for instant first paint.
+  - **`internal/dashboard/static/index.html`**: new
+    `🛑 Attestation Rejections` card placed directly after the NGC
+    GPU proofs panel — they share an operator-mental-model
+    (NVIDIA-attestation rejections often surface here first when
+    upstream NGC validation tightens). Card holds the four element
+    IDs `attest-rejections-{status,counters,table,tbody}`; the
+    `internal/dashboard` integration test now ship-stops on any
+    of those IDs going missing so a future CSS/markup refactor
+    can't silently unhook the poller.
+  - **`internal/dashboard/static/dashboard.js`**:
+    `updateAttestRejections()` is the new poller. Always renders
+    cells via `textContent` (never `innerHTML`) for the miner
+    address column because that field originates from rejected
+    miners and could in principle carry hostile bytes;
+    server-side fields like `kind` and `reason` come from closed
+    allowlists in `pkg/mining/attest/recentrejects` and are
+    safe-by-construction. The fetch sends `credentials: 'include'`
+    so the dashboard auth cookie travels and the
+    `requireAuth`-wrapped handler accepts the request. The
+    function is wired into both `startUpdates()` (initial
+    paint) and `startPolling()` (recurring 2 s loop).
+  - **Backwards compatibility:** if `v2wiring.Wire()` did not
+    register a `RecentRejectionLister` (v1-only deployments, or
+    operators who explicitly disabled the v2 store), the API
+    returns `available:false` and the tile renders an explanatory
+    banner rather than a 503; counters and history rows stay
+    empty. Operators upgrading from v1 see the tile populate
+    automatically the next time `Wire()` runs.
+  - **Tests:** `internal/dashboard/integration_test.go` now
+    asserts the four tile IDs are present in the rendered HTML
+    and that `updateAttestRejections` plus the
+    `/api/attest/rejections` fetch target are present in the
+    served JS bundle. Confirmed `node --check` passes on the
+    updated `dashboard.js` (no JS regressions).
+  - **Rebrand-residue cleanup:** while in `dashboard.js`,
+    removed two leftover `legacy <code>QSDM_NGC_INGEST_SECRET</code>
+    still accepted` / `legacy <code>QSDM_NGC_REPORT_URL</code>
+    still accepted` strings whose "legacy" half was identical to
+    the canonical name — a flatten artifact from the same rebrand
+    sweep audited in commits `3d798c8` / `b488996` / `cef8581` /
+    `eabaecb`. The dashboard previously promised env-var
+    compatibility that `pkg/envcompat` no longer provides; the
+    cleaned text matches the audited server-side strings.
+
 - **Recent-rejection ring on-disk persistence — restart no
   longer wipes §4.6 forensic record (2026-04-29).**
   Closes the explicit "out of scope" placeholder in
