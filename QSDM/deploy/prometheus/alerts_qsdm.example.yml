@@ -655,3 +655,275 @@ groups:
             Cross-check qsdm_slash_rejected_total and
             qsdm_enrollment_rejected_total; high rejection rate
             means admission is not catching what apply does.
+
+  # -----------------------------------------------------------------
+  # v2 attestation — arch-spoof rejection (§4.6.1 / §4.6.2 / §4.6.5)
+  # -----------------------------------------------------------------
+  # Consumes qsdm_attest_archspoof_rejected_total{reason} emitted
+  # by pkg/monitoring/archcheck_metrics.go (recorder pattern,
+  # recorded from pkg/mining/verifier.go and the per-type
+  # attestation verifiers). Pages on:
+  #
+  #   reason="unknown_arch":
+  #     Attestation.GPUArch outside the closed-enum allowlist.
+  #     Single increment is usually a typo'd client; sustained
+  #     rate is a probe / future-arch-sneak attempt.
+  #
+  #   reason="gpu_name_mismatch":
+  #     HMAC bundle's gpu_name does not match any pattern for the
+  #     claimed arch (the §3.3 step-8 lazy-spoof catch). The bundle
+  #     is HMAC-bound under the operator's enrollment key, so this
+  #     reason firing means an enrolled operator is spoofing arch
+  #     (consumer card claiming Hopper) — economically deterred by
+  #     stake bond + slashing, but operators want a heads-up.
+  #
+  #   reason="cc_subject_mismatch":
+  #     CC bundle's leaf cert Subject contains positive product
+  #     evidence that contradicts the claimed arch (§4.6.5). To
+  #     reach this reason the proof has ALREADY passed cert-chain
+  #     pin (§3.2 step 3) + AIK signature (§3.2 step 4), so a
+  #     non-zero increment is highly suspicious — fabricated AIK
+  #     or serious operator misconfiguration. Pages at higher
+  #     severity than the other two reasons.
+  - name: qsdm-v2-attest-archspoof
+    rules:
+      - alert: QSDMAttestArchSpoofUnknownArchBurst
+        # Sustained rate of unknown-arch rejections = probe / scan.
+        # Threshold 0.1/s = ≥30 rejections in 5m. A typo'd client
+        # gets one increment and stops; a probe drives the rate up.
+        expr: rate(qsdm_attest_archspoof_rejected_total{reason="unknown_arch"}[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: v2-attest
+        annotations:
+          summary: "{{ $labels.instance }}: sustained unknown-arch rejections"
+          description: |
+            qsdm_attest_archspoof_rejected_total{reason="unknown_arch"}
+            climbing at {{ $value }}/s over 5m. Either:
+              - A miner client running an unreleased GPU arch
+                (e.g. "rubin", a hypothetical post-Blackwell)
+                is auto-retrying. Tighten quickstart docs.
+              - External prober scanning the v2 attestation
+                surface. Confirm via source IP distribution in
+                ingress logs; consider rate-limiting upstream.
+              - Client/server skew on alias canonicalisation
+                (e.g. miner emits "ada" but server hasn't
+                landed alias yet). Cross-check release versions.
+
+      - alert: QSDMAttestArchSpoofGPUNameMismatch
+        # Any sustained gpu_name_mismatch is a real spoof attempt
+        # by an enrolled operator — page warning. Threshold lower
+        # than unknown_arch because the operator-side cost (stake
+        # bond at risk) means honest operators rarely trigger this
+        # by accident.
+        expr: rate(qsdm_attest_archspoof_rejected_total{reason="gpu_name_mismatch"}[5m]) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: v2-attest
+        annotations:
+          summary: "{{ $labels.instance }}: HMAC bundle gpu_name vs gpu_arch mismatch"
+          description: |
+            qsdm_attest_archspoof_rejected_total{reason="gpu_name_mismatch"}
+            climbing at {{ $value }}/s. An enrolled miner is
+            submitting proofs whose HMAC-bound gpu_name doesn't
+            match the patterns for the claimed gpu_arch. Most
+            common shapes:
+              - Consumer Ada card (RTX 4090) claiming gpu_arch=hopper
+                to chase higher reward weights.
+              - Hardware swap on an existing NodeID without
+                re-enrollment (bundle still HMAC-signed under
+                the old GPU's identity).
+            The §3.3 step-8 cross-check rejects these proofs
+            before block inclusion; the operator's stake bond
+            covers any cumulative damage. To identify the
+            offender, cross-reference qsdmcli enrollment-status
+            against recent slash candidates. Sustained activity
+            from a single NodeID is a slashing case under §8.
+
+      - alert: QSDMAttestArchSpoofCCSubjectMismatch
+        # CC-path subject mismatch is critical: to even reach this
+        # check the proof has passed cert-chain pin AND AIK
+        # signature, so a non-zero increment is ALREADY a
+        # cryptographic anomaly. ANY single fire pages immediately.
+        expr: increase(qsdm_attest_archspoof_rejected_total{reason="cc_subject_mismatch"}[15m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          subsystem: v2-attest
+        annotations:
+          summary: "{{ $labels.instance }}: CC leaf cert subject contradicts gpu_arch"
+          description: |
+            qsdm_attest_archspoof_rejected_total{reason="cc_subject_mismatch"}
+            incremented in the last 15m. To reach this check the
+            CC bundle has ALREADY passed:
+              - Cert chain rooted in a genesis-pinned NVIDIA CA
+                (§3.2 step 3)
+              - AIK ECDSA signature over the canonical preimage
+                (§3.2 step 4)
+              - PCR firmware/driver floor (§3.2 step 8)
+            yet the leaf cert's Subject.CommonName contains
+            positive product evidence (e.g. "NVIDIA H100") that
+            contradicts the proof's claimed gpu_arch. Two
+            possibilities:
+              1. Fabricated AIK leaf — an operator with an
+                 NVIDIA-issued cert has crafted a leaf with a
+                 mismatched arch claim. This is a cryptographic
+                 anomaly worth a security-team page.
+              2. Operator misconfiguration — the miner binary is
+                 reading gpu_arch from a stale config file after
+                 a hardware swap. Less severe but still worth
+                 a direct contact with the operator.
+            Triage: identify the proof via the validator's reject
+            log (the rejection wraps archcheck.ErrArchCertSubjectMismatch
+            and embeds the offending Subject CN + claimed arch
+            in the error message), then check the operator's
+            recent enrollment / slash history.
+
+  # -----------------------------------------------------------------
+  # v2 attestation — hashrate-band plausibility (§4.6.3)
+  # -----------------------------------------------------------------
+  # Consumes qsdm_attest_hashrate_rejected_total{arch} emitted by
+  # pkg/monitoring/archcheck_metrics.go. Each per-arch series gets
+  # its own alert with arch-aware annotations so the on-call
+  # knows which product line is being targeted (T4 hashrate
+  # spoofs and B200 hashrate spoofs have different remediation:
+  # different MIN_FIRMWARE floors, different operator profiles).
+  #
+  # Threshold 0.05/s ≈ 15 rejections in 5m, lower than the
+  # archspoof unknown-arch rule because hashrate fabrication is
+  # economic-cheating-flavoured rather than typo-flavoured.
+  - name: qsdm-v2-attest-hashrate
+    rules:
+      - alert: QSDMAttestHashrateOutOfBand
+        # Catch-all rule that fires on ANY arch label. The
+        # description below uses {{ $labels.arch }} so a single
+        # rule covers all five canonical arches without manual
+        # duplication. arch="unknown" lands in the default switch
+        # branch in pkg/monitoring/archcheck_metrics.go and is
+        # rare enough that no separate rule is needed.
+        expr: rate(qsdm_attest_hashrate_rejected_total[5m]) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: v2-attest
+        annotations:
+          summary: "{{ $labels.instance }}: claimed hashrate out of band for arch={{ $labels.arch }}"
+          description: |
+            qsdm_attest_hashrate_rejected_total{arch="{{ $labels.arch }}"}
+            climbing at {{ $value }}/s over 5m. Miners are
+            submitting Attestation.ClaimedHashrateHPS values
+            outside the per-arch [Min, Max] band (§4.6.3 in
+            MINING_PROTOCOL_V2.md). Bands are deliberately wide
+            (~100x range per arch); an out-of-band value is
+            either:
+              - A units-confusion typo (miner emitting H/min or
+                kH/s as raw H/s — quickstart docs may need
+                clarification).
+              - A leaderboard-stuffing attempt (miner inflating
+                claimed hashrate to top the leaderboard without
+                actually mining at that rate).
+              - A consensus-relevant signal: the rest of the
+                attestation is suspect, since the per-type
+                verifier ALSO rejected (this counter only fires
+                AFTER the hashrate gate trips).
+            Reference bands (see §4.6.3 table):
+              turing       [10K,    5M]   H/s
+              ampere       [50K,   50M]   H/s
+              ada-lovelace [100K,  50M]   H/s
+              hopper       [1M,   200M]   H/s
+              blackwell    [5M,   500M]   H/s
+
+  # -----------------------------------------------------------------
+  # v2 governance — authority rotation activity (§4.6 governance)
+  # -----------------------------------------------------------------
+  # Consumes qsdm_gov_authority_* counters + the
+  # qsdm_gov_authority_count gauge emitted by
+  # pkg/monitoring/gov_metrics.go. These pages are intentionally
+  # low-severity — multisig rotation is a deliberate, rare event
+  # that the authority members coordinate out-of-band; the alerts
+  # ensure the OTHER members know a vote happened in case the
+  # coordinator forgets to ping them.
+  - name: qsdm-v2-governance
+    rules:
+      - alert: QSDMGovAuthorityVoteRecorded
+        # Any vote in the last 24h is an "FYI" to the multisig
+        # set. Severity info — Alertmanager should route to a
+        # passive channel (chat ping) rather than PagerDuty.
+        expr: increase(qsdm_gov_authority_voted_total[24h]) > 0
+        for: 5m
+        labels:
+          severity: info
+          subsystem: v2-governance
+        annotations:
+          summary: "{{ $labels.instance }}: authority rotation vote recorded ({{ $labels.op }})"
+          description: |
+            qsdm_gov_authority_voted_total{op="{{ $labels.op }}"}
+            incremented {{ $value }} time(s) in the last 24h.
+            A multisig member submitted a vote to {{ $labels.op }}
+            an authority. Pre-activation: the AuthorityVoteStore
+            is accumulating ballots toward the M-of-N threshold
+            (max(1, N/2 + 1)). Cross-reference qsdmcli watch
+            params or the governance read API to see proposal
+            details and current vote tally.
+
+      - alert: QSDMGovAuthorityThresholdCrossed
+        # Threshold-cross is more interesting than a single vote:
+        # the proposal is now staged for activation at its
+        # effective_height. Bumps to warning severity so the
+        # multisig set gets a louder ping.
+        expr: increase(qsdm_gov_authority_crossed_total[24h]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          subsystem: v2-governance
+        annotations:
+          summary: "{{ $labels.instance }}: authority rotation crossed M-of-N threshold ({{ $labels.op }})"
+          description: |
+            qsdm_gov_authority_crossed_total{op="{{ $labels.op }}"}
+            crossed the M-of-N threshold and is now STAGED for
+            activation at its effective_height. Confirm:
+              - The other multisig members are aware (this alert
+                fires INSTEAD of the per-member ping if they
+                missed the vote).
+              - The effective_height is the agreed value (a
+                rotation that activates too soon could leave
+                the chain mid-flight on an unwanted authority
+                set).
+              - qsdm_gov_authority_count gauge will tick on
+                activation; cross-check against the genesis
+                authority set.
+
+      - alert: QSDMGovAuthorityCountTooLow
+        # Hard floor: an authority set of <2 means a single key
+        # compromise is a chain-rotation compromise. M-of-N with
+        # N=1 reduces to single-signer governance. Page critical.
+        # The gauge is seeded at boot from genesis (see
+        # SetAuthorityCountGauge in v2wiring), so a value of 0
+        # means either the genesis was misconfigured or the
+        # adapter wiring broke.
+        expr: qsdm_gov_authority_count < 2
+        for: 5m
+        labels:
+          severity: critical
+          subsystem: v2-governance
+        annotations:
+          summary: "{{ $labels.instance }}: AuthorityList size = {{ $value }} (< 2)"
+          description: |
+            qsdm_gov_authority_count is {{ $value }}, below the
+            recommended minimum of 2. With <2 authorities the
+            M-of-N rule degenerates to single-signer governance
+            and any key compromise becomes chain-rotation
+            compromise. Either:
+              - The genesis was deliberately seeded with a
+                single bootstrap authority (testnet bring-up).
+                File this alert under "expected during bring-up"
+                and silence until rotation lands a second
+                member.
+              - The adapter wiring in pkg/monitoring/gov_recorder
+                broke and the gauge is stuck at 0. Verify with
+                the governance read API:
+                  GET /api/v1/governance/authority/list
+                If the list has >=2 members but the gauge says
+                0, file a metric-wiring bug.

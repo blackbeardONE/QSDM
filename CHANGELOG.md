@@ -14,6 +14,64 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Prometheus alert rules + scrape wiring for the §4.6
+  arch-spoof gate, hashrate-band gate, and `qsdm/gov/v1`
+  authority-rotation pipeline (2026-04-29).** Three new alert
+  rule groups land in
+  [`QSDM/deploy/prometheus/alerts_qsdm.example.yml`](QSDM/deploy/prometheus/alerts_qsdm.example.yml)
+  alongside a wiring fix that closes a silent gap caught while
+  shipping this work.
+  - **`qsdm-v2-attest-archspoof`** — three rules, one per reason
+    label on `qsdm_attest_archspoof_rejected_total`:
+    `unknown_arch` (warning, sustained probe), `gpu_name_mismatch`
+    (warning, lazy spoof by enrolled operator), and
+    `cc_subject_mismatch` (**critical, fires on a single
+    increment** because reaching that branch means the proof
+    has already passed cert-chain pin + AIK signature, so the
+    contradiction is a cryptographic anomaly).
+  - **`qsdm-v2-attest-hashrate`** — single rule keyed on
+    `{{ $labels.arch }}` so all five canonical GPU
+    architectures (Hopper/Blackwell/Ada/Ampere/Turing) are
+    covered without manual duplication. Annotation includes
+    the §4.6.3 reference band table so the on-call gets the
+    full triage context inline.
+  - **`qsdm-v2-governance`** — three rules: vote recorded
+    (info, FYI ping for the multisig set), threshold crossed
+    (warning, proposal staged), and AuthorityList size below 2
+    (critical floor protecting against single-signer
+    governance degeneration).
+  - **Scrape-path wiring fix.** While exploring the existing
+    metrics surface I found that the four
+    `qsdm_gov_authority_*` series — counters defined and
+    incremented from `gov_metrics.go` since the multisig work
+    landed — were never iterated over in
+    [`prometheus_scrape.go::corePrometheusMetrics`](QSDM/source/pkg/monitoring/prometheus_scrape.go).
+    Operators would have seen empty `/metrics` for the entire
+    governance authority surface; the alerts above wouldn't
+    have anything to fire on. Fixed by adding the four
+    `for/range` blocks plus the gauge `add()` call mirroring
+    the existing param-pipeline shape. Locked down by 4 new
+    tests in
+    [`gov_metrics_scrape_test.go`](QSDM/source/pkg/monitoring/gov_metrics_scrape_test.go)
+    that drive the recorders and assert the names, types, and
+    labels appear in `corePrometheusMetrics()` output (and one
+    end-to-end test of `PrometheusExposition()` to catch
+    formatter regressions).
+  - **CI guard.**
+    [`.github/workflows/validate-deploy.yml::prometheus-rules-check`](.github/workflows/validate-deploy.yml)
+    runs `promtool check rules` on every push that touches
+    `QSDM/deploy/prometheus/**` — the new rules pass clean
+    locally with `promtool 2.55.1` (`SUCCESS: 33 rules
+    found`).
+  - **Docs.**
+    [`QSDM/deploy/prometheus/README.md`](QSDM/deploy/prometheus/README.md)
+    table of rule groups extended to include the three new
+    families with the same shape as the existing v2-mining
+    entries, plus a short note explaining why
+    `cc_subject_mismatch` is intentionally critical.
+  - **Tests**: 4 new monitoring tests + all 1880+ existing
+    tests pass; `go vet ./...` clean.
+
 - **CC-path leaf cert subject ↔ `gpu_arch` consistency check
   (§4.6.5, 2026-04-29).** Replaces the earlier no-op stub
   `archcheck.ValidateBundleArchConsistencyCC` with a real

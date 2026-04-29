@@ -201,6 +201,29 @@ func corePrometheusMetrics() []Metric {
 			MetricCounter, float64(p.Val), map[string]string{"reason": p.Reason})
 	}
 
+	// ---- v2 governance authority-rotation pipeline -------------
+	// op label is bounded to {add, remove, other}; the gauge is
+	// a single time series. Total cardinality across this block:
+	// 3 ops × 3 counters + 1 gauge = 10 series, well-bounded.
+	for _, p := range GovAuthorityVotedLabeled() {
+		add("qsdm_gov_authority_voted_total",
+			"qsdm/gov/v1 authority-rotation votes recorded, by op (add|remove|other).",
+			MetricCounter, float64(p.Val), map[string]string{"op": p.Op})
+	}
+	for _, p := range GovAuthorityCrossedLabeled() {
+		add("qsdm_gov_authority_crossed_total",
+			"qsdm/gov/v1 authority-rotation proposals that crossed the M-of-N threshold, by op.",
+			MetricCounter, float64(p.Val), map[string]string{"op": p.Op})
+	}
+	for _, p := range GovAuthorityActivatedLabeled() {
+		add("qsdm_gov_authority_activated_total",
+			"qsdm/gov/v1 authority-rotation proposals activated by Promote(), by op.",
+			MetricCounter, float64(p.Val), map[string]string{"op": p.Op})
+	}
+	add("qsdm_gov_authority_count",
+		"Current size of the active AuthorityList (number of multisig members).",
+		MetricGauge, float64(AuthorityCountGauge()), nil)
+
 	return out
 }
 

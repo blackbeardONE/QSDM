@@ -40,16 +40,23 @@ Series names use the `qsdm_` prefix (e.g. `qsdm_nvidia_lock_http_blocks_total`, 
 
 ## v2 mining alert groups
 
-`alerts_qsdm.example.yml` contains four rule groups for the v2 NVIDIA-locked mining protocol:
+`alerts_qsdm.example.yml` contains rule groups for the v2 NVIDIA-locked mining protocol:
 
 | Group | Series consumed | Pages on |
 |-------|-----------------|----------|
 | `qsdm-v2-mining-slashing` | `qsdm_slash_*` | applied slash (warning), >50 CELL drained / 15m (critical), rejection burst (warning), auto-revoke burst (critical) |
 | `qsdm-v2-mining-enrollment` | `qsdm_enrollment_*`, `qsdm_unenrollment_*` | empty registry after warm-up, fast shrink (>25%/1h), pending-unbond majority, rejection burst, bonded-dust drop (>50 CELL/30m) |
 | `qsdm-v2-mining-liveness` | `qsdm_chain_height`, `qsdm_mempool_size` | chain height stuck (critical), mempool >10k for 10m |
+| `qsdm-v2-attest-archspoof` | `qsdm_attest_archspoof_rejected_total{reason}` | unknown-arch burst (warning), HMAC `gpu_name_mismatch` (warning), CC `cc_subject_mismatch` (critical, single fire) |
+| `qsdm-v2-attest-hashrate` | `qsdm_attest_hashrate_rejected_total{arch}` | per-arch out-of-band burst — single rule covers all five canonical arches via `{{ $labels.arch }}` |
+| `qsdm-v2-governance` | `qsdm_gov_authority_*`, `qsdm_gov_authority_count` | vote recorded (info, FYI ping), threshold crossed (warning), AuthorityList size <2 (critical) |
 
-Thresholds (50 CELL drained, 25% shrink, 10k mempool depth) are calibrated for a small-to-medium fleet. Tune per environment after observing one week of baseline. The `subsystem: v2-mining` label on every rule lets Alertmanager route them to a dedicated channel without rewriting expressions.
+Thresholds (50 CELL drained, 25% shrink, 10k mempool depth, 0.05–0.1 rejections/sec) are calibrated for a small-to-medium fleet. Tune per environment after observing one week of baseline. Every rule carries `subsystem: v2-mining`, `subsystem: v2-attest`, or `subsystem: v2-governance` so Alertmanager can route the three families to dedicated channels without rewriting expressions.
 
-**v1-only deployments:** drop the `qsdm-v2-mining-*` groups — `qsdm_enrollment_active_count` legitimately stays at 0 on a v1 node and `QSDMMiningRegistryEmpty` would page indefinitely.
+**v1-only deployments:** drop the `qsdm-v2-mining-*`, `qsdm-v2-attest-*`, and `qsdm-v2-governance` groups — `qsdm_enrollment_active_count` legitimately stays at 0 on a v1 node, the attest counters never increment, and `qsdm_gov_authority_count` is also zero by construction. Loading these groups on a v1 node would page indefinitely.
+
+### CC-subject mismatch is intentionally critical
+
+The `QSDMAttestArchSpoofCCSubjectMismatch` alert pages on a **single** increment of `qsdm_attest_archspoof_rejected_total{reason="cc_subject_mismatch"}` over 15 minutes — much louder than the `unknown_arch` and `gpu_name_mismatch` siblings. Rationale: to reach this rejection branch the proof has already passed the cert-chain pin (genesis-trusted NVIDIA CA root) AND the AIK ECDSA signature, so a non-zero increment means an operator with an NVIDIA-issued AIK is submitting a proof whose leaf cert subject contradicts the claimed `gpu_arch`. That's either a fabricated AIK leaf (security event) or a serious operator misconfiguration; both warrant immediate attention.
 
 **CI smoke test:** `.github/workflows/validate-deploy.yml` runs `promtool check rules` against this file on every push that touches `QSDM/deploy/prometheus/**`.
