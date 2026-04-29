@@ -159,6 +159,22 @@ func currentRecentRejectionLister() RecentRejectionLister {
 	return recentRejectionHolder.lister
 }
 
+// CurrentRecentRejectionLister returns the process-wide
+// RecentRejectionLister, or nil if SetRecentRejectionLister
+// has not been called yet (i.e. v1-only deployment, or the
+// v2 store has not been wired by internal/v2wiring at boot).
+//
+// Exported so in-process readers outside pkg/api — primarily
+// the operator dashboard's attestation-rejections tile in
+// internal/dashboard — can render the list without going
+// through the HTTP API. New callers SHOULD treat a nil return
+// the same way the HTTP handler does: surface "503: store
+// not configured" to the operator rather than fabricating an
+// empty list.
+func CurrentRecentRejectionLister() RecentRejectionLister {
+	return currentRecentRejectionLister()
+}
+
 // MaxRecentRejectionListLimit caps server-side page size.
 // Mirrors recentrejects.MaxListLimit so client clamping and
 // server clamping agree (the store's clamp is the authoritative

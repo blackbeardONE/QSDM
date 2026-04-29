@@ -334,3 +334,88 @@ func (p failingPersister) LoadAll() ([]recentrejects.Rejection, error) {
 	return nil, nil
 }
 func (p failingPersister) Close() error { return nil }
+
+// RecentRejectMetricsSnapshot is the in-process consumer-
+// facing accessor used by the operator dashboard's
+// attestation-rejections tile (see internal/dashboard/
+// attest_rejections.go). The two tests below pin the wire
+// shape so a future refactor doesn't silently change the
+// JSON contract the tile depends on.
+func TestRecentRejectMetricsSnapshot_ZeroState(t *testing.T) {
+	t.Cleanup(ResetRecentRejectMetricsForTest)
+	ResetRecentRejectMetricsForTest()
+
+	snap := RecentRejectMetricsSnapshot()
+
+	if got, want := len(snap.Fields), 3; got != want {
+		t.Fatalf("len(Fields)=%d, want %d (detail, gpu_name, cert_subject)", got, want)
+	}
+	wantOrder := []string{
+		RecentRejectFieldDetail,
+		RecentRejectFieldGPUName,
+		RecentRejectFieldCertSubject,
+	}
+	for i, want := range wantOrder {
+		if snap.Fields[i].Field != want {
+			t.Errorf("Fields[%d].Field=%q, want %q (stable ordering broken — tile assumes detail/gpu_name/cert_subject)",
+				i, snap.Fields[i].Field, want)
+		}
+		if snap.Fields[i].ObservedTotal != 0 {
+			t.Errorf("Fields[%d].ObservedTotal=%d, want 0 (post-reset)",
+				i, snap.Fields[i].ObservedTotal)
+		}
+		if snap.Fields[i].TruncatedTotal != 0 {
+			t.Errorf("Fields[%d].TruncatedTotal=%d, want 0", i, snap.Fields[i].TruncatedTotal)
+		}
+		if snap.Fields[i].RunesMax != 0 {
+			t.Errorf("Fields[%d].RunesMax=%d, want 0", i, snap.Fields[i].RunesMax)
+		}
+	}
+	if snap.PersistErrorsTotal != 0 {
+		t.Errorf("PersistErrorsTotal=%d, want 0", snap.PersistErrorsTotal)
+	}
+}
+
+func TestRecentRejectMetricsSnapshot_ReflectsCounters(t *testing.T) {
+	t.Cleanup(ResetRecentRejectMetricsForTest)
+	ResetRecentRejectMetricsForTest()
+
+	// Two detail observations (one truncated at 4096), one
+	// gpu_name observation (not truncated), one cert_subject
+	// observation (truncated at 256). Two persist errors.
+	RecordRecentRejectField(RecentRejectFieldDetail, 4096, true)
+	RecordRecentRejectField(RecentRejectFieldDetail, 1024, false)
+	RecordRecentRejectField(RecentRejectFieldGPUName, 32, false)
+	RecordRecentRejectField(RecentRejectFieldCertSubject, 256, true)
+	RecordRecentRejectPersistError(errFakePersistError("disk full"))
+	RecordRecentRejectPersistError(errFakePersistError("permission denied"))
+
+	snap := RecentRejectMetricsSnapshot()
+
+	want := map[string]struct {
+		observed, truncated, runesMax uint64
+	}{
+		RecentRejectFieldDetail:      {2, 1, 4096},
+		RecentRejectFieldGPUName:     {1, 0, 32},
+		RecentRejectFieldCertSubject: {1, 1, 256},
+	}
+	for _, row := range snap.Fields {
+		w, ok := want[row.Field]
+		if !ok {
+			t.Errorf("unexpected field in snapshot: %q", row.Field)
+			continue
+		}
+		if row.ObservedTotal != w.observed {
+			t.Errorf("%s ObservedTotal=%d, want %d", row.Field, row.ObservedTotal, w.observed)
+		}
+		if row.TruncatedTotal != w.truncated {
+			t.Errorf("%s TruncatedTotal=%d, want %d", row.Field, row.TruncatedTotal, w.truncated)
+		}
+		if row.RunesMax != w.runesMax {
+			t.Errorf("%s RunesMax=%d, want %d", row.Field, row.RunesMax, w.runesMax)
+		}
+	}
+	if snap.PersistErrorsTotal != 2 {
+		t.Errorf("PersistErrorsTotal=%d, want 2", snap.PersistErrorsTotal)
+	}
+}

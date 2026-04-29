@@ -241,6 +241,12 @@ func (d *Dashboard) buildHandler() (http.Handler, error) {
 	mux.HandleFunc("/api/mesh3d-viz", d.requireAuth(d.handleMesh3DViz))
 	mux.HandleFunc("/api/ngc-proofs", d.requireAuth(d.handleNGCProofs))
 
+	// Attestation-rejection ring buffer + truncation telemetry tile.
+	// Combines the most recent rejection records with the cumulative
+	// qsdm_attest_rejection_field_* / persist_errors counters in one
+	// envelope. See attest_rejections.go for the wire shape.
+	mux.HandleFunc("/api/attest/rejections", d.requireAuth(d.handleAttestRejections))
+
 	// mTLS certificate management (admin only — certs are security-sensitive)
 	mux.HandleFunc("/api/mtls/generate", d.requireAdmin(d.handleMTLSGenerate))
 	mux.HandleFunc("/api/mtls/status", d.requireAuth(d.handleMTLSStatus))

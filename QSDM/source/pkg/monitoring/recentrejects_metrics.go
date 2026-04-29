@@ -137,6 +137,62 @@ func RecentRejectPersistErrorsForTest() uint64 {
 	return rrPersistErrors.Load()
 }
 
+// RecentRejectFieldMetricsView is one row of the per-field
+// telemetry snapshot returned by RecentRejectMetricsSnapshot.
+// JSON tag names below are the public contract; reordering is
+// safe but renaming any of them is a breaking change for the
+// operator dashboard tile that consumes this shape.
+type RecentRejectFieldMetricsView struct {
+	Field          string `json:"field"`
+	ObservedTotal  uint64 `json:"observed_total"`
+	TruncatedTotal uint64 `json:"truncated_total"`
+	RunesMax       uint64 `json:"runes_max"`
+}
+
+// RecentRejectMetricsView is the all-fields snapshot of the
+// recent-rejection ring's telemetry surface. Returned by
+// RecentRejectMetricsSnapshot for in-process consumers (the
+// operator dashboard's attestation-rejections tile, primarily)
+// that want a coherent view without scraping Prometheus.
+//
+// This is a snapshot — Fields and PersistErrorsTotal are
+// captured atomically per-counter but not as a transaction
+// across the whole struct. Two near-simultaneous Record calls
+// can interleave such that PersistErrorsTotal reflects a
+// failure that has not yet been added to the in-memory ring;
+// callers reading both this snapshot and the recentrejects
+// list together MUST treat the count and the list as
+// independent samples.
+type RecentRejectMetricsView struct {
+	Fields             []RecentRejectFieldMetricsView `json:"fields"`
+	PersistErrorsTotal uint64                         `json:"persist_errors_total"`
+}
+
+// RecentRejectMetricsSnapshot returns the current per-field
+// observed / truncated / runes-max counts plus the persist-
+// error total. Safe for concurrent callers; all reads are
+// atomic.Load.
+//
+// Field order in the returned slice matches
+// recentRejectFieldsLabeled (detail, gpu_name, cert_subject)
+// for stable rendering in the dashboard tile.
+func RecentRejectMetricsSnapshot() RecentRejectMetricsView {
+	rows := recentRejectFieldsLabeled()
+	out := RecentRejectMetricsView{
+		Fields:             make([]RecentRejectFieldMetricsView, 0, len(rows)),
+		PersistErrorsTotal: rrPersistErrors.Load(),
+	}
+	for _, r := range rows {
+		out.Fields = append(out.Fields, RecentRejectFieldMetricsView{
+			Field:          r.Field,
+			ObservedTotal:  r.Observed,
+			TruncatedTotal: r.Truncated,
+			RunesMax:       r.RunesMax,
+		})
+	}
+	return out
+}
+
 // recentRejectFieldLabeled returns the (field, observed,
 // truncated, max) tuples in stable order for Prometheus
 // exposition.
