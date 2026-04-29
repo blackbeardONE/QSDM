@@ -1,13 +1,13 @@
 // Package branding holds the canonical public product identity for QSDM.
 //
-// Background: the project was temporarily known as "QSDM" while the current
+// Background: the project was temporarily known as "QSDM+" while the current
 // feature enhancements (NVIDIA NGC attestation, Scylla storage, WASM contracts,
 // Go/JS SDKs) were stabilised. Per the Major Update plan (see
 // QSDM/docs/docs/REBRAND_NOTES.md), the product reverts to the clean name
 // "QSDM" at the Cell-coin launch. Technical identifiers (Go module path
-// github.com/blackbeardONE/QSDM, legacy environment variables QSDM_*,
-// legacy HTTP headers X-QSDM-*, legacy JSON field qsdm_node_id,
-// and legacy directories cmd/qsdm, sdk/qsdm.*) continue to work
+// github.com/blackbeardONE/QSDM, legacy environment variables QSDMPLUS_*,
+// legacy HTTP headers X-QSDMPLUS-*, legacy JSON field qsdmplus_node_id,
+// and legacy directories cmd/qsdmplus, sdk/qsdmplus.*) continue to work
 // for one deprecation window; new code and operator docs MUST reference the
 // Name / CoinName / CoinSymbol / preferred-header constants defined here.
 package branding
@@ -20,7 +20,7 @@ const (
 	// LegacyName is the immediately previous product name. It is exported so
 	// deprecation shims and REBRAND_NOTES tooling can emit consistent wording
 	// without re-hard-coding the string in half a dozen places.
-	LegacyName = "QSDM"
+	LegacyName = "QSDM+"
 
 	// Tagline is the long-form descriptor shown with the product.
 	Tagline = "Quantum-Secure Dynamic Mesh Ledger"
@@ -87,14 +87,14 @@ const (
 	NGCSecretHeaderPreferred = "X-QSDM-NGC-Secret"
 
 	// NGCSecretHeaderLegacy is the pre-rebrand name for the same header.
-	NGCSecretHeaderLegacy = "X-QSDM-NGC-Secret"
+	NGCSecretHeaderLegacy = "X-QSDMPLUS-NGC-Secret"
 
 	// MetricsScrapeSecretHeaderPreferred is the optional alternative to
 	// Bearer for GET /api/metrics/prometheus.
 	MetricsScrapeSecretHeaderPreferred = "X-QSDM-Metrics-Scrape-Secret"
 
 	// MetricsScrapeSecretHeaderLegacy is the pre-rebrand name for the same header.
-	MetricsScrapeSecretHeaderLegacy = "X-QSDM-Metrics-Scrape-Secret"
+	MetricsScrapeSecretHeaderLegacy = "X-QSDMPLUS-Metrics-Scrape-Secret"
 )
 
 // MetricsScrapeSecretHeader remains exported as the PREFERRED name and is
@@ -110,11 +110,11 @@ const MetricsScrapeSecretHeader = MetricsScrapeSecretHeaderPreferred
 // with existing sidecar deployments.
 const (
 	ProofNodeIDFieldPreferred = "qsdm_node_id"
-	ProofNodeIDFieldLegacy    = "qsdm_node_id"
+	ProofNodeIDFieldLegacy    = "qsdmplus_node_id"
 
 	ProofHMACFieldPreferred = "qsdm_proof_hmac"
-	ProofHMACFieldLegacy    = "qsdm_proof_hmac"
+	ProofHMACFieldLegacy    = "qsdmplus_proof_hmac"
 
 	ProofIngestNonceFieldPreferred = "qsdm_ingest_nonce"
-	ProofIngestNonceFieldLegacy    = "qsdm_ingest_nonce"
+	ProofIngestNonceFieldLegacy    = "qsdmplus_ingest_nonce"
 )
