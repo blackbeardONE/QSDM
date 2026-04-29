@@ -206,6 +206,38 @@ const (
 	// chain config (or a future binary added a multisig-gated
 	// rotation tx and the operator missed the announcement).
 	WatchKindParamAuthoritiesChanged WatchEventKind = "param_authorities_changed"
+
+	// --- attestation-rejection watcher kinds (see watch_archspoof.go) ---
+	//
+	// The archspoof watcher polls /api/metrics/prometheus and
+	// diffs the qsdm_attest_archspoof_rejected_total{reason}
+	// and qsdm_attest_hashrate_rejected_total{arch} counter
+	// families. It emits one event per non-zero delta per
+	// label across consecutive successful polls. Counters
+	// only ever monotonically increase under normal operation;
+	// a decrease (process restart wiping in-memory counters)
+	// resets the snapshot to the new baseline without emitting.
+	//
+	// Operators run this alongside the existing Prometheus
+	// alert rules: the alerts say "something is wrong"; the
+	// watcher says "here is each individual hit, in order, as
+	// they happen". The two views complement each other for
+	// incident-response.
+
+	// WatchKindArchSpoofBurst — at least one new
+	// qsdm_attest_archspoof_rejected_total increment was
+	// observed for a (reason) bucket since the prior poll.
+	// Reason is one of: unknown_arch, gpu_name_mismatch,
+	// cc_subject_mismatch (see MINING_PROTOCOL_V2 §4.6.4).
+	WatchKindArchSpoofBurst WatchEventKind = "archspoof_burst"
+
+	// WatchKindHashrateBurst — at least one new
+	// qsdm_attest_hashrate_rejected_total increment was
+	// observed for an (arch) bucket since the prior poll.
+	// Arch is one of the canonical NVIDIA architecture
+	// names (ada / hopper / blackwell / blackwell_ultra /
+	// rubin / rubin_ultra) or "unknown" for arch-less hits.
+	WatchKindHashrateBurst WatchEventKind = "hashrate_burst"
 )
 
 // WatchEvent is the unified wire shape of one diff output across
@@ -344,6 +376,33 @@ type WatchEvent struct {
 	// WatchKindParamAuthoritiesChanged. Sorted ASC.
 	AuthoritiesAdded   []string `json:"authorities_added,omitempty"`
 	AuthoritiesRemoved []string `json:"authorities_removed,omitempty"`
+
+	// --- archspoof / hashrate watcher payload ---
+	//
+	// Reason — populated on WatchKindArchSpoofBurst. Mirrors
+	// the {reason="..."} label of the underlying counter:
+	// unknown_arch | gpu_name_mismatch | cc_subject_mismatch.
+	Reason string `json:"reason,omitempty"`
+
+	// Arch — populated on WatchKindHashrateBurst (canonical
+	// NVIDIA arch name or "unknown"). NOT populated on
+	// WatchKindArchSpoofBurst even though some reasons carry
+	// arch context internally — keeping the counter labels
+	// 1:1 with the wire shape eliminates a class of mis-
+	// reading bugs in dashboards.
+	Arch string `json:"arch,omitempty"`
+
+	// DeltaCount — non-zero, positive count delta observed
+	// for this (kind, label) bucket between the prior and
+	// current poll. Always ≥ 1 on archspoof/hashrate events;
+	// zero deltas are filtered out before emission.
+	DeltaCount uint64 `json:"delta_count,omitempty"`
+
+	// TotalCount — the absolute counter value at the moment
+	// of the current poll. Lets dashboards reconstruct the
+	// monotonic series without re-fetching the metrics
+	// endpoint.
+	TotalCount uint64 `json:"total_count,omitempty"`
 }
 
 // watchRecord mirrors api.EnrollmentRecordView. Kept local to
@@ -387,11 +446,12 @@ type watchOptions struct {
 }
 
 // watchCommand handles `qsdmcli watch <subcommand> [flags...]`.
-// Currently `enrollments` and `slashes` are implemented; future
-// subcommands (`proofs`, etc.) plug in here.
+// Currently `enrollments`, `slashes`, `params`, and `archspoof`
+// are implemented; future subcommands (`proofs`, etc.) plug in
+// here.
 func (c *CLI) watchCommand(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: qsdmcli watch <subcommand> [flags]\n\nSubcommands:\n  enrollments    stream enrollment phase-change events\n  slashes        stream slash-receipt resolution events\n  params         stream governance-parameter staging/activation events")
+		return fmt.Errorf("usage: qsdmcli watch <subcommand> [flags]\n\nSubcommands:\n  enrollments    stream enrollment phase-change events\n  slashes        stream slash-receipt resolution events\n  params         stream governance-parameter staging/activation events\n  archspoof      stream attestation arch-spoof and hashrate-band rejection bursts")
 	}
 	sub := args[0]
 	rest := args[1:]
@@ -402,8 +462,10 @@ func (c *CLI) watchCommand(args []string) error {
 		return c.watchSlashes(rest)
 	case "params":
 		return c.watchParams(rest)
+	case "archspoof":
+		return c.watchArchSpoof(rest)
 	default:
-		return fmt.Errorf("unknown watch subcommand: %q (known: enrollments, slashes, params)", sub)
+		return fmt.Errorf("unknown watch subcommand: %q (known: enrollments, slashes, params, archspoof)", sub)
 	}
 }
 
@@ -830,12 +892,14 @@ func emitEvents(stdout, stderr io.Writer, jsonMode bool, events []WatchEvent) {
 func formatEventHuman(ev WatchEvent) string {
 	ts := ev.Timestamp.Format(time.RFC3339)
 	kind := strings.ToUpper(string(ev.Kind))
-	// Pad to width 20 so columns line up across all kinds:
+	// Pad to width 25 so columns line up across all kinds:
 	// enrollment kinds NEW(3), TRANSITION(10), STAKE_DELTA(11),
 	// DROPPED(7), ERROR(5); slash kinds SLASH_PENDING(13),
-	// SLASH_RESOLVED(14), SLASH_EVICTED(13), SLASH_OUTCOME_CHANGE(20).
+	// SLASH_RESOLVED(14), SLASH_EVICTED(13), SLASH_OUTCOME_CHANGE(20);
+	// param kinds up to PARAM_AUTHORITIES_CHANGED(25);
+	// archspoof kinds ARCHSPOOF_BURST(15), HASHRATE_BURST(14).
 	// Picked the max so mixed-stream tee'd output stays aligned.
-	for len(kind) < 20 {
+	for len(kind) < 25 {
 		kind += " "
 	}
 	switch ev.Kind {
@@ -950,6 +1014,16 @@ func formatEventHuman(ev WatchEvent) string {
 			s += "  removed=" + strings.Join(ev.AuthoritiesRemoved, ",")
 		}
 		return s
+	case WatchKindArchSpoofBurst:
+		return fmt.Sprintf("%s %s reason=%s  delta=+%d  total=%d",
+			ts, kind, ev.Reason, ev.DeltaCount, ev.TotalCount)
+	case WatchKindHashrateBurst:
+		arch := ev.Arch
+		if arch == "" {
+			arch = "unknown"
+		}
+		return fmt.Sprintf("%s %s arch=%s  delta=+%d  total=%d",
+			ts, kind, arch, ev.DeltaCount, ev.TotalCount)
 	default:
 		// Defensive — unreachable in normal flow because
 		// WatchKindError takes the stderr path before

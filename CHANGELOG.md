@@ -14,6 +14,71 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`qsdmcli watch archspoof` — operator-facing live stream of
+  arch-spoof and hashrate-band rejection bursts (2026-04-29).**
+  Fourth member of the `qsdmcli watch *` family alongside
+  `enrollments` / `slashes` / `params`. Polls
+  `/api/metrics/prometheus`, parses the
+  `qsdm_attest_archspoof_rejected_total{reason}` and
+  `qsdm_attest_hashrate_rejected_total{arch}` counter
+  families, and emits one event per non-zero counter delta on
+  each tick. Designed as the per-event complement to the
+  Prometheus alert rules shipped in the previous slot: alerts
+  say "something is wrong"; the watcher says "here is each hit
+  as it lands, in order".
+  - **Two new event kinds** on the shared `WatchEvent`
+    envelope: `archspoof_burst` (with `reason`,
+    `delta_count`, `total_count`) and `hashrate_burst` (with
+    `arch`, `delta_count`, `total_count`). JSON-Lines
+    consumers can decode every watcher's output with a single
+    struct definition; renaming either kind is a wire-format
+    change pinned by tests.
+  - **Counter-rollback handling.** Counters monotonically
+    increase under normal operation; a decrease across two
+    polls (process restart wiping in-memory counters) snaps
+    the snapshot to the new baseline without emitting. Under-
+    counting one cycle is preferred to a spurious "burst" the
+    moment a validator restarts. Covered by
+    `TestDiffArchSpoofSnapshots_CounterRollback_Silent`.
+  - **Server-side filters.** `--reason` and `--arch` flags
+    accept comma-separated allowlists (e.g.
+    `--reason=cc_subject_mismatch` to monitor only the
+    critical bucket); flag values are validated against the
+    canonical enums at parse time so typos surface
+    immediately rather than as silent no-matches.
+  - **Metrics-URL derivation.** Defaults to deriving from
+    `QSDM_API_URL` (replacing the trailing `/api/v1` with
+    `/api/metrics/prometheus`); overridable via
+    `--metrics-url` flag or `QSDM_METRICS_URL` env var for
+    operators with split data-plane / metrics-plane
+    deployments.
+  - **Auth.** Same Bearer-token plumbing as the rest of
+    `qsdmcli`. The dashboard's `requireMetricsScrapeOrAuth`
+    middleware accepts either a JWT or the metrics-scrape
+    secret; the Bearer side is the one wired in `qsdmcli`
+    today.
+  - **Test coverage.** 34 new unit / integration tests in
+    [`QSDM/source/cmd/qsdmcli/watch_archspoof_test.go`](QSDM/source/cmd/qsdmcli/watch_archspoof_test.go)
+    covering flag normalisation, CSV-set parsing, URL
+    derivation, exposition parsing (happy path, float values,
+    malformed lines, empty arch label normalisation),
+    `splitExpositionLine` direct cases, diff-core semantics
+    (no-change, single-bucket burst, multi-bucket sorted
+    output, counter rollback, filter enforcement),
+    `--include-existing` snapshot synthesis, end-to-end
+    `--once` mode against an `httptest` metrics server, and
+    router dispatch / unknown-subcommand error advertisement.
+    Total qsdmcli tests: 161 → 195.
+  - **Out of scope (deliberately).** Per-rejection `node_id` /
+    GPU name / raw error message — the metrics layer is
+    label-coarse on purpose; surfacing that detail would
+    require a server-side ring buffer and a new
+    `/api/v1/attest/recent-rejections` endpoint. Operators
+    needing per-event detail can correlate watcher bursts
+    against the validator's structured log; a recent-
+    rejections endpoint is queued behind the watcher-bot
+    reference impl in a future session.
+
 - **Prometheus alert rules + scrape wiring for the §4.6
   arch-spoof gate, hashrate-band gate, and `qsdm/gov/v1`
   authority-rotation pipeline (2026-04-29).** Three new alert

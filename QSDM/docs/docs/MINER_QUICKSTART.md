@@ -564,6 +564,60 @@ Operational notes:
 - **Per-cycle partial failures are non-fatal.** A transient HTTP error on one tx id does not tear down the loop; the id is silently dropped from this cycle and retried next. Only a *total* failure (every id errors) triggers an `error` event on stderr / stdout-under-`--json`. The initial cycle is the exception: total failure there exits non-zero so misconfigured watcher invocations fail loudly.
 - **Cadence floor.** `--interval` is clamped to ≥ 5 seconds, same as `watch enrollments`.
 
+### Streaming arch-spoof / hashrate-band rejection bursts with `qsdmcli watch archspoof`
+
+The third operator-facing watcher in the family. While `watch enrollments` and `watch slashes` follow lifecycle changes for resources the operator owns (rigs, slash transactions), `watch archspoof` is a **fleet-wide attestation-rejection stream**: it polls `/api/metrics/prometheus` and emits one event every time the validator increments `qsdm_attest_archspoof_rejected_total{reason}` (the §4.6 arch-spoof gate) or `qsdm_attest_hashrate_rejected_total{arch}` (the §4.6.3 hashrate-band gate).
+
+This is the **per-event complement** to the Prometheus alert rules in `QSDM/deploy/prometheus/alerts_qsdm.example.yml`: alerts say "the rate is too high"; the watcher says "here is each individual hit, in order, as they happen". Operators running on-call rotations typically pair the two views.
+
+```bash
+# Stream every rejection bucket; default 30s cadence, human format on stdout:
+./qsdmcli watch archspoof
+
+# JSON-Lines for log shippers; 10-second cadence:
+./qsdmcli watch archspoof --json --interval=10s | tee rejections.jsonl
+
+# Filter to the critical bucket only — cc_subject_mismatch means a proof
+# passed cert-chain pin + AIK signature but the leaf cert subject
+# contradicts the claimed gpu_arch (cryptographic anomaly):
+./qsdmcli watch archspoof --reason=cc_subject_mismatch
+
+# Watch a specific arch's hashrate rejections:
+./qsdmcli watch archspoof --arch=hopper,blackwell
+
+# Snapshot once and exit, including every existing non-zero counter:
+./qsdmcli watch archspoof --once --include-existing --json
+
+# Override the metrics URL (split data-plane / metrics-plane deployments):
+QSDM_METRICS_URL=https://metrics.example.com/api/metrics/prometheus \
+  ./qsdmcli watch archspoof
+```
+
+Sample human output:
+
+```text
+2026-04-28T04:00:42Z ARCHSPOOF_BURST          reason=unknown_arch  delta=+3  total=42
+2026-04-28T04:01:12Z ARCHSPOOF_BURST          reason=cc_subject_mismatch  delta=+1  total=2
+2026-04-28T04:01:42Z HASHRATE_BURST           arch=hopper  delta=+5  total=18
+```
+
+Same data under `--json`:
+
+```json
+{"ts":"2026-04-28T04:00:42Z","event":"archspoof_burst","reason":"unknown_arch","delta_count":3,"total_count":42}
+{"ts":"2026-04-28T04:01:12Z","event":"archspoof_burst","reason":"cc_subject_mismatch","delta_count":1,"total_count":2}
+{"ts":"2026-04-28T04:01:42Z","event":"hashrate_burst","arch":"hopper","delta_count":5,"total_count":18}
+```
+
+Operational notes:
+
+- **No write surface.** Like every `watch *` subcommand, this never submits a transaction — safe on a low-trust admin host.
+- **Auth.** `/api/metrics/prometheus` accepts either a dashboard JWT (Bearer, the path `qsdmcli` uses) or a metrics-scrape secret header. Set the JWT via the standard `QSDM_TOKEN` plumbing or run unauthenticated against an internal node.
+- **Counter rollback handling.** Counters monotonically increase under normal operation; a decrease across two polls (process restart wiping in-memory state) snaps the snapshot to the new baseline silently. The watcher errs toward under-counting one cycle rather than synthesising a fake "burst" the moment the validator restarts.
+- **Filters validate at parse time.** `--reason` only accepts `unknown_arch`, `gpu_name_mismatch`, `cc_subject_mismatch` (per `MINING_PROTOCOL_V2 §4.6.4`); `--arch` only accepts the canonical NVIDIA family names plus `unknown`. Typos surface immediately rather than as silent no-matches across hours of polling.
+- **What is NOT in the stream.** The metrics layer is label-coarse on purpose: this watcher does not surface per-rejection `node_id` / GPU name / raw error message. For incident response that needs that detail, correlate the watcher bursts against the validator's structured log (a future `/api/v1/attest/recent-rejections` endpoint is queued behind the watcher-bot reference impl).
+- **Cadence floor.** `--interval` is clamped to ≥ 5 seconds, same as the other watchers.
+
 ### Tooling notes
 
 - All three write subcommands accept `--id` for an idempotent client-supplied tx id; if omitted, `qsdmcli` generates a 16-byte random hex id.
