@@ -116,6 +116,90 @@ func TestWire_RecentRejections_StoreSurfacesThroughHandler(t *testing.T) {
 	}
 }
 
+// TestWire_RecentRejections_GPUNameSurfaces locks the
+// end-to-end "gpu_name reaches the operator" invariant
+// introduced with the archcheck.RejectionDetail wrapper. The
+// store accepts a Rejection with GPUName populated and the
+// HTTP handler surfaces it byte-for-byte on the wire view —
+// any future refactor that drops the field anywhere along the
+// chain (store → adapter → view → handler) makes this test
+// fail loudly.
+func TestWire_RecentRejections_GPUNameSurfaces(t *testing.T) {
+	r := buildRig(t, 20)
+
+	r.w.RecentRejections.Record(recentrejects.Rejection{
+		Kind:    recentrejects.KindArchSpoofGPUNameMismatch,
+		Reason:  "gpu_name_mismatch",
+		Arch:    "hopper",
+		GPUName: "NVIDIA GeForce RTX 4090",
+		Detail:  "lazy spoof: claimed hopper, smi reported Ada",
+	})
+
+	h := &api.Handlers{}
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/attest/recent-rejections", nil)
+	w := httptest.NewRecorder()
+	h.RecentRejectionsHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("handler status: got %d, body=%s", w.Code, w.Body.String())
+	}
+	var view api.RecentRejectionsListPageView
+	if err := json.NewDecoder(w.Body).Decode(&view); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(view.Records) != 1 {
+		t.Fatalf("records: got %d", len(view.Records))
+	}
+	if view.Records[0].GPUName != "NVIDIA GeForce RTX 4090" {
+		t.Errorf("GPUName must surface end-to-end; got %q",
+			view.Records[0].GPUName)
+	}
+	if view.Records[0].CertSubject != "" {
+		t.Errorf("CertSubject must stay empty on HMAC path; got %q",
+			view.Records[0].CertSubject)
+	}
+}
+
+// TestWire_RecentRejections_CertSubjectSurfaces — CC-path
+// counterpart to the GPUName test.
+func TestWire_RecentRejections_CertSubjectSurfaces(t *testing.T) {
+	r := buildRig(t, 20)
+
+	r.w.RecentRejections.Record(recentrejects.Rejection{
+		Kind:        recentrejects.KindArchSpoofCCSubjectMismatch,
+		Reason:      "cc_subject_mismatch",
+		Arch:        "hopper",
+		CertSubject: "NVIDIA GeForce RTX 4090",
+		Detail:      "leaf cert subject contradicts claimed arch",
+	})
+
+	h := &api.Handlers{}
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/attest/recent-rejections", nil)
+	w := httptest.NewRecorder()
+	h.RecentRejectionsHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("handler status: got %d", w.Code)
+	}
+	var view api.RecentRejectionsListPageView
+	if err := json.NewDecoder(w.Body).Decode(&view); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(view.Records) != 1 {
+		t.Fatalf("records: got %d", len(view.Records))
+	}
+	if view.Records[0].CertSubject != "NVIDIA GeForce RTX 4090" {
+		t.Errorf("CertSubject must surface end-to-end; got %q",
+			view.Records[0].CertSubject)
+	}
+	if view.Records[0].GPUName != "" {
+		t.Errorf("GPUName must stay empty on CC path; got %q",
+			view.Records[0].GPUName)
+	}
+}
+
 // TestWire_RecentRejections_KindFilterRoundTrip validates that
 // the production wiring path filters at the store layer (not
 // just the handler validation layer). A bug where the adapter

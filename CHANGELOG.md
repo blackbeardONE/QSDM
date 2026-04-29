@@ -14,6 +14,75 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Structured `*archcheck.RejectionDetail` wrapper — `gpu_name`
+  and `cert_subject` now populate end-to-end on §4.6 rejections
+  (2026-04-29).** Closes the "GPUName / CertSubject empty
+  end-to-end" caveat noted in the prior commit. The outer
+  verifier never sees the bundle's gpu_name or the leaf cert's
+  subject directly — both live inside the per-type verifier
+  (`pkg/mining/attest/{hmac,cc}/`) — so until now the
+  `recent-rejections` ring populated those fields with empty
+  strings.
+  - **New `archcheck.RejectionDetail` error wrapper** carries
+    the offending value (`GPUName` on HMAC paths,
+    `CertSubject` on CC paths, raw `GPUArch` on outer-arch
+    paths) plus the matched/expected `Patterns`. Implements
+    `Unwrap()` returning the canonical sentinel
+    (`ErrArchUnknown` / `ErrArchGPUNameMismatch` /
+    `ErrArchCertSubjectMismatch`) so every existing
+    `errors.Is(err, archcheck.ErrArch*)` call site keeps
+    working byte-for-byte.
+  - **`ValidateOuterArch`,
+    `ValidateBundleArchConsistencyHMAC`, and
+    `ValidateBundleArchConsistencyCC` now return
+    `*RejectionDetail`** instead of bare `fmt.Errorf("%w: ...")`.
+    The rendered `Error()` string is preserved verbatim
+    (operator log lines do not visibly drift).
+  - **Outer verifier traverses the wrapper via `errors.As`.**
+    `recordRejectionForArchSpoof` now extracts `GPUName` /
+    `CertSubject` from the structured detail attached to the
+    error chain — works through the per-type verifier's
+    `fmt.Errorf("hmac: %w: %w", err,
+    mining.ErrAttestationSignatureInvalid)` double-wrap (Go
+    1.20+ multi-`%w`). Outer-verifier signature simplified:
+    `recordRejectionForArchSpoof(err, p)` — no more
+    placeholder `gpuName, certSubject` args.
+  - **Wire surface unchanged.** Every JSON consumer of
+    `/api/v1/attest/recent-rejections` and
+    `qsdmcli watch archspoof --detailed` automatically starts
+    receiving populated `gpu_name` / `cert_subject` fields the
+    moment a node deploys this binary; no client-side code
+    change required.
+  - **Test coverage.** 19 new unit / integration tests
+    (1973 → 1992 module-wide):
+    - 14 in
+      `pkg/mining/attest/archcheck/rejection_detail_test.go`
+      covering `errors.Is` parity for all three sentinels,
+      `errors.As` extraction (HMAC/CC/outer-unknown,
+      including the per-type verifier's double-`%w`), Error()
+      string parity (allowed-list suffix on outer-unknown,
+      gpu_name + patterns on HMAC, cert_subject on CC, empty
+      gpu_name special case), nil-detail safety, and
+      defensive Patterns-slice copying.
+    - 3 in
+      `pkg/mining/verifier_recentrejects_test.go` driving the
+      verifier hot path with real `archcheck.Validate*`
+      returns wrapped under `ErrAttestationSignatureInvalid`,
+      validating that `RejectionEvent.GPUName` /
+      `.CertSubject` surface automatically end-to-end.
+    - 2 in
+      `internal/v2wiring/v2wiring_recentrejects_test.go`
+      locking the round trip through the production HTTP
+      handler: a record with `GPUName` populated round-trips
+      to `view.Records[0].GPUName`; same for `CertSubject`.
+  - **Backward-compatible.** Older deployments running the
+    prior binary against this new client / dashboard simply
+    continue to emit empty-string `gpu_name` / `cert_subject`
+    — the omitempty JSON tags drop them from the wire, and
+    consumers handle absence the same way they handle
+    "rejection happened on a path that doesn't carry that
+    detail".
+
 - **`/api/v1/attest/recent-rejections` endpoint — per-event detail
   companion to the §4.6 archspoof / hashrate Prometheus counters
   (2026-04-29).** Closes the "out of scope" caveat shipped with

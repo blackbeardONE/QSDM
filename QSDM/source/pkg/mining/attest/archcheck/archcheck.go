@@ -383,8 +383,11 @@ func Canonicalise(s string) (Architecture, bool) {
 func ValidateOuterArch(gpuArch string) (Architecture, error) {
 	a, ok := Canonicalise(gpuArch)
 	if !ok {
-		return "", fmt.Errorf("%w: %q (allowed: %s)",
-			ErrArchUnknown, gpuArch, allowedNamesForError())
+		// Structured detail: surfaces the raw (rejected) arch
+		// string on the wire view via *RejectionDetail.GPUArch.
+		// errors.Is(err, ErrArchUnknown) still matches because
+		// RejectionDetail.Unwrap() returns the sentinel.
+		return "", newOuterArchUnknown(gpuArch, allowedNamesForError())
 	}
 	return a, nil
 }
@@ -416,16 +419,24 @@ func ValidateBundleArchConsistencyHMAC(arch Architecture, gpuName string) error 
 	}
 	name := normaliseGPUName(gpuName)
 	if name == "" {
-		return fmt.Errorf("%w: empty gpu_name (claimed arch %q)",
-			ErrArchGPUNameMismatch, arch)
+		// Empty gpu_name is itself a rejection — emit the
+		// structured detail with the (canonical) arch but no
+		// gpu_name (matches the prior message body when
+		// rendered via Error()). The recent-rejections ring
+		// will populate GPUArch but leave GPUName empty.
+		return newGPUNameMismatchEmpty(arch)
 	}
 	for _, p := range patterns {
 		if strings.Contains(name, p) {
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: gpu_name=%q does not match arch=%q (patterns: %s)",
-		ErrArchGPUNameMismatch, gpuName, arch, strings.Join(patterns, ", "))
+	// Structured detail: GPUName carries the actual offending
+	// value (un-normalised — operators want to see what the
+	// driver emitted, not the lowercased form). Patterns is
+	// the substring set we tried, so the operator log line
+	// can answer "what would have been accepted".
+	return newGPUNameMismatch(arch, gpuName, patterns)
 }
 
 // normaliseGPUName lowercases, trims, and collapses internal
@@ -632,8 +643,13 @@ func ValidateBundleArchConsistencyCC(arch Architecture, certSubject string) erro
 	if _, ok := bestArches[arch]; ok {
 		return nil
 	}
-	return fmt.Errorf("%w: cert subject=%q strongest-evidence patterns=%v but claimed arch=%q",
-		ErrArchCertSubjectMismatch, certSubject, bestPatterns, arch)
+	// Structured detail: CertSubject carries the un-normalised
+	// raw operator-supplied subject (operators want to see what
+	// the cert actually contains). Patterns carries the
+	// strongest-match labels for log readability; consumers
+	// reading the wire view typically only consume CertSubject
+	// + GPUArch.
+	return newCertSubjectMismatch(arch, certSubject, bestPatterns)
 }
 
 // allowedNamesForError returns a comma-joined list of

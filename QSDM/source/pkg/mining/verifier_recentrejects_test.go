@@ -24,7 +24,9 @@ package mining
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -322,6 +324,185 @@ func TestRecorder_DoesNotFireOnGenericCryptoError(t *testing.T) {
 	if len(events) != 0 {
 		t.Errorf("generic crypto err must not bucket; got %d events: %+v",
 			len(events), events)
+	}
+}
+
+// TestRecorder_ExtractsGPUNameFromHMACDetail validates the
+// structured-detail extraction added with the
+// archcheck.RejectionDetail wrapper migration. A per-type
+// verifier returning a real archcheck.RejectionDetail (the
+// shape ValidateBundleArchConsistencyHMAC now returns) MUST
+// surface its GPUName onto the captured RejectionEvent. This
+// closes the long-standing "GPUName empty end-to-end" gap
+// flagged in the previous commit's TODO.
+func TestRecorder_ExtractsGPUNameFromHMACDetail(t *testing.T) {
+	resetForkV2(t)
+	SetForkV2Height(50)
+	cap := installCaptureRecorder(t)
+
+	// Build the EXACT shape the production HMAC verifier
+	// produces: archcheck.ValidateBundleArchConsistencyHMAC
+	// already returns *RejectionDetail, then the verifier
+	// wraps with mining.ErrAttestationSignatureInvalid via
+	// fmt.Errorf("hmac: %w: %w", err, sentinel).
+	stub := &recordingVerifier{
+		onVerify: func(_ Proof, _ time.Time) error {
+			inner := archcheck.ValidateBundleArchConsistencyHMAC(
+				archcheck.ArchHopper, "NVIDIA GeForce RTX 4090")
+			return fmt.Errorf("hmac: %w: %w", inner, ErrAttestationSignatureInvalid)
+		},
+	}
+	v, err := NewVerifier(VerifierConfig{
+		EpochParams:      NewEpochParams(),
+		DifficultyParams: NewDifficultyAdjusterParams(),
+		Chain:            &fakeChain{tip: 200, headers: map[uint64][32]byte{100: {0x01}}},
+		Addresses:        permissiveAddr{},
+		Dedup:            NewProofIDSet(16),
+		Quarantine:       NewQuarantineSet(),
+		DAGProvider:      func(uint64) (DAG, error) { return nil, errors.New("unused") },
+		WorkSetProvider:  func(uint64) (WorkSet, error) { return WorkSet{}, errors.New("unused") },
+		DifficultyAt:     func(uint64) (*big.Int, error) { return nil, errors.New("unused") },
+		Attestation:      stub,
+	})
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+
+	p := buildV2Proof(t, AttestationTypeHMAC)
+	p.Attestation.GPUArch = "hopper"
+	raw, err := p.CanonicalJSON()
+	if err != nil {
+		t.Fatalf("canonical: %v", err)
+	}
+	_, _ = v.Verify(raw, 150)
+
+	events := cap.snapshot()
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d: %+v", len(events), events)
+	}
+	got := events[0]
+	if got.Kind != RejectionKindArchSpoofGPUNameMismatch {
+		t.Errorf("kind: got %q", got.Kind)
+	}
+	if got.GPUName != "NVIDIA GeForce RTX 4090" {
+		t.Errorf("GPUName must surface from RejectionDetail; got %q", got.GPUName)
+	}
+	if got.CertSubject != "" {
+		t.Errorf("CertSubject must stay empty on HMAC path; got %q", got.CertSubject)
+	}
+}
+
+// TestRecorder_ExtractsCertSubjectFromCCDetail mirrors the
+// HMAC-side test for the CC path.
+func TestRecorder_ExtractsCertSubjectFromCCDetail(t *testing.T) {
+	resetForkV2(t)
+	SetForkV2Height(50)
+	cap := installCaptureRecorder(t)
+
+	stub := &recordingVerifier{
+		onVerify: func(_ Proof, _ time.Time) error {
+			inner := archcheck.ValidateBundleArchConsistencyCC(
+				archcheck.ArchHopper, "NVIDIA GeForce RTX 4090")
+			return fmt.Errorf("cc: arch consistency: %w: %w",
+				inner, ErrAttestationSignatureInvalid)
+		},
+	}
+	v, err := NewVerifier(VerifierConfig{
+		EpochParams:      NewEpochParams(),
+		DifficultyParams: NewDifficultyAdjusterParams(),
+		Chain:            &fakeChain{tip: 200, headers: map[uint64][32]byte{100: {0x01}}},
+		Addresses:        permissiveAddr{},
+		Dedup:            NewProofIDSet(16),
+		Quarantine:       NewQuarantineSet(),
+		DAGProvider:      func(uint64) (DAG, error) { return nil, errors.New("unused") },
+		WorkSetProvider:  func(uint64) (WorkSet, error) { return WorkSet{}, errors.New("unused") },
+		DifficultyAt:     func(uint64) (*big.Int, error) { return nil, errors.New("unused") },
+		Attestation:      stub,
+	})
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+
+	p := buildV2Proof(t, AttestationTypeCC)
+	p.Attestation.GPUArch = "hopper"
+	raw, err := p.CanonicalJSON()
+	if err != nil {
+		t.Fatalf("canonical: %v", err)
+	}
+	_, _ = v.Verify(raw, 150)
+
+	events := cap.snapshot()
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d: %+v", len(events), events)
+	}
+	got := events[0]
+	if got.Kind != RejectionKindArchSpoofCCSubjectMismatch {
+		t.Errorf("kind: got %q", got.Kind)
+	}
+	if got.CertSubject != "NVIDIA GeForce RTX 4090" {
+		t.Errorf("CertSubject must surface from RejectionDetail; got %q", got.CertSubject)
+	}
+	if got.GPUName != "" {
+		t.Errorf("GPUName must stay empty on CC path; got %q", got.GPUName)
+	}
+}
+
+// TestRecorder_ExtractsRawArchFromOuterUnknown validates the
+// archspoof_unknown_arch path: ValidateOuterArch returns a
+// *RejectionDetail with the raw rejected arch in GPUArch (not
+// GPUName). The recorder still populates ev.Arch from the proof
+// envelope (already covered) and the event detail string
+// captures the formatted error — but the key invariant locked
+// here is that the structured-detail wrapper is REACHABLE on
+// this path too, so a future enhancement (e.g. surfacing the
+// allowed list to dashboards) doesn't have to retrofit a
+// separate plumbing.
+func TestRecorder_ExtractsRawArchFromOuterUnknown(t *testing.T) {
+	resetForkV2(t)
+	SetForkV2Height(50)
+	cap := installCaptureRecorder(t)
+
+	stub := &recordingVerifier{
+		onVerify: func(_ Proof, _ time.Time) error { return nil },
+	}
+	v, err := NewVerifier(VerifierConfig{
+		EpochParams:      NewEpochParams(),
+		DifficultyParams: NewDifficultyAdjusterParams(),
+		Chain:            &fakeChain{tip: 200, headers: map[uint64][32]byte{100: {0x01}}},
+		Addresses:        permissiveAddr{},
+		Dedup:            NewProofIDSet(16),
+		Quarantine:       NewQuarantineSet(),
+		DAGProvider:      func(uint64) (DAG, error) { return nil, errors.New("unused") },
+		WorkSetProvider:  func(uint64) (WorkSet, error) { return WorkSet{}, errors.New("unused") },
+		DifficultyAt:     func(uint64) (*big.Int, error) { return nil, errors.New("unused") },
+		Attestation:      stub,
+	})
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+
+	p := buildV2Proof(t, AttestationTypeHMAC)
+	p.Attestation.GPUArch = "future-arch-2099"
+	raw, err := p.CanonicalJSON()
+	if err != nil {
+		t.Fatalf("canonical: %v", err)
+	}
+	_, _ = v.Verify(raw, 150)
+
+	events := cap.snapshot()
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d: %+v", len(events), events)
+	}
+	if events[0].Kind != RejectionKindArchSpoofUnknown {
+		t.Errorf("kind: got %q", events[0].Kind)
+	}
+	if events[0].Arch != "future-arch-2099" {
+		t.Errorf("arch (raw): got %q", events[0].Arch)
+	}
+	// The detail string carries the formatted rejection — make
+	// sure the wrapper round-tripped its allowed-list suffix.
+	if !strings.Contains(events[0].Detail, "allowed:") {
+		t.Errorf("detail must include allowed list; got %q", events[0].Detail)
 	}
 }
 

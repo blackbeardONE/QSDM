@@ -374,7 +374,7 @@ func (v *Verifier) Verify(rawProofJSON []byte, acceptHeight uint64) ([32]byte, e
 		arch, err := archcheck.ValidateOuterArch(p.Attestation.GPUArch)
 		if err != nil {
 			recordArchSpoofRejection(err)
-			recordRejectionForArchSpoof(err, p, "", "")
+			recordRejectionForArchSpoof(err, p)
 			return [32]byte{}, reject(ReasonAttestation, "%v", err)
 		}
 		// Hashrate-band plausibility (§4.6 hashrate paragraph).
@@ -403,7 +403,7 @@ func (v *Verifier) Verify(rawProofJSON []byte, acceptHeight uint64) ([32]byte, e
 			// ring so operators can answer "who got bounced"
 			// without round-tripping the metrics endpoint.
 			recordArchSpoofRejection(err)
-			recordRejectionForArchSpoof(err, p, "", "")
+			recordRejectionForArchSpoof(err, p)
 			return [32]byte{}, reject(ReasonAttestation, "%v", err)
 		}
 	} else {

@@ -161,10 +161,11 @@ func currentRejectionRecorder() RejectionRecorder {
 //
 // The verifier passes the full Proof so we can populate
 // MinerAddr/Height/Arch without a second walk. GPU name and
-// cert subject come from the per-type verifier as side
-// channels; the verifier supplies them through the
-// RejectionEvent literal at the call site (this helper picks
-// the Kind/Reason/Arch fields).
+// cert subject come from the per-type verifier via the
+// *archcheck.RejectionDetail wrapper traversed by errors.As —
+// they are side-channel detail attached to the error itself,
+// not the proof envelope, so this is the only place they
+// surface on the outer verifier path.
 func rejectionEventFromArchSpoof(err error, p *Proof) (RejectionEvent, bool) {
 	if err == nil || p == nil {
 		return RejectionEvent{}, false
@@ -187,6 +188,23 @@ func rejectionEventFromArchSpoof(err error, p *Proof) (RejectionEvent, bool) {
 		ev.Reason = ArchSpoofRejectReasonCCSubjectMismatch
 	default:
 		return RejectionEvent{}, false
+	}
+
+	// Pluck the per-type verifier's structured side-channel
+	// detail. Populated whenever the per-type verifier wraps
+	// the archcheck.ValidateBundle*-style return through
+	// fmt.Errorf("...: %w: %w", err, sentinel). errors.As
+	// walks both unwraps so this works even when the per-type
+	// verifier double-wraps the archcheck error under
+	// mining.ErrAttestationSignatureInvalid.
+	var detail *archcheck.RejectionDetail
+	if errors.As(err, &detail) && detail != nil {
+		if detail.GPUName != "" {
+			ev.GPUName = detail.GPUName
+		}
+		if detail.CertSubject != "" {
+			ev.CertSubject = detail.CertSubject
+		}
 	}
 	return ev, true
 }
@@ -218,27 +236,16 @@ func rejectionEventFromHashrate(arch archcheck.Architecture, p *Proof, err error
 // sentinel (matches recordArchSpoofRejection's posture of "we
 // only label things we recognise").
 //
-// gpuName / certSubject are optional — pass "" when the caller
-// (outer verifier, before per-type dispatch) does not have them.
-// The HMAC verifier could in principle plumb gpuName through a
-// future side channel; today the bundle is parsed inside
-// pkg/mining/attest/hmac and re-extracting it here would
-// re-introduce the import boundary the dependency inversion is
-// designed to break. The CertSubject path is the same shape
-// for cc/. A future enhancement can add an interface method on
-// the per-type AttestationVerifier to expose these strings;
-// until then the ring captures the empty-string defaults and
-// dashboards key on Reason/Arch instead.
-func recordRejectionForArchSpoof(err error, p *Proof, gpuName, certSubject string) {
+// GPUName and CertSubject are now extracted automatically from
+// the *archcheck.RejectionDetail wrapper attached to the err
+// chain (see archcheck/rejection_detail.go). Per-type verifiers
+// no longer need a side channel — the structured detail rides
+// inside the error itself, traversed via errors.As at this
+// call site.
+func recordRejectionForArchSpoof(err error, p *Proof) {
 	ev, ok := rejectionEventFromArchSpoof(err, p)
 	if !ok {
 		return
-	}
-	if gpuName != "" {
-		ev.GPUName = gpuName
-	}
-	if certSubject != "" {
-		ev.CertSubject = certSubject
 	}
 	currentRejectionRecorder().Record(ev)
 }

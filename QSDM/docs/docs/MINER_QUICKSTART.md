@@ -629,6 +629,8 @@ Operational notes:
   ./qsdmcli watch archspoof --detailed --reason=cc_subject_mismatch
   ```
 
+  As of 2026-04-29 the `gpu_name` field (HMAC paths) and `cert_subject` field (CC paths) populate automatically — no operator action required. The verifier extracts them from the per-type verifier's structured `*archcheck.RejectionDetail` wrapper via `errors.As`, so a `--detailed` event for an HMAC step-8 rejection always carries the rejected `gpu_name` (e.g. `"NVIDIA GeForce RTX 4090"` when an Ada card lazily claimed `gpu_arch=hopper`), and a CC step-9 event always carries the rejected leaf cert's `Subject.CommonName`.
+
   Sample human output:
 
   ```
