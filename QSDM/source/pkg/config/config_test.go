@@ -169,3 +169,85 @@ func TestValidate_APIRateLimit_tooHigh(t *testing.T) {
 		t.Fatal("expected error for excessive rate limit max")
 	}
 }
+
+// chdirCleanup is shared by the qsdmplus.* fallback tests below: each
+// test cd's into a fresh t.TempDir() so applyDefaults' os.Stat probes
+// against bare relative names ("qsdm.db" / "qsdmplus.db") only see
+// the marker files we lay down. Restoring the original CWD on cleanup
+// keeps the rest of the package-level tests running where they expect.
+func chdirCleanup(t *testing.T) string {
+	t.Helper()
+	tmp := t.TempDir()
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir(%q): %v", tmp, err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+	return tmp
+}
+
+// Regression: the rebrand commit (db9b590) collapsed both branches
+// of the SQLitePath fallback (`os.Stat("qsdm.db") ... else os.Stat("qsdmplus.db") ...`)
+// into identical-name probes, so an operator upgrading from a
+// pre-rebrand QSDM+ deployment with an existing qsdmplus.db would
+// silently get a fresh empty qsdm.db next to it (state divergence /
+// data-loss class).
+//
+// Restored in the same commit that adds these three tests.
+func TestApplyDefaults_SQLitePath_legacyQsdmplusDBPicked(t *testing.T) {
+	tmp := chdirCleanup(t)
+	if err := os.WriteFile(filepath.Join(tmp, "qsdmplus.db"), []byte("legacy"), 0o600); err != nil {
+		t.Fatalf("write legacy db: %v", err)
+	}
+	cfg := &Config{}
+	applyDefaults(cfg)
+	if cfg.SQLitePath != "qsdmplus.db" {
+		t.Fatalf("SQLitePath = %q, want %q "+
+			"(pre-rebrand fallback regressed; operators upgrading from QSDM+ "+
+			"would lose state — see fix(branding) commit and the comment "+
+			"in applyDefaults' SQLitePath branch)",
+			cfg.SQLitePath, "qsdmplus.db")
+	}
+}
+
+func TestApplyDefaults_SQLitePath_qsdmDBPreferredOverLegacy(t *testing.T) {
+	tmp := chdirCleanup(t)
+	if err := os.WriteFile(filepath.Join(tmp, "qsdm.db"), []byte("new"), 0o600); err != nil {
+		t.Fatalf("write new db: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "qsdmplus.db"), []byte("old"), 0o600); err != nil {
+		t.Fatalf("write legacy db: %v", err)
+	}
+	cfg := &Config{}
+	applyDefaults(cfg)
+	if cfg.SQLitePath != "qsdm.db" {
+		t.Fatalf("SQLitePath = %q, want %q (canonical preferred over legacy when both exist)",
+			cfg.SQLitePath, "qsdm.db")
+	}
+}
+
+func TestApplyDefaults_SQLitePath_freshDeployDefault(t *testing.T) {
+	chdirCleanup(t)
+	cfg := &Config{}
+	applyDefaults(cfg)
+	if cfg.SQLitePath != "qsdm.db" {
+		t.Fatalf("SQLitePath = %q, want %q (fresh-deploy default)", cfg.SQLitePath, "qsdm.db")
+	}
+}
+
+func TestApplyDefaults_LogFile_legacyQsdmplusLogPicked(t *testing.T) {
+	tmp := chdirCleanup(t)
+	if err := os.WriteFile(filepath.Join(tmp, "qsdmplus.log"), []byte("legacy"), 0o600); err != nil {
+		t.Fatalf("write legacy log: %v", err)
+	}
+	cfg := &Config{}
+	applyDefaults(cfg)
+	if cfg.LogFile != "qsdmplus.log" {
+		t.Fatalf("LogFile = %q, want %q (pre-rebrand log fallback regressed; "+
+			"operators upgrading would split history across two files)",
+			cfg.LogFile, "qsdmplus.log")
+	}
+}

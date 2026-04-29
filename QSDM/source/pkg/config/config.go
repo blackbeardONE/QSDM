@@ -176,12 +176,12 @@ func LoadConfig() (*Config, error) {
 	configFile := getEnvString("CONFIG_FILE", "")
 	
 	// If no config file specified, try common names. The post-rebrand qsdm.*
-	// names are preferred; the legacy qsdm.* names are still probed so
+	// names are preferred; the legacy qsdmplus.* names are still probed so
 	// existing deployments continue to work through the deprecation window.
 	if configFile == "" {
 		configFiles := []string{
 			"qsdm.yaml", "qsdm.yml", "qsdm.toml",
-			"qsdm.yaml", "qsdm.yml", "qsdm.toml",
+			"qsdmplus.yaml", "qsdmplus.yml", "qsdmplus.toml",
 		}
 		for _, f := range configFiles {
 			if _, err := os.Stat(f); err == nil {
@@ -413,12 +413,12 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.SQLitePath == "" {
 		// Default filename: prefer qsdm.db for new deployments, but if a pre-rebrand
-		// qsdm.db exists in the CWD and no qsdm.db exists yet, continue to use it
+		// qsdmplus.db exists in the CWD and no qsdm.db exists yet, continue to use it
 		// so existing operators aren't silently switched to a fresh empty database.
 		if _, err := os.Stat("qsdm.db"); err == nil {
 			cfg.SQLitePath = "qsdm.db"
-		} else if _, err := os.Stat("qsdm.db"); err == nil {
-			cfg.SQLitePath = "qsdm.db"
+		} else if _, err := os.Stat("qsdmplus.db"); err == nil {
+			cfg.SQLitePath = "qsdmplus.db"
 		} else {
 			cfg.SQLitePath = "qsdm.db"
 		}
@@ -438,11 +438,11 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.LogFile == "" {
 		// As with SQLitePath, default to qsdm.log but keep appending to a pre-existing
-		// qsdm.log if that's where operators have historical events already.
+		// qsdmplus.log if that's where operators have historical events already.
 		if _, err := os.Stat("qsdm.log"); err == nil {
 			cfg.LogFile = "qsdm.log"
-		} else if _, err := os.Stat("qsdm.log"); err == nil {
-			cfg.LogFile = "qsdm.log"
+		} else if _, err := os.Stat("qsdmplus.log"); err == nil {
+			cfg.LogFile = "qsdmplus.log"
 		} else {
 			cfg.LogFile = "qsdm.log"
 		}
