@@ -353,3 +353,80 @@ func TestRecentRejectionsHandler_ContentTypeJSON(t *testing.T) {
 		t.Errorf("content-type: got %q, want application/json", got)
 	}
 }
+
+// -----------------------------------------------------------------------------
+// IsKnownRecentRejectionKind / KnownRecentRejectionKinds —
+// shared closed-enum surface for in-process consumers
+// (primarily internal/dashboard's attest-rejections tile).
+// -----------------------------------------------------------------------------
+
+// TestIsKnownRecentRejectionKind_AcceptsAllAllowlistedValues
+// pins the exhaustive set so a future allowlist trim or
+// rename surfaces in dashboard land too — the dashboard
+// imports this predicate as its single source of truth.
+func TestIsKnownRecentRejectionKind_AcceptsAllAllowlistedValues(t *testing.T) {
+	want := []string{
+		"archspoof_unknown_arch",
+		"archspoof_gpu_name_mismatch",
+		"archspoof_cc_subject_mismatch",
+		"hashrate_out_of_band",
+	}
+	for _, k := range want {
+		if !IsKnownRecentRejectionKind(k) {
+			t.Errorf("kind %q: not accepted by IsKnownRecentRejectionKind", k)
+		}
+	}
+}
+
+func TestIsKnownRecentRejectionKind_EmptyStringIsPermissive(t *testing.T) {
+	// Empty input is the "no filter" case — the predicate
+	// must return true so callers can chain it without a
+	// special case for the bare-call path.
+	if !IsKnownRecentRejectionKind("") {
+		t.Error("empty string must be accepted (no-filter case)")
+	}
+}
+
+func TestIsKnownRecentRejectionKind_RejectsTyposAndCaseVariants(t *testing.T) {
+	bad := []string{
+		"archspoof_unknown_arc",   // typo of *_arch
+		"hashrate",                // valid prefix only
+		"ARCHSPOOF_UNKNOWN_ARCH",  // case-sensitive enum
+		"archspoof_unknown_arch ", // trailing whitespace
+		"unknown",                 // valid arch, not a kind
+	}
+	for _, k := range bad {
+		if IsKnownRecentRejectionKind(k) {
+			t.Errorf("kind %q: unexpectedly accepted", k)
+		}
+	}
+}
+
+func TestKnownRecentRejectionKinds_StableOrderingAndCompleteness(t *testing.T) {
+	// Order is the dashboard-tile dropdown's display order.
+	// Reordering would change the UX without a CHANGELOG
+	// note; pin it here so a future allowlist mutation
+	// surfaces as a test failure.
+	want := []string{
+		"archspoof_unknown_arch",
+		"archspoof_gpu_name_mismatch",
+		"archspoof_cc_subject_mismatch",
+		"hashrate_out_of_band",
+	}
+	got := KnownRecentRejectionKinds()
+	if len(got) != len(want) {
+		t.Fatalf("len(KnownRecentRejectionKinds())=%d, want %d", len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("KnownRecentRejectionKinds()[%d] = %q, want %q",
+				i, got[i], w)
+		}
+	}
+	// Snapshot is independent — mutating the returned slice
+	// MUST NOT corrupt the underlying allowlist.
+	got[0] = "MUTATED"
+	if KnownRecentRejectionKinds()[0] != "archspoof_unknown_arch" {
+		t.Error("returned slice aliases the underlying allowlist; defensive copy missing")
+	}
+}

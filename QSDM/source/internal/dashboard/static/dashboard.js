@@ -148,6 +148,186 @@ function updateNGCProofs() {
         });
 }
 
+// attestRejectionsState backs the triage control bar above the
+// rejection tile. Shape:
+//
+//   kind      : closed-enum filter ("" = no filter; values
+//               match api.IsKnownRecentRejectionKind).
+//   windowSec : rolling time-window in seconds (0 = since boot).
+//               The absolute since-timestamp is computed from
+//               Date.now() on every fetch so the window rolls
+//               forward as time passes — matches operator
+//               intuition ("last 1h" = last 1h from now,
+//               recomputed each tick).
+//   paused    : when true, the recurring polling loop skips
+//               the tile so an operator reading the table is
+//               not page-rolled out from under by the next tick.
+//   lastRecords : last successfully-fetched records; used for
+//                 the CSV-export href without re-fetching.
+const attestRejectionsState = {
+    kind: '',
+    windowSec: 0,
+    paused: false,
+    lastRecords: [],
+};
+
+// csvEscape wraps a single cell value for safe CSV emission.
+// Doubles internal quotes (the CSV escape rule) and wraps in
+// quotes whenever the cell contains comma / quote / newline /
+// CR. textContent-source data only — never trusted-string-as-
+// CSV, which would let a hostile miner_addr inject formula
+// payloads (=cmd|...) when the file opens in Excel. We
+// defend against that here too: a cell starting with =, +, -,
+// @, or tab gets a leading apostrophe so spreadsheet apps
+// treat it as a literal string, not a formula.
+function csvEscape(v) {
+    if (v == null) return '';
+    let s = String(v);
+    // Excel/LibreOffice formula-injection defence. The leading
+    // apostrophe is the standard CSV-as-spreadsheet escape and
+    // is dropped on display by both apps.
+    if (s.length > 0 && '=+-@\t\r'.indexOf(s[0]) !== -1) {
+        s = "'" + s;
+    }
+    if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 ||
+        s.indexOf('\n') !== -1 || s.indexOf('\r') !== -1) {
+        s = '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+}
+
+// buildAttestRejectionsCSV serialises the records array into a
+// CSV blob for the export link. Header row matches the table's
+// rendered columns plus a few fields the table truncates
+// (full miner_addr, gpu_name, cert_subject, detail) so
+// operators have the full record without an extra API roundtrip.
+function buildAttestRejectionsCSV(records) {
+    const header = [
+        'seq', 'recorded_at', 'kind', 'reason', 'arch',
+        'height', 'miner_addr', 'gpu_name', 'cert_subject',
+        'detail',
+    ];
+    const lines = [header.join(',')];
+    for (const r of records) {
+        lines.push([
+            r.seq != null ? r.seq : '',
+            r.recorded_at || '',
+            r.kind || '',
+            r.reason || '',
+            r.arch || '',
+            r.height != null ? r.height : '',
+            r.miner_addr || '',
+            r.gpu_name || '',
+            r.cert_subject || '',
+            r.detail || '',
+        ].map(csvEscape).join(','));
+    }
+    return lines.join('\n');
+}
+
+// updateAttestRejectionsExport refreshes the CSV-export link's
+// data: URL from the current lastRecords. Called after every
+// successful fetch so the link is always one click away from
+// the freshest snapshot.
+function updateAttestRejectionsExport() {
+    const link = document.getElementById('attest-rejections-export');
+    if (!link) return;
+    const csv = buildAttestRejectionsCSV(attestRejectionsState.lastRecords);
+    // encodeURIComponent on the body keeps newlines / commas /
+    // quotes intact in the data: payload — the alternative
+    // (Blob URL) would require a click handler and revoke
+    // dance; data: URLs are zero-overhead and inert.
+    link.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+}
+
+// renderAttestRejectionsTopMiners populates the top-3
+// offenders strip from the current page. Aggregates by
+// miner_addr (records with no miner are skipped; a hostile
+// miner that omits the address still shows up in the table
+// itself, just not in this strip). Hidden when no record has
+// a populated miner_addr.
+function renderAttestRejectionsTopMiners(records) {
+    const wrap = document.getElementById('attest-rejections-top-miners');
+    const list = document.getElementById('attest-rejections-top-miners-list');
+    if (!wrap || !list) return;
+
+    const counts = new Map();
+    for (const r of records) {
+        const m = r.miner_addr || '';
+        if (!m) continue;
+        counts.set(m, (counts.get(m) || 0) + 1);
+    }
+    if (counts.size === 0) {
+        wrap.style.display = 'none';
+        return;
+    }
+    const ranked = Array.from(counts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3);
+    list.innerHTML = '';
+    for (const [miner, count] of ranked) {
+        const li = document.createElement('li');
+        const minerSpan = document.createElement('span');
+        const short = miner.length > 24 ? miner.slice(0, 24) + '…' : miner;
+        minerSpan.textContent = short;
+        minerSpan.title = miner;
+        const countSpan = document.createElement('span');
+        countSpan.style.color = '#f5a623';
+        countSpan.textContent = ' — ' + count + ' rejection' + (count === 1 ? '' : 's');
+        li.appendChild(minerSpan);
+        li.appendChild(countSpan);
+        list.appendChild(li);
+    }
+    wrap.style.display = 'block';
+}
+
+// initAttestRejectionsControls hooks the kind/window/pause/CSV
+// controls to attestRejectionsState. Idempotent — safe to
+// call multiple times if the DOM is rebuilt for any reason.
+// Called once from startUpdates(); the controls fire one
+// updateAttestRejections() on change so operators see the
+// filtered tile immediately, not on the next 2 s poll.
+function initAttestRejectionsControls() {
+    const kindSel = document.getElementById('attest-rejections-filter-kind');
+    const winSel = document.getElementById('attest-rejections-filter-window');
+    const pauseBtn = document.getElementById('attest-rejections-pause');
+    if (kindSel && !kindSel.dataset.wired) {
+        kindSel.dataset.wired = '1';
+        kindSel.addEventListener('change', () => {
+            attestRejectionsState.kind = kindSel.value || '';
+            updateAttestRejections();
+        });
+    }
+    if (winSel && !winSel.dataset.wired) {
+        winSel.dataset.wired = '1';
+        winSel.addEventListener('change', () => {
+            const sec = parseInt(winSel.value, 10);
+            attestRejectionsState.windowSec =
+                (isNaN(sec) || sec <= 0) ? 0 : sec;
+            updateAttestRejections();
+        });
+    }
+    if (pauseBtn && !pauseBtn.dataset.wired) {
+        pauseBtn.dataset.wired = '1';
+        pauseBtn.addEventListener('click', () => {
+            attestRejectionsState.paused = !attestRejectionsState.paused;
+            if (attestRejectionsState.paused) {
+                pauseBtn.textContent = '▶ resume polling';
+                pauseBtn.style.background = '#3a2a1a';
+                pauseBtn.style.color = '#f5a623';
+            } else {
+                pauseBtn.textContent = '⏸ pause polling';
+                pauseBtn.style.background = '#1a3a5a';
+                pauseBtn.style.color = '#7bd3ff';
+                // Resume → fetch immediately so the operator
+                // sees fresh data without waiting for the
+                // next 2 s tick.
+                updateAttestRejections();
+            }
+        });
+    }
+}
+
 // updateAttestRejections renders the recent-attestation-rejection tile.
 // Wire shape comes from internal/dashboard/attest_rejections.go and
 // pkg/api.RecentRejectionView. Records arrive newest-first (server
@@ -159,7 +339,18 @@ function updateNGCProofs() {
 // rendered cells via textContent rather than innerHTML to avoid an XSS
 // vector if a malicious miner ever submits HTML in their address bytes.
 function updateAttestRejections() {
-    fetch('/api/attest/rejections?limit=50', dashFetchOpts)
+    const params = new URLSearchParams({ limit: '50' });
+    if (attestRejectionsState.kind) {
+        params.set('kind', attestRejectionsState.kind);
+    }
+    if (attestRejectionsState.windowSec > 0) {
+        // Rolling-from-now: recomputed every tick so the
+        // window slides forward in lockstep with the clock.
+        const since = Math.floor(Date.now() / 1000)
+            - attestRejectionsState.windowSec;
+        params.set('since', String(since));
+    }
+    fetch('/api/attest/rejections?' + params.toString(), dashFetchOpts)
         .then(response => response.json())
         .then(data => {
             const statusEl = document.getElementById('attest-rejections-status');
@@ -262,6 +453,13 @@ function updateAttestRejections() {
                 '#e6e6e6',
                 'live JSONL record count (approximate, ±softCap during reads)'
             ));
+
+            // Stash for the CSV-export link + the top-miners
+            // strip; both are derived from the current page so
+            // a click is always one render away from fresh data.
+            attestRejectionsState.lastRecords = records;
+            updateAttestRejectionsExport();
+            renderAttestRejectionsTopMiners(records);
 
             // Records table.
             tbody.innerHTML = '';
@@ -874,7 +1072,13 @@ function startPolling() {
         updateMetrics();
         updateHealth();
         updateNGCProofs();
-        updateAttestRejections();
+        // Respect the operator's pause toggle on the
+        // attestation-rejections tile — the other tiles keep
+        // ticking, but the rejection table stays still while
+        // the operator reads a row.
+        if (!attestRejectionsState.paused) {
+            updateAttestRejections();
+        }
         updateContracts();
         updateBridge();
         updateTopology();
@@ -887,6 +1091,7 @@ function startUpdates() {
     updateMetrics();
     updateHealth();
     updateNGCProofs();
+    initAttestRejectionsControls();
     updateAttestRejections();
     updateContracts();
     updateBridge();

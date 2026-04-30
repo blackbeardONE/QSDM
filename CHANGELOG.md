@@ -14,6 +14,83 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Attestation-rejections dashboard tile — triage controls
+  (kind / window / pause / top-miners / CSV) (2026-04-30).** Operators
+  using the rejection tile in production hit the same friction within
+  the first incident: the table page-rolls every 2 s while you're
+  trying to read a row, you can't narrow to "just gpu_name_mismatch"
+  without leaving the dashboard for the v1 list endpoint, and there
+  is no quick "give me the last 50 rows as CSV" path for an out-of-
+  band post-mortem. This change closes all five gaps in one tile
+  refresh, with no new API surface beyond two query parameters on
+  the existing `/api/attest/rejections` endpoint.
+  - **Kind filter dropdown (5 options):** `all` (default) plus the
+    four closed-enum kinds (`archspoof_unknown_arch`,
+    `archspoof_gpu_name_mismatch`, `archspoof_cc_subject_mismatch`,
+    `hashrate_out_of_band`). Selection forwards as `?kind=` to the
+    handler. The handler validates against the same allowlist the
+    v1 list handler uses (new exported predicate
+    `api.IsKnownRecentRejectionKind`); a typo'd kind returns 400 so
+    the operator sees the failure rather than silently getting "no
+    filter applied".
+  - **Time-window dropdown (5 options):** `since boot` (default),
+    `last 24h / 6h / 1h / 15m`. Stored as a rolling seconds-back
+    value; the absolute `since=` query parameter is recomputed from
+    `Date.now()` on every fetch, so the window slides forward in
+    lockstep with the clock (matching operator intuition: "last 1h"
+    means "last 1h from now", not "last 1h from when I clicked").
+  - **Pause-polling toggle:** flips a module-level
+    `attestRejectionsState.paused` flag. The 2 s `setInterval` in
+    `startPolling` skips the rejection tile when set; the other
+    tiles keep ticking. Resume fires one explicit
+    `updateAttestRejections()` so the operator gets fresh data
+    without waiting for the next tick. Button colour shifts cyan
+    ↔ orange to make the state glanceable from across the room.
+  - **Top-3 offending miners strip:** computed client-side over
+    the current page (records with no `miner_addr` skipped). Hidden
+    when no rejection in the page has a populated miner. Long
+    addresses truncated to 24 chars with the full value in the
+    title attribute; rendered via `textContent` to defeat any HTML
+    payload a hostile miner might smuggle through the field.
+  - **CSV export link:** `data:text/csv;charset=utf-8,…` URL built
+    on every successful fetch from the current `lastRecords` array,
+    so a click is always one render away from the freshest 50-row
+    snapshot. Per-cell quoting follows RFC 4180; cells starting
+    with `=`, `+`, `-`, `@`, or tab get a leading apostrophe to
+    defeat Excel/LibreOffice formula injection (the apostrophe is
+    dropped on display by both apps). Header row carries 10 fields:
+    `seq, recorded_at, kind, reason, arch, height, miner_addr,
+    gpu_name, cert_subject, detail` — superset of what the table
+    renders, so an operator pasting the CSV into an incident
+    ticket has the full record without an extra API roundtrip.
+  - **Wire-shape change:**
+    `dashboardAttestRejectionsView.Filters` is a new optional
+    pointer field carrying the echoed `kind` / `since` filters the
+    server actually applied. Pointer (rather than struct +
+    `omitempty`) because Go's JSON encoder does NOT elide a
+    zero-valued struct under `omitempty` — only `nil` pointers /
+    empty slices / etc. So a bare-call response carries no
+    `"filters"` key at all, and a filtered response carries the
+    block — matches the operator audit need ("did the server
+    understand my dropdown?") while keeping the bare-call payload
+    minimal.
+  - **New shared predicate `api.IsKnownRecentRejectionKind`** plus
+    `api.KnownRecentRejectionKinds` (ordered slice for dropdown
+    population). The dashboard handler imports the predicate so
+    its closed-enum and the v1 list handler's stay in lock-step;
+    a future allowlist change surfaces in both surfaces from a
+    single edit.
+  - **Tests:** four new `pkg/api` tests pin the predicate's
+    accept-all-allowlisted, reject-typos-and-case-variants,
+    empty-string-permissive, and stable-ordering-with-defensive-
+    copy contracts. Five new `internal/dashboard` tests cover
+    kind passthrough, kind 400-on-typo, since passthrough, since
+    400-on-malformed, and the omitempty-Filters behaviour on
+    bare calls. The integration test was extended with six new
+    HTML element-ID assertions, six JS-symbol assertions, and a
+    pause-gate string assertion so a regression that drops any
+    of the new affordances ship-stops the bundle build.
+
 - **Recent-rejection ring compaction observability — close the last
   visibility gap in the persistence layer (2026-04-30).**
   `FilePersister.compactLocked` was previously silent: a miner spamming

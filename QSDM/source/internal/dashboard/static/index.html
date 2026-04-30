@@ -496,8 +496,47 @@
                  internal/dashboard/attest_rejections.go for the wire shape. -->
             <div class="card ngc-panel" style="grid-column: 1 / -1;">
                 <h2>🛑 Attestation Rejections</h2>
+
+                <!-- Triage control bar: kind filter + time-window + pause + CSV export.
+                     Polling is gated on the pause toggle so an operator reading
+                     the table during an incident isn't page-rolled out from
+                     under by the next 2 s tick. -->
+                <div id="attest-rejections-controls" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; padding: 10px; background: #0f1419; border: 1px solid #2a3441; border-radius: 4px;">
+                    <label style="font-size: 12px; color: #a0a0a0; display: flex; align-items: center; gap: 6px;">
+                        Kind:
+                        <select id="attest-rejections-filter-kind" style="padding: 4px 8px; background: #1a1f2e; color: #e6e6e6; border: 1px solid #2a3441; border-radius: 4px; font-size: 12px;">
+                            <option value="">all</option>
+                            <option value="archspoof_unknown_arch">archspoof_unknown_arch</option>
+                            <option value="archspoof_gpu_name_mismatch">archspoof_gpu_name_mismatch</option>
+                            <option value="archspoof_cc_subject_mismatch">archspoof_cc_subject_mismatch</option>
+                            <option value="hashrate_out_of_band">hashrate_out_of_band</option>
+                        </select>
+                    </label>
+                    <label style="font-size: 12px; color: #a0a0a0; display: flex; align-items: center; gap: 6px;">
+                        Window:
+                        <select id="attest-rejections-filter-window" style="padding: 4px 8px; background: #1a1f2e; color: #e6e6e6; border: 1px solid #2a3441; border-radius: 4px; font-size: 12px;">
+                            <option value="0">since boot</option>
+                            <option value="86400">last 24h</option>
+                            <option value="21600">last 6h</option>
+                            <option value="3600">last 1h</option>
+                            <option value="900">last 15m</option>
+                        </select>
+                    </label>
+                    <button id="attest-rejections-pause" type="button" style="padding: 4px 12px; background: #1a3a5a; color: #7bd3ff; border: 1px solid #2a3441; border-radius: 4px; cursor: pointer; font-size: 12px;">⏸ pause polling</button>
+                    <a id="attest-rejections-export" href="#" download="attest-rejections.csv" style="margin-left: auto; padding: 4px 12px; background: #1a3a1a; color: #7ed321; border: 1px solid #2a3441; border-radius: 4px; text-decoration: none; font-size: 12px;">⬇ export CSV</a>
+                </div>
+
                 <div id="attest-rejections-status" class="ngc-status">Loading…</div>
                 <div id="attest-rejections-counters" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 12px 0;"></div>
+
+                <!-- Top-3 offending miners: glanceable strip computed
+                     client-side over the current page. Hidden when no
+                     records have a populated miner_addr. -->
+                <div id="attest-rejections-top-miners" style="display: none; margin: 8px 0; padding: 8px; background: #0f1419; border-left: 3px solid #f5a623; border-radius: 4px; font-size: 12px;">
+                    <div style="color: #f5a623; margin-bottom: 4px; font-weight: bold;">Top offenders (this page):</div>
+                    <ol id="attest-rejections-top-miners-list" style="padding-left: 20px; margin: 0; font-family: ui-monospace, monospace;"></ol>
+                </div>
+
                 <div class="ngc-table-wrap">
                     <table class="ngc-table" id="attest-rejections-table" style="display: none;">
                         <thead>
@@ -513,7 +552,7 @@
                     </table>
                 </div>
                 <p style="color: #888; font-size: 11px; margin-top: 10px; line-height: 1.45;">
-                    Bounded ring buffer of the most recent rejection records plus per-field rune-truncation counters and the full persistence lifecycle (errors / compactions / on-disk record count). Truncation is applied <strong>before</strong> records reach the ring, so high <em>truncated</em> counts indicate possible hostile input — not data loss in the buffer itself. A sustained <em>compactions</em> rate means a miner is filling the ring faster than the soft-cap can absorb. See <code>qsdm_attest_rejection_field_*</code>, <code>qsdm_attest_rejection_persist_errors_total</code>, <code>qsdm_attest_rejection_persist_compactions_total</code>, and <code>qsdm_attest_rejection_persist_records_on_disk</code> for Prometheus equivalents.
+                    Bounded ring buffer of the most recent rejection records plus per-field rune-truncation counters and the full persistence lifecycle (errors / compactions / on-disk record count). Truncation is applied <strong>before</strong> records reach the ring, so high <em>truncated</em> counts indicate possible hostile input — not data loss in the buffer itself. A sustained <em>compactions</em> rate means a miner is filling the ring faster than the soft-cap can absorb. Use the kind / window filters above to narrow the table, and pause polling while reading. See <code>qsdm_attest_rejection_field_*</code>, <code>qsdm_attest_rejection_persist_errors_total</code>, <code>qsdm_attest_rejection_persist_compactions_total</code>, and <code>qsdm_attest_rejection_persist_records_on_disk</code> for Prometheus equivalents.
                 </p>
             </div>
         </div>

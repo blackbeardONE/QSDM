@@ -76,10 +76,34 @@ type dashboardAttestRejectionsView struct {
 	// silently cap a too-large request.
 	Limit int `json:"limit"`
 
+	// Filters echoes back the kind / since filters the
+	// server actually applied. Pointer + omitempty so a
+	// bare-call response (no filters set) DOES NOT carry a
+	// `"filters":{}` block at all — `omitempty` only elides
+	// nil pointers / empty slices, not zero-valued structs,
+	// so making this a *T is the only way to get the
+	// clean-omit behaviour. Used by the tile to confirm
+	// "the server understood my dropdown selection" (a
+	// typo'd filter gets a 400 immediately, not silent
+	// passthrough).
+	Filters *dashboardAttestRejectionsEchoedFilters `json:"filters,omitempty"`
+
 	// Metrics is the per-field truncation telemetry plus the
-	// persist-error counter. See
-	// monitoring.RecentRejectMetricsView for field semantics.
+	// persist-error / compactions / records-on-disk
+	// surfaces. See monitoring.RecentRejectMetricsView for
+	// field semantics.
 	Metrics monitoring.RecentRejectMetricsView `json:"metrics"`
+}
+
+// dashboardAttestRejectionsEchoedFilters is the dashboard's
+// own slim version of api.RecentRejectionsEchoedFilters —
+// only the two filters this tile supports. Keeping a separate
+// struct (rather than reusing pkg/api's) lets the dashboard
+// add tile-specific filters later (e.g. miner_addr) without
+// breaking pkg/api's wire contract.
+type dashboardAttestRejectionsEchoedFilters struct {
+	Kind  string `json:"kind,omitempty"`
+	Since int64  `json:"since,omitempty"`
 }
 
 const (
@@ -103,12 +127,18 @@ const (
 //
 //	limit : optional. Defaults to 50. Clamped to
 //	        [1, dashboardAttestRejectionsMaxLimit].
+//	kind  : optional. One of the closed-enum kinds (validated
+//	        against api.IsKnownRecentRejectionKind so the
+//	        dashboard tile and the v1 list handler agree on
+//	        the allowlist). 400 on a typo.
+//	since : optional non-negative unix-seconds timestamp;
+//	        drops records strictly older. 400 on a non-integer.
 //
 // 200 OK with dashboardAttestRejectionsView on success — even
 // when the v2 store is not wired (Available=false in that
 // case so the frontend can display "feature unavailable" but
 // still render the metrics row).
-// 400 on a malformed limit query parameter.
+// 400 on a malformed limit / kind / since query parameter.
 // 405 on non-GET.
 //
 // No 503: the dashboard renders gracefully when the store is
@@ -122,8 +152,10 @@ func (d *Dashboard) handleAttestRejections(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	q := r.URL.Query()
+
 	limit := dashboardAttestRejectionsDefaultLimit
-	if raw := r.URL.Query().Get("limit"); raw != "" {
+	if raw := q.Get("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 1 {
 			http.Error(w,
@@ -137,16 +169,55 @@ func (d *Dashboard) handleAttestRejections(w http.ResponseWriter, r *http.Reques
 		limit = n
 	}
 
+	// Closed-enum validation against pkg/api's authoritative
+	// allowlist. A typo'd filter must NOT silently degrade to
+	// "no filter applied" — operators triaging an incident
+	// would otherwise see all records when they thought they
+	// were looking only at gpu_name_mismatch, and miss the
+	// signal entirely.
+	rawKind := q.Get("kind")
+	if rawKind != "" && !api.IsKnownRecentRejectionKind(rawKind) {
+		http.Error(w,
+			"kind must be one of: archspoof_unknown_arch, archspoof_gpu_name_mismatch, archspoof_cc_subject_mismatch, hashrate_out_of_band",
+			http.StatusBadRequest)
+		return
+	}
+
+	var since int64
+	if raw := q.Get("since"); raw != "" {
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || n < 0 {
+			http.Error(w,
+				"since must be a non-negative unix-seconds timestamp",
+				http.StatusBadRequest)
+			return
+		}
+		since = n
+	}
+
 	view := dashboardAttestRejectionsView{
 		Records: []api.RecentRejectionView{},
 		Limit:   limit,
 		Metrics: monitoring.RecentRejectMetricsSnapshot(),
 	}
+	// Only attach the Filters block when at least one filter
+	// is actually applied — keeps the bare-call response wire-
+	// minimal so the dashboard's "first paint" payload is
+	// 1-2 lines smaller, and matches operator expectation
+	// that an unfiltered call shouldn't advertise filters.
+	if rawKind != "" || since != 0 {
+		view.Filters = &dashboardAttestRejectionsEchoedFilters{
+			Kind:  rawKind,
+			Since: since,
+		}
+	}
 
 	if lister := api.CurrentRecentRejectionLister(); lister != nil {
 		view.Available = true
 		page := lister.List(api.RecentRejectionListOptions{
-			Limit: limit,
+			Limit:        limit,
+			Kind:         rawKind,
+			SinceUnixSec: since,
 		})
 		// pkg/api's lister returns rows in ascending Seq;
 		// reverse so the tile renders newest-first.

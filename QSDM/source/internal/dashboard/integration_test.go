@@ -60,6 +60,15 @@ func TestDashboardIntegration(t *testing.T) {
 			`id="attest-rejections-counters"`,
 			`id="attest-rejections-table"`,
 			`id="attest-rejections-tbody"`,
+			// Triage controls (2026-04-30): dropdown filters,
+			// pause toggle, top-miners strip, CSV export. Any
+			// missing ID means the JS handlers wire to nothing.
+			`id="attest-rejections-filter-kind"`,
+			`id="attest-rejections-filter-window"`,
+			`id="attest-rejections-pause"`,
+			`id="attest-rejections-export"`,
+			`id="attest-rejections-top-miners"`,
+			`id="attest-rejections-top-miners-list"`,
 		} {
 			if !strings.Contains(body, id) {
 				t.Errorf("Dashboard HTML missing attestation-rejections tile element %s", id)
@@ -166,6 +175,32 @@ func TestDashboardIntegration(t *testing.T) {
 			if !strings.Contains(string(body), label) {
 				t.Errorf("JavaScript missing persistence-lifecycle label/field %q", label)
 			}
+		}
+		// Triage controls (2026-04-30): the JS state object,
+		// the four event-wired functions, the CSV builder, and
+		// the top-miners renderer must all be present. A
+		// future refactor that drops the controls without
+		// updating the HTML would sneak through pkg-level
+		// builds; ship-stop on the bundle string here.
+		for _, sym := range []string{
+			"attestRejectionsState",
+			"initAttestRejectionsControls",
+			"buildAttestRejectionsCSV",
+			"renderAttestRejectionsTopMiners",
+			"updateAttestRejectionsExport",
+			"csvEscape",
+		} {
+			if !strings.Contains(string(body), sym) {
+				t.Errorf("JavaScript missing triage-control symbol %q", sym)
+			}
+		}
+		// Pause-toggle gate: the polling loop must check
+		// attestRejectionsState.paused before firing the
+		// rejection fetch. A regression that drops this
+		// guard breaks the operator's ability to read a row
+		// without it scrolling out from under them.
+		if !strings.Contains(string(body), "if (!attestRejectionsState.paused)") {
+			t.Error("polling loop missing pause-aware gate around updateAttestRejections")
 		}
 	})
 

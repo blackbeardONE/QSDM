@@ -24,6 +24,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -309,3 +311,170 @@ func TestHandleAttestRejections_MetricsSnapshotReflectsCounters(t *testing.T) {
 type errBoom string
 
 func (e errBoom) Error() string { return string(e) }
+
+// ----- Triage-control filter passthrough --------------------
+//
+// The dashboard tile (2026-04-30) added a kind dropdown and a
+// time-window dropdown above the table. Both forward to this
+// handler as ?kind= and ?since= query parameters. The four
+// tests below pin:
+//
+//   - kind passthrough: the value reaches the lister unchanged.
+//   - kind validation: typo'd kinds return 400, NOT silent
+//     "no filter" passthrough (which would hide the operator's
+//     intent).
+//   - since passthrough: a non-zero since reaches the lister.
+//   - since validation: garbage / negative since returns 400.
+//
+// Plus one wire-shape regression-pin to make sure the echoed
+// Filters appear in the response (so the frontend can audit
+// what the server understood).
+
+func TestHandleAttestRejections_KindFilter_PassesThrough(t *testing.T) {
+	withCleanRecentRejectionWiring(t)
+	d := newTestDashboard()
+
+	fake := &fakeRecentRejectionLister{}
+	api.SetRecentRejectionLister(fake)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/attest/rejections?kind=archspoof_gpu_name_mismatch", nil)
+	w := httptest.NewRecorder()
+	d.handleAttestRejections(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	if got := fake.lastOpts.Kind; got != "archspoof_gpu_name_mismatch" {
+		t.Errorf("lister.opts.Kind = %q, want %q", got, "archspoof_gpu_name_mismatch")
+	}
+
+	var view dashboardAttestRejectionsView
+	if err := json.NewDecoder(w.Body).Decode(&view); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if view.Filters == nil {
+		t.Fatalf("filtered call returned nil Filters; want echoed kind")
+	}
+	if got := view.Filters.Kind; got != "archspoof_gpu_name_mismatch" {
+		t.Errorf("echoed Filters.Kind = %q, want %q (frontend audit broken)",
+			got, "archspoof_gpu_name_mismatch")
+	}
+}
+
+func TestHandleAttestRejections_BadKind_400(t *testing.T) {
+	withCleanRecentRejectionWiring(t)
+	d := newTestDashboard()
+
+	// A typo'd filter MUST NOT silently degrade — the
+	// operator triaging an incident would otherwise see all
+	// records when they thought they were looking at a
+	// specific kind, and miss the signal entirely.
+	cases := []string{
+		"archspoof_unknown_arc",   // typo of *_arch
+		"hashrate",                // valid prefix only
+		"ARCHSPOOF_UNKNOWN_ARCH",  // case-sensitive enum
+		"' OR 1=1 --",             // hostile input — must 400, not pass
+	}
+	for _, raw := range cases {
+		// url.QueryEscape so test inputs with spaces / quotes
+		// don't trip httptest.NewRequest's HTTP-line parser.
+		req := httptest.NewRequest(http.MethodGet,
+			"/api/attest/rejections?kind="+url.QueryEscape(raw), nil)
+		w := httptest.NewRecorder()
+		d.handleAttestRejections(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("kind=%q: status = %d, want 400", raw, w.Code)
+		}
+	}
+}
+
+func TestHandleAttestRejections_SinceParam_PassesThrough(t *testing.T) {
+	withCleanRecentRejectionWiring(t)
+	d := newTestDashboard()
+
+	fake := &fakeRecentRejectionLister{}
+	api.SetRecentRejectionLister(fake)
+
+	const wantSince int64 = 1714400000 // arbitrary 2024-ish unix-secs
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/attest/rejections?since=1714400000", nil)
+	w := httptest.NewRecorder()
+	d.handleAttestRejections(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	if got := fake.lastOpts.SinceUnixSec; got != wantSince {
+		t.Errorf("lister.opts.SinceUnixSec = %d, want %d", got, wantSince)
+	}
+
+	var view dashboardAttestRejectionsView
+	if err := json.NewDecoder(w.Body).Decode(&view); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if view.Filters == nil {
+		t.Fatalf("filtered call returned nil Filters; want echoed since")
+	}
+	if got := view.Filters.Since; got != wantSince {
+		t.Errorf("echoed Filters.Since = %d, want %d (frontend audit broken)",
+			got, wantSince)
+	}
+}
+
+func TestHandleAttestRejections_BadSince_400(t *testing.T) {
+	withCleanRecentRejectionWiring(t)
+	d := newTestDashboard()
+
+	cases := []string{
+		"abc",         // not an integer
+		"-1",          // negative — disallowed
+		"1.5",         // not an integer
+		"9999999999999999999999", // overflow
+	}
+	for _, raw := range cases {
+		req := httptest.NewRequest(http.MethodGet,
+			"/api/attest/rejections?since="+raw, nil)
+		w := httptest.NewRecorder()
+		d.handleAttestRejections(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("since=%q: status = %d, want 400", raw, w.Code)
+		}
+	}
+}
+
+func TestHandleAttestRejections_NoFilters_EchoedFiltersOmitted(t *testing.T) {
+	// A bare /api/attest/rejections (no kind, no since)
+	// must NOT emit a "filters":{...} block — Filters is
+	// `omitempty` precisely so the bare-call response stays
+	// minimal, mirroring pkg/api's RecentRejectionsListPageView
+	// behaviour.
+	withCleanRecentRejectionWiring(t)
+	d := newTestDashboard()
+
+	fake := &fakeRecentRejectionLister{}
+	api.SetRecentRejectionLister(fake)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/attest/rejections", nil)
+	w := httptest.NewRecorder()
+	d.handleAttestRejections(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	body := w.Body.String()
+	if strings.Contains(body, `"filters"`) {
+		t.Errorf("bare call surfaced filters block (omitempty broken): %s", body)
+	}
+	// The lister still sees zero values — confirming that the
+	// no-filter path takes the same lister.List route as the
+	// filtered path, just with empty inputs.
+	if fake.lastOpts.Kind != "" {
+		t.Errorf("bare call leaked Kind into lister opts: %q", fake.lastOpts.Kind)
+	}
+	if fake.lastOpts.SinceUnixSec != 0 {
+		t.Errorf("bare call leaked SinceUnixSec into lister opts: %d",
+			fake.lastOpts.SinceUnixSec)
+	}
+}

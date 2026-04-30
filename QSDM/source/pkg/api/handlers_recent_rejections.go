@@ -209,6 +209,45 @@ var (
 	}
 )
 
+// IsKnownRecentRejectionKind reports whether s is a recognised
+// rejection-kind enum value the v1 list handler accepts. Empty
+// string returns true so callers can treat "no filter" as
+// permissive without a special case.
+//
+// Exported so in-process consumers — primarily the operator
+// dashboard's attest-rejections tile in internal/dashboard,
+// which forwards the same query parameter to its own
+// lister.List call — can validate filter input against the
+// SAME source of truth as the v1 HTTP handler. Duplicating the
+// allowlist would let the two surfaces drift; calling through
+// here keeps them in lock-step.
+func IsKnownRecentRejectionKind(s string) bool {
+	if s == "" {
+		return true
+	}
+	_, ok := recentRejectionKinds[s]
+	return ok
+}
+
+// KnownRecentRejectionKinds returns a snapshot of the
+// closed-enum kind allowlist in stable order. Used by the
+// dashboard tile to populate its filter dropdown without
+// hard-coding the values; a future addition to the enum
+// (e.g. a new §4.6 site) propagates automatically.
+//
+// Order mirrors the recentrejects.RejectionKind constants:
+// archspoof variants first (alphabetical within), hashrate
+// last. Snapshot is returned as a fresh slice each call so
+// callers cannot mutate the underlying allowlist.
+func KnownRecentRejectionKinds() []string {
+	return []string{
+		"archspoof_unknown_arch",
+		"archspoof_gpu_name_mismatch",
+		"archspoof_cc_subject_mismatch",
+		"hashrate_out_of_band",
+	}
+}
+
 // RecentRejectionsHandler serves
 // GET /api/v1/attest/recent-rejections.
 //
