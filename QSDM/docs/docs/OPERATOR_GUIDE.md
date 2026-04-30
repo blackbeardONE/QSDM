@@ -505,6 +505,11 @@ A few practical notes:
   — why NVIDIA-lock is a transparency signal, not a consensus rule.
 - [`../../../apps/qsdm-nvidia-ngc/QUICKSTART.md`](../../../apps/qsdm-nvidia-ngc/QUICKSTART.md)
   — NGC sidecar runbook.
+- [`runbooks/REJECTION_FLOOD.md`](./runbooks/REJECTION_FLOOD.md) —
+  incident runbook for the §4.6 attestation-rejection ring's two
+  flood-detection alerts (`QSDMAttestRejectionPersistCompactionsHigh`
+  and `QSDMAttestRejectionPersistHardCapDropping`). Covers triage,
+  mitigation policy, slashing escalation, and a worked example.
 - [`REBRAND_NOTES.md`](./REBRAND_NOTES.md) — QSDM → QSDM migration
   table (env vars, metrics, headers).
 

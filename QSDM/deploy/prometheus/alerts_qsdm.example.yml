@@ -1085,6 +1085,17 @@ groups:
           severity: warning
           subsystem: v2-attest
         annotations:
+          # The runbook_url annotation is the standard
+          # Prometheus convention; Alertmanager UIs render it
+          # as a click-through during paging. Path is
+          # repo-relative so a fork that re-publishes the docs
+          # under a different host can rewrite the prefix in
+          # one place. The runbook covers BOTH this alert and
+          # QSDMAttestRejectionPersistHardCapDropping below
+          # because the triage diverges at exactly one decision
+          # point — keeping them on one page lets the operator
+          # walk between modes without losing context.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md"
           summary: "{{ $labels.instance }}: recent-rejection ring is compacting {{ $value | humanize }}× per minute"
           description: |
             qsdm_attest_rejection_persist_compactions_total has
@@ -1143,6 +1154,13 @@ groups:
           severity: warning
           subsystem: v2-attest
         annotations:
+          # Same runbook URL as
+          # QSDMAttestRejectionPersistCompactionsHigh above —
+          # the runbook covers both alerts on one page so the
+          # operator can walk between Mode A (compactions
+          # high) and Mode B (hard-cap dropping) without
+          # losing context.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md"
           summary: "{{ $labels.instance }}: recent-rejection persister is shedding records at the hard byte cap"
           description: |
             qsdm_attest_rejection_persist_hardcap_drops_total has

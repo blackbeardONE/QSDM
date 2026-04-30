@@ -14,6 +14,52 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Operator runbook for the §4.6 attestation-rejection flood incident
+  (2026-04-30).** The two flood-detection alerts shipped this week
+  (`QSDMAttestRejectionPersistCompactionsHigh` and
+  `QSDMAttestRejectionPersistHardCapDropping`) ship with embedded
+  triage notes in their annotations, but YAML annotations are awkward
+  to skim during a paging incident and Alertmanager UIs render them
+  as raw text. Lift the content into a proper Markdown runbook and
+  wire the standard Prometheus `runbook_url` annotation so the alert
+  becomes a click-through.
+  - **New file:**
+    [`QSDM/docs/docs/runbooks/REJECTION_FLOOD.md`](QSDM/docs/docs/runbooks/REJECTION_FLOOD.md)
+    — establishes a `runbooks/` subfolder under the existing
+    `QSDM/docs/docs/` flat layout. The runbook is the canonical home
+    for incident-response artifacts; future runbooks slot in alongside
+    this one.
+  - **Runbook coverage:** threat-model section explaining the
+    soft-cap / hard-cap two-stage defence; symptom table mapping
+    dashboard tile cells to "healthy / Mode A / Mode B" states;
+    PromQL triage queries; operator-policy mitigation table per mode;
+    §4.6 slashing-escalation procedure with a concrete tx-id
+    inspection step; a 12-minute worked example walking from
+    "PagerDuty page" through "auto-resolve"; post-incident artifact-
+    capture guidance (CSV export from the dashboard tile + JSONL
+    log); and a cross-reference index pointing back at every code /
+    config touchpoint the runbook calls out.
+  - **`runbook_url` annotation on both alerts** in
+    `QSDM/deploy/prometheus/alerts_qsdm.example.yml`. Standard
+    Prometheus convention — Alertmanager UIs render it as a click-
+    through link during paging. Both alerts point at the SAME
+    runbook because their triage diverges at exactly one decision
+    point ("is the hard-cap-drops cell red?"), and keeping them on
+    one page lets the operator walk between Mode A and Mode B
+    without losing context.
+  - **`OPERATOR_GUIDE.md` "Further reading" entry** pointing at the
+    runbook so a search through the operator wiki surfaces the
+    incident procedure even without an active alert. Description
+    explicitly names both alert IDs so a Ctrl-F-from-PagerDuty hits
+    the relevant doc.
+  - **Verification:** the runbook YAML changes pass
+    `python -c "import yaml; yaml.safe_load(...)"` (37 rules across
+    13 groups, both new annotations present); the
+    `prometheus-rules-check` CI job exercises the same parse plus
+    `promtool check rules` on the alert file. All cross-reference
+    paths are repo-relative and resolve from the runbook's
+    `QSDM/docs/docs/runbooks/` location.
+
 - **Recent-rejection ring hard-cap defence on the JSONL file
   (2026-04-30).** The soft-cap compaction loop bounds the file at
   `[softCap, 2*softCap)` records under realistic traffic, but a flood
