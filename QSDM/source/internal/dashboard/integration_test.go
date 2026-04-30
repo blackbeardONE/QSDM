@@ -170,9 +170,11 @@ func TestDashboardIntegration(t *testing.T) {
 			`'compactions'`,
 			`'records on disk'`,
 			`'hard-cap drops'`,
+			`'rate-limit drops'`,
 			`metrics.persist_compactions_total`,
 			`metrics.persist_records_on_disk`,
 			`metrics.persist_hardcap_drops_total`,
+			`metrics.per_miner_rate_limited_total`,
 		} {
 			if !strings.Contains(string(body), label) {
 				t.Errorf("JavaScript missing persistence-lifecycle label/field %q", label)

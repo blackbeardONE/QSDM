@@ -3,11 +3,12 @@
 **Audience:** validator operators on call for a single QSDM node or a
 fleet thereof.
 
-**Trigger:** one or both of these alerts firing on
+**Trigger:** one or more of these alerts firing on
 [`alerts_qsdm.example.yml`](../../../deploy/prometheus/alerts_qsdm.example.yml):
 
-- `QSDMAttestRejectionPersistCompactionsHigh` (severity warning)
-- `QSDMAttestRejectionPersistHardCapDropping` (severity warning)
+- `QSDMAttestRejectionPersistCompactionsHigh` (severity warning) — Mode A
+- `QSDMAttestRejectionPersistHardCapDropping` (severity warning) — Mode B
+- `QSDMAttestRejectionPerMinerRateLimited` (severity warning) — Mode C
 
 **Estimated time to resolve:** 5–30 minutes for a typical single-miner
 flood; longer if a coordinated multi-miner spam campaign is under way
@@ -26,16 +27,18 @@ operator configures `cfg.RecentRejectionsPath`, the same records are
 ALSO append-only persisted to a JSONL log so a restart does not wipe
 forensic continuity.
 
-The persister is bounded by **two** caps in series:
+The rejection ring is bounded by **three** defences in series. The
+first fires at ring entry; the next two fire on the persister:
 
-| Cap         | Unit    | Default        | Set by                            | Defence depth |
-| ----------- | ------- | -------------- | --------------------------------- | ------------- |
-| **softCap** | records | 1024 records   | `recentrejects.DefaultPersistSoftCap` | First — triggers compaction (read-all, keep-last-N, atomic-rename rewrite) once per `softCap`-many appends |
-| **maxBytes** | bytes  | 0 (= disabled) | `cfg.RecentRejectionsMaxBytes`    | Second — refuses an Append outright when admitting it would breach the byte ceiling AND a salvage compaction failed to free enough headroom |
+| Defence                | Unit       | Default        | Set by                                  | Where it fires |
+| ---------------------- | ---------- | -------------- | --------------------------------------- | -------------- |
+| **per-miner limiter**  | rec/s/miner | 0 (= disabled) | `cfg.RecentRejectionsRateLimitPerSec`   | `Store.Record()` entry — drops BEFORE the ring or the persister see the record. Per-miner token bucket; the dashboard's "top offenders" strip identifies the source. |
+| **softCap**            | records    | 1024 records   | `recentrejects.DefaultPersistSoftCap`   | Persister — triggers compaction (read-all, keep-last-N, atomic-rename rewrite) once per `softCap`-many appends. |
+| **maxBytes**           | bytes      | 0 (= disabled) | `cfg.RecentRejectionsMaxBytes`          | Persister — refuses an Append outright when admitting it would breach the byte ceiling AND a salvage compaction failed to free enough headroom. |
 
 A "rejection flood" is operator-jargon for the scenario where one or
 more miners are submitting forged proofs faster than the validator can
-trim the on-disk log. There are two failure modes:
+absorb. There are three failure modes:
 
 - **Mode A (caught by `QSDMAttestRejectionPersistCompactionsHigh`):**
   the soft-cap rewrite loop is keeping up, but the rate is anomalously
@@ -46,12 +49,19 @@ trim the on-disk log. There are two failure modes:
   refused at least one record over the last 10m. Forensic durability
   is being shed — the in-memory ring still receives every record, but
   the on-disk JSONL log is no longer a complete history.
+- **Mode C (caught by `QSDMAttestRejectionPerMinerRateLimited`):**
+  the per-miner token bucket is exhausted for at least one
+  `miner_addr`. Records from that source are dropped at
+  `Store.Record()` entry; neither ring nor persister sees them. This
+  is the EARLIEST defence — when it fires alone (Modes A and B both
+  flat) it is the cleanest "single bad actor" signal in the stack.
 
 Mode B is strictly worse than Mode A, and only fires when `maxBytes`
-is configured. A node with `cfg.RecentRejectionsMaxBytes == 0` (the
-default) will never see Mode B — but it ALSO has no upper bound on
-disk consumption, which is why production operators are encouraged to
-set the cap.
+is configured. Mode C only fires when `cfg.RecentRejectionsRateLimitPerSec`
+is configured. A node with both caps disabled (the defaults)
+will never see Modes B or C — but it ALSO has no upper bound on disk
+consumption AND no per-miner fairness guarantee, which is why
+production operators are encouraged to set both.
 
 ---
 
@@ -61,23 +71,32 @@ set the cap.
 
 Open the operator dashboard (default
 `http://<validator-host>:8080/`) and locate the **🛑 Attestation
-Rejections** card. The persistence-lifecycle row carries four cells:
+Rejections** card. The persistence-lifecycle row carries five cells:
 
-| Cell                  | Healthy        | Mode A (compactions high)  | Mode B (hard-cap dropping)              |
-| --------------------- | -------------- | -------------------------- | --------------------------------------- |
-| **persist errors**    | 0 (green)      | 0 (green)                  | 0 — possibly non-zero on a contemporaneous I/O flap |
-| **compactions**       | low/stable     | climbing fast              | climbing AND records-on-disk plateaued near MaxBytes/recordSize |
-| **records on disk**   | ≤ softCap      | hovering near softCap      | hovering near MaxBytes/recordSize       |
-| **hard-cap drops**    | 0 (green)      | 0 (green)                  | **non-zero (red)**                      |
+| Cell                  | Healthy        | Mode A (compactions high)  | Mode B (hard-cap dropping)              | Mode C (rate-limit dropping) |
+| --------------------- | -------------- | -------------------------- | --------------------------------------- | ---------------------------- |
+| **persist errors**    | 0 (green)      | 0 (green)                  | 0 — possibly non-zero on a contemporaneous I/O flap | 0 (green)        |
+| **compactions**       | low/stable     | climbing fast              | climbing AND records-on-disk plateaued near MaxBytes/recordSize | low/stable — the limiter is sparing the ring |
+| **records on disk**   | ≤ softCap      | hovering near softCap      | hovering near MaxBytes/recordSize       | ≤ softCap                    |
+| **hard-cap drops**    | 0 (green)      | 0 (green)                  | **non-zero (red)**                      | 0 (green)                    |
+| **rate-limit drops**  | 0 (green)      | 0 — limiter not exhausted  | possibly non-zero — the flood is hitting both gates | **non-zero (red)** |
 
-If "hard-cap drops" is red, you are in Mode B. Otherwise check the
-**compactions** cell against your baseline — anything more than ~1×
-the typical rate is worth investigating even before
-`QSDMAttestRejectionPersistCompactionsHigh` fires.
+Read top-to-bottom. The first red cell tells you the mode:
+
+- **rate-limit drops red, others green** ⇒ Mode C — single bad actor,
+  the limiter is doing its job. Triage at §3.3.
+- **hard-cap drops red** ⇒ Mode B — escalate; the limiter (if
+  configured) was not enough.
+- **compactions climbing, hard-cap drops green** ⇒ Mode A — the
+  soft-cap loop is keeping up, but the volume is anomalous.
+
+If multiple cells are red the modes are not mutually exclusive: a
+sustained single-miner flood will trip Mode C first, then if their
+ALLOWED rate still saturates the persister, Modes A and B as well.
 
 ### 2.2 Prometheus
 
-The four series operators read during this incident:
+The five series operators read during this incident:
 
 ```promql
 # Compaction rate (Mode A trigger)
@@ -85,6 +104,9 @@ rate(qsdm_attest_rejection_persist_compactions_total[5m]) * 60
 
 # Hard-cap drop rate (Mode B trigger)
 rate(qsdm_attest_rejection_persist_hardcap_drops_total[5m])
+
+# Per-miner rate-limit drop rate (Mode C trigger)
+rate(qsdm_attest_rejection_per_miner_rate_limited_total[5m])
 
 # Current on-disk record count (gauge)
 qsdm_attest_rejection_persist_records_on_disk
@@ -192,8 +214,32 @@ the drop. Pick ONE of:
 | ----------------------------------- | ----------------------------------------------------------------------------- |
 | **Raise `cfg.RecentRejectionsMaxBytes`** | You have headroom in your disk budget. Restart the validator to apply (config-reload is not yet supported for this field as of 2026-04-30). |
 | **Raise softCap**                   | The soft-cap loop is running but each rewrite is too small. Larger softCap means each rewrite trims more, amortising the I/O cost. Same restart caveat. |
+| **Tighten `cfg.RecentRejectionsRateLimitPerSec`** | The hard-cap is breached because per-miner traffic is too high; cut admission upstream rather than chasing the disk. Restart caveat applies. |
 | **Apply libp2p / mempool rate-limit** | Same as Mode A — but here it is the immediate-action choice if you cannot restart the validator. |
 | **Slash the offender** (§4)         | The flood is sustained, the offender is identified, and you have governance authority to file a slash transaction. |
+
+#### 3.4.3 Mode C (rate-limit dropping) — usually self-resolving
+
+Mode C means the per-miner token-bucket limiter is actively dropping
+records — the validator's earliest defence is doing its job. The ring
+and the persister are both unaffected, so live operator surfaces are
+accurate AND the on-disk forensic record is complete (modulo the
+records the limiter shed, which by definition were redundant
+volume from a single offender).
+
+The expected operator response is light:
+
+| Option                              | When to choose                                                                |
+| ----------------------------------- | ----------------------------------------------------------------------------- |
+| **Wait** (no action)                | The limiter is shedding the offender's surplus; ring/persister load stays at baseline. The alert auto-clears once the offender backs off or is otherwise mitigated. Use when §3.3 identifies a single offender and Modes A and B are both flat. |
+| **Apply libp2p / mempool rate-limit** | The drops have persisted across multiple alert cycles AND the offending `miner_addr` is identified — cut at the network gate so even the limiter does not need to keep counting. |
+| **Slash the offender** (§4)         | Same triggers as Mode A/B: sustained, identified, you have authority. |
+| **Loosen `cfg.RecentRejectionsRateLimitPerSec`** | The drops are spread across MANY `miner_addr`s — the limiter is too tight for legitimate fleet behaviour (e.g. a CI run, a shared staging cluster). Restart caveat applies. |
+
+If Mode C fires alongside Mode A or Mode B the limiter is sparing the
+ring/persister but not enough — the offender's ALLOWED rate is still
+saturating downstream defences. Tighten the rate-limit AND apply the
+relevant Mode-A or Mode-B mitigation.
 
 ---
 
@@ -294,7 +340,9 @@ auto-resolves. Total operator-time: ~12 minutes.
   [`QSDM/deploy/prometheus/alerts_qsdm.example.yml`](../../../deploy/prometheus/alerts_qsdm.example.yml)
 - Persister implementation —
   `QSDM/source/pkg/mining/attest/recentrejects/persistence.go`
-- Wiring config (`RecentRejectionsPath`, `RecentRejectionsMaxBytes`) —
+- Wiring config (`RecentRejectionsPath`, `RecentRejectionsMaxBytes`,
+  `RecentRejectionsRateLimitPerSec`, `RecentRejectionsRateLimitBurst`,
+  `RecentRejectionsRateLimitIdleTTL`) —
   `QSDM/source/internal/v2wiring/v2wiring.go`
 - Dashboard tile —
   `QSDM/source/internal/dashboard/static/dashboard.js`

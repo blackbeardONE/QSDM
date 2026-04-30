@@ -248,6 +248,8 @@ func TestRecentRejectsMetricsAdapter_ImplementsInterface(t *testing.T) {
 	var _ recentrejects.PersistRecordsRecorder = recentRejectsMetricsAdapter{}
 	// Hard-cap drop telemetry (2026-04-30):
 	var _ recentrejects.PersistHardCapDropRecorder = recentRejectsMetricsAdapter{}
+	// Per-miner rate-limit drop telemetry (2026-05-01):
+	var _ recentrejects.RateLimitRecorder = recentRejectsMetricsAdapter{}
 }
 
 // TestRecordRecentRejectPersistError_IncrementsCounter locks
@@ -640,6 +642,111 @@ func TestResetRecentRejectMetricsForTest_ResetsHardCapDrops(t *testing.T) {
 	}
 	ResetRecentRejectMetricsForTest()
 	if got := RecentRejectPersistHardCapDropsForTest(); got != 0 {
+		t.Errorf("after reset: got %d, want 0", got)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Per-miner rate-limit drop telemetry (2026-05-01)
+// -----------------------------------------------------------------------------
+
+// TestRecordRecentRejectPerMinerRateLimited_Increments locks the
+// counter contract: each call increments by exactly 1 regardless
+// of the minerAddr argument. The addr is accepted on the API so
+// a future structured-log adapter can use it but the production
+// Prometheus mirror discards it (cardinality safety).
+func TestRecordRecentRejectPerMinerRateLimited_Increments(t *testing.T) {
+	t.Cleanup(ResetRecentRejectMetricsForTest)
+	ResetRecentRejectMetricsForTest()
+
+	if got := RecentRejectPerMinerRateLimitedForTest(); got != 0 {
+		t.Fatalf("baseline counter: got %d, want 0", got)
+	}
+
+	RecordRecentRejectPerMinerRateLimited("")
+	RecordRecentRejectPerMinerRateLimited("0xA")
+	RecordRecentRejectPerMinerRateLimited("0xB")
+
+	if got := RecentRejectPerMinerRateLimitedForTest(); got != 3 {
+		t.Errorf("counter after 3 drops: got %d, want 3", got)
+	}
+}
+
+// TestRecentRejectMetricsSnapshot_IncludesPerMinerRateLimited
+// pins the wire contract: the snapshot must surface
+// PerMinerRateLimitedTotal so the dashboard tile renders the
+// new cell. Removing the field from the JSON shape silently
+// blanks the operator's "single bad actor" signal.
+func TestRecentRejectMetricsSnapshot_IncludesPerMinerRateLimited(t *testing.T) {
+	t.Cleanup(ResetRecentRejectMetricsForTest)
+	ResetRecentRejectMetricsForTest()
+
+	RecordRecentRejectPerMinerRateLimited("0xflood")
+	RecordRecentRejectPerMinerRateLimited("0xflood")
+	RecordRecentRejectPerMinerRateLimited("0xflood")
+
+	snap := RecentRejectMetricsSnapshot()
+
+	if snap.PerMinerRateLimitedTotal != 3 {
+		t.Errorf("PerMinerRateLimitedTotal=%d, want 3", snap.PerMinerRateLimitedTotal)
+	}
+	// Pre-existing surface must still survive unchanged.
+	if len(snap.Fields) != 3 {
+		t.Errorf("len(Fields)=%d, want 3 (regression in pre-existing surface)",
+			len(snap.Fields))
+	}
+	if snap.PersistHardCapDropsTotal != 0 {
+		t.Errorf("hard-cap drops leaked into rate-limit test: %d",
+			snap.PersistHardCapDropsTotal)
+	}
+}
+
+// TestRecentRejectsMetricsAdapter_RateLimitRoutes drives the
+// dependency-inversion chain end-to-end for the new
+// rate-limit hook: invoking the adapter method must reach the
+// package-level counter, with no leakage between this
+// counter and the other persistence-lifecycle counters.
+func TestRecentRejectsMetricsAdapter_RateLimitRoutes(t *testing.T) {
+	t.Cleanup(func() {
+		recentrejects.SetMetricsRecorder(recentRejectsMetricsAdapter{})
+		ResetRecentRejectMetricsForTest()
+	})
+	ResetRecentRejectMetricsForTest()
+	recentrejects.SetMetricsRecorder(recentRejectsMetricsAdapter{})
+
+	a := recentRejectsMetricsAdapter{}
+	a.RecordRateLimited("0xA")
+	a.RecordRateLimited("0xA")
+	a.RecordRateLimited("0xB")
+
+	if got := RecentRejectPerMinerRateLimitedForTest(); got != 3 {
+		t.Errorf("rate-limit counter via adapter: got %d, want 3", got)
+	}
+	// Cross-leak guards: every other counter must remain
+	// at zero. A shared-storage regression would surface as
+	// a stray increment here.
+	if got := RecentRejectPersistErrorsForTest(); got != 0 {
+		t.Errorf("persist-errors counter leaked: got %d, want 0", got)
+	}
+	if got := RecentRejectPersistCompactionsForTest(); got != 0 {
+		t.Errorf("compactions counter leaked: got %d, want 0", got)
+	}
+	if got := RecentRejectPersistHardCapDropsForTest(); got != 0 {
+		t.Errorf("hard-cap drops counter leaked: got %d, want 0", got)
+	}
+}
+
+// TestResetRecentRejectMetricsForTest_ResetsPerMinerRateLimited
+// pins that the reset helper clears the new counter alongside
+// the existing ones. Tests rely on a known-zero baseline; a
+// missed reset would cross-contaminate parallel test runs.
+func TestResetRecentRejectMetricsForTest_ResetsPerMinerRateLimited(t *testing.T) {
+	RecordRecentRejectPerMinerRateLimited("0xA")
+	if got := RecentRejectPerMinerRateLimitedForTest(); got != 1 {
+		t.Fatalf("setup: counter not at 1: %d", got)
+	}
+	ResetRecentRejectMetricsForTest()
+	if got := RecentRejectPerMinerRateLimitedForTest(); got != 0 {
 		t.Errorf("after reset: got %d, want 0", got)
 	}
 }

@@ -201,6 +201,19 @@ func corePrometheusMetrics() []Metric {
 	add("qsdm_attest_rejection_persist_hardcap_drops_total",
 		"Records the recent-rejection ring's FilePersister refused to write because admitting them would exceed the configured hard byte cap. The in-memory ring is unaffected; only the on-disk forensic record is shed.",
 		MetricCounter, float64(recentRejectPersistHardCapDropsCount()), nil)
+	// Per-miner rate-limit drop counter. Fires BEFORE the
+	// record reaches the ring or the persister: a single
+	// miner's token bucket is exhausted and Store.Record
+	// drops the record at entry. Distinct from the hard-cap
+	// drops above which fire after admission. Operators
+	// alert rate(...) > 0 sustained 10m as a "single bad
+	// actor flooding" signal — the dashboard's "top
+	// offenders" strip then identifies the miner_addr (the
+	// metric itself stays unlabeled to keep cardinality
+	// bounded against a fast-rotating attacker).
+	add("qsdm_attest_rejection_per_miner_rate_limited_total",
+		"Records dropped at recent-rejection ring entry by the per-miner token-bucket limiter. Indicates a single miner exhausted their per-miner rate budget.",
+		MetricCounter, float64(recentRejectPerMinerRateLimitedCount()), nil)
 
 	// ---- v2 enrollment registry --------------------------------
 	add("qsdm_enrollment_applied_total",

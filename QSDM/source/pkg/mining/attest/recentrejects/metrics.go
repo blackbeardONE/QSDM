@@ -126,6 +126,33 @@ type PersistHardCapDropRecorder interface {
 	RecordPersistHardCapDrop(droppedBytes int)
 }
 
+// RateLimitRecorder is the OPTIONAL extension surface a
+// MetricsRecorder implementation MAY satisfy to receive
+// notifications when the per-miner token-bucket limiter
+// (Store.SetRateLimit) drops a record. minerAddr is the
+// dropped record's MinerAddr — passed through verbatim so a
+// future per-miner cardinality-bounded counter could use it,
+// but the production Prometheus mirror DELIBERATELY discards
+// it (Prometheus best practice: never label a counter with
+// an unbounded user-supplied value). The unlabeled
+// qsdm_attest_rejection_per_miner_rate_limited_total counter
+// is the canonical signal; the addr is here only so a
+// debug-mode adapter could emit a structured-log line at
+// drop time.
+//
+// Production wiring: pkg/monitoring's adapter implements
+// this so a rate-limit drop increments
+// qsdm_attest_rejection_per_miner_rate_limited_total.
+// Operators alert on rate(...) > 0 sustained 10m: any
+// non-zero rate means a single miner has saturated their
+// bucket, which is itself a strong "investigate this
+// miner_addr" signal — distinct from the "ring is filling"
+// signal of compactions, and from the "disk is shedding"
+// signal of hard-cap drops.
+type RateLimitRecorder interface {
+	RecordRateLimited(minerAddr string)
+}
+
 // PersistRecordsRecorder is the OPTIONAL extension surface a
 // MetricsRecorder implementation MAY satisfy to receive
 // best-effort gauge updates of the on-disk record count.

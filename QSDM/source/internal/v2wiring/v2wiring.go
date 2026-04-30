@@ -52,6 +52,7 @@ package v2wiring
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/api"
 	"github.com/blackbeardONE/QSDM/pkg/chain"
@@ -233,6 +234,59 @@ type Config struct {
 	// at minute-resolution. Lower values trade durability
 	// for tighter disk-quota guarantees.
 	RecentRejectionsMaxBytes int64
+
+	// RecentRejectionsRateLimitPerSec is the OPTIONAL per-miner
+	// token-bucket refill rate (records/second/miner) the
+	// rejection ring enforces at Store.Record() entry. Zero
+	// (the default) leaves the limiter detached — the
+	// pre-2026-05-01 posture where every well-formed
+	// rejection enters the ring regardless of source.
+	//
+	// When set, records for a miner whose bucket is exhausted
+	// are dropped at Record() entry: they never enter the
+	// ring, never invoke the persister, and never update the
+	// per-field truncation counters. Only the dedicated
+	// qsdm_attest_rejection_per_miner_rate_limited_total
+	// counter increments, plus the per-Store
+	// rejectionStore.RateLimitedCount() mirror.
+	//
+	// Reasonable values for a §4.6-active validator:
+	//   - 5-15 records/sec/miner sustained: covers a miner
+	//     that's misconfigured-then-retrying without
+	//     suppressing legitimate operator visibility.
+	//   - Below 1: tightens against a quiet validator's
+	//     baseline, but risks suppressing the first
+	//     real-incident burst from a freshly-misconfigured
+	//     fleet.
+	//
+	// Records with empty MinerAddr (rare envelope-parse-
+	// failure case) bypass the limiter so operator
+	// visibility into the parse-failure path is preserved.
+	RecentRejectionsRateLimitPerSec float64
+
+	// RecentRejectionsRateLimitBurst is the per-miner burst
+	// allowance — the maximum number of tokens any single
+	// miner can accumulate. Zero derives a sensible default
+	// (5 × RecentRejectionsRateLimitPerSec, clamped to >=1).
+	//
+	// Set explicitly to override; the derivation is intended
+	// for the common case where operators tune only the
+	// sustained rate and accept a 5-second burst window.
+	RecentRejectionsRateLimitBurst float64
+
+	// RecentRejectionsRateLimitIdleTTL controls how long an
+	// idle per-miner bucket stays in the limiter map before
+	// amortized eviction. Zero uses the package default
+	// (1 hour). Negative values are clamped to 0 (eviction
+	// disabled — bucket map grows unboundedly; only
+	// appropriate for short-lived test validators).
+	//
+	// Operators rotating through a fleet of one-shot miners
+	// (e.g. CI test runs) can shorten this to e.g. 5 min to
+	// keep the map tight; long-running production
+	// validators with stable miner populations should leave
+	// it at the default.
+	RecentRejectionsRateLimitIdleTTL time.Duration
 
 	// LogRecentRejectionsError is invoked on
 	// RestoreFromPersister failure (boot-time replay errored)
@@ -473,6 +527,21 @@ func Wire(cfg Config) (*Wired, error) {
 				}
 			}
 		}
+	}
+
+	// Apply per-miner rate-limit when configured. Setter is a
+	// no-op for rate <= 0 so the bare unset path
+	// (cfg.RecentRejectionsRateLimitPerSec == 0) keeps the
+	// pre-2026-05-01 behaviour intact: every well-formed
+	// rejection enters the ring regardless of source. Burst
+	// and IdleTTL pass through to the limiter's own derivation
+	// logic — see recentrejects.SetRateLimit for the defaults.
+	if cfg.RecentRejectionsRateLimitPerSec > 0 {
+		rejectionStore.SetRateLimit(
+			cfg.RecentRejectionsRateLimitPerSec,
+			cfg.RecentRejectionsRateLimitBurst,
+			cfg.RecentRejectionsRateLimitIdleTTL,
+		)
 	}
 
 	mining.SetRejectionRecorder(miningRejectionRecorderAdapter{store: rejectionStore})

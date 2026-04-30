@@ -1193,3 +1193,82 @@ groups:
                 * Apply a libp2p / mempool rate-limit on the
                   offending miner so the rejection volume drops
                   to baseline and the soft-cap loop catches up.
+
+      # qsdm_attest_rejection_per_miner_rate_limited_total
+      # increments when the per-miner token-bucket limiter
+      # (recentrejects.SetRateLimit, wired via
+      # cfg.RecentRejectionsRateLimitPerSec) drops a record at
+      # Store.Record() entry. Distinct from the persist-hard-cap
+      # alert above:
+      #
+      #   - HardCapDropping fires when the on-disk persister
+      #     refuses an admitted record. The ring saw it; the
+      #     disk did not.
+      #   - PerMinerRateLimited fires when neither the ring
+      #     nor the persister see the record at all. A single
+      #     miner has saturated their per-miner rate budget,
+      #     full stop.
+      #
+      # Triage divergence:
+      #   - Rate-limit drops with a flat hard-cap rate ⇒ ONE
+      #     bad actor. Identify miner_addr from the dashboard
+      #     "top offenders" strip and apply policy at the
+      #     libp2p / mempool gate.
+      #   - Rate-limit drops AND hard-cap drops simultaneously
+      #     ⇒ ONE bad actor pushing hard enough that even
+      #     after rate-limiting their admitted records overflow
+      #     the persister. Tighten the per-miner rate limit
+      #     AND raise the disk cap, in that order.
+      #   - Rate-limit drops with NO obvious top offender
+      #     (broad attack across many miner_addrs) ⇒ either the
+      #     limiter rate is too tight (operators tighten under
+      #     load and forget to relax later) or a botnet is
+      #     active. Cross-check against
+      #     qsdm_p2p_peers_connected for unusual peer churn.
+      - alert: QSDMAttestRejectionPerMinerRateLimited
+        # rate > 0 for 10m: any sustained per-miner drops
+        # across two scrape windows. No hysteresis — non-zero
+        # is an investigation signal in itself.
+        expr: |
+          rate(qsdm_attest_rejection_per_miner_rate_limited_total[5m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: v2-attest
+        annotations:
+          # Same runbook as the compactions / hard-cap alerts
+          # — the rejection-flood mode walks all three on one
+          # page so the operator picks the right mitigation
+          # without losing context.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md"
+          summary: "{{ $labels.instance }}: per-miner rate-limit is dropping records at recent-rejection ring entry"
+          description: |
+            qsdm_attest_rejection_per_miner_rate_limited_total has
+            been incrementing for ≥10m on {{ $labels.instance }}.
+            One or more miners have exhausted their per-miner
+            token bucket and Store.Record is dropping their
+            records at entry — neither the in-memory ring nor
+            the persister see them.
+
+            This is the EARLIEST defence in the rejection-ring
+            stack: it fires before hard-cap drops, before
+            soft-cap compactions, and before per-field rune
+            truncation. A non-zero rate means the operator
+            policy (cfg.RecentRejectionsRateLimitPerSec) is
+            actively shedding what would otherwise be a flood.
+
+            Triage:
+              - Identify the offending miner_addr from the
+                dashboard "top offenders" strip:
+                /dashboard → Recent Attestation Rejections.
+              - Cross-check against the verifier's per-arch
+                rejection counters:
+                topk(5, rate(qsdm_attestation_rejected_total{kind!=""}[5m])
+                  by (miner_addr))
+              - If exactly one miner_addr dominates: apply a
+                libp2p / mempool ban or rate-limit at the
+                gate so the rejection volume drops to baseline.
+              - If many miner_addrs share the load: the
+                limiter rate may be too tight. Loosen
+                cfg.RecentRejectionsRateLimitPerSec or
+                widen the burst.

@@ -12,6 +12,83 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Added
+
+- **Per-miner rate-limit at recent-rejection ring entry (2026-05-01).**
+  Closed a known signal-to-noise gap in the `pkg/mining/attest/recentrejects`
+  ring: prior to this change, a single miner submitting forged proofs at
+  line-rate could fill the ring with their own records, FIFO-ing legitimate
+  rejection events out of the operator's view AND saturating the per-field
+  rune-truncation counters so legitimate truncation patterns got hidden in
+  the aggregate. The hard-cap defence (commit `691b348`, 2026-04-30) bounded
+  the on-disk blast radius but did nothing about per-miner fairness.
+  - **Token-bucket limiter (`ratelimit.go`).** New per-miner token bucket
+    consulted at `Store.Record()` entry. `rate` (tokens/sec/miner) refills
+    each bucket; `burst` (max tokens) absorbs a quiet miner's first
+    burst-many records cold. Records for a miner whose bucket is exhausted
+    are DROPPED — never enter the ring, never invoke the persister, never
+    update the per-field truncation counters; only the dedicated drop
+    counter increments. Empty `MinerAddr` (rare envelope-parse-failure
+    case) bypasses the limiter so operator visibility into the
+    parse-failure path is preserved.
+  - **Lazy idle-bucket eviction.** Buckets idle longer than `idleTTL`
+    are pruned by an amortised sweep every 1024 admits (constant
+    average cost per `Record()` call regardless of distinct-miner
+    count). Long-running validators with rotating miner populations
+    do not leak map memory.
+  - **Disabled by default.** `recentrejects.Store` ships with the
+    limiter detached (rate=0); pre-existing tests and quiet
+    validators see zero behaviour change. Production wiring activates
+    it via three new `internal/v2wiring.Config` fields:
+    `RecentRejectionsRateLimitPerSec`,
+    `RecentRejectionsRateLimitBurst`,
+    `RecentRejectionsRateLimitIdleTTL`. Setter
+    (`Store.SetRateLimit`) accepts in-place re-tuning that PRESERVES
+    existing token state — a tighter rate kicks in immediately
+    rather than letting an unbounded burst through during the
+    re-configure window.
+  - **Observability (5 surfaces).**
+    - New optional `recentrejects.RateLimitRecorder` interface
+      (mirrors the existing `PersistErrorRecorder` /
+      `PersistCompactionRecorder` /
+      `PersistRecordsRecorder` /
+      `PersistHardCapDropRecorder` extension pattern).
+    - Prometheus counter
+      `qsdm_attest_rejection_per_miner_rate_limited_total`
+      (unlabeled — Prometheus best practice; `miner_addr` would
+      explode cardinality under a fast-rotating attacker).
+    - `pkg/monitoring.RecentRejectMetricsView` snapshot gains
+      `PerMinerRateLimitedTotal` (JSON tag
+      `per_miner_rate_limited_total`).
+    - Dashboard tile gains a fifth persistence-lifecycle cell
+      (`'rate-limit drops'`) that goes red on first hit; tile
+      caption updated to walk the operator through the new
+      defence.
+    - Per-store `Store.RateLimitedCount()` mirror returns the
+      same value without a Prometheus scrape.
+  - **Alert + runbook.** New `QSDMAttestRejectionPerMinerRateLimited`
+    alert (`rate(...) > 0` for 10m, severity warning, `runbook_url`
+    pointing at the same `REJECTION_FLOOD.md` runbook used by the
+    compactions and hard-cap alerts). Runbook upgraded from a
+    two-mode (A: compactions, B: hard-cap) to a three-mode
+    triage flow with **Mode C (rate-limit dropping) — usually
+    self-resolving**, and the dashboard "first red cell tells
+    you the mode" shortcut.
+  - **Test coverage (15 new behavioural tests + 4 monitoring
+    tests).** Covers: disabled-by-default, empty-`MinerAddr`-
+    bypass, burst absorption, sustained-over-rate drops,
+    refill-resumes-admission, per-miner independence, idle-TTL
+    eviction, re-configure preserves token state,
+    re-configure-disable frees the map, drop fires the
+    `RateLimitRecorder`, drop does NOT advance `Seq` (cursor-
+    pagination invariant), drop does NOT invoke the persister
+    (forensic-record stability), `RateLimitConfig` reflects boot
+    settings, nil-store safety, derived-burst defaults,
+    sub-one-burst clamp. Monitoring tests assert: counter
+    increments, snapshot inclusion, adapter routing, reset-
+    helper coverage. All 19 green; full mining + monitoring +
+    dashboard + v2wiring suites stay green.
+
 ### Fixed
 
 - **`qsdmplus -> qsdm` rebrand residue in shell + PowerShell + YAML

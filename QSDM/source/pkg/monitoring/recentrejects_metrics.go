@@ -106,6 +106,31 @@ var (
 	// outrunning the soft-cap rewrite cycle — escalate to
 	// operator, not just to logs.
 	rrPersistHardCapDrops atomic.Uint64
+
+	// rrPerMinerRateLimited counts records dropped at
+	// Store.Record() entry by the per-miner token-bucket
+	// limiter (recentrejects.SetRateLimit). Exposed as
+	// qsdm_attest_rejection_per_miner_rate_limited_total.
+	//
+	// Distinct from the persister's hard-cap drops: this
+	// counter fires BEFORE the record reaches the ring or
+	// the persister. The drop signals "one miner's bucket
+	// is exhausted" — i.e. a single bad actor flooding,
+	// not a broad volume spike. Cardinality is intentionally
+	// unlabeled (no miner_addr label) so the counter cannot
+	// blow up under a fast-rotating attacker; the per-miner
+	// breakdown lives in the dashboard's "top offenders"
+	// strip, which derives from the in-ring records the
+	// limiter does not affect.
+	//
+	// Operator alert: rate(...) > 0 sustained 10m. A
+	// non-zero rate combined with a flat hard-cap-drop
+	// rate is the diagnostic for "one bad actor"; a
+	// non-zero rate combined with a rising hard-cap-drop
+	// rate is the diagnostic for "one bad actor pushing
+	// hard enough that even after rate-limiting their
+	// admitted records overflow the persister".
+	rrPerMinerRateLimited atomic.Uint64
 )
 
 // RecordRecentRejectField is the package-level entry point
@@ -234,6 +259,32 @@ func RecentRejectPersistHardCapDropsForTest() uint64 {
 	return rrPersistHardCapDrops.Load()
 }
 
+// RecordRecentRejectPerMinerRateLimited increments the
+// qsdm_attest_rejection_per_miner_rate_limited_total counter.
+// Invoked by the recentrejects→monitoring adapter when
+// Store.Record() drops a record because the per-miner token
+// bucket is exhausted. minerAddr is accepted on the parameter
+// so a future structured-log adapter could surface it, but
+// THIS counter deliberately discards it (Prometheus best
+// practice: no unbounded user-supplied label values).
+func RecordRecentRejectPerMinerRateLimited(minerAddr string) {
+	_ = minerAddr
+	rrPerMinerRateLimited.Add(1)
+}
+
+// recentRejectPerMinerRateLimitedCount returns the current
+// value of qsdm_attest_rejection_per_miner_rate_limited_total
+// for the Prometheus scrape path. Unexported.
+func recentRejectPerMinerRateLimitedCount() uint64 {
+	return rrPerMinerRateLimited.Load()
+}
+
+// RecentRejectPerMinerRateLimitedForTest exposes the current
+// counter value for unit tests.
+func RecentRejectPerMinerRateLimitedForTest() uint64 {
+	return rrPerMinerRateLimited.Load()
+}
+
 // SetRecentRejectPersistRecordsOnDisk updates the
 // qsdm_attest_rejection_persist_records_on_disk gauge.
 // Invoked by the recentrejects→monitoring adapter from
@@ -286,11 +337,12 @@ type RecentRejectFieldMetricsView struct {
 // list together MUST treat the count and the list as
 // independent samples.
 type RecentRejectMetricsView struct {
-	Fields                   []RecentRejectFieldMetricsView `json:"fields"`
-	PersistErrorsTotal       uint64                         `json:"persist_errors_total"`
-	PersistCompactionsTotal  uint64                         `json:"persist_compactions_total"`
-	PersistRecordsOnDisk     uint64                         `json:"persist_records_on_disk"`
-	PersistHardCapDropsTotal uint64                         `json:"persist_hardcap_drops_total"`
+	Fields                       []RecentRejectFieldMetricsView `json:"fields"`
+	PersistErrorsTotal           uint64                         `json:"persist_errors_total"`
+	PersistCompactionsTotal      uint64                         `json:"persist_compactions_total"`
+	PersistRecordsOnDisk         uint64                         `json:"persist_records_on_disk"`
+	PersistHardCapDropsTotal     uint64                         `json:"persist_hardcap_drops_total"`
+	PerMinerRateLimitedTotal     uint64                         `json:"per_miner_rate_limited_total"`
 }
 
 // RecentRejectMetricsSnapshot returns the current per-field
@@ -310,6 +362,7 @@ func RecentRejectMetricsSnapshot() RecentRejectMetricsView {
 		PersistCompactionsTotal:  rrPersistCompactions.Load(),
 		PersistRecordsOnDisk:     rrPersistRecordsOnDisk.Load(),
 		PersistHardCapDropsTotal: rrPersistHardCapDrops.Load(),
+		PerMinerRateLimitedTotal: rrPerMinerRateLimited.Load(),
 	}
 	for _, r := range rows {
 		out.Fields = append(out.Fields, RecentRejectFieldMetricsView{
@@ -388,4 +441,5 @@ func ResetRecentRejectMetricsForTest() {
 	rrPersistCompactions.Store(0)
 	rrPersistRecordsOnDisk.Store(0)
 	rrPersistHardCapDrops.Store(0)
+	rrPerMinerRateLimited.Store(0)
 }

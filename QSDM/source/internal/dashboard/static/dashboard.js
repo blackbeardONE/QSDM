@@ -469,6 +469,24 @@ function updateAttestRejections() {
                 'on-disk Append refusals (ring unaffected; flood signal)'
             ));
 
+            // Per-miner rate-limit drops. Fires BEFORE the record
+            // reaches the ring or the persister: a single miner's
+            // token bucket is exhausted and Store.Record dropped
+            // the record at entry. Distinct from the hard-cap
+            // drops above (which fire AFTER admission). Non-zero
+            // here means "one miner is flooding"; combine with
+            // a flat hard-cap-drops rate to disambiguate from
+            // "broad rejection volume spike". Colour gates red
+            // on first hit because any non-zero value is a
+            // single-actor signal worth investigating.
+            const rateLimitDrops = metrics.per_miner_rate_limited_total || 0;
+            countersEl.appendChild(buildPersistCell(
+                'rate-limit drops',
+                String(rateLimitDrops),
+                rateLimitDrops > 0 ? '#d0021b' : '#7ed321',
+                'per-miner bucket-exhausted drops (ring + persister both unaffected)'
+            ));
+
             // Stash for the CSV-export link + the top-miners
             // strip; both are derived from the current page so
             // a click is always one render away from fresh data.

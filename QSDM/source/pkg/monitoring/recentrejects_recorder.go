@@ -19,19 +19,20 @@ func init() {
 }
 
 // recentRejectsMetricsAdapter implements
-// recentrejects.MetricsRecorder plus four optional
+// recentrejects.MetricsRecorder plus five optional
 // extension surfaces by forwarding to the package-level
 // Record*/Set* functions in recentrejects_metrics.go.
 //
-// All four optional surfaces are probed by the recentrejects
+// All five optional surfaces are probed by the recentrejects
 // package via type-assertion at runtime; the adapter
 // satisfying them all lets the production scrape expose the
-// full persistence lifecycle:
+// full rejection lifecycle:
 //
 //   - PersistErrorRecorder         → persist_errors_total
 //   - PersistCompactionRecorder    → persist_compactions_total
 //   - PersistRecordsRecorder       → persist_records_on_disk (gauge)
 //   - PersistHardCapDropRecorder   → persist_hardcap_drops_total
+//   - RateLimitRecorder            → per_miner_rate_limited_total
 //
 // A future refactor that drops one of the methods silently
 // breaks the relevant counter without a build failure
@@ -59,4 +60,8 @@ func (recentRejectsMetricsAdapter) SetPersistRecordsOnDisk(n uint64) {
 
 func (recentRejectsMetricsAdapter) RecordPersistHardCapDrop(droppedBytes int) {
 	RecordRecentRejectPersistHardCapDrop(droppedBytes)
+}
+
+func (recentRejectsMetricsAdapter) RecordRateLimited(minerAddr string) {
+	RecordRecentRejectPerMinerRateLimited(minerAddr)
 }

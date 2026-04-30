@@ -181,6 +181,15 @@ type Store struct {
 	// via PersistErrorCount; a Prometheus mirror lives in
 	// pkg/monitoring (recentrejects_metrics.go).
 	persistErrCount uint64
+
+	// limiter is the per-miner token-bucket defence. Disabled
+	// (rate=0) by default for backward compatibility with
+	// existing tests and quiet validators; the production
+	// wiring activates it via internal/v2wiring.Config. Lives
+	// under s.mu so admit() inherits the Store's lock without
+	// a separate mutex (lock-graph stays flat, see
+	// ratelimit.go for the reasoning).
+	limiter rateLimiter
 }
 
 // NewStore constructs an empty store with a FIFO-eviction cap
@@ -326,6 +335,97 @@ func (s *Store) PersistErrorCount() uint64 {
 	return s.persistErrCount
 }
 
+// SetRateLimit installs (or re-tunes) the per-miner token-
+// bucket limiter consulted at Store.Record() entry. Records
+// for a miner whose bucket is exhausted are DROPPED — they
+// never enter the in-memory ring, never invoke the persister,
+// and never update the per-field truncation counters; only
+// the dedicated rate-limit drop counter increments.
+//
+// Parameters:
+//   - rate: tokens per second per miner. <=0 disables the
+//     limiter (the default; existing behaviour preserved).
+//   - burst: max tokens any single miner can accumulate.
+//     Pass 0 to derive a sensible default (rate*5, clamped
+//     to >=1).
+//   - idleTTL: how long an idle bucket is kept in the map
+//     before amortized eviction. Pass 0 to use the package
+//     default (1h). Negative values are clamped to 0
+//     (eviction off).
+//
+// The limiter is consulted under the Store's existing mutex
+// so concurrency is identical to other Store mutators; no
+// new lock graph.
+//
+// Re-configuring an active limiter does NOT flush existing
+// buckets — token state carries forward so a tighter rate
+// kicks in immediately without an unbounded cold-start
+// admit window.
+func (s *Store) SetRateLimit(rate, burst float64, idleTTL time.Duration) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.limiter.configure(rate, burst, idleTTL)
+}
+
+// RateLimitConfig returns a snapshot of the per-miner
+// limiter's configuration plus the lifetime drop count.
+// Returns nil iff the limiter is disabled (rate <= 0).
+//
+// Used by the dashboard tile to render "rate-limit: 10/s
+// (burst 50; tracking 73 miners; 12 dropped)" and by tests
+// asserting the v2wiring boot wired the right knobs.
+func (s *Store) RateLimitConfig() *RateLimitConfig {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.limiter.snapshotRate() <= 0 {
+		return nil
+	}
+	return &RateLimitConfig{
+		Rate:           s.limiter.snapshotRate(),
+		Burst:          s.limiter.snapshotBurst(),
+		IdleTTL:        s.limiter.snapshotIdleTTL(),
+		ActiveBuckets:  s.limiter.snapshotActiveBuckets(),
+		RateLimitedTot: s.limiter.snapshotDropCount(),
+	}
+}
+
+// RateLimitedCount returns the lifetime per-miner-rate-limit
+// drop count for this Store. Monotonic; reset only on
+// process restart. Returns 0 if the limiter is disabled.
+//
+// Mirrors the qsdm_attest_rejection_per_miner_rate_limited_total
+// Prometheus counter (set by the recentrejects→monitoring
+// adapter); both should agree on a healthy validator.
+func (s *Store) RateLimitedCount() uint64 {
+	if s == nil {
+		return 0
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.limiter.snapshotDropCount()
+}
+
+// SweepRateLimitIdleForTest forces an immediate sweep of
+// idle buckets. Tests use it to deterministically shrink the
+// limiter map without waiting for the amortized
+// sweepEveryAdmits cadence. Production code MUST NOT call
+// this — the amortized sweep already bounds map size on the
+// hot path.
+func (s *Store) SweepRateLimitIdleForTest(now time.Time) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.limiter.sweepIdle(now)
+}
+
 // Per-field rune caps. Defined as named constants so the
 // metrics adapter and tests can reference the exact same
 // numbers the store enforces — a future bump to e.g. 400
@@ -337,12 +437,23 @@ const (
 )
 
 // Record appends a new rejection to the ring, evicting the
-// oldest if the cap is reached. Returns the assigned Seq.
+// oldest if the cap is reached. Returns the assigned Seq, or 0
+// if the per-miner rate-limiter dropped the record.
 //
 // Thread-safe. Defensive: Detail is truncated to 200 runes,
 // GPUName / CertSubject to 256 runes (defending against a
 // malicious miner stuffing the store with megabyte attestation
 // fields).
+//
+// Per-miner rate-limit (see SetRateLimit): when configured,
+// records for a miner whose bucket is exhausted are dropped at
+// Record() entry — they do NOT enter the ring, do NOT invoke
+// the persister, do NOT update the per-field truncation
+// counters. Only the dedicated rate-limit-drop counter
+// increments. Records with empty MinerAddr bypass the
+// limiter (no key to bucket against) so the operator's
+// visibility into the rare envelope-parse-failure case is
+// preserved.
 //
 // The pre-truncation rune count of every non-empty observed
 // field is reported to the package-level MetricsRecorder
@@ -355,10 +466,26 @@ func (s *Store) Record(rec Rejection) uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Per-miner rate-limit gate. When the limiter is disabled
+	// (the default, and the configuration of every
+	// pre-existing test) admit() returns true on the first
+	// branch with no map lookup, so the cost on quiet
+	// validators is one float compare. The Seq counter is
+	// NOT bumped on a drop — Seq is the persistent
+	// "what made it onto the ring" identifier and a dropped
+	// record never reaches the ring; bumping Seq here would
+	// leak gaps into the persisted Seq sequence and confuse
+	// cursor-based pagination of /api/v1/attest/recent-rejections.
+	now := s.nowFn()
+	if !s.limiter.admit(rec.MinerAddr, now) {
+		noteRateLimited(rec.MinerAddr)
+		return 0
+	}
+
 	s.seq++
 	rec.Seq = s.seq
 	if rec.RecordedAt.IsZero() {
-		rec.RecordedAt = s.nowFn()
+		rec.RecordedAt = now
 	}
 
 	// Observe pre-truncation lengths BEFORE we mutate the
