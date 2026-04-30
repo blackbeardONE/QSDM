@@ -176,12 +176,26 @@ def tensor_core_proof(seed: bytes) -> dict:
 
 
 def _env_preferred(primary: str, legacy: str) -> str:
+    # Fail loudly if a refactor (e.g. the historical qsdmplus -> qsdm
+    # rebrand) ever flattens both args to the same string. A silent
+    # collapse turns the legacy fallback into dead code AND makes the
+    # call equivalent to a bare os.environ.get -- the helper exists
+    # ONLY for the (preferred, legacy) deprecation-window pattern; if
+    # both names are the same the caller wants os.environ.get directly.
+    # Raising here is cheaper than a CI grep because it fires the
+    # moment a developer runs the sidecar against the wrong branch.
+    if primary == legacy:
+        raise ValueError(
+            "_env_preferred requires distinct (primary, legacy) names; "
+            f"got {primary!r} for both. Use os.environ.get(...) instead "
+            "if no legacy fallback is needed, or restore the legacy name."
+        )
     return os.environ.get(primary, "").strip() or os.environ.get(legacy, "").strip()
 
 
 def _challenge_jitter_sleep() -> None:
     """Spread GET /ngc-challenge calls when many validators share one NAT (15/min per client)."""
-    raw = _env_preferred("QSDM_NGC_CHALLENGE_JITTER_MAX_SEC", "QSDM_NGC_CHALLENGE_JITTER_MAX_SEC")
+    raw = _env_preferred("QSDM_NGC_CHALLENGE_JITTER_MAX_SEC", "QSDMPLUS_NGC_CHALLENGE_JITTER_MAX_SEC")
     if not raw:
         return
     try:
@@ -205,25 +219,25 @@ def _retry_after_seconds(http_err: urllib.error.HTTPError) -> float:
 
 def fetch_ingest_nonce() -> str:
     """GET /ngc-challenge when QSDM_NGC_FETCH_CHALLENGE=true (node must have nvidia_lock_require_ingest_nonce)."""
-    if _env_preferred("QSDM_NGC_FETCH_CHALLENGE", "QSDM_NGC_FETCH_CHALLENGE").lower() not in ("1", "true", "yes"):
+    if _env_preferred("QSDM_NGC_FETCH_CHALLENGE", "QSDMPLUS_NGC_FETCH_CHALLENGE").lower() not in ("1", "true", "yes"):
         return ""
-    url = _env_preferred("QSDM_NGC_CHALLENGE_URL", "QSDM_NGC_CHALLENGE_URL")
+    url = _env_preferred("QSDM_NGC_CHALLENGE_URL", "QSDMPLUS_NGC_CHALLENGE_URL")
     if not url:
-        report = _env_preferred("QSDM_NGC_REPORT_URL", "QSDM_NGC_REPORT_URL")
+        report = _env_preferred("QSDM_NGC_REPORT_URL", "QSDMPLUS_NGC_REPORT_URL")
         if report and "/ngc-proof" in report:
             url = report.replace("/ngc-proof", "/ngc-challenge", 1)
         else:
             return ""
-    secret = _env_preferred("QSDM_NGC_INGEST_SECRET", "QSDM_NGC_INGEST_SECRET")
+    secret = _env_preferred("QSDM_NGC_INGEST_SECRET", "QSDMPLUS_NGC_INGEST_SECRET")
     if not secret:
         return ""
-    max_retries_raw = _env_preferred("QSDM_NGC_CHALLENGE_MAX_RETRIES", "QSDM_NGC_CHALLENGE_MAX_RETRIES")
+    max_retries_raw = _env_preferred("QSDM_NGC_CHALLENGE_MAX_RETRIES", "QSDMPLUS_NGC_CHALLENGE_MAX_RETRIES")
     try:
         max_retries = max(1, min(12, int(max_retries_raw or "4")))
     except ValueError:
         max_retries = 4
     ctx = None
-    if _env_preferred("QSDM_NGC_REPORT_INSECURE_TLS", "QSDM_NGC_REPORT_INSECURE_TLS").lower() in (
+    if _env_preferred("QSDM_NGC_REPORT_INSECURE_TLS", "QSDMPLUS_NGC_REPORT_INSECURE_TLS").lower() in (
         "1",
         "true",
         "yes",
@@ -251,8 +265,8 @@ def fetch_ingest_nonce() -> str:
 
 
 def attach_proof_hmac(block: dict) -> None:
-    """Set qsdm_proof_hmac when QSDM_NGC_PROOF_HMAC_SECRET (or legacy) matches node's NVIDIA-lock HMAC secret (v2 if nonce present)."""
-    secret = _env_preferred("QSDM_NGC_PROOF_HMAC_SECRET", "QSDM_NGC_PROOF_HMAC_SECRET")
+    """Set qsdm_proof_hmac when QSDM_NGC_PROOF_HMAC_SECRET (or legacy QSDMPLUS_NGC_PROOF_HMAC_SECRET) matches node's NVIDIA-lock HMAC secret (v2 if nonce present)."""
+    secret = _env_preferred("QSDM_NGC_PROOF_HMAC_SECRET", "QSDMPLUS_NGC_PROOF_HMAC_SECRET")
     if not secret:
         return
     node = block.get("qsdm_node_id") or ""
@@ -267,11 +281,11 @@ def attach_proof_hmac(block: dict) -> None:
 
 
 def maybe_report_to_qsdm(block: dict) -> None:
-    """POST proof bundle to QSDM API (branded env: QSDM_*; legacy QSDM_* still supported)."""
-    url = _env_preferred("QSDM_NGC_REPORT_URL", "QSDM_NGC_REPORT_URL")
+    """POST proof bundle to QSDM API (branded env: QSDM_*; legacy QSDMPLUS_* still supported)."""
+    url = _env_preferred("QSDM_NGC_REPORT_URL", "QSDMPLUS_NGC_REPORT_URL")
     if not url:
         return
-    secret = _env_preferred("QSDM_NGC_INGEST_SECRET", "QSDM_NGC_INGEST_SECRET")
+    secret = _env_preferred("QSDM_NGC_INGEST_SECRET", "QSDMPLUS_NGC_INGEST_SECRET")
     if not secret:
         return
     payload = json.dumps(block).encode("utf-8")
@@ -280,7 +294,7 @@ def maybe_report_to_qsdm(block: dict) -> None:
     req.add_header("X-QSDM-NGC-Secret", secret)
     req.add_header("X-QSDM-NGC-Secret", secret)
     ctx = None
-    if _env_preferred("QSDM_NGC_REPORT_INSECURE_TLS", "QSDM_NGC_REPORT_INSECURE_TLS").lower() in (
+    if _env_preferred("QSDM_NGC_REPORT_INSECURE_TLS", "QSDMPLUS_NGC_REPORT_INSECURE_TLS").lower() in (
         "1",
         "true",
         "yes",
@@ -349,7 +363,7 @@ def build_block() -> dict:
             "NVIDIA_VISIBLE_DEVICES": os.environ.get("NVIDIA_VISIBLE_DEVICES"),
         },
     }
-    proof_node = _env_preferred("QSDM_NGC_PROOF_NODE_ID", "QSDM_NGC_PROOF_NODE_ID")
+    proof_node = _env_preferred("QSDM_NGC_PROOF_NODE_ID", "QSDMPLUS_NGC_PROOF_NODE_ID")
     if proof_node:
         block["qsdm_node_id"] = proof_node
     ingest_nonce = fetch_ingest_nonce()

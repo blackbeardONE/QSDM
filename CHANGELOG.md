@@ -12,6 +12,86 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`qsdmplus -> qsdm` rebrand residue in the Python sidecar +
+  installer scripts (2026-04-30).** The Python deploy artefacts were
+  outside the existing `check-no-new-legacy-metrics.sh` CI guard's
+  scope (it only flags Prometheus-style metric-name literals like
+  `qsdmplus_foo_total`) and outside `go vet` / `staticcheck`'s reach
+  entirely, so the over-eager search-and-replace migration that
+  retired the `qsdmplus` brand silently broke env-var deprecation
+  fallback in three files. Audit + fix.
+  - **`apps/qsdm-nvidia-ngc/validator_phase1.py` — twelve broken call
+    sites.** The file defines a helper
+    `_env_preferred(primary: str, legacy: str)` whose entire purpose
+    is the deprecation-window pattern (read preferred env-var name,
+    fall back to legacy). The rebrand collapsed *every* call to the
+    same name on both sides, e.g.
+    `_env_preferred("QSDM_NGC_INGEST_SECRET", "QSDM_NGC_INGEST_SECRET")`
+    — making the helper equivalent to a bare `os.environ.get` and
+    silently killing legacy support. The smoking gun is a docstring
+    on the (now fixed) `report_to_qsdm()` function that still read
+    `"branded env: QSDM_*; legacy QSDM_* still supported"` —
+    preserving the deprecation-shape sentence but with both names
+    flattened to the same value, definitive evidence of a regex
+    sweep that touched literals without re-reading the comments.
+    Restored the legacy `QSDMPLUS_<...>` second argument at all
+    twelve call sites
+    (`QSDM_NGC_INGEST_SECRET`, `QSDM_NGC_REPORT_URL`,
+    `QSDM_NGC_FETCH_CHALLENGE`, `QSDM_NGC_CHALLENGE_URL`,
+    `QSDM_NGC_CHALLENGE_JITTER_MAX_SEC`,
+    `QSDM_NGC_CHALLENGE_MAX_RETRIES`, `QSDM_NGC_REPORT_INSECURE_TLS`
+    ×2, `QSDM_NGC_PROOF_HMAC_SECRET`, `QSDM_NGC_PROOF_NODE_ID`,
+    `QSDM_NGC_REPORT_URL` ×2, `QSDM_NGC_INGEST_SECRET` ×2). Also
+    repaired the two flattened docstrings on lines 254 and 270.
+  - **`apps/qsdm-nvidia-ngc/validator_phase1.py` — runtime defence in
+    `_env_preferred` itself.** Added a `if primary == legacy: raise
+    ValueError(...)` guard at the top of the helper. A future
+    refactor that re-flattens both args will now crash the sidecar
+    on first invocation rather than silently degrading; verified
+    with a 3-property smoke test (collapsed pair raises, legacy
+    fallback active when primary unset, primary wins when both set).
+  - **`QSDM/deploy/install_ngc_sidecar_vps.py` — collapsed
+    `grep -E` regex.** The installer reads the existing NGC ingest
+    secret out of the validator's running systemd environment via
+    `systemctl show qsdm --property=Environment ... | grep -E
+    '^QSDM_NGC_INGEST_SECRET=|^QSDM_NGC_INGEST_SECRET='`. The two
+    alternatives on either side of the `|` had been collapsed to the
+    same literal, so the installer would fail with "could not find
+    NGC_INGEST_SECRET" on a validator that still had the legacy
+    `QSDMPLUS_NGC_INGEST_SECRET=` form (i.e. one that hadn't yet
+    rotated its secrets.conf to the new env-var name). Restored the
+    legacy alternative + repaired the docstring on lines 10-11 +
+    expanded the SystemExit error message to name both env-var
+    names explicitly so the operator knows which two patterns were
+    consulted.
+  - **`QSDM/deploy/install_ngc_sidecar_oci.py` — clean.** The OCI
+    installer doesn't use `_env_preferred`; it generates a fresh
+    `ngc.env` from operator-supplied input (`--secret-env` /
+    `--secret`) and writes only the preferred `QSDM_NGC_*` form,
+    which is correct. Audited the systemd unit names, file paths,
+    HTTP endpoints, and POST URLs — all consistent with the post-
+    rebrand naming. No changes.
+  - **New CI guardrail:**
+    [`QSDM/scripts/check-no-collapsed-env-preferred.sh`](QSDM/scripts/check-no-collapsed-env-preferred.sh)
+    — sibling of the existing `check-no-new-legacy-metrics.sh`.
+    Greps `apps/` and `QSDM/deploy/` for `_env_preferred("X", "X")`
+    patterns using `rg --pcre2` (PCRE2 needed for the back-reference
+    to require both args literally equal). Wired into the
+    `qsdm-go.yml` CI workflow alongside the existing legacy-metrics
+    check, fails fast before build. The runtime `ValueError` guard
+    in `_env_preferred` is the late defence; this script is the
+    early one that fires on every PR before the change can land.
+  - **Why no test added for the helper:** the runtime smoke test
+    above (collapsed-pair raises, legacy fallback works, primary
+    wins) was executed inline during the audit and produced the
+    expected three PASS lines, but `apps/qsdm-nvidia-ngc/` has no
+    pytest harness and adding one for one helper would over-build
+    the testing scaffolding. The CI grep guard + the runtime
+    `ValueError` cover the same regression surface with zero test-
+    infrastructure cost.
+
 ### Added
 
 - **Operator runbook for the §4.6 attestation-rejection flood incident

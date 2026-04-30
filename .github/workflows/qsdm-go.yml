@@ -44,6 +44,14 @@ jobs:
       - name: Check for new legacy qsdm_* metric names
         run: bash QSDM/scripts/check-no-new-legacy-metrics.sh
 
+      # Sibling guardrail for the same rebrand window: catches
+      # `_env_preferred("X", "X")` calls in the Python sidecar /
+      # installer scripts, where a search-and-replace previously
+      # collapsed the (preferred, legacy) pair into a single name and
+      # silently killed the legacy fallback. Cheap grep-only check.
+      - name: Check for collapsed _env_preferred(X, X) calls
+        run: bash QSDM/scripts/check-no-collapsed-env-preferred.sh
+
       # Scripts live in QSDM/scripts; run from repo root so paths stay stable.
       - name: Build (no CGO)
         run: bash QSDM/scripts/go-build-no-cgo.sh /tmp/qsdm

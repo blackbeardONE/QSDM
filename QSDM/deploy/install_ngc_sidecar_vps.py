@@ -7,10 +7,13 @@ On the target VPS (default: `api.qsdm.tech`, root over ed25519) we:
 
   1. Create /opt/qsdm/ngc-sidecar/ (mode 0750) and upload
      apps/qsdm-nvidia-ngc/validator_phase1.py into it.
-  2. Read the existing `QSDM_NGC_INGEST_SECRET` / `QSDM_NGC_INGEST_SECRET`
-     from the qsdm systemd service environment so the sidecar posts
-     with the same HMAC the ingest endpoint already trusts. The secret
-     is never logged to the local shell.
+  2. Read the existing `QSDM_NGC_INGEST_SECRET` (preferred) or the
+     legacy `QSDMPLUS_NGC_INGEST_SECRET` from the qsdm systemd service
+     environment so the sidecar posts with the same HMAC the ingest
+     endpoint already trusts. The legacy name is still accepted for the
+     deprecation window described in `pkg/branding/branding.go`; pick
+     whichever the validator was deployed with. The secret is never
+     logged to the local shell.
   3. Write /opt/qsdm/ngc-sidecar/ngc.env (mode 0600, root-owned)
      with that secret, the loopback ingest URL, and a free-form node-id
      label for operator bookkeeping.
@@ -126,9 +129,17 @@ def main() -> int:
         ssh_run(c, "chmod 0755 /opt/qsdm/ngc-sidecar/validator_phase1.py")
 
         print("\n=== 3. read existing NGC ingest secret from systemd env ===")
+        # Match BOTH the preferred (QSDM_NGC_INGEST_SECRET) and the
+        # legacy (QSDMPLUS_NGC_INGEST_SECRET) names in one grep so the
+        # installer keeps working on validators that haven't yet been
+        # rotated to the new env-var name. The over-eager qsdmplus->qsdm
+        # rebrand previously collapsed both branches of the regex into
+        # the same alternative, silently dropping legacy support; the
+        # docstring on this function still mentioned both, so the
+        # collapse was unambiguously a search-and-replace bug.
         envline = ssh_run(c,
             "systemctl show qsdm --property=Environment --value | tr ' ' '\\n' "
-            "| grep -E '^QSDM_NGC_INGEST_SECRET=|^QSDM_NGC_INGEST_SECRET='")
+            "| grep -E '^QSDM_NGC_INGEST_SECRET=|^QSDMPLUS_NGC_INGEST_SECRET='")
         secret = ""
         for line in envline.splitlines():
             if "=" in line:
@@ -138,7 +149,8 @@ def main() -> int:
                     break
         if not secret:
             raise SystemExit(
-                "could not find NGC_INGEST_SECRET on the qsdm service. "
+                "could not find QSDM_NGC_INGEST_SECRET (or legacy "
+                "QSDMPLUS_NGC_INGEST_SECRET) on the qsdm service. "
                 "Set it in /etc/systemd/system/qsdm.service.d/secrets.conf "
                 "first, then re-run this installer."
             )
