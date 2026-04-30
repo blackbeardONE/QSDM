@@ -14,18 +14,26 @@ if [ -z "$SECRET" ] || [ -z "$API_PORT" ]; then
 	exit 1
 fi
 
+# Export under BOTH the preferred QSDM_* name and the legacy
+# QSDMPLUS_* alias so docker-compose containers running mixed sidecar
+# versions all see the value (the post-rebrand sidecar reads QSDM_*
+# first, the deprecation-window sidecar reads QSDMPLUS_*; setting
+# both is cheap and removes a foot-gun). The qsdmplus -> qsdm rebrand
+# previously collapsed the QSDMPLUS_* lines into duplicates of the
+# QSDM_* lines (incl. an inert self-assignment of QSDM_NGC_REPORT_URL),
+# silently breaking any container still on the legacy name.
 export QSDM_NGC_INGEST_SECRET="$SECRET"
 export QSDM_NGC_REPORT_URL="http://host.docker.internal:${API_PORT}/api/v1/monitoring/ngc-proof"
-export QSDM_NGC_INGEST_SECRET="$SECRET"
-export QSDM_NGC_REPORT_URL="$QSDM_NGC_REPORT_URL"
+export QSDMPLUS_NGC_INGEST_SECRET="$SECRET"
+export QSDMPLUS_NGC_REPORT_URL="$QSDM_NGC_REPORT_URL"
 
 if [ -n "$PROOF_NODE" ]; then
 	export QSDM_NGC_PROOF_NODE_ID="$PROOF_NODE"
-	export QSDM_NGC_PROOF_NODE_ID="$PROOF_NODE"
+	export QSDMPLUS_NGC_PROOF_NODE_ID="$PROOF_NODE"
 fi
 if [ -n "$HMAC_SECRET" ]; then
 	export QSDM_NGC_PROOF_HMAC_SECRET="$HMAC_SECRET"
-	export QSDM_NGC_PROOF_HMAC_SECRET="$HMAC_SECRET"
+	export QSDMPLUS_NGC_PROOF_HMAC_SECRET="$HMAC_SECRET"
 fi
 
 echo "QSDM_NGC_REPORT_URL=$QSDM_NGC_REPORT_URL"

@@ -1,6 +1,33 @@
 # rebrand-sweep.ps1 — replace qsdmplus / QSDM+ variants with qsdm / QSDM across
-# source, config, docs, scripts, and website files. Skips build artifacts and
-# binaries. Safe to run idempotently.
+# source, config, docs, scripts, and website files.
+#
+# !! DANGER — DO NOT RE-RUN BLINDLY !!
+# This script executed the one-time qsdmplus -> qsdm migration in commit
+# db9b590. The migration is COMPLETE and committed; running it again
+# is unsafe because some files now legitimately contain
+# QSDMPLUS_<name> tokens as the LEGACY half of a (preferred, legacy)
+# deprecation pair (e.g. _env_preferred("QSDM_X", "QSDMPLUS_X") in
+# apps/qsdm-nvidia-ngc/validator_phase1.py, the parallel exports in
+# apps/qsdm-nvidia-ngc/scripts/wire-qsdm.{sh,ps1}, and the dual-name
+# documentation in vps.txt). A blind re-run would re-collapse those
+# pairs and silently kill the legacy fallback for every operator who
+# hasn't yet rotated their secrets to the new env-var name.
+#
+# History: an audit on 2026-04-30 (commit b0b2f77 + this commit)
+# discovered that the original rebrand had collapsed twelve
+# _env_preferred() call sites in validator_phase1.py, the grep regex
+# in install_ngc_sidecar_vps.py, four duplicated exports in
+# wire-qsdm.{sh,ps1}, the local-attest preflight, the docker-compose
+# comment, and three vps.txt documentation lines, by exactly this
+# mechanism. The fixes restored the QSDMPLUS_<name> halves; this
+# guard exists so they survive a future operator running this script
+# under the impression that "it's idempotent".
+#
+# To run it anyway (e.g. you're handling a NEW migration that needs
+# the same shape), pass -IAcceptThatThisRecollapsesLegacyFallbacks
+# explicitly. The flag name is deliberately long, ugly, and
+# self-explaining — there is no reasonable use case where you should
+# add it without first reading the audit notes in CHANGELOG.md.
 #
 # Replacement rules (applied in this order; case-sensitive):
 #   QSDMPLUS_ -> QSDM_
@@ -13,10 +40,34 @@
 [CmdletBinding()]
 param(
     [string]$Root = '',
-    [switch]$DryRun
+    [switch]$DryRun,
+    # Required to actually mutate files. Without it the script halts
+    # before reading anything.
+    [switch]$IAcceptThatThisRecollapsesLegacyFallbacks
 )
 
 $ErrorActionPreference = 'Stop'
+
+if (-not $IAcceptThatThisRecollapsesLegacyFallbacks -and -not $DryRun) {
+    Write-Host ""                                                              -ForegroundColor Red
+    Write-Host "rebrand-sweep.ps1: refusing to run without an explicit"          -ForegroundColor Red
+    Write-Host "  -IAcceptThatThisRecollapsesLegacyFallbacks flag."              -ForegroundColor Red
+    Write-Host ""                                                              -ForegroundColor Red
+    Write-Host "  The qsdmplus -> qsdm rebrand executed in commit db9b590"       -ForegroundColor Yellow
+    Write-Host "  and the cleanup pass in commits b0b2f77 + the audit follow-"    -ForegroundColor Yellow
+    Write-Host "  up. Some files now legitimately contain QSDMPLUS_<name>"        -ForegroundColor Yellow
+    Write-Host "  tokens as the LEGACY half of (preferred, legacy) pairs."        -ForegroundColor Yellow
+    Write-Host "  A blind re-run RE-COLLAPSES those pairs and breaks the"         -ForegroundColor Yellow
+    Write-Host "  deprecation-window fallback for every operator still on"        -ForegroundColor Yellow
+    Write-Host "  the legacy env-var names."                                      -ForegroundColor Yellow
+    Write-Host ""                                                              -ForegroundColor Red
+    Write-Host "  If you understand and still want to proceed, re-run with:"      -ForegroundColor Yellow
+    Write-Host "    .\rebrand-sweep.ps1 -IAcceptThatThisRecollapsesLegacyFallbacks" -ForegroundColor Yellow
+    Write-Host ""                                                              -ForegroundColor Red
+    Write-Host "  Or use -DryRun to preview without mutating files."              -ForegroundColor Yellow
+    Write-Host ""
+    exit 2
+}
 
 if ([string]::IsNullOrEmpty($Root)) {
     if ($PSScriptRoot) {

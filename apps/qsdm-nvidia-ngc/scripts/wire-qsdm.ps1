@@ -17,17 +17,25 @@ if ([string]::IsNullOrWhiteSpace($Secret)) {
     exit 1
 }
 
+# Export under BOTH the preferred QSDM_* name and the legacy
+# QSDMPLUS_* alias so docker-compose containers running mixed sidecar
+# versions all see the value (the post-rebrand sidecar reads QSDM_*
+# first, the deprecation-window sidecar reads QSDMPLUS_*; setting
+# both is cheap and removes a foot-gun). The qsdmplus -> qsdm rebrand
+# previously collapsed the QSDMPLUS_* lines into duplicates of the
+# QSDM_* lines (incl. an inert self-assignment of QSDM_NGC_REPORT_URL),
+# silently breaking any container still on the legacy name.
 $env:QSDM_NGC_INGEST_SECRET = $Secret
 $env:QSDM_NGC_REPORT_URL = "http://host.docker.internal:$ApiPort/api/v1/monitoring/ngc-proof"
-$env:QSDM_NGC_INGEST_SECRET = $Secret
-$env:QSDM_NGC_REPORT_URL = $env:QSDM_NGC_REPORT_URL
+$env:QSDMPLUS_NGC_INGEST_SECRET = $Secret
+$env:QSDMPLUS_NGC_REPORT_URL = $env:QSDM_NGC_REPORT_URL
 if (![string]::IsNullOrWhiteSpace($ProofNodeId)) {
     $env:QSDM_NGC_PROOF_NODE_ID = $ProofNodeId
-    $env:QSDM_NGC_PROOF_NODE_ID = $ProofNodeId
+    $env:QSDMPLUS_NGC_PROOF_NODE_ID = $ProofNodeId
 }
 if (![string]::IsNullOrWhiteSpace($ProofHMACSecret)) {
     $env:QSDM_NGC_PROOF_HMAC_SECRET = $ProofHMACSecret
-    $env:QSDM_NGC_PROOF_HMAC_SECRET = $ProofHMACSecret
+    $env:QSDMPLUS_NGC_PROOF_HMAC_SECRET = $ProofHMACSecret
 }
 Write-Host "QSDM_NGC_REPORT_URL=$($env:QSDM_NGC_REPORT_URL)" -ForegroundColor Green
 Write-Host "QSDM_NGC_INGEST_SECRET=(set)" -ForegroundColor Green

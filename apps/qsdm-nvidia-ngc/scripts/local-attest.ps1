@@ -86,14 +86,34 @@ if ($Url)    { $env:QSDM_NGC_REPORT_URL    = $Url }
 if ($Secret) { $env:QSDM_NGC_INGEST_SECRET = $Secret }
 if ($NodeId) { $env:QSDM_NGC_PROOF_NODE_ID = $NodeId }
 
-if (-not $env:QSDM_NGC_REPORT_URL) {
-    Write-Error "QSDM_NGC_REPORT_URL is not set. Pass -Url or set the env var."
-    exit 2
+# Preflight accepts EITHER the preferred QSDM_* env-var name or the
+# legacy QSDMPLUS_* alias (the qsdmplus -> qsdm rebrand introduced
+# QSDM_* but kept QSDMPLUS_* working for one deprecation window per
+# pkg/branding/branding.go). The previous version only checked the
+# preferred name, so an operator with a still-pre-rebrand
+# ngc.local.env got a hard "QSDM_NGC_REPORT_URL is not set" refusal
+# even though validator_phase1.py would have happily picked up the
+# legacy name via _env_preferred(...). When only the legacy name is
+# present we promote it to the preferred slot so the downstream
+# Python sees a clean primary, AND set the canonical slot from the
+# fallback so subsequent commands in the same shell session see it.
+function Resolve-PreferredEnv {
+    param([string]$Preferred, [string]$Legacy, [string]$DisplayName)
+    $val = [Environment]::GetEnvironmentVariable($Preferred, "Process")
+    if ([string]::IsNullOrWhiteSpace($val)) {
+        $val = [Environment]::GetEnvironmentVariable($Legacy, "Process")
+        if (-not [string]::IsNullOrWhiteSpace($val)) {
+            [Environment]::SetEnvironmentVariable($Preferred, $val, "Process")
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($val)) {
+        Write-Error "$DisplayName is not set. Pass the corresponding param or set the env var (also accepts legacy ${Legacy})."
+        exit 2
+    }
 }
-if (-not $env:QSDM_NGC_INGEST_SECRET) {
-    Write-Error "QSDM_NGC_INGEST_SECRET is not set. Pass -Secret or set the env var."
-    exit 2
-}
+
+Resolve-PreferredEnv -Preferred 'QSDM_NGC_REPORT_URL'    -Legacy 'QSDMPLUS_NGC_REPORT_URL'    -DisplayName 'QSDM_NGC_REPORT_URL'
+Resolve-PreferredEnv -Preferred 'QSDM_NGC_INGEST_SECRET' -Legacy 'QSDMPLUS_NGC_INGEST_SECRET' -DisplayName 'QSDM_NGC_INGEST_SECRET'
 
 function Invoke-Attestation {
     $t0 = Get-Date

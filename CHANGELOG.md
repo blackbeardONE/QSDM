@@ -14,6 +14,123 @@ attempt to retroactively enumerate that history.
 
 ### Fixed
 
+- **`qsdmplus -> qsdm` rebrand residue in shell + PowerShell + YAML
+  deploy artefacts (2026-04-30, follow-up audit to commit `b0b2f77`).**
+  After the Python-side audit closed with the `_env_preferred(X, X)`
+  fix, a sweep through `*.sh` / `*.ps1` / `*.yml` / `*.yaml` revealed
+  the SAME flatten pattern in five additional places, plus the
+  immediate cause of the bug class itself. Continuing the audit:
+  - **`apps/qsdm-nvidia-ngc/scripts/wire-qsdm.{sh,ps1}` — duplicated
+    exports.** Both files contained four pairs of back-to-back
+    identical `export QSDM_X="$VAL"` lines, including a literal
+    self-assignment `export QSDM_NGC_REPORT_URL="$QSDM_NGC_REPORT_URL"`
+    on the bash side and `$env:QSDM_NGC_REPORT_URL = $env:QSDM_NGC_REPORT_URL`
+    on the PowerShell side. Reconstructed the original shape: the
+    second line of each pair was meant to export the LEGACY
+    `QSDMPLUS_NGC_*` alias so docker-compose containers running a
+    pre-rebrand sidecar image still see the value. The rebrand sweep
+    flattened `QSDMPLUS_*` to `QSDM_*` and turned the parallel-export
+    block into a redundant self-redundant block, breaking any
+    container in the deprecation window. Restored the parallel
+    `QSDMPLUS_*` exports for `NGC_INGEST_SECRET`, `NGC_REPORT_URL`,
+    `NGC_PROOF_NODE_ID`, and `NGC_PROOF_HMAC_SECRET`.
+  - **`apps/qsdm-nvidia-ngc/scripts/local-attest.ps1` — preflight
+    refused legacy env-var name.** The Windows operator-side wrapper
+    around `validator_phase1.py` checked `$env:QSDM_NGC_REPORT_URL`
+    and `$env:QSDM_NGC_INGEST_SECRET` and bailed out with a hard
+    `Write-Error "...is not set"` when those weren't populated —
+    even though the downstream Python now reads either name via the
+    just-fixed `_env_preferred(...)` helper. An operator with a
+    pre-rebrand `ngc.local.env` (only `QSDMPLUS_NGC_*` set) would
+    hit the wrapper's hard refusal before the Python ever ran.
+    Added a `Resolve-PreferredEnv -Preferred -Legacy -DisplayName`
+    helper that mirrors the Python helper's contract: read preferred,
+    fall back to legacy, AND promote the legacy value into the
+    preferred slot so the downstream Python sees a clean primary.
+    Both `QSDM_NGC_REPORT_URL` / `QSDMPLUS_NGC_REPORT_URL` and
+    `QSDM_NGC_INGEST_SECRET` / `QSDMPLUS_NGC_INGEST_SECRET` now
+    accept either name.
+  - **`apps/qsdm-nvidia-ngc/docker-compose.yml` — collapsed
+    documentation comment.** The `validator-cpu` service's
+    `environment:` block had a comment `# QSDM_NGC_REPORT_URL /
+    QSDM_NGC_REPORT_URL — see scripts/wire-qsdm.ps1 or wire-qsdm.sh`
+    where the same name appeared on both sides of the slash.
+    Restored as `QSDM_NGC_REPORT_URL (or legacy QSDMPLUS_NGC_REPORT_URL)`
+    and applied the same edit to the `INGEST_SECRET` /
+    `PROOF_NODE_ID` companion comments so all three reference the
+    deprecation pair.
+  - **`vps.txt` — operator credential reference (gitignored).**
+    Three collapsed documentation pairs (`canonical QSDM_* env name
+    and the legacy QSDM_* alias`, `QSDM_NVIDIA_LOCK_PROOF_HMAC_SECRET
+    / QSDM_NVIDIA_LOCK_PROOF_HMAC_SECRET pair`, and the rotation
+    procedure's `BOTH the QSDM_* and QSDM_* lines`). Restored the
+    legacy `QSDMPLUS_*` half of each pair. File is gitignored
+    (`.gitignore:25`) so the change is operator-local but the
+    document is the canonical reference for the validator's
+    secrets.conf shape during the deprecation window — leaving
+    those self-referential pairs in place would mislead the next
+    operator who reads it during a secret rotation.
+  - **`QSDM/deploy/bring-up-validator.sh` — misleading "dual-name"
+    comment.** The systemd unit fragment had a comment claiming
+    `Environment="QSDM_CONFIG_FILE=${CONFIG_FILE}"` was a
+    "dual-name for the rebrand window; pick whichever the binary
+    prefers", but `pkg/config/config.go:179` only consults
+    `os.Getenv("CONFIG_FILE")` — `QSDM_CONFIG_FILE` is dead env
+    today. The line itself is harmless (a dead env var is just
+    ignored), but the comment was a maintainability hazard: an
+    operator who removed the `CONFIG_FILE` line in favor of the
+    "more branded" `QSDM_CONFIG_FILE` would crash the validator on
+    boot. Replaced the comment with an honest description of the
+    current state and a future-migration intent. Filed the
+    config-loader update (read `QSDM_CONFIG_FILE` first, fall back
+    to `CONFIG_FILE`) as follow-up work outside the script-audit
+    scope; that's a Go change with a wider blast radius than a
+    deploy-script tweak.
+  - **`QSDM/scripts/rebrand-sweep.ps1` — locked behind an explicit
+    flag.** This is the script that *caused* the entire bug class —
+    its core regex `'QSDMPLUS_' -> 'QSDM_'` is the mechanism that
+    flattened every `_env_preferred("QSDM_X", "QSDMPLUS_X")` pair,
+    every `'QSDM_X=|QSDMPLUS_X='` grep alternation, every parallel
+    export block, and every `(preferred / legacy)` documentation
+    comment. The original script was billed as "Safe to run
+    idempotently" — that statement is now false, because some files
+    legitimately contain `QSDMPLUS_<name>` as the legacy half of a
+    deprecation pair, and a re-run would re-collapse them. Added a
+    `-IAcceptThatThisRecollapsesLegacyFallbacks` switch that the
+    operator must pass explicitly; without it the script halts
+    before any file read with a coloured warning naming the audit
+    commits and the legitimate `QSDMPLUS_*` use cases. Flag name is
+    deliberately long, ugly, and self-explaining so it can't be
+    typed by accident. Help-text lifted to a `!! DANGER !!` block
+    at the top of the file with a full history pointer (commits
+    `db9b590`, `b0b2f77`, this commit) so a future operator who
+    finds the script in a search has the right context.
+  - **CI guard expanded:**
+    `QSDM/scripts/check-no-collapsed-env-preferred.sh` now runs in
+    two passes. Pass A (unchanged) catches the Python
+    `_env_preferred("X", "X")` shape. Pass B (new) catches the
+    docs/shell/YAML `\bQSDM_(X)\b\s*[/|]\s*\bQSDM_\1\b` shape via
+    `rg --pcre2` backreferences — same name on both sides of `/`
+    or `|`, anchored by the `QSDM_` prefix to avoid tripping on
+    legitimate alternations of unrelated literals (e.g. the
+    `QSDM_NODE_ROLE / QSDM_MINING_ENABLED` comment in
+    `validator-statefulset.yaml`, which is two different env vars).
+    Excludes `CHANGELOG.md`, `REBRAND_NOTES.md`,
+    `check-no-collapsed-env-preferred.sh` itself, and
+    `rebrand-sweep.ps1` — those four files all legitimately quote
+    the bug pattern as documentation.
+  - **Verification:** `[Parser]::ParseFile` clean on all three
+    modified `.ps1` files; `yaml.safe_load` clean on the modified
+    `docker-compose.yml`; a 7-property smoke test confirmed the
+    rebrand-sweep guard wired up, both wire-qsdm scripts have the
+    parallel preferred+legacy exports with no self-assignment lines,
+    `local-attest.ps1` has the dual-name preflight,
+    `docker-compose.yml` comment restored, `vps.txt` documentation
+    pairs restored, and `bring-up-validator.sh` carries the honest
+    dead-name comment. WSL is broken on the audit machine so
+    `bash` syntax-check ran via the existing CI's
+    `ubuntu-latest` runner instead.
+
 - **`qsdmplus -> qsdm` rebrand residue in the Python sidecar +
   installer scripts (2026-04-30).** The Python deploy artefacts were
   outside the existing `check-no-new-legacy-metrics.sh` CI guard's

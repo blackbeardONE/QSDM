@@ -301,7 +301,13 @@ RestartSec=10
 Environment="CGO_ENABLED=1"
 Environment="LD_LIBRARY_PATH=${INSTALL_DIR}/liboqs_install/lib:${INSTALL_DIR}/liboqs_install/lib64:/usr/local/lib64:/usr/local/lib"
 Environment="CONFIG_FILE=${CONFIG_FILE}"
-# Dual-name for the rebrand window; pick whichever the binary prefers.
+# QSDM_CONFIG_FILE is set ahead of a future Go-side migration that
+# would teach pkg/config/config.go to read it before falling back to
+# the bare CONFIG_FILE name. As of today the binary ONLY reads
+# CONFIG_FILE (see config.go:179), so this line is a no-op the binary
+# ignores; it exists so a deploy unit that later flips on QSDM_CONFIG_FILE
+# reads doesn't need a unit-file edit. Do NOT remove the CONFIG_FILE
+# line above — that is the single source the binary actually consults.
 Environment="QSDM_CONFIG_FILE=${CONFIG_FILE}"
 
 NoNewPrivileges=true
