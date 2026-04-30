@@ -238,7 +238,7 @@ func TestRecentRejectsMetricsAdapter_IsRegistered(t *testing.T) {
 func TestRecentRejectsMetricsAdapter_ImplementsInterface(t *testing.T) {
 	var _ recentrejects.MetricsRecorder = recentRejectsMetricsAdapter{}
 	// New surface (2026-04-29): persist-error reporting is
-	// optional. The adapter must satisfy all four interfaces —
+	// optional. The adapter must satisfy all five interfaces —
 	// the FilePersister probes via type assertion, so a method
 	// drop here would silently break alerting without
 	// failing the build. Compile-time assertion catches it.
@@ -246,6 +246,8 @@ func TestRecentRejectsMetricsAdapter_ImplementsInterface(t *testing.T) {
 	// Compaction observability (2026-04-30):
 	var _ recentrejects.PersistCompactionRecorder = recentRejectsMetricsAdapter{}
 	var _ recentrejects.PersistRecordsRecorder = recentRejectsMetricsAdapter{}
+	// Hard-cap drop telemetry (2026-04-30):
+	var _ recentrejects.PersistHardCapDropRecorder = recentRejectsMetricsAdapter{}
 }
 
 // TestRecordRecentRejectPersistError_IncrementsCounter locks
@@ -543,5 +545,101 @@ func TestRecentRejectsMetricsAdapter_CompactionAndRecordsRoute(t *testing.T) {
 	}
 	if got := RecentRejectPersistRecordsOnDiskForTest(); got != 999 {
 		t.Errorf("records-on-disk gauge via adapter: got %d, want 999", got)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Hard-cap drop telemetry (2026-04-30)
+// -----------------------------------------------------------------------------
+
+// TestRecordRecentRejectPersistHardCapDrop_Increments locks the
+// counter contract: each call increments by exactly 1 regardless
+// of the droppedBytes argument (which is currently dropped on
+// the floor — operators alert on the rate, not the byte volume).
+func TestRecordRecentRejectPersistHardCapDrop_Increments(t *testing.T) {
+	t.Cleanup(ResetRecentRejectMetricsForTest)
+	ResetRecentRejectMetricsForTest()
+
+	if got := RecentRejectPersistHardCapDropsForTest(); got != 0 {
+		t.Fatalf("baseline counter: got %d, want 0", got)
+	}
+
+	RecordRecentRejectPersistHardCapDrop(0)
+	RecordRecentRejectPersistHardCapDrop(512)
+	RecordRecentRejectPersistHardCapDrop(1024)
+
+	if got := RecentRejectPersistHardCapDropsForTest(); got != 3 {
+		t.Errorf("counter after 3 drops: got %d, want 3", got)
+	}
+}
+
+// TestRecentRejectMetricsSnapshot_IncludesHardCapDrops pins the
+// wire contract for the dashboard tile: the snapshot must
+// surface PersistHardCapDropsTotal so the new persistence cell
+// renders correctly. A future refactor that drops the field
+// from the JSON shape would silently blank the operator's
+// flood-detection signal.
+func TestRecentRejectMetricsSnapshot_IncludesHardCapDrops(t *testing.T) {
+	t.Cleanup(ResetRecentRejectMetricsForTest)
+	ResetRecentRejectMetricsForTest()
+
+	RecordRecentRejectPersistHardCapDrop(256)
+	RecordRecentRejectPersistHardCapDrop(256)
+
+	snap := RecentRejectMetricsSnapshot()
+
+	if snap.PersistHardCapDropsTotal != 2 {
+		t.Errorf("PersistHardCapDropsTotal=%d, want 2", snap.PersistHardCapDropsTotal)
+	}
+	// Pre-existing fields must still surface unchanged.
+	if len(snap.Fields) != 3 {
+		t.Errorf("len(Fields)=%d, want 3 (regression in pre-existing surface)",
+			len(snap.Fields))
+	}
+}
+
+// TestRecentRejectsMetricsAdapter_HardCapDropRoutes drives the
+// dependency-inversion chain end-to-end for the new hard-cap
+// hook: invoking the adapter method must reach the package-
+// level counter, with no leakage between this counter and the
+// other persistence-lifecycle counters.
+func TestRecentRejectsMetricsAdapter_HardCapDropRoutes(t *testing.T) {
+	t.Cleanup(func() {
+		recentrejects.SetMetricsRecorder(recentRejectsMetricsAdapter{})
+		ResetRecentRejectMetricsForTest()
+	})
+	ResetRecentRejectMetricsForTest()
+	recentrejects.SetMetricsRecorder(recentRejectsMetricsAdapter{})
+
+	a := recentRejectsMetricsAdapter{}
+	a.RecordPersistHardCapDrop(512)
+	a.RecordPersistHardCapDrop(1024)
+
+	if got := RecentRejectPersistHardCapDropsForTest(); got != 2 {
+		t.Errorf("hard-cap counter via adapter: got %d, want 2", got)
+	}
+	// Other persistence counters must remain at zero — a
+	// shared-storage regression would surface as a stray
+	// increment here.
+	if got := RecentRejectPersistErrorsForTest(); got != 0 {
+		t.Errorf("persist-errors counter leaked: got %d, want 0", got)
+	}
+	if got := RecentRejectPersistCompactionsForTest(); got != 0 {
+		t.Errorf("compactions counter leaked: got %d, want 0", got)
+	}
+}
+
+// TestResetRecentRejectMetricsForTest_ResetsHardCapDrops pins
+// that the reset helper clears the new counter alongside the
+// existing ones. Tests rely on a known-zero baseline; a missed
+// reset would cross-contaminate parallel test runs.
+func TestResetRecentRejectMetricsForTest_ResetsHardCapDrops(t *testing.T) {
+	RecordRecentRejectPersistHardCapDrop(1)
+	if got := RecentRejectPersistHardCapDropsForTest(); got != 1 {
+		t.Fatalf("setup: counter not at 1: %d", got)
+	}
+	ResetRecentRejectMetricsForTest()
+	if got := RecentRejectPersistHardCapDropsForTest(); got != 0 {
+		t.Errorf("after reset: got %d, want 0", got)
 	}
 }

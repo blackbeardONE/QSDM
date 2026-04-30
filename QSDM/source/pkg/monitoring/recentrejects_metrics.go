@@ -89,6 +89,23 @@ var (
 	// scrape interval should treat ±softCap as the
 	// uncertainty window.
 	rrPersistRecordsOnDisk atomic.Uint64
+
+	// rrPersistHardCapDrops counts records the FilePersister
+	// refused to admit because the JSONL file's configured
+	// hard byte ceiling would otherwise be breached AND a
+	// salvage in-band compaction failed to free enough
+	// headroom. Exposed as
+	// qsdm_attest_rejection_persist_hardcap_drops_total. The
+	// in-memory ring is unaffected — only the on-disk
+	// forensic-record durability is dropped.
+	//
+	// Operator alert: rate(...) > 0 sustained 10m. ANY
+	// non-zero rate is anomalous (the soft-cap loop is sized
+	// to keep the file an order of magnitude below the hard
+	// cap on realistic traffic), so a hit means a flood is
+	// outrunning the soft-cap rewrite cycle — escalate to
+	// operator, not just to logs.
+	rrPersistHardCapDrops atomic.Uint64
 )
 
 // RecordRecentRejectField is the package-level entry point
@@ -187,6 +204,36 @@ func RecentRejectPersistCompactionsForTest() uint64 {
 	return rrPersistCompactions.Load()
 }
 
+// RecordRecentRejectPersistHardCapDrop increments the
+// qsdm_attest_rejection_persist_hardcap_drops_total counter.
+// Invoked by the recentrejects→monitoring adapter when
+// FilePersister.Append refuses a record because admitting it
+// would breach the configured hard byte ceiling AND an
+// in-band salvage compaction failed to free enough
+// headroom. droppedBytes is the size of the would-be-written
+// record in bytes (line + framing newlines) — currently
+// dropped on the floor (the alert is on the drop rate, not
+// the byte volume), but accepted on the parameter so a
+// future "bytes-shed" rate gauge can join against this
+// without a contract change.
+func RecordRecentRejectPersistHardCapDrop(droppedBytes int) {
+	_ = droppedBytes
+	rrPersistHardCapDrops.Add(1)
+}
+
+// recentRejectPersistHardCapDropsCount returns the current
+// value of qsdm_attest_rejection_persist_hardcap_drops_total
+// for the Prometheus scrape path. Unexported.
+func recentRejectPersistHardCapDropsCount() uint64 {
+	return rrPersistHardCapDrops.Load()
+}
+
+// RecentRejectPersistHardCapDropsForTest exposes the current
+// counter value for unit tests.
+func RecentRejectPersistHardCapDropsForTest() uint64 {
+	return rrPersistHardCapDrops.Load()
+}
+
 // SetRecentRejectPersistRecordsOnDisk updates the
 // qsdm_attest_rejection_persist_records_on_disk gauge.
 // Invoked by the recentrejects→monitoring adapter from
@@ -239,10 +286,11 @@ type RecentRejectFieldMetricsView struct {
 // list together MUST treat the count and the list as
 // independent samples.
 type RecentRejectMetricsView struct {
-	Fields                  []RecentRejectFieldMetricsView `json:"fields"`
-	PersistErrorsTotal      uint64                         `json:"persist_errors_total"`
-	PersistCompactionsTotal uint64                         `json:"persist_compactions_total"`
-	PersistRecordsOnDisk    uint64                         `json:"persist_records_on_disk"`
+	Fields                   []RecentRejectFieldMetricsView `json:"fields"`
+	PersistErrorsTotal       uint64                         `json:"persist_errors_total"`
+	PersistCompactionsTotal  uint64                         `json:"persist_compactions_total"`
+	PersistRecordsOnDisk     uint64                         `json:"persist_records_on_disk"`
+	PersistHardCapDropsTotal uint64                         `json:"persist_hardcap_drops_total"`
 }
 
 // RecentRejectMetricsSnapshot returns the current per-field
@@ -257,10 +305,11 @@ type RecentRejectMetricsView struct {
 func RecentRejectMetricsSnapshot() RecentRejectMetricsView {
 	rows := recentRejectFieldsLabeled()
 	out := RecentRejectMetricsView{
-		Fields:                  make([]RecentRejectFieldMetricsView, 0, len(rows)),
-		PersistErrorsTotal:      rrPersistErrors.Load(),
-		PersistCompactionsTotal: rrPersistCompactions.Load(),
-		PersistRecordsOnDisk:    rrPersistRecordsOnDisk.Load(),
+		Fields:                   make([]RecentRejectFieldMetricsView, 0, len(rows)),
+		PersistErrorsTotal:       rrPersistErrors.Load(),
+		PersistCompactionsTotal:  rrPersistCompactions.Load(),
+		PersistRecordsOnDisk:     rrPersistRecordsOnDisk.Load(),
+		PersistHardCapDropsTotal: rrPersistHardCapDrops.Load(),
 	}
 	for _, r := range rows {
 		out.Fields = append(out.Fields, RecentRejectFieldMetricsView{
@@ -338,4 +387,5 @@ func ResetRecentRejectMetricsForTest() {
 	rrPersistErrors.Store(0)
 	rrPersistCompactions.Store(0)
 	rrPersistRecordsOnDisk.Store(0)
+	rrPersistHardCapDrops.Store(0)
 }

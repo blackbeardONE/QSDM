@@ -1107,3 +1107,71 @@ groups:
             gauge will hover near softCap during the spike;
             after the spike subsides it should drift down on
             the next compaction with no operator action.
+
+      # qsdm_attest_rejection_persist_hardcap_drops_total
+      # increments when the FilePersister refuses to admit a
+      # record because admitting it would breach the operator-
+      # configured hard byte ceiling (cfg.RecentRejectionsMaxBytes)
+      # AND a salvage in-band compaction failed to free enough
+      # headroom. ANY non-zero rate is anomalous: the soft-cap
+      # loop is sized to keep the file an order of magnitude
+      # under the hard cap on realistic traffic, so a hit means
+      # a flood is actively outrunning the rewrite cycle. The
+      # in-memory ring is unaffected (the dashboard tile and
+      # /api/v1/attest/recent-rejections still surface every
+      # record); only the durable on-disk forensic record was
+      # dropped.
+      #
+      # Independent signal from QSDMAttestRejectionPersistCompactionsHigh:
+      #   - Compactions-high fires on sustained rewrite rate.
+      #     The validator is keeping up but the volume is
+      #     elevated. Operator action: investigate, consider
+      #     tightening cap policy.
+      #   - HardCapDropping fires on ANY drops. The validator
+      #     is NOT keeping up; the cap is now actively shedding
+      #     records. Operator action: escalate immediately —
+      #     either tune softCap up, MaxBytes up, or apply a
+      #     rate-limit at the libp2p gate.
+      - alert: QSDMAttestRejectionPersistHardCapDropping
+        # rate > 0 for 10m: the drop counter advanced AT ALL
+        # over the last 5m, sustained across two scrape windows.
+        # No hysteresis — a single drop is operator-relevant.
+        expr: |
+          rate(qsdm_attest_rejection_persist_hardcap_drops_total[5m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: v2-attest
+        annotations:
+          summary: "{{ $labels.instance }}: recent-rejection persister is shedding records at the hard byte cap"
+          description: |
+            qsdm_attest_rejection_persist_hardcap_drops_total has
+            been incrementing for ≥10m on {{ $labels.instance }}.
+            The on-disk JSONL log has hit its configured byte
+            ceiling AND the salvage compaction loop is not
+            freeing enough headroom for new records, so the
+            FilePersister is now dropping incoming records to
+            stay within budget.
+
+            The in-memory ring is unaffected — operators reading
+            the dashboard tile or /api/v1/attest/recent-rejections
+            continue to see every record. ONLY the durable
+            forensic-record persistence is being dropped.
+
+            Triage:
+              - Confirm a flood is in progress:
+                rate(qsdm_attestation_rejected_total[5m])
+              - Check the hard cap configuration vs current
+                file size:
+                qsdm_attest_rejection_persist_records_on_disk
+              - Identify the dominant offender:
+                topk(5, rate(qsdm_attestation_rejected_total{kind!=""}[5m]))
+              - Mitigations (operator policy):
+                * Raise cfg.RecentRejectionsMaxBytes if disk
+                  budget allows — gives the soft-cap loop more
+                  headroom but trades disk for durability.
+                * Raise softCap so each rewrite trims more —
+                  amortises the I/O cost of the compaction loop.
+                * Apply a libp2p / mempool rate-limit on the
+                  offending miner so the rejection volume drops
+                  to baseline and the soft-cap loop catches up.

@@ -454,6 +454,21 @@ function updateAttestRejections() {
                 'live JSONL record count (approximate, ±softCap during reads)'
             ));
 
+            // Hard-cap drops: the on-disk durability ceiling
+            // signal. ANY non-zero value is operator-noteworthy
+            // (the soft-cap loop should keep us well below the
+            // hard cap on realistic traffic), so colour shifts
+            // red on first hit rather than waiting for a
+            // threshold. The in-memory ring is unaffected — only
+            // the durable forensic record was dropped.
+            const hardCapDrops = metrics.persist_hardcap_drops_total || 0;
+            countersEl.appendChild(buildPersistCell(
+                'hard-cap drops',
+                String(hardCapDrops),
+                hardCapDrops > 0 ? '#d0021b' : '#7ed321',
+                'on-disk Append refusals (ring unaffected; flood signal)'
+            ));
+
             // Stash for the CSV-export link + the top-miners
             // strip; both are derived from the current page so
             // a click is always one render away from fresh data.

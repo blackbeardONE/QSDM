@@ -767,3 +767,193 @@ func TestFilePersister_CompactionHook_NoTrim_DoesNotFire(t *testing.T) {
 		t.Errorf("RecordsOnDisk: got %d, want 3", got)
 	}
 }
+
+// -----------------------------------------------------------------------------
+// Hard-cap defence (2026-04-30)
+//
+// The soft-cap loop bounds the file at [softCap, 2*softCap-1)
+// records under realistic traffic — but a flood that outruns
+// the rewrite cycle could in principle grow the file past any
+// budget the operator wanted to keep. The hard cap is a
+// belt-and-braces second bound: byte-shaped (operator tunes
+// against disk-quota / log-rotate budgets), enforced AFTER a
+// salvage compaction attempt, and surfaces the drop via
+// telemetry so alerting catches the flood independently of
+// the compactions-rate alert.
+//
+// The four tests below pin:
+//
+//   - SetMaxBytes/MaxBytes round-trip + negative clamping.
+//   - Disabled (maxBytes==0): no drops regardless of size.
+//   - Salvage compaction admits the next record when there's
+//     enough trim headroom (the common case under flood).
+//   - Hard refusal when even compaction can't free enough
+//     space: ErrHardCapExceeded + telemetry hook fires.
+// -----------------------------------------------------------------------------
+
+// TestFilePersister_MaxBytes_Accessor_RoundTrip — basic
+// setter/getter pair with the negative-input clamp.
+func TestFilePersister_MaxBytes_Accessor_RoundTrip(t *testing.T) {
+	t.Parallel()
+	fp, _ := newFilePersisterT(t, 0)
+
+	// Default: disabled.
+	if got := fp.MaxBytes(); got != 0 {
+		t.Errorf("default MaxBytes = %d, want 0 (disabled)", got)
+	}
+
+	fp.SetMaxBytes(8 * 1024 * 1024)
+	if got := fp.MaxBytes(); got != 8*1024*1024 {
+		t.Errorf("after SetMaxBytes(8MiB) = %d, want %d", got, 8*1024*1024)
+	}
+
+	// Negative clamps to 0 (= disabled). A panic-on-negative
+	// would be hostile to test fixtures that compute the cap
+	// from arithmetic; clamp is the same posture as
+	// softCap's <=0 → DefaultPersistSoftCap.
+	fp.SetMaxBytes(-1)
+	if got := fp.MaxBytes(); got != 0 {
+		t.Errorf("after SetMaxBytes(-1) = %d, want 0 (clamped)", got)
+	}
+
+	// Nil-receiver is a no-op (programmer-error guard, same
+	// posture as RecordsOnDisk on nil).
+	var nilP *FilePersister
+	nilP.SetMaxBytes(999) // must not panic
+	if got := nilP.MaxBytes(); got != 0 {
+		t.Errorf("nil-receiver MaxBytes() = %d, want 0", got)
+	}
+}
+
+// TestFilePersister_MaxBytes_Disabled_NoDropsRegardlessOfSize
+// pins the "feature off by default" contract: with maxBytes=0
+// (or unset), no Append ever returns ErrHardCapExceeded and
+// no drop hook fires, even when the file far exceeds any
+// realistic ceiling.
+func TestFilePersister_MaxBytes_Disabled_NoDropsRegardlessOfSize(t *testing.T) {
+	rec := withCaptureRecorder(t)
+
+	// softCap=1000 keeps the soft-cap loop quiet for the
+	// 50-record write below.
+	fp, _ := newFilePersisterT(t, 1000)
+	if got := fp.MaxBytes(); got != 0 {
+		t.Fatalf("precondition: expected disabled hard cap, got %d", got)
+	}
+
+	for i := uint64(1); i <= 50; i++ {
+		if err := fp.Append(Rejection{
+			Seq: i, Kind: KindArchSpoofUnknown,
+			// Padding to make each record several
+			// hundred bytes so a hard cap of (say) 4 KiB
+			// would have fired — but with the cap
+			// disabled this is irrelevant.
+			Detail: strings.Repeat("x", 200),
+		}); err != nil {
+			t.Fatalf("Append %d (cap disabled): %v", i, err)
+		}
+	}
+	if drops := rec.hardCapSnapshot(); len(drops) != 0 {
+		t.Errorf("expected zero hard-cap drops with feature disabled, got %d: %v",
+			len(drops), drops)
+	}
+}
+
+// TestFilePersister_MaxBytes_SalvageCompactionAdmits — the
+// happy-path-under-flood case: hard cap tight enough that we
+// briefly cross the threshold, but the salvage compaction
+// trims the head and frees enough headroom to admit the next
+// record. No drops should fire; the next-record write
+// succeeds.
+func TestFilePersister_MaxBytes_SalvageCompactionAdmits(t *testing.T) {
+	rec := withCaptureRecorder(t)
+
+	// softCap=3 trims aggressively; the salvage compaction
+	// will rewrite ~3 records (well under the hard cap).
+	fp, _ := newFilePersisterT(t, 3)
+
+	// Record size: ~ 80 bytes after JSON encoding (Seq +
+	// Kind + a small Detail). The first 8 records grow the
+	// file to ~ 640 bytes; setting the hard cap to 1024 lets
+	// the compaction loop hit softCap=3 (3 records ≈ 240
+	// bytes) and then admit subsequent records below 1024.
+	fp.SetMaxBytes(1024)
+
+	for i := uint64(1); i <= 20; i++ {
+		if err := fp.Append(Rejection{
+			Seq: i, Kind: KindArchSpoofUnknown,
+			Detail: strings.Repeat("a", 50),
+		}); err != nil {
+			// A salvage compaction failure manifests as
+			// ErrHardCapExceeded — that's the assertion
+			// failure mode of this test.
+			t.Fatalf("Append %d unexpectedly returned %v "+
+				"(salvage compaction should have admitted it)", i, err)
+		}
+	}
+
+	if drops := rec.hardCapSnapshot(); len(drops) != 0 {
+		t.Errorf("salvage path should not drop; got %d drops: %v",
+			len(drops), drops)
+	}
+	// File should be bounded by softCap after the loop —
+	// the compaction loop trims back to len==softCap on
+	// every cycle.
+	if got := fp.RecordsOnDisk(); got > 5 {
+		t.Errorf("RecordsOnDisk after salvage cycles = %d, want ≤ 5 (softCap+slack)", got)
+	}
+}
+
+// TestFilePersister_MaxBytes_HardRefusal_FiresTelemetry — the
+// adversarial case: hard cap so tight that even after a
+// salvage compaction the next record won't fit. Append must
+// return ErrHardCapExceeded AND the drop hook must fire so
+// Prometheus catches the flood.
+func TestFilePersister_MaxBytes_HardRefusal_FiresTelemetry(t *testing.T) {
+	rec := withCaptureRecorder(t)
+
+	fp, _ := newFilePersisterT(t, 3)
+	// Tiny cap below ANY single record's encoded size — the
+	// salvage compaction succeeds (file becomes empty since
+	// loadAllLocked returns ≤ softCap records, the no-trim
+	// early-return leaves it unchanged) but the cap math
+	// still fails.
+	fp.SetMaxBytes(8) // 8 bytes — smaller than even the JSON braces
+
+	rec.mu.Lock()
+	rec.hardCapDrops = nil
+	rec.mu.Unlock()
+
+	err := fp.Append(Rejection{
+		Seq: 1, Kind: KindArchSpoofUnknown,
+		Detail: "this record is way bigger than 8 bytes",
+	})
+	if err == nil {
+		t.Fatalf("expected ErrHardCapExceeded, got nil")
+	}
+	if !errors.Is(err, ErrHardCapExceeded) {
+		t.Errorf("error should wrap ErrHardCapExceeded; got %v", err)
+	}
+	drops := rec.hardCapSnapshot()
+	if len(drops) != 1 {
+		t.Fatalf("hard-cap drop hook fired %d times, want 1: %v", len(drops), drops)
+	}
+	if drops[0] <= 0 {
+		t.Errorf("dropped byte count = %d, want > 0", drops[0])
+	}
+
+	// A second drop must fire on the next attempt — the
+	// counter is cumulative, not "first attempt only".
+	if err := fp.Append(Rejection{Seq: 2, Kind: KindArchSpoofUnknown}); !errors.Is(err, ErrHardCapExceeded) {
+		t.Errorf("second Append: got %v, want ErrHardCapExceeded", err)
+	}
+	if got := len(rec.hardCapSnapshot()); got != 2 {
+		t.Errorf("after second drop: hook fired %d times, want 2", got)
+	}
+
+	// In-memory ring is unaffected by on-disk drops — that's
+	// the whole point. RecordsOnDisk should be 0 (no
+	// successful Append).
+	if got := fp.RecordsOnDisk(); got != 0 {
+		t.Errorf("RecordsOnDisk after hard-cap drops = %d, want 0", got)
+	}
+}

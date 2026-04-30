@@ -34,13 +34,14 @@ type captureRecorder struct {
 
 	// Optional-surface state. nil-safe — tests that don't
 	// touch these stay green; the recorder satisfies all
-	// four interfaces unconditionally so a future code
+	// FIVE interfaces unconditionally so a future code
 	// change that flips one Persister hook to required
 	// surfaces here as a behavioural regression rather
 	// than a build error.
-	persistErrors []error
-	compactions   []int
-	recordsOnDisk []uint64
+	persistErrors   []error
+	compactions     []int
+	recordsOnDisk   []uint64
+	hardCapDrops    []int
 }
 
 type captureCall struct {
@@ -73,6 +74,12 @@ func (c *captureRecorder) SetPersistRecordsOnDisk(n uint64) {
 	c.recordsOnDisk = append(c.recordsOnDisk, n)
 }
 
+func (c *captureRecorder) RecordPersistHardCapDrop(droppedBytes int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.hardCapDrops = append(c.hardCapDrops, droppedBytes)
+}
+
 func (c *captureRecorder) snapshot() []captureCall {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -92,6 +99,16 @@ func (c *captureRecorder) persistSnapshot() (compactions []int, recordsOnDisk []
 	cc := append([]int(nil), c.compactions...)
 	rr := append([]uint64(nil), c.recordsOnDisk...)
 	return cc, rr
+}
+
+// hardCapSnapshot mirrors persistSnapshot for the hard-cap
+// drop trail. Returned as a fresh slice so the caller can
+// assert without holding c.mu.
+func (c *captureRecorder) hardCapSnapshot() []int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := append([]int(nil), c.hardCapDrops...)
+	return out
 }
 
 // withCaptureRecorder installs a fresh captureRecorder for

@@ -209,6 +209,31 @@ type Config struct {
 	// independently for dashboard / alert use.
 	RecentRejectionsPath string
 
+	// RecentRejectionsMaxBytes is the OPTIONAL hard ceiling
+	// on the JSONL log's on-disk size in bytes. Zero (the
+	// default) disables the check entirely — the
+	// pre-2026-04-30 posture, where the soft cap is the only
+	// bound on file growth. When > 0, the FilePersister
+	// refuses to write a record that would push the file
+	// past the cap AFTER attempting one in-band salvage
+	// compaction; the refusal increments
+	// qsdm_attest_rejection_persist_hardcap_drops_total and
+	// returns recentrejects.ErrHardCapExceeded to the
+	// Store.Record path (which never propagates the error
+	// further — the in-memory ring continues to receive
+	// records, only on-disk durability is dropped).
+	//
+	// Production tuning: at the default softCap
+	// (DefaultMaxRejections=1024) and the realistic
+	// per-record size (~512 bytes), the soft-cap rewrite
+	// loop keeps the file at ~512 KiB. An operator setting
+	// MaxBytes=8*1024*1024 (8 MiB) gives the soft-cap
+	// roughly 16x headroom — comfortable for transient
+	// traffic spikes, tight enough to cap a sustained flood
+	// at minute-resolution. Lower values trade durability
+	// for tighter disk-quota guarantees.
+	RecentRejectionsMaxBytes int64
+
 	// LogRecentRejectionsError is invoked on
 	// RestoreFromPersister failure (boot-time replay errored)
 	// and on FilePersister construction failure. Per-record
@@ -434,6 +459,13 @@ func Wire(cfg Config) (*Wired, error) {
 				cfg.LogRecentRejectionsError(fmt.Errorf("v2wiring: recent-rejections persister: %w", err))
 			}
 		} else {
+			// Apply hard byte cap when configured. Setter
+			// is a no-op for n <= 0, so the bare unset
+			// path (cfg.RecentRejectionsMaxBytes==0) keeps
+			// pre-2026-04-30 behaviour intact.
+			if cfg.RecentRejectionsMaxBytes > 0 {
+				fp.SetMaxBytes(cfg.RecentRejectionsMaxBytes)
+			}
 			rejectionStore.SetPersister(fp)
 			if _, err := rejectionStore.RestoreFromPersister(); err != nil {
 				if cfg.LogRecentRejectionsError != nil {

@@ -54,6 +54,23 @@ import (
 	"sync/atomic"
 )
 
+// ErrHardCapExceeded is the sentinel returned by
+// FilePersister.Append when admitting the record would push
+// the JSONL file past the configured hard byte ceiling AND
+// a salvage compaction failed to free enough headroom. The
+// in-memory ring is UNAFFECTED — Store.Record always appends
+// in-memory, so the volatile operator surface (dashboard
+// tile, /api/v1/attest/recent-rejections) stays accurate;
+// only the durable on-disk record is dropped.
+//
+// Operators distinguish "transient I/O failure" (any other
+// error) from "validator is being actively flooded" (this
+// sentinel) via errors.Is, and the
+// qsdm_attest_rejection_persist_hardcap_drops_total counter
+// fires regardless of which call site sees the error so the
+// alert surface is independent of caller-side handling.
+var ErrHardCapExceeded = errors.New("recentrejects: persist hard cap exceeded")
+
 // Persister is the on-disk hook for the volatile in-memory
 // ring. NewStore takes nil by default (the original posture);
 // production wiring (internal/v2wiring.Wire()) installs a
@@ -154,6 +171,29 @@ type FilePersister struct {
 	// happen under p.mu in Append/compactLocked which
 	// serialises the read-modify-write naturally.
 	recordsOnDisk atomic.Uint64
+
+	// maxBytes is the OPTIONAL hard ceiling on the JSONL
+	// file's on-disk size in bytes. Zero (the default)
+	// disables the check entirely — backwards-compatible with
+	// every existing caller. When > 0, Append refuses to
+	// write a record that would push currentSize+lineSize
+	// past the cap AFTER attempting one in-band salvage
+	// compaction; the refusal returns ErrHardCapExceeded and
+	// fires notePersistHardCapDrop so the
+	// qsdm_attest_rejection_persist_hardcap_drops_total
+	// counter increments.
+	//
+	// Why bytes (not records): operators tune this against
+	// disk-quota / log-rotate budgets, which are byte-shaped
+	// constraints. A record-shaped cap would leak the
+	// internal record-size assumption and force a
+	// re-tune on every schema change.
+	//
+	// Read/write under p.mu — atomicity isn't required
+	// because the hot-path read happens inside Append's
+	// critical section, and the setter is called once at
+	// boot before any Append fires (in production wiring).
+	maxBytes int64
 }
 
 // DefaultPersistSoftCap is the per-file rejection record cap
@@ -250,6 +290,48 @@ func (p *FilePersister) SoftCap() int {
 	return p.softCap
 }
 
+// SetMaxBytes installs the hard byte ceiling for the JSONL
+// file. n <= 0 disables the check (the construction default).
+//
+// Intended to be called ONCE at boot from the wiring layer
+// (internal/v2wiring.Wire when cfg.RecentRejectionsMaxBytes
+// is set). Calling at runtime is safe — the next Append's
+// cap evaluation will pick up the new value — but that is
+// an unusual posture; operators typically rotate the value
+// via config-reload + restart, not hot-update.
+//
+// Why a setter (rather than a constructor parameter): the
+// existing NewFilePersister signature is consumed by tests
+// that have no opinion on the cap; threading a third
+// parameter through every test would expand the diff
+// without serving the test. The setter keeps construction
+// minimal AND lets v2wiring opt in explicitly with one
+// extra line.
+func (p *FilePersister) SetMaxBytes(n int64) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if n < 0 {
+		n = 0
+	}
+	p.maxBytes = n
+}
+
+// MaxBytes returns the configured hard byte ceiling, or 0
+// when the cap is disabled. Read under p.mu so a concurrent
+// SetMaxBytes cannot tear the value across word boundaries
+// on 32-bit platforms.
+func (p *FilePersister) MaxBytes() int64 {
+	if p == nil {
+		return 0
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.maxBytes
+}
+
 // Append serialises rec to JSON and appends it to the file
 // as one line. Triggers compaction when the post-append
 // counter reaches softCap.
@@ -280,6 +362,44 @@ func (p *FilePersister) Append(rec Rejection) error {
 	line, err := json.Marshal(rec)
 	if err != nil {
 		return fmt.Errorf("recentrejects: marshal: %w", err)
+	}
+
+	// Hard-cap enforcement (skipped when maxBytes <= 0).
+	// Worst-case admit cost is len(line) + 2 bytes (one
+	// optional partial-write framing newline + one record
+	// terminator newline). Use the worst case for the cap
+	// check so a marginal record can't sneak past with
+	// sub-byte precision games.
+	if p.maxBytes > 0 {
+		admitCost := int64(len(line)) + 2
+		size, sizeErr := p.currentSizeLocked()
+		if sizeErr != nil {
+			return fmt.Errorf("recentrejects: stat for hard-cap: %w", sizeErr)
+		}
+		if size+admitCost > p.maxBytes {
+			// Try one in-band salvage compaction. If the
+			// soft-cap loop has been keeping pace this is
+			// almost certainly redundant; if a flood is
+			// actively outrunning the soft cap (which is
+			// THE scenario the hard cap exists for) the
+			// compaction will trim the head and free
+			// enough headroom to admit the next record.
+			if cerr := p.compactLocked(); cerr == nil {
+				p.appendsSinceCompact = 0
+				size, sizeErr = p.currentSizeLocked()
+				if sizeErr != nil {
+					return fmt.Errorf("recentrejects: stat after salvage: %w", sizeErr)
+				}
+			}
+			if size+admitCost > p.maxBytes {
+				// Even after a salvage compaction we cannot
+				// admit this record without breaching the
+				// cap. Drop it and fire telemetry so the
+				// alert pipeline catches the flood.
+				notePersistHardCapDrop(int(admitCost))
+				return ErrHardCapExceeded
+			}
+		}
 	}
 
 	// Open O_RDWR (not O_WRONLY) so we can read the last
@@ -375,6 +495,23 @@ func (p *FilePersister) LoadAll() ([]Rejection, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.loadAllLocked()
+}
+
+// currentSizeLocked stat-reports the JSONL file's size in
+// bytes. ENOENT (file not yet created — a fresh persister
+// before the first Append) returns 0 with no error so the
+// cap check on a brand-new file always passes the
+// "size + admitCost > cap" branch correctly. Caller must
+// hold p.mu.
+func (p *FilePersister) currentSizeLocked() (int64, error) {
+	info, err := os.Stat(p.path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return info.Size(), nil
 }
 
 func (p *FilePersister) loadAllLocked() ([]Rejection, error) {

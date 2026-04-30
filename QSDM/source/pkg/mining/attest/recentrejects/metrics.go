@@ -97,6 +97,35 @@ type PersistCompactionRecorder interface {
 	RecordPersistCompaction(recordsAfter int)
 }
 
+// PersistHardCapDropRecorder is the OPTIONAL extension surface
+// a MetricsRecorder implementation MAY satisfy to receive
+// notifications when the on-disk persister rejects an Append
+// because admitting it would push the JSONL file past its
+// hard byte ceiling AND a salvage compaction failed to free
+// enough headroom. droppedBytes is the size of the
+// would-be-written record in bytes (line + framing newlines)
+// — useful for "how much hostile traffic are we shedding?"
+// dashboards.
+//
+// Production wiring: pkg/monitoring's adapter implements
+// this so a hard-cap drop increments
+// qsdm_attest_rejection_persist_hardcap_drops_total. Operators
+// alert on rate(...) > 0 for 10m: ANY sustained drop activity
+// is anomalous (the soft-cap compaction loop is sized to
+// keep the file an order of magnitude below the hard cap on
+// realistic rejection rates), so a non-zero rate means the
+// validator is being actively flooded — escalate to operator,
+// not just to logs.
+//
+// The in-memory ring is unaffected: a hard-cap drop only
+// rejects the on-disk persistence step. The volatile ring
+// continues to receive every record so the live operator
+// surface (dashboard tile, /api/v1/attest/recent-rejections)
+// stays accurate.
+type PersistHardCapDropRecorder interface {
+	RecordPersistHardCapDrop(droppedBytes int)
+}
+
 // PersistRecordsRecorder is the OPTIONAL extension surface a
 // MetricsRecorder implementation MAY satisfy to receive
 // best-effort gauge updates of the on-disk record count.
@@ -139,6 +168,20 @@ func notePersistError(err error) {
 func notePersistCompaction(recordsAfter int) {
 	if pr, ok := currentMetricsRecorder().(PersistCompactionRecorder); ok {
 		pr.RecordPersistCompaction(recordsAfter)
+	}
+}
+
+// notePersistHardCapDrop forwards a dropped-record byte count
+// to the active recorder iff it implements
+// PersistHardCapDropRecorder. Hot path: one atomic.Load + one
+// type assertion per drop. Drops are by definition the
+// EXCEPTIONAL path (the soft-cap compaction loop should keep
+// us well under the hard cap), so the assertion cost is
+// irrelevant — the cost we DO care about is making sure the
+// telemetry fires at all so operators see the flood.
+func notePersistHardCapDrop(droppedBytes int) {
+	if pr, ok := currentMetricsRecorder().(PersistHardCapDropRecorder); ok {
+		pr.RecordPersistHardCapDrop(droppedBytes)
 	}
 }
 

@@ -14,6 +14,105 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Recent-rejection ring hard-cap defence on the JSONL file
+  (2026-04-30).** The soft-cap compaction loop bounds the file at
+  `[softCap, 2*softCap)` records under realistic traffic, but a flood
+  that outruns the rewrite cycle could in principle grow the file past
+  any disk budget the operator wants to keep. Add a belt-and-braces
+  byte-shaped hard ceiling, enforced AFTER a salvage compaction
+  attempt, with telemetry on every drop so alerting catches the
+  flood independently of the compactions-rate alert.
+  - **`recentrejects.ErrHardCapExceeded` (exported sentinel):** the
+    error `FilePersister.Append` returns when admitting a record would
+    breach the configured byte ceiling AND a salvage compaction failed
+    to free enough headroom. Operators distinguish "transient I/O
+    failure" from "validator is being actively flooded" via
+    `errors.Is(err, ErrHardCapExceeded)`. The in-memory ring is
+    unaffected — `Store.Record` always appends in-memory regardless,
+    so the dashboard tile and `/api/v1/attest/recent-rejections` stay
+    accurate; only the durable on-disk record is dropped.
+  - **`FilePersister.SetMaxBytes(int64)` / `MaxBytes()`:** opt-in
+    setter / accessor pair. `n <= 0` (the construction default) keeps
+    the pre-2026-04-30 posture intact, so existing callers that don't
+    know about the field stay unaffected. Negative inputs clamp to 0
+    (= disabled), mirroring softCap's `<=0 → DefaultPersistSoftCap`
+    posture. `MaxBytes()` reads under `p.mu` to avoid torn reads on
+    32-bit platforms.
+  - **`Append` cap check:** when `maxBytes > 0`, before opening the
+    file for write, `Append` stats the current size and compares
+    against `currentSize + lineSize + 2` (line + framing newlines,
+    pessimistic to defeat sub-byte precision games). If the cap would
+    be breached, `Append` runs one in-band salvage compaction — the
+    soft-cap rewrite trims the head and frees significant headroom —
+    and re-checks. If still over: the record is dropped,
+    `notePersistHardCapDrop(admitCost)` fires, and
+    `ErrHardCapExceeded` is returned. The append-side watermark
+    (`appendsSinceCompact`) is reset to 0 after a successful salvage
+    so the next post-cap append doesn't immediately re-trigger a
+    normal compaction.
+  - **New optional `MetricsRecorder` extension surface:**
+    `PersistHardCapDropRecorder { RecordPersistHardCapDrop(int) }` in
+    `pkg/mining/attest/recentrejects/metrics.go`. Follows the same
+    dependency-inversion pattern as the existing `PersistErrorRecorder`,
+    `PersistCompactionRecorder`, and `PersistRecordsRecorder` — no-op
+    default; `pkg/monitoring`'s adapter implements it at `init()` time;
+    type assertion at the call site so old recorders still build.
+  - **`qsdm_attest_rejection_persist_hardcap_drops_total` (counter):**
+    exposed by `pkg/monitoring/prometheus_scrape.go`. Increments by 1
+    on every drop. The `droppedBytes` argument from the recorder hook
+    is currently dropped on the floor (alerting is on rate, not
+    volume); the parameter is retained on the wire so a future
+    "bytes-shed" rate gauge can join against this without a contract
+    change.
+  - **Operator dashboard tile (`internal/dashboard/static/dashboard.js`):**
+    fourth persistence cell rendered next to the existing
+    errors / compactions / records-on-disk cells. Colour shifts red
+    on first non-zero hit (no threshold — any drop is operator-
+    noteworthy). Caption updated to call out the hard-cap drops as a
+    flood-active signal independent of the compactions rate.
+  - **New Prometheus alert
+    `QSDMAttestRejectionPersistHardCapDropping`** in
+    `QSDM/deploy/prometheus/alerts_qsdm.example.yml`: fires on
+    `rate(qsdm_attest_rejection_persist_hardcap_drops_total[5m]) > 0`
+    sustained 10m. Severity warning. Independent signal from
+    `QSDMAttestRejectionPersistCompactionsHigh` — compactions-high
+    means "validator is keeping up but elevated", hard-cap-dropping
+    means "validator is NOT keeping up; durability is being shed".
+    Triage runbook in the alert annotations covers `cfg.MaxBytes`
+    tuning, softCap tuning, and libp2p rate-limit application.
+  - **`internal/v2wiring.Config.RecentRejectionsMaxBytes` (int64):**
+    new optional field. When > 0, `Wire()` calls `fp.SetMaxBytes(n)`
+    after `NewFilePersister` succeeds. Default 0 (disabled) so
+    existing operator configs stay byte-cap-disabled until they
+    explicitly opt in. Production tuning guidance in the field's
+    doc comment: at the default `softCap=DefaultMaxRejections=1024`
+    and ~512 bytes per record, the soft-cap rewrite loop keeps the
+    file at ~512 KiB; setting `MaxBytes=8*1024*1024` (8 MiB) gives
+    the soft-cap roughly 16x headroom — comfortable for transient
+    spikes, tight enough to cap a sustained flood at minute resolution.
+  - **Tests:** four new `pkg/mining/attest/recentrejects` tests pin
+    the persister contract: `MaxBytes` accessor round-trip with
+    negative-input clamp + nil-receiver guard,
+    `Disabled_NoDropsRegardlessOfSize` (50 records past where a tiny
+    cap would fire — feature-off path stays clean), salvage-
+    compaction-admits (cap tight enough to trigger but loose enough
+    that the rewrite frees headroom), and hard-refusal +
+    `ErrHardCapExceeded` + telemetry-fires + in-memory-ring-unaffected.
+    The shared `captureRecorder` test fake was extended to satisfy
+    the new `PersistHardCapDropRecorder` interface with an
+    `hardCapSnapshot()` accessor for the persister-side tests. Five
+    new `pkg/monitoring` tests pin the counter-increments contract,
+    snapshot-includes-field, adapter-routing, no-leakage between
+    counters, and `ResetRecentRejectMetricsForTest`-clears-new-counter.
+    The compile-time assertion in
+    `TestRecentRejectsMetricsAdapter_ImplementsInterface` was
+    extended to cover the new interface so a future method-rename
+    surfaces as a build failure rather than a silent telemetry break.
+    The dashboard integration test was extended with two new label
+    assertions (`'hard-cap drops'`,
+    `metrics.persist_hardcap_drops_total`) so a regression that drops
+    the cell ship-stops the bundle build.
+
 - **Attestation-rejections dashboard tile — triage controls
   (kind / window / pause / top-miners / CSV) (2026-04-30).** Operators
   using the rejection tile in production hit the same friction within

@@ -188,6 +188,19 @@ func corePrometheusMetrics() []Metric {
 	add("qsdm_attest_rejection_persist_records_on_disk",
 		"Best-effort gauge of the recent-rejection ring's on-disk JSONL record count.",
 		MetricGauge, float64(recentRejectPersistRecordsOnDisk()), nil)
+	// Hard-cap drop counter: increments when the
+	// FilePersister refuses an Append because admitting it
+	// would breach the configured byte ceiling AND a salvage
+	// in-band compaction failed to free enough headroom. ANY
+	// non-zero rate is anomalous (the soft-cap loop is sized
+	// to keep the file well under the hard cap on realistic
+	// traffic), so operators alert rate(...) > 0 sustained
+	// 10m as a flood-active signal independent of the
+	// compactions-rate alert. The in-memory ring is
+	// unaffected — only the on-disk forensic record is dropped.
+	add("qsdm_attest_rejection_persist_hardcap_drops_total",
+		"Records the recent-rejection ring's FilePersister refused to write because admitting them would exceed the configured hard byte cap. The in-memory ring is unaffected; only the on-disk forensic record is shed.",
+		MetricCounter, float64(recentRejectPersistHardCapDropsCount()), nil)
 
 	// ---- v2 enrollment registry --------------------------------
 	add("qsdm_enrollment_applied_total",
