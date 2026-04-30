@@ -170,6 +170,24 @@ func corePrometheusMetrics() []Metric {
 	add("qsdm_attest_rejection_persist_errors_total",
 		"On-disk persister failures observed by the recent-rejection ring (Append / compaction). The in-memory ring is unaffected; this measures forensic-record durability only.",
 		MetricCounter, float64(recentRejectPersistErrorsCount()), nil)
+	// Soft-cap compaction rate: increments each time the
+	// FilePersister rewrites the JSONL log to enforce its
+	// soft-cap. A sustained high rate (alert >5/min for 30m)
+	// indicates a miner is filling the ring faster than the
+	// soft-cap can absorb — independent signal from the
+	// per-field truncation-rate alert.
+	add("qsdm_attest_rejection_persist_compactions_total",
+		"Successful soft-cap compactions performed by the recent-rejection ring's FilePersister. Sustained high rate suggests rejection-rate flooding.",
+		MetricCounter, float64(recentRejectPersistCompactionsCount()), nil)
+	// On-disk record gauge: best-effort current size of the
+	// JSONL log in records. Updated at boot, after every
+	// Append, and after every compaction. Approximate during
+	// concurrent reads — operators reading this alongside
+	// the compactions counter should treat ±softCap as the
+	// uncertainty window.
+	add("qsdm_attest_rejection_persist_records_on_disk",
+		"Best-effort gauge of the recent-rejection ring's on-disk JSONL record count.",
+		MetricGauge, float64(recentRejectPersistRecordsOnDisk()), nil)
 
 	// ---- v2 enrollment registry --------------------------------
 	add("qsdm_enrollment_applied_total",

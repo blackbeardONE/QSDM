@@ -68,6 +68,27 @@ var (
 	// are not field-keyed (the same "disk full" affects all
 	// fields uniformly).
 	rrPersistErrors atomic.Uint64
+
+	// rrPersistCompactions counts successful soft-cap
+	// compactions performed by the FilePersister. Exposed
+	// as qsdm_attest_rejection_persist_compactions_total.
+	// A sustained high rate (alert >5/min for 30m) means a
+	// miner is filling the ring faster than the soft-cap
+	// can absorb — independent of the truncation-rate
+	// alert which fires on per-field rune-cap pressure.
+	rrPersistCompactions atomic.Uint64
+
+	// rrPersistRecordsOnDisk is a best-effort gauge of the
+	// JSONL file's current record count. Exposed as
+	// qsdm_attest_rejection_persist_records_on_disk. Updated
+	// by the FilePersister at three moments: boot (from a
+	// one-shot scan of the existing file), every successful
+	// Append (+1), every successful compaction (set to
+	// post-compaction count). Approximate during concurrent
+	// reads — operators reading this alongside Prometheus's
+	// scrape interval should treat ±softCap as the
+	// uncertainty window.
+	rrPersistRecordsOnDisk atomic.Uint64
 )
 
 // RecordRecentRejectField is the package-level entry point
@@ -137,6 +158,59 @@ func RecentRejectPersistErrorsForTest() uint64 {
 	return rrPersistErrors.Load()
 }
 
+// RecordRecentRejectPersistCompaction increments the
+// qsdm_attest_rejection_persist_compactions_total counter.
+// Invoked by the recentrejects→monitoring adapter after a
+// successful FilePersister.compactLocked. recordsAfter is
+// the post-compaction file size in records — currently
+// dropped on the floor (the alert is on the compaction
+// rate, not the size), but accepted on the parameter so a
+// future alert that joins the rate against the size has the
+// data to do so.
+func RecordRecentRejectPersistCompaction(recordsAfter int) {
+	_ = recordsAfter
+	rrPersistCompactions.Add(1)
+}
+
+// recentRejectPersistCompactionsCount returns the current
+// value of qsdm_attest_rejection_persist_compactions_total
+// for the Prometheus scrape path. Unexported for the same
+// reason recentRejectPersistErrorsCount is.
+func recentRejectPersistCompactionsCount() uint64 {
+	return rrPersistCompactions.Load()
+}
+
+// RecentRejectPersistCompactionsForTest exposes the current
+// value of qsdm_attest_rejection_persist_compactions_total
+// for unit tests.
+func RecentRejectPersistCompactionsForTest() uint64 {
+	return rrPersistCompactions.Load()
+}
+
+// SetRecentRejectPersistRecordsOnDisk updates the
+// qsdm_attest_rejection_persist_records_on_disk gauge.
+// Invoked by the recentrejects→monitoring adapter from
+// FilePersister at boot, after every Append, and after
+// every compaction. Accepts uint64 because record counts
+// never go negative and the gauge would have to clamp
+// otherwise.
+func SetRecentRejectPersistRecordsOnDisk(n uint64) {
+	rrPersistRecordsOnDisk.Store(n)
+}
+
+// recentRejectPersistRecordsOnDisk returns the current
+// value of qsdm_attest_rejection_persist_records_on_disk
+// for the Prometheus scrape path. Unexported.
+func recentRejectPersistRecordsOnDisk() uint64 {
+	return rrPersistRecordsOnDisk.Load()
+}
+
+// RecentRejectPersistRecordsOnDiskForTest exposes the
+// current gauge value for unit tests.
+func RecentRejectPersistRecordsOnDiskForTest() uint64 {
+	return rrPersistRecordsOnDisk.Load()
+}
+
 // RecentRejectFieldMetricsView is one row of the per-field
 // telemetry snapshot returned by RecentRejectMetricsSnapshot.
 // JSON tag names below are the public contract; reordering is
@@ -155,7 +229,8 @@ type RecentRejectFieldMetricsView struct {
 // operator dashboard's attestation-rejections tile, primarily)
 // that want a coherent view without scraping Prometheus.
 //
-// This is a snapshot — Fields and PersistErrorsTotal are
+// This is a snapshot — Fields, PersistErrorsTotal,
+// PersistCompactionsTotal, and PersistRecordsOnDisk are
 // captured atomically per-counter but not as a transaction
 // across the whole struct. Two near-simultaneous Record calls
 // can interleave such that PersistErrorsTotal reflects a
@@ -164,13 +239,16 @@ type RecentRejectFieldMetricsView struct {
 // list together MUST treat the count and the list as
 // independent samples.
 type RecentRejectMetricsView struct {
-	Fields             []RecentRejectFieldMetricsView `json:"fields"`
-	PersistErrorsTotal uint64                         `json:"persist_errors_total"`
+	Fields                  []RecentRejectFieldMetricsView `json:"fields"`
+	PersistErrorsTotal      uint64                         `json:"persist_errors_total"`
+	PersistCompactionsTotal uint64                         `json:"persist_compactions_total"`
+	PersistRecordsOnDisk    uint64                         `json:"persist_records_on_disk"`
 }
 
 // RecentRejectMetricsSnapshot returns the current per-field
 // observed / truncated / runes-max counts plus the persist-
-// error total. Safe for concurrent callers; all reads are
+// error total, persist-compactions total, and on-disk
+// records gauge. Safe for concurrent callers; all reads are
 // atomic.Load.
 //
 // Field order in the returned slice matches
@@ -179,8 +257,10 @@ type RecentRejectMetricsView struct {
 func RecentRejectMetricsSnapshot() RecentRejectMetricsView {
 	rows := recentRejectFieldsLabeled()
 	out := RecentRejectMetricsView{
-		Fields:             make([]RecentRejectFieldMetricsView, 0, len(rows)),
-		PersistErrorsTotal: rrPersistErrors.Load(),
+		Fields:                  make([]RecentRejectFieldMetricsView, 0, len(rows)),
+		PersistErrorsTotal:      rrPersistErrors.Load(),
+		PersistCompactionsTotal: rrPersistCompactions.Load(),
+		PersistRecordsOnDisk:    rrPersistRecordsOnDisk.Load(),
 	}
 	for _, r := range rows {
 		out.Fields = append(out.Fields, RecentRejectFieldMetricsView{
@@ -256,4 +336,6 @@ func ResetRecentRejectMetricsForTest() {
 	rrFieldRunesMaxGPUName.Store(0)
 	rrFieldRunesMaxCertSubject.Store(0)
 	rrPersistErrors.Store(0)
+	rrPersistCompactions.Store(0)
+	rrPersistRecordsOnDisk.Store(0)
 }

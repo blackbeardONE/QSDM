@@ -214,27 +214,54 @@ function updateAttestRejections() {
                 countersEl.appendChild(cell);
             });
 
+            // Persistence-lifecycle counters: errors / compactions / on-disk size.
+            // Local helper to mint one cell with the same visual shape as the
+            // per-field grid above.
+            const buildPersistCell = (label, valueText, valueColor, detailText) => {
+                const cell = document.createElement('div');
+                cell.style.cssText = 'background:#0f1419;border:1px solid #2a3441;border-radius:4px;padding:10px;';
+                const head = document.createElement('div');
+                head.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;';
+                const labelEl = document.createElement('span');
+                labelEl.className = 'metric-label';
+                labelEl.textContent = label;
+                const valueEl = document.createElement('span');
+                valueEl.className = 'metric-value';
+                valueEl.style.cssText = 'font-size:14px;color:' + valueColor + ';';
+                valueEl.textContent = valueText;
+                head.appendChild(labelEl);
+                head.appendChild(valueEl);
+                const detail = document.createElement('div');
+                detail.style.cssText = 'font-size:11px;color:#a0a0a0;margin-top:6px;';
+                detail.textContent = detailText;
+                cell.appendChild(head);
+                cell.appendChild(detail);
+                return cell;
+            };
+
             const persistErrs = metrics.persist_errors_total || 0;
-            const persistColor = persistErrs > 0 ? '#d0021b' : '#7ed321';
-            const persistCell = document.createElement('div');
-            persistCell.style.cssText = 'background:#0f1419;border:1px solid #2a3441;border-radius:4px;padding:10px;';
-            const persistHead = document.createElement('div');
-            persistHead.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;';
-            const persistLabel = document.createElement('span');
-            persistLabel.className = 'metric-label';
-            persistLabel.textContent = 'persist errors';
-            const persistValue = document.createElement('span');
-            persistValue.className = 'metric-value';
-            persistValue.style.cssText = 'font-size:14px;color:' + persistColor + ';';
-            persistValue.textContent = String(persistErrs);
-            persistHead.appendChild(persistLabel);
-            persistHead.appendChild(persistValue);
-            const persistDetail = document.createElement('div');
-            persistDetail.style.cssText = 'font-size:11px;color:#a0a0a0;margin-top:6px;';
-            persistDetail.textContent = 'on-disk Append() failures (in-memory ring unaffected)';
-            persistCell.appendChild(persistHead);
-            persistCell.appendChild(persistDetail);
-            countersEl.appendChild(persistCell);
+            countersEl.appendChild(buildPersistCell(
+                'persist errors',
+                String(persistErrs),
+                persistErrs > 0 ? '#d0021b' : '#7ed321',
+                'on-disk Append() failures (in-memory ring unaffected)'
+            ));
+
+            const compactions = metrics.persist_compactions_total || 0;
+            countersEl.appendChild(buildPersistCell(
+                'compactions',
+                String(compactions),
+                '#7bd3ff',
+                'soft-cap rewrites since boot (sustained rate ⇒ ring flooding)'
+            ));
+
+            const recordsOnDisk = metrics.persist_records_on_disk || 0;
+            countersEl.appendChild(buildPersistCell(
+                'records on disk',
+                String(recordsOnDisk),
+                '#e6e6e6',
+                'live JSONL record count (approximate, ±softCap during reads)'
+            ));
 
             // Records table.
             tbody.innerHTML = '';

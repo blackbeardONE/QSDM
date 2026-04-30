@@ -77,6 +77,47 @@ type PersistErrorRecorder interface {
 	RecordPersistError(error)
 }
 
+// PersistCompactionRecorder is the OPTIONAL extension surface
+// a MetricsRecorder implementation MAY satisfy to receive
+// notifications when the on-disk persister rewrites its log
+// to enforce the soft-cap (see FilePersister.compactLocked).
+// recordsAfter is the post-compaction record count — i.e.
+// the new file size in records, equal to the persister's
+// SoftCap when the compaction trimmed the head.
+//
+// Production wiring: pkg/monitoring's adapter implements
+// this so a successful compaction increments
+// qsdm_attest_rejection_persist_compactions_total. Operators
+// alert on rate(...) > N/min for N tuned to the realistic
+// rejection-rate ceiling — a sustained high rate means a
+// miner is filling the ring faster than the soft-cap can
+// absorb, which is itself an alerting signal independent
+// of the truncation-rate alert.
+type PersistCompactionRecorder interface {
+	RecordPersistCompaction(recordsAfter int)
+}
+
+// PersistRecordsRecorder is the OPTIONAL extension surface a
+// MetricsRecorder implementation MAY satisfy to receive
+// best-effort gauge updates of the on-disk record count.
+// Invoked from the persister at three moments:
+//
+//   - Construction: NewFilePersister counts existing records
+//     and seeds the gauge so operators see a live value
+//     immediately after boot, not a zero until the first
+//     Append fires.
+//   - Append success: gauge increments by one.
+//   - Compaction success: gauge resets to the post-compaction
+//     count.
+//
+// The gauge is approximate — it can briefly disagree with
+// the disk during concurrent reads — but the producer side
+// updates atomically per operation, so monotonic
+// behaviour holds for any single operation.
+type PersistRecordsRecorder interface {
+	SetPersistRecordsOnDisk(n uint64)
+}
+
 // notePersistError forwards err to the active recorder iff
 // it implements PersistErrorRecorder. Hot path: one
 // atomic.Load + one type assertion per persistence failure
@@ -87,6 +128,31 @@ func notePersistError(err error) {
 	}
 	if pr, ok := currentMetricsRecorder().(PersistErrorRecorder); ok {
 		pr.RecordPersistError(err)
+	}
+}
+
+// notePersistCompaction forwards a post-compaction record
+// count to the active recorder iff it implements
+// PersistCompactionRecorder. Compactions are rare events
+// (one per softCap appends), so the type assertion cost is
+// in the noise.
+func notePersistCompaction(recordsAfter int) {
+	if pr, ok := currentMetricsRecorder().(PersistCompactionRecorder); ok {
+		pr.RecordPersistCompaction(recordsAfter)
+	}
+}
+
+// notePersistRecordsOnDisk forwards the current on-disk
+// record count to the active recorder iff it implements
+// PersistRecordsRecorder. Called at boot, after every
+// Append, and after every compaction — so the cost lives
+// on the same hot path as Append. Type assertion is one
+// branch per call; recorders that don't implement the
+// interface (the package-default no-op, plus any
+// non-Prometheus test adapter) skip the work entirely.
+func notePersistRecordsOnDisk(n uint64) {
+	if pr, ok := currentMetricsRecorder().(PersistRecordsRecorder); ok {
+		pr.SetPersistRecordsOnDisk(n)
 	}
 }
 

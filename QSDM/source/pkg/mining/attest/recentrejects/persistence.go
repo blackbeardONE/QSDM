@@ -51,6 +51,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 )
 
 // Persister is the on-disk hook for the volatile in-memory
@@ -140,6 +141,19 @@ type FilePersister struct {
 	// process restarted before compaction triggered), the
 	// next Append after softCap-many calls will compact.
 	appendsSinceCompact int
+
+	// recordsOnDisk is the running count of records in the
+	// JSONL file. Seeded by the constructor (a one-shot scan
+	// of the existing file), incremented on every successful
+	// Append, reset to len(keep) after every successful
+	// compaction. Used to back the
+	// qsdm_attest_rejection_persist_records_on_disk gauge in
+	// pkg/monitoring via notePersistRecordsOnDisk.
+	//
+	// atomic so RecordsOnDisk() is lock-free; mutations
+	// happen under p.mu in Append/compactLocked which
+	// serialises the read-modify-write naturally.
+	recordsOnDisk atomic.Uint64
 }
 
 // DefaultPersistSoftCap is the per-file rejection record cap
@@ -178,7 +192,43 @@ func NewFilePersister(path string, softCap int) (*FilePersister, error) {
 	if err := f.Close(); err != nil {
 		return nil, fmt.Errorf("recentrejects: close %q: %w", path, err)
 	}
-	return &FilePersister{path: path, softCap: softCap}, nil
+	p := &FilePersister{path: path, softCap: softCap}
+
+	// Count existing records (best-effort) so the on-disk
+	// records gauge starts with an accurate value at boot,
+	// not a flat zero until the first Append. This is a
+	// one-shot read of <= softCap*recordSize bytes; for the
+	// 1024-record default that's well under 1 MiB and
+	// completes in a few ms even on a cold disk.
+	//
+	// Errors are swallowed: a corrupt file means we boot
+	// with a stale gauge but keep operating; the next
+	// Append will tick the count from whatever value we
+	// seeded, drifting only by the size of the corruption
+	// we couldn't parse.
+	if recs, err := p.loadAllLocked(); err == nil {
+		n := uint64(len(recs))
+		p.recordsOnDisk.Store(n)
+		notePersistRecordsOnDisk(n)
+	}
+
+	return p, nil
+}
+
+// RecordsOnDisk returns the FilePersister's running count of
+// records in the JSONL file. Atomic / lock-free; the value
+// is approximate during a concurrent Append (the increment
+// races the read by ≤ 1) but stabilises within microseconds.
+//
+// Exported for tests and for in-process consumers that want
+// the gauge value without going through the metrics adapter
+// (the dashboard tile reads the metrics adapter; the
+// persistence test reads this directly).
+func (p *FilePersister) RecordsOnDisk() uint64 {
+	if p == nil {
+		return 0
+	}
+	return p.recordsOnDisk.Load()
 }
 
 // Path returns the underlying file path. Used by tests and
@@ -267,7 +317,16 @@ func (p *FilePersister) Append(rec Rejection) error {
 		return fmt.Errorf("recentrejects: close %q: %w", p.path, cerr)
 	}
 
+	// Successful append: bump both the watermark counter
+	// (drives compaction) and the records-on-disk gauge
+	// (drives the dashboard / Prometheus surfaces). The
+	// gauge update goes through the metrics adapter chain,
+	// which is one atomic.Load + one type-assertion +
+	// one atomic.Store — well under a microsecond.
 	p.appendsSinceCompact++
+	newCount := p.recordsOnDisk.Add(1)
+	notePersistRecordsOnDisk(newCount)
+
 	if p.appendsSinceCompact >= p.softCap {
 		if err := p.compactLocked(); err != nil {
 			// Compaction failure is non-fatal for the next
@@ -429,5 +488,16 @@ func (p *FilePersister) compactLocked() error {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("recentrejects: rename %q -> %q: %w", tmp, p.path, err)
 	}
+
+	// Compaction succeeded: file now has exactly len(keep)
+	// records. Update the running gauge and emit two
+	// observations to the metrics adapter — one for the
+	// compactions counter (rate-of-compactions alert), one
+	// for the records-on-disk gauge so the dashboard tile
+	// reflects the post-compaction size on the next scrape.
+	post := uint64(len(keep))
+	p.recordsOnDisk.Store(post)
+	notePersistCompaction(len(keep))
+	notePersistRecordsOnDisk(post)
 	return nil
 }

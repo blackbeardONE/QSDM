@@ -14,6 +14,83 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Recent-rejection ring compaction observability — close the last
+  visibility gap in the persistence layer (2026-04-30).**
+  `FilePersister.compactLocked` was previously silent: a miner spamming
+  forged rejections could trigger a soft-cap compaction every few
+  seconds and the only signal would be a stalled disk. Two new metrics
+  + a new dashboard cell + a new Prometheus alert close that gap:
+  - **`qsdm_attest_rejection_persist_compactions_total` (counter):**
+    increments on every successful soft-cap compaction (post-rename).
+    No-trim early-returns — where `loadAllLocked` finds ≤ softCap
+    records and the file is left untouched — do NOT increment, so the
+    counter is a faithful "rewrites" rate.
+  - **`qsdm_attest_rejection_persist_records_on_disk` (gauge):**
+    best-effort current size of the JSONL log in records. Updated at
+    boot (one-shot scan of the existing file), after every successful
+    Append (+1), and after every successful compaction (set to
+    post-trim count). Approximate during concurrent reads — operators
+    should treat ±softCap as the uncertainty window.
+  - **Two new optional `MetricsRecorder` extension surfaces in
+    `pkg/mining/attest/recentrejects/metrics.go`:**
+    `PersistCompactionRecorder { RecordPersistCompaction(int) }` and
+    `PersistRecordsRecorder { SetPersistRecordsOnDisk(uint64) }`.
+    Both follow the same dependency-inversion pattern as the existing
+    `MetricsRecorder` and `PersistErrorRecorder` (no-op default,
+    pkg/monitoring's adapter implements them at init() time, type
+    assertion at the call site so old recorders still build).
+  - **`FilePersister` instrumentation in
+    `pkg/mining/attest/recentrejects/persistence.go`:** new
+    `recordsOnDisk atomic.Uint64` field, seeded at construction by
+    counting existing records via `loadAllLocked` so the gauge
+    reflects on-disk reality before the first Append fires; updated
+    on every successful Append; reset to `len(keep)` after every
+    successful compaction. New `RecordsOnDisk()` accessor for tests.
+  - **Operator dashboard tile (`internal/dashboard/static/dashboard.js`)
+    now renders three persistence cells side-by-side:** persist errors
+    (red on non-zero), compactions (cyan, soft-cap rewrite count
+    since boot), and records-on-disk (current JSONL size). Built via
+    a new `buildPersistCell` helper that mirrors the per-field grid's
+    visual rhythm. Caption updated to point at all four Prometheus
+    series.
+  - **New Prometheus alert
+    `QSDMAttestRejectionPersistCompactionsHigh`** in
+    `QSDM/deploy/prometheus/alerts_qsdm.example.yml`: fires on
+    `>5 compactions/min sustained 30m` (severity: warning).  At the
+    default softCap=1024 that's ~85 rejections/s sustained — roughly
+    10× a healthy validator's baseline — so the threshold catches
+    real rejection-flood patterns without paging on noise.
+  - **Test coverage:**
+    - `pkg/mining/attest/recentrejects/persistence_test.go`: 4 new
+      tests — `TestFilePersister_RecordsOnDisk_TracksAppendAndCompact`
+      (atomic counter contract end-to-end through the no-trim and
+      trim compaction paths),
+      `TestNewFilePersister_SeedsRecordsOnDiskFromExistingFile` (boot-
+      time gauge accuracy), `TestFilePersister_CompactionHook_FiresOnTrim`
+      (hook fires exactly once with the correct post-compaction
+      count), `TestFilePersister_CompactionHook_NoTrim_DoesNotFire`
+      (no-trim early-return must not fire the hook — preserves the
+      counter's "rewrites" semantics).
+    - `pkg/mining/attest/recentrejects/metrics_test.go`: extended the
+      shared `captureRecorder` fake with `RecordPersistError` /
+      `RecordPersistCompaction` / `SetPersistRecordsOnDisk` methods
+      plus a `persistSnapshot` accessor so persistence tests use the
+      same recorder helper without duplicating it.
+    - `pkg/monitoring/recentrejects_metrics_test.go`: 4 new tests —
+      `TestRecordRecentRejectPersistCompaction_Increments` (counter
+      contract), `TestSetRecentRejectPersistRecordsOnDisk_Stores`
+      (gauge contract incl. zero-input), `TestRecentRejectMetricsSnapshot_IncludesCompactionAndOnDisk`
+      (wire shape regression-pin for the dashboard tile),
+      `TestRecentRejectsMetricsAdapter_CompactionAndRecordsRoute`
+      (adapter→counter routing). Compile-time assertion in
+      `TestRecentRejectsMetricsAdapter_ImplementsInterface` extended
+      to ship-stop on a future drop of either new method.
+    - `internal/dashboard/integration_test.go`: extended to assert
+      both new field labels (`'compactions'`, `'records on disk'`)
+      and JSON keys (`metrics.persist_compactions_total`,
+      `metrics.persist_records_on_disk`) are present in the served
+      `dashboard.js`.
+
 - **Operator dashboard tile: recent attestation rejections + truncation
   telemetry (2026-04-29, frontend slice).**
   Renders the `/api/attest/rejections` envelope landed in commit

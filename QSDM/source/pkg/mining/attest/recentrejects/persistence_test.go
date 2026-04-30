@@ -552,3 +552,218 @@ func TestStore_SetPersister_NilRevertsToNoop(t *testing.T) {
 		t.Errorf("noop after detach produced PersistErrorCount=%d", got)
 	}
 }
+
+// ----- Compaction-observability suite ---------------------------
+//
+// Three behaviours under test:
+//
+//   - FilePersister.RecordsOnDisk increments on every successful
+//     Append and resets to len(keep) after compaction.
+//   - The constructor seeds RecordsOnDisk from any pre-existing
+//     records (so a v2wiring boot reflects a non-zero gauge
+//     before the first Append fires).
+//   - The metrics-recorder hooks
+//     (PersistCompactionRecorder + PersistRecordsRecorder) fire
+//     on the same events.
+//
+// All tests use the package's existing withCaptureRecorder
+// helper (see metrics_test.go); the captureRecorder satisfies
+// all four interfaces, and t.Cleanup inside withCaptureRecorder
+// restores the no-op default so a sibling test sharing the
+// process-wide recorder does not see leftover hooks.
+
+// TestFilePersister_RecordsOnDisk_TracksAppendAndCompact pins
+// the basic atomic-counter contract: each successful Append
+// increments by one; each successful compaction resets to the
+// post-compaction count.
+func TestFilePersister_RecordsOnDisk_TracksAppendAndCompact(t *testing.T) {
+	t.Parallel()
+	fp, _ := newFilePersisterT(t, 5)
+
+	if got := fp.RecordsOnDisk(); got != 0 {
+		t.Fatalf("baseline RecordsOnDisk: got %d, want 0", got)
+	}
+
+	for i := uint64(1); i <= 4; i++ {
+		if err := fp.Append(Rejection{Seq: i, Kind: KindArchSpoofUnknown}); err != nil {
+			t.Fatalf("Append %d: %v", i, err)
+		}
+	}
+	if got := fp.RecordsOnDisk(); got != 4 {
+		t.Errorf("after 4 appends: got %d, want 4", got)
+	}
+
+	// 5th append crosses the watermark; compactLocked
+	// fires but the file already has exactly softCap=5
+	// records → loadAllLocked returns 5, no trim, gauge
+	// holds at 5.
+	if err := fp.Append(Rejection{Seq: 5, Kind: KindArchSpoofUnknown}); err != nil {
+		t.Fatalf("Append 5: %v", err)
+	}
+	if got := fp.RecordsOnDisk(); got != 5 {
+		t.Errorf("after 5th append (compaction is a no-op): got %d, want 5", got)
+	}
+
+	// 6th-9th appends drive the count to 9; the next
+	// compaction at #10 will trim to 5.
+	for i := uint64(6); i <= 9; i++ {
+		if err := fp.Append(Rejection{Seq: i, Kind: KindArchSpoofUnknown}); err != nil {
+			t.Fatalf("Append %d: %v", i, err)
+		}
+	}
+	if got := fp.RecordsOnDisk(); got != 9 {
+		t.Errorf("pre-trim count: got %d, want 9", got)
+	}
+	if err := fp.Append(Rejection{Seq: 10, Kind: KindArchSpoofUnknown}); err != nil {
+		t.Fatalf("Append 10: %v", err)
+	}
+	// Append 10 → count goes 9→10, then compaction fires
+	// (10 records vs softCap=5 → trim to last 5).
+	if got := fp.RecordsOnDisk(); got != 5 {
+		t.Errorf("post-trim count: got %d, want 5", got)
+	}
+}
+
+// TestNewFilePersister_SeedsRecordsOnDiskFromExistingFile —
+// the boot-time scan must report a non-zero gauge before the
+// first Append. Otherwise dashboards would lie about disk
+// state in the seconds between v2wiring.Wire and the first
+// rejection.
+func TestNewFilePersister_SeedsRecordsOnDiskFromExistingFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "recentrejects.jsonl")
+
+	// Hand-write 7 records.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	for i := uint64(1); i <= 7; i++ {
+		line, err := json.Marshal(Rejection{Seq: i, Kind: KindArchSpoofUnknown})
+		if err != nil {
+			t.Fatalf("marshal %d: %v", i, err)
+		}
+		line = append(line, '\n')
+		if _, err := f.Write(line); err != nil {
+			t.Fatalf("write %d: %v", i, err)
+		}
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	fp, err := NewFilePersister(path, 10)
+	if err != nil {
+		t.Fatalf("NewFilePersister: %v", err)
+	}
+	t.Cleanup(func() { _ = fp.Close() })
+	if got := fp.RecordsOnDisk(); got != 7 {
+		t.Errorf("constructor seed: got %d, want 7", got)
+	}
+}
+
+// TestFilePersister_CompactionHook_FiresOnTrim — the
+// PersistCompactionRecorder hook fires on every successful
+// compaction, with the correct post-compaction count. A
+// no-op compaction (file already at softCap) still fires
+// the hook because the metrics adapter currently wants the
+// rate signal regardless of the trim outcome.
+func TestFilePersister_CompactionHook_FiresOnTrim(t *testing.T) {
+	rec := withCaptureRecorder(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "recentrejects.jsonl")
+
+	// Hand-write 8 records to force the first Append-driven
+	// compaction to actually trim (softCap=3 → keep last 3).
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	for i := uint64(1); i <= 8; i++ {
+		line, err := json.Marshal(Rejection{Seq: i, Kind: KindArchSpoofUnknown})
+		if err != nil {
+			t.Fatalf("marshal %d: %v", i, err)
+		}
+		line = append(line, '\n')
+		if _, err := f.Write(line); err != nil {
+			t.Fatalf("write %d: %v", i, err)
+		}
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	fp, err := NewFilePersister(path, 3)
+	if err != nil {
+		t.Fatalf("NewFilePersister: %v", err)
+	}
+	t.Cleanup(func() { _ = fp.Close() })
+
+	// 3 more appends — the watermark hits softCap=3 on
+	// append #3, compaction fires, file has 11 records →
+	// trims to last 3.
+	for i := uint64(9); i <= 11; i++ {
+		if err := fp.Append(Rejection{Seq: i, Kind: KindArchSpoofUnknown}); err != nil {
+			t.Fatalf("Append %d: %v", i, err)
+		}
+	}
+
+	compactions, recs := rec.persistSnapshot()
+	if len(compactions) != 1 {
+		t.Fatalf("compaction hook fired %d times, want exactly 1", len(compactions))
+	}
+	if compactions[0] != 3 {
+		t.Errorf("compaction recordsAfter: got %d, want 3 (softCap)", compactions[0])
+	}
+	// recordsOnDisk hook must have been invoked at least
+	// for: constructor seed (8), 3× Append, 1× compaction
+	// post-trim (3). We don't assert exact ordering of
+	// the multi-event sequence — only that the trim event
+	// is in the trail.
+	sawTrim := false
+	for _, n := range recs {
+		if n == 3 {
+			sawTrim = true
+			break
+		}
+	}
+	if !sawTrim {
+		t.Errorf("expected SetPersistRecordsOnDisk(3) after trim, got values %v", recs)
+	}
+}
+
+// TestFilePersister_CompactionHook_NoTrim_DoesNotFire pins the
+// edge case where appendsSinceCompact crosses the watermark
+// but the file is already at softCap (so loadAllLocked
+// returns exactly softCap records, no trim is needed). The
+// hook MUST NOT fire on this path because the file did not
+// actually rewrite — only successful os.Rename calls count
+// as compactions for alerting purposes. If we counted the
+// no-trim early-return as a compaction, operators would
+// misread the steady-state compaction rate of a healthy
+// validator at exactly the soft-cap boundary as 1/softCap-
+// appends-per-rejection.
+func TestFilePersister_CompactionHook_NoTrim_DoesNotFire(t *testing.T) {
+	rec := withCaptureRecorder(t)
+
+	fp, _ := newFilePersisterT(t, 3)
+	for i := uint64(1); i <= 3; i++ {
+		if err := fp.Append(Rejection{Seq: i, Kind: KindArchSpoofUnknown}); err != nil {
+			t.Fatalf("Append %d: %v", i, err)
+		}
+	}
+	// Append #3 hits the watermark — compactLocked fires
+	// but loadAllLocked returns 3 records (== softCap),
+	// the early-return path keeps the file unchanged.
+	compactions, _ := rec.persistSnapshot()
+	if len(compactions) != 0 {
+		t.Errorf("compaction hook should not fire on no-trim path; got %d calls with values %v",
+			len(compactions), compactions)
+	}
+	// Sanity: file is at expected size, gauge reflects it.
+	if got := fp.RecordsOnDisk(); got != 3 {
+		t.Errorf("RecordsOnDisk: got %d, want 3", got)
+	}
+}

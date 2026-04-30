@@ -1051,3 +1051,59 @@ groups:
             wire it to a passive channel (chat ping) so operators
             see the ramp before the truncation-rate alert above
             crosses 25%.
+
+      # ---------------------------------------------------------------
+      # v2 attestation — recent-rejection ring on-disk persistence
+      # ---------------------------------------------------------------
+      # Independent signal from the truncation alerts above: the
+      # persistence layer (pkg/mining/attest/recentrejects/persistence.go)
+      # rewrites its JSONL log when the soft-cap is crossed. A
+      # sustained high compaction rate means a miner is filling
+      # the ring faster than the cap can absorb — useful for
+      # detecting rejection-flood patterns where the per-rejection
+      # rate stays under the slashing-evidence threshold but the
+      # cumulative volume over a long window is anomalous.
+      #
+      # Tuning:
+      #   - softCap defaults to DefaultMaxRejections (1024) so a
+      #     healthy validator should compact roughly every
+      #     1024 rejections. At 100 rejections/s steady-state
+      #     that's ~1 compaction every ~10 seconds — well under
+      #     the alert threshold below.
+      #   - The threshold is intentionally loose; tighten per-
+      #     deployment as you learn your validator's baseline.
+      - alert: QSDMAttestRejectionPersistCompactionsHigh
+        # >5 compactions/min sustained for 30m equals a soft-cap
+        # rewrite every ≤12s for half an hour — at the default
+        # softCap=1024 that's ~85 rejections/s sustained, i.e.
+        # roughly an order of magnitude above any healthy
+        # validator's normal §4.6 rejection rate.
+        expr: |
+          rate(qsdm_attest_rejection_persist_compactions_total[5m]) * 60 > 5
+        for: 30m
+        labels:
+          severity: warning
+          subsystem: v2-attest
+        annotations:
+          summary: "{{ $labels.instance }}: recent-rejection ring is compacting {{ $value | humanize }}× per minute"
+          description: |
+            qsdm_attest_rejection_persist_compactions_total has
+            been incrementing at >5/min sustained for 30m on
+            {{ $labels.instance }}. Each compaction means the
+            on-disk JSONL log crossed its soft-cap and was
+            rewritten — at the default softCap=1024 this implies
+            ~85 rejections/s sustained, ~10× a typical baseline.
+            Triage:
+              - Confirm the rejection volume is real, not a
+                metric leak: rate(qsdm_attestation_rejected_total[5m]).
+              - Identify the dominant rejection kind / miner:
+                topk(5, rate(qsdm_attestation_rejected_total{kind!=""}[5m]))
+              - Inspect recent records for a hostile pattern:
+                GET /api/v1/attest/recent-rejections?limit=50
+              - If a miner is spamming, consider tightening the
+                §4.6 cap (operator policy) or applying a P2P
+                rate-limit at the libp2p gate.
+            The qsdm_attest_rejection_persist_records_on_disk
+            gauge will hover near softCap during the spike;
+            after the spike subsides it should drift down on
+            the next compaction with no operator action.

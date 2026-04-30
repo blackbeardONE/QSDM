@@ -149,6 +149,24 @@ func TestDashboardIntegration(t *testing.T) {
 		if !strings.Contains(string(body), "/api/attest/rejections") {
 			t.Error("JavaScript file missing /api/attest/rejections fetch target")
 		}
+		// The persistence-lifecycle counters (added 2026-04-30:
+		// errors / compactions / records-on-disk) must all be
+		// rendered by the tile. The buildPersistCell helper is
+		// the only call site for these labels — its absence
+		// means the dashboard rolled back to the
+		// errors-only flavour and operators lose the compaction
+		// signal.
+		for _, label := range []string{
+			`'persist errors'`,
+			`'compactions'`,
+			`'records on disk'`,
+			`metrics.persist_compactions_total`,
+			`metrics.persist_records_on_disk`,
+		} {
+			if !strings.Contains(string(body), label) {
+				t.Errorf("JavaScript missing persistence-lifecycle label/field %q", label)
+			}
+		}
 	})
 
 	// Test 5: 404 for invalid paths

@@ -238,11 +238,14 @@ func TestRecentRejectsMetricsAdapter_IsRegistered(t *testing.T) {
 func TestRecentRejectsMetricsAdapter_ImplementsInterface(t *testing.T) {
 	var _ recentrejects.MetricsRecorder = recentRejectsMetricsAdapter{}
 	// New surface (2026-04-29): persist-error reporting is
-	// optional. The adapter must satisfy both interfaces —
-	// the Store probes via type assertion, so a method
+	// optional. The adapter must satisfy all four interfaces —
+	// the FilePersister probes via type assertion, so a method
 	// drop here would silently break alerting without
 	// failing the build. Compile-time assertion catches it.
 	var _ recentrejects.PersistErrorRecorder = recentRejectsMetricsAdapter{}
+	// Compaction observability (2026-04-30):
+	var _ recentrejects.PersistCompactionRecorder = recentRejectsMetricsAdapter{}
+	var _ recentrejects.PersistRecordsRecorder = recentRejectsMetricsAdapter{}
 }
 
 // TestRecordRecentRejectPersistError_IncrementsCounter locks
@@ -417,5 +420,128 @@ func TestRecentRejectMetricsSnapshot_ReflectsCounters(t *testing.T) {
 	}
 	if snap.PersistErrorsTotal != 2 {
 		t.Errorf("PersistErrorsTotal=%d, want 2", snap.PersistErrorsTotal)
+	}
+}
+
+// ----- Compaction observability surface --------------------
+//
+// The four tests below pin the new (2026-04-30) compaction-
+// observability counters: the counter must increment on every
+// call to RecordRecentRejectPersistCompaction, the gauge must
+// reflect the latest call to SetRecentRejectPersistRecordsOnDisk,
+// the snapshot must surface both, and the adapter must route
+// both end-to-end via type assertion when invoked through the
+// FilePersister hot path.
+
+// TestRecordRecentRejectPersistCompaction_Increments locks the
+// counter contract: each invocation increments by exactly one,
+// and the recordsAfter argument is intentionally ignored at the
+// counter level (it lives in the gauge, not the counter).
+func TestRecordRecentRejectPersistCompaction_Increments(t *testing.T) {
+	t.Cleanup(ResetRecentRejectMetricsForTest)
+	ResetRecentRejectMetricsForTest()
+
+	if got := RecentRejectPersistCompactionsForTest(); got != 0 {
+		t.Fatalf("baseline counter: got %d, want 0", got)
+	}
+
+	RecordRecentRejectPersistCompaction(0)
+	RecordRecentRejectPersistCompaction(1024)
+	RecordRecentRejectPersistCompaction(512)
+	RecordRecentRejectPersistCompaction(0)
+
+	if got := RecentRejectPersistCompactionsForTest(); got != 4 {
+		t.Errorf("counter after 4 compactions: got %d, want 4", got)
+	}
+}
+
+// TestSetRecentRejectPersistRecordsOnDisk_Stores locks the
+// gauge contract: SetRecentRejectPersistRecordsOnDisk overwrites
+// the stored value (it's a gauge, not a counter), the value is
+// retrievable via the test accessor, and zero is a valid input
+// (the gauge can drop after a manual file truncation in
+// production, although that is not currently a code path).
+func TestSetRecentRejectPersistRecordsOnDisk_Stores(t *testing.T) {
+	t.Cleanup(ResetRecentRejectMetricsForTest)
+	ResetRecentRejectMetricsForTest()
+
+	if got := RecentRejectPersistRecordsOnDiskForTest(); got != 0 {
+		t.Fatalf("baseline gauge: got %d, want 0", got)
+	}
+
+	SetRecentRejectPersistRecordsOnDisk(7)
+	if got := RecentRejectPersistRecordsOnDiskForTest(); got != 7 {
+		t.Errorf("after Set(7): got %d, want 7", got)
+	}
+
+	SetRecentRejectPersistRecordsOnDisk(1024)
+	if got := RecentRejectPersistRecordsOnDiskForTest(); got != 1024 {
+		t.Errorf("after Set(1024): got %d, want 1024 (gauge must overwrite, not accumulate)", got)
+	}
+
+	SetRecentRejectPersistRecordsOnDisk(0)
+	if got := RecentRejectPersistRecordsOnDiskForTest(); got != 0 {
+		t.Errorf("after Set(0): got %d, want 0 (gauge must accept zero)", got)
+	}
+}
+
+// TestRecentRejectMetricsSnapshot_IncludesCompactionAndOnDisk
+// pins the wire contract for the dashboard tile: the snapshot
+// must surface both new fields with their current values. A
+// future refactor that drops PersistCompactionsTotal /
+// PersistRecordsOnDisk from the JSON shape would silently break
+// the operator dashboard's compaction-rate cell.
+func TestRecentRejectMetricsSnapshot_IncludesCompactionAndOnDisk(t *testing.T) {
+	t.Cleanup(ResetRecentRejectMetricsForTest)
+	ResetRecentRejectMetricsForTest()
+
+	RecordRecentRejectPersistCompaction(512)
+	RecordRecentRejectPersistCompaction(512)
+	RecordRecentRejectPersistCompaction(512)
+	SetRecentRejectPersistRecordsOnDisk(847)
+
+	snap := RecentRejectMetricsSnapshot()
+
+	if snap.PersistCompactionsTotal != 3 {
+		t.Errorf("PersistCompactionsTotal=%d, want 3", snap.PersistCompactionsTotal)
+	}
+	if snap.PersistRecordsOnDisk != 847 {
+		t.Errorf("PersistRecordsOnDisk=%d, want 847", snap.PersistRecordsOnDisk)
+	}
+	// The pre-existing fields must still surface unchanged
+	// — this catches a regression where the new fields'
+	// addition broke the snapshot's per-field row population.
+	if len(snap.Fields) != 3 {
+		t.Errorf("len(Fields)=%d, want 3 (regression in pre-existing surface)", len(snap.Fields))
+	}
+}
+
+// TestRecentRejectsMetricsAdapter_CompactionAndRecordsRoute
+// drives the dependency-inversion chain end-to-end for the
+// new hooks: install the production adapter via the
+// recentrejects setter, fire the hook by hand (we'd need a
+// real FilePersister to drive it via the natural path, but
+// that lives in pkg/mining/attest/recentrejects' own test
+// binary — here we verify the adapter's RecordPersistCompaction
+// and SetPersistRecordsOnDisk methods route to the package-
+// level functions).
+func TestRecentRejectsMetricsAdapter_CompactionAndRecordsRoute(t *testing.T) {
+	t.Cleanup(func() {
+		recentrejects.SetMetricsRecorder(recentRejectsMetricsAdapter{})
+		ResetRecentRejectMetricsForTest()
+	})
+	ResetRecentRejectMetricsForTest()
+	recentrejects.SetMetricsRecorder(recentRejectsMetricsAdapter{})
+
+	a := recentRejectsMetricsAdapter{}
+	a.RecordPersistCompaction(256)
+	a.RecordPersistCompaction(512)
+	a.SetPersistRecordsOnDisk(999)
+
+	if got := RecentRejectPersistCompactionsForTest(); got != 2 {
+		t.Errorf("compactions counter via adapter: got %d, want 2", got)
+	}
+	if got := RecentRejectPersistRecordsOnDiskForTest(); got != 999 {
+		t.Errorf("records-on-disk gauge via adapter: got %d, want 999", got)
 	}
 }

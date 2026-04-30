@@ -22,11 +22,25 @@ import (
 )
 
 // captureRecorder is a fake MetricsRecorder that records
-// every ObserveField invocation in arrival order. Safe for
+// every ObserveField invocation in arrival order, plus the
+// three optional persistence-related surfaces
+// (PersistErrorRecorder / PersistCompactionRecorder /
+// PersistRecordsRecorder) so persistence_test.go can drive
+// the same fake without duplicating the helper. Safe for
 // concurrent use so the concurrency test can drive it.
 type captureRecorder struct {
 	mu    sync.Mutex
 	calls []captureCall
+
+	// Optional-surface state. nil-safe — tests that don't
+	// touch these stay green; the recorder satisfies all
+	// four interfaces unconditionally so a future code
+	// change that flips one Persister hook to required
+	// surfaces here as a behavioural regression rather
+	// than a build error.
+	persistErrors []error
+	compactions   []int
+	recordsOnDisk []uint64
 }
 
 type captureCall struct {
@@ -41,12 +55,43 @@ func (c *captureRecorder) ObserveField(field string, runes int, truncated bool) 
 	c.calls = append(c.calls, captureCall{Field: field, Runes: runes, Truncated: truncated})
 }
 
+func (c *captureRecorder) RecordPersistError(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.persistErrors = append(c.persistErrors, err)
+}
+
+func (c *captureRecorder) RecordPersistCompaction(recordsAfter int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.compactions = append(c.compactions, recordsAfter)
+}
+
+func (c *captureRecorder) SetPersistRecordsOnDisk(n uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.recordsOnDisk = append(c.recordsOnDisk, n)
+}
+
 func (c *captureRecorder) snapshot() []captureCall {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	out := make([]captureCall, len(c.calls))
 	copy(out, c.calls)
 	return out
+}
+
+// persistSnapshot returns a copy of the persistence-hook
+// trails so persistence_test.go can assert against them
+// without holding c.mu — the slices are guaranteed stable
+// after the function returns even if the recorder is still
+// being driven concurrently.
+func (c *captureRecorder) persistSnapshot() (compactions []int, recordsOnDisk []uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	cc := append([]int(nil), c.compactions...)
+	rr := append([]uint64(nil), c.recordsOnDisk...)
+	return cc, rr
 }
 
 // withCaptureRecorder installs a fresh captureRecorder for

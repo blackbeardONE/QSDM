@@ -18,16 +18,26 @@ func init() {
 	recentrejects.SetMetricsRecorder(recentRejectsMetricsAdapter{})
 }
 
-// recentRejectsMetricsAdapter implements both
-// recentrejects.MetricsRecorder and the optional
-// recentrejects.PersistErrorRecorder by forwarding to the
-// package-level Record* functions in recentrejects_metrics.go.
+// recentRejectsMetricsAdapter implements
+// recentrejects.MetricsRecorder plus three optional
+// extension surfaces by forwarding to the package-level
+// Record*/Set* functions in recentrejects_metrics.go.
 //
-// PersistErrorRecorder is the optional extension surface the
-// Store probes via type-assertion; implementing it here lets
-// the recentrejects ring's filesystem failures surface as
-// qsdm_attest_rejection_persist_errors_total without us
-// breaking the original ObserveField-only interface.
+// All three optional surfaces are probed by the
+// recentrejects package via type-assertion at runtime; the
+// adapter satisfying them all lets the production scrape
+// expose the full persistence lifecycle:
+//
+//   - PersistErrorRecorder       → persist_errors_total
+//   - PersistCompactionRecorder  → persist_compactions_total
+//   - PersistRecordsRecorder     → persist_records_on_disk (gauge)
+//
+// A future refactor that drops one of the methods
+// silently breaks the relevant counter without a build
+// failure (interface satisfaction is by structural match);
+// the compile-time assertions in
+// recentrejects_metrics_test.go ship-stop on any such
+// regression.
 type recentRejectsMetricsAdapter struct{}
 
 func (recentRejectsMetricsAdapter) ObserveField(field string, runes int, truncated bool) {
@@ -36,4 +46,12 @@ func (recentRejectsMetricsAdapter) ObserveField(field string, runes int, truncat
 
 func (recentRejectsMetricsAdapter) RecordPersistError(err error) {
 	RecordRecentRejectPersistError(err)
+}
+
+func (recentRejectsMetricsAdapter) RecordPersistCompaction(recordsAfter int) {
+	RecordRecentRejectPersistCompaction(recordsAfter)
+}
+
+func (recentRejectsMetricsAdapter) SetPersistRecordsOnDisk(n uint64) {
+	SetRecentRejectPersistRecordsOnDisk(n)
 }
