@@ -82,6 +82,7 @@ func buildRig(t *testing.T, aliceCELL float64) *rig {
 		api.SetEnrollmentMempool(nil)
 		api.SetSlashMempool(nil)
 		api.SetSlashReceiptStore(nil)
+		api.SetSlashReceiptLister(nil)
 		api.SetRecentRejectionLister(nil)
 		mining.SetRejectionRecorder(nil)
 	})
@@ -731,5 +732,69 @@ func TestWire_EnrollmentQuery_NotConfiguredReturns503(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("status: got %d, want 503; body=%s",
 			rec.Code, rec.Body.String())
+	}
+}
+
+// TestWire_SlashReceiptLister_Installed asserts that
+// v2wiring.Wire() registers the slash-receipt LIST adapter
+// (alongside the lookup adapter that earlier tests cover).
+// Without this, the dashboard tile at /api/mining/slash-receipts
+// would silently fall through to the "feature unavailable"
+// branch even though the v2 store IS wired — a regression
+// that would not surface in any existing test.
+//
+// Strategy: submit a slash against a non-enrolled node. The
+// applier rejects on node_not_enrolled and publishes the
+// receipt — gives us a cheap route to a populated list
+// without setting up a forged-attestation witness.
+func TestWire_SlashReceiptLister_Installed(t *testing.T) {
+	r := buildRig(t, 20)
+
+	if err := r.pool.Add(slashTx(t, tAlice, "tx-list-1", 0)); err != nil {
+		t.Fatalf("slash Add: %v", err)
+	}
+	// ProduceBlock returns "all transactions failed state
+	// application" — expected, since the slash rejects at
+	// lookup. The publisher fires from inside ApplySlashTx
+	// BEFORE the error returns, so the receipt is in the
+	// store regardless. Mirrors the pattern in
+	// TestWire_SlashReceiptEndpoint_RoundTrip above.
+	_, _ = r.producer.ProduceBlock()
+
+	lister := api.CurrentSlashReceiptLister()
+	if lister == nil {
+		t.Fatal("api.CurrentSlashReceiptLister() = nil after Wire(); SetSlashReceiptLister was not called by v2wiring")
+	}
+
+	page := lister.List(api.SlashReceiptListOptions{Limit: 10})
+	if len(page.Records) == 0 {
+		t.Fatalf("lister returned 0 records after produce; expected at least 1 (rejected slash)")
+	}
+	// Newest-first ordering means the just-published rejection
+	// is at index 0. Field-by-field round-trip is covered by
+	// the chain-side tests; here we only assert the ADAPTER
+	// did not silently drop fields.
+	got := page.Records[0]
+	if got.TxID != "tx-list-1" {
+		t.Errorf("Records[0].TxID = %q, want tx-list-1", got.TxID)
+	}
+	if got.Outcome != chain.SlashOutcomeRejected {
+		t.Errorf("Records[0].Outcome = %q, want %q (admission expected to reject — tNodeID is not enrolled)",
+			got.Outcome, chain.SlashOutcomeRejected)
+	}
+}
+
+// TestWire_SlashReceiptLister_NotConfiguredReturns_Nil mirrors
+// the 503-equivalent contract for the lister: a node booted
+// WITHOUT v2wiring.Wire() has no lister installed, and
+// CurrentSlashReceiptLister() must return nil so the
+// dashboard renders "feature unavailable" rather than a
+// blank tile.
+func TestWire_SlashReceiptLister_NotConfiguredReturns_Nil(t *testing.T) {
+	api.SetSlashReceiptLister(nil)
+	t.Cleanup(func() { api.SetSlashReceiptLister(nil) })
+
+	if got := api.CurrentSlashReceiptLister(); got != nil {
+		t.Errorf("CurrentSlashReceiptLister() = %v, want nil with no Wire()", got)
 	}
 }

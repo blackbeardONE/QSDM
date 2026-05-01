@@ -532,6 +532,282 @@ function updateAttestRejections() {
         });
 }
 
+// =============================================================================
+// Slashing-pipeline tile (2026-05-01)
+// =============================================================================
+//
+// Sibling of the attestation-rejections tile. Backed by
+// /api/mining/slash-receipts (handleSlashReceipts in
+// internal/dashboard/slashing.go) which combines the most
+// recent slash receipts with a snapshot of the qsdm_slash_*
+// counters in one envelope.
+//
+// State + control wiring follows the same idiom as
+// attestRejectionsState: dropdowns drive a filtered fetch,
+// pause toggle gates the polling loop, CSV export is
+// derived client-side from the last fetched page.
+const slashReceiptsState = {
+    outcome: '',
+    evidenceKind: '',
+    windowSec: 0,
+    paused: false,
+    lastRecords: [],
+};
+
+function updateSlashReceiptsExport() {
+    const link = document.getElementById('slash-receipts-export');
+    if (!link) return;
+    const records = slashReceiptsState.lastRecords || [];
+    if (records.length === 0) {
+        link.style.opacity = '0.4';
+        link.style.pointerEvents = 'none';
+        link.removeAttribute('href');
+        return;
+    }
+    link.style.opacity = '1';
+    link.style.pointerEvents = '';
+    const headers = ['recorded_at', 'tx_id', 'outcome', 'height', 'evidence_kind',
+        'slasher', 'node_id', 'slashed_dust', 'rewarded_dust', 'burned_dust',
+        'auto_revoked', 'reject_reason', 'error'];
+    const escape = (v) => {
+        const s = (v == null) ? '' : String(v);
+        return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const rows = records.map(r => [
+        r.recorded_at, r.tx_id, r.outcome, r.height, r.evidence_kind,
+        r.slasher, r.node_id, r.slashed_dust, r.rewarded_dust, r.burned_dust,
+        r.auto_revoked, r.reject_reason, r.error,
+    ].map(escape).join(','));
+    const csv = headers.join(',') + '\n' + rows.join('\n') + '\n';
+    link.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+}
+
+function renderSlashReceiptsTopOffenders(records) {
+    const wrap = document.getElementById('slash-receipts-top-offenders');
+    const list = document.getElementById('slash-receipts-top-offenders-list');
+    if (!wrap || !list) return;
+    const tally = new Map();
+    records.forEach(r => {
+        const id = r.node_id || '';
+        if (!id) return;
+        tally.set(id, (tally.get(id) || 0) + 1);
+    });
+    if (tally.size === 0) {
+        wrap.style.display = 'none';
+        return;
+    }
+    const sorted = Array.from(tally.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3);
+    list.innerHTML = '';
+    sorted.forEach(([nodeId, count]) => {
+        const li = document.createElement('li');
+        const short = nodeId.length > 24 ? nodeId.slice(0, 24) + '…' : nodeId;
+        li.textContent = short + '  ×' + count;
+        li.title = nodeId;
+        list.appendChild(li);
+    });
+    wrap.style.display = '';
+}
+
+function initSlashReceiptsControls() {
+    const outcomeSel = document.getElementById('slash-receipts-filter-outcome');
+    if (outcomeSel) {
+        outcomeSel.addEventListener('change', () => {
+            slashReceiptsState.outcome = outcomeSel.value || '';
+            updateSlashReceipts();
+        });
+    }
+    const kindSel = document.getElementById('slash-receipts-filter-kind');
+    if (kindSel) {
+        kindSel.addEventListener('change', () => {
+            slashReceiptsState.evidenceKind = kindSel.value || '';
+            updateSlashReceipts();
+        });
+    }
+    const winSel = document.getElementById('slash-receipts-filter-window');
+    if (winSel) {
+        winSel.addEventListener('change', () => {
+            const sec = parseInt(winSel.value, 10);
+            slashReceiptsState.windowSec = (isNaN(sec) || sec <= 0) ? 0 : sec;
+            updateSlashReceipts();
+        });
+    }
+    const pauseBtn = document.getElementById('slash-receipts-pause');
+    if (pauseBtn) {
+        pauseBtn.addEventListener('click', () => {
+            slashReceiptsState.paused = !slashReceiptsState.paused;
+            pauseBtn.textContent = slashReceiptsState.paused ? '▶ resume polling' : '⏸ pause polling';
+            pauseBtn.style.background = slashReceiptsState.paused ? '#3a1a1a' : '#1a3a5a';
+            pauseBtn.style.color = slashReceiptsState.paused ? '#ff7b7b' : '#7bd3ff';
+            if (!slashReceiptsState.paused) {
+                updateSlashReceipts();
+            }
+        });
+    }
+}
+
+function updateSlashReceipts() {
+    const params = new URLSearchParams({ limit: '50' });
+    if (slashReceiptsState.outcome) {
+        params.set('outcome', slashReceiptsState.outcome);
+    }
+    if (slashReceiptsState.evidenceKind) {
+        params.set('evidence_kind', slashReceiptsState.evidenceKind);
+    }
+    if (slashReceiptsState.windowSec > 0) {
+        const since = Math.floor(Date.now() / 1000) - slashReceiptsState.windowSec;
+        params.set('since', String(since));
+    }
+    fetch('/api/mining/slash-receipts?' + params.toString(), dashFetchOpts)
+        .then(response => response.json())
+        .then(data => {
+            const statusEl = document.getElementById('slash-receipts-status');
+            const countersEl = document.getElementById('slash-receipts-counters');
+            const table = document.getElementById('slash-receipts-table');
+            const tbody = document.getElementById('slash-receipts-tbody');
+            if (!statusEl || !countersEl || !table || !tbody) return;
+
+            const records = data.records || [];
+            if (data.available !== true) {
+                statusEl.innerHTML = '<strong>Slash receipt store not wired.</strong> v1-only deployment, or v2 chain not active. Counter row below remains accurate (Prometheus counters are independent of the receipt store); the receipt table stays empty until <code>v2wiring.Wire</code> attaches the chain.';
+            } else {
+                const total = data.total_matches || 0;
+                statusEl.textContent = 'Store wired. ' + total + ' receipt(s) in this page · showing newest first.';
+            }
+
+            // Counter strip: applied + rejected + drained-dust + reward/burn + auto-revoke.
+            // Dense layout — slashing has more series than the rejection ring,
+            // so each cell is summarised rather than per-label.
+            const m = data.metrics || {};
+            countersEl.innerHTML = '';
+            const buildCell = (label, valueText, valueColor, detailText) => {
+                const cell = document.createElement('div');
+                cell.style.cssText = 'background:#0f1419;border:1px solid #2a3441;border-radius:4px;padding:10px;';
+                const head = document.createElement('div');
+                head.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;';
+                const labelEl = document.createElement('span');
+                labelEl.className = 'metric-label';
+                labelEl.textContent = label;
+                const valueEl = document.createElement('span');
+                valueEl.className = 'metric-value';
+                valueEl.style.cssText = 'font-size:14px;color:' + valueColor + ';';
+                valueEl.textContent = valueText;
+                head.appendChild(labelEl);
+                head.appendChild(valueEl);
+                const detail = document.createElement('div');
+                detail.style.cssText = 'font-size:11px;color:#a0a0a0;margin-top:6px;';
+                detail.textContent = detailText;
+                cell.appendChild(head);
+                cell.appendChild(detail);
+                return cell;
+            };
+            const sumLabeled = (rows) =>
+                (rows || []).reduce((acc, r) => acc + (r.value || 0), 0);
+
+            const totalApplied = sumLabeled(m.applied_by_kind);
+            const breakdownApplied = (m.applied_by_kind || [])
+                .filter(r => r.value > 0)
+                .map(r => r.label + ':' + r.value)
+                .join(' · ') || 'no slashes yet';
+            countersEl.appendChild(buildCell(
+                'applied',
+                String(totalApplied),
+                totalApplied > 0 ? '#f5a623' : '#7ed321',
+                breakdownApplied
+            ));
+
+            const totalDrained = sumLabeled(m.drained_dust_by_kind);
+            const drainedCELL = (totalDrained / 1e9).toFixed(3);
+            countersEl.appendChild(buildCell(
+                'drained dust',
+                drainedCELL + ' CELL',
+                totalDrained > 0 ? '#f5a623' : '#7ed321',
+                String(totalDrained) + ' dust drained from offenders since boot'
+            ));
+
+            const rewarded = m.rewarded_dust_total || 0;
+            const burned = m.burned_dust_total || 0;
+            countersEl.appendChild(buildCell(
+                'reward / burn',
+                (rewarded / 1e9).toFixed(3) + ' / ' + (burned / 1e9).toFixed(3) + ' CELL',
+                '#7bd3ff',
+                'paid to slashers / burned (sum = drained)'
+            ));
+
+            const totalRejected = sumLabeled(m.rejected_by_reason);
+            const rejBreakdown = (m.rejected_by_reason || [])
+                .filter(r => r.value > 0)
+                .map(r => r.label + ':' + r.value)
+                .join(' · ') || 'no rejections';
+            countersEl.appendChild(buildCell(
+                'rejected',
+                String(totalRejected),
+                totalRejected > 0 ? '#d0021b' : '#7ed321',
+                rejBreakdown
+            ));
+
+            const totalRevoked = sumLabeled(m.auto_revoked_by_reason);
+            const revBreakdown = (m.auto_revoked_by_reason || [])
+                .filter(r => r.value > 0)
+                .map(r => r.label + ':' + r.value)
+                .join(' · ') || 'none';
+            countersEl.appendChild(buildCell(
+                'auto-revoked',
+                String(totalRevoked),
+                totalRevoked > 0 ? '#f5a623' : '#7ed321',
+                revBreakdown
+            ));
+
+            slashReceiptsState.lastRecords = records;
+            updateSlashReceiptsExport();
+            renderSlashReceiptsTopOffenders(records);
+
+            tbody.innerHTML = '';
+            if (records.length === 0) {
+                table.style.display = 'none';
+                return;
+            }
+            table.style.display = 'table';
+            records.forEach(rec => {
+                const tr = document.createElement('tr');
+                const nodeFull = rec.node_id || '';
+                const nodeShort = nodeFull
+                    ? (nodeFull.length > 18 ? nodeFull.slice(0, 18) + '…' : nodeFull)
+                    : '—';
+                const dustCELL = rec.slashed_dust
+                    ? (rec.slashed_dust / 1e9).toFixed(3) + ' CELL'
+                    : '—';
+                const detail = rec.outcome === 'rejected'
+                    ? (rec.reject_reason || rec.error || '—')
+                    : (rec.auto_revoked ? 'auto-revoked' : 'applied');
+                const cells = [
+                    { text: rec.recorded_at || '—' },
+                    { text: rec.tx_id || '—', cls: 'ngc-hash' },
+                    { text: rec.outcome || '—' },
+                    { text: rec.evidence_kind || '—' },
+                    { text: nodeShort, title: nodeFull, cls: 'ngc-hash' },
+                    { text: dustCELL },
+                    { text: detail },
+                ];
+                cells.forEach(c => {
+                    const td = document.createElement('td');
+                    td.textContent = c.text;
+                    if (c.cls) td.className = c.cls;
+                    if (c.title) td.title = c.title;
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+        })
+        .catch(() => {
+            const statusEl = document.getElementById('slash-receipts-status');
+            if (statusEl) {
+                statusEl.textContent = 'Could not load slash receipts (check dashboard auth / network).';
+            }
+        });
+}
+
 function updateHealth() {
     fetch('/api/health', dashFetchOpts)
         .then(response => response.json())
@@ -1108,9 +1384,13 @@ function startPolling() {
         // Respect the operator's pause toggle on the
         // attestation-rejections tile — the other tiles keep
         // ticking, but the rejection table stays still while
-        // the operator reads a row.
+        // the operator reads a row. Same idiom for the
+        // sibling slash-receipts tile.
         if (!attestRejectionsState.paused) {
             updateAttestRejections();
+        }
+        if (!slashReceiptsState.paused) {
+            updateSlashReceipts();
         }
         updateContracts();
         updateBridge();
@@ -1126,6 +1406,8 @@ function startUpdates() {
     updateNGCProofs();
     initAttestRejectionsControls();
     updateAttestRejections();
+    initSlashReceiptsControls();
+    updateSlashReceipts();
     updateContracts();
     updateBridge();
     loadContractTemplates();

@@ -106,6 +106,147 @@ func currentSlashReceiptStore() SlashReceiptStore {
 	return slashReceiptHolder.store
 }
 
+// -----------------------------------------------------------------------------
+// SlashReceiptLister — paginated read for the dashboard tile (2026-05-01)
+// -----------------------------------------------------------------------------
+//
+// Why a SEPARATE interface rather than extending SlashReceiptStore:
+//
+//   - SlashReceiptStore's Lookup contract is older + stable, used
+//     by the v1 GET /api/v1/mining/slash/{tx_id} endpoint. Adding
+//     a List method to the same interface would force every
+//     existing fake (incl. the test doubles in this package) to
+//     implement it, even though the v1 endpoint never calls it.
+//   - The split mirrors the recentrejects precedent
+//     (handlers_recent_rejections.go's RecentRejectionLister vs.
+//     the never-grown-into-a-store equivalent). Future
+//     dashboards / CLIs can depend on the narrower interface
+//     they actually need.
+//   - The two interfaces are typically satisfied by ONE concrete
+//     adapter (the chain receipt store), so production wiring
+//     pays no extra surface area.
+
+// SlashReceiptListOptions echoes the filter knobs supported by
+// chain.SlashReceiptStore.List but in api-package types so
+// dependent handlers (dashboard tile, future v1 list endpoint)
+// don't have to import chain. The dashboard handler validates
+// Outcome/EvidenceKind against fixed allowlists BEFORE
+// forwarding so a typo'd filter returns 400 rather than
+// silently passing through as "no filter".
+type SlashReceiptListOptions struct {
+	Limit        int
+	Outcome      string
+	EvidenceKind string
+	SinceUnixSec int64
+}
+
+// SlashReceiptListPage is one page of List() results with
+// page-level metadata. Records are NEWEST-FIRST (the natural
+// order for an operator tile). TotalMatches counts the
+// matched records visible to this page (i.e. page count + 1
+// when HasMore is true; not a global count of every match in
+// the whole store, which would require an unbounded scan).
+type SlashReceiptListPage struct {
+	Records      []SlashReceiptView
+	TotalMatches uint64
+	HasMore      bool
+}
+
+// SlashReceiptLister is the narrow read-only interface the
+// dashboard tile depends on. Concrete implementation is the
+// thin adapter installed by internal/v2wiring; pkg/api stays
+// free of pkg/chain imports.
+type SlashReceiptLister interface {
+	List(opts SlashReceiptListOptions) SlashReceiptListPage
+}
+
+type slashReceiptListerHolder struct {
+	mu     sync.RWMutex
+	lister SlashReceiptLister
+}
+
+var slashReceiptListerHldr = &slashReceiptListerHolder{}
+
+// SetSlashReceiptLister installs (or removes, when
+// lister==nil) the process-wide lister. internal/v2wiring
+// calls this at boot with a thin adapter over the bounded
+// chain.SlashReceiptStore; tests can call it with a fake.
+//
+// Distinct from SetSlashReceiptStore (Lookup-only): operators
+// running a v1-only deployment can wire neither, and both
+// the dashboard tile and the GET /api/v1/mining/slash/{tx_id}
+// endpoint will return 503 with a descriptive message rather
+// than fabricating empty / not-found responses.
+func SetSlashReceiptLister(lister SlashReceiptLister) {
+	slashReceiptListerHldr.mu.Lock()
+	defer slashReceiptListerHldr.mu.Unlock()
+	slashReceiptListerHldr.lister = lister
+}
+
+func currentSlashReceiptLister() SlashReceiptLister {
+	slashReceiptListerHldr.mu.RLock()
+	defer slashReceiptListerHldr.mu.RUnlock()
+	return slashReceiptListerHldr.lister
+}
+
+// CurrentSlashReceiptLister returns the process-wide lister,
+// or nil if SetSlashReceiptLister has not been called
+// (i.e. v1-only deployment, or the v2 chain store has not
+// been wired by internal/v2wiring at boot). Exported because
+// the dashboard package needs to detect "feature unavailable"
+// before rendering its tile.
+//
+// NOTE: package-level access pattern matches
+// CurrentRecentRejectionLister exactly, including the nil-
+// return-on-missing semantics. Callers should print
+// "feature not configured" to the operator rather than
+// fabricating empty list output.
+func CurrentSlashReceiptLister() SlashReceiptLister {
+	return currentSlashReceiptLister()
+}
+
+// IsKnownSlashOutcome reports whether s is one of the closed
+// outcome values the dashboard / list filter allow. Used by
+// the dashboard handler to validate query parameters. Mirrors
+// IsKnownRecentRejectionKind's role for the rejection ring.
+func IsKnownSlashOutcome(s string) bool {
+	switch s {
+	case "applied", "rejected":
+		return true
+	default:
+		return false
+	}
+}
+
+// KnownSlashOutcomes returns the closed-set outcome strings in
+// stable order. Used by the dashboard tile to populate the
+// outcome-filter dropdown without duplicating the allowlist.
+func KnownSlashOutcomes() []string {
+	return []string{"applied", "rejected"}
+}
+
+// IsKnownSlashEvidenceKind reports whether s is one of the
+// closed evidence-kind strings the dashboard accepts. Mirrors
+// the slashing.EvidenceKind constants but kept here so
+// pkg/api does not import pkg/mining/slashing for a plain
+// string-set check (the chain store already converts
+// EvidenceKind to string at insertion).
+func IsKnownSlashEvidenceKind(s string) bool {
+	switch s {
+	case "forged-attestation", "double-mining", "freshness-cheat":
+		return true
+	default:
+		return false
+	}
+}
+
+// KnownSlashEvidenceKinds returns the closed-set kind strings
+// in stable order. Used by the dashboard tile's evidence-kind
+// dropdown.
+func KnownSlashEvidenceKinds() []string {
+	return []string{"forged-attestation", "double-mining", "freshness-cheat"}
+}
+
 // SlashReceiptHandler serves
 // GET /api/v1/mining/slash/{tx_id}.
 //

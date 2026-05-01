@@ -349,6 +349,12 @@ groups:
           severity: warning
           subsystem: v2-mining
         annotations:
+          # Mode A in SLASHING_INCIDENT.md — confirm + ratify
+          # path. Almost always benign (chain caught a cheater),
+          # but the runbook walks the receipt verification so
+          # the on-call doesn't reflexively page protocol-eng
+          # for a single legitimate slash.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#31-mode-a--qsdmminingslashapplied"
           summary: "{{ $labels.instance }}: slash transaction applied"
           description: |
             At least one qsdm_slash_applied_total has incremented
@@ -375,6 +381,12 @@ groups:
           severity: critical
           subsystem: v2-mining
         annotations:
+          # Mode B — the dangerous one. Could be a real cheat
+          # ring (ratify) OR a verifier regression (rollback).
+          # Runbook §3.2 walks the distinguishing query AND
+          # the verifier-rollback procedure. Wrong call here
+          # loses real money for honest miners; do not skip it.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#32-mode-b--qsdmminingslasheddustburst"
           summary: "{{ $labels.instance }}: >50 CELL slashed in 15m"
           description: |
             qsdm_slash_drained_dust_total has increased by
@@ -409,6 +421,11 @@ groups:
           severity: warning
           subsystem: v2-mining
         annotations:
+          # Mode C — usually benign in isolation but a leading
+          # indicator of an attacker probing the admission gate
+          # before the real slash burst. Runbook §3.3 has the
+          # per-reason triage table.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#33-mode-c--qsdmminingslashrejectionsburst"
           summary: "{{ $labels.instance }}: ≥10 slash transactions rejected in 10m"
           description: |
             qsdm_slash_rejected_total grew by {{ $value }} in 10m.
@@ -440,6 +457,13 @@ groups:
           severity: critical
           subsystem: v2-mining
         annotations:
+          # Mode D — almost always escalates Mode B but worth
+          # paging on its own because it shows the slasher is
+          # pushing miners off the active set, not just
+          # debiting bonds. Runbook §3.4 covers the slash-
+          # arithmetic-bug and stake-stripping-attack
+          # branches that AREN'T just B in disguise.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#34-mode-d--qsdmminingautorevokeburst"
           summary: "{{ $labels.instance }}: ≥3 records auto-revoked by SlashApplier in 15m"
           description: |
             SlashApplier.RevokeIfUnderBonded fired for {{ $value }}

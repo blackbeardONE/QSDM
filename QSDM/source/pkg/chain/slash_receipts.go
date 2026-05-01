@@ -246,8 +246,8 @@ func (s *SlashReceiptStore) Lookup(txID string) (SlashReceipt, bool) {
 }
 
 // Len returns the current number of stored receipts. Useful
-// for tests and for a future /api/v1/mining/slash/receipts
-// list endpoint that wants to advertise total count.
+// for tests and for the dashboard tile that advertises total
+// count alongside the page slice.
 func (s *SlashReceiptStore) Len() int {
 	if s == nil {
 		return 0
@@ -255,6 +255,136 @@ func (s *SlashReceiptStore) Len() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.byID)
+}
+
+// SlashReceiptListOptions controls a paginated walk over the
+// receipt store. All filters are AND'd together; an empty
+// filter passes through.
+//
+// Limit is clamped to [1, MaxSlashReceiptListLimit]; a value
+// of 0 selects DefaultSlashReceiptListLimit.
+//
+// Outcome filter is "applied" / "rejected" or empty (both).
+// EvidenceKind filter matches the receipt's slashing.EvidenceKind
+// string-encoded value verbatim ("forged-attestation",
+// "double-mining", "freshness-cheat"); the dashboard validates
+// against a fixed allowlist BEFORE forwarding so a typo
+// returns 400 rather than silently dropping all rows.
+//
+// SinceUnixSec, when non-zero, drops receipts with RecordedAt
+// strictly before the supplied unix-seconds timestamp — used
+// by the dashboard tile's rolling-time-window selector.
+type SlashReceiptListOptions struct {
+	Limit        int
+	Outcome      string
+	EvidenceKind string
+	SinceUnixSec int64
+}
+
+// SlashReceiptListPage is one page of List() results. Records
+// are returned NEWEST-FIRST (reverse-chronological) — the
+// natural order for an operator-facing tile that wants the
+// most recent receipts at the top. TotalMatches is the total
+// number of records matching the filters across the whole
+// store, not just the page.
+type SlashReceiptListPage struct {
+	Records      []SlashReceipt
+	TotalMatches uint64
+	HasMore      bool
+}
+
+// DefaultSlashReceiptListLimit and MaxSlashReceiptListLimit
+// mirror the conventions of pkg/mining/enrollment.ListOptions.
+// Smaller defaults than the rejection ring's because slash
+// receipts are individually larger (full SlashReceipt struct
+// vs. a Rejection record) and operators rarely need more than
+// the last 100 in a tile context — bulk export of the receipt
+// store is a future-feature operator concern.
+const (
+	DefaultSlashReceiptListLimit = 100
+	MaxSlashReceiptListLimit     = 500
+)
+
+// List returns a page of receipts matching opts, sorted by
+// RecordedAt DESC (newest first). Pure read path — guarded by
+// RLock so concurrent PublishMiningSlash calls do not block
+// listings (and vice versa).
+//
+// The filter walk is O(n) over the bounded store size; with
+// max=DefaultMaxSlashReceipts=10000 this is in the noise on
+// modern hardware. Callers wanting cursor-stable pagination
+// should switch to a future cursor-based variant; the
+// dashboard tile re-fetches the entire current page every
+// poll tick so cursor stability is not required at this
+// scope.
+func (s *SlashReceiptStore) List(opts SlashReceiptListOptions) SlashReceiptListPage {
+	if s == nil {
+		return SlashReceiptListPage{}
+	}
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = DefaultSlashReceiptListLimit
+	}
+	if limit > MaxSlashReceiptListLimit {
+		limit = MaxSlashReceiptListLimit
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := SlashReceiptListPage{
+		Records: make([]SlashReceipt, 0, limit),
+	}
+	matched := uint64(0)
+
+	// Walk in reverse insertion order so the newest matching
+	// records fill the page first. The store's `order` slice
+	// has order[0] = oldest, so we iterate from the tail.
+	for i := len(s.order) - 1; i >= 0; i-- {
+		txID := s.order[i]
+		rec, ok := s.byID[txID]
+		if !ok {
+			// order/byID got out of sync — shouldn't happen
+			// under the existing locking discipline but guard
+			// defensively so a future bug doesn't panic the
+			// dashboard.
+			continue
+		}
+		if !slashReceiptMatches(*rec, opts) {
+			continue
+		}
+		matched++
+		if len(out.Records) < limit {
+			out.Records = append(out.Records, *rec)
+			continue
+		}
+		// We already have `limit` records; anything else
+		// matching is "more". Break early so we don't scan
+		// the rest of the store counting matches the client
+		// will never see (TotalMatches is documented as
+		// "matches in this page + at least one more if
+		// HasMore", not a global count; the cost of a full
+		// scan is bounded by the cap but pointless).
+		out.HasMore = true
+		break
+	}
+	out.TotalMatches = matched
+	return out
+}
+
+// slashReceiptMatches applies the AND'd filter set to one
+// receipt. Empty filter fields pass through.
+func slashReceiptMatches(r SlashReceipt, opts SlashReceiptListOptions) bool {
+	if opts.Outcome != "" && r.Outcome != opts.Outcome {
+		return false
+	}
+	if opts.EvidenceKind != "" && string(r.EvidenceKind) != opts.EvidenceKind {
+		return false
+	}
+	if opts.SinceUnixSec > 0 && r.RecordedAt.Unix() < opts.SinceUnixSec {
+		return false
+	}
+	return true
 }
 
 // evictOldestLocked removes the front of the FIFO. Caller

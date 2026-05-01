@@ -75,6 +75,7 @@ func buildGovRig(t *testing.T, seedCELL float64, storePath string) *govRig {
 		api.SetEnrollmentMempool(nil)
 		api.SetSlashMempool(nil)
 		api.SetSlashReceiptStore(nil)
+		api.SetSlashReceiptLister(nil)
 		api.SetGovernanceProvider(nil)
 		api.SetRecentRejectionLister(nil)
 		mining.SetRejectionRecorder(nil)

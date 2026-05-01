@@ -592,7 +592,16 @@ func Wire(cfg Config) (*Wired, error) {
 	api.SetSlashMempool(cfg.Pool)
 	api.SetEnrollmentRegistry(state)
 	api.SetEnrollmentLister(state)
-	api.SetSlashReceiptStore(slashReceiptAdapter{store: slashReceipts})
+	// Both interfaces are satisfied by the same chain-side
+	// store, so a single adapter instance lights up the
+	// lookup-by-tx-id endpoint AND the dashboard list tile.
+	// Wiring is paired so a v1-only deployment that doesn't
+	// run Wire() leaves both interfaces nil; the dashboard
+	// tile + GET /{tx_id} handler render "feature
+	// unavailable" consistently.
+	slashAdapter := slashReceiptAdapter{store: slashReceipts}
+	api.SetSlashReceiptStore(slashAdapter)
+	api.SetSlashReceiptLister(slashAdapter)
 	api.SetRecentRejectionLister(recentRejectionListerAdapter{store: rejectionStore})
 
 	// Governance read API. Provider snapshots the live
@@ -674,16 +683,21 @@ func Wire(cfg Config) (*Wired, error) {
 
 // slashReceiptAdapter bridges the chain-side
 // *SlashReceiptStore (which knows about chain.SlashReceipt) to
-// the api-side SlashReceiptStore interface (which knows about
-// api.SlashReceiptView). The adapter is the right size to
-// keep pkg/api decoupled from pkg/chain — without it, pkg/api
-// would have to import pkg/chain for the receipt struct, which
-// would re-introduce the import-cycle pressure that
-// dependency-inverted MetricsRecorder + EnrollmentRegistry
-// were designed to avoid.
+// the api-side SlashReceiptStore + SlashReceiptLister
+// interfaces (which know about api.SlashReceiptView). The
+// adapter is the right size to keep pkg/api decoupled from
+// pkg/chain — without it, pkg/api would have to import
+// pkg/chain for the receipt struct, which would re-introduce
+// the import-cycle pressure that dependency-inverted
+// MetricsRecorder + EnrollmentRegistry were designed to avoid.
 //
-// One-method interface; lookup is the only call the handler
-// makes.
+// One value satisfies BOTH interfaces (Lookup for the v1
+// /api/v1/mining/slash/{tx_id} endpoint, List for the
+// dashboard tile at /api/mining/slash-receipts) so the boot
+// path can install one adapter for both call sites — the
+// usual "lookup + list as separate Go interfaces, one
+// concrete impl" pattern that pkg/api inherited from
+// recentrejects.
 type slashReceiptAdapter struct {
 	store *chain.SlashReceiptStore
 }
@@ -699,6 +713,47 @@ func (a slashReceiptAdapter) Lookup(txID string) (api.SlashReceiptView, bool) {
 	if !ok {
 		return api.SlashReceiptView{}, false
 	}
+	return slashReceiptToView(rec), true
+}
+
+// List implements api.SlashReceiptLister by forwarding to the
+// chain receipt store and translating each chain receipt into
+// the api wire view. Returns an empty page on a nil store
+// (matches the "feature unavailable" path the dashboard
+// handler interprets gracefully).
+//
+// Filter knobs are pass-through; field-set validation
+// (allowlist for Outcome / EvidenceKind) is the dashboard
+// handler's responsibility — the adapter trusts its callers
+// because the api package already enforces the same set
+// before invoking the lister.
+func (a slashReceiptAdapter) List(opts api.SlashReceiptListOptions) api.SlashReceiptListPage {
+	if a.store == nil {
+		return api.SlashReceiptListPage{}
+	}
+	page := a.store.List(chain.SlashReceiptListOptions{
+		Limit:        opts.Limit,
+		Outcome:      opts.Outcome,
+		EvidenceKind: opts.EvidenceKind,
+		SinceUnixSec: opts.SinceUnixSec,
+	})
+	views := make([]api.SlashReceiptView, len(page.Records))
+	for i, rec := range page.Records {
+		views[i] = slashReceiptToView(rec)
+	}
+	return api.SlashReceiptListPage{
+		Records:      views,
+		TotalMatches: page.TotalMatches,
+		HasMore:      page.HasMore,
+	}
+}
+
+// slashReceiptToView is the chain.SlashReceipt → api.SlashReceiptView
+// converter shared by Lookup and List. Centralising the
+// field-by-field copy here keeps the two adapter methods in
+// sync — adding a field to api.SlashReceiptView only needs to
+// be wired here once, not at both call sites.
+func slashReceiptToView(rec chain.SlashReceipt) api.SlashReceiptView {
 	return api.SlashReceiptView{
 		TxID:                    rec.TxID,
 		Outcome:                 rec.Outcome,
@@ -714,7 +769,7 @@ func (a slashReceiptAdapter) Lookup(txID string) (api.SlashReceiptView, bool) {
 		AutoRevokeRemainingDust: rec.AutoRevokeRemainingDust,
 		RejectReason:            rec.RejectReason,
 		Err:                     rec.Err,
-	}, true
+	}
 }
 
 // miningRejectionRecorderAdapter wraps a recentrejects.Store so

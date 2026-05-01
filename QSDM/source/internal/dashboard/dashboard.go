@@ -247,6 +247,14 @@ func (d *Dashboard) buildHandler() (http.Handler, error) {
 	// envelope. See attest_rejections.go for the wire shape.
 	mux.HandleFunc("/api/attest/rejections", d.requireAuth(d.handleAttestRejections))
 
+	// v2-mining slashing tile. Combines the most recent slash
+	// receipts (chain.SlashReceiptStore) with the qsdm_slash_*
+	// counter snapshot in one envelope. Companion runbook lives
+	// at QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md (linked
+	// from the QSDMMining* alert rules' runbook_url annotation).
+	// See slashing.go for the wire shape.
+	mux.HandleFunc("/api/mining/slash-receipts", d.requireAuth(d.handleSlashReceipts))
+
 	// mTLS certificate management (admin only — certs are security-sensitive)
 	mux.HandleFunc("/api/mtls/generate", d.requireAdmin(d.handleMTLSGenerate))
 	mux.HandleFunc("/api/mtls/status", d.requireAuth(d.handleMTLSStatus))

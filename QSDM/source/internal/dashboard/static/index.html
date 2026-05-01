@@ -555,6 +555,84 @@
                     Bounded ring buffer of the most recent rejection records plus per-field rune-truncation counters, the full persistence lifecycle (errors / compactions / on-disk record count / hard-cap drops), and the per-miner rate-limit drop counter. Truncation is applied <strong>before</strong> records reach the ring, so high <em>truncated</em> counts indicate possible hostile input — not data loss in the buffer itself. A sustained <em>compactions</em> rate means a miner is filling the ring faster than the soft-cap can absorb; non-zero <em>hard-cap drops</em> means a flood is outrunning even the rewrite cycle and the on-disk durability ceiling has refused records (in-memory ring is unaffected); non-zero <em>rate-limit drops</em> means a single miner has exhausted their per-miner token bucket and records from that source are being shed at ring entry (neither ring nor persister touched). Use the kind / window filters above to narrow the table, and pause polling while reading. See <code>qsdm_attest_rejection_field_*</code>, <code>qsdm_attest_rejection_persist_errors_total</code>, <code>qsdm_attest_rejection_persist_compactions_total</code>, <code>qsdm_attest_rejection_persist_records_on_disk</code>, <code>qsdm_attest_rejection_persist_hardcap_drops_total</code>, and <code>qsdm_attest_rejection_per_miner_rate_limited_total</code> for Prometheus equivalents.
                 </p>
             </div>
+
+            <!-- v2-mining slashing pipeline tile.
+                 Backed by /api/mining/slash-receipts (handleSlashReceipts);
+                 see internal/dashboard/slashing.go for the wire shape and
+                 QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md for the
+                 incident-response runbook (linked from the runbook_url
+                 annotation on every QSDMMining* alert). -->
+            <div class="card ngc-panel" style="grid-column: 1 / -1;">
+                <h2>⚖️ Slashing Pipeline</h2>
+
+                <!-- Triage control bar: outcome / evidence_kind / time
+                     window / pause / CSV export. Pause toggle lets
+                     operators read a row mid-incident without the
+                     2 s tick scrolling them out from under. -->
+                <div id="slash-receipts-controls" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; padding: 10px; background: #0f1419; border: 1px solid #2a3441; border-radius: 4px;">
+                    <label style="font-size: 12px; color: #a0a0a0; display: flex; align-items: center; gap: 6px;">
+                        Outcome:
+                        <select id="slash-receipts-filter-outcome" style="padding: 4px 8px; background: #1a1f2e; color: #e6e6e6; border: 1px solid #2a3441; border-radius: 4px; font-size: 12px;">
+                            <option value="">all</option>
+                            <option value="applied">applied</option>
+                            <option value="rejected">rejected</option>
+                        </select>
+                    </label>
+                    <label style="font-size: 12px; color: #a0a0a0; display: flex; align-items: center; gap: 6px;">
+                        Kind:
+                        <select id="slash-receipts-filter-kind" style="padding: 4px 8px; background: #1a1f2e; color: #e6e6e6; border: 1px solid #2a3441; border-radius: 4px; font-size: 12px;">
+                            <option value="">all</option>
+                            <option value="forged-attestation">forged-attestation</option>
+                            <option value="double-mining">double-mining</option>
+                            <option value="freshness-cheat">freshness-cheat</option>
+                        </select>
+                    </label>
+                    <label style="font-size: 12px; color: #a0a0a0; display: flex; align-items: center; gap: 6px;">
+                        Window:
+                        <select id="slash-receipts-filter-window" style="padding: 4px 8px; background: #1a1f2e; color: #e6e6e6; border: 1px solid #2a3441; border-radius: 4px; font-size: 12px;">
+                            <option value="0">since boot</option>
+                            <option value="86400">last 24h</option>
+                            <option value="21600">last 6h</option>
+                            <option value="3600">last 1h</option>
+                            <option value="900">last 15m</option>
+                        </select>
+                    </label>
+                    <button id="slash-receipts-pause" type="button" style="padding: 4px 12px; background: #1a3a5a; color: #7bd3ff; border: 1px solid #2a3441; border-radius: 4px; cursor: pointer; font-size: 12px;">⏸ pause polling</button>
+                    <a id="slash-receipts-export" href="#" download="slash-receipts.csv" style="margin-left: auto; padding: 4px 12px; background: #1a3a1a; color: #7ed321; border: 1px solid #2a3441; border-radius: 4px; text-decoration: none; font-size: 12px;">⬇ export CSV</a>
+                </div>
+
+                <div id="slash-receipts-status" class="ngc-status">Loading…</div>
+                <div id="slash-receipts-counters" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 12px 0;"></div>
+
+                <!-- Top-3 most-slashed NodeIDs in the current page.
+                     Surface during a coordinated cheat-ring incident
+                     so the on-call doesn't have to scroll the whole
+                     table to spot the offender. -->
+                <div id="slash-receipts-top-offenders" style="display: none; margin: 8px 0; padding: 8px; background: #0f1419; border-left: 3px solid #f5a623; border-radius: 4px; font-size: 12px;">
+                    <div style="color: #f5a623; margin-bottom: 4px; font-weight: bold;">Top slashed NodeIDs (this page):</div>
+                    <ol id="slash-receipts-top-offenders-list" style="padding-left: 20px; margin: 0; font-family: ui-monospace, monospace;"></ol>
+                </div>
+
+                <div class="ngc-table-wrap">
+                    <table class="ngc-table" id="slash-receipts-table" style="display: none;">
+                        <thead>
+                            <tr>
+                                <th>Recorded</th>
+                                <th>Tx ID</th>
+                                <th>Outcome</th>
+                                <th>Evidence</th>
+                                <th>Node</th>
+                                <th>Slashed</th>
+                                <th>Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody id="slash-receipts-tbody"></tbody>
+                    </table>
+                </div>
+                <p style="color: #888; font-size: 11px; margin-top: 10px; line-height: 1.45;">
+                    Bounded in-memory store of the most recent v2-mining slash receipts (applied + rejected outcomes), plus a snapshot of the <code>qsdm_slash_*</code> counters. The <em>applied</em> cell tallies successful slashes by EvidenceKind; <em>drained dust</em> shows the cumulative stake forfeited (CELL = dust ÷ 1e9); <em>reward / burn</em> splits the drained total into slasher reward vs. burned residue; <em>rejected</em> is per-reason; <em>auto-revoked</em> tallies post-slash record revocations from <code>SlashApplier.RevokeIfUnderBonded</code>. A sustained non-zero <em>rejected</em> rate signals a buggy slasher tool or an upstream probe; a <em>drained dust</em> spike of multiple CELL in a few minutes indicates a coordinated cheat ring or a verifier regression — see the <strong>SLASHING_INCIDENT.md</strong> runbook (linked from every <code>QSDMMining*</code> alert's <code>runbook_url</code>) for the triage flow.
+                </p>
+            </div>
         </div>
 
         <!-- mTLS Certificate Management -->

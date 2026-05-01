@@ -63,6 +63,7 @@ func buildTCRig(t *testing.T, seed *uint64, storePath string) *tcRig {
 		api.SetEnrollmentMempool(nil)
 		api.SetSlashMempool(nil)
 		api.SetSlashReceiptStore(nil)
+		api.SetSlashReceiptLister(nil)
 		api.SetGovernanceProvider(nil)
 		api.SetRecentRejectionLister(nil)
 		mining.SetRejectionRecorder(nil)

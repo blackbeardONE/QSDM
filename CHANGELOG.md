@@ -14,6 +14,90 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Slashing operator surface — dashboard tile + runbook + alert annotations (2026-05-01).**
+  Closed the operator-experience gap in the v2-mining slashing pipeline:
+  `qsdm_slash_*` Prometheus counters and the four `QSDMMiningSlash*` /
+  `QSDMMiningAutoRevokeBurst` alerts have been in place since the slashing
+  rollout, but a paged on-call had no in-product surface to triage from
+  (only the per-tx `GET /api/v1/mining/slash/{tx_id}` lookup, which
+  required already knowing the tx_id from somewhere) and no consolidated
+  runbook to walk the verifier-regression-vs-real-cheat-ring decision.
+  This commit fills both gaps, mirroring the pattern the rejection-ring
+  vertical established (commit `691b348` for hard-cap, `aa17da6` for the
+  per-miner limiter) so operators see the same shape of triage tile +
+  runbook reference for both subsystems.
+  - **`chain.SlashReceiptStore.List(opts)`** — new paginated walk over
+    the bounded receipt store, returning records NEWEST-FIRST. Filters:
+    `Outcome` (applied/rejected), `EvidenceKind` (forged-attestation /
+    double-mining / freshness-cheat), `SinceUnixSec` (rolling time
+    window). Limit clamping mirrors the rejection-ring lister
+    (`DefaultSlashReceiptListLimit=100`, `MaxSlashReceiptListLimit=500`);
+    9 new behavioural tests cover ordering, filter ANDing, eviction
+    interaction, nil-store safety, and limit-clamp semantics.
+  - **`api.SlashReceiptLister`** — new interface companion to the
+    existing Lookup-only `SlashReceiptStore`. The split mirrors the
+    `RecentRejectionLister` precedent: lookup is the older + stable
+    interface used by the v1 GET endpoint; list is the read shape the
+    dashboard needs. One `slashReceiptAdapter` in `internal/v2wiring`
+    satisfies both, so production wiring pays no extra surface area.
+    `IsKnownSlashOutcome` / `IsKnownSlashEvidenceKind` +
+    `KnownSlashOutcomes` / `KnownSlashEvidenceKinds` published as the
+    closed-enum allowlists the dashboard handler validates against —
+    typo'd filters return 400 rather than silently passing through.
+  - **`monitoring.SlashMetricsView` + `SlashMetricsSnapshot()`** — JSON-
+    friendly aggregate view of every `qsdm_slash_*` series in one
+    coherent struct (`AppliedByKind`, `DrainedDustByKind`,
+    `RewardedDustTotal`, `BurnedDustTotal`, `RejectedByReason`,
+    `AutoRevokedByReason`). The dashboard tile reads through this so
+    the operator sees a single coherent counter strip without
+    chained Prometheus queries. Atomic per-counter, not transactional
+    across the snapshot — documented eventual-consistency window is
+    well below operator reaction time at 2 s polling.
+  - **`/api/mining/slash-receipts` dashboard endpoint** —
+    `internal/dashboard/slashing.go::handleSlashReceipts`. Combines the
+    most recent N receipts with the `SlashMetricsSnapshot()` in one
+    envelope. Closed-enum filter validation (400 on bogus `outcome` /
+    `evidence_kind`); `Filters` block omitted on a bare call (matches
+    the attest-rejections tile's wire-payload tightness); graceful
+    "Available=false with metrics still surfaced" when no v2 store is
+    wired (v1-only deployment). 8 new handler tests cover method
+    gating, limit clamping, no-lister-wired path, happy path, all
+    three filter-validation 400 branches, and full filter-passthrough
+    + filter-echo.
+  - **⚖️ Slashing Pipeline dashboard tile** — full sibling of the
+    🛑 Attestation Rejections tile. Counter strip (applied / drained
+    dust / reward+burn / rejected / auto-revoked, each with per-label
+    breakdown). Triage controls: outcome filter, evidence_kind filter,
+    rolling-time-window selector, pause-polling toggle, CSV export,
+    Top-3 most-slashed NodeIDs strip. Polling integrates with the
+    existing 2 s tick + WebSocket fallback, gated on
+    `slashReceiptsState.paused` so a mid-incident operator can read
+    a row without it scrolling out from under them. Integration
+    test asserts every tile container ID, every JS module-level
+    symbol, every counter-strip label, and the pause-aware poll gate.
+  - **`SLASHING_INCIDENT.md` operator runbook** — new file at
+    `QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md`. Four-mode
+    triage flow:
+    - Mode A (`QSDMMiningSlashApplied`) — confirm + ratify (the happy
+      path: chain caught a cheater).
+    - Mode B (`QSDMMiningSlashedDustBurst`) — the dangerous one. §3.2
+      walks the cheat-ring-vs-verifier-regression decision query, the
+      mitigation policy for each branch, AND the verifier-rollback
+      procedure (with off-chain rebate guidance for slashed-honest
+      miners since the chain has no un-slash transaction).
+    - Mode C (`QSDMMiningSlashRejectionsBurst`) — per-reason triage
+      table (`verifier_failed`, `evidence_replayed`, etc.) with
+      action class for each.
+    - Mode D (`QSDMMiningAutoRevokeBurst`) — usually escalates Mode B,
+      but the runbook surfaces the slash-arithmetic-bug and stake-
+      stripping-attack branches that aren't just B in disguise.
+  - **`runbook_url` on every `QSDMMining*` slash alert.** All four
+    alerts in `qsdm-v2-mining-slashing` (SlashApplied, SlashedDustBurst,
+    SlashRejectionsBurst, AutoRevokeBurst) now carry deep links to the
+    matching `SLASHING_INCIDENT.md` section anchor. Total alerts
+    carrying `runbook_url` rose from 3 → 7 with this commit; the
+    rejection-flood three remain unchanged.
+
 - **Per-miner rate-limit at recent-rejection ring entry (2026-05-01).**
   Closed a known signal-to-noise gap in the `pkg/mining/attest/recentrejects`
   ring: prior to this change, a single miner submitting forged proofs at

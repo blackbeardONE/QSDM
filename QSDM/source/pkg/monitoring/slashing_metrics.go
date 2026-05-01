@@ -236,6 +236,83 @@ func SlashAutoRevokedLabeled() []struct {
 	}
 }
 
+// ---------- snapshot view (for the dashboard tile) ----------
+
+// SlashLabeledCount is one row of the labeled counter view.
+// Field tag uses the generic "label" name because the same
+// shape is reused for both kind-labeled (applied / drained)
+// and reason-labeled (rejected / auto_revoked) series.
+// Frontends render the same column header regardless of
+// which series they're displaying.
+type SlashLabeledCount struct {
+	Label string `json:"label"`
+	Value uint64 `json:"value"`
+}
+
+// SlashMetricsView is the all-counters snapshot of the
+// slashing-pipeline telemetry surface. Returned by
+// SlashMetricsSnapshot for in-process consumers (the
+// operator dashboard's slashing-receipts tile, primarily)
+// that want a coherent view without scraping Prometheus.
+//
+// This is a snapshot — every field is captured atomically
+// per-counter but not as a transaction across the whole
+// struct. Two near-simultaneous slash applies can interleave
+// such that AppliedByKind reflects an apply that has not yet
+// been added to RewardedDustTotal; callers reading this
+// snapshot alongside the receipt list together MUST treat
+// the count and the list as independent samples (typical
+// dashboard polling cadence is 2s, well below the operator's
+// reaction time, so the eventual consistency window is not
+// observable in practice).
+//
+// JSON tags below are the public dashboard contract. Adding
+// a new field is non-breaking; renaming any of them is.
+type SlashMetricsView struct {
+	AppliedByKind       []SlashLabeledCount `json:"applied_by_kind"`
+	DrainedDustByKind   []SlashLabeledCount `json:"drained_dust_by_kind"`
+	RewardedDustTotal   uint64              `json:"rewarded_dust_total"`
+	BurnedDustTotal     uint64              `json:"burned_dust_total"`
+	RejectedByReason    []SlashLabeledCount `json:"rejected_by_reason"`
+	AutoRevokedByReason []SlashLabeledCount `json:"auto_revoked_by_reason"`
+}
+
+// SlashMetricsSnapshot returns the current slashing-pipeline
+// counters in a single coherent view. Safe for concurrent
+// callers; all reads are atomic.Load.
+//
+// Label order in each labeled slice matches the corresponding
+// *Labeled() function so the dashboard tile can render
+// kind/reason rows in a stable order across polls.
+func SlashMetricsSnapshot() SlashMetricsView {
+	applied := SlashAppliedLabeled()
+	drained := SlashDrainedDustLabeled()
+	rejected := SlashRejectedLabeled()
+	revoked := SlashAutoRevokedLabeled()
+
+	out := SlashMetricsView{
+		AppliedByKind:       make([]SlashLabeledCount, 0, len(applied)),
+		DrainedDustByKind:   make([]SlashLabeledCount, 0, len(drained)),
+		RewardedDustTotal:   slashRewardedDust.Load(),
+		BurnedDustTotal:     slashBurnedDust.Load(),
+		RejectedByReason:    make([]SlashLabeledCount, 0, len(rejected)),
+		AutoRevokedByReason: make([]SlashLabeledCount, 0, len(revoked)),
+	}
+	for _, p := range applied {
+		out.AppliedByKind = append(out.AppliedByKind, SlashLabeledCount{Label: p.Kind, Value: p.Val})
+	}
+	for _, p := range drained {
+		out.DrainedDustByKind = append(out.DrainedDustByKind, SlashLabeledCount{Label: p.Kind, Value: p.Val})
+	}
+	for _, p := range rejected {
+		out.RejectedByReason = append(out.RejectedByReason, SlashLabeledCount{Label: p.Reason, Value: p.Val})
+	}
+	for _, p := range revoked {
+		out.AutoRevokedByReason = append(out.AutoRevokedByReason, SlashLabeledCount{Label: p.Reason, Value: p.Val})
+	}
+	return out
+}
+
 // ---------- test reset ----------
 
 // ResetSlashMetricsForTest clears every counter in this file.

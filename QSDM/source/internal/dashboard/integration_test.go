@@ -74,6 +74,29 @@ func TestDashboardIntegration(t *testing.T) {
 				t.Errorf("Dashboard HTML missing attestation-rejections tile element %s", id)
 			}
 		}
+		// Slashing pipeline tile container IDs (2026-05-01).
+		// Mirror the attest-rejections guards: any missing ID
+		// silently no-ops the slashing poller. The tile is the
+		// operator surface that pairs with the SLASHING_INCIDENT
+		// runbook + the runbook_url annotations on the four
+		// QSDMMining* alerts.
+		for _, id := range []string{
+			`id="slash-receipts-status"`,
+			`id="slash-receipts-counters"`,
+			`id="slash-receipts-table"`,
+			`id="slash-receipts-tbody"`,
+			`id="slash-receipts-filter-outcome"`,
+			`id="slash-receipts-filter-kind"`,
+			`id="slash-receipts-filter-window"`,
+			`id="slash-receipts-pause"`,
+			`id="slash-receipts-export"`,
+			`id="slash-receipts-top-offenders"`,
+			`id="slash-receipts-top-offenders-list"`,
+		} {
+			if !strings.Contains(body, id) {
+				t.Errorf("Dashboard HTML missing slashing-pipeline tile element %s", id)
+			}
+		}
 	})
 
 	// Test 2: Metrics API
@@ -205,6 +228,53 @@ func TestDashboardIntegration(t *testing.T) {
 		// without it scrolling out from under them.
 		if !strings.Contains(string(body), "if (!attestRejectionsState.paused)") {
 			t.Error("polling loop missing pause-aware gate around updateAttestRejections")
+		}
+
+		// Slashing tile poller: same guards as the
+		// attest-rejections tile. The slashing poller is the
+		// operator surface paired with the SLASHING_INCIDENT
+		// runbook; if a refactor unhooks any of these symbols
+		// the dashboard goes blind to slash receipts even
+		// though the chain-side store keeps recording them.
+		if !strings.Contains(string(body), "function updateSlashReceipts") {
+			t.Error("JavaScript file missing updateSlashReceipts function")
+		}
+		if !strings.Contains(string(body), "/api/mining/slash-receipts") {
+			t.Error("JavaScript file missing /api/mining/slash-receipts fetch target")
+		}
+		for _, sym := range []string{
+			"slashReceiptsState",
+			"initSlashReceiptsControls",
+			"updateSlashReceiptsExport",
+			"renderSlashReceiptsTopOffenders",
+		} {
+			if !strings.Contains(string(body), sym) {
+				t.Errorf("JavaScript missing slashing-tile symbol %q", sym)
+			}
+		}
+		// Counter-strip labels & JSON field references — these
+		// are the dashboard contract with monitoring.SlashMetricsView.
+		// Renaming a field would break this test before it hits
+		// production.
+		for _, label := range []string{
+			`'applied'`,
+			`'drained dust'`,
+			`'reward / burn'`,
+			`'rejected'`,
+			`'auto-revoked'`,
+			"applied_by_kind",
+			"drained_dust_by_kind",
+			"rewarded_dust_total",
+			"burned_dust_total",
+			"rejected_by_reason",
+			"auto_revoked_by_reason",
+		} {
+			if !strings.Contains(string(body), label) {
+				t.Errorf("JavaScript missing slashing counter-strip label/field %q", label)
+			}
+		}
+		if !strings.Contains(string(body), "if (!slashReceiptsState.paused)") {
+			t.Error("polling loop missing pause-aware gate around updateSlashReceipts")
 		}
 	})
 
