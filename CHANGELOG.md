@@ -14,6 +14,69 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Trust / NGC-attestation operator runbook + alert annotations (2026-05-01).**
+  Closed the largest remaining cluster of uncovered alerts —
+  the six in `qsdm-trust-transparency` +
+  `qsdm-trust-redundancy`. The trust pipeline is the chain's
+  reward gate (enrollment determines who CAN earn; trust
+  determines whose attestations COUNT toward earning), and a
+  misread on these alerts is the difference between fair
+  payouts and silently under-paying the honest fleet. The
+  user-facing consequence — qsdm.tech transparency badge
+  flipping red — is community-visible within minutes; five
+  of the six alerts fire **before** the badge flips, giving
+  the operator a pre-warning window the runbook is
+  designed to use.
+  - **`docs/runbooks/TRUST_INCIDENT.md`** — six-mode runbook
+    (A through F) covering every alert in the trust groups.
+    Mode F (`QSDMTrustAggregatorStale`, severity:
+    **critical**) gets dedicated coverage of the
+    Refresh()-goroutine wedge — when the aggregator stops
+    ticking, the Trust Panel and qsdm.tech badge can stay
+    green while the pipeline is silently broken (false-
+    confidence — the worst class of trust failure). Runbook
+    explicitly directs operators to capture
+    `/debug/pprof/goroutine` BEFORE restarting because the
+    wedge is typically reproducible.
+    The §4 cascade map walks the canonical 30–40-minute
+    incident progression (sidecar stops → counter flatlines →
+    NGCServiceStatus flips degraded → newest sample ages out
+    → attested drops below floor) so on-call hit by 4
+    simultaneous alerts identifies them as ONE incident, not
+    four. The §5 cross-mode escalation matrix maps every
+    common multi-fire pattern (A+D+E+C cascade,
+    F+anything-else, all-six) to the most likely root cause.
+    Includes the closed-enum reject-reason → cause table
+    operators rely on for Mode B (`hmac_mismatch` / secret
+    rotation, `invalid_nonce` / clock skew, `unauthorized`
+    / probe), the `LocalDistinctAttestationSource` NodeID-
+    collision branch for Mode C (two sidecars sharing a
+    NodeID dedupe to one source), and the
+    external-CI-mirror cross-check for distinguishing real
+    trust incidents from local Prometheus-target issues
+    (CI green + Mode C internally → suspect the local
+    metric path).
+  - **6 new `runbook_url` annotations** on every alert in the
+    trust groups, deep-linked to the matching mode anchor.
+    Total runbook-coverage tally on the alert file rose from
+    14/38 (37%) to **20/38 (53%)** — over half the alert
+    family now carries deep-linked operator triage docs.
+    The Trust panel widget (`updateTrustPanel()` in
+    `dashboard.js`) and the underlying `TrustMetricsCollector`
+    in `pkg/api/trust_metrics.go` already existed; this is a
+    pure documentation + Prometheus-config commit, leveraging
+    the existing observability surface.
+  - **No code, no tests** — runbook + alert annotations
+    only. Cost ≈ 30% of the enrollment operator-surface
+    commit (`7702ba1`); the panel and collector exist
+    already, so the work was scoped to the runbook + the 6
+    annotations.
+
+  Files touched:
+  - `QSDM/docs/docs/runbooks/TRUST_INCIDENT.md` (new)
+  - `QSDM/deploy/prometheus/alerts_qsdm.example.yml`
+  - `CHANGELOG.md`
+
 - **Mining-liveness runbook + dangling-cross-reference resolution (2026-05-01).**
   Closed the only critical-severity v2-mining alert that was
   paging into a void: `QSDMMiningChainStuck` (severity:

@@ -107,6 +107,15 @@ groups:
         labels:
           severity: warning
         annotations:
+          # Mode A is the entry point of the canonical
+          # trust-degradation cascade — sidecar stops
+          # posting → counter flatlines → service status
+          # degraded → newest sample ages out → attested
+          # drops below floor. The runbook's §4 cascade
+          # map walks the typical 30–40m progression so
+          # an operator hit by 4 alerts at once knows
+          # they're one incident.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#31-mode-a--qsdmtrustnoattestationsaccepted"
           summary: "No accepted NGC proof bundles for 20 minutes"
           description: |
             /api/v1/trust/attestations/summary will report attested=0 until a
@@ -133,6 +142,13 @@ groups:
         labels:
           severity: warning
         annotations:
+          # Mode B's triage is reason-driven: hmac_mismatch
+          # = secret rotation (operationally most common),
+          # invalid_nonce = clock skew or slow network,
+          # unauthorized = third-party probe. The runbook
+          # table maps every closed-enum reason to a
+          # cause and an action.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#32-mode-b--qsdmtrustingestrejectrateelevated"
           summary: "NGC ingest rejections outpacing acceptances"
           description: |
             Break out qsdm_ngc_proof_ingest_rejected_total by reason.
@@ -173,6 +189,14 @@ groups:
         labels:
           severity: warning
         annotations:
+          # Mode C is the internal twin of the external
+          # cmd/trustcheck --min-attested 2 CI probe. The
+          # runbook surfaces the LocalDistinctAttestationSource
+          # NodeID-collision case explicitly — two sidecars
+          # with the same QSDM_NGC_PROOF_NODE_ID dedupe to
+          # one source, which can fire this alert even when
+          # both sidecars are healthy and posting.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#33-mode-c--qsdmtrustattestationsbelowfloor"
           summary: "{{ $labels.instance }}: only {{ $value }} fresh attestation source(s)"
           description: |
             /api/v1/trust/attestations/summary reports attested={{ $value }}
@@ -199,6 +223,15 @@ groups:
         labels:
           severity: warning
         annotations:
+          # Mode D is the leading-edge alert in the
+          # cascade — the aggregator's ngc_service_status
+          # classifier flips before the gauges underneath
+          # do, so this fires while modes C/E are still
+          # quiet. The runbook treats Mode D as a
+          # pre-warning trigger to identify the upstream
+          # cause (Modes A/B) rather than a thing to
+          # mitigate directly.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#34-mode-d--qsdmtrustngcservicedegraded"
           summary: "{{ $labels.instance }}: NGC service status is not 'healthy'"
           description: |
             /api/v1/trust/attestations/summary ngc_service_status is
@@ -223,6 +256,13 @@ groups:
         labels:
           severity: warning
         annotations:
+          # Mode E is the belt-and-braces alert: even if
+          # attested >= 2, a sample older than twice
+          # fresh_within means the source is about to age
+          # out. Threshold is calibrated to fire halfway
+          # through the degradation window so an operator
+          # has 30 minutes to act before Mode C fires.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#35-mode-e--qsdmtrustlastattestedstale"
           summary: "{{ $labels.instance }}: newest attestation is >30m old"
           description: |
             Newest attestation timestamp is {{ $value | humanizeDuration }}
@@ -244,6 +284,17 @@ groups:
         labels:
           severity: critical
         annotations:
+          # Mode F is the only critical-severity alert in
+          # the trust group. The aggregator goroutine is
+          # wedged — Refresh() ticks have stopped, so the
+          # Trust Panel and qsdm.tech badge can stay green
+          # while the pipeline is silently broken (false-
+          # confidence — the worst class of trust failure).
+          # Runbook calls out: capture a goroutine dump
+          # BEFORE restarting (state will be lost on
+          # restart, and the wedge is likely
+          # reproducible).
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#36-mode-f--qsdmtrustaggregatorstale"
           summary: "{{ $labels.instance }}: TrustAggregator Refresh() is stuck"
           description: |
             qsdm_trust_last_checked_seconds has not advanced in >2m
