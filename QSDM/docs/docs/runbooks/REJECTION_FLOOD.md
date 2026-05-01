@@ -334,7 +334,163 @@ auto-resolves. Total operator-time: ~12 minutes.
 
 ---
 
-## 7. Cross-references
+## 7. Mode anchors
+
+The five alerts in the
+`qsdm-v2-attest-recent-rejections` group each have a
+dedicated `runbook_url` deep-link into the section
+below. Sections collect the mode-specific entry
+points so an operator paged on a single alert lands
+on the relevant text rather than scrolling the
+whole runbook.
+
+### 7.1. Mode A — `QSDMAttestRejectionPersistCompactionsHigh`
+
+The soft-cap rewrite loop is keeping up but the rate
+is anomalously high (>5 compactions/min sustained
+for 30m). The validator is healthy; the **volume**
+is the signal. Expect the
+`qsdm_attest_rejection_persist_records_on_disk`
+gauge to hover near `softCap` during the spike.
+
+- **Triage entry point:** §3.1 (confirm flood),
+  §3.2 (dominant kind), §3.3 (offending miner).
+- **Mitigation:** §3.4 — operator policy. Either
+  tighten the §4.6 cap, raise softCap, or apply a
+  P2P / mempool rate-limit on the dominant
+  miner_addr.
+- **Promotion path:** if compactions stay high AND
+  the persister starts dropping records, the
+  incident has promoted to Mode B — switch to §7.2
+  below.
+
+### 7.2. Mode B — `QSDMAttestRejectionPersistHardCapDropping`
+
+The persister is **shedding records** at the
+hard byte cap. The soft-cap rewrite loop is no
+longer freeing enough headroom on each pass; the
+on-disk JSONL log is no longer a complete forensic
+record. Mode B is strictly worse than Mode A.
+
+- **In-memory ring is unaffected.** The dashboard
+  tile and `/api/v1/attest/recent-rejections`
+  continue to surface every record. Only the
+  durable forensic-record persistence is being
+  dropped.
+- **Triage entry point:** §3 — same flow as Mode A,
+  but the `hard-cap drops` cell on the dashboard
+  is red.
+- **Mitigation:** §3.4 row "hard-cap dropping" —
+  raise `cfg.RecentRejectionsMaxBytes` if disk
+  budget allows, OR raise `softCap` so each rewrite
+  trims more, OR apply the libp2p / mempool
+  rate-limit. Pick one based on the dominant
+  source distribution.
+
+### 7.3. Mode C — `QSDMAttestRejectionPerMinerRateLimited`
+
+The per-miner token-bucket limiter
+(`recentrejects.SetRateLimit`, wired via
+`cfg.RecentRejectionsRateLimitPerSec`) is dropping
+records at `Store.Record()` entry. Neither the ring
+nor the persister sees those records — the limiter
+is the **earliest defence** in the stack.
+
+When Mode C fires alone (Modes A and B both flat),
+this is the **cleanest "single bad actor" signal in
+the stack** — the limiter has identified one
+saturating source and is sparing the rest of the
+pipeline.
+
+- **Triage entry point:** §3.3 — the dashboard's
+  "top offenders" strip names the saturating
+  `miner_addr` directly.
+- **Mitigation:**
+  - Limiter doing its job ⇒ apply policy at the
+    libp2p / mempool gate so the offender's traffic
+    drops before it even reaches the limiter.
+  - Limiter rate appears too tight (broad
+    distribution of drops, no obvious top
+    offender) ⇒ relax `cfg.RecentRejectionsRateLimitPerSec`,
+    OR cross-check `qsdm_p2p_peers_connected` for
+    botnet-shaped peer churn.
+
+### 7.4. Mode D — `QSDMAttestRejectionFieldTruncationSustained`
+
+The rejection ring's per-field rune-cap is
+truncating records at >25% of observed rejections
+for 15m. This is **not** a rejection-volume alert
+(Modes A/B/C cover that); it's a rejection-payload-
+shape alert.
+
+The ring's per-field caps are pinned in code
+(`maxDetailRunes=200` / `maxGPUNameRunes=256` /
+`maxCertSubjectRunes=256`) and the truncation
+machinery silently shortens any field that
+overflows. Mode D fires when truncations are no
+longer occasional one-offs — a sustained 25%+ rate
+means something has changed about the rejection
+payload distribution.
+
+#### Triage
+
+```promql
+# Which field is dominant?
+topk(3, rate(qsdm_attest_rejection_field_truncated_total[10m]))
+
+# How close to the cap are observations?
+qsdm_attest_rejection_field_runes_max
+```
+
+| Dominant `field` | Probable cause |
+|---|---|
+| `detail` (cap 200) | A recent verifier release emits longer `RejectError.Detail` strings; OR a miner is intentionally stuffing the proof envelope with oversized payloads to drown debug signal |
+| `gpu_name` (cap 256) | Unlikely to be operator-side — gpu_name is short by NVIDIA convention; sustained truncation here is suspicious. Cross-check Modes B/C in [`ARCH_SPOOF_INCIDENT.md`](ARCH_SPOOF_INCIDENT.md) |
+| `cert_subject` (cap 256) | Most often: multi-byte unicode in CN/SAN of a real NVIDIA cert pushes byte count past rune count. Operationally fine but worth verifying via `qsdm_attest_rejection_field_runes_max` |
+
+#### Mitigation
+
+- **Verifier release skew:** raise the cap in
+  `pkg/mining/attest/recentrejects/recentrejects.go`
+  (one-line change + CHANGELOG entry) and re-roll.
+- **Miner stuffing:** identify the offender via
+  the rejection-ring tile; the dominant `miner_addr`
+  with truncation events is the source. Escalate
+  via the slashing pipeline if sustained from one
+  NodeID.
+- **Multi-byte unicode (cert_subject):** no chain-
+  side action. Document the operator's cert chain
+  for future reference.
+
+### 7.5. Mode E — `QSDMAttestRejectionFieldRunesMaxNearCap`
+
+`qsdm_attest_rejection_field_runes_max` is sitting
+within 10% of the in-store cap for 30m+. **Severity:
+info — should NOT page**; wire to a passive channel
+(chat ping, dashboard cell) so operators see the
+ramp before Mode D paints.
+
+This is the leading-indicator alert — the
+process-lifetime max-runes-observed gauge has
+crossed the 90% threshold for the relevant cap
+(`detail≥180`, `gpu_name≥230`, `cert_subject≥230`).
+
+#### Action
+
+- **No incident.** Mode E is informational; the ring
+  continues to truncate harmlessly.
+- **Operator decision:** if observed proofs are
+  consistently approaching the cap, consider
+  whether the cap should be raised in the
+  recentrejects source. Mode D is the page that
+  fires if you don't act.
+- **Cross-reference Mode D's cause table** for the
+  same `field` label — the leading-indicator and
+  the page share the same root causes.
+
+---
+
+## 8. Cross-references
 
 - Alert source —
   [`QSDM/deploy/prometheus/alerts_qsdm.example.yml`](../../../deploy/prometheus/alerts_qsdm.example.yml)
@@ -354,3 +510,10 @@ auto-resolves. Total operator-time: ~12 minutes.
   [`MINING_PROTOCOL_V2.md`](../MINING_PROTOCOL_V2.md) §5
 - Operator entry point —
   [`OPERATOR_GUIDE.md`](../OPERATOR_GUIDE.md)
+- Companion runbooks:
+  - [`ARCH_SPOOF_INCIDENT.md`](ARCH_SPOOF_INCIDENT.md)
+    — when the rejection-ring volume comes from
+    arch-spoof rejections specifically
+  - [`SLASHING_INCIDENT.md`](SLASHING_INCIDENT.md) —
+    the slash-evidence escalation path for sustained
+    single-miner activity

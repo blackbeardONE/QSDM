@@ -14,6 +14,93 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Small-runbook sweep — quarantine + arch-spoof + rejection-plumbing
+  backfill (2026-05-01).** Closed three small clusters of remaining
+  uncovered alerts in one focused pass: 2 quarantine alerts (a brand-new
+  runbook), 3 arch-spoof alerts (a brand-new runbook), and the 5
+  rejection-plumbing alerts in `qsdm-v2-attest-recent-rejections` (2 new
+  annotations + 3 anchor upgrades on existing root-pointing URLs). Net
+  effect: alert-with-runbook coverage moves from 20/38 (53%) to 27/38
+  (71%), and every cluster the §4.6 rejection-ring touches now has a
+  mode-specific deep-link that lands the on-call operator on the
+  relevant text rather than the runbook's introduction.
+  - **`docs/runbooks/QUARANTINE_INCIDENT.md`** — two-mode runbook
+    covering `QSDMQuarantineAnySubmesh` (per-submesh page, warning) and
+    `QSDMQuarantineMajorityIsolated` (ratio-based escalation,
+    **critical**). Mode A's reject-reason → cause table (invalid_signature
+    / clock_skew / bad_tx_payload / unknown / counter-quiet-but-sticky)
+    walks the operator from "the immune system activated" to the
+    upstream `qsdm_submesh_*_reject_*` counter that named the policy
+    hit. Mode B's "what changed in the last hour" check (binary release
+    / config push / NTP event / key rotation) is the systemic-cause
+    decision tree — the runbook explicitly tells the operator NOT to
+    bulk-clear `RemoveQuarantine` without root cause, because a
+    re-quarantine within 15 min destroys the diagnostic state of which
+    submeshes triggered when.
+  - **`docs/runbooks/ARCH_SPOOF_INCIDENT.md`** — three-mode runbook
+    covering the chain's adversarial-detection signals:
+    `QSDMAttestArchSpoofUnknownArchBurst` (Mode A, typo / probe /
+    release-skew), `QSDMAttestArchSpoofGPUNameMismatch` (Mode B, the
+    canonical economic-cheat — enrolled operator's HMAC bundle has
+    `gpu_name` contradicting `gpu_arch`), and
+    `QSDMAttestArchSpoofCCSubjectMismatch` (Mode C, **critical**, fires
+    on a single increment because the proof has already passed
+    cert-chain pin AND AIK signature — non-zero increment is, by
+    construction, either a fabricated AIK leaf or a real H100-class
+    operator with a stale gpu_arch config). Mode C's decision tree
+    forks on whether the offending Subject CN is consistent with NVIDIA
+    canonical naming, and explicitly blocks unilateral slashing on the
+    cryptographic-anomaly branch — because slashing destroys forensic
+    state and the bundle may need to be preserved untouched as evidence
+    for an external investigation. Mode B hands off to
+    `SLASHING_INCIDENT.md` for sustained single-NodeID activity (the
+    canonical forged-attestation slashing case); Mode B's hardware-swap
+    branch hands off to `ENROLLMENT_INCIDENT.md` for the unenroll →
+    unbond → re-enroll cycle.
+  - **`docs/runbooks/REJECTION_FLOOD.md` extension** — added §7 with
+    five mode-specific anchors so the existing 3 root-pointing
+    `runbook_url` annotations + 2 fresh annotations all deep-link to
+    the relevant text. §7.1 (`QSDMAttestRejectionPersistCompactionsHigh`,
+    Mode A), §7.2 (`QSDMAttestRejectionPersistHardCapDropping`,
+    Mode B), §7.3 (`QSDMAttestRejectionPerMinerRateLimited`, Mode C)
+    are entry-point summaries pointing back to the existing §3 triage
+    walkthrough. §7.4 (`QSDMAttestRejectionFieldTruncationSustained`,
+    Mode D) is a brand-new payload-shape mode covering sustained
+    truncation of `detail` / `gpu_name` / `cert_subject` ring fields —
+    the cause table maps each `field` label to verifier-release skew,
+    adversarial stuffing, or benign multi-byte unicode. §7.5
+    (`QSDMAttestRejectionFieldRunesMaxNearCap`, Mode E) is the
+    severity:info leading-indicator before Mode D paints; the runbook
+    explicitly notes Mode E should NOT page (wire to a passive channel)
+    so operators see the ramp before the truncation-rate alert
+    crosses 25%.
+  - **`deploy/prometheus/alerts_qsdm.example.yml`** — added
+    `runbook_url` to all 7 previously-uncovered alerts in this sweep
+    (`QSDMQuarantineAnySubmesh`, `QSDMQuarantineMajorityIsolated`,
+    `QSDMAttestArchSpoofUnknownArchBurst`,
+    `QSDMAttestArchSpoofGPUNameMismatch`,
+    `QSDMAttestArchSpoofCCSubjectMismatch`,
+    `QSDMAttestRejectionFieldTruncationSustained`,
+    `QSDMAttestRejectionFieldRunesMaxNearCap`) and upgraded 3 existing
+    root-pointing URLs to anchored ones
+    (`QSDMAttestRejectionPersistCompactionsHigh`,
+    `QSDMAttestRejectionPersistHardCapDropping`,
+    `QSDMAttestRejectionPerMinerRateLimited`). Each annotation carries a
+    multi-line operator-comment block immediately before the
+    `runbook_url` summarising the mode-specific signal and the runbook
+    section's role — Alertmanager renders annotation text as paged
+    context, so on-call operators get the "why this is critical" or
+    "why this is informational" framing at page-time without the
+    click-through to the runbook.
+  - **No code changes.** Pure documentation + alert-annotation commit;
+    leverages the existing `pkg/quarantine/metrics.go`,
+    `pkg/monitoring/archcheck_metrics.go`, and
+    `pkg/mining/attest/recentrejects/metrics.go` collectors that
+    already shipped. The remaining 11 uncovered alerts span four
+    smaller clusters (NVIDIA-lock, NGC challenge / proof-ingest, submesh
+    P2P/API policy, governance-authority) and a no-tx alarm — the next
+    runbook sweep can pick the highest-leverage of those.
+
 - **Trust / NGC-attestation operator runbook + alert annotations (2026-05-01).**
   Closed the largest remaining cluster of uncovered alerts —
   the six in `qsdm-trust-transparency` +

@@ -336,6 +336,16 @@ groups:
         labels:
           severity: warning
         annotations:
+          # Mode A is the per-submesh quarantine page —
+          # one or more submeshes have quarantined[k]=true
+          # for 10+ min. Runbook walks the closed-enum
+          # reject-reason → cause table. Auto-recovery is
+          # intentionally OFF in production (human review
+          # is the safer default), so the alert clears
+          # when the operator either fixes the upstream
+          # cause or calls RemoveQuarantine after
+          # confirming the policy hit has stopped.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/QUARANTINE_INCIDENT.md#31-mode-a--qsdmquarantineanysubmesh"
           summary: "{{ $labels.instance }}: {{ $value }} submesh(es) currently quarantined"
           description: |
             The QuarantineManager has {{ $value }} submeshes with
@@ -358,6 +368,19 @@ groups:
         labels:
           severity: critical
         annotations:
+          # Mode B is critical-severity because >50% of
+          # tracked submeshes simultaneously quarantined
+          # is, by construction, NOT a per-submesh
+          # problem — single-rig issues affect one submesh
+          # at a time. The runbook's §3.2 decision tree
+          # walks the "what changed in the last hour"
+          # check (binary release / config push / NTP
+          # event / key rotation) before any
+          # RemoveQuarantine call, because a bulk-clear
+          # without root cause re-fires within 15 min
+          # and loses the diagnostic state of which
+          # submeshes triggered when.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/QUARANTINE_INCIDENT.md#32-mode-b--qsdmquarantinemajorityisolated"
           summary: "{{ $labels.instance }}: majority of tracked submeshes quarantined ({{ $value | humanizePercentage }})"
           description: |
             {{ $value | humanizePercentage }} of the submeshes this
@@ -829,6 +852,17 @@ groups:
           severity: warning
           subsystem: v2-attest
         annotations:
+          # Mode A is the typo / probe / release-skew
+          # signal — the gpu_arch field is outside the
+          # closed-enum allowlist. The runbook's §3.1
+          # source-distribution table maps {single
+          # NodeID, broad NodeIDs, release-correlated}
+          # to {operator-side fix, firewall block, alias
+          # PR}. Mode A almost never escalates to
+          # slashing because the offending field is
+          # simply not in the enum — there's no
+          # economic gain to harvest.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#31-mode-a--qsdmattestarchspoofunknownarchburst"
           summary: "{{ $labels.instance }}: sustained unknown-arch rejections"
           description: |
             qsdm_attest_archspoof_rejected_total{reason="unknown_arch"}
@@ -855,6 +889,22 @@ groups:
           severity: warning
           subsystem: v2-attest
         annotations:
+          # Mode B is the canonical economic-cheat
+          # signal — an enrolled operator's HMAC bundle
+          # has gpu_name contradicting the claimed
+          # gpu_arch (consumer Ada claiming Hopper, etc).
+          # The HMAC binds gpu_name to the bundle, so
+          # this isn't a client bug — it's a deliberate
+          # or config-drift attempt to claim a higher
+          # reward weight. Sustained Mode B from one
+          # NodeID IS the canonical forged-attestation
+          # slashing case; the runbook's §3.2 hands
+          # off to SLASHING_INCIDENT.md for evidence
+          # submission. Threshold 0.05/s lower than
+          # Mode A because the economic cost (stake
+          # bond at risk) means honest operators rarely
+          # trigger this by accident.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#32-mode-b--qsdmattestarchspoofgpunamemismatch"
           summary: "{{ $labels.instance }}: HMAC bundle gpu_name vs gpu_arch mismatch"
           description: |
             qsdm_attest_archspoof_rejected_total{reason="gpu_name_mismatch"}
@@ -885,6 +935,27 @@ groups:
           severity: critical
           subsystem: v2-attest
         annotations:
+          # Mode C is the only critical-severity alert
+          # in the arch-spoof group, and the only §4.6
+          # alert that pages on a SINGLE fire (no rate
+          # threshold). To reach this check the proof
+          # has already passed cert-chain pin (§3.2
+          # step 3) AND AIK signature (§3.2 step 4) —
+          # so a non-zero increment is, by construction,
+          # either a fabricated AIK leaf (cryptographic
+          # anomaly worth a security-team page) OR a
+          # real H100-class hardware operating with a
+          # stale gpu_arch config (operator
+          # misconfiguration, also serious). The
+          # runbook's §3.3 decision tree forks on
+          # whether the offending Subject CN is
+          # consistent with NVIDIA canonical naming —
+          # and explicitly tells the operator to NOT
+          # unilaterally slash on the cryptographic-
+          # anomaly branch (slashing destroys forensic
+          # state and the bundle may need to be
+          # preserved untouched as evidence).
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#33-mode-c--qsdmattestarchspoofccsubjectmismatch"
           summary: "{{ $labels.instance }}: CC leaf cert subject contradicts gpu_arch"
           description: |
             qsdm_attest_archspoof_rejected_total{reason="cc_subject_mismatch"}
@@ -1114,6 +1185,21 @@ groups:
           severity: warning
           subsystem: v2-attest
         annotations:
+          # Mode D in REJECTION_FLOOD.md — payload-shape
+          # alert (NOT volume; Modes A/B/C cover that).
+          # The ring's per-field rune-caps are pinned
+          # in code (detail=200, gpu_name=256,
+          # cert_subject=256) and silently truncate
+          # overflows; sustained 25%+ truncation rate
+          # means something has changed about the
+          # rejection payload distribution. Runbook
+          # §7.4 maps the dominant `field` label to
+          # cause: detail ⇒ verifier release skew or
+          # adversarial stuffing; gpu_name ⇒
+          # cross-check ARCH_SPOOF_INCIDENT.md;
+          # cert_subject ⇒ benign multi-byte unicode
+          # in a real NVIDIA cert.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#74-mode-d--qsdmattestrejectionfieldtruncationsustained"
           summary: "{{ $labels.instance }}: recent-rejection ring is truncating {{ $labels.field }} >25% of the time"
           description: |
             qsdm_attest_rejection_field_truncated_total{field="{{ $labels.field }}"}
@@ -1170,6 +1256,17 @@ groups:
           severity: info
           subsystem: v2-attest
         annotations:
+          # Mode E in REJECTION_FLOOD.md — leading
+          # indicator before the truncation-rate alert
+          # paints. Severity:info means the alert
+          # should NOT page; wire to a passive channel
+          # (chat ping, dashboard cell). The operator
+          # decision is whether to raise the per-field
+          # cap in pkg/mining/attest/recentrejects/
+          # before Mode D crosses 25%. Cross-references
+          # Mode D's cause table for the same `field`
+          # label.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#75-mode-e--qsdmattestrejectionfieldrunesmaxnearcap"
           summary: "{{ $labels.instance }}: recent-rejection ring {{ $labels.field }} runes_max within 10% of cap"
           description: |
             qsdm_attest_rejection_field_runes_max{field="{{ $labels.field }}"}
@@ -1217,17 +1314,15 @@ groups:
           severity: warning
           subsystem: v2-attest
         annotations:
-          # The runbook_url annotation is the standard
-          # Prometheus convention; Alertmanager UIs render it
-          # as a click-through during paging. Path is
-          # repo-relative so a fork that re-publishes the docs
-          # under a different host can rewrite the prefix in
-          # one place. The runbook covers BOTH this alert and
-          # QSDMAttestRejectionPersistHardCapDropping below
-          # because the triage diverges at exactly one decision
-          # point — keeping them on one page lets the operator
-          # walk between modes without losing context.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md"
+          # Mode A in REJECTION_FLOOD.md — the soft-cap
+          # rewrite loop is keeping up but the rate is
+          # anomalously high. Validator is healthy; the
+          # VOLUME is the signal. Anchor §7.1 jumps
+          # directly to the mode-specific entry point;
+          # the runbook also walks the promotion path
+          # to Mode B (§7.2) if compactions stay high
+          # AND the persister starts dropping records.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#71-mode-a--qsdmattestrejectionpersistcompactionshigh"
           summary: "{{ $labels.instance }}: recent-rejection ring is compacting {{ $value | humanize }}× per minute"
           description: |
             qsdm_attest_rejection_persist_compactions_total has
@@ -1286,13 +1381,16 @@ groups:
           severity: warning
           subsystem: v2-attest
         annotations:
-          # Same runbook URL as
-          # QSDMAttestRejectionPersistCompactionsHigh above —
-          # the runbook covers both alerts on one page so the
-          # operator can walk between Mode A (compactions
-          # high) and Mode B (hard-cap dropping) without
-          # losing context.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md"
+          # Mode B in REJECTION_FLOOD.md — strictly
+          # worse than Mode A: the persister is now
+          # actively SHEDDING records. The in-memory
+          # ring is unaffected (dashboard tile and
+          # /api/v1/attest/recent-rejections continue
+          # to surface every record); ONLY the durable
+          # forensic-record persistence is being
+          # dropped. Anchor §7.2 walks the
+          # cap-tuning vs. mempool-rate-limit decision.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#72-mode-b--qsdmattestrejectionpersisthardcapdropping"
           summary: "{{ $labels.instance }}: recent-rejection persister is shedding records at the hard byte cap"
           description: |
             qsdm_attest_rejection_persist_hardcap_drops_total has
@@ -1368,11 +1466,19 @@ groups:
           severity: warning
           subsystem: v2-attest
         annotations:
-          # Same runbook as the compactions / hard-cap alerts
-          # — the rejection-flood mode walks all three on one
-          # page so the operator picks the right mitigation
-          # without losing context.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md"
+          # Mode C in REJECTION_FLOOD.md — the EARLIEST
+          # defence in the stack. Records are dropped
+          # at Store.Record() entry; neither the ring
+          # nor the persister sees them. When Mode C
+          # fires alone (Modes A and B both flat) it
+          # is the cleanest single-bad-actor signal in
+          # the stack — the dashboard "top offenders"
+          # strip names the saturating miner_addr
+          # directly. Anchor §7.3 forks on whether the
+          # limiter is doing its job (apply policy
+          # upstream) vs. the limiter rate is too tight
+          # (relax cfg.RecentRejectionsRateLimitPerSec).
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#73-mode-c--qsdmattestrejectionperminerratelimited"
           summary: "{{ $labels.instance }}: per-miner rate-limit is dropping records at recent-rejection ring entry"
           description: |
             qsdm_attest_rejection_per_miner_rate_limited_total has
