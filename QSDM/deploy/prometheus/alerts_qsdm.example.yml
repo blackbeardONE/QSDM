@@ -500,6 +500,13 @@ groups:
           severity: warning
           subsystem: v2-mining
         annotations:
+          # Deep-link to the Mode A subsection of the
+          # enrollment runbook. Mode A is the canonical "zero
+          # active records" page; if the registry is wedged
+          # rather than empty, the runbook redirects the
+          # operator to the chain-liveness runbook in step
+          # 3.1.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#31-mode-a--qsdmminingregistryempty"
           summary: "{{ $labels.instance }}: zero active enrollments for 15m"
           description: |
             qsdm_enrollment_active_count is 0 on a node that has
@@ -531,6 +538,13 @@ groups:
           severity: warning
           subsystem: v2-mining
         annotations:
+          # Mode B (shrinking-fast) decomposes the drop into
+          # voluntary / forced / sweep drivers. The runbook's
+          # Mode B redirects to SLASHING_INCIDENT.md if the
+          # forced-exit driver dominates — a coordinated
+          # cheat-ring incident is a different on-call than a
+          # voluntary release-regression exit.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#32-mode-b--qsdmminingregistryshrinkingfast"
           summary: "{{ $labels.instance }}: active enrollments fell {{ $value | humanizePercentage }} in 1h"
           description: |
             qsdm_enrollment_active_count dropped by {{ $value | humanizePercentage }}
@@ -560,6 +574,14 @@ groups:
           severity: warning
           subsystem: v2-mining
         annotations:
+          # Mode C is the leading-indicator runbook entry —
+          # >50% of the population in pending_unbond means
+          # something upstream is going wrong. The runbook
+          # cross-references the slashing-rate and
+          # consensus-byzantine signals so operators can
+          # identify the upstream cause before the 7-day
+          # unbond window matures.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#33-mode-c--qsdmminingpendingunbondmajority"
           summary: "{{ $labels.instance }}: {{ $value | humanizePercentage }} of bonded miners pending unbond"
           description: |
             More than half of the bonded population is in the 7-day
@@ -583,6 +605,12 @@ groups:
           severity: warning
           subsystem: v2-mining
         annotations:
+          # Mode D maps every closed-enum reject reason to a
+          # cause + action row. Operators read the dominant
+          # `reason` label off the by-reason breakout query
+          # in the description and jump straight to the row
+          # in the runbook table.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#34-mode-d--qsdmminingenrollmentrejectionsburst"
           summary: "{{ $labels.instance }}: ≥20 enrollment rejections in 10m"
           description: |
             qsdm_enrollment_rejected_total grew by {{ $value }} in
@@ -609,6 +637,15 @@ groups:
           severity: warning
           subsystem: v2-mining
         annotations:
+          # Mode E covers the metric-callback regression
+          # branch explicitly: if the drop isn't accounted
+          # for by unenroll / slash / sweep rates, the
+          # runbook walks the operator through verifying the
+          # gauge against the live registry via
+          # /api/v1/mining/enrollments. Catches stale
+          # EnrollmentStateProvider closures that survive a
+          # partial restart.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#35-mode-e--qsdmminingbondeddustdropped"
           summary: "{{ $labels.instance }}: bonded stake dropped >50 CELL in 30m"
           description: |
             Total active bond fell by {{ humanize $value }} dust

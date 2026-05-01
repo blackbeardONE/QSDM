@@ -808,6 +808,247 @@ function updateSlashReceipts() {
         });
 }
 
+// =============================================================================
+// Enrollment registry tile (2026-05-01)
+// =============================================================================
+//
+// Sibling of the attestation-rejections + slashing tiles. Backed
+// by /api/mining/enrollment-overview (handleEnrollmentOverview in
+// internal/dashboard/enrollment.go) which combines the live
+// registry page with a snapshot of the qsdm_enrollment_* +
+// qsdm_unenrollment_* counters / gauges in one envelope.
+//
+// State + control wiring follows the same idiom as
+// slashReceiptsState: dropdowns drive a filtered fetch, pause
+// toggle gates the polling loop, CSV export is derived
+// client-side from the last fetched page.
+const enrollmentOverviewState = {
+    phase: '',
+    paused: false,
+    lastRecords: [],
+};
+
+function updateEnrollmentOverviewExport() {
+    const link = document.getElementById('enrollment-export');
+    if (!link) return;
+    const records = enrollmentOverviewState.lastRecords || [];
+    if (records.length === 0) {
+        link.style.opacity = '0.4';
+        link.style.pointerEvents = 'none';
+        link.removeAttribute('href');
+        return;
+    }
+    link.style.opacity = '1';
+    link.style.pointerEvents = '';
+    const headers = ['node_id', 'owner', 'gpu_uuid', 'phase', 'slashable',
+        'stake_dust', 'enrolled_at_height', 'revoked_at_height',
+        'unbond_matures_at_height'];
+    const escape = (v) => {
+        const s = (v == null) ? '' : String(v);
+        return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const rows = records.map(r => [
+        r.node_id, r.owner, r.gpu_uuid, r.phase, r.slashable,
+        r.stake_dust, r.enrolled_at_height, r.revoked_at_height,
+        r.unbond_matures_at_height,
+    ].map(escape).join(','));
+    const csv = headers.join(',') + '\n' + rows.join('\n') + '\n';
+    link.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+}
+
+function initEnrollmentOverviewControls() {
+    const phaseSel = document.getElementById('enrollment-filter-phase');
+    if (phaseSel) {
+        phaseSel.addEventListener('change', () => {
+            enrollmentOverviewState.phase = phaseSel.value || '';
+            updateEnrollmentOverview();
+        });
+    }
+    const pauseBtn = document.getElementById('enrollment-pause');
+    if (pauseBtn) {
+        pauseBtn.addEventListener('click', () => {
+            enrollmentOverviewState.paused = !enrollmentOverviewState.paused;
+            pauseBtn.textContent = enrollmentOverviewState.paused ? '▶ resume polling' : '⏸ pause polling';
+            pauseBtn.style.background = enrollmentOverviewState.paused ? '#3a1a1a' : '#1a3a5a';
+            pauseBtn.style.color = enrollmentOverviewState.paused ? '#ff7b7b' : '#7bd3ff';
+            if (!enrollmentOverviewState.paused) {
+                updateEnrollmentOverview();
+            }
+        });
+    }
+}
+
+function updateEnrollmentOverview() {
+    const params = new URLSearchParams({ limit: '50' });
+    if (enrollmentOverviewState.phase) {
+        params.set('phase', enrollmentOverviewState.phase);
+    }
+    fetch('/api/mining/enrollment-overview?' + params.toString(), dashFetchOpts)
+        .then(response => response.json())
+        .then(data => {
+            const statusEl = document.getElementById('enrollment-status');
+            const countersEl = document.getElementById('enrollment-counters');
+            const table = document.getElementById('enrollment-table');
+            const tbody = document.getElementById('enrollment-tbody');
+            if (!statusEl || !countersEl || !table || !tbody) return;
+
+            const records = data.records || [];
+            if (data.available !== true) {
+                statusEl.innerHTML = '<strong>Enrollment registry not wired.</strong> v1-only deployment, or v2 chain not active. Counter row below remains accurate (Prometheus counters are independent of the lister); the records table stays empty until <code>v2wiring.Wire</code> attaches the registry.';
+            } else {
+                const total = data.total_matches || 0;
+                const more = data.has_more ? ' (more pages available — narrow with the phase filter)' : '';
+                statusEl.textContent = 'Registry wired. ' + total + ' record(s) on this page' + more + '.';
+            }
+
+            // Counter strip: lifecycle gauges + applied/unenrolled/swept totals + reject summaries.
+            const m = data.metrics || {};
+            countersEl.innerHTML = '';
+            const buildCell = (label, valueText, valueColor, detailText) => {
+                const cell = document.createElement('div');
+                cell.style.cssText = 'background:#0f1419;border:1px solid #2a3441;border-radius:4px;padding:10px;';
+                const head = document.createElement('div');
+                head.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;';
+                const labelEl = document.createElement('span');
+                labelEl.className = 'metric-label';
+                labelEl.textContent = label;
+                const valueEl = document.createElement('span');
+                valueEl.className = 'metric-value';
+                valueEl.style.cssText = 'font-size:14px;color:' + valueColor + ';';
+                valueEl.textContent = valueText;
+                head.appendChild(labelEl);
+                head.appendChild(valueEl);
+                const detail = document.createElement('div');
+                detail.style.cssText = 'font-size:11px;color:#a0a0a0;margin-top:6px;';
+                detail.textContent = detailText;
+                cell.appendChild(head);
+                cell.appendChild(detail);
+                return cell;
+            };
+            const sumLabeled = (rows) =>
+                (rows || []).reduce((acc, r) => acc + (r.value || 0), 0);
+
+            // Live gauges. ActiveCount==0 on a node up >10m fires
+            // QSDMMiningRegistryEmpty — colour red when zero so
+            // the cell tracks the alert's intent.
+            const active = m.active_count || 0;
+            countersEl.appendChild(buildCell(
+                'active miners',
+                String(active),
+                active === 0 ? '#d0021b' : '#7ed321',
+                'records with phase=active (Slashable bond locked)'
+            ));
+
+            const bondedCELL = ((m.bonded_dust || 0) / 1e9).toFixed(3);
+            countersEl.appendChild(buildCell(
+                'bonded dust',
+                bondedCELL + ' CELL',
+                '#7bd3ff',
+                String(m.bonded_dust || 0) + ' dust across all active records'
+            ));
+
+            // Pending unbond pressure ratio. Mode "majority" alerts
+            // when pending > active; colour amber when >25%, red
+            // when >50%.
+            const pending = m.pending_unbond_count || 0;
+            const totalBonded = active + pending;
+            const pendingRatio = totalBonded > 0 ? (pending / totalBonded) : 0;
+            const pendingColor = pendingRatio > 0.5 ? '#d0021b'
+                : pendingRatio > 0.25 ? '#f5a623' : '#7ed321';
+            const pendingPctText = totalBonded > 0
+                ? (pendingRatio * 100).toFixed(1) + '%'
+                : '0.0%';
+            countersEl.appendChild(buildCell(
+                'pending unbond',
+                String(pending),
+                pendingColor,
+                pendingPctText + ' of bonded population · ' + ((m.pending_unbond_dust || 0) / 1e9).toFixed(3) + ' CELL locked'
+            ));
+
+            const enrollApplied = m.enroll_applied_total || 0;
+            const unenrollApplied = m.unenroll_applied_total || 0;
+            countersEl.appendChild(buildCell(
+                'enroll / unenroll',
+                String(enrollApplied) + ' / ' + String(unenrollApplied),
+                '#7bd3ff',
+                'applied since boot · sweep total: ' + String(m.enroll_unbond_swept_total || 0)
+            ));
+
+            // Reject summaries — break out top non-zero reasons so
+            // operators can spot the dominant signal at a glance.
+            const enrollRej = sumLabeled(m.enroll_rejected_by_reason);
+            const enrollRejBreak = (m.enroll_rejected_by_reason || [])
+                .filter(r => r.value > 0)
+                .map(r => r.label + ':' + r.value)
+                .join(' · ') || 'no rejections';
+            countersEl.appendChild(buildCell(
+                'enroll rejected',
+                String(enrollRej),
+                enrollRej > 0 ? '#f5a623' : '#7ed321',
+                enrollRejBreak
+            ));
+
+            const unenrollRej = sumLabeled(m.unenroll_rejected_by_reason);
+            const unenrollRejBreak = (m.unenroll_rejected_by_reason || [])
+                .filter(r => r.value > 0)
+                .map(r => r.label + ':' + r.value)
+                .join(' · ') || 'no rejections';
+            countersEl.appendChild(buildCell(
+                'unenroll rejected',
+                String(unenrollRej),
+                unenrollRej > 0 ? '#f5a623' : '#7ed321',
+                unenrollRejBreak
+            ));
+
+            enrollmentOverviewState.lastRecords = records;
+            updateEnrollmentOverviewExport();
+
+            tbody.innerHTML = '';
+            if (records.length === 0) {
+                table.style.display = 'none';
+                return;
+            }
+            table.style.display = 'table';
+            records.forEach(rec => {
+                const tr = document.createElement('tr');
+                const nodeFull = rec.node_id || '';
+                const nodeShort = nodeFull
+                    ? (nodeFull.length > 18 ? nodeFull.slice(0, 18) + '…' : nodeFull)
+                    : '—';
+                const ownerFull = rec.owner || '';
+                const ownerShort = ownerFull
+                    ? (ownerFull.length > 18 ? ownerFull.slice(0, 18) + '…' : ownerFull)
+                    : '—';
+                const stakeCELL = rec.stake_dust
+                    ? (rec.stake_dust / 1e9).toFixed(3) + ' CELL'
+                    : '0';
+                const cells = [
+                    { text: nodeShort, title: nodeFull, cls: 'ngc-hash' },
+                    { text: rec.phase || '—' },
+                    { text: rec.slashable ? '✓' : '—' },
+                    { text: ownerShort, title: ownerFull, cls: 'ngc-hash' },
+                    { text: stakeCELL },
+                    { text: rec.enrolled_at_height != null ? String(rec.enrolled_at_height) : '—' },
+                    { text: rec.unbond_matures_at_height ? String(rec.unbond_matures_at_height) : '—' },
+                ];
+                cells.forEach(c => {
+                    const td = document.createElement('td');
+                    td.textContent = c.text;
+                    if (c.cls) td.className = c.cls;
+                    if (c.title) td.title = c.title;
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+        })
+        .catch(() => {
+            const statusEl = document.getElementById('enrollment-status');
+            if (statusEl) {
+                statusEl.textContent = 'Could not load enrollment overview (check dashboard auth / network).';
+            }
+        });
+}
+
 function updateHealth() {
     fetch('/api/health', dashFetchOpts)
         .then(response => response.json())
@@ -1392,6 +1633,9 @@ function startPolling() {
         if (!slashReceiptsState.paused) {
             updateSlashReceipts();
         }
+        if (!enrollmentOverviewState.paused) {
+            updateEnrollmentOverview();
+        }
         updateContracts();
         updateBridge();
         updateTopology();
@@ -1408,6 +1652,8 @@ function startUpdates() {
     updateAttestRejections();
     initSlashReceiptsControls();
     updateSlashReceipts();
+    initEnrollmentOverviewControls();
+    updateEnrollmentOverview();
     updateContracts();
     updateBridge();
     loadContractTemplates();

@@ -14,6 +14,146 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Enrollment registry operator surface — dashboard tile + runbook + alert annotations (2026-05-01).**
+  Closed the last operator-experience gap in the v2-mining
+  observability triangle. The `qsdm_enrollment_*` /
+  `qsdm_unenrollment_*` Prometheus counters and the five
+  `qsdm-v2-mining-enrollment` group alerts (`RegistryEmpty`,
+  `RegistryShrinkingFast`, `PendingUnbondMajority`,
+  `EnrollmentRejectionsBurst`, `BondedDustDropped`) have been
+  in place since the v2-mining rollout, but a paged on-call had
+  no in-product tile to triage from (only the cursor-paginated
+  `GET /api/v1/mining/enrollments` JSON, which required
+  separate Prometheus queries to read the live gauges) and no
+  consolidated runbook to walk the voluntary-vs-forced-exit
+  decision before the 7-day unbond window matures and the
+  recovery cost rises. This commit fills both gaps with the
+  same template the slashing tile established (commit
+  `9dd4a73`) so operators see one shape of triage surface —
+  counter strip + filtered records + runbook deep-link — across
+  rejection-ring, slashing, and enrollment.
+  - **`monitoring.EnrollmentMetricsView` + `EnrollmentMetricsSnapshot()`** —
+    one struct that aggregates every `qsdm_enrollment_*` /
+    `qsdm_unenrollment_*` series: live gauges (`active_count`,
+    `bonded_dust`, `pending_unbond_count`,
+    `pending_unbond_dust`) read through the existing callback-
+    driven `EnrollmentStateProvider`, plus the monotonic
+    counters (`enroll_applied_total`, `unenroll_applied_total`,
+    `enroll_unbond_swept_total`) and reason-labeled reject
+    breakouts in stable Prometheus exposition order so the
+    dashboard cell ordering matches PromQL view ordering. Four
+    new behavioural tests cover: zero-state on a cleared
+    counter set, counter increment under `Record*`, gauge
+    pass-through via a fake `EnrollmentStateProvider`, and
+    label-order parity against `EnrollmentRejectedLabeled` /
+    `UnenrollmentRejectedLabeled` so a future drift between the
+    snapshot and the Prometheus exposition is caught at build
+    time rather than as misaligned reason columns in
+    production.
+  - **`api.CurrentEnrollmentLister` + `api.EnrollmentViewFromRecord`** —
+    two surgical exports that let `internal/dashboard` consume
+    the existing `EnrollmentLister` interface without adding a
+    parallel adapter: same precedent the rejection-ring and
+    slashing tiles set with `CurrentRecentRejectionLister` /
+    `CurrentSlashReceiptLister`. `EnrollmentViewFromRecord`
+    centralises the
+    `enrollment.EnrollmentRecord → EnrollmentRecordView`
+    translation in one place so the v1 query handler, the v1
+    list handler, and the dashboard tile stay in lockstep —
+    adding a field to `EnrollmentRecordView` only needs to be
+    wired once. Zero behaviour change at the v1 `/api/v1/
+    mining/enrollment*` endpoints.
+  - **`/api/mining/enrollment-overview` dashboard endpoint** —
+    `internal/dashboard/enrollment.go::handleEnrollmentOverview`.
+    Combines the live registry page (lexicographic by NodeID
+    via the existing lister) with the metrics snapshot in one
+    envelope. Server-side parity with the v1 list endpoint:
+    closed-enum `phase` validation (400 on a typo, mirroring
+    the same allowlist the v1 endpoint enforces); `cursor`
+    length-clamped to `enrollment.MaxNodeIDLen`; `limit`
+    clamped to a tile-friendly `[1, 200]` range (the v1
+    endpoint's 500 ceiling stays the indexer path). Graceful
+    "v1-only deployment" path: when no lister is wired the
+    handler returns 200 with `available=false` and the
+    metrics block populated with zero-valued gauges, so the
+    tile renders "registry not wired" without blanking the
+    counter strip. `Filters` block omitted on a bare call
+    (pointer + `omitempty`, same pattern as the slashing
+    tile). 8 new behavioural tests cover method gating,
+    limit clamping (over-cap / negative / non-integer),
+    no-lister-wired graceful path, happy-path ordering +
+    pagination forwarding, closed-enum bogus-input rejection
+    (incl. a SQL-injection-style payload via
+    `url.QueryEscape`), oversized-cursor rejection, filter
+    passthrough + echo, and all-three-phase acceptance.
+  - **🪪 Enrollment Registry dashboard tile** —
+    `internal/dashboard/static/{index.html,dashboard.js}`. Six-
+    cell counter strip (`active miners`, `bonded dust`,
+    `pending unbond`, `enroll / unenroll`, `enroll rejected`,
+    `unenroll rejected`) with traffic-light colouring tuned to
+    the alert thresholds: `active=0` cell turns red (matches
+    `QSDMMiningRegistryEmpty`); `pending_unbond` ratio >50%
+    turns red, >25% turns amber (matches
+    `QSDMMiningPendingUnbondMajority`); reject-cell amber the
+    moment the cumulative rejection count is non-zero. Records
+    table shows NodeID / Phase / Slashable / Owner / Stake (in
+    CELL) / Enrolled@ / UnbondMatures@; long NodeIDs / owners
+    truncate to 18 chars with the full value in the `title=`
+    attribute. Triage controls: phase dropdown
+    (all/active/pending_unbond/revoked), pause-polling toggle
+    (gates `updateEnrollmentOverview` in the 2 s polling loop
+    so an operator can read a row without it scrolling out
+    from under), CSV export of the current page (escaping
+    routine reused from the rejection-ring tile via
+    `csvEscape`). Integration test extended with 23 new
+    container-ID / module-symbol / counter-strip-label /
+    JSON-field-reference / pause-gate guards so a refactor
+    that drops the wiring fails the build before silently
+    blanking the tile in production.
+  - **`docs/runbooks/ENROLLMENT_INCIDENT.md`** — five-mode
+    runbook covering each alert in the
+    `qsdm-v2-mining-enrollment` group, plus a cross-mode
+    escalation matrix that maps multi-fire patterns
+    (`B+C+E` = coordinated voluntary exit, `B-forced+E` =
+    active slashing incident, `D+B-voluntary` = client-server
+    skew) to their root cause. Each mode follows the same
+    template the slashing runbook established: dashboard
+    symptoms → Prometheus symptoms → triage queries → cause-
+    and-action table → mitigation. Mode E gets explicit
+    coverage of the metric-callback-regression branch — if a
+    `bonded_dust` drop isn't accounted for by
+    unenroll/slash/sweep rates the runbook walks the operator
+    through verifying the gauge against the live registry via
+    `/api/v1/mining/enrollments?phase=active&limit=500`,
+    catching stale `EnrollmentStateProvider` closures that
+    survive a partial restart. Recovery validation queries at
+    the end let on-call confirm the registry has stabilised
+    after mitigation.
+  - **Five new `runbook_url` annotations** on every
+    `QSDMMiningRegistry*` / `QSDMMiningEnrollment*` /
+    `QSDMMiningBondedDustDropped` alert in
+    `deploy/prometheus/alerts_qsdm.example.yml`, deep-linking
+    to the matching mode anchor in `ENROLLMENT_INCIDENT.md`.
+    Combined with the four runbook URLs added in the slashing
+    commit (`9dd4a73`), every `QSDMMining*` alert in the alert
+    file now carries a runbook deep-link AND has a dashboard
+    tile pre-classifying its symptoms — the v2-mining surface
+    is at "fully observable" baseline.
+
+  Files touched:
+  - `QSDM/source/pkg/monitoring/enrollment_metrics.go`
+  - `QSDM/source/pkg/monitoring/enrollment_metrics_test.go` (new)
+  - `QSDM/source/pkg/api/handlers_enrollment_list.go`
+  - `QSDM/source/pkg/api/handlers_enrollment_query.go`
+  - `QSDM/source/internal/dashboard/dashboard.go`
+  - `QSDM/source/internal/dashboard/enrollment.go` (new)
+  - `QSDM/source/internal/dashboard/enrollment_test.go` (new)
+  - `QSDM/source/internal/dashboard/integration_test.go`
+  - `QSDM/source/internal/dashboard/static/index.html`
+  - `QSDM/source/internal/dashboard/static/dashboard.js`
+  - `QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md` (new)
+  - `QSDM/deploy/prometheus/alerts_qsdm.example.yml`
+
 - **Slashing operator surface — dashboard tile + runbook + alert annotations (2026-05-01).**
   Closed the operator-experience gap in the v2-mining slashing pipeline:
   `qsdm_slash_*` Prometheus counters and the four `QSDMMiningSlash*` /

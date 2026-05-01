@@ -270,6 +270,94 @@ func (nopEnrollmentStateProvider) BondedDust() uint64          { return 0 }
 func (nopEnrollmentStateProvider) PendingUnbondCount() uint64  { return 0 }
 func (nopEnrollmentStateProvider) PendingUnbondDust() uint64   { return 0 }
 
+// ---------- snapshot view (for the dashboard tile) ----------
+
+// EnrollmentLabeledCount is one row of the labeled counter
+// view. Generic "label" name reused across enrollment-rejected
+// and unenrollment-rejected since both label sets are
+// reason-based; clients render the same column header.
+type EnrollmentLabeledCount struct {
+	Label string `json:"label"`
+	Value uint64 `json:"value"`
+}
+
+// EnrollmentMetricsView is the all-counters-and-gauges
+// snapshot of the enrollment-pipeline telemetry surface.
+// Returned by EnrollmentMetricsSnapshot for in-process
+// consumers (the operator dashboard's Enrollment Registry
+// tile, primarily) that want a coherent view without
+// scraping Prometheus.
+//
+// The COUNTER fields (EnrollAppliedTotal, etc.) are
+// monotonic; the GAUGE fields (ActiveCount, BondedDust,
+// PendingUnbond*) reflect the live registry state via the
+// callback installed by SetEnrollmentStateProvider — they
+// can decrease as miners unenroll, get auto-revoked, or
+// have their unbond windows mature.
+//
+// This is a snapshot — every field is captured atomically
+// per-counter / per-gauge but not as a transaction across
+// the whole struct. ActiveCount + PendingUnbondCount are
+// callback-driven through one `EnrollmentStateProvider`
+// instance, so they ARE coherent with each other; the
+// counter fields above can drift one tick relative to the
+// gauges. Operators reading this snapshot alongside the
+// list page MUST treat them as independent samples
+// (typical 2 s polling well under reaction time, so the
+// eventual-consistency window is invisible in practice).
+//
+// JSON tags below are the public dashboard contract.
+// Adding a new field is non-breaking; renaming any of them
+// is.
+type EnrollmentMetricsView struct {
+	// Lifecycle gauges (live point-in-time).
+	ActiveCount        uint64 `json:"active_count"`
+	BondedDust         uint64 `json:"bonded_dust"`
+	PendingUnbondCount uint64 `json:"pending_unbond_count"`
+	PendingUnbondDust  uint64 `json:"pending_unbond_dust"`
+
+	// Lifecycle counters (monotonic since boot).
+	EnrollAppliedTotal       uint64 `json:"enroll_applied_total"`
+	UnenrollAppliedTotal     uint64 `json:"unenroll_applied_total"`
+	EnrollUnbondSweptTotal   uint64 `json:"enroll_unbond_swept_total"`
+
+	// Reject breakdowns (monotonic since boot).
+	EnrollRejectedByReason   []EnrollmentLabeledCount `json:"enroll_rejected_by_reason"`
+	UnenrollRejectedByReason []EnrollmentLabeledCount `json:"unenroll_rejected_by_reason"`
+}
+
+// EnrollmentMetricsSnapshot returns the current enrollment-
+// pipeline counters + gauges in a single coherent view.
+// Safe for concurrent callers; gauges via the registered
+// EnrollmentStateProvider, counters via atomic.Load.
+//
+// Label order in each labeled slice matches the
+// corresponding *Labeled() function so the dashboard tile
+// can render reason rows in a stable order across polls.
+func EnrollmentMetricsSnapshot() EnrollmentMetricsView {
+	enrollRej := EnrollmentRejectedLabeled()
+	unenrollRej := UnenrollmentRejectedLabeled()
+
+	out := EnrollmentMetricsView{
+		ActiveCount:              EnrollmentStateActiveCount(),
+		BondedDust:               EnrollmentStateBondedDust(),
+		PendingUnbondCount:       EnrollmentStatePendingUnbondCount(),
+		PendingUnbondDust:        EnrollmentStatePendingUnbondDust(),
+		EnrollAppliedTotal:       enrollmentApplied.Load(),
+		UnenrollAppliedTotal:     unenrollmentApplied.Load(),
+		EnrollUnbondSweptTotal:   enrollmentAutoRevokeUnbondSwept.Load(),
+		EnrollRejectedByReason:   make([]EnrollmentLabeledCount, 0, len(enrollRej)),
+		UnenrollRejectedByReason: make([]EnrollmentLabeledCount, 0, len(unenrollRej)),
+	}
+	for _, p := range enrollRej {
+		out.EnrollRejectedByReason = append(out.EnrollRejectedByReason, EnrollmentLabeledCount{Label: p.Reason, Value: p.Val})
+	}
+	for _, p := range unenrollRej {
+		out.UnenrollRejectedByReason = append(out.UnenrollRejectedByReason, EnrollmentLabeledCount{Label: p.Reason, Value: p.Val})
+	}
+	return out
+}
+
 // ---------- test reset ----------
 
 // ResetEnrollmentMetricsForTest clears every counter in this

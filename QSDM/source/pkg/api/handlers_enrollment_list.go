@@ -82,6 +82,18 @@ func currentEnrollmentLister() EnrollmentLister {
 	return enrollmentListHolder.lister
 }
 
+// CurrentEnrollmentLister returns the process-wide
+// EnrollmentLister, or nil if SetEnrollmentLister has not
+// been called yet (i.e. v1-only deployment, or
+// internal/v2wiring hasn't run). Exported because the
+// internal/dashboard package needs to detect "feature
+// unavailable" before rendering its enrollment-overview
+// tile — same pattern as CurrentRecentRejectionLister and
+// CurrentSlashReceiptLister.
+func CurrentEnrollmentLister() EnrollmentLister {
+	return currentEnrollmentLister()
+}
+
 // EnrollmentListPageView is the wire shape for one page of
 // list results. JSON tags are the public contract; field
 // reordering is fine, renaming is breaking.

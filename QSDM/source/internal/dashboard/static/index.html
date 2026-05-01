@@ -633,6 +633,63 @@
                     Bounded in-memory store of the most recent v2-mining slash receipts (applied + rejected outcomes), plus a snapshot of the <code>qsdm_slash_*</code> counters. The <em>applied</em> cell tallies successful slashes by EvidenceKind; <em>drained dust</em> shows the cumulative stake forfeited (CELL = dust ÷ 1e9); <em>reward / burn</em> splits the drained total into slasher reward vs. burned residue; <em>rejected</em> is per-reason; <em>auto-revoked</em> tallies post-slash record revocations from <code>SlashApplier.RevokeIfUnderBonded</code>. A sustained non-zero <em>rejected</em> rate signals a buggy slasher tool or an upstream probe; a <em>drained dust</em> spike of multiple CELL in a few minutes indicates a coordinated cheat ring or a verifier regression — see the <strong>SLASHING_INCIDENT.md</strong> runbook (linked from every <code>QSDMMining*</code> alert's <code>runbook_url</code>) for the triage flow.
                 </p>
             </div>
+
+            <!-- v2-Mining: Enrollment Registry tile (2026-05-01).
+                 Live operator surface for the qsdm_enrollment_* +
+                 qsdm_unenrollment_* counters / gauges, plus a
+                 paginated walk over the on-chain registry. Backed
+                 by /api/mining/enrollment-overview
+                 (handleEnrollmentOverview); see internal/dashboard/
+                 enrollment.go for the wire shape and
+                 QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md for
+                 the incident-response runbook (linked from the
+                 runbook_url annotation on every QSDMMiningRegistry*
+                 / QSDMMiningEnrollment* alert). -->
+            <div class="card ngc-panel" style="grid-column: 1 / -1;">
+                <h2>🪪 Enrollment Registry</h2>
+
+                <!-- Triage control bar: phase / pause / CSV export.
+                     The phase dropdown maps 1:1 to the closed enum
+                     enforced server-side
+                     (active|pending_unbond|revoked); a typo would
+                     surface as a 400, never a silent miss. -->
+                <div id="enrollment-controls" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; padding: 10px; background: #0f1419; border: 1px solid #2a3441; border-radius: 4px;">
+                    <label style="font-size: 12px; color: #a0a0a0; display: flex; align-items: center; gap: 6px;">
+                        Phase:
+                        <select id="enrollment-filter-phase" style="padding: 4px 8px; background: #1a1f2e; color: #e6e6e6; border: 1px solid #2a3441; border-radius: 4px; font-size: 12px;">
+                            <option value="">all</option>
+                            <option value="active">active</option>
+                            <option value="pending_unbond">pending_unbond</option>
+                            <option value="revoked">revoked</option>
+                        </select>
+                    </label>
+                    <button id="enrollment-pause" type="button" style="padding: 4px 12px; background: #1a3a5a; color: #7bd3ff; border: 1px solid #2a3441; border-radius: 4px; cursor: pointer; font-size: 12px;">⏸ pause polling</button>
+                    <a id="enrollment-export" href="#" download="enrollment-records.csv" style="margin-left: auto; padding: 4px 12px; background: #1a3a1a; color: #7ed321; border: 1px solid #2a3441; border-radius: 4px; text-decoration: none; font-size: 12px;">⬇ export CSV</a>
+                </div>
+
+                <div id="enrollment-status" class="ngc-status">Loading…</div>
+                <div id="enrollment-counters" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 12px 0;"></div>
+
+                <div class="ngc-table-wrap">
+                    <table class="ngc-table" id="enrollment-table" style="display: none;">
+                        <thead>
+                            <tr>
+                                <th>NodeID</th>
+                                <th>Phase</th>
+                                <th>Slashable</th>
+                                <th>Owner</th>
+                                <th>Stake</th>
+                                <th>Enrolled@</th>
+                                <th>Unbond Matures@</th>
+                            </tr>
+                        </thead>
+                        <tbody id="enrollment-tbody"></tbody>
+                    </table>
+                </div>
+                <p style="color: #888; font-size: 11px; margin-top: 10px; line-height: 1.45;">
+                    Live operator view of the on-chain enrollment registry. <em>active miners</em> = records with phase=active and bond locked (the slashable population); <em>bonded dust</em> sums their stake (CELL = dust ÷ 1e9); <em>pending unbond</em> tracks records in the 7-day unbond window — once that ratio crosses 25% / 50% the cell turns amber / red, mirroring the <code>QSDMMiningPendingUnbondMajority</code> alert. <em>enroll / unenroll</em> are monotonic since boot; <em>enroll/unenroll rejected</em> break out the dominant rejection reason. Sustained zero <em>active miners</em> after a 10m grace fires <code>QSDMMiningRegistryEmpty</code>; a fast drop in active count fires <code>QSDMMiningRegistryShrinkingFast</code>; a sudden bond-dust drop fires <code>QSDMMiningBondedDustDropped</code> — see the <strong>ENROLLMENT_INCIDENT.md</strong> runbook (linked from every <code>QSDMMiningRegistry*</code> / <code>QSDMMiningEnrollment*</code> alert's <code>runbook_url</code>) for the triage flow.
+                </p>
+            </div>
         </div>
 
         <!-- mTLS Certificate Management -->

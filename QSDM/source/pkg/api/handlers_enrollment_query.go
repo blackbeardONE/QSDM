@@ -116,6 +116,17 @@ type EnrollmentRecordView struct {
 	Slashable bool `json:"slashable"`
 }
 
+// EnrollmentViewFromRecord is the public alias for
+// viewFromRecord used by the internal/dashboard package's
+// enrollment-overview tile. Centralising the
+// EnrollmentRecord → EnrollmentRecordView translation here
+// keeps the v1 query handler, the v1 list handler, and the
+// dashboard tile in lockstep — adding a field to
+// EnrollmentRecordView only needs to be wired in one place.
+func EnrollmentViewFromRecord(rec *enrollment.EnrollmentRecord) EnrollmentRecordView {
+	return viewFromRecord(rec)
+}
+
 func viewFromRecord(rec *enrollment.EnrollmentRecord) EnrollmentRecordView {
 	v := EnrollmentRecordView{
 		NodeID:                rec.NodeID,

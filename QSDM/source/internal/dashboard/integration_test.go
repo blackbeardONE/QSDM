@@ -97,6 +97,25 @@ func TestDashboardIntegration(t *testing.T) {
 				t.Errorf("Dashboard HTML missing slashing-pipeline tile element %s", id)
 			}
 		}
+		// Enrollment registry tile container IDs (2026-05-01).
+		// Same shape as the slashing tile guards. The tile is
+		// the operator surface paired with ENROLLMENT_INCIDENT.md
+		// + the runbook_url annotations on every QSDMMiningRegistry*
+		// / QSDMMiningEnrollment* alert; missing IDs silently
+		// no-op the poller.
+		for _, id := range []string{
+			`id="enrollment-status"`,
+			`id="enrollment-counters"`,
+			`id="enrollment-table"`,
+			`id="enrollment-tbody"`,
+			`id="enrollment-filter-phase"`,
+			`id="enrollment-pause"`,
+			`id="enrollment-export"`,
+		} {
+			if !strings.Contains(body, id) {
+				t.Errorf("Dashboard HTML missing enrollment-registry tile element %s", id)
+			}
+		}
 	})
 
 	// Test 2: Metrics API
@@ -275,6 +294,58 @@ func TestDashboardIntegration(t *testing.T) {
 		}
 		if !strings.Contains(string(body), "if (!slashReceiptsState.paused)") {
 			t.Error("polling loop missing pause-aware gate around updateSlashReceipts")
+		}
+
+		// Enrollment-registry tile poller (2026-05-01). Same
+		// guards as slashing — the symbols, the fetch target,
+		// the pause gate, and the metrics-field references
+		// must all be wired. Renaming a JSON field in
+		// monitoring.EnrollmentMetricsView would break
+		// integration here BEFORE the dashboard goes silent
+		// in production.
+		if !strings.Contains(string(body), "function updateEnrollmentOverview") {
+			t.Error("JavaScript file missing updateEnrollmentOverview function")
+		}
+		if !strings.Contains(string(body), "/api/mining/enrollment-overview") {
+			t.Error("JavaScript file missing /api/mining/enrollment-overview fetch target")
+		}
+		for _, sym := range []string{
+			"enrollmentOverviewState",
+			"initEnrollmentOverviewControls",
+			"updateEnrollmentOverviewExport",
+		} {
+			if !strings.Contains(string(body), sym) {
+				t.Errorf("JavaScript missing enrollment-tile symbol %q", sym)
+			}
+		}
+		// Counter-strip labels & JSON field references — these
+		// are the dashboard contract with monitoring.EnrollmentMetricsView.
+		// Renaming a field here would surface as "—" cells in
+		// production; the strings.Contains assertion catches it
+		// at build time.
+		for _, label := range []string{
+			`'active miners'`,
+			`'bonded dust'`,
+			`'pending unbond'`,
+			`'enroll / unenroll'`,
+			`'enroll rejected'`,
+			`'unenroll rejected'`,
+			"active_count",
+			"bonded_dust",
+			"pending_unbond_count",
+			"pending_unbond_dust",
+			"enroll_applied_total",
+			"unenroll_applied_total",
+			"enroll_unbond_swept_total",
+			"enroll_rejected_by_reason",
+			"unenroll_rejected_by_reason",
+		} {
+			if !strings.Contains(string(body), label) {
+				t.Errorf("JavaScript missing enrollment counter-strip label/field %q", label)
+			}
+		}
+		if !strings.Contains(string(body), "if (!enrollmentOverviewState.paused)") {
+			t.Error("polling loop missing pause-aware gate around updateEnrollmentOverview")
 		}
 	})
 

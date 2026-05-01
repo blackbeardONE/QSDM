@@ -255,6 +255,16 @@ func (d *Dashboard) buildHandler() (http.Handler, error) {
 	// See slashing.go for the wire shape.
 	mux.HandleFunc("/api/mining/slash-receipts", d.requireAuth(d.handleSlashReceipts))
 
+	// v2-mining enrollment registry tile. Combines the live
+	// registry page (lexicographic by node_id) with the
+	// qsdm_enrollment_* + qsdm_unenrollment_* counter / gauge
+	// snapshot in one envelope. Companion runbook lives at
+	// QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md (linked
+	// from the qsdm-v2-mining-enrollment alert rules'
+	// runbook_url annotations). See enrollment.go for the wire
+	// shape.
+	mux.HandleFunc("/api/mining/enrollment-overview", d.requireAuth(d.handleEnrollmentOverview))
+
 	// mTLS certificate management (admin only — certs are security-sensitive)
 	mux.HandleFunc("/api/mtls/generate", d.requireAdmin(d.handleMTLSGenerate))
 	mux.HandleFunc("/api/mtls/status", d.requireAuth(d.handleMTLSStatus))
