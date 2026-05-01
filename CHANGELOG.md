@@ -14,6 +14,95 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Submesh-policy operator runbook + alert annotations (2026-05-01).**
+  Closed the natural companion cluster to the
+  quarantine subsystem — the 2 alerts in `qsdm-submesh`
+  catch the **per-tx policy decision** (fee/geotag
+  route + `max_tx_size` enforcement on libp2p AND HTTP
+  paths), distinct from the **per-submesh aggregate
+  response** that QUARANTINE_INCIDENT.md covers. The
+  cross-links now run both directions: QUARANTINE Mode A's
+  reject-reason table points to SUBMESH_POLICY for the
+  per-counter triage matrix, and SUBMESH_POLICY's
+  cross-mode escalation §4 routes concurrent
+  `QSDMSubmesh*` + `QSDMQuarantine*` alerts to the
+  correct precedence ("the policy hits crossed the
+  threshold for whole-submesh isolation"). Net
+  coverage: 27/38 → **29/38 (76%)**.
+  - **`docs/runbooks/SUBMESH_POLICY_INCIDENT.md`** —
+    two-mode runbook covering the libp2p path
+    (`QSDMSubmeshP2PRejects` Mode A) and the HTTP API
+    path (`QSDMSubmeshAPISustained422` Mode B). The
+    five-counter table at the top of the runbook
+    cross-references each `qsdm_submesh_*_reject_*`
+    counter to its triggering code path
+    (`pkg/api/handlers.go` for API,
+    `cmd/qsdm/transaction/transaction.go` for P2P)
+    and to the typed error
+    (`submesh.ErrSubmeshNoRoute` /
+    `submesh.ErrSubmeshPayloadTooLarge`). Mode A's
+    triage matrix forks the dominant-counter signal
+    into one of three causes (client-side fee/geotag
+    drift / validator `submesh_config` reload
+    regression / in-flight client migration that
+    touches both fee/geotag AND payload-size); the
+    runbook **explicitly anti-patterns silencing
+    the alert** — libp2p drops are silent
+    fire-and-forget so the alert IS the operator's
+    only signal that a population of peers is
+    permanently unable to participate. Mode B's
+    triage forks on which API endpoint dominates:
+    `wallet_reject_route` ⇒ stale wallet client,
+    `wallet_reject_size` ⇒ wallet release added a
+    memo/metadata field, `privileged_reject_size`
+    ⇒ service-account producer payload-size
+    regression (the privileged path uses the
+    *strictest* `max_tx_size` globally and has no
+    route check). Mode B also explicitly
+    anti-patterns raising the privileged
+    `max_tx_size` to silence one bad producer — it's
+    a global change affecting every privileged
+    caller. Cross-mode + cross-runbook §4 maps
+    {Mode A, Mode B, Mode A+B} concurrent with
+    `QUARANTINE_INCIDENT.md`'s {Mode A, Mode B} or
+    `MINING_LIVENESS.md` to the correct triage
+    precedence.
+  - **`docs/runbooks/QUARANTINE_INCIDENT.md`
+    backfill** — added bidirectional cross-link.
+    The first-90-seconds checklist's
+    "cross-reference the submesh-policy counters"
+    item now deep-links to SUBMESH_POLICY, and the
+    Reference §5's companion-runbooks list now
+    includes SUBMESH_POLICY explicitly framed as
+    the *upstream cause* runbook (per-tx gate vs
+    aggregate response).
+  - **`deploy/prometheus/alerts_qsdm.example.yml`** —
+    replaced both `qsdm-submesh` alerts' terse
+    one-line annotations with structured
+    `summary` + multi-line `description` + anchored
+    `runbook_url` blocks. Each alert also gets a
+    multi-line operator-comment block before the
+    `runbook_url` summarising the mode-specific
+    signal (Mode A: "libp2p rejects are silent so
+    the alert IS the operator's only handle"; Mode
+    B: "API rejects are HTTP 422 so the producer
+    knows but is retrying without fixing the
+    upstream cause"). The yml's group-level comment
+    block was also added, documenting the two
+    typed errors and the privileged-path
+    "no-route-check" exception.
+  - **No code changes.** Pure docs +
+    alert-annotation commit; leverages the existing
+    `pkg/monitoring/submesh_metrics.go` collector
+    and the `pkg/submesh/manager.go` + handler
+    enforcement that already shipped. The
+    remaining 9 uncovered alerts span four small
+    clusters (NVIDIA-lock, NGC challenge /
+    proof-ingest, governance authority) and 2
+    singletons (NoTransactionsStored,
+    AttestHashrateOutOfBand) — the next runbook
+    sweep can pick the highest-leverage of those.
+
 - **Small-runbook sweep — quarantine + arch-spoof + rejection-plumbing
   backfill (2026-05-01).** Closed three small clusters of remaining
   uncovered alerts in one focused pass: 2 quarantine alerts (a brand-new

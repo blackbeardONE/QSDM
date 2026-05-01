@@ -42,18 +42,99 @@ groups:
           summary: "Many rejected POSTs to /monitoring/ngc-proof"
           description: "Check sidecar logs, HMAC/nonce alignment, body size, and unauthorized probes; see qsdm_ngc_proof_ingest_rejected_total by reason."
 
+  # -----------------------------------------------------------------
+  # Submesh policy gate (per-tx route + size enforcement)
+  # -----------------------------------------------------------------
+  # The submesh policy gate sits UPSTREAM of validation
+  # (pkg/submesh/manager.go via cmd/qsdm/transaction/
+  # transaction.go for libp2p, pkg/api/handlers.go for
+  # HTTP). Transactions that fail the gate are dropped
+  # before validation runs — they don't increment
+  # qsdm_transactions_invalid_total. Two failure modes,
+  # captured by two error types:
+  #
+  #   ErrSubmeshNoRoute:
+  #     fee/geotag did not match any submesh route
+  #     loaded from cfg.SubmeshConfigPath. Most often
+  #     a client-side config drift (fee tier client
+  #     thinks valid is no longer in the loaded
+  #     submesh_config) OR validator-side reload that
+  #     tightened the route set.
+  #
+  #   ErrSubmeshPayloadTooLarge:
+  #     route matched but the message exceeded the
+  #     matched submesh's max_tx_size. Most often a
+  #     client-side framing change (new field /
+  #     larger encoding) OR validator-side reload
+  #     that lowered max_tx_size.
+  #
+  # Five counters distinguish the path (libp2p vs API
+  # wallet vs API privileged) and the reason (route vs
+  # size). Privileged paths use the strictest
+  # max_tx_size across all submeshes and have no route
+  # check.
   - name: qsdm-submesh
     rules:
       - alert: QSDMSubmeshP2PRejects
+        # ANY route OR size reject in 15m, sustained 5m.
+        # Threshold is intentionally aggressive: libp2p
+        # rejects are silent (fire-and-forget; producer
+        # gets no feedback), so the alert IS the
+        # operator's only signal that a population of
+        # peers is being permanently dropped at the gate.
         expr: increase(qsdm_submesh_p2p_reject_route_total[15m]) > 0 or increase(qsdm_submesh_p2p_reject_size_total[15m]) > 0
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "P2P transactions dropped by submesh policy"
-          description: "Check fee/geotag vs submesh_config and max_tx_size; see qsdm_submesh_p2p_reject_* metrics."
+          # Mode A in SUBMESH_POLICY_INCIDENT.md — P2P
+          # path. Triage matrix in §3.1 maps the dominant
+          # counter ({route_total only, size_total only,
+          # both}) and the source distribution ({single
+          # peer, fleet-wide}) to one of {client-config
+          # drift, validator-config reload regression,
+          # in-flight client migration}. The runbook
+          # explicitly says NOT to silence the alert
+          # without identifying the producer — libp2p has
+          # no client-visible response, so silencing
+          # leaves a population permanently unable to
+          # participate.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SUBMESH_POLICY_INCIDENT.md#31-mode-a--qsdmsubmeshp2prejects"
+          summary: "{{ $labels.instance }}: P2P transactions dropped by submesh policy gate"
+          description: |
+            qsdm_submesh_p2p_reject_route_total or
+            qsdm_submesh_p2p_reject_size_total has been
+            incrementing for 5m+. P2P txs are dropped
+            silently (libp2p fire-and-forget); producers
+            have no client-visible signal that their
+            txs are being rejected, so the alert IS the
+            operator's only handle.
+            Triage:
+              - Decompose by reason:
+                rate(qsdm_submesh_p2p_reject_route_total[15m])
+                rate(qsdm_submesh_p2p_reject_size_total[15m])
+              - route_total dominant ⇒ client fee/geotag
+                drift OR validator submesh_config reload
+                tightened routes.
+              - size_total dominant ⇒ client framing
+                drift OR max_tx_size lowered on the
+                matched submesh.
+              - Cross-check qsdm_quarantine_submeshes:
+                sustained policy hits eventually
+                trigger per-submesh isolation
+                (QUARANTINE_INCIDENT.md cascade).
 
       - alert: QSDMSubmeshAPISustained422
+        # ≥5 API rejects (any of wallet route + wallet
+        # size + privileged size) over 10m, sustained
+        # 5m. Summed-counter expression with a small
+        # threshold gives noise immunity: a single
+        # mistuned client doesn't trip it but a
+        # sustained mis-rollout does. API rejects ARE
+        # client-visible (HTTP 422), so unlike Mode A
+        # the producer knows — but if they're retrying
+        # without fixing the underlying cause, the
+        # alert paints.
         expr: |
           (
             increase(qsdm_submesh_api_wallet_reject_route_total[10m])
@@ -64,8 +145,41 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Many HTTP 422s from submesh policy"
-          description: "Wallet send or mint/token-create failing submesh rules; tune profiles or client fee/geotag/payload size."
+          # Mode B in SUBMESH_POLICY_INCIDENT.md — API
+          # path. Triage matrix in §3.2 forks on the
+          # dominant counter: wallet_reject_route_total
+          # ⇒ stale wallet client, wallet_reject_size_total
+          # ⇒ wallet release added a memo/metadata field,
+          # privileged_reject_size_total ⇒ service-account
+          # producer hit a payload-size regression. The
+          # runbook explicitly anti-patterns raising the
+          # privileged max_tx_size to silence one bad
+          # producer (it's a global change affecting
+          # every privileged caller).
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SUBMESH_POLICY_INCIDENT.md#32-mode-b--qsdmsubmeshapisustained422"
+          summary: "{{ $labels.instance }}: sustained HTTP 422s from submesh policy gate"
+          description: |
+            ≥5 API submesh-policy rejects over 10m,
+            summed across qsdm_submesh_api_wallet_reject_*
+            and qsdm_submesh_api_privileged_reject_size_total.
+            API clients receive HTTP 422 directly so the
+            producer knows; the alert paints because
+            they're retrying without fixing the
+            underlying cause.
+            Triage:
+              - Decompose by endpoint:
+                rate(qsdm_submesh_api_wallet_reject_route_total[10m])
+                rate(qsdm_submesh_api_wallet_reject_size_total[10m])
+                rate(qsdm_submesh_api_privileged_reject_size_total[10m])
+              - wallet_route ⇒ stale wallet client OR
+                submesh_config dropped a route the
+                wallet was using.
+              - wallet_size ⇒ wallet release attaching
+                memos / metadata OR max_tx_size lowered.
+              - privileged_size ⇒ mint / token-create
+                caller above the strictest cap (most
+                often a service-account producer
+                payload-size regression).
 
   - name: qsdm-throughput
     rules:

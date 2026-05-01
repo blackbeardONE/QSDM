@@ -82,10 +82,14 @@ ever kicking in?" while **quarantine** alerts answer
 
 3. **Cross-reference the submesh-policy counters.**
    `qsdm_submesh_p2p_reject_*` and
-   `qsdm_submesh_api_reject_*` (from the `qsdm-submesh`
-   alert group) name the offending policy. The
-   dominant `reason` label there is the cause for the
-   quarantine here.
+   `qsdm_submesh_api_*_reject_*` (from the
+   `qsdm-submesh` alert group) name the offending
+   policy gate. The dominant counter there is the
+   upstream cause for the quarantine here — see
+   [`SUBMESH_POLICY_INCIDENT.md`](SUBMESH_POLICY_INCIDENT.md)
+   for the per-counter triage matrix. Quarantine is
+   the *aggregate response*; submesh-policy is the
+   *per-tx decision*.
 
 4. **For Mode B: stop, capture, decide.** Critical-
    severity, ratio > 50% — don't reflexively clear half
@@ -267,6 +271,12 @@ holdoff.
   - `qsdm_quarantine_submeshes_tracked` — total observed (denominator)
   - `qsdm_quarantine_submeshes_ratio` — quarantined / tracked
 - **Companion runbooks:**
+  - [`SUBMESH_POLICY_INCIDENT.md`](SUBMESH_POLICY_INCIDENT.md)
+    — the *upstream cause* runbook. Submesh-policy
+    is the per-tx gate; quarantine is the aggregate
+    response. Concurrent `QSDMSubmesh*` + `QSDMQuarantine*`
+    alerts mean the policy hits have crossed the
+    threshold for whole-submesh isolation.
   - [`MINING_LIVENESS.md`](MINING_LIVENESS.md) — when
     quarantine has isolated enough of the validator
     set that consensus stalls
