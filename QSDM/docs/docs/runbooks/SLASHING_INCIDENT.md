@@ -359,6 +359,20 @@ the active set). Two non-Mode-B scenarios worth checking:
   - EvidenceKinds: `forged-attestation`, `double-mining`, `freshness-cheat`
   - Reject reasons: `verifier_failed`, `evidence_replayed`, `node_not_enrolled`, `decode_failed`, `fee_invalid`, `wrong_contract`, `state_lookup_failed`, `stake_mutation_failed`, `other`
   - Auto-revoke reasons: `fully_drained`, `under_bonded`
+- **Companion runbooks:**
+  - [`MINING_LIVENESS.md`](MINING_LIVENESS.md) — every
+    counter on this page flatlines during a producer
+    wedge. If `QSDMMiningChainStuck` is firing
+    concurrently, slash silence is collateral signal, not
+    a healthy state — triage liveness first.
+  - [`ENROLLMENT_INCIDENT.md`](ENROLLMENT_INCIDENT.md) —
+    `QSDMMiningRegistryShrinkingFast` driven by the
+    forced-exit branch redirects here as the upstream
+    cause; expect collateral firing.
+  - [`REJECTION_FLOOD.md`](REJECTION_FLOOD.md) — when the
+    rejection-ring is overlapping (slasher tool
+    misconfiguration drives both `qsdm_slash_rejected_total`
+    and `qsdm_attest_rejection_*` simultaneously).
 
 ## 5. Alert ↔ Mode quick-reference
 

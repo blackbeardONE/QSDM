@@ -26,8 +26,10 @@ matching cell turn red or amber.
 > false-empty registry (operator panic) or, conversely, that
 > a cluster *should* be paging on a coordinated exit and
 > isn't. Triage steps below assume the alert manager is
-> alive; if Prometheus itself is silent, escalate to the
-> liveness runbook (`QSDMMiningChainStuck`) first.
+> alive; if Prometheus itself is silent, escalate to
+> [`MINING_LIVENESS.md`](MINING_LIVENESS.md#31-mode-a--qsdmminingchainstuck)
+> first — every gauge on this page reads zero during a
+> producer wedge, regardless of the registry's actual state.
 
 ---
 
@@ -72,10 +74,14 @@ Regardless of which mode fired:
    triaging.
 
 3. **Cross-reference the chain liveness alerts.** If
-   `QSDMMiningChainStuck` is firing in the same window, the
-   block producer is wedged and the registry simply isn't
-   advancing. Triage the producer first; the registry will
-   recover on its own.
+   [`QSDMMiningChainStuck`](MINING_LIVENESS.md#31-mode-a--qsdmminingchainstuck)
+   is firing in the same window, the block producer is
+   wedged and the registry simply isn't advancing. Triage
+   the producer first via `MINING_LIVENESS.md`; the
+   registry will recover on its own once block production
+   resumes (often with a single-tick burst of
+   counter-catch-up activity — expected, not a new
+   incident).
 
 4. **Identify the dominant signal.** The mode tables below
    call out the cells that should change first; if the
@@ -127,7 +133,7 @@ delta(qsdm_chain_height[5m])
 | `unenrollment_applied` rate >> 0 in last hour | Coordinated exit (release regression, driver rollout, governance unrest) | See Mode B below — the same coordinated-exit pattern but caught earlier in time |
 | `enrollment_rejected` rate >> 0 by `malformed_payload` / `wrong_contract` | Client-server skew after a release | Pin minimum client version in MINER_QUICKSTART; revert the contract change if mid-deploy |
 | `enrollment_rejected` rate >> 0 by `gpu_uuid_collision` / `node_id_bound` | Re-enrollment churn (fleet wipe + re-onboard) | Confirm with fleet operators; usually self-resolves once the unbond window closes |
-| `delta(chain_height[5m]) == 0` | Producer wedged | Switch to `QSDMMiningChainStuck` runbook; gauges will recover when block production resumes |
+| `delta(chain_height[5m]) == 0` | Producer wedged | Switch to [`MINING_LIVENESS.md`](MINING_LIVENESS.md#31-mode-a--qsdmminingchainstuck) — gauges will recover when block production resumes |
 
 #### Mitigation
 
@@ -374,7 +380,8 @@ window, escalate to a P2 incident. Common multi-fire patterns:
   as collateral signal.
 - **A alone after a quiet period:** probably a producer
   wedge masquerading as a registry incident. Cross-check
-  `QSDMMiningChainStuck` first.
+  [`MINING_LIVENESS.md` Mode A](MINING_LIVENESS.md#31-mode-a--qsdmminingchainstuck)
+  first.
 
 ---
 
@@ -410,5 +417,11 @@ windows pass without the trigger condition holding.
 - Alert rules: `deploy/prometheus/alerts_qsdm.example.yml` →
   `qsdm-v2-mining-enrollment` group.
 - Companion runbooks:
-  - SLASHING_INCIDENT.md (when forced-exit is the driver)
-  - REJECTION_FLOOD.md (when admission-gate metrics overlap)
+  - [`MINING_LIVENESS.md`](MINING_LIVENESS.md) (when the
+    producer is wedged — every gauge on this page goes to
+    zero, so liveness is always the first thing to rule
+    out)
+  - [`SLASHING_INCIDENT.md`](SLASHING_INCIDENT.md) (when
+    forced-exit is the driver)
+  - [`REJECTION_FLOOD.md`](REJECTION_FLOOD.md) (when
+    admission-gate metrics overlap)

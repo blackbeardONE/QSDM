@@ -680,6 +680,16 @@ groups:
           severity: critical
           subsystem: v2-mining
         annotations:
+          # Mode A is the only critical-severity v2-mining
+          # alert in this file. The runbook spends most of
+          # its triage on the "all transactions failed
+          # state application" silent-freeze path because
+          # that's the operationally most-frequent cause —
+          # admission stays open while the producer
+          # silently refuses to seal, and every downstream
+          # mining alert flatlines as collateral signal
+          # rather than firing.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/MINING_LIVENESS.md#31-mode-a--qsdmminingchainstuck"
           summary: "{{ $labels.instance }}: qsdm_chain_height has not advanced in 5m"
           description: |
             Block production has stalled. v2 mining alerts above
@@ -706,6 +716,16 @@ groups:
           severity: warning
           subsystem: v2-mining
         annotations:
+          # Mode B has a strict promotion path to Mode A:
+          # if chain_height stops advancing while the
+          # backlog is firing, the runbook redirects the
+          # operator to abandon backlog triage and treat
+          # the incident as a freeze. The decision tree on
+          # the dominant reject-by-reason label
+          # (not_enrolled / wrong_contract / decode_failed
+          # vs. insufficient_balance / fee_invalid) lives in
+          # the runbook table.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/MINING_LIVENESS.md#32-mode-b--qsdmminingmempoolbacklog"
           summary: "{{ $labels.instance }}: mempool >10k pending for 10m"
           description: |
             qsdm_mempool_size is {{ $value }}. Either traffic spiked

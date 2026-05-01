@@ -14,6 +14,67 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Mining-liveness runbook + dangling-cross-reference resolution (2026-05-01).**
+  Closed the only critical-severity v2-mining alert that was
+  paging into a void: `QSDMMiningChainStuck` (severity:
+  critical) and its warning sibling `QSDMMiningMempoolBacklog`
+  now have a dedicated runbook + `runbook_url` deep-links.
+  This commit also resolves four dangling cross-references
+  inside the freshly-shipped `ENROLLMENT_INCIDENT.md`
+  (commit `7702ba1`) and one cross-reference list in
+  `SLASHING_INCIDENT.md` (commit `9dd4a73`) that pointed at
+  "the liveness runbook" before any such runbook existed —
+  an operator following those cross-references during a real
+  incident would have hit dead links. Asymmetric coverage
+  fixed: every warning-severity v2-mining alert had a
+  runbook, but the *only* critical-severity alert in the
+  family did not.
+  - **`docs/runbooks/MINING_LIVENESS.md`** — two-mode runbook
+    plus a Mode-B → Mode-A promotion path (chain advancing +
+    mempool growing → "backlog"; chain stops advancing →
+    "frozen", abandon backlog triage). Mode A spends most of
+    its triage on the **"all transactions failed state
+    application" silent-freeze path** because that's the
+    operationally most-frequent cause: admission stays open
+    while the producer silently refuses to seal, so every
+    downstream mining alert flatlines as collateral signal
+    rather than firing — the dashboard reads "no recent
+    activity" while the chain is wedged. The runbook
+    explicitly calls out this anti-correlation pattern so an
+    on-call doesn't burn cycles triaging the silent
+    `🪪 Enrollment Registry` / `⚖️ Slashing Pipeline` tiles
+    before fixing the upstream wedge. Recovery-validation
+    queries at the end let the operator confirm height has
+    resumed and warn that a single-tick burst of downstream
+    activity (post-wedge backlog drain) is expected, not a
+    new incident.
+  - **2 new `runbook_url` annotations** on
+    `QSDMMiningChainStuck` and `QSDMMiningMempoolBacklog` in
+    `deploy/prometheus/alerts_qsdm.example.yml`. Total
+    runbook-coverage tally on the alert file rose from
+    12/38 to 14/38 (37%); every `QSDMMining*` alert in the
+    file now carries a runbook deep-link.
+  - **Cross-reference resolution in
+    `ENROLLMENT_INCIDENT.md`** — four references to "the
+    liveness runbook" / `QSDMMiningChainStuck` upgraded
+    from bare alert names to deep-links pointing at
+    `MINING_LIVENESS.md#31-mode-a--qsdmminingchainstuck`.
+    Same surgery in `SLASHING_INCIDENT.md`: the §4
+    Reference list grew a "Companion runbooks" subsection
+    that surfaces the liveness/enrollment/rejection
+    runbooks operators may need during a slashing incident.
+  - **No code, no tests** — pure documentation +
+    Prometheus-config commit. Cost ≈ 10% of the enrollment
+    operator-surface commit (`7702ba1`); proportional to
+    the gap closed.
+
+  Files touched:
+  - `QSDM/docs/docs/runbooks/MINING_LIVENESS.md` (new)
+  - `QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md`
+  - `QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md`
+  - `QSDM/deploy/prometheus/alerts_qsdm.example.yml`
+  - `CHANGELOG.md`
+
 - **Enrollment registry operator surface — dashboard tile + runbook + alert annotations (2026-05-01).**
   Closed the last operator-experience gap in the v2-mining
   observability triangle. The `qsdm_enrollment_*` /
