@@ -5,10 +5,14 @@ on:
   push:
     paths:
       - "QSDM/deploy/**"
+      - "QSDM/docs/docs/runbooks/**"
+      - "scripts/check_runbook_coverage.py"
       - ".github/workflows/validate-deploy.yml"
   pull_request:
     paths:
       - "QSDM/deploy/**"
+      - "QSDM/docs/docs/runbooks/**"
+      - "scripts/check_runbook_coverage.py"
       - ".github/workflows/validate-deploy.yml"
   workflow_dispatch:
 
@@ -103,3 +107,40 @@ jobs:
             echo "==> $f"
             promtool check rules "$f"
           done
+
+  # runbook-coverage lints the (alerts, runbooks) pair to ensure
+  # every Prometheus alert in alerts_qsdm.example.yml carries a
+  # resolvable `runbook_url` annotation. Three invariants are
+  # enforced (mirroring the operator-side promise made in
+  # QSDM/docs/docs/runbooks/README.md §5):
+  #
+  #   1. Every alert has a non-empty runbook_url.
+  #   2. Every runbook_url's filename component refers to an
+  #      existing file under QSDM/docs/docs/runbooks/.
+  #   3. Every runbook_url's #anchor fragment matches an actual
+  #      markdown heading in the target file (using GitHub's
+  #      slugify rules).
+  #
+  # The sweep that landed across commits 9dd4a73..93acb1b reached
+  # 38/38 (100%) coverage; this lint job is the regression guard
+  # that prevents future PRs from silently undoing it.
+  runbook-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          # PyYAML is the only runtime dep of check_runbook_coverage.py.
+          pip install "PyYAML>=6,<7"
+
+      - name: Lint runbook coverage (alerts ↔ runbook anchors)
+        run: |
+          set -euo pipefail
+          python scripts/check_runbook_coverage.py

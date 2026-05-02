@@ -14,6 +14,68 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Runbook master index + CI coverage lint (2026-05-02).** The
+  finishing artifact for the runbook sweep that closed at 38/38
+  in the previous commit. Two paired changes:
+  (1) a master-index page operators land on as the first page
+  when paged, and (2) a CI lint job that enforces the 100%
+  coverage invariant against future regression. After this
+  commit, no PR can land an alert without a resolvable
+  `runbook_url`, and no PR can rename a runbook section without
+  also updating the anchors that point at it — both fail CI
+  before merge.
+  - **`docs/runbooks/README.md`** — operator-first index page
+    structured in 7 sections:
+    * §1 alphabetized 38-row alert ↔ runbook ↔ anchor table
+      (the "paged at 3am, click here" surface);
+    * §2 per-runbook subsystem cards (one card per runbook
+      naming the alerts covered, the canonical "when to read
+      this" framing, and the bidirectional companion runbooks
+      — 11 cards total);
+    * §3 cross-runbook escalation map (mermaid diagram showing
+      upstream causes → downstream symptoms across the 11
+      runbooks, plus a canonical concurrent-alert-pattern
+      table mapping cascade pairs to first-fix runbooks);
+    * §4 severity quick-views (7 critical, 29 warning, 2 info,
+      with Why-critical column for the 7 page-out-of-bed cases);
+    * §5 coverage invariants (documents the three CI-enforced
+      promises);
+    * §6 source-file pointers;
+    * §7 sweep history (10 commits, the runbook-coverage
+      delta sequence from initial 4/38 to invariant-locked
+      38/38).
+  - **`scripts/check_runbook_coverage.py`** — Python validator
+    enforcing three invariants: (1) every alert in
+    `alerts_qsdm.example.yml` has a non-empty `runbook_url`
+    annotation, (2) every URL's filename resolves to an existing
+    file under `QSDM/docs/docs/runbooks/`, (3) every URL's
+    `#anchor` fragment matches an actual markdown heading in
+    the target file using GitHub's slugify rules (lowercase,
+    drop non-alphanumeric except `-` and `_`, spaces to `-`,
+    consecutive hyphens preserved — the em-dash in
+    `### 3.1 Mode A — \`Alert\`` headings collapses to the
+    `--` pattern that GitHub's renderer produces). Tested
+    against three synthetic violation classes (missing url,
+    bad anchor, missing file); all three correctly exit 1.
+    Single runtime dep: PyYAML.
+  - **`.github/workflows/validate-deploy.yml`** — added
+    `runbook-coverage` job to the existing validate-deploy
+    workflow. Triggers on push/PR that touches
+    `QSDM/deploy/**`, `QSDM/docs/docs/runbooks/**`,
+    `scripts/check_runbook_coverage.py`, or the workflow file
+    itself. Pins Python 3.12 and installs `PyYAML>=6,<7`.
+    Sits alongside the existing `compose-config`,
+    `kubernetes-dry-run`, and `prometheus-rules-check` jobs;
+    same fail-fast posture.
+  - **Coverage invariant guarantee.** After this commit the
+    `docs/runbooks/README.md` §5 promise — "every alert has a
+    `runbook_url`, every URL resolves, every anchor exists" —
+    is CI-enforced rather than a one-shot manual audit. Future
+    runbook reorganization (renaming sections, moving alerts
+    between runbooks, splitting runbooks) is now safe in the
+    sense that CI will catch every dangling link before merge,
+    and broken anchors during refactor surface immediately.
+
 - **Operator-hygiene finishing runbook → 100% alert coverage
   (2026-05-02).** Closed the last 4 alerts without a
   `runbook_url` into a single bundled hygiene runbook,
