@@ -14,6 +14,88 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Operator-hygiene finishing runbook → 100% alert coverage
+  (2026-05-02).** Closed the last 4 alerts without a
+  `runbook_url` into a single bundled hygiene runbook,
+  bringing
+  [`alerts_qsdm.example.yml`](QSDM/deploy/prometheus/alerts_qsdm.example.yml)
+  coverage from 34/38 (89%) to **38/38 (100%)**. The four
+  alerts share three properties: (1) operationally adjacent
+  to v1 NVIDIA-lock or v2 throughput sentinels, (2)
+  resolvable by the on-call alone without escalation, and
+  (3) lower-frequency than cascade alerts so a single
+  bundled runbook is the right granularity. After this
+  commit every alert in the v2 alerts file carries an
+  anchored `runbook_url` and every runbook is bidirectionally
+  cross-linked to its operationally-related companions.
+  - **`docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md`** —
+    four-mode runbook covering
+    `QSDMNvidiaLockHTTPBlocksSpike` (Mode A, HTTP 403 spike
+    on the state-changing API gate),
+    `QSDMNvidiaLockP2PRejects` (Mode B, libp2p tx drops
+    post-consensus on the P2P gate),
+    `QSDMAttestHashrateOutOfBand` (Mode C, per-arch hashrate
+    band rejection across the five canonical arches), and
+    `QSDMNoTransactionsStored` (Mode D, the chain's "silent
+    failure" sentinel — processed > 0 but stored == 0 for
+    30m). Mode A's triage table maps the four canonical
+    `NvidiaLockProofOK` detail substrings ("no NGC proof
+    bundles ingested" / "no qualifying proof within
+    window" / "matching qsdm_node_id" / "valid
+    qsdm_proof_hmac") to {sidecar not posting, bundle
+    policy fail, NodeID mismatch, HMAC drift}. Mode B
+    documents the asymmetric-toggle case (HTTP gate
+    disabled, P2P gate enabled — silent libp2p drops with
+    no producer-visible signal). Mode C maps {value off by
+    orders of magnitude, value just-above-Max, multi-miner
+    one-arch-dominant, `arch="unknown"` dominant} to {units
+    typo, leaderboard-stuffing, release regression / new
+    SKU bump, `ARCH_SPOOF_INCIDENT.md` Mode A
+    cross-reference}. Mode D — the keystone — documents the
+    six-gate dispatch pipeline (parse → WASM preflight →
+    submesh policy → consensus → NVIDIA-lock P2P → storage)
+    and decomposes the divergence by which counter is
+    climbing (`qsdm_submesh_p2p_reject_*` ⇒ submesh,
+    `qsdm_nvidia_lock_p2p_rejects` ⇒ NVIDIA-lock P2P,
+    `qsdm_transactions_invalid` only ⇒ WASM or consensus,
+    all flat with only processed climbing ⇒ storage backend
+    erroring, processed alone ⇒ silent parse-stage drop).
+  - **`deploy/prometheus/alerts_qsdm.example.yml`** —
+    replaced four terse one-line annotations with structured
+    multi-line `summary` / `description` blocks plus
+    anchored `runbook_url`s pointing into the new runbook.
+    Added group-level header comments to `qsdm-nvidia-lock`
+    (documenting the two-gate model and the NGC-submission
+    upstream relationship) and `qsdm-throughput`
+    (documenting why the divergence sentinel exists — most
+    chain-failure modes have a louder signal, but silent
+    100%-reject scenarios were previously undetected).
+  - **Cross-link backfill into companion runbooks:**
+    - `ARCH_SPOOF_INCIDENT.md` — added
+      `OPERATOR_HYGIENE_INCIDENT.md` to the companion
+      runbooks list, naming the canonical
+      "miner-cheating-across-multiple-axes" pattern (Mode B
+      arch-spoof + Mode C hashrate from one NodeID →
+      slashing pipeline) and the `arch="unknown"` →
+      hashrate-band false-fail correlation.
+    - `SUBMESH_POLICY_INCIDENT.md` — added
+      `OPERATOR_HYGIENE_INCIDENT.md` to the companion
+      runbooks list as the throughput symptom (when submesh
+      rejects 100% of P2P traffic, hygiene Mode D fires as
+      the "chain admitting txs but storing none" sentinel).
+    - `NGC_SUBMISSION_INCIDENT.md` — added
+      `OPERATOR_HYGIENE_INCIDENT.md` to the companion
+      runbooks list as the *downstream consumer* runbook
+      (NGC submission populates the proof ring NVIDIA-lock
+      reads from; sustained NGC ingest rejects are the
+      canonical upstream cause of NVIDIA-lock alerts).
+  - **Coverage progression** — sweep summary now reads:
+    initial sweep (slashing/enrollment/mining-liveness/trust
+    14→20), quarantine + arch-spoof + rejection-plumbing
+    (20→27), submesh-policy (27→29), governance-authority
+    (29→32, last critical-severity gap closed),
+    NGC-submission (32→34), operator-hygiene (34→**38**).
+
 - **NGC-submission operator runbook + TRUST_INCIDENT.md
   bidirectional cross-link backfill (2026-05-02).** Closed the
   natural companion cluster to the trust subsystem — the 2 alerts

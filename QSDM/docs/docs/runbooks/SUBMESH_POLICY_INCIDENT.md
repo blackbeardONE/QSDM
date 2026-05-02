@@ -390,6 +390,16 @@ eventually be quarantined. The mapping:
     ring), but the operator pattern of
     "sustained-rejects-then-quarantine" is parallel
     and may co-occur during a fleet-wide attack.
+  - [`OPERATOR_HYGIENE_INCIDENT.md`](OPERATOR_HYGIENE_INCIDENT.md)
+    — when submesh-policy is rejecting 100% of
+    inbound P2P traffic (fleet-wide route mismatch
+    or `max_tx_size` lowered to zero), the hygiene
+    runbook's Mode D
+    (`QSDMNoTransactionsStored`) co-fires as the
+    "chain admitting txs but storing none"
+    sentinel. SUBMESH_POLICY is the upstream gate;
+    OPERATOR_HYGIENE Mode D is the throughput
+    symptom.
 
 ---
 

@@ -4,6 +4,24 @@
 # Adjust thresholds and `for:` to your fleet; many counters are monotonic — use rate().
 
 groups:
+  # -----------------------------------------------------------------
+  # NVIDIA-lock + NGC submission gate (operator-policy enforcement)
+  # -----------------------------------------------------------------
+  # NVIDIA-lock has two enforcement points: the HTTP
+  # gate (state-changing API → 403 if no qualifying
+  # proof) and the P2P gate (libp2p tx → silent drop
+  # post-consensus if no qualifying proof). Both
+  # consult the same proof ring (populated by the
+  # NGC submission gate below). Toggles are
+  # independent: QSDM_NVIDIA_LOCK_ENABLED for HTTP,
+  # QSDM_NVIDIA_LOCK_GATE_P2P for P2P. Detail strings
+  # in NvidiaLockProofOK (pkg/monitoring/nvidia_lock.go)
+  # name the four canonical failure modes (no bundles,
+  # no qualifying proof, NodeID mismatch, HMAC fail).
+  # The NGC submission alerts further down catch
+  # failures at the per-request gate that feeds the
+  # proof ring — sustained NGC rejects are the
+  # canonical upstream cause of NVIDIA-lock alerts.
   - name: qsdm-nvidia-lock
     rules:
       - alert: QSDMNvidiaLockHTTPBlocksSpike
@@ -12,8 +30,40 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Elevated NVIDIA-lock HTTP blocks"
-          description: "State-changing API calls are returning 403 from NVIDIA-lock faster than threshold."
+          # Mode A in OPERATOR_HYGIENE_INCIDENT.md —
+          # the HTTP NVIDIA-lock gate is returning
+          # 403s on state-changing API calls at >0.5/s
+          # sustained (≈150 failures in 5m). Each 403
+          # carries a typed detail message naming
+          # which guard tripped; the runbook §3.1
+          # triage table maps the four canonical
+          # detail substrings ({"no NGC proof bundles
+          # ingested", "no qualifying proof within
+          # window", "matching qsdm_node_id /
+          # qsdmplus_node_id", "valid qsdm_proof_hmac
+          # / qsdmplus_proof_hmac"}) to {sidecar not
+          # posting, bundle policy fail, NodeID
+          # mismatch, HMAC drift}. Cross-references
+          # NGC_SUBMISSION_INCIDENT.md as the
+          # upstream cause when the proof ring is
+          # empty because ingest is rejecting.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#31-mode-a--qsdmnvidialockhttpblocksspike"
+          summary: "{{ $labels.instance }}: elevated NVIDIA-lock HTTP 403 rate"
+          description: |
+            qsdm_nvidia_lock_http_blocks_total is incrementing
+            at >0.5/s sustained. State-changing API calls are
+            being rejected by the HTTP NVIDIA-lock gate. The
+            403 response body contains a typed detail message
+            naming the failure mode — capture one and match
+            against the triage table:
+              "no NGC proof bundles ingested" ⇒ sidecar isn't
+                  posting OR QSDM_NGC_INGEST_SECRET unset
+              "no qualifying proof within window" ⇒ bundle's
+                  architecture/gpu_fingerprint policy failed
+              "matching qsdm_node_id" ⇒ QSDM_NVIDIA_LOCK_EXPECTED_NODE_ID
+                  ≠ QSDM_NGC_PROOF_NODE_ID
+              "valid qsdm_proof_hmac" ⇒ HMAC secret rotated
+                  on one side only
 
       - alert: QSDMNvidiaLockP2PRejects
         expr: increase(qsdm_nvidia_lock_p2p_rejects_total[15m]) > 0
@@ -21,8 +71,41 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "P2P transactions rejected by NVIDIA-lock gate"
-          description: "nvidia_lock_gate_p2p is dropping txs without a qualifying proof."
+          # Mode B in OPERATOR_HYGIENE_INCIDENT.md —
+          # the P2P NVIDIA-lock gate dropped at least
+          # one inbound libp2p tx in 15m. Runs AFTER
+          # consensus validation, so the dropped tx
+          # had already passed WASM preflight, submesh
+          # policy, AND consensus — the lock is the
+          # final gate before storage. A single drop
+          # fires the alert. Toggles are independent
+          # of the HTTP gate: an operator can run with
+          # QSDM_NVIDIA_LOCK_ENABLED=0 (HTTP open) and
+          # QSDM_NVIDIA_LOCK_GATE_P2P=1 (P2P locked),
+          # or vice versa. The runbook §3.2 maps
+          # {Mode A also firing, Mode A flat /
+          # Mode B alone, chain-height correlated,
+          # fresh-validator unintended-gate} to the
+          # right action. The libp2p drop is silent —
+          # producers have no client-visible signal,
+          # so the alert IS the operator's only handle.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#32-mode-b--qsdmnvidialockp2prejects"
+          summary: "{{ $labels.instance }}: P2P transactions rejected by NVIDIA-lock gate"
+          description: |
+            qsdm_nvidia_lock_p2p_rejects_total has incremented
+            in the last 15m. The P2P NVIDIA-lock gate
+            (QSDM_NVIDIA_LOCK_GATE_P2P) dropped libp2p txs
+            post-consensus because no qualifying NGC proof
+            was in the ring. P2P drops are silent — the
+            producer has no client-visible signal. Triage:
+              - If Mode A (NVIDIA-lock HTTP) is also firing,
+                shared root: the proof ring is broken. Triage
+                Mode A first; B clears as a follow-on.
+              - If Mode A is flat, the HTTP gate is disabled
+                but P2P is enabled. Confirm the asymmetric
+                toggle is intentional.
+              - If unintended (env-var typo), set
+                QSDM_NVIDIA_LOCK_GATE_P2P=0 and restart.
 
       # ---------------------------------------------------------------
       # NGC submission gate — challenge issuance + proof ingest
@@ -275,6 +358,22 @@ groups:
                 often a service-account producer
                 payload-size regression).
 
+  # -----------------------------------------------------------------
+  # Throughput sentinel — the chain's "silent failure" detector
+  # -----------------------------------------------------------------
+  # Most chain-failure modes have a louder signal
+  # (consensus stalls trip mining-liveness;
+  # quarantine triggers trip the quarantine cluster;
+  # trust degradation trips the trust cluster). This
+  # rule catches the residual case where the chain
+  # LOOKS healthy from outside (peers connected,
+  # mempool churning, /metrics returning data) but
+  # isn't doing useful work — the validator is
+  # admitting txs but losing 100% of them somewhere
+  # in the six-gate dispatch pipeline (parse → WASM
+  # preflight → submesh policy → consensus →
+  # NVIDIA-lock P2P → storage). Without this alert
+  # the operator could miss it for hours.
   - name: qsdm-throughput
     rules:
       - alert: QSDMNoTransactionsStored
@@ -283,8 +382,43 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Transactions processed but none stored"
-          description: "Possible validation/storage issue; verify logs and NVIDIA-lock policy."
+          # Mode D in OPERATOR_HYGIENE_INCIDENT.md —
+          # the throughput-divergence sentinel. The
+          # runbook §3.4 documents the six-gate
+          # dispatch pipeline and maps {dominant
+          # submesh reject counter, dominant
+          # nvidia-lock P2P reject counter, invalid
+          # climbing without subsystem signal, all
+          # counters flat with only processed
+          # climbing, processed climbing without any
+          # invalid signal} to {submesh policy fail
+          # fleet-wide, NVIDIA-lock P2P all-reject,
+          # WASM preflight or consensus regression,
+          # storage backend erroring, parse-stage
+          # silent drop}. Cross-references
+          # SUBMESH_POLICY_INCIDENT.md (alternate
+          # gate cause), OPERATOR_HYGIENE Mode B
+          # (NVIDIA-lock P2P gate cause), and
+          # MINING_LIVENESS.md (when storage failures
+          # wedge block production).
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#34-mode-d--qsdmnotransactionsstored"
+          summary: "{{ $labels.instance }}: transactions processed but none stored"
+          description: |
+            Validator is admitting inbound P2P txs but storing
+            zero of them for 30m. Every tx is being dropped
+            somewhere in the six-gate dispatch pipeline (parse
+            → WASM preflight → submesh policy → consensus →
+            NVIDIA-lock P2P → storage). Triage by reading which
+            counter is climbing:
+              qsdm_submesh_p2p_reject_*    ⇒ submesh policy
+              qsdm_nvidia_lock_p2p_rejects ⇒ NVIDIA-lock P2P
+              qsdm_transactions_invalid    ⇒ WASM or consensus
+              all flat                     ⇒ storage backend
+                                             erroring (check
+                                             logs for "Failed
+                                             to store transaction")
+            See OPERATOR_HYGIENE_INCIDENT.md §3.4 for the full
+            decomposition.
 
   # -----------------------------------------------------------------
   # Trust / attestation transparency (Major Update §8.5)
@@ -1220,6 +1354,25 @@ groups:
           severity: warning
           subsystem: v2-attest
         annotations:
+          # Mode C in OPERATOR_HYGIENE_INCIDENT.md —
+          # per-arch hashrate band rejection.
+          # Threshold 0.05/s ≈ 15 rejections in 5m,
+          # lower than archspoof unknown_arch because
+          # hashrate fabrication is economic-cheating-
+          # flavoured rather than typo-flavoured. The
+          # runbook §3.3 maps {value off by orders of
+          # magnitude, value just-above-Max,
+          # multi-miner one-arch-dominant,
+          # arch="unknown" dominant} to {units typo,
+          # leaderboard-stuffing, release regression
+          # / new SKU bump, ARCH_SPOOF Mode A}. The
+          # hashrate band check is upstream of the
+          # per-type verifier; if the hashrate fails,
+          # the per-type verifier never runs — so this
+          # alert often co-fires with rejection-flood
+          # signals and may flow into a slashing case
+          # for sustained single-NodeID activity.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#33-mode-c--qsdmattesthashrateoutofband"
           summary: "{{ $labels.instance }}: claimed hashrate out of band for arch={{ $labels.arch }}"
           description: |
             qsdm_attest_hashrate_rejected_total{arch="{{ $labels.arch }}"}

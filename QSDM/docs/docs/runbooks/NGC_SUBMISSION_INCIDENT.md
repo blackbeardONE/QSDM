@@ -451,6 +451,18 @@ healthy state.
     gate*; trust there is the *aggregate
     response*. Bidirectional cross-links from
     Modes A/B/D in TRUST_INCIDENT.md.
+  - [`OPERATOR_HYGIENE_INCIDENT.md`](OPERATOR_HYGIENE_INCIDENT.md)
+    — *downstream consumer* runbook. NGC
+    submission populates the proof ring that
+    NVIDIA-lock (Modes A/B in the hygiene
+    runbook) reads from. Sustained NGC ingest
+    rejects (Mode B here) are the canonical
+    upstream cause of NVIDIA-lock alerts: if
+    the gate rejects bundles, the ring stays
+    empty and both NVIDIA-lock gates start
+    rejecting. Fix Mode B here and the
+    NVIDIA-lock signals clear within one
+    sidecar cycle.
 
 ---
 

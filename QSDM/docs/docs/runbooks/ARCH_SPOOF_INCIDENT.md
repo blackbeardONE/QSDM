@@ -387,6 +387,18 @@ canonical product naming (e.g. "NVIDIA H100", "H100 PCIe")?
   - [`ENROLLMENT_INCIDENT.md`](ENROLLMENT_INCIDENT.md)
     — Mode B's hardware-swap branch flows through the
     unenroll → unbond → re-enroll cycle
+  - [`OPERATOR_HYGIENE_INCIDENT.md`](OPERATOR_HYGIENE_INCIDENT.md)
+    — Mode C of the hygiene runbook is
+    `QSDMAttestHashrateOutOfBand`, the per-arch
+    hashrate-band check. Sustained activity from one
+    NodeID across both runbooks (arch-spoof Mode B
+    + hashrate Mode C) is the canonical
+    "miner cheating across multiple axes" pattern;
+    cross-reference to `SLASHING_INCIDENT.md`. The
+    hygiene runbook also covers the related
+    `arch="unknown"` case (lands in default switch
+    branch and trivially fails the hashrate band
+    check)
 
 ---
 
