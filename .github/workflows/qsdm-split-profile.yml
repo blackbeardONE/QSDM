@@ -60,7 +60,7 @@ jobs:
             packages: "./pkg/mining/... ./cmd/qsdmminer/... ./cmd/qsdmminer-console/... ./pkg/config/... ./pkg/branding/... ./pkg/buildinfo/... ./pkg/chain/... ./pkg/audit/... ./cmd/trustcheck/..."
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-go@v5
         with:
@@ -173,7 +173,7 @@ jobs:
     # third party (e.g. a monitoring service) would exercise from
     # outside the node.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-go@v5
         with:
@@ -199,7 +199,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: docker/setup-buildx-action@v3
 
@@ -218,7 +218,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: docker/setup-buildx-action@v3
 
