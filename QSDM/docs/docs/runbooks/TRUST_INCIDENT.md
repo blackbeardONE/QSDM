@@ -162,9 +162,9 @@ curl -s http://127.0.0.1:8080/api/v1/trust/attestations/summary | jq .
 
 | Reject rate | Probable cause | Action |
 |---|---|---|
-| Zero (no rejections either) | No sidecar is posting *anything*. Either the scheduled task / systemd timer / cron stopped, the host is offline, or `QSDM_NGC_INGEST_SECRET` is unset (route disabled) | Check sidecar status; verify the secret is set on the node |
+| Zero (no rejections either) | No sidecar is posting *anything*. Either the scheduled task / systemd timer / cron stopped, the host is offline, or `QSDM_NGC_INGEST_SECRET` is unset (route disabled — `ingest_disabled` reason) | Check sidecar status; verify the secret is set on the node. See [`NGC_SUBMISSION_INCIDENT.md` §3.2](NGC_SUBMISSION_INCIDENT.md#32-mode-b--qsdmngcproofingestrejectburst) "Class 4 — config" for the silence-vs-fix decision |
 | Non-zero, `unauthorized` dominant | Probe / scan; legitimate sidecars are also down | Same as above; the unauthorized rejects are noise |
-| Non-zero, `hmac_mismatch` / `invalid_nonce` dominant | Sidecar IS posting but the signed bundle is rejected | Promote to Mode B (the same incident from the rejection-side view); secret rotated on one side |
+| Non-zero, `hmac` / `nonce` dominant | Sidecar IS posting but the signed bundle is rejected | Promote to Mode B (the same incident from the rejection-side view); secret rotated on one side. See [`NGC_SUBMISSION_INCIDENT.md`](NGC_SUBMISSION_INCIDENT.md#32-mode-b--qsdmngcproofingestrejectburst) for the per-reason cause table |
 
 #### Mitigation
 
@@ -205,12 +205,23 @@ Severity: warning. **No `warm` gate.**
 sum by (reason) (rate(qsdm_ngc_proof_ingest_rejected_total[10m]))
 ```
 
+The closed-enum `reason` set is the same as
+[`NGC_SUBMISSION_INCIDENT.md`](NGC_SUBMISSION_INCIDENT.md#32-mode-b--qsdmngcproofingestrejectburst)
+Mode B (the per-request gate runbook), which
+carries the **authoritative reason → cause + action
+table for all nine reasons**. Below is the
+trust-side abridged view; deep-link to the gate
+runbook for the full triage matrix and mitigation
+classes.
+
 | Dominant `reason` | Cause | Action |
 |---|---|---|
-| `hmac_mismatch` | `QSDM_NGC_INGEST_SECRET` rotated on one side, mismatch between sidecar config and node config | Confirm secret alignment between sidecar env files and the validator's env file; redeploy the side that's stale |
-| `invalid_nonce` | Replay-nonce expired in flight (slow network) OR sidecar's clock has drifted out of the freshness window | Check sidecar clock skew (NTP); if the network is slow, the sidecar's retry loop should self-heal once cadence resumes |
-| `unauthorized` | Third party probing the endpoint — credentials never matched | Add the source IP to firewall block list; this reason alone usually doesn't fire the alert (small constant rate) but combined with low accepts, it can |
-| `decode_failed` / `bundle_too_large` | Sidecar/operator-tooling regression after a release | Pin sidecar minimum version in MINER_QUICKSTART |
+| `hmac` | `QSDM_NGC_INGEST_SECRET` rotated on one side, mismatch between sidecar config and node config | See [`NGC_SUBMISSION_INCIDENT.md` §3.2](NGC_SUBMISSION_INCIDENT.md#32-mode-b--qsdmngcproofingestrejectburst) "Class 1 — auth/secret drift" mitigation |
+| `nonce` | Replay-nonce expired in flight (slow network) OR sidecar's clock has drifted out of the freshness window OR the nonce-pool overflowed | See [`NGC_SUBMISSION_INCIDENT.md` §3.2](NGC_SUBMISSION_INCIDENT.md#32-mode-b--qsdmngcproofingestrejectburst) "Class 3 — replay/timing" mitigation |
+| `unauthorized` | Third party probing the endpoint OR a misconfigured sidecar lost its auth header | Add the source IP to firewall block list (see gate runbook §3.2 source-distribution audit) |
+| `body_too_large` / `invalid_json` / `missing_cuda_hash` | Sidecar/operator-tooling regression after a release | See [`NGC_SUBMISSION_INCIDENT.md` §3.2](NGC_SUBMISSION_INCIDENT.md#32-mode-b--qsdmngcproofingestrejectburst) "Class 2 — payload shape" mitigation; pin sidecar minimum version in MINER_QUICKSTART |
+| `ingest_disabled` | `QSDM_NGC_INGEST_SECRET` is unset on this validator — ingest endpoint returns 404 by design. **Not a sidecar fault.** | If this validator is supposed to be a trust peer, set the env. If not, silence Mode B on this instance |
+| `body_read` / `other` | Network flap / unmapped failure | See gate runbook §3.2 |
 
 #### Mitigation
 
@@ -219,11 +230,19 @@ sum by (reason) (rate(qsdm_ngc_proof_ingest_rejected_total[10m]))
   (usually the validator's env file in
   `/etc/qsdm/qsdm.env`) and re-key all sidecars from
   there. Rotation should be a coordinated push, not
-  side-by-side updates.
+  side-by-side updates. The gate runbook documents the
+  validator-accepts-both transition window pattern
+  for safe rotations.
 - **Clock skew:** force NTP sync on sidecars; if the
   fleet drifts repeatedly, audit which timer service
   the host runs (Windows Time / `chronyd` / `systemd-
   timesyncd`).
+- **For all other reasons:** [`NGC_SUBMISSION_INCIDENT.md`
+  §3.2](NGC_SUBMISSION_INCIDENT.md#32-mode-b--qsdmngcproofingestrejectburst)
+  is the authoritative gate-side runbook — TRUST is
+  the *aggregate response*, NGC_SUBMISSION is the
+  *per-request gate*. Fix the gate; trust auto-clears
+  5–20 min later as the aggregator re-warms.
 
 ---
 
@@ -603,10 +622,25 @@ will turn green and confirm the fix from outside.
 - **Closed-enum values:**
   - `ngc_service_status`: `healthy`, `degraded`,
     `outage`
-  - Reject reasons: `hmac_mismatch`, `invalid_nonce`,
-    `unauthorized`, `decode_failed`,
-    `bundle_too_large`, `replay_detected`
+  - Reject reasons (9 values; authoritative
+    definition in
+    [`pkg/monitoring/ngc_ingest_metrics.go`](../../../source/pkg/monitoring/ngc_ingest_metrics.go)):
+    `ingest_disabled`, `unauthorized`, `body_read`,
+    `body_too_large`, `invalid_json`,
+    `missing_cuda_hash`, `nonce`, `hmac`, `other`.
+    See
+    [`NGC_SUBMISSION_INCIDENT.md`](NGC_SUBMISSION_INCIDENT.md#32-mode-b--qsdmngcproofingestrejectburst)
+    for the per-reason cause + action table.
 - **Companion runbooks:**
+  - [`NGC_SUBMISSION_INCIDENT.md`](NGC_SUBMISSION_INCIDENT.md)
+    — the *upstream cause* runbook. NGC submission
+    is the per-request gate (challenge issuance +
+    proof ingest); trust here is the aggregate
+    response. Sustained `QSDMNGCProofIngestRejectBurst`
+    is the canonical upstream cause for Modes A/B/D
+    here; the gate runbook's §3.2 is the
+    authoritative reason → cause + action table for
+    all nine reject reasons.
   - [`MINING_LIVENESS.md`](MINING_LIVENESS.md) —
     aggregator wedges and producer wedges share the
     same "downstream silence is collateral signal"

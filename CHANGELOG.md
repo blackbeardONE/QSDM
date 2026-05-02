@@ -14,6 +14,94 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **NGC-submission operator runbook + TRUST_INCIDENT.md
+  bidirectional cross-link backfill (2026-05-02).** Closed the
+  natural companion cluster to the trust subsystem — the 2 alerts
+  in the NGC-submission sub-group of `qsdm-nvidia-lock` catch the
+  **per-request gate** for the qsdm.tech transparency pipeline
+  (`GET /monitoring/ngc-challenge` rate-limited at 15 req/IP/min,
+  `POST /monitoring/ngc-proof` with nine closed-enum reject
+  reasons), distinct from the **aggregate-response** failure mode
+  that TRUST_INCIDENT.md covers. The pattern is parallel to
+  QUARANTINE↔SUBMESH_POLICY: NGC submission is the per-request
+  gate; trust is the aggregate response. While here, also fixed
+  TRUST_INCIDENT.md's stale reject-reason names (the runbook had
+  `hmac_mismatch` / `invalid_nonce` / `decode_failed` /
+  `bundle_too_large` / `replay_detected` from an earlier rev of
+  the code, but the actual closed-enum set per
+  `pkg/monitoring/ngc_ingest_metrics.go` is `ingest_disabled` /
+  `unauthorized` / `body_read` / `body_too_large` / `invalid_json`
+  / `missing_cuda_hash` / `nonce` / `hmac` / `other`). Net
+  coverage: 32/38 → **34/38 (89%)**.
+  - **`docs/runbooks/NGC_SUBMISSION_INCIDENT.md`** — two-mode
+    runbook covering `QSDMNGCChallengeRateLimited` (Mode A,
+    challenge-issuance 429s) and `QSDMNGCProofIngestRejectBurst`
+    (Mode B, ingest rejects across nine closed-enum reasons).
+    Mode A's source-distribution table forks {single known
+    sidecar, single unknown IP, fleet-wide bursts, chain-event
+    correlated} into one of {operator outreach, firewall block,
+    sidecar release rollback, nonce-TTL extension}; explicitly
+    anti-patterns silently raising the per-IP cap to silence the
+    alert. Mode B is framed as "the canonical upstream cause for
+    trust degradation" — the per-reason cause + action table maps
+    each of nine closed-enum reasons to a probable cause and
+    grouped-mitigation class: Class 1 — auth/secret drift (`hmac`,
+    `unauthorized`); Class 2 — payload shape (`body_too_large`,
+    `missing_cuda_hash`, `invalid_json`); Class 3 — replay/timing
+    (`nonce`, `body_read`); Class 4 — config (`ingest_disabled` —
+    silence on validators not supposed to be trust peers); Class
+    5 — bug (`other`). The §4 cascade map explicitly hands off to
+    TRUST_INCIDENT.md Modes A/B/D when those fire alongside, with
+    the framing: "Mode B is the upstream cause; the trust alert
+    is the symptom. Fix the dominant reject reason here, and the
+    trust alert clears 5–20 min later as the aggregator
+    re-warms."
+  - **`docs/runbooks/TRUST_INCIDENT.md` bidirectional cross-link
+    backfill** —
+    - Mode A's reject-rate table now deep-links to
+      NGC_SUBMISSION_INCIDENT.md §3.2 for the silence-vs-fix
+      decision on `ingest_disabled` and the per-reason cause
+      table on `hmac`/`nonce`.
+    - Mode B's per-reason table replaced with the abridged
+      trust-side view + deep-link to the gate runbook's
+      authoritative full table; reasons updated from the stale
+      names (`hmac_mismatch` / `invalid_nonce` / `decode_failed` /
+      `bundle_too_large` / `replay_detected`) to the actual
+      closed-enum names (`hmac` / `nonce` / `body_too_large` /
+      `invalid_json` / `missing_cuda_hash` / etc.). Mode B's
+      mitigation now cross-references the gate runbook's
+      validator-accepts-both transition window pattern for
+      safe rotations.
+    - §5 Reference's "Closed-enum values" updated to list the
+      authoritative 9-reason set with a deep-link to the source
+      file (`pkg/monitoring/ngc_ingest_metrics.go`) and the gate
+      runbook's per-reason table.
+    - §5 Reference's companion-runbooks list now opens with
+      NGC_SUBMISSION_INCIDENT.md, explicitly framed as the
+      *upstream cause* runbook (per-request gate vs. aggregate
+      response).
+  - **`deploy/prometheus/alerts_qsdm.example.yml`** — replaced
+    both NGC-submission alerts' terse one-line annotations with
+    structured `summary` + multi-line `description` + anchored
+    `runbook_url` blocks. Each alert carries a multi-line
+    operator-comment block before the `runbook_url` summarising
+    the mode-specific signal (Mode A: source-distribution
+    decision tree + "explicitly anti-patterns silently raising
+    the per-IP cap"; Mode B: "the canonical upstream cause for
+    trust degradation" with the cascade timing). The alert group
+    also got a multi-line header comment block documenting the
+    rate-limit caps (15/30 req/IP/min) and the cascade
+    relationship to TRUST_INCIDENT.md Modes A/B/D.
+  - **No code changes.** Pure docs + alert-annotation commit;
+    leverages the existing `pkg/monitoring/ngc_ingest_metrics.go`
+    + `pkg/monitoring/nvidia_lock_metrics.go` collectors and the
+    `pkg/api/security.go` rate-limiter that already shipped. The
+    remaining 4 uncovered alerts are 2 NVIDIA-lock alerts and 2
+    singletons (`QSDMNoTransactionsStored`,
+    `QSDMAttestHashrateOutOfBand`) — the next runbook sweep can
+    bundle all four into a single "v1 attestation + operator
+    hygiene" runbook that wraps the coverage at 100%.
+
 - **Governance-authority operator runbook + alert annotations (2026-05-02).**
   Closed the largest remaining cluster of uncovered alerts AND the
   last critical-severity alert without a runbook — the 3 alerts in

@@ -24,14 +24,64 @@ groups:
           summary: "P2P transactions rejected by NVIDIA-lock gate"
           description: "nvidia_lock_gate_p2p is dropping txs without a qualifying proof."
 
+      # ---------------------------------------------------------------
+      # NGC submission gate — challenge issuance + proof ingest
+      # ---------------------------------------------------------------
+      # GET /monitoring/ngc-challenge mints a fresh
+      # (nonce, issued_at, signature) triple per call;
+      # rate-limited at 15 req/IP/min in
+      # pkg/api/security.go:getEndpointLimit. POST
+      # /monitoring/ngc-proof ingests the signed
+      # CUDA-proof bundle; rate-limited at 30 req/IP/min,
+      # nine closed-enum reject reasons in
+      # pkg/monitoring/ngc_ingest_metrics.go
+      # (ingest_disabled / unauthorized / body_read /
+      # body_too_large / invalid_json / missing_cuda_hash
+      # / nonce / hmac / other). These two alerts catch
+      # failures at the per-request submission gate;
+      # sustained rejects here are the canonical
+      # upstream cause of TRUST_INCIDENT.md Modes A/B/D
+      # (no accepted bundles → trust attested drops →
+      # qsdm.tech badge degraded).
       - alert: QSDMNGCChallengeRateLimited
         expr: increase(qsdm_ngc_challenge_rate_limited_total[10m]) > 5
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Many 429s on ngc-challenge"
-          description: "Sidecars or clients may be polling challenge too aggressively; check Retry-After and jitter."
+          # Mode A in NGC_SUBMISSION_INCIDENT.md — a
+          # sidecar (or a third-party probe) hit the
+          # 15-req/IP/min cap on /ngc-challenge and
+          # got 429 at least 6× in 10m. The validator
+          # returns Retry-After on every 429, so a
+          # well-behaved client backs off immediately;
+          # sustained hits mean the client ignored
+          # Retry-After OR retries without jitter. The
+          # runbook §3.1 source-distribution table
+          # forks {single known sidecar, single
+          # unknown IP, fleet-wide bursts, chain-event
+          # correlated} into one of {operator
+          # outreach, firewall block, sidecar release
+          # rollback, nonce-TTL extension}. Explicitly
+          # anti-patterns silently raising the per-IP
+          # cap to silence the alert.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NGC_SUBMISSION_INCIDENT.md#31-mode-a--qsdmngcchallengeratelimited"
+          summary: "{{ $labels.instance }}: sustained 429s on /monitoring/ngc-challenge"
+          description: |
+            qsdm_ngc_challenge_rate_limited_total has incremented
+            >5 times in 10m, sustained 5m. The per-IP cap is 15
+            req/min; sustained hits mean a sidecar is polling
+            without jitter or ignoring Retry-After. Triage:
+              - Identify the offending IP from access logs
+                (the rate limit is per-IP).
+              - Compare rate(qsdm_ngc_challenge_rate_limited_total)
+                vs. rate(qsdm_ngc_challenge_issued_total) — the
+                healthy ratio is rate_limited << issued.
+              - If the offender is a known sidecar, pin its
+                version against the reference scripts in
+                apps/qsdm-nvidia-ngc/scripts (which jitter
+                ±30s in a 60–120s cycle).
+              - If unknown, add to upstream firewall block list.
 
       - alert: QSDMNGCProofIngestRejectBurst
         expr: sum(increase(qsdm_ngc_proof_ingest_rejected_total[10m])) > 10
@@ -39,8 +89,52 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Many rejected POSTs to /monitoring/ngc-proof"
-          description: "Check sidecar logs, HMAC/nonce alignment, body size, and unauthorized probes; see qsdm_ngc_proof_ingest_rejected_total by reason."
+          # Mode B in NGC_SUBMISSION_INCIDENT.md — the
+          # canonical upstream cause for trust
+          # degradation. The summed-rate expression
+          # means a multi-reason failure trips the
+          # alert just as easily as a single dominant
+          # reason — intentional, because most real
+          # incidents (rotated secret, malformed
+          # bundle release, clock-skew event) cause
+          # two or three reject_reasons to spike
+          # together. The runbook §3.2 maps each of
+          # nine closed-enum reasons to a probable
+          # cause + action, and groups them into
+          # mitigation classes: auth/secret drift
+          # (hmac, unauthorized), payload shape
+          # (body_too_large, missing_cuda_hash,
+          # invalid_json), replay/timing (nonce,
+          # body_read), config (ingest_disabled —
+          # silence on validators not supposed to be
+          # trust peers), and bug (other). The
+          # cascade map in §4 explicitly hands off to
+          # TRUST_INCIDENT.md Modes A/B/D when those
+          # fire alongside.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NGC_SUBMISSION_INCIDENT.md#32-mode-b--qsdmngcproofingestrejectburst"
+          summary: "{{ $labels.instance }}: sustained POST /monitoring/ngc-proof rejections"
+          description: |
+            qsdm_ngc_proof_ingest_rejected_total summed across
+            all reject reasons exceeded 10 in 10m, sustained 5m.
+            This is the canonical UPSTREAM CAUSE for trust
+            degradation — sustained Mode B precedes
+            QSDMTrustNoAttestationsAccepted /
+            QSDMTrustIngestRejectRateElevated /
+            QSDMTrustNGCServiceDegraded by 5–20 min.
+            Triage: decompose by reason FIRST. The dominant
+            reason names the cause:
+              topk(3, sum by (reason)
+                (rate(qsdm_ngc_proof_ingest_rejected_total[10m])))
+            Reason → cause mapping (see runbook §3.2 table
+            for full triage):
+              hmac           ⇒ secret rotation hit one side only
+              nonce          ⇒ clock skew / retry loop / pool overflow
+              unauthorized   ⇒ third-party probe OR auth misconfig
+              body_too_large ⇒ sidecar release payload regression
+              missing_cuda_hash / invalid_json ⇒ sidecar serializer bug
+              ingest_disabled ⇒ QSDM_NGC_INGEST_SECRET unset (not a
+                                fault if this validator isn't a trust peer)
+              other          ⇒ closed-enum gap; file P3.
 
   # -----------------------------------------------------------------
   # Submesh policy gate (per-tx route + size enforcement)
