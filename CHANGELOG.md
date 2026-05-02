@@ -14,6 +14,67 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Governance-authority operator runbook + alert annotations (2026-05-02).**
+  Closed the largest remaining cluster of uncovered alerts AND the
+  last critical-severity alert without a runbook — the 3 alerts in
+  `qsdm-v2-governance` cover the chain's **constitutional layer**
+  (M-of-N multisig that signs `qsdm/gov/v1` parameter changes and
+  votes on its own membership). The runbook focuses on the
+  three-stage authority lifecycle (vote → threshold cross →
+  activation) instrumented by three counter families, plus the
+  `qsdm_gov_authority_count` gauge that is the floor-violation
+  signal. Net coverage: 29/38 → **32/38 (84%)**, and EVERY remaining
+  uncovered alert is now severity:warning or below.
+  - **`docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md`** —
+    three-mode runbook covering `QSDMGovAuthorityVoteRecorded`
+    (Mode A, info), `QSDMGovAuthorityThresholdCrossed` (Mode B,
+    warning), and `QSDMGovAuthorityCountTooLow` (Mode C, **critical**).
+    Mode A is operator-coordination glue — the alert exists so every
+    multisig member sees a vote happened in case the coordinator
+    forgets the secure-channel ping. Mode A's observation table
+    forks on {expected schedule, unexpected vote, sustained
+    duplicate-vote rejects, vote-validation rejects, mass-rotation}
+    to one of {acknowledge, secure-channel veto check, script-bug
+    audit, voter-membership audit, planned mass rotation}.
+    Mode B is the staging-window page — the proposal has crossed
+    threshold and is one consensus step from applying; the §3.2
+    pre-activation checklist walks {confirm-intent, validate-address
+    (canonical social-engineering attack on op=add),
+    validate-effective-height, op=remove post-count-check}. Crucially,
+    the runbook documents that **no on-chain cancellation primitive
+    exists** — the only veto path is racing a counter-rotation, OR
+    deliberately tripping Mode C as a paged signal to halt the
+    chain. Mode C is the chain's single-signer hazard alarm; the
+    §3.3 decision tree forks on whether the actual `AuthorityList`
+    size matches the gauge: real count drop ⇒ Branch A (race a
+    unilateral op=add if N=1; hard-fork if N=0), wiring bug ⇒ Branch
+    B (restart and audit `pkg/monitoring/gov_recorder`). The
+    threshold formula (`AuthorityThreshold(n)`: 0→0, 1→1, n≥2→n/2+1)
+    is documented inline so operators can reason about whether a
+    given rotation will trip the floor before they cast a vote.
+    Cross-mode + cross-runbook §4 covers the cascade map: Mode B
+    `op=remove` followed by Mode C ⇒ the activated remove pushed
+    N below floor; Mode C + chain-stuck ⇒ governance recovery is
+    gated on chain liveness; Mode C + slashing of an authority
+    key ⇒ normal post-slash behaviour via `DropVotesByAuthority`.
+  - **`deploy/prometheus/alerts_qsdm.example.yml`** — added
+    `runbook_url` to all three `qsdm-v2-governance` alerts. Each
+    annotation carries a multi-line operator-comment block before
+    the URL summarising the mode-specific signal (Mode A: "if it
+    pages someone out of bed, the Alertmanager routing config is
+    wrong"; Mode B: "the staging window is the LAST opportunity
+    to coordinate out-of-band; no on-chain cancellation primitive
+    exists"; Mode C: "the only critical-severity alert in the
+    governance group, the only one that fires on a gauge-state").
+  - **No code changes.** Pure docs + alert-annotation commit;
+    leverages the existing `pkg/monitoring/gov_metrics.go`
+    collector and the `pkg/governance/chainparams/authority.go`
+    `AuthorityVoteStore` semantics. After this commit the only
+    uncovered alerts are 6 warning/info alerts split across
+    NVIDIA-lock (2), NGC submission (2), and 2 singletons
+    (`QSDMNoTransactionsStored`, `QSDMAttestHashrateOutOfBand`) —
+    no remaining critical-severity alert lacks a runbook.
+
 - **Submesh-policy operator runbook + alert annotations (2026-05-01).**
   Closed the natural companion cluster to the
   quarantine subsystem — the 2 alerts in `qsdm-submesh`

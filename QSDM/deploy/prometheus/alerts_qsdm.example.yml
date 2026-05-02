@@ -1174,6 +1174,22 @@ groups:
           severity: info
           subsystem: v2-governance
         annotations:
+          # Mode A in GOVERNANCE_AUTHORITY_INCIDENT.md —
+          # operator coordination glue. The alert exists
+          # so every multisig member sees that a vote
+          # happened in case the coordinator forgets the
+          # secure-channel ping. The runbook's §3.1
+          # observation table maps {expected coordinator
+          # schedule, unexpected vote, sustained
+          # duplicate-vote rejects, vote-validation
+          # rejects, mass-rotation event} to one of
+          # {acknowledge, secure-channel veto check,
+          # script-bug audit, voter-membership audit,
+          # planned mass rotation}. The alert is
+          # informational — if it pages someone out of
+          # bed, the Alertmanager routing config is
+          # wrong.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#31-mode-a--qsdmgovauthorityvoterecorded"
           summary: "{{ $labels.instance }}: authority rotation vote recorded ({{ $labels.op }})"
           description: |
             qsdm_gov_authority_voted_total{op="{{ $labels.op }}"}
@@ -1196,6 +1212,21 @@ groups:
           severity: warning
           subsystem: v2-governance
         annotations:
+          # Mode B in GOVERNANCE_AUTHORITY_INCIDENT.md —
+          # the proposal has crossed M-of-N and is
+          # staged for activation at effective_height.
+          # The window between Crossed and
+          # effective_height is the LAST opportunity to
+          # coordinate out-of-band; no on-chain
+          # cancellation primitive exists. The runbook's
+          # §3.2 pre-activation checklist walks
+          # {confirm-intent, validate-address (canonical
+          # social-engineering attack on op=add),
+          # validate-effective-height, op=remove
+          # post-count-check}. The veto path is
+          # explicitly racing a counter-rotation —
+          # there is no "cancel proposal" tx.
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#32-mode-b--qsdmgovauthoritythresholdcrossed"
           summary: "{{ $labels.instance }}: authority rotation crossed M-of-N threshold ({{ $labels.op }})"
           description: |
             qsdm_gov_authority_crossed_total{op="{{ $labels.op }}"}
@@ -1226,6 +1257,27 @@ groups:
           severity: critical
           subsystem: v2-governance
         annotations:
+          # Mode C in GOVERNANCE_AUTHORITY_INCIDENT.md —
+          # the only critical-severity alert in the
+          # governance group, and the only governance
+          # alert that fires on a gauge-state rather
+          # than a counter-rate. The runbook's §3.3
+          # decision tree forks on whether the actual
+          # AuthorityList size matches the gauge
+          # (real count drop ⇒ Branch A, race a
+          # unilateral op=add if N=1; wiring bug ⇒
+          # Branch B, restart and audit
+          # gov_recorder). With N=0 governance is
+          # disabled entirely and only a hard fork can
+          # re-seed the AuthorityList — the runbook
+          # explicitly calls this out as the
+          # worst-case escape hatch. Cross-references
+          # SLASHING_INCIDENT.md (slashing of an
+          # authority key) and MINING_LIVENESS.md
+          # (gov recovery is gated on chain liveness
+          # if the authority drop has wedged
+          # consensus).
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#33-mode-c--qsdmgovauthoritycounttoolow"
           summary: "{{ $labels.instance }}: AuthorityList size = {{ $value }} (< 2)"
           description: |
             qsdm_gov_authority_count is {{ $value }}, below the
