@@ -308,7 +308,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build (and push when allowed)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: QSDM
           file: QSDM/Dockerfile

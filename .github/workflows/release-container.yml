@@ -286,7 +286,7 @@ jobs:
             type=semver,pattern={{major}}
 
       - name: Build and push (legacy qsdm name)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: QSDM
           file: QSDM/Dockerfile
@@ -323,7 +323,7 @@ jobs:
             type=semver,pattern={{major}}
 
       - name: Build and push validator image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: QSDM
           file: QSDM/Dockerfile.validator
@@ -360,7 +360,7 @@ jobs:
             type=semver,pattern={{major}}
 
       - name: Build and push miner image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: QSDM
           file: QSDM/Dockerfile.miner
