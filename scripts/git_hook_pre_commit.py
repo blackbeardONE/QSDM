@@ -104,16 +104,22 @@ ALERTS_FILE = "QSDM/deploy/prometheus/alerts_qsdm.example.yml"
 TEST_FILE = "QSDM/deploy/prometheus/alerts_qsdm.test.yml"
 SPEC_FILE = "QSDM/deploy/prometheus/alerts_qsdm.test.spec.yml"
 RUNBOOKS_DIR = "QSDM/docs/docs/runbooks/"
+DASHBOARDS_DIR = "QSDM/deploy/grafana/dashboards/"
 LINT_SCRIPT = "scripts/check_runbook_coverage.py"
 GEN_SCRIPT = "scripts/gen_promtool_tests.py"
+GEN_DASHBOARDS_SCRIPT = "scripts/gen_grafana_dashboards.py"
 WORKFLOW_FILE = ".github/workflows/validate-deploy.yml"
 HOOK_FILE = "scripts/git_hook_pre_commit.py"
 
 # Paths whose modification triggers the runbook-coverage lint.
+# The lint also validates `dashboard_url` annotations and the
+# corresponding JSON files, so dashboard edits trigger it too.
 RUNBOOK_LINT_TRIGGERS = (
     ALERTS_FILE,
     RUNBOOKS_DIR,
+    DASHBOARDS_DIR,
     LINT_SCRIPT,
+    GEN_DASHBOARDS_SCRIPT,
     HOOK_FILE,
 )
 

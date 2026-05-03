@@ -1,0 +1,51 @@
+# Grafana dashboard provisioning — auto-loads the QSDM runbook
+# dashboards from QSDM/deploy/grafana/dashboards/.
+#
+# Copy into your Grafana provisioning path, e.g.
+#   /etc/grafana/provisioning/dashboards/qsdm-runbooks.yaml
+# (Docker: mount as /etc/grafana/provisioning/dashboards/qsdm-runbooks.yaml).
+#
+# Then mount the dashboards directory itself at the path declared in
+# `options.path:` below. Adjust `options.path:` to wherever you put
+# the `QSDM/deploy/grafana/dashboards/` contents on the Grafana host.
+#
+# What this provisions
+# --------------------
+# - One per-runbook dashboard for each runbook that owns alerts
+#   (filename pattern: qsdm-runbook-<slug>.json).
+# - One master "alerts overview" dashboard (qsdm-alerts-overview.json)
+#   showing every alert grouped by runbook in collapsible rows.
+#
+# All dashboards are auto-generated from
+# QSDM/deploy/prometheus/alerts_qsdm.example.yml by
+# scripts/gen_grafana_dashboards.py. Do not hand-edit the JSON
+# files — your changes will be overwritten on the next regeneration.
+#
+# All dashboards expect a Prometheus datasource. They reference it
+# via `${DS_PROMETHEUS}`, which Grafana resolves at provisioning
+# time. Pair this file with the datasource provisioning at
+# provisioning/datasources/prometheus.example.yml (same dir).
+
+apiVersion: 1
+
+providers:
+  - name: 'qsdm-runbooks'
+    orgId: 1
+    folder: 'QSDM Runbooks'
+    folderUid: qsdm-runbooks
+    type: file
+    disableDeletion: false
+    # Re-scan every 30 s so a regenerate-and-redeploy of a single
+    # JSON shows up without a Grafana restart.
+    updateIntervalSeconds: 30
+    # Keep file UIDs stable: when a dashboard is reloaded after
+    # being edited in the UI, Grafana writes UI changes back to the
+    # JSON file (avoid for production). Set allowUiUpdates: false
+    # to make the file the source of truth.
+    allowUiUpdates: false
+    options:
+      # ADJUST TO YOUR DEPLOYMENT.
+      # Mount or copy the QSDM/deploy/grafana/dashboards/ directory
+      # to this path on the Grafana host.
+      path: /etc/grafana/provisioning/dashboards/qsdm
+      foldersFromFilesStructure: false

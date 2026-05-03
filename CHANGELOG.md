@@ -14,6 +14,100 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Per-runbook Grafana dashboards + `dashboard_url` annotation
+  on every alert (2026-05-04).** Closes the last gap in the
+  alert ↔ incident-response chain: an on-call operator now has
+  a click-through path from PagerDuty / Slack notification →
+  live Grafana panel for the firing alert, in addition to the
+  existing path to the runbook markdown. The dashboards are
+  auto-generated from the alerts file (one panel per alert,
+  threshold-coloured) and lint-validated, so they cannot drift
+  out of sync with the rules they visualise.
+  - **New artefacts**:
+    - 11 per-runbook dashboard JSONs at
+      [`QSDM/deploy/grafana/dashboards/qsdm-runbook-*.json`](QSDM/deploy/grafana/dashboards),
+      one for each runbook that owns alerts (38 alerts spread
+      across 11 runbooks).
+    - 1 master overview dashboard at
+      [`qsdm-alerts-overview.json`](QSDM/deploy/grafana/dashboards/qsdm-alerts-overview.json)
+      containing all 38 alert panels grouped by runbook in
+      collapsible rows (76 panels total across the 12
+      dashboards).
+    - File-provisioning shim
+      [`provisioning/dashboards/qsdm-runbooks.example.yaml`](QSDM/deploy/grafana/provisioning/dashboards/qsdm-runbooks.example.yaml)
+      so Grafana auto-loads the directory; `updateIntervalSeconds: 30`
+      means a regenerate-and-redeploy of one JSON shows up
+      without a Grafana restart.
+    - Generator [`scripts/gen_grafana_dashboards.py`](scripts/gen_grafana_dashboards.py)
+      (~632 lines): reads
+      [`alerts_qsdm.example.yml`](QSDM/deploy/prometheus/alerts_qsdm.example.yml),
+      groups alerts by their `runbook_url` filename, emits one
+      stat-panel-per-alert dashboard per runbook plus the
+      master overview. Stable panel IDs (alphabetical on
+      alertname) so URL fragments survive alert add/remove.
+  - **Threshold extraction**: the generator parses each
+    alert's PromQL expression and extracts the rightmost
+    top-level numeric comparison, then renders the LHS as the
+    panel expression with a Grafana threshold step at the RHS.
+    Severity drives the firing colour (`critical → red`,
+    `warning → orange`, `info → yellow`). For compound
+    expressions (`a > 1 and b < 2`), `==`/`!=`, or non-numeric
+    RHS, the generator falls back to rendering the full
+    boolean expression (0/1) with the same severity colour at
+    1 — operationally clearer than splitting at one half of a
+    compound clause. PromQL whitespace from YAML block-folded
+    `expr:` values is normalised to single spaces in the
+    panel definition so dashboard JSON stays clean.
+  - **Two new lint invariants** (extending the existing six-
+    invariant lint at
+    [`scripts/check_runbook_coverage.py`](scripts/check_runbook_coverage.py)):
+    | # | Invariant                                                                              |
+    | -- | -------------------------------------------------------------------------------------- |
+    | 7 | Every alert has a non-empty `dashboard_url` annotation alongside its `runbook_url`.    |
+    | 8 | Every `dashboard_url` resolves to a real JSON file under `QSDM/deploy/grafana/dashboards/`. |
+    Both invariants verified end-to-end with a 4-scenario
+    drift harness against the live alerts file (baseline /
+    strip-all-annotations / point-at-missing-file /
+    wrong-URL-shape) — all four scenarios produce the expected
+    PASS or FAIL with helpful pointers (the broken-file case
+    even suggests `python scripts/gen_grafana_dashboards.py`
+    as the remediation).
+  - **`dashboard_url` annotation added to all 38 alerts** in
+    [`alerts_qsdm.example.yml`](QSDM/deploy/prometheus/alerts_qsdm.example.yml),
+    one line each, immediately after `runbook_url`. Same URL
+    shape as `runbook_url` (`https://github.com/.../blob/main/...`)
+    so the lint can validate without external dependencies.
+    Operators with a running Grafana add their own deep-link
+    via `<grafana>/d/<uid>?viewPanel=<id>` — the URLs in the
+    annotation point at the canonical JSON source.
+  - **Pre-commit hook trigger paths updated**: dashboard
+    edits + generator-script edits now engage the runbook
+    coverage lint locally, mirroring the CI workflow's
+    `paths:` filter (which already covers `QSDM/deploy/**`).
+  - **`promtool test rules` baselines regenerated**: adding a
+    new annotation key to every alert changed the rendered
+    `Annotations:` map promtool emits, which would have
+    failed `exp_annotations` exact-match assertions in the
+    behavioural suite. Re-ran
+    [`scripts/gen_promtool_tests.py`](scripts/gen_promtool_tests.py)
+    to capture the new baseline; the resulting `+38` lines in
+    [`alerts_qsdm.test.yml`](QSDM/deploy/prometheus/alerts_qsdm.test.yml)
+    are the new `dashboard_url:` entries inside each
+    `exp_annotations:` block. `promtool test rules` reports
+    `SUCCESS` against the regenerated suite.
+  - **Operator workflow** for adding a new alert now:
+    1. Add the rule to `alerts_qsdm.example.yml` with
+       `runbook_url` and `dashboard_url` annotations.
+    2. Add a matching test entry to
+       `alerts_qsdm.test.spec.yml`.
+    3. Add a matching runbook section.
+    4. Run `python scripts/gen_grafana_dashboards.py` to
+       generate / update the per-runbook dashboard.
+    5. Run `python scripts/gen_promtool_tests.py` to
+       refresh `alerts_qsdm.test.yml` baselines.
+    6. Commit. Pre-commit hook runs all three lint gates;
+       all four CI gates run on push.
+
 - **Declarative test-spec file for the promtool behavioural suite
   (2026-05-04).** The 38-alert behavioural test suite previously
   lived as a 510-line in-script literal at the top of

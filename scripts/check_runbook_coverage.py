@@ -2,12 +2,13 @@
 """
 Runbook coverage lint.
 
-Enforces six invariants on every push/PR that
+Enforces eight invariants on every push/PR that
 touches QSDM/deploy/, QSDM/docs/docs/runbooks/, or
 this script. The first three protect the alerts ↔
 runbooks pair; the next three protect the in-runbook
 navigation mesh (cross-runbook links + source-file
-references + intra-file anchors).
+references + intra-file anchors); the last two
+protect the alerts ↔ Grafana dashboards pair.
 
 Alerts ↔ runbooks invariants:
 
@@ -35,6 +36,24 @@ In-runbook link invariants:
      existing path under the repo root. This covers
      references to Go source files, deploy
      manifests, scripts, and other repo artifacts.
+
+Alerts ↔ Grafana dashboards invariants:
+
+  7. Every Prometheus alert carries a non-empty
+     `dashboard_url` annotation alongside its
+     `runbook_url`. PagerDuty / Slack templates
+     surface both, so an on-call operator can jump
+     from the incident notification straight to a
+     live Grafana panel for that alert.
+  8. Every `dashboard_url` resolves to an existing
+     JSON file under
+     QSDM/deploy/grafana/dashboards/. The
+     dashboards are auto-generated from the alerts
+     file by scripts/gen_grafana_dashboards.py;
+     this invariant catches stale URLs left behind
+     after a runbook is renamed (the slug changes
+     so the URL would otherwise point at a missing
+     file).
 
 External links (http://, https://, mailto:) are
 always skipped because the lint is offline-only.
@@ -92,7 +111,9 @@ except ImportError:
 REPO_ROOT_DEFAULT = Path(__file__).resolve().parent.parent
 ALERTS_RELPATH = Path("QSDM/deploy/prometheus/alerts_qsdm.example.yml")
 RUNBOOKS_RELDIR = Path("QSDM/docs/docs/runbooks")
+DASHBOARDS_RELDIR = Path("QSDM/deploy/grafana/dashboards")
 RUNBOOK_URL_PREFIX_GITHUB = "https://github.com/"
+DASHBOARD_URL_PREFIX_GITHUB = "https://github.com/"
 
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
@@ -187,11 +208,11 @@ def extract_links(md_path: Path) -> List[Tuple[int, str, str]]:
     return out
 
 
-def parse_alerts(path: Path) -> List[Tuple[str, str, str]]:
-    """Load alerts file and return [(group, alert_name, runbook_url), ...]."""
+def parse_alerts(path: Path) -> List[Tuple[str, str, str, str]]:
+    """Load alerts file and return [(group, alert_name, runbook_url, dashboard_url), ...]."""
     with path.open("r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
-    out: List[Tuple[str, str, str]] = []
+    out: List[Tuple[str, str, str, str]] = []
     for group in data.get("groups", []) or []:
         gname = group.get("name", "<unnamed-group>")
         for rule in group.get("rules", []) or []:
@@ -199,7 +220,8 @@ def parse_alerts(path: Path) -> List[Tuple[str, str, str]]:
                 continue
             ann = rule.get("annotations") or {}
             url = ann.get("runbook_url", "") or ""
-            out.append((gname, rule["alert"], url))
+            dburl = ann.get("dashboard_url", "") or ""
+            out.append((gname, rule["alert"], url, dburl))
     return out
 
 
@@ -218,6 +240,34 @@ def parse_runbook_url(url: str) -> Tuple[str, str]:
     filename = path_parts[1]
     anchor = parsed.fragment
     return (filename, anchor)
+
+
+def parse_dashboard_url(url: str) -> str:
+    """Extract dashboard JSON filename from a GitHub blob URL.
+
+    Returns "" if the URL doesn't match the canonical shape
+    (which is itself a violation). The expected shape is
+
+        https://github.com/<owner>/<repo>/blob/<branch>/QSDM/
+        deploy/grafana/dashboards/<file>.json
+
+    where `<file>.json` is the bit we extract.
+
+    Anchors are intentionally ignored — the dashboard URL
+    points at the JSON source for now (operators with a
+    running Grafana add their own deep-link via
+    `<grafana>/d/<uid>?viewPanel=<id>`).
+    """
+    if not url.startswith(DASHBOARD_URL_PREFIX_GITHUB):
+        return ""
+    parsed = urlparse(url)
+    path_parts = parsed.path.split("/dashboards/", 1)
+    if len(path_parts) != 2:
+        return ""
+    filename = path_parts[1]
+    if "#" in filename:
+        filename = filename.split("#", 1)[0]
+    return filename
 
 
 def main(argv: List[str]) -> int:
@@ -240,6 +290,7 @@ def main(argv: List[str]) -> int:
     repo = args.repo.resolve()
     alerts_path = repo / ALERTS_RELPATH
     runbooks_dir = repo / RUNBOOKS_RELDIR
+    dashboards_dir = repo / DASHBOARDS_RELDIR
 
     if not alerts_path.is_file():
         print(f"ERROR: alerts file not found: {alerts_path}", file=sys.stderr)
@@ -250,15 +301,24 @@ def main(argv: List[str]) -> int:
             file=sys.stderr,
         )
         return 2
+    if not dashboards_dir.is_dir():
+        print(
+            f"ERROR: dashboards directory not found: {dashboards_dir}",
+            file=sys.stderr,
+        )
+        return 2
 
     alerts = parse_alerts(alerts_path)
     runbook_files = sorted(runbooks_dir.glob("*.md"))
+    dashboard_files = sorted(dashboards_dir.glob("*.json"))
 
     if not args.quiet:
         print(f"==> Alerts file: {alerts_path.relative_to(repo)}")
         print(f"==> Runbooks dir: {runbooks_dir.relative_to(repo)}")
+        print(f"==> Dashboards dir: {dashboards_dir.relative_to(repo)}")
         print(f"==> Total alerts: {len(alerts)}")
         print(f"==> Total runbook files: {len(runbook_files)}")
+        print(f"==> Total dashboard files: {len(dashboard_files)}")
         print()
 
     # Cache anchor sets per markdown file (read each at most once).
@@ -281,7 +341,7 @@ def main(argv: List[str]) -> int:
     if not args.quiet:
         print("==> Pass 1: alerts → runbook URLs (invariants 1–3)")
 
-    for gname, alert_name, url in alerts:
+    for gname, alert_name, url, _dburl in alerts:
         if not url:
             fail(
                 f"[{gname}] alert {alert_name!r} has no runbook_url annotation"
@@ -436,6 +496,56 @@ def main(argv: List[str]) -> int:
         print(f"    path links (validated):   {checked_path_links}")
 
     # ------------------------------------------------------------------
+    # Pass 3: alerts ↔ Grafana dashboards (invariants 7–8)
+    # ------------------------------------------------------------------
+    if not args.quiet:
+        print()
+        print(
+            "==> Pass 3: alerts → dashboard URLs (invariants 7–8)"
+        )
+
+    dashboard_filenames = {p.name for p in dashboard_files}
+    dashboard_violations_at_pass_start = len(violations)
+
+    for gname, alert_name, _url, dburl in alerts:
+        if not dburl:
+            fail(
+                f"[{gname}] alert {alert_name!r} has no dashboard_url "
+                f"annotation"
+            )
+            continue
+
+        filename = parse_dashboard_url(dburl)
+        if not filename:
+            fail(
+                f"[{gname}] alert {alert_name!r} has dashboard_url that "
+                f"isn't a github.com /dashboards/ URL: {dburl!r}"
+            )
+            continue
+
+        if filename not in dashboard_filenames:
+            # Helpful pointer: list dashboards whose name shares a prefix
+            # with the missing one (catches "renamed runbook ⇒ stale slug").
+            stem = filename.removesuffix(".json")
+            near = sorted(
+                p.name for p in dashboard_files
+                if p.stem.startswith(stem[:8]) or stem.startswith(p.stem[:8])
+            )[:5]
+            fail(
+                f"[{gname}] alert {alert_name!r} dashboard_url points at "
+                f"missing file: {filename!r} "
+                f"(under {dashboards_dir.relative_to(repo)}). "
+                f"Nearby: {near or '[none]'}. Re-run "
+                f"`python scripts/gen_grafana_dashboards.py` to regenerate."
+            )
+            continue
+
+        if not args.quiet:
+            print(f"  ok   {alert_name}  ->  {filename}")
+
+    pass3_violations = len(violations) - dashboard_violations_at_pass_start
+
+    # ------------------------------------------------------------------
     # Summary
     # ------------------------------------------------------------------
     print()
@@ -449,8 +559,10 @@ def main(argv: List[str]) -> int:
 
     print(
         f"OK: {len(alerts)}/{len(alerts)} alerts have resolvable "
-        f"runbook_url anchors; {link_count - skipped_external} in-runbook "
-        f"link(s) across {len(runbook_files)} file(s) all resolve."
+        f"runbook_url anchors and dashboard_url files; "
+        f"{link_count - skipped_external} in-runbook link(s) across "
+        f"{len(runbook_files)} file(s) all resolve; "
+        f"{len(dashboard_files)} dashboard JSON file(s) cover all alerts."
     )
     return 0
 
