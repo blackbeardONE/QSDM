@@ -7,6 +7,15 @@ intentionally fail (`exp_alerts: []`), capturing promtool's rendered
 captured renderings, so the final tests truly bind the alert rules
 (including labels and annotation templates) to expected behaviour.
 
+Test specs live in
+``QSDM/deploy/prometheus/alerts_qsdm.test.spec.yml``. That file is
+the human-edited declarative source: one entry per alert, naming
+the input series, eval-time checkpoints, and any explanatory notes.
+The generator validates 1:1 coverage between alertnames in the
+alerts file and entries in the spec file at every run, so the
+common drift modes (add an alert without a spec, remove an alert
+without removing the spec) fail loudly.
+
 Run:
     python scripts/gen_promtool_tests.py
 
@@ -15,7 +24,7 @@ a Windows-local download), set the `PROMTOOL` env var to the binary
 path.
 
 The script is idempotent — running it multiple times converges to the
-same test-file output for the same alerts file.
+same test-file output for the same alerts file + spec file pair.
 """
 from __future__ import annotations
 
@@ -26,6 +35,15 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+try:
+    import yaml
+except ImportError:
+    print(
+        "ERROR: PyYAML not installed. Install with: pip install PyYAML",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 # Repo root is the parent directory of scripts/ where this script lives.
 REPO = Path(__file__).resolve().parent.parent
@@ -40,11 +58,13 @@ else:
 
 TESTS = REPO / "QSDM" / "deploy" / "prometheus" / "alerts_qsdm.test.yml"
 ALERTS = REPO / "QSDM" / "deploy" / "prometheus" / "alerts_qsdm.example.yml"
+SPEC = REPO / "QSDM" / "deploy" / "prometheus" / "alerts_qsdm.test.spec.yml"
 
 
 # ---------------------------------------------------------------------------
-# Test specs — mirrors the alerts file groups, one entry per alert.
-# (group_header_md, alertname, comment, input_series, early_eval, late_eval)
+# Test specs — loaded from alerts_qsdm.test.spec.yml (one entry per alert).
+# `T` is the in-memory shape the rest of the generator already operates on;
+# the YAML loader populates it from the declarative spec file.
 # ---------------------------------------------------------------------------
 
 @dataclasses.dataclass
@@ -57,520 +77,157 @@ class T:
     notes: str = ""  # optional extra comment lines for the test
 
 
-GROUPS: list[tuple[str, list[T]]] = [
-    (
-        "qsdm-nvidia-lock — NVIDIA-lock + NGC submission gate\n"
-        "OPERATOR_HYGIENE_INCIDENT.md §3.1 / §3.2\n"
-        "NGC_SUBMISSION_INCIDENT.md §3.1 / §3.2",
-        [
-            T(
-                "QSDMNvidiaLockHTTPBlocksSpike",
-                "rate > 0.5/s, for:10m",
-                [("qsdm_nvidia_lock_http_blocks_total", "0+60x30")],
-                "5m",
-                "16m",
-                notes="60/min = 1.0/s sustained, 2x the 0.5/s threshold.",
-            ),
-            T(
-                "QSDMNvidiaLockP2PRejects",
-                "increase > 0 in 15m, for:5m",
-                [("qsdm_nvidia_lock_p2p_rejects_total", "0+1x30")],
-                "1m",
-                "20m",
-                notes="Counter ramps 1/min for 30m → increase[15m] = 15.",
-            ),
-            T(
-                "QSDMNGCChallengeRateLimited",
-                "increase > 5 in 10m, for:5m",
-                [("qsdm_ngc_challenge_rate_limited_total", "0+1x30")],
-                "5m",
-                "20m",
-                notes="1/min for 30m → increase[10m] = 10 (above 5).",
-            ),
-            T(
-                "QSDMNGCProofIngestRejectBurst",
-                "sum(increase) > 10 in 10m, for:5m",
-                [
-                    (
-                        'qsdm_ngc_proof_ingest_rejected_total{reason="hmac"}',
-                        "0+2x30",
+def _load_groups_from_spec(spec_path: Path) -> list[tuple[str, list[T]]]:
+    """Parse the YAML spec file into the same shape the rest of the
+    generator uses (a list of (header, [T]) pairs).
+
+    Validates structural invariants: every group has a header + tests
+    list; every test has the required fields; series/values pairs are
+    well-formed. Schema errors raise SystemExit with a precise pointer
+    so spec-file edits fail fast instead of producing a malformed
+    test file.
+    """
+    if not spec_path.exists():
+        sys.exit(
+            f"ERROR: spec file not found: {spec_path.relative_to(REPO)}\n"
+            f"  Expected the declarative test spec at the path above."
+        )
+    try:
+        raw = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as e:
+        sys.exit(f"ERROR: spec file is not valid YAML: {e}")
+    if not isinstance(raw, dict) or "groups" not in raw:
+        sys.exit(
+            "ERROR: spec file must be a mapping with a top-level "
+            "`groups:` key."
+        )
+    groups_raw = raw["groups"] or []
+    if not isinstance(groups_raw, list):
+        sys.exit("ERROR: spec.groups must be a list.")
+    out: list[tuple[str, list[T]]] = []
+    for gi, g in enumerate(groups_raw):
+        if not isinstance(g, dict):
+            sys.exit(f"ERROR: spec.groups[{gi}] must be a mapping.")
+        header = g.get("header", "")
+        if not isinstance(header, str):
+            sys.exit(f"ERROR: spec.groups[{gi}].header must be a string.")
+        tests_raw = g.get("tests") or []
+        if not isinstance(tests_raw, list):
+            sys.exit(f"ERROR: spec.groups[{gi}].tests must be a list.")
+        ts: list[T] = []
+        for ti, t in enumerate(tests_raw):
+            loc = f"spec.groups[{gi}].tests[{ti}]"
+            if not isinstance(t, dict):
+                sys.exit(f"ERROR: {loc} must be a mapping.")
+            for required in ("name", "summary", "early", "late", "input_series"):
+                if required not in t:
+                    sys.exit(f"ERROR: {loc} missing required field `{required}`.")
+            name = str(t["name"])
+            summary = str(t["summary"])
+            early = str(t["early"])
+            late = str(t["late"])
+            notes = str(t.get("notes") or "").rstrip("\n")
+            series_raw = t["input_series"]
+            if not isinstance(series_raw, list) or not series_raw:
+                sys.exit(
+                    f"ERROR: {loc}.input_series must be a non-empty list."
+                )
+            series: list[tuple[str, str]] = []
+            for si, s in enumerate(series_raw):
+                if (
+                    not isinstance(s, dict)
+                    or "series" not in s
+                    or "values" not in s
+                ):
+                    sys.exit(
+                        f"ERROR: {loc}.input_series[{si}] must be a "
+                        "mapping with `series:` and `values:` keys."
                     )
-                ],
-                "5m",
-                "20m",
-                notes="2/min on one reason → sum(increase[10m]) = 20.",
-            ),
-        ],
-    ),
-    (
-        "qsdm-submesh\n"
-        "SUBMESH_POLICY_INCIDENT.md §3.1 / §3.2",
-        [
-            T(
-                "QSDMSubmeshP2PRejects",
-                "route OR size increase > 0 in 15m, for:5m",
-                [
-                    ("qsdm_submesh_p2p_reject_route_total", "0+1x30"),
-                    ("qsdm_submesh_p2p_reject_size_total", "0x30"),
-                ],
-                "1m",
-                "20m",
-            ),
-            T(
-                "QSDMSubmeshAPISustained422",
-                "summed rejects >= 5 in 10m, for:5m",
-                [
-                    ("qsdm_submesh_api_wallet_reject_route_total", "0+1x30"),
-                    ("qsdm_submesh_api_wallet_reject_size_total", "0+1x30"),
-                    ("qsdm_submesh_api_privileged_reject_size_total", "0+1x30"),
-                ],
-                "5m",
-                "20m",
-                notes="3 series × 10 each = 30 summed.",
-            ),
-        ],
-    ),
-    (
-        "qsdm-throughput — chain \"silent failure\" sentinel\n"
-        "OPERATOR_HYGIENE_INCIDENT.md §3.4",
-        [
-            T(
-                "QSDMNoTransactionsStored",
-                "stored=0 but processed>0, for:30m",
-                [
-                    ("qsdm_transactions_processed_total", "0+10x80"),
-                    ("qsdm_transactions_stored_total", "0x80"),
-                ],
-                "25m",
-                "65m",
-                notes="processed climbing, stored flat → divergence sustained.",
-            ),
-        ],
-    ),
-    (
-        "qsdm-trust-transparency\n"
-        "TRUST_INCIDENT.md §3.1 / §3.2",
-        [
-            T(
-                "QSDMTrustNoAttestationsAccepted",
-                "accepted-rate=0 over 20m, for:5m",
-                [
-                    (
-                        'qsdm_ngc_proof_ingest_accepted_total{reason="ok"}',
-                        "0+1x10 10x60",
-                    )
-                ],
-                "5m",
-                "40m",
-                notes=(
-                    "Counter increments for first 10m (rate > 0), then flat\n"
-                    "(rate == 0). At t=40m the 20m rate window covers the\n"
-                    "flat tail entirely, sum(rate)==0 fires."
-                ),
-            ),
-            T(
-                "QSDMTrustIngestRejectRateElevated",
-                "reject-rate > 1 + accept-rate, for:10m",
-                [
-                    (
-                        'qsdm_ngc_proof_ingest_rejected_total{reason="hmac"}',
-                        "0+120x30",
-                    ),
-                    (
-                        'qsdm_ngc_proof_ingest_accepted_total{reason="ok"}',
-                        "5x30",
-                    ),
-                ],
-                "5m",
-                "21m",
-                notes="rejected = 120/min = 2.0/s; accepted rate = 0/s. 2 > 1+0.",
-            ),
-        ],
-    ),
-    (
-        "qsdm-trust-redundancy\n"
-        "TRUST_INCIDENT.md §3.3 / §3.4 / §3.5 / §3.6",
-        [
-            T(
-                "QSDMTrustAttestationsBelowFloor",
-                "warm=1 and attested<2, for:10m",
-                [
-                    ("qsdm_trust_warm", "1x30"),
-                    ("qsdm_trust_attested", "1x30"),
-                ],
-                "5m",
-                "16m",
-            ),
-            T(
-                "QSDMTrustNGCServiceDegraded",
-                "warm=1 and ngc_healthy=0, for:10m",
-                [
-                    ("qsdm_trust_warm", "1x30"),
-                    ("qsdm_trust_ngc_service_healthy", "0x30"),
-                ],
-                "5m",
-                "16m",
-            ),
-            T(
-                "QSDMTrustLastAttestedStale",
-                "(time()-last_attested) > 1800, for:5m",
-                [
-                    ("qsdm_trust_warm", "1x60"),
-                    ("qsdm_trust_last_attested_seconds", "60x60"),
-                ],
-                "25m",
-                "40m",
-                notes=(
-                    "last_attested pinned at t=60s. diff > 1800 ⇔ N > 31m;\n"
-                    "for:5m means firing from t=37m. Tested at 40m."
-                ),
-            ),
-            T(
-                "QSDMTrustAggregatorStale",
-                "(time()-last_checked) > 120, for:2m",
-                [
-                    ("qsdm_trust_warm", "1x10"),
-                    ("qsdm_trust_last_checked_seconds", "10x10"),
-                ],
-                "1m",
-                "6m",
-                notes=(
-                    "last_checked pinned at t=10s. Condition true from t=3m;\n"
-                    "for:2m → firing from t=5m."
-                ),
-            ),
-        ],
-    ),
-    (
-        "qsdm-quarantine\n"
-        "QUARANTINE_INCIDENT.md §3.1 / §3.2",
-        [
-            T(
-                "QSDMQuarantineAnySubmesh",
-                "submeshes>0, for:10m",
-                [("qsdm_quarantine_submeshes", "1x30")],
-                "5m",
-                "16m",
-            ),
-            T(
-                "QSDMQuarantineMajorityIsolated",
-                "tracked>=4 and ratio>0.5, for:15m",
-                [
-                    ("qsdm_quarantine_submeshes_tracked", "4x30"),
-                    ("qsdm_quarantine_submeshes_ratio", "0.6x30"),
-                ],
-                "10m",
-                "17m",
-            ),
-        ],
-    ),
-    (
-        "qsdm-v2-mining-slashing\n"
-        "SLASHING_INCIDENT.md §3.1 / §3.2 / §3.3 / §3.4",
-        [
-            T(
-                "QSDMMiningSlashApplied",
-                "sum(increase) >= 1 in 15m, for:1m",
-                [
-                    (
-                        'qsdm_slash_applied_total{reason="dust"}',
-                        "0+1x30",
-                    )
-                ],
-                "0m",  # for: is only 1m, no useful early checkpoint
-                "20m",
-            ),
-            T(
-                "QSDMMiningSlashedDustBurst",
-                "dust drained > 5e10 in 15m, for:5m",
-                [
-                    (
-                        'qsdm_slash_drained_dust_total{reason="dust"}',
-                        "0+10000000000x30",
-                    )
-                ],
-                "5m",
-                "21m",
-                notes="Increase 1e10/min → 15m increase = 1.5e11 (3x threshold).",
-            ),
-            T(
-                "QSDMMiningSlashRejectionsBurst",
-                "sum(increase) >= 10 in 10m, for:5m",
-                [
-                    (
-                        'qsdm_slash_rejected_total{reason="evidence"}',
-                        "0+1x30",
-                    )
-                ],
-                "5m",
-                "16m",
-            ),
-            T(
-                "QSDMMiningAutoRevokeBurst",
-                "sum(increase) >= 3 in 15m, for:5m",
-                [
-                    (
-                        'qsdm_slash_auto_revoked_total{reason="threshold"}',
-                        "0+1x30",
-                    )
-                ],
-                "5m",
-                "21m",
-            ),
-        ],
-    ),
-    (
-        "qsdm-v2-mining-enrollment\n"
-        "ENROLLMENT_INCIDENT.md §3.1–§3.5",
-        [
-            T(
-                "QSDMMiningRegistryEmpty",
-                "active=0 and uptime>600, for:15m",
-                [
-                    ("qsdm_enrollment_active_count", "0x30"),
-                    ("qsdm_process_uptime_seconds", "700+60x30"),
-                ],
-                "5m",
-                "16m",
-            ),
-            T(
-                "QSDMMiningRegistryShrinkingFast",
-                ">25% drop over 1h with baseline >= 4, for:10m",
-                [
-                    ("qsdm_enrollment_active_count", "10x70 4x30"),
-                ],
-                "75m",
-                "86m",
-                notes=(
-                    "Stay at 10 for first 70m (1h+ stable history), then drop\n"
-                    "to 4. offset 1h at t=86m → t=26m where count was 10.\n"
-                    "(10-4)/10 = 0.6 > 0.25."
-                ),
-            ),
-            T(
-                "QSDMMiningPendingUnbondMajority",
-                "pending/total > 0.5 with total >= 4, for:30m",
-                [
-                    ("qsdm_enrollment_active_count", "2x40"),
-                    ("qsdm_enrollment_pending_unbond_count", "3x40"),
-                ],
-                "15m",
-                "32m",
-                notes="active=2, pending=3, total=5≥4, ratio=3/5=0.6>0.5.",
-            ),
-            T(
-                "QSDMMiningEnrollmentRejectionsBurst",
-                "sum(increase) >= 20 in 10m, for:5m",
-                [
-                    (
-                        'qsdm_enrollment_rejected_total{reason="bond_too_small"}',
-                        "0+2x30",
-                    )
-                ],
-                "5m",
-                "17m",
-                notes="2/min → increase[10m] = 20.",
-            ),
-            T(
-                "QSDMMiningBondedDustDropped",
-                "bond drops > 5e10 over 30m, for:10m",
-                [
-                    (
-                        "qsdm_enrollment_bonded_dust",
-                        "100000000000x30 40000000000x30",
-                    )
-                ],
-                "35m",
-                "46m",
-                notes=(
-                    "Stay at 1e11 for 30m, then drop to 4e10 → drop=6e10>5e10."
-                ),
-            ),
-        ],
-    ),
-    (
-        "qsdm-v2-mining-liveness — chain liveness sentinels\n"
-        "MINING_LIVENESS.md §3.1 / §3.2",
-        [
-            T(
-                "QSDMMiningChainStuck",
-                "delta(height[5m])=0 and uptime>300, for:3m",
-                [
-                    ("qsdm_chain_height", "100x30"),
-                    ("qsdm_process_uptime_seconds", "400+60x30"),
-                ],
-                "1m",
-                "9m",
-            ),
-            T(
-                "QSDMMiningMempoolBacklog",
-                "mempool > 10000, for:10m",
-                [("qsdm_mempool_size", "20000x30")],
-                "5m",
-                "11m",
-            ),
-        ],
-    ),
-    (
-        "qsdm-v2-attest-archspoof — adversarial arch-claim defence\n"
-        "ARCH_SPOOF_INCIDENT.md §3.1 / §3.2 / §3.3",
-        [
-            T(
-                "QSDMAttestArchSpoofUnknownArchBurst",
-                "rate{unknown_arch} > 0.1, for:10m",
-                [
-                    (
-                        'qsdm_attest_archspoof_rejected_total{reason="unknown_arch"}',
-                        "0+12x30",
-                    )
-                ],
-                "5m",
-                "16m",
-                notes="12/min = 0.2/s; 2x the 0.1/s threshold.",
-            ),
-            T(
-                "QSDMAttestArchSpoofGPUNameMismatch",
-                "rate{gpu_name_mismatch} > 0.05, for:10m",
-                [
-                    (
-                        'qsdm_attest_archspoof_rejected_total{reason="gpu_name_mismatch"}',
-                        "0+6x30",
-                    )
-                ],
-                "5m",
-                "16m",
-                notes="6/min = 0.1/s; 2x the 0.05/s threshold.",
-            ),
-            T(
-                "QSDMAttestArchSpoofCCSubjectMismatch",
-                "increase{cc_subject_mismatch} > 0 in 15m, for:1m",
-                [
-                    (
-                        'qsdm_attest_archspoof_rejected_total{reason="cc_subject_mismatch"}',
-                        "0+1x30",
-                    )
-                ],
-                "0m",
-                "20m",
-            ),
-        ],
-    ),
-    (
-        "qsdm-v2-attest-hashrate — per-arch hashrate plausibility band\n"
-        "OPERATOR_HYGIENE_INCIDENT.md §3.3",
-        [
-            T(
-                "QSDMAttestHashrateOutOfBand",
-                "rate per arch > 0.05, for:10m",
-                [
-                    (
-                        'qsdm_attest_hashrate_rejected_total{arch="turing"}',
-                        "0+6x30",
-                    )
-                ],
-                "5m",
-                "16m",
-                notes="6/min = 0.1/s; 2x the 0.05/s threshold.",
-            ),
-        ],
-    ),
-    (
-        "qsdm-v2-governance — multisig authority rotation\n"
-        "GOVERNANCE_AUTHORITY_INCIDENT.md §3.1 / §3.2 / §3.3",
-        [
-            T(
-                "QSDMGovAuthorityVoteRecorded",
-                "increase[24h] > 0, for:5m",
-                [("qsdm_gov_authority_voted_total", "0+1x60")],
-                "1m",
-                "60m",
-            ),
-            T(
-                "QSDMGovAuthorityThresholdCrossed",
-                "increase[24h] > 0, for:1m",
-                [("qsdm_gov_authority_crossed_total", "0+1x60")],
-                "0m",
-                "60m",
-            ),
-            T(
-                "QSDMGovAuthorityCountTooLow",
-                "count < 2, for:5m",
-                [("qsdm_gov_authority_count", "1x30")],
-                "1m",
-                "7m",
-            ),
-        ],
-    ),
-    (
-        "qsdm-v2-attest-recent-rejections — §4.6 rejection-ring health\n"
-        "REJECTION_FLOOD.md §7.1 / §7.2 / §7.3 / §7.4 / §7.5",
-        [
-            T(
-                "QSDMAttestRejectionFieldTruncationSustained",
-                "truncated/observed > 0.25, for:15m",
-                [
-                    ("qsdm_attest_rejection_field_truncated_total", "0+30x40"),
-                    (
-                        "qsdm_attest_rejection_field_runes_observed_total",
-                        "0+60x40",
-                    ),
-                ],
-                "10m",
-                "26m",
-                notes="truncated 30/min, observed 60/min → ratio = 0.5.",
-            ),
-            T(
-                "QSDMAttestRejectionFieldRunesMaxNearCap",
-                "detail rune-cap >= 180, for:30m",
-                [
-                    (
-                        'qsdm_attest_rejection_field_runes_max{field="detail"}',
-                        "200x40",
-                    )
-                ],
-                "15m",
-                "32m",
-            ),
-            T(
-                "QSDMAttestRejectionPersistCompactionsHigh",
-                "rate*60 > 5, for:30m",
-                [
-                    (
-                        "qsdm_attest_rejection_persist_compactions_total",
-                        "0+6x40",
-                    )
-                ],
-                "15m",
-                "36m",
-                notes="6/min sustained → rate ≈ 0.1/s → rate*60 = 6 > 5.",
-            ),
-            T(
-                "QSDMAttestRejectionPersistHardCapDropping",
-                "rate > 0, for:10m",
-                [
-                    (
-                        "qsdm_attest_rejection_persist_hardcap_drops_total",
-                        "0+1x30",
-                    )
-                ],
-                "5m",
-                "16m",
-            ),
-            T(
-                "QSDMAttestRejectionPerMinerRateLimited",
-                "rate > 0, for:10m",
-                [
-                    (
-                        "qsdm_attest_rejection_per_miner_rate_limited_total",
-                        "0+1x30",
-                    )
-                ],
-                "5m",
-                "16m",
-            ),
-        ],
-    ),
-]
+                series.append((str(s["series"]), str(s["values"])))
+            ts.append(
+                T(
+                    name=name,
+                    summary=summary,
+                    input_series=series,
+                    early=early,
+                    late=late,
+                    notes=notes,
+                )
+            )
+        # Strip a single trailing newline from block-scalar headers
+        # so downstream rendering matches the prior in-script form.
+        out.append((header.rstrip("\n"), ts))
+    return out
+
+
+def _alertnames_in_alerts_file(alerts_path: Path) -> list[str]:
+    """Return the ordered list of alertnames from alerts_qsdm.example.yml.
+
+    Used by the coverage validator below. Reads the YAML rather than
+    regex-matching so renames / re-indents in the alerts file don't
+    silently break the validator.
+    """
+    try:
+        data = yaml.safe_load(alerts_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as e:
+        sys.exit(f"ERROR: alerts file is not valid YAML: {e}")
+    if not isinstance(data, dict):
+        sys.exit("ERROR: alerts file root must be a mapping.")
+    names: list[str] = []
+    for grp in data.get("groups") or []:
+        for rule in grp.get("rules") or []:
+            n = rule.get("alert")
+            if isinstance(n, str):
+                names.append(n)
+    return names
+
+
+def _validate_coverage(groups: list[tuple[str, list[T]]]) -> None:
+    """Fail loudly if the spec doesn't 1:1 cover the alerts file.
+
+    Catches the two everyday drift modes:
+      - new alert added with no matching spec (alerts_only)
+      - spec entry left behind after an alert was removed/renamed
+        (spec_only)
+    Also catches duplicate spec entries for the same alertname.
+    """
+    spec_names: list[str] = []
+    for _, ts in groups:
+        for t in ts:
+            spec_names.append(t.name)
+
+    duplicates = sorted({n for n in spec_names if spec_names.count(n) > 1})
+    if duplicates:
+        sys.exit(
+            "ERROR: spec file has duplicate test entries for "
+            f"alertname(s): {duplicates}"
+        )
+
+    alerts_names = _alertnames_in_alerts_file(ALERTS)
+    alerts_set = set(alerts_names)
+    spec_set = set(spec_names)
+
+    missing_specs = sorted(alerts_set - spec_set)
+    orphan_specs = sorted(spec_set - alerts_set)
+
+    if missing_specs or orphan_specs:
+        msg: list[str] = ["ERROR: alerts ↔ spec coverage mismatch."]
+        if missing_specs:
+            msg.append("  Alerts missing a spec entry (add to spec file):")
+            for n in missing_specs:
+                msg.append(f"    - {n}")
+        if orphan_specs:
+            msg.append(
+                "  Spec entries with no matching alert (remove or rename):"
+            )
+            for n in orphan_specs:
+                msg.append(f"    - {n}")
+        sys.exit("\n".join(msg))
+
+
+GROUPS: list[tuple[str, list[T]]] = _load_groups_from_spec(SPEC)
+_validate_coverage(GROUPS)
+
 
 HEADER = """\
 # =====================================================================
@@ -627,13 +284,14 @@ HEADER = """\
 #          The full firing alert is asserted. Catches threshold,
 #          metric-name, label, and annotation drift.
 #
-#  This file is generated by scripts/.gen-promtool-tests.py from
-#  the inline test specs in that script. The script runs promtool,
-#  captures the rendered annotations from the actual rule
-#  evaluation, and emits them here verbatim. To regenerate after
-#  editing the alerts file, run the generator (see CHANGELOG entry
-#  on regenerating the suite). All hand edits to this file
-#  immediately below the rule_files block are preserved.
+#  This file is generated by scripts/gen_promtool_tests.py from
+#  the declarative spec at alerts_qsdm.test.spec.yml. The
+#  generator validates 1:1 coverage between alertnames in the
+#  alerts file and entries in the spec, then runs promtool to
+#  capture the rendered Labels and Annotations and embed them
+#  here verbatim. Hand edits to THIS file are not preserved
+#  across regenerations — edit alerts_qsdm.test.spec.yml and
+#  re-run the generator instead.
 #
 # =====================================================================
 

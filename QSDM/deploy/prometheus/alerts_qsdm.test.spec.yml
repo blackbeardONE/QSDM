@@ -1,0 +1,417 @@
+# =====================================================================
+# Test spec for alerts_qsdm.example.yml -> alerts_qsdm.test.yml.
+# =====================================================================
+#
+# Hand-edited.  Regenerate alerts_qsdm.test.yml with:
+#
+#   python scripts/gen_promtool_tests.py
+#
+# The generator validates 1:1 coverage between alertnames in
+# alerts_qsdm.example.yml and entries in this file: adding an alert
+# without a spec (or removing a spec without removing the alert)
+# fails the generator and CI.
+#
+# Schema (per group):
+#   header:        free-form group banner (multi-line).
+#   tests[]:       list of per-alert specs.
+#
+# Schema (per test):
+#   name:          alertname; must match alerts_qsdm.example.yml.
+#   summary:       one-line firing-condition summary; goes in test name.
+#   early:         eval_time for the negative checkpoint (e.g. "5m").
+#   late:          eval_time for the firing checkpoint   (e.g. "16m").
+#   notes:         (optional) explanatory comment lines for the test.
+#   input_series:  list of {series, values} pairs in promtool format.
+# =====================================================================
+
+groups:
+
+  - header: |
+      qsdm-nvidia-lock — NVIDIA-lock + NGC submission gate
+      OPERATOR_HYGIENE_INCIDENT.md §3.1 / §3.2
+      NGC_SUBMISSION_INCIDENT.md §3.1 / §3.2
+    tests:
+      - name: QSDMNvidiaLockHTTPBlocksSpike
+        summary: "rate > 0.5/s, for:10m"
+        early: 5m
+        late: 16m
+        notes: "60/min = 1.0/s sustained, 2x the 0.5/s threshold."
+        input_series:
+          - series: qsdm_nvidia_lock_http_blocks_total
+            values: 0+60x30
+      - name: QSDMNvidiaLockP2PRejects
+        summary: "increase > 0 in 15m, for:5m"
+        early: 1m
+        late: 20m
+        notes: Counter ramps 1/min for 30m → increase[15m] = 15.
+        input_series:
+          - series: qsdm_nvidia_lock_p2p_rejects_total
+            values: 0+1x30
+      - name: QSDMNGCChallengeRateLimited
+        summary: "increase > 5 in 10m, for:5m"
+        early: 5m
+        late: 20m
+        notes: 1/min for 30m → increase[10m] = 10 (above 5).
+        input_series:
+          - series: qsdm_ngc_challenge_rate_limited_total
+            values: 0+1x30
+      - name: QSDMNGCProofIngestRejectBurst
+        summary: "sum(increase) > 10 in 10m, for:5m"
+        early: 5m
+        late: 20m
+        notes: 2/min on one reason → sum(increase[10m]) = 20.
+        input_series:
+          - series: "qsdm_ngc_proof_ingest_rejected_total{reason=\"hmac\"}"
+            values: 0+2x30
+
+  - header: |
+      qsdm-submesh
+      SUBMESH_POLICY_INCIDENT.md §3.1 / §3.2
+    tests:
+      - name: QSDMSubmeshP2PRejects
+        summary: "route OR size increase > 0 in 15m, for:5m"
+        early: 1m
+        late: 20m
+        input_series:
+          - series: qsdm_submesh_p2p_reject_route_total
+            values: 0+1x30
+          - series: qsdm_submesh_p2p_reject_size_total
+            values: "0x30"
+      - name: QSDMSubmeshAPISustained422
+        summary: "summed rejects >= 5 in 10m, for:5m"
+        early: 5m
+        late: 20m
+        notes: 3 series × 10 each = 30 summed.
+        input_series:
+          - series: qsdm_submesh_api_wallet_reject_route_total
+            values: 0+1x30
+          - series: qsdm_submesh_api_wallet_reject_size_total
+            values: 0+1x30
+          - series: qsdm_submesh_api_privileged_reject_size_total
+            values: 0+1x30
+
+  - header: |
+      qsdm-throughput — chain "silent failure" sentinel
+      OPERATOR_HYGIENE_INCIDENT.md §3.4
+    tests:
+      - name: QSDMNoTransactionsStored
+        summary: "stored=0 but processed>0, for:30m"
+        early: 25m
+        late: 65m
+        notes: "processed climbing, stored flat → divergence sustained."
+        input_series:
+          - series: qsdm_transactions_processed_total
+            values: 0+10x80
+          - series: qsdm_transactions_stored_total
+            values: "0x80"
+
+  - header: |
+      qsdm-trust-transparency
+      TRUST_INCIDENT.md §3.1 / §3.2
+    tests:
+      - name: QSDMTrustNoAttestationsAccepted
+        summary: "accepted-rate=0 over 20m, for:5m"
+        early: 5m
+        late: 40m
+        notes: |
+          Counter increments for first 10m (rate > 0), then flat
+          (rate == 0). At t=40m the 20m rate window covers the
+          flat tail entirely, sum(rate)==0 fires.
+        input_series:
+          - series: "qsdm_ngc_proof_ingest_accepted_total{reason=\"ok\"}"
+            values: 0+1x10 10x60
+      - name: QSDMTrustIngestRejectRateElevated
+        summary: "reject-rate > 1 + accept-rate, for:10m"
+        early: 5m
+        late: 21m
+        notes: rejected = 120/min = 2.0/s; accepted rate = 0/s. 2 > 1+0.
+        input_series:
+          - series: "qsdm_ngc_proof_ingest_rejected_total{reason=\"hmac\"}"
+            values: 0+120x30
+          - series: "qsdm_ngc_proof_ingest_accepted_total{reason=\"ok\"}"
+            values: 5x30
+
+  - header: |
+      qsdm-trust-redundancy
+      TRUST_INCIDENT.md §3.3 / §3.4 / §3.5 / §3.6
+    tests:
+      - name: QSDMTrustAttestationsBelowFloor
+        summary: "warm=1 and attested<2, for:10m"
+        early: 5m
+        late: 16m
+        input_series:
+          - series: qsdm_trust_warm
+            values: 1x30
+          - series: qsdm_trust_attested
+            values: 1x30
+      - name: QSDMTrustNGCServiceDegraded
+        summary: "warm=1 and ngc_healthy=0, for:10m"
+        early: 5m
+        late: 16m
+        input_series:
+          - series: qsdm_trust_warm
+            values: 1x30
+          - series: qsdm_trust_ngc_service_healthy
+            values: "0x30"
+      - name: QSDMTrustLastAttestedStale
+        summary: "(time()-last_attested) > 1800, for:5m"
+        early: 25m
+        late: 40m
+        notes: |
+          last_attested pinned at t=60s. diff > 1800 ⇔ N > 31m;
+          for:5m means firing from t=37m. Tested at 40m.
+        input_series:
+          - series: qsdm_trust_warm
+            values: 1x60
+          - series: qsdm_trust_last_attested_seconds
+            values: 60x60
+      - name: QSDMTrustAggregatorStale
+        summary: "(time()-last_checked) > 120, for:2m"
+        early: 1m
+        late: 6m
+        notes: |
+          last_checked pinned at t=10s. Condition true from t=3m;
+          for:2m → firing from t=5m.
+        input_series:
+          - series: qsdm_trust_warm
+            values: 1x10
+          - series: qsdm_trust_last_checked_seconds
+            values: 10x10
+
+  - header: |
+      qsdm-quarantine
+      QUARANTINE_INCIDENT.md §3.1 / §3.2
+    tests:
+      - name: QSDMQuarantineAnySubmesh
+        summary: "submeshes>0, for:10m"
+        early: 5m
+        late: 16m
+        input_series:
+          - series: qsdm_quarantine_submeshes
+            values: 1x30
+      - name: QSDMQuarantineMajorityIsolated
+        summary: "tracked>=4 and ratio>0.5, for:15m"
+        early: 10m
+        late: 17m
+        input_series:
+          - series: qsdm_quarantine_submeshes_tracked
+            values: 4x30
+          - series: qsdm_quarantine_submeshes_ratio
+            values: 0.6x30
+
+  - header: |
+      qsdm-v2-mining-slashing
+      SLASHING_INCIDENT.md §3.1 / §3.2 / §3.3 / §3.4
+    tests:
+      - name: QSDMMiningSlashApplied
+        summary: "sum(increase) >= 1 in 15m, for:1m"
+        early: 0m
+        late: 20m
+        input_series:
+          - series: "qsdm_slash_applied_total{reason=\"dust\"}"
+            values: 0+1x30
+      - name: QSDMMiningSlashedDustBurst
+        summary: "dust drained > 5e10 in 15m, for:5m"
+        early: 5m
+        late: 21m
+        notes: Increase 1e10/min → 15m increase = 1.5e11 (3x threshold).
+        input_series:
+          - series: "qsdm_slash_drained_dust_total{reason=\"dust\"}"
+            values: 0+10000000000x30
+      - name: QSDMMiningSlashRejectionsBurst
+        summary: "sum(increase) >= 10 in 10m, for:5m"
+        early: 5m
+        late: 16m
+        input_series:
+          - series: "qsdm_slash_rejected_total{reason=\"evidence\"}"
+            values: 0+1x30
+      - name: QSDMMiningAutoRevokeBurst
+        summary: "sum(increase) >= 3 in 15m, for:5m"
+        early: 5m
+        late: 21m
+        input_series:
+          - series: "qsdm_slash_auto_revoked_total{reason=\"threshold\"}"
+            values: 0+1x30
+
+  - header: |
+      qsdm-v2-mining-enrollment
+      ENROLLMENT_INCIDENT.md §3.1–§3.5
+    tests:
+      - name: QSDMMiningRegistryEmpty
+        summary: "active=0 and uptime>600, for:15m"
+        early: 5m
+        late: 16m
+        input_series:
+          - series: qsdm_enrollment_active_count
+            values: "0x30"
+          - series: qsdm_process_uptime_seconds
+            values: 700+60x30
+      - name: QSDMMiningRegistryShrinkingFast
+        summary: ">25% drop over 1h with baseline >= 4, for:10m"
+        early: 75m
+        late: 86m
+        notes: |
+          Stay at 10 for first 70m (1h+ stable history), then drop
+          to 4. offset 1h at t=86m → t=26m where count was 10.
+          (10-4)/10 = 0.6 > 0.25.
+        input_series:
+          - series: qsdm_enrollment_active_count
+            values: 10x70 4x30
+      - name: QSDMMiningPendingUnbondMajority
+        summary: "pending/total > 0.5 with total >= 4, for:30m"
+        early: 15m
+        late: 32m
+        notes: "active=2, pending=3, total=5≥4, ratio=3/5=0.6>0.5."
+        input_series:
+          - series: qsdm_enrollment_active_count
+            values: 2x40
+          - series: qsdm_enrollment_pending_unbond_count
+            values: 3x40
+      - name: QSDMMiningEnrollmentRejectionsBurst
+        summary: "sum(increase) >= 20 in 10m, for:5m"
+        early: 5m
+        late: 17m
+        notes: 2/min → increase[10m] = 20.
+        input_series:
+          - series: "qsdm_enrollment_rejected_total{reason=\"bond_too_small\"}"
+            values: 0+2x30
+      - name: QSDMMiningBondedDustDropped
+        summary: "bond drops > 5e10 over 30m, for:10m"
+        early: 35m
+        late: 46m
+        notes: "Stay at 1e11 for 30m, then drop to 4e10 → drop=6e10>5e10."
+        input_series:
+          - series: qsdm_enrollment_bonded_dust
+            values: 100000000000x30 40000000000x30
+
+  - header: |
+      qsdm-v2-mining-liveness — chain liveness sentinels
+      MINING_LIVENESS.md §3.1 / §3.2
+    tests:
+      - name: QSDMMiningChainStuck
+        summary: "delta(height[5m])=0 and uptime>300, for:3m"
+        early: 1m
+        late: 9m
+        input_series:
+          - series: qsdm_chain_height
+            values: 100x30
+          - series: qsdm_process_uptime_seconds
+            values: 400+60x30
+      - name: QSDMMiningMempoolBacklog
+        summary: "mempool > 10000, for:10m"
+        early: 5m
+        late: 11m
+        input_series:
+          - series: qsdm_mempool_size
+            values: 20000x30
+
+  - header: |
+      qsdm-v2-attest-archspoof — adversarial arch-claim defence
+      ARCH_SPOOF_INCIDENT.md §3.1 / §3.2 / §3.3
+    tests:
+      - name: QSDMAttestArchSpoofUnknownArchBurst
+        summary: "rate{unknown_arch} > 0.1, for:10m"
+        early: 5m
+        late: 16m
+        notes: 12/min = 0.2/s; 2x the 0.1/s threshold.
+        input_series:
+          - series: "qsdm_attest_archspoof_rejected_total{reason=\"unknown_arch\"}"
+            values: 0+12x30
+      - name: QSDMAttestArchSpoofGPUNameMismatch
+        summary: "rate{gpu_name_mismatch} > 0.05, for:10m"
+        early: 5m
+        late: 16m
+        notes: 6/min = 0.1/s; 2x the 0.05/s threshold.
+        input_series:
+          - series: "qsdm_attest_archspoof_rejected_total{reason=\"gpu_name_mismatch\"}"
+            values: 0+6x30
+      - name: QSDMAttestArchSpoofCCSubjectMismatch
+        summary: "increase{cc_subject_mismatch} > 0 in 15m, for:1m"
+        early: 0m
+        late: 20m
+        input_series:
+          - series: "qsdm_attest_archspoof_rejected_total{reason=\"cc_subject_mismatch\"}"
+            values: 0+1x30
+
+  - header: |
+      qsdm-v2-attest-hashrate — per-arch hashrate plausibility band
+      OPERATOR_HYGIENE_INCIDENT.md §3.3
+    tests:
+      - name: QSDMAttestHashrateOutOfBand
+        summary: "rate per arch > 0.05, for:10m"
+        early: 5m
+        late: 16m
+        notes: 6/min = 0.1/s; 2x the 0.05/s threshold.
+        input_series:
+          - series: "qsdm_attest_hashrate_rejected_total{arch=\"turing\"}"
+            values: 0+6x30
+
+  - header: |
+      qsdm-v2-governance — multisig authority rotation
+      GOVERNANCE_AUTHORITY_INCIDENT.md §3.1 / §3.2 / §3.3
+    tests:
+      - name: QSDMGovAuthorityVoteRecorded
+        summary: "increase[24h] > 0, for:5m"
+        early: 1m
+        late: 60m
+        input_series:
+          - series: qsdm_gov_authority_voted_total
+            values: 0+1x60
+      - name: QSDMGovAuthorityThresholdCrossed
+        summary: "increase[24h] > 0, for:1m"
+        early: 0m
+        late: 60m
+        input_series:
+          - series: qsdm_gov_authority_crossed_total
+            values: 0+1x60
+      - name: QSDMGovAuthorityCountTooLow
+        summary: "count < 2, for:5m"
+        early: 1m
+        late: 7m
+        input_series:
+          - series: qsdm_gov_authority_count
+            values: 1x30
+
+  - header: |
+      qsdm-v2-attest-recent-rejections — §4.6 rejection-ring health
+      REJECTION_FLOOD.md §7.1 / §7.2 / §7.3 / §7.4 / §7.5
+    tests:
+      - name: QSDMAttestRejectionFieldTruncationSustained
+        summary: "truncated/observed > 0.25, for:15m"
+        early: 10m
+        late: 26m
+        notes: "truncated 30/min, observed 60/min → ratio = 0.5."
+        input_series:
+          - series: qsdm_attest_rejection_field_truncated_total
+            values: 0+30x40
+          - series: qsdm_attest_rejection_field_runes_observed_total
+            values: 0+60x40
+      - name: QSDMAttestRejectionFieldRunesMaxNearCap
+        summary: "detail rune-cap >= 180, for:30m"
+        early: 15m
+        late: 32m
+        input_series:
+          - series: "qsdm_attest_rejection_field_runes_max{field=\"detail\"}"
+            values: 200x40
+      - name: QSDMAttestRejectionPersistCompactionsHigh
+        summary: "rate*60 > 5, for:30m"
+        early: 15m
+        late: 36m
+        notes: 6/min sustained → rate ≈ 0.1/s → rate*60 = 6 > 5.
+        input_series:
+          - series: qsdm_attest_rejection_persist_compactions_total
+            values: 0+6x40
+      - name: QSDMAttestRejectionPersistHardCapDropping
+        summary: "rate > 0, for:10m"
+        early: 5m
+        late: 16m
+        input_series:
+          - series: qsdm_attest_rejection_persist_hardcap_drops_total
+            values: 0+1x30
+      - name: QSDMAttestRejectionPerMinerRateLimited
+        summary: "rate > 0, for:10m"
+        early: 5m
+        late: 16m
+        input_series:
+          - series: qsdm_attest_rejection_per_miner_rate_limited_total
+            values: 0+1x30

@@ -14,6 +14,65 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Declarative test-spec file for the promtool behavioural suite
+  (2026-05-04).** The 38-alert behavioural test suite previously
+  lived as a 510-line in-script literal at the top of
+  [`scripts/gen_promtool_tests.py`](scripts/gen_promtool_tests.py).
+  Adding a new alert meant editing Python — surrounding context
+  (commas, dataclass keyword arguments, multi-line escapes) made
+  small additions surprisingly error-prone, and the diff for "I
+  bumped a threshold" was always cluttered with structural
+  punctuation.
+  - **New artefact**:
+    [`QSDM/deploy/prometheus/alerts_qsdm.test.spec.yml`](QSDM/deploy/prometheus/alerts_qsdm.test.spec.yml)
+    (~417 lines). One YAML mapping per alert; reviewers see only
+    the substantive change in a typical PR. Schema documented in
+    the file's own header so it's discoverable without grep.
+  - **Coverage validator built into the generator**: every run
+    asserts a strict 1:1 binding between alertnames in
+    [`alerts_qsdm.example.yml`](QSDM/deploy/prometheus/alerts_qsdm.example.yml)
+    and entries in the spec file. Drift produces actionable
+    output:
+    | Drift mode                              | Validator output                                                |
+    | --------------------------------------- | --------------------------------------------------------------- |
+    | new alert added without a spec entry    | `Alerts missing a spec entry: <name>`                           |
+    | spec left behind after alert removal    | `Spec entries with no matching alert: <name>`                   |
+    | duplicate spec entries for one alert    | `duplicate test entries for alertname(s): [<name>]`             |
+    | malformed spec (e.g. missing field)     | `<file:groups[g].tests[t]> missing required field "<field>"`    |
+    All four modes verified with a 5-scenario harness against
+    fabricated input pairs in tempdirs.
+  - **Generator refactor**:
+    [`scripts/gen_promtool_tests.py`](scripts/gen_promtool_tests.py)
+    shrank by `-531/+196` net (704 → 591 lines). The dataclass
+    `T`, the two-pass scaffold-then-capture flow, the
+    `parse_kv_block` / `GOT_BLOCK_RE` / `ALERT_RE` parsers, and
+    the YAML-quoted output formatter are all unchanged — only
+    the data source moved.
+  - **Functional equivalence proven**: regenerating
+    [`alerts_qsdm.test.yml`](QSDM/deploy/prometheus/alerts_qsdm.test.yml)
+    after the refactor produced a SHA-256-identical file (same
+    76 behavioural assertions, same `exp_labels`, same
+    `exp_annotations`, same series byte-for-byte) modulo a
+    single comment paragraph in the file's header that now
+    points at the spec file instead of the in-script literal.
+    `promtool test rules` reports `SUCCESS` against the
+    regenerated file.
+  - **Pre-commit hook trigger updated**: the spec file is now
+    one of the
+    [`PROMTOOL_TEST_TRIGGERS`](scripts/git_hook_pre_commit.py),
+    so editing it (without regenerating
+    `alerts_qsdm.test.yml`) prompts the hook to re-run
+    `promtool test rules` locally — the validator catches the
+    inconsistency before it reaches CI. The CI workflow's
+    `paths:` filter already covers `QSDM/deploy/**` so no
+    workflow edit was required.
+  - **PyYAML**: now used by both
+    [`check_runbook_coverage.py`](scripts/check_runbook_coverage.py)
+    and
+    [`gen_promtool_tests.py`](scripts/gen_promtool_tests.py)
+    with the same import-error fallback message; CI workflow
+    already installs PyYAML for the runbook-coverage step.
+
 - **Promtool version pin in the pre-commit hook (2026-05-04).**
   Closes the "local green ≠ CI green due to silent version drift"
   failure mode on the alerts ↔ runbook contract chain. The hook

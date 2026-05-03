@@ -102,6 +102,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 ALERTS_FILE = "QSDM/deploy/prometheus/alerts_qsdm.example.yml"
 TEST_FILE = "QSDM/deploy/prometheus/alerts_qsdm.test.yml"
+SPEC_FILE = "QSDM/deploy/prometheus/alerts_qsdm.test.spec.yml"
 RUNBOOKS_DIR = "QSDM/docs/docs/runbooks/"
 LINT_SCRIPT = "scripts/check_runbook_coverage.py"
 GEN_SCRIPT = "scripts/gen_promtool_tests.py"
@@ -119,10 +120,15 @@ RUNBOOK_LINT_TRIGGERS = (
 # Paths whose modification triggers `promtool check rules`.
 PROMTOOL_CHECK_TRIGGERS = (ALERTS_FILE,)
 
-# Paths whose modification triggers `promtool test rules`.
+# Paths whose modification triggers `promtool test rules`. The
+# spec file is included because editing it (without regenerating
+# alerts_qsdm.test.yml) creates a checked-in inconsistency the
+# generator's coverage validator catches; we want that signal
+# locally before the operator pushes.
 PROMTOOL_TEST_TRIGGERS = (
     ALERTS_FILE,
     TEST_FILE,
+    SPEC_FILE,
     GEN_SCRIPT,
 )
 
