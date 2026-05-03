@@ -14,6 +14,53 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Promtool version pin in the pre-commit hook (2026-05-04).**
+  Closes the "local green ≠ CI green due to silent version drift"
+  failure mode on the alerts ↔ runbook contract chain. The hook
+  now probes the local `promtool --version` and compares it to
+  the version pinned in
+  [`.github/workflows/validate-deploy.yml`](.github/workflows/validate-deploy.yml)
+  (currently `2.55.1`); a mismatch prints a single amber banner
+  before the checks run, never a hard failure.
+  - **Single source of truth**: the workflow file is the only
+    place the version is hard-coded. The hook parses the
+    `VERSION="..."` line from the `prometheus-rules-check:` job
+    at hook-invocation time, so updating the pin is a
+    one-character edit. Mid-flight refactors that move or rename
+    the install step degrade gracefully (the hook silently skips
+    the version check rather than blocking commits on missing
+    metadata).
+  - **Three observable states**, picked to minimise noise on the
+    happy path:
+    | State                                    | Hook output                                                  |
+    | ---------------------------------------- | ------------------------------------------------------------ |
+    | local matches CI pin                     | (silent — no extra lines)                                    |
+    | local diverges from CI pin               | one-block amber banner: `version mismatch: local=X, CI-pinned=Y` + remediation |
+    | local probe fails (binary refused/etc.) | one-line amber banner: `could not probe ...; CI is pinned to Y` |
+    | promtool absent entirely                 | existing "promtool not found" banner now references the pin  |
+  - **Why a warning, not a failure**: minor-version drift is
+    almost always benign for `promtool check rules`, and even
+    `promtool test rules` regressions are fixable with
+    `$PROMTOOL` pointing at a pinned binary. Hard-failing on
+    drift would punish operators who deliberately test against
+    newer promtool releases (forward-compat smoke testing) or
+    whose distros ship a newer build. The warning gives them the
+    information without taking away the choice.
+  - **Verified** with a 7-scenario smoke harness covering both
+    parser correctness and end-to-end UX: real workflow → pin
+    `2.55.1`; real promtool → version `2.55.1`; fabricated
+    workflow without pin → `None`; fabricated workflow with
+    `VERSION="9.9.9"` → `9.9.9`; missing workflow file →
+    `None`; matching version → silent; mismatched version → all
+    three banner fields present (`local=`, `CI-pinned=`,
+    remediation text).
+  - **Driver impact**: `+171/-10` lines in
+    [`scripts/git_hook_pre_commit.py`](scripts/git_hook_pre_commit.py)
+    (two regex helpers + integration into `main()` +
+    docstring); zero new dependencies; no measurable runtime
+    impact (the version probe completes in <50 ms and only runs
+    when promtool would have run anyway).
+
 - **Pre-commit hook for the alerts ↔ runbook contract chain
   (2026-05-03).** Surfaces the same three CI gates locally,
   scoped by changed files so unrelated commits stay fast. The

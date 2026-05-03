@@ -46,10 +46,21 @@ CI parity
 The hook runs the SAME commands the CI workflow runs, in the
 same order. A clean local run is the strongest possible signal
 that the CI gate will pass.
+
+Version pinning
+---------------
+The CI workflow installs an exact promtool version. When the
+hook will invoke promtool, it also probes
+`promtool --version` and compares the result to the pin parsed
+from `.github/workflows/validate-deploy.yml`. A mismatch prints
+a soft amber warning (never a failure) so operators know that
+local-vs-CI parity is approximate when versions diverge — set
+`$PROMTOOL` to a binary at the pinned version for exact parity.
 """
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -186,6 +197,110 @@ def find_promtool() -> str | None:
 
 
 # -----------------------------------------------------------------
+# promtool version pinning
+# -----------------------------------------------------------------
+#
+# The CI workflow installs an exact promtool version; locally the
+# operator might have a different one. Most rule semantics are
+# stable across recent promtool releases, but `test rules`
+# behaviour HAS shifted in subtle ways between minors (e.g. how
+# `exp_annotations` is matched changed between 2.x and 3.x), so
+# "local green" can disagree with "CI green" if the versions
+# diverge meaningfully.
+#
+# We do NOT make a version mismatch fatal — that would be
+# annoying for operators who are deliberately on a newer promtool
+# (e.g. testing forward compatibility) or who installed the
+# distro's package version. Instead the hook prints a single-
+# line amber banner so the operator knows local-vs-CI parity
+# might not be exact.
+#
+# Source-of-truth: the CI workflow file is the canonical pin. The
+# hook parses it once per invocation. If the workflow file is
+# missing or unparseable (e.g. someone refactored the install
+# step), the version probe silently skips — never fail the hook
+# for missing CI metadata.
+
+# Match `VERSION="2.55.1"` (and tolerant variants) inside the
+# Install promtool step. Specific enough not to false-positive on
+# unrelated VERSION assignments elsewhere in the workflow file.
+_WORKFLOW_VERSION_RE = re.compile(
+    r"""
+    ^[ \t]*VERSION[ \t]*=[ \t]*
+    ["']?(?P<version>\d+\.\d+\.\d+)["']?
+    [ \t]*$
+    """,
+    re.MULTILINE | re.VERBOSE,
+)
+
+
+def pinned_promtool_version() -> str | None:
+    """Read the canonical promtool version pin from the CI workflow.
+
+    Returns the version string (e.g. "2.55.1") or None if the
+    workflow file is missing / the pin marker is absent.
+
+    The hook treats a None return as "no pin to compare against",
+    not a failure. This keeps the hook resilient to future
+    refactors of the workflow file.
+    """
+    wf = REPO_ROOT / WORKFLOW_FILE
+    if not wf.exists():
+        return None
+    try:
+        text = wf.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    # We only consider VERSION assignments inside the
+    # `prometheus-rules-check:` job; that's a soft scope (we just
+    # check the assignment is somewhere AFTER the job name in the
+    # file) so the regex doesn't pull a kubeconform VERSION pin
+    # by accident.
+    job_marker = "prometheus-rules-check:"
+    job_pos = text.find(job_marker)
+    scope = text[job_pos:] if job_pos >= 0 else text
+    m = _WORKFLOW_VERSION_RE.search(scope)
+    if not m:
+        return None
+    return m.group("version")
+
+
+# Match `promtool, version 2.55.1 (...)` on the first line.
+_LOCAL_VERSION_RE = re.compile(
+    r"^promtool,?\s+version\s+(?P<version>\d+\.\d+\.\d+)",
+    re.MULTILINE,
+)
+
+
+def local_promtool_version(promtool: str) -> str | None:
+    """Probe `promtool --version` and parse its output.
+
+    Returns the version string or None on probe failure (binary
+    refused to run, output format unrecognised, etc.). Failures
+    are NOT reported as errors; they just disable the version
+    check.
+    """
+    try:
+        proc = subprocess.run(
+            [promtool, "--version"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    blob = (proc.stdout or "") + (proc.stderr or "")
+    m = _LOCAL_VERSION_RE.search(blob)
+    if not m:
+        return None
+    return m.group("version")
+
+
+# -----------------------------------------------------------------
 # Check runners
 # -----------------------------------------------------------------
 
@@ -294,24 +409,70 @@ def main() -> int:
         if more:
             print(f"     {more}")
 
-    # ------------- Locate promtool -------------
+    # ------------- Locate promtool + check version pin -------------
     promtool = None
-    if any(name in ("promtool_check", "promtool_test") for name, _ in runs):
+    will_run_promtool = any(
+        name in ("promtool_check", "promtool_test") for name, _ in runs
+    )
+    if will_run_promtool:
         promtool = find_promtool()
+        pinned = pinned_promtool_version()
         if promtool is None:
             print()
+            install_url = (
+                "https://github.com/prometheus/prometheus/releases/"
+                f"download/v{pinned}/prometheus-{pinned}.<os>-amd64.tar.gz"
+                if pinned
+                else "https://github.com/prometheus/prometheus/releases"
+            )
+            pinned_label = pinned or "the version pinned in CI"
             print(_warn("⚠  promtool not found on PATH (and $PROMTOOL unset)."))
             print(_warn("   The two promtool checks will be SKIPPED locally."))
-            print(_warn("   They still run in CI — the workflow installs"))
-            print(_warn("   prometheus 2.55.1 itself."))
+            print(_warn(f"   They still run in CI — the workflow installs"))
+            print(_warn(f"   prometheus {pinned_label} itself."))
             print(_warn("   To enable locally, install promtool:"))
-            print(
-                _warn(
-                    "     curl -fsSL "
-                    "https://github.com/prometheus/prometheus/releases/"
-                    "download/v2.55.1/prometheus-2.55.1.<os>-amd64.tar.gz"
+            print(_warn(f"     curl -fsSL {install_url}"))
+        else:
+            # Compare local vs pinned. Mismatches print a single
+            # amber line; matches stay silent (no extra noise on
+            # the happy path).
+            local = local_promtool_version(promtool)
+            if pinned and local and local != pinned:
+                print()
+                print(
+                    _warn(
+                        f"⚠  promtool version mismatch: local={local}, "
+                        f"CI-pinned={pinned}."
+                    )
                 )
-            )
+                print(
+                    _warn(
+                        "   `promtool test rules` semantics have shifted "
+                        "between minors;"
+                    )
+                )
+                print(
+                    _warn(
+                        "   local PASS does not strictly imply CI PASS. "
+                        "Pin local to match"
+                    )
+                )
+                print(
+                    _warn(
+                        f"   CI by installing prometheus {pinned}, or "
+                        "set $PROMTOOL to the pinned"
+                    )
+                )
+                print(_warn("   binary."))
+            elif pinned and local is None:
+                # Probe failed — note but don't dwell on it.
+                print()
+                print(
+                    _warn(
+                        f"⚠  could not probe promtool --version; "
+                        f"CI is pinned to {pinned}."
+                    )
+                )
 
     # ------------- Run checks -------------
     results: list[tuple[str, CheckResult]] = []
