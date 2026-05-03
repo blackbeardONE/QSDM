@@ -34,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: QSDM/source/go.mod
 
@@ -73,7 +73,7 @@ jobs:
       - name: Build wasm_module
         run: bash QSDM/scripts/build-wasm-module.sh
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: QSDM/source/go.mod
 
@@ -100,7 +100,7 @@ jobs:
         shell: bash
         run: bash QSDM/scripts/build-wasm-module.sh
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: QSDM/source/go.mod
 
@@ -120,7 +120,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: QSDM/source/go.mod
 
@@ -214,7 +214,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: QSDM/source/go.mod
 
@@ -269,7 +269,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: QSDM/source/go.mod
 
