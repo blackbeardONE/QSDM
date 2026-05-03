@@ -2,8 +2,14 @@
 """
 Runbook coverage lint.
 
-Enforces three invariants on every push/PR that
-touches QSDM/deploy/ or this script:
+Enforces six invariants on every push/PR that
+touches QSDM/deploy/, QSDM/docs/docs/runbooks/, or
+this script. The first three protect the alerts ↔
+runbooks pair; the next three protect the in-runbook
+navigation mesh (cross-runbook links + source-file
+references + intra-file anchors).
+
+Alerts ↔ runbooks invariants:
 
   1. Every Prometheus alert in
      QSDM/deploy/prometheus/alerts_qsdm.example.yml
@@ -14,6 +20,27 @@ touches QSDM/deploy/ or this script:
      part) exists in its target markdown file.
      Anchors are computed from each markdown
      heading using GitHub's slug rules.
+
+In-runbook link invariants:
+
+  4. Every relative `[text](OTHER.md)` cross-runbook
+     link in any runbook resolves to an existing
+     markdown file.
+  5. Every `[text](OTHER.md#anchor)` or
+     `[text](#anchor)` anchor target exists as a
+     heading in the target file (intra-file anchors
+     are checked against the same file's headings).
+  6. Every `[text](../path/to/source.go)` source-
+     file reference in any runbook resolves to an
+     existing path under the repo root. This covers
+     references to Go source files, deploy
+     manifests, scripts, and other repo artifacts.
+
+External links (http://, https://, mailto:) are
+always skipped because the lint is offline-only.
+Links inside fenced code blocks (```...```) are
+skipped because they're documentation-of-syntax, not
+navigation.
 
 Exit codes:
   0  all invariants hold
@@ -69,6 +96,13 @@ RUNBOOK_URL_PREFIX_GITHUB = "https://github.com/"
 
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+_FENCE_RE = re.compile(r"^\s*```")
+# Inline code spans: `...` (single backtick) or ``...`` (double, for code
+# containing single backticks). Greedy-but-shortest non-newline content
+# between matching backtick runs.
+_INLINE_CODE_RE = re.compile(r"(`+)(?:(?!\1).)+\1")
+_EXTERNAL_PREFIXES = ("http://", "https://", "mailto:")
 
 
 def slugify_github(heading_text: str) -> str:
@@ -99,13 +133,58 @@ def collect_anchors(md_path: Path) -> Set[str]:
     """Return the set of anchor slugs reachable in this markdown file."""
     text = md_path.read_text(encoding="utf-8")
     anchors: Set[str] = set()
+    in_fence = False
     for line in text.splitlines():
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         m = _HEADING_RE.match(line)
         if not m:
             continue
         heading = m.group(2)
         anchors.add(slugify_github(heading))
     return anchors
+
+
+def _mask_inline_code(line: str) -> str:
+    """Replace inline-code spans with same-length placeholders so the link
+    regex doesn't match `[example](syntax)` shown inside backticks (e.g.
+    in this script's own README §5 documenting the link syntax itself).
+    """
+    return _INLINE_CODE_RE.sub(lambda m: " " * len(m.group(0)), line)
+
+
+def extract_links(md_path: Path) -> List[Tuple[int, str, str]]:
+    """Return [(line_number, label, target), ...] for every markdown link.
+
+    Skips:
+      * fenced code blocks (``` ... ```) — entire blocks ignored
+      * inline code spans (`...` or ``...``) — masked per-line before
+        the link regex runs, so `[demo](syntax)` shown inside backticks
+        for documentation-of-syntax purposes is not treated as
+        navigation.
+
+    Doesn't try to handle reference-style links (`[label][ref]`) because
+    the runbook tree doesn't use them; if introduced, they'd be silently
+    skipped (false negative, not a coverage regression).
+    """
+    out: List[Tuple[int, str, str]] = []
+    in_fence = False
+    text = md_path.read_text(encoding="utf-8")
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        cleaned = _mask_inline_code(line)
+        for m in _LINK_RE.finditer(cleaned):
+            label = m.group(1)
+            target = m.group(2).strip()
+            out.append((lineno, label, target))
+    return out
 
 
 def parse_alerts(path: Path) -> List[Tuple[str, str, str]]:
@@ -173,14 +252,16 @@ def main(argv: List[str]) -> int:
         return 2
 
     alerts = parse_alerts(alerts_path)
+    runbook_files = sorted(runbooks_dir.glob("*.md"))
 
     if not args.quiet:
         print(f"==> Alerts file: {alerts_path.relative_to(repo)}")
         print(f"==> Runbooks dir: {runbooks_dir.relative_to(repo)}")
         print(f"==> Total alerts: {len(alerts)}")
+        print(f"==> Total runbook files: {len(runbook_files)}")
         print()
 
-    # Cache anchor sets per runbook file (read each at most once).
+    # Cache anchor sets per markdown file (read each at most once).
     anchor_cache: Dict[Path, Set[str]] = {}
 
     def anchors_for(p: Path) -> Set[str]:
@@ -193,6 +274,12 @@ def main(argv: List[str]) -> int:
     def fail(msg: str) -> None:
         violations.append(msg)
         print(f"  FAIL: {msg}", file=sys.stderr)
+
+    # ------------------------------------------------------------------
+    # Pass 1: alerts ↔ runbooks (invariants 1–3)
+    # ------------------------------------------------------------------
+    if not args.quiet:
+        print("==> Pass 1: alerts → runbook URLs (invariants 1–3)")
 
     for gname, alert_name, url in alerts:
         if not url:
@@ -236,15 +323,135 @@ def main(argv: List[str]) -> int:
         if not args.quiet:
             print(f"  ok   {alert_name}  ->  {filename}#{anchor}")
 
+    # ------------------------------------------------------------------
+    # Pass 2: in-runbook links (invariants 4–6)
+    # ------------------------------------------------------------------
+    if not args.quiet:
+        print()
+        print(
+            "==> Pass 2: in-runbook navigation links (invariants 4–6)"
+        )
+
+    repo_resolved = repo.resolve()
+    link_count = 0
+    skipped_external = 0
+    skipped_anchor = 0
+    skipped_anchor_invalid = 0  # anchors that fail; not skipped, just tallied
+    checked_path_links = 0
+
+    for md_path in runbook_files:
+        rel_md = md_path.relative_to(repo)
+        for lineno, label, target in extract_links(md_path):
+            link_count += 1
+
+            if target.startswith(_EXTERNAL_PREFIXES):
+                skipped_external += 1
+                continue
+
+            # Pure anchor link (#section). Validate against the same file.
+            if target.startswith("#"):
+                anchor = target.lstrip("#")
+                if not anchor:
+                    fail(
+                        f"{rel_md}:{lineno} [{label!r}] empty anchor "
+                        f"target: {target!r}"
+                    )
+                    continue
+                existing = anchors_for(md_path)
+                if anchor not in existing:
+                    fail(
+                        f"{rel_md}:{lineno} [{label!r}] intra-file anchor "
+                        f"#{anchor} not found; nearby anchors: "
+                        f"{sorted(a for a in existing if a.startswith(anchor[:3]))[:5]}"
+                    )
+                continue
+
+            # Path link (optionally with #anchor). Resolve relative to
+            # the source file's parent directory.
+            if "#" in target:
+                path_part, anchor = target.split("#", 1)
+            else:
+                path_part, anchor = target, ""
+
+            if not path_part:
+                fail(
+                    f"{rel_md}:{lineno} [{label!r}] empty path in link "
+                    f"target: {target!r}"
+                )
+                continue
+
+            try:
+                resolved = (md_path.parent / path_part).resolve()
+            except (ValueError, OSError) as e:
+                fail(
+                    f"{rel_md}:{lineno} [{label!r}] failed to resolve "
+                    f"path {path_part!r}: {e}"
+                )
+                continue
+
+            # Repo containment check: catch escapes via excessive ../
+            try:
+                resolved_rel = resolved.relative_to(repo_resolved)
+            except ValueError:
+                fail(
+                    f"{rel_md}:{lineno} [{label!r}] link target "
+                    f"{path_part!r} escapes repo root (resolved to "
+                    f"{resolved})"
+                )
+                continue
+
+            if not resolved.exists():
+                fail(
+                    f"{rel_md}:{lineno} [{label!r}] missing file: "
+                    f"{path_part!r} (resolved to {resolved_rel})"
+                )
+                continue
+
+            checked_path_links += 1
+
+            # If an anchor fragment is present and the target is markdown,
+            # verify the anchor exists in that file.
+            if anchor and resolved.suffix.lower() == ".md":
+                existing = anchors_for(resolved)
+                if anchor not in existing:
+                    fail(
+                        f"{rel_md}:{lineno} [{label!r}] anchor #{anchor} "
+                        f"not found in {resolved_rel}; nearby anchors: "
+                        f"{sorted(a for a in existing if a.startswith(anchor[:3]))[:5]}"
+                    )
+
+    if not args.quiet:
+        print(
+            f"  scanned {link_count} link(s) across {len(runbook_files)} "
+            f"runbook file(s)"
+        )
+        print(
+            f"    external (skipped):       {skipped_external}"
+        )
+        print(
+            f"    intra-file anchors:       "
+            f"{link_count - skipped_external - checked_path_links - sum(1 for v in violations if 'intra-file anchor' in v or 'empty anchor' in v)}"
+            f" (validated)"
+        )
+        print(f"    path links (validated):   {checked_path_links}")
+
+    # ------------------------------------------------------------------
+    # Summary
+    # ------------------------------------------------------------------
     print()
     if violations:
         print(
-            f"FAIL: {len(violations)} violation(s) across {len(alerts)} alert(s)",
+            f"FAIL: {len(violations)} violation(s) across "
+            f"{len(alerts)} alert(s) and {len(runbook_files)} runbook(s)",
             file=sys.stderr,
         )
         return 1
 
-    print(f"OK: {len(alerts)}/{len(alerts)} alerts have resolvable runbook_url anchors")
+    print(
+        f"OK: {len(alerts)}/{len(alerts)} alerts have resolvable "
+        f"runbook_url anchors; {link_count - skipped_external} in-runbook "
+        f"link(s) across {len(runbook_files)} file(s) all resolve."
+    )
     return 0
 
 

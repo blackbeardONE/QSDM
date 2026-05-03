@@ -477,12 +477,16 @@ severity `warning`.
 
 ## 5. Coverage invariants enforced by CI
 
-The following are guaranteed by
+The following six invariants are guaranteed by
 [`scripts/check_runbook_coverage.py`](../../../../scripts/check_runbook_coverage.py)
 running in
 [`.github/workflows/validate-deploy.yml`](../../../../.github/workflows/validate-deploy.yml)
-on every push and PR that touches `QSDM/deploy/` or
-the workflow itself:
+on every push and PR that touches `QSDM/deploy/`,
+`QSDM/docs/docs/runbooks/`, the lint script, or the
+workflow itself.
+
+**Alerts ↔ runbooks invariants** (the
+38-alerts-have-resolvable-deep-links promise):
 
 1. **Every alert in `alerts_qsdm.example.yml` carries
    a non-empty `runbook_url` annotation.** A PR
@@ -498,10 +502,42 @@ the workflow itself:
    `### N.M Mode X — \`alert\`` heading and matches
    them against the URL fragment.
 
-If you add or rename an alert, update both
-`alerts_qsdm.example.yml` AND the corresponding
-runbook + this index in the same PR — CI will catch
-the rest.
+**In-runbook navigation invariants** (the
+no-broken-links-inside-the-runbook-tree promise; ~300
+links validated):
+
+4. **Every relative `[text](OTHER.md)` cross-runbook
+   link in any runbook resolves to an existing
+   markdown file.** A PR renaming a runbook without
+   also updating every other runbook that links to
+   it fails CI.
+5. **Every `[text](OTHER.md#anchor)` and
+   `[text](#anchor)` anchor target exists as a real
+   markdown heading.** A PR renaming a section
+   header (anywhere in the runbook tree) without
+   updating the navigation links pointing at it
+   fails CI. Intra-file anchors (`#anchor`) are
+   checked against the same file's headings;
+   cross-file anchors (`OTHER.md#anchor`) are
+   checked against the target file's headings.
+6. **Every `[text](../path/to/source.go)` (and other
+   non-markdown) source-file reference in any
+   runbook resolves to an existing path under the
+   repo.** Covers Go source files, deploy
+   manifests, scripts, workflows, and other repo
+   artifacts. A PR moving or renaming a referenced
+   file without updating runbook links fails CI.
+
+External links (`http://`, `https://`, `mailto:`)
+are skipped — the lint is offline-only. Links
+inside fenced code blocks (` ``` … ``` `) are also
+skipped, since they're documentation-of-syntax, not
+navigation.
+
+**If you add or rename an alert, a runbook, a
+section header, or a referenced source file, update
+both the source AND the dependent links in the same
+PR — CI will catch the rest.**
 
 ---
 

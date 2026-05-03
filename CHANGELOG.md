@@ -14,6 +14,86 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Runbook lint extended to cover all in-runbook navigation
+  links (2026-05-03).** Tightens the regression guard from the
+  previous commit by extending
+  [`scripts/check_runbook_coverage.py`](scripts/check_runbook_coverage.py)
+  from 3 invariants (alerts ↔ runbook URLs) to 6 (alerts ↔
+  runbook URLs **plus** every internal navigation link in the
+  runbook tree). Closes the silent-breakage gap where renaming a
+  runbook, a section header, or a referenced source file would
+  break operator navigation without any CI signal.
+  - **Three new invariants enforced**, on top of the existing
+    three:
+    * **(4)** Every relative `[text](OTHER.md)` cross-runbook
+      link in any runbook resolves to an existing markdown
+      file. Catches "I renamed `MINING_LIVENESS.md` →
+      `CHAIN_LIVENESS.md` but forgot the 10 other runbooks
+      that link to it" regressions.
+    * **(5)** Every `[text](OTHER.md#anchor)` and
+      `[text](#anchor)` anchor target exists as a real
+      markdown heading in the right file. Same GitHub-
+      flavoured slugify rules as invariant 3. Intra-file
+      anchors (`#anchor`) are checked against the same file's
+      headings; cross-file anchors are checked against the
+      target file's headings.
+    * **(6)** Every `[text](../path/to/source.go)` (and other
+      non-markdown) source-file reference resolves to an
+      existing path under the repo. Covers Go source files,
+      deploy manifests, scripts, workflows. A PR moving a
+      referenced file without updating runbook links fails
+      CI.
+  - **Coverage now: 38 alert URLs + 298 in-runbook links =
+    336 navigation invariants validated** on every push/PR
+    that touches `QSDM/deploy/`, `QSDM/docs/docs/runbooks/`,
+    the lint script, or the workflow file. The 298
+    in-runbook links break down as 32 intra-file anchors +
+    266 path links across 11 incident runbooks + the master
+    `README.md` index. CI catches: missing files, missing
+    anchors, paths escaping the repo root, anchor-only links
+    pointing at non-existent sections, and any combination
+    thereof.
+  - **Two pre-existing broken source-file links found and
+    fixed.** The recon pass surfaced two Go-source references
+    that had silently rotted before the lint existed:
+    * `QUARANTINE_INCIDENT.md` §5 pointed at
+      `pkg/quarantine/manager.go` (file doesn't exist;
+      actual file is `pkg/quarantine/quarantine_manager.go`,
+      where `type QuarantineManager struct` lives).
+    * `SUBMESH_POLICY_INCIDENT.md` §5 pointed at
+      `pkg/submesh/manager.go` (file doesn't exist; the
+      submesh-policy implementation lives in
+      `pkg/submesh/policy.go` with error types in
+      `pkg/submesh/errors.go`). Updated to point at both
+      with corrected description.
+    Both fixes shipped in this commit alongside the lint
+    extension that prevents future occurrences.
+  - **Inline-code masking for documentation-of-syntax.** The
+    extracted-link regex now masks inline-code spans
+    (` ` `…` ` `, ` `` `…` `` `) per-line before matching
+    `[label](target)` patterns. This lets documentation
+    (including this README's §5 itself) show example link
+    syntax without the lint mistaking examples for real
+    navigation. Fenced code blocks were already skipped; this
+    closes the inline-code gap.
+  - **`README.md` §5 rewritten** to document all 6 invariants
+    in two groups (alerts ↔ runbooks vs in-runbook links)
+    with an explicit operator-promise framing: "If you add or
+    rename an alert, a runbook, a section header, or a
+    referenced source file, update both the source AND the
+    dependent links in the same PR — CI will catch the
+    rest."
+  - **Negative-tested against 5 failure patterns** (broken
+    cross-md file, broken cross-md anchor, broken source-file
+    path, broken intra-file anchor, path escaping repo root)
+    — all 5 correctly exit `1` with precise per-violation
+    diagnostics including filename:line, label, and the
+    resolved problem path.
+  - **No CI workflow changes.** The previous commit's
+    `runbook-coverage` job already triggers on
+    `QSDM/docs/docs/runbooks/**` changes, so the extended
+    lint scope is picked up automatically.
+
 - **Runbook master index + CI coverage lint (2026-05-02).** The
   finishing artifact for the runbook sweep that closed at 38/38
   in the previous commit. Two paired changes:

@@ -260,7 +260,7 @@ holdoff.
 ## 5. Reference
 
 - **Source files:**
-  - [`pkg/quarantine/manager.go`](../../../source/pkg/quarantine/manager.go)
+  - [`pkg/quarantine/quarantine_manager.go`](../../../source/pkg/quarantine/quarantine_manager.go)
     — QuarantineManager + Add/RemoveQuarantine
   - [`pkg/quarantine/metrics.go`](../../../source/pkg/quarantine/metrics.go)
     — `qsdm_quarantine_*` gauges

@@ -350,9 +350,11 @@ eventually be quarantined. The mapping:
 ## 5. Reference
 
 - **Source files:**
-  - [`pkg/submesh/manager.go`](../../../source/pkg/submesh/manager.go)
+  - [`pkg/submesh/policy.go`](../../../source/pkg/submesh/policy.go)
     — submesh policy implementation (route + size
-    enforcement, error types)
+    enforcement); error types live alongside in
+    [`pkg/submesh/errors.go`](../../../source/pkg/submesh/errors.go)
+    (`ErrSubmeshNoRoute`, `ErrSubmeshPayloadTooLarge`)
   - [`pkg/monitoring/submesh_metrics.go`](../../../source/pkg/monitoring/submesh_metrics.go)
     — five counters + Record/Count function pairs
   - [`pkg/api/handlers.go`](../../../source/pkg/api/handlers.go)
