@@ -26,7 +26,7 @@ jobs:
   compose-config:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Docker Compose config (cluster)
         run: docker compose -f QSDM/deploy/docker-compose.cluster.yml config -q
@@ -37,7 +37,7 @@ jobs:
   kubernetes-dry-run:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # kubeconform validates Kubernetes manifests against the upstream
       # OpenAPI schemas fully offline, so we don't need a running
@@ -86,7 +86,7 @@ jobs:
   prometheus-rules-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install promtool
         run: |
@@ -157,7 +157,7 @@ jobs:
   runbook-coverage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v5
         with:
