@@ -1,0 +1,71 @@
+# =====================================================================
+#  pre-commit framework config — https://pre-commit.com/
+# =====================================================================
+#
+#  Install (one-time, per clone):
+#    pip install pre-commit          # or: pipx install pre-commit
+#    pre-commit install              # writes .git/hooks/pre-commit
+#
+#  Run manually against staged files:
+#    pre-commit run
+#
+#  Run against ALL files (e.g. before merging a long-lived branch):
+#    pre-commit run --all-files
+#
+#  Bypass for a single commit:
+#    git commit --no-verify
+#
+#  Why the framework AND a bare-git path?
+#  --------------------------------------
+#  Some contributors prefer the framework (auto-managed venv, pinned
+#  hook versions, --all-files runner). Others prefer one less Python
+#  dep on their box. Both paths run the same logic in
+#  scripts/git_hook_pre_commit.py, so a contributor who switches paths
+#  later sees identical behaviour.
+#
+#  Which checks?
+#  -------------
+#  Each hook below is a thin wrapper that invokes the same Python
+#  driver as the bare-git installer. The driver decides which of the
+#  three real checks (runbook coverage, promtool check rules,
+#  promtool test rules) to run based on which staged files match
+#  each check's path filter — so a doc-only commit does no slow
+#  promtool work, and an alerts-file commit does the full sweep.
+#
+#  CI parity
+#  ---------
+#  Every check below mirrors a step in
+#  .github/workflows/validate-deploy.yml. Local green = CI green
+#  on these jobs.
+# =====================================================================
+
+repos:
+  # We use `repo: local` for all hooks. Reasons:
+  #   - The driver script lives in this repo, not a third-party hook
+  #     repo, so there's nothing to clone/pin externally.
+  #   - The driver self-detects which checks to run via its own
+  #     staged-file analysis; it doesn't need pre-commit's per-hook
+  #     `files:` filtering.
+  #   - One hook entry => one summary block per commit, regardless of
+  #     how many checks fire — clean operator UX.
+  - repo: local
+    hooks:
+      - id: qsdm-pre-commit
+        name: QSDM pre-commit (alerts + runbook contract)
+        entry: python scripts/git_hook_pre_commit.py
+        language: system
+        # `pass_filenames: false` — the driver consults `git diff`
+        # itself to decide which checks to run, ignoring the file
+        # list pre-commit would otherwise pass on argv. This keeps
+        # the bare-git hook and the framework hook behaviourally
+        # identical.
+        pass_filenames: false
+        # `always_run: true` — the driver decides whether any work
+        # is needed. If no triggering files are staged, it exits
+        # silently in <50 ms.
+        always_run: true
+        # The framework runs hooks against a staged-only worktree
+        # via `git stash` machinery; the driver script reads the
+        # same staged file set via `git diff --cached`, so this
+        # works correctly under the framework.
+        stages: [pre-commit]

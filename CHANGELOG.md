@@ -14,6 +14,91 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Pre-commit hook for the alerts ↔ runbook contract chain
+  (2026-05-03).** Surfaces the same three CI gates locally,
+  scoped by changed files so unrelated commits stay fast. The
+  goal is "local green ⇒ CI green" — operators discover broken
+  contracts before `git push`, not 30 seconds after.
+  - **Three checks, scoped per change kind**:
+    | Trigger paths                              | Runs                                      |
+    | ------------------------------------------ | ----------------------------------------- |
+    | `alerts_qsdm.example.yml`, `runbooks/`,    | runbook coverage lint                     |
+    | `check_runbook_coverage.py`,               | (38 alerts + 298 navigation links)        |
+    | `git_hook_pre_commit.py`                   |                                           |
+    | `alerts_qsdm.example.yml`                  | + `promtool check rules` (PromQL syntax)  |
+    | `alerts_qsdm.example.yml`,                 | + `promtool test rules` (synthetic        |
+    | `alerts_qsdm.test.yml`,                    | time-series suite, 76 assertions)         |
+    | `gen_promtool_tests.py`                    |                                           |
+    A doc-only commit runs nothing slow. An alerts-file commit
+    runs the full sweep (~11 s on a typical laptop with promtool
+    cached).
+  - **Two install paths**, same driver:
+    * **Bare git hook**:
+      ```
+      python scripts/install_git_hooks.py
+      ```
+      Writes a tiny POSIX-shell shim to
+      [`.git/hooks/pre-commit`](.git/hooks) that resolves Python
+      via PATH (or `$PYTHON`) and execs the driver. Works on
+      Linux, macOS, and Windows-with-Git-Bash. The shim is
+      stable across edits to the driver — only the Python file
+      changes when behaviour evolves.
+    * **`pre-commit` framework users**: drop in
+      [`.pre-commit-config.yaml`](.pre-commit-config.yaml),
+      then `pre-commit install`. The framework auto-resolves
+      Python deps in an isolated venv and supports
+      `pre-commit run --all-files` for batch validation. The
+      same driver runs under the hood, so the two paths are
+      behaviourally identical.
+  - **Driver design** ([`scripts/git_hook_pre_commit.py`](scripts/git_hook_pre_commit.py)):
+    * Reads staged files via
+      `git diff --cached --name-only --diff-filter=ACMR`
+      (added / copied / modified / renamed; deletions and
+      conflicts excluded).
+    * Buckets staged files against per-check trigger paths;
+      runs only the checks whose triggers fired.
+    * Streams check output to the terminal in real time (no
+      buffering — promtool tests take 10 s and the operator
+      should see progress).
+    * Prints a clean PASS/FAIL/SKIPPED summary table keyed
+      by check name and elapsed milliseconds.
+    * Short-circuits on the first failure: subsequent checks
+      rarely add useful signal once the first fails, and the
+      operator wants a fast clear answer.
+    * Locates `promtool` via `$PROMTOOL` env override → PATH
+      lookup → graceful skip with an amber-warning banner.
+      The hook never auto-installs promtool; that's a
+      deliberate scope decision so the hook stays fast and
+      deterministic. Operators without promtool still get
+      runbook lint coverage; CI catches the rest.
+  - **Bypass** (standard git escape hatch):
+      ```
+      git commit --no-verify
+      ```
+    No hook config needed.
+  - **Verified locally** with a 5-scenario smoke test before
+    install:
+      `(1)` Empty stage → hook fast-exits (rc=0, no output).
+      `(2)` Doc-only change (`README.md`) → fast-exits (rc=0,
+      no banner because no trigger files matched).
+      `(3)` Runbook README edit → runs ONLY the runbook lint;
+      promtool checks not invoked (~625 ms total).
+      `(4)` Alerts threshold mutation (`> 0.5` → `> 50`) →
+      runs all three checks; `promtool test rules` fails
+      with the full failure context shown; rc=1.
+      `(5)` Alerts comment append (semantic no-op) → runs
+      all three checks; all pass (~11 s total).
+    Each scenario uses an isolated `git worktree` so the
+    smoke test never touches the operator's index.
+  - **CI parity statement.** The hook runs the EXACT same
+    commands as the corresponding steps in
+    [`.github/workflows/validate-deploy.yml`](.github/workflows/validate-deploy.yml),
+    in the same order. A clean local run is the strongest
+    possible signal that the CI gate will pass — modulo
+    issues caused by stale local state (uncommitted edits,
+    different promtool version), which the hook cannot
+    catch and the user must reason about.
+
 - **`promtool test rules` synthetic-time-series suite for all 38
   alerts (2026-05-03).** Closes the last regression-guard gap in
   the alerts subsystem. The existing `promtool check rules` job
