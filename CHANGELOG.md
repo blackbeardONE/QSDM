@@ -14,6 +14,104 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`promtool test rules` synthetic-time-series suite for all 38
+  alerts (2026-05-03).** Closes the last regression-guard gap in
+  the alerts subsystem. The existing `promtool check rules` job
+  already validated PromQL syntax and template compilation; this
+  new behavioural suite evaluates each rule against synthetic
+  time-series fixtures and asserts the alert fires (or does
+  not) at expected times, locking in the threshold, `for:`
+  window, label set, and rendered annotations as a CI contract.
+  - **Coverage**: 1 test per alert × 38 alerts × 2 eval-time
+    checkpoints (early-negative + late-firing) = **76
+    behavioural assertions per CI run**. Each firing checkpoint
+    pins the full `exp_labels` (severity, subsystem, reason,
+    arch, etc.) and `exp_annotations` (description, summary,
+    runbook_url) verbatim against what the rule renders, so
+    drift in any contract surface fails CI before merge.
+  - **Four classes of silent regression now caught** that
+    `promtool check rules` cannot:
+    * **Threshold drift** — `> 0.5` tightened to `> 0.05` is
+      valid PromQL but a 10× behavioural change. Caught by the
+      late-firing checkpoint when the rate fixture (chosen 2×
+      above the documented threshold) no longer exceeds the
+      mutated threshold.
+    * **`for:` window shrinkage** — `for: 10m` shortened to
+      `for: 1m` is valid YAML but a 10× firing-rate change.
+      Caught by the early-negative checkpoint, which asserts
+      the alert is NOT firing at an eval_time before the
+      original `for:` window has elapsed; shrinking it makes
+      the alert fire at that early checkpoint and breaks the
+      test.
+    * **Metric-name typos** — `qsdm_typo_total` parses fine
+      but evaluates to no-data. Caught by the late-firing
+      checkpoint asserting the alert IS firing; a typo'd
+      metric never fires, so `exp_alerts: [{...}]` mismatches
+      `got: []`.
+    * **Annotation-template drift** — editing a runbook
+      anchor in the rule's `annotations.runbook_url` template
+      without updating the runbook itself fails the test
+      (because the test pins the rendered runbook_url
+      verbatim). This closes the loop with the runbook-
+      coverage lint: annotation-side breakage now fails CI on
+      the alerts-file edit, not just on the runbook-file
+      edit, so drift cannot accumulate in either direction.
+  - **Generator at
+    [`scripts/gen_promtool_tests.py`](scripts/gen_promtool_tests.py)**.
+    Two-pass design:
+      Pass 1 emits a scaffold with placeholder
+      `exp_alerts: []` at every firing checkpoint, runs
+      promtool to provoke the failures, and parses the
+      rendered `got:[...]` blocks (Labels and Annotations) out
+      of promtool's diff output.
+      Pass 2 emits the final
+      [`alerts_qsdm.test.yml`](QSDM/deploy/prometheus/alerts_qsdm.test.yml)
+      with the captured renderings substituted into each
+      firing checkpoint, and re-runs promtool to confirm
+      SUCCESS.
+    To regenerate after editing the alerts file:
+      ```
+      promtool --version  # 2.55.1 expected
+      python scripts/gen_promtool_tests.py
+      ```
+    The generator is idempotent (running it twice on
+    unchanged input produces a byte-identical test file) and
+    works locally on Windows or Linux as long as
+    `promtool` is on PATH (or `PROMTOOL=<path>` is set).
+  - **CI wiring**: the existing `prometheus-rules-check` job
+    in
+    [`.github/workflows/validate-deploy.yml`](.github/workflows/validate-deploy.yml)
+    now runs `promtool test rules
+    QSDM/deploy/prometheus/alerts_qsdm.test.yml` as a second
+    step after `promtool check rules`. Same pinned promtool
+    version (2.55.1) and same trigger paths; no new dependency.
+  - **Negative-test verification** ran six rule mutations
+    locally before commit:
+      `(1)` Loosen `rate > 0.5` to `rate > 50` — caught.
+      `(2)` Rename a metric (typo) — caught.
+      `(3)` Tighten a gauge threshold past the test fixture —
+      caught.
+      `(4)` Shrink `for: 10m` to `for: 1m` — caught (early
+      checkpoint fires).
+      `(5)` Rename an alert (severity/identity drift) —
+      caught.
+      `(6)` Edit a runbook anchor in the annotation template —
+      caught (annotation match fails).
+    All six mutations broke at least one test. The suite is
+    not a tautology.
+  - **Tests are organised by group** matching
+    `alerts_qsdm.example.yml` (qsdm-nvidia-lock, qsdm-submesh,
+    qsdm-throughput, qsdm-trust-transparency, qsdm-trust-
+    redundancy, qsdm-quarantine, qsdm-v2-mining-slashing,
+    qsdm-v2-mining-enrollment, qsdm-v2-mining-liveness,
+    qsdm-v2-attest-archspoof, qsdm-v2-attest-hashrate,
+    qsdm-v2-governance, qsdm-v2-attest-recent-rejections), and
+    each group header in the test file cross-references the
+    runbook section that diagnoses the matching alert mode.
+    The suite reads as the canonical "what does this alert do
+    in steady state and at firing time?" reference, sitting
+    next to the rule file it pins.
+
 - **Runbook lint extended to cover all in-runbook navigation
   links (2026-05-03).** Tightens the regression guard from the
   previous commit by extending
