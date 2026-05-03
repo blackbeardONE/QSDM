@@ -1,0 +1,327 @@
+# =====================================================================
+# Alertmanager config for QSDM.
+# =====================================================================
+#
+# This file is the example/reference configuration that ships with
+# the repo. Copy to /etc/alertmanager/alertmanager.yml on the
+# alertmanager host (or mount via Docker) and replace the four
+# REPLACE_ME tokens:
+#
+#     1. https://events.pagerduty.com/integration/REPLACE_ME_SERVICE_KEY/enqueue
+#        (PagerDuty integration URL — actually a service key in
+#         the legacy v1 API; use `routing_key:` in the config below
+#         and copy the integration key from PagerDuty's "Events
+#         API V2" integration tab.)
+#     2. https://hooks.slack.com/services/REPLACE/ME/SLACK_WEBHOOK
+#        (Slack webhook URL — get from your Slack workspace's
+#         "Incoming Webhooks" app config; one URL per channel)
+#     3. REPLACE_ME_SMTP_USERNAME (SMTP auth user)
+#     4. REPLACE_ME_SMTP_PASSWORD (SMTP auth password)
+#
+# Placeholder URLs above are intentionally syntactically valid so
+# `amtool check-config` passes against the example as shipped; only
+# the path/credential portions need editing for production use.
+#
+# If a receiver isn't used (e.g. no PagerDuty), leave the
+# placeholder in place and remove the corresponding route from
+# the routing tree below — the config will still validate.
+#
+# Routing summary:
+#
+#   incoming alert
+#         │
+#         ├─ severity=critical ──► pagerduty-critical (continue: true)
+#         │                  ╰──► slack-critical
+#         ├─ severity=warning ──► slack-warning
+#         ├─ severity=info    ──► slack-info-quiet (long repeat)
+#         └─ unlabelled       ──► slack-default (fallback)
+#
+# Critical fan-out is achieved by two SIBLING routes that both match
+# `severity=critical`: the first uses `continue: true` so the second
+# also evaluates, and an alert routes to BOTH receivers. This is the
+# canonical way to send one alert to two destinations in Alertmanager
+# (nested routes don't fan out — the deepest match wins).
+#
+# Inhibit rules suppress the warning twin of each critical alert
+# while the critical is firing — operators see one notification per
+# incident, not two.
+#
+# Templates render BOTH `runbook_url` and `dashboard_url` annotations
+# into every notification surface (Slack attachment, PagerDuty
+# custom_details, email body), so an on-call operator gets a
+# one-click path from the incident message to the markdown runbook
+# AND the live Grafana panel for the firing alert.
+# =====================================================================
+
+global:
+  # Resolve timeout: how long alertmanager waits for a `resolved`
+  # update from prometheus before considering the alert auto-resolved.
+  # Should be > prometheus's `evaluation_interval` × 4.
+  resolve_timeout: 5m
+
+  # SMTP for the email-fallback receiver. Configure even if you only
+  # use Slack/PagerDuty so a misconfigured route doesn't fail to
+  # forward; the email-fallback receiver is the safety net.
+  smtp_from: 'qsdm-alerts@example.com'
+  smtp_smarthost: 'smtp.example.com:587'
+  smtp_auth_username: 'REPLACE_ME_SMTP_USERNAME'
+  smtp_auth_password: 'REPLACE_ME_SMTP_PASSWORD'
+  smtp_require_tls: true
+
+  # Slack webhook is referenced per-receiver below; defining the
+  # `slack_api_url` here is optional. We keep it commented so each
+  # receiver can use a different webhook (different Slack channels).
+  # slack_api_url: 'https://hooks.slack.com/services/REPLACE/ME/SLACK_WEBHOOK'
+
+# Templates referenced by receivers. Path is relative to alertmanager's
+# working directory (or absolute on the alertmanager host). The shipped
+# template surfaces `runbook_url` + `dashboard_url` from every alert.
+templates:
+  - 'templates/qsdm.tmpl'
+
+# =====================================================================
+# Routing tree
+# =====================================================================
+#
+# Alertmanager evaluates routes top-down, depth-first. A child route
+# that matches consumes the alert (the parent's receiver is NOT
+# also used). To send the same alert to two destinations, set
+# `continue: true` on the first matching sibling so the next sibling
+# is also evaluated.
+#
+# We exploit `continue: true` to fan critical alerts out to BOTH
+# pagerduty-critical AND slack-critical via two consecutive sibling
+# routes that both match `severity: critical`.
+# =====================================================================
+
+route:
+  # Default receiver — fires only when no child route matches.
+  # Used as the fallback for alerts that arrive without a
+  # `severity` label (which would be an alerts-file bug).
+  receiver: 'slack-default'
+
+  # Group all alerts in the same alertname + cluster + instance
+  # together so related signals share one notification.
+  group_by: ['alertname', 'cluster', 'instance']
+  group_wait: 30s        # wait this long after the first alert
+                         # before sending; lets Prometheus catch
+                         # related alerts in the same notification
+  group_interval: 5m     # min interval between notifications for
+                         # the same group when new alerts join
+  repeat_interval: 12h   # re-page after this long if still firing
+
+  routes:
+    # ----- Critical, fan-out leg 1: PagerDuty.
+    # `continue: true` means the next sibling is also evaluated,
+    # so the same alert ALSO routes to slack-critical below.
+    - match:
+        severity: critical
+      receiver: 'pagerduty-critical'
+      group_wait: 0s        # no batching delay for critical
+      repeat_interval: 4h   # nag every 4h while firing
+      continue: true
+
+    # ----- Critical, fan-out leg 2: Slack incidents channel.
+    # No `continue` — this is the last critical-specific route, so
+    # the alert is consumed here and tree traversal ends.
+    - match:
+        severity: critical
+      receiver: 'slack-critical'
+      group_wait: 0s
+      repeat_interval: 4h
+
+    # ----- Warning: Slack only.
+    - match:
+        severity: warning
+      receiver: 'slack-warning'
+      group_wait: 30s
+      repeat_interval: 12h
+
+    # ----- Info: low-priority, long repeat, no grouping.
+    # `info` alerts are FYI pings (e.g. governance vote recorded);
+    # we still want them in a Slack channel for an audit trail
+    # but not paged.
+    - match:
+        severity: info
+      receiver: 'slack-info-quiet'
+      group_wait: 5m
+      repeat_interval: 7d
+
+# =====================================================================
+# Inhibit rules
+# =====================================================================
+#
+# Suppress the lower-priority twin of an alert while a higher-
+# priority one is firing for the same scope. The matchers below
+# trigger when an instance has both a critical and a matching
+# warning firing simultaneously.
+# =====================================================================
+
+inhibit_rules:
+  # Generic critical-supersedes-warning rule — any critical for an
+  # instance suppresses any warning from the SAME instance.
+  - source_matchers:
+      - 'severity = critical'
+    target_matchers:
+      - 'severity = warning'
+    equal: ['alertname', 'instance']
+
+  # Slashing-specific: a "dust burst" critical means the cluster is
+  # bleeding stake at scale; the per-event "slash applied" warning
+  # is a strict subset of that signal. Suppress the warning while
+  # the burst alert is live.
+  - source_matchers:
+      - 'alertname = QSDMMiningSlashedDustBurst'
+    target_matchers:
+      - 'alertname = QSDMMiningSlashApplied'
+    equal: ['instance']
+
+  # Quarantine: majority-isolated is a worse case of any-submesh-
+  # quarantined. Operator only needs one notification.
+  - source_matchers:
+      - 'alertname = QSDMQuarantineMajorityIsolated'
+    target_matchers:
+      - 'alertname = QSDMQuarantineAnySubmesh'
+    equal: ['instance']
+
+  # Trust subsystem: when the chain reports "no attestations
+  # accepted" (the upstream signal), the downstream "below floor"
+  # and "ngc service degraded" warnings are restating the same
+  # outage. Suppress those while the parent is firing.
+  - source_matchers:
+      - 'alertname = QSDMTrustNoAttestationsAccepted'
+    target_matchers:
+      - 'alertname =~ QSDMTrust(AttestationsBelowFloor|NGCServiceDegraded)'
+    equal: ['instance']
+
+# =====================================================================
+# Receivers
+# =====================================================================
+#
+# Each receiver names how to deliver the alert. Templates are
+# referenced by name (e.g. `{{ template "qsdm.title" . }}`) and
+# resolve against the templates: section above.
+# =====================================================================
+
+receivers:
+
+  # Audit channel — every alert lands here regardless of severity.
+  - name: 'slack-default'
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/REPLACE/ME/SLACK_AUDIT_WEBHOOK'
+        channel: '#qsdm-alerts-audit'
+        send_resolved: true
+        title: '{{ template "qsdm.slack.title" . }}'
+        title_link: '{{ template "qsdm.slack.titlelink" . }}'
+        text: '{{ template "qsdm.text" . }}'
+        color: '{{ template "qsdm.slack.color" . }}'
+        short_fields: true
+        fields:
+          - title: 'Severity'
+            value: '{{ .CommonLabels.severity }}'
+            short: true
+          - title: 'Subsystem'
+            value: '{{ .CommonLabels.subsystem }}'
+            short: true
+
+  # Critical → PagerDuty.
+  - name: 'pagerduty-critical'
+    pagerduty_configs:
+      - routing_key: 'REPLACE_ME_PAGERDUTY_INTEGRATION_KEY'
+        send_resolved: true
+        description: '{{ template "qsdm.title" . }}'
+        client: '{{ template "qsdm.pd.client" . }}'
+        client_url: '{{ .CommonAnnotations.dashboard_url }}'
+        details:
+          severity: '{{ .CommonLabels.severity }}'
+          subsystem: '{{ .CommonLabels.subsystem }}'
+          alertname: '{{ .CommonLabels.alertname }}'
+          summary: '{{ .CommonAnnotations.summary }}'
+          description: '{{ .CommonAnnotations.description }}'
+          runbook_url: '{{ .CommonAnnotations.runbook_url }}'
+          dashboard_url: '{{ .CommonAnnotations.dashboard_url }}'
+          firing: '{{ .Alerts.Firing | len }}'
+          resolved: '{{ .Alerts.Resolved | len }}'
+        # PagerDuty class drives incident grouping in the PD UI.
+        class: '{{ template "qsdm.pd.classname" . }}'
+        # PD severity field — map our `critical` to PD `error` so
+        # PD's own escalation rules treat it correctly.
+        severity: 'error'
+        # Custom links surfaced in the PD incident sidebar so the
+        # on-call clicks runbook + dashboard from inside PagerDuty
+        # without leaving the incident.
+        links:
+          - href: '{{ .CommonAnnotations.runbook_url }}'
+            text: 'QSDM Runbook'
+          - href: '{{ .CommonAnnotations.dashboard_url }}'
+            text: 'Grafana Dashboard'
+
+  # Critical → high-priority Slack channel.
+  - name: 'slack-critical'
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/REPLACE/ME/SLACK_INCIDENTS_WEBHOOK'
+        channel: '#qsdm-incidents'
+        send_resolved: true
+        title: '{{ template "qsdm.slack.title" . }}'
+        title_link: '{{ template "qsdm.slack.titlelink" . }}'
+        text: '{{ template "qsdm.text" . }}'
+        color: 'danger'
+        # Slack action buttons — clickable links right under the
+        # message body, in addition to the title_link, so operators
+        # don't have to scroll to the description.
+        actions:
+          - type: button
+            text: '📖 Runbook'
+            url: '{{ .CommonAnnotations.runbook_url }}'
+          - type: button
+            text: '📊 Dashboard'
+            url: '{{ .CommonAnnotations.dashboard_url }}'
+
+  # Warning → standard Slack channel.
+  - name: 'slack-warning'
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/REPLACE/ME/SLACK_WARNINGS_WEBHOOK'
+        channel: '#qsdm-warnings'
+        send_resolved: true
+        title: '{{ template "qsdm.slack.title" . }}'
+        title_link: '{{ template "qsdm.slack.titlelink" . }}'
+        text: '{{ template "qsdm.text" . }}'
+        color: '{{ template "qsdm.slack.color" . }}'
+        actions:
+          - type: button
+            text: '📖 Runbook'
+            url: '{{ .CommonAnnotations.runbook_url }}'
+          - type: button
+            text: '📊 Dashboard'
+            url: '{{ .CommonAnnotations.dashboard_url }}'
+
+  # Info → quiet Slack channel.
+  - name: 'slack-info-quiet'
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/REPLACE/ME/SLACK_INFO_WEBHOOK'
+        channel: '#qsdm-info'
+        send_resolved: false   # info alerts don't need resolve pings
+        title: '{{ template "qsdm.slack.title" . }}'
+        title_link: '{{ template "qsdm.slack.titlelink" . }}'
+        text: '{{ template "qsdm.text" . }}'
+        color: '#9c9c9c'
+
+  # Email fallback — used by routes that opt-in via `receiver:
+  # email-fallback`. Not in the default routing tree above; included
+  # here so operators can wire it in (e.g. as a no-PagerDuty
+  # backup) without rewriting the receiver block.
+  - name: 'email-fallback'
+    email_configs:
+      - to: 'oncall@example.com'
+        send_resolved: true
+        headers:
+          Subject: '{{ template "qsdm.title" . }}'
+        html: |
+          <h3>{{ template "qsdm.title" . }}</h3>
+          <pre>{{ template "qsdm.text" . }}</pre>
+          {{ if .CommonAnnotations.runbook_url }}
+          <p><a href="{{ .CommonAnnotations.runbook_url }}">📖 Runbook</a></p>
+          {{ end }}
+          {{ if .CommonAnnotations.dashboard_url }}
+          <p><a href="{{ .CommonAnnotations.dashboard_url }}">📊 Grafana Dashboard</a></p>
+          {{ end }}

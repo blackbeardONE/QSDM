@@ -4,11 +4,26 @@
 # Run (adjust paths):
 #   prometheus --config.file=prometheus.qsdm.example.yml
 #
-# Before use: replace DASHBOARD_HOST, DASHBOARD_PORT, and PASTE_METRICS_SCRAPE_SECRET_HERE.
+# Before use: replace DASHBOARD_HOST, DASHBOARD_PORT, ALERTMANAGER_HOST, and PASTE_METRICS_SCRAPE_SECRET_HERE.
 
 global:
   scrape_interval: 30s
   evaluation_interval: 30s
+
+# Alertmanager wiring. Alerts that fire from `rule_files` below
+# are forwarded here for routing/templating/notification — the
+# config that ships with the repo is at
+# ../alertmanager/alertmanager.example.yml.
+#
+# Replace ALERTMANAGER_HOST:9093 with the actual host:port of
+# your Alertmanager. If you don't run Alertmanager, comment out
+# this entire block — Prometheus will still evaluate the rules,
+# but firing alerts go nowhere.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - ALERTMANAGER_HOST:9093
 
 rule_files:
   - "alerts_qsdm.example.yml"

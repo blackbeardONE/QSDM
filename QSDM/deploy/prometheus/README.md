@@ -19,16 +19,22 @@ If a scrape secret is configured, a **wrong** Bearer value returns **401** (it i
 | File | Purpose |
 |------|---------|
 | `scrape_qsdm.example.yml` | Paste into `scrape_configs` (adjust target and secret) |
-| `prometheus.qsdm.example.yml` | Standalone minimal `prometheus.yml` (scrape job + `rule_files`) |
+| `prometheus.qsdm.example.yml` | Standalone minimal `prometheus.yml` (scrape job + `alerting:` + `rule_files`) |
 | `alerts_qsdm.example.yml` | Example `rule_files` (NVIDIA-lock, **submesh** P2P/API 422, throughput heuristics, **v2-mining** slashing/enrollment/liveness) |
 
 ### Standalone Prometheus
 
 1. Copy `prometheus.qsdm.example.yml` and `alerts_qsdm.example.yml` into the **same directory**.
-2. Replace placeholders (`DASHBOARD_HOST`, `DASHBOARD_PORT`, Bearer secret).
+2. Replace placeholders (`DASHBOARD_HOST`, `DASHBOARD_PORT`, `ALERTMANAGER_HOST`, Bearer secret).
 3. Start: `prometheus --config.file=prometheus.qsdm.example.yml`
 
-If you already have a `prometheus.yml`, merge in the `rule_files` block and the `qsdm-dashboard` job from this example instead.
+If you already have a `prometheus.yml`, merge in the `alerting`, `rule_files`, and the `qsdm-dashboard` job from this example instead.
+
+### Alertmanager wiring
+
+The example `prometheus.qsdm.example.yml` includes an `alerting:` block that forwards firing alerts to an Alertmanager instance at `ALERTMANAGER_HOST:9093`. The matching Alertmanager config (with severity-based routing, fan-out for critical alerts, inhibit rules, and Slack/PagerDuty/email templates that surface **both** `runbook_url` and `dashboard_url` annotations on every notification) lives at **`../alertmanager/alertmanager.example.yml`** — see **`../alertmanager/README.md`** for the full setup recipe and end-to-end smoke-test instructions.
+
+If you don't run Alertmanager, comment out the `alerting:` block — Prometheus still evaluates rules, alerts just don't go anywhere.
 
 Series names use the `qsdm_` prefix (e.g. `qsdm_nvidia_lock_http_blocks_total`, `qsdm_transactions_processed_total`, `qsdm_submesh_p2p_reject_route_total`, `qsdm_submesh_api_wallet_reject_size_total`).
 
@@ -59,4 +65,4 @@ Thresholds (50 CELL drained, 25% shrink, 10k mempool depth, 0.05–0.1 rejection
 
 The `QSDMAttestArchSpoofCCSubjectMismatch` alert pages on a **single** increment of `qsdm_attest_archspoof_rejected_total{reason="cc_subject_mismatch"}` over 15 minutes — much louder than the `unknown_arch` and `gpu_name_mismatch` siblings. Rationale: to reach this rejection branch the proof has already passed the cert-chain pin (genesis-trusted NVIDIA CA root) AND the AIK ECDSA signature, so a non-zero increment means an operator with an NVIDIA-issued AIK is submitting a proof whose leaf cert subject contradicts the claimed `gpu_arch`. That's either a fabricated AIK leaf (security event) or a serious operator misconfiguration; both warrant immediate attention.
 
-**CI smoke test:** `.github/workflows/validate-deploy.yml` runs `promtool check rules` against this file on every push that touches `QSDM/deploy/prometheus/**`.
+**CI smoke test:** `.github/workflows/validate-deploy.yml` runs `promtool check rules` against this file on every push that touches `QSDM/deploy/prometheus/**`, and `amtool check-config` against `../alertmanager/alertmanager.example.yml` on every push that touches `QSDM/deploy/alertmanager/**`.

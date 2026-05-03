@@ -8,6 +8,7 @@ on:
       - "QSDM/docs/docs/runbooks/**"
       - "scripts/check_runbook_coverage.py"
       - "scripts/gen_promtool_tests.py"
+      - "scripts/gen_grafana_dashboards.py"
       - ".github/workflows/validate-deploy.yml"
   pull_request:
     paths:
@@ -15,6 +16,7 @@ on:
       - "QSDM/docs/docs/runbooks/**"
       - "scripts/check_runbook_coverage.py"
       - "scripts/gen_promtool_tests.py"
+      - "scripts/gen_grafana_dashboards.py"
       - ".github/workflows/validate-deploy.yml"
   workflow_dispatch:
 
@@ -137,6 +139,75 @@ jobs:
         run: |
           set -euo pipefail
           promtool test rules QSDM/deploy/prometheus/alerts_qsdm.test.yml
+
+  # amtool check-config guards against silent breakage of the
+  # Alertmanager example config under QSDM/deploy/alertmanager/.
+  # Catches three classes of regression that promtool cannot:
+  #
+  #   1. Routing-tree YAML structure drift (a misindented sibling
+  #      that silently turns an `n` into a `0`-sibling route).
+  #   2. Template-reference rot (a receiver that calls
+  #      `{{ template "qsdm.text" . }}` after the template has been
+  #      renamed in templates/qsdm.tmpl).
+  #   3. URL-field syntax errors (api_url / pagerduty routing_key
+  #      / SMTP host parse failures); amtool runs the same URL
+  #      parser Alertmanager uses at startup.
+  #
+  # We additionally exercise the routing tree end-to-end with
+  # `amtool config routes test` for each severity level — a
+  # regression that breaks the `severity=critical -> pagerduty +
+  # slack` fan-out (e.g. someone collapsing the `continue: true`)
+  # would silently bypass PagerDuty without this check.
+  alertmanager-config-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install amtool
+        run: |
+          set -euo pipefail
+          # Pin AMTOOL_VERSION here; scripts/git_hook_pre_commit.py
+          # reads the same VERSION literal to warn when the local
+          # amtool version drifts from the CI pin.
+          VERSION="0.27.0"
+          curl -fsSL -o /tmp/alertmanager.tgz \
+            "https://github.com/prometheus/alertmanager/releases/download/v${VERSION}/alertmanager-${VERSION}.linux-amd64.tar.gz"
+          tar -xzf /tmp/alertmanager.tgz -C /tmp
+          sudo mv "/tmp/alertmanager-${VERSION}.linux-amd64/amtool" /usr/local/bin/amtool
+          amtool --version
+
+      - name: amtool check-config
+        run: |
+          set -euo pipefail
+          amtool check-config QSDM/deploy/alertmanager/alertmanager.example.yml
+
+      - name: Verify routing tree (amtool config routes test)
+        # amtool returns the comma-separated list of receivers that a
+        # set of labels would route to. We assert each severity routes
+        # to the expected receiver(s) — this catches breakage of the
+        # `continue: true` fan-out for critical alerts.
+        run: |
+          set -euo pipefail
+          CFG=QSDM/deploy/alertmanager/alertmanager.example.yml
+
+          assert_route() {
+            local labels="$1"
+            local expected="$2"
+            local actual
+            actual="$(amtool config routes test --config.file="$CFG" $labels)"
+            if [ "$actual" != "$expected" ]; then
+              echo "FAIL: labels=[$labels]"
+              echo "  expected: $expected"
+              echo "  actual:   $actual"
+              exit 1
+            fi
+            echo "OK: [$labels] -> $expected"
+          }
+
+          assert_route "severity=critical alertname=ExampleCritical" "pagerduty-critical,slack-critical"
+          assert_route "severity=warning  alertname=ExampleWarning"  "slack-warning"
+          assert_route "severity=info     alertname=ExampleInfo"     "slack-info-quiet"
+          assert_route "alertname=ExampleNoSeverity"                 "slack-default"
 
   # runbook-coverage lints the (alerts, runbooks) pair to ensure
   # every Prometheus alert in alerts_qsdm.example.yml carries a

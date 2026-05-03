@@ -14,6 +14,105 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Alertmanager example config + Slack/PagerDuty templates that
+  surface BOTH `runbook_url` and `dashboard_url` (2026-05-04).**
+  The alerts file and the per-runbook dashboards have been
+  generating these annotations for several commits, but until now
+  there was no piece of deploy config that actually rendered them
+  into a notification surface; the URLs sat in the YAML and the
+  on-call operator never saw them. This change closes that gap by
+  shipping a complete, end-to-end-tested Alertmanager
+  configuration that routes alerts by severity, fans critical
+  alerts out to PagerDuty + Slack, and renders both URLs into
+  every notification channel (Slack message body + click-through
+  buttons, PagerDuty `client_url` + sidebar links + custom
+  details, and HTML email body).
+  - **New artefacts**:
+    - [`QSDM/deploy/alertmanager/alertmanager.example.yml`](QSDM/deploy/alertmanager/alertmanager.example.yml)
+      — full reference config: routing tree (severity-driven, with
+      `continue: true` fan-out for critical), 4 inhibit rules
+      (critical-supersedes-warning, slashing dust-burst,
+      quarantine majority-isolated, trust no-attestations), 6
+      receivers (slack-default audit, pagerduty-critical,
+      slack-critical, slack-warning, slack-info-quiet, email-fallback),
+      heavily commented for operator-facing maintenance.
+    - [`QSDM/deploy/alertmanager/templates/qsdm.tmpl`](QSDM/deploy/alertmanager/templates/qsdm.tmpl)
+      — five Go-template definitions (`qsdm.title`, `qsdm.text`,
+      `qsdm.slack.title`, `qsdm.slack.titlelink`,
+      `qsdm.slack.color`, `qsdm.severityEmoji`, `qsdm.pd.client`,
+      `qsdm.pd.classname`) consumed by the receivers. Surfaces
+      `*Runbook*:` and `*Dashboard*:` Slack-mrkdwn hyperlinks plus
+      severity-coloured attachments.
+    - [`QSDM/deploy/alertmanager/README.md`](QSDM/deploy/alertmanager/README.md)
+      — operator-facing setup recipe (install → configure →
+      validate → start → wire into Prometheus), routing-tree
+      diagram, inhibit-rule table, template summary, and
+      end-to-end smoke-test instructions.
+    - [`scripts/smoketest_alertmanager.py`](scripts/smoketest_alertmanager.py)
+      — self-contained two-phase end-to-end harness. Phase 1 spins
+      up a real Alertmanager pointed at a localhost listener with
+      `webhook_configs:` receivers, pushes 4 synthetic alerts (one
+      per severity + one unlabelled), and asserts the routing tree
+      dispatches correctly (including the critical fan-out) and
+      that every delivery's `commonAnnotations` carries both URLs.
+      Phase 2 reuses the same harness with `slack_configs:`
+      receivers (real template rendering) pointed at a second
+      listener, and asserts the rendered Slack JSON contains
+      `*Runbook*:` / `*Dashboard*:` mrkdwn lines and that the
+      action buttons carry the resolved URLs. 27 checks total;
+      gracefully skips (exit 0) when `alertmanager` is unavailable.
+  - **Prometheus wiring**: [`prometheus.qsdm.example.yml`](QSDM/deploy/prometheus/prometheus.qsdm.example.yml)
+    grew an `alerting:` block that forwards firing alerts to
+    `ALERTMANAGER_HOST:9093`, and the prometheus README now
+    cross-links the alertmanager directory.
+  - **CI gate**: [`.github/workflows/validate-deploy.yml`](.github/workflows/validate-deploy.yml)
+    grew a new `alertmanager-config-check` job that:
+    1. Installs amtool 0.27.0 (version-pinned).
+    2. Runs `amtool check-config` (validates YAML, template
+       references, URL fields).
+    3. Runs `amtool config routes test` four times (one per
+       severity) and asserts the receivers list matches the
+       expected fan-out — catches regressions where someone
+       collapses the `continue: true` and silently bypasses
+       PagerDuty.
+  - **Pre-commit hook**: [`scripts/git_hook_pre_commit.py`](scripts/git_hook_pre_commit.py)
+    learned a fourth check (`amtool_check`) triggered by any edit
+    under `QSDM/deploy/alertmanager/`, with the same version-pin
+    semantics as the existing `promtool` check (reads
+    `alertmanager-config-check:` job's `VERSION=...` from the CI
+    workflow, probes `amtool --version`, prints a soft amber
+    warning on mismatch).
+  - **Verification (executed locally before commit)**:
+    - `amtool check-config alertmanager.example.yml` →
+      `SUCCESS: 4 inhibit rules, 6 receivers, 1 templates`.
+    - `amtool config routes test` for `severity=critical
+      alertname=...` returns `pagerduty-critical,slack-critical`
+      (proves fan-out works).
+    - `python scripts/smoketest_alertmanager.py` →
+      `OK 27/27 smoke checks passed`. Confirms BOTH URLs appear
+      in the rendered Slack JSON for every receiver, including
+      the action buttons.
+    - `promtool check config prometheus.qsdm.example.yml` still
+      passes after the new `alerting:` block.
+  - **Why this is the highest-leverage incident-response work
+    that remained**: the runbook ↔ alert ↔ dashboard chain has
+    been complete in source for several commits (every alert has
+    a runbook_url + dashboard_url), but a chain is only useful
+    when the rendering surface actually puts the links in front
+    of a human. With this commit:
+    - On-call operator gets a PagerDuty incident → clicks
+      `client_url` → lands on the live Grafana panel.
+    - On-call operator gets a Slack message → clicks the
+      `📖 Runbook` button → lands on the markdown triage steps.
+    - On-call operator gets a Slack message → clicks the
+      `📊 Dashboard` button → lands on the live panel.
+    - The audit channel gets a copy of every alert for postmortem
+      reference.
+    Total click-distance from "page wakes you up at 3am" to
+    "the playbook for this exact alert is open in your browser":
+    one click. (Previously: zero links anywhere — runbook_url and
+    dashboard_url existed in YAML but were not surfaced.)
+
 - **Per-runbook Grafana dashboards + `dashboard_url` annotation
   on every alert (2026-05-04).** Closes the last gap in the
   alert ↔ incident-response chain: an on-call operator now has

@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 """Pre-commit hook for QSDM.
 
-Runs the runbook coverage lint and promtool's two-layer rule check
-(`promtool check rules` + `promtool test rules`) before every commit,
-but ONLY for the checks whose inputs are part of the staged
-changeset. A commit that doesn't touch alerts, runbooks, or the
-prometheus deploy folder runs no slow checks at all.
+Runs the runbook coverage lint, promtool's two-layer rule check
+(`promtool check rules` + `promtool test rules`), and amtool's
+config check (`amtool check-config`) before every commit, but
+ONLY for the checks whose inputs are part of the staged changeset.
+A commit that doesn't touch alerts, runbooks, dashboards, or the
+deploy folder runs no slow checks at all.
 
 Mirrors the GitHub Actions job in
 .github/workflows/validate-deploy.yml so failures surface locally
@@ -37,9 +38,13 @@ Skip semantics
 --------------
 - `promtool` not on PATH (and `$PROMTOOL` env var unset): both
   promtool checks are SKIPPED with a clear amber-warning banner.
-  The runbook coverage lint still runs (Python-only).
-- The hook never auto-installs promtool; that's a deliberate
-  scope decision so the hook stays fast and deterministic.
+- `amtool` not on PATH (and `$AMTOOL` env var unset): the
+  amtool check is SKIPPED with a clear amber-warning banner.
+- The runbook coverage lint always runs when triggered (Python-
+  only, no external binaries).
+- The hook never auto-installs promtool / amtool; that's a
+  deliberate scope decision so the hook stays fast and
+  deterministic.
 
 CI parity
 ---------
@@ -49,13 +54,15 @@ that the CI gate will pass.
 
 Version pinning
 ---------------
-The CI workflow installs an exact promtool version. When the
-hook will invoke promtool, it also probes
-`promtool --version` and compares the result to the pin parsed
-from `.github/workflows/validate-deploy.yml`. A mismatch prints
-a soft amber warning (never a failure) so operators know that
-local-vs-CI parity is approximate when versions diverge — set
-`$PROMTOOL` to a binary at the pinned version for exact parity.
+The CI workflow installs exact `promtool` and `amtool` versions.
+When the hook will invoke either binary, it probes its
+`--version` output and compares the result to the pin parsed
+from `.github/workflows/validate-deploy.yml` (one pin per CI job:
+`prometheus-rules-check:` for promtool, `alertmanager-config-check:`
+for amtool). A mismatch prints a soft amber warning (never a
+failure) so operators know that local-vs-CI parity is approximate
+when versions diverge — set `$PROMTOOL` / `$AMTOOL` to a binary at
+the pinned version for exact parity.
 """
 from __future__ import annotations
 
@@ -105,6 +112,8 @@ TEST_FILE = "QSDM/deploy/prometheus/alerts_qsdm.test.yml"
 SPEC_FILE = "QSDM/deploy/prometheus/alerts_qsdm.test.spec.yml"
 RUNBOOKS_DIR = "QSDM/docs/docs/runbooks/"
 DASHBOARDS_DIR = "QSDM/deploy/grafana/dashboards/"
+ALERTMANAGER_DIR = "QSDM/deploy/alertmanager/"
+ALERTMANAGER_FILE = "QSDM/deploy/alertmanager/alertmanager.example.yml"
 LINT_SCRIPT = "scripts/check_runbook_coverage.py"
 GEN_SCRIPT = "scripts/gen_promtool_tests.py"
 GEN_DASHBOARDS_SCRIPT = "scripts/gen_grafana_dashboards.py"
@@ -137,6 +146,11 @@ PROMTOOL_TEST_TRIGGERS = (
     SPEC_FILE,
     GEN_SCRIPT,
 )
+
+# Paths whose modification triggers `amtool check-config`.
+# Anything inside the alertmanager directory (config, templates,
+# README, etc.) re-runs the syntax + template-resolution check.
+AMTOOL_CHECK_TRIGGERS = (ALERTMANAGER_DIR,)
 
 
 # -----------------------------------------------------------------
@@ -198,10 +212,23 @@ def find_promtool() -> str | None:
 
     Returns the resolved path, or None if not found.
     """
-    env = os.environ.get("PROMTOOL")
+    return _find_binary("PROMTOOL", "promtool")
+
+
+def find_amtool() -> str | None:
+    """Locate the `amtool` binary (Alertmanager config tool).
+
+    Same lookup semantics as `find_promtool` — `$AMTOOL` env var,
+    then PATH (with .exe variant on Windows).
+    """
+    return _find_binary("AMTOOL", "amtool")
+
+
+def _find_binary(env_var: str, name: str) -> str | None:
+    env = os.environ.get(env_var)
     if env and Path(env).exists():
         return env
-    for cand in ("promtool", "promtool.exe"):
+    for cand in (name, f"{name}.exe"):
         found = shutil.which(cand)
         if found:
             return found
@@ -209,19 +236,19 @@ def find_promtool() -> str | None:
 
 
 # -----------------------------------------------------------------
-# promtool version pinning
+# Binary version pinning (promtool + amtool)
 # -----------------------------------------------------------------
 #
-# The CI workflow installs an exact promtool version; locally the
-# operator might have a different one. Most rule semantics are
-# stable across recent promtool releases, but `test rules`
-# behaviour HAS shifted in subtle ways between minors (e.g. how
-# `exp_annotations` is matched changed between 2.x and 3.x), so
-# "local green" can disagree with "CI green" if the versions
-# diverge meaningfully.
+# The CI workflow installs exact `promtool` and `amtool` versions;
+# locally the operator might have different ones. Most rule
+# semantics are stable across recent releases, but behaviour HAS
+# shifted in subtle ways between minors (e.g. how
+# `promtool test rules` matches `exp_annotations` changed between
+# 2.x and 3.x), so "local green" can disagree with "CI green" if
+# the versions diverge meaningfully.
 #
 # We do NOT make a version mismatch fatal — that would be
-# annoying for operators who are deliberately on a newer promtool
+# annoying for operators who are deliberately on a newer release
 # (e.g. testing forward compatibility) or who installed the
 # distro's package version. Instead the hook prints a single-
 # line amber banner so the operator knows local-vs-CI parity
@@ -233,9 +260,10 @@ def find_promtool() -> str | None:
 # step), the version probe silently skips — never fail the hook
 # for missing CI metadata.
 
-# Match `VERSION="2.55.1"` (and tolerant variants) inside the
-# Install promtool step. Specific enough not to false-positive on
-# unrelated VERSION assignments elsewhere in the workflow file.
+# Match `VERSION="2.55.1"` (and tolerant variants) anywhere in the
+# scope passed to it. Specific enough not to false-positive on
+# unrelated VERSION assignments because the caller pre-narrows
+# the search to the relevant CI job.
 _WORKFLOW_VERSION_RE = re.compile(
     r"""
     ^[ \t]*VERSION[ \t]*=[ \t]*
@@ -246,15 +274,16 @@ _WORKFLOW_VERSION_RE = re.compile(
 )
 
 
-def pinned_promtool_version() -> str | None:
-    """Read the canonical promtool version pin from the CI workflow.
+def _pinned_version_in_job(job_marker: str) -> str | None:
+    """Read `VERSION="X.Y.Z"` from a specific CI job's install step.
 
-    Returns the version string (e.g. "2.55.1") or None if the
-    workflow file is missing / the pin marker is absent.
+    `job_marker` is the bare job key (e.g. "prometheus-rules-check:").
+    The search is anchored AT or AFTER the job marker so VERSION
+    pins from earlier jobs (e.g. kubeconform) are ignored.
 
-    The hook treats a None return as "no pin to compare against",
-    not a failure. This keeps the hook resilient to future
-    refactors of the workflow file.
+    Returns the version string or None if the workflow / pin is
+    missing — never raises. Failures here are not the hook's fault;
+    they just disable the version-check feature.
     """
     wf = REPO_ROOT / WORKFLOW_FILE
     if not wf.exists():
@@ -263,38 +292,48 @@ def pinned_promtool_version() -> str | None:
         text = wf.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
-    # We only consider VERSION assignments inside the
-    # `prometheus-rules-check:` job; that's a soft scope (we just
-    # check the assignment is somewhere AFTER the job name in the
-    # file) so the regex doesn't pull a kubeconform VERSION pin
-    # by accident.
-    job_marker = "prometheus-rules-check:"
     job_pos = text.find(job_marker)
-    scope = text[job_pos:] if job_pos >= 0 else text
+    if job_pos < 0:
+        return None
+    # Narrow to "from this job onwards" — the install step always
+    # appears within the same job, and the very next VERSION= line
+    # we find is the one for this job.
+    scope = text[job_pos:]
     m = _WORKFLOW_VERSION_RE.search(scope)
     if not m:
         return None
     return m.group("version")
 
 
+def pinned_promtool_version() -> str | None:
+    """Read the canonical promtool version pin from the CI workflow.
+
+    Returns the version string (e.g. "2.55.1") or None if missing.
+    """
+    return _pinned_version_in_job("prometheus-rules-check:")
+
+
+def pinned_amtool_version() -> str | None:
+    """Read the canonical amtool version pin from the CI workflow."""
+    return _pinned_version_in_job("alertmanager-config-check:")
+
+
 # Match `promtool, version 2.55.1 (...)` on the first line.
-_LOCAL_VERSION_RE = re.compile(
+_LOCAL_PROMTOOL_VERSION_RE = re.compile(
     r"^promtool,?\s+version\s+(?P<version>\d+\.\d+\.\d+)",
+    re.MULTILINE,
+)
+# Match `amtool, version 0.27.0 (...)` on the first line.
+_LOCAL_AMTOOL_VERSION_RE = re.compile(
+    r"^amtool,?\s+version\s+(?P<version>\d+\.\d+\.\d+)",
     re.MULTILINE,
 )
 
 
-def local_promtool_version(promtool: str) -> str | None:
-    """Probe `promtool --version` and parse its output.
-
-    Returns the version string or None on probe failure (binary
-    refused to run, output format unrecognised, etc.). Failures
-    are NOT reported as errors; they just disable the version
-    check.
-    """
+def _probe_version(binary: str, regex: re.Pattern[str]) -> str | None:
     try:
         proc = subprocess.run(
-            [promtool, "--version"],
+            [binary, "--version"],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -306,10 +345,26 @@ def local_promtool_version(promtool: str) -> str | None:
     if proc.returncode != 0:
         return None
     blob = (proc.stdout or "") + (proc.stderr or "")
-    m = _LOCAL_VERSION_RE.search(blob)
+    m = regex.search(blob)
     if not m:
         return None
     return m.group("version")
+
+
+def local_promtool_version(promtool: str) -> str | None:
+    """Probe `promtool --version` and parse its output.
+
+    Returns the version string or None on probe failure (binary
+    refused to run, output format unrecognised, etc.). Failures
+    are NOT reported as errors; they just disable the version
+    check.
+    """
+    return _probe_version(promtool, _LOCAL_PROMTOOL_VERSION_RE)
+
+
+def local_amtool_version(amtool: str) -> str | None:
+    """Probe `amtool --version` and parse its output."""
+    return _probe_version(amtool, _LOCAL_AMTOOL_VERSION_RE)
 
 
 # -----------------------------------------------------------------
@@ -377,6 +432,13 @@ def check_promtool_test_rules(promtool: str) -> CheckResult:
     )
 
 
+def check_amtool_check_config(amtool: str) -> CheckResult:
+    return run_subprocess(
+        [amtool, "check-config", ALERTMANAGER_FILE],
+        "amtool check-config (alertmanager YAML + templates)",
+    )
+
+
 # -----------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------
@@ -393,6 +455,7 @@ def main() -> int:
     runbook_hits = any_match(files, RUNBOOK_LINT_TRIGGERS)
     check_hits = any_match(files, PROMTOOL_CHECK_TRIGGERS)
     test_hits = any_match(files, PROMTOOL_TEST_TRIGGERS)
+    amtool_hits = any_match(files, AMTOOL_CHECK_TRIGGERS)
 
     runs = []
     if runbook_hits:
@@ -401,6 +464,8 @@ def main() -> int:
         runs.append(("promtool_check", check_hits))
     if test_hits:
         runs.append(("promtool_test", test_hits))
+    if amtool_hits:
+        runs.append(("amtool_check", amtool_hits))
 
     if not runs:
         # No relevant files staged — fast-exit, don't print noise.
@@ -486,6 +551,59 @@ def main() -> int:
                     )
                 )
 
+    # ------------- Locate amtool + check version pin -------------
+    amtool = None
+    will_run_amtool = any(name == "amtool_check" for name, _ in runs)
+    if will_run_amtool:
+        amtool = find_amtool()
+        pinned_am = pinned_amtool_version()
+        if amtool is None:
+            print()
+            install_url = (
+                "https://github.com/prometheus/alertmanager/releases/"
+                f"download/v{pinned_am}/alertmanager-{pinned_am}.<os>-amd64.tar.gz"
+                if pinned_am
+                else "https://github.com/prometheus/alertmanager/releases"
+            )
+            pinned_label = pinned_am or "the version pinned in CI"
+            print(_warn("⚠  amtool not found on PATH (and $AMTOOL unset)."))
+            print(_warn("   `amtool check-config` will be SKIPPED locally."))
+            print(_warn(f"   It still runs in CI — the workflow installs"))
+            print(_warn(f"   alertmanager {pinned_label} itself."))
+            print(_warn("   To enable locally, install amtool:"))
+            print(_warn(f"     curl -fsSL {install_url}"))
+        else:
+            local_am = local_amtool_version(amtool)
+            if pinned_am and local_am and local_am != pinned_am:
+                print()
+                print(
+                    _warn(
+                        f"⚠  amtool version mismatch: local={local_am}, "
+                        f"CI-pinned={pinned_am}."
+                    )
+                )
+                print(
+                    _warn(
+                        "   Alertmanager config schema has evolved between "
+                        "minors; local PASS"
+                    )
+                )
+                print(
+                    _warn(
+                        f"   does not strictly imply CI PASS. Install "
+                        f"alertmanager {pinned_am}, or"
+                    )
+                )
+                print(_warn("   set $AMTOOL to the pinned binary."))
+            elif pinned_am and local_am is None:
+                print()
+                print(
+                    _warn(
+                        f"⚠  could not probe amtool --version; "
+                        f"CI is pinned to {pinned_am}."
+                    )
+                )
+
     # ------------- Run checks -------------
     results: list[tuple[str, CheckResult]] = []
     for name, _hits in runs:
@@ -505,6 +623,13 @@ def main() -> int:
                 )
             else:
                 results.append((name, check_promtool_test_rules(promtool)))
+        elif name == "amtool_check":
+            if amtool is None:
+                results.append(
+                    (name, CheckResult(CheckResult.SKIPPED, 0, "amtool missing"))
+                )
+            else:
+                results.append((name, check_amtool_check_config(amtool)))
 
         # Short-circuit on first failure: subsequent checks rarely
         # add useful signal once the first one fails, and operators
