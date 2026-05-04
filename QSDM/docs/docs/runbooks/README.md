@@ -1,7 +1,7 @@
 # QSDM Operator Runbooks — Master Index
 
 This is the operator's first page when paged for any
-`QSDM*` Prometheus alert. It lists all 38 alerts in
+`QSDM*` Prometheus alert. It lists all 39 alerts in
 [`alerts_qsdm.example.yml`](../../../deploy/prometheus/alerts_qsdm.example.yml),
 maps each to its dedicated runbook section, and shows
 the cross-subsystem escalation paths in one place.
@@ -81,6 +81,7 @@ link directly to the relevant `### 3.x Mode X` (or
 | `QSDMNvidiaLockP2PRejects`                     | warning      | `qsdm-nvidia-lock`                | [`OPERATOR_HYGIENE_INCIDENT.md` §3.2](OPERATOR_HYGIENE_INCIDENT.md#32-mode-b--qsdmnvidialockp2prejects) |
 | `QSDMQuarantineAnySubmesh`                     | warning      | `qsdm-quarantine`                 | [`QUARANTINE_INCIDENT.md` §3.1](QUARANTINE_INCIDENT.md#31-mode-a--qsdmquarantineanysubmesh) |
 | `QSDMQuarantineMajorityIsolated`               | **critical** | `qsdm-quarantine`                 | [`QUARANTINE_INCIDENT.md` §3.2](QUARANTINE_INCIDENT.md#32-mode-b--qsdmquarantinemajorityisolated) |
+| `QSDMStubActive`                               | **critical** | `qsdm-stub-active`                | [`STUB_DEPLOYMENT_INCIDENT.md`](STUB_DEPLOYMENT_INCIDENT.md) (kind-dispatched) |
 | `QSDMSubmeshAPISustained422`                   | warning      | `qsdm-submesh`                    | [`SUBMESH_POLICY_INCIDENT.md` §3.2](SUBMESH_POLICY_INCIDENT.md#32-mode-b--qsdmsubmeshapisustained422) |
 | `QSDMSubmeshP2PRejects`                        | warning      | `qsdm-submesh`                    | [`SUBMESH_POLICY_INCIDENT.md` §3.1](SUBMESH_POLICY_INCIDENT.md#31-mode-a--qsdmsubmeshp2prejects) |
 | `QSDMTrustAggregatorStale`                     | **critical** | `qsdm-trust-redundancy`           | [`TRUST_INCIDENT.md` §3.6](TRUST_INCIDENT.md#36-mode-f--qsdmtrustaggregatorstale) |
@@ -90,7 +91,7 @@ link directly to the relevant `### 3.x Mode X` (or
 | `QSDMTrustNGCServiceDegraded`                  | warning      | `qsdm-trust-redundancy`           | [`TRUST_INCIDENT.md` §3.4](TRUST_INCIDENT.md#34-mode-d--qsdmtrustngcservicedegraded) |
 | `QSDMTrustNoAttestationsAccepted`              | warning      | `qsdm-trust-transparency`         | [`TRUST_INCIDENT.md` §3.1](TRUST_INCIDENT.md#31-mode-a--qsdmtrustnoattestationsaccepted) |
 
-**Total: 38 alerts. Severity distribution: 7 critical
+**Total: 39 alerts. Severity distribution: 8 critical
 / 29 warning / 2 info.**
 
 ---
@@ -376,6 +377,41 @@ cascade companions.
 
 ---
 
+### `STUB_DEPLOYMENT_INCIDENT.md` — silent stub-deployment guard
+
+Single-alert runbook with **seven kind-dispatched
+sections**. Closes the silent stub-deployment footgun
+where a non-CGO build (PoE / Dilithium / wallet stubs),
+a deploy that selected the CC stub verifier, or a
+slashing dispatcher with stub-wired EvidenceKinds runs
+in production without any signal that the validator is
+operating with a stub-shipped code path.
+
+| `kind` label | Severity in prod | Section |
+|---|---|---|
+| `poe`         | **CRITICAL — security event**       | [§ kind-poe](STUB_DEPLOYMENT_INCIDENT.md#kind-poe)              |
+| `dilithium`   | **CRITICAL — crypto downgrade**     | [§ kind-dilithium](STUB_DEPLOYMENT_INCIDENT.md#kind-dilithium)  |
+| `wallet`      | **CRITICAL — crypto downgrade**     | [§ kind-wallet](STUB_DEPLOYMENT_INCIDENT.md#kind-wallet)        |
+| `cc`          | **HIGH — CC mining offline**        | [§ kind-cc](STUB_DEPLOYMENT_INCIDENT.md#kind-cc)                |
+| `slashing`    | **HIGH — slashing partly offline**  | [§ kind-slashing](STUB_DEPLOYMENT_INCIDENT.md#kind-slashing)    |
+| `mesh3d-cuda` | LOW — performance only              | [§ kind-mesh3d-cuda](STUB_DEPLOYMENT_INCIDENT.md#kind-mesh3d-cuda) |
+| `wasm-sdk`    | LOW — WASM modules unavailable      | [§ kind-wasm-sdk](STUB_DEPLOYMENT_INCIDENT.md#kind-wasm-sdk)    |
+
+**When to read:** any `qsdm_stub_active{kind="..."} == 1`
+fire. The alert template anchors directly into the
+right kind-section via
+`{{ reReplaceAll "_" "-" $labels.kind }}`, so an
+on-call clicking the page lands at the exact
+remediation. `kind="poe"` in particular is a hard-fail
+security event because the non-CGO PoE stub accepts
+transactions WITHOUT signature verification.
+
+**Companions:** [`SLASHING_INCIDENT.md`](SLASHING_INCIDENT.md)
+(complements [§ kind-slashing](STUB_DEPLOYMENT_INCIDENT.md#kind-slashing)
+when a slash tx is rejected for the stub-wired kind).
+
+---
+
 ### `OPERATOR_HYGIENE_INCIDENT.md` — bundled finishing runbook
 
 Four-mode runbook bundling alerts that share three
@@ -449,7 +485,7 @@ flowchart LR
 
 ## 4. Severity quick-views
 
-### Critical (7) — page-out-of-bed
+### Critical (8) — page-out-of-bed
 
 | Alert | Runbook | Why critical |
 |---|---|---|
@@ -460,6 +496,7 @@ flowchart LR
 | `QSDMMiningAutoRevokeBurst`             | [`SLASHING_INCIDENT.md`](SLASHING_INCIDENT.md)                       | Mass auto-revocations |
 | `QSDMAttestArchSpoofCCSubjectMismatch`  | [`ARCH_SPOOF_INCIDENT.md`](ARCH_SPOOF_INCIDENT.md)                   | CC leaf cert subject contradicts claimed arch — cryptographic anomaly |
 | `QSDMGovAuthorityCountTooLow`           | [`GOVERNANCE_AUTHORITY_INCIDENT.md`](GOVERNANCE_AUTHORITY_INCIDENT.md)| Authority count below operating minimum |
+| `QSDMStubActive`                        | [`STUB_DEPLOYMENT_INCIDENT.md`](STUB_DEPLOYMENT_INCIDENT.md)         | Stub-shipped code path active in prod (kind-dispatched: `kind="poe"` accepts unsigned txs; `kind="dilithium"`/`"wallet"` are crypto downgrades; `kind="cc"`/`"slashing"` silently disable subsystems) |
 
 ### Warning (29) — investigate within shift
 
@@ -568,3 +605,4 @@ commit):
 | 8 | `NGC_SUBMISSION_INCIDENT.md` + 2 alerts + TRUST cross-link backfill | +2 (34/38) |
 | 9 | `OPERATOR_HYGIENE_INCIDENT.md` (4 modes) + 4 alerts → **100%** | +4 (38/38) |
 | 10 | This index + CI coverage lint (regression guard) | invariant-lock |
+| 11 | `STUB_DEPLOYMENT_INCIDENT.md` (7 kinds) + `QSDMStubActive` alert + `qsdm_stub_active{kind="..."}` gauge + `pkg/monitoring/stubactive` leaf registry — closes the silent-stub-deployment footgun (`kind="poe"` accepts unsigned txs; etc.). Templated runbook anchor (`#kind-{{ reReplaceAll "_" "-" $labels.kind }}`) supported by an extension to `check_runbook_coverage.py`. | +1 (39/39) |

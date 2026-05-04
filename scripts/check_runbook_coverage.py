@@ -372,6 +372,44 @@ def main(argv: List[str]) -> int:
             continue
 
         existing = anchors_for(runbook_path)
+
+        # Templated anchors: when the URL fragment contains `{{ ... }}`
+        # (a Go template expression like `{{ $labels.kind }}` or
+        # `{{ reReplaceAll "_" "-" $labels.kind }}`), the lint cannot
+        # statically resolve the anchor — the value is filled in by
+        # Prometheus at evaluation time from the alert's labels.
+        # Instead, we validate the *static prefix* before the first
+        # `{{`: at least one anchor in the runbook must start with
+        # that prefix. This guarantees the runbook has the dispatch
+        # section the template refers to, while permitting
+        # per-instance deep links (e.g. `#kind-poe`, `#kind-dilithium`,
+        # `#kind-cc`, … for QSDMStubActive).
+        if "{{" in anchor:
+            prefix = anchor.split("{{", 1)[0]
+            if not prefix:
+                fail(
+                    f"[{gname}] alert {alert_name!r} templated anchor "
+                    f"{anchor!r} has no static prefix; the lint needs at "
+                    f"least one literal character before '{{{{' to validate "
+                    f"the runbook contains the dispatch section"
+                )
+                continue
+            matching = [a for a in existing if a.startswith(prefix)]
+            if not matching:
+                fail(
+                    f"[{gname}] alert {alert_name!r} templated anchor "
+                    f"#{anchor} static prefix {prefix!r} matches no anchor "
+                    f"in {filename}; expected at least one section header "
+                    f"slug starting with that prefix"
+                )
+                continue
+            if not args.quiet:
+                print(
+                    f"  ok   {alert_name}  ->  {filename}#{anchor} "
+                    f"(templated; {len(matching)} matching anchor(s))"
+                )
+            continue
+
         if anchor not in existing:
             fail(
                 f"[{gname}] alert {alert_name!r} anchor #{anchor} not found in "

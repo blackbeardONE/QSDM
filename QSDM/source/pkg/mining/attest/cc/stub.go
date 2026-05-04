@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/mining"
+	"github.com/blackbeardONE/QSDM/pkg/monitoring/stubactive"
 )
 
 // ErrNotYetAvailable is returned by StubVerifier.VerifyAttestation
@@ -53,8 +54,14 @@ var ErrNotYetAvailable = fmt.Errorf(
 type StubVerifier struct{}
 
 // NewStubVerifier returns a StubVerifier ready to register under
-// mining.AttestationTypeCC.
-func NewStubVerifier() StubVerifier { return StubVerifier{} }
+// mining.AttestationTypeCC. Side effect: flips
+// qsdm_stub_active{kind="cc"} to 1 so a production scrape can
+// alert when nvidia-cc-v1 attestation is wired to the placeholder
+// rather than the real Phase 2c-iv verifier.
+func NewStubVerifier() StubVerifier {
+	stubactive.MarkActive(stubactive.KindCC)
+	return StubVerifier{}
+}
 
 // VerifyAttestation rejects any proof whose Attestation.Type is
 // "nvidia-cc-v1" (which, via dispatcher routing, is every proof

@@ -28,6 +28,11 @@ func GlobalScrapePrometheusExporter() *PrometheusExporter {
 		globalScrapeExporter = NewPrometheusExporter()
 		globalScrapeExporter.RegisterCollector("qsdm_core", corePrometheusMetrics)
 		globalScrapeExporter.RegisterCollector("qsdm_process", scrapeProcessMetaMetrics)
+		// qsdm_stub_active{kind="..."} surfaces the registry in
+		// pkg/monitoring/stubactive so alerts can fire when a
+		// non-CGO build, the CC stub verifier, or any slashing
+		// StubVerifier is active in production.
+		globalScrapeExporter.RegisterCollector("qsdm_stub_active", stubActiveMetrics)
 	})
 	return globalScrapeExporter
 }

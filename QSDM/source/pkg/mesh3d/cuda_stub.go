@@ -5,6 +5,18 @@
 
 package mesh3d
 
+import "github.com/blackbeardONE/QSDM/pkg/monitoring/stubactive"
+
+// init flips qsdm_stub_active{kind="mesh3d_cuda"} to 1 in builds
+// where CUDA mesh validation falls back to CPU. Operationally
+// usually fine (CPU path is correct, just slower) — but operators
+// running large meshes who expected CUDA acceleration will see
+// throughput far below capacity, and this signal helps surface
+// misconfiguration.
+func init() {
+	stubactive.MarkActive(stubactive.KindMesh3DCUDA)
+}
+
 // CUDAAccelerator stub when CUDA is not available
 type CUDAAccelerator struct {
 	initialized bool

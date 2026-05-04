@@ -1961,3 +1961,120 @@ groups:
                 limiter rate may be too tight. Loosen
                 cfg.RecentRejectionsRateLimitPerSec or
                 widen the burst.
+
+  # =====================================================================
+  # qsdm-stub-active — surfaces deployments running with a stub-shipped
+  # implementation in place of the production verifier / signer / etc.
+  #
+  # This alert closes the silent-stub-deployment footgun: QSDM
+  # intentionally ships several stubs that are runtime-selectable or
+  # build-tag-selectable (non-CGO PoE / Dilithium / wallet, the CC
+  # nvidia-cc-v1 stub verifier, slashing StubVerifier for evidence kinds
+  # whose real implementation hasn't shipped, etc.). Some of these stubs
+  # are operationally dangerous in production:
+  #
+  #   - kind="poe" (non-CGO consensus) ACCEPTS transactions WITHOUT
+  #     signature verification — see pkg/consensus/poe_stub.go:38-46.
+  #     Any production deploy with this gauge set to 1 is a hard-fail
+  #     security event.
+  #
+  #   - kind="dilithium" / kind="wallet" (non-CGO) downgrade quantum-
+  #     safe ML-DSA-87 to SHA-256-keyed HMAC. Functionally correct
+  #     for testing, but a downgrade from the v2 mining protocol's
+  #     quantum-safe promise.
+  #
+  #   - kind="cc" (nvidia-cc-v1 stub verifier) rejects every CC
+  #     attestation. Validators wired to the stub effectively
+  #     refuse to admit any v2 mining proof of Type=nvidia-cc-v1
+  #     until Phase 2c-iv lands.
+  #
+  #   - kind="slashing" (StubVerifier) silently disables slashing
+  #     for evidence kinds wired to the stub. Slash txs of those
+  #     kinds are rejected with "not yet implemented" — the
+  #     subnet's slashing surface is partially offline without
+  #     the operator necessarily noticing.
+  #
+  #   - kind="mesh3d_cuda" / kind="wasm_sdk" are softer: CPU
+  #     fallback / WASM unavailable. Operationally fine but a
+  #     signal that the operator's deploy doesn't match what they
+  #     probably expected.
+  #
+  # The metric `qsdm_stub_active{kind="..."}` is emitted by
+  # pkg/monitoring/stub_active_metrics.go on every scrape, with one
+  # row per canonical kind in pkg/monitoring/stubactive/AllKinds()
+  # (always populated, value 0 or 1). The for:5m window swallows the
+  # ~30s of startup transients before all init() functions have run.
+  # =====================================================================
+  - name: qsdm-stub-active
+    rules:
+      - alert: QSDMStubActive
+        # `== 1` matches every kind label whose gauge is currently 1.
+        # Prometheus produces one alert instance per matching kind label,
+        # so operators get a separate page per stub-active kind (with
+        # the specific kind in $labels.kind for routing / dashboard
+        # panels).
+        expr: |
+          qsdm_stub_active == 1
+        for: 5m
+        labels:
+          severity: critical
+          subsystem: v2-deployment
+        annotations:
+          # Anchor lands on the kind-specific section of the runbook so
+          # an on-call clicking the page jumps straight to the right
+          # remediation (rebuild with CGO, swap the CC verifier,
+          # register a real slashing evidence verifier, etc.) rather
+          # than the runbook header.
+          runbook_url: 'https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md#kind-{{ reReplaceAll "_" "-" $labels.kind }}'
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-stub-deployment-incident.json"
+          summary: "{{ $labels.instance }}: stub implementation active for kind={{ $labels.kind }}"
+          description: |
+            qsdm_stub_active{kind="{{ $labels.kind }}"} == 1 on
+            {{ $labels.instance }} for ≥5m.
+
+            A stub-shipped code path is active in this binary. Some
+            stubs are operationally dangerous in production:
+
+              - kind="poe": non-CGO consensus ACCEPTS transactions
+                WITHOUT signature verification. Hard-fail security
+                event in production. Rebuild with CGO_ENABLED=1 and
+                liboqs available.
+
+              - kind="dilithium" / "wallet": quantum-safe ML-DSA-87
+                not available; SHA-256 fallback in use. Downgrade
+                from the v2 mining protocol's quantum-safe promise.
+                Rebuild with CGO + liboqs.
+
+              - kind="cc": nvidia-cc-v1 stub verifier rejects every
+                proof. Validators using this stub admit zero v2
+                mining proofs of Type=nvidia-cc-v1 (Phase 2c-iv work
+                pending). Replace cc.NewStubVerifier() with the real
+                AIK verifier in the validator wiring.
+
+              - kind="slashing": at least one EvidenceKind is wired
+                to the StubVerifier (always rejects). Slash txs of
+                that kind silently fail. Replace the StubVerifier
+                registration in slashing.NewProductionDispatcher
+                with the real per-kind verifier.
+
+              - kind="mesh3d_cuda": CUDA acceleration unavailable;
+                CPU fallback in use. Functionally correct but
+                throughput will be far below CUDA-enabled capacity.
+
+              - kind="wasm_sdk": WASM module execution unavailable
+                (non-CGO). Modules configured under [wasm.*] will
+                all fail to load.
+
+            Triage:
+              - See QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md
+                for the kind-specific remediation (the runbook_url
+                above anchors directly into the right section).
+              - This alert is for:5m which means a brand-new node
+                boot will not page; the gauge has to remain 1 for
+                two scrape windows.
+              - To see all currently-active kinds:
+                  qsdm_stub_active == 1
+                and group by `kind` for an at-a-glance summary.
+              - This alert NEVER auto-resolves until the binary is
+                redeployed with the stub replaced. There is no
+                "transient" stub-active condition.

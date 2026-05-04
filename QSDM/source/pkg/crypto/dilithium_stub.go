@@ -5,7 +5,17 @@ package crypto
 
 import (
 	"errors"
+
+	"github.com/blackbeardONE/QSDM/pkg/monitoring/stubactive"
 )
+
+// init flips qsdm_stub_active{kind="dilithium"} to 1 in non-CGO
+// builds. ML-DSA-87 quantum-safe signatures require liboqs
+// (CGO); without it, every Sign/Verify call here returns an
+// error rather than silently producing weaker output.
+func init() {
+	stubactive.MarkActive(stubactive.KindDilithium)
+}
 
 // Dilithium represents the Dilithium signature scheme (stub for non-CGO builds)
 type Dilithium struct{}

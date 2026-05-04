@@ -9,7 +9,17 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+
+	"github.com/blackbeardONE/QSDM/pkg/monitoring/stubactive"
 )
+
+// init flips qsdm_stub_active{kind="wallet"} to 1 in non-CGO
+// builds where the wallet uses SHA-256 rather than quantum-safe
+// signatures. A production deploy with this stub active is a
+// downgrade from the v2 mining protocol's quantum-safe promise.
+func init() {
+	stubactive.MarkActive(stubactive.KindWallet)
+}
 
 // WalletService provides wallet functionality for the QSDM node.
 // Fallback implementation when CGO is disabled (uses SHA256 instead of quantum-safe crypto)

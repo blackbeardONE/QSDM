@@ -415,3 +415,20 @@ groups:
         input_series:
           - series: qsdm_attest_rejection_per_miner_rate_limited_total
             values: 0+1x30
+
+  - header: |
+      qsdm-stub-active — silent stub-deployment guard
+      STUB_DEPLOYMENT_INCIDENT.md (kind-anchored sections)
+    tests:
+      - name: QSDMStubActive
+        summary: "qsdm_stub_active{kind} == 1, for:5m"
+        early: 4m
+        late: 6m
+        notes: |
+          Gauge held at 1 for the full window; alert fires after the
+          5m for-clause. The early checkpoint at 4m must be silent
+          (still inside for-clause), the late checkpoint at 6m must
+          be firing.
+        input_series:
+          - series: 'qsdm_stub_active{kind="poe"}'
+            values: 1x10

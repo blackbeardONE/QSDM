@@ -49,7 +49,7 @@
         "x": 0,
         "y": 0
       },
-      "id": 138,
+      "id": 139,
       "panels": [],
       "title": "ARCH_SPOOF_INCIDENT.md  (3 alerts)",
       "type": "row"
@@ -257,7 +257,7 @@
         "x": 0,
         "y": 7
       },
-      "id": 139,
+      "id": 140,
       "panels": [],
       "title": "ENROLLMENT_INCIDENT.md  (5 alerts)",
       "type": "row"
@@ -595,7 +595,7 @@
         "x": 0,
         "y": 20
       },
-      "id": 140,
+      "id": 141,
       "panels": [],
       "title": "GOVERNANCE_AUTHORITY_INCIDENT.md  (3 alerts)",
       "type": "row"
@@ -803,7 +803,7 @@
         "x": 0,
         "y": 27
       },
-      "id": 141,
+      "id": 142,
       "panels": [],
       "title": "MINING_LIVENESS.md  (2 alerts)",
       "type": "row"
@@ -946,7 +946,7 @@
         "x": 0,
         "y": 34
       },
-      "id": 142,
+      "id": 143,
       "panels": [],
       "title": "NGC_SUBMISSION_INCIDENT.md  (2 alerts)",
       "type": "row"
@@ -1089,7 +1089,7 @@
         "x": 0,
         "y": 41
       },
-      "id": 143,
+      "id": 144,
       "panels": [],
       "title": "OPERATOR_HYGIENE_INCIDENT.md  (4 alerts)",
       "type": "row"
@@ -1362,7 +1362,7 @@
         "x": 0,
         "y": 48
       },
-      "id": 144,
+      "id": 145,
       "panels": [],
       "title": "QUARANTINE_INCIDENT.md  (2 alerts)",
       "type": "row"
@@ -1505,7 +1505,7 @@
         "x": 0,
         "y": 55
       },
-      "id": 145,
+      "id": 146,
       "panels": [],
       "title": "REJECTION_FLOOD.md  (5 alerts)",
       "type": "row"
@@ -1843,7 +1843,7 @@
         "x": 0,
         "y": 68
       },
-      "id": 146,
+      "id": 147,
       "panels": [],
       "title": "SLASHING_INCIDENT.md  (4 alerts)",
       "type": "row"
@@ -2116,7 +2116,85 @@
         "x": 0,
         "y": 75
       },
-      "id": 147,
+      "id": 148,
+      "panels": [],
+      "title": "STUB_DEPLOYMENT_INCIDENT.md  (1 alert)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "**Alert**: `QSDMStubActive`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_stub_active == 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md#kind-{{ reReplaceAll \"_\" \"-\" $labels.kind }}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 76
+      },
+      "id": 31,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "qsdm_stub_active == 1",
+          "instant": false,
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "QSDMStubActive",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 82
+      },
+      "id": 149,
       "panels": [],
       "title": "SUBMESH_POLICY_INCIDENT.md  (2 alerts)",
       "type": "row"
@@ -2153,9 +2231,9 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 76
+        "y": 83
       },
-      "id": 32,
+      "id": 33,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -2218,9 +2296,9 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 76
+        "y": 83
       },
-      "id": 31,
+      "id": 32,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -2257,9 +2335,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 82
+        "y": 89
       },
-      "id": 148,
+      "id": 150,
       "panels": [],
       "title": "TRUST_INCIDENT.md  (6 alerts)",
       "type": "row"
@@ -2296,9 +2374,9 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 83
+        "y": 90
       },
-      "id": 38,
+      "id": 39,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -2361,9 +2439,9 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 83
+        "y": 90
       },
-      "id": 35,
+      "id": 36,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -2426,9 +2504,9 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 83
+        "y": 90
       },
-      "id": 34,
+      "id": 35,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -2491,9 +2569,9 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 83
+        "y": 90
       },
-      "id": 37,
+      "id": 38,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -2556,9 +2634,9 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 89
+        "y": 96
       },
-      "id": 36,
+      "id": 37,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -2621,9 +2699,9 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 89
+        "y": 96
       },
-      "id": 33,
+      "id": 34,
       "options": {
         "colorMode": "background",
         "graphMode": "area",

@@ -7,7 +7,18 @@ import (
 	"errors"
 
 	"github.com/blackbeardONE/QSDM/internal/logging"
+	"github.com/blackbeardONE/QSDM/pkg/monitoring/stubactive"
 )
+
+// init flips the qsdm_stub_active{kind="poe"} gauge to 1 so a
+// production scrape can detect a non-CGO build where PoE
+// signature verification is bypassed (ValidateTransaction returns
+// true unconditionally when poe == nil — see line ~38). Only
+// runs in builds compiled with !cgo; the real consensus path
+// in poe.go does not call MarkActive and the gauge stays at 0.
+func init() {
+	stubactive.MarkActive(stubactive.KindPoE)
+}
 
 // ProofOfEntanglement represents the PoE consensus mechanism
 // Stub implementation when CGO is disabled

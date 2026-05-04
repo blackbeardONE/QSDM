@@ -3,6 +3,8 @@ package slashing
 import (
 	"fmt"
 	"sync"
+
+	"github.com/blackbeardONE/QSDM/pkg/monitoring/stubactive"
 )
 
 // EvidenceVerifier verifies that an evidence blob proves the
@@ -76,6 +78,14 @@ func (d *Dispatcher) Register(v EvidenceVerifier) {
 		panic(fmt.Sprintf("slashing: duplicate verifier registration for kind %q", k))
 	}
 	d.verifiers[k] = v
+	// Surface stub-only registrations to the qsdm_stub_active
+	// gauge so an operator scrape can alert when a production
+	// dispatcher has at least one EvidenceKind wired to the
+	// always-rejecting StubVerifier (i.e. slashing of that kind
+	// is silently disabled until the real verifier ships).
+	if _, isStub := v.(StubVerifier); isStub {
+		stubactive.MarkActive(stubactive.KindSlashing)
+	}
 }
 
 // Verify dispatches to the verifier for p.EvidenceKind. Returns

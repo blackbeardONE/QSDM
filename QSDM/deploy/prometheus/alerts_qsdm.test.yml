@@ -1053,3 +1053,36 @@ tests:
             description: "qsdm_attest_rejection_per_miner_rate_limited_total has\nbeen incrementing for ≥10m on .\nOne or more miners have exhausted their per-miner\ntoken bucket and Store.Record is dropping their\nrecords at entry — neither the in-memory ring nor\nthe persister see them.\n\nThis is the EARLIEST defence in the rejection-ring\nstack: it fires before hard-cap drops, before\nsoft-cap compactions, and before per-field rune\ntruncation. A non-zero rate means the operator\npolicy (cfg.RecentRejectionsRateLimitPerSec) is\nactively shedding what would otherwise be a flood.\n\nTriage:\n  - Identify the offending miner_addr from the\n    dashboard \"top offenders\" strip:\n    /dashboard → Recent Attestation Rejections.\n  - Cross-check against the verifier's per-arch\n    rejection counters:\n    topk(5, rate(qsdm_attestation_rejected_total{kind!=\"\"}[5m])\n      by (miner_addr))\n  - If exactly one miner_addr dominates: apply a\n    libp2p / mempool ban or rate-limit at the\n    gate so the rejection volume drops to baseline.\n  - If many miner_addrs share the load: the\n    limiter rate may be too tight. Loosen\n    cfg.RecentRejectionsRateLimitPerSec or\n    widen the burst.\n"
             runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#73-mode-c--qsdmattestrejectionperminerratelimited"
             summary: ": per-miner rate-limit is dropping records at recent-rejection ring entry"
+
+  # -------------------------------------------------------------------
+  # qsdm-stub-active — silent stub-deployment guard
+  # STUB_DEPLOYMENT_INCIDENT.md (kind-anchored sections)
+  # -------------------------------------------------------------------
+
+  - name: "QSDMStubActive — qsdm_stub_active{kind} == 1, for:5m"
+    interval: 1m
+    # Gauge held at 1 for the full window; alert fires after the
+    # 5m for-clause. The early checkpoint at 4m must be silent
+    # (still inside for-clause), the late checkpoint at 6m must
+    # be firing.
+    input_series:
+      - series: 'qsdm_stub_active{kind="poe"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: QSDMStubActive
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: QSDMStubActive
+        exp_alerts:
+        - exp_labels:
+            kind: "poe"
+            severity: "critical"
+            subsystem: "v2-deployment"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-stub-deployment-incident.json"
+            description: "qsdm_stub_active{kind=\"poe\"} == 1 on\n for ≥5m.\n\nA stub-shipped code path is active in this binary. Some\nstubs are operationally dangerous in production:\n\n  - kind=\"poe\": non-CGO consensus ACCEPTS transactions\n    WITHOUT signature verification. Hard-fail security\n    event in production. Rebuild with CGO_ENABLED=1 and\n    liboqs available.\n\n  - kind=\"dilithium\" / \"wallet\": quantum-safe ML-DSA-87\n    not available; SHA-256 fallback in use. Downgrade\n    from the v2 mining protocol's quantum-safe promise.\n    Rebuild with CGO + liboqs.\n\n  - kind=\"cc\": nvidia-cc-v1 stub verifier rejects every\n    proof. Validators using this stub admit zero v2\n    mining proofs of Type=nvidia-cc-v1 (Phase 2c-iv work\n    pending). Replace cc.NewStubVerifier() with the real\n    AIK verifier in the validator wiring.\n\n  - kind=\"slashing\": at least one EvidenceKind is wired\n    to the StubVerifier (always rejects). Slash txs of\n    that kind silently fail. Replace the StubVerifier\n    registration in slashing.NewProductionDispatcher\n    with the real per-kind verifier.\n\n  - kind=\"mesh3d_cuda\": CUDA acceleration unavailable;\n    CPU fallback in use. Functionally correct but\n    throughput will be far below CUDA-enabled capacity.\n\n  - kind=\"wasm_sdk\": WASM module execution unavailable\n    (non-CGO). Modules configured under [wasm.*] will\n    all fail to load.\n\nTriage:\n  - See QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md\n    for the kind-specific remediation (the runbook_url\n    above anchors directly into the right section).\n  - This alert is for:5m which means a brand-new node\n    boot will not page; the gauge has to remain 1 for\n    two scrape windows.\n  - To see all currently-active kinds:\n      qsdm_stub_active == 1\n    and group by `kind` for an at-a-glance summary.\n  - This alert NEVER auto-resolves until the binary is\n    redeployed with the stub replaced. There is no\n    \"transient\" stub-active condition.\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md#kind-poe"
+            summary: ": stub implementation active for kind=poe"
