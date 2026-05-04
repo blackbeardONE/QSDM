@@ -648,6 +648,7 @@ func (h *Handlers) CreateWallet(w http.ResponseWriter, r *http.Request) {
 	// This works even without CGO (uses fallback implementation)
 	newWallet, err := wallet.NewWalletService()
 	if err != nil {
+		monitoring.RecordWalletCreate(monitoring.WalletCreateResultFailed)
 		h.logger.Error("Failed to create new wallet", "error", err)
 		writeErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("failed to create wallet: %v", err))
 		return
@@ -656,6 +657,7 @@ func (h *Handlers) CreateWallet(w http.ResponseWriter, r *http.Request) {
 	address := newWallet.GetAddress()
 	balance := float64(newWallet.GetBalance())
 
+	monitoring.RecordWalletCreate(monitoring.WalletCreateResultSuccess)
 	writeJSONResponse(w, http.StatusCreated, CreateWalletResponse{
 		Address: address,
 		Balance: balance,
@@ -683,11 +685,13 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 
 	balance, err := h.storage.GetBalance(address)
 	if err != nil {
+		monitoring.RecordWalletBalanceQuery(monitoring.WalletBalanceResultStorageError)
 		h.logger.Error("Failed to get balance", "error", err, "address", address)
 		writeErrorResponse(w, http.StatusInternalServerError, "failed to get balance")
 		return
 	}
 
+	monitoring.RecordWalletBalanceQuery(monitoring.WalletBalanceResultSuccess)
 	writeJSONResponse(w, http.StatusOK, map[string]interface{}{
 		"address": address,
 		"balance": balance,
@@ -717,49 +721,59 @@ func (h *Handlers) SendTransaction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.walletService == nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultNoWalletService)
 		writeErrorResponse(w, http.StatusServiceUnavailable, msgWalletServiceUnavailable)
 		return
 	}
 
 	claims, ok := r.Context().Value("claims").(*Claims)
 	if !ok {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultUnauthenticated)
 		writeErrorResponse(w, http.StatusUnauthorized, "missing authentication")
 		return
 	}
 	_ = claims // Use claims for future enhancements
 
 	if !h.enforceNvidiaLock(w) {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultNvidiaLockBlocked)
 		return
 	}
 
 	var req SendTransactionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
 		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	// Validate request with comprehensive validation
 	if err := ValidateAddress(req.Recipient); err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
 		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid recipient address: %v", err))
 		return
 	}
 	if err := ValidateAmount(req.Amount); err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
 		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid amount: %v", err))
 		return
 	}
 	if req.Fee < 0 {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
 		writeErrorResponse(w, http.StatusBadRequest, "fee cannot be negative")
 		return
 	}
 	if err := ValidateAmount(req.Fee); err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
 		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid fee: %v", err))
 		return
 	}
 	if err := ValidateGeoTag(req.GeoTag); err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
 		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid geotag: %v", err))
 		return
 	}
 	if err := ValidateParentCells(req.ParentCells); err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
 		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid parent cells: %v", err))
 		return
 	}
@@ -773,21 +787,29 @@ func (h *Handlers) SendTransaction(w http.ResponseWriter, r *http.Request) {
 		req.ParentCells,
 	)
 	if err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultTxCreateFailed)
 		h.logger.Error("Failed to create transaction", "error", err)
 		writeErrorResponse(w, http.StatusInternalServerError, "failed to create transaction")
 		return
 	}
 
+	// Submesh-policy rejects are recorded by enforceSubmeshWalletSend
+	// itself (qsdm_submesh_api_wallet_reject_*_total counters); we
+	// don't double-count here. The send returns without a
+	// qsdm_wallet_send_total bump in that case.
 	if !h.enforceSubmeshWalletSend(w, req.Fee, req.GeoTag, txBytes) {
 		return
 	}
 
 	// Store transaction
 	if err := h.storage.StoreTransaction(txBytes); err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultStoreFailed)
 		h.logger.Error("Failed to store transaction", "error", err)
 		writeErrorResponse(w, http.StatusInternalServerError, "failed to store transaction")
 		return
 	}
+
+	monitoring.RecordWalletSend(monitoring.WalletSendResultSuccess)
 
 	if h.p2pTxBroadcast != nil {
 		if err := h.p2pTxBroadcast(txBytes); err != nil {
@@ -1098,21 +1120,30 @@ func (h *Handlers) MintMainCoin(w http.ResponseWriter, r *http.Request) {
 
 	var req MintMainCoinRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		monitoring.RecordWalletMint(monitoring.WalletMintResultInvalidRequest)
 		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	// Validate request
 	if req.Recipient == "" {
+		monitoring.RecordWalletMint(monitoring.WalletMintResultInvalidRequest)
 		writeErrorResponse(w, http.StatusBadRequest, "recipient address is required")
 		return
 	}
 	if req.Amount <= 0 {
+		monitoring.RecordWalletMint(monitoring.WalletMintResultInvalidRequest)
 		writeErrorResponse(w, http.StatusBadRequest, "amount must be positive")
 		return
 	}
 
 	if !h.enforceNvidiaLock(w) {
+		// NVIDIA-lock 403 — the gate's own counters
+		// (qsdm_nvidia_lock_http_blocks_total) record this; we
+		// also tag it as admin_rejected on the mint side because
+		// from the mint endpoint's perspective the request was
+		// administratively denied.
+		monitoring.RecordWalletMint(monitoring.WalletMintResultAdminRejected)
 		return
 	}
 
@@ -1128,16 +1159,20 @@ func (h *Handlers) MintMainCoin(w http.ResponseWriter, r *http.Request) {
 
 	cellMintPayload := []byte(fmt.Sprintf(`{"type":"mint","coin":"CELL","amount":%f,"recipient":"%s","tx_id":"%s"}`, req.Amount, req.Recipient, txID))
 	if !h.enforceSubmeshPrivilegedPayload(w, cellMintPayload) {
+		// Submesh privileged-policy reject — the submesh counters
+		// already recorded the rejection; we don't double-count.
 		return
 	}
 
 	// Store the mint transaction in storage
 	if err := h.storage.StoreTransaction(cellMintPayload); err != nil {
+		monitoring.RecordWalletMint(monitoring.WalletMintResultStoreFailed)
 		h.logger.Error("Failed to store mint transaction", "error", err)
 		writeErrorResponse(w, http.StatusInternalServerError, "failed to store transaction")
 		return
 	}
 
+	monitoring.RecordWalletMint(monitoring.WalletMintResultSuccess)
 	writeJSONResponse(w, http.StatusOK, MintMainCoinResponse{
 		TransactionID: txID,
 		Amount:        req.Amount,

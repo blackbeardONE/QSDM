@@ -14,6 +14,89 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Wallet handler-side observability: 4 per-result counters +
+  3 alerts + 3-mode runbook (2026-05-04).** Closes the
+  handler-side wallet observability gap. Before this commit,
+  the only wallet-related Prometheus signals were *gate-side*
+  rejects (`qsdm_submesh_api_wallet_reject_*_total`,
+  `qsdm_p2p_wallet_ingress_dedupe_skip_total`) — a wedged
+  storage backend, a missing wallet-service init, or a
+  perpetually-blocking NVIDIA-lock were log-only.
+  - **New artefacts**:
+    - [`QSDM/source/pkg/monitoring/wallet_metrics.go`](QSDM/source/pkg/monitoring/wallet_metrics.go)
+      — per-result counters for the four state-changing wallet
+      endpoints (send, balance, mint, create). Atomic counters
+      with `result` label values defined as Go constants
+      (success / invalid_request / unauthenticated /
+      nvidia_lock_blocked / no_wallet_service / tx_create_failed
+      / store_failed for send; success / storage_error /
+      no_wallet_service for balance; success / admin_rejected /
+      invalid_request / store_failed / no_wallet_service for
+      mint; success / failed for create). Unknown result tags
+      no-op rather than panic (defensive against future enum
+      drift).
+    - [`QSDM/docs/docs/runbooks/WALLET_INCIDENT.md`](QSDM/docs/docs/runbooks/WALLET_INCIDENT.md)
+      — three-mode runbook with anchored alert sections (§3.1
+      send-error-rate drilled by per-result tag, §3.2 storage
+      error burst, §3.3 mint burst supply-inflation tripwire).
+      Mode A explicitly forks into the right subsystem-runbook
+      based on the dominant failure tag (cross-references
+      `STUB_DEPLOYMENT_INCIDENT.md` for `tx_create_failed` /
+      `no_wallet_service`, `OPERATOR_HYGIENE_INCIDENT.md` for
+      `store_failed`, `NGC_SUBMISSION_INCIDENT.md` for
+      `nvidia_lock_blocked`).
+    - [`QSDM/deploy/grafana/dashboards/qsdm-runbook-wallet-incident.json`](QSDM/deploy/grafana/dashboards/qsdm-runbook-wallet-incident.json)
+      — auto-generated panel.
+  - **Alert wiring** (new `qsdm-wallet` group in
+    [`alerts_qsdm.example.yml`](QSDM/deploy/prometheus/alerts_qsdm.example.yml)):
+    - `QSDMWalletSendErrorRate`: handler-side failure ratio
+      (`tx_create_failed` + `store_failed` +
+      `no_wallet_service` + `nvidia_lock_blocked`) divided
+      by total send rate > 10% for ≥10m. Submesh-policy and
+      dedupe rejects are excluded from the numerator
+      (gate-side, separate counters).
+    - `QSDMWalletStorageErrorBurst`: combined wallet
+      storage-error rate (balance.storage_error +
+      send.store_failed) > 1/min for ≥5m. Strong storage-
+      backend wedge signal that complements
+      `QSDMNoTransactionsStored` and `QSDMMiningChainStuck`.
+    - `QSDMWalletMintBurst`: `result="success"` mint rate
+      > 5/min for ≥30m (≥150 mints in window). Supply-
+      inflation tripwire — mint is admin-only and gated, so
+      sustained successful volume is suspicious in itself.
+  - **Handler instrumentation**: every terminal point in the
+    four state-changing handlers in `pkg/api/handlers.go` now
+    calls `monitoring.RecordWalletXxx(...)`. Submesh-policy
+    and dedupe paths intentionally NOT double-counted (their
+    own counters cover those rejects).
+  - **CI / test coverage**:
+    - New `pkg/monitoring/wallet_metrics_test.go` — proves
+      every result tag surfaces in `walletPrometheusMetrics()`,
+      `RecordWalletSend` reflects in `PrometheusExposition()`,
+      and unknown tags no-op without panic.
+    - Three new entries in
+      [`alerts_qsdm.test.spec.yml`](QSDM/deploy/prometheus/alerts_qsdm.test.spec.yml)
+      — `promtool test rules` evaluates each alert at the
+      silent + firing checkpoints against synthetic time
+      series.
+  - **Verification**:
+    - `go build ./...` (CGO=0): clean.
+    - `go test ./pkg/api/... ./pkg/monitoring/...`: pass.
+    - `promtool check rules`: 42 rules valid (was 39).
+    - `promtool test rules alerts_qsdm.test.yml`: SUCCESS.
+    - `scripts/check_runbook_coverage.py`: 42/42 alerts
+      coverage; 358 in-runbook links; 14 dashboards.
+    - `gen_grafana_dashboards.py`: 13 → 14 per-runbook
+      dashboards (added `qsdm-runbook-wallet-incident.json`).
+
+  Note on real on-chain balance lookup: `WalletService.GetBalance()`
+  in `pkg/wallet/wallet_stub.go` returns 0 by design — it's
+  documented as "balance is stored in storage backend, not
+  wallet service." The API handler `Handlers.GetBalance` already
+  queries `h.storage.GetBalance(address)` (which IS the on-chain
+  balance lookup). No change needed there; the integration is
+  already correct.
+
 - **Silent-stub-deployment guard: `qsdm_stub_active{kind="..."}`
   metric + `QSDMStubActive` critical alert + 7-section runbook
   (2026-05-04).** Closes the most dangerous gap in the deploy

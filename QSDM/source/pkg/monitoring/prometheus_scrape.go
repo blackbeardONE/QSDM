@@ -33,6 +33,11 @@ func GlobalScrapePrometheusExporter() *PrometheusExporter {
 		// non-CGO build, the CC stub verifier, or any slashing
 		// StubVerifier is active in production.
 		globalScrapeExporter.RegisterCollector("qsdm_stub_active", stubActiveMetrics)
+		// qsdm_wallet_*_total counters from wallet_metrics.go,
+		// instrumented from the four state-changing wallet HTTP
+		// endpoints (send, balance, mint, create) for per-result
+		// alert thresholding (high error rate, mint burst, etc.).
+		globalScrapeExporter.RegisterCollector("qsdm_wallet", walletPrometheusMetrics)
 	})
 	return globalScrapeExporter
 }

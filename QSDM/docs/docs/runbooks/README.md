@@ -1,7 +1,7 @@
 # QSDM Operator Runbooks — Master Index
 
 This is the operator's first page when paged for any
-`QSDM*` Prometheus alert. It lists all 39 alerts in
+`QSDM*` Prometheus alert. It lists all 42 alerts in
 [`alerts_qsdm.example.yml`](../../../deploy/prometheus/alerts_qsdm.example.yml),
 maps each to its dedicated runbook section, and shows
 the cross-subsystem escalation paths in one place.
@@ -90,9 +90,12 @@ link directly to the relevant `### 3.x Mode X` (or
 | `QSDMTrustLastAttestedStale`                   | warning      | `qsdm-trust-redundancy`           | [`TRUST_INCIDENT.md` §3.5](TRUST_INCIDENT.md#35-mode-e--qsdmtrustlastattestedstale) |
 | `QSDMTrustNGCServiceDegraded`                  | warning      | `qsdm-trust-redundancy`           | [`TRUST_INCIDENT.md` §3.4](TRUST_INCIDENT.md#34-mode-d--qsdmtrustngcservicedegraded) |
 | `QSDMTrustNoAttestationsAccepted`              | warning      | `qsdm-trust-transparency`         | [`TRUST_INCIDENT.md` §3.1](TRUST_INCIDENT.md#31-mode-a--qsdmtrustnoattestationsaccepted) |
+| `QSDMWalletMintBurst`                          | warning      | `qsdm-wallet`                     | [`WALLET_INCIDENT.md` §3.3](WALLET_INCIDENT.md#33-mode-c--qsdmwalletmintburst)            |
+| `QSDMWalletSendErrorRate`                      | warning      | `qsdm-wallet`                     | [`WALLET_INCIDENT.md` §3.1](WALLET_INCIDENT.md#31-mode-a--qsdmwalletsenderrorrate)         |
+| `QSDMWalletStorageErrorBurst`                  | warning      | `qsdm-wallet`                     | [`WALLET_INCIDENT.md` §3.2](WALLET_INCIDENT.md#32-mode-b--qsdmwalletstorageerrorburst)     |
 
-**Total: 39 alerts. Severity distribution: 8 critical
-/ 29 warning / 2 info.**
+**Total: 42 alerts. Severity distribution: 8 critical
+/ 32 warning / 2 info.**
 
 ---
 
@@ -377,6 +380,48 @@ cascade companions.
 
 ---
 
+### `WALLET_INCIDENT.md` — wallet HTTP API health
+
+Three-mode runbook for the `/api/v1/wallet/*` HTTP surface.
+Mode A is the keystone send-side error-rate alert (drilled
+by per-result tag), Mode B catches storage-backend wedges
+visible from the wallet's read or write paths, Mode C is
+the supply-inflation tripwire (sustained admin mint volume).
+
+| Alert | Mode | Severity |
+|---|---|---|
+| [`QSDMWalletSendErrorRate`](WALLET_INCIDENT.md#31-mode-a--qsdmwalletsenderrorrate)         | A | warning |
+| [`QSDMWalletStorageErrorBurst`](WALLET_INCIDENT.md#32-mode-b--qsdmwalletstorageerrorburst) | B | warning |
+| [`QSDMWalletMintBurst`](WALLET_INCIDENT.md#33-mode-c--qsdmwalletmintburst)                 | C | warning |
+
+**When to read:** wallet handler-side activity is failing
+(Mode A drill-by-tag tells you why), the storage backend
+is rejecting reads or writes from the wallet (Mode B), or
+sustained admin mint volume requires authorization audit
+(Mode C). Submesh-policy and dedupe rejects on the wallet
+surface are NOT covered here — they have their own
+counters and runbooks.
+
+**Companions:** [`STUB_DEPLOYMENT_INCIDENT.md`](STUB_DEPLOYMENT_INCIDENT.md)
+(`kind="wallet"` / `"dilithium"` if the wallet didn't
+initialize at boot — Mode A `tx_create_failed` /
+`no_wallet_service` paths),
+[`OPERATOR_HYGIENE_INCIDENT.md`](OPERATOR_HYGIENE_INCIDENT.md)
+(`QSDMNoTransactionsStored` co-fires with Mode B when the
+storage wedge is system-wide),
+[`NGC_SUBMISSION_INCIDENT.md`](NGC_SUBMISSION_INCIDENT.md)
+(empty NVIDIA-lock proof ring → Mode A
+`nvidia_lock_blocked` path),
+[`SUBMESH_POLICY_INCIDENT.md`](SUBMESH_POLICY_INCIDENT.md)
+(gate-side rejects, complementary surface),
+[`GOVERNANCE_AUTHORITY_INCIDENT.md`](GOVERNANCE_AUTHORITY_INCIDENT.md)
+(authority vote audit trail for Mode C legitimate-cause
+campaigns),
+[`MINING_LIVENESS.md`](MINING_LIVENESS.md)
+(downstream chain-stall risk after sustained Mode B).
+
+---
+
 ### `STUB_DEPLOYMENT_INCIDENT.md` — silent stub-deployment guard
 
 Single-alert runbook with **seven kind-dispatched
@@ -606,3 +651,4 @@ commit):
 | 9 | `OPERATOR_HYGIENE_INCIDENT.md` (4 modes) + 4 alerts → **100%** | +4 (38/38) |
 | 10 | This index + CI coverage lint (regression guard) | invariant-lock |
 | 11 | `STUB_DEPLOYMENT_INCIDENT.md` (7 kinds) + `QSDMStubActive` alert + `qsdm_stub_active{kind="..."}` gauge + `pkg/monitoring/stubactive` leaf registry — closes the silent-stub-deployment footgun (`kind="poe"` accepts unsigned txs; etc.). Templated runbook anchor (`#kind-{{ reReplaceAll "_" "-" $labels.kind }}`) supported by an extension to `check_runbook_coverage.py`. | +1 (39/39) |
+| 12 | `WALLET_INCIDENT.md` (3 modes) + 3 alerts + `qsdm_wallet_send_total` / `qsdm_wallet_balance_query_total` / `qsdm_wallet_mint_total` / `qsdm_wallet_create_total` per-result counters wired into the four `/api/v1/wallet/*` handlers in `pkg/api/handlers.go` (`monitoring.RecordWalletXxx`). Closes handler-side wallet observability — previously only gate-side counters existed. | +3 (42/42) |
