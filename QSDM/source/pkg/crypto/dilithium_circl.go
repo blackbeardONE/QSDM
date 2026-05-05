@@ -1,16 +1,16 @@
-//go:build !cgo && dilithium_circl
-// +build !cgo,dilithium_circl
+//go:build !cgo
+// +build !cgo
 
 // Package crypto — ML-DSA-87 signature backend, pure-Go variant.
 //
-// This file is selected by the `dilithium_circl` build tag in
-// non-CGO builds, displacing the always-error stub at
-// dilithium_stub.go. It satisfies the same *Dilithium API
-// (NewDilithium, NewDilithiumVerifyOnly, Sign, Verify,
-// VerifyWithPublicKey, Free) using the cloudflare/circl pure-Go
-// implementation of FIPS 204 ML-DSA-87, so a non-CGO validator
-// can verify (and optionally sign) the same wire-format
-// signatures the CGO+liboqs build produces.
+// This file is the default non-CGO backend as of Stage B
+// (2026-05-06). It replaces the prior dilithium_stub.go (deleted)
+// for any build with CGO disabled. It satisfies the same
+// *Dilithium API (NewDilithium, NewDilithiumVerifyOnly, Sign,
+// Verify, VerifyWithPublicKey, Free) using the cloudflare/circl
+// pure-Go implementation of FIPS 204 ML-DSA-87, so a non-CGO
+// validator verifies (and optionally signs) the same
+// wire-format signatures the CGO+liboqs build produces.
 //
 // Wire-format compatibility:
 //
@@ -22,15 +22,17 @@
 //     other. The parity test in dilithium_circl_test.go is the
 //     regression guard that catches any future drift.
 //
-// Stage A scope:
+// Stage progression:
 //
-// This file lands the backend behind an opt-in build tag so the
-// default non-CGO build is byte-identical to the prior stub
-// behaviour. Stage B (a follow-up commit) flips the build tag so
-// non-CGO binaries use this backend by default and the
-// dilithium_stub.go path is retired entirely. Splitting in two
-// stages lets Stage A's parity tests run in CI before Stage B
-// changes any operational behaviour.
+//   - Stage A (commit 522f567) added this file behind the opt-in
+//     `dilithium_circl` build tag so parity tests could soak in
+//     CI without changing operational behaviour.
+//   - Stage B (this commit) flips the default: !cgo builds now
+//     use this backend automatically, and dilithium_stub.go is
+//     deleted. The qsdm_stub_active{kind="dilithium"} gauge
+//     remains in the registry for forward compatibility but no
+//     code path flips it on under !cgo any more — it stays at
+//     0 in every build configuration QSDM ships.
 //
 // Why "VerifyOnly" still allocates a real backend:
 //
@@ -49,6 +51,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
@@ -183,3 +186,134 @@ func (d *Dilithium) VerifyWithPublicKey(message []byte, signature []byte, public
 // Kept for API parity so downstream callers that defer Free()
 // compile under both backends.
 func (d *Dilithium) Free() {}
+
+// GetPublicKey returns a defensive copy of the handle's packed
+// public key. Matches the CGO backend's GetPublicKey: returns
+// nil for a nil receiver or a verify-only handle constructed
+// without a key. pkg/wallet/wallet.go relies on this to embed
+// the validator's public key in outbound signed transactions.
+func (d *Dilithium) GetPublicKey() []byte {
+	if d == nil || d.verifyKey == nil {
+		return nil
+	}
+	pk, err := d.verifyKey.MarshalBinary()
+	if err != nil {
+		// MarshalBinary on a freshly-generated circl mldsa87
+		// PublicKey is infallible (the only failure mode is
+		// nil receiver, which we already gated above). If
+		// circl ever introduces a real error path here,
+		// returning nil matches the CGO backend's "key not
+		// available" semantics — callers already handle nil.
+		return nil
+	}
+	return pk
+}
+
+// GetPrivateKey returns a defensive copy of the handle's packed
+// private key. Matches the CGO backend; returns nil for
+// verify-only handles. Used by pkg/wallet for on-disk wallet
+// persistence in the optional encrypted-keystore flow.
+func (d *Dilithium) GetPrivateKey() []byte {
+	if d == nil || d.signKey == nil {
+		return nil
+	}
+	sk, err := d.signKey.MarshalBinary()
+	if err != nil {
+		return nil
+	}
+	return sk
+}
+
+// SignOptimized is an alias for Sign in the pure-Go backend. The
+// CGO backend exposes this as a memory-pooled fast path that
+// reuses signature buffers across calls (5-10% throughput win at
+// scale). circl already allocates internally; layering a pool
+// here would not move the bottleneck. Kept as a separate method
+// for API parity so pkg/wallet (which calls SignOptimized
+// explicitly to opt in to the perf path on CGO builds) compiles
+// without conditionals.
+func (d *Dilithium) SignOptimized(message []byte) ([]byte, error) {
+	return d.Sign(message)
+}
+
+// SignCompressed signs a message and returns a zstd-compressed
+// signature (typically ~50% the size of the raw 4627-byte
+// FIPS 204 signature). Compression is implemented in
+// pkg/crypto/signature_compression.go (pure Go) so this method
+// is wire-compatible with the CGO backend's SignCompressed —
+// both produce the same compressed bytes for the same input
+// signature, modulo the underlying signature being randomized
+// per FIPS 204 §6.1.
+func (d *Dilithium) SignCompressed(message []byte) ([]byte, error) {
+	sig, err := d.Sign(message)
+	if err != nil {
+		return nil, err
+	}
+	return CompressSignature(sig)
+}
+
+// VerifyCompressed decompresses a signature produced by
+// SignCompressed (or by the CGO backend's SignCompressed) and
+// verifies it under the handle's own public key.
+func (d *Dilithium) VerifyCompressed(message []byte, compressedSig []byte) (bool, error) {
+	sig, err := DecompressSignature(compressedSig)
+	if err != nil {
+		return false, fmt.Errorf("dilithium (circl backend): decompress: %w", err)
+	}
+	return d.Verify(message, sig)
+}
+
+// VerifyWithPublicKeyCompressed decompresses a signature and
+// verifies it under an externally-supplied public key. This is
+// the consensus-critical companion to SignCompressed; pkg/wallet
+// uses it on the verify side of compressed-signature transports.
+func (d *Dilithium) VerifyWithPublicKeyCompressed(message []byte, compressedSig []byte, publicKey []byte) (bool, error) {
+	sig, err := DecompressSignature(compressedSig)
+	if err != nil {
+		return false, fmt.Errorf("dilithium (circl backend): decompress: %w", err)
+	}
+	return d.VerifyWithPublicKey(message, sig, publicKey)
+}
+
+// SignBatchOptimized signs N messages and returns N signatures
+// in parallel. The CGO backend gets a measured 10-100× speedup
+// from running multiple liboqs sign loops concurrently because
+// each ML-DSA-87 signature is dominated by SHAKE / NTT
+// arithmetic that does not contend on shared state. circl's
+// pure-Go signer is also stateless per call, so the same
+// fan-out works.
+//
+// On the first error, all in-flight goroutines are allowed to
+// finish (we don't cancel — circl signs in <2ms per message,
+// fan-out is short-lived) and the first non-nil error is
+// returned.
+func (d *Dilithium) SignBatchOptimized(messages [][]byte) ([][]byte, error) {
+	if d == nil || d.signKey == nil {
+		return nil, ErrSignVerifyOnly
+	}
+	if len(messages) == 0 {
+		return nil, nil
+	}
+	results := make([][]byte, len(messages))
+	errs := make([]error, len(messages))
+	var wg sync.WaitGroup
+	for i := range messages {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			sig := make([]byte, mldsa87.SignatureSize)
+			if err := mldsa87.SignTo(d.signKey, messages[idx], nil, true, sig); err != nil {
+				errs[idx] = err
+				return
+			}
+			results[idx] = sig
+		}(i)
+	}
+	wg.Wait()
+	for _, e := range errs {
+		if e != nil {
+			return nil, fmt.Errorf("dilithium (circl backend): batch sign: %w", e)
+		}
+	}
+	return results, nil
+}

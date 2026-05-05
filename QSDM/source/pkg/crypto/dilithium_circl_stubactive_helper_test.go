@@ -1,13 +1,13 @@
-//go:build !cgo && dilithium_circl
-// +build !cgo,dilithium_circl
+//go:build !cgo
+// +build !cgo
 
 package crypto
 
-// Helper file separated from dilithium_circl_test.go so the
-// stubactive import only appears under the dilithium_circl tag.
-// dilithium_stub.go imports stubactive on the !dilithium_circl
-// path, so the import graph is mutually exclusive — exactly one
-// of the two files supplies the dependency at any given build.
+// Helper file separated from dilithium_circl_test.go for the
+// stubactive registry probe used by TestCircl_StubFlagNotMarked.
+// Under Stage B the dilithium kind is no longer marked active in
+// any !cgo build path, so this is the test that proves the
+// invariant remained true after the build-tag flip.
 
 import (
 	"github.com/blackbeardONE/QSDM/pkg/monitoring/stubactive"

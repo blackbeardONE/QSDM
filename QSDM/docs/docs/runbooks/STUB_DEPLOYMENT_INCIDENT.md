@@ -87,29 +87,33 @@ qsdm_stub_active
 
 ## kind-poe
 
-> **Severity in production: CRITICAL — security event.**
+> **Severity in production: CRITICAL — historical security event.**
+> **As of 2026-05-06 (Stage B), no production binary built from
+> the QSDM tree can fire this alert.** The stub
+> (`pkg/consensus/poe_stub.go`) has been deleted and the real
+> `*ProofOfEntanglement` is unconditionally constructed under
+> both CGO+liboqs and non-CGO builds. The
+> `qsdm_stub_active{kind="poe"}` gauge is retained in the
+> registry for forward compatibility, but no code path flips it
+> on. If you see this alert, the binary on the affected node
+> predates the Stage B commit — treat as a wrong-binary
+> deployment.
 
-The non-CGO PoE stub (`pkg/consensus/poe_stub.go`) returns
-`nil` from `NewProofOfEntanglement()` and its
-`ValidateTransaction(...)` method **accepts every transaction
-without signature verification** when invoked on a `nil`
-receiver. From `pkg/consensus/poe_stub.go:38-46`:
+The historical failure mode (which the alert was written to
+catch) was:
 
 ```go
+// Pre-Stage-B poe_stub.go, since deleted:
 if poe == nil {
     if logger != nil {
         logger.Warn("ProofOfEntanglement not available (CGO disabled), accepting transaction without signature verification")
     }
-    // Without crypto, we can't validate signatures, but we can still accept transactions
-    // for testing purposes
     return true, nil
 }
 ```
 
-A node running this stub in production accepts forged
+A node running this stub in production accepted forged
 transactions on the wire as if they had valid PoE signatures.
-This is **not an alertable transient** — it's a wrong-binary
-deployment, and the only correct response is to redeploy.
 
 ### kind-poe — triage
 
@@ -126,123 +130,120 @@ deployment, and the only correct response is to redeploy.
    (`ALERTS{alertname="QSDMStubActive",kind="poe"}` start
    timestamp through resolution), enumerate every transaction
    accepted by the affected node — they are all suspect.
-4. **Redeploy with CGO.** Rebuild with `CGO_ENABLED=1` and
-   liboqs available on the build host. The real PoE
-   implementation in `pkg/consensus/poe.go` (CGO-tagged)
-   replaces the stub at link time.
+4. **Redeploy with a current binary.** Any binary built from
+   2026-05-06 (Stage B) onwards has the real PoE wired
+   regardless of CGO state. See remediation below.
 
 ### kind-poe — remediation
 
 ```bash
-# On the build host:
-export CGO_ENABLED=1
-# Ensure liboqs is installed (oqs-provider for OpenSSL works
-# for the link step; the runtime needs the .so/.dylib).
+# Linux VPS (most common production target), pure-Go path:
 cd QSDM/source
-go build -tags='cgo' -o ../qsdm ./cmd/qsdm
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../qsdm ./cmd/qsdm
+# OR, if liboqs is already on the build host and you want
+# the AVX2-accelerated path:
+CGO_ENABLED=1 go build -o ../qsdm ./cmd/qsdm
 ```
 
-After redeploy, `qsdm_stub_active{kind="poe"}` flips to `0`
-and `QSDMStubActive` auto-resolves.
+After redeploy, `qsdm_stub_active{kind="poe"}` stays at `0`
+and `QSDMStubActive` auto-resolves. Stage B's parity tests
+(`pkg/crypto/dilithium_circl_test.go`) cover the round-trip
+that PoE depends on for both backends, so wire-format
+compatibility holds across heterogeneous validator sets.
 
 ### kind-poe — escalation
 
-If you cannot rebuild with CGO (build environment doesn't
-support liboqs), the node **must not run as a validator**.
-Take it out of rotation and treat it as a non-mining read
-replica only.
+If `qsdm_stub_active{kind="poe"}` somehow re-appears on a
+binary that should have Stage B (verify with `qsdm --version`
+and the build commit hash), that is itself a P0:
+`pkg/consensus/poe_stub.go` should not exist in the tree. File
+an incident with the build artifact's `git rev-parse HEAD` and
+the `qsdm` binary's `--version` string — someone has
+reintroduced the stub.
 
 ---
 
 ## kind-dilithium
 
-> **Severity in production: CRITICAL — quantum-safe crypto downgrade.**
+> **Severity in production: CRITICAL — historical quantum-safe crypto downgrade.**
+> **As of 2026-05-06 (Stage B), no production binary built from
+> the QSDM tree can fire this alert.** `pkg/crypto/dilithium_stub.go`
+> has been deleted; non-CGO builds now use
+> `pkg/crypto/dilithium_circl.go` (cloudflare/circl pure-Go,
+> FIPS 204 byte-compatible with the CGO+liboqs path).
 
-`pkg/crypto/dilithium_stub.go` (non-CGO build, no
-`dilithium_circl` tag) returns `nil` from `NewDilithium()` and
-every `Sign`/`Verify`/`VerifyWithPublicKey` returns
-`errors.New("Dilithium not available: CGO and liboqs required")`.
+The historical stub returned `nil` from `NewDilithium()` and
+errored out every `Sign`/`Verify` call. In practice, every code
+path that needed to produce or verify ML-DSA-87 signatures —
+v2 mining proof attestation signature verification,
+freshness-cheat signature recomputation, forged-attestation
+evidence verification — failed.
 
-In practice, this means any code path that needs to **produce or
-verify ML-DSA-87 signatures** errors out — including v2 mining
-proof attestation signature verification, freshness-cheat
-signature recomputation, and forged-attestation evidence
-verification.
-
-When this fires alone (without `kind="poe"`), it usually means
-PoE itself doesn't need Dilithium on the hot path but a downstream
-verifier does.
-
-> **There are now THREE backends.** As of 2026-05-06, ML-DSA-87
-> can be supplied by any of:
+> **Backend selection (post-Stage-B).** Two backends ship; both
+> produce wire-compatible FIPS 204 ML-DSA-87 signatures:
 >
 > 1. **CGO + liboqs** — `pkg/crypto/dilithium.go`. Default for
 >    CGO builds. Fastest (AVX2-accelerated), depends on the
 >    liboqs C library being present at build and runtime.
 > 2. **Pure-Go via cloudflare/circl** — `pkg/crypto/dilithium_circl.go`.
->    Selected by `go build -tags dilithium_circl ./...` on a
->    non-CGO build. FIPS-204-byte-compatible with the liboqs
->    backend; same on-the-wire signatures, no CGO toolchain
+>    Default for **non-CGO builds**. No build flag required.
+>    Same on-the-wire signatures as liboqs, no CGO toolchain
 >    needed.
-> 3. **Stub** — `pkg/crypto/dilithium_stub.go`. Selected when
->    NEITHER of the above is in scope (non-CGO, no `dilithium_circl`
->    tag). Returns errors. **This is the path that fires the
->    alert.**
+>
+> The previous opt-in `dilithium_circl` build tag is now a
+> no-op (the file is selected by `!cgo` alone). The
+> `dilithium_stub.go` file has been removed entirely.
 
 ### kind-dilithium — triage
 
+If this alert is firing, the binary on the node is older than
+the Stage B commit. Treat it the same as `kind-poe` — wrong
+binary, redeploy.
+
 1. **Confirm the build flavour.** SSH onto the affected
-   instance: `qsdm --version` should show whether CGO was on
-   at build time. If the binary has CGO disabled AND was built
-   without the `dilithium_circl` tag, that's the root cause.
-2. **Check what's failing.** Look at `qsdm_attestation_rejected_total`
+   instance: check `qsdm --version` against the post-Stage-B
+   commit hash. If the binary predates Stage B, that's the
+   root cause.
+2. **Check what's failing.** `qsdm_attestation_rejected_total`
    per `reason` label — stub builds typically see a flood
    of `signature_verification_failed` rejections.
-3. **Pick a remediation path.**
-   - **Fastest fix on a Windows or Alpine VPS** (no liboqs DLL
-     install dance): rebuild non-CGO with the
-     `dilithium_circl` tag. Wallet, PoE, and every downstream
-     ML-DSA-87 path light up with the pure-Go backend; the
-     dilithium stub-active flag stays at 0.
-     ```bash
-     cd QSDM/source
-     CGO_ENABLED=0 go build -tags dilithium_circl -o ../qsdm ./cmd/qsdm
-     ```
-     Stage A landed the backend behind this opt-in tag in
-     2026-05-06 (see `pkg/crypto/dilithium_circl.go`); Stage B
-     will flip it on by default once a soak window has
-     accumulated production parity evidence.
-   - **Best perf on a Linux validator** with liboqs already
-     installed: rebuild with CGO + liboqs, same as
-     [§ kind-poe](#kind-poe) remediation. Use this for
-     validators handling high tx throughput; the AVX2-
-     accelerated liboqs path is meaningfully faster than
-     pure-Go circl for sustained verification load.
+3. **Redeploy.**
+   ```bash
+   cd QSDM/source
+   # Pure-Go path (no CGO toolchain needed; works on Alpine,
+   # Windows-cross-compile-to-Linux, etc.):
+   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../qsdm ./cmd/qsdm
+   ```
+   For the perf-sensitive Linux+liboqs path see
+   [§ kind-poe](#kind-poe) remediation — the same binary
+   covers both kinds.
 
 ---
 
 ## kind-wallet
 
-> **Severity in production: CRITICAL — quantum-safe crypto downgrade.**
+> **Severity in production: CRITICAL — historical quantum-safe crypto downgrade.**
+> **As of 2026-05-06 (Stage B), no production binary built from
+> the QSDM tree can fire this alert.** `pkg/wallet/wallet_stub.go`
+> has been deleted; the real `pkg/wallet/wallet.go` now
+> compiles unconditionally (`pkg/crypto.NewDilithium` supplies
+> a real ML-DSA-87 signer in every build, via either liboqs or
+> cloudflare/circl).
 
-`pkg/wallet/wallet_stub.go` (non-CGO build) uses **SHA-256**
-to "sign" transactions and "verify" signatures. This is
-functionally a hash, not a signature — it provides no
-non-repudiation, no key-binding, and no quantum safety.
-
-The wallet's `CreateTransaction` produces JSON that other v2
-QSDM nodes will reject as having an invalid signature, **unless
-those other nodes are also running the stub**. In a mixed
-deployment (some CGO, some not), this stub produces
-transactions that the network rejects.
+The historical stub used **SHA-256** as a stand-in for
+ML-DSA-87 signatures. That was functionally a hash, not a
+signature — no non-repudiation, no key-binding, no quantum
+safety. The wallet's `CreateTransaction` produced JSON that
+other v2 QSDM nodes (running the real wallet) rejected as
+invalid.
 
 ### kind-wallet — triage
 
-1. Same root cause as [§ kind-dilithium](#kind-dilithium):
-   CGO not enabled at build time.
-2. Confirm via `qsdm --version` and look for the binary's
-   CGO marker.
-3. Redeploy with CGO + liboqs.
+If this alert is firing, the binary predates Stage B. Same
+remediation as [§ kind-dilithium](#kind-dilithium): rebuild
+from current head and redeploy. The `qsdm_stub_active{kind="wallet"}`
+gauge is retained for forward compatibility but no code path
+flips it on under any supported build configuration.
 
 ---
 

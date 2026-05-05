@@ -47,6 +47,15 @@ type Logger struct {
 	jsonOutput bool
 	logLevel   LogLevel
 	requestID  string // Current request ID for context
+
+	// closer is the underlying lumberjack.Logger handle (the
+	// one that owns the OS file descriptor). Stored separately
+	// from the formatted *log.Logger fan-out so Close can
+	// release it deterministically — required on Windows,
+	// where t.TempDir() cleanup fails to remove a log file
+	// that's still mapped open. nil only if the logger was
+	// constructed with no file output.
+	closer io.Closer
 }
 
 // NewLogger creates a new logger with specified log file and output format
@@ -74,7 +83,29 @@ func NewLoggerWithLevel(logFile string, jsonOutput bool, logLevel string) *Logge
 		jsonOutput: jsonOutput,
 		logLevel:   parseLogLevel(logLevel),
 		requestID:  "",
+		closer:     lumberjackLogger,
 	}
+}
+
+// Close releases the underlying log file handle. Safe to call
+// multiple times; subsequent calls are no-ops. After Close,
+// further writes go to stdout-only (the lumberjack tee is
+// dropped on the floor; logging continues but does not append
+// to the file). Designed for graceful shutdown and for tests
+// that need t.TempDir() cleanup to succeed on Windows, where an
+// open log file blocks unlinkat.
+func (l *Logger) Close() error {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closer == nil {
+		return nil
+	}
+	err := l.closer.Close()
+	l.closer = nil
+	return err
 }
 
 // SetRequestID sets the current request ID for context tracking

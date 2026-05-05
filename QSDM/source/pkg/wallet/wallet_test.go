@@ -78,7 +78,19 @@ func TestSignAndVerify(t *testing.T) {
 		t.Fatal("signature must not be empty")
 	}
 
-	ok, err := ws.VerifySignature(data, sig, nil)
+	// VerifySignature delegates to Dilithium.VerifyWithPublicKey,
+	// which requires an externally-supplied 2592-byte FIPS 204
+	// ML-DSA-87 public key. The wallet's own key is the obvious
+	// choice for a self-roundtrip — that's what GetPublicKey
+	// surfaces. Pre-Stage-B the wallet stub's VerifySignature
+	// ignored the publicKey arg entirely (SHA-256 length check
+	// only); the real backend can't.
+	pk := ws.GetPublicKey()
+	if len(pk) == 0 {
+		t.Fatal("wallet has no public key — backend init failed")
+	}
+
+	ok, err := ws.VerifySignature(data, sig, pk)
 	if err != nil {
 		t.Fatalf("VerifySignature error: %v", err)
 	}

@@ -12,6 +12,101 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Removed
+
+- **`dilithium`/`wallet`/`poe` stub paths deleted (Stage B) (2026-05-06).**
+  Three CRITICAL `qsdm_stub_active` kinds are now structurally
+  unreachable on any binary built from current head. Files
+  deleted: `pkg/crypto/dilithium_stub.go`,
+  `pkg/wallet/wallet_stub.go`, `pkg/consensus/poe_stub.go`.
+  Each had been the sole `MarkActive` site for its kind; with
+  the files gone, no code path under any supported build
+  configuration (CGO+liboqs, non-CGO+circl, future
+  Linux/Windows/macOS targets) flips those gauges.
+  - **`pkg/crypto/dilithium_circl.go`** is now the default
+    non-CGO backend (`//go:build !cgo`, no opt-in tag
+    required). Replaces `dilithium_stub.go`'s always-error
+    behaviour with real FIPS 204 ML-DSA-87 via
+    `cloudflare/circl/sign/mldsa/mldsa87`. Wire-compatible
+    with the CGO+liboqs backend; mixed-backend validator
+    sets do not fork. Method surface extended to match the
+    full CGO API: `GetPublicKey`, `GetPrivateKey`,
+    `SignOptimized`, `SignBatchOptimized`, `SignCompressed`,
+    `VerifyCompressed`, `VerifyWithPublicKeyCompressed`.
+  - **`pkg/wallet/wallet.go`** (formerly `//go:build cgo`)
+    now compiles unconditionally. Real wallet backed by
+    `*pkg/crypto.Dilithium` regardless of CGO state. New
+    helper `(*WalletService).GetPublicKey()` exposes the
+    handle's 2592-byte public key (used by `VerifySignature`
+    self-roundtrip and any caller that needs to embed the
+    wallet pubkey externally).
+  - **`pkg/consensus/poe.go`** (formerly `//go:build cgo`)
+    now compiles unconditionally. The historical fail-open
+    "accepting transaction without signature verification"
+    branch is gone — `consensus.NewProofOfEntanglement()`
+    returns a non-nil verifier in every build.
+  - **Test-fixture fixes.** Three test sites were implicitly
+    relying on stub behaviour and had to be updated:
+    - `tests/api_contracts_bridge_test.go`: the test
+      client previously hardcoded HMAC-SHA256 request
+      signing because `crypto.NewDilithium()` was nil under
+      the stub; with a real signer behind the API server,
+      every POST returned 401 ("invalid request signature").
+      Refactored `setupContractsBridgeTestServer` to return a
+      `cbTestRig` that exposes the server's
+      `*api.RequestSigner`, and changed `authedRequest` to
+      sign with that same signer. Round-trip is now
+      backend-agnostic — works under HMAC fallback, circl,
+      and liboqs identically. New API surface:
+      `(*api.Server).RequestSigner()` returns the per-server
+      signer for tests.
+    - `pkg/wallet/wallet_test.go::TestSignAndVerify`: passed
+      `nil` for the public-key argument, which the wallet
+      stub's SHA-256 length-only "verifier" silently
+      accepted but the real backend rejects with
+      "public key must be 2592 bytes, got 0". Updated to
+      use `ws.GetPublicKey()` (the obvious self-roundtrip
+      key).
+    - `pkg/quarantine/phase3_transaction_test.go::TestHandlePhase3Transaction`:
+      previously skipped under !cgo (`if poe == nil { t.Skip(...) }`);
+      now runs in full because PoE is real. Exposed a
+      pre-existing Windows-only teardown bug (t.TempDir()
+      cleanup failing because the test's `*logging.Logger`
+      held the log file open). Added
+      `(*logging.Logger).Close()` and a `t.Cleanup` hook to
+      release the file before unlink.
+  - **Runbook**:
+    [`STUB_DEPLOYMENT_INCIDENT.md`](QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md)
+    sections for `kind-dilithium`, `kind-wallet`, and
+    `kind-poe` rewritten. They now state the alert is
+    structurally unreachable on Stage B+ binaries and that
+    any firing instance is a wrong-binary deployment to
+    redeploy from current head.
+  - **Verification (CGO_ENABLED=0, no extra build tags):**
+    - `go build ./...` clean.
+    - `go test ./...` — green, **55/55 packages**, including
+      the previously-skipped `TestHandlePhase3Transaction`
+      and the previously-stub-only API E2E tests
+      (`TestContractDeployAndExecuteE2E`,
+      `TestContractDeployDuplicateE2E`,
+      `TestContractVotingE2E`,
+      `TestBridgeEndpoints503WhenUnavailable`).
+    - `go test -tags dilithium_circl ./...` also green
+      (the tag is now a no-op, retained as a no-op alias
+      for one release for compatibility with any external
+      build scripts).
+  - **Operational impact.** A non-CGO binary built from
+    current head replaces the Phase-2-era SHA-256 fallback
+    wallet AND the always-accept PoE on the wire with real
+    FIPS 204 ML-DSA-87. Operators running stub-built
+    binaries (the common case for Windows-based Go-only
+    builders) should rebuild and redeploy. The
+    `qsdm_stub_active{kind=~"dilithium|wallet|poe"}` rows
+    on the dashboard will move from "fires immediately at
+    boot in non-CGO builds" to "structurally cannot fire";
+    Alertmanager runbook entries kept as forensics for any
+    leftover pre-Stage-B binaries.
+
 ### Added
 
 - **Pure-Go ML-DSA-87 backend (Stage A, opt-in) (2026-05-06).**

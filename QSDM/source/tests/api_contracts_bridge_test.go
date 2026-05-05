@@ -2,10 +2,7 @@ package tests
 
 import (
 	"bytes"
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -22,7 +19,22 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/storage"
 )
 
-func setupContractsBridgeTestServer(t *testing.T) (*httptest.Server, func()) {
+// cbTestRig bundles the per-test fixture so call sites can sign
+// outbound requests with the same *api.RequestSigner the server
+// uses to verify them. Without this, the test client and the
+// server can disagree on backend choice — for example, the
+// client always wanting HMAC-SHA256 while the server speaks
+// ML-DSA-87 because crypto.NewDilithium() returned a real
+// handle (CGO+liboqs build, or non-CGO with the
+// dilithium_circl tag). Sharing the same RequestSigner makes
+// the round-trip backend-agnostic.
+type cbTestRig struct {
+	ts        *httptest.Server
+	apiServer *api.Server
+	cleanup   func()
+}
+
+func setupContractsBridgeTestServer(t *testing.T) *cbTestRig {
 	t.Helper()
 	cfg := &config.Config{
 		APIPort:   0,
@@ -43,8 +55,12 @@ func setupContractsBridgeTestServer(t *testing.T) (*httptest.Server, func()) {
 	ce := contracts.NewContractEngine(nil)
 	apiServer.SetContractEngine(ce)
 
-	// Bridge/AtomicSwap require CGO for Dilithium; skip those endpoints if unavailable.
-	// The server handles nil gracefully (returns 503).
+	// Bridge/AtomicSwap require Dilithium AND an explicit
+	// SetBridgeProtocol wiring. We deliberately do NOT call
+	// SetBridgeProtocol here so the bridge endpoints surface a
+	// 503 ("bridge protocol not available") regardless of which
+	// signature backend the build links — that's what
+	// TestBridgeEndpoints503WhenUnavailable asserts.
 
 	ts := httptest.NewServer(apiServer.SetupTestHandler())
 	cleanup := func() {
@@ -53,7 +69,7 @@ func setupContractsBridgeTestServer(t *testing.T) (*httptest.Server, func()) {
 		os.RemoveAll("test_cb_storage")
 		os.Remove("test_cb.log")
 	}
-	return ts, cleanup
+	return &cbTestRig{ts: ts, apiServer: apiServer, cleanup: cleanup}
 }
 
 // registerAndLogin registers a user and returns a valid access token.
@@ -92,16 +108,18 @@ func registerAndLogin(t *testing.T, baseURL string) string {
 	return token
 }
 
-// signBody computes HMAC-SHA256 over "timestamp:nonce:body" using the default
-// test secret ("Charming123"), matching the RequestSigner fallback.
-func signBody(body []byte, ts int64, nonce string) string {
-	payload := fmt.Sprintf("%d:%s:", ts, nonce)
-	h := hmac.New(sha256.New, []byte("Charming123"))
-	h.Write(append([]byte(payload), body...))
-	return base64.URLEncoding.EncodeToString(h.Sum(nil))
-}
-
-func authedRequest(method, url, token string, body interface{}) (*http.Response, error) {
+// authedRequest builds and dispatches a token-authenticated
+// request, signed with the SAME *api.RequestSigner the server
+// will use to verify it. Sharing the signer makes the test
+// round-trip backend-agnostic: the request middleware and the
+// client agree on Dilithium-vs-HMAC because they consult the
+// same handle.
+//
+// signer must be the rig's apiServer.RequestSigner(); passing a
+// fresh RequestSigner would break the round-trip in any build
+// where the backend generates a per-process keypair (every
+// non-stub build).
+func authedRequest(rig *cbTestRig, method, url, token string, body interface{}) (*http.Response, error) {
 	var bodyBytes []byte
 	if body != nil {
 		bodyBytes, _ = json.Marshal(body)
@@ -119,9 +137,13 @@ func authedRequest(method, url, token string, body interface{}) (*http.Response,
 		nonceBytes := make([]byte, 16)
 		rand.Read(nonceBytes)
 		nonce := hex.EncodeToString(nonceBytes)
+		sig, signErr := rig.apiServer.RequestSigner().SignRequest(bodyBytes, ts, nonce)
+		if signErr != nil {
+			return nil, fmt.Errorf("authedRequest: signer.SignRequest: %w", signErr)
+		}
 		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", ts))
 		req.Header.Set("X-Nonce", nonce)
-		req.Header.Set("X-Signature", signBody(bodyBytes, ts, nonce))
+		req.Header.Set("X-Signature", sig)
 	}
 	return http.DefaultClient.Do(req)
 }
@@ -136,12 +158,12 @@ func decodeJSON(t *testing.T, resp *http.Response) map[string]interface{} {
 // ---------- Contract API E2E ----------
 
 func TestContractDeployAndExecuteE2E(t *testing.T) {
-	ts, cleanup := setupContractsBridgeTestServer(t)
-	defer cleanup()
-	token := registerAndLogin(t, ts.URL)
+	rig := setupContractsBridgeTestServer(t)
+	defer rig.cleanup()
+	token := registerAndLogin(t, rig.ts.URL)
 
 	// List templates (public)
-	resp, _ := authedRequest("GET", ts.URL+"/api/v1/contracts/templates", token, nil)
+	resp, _ := authedRequest(rig, "GET", rig.ts.URL+"/api/v1/contracts/templates", token, nil)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("templates status = %d", resp.StatusCode)
@@ -153,7 +175,7 @@ func TestContractDeployAndExecuteE2E(t *testing.T) {
 	}
 
 	// Deploy SimpleToken from template
-	resp, _ = authedRequest("POST", ts.URL+"/api/v1/contracts/deploy", token, map[string]string{
+	resp, _ = authedRequest(rig, "POST", rig.ts.URL+"/api/v1/contracts/deploy", token, map[string]string{
 		"contract_id": "my_token",
 		"template":    "SimpleToken",
 	})
@@ -164,7 +186,7 @@ func TestContractDeployAndExecuteE2E(t *testing.T) {
 	}
 
 	// Execute: transfer tokens
-	resp, _ = authedRequest("POST", ts.URL+"/api/v1/contracts/my_token/execute", token, map[string]interface{}{
+	resp, _ = authedRequest(rig, "POST", rig.ts.URL+"/api/v1/contracts/my_token/execute", token, map[string]interface{}{
 		"function": "transfer",
 		"args":     map[string]interface{}{"to": "bob", "amount": 42},
 	})
@@ -179,7 +201,7 @@ func TestContractDeployAndExecuteE2E(t *testing.T) {
 	}
 
 	// Execute: balanceOf
-	resp, _ = authedRequest("POST", ts.URL+"/api/v1/contracts/my_token/execute", token, map[string]interface{}{
+	resp, _ = authedRequest(rig, "POST", rig.ts.URL+"/api/v1/contracts/my_token/execute", token, map[string]interface{}{
 		"function": "balanceOf",
 		"args":     map[string]interface{}{"address": "bob"},
 	})
@@ -194,7 +216,7 @@ func TestContractDeployAndExecuteE2E(t *testing.T) {
 	}
 
 	// List contracts
-	resp, _ = authedRequest("GET", ts.URL+"/api/v1/contracts/list", token, nil)
+	resp, _ = authedRequest(rig, "GET", rig.ts.URL+"/api/v1/contracts/list", token, nil)
 	defer resp.Body.Close()
 	listResp := decodeJSON(t, resp)
 	if listResp["count"] != float64(1) {
@@ -202,7 +224,7 @@ func TestContractDeployAndExecuteE2E(t *testing.T) {
 	}
 
 	// Get contract
-	resp, _ = authedRequest("GET", ts.URL+"/api/v1/contracts/my_token", token, nil)
+	resp, _ = authedRequest(rig, "GET", rig.ts.URL+"/api/v1/contracts/my_token", token, nil)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get contract status = %d", resp.StatusCode)
@@ -214,12 +236,12 @@ func TestContractDeployAndExecuteE2E(t *testing.T) {
 }
 
 func TestContractDeployDuplicateE2E(t *testing.T) {
-	ts, cleanup := setupContractsBridgeTestServer(t)
-	defer cleanup()
-	token := registerAndLogin(t, ts.URL)
+	rig := setupContractsBridgeTestServer(t)
+	defer rig.cleanup()
+	token := registerAndLogin(t, rig.ts.URL)
 
 	deploy := func() int {
-		resp, _ := authedRequest("POST", ts.URL+"/api/v1/contracts/deploy", token, map[string]string{
+		resp, _ := authedRequest(rig, "POST", rig.ts.URL+"/api/v1/contracts/deploy", token, map[string]string{
 			"contract_id": "dup_test",
 			"template":    "Voting",
 		})
@@ -236,30 +258,30 @@ func TestContractDeployDuplicateE2E(t *testing.T) {
 }
 
 func TestContractVotingE2E(t *testing.T) {
-	ts, cleanup := setupContractsBridgeTestServer(t)
-	defer cleanup()
-	token := registerAndLogin(t, ts.URL)
+	rig := setupContractsBridgeTestServer(t)
+	defer rig.cleanup()
+	token := registerAndLogin(t, rig.ts.URL)
 
 	// Deploy Voting contract
-	authedRequest("POST", ts.URL+"/api/v1/contracts/deploy", token, map[string]string{
+	authedRequest(rig, "POST", rig.ts.URL+"/api/v1/contracts/deploy", token, map[string]string{
 		"contract_id": "gov_vote",
 		"template":    "Voting",
 	})
 
 	// Cast 3 yes votes, 1 no vote
 	for i := 0; i < 3; i++ {
-		authedRequest("POST", ts.URL+"/api/v1/contracts/gov_vote/execute", token, map[string]interface{}{
+		authedRequest(rig, "POST", rig.ts.URL+"/api/v1/contracts/gov_vote/execute", token, map[string]interface{}{
 			"function": "vote",
 			"args":     map[string]interface{}{"proposal": "proposal_A", "choice": true},
 		})
 	}
-	authedRequest("POST", ts.URL+"/api/v1/contracts/gov_vote/execute", token, map[string]interface{}{
+	authedRequest(rig, "POST", rig.ts.URL+"/api/v1/contracts/gov_vote/execute", token, map[string]interface{}{
 		"function": "vote",
 		"args":     map[string]interface{}{"proposal": "proposal_A", "choice": false},
 	})
 
 	// Check results
-	resp, _ := authedRequest("POST", ts.URL+"/api/v1/contracts/gov_vote/execute", token, map[string]interface{}{
+	resp, _ := authedRequest(rig, "POST", rig.ts.URL+"/api/v1/contracts/gov_vote/execute", token, map[string]interface{}{
 		"function": "getResults",
 		"args":     map[string]interface{}{"proposal": "proposal_A"},
 	})
@@ -282,11 +304,11 @@ func TestContractVotingE2E(t *testing.T) {
 }
 
 func TestContractMissingReturns404(t *testing.T) {
-	ts, cleanup := setupContractsBridgeTestServer(t)
-	defer cleanup()
-	token := registerAndLogin(t, ts.URL)
+	rig := setupContractsBridgeTestServer(t)
+	defer rig.cleanup()
+	token := registerAndLogin(t, rig.ts.URL)
 
-	resp, _ := authedRequest("GET", ts.URL+"/api/v1/contracts/nonexistent", token, nil)
+	resp, _ := authedRequest(rig, "GET", rig.ts.URL+"/api/v1/contracts/nonexistent", token, nil)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", resp.StatusCode)
@@ -295,10 +317,20 @@ func TestContractMissingReturns404(t *testing.T) {
 
 // ---------- Bridge API E2E ----------
 
+// TestBridgeEndpoints503WhenUnavailable verifies the bridge
+// endpoints return 503 when no *bridge.BridgeProtocol has been
+// wired into the api.Server. Pre-circl, the failure mode was
+// "bridge construction errored because Dilithium was nil"; now
+// any backend (CGO+liboqs, circl pure-Go, or stub) builds a
+// non-nil signer, so the only remaining 503 trigger is the
+// explicit no-SetBridgeProtocol case the test fixture
+// constructs. Either way the user-facing contract holds: a
+// validator that has not opted into bridge functionality
+// returns 503 from every bridge endpoint.
 func TestBridgeEndpoints503WhenUnavailable(t *testing.T) {
-	ts, cleanup := setupContractsBridgeTestServer(t)
-	defer cleanup()
-	token := registerAndLogin(t, ts.URL)
+	rig := setupContractsBridgeTestServer(t)
+	defer rig.cleanup()
+	token := registerAndLogin(t, rig.ts.URL)
 
 	endpoints := []struct {
 		method string
@@ -312,10 +344,10 @@ func TestBridgeEndpoints503WhenUnavailable(t *testing.T) {
 
 	for _, ep := range endpoints {
 		t.Run(fmt.Sprintf("%s %s", ep.method, ep.path), func(t *testing.T) {
-			resp, _ := authedRequest(ep.method, ts.URL+ep.path, token, map[string]interface{}{})
+			resp, _ := authedRequest(rig, ep.method, rig.ts.URL+ep.path, token, map[string]interface{}{})
 			defer resp.Body.Close()
 			if resp.StatusCode != http.StatusServiceUnavailable {
-				t.Errorf("status = %d, want 503 (bridge requires CGO/Dilithium)", resp.StatusCode)
+				t.Errorf("status = %d, want 503 (no SetBridgeProtocol → bridge protocol not available)", resp.StatusCode)
 			}
 		})
 	}

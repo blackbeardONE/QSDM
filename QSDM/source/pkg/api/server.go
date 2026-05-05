@@ -365,3 +365,20 @@ func (s *Server) SetupTestHandler() http.Handler {
 	return s.setupMiddleware(mux)
 }
 
+// RequestSigner returns the per-server RequestSigner so tests can
+// produce signatures that match the server's verification path
+// regardless of which backend the build selected (Dilithium via
+// CGO+liboqs, Dilithium via cloudflare/circl pure-Go, or the
+// HMAC-SHA256 fallback in non-CGO stub builds). Production
+// callers do NOT need this — the middleware reads the same
+// signer internally.
+//
+// Test-only contract: signatures produced by this RequestSigner
+// (RequestSigner.SignRequest) are accepted by the same Server's
+// VerifyRequest. This is true for all three backends because
+// SignRequest and VerifyRequest both consult the same underlying
+// (Dilithium handle | HMAC secret) state.
+func (s *Server) RequestSigner() *RequestSigner {
+	return s.requestSigner
+}
+

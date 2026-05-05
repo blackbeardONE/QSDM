@@ -1,5 +1,14 @@
-//go:build cgo
-// +build cgo
+// Package consensus — Proof-of-Entanglement signature path.
+//
+// As of 2026-05-06 (Stage B) this file is the canonical PoE
+// implementation under both CGO+liboqs and non-CGO builds. It
+// uses pkg/crypto.NewDilithium for the actual ML-DSA-87 work,
+// which selects the correct backend at compile time
+// (dilithium.go on cgo, dilithium_circl.go on !cgo). The
+// previous always-accept stub at poe_stub.go has been deleted:
+// every supported build path now has a real verifier, so the
+// "accept transactions without signature verification" failure
+// mode is no longer reachable.
 
 package consensus
 

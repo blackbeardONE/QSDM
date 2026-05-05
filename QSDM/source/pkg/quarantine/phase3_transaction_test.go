@@ -19,6 +19,14 @@ func parent32(b byte) []byte {
 func TestHandlePhase3Transaction(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "test_quarantine.log")
 	logger := logging.NewLogger(logPath, false)
+	// Close the logger before t.TempDir() runs its cleanup —
+	// on Windows, unlinkat on a still-open log file blocks
+	// removal and fails the test even when the test logic
+	// itself passed. Pre-Stage-B this test was Skip()'d on
+	// !cgo because ProofOfEntanglement was nil; with Stage B's
+	// real PoE backend the test runs in full and exposed the
+	// missing teardown.
+	t.Cleanup(func() { _ = logger.Close() })
 
 	mesh3dValidator := mesh3d.NewMesh3DValidator()
 	quarantineManager := quarantine.NewQuarantineManager(0.5)

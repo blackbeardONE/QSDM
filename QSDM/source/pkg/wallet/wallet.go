@@ -1,5 +1,15 @@
-//go:build cgo
-// +build cgo
+// Package wallet — production wallet service backed by the real
+// ML-DSA-87 implementation in pkg/crypto.
+//
+// As of 2026-05-06 (Stage B) this file is the canonical wallet
+// implementation for both CGO+liboqs builds (where pkg/crypto
+// uses dilithium.go) and non-CGO builds (where pkg/crypto uses
+// dilithium_circl.go). The previous build-tag-gated SHA-256
+// fallback (wallet_stub.go) has been deleted: a real ML-DSA-87
+// signer is available on every supported build now, so the
+// fallback was strictly a downgrade. Both backends produce
+// FIPS 204 wire-compatible signatures, so a wallet built under
+// either backend interoperates with any QSDM validator.
 
 package wallet
 
@@ -140,6 +150,21 @@ func (ws *WalletService) SignData(data []byte) ([]byte, error) {
 		return nil, errors.New("Dilithium not initialized")
 	}
 	return ws.dilithium.Sign(data)
+}
+
+// GetPublicKey returns the wallet's packed FIPS 204 ML-DSA-87
+// public key (2592 bytes). Used by callers that want to verify
+// a signature this wallet produced under
+// VerifySignature(data, sig, ws.GetPublicKey()) — the
+// pkg/crypto.*Dilithium.VerifyWithPublicKey path requires an
+// externally-supplied key and does not consult the verifier
+// handle's internal one. Returns nil if the underlying
+// Dilithium handle has no key (verify-only construction, etc.).
+func (ws *WalletService) GetPublicKey() []byte {
+	if ws.dilithium == nil {
+		return nil
+	}
+	return ws.dilithium.GetPublicKey()
 }
 
 // SignDataCompressed signs arbitrary data and returns a compressed signature.
