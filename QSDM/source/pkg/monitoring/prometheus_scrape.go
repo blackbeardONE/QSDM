@@ -38,6 +38,13 @@ func GlobalScrapePrometheusExporter() *PrometheusExporter {
 		// endpoints (send, balance, mint, create) for per-result
 		// alert thresholding (high error rate, mint burst, etc.).
 		globalScrapeExporter.RegisterCollector("qsdm_wallet", walletPrometheusMetrics)
+		// qsdm_storage_op_total{op,result} counters from
+		// storage_op_metrics.go, instrumented from the SQLite,
+		// FileStorage, and Scylla backends' per-op call sites.
+		// Closes the "storage write failed silently" gap where
+		// pkg/storage/sqlite.go's StoreTransaction had no metric
+		// hook at all.
+		globalScrapeExporter.RegisterCollector("qsdm_storage_op", storageOpPrometheusMetrics)
 	})
 	return globalScrapeExporter
 }

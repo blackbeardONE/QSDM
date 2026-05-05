@@ -89,7 +89,19 @@ func NewStorage(dbPath string) (*Storage, error) {
 	return &Storage{db: db}, nil
 }
 
-func (s *Storage) StoreTransaction(data []byte) error {
+func (s *Storage) StoreTransaction(data []byte) (resErr error) {
+	// Single instrumentation point: every return path flips the
+	// qsdm_storage_op_total{op="store_transaction", result=...}
+	// counter so the scrape sees both successes and failures
+	// regardless of which branch returned.
+	defer func() {
+		if resErr != nil {
+			monitoring.RecordStorageOp(monitoring.StorageOpStoreTransaction, monitoring.StorageOpResultError)
+		} else {
+			monitoring.RecordStorageOp(monitoring.StorageOpStoreTransaction, monitoring.StorageOpResultSuccess)
+		}
+	}()
+
 	// Parse transaction to extract metadata
 	var txMap map[string]interface{}
 	if err := json.Unmarshal(data, &txMap); err == nil {
@@ -194,8 +206,10 @@ func (s *Storage) GetBalance(address string) (float64, error) {
 		metrics := monitoring.GetMetrics()
 		if err != nil && err != sql.ErrNoRows {
 			metrics.RecordStorageOperation("GetBalance", latency, err)
+			monitoring.RecordStorageOp(monitoring.StorageOpGetBalance, monitoring.StorageOpResultError)
 		} else {
 			metrics.RecordStorageOperation("GetBalance", latency, nil)
+			monitoring.RecordStorageOp(monitoring.StorageOpGetBalance, monitoring.StorageOpResultSuccess)
 		}
 	}()
 
@@ -222,8 +236,10 @@ func (s *Storage) UpdateBalance(address string, amount float64) error {
 		metrics := monitoring.GetMetrics()
 		if err != nil {
 			metrics.RecordStorageOperation("UpdateBalance", latency, err)
+			monitoring.RecordStorageOp(monitoring.StorageOpUpdateBalance, monitoring.StorageOpResultError)
 		} else {
 			metrics.RecordStorageOperation("UpdateBalance", latency, nil)
+			monitoring.RecordStorageOp(monitoring.StorageOpUpdateBalance, monitoring.StorageOpResultSuccess)
 		}
 	}()
 
@@ -252,8 +268,10 @@ func (s *Storage) SetBalance(address string, balance float64) error {
 		metrics := monitoring.GetMetrics()
 		if err != nil {
 			metrics.RecordStorageOperation("SetBalance", latency, err)
+			monitoring.RecordStorageOp(monitoring.StorageOpSetBalance, monitoring.StorageOpResultError)
 		} else {
 			metrics.RecordStorageOperation("SetBalance", latency, nil)
+			monitoring.RecordStorageOp(monitoring.StorageOpSetBalance, monitoring.StorageOpResultSuccess)
 		}
 	}()
 
@@ -435,7 +453,14 @@ func (s *Storage) ForEachBalance(fn func(address string, balance float64) error)
 }
 
 // Ready pings the SQLite database.
-func (s *Storage) Ready() error {
+func (s *Storage) Ready() (resErr error) {
+	defer func() {
+		if resErr != nil {
+			monitoring.RecordStorageOp(monitoring.StorageOpReady, monitoring.StorageOpResultError)
+		} else {
+			monitoring.RecordStorageOp(monitoring.StorageOpReady, monitoring.StorageOpResultSuccess)
+		}
+	}()
 	if s.db == nil {
 		return fmt.Errorf("database not initialized")
 	}

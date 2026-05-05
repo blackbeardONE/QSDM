@@ -1175,3 +1175,63 @@ tests:
             description: "qsdm_wallet_mint_total{result=\"success\"} on\ni1 has been incrementing at\n>5/min sustained for ≥30m (≥150 mints in the window).\n\n$CELL mint is admin-only and gated by NVIDIA-lock.\nSustained successful mint volume regardless of policy\nis a supply-inflation signal:\n  - Legitimate cause: an admin running a test campaign\n    without notifying ops. Confirm out-of-band with\n    the operator who owns the API credentials.\n  - Adversarial cause: compromised admin credentials.\n    Rotate the credential and audit the recipient\n    addresses against the legitimate-recipient list.\n\nTriage:\n  - List the mint amounts and recipients from logs:\n    grep '\"coin\":\"CELL\"' on the validator's stdout.\n  - Cross-check QSDMGovAuthorityVoteRecorded — if a\n    governance vote authorized the campaign, the vote\n    will be in the chain.\n  - If recipient is not on the legitimate list, treat\n    as a credential compromise: rotate, restrict, and\n    file an incident report.\n"
             runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#33-mode-c--qsdmwalletmintburst"
             summary: "i1: $CELL mint rate > 5/min for ≥30m"
+
+  # -------------------------------------------------------------------
+  # qsdm-storage — storage backend health
+  # STORAGE_INCIDENT.md §3.1 / §3.2
+  # -------------------------------------------------------------------
+
+  - name: "QSDMStorageWriteErrorBurst — store_transaction err rate*60 > 1, for:5m"
+    interval: 1m
+    # 2 errors/min sustained → rate*60 = 2 > 1 threshold.
+    # Crosses for:5m at 6m.
+    input_series:
+      - series: 'qsdm_storage_op_total{op="store_transaction",result="error",instance="i1"}'
+        values: '0+2x40'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: QSDMStorageWriteErrorBurst
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: QSDMStorageWriteErrorBurst
+        exp_alerts:
+        - exp_labels:
+            instance: "i1"
+            op: "store_transaction"
+            result: "error"
+            severity: "warning"
+            subsystem: "v2-storage"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-storage-incident.json"
+            description: "qsdm_storage_op_total{op=\"store_transaction\",result=\"error\"}\nrate on i1 has been > 1/min sustained\nfor ≥5m. The storage backend (SQLite / FileStorage / Scylla)\nis rejecting transaction writes.\n\nTriage:\n  - Drill into the success-vs-error ratio to confirm the\n    magnitude:\n      rate(qsdm_storage_op_total{op=\"store_transaction\",result=\"error\"}[5m])\n      /\n      rate(qsdm_storage_op_total{op=\"store_transaction\"}[5m])\n  - Cross-check QSDMNoTransactionsStored: if firing\n    concurrently, ZERO transactions are completing\n    (full storage wedge); if NOT firing, some writes\n    are getting through but a fraction are failing\n    (lock contention, partial disk failure, transient\n    Scylla quorum loss).\n  - Cross-check QSDMWalletStorageErrorBurst: if firing\n    concurrently, the wallet API surface is seeing the\n    failures end-to-end (this is expected). If NOT\n    firing but QSDMStorageWriteErrorBurst is, the\n    error volume is from p2p ingress (libp2p\n    accepting txs that storage then rejects) rather\n    than the wallet API.\n  - Inspect node logs for storage error messages\n    (SQLite \"database is locked\", Scylla \"quorum\",\n    FileStorage \"no space left\").\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#31-mode-a--qsdmstoragewriteerrorburst"
+            summary: "i1: storage StoreTransaction errors > 1/min for ≥5m"
+
+  - name: "QSDMStorageReadyFailing — ready err rate > 0, for:2m"
+    interval: 1m
+    # 1 ready error/min → rate > 0. Crosses for:2m at 3m.
+    input_series:
+      - series: 'qsdm_storage_op_total{op="ready",result="error",instance="i1"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: QSDMStorageReadyFailing
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: QSDMStorageReadyFailing
+        exp_alerts:
+        - exp_labels:
+            instance: "i1"
+            op: "ready"
+            result: "error"
+            severity: "critical"
+            subsystem: "v2-storage"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-storage-incident.json"
+            description: "qsdm_storage_op_total{op=\"ready\",result=\"error\"} is\nnon-zero on i1 for ≥2m. The\nstorage backend is reporting itself unhealthy on the\nhealth-probe path — either fully offline or\nunreachable.\n\nLikely causes:\n  - SQLite: db file deleted, FS unmounted, fsync\n    failure on the journal.\n  - FileStorage: storage directory removed or\n    permissions broken.\n  - Scylla: session lost (auth expiry, TLS cert\n    rotation, network partition to the cluster).\n\nImmediate consequences:\n  - /api/v1/health returns 503 — load balancers\n    will (correctly) take this node out of rotation.\n  - QSDMNoTransactionsStored will follow within\n    30m if this stays unresolved.\n  - QSDMMiningChainStuck will follow if a majority\n    of validators hit this concurrently.\n\nTriage:\n  - Confirm the underlying backend is reachable:\n      - SQLite: `ls -la <db-path>` from the node.\n      - FileStorage: `ls -la <storage-dir>`.\n      - Scylla: `cqlsh <host>` from the node.\n  - If the backend is alive but the validator can't\n    reach it, the issue is between the node and the\n    backend (DNS, TLS, auth, firewall). Restart\n    with the correct config.\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#32-mode-b--qsdmstoragereadyfailing"
+            summary: "i1: storage Ready() probe failing"

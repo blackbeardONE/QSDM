@@ -1,7 +1,7 @@
 # QSDM Operator Runbooks — Master Index
 
 This is the operator's first page when paged for any
-`QSDM*` Prometheus alert. It lists all 42 alerts in
+`QSDM*` Prometheus alert. It lists all 44 alerts in
 [`alerts_qsdm.example.yml`](../../../deploy/prometheus/alerts_qsdm.example.yml),
 maps each to its dedicated runbook section, and shows
 the cross-subsystem escalation paths in one place.
@@ -81,6 +81,8 @@ link directly to the relevant `### 3.x Mode X` (or
 | `QSDMNvidiaLockP2PRejects`                     | warning      | `qsdm-nvidia-lock`                | [`OPERATOR_HYGIENE_INCIDENT.md` §3.2](OPERATOR_HYGIENE_INCIDENT.md#32-mode-b--qsdmnvidialockp2prejects) |
 | `QSDMQuarantineAnySubmesh`                     | warning      | `qsdm-quarantine`                 | [`QUARANTINE_INCIDENT.md` §3.1](QUARANTINE_INCIDENT.md#31-mode-a--qsdmquarantineanysubmesh) |
 | `QSDMQuarantineMajorityIsolated`               | **critical** | `qsdm-quarantine`                 | [`QUARANTINE_INCIDENT.md` §3.2](QUARANTINE_INCIDENT.md#32-mode-b--qsdmquarantinemajorityisolated) |
+| `QSDMStorageReadyFailing`                      | **critical** | `qsdm-storage`                    | [`STORAGE_INCIDENT.md` §3.2](STORAGE_INCIDENT.md#32-mode-b--qsdmstoragereadyfailing)        |
+| `QSDMStorageWriteErrorBurst`                   | warning      | `qsdm-storage`                    | [`STORAGE_INCIDENT.md` §3.1](STORAGE_INCIDENT.md#31-mode-a--qsdmstoragewriteerrorburst)     |
 | `QSDMStubActive`                               | **critical** | `qsdm-stub-active`                | [`STUB_DEPLOYMENT_INCIDENT.md`](STUB_DEPLOYMENT_INCIDENT.md) (kind-dispatched) |
 | `QSDMSubmeshAPISustained422`                   | warning      | `qsdm-submesh`                    | [`SUBMESH_POLICY_INCIDENT.md` §3.2](SUBMESH_POLICY_INCIDENT.md#32-mode-b--qsdmsubmeshapisustained422) |
 | `QSDMSubmeshP2PRejects`                        | warning      | `qsdm-submesh`                    | [`SUBMESH_POLICY_INCIDENT.md` §3.1](SUBMESH_POLICY_INCIDENT.md#31-mode-a--qsdmsubmeshp2prejects) |
@@ -94,8 +96,8 @@ link directly to the relevant `### 3.x Mode X` (or
 | `QSDMWalletSendErrorRate`                      | warning      | `qsdm-wallet`                     | [`WALLET_INCIDENT.md` §3.1](WALLET_INCIDENT.md#31-mode-a--qsdmwalletsenderrorrate)         |
 | `QSDMWalletStorageErrorBurst`                  | warning      | `qsdm-wallet`                     | [`WALLET_INCIDENT.md` §3.2](WALLET_INCIDENT.md#32-mode-b--qsdmwalletstorageerrorburst)     |
 
-**Total: 42 alerts. Severity distribution: 8 critical
-/ 32 warning / 2 info.**
+**Total: 44 alerts. Severity distribution: 9 critical
+/ 33 warning / 2 info.**
 
 ---
 
@@ -419,6 +421,54 @@ storage wedge is system-wide),
 campaigns),
 [`MINING_LIVENESS.md`](MINING_LIVENESS.md)
 (downstream chain-stall risk after sustained Mode B).
+
+---
+
+### `STORAGE_INCIDENT.md` — storage-backend health (SQLite / file / Scylla)
+
+Two-mode runbook for the storage layer beneath the wallet
+and p2p ingress paths. Mode A catches sustained
+`store_transaction` write-error bursts (storage rejecting
+new state); Mode B is the lowest-level health-probe
+signal — `Ready()` itself failing — which is critical
+because the validator cannot meaningfully participate in
+consensus without a working storage backend.
+
+Closes a long-standing gap: the SQLite backend's
+`StoreTransaction` had **no Prometheus instrumentation
+at all** before this commit — write failures were
+log-only. The new `qsdm_storage_op_total{op,result}`
+counter (5 ops × 2 results, all pre-populated at 0)
+makes per-op success-vs-error visible at the storage
+layer itself.
+
+| Alert | Mode | Severity |
+|---|---|---|
+| [`QSDMStorageWriteErrorBurst`](STORAGE_INCIDENT.md#31-mode-a--qsdmstoragewriteerrorburst) | A | warning  |
+| [`QSDMStorageReadyFailing`](STORAGE_INCIDENT.md#32-mode-b--qsdmstoragereadyfailing)       | B | **critical** |
+
+**When to read:** storage backend (SQLite/FileStorage/Scylla)
+is rejecting writes (Mode A) or reporting itself fully
+offline via the `Ready()` probe (Mode B). Distinct from
+[`WALLET_INCIDENT.md`](WALLET_INCIDENT.md) Mode B —
+that one fires when the wallet API surface sees the
+failure end-to-end; STORAGE_INCIDENT fires when the
+storage layer itself is the source of truth, regardless
+of whether the call originated from the wallet API or
+from p2p ingress.
+
+**Companions:** [`WALLET_INCIDENT.md`](WALLET_INCIDENT.md)
+(`QSDMWalletStorageErrorBurst` is the wallet-API-surface
+symptom of the same failure class),
+[`OPERATOR_HYGIENE_INCIDENT.md`](OPERATOR_HYGIENE_INCIDENT.md)
+(`QSDMNoTransactionsStored` is the aggregate-throughput
+sentinel that follows Mode A within ~30m if unresolved),
+[`MINING_LIVENESS.md`](MINING_LIVENESS.md)
+(`QSDMMiningChainStuck` follows Mode B if a majority of
+validators hit it — e.g. shared Scylla cluster outage),
+[`QUARANTINE_INCIDENT.md`](QUARANTINE_INCIDENT.md)
+(submesh isolation behaviour follows when a majority hit
+Mode B together).
 
 ---
 

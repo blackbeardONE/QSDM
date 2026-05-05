@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 )
 
 // FileStorage implements storage by saving transactions as individual files.
@@ -50,7 +52,15 @@ func sanitizeWalletTxIDForPath(id string) string {
 
 // StoreTransaction stores a transaction as a file. When JSON contains a non-empty `id`,
 // the file name is derived from that id so duplicate ingests are skipped (parity with SQLite dedupe).
-func (fs *FileStorage) StoreTransaction(data []byte) error {
+func (fs *FileStorage) StoreTransaction(data []byte) (resErr error) {
+	defer func() {
+		if resErr != nil {
+			monitoring.RecordStorageOp(monitoring.StorageOpStoreTransaction, monitoring.StorageOpResultError)
+		} else {
+			monitoring.RecordStorageOp(monitoring.StorageOpStoreTransaction, monitoring.StorageOpResultSuccess)
+		}
+	}()
+
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -84,7 +94,15 @@ func (fs *FileStorage) Close() error {
 }
 
 // Ready checks that the storage directory is accessible.
-func (fs *FileStorage) Ready() error {
+func (fs *FileStorage) Ready() (resErr error) {
+	defer func() {
+		if resErr != nil {
+			monitoring.RecordStorageOp(monitoring.StorageOpReady, monitoring.StorageOpResultError)
+		} else {
+			monitoring.RecordStorageOp(monitoring.StorageOpReady, monitoring.StorageOpResultSuccess)
+		}
+	}()
+
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	_, err := os.Stat(fs.dir)

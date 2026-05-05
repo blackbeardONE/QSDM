@@ -472,3 +472,27 @@ groups:
         input_series:
           - series: 'qsdm_wallet_mint_total{result="success",instance="i1"}'
             values: 0+10x40
+
+  - header: |
+      qsdm-storage — storage backend health
+      STORAGE_INCIDENT.md §3.1 / §3.2
+    tests:
+      - name: QSDMStorageWriteErrorBurst
+        summary: "store_transaction err rate*60 > 1, for:5m"
+        early: 1m
+        late: 8m
+        notes: |
+          2 errors/min sustained → rate*60 = 2 > 1 threshold.
+          Crosses for:5m at 6m.
+        input_series:
+          - series: 'qsdm_storage_op_total{op="store_transaction",result="error",instance="i1"}'
+            values: 0+2x40
+      - name: QSDMStorageReadyFailing
+        summary: "ready err rate > 0, for:2m"
+        early: 1m
+        late: 5m
+        notes: |
+          1 ready error/min → rate > 0. Crosses for:2m at 3m.
+        input_series:
+          - series: 'qsdm_storage_op_total{op="ready",result="error",instance="i1"}'
+            values: 0+1x30

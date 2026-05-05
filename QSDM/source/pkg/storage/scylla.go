@@ -320,12 +320,22 @@ func (s *ScyllaStorage) StoreTransactionMigrate(data []byte) error {
 	return s.storeTransactionWithOptions(data, false, "StoreTransactionMigrate")
 }
 
-func (s *ScyllaStorage) storeTransactionWithOptions(data []byte, applyBalance bool, opName string) error {
+func (s *ScyllaStorage) storeTransactionWithOptions(data []byte, applyBalance bool, opName string) (resErr error) {
 	start := time.Now()
 	defer func() {
 		latency := time.Since(start)
 		metrics := monitoring.GetMetrics()
+		// Pre-existing instrumentation always passed nil for err
+		// — preserved here for call-site backwards compatibility.
 		metrics.RecordStorageOperation(opName, latency, nil)
+		// New per-result counter that drives the qsdm-storage
+		// alerts. Distinguishes success from error rather than
+		// just total volume.
+		if resErr != nil {
+			monitoring.RecordStorageOp(monitoring.StorageOpStoreTransaction, monitoring.StorageOpResultError)
+		} else {
+			monitoring.RecordStorageOp(monitoring.StorageOpStoreTransaction, monitoring.StorageOpResultSuccess)
+		}
 	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -772,7 +782,14 @@ func (s *ScyllaStorage) GetTransaction(txID string) (map[string]interface{}, err
 }
 
 // Ready runs a lightweight cluster query.
-func (s *ScyllaStorage) Ready() error {
+func (s *ScyllaStorage) Ready() (resErr error) {
+	defer func() {
+		if resErr != nil {
+			monitoring.RecordStorageOp(monitoring.StorageOpReady, monitoring.StorageOpResultError)
+		} else {
+			monitoring.RecordStorageOp(monitoring.StorageOpReady, monitoring.StorageOpResultSuccess)
+		}
+	}()
 	if s.session == nil {
 		return fmt.Errorf("scylla session not initialized")
 	}

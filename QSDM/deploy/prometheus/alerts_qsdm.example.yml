@@ -2250,3 +2250,121 @@ groups:
               - If recipient is not on the legitimate list, treat
                 as a credential compromise: rotate, restrict, and
                 file an incident report.
+
+  # =====================================================================
+  # qsdm-storage — storage backend health
+  #
+  # Two alerts cover the SQLite/file/Scylla backends' per-op
+  # outcomes. Both fire on the same metric
+  # (qsdm_storage_op_total{op,result="error"}) but at different
+  # thresholds — the write-path burst is the higher-confidence
+  # signal because it implies the chain can't accept new state;
+  # the read-path burst is more permissive because read errors
+  # (e.g. transient lock contention) are noisier.
+  #
+  # The metric is emitted by pkg/monitoring/storage_op_metrics.go
+  # with all 10 (op, result) pairs always populated, so cold-start
+  # nodes don't have a missing-data bootstrap problem.
+  # =====================================================================
+  - name: qsdm-storage
+    rules:
+      - alert: QSDMStorageWriteErrorBurst
+        # store_transaction error rate above 1/min sustained for
+        # 5m. Strong signal that the storage backend is rejecting
+        # writes — either a disk/space issue, a lock-contention
+        # storm, or a Scylla cluster degradation. Companion to
+        # QSDMNoTransactionsStored (which fires when zero writes
+        # complete) and QSDMWalletStorageErrorBurst (which fires
+        # when the wallet API surface sees the failures); this
+        # one fires when the storage layer itself is the
+        # source of truth for the failure.
+        expr: |
+          rate(qsdm_storage_op_total{op="store_transaction",result="error"}[5m]) * 60 > 1
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: v2-storage
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#31-mode-a--qsdmstoragewriteerrorburst"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-storage-incident.json"
+          summary: "{{ $labels.instance }}: storage StoreTransaction errors > 1/min for ≥5m"
+          description: |
+            qsdm_storage_op_total{op="store_transaction",result="error"}
+            rate on {{ $labels.instance }} has been > 1/min sustained
+            for ≥5m. The storage backend (SQLite / FileStorage / Scylla)
+            is rejecting transaction writes.
+
+            Triage:
+              - Drill into the success-vs-error ratio to confirm the
+                magnitude:
+                  rate(qsdm_storage_op_total{op="store_transaction",result="error"}[5m])
+                  /
+                  rate(qsdm_storage_op_total{op="store_transaction"}[5m])
+              - Cross-check QSDMNoTransactionsStored: if firing
+                concurrently, ZERO transactions are completing
+                (full storage wedge); if NOT firing, some writes
+                are getting through but a fraction are failing
+                (lock contention, partial disk failure, transient
+                Scylla quorum loss).
+              - Cross-check QSDMWalletStorageErrorBurst: if firing
+                concurrently, the wallet API surface is seeing the
+                failures end-to-end (this is expected). If NOT
+                firing but QSDMStorageWriteErrorBurst is, the
+                error volume is from p2p ingress (libp2p
+                accepting txs that storage then rejects) rather
+                than the wallet API.
+              - Inspect node logs for storage error messages
+                (SQLite "database is locked", Scylla "quorum",
+                FileStorage "no space left").
+
+      - alert: QSDMStorageReadyFailing
+        # Storage Ready() probe failing > 0 for 2m. This is the
+        # lowest-level health signal — Ready() is called by the
+        # /healthz endpoint, the wallet handler, and the metrics
+        # check. A Ready() failure means the backend is fully
+        # offline (file directory missing, SQLite DB closed,
+        # Scylla session dead). Critical because the validator
+        # cannot meaningfully participate in consensus without
+        # a working storage backend.
+        expr: |
+          rate(qsdm_storage_op_total{op="ready",result="error"}[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+          subsystem: v2-storage
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#32-mode-b--qsdmstoragereadyfailing"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-storage-incident.json"
+          summary: "{{ $labels.instance }}: storage Ready() probe failing"
+          description: |
+            qsdm_storage_op_total{op="ready",result="error"} is
+            non-zero on {{ $labels.instance }} for ≥2m. The
+            storage backend is reporting itself unhealthy on the
+            health-probe path — either fully offline or
+            unreachable.
+
+            Likely causes:
+              - SQLite: db file deleted, FS unmounted, fsync
+                failure on the journal.
+              - FileStorage: storage directory removed or
+                permissions broken.
+              - Scylla: session lost (auth expiry, TLS cert
+                rotation, network partition to the cluster).
+
+            Immediate consequences:
+              - /api/v1/health returns 503 — load balancers
+                will (correctly) take this node out of rotation.
+              - QSDMNoTransactionsStored will follow within
+                30m if this stays unresolved.
+              - QSDMMiningChainStuck will follow if a majority
+                of validators hit this concurrently.
+
+            Triage:
+              - Confirm the underlying backend is reachable:
+                  - SQLite: `ls -la <db-path>` from the node.
+                  - FileStorage: `ls -la <storage-dir>`.
+                  - Scylla: `cqlsh <host>` from the node.
+              - If the backend is alive but the validator can't
+                reach it, the issue is between the node and the
+                backend (DNS, TLS, auth, firewall). Restart
+                with the correct config.

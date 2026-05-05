@@ -14,6 +14,96 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Storage-backend observability: per-(op, result) counter +
+  2 alerts + 2-mode runbook (2026-05-05).** Closes a
+  long-standing instrumentation gap in the storage layer.
+  Before this commit, `pkg/storage/sqlite.go`'s
+  `StoreTransaction` had **no Prometheus instrumentation at
+  all** — a write failure (database locked, disk full,
+  encryption failure, compression failure) was log-only,
+  invisible to alerting. The legacy
+  `monitoring.RecordStorageOperation` hook covered
+  `GetBalance` / `UpdateBalance` / `SetBalance` but was
+  exposed only in the `/api/metrics` JSON map, not in the
+  OpenMetrics scrape used for alerting.
+  - **New artefacts**:
+    - [`QSDM/source/pkg/monitoring/storage_op_metrics.go`](QSDM/source/pkg/monitoring/storage_op_metrics.go)
+      — `qsdm_storage_op_total{op,result}` counter with 5 ops
+      (`store_transaction`, `get_balance`, `update_balance`,
+      `set_balance`, `ready`) × 2 results (`success`, `error`)
+      = 10 always-populated rows. Cold-start nodes never
+      bootstrap with missing-data, so alert expressions like
+      `rate(...{result="error"}[5m]) > 0` evaluate against a
+      defined time series from process start.
+      `RecordStorageOp(op, result)` is the public mutator;
+      unknown (op, result) tuples no-op rather than panicking.
+    - [`QSDM/source/pkg/monitoring/storage_op_metrics_test.go`](QSDM/source/pkg/monitoring/storage_op_metrics_test.go)
+      — verifies all 10 (op, result) rows are emitted, that
+      counter increments reflect in `PrometheusExposition()`,
+      and that unknown tags are silently dropped.
+    - [`QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md`](QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md)
+      — two-mode runbook. Mode A (`QSDMStorageWriteErrorBurst`,
+      warning, `for: 5m`) catches sustained write-error
+      bursts: rate-of-store_transaction-error * 60 > 1.
+      Mode B (`QSDMStorageReadyFailing`, **critical**,
+      `for: 2m`) catches `Ready()` probe failures — the
+      lowest-level health signal because the validator can't
+      meaningfully participate in consensus without working
+      storage.
+  - **Wiring**:
+    - [`QSDM/source/pkg/storage/sqlite.go`](QSDM/source/pkg/storage/sqlite.go)
+      `StoreTransaction` is now `(resErr error)` named-return
+      with a single `defer` that flips the success/error
+      counter at every termination point (early dedupe-skip,
+      JSON-fallback path, and the per-row INSERT branch).
+      `GetBalance` / `UpdateBalance` / `SetBalance` /
+      `Ready` also call `RecordStorageOp` alongside the
+      legacy `RecordStorageOperation` (legacy path preserved
+      for `/api/metrics` JSON consumers).
+    - [`QSDM/source/pkg/storage/file_storage.go`](QSDM/source/pkg/storage/file_storage.go)
+      `StoreTransaction` and `Ready` instrumented via the
+      same named-return pattern.
+    - [`QSDM/source/pkg/storage/scylla.go`](QSDM/source/pkg/storage/scylla.go)
+      `storeTransactionWithOptions` (the shared
+      implementation behind `StoreTransaction` and
+      `StoreTransactionMigrate`) and `Ready` instrumented;
+      the pre-existing `RecordStorageOperation` call is
+      preserved for backwards-compatibility.
+    - [`QSDM/source/pkg/monitoring/prometheus_scrape.go`](QSDM/source/pkg/monitoring/prometheus_scrape.go)
+      registers `storageOpPrometheusMetrics` as a collector.
+  - **Alerts** (in
+    [`QSDM/deploy/prometheus/alerts_qsdm.example.yml`](QSDM/deploy/prometheus/alerts_qsdm.example.yml),
+    new group `qsdm-storage`):
+    - `QSDMStorageWriteErrorBurst` — store_transaction error
+      rate > 1/min sustained 5m. Companion to
+      `QSDMNoTransactionsStored` (full-wedge sentinel) and
+      `QSDMWalletStorageErrorBurst` (wallet-API-surface
+      symptom of the same class).
+    - `QSDMStorageReadyFailing` — `Ready()` probe error
+      rate > 0 for 2m. Critical because `/api/v1/health`
+      returns 503 and `QSDMNoTransactionsStored` /
+      `QSDMMiningChainStuck` follow downstream.
+  - **CI**: promtool tests added to
+    [`alerts_qsdm.test.spec.yml`](QSDM/deploy/prometheus/alerts_qsdm.test.spec.yml)
+    (early/late firing checkpoints for both alerts);
+    runbook coverage check verifies all 44 alerts now have
+    resolvable `runbook_url` and `dashboard_url`s; auto-
+    generated dashboard
+    `qsdm-runbook-storage-incident.json` shipped.
+  - **Verification**: `go build ./... && go test
+    ./pkg/storage/... ./pkg/monitoring/... ./pkg/api/...`
+    pass under `CGO_ENABLED=0`. promtool unit tests pass
+    (44 alerts captured, all anchors resolve, 383 in-
+    runbook links resolve, 15 dashboards cover all alerts).
+  - **Operational impact**: storage write failures are no
+    longer log-only. A wedged Scylla cluster, a full disk,
+    a permission-changed FileStorage directory, or a
+    locked SQLite DB now fires within 5m (write-error
+    burst) or 2m (`Ready()` failure), with a runbook that
+    explains how to triage by op tag and how to disambiguate
+    from the wallet-API-surface and aggregate-throughput
+    sentinels firing concurrently.
+
 - **Wallet handler-side observability: 4 per-result counters +
   3 alerts + 3-mode runbook (2026-05-04).** Closes the
   handler-side wallet observability gap. Before this commit,
