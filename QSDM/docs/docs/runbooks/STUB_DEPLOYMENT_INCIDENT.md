@@ -354,19 +354,36 @@ can handle.
 
 > **Severity in production: LOW — WASM modules will not load.**
 
-`pkg/wasm/sdk_stub.go` (non-CGO build) returns an error for
-every `NewWASMSDK()` call. WASM module hooks (`[wasm.*]`
-configuration sections) cannot be loaded — but the validator
-itself runs fine without them.
+`pkg/wasm/sdk_stub.go` (non-CGO build) and
+`pkg/wasm/sdk_wasmtime_disabled.go` (CGO build with no wasmtime
+DLLs) both return an error for every `NewWASMSDK()` call. WASM
+module hooks (`[wasm.*]` configuration sections) cannot be
+loaded — but the validator itself runs fine without them.
+
+> **The flag is opt-in.** The stub flag flips on the FIRST
+> `NewWASMSDK()` call, NOT at process start. A non-CGO node
+> that doesn't configure any WASM module will never trigger
+> `qsdm_stub_active{kind="wasm_sdk"}` — the contracts engine
+> uses pure-Go wazero, and wallet WASM is opt-in via the
+> `wasm_modules/wallet/wallet.wasm` path. If you ARE seeing
+> the alert fire, the operator's config (or build) tried to
+> wire a WASM module, the construction failed, and the
+> validator is now running with the simulation/wazero
+> fallbacks instead.
 
 ### kind-wasm-sdk — triage
 
 1. **Confirm whether WASM modules are configured.** If the
-   operator's config has no `[wasm.*]` sections, the stub is
-   inert and the alert can be silenced.
+   operator's config has no `[wasm.*]` sections AND no
+   `wasm_modules/wallet/wallet.wasm` is loaded at startup,
+   the alert was triggered by a one-off load attempt during
+   the current process lifetime; restart the validator to
+   clear the flag, or silence the alert if the dangling
+   load attempt is benign.
 2. **If WASM modules ARE configured:** they will fail to
    load on every restart. The operator should either remove
-   the WASM config or rebuild with CGO enabled.
+   the WASM config or rebuild with CGO + wasmtime DLLs (or
+   migrate the module to wazero, which runs CGO-free).
 
 ---
 

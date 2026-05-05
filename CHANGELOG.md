@@ -14,6 +14,48 @@ attempt to retroactively enumerate that history.
 
 ### Changed
 
+- **WASM SDK stub flag is now opt-in, not always-on (2026-05-05).**
+  `pkg/wasm/sdk_stub.go` previously called
+  `stubactive.MarkActive(KindWasmSDK)` from package `init()`,
+  meaning every non-CGO build flipped
+  `qsdm_stub_active{kind="wasm_sdk"} = 1` at process start
+  regardless of whether WASM modules were configured. That
+  was a false positive — the contracts engine prefers
+  pure-Go wazero, and `wasm_modules/wallet/wallet.wasm`
+  loading is opt-in — and it drowned the dangerous-stub
+  signal in benign noise across every CGO-disabled deploy.
+  Moved `MarkActive` from `init()` to inside `NewWASMSDK()`
+  so the flag flips only when an operator actually attempts
+  to construct a WASM SDK. Applied the same fix to
+  `pkg/wasm/sdk_wasmtime_disabled.go` (CGO build with no
+  wasmtime DLLs) — that file previously didn't mark the
+  stub at all, so a CGO build that linked against liboqs
+  but lacked wasmtime DLLs ran with broken WASM and emitted
+  no Prometheus signal.
+  - **Regression guard: `TestWasmSDK_StubActiveIsLazy` in
+    `pkg/wasm/sdk_stubactive_test.go`.** Asserts the kind is
+    inactive after package load, then triggers `NewWASMSDK`
+    and asserts the kind flips. Skips on real wasmtime
+    builds where the SDK constructs successfully.
+  - **Runbook updated**:
+    [`STUB_DEPLOYMENT_INCIDENT.md` § kind-wasm-sdk](QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md#kind-wasm-sdk)
+    now documents the opt-in semantics, calls out the
+    pure-Go wazero default, and updates triage so an
+    on-call seeing the alert immediately checks whether
+    the operator's config (or build) tried to load a WASM
+    module.
+  - **Verification (CGO_ENABLED=0):**
+    - `go build ./...` clean.
+    - `go test ./pkg/wasm/... ./pkg/monitoring/stubactive/...`
+      — green, including the new
+      `TestWasmSDK_StubActiveIsLazy`.
+  - **Operational impact.** False-positive
+    `QSDMStubActive{kind="wasm_sdk"}` pages eliminated for
+    every non-CGO deploy that doesn't use WASM modules.
+    The CGO-no-wasmtime gap is closed: those deploys now
+    page like the non-CGO ones do, instead of silently
+    failing.
+
 - **Slashing wiring: production dispatcher now covers all
   three EvidenceKinds with real verifiers (2026-05-05).**
   `internal/v2wiring/v2wiring.go` previously called
