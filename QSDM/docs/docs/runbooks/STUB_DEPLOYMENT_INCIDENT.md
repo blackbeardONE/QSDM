@@ -158,9 +158,10 @@ replica only.
 
 > **Severity in production: CRITICAL — quantum-safe crypto downgrade.**
 
-`pkg/crypto/dilithium_stub.go` (non-CGO build) returns `nil`
-from `NewDilithium()` and every `Sign`/`Verify`/`VerifyWithPublicKey`
-returns `errors.New("Dilithium not available: CGO and liboqs required")`.
+`pkg/crypto/dilithium_stub.go` (non-CGO build, no
+`dilithium_circl` tag) returns `nil` from `NewDilithium()` and
+every `Sign`/`Verify`/`VerifyWithPublicKey` returns
+`errors.New("Dilithium not available: CGO and liboqs required")`.
 
 In practice, this means any code path that needs to **produce or
 verify ML-DSA-87 signatures** errors out — including v2 mining
@@ -172,17 +173,51 @@ When this fires alone (without `kind="poe"`), it usually means
 PoE itself doesn't need Dilithium on the hot path but a downstream
 verifier does.
 
+> **There are now THREE backends.** As of 2026-05-06, ML-DSA-87
+> can be supplied by any of:
+>
+> 1. **CGO + liboqs** — `pkg/crypto/dilithium.go`. Default for
+>    CGO builds. Fastest (AVX2-accelerated), depends on the
+>    liboqs C library being present at build and runtime.
+> 2. **Pure-Go via cloudflare/circl** — `pkg/crypto/dilithium_circl.go`.
+>    Selected by `go build -tags dilithium_circl ./...` on a
+>    non-CGO build. FIPS-204-byte-compatible with the liboqs
+>    backend; same on-the-wire signatures, no CGO toolchain
+>    needed.
+> 3. **Stub** — `pkg/crypto/dilithium_stub.go`. Selected when
+>    NEITHER of the above is in scope (non-CGO, no `dilithium_circl`
+>    tag). Returns errors. **This is the path that fires the
+>    alert.**
+
 ### kind-dilithium — triage
 
 1. **Confirm the build flavour.** SSH onto the affected
    instance: `qsdm --version` should show whether CGO was on
-   at build time. If the binary has CGO disabled, that's the
-   root cause.
+   at build time. If the binary has CGO disabled AND was built
+   without the `dilithium_circl` tag, that's the root cause.
 2. **Check what's failing.** Look at `qsdm_attestation_rejected_total`
-   per `reason` label — non-CGO builds typically see a flood
+   per `reason` label — stub builds typically see a flood
    of `signature_verification_failed` rejections.
-3. **Redeploy with CGO + liboqs**, same as
-   [§ kind-poe](#kind-poe) remediation.
+3. **Pick a remediation path.**
+   - **Fastest fix on a Windows or Alpine VPS** (no liboqs DLL
+     install dance): rebuild non-CGO with the
+     `dilithium_circl` tag. Wallet, PoE, and every downstream
+     ML-DSA-87 path light up with the pure-Go backend; the
+     dilithium stub-active flag stays at 0.
+     ```bash
+     cd QSDM/source
+     CGO_ENABLED=0 go build -tags dilithium_circl -o ../qsdm ./cmd/qsdm
+     ```
+     Stage A landed the backend behind this opt-in tag in
+     2026-05-06 (see `pkg/crypto/dilithium_circl.go`); Stage B
+     will flip it on by default once a soak window has
+     accumulated production parity evidence.
+   - **Best perf on a Linux validator** with liboqs already
+     installed: rebuild with CGO + liboqs, same as
+     [§ kind-poe](#kind-poe) remediation. Use this for
+     validators handling high tx throughput; the AVX2-
+     accelerated liboqs path is meaningfully faster than
+     pure-Go circl for sustained verification load.
 
 ---
 

@@ -1,5 +1,5 @@
-//go:build !cgo
-// +build !cgo
+//go:build !cgo && !dilithium_circl
+// +build !cgo,!dilithium_circl
 
 package crypto
 
@@ -10,9 +10,17 @@ import (
 )
 
 // init flips qsdm_stub_active{kind="dilithium"} to 1 in non-CGO
-// builds. ML-DSA-87 quantum-safe signatures require liboqs
-// (CGO); without it, every Sign/Verify call here returns an
-// error rather than silently producing weaker output.
+// builds *without* the dilithium_circl tag. ML-DSA-87 quantum-
+// safe signatures require either liboqs (CGO) or the cloudflare/
+// circl pure-Go backend (selected by `go build -tags dilithium_circl`,
+// see dilithium_circl.go); with neither available, every
+// Sign/Verify call here returns an error rather than silently
+// producing weaker output.
+//
+// Stage A note: the dilithium_circl backend lands behind an
+// opt-in build tag so default non-CGO builds stay byte-identical
+// to the prior stub behaviour. Stage B will flip the tag and
+// retire this file.
 func init() {
 	stubactive.MarkActive(stubactive.KindDilithium)
 }

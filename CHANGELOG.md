@@ -12,6 +12,67 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Added
+
+- **Pure-Go ML-DSA-87 backend (Stage A, opt-in) (2026-05-06).**
+  Adds `pkg/crypto/dilithium_circl.go`, a third
+  implementation of the `*Dilithium` API alongside the
+  existing CGO+liboqs path (`dilithium.go`) and the always-
+  error stub (`dilithium_stub.go`). The new backend is built
+  on `github.com/cloudflare/circl/sign/mldsa/mldsa87`, which
+  implements FIPS 204 byte-for-byte and emits the same
+  2592-byte public keys / 4627-byte signatures the existing
+  CGO build produces. Wire-compatible: a circl-built
+  validator and a liboqs-built validator can verify each
+  other's signatures without any envelope changes.
+  - **Build-tag selection.** The backend is opt-in:
+    `go build -tags dilithium_circl ./...` on a non-CGO
+    build pulls in `dilithium_circl.go` and excludes
+    `dilithium_stub.go` (which now carries
+    `//go:build !cgo && !dilithium_circl`). CGO builds are
+    unchanged. **Default non-CGO builds are unchanged** —
+    Stage A intentionally lands the code behind a tag so
+    the parity tests run in CI before any operational
+    behaviour shifts.
+  - **Parity tests** (`pkg/crypto/dilithium_circl_test.go`):
+    eight assertions covering FIPS 204 size invariants
+    against `pkg/chain/txsig.go` constants, round-trip
+    sign+verify, external-public-key verification (the
+    consensus-critical path), tamper-detection negatives
+    on each of message / signature / public-key, verify-
+    only handle semantics, deterministic-keygen
+    seed-recovery, and SHA-256 address binding round-trip.
+    All eight pass under `-tags dilithium_circl`.
+  - **Stub-active invariant.** Under
+    `-tags dilithium_circl`, `qsdm_stub_active{kind="dilithium"}`
+    stays at 0 — the dilithium_stub.go init() that flips it
+    is excluded by build tag. Verified by
+    `TestCircl_StubFlagNotMarked`.
+  - **Runbook updated**:
+    [`STUB_DEPLOYMENT_INCIDENT.md` § kind-dilithium](QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md#kind-dilithium)
+    now documents three available backends (CGO+liboqs,
+    pure-Go circl, stub) and the build commands that select
+    each. On-call seeing a Windows or Alpine VPS firing
+    `kind="dilithium"` can now rebuild with the circl tag
+    instead of installing liboqs DLLs.
+  - **Verification (CGO_ENABLED=0):**
+    - `go build ./...` clean (default).
+    - `go build -tags dilithium_circl ./...` clean (opt-in).
+    - `go test -tags dilithium_circl ./pkg/crypto/...`
+      — green, all 8 parity tests pass.
+    - `go test ./pkg/wasm/... ./pkg/monitoring/stubactive/...
+      ./internal/v2wiring/... ./pkg/mining/slashing/...`
+      — green (no regressions on the default build path).
+  - **Operational impact.** Stage A is zero impact by
+    design — no production binary changes behaviour until
+    Stage B flips the tag default. What it provides is the
+    safety net: parity tests in CI lock the wire-format
+    contract between liboqs and circl, so Stage B can flip
+    the default with confidence that a chain running mixed
+    backends won't fork. New dependency:
+    `github.com/cloudflare/circl v1.6.3` (pure Go, MIT/BSD
+    licensed, ~10kloc with the mldsa subtree).
+
 ### Changed
 
 - **WASM SDK stub flag is now opt-in, not always-on (2026-05-05).**
