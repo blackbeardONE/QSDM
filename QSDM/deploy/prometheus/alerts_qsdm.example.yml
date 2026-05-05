@@ -2474,3 +2474,103 @@ groups:
                 cases. If the alert re-fires immediately
                 after restart, it's a network-layer issue,
                 not a goroutine drift.
+
+  # =====================================================================
+  # qsdm-contracts-bridge — smart-contract execution + atomic-swap bridge
+  #
+  # Two alerts cover the two new metric surfaces. Both are
+  # threshold-on-error-rate, intentionally tuned to be
+  # conservative — these subsystems can carry user-driven
+  # error volume (gas exhaustion, invalid secret submission)
+  # that's not necessarily a system fault. The thresholds
+  # match sustained dominant-error patterns rather than
+  # absolute error counts.
+  # =====================================================================
+  - name: qsdm-contracts-bridge
+    rules:
+      - alert: QSDMContractExecuteErrorRate
+        # Contract executions failing at >50% of total volume
+        # for ≥15m AND with at least 1 attempt/min sustained.
+        # Filters out the "rarely-used contract that errored
+        # once" case while still catching a sustained
+        # systematic failure (gas envelope misconfiguration,
+        # ABI drift, runtime regression).
+        expr: |
+          (
+            rate(qsdm_contract_executions_total{result="error"}[15m])
+            /
+            (rate(qsdm_contract_executions_total[15m]) > 0)
+          ) > 0.5
+          and
+          rate(qsdm_contract_executions_total[15m]) * 60 >= 1
+        for: 15m
+        labels:
+          severity: warning
+          subsystem: v2-contracts
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/CONTRACTS_BRIDGE_INCIDENT.md#31-mode-a--qsdmcontractexecuteerrorrate"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-contracts-bridge-incident.json"
+          summary: "{{ $labels.instance }}: contract execution error rate > 50% for ≥15m"
+          description: |
+            ContractEngine.ExecuteContract on
+            {{ $labels.instance }} has been failing at >50%
+            of total volume (with ≥1 call/min) sustained for
+            ≥15m. Likely:
+              - WASM runtime regression (per-contract wazero
+                or shared wazero failing systematically).
+              - Gas envelope misconfiguration causing the
+                majority of calls to exhaust their limit.
+              - ABI/codec drift after a deploy: callers are
+                passing args the contracts no longer accept.
+              - simulation-fallback path producing an error
+                where the real WASM runtime would have
+                succeeded.
+
+            Triage:
+              - Inspect node logs for "function not found",
+                "gas exhausted", or runtime panic stacks.
+              - Cross-check qsdm_stub_active{kind="wasm_sdk"} —
+                if 1, the WASM SDK stub is active, which can
+                produce systematic errors. See
+                STUB_DEPLOYMENT_INCIDENT.md.
+              - If failure is concentrated to a single
+                contract, that contract has likely shipped a
+                broken update; consider rolling it back.
+
+      - alert: QSDMBridgeOpErrorBurst
+        # Bridge op error rate > 0.2/min sustained for 10m.
+        # Lower threshold than the contract alert because
+        # each bridge op represents a real cross-chain
+        # action and a sustained error rate has direct
+        # economic impact (locked funds that won't redeem).
+        expr: |
+          rate(qsdm_bridge_op_total{result="error"}[10m]) * 60 > 0.2
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: v2-bridge
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/CONTRACTS_BRIDGE_INCIDENT.md#32-mode-b--qsdmbridgeoperrorburst"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-contracts-bridge-incident.json"
+          summary: "{{ $labels.instance }}: bridge op error rate > 0.2/min for ≥10m"
+          description: |
+            BridgeProtocol on {{ $labels.instance }} has had
+            errors at >0.2/min sustained for ≥10m. Drill by
+            op tag to identify the failing stage:
+
+              topk(3, sum by (op) (rate(qsdm_bridge_op_total{result="error"}[10m])))
+
+            Per-op interpretation:
+              - op="lock": secret-generation failed, or the
+                source-chain lock state is stuck. Inspect
+                generateSecret / generateLockID call paths.
+              - op="redeem": invalid-secret spam (adversarial
+                or buggy redeemer client) OR cross-chain
+                proof failures. Cross-reference with
+                qsdm_p2p_messages_total — a redeem-error
+                burst with no other p2p activity hints at
+                spam.
+              - op="refund": post-expiry recovery is failing
+                — locks aren't transitioning to LockStatusRefunded.
+                This is the highest-stakes case: funds are
+                stuck. Investigate immediately.

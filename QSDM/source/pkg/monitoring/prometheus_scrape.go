@@ -52,6 +52,13 @@ func GlobalScrapePrometheusExporter() *PrometheusExporter {
 		// hot paths). Closes the gap where pkg/networking
 		// had ZERO Prometheus instrumentation prior.
 		globalScrapeExporter.RegisterCollector("qsdm_p2p", networkPrometheusMetrics)
+		// qsdm_contract_executions_total{result} and
+		// qsdm_bridge_op_total{op,result} from
+		// contracts_bridge_metrics.go. Closes the gap where
+		// pkg/contracts (ContractEngine) and pkg/bridge
+		// (BridgeProtocol) had ZERO Prometheus
+		// instrumentation prior.
+		globalScrapeExporter.RegisterCollector("qsdm_contracts_bridge", contractsBridgePrometheusMetrics)
 	})
 	return globalScrapeExporter
 }

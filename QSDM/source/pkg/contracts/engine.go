@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 	"github.com/blackbeardONE/QSDM/pkg/wasm"
 )
 
@@ -139,7 +140,19 @@ func (ce *ContractEngine) DeployContract(ctx context.Context, contractID string,
 }
 
 // ExecuteContract executes a contract function
-func (ce *ContractEngine) ExecuteContract(ctx context.Context, contractID string, functionName string, args map[string]interface{}) (*ExecutionResult, error) {
+func (ce *ContractEngine) ExecuteContract(ctx context.Context, contractID string, functionName string, args map[string]interface{}) (resExec *ExecutionResult, resErr error) {
+	// Single instrumentation point: every return path flips
+	// qsdm_contract_executions_total{result=...}. ExecutionResult
+	// nil-with-error counts as error; non-nil-with-error too
+	// (the engine has both shapes); only no-error is success.
+	defer func() {
+		if resErr != nil {
+			monitoring.RecordContractExecution(monitoring.ContractExecResultError)
+		} else {
+			monitoring.RecordContractExecution(monitoring.ContractExecResultSuccess)
+		}
+	}()
+
 	ce.mu.RLock()
 	contract, exists := ce.contracts[contractID]
 	ce.mu.RUnlock()

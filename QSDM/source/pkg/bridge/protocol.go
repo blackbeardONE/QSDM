@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/crypto"
+	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 )
 
 // BridgeProtocol handles cross-chain interoperability
@@ -60,7 +61,15 @@ func NewBridgeProtocol() (*BridgeProtocol, error) {
 }
 
 // LockAsset locks an asset on the source chain
-func (bp *BridgeProtocol) LockAsset(ctx context.Context, sourceChain, targetChain, asset string, amount float64, recipient string, expiryDuration time.Duration) (*Lock, error) {
+func (bp *BridgeProtocol) LockAsset(ctx context.Context, sourceChain, targetChain, asset string, amount float64, recipient string, expiryDuration time.Duration) (resLock *Lock, resErr error) {
+	defer func() {
+		if resErr != nil {
+			monitoring.RecordBridgeOp(monitoring.BridgeOpLock, monitoring.BridgeOpResultError)
+		} else {
+			monitoring.RecordBridgeOp(monitoring.BridgeOpLock, monitoring.BridgeOpResultSuccess)
+		}
+	}()
+
 	// Generate secret and hash
 	secret := generateSecret()
 	secretHash := hashSecret(secret)
@@ -93,7 +102,15 @@ func (bp *BridgeProtocol) LockAsset(ctx context.Context, sourceChain, targetChai
 }
 
 // RedeemAsset redeems a locked asset on the target chain
-func (bp *BridgeProtocol) RedeemAsset(ctx context.Context, lockID string, secret string) error {
+func (bp *BridgeProtocol) RedeemAsset(ctx context.Context, lockID string, secret string) (resErr error) {
+	defer func() {
+		if resErr != nil {
+			monitoring.RecordBridgeOp(monitoring.BridgeOpRedeem, monitoring.BridgeOpResultError)
+		} else {
+			monitoring.RecordBridgeOp(monitoring.BridgeOpRedeem, monitoring.BridgeOpResultSuccess)
+		}
+	}()
+
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
 
@@ -128,7 +145,15 @@ func (bp *BridgeProtocol) RedeemAsset(ctx context.Context, lockID string, secret
 }
 
 // RefundAsset refunds a locked asset if it hasn't been redeemed
-func (bp *BridgeProtocol) RefundAsset(ctx context.Context, lockID string) error {
+func (bp *BridgeProtocol) RefundAsset(ctx context.Context, lockID string) (resErr error) {
+	defer func() {
+		if resErr != nil {
+			monitoring.RecordBridgeOp(monitoring.BridgeOpRefund, monitoring.BridgeOpResultError)
+		} else {
+			monitoring.RecordBridgeOp(monitoring.BridgeOpRefund, monitoring.BridgeOpResultSuccess)
+		}
+	}()
+
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
 

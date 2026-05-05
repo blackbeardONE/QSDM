@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMStubActive`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_stub_active == 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md#kind-{{ reReplaceAll \"_\" \"-\" $labels.kind }}",
+      "description": "**Alert**: `QSDMContractExecuteErrorRate`\n\n**Severity**: `warning`\n\n**Trigger**: `( rate(qsdm_contract_executions_total{result=\"error\"}[15m]) / (rate(qsdm_contract_executions_total[15m]) > 0) ) > 0.5 and rate(qsdm_contract_executions_total[15m]) * 60 >= 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/CONTRACTS_BRIDGE_INCIDENT.md#31-mode-a--qsdmcontractexecuteerrorrate",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -60,7 +60,7 @@
                 "value": null
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 1
               }
             ]
@@ -75,7 +75,7 @@
         "x": 0,
         "y": 0
       },
-      "id": 37,
+      "id": 11,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -96,14 +96,79 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "qsdm_stub_active == 1",
+          "expr": "( rate(qsdm_contract_executions_total{result=\"error\"}[15m]) / (rate(qsdm_contract_executions_total[15m]) > 0) ) > 0.5 and rate(qsdm_contract_executions_total[15m]) * 60 >= 1",
           "instant": false,
           "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "QSDMStubActive",
+      "title": "QSDMContractExecuteErrorRate",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "**Alert**: `QSDMBridgeOpErrorBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_bridge_op_total{result=\"error\"}[10m]) * 60 > 0.2`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/CONTRACTS_BRIDGE_INCIDENT.md#32-mode-b--qsdmbridgeoperrorburst",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.2
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(qsdm_bridge_op_total{result=\"error\"}[10m]) * 60",
+          "instant": false,
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "QSDMBridgeOpErrorBurst",
       "type": "stat"
     }
   ],
@@ -123,8 +188,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "QSDM — Stub Deployment Incident",
-  "uid": "qsdm-runbook-stub-deployment-incident",
+  "title": "QSDM — Contracts Bridge Incident",
+  "uid": "qsdm-runbook-contracts-bridge-incident",
   "version": 1,
   "weekStart": ""
 }

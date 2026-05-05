@@ -14,6 +14,84 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Smart-contract + atomic-swap bridge observability:
+  per-result + per-(op,result) counters + 2 alerts +
+  2-mode runbook (2026-05-05).** Closes a long-standing
+  instrumentation gap. Both `pkg/contracts` and
+  `pkg/bridge` had **zero** Prometheus instrumentation
+  before this commit. Contract gas-exhaustion failures, a
+  WASM runtime regression, a stuck bridge lock, or a flood
+  of invalid-secret redemption attempts were all log-only.
+  - **New artefacts**:
+    - [`QSDM/source/pkg/monitoring/contracts_bridge_metrics.go`](QSDM/source/pkg/monitoring/contracts_bridge_metrics.go)
+      — defines `qsdm_contract_executions_total{result}` (2
+      rows: success / error) and `qsdm_bridge_op_total{op,result}`
+      (6 rows: 3 ops × 2 results, all pre-populated at 0).
+      `RecordContractExecution(result)` and
+      `RecordBridgeOp(op, result)` are the public mutators;
+      unknown op/result tuples no-op rather than panicking.
+    - [`QSDM/source/pkg/monitoring/contracts_bridge_metrics_test.go`](QSDM/source/pkg/monitoring/contracts_bridge_metrics_test.go)
+      — verifies all 8 rows are emitted, that counter
+      increments reflect in `PrometheusExposition()`, and
+      that unknown labels are silently dropped.
+    - [`QSDM/docs/docs/runbooks/CONTRACTS_BRIDGE_INCIDENT.md`](QSDM/docs/docs/runbooks/CONTRACTS_BRIDGE_INCIDENT.md)
+      — two-mode runbook with conservative thresholds
+      (these subsystems carry user-driven error volume that
+      isn't necessarily a system fault). Mode A fires on
+      contract execution error ratio > 50% with ≥1 call/min
+      sustained 15m; Mode B fires on bridge op error rate
+      > 0.2/min sustained 10m. Mode B includes per-op
+      interpretation tables (lock/redeem/refund), with the
+      `op="refund"` case flagged as highest-stakes
+      ("funds are stuck") and a cross-reference to
+      `qsdm_p2p_messages_total` for redeem-error vs.
+      adversarial-spam disambiguation.
+  - **Wiring**:
+    - [`QSDM/source/pkg/contracts/engine.go`](QSDM/source/pkg/contracts/engine.go)
+      — `ContractEngine.ExecuteContract` converted to
+      `(resExec, resErr)` named-return with a single
+      `defer` that flips
+      `qsdm_contract_executions_total{result=...}` at every
+      termination point (function-not-found, gas
+      exhaustion, runtime panic, ABI mismatch, success).
+    - [`QSDM/source/pkg/bridge/protocol.go`](QSDM/source/pkg/bridge/protocol.go)
+      — `LockAsset`, `RedeemAsset`, `RefundAsset` each
+      converted to named-return with a single `defer` that
+      flips `qsdm_bridge_op_total{op=..., result=...}`.
+    - [`QSDM/source/pkg/monitoring/prometheus_scrape.go`](QSDM/source/pkg/monitoring/prometheus_scrape.go)
+      registers `contractsBridgePrometheusMetrics` as a
+      collector.
+  - **Alerts** (in
+    [`QSDM/deploy/prometheus/alerts_qsdm.example.yml`](QSDM/deploy/prometheus/alerts_qsdm.example.yml),
+    new group `qsdm-contracts-bridge`):
+    - `QSDMContractExecuteErrorRate` (warning, `for: 15m`):
+      error ratio > 50% with ≥1 call/min. Companion to
+      `QSDMStubActive{kind="wasm_sdk"}` (upstream sentinel
+      when the SDK stub is producing the errors).
+    - `QSDMBridgeOpErrorBurst` (warning, `for: 10m`):
+      error rate > 0.2/min — lower threshold than the
+      contract alert because each bridge op carries direct
+      economic impact.
+  - **CI**: promtool unit tests added to
+    [`alerts_qsdm.test.spec.yml`](QSDM/deploy/prometheus/alerts_qsdm.test.spec.yml)
+    (early/late firing checkpoints for both alerts);
+    runbook coverage check now verifies all 48 alerts have
+    resolvable `runbook_url` and `dashboard_url`s; auto-
+    generated `qsdm-runbook-contracts-bridge-incident.json`
+    shipped.
+  - **Verification**: `go build ./... && go test
+    ./pkg/contracts/... ./pkg/bridge/... ./pkg/monitoring/...`
+    pass under `CGO_ENABLED=0`. promtool tests pass (48
+    alerts; 423 in-runbook links resolve across 17 files;
+    17 dashboards cover all alerts).
+  - **Operational impact**: contract execution failures
+    (gas exhausted, ABI drift, runtime regression) and
+    bridge op failures (cross-chain proof failure, stuck
+    refund, invalid-secret spam) are now visible to
+    alerting. Mode B's per-op breakdown lets an operator
+    distinguish a redeem-spam attack from a refund wedge
+    immediately on page.
+
 - **libp2p peer-graph observability: pulled gauge + push
   counters + 2 alerts + 2-mode runbook (2026-05-05).**
   Closes a long-standing instrumentation gap. Before this

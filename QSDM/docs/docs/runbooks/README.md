@@ -1,7 +1,7 @@
 # QSDM Operator Runbooks — Master Index
 
 This is the operator's first page when paged for any
-`QSDM*` Prometheus alert. It lists all 46 alerts in
+`QSDM*` Prometheus alert. It lists all 48 alerts in
 [`alerts_qsdm.example.yml`](../../../deploy/prometheus/alerts_qsdm.example.yml),
 maps each to its dedicated runbook section, and shows
 the cross-subsystem escalation paths in one place.
@@ -60,6 +60,8 @@ link directly to the relevant `### 3.x Mode X` (or
 | `QSDMAttestRejectionPerMinerRateLimited`       | warning      | `qsdm-v2-attest-recent-rejections`| [`REJECTION_FLOOD.md` §7.3](REJECTION_FLOOD.md#73-mode-c--qsdmattestrejectionperminerratelimited) |
 | `QSDMAttestRejectionPersistCompactionsHigh`    | warning      | `qsdm-v2-attest-recent-rejections`| [`REJECTION_FLOOD.md` §7.1](REJECTION_FLOOD.md#71-mode-a--qsdmattestrejectionpersistcompactionshigh) |
 | `QSDMAttestRejectionPersistHardCapDropping`    | warning      | `qsdm-v2-attest-recent-rejections`| [`REJECTION_FLOOD.md` §7.2](REJECTION_FLOOD.md#72-mode-b--qsdmattestrejectionpersisthardcapdropping) |
+| `QSDMBridgeOpErrorBurst`                       | warning      | `qsdm-contracts-bridge`           | [`CONTRACTS_BRIDGE_INCIDENT.md` §3.2](CONTRACTS_BRIDGE_INCIDENT.md#32-mode-b--qsdmbridgeoperrorburst)         |
+| `QSDMContractExecuteErrorRate`                 | warning      | `qsdm-contracts-bridge`           | [`CONTRACTS_BRIDGE_INCIDENT.md` §3.1](CONTRACTS_BRIDGE_INCIDENT.md#31-mode-a--qsdmcontractexecuteerrorrate)   |
 | `QSDMGovAuthorityCountTooLow`                  | **critical** | `qsdm-v2-governance`              | [`GOVERNANCE_AUTHORITY_INCIDENT.md` §3.3](GOVERNANCE_AUTHORITY_INCIDENT.md#33-mode-c--qsdmgovauthoritycounttoolow) |
 | `QSDMGovAuthorityThresholdCrossed`             | warning      | `qsdm-v2-governance`              | [`GOVERNANCE_AUTHORITY_INCIDENT.md` §3.2](GOVERNANCE_AUTHORITY_INCIDENT.md#32-mode-b--qsdmgovauthoritythresholdcrossed) |
 | `QSDMGovAuthorityVoteRecorded`                 | info         | `qsdm-v2-governance`              | [`GOVERNANCE_AUTHORITY_INCIDENT.md` §3.1](GOVERNANCE_AUTHORITY_INCIDENT.md#31-mode-a--qsdmgovauthorityvoterecorded) |
@@ -98,8 +100,8 @@ link directly to the relevant `### 3.x Mode X` (or
 | `QSDMWalletSendErrorRate`                      | warning      | `qsdm-wallet`                     | [`WALLET_INCIDENT.md` §3.1](WALLET_INCIDENT.md#31-mode-a--qsdmwalletsenderrorrate)         |
 | `QSDMWalletStorageErrorBurst`                  | warning      | `qsdm-wallet`                     | [`WALLET_INCIDENT.md` §3.2](WALLET_INCIDENT.md#32-mode-b--qsdmwalletstorageerrorburst)     |
 
-**Total: 46 alerts. Severity distribution: 9 critical
-/ 35 warning / 2 info.**
+**Total: 48 alerts. Severity distribution: 9 critical
+/ 37 warning / 2 info.**
 
 ---
 
@@ -523,6 +525,47 @@ starved AND the local node has no ingress path),
 [`SUBMESH_POLICY_INCIDENT.md`](SUBMESH_POLICY_INCIDENT.md)
 (when the network is fine but submesh-policy rejects are
 dominating — orthogonal to this runbook).
+
+---
+
+### `CONTRACTS_BRIDGE_INCIDENT.md` — smart contracts + atomic-swap bridge
+
+Two-mode runbook covering both the WASM contract
+execution path and the atomic-swap bridge protocol.
+Mode A catches sustained dominant-error contract
+execution (>50% error ratio with ≥1 call/min over 15m);
+Mode B catches a bridge op error burst (>0.2/min over
+10m) with explicit per-op interpretation tables for
+lock / redeem / refund.
+
+Closes a long-standing instrumentation gap: both
+`pkg/contracts` and `pkg/bridge` had **zero**
+Prometheus instrumentation before this commit. Contract
+gas-exhaustion failures, a WASM runtime regression, a
+stuck bridge lock, or a flood of invalid-secret
+redemption attempts were all log-only.
+
+| Alert | Mode | Severity |
+|---|---|---|
+| [`QSDMContractExecuteErrorRate`](CONTRACTS_BRIDGE_INCIDENT.md#31-mode-a--qsdmcontractexecuteerrorrate) | A | warning |
+| [`QSDMBridgeOpErrorBurst`](CONTRACTS_BRIDGE_INCIDENT.md#32-mode-b--qsdmbridgeoperrorburst)             | B | warning |
+
+**When to read:** WASM contract execution is failing
+systematically (Mode A) or the atomic-swap bridge has
+sustained errors at the lock/redeem/refund layer (Mode
+B). Mode B's `op="refund"` case is the highest-stakes
+because it implies funds are stuck post-expiry.
+
+**Companions:** [`STUB_DEPLOYMENT_INCIDENT.md`](STUB_DEPLOYMENT_INCIDENT.md)
+(`kind="wasm_sdk"` is the upstream sentinel when the
+WASM SDK fallback is producing the errors that cascade
+into Mode A; cross-check on every Mode A page),
+[`MINING_LIVENESS.md`](MINING_LIVENESS.md)
+(downstream chain-stall risk),
+[`OPERATOR_HYGIENE_INCIDENT.md`](OPERATOR_HYGIENE_INCIDENT.md)
+(`QSDMNoTransactionsStored` may co-fire if bridge
+errors are accompanied by a storage-layer issue —
+coincidence rather than causal chain).
 
 ---
 

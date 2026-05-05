@@ -1297,3 +1297,67 @@ tests:
             description: "On i1, qsdm_p2p_peers_connected\n> 0 but the inbound message rate is exactly zero\nfor ≥10m. The validator's libp2p host has live\nconnections that aren't producing pubsub\ntraffic.\n\nLikely:\n  - Subscription on the qsdm-transactions topic\n    was dropped (e.g. context cancellation but\n    handleMessages goroutine still nominally\n    \"running\").\n  - One-way network partition: outbound dials work,\n    inbound payload delivery is silently dropped\n    (NAT misconfiguration, asymmetric firewall).\n  - All connected peers have been quarantined or\n    are themselves muted from the topic.\n\nTriage:\n  - Cross-check QSDMQuarantineAnySubmesh — if\n    co-firing, our peer set is silenced by quarantine\n    policy rather than broken at the network layer.\n  - Restart the validator. handleMessages re-binds\n    the subscription cleanly on startup, so a\n    bounce is the cheapest recovery for transient\n    cases. If the alert re-fires immediately\n    after restart, it's a network-layer issue,\n    not a goroutine drift.\n"
             runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#32-mode-b--qsdmp2pgossipingressstalled"
             summary: "i1: peers > 0 but no inbound gossip for ≥10m"
+
+  # -------------------------------------------------------------------
+  # qsdm-contracts-bridge — contract exec + bridge op health
+  # CONTRACTS_BRIDGE_INCIDENT.md §3.1 / §3.2
+  # -------------------------------------------------------------------
+
+  - name: "QSDMContractExecuteErrorRate — exec error rate > 50% with >=1/min, for:15m"
+    interval: 1m
+    # 1 success/min + 2 error/min sustained → error ratio
+    # = 2/3 > 0.5 with rate=3/min ≥ 1/min. Crosses for:15m
+    # at ~30m.
+    input_series:
+      - series: 'qsdm_contract_executions_total{result="success",instance="i1"}'
+        values: '0+1x40'
+      - series: 'qsdm_contract_executions_total{result="error",instance="i1"}'
+        values: '0+2x40'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: QSDMContractExecuteErrorRate
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 32m
+        alertname: QSDMContractExecuteErrorRate
+        exp_alerts:
+        - exp_labels:
+            instance: "i1"
+            result: "error"
+            severity: "warning"
+            subsystem: "v2-contracts"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-contracts-bridge-incident.json"
+            description: "ContractEngine.ExecuteContract on\ni1 has been failing at >50%\nof total volume (with ≥1 call/min) sustained for\n≥15m. Likely:\n  - WASM runtime regression (per-contract wazero\n    or shared wazero failing systematically).\n  - Gas envelope misconfiguration causing the\n    majority of calls to exhaust their limit.\n  - ABI/codec drift after a deploy: callers are\n    passing args the contracts no longer accept.\n  - simulation-fallback path producing an error\n    where the real WASM runtime would have\n    succeeded.\n\nTriage:\n  - Inspect node logs for \"function not found\",\n    \"gas exhausted\", or runtime panic stacks.\n  - Cross-check qsdm_stub_active{kind=\"wasm_sdk\"} —\n    if 1, the WASM SDK stub is active, which can\n    produce systematic errors. See\n    STUB_DEPLOYMENT_INCIDENT.md.\n  - If failure is concentrated to a single\n    contract, that contract has likely shipped a\n    broken update; consider rolling it back.\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/CONTRACTS_BRIDGE_INCIDENT.md#31-mode-a--qsdmcontractexecuteerrorrate"
+            summary: "i1: contract execution error rate > 50% for ≥15m"
+
+  - name: "QSDMBridgeOpErrorBurst — bridge error rate > 0.2/min for 10m, for:10m"
+    interval: 1m
+    # 1 redeem error per minute → rate*60 = 1 > 0.2. The
+    # 10m rate window saturates at 10m, then for:10m
+    # fires at 20m.
+    input_series:
+      - series: 'qsdm_bridge_op_total{op="redeem",result="error",instance="i1"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: QSDMBridgeOpErrorBurst
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 22m
+        alertname: QSDMBridgeOpErrorBurst
+        exp_alerts:
+        - exp_labels:
+            instance: "i1"
+            op: "redeem"
+            result: "error"
+            severity: "warning"
+            subsystem: "v2-bridge"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-contracts-bridge-incident.json"
+            description: "BridgeProtocol on i1 has had\nerrors at >0.2/min sustained for ≥10m. Drill by\nop tag to identify the failing stage:\n\n  topk(3, sum by (op) (rate(qsdm_bridge_op_total{result=\"error\"}[10m])))\n\nPer-op interpretation:\n  - op=\"lock\": secret-generation failed, or the\n    source-chain lock state is stuck. Inspect\n    generateSecret / generateLockID call paths.\n  - op=\"redeem\": invalid-secret spam (adversarial\n    or buggy redeemer client) OR cross-chain\n    proof failures. Cross-reference with\n    qsdm_p2p_messages_total — a redeem-error\n    burst with no other p2p activity hints at\n    spam.\n  - op=\"refund\": post-expiry recovery is failing\n    — locks aren't transitioning to LockStatusRefunded.\n    This is the highest-stakes case: funds are\n    stuck. Investigate immediately.\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/CONTRACTS_BRIDGE_INCIDENT.md#32-mode-b--qsdmbridgeoperrorburst"
+            summary: "i1: bridge op error rate > 0.2/min for ≥10m"
