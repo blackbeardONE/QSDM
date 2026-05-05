@@ -2368,3 +2368,109 @@ groups:
                 reach it, the issue is between the node and the
                 backend (DNS, TLS, auth, firewall). Restart
                 with the correct config.
+
+  # =====================================================================
+  # qsdm-p2p — libp2p peer-graph health
+  #
+  # Two alerts cover the most common shapes of a "validator is
+  # alive but isolated from the network" failure: zero
+  # peers (full islanding) and peers-but-no-inbound-gossip
+  # (one-way partition or subscription drift). Both fire
+  # against time series that are guaranteed to be populated
+  # because qsdm_p2p_peers_connected always emits with either
+  # provider="live" or provider="none" (the alert filters to
+  # "live" so test/dev nodes don't false-fire).
+  # =====================================================================
+  - name: qsdm-p2p
+    rules:
+      - alert: QSDMP2PNoPeers
+        # Validator has zero connected libp2p peers for ≥5m on
+        # a host where networking has actually been wired
+        # (provider="live"). The provider label filters out
+        # unit-test / pre-init scrapes which legitimately have
+        # no peers and would otherwise false-fire this alert.
+        expr: |
+          qsdm_p2p_peers_connected{provider="live"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: v2-networking
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#31-mode-a--qsdmp2pnopeers"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-networking-incident.json"
+          summary: "{{ $labels.instance }}: libp2p peer count == 0 for ≥5m"
+          description: |
+            qsdm_p2p_peers_connected{instance="{{ $labels.instance }}",provider="live"}
+            has been 0 for ≥5m. The validator is islanded from
+            the rest of the network — no inbound gossip, no
+            outbound publish reachability. Mining / consensus
+            participation is effectively dead while in this
+            state.
+
+            Common causes:
+              - libp2p TCP port not reachable (firewall change,
+                k8s service config drift, wrong host port).
+              - mDNS-only test deploy on a host with no peer
+                neighbours.
+              - Bootstrap peer list is wrong / unreachable.
+              - libp2p host shutdown but process not crashed
+                (Network.Close() was called and never replaced).
+
+            Triage:
+              - On the node: `ss -tnp | grep <libp2p-port>` to
+                confirm the listener is bound and accepting.
+              - From a known-good peer: try to dial this host
+                directly and confirm whether it accepts the
+                connection.
+              - Check `qsdm_p2p_messages_total{direction="in"}`
+                rate — if 0 across the whole fleet, the
+                ingress side of gossip is dead at every node
+                (likely a deploy-wide config issue, not a
+                single-host problem).
+
+      - alert: QSDMP2PGossipIngressStalled
+        # Connected peers > 0 but received-message rate is
+        # exactly 0 for ≥10m. Peers are visible but not
+        # gossiping — strong signal of a pubsub-topic
+        # subscription failure or a one-way network partition
+        # (we can dial out but inbound gossip never lands).
+        expr: |
+          qsdm_p2p_peers_connected{provider="live"} > 0
+            and on(instance)
+          rate(qsdm_p2p_messages_total{direction="in"}[10m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: v2-networking
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#32-mode-b--qsdmp2pgossipingressstalled"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-networking-incident.json"
+          summary: "{{ $labels.instance }}: peers > 0 but no inbound gossip for ≥10m"
+          description: |
+            On {{ $labels.instance }}, qsdm_p2p_peers_connected
+            > 0 but the inbound message rate is exactly zero
+            for ≥10m. The validator's libp2p host has live
+            connections that aren't producing pubsub
+            traffic.
+
+            Likely:
+              - Subscription on the qsdm-transactions topic
+                was dropped (e.g. context cancellation but
+                handleMessages goroutine still nominally
+                "running").
+              - One-way network partition: outbound dials work,
+                inbound payload delivery is silently dropped
+                (NAT misconfiguration, asymmetric firewall).
+              - All connected peers have been quarantined or
+                are themselves muted from the topic.
+
+            Triage:
+              - Cross-check QSDMQuarantineAnySubmesh — if
+                co-firing, our peer set is silenced by quarantine
+                policy rather than broken at the network layer.
+              - Restart the validator. handleMessages re-binds
+                the subscription cleanly on startup, so a
+                bounce is the cheapest recovery for transient
+                cases. If the alert re-fires immediately
+                after restart, it's a network-layer issue,
+                not a goroutine drift.

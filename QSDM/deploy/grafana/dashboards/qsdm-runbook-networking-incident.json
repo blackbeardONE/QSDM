@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMStorageWriteErrorBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_storage_op_total{op=\"store_transaction\",result=\"error\"}[5m]) * 60 > 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#31-mode-a--qsdmstoragewriteerrorburst",
+      "description": "**Alert**: `QSDMP2PNoPeers`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_p2p_peers_connected{provider=\"live\"} == 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#31-mode-a--qsdmp2pnopeers",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -61,7 +61,7 @@
               },
               {
                 "color": "orange",
-                "value": 1.0
+                "value": 1
               }
             ]
           },
@@ -75,7 +75,7 @@
         "x": 0,
         "y": 0
       },
-      "id": 34,
+      "id": 30,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -96,14 +96,14 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(qsdm_storage_op_total{op=\"store_transaction\",result=\"error\"}[5m]) * 60",
+          "expr": "qsdm_p2p_peers_connected{provider=\"live\"} == 0",
           "instant": false,
           "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "QSDMStorageWriteErrorBurst",
+      "title": "QSDMP2PNoPeers",
       "type": "stat"
     },
     {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMStorageReadyFailing`\n\n**Severity**: `critical`\n\n**Trigger**: `rate(qsdm_storage_op_total{op=\"ready\",result=\"error\"}[5m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#32-mode-b--qsdmstoragereadyfailing",
+      "description": "**Alert**: `QSDMP2PGossipIngressStalled`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_p2p_peers_connected{provider=\"live\"} > 0 and on(instance) rate(qsdm_p2p_messages_total{direction=\"in\"}[10m]) == 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#32-mode-b--qsdmp2pgossipingressstalled",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -125,8 +125,8 @@
                 "value": null
               },
               {
-                "color": "red",
-                "value": 0.0
+                "color": "orange",
+                "value": 1
               }
             ]
           },
@@ -140,7 +140,7 @@
         "x": 6,
         "y": 0
       },
-      "id": 33,
+      "id": 29,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -161,14 +161,14 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(qsdm_storage_op_total{op=\"ready\",result=\"error\"}[5m])",
+          "expr": "qsdm_p2p_peers_connected{provider=\"live\"} > 0 and on(instance) rate(qsdm_p2p_messages_total{direction=\"in\"}[10m]) == 0",
           "instant": false,
           "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "QSDMStorageReadyFailing",
+      "title": "QSDMP2PGossipIngressStalled",
       "type": "stat"
     }
   ],
@@ -188,8 +188,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "QSDM — Storage Incident",
-  "uid": "qsdm-runbook-storage-incident",
+  "title": "QSDM — Networking Incident",
+  "uid": "qsdm-runbook-networking-incident",
   "version": 1,
   "weekStart": ""
 }

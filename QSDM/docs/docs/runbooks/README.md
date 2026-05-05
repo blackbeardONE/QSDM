@@ -1,7 +1,7 @@
 # QSDM Operator Runbooks — Master Index
 
 This is the operator's first page when paged for any
-`QSDM*` Prometheus alert. It lists all 44 alerts in
+`QSDM*` Prometheus alert. It lists all 46 alerts in
 [`alerts_qsdm.example.yml`](../../../deploy/prometheus/alerts_qsdm.example.yml),
 maps each to its dedicated runbook section, and shows
 the cross-subsystem escalation paths in one place.
@@ -79,6 +79,8 @@ link directly to the relevant `### 3.x Mode X` (or
 | `QSDMNoTransactionsStored`                     | warning      | `qsdm-throughput`                 | [`OPERATOR_HYGIENE_INCIDENT.md` §3.4](OPERATOR_HYGIENE_INCIDENT.md#34-mode-d--qsdmnotransactionsstored) |
 | `QSDMNvidiaLockHTTPBlocksSpike`                | warning      | `qsdm-nvidia-lock`                | [`OPERATOR_HYGIENE_INCIDENT.md` §3.1](OPERATOR_HYGIENE_INCIDENT.md#31-mode-a--qsdmnvidialockhttpblocksspike) |
 | `QSDMNvidiaLockP2PRejects`                     | warning      | `qsdm-nvidia-lock`                | [`OPERATOR_HYGIENE_INCIDENT.md` §3.2](OPERATOR_HYGIENE_INCIDENT.md#32-mode-b--qsdmnvidialockp2prejects) |
+| `QSDMP2PGossipIngressStalled`                  | warning      | `qsdm-p2p`                        | [`NETWORKING_INCIDENT.md` §3.2](NETWORKING_INCIDENT.md#32-mode-b--qsdmp2pgossipingressstalled)         |
+| `QSDMP2PNoPeers`                               | warning      | `qsdm-p2p`                        | [`NETWORKING_INCIDENT.md` §3.1](NETWORKING_INCIDENT.md#31-mode-a--qsdmp2pnopeers)                      |
 | `QSDMQuarantineAnySubmesh`                     | warning      | `qsdm-quarantine`                 | [`QUARANTINE_INCIDENT.md` §3.1](QUARANTINE_INCIDENT.md#31-mode-a--qsdmquarantineanysubmesh) |
 | `QSDMQuarantineMajorityIsolated`               | **critical** | `qsdm-quarantine`                 | [`QUARANTINE_INCIDENT.md` §3.2](QUARANTINE_INCIDENT.md#32-mode-b--qsdmquarantinemajorityisolated) |
 | `QSDMStorageReadyFailing`                      | **critical** | `qsdm-storage`                    | [`STORAGE_INCIDENT.md` §3.2](STORAGE_INCIDENT.md#32-mode-b--qsdmstoragereadyfailing)        |
@@ -96,8 +98,8 @@ link directly to the relevant `### 3.x Mode X` (or
 | `QSDMWalletSendErrorRate`                      | warning      | `qsdm-wallet`                     | [`WALLET_INCIDENT.md` §3.1](WALLET_INCIDENT.md#31-mode-a--qsdmwalletsenderrorrate)         |
 | `QSDMWalletStorageErrorBurst`                  | warning      | `qsdm-wallet`                     | [`WALLET_INCIDENT.md` §3.2](WALLET_INCIDENT.md#32-mode-b--qsdmwalletstorageerrorburst)     |
 
-**Total: 44 alerts. Severity distribution: 9 critical
-/ 33 warning / 2 info.**
+**Total: 46 alerts. Severity distribution: 9 critical
+/ 35 warning / 2 info.**
 
 ---
 
@@ -469,6 +471,58 @@ validators hit it — e.g. shared Scylla cluster outage),
 [`QUARANTINE_INCIDENT.md`](QUARANTINE_INCIDENT.md)
 (submesh isolation behaviour follows when a majority hit
 Mode B together).
+
+---
+
+### `NETWORKING_INCIDENT.md` — libp2p peer-graph health
+
+Two-mode runbook for the libp2p peer graph beneath every
+gossip-driven subsystem. Mode A catches **full islanding**
+(zero connected peers); Mode B catches the more subtle case
+of **peers-but-no-inbound-gossip** (one-way partition or
+silently-dropped pubsub subscription).
+
+Closes a long-standing instrumentation gap: before this
+commit, `pkg/networking` had **zero** Prometheus
+instrumentation. Peer count, gossip volume, and
+connection churn were all log-only signals invisible to
+alerting. The new `qsdm_p2p_peers_connected{provider}`
+gauge (pulled at scrape time) and
+`qsdm_p2p_messages_total{direction}` counter pair
+(push-incremented from libp2p send/receive paths)
+expose the layer to alerting at last. The
+provider="live|none" label keeps unit-test / dev nodes
+from false-firing the no-peers alert.
+
+| Alert | Mode | Severity |
+|---|---|---|
+| [`QSDMP2PNoPeers`](NETWORKING_INCIDENT.md#31-mode-a--qsdmp2pnopeers)                           | A | warning |
+| [`QSDMP2PGossipIngressStalled`](NETWORKING_INCIDENT.md#32-mode-b--qsdmp2pgossipingressstalled) | B | warning |
+
+**When to read:** validator is islanded from the network
+(Mode A) or peers exist but no gossip is landing (Mode B).
+Both alerts point at the libp2p layer; if the network is
+fine but you're seeing application-level rejects, escalate
+to [`SUBMESH_POLICY_INCIDENT.md`](SUBMESH_POLICY_INCIDENT.md)
+or [`QUARANTINE_INCIDENT.md`](QUARANTINE_INCIDENT.md)
+instead.
+
+**Companions:** [`QUARANTINE_INCIDENT.md`](QUARANTINE_INCIDENT.md)
+(`QSDMQuarantineMajorityIsolated` is the policy-side
+companion to Mode A's network-side islanding;
+`QSDMQuarantineAnySubmesh` is the disambiguator for
+Mode B — co-firing means peers are muted by submesh
+policy rather than broken at the network layer),
+[`MINING_LIVENESS.md`](MINING_LIVENESS.md)
+(`QSDMMiningChainStuck` will follow within ~30m if a
+majority of validators hit Mode A together — full chain
+stall),
+[`OPERATOR_HYGIENE_INCIDENT.md`](OPERATOR_HYGIENE_INCIDENT.md)
+(`QSDMNoTransactionsStored` follows when gossip is
+starved AND the local node has no ingress path),
+[`SUBMESH_POLICY_INCIDENT.md`](SUBMESH_POLICY_INCIDENT.md)
+(when the network is fine but submesh-policy rejects are
+dominating — orthogonal to this runbook).
 
 ---
 

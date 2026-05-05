@@ -14,6 +14,90 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **libp2p peer-graph observability: pulled gauge + push
+  counters + 2 alerts + 2-mode runbook (2026-05-05).**
+  Closes a long-standing instrumentation gap. Before this
+  commit, `pkg/networking` had **zero** Prometheus
+  instrumentation — peer count, gossip volume, and
+  connection churn were all log-only signals invisible to
+  alerting. The legacy `Metrics.NetworkMessagesSent` /
+  `NetworkMessagesRecv` fields were never incremented from
+  the libp2p path AND never exposed in the OpenMetrics
+  scrape.
+  - **New artefacts**:
+    - [`QSDM/source/pkg/monitoring/netmetrics/netmetrics.go`](QSDM/source/pkg/monitoring/netmetrics/netmetrics.go)
+      — leaf package with zero non-stdlib imports; defines
+      `NetworkProvider` interface, `RegisterNetworkProvider`,
+      `RecordGossipMessage`, `GossipCounts`. Split out as a
+      leaf because `pkg/monitoring` already imports
+      `pkg/networking` (TopologyMonitor) — having
+      `pkg/networking` import the leaf instead of the root
+      avoids a circular dependency.
+    - [`QSDM/source/pkg/monitoring/network_metrics.go`](QSDM/source/pkg/monitoring/network_metrics.go)
+      — Prometheus exposition wrapper. Re-exports the
+      netmetrics primitives at `monitoring.RegisterNetworkProvider`
+      / `monitoring.RecordGossipMessage` for backwards-compat.
+      Emits `qsdm_p2p_peers_connected{provider="live|none"}`
+      (gauge, pulled at scrape time) and
+      `qsdm_p2p_messages_total{direction="in|out"}` (counter,
+      always emits both rows so cold-start nodes don't miss-
+      data on alert evaluation).
+    - [`QSDM/source/pkg/monitoring/netmetrics/netmetrics_test.go`](QSDM/source/pkg/monitoring/netmetrics/netmetrics_test.go)
+      and [`QSDM/source/pkg/monitoring/network_metrics_test.go`](QSDM/source/pkg/monitoring/network_metrics_test.go)
+      — exercise registration idempotency, provider= label
+      switching, direction-counter increments, exposition
+      formatting, and unknown-tag defensive drops.
+    - [`QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md`](QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md)
+      — two-mode runbook with cross-fleet vs. single-host
+      disambiguation guidance and explicit policy-vs-network
+      distinction (quarantine policy fires the same shape
+      of symptom as a one-way partition).
+  - **Wiring**:
+    - [`QSDM/source/pkg/networking/libp2p.go`](QSDM/source/pkg/networking/libp2p.go)
+      now imports `pkg/monitoring/netmetrics` (NOT root
+      monitoring, to avoid the cycle); `SetupLibP2PWithPort`
+      calls `netmetrics.RegisterNetworkProvider(net)` after
+      construction; `Network.PeerCount()` implements
+      `netmetrics.NetworkProvider`; `handleMessages`
+      increments `direction="in"` per non-self pubsub message;
+      `Broadcast` increments `direction="out"` only on
+      successful publish (not on error paths).
+    - [`QSDM/source/pkg/monitoring/prometheus_scrape.go`](QSDM/source/pkg/monitoring/prometheus_scrape.go)
+      registers `networkPrometheusMetrics` as a collector.
+  - **Alerts** (in
+    [`QSDM/deploy/prometheus/alerts_qsdm.example.yml`](QSDM/deploy/prometheus/alerts_qsdm.example.yml),
+    new group `qsdm-p2p`):
+    - `QSDMP2PNoPeers` (warning, `for: 5m`): peer count
+      is 0 with `provider="live"` filter sustained for 5m.
+      Companion to `QSDMQuarantineMajorityIsolated`
+      (network-side vs. policy-side islanding) and
+      `QSDMMiningChainStuck` (downstream stall risk).
+    - `QSDMP2PGossipIngressStalled` (warning, `for: 10m`):
+      peers > 0 but inbound gossip rate is exactly 0 for
+      10m. Catches the more subtle one-way-partition or
+      pubsub-subscription-drift case where host metrics
+      look healthy but gossip ingress is silent.
+  - **CI**: promtool unit tests added to
+    [`alerts_qsdm.test.spec.yml`](QSDM/deploy/prometheus/alerts_qsdm.test.spec.yml)
+    (early/late firing checkpoints for both alerts);
+    runbook coverage check now verifies all 46 alerts have
+    resolvable `runbook_url` and `dashboard_url`s; auto-
+    generated `qsdm-runbook-networking-incident.json`
+    shipped.
+  - **Verification**: `go build ./... && go test
+    ./pkg/networking/... ./pkg/monitoring/...` pass under
+    `CGO_ENABLED=0`. promtool tests pass (46 alerts; 407
+    in-runbook links resolve across 16 files; 16 dashboards
+    cover all alerts).
+  - **Operational impact**: a validator that loses all its
+    peers no longer disappears silently — `QSDMP2PNoPeers`
+    fires within 5m. A one-way partition or wedged pubsub
+    subscription, previously invisible, fires
+    `QSDMP2PGossipIngressStalled` within 10m with explicit
+    triage steps and a built-in cross-check against the
+    quarantine sentinel to disambiguate policy from
+    plumbing.
+
 - **Storage-backend observability: per-(op, result) counter +
   2 alerts + 2-mode runbook (2026-05-05).** Closes a
   long-standing instrumentation gap in the storage layer.

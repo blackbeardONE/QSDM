@@ -45,6 +45,13 @@ func GlobalScrapePrometheusExporter() *PrometheusExporter {
 		// pkg/storage/sqlite.go's StoreTransaction had no metric
 		// hook at all.
 		globalScrapeExporter.RegisterCollector("qsdm_storage_op", storageOpPrometheusMetrics)
+		// qsdm_p2p_peers_connected (live peer count, pulled
+		// from networking.Network at scrape time) and
+		// qsdm_p2p_messages_total{direction} (in/out gossip
+		// counters, pushed from the libp2p send/receive
+		// hot paths). Closes the gap where pkg/networking
+		// had ZERO Prometheus instrumentation prior.
+		globalScrapeExporter.RegisterCollector("qsdm_p2p", networkPrometheusMetrics)
 	})
 	return globalScrapeExporter
 }

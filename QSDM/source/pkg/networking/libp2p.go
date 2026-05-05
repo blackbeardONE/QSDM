@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/blackbeardONE/QSDM/internal/logging"
+	"github.com/blackbeardONE/QSDM/pkg/monitoring/netmetrics"
 	libp2p "github.com/libp2p/go-libp2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -102,11 +103,29 @@ func SetupLibP2PWithPort(ctx context.Context, logger *logging.Logger, port int) 
 		peerMsgCount: make(map[peer.ID]int64),
 	}
 
+	// Wire the live network into the monitoring layer so
+	// qsdm_p2p_peers_connected{provider="live"} reflects
+	// this host's peer count at scrape time. Goes through
+	// the netmetrics leaf to avoid an import cycle with
+	// pkg/monitoring (which itself imports pkg/networking
+	// for TopologyMonitor).
+	netmetrics.RegisterNetworkProvider(net)
+
 	go net.handleMessages()
 	go net.monitorPeers()
 
 	logger.Info("LibP2P host created", "hostID", h.ID().String())
 	return net, nil
+}
+
+// PeerCount implements netmetrics.NetworkProvider for this
+// host. Counts only fully-connected libp2p peers (matches the
+// semantic the alerts in qsdm-p2p assume).
+func (n *Network) PeerCount() int {
+	if n == nil || n.Host == nil {
+		return 0
+	}
+	return len(n.Host.Network().Peers())
 }
 
 func (n *Network) handleMessages() {
@@ -122,6 +141,11 @@ func (n *Network) handleMessages() {
 		if msg.ReceivedFrom == n.Host.ID() {
 			continue // Ignore messages from self
 		}
+		// Increment qsdm_p2p_messages_total{direction="in"}
+		// for every non-self pubsub message — gives the
+		// scrape a publish-rate signal for gossip-stall
+		// alerts.
+		netmetrics.RecordGossipMessage(netmetrics.DirectionIn)
 		n.peerStatusMu.Lock()
 		n.peerStatus[msg.ReceivedFrom] = time.Now()
 		n.peerMsgCount[msg.ReceivedFrom]++
@@ -157,7 +181,14 @@ func (n *Network) SetTxGossipIngress(ing *TxGossipIngress) {
 }
 
 func (n *Network) Broadcast(msg []byte) error {
-	return n.Topic.Publish(n.ctx, msg)
+	if err := n.Topic.Publish(n.ctx, msg); err != nil {
+		return err
+	}
+	// Only count successful publishes — the counter then
+	// reflects payloads the gossip layer actually accepted,
+	// not those that errored out at the libp2p boundary.
+	netmetrics.RecordGossipMessage(netmetrics.DirectionOut)
+	return nil
 }
 
 func (n *Network) Close() error {
