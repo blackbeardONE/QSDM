@@ -12,6 +12,62 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Changed
+
+- **Slashing wiring: production dispatcher now covers all
+  three EvidenceKinds with real verifiers (2026-05-05).**
+  `internal/v2wiring/v2wiring.go` previously called
+  `doublemining.NewProductionSlashingDispatcher`, which
+  registered the real `forgedattest` and `doublemining`
+  verifiers and left `EvidenceKindFreshnessCheat` wired to
+  `slashing.StubVerifier` ("not yet implemented"). The
+  freshness-cheat verifier ships fully implemented in
+  `pkg/mining/slashing/freshnesscheat/` — only its
+  block-inclusion witness collaborator is deferred pending
+  BFT finality (see `MINING_PROTOCOL_V2.md §12.3`). Switched
+  `Wire()` to `freshnesscheat.NewProductionSlashingDispatcher`
+  with `witness=nil` (the production-safe `RejectAllWitness`
+  default). End-user behaviour for slash txs of kind
+  `freshness-cheat` is unchanged — every one is still
+  rejected — but the rejection now carries kind-specific
+  structural / staleness / registry diagnostics instead of
+  the generic stub message, **and the
+  `qsdm_stub_active{kind="slashing"}` gauge stays at 0** for
+  every binary that boots through `v2wiring`.
+  - **`Wired.SlashDispatcher` exposed.** New field on
+    `internal/v2wiring.Wired` so consumers (and tests) can
+    introspect the production dispatcher without reaching
+    through the SlashApplier internals.
+  - **Regression guard: `TestWire_SlashingDispatcherCoversAllKinds`
+    in `internal/v2wiring/v2wiring_test.go`.** Asserts the
+    dispatcher built by `Wire()` registers a real verifier
+    for every kind in `slashing.AllEvidenceKinds`, AND that
+    a freshness-cheat dispatch returns a kind-specific error
+    rather than the StubVerifier "(not yet implemented)"
+    string. A future EvidenceKind added to `AllEvidenceKinds`
+    without a matching wiring update fails this test before
+    it reaches a running validator.
+  - **Runbook updated**:
+    [`STUB_DEPLOYMENT_INCIDENT.md` § kind-slashing](QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md#kind-slashing)
+    now documents the new "no production binary wires a
+    StubVerifier" invariant, calls out that
+    freshness-cheat is NOT a stub (it runs against
+    `RejectAllWitness`, which is a real verifier path with
+    a deferred witness), and updates the triage flowchart
+    so an on-call hitting `qsdm_stub_active{kind="slashing"} == 1`
+    immediately checks whether the binary is using
+    `v2wiring.Wire` or a hand-rolled dispatcher.
+  - **Verification (CGO_ENABLED=0):**
+    - `go build ./...` clean.
+    - `go test ./internal/v2wiring/... ./pkg/mining/slashing/...`
+      — all green, including the new
+      `TestWire_SlashingDispatcherCoversAllKinds`.
+  - **Operational impact.** One stub kind retired in
+    production wiring. The
+    `QSDMStubActive` alert with `kind="slashing"` is now
+    structurally impossible to fire from a binary that uses
+    `v2wiring.Wire` and has no kind drift.
+
 ### Added
 
 - **Loose-end alerts: hot-reload + wallet-ingress dedupe

@@ -261,14 +261,13 @@ admission path.
 ## kind-slashing
 
 > **Severity in production: HIGH — slashing for stub-wired EvidenceKinds is silently disabled.**
+>
+> **As of `internal/v2wiring`'s switch to `freshnesscheat.NewProductionSlashingDispatcher`, no production binary wires a `StubVerifier`** — every `EvidenceKind` in `slashing.AllEvidenceKinds` (`forged-attestation`, `double-mining`, `freshness-cheat`) reaches its real `EvidenceVerifier`. If `qsdm_stub_active{kind="slashing"} == 1` you are looking at either (a) a binary that still uses a hand-rolled `slashing.NewProductionDispatcher` call without all three slots filled, or (b) a future `EvidenceKind` that was added to `AllEvidenceKinds` without a matching wiring update. The integration test `TestWire_SlashingDispatcherCoversAllKinds` in `internal/v2wiring/v2wiring_test.go` is the regression guard.
 
 `slashing.StubVerifier` (in `pkg/mining/slashing/verifier.go`) is
 an always-rejecting `EvidenceVerifier`. The production
 dispatcher (`slashing.NewProductionDispatcher`) wires it in for
-any `EvidenceKind` whose real verifier hasn't shipped (e.g.
-`EvidenceKindDoubleMining`, `EvidenceKindFreshnessCheat` may be
-stubbed even when `EvidenceKindForgedAttestation` has its real
-`forgedattest.Verifier` registered).
+any `EvidenceKind` whose `ProductionConfig` slot is left nil.
 
 The flag is set by `Dispatcher.Register()` in
 `pkg/mining/slashing/verifier.go` when the verifier passed in is
@@ -283,22 +282,38 @@ fail-closed (the slash doesn't apply) but it also means the
 attack vector that EvidenceKind was supposed to deter is
 **unprotected** until the real verifier ships.
 
+> **freshness-cheat is NOT a stub.** The freshness-cheat
+> verifier ships fully implemented; in production it runs
+> against `freshnesscheat.RejectAllWitness` because the BFT-
+> finality block-inclusion oracle hasn't shipped yet (see
+> `MINING_PROTOCOL_V2.md §12.3`). Slash txs of that kind are
+> still rejected, but with kind-specific structural / staleness /
+> witness errors (richer operator diagnostics) — the
+> `qsdm_stub_active` flag stays at 0.
+
 ### kind-slashing — triage
 
 1. **Identify which EvidenceKinds are stub-wired.** Look at
    the validator's startup log for messages like
    `"slashing: registered StubVerifier for kind <kind>"`.
    Cross-reference with `slashing.AllEvidenceKinds`.
-2. **Check whether the corresponding sub-package has a real
-   verifier:** `pkg/mining/slashing/{forgedattest,doublemining,freshnesscheat}/`.
-   If the real verifier ships in-tree but isn't wired into
-   the validator's `NewProductionDispatcher` call site, the
-   fix is wiring (one line). If it doesn't ship in-tree yet,
-   the fix is upstream development.
-3. **For stub-wired kinds, surface the gap publicly.** The
+2. **If the binary uses `internal/v2wiring`, this should be
+   impossible.** Check whether the binary calls
+   `v2wiring.Wire(...)` (which uses
+   `freshnesscheat.NewProductionSlashingDispatcher`) or rolls
+   its own dispatcher. If the latter, switch it to
+   `freshnesscheat.NewProductionSlashingDispatcher` — that
+   covers all three current EvidenceKinds without manual
+   slot bookkeeping.
+3. **If a NEW EvidenceKind is the offender:** add a real
+   verifier sub-package (mirroring `forgedattest/`,
+   `doublemining/`, `freshnesscheat/`) and extend
+   `freshnesscheat.NewProductionSlashingDispatcher` (and the
+   `slashing.ProductionConfig`) with a slot for it.
+4. **For stub-wired kinds, surface the gap publicly.** The
    subnet community needs to know that slashing for that
    EvidenceKind isn't enforced until the real verifier ships.
-4. **Cross-link:** see also
+5. **Cross-link:** see also
    [SLASHING_INCIDENT.md](./SLASHING_INCIDENT.md) for the
    slashing-pipeline runbook (apply rates, reject reasons,
    forfeiture caps).

@@ -62,7 +62,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/mining/attest/recentrejects"
 	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
 	"github.com/blackbeardONE/QSDM/pkg/mining/slashing"
-	"github.com/blackbeardONE/QSDM/pkg/mining/slashing/doublemining"
+	"github.com/blackbeardONE/QSDM/pkg/mining/slashing/freshnesscheat"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 )
 
@@ -321,6 +321,12 @@ type Wired struct {
 	Enrollment      *chain.EnrollmentApplier
 	Slasher         *chain.SlashApplier
 	SlashReceipts   *chain.SlashReceiptStore
+	// SlashDispatcher is the production *slashing.Dispatcher
+	// the SlashApplier was wired against. Exposed so tests can
+	// assert kind-coverage (every EvidenceKind has a real
+	// verifier registered, no StubVerifier fallback) without
+	// having to reach through the unexported applier internals.
+	SlashDispatcher *slashing.Dispatcher
 	Gov             *chain.GovApplier
 	GovParams       *chainparams.InMemoryParamStore
 	GovAuthVotes    *chainparams.InMemoryAuthorityVoteStore
@@ -367,14 +373,27 @@ func Wire(cfg Config) (*Wired, error) {
 	aware := chain.NewEnrollmentAwareApplier(cfg.Accounts, enrollAp)
 
 	// Slasher arm. Build the production dispatcher with the
-	// real registry; on error, return a clear wiring failure
-	// — slashing wiring drift is exactly the kind of silent
-	// regression this package exists to prevent.
-	disp, err := doublemining.NewProductionSlashingDispatcher(
+	// real registry, all three verifiers wired (forgedattest,
+	// doublemining, freshnesscheat). The freshnesscheat
+	// witness is left at the production-default
+	// RejectAllWitness — every freshness-cheat slash still
+	// gets rejected (the BFT-finality dependency hasn't
+	// shipped yet, see MINING_PROTOCOL_V2.md §12.3), but
+	// with kind-specific structural / staleness / registry
+	// diagnostics rather than the previous "this is a stub"
+	// fallback. This wiring keeps qsdm_stub_active{kind="slashing"}
+	// at 0 in production.
+	//
+	// On error, return a clear wiring failure — slashing
+	// wiring drift is exactly the kind of silent regression
+	// this package exists to prevent.
+	disp, err := freshnesscheat.NewProductionSlashingDispatcher(
 		enrollment.NewStateBackedRegistry(state),
 		nil, // empty deny-list at boot; governance can append later.
+		nil, // witness=nil → RejectAllWitness (production safe default).
 		0,   // forgedattest cap = forgedattest.DefaultMaxSlashDust
 		0,   // doublemining cap = doublemining.DefaultMaxSlashDust
+		0,   // freshnesscheat cap = freshnesscheat.DefaultMaxSlashDust
 	)
 	if err != nil {
 		return nil, fmt.Errorf("v2wiring: slash dispatcher: %w", err)
@@ -673,6 +692,7 @@ func Wire(cfg Config) (*Wired, error) {
 		Enrollment:       enrollAp,
 		Slasher:          slasher,
 		SlashReceipts:    slashReceipts,
+		SlashDispatcher:  disp,
 		Gov:              govApplier,
 		GovParams:        govStore,
 		GovAuthVotes:     govVotes,

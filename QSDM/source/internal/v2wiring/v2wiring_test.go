@@ -5,7 +5,10 @@ package v2wiring_test
 // Confirms that a node configured with:
 //
 //   - InMemoryState + EnrollmentApplier + EnrollmentAwareApplier
-//   - SlashApplier built off doublemining.NewProductionSlashingDispatcher
+//   - SlashApplier built off freshnesscheat.NewProductionSlashingDispatcher
+//     (forgedattest + doublemining + freshnesscheat verifiers, the last
+//     wired against RejectAllWitness as the production safe default
+//     pending BFT-finality; keeps qsdm_stub_active{kind="slashing"} = 0)
 //   - mempool admission gate composed via enrollment.AdmissionChecker
 //   - monitoring.SetEnrollmentStateProvider populated
 //   - api.SetEnrollmentMempool populated
@@ -43,6 +46,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/blackbeardONE/QSDM/internal/v2wiring"
@@ -416,6 +420,71 @@ func TestWire_SlashApplierIsRoutable(t *testing.T) {
 	}
 	if r.w.Aware.SlashApplier() == nil {
 		t.Error("aware.SlashApplier() returned nil after Wire")
+	}
+}
+
+// TestWire_SlashingDispatcherCoversAllKinds proves the production
+// dispatcher built by Wire() has a real EvidenceVerifier registered
+// for EVERY EvidenceKind in slashing.AllEvidenceKinds — i.e. no
+// kind falls through to slashing.StubVerifier.
+//
+// Operationally this is the contract that keeps
+// qsdm_stub_active{kind="slashing"} at 0 in production: a regression
+// where a future EvidenceKind is added to AllEvidenceKinds without a
+// matching real-verifier wiring would surface here as a missing
+// kind, before it ever reaches a running validator.
+//
+// We verify by introspecting Dispatcher.Kinds(); a StubVerifier
+// registration would still appear in Kinds(), so we additionally
+// dispatch a payload that the freshness-cheat verifier WILL reject
+// with a kind-specific (non-stub) error — that error message
+// distinguishes the freshnesscheat.RejectAllWitness production
+// posture from the StubVerifier "(not yet implemented)" fallback
+// the previous wiring used.
+func TestWire_SlashingDispatcherCoversAllKinds(t *testing.T) {
+	r := buildRig(t, 20)
+	if r.w.Slasher == nil {
+		t.Fatal("Wired.Slasher is nil")
+	}
+	disp := r.w.SlashDispatcher
+	if disp == nil {
+		t.Fatal("Wired.SlashDispatcher is nil")
+	}
+	got := disp.Kinds()
+	if len(got) != len(slashing.AllEvidenceKinds) {
+		t.Errorf("dispatcher.Kinds() = %v (len=%d); want all %d kinds",
+			got, len(got), len(slashing.AllEvidenceKinds))
+	}
+	wantSet := map[slashing.EvidenceKind]bool{}
+	for _, k := range slashing.AllEvidenceKinds {
+		wantSet[k] = true
+	}
+	for _, k := range got {
+		if !wantSet[k] {
+			t.Errorf("dispatcher registered unexpected kind %q", k)
+		}
+		delete(wantSet, k)
+	}
+	for k := range wantSet {
+		t.Errorf("dispatcher missing kind %q", k)
+	}
+
+	// freshness-cheat is the kind that USED to fall through to
+	// StubVerifier under the old doublemining-only wiring. Now
+	// it should reach freshnesscheat.Verifier and be rejected
+	// with a kind-specific reason (registry / staleness /
+	// witness), NOT the "stub (not yet implemented)" string.
+	_, err := disp.Verify(slashing.SlashPayload{
+		NodeID:          "test-node",
+		EvidenceKind:    slashing.EvidenceKindFreshnessCheat,
+		EvidenceBlob:    []byte("not-a-real-proof"),
+		SlashAmountDust: 1,
+	}, 100)
+	if err == nil {
+		t.Fatal("freshness-cheat dispatch unexpectedly succeeded with junk evidence")
+	}
+	if msg := err.Error(); strings.Contains(msg, "(not yet implemented)") {
+		t.Errorf("freshness-cheat verifier still routes to StubVerifier: %v", err)
 	}
 }
 
