@@ -748,6 +748,19 @@ func main() {
 	nodeTxRep := networking.NewReputationTracker(networking.DefaultReputationConfig())
 	nodeEvidenceRep := networking.NewReputationTracker(networking.ReputationConfigForEvidence())
 
+	// Wire both reputation trackers into the monitoring
+	// scrape so qsdm_reputation_*{tracker="tx|evidence"}
+	// gauges reflect live state. Also start the per-tracker
+	// decay goroutine — without this, scores never decay
+	// back toward zero, which means historic peer
+	// behaviour permanently dominates current state.
+	monitoring.RegisterReputationProvider("tx", nodeTxRep)
+	monitoring.RegisterReputationProvider("evidence", nodeEvidenceRep)
+	nodeTxRep.Start()
+	nodeEvidenceRep.Start()
+	defer nodeTxRep.Stop()
+	defer nodeEvidenceRep.Stop()
+
 	var evidenceRelay *networking.EvidenceP2PRelay
 	evIng := networking.NewEvidenceGossipIngress(nodeEvidenceManager, nodeEvidenceRep, networking.DefaultEvidenceGossipConfig())
 	if er, evErr := networking.NewEvidenceP2PRelay(net, evIng, net.Host.ID().String()); evErr != nil {

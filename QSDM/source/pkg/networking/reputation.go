@@ -5,6 +5,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/blackbeardONE/QSDM/pkg/monitoring/repmetrics"
 )
 
 // PeerEvent categorises observable peer behaviour.
@@ -243,6 +245,46 @@ func (rt *ReputationTracker) PeerCount() int {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
 	return len(rt.peers)
+}
+
+// Snapshot implements repmetrics.ReputationProvider so the
+// monitoring scrape can render qsdm_reputation_* gauges
+// for this tracker. Returns a coherent point-in-time view
+// computed under the read lock.
+func (rt *ReputationTracker) Snapshot() repmetrics.ReputationSnapshot {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+
+	if len(rt.peers) == 0 {
+		return repmetrics.ReputationSnapshot{}
+	}
+
+	var (
+		banned int
+		min    = math.Inf(1)
+		max    = math.Inf(-1)
+		sum    float64
+	)
+	for _, rec := range rt.peers {
+		if rec.Banned {
+			banned++
+		}
+		if rec.Score < min {
+			min = rec.Score
+		}
+		if rec.Score > max {
+			max = rec.Score
+		}
+		sum += rec.Score
+	}
+
+	return repmetrics.ReputationSnapshot{
+		TotalPeers:  len(rt.peers),
+		BannedPeers: banned,
+		MinScore:    min,
+		MaxScore:    max,
+		AvgScore:    sum / float64(len(rt.peers)),
+	}
 }
 
 // DecayAll applies the decay factor to all peer scores, pulling them toward zero.

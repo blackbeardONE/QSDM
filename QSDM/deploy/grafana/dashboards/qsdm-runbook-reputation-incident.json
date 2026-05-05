@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMStubActive`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_stub_active == 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md#kind-{{ reReplaceAll \"_\" \"-\" $labels.kind }}",
+      "description": "**Alert**: `QSDMReputationBanRatioHigh`\n\n**Severity**: `warning`\n\n**Trigger**: `(qsdm_reputation_peers_banned / qsdm_reputation_peers_total) > 0.5 and qsdm_reputation_peers_total >= 4`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md#31-mode-a--qsdmreputationbanratiohigh",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -60,7 +60,7 @@
                 "value": null
               },
               {
-                "color": "red",
+                "color": "orange",
                 "value": 1
               }
             ]
@@ -75,7 +75,7 @@
         "x": 0,
         "y": 0
       },
-      "id": 39,
+      "id": 35,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -96,14 +96,79 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "qsdm_stub_active == 1",
+          "expr": "(qsdm_reputation_peers_banned / qsdm_reputation_peers_total) > 0.5 and qsdm_reputation_peers_total >= 4",
           "instant": false,
           "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "QSDMStubActive",
+      "title": "QSDMReputationBanRatioHigh",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "**Alert**: `QSDMReputationScoreCollapse`\n\n**Severity**: `info`\n\n**Trigger**: `qsdm_reputation_score_min < -100 and qsdm_reputation_peers_total >= 4`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md#32-mode-b--qsdmreputationscorecollapse",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 36,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "qsdm_reputation_score_min < -100 and qsdm_reputation_peers_total >= 4",
+          "instant": false,
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "QSDMReputationScoreCollapse",
       "type": "stat"
     }
   ],
@@ -123,8 +188,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "QSDM — Stub Deployment Incident",
-  "uid": "qsdm-runbook-stub-deployment-incident",
+  "title": "QSDM — Reputation Incident",
+  "uid": "qsdm-runbook-reputation-incident",
   "version": 1,
   "weekStart": ""
 }

@@ -2574,3 +2574,98 @@ groups:
                 — locks aren't transitioning to LockStatusRefunded.
                 This is the highest-stakes case: funds are
                 stuck. Investigate immediately.
+
+  # =====================================================================
+  # qsdm-reputation — peer-reputation tracker health
+  #
+  # The reputation tracker is the primary defence against
+  # misbehaving peers (invalid blocks, invalid txs, protocol
+  # violations) — it scores them down and bans them when
+  # they cross the BanThreshold (-200 default). A high
+  # banned-ratio is either a real attack OR a sign the
+  # penalty config is too aggressive; either way it
+  # warrants operator attention.
+  #
+  # Metrics scoped by tracker= label:
+  #   tracker="tx"        — DefaultReputationConfig (lenient)
+  #   tracker="evidence"  — ReputationConfigForEvidence (strict)
+  # =====================================================================
+  - name: qsdm-reputation
+    rules:
+      - alert: QSDMReputationBanRatioHigh
+        # banned/total > 50% sustained for 10m on a tracker
+        # that has at least 4 peers (filters out the
+        # "1-of-2-peers banned" noise on tiny dev clusters).
+        # Either a real attack from a majority of peers
+        # (very rare; quarantine should kick in first), or
+        # a penalty-config regression that's mass-banning
+        # honest peers.
+        expr: |
+          (qsdm_reputation_peers_banned / qsdm_reputation_peers_total) > 0.5
+          and qsdm_reputation_peers_total >= 4
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: v2-reputation
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md#31-mode-a--qsdmreputationbanratiohigh"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-reputation-incident.json"
+          summary: "{{ $labels.instance }}: {{ $labels.tracker }} ban ratio > 50% for ≥10m"
+          description: |
+            qsdm_reputation_peers_banned /
+            qsdm_reputation_peers_total on
+            {{ $labels.instance }} (tracker={{ $labels.tracker }})
+            has been > 0.5 for ≥10m with ≥4 tracked peers.
+            Either a coordinated attack against this node OR
+            a penalty-config regression mass-banning honest
+            peers.
+
+            Triage:
+              - Inspect AllPeers() via the admin API
+                (or equivalent endpoint exposing the
+                tracker's BannedPeers list). If the banned
+                set is dominated by repeated misbehaviour
+                from peers that pre-date the alert, this is
+                an attack. If the banned set is recent and
+                the misbehaviour counts are low, the
+                penalty config has shifted (e.g. someone
+                tightened InvalidTxWeight without thinking
+                through the cascade).
+              - Cross-check tracker="evidence" vs.
+                tracker="tx": if both show high ban ratios
+                concurrently, the cause is likely systemic;
+                if only one, the cause is per-tracker
+                config or per-tracker traffic shape.
+              - Cross-check qsdm_quarantine_* — if a
+                majority of peers are also quarantined by
+                submesh policy, the failure is upstream of
+                reputation.
+
+      - alert: QSDMReputationScoreCollapse
+        # min-score sliding toward the BanThreshold across
+        # the whole peer set. Drift signal — if min-score
+        # has been below -100 (halfway to ban) for ≥30m on
+        # a non-trivial peer set, peers are accumulating
+        # penalties faster than the decay can pull them
+        # back. Often a precursor to QSDMReputationBanRatioHigh.
+        expr: |
+          qsdm_reputation_score_min < -100
+          and qsdm_reputation_peers_total >= 4
+        for: 30m
+        labels:
+          severity: info
+          subsystem: v2-reputation
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md#32-mode-b--qsdmreputationscorecollapse"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-reputation-incident.json"
+          summary: "{{ $labels.instance }}: {{ $labels.tracker }} min-score < -100 for ≥30m"
+          description: |
+            qsdm_reputation_score_min on
+            {{ $labels.instance }} (tracker={{ $labels.tracker }})
+            has been below -100 (halfway to ban) for ≥30m
+            with ≥4 tracked peers. Penalties are
+            accumulating faster than the configured
+            DecayInterval/DecayFactor can pull them back.
+            Often a precursor to QSDMReputationBanRatioHigh
+            (Mode A) — read the next 30m of trend before
+            paging up.

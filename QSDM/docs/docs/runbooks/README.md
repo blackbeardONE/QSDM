@@ -1,7 +1,7 @@
 # QSDM Operator Runbooks — Master Index
 
 This is the operator's first page when paged for any
-`QSDM*` Prometheus alert. It lists all 48 alerts in
+`QSDM*` Prometheus alert. It lists all 50 alerts in
 [`alerts_qsdm.example.yml`](../../../deploy/prometheus/alerts_qsdm.example.yml),
 maps each to its dedicated runbook section, and shows
 the cross-subsystem escalation paths in one place.
@@ -85,6 +85,8 @@ link directly to the relevant `### 3.x Mode X` (or
 | `QSDMP2PNoPeers`                               | warning      | `qsdm-p2p`                        | [`NETWORKING_INCIDENT.md` §3.1](NETWORKING_INCIDENT.md#31-mode-a--qsdmp2pnopeers)                      |
 | `QSDMQuarantineAnySubmesh`                     | warning      | `qsdm-quarantine`                 | [`QUARANTINE_INCIDENT.md` §3.1](QUARANTINE_INCIDENT.md#31-mode-a--qsdmquarantineanysubmesh) |
 | `QSDMQuarantineMajorityIsolated`               | **critical** | `qsdm-quarantine`                 | [`QUARANTINE_INCIDENT.md` §3.2](QUARANTINE_INCIDENT.md#32-mode-b--qsdmquarantinemajorityisolated) |
+| `QSDMReputationBanRatioHigh`                   | warning      | `qsdm-reputation`                 | [`REPUTATION_INCIDENT.md` §3.1](REPUTATION_INCIDENT.md#31-mode-a--qsdmreputationbanratiohigh)      |
+| `QSDMReputationScoreCollapse`                  | info         | `qsdm-reputation`                 | [`REPUTATION_INCIDENT.md` §3.2](REPUTATION_INCIDENT.md#32-mode-b--qsdmreputationscorecollapse)     |
 | `QSDMStorageReadyFailing`                      | **critical** | `qsdm-storage`                    | [`STORAGE_INCIDENT.md` §3.2](STORAGE_INCIDENT.md#32-mode-b--qsdmstoragereadyfailing)        |
 | `QSDMStorageWriteErrorBurst`                   | warning      | `qsdm-storage`                    | [`STORAGE_INCIDENT.md` §3.1](STORAGE_INCIDENT.md#31-mode-a--qsdmstoragewriteerrorburst)     |
 | `QSDMStubActive`                               | **critical** | `qsdm-stub-active`                | [`STUB_DEPLOYMENT_INCIDENT.md`](STUB_DEPLOYMENT_INCIDENT.md) (kind-dispatched) |
@@ -100,8 +102,8 @@ link directly to the relevant `### 3.x Mode X` (or
 | `QSDMWalletSendErrorRate`                      | warning      | `qsdm-wallet`                     | [`WALLET_INCIDENT.md` §3.1](WALLET_INCIDENT.md#31-mode-a--qsdmwalletsenderrorrate)         |
 | `QSDMWalletStorageErrorBurst`                  | warning      | `qsdm-wallet`                     | [`WALLET_INCIDENT.md` §3.2](WALLET_INCIDENT.md#32-mode-b--qsdmwalletstorageerrorburst)     |
 
-**Total: 48 alerts. Severity distribution: 9 critical
-/ 37 warning / 2 info.**
+**Total: 50 alerts. Severity distribution: 9 critical
+/ 38 warning / 3 info.**
 
 ---
 
@@ -525,6 +527,53 @@ starved AND the local node has no ingress path),
 [`SUBMESH_POLICY_INCIDENT.md`](SUBMESH_POLICY_INCIDENT.md)
 (when the network is fine but submesh-policy rejects are
 dominating — orthogonal to this runbook).
+
+---
+
+### `REPUTATION_INCIDENT.md` — peer-reputation tracker health
+
+Two-mode runbook for the peer-reputation trackers
+(`pkg/networking.ReputationTracker`). Mode A catches a
+**high banned-ratio** (50%+ peers banned for ≥10m on a
+tracker with ≥4 peers) — either a coordinated attack or a
+penalty-config regression. Mode B is a softer info-level
+drift signal: **min-score sliding toward the ban
+threshold** sustained for ≥30m, often a precursor to
+Mode A.
+
+Closes a long-standing operational gap. The reputation
+trackers existed and were wired into BFT and evidence
+ingress, but had **two large defects**: (a) decay was
+never started — `Start()` was created but never called,
+so penalties accumulated permanently; (b) zero
+Prometheus exposition. Both are fixed: `Start()` is
+invoked at validator boot (with matching `defer Stop()`),
+and the new `qsdm_reputation_*{tracker}` gauges expose
+state via the `pkg/monitoring/repmetrics` leaf.
+
+| Alert | Mode | Severity |
+|---|---|---|
+| [`QSDMReputationBanRatioHigh`](REPUTATION_INCIDENT.md#31-mode-a--qsdmreputationbanratiohigh) | A | warning |
+| [`QSDMReputationScoreCollapse`](REPUTATION_INCIDENT.md#32-mode-b--qsdmreputationscorecollapse) | B | info |
+
+**When to read:** majority of peers in a tracker are
+banned (Mode A) or scores are drifting toward the ban
+threshold (Mode B). Two trackers in scope:
+`tracker="tx"` (transaction gossip, lenient config) and
+`tracker="evidence"` (consensus evidence, strict
+config).
+
+**Companions:** [`QUARANTINE_INCIDENT.md`](QUARANTINE_INCIDENT.md)
+(quarantine isolates per submesh; reputation bans per
+topic — different layers of the same defence),
+[`SLASHING_INCIDENT.md`](SLASHING_INCIDENT.md)
+(`tracker="evidence"` Mode A often co-fires when
+evidence gossip is degraded — peers get
+`EventProtocolViolation` for relaying malformed
+evidence even when honest),
+[`NETWORKING_INCIDENT.md`](NETWORKING_INCIDENT.md)
+(`QSDMP2PNoPeers` is the polar opposite — Mode A/B
+both require non-zero `peers_total`).
 
 ---
 

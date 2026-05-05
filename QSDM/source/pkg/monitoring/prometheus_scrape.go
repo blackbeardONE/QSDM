@@ -59,6 +59,12 @@ func GlobalScrapePrometheusExporter() *PrometheusExporter {
 		// (BridgeProtocol) had ZERO Prometheus
 		// instrumentation prior.
 		globalScrapeExporter.RegisterCollector("qsdm_contracts_bridge", contractsBridgePrometheusMetrics)
+		// qsdm_reputation_* gauges per registered tracker
+		// (tracker="tx" / "evidence" / etc.). Pulled at scrape
+		// time from registered ReputationTracker via the
+		// repmetrics leaf. Emits nothing when no tracker has
+		// been registered (test/dev scrapes).
+		globalScrapeExporter.RegisterCollector("qsdm_reputation", reputationPrometheusMetrics)
 	})
 	return globalScrapeExporter
 }

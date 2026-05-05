@@ -14,6 +14,104 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Peer-reputation observability + decay-loop wiring:
+  multi-tracker gauges + 2 alerts + 2-mode runbook
+  (2026-05-05).** Closes two long-standing operational
+  defects in the peer-reputation system. The
+  `pkg/networking.ReputationTracker` had been wired into
+  BFT and evidence ingress for many releases, but
+  (a) `Start()` was never called from `cmd/qsdm/main.go`
+  so the configured decay loop never actually ran —
+  penalties accumulated permanently — and (b) tracker
+  state had zero Prometheus exposition, visible only via
+  the admin API.
+  - **New artefacts**:
+    - [`QSDM/source/pkg/monitoring/repmetrics/repmetrics.go`](QSDM/source/pkg/monitoring/repmetrics/repmetrics.go)
+      — leaf package mirroring the netmetrics pattern
+      (zero non-stdlib imports). Defines
+      `ReputationProvider` interface,
+      `ReputationSnapshot` value type, and a
+      tracker-keyed registry (`RegisterReputationProvider`,
+      `Providers`). Required because `pkg/monitoring`
+      already imports `pkg/networking` via
+      `topology.go`; having `pkg/networking` depend on
+      the leaf instead of the root avoids a cycle.
+    - [`QSDM/source/pkg/monitoring/reputation_metrics.go`](QSDM/source/pkg/monitoring/reputation_metrics.go)
+      — Prometheus exposition wrapper. Re-exports the
+      leaf primitives at
+      `monitoring.RegisterReputationProvider` for
+      backwards compat. Emits five gauges per
+      registered tracker:
+      `qsdm_reputation_peers_total{tracker}`,
+      `qsdm_reputation_peers_banned{tracker}`,
+      `qsdm_reputation_score_min{tracker}`,
+      `qsdm_reputation_score_max{tracker}`,
+      `qsdm_reputation_score_avg{tracker}`. Empty
+      output when no tracker is registered (no
+      always-on `provider="none"` rows because
+      reputation absence is the common test/dev case).
+    - [`QSDM/source/pkg/monitoring/repmetrics/repmetrics_test.go`](QSDM/source/pkg/monitoring/repmetrics/repmetrics_test.go)
+      and
+      [`QSDM/source/pkg/monitoring/reputation_metrics_test.go`](QSDM/source/pkg/monitoring/reputation_metrics_test.go)
+      — exercise registration idempotency, multi-
+      tracker isolation, copy-on-return semantics, and
+      end-to-end `PrometheusExposition()` formatting.
+    - [`QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md`](QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md)
+      — two-mode runbook with explicit
+      attack-vs-config-regression triage paths and
+      per-tracker disambiguation guidance
+      (`tracker="tx"` lenient vs.
+      `tracker="evidence"` strict).
+  - **Wiring**:
+    - [`QSDM/source/pkg/networking/reputation.go`](QSDM/source/pkg/networking/reputation.go)
+      — `ReputationTracker.Snapshot()` implements
+      `repmetrics.ReputationProvider`, computing min
+      / max / avg / total / banned counts under the
+      tracker's read lock and returning by value for
+      lock-free scrape rendering.
+    - [`QSDM/source/cmd/qsdm/main.go`](QSDM/source/cmd/qsdm/main.go)
+      — both `nodeTxRep` and `nodeEvidenceRep` are now
+      registered as monitoring providers under names
+      `"tx"` and `"evidence"`, and both have
+      `Start()` invoked with matching `defer Stop()`.
+      Closes the never-decay defect.
+    - [`QSDM/source/pkg/monitoring/prometheus_scrape.go`](QSDM/source/pkg/monitoring/prometheus_scrape.go)
+      registers `reputationPrometheusMetrics` as a
+      collector.
+  - **Alerts** (in
+    [`QSDM/deploy/prometheus/alerts_qsdm.example.yml`](QSDM/deploy/prometheus/alerts_qsdm.example.yml),
+    new group `qsdm-reputation`):
+    - `QSDMReputationBanRatioHigh` (warning, `for: 10m`):
+      `peers_banned / peers_total > 0.5` with
+      `peers_total >= 4`. Either a coordinated attack
+      OR a penalty-config regression.
+    - `QSDMReputationScoreCollapse` (info, `for: 30m`):
+      `score_min < -100` (halfway to default
+      `BanThreshold`) with `peers_total >= 4`. Drift
+      precursor to the Mode A page.
+  - **CI**: promtool unit tests added to
+    [`alerts_qsdm.test.spec.yml`](QSDM/deploy/prometheus/alerts_qsdm.test.spec.yml)
+    (early/late firing checkpoints for both alerts);
+    runbook coverage now verifies all 50 alerts have
+    resolvable `runbook_url` and `dashboard_url`s;
+    auto-generated
+    `qsdm-runbook-reputation-incident.json` shipped.
+  - **Verification**: `go build ./... && go test
+    ./pkg/networking/... ./pkg/monitoring/...` pass
+    under `CGO_ENABLED=0`. promtool tests pass (50
+    alerts; 442 in-runbook links resolve across 18
+    files; 18 dashboards cover all alerts).
+  - **Operational impact**: a coordinated peer attack
+    that crosses 50% of the population will now page
+    within 10m on the warning channel rather than
+    being invisible until the chain stops; a config
+    regression that mass-bans honest peers will page
+    on the same alert. The decay-loop fix means
+    historic peer behaviour no longer permanently
+    dominates the score state, restoring the
+    intended semantics of the
+    `DecayInterval`/`DecayFactor` config knobs.
+
 - **Smart-contract + atomic-swap bridge observability:
   per-result + per-(op,result) counters + 2 alerts +
   2-mode runbook (2026-05-05).** Closes a long-standing

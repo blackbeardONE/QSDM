@@ -553,3 +553,32 @@ groups:
         input_series:
           - series: 'qsdm_bridge_op_total{op="redeem",result="error",instance="i1"}'
             values: 0+1x30
+
+  - header: |
+      qsdm-reputation — peer-reputation tracker health
+      REPUTATION_INCIDENT.md §3.1 / §3.2
+    tests:
+      - name: QSDMReputationBanRatioHigh
+        summary: "banned/total > 0.5 with >=4 peers, for:10m"
+        early: 9m
+        late: 12m
+        notes: |
+          5 of 8 peers banned (ratio = 0.625 > 0.5) with
+          total >= 4 sustained for 30m → for:10m fires at 10m.
+        input_series:
+          - series: 'qsdm_reputation_peers_total{tracker="tx",instance="i1"}'
+            values: 8+0x30
+          - series: 'qsdm_reputation_peers_banned{tracker="tx",instance="i1"}'
+            values: 5+0x30
+      - name: QSDMReputationScoreCollapse
+        summary: "min < -100 with >=4 peers, for:30m"
+        early: 29m
+        late: 40m
+        notes: |
+          min_score = -150 with peers_total = 6 sustained
+          for 60m → for:30m fires at 30m.
+        input_series:
+          - series: 'qsdm_reputation_score_min{tracker="tx",instance="i1"}'
+            values: -150+0x60
+          - series: 'qsdm_reputation_peers_total{tracker="tx",instance="i1"}'
+            values: 6+0x60
