@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMStorageWriteErrorBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_storage_op_total{op=\"store_transaction\",result=\"error\"}[5m]) * 60 > 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#31-mode-a--qsdmstoragewriteerrorburst",
+      "description": "**Alert**: `QSDMHotReloadApplyFailures`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_hot_reload_apply_failure_total[5m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#31-mode-a--qsdmhotreloadapplyfailures",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -61,7 +61,7 @@
               },
               {
                 "color": "orange",
-                "value": 1.0
+                "value": 0.0
               }
             ]
           },
@@ -75,7 +75,7 @@
         "x": 0,
         "y": 0
       },
-      "id": 41,
+      "id": 15,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -96,14 +96,14 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(qsdm_storage_op_total{op=\"store_transaction\",result=\"error\"}[5m]) * 60",
+          "expr": "rate(qsdm_hot_reload_apply_failure_total[5m])",
           "instant": false,
           "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "QSDMStorageWriteErrorBurst",
+      "title": "QSDMHotReloadApplyFailures",
       "type": "stat"
     },
     {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMStorageReadyFailing`\n\n**Severity**: `critical`\n\n**Trigger**: `rate(qsdm_storage_op_total{op=\"ready\",result=\"error\"}[5m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#32-mode-b--qsdmstoragereadyfailing",
+      "description": "**Alert**: `QSDMHotReloadDryRunDegraded`\n\n**Severity**: `info`\n\n**Trigger**: `(qsdm_hot_reload_last_dry_run_load_ok == 0 or qsdm_hot_reload_last_dry_run_policy_ok == 0) and qsdm_hot_reload_last_dry_run_timestamp > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#32-mode-b--qsdmhotreloaddryrundegraded",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -125,8 +125,8 @@
                 "value": null
               },
               {
-                "color": "red",
-                "value": 0.0
+                "color": "yellow",
+                "value": 1
               }
             ]
           },
@@ -140,7 +140,7 @@
         "x": 6,
         "y": 0
       },
-      "id": 40,
+      "id": 16,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -161,14 +161,14 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(qsdm_storage_op_total{op=\"ready\",result=\"error\"}[5m])",
+          "expr": "(qsdm_hot_reload_last_dry_run_load_ok == 0 or qsdm_hot_reload_last_dry_run_policy_ok == 0) and qsdm_hot_reload_last_dry_run_timestamp > 0",
           "instant": false,
           "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "QSDMStorageReadyFailing",
+      "title": "QSDMHotReloadDryRunDegraded",
       "type": "stat"
     }
   ],
@@ -188,8 +188,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "QSDM — Storage Incident",
-  "uid": "qsdm-runbook-storage-incident",
+  "title": "QSDM — Hot Reload Incident",
+  "uid": "qsdm-runbook-hot-reload-incident",
   "version": 1,
   "weekStart": ""
 }

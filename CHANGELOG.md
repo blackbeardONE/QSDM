@@ -14,6 +14,67 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Loose-end alerts: hot-reload + wallet-ingress dedupe
+  burst. 3 alerts + HOT_RELOAD_INCIDENT runbook + new
+  NETWORKING_INCIDENT Mode C (2026-05-05).** Closes
+  three pre-existing metric surfaces that had no alerts
+  pointing at them, leaving each subsystem invisible to
+  paging until a downstream failure cascade started.
+  - **Hot-reload (two new alerts)**:
+    - `QSDMHotReloadApplyFailures` (warning, `for: 10m`):
+      `rate(qsdm_hot_reload_apply_failure_total[5m]) > 0`
+      sustained 10m. Live config-swap attempts being
+      rejected by the in-process reload path — validator
+      is running on the previous config until the swap
+      path is fixed.
+    - `QSDMHotReloadDryRunDegraded` (info, `for: 30m`):
+      `last_dry_run_load_ok == 0` OR
+      `last_dry_run_policy_ok == 0` with
+      `last_dry_run_timestamp > 0` for 30m. Soft
+      precursor — the on-disk file either can't parse
+      or fails the policy guard, so the next planned
+      apply will fail. Filters out cold-start nodes
+      via the timestamp guard.
+    - [`QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md`](QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md)
+      — new two-mode runbook with a load-vs-policy
+      drill-down for Mode B and explicit cross-references
+      to `GOVERNANCE_AUTHORITY_INCIDENT.md` and
+      `SUBMESH_POLICY_INCIDENT.md` for the two
+      subsystems whose reload failures most often
+      cascade through these alerts.
+  - **Wallet-ingress dedupe burst (one new alert)**:
+    - `QSDMP2PWalletIngressDedupeBurst` (info, `for: 15m`):
+      `rate(qsdm_p2p_wallet_ingress_dedupe_skip_total[5m]) > 1`
+      sustained 15m. INFO severity because dedupe is
+      protective behaviour — duplicates are NOT
+      double-applied — but the burst signal is useful
+      for capacity planning and for spotting
+      buggy/adversarial relayers replaying the same
+      tx_ids via mesh wire + JSON gossip.
+    - Lives in the existing `qsdm-p2p` group; runbook
+      coverage is the new
+      [`NETWORKING_INCIDENT.md` §3.3 / Mode C](QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md).
+      Cross-references reputation as the upstream
+      defence against adversarial sources.
+  - **CI**: promtool unit tests added for all three
+    alerts (early/late firing checkpoints); runbook
+    coverage now verifies all 53 alerts have resolvable
+    `runbook_url` and `dashboard_url`s; auto-generated
+    `qsdm-runbook-hot-reload-incident.json` shipped.
+  - **Verification**: promtool `check rules` + `test
+    rules` pass (53 alerts; 464 in-runbook links
+    resolve across 19 files; 19 dashboards cover all
+    alerts). No code changes — these alerts attach to
+    existing metric surfaces.
+  - **Operational impact**: the hot-reload subsystem
+    is no longer silently broken; a jammed apply path
+    pages within 10m and a config-file regression
+    pages within 30m as a soft precursor. The
+    wallet-ingress dedupe burst signal lets operators
+    identify a misbehaving replayer (often a buggy
+    relayer with a too-tight retry loop) before it
+    scales up enough to require quarantine action.
+
 - **Peer-reputation observability + decay-loop wiring:
   multi-tracker gauges + 2 alerts + 2-mode runbook
   (2026-05-05).** Closes two long-standing operational

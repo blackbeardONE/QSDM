@@ -75,7 +75,7 @@
         "x": 0,
         "y": 0
       },
-      "id": 32,
+      "id": 34,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -140,7 +140,7 @@
         "x": 6,
         "y": 0
       },
-      "id": 31,
+      "id": 33,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -169,6 +169,71 @@
         }
       ],
       "title": "QSDMP2PGossipIngressStalled",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "**Alert**: `QSDMP2PWalletIngressDedupeBurst`\n\n**Severity**: `info`\n\n**Trigger**: `rate(qsdm_p2p_wallet_ingress_dedupe_skip_total[5m]) > 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#33-mode-c--qsdmp2pwalletingressdedupeburst",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 35,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(qsdm_p2p_wallet_ingress_dedupe_skip_total[5m])",
+          "instant": false,
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "QSDMP2PWalletIngressDedupeBurst",
       "type": "stat"
     }
   ],

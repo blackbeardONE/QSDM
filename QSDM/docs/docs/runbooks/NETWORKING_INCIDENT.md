@@ -8,8 +8,9 @@ silently-dropped pubsub subscription).
 
 | Alert | Severity | Default `for:` | Anchor |
 |---|---|---|---|
-| `QSDMP2PNoPeers`               | warning | 5m  | [§3.1](#31-mode-a--qsdmp2pnopeers)               |
-| `QSDMP2PGossipIngressStalled`  | warning | 10m | [§3.2](#32-mode-b--qsdmp2pgossipingressstalled)  |
+| `QSDMP2PNoPeers`                       | warning | 5m  | [§3.1](#31-mode-a--qsdmp2pnopeers)                       |
+| `QSDMP2PGossipIngressStalled`          | warning | 10m | [§3.2](#32-mode-b--qsdmp2pgossipingressstalled)          |
+| `QSDMP2PWalletIngressDedupeBurst`      | info    | 15m | [§3.3](#33-mode-c--qsdmp2pwalletingressdedupeburst)      |
 
 > **What this runbook closes.** Before this commit,
 > `pkg/networking` had **zero** Prometheus instrumentation.
@@ -206,6 +207,65 @@ failure),
 (`QSDMMiningMempoolBacklog` may follow if the local
 validator is publishing locally-submitted txs but
 none are arriving via gossip).
+
+---
+
+### 3.3 Mode C — `QSDMP2PWalletIngressDedupeBurst`
+
+**Severity:** info. **Default `for:`** 15m.
+
+**Fires when**:
+`rate(qsdm_p2p_wallet_ingress_dedupe_skip_total[5m]) > 1`
+sustained for ≥15m.
+
+**Why this matters**: dedupe is the chain's *defence*
+against double-applying the same wallet tx via the
+mesh3d wire path AND the JSON gossip path — both fan
+into the same idempotent ingest. **Dedupe doing its
+job is the healthy state.** This alert is INFO (not
+warning) because duplicates are NOT getting applied;
+the chain is protected. The signal exists for
+**capacity planning and source identification**:
+which peer is replaying tx_ids, and at what cost to
+gossip bandwidth?
+
+**Triage**:
+
+1. **Identify the source** — without per-peer
+   tagging on this counter (yet), inspect the
+   gossip-handler logs around the time the rate
+   spiked. The peer ID logging on
+   `TxGossipIngress.TryConsumeGossip` will point at
+   which sender is replaying.
+2. **Common causes**:
+   - A peer that rejoined recently and is replaying
+     its mempool aggressively at the configured
+     re-broadcast cadence.
+   - A buggy relayer with a too-tight retry loop.
+   - Adversarial re-broadcast spam aimed at
+     amplifying gossip volume to drown out other
+     traffic.
+3. **Cross-check Mode A / Mode B**: if either is
+   firing concurrently, the dedupe burst is a
+   symptom of the deeper network issue — fix that
+   first. If only Mode C is firing, it's a
+   peer-behaviour issue (or a relayer bug),
+   independent of the local network health.
+4. **No urgent mitigation needed**. The burst is
+   bandwidth waste, not correctness risk. If the
+   source is identifiable as adversarial, the
+   reputation tracker (`tracker="tx"`) should
+   already be penalising them.
+
+**Companions:**
+[Mode A](#31-mode-a--qsdmp2pnopeers) and
+[Mode B](#32-mode-b--qsdmp2pgossipingressstalled)
+(if either is co-firing, the dedupe burst is a
+symptom),
+[`REPUTATION_INCIDENT.md`](REPUTATION_INCIDENT.md)
+(reputation should be penalising the source if
+they're adversarial; cross-check
+`tracker="tx"` ban list).
 
 ---
 

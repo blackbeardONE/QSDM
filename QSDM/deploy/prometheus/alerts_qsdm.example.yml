@@ -2475,6 +2475,49 @@ groups:
                 after restart, it's a network-layer issue,
                 not a goroutine drift.
 
+      - alert: QSDMP2PWalletIngressDedupeBurst
+        # Wallet-tx dedupe is a healthy mechanism — same
+        # tx_id arriving via mesh3d wire and JSON gossip
+        # both hit the same idempotent ingest. But a SUDDEN
+        # high-rate burst (>1/sec sustained for 15m)
+        # indicates a gossip-replay storm: peers re-sending
+        # the same tx repeatedly. Either a recent rejoin
+        # (validators replaying the mempool), an honest
+        # mistake by a peer's relayer, or active spam.
+        expr: |
+          rate(qsdm_p2p_wallet_ingress_dedupe_skip_total[5m]) > 1
+        for: 15m
+        labels:
+          severity: info
+          subsystem: v2-networking
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#33-mode-c--qsdmp2pwalletingressdedupeburst"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-networking-incident.json"
+          summary: "{{ $labels.instance }}: wallet-tx dedupe skip rate > 1/sec for ≥15m"
+          description: |
+            qsdm_p2p_wallet_ingress_dedupe_skip_total on
+            {{ $labels.instance }} has been incrementing at
+            > 1/sec sustained for ≥15m. Inbound wallet
+            transactions are being deduplicated at high
+            volume — a peer (or many peers) is re-sending
+            the same tx_ids repeatedly via mesh wire +
+            JSON gossip.
+
+            Common causes:
+              - A peer that rejoined recently and is
+                replaying its mempool aggressively.
+              - A buggy relayer with too-tight retry
+                cadence.
+              - Adversarial re-broadcast spam aimed at
+                amplifying gossip volume.
+
+            This is INFO severity because dedupe is
+            actively protecting the chain — duplicates
+            are not getting double-applied. The signal
+            is useful for capacity planning and for
+            spotting the buggy/adversarial source
+            before they scale up.
+
   # =====================================================================
   # qsdm-contracts-bridge — smart-contract execution + atomic-swap bridge
   #
@@ -2669,3 +2712,79 @@ groups:
             Often a precursor to QSDMReputationBanRatioHigh
             (Mode A) — read the next 30m of trend before
             paging up.
+
+  # =====================================================================
+  # qsdm-hot-reload — runtime config hot-reload health
+  #
+  # The hot-reload subsystem applies config changes without
+  # a validator restart. Two failure shapes matter:
+  #   1. apply_failure_total climbing — applies (real
+  #      config swaps) are being rejected by the in-process
+  #      reload path. Validator is running on stale config.
+  #   2. last_dry_run_load_ok == 0 sustained — the on-disk
+  #      config can't even parse cleanly. The next planned
+  #      apply will fail.
+  # =====================================================================
+  - name: qsdm-hot-reload
+    rules:
+      - alert: QSDMHotReloadApplyFailures
+        # Any sustained rate of failed applies. Threshold is
+        # >0/5m sustained for 10m — a single transient
+        # failure shouldn't page, but consistent failures
+        # mean live config swaps are jammed.
+        expr: |
+          rate(qsdm_hot_reload_apply_failure_total[5m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: v2-hotreload
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#31-mode-a--qsdmhotreloadapplyfailures"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-hot-reload-incident.json"
+          summary: "{{ $labels.instance }}: hot-reload apply failures sustained for ≥10m"
+          description: |
+            qsdm_hot_reload_apply_failure_total on
+            {{ $labels.instance }} has been incrementing for
+            ≥10m. Live config-swap attempts are being
+            rejected by the in-process reload path; the
+            validator is running on the previous config
+            until the swap path is fixed.
+
+            Likely:
+              - On-disk config has a syntactic / semantic
+                regression (the dry-run guard would catch
+                this — see QSDMHotReloadDryRunDegraded).
+              - A reloader hook (subsystem-specific
+                Apply()) is failing — read the validator
+                logs for the specific subsystem error.
+              - Lock contention on a config-mutex if a
+                deploy script is hammering the apply
+                endpoint.
+
+      - alert: QSDMHotReloadDryRunDegraded
+        # Last dry-run failed to load OR failed policy, AND
+        # a dry-run has actually been attempted (timestamp
+        # != 0). Filters out cold-start nodes that haven't
+        # yet attempted a dry-run.
+        expr: |
+          (qsdm_hot_reload_last_dry_run_load_ok == 0
+           or qsdm_hot_reload_last_dry_run_policy_ok == 0)
+          and qsdm_hot_reload_last_dry_run_timestamp > 0
+        for: 30m
+        labels:
+          severity: info
+          subsystem: v2-hotreload
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#32-mode-b--qsdmhotreloaddryrundegraded"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-hot-reload-incident.json"
+          summary: "{{ $labels.instance }}: last hot-reload dry-run failed load or policy for ≥30m"
+          description: |
+            On {{ $labels.instance }} the most-recent
+            hot-reload dry-run reports
+            qsdm_hot_reload_last_dry_run_load_ok == 0 or
+            qsdm_hot_reload_last_dry_run_policy_ok == 0
+            sustained for ≥30m. The on-disk config either
+            doesn't parse cleanly or fails the policy
+            guard. The next planned apply WILL fail —
+            this is the precursor signal to
+            QSDMHotReloadApplyFailures.

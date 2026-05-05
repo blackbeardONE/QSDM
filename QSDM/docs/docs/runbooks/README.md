@@ -1,7 +1,7 @@
 # QSDM Operator Runbooks — Master Index
 
 This is the operator's first page when paged for any
-`QSDM*` Prometheus alert. It lists all 50 alerts in
+`QSDM*` Prometheus alert. It lists all 53 alerts in
 [`alerts_qsdm.example.yml`](../../../deploy/prometheus/alerts_qsdm.example.yml),
 maps each to its dedicated runbook section, and shows
 the cross-subsystem escalation paths in one place.
@@ -65,6 +65,8 @@ link directly to the relevant `### 3.x Mode X` (or
 | `QSDMGovAuthorityCountTooLow`                  | **critical** | `qsdm-v2-governance`              | [`GOVERNANCE_AUTHORITY_INCIDENT.md` §3.3](GOVERNANCE_AUTHORITY_INCIDENT.md#33-mode-c--qsdmgovauthoritycounttoolow) |
 | `QSDMGovAuthorityThresholdCrossed`             | warning      | `qsdm-v2-governance`              | [`GOVERNANCE_AUTHORITY_INCIDENT.md` §3.2](GOVERNANCE_AUTHORITY_INCIDENT.md#32-mode-b--qsdmgovauthoritythresholdcrossed) |
 | `QSDMGovAuthorityVoteRecorded`                 | info         | `qsdm-v2-governance`              | [`GOVERNANCE_AUTHORITY_INCIDENT.md` §3.1](GOVERNANCE_AUTHORITY_INCIDENT.md#31-mode-a--qsdmgovauthorityvoterecorded) |
+| `QSDMHotReloadApplyFailures`                   | warning      | `qsdm-hot-reload`                 | [`HOT_RELOAD_INCIDENT.md` §3.1](HOT_RELOAD_INCIDENT.md#31-mode-a--qsdmhotreloadapplyfailures)                |
+| `QSDMHotReloadDryRunDegraded`                  | info         | `qsdm-hot-reload`                 | [`HOT_RELOAD_INCIDENT.md` §3.2](HOT_RELOAD_INCIDENT.md#32-mode-b--qsdmhotreloaddryrundegraded)               |
 | `QSDMMiningAutoRevokeBurst`                    | **critical** | `qsdm-v2-mining-slashing`         | [`SLASHING_INCIDENT.md` §3.4](SLASHING_INCIDENT.md#34-mode-d--qsdmminingautorevokeburst) |
 | `QSDMMiningBondedDustDropped`                  | warning      | `qsdm-v2-mining-enrollment`       | [`ENROLLMENT_INCIDENT.md` §3.5](ENROLLMENT_INCIDENT.md#35-mode-e--qsdmminingbondeddustdropped) |
 | `QSDMMiningChainStuck`                         | **critical** | `qsdm-v2-mining-liveness`         | [`MINING_LIVENESS.md` §3.1](MINING_LIVENESS.md#31-mode-a--qsdmminingchainstuck) |
@@ -83,6 +85,7 @@ link directly to the relevant `### 3.x Mode X` (or
 | `QSDMNvidiaLockP2PRejects`                     | warning      | `qsdm-nvidia-lock`                | [`OPERATOR_HYGIENE_INCIDENT.md` §3.2](OPERATOR_HYGIENE_INCIDENT.md#32-mode-b--qsdmnvidialockp2prejects) |
 | `QSDMP2PGossipIngressStalled`                  | warning      | `qsdm-p2p`                        | [`NETWORKING_INCIDENT.md` §3.2](NETWORKING_INCIDENT.md#32-mode-b--qsdmp2pgossipingressstalled)         |
 | `QSDMP2PNoPeers`                               | warning      | `qsdm-p2p`                        | [`NETWORKING_INCIDENT.md` §3.1](NETWORKING_INCIDENT.md#31-mode-a--qsdmp2pnopeers)                      |
+| `QSDMP2PWalletIngressDedupeBurst`              | info         | `qsdm-p2p`                        | [`NETWORKING_INCIDENT.md` §3.3](NETWORKING_INCIDENT.md#33-mode-c--qsdmp2pwalletingressdedupeburst)     |
 | `QSDMQuarantineAnySubmesh`                     | warning      | `qsdm-quarantine`                 | [`QUARANTINE_INCIDENT.md` §3.1](QUARANTINE_INCIDENT.md#31-mode-a--qsdmquarantineanysubmesh) |
 | `QSDMQuarantineMajorityIsolated`               | **critical** | `qsdm-quarantine`                 | [`QUARANTINE_INCIDENT.md` §3.2](QUARANTINE_INCIDENT.md#32-mode-b--qsdmquarantinemajorityisolated) |
 | `QSDMReputationBanRatioHigh`                   | warning      | `qsdm-reputation`                 | [`REPUTATION_INCIDENT.md` §3.1](REPUTATION_INCIDENT.md#31-mode-a--qsdmreputationbanratiohigh)      |
@@ -102,8 +105,8 @@ link directly to the relevant `### 3.x Mode X` (or
 | `QSDMWalletSendErrorRate`                      | warning      | `qsdm-wallet`                     | [`WALLET_INCIDENT.md` §3.1](WALLET_INCIDENT.md#31-mode-a--qsdmwalletsenderrorrate)         |
 | `QSDMWalletStorageErrorBurst`                  | warning      | `qsdm-wallet`                     | [`WALLET_INCIDENT.md` §3.2](WALLET_INCIDENT.md#32-mode-b--qsdmwalletstorageerrorburst)     |
 
-**Total: 50 alerts. Severity distribution: 9 critical
-/ 38 warning / 3 info.**
+**Total: 53 alerts. Severity distribution: 9 critical
+/ 39 warning / 5 info.**
 
 ---
 
@@ -500,8 +503,9 @@ from false-firing the no-peers alert.
 
 | Alert | Mode | Severity |
 |---|---|---|
-| [`QSDMP2PNoPeers`](NETWORKING_INCIDENT.md#31-mode-a--qsdmp2pnopeers)                           | A | warning |
-| [`QSDMP2PGossipIngressStalled`](NETWORKING_INCIDENT.md#32-mode-b--qsdmp2pgossipingressstalled) | B | warning |
+| [`QSDMP2PNoPeers`](NETWORKING_INCIDENT.md#31-mode-a--qsdmp2pnopeers)                                 | A | warning |
+| [`QSDMP2PGossipIngressStalled`](NETWORKING_INCIDENT.md#32-mode-b--qsdmp2pgossipingressstalled)       | B | warning |
+| [`QSDMP2PWalletIngressDedupeBurst`](NETWORKING_INCIDENT.md#33-mode-c--qsdmp2pwalletingressdedupeburst) | C | info    |
 
 **When to read:** validator is islanded from the network
 (Mode A) or peers exist but no gossip is landing (Mode B).
@@ -527,6 +531,44 @@ starved AND the local node has no ingress path),
 [`SUBMESH_POLICY_INCIDENT.md`](SUBMESH_POLICY_INCIDENT.md)
 (when the network is fine but submesh-policy rejects are
 dominating — orthogonal to this runbook).
+
+---
+
+### `HOT_RELOAD_INCIDENT.md` — runtime config hot-reload health
+
+Two-mode runbook for the in-process config hot-reload
+subsystem. Mode A catches **sustained apply failures**
+(live config swaps being rejected — the validator is
+running on stale config); Mode B is the lower-severity
+precursor case where **the on-disk config can't pass a
+dry-run** (next planned apply will fail).
+
+Closes a long-standing alerting gap. The hot-reload
+subsystem already exposed five Prometheus counters and
+four gauges (`qsdm_hot_reload_*` in
+`pkg/monitoring/prometheus_scrape.go`), but no alert
+ever fired against them. A jammed apply path or a
+dry-run that couldn't parse the on-disk file were both
+invisible until a downstream subsystem broke.
+
+| Alert | Mode | Severity |
+|---|---|---|
+| [`QSDMHotReloadApplyFailures`](HOT_RELOAD_INCIDENT.md#31-mode-a--qsdmhotreloadapplyfailures)   | A | warning |
+| [`QSDMHotReloadDryRunDegraded`](HOT_RELOAD_INCIDENT.md#32-mode-b--qsdmhotreloaddryrundegraded) | B | info    |
+
+**When to read:** live config swaps are failing
+(Mode A) or the on-disk file can't pass the dry-run
+guard (Mode B — precursor signal). Distinguish by
+checking which `qsdm_hot_reload_last_dry_run_*` gauge
+is at 0.
+
+**Companions:** [`GOVERNANCE_AUTHORITY_INCIDENT.md`](GOVERNANCE_AUTHORITY_INCIDENT.md)
+(authority-list reload failures cascade through Mode A;
+authority-count policy failures cascade through Mode
+B's `policy_ok=0` path),
+[`SUBMESH_POLICY_INCIDENT.md`](SUBMESH_POLICY_INCIDENT.md)
+(submesh-policy reload failures cascade through both
+modes).
 
 ---
 

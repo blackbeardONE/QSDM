@@ -1424,3 +1424,97 @@ tests:
             description: "qsdm_reputation_score_min on\ni1 (tracker=tx)\nhas been below -100 (halfway to ban) for ≥30m\nwith ≥4 tracked peers. Penalties are\naccumulating faster than the configured\nDecayInterval/DecayFactor can pull them back.\nOften a precursor to QSDMReputationBanRatioHigh\n(Mode A) — read the next 30m of trend before\npaging up.\n"
             runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md#32-mode-b--qsdmreputationscorecollapse"
             summary: "i1: tx min-score < -100 for ≥30m"
+
+  # -------------------------------------------------------------------
+  # qsdm-hot-reload — runtime config hot-reload health
+  # HOT_RELOAD_INCIDENT.md §3.1 / §3.2
+  # -------------------------------------------------------------------
+
+  - name: "QSDMHotReloadApplyFailures — apply_failure rate > 0 for 5m, for:10m"
+    interval: 1m
+    # 1 apply failure per minute → rate > 0. The 5m
+    # rate window saturates at 5m, then for:10m fires
+    # at 15m.
+    input_series:
+      - series: 'qsdm_hot_reload_apply_failure_total{instance="i1"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: QSDMHotReloadApplyFailures
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: QSDMHotReloadApplyFailures
+        exp_alerts:
+        - exp_labels:
+            instance: "i1"
+            severity: "warning"
+            subsystem: "v2-hotreload"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-hot-reload-incident.json"
+            description: "qsdm_hot_reload_apply_failure_total on\ni1 has been incrementing for\n≥10m. Live config-swap attempts are being\nrejected by the in-process reload path; the\nvalidator is running on the previous config\nuntil the swap path is fixed.\n\nLikely:\n  - On-disk config has a syntactic / semantic\n    regression (the dry-run guard would catch\n    this — see QSDMHotReloadDryRunDegraded).\n  - A reloader hook (subsystem-specific\n    Apply()) is failing — read the validator\n    logs for the specific subsystem error.\n  - Lock contention on a config-mutex if a\n    deploy script is hammering the apply\n    endpoint.\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#31-mode-a--qsdmhotreloadapplyfailures"
+            summary: "i1: hot-reload apply failures sustained for ≥10m"
+
+  - name: "QSDMHotReloadDryRunDegraded — load_ok=0 with timestamp>0, for:30m"
+    interval: 1m
+    # load_ok stays at 0, timestamp = 1700000000 (non-
+    # zero static). Fires for:30m at 30m.
+    input_series:
+      - series: 'qsdm_hot_reload_last_dry_run_load_ok{instance="i1"}'
+        values: '0+0x60'
+      - series: 'qsdm_hot_reload_last_dry_run_policy_ok{instance="i1"}'
+        values: '1+0x60'
+      - series: 'qsdm_hot_reload_last_dry_run_timestamp{instance="i1"}'
+        values: '1700000000+0x60'
+    alert_rule_test:
+      - eval_time: 29m
+        alertname: QSDMHotReloadDryRunDegraded
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: QSDMHotReloadDryRunDegraded
+        exp_alerts:
+        - exp_labels:
+            instance: "i1"
+            severity: "info"
+            subsystem: "v2-hotreload"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-hot-reload-incident.json"
+            description: "On i1 the most-recent\nhot-reload dry-run reports\nqsdm_hot_reload_last_dry_run_load_ok == 0 or\nqsdm_hot_reload_last_dry_run_policy_ok == 0\nsustained for ≥30m. The on-disk config either\ndoesn't parse cleanly or fails the policy\nguard. The next planned apply WILL fail —\nthis is the precursor signal to\nQSDMHotReloadApplyFailures.\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#32-mode-b--qsdmhotreloaddryrundegraded"
+            summary: "i1: last hot-reload dry-run failed load or policy for ≥30m"
+
+  # -------------------------------------------------------------------
+  # qsdm-p2p — wallet-tx dedupe burst (loose-end mode)
+  # NETWORKING_INCIDENT.md §3.3
+  # -------------------------------------------------------------------
+
+  - name: "QSDMP2PWalletIngressDedupeBurst — dedupe_skip rate > 1/sec for 5m, for:15m"
+    interval: 1m
+    # 120 dedupe skips per minute (= 2/sec) sustained
+    # → rate > 1. The 5m rate window saturates at 5m,
+    # then for:15m fires at 20m.
+    input_series:
+      - series: 'qsdm_p2p_wallet_ingress_dedupe_skip_total{instance="i1"}'
+        values: '0+120x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: QSDMP2PWalletIngressDedupeBurst
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 22m
+        alertname: QSDMP2PWalletIngressDedupeBurst
+        exp_alerts:
+        - exp_labels:
+            instance: "i1"
+            severity: "info"
+            subsystem: "v2-networking"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-networking-incident.json"
+            description: "qsdm_p2p_wallet_ingress_dedupe_skip_total on\ni1 has been incrementing at\n> 1/sec sustained for ≥15m. Inbound wallet\ntransactions are being deduplicated at high\nvolume — a peer (or many peers) is re-sending\nthe same tx_ids repeatedly via mesh wire +\nJSON gossip.\n\nCommon causes:\n  - A peer that rejoined recently and is\n    replaying its mempool aggressively.\n  - A buggy relayer with too-tight retry\n    cadence.\n  - Adversarial re-broadcast spam aimed at\n    amplifying gossip volume.\n\nThis is INFO severity because dedupe is\nactively protecting the chain — duplicates\nare not getting double-applied. The signal\nis useful for capacity planning and for\nspotting the buggy/adversarial source\nbefore they scale up.\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#33-mode-c--qsdmp2pwalletingressdedupeburst"
+            summary: "i1: wallet-tx dedupe skip rate > 1/sec for ≥15m"
