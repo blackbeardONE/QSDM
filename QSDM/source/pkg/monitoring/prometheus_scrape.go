@@ -65,6 +65,14 @@ func GlobalScrapePrometheusExporter() *PrometheusExporter {
 		// repmetrics leaf. Emits nothing when no tracker has
 		// been registered (test/dev scrapes).
 		globalScrapeExporter.RegisterCollector("qsdm_reputation", reputationPrometheusMetrics)
+		// qsdm_binary_capabilities is a single info-metric
+		// (value=1) labelled with the build-tag-determined
+		// backend choices for dilithium / wasm / mesh3d. Lets
+		// operators detect a wrong-binary deploy on the first
+		// /metrics scrape (no 5m wait for QSDMStubActive). See
+		// build_capabilities.go for the rationale and STAGE_B_
+		// DEPLOY_BLR1.md §"Smoke check" for the runbook hook.
+		globalScrapeExporter.RegisterCollector("qsdm_binary_capabilities", buildCapabilitiesMetrics)
 	})
 	return globalScrapeExporter
 }

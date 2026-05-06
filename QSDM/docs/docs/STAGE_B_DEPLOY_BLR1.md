@@ -151,8 +151,36 @@ investigate after.
 ## 4. Smoke check — verify Stage B is actually live
 
 The whole point of this deploy is that the three CRITICAL
-stub-active alerts auto-resolve. Three quick checks confirm
+stub-active alerts auto-resolve. Four quick checks confirm
 that, in increasing order of confidence:
+
+**4.0 The binary identity is Stage B (zero-latency check).**
+
+```bash
+curl -s http://127.0.0.1:8080/api/metrics/prometheus \
+  | grep -E '^qsdm_binary_capabilities\{'
+```
+
+Expected on a Stage B+ binary:
+
+```text
+qsdm_binary_capabilities{dilithium="circl",mesh3d="cpu_fallback",wasm="wazero"} 1
+```
+
+What each label tells you:
+
+- `dilithium="circl"` — pure-Go ML-DSA-87 (Stage B). If you see
+  `dilithium="liboqs"` you're on a CGO build, which is fine
+  for a different deployment topology but **not** what this
+  runbook deploys (BLR1 has no liboqs system package).
+- `wasm="wazero"` — pure-Go WASMSDK (wasm Stage B).
+- `mesh3d="cpu_fallback"` — expected on the BLR1 VPS (no
+  NVIDIA hardware). `mesh3d="cuda"` is fine on a GPU host
+  but indicates a different binary.
+
+This metric flips on the first `/metrics` scrape (no `for: 5m`
+delay). If any label is unexpected, **rollback now** (§5) —
+you almost certainly redeployed a stale or wrong-tag binary.
 
 **4.1 Process logs show the new build's circl init.**
 

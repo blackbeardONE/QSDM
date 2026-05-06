@@ -12,6 +12,50 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Added
+
+- **Boot-time binary-capabilities info-metric (2026-05-06).**
+  New collector `qsdm_binary_capabilities` (value=1) exposes
+  the build-tag-determined backend identity of the running
+  binary on the `/api/metrics/prometheus` endpoint:
+  ```text
+  qsdm_binary_capabilities{dilithium="circl",mesh3d="cpu_fallback",wasm="wazero"} 1
+  ```
+  Closes the wrong-binary-deploy detection gap: previously a
+  stale binary that re-introduced a retired stub had to wait
+  the `QSDMStubActive` alert's `for: 5m` window before paging.
+  The capabilities metric flips on the first scrape, so a
+  redeploy of a stale tag is detectable in seconds.
+  - Labels are drawn from closed enums (`dilithium ∈
+    {liboqs, circl}`, `wasm ∈ {wazero, browser_stub}`,
+    `mesh3d ∈ {cuda, cpu_fallback}`); cardinality is
+    bounded at 8 series across all binaries ever built.
+  - Implementation: 6 build-tag-conditional files in
+    `pkg/monitoring/` set package-level constants
+    (`dilithiumBackend`, `wasmBackend`, `mesh3dBackend`)
+    that mirror the underlying subsystem build-tag
+    selections in `pkg/crypto`, `pkg/wasm`, and
+    `pkg/mesh3d`. The collector reads the constants and
+    emits a single info-metric per scrape.
+  - **Tests:** `pkg/monitoring/build_capabilities_test.go`
+    asserts the metric shape (1 series, value=1, three
+    labels), the Prometheus-exposition wiring (collector
+    is registered), and the closed-enum invariant (so
+    runbook drift surfaces in CI). All 3 new tests pass
+    under `CGO_ENABLED=0`.
+  - **Runbook hooks:**
+    - `STAGE_B_DEPLOY_BLR1.md` §"Smoke check" gained
+      step 4.0: a zero-latency check of the metric BEFORE
+      the existing 4.1–4.3 checks. If any label is
+      unexpected, the runbook tells the operator to
+      rollback immediately.
+    - `STUB_DEPLOYMENT_INCIDENT.md` §2a: when the alert
+      fires, on-call checks `qsdm_binary_capabilities`
+      first to distinguish "wrong binary deployed" from
+      "real subsystem regression"; the four retired kinds
+      reduce to "redeploy from head" without reading the
+      per-kind anchor.
+
 ### Removed
 
 - **`wasm_sdk` stub paths deleted (wasm Stage B) (2026-05-06).**

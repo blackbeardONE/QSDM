@@ -83,6 +83,39 @@ To watch the full state at a glance (including kinds at 0):
 qsdm_stub_active
 ```
 
+### 2a. Wrong-binary deploy? (5-second triage)
+
+Before opening the per-kind anchor below, check if this is
+just a wrong-binary deploy:
+
+```promql
+qsdm_binary_capabilities
+```
+
+This is a single info-metric (value=1) with the binary's
+build-tag-determined backends. On a Stage B+ deploy of the
+QSDM tree, you expect:
+
+```text
+qsdm_binary_capabilities{dilithium="circl",mesh3d="cpu_fallback",wasm="wazero"} 1
+```
+
+If `dilithium != "circl"` (and you're not on a CGO+liboqs
+host) **or** `wasm != "wazero"`, the kinds `poe`,
+`dilithium`, `wallet`, `wasm_sdk` are not structurally pinned
+on the running binary and the alert is detecting a real
+stub-shipped path that should not exist on Stage B+. The fix
+is the same: **rebuild from current head and redeploy** (see
+[`STAGE_B_DEPLOY_BLR1.md`](../STAGE_B_DEPLOY_BLR1.md) for the
+operational steps on the BLR1 validator). No need to read the
+per-kind anchor — those four anchors below all reduce to
+"wrong binary, redeploy" in 2026-05-06+.
+
+If `qsdm_binary_capabilities` shows the expected Stage B+
+labels, the firing kind is one of the still-live ones
+(`mesh3d_cuda`, `cc`) and you should jump to its anchor
+below for the real triage path.
+
 ---
 
 ## kind-poe
