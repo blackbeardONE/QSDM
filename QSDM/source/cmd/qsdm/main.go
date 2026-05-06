@@ -533,32 +533,41 @@ func main() {
 	}
 	consensus := poe
 
-	// Load wallet WASM module (optional, requires CGO and wasmtime DLLs)
-	// Disabled when wasmtime DLLs are not available to avoid crashes
+	// Optional WASM contract modules. The non-CGO !cgo build defaults to the
+	// pure-Go wazero runtime via pkg/wasm; the .wasm files themselves are
+	// not shipped in the repo and the loader falls back gracefully when
+	// they are absent (production state on most validators).
+	//
+	// Logging policy: file-absent is the configured-off case (INFO);
+	// file-present-but-malformed and SDK-instantiation errors are real
+	// problems (WARN).
 	walletWasmPath := "wasm_modules/wallet/wallet.wasm"
 	walletBytes, err := wasm.LoadWASMFromFile(walletWasmPath)
 	var walletSdk *wasm.WASMSDK
 	if err != nil {
-		logger.Warn("Failed to load wallet WASM module", "path", walletWasmPath, "error", err)
-		log.Println("WASM wallet module disabled due to missing WASM file")
+		if errors.Is(err, os.ErrNotExist) {
+			logger.Info("WASM wallet module disabled (file absent)", "path", walletWasmPath)
+		} else {
+			logger.Warn("Failed to load wallet WASM module", "path", walletWasmPath, "error", err)
+		}
 	} else {
-		// Try to create WASM SDK - this will fail gracefully if wasmtime DLLs are missing
 		walletSdk, err = wasm.NewWASMSDK(walletBytes)
 		if err != nil {
-			logger.Warn("Failed to create WASM SDK for wallet", "error", err)
-			log.Printf("WASM wallet SDK disabled: %v (this is normal if wasmtime DLLs are missing)", err)
+			logger.Warn("Failed to instantiate WASM SDK for wallet", "error", err)
 			walletSdk = nil
 		} else {
 			logger.Info("WASM wallet SDK initialized")
 		}
 	}
 
-	// Load validator WASM module (optional, requires CGO)
 	validatorWasmPath := "wasm_modules/validator/validator.wasm"
 	_, err = wasm.LoadWASMFromFile(validatorWasmPath)
 	if err != nil {
-		logger.Warn("Failed to load validator WASM module", "path", validatorWasmPath, "error", err)
-		log.Println("WASM validator module disabled due to missing WASM file")
+		if errors.Is(err, os.ErrNotExist) {
+			logger.Info("WASM validator module disabled (file absent)", "path", validatorWasmPath)
+		} else {
+			logger.Warn("Failed to load validator WASM module", "path", validatorWasmPath, "error", err)
+		}
 	} else {
 		logger.Info("WASM validator module loaded")
 	}
