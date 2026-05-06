@@ -16,12 +16,30 @@ QSDM tree is small, the `cmd/qsdm` binary is self-contained
 on Ubuntu cleanly restarts the unit. Total operator time
 end-to-end is ~5 minutes including the smoke check.
 
-> **Pre-Stage-B baseline being replaced.** The currently-live
-> binary on `/opt/qsdm/qsdm` is built from a stub-era commit:
-> non-CGO, no `dilithium_circl` tag, so `crypto.NewDilithium()`
-> returned `nil` and the wallet/PoE/dilithium kinds were all
-> firing CRITICAL alerts at boot. After this deploy those three
-> rows go to `0` and stay there.
+> **History — one-time `qsdmplus` → `qsdm` rebrand (2026-05-06).**
+> Before 2026-05-06 the live deploy was an Apr-23 CGO+liboqs
+> build under the legacy `qsdmplus.service` unit, user `qsdmplus`,
+> at `/opt/qsdmplus/qsdmplus`. That binary predated the
+> `qsdm_stub_active` / `qsdm_binary_capabilities` collectors,
+> so no stub-active alerts were ever firing — but the deployed
+> tree had drifted ~13 days behind `origin/main` with stale
+> branding. On 2026-05-06 a one-time rebrand migration was run
+> against BLR1 (snapshot at `/root/qsdmplus.snapshot.<ts>.tgz`,
+> old unit + tree preserved disabled for emergency rollback);
+> from that point on this runbook applies as-is. SQLite state
+> was lost in the migration because the new non-CGO binary uses
+> file-storage fallback (`SQLite requires CGO`); the validator
+> had `transactions_processed: 0` for 13 days so this was a
+> no-op in practice. New libp2p hostID:
+> `12D3KooWJynBfebCrUZxqEQQ727trwdwgw9BhJsZkBE1eTdzCE5D`.
+>
+> **Pre-Stage-B baseline being replaced** *(by future deploys)*.
+> The currently-live binary on `/opt/qsdm/qsdm` is built from
+> Stage B at commit `bb89450` and reports
+> `qsdm_binary_capabilities{dilithium="circl",mesh3d="cpu_fallback",wasm="wazero"} 1`.
+> All seven `qsdm_stub_active{kind=…}` rows are pinned at `0`.
+> Subsequent deploys following this runbook should preserve
+> that state.
 
 ---
 
@@ -157,7 +175,13 @@ that, in increasing order of confidence:
 **4.0 The binary identity is Stage B (zero-latency check).**
 
 ```bash
-curl -s http://127.0.0.1:8080/api/metrics/prometheus \
+# The metrics endpoint lives on the dashboard port (:8081),
+# not the log viewer (:8080) and not the API server (:8443).
+# Auth is by Bearer token = QSDM_DASHBOARD_METRICS_SCRAPE_SECRET
+# (set in /etc/systemd/system/qsdm.service.d/secrets.conf).
+SECRET=$(awk -F'=' '/QSDM_DASHBOARD_METRICS_SCRAPE_SECRET=/ && /^Environment="QSDM_DASH/ {gsub(/"$/,"",$3); print $3; exit}' /etc/systemd/system/qsdm.service.d/secrets.conf)
+curl -sS -H "Authorization: Bearer $SECRET" \
+     http://127.0.0.1:8081/api/metrics/prometheus \
   | grep -E '^qsdm_binary_capabilities\{'
 ```
 
@@ -196,9 +220,10 @@ does not.
 **4.2 The Prometheus stub-active gauges are all 0.**
 
 ```bash
-# The scrape endpoint is open-read on this node (strict auth
-# disabled — see vps.txt §[2]).
-curl -s http://127.0.0.1:8080/api/metrics/prometheus \
+# Same Bearer-auth scheme as §4.0. The endpoint lives on :8081
+# (dashboard), not :8080 (log viewer) or :8443 (API server).
+curl -sS -H "Authorization: Bearer $SECRET" \
+     http://127.0.0.1:8081/api/metrics/prometheus \
   | grep -E '^qsdm_stub_active\{' \
   | sort
 ```
@@ -227,12 +252,14 @@ journalctl -u qsdm -f --no-pager | grep -E "block height|mined|tx accepted"
 # Wait for one new line. Ctrl-C when you see one.
 ```
 
-Or via the API:
+Or via the API (chain height lives on the API server `:8443`,
+not on the log viewer or dashboard ports):
 
 ```bash
-curl -s http://127.0.0.1:8080/api/v1/chain/height | jq .
-# Expect: {"height": <some-number>}, run twice with 30s gap,
-# expect height to advance.
+# /api/v1/chain/height requires JWT auth on the production
+# config; for a local smoke check use the unauthenticated
+# /api/v1/health/live endpoint to confirm the API is up.
+curl -sS http://127.0.0.1:8443/api/v1/health/live | jq .
 ```
 
 If §4.1, §4.2, §4.3 all check out, the deploy is done. Move to
@@ -332,3 +359,33 @@ After §4 passes, you've verified end-to-end:
 
 If a future Stage C or unrelated change reverts any of these,
 this runbook is the regression-detection checklist.
+
+---
+
+## 9. Known Caddy issue (separate fix)
+
+The Caddyfile at `/etc/caddy/Caddyfile` proxies
+`qsdm.tech/api/metrics/prometheus` to `127.0.0.1:8443`. That
+worked on the legacy QSDM+ binary (which served metrics on
+the API port) but on Stage B the metrics endpoint lives on
+`:8081` instead. As of 2026-05-06 the Caddy block routes the
+external scrape URL to a port that returns `401 invalid or
+expired token` (the API server's JWT auth).
+
+This does **not** block local Prometheus scrape: a Prometheus
+instance running on the same host scrapes `127.0.0.1:8081`
+directly with the Bearer secret. It only matters if you want
+Prometheus to scrape from the public internet via Caddy.
+
+To fix when you have a maintenance window, swap the proxy
+target for the metrics-only path:
+
+```caddyfile
+# In the qsdm.tech { ... } block, replace
+@api path /api/v1/* /api/metrics /api/metrics/prometheus
+# with two distinct matchers:
+@api  path /api/v1/* /api/metrics
+@scrape path /api/metrics/prometheus
+handle @api    { reverse_proxy 127.0.0.1:8443 ... }
+handle @scrape { reverse_proxy 127.0.0.1:8081 ... }
+```
