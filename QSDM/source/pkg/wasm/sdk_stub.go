@@ -1,5 +1,5 @@
-//go:build !cgo
-// +build !cgo
+//go:build !cgo && !wasm_wazero
+// +build !cgo,!wasm_wazero
 
 package wasm
 
@@ -10,6 +10,13 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/monitoring/stubactive"
 )
 
+// Selected when CGO is off AND the wasm_wazero opt-in tag is
+// NOT in scope. The wasm_wazero variant (sdk_wazero.go) is the
+// Stage-A path that lights up a real WASMSDK backed by wazero
+// pure-Go; with that tag this stub never compiles. CGO builds
+// without wasmtime DLLs land on sdk_wasmtime_disabled.go
+// instead.
+//
 // Note: qsdm_stub_active{kind="wasm_sdk"} is flipped to 1 by
 // NewWASMSDK below — NOT by package init() — because a non-CGO
 // validator that doesn't configure any WASM module is operating

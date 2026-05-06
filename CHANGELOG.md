@@ -12,6 +12,87 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Added
+
+- **Pure-Go wazero WASM backend (Stage A, opt-in) (2026-05-06).**
+  Adds `pkg/wasm/sdk_wazero.go`, a real `*WASMSDK`
+  implementation backed by `github.com/tetratelabs/wazero`
+  (already a direct dependency for the
+  `QSDM_WASM_PREFLIGHT_MODULE` env hook). Selected by
+  `go build -tags wasm_wazero ./...`; orthogonal to CGO state
+  so it works on every target the QSDM binary already runs on.
+  - **Build-tag selection.** The two existing stub backends had
+    their tags narrowed to exclude `wasm_wazero`:
+    - `sdk_stub.go`: `//go:build !cgo && !wasm_wazero`
+    - `sdk_wasmtime_disabled.go`: `//go:build cgo && !wasm_wazero`
+    The wazero backend takes over the `WASMSDK` type entirely
+    when the tag is in scope; default builds are unchanged.
+  - **API parity.** `NewWASMSDK`, `CallFunction(name, params...)`,
+    `preflightP2PTransactionJSON`, `LoadWASMFromFile` all match
+    the existing stub surface exactly, so callers in
+    `cmd/qsdm/main.go`, `cmd/qsdm/transaction/dispatch.go`, and
+    `pkg/contracts/engine.go` compile unchanged. New
+    `(*WASMSDK).Close()` method releases the wazero runtime
+    deterministically (no-op on stub builds).
+  - **Stub-active invariant.** Under `-tags wasm_wazero`,
+    `qsdm_stub_active{kind="wasm_sdk"}` stays at 0 — the
+    wazero backend is real, no `MarkActive` call. Verified
+    by `TestWazeroSDK_StubFlagNotMarked`.
+  - **Parity tests** (`pkg/wasm/sdk_wazero_test.go`):
+    - `TestWazeroSDK_RoundTrip_AddJSON` — the contracts-engine
+      hot path: `CallFunction(name, jsonString)` with a 2-arg
+      i32 add module.
+    - `TestWazeroSDK_StubFlagNotMarked` — operational
+      invariant.
+    - `TestWazeroSDK_EmptyBytecodeRejected` — empty input is
+      rejected at construction (matches stub behaviour).
+    - `TestWazeroSDK_CallFunctionUnknownExport` — undefined
+      export errors out instead of silently succeeding.
+    - `TestWazeroSDK_PreflightNoValidator` — modules without
+      `validate_raw` get the "no preflight rules" fast path
+      so gossip propagation isn't blocked.
+  - **Stub-active lazy-flag test fixed.** `sdk_stubactive_test.go`'s
+    `TestWasmSDK_StubActiveIsLazy` previously assumed any
+    `NewWASMSDK` error meant the stub flag should flip — but
+    with `wasm_wazero` in scope, the wazero backend errors on
+    invalid bytecode without flipping the flag (correctly,
+    because it's real). Now uses a 39-byte valid `add` module:
+    if construction succeeds, skip (real backend); if it
+    errors, assert the flag flipped (stub backend).
+  - **Runbook updated**:
+    [`STUB_DEPLOYMENT_INCIDENT.md` § kind-wasm-sdk](QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md#kind-wasm-sdk)
+    now documents three backends (CGO+wasmtime, pure-Go
+    wazero, stub) and the build commands to select each.
+    On-call seeing a Windows or Alpine VPS firing
+    `kind="wasm_sdk"` can rebuild with the `wasm_wazero` tag
+    instead of installing wasmtime DLLs.
+  - **Verification (CGO_ENABLED=0):**
+    - `go build ./...` clean (default).
+    - `go build -tags wasm_wazero ./...` clean (opt-in).
+    - `go test ./...` — 55/55 packages green (default path).
+    - `go test -tags wasm_wazero ./...` — 55/55 packages
+      green.
+  - **Operational impact.** Stage A is zero impact by
+    design — no production binary changes behaviour until
+    Stage B flips the tag default. What it provides is the
+    safety net: a real WASM backend is now available behind
+    a flag for the same Windows/Alpine operators who can't
+    install wasmtime DLLs but want WASM modules working.
+
+### Changed
+
+- **`stubactive` package documentation refreshed (2026-05-06).**
+  The package-level doc comment in
+  `pkg/monitoring/stubactive/stubactive.go` previously listed
+  every kind as "active stub" with descriptions like "ML-DSA-87
+  quantum-safe signing not available" for `dilithium`. After
+  Stage B four of those kinds are RETIRED (`poe`, `dilithium`,
+  `wallet`, `slashing`) and their files are deleted from the
+  tree. Updated the doc to mark each kind's current status
+  (RETIRED / OPT-IN STUB / UNCHANGED) and link to the
+  responsible backend file. Pure docs change; no code path
+  affected.
+
 ### Removed
 
 - **`dilithium`/`wallet`/`poe` stub paths deleted (Stage B) (2026-05-06).**

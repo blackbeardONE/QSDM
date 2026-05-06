@@ -6,6 +6,20 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/monitoring/stubactive"
 )
 
+// minimalAddWASM_lazy is a self-contained 39-byte WASM module
+// exporting `add(i32,i32)->i32`. Kept as a separate copy from
+// runtime_test.go's minimalAddWASM and sdk_wazero_test.go's
+// minimalAddWASM_sdk so this test compiles under every build
+// tag combination (stub-only, wasm_wazero, real wasmtime).
+var minimalAddWASM_lazy = []byte{
+	0x00, 0x61, 0x73, 0x6d,
+	0x01, 0x00, 0x00, 0x00,
+	0x01, 0x07, 0x01, 0x60, 0x02, 0x7f, 0x7f, 0x01, 0x7f,
+	0x03, 0x02, 0x01, 0x00,
+	0x07, 0x07, 0x01, 0x03, 0x61, 0x64, 0x64, 0x00, 0x00,
+	0x0a, 0x09, 0x01, 0x07, 0x00, 0x20, 0x00, 0x20, 0x01, 0x6a, 0x0b,
+}
+
 // TestWasmSDK_StubActiveIsLazy guards the operational invariant
 // that qsdm_stub_active{kind="wasm_sdk"} stays at 0 unless an
 // operator actually attempts to construct a WASM SDK. The
@@ -14,6 +28,21 @@ import (
 // missing the wasmtime DLLs) regardless of whether WASM modules
 // are configured, drowning the dangerous-stub alert in benign
 // noise.
+//
+// Build-tag matrix this test must work under:
+//
+//   - default !cgo (sdk_stub.go) — stub backend; valid WASM
+//     bytes still error, flag flips. ASSERT both.
+//   - default cgo, no wasmtime DLLs (sdk_wasmtime_disabled.go)
+//     — stub backend; same as above. ASSERT both.
+//   - wasm_wazero (sdk_wazero.go) — real backend; valid WASM
+//     bytes succeed, flag does not flip. SKIP (no stub
+//     semantics to assert).
+//   - cgo + real wasmtime DLLs — real backend; same as
+//     wasm_wazero case. SKIP.
+//
+// We distinguish "stub" from "real" by feeding a valid 39-byte
+// add module and checking whether construction succeeds.
 //
 // We rely on stubactive.Reset() being a test-only helper; the
 // production binary never calls it, so the test isolates the
@@ -28,18 +57,14 @@ func TestWasmSDK_StubActiveIsLazy(t *testing.T) {
 			stubactive.KindWasmSDK)
 	}
 
-	// Now exercise the stub. NewWASMSDK is expected to return an
-	// error in both stub builds (sdk_stub.go for !cgo,
-	// sdk_wasmtime_disabled.go for cgo without wasmtime DLLs).
-	// In a production CGO+wasmtime build this test is irrelevant
-	// (the SDK constructs successfully and never marks the
-	// stubactive flag); skip when we observe success.
-	sdk, err := NewWASMSDK([]byte("ignored"))
+	sdk, err := NewWASMSDK(minimalAddWASM_lazy)
 	if err == nil {
-		// Real wasmtime-backed build. Stub semantics don't
-		// apply here; nothing to assert.
+		// Real backend (wazero, or real wasmtime). Stub
+		// semantics don't apply; the lazy-flag invariant is
+		// covered by sdk_wazero_test.go::TestWazeroSDK_StubFlagNotMarked
+		// when the wazero backend is in scope.
 		_ = sdk
-		t.Skip("real wasmtime-backed SDK constructed successfully; " +
+		t.Skip("real WASM backend constructed successfully; " +
 			"stubactive lazy-flag invariant only applies to stub builds")
 	}
 

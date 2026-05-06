@@ -1,5 +1,5 @@
-//go:build cgo
-// +build cgo
+//go:build cgo && !wasm_wazero
+// +build cgo,!wasm_wazero
 
 package wasm
 
@@ -10,8 +10,12 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/monitoring/stubactive"
 )
 
-// This version is used when CGO is enabled but wasmtime DLLs are not available
-// It allows the application to use liboqs (for consensus) without wasmtime.
+// This version is used when CGO is enabled, the operator is NOT
+// opting in to the wazero backend (sdk_wazero.go via the
+// wasm_wazero tag), and wasmtime DLLs are not available. It
+// allows the application to use liboqs (for consensus) without
+// wasmtime. With wasm_wazero on, the wazero pure-Go SDK takes
+// over the WASMSDK type entirely.
 //
 // Like sdk_stub.go (the non-CGO counterpart), we flip
 // qsdm_stub_active{kind="wasm_sdk"} only inside NewWASMSDK, not in

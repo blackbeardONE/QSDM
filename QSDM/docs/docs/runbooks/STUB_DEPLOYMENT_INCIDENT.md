@@ -390,11 +390,24 @@ can handle.
 
 > **Severity in production: LOW — WASM modules will not load.**
 
-`pkg/wasm/sdk_stub.go` (non-CGO build) and
-`pkg/wasm/sdk_wasmtime_disabled.go` (CGO build with no wasmtime
-DLLs) both return an error for every `NewWASMSDK()` call. WASM
-module hooks (`[wasm.*]` configuration sections) cannot be
-loaded — but the validator itself runs fine without them.
+`pkg/wasm/sdk_stub.go` (non-CGO build, no `wasm_wazero` tag)
+and `pkg/wasm/sdk_wasmtime_disabled.go` (CGO build with no
+wasmtime DLLs and no `wasm_wazero` tag) both return an error
+for every `NewWASMSDK()` call. WASM module hooks (`[wasm.*]`
+configuration sections) cannot be loaded — but the validator
+itself runs fine without them.
+
+> **There are now THREE WASMSDK backends.** As of 2026-05-06:
+>
+> 1. **Real wasmtime via CGO** — when `wasmtime_available`
+>    plus the wasmtime DLLs are in scope. Fastest, but
+>    requires C toolchain at build and runtime DLLs at run.
+> 2. **Pure-Go wazero (Stage A, opt-in)** — `pkg/wasm/sdk_wazero.go`,
+>    selected by `go build -tags wasm_wazero ./...`. No CGO,
+>    no DLLs, runs everywhere the QSDM binary already runs.
+>    Behind an opt-in tag for one CI cycle of soak.
+> 3. **Stub** — `sdk_stub.go` / `sdk_wasmtime_disabled.go`.
+>    Returns errors. The path that fires this alert.
 
 > **The flag is opt-in.** The stub flag flips on the FIRST
 > `NewWASMSDK()` call, NOT at process start. A non-CGO node
@@ -416,10 +429,26 @@ loaded — but the validator itself runs fine without them.
    the current process lifetime; restart the validator to
    clear the flag, or silence the alert if the dangling
    load attempt is benign.
-2. **If WASM modules ARE configured:** they will fail to
-   load on every restart. The operator should either remove
-   the WASM config or rebuild with CGO + wasmtime DLLs (or
-   migrate the module to wazero, which runs CGO-free).
+2. **If WASM modules ARE configured and you want them
+   working:** pick a remediation path.
+   - **Fastest fix on a Windows or Alpine VPS** (no
+     wasmtime DLL install dance): rebuild non-CGO with the
+     `wasm_wazero` tag. WASMSDK becomes wazero-backed and
+     the alert clears.
+     ```bash
+     cd QSDM/source
+     CGO_ENABLED=0 go build -tags wasm_wazero -o ../qsdm ./cmd/qsdm
+     ```
+     Stage A landed the backend behind this opt-in tag in
+     2026-05-06 (see `pkg/wasm/sdk_wazero.go`); Stage B
+     will flip it on by default once a soak window has
+     accumulated production parity evidence.
+   - **CGO+wasmtime path:** rebuild with the
+     `wasmtime_available` tag and ensure wasmtime DLLs are
+     installed at runtime. Highest compatibility for modules
+     that depend on wasmtime-specific extensions.
+3. **If you don't need WASM:** remove the WASM config and
+   the alert resolves on the next scrape.
 
 ---
 

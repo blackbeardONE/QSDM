@@ -2,25 +2,56 @@
 // paths are currently active in the running binary. It exists
 // because QSDM intentionally ships several stubs that are
 // runtime-selectable or build-tag-selectable and are NOT safe in
-// production:
+// production.
 //
-//   - "poe"          — pkg/consensus/poe_stub.go (CGO disabled).
-//                      ⚠ Accepts transactions WITHOUT signature
-//                      verification. Test-only path.
-//   - "dilithium"    — pkg/crypto/dilithium_stub.go (CGO disabled).
-//                      ML-DSA-87 quantum-safe signing not available.
-//   - "wallet"       — pkg/wallet/wallet_stub.go (CGO disabled).
-//                      SHA-256 signatures instead of quantum-safe.
-//   - "mesh3d_cuda"  — pkg/mesh3d/cuda_stub.go (CUDA disabled).
-//                      Falls back to CPU mesh validation.
-//   - "wasm_sdk"     — pkg/wasm/sdk_stub.go (CGO disabled).
-//                      WASM module execution unavailable.
-//   - "cc"           — pkg/mining/attest/cc/stub.go (Phase 2c-iv
-//                      pending). Rejects every nvidia-cc-v1 proof
-//                      with ErrNotYetAvailable.
-//   - "slashing"     — pkg/mining/slashing/verifier.go StubVerifier.
-//                      Returns "stub (not yet implemented)" for
-//                      unregistered evidence kinds.
+// Current state of each kind (last reviewed 2026-05-06, after
+// Stage A wazero / Stage B circl):
+//
+//   - "poe"          — RETIRED. pkg/consensus/poe_stub.go was
+//                      deleted in Stage B (commit c2598d5);
+//                      pkg/consensus/poe.go now compiles
+//                      unconditionally and supplies a real
+//                      verifier in every build. Kind is kept
+//                      in AllKinds() for forward compatibility
+//                      with rolling deploys, but no in-tree
+//                      code path flips it on.
+//   - "dilithium"    — RETIRED. pkg/crypto/dilithium_stub.go
+//                      was deleted in Stage B; the !cgo path
+//                      now uses pkg/crypto/dilithium_circl.go
+//                      (cloudflare/circl pure-Go ML-DSA-87,
+//                      FIPS 204 wire-compatible with liboqs).
+//   - "wallet"       — RETIRED. pkg/wallet/wallet_stub.go was
+//                      deleted in Stage B; pkg/wallet/wallet.go
+//                      compiles unconditionally and the SHA-256
+//                      fallback signer is gone.
+//   - "slashing"     — RETIRED. internal/v2wiring uses
+//                      freshnesscheat.NewProductionSlashingDispatcher
+//                      which registers a real EvidenceVerifier
+//                      for every EvidenceKind (no StubVerifier
+//                      fallback in production wiring).
+//   - "wasm_sdk"     — OPT-IN STUB. pkg/wasm/sdk_stub.go (when
+//                      neither -tags wasm_wazero nor a real
+//                      wasmtime build is selected) flips the
+//                      flag inside NewWASMSDK only — package
+//                      load is silent, so a binary that never
+//                      loads a WASM module never trips the
+//                      alert. With -tags wasm_wazero
+//                      (sdk_wazero.go, Stage A as of
+//                      2026-05-06) the SDK is real and the flag
+//                      stays at 0. Stage B for WASM will flip
+//                      wazero on by default.
+//   - "mesh3d_cuda"  — UNCHANGED. pkg/mesh3d/cuda_stub.go (no
+//                      CUDA toolkit / drivers); CPU fallback
+//                      validator runs in its place and is
+//                      structurally complete. Real GPU
+//                      acceleration requires NVIDIA hardware.
+//   - "cc"           — UNCHANGED. pkg/mining/attest/cc/stub.go
+//                      (Phase 2c-iv pending). Rejects every
+//                      nvidia-cc-v1 proof with
+//                      ErrNotYetAvailable. Real implementation
+//                      requires the NVIDIA Confidential
+//                      Computing SDK and an H100/H200 GPU on
+//                      the verifier side.
 //
 // Why a separate leaf package instead of a value in pkg/monitoring?
 //
