@@ -176,12 +176,20 @@ curl -s http://127.0.0.1:8080/api/metrics/prometheus \
 ```
 
 Expected output: every `qsdm_stub_active{kind="..."}` sample
-ends with ` 0`. The kinds that previously flipped to `1` at
-boot under the stub binary — `dilithium`, `wallet`, `poe` —
-are now structurally pinned at `0`. Other kinds (e.g.
-`mesh3d_cuda`, `cc`, `wasm_sdk`) may legitimately be `1` if
-the corresponding feature isn't wired on this node; that's
-fine and isn't part of this deploy's scope.
+ends with ` 0`. Four kinds are now structurally pinned at `0`
+on any binary built from current head: `dilithium`, `wallet`,
+`poe` (Stage B, commit `c2598d5`), and `wasm_sdk` (wasm Stage
+B, on top of `c2598d5`). Two kinds may legitimately be `1` if
+the corresponding feature isn't wired on this node — that's
+fine and isn't part of this deploy's scope:
+
+- `mesh3d_cuda` — CUDA acceleration unavailable; CPU mesh
+  validator runs in its place. Expected on every non-NVIDIA
+  build host.
+- `cc` (nvidia-cc-v1) — Confidential Computing attestation
+  not yet implemented (Phase 2c-iv pending). Will stay at
+  `1` until a real verifier replaces the StubVerifier; not
+  blocking this deploy.
 
 **4.3 Block production is still happening.**
 

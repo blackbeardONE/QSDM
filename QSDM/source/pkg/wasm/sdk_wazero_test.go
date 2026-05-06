@@ -1,5 +1,5 @@
-//go:build wasm_wazero
-// +build wasm_wazero
+//go:build !js || !wasm
+// +build !js !wasm
 
 package wasm
 

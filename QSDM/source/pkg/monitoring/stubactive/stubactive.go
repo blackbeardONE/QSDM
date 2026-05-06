@@ -29,17 +29,16 @@
 //                      which registers a real EvidenceVerifier
 //                      for every EvidenceKind (no StubVerifier
 //                      fallback in production wiring).
-//   - "wasm_sdk"     — OPT-IN STUB. pkg/wasm/sdk_stub.go (when
-//                      neither -tags wasm_wazero nor a real
-//                      wasmtime build is selected) flips the
-//                      flag inside NewWASMSDK only — package
-//                      load is silent, so a binary that never
-//                      loads a WASM module never trips the
-//                      alert. With -tags wasm_wazero
-//                      (sdk_wazero.go, Stage A as of
-//                      2026-05-06) the SDK is real and the flag
-//                      stays at 0. Stage B for WASM will flip
-//                      wazero on by default.
+//   - "wasm_sdk"     — RETIRED. pkg/wasm/sdk_stub.go and
+//                      pkg/wasm/sdk_wasmtime_disabled.go were
+//                      deleted in wasm Stage B (2026-05-06);
+//                      pkg/wasm/sdk_wazero.go (build tag
+//                      `!js || !wasm`) is now the
+//                      unconditional default backed by
+//                      tetratelabs/wazero pure-Go. The
+//                      wasm_wazero tag from Stage A is a no-op
+//                      alias retained for one release for
+//                      compat with external build scripts.
 //   - "mesh3d_cuda"  — UNCHANGED. pkg/mesh3d/cuda_stub.go (no
 //                      CUDA toolkit / drivers); CPU fallback
 //                      validator runs in its place and is

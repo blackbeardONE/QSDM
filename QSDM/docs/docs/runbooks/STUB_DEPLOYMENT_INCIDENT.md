@@ -388,67 +388,61 @@ can handle.
 
 ## kind-wasm-sdk
 
-> **Severity in production: LOW — WASM modules will not load.**
+> **Severity in production: LOW — historical "WASM modules will
+> not load" stub.**
+> **As of 2026-05-06 (Stage B, commit 57ef2cf + wasm Stage B),
+> no production binary built from the QSDM tree can fire this
+> alert.** Both stub backends (`pkg/wasm/sdk_stub.go` and
+> `pkg/wasm/sdk_wasmtime_disabled.go`) have been deleted; the
+> wazero pure-Go backend in `pkg/wasm/sdk_wazero.go` is now
+> the unconditional default for every native target the
+> binary ships on (`!js || !wasm`). `qsdm_stub_active{kind="wasm_sdk"}`
+> stays at 0 in every supported build configuration.
 
-`pkg/wasm/sdk_stub.go` (non-CGO build, no `wasm_wazero` tag)
-and `pkg/wasm/sdk_wasmtime_disabled.go` (CGO build with no
-wasmtime DLLs and no `wasm_wazero` tag) both return an error
-for every `NewWASMSDK()` call. WASM module hooks (`[wasm.*]`
-configuration sections) cannot be loaded — but the validator
-itself runs fine without them.
+The historical stub returned an error for every `NewWASMSDK()`
+call when CGO was off, or when CGO was on but wasmtime DLLs
+weren't installed. WASM module hooks (`[wasm.*]` config
+sections) couldn't be loaded — though the validator itself
+ran fine without them.
 
-> **There are now THREE WASMSDK backends.** As of 2026-05-06:
+> **Backend selection (post-Stage-B).** A single backend ships:
 >
-> 1. **Real wasmtime via CGO** — when `wasmtime_available`
->    plus the wasmtime DLLs are in scope. Fastest, but
->    requires C toolchain at build and runtime DLLs at run.
-> 2. **Pure-Go wazero (Stage A, opt-in)** — `pkg/wasm/sdk_wazero.go`,
->    selected by `go build -tags wasm_wazero ./...`. No CGO,
->    no DLLs, runs everywhere the QSDM binary already runs.
->    Behind an opt-in tag for one CI cycle of soak.
-> 3. **Stub** — `sdk_stub.go` / `sdk_wasmtime_disabled.go`.
->    Returns errors. The path that fires this alert.
-
-> **The flag is opt-in.** The stub flag flips on the FIRST
-> `NewWASMSDK()` call, NOT at process start. A non-CGO node
-> that doesn't configure any WASM module will never trigger
-> `qsdm_stub_active{kind="wasm_sdk"}` — the contracts engine
-> uses pure-Go wazero, and wallet WASM is opt-in via the
-> `wasm_modules/wallet/wallet.wasm` path. If you ARE seeing
-> the alert fire, the operator's config (or build) tried to
-> wire a WASM module, the construction failed, and the
-> validator is now running with the simulation/wazero
-> fallbacks instead.
+> - **Pure-Go wazero** — `pkg/wasm/sdk_wazero.go`. No CGO,
+>   no DLLs, runs everywhere the QSDM binary already runs.
+>   Real `*WASMSDK` with `NewWASMSDK`, `CallFunction`, and
+>   `preflightP2PTransactionJSON` all backed by
+>   `github.com/tetratelabs/wazero`.
+>
+> The opt-in `wasm_wazero` build tag from Stage A is now a
+> no-op alias. CGO+wasmtime as a separate backend was never
+> actually wired in the tree (only stubs existed); if a
+> future Stage C wants to add it, the `wasmtime_available`
+> tag is the path.
 
 ### kind-wasm-sdk — triage
 
-1. **Confirm whether WASM modules are configured.** If the
-   operator's config has no `[wasm.*]` sections AND no
-   `wasm_modules/wallet/wallet.wasm` is loaded at startup,
-   the alert was triggered by a one-off load attempt during
-   the current process lifetime; restart the validator to
-   clear the flag, or silence the alert if the dangling
-   load attempt is benign.
-2. **If WASM modules ARE configured and you want them
-   working:** pick a remediation path.
-   - **Fastest fix on a Windows or Alpine VPS** (no
-     wasmtime DLL install dance): rebuild non-CGO with the
-     `wasm_wazero` tag. WASMSDK becomes wazero-backed and
-     the alert clears.
-     ```bash
-     cd QSDM/source
-     CGO_ENABLED=0 go build -tags wasm_wazero -o ../qsdm ./cmd/qsdm
-     ```
-     Stage A landed the backend behind this opt-in tag in
-     2026-05-06 (see `pkg/wasm/sdk_wazero.go`); Stage B
-     will flip it on by default once a soak window has
-     accumulated production parity evidence.
-   - **CGO+wasmtime path:** rebuild with the
-     `wasmtime_available` tag and ensure wasmtime DLLs are
-     installed at runtime. Highest compatibility for modules
-     that depend on wasmtime-specific extensions.
+If this alert is firing on a Stage-B-or-later binary, the
+expectation is that it cannot. Treat as a wrong-binary
+deployment:
+
+1. **Confirm the build flavour.** SSH onto the affected
+   instance: `qsdm --version` should show the build commit.
+   If it predates `57ef2cf` (or the wasm Stage B commit),
+   that's the root cause.
+2. **Redeploy.** Same procedure as the
+   [§ kind-dilithium](#kind-dilithium) /
+   [§ kind-poe](#kind-poe) remediation — rebuild from current
+   head, `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build`.
 3. **If you don't need WASM:** remove the WASM config and
-   the alert resolves on the next scrape.
+   any flicker resolves on the next scrape.
+
+If `qsdm_stub_active{kind="wasm_sdk"}` re-appears on a binary
+that should have wasm Stage B (verify with `qsdm --version`
+and the build commit hash), that is itself a P0:
+`pkg/wasm/sdk_stub.go` and `pkg/wasm/sdk_wasmtime_disabled.go`
+should not exist in the tree. File an incident with the build
+artifact's `git rev-parse HEAD` and the `qsdm` binary's
+`--version` string — someone has reintroduced a stub.
 
 ---
 

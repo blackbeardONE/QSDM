@@ -1,31 +1,42 @@
-//go:build wasm_wazero
-// +build wasm_wazero
+//go:build !js || !wasm
+// +build !js !wasm
 
-// Package wasm — wazero-backed WASMSDK (Stage A, opt-in).
+// Package wasm — wazero-backed WASMSDK.
 //
-// This file is selected by the `wasm_wazero` build tag and is
-// orthogonal to CGO state — wazero is pure-Go and works on
-// every supported target the rest of the QSDM tree builds on.
-// It displaces both stub backends:
+// This file is the default WASMSDK backend as of Stage B
+// (2026-05-06). It supplies a real *WASMSDK backed by
+// github.com/tetratelabs/wazero (pure-Go, already a direct
+// dependency for the QSDM_WASM_PREFLIGHT_MODULE env hook).
 //
-//   - sdk_stub.go             (// build !cgo && !wasm_wazero)
-//   - sdk_wasmtime_disabled.go (// build cgo && !wasm_wazero)
+// Build-tag selection:
 //
-// When this tag is in scope, NewWASMSDK constructs a real
-// *WASMSDK backed by *WazeroRuntime (already used by the
-// QSDM_WASM_PREFLIGHT_MODULE path in preflight_module.go and
-// by the contracts engine indirectly). qsdm_stub_active
-// {kind="wasm_sdk"} is NOT flipped — the stub is no longer
-// active.
+//   - This file: `!js || !wasm` — every native target the
+//     QSDM binary ships on (linux, windows, darwin, freebsd
+//     amd64/arm64). The inverse of wasm.go's `js && wasm`
+//     guard avoids a duplicate-definition collision with the
+//     legacy Go-to-browser-WASM build.
 //
-// Stage A scope:
+//   - wasm.go: `js && wasm` — Go compiled to WebAssembly for
+//     a browser host. Untouched by Stage B.
 //
-// Lands the backend behind an opt-in tag so parity tests and
-// any downstream behaviour assertions can soak before Stage B
-// flips wazero on by default for !cgo builds (mirroring the
-// circl-for-dilithium rollout in commit c2598d5). CGO+wasmtime
-// builds — when the wasmtime DLLs are available — remain a
-// separate code path that this commit does not touch.
+// Stage progression:
+//
+//   - Stage A (commit 57ef2cf, 2026-05-06) added this file
+//     behind the opt-in `wasm_wazero` build tag so parity
+//     tests could soak in CI without changing operational
+//     behaviour. The two stubs (`sdk_stub.go`,
+//     `sdk_wasmtime_disabled.go`) carried `&& !wasm_wazero`
+//     to yield to wazero when the tag was on.
+//
+//   - Stage B (this commit) flips the default: every native
+//     build now uses this backend automatically, and both
+//     stubs are deleted. The `wasm_wazero` build tag is now
+//     a no-op — kept as a no-op alias for one release for
+//     compatibility with any external build scripts that
+//     pass it. The `qsdm_stub_active{kind="wasm_sdk"}` gauge
+//     remains in the registry for forward compatibility but
+//     no code path flips it on under any supported build
+//     configuration any more.
 
 package wasm
 

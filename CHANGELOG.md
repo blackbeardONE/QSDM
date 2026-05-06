@@ -12,6 +12,48 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Removed
+
+- **`wasm_sdk` stub paths deleted (wasm Stage B) (2026-05-06).**
+  The two stub WASMSDK backends are gone:
+  - `pkg/wasm/sdk_stub.go` (`!cgo && !wasm_wazero`) — deleted.
+  - `pkg/wasm/sdk_wasmtime_disabled.go` (`cgo && !wasm_wazero`)
+    — deleted.
+  `pkg/wasm/sdk_wazero.go` is now the unconditional default
+  for every native target the binary ships on (build tag
+  changed from `wasm_wazero` to `!js || !wasm`, the inverse of
+  `wasm.go`'s `js && wasm` guard so it doesn't collide with
+  the legacy Go-to-browser-WASM file). The `wasm_wazero` tag
+  from Stage A is now a no-op alias kept for one release for
+  compatibility with any external build scripts.
+  - **Stub-active invariant.** `qsdm_stub_active{kind="wasm_sdk"}`
+    is now structurally pinned at 0 on any Stage-B+ binary —
+    no `MarkActive(KindWasmSDK)` site exists in the tree.
+    The kind is retained in `stubactive.AllKinds()` for
+    rolling-deploy forward compatibility, but no code path
+    flips it on under any supported build configuration.
+  - **Verification (CGO_ENABLED=0, no extra build tags):**
+    - `go build ./...` clean.
+    - `go test ./...` — green, **55/55 packages**.
+    - `go test -tags wasm_wazero ./...` also green
+      (no-op alias).
+  - **Runbook updated**:
+    [`STUB_DEPLOYMENT_INCIDENT.md` § kind-wasm-sdk](QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md#kind-wasm-sdk)
+    rewritten to mark the alert structurally unreachable on
+    Stage-B+ binaries and treat any firing instance as a
+    wrong-binary deployment.
+  - **Operational impact.** A non-CGO binary built from
+    current head can load WASM modules out of the box —
+    no wasmtime DLLs, no CGO, no opt-in build tag required.
+    This applies to the wallet WASM module
+    (`wasm_modules/wallet/wallet.wasm`), the contracts
+    engine's WASM dispatch (`pkg/contracts/engine.go`), and
+    any operator-supplied WASM via `[wasm.*]` config
+    sections. Validators that previously had to ship
+    without WASM functionality on Windows/Alpine targets
+    can now turn WASM on by simply rebuilding from current
+    head.
+
 ### Added
 
 - **Pure-Go wazero WASM backend (Stage A, opt-in) (2026-05-06).**
