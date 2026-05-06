@@ -233,6 +233,14 @@ func isPublicEndpoint(path string) bool {
 		// rejects malformed traffic before it reaches block apply.
 		"/api/v1/mining/enroll",
 		"/api/v1/mining/unenroll",
+		// /mining/enrollments is the paged read of the on-chain
+		// enrollment registry. Public for the same reason as the
+		// transparency endpoints below: anyone observing the chain
+		// can independently verify "this NodeID is enrolled with
+		// this stake/phase" without needing an operator-granted
+		// session. The list handler itself caps page size and is
+		// read-only, so leakage risk is bounded.
+		"/api/v1/mining/enrollments",
 		// Trust transparency endpoints (Major Update §8.5). Intentionally
 		// public so third parties can independently scrape and verify
 		// "X of Y attested" without operator-granted API tokens. The
@@ -244,6 +252,15 @@ func isPublicEndpoint(path string) bool {
 		if path == publicPath {
 			return true
 		}
+	}
+	// Prefix-matched public paths: GET /api/v1/mining/enrollment/{node_id}
+	// is the per-rig variant of /mining/enrollments above and shares the
+	// same transparency justification. The handler validates the suffix
+	// itself, so a request like /api/v1/mining/enrollment/ (empty node)
+	// reaches the handler and gets a clean 400 — exactly the same path
+	// it takes for an authenticated caller.
+	if strings.HasPrefix(path, "/api/v1/mining/enrollment/") {
+		return true
 	}
 	return false
 }

@@ -1193,7 +1193,47 @@ func main() {
 		// worst case the chain gets a 1-CELL transfer at
 		// height 0 that any peer's chain would replay safely.
 		genesisFunder := blockdriver.FunderAddress
-		const genesisDest = "qsdm-genesis-anchor"
+
+		// Genesis prefund: when QSDM_GENESIS_PREFUND_ADDR is
+		// set (canonical for v2 testnet activation per spec
+		// §10.3 — the fresh chain commits at least one
+		// pre-funded operator wallet so an HMAC enrollment
+		// can land before any block reward has emitted), the
+		// genesis tx becomes a transfer of
+		// QSDM_GENESIS_PREFUND_AMOUNT_CELL from the funder to
+		// that address. The default branch (env unset) keeps
+		// the legacy 1-CELL transfer to qsdm-genesis-anchor —
+		// useful for the no-prefund testnet where operators
+		// arrive after some block rewards have minted CELL
+		// the natural way.
+		genesisDest := "qsdm-genesis-anchor"
+		genesisAmount := 1.0
+		genesisPrefundAddr := strings.TrimSpace(os.Getenv("QSDM_GENESIS_PREFUND_ADDR"))
+		if genesisPrefundAddr != "" {
+			rawAmount := strings.TrimSpace(os.Getenv("QSDM_GENESIS_PREFUND_AMOUNT_CELL"))
+			parsedAmount, parseErr := strconv.ParseFloat(rawAmount, 64)
+			switch {
+			case parseErr != nil || parsedAmount <= 0:
+				logger.Warn("QSDM_GENESIS_PREFUND_ADDR set but AMOUNT_CELL missing/invalid; ignoring prefund",
+					"addr", genesisPrefundAddr,
+					"raw_amount", rawAmount,
+					"parse_error_str", func() string {
+						if parseErr != nil {
+							return parseErr.Error()
+						}
+						return ""
+					}())
+			default:
+				genesisDest = genesisPrefundAddr
+				genesisAmount = parsedAmount
+				logger.Info("Genesis prefund configured",
+					"addr", genesisDest,
+					"amount_cell", genesisAmount,
+					"env_addr", "QSDM_GENESIS_PREFUND_ADDR",
+					"env_amount", "QSDM_GENESIS_PREFUND_AMOUNT_CELL")
+			}
+		}
+
 		// Save & clear preSealBFTRound only when it's set
 		// (non-solo). The solo-mode skip earlier means it is
 		// already nil and Restore would be a no-op; we still
@@ -1210,13 +1250,17 @@ func main() {
 		// already constructed and credited the funder from
 		// blockdriver.DefaultFunderBalance — Credit here adds
 		// 1 more CELL on top, harmless. Outside solo mode
-		// this is a fresh credit.
-		adminAccounts.Credit(genesisFunder, 1.0)
+		// this is a fresh credit. When prefund is configured
+		// we top up to genesisAmount + 1 to guarantee the
+		// transfer (and any nonce-1 follow-on) succeeds even
+		// if the blockdriver auto-credit didn't run for some
+		// reason.
+		adminAccounts.Credit(genesisFunder, genesisAmount+1.0)
 		seedTx := &mempool.Tx{
 			ID:        fmt.Sprintf("genesis-seed-%d", time.Now().UnixNano()),
 			Sender:    genesisFunder,
 			Recipient: genesisDest,
-			Amount:    1.0,
+			Amount:    genesisAmount,
 			Fee:       0,
 			Nonce:     0,
 			AddedAt:   time.Now(),
@@ -1235,7 +1279,9 @@ func main() {
 				logger.Info("Genesis block sealed by solo validator; chain tip advanced",
 					"height", blk.Height,
 					"hash", blk.Hash,
-					"tx_count", len(blk.Transactions))
+					"tx_count", len(blk.Transactions),
+					"prefund_addr", genesisDest,
+					"prefund_amount_cell", genesisAmount)
 			} else {
 				logger.Warn("Genesis seal: ProduceBlock returned nil with no error")
 			}

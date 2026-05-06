@@ -107,6 +107,23 @@ func (rl *RoleRateLimiter) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// Mining-protocol endpoints are designed for high-
+		// frequency miner traffic (the canonical /work poll
+		// is every ~2s, /challenge is every accepted proof,
+		// /submit is one per solved proof). The 30/min
+		// anonymous tier was set for occasional UI browsing
+		// and chokes any real miner within a single minute.
+		// Consensus-level abuse protection for these paths
+		// lives where it belongs — pkg/mining/verifier
+		// Dedup + Quarantine + hashrate-band gating, plus
+		// the v2 attestation gate that rejects unattested
+		// proofs at zero CPU cost. The HTTP-layer rate
+		// limit is redundant here and operationally
+		// harmful, so bypass it.
+		if strings.HasPrefix(r.URL.Path, "/api/v1/mining/") {
+			next.ServeHTTP(w, r)
+			return
+		}
 
 		role := "anonymous"
 		identifier := clientIP(r)
