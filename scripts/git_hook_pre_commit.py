@@ -74,6 +74,20 @@ import sys
 import time
 from pathlib import Path
 
+# Force UTF-8 on stdout/stderr so the hook works on Windows
+# consoles defaulting to GBK/CP1252 etc. The hook prints a
+# decorative banner with box-drawing chars, en-dashes, and the
+# alerts<->runbooks separator; without this reconfigure the
+# very first print() can fail with UnicodeEncodeError before
+# any real check has a chance to run.
+for _stream in (sys.stdout, sys.stderr):
+    _reconfig = getattr(_stream, "reconfigure", None)
+    if _reconfig is not None:
+        try:
+            _reconfig(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 # ANSI colour codes — wrapped in a tiny helper so output stays
 # readable when piped through a non-tty (e.g. `git commit | tee`).
 _USE_COLOUR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
@@ -414,7 +428,7 @@ def run_subprocess(
 def check_runbook_coverage() -> CheckResult:
     return run_subprocess(
         [sys.executable, LINT_SCRIPT],
-        "runbook coverage lint (alerts ↔ runbooks)",
+        "runbook coverage lint (alerts <-> runbooks)",
     )
 
 
