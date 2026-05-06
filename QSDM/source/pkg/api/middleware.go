@@ -210,6 +210,11 @@ func isPublicEndpoint(path string) bool {
 		// plus per-address quarantine (MINING_PROTOCOL.md §8.3).
 		"/api/v1/mining/work",
 		"/api/v1/mining/submit",
+		// /mining/account is a read-only solo-mode probe;
+		// reachable without auth so operators can curl
+		// balances during testnet bring-up. Outside solo
+		// mode it returns 503 because no probe is wired.
+		"/api/v1/mining/account",
 		// /mining/challenge mints a fresh per-call nonce and MUST be
 		// publicly reachable — if miners had to authenticate to fetch
 		// a challenge, the validator's identity gating would leak out

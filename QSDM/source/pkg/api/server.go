@@ -37,6 +37,14 @@ type Server struct {
 	httpServer         *http.Server
 	adminAPI           *AdminAPI
 	txGossipBroadcast  func([]byte) error
+	// Pending source callbacks captured before Start —
+	// registerRoutes is the late-binding point at which the
+	// concrete *Handlers exists, so we stash them here and
+	// apply at registerRoutes time. Without this stash, every
+	// SetChainTipSource call before Start would silently
+	// no-op against the nil s.handlers.
+	pendingChainTipSource  func() uint64
+	pendingPeerCountSource func() int
 }
 
 // StorageInterface defines the storage interface for the API
@@ -313,6 +321,39 @@ func (s *Server) SetAdminAPI(a *AdminAPI) { s.adminAPI = a }
 
 // SetTxGossipBroadcast sets optional P2P publish after wallet/API sends (call before Start).
 func (s *Server) SetTxGossipBroadcast(fn func([]byte) error) { s.txGossipBroadcast = fn }
+
+// SetChainTipSource wires a live chain-tip callback into the
+// status handler so GET /api/v1/status returns the real
+// producer height instead of a hardcoded 0. Safe to call any
+// time before or after Start; the callback must be safe for
+// concurrent use and return quickly because it runs on every
+// status hit. Pre-Start calls are stashed in
+// pendingChainTipSource and applied in registerRoutes when
+// the concrete *Handlers exists.
+func (s *Server) SetChainTipSource(fn func() uint64) {
+	if s == nil {
+		return
+	}
+	if s.handlers != nil {
+		s.handlers.SetChainTipSource(fn)
+		return
+	}
+	s.pendingChainTipSource = fn
+}
+
+// SetPeerCountSource is the matching accessor for the live
+// peer-count callback. Same concurrency / Start contract as
+// SetChainTipSource.
+func (s *Server) SetPeerCountSource(fn func() int) {
+	if s == nil {
+		return
+	}
+	if s.handlers != nil {
+		s.handlers.SetPeerCountSource(fn)
+		return
+	}
+	s.pendingPeerCountSource = fn
+}
 
 // setupMiddleware configures all security middleware
 func (s *Server) setupMiddleware(handler http.Handler) http.Handler {

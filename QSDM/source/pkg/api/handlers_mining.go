@@ -106,6 +106,89 @@ func currentMiningService() MiningService {
 	return miningHolder.svc
 }
 
+// MiningAccountProbe is the read-only contract the
+// /api/v1/mining/account endpoint uses to surface CELL
+// balances from the live AccountStore. Wired by the validator
+// in solo-validator mode so operators can see mining rewards
+// land. Without a probe, the endpoint returns 503 with
+// "balance probe not configured" — distinct from "service not
+// configured" so debugging is unambiguous.
+//
+// The contract is intentionally thin (one method) so the
+// implementation in cmd/qsdm/main.go is a one-line closure
+// that calls adminAccounts.Get.
+type MiningAccountProbe interface {
+	// BalanceOf returns the CELL balance and nonce of an
+	// address, plus a `present` flag distinguishing
+	// "address has 0 balance because it never received any
+	// txs" (false) from "address received and spent
+	// everything" (true, balance=0). Lookups for unknown
+	// addresses return present=false, balance=0, nonce=0.
+	BalanceOf(address string) (balance float64, nonce uint64, present bool)
+}
+
+type miningAccountProbeHolder struct {
+	mu    sync.RWMutex
+	probe MiningAccountProbe
+}
+
+var miningAccountProbeRegistry = &miningAccountProbeHolder{}
+
+// SetMiningAccountProbe installs (or removes, when probe==nil)
+// the process-wide balance probe. Outside solo mode, the
+// validator does not wire one and the endpoint stays at 503.
+func SetMiningAccountProbe(probe MiningAccountProbe) {
+	miningAccountProbeRegistry.mu.Lock()
+	defer miningAccountProbeRegistry.mu.Unlock()
+	miningAccountProbeRegistry.probe = probe
+}
+
+func currentMiningAccountProbe() MiningAccountProbe {
+	miningAccountProbeRegistry.mu.RLock()
+	defer miningAccountProbeRegistry.mu.RUnlock()
+	return miningAccountProbeRegistry.probe
+}
+
+// MiningAccountResponse is the wire payload for
+// GET /api/v1/mining/account?address=<addr>.
+type MiningAccountResponse struct {
+	Address string  `json:"address"`
+	Balance float64 `json:"balance"`
+	Nonce   uint64  `json:"nonce"`
+	Present bool    `json:"present"`
+}
+
+// MiningAccountHandler serves GET /api/v1/mining/account?address=<addr>.
+// Returns 503 when no probe is wired (canonical posture
+// outside solo mode). Returns 400 when the address parameter
+// is missing.
+func (h *Handlers) MiningAccountHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	probe := currentMiningAccountProbe()
+	if probe == nil {
+		writeMiningUnavailable(w, "balance probe not configured (solo mode only)")
+		return
+	}
+	address := r.URL.Query().Get("address")
+	if address == "" {
+		http.Error(w, "address parameter is required", http.StatusBadRequest)
+		return
+	}
+	bal, nonce, present := probe.BalanceOf(address)
+	resp := MiningAccountResponse{
+		Address: address,
+		Balance: bal,
+		Nonce:   nonce,
+		Present: present,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 // MiningWorkHandler serves GET /api/v1/mining/work?height=<h>.
 func (h *Handlers) MiningWorkHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

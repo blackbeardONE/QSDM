@@ -144,6 +144,31 @@ type Config struct {
 	// IDs. Zero uses 4096 — a few hours of legitimate miner
 	// traffic at testnet block rates.
 	DedupCapacity uint64
+
+	// RewardSink, when non-nil, is notified of every
+	// successfully-verified proof's miner address so the host
+	// process can credit a reward at the next block boundary.
+	// Nil leaves miningsvc as a pure verifier with no
+	// economic side-effects (the previous bring-up posture).
+	// The sink is called from the goroutine that handles the
+	// HTTP /api/v1/mining/submit request, so implementations
+	// MUST be non-blocking; the canonical implementation in
+	// internal/blockdriver enqueues into an in-memory map
+	// guarded by a mutex.
+	RewardSink RewardSink
+}
+
+// RewardSink is the narrow contract a host process implements
+// to be notified of accepted proofs. Implementations should
+// queue work and return quickly — the HTTP path waits on this
+// before responding to the miner.
+type RewardSink interface {
+	// OnAcceptedProof is called once per accepted /submit
+	// with the proof's miner_addr field. Empty addresses are
+	// possible if the proof was malformed at the miner end
+	// but somehow survived earlier checks; sinks should
+	// silently drop those rather than fail.
+	OnAcceptedProof(minerAddr string)
 }
 
 // Service is the concrete api.MiningService the validator
@@ -165,7 +190,8 @@ type Service struct {
 	dagMu    sync.RWMutex
 	dagCache map[uint64]mining.DAG // keyed by epoch; cap = 2
 
-	verifier *mining.Verifier
+	verifier   *mining.Verifier
+	rewardSink RewardSink // optional; see Config.RewardSink
 }
 
 // dagCacheCap bounds the DAG map's resident size. Two is the
@@ -229,6 +255,7 @@ func New(cfg Config) (*Service, error) {
 		difficulty:     new(big.Int).Set(cfg.Difficulty),
 		blocksPerEpoch: bpe,
 		dagCache:       make(map[uint64]mining.DAG, dagCacheCap),
+		rewardSink:     cfg.RewardSink,
 	}
 
 	v, err := mining.NewVerifier(mining.VerifierConfig{
@@ -299,9 +326,32 @@ func (s *Service) WorkAt(height uint64) (*api.MiningWork, error) {
 // acceptHeight. Rejection reasons are the standard
 // pkg/mining sentinels and propagate to the HTTP layer
 // untouched.
+//
+// On acceptance, the configured RewardSink (if any) is
+// notified with the proof's miner_addr field so the host
+// process can queue a payout for the next sealed block. The
+// notification happens BEFORE Submit returns so a misbehaving
+// sink that takes too long will be visible in /submit
+// latency metrics — the alternative (fire-and-forget
+// goroutines) was rejected as harder to debug and easier to
+// silently lose payouts on a panic.
 func (s *Service) Submit(rawProofJSON []byte) ([32]byte, error) {
 	tip := s.producer.TipHeight()
-	return s.verifier.Verify(rawProofJSON, tip)
+	id, err := s.verifier.Verify(rawProofJSON, tip)
+	if err != nil {
+		return id, err
+	}
+	if s.rewardSink != nil {
+		// Re-parse the proof for its miner_addr. The verifier
+		// already canonicalised + accepted the bytes so this
+		// can't fail on a happy path; we still check err to
+		// avoid a panic if an unexpected version of the proof
+		// schema lands here.
+		if p, perr := mining.ParseProof(rawProofJSON); perr == nil {
+			s.rewardSink.OnAcceptedProof(p.MinerAddr)
+		}
+	}
+	return id, nil
 }
 
 // TipHeight implements api.MiningService.

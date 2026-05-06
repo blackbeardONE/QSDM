@@ -19,6 +19,7 @@ import (
 
 	"github.com/blackbeardONE/QSDM/cmd/qsdm/governancecli"
 	"github.com/blackbeardONE/QSDM/cmd/qsdm/transaction"
+	"github.com/blackbeardONE/QSDM/internal/blockdriver"
 	"github.com/blackbeardONE/QSDM/internal/dashboard"
 	"github.com/blackbeardONE/QSDM/internal/logging"
 	"github.com/blackbeardONE/QSDM/internal/miningsvc"
@@ -854,10 +855,28 @@ func main() {
 	v2Wired.AttachToProducer(adminProducer)
 	adminProducer.SetAppendReceiptStore(adminReceipts)
 	adminProducer.SetPolFollower(polFollower)
-	adminProducer.SetBFTSealGate(liveBFT)
-	adminProducer.SetPreSealBFTRound(func(blk *chain.Block) error {
-		return chain.RunSyntheticBFTRoundWithExecutor(bftExec, nodeValidatorSet, blk)
-	})
+	// Solo-validator mode (QSDM_SOLO_VALIDATOR_MODE=1):
+	// without peers there is no BFT quorum to commit blocks
+	// or POL gossip to publish round certificates, so the
+	// production gates would refuse to extend past genesis.
+	// Skip SetBFTSealGate and SetPreSealBFTRound in solo
+	// mode; internal/blockdriver drives ProduceBlock directly
+	// against an unguarded producer. When a peer joins, flip
+	// the env var off and these gates are restored on the
+	// next process restart — there is no consensus-relevant
+	// state to migrate because the solo chain is treated as
+	// a clean testnet origin, not a fork to merge.
+	soloValidatorMode := envcompat.Truthy("QSDM_SOLO_VALIDATOR_MODE", "QSDM_SOLO_VALIDATOR_MODE")
+	if !soloValidatorMode {
+		adminProducer.SetBFTSealGate(liveBFT)
+		adminProducer.SetPreSealBFTRound(func(blk *chain.Block) error {
+			return chain.RunSyntheticBFTRoundWithExecutor(bftExec, nodeValidatorSet, blk)
+		})
+	} else {
+		logger.Info("Solo validator mode: BFT seal gate and pre-seal synthetic round disabled",
+			"env_var", "QSDM_SOLO_VALIDATOR_MODE",
+			"reason", "no peer validators to drive BFT quorum; internal/blockdriver will own block production")
+	}
 	// Compose the admission gate. v2wiring.Wire() already
 	// installed enrollment.AdmissionChecker(nil); we replace it
 	// with the same checker wrapped around the POL/BFT base
@@ -884,7 +903,17 @@ func main() {
 		}
 		return nil
 	}
-	v2wiring.ReinstallAdmissionGate(adminPool, baseAdmit)
+	if soloValidatorMode {
+		// Solo: ignore the BFT/POL extension predicate
+		// because liveBFT.IsCommitted always returns false
+		// without peer votes, which would otherwise reject
+		// every solo-mode reward tx.
+		v2wiring.ReinstallAdmissionGate(adminPool, nil)
+		logger.Info("Solo validator mode: admission gate now ignores BFT/POL predicates",
+			"reason", "no peers to vote → liveBFT.IsCommitted permanently false")
+	} else {
+		v2wiring.ReinstallAdmissionGate(adminPool, baseAdmit)
+	}
 	adminProducer.OnSealed = func() {
 		if blk, ok := adminProducer.LatestBlock(); ok {
 			polTipSnap.mu.Lock()
@@ -925,13 +954,34 @@ func main() {
 	// promoted to operator-tunable config keys once we have a
 	// second validator that needs to agree on them. Until
 	// then, hardcoding keeps consensus byte-identical.
-	miningSvc, miningErr := miningsvc.New(miningsvc.Config{
+	// In solo mode we construct the blockdriver FIRST so it
+	// can be passed as the miningsvc reward sink. Outside
+	// solo mode the sink stays nil and miningsvc behaves as a
+	// pure verifier (the prior bring-up posture).
+	var soloDriver *blockdriver.Driver
+	if soloValidatorMode {
+		drv, drvErr := blockdriver.New(blockdriver.Config{
+			Producer: adminProducer,
+			Pool:     adminPool,
+			Accounts: adminAccounts,
+			Logger:   logger,
+		})
+		if drvErr != nil {
+			log.Fatalf("solo blockdriver wiring failed: %v", drvErr)
+		}
+		soloDriver = drv
+	}
+	miningSvcCfg := miningsvc.Config{
 		Producer:       adminProducer,
 		WorkSet:        bringUpWorkSet(),
 		DAGSize:        1024,
 		Difficulty:     big.NewInt(2),
 		BlocksPerEpoch: mining.DefaultBlocksPerMiningEpoch,
-	})
+	}
+	if soloDriver != nil {
+		miningSvcCfg.RewardSink = soloDriver
+	}
+	miningSvc, miningErr := miningsvc.New(miningSvcCfg)
 	if miningErr != nil {
 		// Mining wiring failure is operator-actionable; refuse
 		// to boot in a half-wired state where /work and /submit
@@ -939,10 +989,20 @@ func main() {
 		log.Fatalf("mining service wiring failed: %v", miningErr)
 	}
 	api.SetMiningService(miningSvc)
+	if soloValidatorMode {
+		// Wire the read-only AccountStore probe so operators
+		// can curl /api/v1/mining/account?address=<addr> and
+		// see mining rewards land. Only enabled in solo mode
+		// because outside solo mode the wallet endpoints
+		// already cover this with auth.
+		api.SetMiningAccountProbe(accountProbeFromStore(adminAccounts))
+		logger.Info("Solo validator mode: /api/v1/mining/account balance probe wired")
+	}
 	logger.Info("Mining service installed",
 		"dag_size", uint32(1024),
 		"difficulty", "2",
 		"blocks_per_epoch", mining.DefaultBlocksPerMiningEpoch,
+		"reward_sink_wired", soloDriver != nil,
 		"endpoints", "/api/v1/mining/work, /api/v1/mining/submit")
 
 	// Single-validator genesis seal. /api/v1/mining/work
@@ -967,15 +1027,34 @@ func main() {
 	// and POL gates aren't active yet anyway) so skipping it
 	// is safe.
 	if !adminProducer.HasTip() {
-		const genesisFunder = "qsdm-genesis-funder"
+		// In solo mode, fund and use the blockdriver's
+		// canonical funder address so the genesis tx and the
+		// driver's subsequent reward txs share a single nonce
+		// stream. Outside solo mode (peer cluster), genesis
+		// would arrive via TryAppendExternalBlock from a
+		// peer's BFT-committed proposal, so this whole branch
+		// is dead code; we still run it for resilience —
+		// worst case the chain gets a 1-CELL transfer at
+		// height 0 that any peer's chain would replay safely.
+		genesisFunder := blockdriver.FunderAddress
 		const genesisDest = "qsdm-genesis-anchor"
-		preSealRestore := func(blk *chain.Block) error {
-			return chain.RunSyntheticBFTRoundWithExecutor(bftExec, nodeValidatorSet, blk)
+		// Save & clear preSealBFTRound only when it's set
+		// (non-solo). The solo-mode skip earlier means it is
+		// already nil and Restore would be a no-op; we still
+		// re-set it on the off chance the caller flips solo
+		// mode mid-boot via another goroutine.
+		var preSealRestore func(blk *chain.Block) error
+		if !soloValidatorMode {
+			preSealRestore = func(blk *chain.Block) error {
+				return chain.RunSyntheticBFTRoundWithExecutor(bftExec, nodeValidatorSet, blk)
+			}
+			adminProducer.SetPreSealBFTRound(nil)
 		}
-		adminProducer.SetPreSealBFTRound(nil)
-		// Seed the funder so the heartbeat tx debit succeeds.
-		// AccountStore.Credit is idempotent at the chain level
-		// (no on-chain emission yet — the chain hasn't started).
+		// Seed the funder. In solo mode the blockdriver was
+		// already constructed and credited the funder from
+		// blockdriver.DefaultFunderBalance — Credit here adds
+		// 1 more CELL on top, harmless. Outside solo mode
+		// this is a fresh credit.
 		adminAccounts.Credit(genesisFunder, 1.0)
 		seedTx := &mempool.Tx{
 			ID:        fmt.Sprintf("genesis-seed-%d", time.Now().UnixNano()),
@@ -1005,9 +1084,36 @@ func main() {
 				logger.Warn("Genesis seal: ProduceBlock returned nil with no error")
 			}
 		}
-		// Re-install preSealBFTRound for any subsequent
-		// (peer-driven) block production paths.
-		adminProducer.SetPreSealBFTRound(preSealRestore)
+		if preSealRestore != nil {
+			adminProducer.SetPreSealBFTRound(preSealRestore)
+		}
+	}
+
+	// Start the solo-mode block driver after genesis has
+	// settled. If the genesis seal failed (e.g. mempool
+	// admission rejected the seed for an unexpected reason),
+	// the driver will still try every Period — its own
+	// heartbeat tx funds the chain forward.
+	if soloDriver != nil {
+		// Re-sync the driver's funder nonce. The genesis seal
+		// above used the same funder account at nonce=0, so
+		// the AccountStore now has funder.Nonce=1 but the
+		// driver's in-memory counter is still 0. Without this
+		// call the very first tick would issue a reward tx at
+		// nonce=0 → ApplyTx rejects → "all transactions failed
+		// state application" → tip never advances past 0.
+		soloDriver.SyncFunderNonce()
+		// Use a fresh background context so the driver
+		// outlives any request-scoped contexts. Stop is
+		// triggered by the existing graceful-shutdown handler
+		// (SIGINT/SIGTERM); see the deferred soloDriver.Stop()
+		// registered just below.
+		soloDriver.Start(context.Background())
+		// Best-effort hook into the existing shutdown path —
+		// the validator's main shutdown closure runs on Ctrl-C
+		// and SIGTERM and should drain in-flight ticks before
+		// closing the network.
+		defer soloDriver.Stop()
 	}
 
 	bftExec.SetOnCommitted(func(height uint64, round uint32, blockHash string) {
@@ -1262,6 +1368,23 @@ func main() {
 			if bridgeRelay != nil {
 				apiServer.SetBridgeRelay(bridgeRelay, net.Host.ID().String())
 			}
+			// Wire the live chain tip into /api/v1/status so the
+			// status endpoint reflects what the producer
+			// actually has. Without this hook the response
+			// hardcodes chain_tip=0, which made the
+			// blockdriver advance look invisible.
+			apiServer.SetChainTipSource(func() uint64 {
+				if adminProducer == nil {
+					return 0
+				}
+				return adminProducer.TipHeight()
+			})
+			apiServer.SetPeerCountSource(func() int {
+				if net == nil || net.Host == nil {
+					return 0
+				}
+				return len(net.Host.Network().Peers())
+			})
 			apiServer.SetTxGossipBroadcast(func(b []byte) error {
 				if txGossipRelay != nil {
 					return txGossipRelay.MaybePublishOpaque(b)
@@ -1504,6 +1627,28 @@ func main() {
 //     batch must have 3..5 cells, and each cell ID must be
 //     non-empty and globally unique within the workset.
 //
+// accountProbeFromStore adapts a *chain.AccountStore to the
+// api.MiningAccountProbe interface. Only used in solo mode;
+// see api.SetMiningAccountProbe.
+type accountStoreProbe struct {
+	store *chain.AccountStore
+}
+
+func (p accountStoreProbe) BalanceOf(address string) (float64, uint64, bool) {
+	if p.store == nil {
+		return 0, 0, false
+	}
+	acc, ok := p.store.Get(address)
+	if !ok || acc == nil {
+		return 0, 0, false
+	}
+	return acc.Balance, acc.Nonce, true
+}
+
+func accountProbeFromStore(store *chain.AccountStore) api.MiningAccountProbe {
+	return accountStoreProbe{store: store}
+}
+
 // The cells below are 16-byte synthetic IDs derived from a
 // fixed lexicographic prefix; the content hashes are the
 // SHA-256-style 32-byte arrays with deterministic byte

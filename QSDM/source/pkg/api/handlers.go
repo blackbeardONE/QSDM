@@ -170,6 +170,19 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 		handlers.SetNodeRole(s.config.NodeRole)
 	}
 	s.handlers = handlers
+	// Apply any pre-Start status-source hooks that were
+	// captured before s.handlers existed. Without this,
+	// Server.SetChainTipSource called before Start would
+	// silently no-op and /api/v1/status would forever
+	// report chain_tip=0.
+	if s.pendingChainTipSource != nil {
+		handlers.SetChainTipSource(s.pendingChainTipSource)
+		s.pendingChainTipSource = nil
+	}
+	if s.pendingPeerCountSource != nil {
+		handlers.SetPeerCountSource(s.pendingPeerCountSource)
+		s.pendingPeerCountSource = nil
+	}
 
 	if s.tokenRegistryPath != "" {
 		handlers.tokenRegistryPath = s.tokenRegistryPath
@@ -241,6 +254,12 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// MiningService is installed via api.SetMiningService(...).
 	mux.HandleFunc("/api/v1/mining/work", handlers.MiningWorkHandler)
 	mux.HandleFunc("/api/v1/mining/submit", handlers.MiningSubmitHandler)
+	// Solo-mode-only balance probe; returns 503 when no
+	// MiningAccountProbe is wired. Lets operators verify
+	// mining rewards are landing on the CHAIN AccountStore
+	// without going through the (separately-stored) wallet
+	// API. Registered unconditionally so miners can probe.
+	mux.HandleFunc("/api/v1/mining/account", handlers.MiningAccountHandler)
 	// Mining challenge endpoint (Phase 2c-iii,
 	// MINING_PROTOCOL_V2.md §6.2). Returns 503 until
 	// a ChallengeIssuer is installed via api.SetChallengeIssuer(...).

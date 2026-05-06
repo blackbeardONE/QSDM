@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math/big"
+	"sync"
 	"testing"
 
 	"github.com/blackbeardONE/QSDM/pkg/api"
@@ -337,6 +338,79 @@ func TestDAGCache_BoundedAtCap(t *testing.T) {
 	svc.dagMu.RUnlock()
 	if got > dagCacheCap {
 		t.Fatalf("cache size %d exceeds cap %d", got, dagCacheCap)
+	}
+}
+
+// ---- reward sink ---------------------------------------------------------
+
+type capturingSink struct {
+	mu    sync.Mutex
+	addrs []string
+}
+
+func (s *capturingSink) OnAcceptedProof(a string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.addrs = append(s.addrs, a)
+}
+
+func (s *capturingSink) snapshot() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, len(s.addrs))
+	copy(out, s.addrs)
+	return out
+}
+
+func TestRewardSink_NotifiedOnAccept(t *testing.T) {
+	cfg := validConfig(t)
+	sink := &capturingSink{}
+	cfg.RewardSink = sink
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	tip := cfg.Producer.TipHeight()
+	work, err := svc.WorkAt(tip)
+	if err != nil {
+		t.Fatalf("WorkAt: %v", err)
+	}
+	ws, hdr, diff, _ := api.WorkToMiningCore(work)
+	ws.Canonicalize()
+	batchRoot, _ := ws.PrefixRoot(1)
+	target, _ := mining.TargetFromDifficulty(diff)
+	dag, _ := mining.NewInMemoryDAG(work.Epoch, ws.Root(), work.DAGSize)
+	res, err := mining.Solve(context.Background(), mining.SolverParams{
+		Epoch: work.Epoch, Height: work.Height, HeaderHash: hdr,
+		MinerAddr: "qsdm1revvenue", BatchRoot: batchRoot, BatchCount: 1,
+		Target: target, DAG: dag,
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("Solve: %v", err)
+	}
+	raw, _ := res.Proof.CanonicalJSON()
+	if _, err := svc.Submit(raw); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	got := sink.snapshot()
+	if len(got) != 1 || got[0] != "qsdm1revvenue" {
+		t.Fatalf("sink not notified or wrong addr: %v", got)
+	}
+}
+
+func TestRewardSink_NotNotifiedOnReject(t *testing.T) {
+	cfg := validConfig(t)
+	sink := &capturingSink{}
+	cfg.RewardSink = sink
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := svc.Submit([]byte(`{"not":"valid"}`)); err == nil {
+		t.Fatal("expected reject on garbage proof")
+	}
+	if got := sink.snapshot(); len(got) != 0 {
+		t.Fatalf("sink notified on reject (should not be): %v", got)
 	}
 }
 
