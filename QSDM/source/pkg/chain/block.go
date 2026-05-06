@@ -581,6 +581,85 @@ func (bp *BlockProducer) HasTip() bool {
 	return bp.tipHeightSet.Load()
 }
 
+// AllBlocks returns a snapshot copy of every block currently in
+// the chain, in height order. The slice and its element pointers
+// are owned by the caller; the producer's internal chain is
+// untouched. Used by persistence (cmd/qsdm wires this into the
+// OnSealedBlock hook to write a side-effect log to disk) and by
+// reorg-safe replay tools that need to walk the canonical history
+// without taking bp.mu themselves.
+//
+// Concurrency: takes bp.mu for the duration of the copy. The
+// chain slice header is replaced rather than appended to, so a
+// concurrent ProduceBlock can safely complete after this call
+// returns without invalidating the snapshot.
+func (bp *BlockProducer) AllBlocks() []*Block {
+	if bp == nil {
+		return nil
+	}
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+	out := make([]*Block, len(bp.chain))
+	copy(out, bp.chain)
+	return out
+}
+
+// RestoreChain replaces the producer's chain with the given
+// slice IF and ONLY IF the producer currently has no blocks.
+// Intended for one-shot startup hydration from disk: the caller
+// reads a persisted block log, decodes it, and hands the result
+// to RestoreChain before the genesis-seal logic in main.go runs.
+//
+// Returns an error rather than silently overwriting because the
+// only time RestoreChain is correct is the empty-chain case —
+// post-genesis use would replace live state with whatever the
+// caller passed and break consensus invariants. The empty-chain
+// guard makes the misuse caller-attributable instead of a quiet
+// state corruption.
+//
+// Side effects on success:
+//   - bp.chain takes ownership of blocks (no copy; caller MUST
+//     stop touching the slice after this call).
+//   - tipHeight is set to the last block's Height (zero if
+//     blocks is empty — same as a fresh producer).
+//   - tipHeightSet flips to true iff len(blocks) > 0, so HasTip()
+//     reports correctly in the genesis-already-sealed branch of
+//     cmd/qsdm/main.go without re-running the seed tx.
+//
+// Validation is deliberately minimal: this method trusts the
+// caller's persisted log. Tampering detection lives elsewhere
+// (block hashes are content-addressed and BFT/POL state machines
+// re-verify on the wire). A malformed log here surfaces as a
+// state-root mismatch the next time ApplyTx runs against the
+// restored AccountStore — operator-visible, not silent.
+func (bp *BlockProducer) RestoreChain(blocks []*Block) error {
+	if bp == nil {
+		return fmt.Errorf("chain: nil producer")
+	}
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+	if len(bp.chain) != 0 {
+		return fmt.Errorf("chain: RestoreChain called on a non-empty producer (have %d blocks)", len(bp.chain))
+	}
+	if len(blocks) == 0 {
+		return nil
+	}
+	for i, blk := range blocks {
+		if blk == nil {
+			return fmt.Errorf("chain: RestoreChain encountered nil block at index %d", i)
+		}
+		if i > 0 && blk.Height != blocks[i-1].Height+1 {
+			return fmt.Errorf("chain: RestoreChain non-contiguous heights at index %d (prev %d, this %d)",
+				i, blocks[i-1].Height, blk.Height)
+		}
+	}
+	bp.chain = blocks
+	tip := blocks[len(blocks)-1]
+	bp.tipHeight.Store(tip.Height)
+	bp.tipHeightSet.Store(true)
+	return nil
+}
+
 // Headers returns block headers for a range of heights.
 func (bp *BlockProducer) Headers(from, to uint64) []BlockHeader {
 	bp.mu.Lock()

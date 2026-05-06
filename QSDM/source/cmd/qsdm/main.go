@@ -1161,6 +1161,126 @@ func main() {
 		"reward_sink_wired", soloDriver != nil,
 		"endpoints", "/api/v1/mining/work, /api/v1/mining/submit")
 
+	// Chain + accounts persistence (Phase 2c-vii follow-up).
+	// Without this, every restart wipes both the BlockProducer
+	// chain (in-memory `[]*Block`) and the AccountStore (in-
+	// memory map), so the genesis-seal block below fires on
+	// every boot and re-credits the funder + re-seeds the
+	// prefund address. The NDJSON chain log is appended per
+	// seal, the accounts JSON is overwritten per seal; on the
+	// next boot we hydrate both before the genesis-seal block
+	// runs so HasTip()=true and the seal is skipped.
+	//
+	// State files live under stateDir (the dir holding
+	// qsdm.db). On a fresh host both paths are absent and the
+	// genesis seal runs as before. On a returning host the
+	// files exist and the genesis seal is skipped — exactly
+	// the contract the seal-skip branch was already written
+	// against, so no other code-paths change.
+	//
+	// Order matters during hydrate: load CHAIN first (it
+	// determines HasTip), then ACCOUNTS. If the chain shows
+	// blocks but the accounts file is missing, we fail-fast
+	// rather than boot a half-restored state where balances
+	// are zero but tip is non-zero — that combination would
+	// cause the next reward tx (funder.nonce>0 expected) to
+	// fail the nonce check and stall the chain.
+	chainStatePath := filepath.Join(stateDir, "qsdm_chain.ndjson")
+	accountsStatePath := filepath.Join(stateDir, "qsdm_accounts.json")
+	enrollmentStatePath := filepath.Join(stateDir, "qsdm_enrollment.json")
+	if persistedBlocks, restoreErr := chain.LoadChainNDJSON(chainStatePath); restoreErr != nil {
+		log.Fatalf("chain restore: read %s: %v", chainStatePath, restoreErr)
+	} else if len(persistedBlocks) > 0 {
+		if err := adminProducer.RestoreChain(persistedBlocks); err != nil {
+			log.Fatalf("chain restore: producer hydrate from %s (%d blocks): %v",
+				chainStatePath, len(persistedBlocks), err)
+		}
+		loadedAccounts, loadErr := adminAccounts.Load(accountsStatePath)
+		if loadErr != nil {
+			log.Fatalf("chain restore: accounts file %s missing or unreadable while chain has %d blocks (%v) — refusing to boot a half-restored state. Either restore the matching accounts file or wipe %s to reset the chain.",
+				accountsStatePath, len(persistedBlocks), loadErr, chainStatePath)
+		}
+		// Enrollment state is hydrated next so the registry is
+		// populated before the v2 attestation gate ever sees a
+		// /api/v1/mining/submit. Missing file is OK (operator
+		// nuked /opt/qsdm/qsdm_enrollment.json by hand to clear
+		// enrollments without resetting the chain) — the
+		// validator boots with an empty registry and any v2
+		// proof rejects until the operator re-enrolls.
+		loadedEnrollments, enrollErr := v2Wired.EnrollmentState.Load(enrollmentStatePath)
+		if enrollErr != nil {
+			log.Fatalf("chain restore: enrollment file %s unreadable (%v) — refusing to boot. Either restore the file or remove it (the chain will continue without enrollments and v2 proofs will reject).",
+				enrollmentStatePath, enrollErr)
+		}
+		logger.Info("Chain + accounts + enrollments restored from disk",
+			"blocks", len(persistedBlocks),
+			"tip_height", adminProducer.TipHeight(),
+			"accounts_loaded", loadedAccounts,
+			"enrollments_loaded", loadedEnrollments,
+			"chain_path", chainStatePath,
+			"accounts_path", accountsStatePath,
+			"enrollment_path", enrollmentStatePath,
+			"genesis_seal_will_skip", true)
+	} else {
+		logger.Info("No persisted chain found; genesis seal will run on a fresh chain",
+			"chain_path", chainStatePath)
+	}
+
+	// Compose persistence with whatever OnSealedBlock the
+	// v2wiring layer installed. v2wiring's hook runs the
+	// enrollment-sweep + gov-promote logic against
+	// AccountStore — those mutations MUST land before we
+	// snapshot, otherwise the on-disk accounts trail the
+	// in-memory state by one block's worth of stake
+	// matures + activated gov params. So the order is:
+	//
+	//  1. v2wiring hook (sweep + promote)
+	//  2. AppendBlockToFile (chain log gains the block)
+	//  3. AccountStore.Save (accounts catch up to chain)
+	//
+	// If a crash interrupts between (2) and (3): on
+	// restart, chain has block N, accounts trail at N-1.
+	// This is recoverable but not yet auto-recovered (the
+	// fail-fast above is the safe default — operator wipes
+	// or hand-replays). That's acceptable for testnet; a
+	// future commit can add chain-replay-on-mismatch.
+	priorSealedBlockHook := adminProducer.OnSealedBlock
+	adminProducer.OnSealedBlock = func(blk *chain.Block) {
+		if priorSealedBlockHook != nil {
+			priorSealedBlockHook(blk)
+		}
+		if blk == nil {
+			return
+		}
+		if err := chain.AppendBlockToFile(chainStatePath, blk); err != nil {
+			logger.Warn("chain persistence: append failed",
+				"height", blk.Height,
+				"path", chainStatePath,
+				"error_str", err.Error())
+			return
+		}
+		if err := adminAccounts.Save(accountsStatePath); err != nil {
+			logger.Warn("accounts persistence: save failed",
+				"path", accountsStatePath,
+				"error_str", err.Error())
+		}
+		// Enrollment state must persist alongside accounts —
+		// the v2 attestation gate (hmac.Verify) consults the
+		// registry every /api/v1/mining/submit, and a registry
+		// that lags one block behind would let a slashed
+		// NodeID briefly continue to mine after restart, or
+		// (more commonly) reject every legitimate operator
+		// because the on-disk snapshot was empty when the
+		// validator restarted.
+		if v2Wired.EnrollmentState != nil {
+			if err := v2Wired.EnrollmentState.Save(enrollmentStatePath); err != nil {
+				logger.Warn("enrollment persistence: save failed",
+					"path", enrollmentStatePath,
+					"error_str", err.Error())
+			}
+		}
+	}
+
 	// Single-validator genesis seal. /api/v1/mining/work
 	// requires the producer to have at least one sealed
 	// block — without it, every miner request returns 503
