@@ -3,7 +3,10 @@ package attest
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -344,6 +347,82 @@ func TestNewProductionDispatcher_CCConfigBadRoot_PropagatesError(t *testing.T) {
 	}
 	if _, err := NewProductionDispatcher(cfg); err == nil {
 		t.Fatal("expected error on malformed pinned root DER")
+	}
+}
+
+// TestNewProductionDispatcher_CCConfigFromLoader_FullOperatorPath is the
+// end-to-end integration test for Phase 2c-iv operator wiring:
+//
+//   1. BuildTestBundle mints a fresh root + leaf + signed bundle.
+//   2. The root's DER is PEM-wrapped and dropped into a temp dir
+//      — exactly what an operator does with /etc/qsdm/cc-roots/.
+//   3. cc.LoadVerifierConfig reads the dir, returns a fully-
+//      populated *cc.VerifierConfig.
+//   4. attest.NewProductionDispatcher with that config wires
+//      the real *cc.Verifier (no stub) and routes a CC proof
+//      through it.
+//
+// A pass on this test means the only thing left between an
+// operator and live nvidia-cc-v1 acceptance is to populate
+// the [mining.cc] config section in their TOML — no Go code
+// changes required.
+func TestNewProductionDispatcher_CCConfigFromLoader_FullOperatorPath(t *testing.T) {
+	b64, root, _, err := cc.BuildTestBundle(cc.BuildOpts{})
+	if err != nil {
+		t.Fatalf("BuildTestBundle: %v", err)
+	}
+
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: root.DER,
+	})
+	rootDir := t.TempDir()
+	rootPath := filepath.Join(rootDir, "nvidia-cc-root.pem")
+	if err := os.WriteFile(rootPath, pemBytes, 0o600); err != nil {
+		t.Fatalf("write root: %v", err)
+	}
+
+	prodCfg := validProdConfig()
+	loaded, err := cc.LoadVerifierConfig(cc.VerifierConfigOptions{
+		RootPaths:   []string{rootDir},
+		MinFirmware: "535.0.0",
+		MinDriver:   "550.0.0",
+		NonceStore:  prodCfg.NonceStore,
+	})
+	if err != nil {
+		t.Fatalf("LoadVerifierConfig: %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("LoadVerifierConfig returned nil with non-empty RootPaths")
+	}
+	prodCfg.CCConfig = loaded
+
+	d, err := NewProductionDispatcher(prodCfg)
+	if err != nil {
+		t.Fatalf("NewProductionDispatcher: %v", err)
+	}
+
+	var nonce, batchRoot, mixDigest [32]byte
+	copy(nonce[:], []byte("nonce-test-vector-32-bytes-fixed"))
+	copy(batchRoot[:], []byte("batch-root-test-vector-32-bytes-fixed"))
+	copy(mixDigest[:], []byte("mix-digest-test-vector-32-bytes-fixed"))
+	proof := mining.Proof{
+		Version:   mining.ProtocolVersionV2,
+		MinerAddr: "qsdm1testminer000000000000000000000000000000",
+		BatchRoot: batchRoot,
+		MixDigest: mixDigest,
+		Attestation: mining.Attestation{
+			Type:         mining.AttestationTypeCC,
+			BundleBase64: b64,
+			Nonce:        nonce,
+			IssuedAt:     time.Unix(1_700_000_000, 0).Unix(),
+		},
+	}
+	if err := d.VerifyAttestation(proof, time.Unix(1_700_000_000, 0)); err != nil {
+		t.Fatalf("operator-wired CC verifier should accept test bundle: %v", err)
+	}
+	if errors.Is(err, cc.ErrNotYetAvailable) {
+		t.Fatal("loader path should NOT route through the stub")
 	}
 }
 

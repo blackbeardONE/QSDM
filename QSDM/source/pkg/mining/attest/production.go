@@ -106,6 +106,20 @@ type ProductionConfig struct {
 	// anchor lands, flipping CCConfig from nil to a populated
 	// struct is the single-line change to start accepting
 	// nvidia-cc-v1 proofs.
+	//
+	// Operators populate this via cc.LoadVerifierConfig
+	// (see pkg/mining/attest/cc/loader.go) which reads pinned
+	// root .pem/.der files from a directory and assembles the
+	// rest of the config from operator-supplied tunables. The
+	// canonical wiring shape is:
+	//
+	//	ccCfg, err := cc.LoadVerifierConfig(cc.VerifierConfigOptions{
+	//	    RootPaths:   []string{"/etc/qsdm/cc-roots/"},
+	//	    MinFirmware: "535.86.10",
+	//	    MinDriver:   "550.54.14",
+	//	    NonceStore:  prodCfg.NonceStore,
+	//	})
+	//	prodCfg.CCConfig = ccCfg // nil if RootPaths was empty
 	CCConfig *cc.VerifierConfig
 }
 
