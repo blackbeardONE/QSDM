@@ -29,6 +29,17 @@ api.qsdm.tech, node.qsdm.tech {
 		reverse_proxy 127.0.0.1:8443
 	}
 
+	# Prometheus scrape lives on the dashboard port (:8081), not the API
+	# server (:8443) since Stage B (2026-05-06). External Prometheus uses
+	# Bearer = QSDM_DASHBOARD_METRICS_SCRAPE_SECRET (see secrets.conf).
+	@scrape path /api/metrics/prometheus
+	handle @scrape {
+		reverse_proxy 127.0.0.1:8081 {
+			header_up X-Forwarded-Proto https
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
 	handle {
 		reverse_proxy 127.0.0.1:8443 {
 			header_up X-Forwarded-Proto https
@@ -88,9 +99,18 @@ qsdm.tech {
 	redir /app/* https://dashboard.qsdm.tech/ 302
 
 	# Public API pass-through (login/register/wallet/health) -> qsdm :8443
-	@api path /api/v1/* /api/metrics /api/metrics/prometheus
+	@api path /api/v1/* /api/metrics
 	handle @api {
 		reverse_proxy 127.0.0.1:8443 {
+			header_up X-Forwarded-Proto https
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# Prometheus scrape lives on dashboard :8081 (Stage B, 2026-05-06).
+	@scrape path /api/metrics/prometheus
+	handle @scrape {
+		reverse_proxy 127.0.0.1:8081 {
 			header_up X-Forwarded-Proto https
 			header_up X-Real-IP {remote_host}
 		}

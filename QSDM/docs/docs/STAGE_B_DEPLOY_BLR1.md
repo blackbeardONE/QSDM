@@ -362,30 +362,93 @@ this runbook is the regression-detection checklist.
 
 ---
 
-## 9. Known Caddy issue (separate fix)
+## 9. Caddy metrics route — fixed 2026-05-06
 
-The Caddyfile at `/etc/caddy/Caddyfile` proxies
-`qsdm.tech/api/metrics/prometheus` to `127.0.0.1:8443`. That
-worked on the legacy QSDM+ binary (which served metrics on
-the API port) but on Stage B the metrics endpoint lives on
-`:8081` instead. As of 2026-05-06 the Caddy block routes the
-external scrape URL to a port that returns `401 invalid or
-expired token` (the API server's JWT auth).
+> **Status:** *applied on BLR1 as part of the Stage B rollout.*
 
-This does **not** block local Prometheus scrape: a Prometheus
-instance running on the same host scrapes `127.0.0.1:8081`
-directly with the Bearer secret. It only matters if you want
-Prometheus to scrape from the public internet via Caddy.
+Earlier the Caddyfile at `/etc/caddy/Caddyfile` proxied
+`qsdm.tech/api/metrics/prometheus` to `127.0.0.1:8443`, which
+worked on the legacy QSDM+ binary (it served metrics on the
+API port) but **not** on Stage B, where the metrics endpoint
+lives on `:8081`. Hitting the external scrape URL returned
+`401 invalid or expired token` (the API server's JWT auth).
 
-To fix when you have a maintenance window, swap the proxy
-target for the metrics-only path:
+The fix adds an explicit `@scrape path /api/metrics/prometheus`
+matcher that routes to `:8081` in both the
+`api.qsdm.tech, node.qsdm.tech { … }` block and the
+`qsdm.tech { … }` block, before the catch-all `:8443` route.
+The corrected file is checked in at
+[`QSDM/deploy/Caddyfile`](../../../QSDM/deploy/Caddyfile);
+the in-place edit on BLR1 has the original preserved at
+`/etc/caddy/Caddyfile.bak.<ts>`.
 
-```caddyfile
-# In the qsdm.tech { ... } block, replace
-@api path /api/v1/* /api/metrics /api/metrics/prometheus
-# with two distinct matchers:
-@api  path /api/v1/* /api/metrics
-@scrape path /api/metrics/prometheus
-handle @api    { reverse_proxy 127.0.0.1:8443 ... }
-handle @scrape { reverse_proxy 127.0.0.1:8081 ... }
+After editing, `caddy reload` does **not** work because the
+Caddyfile has `admin off` (which disables the local admin
+API on `:2019`). Use `systemctl restart caddy` instead — the
+restart is sub-second and the only externally-observable
+effect is the metrics route now resolving correctly.
+
+Smoke check from outside:
+
+```bash
+SECRET=…  # value of QSDM_DASHBOARD_METRICS_SCRAPE_SECRET
+curl -sS -H "Authorization: Bearer $SECRET" \
+     https://qsdm.tech/api/metrics/prometheus | wc -l   # expect 388 lines
+curl -sS -H "Authorization: Bearer $SECRET" \
+     https://api.qsdm.tech/api/metrics/prometheus | wc -l
+curl -sS -H "Authorization: Bearer $SECRET" \
+     https://dashboard.qsdm.tech/api/metrics/prometheus | wc -l
 ```
+
+All three must return identical line counts. Catch-all paths
+(`/api/v1/health`, etc.) still go to `:8443`.
+
+## 10. Observability stack (Prometheus + Alertmanager + Grafana)
+
+> **Status:** *deployed on BLR1 alongside qsdm.service on
+> 2026-05-06.*
+
+The companion installer at
+[`QSDM/deploy/scripts/install_observability.sh`](../../../QSDM/deploy/scripts/install_observability.sh)
+lays down a native systemd-managed Prometheus + Alertmanager +
+Grafana stack on the same host as `qsdm.service`. All three
+bind `127.0.0.1` only; reach them via SSH local-forward:
+
+```bash
+ssh -L 9090:127.0.0.1:9090 -L 9093:127.0.0.1:9093 \
+    -L 3000:127.0.0.1:3000 root@206.189.132.232
+```
+
+| Component | Port | Path | Auth |
+| --- | --- | --- | --- |
+| Prometheus | `:9090` | `/etc/prometheus/{prometheus.yml,alerts_qsdm.yml}` | none (loopback) |
+| Alertmanager | `:9093` | `/etc/alertmanager/alertmanager.yml` | none (loopback) |
+| Grafana | `:3000` | `/etc/grafana/`, `/var/lib/grafana/dashboards/qsdm/` | admin + password from `/etc/grafana/.admin-password` |
+
+**On BLR1 the v2-* alert groups are stripped** (`qsdm-v2-mining-*`,
+`qsdm-v2-attest-*`, `qsdm-v2-governance`) per the README's
+v1-only guidance — the validator is a single-node v1 deploy,
+so leaving those groups in produced 5 perpetually-pending
+alerts on legitimate-zero state. The full file is preserved
+at `/etc/prometheus/alerts_qsdm.yml.with-v2.bak` and at
+`/opt/qsdm-deploy/prometheus/alerts_qsdm.example.yml`.
+Re-enable when v2 mining/governance comes online by copying
+the example file back over `alerts_qsdm.yml` and reloading
+Prometheus (`systemctl reload prometheus`).
+
+**Alertmanager is wired with a no-receiver default**
+(`/etc/alertmanager/alertmanager.yml` routes all alerts to a
+`null-receiver` with no delivery configs). Alerts are visible
+in the Alertmanager UI at `http://127.0.0.1:9093` and the
+v2 API at `/api/v2/alerts`, but are not delivered externally.
+To wire real Slack/PagerDuty/email, copy
+`/opt/qsdm-deploy/alertmanager/alertmanager.example.yml`
+over the active config and substitute the four `REPLACE_ME`
+tokens (see `QSDM/deploy/alertmanager/README.md`).
+
+Re-runs of `install_observability.sh` are idempotent: the
+binary install steps skip if the binaries are already on
+`PATH`, and the systemd unit / config writes are
+content-based overwrites. The only one-time action is the
+initial admin password generation; subsequent runs leave
+`/etc/grafana/.admin-password-set` and don't re-key.
