@@ -35,7 +35,9 @@ end-to-end is ~5 minutes including the smoke check.
 >
 > **Pre-Stage-B baseline being replaced** *(by future deploys)*.
 > The currently-live binary on `/opt/qsdm/qsdm` is built from
-> Stage B at commit `bb89450` and reports
+> Stage B at commit `603e4c7` (post-rebrand series, with
+> `bb89450` capabilities + the WASM-absent log demoted from
+> WARN to INFO) and reports
 > `qsdm_binary_capabilities{dilithium="circl",mesh3d="cpu_fallback",wasm="wazero"} 1`.
 > All seven `qsdm_stub_active{kind=…}` rows are pinned at `0`.
 > Subsequent deploys following this runbook should preserve
