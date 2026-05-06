@@ -260,6 +260,13 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// without going through the (separately-stored) wallet
 	// API. Registered unconditionally so miners can probe.
 	mux.HandleFunc("/api/v1/mining/account", handlers.MiningAccountHandler)
+	// Read-only emission probe; surfaces the §8 schedule,
+	// current per-block reward, cumulative emission, and
+	// remaining supply. Wired regardless of solo mode
+	// because the data is pure schedule state — no
+	// AccountStore peek. SDK clients render tokenomics
+	// widgets from this endpoint.
+	mux.HandleFunc("/api/v1/mining/emission", handlers.MiningEmissionHandler)
 	// Mining challenge endpoint (Phase 2c-iii,
 	// MINING_PROTOCOL_V2.md §6.2). Returns 503 until
 	// a ChallengeIssuer is installed via api.SetChallengeIssuer(...).

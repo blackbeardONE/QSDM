@@ -128,6 +128,131 @@ func TestMiningWorkReturns503WhenServiceAbsent(t *testing.T) {
 	}
 }
 
+// fakeAccountProbe + fakeEmissionProbe exercise the read-
+// only solo-mode probe handlers without booting the chain.
+
+type fakeAccountProbe struct {
+	addrs map[string]struct {
+		bal   float64
+		nonce uint64
+	}
+}
+
+func (p *fakeAccountProbe) BalanceOf(addr string) (float64, uint64, bool) {
+	if p == nil {
+		return 0, 0, false
+	}
+	v, ok := p.addrs[addr]
+	if !ok {
+		return 0, 0, false
+	}
+	return v.bal, v.nonce, true
+}
+
+func TestMiningAccount_503WhenProbeAbsent(t *testing.T) {
+	SetMiningAccountProbe(nil)
+	t.Cleanup(func() { SetMiningAccountProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/mining/account?address=qsdm1foo", nil)
+	h.MiningAccountHandler(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d", rec.Code)
+	}
+}
+
+func TestMiningAccount_400WhenAddressMissing(t *testing.T) {
+	SetMiningAccountProbe(&fakeAccountProbe{})
+	t.Cleanup(func() { SetMiningAccountProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/mining/account", nil)
+	h.MiningAccountHandler(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rec.Code)
+	}
+}
+
+func TestMiningAccount_RoundTripsBalance(t *testing.T) {
+	SetMiningAccountProbe(&fakeAccountProbe{
+		addrs: map[string]struct {
+			bal   float64
+			nonce uint64
+		}{
+			"qsdm1miner": {bal: 12.5, nonce: 7},
+		},
+	})
+	t.Cleanup(func() { SetMiningAccountProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/mining/account?address=qsdm1miner", nil)
+	h.MiningAccountHandler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp MiningAccountResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Address != "qsdm1miner" || resp.Balance != 12.5 || resp.Nonce != 7 || !resp.Present {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
+type fakeEmissionProbe struct {
+	snap MiningEmissionSnapshot
+}
+
+func (p *fakeEmissionProbe) Snapshot() MiningEmissionSnapshot { return p.snap }
+
+func TestMiningEmission_503WhenProbeAbsent(t *testing.T) {
+	SetMiningEmissionProbe(nil)
+	t.Cleanup(func() { SetMiningEmissionProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/mining/emission", nil)
+	h.MiningEmissionHandler(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d", rec.Code)
+	}
+}
+
+func TestMiningEmission_RoundTripsSnapshot(t *testing.T) {
+	want := MiningEmissionSnapshot{
+		ChainTip:               42,
+		MiningCapDust:          9_000_000_000_000_000,
+		BlocksPerEpoch:         12_623_040,
+		TargetBlockTimeSeconds: 10,
+		CurrentEpoch:           0,
+		BlockRewardDust:        356_490_987,
+		BlockRewardCell:        "3.56490987",
+		EmittedDust:            14_972_621_454,
+		EmittedCell:            "149.72621454",
+		RemainingDust:          8_999_999_985_027_378_546,
+		NextHalvingHeight:      12_623_040,
+		NextHalvingETASeconds:  126_230_388,
+	}
+	SetMiningEmissionProbe(&fakeEmissionProbe{snap: want})
+	t.Cleanup(func() { SetMiningEmissionProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/mining/emission", nil)
+	h.MiningEmissionHandler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp MiningEmissionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.ChainTip != want.ChainTip ||
+		resp.BlockRewardDust != want.BlockRewardDust ||
+		resp.BlockRewardCell != want.BlockRewardCell ||
+		resp.NextHalvingHeight != want.NextHalvingHeight {
+		t.Fatalf("snapshot did not round-trip: got %+v want %+v", resp, want)
+	}
+}
+
 func TestMiningSubmitReturns503WhenServiceAbsent(t *testing.T) {
 	SetMiningService(nil)
 	t.Cleanup(func() { SetMiningService(nil) })

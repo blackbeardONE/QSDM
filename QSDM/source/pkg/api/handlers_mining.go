@@ -158,6 +158,108 @@ type MiningAccountResponse struct {
 	Present bool    `json:"present"`
 }
 
+// MiningEmissionProbe is the read-only contract the
+// /api/v1/mining/emission endpoint uses to surface the §8
+// emission schedule, current per-block reward, cumulative
+// emission, and remaining supply. Wired by the validator
+// regardless of solo / peer mode because the data is pure
+// schedule state — no AccountStore peek.
+type MiningEmissionProbe interface {
+	// Snapshot returns a single-call view of the current
+	// emission state at the live chain tip. The struct shape
+	// mirrors MiningEmissionResponse so implementations can
+	// fill it directly.
+	Snapshot() MiningEmissionSnapshot
+}
+
+// MiningEmissionSnapshot bundles the read-only schedule
+// state returned by MiningEmissionProbe.Snapshot. Field
+// units match the on-wire MiningEmissionResponse.
+type MiningEmissionSnapshot struct {
+	ChainTip               uint64
+	MiningCapDust          uint64
+	BlocksPerEpoch         uint64
+	TargetBlockTimeSeconds uint64
+	CurrentEpoch           uint32
+	BlockRewardDust        uint64
+	BlockRewardCell        string
+	EmittedDust            uint64
+	EmittedCell            string
+	RemainingDust          uint64
+	NextHalvingHeight      uint64
+	NextHalvingETASeconds  uint64
+}
+
+// MiningEmissionResponse is the wire payload for
+// GET /api/v1/mining/emission.
+type MiningEmissionResponse struct {
+	ChainTip               uint64 `json:"chain_tip"`
+	MiningCapDust          uint64 `json:"mining_cap_dust"`
+	BlocksPerEpoch         uint64 `json:"blocks_per_epoch"`
+	TargetBlockTimeSeconds uint64 `json:"target_block_time_seconds"`
+	CurrentEpoch           uint32 `json:"current_epoch"`
+	BlockRewardDust        uint64 `json:"block_reward_dust"`
+	BlockRewardCell        string `json:"block_reward_cell"`
+	EmittedDust            uint64 `json:"emitted_dust"`
+	EmittedCell            string `json:"emitted_cell"`
+	RemainingDust          uint64 `json:"remaining_dust"`
+	NextHalvingHeight      uint64 `json:"next_halving_height"`
+	NextHalvingETASeconds  uint64 `json:"next_halving_eta_seconds"`
+}
+
+type miningEmissionProbeHolder struct {
+	mu    sync.RWMutex
+	probe MiningEmissionProbe
+}
+
+var miningEmissionProbeRegistry = &miningEmissionProbeHolder{}
+
+// SetMiningEmissionProbe installs (or removes, when
+// probe==nil) the process-wide emission probe.
+func SetMiningEmissionProbe(probe MiningEmissionProbe) {
+	miningEmissionProbeRegistry.mu.Lock()
+	defer miningEmissionProbeRegistry.mu.Unlock()
+	miningEmissionProbeRegistry.probe = probe
+}
+
+func currentMiningEmissionProbe() MiningEmissionProbe {
+	miningEmissionProbeRegistry.mu.RLock()
+	defer miningEmissionProbeRegistry.mu.RUnlock()
+	return miningEmissionProbeRegistry.probe
+}
+
+// MiningEmissionHandler serves GET /api/v1/mining/emission.
+// Returns 503 when no probe is wired.
+func (h *Handlers) MiningEmissionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	probe := currentMiningEmissionProbe()
+	if probe == nil {
+		writeMiningUnavailable(w, "emission probe not configured")
+		return
+	}
+	snap := probe.Snapshot()
+	resp := MiningEmissionResponse{
+		ChainTip:               snap.ChainTip,
+		MiningCapDust:          snap.MiningCapDust,
+		BlocksPerEpoch:         snap.BlocksPerEpoch,
+		TargetBlockTimeSeconds: snap.TargetBlockTimeSeconds,
+		CurrentEpoch:           snap.CurrentEpoch,
+		BlockRewardDust:        snap.BlockRewardDust,
+		BlockRewardCell:        snap.BlockRewardCell,
+		EmittedDust:            snap.EmittedDust,
+		EmittedCell:            snap.EmittedCell,
+		RemainingDust:          snap.RemainingDust,
+		NextHalvingHeight:      snap.NextHalvingHeight,
+		NextHalvingETASeconds:  snap.NextHalvingETASeconds,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 // MiningAccountHandler serves GET /api/v1/mining/account?address=<addr>.
 // Returns 503 when no probe is wired (canonical posture
 // outside solo mode). Returns 400 when the address parameter

@@ -48,6 +48,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/wallet"
 	"github.com/blackbeardONE/QSDM/pkg/wasm"
 	"log"
+	"runtime/debug"
 )
 
 var logger *logging.Logger
@@ -998,6 +999,12 @@ func main() {
 		api.SetMiningAccountProbe(accountProbeFromStore(adminAccounts))
 		logger.Info("Solo validator mode: /api/v1/mining/account balance probe wired")
 	}
+	// Wire the emission probe regardless of solo mode — it
+	// reads pure schedule state, no AccountStore peek, so
+	// it's always safe to expose. SDK clients render
+	// tokenomics widgets from this endpoint.
+	api.SetMiningEmissionProbe(emissionProbeFromProducer(adminProducer))
+	logger.Info("/api/v1/mining/emission probe wired (chain.DefaultEmissionSchedule)")
 	logger.Info("Mining service installed",
 		"dag_size", uint32(1024),
 		"difficulty", "2",
@@ -1344,8 +1351,11 @@ func main() {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				logger.Error("Panic during API server initialization", "error", r)
-				log.Printf("API server initialization panic: %v (this is normal if CGO/liboqs is not available)", r)
+				stack := debug.Stack()
+				logger.Error("Panic during API server initialization",
+					"error_str", fmt.Sprintf("%v", r),
+					"stack", string(stack))
+				log.Printf("API server initialization panic: %v (this is normal if CGO/liboqs is not available)\nstack:\n%s", r, stack)
 			}
 		}()
 
@@ -1647,6 +1657,55 @@ func (p accountStoreProbe) BalanceOf(address string) (float64, uint64, bool) {
 
 func accountProbeFromStore(store *chain.AccountStore) api.MiningAccountProbe {
 	return accountStoreProbe{store: store}
+}
+
+// emissionStoreProbe adapts a *chain.BlockProducer + the
+// canonical chain.DefaultEmissionSchedule to
+// api.MiningEmissionProbe. Lives in cmd/qsdm because the
+// schedule choice is operator policy, not consensus — peer
+// nodes pick their own at boot from the same defaults.
+type emissionStoreProbe struct {
+	producer *chain.BlockProducer
+	schedule chain.EmissionSchedule
+}
+
+func (p emissionStoreProbe) Snapshot() api.MiningEmissionSnapshot {
+	var tip uint64
+	if p.producer != nil && p.producer.HasTip() {
+		tip = p.producer.TipHeight()
+	}
+	rewardDust := p.schedule.BlockRewardDust(tip + 1)
+	return api.MiningEmissionSnapshot{
+		ChainTip:               tip,
+		MiningCapDust:          p.schedule.MiningCapDust,
+		BlocksPerEpoch:         p.schedule.BlocksPerEpoch,
+		TargetBlockTimeSeconds: p.schedule.TargetBlockTimeSeconds,
+		CurrentEpoch:           p.schedule.EpochForHeight(tip),
+		BlockRewardDust:        rewardDust,
+		BlockRewardCell:        p.schedule.BlockRewardCell(tip + 1),
+		EmittedDust:            p.schedule.CumulativeEmittedDust(tip),
+		EmittedCell:            formatDustAsCellLocal(p.schedule.CumulativeEmittedDust(tip)),
+		RemainingDust:          p.schedule.RemainingSupplyDust(tip),
+		NextHalvingHeight:      p.schedule.NextHalvingHeight(tip),
+		NextHalvingETASeconds:  p.schedule.NextHalvingETA(tip),
+	}
+}
+
+func emissionProbeFromProducer(p *chain.BlockProducer) api.MiningEmissionProbe {
+	return emissionStoreProbe{
+		producer: p,
+		schedule: chain.DefaultEmissionSchedule(),
+	}
+}
+
+// formatDustAsCellLocal mirrors the helper in
+// pkg/api/handlers_status.go (dust → "X.YYYYYYYY" CELL).
+// Duplicated here to avoid an import cycle since the helper
+// there is unexported.
+func formatDustAsCellLocal(dust uint64) string {
+	whole := dust / chain.DustPerCell
+	frac := dust % chain.DustPerCell
+	return fmt.Sprintf("%d.%0*d", whole, chain.CellDecimals, frac)
 }
 
 // The cells below are 16-byte synthetic IDs derived from a

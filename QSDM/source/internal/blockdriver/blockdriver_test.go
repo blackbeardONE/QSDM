@@ -42,7 +42,9 @@ func build(t *testing.T) (*chain.BlockProducer, *mempool.Mempool, *chain.Account
 }
 
 // validCfg returns the minimum-valid Config — every field
-// populated, defaults filled in by New.
+// populated, defaults filled in by New. Tests use
+// FlatRewardPerBlock to keep arithmetic simple; schedule-
+// driven behaviour is covered separately.
 func validCfg(t *testing.T) Config {
 	t.Helper()
 	bp, pool, accounts := build(t)
@@ -52,7 +54,7 @@ func validCfg(t *testing.T) Config {
 		Accounts:             accounts,
 		Logger:               quietLogger(t),
 		Period:               5 * time.Millisecond,
-		RewardPerBlock:       1.0,
+		FlatRewardPerBlock:   1.0,
 		FunderInitialBalance: 1000.0,
 	}
 }
@@ -105,11 +107,28 @@ func TestNew_FillsDefaults(t *testing.T) {
 	if d.cfg.Period != DefaultPeriod {
 		t.Errorf("Period: got %v want %v", d.cfg.Period, DefaultPeriod)
 	}
-	if d.cfg.RewardPerBlock != DefaultRewardPerBlock {
-		t.Errorf("RewardPerBlock: got %v want %v", d.cfg.RewardPerBlock, DefaultRewardPerBlock)
-	}
 	if d.cfg.FunderInitialBalance != DefaultFunderBalance {
 		t.Errorf("FunderInitialBalance: got %v want %v", d.cfg.FunderInitialBalance, DefaultFunderBalance)
+	}
+	// Default schedule should match chain.DefaultEmissionSchedule().
+	want := chain.DefaultEmissionSchedule()
+	if d.schedule.MiningCapDust != want.MiningCapDust {
+		t.Errorf("schedule.MiningCapDust: got %d want %d", d.schedule.MiningCapDust, want.MiningCapDust)
+	}
+	if d.schedule.BlocksPerEpoch != want.BlocksPerEpoch {
+		t.Errorf("schedule.BlocksPerEpoch: got %d want %d", d.schedule.BlocksPerEpoch, want.BlocksPerEpoch)
+	}
+}
+
+// TestNew_RejectsZeroValueSchedule guards against the
+// classic "passed a zero EmissionSchedule by mistake" bug
+// which would silently produce 0-reward forever.
+func TestNew_RejectsZeroValueSchedule(t *testing.T) {
+	cfg := validCfg(t)
+	zero := chain.EmissionSchedule{}
+	cfg.EmissionSchedule = &zero
+	if _, err := New(cfg); err == nil {
+		t.Fatal("expected error when EmissionSchedule has BlocksPerEpoch == 0")
 	}
 }
 
@@ -193,7 +212,7 @@ func TestTick_HeartbeatSealsEmptyBlock(t *testing.T) {
 // proof count.
 func TestTick_PayoutCreditsMiners(t *testing.T) {
 	cfg := validCfg(t)
-	cfg.RewardPerBlock = 4.0 // exact split: alice=3 of 4, bob=1 of 4.
+	cfg.FlatRewardPerBlock = 4.0 // exact split: alice=3 of 4, bob=1 of 4.
 	d, err := New(cfg)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -225,7 +244,7 @@ func TestTick_PayoutCreditsMiners(t *testing.T) {
 	}
 	// Funder balance dropped by exactly the reward total.
 	funder, _ := cfg.Accounts.Get(FunderAddress)
-	want := cfg.FunderInitialBalance - cfg.RewardPerBlock
+	want := cfg.FunderInitialBalance - cfg.FlatRewardPerBlock
 	if funder.Balance < want-0.001 || funder.Balance > want+0.001 {
 		t.Errorf("funder balance: got %.6f want ~%.6f", funder.Balance, want)
 	}
@@ -288,7 +307,7 @@ func TestTick_FunderNonceMonotonic(t *testing.T) {
 // "what BLR1 will look like in solo mode" exercise.
 func TestE2E_SealsManyBlocksAccumulatesBalance(t *testing.T) {
 	cfg := validCfg(t)
-	cfg.RewardPerBlock = 0.5
+	cfg.FlatRewardPerBlock = 0.5
 	d, err := New(cfg)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -308,7 +327,7 @@ func TestE2E_SealsManyBlocksAccumulatesBalance(t *testing.T) {
 	if charlie == nil {
 		t.Fatal("charlie account missing")
 	}
-	want := 5 * cfg.RewardPerBlock
+	want := 5 * cfg.FlatRewardPerBlock
 	if charlie.Balance < want-0.001 || charlie.Balance > want+0.001 {
 		t.Errorf("charlie balance after 5 blocks: got %.6f want %.6f",
 			charlie.Balance, want)
@@ -344,6 +363,100 @@ func TestStart_TicksUntilStop(t *testing.T) {
 	d.Stop()
 	// Stop should be idempotent.
 	d.Stop()
+}
+
+// ---- emission schedule ---------------------------------------------------
+
+// TestTick_UsesEmissionScheduleWhenFlatRewardZero verifies
+// that the production code path (FlatRewardPerBlock = 0)
+// pulls the per-block reward from the schedule. We use a
+// small custom schedule (cap = 8 dust, BlocksPerEpoch = 1)
+// to make the arithmetic obvious: epoch 0 allocates cap/2 = 4
+// dust per block, so the miner gets 4 dust = 4e-8 CELL.
+func TestTick_UsesEmissionScheduleWhenFlatRewardZero(t *testing.T) {
+	bp, pool, accounts := build(t)
+	// Tiny schedule: cap=8 dust, 10 s blocks, 10 s epochs ⇒
+	// BlocksPerEpoch=1 ⇒ epoch 0 alloc = 4 dust = 4 dust per
+	// block (only block in the epoch).
+	sched, err := chain.NewEmissionSchedule(8, 10, 10)
+	if err != nil {
+		t.Fatalf("NewEmissionSchedule: %v", err)
+	}
+	d, err := New(Config{
+		Producer:             bp,
+		Pool:                 pool,
+		Accounts:             accounts,
+		Logger:               quietLogger(t),
+		Period:               5 * time.Millisecond,
+		EmissionSchedule:     &sched,
+		FunderInitialBalance: 1000.0,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// Seal genesis (height 0; 0 reward by spec) so the
+	// next tick targets height 1 and the schedule pays out.
+	d.tick()
+	if !bp.HasTip() {
+		t.Fatal("genesis tick did not seal a block")
+	}
+	d.OnAcceptedProof("qsdm1solo")
+	d.tick()
+	want := 4.0 / float64(chain.DustPerCell) // 4 dust as CELL
+	got, _ := accounts.Get("qsdm1solo")
+	if got == nil {
+		t.Fatal("solo balance not credited")
+	}
+	if got.Balance < want-1e-12 || got.Balance > want+1e-12 {
+		t.Errorf("schedule reward: got %.12f want %.12f", got.Balance, want)
+	}
+	if e := d.Stats().EmittedDust; e != 4 {
+		t.Errorf("EmittedDust: got %d want 4", e)
+	}
+	if d.Stats().FlatReward {
+		t.Error("FlatReward should be false when schedule is in use")
+	}
+}
+
+// TestTick_HeartbeatWhenScheduleAtZero confirms that once the
+// emission curve has emitted its full allocation, subsequent
+// blocks are heartbeats (no payout) — the supply cap is
+// enforced. We set cap = 1 dust + BlocksPerEpoch = 1 so
+// epoch 0 allocates 0 dust per block (1/2 = 0 in integer
+// math), and every block lands here.
+func TestTick_HeartbeatWhenScheduleAtZero(t *testing.T) {
+	bp, pool, accounts := build(t)
+	sched, err := chain.NewEmissionSchedule(1, 10, 10) // alloc = 0
+	if err != nil {
+		t.Fatalf("NewEmissionSchedule: %v", err)
+	}
+	d, err := New(Config{
+		Producer:             bp,
+		Pool:                 pool,
+		Accounts:             accounts,
+		Logger:               quietLogger(t),
+		Period:               5 * time.Millisecond,
+		EmissionSchedule:     &sched,
+		FunderInitialBalance: 1000.0,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// Seal genesis first so the next tick is at height 1.
+	d.tick()
+	d.OnAcceptedProof("qsdm1cap")
+	d.tick()
+	got, _ := accounts.Get("qsdm1cap")
+	if got != nil && got.Balance != 0 {
+		t.Errorf("expected no credit when schedule emits 0, got %.12f", got.Balance)
+	}
+	if e := d.Stats().EmittedDust; e != 0 {
+		t.Errorf("EmittedDust: got %d want 0", e)
+	}
+	// Block was still sealed (heartbeat), so chain advances.
+	if !bp.HasTip() {
+		t.Fatal("expected heartbeat block to seal")
+	}
 }
 
 // ---- SyncFunderNonce -----------------------------------------------------

@@ -215,6 +215,10 @@ func isPublicEndpoint(path string) bool {
 		// balances during testnet bring-up. Outside solo
 		// mode it returns 503 because no probe is wired.
 		"/api/v1/mining/account",
+		// /mining/emission is a read-only schedule probe;
+		// no AccountStore peek so it's safe outside solo
+		// mode. SDKs render tokenomics widgets from it.
+		"/api/v1/mining/emission",
 		// /mining/challenge mints a fresh per-call nonce and MUST be
 		// publicly reachable — if miners had to authenticate to fetch
 		// a challenge, the validator's identity gating would leak out
