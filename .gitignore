@@ -244,3 +244,33 @@ desktop.ini
 # remote_apply_paramiko.py packs the tree into a one-shot snapshot
 # it uploads and deletes. Interrupted runs can leave one behind.
 /qsdm-snapshot-*.tar.gz
+
+# ------------------------------------------------------------
+# Build artifacts (never check the binaries in)
+# ------------------------------------------------------------
+# Cross-compiled validator + reference miner. Both are
+# regeneratable from source via `go build ./cmd/qsdm` /
+# `go build ./cmd/qsdmminer` — checking them in would just
+# bloat the repo and risk an out-of-date binary shadowing the
+# source.
+/QSDM/source/qsdm-linux-amd64
+/QSDM/source/qsdmminer.exe
+/QSDM/source/qsdm.exe
+/QSDM/source/qsdmminer-console.exe
+/QSDM/source/qsdmminer-linux-amd64
+/QSDM/source/qsdmminer-console-linux-amd64
+
+# ------------------------------------------------------------
+# Local one-shot deploy/operator scripts
+# ------------------------------------------------------------
+# .deploy_stagev.sh is the atomic-swap helper used during
+# Phase 2c-v bring-up; it embeds a small operator workflow
+# (backup → swap → restart → watchdog → rollback) that's
+# specific to BLR1's filesystem layout. Kept out of the
+# public repo because it would mislead operators of other
+# QSDM nodes who have a different /opt layout.
+/.deploy_stagev.sh
+
+# Throwaway PowerShell helpers used during local repro / debug.
+# These accrete and are usually superseded within hours.
+/.cache/

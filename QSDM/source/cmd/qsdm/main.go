@@ -21,6 +21,7 @@ import (
 	"github.com/blackbeardONE/QSDM/cmd/qsdm/transaction"
 	"github.com/blackbeardONE/QSDM/internal/dashboard"
 	"github.com/blackbeardONE/QSDM/internal/logging"
+	"github.com/blackbeardONE/QSDM/internal/miningsvc"
 	"github.com/blackbeardONE/QSDM/internal/v2wiring"
 	"github.com/blackbeardONE/QSDM/internal/webviewer"
 	"github.com/blackbeardONE/QSDM/internal/alerting"
@@ -35,6 +36,8 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/governance"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 	"github.com/blackbeardONE/QSDM/pkg/mesh3d"
+	"math/big"
+	"github.com/blackbeardONE/QSDM/pkg/mining"
 	"github.com/blackbeardONE/QSDM/pkg/mining/roleguard"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 	"github.com/blackbeardONE/QSDM/pkg/networking"
@@ -897,6 +900,116 @@ func main() {
 		}
 		chain.SyncValidatorStakesFromCommittedTip(nodeValidatorSet, adminAccounts, adminProducer, stakingLedger)
 	}
+
+	// v1 mining service (Phase 2c-v wiring): install the
+	// concrete api.MiningService that backs /api/v1/mining/work
+	// and /api/v1/mining/submit. Without this, both endpoints
+	// return 503 mining_unavailable — the pre-2026-05-06 BLR1
+	// posture confirmed by the curl probe in commit history.
+	//
+	// Bring-up parameters (deliberately conservative):
+	//   - WorkSet: a deterministic 3-batch / 3-cell-per-batch
+	//     synthetic. Mining cells are ID-sorted so any miner
+	//     re-canonicalises to byte-identical content.
+	//   - DAGSize: 1024 entries (32 KiB resident). Enough to
+	//     exercise the DAG-walk path; small enough that a
+	//     fresh validator boots in ms. Production mainnet
+	//     re-targets to mining.ProductionDAGSize.
+	//   - Difficulty: 2 (matches qsdmminer --self-test).
+	//     Hits a target in <2 attempts on commodity CPU,
+	//     keeping the bring-up loop interactive. Real
+	//     difficulty retargets land with the
+	//     DifficultyAdjuster wiring (Phase 4.6).
+	//
+	// All three values are static for now. They can be
+	// promoted to operator-tunable config keys once we have a
+	// second validator that needs to agree on them. Until
+	// then, hardcoding keeps consensus byte-identical.
+	miningSvc, miningErr := miningsvc.New(miningsvc.Config{
+		Producer:       adminProducer,
+		WorkSet:        bringUpWorkSet(),
+		DAGSize:        1024,
+		Difficulty:     big.NewInt(2),
+		BlocksPerEpoch: mining.DefaultBlocksPerMiningEpoch,
+	})
+	if miningErr != nil {
+		// Mining wiring failure is operator-actionable; refuse
+		// to boot in a half-wired state where /work and /submit
+		// would return 503 silently.
+		log.Fatalf("mining service wiring failed: %v", miningErr)
+	}
+	api.SetMiningService(miningSvc)
+	logger.Info("Mining service installed",
+		"dag_size", uint32(1024),
+		"difficulty", "2",
+		"blocks_per_epoch", mining.DefaultBlocksPerMiningEpoch,
+		"endpoints", "/api/v1/mining/work, /api/v1/mining/submit")
+
+	// Single-validator genesis seal. /api/v1/mining/work
+	// requires the producer to have at least one sealed
+	// block — without it, every miner request returns 503
+	// "mining: work unavailable" because chainAdapter has no
+	// HeaderHashAt(0) to anchor the proof. On a fresh BLR1-
+	// only network there are no peer validators to drive
+	// BFT-committed external blocks via TryAppendExternalBlock,
+	// so we must seal genesis ourselves. The producer's POL
+	// and BFT gates short-circuit when len(bp.chain) == 0
+	// (see pkg/chain/block.go:229-241), making this the only
+	// height at which a solo validator can advance the tip
+	// without violating consensus invariants.
+	//
+	// The preSealBFTRound hook installed above (line ~855)
+	// trips a type guard that requires the applier to be a
+	// *AccountStore — our live applier is the
+	// EnrollmentAwareApplier wrapper, so we must temporarily
+	// clear preSealBFTRound, seal, then restore. The
+	// synthetic BFT round is unnecessary at genesis (the BFT
+	// and POL gates aren't active yet anyway) so skipping it
+	// is safe.
+	if !adminProducer.HasTip() {
+		const genesisFunder = "qsdm-genesis-funder"
+		const genesisDest = "qsdm-genesis-anchor"
+		preSealRestore := func(blk *chain.Block) error {
+			return chain.RunSyntheticBFTRoundWithExecutor(bftExec, nodeValidatorSet, blk)
+		}
+		adminProducer.SetPreSealBFTRound(nil)
+		// Seed the funder so the heartbeat tx debit succeeds.
+		// AccountStore.Credit is idempotent at the chain level
+		// (no on-chain emission yet — the chain hasn't started).
+		adminAccounts.Credit(genesisFunder, 1.0)
+		seedTx := &mempool.Tx{
+			ID:        fmt.Sprintf("genesis-seed-%d", time.Now().UnixNano()),
+			Sender:    genesisFunder,
+			Recipient: genesisDest,
+			Amount:    1.0,
+			Fee:       0,
+			Nonce:     0,
+			AddedAt:   time.Now(),
+		}
+		if err := adminPool.Add(seedTx); err != nil {
+			logger.Warn("Genesis seal: mempool admission failed; chain will stay at tip=0 and /api/v1/mining/work will return 503 until a peer-driven external block lands",
+				"error_str", err.Error())
+		} else {
+			blk, prodErr := adminProducer.ProduceBlock()
+			if prodErr != nil {
+				logger.Warn("Genesis seal: ProduceBlock failed; chain stays at tip=0",
+					"error_str", prodErr.Error(),
+					"validator_set_active", len(nodeValidatorSet.ActiveValidators()),
+					"mempool_size", adminPool.Size())
+			} else if blk != nil {
+				logger.Info("Genesis block sealed by solo validator; chain tip advanced",
+					"height", blk.Height,
+					"hash", blk.Hash,
+					"tx_count", len(blk.Transactions))
+			} else {
+				logger.Warn("Genesis seal: ProduceBlock returned nil with no error")
+			}
+		}
+		// Re-install preSealBFTRound for any subsequent
+		// (peer-driven) block production paths.
+		adminProducer.SetPreSealBFTRound(preSealRestore)
+	}
+
 	bftExec.SetOnCommitted(func(height uint64, round uint32, blockHash string) {
 		defer bftExec.ClearLastInboundBFTGossipPeer()
 		logger.Info("BFT committed height", "height", height, "round", round, "block_hash", blockHash)
@@ -1378,4 +1491,45 @@ func main() {
 	os.Stdout.Sync()
 
 	select {} // Block forever until shutdown signal
+}
+
+// bringUpWorkSet returns the deterministic v1 mining workset
+// the validator serves to every miner during the bring-up
+// posture. Two requirements:
+//
+//  1. Stable across runs and platforms (every miner sees the
+//     same WorkSet.Root() so DAG entries match between
+//     miner and validator).
+//  2. Passes mining.WorkSet.Validate() — which means each
+//     batch must have 3..5 cells, and each cell ID must be
+//     non-empty and globally unique within the workset.
+//
+// The cells below are 16-byte synthetic IDs derived from a
+// fixed lexicographic prefix; the content hashes are the
+// SHA-256-style 32-byte arrays with deterministic byte
+// patterns. Nothing here is consensus-critical beyond
+// "miner and validator must agree" — once a per-epoch
+// derivation lands (Phase 4.6), this helper is deleted and
+// the WorkSet comes from chain state.
+func bringUpWorkSet() mining.WorkSet {
+	mkCell := func(prefix byte, idx int) mining.ParentCellRef {
+		id := []byte{
+			0xC0, 0xFF, 0xEE, 0x01,
+			prefix, byte(idx),
+			0xDE, 0xAD, 0xBE, 0xEF,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		}
+		var ch [32]byte
+		ch[0] = prefix
+		ch[1] = byte(idx)
+		ch[2] = 0xA5
+		return mining.ParentCellRef{ID: id, ContentHash: ch}
+	}
+	ws := mining.WorkSet{Batches: []mining.Batch{
+		{Cells: []mining.ParentCellRef{mkCell('a', 0), mkCell('a', 1), mkCell('a', 2)}},
+		{Cells: []mining.ParentCellRef{mkCell('b', 0), mkCell('b', 1), mkCell('b', 2)}},
+		{Cells: []mining.ParentCellRef{mkCell('c', 0), mkCell('c', 1), mkCell('c', 2)}},
+	}}
+	ws.Canonicalize()
+	return ws
 }
