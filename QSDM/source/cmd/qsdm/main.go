@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
 	"sync"
@@ -39,6 +40,11 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/mesh3d"
 	"math/big"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
+	"github.com/blackbeardONE/QSDM/pkg/mining/attest"
+	"github.com/blackbeardONE/QSDM/pkg/mining/attest/cc"
+	"github.com/blackbeardONE/QSDM/pkg/mining/attest/hmac"
+	"github.com/blackbeardONE/QSDM/pkg/mining/challenge"
+	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
 	"github.com/blackbeardONE/QSDM/pkg/mining/roleguard"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 	"github.com/blackbeardONE/QSDM/pkg/networking"
@@ -625,6 +631,34 @@ func main() {
 	bridgeStatePath := filepath.Join(stateDir, "qsdm_bridge_state.json")
 	tokenRegistryPath := filepath.Join(stateDir, "qsdm_tokens.json")
 	stakingPath := filepath.Join(stateDir, "qsdm_staking.json")
+	challengeKeyPath := filepath.Join(stateDir, "qsdm_challenge_hmac.key")
+
+	// v2 NVIDIA-locked mining activation (MINING_PROTOCOL_V2.md
+	// §0 / §10). Setting this env activates FORK_V2_HEIGHT=0 so
+	// the verifier engages the v2 attestation gate from genesis:
+	// every accepted proof must carry a valid nvidia-cc-v1 or
+	// nvidia-hmac-v1 attestation. CPU / non-NVIDIA proofs are
+	// rejected at the verifier without entering the mempool.
+	//
+	// Default OFF preserves v1 testnet behaviour (CPU proofs
+	// accepted economically only) so existing testnets keep
+	// running unchanged. The env-gated activation is the
+	// minimum-blast-radius switch: a misconfigured restart
+	// without QSDM_V2_ACTIVE=1 quietly reverts to v1, so
+	// operators must intentionally opt in.
+	v2Active := envcompat.Truthy("QSDM_V2_ACTIVE", "QSDM_V2_ACTIVE")
+	if v2Active {
+		mining.SetForkV2Height(0)
+		logger.Info("v2 NVIDIA-locked mining: ACTIVE from genesis",
+			"fork_v2_height", 0,
+			"env_var", "QSDM_V2_ACTIVE",
+			"effect", "non-NVIDIA / unattested proofs rejected at /api/v1/mining/submit",
+			"see", "MINING_PROTOCOL_V2.md §0 / §10")
+	} else {
+		logger.Info("v2 NVIDIA-locked mining: NOT active (v1 testnet protocol)",
+			"env_var", "QSDM_V2_ACTIVE",
+			"to_activate", "set QSDM_V2_ACTIVE=1 (chain reset required per §10.3)")
+	}
 	// User store persistence: fall back to <stateDir>/qsdm_users.json
 	// when nothing was set explicitly (config file or env). This matches
 	// the sibling staking/bridge JSON files and keeps all ledger-local
@@ -972,12 +1006,127 @@ func main() {
 		}
 		soloDriver = drv
 	}
+
+	// v2 attestation dispatcher. Wired UNCONDITIONALLY (whether
+	// or not QSDM_V2_ACTIVE is set) because:
+	//
+	//   - With v2 NOT active, ForkV2Height defaults to MaxUint64
+	//     and the verifier never invokes the dispatcher. Wiring
+	//     it costs ~one nonce-store map and a per-validator
+	//     HMAC-key file; nothing consensus-touching.
+	//
+	//   - With v2 ACTIVE, the dispatcher is the consensus rule
+	//     that rejects CPU / non-NVIDIA proofs. A miswired
+	//     dispatcher (nil) silently falls through to
+	//     FailClosedVerifier, which rejects everything — safe,
+	//     but the operator gets no diagnostics. Wiring eagerly
+	//     means a startup-time failure (e.g. unreadable HMAC
+	//     key file) surfaces clearly here rather than silently
+	//     during the first /api/v1/mining/submit request.
+	//
+	// Collaborators:
+	//   Registry        — enrollment.NewStateBackedRegistry over
+	//                     the live on-chain enrollment state, so
+	//                     the HMAC verifier resolves operator
+	//                     entries against the same state the
+	//                     EnrollmentApplier mutates.
+	//   ChallengeVerifier — challenge.NewHMACSignerVerifier
+	//                       seeded with this validator's local
+	//                       signer key. Multi-validator setups
+	//                       Register() each peer's key here at
+	//                       genesis; for the solo deploy the
+	//                       single-key registration is enough.
+	//   NonceStore      — per-(node_id, nonce) replay cache,
+	//                     in-memory with 2*FreshnessWindow
+	//                     retention. Production multi-validator
+	//                     deployments will swap this for a
+	//                     persistent store; the interface stays
+	//                     unchanged.
+	//   CCConfig        — populated from cc.LoadVerifierConfig
+	//                     when QSDM_CC_ROOTS_DIR is set; nil
+	//                     otherwise (cc.NewStubVerifier handles
+	//                     nvidia-cc-v1 proofs as ErrNotYetAvailable
+	//                     so the bring-up posture does not pretend
+	//                     to verify CC bundles without a trust
+	//                     anchor).
+	//
+	// The validator's HMAC key is a per-process secret persisted
+	// to <stateDir>/qsdm_challenge_hmac.key. Auto-generated on
+	// first boot via crypto/rand; the key never leaves the file
+	// and never appears in logs (only the signer_id, derived
+	// from the key's first 8 bytes via hex, is logged).
+	chSignerID, chSignerKey, chKeyErr := loadOrCreateChallengeKey(challengeKeyPath)
+	if chKeyErr != nil {
+		log.Fatalf("v2 challenge key init: %v", chKeyErr)
+	}
+	chSigner, chSignerErr := challenge.NewHMACSigner(chSignerID, chSignerKey)
+	if chSignerErr != nil {
+		log.Fatalf("v2 challenge signer: %v", chSignerErr)
+	}
+	chSignerVerifier := challenge.NewHMACSignerVerifier()
+	if regErr := chSignerVerifier.Register(chSignerID, chSignerKey); regErr != nil {
+		log.Fatalf("v2 challenge signer-verifier registration: %v", regErr)
+	}
+	chIssuer, chIssuerErr := challenge.NewIssuer(chSigner)
+	if chIssuerErr != nil {
+		log.Fatalf("v2 challenge issuer: %v", chIssuerErr)
+	}
+	api.SetChallengeIssuer(chIssuer)
+	logger.Info("v2 challenge issuer wired",
+		"signer_id", chSigner.SignerID(),
+		"key_path", challengeKeyPath,
+		"endpoint", "/api/v1/mining/challenge")
+
+	hmacNonceStore := hmac.NewInMemoryNonceStore(2 * mining.FreshnessWindow)
+	attestProdCfg := attest.ProductionConfig{
+		Registry:          enrollment.NewStateBackedRegistry(v2Wired.EnrollmentState),
+		ChallengeVerifier: chSignerVerifier,
+		NonceStore:        hmacNonceStore,
+		// DenyList nil → hmac.EmptyDenyList (genesis posture).
+		// FreshnessWindow / AllowedFutureSkew zero → spec defaults.
+	}
+	if ccRootsDir := strings.TrimSpace(os.Getenv("QSDM_CC_ROOTS_DIR")); ccRootsDir != "" {
+		// CC trust anchor is operator-supplied: if the dir is
+		// configured but unreadable, refuse to boot rather than
+		// silently fall back to the stub. A v2-active validator
+		// that pretends to verify nvidia-cc-v1 but actually
+		// rejects every CC proof is exactly the silent-failure
+		// posture the activation gate exists to prevent.
+		ccCfg, ccErr := cc.LoadVerifierConfig(cc.VerifierConfigOptions{
+			RootPaths:  []string{ccRootsDir},
+			NonceStore: hmacNonceStore,
+		})
+		if ccErr != nil {
+			log.Fatalf("v2 cc verifier config: %v", ccErr)
+		}
+		if ccCfg != nil {
+			attestProdCfg.CCConfig = ccCfg
+			logger.Info("v2 nvidia-cc-v1 verifier wired",
+				"roots_dir", ccRootsDir,
+				"pinned_root_count", len(ccCfg.PinnedRoots))
+		}
+	} else {
+		logger.Info("v2 nvidia-cc-v1 verifier: stub (datacenter Hopper/Blackwell path disabled)",
+			"env_var", "QSDM_CC_ROOTS_DIR",
+			"effect", "consumer NVIDIA GPUs only, via nvidia-hmac-v1; CC proofs reject as ErrNotYetAvailable")
+	}
+	v2Dispatcher, v2DispErr := attest.NewProductionDispatcher(attestProdCfg)
+	if v2DispErr != nil {
+		log.Fatalf("v2 attestation dispatcher wiring failed: %v", v2DispErr)
+	}
+	logger.Info("v2 attestation dispatcher wired",
+		"hmac_path_active", true,
+		"cc_path_active", attestProdCfg.CCConfig != nil,
+		"fork_v2_active", v2Active,
+		"effect_when_active", "post-fork proofs require nvidia-cc-v1 or nvidia-hmac-v1 attestation")
+
 	miningSvcCfg := miningsvc.Config{
 		Producer:       adminProducer,
 		WorkSet:        bringUpWorkSet(),
 		DAGSize:        1024,
 		Difficulty:     big.NewInt(2),
 		BlocksPerEpoch: mining.DefaultBlocksPerMiningEpoch,
+		Attestation:    v2Dispatcher,
 	}
 	if soloDriver != nil {
 		miningSvcCfg.RewardSink = soloDriver
@@ -1706,6 +1855,76 @@ func formatDustAsCellLocal(dust uint64) string {
 	whole := dust / chain.DustPerCell
 	frac := dust % chain.DustPerCell
 	return fmt.Sprintf("%d.%0*d", whole, chain.CellDecimals, frac)
+}
+
+// challengeKeyLen is the on-disk size of the validator's
+// challenge-issuer HMAC key. 32 bytes matches HMAC-SHA256's
+// natural key size and exceeds the 16-byte minimum the
+// challenge package enforces (see pkg/mining/challenge/hmac_signer.go).
+const challengeKeyLen = 32
+
+// loadOrCreateChallengeKey reads the per-validator challenge
+// HMAC key from path. On first boot (file does not exist) it
+// generates a fresh 32-byte key from crypto/rand, writes it
+// with 0o600 perms (owner read/write only) and returns it.
+//
+// Returned values:
+//
+//	signerID — opaque-but-stable identifier for this key,
+//	           rendered as the lowercase hex of the first 8
+//	           key bytes prefixed with "validator-". This is
+//	           the value miners see in
+//	           Challenge.SignerID and the value the
+//	           HMACSignerVerifier registers under. Knowing the
+//	           signer_id leaks NOTHING about the secret —
+//	           HMAC-SHA256 with a 32-byte key is preimage-
+//	           resistant — so deriving it from the key is
+//	           safe and saves a separate id-management step.
+//	key      — 32 raw bytes. Never logged.
+//	err      — read / write / generate failure. Boot fails;
+//	           the caller log.Fatalfs.
+//
+// The "auto-generate on first boot" posture is deliberately
+// permissive for a solo validator. Multi-validator setups
+// will replace this with an explicit genesis-time key
+// distribution step (each operator hand-edits their key
+// file and shares the corresponding public hex SignerID
+// over a side channel so peers can Register one another).
+func loadOrCreateChallengeKey(path string) (signerID string, key []byte, err error) {
+	if path == "" {
+		return "", nil, errors.New("empty challenge key path")
+	}
+	if existing, readErr := os.ReadFile(path); readErr == nil {
+		if len(existing) != challengeKeyLen {
+			return "", nil, fmt.Errorf(
+				"challenge key at %s has length %d, expected %d (delete the file to regenerate)",
+				path, len(existing), challengeKeyLen)
+		}
+		return deriveChallengeSignerID(existing), existing, nil
+	} else if !errors.Is(readErr, os.ErrNotExist) {
+		return "", nil, fmt.Errorf("read challenge key %s: %w", path, readErr)
+	}
+	fresh := make([]byte, challengeKeyLen)
+	if _, randErr := cryptorand.Read(fresh); randErr != nil {
+		return "", nil, fmt.Errorf("generate challenge key: %w", randErr)
+	}
+	if writeErr := os.WriteFile(path, fresh, 0o600); writeErr != nil {
+		return "", nil, fmt.Errorf("persist challenge key %s: %w", path, writeErr)
+	}
+	return deriveChallengeSignerID(fresh), fresh, nil
+}
+
+// deriveChallengeSignerID returns the deterministic
+// SignerID-from-key derivation the challenge issuer uses.
+// Format: "validator-" || lowercase-hex(key[:8]). 8 bytes is
+// 64 bits of entropy — beyond practical collision range for
+// the validator population we'll ever ship. Stable across
+// restarts because the key file is stable.
+func deriveChallengeSignerID(key []byte) string {
+	if len(key) < 8 {
+		return "validator-shortkey"
+	}
+	return fmt.Sprintf("validator-%x", key[:8])
 }
 
 // The cells below are 16-byte synthetic IDs derived from a

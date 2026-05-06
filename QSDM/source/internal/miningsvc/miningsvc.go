@@ -55,12 +55,13 @@
 //
 //   - v2 attestation. Pre-fork proofs (Height < ForkV2Height)
 //     skip the Attestation hook entirely per
-//     pkg/mining/verifier.go's documented contract. The
-//     bring-up posture leaves Attestation nil, and the
-//     verifier's auto-injected FailClosedVerifier handles the
-//     post-fork case (rejecting v2 proofs until cmd/qsdm
-//     wires attest.NewProductionDispatcher — Phase 2c-vii
-//     work).
+//     pkg/mining/verifier.go's documented contract. Post-fork,
+//     Config.Attestation receives the real *attest.Dispatcher
+//     so CPU / non-NVIDIA proofs reject at the verifier without
+//     ever entering the mempool. The default of nil falls back
+//     to FailClosedVerifier so a misconfigured fork-active
+//     validator rejects every proof rather than silently
+//     accepting unattested ones.
 package miningsvc
 
 import (
@@ -156,6 +157,23 @@ type Config struct {
 	// internal/blockdriver enqueues into an in-memory map
 	// guarded by a mutex.
 	RewardSink RewardSink
+
+	// Attestation is the v2 NVIDIA-locked attestation verifier
+	// the miningsvc passes through to mining.VerifierConfig.
+	// It is consulted only for proofs whose height is at or
+	// above mining.ForkV2Height(); pre-fork proofs skip the
+	// hook entirely so a v1 testnet stays byte-identical.
+	//
+	// Nil leaves the verifier with the default
+	// FailClosedVerifier, which is the right posture for a
+	// pre-fork validator (no v2 proofs are submitted yet) and
+	// also the right fail-safe if someone activates the fork
+	// without remembering to wire a real dispatcher (every
+	// post-fork proof rejects). Production validators MUST
+	// pass a fully-built *attest.Dispatcher (see
+	// pkg/mining/attest.NewProductionDispatcher) before
+	// activating the fork via mining.SetForkV2Height(0).
+	Attestation mining.AttestationVerifier
 }
 
 // RewardSink is the narrow contract a host process implements
@@ -269,6 +287,7 @@ func New(cfg Config) (*Service, error) {
 		DAGProvider:      svc.dagFor,
 		WorkSetProvider:  svc.workSetFor,
 		DifficultyAt:     svc.difficultyFor,
+		Attestation:      cfg.Attestation,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("miningsvc: build verifier: %w", err)
