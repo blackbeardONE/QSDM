@@ -125,6 +125,24 @@ func (rl *RateLimiter) RateLimitMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// Mining-protocol endpoints are designed for high-
+		// frequency miner traffic (work poll ~2s, challenge
+		// per accepted proof, submit per solved proof). The
+		// HTTP-layer rate limit is the wrong gate for them —
+		// consensus-level protection lives in pkg/mining/verifier
+		// (Dedup + Quarantine + hashrate-band gating + the v2
+		// attestation gate that rejects unattested proofs at
+		// zero CPU cost). Without this bypass the limiter
+		// chokes a real RTX-3050 within ~5s of mining (verified
+		// 2026-05-07: 19 accepted proofs followed by 12 sequential
+		// 429s from this exact RateLimiter). Mirror of the bypass
+		// added to RoleRateLimiter in ratelimit_roles.go — both
+		// middlewares are mounted in series and the bypass must
+		// land in BOTH or the miner sees 429s anyway.
+		if strings.HasPrefix(r.URL.Path, "/api/v1/mining/") {
+			next.ServeHTTP(w, r)
+			return
+		}
 		// Get client identifier (IP address or API key)
 		identifier := rl.getClientIdentifier(r)
 		
