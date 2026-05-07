@@ -219,6 +219,12 @@ func isPublicEndpoint(path string) bool {
 		// no AccountStore peek so it's safe outside solo
 		// mode. SDKs render tokenomics widgets from it.
 		"/api/v1/mining/emission",
+		// /mining/blocks is a read-only block-header probe
+		// for the public chain dashboard. No AccountStore
+		// peek; returns the last N block headers in
+		// height-ascending order. Same threat model as
+		// /status: pure transparency, no secret leakage.
+		"/api/v1/mining/blocks",
 		// /mining/challenge mints a fresh per-call nonce and MUST be
 		// publicly reachable — if miners had to authenticate to fetch
 		// a challenge, the validator's identity gating would leak out

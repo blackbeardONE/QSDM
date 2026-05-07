@@ -872,6 +872,7 @@ func main() {
 	// pool admission gate set inside Wire is replaced once we
 	// install the composed BaseAdmit + enrollment.AdmissionChecker
 	// pair, ensuring both predicates run for non-enrollment txs.
+	govStorePath := filepath.Join(stateDir, "qsdm_governance.json")
 	v2Wired, v2WireErr := v2wiring.Wire(v2wiring.Config{
 		Accounts:       adminAccounts,
 		Pool:           adminPool,
@@ -880,6 +881,20 @@ func main() {
 		LogSweepError: func(h uint64, err error) {
 			logger.Warn("v2 mining: enrollment sweep failed",
 				"height", h, "error", err)
+		},
+		// GovParamStorePath persists the chain-parameter
+		// store (TCs / ForkV2TCHeight / activation params)
+		// across restarts via atomic-rename snapshots in the
+		// post-seal hook. Default value path lives next to
+		// the other state files; the directory is the same
+		// stateDir we already use for qsdm_chain.ndjson +
+		// qsdm_accounts.json + qsdm_enrollment.json so the
+		// operator's reset / backup ceremony covers all four
+		// in one step.
+		GovParamStorePath: govStorePath,
+		LogSnapshotError: func(h uint64, err error) {
+			logger.Warn("gov param store: snapshot failed",
+				"height", h, "path", govStorePath, "error", err)
 		},
 	})
 	if v2WireErr != nil {
@@ -1154,6 +1169,8 @@ func main() {
 	// tokenomics widgets from this endpoint.
 	api.SetMiningEmissionProbe(emissionProbeFromProducer(adminProducer))
 	logger.Info("/api/v1/mining/emission probe wired (chain.DefaultEmissionSchedule)")
+	api.SetMiningBlocksProbe(blocksProbeFromProducer(adminProducer))
+	logger.Info("/api/v1/mining/blocks probe wired (BlockProducer header projection)")
 	logger.Info("Mining service installed",
 		"dag_size", uint32(1024),
 		"difficulty", "2",
@@ -1188,6 +1205,7 @@ func main() {
 	chainStatePath := filepath.Join(stateDir, "qsdm_chain.ndjson")
 	accountsStatePath := filepath.Join(stateDir, "qsdm_accounts.json")
 	enrollmentStatePath := filepath.Join(stateDir, "qsdm_enrollment.json")
+	receiptsStatePath := filepath.Join(stateDir, "qsdm_receipts.json")
 	if persistedBlocks, restoreErr := chain.LoadChainNDJSON(chainStatePath); restoreErr != nil {
 		log.Fatalf("chain restore: read %s: %v", chainStatePath, restoreErr)
 	} else if len(persistedBlocks) > 0 {
@@ -1212,14 +1230,30 @@ func main() {
 			log.Fatalf("chain restore: enrollment file %s unreadable (%v) — refusing to boot. Either restore the file or remove it (the chain will continue without enrollments and v2 proofs will reject).",
 				enrollmentStatePath, enrollErr)
 		}
-		logger.Info("Chain + accounts + enrollments restored from disk",
+		// Receipts are loaded best-effort: a missing file is
+		// fine (operator can `qsdmcli receipt <id>` only on
+		// txs sealed since boot), but a corrupt one is a
+		// hard error so the operator notices instead of
+		// silently losing tx history.
+		loadedReceipts := 0
+		if _, statErr := os.Stat(receiptsStatePath); statErr == nil {
+			n, recErr := adminReceipts.Load(receiptsStatePath)
+			if recErr != nil {
+				log.Fatalf("chain restore: receipts file %s unreadable (%v) — delete the file to continue without receipt history.",
+					receiptsStatePath, recErr)
+			}
+			loadedReceipts = n
+		}
+		logger.Info("Chain + accounts + enrollments + receipts restored from disk",
 			"blocks", len(persistedBlocks),
 			"tip_height", adminProducer.TipHeight(),
 			"accounts_loaded", loadedAccounts,
 			"enrollments_loaded", loadedEnrollments,
+			"receipts_loaded", loadedReceipts,
 			"chain_path", chainStatePath,
 			"accounts_path", accountsStatePath,
 			"enrollment_path", enrollmentStatePath,
+			"receipts_path", receiptsStatePath,
 			"genesis_seal_will_skip", true)
 	} else {
 		logger.Info("No persisted chain found; genesis seal will run on a fresh chain",
@@ -1276,6 +1310,24 @@ func main() {
 			if err := v2Wired.EnrollmentState.Save(enrollmentStatePath); err != nil {
 				logger.Warn("enrollment persistence: save failed",
 					"path", enrollmentStatePath,
+					"error_str", err.Error())
+			}
+		}
+		// Receipts are saved on every seal because a clean
+		// `qsdmcli receipt <id>` flow on the next restart is
+		// the user-facing payoff. The save is O(N) over all
+		// receipts ever stored, so this gets expensive on a
+		// long-running testnet — once we cross ~10k receipts
+		// the per-block cost becomes noticeable. Mitigation
+		// (follow-up): switch to NDJSON-style append-only
+		// receipts (matches the chain log strategy) so the
+		// per-seal cost drops to O(receipts in this block).
+		// For the current testnet (a few txs / minute) this
+		// O(N) loop is well under 1ms per block.
+		if adminReceipts != nil {
+			if err := adminReceipts.Save(receiptsStatePath); err != nil {
+				logger.Warn("receipts persistence: save failed",
+					"path", receiptsStatePath,
 					"error_str", err.Error())
 			}
 		}
@@ -2011,6 +2063,62 @@ func emissionProbeFromProducer(p *chain.BlockProducer) api.MiningEmissionProbe {
 		producer: p,
 		schedule: chain.DefaultEmissionSchedule(),
 	}
+}
+
+// blocksProbeFromProducer adapts a *chain.BlockProducer to
+// api.MiningBlocksProbe so the public chain dashboard can list
+// the last N block headers.
+//
+// The probe is intentionally O(N) over bp.AllBlocks() per call
+// because (a) AllBlocks already takes the bp.mu lock and returns
+// a snapshot copy so we don't hold the producer lock while
+// projecting, and (b) for the current testnet the chain is
+// small enough that a full walk to filter by [from, to] runs in
+// microseconds. When the chain grows past a few hundred thousand
+// blocks, replace this with a height-indexed accessor in
+// pkg/chain/block.go (BlockProducer.BlockAtHeight) and switch
+// HeadersInRange to a slice operation.
+type blocksStoreProbe struct {
+	producer *chain.BlockProducer
+}
+
+func (p blocksStoreProbe) Tip() uint64 {
+	if p.producer == nil || !p.producer.HasTip() {
+		return 0
+	}
+	return p.producer.TipHeight()
+}
+
+func (p blocksStoreProbe) HeadersInRange(from, to uint64) []api.MiningBlockHeader {
+	if p.producer == nil {
+		return nil
+	}
+	all := p.producer.AllBlocks()
+	out := make([]api.MiningBlockHeader, 0, 32)
+	for _, b := range all {
+		if b == nil {
+			continue
+		}
+		if b.Height < from || b.Height > to {
+			continue
+		}
+		hdr := b.Header()
+		out = append(out, api.MiningBlockHeader{
+			Height:     hdr.Height,
+			Hash:       hdr.Hash,
+			PrevHash:   hdr.PrevHash,
+			StateRoot:  hdr.StateRoot,
+			TxRoot:     hdr.TxRoot,
+			TxCount:    hdr.TxCount,
+			Timestamp:  hdr.Timestamp.UTC().Format(time.RFC3339),
+			ProducerID: b.ProducerID,
+		})
+	}
+	return out
+}
+
+func blocksProbeFromProducer(p *chain.BlockProducer) api.MiningBlocksProbe {
+	return blocksStoreProbe{producer: p}
 }
 
 // formatDustAsCellLocal mirrors the helper in

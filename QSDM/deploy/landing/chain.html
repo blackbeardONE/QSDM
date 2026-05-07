@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Chain status — QSDM · Cell (CELL)</title>
+<meta name="description" content="Live status of the QSDM testnet: chain tip, block reward emission, active GPU enrollments, recent blocks." />
+<meta name="theme-color" content="#0b1220" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b1220'/%3E%3Cpath d='M12 32l10-10 10 10-10 10z' fill='%2376b900'/%3E%3Cpath d='M32 20l10 12-10 12-10-12z' fill='%2300d1b2' opacity='.85'/%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #0a101d;
+    --panel: #111a2e;
+    --panel-2: #152238;
+    --border: #1f2a44;
+    --text: #e6edf7;
+    --text-2: #9fb0c9;
+    --muted: #6d7e99;
+    --accent: #76b900;
+    --accent-2: #00d1b2;
+    --accent-3: #6ea8ff;
+    --success: #3ddc97;
+    --warn: #ffb454;
+    --danger: #ff6b6b;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--sans); line-height: 1.5; }
+  a { color: var(--accent-3); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: .92em; }
+  pre {
+    font-family: var(--mono); background: rgba(0,0,0,.35); padding: 14px 16px;
+    border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; font-size: 13px;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .container { max-width: 1080px; margin: 0 auto; padding: 36px 20px; }
+  header { border-bottom: 1px solid var(--border); background: rgba(10,16,29,.72); backdrop-filter: saturate(140%) blur(10px); position: sticky; top: 0; z-index: 10; }
+  header .container { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; }
+  .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 700; }
+  .brand svg { width: 26px; height: 26px; }
+  .brand .plus { color: var(--accent); }
+  h1 { font-size: 34px; line-height: 1.1; margin: 0 0 10px; letter-spacing: -0.01em; }
+  h2 { font-size: 20px; margin: 30px 0 8px; }
+  h3 { font-size: 16px; margin: 20px 0 6px; color: var(--text-2); font-weight: 700; letter-spacing: .3px; text-transform: uppercase; }
+  .lede { color: var(--text-2); font-size: 17px; max-width: 740px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+    margin-top: 18px;
+  }
+  .panel {
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border: 1px solid var(--border); border-radius: 12px; padding: 22px 24px;
+    box-shadow: 0 10px 30px -12px rgba(0,0,0,.55); margin-top: 18px;
+  }
+  .panel.hl { border-color: rgba(118,185,0,.35); background: linear-gradient(180deg, rgba(118,185,0,.06), var(--panel-2)); }
+  .stat-card {
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+  }
+  .stat-card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; }
+  .stat-card .value { color: var(--text); font-family: var(--mono); font-size: 22px; font-weight: 600; }
+  .stat-card .sub { color: var(--text-2); font-size: 12px; margin-top: 4px; }
+  .stat-card.ok { border-color: rgba(61,220,151,.35); }
+  .stat-card.warn { border-color: rgba(255,180,84,.35); }
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
+  td { color: var(--text); word-break: break-all; }
+  td.num { text-align: right; }
+  td a { font-family: var(--mono); }
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-family: var(--mono);
+  }
+  .pill.active { background: rgba(61,220,151,.1); color: var(--success); border: 1px solid rgba(61,220,151,.3); }
+  .pill.unbonding { background: rgba(255,180,84,.1); color: var(--warn); border: 1px solid rgba(255,180,84,.3); }
+  .pill.revoked { background: rgba(255,107,107,.1); color: var(--danger); border: 1px solid rgba(255,107,107,.3); }
+  .lookup { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .lookup input {
+    flex: 1; min-width: 240px; font-family: var(--mono); font-size: 14px;
+    background: rgba(0,0,0,.35); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 9px 12px;
+  }
+  .lookup input:focus { border-color: var(--accent-2); outline: none; }
+  .lookup button {
+    background: var(--accent); color: #0a101d; font-weight: 700; border: 0;
+    padding: 9px 16px; border-radius: 6px; cursor: pointer; font-family: var(--sans);
+  }
+  .lookup button:hover { filter: brightness(1.05); }
+  .footer { color: var(--muted); font-size: 12px; margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--border); text-align: center; }
+  .footer a { color: var(--text-2); }
+  .live-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--success); margin-right: 6px;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .empty { color: var(--muted); font-style: italic; padding: 12px; }
+  .err { color: var(--danger); font-family: var(--mono); font-size: 13px; padding: 8px 12px; background: rgba(255,107,107,.06); border-radius: 6px; border: 1px solid rgba(255,107,107,.2); margin-top: 10px; }
+  nav.subnav { display: flex; gap: 18px; margin-bottom: 8px; flex-wrap: wrap; }
+  nav.subnav a { color: var(--text-2); font-size: 14px; }
+  nav.subnav a.active { color: var(--accent-2); font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <div class="container">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#0b1220"/><path d="M12 32l10-10 10 10-10 10z" fill="#76b900"/><path d="M32 20l10 12-10 12-10-12z" fill="#00d1b2" opacity=".85"/></svg>
+      <span>QSDM<span class="plus">+</span></span>
+    </a>
+    <nav class="subnav">
+      <a href="/">Home</a>
+      <a href="/validators.html">Validators</a>
+      <a href="/trust.html">Trust</a>
+      <a href="/chain.html" class="active">Chain</a>
+    </nav>
+  </div>
+</header>
+
+<div class="container">
+  <h1><span class="live-dot"></span>Chain status</h1>
+  <p class="lede">
+    Live snapshot of the QSDM testnet. Auto-refreshes every <strong>10 s</strong>.
+    All data sourced from the public <code>/api/v1/*</code> endpoints — verifiable independently
+    by anyone with <code>curl</code> + <code>jq</code>.
+  </p>
+
+  <h2>Network</h2>
+  <div class="grid">
+    <div class="stat-card" id="card-tip">
+      <div class="label">Chain tip</div>
+      <div class="value" data-stat="tip">…</div>
+      <div class="sub" data-stat="tip-sub">block height</div>
+    </div>
+    <div class="stat-card" id="card-epoch">
+      <div class="label">Current epoch</div>
+      <div class="value" data-stat="epoch">…</div>
+      <div class="sub" data-stat="epoch-sub">epoch index</div>
+    </div>
+    <div class="stat-card" id="card-reward">
+      <div class="label">Block reward</div>
+      <div class="value" data-stat="reward">…</div>
+      <div class="sub">CELL per sealed block</div>
+    </div>
+    <div class="stat-card" id="card-emitted">
+      <div class="label">Total emitted</div>
+      <div class="value" data-stat="emitted">…</div>
+      <div class="sub" data-stat="emitted-sub">CELL minted to date</div>
+    </div>
+    <div class="stat-card" id="card-cap">
+      <div class="label">Mining cap</div>
+      <div class="value" data-stat="cap">…</div>
+      <div class="sub">CELL maximum supply</div>
+    </div>
+    <div class="stat-card" id="card-halving">
+      <div class="label">Next halving</div>
+      <div class="value" data-stat="halving">…</div>
+      <div class="sub" data-stat="halving-sub">at chain height</div>
+    </div>
+  </div>
+
+  <h2>Active GPU enrollments</h2>
+  <p class="lede" style="font-size: 14px;">
+    Each row is a NodeID bonded by a NVIDIA GPU UUID. The HMAC key in the on-chain enrollment
+    is what the v2 attestation gate verifies on every <code>/api/v1/mining/submit</code>.
+    Slashed or revoked records show their phase here.
+  </p>
+  <div class="panel" id="enroll-panel">
+    <div id="enroll-content" class="empty">Loading enrollments…</div>
+  </div>
+
+  <h2>Recent blocks</h2>
+  <p class="lede" style="font-size: 14px;">
+    The last <strong>20 blocks</strong> sealed. Producer is the validator that ran the seal;
+    on a solo testnet that is the BLR1 blockdriver.
+  </p>
+  <div class="panel" id="blocks-panel">
+    <div id="blocks-content" class="empty">Loading blocks…</div>
+  </div>
+
+  <h2>Account lookup</h2>
+  <p class="lede" style="font-size: 14px;">
+    Query any address's balance and nonce. Mining rewards land here once a proof is accepted
+    and the corresponding block seals.
+  </p>
+  <div class="panel">
+    <div class="lookup">
+      <input id="account-input" type="text" placeholder="qsdm1miner-rtx3050"
+             value="qsdm1miner-rtx3050" autocomplete="off" spellcheck="false" />
+      <button id="account-button" type="button">Lookup</button>
+    </div>
+    <div id="account-result" style="margin-top: 14px; font-family: var(--mono); font-size: 13.5px;"></div>
+  </div>
+
+  <div class="footer">
+    Data refreshed <span id="last-updated">never</span> · Self-hosted on BLR1 · MIT-licensed source at
+    <a href="https://github.com/blackbeardONE/QSDM" target="_blank" rel="noopener">github.com/blackbeardONE/QSDM</a>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const API_BASE = "/api/v1";
+const REFRESH_MS = 10_000;
+
+function fmtNum(n) {
+  if (n === null || n === undefined) return "—";
+  return Number(n).toLocaleString();
+}
+
+function fmtCellFromDust(dust) {
+  if (dust === null || dust === undefined) return "—";
+  return (Number(dust) / 1e8).toLocaleString(undefined, { maximumFractionDigits: 8 });
+}
+
+function fmtDuration(secs) {
+  if (!secs || secs <= 0) return "—";
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  if (d > 365) return `${(d / 365).toFixed(1)} years`;
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${Math.floor((secs % 3600) / 60)}m`;
+  return `${Math.floor(secs / 60)}m ${Math.floor(secs % 60)}s`;
+}
+
+function shortHash(h, n) {
+  if (!h) return "—";
+  if (h.length <= 2 * n + 3) return h;
+  return `${h.slice(0, n)}…${h.slice(-n)}`;
+}
+
+async function fetchJSON(path) {
+  const res = await fetch(API_BASE + path, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
+  return res.json();
+}
+
+function setStat(name, value, sub) {
+  const v = document.querySelector(`[data-stat="${name}"]`);
+  if (v) v.textContent = value;
+  if (sub !== undefined) {
+    const s = document.querySelector(`[data-stat="${name}-sub"]`);
+    if (s) s.textContent = sub;
+  }
+}
+
+async function refreshEmission() {
+  try {
+    const e = await fetchJSON("/mining/emission");
+    setStat("tip", fmtNum(e.chain_tip), `block height (target ${e.target_block_time_seconds}s)`);
+    setStat("epoch", fmtNum(e.current_epoch), `${fmtNum(e.blocks_per_epoch)} blocks per epoch`);
+    setStat("reward", e.block_reward_cell || fmtCellFromDust(e.block_reward_dust));
+    setStat("emitted", e.emitted_cell || fmtCellFromDust(e.emitted_dust),
+            `of ${fmtCellFromDust(e.mining_cap_dust)} CELL cap`);
+    setStat("cap", fmtCellFromDust(e.mining_cap_dust));
+    setStat("halving", fmtNum(e.next_halving_height),
+            `~${fmtDuration(e.next_halving_eta_seconds)} away`);
+  } catch (err) {
+    console.error("emission fetch failed:", err);
+  }
+}
+
+async function refreshEnrollments() {
+  const root = document.getElementById("enroll-content");
+  try {
+    const data = await fetchJSON("/mining/enrollments");
+    if (!data.records || data.records.length === 0) {
+      root.innerHTML = `<div class="empty">No enrollments on chain yet — run <code>qsdmcli enroll</code> to bond a NodeID.</div>`;
+      return;
+    }
+    const rows = data.records.map(r => {
+      const phase = r.phase || "active";
+      const pillClass = phase === "active" ? "active" : (phase === "pending_unbond" ? "unbonding" : "revoked");
+      const stake = fmtCellFromDust(r.stake_dust);
+      return `
+        <tr>
+          <td>${escapeHTML(r.node_id)}</td>
+          <td>${escapeHTML(r.owner)}</td>
+          <td title="${escapeHTML(r.gpu_uuid)}">${escapeHTML(shortHash(r.gpu_uuid, 8))}</td>
+          <td class="num">${stake} CELL</td>
+          <td class="num">${fmtNum(r.enrolled_at_height)}</td>
+          <td><span class="pill ${pillClass}">${escapeHTML(phase)}</span></td>
+        </tr>`;
+    }).join("");
+    root.innerHTML = `
+      <table>
+        <thead><tr>
+          <th>Node ID</th><th>Owner</th><th>GPU UUID</th>
+          <th class="num">Stake</th><th class="num">Enrolled @</th><th>Phase</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch (err) {
+    root.innerHTML = `<div class="err">Failed to load enrollments: ${escapeHTML(err.message)}</div>`;
+  }
+}
+
+async function refreshBlocks() {
+  const root = document.getElementById("blocks-content");
+  try {
+    const data = await fetchJSON("/mining/blocks?limit=20");
+    const headers = (data.headers || []).slice().sort((a, b) => Number(b.height) - Number(a.height));
+    if (headers.length === 0) {
+      root.innerHTML = `<div class="empty">No blocks yet.</div>`;
+      return;
+    }
+    const rows = headers.map(b => {
+      const ts = b.timestamp ? new Date(b.timestamp).toLocaleTimeString() : "—";
+      const producer = b.producer_id ? shortHash(b.producer_id, 6) : "—";
+      return `
+        <tr>
+          <td class="num">${fmtNum(b.height)}</td>
+          <td>${escapeHTML(ts)}</td>
+          <td title="${escapeHTML(b.hash)}">${escapeHTML(shortHash(b.hash, 8))}</td>
+          <td class="num">${b.tx_count || 0}</td>
+          <td title="${escapeHTML(b.producer_id || '')}">${escapeHTML(producer)}</td>
+        </tr>`;
+    }).join("");
+    root.innerHTML = `
+      <table>
+        <thead><tr>
+          <th class="num">Height</th><th>Sealed</th><th>Hash</th>
+          <th class="num">Txs</th><th>Producer</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch (err) {
+    root.innerHTML = `<div class="err">Failed to load blocks: ${escapeHTML(err.message)}</div>`;
+  }
+}
+
+async function lookupAccount() {
+  const root = document.getElementById("account-result");
+  const addr = document.getElementById("account-input").value.trim();
+  if (!addr) {
+    root.innerHTML = `<div class="empty">Enter an address.</div>`;
+    return;
+  }
+  root.innerHTML = `<div class="empty">Loading…</div>`;
+  try {
+    const a = await fetchJSON(`/mining/account?address=${encodeURIComponent(addr)}`);
+    if (!a.present) {
+      root.innerHTML = `<div class="empty">Address not found on chain. Mining rewards or transfers create the entry on first credit.</div>`;
+      return;
+    }
+    root.innerHTML = `
+      <div><span style="color:var(--muted)">address:</span> ${escapeHTML(a.address)}</div>
+      <div><span style="color:var(--muted)">balance:</span> <strong>${a.balance} CELL</strong></div>
+      <div><span style="color:var(--muted)">nonce:</span> ${a.nonce}</div>`;
+  } catch (err) {
+    root.innerHTML = `<div class="err">Lookup failed: ${escapeHTML(err.message)}</div>`;
+  }
+}
+
+function escapeHTML(s) {
+  if (s === null || s === undefined) return "";
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+async function refreshAll() {
+  await Promise.all([refreshEmission(), refreshEnrollments(), refreshBlocks()]);
+  document.getElementById("last-updated").textContent = new Date().toLocaleTimeString();
+}
+
+document.getElementById("account-button").addEventListener("click", lookupAccount);
+document.getElementById("account-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") lookupAccount();
+});
+
+refreshAll();
+lookupAccount();
+setInterval(refreshAll, REFRESH_MS);
+</script>
+</body>
+</html>

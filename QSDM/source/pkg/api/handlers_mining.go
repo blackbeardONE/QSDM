@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -258,6 +259,174 @@ func (h *Handlers) MiningEmissionHandler(w http.ResponseWriter, r *http.Request)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// MiningBlocksProbe is the read-only contract the
+// /api/v1/mining/blocks endpoint uses to surface block-header
+// metadata for the public chain dashboard.
+//
+// Implementations return the headers in height order, ascending,
+// for the inclusive [from, to] range. The probe is responsible
+// for clamping `to` to the current tip and for handling from > to
+// as an empty result; the handler itself only enforces the page
+// size cap (MiningBlocksMaxLimit) so a runaway query can't pin
+// the validator's mu for an unbounded number of headers.
+type MiningBlocksProbe interface {
+	HeadersInRange(from, to uint64) []MiningBlockHeader
+	Tip() uint64
+}
+
+// MiningBlockHeader is a wire-friendly subset of chain.BlockHeader
+// (we deliberately don't import pkg/chain into pkg/api to keep the
+// dependency arrow pointing inward). Field names mirror the JSON
+// tags on chain.BlockHeader so a future chain-package wire bump
+// stays consistent with what the dashboard renders.
+type MiningBlockHeader struct {
+	Height     uint64 `json:"height"`
+	Hash       string `json:"hash"`
+	PrevHash   string `json:"prev_hash"`
+	StateRoot  string `json:"state_root"`
+	TxRoot     string `json:"tx_root"`
+	TxCount    int    `json:"tx_count"`
+	Timestamp  string `json:"timestamp"`
+	ProducerID string `json:"producer_id,omitempty"`
+}
+
+// MiningBlocksMaxLimit caps the number of headers returned by
+// a single /api/v1/mining/blocks call. 200 is enough for the
+// canonical dashboard view (last 20) and for "show me the
+// last few minutes of seals" tooling, while bounding the
+// per-call lock duration at the BlockProducer's bp.mu.
+const MiningBlocksMaxLimit = 200
+
+// MiningBlocksResponse wraps the headers in a small envelope so
+// future fields (pagination cursor, total count) can land
+// without a breaking schema change. Empty slice on no results
+// (NOT null) for friendly JS consumption.
+type MiningBlocksResponse struct {
+	Tip     uint64              `json:"tip"`
+	From    uint64              `json:"from"`
+	To      uint64              `json:"to"`
+	Headers []MiningBlockHeader `json:"headers"`
+}
+
+type miningBlocksProbeHolder struct {
+	mu    sync.RWMutex
+	probe MiningBlocksProbe
+}
+
+var miningBlocksProbeRegistry = &miningBlocksProbeHolder{}
+
+// SetMiningBlocksProbe installs (or removes, when probe==nil)
+// the process-wide block-header probe. Wired by cmd/qsdm/main.go
+// against the live BlockProducer; outside the solo deploy a peer
+// cluster's GossipSub-driven block flow would wire a different
+// implementation that draws from the local replicated chain.
+func SetMiningBlocksProbe(probe MiningBlocksProbe) {
+	miningBlocksProbeRegistry.mu.Lock()
+	defer miningBlocksProbeRegistry.mu.Unlock()
+	miningBlocksProbeRegistry.probe = probe
+}
+
+func currentMiningBlocksProbe() MiningBlocksProbe {
+	miningBlocksProbeRegistry.mu.RLock()
+	defer miningBlocksProbeRegistry.mu.RUnlock()
+	return miningBlocksProbeRegistry.probe
+}
+
+// MiningBlocksHandler serves GET /api/v1/mining/blocks.
+//
+// Query params (all optional):
+//
+//	?from=<height>   default = max(0, tip - default_limit + 1)
+//	?to=<height>     default = tip
+//	?limit=<n>       default = 20, capped at MiningBlocksMaxLimit;
+//	                 used as `to - limit + 1` if `from` is unset.
+//
+// Returns 503 when no probe is wired (the canonical posture for a
+// non-solo deploy where this endpoint isn't yet wired). Returns
+// 400 when the parameters parse cleanly but are inconsistent
+// (from > to with both explicit).
+func (h *Handlers) MiningBlocksHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	probe := currentMiningBlocksProbe()
+	if probe == nil {
+		writeMiningUnavailable(w, "blocks probe not configured")
+		return
+	}
+	tip := probe.Tip()
+
+	q := r.URL.Query()
+	limit := uint64(20)
+	if raw := q.Get("limit"); raw != "" {
+		v, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			http.Error(w, "limit must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		limit = v
+	}
+	if limit == 0 {
+		limit = 20
+	}
+	if limit > MiningBlocksMaxLimit {
+		limit = MiningBlocksMaxLimit
+	}
+
+	var from, to uint64
+	hasFrom := q.Get("from") != ""
+	hasTo := q.Get("to") != ""
+	if hasTo {
+		v, err := strconv.ParseUint(q.Get("to"), 10, 64)
+		if err != nil {
+			http.Error(w, "to must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		to = v
+	} else {
+		to = tip
+	}
+	if hasFrom {
+		v, err := strconv.ParseUint(q.Get("from"), 10, 64)
+		if err != nil {
+			http.Error(w, "from must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		from = v
+	} else {
+		// No explicit from → derive from limit + to.
+		// Underflow-safe: an int64 swing past 0 wraps and would
+		// blow the page size; we clamp to 0 instead.
+		if to+1 > limit {
+			from = to + 1 - limit
+		} else {
+			from = 0
+		}
+	}
+	if from > to {
+		http.Error(w, "from must be <= to", http.StatusBadRequest)
+		return
+	}
+	if to-from+1 > MiningBlocksMaxLimit {
+		http.Error(w, fmt.Sprintf("range exceeds MiningBlocksMaxLimit=%d headers", MiningBlocksMaxLimit), http.StatusBadRequest)
+		return
+	}
+
+	headers := probe.HeadersInRange(from, to)
+	if headers == nil {
+		headers = []MiningBlockHeader{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(MiningBlocksResponse{
+		Tip:     tip,
+		From:    from,
+		To:      to,
+		Headers: headers,
+	})
 }
 
 // MiningAccountHandler serves GET /api/v1/mining/account?address=<addr>.

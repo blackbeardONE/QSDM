@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/blackbeardONE/QSDM/pkg/mining"
@@ -250,6 +251,115 @@ func TestMiningEmission_RoundTripsSnapshot(t *testing.T) {
 		resp.BlockRewardCell != want.BlockRewardCell ||
 		resp.NextHalvingHeight != want.NextHalvingHeight {
 		t.Fatalf("snapshot did not round-trip: got %+v want %+v", resp, want)
+	}
+}
+
+type fakeBlocksProbe struct {
+	tip     uint64
+	headers []MiningBlockHeader
+}
+
+func (p *fakeBlocksProbe) Tip() uint64 { return p.tip }
+func (p *fakeBlocksProbe) HeadersInRange(from, to uint64) []MiningBlockHeader {
+	out := make([]MiningBlockHeader, 0)
+	for _, h := range p.headers {
+		if h.Height >= from && h.Height <= to {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
+func TestMiningBlocks_503WhenProbeAbsent(t *testing.T) {
+	SetMiningBlocksProbe(nil)
+	t.Cleanup(func() { SetMiningBlocksProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/mining/blocks", nil)
+	h.MiningBlocksHandler(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d", rec.Code)
+	}
+}
+
+func TestMiningBlocks_DefaultLimitReturnsLastN(t *testing.T) {
+	headers := make([]MiningBlockHeader, 0, 50)
+	for i := uint64(0); i <= 49; i++ {
+		headers = append(headers, MiningBlockHeader{
+			Height:     i,
+			Hash:       "h" + strconv.FormatUint(i, 10),
+			TxCount:    1,
+			Timestamp:  "2026-04-29T00:00:00Z",
+			ProducerID: "node-x",
+		})
+	}
+	SetMiningBlocksProbe(&fakeBlocksProbe{tip: 49, headers: headers})
+	t.Cleanup(func() { SetMiningBlocksProbe(nil) })
+
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/mining/blocks", nil)
+	h.MiningBlocksHandler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp MiningBlocksResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// Default page is 20 → from = 49-20+1 = 30, to = 49.
+	if resp.From != 30 || resp.To != 49 {
+		t.Fatalf("default range wrong: from=%d to=%d", resp.From, resp.To)
+	}
+	if len(resp.Headers) != 20 {
+		t.Fatalf("want 20 headers, got %d", len(resp.Headers))
+	}
+}
+
+func TestMiningBlocks_ExplicitRange(t *testing.T) {
+	headers := make([]MiningBlockHeader, 0, 100)
+	for i := uint64(0); i <= 99; i++ {
+		headers = append(headers, MiningBlockHeader{Height: i, Hash: "h", Timestamp: "t"})
+	}
+	SetMiningBlocksProbe(&fakeBlocksProbe{tip: 99, headers: headers})
+	t.Cleanup(func() { SetMiningBlocksProbe(nil) })
+
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/mining/blocks?from=10&to=14", nil)
+	h.MiningBlocksHandler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	var resp MiningBlocksResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp.From != 10 || resp.To != 14 || len(resp.Headers) != 5 {
+		t.Fatalf("explicit range wrong: from=%d to=%d n=%d", resp.From, resp.To, len(resp.Headers))
+	}
+}
+
+func TestMiningBlocks_FromGreaterThanTo400(t *testing.T) {
+	SetMiningBlocksProbe(&fakeBlocksProbe{tip: 100})
+	t.Cleanup(func() { SetMiningBlocksProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/mining/blocks?from=20&to=10", nil)
+	h.MiningBlocksHandler(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rec.Code)
+	}
+}
+
+func TestMiningBlocks_RangeExceedsCap400(t *testing.T) {
+	SetMiningBlocksProbe(&fakeBlocksProbe{tip: 1000})
+	t.Cleanup(func() { SetMiningBlocksProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/mining/blocks?from=0&to="+strconv.Itoa(MiningBlocksMaxLimit), nil)
+	h.MiningBlocksHandler(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 (range exceeds cap), got %d", rec.Code)
 	}
 }
 

@@ -267,6 +267,13 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// AccountStore peek. SDK clients render tokenomics
 	// widgets from this endpoint.
 	mux.HandleFunc("/api/v1/mining/emission", handlers.MiningEmissionHandler)
+	// Read-only block-header probe; surfaces the last N
+	// blocks' headers (height, hash, tx_count, timestamp,
+	// producer) for the public chain dashboard. Returns
+	// 503 until a MiningBlocksProbe is wired. Registered
+	// unconditionally so an unwired peer can still answer
+	// "no blocks probe" rather than 404.
+	mux.HandleFunc("/api/v1/mining/blocks", handlers.MiningBlocksHandler)
 	// Mining challenge endpoint (Phase 2c-iii,
 	// MINING_PROTOCOL_V2.md §6.2). Returns 503 until
 	// a ChallengeIssuer is installed via api.SetChallengeIssuer(...).
