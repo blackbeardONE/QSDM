@@ -1205,7 +1205,13 @@ func main() {
 	chainStatePath := filepath.Join(stateDir, "qsdm_chain.ndjson")
 	accountsStatePath := filepath.Join(stateDir, "qsdm_accounts.json")
 	enrollmentStatePath := filepath.Join(stateDir, "qsdm_enrollment.json")
-	receiptsStatePath := filepath.Join(stateDir, "qsdm_receipts.json")
+	// Receipts are NDJSON-append-only (qsdm_receipts.ndjson). The
+	// legacy whole-store JSON path (qsdm_receipts.json) is kept
+	// only for one-shot migration of pre-existing deployments —
+	// see the boot block below. New installs go straight to
+	// NDJSON; the legacy path is never written.
+	receiptsNDJSONPath := filepath.Join(stateDir, "qsdm_receipts.ndjson")
+	receiptsLegacyJSONPath := filepath.Join(stateDir, "qsdm_receipts.json")
 	if persistedBlocks, restoreErr := chain.LoadChainNDJSON(chainStatePath); restoreErr != nil {
 		log.Fatalf("chain restore: read %s: %v", chainStatePath, restoreErr)
 	} else if len(persistedBlocks) > 0 {
@@ -1230,19 +1236,67 @@ func main() {
 			log.Fatalf("chain restore: enrollment file %s unreadable (%v) — refusing to boot. Either restore the file or remove it (the chain will continue without enrollments and v2 proofs will reject).",
 				enrollmentStatePath, enrollErr)
 		}
-		// Receipts are loaded best-effort: a missing file is
-		// fine (operator can `qsdmcli receipt <id>` only on
-		// txs sealed since boot), but a corrupt one is a
-		// hard error so the operator notices instead of
-		// silently losing tx history.
+		// Receipts: NDJSON-first. If qsdm_receipts.ndjson
+		// exists we use it. Otherwise, if a legacy
+		// qsdm_receipts.json is present, we one-shot
+		// migrate by Load-ing the legacy JSON into the
+		// in-memory store and re-flushing every receipt as
+		// NDJSON via AppendBlockNDJSON; the legacy file is
+		// then renamed to qsdm_receipts.json.legacy so the
+		// operator has a backup for one boot, after which
+		// the validator will only ever touch the .ndjson
+		// path. A missing receipts file at all is fine —
+		// fresh chain or operator hand-cleared it. A
+		// corrupt receipts file is a hard error so the
+		// operator notices instead of silently losing tx
+		// history.
 		loadedReceipts := 0
-		if _, statErr := os.Stat(receiptsStatePath); statErr == nil {
-			n, recErr := adminReceipts.Load(receiptsStatePath)
+		_, ndjsonStatErr := os.Stat(receiptsNDJSONPath)
+		_, legacyStatErr := os.Stat(receiptsLegacyJSONPath)
+		switch {
+		case ndjsonStatErr == nil:
+			n, recErr := adminReceipts.LoadNDJSON(receiptsNDJSONPath)
 			if recErr != nil {
-				log.Fatalf("chain restore: receipts file %s unreadable (%v) — delete the file to continue without receipt history.",
-					receiptsStatePath, recErr)
+				log.Fatalf("chain restore: receipts NDJSON %s unreadable (%v) — trim the offending trailing line or delete the file to continue without receipt history.",
+					receiptsNDJSONPath, recErr)
 			}
 			loadedReceipts = n
+		case legacyStatErr == nil:
+			n, recErr := adminReceipts.Load(receiptsLegacyJSONPath)
+			if recErr != nil {
+				log.Fatalf("chain restore: legacy receipts JSON %s unreadable (%v) — delete the file to continue without receipt history.",
+					receiptsLegacyJSONPath, recErr)
+			}
+			loadedReceipts = n
+			// Re-flush as NDJSON so subsequent boots
+			// take the cheap path. We walk the legacy
+			// store's per-block index and append each
+			// block's slice; this preserves height
+			// ordering on disk, which is the same
+			// order LoadNDJSON observes.
+			migrated := 0
+			for h := uint64(0); h <= adminProducer.TipHeight(); h++ {
+				if got := adminReceipts.GetByBlock(h); len(got) == 0 {
+					continue
+				}
+				w, werr := adminReceipts.AppendBlockNDJSON(receiptsNDJSONPath, h)
+				if werr != nil {
+					log.Fatalf("receipts migration: append height=%d failed: %v — leave qsdm_receipts.json in place and re-run", h, werr)
+				}
+				migrated += w
+			}
+			backupPath := receiptsLegacyJSONPath + ".legacy"
+			if err := os.Rename(receiptsLegacyJSONPath, backupPath); err != nil {
+				logger.Warn("receipts migration: rename legacy file failed (NDJSON is now the source of truth, but the JSON file remains)",
+					"src", receiptsLegacyJSONPath, "dst", backupPath, "error_str", err.Error())
+			}
+			logger.Info("Receipts migrated: legacy JSON → NDJSON append-only",
+				"loaded_legacy", n,
+				"written_ndjson", migrated,
+				"legacy_renamed_to", backupPath,
+				"ndjson_path", receiptsNDJSONPath)
+		default:
+			// Neither file present — fresh chain or hand-cleared. No-op.
 		}
 		logger.Info("Chain + accounts + enrollments + receipts restored from disk",
 			"blocks", len(persistedBlocks),
@@ -1253,7 +1307,7 @@ func main() {
 			"chain_path", chainStatePath,
 			"accounts_path", accountsStatePath,
 			"enrollment_path", enrollmentStatePath,
-			"receipts_path", receiptsStatePath,
+			"receipts_path", receiptsNDJSONPath,
 			"genesis_seal_will_skip", true)
 	} else {
 		logger.Info("No persisted chain found; genesis seal will run on a fresh chain",
@@ -1313,21 +1367,17 @@ func main() {
 					"error_str", err.Error())
 			}
 		}
-		// Receipts are saved on every seal because a clean
-		// `qsdmcli receipt <id>` flow on the next restart is
-		// the user-facing payoff. The save is O(N) over all
-		// receipts ever stored, so this gets expensive on a
-		// long-running testnet — once we cross ~10k receipts
-		// the per-block cost becomes noticeable. Mitigation
-		// (follow-up): switch to NDJSON-style append-only
-		// receipts (matches the chain log strategy) so the
-		// per-seal cost drops to O(receipts in this block).
-		// For the current testnet (a few txs / minute) this
-		// O(N) loop is well under 1ms per block.
+		// Receipts: NDJSON append-only. Per-seal cost is
+		// O(receipts in this block) regardless of total
+		// receipt-store size, so this stays sub-millisecond
+		// even after the chain has accumulated millions of
+		// receipts. The legacy O(N_total) save was migrated
+		// out at boot.
 		if adminReceipts != nil {
-			if err := adminReceipts.Save(receiptsStatePath); err != nil {
-				logger.Warn("receipts persistence: save failed",
-					"path", receiptsStatePath,
+			if _, err := adminReceipts.AppendBlockNDJSON(receiptsNDJSONPath, blk.Height); err != nil {
+				logger.Warn("receipts persistence: append failed",
+					"height", blk.Height,
+					"path", receiptsNDJSONPath,
 					"error_str", err.Error())
 			}
 		}

@@ -1,8 +1,11 @@
 package chain
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -201,4 +204,130 @@ func (rs *ReceiptStore) Load(path string) (int, error) {
 		rs.Store(r)
 	}
 	return len(receipts), nil
+}
+
+// AppendBlockNDJSON appends every receipt in the receiver whose
+// BlockHeight == height as a single NDJSON line to path, creating
+// the file (mode 0o644) if missing. Returns the number of receipts
+// written.
+//
+// This is the post-seal hook companion to chain.AppendBlockToFile:
+// instead of rewriting the entire receipt store on every seal
+// (the O(N_total) cost the legacy ReceiptStore.Save pays), it
+// writes only the receipts produced during the block being sealed.
+// On a long-running testnet that crosses ~10k receipts, the
+// per-seal cost drops from "marshal + write the whole store" to
+// "marshal + write this block's receipts" — typically a handful
+// of bytes.
+//
+// Format mirrors qsdm_chain.ndjson: one JSON object per line,
+// trailing newline, no leading marker. A reader that sees a
+// truncated tail (process crashed mid-write) skips the partial
+// line; LoadNDJSON surfaces a parse error indicating which line
+// failed so the operator can trim and recover.
+//
+// Concurrency: takes rs.mu in read mode. Callers that drive this
+// from a single serialised hook (e.g. BlockProducer.OnSealedBlock)
+// get a strict happens-before edge with the receipts that the
+// applier just Stored; callers that fan-out must serialise
+// themselves.
+func (rs *ReceiptStore) AppendBlockNDJSON(path string, height uint64) (int, error) {
+	if path == "" {
+		return 0, errors.New("chain.ReceiptStore.AppendBlockNDJSON: empty path")
+	}
+	rs.mu.RLock()
+	receipts := append([]*TxReceipt(nil), rs.byBlock[height]...)
+	rs.mu.RUnlock()
+	if len(receipts) == 0 {
+		return 0, nil
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return 0, fmt.Errorf("chain.ReceiptStore.AppendBlockNDJSON: open %s: %w", path, err)
+	}
+	defer f.Close()
+	w := bufio.NewWriter(f)
+	written := 0
+	for _, r := range receipts {
+		if r == nil {
+			continue
+		}
+		data, err := json.Marshal(r)
+		if err != nil {
+			// One bad receipt should not lose the rest of
+			// the batch — flush what we have and surface
+			// the error with the partial count so the
+			// operator can investigate the offending tx.
+			_ = w.Flush()
+			return written, fmt.Errorf("chain.ReceiptStore.AppendBlockNDJSON: marshal receipt %s: %w", r.TxID, err)
+		}
+		if _, err := w.Write(append(data, '\n')); err != nil {
+			_ = w.Flush()
+			return written, fmt.Errorf("chain.ReceiptStore.AppendBlockNDJSON: write %s: %w", path, err)
+		}
+		written++
+	}
+	if err := w.Flush(); err != nil {
+		return written, fmt.Errorf("chain.ReceiptStore.AppendBlockNDJSON: flush %s: %w", path, err)
+	}
+	return written, nil
+}
+
+// LoadNDJSON reads path line-by-line, decoding each as a *TxReceipt
+// and Store-ing it into the receiver. Returns (loadedCount, nil) on
+// success, or (0, nil) if the file does not exist (the canonical
+// "fresh chain, no prior receipts" case).
+//
+// On a truncated trailing line (process crashed mid-write), the
+// loader reports a parse error citing the offending line number
+// AND returns the partial count already loaded. Operators recover
+// by deleting the trailing partial line.
+//
+// Unlike Load (legacy JSON-array path), LoadNDJSON intentionally
+// does NOT require the receiver to be empty — it can be called
+// twice if an operator legitimately wants to merge two log
+// segments. The Store call dedupes by TxID, so re-loading the
+// same NDJSON twice has the same final state as loading it once.
+func (rs *ReceiptStore) LoadNDJSON(path string) (int, error) {
+	if path == "" {
+		return 0, errors.New("chain.ReceiptStore.LoadNDJSON: empty path")
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("chain.ReceiptStore.LoadNDJSON: open %s: %w", path, err)
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	// 4 MiB ceiling matches LoadChainNDJSON. A receipt with
+	// hundreds of LogEntry rows is well under this; runaway
+	// lines surface as parse failures rather than OOM.
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	loaded := 0
+	lineno := 0
+	for scanner.Scan() {
+		lineno++
+		raw := scanner.Bytes()
+		if len(raw) == 0 {
+			continue
+		}
+		r := &TxReceipt{}
+		if err := json.Unmarshal(raw, r); err != nil {
+			return loaded, fmt.Errorf("chain.ReceiptStore.LoadNDJSON: parse line %d of %s: %w (loaded %d before failure; trim the bad line to recover)",
+				lineno, path, err, loaded)
+		}
+		if r.TxID == "" {
+			// Skip empty-TxID rows defensively — they
+			// would corrupt byTxID/order if Stored as-is.
+			continue
+		}
+		rs.Store(r)
+		loaded++
+	}
+	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) {
+		return loaded, fmt.Errorf("chain.ReceiptStore.LoadNDJSON: scan %s: %w", path, err)
+	}
+	return loaded, nil
 }
