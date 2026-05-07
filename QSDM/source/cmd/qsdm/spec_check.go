@@ -116,6 +116,16 @@ type SpecCheckWiring struct {
 	// layers expose its snapshots via /api/v1/mining/account
 	// and qsdm_spec_penalty_* counters.
 	Penalty *telemetrycheck.PerMinerStats
+
+	// PeerKeys is the per-attester key-pinning registry.
+	// Always non-nil after buildSpecCheckWiring resolves;
+	// the registry's HasPins() reports whether any pin
+	// is loaded. fetchPeerProfile consults
+	// PeerKeys.VerifyAndAccept BEFORE forwarding the
+	// profile to the catalog so a forged or unsigned
+	// profile is dropped with an audit-trail counter
+	// rather than poisoning the SKU table.
+	PeerKeys *PeerKeyRegistry
 }
 
 // buildSpecCheckWiring constructs the catalog + checker +
@@ -140,6 +150,26 @@ func buildSpecCheckWiring(ctx context.Context, logf func(string, ...any)) (*Spec
 	refresh := readEnvDuration("QSDM_PEER_ATTESTER_REFRESH", 5*time.Minute)
 	urls := splitURLs(os.Getenv("QSDM_PEER_ATTESTER_URLS"))
 
+	// Per-attester key-pinning registry. Resolved BEFORE
+	// the boot-time peer fetch so the very first profile
+	// pull is gated by whatever pins the operator
+	// configured. A bad entry in QSDM_PEER_ATTESTER_KEYS
+	// is fatal here — the operator typo'd a hex string
+	// and the right answer is a loud error, not a silent
+	// "trust everything" fallback.
+	peerKeys, peerKeyCount, peerKeyErr := LoadPeerKeysFromEnv()
+	if peerKeyErr != nil {
+		return nil, peerKeyErr
+	}
+	if peerKeys.HasPins() {
+		logf("spec-check: peer-attester key pinning ACTIVE",
+			"pins", peerKeyCount,
+			"signer_ids", strings.Join(peerKeys.PinnedSigners(), ","),
+			"strict_mode", peerKeys.Strict())
+	} else {
+		logf("spec-check: peer-attester key pinning DISABLED (set QSDM_PEER_ATTESTER_KEYS to enable)")
+	}
+
 	catalog := telemetrycheck.NewCatalog()
 	added := catalog.LoadBaseline()
 	logf("spec-check: baseline loaded",
@@ -155,6 +185,13 @@ func buildSpecCheckWiring(ctx context.Context, logf func(string, ...any)) (*Spec
 				"url", url, "err", err.Error())
 			continue
 		}
+		if vErr := peerKeys.VerifyAndAccept(profile); vErr != nil {
+			logf("spec-check: peer profile signature rejected (boot)",
+				"url", url,
+				"signer_id", profile.SignerID,
+				"err", vErr.Error())
+			continue
+		}
 		applied, applyErr := catalog.Apply(profile)
 		if applyErr != nil {
 			logf("spec-check: peer profile apply failed (boot)",
@@ -164,7 +201,8 @@ func buildSpecCheckWiring(ctx context.Context, logf func(string, ...any)) (*Spec
 		logf("spec-check: peer profile applied",
 			"url", url,
 			"signer_id", profile.SignerID,
-			"gpu_entries", applied)
+			"gpu_entries", applied,
+			"signature_verified", peerKeys.HasPins())
 	}
 
 	checker := telemetrycheck.NewChecker(catalog)
@@ -177,6 +215,7 @@ func buildSpecCheckWiring(ctx context.Context, logf func(string, ...any)) (*Spec
 		PeerURLs:     urls,
 		RefreshEvery: refresh,
 		RingCap:      ringCap,
+		PeerKeys:     peerKeys,
 	}
 
 	// Tier-3: opt-in reward-downgrade. Only honoured when
@@ -270,6 +309,15 @@ func tickSpecCheckPoll(ctx context.Context, w *SpecCheckWiring, logf func(string
 				"url", url, "err", err.Error())
 			continue
 		}
+		if w.PeerKeys != nil {
+			if vErr := w.PeerKeys.VerifyAndAccept(profile); vErr != nil {
+				logf("spec-check: poll signature rejected",
+					"url", url,
+					"signer_id", profile.SignerID,
+					"err", vErr.Error())
+				continue
+			}
+		}
 		applied, applyErr := w.Catalog.Apply(profile)
 		if applyErr != nil {
 			logf("spec-check: poll apply failed",
@@ -289,11 +337,15 @@ func tickSpecCheckPoll(ctx context.Context, w *SpecCheckWiring, logf func(string
 // from a peer attester. Performs a minimal Validate (so a
 // poll that returns "telemetry_disabled" surfaces as a
 // regular fetch error instead of polluting the catalog
-// with a corrupt entry). Does NOT verify the signature —
-// the signing key isn't available to the validator yet (a
-// future change can pin per-attester keys via a config
-// file). Until that lands, the catalog trusts the URL +
-// the assertion that the attester self-attests.
+// with a corrupt entry).
+//
+// fetchPeerProfile does NOT verify the signature — that
+// happens one layer up in the caller (boot wiring +
+// periodic poll), which has the PeerKeyRegistry in scope
+// and can route metric updates appropriately. Splitting
+// fetch from verify keeps THIS function pure (HTTP +
+// JSON, no config dependency) and easy to test in
+// isolation.
 func fetchPeerProfile(ctx context.Context, url string) (*telemetry.ReferenceProfile, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -386,6 +438,25 @@ func (p *specCheckMonitoringImpl) CheckCounters() (uint64, uint64, uint64, uint6
 
 func (p *specCheckMonitoringImpl) MismatchesByField() map[string]uint64 {
 	return p.wiring.Checker.MismatchesByField()
+}
+
+func (p *specCheckMonitoringImpl) PeerKeyCounters() (uint64, uint64, uint64, uint64, uint64) {
+	if p.wiring.PeerKeys == nil {
+		return 0, 0, 0, 0, 0
+	}
+	return p.wiring.PeerKeys.Counters()
+}
+
+func (p *specCheckMonitoringImpl) PeerKeyConfig() (int, int) {
+	if p.wiring.PeerKeys == nil {
+		return 0, 0
+	}
+	pins := len(p.wiring.PeerKeys.PinnedSigners())
+	strictInt := 0
+	if p.wiring.PeerKeys.Strict() {
+		strictInt = 1
+	}
+	return pins, strictInt
 }
 
 // specPenaltyMonitoringProbe converts the Tier-3 wiring

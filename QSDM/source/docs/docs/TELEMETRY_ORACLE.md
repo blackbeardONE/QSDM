@@ -256,10 +256,76 @@ seeing them is a positive disable signal, not a metric drop.
 | Tier | What | When |
 |---|---|---|
 | 1 | Static spec catalog (this doc) | Shipped. |
-| 2 | Validator-side advisory check (warn on mismatch) | Next. |
-| 3 | Validator-side enforcement (downgrade tier on mismatch) | After ≥10 attesters publish. |
+| 2 | Validator-side advisory check (warn on mismatch) | Shipped. |
+| 3 | Validator-side enforcement (downgrade reward on persistent mismatch) | Shipped. See `SPEC_ANOMALY_CHECK.md` §"Tier-3 reward downgrade". |
 | 4 | Live benchmark fingerprints (timing distributions for canonical kernels) | Independent of 2/3. |
 | 5 | Aggregator endpoint at `/api/v1/telemetry/profiles` | Independent of 2/3. |
+
+## Per-attester key pinning (validator side)
+
+The Tier-2/3 catalog refresh path is only as trustworthy as
+the attester URLs the validator polls. Without verification a
+relay operator (or anyone in a position to MITM the HTTPS
+connection between validator and attester) could forge a
+profile and silently poison the SKU catalog. The validator
+closes this gap with **per-attester key pinning**.
+
+### How it works
+
+The attester signs every profile with its 32-byte HMAC key
+(`~/.qsdm/attester.key`). The validator can be configured
+with a list of `(signer_id, key)` pairs it trusts:
+
+| Env var | Format | Notes |
+|---|---|---|
+| `QSDM_PEER_ATTESTER_KEYS` | `signer_id=<64 hex>;signer_id=<64 hex>` | Inline. Ergonomic for 1–2 pins. |
+| `QSDM_PEER_ATTESTER_KEYS_FILE` | path | One `signer_id=<64 hex>` per line; `#` comments. Use this when the list is too long for a systemd `Environment=` line, or when you want stricter file-system permissions on the secret. |
+| `QSDM_PEER_ATTESTER_STRICT` | `1` (default if any pin loaded) / `0` | When strict, profiles whose `signer_id` is NOT in the pin list are dropped. When non-strict, unknown signers are accepted with a warning — useful during rollout. |
+
+When **at least one pin** is loaded, the verification gate
+runs on every fetched profile (boot + periodic poll). The
+decision tree:
+
+| Profile state | Outcome | Counter |
+|---|---|---|
+| Signed by a pinned key, signature verifies | Accepted, applied to catalog | `accepted_signed` |
+| Signed but signer_id is unknown, strict=1 | Rejected | `rejected_unknown_signer` |
+| Signed but signer_id is unknown, strict=0 | Accepted with warning | `accepted_unpinned` |
+| Pinned signer but `signature` is empty | Rejected (NEVER accept unsigned when ANY pin is configured — that would let an attacker bypass the check by stripping the field) | `rejected_unsigned` |
+| Pinned signer but signature does not verify | Rejected | `rejected_bad_signature` |
+
+When **no pin is loaded**, the gate is bypassed — all
+fetched profiles are accepted, and a single
+`spec-check: peer-attester key pinning DISABLED` log line
+is emitted at boot so the operator notices.
+
+### Prometheus
+
+| Metric | Type | Notes |
+|---|---|---|
+| `qsdm_spec_check_peer_keys_pinned` | gauge | Number of pins loaded. `0` = pinning off. |
+| `qsdm_spec_check_peer_keys_strict` | gauge | `1` when strict mode is on. |
+| `qsdm_spec_check_peer_profile_signature_total{result="..."}` | counter | One series per outcome label. Use this to alert on spikes in `rejected_*`. |
+
+### Operational notes
+
+- HMAC is symmetric: the same 32 bytes the attester uses to
+  sign are what the validator pins. The operator therefore
+  has to copy the attester's `attester.key` (or its hex
+  encoding) onto every validator that wants to trust it.
+- A future revision can swap the wire signature to
+  Ed25519 (asymmetric) without changing the pinning
+  contract — the registry would load public keys instead
+  of shared secrets, the rest of the pipeline unchanged.
+- File-system advice for `QSDM_PEER_ATTESTER_KEYS_FILE`:
+  put the file at `/etc/qsdm/peer-attester-keys.txt`,
+  `chown root:<service-user>`, `chmod 640`. Permissions
+  must let the validator's service user read the file
+  but nobody else.
+- Rotation: when an attester rotates its key, every
+  pinning validator must update its config simultaneously.
+  This is the correct posture — silent acceptance of an
+  un-coordinated key change would defeat the threat model.
 
 ## Wiring it into your own attester
 
