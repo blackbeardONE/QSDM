@@ -516,6 +516,147 @@ func TestDriverImplementsRewardSink(t *testing.T) {
 	// assertion lives in the package source.
 }
 
+// ---- Tier-3 reward downgrade --------------------------------------------
+
+// fakeRewardPenalty is a deterministic RewardPenalty
+// implementation used by the tests below. Returns the
+// configured multiplier for matching addresses; 1.0 for
+// every other address.
+type fakeRewardPenalty struct {
+	multipliers map[string]float64
+}
+
+func (f *fakeRewardPenalty) MultiplierFor(addr string) float64 {
+	if m, ok := f.multipliers[addr]; ok {
+		return m
+	}
+	return 1.0
+}
+
+// TestTier3_PenaltyAppliesToFlaggedMiner verifies the
+// happy path: a miner over-threshold gets a fraction of
+// their full reward, while honest miners get their full
+// share. Uses FlatRewardPerBlock to keep arithmetic
+// trivially auditable.
+func TestTier3_PenaltyAppliesToFlaggedMiner(t *testing.T) {
+	cfg := validCfg(t)
+	cfg.FlatRewardPerBlock = 4.0
+	cfg.RewardPenalty = &fakeRewardPenalty{
+		multipliers: map[string]float64{
+			"qsdm1bad": 0.5,
+		},
+	}
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		d.OnAcceptedProof("qsdm1bad")
+		d.OnAcceptedProof("qsdm1good")
+	}
+	d.tick()
+
+	bad, _ := cfg.Accounts.Get("qsdm1bad")
+	good, _ := cfg.Accounts.Get("qsdm1good")
+	if bad == nil || good == nil {
+		t.Fatalf("miner accounts not credited: bad=%v good=%v", bad, good)
+	}
+	// 4 proofs, 2 each → base share = 2.0 each.
+	// Bad gets 2.0 * 0.5 = 1.0, Good gets 2.0.
+	if bad.Balance < 0.999 || bad.Balance > 1.001 {
+		t.Errorf("bad balance: got %.6f want ~1.0 (2.0 * 0.5 multiplier)", bad.Balance)
+	}
+	if good.Balance < 1.999 || good.Balance > 2.001 {
+		t.Errorf("good balance: got %.6f want ~2.0 (no penalty)", good.Balance)
+	}
+	stats := d.Stats()
+	if stats.PenalisedPayouts != 1 {
+		t.Errorf("PenalisedPayouts: got %d want 1", stats.PenalisedPayouts)
+	}
+	if stats.WithheldDust == 0 {
+		t.Errorf("WithheldDust: got 0 want > 0 (1.0 CELL withheld)")
+	}
+	if !stats.PenaltyActive {
+		t.Errorf("PenaltyActive should be true")
+	}
+}
+
+// TestTier3_NilPenaltyKeepsLegacyBehaviour confirms the
+// pre-Tier-3 posture (no RewardPenalty wired) is byte-
+// identical to before: full per-proof share, no withheld
+// dust, PenaltyActive=false.
+func TestTier3_NilPenaltyKeepsLegacyBehaviour(t *testing.T) {
+	cfg := validCfg(t)
+	cfg.FlatRewardPerBlock = 2.0
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	d.OnAcceptedProof("qsdm1solo")
+	d.OnAcceptedProof("qsdm1solo")
+	d.tick()
+
+	solo, _ := cfg.Accounts.Get("qsdm1solo")
+	if solo == nil || solo.Balance < 1.999 || solo.Balance > 2.001 {
+		t.Errorf("solo balance: got %v want ~2.0 (full reward)", solo)
+	}
+	stats := d.Stats()
+	if stats.PenalisedPayouts != 0 {
+		t.Errorf("PenalisedPayouts: got %d want 0", stats.PenalisedPayouts)
+	}
+	if stats.WithheldDust != 0 {
+		t.Errorf("WithheldDust: got %d want 0", stats.WithheldDust)
+	}
+	if stats.PenaltyActive {
+		t.Errorf("PenaltyActive should be false when no penalty wired")
+	}
+}
+
+// TestTier3_NaNAndOutOfRangeMultiplier_ClampsToFullReward
+// exercises the defensive clamp inside buildTxs: a buggy
+// MismatchPenalty that returns NaN, +Inf, negative, or >1
+// must NOT cause a phantom mint or a negative tx amount.
+// Falls back to 1.0 (no penalty) so the system is fail-safe.
+type degenerateMultiplier struct{ value float64 }
+
+func (d *degenerateMultiplier) MultiplierFor(string) float64 { return d.value }
+
+func TestTier3_DefensiveClamp_OnDegenerateMultipliers(t *testing.T) {
+	cases := []struct {
+		name  string
+		value float64
+	}{
+		{"NaN", nanFloat()},
+		{"PositiveInfinity", infFloat()},
+		{"Negative", -0.25},
+		{"GreaterThanOne", 1.5},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := validCfg(t)
+			cfg.FlatRewardPerBlock = 1.0
+			cfg.RewardPenalty = &degenerateMultiplier{value: tc.value}
+			d, err := New(cfg)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			d.OnAcceptedProof("qsdm1clamp")
+			d.tick()
+			acc, _ := cfg.Accounts.Get("qsdm1clamp")
+			if acc == nil || acc.Balance < 0.999 || acc.Balance > 1.001 {
+				t.Errorf("balance under degenerate multiplier %v: got %v want ~1.0",
+					tc.value, acc)
+			}
+			if d.Stats().PenalisedPayouts != 0 {
+				t.Errorf("degenerate multiplier should not register as penalty firing")
+			}
+		})
+	}
+}
+
+func nanFloat() float64 { var z float64; return z / z }
+func infFloat() float64 { var z float64; z = 1; return z / 0 }
+
 // Ensure concurrent OnAcceptedProof calls don't race the
 // queue's internal state. Run with `go test -race`.
 func TestConcurrentOnAcceptedProof_NoRace(t *testing.T) {

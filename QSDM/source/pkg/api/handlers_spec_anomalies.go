@@ -46,6 +46,57 @@ type SpecAnomaliesProbe interface {
 	RecentAnomalies(n int) []SpecAnomalyView
 }
 
+// SpecPenaltyProbe is the optional Tier-3 hook. When the
+// validator has opted into reward downgrade
+// (QSDM_SPEC_PENALTY_ENABLED), this probe gives the public
+// API access to the per-miner sliding-window state so a
+// flagged miner can curl /api/v1/mining/penalty?addr=...
+// and see exactly why their rewards dropped.
+//
+// AllPenaltySnapshots returns one PenaltyView per miner
+// the engine has observed, sorted by miner_addr. Used by
+// the dashboard list view + the /api/v1/mining/penalty
+// (no-arg) snapshot.
+//
+// PenaltyForMiner returns the per-miner explanation, or
+// (zero, false) when the miner is not known. The handler
+// surfaces "not found" as 200 with a zero-state view —
+// the dashboard treats that as "fully clean".
+type SpecPenaltyProbe interface {
+	PenaltyForMiner(addr string) (PenaltyView, bool)
+	AllPenaltySnapshots() []PenaltyView
+	PenalisedCount() int
+	Config() PenaltyConfigView
+}
+
+// PenaltyView is the public-facing per-miner snapshot.
+// Mirrors telemetrycheck.PenaltySnapshot but lives here
+// so the wire layout is owned by the api package.
+type PenaltyView struct {
+	MinerAddr        string  `json:"miner_addr"`
+	WindowSize       int     `json:"window_size"`
+	WindowFilled     int     `json:"window_filled"`
+	MismatchCount    int     `json:"mismatch_count"`
+	UnknownSKUCount  int     `json:"unknown_sku_count"`
+	MatchCount       int     `json:"match_count"`
+	MismatchPct      float64 `json:"mismatch_pct"`
+	ThresholdPct     float64 `json:"threshold_pct"`
+	OverThreshold    bool    `json:"over_threshold"`
+	BelowMinObs      bool    `json:"below_min_observations"`
+	Multiplier       float64 `json:"multiplier"`
+	LastObservedAt   int64   `json:"last_observed_at,omitempty"`
+}
+
+// PenaltyConfigView is the resolved Tier-3 config the
+// validator advertises so the dashboard can label the
+// threshold line on the graph.
+type PenaltyConfigView struct {
+	WindowSize           int     `json:"window_size"`
+	MismatchThresholdPct float64 `json:"threshold_pct"`
+	PenaltyMultiplier    float64 `json:"multiplier"`
+	MinObservations      int     `json:"min_observations"`
+}
+
 // SpecAnomaliesSnapshot is the counter half of the
 // public payload. Counts are cumulative since process
 // start; ring size is the in-memory cap.
@@ -119,6 +170,96 @@ func currentSpecAnomaliesProbe() SpecAnomaliesProbe {
 	specAnomaliesProbeRegistry.mu.RLock()
 	defer specAnomaliesProbeRegistry.mu.RUnlock()
 	return specAnomaliesProbeRegistry.probe
+}
+
+// Same RWMutex-guarded slot pattern for the optional
+// Tier-3 penalty probe. Kept separate from the anomalies
+// probe so a deployment can run Tier-2 alone without
+// having to nil-check inside the anomalies probe.
+type specPenaltyProbeHolder struct {
+	mu    sync.RWMutex
+	probe SpecPenaltyProbe
+}
+
+var specPenaltyProbeRegistry = &specPenaltyProbeHolder{}
+
+// SetSpecPenaltyProbe installs the process-wide Tier-3
+// reward-downgrade probe. Idempotent. Nil disables the
+// /api/v1/mining/penalty endpoint (returns 503). Wiring
+// happens at validator boot only when both
+// QSDM_SPEC_CHECK_ENABLED and QSDM_SPEC_PENALTY_ENABLED
+// are truthy.
+func SetSpecPenaltyProbe(probe SpecPenaltyProbe) {
+	specPenaltyProbeRegistry.mu.Lock()
+	defer specPenaltyProbeRegistry.mu.Unlock()
+	specPenaltyProbeRegistry.probe = probe
+}
+
+func currentSpecPenaltyProbe() SpecPenaltyProbe {
+	specPenaltyProbeRegistry.mu.RLock()
+	defer specPenaltyProbeRegistry.mu.RUnlock()
+	return specPenaltyProbeRegistry.probe
+}
+
+// SpecPenaltyResponse is the GET body for
+// /api/v1/mining/penalty (without ?address). One miner
+// per row, ordered by addr; plus the resolved policy
+// config so the dashboard can draw the threshold line.
+type SpecPenaltyResponse struct {
+	Config           PenaltyConfigView `json:"config"`
+	PenalisedCount   int               `json:"penalised_count"`
+	TrackedMiners    int               `json:"tracked_miners"`
+	Miners           []PenaltyView     `json:"miners"`
+}
+
+// SpecPenaltyHandler serves GET /api/v1/mining/penalty.
+//
+// Query params:
+//
+//	?address=<addr>  — return one miner. 200 always; an
+//	                    unknown miner returns the zero
+//	                    snapshot with multiplier=1.0.
+//	(no params)      — return all tracked miners + config.
+//
+// 503 when the validator did not opt into Tier-3 via
+// QSDM_SPEC_PENALTY_ENABLED.
+func (h *Handlers) SpecPenaltyHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	probe := currentSpecPenaltyProbe()
+	if probe == nil {
+		writeMiningUnavailable(w, "penalty probe not configured (set QSDM_SPEC_PENALTY_ENABLED=1)")
+		return
+	}
+
+	if addr := r.URL.Query().Get("address"); addr != "" {
+		view, _ := probe.PenaltyForMiner(addr)
+		if view.MinerAddr == "" {
+			view.MinerAddr = addr
+		}
+		if view.Multiplier == 0 {
+			view.Multiplier = 1.0
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(view)
+		return
+	}
+
+	all := probe.AllPenaltySnapshots()
+	if all == nil {
+		all = []PenaltyView{}
+	}
+	resp := SpecPenaltyResponse{
+		Config:         probe.Config(),
+		PenalisedCount: probe.PenalisedCount(),
+		TrackedMiners:  len(all),
+		Miners:         all,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // SpecAnomaliesHandler serves GET

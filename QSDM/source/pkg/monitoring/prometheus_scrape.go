@@ -81,6 +81,15 @@ func GlobalScrapePrometheusExporter() *PrometheusExporter {
 		// QSDM_SPEC_CHECK_ENABLED unset), so existing
 		// /metrics output remains bit-identical.
 		globalScrapeExporter.RegisterCollector("qsdm_spec_check", specCheckPrometheusMetrics)
+		// qsdm_spec_penalty_* gauges + counters from
+		// spec_penalty_metrics.go. Drives the Tier-3
+		// reward-downgrade dashboard (per-miner aggregates
+		// + blockdriver-side withheld-dust counters).
+		// Emits NOTHING when no SpecPenaltyProbe is wired
+		// (pre-Tier-3 posture = QSDM_SPEC_PENALTY_ENABLED
+		// unset), so existing /metrics output remains
+		// bit-identical.
+		globalScrapeExporter.RegisterCollector("qsdm_spec_penalty", specPenaltyPrometheusMetrics)
 	})
 	return globalScrapeExporter
 }

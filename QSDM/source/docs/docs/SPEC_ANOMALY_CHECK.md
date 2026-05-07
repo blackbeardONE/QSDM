@@ -44,8 +44,9 @@ unsafe for a few reasons:
   updates. An "unknown_sku" reject would break every honest miner
   on a new RTX-series card the day NVIDIA released it.
 
-Tier-3 (reward downgrade on persistent mismatch) is the planned
-enforcement layer; it lives one commit removed from this one.
+Tier-3 (reward downgrade on persistent mismatch) is the
+enforcement layer; **it shipped on `2026-05-07`** and is
+[documented below](#tier-3-reward-downgrade).
 
 ## Catalog sources
 
@@ -257,12 +258,158 @@ Reference scenario performed at deployment time:
 This is the canonical demo proving the rule set is sensitive
 enough to catch real spoofing while quiet on the happy path.
 
+## Tier-3 reward downgrade
+
+**Status:** Active on `qsdm.tech` (BLR1 validator) since
+`2026-05-07`. Sits one layer above Tier-2 — consumes the
+verdict stream and applies a per-miner sliding-window
+penalty to the blockdriver's per-block share. Strictly
+**off the consensus path** (the proofs that earn rewards
+have already been accepted).
+
+### Wire layout
+
+```
+v2 proof
+    ↓
+hmac.Verifier.VerifyAttestation (consensus)
+    ↓ (proof accepted, returns nil)
+HMACAdapter.OnHMACAccept
+    ├── Checker.Check(claim) → Verdict       (Tier-2)
+    └── PerMinerStats.Update(addr, verdict)  (Tier-3, sliding window)
+        ⋮
+miningsvc.RewardSink.OnAcceptedProof(addr)
+    ↓
+blockdriver.Driver.tick()
+    ↓
+buildTxs(queue, total, rewardCell):
+    for addr, count in queue:
+        share = rewardCell * count / total
+        share *= rewardPenalty.MultiplierFor(addr)  ← Tier-3 hook
+        emit tx(addr, share)
+```
+
+The "lost" share is **unminted, NOT redistributed** to
+other miners. That keeps the supply cap monotonically
+respected and makes the tokenomic effect of Tier-3
+strictly subtractive.
+
+### Threshold logic
+
+For each miner address, the engine maintains a sliding
+window of the last `WindowSize` verdicts (default 1000).
+Every accepted proof's verdict folds into the window:
+
+| Verdict | Counts toward threshold? |
+| --- | --- |
+| `match` | No (denominator only) |
+| `unknown_sku` | No (catalog will catch up) |
+| `mismatch` with `has_major: false` (minor only) | No |
+| `mismatch` with `has_major: true` | **Yes** |
+| `skipped` | No |
+
+Penalty fires when:
+
+```
+window_filled  >= MinObservations           AND
+mismatch_pct   >= MismatchThresholdPct
+```
+
+When fired, every per-block share for that miner is
+multiplied by `PenaltyMultiplier`. Otherwise the
+multiplier is `1.0`.
+
+### Governance constants (defaults)
+
+| Env var | Default | Meaning |
+| --- | --- | --- |
+| `QSDM_SPEC_PENALTY_ENABLED` | unset (off) | Master switch. Requires `QSDM_SPEC_CHECK_ENABLED=1` to do anything. |
+| `QSDM_SPEC_PENALTY_WINDOW` | 1000 | Sliding-window length in proofs. |
+| `QSDM_SPEC_PENALTY_THRESHOLD` | 10.0 | Mismatch percentage at or above which the multiplier fires. |
+| `QSDM_SPEC_PENALTY_MULTIPLIER` | 0.75 | Reward share multiplier when over threshold. |
+| `QSDM_SPEC_PENALTY_MIN_OBS` | 50 | Warmup floor — penalty cannot fire until window has at least this many proofs. |
+
+Setting `MULTIPLIER=0` would zero out a flagged miner's
+reward, which is functionally a hard slash and not what
+this layer represents. Values `<= 0` resolve to the
+default. Values `> 1` likewise resolve to the default —
+Tier-3 is strictly subtractive.
+
+### Public endpoint
+
+```
+GET /api/v1/mining/penalty             → all tracked miners + config
+GET /api/v1/mining/penalty?address=…   → one miner
+```
+
+503 when Tier-3 is disabled. Otherwise:
+
+```json
+{
+  "config": {
+    "window_size": 200,
+    "threshold_pct": 5,
+    "multiplier": 0.5,
+    "min_observations": 20
+  },
+  "penalised_count": 1,
+  "tracked_miners": 1,
+  "miners": [
+    {
+      "miner_addr": "qsdm1miner-rtx3050",
+      "window_size": 200,
+      "window_filled": 200,
+      "mismatch_count": 200,
+      "match_count": 0,
+      "mismatch_pct": 100,
+      "threshold_pct": 5,
+      "over_threshold": true,
+      "below_min_observations": false,
+      "multiplier": 0.5,
+      "last_observed_at": 1778162804
+    }
+  ]
+}
+```
+
+### Prometheus metrics
+
+| Metric | Type | Meaning |
+| --- | --- | --- |
+| `qsdm_spec_penalty_active` | gauge | 1 = Tier-3 wired, else 0 |
+| `qsdm_spec_penalty_window_size` | gauge | Resolved window length |
+| `qsdm_spec_penalty_threshold_pct` | gauge | Resolved threshold |
+| `qsdm_spec_penalty_multiplier` | gauge | Resolved multiplier |
+| `qsdm_spec_penalty_min_observations` | gauge | Resolved warmup floor |
+| `qsdm_spec_penalty_tracked_miners` | gauge | Distinct addresses observed |
+| `qsdm_spec_penalty_penalised_miners` | gauge | Miners currently with multiplier < 1.0 |
+| `qsdm_spec_penalty_blockdriver_payouts_total` | counter | Per-block shares the blockdriver multiplied by < 1.0 |
+| `qsdm_spec_penalty_blockdriver_withheld_dust` | counter | Cumulative dust unminted by Tier-3 |
+
+Per-miner cardinality is intentionally NOT exported as a
+Prometheus label. The `/api/v1/mining/penalty` endpoint
+is the per-miner-detail surface; Prometheus only sees
+aggregates so synthetic-address spam can't inflate the
+metrics surface.
+
+### Tier-3 end-to-end verification (BLR1, 2026-05-07)
+
+| Step | Action | Result |
+| --- | --- | --- |
+| 1 | Deploy with `QSDM_SPEC_PENALTY_ENABLED=1`, window=200, threshold=5%, multiplier=0.5, min_obs=20. | `spec-check: Tier-3 reward downgrade active` in log. `qsdm_spec_penalty_active=1`. |
+| 2 | Real RTX 3050 mines with `compute_cap=8.6`. | After ~30s: 1 tracked miner, 0 penalised. Multiplier `1.0`. |
+| 3 | Spoof config to `compute_cap=9.0` (Hopper claim on Ampere GPU). | Within ~60s the window fills with 200 mismatches → `over_threshold=true`, `multiplier=0.5`. |
+| 4 | Confirm blockdriver applied the penalty. | `qsdm_spec_penalty_blockdriver_payouts_total=10`, `withheld_dust=1.78×10⁹` (≈17.82 CELL not minted). |
+| 5 | Restore config, restart miner. | After ~3 minutes the window evicts the bad proofs → `match_count=200`, `mismatch_count=0`, `multiplier=1.0`. The penalty self-clears. |
+
+This proves the round trip: bad proofs ⇒ penalty fires
+⇒ blockdriver mints fewer CELL ⇒ honest behaviour
+restores the multiplier ⇒ next block credits the full
+share. **Persistent good behaviour heals the penalty
+without operator intervention.**
+
 ## Roadmap
 
-- **Tier-3 enforcement.** Reward-tier downgrade for miners with
-  sustained mismatch rate above a governance-set threshold.
-  This converts the advisory-only checker into a real economic
-  signal without coupling it to consensus.
 - **Per-attester signing-key pinning.** Today the validator
   accepts profile content over HTTPS but does not verify the
   HMAC signature against a pinned per-attester key. A future
@@ -290,8 +437,12 @@ pkg/mining/telemetrycheck/
 ├── checker.go            -- entry point: Check(claim) -> Verdict
 ├── rules.go              -- one function per rule
 ├── hmac_adapter.go       -- bridge into hmac.Verifier.OnAccept
+├── penalty.go            -- Tier-3 sliding-window + multiplier
+└── penalty_test.go       -- Tier-3 unit tests (window math)
 
-pkg/api/handlers_spec_anomalies.go        -- public HTTP endpoint
-pkg/monitoring/spec_check_metrics.go      -- Prometheus collector
-cmd/qsdm/spec_check.go                    -- validator-side wiring
+pkg/api/handlers_spec_anomalies.go        -- public HTTP endpoint (Tier-2 + Tier-3)
+pkg/monitoring/spec_check_metrics.go      -- Tier-2 Prometheus collector
+pkg/monitoring/spec_penalty_metrics.go    -- Tier-3 Prometheus collector
+internal/blockdriver/blockdriver.go       -- RewardPenalty hook in buildTxs
+cmd/qsdm/spec_check.go                    -- validator-side wiring (Tier-2 + Tier-3)
 ```

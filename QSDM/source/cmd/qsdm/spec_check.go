@@ -33,6 +33,41 @@ package main
 //   QSDM_SPEC_CHECK_RING_CAP    - in-memory anomaly ring
 //                                 capacity. Default 256.
 //
+//   QSDM_SPEC_PENALTY_ENABLED   - enable the Tier-3 reward
+//                                 downgrade. When set, the
+//                                 wiring builds a
+//                                 PerMinerStats engine and
+//                                 hands it to the
+//                                 blockdriver via
+//                                 RewardPenalty. REQUIRES
+//                                 QSDM_SPEC_CHECK_ENABLED;
+//                                 otherwise no verdicts
+//                                 reach the engine and
+//                                 every multiplier stays
+//                                 at 1.0 forever.
+//
+//   QSDM_SPEC_PENALTY_WINDOW    - sliding-window size in
+//                                 proofs (default 1000).
+//                                 Smaller windows trip
+//                                 faster but tolerate less
+//                                 noise.
+//
+//   QSDM_SPEC_PENALTY_THRESHOLD - mismatch percentage
+//                                 (e.g. 10.0) at or above
+//                                 which the multiplier
+//                                 fires. Default 10.0.
+//
+//   QSDM_SPEC_PENALTY_MULTIPLIER - the multiplier itself
+//                                 (e.g. 0.75 for 25%
+//                                 downgrade). Default 0.75.
+//
+//   QSDM_SPEC_PENALTY_MIN_OBS   - minimum proofs in window
+//                                 before a penalty can
+//                                 fire. Default 50. Below
+//                                 this count the multiplier
+//                                 stays at 1.0 even if the
+//                                 ratio is over threshold.
+//
 // The peer attester poller is best-effort: a fetch failure
 // emits a warning log + bumps a metric, but never blocks
 // boot or causes the validator to refuse new proofs.
@@ -48,6 +83,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blackbeardONE/QSDM/internal/blockdriver"
 	"github.com/blackbeardONE/QSDM/pkg/api"
 	"github.com/blackbeardONE/QSDM/pkg/mining/telemetrycheck"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
@@ -72,6 +108,14 @@ type SpecCheckWiring struct {
 
 	// RingCap is the resolved anomaly ring size.
 	RingCap int
+
+	// Penalty is the optional Tier-3 reward-downgrade engine.
+	// Non-nil when QSDM_SPEC_PENALTY_ENABLED is truthy AND
+	// the Tier-2 path is also active. The blockdriver
+	// consumes it as a RewardPenalty; the API + monitoring
+	// layers expose its snapshots via /api/v1/mining/account
+	// and qsdm_spec_penalty_* counters.
+	Penalty *telemetrycheck.PerMinerStats
 }
 
 // buildSpecCheckWiring constructs the catalog + checker +
@@ -134,7 +178,61 @@ func buildSpecCheckWiring(ctx context.Context, logf func(string, ...any)) (*Spec
 		RefreshEvery: refresh,
 		RingCap:      ringCap,
 	}
+
+	// Tier-3: opt-in reward-downgrade. Only honoured when
+	// the operator explicitly turns it on AND the Tier-2
+	// checker is active (the if branch we are inside). The
+	// engine hangs off the same adapter so verdicts feed
+	// the sliding window automatically.
+	if specPenaltyEnabled() {
+		penaltyCfg := telemetrycheck.PenaltyConfig{
+			WindowSize:           readEnvInt("QSDM_SPEC_PENALTY_WINDOW", 0),
+			MismatchThresholdPct: readEnvFloat("QSDM_SPEC_PENALTY_THRESHOLD", 0),
+			PenaltyMultiplier:    readEnvFloat("QSDM_SPEC_PENALTY_MULTIPLIER", 0),
+			MinObservations:      readEnvInt("QSDM_SPEC_PENALTY_MIN_OBS", 0),
+		}
+		penalty := telemetrycheck.NewPerMinerStats(penaltyCfg)
+		adapter.AttachPenalty(penalty)
+		wiring.Penalty = penalty
+		resolved := penalty.Config()
+		logf("spec-check: Tier-3 reward downgrade active",
+			"window_size", resolved.WindowSize,
+			"threshold_pct", resolved.MismatchThresholdPct,
+			"multiplier", resolved.PenaltyMultiplier,
+			"min_observations", resolved.MinObservations)
+	} else {
+		logf("spec-check: Tier-3 reward downgrade disabled (set QSDM_SPEC_PENALTY_ENABLED=1 to enable)")
+	}
 	return wiring, nil
+}
+
+// specPenaltyEnabled mirrors specCheckEnabled. The two are
+// independent gates: Tier-2 (anomaly checking) can be on
+// without Tier-3 (reward downgrade), but the inverse is
+// nonsensical because Tier-3 needs verdicts to act on.
+func specPenaltyEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("QSDM_SPEC_PENALTY_ENABLED"))) {
+	case "", "0", "false", "no", "off":
+		return false
+	}
+	return true
+}
+
+// readEnvFloat parses a float64 env var. Returns fallback
+// on empty / parse-error / non-positive values; the
+// PenaltyConfig.Resolve path then turns 0 into the package
+// default. Splitting validation between here and Resolve
+// keeps the env-parsing surface minimal.
+func readEnvFloat(name string, fallback float64) float64 {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	f, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return fallback
+	}
+	return f
 }
 
 // runSpecCheckPoller is the long-running goroutine that
@@ -288,6 +386,129 @@ func (p *specCheckMonitoringImpl) CheckCounters() (uint64, uint64, uint64, uint6
 
 func (p *specCheckMonitoringImpl) MismatchesByField() map[string]uint64 {
 	return p.wiring.Checker.MismatchesByField()
+}
+
+// specPenaltyMonitoringProbe converts the Tier-3 wiring
+// (PerMinerStats + the soloDriver counters) into the
+// monitoring.SpecPenaltyProbe interface the Prometheus
+// collector expects.
+//
+// driver may be nil; in that case the blockdriver counters
+// surface as 0 (no payouts have happened yet because the
+// driver isn't running). That's a legitimate state during
+// boot — Prometheus just sees zeros until the driver
+// starts ticking.
+func specPenaltyMonitoringProbe(w *SpecCheckWiring) monitoring.SpecPenaltyProbe {
+	if w == nil || w.Penalty == nil {
+		return nil
+	}
+	return &specPenaltyMonitoringImpl{
+		stats:   w.Penalty,
+		driverP: &soloDriverPtr,
+	}
+}
+
+// soloDriverPtr is the package-level pointer to the
+// blockdriver. Set by main.go AFTER the driver is
+// constructed so the monitoring probe can dereference it
+// at scrape time. Read-only after wiring.
+var soloDriverPtr *blockdriver.Driver
+
+// SetSoloDriverForMonitoring lets main.go publish the
+// constructed driver to the spec-check monitoring probe.
+// Idempotent. nil resets — useful for tests.
+func SetSoloDriverForMonitoring(d *blockdriver.Driver) {
+	soloDriverPtr = d
+}
+
+type specPenaltyMonitoringImpl struct {
+	stats   *telemetrycheck.PerMinerStats
+	driverP **blockdriver.Driver
+}
+
+func (p *specPenaltyMonitoringImpl) PenaltyConfig() (int, float64, float64, int) {
+	cfg := p.stats.Config()
+	return cfg.WindowSize, cfg.MismatchThresholdPct, cfg.PenaltyMultiplier, cfg.MinObservations
+}
+
+func (p *specPenaltyMonitoringImpl) PenaltyAggregate() (int, int) {
+	tracked := len(p.stats.AllMiners())
+	penalised := p.stats.PenalisedCount()
+	return tracked, penalised
+}
+
+func (p *specPenaltyMonitoringImpl) BlockdriverPenaltyCounters() (uint64, uint64) {
+	if p.driverP == nil || *p.driverP == nil {
+		return 0, 0
+	}
+	stats := (*p.driverP).Stats()
+	return stats.PenalisedPayouts, stats.WithheldDust
+}
+
+// specPenaltyProbe converts the Tier-3 *PerMinerStats
+// into the api.SpecPenaltyProbe interface. Returns nil
+// when Tier-3 is not enabled — the API layer then serves
+// 503 rather than wedging on a nil-deref.
+func specPenaltyProbe(w *SpecCheckWiring) api.SpecPenaltyProbe {
+	if w == nil || w.Penalty == nil {
+		return nil
+	}
+	return &specPenaltyProbeImpl{stats: w.Penalty}
+}
+
+type specPenaltyProbeImpl struct {
+	stats *telemetrycheck.PerMinerStats
+}
+
+func (p *specPenaltyProbeImpl) PenaltyForMiner(addr string) (api.PenaltyView, bool) {
+	snap := p.stats.Snapshot(addr)
+	if snap.WindowFilled == 0 && snap.MismatchCount == 0 && snap.LastObservedAt == 0 {
+		return penaltyViewFromSnapshot(snap), false
+	}
+	return penaltyViewFromSnapshot(snap), true
+}
+
+func (p *specPenaltyProbeImpl) AllPenaltySnapshots() []api.PenaltyView {
+	src := p.stats.SnapshotAll()
+	out := make([]api.PenaltyView, len(src))
+	for i, s := range src {
+		out[i] = penaltyViewFromSnapshot(s)
+	}
+	return out
+}
+
+func (p *specPenaltyProbeImpl) PenalisedCount() int {
+	return p.stats.PenalisedCount()
+}
+
+func (p *specPenaltyProbeImpl) Config() api.PenaltyConfigView {
+	cfg := p.stats.Config()
+	return api.PenaltyConfigView{
+		WindowSize:           cfg.WindowSize,
+		MismatchThresholdPct: cfg.MismatchThresholdPct,
+		PenaltyMultiplier:    cfg.PenaltyMultiplier,
+		MinObservations:      cfg.MinObservations,
+	}
+}
+
+// penaltyViewFromSnapshot adapts the internal snapshot
+// to the public wire-shape. Pure transformation, no I/O,
+// safe to call from any goroutine.
+func penaltyViewFromSnapshot(s telemetrycheck.PenaltySnapshot) api.PenaltyView {
+	return api.PenaltyView{
+		MinerAddr:       s.MinerAddr,
+		WindowSize:      s.WindowSize,
+		WindowFilled:    s.WindowFilled,
+		MismatchCount:   s.MismatchCount,
+		UnknownSKUCount: s.UnknownSKUCount,
+		MatchCount:      s.MatchCount,
+		MismatchPct:     s.MismatchPct,
+		ThresholdPct:    s.ThresholdPct,
+		OverThreshold:   s.OverThreshold,
+		BelowMinObs:     s.BelowMinObs,
+		Multiplier:      s.Multiplier,
+		LastObservedAt:  s.LastObservedAt,
+	}
 }
 
 // specAnomaliesProbe converts a *SpecCheckWiring into the

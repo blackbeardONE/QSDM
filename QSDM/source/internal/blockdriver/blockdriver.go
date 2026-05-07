@@ -153,7 +153,49 @@ type Config struct {
 	// Producer ID stamp for "heartbeat" blocks (no miners
 	// in the window). Zero/empty uses "qsdm-solo-blockdriver".
 	ProducerID string
+
+	// RewardPenalty, when non-nil, is consulted at tick time
+	// to scale each miner's per-block share by a multiplier
+	// in [0.0, 1.0]. Wired by the validator binary when
+	// QSDM_SPEC_PENALTY_ENABLED is set; nil leaves rewards
+	// at their full per-proof share (the pre-Tier-3 posture).
+	//
+	// The penalty layer is OFF the consensus path — the
+	// proofs that earn rewards have already passed every
+	// consensus check. Tier-3 is purely an emission
+	// modulation: penalised miners earn less, the rest of
+	// the pie stays the same (i.e. the unused share is
+	// NOT redistributed to honest miners, it is simply
+	// unminted). See pkg/mining/telemetrycheck/penalty.go
+	// for the full design rationale.
+	RewardPenalty RewardPenalty
 }
+
+// RewardPenalty is the narrow contract Driver consumes.
+// Identical in shape (intentionally) to
+// pkg/mining/telemetrycheck.MismatchPenalty's hot path
+// but redeclared here so blockdriver does not import the
+// telemetrycheck package — keeps the dependency direction
+// flowing exclusively from cmd/qsdm.
+//
+// Implementations MUST be concurrency-safe AND MUST NOT
+// block on I/O — Driver.tick calls MultiplierFor inside
+// the queue-lock-free section but still on the single
+// block-production goroutine.
+type RewardPenalty interface {
+	// MultiplierFor returns a value in [0.0, 1.0] that
+	// scales the miner's share of the next block's
+	// reward. 1.0 = no penalty, 0.0 = full forfeit.
+	MultiplierFor(minerAddr string) float64
+}
+
+// noopRewardPenalty is the default. Always returns 1.0
+// so the buildTxs hot path can call MultiplierFor
+// unconditionally regardless of whether Tier-3 was
+// wired at boot.
+type noopRewardPenalty struct{}
+
+func (noopRewardPenalty) MultiplierFor(string) float64 { return 1.0 }
 
 // Driver is the periodic block-production loop. Safe for
 // concurrent calls into OnAcceptedProof from any goroutine
@@ -194,6 +236,25 @@ type Driver struct {
 	blocksSealed atomic.Uint64
 	blocksFailed atomic.Uint64
 	proofsPaid   atomic.Uint64
+
+	// rewardPenalty is the resolved penalty source. Always
+	// non-nil after New (defaulted to noopRewardPenalty
+	// when the operator did not opt into Tier-3) so the
+	// buildTxs hot path is branch-free.
+	rewardPenalty RewardPenalty
+
+	// penalisedPayouts counts the number of miner shares
+	// that have been multiplied by a value < 1.0 across
+	// the driver's lifetime. Surfaces in Stats() and
+	// Prometheus so an operator can confirm the Tier-3
+	// layer is firing as expected.
+	penalisedPayouts atomic.Uint64
+
+	// withheldDust tracks the cumulative dust NOT minted
+	// because miners were over-threshold. Useful as a
+	// sanity check that the penalty is shaping emissions
+	// the way the operator intended.
+	withheldDust atomic.Uint64
 
 	stopOnce sync.Once
 	stopCh   chan struct{}
@@ -241,12 +302,18 @@ func New(cfg Config) (*Driver, error) {
 		schedule = chain.DefaultEmissionSchedule()
 	}
 
+	rp := cfg.RewardPenalty
+	if rp == nil {
+		rp = noopRewardPenalty{}
+	}
+
 	d := &Driver{
-		cfg:      cfg,
-		schedule: schedule,
-		queue:    make(map[string]int, 16),
-		stopCh:   make(chan struct{}),
-		doneCh:   make(chan struct{}),
+		cfg:           cfg,
+		schedule:      schedule,
+		queue:         make(map[string]int, 16),
+		stopCh:        make(chan struct{}),
+		doneCh:        make(chan struct{}),
+		rewardPenalty: rp,
 	}
 
 	// Seed the funder balance only if the account is brand new
@@ -346,6 +413,17 @@ type Stats struct {
 	// FlatRewardPerBlock > 0, i.e. the schedule is being
 	// overridden. Useful for tests + a future operator log.
 	FlatReward bool
+	// PenalisedPayouts is the running count of miner shares
+	// that were multiplied by a value < 1.0 by the Tier-3
+	// reward-penalty layer. Zero pre-Tier-3.
+	PenalisedPayouts uint64
+	// WithheldDust is the cumulative dust NOT minted because
+	// miners were over the spec-mismatch threshold. Lifetime
+	// counter. Zero pre-Tier-3.
+	WithheldDust uint64
+	// PenaltyActive is true when a non-noop RewardPenalty is
+	// wired (i.e. Tier-3 is enabled).
+	PenaltyActive bool
 }
 
 // Stats returns a snapshot of the driver's counters.
@@ -353,16 +431,20 @@ func (d *Driver) Stats() Stats {
 	d.mu.Lock()
 	depth := d.queued
 	d.mu.Unlock()
+	_, isNoop := d.rewardPenalty.(noopRewardPenalty)
 	return Stats{
-		Period:       d.cfg.Period,
-		BlocksSealed: d.blocksSealed.Load(),
-		BlocksFailed: d.blocksFailed.Load(),
-		ProofsPaid:   d.proofsPaid.Load(),
-		QueueDepth:   depth,
-		FunderNonce:  d.funderNonce.Load(),
-		EmittedDust:  d.totalEmittedCell.Load(),
-		Schedule:     d.schedule,
-		FlatReward:   d.cfg.FlatRewardPerBlock > 0,
+		Period:           d.cfg.Period,
+		BlocksSealed:     d.blocksSealed.Load(),
+		BlocksFailed:     d.blocksFailed.Load(),
+		ProofsPaid:       d.proofsPaid.Load(),
+		QueueDepth:       depth,
+		FunderNonce:      d.funderNonce.Load(),
+		EmittedDust:      d.totalEmittedCell.Load(),
+		Schedule:         d.schedule,
+		FlatReward:       d.cfg.FlatRewardPerBlock > 0,
+		PenalisedPayouts: d.penalisedPayouts.Load(),
+		WithheldDust:     d.withheldDust.Load(),
+		PenaltyActive:    !isNoop,
 	}
 }
 
@@ -463,7 +545,9 @@ func (d *Driver) tick() {
 		"proofs_in_window", drainedCount,
 		"reward_dust", rewardDust,
 		"reward_cell", d.schedule.BlockRewardCell(blk.Height),
-		"epoch", d.schedule.EpochForHeight(blk.Height))
+		"epoch", d.schedule.EpochForHeight(blk.Height),
+		"penalised_payouts_total", d.penalisedPayouts.Load(),
+		"withheld_dust_total", d.withheldDust.Load())
 }
 
 // rewardDustForHeight returns the dust reward for the given
@@ -504,6 +588,14 @@ func (d *Driver) rewardCellForHeight(height uint64) float64 {
 // accepted proofs OR when the per-block reward has tapered to
 // 0 (cap reached). The producer's mempool refuses to seal an
 // empty block, so we always emit at least one tx.
+//
+// As of Tier-3, each per-miner share is also multiplied by
+// the operator-configured RewardPenalty before being credited.
+// Multipliers below 1.0 mint LESS dust than the schedule
+// would normally allow — the unused share is unminted, NOT
+// redistributed to other miners. That keeps the supply cap
+// monotonically respected and makes the tokenomic effect of
+// Tier-3 strictly subtractive.
 func (d *Driver) buildTxs(queue map[string]int, total int, rewardCell float64) []*mempool.Tx {
 	now := time.Now()
 	if total == 0 || len(queue) == 0 || rewardCell <= 0 {
@@ -521,11 +613,29 @@ func (d *Driver) buildTxs(queue map[string]int, total int, rewardCell float64) [
 
 	out := make([]*mempool.Tx, 0, len(queue))
 	for addr, count := range queue {
-		share := rewardCell * float64(count) / float64(total)
+		baseShare := rewardCell * float64(count) / float64(total)
+		mult := d.rewardPenalty.MultiplierFor(addr)
+		// Defensive clamp: if a buggy MismatchPenalty
+		// returns NaN / Inf / negative / >1 we round it
+		// to a safe band rather than mint anything weird.
+		if !(mult >= 0 && mult <= 1) {
+			mult = 1.0
+		}
+		share := baseShare * mult
 		// Skip 0-share or negative-share rounding artefacts —
 		// the AccountStore would reject them anyway.
 		if share <= 0 {
 			continue
+		}
+		if mult < 1.0 {
+			d.penalisedPayouts.Add(1)
+			// withheldDust = (baseShare - share) in dust.
+			// Truncate via float→uint64 to mirror the same
+			// rounding the producer uses for credits.
+			withheld := uint64((baseShare - share) * float64(chain.DustPerCell))
+			if withheld > 0 {
+				d.withheldDust.Add(withheld)
+			}
 		}
 		nonce := d.funderNonce.Add(1) - 1
 		out = append(out, &mempool.Tx{

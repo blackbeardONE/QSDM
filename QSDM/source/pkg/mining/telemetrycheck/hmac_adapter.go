@@ -33,6 +33,13 @@ import (
 // validator's HTTP layer surfaces at
 // /api/v1/mining/spec-anomalies.
 //
+// As of Tier-3, the adapter ALSO holds an optional
+// *PerMinerStats engine that translates each verdict
+// into a sliding-window penalty signal. Wired only
+// when the operator opts into reward downgrade via
+// QSDM_SPEC_PENALTY_ENABLED; nil leaves the path
+// branch-free.
+//
 // One adapter per validator. Safe for concurrent calls
 // from any number of verifier goroutines.
 type HMACAdapter struct {
@@ -47,6 +54,12 @@ type HMACAdapter struct {
 	ringHead int
 	ringSize int
 	ringCap  int
+
+	// penalty, if non-nil, is updated on EVERY accepted
+	// verdict (matches included — the sliding window
+	// must see the full proof flow to compute a
+	// well-defined ratio). Nil = Tier-3 disabled.
+	penalty *PerMinerStats
 }
 
 // SpecAnomaly is what the operator endpoint serves. A
@@ -109,10 +122,36 @@ func (a *HMACAdapter) OnHMACAccept(bundle hmac.Bundle, p mining.Proof, now time.
 		SubmittedAt:     now.Unix(),
 	}
 	verdict := a.checker.Check(claim)
+	// Feed the full verdict stream into the Tier-3
+	// sliding window FIRST — including matches —
+	// because the threshold is mismatches/window and
+	// we need the denominator to grow on clean proofs
+	// too. The anomaly ring still only records
+	// non-match/non-skipped verdicts.
+	if a.penalty != nil {
+		a.penalty.Update(claim.MinerAddr, verdict, now)
+	}
 	if verdict.Kind == VerdictMatch || verdict.Kind == VerdictSkipped {
 		return
 	}
 	a.recordAnomaly(claim, verdict, now)
+}
+
+// AttachPenalty wires a PerMinerStats engine onto the
+// adapter. Idempotent within a process; calling twice
+// replaces the engine (the older one's accumulated
+// windows are discarded). MUST be called BEFORE the
+// adapter is published to the dispatcher to avoid a
+// data race on the atomic.Pointer-free field.
+func (a *HMACAdapter) AttachPenalty(p *PerMinerStats) {
+	a.penalty = p
+}
+
+// Penalty returns the attached *PerMinerStats, or nil
+// if Tier-3 is disabled. Used by the validator to
+// hand the sink to blockdriver.
+func (a *HMACAdapter) Penalty() *PerMinerStats {
+	return a.penalty
 }
 
 // Checker exposes the underlying *Checker. Used by the

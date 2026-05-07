@@ -281,6 +281,13 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// strictly advisory. Returns 503 when the validator
 	// did not opt into Tier-2 via QSDM_SPEC_CHECK_ENABLED.
 	mux.HandleFunc("/api/v1/mining/spec-anomalies", handlers.SpecAnomaliesHandler)
+	// Tier-3 reward-downgrade probe (pkg/mining/telemetrycheck).
+	// Surfaces per-miner sliding-window state + the current
+	// reward multiplier each miner is being paid at. Public
+	// so a flagged miner can self-diagnose; returns 503 when
+	// the validator did not opt into Tier-3 via
+	// QSDM_SPEC_PENALTY_ENABLED.
+	mux.HandleFunc("/api/v1/mining/penalty", handlers.SpecPenaltyHandler)
 	// Per-tx receipt probe. Path is /api/v1/receipts/{tx_id}
 	// to match qsdmcli `receipt <tx-id>` and preserve the
 	// stable URL convention used by the CLI. Returns 503

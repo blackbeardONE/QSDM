@@ -235,6 +235,14 @@ func isPublicEndpoint(path string) bool {
 		// trust-transparency posture as /mining/blocks
 		// and /receipts.
 		"/api/v1/mining/spec-anomalies",
+		// /mining/penalty surfaces the Tier-3 reward-
+		// downgrade engine output: per-miner sliding-
+		// window state + the current reward multiplier.
+		// Read-only, non-secret, deliberately public so
+		// a flagged miner can self-serve "why did my
+		// rewards drop?" without an operator-granted
+		// session. Same trust posture as /spec-anomalies.
+		"/api/v1/mining/penalty",
 		// /receipts (no tx_id, exact-match) is the
 		// height-range list endpoint that powers the
 		// chain dashboard's "recent transactions" tile.

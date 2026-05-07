@@ -1018,23 +1018,13 @@ func main() {
 	// promoted to operator-tunable config keys once we have a
 	// second validator that needs to agree on them. Until
 	// then, hardcoding keeps consensus byte-identical.
-	// In solo mode we construct the blockdriver FIRST so it
-	// can be passed as the miningsvc reward sink. Outside
-	// solo mode the sink stays nil and miningsvc behaves as a
-	// pure verifier (the prior bring-up posture).
+	// soloDriver is constructed AFTER specCheck so the
+	// optional Tier-3 RewardPenalty can be wired in at New
+	// time (the Driver field is read-only after construction
+	// to keep the buildTxs hot path branch-free). The
+	// declaration stays here so the rest of the boot code
+	// can reference it; the construction itself is below.
 	var soloDriver *blockdriver.Driver
-	if soloValidatorMode {
-		drv, drvErr := blockdriver.New(blockdriver.Config{
-			Producer: adminProducer,
-			Pool:     adminPool,
-			Accounts: adminAccounts,
-			Logger:   logger,
-		})
-		if drvErr != nil {
-			log.Fatalf("solo blockdriver wiring failed: %v", drvErr)
-		}
-		soloDriver = drv
-	}
 
 	// v2 attestation dispatcher. Wired UNCONDITIONALLY (whether
 	// or not QSDM_V2_ACTIVE is set) because:
@@ -1164,6 +1154,18 @@ func main() {
 		monitoring.SetSpecCheckProbe(specCheckMonitoringProbe(specCheck))
 		logger.Info("/api/v1/mining/spec-anomalies probe wired")
 		logger.Info("qsdm_spec_check_* Prometheus collector wired")
+		// Tier-3 wiring — only when the operator turned on
+		// QSDM_SPEC_PENALTY_ENABLED, in which case
+		// specCheck.Penalty is non-nil and the probes have
+		// real data to publish. Pre-Tier-3 deployments
+		// short-circuit the SetSpec*Probe calls (probe
+		// returns nil) and the endpoints serve 503.
+		if specCheck.Penalty != nil {
+			api.SetSpecPenaltyProbe(specPenaltyProbe(specCheck))
+			monitoring.SetSpecPenaltyProbe(specPenaltyMonitoringProbe(specCheck))
+			logger.Info("/api/v1/mining/penalty probe wired")
+			logger.Info("qsdm_spec_penalty_* Prometheus collector wired")
+		}
 	} else {
 		logger.Info("spec-check: Tier-2 advisory checker disabled (set QSDM_SPEC_CHECK_ENABLED=1 to enable)")
 	}
@@ -1201,6 +1203,44 @@ func main() {
 		"cc_path_active", attestProdCfg.CCConfig != nil,
 		"fork_v2_active", v2Active,
 		"effect_when_active", "post-fork proofs require nvidia-cc-v1 or nvidia-hmac-v1 attestation")
+
+	if soloValidatorMode {
+		// In solo mode the blockdriver is the miningsvc
+		// reward sink. Tier-3 reward downgrade is wired here
+		// (the deferred construction is the whole reason
+		// the soloDriver var was declared earlier instead of
+		// allocated inline). Pre-Tier-3 deployments leave
+		// RewardPenalty nil → noopRewardPenalty inside the
+		// driver, byte-identical to before.
+		blockdriverCfg := blockdriver.Config{
+			Producer: adminProducer,
+			Pool:     adminPool,
+			Accounts: adminAccounts,
+			Logger:   logger,
+		}
+		if specCheck != nil && specCheck.Penalty != nil {
+			// Cast: telemetrycheck.PerMinerStats already
+			// satisfies blockdriver.RewardPenalty by virtue
+			// of MultiplierFor(string) float64. Go's
+			// structural interface check makes this a no-
+			// op assignment at runtime.
+			blockdriverCfg.RewardPenalty = specCheck.Penalty
+			logger.Info("solo blockdriver: Tier-3 reward downgrade wired",
+				"window_size", specCheck.Penalty.Config().WindowSize,
+				"threshold_pct", specCheck.Penalty.Config().MismatchThresholdPct,
+				"multiplier", specCheck.Penalty.Config().PenaltyMultiplier)
+		}
+		drv, drvErr := blockdriver.New(blockdriverCfg)
+		if drvErr != nil {
+			log.Fatalf("solo blockdriver wiring failed: %v", drvErr)
+		}
+		soloDriver = drv
+		// Publish the driver to the Tier-3 monitoring probe
+		// so /metrics surfaces blockdriver-side withheld-dust
+		// counters. Safe to call even when Tier-3 is off —
+		// the probe is nil-checked at scrape time.
+		SetSoloDriverForMonitoring(soloDriver)
+	}
 
 	miningSvcCfg := miningsvc.Config{
 		Producer:       adminProducer,
