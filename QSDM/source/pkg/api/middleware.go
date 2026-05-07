@@ -225,6 +225,16 @@ func isPublicEndpoint(path string) bool {
 		// height-ascending order. Same threat model as
 		// /status: pure transparency, no secret leakage.
 		"/api/v1/mining/blocks",
+		// /mining/spec-anomalies surfaces the Tier-2
+		// telemetry advisory checker output: the most-
+		// recent N proofs whose claimed GPU specs
+		// disagreed with the catalog. Read-only,
+		// non-consensus, deliberately public so independent
+		// observers can cross-check a validator's advisory
+		// state without an operator-granted session. Same
+		// trust-transparency posture as /mining/blocks
+		// and /receipts.
+		"/api/v1/mining/spec-anomalies",
 		// /receipts (no tx_id, exact-match) is the
 		// height-range list endpoint that powers the
 		// chain dashboard's "recent transactions" tile.

@@ -1139,6 +1139,34 @@ func main() {
 		// DenyList nil → hmac.EmptyDenyList (genesis posture).
 		// FreshnessWindow / AllowedFutureSkew zero → spec defaults.
 	}
+
+	// Optional: Tier-2 telemetry advisory checker. Wired
+	// only when the operator opts in via
+	// QSDM_SPEC_CHECK_ENABLED — keeps the bit-for-bit
+	// behaviour of pre-Tier-2 deployments unchanged. See
+	// cmd/qsdm/spec_check.go for the wiring rationale.
+	specCheck, specCheckErr := buildSpecCheckWiring(context.Background(), logger.Info)
+	if specCheckErr != nil {
+		log.Fatalf("spec-check wiring: %v", specCheckErr)
+	}
+	if specCheck != nil {
+		attestProdCfg.HMACOnAccept = specCheck.Adapter.OnHMACAccept
+		total, signers, skus := specCheck.Catalog.Counters()
+		logger.Info("spec-check: Tier-2 advisory checker active",
+			"catalog_entries", total,
+			"catalog_signers", signers,
+			"catalog_skus", skus,
+			"peer_urls", strings.Join(specCheck.PeerURLs, ","),
+			"refresh_every", specCheck.RefreshEvery.String(),
+			"ring_cap", specCheck.RingCap)
+		go runSpecCheckPoller(context.Background(), specCheck, logger.Info)
+		api.SetSpecAnomaliesProbe(specAnomaliesProbe(specCheck))
+		monitoring.SetSpecCheckProbe(specCheckMonitoringProbe(specCheck))
+		logger.Info("/api/v1/mining/spec-anomalies probe wired")
+		logger.Info("qsdm_spec_check_* Prometheus collector wired")
+	} else {
+		logger.Info("spec-check: Tier-2 advisory checker disabled (set QSDM_SPEC_CHECK_ENABLED=1 to enable)")
+	}
 	if ccRootsDir := strings.TrimSpace(os.Getenv("QSDM_CC_ROOTS_DIR")); ccRootsDir != "" {
 		// CC trust anchor is operator-supplied: if the dir is
 		// configured but unreadable, refuse to boot rather than

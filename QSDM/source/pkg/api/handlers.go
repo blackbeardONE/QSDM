@@ -274,6 +274,13 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// unconditionally so an unwired peer can still answer
 	// "no blocks probe" rather than 404.
 	mux.HandleFunc("/api/v1/mining/blocks", handlers.MiningBlocksHandler)
+	// Tier-2 telemetry advisory probe (pkg/mining/telemetrycheck).
+	// Surfaces recent spec-anomalies — proofs whose claimed
+	// GPU specs disagreed with the catalog of reference
+	// profiles. Non-consensus by design; the listing is
+	// strictly advisory. Returns 503 when the validator
+	// did not opt into Tier-2 via QSDM_SPEC_CHECK_ENABLED.
+	mux.HandleFunc("/api/v1/mining/spec-anomalies", handlers.SpecAnomaliesHandler)
 	// Per-tx receipt probe. Path is /api/v1/receipts/{tx_id}
 	// to match qsdmcli `receipt <tx-id>` and preserve the
 	// stable URL convention used by the CLI. Returns 503

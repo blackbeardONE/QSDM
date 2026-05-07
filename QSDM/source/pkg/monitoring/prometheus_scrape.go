@@ -73,6 +73,14 @@ func GlobalScrapePrometheusExporter() *PrometheusExporter {
 		// build_capabilities.go for the rationale and STAGE_B_
 		// DEPLOY_BLR1.md §"Smoke check" for the runbook hook.
 		globalScrapeExporter.RegisterCollector("qsdm_binary_capabilities", buildCapabilitiesMetrics)
+		// qsdm_spec_check_* counters/gauges from
+		// spec_check_metrics.go. Drives the Tier-2 telemetry
+		// advisory dashboard (catalog size + verdict counts +
+		// per-field rule firings). Emits NOTHING when no
+		// SpecCheckProbe is wired (pre-Tier-2 posture =
+		// QSDM_SPEC_CHECK_ENABLED unset), so existing
+		// /metrics output remains bit-identical.
+		globalScrapeExporter.RegisterCollector("qsdm_spec_check", specCheckPrometheusMetrics)
 	})
 	return globalScrapeExporter
 }

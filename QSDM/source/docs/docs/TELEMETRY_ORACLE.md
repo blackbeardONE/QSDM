@@ -27,6 +27,16 @@ miner claims against — and at that point, validators can
 start downgrading or rejecting impossible claims (e.g.
 "RTX 3050 with 24 GB" or "H100 with 130W TDP").
 
+> **Active downstream:** The validator-side **Tier-2 advisory
+> checker** (`pkg/mining/telemetrycheck`) already consumes
+> these profiles. It compares each accepted v2 proof's
+> claimed GPU specs against the catalog and surfaces
+> mismatches at `/api/v1/mining/spec-anomalies` and the
+> `qsdm_spec_check_*` Prometheus counters. **Advisory
+> only** — no rejection, no reward effect (yet). See
+> [SPEC_ANOMALY_CHECK.md](SPEC_ANOMALY_CHECK.md) for the
+> full design.
+
 The oracle runs **inside the same `qsdm-attester` binary**
 that issues challenges. One process, two roles, one HMAC key.
 

@@ -121,6 +121,17 @@ type ProductionConfig struct {
 	//	})
 	//	prodCfg.CCConfig = ccCfg // nil if RootPaths was empty
 	CCConfig *cc.VerifierConfig
+
+	// HMACOnAccept, if non-nil, is wired onto the constructed
+	// hmac.Verifier as its OnAccept hook. Pass a closure that
+	// feeds the bundle into the Tier-2 telemetry checker (or
+	// any other non-consensus observer). Default nil = no
+	// observer; the verifier's hot path skips the call.
+	//
+	// Caveats are inherited verbatim from the verifier field:
+	// the hook MUST NOT block, error, or panic. See
+	// hmac.Verifier.OnAccept for the full contract.
+	HMACOnAccept func(hmac.Bundle, mining.Proof, time.Time)
 }
 
 // Validate checks for the required collaborators. Returns an
@@ -171,6 +182,9 @@ func NewProductionDispatcher(cfg ProductionConfig) (*Dispatcher, error) {
 	}
 	if cfg.AllowedFutureSkew > 0 {
 		hmacV.AllowedFutureSkew = cfg.AllowedFutureSkew
+	}
+	if cfg.HMACOnAccept != nil {
+		hmacV.OnAccept = cfg.HMACOnAccept
 	}
 
 	// CC verifier — three-way pick:

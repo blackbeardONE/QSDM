@@ -75,6 +75,32 @@ type Verifier struct {
 	// defences — acceptable for bring-up and isolated testnets
 	// but NEVER for production.
 	ChallengeVerifier challenge.SignerVerifier
+
+	// OnAccept, if non-nil, is invoked exactly ONCE per
+	// successful VerifyAttestation, just before the function
+	// returns nil. Its purpose is to feed accepted-claim data
+	// into NON-CONSENSUS observability layers — today the
+	// telemetry oracle's Tier-2 advisory checker
+	// (pkg/mining/telemetrycheck), tomorrow whatever
+	// Tier-3 reputation system lands.
+	//
+	// Hard contract:
+	//
+	//   - Hook MUST NOT return an error. The proof has
+	//     already passed every consensus check; nothing the
+	//     hook learns can revoke that.
+	//   - Hook MUST NOT panic. A defensive recover() inside
+	//     the call site catches panics and discards them so
+	//     a buggy hook can never crash the validator.
+	//   - Hook is called synchronously on the verifier
+	//     goroutine. Implementations that do work that
+	//     could block (network calls, disk writes) MUST
+	//     enqueue async themselves.
+	//
+	// Setting OnAccept after the verifier has been published
+	// to the dispatcher is racy. Wire it during boot, before
+	// the dispatcher is published.
+	OnAccept func(Bundle, mining.Proof, time.Time)
 }
 
 // NewVerifier constructs a Verifier with the required collaborator
@@ -280,7 +306,25 @@ func (v *Verifier) VerifyAttestation(p mining.Proof, now time.Time) error {
 			err, mining.ErrAttestationSignatureInvalid)
 	}
 
+	// Step 10 (NON-CONSENSUS): emit accepted claim into the
+	// observability hook. Wrapped in a recover so a buggy
+	// observer never trips the validator. Errors swallowed
+	// deliberately — once we are here the proof IS accepted
+	// and nothing the hook learns can change that.
+	if v.OnAccept != nil {
+		safeOnAccept(v.OnAccept, bundle, p, now)
+	}
+
 	return nil
+}
+
+// safeOnAccept runs the OnAccept callback under a deferred
+// recover so a panic inside the observer cannot disturb the
+// caller. Lifted into its own function so the recover is a
+// crisp two-liner instead of inline noise on the hot path.
+func safeOnAccept(fn func(Bundle, mining.Proof, time.Time), bundle Bundle, p mining.Proof, now time.Time) {
+	defer func() { _ = recover() }()
+	fn(bundle, p, now)
 }
 
 // compile-time check that Verifier satisfies the interface.
