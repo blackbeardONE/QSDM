@@ -165,7 +165,9 @@ func buildSpecCheckWiring(ctx context.Context, logf func(string, ...any)) (*Spec
 		logf("spec-check: peer-attester key pinning ACTIVE",
 			"pins", peerKeyCount,
 			"signer_ids", strings.Join(peerKeys.PinnedSigners(), ","),
-			"strict_mode", peerKeys.Strict())
+			"strict_mode", peerKeys.Strict(),
+			"max_profile_age", peerKeys.MaxAge().String(),
+			"skew_tolerance", peerKeys.SkewTolerance().String())
 	} else {
 		logf("spec-check: peer-attester key pinning DISABLED (set QSDM_PEER_ATTESTER_KEYS to enable)")
 	}
@@ -440,23 +442,24 @@ func (p *specCheckMonitoringImpl) MismatchesByField() map[string]uint64 {
 	return p.wiring.Checker.MismatchesByField()
 }
 
-func (p *specCheckMonitoringImpl) PeerKeyCounters() (uint64, uint64, uint64, uint64, uint64) {
+func (p *specCheckMonitoringImpl) PeerKeyCounters() (uint64, uint64, uint64, uint64, uint64, uint64) {
 	if p.wiring.PeerKeys == nil {
-		return 0, 0, 0, 0, 0
+		return 0, 0, 0, 0, 0, 0
 	}
 	return p.wiring.PeerKeys.Counters()
 }
 
-func (p *specCheckMonitoringImpl) PeerKeyConfig() (int, int) {
+func (p *specCheckMonitoringImpl) PeerKeyConfig() (int, int, int) {
 	if p.wiring.PeerKeys == nil {
-		return 0, 0
+		return 0, 0, 0
 	}
 	pins := len(p.wiring.PeerKeys.PinnedSigners())
 	strictInt := 0
 	if p.wiring.PeerKeys.Strict() {
 		strictInt = 1
 	}
-	return pins, strictInt
+	maxAgeSec := int(p.wiring.PeerKeys.MaxAge().Seconds())
+	return pins, strictInt, maxAgeSec
 }
 
 // specPenaltyMonitoringProbe converts the Tier-3 wiring

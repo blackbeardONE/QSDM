@@ -56,16 +56,20 @@ type SpecCheckProbe interface {
 	// outcomes for the peer-attester catalog source in
 	// (accepted_signed, accepted_unpinned,
 	// rejected_unknown_signer, rejected_unsigned,
-	// rejected_bad_signature) order. (0,0,0,0,0) is the
-	// expected reading on a deployment that does not
-	// pin keys AND has no peer URLs configured.
-	PeerKeyCounters() (uint64, uint64, uint64, uint64, uint64)
+	// rejected_bad_signature, rejected_stale) order.
+	// All-zeros is the expected reading on a deployment
+	// that does not pin keys AND has no peer URLs
+	// configured.
+	PeerKeyCounters() (uint64, uint64, uint64, uint64, uint64, uint64)
 
-	// PeerKeyConfig returns (pins_loaded, strict_mode_int)
-	// where strict_mode_int is 1 when strict mode is on,
-	// 0 otherwise. Surfaced as gauges so the operator
-	// dashboard can show the rollout phase at a glance.
-	PeerKeyConfig() (int, int)
+	// PeerKeyConfig returns (pins_loaded, strict_mode_int,
+	// max_age_seconds) where strict_mode_int is 1 when
+	// strict mode is on (0 otherwise) and max_age_seconds
+	// is the freshness-window gauge value (0 when the
+	// gate is disabled). Surfaced as gauges so the
+	// operator dashboard can show the rollout phase at
+	// a glance.
+	PeerKeyConfig() (int, int, int)
 }
 
 // specCheckProbe holds the active SpecCheckProbe. nil = no
@@ -187,43 +191,50 @@ func specCheckPrometheusMetrics() []Metric {
 	// into separate Metric entries (one per result label)
 	// because the monitoring.Metric struct accepts a
 	// label map but emits each metric line independently.
-	signedAccepted, unpinnedAccepted, rejUnknown, rejUnsigned, rejBadSig := probe.PeerKeyCounters()
-	pins, strictInt := probe.PeerKeyConfig()
+	signedAccepted, unpinnedAccepted, rejUnknown, rejUnsigned, rejBadSig, rejStale := probe.PeerKeyCounters()
+	pins, strictInt, maxAgeSec := probe.PeerKeyConfig()
 	out = append(out,
 		Metric{
 			Name:   "qsdm_spec_check_peer_profile_signature_total",
-			Help:   "Cumulative outcomes of the per-attester key-pinning gate on peer telemetry profiles.",
+			Help:   "Cumulative outcomes of the per-attester key-pinning + freshness gate on peer telemetry profiles.",
 			Type:   MetricCounter,
 			Labels: map[string]string{"result": "accepted_signed"},
 			Value:  float64(signedAccepted),
 		},
 		Metric{
 			Name:   "qsdm_spec_check_peer_profile_signature_total",
-			Help:   "Cumulative outcomes of the per-attester key-pinning gate on peer telemetry profiles.",
+			Help:   "Cumulative outcomes of the per-attester key-pinning + freshness gate on peer telemetry profiles.",
 			Type:   MetricCounter,
 			Labels: map[string]string{"result": "accepted_unpinned"},
 			Value:  float64(unpinnedAccepted),
 		},
 		Metric{
 			Name:   "qsdm_spec_check_peer_profile_signature_total",
-			Help:   "Cumulative outcomes of the per-attester key-pinning gate on peer telemetry profiles.",
+			Help:   "Cumulative outcomes of the per-attester key-pinning + freshness gate on peer telemetry profiles.",
 			Type:   MetricCounter,
 			Labels: map[string]string{"result": "rejected_unknown_signer"},
 			Value:  float64(rejUnknown),
 		},
 		Metric{
 			Name:   "qsdm_spec_check_peer_profile_signature_total",
-			Help:   "Cumulative outcomes of the per-attester key-pinning gate on peer telemetry profiles.",
+			Help:   "Cumulative outcomes of the per-attester key-pinning + freshness gate on peer telemetry profiles.",
 			Type:   MetricCounter,
 			Labels: map[string]string{"result": "rejected_unsigned"},
 			Value:  float64(rejUnsigned),
 		},
 		Metric{
 			Name:   "qsdm_spec_check_peer_profile_signature_total",
-			Help:   "Cumulative outcomes of the per-attester key-pinning gate on peer telemetry profiles.",
+			Help:   "Cumulative outcomes of the per-attester key-pinning + freshness gate on peer telemetry profiles.",
 			Type:   MetricCounter,
 			Labels: map[string]string{"result": "rejected_bad_signature"},
 			Value:  float64(rejBadSig),
+		},
+		Metric{
+			Name:   "qsdm_spec_check_peer_profile_signature_total",
+			Help:   "Cumulative outcomes of the per-attester key-pinning + freshness gate on peer telemetry profiles.",
+			Type:   MetricCounter,
+			Labels: map[string]string{"result": "rejected_stale"},
+			Value:  float64(rejStale),
 		},
 		Metric{
 			Name:  "qsdm_spec_check_peer_keys_pinned",
@@ -236,6 +247,12 @@ func specCheckPrometheusMetrics() []Metric {
 			Help:  "1 = unknown signer_ids rejected; 0 = unknown signer_ids accepted with a warning. Only meaningful when peer_keys_pinned > 0.",
 			Type:  MetricGauge,
 			Value: float64(strictInt),
+		},
+		Metric{
+			Name:  "qsdm_spec_check_peer_profile_max_age_seconds",
+			Help:  "Maximum acceptable age of a peer telemetry profile (seconds). 0 = freshness gate disabled.",
+			Type:  MetricGauge,
+			Value: float64(maxAgeSec),
 		},
 	)
 	return out

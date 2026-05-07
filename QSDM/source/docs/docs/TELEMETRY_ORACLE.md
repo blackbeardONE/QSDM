@@ -281,18 +281,34 @@ with a list of `(signer_id, key)` pairs it trusts:
 | `QSDM_PEER_ATTESTER_KEYS` | `signer_id=<64 hex>;signer_id=<64 hex>` | Inline. Ergonomic for 1–2 pins. |
 | `QSDM_PEER_ATTESTER_KEYS_FILE` | path | One `signer_id=<64 hex>` per line; `#` comments. Use this when the list is too long for a systemd `Environment=` line, or when you want stricter file-system permissions on the secret. |
 | `QSDM_PEER_ATTESTER_STRICT` | `1` (default if any pin loaded) / `0` | When strict, profiles whose `signer_id` is NOT in the pin list are dropped. When non-strict, unknown signers are accepted with a warning — useful during rollout. |
+| `QSDM_PEER_ATTESTER_MAX_AGE` | duration literal (`1h`, `30m`) or bare seconds (`3600`) or `0` to disable | Freshness window. A profile whose `IssuedAt` is older than `now − max_age − skew` is rejected even if its signature is valid (defends against profile **replay**). Defaults to `1h` once any pin is loaded. `0` disables the gate explicitly. |
+| `QSDM_PEER_ATTESTER_SKEW` | duration / bare seconds / `0` | Symmetric clock-skew grace window. Profiles signed up to this far in the future are accepted; the past-side cutoff is also extended by this much. Defaults to `5m`. |
 
 When **at least one pin** is loaded, the verification gate
 runs on every fetched profile (boot + periodic poll). The
-decision tree:
+decision tree (in order — first match wins):
 
-| Profile state | Outcome | Counter |
-|---|---|---|
-| Signed by a pinned key, signature verifies | Accepted, applied to catalog | `accepted_signed` |
-| Signed but signer_id is unknown, strict=1 | Rejected | `rejected_unknown_signer` |
-| Signed but signer_id is unknown, strict=0 | Accepted with warning | `accepted_unpinned` |
-| Pinned signer but `signature` is empty | Rejected (NEVER accept unsigned when ANY pin is configured — that would let an attacker bypass the check by stripping the field) | `rejected_unsigned` |
-| Pinned signer but signature does not verify | Rejected | `rejected_bad_signature` |
+| # | Profile state | Outcome | Counter |
+|---|---|---|---|
+| 1 | Signed but `signer_id` unknown, `strict=1` | Rejected | `rejected_unknown_signer` |
+| 2 | Pinned `signer_id` but `signature` empty | Rejected (NEVER accept unsigned when ANY pin is configured — that would let an attacker bypass the check by stripping the field) | `rejected_unsigned` |
+| 3 | Pinned `signer_id` but signature does not verify | Rejected | `rejected_bad_signature` |
+| 4 | `IssuedAt > now + skew` (far-future-dated) AND `max_age > 0` | Rejected | `rejected_stale` |
+| 5 | `IssuedAt < now − max_age − skew` (replay) AND `max_age > 0` | Rejected | `rejected_stale` |
+| 6 | All gates passed, signed by a pinned key | Accepted, applied to catalog | `accepted_signed` |
+| 7 | All gates passed, signer_id unknown (strict=0 or no pins loaded) | Accepted with warning | `accepted_unpinned` |
+
+The signature gate runs **before** the freshness gate so a
+forged-but-fresh profile is reported as `rejected_bad_signature`,
+not `rejected_stale` — operators reading the metric stream
+get the right error label for debugging.
+
+The freshness gate runs **independently** of pinning: an
+operator who wants replay protection but not signature
+pinning can set `QSDM_PEER_ATTESTER_MAX_AGE` directly via
+`SetMaxAge`-equivalent path… though in practice the env
+loader only resolves `MAX_AGE` when at least one pin is
+configured, so the typical posture is "all on or all off".
 
 When **no pin is loaded**, the gate is bypassed — all
 fetched profiles are accepted, and a single
@@ -305,7 +321,8 @@ is emitted at boot so the operator notices.
 |---|---|---|
 | `qsdm_spec_check_peer_keys_pinned` | gauge | Number of pins loaded. `0` = pinning off. |
 | `qsdm_spec_check_peer_keys_strict` | gauge | `1` when strict mode is on. |
-| `qsdm_spec_check_peer_profile_signature_total{result="..."}` | counter | One series per outcome label. Use this to alert on spikes in `rejected_*`. |
+| `qsdm_spec_check_peer_profile_max_age_seconds` | gauge | Resolved freshness window. `0` = freshness gate disabled. |
+| `qsdm_spec_check_peer_profile_signature_total{result="..."}` | counter | One series per outcome label: `accepted_signed`, `accepted_unpinned`, `rejected_unknown_signer`, `rejected_unsigned`, `rejected_bad_signature`, `rejected_stale`. Use this to alert on spikes in any `rejected_*`. |
 
 ### Operational notes
 
@@ -326,6 +343,24 @@ is emitted at boot so the operator notices.
   pinning validator must update its config simultaneously.
   This is the correct posture — silent acceptance of an
   un-coordinated key change would defeat the threat model.
+- **Freshness vs signature: orthogonal concerns.** Pinning
+  defends against forged content; freshness defends against
+  stale content (legitimately signed but old). An attacker
+  who once captured a signed profile via packet inspection
+  can serve it forever without freshness — pinning alone
+  does not stop this. Together they cover the full
+  "what + when" trust surface.
+- **Tuning the freshness window.** Default `1h` comfortably
+  fits the 5-minute polling interval plus several missed
+  polls. Tighter windows (`5m`–`10m`) detect replays
+  faster but punish attesters that briefly go offline.
+  Looser windows (`24h`+) are useful for weekly-refresh
+  static catalogs where the data legitimately ages slowly.
+- **Tuning skew.** The default `5m` is the right choice
+  for boxes that may not run NTP. If you DO run NTP and
+  want maximum tightness, set `QSDM_PEER_ATTESTER_SKEW=0`;
+  the validator will then reject ANY future-dated profile
+  and any profile older than exactly `max_age`.
 
 ## Wiring it into your own attester
 
