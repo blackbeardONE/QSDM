@@ -67,6 +67,13 @@ type Server struct {
 	logIssuanceN    atomic.Uint64 // running count for sampling
 	logEvery        uint64
 	logIssuanceFn   func(snap LogIssuance)
+
+	// telemetry, when non-nil, attaches the Reference
+	// Telemetry Oracle: a signed catalog of observed GPU
+	// fingerprints served at /api/v1/telemetry/reference.
+	// See cmd/qsdm-attester/telemetry.go for the full
+	// wiring rationale.
+	telemetry *TelemetryProvider
 }
 
 // LogIssuance is the structured event the optional issuance
@@ -146,6 +153,12 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/info", s.handleInfo)
 	mux.HandleFunc("/metrics", s.handleMetrics)
+	// Telemetry route registered unconditionally — when
+	// the provider is nil the handler returns 404 with a
+	// "telemetry_disabled" body, so a curious caller
+	// always gets a machine-readable explanation rather
+	// than a generic mux miss.
+	mux.HandleFunc("/api/v1/telemetry/reference", s.handleTelemetryReference)
 	mux.HandleFunc("/", s.handleNotFound)
 	return mux
 }
@@ -253,12 +266,15 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // to peer_signers.toml — except the key itself, which the
 // operator MUST copy out-of-band (scp, encrypted email, etc.).
 type InfoResponse struct {
-	SignerID       string `json:"signer_id"`
-	KeyFingerprint string `json:"key_fingerprint"`
-	Note           string `json:"note"`
-	Version        string `json:"version"`
-	UptimeSeconds  int64  `json:"uptime_seconds"`
-	IssuedTotal    uint64 `json:"issued_total"`
+	SignerID         string `json:"signer_id"`
+	KeyFingerprint   string `json:"key_fingerprint"`
+	Note             string `json:"note"`
+	Version          string `json:"version"`
+	UptimeSeconds    int64  `json:"uptime_seconds"`
+	IssuedTotal      uint64 `json:"issued_total"`
+	TelemetryEnabled bool   `json:"telemetry_enabled"`
+	TelemetryGPUs    int    `json:"telemetry_gpus,omitempty"`
+	TelemetryTicks   uint64 `json:"telemetry_ticks,omitempty"`
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
@@ -276,6 +292,12 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		Version:        buildVersion,
 		UptimeSeconds:  int64(time.Since(s.started).Seconds()),
 		IssuedTotal:    s.issuedTotal.Load(),
+	}
+	if s.telemetryEnabled() {
+		resp.TelemetryEnabled = true
+		_, gpuCount := s.telemetry.Registry.Counters()
+		resp.TelemetryGPUs = gpuCount
+		resp.TelemetryTicks = s.telemetry.collectionTicks.Load()
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
@@ -317,6 +339,28 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		"# HELP qsdm_attester_uptime_seconds Seconds since the attester process started.\n" +
 		"# TYPE qsdm_attester_uptime_seconds gauge\n" +
 		"qsdm_attester_uptime_seconds{" + signerLabel + "} " + strconv.FormatFloat(uptime, 'f', 1, 64) + "\n"
+	if s.telemetryEnabled() {
+		applies, gpuCount := s.telemetry.Registry.Counters()
+		body += "" +
+			"# HELP qsdm_attester_telemetry_gpus Currently-tracked GPUs in the reference profile.\n" +
+			"# TYPE qsdm_attester_telemetry_gpus gauge\n" +
+			"qsdm_attester_telemetry_gpus{" + signerLabel + "} " + strconv.Itoa(gpuCount) + "\n" +
+			"# HELP qsdm_attester_telemetry_collection_ticks_total Number of completed collector ticks.\n" +
+			"# TYPE qsdm_attester_telemetry_collection_ticks_total counter\n" +
+			"qsdm_attester_telemetry_collection_ticks_total{" + signerLabel + "} " + strconv.FormatUint(s.telemetry.collectionTicks.Load(), 10) + "\n" +
+			"# HELP qsdm_attester_telemetry_collection_errors_total Collector failures (Collect / Apply / Save).\n" +
+			"# TYPE qsdm_attester_telemetry_collection_errors_total counter\n" +
+			"qsdm_attester_telemetry_collection_errors_total{" + signerLabel + "} " + strconv.FormatUint(s.telemetry.collectionErrs.Load(), 10) + "\n" +
+			"# HELP qsdm_attester_telemetry_apply_calls_total Total Apply() invocations across all observed GPUs.\n" +
+			"# TYPE qsdm_attester_telemetry_apply_calls_total counter\n" +
+			"qsdm_attester_telemetry_apply_calls_total{" + signerLabel + "} " + strconv.FormatUint(applies, 10) + "\n" +
+			"# HELP qsdm_attester_telemetry_requests_total /api/v1/telemetry/reference HTTP requests.\n" +
+			"# TYPE qsdm_attester_telemetry_requests_total counter\n" +
+			"qsdm_attester_telemetry_requests_total{" + signerLabel + "} " + strconv.FormatUint(s.telemetry.requests.Load(), 10) + "\n" +
+			"# HELP qsdm_attester_telemetry_sign_failures_total Profile signing or encoding failures.\n" +
+			"# TYPE qsdm_attester_telemetry_sign_failures_total counter\n" +
+			"qsdm_attester_telemetry_sign_failures_total{" + signerLabel + "} " + strconv.FormatUint(s.telemetry.signFailures.Load(), 10) + "\n"
+	}
 	_, _ = io.WriteString(w, body)
 }
 
