@@ -78,6 +78,21 @@
   .pill.active { background: rgba(61,220,151,.1); color: var(--success); border: 1px solid rgba(61,220,151,.3); }
   .pill.unbonding { background: rgba(255,180,84,.1); color: var(--warn); border: 1px solid rgba(255,180,84,.3); }
   .pill.revoked { background: rgba(255,107,107,.1); color: var(--danger); border: 1px solid rgba(255,107,107,.3); }
+  .pill.tier { background: rgba(110,168,255,.1); color: var(--accent-3); border: 1px solid rgba(110,168,255,.3); margin-left: 6px; vertical-align: middle; }
+  .pill.clean { background: rgba(61,220,151,.1); color: var(--success); border: 1px solid rgba(61,220,151,.3); }
+  .pill.warming { background: rgba(159,176,201,.1); color: var(--text-2); border: 1px solid rgba(159,176,201,.3); }
+  .pill.near { background: rgba(255,180,84,.1); color: var(--warn); border: 1px solid rgba(255,180,84,.3); }
+  .pill.penalised { background: rgba(255,107,107,.1); color: var(--danger); border: 1px solid rgba(255,107,107,.3); }
+  .policy-bar {
+    display: flex; flex-wrap: wrap; gap: 18px; padding: 10px 14px;
+    background: rgba(0,0,0,.25); border: 1px solid var(--border); border-radius: 8px;
+    font-family: var(--mono); font-size: 12.5px; color: var(--text-2); margin-bottom: 14px;
+  }
+  .policy-bar span strong { color: var(--text); font-weight: 600; }
+  .disabled-state {
+    color: var(--muted); font-style: italic; padding: 18px 12px;
+    background: rgba(0,0,0,.2); border-radius: 6px; border: 1px dashed var(--border);
+  }
   .lookup { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
   .lookup input {
     flex: 1; min-width: 240px; font-family: var(--mono); font-size: 14px;
@@ -174,6 +189,18 @@
   </p>
   <div class="panel" id="enroll-panel">
     <div id="enroll-content" class="empty">Loading enrollments…</div>
+  </div>
+
+  <h2>Reward penalty watch <span class="pill tier">Tier-3</span></h2>
+  <p class="lede" style="font-size: 14px;">
+    The validator runs a sliding-window check on every accepted proof's claimed GPU specs.
+    Miners whose mismatch rate crosses the threshold get their per-block share scaled down
+    by the multiplier — the lost share is unminted, never redistributed. Honest miners are
+    bit-identical to the pre-Tier-3 path. See
+    <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/source/docs/docs/SPEC_ANOMALY_CHECK.md#tier-3-reward-downgrade" target="_blank" rel="noopener"><code>SPEC_ANOMALY_CHECK.md</code></a>.
+  </p>
+  <div class="panel" id="penalty-panel">
+    <div id="penalty-content" class="empty">Loading penalty status…</div>
   </div>
 
   <h2>Recent blocks</h2>
@@ -303,6 +330,109 @@ async function refreshEnrollments() {
   }
 }
 
+// classifyMiner buckets a PenaltyView (one row from
+// /api/v1/mining/penalty's "miners" array) into a colour
+// pill + short-form status. The thresholds match the
+// validator's decision tree exactly:
+//   - multiplier < 1   => "penalised"
+//   - below_min_obs    => "warming"  (cannot trip even if pct is high)
+//   - over_threshold   => "near"     (multiplier still 1 but in the danger zone)
+//   - else             => "clean"
+function classifyMiner(m, cfg) {
+  if (m.multiplier !== undefined && m.multiplier < 1) {
+    return { pill: "penalised", label: "penalised" };
+  }
+  if (m.below_min_observations) {
+    return { pill: "warming", label: "warming up" };
+  }
+  // below threshold but with non-zero mismatches => watch
+  const pct = Number(m.mismatch_pct || 0);
+  if (cfg && pct >= (Number(cfg.threshold_pct) - 2)) {
+    return { pill: "near", label: "near threshold" };
+  }
+  return { pill: "clean", label: "clean" };
+}
+
+async function refreshPenalty() {
+  const root = document.getElementById("penalty-content");
+  let data;
+  try {
+    const res = await fetch(API_BASE + "/mining/penalty", { cache: "no-store" });
+    if (res.status === 503) {
+      root.innerHTML = `<div class="disabled-state">
+        Tier-3 reward downgrade is <strong>not enabled</strong> on this validator.
+        The penalty layer is opt-in; set <code>QSDM_SPEC_PENALTY_ENABLED=1</code>
+        on the validator to engage it.
+      </div>`;
+      return;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+  } catch (err) {
+    root.innerHTML = `<div class="err">Failed to load penalty status: ${escapeHTML(err.message)}</div>`;
+    return;
+  }
+
+  const cfg = data.config || {};
+  const policy = `
+    <div class="policy-bar">
+      <span><strong>Window</strong> ${fmtNum(cfg.window_size)} proofs</span>
+      <span><strong>Threshold</strong> ${cfg.threshold_pct}%</span>
+      <span><strong>Multiplier</strong> ×${cfg.multiplier}</span>
+      <span><strong>Min observations</strong> ${cfg.min_observations}</span>
+      <span style="margin-left: auto"><strong>Tracked</strong> ${fmtNum(data.tracked_miners)}</span>
+      <span><strong>Penalised</strong> ${fmtNum(data.penalised_count)}</span>
+    </div>`;
+
+  const miners = (data.miners || []).slice().sort((a, b) => {
+    // penalised first, then by mismatch_pct desc
+    if ((a.multiplier < 1) !== (b.multiplier < 1)) {
+      return a.multiplier < 1 ? -1 : 1;
+    }
+    return Number(b.mismatch_pct || 0) - Number(a.mismatch_pct || 0);
+  });
+
+  if (miners.length === 0) {
+    root.innerHTML = policy + `<div class="empty">
+      No miners tracked yet — once the first v2 proof lands, this table populates.
+    </div>`;
+    return;
+  }
+
+  const rows = miners.map(m => {
+    const c = classifyMiner(m, cfg);
+    const pct = Number(m.mismatch_pct || 0).toFixed(2);
+    const mult = Number(m.multiplier || 1).toFixed(2);
+    const filled = `${fmtNum(m.window_filled)} / ${fmtNum(m.window_size)}`;
+    const lastObs = m.last_observed_at
+      ? new Date(m.last_observed_at * 1000).toLocaleTimeString()
+      : "—";
+    return `
+      <tr>
+        <td title="${escapeHTML(m.miner_addr)}">${escapeHTML(shortHash(m.miner_addr, 10))}</td>
+        <td><span class="pill ${c.pill}">${c.label}</span></td>
+        <td class="num">${pct}%</td>
+        <td class="num">×${mult}</td>
+        <td class="num">${filled}</td>
+        <td class="num">${fmtNum(m.match_count)}</td>
+        <td class="num">${fmtNum(m.mismatch_count)}</td>
+        <td>${escapeHTML(lastObs)}</td>
+      </tr>`;
+  }).join("");
+
+  root.innerHTML = policy + `
+    <table>
+      <thead><tr>
+        <th>Miner</th><th>Status</th>
+        <th class="num">Mismatch %</th><th class="num">Multiplier</th>
+        <th class="num">Window</th>
+        <th class="num">Matches</th><th class="num">Mismatches</th>
+        <th>Last seen</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
 async function refreshBlocks() {
   const root = document.getElementById("blocks-content");
   try {
@@ -368,7 +498,7 @@ function escapeHTML(s) {
 }
 
 async function refreshAll() {
-  await Promise.all([refreshEmission(), refreshEnrollments(), refreshBlocks()]);
+  await Promise.all([refreshEmission(), refreshEnrollments(), refreshPenalty(), refreshBlocks()]);
   document.getElementById("last-updated").textContent = new Date().toLocaleTimeString();
 }
 
