@@ -107,6 +107,61 @@ func (rs *ReceiptStore) GetByContract(contractID string) []*TxReceipt {
 	return rs.byContract[contractID]
 }
 
+// ListByHeightRange returns receipts whose BlockHeight ∈ [from, to]
+// in newest-first order: heights are walked from `to` down to `from`,
+// and within each height the receipts are returned in their
+// IndexInBlock-ascending natural order (the slice GetByBlock yields).
+//
+// The result is capped at `limit`; the function returns up to that
+// many records and does NOT report a separate "matches beyond the
+// page" count — list views (the chain dashboard's recent-tx tile)
+// just re-page when the user scrolls. This matches the
+// SlashReceiptStore.List posture: cheap O(walked-heights × per-block-receipts)
+// reads, no global scan.
+//
+// Behaviour:
+//
+//	limit <= 0          → nil (caller must clamp; handler enforces a default + cap)
+//	from  >  to         → nil (empty range; same posture as MiningBlocksHandler)
+//	missing height      → skipped silently (height with no receipts)
+//	exhausted before to → returns whatever was collected; never blocks
+//
+// Returns a fresh slice; the underlying *TxReceipt pointers are
+// shared with the store but receipts are immutable after Store(),
+// so the API layer's TxReceiptView projection is safe to read
+// concurrently with new appends.
+func (rs *ReceiptStore) ListByHeightRange(from, to uint64, limit int) []*TxReceipt {
+	if limit <= 0 || from > to {
+		return nil
+	}
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
+	out := make([]*TxReceipt, 0, limit)
+	// Walk heights from `to` (newest) down to `from` (oldest).
+	// uint64 underflow guard: stop the loop when h would wrap.
+	for h := to; ; h-- {
+		recs := rs.byBlock[h]
+		for _, r := range recs {
+			out = append(out, r)
+			if len(out) >= limit {
+				return out
+			}
+		}
+		if h == from {
+			break
+		}
+		if h == 0 {
+			// from > 0 but we've reached 0 — exit before
+			// the next h-- underflows. Should never fire
+			// given the from > to guard above, but
+			// defensive against a future signed-arithmetic
+			// refactor.
+			break
+		}
+	}
+	return out
+}
+
 // Recent returns the last N receipts in insertion order.
 func (rs *ReceiptStore) Recent(n int) []*TxReceipt {
 	rs.mu.RLock()

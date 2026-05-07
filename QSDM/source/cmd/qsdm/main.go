@@ -896,6 +896,20 @@ func main() {
 			logger.Warn("gov param store: snapshot failed",
 				"height", h, "path", govStorePath, "error", err)
 		},
+		// Slash receipts NDJSON persistence. Per-publish
+		// append + boot-time replay so the
+		// /api/v1/mining/slash/{tx_id} GET endpoint serves
+		// continuous history across restarts. Schema
+		// matches api.SlashReceiptView so an operator's
+		// `tail -f` shows the same fields the HTTP endpoint
+		// returns. The default path lives next to the other
+		// state files in stateDir.
+		SlashReceiptsPath: filepath.Join(stateDir, "qsdm_slash_receipts.ndjson"),
+		LogSlashReceiptsError: func(err error) {
+			logger.Warn("slash receipts: persistence error",
+				"path", filepath.Join(stateDir, "qsdm_slash_receipts.ndjson"),
+				"error_str", err.Error())
+		},
 	})
 	if v2WireErr != nil {
 		log.Fatalf("v2 mining wiring failed: %v", v2WireErr)
@@ -1082,6 +1096,31 @@ func main() {
 	if regErr := chSignerVerifier.Register(chSignerID, chSignerKey); regErr != nil {
 		log.Fatalf("v2 challenge signer-verifier registration: %v", regErr)
 	}
+	// Peer-signer allowlist. Lets the validator accept v2
+	// challenges minted by remote cmd/qsdm-attester instances
+	// (e.g. an operator's home machine running on a 3050).
+	// The file path is opt-in via QSDM_PEER_SIGNERS_FILE; an
+	// unset/missing file is a no-op so existing deployments
+	// keep their pre-Phase-2c-attester posture.
+	if peerSignersPath := strings.TrimSpace(os.Getenv("QSDM_PEER_SIGNERS_FILE")); peerSignersPath != "" {
+		peers, peersErr := LoadPeerSignersFile(peerSignersPath)
+		if peersErr != nil {
+			log.Fatalf("v2 peer-signers load: %v", peersErr)
+		}
+		registered, regErrs := RegisterPeerSigners(chSignerVerifier, peers)
+		for _, e := range regErrs {
+			logger.Warn("v2 peer-signer rejected",
+				"signer_id", e.PeerSigner.SignerID,
+				"note", e.PeerSigner.Note,
+				"reason", e.Err.Error())
+		}
+		if len(regErrs) > 0 {
+			log.Fatalf("v2 peer-signers: %d entries rejected; fix peer_signers.toml and restart", len(regErrs))
+		}
+		logger.Info("v2 peer-signers loaded",
+			"path", peerSignersPath,
+			"registered", registered)
+	}
 	chIssuer, chIssuerErr := challenge.NewIssuer(chSigner)
 	if chIssuerErr != nil {
 		log.Fatalf("v2 challenge issuer: %v", chIssuerErr)
@@ -1171,6 +1210,10 @@ func main() {
 	logger.Info("/api/v1/mining/emission probe wired (chain.DefaultEmissionSchedule)")
 	api.SetMiningBlocksProbe(blocksProbeFromProducer(adminProducer))
 	logger.Info("/api/v1/mining/blocks probe wired (BlockProducer header projection)")
+	api.SetMiningReceiptProbe(receiptProbeFromStore(adminReceipts))
+	logger.Info("/api/v1/receipts/{tx_id} probe wired (ReceiptStore lookup)")
+	api.SetMiningReceiptsListProbe(receiptsListProbeFromStore(adminReceipts, adminProducer))
+	logger.Info("/api/v1/receipts probe wired (ReceiptStore height-range list)")
 	logger.Info("Mining service installed",
 		"dag_size", uint32(1024),
 		"difficulty", "2",
@@ -2169,6 +2212,112 @@ func (p blocksStoreProbe) HeadersInRange(from, to uint64) []api.MiningBlockHeade
 
 func blocksProbeFromProducer(p *chain.BlockProducer) api.MiningBlocksProbe {
 	return blocksStoreProbe{producer: p}
+}
+
+// receiptStoreProbe adapts a *chain.ReceiptStore to
+// api.MiningReceiptProbe so the public /api/v1/receipts/{tx_id}
+// endpoint can serve per-tx outcomes from the live store. The
+// projection trims fields the wire view doesn't expose (none
+// today; future-proofing for an internal-only field).
+type receiptStoreProbe struct {
+	store *chain.ReceiptStore
+}
+
+func (p receiptStoreProbe) GetReceipt(txID string) (api.TxReceiptView, bool) {
+	if p.store == nil {
+		return api.TxReceiptView{}, false
+	}
+	r, ok := p.store.Get(txID)
+	if !ok || r == nil {
+		return api.TxReceiptView{}, false
+	}
+	logs := make([]api.TxReceiptLogView, 0, len(r.Logs))
+	for _, l := range r.Logs {
+		logs = append(logs, api.TxReceiptLogView{
+			Topic: l.Topic,
+			Data:  l.Data,
+			Index: l.Index,
+		})
+	}
+	return api.TxReceiptView{
+		TxID:         r.TxID,
+		BlockHeight:  r.BlockHeight,
+		BlockHash:    r.BlockHash,
+		Status:       uint8(r.Status),
+		GasUsed:      r.GasUsed,
+		Fee:          r.Fee,
+		Logs:         logs,
+		Error:        r.Error,
+		Timestamp:    r.Timestamp.UTC().Format(time.RFC3339Nano),
+		ContractID:   r.ContractID,
+		IndexInBlock: r.IndexInBlock,
+	}, true
+}
+
+func receiptProbeFromStore(rs *chain.ReceiptStore) api.MiningReceiptProbe {
+	return receiptStoreProbe{store: rs}
+}
+
+// receiptsListProbe adapts (*chain.ReceiptStore, *chain.BlockProducer)
+// to api.MiningReceiptsListProbe. The store provides the
+// height-range walk; the producer provides the live tip the
+// handler uses as a default `to` when the caller omits it.
+//
+// Both collaborators are read concurrently — RLock on the
+// store, atomic read on the producer's tip — so this probe
+// has no internal lock of its own.
+type receiptsListProbe struct {
+	store    *chain.ReceiptStore
+	producer *chain.BlockProducer
+}
+
+func (p receiptsListProbe) Tip() uint64 {
+	if p.producer == nil {
+		return 0
+	}
+	return p.producer.TipHeight()
+}
+
+func (p receiptsListProbe) ListByHeightRange(from, to uint64, limit int) []api.TxReceiptView {
+	if p.store == nil {
+		return nil
+	}
+	recs := p.store.ListByHeightRange(from, to, limit)
+	if len(recs) == 0 {
+		return nil
+	}
+	out := make([]api.TxReceiptView, 0, len(recs))
+	for _, r := range recs {
+		if r == nil {
+			continue
+		}
+		logs := make([]api.TxReceiptLogView, 0, len(r.Logs))
+		for _, l := range r.Logs {
+			logs = append(logs, api.TxReceiptLogView{
+				Topic: l.Topic,
+				Data:  l.Data,
+				Index: l.Index,
+			})
+		}
+		out = append(out, api.TxReceiptView{
+			TxID:         r.TxID,
+			BlockHeight:  r.BlockHeight,
+			BlockHash:    r.BlockHash,
+			Status:       uint8(r.Status),
+			GasUsed:      r.GasUsed,
+			Fee:          r.Fee,
+			Logs:         logs,
+			Error:        r.Error,
+			Timestamp:    r.Timestamp.UTC().Format(time.RFC3339Nano),
+			ContractID:   r.ContractID,
+			IndexInBlock: r.IndexInBlock,
+		})
+	}
+	return out
+}
+
+func receiptsListProbeFromStore(rs *chain.ReceiptStore, p *chain.BlockProducer) api.MiningReceiptsListProbe {
+	return receiptsListProbe{store: rs, producer: p}
 }
 
 // formatDustAsCellLocal mirrors the helper in

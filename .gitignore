@@ -260,6 +260,21 @@ desktop.ini
 /QSDM/source/qsdmminer-linux-amd64
 /QSDM/source/qsdmminer-console-linux-amd64
 
+# Workspace-level cross-build output directory. Holds the
+# Linux + Windows artifacts produced by `go build -o bin/...`
+# during local deploys (e.g. before scp'ing to BLR1). Plus
+# whatever per-operator deploy templates the bring-up dance
+# produces (systemd drop-ins with HMAC keys, live-keyed
+# TOML allowlists, throwaway awk scripts, etc.). Anything
+# operationally interesting that should ship to other
+# operators belongs in QSDM/source/{cmd,docs,pkg,internal}
+# instead — `/bin/` is a build cache, not a publishable
+# location.
+/bin/
+
+# Local one-shot release-style staging directory.
+/dist/
+
 # ------------------------------------------------------------
 # Local one-shot deploy/operator scripts
 # ------------------------------------------------------------

@@ -58,6 +58,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/branding"
 	"github.com/blackbeardONE/QSDM/pkg/buildinfo"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
+	"github.com/blackbeardONE/QSDM/pkg/mining/v2client"
 	"golang.org/x/term"
 )
 
@@ -82,6 +83,18 @@ type Config struct {
 	BatchCount   uint32 `toml:"batch_count"`
 	PollInterval string `toml:"poll_interval"`
 	Plain        bool   `toml:"plain"`
+
+	// ChallengeURLs, when non-empty, replaces the default
+	// "fetch from validator_url only" challenge-fetch policy
+	// with a round-robin / failover sweep across this list.
+	// Each entry is a base URL (no trailing slash) of either
+	// the validator itself or a peer attester (cmd/qsdm-attester).
+	// validator_url is automatically prepended to the list at
+	// runtime — operators only need to specify the EXTRA peer
+	// attesters they want the miner to use, not the validator
+	// itself. Empty (or omitted) preserves pre-existing
+	// behaviour: pull challenges only from validator_url.
+	ChallengeURLs []string `toml:"challenge_urls,omitempty"`
 
 	// v2 NVIDIA-locked protocol fields. All ignored unless
 	// Protocol is exactly "v2" (case-insensitive). See v2.go
@@ -1232,6 +1245,23 @@ func main() {
 
 	client := &http.Client{Timeout: *httpTimeout}
 
+	// Build the multi-URL challenge fetcher. The validator's
+	// own /api/v1/mining/challenge is always the first
+	// candidate; any additional peer-attester URLs configured
+	// in miner.toml's challenge_urls are appended in order.
+	// The MultiFetcher round-robins on each call AND falls
+	// through to the next URL on any per-endpoint error, so
+	// the mining loop survives a transient outage at any one
+	// endpoint.
+	challengeFetcher, fetcherErr := v2client.NewMultiFetcher(
+		client,
+		append([]string{cfg.ValidatorURL}, cfg.ChallengeURLs...),
+	)
+	if fetcherErr != nil {
+		fmt.Fprintf(os.Stderr, "challenge fetcher: %v\n", fetcherErr)
+		os.Exit(2)
+	}
+
 	// Background enrollment poller: only spun up when v2 is
 	// enabled AND the operator hasn't disabled it via
 	// --enrollment-poll=0. Lives on a dedicated goroutine so a
@@ -1291,7 +1321,7 @@ func main() {
 		}()
 	}
 
-	runLoop(ctx, client, cfg, v2ctx, events, &attempts)
+	runLoop(ctx, client, challengeFetcher, cfg, v2ctx, events, &attempts)
 	pollerWG.Wait()
 
 	events <- Event{Kind: EvShutdown, At: time.Now(), Message: "shutting down"}
@@ -1322,7 +1352,7 @@ func cliWantsContinue() bool {
 // this binary can freely evolve its UX.
 // -----------------------------------------------------------------------------
 
-func runLoop(ctx context.Context, client *http.Client, cfg Config, v2ctx *V2Context, events chan<- Event, attempts *uint64) {
+func runLoop(ctx context.Context, client *http.Client, fetcher v2client.ChallengeFetcher, cfg Config, v2ctx *V2Context, events chan<- Event, attempts *uint64) {
 	var (
 		currentEpoch uint64 = ^uint64(0)
 		currentDAG   mining.DAG
@@ -1428,7 +1458,7 @@ func runLoop(ctx context.Context, client *http.Client, cfg Config, v2ctx *V2Cont
 		// validator will reject, hiding the real problem from
 		// the operator.
 		if v2ctx.IsEnabled() {
-			if err := V2PrepareAttestation(ctx, client, cfg.ValidatorURL, v2ctx, res.Proof); err != nil {
+			if err := V2PrepareAttestation(ctx, fetcher, v2ctx, res.Proof); err != nil {
 				send(Event{Kind: EvError, Message: "v2 prepare: " + err.Error()})
 				sleepOrCancel(ctx, poll)
 				continue

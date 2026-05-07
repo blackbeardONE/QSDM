@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/api"
+	"github.com/blackbeardONE/QSDM/pkg/mining/v2client"
 )
 
 // buildFixtureWork produces a validator-shaped api.MiningWork payload
@@ -281,7 +282,9 @@ func TestIntegration_RunLoop_EndToEnd(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runLoop(ctx, &http.Client{Timeout: 5 * time.Second}, cfg, &V2Context{}, events, &attempts)
+		client := &http.Client{Timeout: 5 * time.Second}
+		fetcher, _ := v2client.NewMultiFetcher(client, append([]string{cfg.ValidatorURL}, cfg.ChallengeURLs...))
+		runLoop(ctx, client, fetcher, cfg, &V2Context{}, events, &attempts)
 	}()
 
 	deadline := time.After(30 * time.Second)

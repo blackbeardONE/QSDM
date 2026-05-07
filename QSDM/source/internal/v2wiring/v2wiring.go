@@ -299,6 +299,33 @@ type Config struct {
 	//
 	// Nil = drop silently. Mirrors LogSnapshotError's posture.
 	LogRecentRejectionsError func(error)
+
+	// SlashReceiptsPath, when non-empty, makes the
+	// SlashReceiptStore Wire constructs additionally append
+	// every "applied" / "rejected" outcome to an NDJSON file
+	// at this path, AND replay any prior file at boot so the
+	// /api/v1/mining/slash/{tx_id} GET endpoint serves
+	// continuous history across restarts.
+	//
+	// Empty = in-memory only (the pre-2026-05-07 posture).
+	//
+	// Schema is identical to api.SlashReceiptView so an
+	// operator running `tail -f` sees the same fields the
+	// HTTP endpoint returns.
+	SlashReceiptsPath string
+
+	// LogSlashReceiptsError is invoked on:
+	//
+	//   - LoadNDJSON boot-time replay parse errors
+	//     (typically a torn trailing line — boot continues
+	//     with the recovered prefix; the bad tail is the
+	//     operator's signal to trim the file).
+	//   - Per-publish append failures (filesystem flap).
+	//
+	// Nil drops errors silently. The in-memory store keeps
+	// working in either case — slash-receipt persistence is
+	// operator-facing telemetry, not consensus state.
+	LogSlashReceiptsError func(error)
 }
 
 // Wired is the output bundle. cmd/qsdm/main.go consumes:
@@ -504,6 +531,22 @@ func Wire(cfg Config) (*Wired, error) {
 	// composition. Attach BEFORE any tx flows through so the
 	// receipt for the very first slash is captured.
 	slashReceipts := chain.NewSlashReceiptStore(0, nil)
+	// Optional NDJSON-append persistence + boot-time replay.
+	// Configure BEFORE the publisher chain is installed so a
+	// concurrent slash apply (vanishingly unlikely this
+	// early, but defensive) does not race against the
+	// SetPersistencePath write. Restore order is also
+	// before-publisher: we want pre-existing receipts to be
+	// queryable the instant the API is up, not race-loaded
+	// while live publishes are also writing.
+	if cfg.SlashReceiptsPath != "" {
+		slashReceipts.SetPersistencePath(cfg.SlashReceiptsPath, cfg.LogSlashReceiptsError)
+		if _, err := slashReceipts.LoadNDJSON(cfg.SlashReceiptsPath); err != nil {
+			if cfg.LogSlashReceiptsError != nil {
+				cfg.LogSlashReceiptsError(fmt.Errorf("v2wiring: slash receipts restore: %w", err))
+			}
+		}
+	}
 	slasher.Publisher = chain.NewCompositePublisher(slasher.Publisher, slashReceipts)
 
 	// Bounded ring buffer of recent §4.6 attestation rejections.

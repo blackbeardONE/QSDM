@@ -44,6 +44,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/api"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
 	"github.com/blackbeardONE/QSDM/pkg/mining/challenge"
+	"github.com/blackbeardONE/QSDM/pkg/mining/v2client"
 )
 
 // fixtureV2Server returns an httptest.Server that serves the
@@ -166,7 +167,9 @@ func TestIntegration_RunLoop_v2_EndToEnd(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runLoop(ctx, &http.Client{Timeout: 5 * time.Second}, cfg, v2ctx, events, &attempts)
+		client := &http.Client{Timeout: 5 * time.Second}
+		fetcher, _ := v2client.NewMultiFetcher(client, append([]string{cfg.ValidatorURL}, cfg.ChallengeURLs...))
+		runLoop(ctx, client, fetcher, cfg, v2ctx, events, &attempts)
 	}()
 
 	deadline := time.After(30 * time.Second)
@@ -301,7 +304,9 @@ func TestIntegration_RunLoop_v2_ChallengeOutageStaysAtV1Empty(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runLoop(ctx, &http.Client{Timeout: 2 * time.Second}, cfg, v2ctx, events, &attempts)
+		client := &http.Client{Timeout: 2 * time.Second}
+		fetcher, _ := v2client.NewMultiFetcher(client, append([]string{cfg.ValidatorURL}, cfg.ChallengeURLs...))
+		runLoop(ctx, client, fetcher, cfg, v2ctx, events, &attempts)
 	}()
 
 	gotV2PrepareErr := false

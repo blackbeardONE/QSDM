@@ -225,6 +225,26 @@ func isPublicEndpoint(path string) bool {
 		// height-ascending order. Same threat model as
 		// /status: pure transparency, no secret leakage.
 		"/api/v1/mining/blocks",
+		// /receipts (no tx_id, exact-match) is the
+		// height-range list endpoint that powers the
+		// chain dashboard's "recent transactions" tile.
+		// Same transparency posture as the per-tx
+		// /receipts/{tx_id} probe — anyone observing the
+		// chain can independently render the recent tx
+		// stream without an operator-granted session.
+		"/api/v1/receipts",
+		// /receipts/{tx_id} is a read-only per-tx outcome
+		// probe (TxApplied / TxFailed log + status code).
+		// Receipts live on-chain implicitly via the
+		// state-root hash, so exposing them publicly is the
+		// canonical "trust transparency" posture: anyone
+		// who saw a tx submission can independently confirm
+		// it landed and at what status. The handler does
+		// path-prefix-matching itself (because the URL has
+		// the tx_id baked in), but the public-allowlist
+		// check uses HasPrefix elsewhere — we keep the
+		// trailing slash here to match exactly.
+		"/api/v1/receipts/",
 		// /mining/challenge mints a fresh per-call nonce and MUST be
 		// publicly reachable — if miners had to authenticate to fetch
 		// a challenge, the validator's identity gating would leak out
@@ -266,6 +286,14 @@ func isPublicEndpoint(path string) bool {
 	// reaches the handler and gets a clean 400 — exactly the same path
 	// it takes for an authenticated caller.
 	if strings.HasPrefix(path, "/api/v1/mining/enrollment/") {
+		return true
+	}
+	// /api/v1/receipts/{tx_id} is the per-tx-outcome probe.
+	// Keep public for the same transparency reason as
+	// /mining/enrollments — anyone with a tx-id should be
+	// able to verify on-chain inclusion without an operator
+	// session. The handler itself bounds tx_id length.
+	if strings.HasPrefix(path, "/api/v1/receipts/") {
 		return true
 	}
 	return false

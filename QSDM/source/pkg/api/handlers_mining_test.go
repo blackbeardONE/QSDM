@@ -363,6 +363,316 @@ func TestMiningBlocks_RangeExceedsCap400(t *testing.T) {
 	}
 }
 
+type fakeReceiptProbe struct {
+	receipts map[string]TxReceiptView
+}
+
+func (p *fakeReceiptProbe) GetReceipt(txID string) (TxReceiptView, bool) {
+	v, ok := p.receipts[txID]
+	return v, ok
+}
+
+type fakeReceiptsListProbe struct {
+	tip      uint64
+	byHeight map[uint64][]TxReceiptView
+	calledFrom uint64
+	calledTo   uint64
+	calledLimit int
+}
+
+func (p *fakeReceiptsListProbe) Tip() uint64 { return p.tip }
+func (p *fakeReceiptsListProbe) ListByHeightRange(from, to uint64, limit int) []TxReceiptView {
+	p.calledFrom, p.calledTo, p.calledLimit = from, to, limit
+	out := make([]TxReceiptView, 0, limit)
+	// Mirror chain.ReceiptStore semantics: walk from `to`
+	// down to `from`, capping at limit.
+	for h := to; ; h-- {
+		for _, r := range p.byHeight[h] {
+			out = append(out, r)
+			if len(out) >= limit {
+				return out
+			}
+		}
+		if h == from || h == 0 {
+			break
+		}
+	}
+	return out
+}
+
+func TestMiningReceiptsList_503WhenProbeAbsent(t *testing.T) {
+	SetMiningReceiptsListProbe(nil)
+	t.Cleanup(func() { SetMiningReceiptsListProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts", nil)
+	h.MiningReceiptsListHandler(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d", rec.Code)
+	}
+}
+
+func TestMiningReceiptsList_DefaultRangeReturnsLastN(t *testing.T) {
+	probe := &fakeReceiptsListProbe{
+		tip: 10,
+		byHeight: map[uint64][]TxReceiptView{
+			10: {{TxID: "h10-a", BlockHeight: 10, IndexInBlock: 0}},
+			9:  {{TxID: "h9-a", BlockHeight: 9, IndexInBlock: 0}},
+			8:  {{TxID: "h8-a", BlockHeight: 8, IndexInBlock: 0}},
+		},
+	}
+	SetMiningReceiptsListProbe(probe)
+	t.Cleanup(func() { SetMiningReceiptsListProbe(nil) })
+
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts", nil)
+	h.MiningReceiptsListHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got MiningReceiptsListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Tip != 10 {
+		t.Errorf("Tip = %d, want 10", got.Tip)
+	}
+	if got.To != 10 {
+		t.Errorf("To = %d, want 10 (default = tip)", got.To)
+	}
+	if got.Limit != DefaultMiningReceiptsListLimit {
+		t.Errorf("Limit = %d, want default %d", got.Limit, DefaultMiningReceiptsListLimit)
+	}
+	// from = max(0, to+1-limit) = max(0, 11 - 20) = 0
+	if got.From != 0 {
+		t.Errorf("From = %d, want 0 (clamped)", got.From)
+	}
+	if probe.calledLimit != DefaultMiningReceiptsListLimit {
+		t.Errorf("probe.calledLimit = %d, want %d", probe.calledLimit, DefaultMiningReceiptsListLimit)
+	}
+}
+
+func TestMiningReceiptsList_RespectsLimit(t *testing.T) {
+	probe := &fakeReceiptsListProbe{
+		tip: 100,
+		byHeight: map[uint64][]TxReceiptView{
+			100: {{TxID: "h100", BlockHeight: 100}},
+			99:  {{TxID: "h99", BlockHeight: 99}},
+			98:  {{TxID: "h98", BlockHeight: 98}},
+		},
+	}
+	SetMiningReceiptsListProbe(probe)
+	t.Cleanup(func() { SetMiningReceiptsListProbe(nil) })
+
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts?limit=2", nil)
+	h.MiningReceiptsListHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	var got MiningReceiptsListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Limit != 2 {
+		t.Errorf("Limit = %d, want 2", got.Limit)
+	}
+	// from = max(0, 101 - 2) = 99
+	if got.From != 99 {
+		t.Errorf("From = %d, want 99", got.From)
+	}
+	if len(got.Receipts) != 2 {
+		t.Fatalf("len(receipts) = %d, want 2", len(got.Receipts))
+	}
+	if got.Receipts[0].TxID != "h100" {
+		t.Errorf("Receipts[0].TxID = %q, want h100 (newest first)", got.Receipts[0].TxID)
+	}
+}
+
+func TestMiningReceiptsList_LimitCappedAtMax(t *testing.T) {
+	probe := &fakeReceiptsListProbe{tip: 1, byHeight: map[uint64][]TxReceiptView{}}
+	SetMiningReceiptsListProbe(probe)
+	t.Cleanup(func() { SetMiningReceiptsListProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts?limit=99999", nil)
+	h.MiningReceiptsListHandler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	var got MiningReceiptsListResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if got.Limit != MiningReceiptsListMaxLimit {
+		t.Errorf("Limit = %d, want capped at %d", got.Limit, MiningReceiptsListMaxLimit)
+	}
+}
+
+func TestMiningReceiptsList_FromGreaterThanTo400(t *testing.T) {
+	probe := &fakeReceiptsListProbe{tip: 100, byHeight: map[uint64][]TxReceiptView{}}
+	SetMiningReceiptsListProbe(probe)
+	t.Cleanup(func() { SetMiningReceiptsListProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts?from=50&to=10", nil)
+	h.MiningReceiptsListHandler(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rec.Code)
+	}
+}
+
+func TestMiningReceiptsList_InvalidLimit400(t *testing.T) {
+	probe := &fakeReceiptsListProbe{tip: 5, byHeight: map[uint64][]TxReceiptView{}}
+	SetMiningReceiptsListProbe(probe)
+	t.Cleanup(func() { SetMiningReceiptsListProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts?limit=banana", nil)
+	h.MiningReceiptsListHandler(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rec.Code)
+	}
+}
+
+func TestMiningReceiptsList_405OnPost(t *testing.T) {
+	probe := &fakeReceiptsListProbe{tip: 1, byHeight: map[uint64][]TxReceiptView{}}
+	SetMiningReceiptsListProbe(probe)
+	t.Cleanup(func() { SetMiningReceiptsListProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/receipts", nil)
+	h.MiningReceiptsListHandler(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("want 405, got %d", rec.Code)
+	}
+}
+
+func TestMiningReceiptsList_ToClampedAtTip(t *testing.T) {
+	probe := &fakeReceiptsListProbe{
+		tip: 10,
+		byHeight: map[uint64][]TxReceiptView{
+			10: {{TxID: "h10", BlockHeight: 10}},
+		},
+	}
+	SetMiningReceiptsListProbe(probe)
+	t.Cleanup(func() { SetMiningReceiptsListProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts?to=99999&limit=1", nil)
+	h.MiningReceiptsListHandler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	var got MiningReceiptsListResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if got.To != 10 {
+		t.Errorf("To = %d, want 10 (clamped at tip)", got.To)
+	}
+}
+
+func TestMiningReceipt_503WhenProbeAbsent(t *testing.T) {
+	SetMiningReceiptProbe(nil)
+	t.Cleanup(func() { SetMiningReceiptProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts/abc", nil)
+	h.MiningReceiptHandler(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d", rec.Code)
+	}
+}
+
+func TestMiningReceipt_404OnMiss(t *testing.T) {
+	SetMiningReceiptProbe(&fakeReceiptProbe{receipts: map[string]TxReceiptView{}})
+	t.Cleanup(func() { SetMiningReceiptProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts/missing-tx", nil)
+	h.MiningReceiptHandler(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestMiningReceipt_200OnHit(t *testing.T) {
+	want := TxReceiptView{
+		TxID:        "found-tx-id",
+		BlockHeight: 42,
+		BlockHash:   "blkhash",
+		Status:      1,
+		GasUsed:     1000,
+		Fee:         0.1,
+		Timestamp:   "2026-05-07T03:00:00Z",
+		ContractID:  "qsdm/enroll/v1",
+		Logs: []TxReceiptLogView{
+			{Topic: "TxApplied", Data: map[string]interface{}{"sender": "alice"}, Index: 0},
+		},
+	}
+	SetMiningReceiptProbe(&fakeReceiptProbe{receipts: map[string]TxReceiptView{"found-tx-id": want}})
+	t.Cleanup(func() { SetMiningReceiptProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts/found-tx-id", nil)
+	h.MiningReceiptHandler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got TxReceiptView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.TxID != want.TxID || got.BlockHeight != want.BlockHeight ||
+		got.Status != want.Status || got.ContractID != want.ContractID {
+		t.Fatalf("round-trip mismatch:\n got %+v\nwant %+v", got, want)
+	}
+	if len(got.Logs) != 1 || got.Logs[0].Topic != "TxApplied" {
+		t.Fatalf("logs round-trip: got %+v", got.Logs)
+	}
+}
+
+func TestMiningReceipt_400OnEmptyTxID(t *testing.T) {
+	SetMiningReceiptProbe(&fakeReceiptProbe{receipts: map[string]TxReceiptView{}})
+	t.Cleanup(func() { SetMiningReceiptProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts/", nil)
+	h.MiningReceiptHandler(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rec.Code)
+	}
+}
+
+func TestMiningReceipt_400OnOversizeTxID(t *testing.T) {
+	SetMiningReceiptProbe(&fakeReceiptProbe{receipts: map[string]TxReceiptView{}})
+	t.Cleanup(func() { SetMiningReceiptProbe(nil) })
+	long := make([]byte, 300)
+	for i := range long {
+		long[i] = 'a'
+	}
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/receipts/"+string(long), nil)
+	h.MiningReceiptHandler(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rec.Code)
+	}
+}
+
+func TestMiningReceipt_405OnPost(t *testing.T) {
+	SetMiningReceiptProbe(&fakeReceiptProbe{receipts: map[string]TxReceiptView{}})
+	t.Cleanup(func() { SetMiningReceiptProbe(nil) })
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/receipts/abc", nil)
+	h.MiningReceiptHandler(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("want 405, got %d", rec.Code)
+	}
+}
+
 func TestMiningSubmitReturns503WhenServiceAbsent(t *testing.T) {
 	SetMiningService(nil)
 	t.Cleanup(func() { SetMiningService(nil) })

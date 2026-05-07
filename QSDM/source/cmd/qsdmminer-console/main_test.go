@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -28,7 +29,7 @@ func TestConfig_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if loaded != orig {
+	if !reflect.DeepEqual(loaded, orig) {
 		t.Errorf("round-trip mismatch:\n  saved:  %+v\n  loaded: %+v", orig, loaded)
 	}
 }
@@ -43,7 +44,7 @@ func TestConfig_MissingIsZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("missing file must not error; got %v", err)
 	}
-	if c != (Config{}) {
+	if !reflect.DeepEqual(c, Config{}) {
 		t.Errorf("missing file must return zero Config; got %+v", c)
 	}
 }

@@ -41,6 +41,7 @@ import (
 
 	"github.com/blackbeardONE/QSDM/pkg/mining"
 	"github.com/blackbeardONE/QSDM/pkg/mining/challenge"
+	"github.com/blackbeardONE/QSDM/pkg/mining/v2client"
 )
 
 // -----------------------------------------------------------------------------
@@ -361,7 +362,11 @@ func TestV2PrepareAttestation_HappyPath(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := V2PrepareAttestation(ctx, &http.Client{Timeout: 2 * time.Second}, srv.URL, v2, proof); err != nil {
+	fetcher, fErr := v2client.NewMultiFetcher(&http.Client{Timeout: 2 * time.Second}, []string{srv.URL})
+	if fErr != nil {
+		t.Fatalf("NewMultiFetcher: %v", fErr)
+	}
+	if err := V2PrepareAttestation(ctx, fetcher, v2, proof); err != nil {
 		t.Fatalf("V2PrepareAttestation: %v", err)
 	}
 
@@ -391,7 +396,8 @@ func TestV2PrepareAttestation_HappyPath(t *testing.T) {
 
 func TestV2PrepareAttestation_DisabledReturnsError(t *testing.T) {
 	proof := &mining.Proof{MinerAddr: "x"}
-	err := V2PrepareAttestation(context.Background(), http.DefaultClient, "http://nowhere", &V2Context{}, proof)
+	fetcher, _ := v2client.NewMultiFetcher(http.DefaultClient, []string{"http://nowhere"})
+	err := V2PrepareAttestation(context.Background(), fetcher, &V2Context{}, proof)
 	if err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("want disabled error, got %v", err)
 	}
@@ -399,7 +405,8 @@ func TestV2PrepareAttestation_DisabledReturnsError(t *testing.T) {
 
 func TestV2PrepareAttestation_NilProofRejected(t *testing.T) {
 	v2 := mustV2Context(t)
-	err := V2PrepareAttestation(context.Background(), http.DefaultClient, "http://nowhere", v2, nil)
+	fetcher, _ := v2client.NewMultiFetcher(http.DefaultClient, []string{"http://nowhere"})
+	err := V2PrepareAttestation(context.Background(), fetcher, v2, nil)
 	if err == nil || !strings.Contains(err.Error(), "nil proof") {
 		t.Fatalf("want nil proof error, got %v", err)
 	}
@@ -419,7 +426,11 @@ func TestV2PrepareAttestation_ChallengeFailureSurfaces(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := V2PrepareAttestation(ctx, &http.Client{Timeout: 2 * time.Second}, srv.URL, v2, proof)
+	fetcher, fErr := v2client.NewMultiFetcher(&http.Client{Timeout: 2 * time.Second}, []string{srv.URL})
+	if fErr != nil {
+		t.Fatalf("NewMultiFetcher: %v", fErr)
+	}
+	err := V2PrepareAttestation(ctx, fetcher, v2, proof)
 	if err == nil {
 		t.Fatal("expected error on 503 from challenge endpoint")
 	}

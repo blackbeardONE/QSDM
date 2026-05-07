@@ -214,9 +214,27 @@ func (bp *BlockProducer) SetPreSealBFTRound(fn func(tentative *Block) error) {
 func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 	bp.mu.Lock()
 	runSealedHook := false
+	// outcomes is captured inline below as txs are applied; it
+	// tracks (tx, applyErr) for every drained tx so we can emit
+	// the matching receipts after seal. Captured outside the
+	// branches so both pre-seal-BFT and the legacy path feed
+	// the same downstream receipt-store.
+	var outcomes []localTxOutcome
+	var sealedReceiptStore *ReceiptStore
 	defer func() {
+		rs := sealedReceiptStore
 		bp.mu.Unlock()
 		if runSealedHook {
+			// Receipts run BEFORE OnSealed/OnSealedBlock so
+			// that hooks which persist the receipt store
+			// (cmd/qsdm/main.go's AppendBlockNDJSON in the
+			// post-seal hook) see this block's receipts in
+			// the store when they fire. If we ran them
+			// after, the disk write would race with Store
+			// and might miss the just-applied receipts.
+			if rs != nil && block != nil {
+				storeProduceBlockReceipts(rs, block, outcomes, time.Now())
+			}
 			if bp.OnSealed != nil {
 				bp.OnSealed()
 			}
@@ -270,8 +288,10 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 		spec := as.Clone()
 		for _, tx := range txs {
 			if err := spec.ApplyTx(tx); err != nil {
+				outcomes = append(outcomes, localTxOutcome{Tx: tx, ApplyErr: err})
 				continue
 			}
+			outcomes = append(outcomes, localTxOutcome{Tx: tx})
 			included = append(included, tx)
 			totalFees += tx.Fee
 			totalGas += tx.GasLimit
@@ -310,8 +330,10 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 	} else {
 		for _, tx := range txs {
 			if err := bp.applier.ApplyTx(tx); err != nil {
+				outcomes = append(outcomes, localTxOutcome{Tx: tx, ApplyErr: err})
 				continue
 			}
+			outcomes = append(outcomes, localTxOutcome{Tx: tx})
 			included = append(included, tx)
 			totalFees += tx.Fee
 			totalGas += tx.GasLimit
@@ -343,7 +365,80 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 	bp.tipHeight.Store(block.Height)
 	bp.tipHeightSet.Store(true)
 	runSealedHook = true
+	// Capture the receipt-store handle under bp.mu so the
+	// deferred receipt write sees the same store the SetAppend
+	// caller installed; a concurrent SetAppendReceiptStore(nil)
+	// after this method returns is fine (this block's receipts
+	// are already targeted).
+	sealedReceiptStore = bp.appendReceipts
 	return block, nil
+}
+
+// localTxOutcome records what happened to one drained tx during a
+// local ProduceBlock pass. ApplyErr == nil means the tx applied
+// (the speculative or live apply succeeded and the tx is in the
+// sealed block's Transactions slice); a non-nil ApplyErr means
+// the tx was dropped at apply-time (typically nonce mismatch,
+// insufficient balance, or contract-route rejection from
+// EnrollmentAwareApplier). Both shapes deserve a receipt — the
+// failed-apply receipt is the operator-visible audit trail
+// explaining why a submitted tx never landed.
+type localTxOutcome struct {
+	Tx       *mempool.Tx
+	ApplyErr error
+}
+
+// storeProduceBlockReceipts emits receipts for txs drained during
+// a local ProduceBlock call, using outcomes captured inline at
+// apply time. Successful outcomes get a TxApplied log; failed
+// ones get a TxFailed log carrying the apply error.
+//
+// Index assignment differs from storeExternalAppendReceipts: a
+// local producer DOES NOT include failed txs in blk.Transactions
+// (they were dropped before block construction), so the IndexInBlock
+// for failures is len(blk.Transactions)+failureRank to keep them
+// distinguishable from real positions while still giving a stable
+// ordering. This matches the convention used by the dashboard
+// receipt-list view.
+func storeProduceBlockReceipts(rs *ReceiptStore, blk *Block, outcomes []localTxOutcome, now time.Time) {
+	if rs == nil || blk == nil {
+		return
+	}
+	includedIdx := 0
+	failureRank := 0
+	for _, oc := range outcomes {
+		if oc.Tx == nil {
+			continue
+		}
+		receipt := &TxReceipt{
+			TxID:        oc.Tx.ID,
+			BlockHeight: blk.Height,
+			BlockHash:   blk.Hash,
+			Fee:         oc.Tx.Fee,
+			GasUsed:     oc.Tx.GasLimit,
+			Timestamp:   now,
+		}
+		if oc.ApplyErr != nil {
+			receipt.Status = ReceiptFailed
+			receipt.Error = oc.ApplyErr.Error()
+			receipt.IndexInBlock = len(blk.Transactions) + failureRank
+			failureRank++
+			failData := map[string]interface{}{"error": oc.ApplyErr.Error()}
+			applyReceiptContractFromTx(receipt, oc.Tx, failData)
+			receipt.Logs = []LogEntry{{Topic: "TxFailed", Data: failData, Index: 0}}
+			rs.Store(receipt)
+			continue
+		}
+		receipt.Status = ReceiptSuccess
+		receipt.IndexInBlock = includedIdx
+		includedIdx++
+		okData := map[string]interface{}{
+			"sender": oc.Tx.Sender, "recipient": oc.Tx.Recipient, "amount": oc.Tx.Amount,
+		}
+		applyReceiptContractFromTx(receipt, oc.Tx, okData)
+		receipt.Logs = []LogEntry{{Topic: "TxApplied", Data: okData, Index: 0}}
+		rs.Store(receipt)
+	}
 }
 
 // storeExternalAppendReceipts emits one receipt per non-nil tx by replaying blk.Transactions in order from

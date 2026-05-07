@@ -261,6 +261,286 @@ func (h *Handlers) MiningEmissionHandler(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// MiningReceiptProbe is the read-only contract the
+// /api/v1/receipts/{tx_id} endpoint uses to surface per-tx
+// outcomes from the live ReceiptStore. Implementations look
+// up by tx_id and return (TxReceiptView, true) on hit or
+// (zero, false) on miss; the handler turns the miss into a
+// 404 and the hit into a JSON body.
+//
+// We deliberately don't import pkg/chain into pkg/api (keeps
+// the dependency arrow pointing inward), so the probe returns
+// a dedicated TxReceiptView shape rather than *chain.TxReceipt.
+type MiningReceiptProbe interface {
+	GetReceipt(txID string) (TxReceiptView, bool)
+}
+
+// TxReceiptView is the wire payload for GET /api/v1/receipts/{tx_id}.
+// Field names mirror the JSON tags on chain.TxReceipt so a
+// caller that already has a chain-package consumer (e.g.
+// qsdmcli watch) can switch between the two without remapping.
+type TxReceiptView struct {
+	TxID         string                 `json:"tx_id"`
+	BlockHeight  uint64                 `json:"block_height"`
+	BlockHash    string                 `json:"block_hash,omitempty"`
+	Status       uint8                  `json:"status"`
+	GasUsed      int64                  `json:"gas_used"`
+	Fee          float64                `json:"fee"`
+	Logs         []TxReceiptLogView     `json:"logs,omitempty"`
+	Error        string                 `json:"error,omitempty"`
+	Timestamp    string                 `json:"timestamp"`
+	ContractID   string                 `json:"contract_id,omitempty"`
+	IndexInBlock int                    `json:"index_in_block"`
+}
+
+// TxReceiptLogView mirrors chain.LogEntry on the wire.
+type TxReceiptLogView struct {
+	Topic string                 `json:"topic"`
+	Data  map[string]interface{} `json:"data,omitempty"`
+	Index int                    `json:"index"`
+}
+
+type miningReceiptProbeHolder struct {
+	mu    sync.RWMutex
+	probe MiningReceiptProbe
+}
+
+var miningReceiptProbeRegistry = &miningReceiptProbeHolder{}
+
+// MiningReceiptsListProbe is the read-only contract the
+// /api/v1/receipts (no tx_id) endpoint uses to surface a
+// height-range page of receipts for the public chain
+// dashboard's "recent transactions" tile.
+//
+// Implementations return receipts in newest-first order: the
+// `to` height's records come before the `from` height's. Within
+// each block, IndexInBlock ordering is preserved.
+//
+// Tip() lets the handler pick a sensible default `to` when the
+// caller doesn't supply one (mirrors MiningBlocksProbe).
+type MiningReceiptsListProbe interface {
+	ListByHeightRange(from, to uint64, limit int) []TxReceiptView
+	Tip() uint64
+}
+
+// MiningReceiptsListResponse wraps a list result in a small
+// envelope so future fields (cursor, total-matches) can land
+// without breaking the schema. Empty slice (NOT null) when no
+// receipts match — friendly JS consumption.
+type MiningReceiptsListResponse struct {
+	Tip      uint64          `json:"tip"`
+	From     uint64          `json:"from"`
+	To       uint64          `json:"to"`
+	Limit    int             `json:"limit"`
+	Receipts []TxReceiptView `json:"receipts"`
+}
+
+// MiningReceiptsListMaxLimit caps the per-call page size.
+// Same reasoning as MiningBlocksMaxLimit: enough for the
+// canonical dashboard tile (last 20) + reasonable scroll-back,
+// while bounding the per-call lock duration on the receipt
+// store's RLock.
+const MiningReceiptsListMaxLimit = 200
+
+// DefaultMiningReceiptsListLimit is the default `limit` when
+// the caller doesn't supply one. Matches the blocks endpoint
+// and the dashboard's typical visible tile size.
+const DefaultMiningReceiptsListLimit = 20
+
+type miningReceiptsListProbeHolder struct {
+	mu    sync.RWMutex
+	probe MiningReceiptsListProbe
+}
+
+var miningReceiptsListProbeRegistry = &miningReceiptsListProbeHolder{}
+
+// SetMiningReceiptsListProbe installs (or removes, when
+// probe==nil) the process-wide receipts-list probe. Wired by
+// cmd/qsdm/main.go against the live ReceiptStore +
+// BlockProducer pair.
+func SetMiningReceiptsListProbe(probe MiningReceiptsListProbe) {
+	miningReceiptsListProbeRegistry.mu.Lock()
+	defer miningReceiptsListProbeRegistry.mu.Unlock()
+	miningReceiptsListProbeRegistry.probe = probe
+}
+
+func currentMiningReceiptsListProbe() MiningReceiptsListProbe {
+	miningReceiptsListProbeRegistry.mu.RLock()
+	defer miningReceiptsListProbeRegistry.mu.RUnlock()
+	return miningReceiptsListProbeRegistry.probe
+}
+
+// MiningReceiptsListHandler serves GET /api/v1/receipts (no
+// trailing slash; the per-tx GET handler under
+// /api/v1/receipts/{tx_id} is a separate route).
+//
+// Query params (all optional):
+//
+//	?from=<height>   default = max(0, to - DefaultLimit + 1)
+//	?to=<height>     default = tip
+//	?limit=<n>       default = DefaultMiningReceiptsListLimit;
+//	                 capped at MiningReceiptsListMaxLimit.
+//
+// Posture mirrors MiningBlocksHandler: 503 until probe wired,
+// 405 on non-GET, 400 on parse error or from > to with both
+// explicit, 200 with envelope on success.
+//
+// Note: even if a height range matches blocks beyond the
+// limit, the response only contains up to `limit` records;
+// the caller can re-query with a different `to` to scroll.
+// This is intentional — keeping the handler stateless and
+// the response self-describing avoids cursor management on
+// the validator and lets a future cursor field land
+// additively.
+func (h *Handlers) MiningReceiptsListHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	probe := currentMiningReceiptsListProbe()
+	if probe == nil {
+		writeMiningUnavailable(w, "receipts list probe not configured")
+		return
+	}
+	tip := probe.Tip()
+
+	q := r.URL.Query()
+	limit := uint64(DefaultMiningReceiptsListLimit)
+	if raw := q.Get("limit"); raw != "" {
+		v, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			http.Error(w, "limit must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		limit = v
+	}
+	if limit == 0 {
+		limit = uint64(DefaultMiningReceiptsListLimit)
+	}
+	if limit > uint64(MiningReceiptsListMaxLimit) {
+		limit = uint64(MiningReceiptsListMaxLimit)
+	}
+
+	var to uint64
+	if raw := q.Get("to"); raw != "" {
+		v, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			http.Error(w, "to must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		if v > tip {
+			v = tip
+		}
+		to = v
+	} else {
+		to = tip
+	}
+
+	var from uint64
+	if raw := q.Get("from"); raw != "" {
+		v, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			http.Error(w, "from must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		from = v
+	} else {
+		// Derive from `to` and `limit`. Underflow-safe.
+		if to+1 > limit {
+			from = to + 1 - limit
+		} else {
+			from = 0
+		}
+	}
+
+	if from > to {
+		http.Error(w, "from must be <= to", http.StatusBadRequest)
+		return
+	}
+
+	receipts := probe.ListByHeightRange(from, to, int(limit))
+	if receipts == nil {
+		receipts = []TxReceiptView{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(MiningReceiptsListResponse{
+		Tip:      tip,
+		From:     from,
+		To:       to,
+		Limit:    int(limit),
+		Receipts: receipts,
+	})
+}
+
+// SetMiningReceiptProbe installs (or removes, when probe==nil)
+// the process-wide receipt probe. Wired by cmd/qsdm/main.go
+// against the live ReceiptStore.
+func SetMiningReceiptProbe(probe MiningReceiptProbe) {
+	miningReceiptProbeRegistry.mu.Lock()
+	defer miningReceiptProbeRegistry.mu.Unlock()
+	miningReceiptProbeRegistry.probe = probe
+}
+
+func currentMiningReceiptProbe() MiningReceiptProbe {
+	miningReceiptProbeRegistry.mu.RLock()
+	defer miningReceiptProbeRegistry.mu.RUnlock()
+	return miningReceiptProbeRegistry.probe
+}
+
+// MiningReceiptHandler serves GET /api/v1/receipts/{tx_id}.
+//
+// 200 OK + TxReceiptView on hit.
+// 400 on missing or oversize tx_id (defensive — same posture
+//     as the slash-receipt handler's tx_id length check).
+// 404 on miss (the canonical "this tx never landed" answer;
+//     callers can poll for inclusion).
+// 405 on non-GET.
+// 503 until SetMiningReceiptProbe is wired.
+//
+// Path is /api/v1/receipts/{tx_id} to match the qsdmcli
+// `receipt <tx-id>` subcommand's URL convention. Some other
+// receipt endpoints live under /api/v1/mining/* (slash-receipt,
+// mining/blocks); this one stays at /api/v1/receipts/* because
+// the receipt is per-tx (not specifically per-mining-tx) and
+// keeping the URL stable preserves the existing CLI surface.
+func (h *Handlers) MiningReceiptHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	probe := currentMiningReceiptProbe()
+	if probe == nil {
+		writeMiningUnavailable(w, "receipt probe not configured")
+		return
+	}
+	const prefix = "/api/v1/receipts/"
+	if len(r.URL.Path) <= len(prefix) || r.URL.Path[:len(prefix)] != prefix {
+		http.Error(w, "tx_id required in path", http.StatusBadRequest)
+		return
+	}
+	txID := r.URL.Path[len(prefix):]
+	if txID == "" {
+		http.Error(w, "tx_id required in path", http.StatusBadRequest)
+		return
+	}
+	// 256-byte cap mirrors the slash-receipt handler's check —
+	// well above any well-formed 32-byte hex tx_id (64 chars)
+	// while bounding pathological probes.
+	if len(txID) > 256 {
+		http.Error(w, "tx_id too long", http.StatusBadRequest)
+		return
+	}
+	view, ok := probe.GetReceipt(txID)
+	if !ok {
+		http.Error(w, "receipt not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(view)
+}
+
 // MiningBlocksProbe is the read-only contract the
 // /api/v1/mining/blocks endpoint uses to surface block-header
 // metadata for the public chain dashboard.

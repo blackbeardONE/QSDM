@@ -45,7 +45,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -282,7 +281,9 @@ func GenerateHMACKeyFile(path string) ([]byte, error) {
 // V2PrepareAttestation is the glue called by runLoop between
 // mining.Solve and submitProof when v2 is enabled. It:
 //
-//  1. Fetches a fresh challenge from the validator.
+//  1. Fetches a fresh challenge from any registered issuer
+//     (validator and/or peer attesters) via the supplied
+//     ChallengeFetcher.
 //  2. Builds an HMAC attestation bundle from the proof +
 //     challenge + v2 context.
 //  3. Attaches the attestation to the proof (bumps version).
@@ -294,10 +295,15 @@ func GenerateHMACKeyFile(path string) ([]byte, error) {
 //
 // Side effects on proof: sets proof.Version = v2, sets
 // proof.Attestation. No other fields are touched.
+//
+// fetcher is the multi-URL aware retrieval primitive from
+// pkg/mining/v2client. The legacy single-validator posture is
+// expressed by passing v2client.SingleURLFetcher(client, base)
+// at the call site; multi-attester miners pass a
+// v2client.MultiFetcher with the full URL list.
 func V2PrepareAttestation(
 	ctx context.Context,
-	client *http.Client,
-	baseURL string,
+	fetcher v2client.ChallengeFetcher,
 	v2 *V2Context,
 	proof *mining.Proof,
 ) error {
@@ -307,8 +313,11 @@ func V2PrepareAttestation(
 	if proof == nil {
 		return errors.New("v2: PrepareAttestation called with nil proof")
 	}
+	if fetcher == nil {
+		return errors.New("v2: PrepareAttestation requires a non-nil ChallengeFetcher")
+	}
 
-	chg, err := v2client.FetchChallenge(ctx, client, baseURL)
+	chg, err := fetcher.Fetch(ctx)
 	if err != nil {
 		return fmt.Errorf("v2: fetch challenge: %w", err)
 	}

@@ -274,6 +274,21 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// unconditionally so an unwired peer can still answer
 	// "no blocks probe" rather than 404.
 	mux.HandleFunc("/api/v1/mining/blocks", handlers.MiningBlocksHandler)
+	// Per-tx receipt probe. Path is /api/v1/receipts/{tx_id}
+	// to match qsdmcli `receipt <tx-id>` and preserve the
+	// stable URL convention used by the CLI. Returns 503
+	// until SetMiningReceiptProbe is wired (same posture as
+	// the other read-only probes); 404 on tx-id miss.
+	mux.HandleFunc("/api/v1/receipts/", handlers.MiningReceiptHandler)
+	// Receipts list probe. Note the absence of trailing
+	// slash: Go's ServeMux keeps "/api/v1/receipts" (exact)
+	// and "/api/v1/receipts/" (prefix-with-tx-id) as separate
+	// routes. The list endpoint is the dashboard's "recent
+	// transactions" tile feed; same 503/400/200 posture as
+	// /mining/blocks. The per-tx receipt route registered
+	// above continues to handle requests of the form
+	// /api/v1/receipts/<tx-id>.
+	mux.HandleFunc("/api/v1/receipts", handlers.MiningReceiptsListHandler)
 	// Mining challenge endpoint (Phase 2c-iii,
 	// MINING_PROTOCOL_V2.md §6.2). Returns 503 until
 	// a ChallengeIssuer is installed via api.SetChallengeIssuer(...).
