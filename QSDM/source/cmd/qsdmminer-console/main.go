@@ -1005,7 +1005,29 @@ func printNvidiaLockDeprecationBanner(w io.Writer) {
 // main
 // -----------------------------------------------------------------------------
 
+// main is the kernel-facing entrypoint. On non-Windows platforms it
+// is a thin wrapper that calls realMain with a background context.
+// On Windows, when launched by the Service Control Manager, main
+// hands control to the SCM dispatcher (see service_windows.go) which
+// in turn calls realMain with a context that is cancelled on
+// SCM-stop. This split lets the entire mining loop's shutdown path
+// stay unchanged: it always sees a single context that ends on
+// either Ctrl-C, SIGTERM, or SCM Stop/Shutdown.
 func main() {
+	if handled, code := runWindowsServiceIfNeeded(realMain); handled {
+		os.Exit(code)
+	}
+	os.Exit(realMain(context.Background()))
+}
+
+// realMain is the former contents of main, restructured to take an
+// ancestor context (so a Windows-service supervisor can cancel it)
+// and to return an exit code instead of os.Exit'ing. Every
+// "fmt.Fprintf(os.Stderr, ...) + os.Exit(N)" pair has been turned
+// into "fmt.Fprintf + return N", which is mechanically equivalent
+// for the interactive path and lets the service path observe a
+// real exit code rather than a process death.
+func realMain(parentCtx context.Context) int {
 	var (
 		configPath   = flag.String("config", defaultConfigPath(), "path to the miner config file")
 		validatorURL = flag.String("validator", "", "override config: validator base URL")
@@ -1062,7 +1084,7 @@ func main() {
 	if consumer.ApplyStaged {
 		if _, err := applyStagedUpdateAtStartup(consumer); err != nil {
 			fmt.Fprintf(os.Stderr, "qsdmminer: apply staged update: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	}
 
@@ -1071,16 +1093,16 @@ func main() {
 	// miner.toml. Same contract as cmd/qsdmminer and cmd/trustcheck.
 	if *showVersion {
 		fmt.Println(buildinfo.String(binaryName))
-		return
+		return 0
 	}
 
 	if *selfTest {
 		if err := runSelfTest(); err != nil {
 			fmt.Fprintf(os.Stderr, "self-test FAILED: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 		fmt.Println("self-test OK: proof solved and verified end-to-end via pkg/mining")
-		return
+		return 0
 	}
 
 	// --gen-hmac-key path runs before any config / wizard side
@@ -1092,7 +1114,7 @@ func main() {
 		key, err := GenerateHMACKeyFile(*genHMACKey)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "gen-hmac-key: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 		fmt.Printf("Wrote 32-byte HMAC key (hex) to %s\n", *genHMACKey)
 		fmt.Println("Permissions: 0o600 (POSIX) / restrict via NTFS ACLs on Windows.")
@@ -1109,7 +1131,7 @@ func main() {
 		fmt.Println("Then start mining with:")
 		fmt.Printf("  qsdmminer-console --protocol=v2 --hmac-key-path=%s \\\n", *genHMACKey)
 		fmt.Println("    --node-id=<NODE_ID> --gpu-uuid=<GPU_UUID> --gpu-arch=<ada|ampere|hopper|blackwell>")
-		return
+		return 0
 	}
 
 	// Implicit auto-update apply hook: when --auto-update is on
@@ -1130,14 +1152,14 @@ func main() {
 	if !consumer.ApplyStaged {
 		if _, err := applyStagedUpdateAtStartup(consumer); err != nil {
 			fmt.Fprintf(os.Stderr, "qsdmminer: apply staged update: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	}
 
 	cfg, err := loadConfig(*configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "load config: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	// --service / --log-file rewires stdout+stderr to a
@@ -1147,7 +1169,7 @@ func main() {
 	plainOverride, logCloser, err := applyServiceMode(consumer, &cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "service log: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	defer logCloser.Close()
 
@@ -1170,11 +1192,11 @@ func main() {
 		newCfg, err := runSetup(*configPath, cfg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "setup: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 		cfg = newCfg
 		if *setup && !cliWantsContinue() {
-			return
+			return 0
 		}
 	}
 
@@ -1233,7 +1255,7 @@ func main() {
 	v2ctx, err := LoadV2Context(cfg.v2Config())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "v2 protocol config: %v\n", err)
-		os.Exit(2)
+		return 2
 	}
 	if v2ctx.IsEnabled() {
 		fmt.Fprintln(os.Stderr, "qsdmminer-console: v2 NVIDIA-locked protocol ENABLED (--protocol=v2)")
@@ -1249,11 +1271,11 @@ func main() {
 
 	if cfg.ValidatorURL == "" {
 		fmt.Fprintln(os.Stderr, "no validator_url set — run `qsdmminer-console --setup` first")
-		os.Exit(2)
+		return 2
 	}
 	if cfg.RewardAddr == "" {
 		fmt.Fprintln(os.Stderr, "no reward_address set — run `qsdmminer-console --setup` first")
-		os.Exit(2)
+		return 2
 	}
 
 	// Renderer choice: --plain forces plain; --service / --log-file
@@ -1268,7 +1290,12 @@ func main() {
 	// plumbing; tests that don't set the env see an empty footer.
 	_ = os.Setenv("QSDM_MINER_CONFIG_DISPLAY", *configPath)
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// Compose the master shutdown context. The interactive caller
+	// passes context.Background() and gets the classic Ctrl-C +
+	// SIGTERM behaviour. The Windows SCM dispatcher passes a ctx
+	// that's also cancelled on SCM Stop/Shutdown, so a `Stop-Service
+	// QSDMMiner` is exactly equivalent to Ctrl-C here.
+	ctx, cancel := signal.NotifyContext(parentCtx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	var rend renderer
@@ -1361,7 +1388,7 @@ func main() {
 	)
 	if fetcherErr != nil {
 		fmt.Fprintf(os.Stderr, "challenge fetcher: %v\n", fetcherErr)
-		os.Exit(2)
+		return 2
 	}
 
 	// --idle-only background sampler. Built only when the
@@ -1397,7 +1424,7 @@ func main() {
 		poller, err := NewEnrollmentPoller(client, cfg.ValidatorURL, v2ctx.NodeID, *enrollPoll)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "enrollment poller: %v\n", err)
-			os.Exit(2)
+			return 2
 		}
 		// emitEvent posts onto the shared events channel,
 		// honouring ctx so a shutdown mid-poll doesn't leak.
@@ -1450,6 +1477,7 @@ func main() {
 	events <- Event{Kind: EvShutdown, At: time.Now(), Message: "shutting down"}
 	close(events)
 	wg.Wait()
+	return 0
 }
 
 // cliWantsContinue returns true if the user asked --setup but *also*

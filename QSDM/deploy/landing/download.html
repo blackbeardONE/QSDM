@@ -193,6 +193,7 @@
       <a class="btn primary" id="auto-miner" href="#all-downloads">View downloads</a>
     </div>
     <div class="small" style="margin-top: 10px" id="auto-sha"></div>
+    <div class="small" style="margin-top: 6px" id="auto-installer-note"></div>
   </div>
 </section>
 
@@ -200,14 +201,14 @@
   <h2>5-minute install</h2>
   <div class="grid grid-2">
     <div class="panel">
-      <h3>Windows</h3>
+      <h3>Windows <span class="pill" style="background:rgba(118,185,0,.15);color:var(--accent);border-color:rgba(118,185,0,.4)">recommended</span></h3>
       <ol class="steps">
-        <li>Download <code>qsdmminer-windows-amd64.exe</code> for your machine.</li>
-        <li>Right-click → <strong>Properties</strong> → tick <em>Unblock</em> (Windows SmartScreen tag from a non-signed download).</li>
-        <li>Open PowerShell where you saved it and run the wizard:</li>
+        <li>Download <strong id="windows-installer-name">qsdmminer-setup.exe</strong> (the installer above).</li>
+        <li>Double-click; if SmartScreen blocks it, click <em>More info → Run anyway</em>.</li>
+        <li>The wizard registers a Windows service that mines on idle and auto-updates every 24h.</li>
       </ol>
-      <pre>.\qsdmminer-windows-amd64.exe --setup</pre>
-      <p class="small">It asks for your reward address and validator URL (default <code>https://testnet.qsdm.tech</code>), then starts mining.</p>
+      <p class="small">The installer copies binaries to <code>C:\Program Files\QSDM Miner\</code>, registers <code>QSDMMiner</code> as a Windows service via <code>sc.exe</code>, creates Start Menu shortcuts, and offers to launch the first-run wizard. To uninstall: <em>Settings → Apps → QSDM Miner</em>.</p>
+      <p class="small"><strong>Power-user path:</strong> grab the raw <code>qsdmminer-windows-amd64.exe</code> from the table below and run <code>.\qsdmminer-windows-amd64.exe --setup</code>.</p>
     </div>
     <div class="panel">
       <h3>Linux / macOS</h3>
@@ -241,7 +242,8 @@
     </tbody>
   </table>
   <p class="small" style="margin-top:12px">
-    <strong>qsdmminer</strong> is the consumer miner — wizard, live panel, idle-only mode, service mode.
+    <strong>qsdmminer-installer</strong> (Windows) is the recommended path — registers the miner as a Windows service.
+    <strong>qsdmminer</strong> is the raw consumer miner — wizard, live panel, idle-only mode, service mode.
     <strong>qsdmcli</strong> is the wallet / chain CLI (balance lookup, enrollment, transactions).
     <strong>qsdm-attester</strong> is the optional home attester for advanced operators (Tier-2 spec checks); regular users do not need it.
   </p>
@@ -363,7 +365,7 @@ sha256sum -c SHA256SUMS.txt 2&gt;&amp;1 | grep qsdmminer
   // 404 (e.g. a fresh deploy that hasn't pinned latest yet), we
   // fall back to a hard-coded RELEASE_TAG so the page never reads
   // as fully empty.
-  var FALLBACK_RELEASE_TAG = "v0.0.0+ce21940";
+  var FALLBACK_RELEASE_TAG = "v0.0.0+5cf5b69";
 
   async function fetchLatestTag() {
     try {
@@ -423,10 +425,20 @@ sha256sum -c SHA256SUMS.txt 2&gt;&amp;1 | grep qsdmminer
     document.getElementById("release-checksums").href =
       "/releases/" + tag + "/SHA256SUMS.txt";
 
-    // Auto-detect card
+    // Auto-detect card. For Windows users we lead with the
+    // installer (qsdmminer-installer component) because the
+    // double-click-and-walk-away install is the consumer story
+    // we want them to see first. The raw .exe is offered as a
+    // secondary "Power user" button. Linux/macOS get the raw
+    // binary as primary because installers for those platforms
+    // aren't built yet (.deb / .pkg are the next milestone).
     if (platform) {
       var miner = components.find(function(c) {
         return c.component === "qsdmminer" && c.os === platform.os && c.arch === platform.arch;
+      });
+      var installer = components.find(function(c) {
+        return c.component === "qsdmminer-installer" &&
+               c.os === platform.os && c.arch === platform.arch;
       });
       var cli = components.find(function(c) {
         return c.component === "qsdmcli" && c.os === platform.os && c.arch === platform.arch;
@@ -434,23 +446,61 @@ sha256sum -c SHA256SUMS.txt 2&gt;&amp;1 | grep qsdmminer
       document.getElementById("platform-name").textContent = platform.label;
       var btns = document.getElementById("auto-buttons");
       btns.innerHTML = "";
-      if (miner) {
+
+      var primary = (platform.os === "windows" && installer) ? installer : miner;
+      var primaryLabel = (primary === installer) ? "Download installer" : "Download qsdmminer";
+      if (primary) {
         var a = document.createElement("a");
         a.className = "btn primary";
-        a.href = "/releases/" + tag + "/" + miner.file;
-        a.innerHTML = "Download qsdmminer <span class=\"meta\">" + fmtBytes(miner.sizeBytes) + "</span>";
+        a.href = "/releases/" + tag + "/" + primary.file;
+        a.innerHTML = primaryLabel + " <span class=\"meta\">" +
+          fmtBytes(primary.sizeBytes) + "</span>";
         btns.appendChild(a);
       }
-      if (cli) {
+
+      // Secondary: when the primary is the installer, the
+      // secondary is the raw miner binary (for power users);
+      // otherwise the secondary is qsdmcli (for everyone else).
+      var secondary = (primary === installer) ? miner : cli;
+      if (secondary) {
         var b = document.createElement("a");
         b.className = "btn secondary";
-        b.href = "/releases/" + tag + "/" + cli.file;
-        b.innerHTML = "qsdmcli <span class=\"meta\">" + fmtBytes(cli.sizeBytes) + "</span>";
+        b.href = "/releases/" + tag + "/" + secondary.file;
+        var labelB = (secondary === miner)
+          ? "Raw qsdmminer.exe"
+          : "qsdmcli";
+        b.innerHTML = labelB + " <span class=\"meta\">" +
+          fmtBytes(secondary.sizeBytes) + "</span>";
         btns.appendChild(b);
       }
-      if (miner) {
+
+      if (primary) {
         document.getElementById("auto-sha").innerHTML =
-          "SHA-256: <code>" + escapeHtml(miner.sha256) + "</code>";
+          "SHA-256: <code>" + escapeHtml(primary.sha256) + "</code>";
+      }
+
+      // Inject the installer file name into the Windows panel
+      // so the "Download <installer-name>" instruction shows
+      // the actual versioned filename rather than a generic
+      // placeholder. Falls back gracefully if the installer
+      // isn't in the manifest (Linux/macOS deploys).
+      var nameSpan = document.getElementById("windows-installer-name");
+      if (nameSpan && installer) {
+        nameSpan.textContent = installer.file;
+      }
+
+      var noteEl = document.getElementById("auto-installer-note");
+      if (noteEl) {
+        if (primary === installer) {
+          noteEl.innerHTML =
+            "Installer registers <code>QSDMMiner</code> as a Windows service " +
+            "(idle-only mining + 24h auto-update).";
+        } else if (platform.os === "windows" && !installer) {
+          noteEl.innerHTML =
+            "Installer not available for this release — running the raw .exe with <code>--setup</code> works the same.";
+        } else {
+          noteEl.textContent = "";
+        }
       }
     } else {
       document.getElementById("platform-name").textContent =
@@ -459,9 +509,15 @@ sha256sum -c SHA256SUMS.txt 2&gt;&amp;1 | grep qsdmminer
   }
 
   function orderOfComponent(name) {
-    if (name === "qsdmminer") return 0;
-    if (name === "qsdmcli") return 1;
-    if (name === "qsdm-attester") return 2;
+    // Render order matters: the installer sits at the top (it's
+    // the consumer's first stop), then the raw miner binary
+    // (power-user fallback), then the CLI tool (used after
+    // install for enrollment + balance lookup), then the
+    // attester (advanced operators only).
+    if (name === "qsdmminer-installer") return 0;
+    if (name === "qsdmminer") return 1;
+    if (name === "qsdmcli") return 2;
+    if (name === "qsdm-attester") return 3;
     return 9;
   }
 

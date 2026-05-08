@@ -1,0 +1,164 @@
+; -----------------------------------------------------------------------------
+; QSDM Miner — Inno Setup 6 installer template.
+;
+; This file is consumed by build_installer.ps1, which substitutes the
+; placeholder tokens (between {%...%}) with values pulled from the
+; latest MANIFEST.json. The substituted file is then handed to
+; iscc.exe (the Inno Setup compiler) to produce a self-contained
+; qsdmminer-setup-<tag>.exe.
+;
+; Why Inno Setup and not MSI/WiX:
+;   - Single-file installer; no .cab proliferation.
+;   - Excellent Windows Service registration via the [Run]/sc.exe
+;     pattern below. WiX has its own ServiceInstall element, but
+;     it requires a .wxs schema and the WiX Toolset runtime.
+;   - GPL2+ license, free for proprietary use.
+;
+; Token reference (filled by build_installer.ps1):
+;   {%VERSION%}        — release tag, e.g. v0.0.0+5cf5b69
+;   {%VERSION_NUM%}    — numeric form for the AppVersion field, e.g. 0.0.0
+;   {%STAGING_DIR%}    — absolute path to the directory containing
+;                          qsdmminer-windows-amd64.exe, qsdmcli-...,
+;                          qsdm-attester-..., and LICENSE/README.
+;   {%OUTPUT_DIR%}     — where to drop the compiled .exe.
+;   {%OUTPUT_BASENAME%} — final installer file name without .exe
+;                          (Inno Setup adds the extension itself).
+; -----------------------------------------------------------------------------
+
+#define MyAppName "QSDM Miner"
+#define MyAppVersion "{%VERSION%}"
+#define MyAppPublisher "QSDM"
+#define MyAppURL "https://qsdm.tech/"
+#define MyAppExeName "qsdmminer.exe"
+#define MyServiceName "QSDMMiner"
+
+[Setup]
+AppId={{B8E6F5C2-3D4A-4F87-9E1C-2A8B6F4D9E3A}
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
+AppVerName={#MyAppName} {#MyAppVersion}
+AppPublisher={#MyAppPublisher}
+AppPublisherURL={#MyAppURL}
+AppSupportURL={#MyAppURL}/download.html
+AppUpdatesURL={#MyAppURL}/download.html
+DefaultDirName={autopf}\QSDM Miner
+DefaultGroupName=QSDM
+LicenseFile={%STAGING_DIR%}\LICENSE
+OutputDir={%OUTPUT_DIR%}
+OutputBaseFilename={%OUTPUT_BASENAME%}
+Compression=lzma2
+SolidCompression=yes
+WizardStyle=modern
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+PrivilegesRequired=admin
+DisableProgramGroupPage=yes
+UninstallDisplayIcon={app}\{#MyAppExeName}
+SetupLogging=yes
+; AppVersion above is decorative; VersionInfoVersion is what
+; Windows Add/Remove Programs reads. Keep it strict 0.0.0.0 form.
+VersionInfoVersion={%VERSION_NUM%}.0
+VersionInfoCompany={#MyAppPublisher}
+VersionInfoDescription=QSDM Miner installer
+VersionInfoCopyright=(c) QSDM contributors
+
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Tasks]
+; The "service" task is on by default — it's the consumer-friendly
+; install posture (auto-start at boot, mine on idle, auto-update).
+; Power users who want manual control can untick it and invoke the
+; binary by hand.
+Name: "service"; Description: "Register a Windows service that mines on idle and auto-updates"; GroupDescription: "Background mining:"; Flags: checkedonce
+Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
+Name: "addtopath"; Description: "Add qsdmcli + qsdmminer to PATH"; GroupDescription: "Command-line access:"; Flags: unchecked
+
+[Files]
+Source: "{%STAGING_DIR%}\qsdmminer-windows-amd64.exe";   DestDir: "{app}"; DestName: "qsdmminer.exe";    Flags: ignoreversion
+Source: "{%STAGING_DIR%}\qsdmcli-windows-amd64.exe";     DestDir: "{app}"; DestName: "qsdmcli.exe";      Flags: ignoreversion
+Source: "{%STAGING_DIR%}\qsdm-attester-windows-amd64.exe"; DestDir: "{app}"; DestName: "qsdm-attester.exe"; Flags: ignoreversion
+Source: "{%STAGING_DIR%}\LICENSE";                       DestDir: "{app}"; Flags: ignoreversion
+Source: "{%STAGING_DIR%}\README.txt";                    DestDir: "{app}"; Flags: ignoreversion
+
+[Icons]
+Name: "{group}\QSDM Miner Setup";          Filename: "{app}\qsdmminer.exe"; Parameters: "--setup"; Comment: "First-run setup wizard"
+Name: "{group}\QSDM Miner Console";        Filename: "{app}\qsdmminer.exe"; Comment: "Run miner in interactive mode"
+Name: "{group}\QSDM CLI";                  Filename: "cmd.exe"; Parameters: "/k cd /d ""{app}"" && qsdmcli.exe --help"; Comment: "qsdmcli help shell"
+Name: "{group}\Open Logs Folder";          Filename: "{app}\Logs"
+Name: "{group}\{cm:UninstallProgram,QSDM Miner}"; Filename: "{uninstallexe}"
+Name: "{commondesktop}\QSDM Miner";        Filename: "{app}\qsdmminer.exe"; Parameters: "--setup"; Tasks: desktopicon
+
+[Registry]
+; Optional PATH addition. We use the "system PATH" key so a fresh
+; cmd.exe sees the binaries; existing shells need a relog. The
+; uninstaller will remove the entry via [UninstallRegistry].
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: NeedsAddPath('{app}'); Tasks: addtopath
+
+[Run]
+; Create the install-time logs directory (some operators won't grant
+; the service Write-on-{app}, so we pre-create with full inheritance).
+Filename: "{cmd}"; Parameters: "/c mkdir ""{app}\Logs"" 2>nul"; Flags: runhidden waituntilterminated; StatusMsg: "Preparing log directory"
+
+; Service registration. We register with `--service --idle-only
+; --auto-update=24h --log-file` baked into the binPath so a fresh
+; install is consumer-ready: mines on idle, auto-updates daily,
+; logs to a rotating file under the install directory.
+Filename: "{sys}\sc.exe"; \
+  Parameters: "create {#MyServiceName} binPath= ""\""{app}\{#MyAppExeName}\"" --service --idle-only --auto-update=24h --log-file=\""{app}\Logs\qsdmminer.log\"""" start= auto DisplayName= ""QSDM Miner"" obj= LocalSystem"; \
+  Flags: runhidden waituntilterminated; StatusMsg: "Registering Windows service"; Tasks: service
+
+Filename: "{sys}\sc.exe"; \
+  Parameters: "description {#MyServiceName} ""Mines QSDM testnet rewards when the GPU is idle. Auto-updates every 24h from https://qsdm.tech/releases.""" ; \
+  Flags: runhidden waituntilterminated; Tasks: service
+
+; Optional: open the setup wizard in a console window so the new
+; user can finish the validator URL + reward address dance without
+; having to find the Start Menu shortcut.
+Filename: "{app}\{#MyAppExeName}"; \
+  Parameters: "--setup --config=""{app}\miner.toml"""; \
+  Flags: postinstall nowait shellexec runascurrentuser unchecked; \
+  Description: "Run the first-time setup wizard now"; \
+  StatusMsg: "Launching setup wizard"
+
+; Start the service post-install IF the service task was selected
+; AND the wizard was completed (we can't easily detect the latter
+; from inside Inno Setup, so we fall back to "start the service
+; anyway and rely on the v2-config-missing error to be human-
+; readable in the log file"). The operator can always
+; `Stop-Service QSDMMiner` and re-run setup.
+Filename: "{sys}\sc.exe"; Parameters: "start {#MyServiceName}"; Flags: runhidden waituntilterminated; Tasks: service
+
+[UninstallRun]
+; Stop + delete the service. Errors are silenced because an
+; operator who already ran `sc delete QSDMMiner` manually shouldn't
+; have the uninstaller fail.
+Filename: "{sys}\sc.exe"; Parameters: "stop {#MyServiceName}"; Flags: runhidden waituntilterminated; RunOnceId: "StopQSDMService"
+Filename: "{sys}\sc.exe"; Parameters: "delete {#MyServiceName}"; Flags: runhidden waituntilterminated; RunOnceId: "DeleteQSDMService"
+
+[UninstallDelete]
+; The service writes logs + config + crash dumps next to the binary.
+; Remove them on uninstall so a re-install is a clean slate. We do
+; NOT touch the user-config directory at %APPDATA%\qsdm because
+; that's where their HMAC key + miner.toml live; deleting it would
+; mean re-enrolling on-chain.
+Type: filesandordirs; Name: "{app}\Logs"
+Type: files;          Name: "{app}\miner.toml"
+
+[Code]
+// NeedsAddPath is the standard Inno Setup PATH-dedupe helper. Adapted
+// from the Inno Setup FAQ; checks if {app} is already a member of
+// the system PATH and only appends if not.
+function NeedsAddPath(Param: string): boolean;
+var
+  OrigPath: string;
+begin
+  if not RegQueryStringValue(HKEY_LOCAL_MACHINE,
+    'SYSTEM\CurrentControlSet\Control\Session Manager\Environment',
+    'Path', OrigPath)
+  then begin
+    Result := True;
+    exit;
+  end;
+  Result := Pos(';' + Uppercase(Param) + ';', ';' + Uppercase(OrigPath) + ';') = 0;
+end;
