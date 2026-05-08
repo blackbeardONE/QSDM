@@ -153,14 +153,25 @@ foreach ($t in $Targets) {
         $artifactName = "$($c.name)-$($t.name)$($t.ext)"
         $artifactPath = Join-Path $OutDir $artifactName
 
-        # ldflags strip the symbol table for smaller binaries.
-        # "-s -w" is safe for production: stack traces still
-        # work because Go embeds runtime tables separately, only
-        # debug symbols + DWARF go away.
-        $ldflags = "-s -w"
+        # ldflags:
+        #   -s -w strips the symbol table + DWARF for smaller
+        #     binaries. Stack traces still work because Go embeds
+        #     runtime tables separately, only debug symbols go away.
+        #   -X github.com/.../buildinfo.{Version,GitSHA,BuildDate}=
+        #     injects the release tag + short SHA + UTC timestamp
+        #     into pkg/buildinfo so `qsdmminer --version` and the
+        #     updater both have a precise identifier to compare
+        #     against /releases/latest.txt.
+        $injSha = $VersionTag.Split('+')[1]
+        if (-not $injSha) { $injSha = "unknown" }
+        $injDate = (Get-Date).ToUniversalTime().ToString("o")
+        $ldflags = "-s -w" `
+            + " -X github.com/blackbeardONE/QSDM/pkg/buildinfo.Version=$VersionTag" `
+            + " -X github.com/blackbeardONE/QSDM/pkg/buildinfo.GitSHA=$injSha" `
+            + " -X github.com/blackbeardONE/QSDM/pkg/buildinfo.BuildDate=$injDate"
 
         Write-Host "  building $artifactName ..." -NoNewline
-        & go build -ldflags $ldflags -o $artifactPath $c.pkg
+        & go build -trimpath -ldflags $ldflags -o $artifactPath $c.pkg
         if ($LASTEXITCODE -ne 0) {
             Write-Host " FAIL" -ForegroundColor Red
             exit $LASTEXITCODE
@@ -230,7 +241,14 @@ foreach ($c in $Manifest.components) {
 }
 
 $manifestPath = Join-Path $OutDir "MANIFEST.json"
-$Manifest | ConvertTo-Json -Depth 6 | Set-Content -Path $manifestPath -Encoding UTF8
+# UTF-8 *without* BOM. Set-Content -Encoding UTF8 in PS 5.1 prepends
+# the EF BB BF BOM, which Go's encoding/json rejects with
+# "invalid character 'ï' looking for beginning of value". Write
+# directly via .NET to get UTF-8-no-BOM that every consumer
+# (browsers via fetch(), the auto-updater's json.Unmarshal, sha256
+# tools) parses identically.
+$manifestJson = $Manifest | ConvertTo-Json -Depth 6
+[System.IO.File]::WriteAllText($manifestPath, $manifestJson, (New-Object System.Text.UTF8Encoding $false))
 
 Write-Host ""
 Write-Host "=== Release built at $OutDir ===" -ForegroundColor Green

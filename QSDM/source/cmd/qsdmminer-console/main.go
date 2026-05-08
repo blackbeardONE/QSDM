@@ -1051,6 +1051,21 @@ func main() {
 	}
 	flag.Parse()
 
+	// --apply-staged-update is an explicit one-shot operator
+	// command and must beat every other short-circuit (--version,
+	// --self-test, --gen-hmac-key) — those flags interrogate the
+	// CURRENT binary, but if the operator typed
+	// --apply-staged-update they want the NEW binary to do
+	// whatever else they asked for. ApplyStaged either re-execs
+	// (control never returns) or os.Exits with an explanatory
+	// stderr line; we treat any returned error as fatal.
+	if consumer.ApplyStaged {
+		if _, err := applyStagedUpdateAtStartup(consumer); err != nil {
+			fmt.Fprintf(os.Stderr, "qsdmminer: apply staged update: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	// --version is handled before config load / wizard / any side
 	// effect, so it's usable on a fresh host that doesn't yet have a
 	// miner.toml. Same contract as cmd/qsdmminer and cmd/trustcheck.
@@ -1095,6 +1110,28 @@ func main() {
 		fmt.Printf("  qsdmminer-console --protocol=v2 --hmac-key-path=%s \\\n", *genHMACKey)
 		fmt.Println("    --node-id=<NODE_ID> --gpu-uuid=<GPU_UUID> --gpu-arch=<ada|ampere|hopper|blackwell>")
 		return
+	}
+
+	// Implicit auto-update apply hook: when --auto-update is on
+	// (so the operator has opted into the update flow) AND a
+	// staged update is sitting next to us, we re-exec into the
+	// new binary now and never reach the rest of main(). The new
+	// process picks up its own config, opens its own log files,
+	// and prints its own banner — leaving us free to do all
+	// of those things normally if no swap was needed.
+	//
+	// This runs AFTER the --version / --self-test / --gen-hmac-key
+	// short-circuits because those are deliberate one-shot
+	// commands; surprising a `--version` invocation with a binary
+	// swap would be the wrong UX. The explicit
+	// --apply-staged-update path above DOES win over those
+	// short-circuits — that is the operator's "I want the swap
+	// even though I also typed --version" override.
+	if !consumer.ApplyStaged {
+		if _, err := applyStagedUpdateAtStartup(consumer); err != nil {
+			fmt.Fprintf(os.Stderr, "qsdmminer: apply staged update: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	cfg, err := loadConfig(*configPath)
@@ -1339,6 +1376,14 @@ func main() {
 			consumer.IdleThreshold, consumer.IdleGrace, consumer.IdlePoll)
 		go idleProbe.Run(ctx)
 	}
+
+	// --auto-update background poller. No-ops when the operator
+	// hasn't set --auto-update; otherwise lives on its own
+	// goroutine, hits qsdm.tech every N, stages the new binary
+	// when one is published. The next service-manager restart
+	// (or operator-issued `--apply-staged-update`) atomically
+	// rolls forward to the new version.
+	runAutoUpdater(ctx, consumer)
 
 	// Background enrollment poller: only spun up when v2 is
 	// enabled AND the operator hasn't disabled it via

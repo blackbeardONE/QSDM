@@ -35,14 +35,20 @@ package main
 // so power users can mix-and-match.
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
+	"github.com/blackbeardONE/QSDM/pkg/buildinfo"
 	"github.com/blackbeardONE/QSDM/pkg/mining/idle"
+	"github.com/blackbeardONE/QSDM/pkg/updater"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -59,6 +65,23 @@ type ConsumerFlags struct {
 	LogFile string
 	LogSize int // megabytes per file before rotation; 0 = lumberjack default
 	LogKeep int // number of rotated files to retain; 0 = lumberjack default
+
+	// Auto-update knobs. When AutoUpdate > 0 the miner runs a
+	// background goroutine that polls UpdateURL for a fresh
+	// release every AutoUpdate, stages the new binary at
+	// <currentExe>.next on a SHA-256 match, and applies any
+	// staged update at the next startup (atomic rename + exec).
+	// AutoUpdate=0 (default) keeps the legacy behaviour: the
+	// miner never reaches out for updates.
+	AutoUpdate time.Duration
+	UpdateURL  string
+
+	// ApplyStaged is the "do exactly one thing then exit" knob:
+	// apply any staged update and exit. Useful for ops scripts
+	// that want to drive the swap without setting AutoUpdate.
+	// Implies a graceful exit-then-exec; the miner does not
+	// proceed to the mining loop on this path.
+	ApplyStaged bool
 }
 
 // RegisterConsumerFlags binds the consumer flags to the default
@@ -102,6 +125,13 @@ func RegisterConsumerFlags(fs *flag.FlagSet, out *ConsumerFlags) {
 		"max megabytes per log file before rotation")
 	fs.IntVar(&out.LogKeep, "log-keep", 5,
 		"number of rotated log files to retain")
+
+	fs.DurationVar(&out.AutoUpdate, "auto-update", 0,
+		"poll <update-url> every N for a fresh release; download + sha256-verify + stage as <exe>.next; auto-apply at next startup. Set to 0 to disable.")
+	fs.StringVar(&out.UpdateURL, "update-url", "https://qsdm.tech/releases",
+		"base URL for the release manifest + binaries (no trailing slash)")
+	fs.BoolVar(&out.ApplyStaged, "apply-staged-update", false,
+		"apply any staged update (<exe>.next) by atomic rename + re-exec, then exit")
 }
 
 // applyServiceMode redirects stdout+stderr to a rotating log file
@@ -276,4 +306,161 @@ func buildIdleGate(probe *idle.Probe) *idleGate {
 		return nil
 	}
 	return &idleGate{probe: probe}
+}
+
+// applyStagedUpdateAtStartup is the "did the operator restart us
+// because they wanted to apply a staged update?" hook. Called from
+// main() BEFORE applyServiceMode reassigns stdout/stderr — applying
+// a staged update reexecs into a different binary, and we want the
+// new process to make its own logging choices rather than inherit
+// stale pipes.
+//
+// Behaviour:
+//
+//   - If --apply-staged-update was passed, ALWAYS apply (or report
+//     "no staged update" + exit 1).
+//   - Else if --auto-update is on AND a staged update exists next
+//     to the running exe, apply silently. This makes the consumer
+//     story (`qsdmminer --auto-update=24h`) self-applying: the
+//     background poller stages, the next service-manager restart
+//     atomically rolls forward.
+//   - Else: do nothing.
+//
+// Returns (applied=true) only on the success path of an exec swap.
+// The current process is gone after that, so callers will only see
+// (false, ...) or never see anything (process replaced).
+func applyStagedUpdateAtStartup(cf *ConsumerFlags) (applied bool, err error) {
+	if !cf.ApplyStaged && cf.AutoUpdate <= 0 {
+		return false, nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return false, fmt.Errorf("locate self: %w", err)
+	}
+	stagePath := exe + ".next"
+	if _, err := os.Stat(stagePath); errors.Is(err, os.ErrNotExist) {
+		if cf.ApplyStaged {
+			fmt.Fprintln(os.Stderr,
+				"qsdmminer: --apply-staged-update set but no staged update found at "+stagePath)
+			os.Exit(1)
+		}
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("stat staged update: %w", err)
+	}
+	fmt.Fprintf(os.Stderr,
+		"qsdmminer: applying staged update from %s (atomic rename + re-exec)\n",
+		stagePath)
+	// ApplyStaged either exits the process via os.Exit(0) on
+	// success OR returns an error. Returning err==nil here
+	// would be a bug — but we wrap defensively.
+	err = updater.ApplyStaged(stagePath, exe, os.Args)
+	return false, err
+}
+
+// runAutoUpdater starts the background updater goroutine when
+// --auto-update is set. The goroutine ticks at the configured
+// interval, attempts one CheckAndStage per tick, and logs the
+// outcome. It honours ctx cancellation so a Ctrl-C / SIGTERM tears
+// the goroutine down promptly.
+//
+// Returns silently when AutoUpdate <= 0; callers can invoke this
+// unconditionally.
+//
+// We deliberately do NOT auto-apply mid-run. Auto-apply would
+// require killing the live mining loop and re-exec'ing the binary,
+// which is a sharp edge: in-flight Solve calls would lose their
+// proof, the live console panel would flicker, and any service
+// manager that's monitoring the pid would see a fork. Staging at
+// runtime + applying at restart is the same outcome with none of
+// those edge cases.
+func runAutoUpdater(ctx context.Context, cf *ConsumerFlags) {
+	if cf.AutoUpdate <= 0 {
+		return
+	}
+	cur := buildinfo.Version
+	if cur == "dev" {
+		fmt.Fprintln(os.Stderr,
+			"qsdmminer: --auto-update enabled but build is 'dev' (no buildinfo injection); skipping")
+		return
+	}
+	cli := &http.Client{Timeout: 30 * time.Second}
+	u, err := updater.New(updater.Config{
+		BaseURL:        cf.UpdateURL,
+		Component:      "qsdmminer",
+		GOOS:           runtime.GOOS,
+		GOARCH:         runtime.GOARCH,
+		CurrentVersion: cur,
+		HTTPClient:     cli,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "qsdmminer: auto-updater disabled: %v\n", err)
+		return
+	}
+
+	interval := cf.AutoUpdate
+	if interval < 5*time.Minute {
+		// 5 min floor. Anything below that is a stress test
+		// against qsdm.tech, not a real update cadence.
+		// Operators who want fast iteration can run
+		// --apply-staged-update by hand.
+		interval = 5 * time.Minute
+	}
+	fmt.Fprintf(os.Stderr,
+		"qsdmminer: auto-update enabled, polling %s every %s (current=%s)\n",
+		cf.UpdateURL, interval, cur)
+
+	go func() {
+		// Initial check after a small jitter so a host that
+		// boots a fleet of miners doesn't hammer the release
+		// host in lockstep. 30s is small enough for a fresh
+		// install to see "update staged" on the panel within
+		// a minute, and large enough to avoid the thundering
+		// herd.
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(30 * time.Second):
+		}
+		runOneUpdateCheck(ctx, u)
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				runOneUpdateCheck(ctx, u)
+			}
+		}
+	}()
+}
+
+// runOneUpdateCheck wraps Updater.CheckAndStage with consistent
+// logging. Errors land on stderr but never crash the miner — the
+// updater is best-effort, and a flapping release host should not
+// take down a healthy mining loop.
+func runOneUpdateCheck(ctx context.Context, u *updater.Updater) {
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	res, err := u.CheckAndStage(cctx)
+	switch {
+	case errors.Is(err, updater.ErrCurrentVersionDev):
+		// Already logged during runAutoUpdater bootstrap.
+		return
+	case err != nil:
+		fmt.Fprintf(os.Stderr, "qsdmminer: update check failed: %v\n", err)
+		return
+	case res.Staged:
+		fmt.Fprintf(os.Stderr,
+			"qsdmminer: staged update %s at %s (sha256=%s, %d bytes); restart to apply\n",
+			res.NewVersion, res.StagedPath, res.SHA256, res.SizeBytes)
+	case res.UpToDate:
+		fmt.Fprintf(os.Stderr,
+			"qsdmminer: update check OK, already on %s\n", res.NewVersion)
+	default:
+		fmt.Fprintf(os.Stderr,
+			"qsdmminer: update check: tag=%s skipped (%s)\n",
+			res.NewVersion, res.SkippedReason)
+	}
 }
