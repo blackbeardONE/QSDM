@@ -225,6 +225,21 @@ const (
 	// carries a human-readable summary suitable for plain-mode
 	// log lines.
 	EvEnrollment
+
+	// EvIdlePaused is emitted by the runLoop when --idle-only
+	// detects the GPU is busy and gates a mining iteration. The
+	// Message field carries a short reason ("GPU busy at 73%")
+	// that the dashboard surfaces in the "Status" row. Mirrored
+	// by EvIdleResumed when the GPU goes back below the
+	// threshold for the configured grace period.
+	EvIdlePaused
+
+	// EvIdleResumed is emitted by the runLoop after a paused
+	// state transitions back to "GPU idle, mining will resume on
+	// the next iteration." Used so the dashboard / plain log
+	// can clearly mark the bracketing of an idle window without
+	// the operator having to diff GPU% snapshots.
+	EvIdleResumed
 )
 
 type Event struct {
@@ -294,6 +309,15 @@ type Dashboard struct {
 	V2EnrollmentSlashable bool
 	V2EnrollmentLastPoll  time.Time
 	V2EnrollmentError     string
+
+	// IdlePaused reflects --idle-only state: true when the most
+	// recent gating decision was "GPU busy, sit this one out".
+	// IdleReason carries the human string the panel surfaces
+	// (e.g. "GPU busy at 73%, waiting for 60s of idle"). Zero
+	// values render as the unchanged operator-friendly status
+	// when --idle-only isn't enabled.
+	IdlePaused bool
+	IdleReason string
 }
 
 func (d *Dashboard) applyEvent(e Event) {
@@ -337,6 +361,12 @@ func (d *Dashboard) applyEvent(e Event) {
 		d.V2EnrollmentSlashable = e.Enrollment.Slashable
 		d.V2EnrollmentLastPoll = e.Enrollment.LastPolledAt
 		d.V2EnrollmentError = e.Enrollment.LastError
+	case EvIdlePaused:
+		d.IdlePaused = true
+		d.IdleReason = e.Message
+	case EvIdleResumed:
+		d.IdlePaused = false
+		d.IdleReason = ""
 	}
 }
 
@@ -440,6 +470,10 @@ func kindLabel(k EventKind) string {
 		return "[v2]  "
 	case EvEnrollment:
 		return "[enrl]"
+	case EvIdlePaused:
+		return "[idle]"
+	case EvIdleResumed:
+		return "[mine]"
 	default:
 		return "[info]"
 	}
@@ -502,11 +536,21 @@ func (c *consoleRenderer) Render(d *Dashboard, hps float64) {
 	}
 
 	statusColor := ansiYellow
+	statusLabel := d.Status
 	switch d.Status {
 	case "connected":
 		statusColor = ansiGreen
 	case "error":
 		statusColor = ansiRed
+	}
+	// --idle-only takes visual priority over the protocol
+	// status: a paused miner that says "[connected]" misleads
+	// the operator into thinking proofs are flowing when they
+	// aren't. The pause is benign so the row is shown in cyan
+	// (informational), not red (error).
+	if d.IdlePaused {
+		statusColor = ansiCyan
+		statusLabel = "paused (GPU busy)"
 	}
 
 	uptime := formatDuration(time.Since(d.StartedAt))
@@ -518,10 +562,13 @@ func (c *consoleRenderer) Render(d *Dashboard, hps float64) {
 	writeLine(ansiBold + "  " + branding.Name + " miner console " + ansiReset + ansiDim + "· protocol v" + itoa(mining.ProtocolVersion) + ansiReset)
 	writeLine(ansiDim + "  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500" + ansiReset)
 	writeLine(fmt.Sprintf("  %-16s %s", "Reward address", truncateAddr(d.Address)))
-	writeLine(fmt.Sprintf("  %-16s %s  %s%s%s", "Validator", d.Validator, statusColor, "["+d.Status+"]", ansiReset))
-	if d.StatusDetail != "" {
+	writeLine(fmt.Sprintf("  %-16s %s  %s%s%s", "Validator", d.Validator, statusColor, "["+statusLabel+"]", ansiReset))
+	switch {
+	case d.IdlePaused && d.IdleReason != "":
+		writeLine(fmt.Sprintf("  %-16s %s%s%s", "", ansiDim, d.IdleReason, ansiReset))
+	case d.StatusDetail != "":
 		writeLine(fmt.Sprintf("  %-16s %s%s%s", "", ansiDim, d.StatusDetail, ansiReset))
-	} else {
+	default:
 		writeLine("")
 	}
 	writeLine(fmt.Sprintf("  %-16s %d  (DAG %s)", "Epoch", d.Epoch, dagLabel))
@@ -988,6 +1035,13 @@ func main() {
 		genHMACKey  = flag.String("gen-hmac-key", "", "generate a fresh 32-byte HMAC key, write it as hex to this path (0o600), print the matching qsdmcli enroll snippet, and exit")
 		enrollPoll  = flag.Duration("enrollment-poll", DefaultEnrollmentPollInterval, "v2 only: cadence the background poller re-fetches the on-chain enrollment record (set to 0 to disable; <5s rounded up to 5s)")
 	)
+	// Consumer-grade flags: --idle-only, --service, --log-file.
+	// Registered through service.go so the existing operator-flag
+	// block above stays focused on protocol / mining knobs and
+	// the new consumer surface is reviewable as one block.
+	consumer := &ConsumerFlags{}
+	RegisterConsumerFlags(flag.CommandLine, consumer)
+
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
 		fmt.Fprintf(out, "%s — friendly console miner (MINING_PROTOCOL.md v%d)\n\n", branding.FullTitle(), mining.ProtocolVersion)
@@ -1043,23 +1097,31 @@ func main() {
 		return
 	}
 
-	// Deprecation banner — printed on every real mining run (but NOT
-	// on --version / --self-test, which must stay machine-parseable
-	// for CI and `docker inspect`-style checks). The project is
-	// pivoting to the NVIDIA-locked v2 protocol described in
-	// nvidia_locked_qsdm_blockchain_architecture.md; once v2
-	// activates, CPU-only miners can no longer produce proofs that
-	// mainnet validators accept. This binary stays in-tree for
-	// testnet replay and algorithmic reference, and shipping it
-	// without a banner would be quietly misleading to any operator
-	// who expects mainnet rewards. Keep the text short — operators
-	// running systemd / journalctl will see it on every restart.
-	printNvidiaLockDeprecationBanner(os.Stderr)
-
 	cfg, err := loadConfig(*configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "load config: %v\n", err)
 		os.Exit(1)
+	}
+
+	// --service / --log-file rewires stdout+stderr to a
+	// rotating log file BEFORE any banner / status text is
+	// printed, so a service operator's log file starts with
+	// the deprecation banner rather than a missing one.
+	plainOverride, logCloser, err := applyServiceMode(consumer, &cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "service log: %v\n", err)
+		os.Exit(1)
+	}
+	defer logCloser.Close()
+
+	// Deprecation banner — printed on every real mining run
+	// EXCEPT under --service. In service mode the operator has
+	// opted into a long-running unattended process and a 10-line
+	// box-drawing banner per restart adds noise to the log
+	// rotation budget. --version / --self-test stay banner-free
+	// so they remain machine-parseable for CI / docker inspect.
+	if !consumer.Service {
+		printNvidiaLockDeprecationBanner(os.Stderr)
 	}
 
 	// The setup wizard runs when: the user explicitly asked; OR the
@@ -1157,9 +1219,12 @@ func main() {
 		os.Exit(2)
 	}
 
-	// Renderer choice: --plain forces plain; otherwise TTY autodetect.
-	// Piping to a file should never emit ANSI escapes.
-	usePanel := !*plain && !cfg.Plain && term.IsTerminal(int(os.Stdout.Fd()))
+	// Renderer choice: --plain forces plain; --service / --log-file
+	// also forces plain because their target stdout is a rotating
+	// log file, not a terminal. Otherwise we autodetect via the
+	// stdlib TTY check — piping to `tee` / `journalctl` should
+	// never emit ANSI escapes.
+	usePanel := !*plain && !cfg.Plain && !plainOverride && term.IsTerminal(int(os.Stdout.Fd()))
 
 	// Stash the config path so the panel footer can display it.
 	// Using an env var keeps the renderer free of config-path
@@ -1262,6 +1327,19 @@ func main() {
 		os.Exit(2)
 	}
 
+	// --idle-only background sampler. Built only when the
+	// operator opted in; nil otherwise so the runLoop's gate
+	// check is a single nil-compare. The probe runs on its own
+	// goroutine and shutdown is implicit via ctx cancellation.
+	idleProbe := buildIdleProbe(consumer)
+	idleGateInstance := buildIdleGate(idleProbe)
+	if idleProbe != nil {
+		fmt.Fprintf(os.Stderr,
+			"qsdmminer-console: --idle-only enabled (threshold=%d%% grace=%s poll=%s)\n",
+			consumer.IdleThreshold, consumer.IdleGrace, consumer.IdlePoll)
+		go idleProbe.Run(ctx)
+	}
+
 	// Background enrollment poller: only spun up when v2 is
 	// enabled AND the operator hasn't disabled it via
 	// --enrollment-poll=0. Lives on a dedicated goroutine so a
@@ -1321,7 +1399,7 @@ func main() {
 		}()
 	}
 
-	runLoop(ctx, client, challengeFetcher, cfg, v2ctx, events, &attempts)
+	runLoop(ctx, client, challengeFetcher, cfg, v2ctx, idleGateInstance, events, &attempts)
 	pollerWG.Wait()
 
 	events <- Event{Kind: EvShutdown, At: time.Now(), Message: "shutting down"}
@@ -1352,7 +1430,7 @@ func cliWantsContinue() bool {
 // this binary can freely evolve its UX.
 // -----------------------------------------------------------------------------
 
-func runLoop(ctx context.Context, client *http.Client, fetcher v2client.ChallengeFetcher, cfg Config, v2ctx *V2Context, events chan<- Event, attempts *uint64) {
+func runLoop(ctx context.Context, client *http.Client, fetcher v2client.ChallengeFetcher, cfg Config, v2ctx *V2Context, gate *idleGate, events chan<- Event, attempts *uint64) {
 	var (
 		currentEpoch uint64 = ^uint64(0)
 		currentDAG   mining.DAG
@@ -1368,9 +1446,31 @@ func runLoop(ctx context.Context, client *http.Client, fetcher v2client.Challeng
 
 	send(Event{Kind: EvConnecting, Message: "contacting " + cfg.ValidatorURL})
 
+	wasPaused := false
 	for {
 		if ctx.Err() != nil {
 			return
+		}
+		// --idle-only gate. If the GPU is busy, sleep in
+		// 1-second slices and re-check; we don't burn Solve
+		// cycles while the user is gaming. The first time we
+		// pause we emit EvIdlePaused; on resume we emit
+		// EvIdleResumed so the dashboard / log clearly
+		// brackets the idle window.
+		if gate != nil {
+			busy, reason := gate.shouldPause()
+			if busy {
+				if !wasPaused {
+					send(Event{Kind: EvIdlePaused, Message: reason})
+					wasPaused = true
+				}
+				sleepOrCancel(ctx, time.Second)
+				continue
+			}
+			if wasPaused {
+				send(Event{Kind: EvIdleResumed, Message: "GPU idle, resuming mining"})
+				wasPaused = false
+			}
 		}
 		work, err := fetchWork(ctx, client, cfg.ValidatorURL)
 		if err != nil {

@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Download — QSDM Miner</title>
+<meta name="description" content="Download the QSDM consumer miner for Windows, Linux, and macOS. Verify SHA-256 checksums, install in 5 minutes, mine Cell (CELL) on your home GPU." />
+<meta name="theme-color" content="#0b1220" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b1220'/%3E%3Cpath d='M12 32l10-10 10 10-10 10z' fill='%2376b900'/%3E%3Cpath d='M32 20l10 12-10 12-10-12z' fill='%2300d1b2' opacity='.85'/%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #0a101d;
+    --bg-2: #0f172a;
+    --panel: #111a2e;
+    --panel-2: #152238;
+    --border: #1f2a44;
+    --text: #e6edf7;
+    --text-2: #9fb0c9;
+    --muted: #6d7e99;
+    --accent: #76b900;
+    --accent-2: #00d1b2;
+    --accent-3: #6ea8ff;
+    --danger: #ff6b6b;
+    --warn: #ffb86b;
+    --success: #3ddc97;
+    --radius: 14px;
+    --radius-sm: 8px;
+    --shadow: 0 10px 30px -12px rgba(0,0,0,.55);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, "Cascadia Mono", Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--text);
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgba(118,185,0,.10), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, rgba(0,209,178,.10), transparent 60%),
+      linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+    min-height: 100vh;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: var(--accent-3); text-decoration: none; }
+  a:hover { color: #a7c5ff; text-decoration: underline; }
+  code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: .9em; }
+  pre {
+    font-family: var(--mono); background: #0a1326; color: var(--text);
+    padding: 14px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+    overflow-x: auto; font-size: 13px; line-height: 1.55;
+  }
+
+  /* --- Layout --- */
+  .container { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+  .nav {
+    position: sticky; top: 0; z-index: 20;
+    backdrop-filter: saturate(140%) blur(10px);
+    background: rgba(10,16,29,.72);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-inner {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 64px; gap: 16px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .2px; }
+  .brand svg { width: 28px; height: 28px; display: block; }
+  .nav ul { list-style: none; display: flex; gap: 22px; padding: 0; margin: 0; }
+  .nav a.navlink { color: var(--text-2); font-size: 14px; }
+  .nav a.navlink:hover { color: var(--text); text-decoration: none; }
+
+  h1, h2, h3 { letter-spacing: -.2px; }
+  h1 { font-size: 40px; line-height: 1.15; margin: 24px 0 12px; }
+  h2 { font-size: 26px; margin: 36px 0 12px; }
+  h3 { font-size: 17px; margin: 24px 0 8px; color: var(--text); }
+  .muted { color: var(--text-2); }
+  .small { font-size: 13px; color: var(--muted); }
+
+  section { padding: 28px 0; border-bottom: 1px solid var(--border); }
+  section:last-child { border-bottom: 0; }
+  .hero p { max-width: 680px; color: var(--text-2); }
+
+  /* Auto-detected platform card */
+  .auto {
+    margin: 18px 0 28px;
+    padding: 20px;
+    background: linear-gradient(180deg, rgba(118,185,0,.10), rgba(118,185,0,.02));
+    border: 1px solid rgba(118,185,0,.45);
+    border-radius: var(--radius);
+  }
+  .auto h3 {
+    margin: 0 0 8px;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--accent);
+  }
+  .auto .platform-name { font-size: 22px; font-weight: 700; margin: 4px 0 14px; }
+  .auto-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 18px; border-radius: 10px; font-weight: 600;
+    border: 1px solid transparent; transition: transform .08s ease;
+    text-decoration: none; cursor: pointer;
+  }
+  .btn:hover { transform: translateY(-1px); text-decoration: none; }
+  .btn.primary { background: var(--accent); color: #0a1400; border-color: #5d9600; }
+  .btn.primary:hover { background: #85cd08; color: #0a1400; }
+  .btn.secondary { background: var(--panel-2); color: var(--text); border-color: var(--border); }
+  .btn.secondary:hover { background: #1c2a45; color: var(--text); }
+  .btn .meta { font-weight: 400; color: var(--muted); font-size: 12px; }
+
+  /* All-platforms table */
+  table.releases {
+    width: 100%; border-collapse: collapse; margin: 12px 0;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  table.releases th, table.releases td {
+    padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+  table.releases th {
+    background: var(--panel-2); color: var(--text-2);
+    font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+  }
+  table.releases tr:last-child td { border-bottom: 0; }
+  table.releases td.sha { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  table.releases td.size { color: var(--text-2); font-variant-numeric: tabular-nums; }
+  table.releases td a { color: var(--accent-3); }
+
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    background: rgba(255,255,255,.08); color: var(--text-2);
+    font-size: 11px; font-weight: 600; letter-spacing: .5px;
+    border: 1px solid var(--border);
+  }
+  .pill.testnet {
+    background: rgba(255, 184, 107, .12);
+    color: var(--warn); border-color: rgba(255, 184, 107, .35);
+  }
+  .pill.unsigned {
+    background: rgba(255, 107, 107, .10);
+    color: var(--danger); border-color: rgba(255, 107, 107, .35);
+  }
+
+  .grid { display: grid; gap: 18px; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 800px) { .grid-2 { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px 20px;
+  }
+
+  ol.steps { padding-left: 22px; }
+  ol.steps li { margin: 10px 0; color: var(--text-2); }
+  ol.steps li strong { color: var(--text); }
+
+  footer {
+    padding: 28px 0; color: var(--muted); font-size: 13px; text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <div class="container nav-inner">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#0b1220"/><path d="M12 32l10-10 10 10-10 10z" fill="#76b900"/><path d="M32 20l10 12-10 12-10-12z" fill="#00d1b2" opacity=".85"/></svg>
+      <span>QSDM</span>
+    </a>
+    <ul>
+      <li><a class="navlink" href="/">Home</a></li>
+      <li><a class="navlink" href="/chain.html">Chain</a></li>
+      <li><a class="navlink" href="/trust.html">Trust</a></li>
+      <li><a class="navlink" href="/validators.html">Validators</a></li>
+      <li><a class="navlink" href="/download.html">Download</a></li>
+    </ul>
+  </div>
+</div>
+
+<div class="container">
+
+<section class="hero">
+  <h1>QSDM Miner <span class="pill testnet">testnet</span> <span class="pill unsigned">unsigned</span></h1>
+  <p>The QSDM consumer miner runs on your home machine and mines Cell (CELL) against the public testnet validator. Idle-only mode pauses mining while you're using the GPU; service mode runs in the background and rotates a single log file.</p>
+
+  <div class="auto" id="auto">
+    <h3>Recommended for your platform</h3>
+    <div class="platform-name" id="platform-name">Detecting…</div>
+    <div class="auto-buttons" id="auto-buttons">
+      <a class="btn primary" id="auto-miner" href="#all-downloads">View downloads</a>
+    </div>
+    <div class="small" style="margin-top: 10px" id="auto-sha"></div>
+  </div>
+</section>
+
+<section>
+  <h2>5-minute install</h2>
+  <div class="grid grid-2">
+    <div class="panel">
+      <h3>Windows</h3>
+      <ol class="steps">
+        <li>Download <code>qsdmminer-windows-amd64.exe</code> for your machine.</li>
+        <li>Right-click → <strong>Properties</strong> → tick <em>Unblock</em> (Windows SmartScreen tag from a non-signed download).</li>
+        <li>Open PowerShell where you saved it and run the wizard:</li>
+      </ol>
+      <pre>.\qsdmminer-windows-amd64.exe --setup</pre>
+      <p class="small">It asks for your reward address and validator URL (default <code>https://testnet.qsdm.tech</code>), then starts mining.</p>
+    </div>
+    <div class="panel">
+      <h3>Linux / macOS</h3>
+      <ol class="steps">
+        <li>Download the binary for your CPU (amd64 or arm64).</li>
+        <li>Verify the checksum (<code>sha256sum -c SHA256SUMS.txt</code> on Linux; on macOS replace with <code>shasum -a 256</code>).</li>
+        <li>Make it executable and run the setup wizard:</li>
+      </ol>
+      <pre>chmod +x qsdmminer-linux-amd64
+./qsdmminer-linux-amd64 --setup</pre>
+      <p class="small">Re-run with <code>--service --idle-only</code> to mine in the background only when the GPU is idle.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2 id="all-downloads">All downloads</h2>
+  <p class="muted small">Latest release: <span id="release-tag">…</span> · built <span id="release-built">…</span> · <a id="release-checksums" href="#">SHA256SUMS.txt</a></p>
+  <table class="releases" id="downloads-table">
+    <thead>
+      <tr>
+        <th>Component</th>
+        <th>Platform</th>
+        <th>File</th>
+        <th>Size</th>
+        <th>SHA-256</th>
+      </tr>
+    </thead>
+    <tbody id="downloads-rows">
+      <tr><td colspan="5" class="muted">Loading manifest…</td></tr>
+    </tbody>
+  </table>
+  <p class="small" style="margin-top:12px">
+    <strong>qsdmminer</strong> is the consumer miner — wizard, live panel, idle-only mode, service mode.
+    <strong>qsdmcli</strong> is the wallet / chain CLI (balance lookup, enrollment, transactions).
+    <strong>qsdm-attester</strong> is the optional home attester for advanced operators (Tier-2 spec checks); regular users do not need it.
+  </p>
+</section>
+
+<section>
+  <h2>Common flags</h2>
+  <div class="panel">
+    <pre>qsdmminer --setup
+    interactive first-run wizard. Saves to %USERPROFILE%\.qsdm\miner.toml
+    on Windows, ~/.qsdm/miner.toml on Linux/macOS.
+
+qsdmminer --idle-only
+    only mine when the GPU is otherwise idle. Pauses mining while you
+    play games, edit video, or video-call. Resumes after 60s of idle.
+
+qsdmminer --idle-only --idle-threshold 5 --idle-grace 2m
+    aggressive variant: only mine when GPU is below 5% for at least
+    2 minutes. Use when you want zero impact on a low-power laptop GPU.
+
+qsdmminer --service
+    background-service mode: no banner, plain log mode, exit 0 on
+    clean shutdown. Pairs with `nssm install qsdmminer ./qsdmminer.exe
+    --service --idle-only` on Windows or a systemd unit on Linux.
+
+qsdmminer --log-file ~/.qsdm/miner.log --log-size-mb 10 --log-keep 5
+    rotate logs at 10 MiB and keep 5 generations (~50 MiB ceiling).
+
+qsdmminer --self-test
+    in-memory solve-and-verify. Exits 0 if the build is healthy. Used
+    by package managers and CI to gate the install.
+
+qsdmminer --version
+    print build metadata (release tag, git SHA, build date).</pre>
+  </div>
+</section>
+
+<section>
+  <h2>Verify your download</h2>
+  <p class="muted">These binaries are not yet code-signed (testnet). The checksum file is the integrity gate until we ship Authenticode + macOS notarization.</p>
+
+  <h3>Windows (PowerShell)</h3>
+  <pre>$expected = (Invoke-WebRequest -Uri "https://qsdm.tech/releases/<latest>/SHA256SUMS.txt").Content `
+              -split "`n" | Where-Object { $_ -like "*qsdmminer-windows-amd64.exe" }
+$got = (Get-FileHash -Algorithm SHA256 .\qsdmminer-windows-amd64.exe).Hash.ToLower()
+if ($expected -like "$got*") { "OK" } else { "MISMATCH" }</pre>
+
+  <h3>Linux / macOS</h3>
+  <pre>curl -sLO https://qsdm.tech/releases/&lt;latest&gt;/SHA256SUMS.txt
+sha256sum -c SHA256SUMS.txt 2&gt;&amp;1 | grep qsdmminer
+# macOS: shasum -a 256 -c SHA256SUMS.txt</pre>
+</section>
+
+<section>
+  <h2>Source &amp; reproducibility</h2>
+  <p class="muted">Every release is reproducible from a tagged commit. The version string baked into the binary (<code>qsdmminer --version</code>) ends in <code>+&lt;short SHA&gt;</code>; check out that SHA, run <code>QSDM/scripts/build_release.ps1 -Tag &lt;tag&gt;</code>, and your local SHA256SUMS.txt should match the published one byte-for-byte.</p>
+  <p>Source: <a href="https://github.com/blackbeardONE/QSDM" target="_blank" rel="noopener">github.com/blackbeardONE/QSDM</a></p>
+</section>
+
+<footer>
+  <div class="container">
+    QSDM testnet · Cell (CELL) · <a href="/">home</a> · <a href="/chain.html">chain explorer</a> · <a href="/trust.html">trust transparency</a>
+  </div>
+</footer>
+
+</div>
+
+<script>
+(function() {
+  // --- platform autodetect ---
+  // Heuristics on UA + navigator.platform; intentionally rough,
+  // because the user can always pick a different artifact from the
+  // table below. The autodetect is "best guess for the prominent
+  // download button", not a contract.
+  function detectPlatform() {
+    var ua = (navigator.userAgent || "").toLowerCase();
+    var p  = (navigator.platform || "").toLowerCase();
+    var arch = "amd64";
+    if (/arm64|aarch64/.test(ua) || /arm/.test(p)) arch = "arm64";
+    if (/win/.test(p) || /windows/.test(ua)) {
+      // 32-bit Windows is unsupported. We could detect it here
+      // but in 2026 the population of Windows 32-bit users is
+      // statistically zero; show the amd64 build and let the
+      // exec error speak for itself.
+      return { os: "windows", arch: "amd64", label: "Windows 10/11 x64" };
+    }
+    if (/mac|darwin/.test(p) || /macintosh|mac os x/.test(ua)) {
+      // Intel Macs are still in service through 2026; UA lies
+      // ("Intel Mac OS X 10_15_7") on Apple Silicon, so we use
+      // the WebGL renderer string as a tiebreaker. If the
+      // renderer mentions Apple, treat as arm64.
+      var canvas = document.createElement("canvas");
+      try {
+        var gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+        var dbg = gl && gl.getExtension("WEBGL_debug_renderer_info");
+        var renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "";
+        if (/apple/i.test(renderer)) arch = "arm64";
+      } catch (e) { /* ignore */ }
+      return {
+        os: "darwin",
+        arch: arch === "arm64" ? "arm64" : "amd64",
+        label: arch === "arm64" ? "macOS Apple Silicon" : "macOS Intel"
+      };
+    }
+    if (/linux/.test(p) || /linux/.test(ua)) {
+      return {
+        os: "linux",
+        arch: arch,
+        label: arch === "arm64" ? "Linux ARM64" : "Linux x86_64"
+      };
+    }
+    return null;
+  }
+
+  // --- locate the latest release manifest ---
+  // Convention: the operator publishes /releases/<tag>/MANIFEST.json
+  // and a /releases/latest.txt that contains the current tag on a
+  // single line. The HTML below tries latest.txt first; if that is
+  // 404 (e.g. a fresh deploy that hasn't pinned latest yet), we
+  // fall back to a hard-coded RELEASE_TAG so the page never reads
+  // as fully empty.
+  var FALLBACK_RELEASE_TAG = "v0.0.0+ce21940";
+
+  async function fetchLatestTag() {
+    try {
+      var res = await fetch("/releases/latest.txt", { cache: "no-cache" });
+      if (res.ok) {
+        var t = (await res.text()).trim();
+        if (t) return t;
+      }
+    } catch (e) { /* ignore */ }
+    return FALLBACK_RELEASE_TAG;
+  }
+
+  function fmtBytes(n) {
+    if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(2) + " MiB";
+    if (n >= 1024) return (n / 1024).toFixed(1) + " KiB";
+    return n + " B";
+  }
+
+  async function loadManifest(tag) {
+    var url = "/releases/" + tag + "/MANIFEST.json";
+    var res = await fetch(url, { cache: "no-cache" });
+    if (!res.ok) throw new Error("HTTP " + res.status + " for " + url);
+    return res.json();
+  }
+
+  function renderRows(tag, manifest, platform) {
+    var tbody = document.getElementById("downloads-rows");
+    tbody.innerHTML = "";
+    var components = manifest.components || [];
+    components.sort(function(a, b) {
+      // Group by component name first (qsdmminer first, then cli,
+      // then attester). Within each component, sort by os then arch.
+      var orderA = orderOfComponent(a.component);
+      var orderB = orderOfComponent(b.component);
+      if (orderA !== orderB) return orderA - orderB;
+      var osCmp = (a.os || "").localeCompare(b.os || "");
+      if (osCmp !== 0) return osCmp;
+      return (a.arch || "").localeCompare(b.arch || "");
+    });
+    components.forEach(function(c) {
+      var tr = document.createElement("tr");
+      var url = "/releases/" + tag + "/" + c.file;
+      tr.innerHTML =
+        "<td><strong>" + escapeHtml(c.component) + "</strong></td>" +
+        "<td>" + escapeHtml(c.label || (c.os + "/" + c.arch)) + "</td>" +
+        "<td><a href=\"" + url + "\">" + escapeHtml(c.file) + "</a></td>" +
+        "<td class=\"size\">" + fmtBytes(c.sizeBytes || 0) + "</td>" +
+        "<td class=\"sha\" title=\"" + escapeHtml(c.sha256 || "") + "\">" +
+            escapeHtml((c.sha256 || "").slice(0, 16)) + "…</td>";
+      tbody.appendChild(tr);
+    });
+
+    // Header strip
+    document.getElementById("release-tag").textContent = tag;
+    document.getElementById("release-built").textContent =
+      manifest.builtAt ? new Date(manifest.builtAt).toLocaleString() : "unknown";
+    document.getElementById("release-checksums").href =
+      "/releases/" + tag + "/SHA256SUMS.txt";
+
+    // Auto-detect card
+    if (platform) {
+      var miner = components.find(function(c) {
+        return c.component === "qsdmminer" && c.os === platform.os && c.arch === platform.arch;
+      });
+      var cli = components.find(function(c) {
+        return c.component === "qsdmcli" && c.os === platform.os && c.arch === platform.arch;
+      });
+      document.getElementById("platform-name").textContent = platform.label;
+      var btns = document.getElementById("auto-buttons");
+      btns.innerHTML = "";
+      if (miner) {
+        var a = document.createElement("a");
+        a.className = "btn primary";
+        a.href = "/releases/" + tag + "/" + miner.file;
+        a.innerHTML = "Download qsdmminer <span class=\"meta\">" + fmtBytes(miner.sizeBytes) + "</span>";
+        btns.appendChild(a);
+      }
+      if (cli) {
+        var b = document.createElement("a");
+        b.className = "btn secondary";
+        b.href = "/releases/" + tag + "/" + cli.file;
+        b.innerHTML = "qsdmcli <span class=\"meta\">" + fmtBytes(cli.sizeBytes) + "</span>";
+        btns.appendChild(b);
+      }
+      if (miner) {
+        document.getElementById("auto-sha").innerHTML =
+          "SHA-256: <code>" + escapeHtml(miner.sha256) + "</code>";
+      }
+    } else {
+      document.getElementById("platform-name").textContent =
+        "Couldn't auto-detect — pick from the list below";
+    }
+  }
+
+  function orderOfComponent(name) {
+    if (name === "qsdmminer") return 0;
+    if (name === "qsdmcli") return 1;
+    if (name === "qsdm-attester") return 2;
+    return 9;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function(c) {
+      return ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c];
+    });
+  }
+
+  async function main() {
+    var platform = detectPlatform();
+    var tag;
+    try {
+      tag = await fetchLatestTag();
+      var manifest = await loadManifest(tag);
+      renderRows(tag, manifest, platform);
+    } catch (e) {
+      var tbody = document.getElementById("downloads-rows");
+      tbody.innerHTML = "<tr><td colspan=\"5\" class=\"muted\">" +
+        "Manifest unavailable yet (" + escapeHtml(e.message) + ")." +
+        " Try directly: <a href=\"/releases/" + escapeHtml(tag || "") + "/\">" +
+        "/releases/" + escapeHtml(tag || "") + "/</a></td></tr>";
+      document.getElementById("release-tag").textContent = tag || "(none)";
+    }
+  }
+
+  main();
+})();
+</script>
+
+</body>
+</html>

@@ -169,7 +169,7 @@ func TestIntegration_RunLoop_v2_EndToEnd(t *testing.T) {
 		defer close(done)
 		client := &http.Client{Timeout: 5 * time.Second}
 		fetcher, _ := v2client.NewMultiFetcher(client, append([]string{cfg.ValidatorURL}, cfg.ChallengeURLs...))
-		runLoop(ctx, client, fetcher, cfg, v2ctx, events, &attempts)
+		runLoop(ctx, client, fetcher, cfg, v2ctx, nil, events, &attempts)
 	}()
 
 	deadline := time.After(30 * time.Second)
@@ -306,7 +306,7 @@ func TestIntegration_RunLoop_v2_ChallengeOutageStaysAtV1Empty(t *testing.T) {
 		defer close(done)
 		client := &http.Client{Timeout: 2 * time.Second}
 		fetcher, _ := v2client.NewMultiFetcher(client, append([]string{cfg.ValidatorURL}, cfg.ChallengeURLs...))
-		runLoop(ctx, client, fetcher, cfg, v2ctx, events, &attempts)
+		runLoop(ctx, client, fetcher, cfg, v2ctx, nil, events, &attempts)
 	}()
 
 	gotV2PrepareErr := false

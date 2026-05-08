@@ -275,6 +275,19 @@ desktop.ini
 # Local one-shot release-style staging directory.
 /dist/
 
+# Cross-platform consumer release artifacts produced by
+# QSDM/scripts/build_release.ps1. Contains the per-platform
+# qsdmminer / qsdmcli / qsdm-attester binaries plus
+# SHA256SUMS.txt and MANIFEST.json. Published manually to
+# https://qsdm.tech/releases/<tag>/ — checking the tarball
+# into git would bloat the repo (~150 MiB per release) and
+# create the same "stale binary shadows fresh source" risk
+# the per-target rules above guard against.
+/release/
+
+# Stderr captures from local repro runs.
+*.err
+
 # ------------------------------------------------------------
 # Local one-shot deploy/operator scripts
 # ------------------------------------------------------------

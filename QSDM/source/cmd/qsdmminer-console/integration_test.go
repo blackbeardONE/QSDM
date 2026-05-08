@@ -284,7 +284,7 @@ func TestIntegration_RunLoop_EndToEnd(t *testing.T) {
 		defer close(done)
 		client := &http.Client{Timeout: 5 * time.Second}
 		fetcher, _ := v2client.NewMultiFetcher(client, append([]string{cfg.ValidatorURL}, cfg.ChallengeURLs...))
-		runLoop(ctx, client, fetcher, cfg, &V2Context{}, events, &attempts)
+		runLoop(ctx, client, fetcher, cfg, &V2Context{}, nil, events, &attempts)
 	}()
 
 	deadline := time.After(30 * time.Second)
