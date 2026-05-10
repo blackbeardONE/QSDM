@@ -28,6 +28,28 @@ vps.txt
 # on Windows/PowerShell shells. The actual commit body lives in
 # git history; the buffer is throwaway.
 _commit_msg.txt
+_tmp_commit_msg.txt
+
+# Local session evidence files emitted by ad-hoc verification runs
+# (govulncheck, syft, soak harnesses). Useful operator breadcrumbs
+# but never appropriate for the public tree.
+_session*_*.log
+_session*_*.json
+_session*_*.spdx.json
+
+# Runtime side effects of the `qsdm` server when the operator runs
+# a binary smoke-check (e.g. `qsdm.exe --version`) directly from the
+# repo root. Storage / governance / staking JSON, append-only NDJSON
+# logs, and the auto-generated challenge HMAC are local node state,
+# not source.
+qsdm_accounts.json
+qsdm_bridge_state.json
+qsdm_chain.ndjson
+qsdm_challenge_hmac.key
+qsdm_enrollment.json
+qsdm_governance.json
+qsdm_receipts.ndjson
+qsdm_staking.json
 
 # Legacy NVIDIA token file (pre-NGC-bundle era).
 Nvidia Token

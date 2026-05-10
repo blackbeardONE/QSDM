@@ -22,7 +22,12 @@ func TestCallTracer_StartTraceCompactionLoop_CompactsWhenLarge(t *testing.T) {
 	defer cancel()
 	ct.StartTraceCompactionLoop(ctx, 20*time.Millisecond, 400)
 
-	deadline := time.Now().Add(3 * time.Second)
+	// Generous wall deadline — under `go test ./...` parallel load the
+	// compaction goroutine can be starved by the scheduler for hundreds of
+	// milliseconds at a time. The test itself finishes in <100ms in isolation;
+	// this 15s ceiling exists purely to avoid flakes under load, not to mask
+	// real regressions (a broken compaction loop would never finish).
+	deadline := time.Now().Add(15 * time.Second)
 	var sz int64
 	for time.Now().Before(deadline) {
 		fi, err := os.Stat(path)

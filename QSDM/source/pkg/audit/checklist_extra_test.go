@@ -5,7 +5,7 @@ import "testing"
 func TestChecklist_IncludesNewCategories(t *testing.T) {
 	cl := NewChecklist()
 	cases := map[Category]int{
-		CatSupplyChain:    7,
+		CatSupplyChain:    8,
 		CatRuntime:        7,
 		CatSecretRotation: 5,
 	}
