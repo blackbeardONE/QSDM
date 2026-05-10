@@ -124,6 +124,13 @@ if ($Platforms) {
 # By default we ship all three: the consumer miner, the cli wallet
 # tool, and the home attester. -SkipCli and -SkipAttester let an
 # operator publish a slimmer release without rebuilding the world.
+#
+# DO NOT add private components (currently: qsdm-detect, qsdmminer-gui)
+# to this list. Those binaries are part of the operator-private kit
+# at <workspace>/Blackbeard/ and must not leak into a public release.
+# The $PrivateComponents check below is an extra guard rail, but the
+# right place to enforce this is the comment you're reading: think
+# twice before extending this list.
 $Components = @(
     @{ pkg = "./cmd/qsdmminer-console"; name = "qsdmminer";    skip = $false }
 )
@@ -132,6 +139,28 @@ if (-not $SkipCli) {
 }
 if (-not $SkipAttester) {
     $Components += @{ pkg = "./cmd/qsdm-attester"; name = "qsdm-attester"; skip = $false }
+}
+
+# Trip-wire: assert the build matrix doesn't try to ship a private
+# component into release/. Mirrors $PrivateComponents in
+# QSDM/deploy/scripts/publish_release.ps1 — keep the two lists in
+# sync. Build-time failure is preferable to relying on the publish
+# gate alone: this catches the regression at the developer's
+# workstation, before any binary ever touches release/<tag>/.
+$PrivateComponents = @('qsdm-detect', 'qsdmminer-gui')
+$leak = @($Components | Where-Object { $PrivateComponents -contains $_.name })
+if ($leak.Count -gt 0) {
+    Write-Host "REFUSING TO BUILD: a private component is in the build matrix." -ForegroundColor Red
+    foreach ($c in $leak) {
+        Write-Host ("  {0} -> pkg {1}" -f $c.name, $c.pkg) -ForegroundColor Red
+    }
+    Write-Host "  These binaries belong in <workspace>/Blackbeard/ and ship via" -ForegroundColor Red
+    Write-Host "  Blackbeard/build-kit.ps1, not via the public release pipeline." -ForegroundColor Red
+    Write-Host "  Either remove them from `$Components above, or update the" -ForegroundColor Red
+    Write-Host "  matching `$PrivateComponents lists in BOTH build_release.ps1 and" -ForegroundColor Red
+    Write-Host "  publish_release.ps1 if a previously-private component is being" -ForegroundColor Red
+    Write-Host "  promoted to public." -ForegroundColor Red
+    exit 7
 }
 
 # Build matrix.
