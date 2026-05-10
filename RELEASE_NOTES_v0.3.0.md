@@ -1,0 +1,121 @@
+# QSDM v0.3.0 — Release Notes
+
+> **Scope.** This document captures the state of the repository at the v0.3.0 cut. It is the tracked, source-of-truth counterpart to the operator-local `NEXT_STEPS.md` (which is `.gitignore`d by design). The release is in-repo complete; the items in *Remaining external blockers* gate any actual public publish or mainnet announcement.
+
+## At a glance
+
+| | Value |
+|---|---|
+| Target tag (Go core) | `v0.3.0` |
+| Target tag (JavaScript SDK) | `sdk-js-v0.3.0` |
+| Verified at git HEAD | `de2bf30` (session 73) |
+| Go toolchain | `1.25.10` |
+| `golang.org/x/net` | `v0.53.0` |
+| Audit-checklist size | 53 items in `pkg/audit/checklist.go` (full-suite render: 81 items including review-driven extras) |
+| `govulncheck` reachable findings | 1 (`GO-2024-3218`, tracked) |
+| Non-`-short` test pass rate | 67 / 67 packages |
+| JS SDK test pass rate | 17 / 17 cases |
+| npm tarball | `qsdm-0.3.0.tgz`, 6 files / 6.3 kB packed / 17.6 kB unpacked |
+
+## Headline changes since the previous release line
+
+### v0.3.0 surface (sessions 70–74)
+
+- **Quantum-secure crypto path**: ML-DSA-87 (NIST FIPS 204) is the production signature scheme. The pure-Go fallback is gated by `QSDM_NO_CGO=1`; the CGO path uses liboqs and is the default on Linux/macOS/Windows once `QSDM/liboqs_install` exists.
+- **Two-tier node model**: validator (CPU-only, PoE + BFT) and miner (Mesh3D-tied PoW) split into separate Docker images, K8s manifests, and binary `cmd/qsdm` + `cmd/qsdmminer`.
+- **Cell tokenomics live**: emission schedule, 4-year halvings, 10-second target block time, treasury allocation. Exposed via `/api/v1/status`, the SDK, and the dashboard tokenomics panel.
+- **Mining sub-protocol shipped**: `MINING_PROTOCOL.md`, `pkg/mining`, `cmd/qsdmminer`, reference CPU miner solves proofs that the verifier accepts. CUDA fat-binary kernel covers `sm_50` through `sm_90`.
+- **Trust & attestation page**: `/api/v1/trust/attestations/*`, dashboard widget, anti-claim landing widget.
+- **JavaScript SDK at parity with the Go SDK**: 17 `node:test` cases, full method coverage, ESM/CJS exports, `prepublishOnly` test gate, Sigstore provenance.
+- **Soak harnesses validated at length** (this session): mempool 10 min / 19.1 M txs / 31.9 K tx/sec; pubsub 10 min / 4 hosts / 239 987 publishes / per-host receive spread of 6 messages over 600 s.
+- **Supply-chain hardening**: source SBOM (SPDX 2.3) and image SBOMs via `anchore/sbom-action`; cosign keyless signing of every binary, every container image, and `SHA256SUMS`; OIDC-driven, no operator key custody.
+- **CVE remediation (session 73)**: Go directive `1.25.9 → 1.25.10`, `golang.org/x/net` `v0.52.0 → v0.53.0` closed three reachable CVEs (`GO-2026-4976`, `GO-2026-4971`, `GO-2026-4918`). One unpatched finding (`GO-2024-3218`) is tracked as audit entry `supply-08` with a written mitigation rationale.
+
+### Session 74 (verification cut)
+
+This is a verification-only session — no code changes, only confirmation that the prior session is reproducible and release-ready.
+
+| Step | Result |
+|---|---|
+| `git status --porcelain` at HEAD `de2bf30` | clean (0 files) |
+| `go test ./... -count=1 -timeout 900s` (full, non-`-short`) | 67 / 67 packages OK |
+| `go vet ./...` | clean |
+| `go vet -tags soak ./tests/...` | clean |
+| `go mod verify` | all modules verified |
+| `govulncheck ./...` | 1 finding (`GO-2024-3218`, tracked as `supply-08`) |
+| `node --test sdk/javascript/qsdm.test.js` | 17 / 17 pass in 11.34 s |
+| `npm pack --dry-run` (sdk/javascript/) | `qsdm-0.3.0.tgz`, 6 files, 6.3 kB packed (LICENSE + CHANGELOG.md present) |
+| 8 release binaries `-trimpath -ldflags="-s -w"` build | all clean; `--version` banner stamps `go1.25.10` |
+| **10-min pubsub soak** (4 hosts × 2 producers × 50 Hz × 256 B) | **PASS in 601.99 s**: 239 987 publishes; 719 946 cross-host receipts; per-host receive totals `[179 985 / 179 987 / 179 984 / 179 990]` (total spread = 6 messages across 4 hosts over 600 s); no partition; no sustained-error window; flat rate throughout |
+
+## What's safe to publish today
+
+These artefacts are sign-off-ready and can be shipped the moment the corresponding external blocker clears:
+
+- **`qsdm@0.3.0` on npm.** Push tag `sdk-js-v0.3.0`; the `.github/workflows/sdk-javascript-publish.yml` workflow validates that the tag suffix matches `package.json`, re-runs the test suite as a `prepublishOnly` gate, and runs `npm publish --provenance --access public`. External blocker: `NPM_TOKEN` repository secret.
+- **GHCR container images** (`qsdm`, `qsdm-validator`, `qsdm-miner`). The `release-container.yml` workflow already keyless-signs them via Sigstore OIDC and attaches an SPDX 2.3 SBOM as a cosign attestation. No external secret required — the GitHub-issued OIDC token mints the certificates.
+- **Linux / Windows binaries** with cosign signatures and a source SBOM. Same workflow.
+
+## Remaining external blockers
+
+These are the items the repo cannot close itself. They are tracked individually in `pkg/audit/checklist.go` (visible via `cmd/auditreport`) and at the top of `NEXT_STEPS.md` (operator-local).
+
+| ID | Blocker | Owner | What unlocks |
+|---|---|---|---|
+| `rebrand-03` | Trademark filings for "QSDM" and "Cell (CELL)" | Counsel | Paid advertising; legally safe public launch. |
+| `tok-01` | Tokenomics genesis policy sign-off (100 M cap, 10 M treasury, 90 M mining, 4-year halvings) | Counsel + foundation | Mainnet genesis ceremony. |
+| `mining-01` | External audit of `MINING_PROTOCOL.md` + `pkg/mining` | Independent cryptography / consensus auditor | CUDA miner public release. Auditor entry-point: `QSDM/docs/docs/AUDIT_PACKET_MINING.md`. |
+| `mining-05` | Incentivised testnet launch | Ops + marketing | Real-world stress of the reference miner before mainnet emission begins. |
+| `supply-08` | Upstream fix for `GO-2024-3218` (libp2p-kad-dht) | go-libp2p maintainers | Removes the only accepted-with-mitigation entry. Practical exposure already bounded by bootstrap allowlist + peer scoring. |
+| — | `NPM_TOKEN` repo secret | Ops | npm publish of `qsdm@0.3.0`. |
+| — | `APPLE_DEVELOPER_ID_APPLICATION` + `APPLE_NOTARYTOOL_KEYCHAIN_PROFILE` | Ops with Apple Developer account | Notarised macOS binaries. Scaffold: `QSDM/scripts/notarize_macos.sh`. |
+| — | NVIDIA hardware + `nvcc` toolchain | Ops | Production Mesh3D PoW. Kernel and Makefile already in tree at `pkg/mesh3d/kernels/`. |
+| — | Mainnet genesis ceremony | Foundation + validator set | After `tok-01` and `mining-01` clear. Dry-run driver at `cmd/genesis-ceremony` flags every artefact `dry_run: true`. |
+
+## How to reproduce this report
+
+```powershell
+pwsh QSDM/scripts/release_evidence.ps1
+```
+
+…or the bash twin (`QSDM/scripts/release_evidence.sh`). Output goes to `_tmp_release_evidence_<UTC>/` and contains the full set of artefacts described in [`QSDM/docs/docs/RELEASE_EVIDENCE.md`](QSDM/docs/docs/RELEASE_EVIDENCE.md). Hand the directory to an auditor; every step is hash-pinned in `00_MANIFEST.txt`.
+
+## Annotated-tag templates
+
+The two tag annotations below are pre-drafted so the operator can copy them verbatim once external blockers clear.
+
+### `v0.3.0` (Go core)
+
+```
+QSDM v0.3.0
+
+In-repo release. Verified at HEAD de2bf30 (session 73), re-confirmed
+in session 74:
+  * go test ./... -count=1 (non-short) -> 67/67 packages OK
+  * govulncheck ./...                   -> 1 finding (GO-2024-3218,
+                                           tracked as supply-08)
+  * go mod verify                       -> all modules verified
+  * 10-min pubsub soak (4 hosts)        -> 239,987 publishes,
+                                           per-host receive spread
+                                           = 6 msgs across 600 s
+  * 10-min mempool soak (8 producers)   -> 19.1 M txs at 31.9 K tx/s
+
+External blockers tracked in pkg/audit/checklist.go (rebrand-03,
+tok-01, mining-01, mining-05, supply-08).
+```
+
+### `sdk-js-v0.3.0` (JavaScript SDK)
+
+```
+qsdm@0.3.0 (JavaScript SDK)
+
+Feature parity with sdk/go. 17/17 node:test cases pass. Tarball:
+6 files, 6.3 kB packed, 17.6 kB unpacked (manifest:
+package.json + qsdm.js + qsdm.d.ts + README.md + CHANGELOG.md +
+LICENSE). Sigstore provenance enabled via publishConfig.provenance.
+
+External blocker: NPM_TOKEN repository secret. Once set, this tag
+triggers .github/workflows/sdk-javascript-publish.yml which
+re-runs the test suite as a prepublishOnly gate and runs
+npm publish --provenance --access public.
+```
