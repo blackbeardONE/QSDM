@@ -173,10 +173,40 @@ __global__ void validate_parent_cells(
 #define MESH3D_API __attribute__((visibility("default")))
 #endif
 
+// CUDA_CHECK frees every pointer that was already allocated and returns the
+// CUDA error code on failure. Without this guard, a mid-pipeline error (e.g.
+// cudaMemcpy out-of-memory) leaks every device buffer that was already
+// allocated for the call.
+#define CUDA_CHECK(call, cleanup_block) do {              \
+    cudaError_t _e = (call);                              \
+    if (_e != cudaSuccess) {                              \
+        cleanup_block;                                    \
+        return (int)_e;                                   \
+    }                                                     \
+} while (0)
+
+// CUDA_CHECK_LAUNCH catches kernel launch errors that surface only via
+// cudaGetLastError() — config errors (too many threads, invalid grid)
+// don't propagate through cudaDeviceSynchronize on every driver version.
+#define CUDA_CHECK_LAUNCH(cleanup_block) do {             \
+    cudaError_t _le = cudaGetLastError();                 \
+    if (_le != cudaSuccess) {                             \
+        cleanup_block;                                    \
+        return (int)_le;                                  \
+    }                                                     \
+} while (0)
+
 extern "C" {
 
 // mesh3d_hash_cells hashes `n` cells on GPU.
 // Returns 0 on success, non-zero on CUDA error.
+//
+// All cudaMalloc / cudaMemcpy / kernel launch sites are checked; any
+// failure path frees every device buffer that was already allocated
+// before returning the CUDA error code (cast to int). The host arrays
+// h_data / h_offsets / h_lengths / h_hashes are never touched on
+// failure, so the caller can safely retry or fall back to the CPU
+// accelerator without state corruption.
 MESH3D_API int mesh3d_hash_cells(
     const uint8_t *h_data,    // flat cell data
     const uint32_t *h_offsets,
@@ -185,38 +215,49 @@ MESH3D_API int mesh3d_hash_cells(
     int n,
     uint32_t total_bytes
 ) {
+    if (n <= 0 || total_bytes == 0) {
+        return 0; // no-op; not an error
+    }
+    if (h_data == NULL || h_offsets == NULL || h_lengths == NULL || h_hashes == NULL) {
+        return (int)cudaErrorInvalidValue;
+    }
+
     uint8_t *d_data = NULL;
     uint32_t *d_offsets = NULL, *d_lengths = NULL;
     uint8_t *d_hashes = NULL;
 
-    cudaMalloc(&d_data, total_bytes);
-    cudaMalloc(&d_offsets, n * sizeof(uint32_t));
-    cudaMalloc(&d_lengths, n * sizeof(uint32_t));
-    cudaMalloc(&d_hashes, n * 32);
+    #define HASH_CLEANUP do {                             \
+        if (d_data)    cudaFree(d_data);                  \
+        if (d_offsets) cudaFree(d_offsets);               \
+        if (d_lengths) cudaFree(d_lengths);               \
+        if (d_hashes)  cudaFree(d_hashes);                \
+    } while (0)
 
-    cudaMemcpy(d_data, h_data, total_bytes, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_offsets, h_offsets, n * sizeof(uint32_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_lengths, h_lengths, n * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    CUDA_CHECK(cudaMalloc(&d_data,    total_bytes),         HASH_CLEANUP);
+    CUDA_CHECK(cudaMalloc(&d_offsets, n * sizeof(uint32_t)), HASH_CLEANUP);
+    CUDA_CHECK(cudaMalloc(&d_lengths, n * sizeof(uint32_t)), HASH_CLEANUP);
+    CUDA_CHECK(cudaMalloc(&d_hashes,  n * 32),               HASH_CLEANUP);
+
+    CUDA_CHECK(cudaMemcpy(d_data,    h_data,    total_bytes,            cudaMemcpyHostToDevice), HASH_CLEANUP);
+    CUDA_CHECK(cudaMemcpy(d_offsets, h_offsets, n * sizeof(uint32_t),  cudaMemcpyHostToDevice), HASH_CLEANUP);
+    CUDA_CHECK(cudaMemcpy(d_lengths, h_lengths, n * sizeof(uint32_t),  cudaMemcpyHostToDevice), HASH_CLEANUP);
 
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
     hash_parent_cells<<<blocks, threads>>>(d_data, d_offsets, d_lengths, d_hashes, n);
+    CUDA_CHECK_LAUNCH(HASH_CLEANUP);
+    CUDA_CHECK(cudaDeviceSynchronize(), HASH_CLEANUP);
 
-    cudaError_t err = cudaDeviceSynchronize();
-    if (err != cudaSuccess) {
-        cudaFree(d_data); cudaFree(d_offsets); cudaFree(d_lengths); cudaFree(d_hashes);
-        return (int)err;
-    }
+    CUDA_CHECK(cudaMemcpy(h_hashes, d_hashes, n * 32, cudaMemcpyDeviceToHost), HASH_CLEANUP);
 
-    cudaMemcpy(h_hashes, d_hashes, n * 32, cudaMemcpyDeviceToHost);
-
-    cudaFree(d_data); cudaFree(d_offsets); cudaFree(d_lengths); cudaFree(d_hashes);
+    HASH_CLEANUP;
+    #undef HASH_CLEANUP
     return 0;
 }
 
 // mesh3d_validate_cells validates `n` cells on GPU.
 // h_results: output array of `n` ints (1=valid, 0=invalid).
-// Returns 0 on success.
+// Returns 0 on success; same error-handling contract as mesh3d_hash_cells.
 MESH3D_API int mesh3d_validate_cells(
     const uint8_t *h_data,
     const uint32_t *h_offsets,
@@ -225,33 +266,56 @@ MESH3D_API int mesh3d_validate_cells(
     int n,
     uint32_t total_bytes
 ) {
+    if (n <= 0 || total_bytes == 0) {
+        return 0;
+    }
+    if (h_data == NULL || h_offsets == NULL || h_lengths == NULL || h_results == NULL) {
+        return (int)cudaErrorInvalidValue;
+    }
+
     uint8_t *d_data = NULL;
     uint32_t *d_offsets = NULL, *d_lengths = NULL;
     int *d_results = NULL;
 
-    cudaMalloc(&d_data, total_bytes);
-    cudaMalloc(&d_offsets, n * sizeof(uint32_t));
-    cudaMalloc(&d_lengths, n * sizeof(uint32_t));
-    cudaMalloc(&d_results, n * sizeof(int));
+    #define VAL_CLEANUP do {                              \
+        if (d_data)    cudaFree(d_data);                  \
+        if (d_offsets) cudaFree(d_offsets);               \
+        if (d_lengths) cudaFree(d_lengths);               \
+        if (d_results) cudaFree(d_results);               \
+    } while (0)
 
-    cudaMemcpy(d_data, h_data, total_bytes, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_offsets, h_offsets, n * sizeof(uint32_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_lengths, h_lengths, n * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    CUDA_CHECK(cudaMalloc(&d_data,    total_bytes),          VAL_CLEANUP);
+    CUDA_CHECK(cudaMalloc(&d_offsets, n * sizeof(uint32_t)),  VAL_CLEANUP);
+    CUDA_CHECK(cudaMalloc(&d_lengths, n * sizeof(uint32_t)),  VAL_CLEANUP);
+    CUDA_CHECK(cudaMalloc(&d_results, n * sizeof(int)),       VAL_CLEANUP);
+
+    CUDA_CHECK(cudaMemcpy(d_data,    h_data,    total_bytes,           cudaMemcpyHostToDevice), VAL_CLEANUP);
+    CUDA_CHECK(cudaMemcpy(d_offsets, h_offsets, n * sizeof(uint32_t), cudaMemcpyHostToDevice), VAL_CLEANUP);
+    CUDA_CHECK(cudaMemcpy(d_lengths, h_lengths, n * sizeof(uint32_t), cudaMemcpyHostToDevice), VAL_CLEANUP);
 
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
     validate_parent_cells<<<blocks, threads>>>(d_data, d_offsets, d_lengths, d_results, n);
+    CUDA_CHECK_LAUNCH(VAL_CLEANUP);
+    CUDA_CHECK(cudaDeviceSynchronize(), VAL_CLEANUP);
 
-    cudaError_t err = cudaDeviceSynchronize();
-    if (err != cudaSuccess) {
-        cudaFree(d_data); cudaFree(d_offsets); cudaFree(d_lengths); cudaFree(d_results);
-        return (int)err;
-    }
+    CUDA_CHECK(cudaMemcpy(h_results, d_results, n * sizeof(int), cudaMemcpyDeviceToHost), VAL_CLEANUP);
 
-    cudaMemcpy(h_results, d_results, n * sizeof(int), cudaMemcpyDeviceToHost);
-
-    cudaFree(d_data); cudaFree(d_offsets); cudaFree(d_lengths); cudaFree(d_results);
+    VAL_CLEANUP;
+    #undef VAL_CLEANUP
     return 0;
+}
+
+// mesh3d_runtime_version returns CUDA runtime version as reported by the
+// loaded driver, or 0 on error. Used by Go-side telemetry (`pkg/mesh3d`)
+// to surface the actual runtime version in `qsdm_binary_capabilities`
+// labels rather than only the compile-time toolkit version.
+MESH3D_API int mesh3d_runtime_version(void) {
+    int v = 0;
+    if (cudaRuntimeGetVersion(&v) != cudaSuccess) {
+        return 0;
+    }
+    return v;
 }
 
 } // extern "C"

@@ -1,0 +1,111 @@
+# Publishes the JavaScript / Node.js SDK (`QSDM/source/sdk/javascript`) to
+# the public npm registry as the `qsdm` package.
+#
+# Trigger:
+#   - Push a tag of the form `sdk-js-vX.Y.Z` (e.g. `git tag sdk-js-v0.3.0
+#     && git push origin sdk-js-v0.3.0`). The tag suffix MUST match the
+#     `version` field in `QSDM/source/sdk/javascript/package.json`; the
+#     `version-matches-tag` step below fails the run otherwise so a
+#     mistagged release cannot reach the registry.
+#   - `workflow_dispatch` for manual re-runs (operator supplies the tag,
+#     same matching rule applies).
+#
+# In-repo footprint (everything except the npm token):
+#   - `package.json`               → metadata, files allowlist, prepublishOnly
+#   - `qsdm.js`                    → runtime
+#   - `qsdm.d.ts`                  → TypeScript declarations
+#   - `qsdm.test.js`               → 17 node:test cases (run via prepublishOnly)
+#   - `LICENSE`                    → MIT, packaged in tarball
+#   - `CHANGELOG.md`               → publish-history record
+#
+# External requirement:
+#   - `NPM_TOKEN` repository secret with publish rights on the `qsdm`
+#     package. Provenance is enabled (`publishConfig.provenance: true`
+#     plus `id-token: write` permission below) so each release on the
+#     registry carries a Sigstore attestation linking the tarball to the
+#     exact GitHub Actions run that produced it.
+name: Publish JavaScript SDK to npm
+
+on:
+  push:
+    tags:
+      - "sdk-js-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing sdk-js-v* tag to (re-)publish"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  # provenance attestations are minted by the OIDC token issued to the run.
+  id-token: write
+
+concurrency:
+  group: sdk-javascript-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: npm publish (qsdm)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: QSDM/source/sdk/javascript
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify package.json version matches tag suffix
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          # `sdk-js-v0.3.0`  →  `0.3.0`
+          EXPECTED="${TAG#sdk-js-v}"
+          ACTUAL="$(node -p "require('./package.json').version")"
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "::error::tag suffix '$EXPECTED' does not match package.json version '$ACTUAL'"
+            exit 1
+          fi
+          echo "Publishing qsdm@${ACTUAL} from tag ${TAG}"
+
+      - name: Install (no production deps; this is a zero-dep package)
+        run: npm ci --ignore-scripts || npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Run tests (also gated by prepublishOnly)
+        run: npm test
+
+      - name: Pack tarball for inspection
+        run: |
+          set -euo pipefail
+          npm pack --dry-run
+          npm pack
+          ls -la *.tgz
+
+      - name: Publish to npm with provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::error::NPM_TOKEN secret is not set; cannot publish."
+            exit 1
+          fi
+          npm publish --provenance --access public

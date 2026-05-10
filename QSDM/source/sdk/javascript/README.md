@@ -67,4 +67,25 @@ cd sdk/javascript
 node --test qsdm.test.js
 ```
 
-Requires Node 18+ (built-in `fetch` and `node:test`).
+Requires Node 18+ (built-in `fetch` and `node:test`). The same command runs as
+`prepublishOnly`, so a broken build cannot reach the registry.
+
+## Releasing
+
+The package is published from CI by `.github/workflows/sdk-javascript-publish.yml`.
+Tag the repo with the matching version:
+
+```bash
+# bump version field in package.json + CHANGELOG.md, commit, then:
+git tag sdk-js-v0.3.0
+git push origin sdk-js-v0.3.0
+```
+
+The workflow verifies the tag suffix matches `package.json`, runs the test
+suite, and publishes with `--provenance` (Sigstore attestation linking the
+tarball to the GitHub Actions run). Only the `NPM_TOKEN` repository secret
+is external.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE) and [`CHANGELOG.md`](CHANGELOG.md).

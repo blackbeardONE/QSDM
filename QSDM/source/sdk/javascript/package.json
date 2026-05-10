@@ -1,27 +1,55 @@
 {
   "name": "qsdm",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Official JavaScript / Node.js SDK for the QSDM HTTP API (native coin: Cell / CELL). Feature parity with sdk/go.",
   "main": "qsdm.js",
   "types": "qsdm.d.ts",
+  "exports": {
+    ".": {
+      "types": "./qsdm.d.ts",
+      "require": "./qsdm.js",
+      "default": "./qsdm.js"
+    }
+  },
   "scripts": {
-    "test": "node --test qsdm.test.js"
+    "test": "node --test qsdm.test.js",
+    "prepublishOnly": "node --test qsdm.test.js"
   },
   "keywords": [
     "qsdm",
     "cell",
     "blockchain",
     "quantum-safe",
-    "sdk"
+    "post-quantum",
+    "ml-dsa",
+    "dilithium",
+    "ledger",
+    "sdk",
+    "client"
   ],
   "author": "QSDM authors",
-  "license": "Apache-2.0",
+  "license": "MIT",
+  "homepage": "https://qsdm.tech",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/blackbeardONE/QSDM.git",
+    "directory": "QSDM/source/sdk/javascript"
+  },
+  "bugs": {
+    "url": "https://github.com/blackbeardONE/QSDM/issues"
+  },
   "engines": {
     "node": ">=18"
   },
   "files": [
     "qsdm.js",
     "qsdm.d.ts",
-    "README.md"
-  ]
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
 }

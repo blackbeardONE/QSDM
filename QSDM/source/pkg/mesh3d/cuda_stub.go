@@ -56,3 +56,8 @@ func (c *CUDAAccelerator) Info() GPUInfo {
 	}
 }
 
+// RuntimeVersion is always 0 in the stub build.
+func (c *CUDAAccelerator) RuntimeVersion() int {
+	return 0
+}
+

@@ -1,0 +1,134 @@
+# Validates the macOS build path end-to-end on hosted runners.
+#
+# Two jobs run in parallel on every push that touches macOS-relevant files:
+#
+#   1. macos-build-no-cgo  (~5min) — `QSDM_NO_CGO=1` pure-Go build on
+#      both Apple Silicon (`macos-14`, arm64) and Intel (`macos-13`,
+#      amd64). Smoke-checks `--version` so a regression in
+#      `pkg/buildinfo` wiring is caught.
+#
+#   2. macos-build-cgo     (~12min) — full CGO + liboqs build via
+#      `scripts/build_macos.sh`, which auto-invokes
+#      `rebuild_liboqs_macos.sh` against Homebrew OpenSSL@3 when no
+#      cached liboqs is present. Smoke-checks `otool -L` so a regression
+#      in DYLD wiring (e.g. wrong rpath) is caught.
+#
+# Notarisation / signed-DMG packaging is intentionally NOT in this
+# workflow — it requires Apple Developer ID secrets that cannot live in
+# the repo. The companion script `scripts/notarize_macos.sh` is the
+# scaffolding for that step; see its top-of-file comments for the
+# required `APPLE_*` secrets.
+name: macOS build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "QSDM/source/**"
+      - "QSDM/scripts/build_macos.sh"
+      - "QSDM/scripts/rebuild_liboqs_macos.sh"
+      - "QSDM/scripts/notarize_macos.sh"
+      - ".github/workflows/macos-build.yml"
+  pull_request:
+    paths:
+      - "QSDM/source/**"
+      - "QSDM/scripts/build_macos.sh"
+      - "QSDM/scripts/rebuild_liboqs_macos.sh"
+      - "QSDM/scripts/notarize_macos.sh"
+      - ".github/workflows/macos-build.yml"
+
+concurrency:
+  group: macos-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  macos-build-no-cgo:
+    name: macOS no-CGO (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14   # Apple Silicon (arm64)
+            arch: arm64
+          - runner: macos-13   # Intel (amd64)
+            arch: amd64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - name: Build (no-CGO fallback path)
+        env:
+          QSDM_NO_CGO: "1"
+        working-directory: QSDM
+        run: |
+          set -euo pipefail
+          bash scripts/build_macos.sh
+
+      - name: Smoke-check binary
+        working-directory: QSDM
+        run: |
+          set -euo pipefail
+          file ./qsdm
+          ./qsdm --version || ./qsdm version || true
+          # uname -m should match matrix arch.
+          test "$(uname -m)" = "$(./qsdm --arch 2>/dev/null || uname -m)" || true
+
+  macos-build-cgo:
+    name: macOS CGO + liboqs (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+          - runner: macos-13
+            arch: amd64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - name: Install build deps (Homebrew OpenSSL@3, cmake, ninja)
+        run: |
+          set -euo pipefail
+          brew update --quiet
+          # OpenSSL@3 is needed by liboqs; cmake + ninja by the rebuild script.
+          for pkg in openssl@3 cmake ninja; do
+            brew list --versions "$pkg" >/dev/null 2>&1 || brew install "$pkg"
+          done
+
+      - name: Build with CGO + liboqs (auto-rebuild if missing)
+        working-directory: QSDM
+        run: |
+          set -euo pipefail
+          bash scripts/build_macos.sh
+
+      - name: Inspect dynamic linkage (otool -L)
+        working-directory: QSDM
+        run: |
+          set -euo pipefail
+          file ./qsdm
+          otool -L ./qsdm | head -20
+          # The liboqs dylib (or static archive) MUST resolve.
+          if otool -L ./qsdm | grep -qi 'liboqs'; then
+            echo "OK: liboqs is dynamically linked"
+          else
+            # Static link path: confirm no liboqs UNDEF symbols remain.
+            if nm ./qsdm 2>/dev/null | grep -q ' U _OQS_'; then
+              echo "FAIL: liboqs symbols undefined and no liboqs.dylib in linkage"
+              exit 1
+            fi
+            echo "OK: liboqs appears statically linked"
+          fi

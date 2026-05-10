@@ -49,6 +49,8 @@ on:
 permissions:
   contents: write # needed to upload release assets
   packages: write # needed to push to ghcr.io
+  id-token: write # needed for cosign keyless signing (Sigstore OIDC)
+  attestations: write # needed for `gh attestation` provenance
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -195,16 +197,65 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # Aggregator: download every matrix cell, produce one canonical
-  # SHA256SUMS, attach everything to the GitHub Release.
+  # Source SBOM. Generated once per release and attached to every artefact
+  # type below (binaries + each container image), so reviewers can audit
+  # the dependency tree of any release without rebuilding from source.
+  #
+  # We use anchore/sbom-action (production-stable, used by kubernetes,
+  # buildpacks, jenkins, etc.) which wraps Syft and emits SPDX 2.3.
   # ---------------------------------------------------------------------------
-  release-assets:
-    name: attach binaries to release
-    needs: binaries
+  source-sbom:
+    name: source SBOM (SPDX)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
+      - name: Generate SBOM for QSDM/source (full Go module + transitive deps)
+        uses: anchore/sbom-action@v0
+        with:
+          path: QSDM/source
+          format: spdx-json
+          output-file: /tmp/qsdm-source-sbom.spdx.json
+
+      - name: Upload SBOM artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qsdm-source-sbom
+          path: /tmp/qsdm-source-sbom.spdx.json
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Aggregator: download every matrix cell, produce one canonical
+  # SHA256SUMS, sign every binary keylessly with cosign (Sigstore OIDC),
+  # and attach everything (binaries + .sig + .pem certs + SBOM) to the
+  # GitHub Release.
+  #
+  # Operator verification (no secrets required, only `cosign`):
+  #
+  #   cosign verify-blob \
+  #     --certificate qsdmminer-linux-amd64.pem \
+  #     --signature   qsdmminer-linux-amd64.sig \
+  #     --certificate-identity-regexp 'https://github.com/.+/.github/workflows/release-container.yml@refs/tags/v.+' \
+  #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  #     qsdmminer-linux-amd64
+  #
+  # The matching certificate proves the release was minted by THIS workflow
+  # at THIS tag — a stolen NPM_TOKEN / DOCKERHUB_TOKEN cannot forge it.
+  # ---------------------------------------------------------------------------
+  release-assets:
+    name: attach binaries + SBOM + signatures to release
+    needs: [binaries, source-sbom]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cosign (keyless Sigstore signer)
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: v2.4.1
 
       - name: Resolve release tag
         id: tag
@@ -222,6 +273,12 @@ jobs:
           path: /tmp/assets
           merge-multiple: true
 
+      - name: Download source SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: qsdm-source-sbom
+          path: /tmp/assets
+
       - name: Consolidate SHA256SUMS
         run: |
           cd /tmp/assets
@@ -229,8 +286,30 @@ jobs:
           # lexically so operators can diff across releases cleanly.
           cat SHA256SUMS-* | sort > SHA256SUMS
           rm -f SHA256SUMS-*
+          # Hash the SBOM too so a tampered SBOM is also caught.
+          sha256sum qsdm-source-sbom.spdx.json >> SHA256SUMS
           echo "=== Final SHA256SUMS ==="
           cat SHA256SUMS
+
+      - name: Cosign-sign every binary + the SBOM (keyless / OIDC)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          set -euo pipefail
+          cd /tmp/assets
+          for f in qsdmminer-* qsdmminer-console-* trustcheck-* genesis-ceremony-* SHA256SUMS qsdm-source-sbom.spdx.json; do
+            # Skip already-produced .sig / .pem so a re-run is idempotent.
+            case "$f" in
+              *.sig|*.pem) continue ;;
+            esac
+            echo "==> cosign sign-blob $f"
+            cosign sign-blob \
+              --yes \
+              --output-signature   "${f}.sig" \
+              --output-certificate "${f}.pem" \
+              "$f"
+          done
+          ls -la
 
       - name: Attach assets to release
         env:
@@ -244,7 +323,7 @@ jobs:
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" \
               --title "$TAG" \
-              --notes "Automated release by .github/workflows/release-container.yml. See CHANGELOG.md." \
+              --notes "Automated release by .github/workflows/release-container.yml. SBOM (SPDX 2.3) and per-asset cosign keyless signatures attached. See CHANGELOG.md." \
               --verify-tag
           fi
           cd /tmp/assets
@@ -254,7 +333,10 @@ jobs:
             qsdmminer-console-* \
             trustcheck-* \
             genesis-ceremony-* \
-            SHA256SUMS
+            qsdm-source-sbom.spdx.json \
+            SHA256SUMS \
+            *.sig \
+            *.pem
 
   # ---------------------------------------------------------------------------
   # Container images.
@@ -267,6 +349,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
+
+      - name: Install cosign (keyless image signer)
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: v2.4.1
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -286,6 +373,7 @@ jobs:
             type=semver,pattern={{major}}
 
       - name: Build and push (legacy qsdm name)
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: QSDM
@@ -296,6 +384,36 @@ jobs:
           cache-from: type=gha,scope=qsdm
           cache-to: type=gha,mode=max,scope=qsdm
 
+      - name: Generate image SBOM (SPDX) and attach to image
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/qsdm@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: /tmp/qsdm-image-sbom.spdx.json
+          upload-artifact: true
+          upload-artifact-retention: 30
+
+      - name: Cosign-sign image (keyless Sigstore OIDC)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          set -euo pipefail
+          for tag in ${{ steps.meta.outputs.tags }}; do
+            echo "==> cosign sign $tag@${{ steps.build.outputs.digest }}"
+            cosign sign --yes "${tag}@${{ steps.build.outputs.digest }}"
+          done
+
+      - name: Attach SBOM as cosign attestation
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          set -euo pipefail
+          DIGEST_REF="ghcr.io/${{ github.repository_owner }}/qsdm@${{ steps.build.outputs.digest }}"
+          cosign attest --yes \
+            --predicate /tmp/qsdm-image-sbom.spdx.json \
+            --type spdxjson \
+            "$DIGEST_REF"
+
   ghcr-validator:
     name: ghcr qsdm-validator (CPU-only)
     runs-on: ubuntu-latest
@@ -304,6 +422,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: v2.4.1
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -323,6 +446,7 @@ jobs:
             type=semver,pattern={{major}}
 
       - name: Build and push validator image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: QSDM
@@ -333,6 +457,35 @@ jobs:
           cache-from: type=gha,scope=qsdm-validator
           cache-to: type=gha,mode=max,scope=qsdm-validator
 
+      - name: Generate image SBOM (SPDX) and attach
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/qsdm-validator@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: /tmp/qsdm-validator-sbom.spdx.json
+          upload-artifact: true
+          upload-artifact-retention: 30
+
+      - name: Cosign-sign validator image
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          set -euo pipefail
+          for tag in ${{ steps.meta.outputs.tags }}; do
+            cosign sign --yes "${tag}@${{ steps.build.outputs.digest }}"
+          done
+
+      - name: Attach SBOM as cosign attestation
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          set -euo pipefail
+          DIGEST_REF="ghcr.io/${{ github.repository_owner }}/qsdm-validator@${{ steps.build.outputs.digest }}"
+          cosign attest --yes \
+            --predicate /tmp/qsdm-validator-sbom.spdx.json \
+            --type spdxjson \
+            "$DIGEST_REF"
+
   ghcr-miner:
     name: ghcr qsdm-miner (GPU miner runtime)
     runs-on: ubuntu-latest
@@ -341,6 +494,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: v2.4.1
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -360,6 +518,7 @@ jobs:
             type=semver,pattern={{major}}
 
       - name: Build and push miner image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: QSDM
@@ -369,3 +528,32 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=qsdm-miner
           cache-to: type=gha,mode=max,scope=qsdm-miner
+
+      - name: Generate image SBOM (SPDX) and attach
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/qsdm-miner@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: /tmp/qsdm-miner-sbom.spdx.json
+          upload-artifact: true
+          upload-artifact-retention: 30
+
+      - name: Cosign-sign miner image
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          set -euo pipefail
+          for tag in ${{ steps.meta.outputs.tags }}; do
+            cosign sign --yes "${tag}@${{ steps.build.outputs.digest }}"
+          done
+
+      - name: Attach SBOM as cosign attestation
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          set -euo pipefail
+          DIGEST_REF="ghcr.io/${{ github.repository_owner }}/qsdm-miner@${{ steps.build.outputs.digest }}"
+          cosign attest --yes \
+            --predicate /tmp/qsdm-miner-sbom.spdx.json \
+            --type spdxjson \
+            "$DIGEST_REF"

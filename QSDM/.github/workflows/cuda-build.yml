@@ -17,18 +17,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compile CUDA kernels
+      - name: Compile CUDA kernels (fat binary, sm_50..sm_90)
         working-directory: source/pkg/mesh3d/kernels
         run: |
+          set -euo pipefail
           nvcc --version
-          nvcc -shared -fPIC -o libmesh3d_kernels.so sha256_validate.cu
-          ls -la libmesh3d_kernels.so
+          # Reproducible build via the in-repo Makefile (covers every
+          # supported compute capability with -O3 and hardened flags).
+          apt-get update && apt-get install -y --no-install-recommends make
+          make all_sm
+          ls -la build/
 
       - name: Upload kernel library
         uses: actions/upload-artifact@v4
         with:
           name: mesh3d-cuda-kernels
-          path: source/pkg/mesh3d/kernels/libmesh3d_kernels.so
+          path: source/pkg/mesh3d/kernels/build/libmesh3d_kernels.so
 
   build-go-with-cuda:
     needs: build-cuda-kernels
