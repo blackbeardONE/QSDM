@@ -208,6 +208,37 @@ $uploadPlan += [PSCustomObject]@{
     Remote = "$Webroot/releases/$Tag/SHA256SUMS.txt"
 }
 
+# Resolve ssh.exe / scp.exe up-front. On Windows hosts the Optional
+# Feature OpenSSH client lives in C:\Windows\System32\OpenSSH and
+# isn't always on the system PATH (this varies by build). Fall back
+# to the Git-for-Windows bundle if the system one is missing. Bake
+# the absolute path into the invoked command line so cmd /c doesn't
+# need PATH cooperation.
+function Resolve-SshTool {
+    param([string]$Name)  # "ssh" or "scp"
+    $envExt = if ($IsWindows -or ([Environment]::OSVersion.Platform -eq 'Win32NT')) { ".exe" } else { "" }
+    $fromPath = Get-Command "$Name$envExt" -ErrorAction SilentlyContinue
+    if ($fromPath) { return $fromPath.Source }
+    $candidates = @(
+        "$env:WINDIR\System32\OpenSSH\$Name$envExt",
+        "$env:ProgramFiles\OpenSSH\$Name$envExt",
+        "$env:ProgramFiles\Git\usr\bin\$Name$envExt",
+        "$env:USERPROFILE\AppData\Local\Programs\Git\usr\bin\$Name$envExt"
+    )
+    foreach ($c in $candidates) {
+        if ($c -and (Test-Path $c)) { return $c }
+    }
+    return $null
+}
+$SshExe = Resolve-SshTool 'ssh'
+$ScpExe = Resolve-SshTool 'scp'
+if (-not $SshExe -or -not $ScpExe) {
+    Write-Host "REFUSING TO PROCEED: ssh.exe / scp.exe not found on this host." -ForegroundColor Red
+    Write-Host "  Install Windows OpenSSH Client (Settings -> Apps -> Optional features)" -ForegroundColor Red
+    Write-Host "  or Git for Windows (which bundles OpenSSH), then re-run."          -ForegroundColor Red
+    exit 8
+}
+
 # 5) Print the plan.
 Write-Host "===== publish_release plan =====" -ForegroundColor Cyan
 Write-Host "  tag:         $Tag"
@@ -216,6 +247,8 @@ Write-Host "  ssh target:  $SshTarget"
 Write-Host "  webroot:     $Webroot"
 Write-Host "  manifest:    $srcManifest"
 Write-Host "  sha256sums:  $srcSums"
+Write-Host "  ssh:         $SshExe"
+Write-Host "  scp:         $ScpExe"
 Write-Host "  bump-latest: $BumpLatest"
 Write-Host "  dry-run:     $DryRun"
 Write-Host ""
@@ -227,22 +260,30 @@ foreach ($u in $uploadPlan) {
 Write-Host ""
 
 # 6) Execute.
+#
+# Direct invocation via the PowerShell call operator (`&`), passing
+# args as a typed array. This avoids `cmd /c` and its first/last-
+# quote stripping, which makes quoted paths with spaces fragile.
 function Invoke-Step {
-    param([string]$Description, [string]$Command)
+    param(
+        [string]$Description,
+        [string]$Exe,
+        [string[]]$ArgsList
+    )
     Write-Host ">>> $Description" -ForegroundColor Yellow
-    Write-Host "    $Command"
+    $rendered = ($ArgsList | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }) -join ' '
+    Write-Host "    $Exe $rendered"
     if ($DryRun) {
         Write-Host "    (dry-run; not executed)" -ForegroundColor DarkGray
         return 0
     }
-    & cmd /c $Command
+    & $Exe @ArgsList
     return $LASTEXITCODE
 }
 
 # Ensure remote dir exists before any scp. Multi-tag deploys
 # create the per-tag directory on demand.
-$mkdirCmd = "ssh `"$SshTarget`" `"mkdir -p $Webroot/releases/$Tag`""
-$rc = Invoke-Step "mkdir on remote" $mkdirCmd
+$rc = Invoke-Step "mkdir on remote" $SshExe @($SshTarget, "mkdir -p $Webroot/releases/$Tag")
 if ($rc -ne 0) {
     Write-Host "remote mkdir failed (exit=$rc); aborting." -ForegroundColor Red
     exit 4
@@ -251,8 +292,7 @@ if ($rc -ne 0) {
 # scp each file. We use -p to preserve mtime so the
 # Last-Modified header on Caddy stays sensible.
 foreach ($u in $uploadPlan) {
-    $cmd = "scp -p `"$($u.Local)`" `"$($SshTarget):$($u.Remote)`""
-    $rc = Invoke-Step ("upload " + (Split-Path $u.Local -Leaf)) $cmd
+    $rc = Invoke-Step ("upload " + (Split-Path $u.Local -Leaf)) $ScpExe @("-p", $u.Local, "$($SshTarget):$($u.Remote)")
     if ($rc -ne 0) {
         Write-Host "scp failed (exit=$rc) for $($u.Local); aborting." -ForegroundColor Red
         exit 5
@@ -261,10 +301,7 @@ foreach ($u in $uploadPlan) {
 
 # Optional: bump latest.txt to point at this tag.
 if ($BumpLatest) {
-    # Write via stdin redirection so we don't need a temp file
-    # on the local box for a one-line marker.
-    $bumpCmd = "ssh `"$SshTarget`" `"echo $Tag > $Webroot/releases/latest.txt && cat $Webroot/releases/latest.txt`""
-    $rc = Invoke-Step "bump latest.txt" $bumpCmd
+    $rc = Invoke-Step "bump latest.txt" $SshExe @($SshTarget, "echo $Tag > $Webroot/releases/latest.txt && cat $Webroot/releases/latest.txt")
     if ($rc -ne 0) {
         Write-Host "bump latest.txt failed (exit=$rc)." -ForegroundColor Red
         exit 6
