@@ -51,7 +51,7 @@ This is a verification-only session — no code changes, only confirmation that 
 | 8 release binaries `-trimpath -ldflags="-s -w"` build | all clean; `--version` banner stamps `go1.25.10` |
 | **10-min pubsub soak** (4 hosts × 2 producers × 50 Hz × 256 B) | **PASS in 601.99 s**: 239 987 publishes; 719 946 cross-host receipts; per-host receive totals `[179 985 / 179 987 / 179 984 / 179 990]` (total spread = 6 messages across 4 hosts over 600 s); no partition; no sustained-error window; flat rate throughout |
 
-## Sessions 75–79: release pipeline shakedown + third-party verification
+## Sessions 75–80: release pipeline shakedown + third-party verification
 
 The first push of `v0.3.0` on `9c6bdde` (session 74) created an empty release skeleton with 0 assets — the workflow failed at four distinct latent bugs that had never run in production because no prior tag had exercised this path end-to-end. Four follow-up fix commits and one verification session resolved them:
 
@@ -92,6 +92,25 @@ After publishing, an independent verifier on a Windows 11 / Go 1.24.2 / cosign v
 | `cosign verify-attestation --type spdxjson` against 3 image SBOMs | 3 / 3 success |
 | Sigstore identity bound by every signing certificate | `https://github.com/blackbeardONE/QSDM/.github/workflows/release-container.yml@refs/tags/v0.3.0` (issuer: `https://token.actions.githubusercontent.com`) |
 | `qsdm:0.3.0` image manifest digest | `sha256:3f46260eef8a702c2e45631824cab8f59f2f792bb2efcb952d0de514509dad1e` |
+
+### Session 80 — post-release maintenance pass
+
+After v0.3.0 shipped, two repo-state issues remained from the long debug period:
+
+- **`macos-build.yml` queue was clogged.** 11 runs (sessions 73 onward, plus 6 dependabot PR runs) had been sitting in `queued` for up to 14 hours because the hosted macOS pool can only execute ~2 runners at a time and `concurrency.cancel-in-progress` only cancels runs in the *same* `head_ref` group. Cancelled 10 stale entries via `POST /actions/runs/{id}/cancel`, kept the latest v0.3.0 push run.
+- **Hidden no-CGO bug in `build_macos.sh`.** Once the queue cleared and a fresh `macos-build` run on `ae88fdc` finally got a macOS runner, the no-CGO job failed immediately:
+  ```
+  go: cannot find main module, but found .git/config in /Users/runner/work/QSDM/QSDM
+  ```
+  Root cause: the no-CGO branch of `build_macos.sh` (`QSDM_NO_CGO=1`) ran `go build ./cmd/qsdm` from the QSDM repo root, but `go.mod` lives at `QSDM/source/go.mod`. The CGO branch (lines 98–107) already handled the `source/` indirection via an `if [[ -f source/go.mod ]]; then cd source` guard; the no-CGO branch (line 34) did not. This bug had been latent forever — the macOS workflow had never actually finished a run end-to-end because the runner queue was always backlogged. Fix: mirror the same `source/`-detection guard into the no-CGO branch.
+- **Dependabot triage.** 10 open PRs (most pre-dating the session 75 `ripgrep` fix in `qsdm-go.yml`, so their `build-test` runs failed for an unrelated reason). Merged the two clean pure-Go bumps with full green CI:
+  - `#11`: `github.com/libp2p/go-libp2p-pubsub` `0.15.0` → `0.16.0`
+  - `#12`: `github.com/mattn/go-sqlite3` `1.14.28` → `1.14.44` (merged after rebase onto `ae88fdc`)
+  Posted `@dependabot rebase` on the remaining six (`#1`, `#5`, `#6`, `#7`, `#8`, `#10`) so they pick up the ripgrep fix on their next CI run.
+- **Deferred to next release cycle.** Two PRs are green at the qsdm-go layer but their PR CI does *not* exercise `release-container.yml` (which runs only on `push: tags: v*`). Merging them risks re-breaking the release pipeline we just stabilised in sessions 75–78:
+  - `#2`: `docker/login-action` `3` → `4`
+  - `#13`: `docker/build-push-action` `6` → `7`
+  Path forward: cut a `v0.3.1-rc1` tag against a temporary branch carrying both bumps, watch `release-container.yml` complete end-to-end (especially the cosign attest + SBOM upload steps), then merge if all 10 jobs are green.
 
 ## What's safe to publish today (post-publish status)
 

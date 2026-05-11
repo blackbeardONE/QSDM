@@ -31,7 +31,17 @@ if [[ "${QSDM_NO_CGO:-0}" == "1" ]]; then
     echo "QSDM_NO_CGO=1 — skipping liboqs / CGO wiring."
     export CGO_ENABLED=0
     unset CGO_CFLAGS CGO_LDFLAGS CGO_CPPFLAGS CGO_CXXFLAGS || true
-    go build -o ./qsdm -v ./cmd/qsdm
+    # The module root is QSDM/source/go.mod. When this script is invoked
+    # with working-directory=QSDM (the macos-build.yml convention), go
+    # needs to be run from source/, otherwise it can't find go.mod.
+    if [[ -f "source/go.mod" ]]; then
+        ( cd source && go build -o ../qsdm -v ./cmd/qsdm )
+    elif [[ -f "go.mod" ]]; then
+        go build -o ../qsdm -v ./cmd/qsdm
+    else
+        echo "ERROR: go.mod not found. Run from QSDM root or source/." >&2
+        exit 1
+    fi
     echo ""
     echo "Built no-CGO binary: ./qsdm"
     exit 0
