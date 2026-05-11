@@ -17,14 +17,25 @@
 //     key at ~/.ssh/id_ed25519. (Override the host with QSDM_VPS_HOST
 //     and the user with QSDM_VPS_USER; the defaults match
 //     QSDM/deploy/_deploy_host.py for parity with the existing scripts.)
-//  2. Upload each `--file local=remote` mapping over the SSH transport,
+//  2. Run each `--pre-run` shell snippet on the remote *first*. This
+//     is for commands that must happen before uploads land — typically
+//     backups (`cp /var/www/qsdm/index.html /root/backups/index.html.bak`).
+//     Streams stdout / stderr live.
+//  3. Upload each `--file local=remote` mapping over the SSH transport,
 //     using `cat > <remote>` piped from the local file. (We deliberately
 //     do not link the pkg/sftp package — there is no SFTP server on the
 //     VPS in the current image, and `cat` over an SSH `exec` channel is
 //     adequate for the small number of files this tool ships.)
-//  3. Run each `--run` shell snippet on the remote, streaming stdout and
-//     stderr live so the operator sees Caddy validate / reload output
-//     in real time.
+//  4. Run each `--run` shell snippet on the remote *after* uploads.
+//     This is the post-upload stage (chown / chmod / caddy validate /
+//     systemctl reload / verification).
+//
+// The pre-run → upload → run ordering is fixed; flags in any order on
+// the command line produce the same execution order. Earlier versions
+// of this tool only had `--run`, which meant a "backup before deploy"
+// shell snippet inside `--run` actually fired after the upload (the
+// first deploy of v0.3.1 wallet hit this), so we now split the two
+// phases explicitly.
 //  4. Exit non-zero on the first remote command that returns a non-zero
 //     status, so failures don't get swept under a happy-path summary.
 //
@@ -112,6 +123,7 @@ func main() {
 		keyPath    string
 		timeoutStr string
 		files      fileMappings
+		preRuns    runList
 		runs       runList
 	)
 	flag.StringVar(&host, "host", envDefault("QSDM_VPS_HOST", "206.189.132.232"), "remote host (env QSDM_VPS_HOST)")
@@ -119,11 +131,12 @@ func main() {
 	flag.StringVar(&keyPath, "key", defaultKeyPath(), "path to OpenSSH private key (ed25519 expected)")
 	flag.StringVar(&timeoutStr, "timeout", "30s", "TCP dial + per-step SSH timeout")
 	flag.Var(&files, "file", "LOCAL=REMOTE file to upload (repeat for multiple)")
-	flag.Var(&runs, "run", "shell command to run on the remote after uploads (repeat for multiple; runs in order)")
+	flag.Var(&preRuns, "pre-run", "shell command to run on the remote BEFORE uploads (repeat for multiple; typically backups)")
+	flag.Var(&runs, "run", "shell command to run on the remote AFTER uploads (repeat for multiple; chown, validate, reload)")
 	flag.Parse()
 
-	if len(files) == 0 && len(runs) == 0 {
-		fmt.Fprintln(os.Stderr, "no -file uploads and no -run commands specified; nothing to do")
+	if len(files) == 0 && len(runs) == 0 && len(preRuns) == 0 {
+		fmt.Fprintln(os.Stderr, "no -file uploads and no -run / -pre-run commands specified; nothing to do")
 		os.Exit(2)
 	}
 	timeout, err := time.ParseDuration(timeoutStr)
@@ -186,6 +199,13 @@ func main() {
 	defer client.Close()
 
 	fmt.Fprintf(os.Stderr, "[ssh] connected (%s)\n", client.ServerVersion())
+
+	for _, cmd := range preRuns {
+		if err := runRemote(client, cmd); err != nil {
+			fmt.Fprintf(os.Stderr, "pre-run command %q: %v\n", cmd, err)
+			os.Exit(1)
+		}
+	}
 
 	for _, m := range files {
 		if err := uploadFile(client, m.local, m.remote); err != nil {
