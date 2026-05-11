@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>QSDM Wallet — Self-Custody, Quantum-Secure (ML-DSA-87)</title>
-<meta name="description" content="Generate a self-custody QSDM wallet in your browser. ML-DSA-87 (FIPS 204) keypair generated entirely client-side; private key never leaves this tab. PBKDF2-SHA256 (600k iterations) + AES-256-GCM passphrase-encrypted keystore, byte-compatible with `qsdmcli wallet new`." />
+<meta name="description" content="Generate a self-custody QSDM wallet in your browser. ML-DSA-87 (FIPS 204) keypair generated entirely client-side; private key never leaves this tab. PBKDF2-SHA256 (600k iterations) + AES-256-GCM passphrase-encrypted keystore, byte-compatible with `qsdmcli wallet new`. Plus a read-only public-address balance lookup that queries api.qsdm.tech." />
 <meta name="theme-color" content="#0b1220" />
 <meta property="og:title" content="QSDM Wallet — Self-Custody, Quantum-Secure" />
 <meta property="og:description" content="Generate a QSDM (Cell / CELL) reward address in your browser. ML-DSA-87 keys, AES-256-GCM encrypted keystore, zero server-side custody." />
@@ -252,6 +252,7 @@
       <button class="tab active" data-tab="generate" role="tab" aria-selected="true">Generate</button>
       <button class="tab" data-tab="open" role="tab" aria-selected="false">Open keystore</button>
       <button class="tab" data-tab="sign" role="tab" aria-selected="false">Sign message</button>
+      <button class="tab" data-tab="balance" role="tab" aria-selected="false">Check balance</button>
     </div>
 
     <!-- Generate -->
@@ -335,6 +336,33 @@
       <div class="status-line" id="sign-status"></div>
       <div id="sign-result" hidden></div>
     </div>
+
+    <!-- Balance -->
+    <div class="tab-pane" data-pane="balance">
+      <h2>Check an address balance</h2>
+      <p>
+        <strong>Unlike the other three tabs, this one talks to the network.</strong>
+        It sends a single <code>GET https://api.qsdm.tech/api/v1/wallet/balance?address=&lt;addr&gt;</code>
+        and renders the response. An address is public information &mdash; it's already on
+        chain &mdash; so the request leaks no private material, but it does correlate
+        <em>this browser</em> with <em>this address</em> at the validator's HTTP log
+        layer. If you want to avoid that correlation, ask a friend's node, run your own
+        validator, or skip this tab entirely.
+      </p>
+      <div class="field">
+        <label>Address <span class="hint">64 hex chars · <code>hex(sha256(public_key))</code></span></label>
+        <input type="text" id="bal-addr" autocomplete="off" spellcheck="false"
+               placeholder="e.g. 605ab7550bd6c74ce3e5b394c1f6334cea0f6e2951938ae7fc5c775a7e1ac7e2"
+               style="font-family: var(--mono); font-size: 13px;" />
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="bal-btn">Look up balance</button>
+        <button class="btn btn-ghost" id="bal-use-last" disabled
+                title="Use the address from the most recent Generate / Open in this tab">Use my last address</button>
+      </div>
+      <div class="status-line" id="bal-status">Address goes in &rarr; balance comes back.</div>
+      <div id="bal-result" hidden></div>
+    </div>
   </section>
 
   <section class="panel">
@@ -354,10 +382,14 @@
       <li><strong>Address derivation:</strong> the QSDM address is
         <code>hex(sha256(public_key))</code>. Same shape as the validator-side
         <code>pkg/wallet</code> derivation.</li>
-      <li><strong>No network:</strong> the wallet page only fetches static files
+      <li><strong>Bounded network surface:</strong> the Generate / Open / Sign
+        tabs only fetch the three static files
         (<code>wallet.wasm</code>, <code>wasm_exec.js</code>, <code>wallet.js</code>).
-        It never POSTs the passphrase, the private key, the public key, or even
-        the address. Confirm in DevTools → Network.</li>
+        They never POST the passphrase, the private key, the public key, or even
+        the address. The <em>Check balance</em> tab is the one exception &mdash; it
+        sends a single read-only <code>GET</code> to <code>api.qsdm.tech</code>
+        with the address in the query string, and only after you click the
+        button. Confirm in DevTools → Network.</li>
       <li><strong>WASM build version:</strong> <span id="wasm-version" style="font-family: var(--mono)">loading…</span></li>
     </ul>
   </section>
@@ -390,7 +422,16 @@ go build -o qsdmcli ./cmd/qsdmcli
   </div>
 </footer>
 
-<script src="/wasm_exec.js"></script>
-<script src="/wallet.js"></script>
+<!--
+  Subresource Integrity is enforced on both scripts and (via wallet.js)
+  on the WASM module. The sha384 values below are emitted by
+  QSDM/scripts/build_wallet_wasm.sh and rotated automatically whenever
+  the Go toolchain rebuilds wallet.wasm (which also re-emits wallet.js
+  with a fresh embedded WASM hash, which in turn changes wallet.js's
+  own hash — the build script handles the dependency chain in order).
+  Manual edits to these literals will work but are not required.
+-->
+<script src="/wasm_exec.js" integrity="sha384-PWCs+V4BDf9yY1yjkD/p+9xNEs4iEbuvq+HezAOJiY3XL5GI6VyJXMsvnjiwNbce" crossorigin="anonymous"></script>
+<script src="/wallet.js" integrity="sha384-7QOp7prD6J2/p9sWPKeYaxZ/dPw/WFj9UR4YCjIuKJpuDIhU9BRZ4l7di4cWESCS" crossorigin="anonymous"></script>
 </body>
 </html>

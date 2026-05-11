@@ -201,7 +201,26 @@
     }
     const go = new Go();
     try {
-      const resp = await fetch('/wallet.wasm');
+      // Subresource Integrity on the WASM fetch.
+      // The literal sha384 hash is rewritten in-place by
+      // QSDM/scripts/build_wallet_wasm.sh after a clean rebuild
+      // (look for the `update_sri_hashes` shell function), so an
+      // operator never has to remember to rotate it manually. The
+      // browser refuses the fetch if the served bytes don't match
+      // — defence-in-depth against a Caddy / CDN swap that would
+      // otherwise pair a rogue wallet.wasm with our legitimate
+      // wallet.html. A fail-closed at fetch time also produces a
+      // visible TypeError in DevTools rather than a silent
+      // wrong-key signature.
+      const resp = await fetch('/wallet.wasm', {
+        integrity: 'sha384-yHrwzrXeXp0uvr4XuFFXM0iPZL5ZEcku33QrczqotHpO+jtnqwqemfADTrcVQHmw',
+        // `same-origin` is the implicit default for /wallet.wasm
+        // because the page is served from the same origin, but
+        // pinning it here means a future move to a CDN sub-domain
+        // (e.g. cdn.qsdm.tech) won't silently change the cred
+        // behaviour without an explicit recheck of the SRI policy.
+        credentials: 'same-origin',
+      });
       if (!resp.ok) throw new Error(`wallet.wasm fetch: HTTP ${resp.status}`);
       const buf = await resp.arrayBuffer();
       const result = await WebAssembly.instantiate(buf, go.importObject);
@@ -224,6 +243,52 @@
     const ver = typeof window.qsdm_wallet_version === 'function' ? window.qsdm_wallet_version() : 'unknown';
     const verEl = $('wasm-version');
     if (verEl) verEl.textContent = ver;
+  }
+
+  // ----- Read-only balance lookup -----
+  //
+  // The validator HTTP API exposes `GET /api/v1/wallet/balance?address=<addr>`
+  // as a public endpoint (no Authorization header required) — confirmed by
+  // `publicPaths` in pkg/api/middleware.go. The response shape is
+  // `{ "address": "<hex>", "balance": <number-of-CELL> }` where balance is
+  // a float64 of CELL (storage.GetBalance returns float64, not dust). The
+  // entire Generate / Open / Sign machinery is unaware of this endpoint and
+  // can stand alone with no network access; balance lookup is opt-in via
+  // its own tab.
+  const BALANCE_ENDPOINT = 'https://api.qsdm.tech/api/v1/wallet/balance';
+  let lastAddress = null;
+
+  // Address shape check: lowercase hex, exactly 64 chars (32 bytes —
+  // sha256 of the public key). The validator will reject malformed input
+  // anyway, but a client-side check produces a useful error before the
+  // round trip and stops obvious typos from polluting the validator's
+  // HTTP access log.
+  function isValidAddress(s) {
+    return typeof s === 'string' && /^[0-9a-f]{64}$/i.test(s);
+  }
+  // Render the API's float64-of-CELL response with fixed 8 decimals
+  // (the smallest unit on QSDM is "dust" = 10^-8 CELL). We keep the
+  // raw number alongside the formatted version because float64 can
+  // lose precision on very large balances and operators may want to
+  // see exactly what the API returned.
+  function formatCell(n) {
+    if (typeof n !== 'number' || !Number.isFinite(n)) return String(n);
+    if (n === 0) return '0 CELL';
+    const sign = n < 0 ? '-' : '';
+    const abs = Math.abs(n);
+    return `${sign}${abs.toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} CELL`;
+  }
+
+  // Hook called from Generate / Open after a valid address surfaces in
+  // this tab. Enables the "Use my last address" shortcut on the
+  // Balance pane and prefills the address input if it's currently empty.
+  function rememberAddress(addr) {
+    if (!isValidAddress(addr)) return;
+    lastAddress = addr.toLowerCase();
+    const btn = $('bal-use-last');
+    if (btn) btn.disabled = false;
+    const input = $('bal-addr');
+    if (input && !input.value.trim()) input.value = lastAddress;
   }
 
   // ----- UI wiring -----
@@ -318,6 +383,7 @@
       });
     });
     setStatus('gen-status', 'Wallet generated. Click Download.', 'ok');
+    rememberAddress(keystore.address);
     // Clear passphrase fields after generation so they don't linger.
     $('gen-pass1').value = '';
     $('gen-pass2').value = '';
@@ -389,6 +455,7 @@
       setTimeout(() => { $('open-copy-addr').textContent = 'Copy address'; }, 1200);
     });
     setStatus('open-status', 'Keystore decrypted & verified.', 'ok');
+    rememberAddress(ks.address);
     $('open-pass').value = '';
   });
 
@@ -450,6 +517,98 @@
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
     })[c]);
   }
+
+  // ----- Balance flow -----
+  $('bal-use-last').addEventListener('click', () => {
+    if (!lastAddress) return;
+    $('bal-addr').value = lastAddress;
+    setStatus('bal-status', `Filled in ${lastAddress.slice(0, 12)}…`, 'ok');
+  });
+
+  $('bal-btn').addEventListener('click', async () => {
+    const addr = ($('bal-addr').value || '').trim().toLowerCase();
+    if (!addr) {
+      setStatus('bal-status', 'enter an address (64 hex chars) first', 'err');
+      return;
+    }
+    if (!isValidAddress(addr)) {
+      setStatus('bal-status', `not a valid QSDM address: expected 64 hex chars, got ${addr.length}`, 'err');
+      return;
+    }
+
+    setStatusBusy('bal-status', `querying ${BALANCE_ENDPOINT}…`);
+    // AbortController gives us a hard 12-second ceiling on the request.
+    // If the validator is slow / unreachable we want a clear error in
+    // the UI rather than a status line that says "querying…" forever.
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 12_000);
+    let resp;
+    try {
+      resp = await fetch(`${BALANCE_ENDPOINT}?address=${encodeURIComponent(addr)}`, {
+        method: 'GET',
+        // Explicitly omit credentials — there's no Authorization
+        // header anyway, but this defends against a future CSRF angle
+        // if the wallet page is ever embedded as an iframe.
+        credentials: 'omit',
+        signal: ctl.signal,
+        headers: { 'Accept': 'application/json' },
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      const reason = e.name === 'AbortError' ? 'timed out after 12s' : e.message;
+      setStatus('bal-status', `network error: ${reason}`, 'err');
+      return;
+    }
+    clearTimeout(timer);
+
+    if (!resp.ok) {
+      setStatus('bal-status', `HTTP ${resp.status} ${resp.statusText}`, 'err');
+      return;
+    }
+    let body;
+    try {
+      body = await resp.json();
+    } catch (e) {
+      setStatus('bal-status', `bad JSON from API: ${e.message}`, 'err');
+      return;
+    }
+    if (typeof body !== 'object' || body === null || !('balance' in body)) {
+      setStatus('bal-status', `unexpected API shape: ${JSON.stringify(body).slice(0, 80)}`, 'err');
+      return;
+    }
+    if (body.address && body.address.toLowerCase() !== addr) {
+      // Sanity: the validator should echo back the address we sent.
+      // If it doesn't, somebody is rewriting the response in flight
+      // — SRI doesn't cover dynamic JSON, so we surface this to the
+      // user explicitly.
+      setStatus(
+        'bal-status',
+        `address mismatch: asked ${addr.slice(0, 12)}…, got ${String(body.address).slice(0, 12)}…`,
+        'err',
+      );
+      return;
+    }
+
+    const r = $('bal-result');
+    r.hidden = false;
+    r.innerHTML = `
+      <div class="result">
+        <h3>Balance</h3>
+        <div class="kv">
+          <div class="k">address</div><div class="v">${escapeHtml(addr)}</div>
+          <div class="k">balance</div><div class="v"><strong>${formatCell(body.balance)}</strong></div>
+          <div class="k">raw response</div><div class="v"><code>${escapeHtml(JSON.stringify(body))}</code></div>
+          <div class="k">source</div><div class="v"><code>${escapeHtml(BALANCE_ENDPOINT)}?address=${escapeHtml(addr.slice(0, 12))}…</code></div>
+          <div class="k">checked at</div><div class="v">${new Date().toISOString()}</div>
+        </div>
+        <div class="status-line" style="margin-top:14px">
+          A balance of <code>0 CELL</code> on a freshly-generated address is normal.
+          Run the reference miner against it (see <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">MINER_QUICKSTART</a>)
+          to start earning block rewards.
+        </div>
+      </div>`;
+    setStatus('bal-status', `Balance retrieved: ${formatCell(body.balance)}`, 'ok');
+  });
 
   // ----- Go! -----
   bootWASM();

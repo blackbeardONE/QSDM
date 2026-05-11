@@ -337,11 +337,147 @@ landing-specific by design.
 
 - A "send transaction" tab on the browser wallet (depends on v2 mining
   envelope format stabilising; planned for v0.4.0).
-- Subresource-Integrity hash baked into `wallet.html` for the WASM
-  fetch. Requires a deploy-time HTML rewrite; tracked but not blocking.
 - Mnemonic / BIP-39-style seed phrase. ML-DSA-87 keys do not have a
   deterministic short representation; the encrypted JSON keystore is
   the recovery artefact. Documented as such in `WEB_WALLET.md §6`.
+
+### Session 84 — homepage rewrite + secondary-page navigation parity
+
+After deploying the wallet in Session 83 the public landing was
+out-of-date: no mention of the wallet beyond a single nav link, the
+SDK install snippet still showed the pre-rename `qsdm` package, no
+visible release version, and the four secondary pages (`chain.html`,
+`validators.html`, `trust.html`, `download.html`) had no link to
+`/wallet.html` — a visitor who deep-linked into Trust or Validators
+could not discover the wallet without going back to `/`.
+
+**`index.html` rewrite.** Cut from 1,479 lines / 85,044 B to
+845 lines / ~44,000 B without losing any current information.
+Restructured around three top-level sections: **Use** (cards for
+Wallet / Mine / Validate, with one-click links into the deployed
+flows), **Build** (developer-facing — `npm install qsdm-sdk`,
+`go get`, WASM, REST API, `docker pull ghcr.io/blackbeardone/qsdm`),
+and **Why** (the existing benefits, condensed and de-duplicated).
+Added a version pill in the nav showing the current release tag
+(`v0.3.1`). The pill fetches `/api/v1/status` on load and shows
+whatever is reported; an inline filter rejects strings matching
+`/^go\d+(\.\d+){1,2}$/` so the validator's accidental publication of
+its Go toolchain version (`go1.25.9`, currently in the field) cannot
+overwrite the release tag with a misleading value. Architecture SVG
+updated to include the wallet box on the user-facing side.
+
+**Secondary page navigation parity.** Audited `chain.html`,
+`validators.html`, `trust.html`, `download.html` and added a `Wallet`
+link to each. Expanded `trust.html`'s nav (previously just a
+"← Back to landing" link) to a full Home / Wallet / Validators /
+Chain / Download set so deep-link traffic from search engines or
+Sigstore-Rekor links has the same discovery surface as the homepage.
+
+**Deploy:** all five HTML files pushed via `cmd/qsdm-deploy-landing`
+with a pre-run tar backup of `/var/www/qsdm` to
+`/root/landing-backups/landing-pre-s84.tgz`. No Caddyfile change. No
+validator-side change.
+
+### Session 85 — wallet SRI hardening + read-only balance lookup
+
+Two narrow, additive improvements to the deployed wallet at
+`https://qsdm.tech/wallet.html`. No consensus change, no server-side
+change, no Caddyfile change. Public edge re-verified end-to-end after
+the deploy.
+
+**1) Subresource Integrity (SRI) is now enforced on every loadable
+sub-resource the wallet page consumes.** This closes the deferred item
+from *Session 83*. Three sha384 hashes are pinned:
+
+| File | Pinned in | Mechanism |
+|------|-----------|-----------|
+| `/wasm_exec.js` | `wallet.html` | `<script integrity="sha384-…" crossorigin="anonymous">` |
+| `/wallet.js`    | `wallet.html` | `<script integrity="sha384-…" crossorigin="anonymous">` |
+| `/wallet.wasm`  | `wallet.js`   | `fetch('/wallet.wasm', { integrity: 'sha384-…' })` |
+
+If any of these bytes differ from the pinned hash, the browser refuses
+the load and surfaces a visible error rather than executing the rogue
+code path. `wallet.html` is at the root of the trust chain — it is
+itself fetched fresh on every page load — so its integrity is bounded
+by HTTPS + the operator's control of `/var/www/qsdm/wallet.html`. SRI
+extends that root-of-trust to the three sub-resources, which is the
+class of attack SRI was designed for (CDN swap, cached-asset poisoning,
+operator-error overwrite of one file but not the HTML).
+
+`QSDM/scripts/build_wallet_wasm.sh` now rotates all three hashes
+automatically (`openssl dgst -sha384 -binary | openssl base64 -A`) in
+dependency order — wasm_exec.js → wallet.wasm → wallet.js → wallet.html
+— and `--refresh-sri-only` is a new flag that re-pins the hashes from
+on-disk artefacts without re-running the `GOOS=js GOARCH=wasm go build`
+(useful for HTML/JS-only edits). The script `grep`-asserts every
+substitution actually took effect so a future template error can't ship
+a stale-hash wallet.
+
+End-to-end public-edge verification after deploy:
+
+```
+on-the-wire sha384 vs pinned (Caddy → curl → SHA-384 → compare to
+attribute literal):
+
+  /wasm_exec.js   PWCs+V4B…  ⇄  pinned in wallet.html  →  MATCH
+  /wallet.js      7QOp7prD…  ⇄  pinned in wallet.html  →  MATCH
+  /wallet.wasm    yHrwzrXe…  ⇄  pinned in wallet.js    →  MATCH
+```
+
+**2) New "Check balance" tab on the wallet.** A fourth tab alongside
+Generate / Open / Sign. The user types or pastes any QSDM address
+(64 hex chars), the page sends a single
+`GET https://api.qsdm.tech/api/v1/wallet/balance?address=<addr>` (the
+endpoint is public — `pkg/api/middleware.go` exempts it from auth so
+game servers and explorers can poll), and the balance is rendered as
+`X.YYYYYYYY CELL` plus the raw JSON for operators who want to see
+exactly what the validator returned.
+
+The Generate and Open tabs now also feed the address they just
+produced into a "Use my last address" shortcut on the Balance pane —
+mostly a UX nicety so a freshly-minted wallet can be checked in one
+click. AbortController bounds the fetch at 12 s so a slow validator
+doesn't leave the UI spinning forever. The endpoint's response shape
+(`{ "address": "<echo>", "balance": <float CELL> }`) is sanity-checked
+against the requested address so a MITM that rewrites the JSON in
+flight can't silently substitute a different account's balance — the
+UI surfaces a clear "address mismatch" error in that case.
+
+The page copy now explicitly differentiates the network behaviour of
+each tab: Generate / Open / Sign remain pure-browser (no POST, no GET
+of anything beyond the three static files); Balance is the one tab
+that contacts the network, and only after an explicit button click.
+That precision is important — the original page promised "no network",
+which would have become subtly false the moment Balance shipped.
+
+**Deployed files (sha384, byte size):**
+
+```
+/var/www/qsdm/wallet.html   sha384-EHFEu4ZH…  21,572 B   (+2,768 B vs s83)
+/var/www/qsdm/wallet.js     sha384-7QOp7prD…  25,780 B   (+7,409 B vs s83)
+/var/www/qsdm/wallet.wasm   sha384-yHrwzrXe…   3,237,388 B   (unchanged)
+/var/www/qsdm/wasm_exec.js  sha384-PWCs+V4B…  16,992 B   (unchanged)
+```
+
+Backup of the prior pair at `/root/backups/wallet.{html,js}.bak-20260512-031728`
+on BLR1. Roll-back is `cp …bak-… /var/www/qsdm/<file>` + chown.
+
+**Deploy tool fix (`cmd/qsdm-deploy-landing`).** No code change this
+session — but discovered that PowerShell on Windows expands `$(date …)`
+locally before sending the shell command to the remote, so a literal
+`$(date …)` in a `-pre-run` flag fails with "Cannot bind parameter
+'Date'". Documented in operator commentary; the fix on the caller side
+is to compute the timestamp via `(Get-Date).ToString(…)` in PowerShell
+and pass it as a plain string. The deploy tool itself is OS-agnostic.
+
+**Verified working end-to-end:**
+
+```
+$ curl -s https://qsdm.tech/wallet.html | grep -c 'data-tab="balance"'   → 1
+$ curl -s https://qsdm.tech/wallet.js   | grep -c 'BALANCE_ENDPOINT'    → 1
+$ curl -s 'https://api.qsdm.tech/api/v1/wallet/balance?address=605ab7…' →
+  {"address":"605ab7…","balance":0}      # public, no auth header
+```
 
 ## What's safe to publish today (post-publish status)
 
