@@ -324,3 +324,6 @@ desktop.ini
 # Throwaway PowerShell helpers used during local repro / debug.
 # These accrete and are usually superseded within hours.
 /.cache/
+
+# session 87 (2026-05-12): local cross-compile output for ad-hoc deploys
+_build/
