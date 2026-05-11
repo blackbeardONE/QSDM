@@ -6,10 +6,13 @@
 
 | | Value |
 |---|---|
-| Target tag (Go core) | `v0.3.0` |
-| Target tag (JavaScript SDK) | `sdk-js-v0.3.0` |
-| Verified at git HEAD | `de2bf30` (session 73) |
-| Go toolchain | `1.25.10` |
+| Target tag (Go core) | `v0.3.0` — **pushed and published** (`https://github.com/blackbeardONE/QSDM/releases/tag/v0.3.0`) |
+| Target tag (JavaScript SDK) | `sdk-js-v0.3.0` — held local pending `NPM_TOKEN` |
+| Verified at git HEAD | `de2bf30` (session 73 baseline) → `c00fccd` (session 78, green release run) |
+| Green CI run | `release-container.yml` run `25650171771` (10 / 10 jobs success) |
+| Container images | `ghcr.io/blackbeardone/{qsdm,qsdm-validator,qsdm-miner}:0.3.0` (cosign-signed + SPDX SBOM attested) |
+| Release assets | 66 files (20 binaries + 22 `.sig` + 22 `.pem` + source SBOM + `SHA256SUMS`) |
+| Go toolchain | `1.25.10` (declared in `go.mod`; auto-fetched by every runner from the local bootstrap toolchain) |
 | `golang.org/x/net` | `v0.53.0` |
 | Audit-checklist size | 53 items in `pkg/audit/checklist.go` (full-suite render: 81 items including review-driven extras) |
 | `govulncheck` reachable findings | 1 (`GO-2024-3218`, tracked) |
@@ -48,13 +51,55 @@ This is a verification-only session — no code changes, only confirmation that 
 | 8 release binaries `-trimpath -ldflags="-s -w"` build | all clean; `--version` banner stamps `go1.25.10` |
 | **10-min pubsub soak** (4 hosts × 2 producers × 50 Hz × 256 B) | **PASS in 601.99 s**: 239 987 publishes; 719 946 cross-host receipts; per-host receive totals `[179 985 / 179 987 / 179 984 / 179 990]` (total spread = 6 messages across 4 hosts over 600 s); no partition; no sustained-error window; flat rate throughout |
 
-## What's safe to publish today
+## Sessions 75–79: release pipeline shakedown + third-party verification
+
+The first push of `v0.3.0` on `9c6bdde` (session 74) created an empty release skeleton with 0 assets — the workflow failed at four distinct latent bugs that had never run in production because no prior tag had exercised this path end-to-end. Four follow-up fix commits and one verification session resolved them:
+
+| Session | Commit | Layer fixed | Root cause |
+|---|---|---|---|
+| 75 | `134abf1` | `qsdm-go.yml` red-since-session-72 | `ubuntu-latest` runners ship no `ripgrep`; the two rebrand-guardrail scripts (`check-no-new-legacy-metrics.sh`, `check-no-collapsed-env-preferred.sh`) call `rg` and exited 2. Fix: `apt-get install ripgrep` in the build-test job. |
+| 76 | `d8326c6` | `gh release upload` duplicate-glob | `qsdmminer-*` and `*.sig` both matched `qsdmminer-*.sig`; gh tried to upload the same name twice and the API rejected the second attempt (`HTTP 422 ReleaseAsset.name already exists`). `--clobber` only handles the *existing* release, not earlier duplicates inside the same call. Fix: collapse to a single `./*` glob (the asset dir contains only release artefacts at that point). |
+| 77 | `83c1128` | **The actual root cause of every SBOM failure** | GHCR is case-sensitive. `docker/metadata-action@v5` auto-lowercases the namespace per OCI convention so `docker/build-push-action` pushes to `ghcr.io/blackbeardone/<image>`. Every downstream step that constructed an image reference from `${{ github.repository_owner }}` raw used the mixed-case `blackbeardONE` and got "manifest unknown". Sessions 75 and 76 chased the symptoms (`registry-username` / `registry-password`, `docker pull`) — none of those addressed the actual case mismatch. Fix: a single `imgbase` step per image job that computes the lowercased ref once and feeds it to `docker/metadata-action`, the `docker pull` step, the `anchore/sbom-action`, and the `cosign attest` step. |
+| 78 | `c00fccd` | bash `for tag in <newlines>` | `${{ steps.meta.outputs.tags }}` is newline-separated. The bash construct `for tag in ${{ … }}; do …` produces a multi-line `for` header that bash rejects (`syntax error near unexpected token 'ghcr.io/.../...:0.3'`). This bug had always been present but was shielded by earlier failing steps in sessions 75–77. Fix: pass `TAGS` through the env block and pipe `printf '%s\n' "$TAGS" | while read`. |
+
+`release-container.yml` run `25650171771` on `c00fccd` finally produced a 10-of-10 green release pipeline:
+
+| Job | Result |
+|---|---|
+| `binaries (linux/amd64)` | success |
+| `binaries (linux/arm64)` | success |
+| `binaries (darwin/amd64)` | success |
+| `binaries (darwin/arm64)` | success |
+| `binaries (windows/amd64)` | success |
+| `source SBOM (SPDX)` | success |
+| `ghcr qsdm (legacy image name)` | success — image + signature + SBOM attestation |
+| `ghcr qsdm-validator (CPU-only)` | success — image + signature + SBOM attestation |
+| `ghcr qsdm-miner (GPU miner runtime)` | success — image + signature + SBOM attestation |
+| `attach binaries + SBOM + signatures to release` | success — 66 assets uploaded |
+
+Plus two GitHub-side cleanups via the REST API: deleted two orphaned **draft** releases (ids `320195790` and `320254619`) that survived earlier tag deletions because GitHub keeps the release object as an orphan draft when its tag is removed.
+
+### Session 79 — independent third-party verification
+
+After publishing, an independent verifier on a Windows 11 / Go 1.24.2 / cosign v2.4.1 host (no Docker installed) downloaded the live release and reproduced the supply-chain claims end-to-end. Full procedure and expected output: [`QSDM/docs/docs/V030_POST_RELEASE_VERIFICATION.md`](QSDM/docs/docs/V030_POST_RELEASE_VERIFICATION.md). Headline:
+
+| Verification | Result |
+|---|---|
+| `qsdmminer-windows-amd64.exe --version` (native) | `qsdmminer v0.3.0 (c00fccd, 2026-05-11T04:23:54Z, go1.25.10, windows/amd64)` |
+| SHA256 cross-match of 6 representative downloads against `SHA256SUMS` | 6 / 6 byte-exact |
+| `cosign verify-blob` against 7 keyless-signed blobs (5 binaries + `SHA256SUMS` + source SBOM) | 7 / 7 `Verified OK` |
+| `cosign verify` against 3 GHCR images (anonymous, `DOCKER_CONFIG=empty`) | 3 / 3 success — every certificate pins `githubWorkflowSha=c00fccd93a66c5317aaaa03b80e9a09d111e87bd`, `githubWorkflowRef=refs/tags/v0.3.0` |
+| `cosign verify-attestation --type spdxjson` against 3 image SBOMs | 3 / 3 success |
+| Sigstore identity bound by every signing certificate | `https://github.com/blackbeardONE/QSDM/.github/workflows/release-container.yml@refs/tags/v0.3.0` (issuer: `https://token.actions.githubusercontent.com`) |
+| `qsdm:0.3.0` image manifest digest | `sha256:3f46260eef8a702c2e45631824cab8f59f2f792bb2efcb952d0de514509dad1e` |
+
+## What's safe to publish today (post-publish status)
 
 These artefacts are sign-off-ready and can be shipped the moment the corresponding external blocker clears:
 
-- **`qsdm@0.3.0` on npm.** Push tag `sdk-js-v0.3.0`; the `.github/workflows/sdk-javascript-publish.yml` workflow validates that the tag suffix matches `package.json`, re-runs the test suite as a `prepublishOnly` gate, and runs `npm publish --provenance --access public`. External blocker: `NPM_TOKEN` repository secret.
-- **GHCR container images** (`qsdm`, `qsdm-validator`, `qsdm-miner`). The `release-container.yml` workflow already keyless-signs them via Sigstore OIDC and attaches an SPDX 2.3 SBOM as a cosign attestation. No external secret required — the GitHub-issued OIDC token mints the certificates.
-- **Linux / Windows binaries** with cosign signatures and a source SBOM. Same workflow.
+- ✅ **GHCR container images** (`qsdm`, `qsdm-validator`, `qsdm-miner` `:0.3.0`). **Published.** `release-container.yml` keyless-signs them via Sigstore OIDC and attaches an SPDX 2.3 SBOM as a cosign attestation. Reproducible with `cosign verify` (see `V030_POST_RELEASE_VERIFICATION.md` §"Step 5").
+- ✅ **Linux / Windows / macOS binaries** (`qsdmminer`, `qsdmminer-console`, `trustcheck`, `genesis-ceremony` × 5 platforms = 20 binaries) with cosign signatures and a source SBOM. **Published.** Reproducible with `cosign verify-blob` (see `V030_POST_RELEASE_VERIFICATION.md` §"Step 4").
+- ⏳ **`qsdm@0.3.0` on npm.** Push tag `sdk-js-v0.3.0`; the `.github/workflows/sdk-javascript-publish.yml` workflow validates that the tag suffix matches `package.json`, re-runs the test suite as a `prepublishOnly` gate, and runs `npm publish --provenance --access public`. External blocker: `NPM_TOKEN` repository secret. The tag annotation is already drafted (see *Annotated-tag templates* below).
 
 ## Remaining external blockers
 
