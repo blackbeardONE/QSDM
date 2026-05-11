@@ -374,11 +374,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # GHCR is case-sensitive. docker/metadata-action auto-lowercases
+      # the image namespace per OCI convention, so `docker/build-push-action`
+      # pushes to ghcr.io/<lowercased-owner>/qsdm. Any subsequent
+      # command that references the same image MUST use the same
+      # lowercased form -- otherwise the registry returns "manifest
+      # unknown" (observed on the first v0.3.0 release run as a syft
+      # exit 1, and on the s76 re-run as a docker pull exit 1, both
+      # because `${{ github.repository_owner }}` is the original-cased
+      # "blackbeardONE" while the pushed image lives at "blackbeardone").
+      - name: Compute lowercased image base
+        id: imgbase
+        run: |
+          OWNER_LC="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "ref=ghcr.io/${OWNER_LC}/qsdm" >> "$GITHUB_OUTPUT"
+
       - name: Docker meta (qsdm legacy)
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/qsdm
+          images: ${{ steps.imgbase.outputs.ref }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -399,26 +414,18 @@ jobs:
       - name: Pull built image into local docker daemon for syft
         # docker/build-push-action with push: true uses the
         # docker-container buildx driver, which does NOT make the
-        # resulting image visible to the local docker daemon. anchore/
-        # sbom-action's syft then has to scan the remote ghcr.io
-        # reference, and on the first v0.3.0 run that failed two
-        # different ways:
-        #   (a) without registry creds, syft got exit 1 against the
-        #       freshly-pushed (private) GHCR image;
-        #   (b) WITH registry-username/registry-password set, the
-        #       action prepended `registry:` to the image URL, and
-        #       syft v1.42.3 cannot parse `registry:...@sha256:...`
-        #       (it works only for tag refs, not digest refs).
-        # Pulling the image into the daemon first sidesteps both:
-        # syft sees a local image and scans it with no registry I/O.
+        # resulting image visible to the local docker daemon. Pulling
+        # by digest from the lowercased ref lets anchore/sbom-action's
+        # syft scan locally without registry I/O or URL reformatting
+        # (registry: prefix + digest is rejected by syft v1.42.3).
         run: |
           set -euo pipefail
-          docker pull "ghcr.io/${{ github.repository_owner }}/qsdm@${{ steps.build.outputs.digest }}"
+          docker pull "${{ steps.imgbase.outputs.ref }}@${{ steps.build.outputs.digest }}"
 
       - name: Generate image SBOM (SPDX) and attach to image
         uses: anchore/sbom-action@v0
         with:
-          image: ghcr.io/${{ github.repository_owner }}/qsdm@${{ steps.build.outputs.digest }}
+          image: ${{ steps.imgbase.outputs.ref }}@${{ steps.build.outputs.digest }}
           format: spdx-json
           output-file: /tmp/qsdm-image-sbom.spdx.json
           upload-artifact: true
@@ -439,7 +446,7 @@ jobs:
           COSIGN_EXPERIMENTAL: "1"
         run: |
           set -euo pipefail
-          DIGEST_REF="ghcr.io/${{ github.repository_owner }}/qsdm@${{ steps.build.outputs.digest }}"
+          DIGEST_REF="${{ steps.imgbase.outputs.ref }}@${{ steps.build.outputs.digest }}"
           cosign attest --yes \
             --predicate /tmp/qsdm-image-sbom.spdx.json \
             --type spdxjson \
@@ -466,11 +473,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # See ghcr-legacy job for the GHCR case-sensitivity rationale.
+      - name: Compute lowercased image base
+        id: imgbase
+        run: |
+          OWNER_LC="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "ref=ghcr.io/${OWNER_LC}/qsdm-validator" >> "$GITHUB_OUTPUT"
+
       - name: Docker meta (qsdm-validator)
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/qsdm-validator
+          images: ${{ steps.imgbase.outputs.ref }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -489,15 +503,14 @@ jobs:
           cache-to: type=gha,mode=max,scope=qsdm-validator
 
       - name: Pull built image into local docker daemon for syft
-        # See ghcr-legacy job for the rationale; same pattern.
         run: |
           set -euo pipefail
-          docker pull "ghcr.io/${{ github.repository_owner }}/qsdm-validator@${{ steps.build.outputs.digest }}"
+          docker pull "${{ steps.imgbase.outputs.ref }}@${{ steps.build.outputs.digest }}"
 
       - name: Generate image SBOM (SPDX) and attach
         uses: anchore/sbom-action@v0
         with:
-          image: ghcr.io/${{ github.repository_owner }}/qsdm-validator@${{ steps.build.outputs.digest }}
+          image: ${{ steps.imgbase.outputs.ref }}@${{ steps.build.outputs.digest }}
           format: spdx-json
           output-file: /tmp/qsdm-validator-sbom.spdx.json
           upload-artifact: true
@@ -517,7 +530,7 @@ jobs:
           COSIGN_EXPERIMENTAL: "1"
         run: |
           set -euo pipefail
-          DIGEST_REF="ghcr.io/${{ github.repository_owner }}/qsdm-validator@${{ steps.build.outputs.digest }}"
+          DIGEST_REF="${{ steps.imgbase.outputs.ref }}@${{ steps.build.outputs.digest }}"
           cosign attest --yes \
             --predicate /tmp/qsdm-validator-sbom.spdx.json \
             --type spdxjson \
@@ -544,11 +557,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # See ghcr-legacy job for the GHCR case-sensitivity rationale.
+      - name: Compute lowercased image base
+        id: imgbase
+        run: |
+          OWNER_LC="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "ref=ghcr.io/${OWNER_LC}/qsdm-miner" >> "$GITHUB_OUTPUT"
+
       - name: Docker meta (qsdm-miner)
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/qsdm-miner
+          images: ${{ steps.imgbase.outputs.ref }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -567,15 +587,14 @@ jobs:
           cache-to: type=gha,mode=max,scope=qsdm-miner
 
       - name: Pull built image into local docker daemon for syft
-        # See ghcr-legacy job for the rationale; same pattern.
         run: |
           set -euo pipefail
-          docker pull "ghcr.io/${{ github.repository_owner }}/qsdm-miner@${{ steps.build.outputs.digest }}"
+          docker pull "${{ steps.imgbase.outputs.ref }}@${{ steps.build.outputs.digest }}"
 
       - name: Generate image SBOM (SPDX) and attach
         uses: anchore/sbom-action@v0
         with:
-          image: ghcr.io/${{ github.repository_owner }}/qsdm-miner@${{ steps.build.outputs.digest }}
+          image: ${{ steps.imgbase.outputs.ref }}@${{ steps.build.outputs.digest }}
           format: spdx-json
           output-file: /tmp/qsdm-miner-sbom.spdx.json
           upload-artifact: true
@@ -595,7 +614,7 @@ jobs:
           COSIGN_EXPERIMENTAL: "1"
         run: |
           set -euo pipefail
-          DIGEST_REF="ghcr.io/${{ github.repository_owner }}/qsdm-miner@${{ steps.build.outputs.digest }}"
+          DIGEST_REF="${{ steps.imgbase.outputs.ref }}@${{ steps.build.outputs.digest }}"
           cosign attest --yes \
             --predicate /tmp/qsdm-miner-sbom.spdx.json \
             --type spdxjson \
