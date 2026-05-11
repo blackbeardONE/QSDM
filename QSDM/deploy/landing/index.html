@@ -868,20 +868,39 @@ docker pull ghcr.io/blackbeardone/qsdm-miner:0.3.1</code></pre>
   // Auto-refresh the version pill from /api/v1/status when reachable.
   // If the API is offline or the field is missing we leave the
   // hard-coded fallback (v0.3.1) in place rather than blanking it.
+  //
+  // CAVEAT: the production /api/v1/status currently emits `version`
+  // as the Go toolchain string (e.g. "go1.25.9") rather than the
+  // release-tag version, so we explicitly reject anything that
+  // looks like a Go toolchain identifier. Once /api/v1/status grows
+  // a dedicated `release` / `qsdm_version` field that returns
+  // "v0.3.1" or similar, this filter will keep working — it only
+  // strips out the Go-toolchain shape. (Tracked alongside the
+  // session-84 site rewrite; the API change is out of scope here
+  // because it requires a validator redeploy.)
   (function () {
     var pill = document.getElementById('ver-pill-text');
     if (!pill) return;
     var endpoints = ['/api/v1/status', 'https://api.qsdm.tech/api/v1/status'];
+    var goToolchain = /^go\d+(\.\d+){1,2}$/;
+    function pickVersion(j) {
+      // Prefer purpose-built fields. `version` is intentionally last
+      // because the validator currently puts the Go toolchain there.
+      var candidates = [j.qsdm_version, j.release_version, j.release, j.build_version, j.version];
+      for (var i = 0; i < candidates.length; i++) {
+        var v = candidates[i];
+        if (typeof v === 'string' && v.length && !goToolchain.test(v)) return v;
+      }
+      return null;
+    }
     function tryFetch(i) {
       if (i >= endpoints.length) return;
       fetch(endpoints[i], { headers: { 'Accept': 'application/json' } })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (j) {
           if (!j) return;
-          var v = j.qsdm_version || j.version || j.build_version;
-          if (typeof v === 'string' && v.length) {
-            pill.textContent = v.charAt(0) === 'v' ? v : 'v' + v;
-          }
+          var v = pickVersion(j);
+          if (v) pill.textContent = v.charAt(0) === 'v' ? v : 'v' + v;
         })
         .catch(function () { tryFetch(i + 1); });
     }
