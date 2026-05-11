@@ -334,16 +334,21 @@ jobs:
               --notes "Automated release by .github/workflows/release-container.yml. SBOM (SPDX 2.3) and per-asset cosign keyless signatures attached. See CHANGELOG.md."
           fi
           cd /tmp/assets
-          gh release upload "$TAG" $REPO_FLAG \
-            --clobber \
-            qsdmminer-* \
-            qsdmminer-console-* \
-            trustcheck-* \
-            genesis-ceremony-* \
-            qsdm-source-sbom.spdx.json \
-            SHA256SUMS \
-            *.sig \
-            *.pem
+          # NOTE: the previous version of this command listed
+          # `qsdmminer-* qsdmminer-console-* trustcheck-* genesis-ceremony-*
+          #  qsdm-source-sbom.spdx.json SHA256SUMS *.sig *.pem`
+          # which double-matched every binary's sibling .sig / .pem
+          # (qsdmminer-linux-amd64.sig matched both `qsdmminer-*` AND
+          # `*.sig`). gh release upload then tried to upload the same
+          # file twice and the GitHub API rejected the second attempt
+          # with HTTP 422 "ReleaseAsset.name already exists" (despite
+          # --clobber, which only de-duplicates against the existing
+          # release, not against earlier names in the same call).
+          # Listing the directory once with a single glob avoids the
+          # duplicate-match entirely; /tmp/assets contains only the
+          # exact set of release artefacts at this point.
+          ls -1
+          gh release upload "$TAG" $REPO_FLAG --clobber ./*
 
   # ---------------------------------------------------------------------------
   # Container images.
@@ -391,14 +396,26 @@ jobs:
           cache-from: type=gha,scope=qsdm
           cache-to: type=gha,mode=max,scope=qsdm
 
+      - name: Pull built image into local docker daemon for syft
+        # docker/build-push-action with push: true uses the
+        # docker-container buildx driver, which does NOT make the
+        # resulting image visible to the local docker daemon. anchore/
+        # sbom-action's syft then has to scan the remote ghcr.io
+        # reference, and on the first v0.3.0 run that failed two
+        # different ways:
+        #   (a) without registry creds, syft got exit 1 against the
+        #       freshly-pushed (private) GHCR image;
+        #   (b) WITH registry-username/registry-password set, the
+        #       action prepended `registry:` to the image URL, and
+        #       syft v1.42.3 cannot parse `registry:...@sha256:...`
+        #       (it works only for tag refs, not digest refs).
+        # Pulling the image into the daemon first sidesteps both:
+        # syft sees a local image and scans it with no registry I/O.
+        run: |
+          set -euo pipefail
+          docker pull "ghcr.io/${{ github.repository_owner }}/qsdm@${{ steps.build.outputs.digest }}"
+
       - name: Generate image SBOM (SPDX) and attach to image
-        # syft (used by anchore/sbom-action) needs explicit registry
-        # credentials when scanning a newly-pushed GHCR image: the
-        # earlier docker/login-action stores creds in ~/.docker/config.json
-        # but the action shells out to syft in a context that doesn't
-        # pick them up reliably (observed exit 1 on the first v0.3.0
-        # release run). Passing them through the action's own inputs is
-        # the documented stable path.
         uses: anchore/sbom-action@v0
         with:
           image: ghcr.io/${{ github.repository_owner }}/qsdm@${{ steps.build.outputs.digest }}
@@ -406,8 +423,6 @@ jobs:
           output-file: /tmp/qsdm-image-sbom.spdx.json
           upload-artifact: true
           upload-artifact-retention: 30
-          registry-username: ${{ github.actor }}
-          registry-password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cosign-sign image (keyless Sigstore OIDC)
         env:
@@ -473,6 +488,12 @@ jobs:
           cache-from: type=gha,scope=qsdm-validator
           cache-to: type=gha,mode=max,scope=qsdm-validator
 
+      - name: Pull built image into local docker daemon for syft
+        # See ghcr-legacy job for the rationale; same pattern.
+        run: |
+          set -euo pipefail
+          docker pull "ghcr.io/${{ github.repository_owner }}/qsdm-validator@${{ steps.build.outputs.digest }}"
+
       - name: Generate image SBOM (SPDX) and attach
         uses: anchore/sbom-action@v0
         with:
@@ -481,8 +502,6 @@ jobs:
           output-file: /tmp/qsdm-validator-sbom.spdx.json
           upload-artifact: true
           upload-artifact-retention: 30
-          registry-username: ${{ github.actor }}
-          registry-password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cosign-sign validator image
         env:
@@ -547,6 +566,12 @@ jobs:
           cache-from: type=gha,scope=qsdm-miner
           cache-to: type=gha,mode=max,scope=qsdm-miner
 
+      - name: Pull built image into local docker daemon for syft
+        # See ghcr-legacy job for the rationale; same pattern.
+        run: |
+          set -euo pipefail
+          docker pull "ghcr.io/${{ github.repository_owner }}/qsdm-miner@${{ steps.build.outputs.digest }}"
+
       - name: Generate image SBOM (SPDX) and attach
         uses: anchore/sbom-action@v0
         with:
@@ -555,8 +580,6 @@ jobs:
           output-file: /tmp/qsdm-miner-sbom.spdx.json
           upload-artifact: true
           upload-artifact-retention: 30
-          registry-username: ${{ github.actor }}
-          registry-password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cosign-sign miner image
         env:
