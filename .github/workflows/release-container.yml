@@ -434,11 +434,23 @@ jobs:
       - name: Cosign-sign image (keyless Sigstore OIDC)
         env:
           COSIGN_EXPERIMENTAL: "1"
+          # steps.meta.outputs.tags is a NEWLINE-separated multi-line
+          # string (one ref per tag pattern). The shell `for X in ...`
+          # construct does not accept embedded newlines as separators
+          # in this position, so the previous form
+          #   for tag in ${{ steps.meta.outputs.tags }}; do ... done
+          # produced
+          #   "syntax error near unexpected token `ghcr.io/.../...:0.3'"
+          # the moment the tags expand on multiple lines. Pipe the list
+          # into `while read` instead.
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          for tag in ${{ steps.meta.outputs.tags }}; do
-            echo "==> cosign sign $tag@${{ steps.build.outputs.digest }}"
-            cosign sign --yes "${tag}@${{ steps.build.outputs.digest }}"
+          printf '%s\n' "$TAGS" | while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            echo "==> cosign sign ${tag}@${DIGEST}"
+            cosign sign --yes "${tag}@${DIGEST}"
           done
 
       - name: Attach SBOM as cosign attestation
@@ -519,10 +531,13 @@ jobs:
       - name: Cosign-sign validator image
         env:
           COSIGN_EXPERIMENTAL: "1"
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          for tag in ${{ steps.meta.outputs.tags }}; do
-            cosign sign --yes "${tag}@${{ steps.build.outputs.digest }}"
+          printf '%s\n' "$TAGS" | while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            cosign sign --yes "${tag}@${DIGEST}"
           done
 
       - name: Attach SBOM as cosign attestation
@@ -603,10 +618,13 @@ jobs:
       - name: Cosign-sign miner image
         env:
           COSIGN_EXPERIMENTAL: "1"
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          for tag in ${{ steps.meta.outputs.tags }}; do
-            cosign sign --yes "${tag}@${{ steps.build.outputs.digest }}"
+          printf '%s\n' "$TAGS" | while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            cosign sign --yes "${tag}@${DIGEST}"
           done
 
       - name: Attach SBOM as cosign attestation
