@@ -237,6 +237,93 @@ Plus offline:
 Both Node scripts are temp/`.gitignored` and rebuildable from the
 patterns above; the in-repo Go tests are the binding contract.
 
+### Session 83 — wallet live on qsdm.tech + CSP fix + Go deploy tool
+
+The Session 82 artefacts existed in-repo but were not yet on the public
+edge. This session pushed them and fixed the one CSP gap that would
+have blocked the browser wallet from running even after the static
+files landed.
+
+**Live deploy (qsdm.tech, BLR1 validator, 206.189.132.232):**
+
+```
+sha256(/var/www/qsdm/wallet.html)   = f57e6e58…ff9c9   (18,804 B)
+sha256(/var/www/qsdm/wallet.js)     = 41e9247c…79c6dea (18,371 B)
+sha256(/var/www/qsdm/wallet.wasm)   = 928bea8f…229676  (3,237,388 B)
+sha256(/var/www/qsdm/wasm_exec.js)  = 0c949f49…acba14  (16,992 B)
+sha256(/var/www/qsdm/index.html)    = 6e1a3eb4…001a328 (85,044 B, adds /wallet.html nav link)
+```
+
+A full backup of the prior `/var/www/qsdm` was tarred to
+`/root/landing-backups/landing-20260511T182420Z.tgz` (307 MB; includes
+historical release directories) and the prior Caddyfile to
+`/root/landing-backups/Caddyfile-20260511T182420Z.bak`. Rollback is a
+single `tar xzf` + `caddy restart`.
+
+**Caddyfile Content-Security-Policy gap fixed.** The previous policy
+was `script-src 'self' 'unsafe-inline'`, which under CSP Level 3 is
+sufficient for inline `<script>` tags but **not** for
+`WebAssembly.instantiate()` — the browser would have failed the WASM
+load with *"Refused to compile or instantiate WebAssembly module
+because 'wasm-unsafe-eval' is not an allowed source of script"*. Added
+the minimal delta `'wasm-unsafe-eval'`. This is strictly narrower than
+`'unsafe-eval'`: it allows `WebAssembly.{instantiate,compile}` but
+*not* `eval()`, `Function()`, or `setTimeout(string, …)`. The rest of
+the CSP (style-src, img-src, connect-src to api/dashboard subdomains
+only, `frame-ancestors 'none'`) is unchanged.
+
+Caddy's admin API is intentionally disabled in our config (`admin off`
+in the global block, since we don't expose it on a listening port and
+have no operational use for hot-reload short of a graceful restart),
+so `caddy reload` returned `connect: connection refused` on
+`localhost:2019`. Used `systemctl restart caddy` instead. The restart
+was clean: all three listeners (`:443` apex, `:8443` API,
+`:8081` dashboard) came back in under one second.
+
+**Public-edge verification (Node `webassembly.instantiate` via curl
+→ Go runtime shim):**
+
+```
+VERSION  : "qsdm-wallet v1 / ml-dsa-87 / circl"
+PUB hex  : 5184 chars  (= 2592 B, ML-DSA-87 spec)
+PRIV hex : 9792 chars  (= 4896 B, ML-DSA-87 spec)
+ADDR     : 605ab7550bd6c74ce3e5b394c1f6334cea0f6e2951938ae7fc5c775a7e1ac7e2
+SIG hex  : 9254 chars  (= 4627 B, ML-DSA-87 spec)
+VERIFY   : true
+TAMPER   : false    (1-byte message edit → signature rejected)
+```
+
+Source for the smoke-test was a Node script that `curl`s
+`https://qsdm.tech/wallet.wasm` + `wasm_exec.js`, instantiates them in
+a fresh `Go` runtime, and round-trips sign+verify. Temp, not
+committed; the binding contract is the in-tree `pkg/keystore` and
+`wasm_modules/wallet/*` Go tests.
+
+**New operator tool: `cmd/qsdm-deploy-landing`.** A small Go binary
+that takes `-file LOCAL=REMOTE` mappings and `-run "shell …"` steps,
+dials the VPS over SSH with the local `~/.ssh/id_ed25519`, uploads
+each file by piping through `cat > <remote>`, and runs each remote
+command with live stdout/stderr. Replaces the historical pattern of
+`python QSDM/deploy/remote_*_paramiko.py` for the landing-site case —
+this workstation's `pip` is broken (MSYS2 MinGW Python 3.12 ships
+without `ensurepip` functional), so the Python path was unavailable
+without a Python detour. The Go path needs only `go build` from the
+existing toolchain. The tool is general (host/user via flag or
+`QSDM_VPS_HOST` / `QSDM_VPS_USER` env vars; key via `-key`); it is not
+landing-specific by design.
+
+**Endpoint health after deploy:**
+
+| URL | HTTP | Notes |
+|---|---|---|
+| `https://qsdm.tech/` | 200 | index.html with new `/wallet.html` nav link |
+| `https://qsdm.tech/wallet.html` | 200 | text/html; 18,804 B |
+| `https://qsdm.tech/wallet.wasm` | 200 | application/wasm; 3,237,388 B |
+| `https://qsdm.tech/wasm_exec.js` | 200 | text/javascript; 16,992 B |
+| `https://qsdm.tech/wallet.js` | 200 | text/javascript; 18,371 B |
+| `https://api.qsdm.tech/api/v1/health` | 200 | validator JSON API alive |
+| `https://dashboard.qsdm.tech/` | 302 | dashboard redirect to login (unchanged behaviour) |
+
 **What did NOT change:**
 
 - No new server-side endpoint, no validator schema change, no
