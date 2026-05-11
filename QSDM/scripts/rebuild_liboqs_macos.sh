@@ -50,7 +50,17 @@ INSTALL_DIR="$(pwd)/liboqs_install"
 BUILD_DIR="$(pwd)/liboqs_build"
 LIBOQS_SRC="liboqs_src"
 
-ARCH="${QSDM_LIBOQS_ARCH:-universal2}"
+# Default to the host's native arch. Building "universal2" (arm64+x86_64
+# in the same cmake build dir) is unreliable on liboqs upstream: cmake
+# applies an arm64-detected `-march=armv8-a+crypto` from the arm64 slice's
+# detection pass to the x86_64 slice's compiler invocation, which then
+# rejects it as "unknown target CPU 'armv8-a+crypto'" (the x86_64 clang
+# only accepts x86_64 target-cpu names). This is precisely the failure
+# observed on the macos-14 hosted runner. CI runs build_macos.sh once
+# per matrix arch and therefore only needs the native slice anyway, so
+# the simple, robust default is `uname -m`. Operators who want a single
+# fat dylib for distribution can still opt in with QSDM_LIBOQS_ARCH=universal2.
+ARCH="${QSDM_LIBOQS_ARCH:-$(uname -m)}"
 case "${ARCH}" in
     arm64|x86_64|universal2) ;;
     *)

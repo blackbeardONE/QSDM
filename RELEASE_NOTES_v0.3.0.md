@@ -103,6 +103,12 @@ After v0.3.0 shipped, two repo-state issues remained from the long debug period:
   go: cannot find main module, but found .git/config in /Users/runner/work/QSDM/QSDM
   ```
   Root cause: the no-CGO branch of `build_macos.sh` (`QSDM_NO_CGO=1`) ran `go build ./cmd/qsdm` from the QSDM repo root, but `go.mod` lives at `QSDM/source/go.mod`. The CGO branch (lines 98–107) already handled the `source/` indirection via an `if [[ -f source/go.mod ]]; then cd source` guard; the no-CGO branch (line 34) did not. This bug had been latent forever — the macOS workflow had never actually finished a run end-to-end because the runner queue was always backlogged. Fix: mirror the same `source/`-detection guard into the no-CGO branch.
+- **Hidden CGO `universal2` cross-compile bug in `rebuild_liboqs_macos.sh`.** With the no-CGO fix in place, the CGO macos-14 job exposed the next latent bug:
+  ```
+  error: unknown target CPU 'armv8-a+crypto'
+  note: valid target CPU values are: nocona, core2, ... x86-64-v4
+  ```
+  Root cause: the script defaulted to `QSDM_LIBOQS_ARCH=universal2`, which sets `CMAKE_OSX_ARCHITECTURES="arm64;x86_64"`. liboqs's cmake auto-detection runs once and picks `-march=armv8-a+crypto` from the arm64 slice's feature probe, then applies it globally — including to the x86_64 slice's compile, which rejects `armv8-a+crypto` as an unknown target CPU. CI builds each arch separately in a matrix anyway, so universal2 is wasted work. Fix: default `QSDM_LIBOQS_ARCH` to `$(uname -m)` (arm64 on macos-14, x86_64 on macos-13). Operators distributing a single fat dylib can still opt in with `QSDM_LIBOQS_ARCH=universal2`.
 - **Dependabot triage.** 10 open PRs (most pre-dating the session 75 `ripgrep` fix in `qsdm-go.yml`, so their `build-test` runs failed for an unrelated reason). Merged the two clean pure-Go bumps with full green CI:
   - `#11`: `github.com/libp2p/go-libp2p-pubsub` `0.15.0` → `0.16.0`
   - `#12`: `github.com/mattn/go-sqlite3` `1.14.28` → `1.14.44` (merged after rebase onto `ae88fdc`)
