@@ -320,14 +320,21 @@ jobs:
           # Create the release if it doesn't already exist (re-run
           # from workflow_dispatch is a no-op against an existing
           # release; upload --clobber replaces assets in place).
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" \
+          # NOTE: `gh release create --verify-tag` was removed because the
+          # gh CLI's tag verification needs to be run from inside a git
+          # repository, but `gh release upload` (the line below) runs
+          # from /tmp/assets after we cd into it. The tag is *already*
+          # pushed (it's what triggered this workflow), so the
+          # verification was always redundant. Pass --repo explicitly
+          # so neither gh call needs to be inside a git working tree.
+          REPO_FLAG="--repo ${{ github.repository }}"
+          if ! gh release view "$TAG" $REPO_FLAG >/dev/null 2>&1; then
+            gh release create "$TAG" $REPO_FLAG \
               --title "$TAG" \
-              --notes "Automated release by .github/workflows/release-container.yml. SBOM (SPDX 2.3) and per-asset cosign keyless signatures attached. See CHANGELOG.md." \
-              --verify-tag
+              --notes "Automated release by .github/workflows/release-container.yml. SBOM (SPDX 2.3) and per-asset cosign keyless signatures attached. See CHANGELOG.md."
           fi
           cd /tmp/assets
-          gh release upload "$TAG" \
+          gh release upload "$TAG" $REPO_FLAG \
             --clobber \
             qsdmminer-* \
             qsdmminer-console-* \
@@ -385,6 +392,13 @@ jobs:
           cache-to: type=gha,mode=max,scope=qsdm
 
       - name: Generate image SBOM (SPDX) and attach to image
+        # syft (used by anchore/sbom-action) needs explicit registry
+        # credentials when scanning a newly-pushed GHCR image: the
+        # earlier docker/login-action stores creds in ~/.docker/config.json
+        # but the action shells out to syft in a context that doesn't
+        # pick them up reliably (observed exit 1 on the first v0.3.0
+        # release run). Passing them through the action's own inputs is
+        # the documented stable path.
         uses: anchore/sbom-action@v0
         with:
           image: ghcr.io/${{ github.repository_owner }}/qsdm@${{ steps.build.outputs.digest }}
@@ -392,6 +406,8 @@ jobs:
           output-file: /tmp/qsdm-image-sbom.spdx.json
           upload-artifact: true
           upload-artifact-retention: 30
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cosign-sign image (keyless Sigstore OIDC)
         env:
@@ -465,6 +481,8 @@ jobs:
           output-file: /tmp/qsdm-validator-sbom.spdx.json
           upload-artifact: true
           upload-artifact-retention: 30
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cosign-sign validator image
         env:
@@ -537,6 +555,8 @@ jobs:
           output-file: /tmp/qsdm-miner-sbom.spdx.json
           upload-artifact: true
           upload-artifact-retention: 30
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cosign-sign miner image
         env:

@@ -38,6 +38,16 @@ jobs:
         with:
           go-version-file: QSDM/source/go.mod
 
+      # Both rebrand-guardrail scripts below (check-no-new-legacy-metrics.sh
+      # and check-no-collapsed-env-preferred.sh) use ripgrep for the
+      # filtered file walk. ubuntu-latest doesn't ship rg by default, so
+      # without this install both scripts exit 2 with
+      # "ripgrep (rg) is required" -- which is the root cause of the
+      # build-test failures observed on sessions 72/73/74 (run ids
+      # 25625305998 / 25626376835 / 25640513232). Install once, reuse.
+      - name: Install ripgrep (required by rebrand guardrail scripts)
+        run: sudo apt-get update -y && sudo apt-get install -y ripgrep
+
       # Guardrail for the qsdm_* -> qsdm_* Prometheus metric prefix
       # migration. Runs before build so it fails fast on regressions
       # without burning compute on a build that we're about to reject.
