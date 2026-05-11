@@ -77,9 +77,18 @@ jobs:
         run: |
           set -euo pipefail
           file ./qsdm
-          ./qsdm --version || ./qsdm version || true
+          # cmd/qsdm is the validator binary, not the miner. It does NOT
+          # implement --version (any unknown flag is ignored and the
+          # binary starts a full validator node, which would run forever
+          # until the job's timeout-minutes hits). Wrap every invocation
+          # in `timeout 5` so the smoke check stays a smoke check.
+          # If qsdm ever grows a real --version flag, the timeout still
+          # passes for a fast-exit binary, so this is safe both ways.
+          timeout 5 ./qsdm --version 2>/dev/null \
+            || timeout 5 ./qsdm version 2>/dev/null \
+            || true
           # uname -m should match matrix arch.
-          test "$(uname -m)" = "$(./qsdm --arch 2>/dev/null || uname -m)" || true
+          test "$(uname -m)" = "$(timeout 5 ./qsdm --arch 2>/dev/null || uname -m)" || true
 
   macos-build-cgo:
     name: macOS CGO + liboqs (${{ matrix.runner }})
