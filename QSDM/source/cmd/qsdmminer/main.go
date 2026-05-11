@@ -52,6 +52,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/branding"
 	"github.com/blackbeardONE/QSDM/pkg/buildinfo"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
+	"github.com/blackbeardONE/QSDM/pkg/mining/preflight"
 )
 
 // binaryName is the exec name we advertise via --version. Keeping it
@@ -70,6 +71,16 @@ func main() {
 		httpTimeout  = flag.Duration("http-timeout", 30*time.Second, "per-request HTTP timeout")
 		progress     = flag.Bool("progress", true, "periodically print hashrate on stderr")
 		showVersion  = flag.Bool("version", false, "print build metadata (release tag, git SHA, build date, runtime) and exit")
+
+		// --allow-v1 is the documented escape hatch for the
+		// "validator says v2 is active but I really do want to
+		// submit v1 anyway" case — exclusively useful for local
+		// audit / replay / devnet bring-up of a chain that ran
+		// v1 historically. On a production validator this flag
+		// turns the binary into a "burn CPU pointlessly" loop
+		// because every submitted proof gets ReasonBadVersion,
+		// hence the loud warning instead of a silent override.
+		allowV1 = flag.Bool("allow-v1", false, "override preflight: run v1 even if the validator reports v2 active (devnet / replay only — every proof will be rejected on a v2 chain)")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(),
@@ -99,16 +110,17 @@ func main() {
 		return
 	}
 
-	// NVIDIA-lock pivot notice. See cmd/qsdmminer-console/main.go for
-	// the rationale — the banner is deliberately factored as a local
-	// function in both miners rather than a shared helper, because
-	// cmd/qsdmminer stays intentionally dependency-minimal for
-	// protocol-audit purposes (see the package doc comment).
+	// NVIDIA-lock pivot notice. The banner is intentionally rewritten
+	// (was: "pivot in progress" before v0.3.2; now: "v2 is live").
+	// We keep the banner even when the preflight passes — it is the
+	// one place an audit-only operator who launched the binary
+	// against a local devnet is reminded that this binary is NOT the
+	// thing they want for mainnet participation.
 	fmt.Fprintln(os.Stderr, "┌─────────────────────────────────────────────────────────────────────┐")
-	fmt.Fprintln(os.Stderr, "│  qsdmminer: NVIDIA-lock pivot in progress                           │")
-	fmt.Fprintln(os.Stderr, "│  Once the v2 protocol activates (see                                │")
-	fmt.Fprintln(os.Stderr, "│  nvidia_locked_qsdm_blockchain_architecture.md), CPU proofs     │")
-	fmt.Fprintln(os.Stderr, "│  will NOT be accepted on mainnet. Binary kept for testnet/replay.   │")
+	fmt.Fprintln(os.Stderr, "│  qsdmminer: v1 reference miner (audit / local-devnet ONLY)          │")
+	fmt.Fprintln(os.Stderr, "│  Mainnet is v2 NVIDIA-locked; v1 proofs are rejected at consensus.  │")
+	fmt.Fprintln(os.Stderr, "│  For mainnet, use qsdmminer-console --protocol=v2 with an enrolled  │")
+	fmt.Fprintln(os.Stderr, "│  NVIDIA GPU. See QSDM/docs/docs/MINER_QUICKSTART.md.                │")
 	fmt.Fprintln(os.Stderr, "└─────────────────────────────────────────────────────────────────────┘")
 
 	if *minerAddr == "" {
@@ -125,6 +137,25 @@ func main() {
 	defer cancel()
 
 	client := &http.Client{Timeout: *httpTimeout}
+
+	// Preflight check: ask the validator whether v2 is consensus-
+	// active at the current tip. If so, qsdmminer (v1-only) MUST
+	// refuse to enter the run loop — every proof it submits would
+	// be rejected by the verifier with ReasonBadVersion (per
+	// pkg/mining/verifier.go §Step 1). The check is fail-OPEN on
+	// network / parse errors so an outage at /api/v1/status doesn't
+	// nuke local devnet usage.
+	{
+		preflightCtx, preflightCancel := context.WithTimeout(ctx, 10*time.Second)
+		decision := preflight.Check(preflightCtx, client, *validatorURL, false /* claimingV2 */)
+		preflightCancel()
+		fmt.Fprintln(os.Stderr, preflight.FormatDecision(decision, *allowV1))
+		if decision.Decision == preflight.DecisionRefuseV1 && !*allowV1 {
+			fmt.Fprintln(os.Stderr, "Pass --allow-v1 to override (intended for local audit / devnet only).")
+			os.Exit(3)
+		}
+	}
+
 	runLoop(ctx, client, *validatorURL, *minerAddr, uint32(*batchCount), *pollInterval, *progress)
 }
 

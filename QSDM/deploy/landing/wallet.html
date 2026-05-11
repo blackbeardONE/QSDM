@@ -398,20 +398,38 @@
     <h2>Or do it from the CLI</h2>
     <p>
       Identical keystore format, but offline. Useful for cold-storage flows where
-      you don't want even a static webpage in the trust chain.
+      you don't want even a static webpage in the trust chain. The mining step
+      uses <code>qsdmminer-console --protocol=v2</code> against the live
+      NVIDIA-locked mainnet; the legacy CPU <code>qsdmminer</code> binary is no
+      longer a public release artefact (mainnet rejects its v1 proofs at
+      consensus &mdash; see
+      <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">MINER_QUICKSTART</a>).
     </p>
     <pre style="background:rgba(0,0,0,.35);padding:14px 16px;border-radius:var(--radius-sm);overflow-x:auto;font-family:var(--mono);font-size:13px;color:var(--text);margin:0"># Build once
 git clone https://github.com/blackbeardONE/QSDM
 cd QSDM/QSDM/source
-go build -o qsdmcli ./cmd/qsdmcli
+go build -o qsdmcli         ./cmd/qsdmcli
+go build -o qsdmminer-console ./cmd/qsdmminer-console
 
-# Generate -- passphrase prompted, address printed to stdout
+# Wallet: generate (passphrase prompted, address printed to stdout)
 ./qsdmcli wallet new --out ~/.qsdm/wallet.json
+ADDR=$(./qsdmcli wallet show | awk '/^address/{print $2}')
 
-# Then point the miner at it
-./qsdmminer --validator=https://api.qsdm.tech \
-            --address="$(./qsdmcli wallet show | awk '/^address/{print $2}')" \
-            --batch-count=1</pre>
+# Mining (v2): generate the HMAC key, enroll on-chain (10 CELL bond),
+# then start the live miner against the mainnet validator.
+./qsdmminer-console --gen-hmac-key=$HOME/.qsdm/hmac.key
+./qsdmcli enroll --sender=$ADDR \
+            --node-id=rig-77 \
+            --gpu-uuid=$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -1) \
+            --hmac-key=$(cat $HOME/.qsdm/hmac.key) \
+            --nonce=&lt;your-account-nonce&gt;
+./qsdmminer-console --protocol=v2 \
+            --validator=https://api.qsdm.tech \
+            --address=$ADDR \
+            --hmac-key-path=$HOME/.qsdm/hmac.key \
+            --node-id=rig-77 \
+            --gpu-uuid=$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -1) \
+            --gpu-arch=ada</pre>
   </section>
 </main>
 
@@ -432,6 +450,6 @@ go build -o qsdmcli ./cmd/qsdmcli
   Manual edits to these literals will work but are not required.
 -->
 <script src="/wasm_exec.js" integrity="sha384-PWCs+V4BDf9yY1yjkD/p+9xNEs4iEbuvq+HezAOJiY3XL5GI6VyJXMsvnjiwNbce" crossorigin="anonymous"></script>
-<script src="/wallet.js" integrity="sha384-7QOp7prD6J2/p9sWPKeYaxZ/dPw/WFj9UR4YCjIuKJpuDIhU9BRZ4l7di4cWESCS" crossorigin="anonymous"></script>
+<script src="/wallet.js" integrity="sha384-f5gqkOf859cd7HAiE4WLIVEnqRxzShF/NgtO3EJseNXl2ctwergxG/HiyQnXVv/s" crossorigin="anonymous"></script>
 </body>
 </html>

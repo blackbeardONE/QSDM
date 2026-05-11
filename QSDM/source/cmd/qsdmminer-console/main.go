@@ -58,6 +58,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/branding"
 	"github.com/blackbeardONE/QSDM/pkg/buildinfo"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
+	"github.com/blackbeardONE/QSDM/pkg/mining/preflight"
 	"github.com/blackbeardONE/QSDM/pkg/mining/v2client"
 	"golang.org/x/term"
 )
@@ -111,6 +112,19 @@ type Config struct {
 	CUDAVersion string `toml:"cuda_version,omitempty"`
 	DriverVer   string `toml:"driver_ver,omitempty"`
 	HMACKeyPath string `toml:"hmac_key_path,omitempty"`
+
+	// AllowV1 lets the operator opt-OUT of the preflight gate that
+	// otherwise refuses to start a v1 miner against a v2-active
+	// validator. The intended use is a local devnet or audit chain
+	// that wired SetForkV2Height(math.MaxUint64) on purpose; on a
+	// production validator (e.g. api.qsdm.tech) every submitted
+	// v1 proof is rejected at the verifier with ReasonBadVersion,
+	// so this override is operator-shoot-foot territory.
+	//
+	// Defaults to false — the safest posture is to refuse rather
+	// than spin wheels on guaranteed-reject proofs. Set explicitly
+	// to true via miner.toml or pass --allow-v1 on the CLI.
+	AllowV1 bool `toml:"allow_v1,omitempty"`
 }
 
 // v2Config is the subset of Config that LoadV2Context needs.
@@ -1056,6 +1070,14 @@ func realMain(parentCtx context.Context) int {
 		hmacKeyPath = flag.String("hmac-key-path", "", "v2 only: path to a file containing the operator HMAC key as a single line of hex")
 		genHMACKey  = flag.String("gen-hmac-key", "", "generate a fresh 32-byte HMAC key, write it as hex to this path (0o600), print the matching qsdmcli enroll snippet, and exit")
 		enrollPoll  = flag.Duration("enrollment-poll", DefaultEnrollmentPollInterval, "v2 only: cadence the background poller re-fetches the on-chain enrollment record (set to 0 to disable; <5s rounded up to 5s)")
+
+		// --allow-v1 is the operator override for the preflight
+		// gate. We expose it via flag and via the persistent
+		// miner.toml field AllowV1 — the OR of the two wins. The
+		// flag's primary use case is one-off audit / replay runs
+		// where the operator does not want to touch their saved
+		// config. See preflight package for the gate semantics.
+		allowV1 = flag.Bool("allow-v1", false, "override preflight: run v1 even if the validator reports v2 active (devnet / replay only — every proof will be rejected on a v2 chain)")
 	)
 	// Consumer-grade flags: --idle-only, --service, --log-file.
 	// Registered through service.go so the existing operator-flag
@@ -1276,6 +1298,34 @@ func realMain(parentCtx context.Context) int {
 	if cfg.RewardAddr == "" {
 		fmt.Fprintln(os.Stderr, "no reward_address set — run `qsdmminer-console --setup` first")
 		return 2
+	}
+
+	// Preflight check against the configured validator. The point
+	// of this gate is to catch the most common operator footgun
+	// observed in v0.3.1: a fresh install runs `qsdmminer-console`
+	// without --protocol=v2 against api.qsdm.tech, spends CPU
+	// cycles producing v1 proofs, and gets every submission
+	// rejected with ReasonBadVersion. We refuse to even start the
+	// loop in that case unless --allow-v1 is set.
+	//
+	// On a probe failure (network, parse error) the function
+	// returns DecisionProceedV{1,2} with a descriptive ProbeErr
+	// so a degraded /api/v1/status doesn't lock out local devnet
+	// usage — see preflight.decisionWhenProbeFailed.
+	{
+		preflightHTTPTimeout := 10 * time.Second
+		if *httpTimeout > 0 && *httpTimeout < preflightHTTPTimeout {
+			preflightHTTPTimeout = *httpTimeout
+		}
+		preflightCtx, preflightCancel := context.WithTimeout(parentCtx, preflightHTTPTimeout)
+		preflightClient := &http.Client{Timeout: preflightHTTPTimeout}
+		decision := preflight.Check(preflightCtx, preflightClient, cfg.ValidatorURL, v2ctx.IsEnabled())
+		preflightCancel()
+		fmt.Fprintln(os.Stderr, preflight.FormatDecision(decision, cfg.AllowV1 || *allowV1))
+		if decision.Decision == preflight.DecisionRefuseV1 && !(cfg.AllowV1 || *allowV1) {
+			fmt.Fprintln(os.Stderr, "Pass --allow-v1 to override (intended for local audit / devnet only), or pass --protocol=v2 with an enrolled NVIDIA GPU.")
+			return 3
+		}
 	}
 
 	// Renderer choice: --plain forces plain; --service / --log-file

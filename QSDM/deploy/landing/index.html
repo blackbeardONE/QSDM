@@ -361,26 +361,31 @@
       </article>
 
       <article class="way green" id="mine">
-        <span class="tag">Miner · NVIDIA-locked · v2 protocol</span>
+        <span class="tag">Miner · NVIDIA-locked · v2 only</span>
         <h3>Mine Cell on your GPU</h3>
         <div class="body">
           <p>
-            Mining mints <strong>Cell (CELL)</strong> from attested NVIDIA proofs. It is
-            <strong>separate from consensus</strong>: miners never propose blocks or order
-            transactions. Every accepted proof carries an NVIDIA attestation
-            (<code>nvidia-cc-v1</code> on Hopper/Blackwell CC GPUs, or <code>nvidia-hmac-v1</code>
-            on consumer RTX with a registered operator key + 10 CELL bond).
+            Mining mints <strong>Cell (CELL)</strong> from attested NVIDIA proofs. The
+            live mainnet runs <strong>v2 only</strong> &mdash; the v1 CPU path is
+            rejected at consensus (<code>ReasonBadVersion</code>) and the v1 reference
+            binary is no longer a public release artefact. Every accepted proof
+            carries an NVIDIA attestation: <code>nvidia-cc-v1</code> on Hopper /
+            Blackwell datacenter GPUs with Confidential Compute, or
+            <code>nvidia-hmac-v1</code> on consumer RTX cards with a registered
+            <code>(node_id, gpu_uuid, hmac_key)</code> tuple and a 10 CELL bond.
           </p>
           <ul>
-            <li><code>qsdmminer-console</code> ships today &mdash; setup wizard, live panel, v2 client</li>
+            <li><strong>Hardware:</strong> any NVIDIA GPU you control + a host clock within 60 s of UTC</li>
+            <li><strong>Tooling:</strong> <code>qsdmminer-console --protocol=v2</code> &mdash; setup wizard, live panel, v2 client</li>
+            <li><strong>On-chain:</strong> <code>qsdmcli enroll</code> bonds 10 CELL to your <code>node_id</code></li>
+            <li><strong>Funding caveat:</strong> v0.3.2 has no public faucet yet &mdash; new operators need a transfer from an existing CELL holder. See <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md#appendix-b-enrollment-funding-status">Appendix B</a>.</li>
             <li>Forged or replayed proofs are slashable (<code>qsdm/slash/v1</code>)</li>
             <li>Halving emission, 90 M lifetime mining cap, 0 % pre-mine</li>
-            <li>CUDA production kernel gated on external audit</li>
           </ul>
         </div>
         <div class="foot">
           <a class="btn btn-primary" href="/download.html">Download Miner</a>
-          <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">Quick-start</a>
+          <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">Quick-start (v2)</a>
         </div>
       </article>
 

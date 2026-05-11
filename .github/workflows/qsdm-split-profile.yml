@@ -151,8 +151,16 @@ jobs:
           # scope (they build with validator_only). Miner binaries
           # are added only on full because they require the miner
           # runtime.
+          # NOTE: cmd/qsdmminer is intentionally NOT in this list as of
+          # v0.3.2 — the v1 reference miner is no longer a release
+          # artefact (mainnet rejects v1 proofs; see
+          # release-container.yml). Its --self-test still runs above
+          # because the v1 ComputeMixDigest code path stays in tree
+          # for protocol audit + replay, but it does not need
+          # buildinfo-ldflags wiring because there's no release binary
+          # to ldflags-stamp.
           if [ "${{ matrix.profile }}" = "full" ]; then
-            BINS="qsdmminer qsdmminer-console trustcheck genesis-ceremony"
+            BINS="qsdmminer-console trustcheck genesis-ceremony"
           else
             BINS="trustcheck genesis-ceremony"
           fi

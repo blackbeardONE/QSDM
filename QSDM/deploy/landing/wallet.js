@@ -603,8 +603,13 @@
         </div>
         <div class="status-line" style="margin-top:14px">
           A balance of <code>0 CELL</code> on a freshly-generated address is normal.
-          Run the reference miner against it (see <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">MINER_QUICKSTART</a>)
-          to start earning block rewards.
+          To start earning block rewards you need an enrolled NVIDIA GPU on the
+          live mainnet (v2 only): bond <strong>10 CELL</strong> with
+          <code>qsdmcli enroll</code>, then run
+          <code>qsdmminer-console --protocol=v2</code>.
+          See <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">MINER_QUICKSTART</a>
+          (and <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md#appendix-b-enrollment-funding-status">Appendix&nbsp;B</a>
+          for the funding caveat &mdash; v0.3.2 has no public faucet yet).
         </div>
       </div>`;
     setStatus('bal-status', `Balance retrieved: ${formatCell(body.balance)}`, 'ok');

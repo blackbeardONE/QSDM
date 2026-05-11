@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"os"
 	"runtime"
@@ -11,6 +12,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/branding"
 	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/config"
+	"github.com/blackbeardONE/QSDM/pkg/mining"
 )
 
 // nodeStartTime is captured once per process so /api/v1/status can report an
@@ -40,6 +42,83 @@ type StatusResponse struct {
 	Coin       CoinInfo       `json:"coin"`
 	Branding   BrandInfo      `json:"branding"`
 	Tokenomics TokenomicsInfo `json:"tokenomics"`
+
+	// Mining is the consensus-visible mining-protocol state. Miners
+	// MUST inspect this block at startup to decide which protocol to
+	// submit proofs under — submitting v1 against a validator whose
+	// v2 fork has activated will be rejected by the verifier with
+	// ReasonBadVersion (pkg/mining/verifier.go §Step 1). The field
+	// is `omitempty` only on the outer pointer, never on the inner
+	// scalars, so SDK callers can rely on `mining.fork_v2_active`
+	// being present whenever `mining` itself is.
+	Mining *MiningInfo `json:"mining,omitempty"`
+}
+
+// MiningInfo advertises the validator's mining-consensus posture so
+// that clients (miners, explorers, dashboards) can self-configure
+// without out-of-band knowledge of the network's fork schedule.
+//
+// All fork-height fields are absolute chain heights. A value of
+// `18446744073709551615` (math.MaxUint64) MUST be interpreted as
+// "the fork is not yet scheduled on this network"; the JSON field is
+// elided in that case (`omitempty`) so the wire form stays compact
+// for v1-only deployments.
+//
+// Mainnet (`api.qsdm.tech`) currently advertises:
+//
+//	{
+//	  "protocol_versions_accepted": [2],
+//	  "fork_v2_height": 0,
+//	  "fork_v2_active":  true,
+//	  "fork_v2_tc_height": <varies>,
+//	  "fork_v2_tc_active": false,
+//	  "attestation_types_required": ["nvidia-cc-v1","nvidia-hmac-v1"],
+//	  "min_enroll_stake_dust": 1000000000
+//	}
+//
+// because pkg/mining.ForkV2Height() == 0 and the live chain tip is
+// already > 0. Any v1 proof submitted against this validator is
+// rejected at the consensus layer.
+type MiningInfo struct {
+	// ProtocolVersionsAccepted lists the Proof.Version values that
+	// the verifier will accept at the CURRENT chain tip. On a
+	// post-fork chain this is `[2]` only; on a pre-fork chain
+	// (ForkV2Height() > ChainTip) it is `[1]`. Boundary heights
+	// are inclusive-on-v2 — at p.Height == ForkV2Height() the
+	// verifier requires v2 (see verifier.go IsV2 helper).
+	ProtocolVersionsAccepted []uint32 `json:"protocol_versions_accepted"`
+
+	// ForkV2Height is the absolute block height at which the v2
+	// NVIDIA-locked attestation gate activates. Elided when the
+	// fork is not scheduled (math.MaxUint64 sentinel — see
+	// pkg/mining/fork.go).
+	ForkV2Height uint64 `json:"fork_v2_height,omitempty"`
+
+	// ForkV2Active is true iff the current chain tip is at or above
+	// ForkV2Height. This is the field miners SHOULD branch on; it
+	// folds the "fork not scheduled" case (height = MaxUint64) and
+	// the "fork scheduled but not yet reached" case into a single
+	// false, and the "fork active" case into a single true.
+	ForkV2Active bool `json:"fork_v2_active"`
+
+	// ForkV2TCHeight is the Tensor-Core PoW mixin fork height. Same
+	// semantics as ForkV2Height: elided when not scheduled.
+	ForkV2TCHeight uint64 `json:"fork_v2_tc_height,omitempty"`
+
+	// ForkV2TCActive folds the "scheduled and reached" semantics
+	// for the TC fork the same way ForkV2Active does for the
+	// attestation fork.
+	ForkV2TCActive bool `json:"fork_v2_tc_active"`
+
+	// AttestationTypesRequired is the whitelist a v2 proof's
+	// Attestation.Type field must match. Empty in a v1-only
+	// posture; ["nvidia-cc-v1","nvidia-hmac-v1"] post-v2.
+	AttestationTypesRequired []string `json:"attestation_types_required,omitempty"`
+
+	// MinEnrollStakeDust is the bonded stake (in dust, 1 CELL = 1e8
+	// dust) required for an nvidia-hmac-v1 operator enrollment. 0
+	// when v2 is not active.
+	MinEnrollStakeDust uint64 `json:"min_enroll_stake_dust,omitempty"`
 }
 
 // TokenomicsInfo is the live emission-schedule snapshot at the current
@@ -152,6 +231,7 @@ func (h *Handlers) StatusHandler(w http.ResponseWriter, r *http.Request) {
 			TargetBlockTimeSeconds: schedule.TargetBlockTimeSeconds,
 			BlocksPerEpoch:         schedule.BlocksPerEpoch,
 		},
+		Mining: buildMiningInfo(chainTip),
 	}
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -231,6 +311,60 @@ func formatDustAsCell(dust uint64) string {
 		whStr = buf[pos:]
 	}
 	return string(whStr) + "." + string(fracStr)
+}
+
+// buildMiningInfo snapshots the in-process v2 fork state into a
+// MiningInfo struct that the public /api/v1/status handler embeds.
+//
+// The function reads pkg/mining.ForkV2Height() / ForkV2TCHeight()
+// once each — these are atomic loads, so the snapshot is sequentially
+// consistent with whichever value SetForkV2Height most recently
+// committed. The "active" booleans are computed against the supplied
+// chainTip so /api/v1/status reports the same answer the verifier
+// would return for a proof at that height — there is no separate
+// truth.
+//
+// math.MaxUint64 is the in-process sentinel for "fork not yet
+// scheduled" (see fork.go init()). The MiningInfo struct does NOT
+// emit the sentinel on the wire: a height of 18446744073709551615
+// would mislead naive clients into computing "chain_tip > fork_height
+// → active", which is exactly backwards. Instead, the height field
+// is `omitempty` and elided in that case, and `fork_v*_active` stays
+// false. SDK callers that want to detect "v2 will eventually
+// activate" should branch on the presence of `fork_v2_height` in the
+// JSON object, not on a comparison against MaxUint64.
+func buildMiningInfo(chainTip uint64) *MiningInfo {
+	v2Height := mining.ForkV2Height()
+	tcHeight := mining.ForkV2TCHeight()
+
+	v2Active := v2Height != math.MaxUint64 && chainTip >= v2Height
+	tcActive := tcHeight != math.MaxUint64 && chainTip >= tcHeight
+
+	info := &MiningInfo{
+		ForkV2Active:   v2Active,
+		ForkV2TCActive: tcActive,
+	}
+	if v2Height != math.MaxUint64 {
+		info.ForkV2Height = v2Height
+	}
+	if tcHeight != math.MaxUint64 {
+		info.ForkV2TCHeight = tcHeight
+	}
+
+	// The accepted-versions list is what the verifier ACTUALLY
+	// accepts at chainTip. Pre-fork validators take v1 only;
+	// post-fork take v2 only. The list is intentionally not
+	// "[1, 2] both ok" — there is no version-tolerant window in
+	// the verifier, and exposing one here would tempt clients
+	// to keep submitting v1.
+	if v2Active {
+		info.ProtocolVersionsAccepted = []uint32{mining.ProtocolVersionV2}
+		info.AttestationTypesRequired = []string{mining.AttestationTypeCC, mining.AttestationTypeHMAC}
+		info.MinEnrollStakeDust = mining.MinEnrollStakeDust
+	} else {
+		info.ProtocolVersionsAccepted = []uint32{mining.ProtocolVersion}
+	}
+	return info
 }
 
 // statusVersion returns the build version string, preferring the Go version

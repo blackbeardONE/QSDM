@@ -21,11 +21,20 @@
 # banner in cmd/qsdmminer-console/main.go.
 #
 #   Binaries (attached to the GitHub Release as assets):
-#     qsdmminer-<os>-<arch>[.exe]            — CPU reference miner (audit-clean)
-#     qsdmminer-console-<os>-<arch>[.exe]    — friendly console miner (wizard + live panel)
+#     qsdmminer-console-<os>-<arch>[.exe]    — friendly console miner (wizard + live panel); ONLY shipped miner since v0.3.2 (NVIDIA-locked v2 protocol)
 #     trustcheck-<os>-<arch>[.exe]           — black-box transparency scraper
 #     genesis-ceremony-<os>-<arch>[.exe]     — mainnet genesis dry-run tool
 #     SHA256SUMS                             — canonical hashes over all of the above
+#
+#   NOT shipped (kept in-tree for audit / local-devnet builds only):
+#     cmd/qsdmminer  — v1 CPU reference miner. Mainnet rejects v1 proofs
+#                       at the verifier (FORK_V2_HEIGHT=0), so distributing
+#                       a v1-only binary would mis-route operators into a
+#                       guaranteed-rejection loop. An operator who needs
+#                       it for local-devnet bring-up or audit can `go build
+#                       ./cmd/qsdmminer` from source. See
+#                       QSDM/docs/docs/MINER_QUICKSTART.md "Appendix: v1
+#                       audit path".
 #
 # Reproducibility: every binary is built with `-trimpath` (strip cwd
 # paths from debug info), CGO_ENABLED=0 (static), and `-ldflags="-s -w"`
@@ -119,23 +128,30 @@ jobs:
           GOARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          # All four binaries compile under the full profile (no
-          # validator_only tag) because qsdmminer / qsdmminer-console
-          # require the mining implementation and the tooling binaries
-          # are profile-agnostic. trustcheck and genesis-ceremony are
-          # stdlib-only (plus golang.org/x/crypto for the latter) so
-          # they cross-compile cleanly to every matrix target.
-          # qsdmminer-console pulls golang.org/x/term for TTY detection
-          # and BurntSushi/toml for ~/.qsdm/miner.toml persistence;
-          # both are pure-Go deps already in go.mod and stay CGO-free.
+          # Three public release binaries are shipped from this job:
+          # qsdmminer-console, trustcheck, genesis-ceremony. All three
+          # cross-compile cleanly to every matrix target (CGO=0, stdlib
+          # + a few small pure-Go deps: golang.org/x/crypto for the
+          # ceremony, golang.org/x/term for the console's TTY detection,
+          # BurntSushi/toml for ~/.qsdm/miner.toml persistence).
+          #
+          # cmd/qsdmminer is INTENTIONALLY excluded from the public
+          # release matrix as of v0.3.2. The mainnet is v2 NVIDIA-
+          # locked (FORK_V2_HEIGHT=0, see MINING_PROTOCOL_V2.md §10),
+          # so a v1 reference miner shipped as a downloadable artefact
+          # would mis-route operators into a guaranteed-rejection
+          # loop. The binary stays in-tree (./cmd/qsdmminer) for
+          # protocol audit, replay, and local-devnet bring-up; an
+          # operator who needs it can `go build ./cmd/qsdmminer`.
+          # See QSDM/docs/docs/MINER_QUICKSTART.md "Appendix: v1 audit
+          # path" for the rationale and reproducible build instructions.
           #
           # -ldflags -X embeds the release tag, short git SHA, and
           # build date into pkg/buildinfo so every binary's --version
           # output maps back to a specific commit + release pair.
-          # All four release artefacts consume these same vars (see
-          # cmd/qsdmminer, cmd/qsdmminer-console, cmd/trustcheck,
-          # cmd/genesis-ceremony — each has a --version flag wired to
-          # pkg/buildinfo.String).
+          # All three release artefacts consume these same vars (see
+          # cmd/qsdmminer-console, cmd/trustcheck, cmd/genesis-ceremony
+          # — each has a --version flag wired to pkg/buildinfo.String).
           mkdir -p /tmp/artefacts
           suffix="${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
 
@@ -143,9 +159,6 @@ jobs:
             -X github.com/blackbeardONE/QSDM/pkg/buildinfo.Version=${{ steps.tag.outputs.tag }} \
             -X github.com/blackbeardONE/QSDM/pkg/buildinfo.GitSHA=${{ steps.meta.outputs.sha }} \
             -X github.com/blackbeardONE/QSDM/pkg/buildinfo.BuildDate=${{ steps.meta.outputs.date }}"
-
-          go build -trimpath -ldflags="${LDFLAGS}" \
-            -o "/tmp/artefacts/qsdmminer-${suffix}" ./cmd/qsdmminer
 
           go build -trimpath -ldflags="${LDFLAGS}" \
             -o "/tmp/artefacts/qsdmminer-console-${suffix}" ./cmd/qsdmminer-console
@@ -168,7 +181,7 @@ jobs:
         run: |
           set -euo pipefail
           suffix="${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
-          for bin in qsdmminer qsdmminer-console trustcheck genesis-ceremony; do
+          for bin in qsdmminer-console trustcheck genesis-ceremony; do
             out="$(/tmp/artefacts/${bin}-${suffix} --version)"
             echo "${bin}: ${out}"
             echo "${out}" | grep -q "${{ steps.tag.outputs.tag }}" \
@@ -188,7 +201,6 @@ jobs:
         with:
           name: binaries-${{ matrix.os }}-${{ matrix.arch }}
           path: |
-            /tmp/artefacts/qsdmminer-*
             /tmp/artefacts/qsdmminer-console-*
             /tmp/artefacts/trustcheck-*
             /tmp/artefacts/genesis-ceremony-*
@@ -235,11 +247,11 @@ jobs:
   # Operator verification (no secrets required, only `cosign`):
   #
   #   cosign verify-blob \
-  #     --certificate qsdmminer-linux-amd64.pem \
-  #     --signature   qsdmminer-linux-amd64.sig \
+  #     --certificate qsdmminer-console-linux-amd64.pem \
+  #     --signature   qsdmminer-console-linux-amd64.sig \
   #     --certificate-identity-regexp 'https://github.com/.+/.github/workflows/release-container.yml@refs/tags/v.+' \
   #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  #     qsdmminer-linux-amd64
+  #     qsdmminer-console-linux-amd64
   #
   # The matching certificate proves the release was minted by THIS workflow
   # at THIS tag — a stolen NPM_TOKEN / DOCKERHUB_TOKEN cannot forge it.
@@ -297,7 +309,7 @@ jobs:
         run: |
           set -euo pipefail
           cd /tmp/assets
-          for f in qsdmminer-* qsdmminer-console-* trustcheck-* genesis-ceremony-* SHA256SUMS qsdm-source-sbom.spdx.json; do
+          for f in qsdmminer-console-* trustcheck-* genesis-ceremony-* SHA256SUMS qsdm-source-sbom.spdx.json; do
             # Skip already-produced .sig / .pem so a re-run is idempotent.
             case "$f" in
               *.sig|*.pem) continue ;;
@@ -335,18 +347,19 @@ jobs:
           fi
           cd /tmp/assets
           # NOTE: the previous version of this command listed
-          # `qsdmminer-* qsdmminer-console-* trustcheck-* genesis-ceremony-*
+          # `qsdmminer-console-* trustcheck-* genesis-ceremony-*
           #  qsdm-source-sbom.spdx.json SHA256SUMS *.sig *.pem`
           # which double-matched every binary's sibling .sig / .pem
-          # (qsdmminer-linux-amd64.sig matched both `qsdmminer-*` AND
-          # `*.sig`). gh release upload then tried to upload the same
-          # file twice and the GitHub API rejected the second attempt
-          # with HTTP 422 "ReleaseAsset.name already exists" (despite
-          # --clobber, which only de-duplicates against the existing
-          # release, not against earlier names in the same call).
-          # Listing the directory once with a single glob avoids the
-          # duplicate-match entirely; /tmp/assets contains only the
-          # exact set of release artefacts at this point.
+          # (qsdmminer-console-linux-amd64.sig matched both
+          # `qsdmminer-console-*` AND `*.sig`). gh release upload then
+          # tried to upload the same file twice and the GitHub API
+          # rejected the second attempt with HTTP 422
+          # "ReleaseAsset.name already exists" (despite --clobber, which
+          # only de-duplicates against the existing release, not against
+          # earlier names in the same call). Listing the directory once
+          # with a single glob avoids the duplicate-match entirely;
+          # /tmp/assets contains only the exact set of release
+          # artefacts at this point.
           ls -1
           gh release upload "$TAG" $REPO_FLAG --clobber ./*
 

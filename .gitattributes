@@ -22,3 +22,22 @@
 *.yml     text eol=lf
 *.yaml    text eol=lf
 Dockerfile text eol=lf
+
+# Landing-site assets are LF on the wire — they are deployed to the
+# Caddy host at /var/www/qsdm via `cat > <remote>` (see
+# cmd/qsdm-deploy-landing) and the SRI hashes in wallet.html are
+# computed by QSDM/scripts/build_wallet_wasm.sh against LF content.
+# A CRLF copy in the working tree would (a) make the SRI integrity
+# check fail when served from a local dev server and (b) confuse the
+# refresh script's sed-based hash injection. Forcing LF at the blob
+# level keeps the working tree consistent with the deployed bytes.
+#
+# Per-extension targeting (not a directory-wide glob) so that
+# wallet.wasm and other binary deploy artefacts are NOT touched by
+# eol normalization — `text eol=lf` would mangle a binary file by
+# stripping any 0x0D byte that happens to follow a 0x0A.
+QSDM/deploy/landing/*.html text eol=lf
+QSDM/deploy/landing/*.js   text eol=lf
+QSDM/deploy/landing/*.css  text eol=lf
+QSDM/deploy/landing/*.svg  text eol=lf
+QSDM/deploy/landing/*.wasm binary

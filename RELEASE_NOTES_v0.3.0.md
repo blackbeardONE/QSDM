@@ -479,6 +479,171 @@ $ curl -s 'https://api.qsdm.tech/api/v1/wallet/balance?address=605ab7…' →
   {"address":"605ab7…","balance":0}      # public, no auth header
 ```
 
+### Session 86 — full v1 deprecation: status posture, miner preflight, release matrix, doc rewrite
+
+User instruction: *"do it all by yourself. make sure v1 is no longer
+an option for everybody."* Closes the audit gap surfaced in session
+85, where the live mainnet has been v2-only at consensus
+(`FORK_V2_HEIGHT = 0` since the Phase-4 chain reset) but several
+user-facing surfaces still suggested v1 was a viable path. Six
+coordinated changes — all consensus-neutral, all additive.
+
+**1) `/api/v1/status` now self-advertises the v2 posture.** New
+`mining` block (`pkg/api/handlers_status.go`):
+
+```json
+"mining": {
+  "protocol_versions_accepted": [2],
+  "fork_v2_height":              0,
+  "fork_v2_active":             true,
+  "fork_v2_tc_height":           <varies>,
+  "fork_v2_tc_active":          false,
+  "attestation_types_required": ["nvidia-cc-v1","nvidia-hmac-v1"],
+  "min_enroll_stake_dust":      1000000000
+}
+```
+
+The booleans fold `(scheduled? & reached?)` into a single field so
+clients don't have to reason about the `math.MaxUint64` sentinel
+that means "fork not yet scheduled". The height fields are
+`omitempty` so a v1-only validator emits a clean minimal payload.
+Implementation reads `mining.ForkV2Height()` / `ForkV2TCHeight()`
+atomically and computes activeness against the current chain tip
+— same logic the verifier uses for proof admission, so the
+posture the endpoint reports is the posture the verifier enforces.
+
+**2) Both miners refuse to start v1 against a v2-active validator
+(`pkg/mining/preflight`).** A new helper package fetches
+`/api/v1/status`, parses the `mining` block, and returns one of
+`DecisionProceedV{1,2}` / `DecisionRefuseV1`. Both `cmd/qsdmminer`
+and `cmd/qsdmminer-console` call this immediately after flag parse
+and *before* entering the mining loop:
+
+- v2-active validator + v1 caller → refuse + exit 3 with a banner
+  pointing operators at `qsdmminer-console --protocol=v2` and the
+  MINER_QUICKSTART.md.
+- v1 validator + v1 caller → proceed; banner explains.
+- Probe failure (network, parse error, older validator without the
+  `mining` block) → fail-OPEN with a warning so a degraded
+  `/api/v1/status` doesn't lock out local devnet usage.
+- `--allow-v1` (CLI flag) / `allow_v1 = true` (miner.toml) bypasses
+  the refusal for forensic / replay use, with a loud "all submitted
+  proofs WILL be rejected" warning printed to stderr.
+
+The probe shape was deliberately implemented without a dependency
+on `pkg/api.StatusResponse` to avoid an import cycle and to make
+the miner brittle-resistant to future status-schema growth.
+Comprehensive unit coverage (`preflight_test.go`, 9 cases) exercises
+all 8 (validator state × caller posture × probe success) cells of
+the decision table.
+
+**3) `cmd/qsdmminer` is no longer a public release artefact.**
+`.github/workflows/release-container.yml` no longer cross-compiles
+or cosign-signs the v1 reference miner; the artefact list in the
+header comment and the asset-glob in the aggregator job are both
+trimmed to `qsdmminer-console-*`, `trustcheck-*`,
+`genesis-ceremony-*`. Two reasons documented in the workflow:
+(a) every v1 proof against mainnet is rejected at consensus, so a
+shipped binary would mis-route operators into a guaranteed-reject
+loop; (b) reproducibility — the binary stays in-tree so any
+auditor can `go build ./cmd/qsdmminer` from a tagged commit and
+verify it byte-for-byte against the SBOM. `qsdm-split-profile.yml`
+keeps the `qsdmminer --self-test` CI gate alive as a canary on the
+v1 ComputeMixDigest code path (the verifier still ingests historical
+v1 blocks if any chain ever produces them), but drops `qsdmminer`
+from the `--version` ldflags-injection smoke (no release binary →
+nothing to stamp).
+
+**4) `QSDM/docs/docs/MINER_QUICKSTART.md` rewritten v2-first.** The
+top of the document used to lead with "install qsdmminer →
+self-test → connect to validator". That sequence is wrong for any
+2026-mainnet operator: they need an enrolled NVIDIA GPU and a
+bonded 10 CELL stake before any miner binary will produce
+accepted work. The rewrite reorders the doc into a v2-mainnet flow
+(`§1 Requirements → §2 Reward address → §3 HMAC key + on-chain
+enrollment → §4 Mine → §5 Lifecycle commands`), demotes the
+original §2 / §3 (CPU install + validator-discovery + systemd
+unit) to **Appendix A. v1 audit / local-devnet builds** with an
+explicit "Mainnet operators: this section is not for you" header,
+and adds the §1a "self-detect the validator's posture" callout
+that documents how `/api/v1/status.mining` is the canonical source
+of truth.
+
+**5) Homepage Mine card + wallet Balance-tab help.** The
+`index.html#mine` article now reads "v2 only" with the explicit
+"v1 CPU path is rejected at consensus (`ReasonBadVersion`) and the
+v1 reference binary is no longer a public release artefact"
+disclaimer, a Hardware / Tooling / On-chain / Funding-caveat
+bullet list, and a link to the new Appendix B. The wallet's
+"Check balance" tab help text now points operators at
+`qsdmcli enroll` + `qsdmminer-console --protocol=v2` and surfaces
+the funding caveat. SHA-384 SRI of `wallet.js` was rotated by
+`build_wallet_wasm.sh --refresh-sri-only`; `wallet.wasm` is
+unchanged.
+
+**6) New "Appendix B. Enrollment-funding status" in
+MINER_QUICKSTART.md — an honest audit.** The chain reset at
+FORK_V2_HEIGHT=0 zeroed total supply, so a fresh outside operator
+who follows the v2 enrollment flow hits an `insufficient_balance`
+rejection from the admission gate at the 10 CELL stake step. The
+appendix walks the four funding routes:
+
+- *Initial-operator allocation* — none on the live chain as of
+  v0.3.2. The single-operator genesis allocation went to the
+  validator-operator's own miner address.
+- *Reward from your own v2 proofs* — circular: requires enrollment,
+  which requires CELL.
+- *Peer transfer* — possible via `/api/v1/transactions`; the
+  browser wallet's *Send transaction* tab is a deferred v0.4 item.
+- *Public bootstrap faucet* — **not yet shipped**. The string
+  `faucet` does not occur anywhere in `QSDM/source/` (verified by
+  `grep -ri faucet QSDM/`).
+
+The appendix also documents the broken `/api/v1/wallet/mint`
+endpoint: it is publicly callable, returns HTTP 200 with
+`status:"minted"`, and **does not credit the recipient's balance**
+(a `GET /api/v1/wallet/balance?address=<recipient>` after a
+successful POST returns the recipient's pre-mint balance unchanged).
+The endpoint is documented in `pkg/api/middleware.go publicPaths`
+as "Public for game server to mint $CELL" — a stub for an external
+authoritative service that was never wired up. Treat as no-op.
+
+This appendix is the deliverable for the previously-open audit
+item *enroll-funding*. The practical answer for a fresh outside
+operator today is "social-bootstrap (ask an existing holder for
+10 CELL) or run a local devnet"; the faucet build-out is now the
+project's highest-priority operator-funding work item.
+
+**Files touched (Session 86):**
+
+```
+QSDM/source/pkg/api/handlers_status.go     — +MiningInfo + buildMiningInfo
+QSDM/source/pkg/mining/preflight/          — new package (preflight.go + tests)
+QSDM/source/cmd/qsdmminer/main.go          — preflight gate + banner rewrite
+QSDM/source/cmd/qsdmminer-console/main.go  — preflight gate + AllowV1 config
+.github/workflows/release-container.yml    — drop qsdmminer from release matrix
+.github/workflows/qsdm-split-profile.yml   — drop qsdmminer from --version smoke
+QSDM/docs/docs/MINER_QUICKSTART.md         — v2-first rewrite + Appendix A + B
+QSDM/deploy/landing/index.html             — Mine card → v2 only
+QSDM/deploy/landing/wallet.html            — CLI snippet → v2 flow
+QSDM/deploy/landing/wallet.js              — Balance-tab help → v2 flow
+RELEASE_NOTES_v0.3.0.md                    — this entry
+```
+
+**Consensus / wire compatibility.** The new `/api/v1/status.mining`
+block is additive (older SDK callers that don't know about it just
+ignore the new field). The preflight refusal is a CLIENT-side
+behaviour: no change to admission rules, no change to verifier, no
+change to block format. The release-matrix drop is a release-time
+packaging change only. Every test in the targeted sweep passes:
+
+```
+ok  github.com/blackbeardONE/QSDM/pkg/api                           1.483s
+ok  github.com/blackbeardONE/QSDM/pkg/mining/preflight              0.317s
+ok  github.com/blackbeardONE/QSDM/cmd/qsdmminer-console             2.636s
++ 17 other pkg/mining/* packages, all green
+```
+
 ## What's safe to publish today (post-publish status)
 
 These artefacts are sign-off-ready and can be shipped the moment the corresponding external blocker clears:
