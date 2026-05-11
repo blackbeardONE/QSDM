@@ -70,7 +70,7 @@ These are real release gates but cannot be captured by a script:
 
 - **External-auditor sign-off** on the 81-item checklist — only a human can flip items from `pending` to `passed` / `waived`.
 - **Apple notarisation** of macOS binaries — requires Apple Developer ID secrets (`APPLE_DEVELOPER_ID_APPLICATION`, `APPLE_NOTARYTOOL_KEYCHAIN_PROFILE`). The scaffold is `QSDM/scripts/notarize_macos.sh`.
-- **`NPM_TOKEN`-driven publish** of `qsdm@0.3.0` — the bundle proves the package is publish-ready; pushing the `sdk-js-v0.3.0` tag is the operator's call.
+- **`NPM_TOKEN`-driven publish** of `qsdm-sdk@0.3.0` — *now published* at <https://www.npmjs.com/package/qsdm-sdk/v/0.3.0> (renamed from the bare `qsdm` after npm's typo-squatting heuristic rejected the original name; the registry copy carries an SLSA v1 provenance attestation tied to the GitHub Actions run via Sigstore Rekor logIndex `1506353451`).
 - **Real-GPU CUDA validation** — the bundle proves the kernel builds and the CPU path passes; an NVIDIA card running the fat binary built by `pkg/mesh3d/kernels/Makefile` is a separate test rig.
 - **Counsel sign-off** on `rebrand-03` (trademark) and `tok-01` (tokenomics) — out of scope for any code artefact.
 

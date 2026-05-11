@@ -219,15 +219,23 @@ tok-01, mining-01, mining-05, supply-08).
 ### `sdk-js-v0.3.0` (JavaScript SDK)
 
 ```
-qsdm@0.3.0 (JavaScript SDK)
+qsdm-sdk@0.3.0 (JavaScript SDK) -- published 2026-05-11
 
 Feature parity with sdk/go. 17/17 node:test cases pass. Tarball:
-6 files, 6.3 kB packed, 17.6 kB unpacked (manifest:
+6 files, 6.7 kB packed, 18.7 kB unpacked (manifest:
 package.json + qsdm.js + qsdm.d.ts + README.md + CHANGELOG.md +
-LICENSE). Sigstore provenance enabled via publishConfig.provenance.
+LICENSE). Sigstore provenance attached at publish time
+(Rekor logIndex 1506353451, SLSA v1 predicate).
 
-External blocker: NPM_TOKEN repository secret. Once set, this tag
-triggers .github/workflows/sdk-javascript-publish.yml which
-re-runs the test suite as a prepublishOnly gate and runs
-npm publish --provenance --access public.
+Registry:  https://www.npmjs.com/package/qsdm-sdk/v/0.3.0
+Tarball:   https://registry.npmjs.org/qsdm-sdk/-/qsdm-sdk-0.3.0.tgz
+shasum:    c4e53da187d25bbb2fd4a15c477c12ec7a0c62c1
+SLSA URL:  https://registry.npmjs.org/-/npm/v1/attestations/qsdm-sdk@0.3.0
+
+The bare name `qsdm` was rejected by npm's typo-squatting
+heuristic on first attempt; the package was renamed to
+`qsdm-sdk` (see Session 81). The repo, GHCR images, binaries,
+on-chain brand, and the import-time QSDMClient symbol all
+keep the original QSDM naming. The Rekor record for the
+rejected first attempt is preserved at logIndex 1506312160.
 ```
