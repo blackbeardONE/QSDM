@@ -79,6 +79,8 @@ func main() {
 		err = cli.govHelper(args)
 	case "watch":
 		err = cli.watchCommand(args)
+	case "wallet":
+		err = cli.walletCommand(args)
 	case "help":
 		printUsage()
 	default:
@@ -370,6 +372,22 @@ v2 mining:
                                         sub ∈ {propose-param, propose-authority, params, inspect}
   watch <subcommand> [flags]          Stream phase-change / slash-resolution / governance-param events to stdout
                                         subcommand ∈ {enrollments, slashes, params}
+
+self-custody wallet (no server keys; ML-DSA-87 keypair generated locally):
+  wallet new [--out PATH] [--passphrase-file FILE] [--force]
+                                      Generate a fresh keypair, write an
+                                      encrypted keystore (default
+                                      ~/.qsdm/wallet.json), print the address.
+  wallet show [--in PATH] [--json]    Print address + public key (no
+                                      passphrase needed; metadata is plaintext).
+  wallet inspect [--in PATH] [--passphrase-file FILE]
+                                      Decrypt and verify integrity (the
+                                      decrypted private key must reproduce
+                                      the stored public key).
+  wallet sign [--in PATH] [--passphrase-file FILE] (--message HEX | --message-file PATH)
+                                      ML-DSA-87 signature over the supplied
+                                      bytes. Output: hex on stdout, status
+                                      summary on stderr.
 
   help                                Show this help
 

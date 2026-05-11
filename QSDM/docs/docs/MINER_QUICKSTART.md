@@ -17,9 +17,32 @@ If you just want to mine with zero flag-memorisation, skip to [§2.5 Friendly co
 ## 1. Requirements
 
 - Any 64-bit desktop/laptop with **Go 1.25+** (for building from source). No CGO required.
-- A QSDM reward address you control (`--address` flag value).
+- A QSDM reward address you control (`--address` flag value). If you don't have one yet, generate a self-custody keystore with **`qsdmcli wallet new`** (see [§1a](#1a-generate-a-reward-address) below) — or use the browser wallet at **<https://qsdm.tech/wallet/>** which produces the same on-disk format.
 - Network access to a validator HTTP endpoint you trust. For testnet this is typically `https://testnet.qsdm.tech` or an IP supplied by the testnet coordinator.
 - Disk: the reference miner keeps one 2 GiB DAG per active mining epoch in RAM (see `MINING_PROTOCOL.md §3.3`). Plan for ~3 GiB free memory during normal operation.
+
+### 1a. Generate a reward address
+
+Two equivalent paths; both produce a passphrase-encrypted JSON keystore in `pkg/keystore` v1 format (PBKDF2-HMAC-SHA-256 with 600 000 iterations → AES-256-GCM). The ML-DSA-87 (FIPS 204) keypair is generated **locally** in either case — neither flow exposes the private key to a validator or any third party.
+
+**Path A — CLI (recommended for cold storage):**
+
+```bash
+cd QSDM/source
+go build -o qsdmcli ./cmd/qsdmcli
+
+# Prompts twice for a passphrase, writes to ~/.qsdm/wallet.json (mode 0600),
+# prints ONLY the address to stdout so the line can be piped into a miner.
+./qsdmcli wallet new
+# → 7a3b…1c4d   (your reward address)
+
+# Optional: inspect what's on disk without revealing the private key
+./qsdmcli wallet show
+```
+
+**Path B — browser:** visit **<https://qsdm.tech/wallet/>**, type a passphrase, click *Generate*. The page runs `wallet.wasm` locally, hands you a `qsdm-wallet-<address>.json` download. Same file format as the CLI: drop it on disk and `qsdmcli wallet show --in <file>` reads it back. The browser page never POSTs the passphrase or the private key anywhere — verify in DevTools → Network.
+
+In both cases: **back up the JSON file AND the passphrase.** Losing either makes the address unrecoverable. There is no server-side recovery.
 
 The reference miner does **not** require a GPU. It runs on CPU at a handful of hashes per second — this is expected. It will not find mainnet blocks at this speed; it will find testnet blocks under easy difficulty, and it will prove the end-to-end pipeline works.
 

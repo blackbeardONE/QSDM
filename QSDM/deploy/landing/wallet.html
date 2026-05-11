@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>QSDM Wallet — Self-Custody, Quantum-Secure (ML-DSA-87)</title>
+<meta name="description" content="Generate a self-custody QSDM wallet in your browser. ML-DSA-87 (FIPS 204) keypair generated entirely client-side; private key never leaves this tab. PBKDF2-SHA256 (600k iterations) + AES-256-GCM passphrase-encrypted keystore, byte-compatible with `qsdmcli wallet new`." />
+<meta name="theme-color" content="#0b1220" />
+<meta property="og:title" content="QSDM Wallet — Self-Custody, Quantum-Secure" />
+<meta property="og:description" content="Generate a QSDM (Cell / CELL) reward address in your browser. ML-DSA-87 keys, AES-256-GCM encrypted keystore, zero server-side custody." />
+<meta property="og:type" content="website" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b1220'/%3E%3Cpath d='M12 32l10-10 10 10-10 10z' fill='%2376b900'/%3E%3Cpath d='M32 20l10 12-10 12-10-12z' fill='%2300d1b2' opacity='.85'/%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #0a101d;
+    --bg-2: #0f172a;
+    --panel: #111a2e;
+    --panel-2: #152238;
+    --border: #1f2a44;
+    --text: #e6edf7;
+    --text-2: #9fb0c9;
+    --muted: #6d7e99;
+    --accent: #76b900;
+    --accent-2: #00d1b2;
+    --accent-3: #6ea8ff;
+    --danger: #ff6b6b;
+    --success: #3ddc97;
+    --warning: #e8c547;
+    --radius: 14px;
+    --radius-sm: 8px;
+    --shadow: 0 10px 30px -12px rgba(0,0,0,.55);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, "Cascadia Mono", Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--text);
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgba(118,185,0,.10), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, rgba(0,209,178,.10), transparent 60%),
+      linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+    min-height: 100vh;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: var(--accent-3); text-decoration: none; }
+  a:hover { color: #a7c5ff; text-decoration: underline; }
+  code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: .9em; }
+
+  .container { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+  .nav {
+    position: sticky; top: 0; z-index: 20;
+    backdrop-filter: saturate(140%) blur(10px);
+    background: rgba(10,16,29,.72);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-inner {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 64px; gap: 16px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .2px; color: var(--text); }
+  .brand:hover { text-decoration: none; }
+  .brand svg { width: 28px; height: 28px; display: block; }
+  .nav ul { list-style: none; display: flex; gap: 22px; padding: 0; margin: 0; }
+  .nav a.navlink { color: var(--text-2); font-size: 14px; }
+  .nav a.navlink:hover { color: var(--text); text-decoration: none; }
+  .nav a.navlink.current { color: var(--accent); }
+
+  .hero { padding: 48px 0 24px; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px;
+    color: var(--accent-2); font-size: 12px; font-weight: 600; letter-spacing: .8px; text-transform: uppercase;
+    background: rgba(0,209,178,.06);
+  }
+  h1 {
+    font-size: clamp(28px, 4.4vw, 44px); line-height: 1.1; margin: 14px 0 10px;
+    letter-spacing: -0.02em;
+    background: linear-gradient(180deg, #ffffff 0%, #c8d3e6 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  h1 .accent { background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lede { color: var(--text-2); font-size: 17px; max-width: 760px; }
+
+  section.panel {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    box-shadow: var(--shadow);
+    padding: 26px;
+    margin: 22px 0;
+  }
+  section.panel h2 {
+    margin: 0 0 6px; font-size: 22px; letter-spacing: -0.01em;
+  }
+  section.panel p { color: var(--text-2); margin: 0 0 16px; }
+  section.panel.warn { border-color: rgba(232,197,71,.4); background: linear-gradient(180deg, rgba(232,197,71,.06), rgba(15,23,42,.7)); }
+  section.panel.warn h2 { color: var(--warning); }
+  section.panel.success { border-color: rgba(61,220,151,.4); }
+  section.panel.success h2 { color: var(--success); }
+
+  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  label { font-weight: 600; font-size: 13px; color: var(--text); }
+  label .hint { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
+  input[type=password], input[type=text], textarea {
+    background: rgba(0,0,0,.25); color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 10px 12px; font-family: var(--mono); font-size: 13px;
+    outline: none; transition: border-color .15s ease;
+    width: 100%;
+  }
+  input:focus, textarea:focus { border-color: var(--accent-2); }
+  textarea { min-height: 84px; resize: vertical; }
+  input[type=file] { color: var(--text-2); font-size: 13px; }
+
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row > .field { flex: 1 1 240px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 18px; border-radius: 10px; font-weight: 600; font-size: 14px;
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    cursor: pointer;
+    transition: transform .15s ease, background .15s ease, border-color .15s ease;
+  }
+  .btn:hover:not(:disabled) { background: var(--panel-2); border-color: #2b3a5e; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: #0a1400; border-color: #5d9600; }
+  .btn-primary:hover:not(:disabled) { background: #85cd08; color: #0a1400; }
+  .btn-ghost { background: transparent; }
+  .btn-danger { background: rgba(255,107,107,.08); color: var(--danger); border-color: rgba(255,107,107,.35); }
+
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+
+  .result {
+    margin-top: 18px;
+    border: 1px solid rgba(61,220,151,.4);
+    border-radius: var(--radius-sm);
+    background: rgba(61,220,151,.04);
+    padding: 16px 18px;
+  }
+  .result h3 { margin: 0 0 6px; color: var(--success); font-size: 14px; letter-spacing: .6px; text-transform: uppercase; }
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 8px 16px; align-items: start; font-size: 13px; }
+  .kv .k { color: var(--muted); font-family: var(--mono); }
+  .kv .v { color: var(--text); font-family: var(--mono); word-break: break-all; }
+  .kv .v.long { max-height: 96px; overflow: auto; padding: 6px 8px; background: rgba(0,0,0,.3); border-radius: 4px; }
+
+  .status-line {
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    margin-top: 10px;
+  }
+  .status-line .ok { color: var(--success); }
+  .status-line .err { color: var(--danger); }
+  .status-line .warn { color: var(--warning); }
+
+  .spinner {
+    display: inline-block; width: 12px; height: 12px;
+    border: 2px solid rgba(255,255,255,.2); border-top-color: var(--accent-2);
+    border-radius: 50%; animation: spin 1s linear infinite;
+    vertical-align: middle; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .tabs {
+    display: flex; gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 22px;
+  }
+  .tab {
+    background: transparent; border: none; color: var(--text-2);
+    font-family: var(--sans); font-size: 14px; font-weight: 600;
+    padding: 10px 16px; cursor: pointer; border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .tab.active { color: var(--accent-2); border-bottom-color: var(--accent-2); }
+  .tab:hover:not(.active) { color: var(--text); }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+
+  footer { padding: 48px 0 32px; color: var(--text-2); border-top: 1px solid var(--border); margin-top: 24px; font-size: 13px; }
+  footer p { margin: 0 0 6px; }
+
+  @media (max-width: 700px) {
+    .nav ul { gap: 12px; }
+    .kv { grid-template-columns: 90px 1fr; }
+  }
+</style>
+</head>
+<body>
+<header class="nav">
+  <div class="container nav-inner">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <rect width="64" height="64" rx="12" fill="#0b1220"></rect>
+        <path d="M12 32l10-10 10 10-10 10z" fill="#76b900"></path>
+        <path d="M32 20l10 12-10 12-10-12z" fill="#00d1b2" opacity=".85"></path>
+      </svg>
+      <span>QSDM</span>
+    </a>
+    <nav aria-label="Primary">
+      <ul>
+        <li><a class="navlink" href="/">Home</a></li>
+        <li><a class="navlink" href="/chain.html">Chain</a></li>
+        <li><a class="navlink" href="/validators.html">Validators</a></li>
+        <li><a class="navlink" href="/download.html">Miner</a></li>
+        <li><a class="navlink current" href="/wallet.html">Wallet</a></li>
+        <li><a class="navlink" href="/trust.html">Trust</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main class="container">
+  <section class="hero">
+    <span class="eyebrow"><span class="dot" style="width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 10px var(--success)"></span> Self-Custody · Browser-Generated</span>
+    <h1>QSDM <span class="accent">Wallet</span></h1>
+    <p class="lede">
+      Generate a quantum-secure (<code>ML-DSA-87</code>, NIST FIPS 204) wallet entirely
+      inside this browser tab. The private key is created locally, encrypted with
+      <code>AES-256-GCM</code> under a passphrase you choose, and offered as a
+      downloadable JSON keystore. <strong>Nothing about the keypair touches the QSDM
+      validators, this site's web server, or any third party.</strong> Compatible
+      byte-for-byte with <code>qsdmcli wallet</code>.
+    </p>
+  </section>
+
+  <section class="panel warn">
+    <h2>Read this before clicking anything</h2>
+    <p style="color: var(--text)">
+      1) The QSDM wallet is the <strong>only thing standing between you and your
+      coins</strong>. If you lose the JSON keystore file <em>or</em> forget the
+      passphrase, the address is permanently unrecoverable — no support team, no
+      reset email, no validator override. Back up the file. Pick a passphrase you
+      will not forget.
+    </p>
+    <p style="color: var(--text)">
+      2) Verify you are on <code>qsdm.tech</code> (look at the address bar) before
+      generating. A phishing clone of this page could replace the WASM binary and
+      exfiltrate the private key the moment it's generated. Even with HTTPS, treat
+      the wallet page like a hardware-wallet recovery screen.
+    </p>
+    <p style="color: var(--text); margin-bottom: 0">
+      3) The same keystore format is produced by the offline CLI: <code>qsdmcli
+      wallet new</code>. If you'd rather not trust a webpage, use the CLI on a
+      machine you control — the keystore opens here either way.
+    </p>
+  </section>
+
+  <section class="panel">
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-tab="generate" role="tab" aria-selected="true">Generate</button>
+      <button class="tab" data-tab="open" role="tab" aria-selected="false">Open keystore</button>
+      <button class="tab" data-tab="sign" role="tab" aria-selected="false">Sign message</button>
+    </div>
+
+    <!-- Generate -->
+    <div class="tab-pane active" data-pane="generate">
+      <h2>Generate a fresh wallet</h2>
+      <p>
+        Choose a strong passphrase (12+ characters, mix of types). The wallet
+        page never sees the passphrase in network traffic: it is fed to
+        <code>PBKDF2-HMAC-SHA-256</code> (600 000 iterations) inside this browser
+        tab, the derived key encrypts the private key under <code>AES-256-GCM</code>,
+        and the resulting JSON keystore is yours to download.
+      </p>
+      <div class="row">
+        <div class="field">
+          <label>Passphrase
+            <span class="hint">12+ chars recommended</span>
+          </label>
+          <input type="password" id="gen-pass1" autocomplete="new-password" />
+        </div>
+        <div class="field">
+          <label>Confirm passphrase</label>
+          <input type="password" id="gen-pass2" autocomplete="new-password" />
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="gen-btn">Generate keystore</button>
+        <button class="btn btn-ghost" id="gen-reveal">Reveal passphrases</button>
+      </div>
+      <div class="status-line" id="gen-status">Waiting for WASM module…</div>
+      <div id="gen-result" hidden></div>
+    </div>
+
+    <!-- Open -->
+    <div class="tab-pane" data-pane="open">
+      <h2>Open an existing keystore</h2>
+      <p>
+        Drop in a <code>wallet.json</code> file (produced here, or by
+        <code>qsdmcli wallet new</code>). The browser will decrypt it locally to
+        confirm the passphrase is correct and the file isn't tampered with.
+        Nothing is uploaded.
+      </p>
+      <div class="field">
+        <label>Keystore file</label>
+        <input type="file" id="open-file" accept="application/json,.json" />
+      </div>
+      <div class="field">
+        <label>Passphrase</label>
+        <input type="password" id="open-pass" autocomplete="off" />
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="open-btn">Decrypt &amp; verify</button>
+      </div>
+      <div class="status-line" id="open-status"></div>
+      <div id="open-result" hidden></div>
+    </div>
+
+    <!-- Sign -->
+    <div class="tab-pane" data-pane="sign">
+      <h2>Sign a message</h2>
+      <p>
+        Decrypt the keystore and produce a <code>ML-DSA-87</code> signature over
+        an arbitrary message. The decrypted private key is held only inside the
+        WASM call; the browser zeros the JS reference as soon as the signature
+        is returned.
+      </p>
+      <div class="field">
+        <label>Keystore file</label>
+        <input type="file" id="sign-file" accept="application/json,.json" />
+      </div>
+      <div class="field">
+        <label>Passphrase</label>
+        <input type="password" id="sign-pass" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label>Message <span class="hint">UTF-8 text</span></label>
+        <textarea id="sign-msg" placeholder="hello, qsdm"></textarea>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="sign-btn">Sign</button>
+      </div>
+      <div class="status-line" id="sign-status"></div>
+      <div id="sign-result" hidden></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>How this works</h2>
+    <ul style="color: var(--text-2); margin: 0; padding-left: 20px; line-height: 1.8">
+      <li><strong>Keypair generation:</strong> a <code>~3 MB</code> Go WebAssembly
+        module (<code>wallet.wasm</code>) runs the same <a href="https://github.com/cloudflare/circl/tree/main/sign/mldsa">cloudflare/circl</a>
+        <code>ML-DSA-87</code> implementation that QSDM validators use to verify your
+        transactions. It calls the browser's <code>crypto.getRandomValues</code> for
+        the keygen entropy.</li>
+      <li><strong>Encryption:</strong> the browser's <code>WebCrypto</code> API
+        (<code>crypto.subtle</code>) derives the AES-256 key with
+        <code>PBKDF2-SHA256</code> (600 000 iterations, 16-byte salt), then
+        encrypts the private key under <code>AES-256-GCM</code> with a fresh
+        12-byte nonce. The on-disk format is identical to <code>pkg/keystore</code>
+        (Go) so the CLI and browser can swap keystores freely.</li>
+      <li><strong>Address derivation:</strong> the QSDM address is
+        <code>hex(sha256(public_key))</code>. Same shape as the validator-side
+        <code>pkg/wallet</code> derivation.</li>
+      <li><strong>No network:</strong> the wallet page only fetches static files
+        (<code>wallet.wasm</code>, <code>wasm_exec.js</code>, <code>wallet.js</code>).
+        It never POSTs the passphrase, the private key, the public key, or even
+        the address. Confirm in DevTools → Network.</li>
+      <li><strong>WASM build version:</strong> <span id="wasm-version" style="font-family: var(--mono)">loading…</span></li>
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>Or do it from the CLI</h2>
+    <p>
+      Identical keystore format, but offline. Useful for cold-storage flows where
+      you don't want even a static webpage in the trust chain.
+    </p>
+    <pre style="background:rgba(0,0,0,.35);padding:14px 16px;border-radius:var(--radius-sm);overflow-x:auto;font-family:var(--mono);font-size:13px;color:var(--text);margin:0"># Build once
+git clone https://github.com/blackbeardONE/QSDM
+cd QSDM/QSDM/source
+go build -o qsdmcli ./cmd/qsdmcli
+
+# Generate -- passphrase prompted, address printed to stdout
+./qsdmcli wallet new --out ~/.qsdm/wallet.json
+
+# Then point the miner at it
+./qsdmminer --validator=https://api.qsdm.tech \
+            --address="$(./qsdmcli wallet show | awk '/^address/{print $2}')" \
+            --batch-count=1</pre>
+  </section>
+</main>
+
+<footer>
+  <div class="container">
+    <p>QSDM — Quantum-Secure Dynamic Mesh Ledger · <a href="https://github.com/blackbeardONE/QSDM">GitHub</a> · <a href="/trust.html">Trust &amp; provenance</a></p>
+    <p>This wallet page runs entirely in your browser. Source: <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/source/wasm_modules/wallet/cmd/qsdm-wallet/main.go">wasm_modules/wallet/cmd/qsdm-wallet/main.go</a> + <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/landing/wallet.js">deploy/landing/wallet.js</a></p>
+  </div>
+</footer>
+
+<script src="/wasm_exec.js"></script>
+<script src="/wallet.js"></script>
+</body>
+</html>
