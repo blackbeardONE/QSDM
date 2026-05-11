@@ -1,10 +1,24 @@
-# qsdm (JavaScript SDK) — Changelog
+# qsdm-sdk (JavaScript SDK) — Changelog
 
-All notable changes to the published `qsdm` npm package are recorded here.
+All notable changes to the published `qsdm-sdk` npm package are recorded here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/).
 
-## [0.3.0] — 2026-05-10
+## [0.3.0] — 2026-05-11
+
+### Changed (publish-time rename)
+
+- npm package id renamed from `qsdm` → `qsdm-sdk`. The original bare name was
+  rejected by the registry's typo-squatting heuristic (similarity to `qs`,
+  `esm`, `tsdx`, etc.) on first-publish, so the package was rebranded under
+  the conventional `<project>-sdk` suffix. No other identifiers change: the
+  on-chain brand is still QSDM, the GitHub repo is still `blackbeardONE/QSDM`,
+  the binaries are still `qsdm` / `qsdmminer-gui`, the import-time class is
+  still `QSDMClient`. Only the `npm install <name>` and `require()` strings
+  pick up the `-sdk` suffix. The provenance attestation from the rejected
+  publish attempt is preserved on Rekor at logIndex `1506312160` for audit.
+
+## [0.3.0-attempt1] — 2026-05-10 (unpublished; see above)
 
 Publish-ready release. No runtime API changes from `0.2.0`; this release adds
 the metadata, packaging, and provenance machinery required for a clean npm

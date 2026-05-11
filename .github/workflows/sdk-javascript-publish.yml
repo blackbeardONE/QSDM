@@ -1,5 +1,9 @@
 # Publishes the JavaScript / Node.js SDK (`QSDM/source/sdk/javascript`) to
-# the public npm registry as the `qsdm` package.
+# the public npm registry as the `qsdm-sdk` package. (The bare name `qsdm`
+# was rejected by npm's similarity heuristic on first publish — see
+# CHANGELOG.md for the rename note. The QSDM brand, repo, binaries, and
+# import-time symbols are unaffected; only the npm package id has the
+# `-sdk` suffix.)
 #
 # Trigger:
 #   - Push a tag of the form `sdk-js-vX.Y.Z` (e.g. `git tag sdk-js-v0.3.0
@@ -19,7 +23,7 @@
 #   - `CHANGELOG.md`               → publish-history record
 #
 # External requirement:
-#   - `NPM_TOKEN` repository secret with publish rights on the `qsdm`
+#   - `NPM_TOKEN` repository secret with publish rights on the `qsdm-sdk`
 #     package. Provenance is enabled (`publishConfig.provenance: true`
 #     plus `id-token: write` permission below) so each release on the
 #     registry carries a Sigstore attestation linking the tarball to the
@@ -48,7 +52,7 @@ concurrency:
 
 jobs:
   publish:
-    name: npm publish (qsdm)
+    name: npm publish (qsdm-sdk)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:

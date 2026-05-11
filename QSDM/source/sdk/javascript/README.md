@@ -1,11 +1,15 @@
-# qsdm — JavaScript / Node.js SDK
+# qsdm-sdk — JavaScript / Node.js SDK
 
 Official JavaScript client for the QSDM HTTP API. Mirrors `sdk/go` feature-for-feature.
+
+> Published on npm as **`qsdm-sdk`** (the bare name `qsdm` was rejected by npm's
+> name-similarity heuristic against `qs` / `esm` / `tsdx` etc.; the on-chain
+> brand, repo, and binaries are still QSDM — only the npm package id is suffixed).
 
 ## Install
 
 ```bash
-npm install qsdm
+npm install qsdm-sdk
 ```
 
 (Or vendor `qsdm.js` + `qsdm.d.ts` directly — the SDK has no runtime dependencies.)
@@ -13,7 +17,7 @@ npm install qsdm
 ## Quick start
 
 ```js
-const { QSDMClient, isUnauthorized } = require('qsdm');
+const { QSDMClient, isUnauthorized } = require('qsdm-sdk');
 
 const client = new QSDMClient('http://node.example.com:8080');
 client.setToken(process.env.QSDM_JWT); // or client.setAPIKey(...)

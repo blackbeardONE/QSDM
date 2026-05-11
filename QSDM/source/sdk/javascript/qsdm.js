@@ -4,7 +4,7 @@
  * Works in browsers and Node.js (18+ which ships fetch globally, or any Node + a
  * fetch polyfill). Exposes the same surface as the Go client:
  *
- *   const { QSDMClient, ApiError, isNotFound, isUnauthorized } = require('qsdm');
+ *   const { QSDMClient, ApiError, isNotFound, isUnauthorized } = require('qsdm-sdk');
  *   const c = new QSDMClient('http://node:8080');
  *   c.setToken(jwt);
  *   const balance = await c.getBalance('addr');

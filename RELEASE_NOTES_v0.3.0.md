@@ -119,13 +119,54 @@ After v0.3.0 shipped, two repo-state issues remained from the long debug period:
   - `#13`: `docker/build-push-action` `6` → `7`
   Path forward: cut a `v0.3.1-rc1` tag against a temporary branch carrying both bumps, watch `release-container.yml` complete end-to-end (especially the cosign attest + SBOM upload steps), then merge if all 10 jobs are green.
 
+### Session 81 — npm publish attempt + package rename
+
+Pushed tag `sdk-js-v0.3.0` against commit `c00fccd9`, supplied an `NPM_TOKEN`
+with 2FA bypass, and re-ran `sdk-javascript-publish.yml`. The workflow ran
+all tests, packed the tarball, signed the build with the GitHub-Actions OIDC
+identity, and published the provenance attestation to Sigstore Rekor at
+**logIndex `1506312160`** — and then the registry rejected the actual
+`PUT /qsdm` with:
+
+```
+403 Forbidden — Package name too similar to existing packages
+qs, esm, jsdom, tsm, tsd, tsdx; try renaming your package to
+'@anachronoa/qsdm' and publishing with 'npm publish --access=public' instead.
+```
+
+This is npm's typo-squatting heuristic applied to new package names; it is
+not appealable through CI. Two paths forward: (a) scoped name
+`@<scope>/qsdm`, (b) unscoped name with a suffix. Chose **(b) `qsdm-sdk`**:
+matches the `aws-sdk` / `stripe-sdk` convention, preserves the QSDM brand,
+and avoids tying the public package id to any individual's npm username.
+
+Rename touched only user-visible surface:
+
+- `QSDM/source/sdk/javascript/package.json`: `"name": "qsdm"` → `"qsdm-sdk"`.
+- `QSDM/source/sdk/javascript/README.md`: install line and `require()` example.
+- `QSDM/source/sdk/javascript/qsdm.js`: JSDoc snippet.
+- `QSDM/source/sdk/javascript/CHANGELOG.md`: explicit rename entry under 0.3.0.
+- `.github/workflows/sdk-javascript-publish.yml`: header comment + job name.
+
+Nothing else changes: the GitHub repo is still `blackbeardONE/QSDM`, the
+binaries are still `qsdm` / `qsdmminer-gui` / `qsdmminer` / `trustcheck` /
+`genesis-ceremony`, the import-time class is still `QSDMClient`, the
+on-chain brand and the GHCR images are still `qsdm:0.3.0`. Only the npm
+package id picks up the `-sdk` suffix.
+
+The failed `sdk-js-v0.3.0` attempt's provenance is permanently archived on
+Rekor (`logIndex=1506312160`) — that record links the GitHub Actions run
+that produced it to the `qsdm-0.3.0.tgz` tarball SHA, even though npm never
+accepted the upload. After the rename publish succeeds, the registry copy
+will carry a fresh provenance entry for the `qsdm-sdk` name.
+
 ## What's safe to publish today (post-publish status)
 
 These artefacts are sign-off-ready and can be shipped the moment the corresponding external blocker clears:
 
 - ✅ **GHCR container images** (`qsdm`, `qsdm-validator`, `qsdm-miner` `:0.3.0`). **Published.** `release-container.yml` keyless-signs them via Sigstore OIDC and attaches an SPDX 2.3 SBOM as a cosign attestation. Reproducible with `cosign verify` (see `V030_POST_RELEASE_VERIFICATION.md` §"Step 5").
 - ✅ **Linux / Windows / macOS binaries** (`qsdmminer`, `qsdmminer-console`, `trustcheck`, `genesis-ceremony` × 5 platforms = 20 binaries) with cosign signatures and a source SBOM. **Published.** Reproducible with `cosign verify-blob` (see `V030_POST_RELEASE_VERIFICATION.md` §"Step 4").
-- ⏳ **`qsdm@0.3.0` on npm.** Push tag `sdk-js-v0.3.0`; the `.github/workflows/sdk-javascript-publish.yml` workflow validates that the tag suffix matches `package.json`, re-runs the test suite as a `prepublishOnly` gate, and runs `npm publish --provenance --access public`. External blocker: `NPM_TOKEN` repository secret. The tag annotation is already drafted (see *Annotated-tag templates* below).
+- ⏳ **`qsdm-sdk@0.3.0` on npm.** Re-push tag `sdk-js-v0.3.0` (moved to the post-rename commit); the `.github/workflows/sdk-javascript-publish.yml` workflow validates that the tag suffix matches `package.json`, re-runs the test suite as a `prepublishOnly` gate, and runs `npm publish --provenance --access public`. External blocker: `NPM_TOKEN` repo secret with 2FA-bypass (the previous attempt under the bare name `qsdm` was rejected by the registry's typo-squatting heuristic — see *Session 81*; the package was renamed `qsdm-sdk` to satisfy that check while preserving the QSDM brand).
 
 ## Remaining external blockers
 
@@ -138,7 +179,7 @@ These are the items the repo cannot close itself. They are tracked individually 
 | `mining-01` | External audit of `MINING_PROTOCOL.md` + `pkg/mining` | Independent cryptography / consensus auditor | CUDA miner public release. Auditor entry-point: `QSDM/docs/docs/AUDIT_PACKET_MINING.md`. |
 | `mining-05` | Incentivised testnet launch | Ops + marketing | Real-world stress of the reference miner before mainnet emission begins. |
 | `supply-08` | Upstream fix for `GO-2024-3218` (libp2p-kad-dht) | go-libp2p maintainers | Removes the only accepted-with-mitigation entry. Practical exposure already bounded by bootstrap allowlist + peer scoring. |
-| — | `NPM_TOKEN` repo secret | Ops | npm publish of `qsdm@0.3.0`. |
+| — | `NPM_TOKEN` repo secret (2FA-bypass) | Ops | npm publish of `qsdm-sdk@0.3.0` (renamed from `qsdm` after the registry's name-similarity heuristic rejected the bare name; see *Session 81*). |
 | — | `APPLE_DEVELOPER_ID_APPLICATION` + `APPLE_NOTARYTOOL_KEYCHAIN_PROFILE` | Ops with Apple Developer account | Notarised macOS binaries. Scaffold: `QSDM/scripts/notarize_macos.sh`. |
 | — | NVIDIA hardware + `nvcc` toolchain | Ops | Production Mesh3D PoW. Kernel and Makefile already in tree at `pkg/mesh3d/kernels/`. |
 | — | Mainnet genesis ceremony | Foundation + validator set | After `tok-01` and `mining-01` clear. Dry-run driver at `cmd/genesis-ceremony` flags every artefact `dry_run: true`. |

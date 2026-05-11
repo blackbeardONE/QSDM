@@ -1,5 +1,5 @@
 {
-  "name": "qsdm",
+  "name": "qsdm-sdk",
   "version": "0.3.0",
   "description": "Official JavaScript / Node.js SDK for the QSDM HTTP API (native coin: Cell / CELL). Feature parity with sdk/go.",
   "main": "qsdm.js",
