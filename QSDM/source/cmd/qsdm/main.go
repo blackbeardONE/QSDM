@@ -359,6 +359,31 @@ func main() {
 		}
 	}()
 
+	// Wire NGC attestation ring persistence (session 90) BEFORE the
+	// API server starts accepting ingest, so a fresh boot replays
+	// pre-restart bundles into the in-memory ring before any new
+	// POST /api/v1/monitoring/ngc-proofs can overwrite them. Empty
+	// path keeps the legacy in-memory-only posture.
+	if cfg.NGCProofPersistPath != "" {
+		if err := monitoring.SetNGCProofPersistPath(cfg.NGCProofPersistPath, 0); err != nil {
+			logger.Warn("NGC proof persistence disabled",
+				"path", cfg.NGCProofPersistPath,
+				"reason", err.Error(),
+				"fix", "ensure parent directory exists and is writable by the qsdm user")
+		} else if n, rerr := monitoring.RestoreNGCProofsFromDisk(); rerr != nil {
+			logger.Warn("NGC proof persistence replay failed (continuing with empty ring)",
+				"path", cfg.NGCProofPersistPath,
+				"error", rerr.Error())
+		} else if n > 0 {
+			logger.Info("NGC proof persistence: replayed pre-restart bundles into in-memory ring",
+				"path", cfg.NGCProofPersistPath,
+				"records_restored", n)
+		} else {
+			logger.Info("NGC proof persistence enabled (no pre-restart records to restore)",
+				"path", cfg.NGCProofPersistPath)
+		}
+	}
+
 	// Create dashboard instance (will be started in goroutine)
 	nonceTTL := int64(cfg.NvidiaLockIngestNonceTTL.Seconds())
 	if nonceTTL <= 0 && cfg.NvidiaLockRequireIngestNonce {

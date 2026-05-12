@@ -24,10 +24,15 @@ var (
 )
 
 func appendNGCProofRawLocked(raw json.RawMessage) {
-	ngcProofs = append(ngcProofs, ngcStoredProof{ReceivedAt: time.Now().UTC(), Raw: raw})
+	entry := ngcStoredProof{ReceivedAt: time.Now().UTC(), Raw: raw}
+	ngcProofs = append(ngcProofs, entry)
 	if len(ngcProofs) > maxNGCProofEntries {
 		ngcProofs = ngcProofs[len(ngcProofs)-maxNGCProofEntries:]
 	}
+	// Best-effort persist; filesystem failures don't block ingest
+	// (they're surfaced via NGCProofPersistErrors() and the
+	// dashboard gauge instead). See ngc_proof_persist.go.
+	appendNGCProofToDisk(entry)
 }
 
 // RecordNGCProofBundle validates JSON and appends to a fixed-size ring buffer.

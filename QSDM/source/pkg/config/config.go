@@ -76,6 +76,19 @@ type Config struct {
 	LogViewerPort    int
 	LogFile          string
 	LogLevel         string
+	// NGCProofPersistPath: optional path the in-memory NGC
+	// attestation ring (see pkg/monitoring/ngc_proofs.go) is
+	// persisted to as JSONL. When set, qsdm.service restart no
+	// longer wipes pre-restart bundles; cmd/qsdm replays the file
+	// at startup so /api/v1/trust/attestations/summary stays
+	// > 0 across restarts (assuming pre-restart timestamps are
+	// still inside cfg.TrustFreshWithin, default 15m). Empty
+	// (default) = legacy in-memory-only ring.
+	// TOML: [monitoring] ngc_proof_persist_path; YAML:
+	// monitoring.ngc_proof_persist_path; env:
+	// QSDM_NGC_PROOF_PERSIST_PATH. See
+	// pkg/monitoring/ngc_proof_persist.go for the on-disk format.
+	NGCProofPersistPath string
 	// DashboardMetricsScrapeSecret: when set, GET /api/metrics/prometheus accepts this via Bearer or
 	// X-QSDM-Metrics-Scrape-Secret header (legacy X-QSDMPLUS-Metrics-Scrape-Secret also accepted).
 	// Env: QSDM_DASHBOARD_METRICS_SCRAPE_SECRET (the pre-rebrand QSDMPLUS_DASHBOARD_METRICS_SCRAPE_SECRET
@@ -263,6 +276,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.LogLevel = tomlCfg.Monitoring.LogLevel
 		cfg.DashboardMetricsScrapeSecret = tomlCfg.Monitoring.MetricsScrapeSecret
 		cfg.DashboardStrictAuth = tomlCfg.Monitoring.StrictDashboardAuth
+		cfg.NGCProofPersistPath = strings.TrimSpace(tomlCfg.Monitoring.NGCProofPersistPath)
 		cfg.APIPort = tomlCfg.API.Port
 		cfg.EnableTLS = tomlCfg.API.EnableTLS
 		cfg.TLSCertFile = tomlCfg.API.TLSCertFile
@@ -352,6 +366,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.LogLevel = yamlCfg.Monitoring.LogLevel
 		cfg.DashboardMetricsScrapeSecret = yamlCfg.Monitoring.MetricsScrapeSecret
 		cfg.DashboardStrictAuth = yamlCfg.Monitoring.StrictDashboardAuth
+		cfg.NGCProofPersistPath = strings.TrimSpace(yamlCfg.Monitoring.NGCProofPersistPath)
 		cfg.APIPort = yamlCfg.API.Port
 		cfg.EnableTLS = yamlCfg.API.EnableTLS
 		cfg.TLSCertFile = yamlCfg.API.TLSCertFile
@@ -531,6 +546,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if val := strings.TrimSpace(envPreferred("QSDM_NETWORK_HOST_KEY_PATH", "QSDM_NETWORK_HOST_KEY_PATH")); val != "" {
 		cfg.NetworkHostKeyPath = val
+	}
+	if val := strings.TrimSpace(envPreferred("QSDM_NGC_PROOF_PERSIST_PATH", "QSDM_NGC_PROOF_PERSIST_PATH")); val != "" {
+		cfg.NGCProofPersistPath = val
 	}
 	if val := getEnvString("STORAGE_TYPE", ""); val != "" {
 		cfg.StorageType = val

@@ -98,6 +98,14 @@ type MonitoringConfig struct {
 	LogLevel            string `toml:"log_level" yaml:"log_level"`
 	MetricsScrapeSecret string `toml:"metrics_scrape_secret" yaml:"metrics_scrape_secret"`
 	StrictDashboardAuth bool   `toml:"strict_dashboard_auth" yaml:"strict_dashboard_auth"`
+	// NGCProofPersistPath: optional file path the in-memory NGC
+	// attestation ring is persisted to as JSONL. Empty (default)
+	// = legacy in-memory-only ring; non-empty = pre-restart
+	// bundles replayed at boot so /api/v1/trust/attestations/
+	// summary.attested doesn't drop to 0 on every qsdm.service
+	// restart. See pkg/monitoring/ngc_proof_persist.go. Env:
+	// QSDM_NGC_PROOF_PERSIST_PATH.
+	NGCProofPersistPath string `toml:"ngc_proof_persist_path" yaml:"ngc_proof_persist_path"`
 }
 
 type APIConfig struct {
