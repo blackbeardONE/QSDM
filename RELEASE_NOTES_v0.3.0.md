@@ -835,6 +835,133 @@ is self-contained against `MINER_QUICKSTART.md` and the live
 validator status, so any future revisions of the v2 protocol that
 break the recipe will surface immediately.
 
+### Session 89 — libp2p host key persistence
+
+User instruction (paraphrased): *"what's next?"* → recommended
+closing the `libp2p-key-persist` follow-up filed at the end of
+Session 87. Did so; deployed and verified.
+
+**The fix.** `pkg/networking/hostkey.go::loadOrCreateHostKey` loads
+a base64-encoded `libp2p.MarshalPrivateKey` blob from a configured
+on-disk path, or generates and persists a fresh Ed25519 keypair at
+0600 (atomic tmp+rename) if the file is missing. The new
+`SetupLibP2PWithPortAndKey(ctx, logger, port, hostKeyPath)` plumbs
+that key into `libp2p.Identity(...)`. The two older constructors
+(`SetupLibP2P`, `SetupLibP2PWithPort`) keep working — they pass an
+empty path, which preserves the legacy ephemeral-identity behaviour
+expected by tests and devnets.
+
+**Config surface (one new knob).**
+  * `Config.NetworkHostKeyPath` (Go), `[network] host_key_path` (TOML),
+    `network.host_key_path` (YAML), `QSDM_NETWORK_HOST_KEY_PATH` (env).
+  * Empty by default → ephemeral, identical to v0.3.2 behaviour.
+  * Set to a path (e.g. `/opt/qsdm/host_key`) on production → load
+    or create; key is preserved across qsdm.service restarts.
+
+**Tests added (13/13 green).**
+`pkg/networking/hostkey_test.go` covers: empty path,
+whitespace-only path, create-then-reload identity stability,
+corrupted-file error messages that mention the path so an operator
+can grep them out of `journalctl -u qsdm`, missing parent directory
+(we don't auto-mkdir behind the operator's back), path-is-a-
+directory, end-to-end peer.ID stability via two
+`SetupLibP2PWithPortAndKey` calls against the same path, and empty
+path keeps producing distinct ephemeral identities (so the legacy
+contract is preserved). Broader `go test -short
+./pkg/networking/... ./pkg/config/...` is 114/114.
+
+**Production deploy (api.qsdm.tech, BLR1).**
+
+```
+build:        cross-compiled cmd/qsdm linux/amd64 from b1f72ef
+              with -trimpath -ldflags="-s -w
+              -X main.buildVersion=v0.3.2+s89 -X main.buildSHA=b1f72ef"
+              size = 32,436,408 bytes
+              sha256 = 738796c3ddcd6efd8e38305549d9b8a4d445dd70ac392595e835152a3a5b46f3
+upload:       /tmp/qsdm.new (SHA-verified post-SCP)
+install:      install -m 0755 /tmp/qsdm.new /opt/qsdm/qsdm
+              previous binary preserved at
+              /opt/qsdm/qsdm.bak.s89.20260512T124339Z
+drop-in:      /etc/systemd/system/qsdm.service.d/host-key.conf
+              Environment=QSDM_NETWORK_HOST_KEY_PATH=/opt/qsdm/host_key
+restart #1:   systemctl daemon-reload && systemctl restart qsdm
+              host_key file generated:
+                  -rw------- 1 qsdm qsdm 93 May 12 04:43 /opt/qsdm/host_key
+                  sha256 03c91b2710399d27b14d3a042392c621258d7a31529050c410c5e5c1e99834ff
+              node_id (pre, old binary): 12D3KooWBY9zdQDrQ39LGhFTgftM8SojMnFjNUYdm1CywpDfJ1dT
+              node_id (after restart-1): 12D3KooWRH4MGiaRYMZEr9LvdxYrpePT5LPbNqLTMGukD32yhkZ8  (rolled once, persisted)
+restart #2:   systemctl restart qsdm
+              node_id (after restart-2): 12D3KooWRH4MGiaRYMZEr9LvdxYrpePT5LPbNqLTMGukD32yhkZ8  (same, loaded from disk)
+              /opt/qsdm/host_key sha256 unchanged: 03c91b2710399d27b14d3a042392c621258d7a31529050c410c5e5c1e99834ff
+verdict:      PASS — libp2p peer.ID is stable across qsdm.service restart.
+```
+
+The deploy did roll the node_id one final time (`12D3KooWBY9zdQ...` →
+`12D3KooWRH4...`). Future restarts will preserve `12D3KooWRH4...`.
+
+**Honest scope note — what this does and does NOT fix.**
+The original Session 87 hypothesis was that the libp2p node_id roll
+caused the `Trust transparency external probe` to fail for ~8 min
+after every restart. Investigation during this session shows that
+the NGC attestation sidecar identifies its bundles by a config-set
+identifier (`qsdmplus_node_id=vps-blr1-validator`, from
+`QSDM_NGC_PROOF_NODE_ID`) — NOT by the libp2p peer.ID. So the
+trust-attestation freshness check is decoupled from the libp2p
+key, and the real post-restart blip is the validator's in-memory
+"accepted attestation" ring buffer being wiped on every restart.
+Pre-restart bundles posted to `/api/v1/monitoring/ngc-proofs` do
+not survive the restart, so the trust summary momentarily reports
+`attested=0` until the next sidecar tick (≤10 min on BLR1, ≤10 min
+on OCI SGP1) re-fills the ring.
+
+That residual issue is filed as a new follow-up
+**`trust-attest-persist`**: persist the accepted-attestation ring
+to disk (mirror what `recentrejections.FilePersister` does for
+rejections — same pattern, same atomic-write-with-compaction shape).
+Out of scope for Session 89.
+
+What `libp2p-key-persist` **does** fix is everything that IS keyed
+by the libp2p peer.ID:
+  * Bootstrap-peer allowlists that whitelist us by peer.ID
+    (currently we'd need to update those every restart).
+  * P2P topology graphs and `qsdm_p2p_peers_*` metrics — same
+    physical node now appears as the same logical node across
+    restarts.
+  * The `node_id` field on `/api/v1/status`, dashboards, and
+    external probes.
+
+**Files touched (Session 89).**
+
+```
+QSDM/source/pkg/networking/hostkey.go          (NEW, 134 lines)
+QSDM/source/pkg/networking/hostkey_test.go     (NEW, 214 lines)
+QSDM/source/pkg/networking/libp2p.go           — refactor: split
+                                                 SetupLibP2PWithPort
+                                                 into a wrapper over
+                                                 the new
+                                                 SetupLibP2PWithPortAndKey.
+QSDM/source/pkg/config/config.go               — +NetworkHostKeyPath
+                                                 field, TOML/YAML
+                                                 plumbing, env
+                                                 override.
+QSDM/source/pkg/config/config_toml.go          — +HostKeyPath in
+                                                 NetworkConfig.
+QSDM/source/cmd/qsdm/main.go                   — SetupNetwork takes
+                                                 hostKeyPath; cfg
+                                                 wired through.
+RELEASE_NOTES_v0.3.0.md                        — this entry.
+
+VPS:
+  /opt/qsdm/qsdm                              — replaced
+  /opt/qsdm/qsdm.bak.s89.20260512T124339Z     — previous binary
+  /opt/qsdm/host_key                          — generated, 93 bytes, 0600
+  /etc/systemd/system/qsdm.service.d/host-key.conf  — new drop-in
+```
+
+**New follow-up filed:** `trust-attest-persist` — persist
+accepted-attestation ring buffer to disk so the trust summary survives
+qsdm.service restarts. Pattern: mirror `recentrejections.FilePersister`.
+
 ## What's safe to publish today (post-publish status)
 
 These artefacts are sign-off-ready and can be shipped the moment the corresponding external blocker clears:
