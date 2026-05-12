@@ -6,9 +6,9 @@
 
 | | Value |
 |---|---|
-| Target tag (Go core) | `v0.3.0` — **pushed and published** (`https://github.com/blackbeardONE/QSDM/releases/tag/v0.3.0`) |
+| Target tag (Go core) | `v0.3.3` — **pushed** (`https://github.com/blackbeardONE/QSDM/releases/tag/v0.3.3`). Predecessors: `v0.3.0` (foundation), `v0.3.1`, `v0.3.2` (v1 deprecation), `v0.3.3` (sessions 89-91 durability + mint deprecation, 2026-05-12). |
 | Target tag (JavaScript SDK) | `sdk-js-v0.3.0` — held local pending `NPM_TOKEN` |
-| Verified at git HEAD | `de2bf30` (session 73 baseline) → `c00fccd` (session 78, green release run) |
+| Verified at git HEAD | `de2bf30` (session 73 baseline) → `c00fccd` (session 78, green release run) → `03edf41` (session 91, v0.3.3 tag head) |
 | Green CI run | `release-container.yml` run `25650171771` (10 / 10 jobs success) |
 | Container images | `ghcr.io/blackbeardone/{qsdm,qsdm-validator,qsdm-miner}:0.3.0` (cosign-signed + SPDX SBOM attested) |
 | Release assets | 66 files (20 binaries + 22 `.sig` + 22 `.pem` + source SBOM + `SHA256SUMS`) |
