@@ -14,7 +14,7 @@
 | Release assets | 66 files (20 binaries + 22 `.sig` + 22 `.pem` + source SBOM + `SHA256SUMS`) |
 | Go toolchain | `1.25.10` (declared in `go.mod`; auto-fetched by every runner from the local bootstrap toolchain) |
 | `golang.org/x/net` | `v0.53.0` |
-| Audit-checklist size | 53 items in `pkg/audit/checklist.go` (full-suite render: 81 items including review-driven extras) |
+| Audit-checklist size | 54 items in `pkg/audit/checklist.go` (full-suite render: 82 items including review-driven extras) — `store-05` added in Session 90 for the NGC ring persister |
 | `govulncheck` reachable findings | 1 (`GO-2024-3218`, tracked) |
 | Non-`-short` test pass rate | 67 / 67 packages |
 | JS SDK test pass rate | 17 / 17 cases |
@@ -961,6 +961,161 @@ VPS:
 **New follow-up filed:** `trust-attest-persist` — persist
 accepted-attestation ring buffer to disk so the trust summary survives
 qsdm.service restarts. Pattern: mirror `recentrejections.FilePersister`.
+
+### Session 90 — NGC attestation ring persistence (closes `trust-attest-persist`)
+
+User instruction (paraphrased): *"what's next?"* → recommended
+closing the `trust-attest-persist` follow-up filed at the end of
+Session 89, because *that* is what actually fixes the post-restart
+`attested=0` blip (the libp2p key change in Session 89 didn't —
+the sidecar identifies bundles by a config-set `qsdmplus_node_id`,
+not the libp2p peer.ID). Did so; deployed and verified end-to-end.
+
+**The fix.** A new `pkg/monitoring/ngc_proof_persist.go` mirrors
+the pattern proven in `pkg/mining/attest/recentrejects/persistence.go`:
+JSONL append-only with crash-recovery framing (partial-write tail
+defence: pre-pend `\n` if the file's last byte isn't a newline,
+so a half-written record can't run together with the next one),
+atomic-rename compaction at a soft cap that matches the in-memory
+ring size (32 records), corruption-tolerant load that skips lines
+which fail `json.Unmarshal`, mode `0600`, error counter
+(`NGCProofPersistErrors()`) and on-disk gauge
+(`NGCProofPersistRecordsOnDisk()`).
+
+`appendNGCProofRawLocked` (the single mutation point of the
+in-memory ring in `ngc_proofs.go`) now calls `appendNGCProofToDisk`
+after every successful in-memory append. Filesystem failures are
+**best-effort**: they bump `NGCProofPersistErrors()` but never
+block the in-memory ring update, so the dashboard and
+`/api/v1/trust/attestations/summary` stay accurate even with a
+full disk — the operator-facing degradation surface is the error
+counter, not lost telemetry.
+
+`cmd/qsdm/main.go` calls `monitoring.SetNGCProofPersistPath` +
+`monitoring.RestoreNGCProofsFromDisk` **before** the API server
+binds, so a fresh boot replays pre-restart bundles into the in-
+memory ring before any new POST `/api/v1/monitoring/ngc-proof`
+can overwrite them. The replay path is logged with a structured
+INFO line: `"NGC proof persistence: replayed pre-restart bundles
+into in-memory ring","path":"…","records_restored":N`. (Two
+companion log lines cover the "no records to restore" and
+"persistence disabled — operator chose ephemeral" branches.)
+
+**Config surface (one new knob).**
+  * `Config.NGCProofPersistPath` (Go), `[monitoring] ngc_proof_persist_path`
+    (TOML), `monitoring.ngc_proof_persist_path` (YAML),
+    `QSDM_NGC_PROOF_PERSIST_PATH` (env).
+  * Empty by default → in-memory-only ring (legacy v0.3.2 behaviour).
+  * Set to a path (e.g. `/opt/qsdm/ngc_proofs.jsonl`) → the in-
+    memory ring is mirrored to disk; restart no longer loses
+    accepted attestations.
+
+**Tests added (6/6 green; broader suite 154/154).**
+`pkg/monitoring/ngc_proof_persist_test.go` covers:
+
+  * empty path is a no-op (no I/O, no errors, no records-on-disk);
+  * round-trip — three bundles record → restore preserves all three
+    `NGCProofDistinctByNodeID` rows; file is mode `0600` and
+    contains exactly three newline-terminated lines;
+  * corrupt tail line is skipped on load (simulated half-written
+    JSON with no trailing newline);
+  * compaction caps the file at `softCap` after `2*softCap` writes
+    (smoke test uses `softCap=4` so we don't need 32+ records);
+  * empty-file restore returns `(0, nil)`;
+  * missing parent directory produces an actionable error message
+    that mentions the parent path so an operator can fix it from
+    `journalctl -u qsdm`.
+
+`go test -short ./pkg/monitoring/... ./pkg/config/...` → 154/154.
+
+**Production deploy (api.qsdm.tech, BLR1).**
+
+```
+build:        cross-compiled cmd/qsdm linux/amd64 from 69fb006
+              with -trimpath -ldflags="-s -w
+              -X main.buildVersion=v0.3.2-s90 -X main.buildSHA=69fb006"
+              size = 32,456,888 bytes
+              sha256 = d028a87a695274c406fab914e1c954f0446f7d003b5d3f43caf1beb22ab152cc
+upload:       /tmp/qsdm-s90-amd64 (SHA-verified post-SCP)
+install:      install -m 0755 /tmp/qsdm-s90-amd64 /opt/qsdm/qsdm
+              previous binary preserved at
+              /opt/qsdm/qsdm.pre-s90.bak
+drop-in:      /etc/systemd/system/qsdm.service.d/ngc-persist.conf
+              Environment=QSDM_NGC_PROOF_PERSIST_PATH=/opt/qsdm/ngc_proofs.jsonl
+restart #1:   systemctl daemon-reload && systemctl restart qsdm
+              boot log:
+                "NGC proof persistence enabled
+                 (no pre-restart records to restore)",
+                 "path":"/opt/qsdm/ngc_proofs.jsonl"
+              file created lazily:
+                -rw------- 1 qsdm qsdm 0 May 12 05:06 /opt/qsdm/ngc_proofs.jsonl
+trigger:      systemctl start qsdm-ngc-attest.service
+              → BLR1 sidecar POSTs one bundle (cuda_proof_hash
+                998e4ffe..., qsdmplus_node_id=vps-blr1-validator)
+              → validator returns 200
+              → file grows to 1 line, 904 bytes
+restart #2:   systemctl restart qsdm
+              boot log:
+                "NGC proof persistence: replayed pre-restart
+                 bundles into in-memory ring",
+                 "path":"/opt/qsdm/ngc_proofs.jsonl",
+                 "records_restored":1
+restart #3:   systemctl restart qsdm
+              boot log: records_restored=1 (idempotent — same
+              record replayed without growing the file)
+verdict:      PASS — the in-memory NGC attestation ring is now
+              durable across qsdm.service restarts. The
+              post-restart `attested=0` blip described in
+              Session 89's "honest scope note" is closed.
+```
+
+**Operator behaviour change.**
+The next time `qsdm.service` restarts (planned or unplanned),
+`/api/v1/trust/attestations/summary.attested` will **not** drop
+to zero. The freshness window in the validator (default 15 min
+via `Config.TrustFreshWithin`) still applies — a bundle whose
+`timestamp_utc` is older than that window is excluded from the
+"attested" count even if it lives in the ring — so a multi-hour
+outage will eventually exit freshness and require fresh sidecar
+ticks. Steady-state operation (sidecar tick every ≤10 min on
+BLR1 + ≤10 min on OCI SGP1) keeps the ring continuously fresh.
+
+**Files touched (Session 90).**
+
+```
+QSDM/source/pkg/monitoring/ngc_proof_persist.go      (NEW, 449 lines)
+QSDM/source/pkg/monitoring/ngc_proof_persist_test.go (NEW, 242 lines)
+QSDM/source/pkg/monitoring/ngc_proofs.go             — appendNGCProofRawLocked
+                                                       hooks appendNGCProofToDisk
+                                                       after each in-memory append.
+QSDM/source/pkg/config/config.go                     — +NGCProofPersistPath
+                                                       field, TOML/YAML
+                                                       plumbing, env override
+                                                       (QSDM_NGC_PROOF_PERSIST_PATH).
+QSDM/source/pkg/config/config_toml.go                — +NGCProofPersistPath in
+                                                       MonitoringConfig.
+QSDM/source/cmd/qsdm/main.go                         — SetNGCProofPersistPath +
+                                                       RestoreNGCProofsFromDisk
+                                                       called before the API
+                                                       server binds.
+RELEASE_NOTES_v0.3.0.md                              — this entry.
+
+VPS:
+  /opt/qsdm/qsdm                              — replaced (32,456,888 bytes, sha256 d028a87a…)
+  /opt/qsdm/qsdm.pre-s90.bak                  — previous binary preserved
+  /opt/qsdm/ngc_proofs.jsonl                  — created, mode 0600, owner qsdm:qsdm
+  /etc/systemd/system/qsdm.service.d/ngc-persist.conf
+                                              — new drop-in:
+                                                QSDM_NGC_PROOF_PERSIST_PATH=/opt/qsdm/ngc_proofs.jsonl
+```
+
+**Closes:** Session 89's `trust-attest-persist` follow-up.
+
+**No new follow-up filed.** With this in place the post-restart
+trust-transparency external probe is expected to stay green
+across the next `qsdm.service` restart (the next planned restart
+will be the natural confirmation; the steady-state telemetry on
+the metrics scrape is the durable signal).
 
 ## What's safe to publish today (post-publish status)
 
