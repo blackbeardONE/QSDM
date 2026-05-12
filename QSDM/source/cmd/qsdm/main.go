@@ -239,8 +239,14 @@ func submeshCLI(dynamicManager *submesh.DynamicSubmeshManager, profilePath strin
 
 // SetupNetwork wires a libp2p host bound to the configured TCP port so ufw rules
 // and peer dial strings stay stable across restarts. Pass port=0 for ephemeral.
-func SetupNetwork(ctx context.Context, logger *logging.Logger, port int) (*networking.Network, error) {
-	return networking.SetupLibP2PWithPort(ctx, logger, port)
+// hostKeyPath, when non-empty, persists the libp2p host PrivateKey across
+// restarts so peer.ID is stable too — see pkg/networking/hostkey.go for the
+// on-disk format. An empty hostKeyPath preserves the legacy ephemeral-identity
+// behaviour (acceptable for tests and dev; on production it causes the
+// post-restart trust-attestation blip documented in RELEASE_NOTES_v0.3.0.md
+// "Session 87").
+func SetupNetwork(ctx context.Context, logger *logging.Logger, port int, hostKeyPath string) (*networking.Network, error) {
+	return networking.SetupLibP2PWithPortAndKey(ctx, logger, port, hostKeyPath)
 }
 
 func HandleTransaction(logger *logging.Logger, msg []byte, dynamicManager *submesh.DynamicSubmeshManager, wasmSdk *wasm.WASMSDK, consensus *consensus.ProofOfEntanglement, storage Storage, nvidiaP2PGate *monitoring.NvidiaLockP2PGate) {
@@ -415,7 +421,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	net, err := SetupNetwork(ctx, logger, cfg.NetworkPort)
+	net, err := SetupNetwork(ctx, logger, cfg.NetworkPort, cfg.NetworkHostKeyPath)
 	if err != nil {
 		logger.Error("Failed to setup libp2p", "error", err)
 		metrics.RecordError("Network setup failed: " + err.Error())

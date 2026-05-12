@@ -35,6 +35,16 @@ type Config struct {
 	// Network
 	NetworkPort      int
 	BootstrapPeers   []string
+	// NetworkHostKeyPath: optional file persisting the libp2p host
+	// PrivateKey across restarts so peer.ID is stable. Empty (default)
+	// = ephemeral key, generated fresh every restart (acceptable for
+	// dev/CI; on production this causes pre-restart trust attestation
+	// rows to age out of the freshness window because node_id flips).
+	// Env override: QSDM_NETWORK_HOST_KEY_PATH; TOML:
+	// [network] host_key_path; YAML: network.host_key_path. File
+	// format: single line of base64(proto.Marshal(libp2p PrivKey)),
+	// mode 0600; see pkg/networking/hostkey.go.
+	NetworkHostKeyPath string
 	// SubmeshConfigPath: optional file (e.g. config/micropayments.toml) loaded into DynamicSubmeshManager at startup.
 	SubmeshConfigPath string
 	// ConfigFileUsed is the absolute path to the main config file when one was loaded; used to resolve relative submesh_config.
@@ -242,6 +252,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.NetworkPort = tomlCfg.Network.Port
 		cfg.BootstrapPeers = tomlCfg.Network.BootstrapPeers
 		cfg.SubmeshConfigPath = strings.TrimSpace(tomlCfg.Network.SubmeshConfig)
+		cfg.NetworkHostKeyPath = strings.TrimSpace(tomlCfg.Network.HostKeyPath)
 		cfg.StorageType = tomlCfg.Storage.Type
 		cfg.SQLitePath = tomlCfg.Storage.SQLitePath
 		cfg.ScyllaHosts = tomlCfg.Storage.ScyllaHosts
@@ -324,6 +335,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.NetworkPort = yamlCfg.Network.Port
 		cfg.BootstrapPeers = yamlCfg.Network.BootstrapPeers
 		cfg.SubmeshConfigPath = strings.TrimSpace(yamlCfg.Network.SubmeshConfig)
+		cfg.NetworkHostKeyPath = strings.TrimSpace(yamlCfg.Network.HostKeyPath)
 		cfg.StorageType = yamlCfg.Storage.Type
 		cfg.SQLitePath = yamlCfg.Storage.SQLitePath
 		cfg.ScyllaHosts = yamlCfg.Storage.ScyllaHosts
@@ -516,6 +528,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if val := getEnvString("BOOTSTRAP_PEERS", ""); val != "" {
 		cfg.BootstrapPeers = getEnvStringSlice("BOOTSTRAP_PEERS", cfg.BootstrapPeers)
+	}
+	if val := strings.TrimSpace(envPreferred("QSDM_NETWORK_HOST_KEY_PATH", "QSDM_NETWORK_HOST_KEY_PATH")); val != "" {
+		cfg.NetworkHostKeyPath = val
 	}
 	if val := getEnvString("STORAGE_TYPE", ""); val != "" {
 		cfg.StorageType = val

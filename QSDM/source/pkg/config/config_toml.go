@@ -67,6 +67,13 @@ type NetworkConfig struct {
 	BootstrapPeers []string `toml:"bootstrap_peers"`
 	// SubmeshConfig: optional path to a micropayments-style profile (.toml/.yaml) loaded at startup.
 	SubmeshConfig string `toml:"submesh_config" yaml:"submesh_config"`
+	// HostKeyPath: optional file that persists the libp2p host PrivateKey
+	// across qsdm.service restarts so peer.ID is stable. Empty (default)
+	// = ephemeral key, generated fresh every restart. Production deploys
+	// should set this to e.g. `/opt/qsdm/host_key`. File format: a single
+	// line of base64(proto.Marshal(libp2p PrivKey)), mode 0600; see
+	// pkg/networking/hostkey.go. Env override: QSDM_NETWORK_HOST_KEY_PATH.
+	HostKeyPath string `toml:"host_key_path" yaml:"host_key_path"`
 }
 
 type StorageConfig struct {

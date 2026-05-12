@@ -48,12 +48,33 @@ type Network struct {
 // Production callers should use SetupLibP2PWithPort to bind a stable TCP port so
 // firewall rules and peer dial strings are deterministic.
 func SetupLibP2P(ctx context.Context, logger *logging.Logger) (*Network, error) {
-	return SetupLibP2PWithPort(ctx, logger, 0)
+	return SetupLibP2PWithPortAndKey(ctx, logger, 0, "")
 }
 
 // SetupLibP2PWithPort creates a libp2p host listening on the given TCP port on all
-// IPv4/IPv6 interfaces. Pass 0 to bind an ephemeral port.
+// IPv4/IPv6 interfaces. Pass 0 to bind an ephemeral port. The host identity is
+// ephemeral (generated fresh on every call) — production deploys should use
+// SetupLibP2PWithPortAndKey so the libp2p peer.ID is stable across qsdm.service
+// restarts (see hostkey.go for the on-disk format).
 func SetupLibP2PWithPort(ctx context.Context, logger *logging.Logger, port int) (*Network, error) {
+	return SetupLibP2PWithPortAndKey(ctx, logger, port, "")
+}
+
+// SetupLibP2PWithPortAndKey creates a libp2p host listening on the given TCP
+// port and identified by the libp2p PrivateKey loaded from (or, on first run,
+// generated and persisted to) hostKeyPath. An empty hostKeyPath preserves the
+// legacy ephemeral-identity behaviour. See pkg/networking/hostkey.go for the
+// on-disk file format.
+//
+// Persisting the host key keeps `peer.ID` stable across qsdm.service restarts
+// so:
+//   - Pre-restart `trust/attestations/*` rows submitted under the old node_id
+//     remain valid across the next 15-minute freshness window.
+//   - Bootstrap allowlists and operator metrics don't see the same node as
+//     a different peer after each restart.
+//   - The /api/v1/status `node_id` field is stable for dashboards and
+//     external probes.
+func SetupLibP2PWithPortAndKey(ctx context.Context, logger *logging.Logger, port int, hostKeyPath string) (*Network, error) {
 	var opts []libp2p.Option
 	if port < 0 || port > 65535 {
 		return nil, fmt.Errorf("invalid libp2p port: %d", port)
@@ -62,6 +83,15 @@ func SetupLibP2PWithPort(ctx context.Context, logger *logging.Logger, port int) 
 		fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port),
 		fmt.Sprintf("/ip6/::/tcp/%d", port),
 	))
+	if hostKeyPath != "" {
+		priv, kerr := loadOrCreateHostKey(hostKeyPath)
+		if kerr != nil {
+			return nil, fmt.Errorf("libp2p host key: %w", kerr)
+		}
+		if priv != nil {
+			opts = append(opts, libp2p.Identity(priv))
+		}
+	}
 	h, err := libp2p.New(opts...)
 	if err != nil {
 		return nil, err
