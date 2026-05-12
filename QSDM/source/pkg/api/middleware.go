@@ -199,7 +199,7 @@ func isPublicEndpoint(path string) bool {
 		"/api/v1/auth/register",
 		"/api/v1/wallet/create", // Public for game server integration
 		"/api/v1/wallet/balance", // Public for game server to check balances (address required in query)
-		"/api/v1/wallet/mint",    // Public for game server to mint $CELL (main coin)
+		"/api/v1/wallet/mint",    // Removed in v0.3.3 (Session 91): always returns 410 Gone with a migration message. Kept in publicPaths so external callers that still hit the path receive a structured 410 instead of a confusing 401 redirect to /api/auth/login.
 		"/api/v1/monitoring/ngc-proof",
 		"/api/v1/monitoring/ngc-challenge",
 		"/api/v1/monitoring/ngc-proofs",

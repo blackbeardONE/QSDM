@@ -1159,7 +1159,11 @@ func (h *Handlers) MintToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// MintMainCoinRequest represents a main coin minting request
+// MintMainCoinRequest is the historical request shape for POST
+// /api/v1/wallet/mint. RETAINED on the symbol surface for SDK /
+// generator compatibility; the endpoint now returns 410 Gone and
+// the field values are ignored. See MintMainCoin for the migration
+// path.
 type MintMainCoinRequest struct {
 	Recipient string  `json:"recipient"`
 	Amount    float64 `json:"amount"`
@@ -1174,72 +1178,62 @@ type MintMainCoinResponse struct {
 }
 
 // MintMainCoin mints the main coin ($CELL) to a recipient address
+// MintMainCoin is the handler for POST /api/v1/wallet/mint.
+//
+// HISTORY. This endpoint was wired in the early-product window as a
+// stub for a hypothetical game-server integration. It accepted
+// `{recipient, amount}`, ran NVIDIA-lock + submesh policy checks,
+// stored a `{"type":"mint","coin":"CELL",...}` envelope into the
+// transaction log, and returned HTTP 200 with `status:"minted"`.
+//
+// It **never actually credited the recipient's balance** — there is
+// no code path from POST /api/v1/wallet/mint to the wallet-service
+// `AddBalance(addr, amount)` operation that `GET /wallet/balance`
+// reads from. A balance lookup after a "successful" mint always
+// returned 0. Confirmed by audit (Session 85) and by direct
+// reproduction on the BLR1 testnet.
+//
+// REMOVED IN v0.3.3 (Session 91). The handler now returns
+// HTTP 410 Gone with a JSON body that explains the migration:
+//
+//   * To acquire CELL as a new operator, follow the peer-transfer
+//     workflow in MINER_QUICKSTART.md Appendix B (an existing
+//     operator with funds POSTs `/api/v1/wallet/send` to your
+//     address), or wait for the public incentivised testnet
+//     (`mining-05` blocker in NEXT_STEPS.md / RELEASE_NOTES_v0.3.0.md).
+//   * To mint named secondary tokens (e.g. game tokens), use
+//     POST /api/v1/tokens/mint, which IS wired through the
+//     wallet-service and DOES update balances.
+//
+// The function symbol, MintMainCoinRequest, and MintMainCoinResponse
+// types are RETAINED so generated SDK code still compiles. The 410
+// is intentionally surfaced via the regular `monitoring.WalletMint*`
+// counters with a new `gone` result tag so dashboards / alerts that
+// were watching for inflation see the now-impossible mint surface
+// transition cleanly from `success` to `gone`.
+//
+// Reversal: if a real game-server integration ever lands, the
+// handler can be re-implemented to actually call
+// `h.walletService.AddBalance(req.Recipient, req.Amount)` (note:
+// h.walletService is currently nil on most node profiles, hence
+// the original stub posture). Any reversal MUST land WITH an
+// admin-credential check + rate-limit tightening; this endpoint
+// is in publicPaths and a working mint without an admin gate is
+// an open supply-inflation surface.
 func (h *Handlers) MintMainCoin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-
-	var req MintMainCoinRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		monitoring.RecordWalletMint(monitoring.WalletMintResultInvalidRequest)
-		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	// Validate request
-	if req.Recipient == "" {
-		monitoring.RecordWalletMint(monitoring.WalletMintResultInvalidRequest)
-		writeErrorResponse(w, http.StatusBadRequest, "recipient address is required")
-		return
-	}
-	if req.Amount <= 0 {
-		monitoring.RecordWalletMint(monitoring.WalletMintResultInvalidRequest)
-		writeErrorResponse(w, http.StatusBadRequest, "amount must be positive")
-		return
-	}
-
-	if !h.enforceNvidiaLock(w) {
-		// NVIDIA-lock 403 — the gate's own counters
-		// (qsdm_nvidia_lock_http_blocks_total) record this; we
-		// also tag it as admin_rejected on the mint side because
-		// from the mint endpoint's perspective the request was
-		// administratively denied.
-		monitoring.RecordWalletMint(monitoring.WalletMintResultAdminRejected)
-		return
-	}
-
-	// Log the mint operation with $CELL coin name
-	h.logger.Info("Main coin minted",
-		"coin", "$CELL",
-		"amount", req.Amount,
-		"recipient", req.Recipient,
-	)
-
-	// Generate transaction ID
-	txID := fmt.Sprintf("mint_cell_%d", time.Now().UnixNano())
-
-	cellMintPayload := []byte(fmt.Sprintf(`{"type":"mint","coin":"CELL","amount":%f,"recipient":"%s","tx_id":"%s"}`, req.Amount, req.Recipient, txID))
-	if !h.enforceSubmeshPrivilegedPayload(w, cellMintPayload) {
-		// Submesh privileged-policy reject — the submesh counters
-		// already recorded the rejection; we don't double-count.
-		return
-	}
-
-	// Store the mint transaction in storage
-	if err := h.storage.StoreTransaction(cellMintPayload); err != nil {
-		monitoring.RecordWalletMint(monitoring.WalletMintResultStoreFailed)
-		h.logger.Error("Failed to store mint transaction", "error", err)
-		writeErrorResponse(w, http.StatusInternalServerError, "failed to store transaction")
-		return
-	}
-
-	monitoring.RecordWalletMint(monitoring.WalletMintResultSuccess)
-	writeJSONResponse(w, http.StatusOK, MintMainCoinResponse{
-		TransactionID: txID,
-		Amount:        req.Amount,
-		Recipient:     req.Recipient,
-		Status:        "minted",
+	monitoring.RecordWalletMint(monitoring.WalletMintResultGone)
+	writeJSONResponse(w, http.StatusGone, map[string]interface{}{
+		"status":        "gone",
+		"reason":        "POST /api/v1/wallet/mint was a non-functional stub (returned 200 but never credited balance). Removed in v0.3.3.",
+		"migration": map[string]string{
+			"new_operator_funding": "See MINER_QUICKSTART.md Appendix B (peer transfer via POST /api/v1/wallet/send from an existing-balance operator).",
+			"named_token_minting":  "Use POST /api/v1/tokens/mint (this IS wired through the wallet service and DOES update balances).",
+			"public_testnet":       "Tracked as `mining-05` blocker. See RELEASE_NOTES_v0.3.0.md \"Remaining external blockers\".",
+		},
 	})
 }
 

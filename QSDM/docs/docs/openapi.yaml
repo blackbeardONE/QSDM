@@ -506,55 +506,63 @@ paths:
     post:
       tags:
         - Wallet
-      summary: Mint main coin ($CELL)
+      summary: '[REMOVED in v0.3.3] Mint main coin ($CELL) — now returns 410 Gone'
+      deprecated: true
       description: |
-        Mints the main ledger coin to a recipient. When **nvidia_lock** is enabled, requires a recent GPU-attested NGC proof on the node (**403** otherwise).
-        When **submesh_config** is loaded, returns **422** if the stored mint record JSON exceeds the **strictest** profile **max_tx_size**.
+        **Removed in v0.3.3 (Session 91).** This endpoint was a non-functional
+        stub in v0.3.2 and earlier: it accepted `{recipient, amount}`, returned
+        HTTP 200 with `status:"minted"`, but **never credited the recipient's
+        balance** — there was no code path from this handler to the wallet
+        service's `AddBalance` operation. A subsequent
+        `GET /wallet/balance?address=<recipient>` always returned 0.
+
+        The handler now returns **HTTP 410 Gone** with a JSON body carrying a
+        structured `migration` block. Callers should switch to:
+
+        * **New-operator funding:** `POST /wallet/send` from an existing
+          operator (peer transfer; see `MINER_QUICKSTART.md` Appendix B), or
+          wait for the public incentivised testnet (tracked as `mining-05`
+          in `RELEASE_NOTES_v0.3.0.md`).
+        * **Named token mint:** `POST /tokens/mint` is the working,
+          wallet-service-backed mint path for secondary tokens.
+
+        The `qsdm_wallet_mint_total{result="gone"}` Prometheus counter
+        increments for every call to this path on v0.3.3+ nodes — a rising
+        value indicates a misconfigured caller that should be migrated.
       operationId: mintMainCoin
       security:
         - bearerAuth: []
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               type: object
-              required:
-                - recipient
-                - amount
-              properties:
-                recipient:
-                  type: string
-                  description: Recipient wallet address (hex)
-                amount:
-                  type: number
-                  format: float
-                  minimum: 0
+              description: 'Body is ignored — handler always returns 410 Gone.'
       responses:
-        '200':
-          description: Mint recorded
+        '410':
+          description: Endpoint removed in v0.3.3 — see `migration` field for next steps.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  transaction_id:
-                    type: string
-                  amount:
-                    type: number
-                  recipient:
-                    type: string
                   status:
                     type: string
-                    example: minted
-        '400':
-          description: Invalid request
-        '401':
-          description: Unauthorized
-        '403':
-          description: NVIDIA-lock blocked (no qualifying proof)
-        '422':
-          $ref: '#/components/responses/SubmeshPolicy422'
+                    example: gone
+                  reason:
+                    type: string
+                  migration:
+                    type: object
+                    properties:
+                      new_operator_funding:
+                        type: string
+                      named_token_minting:
+                        type: string
+                      public_testnet:
+                        type: string
+        '405':
+          description: Method not allowed (only POST is routed; GET/PUT/DELETE return 405 before the 410 evaluation).
 
   /tokens/mint:
     post:

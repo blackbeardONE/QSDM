@@ -134,13 +134,23 @@ func WalletBalanceCounts() []struct {
 }
 
 // ---------- /api/v1/wallet/mint ----------
+//
+// HISTORY: in v0.3.2 and earlier the endpoint had four real
+// outcomes (success / admin_rejected / invalid_request / store_failed
+// / no_wallet_service). Removed in v0.3.3 (Session 91) — the
+// endpoint always returns 410 Gone, so only `gone` increments on a
+// live operator node. The other tags are retained on the exposition
+// surface so dashboards / alerts that watch them keep evaluating
+// against present time-series instead of missing-data (legacy
+// nodes that haven't upgraded to v0.3.3 yet still emit them).
 
 var (
-	walletMintSuccess           atomic.Uint64 // 201: mint admitted
-	walletMintAdminRejected     atomic.Uint64 // 403: not authorized to mint
-	walletMintInvalidRequest    atomic.Uint64 // 400: validation failure
-	walletMintStoreFailed       atomic.Uint64 // 500: storage write error
-	walletMintNoWalletService   atomic.Uint64 // 503: wallet service not initialized
+	walletMintSuccess           atomic.Uint64 // PRE-v0.3.3: 201: mint admitted (now never increments)
+	walletMintAdminRejected     atomic.Uint64 // PRE-v0.3.3: 403: NVIDIA-lock or submesh policy reject (now never increments)
+	walletMintInvalidRequest    atomic.Uint64 // PRE-v0.3.3: 400: validation failure (now never increments)
+	walletMintStoreFailed       atomic.Uint64 // PRE-v0.3.3: 500: storage write error (now never increments)
+	walletMintNoWalletService   atomic.Uint64 // PRE-v0.3.3: 503: wallet service not initialized (now never increments)
+	walletMintGone              atomic.Uint64 // v0.3.3+: 410: endpoint removed; every call lands here
 )
 
 // Result tags for qsdm_wallet_mint_total.
@@ -150,6 +160,14 @@ const (
 	WalletMintResultInvalidRequest   = "invalid_request"
 	WalletMintResultStoreFailed      = "store_failed"
 	WalletMintResultNoWalletService  = "no_wallet_service"
+	// WalletMintResultGone is the only result that increments on a
+	// v0.3.3+ node — every POST /api/v1/wallet/mint returns 410
+	// Gone with a structured migration message. Operators that see
+	// this counter rising have callers (game servers, scripts) that
+	// still target the removed endpoint and need to be migrated to
+	// `/api/v1/wallet/send` (peer transfer) or `/api/v1/tokens/mint`
+	// (named token mint).
+	WalletMintResultGone             = "gone"
 )
 
 // RecordWalletMint increments qsdm_wallet_mint_total{result=...}.
@@ -165,6 +183,8 @@ func RecordWalletMint(result string) {
 		walletMintStoreFailed.Add(1)
 	case WalletMintResultNoWalletService:
 		walletMintNoWalletService.Add(1)
+	case WalletMintResultGone:
+		walletMintGone.Add(1)
 	}
 }
 
@@ -182,6 +202,7 @@ func WalletMintCounts() []struct {
 		{WalletMintResultInvalidRequest, walletMintInvalidRequest.Load()},
 		{WalletMintResultStoreFailed, walletMintStoreFailed.Load()},
 		{WalletMintResultNoWalletService, walletMintNoWalletService.Load()},
+		{WalletMintResultGone, walletMintGone.Load()},
 	}
 }
 
@@ -256,7 +277,7 @@ func walletPrometheusMetrics() []Metric {
 	for _, p := range WalletMintCounts() {
 		out = append(out, Metric{
 			Name: "qsdm_wallet_mint_total",
-			Help: "POST /api/v1/wallet/mint terminal outcomes by per-result tag (success / admin_rejected / invalid_request / store_failed / no_wallet_service). Mint is admin-only; sustained success volume is a supply-inflation signal — see WALLET_INCIDENT.md §3.2.",
+			Help: "POST /api/v1/wallet/mint terminal outcomes by per-result tag. Removed in v0.3.3 (Session 91): the endpoint now always returns 410 Gone, so on a v0.3.3+ node only the `gone` tag increments. Legacy tags (success / admin_rejected / invalid_request / store_failed / no_wallet_service) are retained on the exposition surface so older WALLET_INCIDENT.md alerts (Mode C: QSDMWalletMintBurst) keep evaluating against present time-series. A rising `gone` count indicates a misconfigured caller (game server, script) that should be migrated to /api/v1/wallet/send or /api/v1/tokens/mint.",
 			Type: MetricCounter,
 			Value: float64(p.Count),
 			Labels: map[string]string{"result": p.Result},

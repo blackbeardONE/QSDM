@@ -906,15 +906,20 @@ mainnet (`api.qsdm.tech`). It will be revised as the picture changes.
   is the source the block driver pays miners *from*; it is not a
   human-controllable address and never grants balance to a
   `qsdm1*` wallet on its own.
-- **`/api/v1/wallet/mint`.** A public endpoint exists at this path
-  (`pkg/api/middleware.go publicPaths`). On the live mainnet it
-  accepts `{recipient, amount}` POSTs, logs a `mint_*` transaction
-  to storage, and returns HTTP 200 with `status:"minted"` — but
-  **it does not credit the recipient's account balance.** It is a
-  stub for an external "game server" that has never been wired up.
-  A balance query on the recipient after a successful mint POST
-  confirms the balance stays at zero. Treat this endpoint as a
-  no-op for funding purposes.
+- **`/api/v1/wallet/mint` — REMOVED in v0.3.3 (returns 410 Gone).**
+  In v0.3.2 and earlier this public endpoint accepted
+  `{recipient, amount}` POSTs, logged a `mint_*` transaction to
+  storage, and returned HTTP 200 with `status:"minted"` — but
+  **never credited the recipient's account balance**, because no
+  code path connected the handler to the wallet service's
+  `AddBalance` operation. A balance query on the recipient after
+  a "successful" mint POST always returned zero.
+  v0.3.3 (Session 91) replaced the handler with **HTTP 410 Gone**
+  + a structured `migration` JSON block pointing callers to either
+  `/api/v1/wallet/send` (peer transfer — see §B.2 row 3) or
+  `/api/v1/tokens/mint` (named token mint — actually wired). The
+  `qsdm_wallet_mint_total{result="gone"}` Prometheus counter
+  surfaces any caller that still targets the removed endpoint.
 - **`/api/v1/wallet/balance`.** Read-only, public, returns the
   current account balance as a `float64` CELL number. Used by the
   browser wallet's *Check balance* tab.

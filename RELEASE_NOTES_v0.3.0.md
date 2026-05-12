@@ -14,7 +14,7 @@
 | Release assets | 66 files (20 binaries + 22 `.sig` + 22 `.pem` + source SBOM + `SHA256SUMS`) |
 | Go toolchain | `1.25.10` (declared in `go.mod`; auto-fetched by every runner from the local bootstrap toolchain) |
 | `golang.org/x/net` | `v0.53.0` |
-| Audit-checklist size | 54 items in `pkg/audit/checklist.go` (full-suite render: 82 items including review-driven extras) — `store-05` added in Session 90 for the NGC ring persister |
+| Audit-checklist size | 56 items in `pkg/audit/checklist.go` (full-suite render: 84 items including review-driven extras) — `store-05` (Session 90, NGC ring persister), `net-05` (Session 89, libp2p host key), and `api-05` (Session 91, `/wallet/mint` → 410) |
 | `govulncheck` reachable findings | 1 (`GO-2024-3218`, tracked) |
 | Non-`-short` test pass rate | 67 / 67 packages |
 | JS SDK test pass rate | 17 / 17 cases |
@@ -1116,6 +1116,149 @@ trust-transparency external probe is expected to stay green
 across the next `qsdm.service` restart (the next planned restart
 will be the natural confirmation; the steady-state telemetry on
 the metrics scrape is the durable signal).
+
+### Session 91 — `/api/v1/wallet/mint` deprecated to 410 Gone
+
+User instruction (paraphrased): *"do it yourself"* → continued the
+"top of the queue" ranking from the end of Session 90 and dropped
+the misleading `/api/v1/wallet/mint` stub flagged in the Session 85
+audit.
+
+**What was wrong.** The endpoint was on `publicPaths` in
+`pkg/api/middleware.go` with the comment *"Public for game server
+to mint $CELL (main coin)"*. The handler validated input,
+optionally enforced `nvidia_lock` + submesh policy, logged a mint
+line, **stored a `{"type":"mint","coin":"CELL",…}` envelope into
+the transaction log**, and returned HTTP 200 with
+`status:"minted"`. But **no code path connected the handler to the
+wallet service's `AddBalance` operation**, so a follow-up
+`GET /api/v1/wallet/balance?address=<recipient>` always returned 0.
+On the BLR1 production node `nvidia_lock` is disabled, which meant
+in practice any caller could POST `/api/v1/wallet/mint` and the
+validator would write a phantom mint record — an open
+supply-inflation log surface with no actual ledger effect, but
+also no actual functionality. The Session 85 audit flagged this as
+"a non-functional stub that creates a misleading public surface".
+
+**The fix.** Surgical, reversible, no removal of the URL itself:
+the handler now returns **HTTP 410 Gone** with a structured JSON
+body carrying a `migration` block that points callers at the two
+real paths — `/api/v1/wallet/send` for peer transfers (the new-
+operator funding path from `MINER_QUICKSTART.md` Appendix B) and
+`/api/v1/tokens/mint` for named token minting (which IS wired
+through the wallet service and DOES update balances). A new
+`monitoring.WalletMintResultGone` tag (`qsdm_wallet_mint_total{result="gone"}`)
+fires on every call so operators can spot misconfigured callers
+that still target the removed endpoint.
+
+The function symbol (`MintMainCoin`), `MintMainCoinRequest`, and
+`MintMainCoinResponse` types are retained so generated SDK code
+still compiles — only the handler body changed. The route stays
+in `publicPaths` so an external caller receives a clean 410 with
+the migration JSON instead of a confusing 401 redirect to
+`/api/auth/login`. The rate-limit entry in `security.go` stays as
+well — defence in depth against a flood of removed-endpoint hits.
+
+**Why 410 and not a flat removal of the route.**
+
+  * Preserves the URL as a *documented, intentional* response.
+    A 404 from a removed mux entry tells the caller nothing; a
+    410 with a JSON `migration` block is self-documenting.
+  * Doesn't break smoke tests or external probes that target the
+    path (e.g. an `api.qsdm.tech/api/v1/wallet/mint` health
+    poke from a third party).
+  * Keeps the `qsdm_wallet_mint_total` exposition surface
+    consistent. Dashboards / alerts that watch the counter
+    (`QSDMWalletMintBurst`) keep evaluating against present
+    time-series instead of missing-data on a v0.3.3 node. The
+    alert itself becomes a **regression tripwire** — if a
+    future code revert restores the never-credited mint path,
+    the alert fires at the 30-min threshold.
+  * Trivially reversible if a real game-server integration ever
+    materialises. The function body is the only code that
+    changed; restoring real-mint behaviour would replace 6
+    lines (with an `h.walletService.AddBalance(...)` call) plus
+    re-enable the original 8 tests from git history.
+
+**Test churn.** Eight mint-specific tests deleted (they all
+asserted 200/403 behaviours of the never-credited stub —
+`TestNvidiaLockMintMainCoin_*` × 7, `TestSubmeshMintMainCoin_*` × 1).
+The NVIDIA-lock / HMAC / ingest-nonce / submesh-privileged-payload
+code paths they exercised are still covered by the other consumers
+(`/api/v1/wallet/send`, `/api/v1/tokens/mint`, etc.), so coverage
+is preserved. Replaced with two new tests
+(`TestWalletMint_410Gone`, `TestWalletMint_410GoneMethodNotAllowed`)
+that pin the new posture: 410 with a well-formed `migration` JSON
+block, and 405 still wins over 410 for non-POST methods.
+`go test -short ./pkg/api/... ./pkg/monitoring/... ./pkg/config/...` → 378/378.
+
+**Files touched (Session 91).**
+
+```
+QSDM/source/pkg/api/handlers.go               — MintMainCoin body
+                                                 replaced with 410
+                                                 + migration JSON.
+QSDM/source/pkg/api/middleware.go             — publicPaths
+                                                 comment updated to
+                                                 reflect 410 posture.
+QSDM/source/pkg/api/handlers_test.go          — 8 mint tests
+                                                 deleted; 2 new tests
+                                                 (410 + 405 win).
+QSDM/source/pkg/monitoring/wallet_metrics.go  — +WalletMintResultGone
+                                                 tag and counter
+                                                 row; help text
+                                                 updated.
+QSDM/source/pkg/audit/checklist.go            — +api-05 row
+                                                 documenting the
+                                                 supply-inflation-
+                                                 surface closure.
+QSDM/docs/docs/openapi.yaml                   — /wallet/mint marked
+                                                 deprecated; 200/400/
+                                                 403/422 responses
+                                                 replaced with 410 +
+                                                 migration schema +
+                                                 405.
+QSDM/docs/docs/MINER_QUICKSTART.md            — Appendix B mint
+                                                 bullet rewritten to
+                                                 say "REMOVED in
+                                                 v0.3.3, returns 410".
+QSDM/docs/docs/runbooks/WALLET_INCIDENT.md    — §3.3 Mode C marked
+                                                 as a regression
+                                                 tripwire (not an
+                                                 active-incident
+                                                 detector); operators
+                                                 watching for
+                                                 misconfigured
+                                                 callers should use
+                                                 result="gone".
+RELEASE_NOTES_v0.3.0.md                       — this entry; "At a
+                                                 glance" audit-
+                                                 checklist size
+                                                 bumped to 56/84.
+```
+
+**Audit-checklist refresh (Session 91 follow-on).**
+
+Two new audit rows were added alongside `api-05`:
+
+  * **`net-05`** — libp2p host key persistence (closes Session
+    89's deployed work in audit form: peer.ID stable across
+    restarts via `Config.NetworkHostKeyPath`; the
+    `pkg/networking/hostkey.go` atomic-write-with-0600 invariant;
+    parent-dir-must-exist precondition).
+  * **`store-05`** — was already added in Session 90 for the
+    NGC ring persister; included here for completeness because
+    the "At a glance" row's bump from 53→56 covers all three.
+
+Total `pkg/audit/checklist.go` rows: **53 → 56** (full-suite
+render including review-driven extras: 81 → 84).
+
+**Production-deploy posture.** No emergency redeploy needed. The
+v0.3.2-s90 binary on BLR1 still serves the v0.3.2 mint stub; the
+410 lands the moment the next planned deploy ships. Practical
+exposure today is bounded by the fact that no real caller targets
+the endpoint (no game-server integration exists), so the surface
+is theoretical until a malicious caller stumbles onto the path.
 
 ## What's safe to publish today (post-publish status)
 

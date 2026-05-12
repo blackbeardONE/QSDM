@@ -325,10 +325,16 @@ func TestGetBalance(t *testing.T) {
 	// Full integration tests should be in tests/api_integration_test.go
 }
 
-func TestNvidiaLockMintMainCoin_403WithoutProof(t *testing.T) {
-	monitoring.ResetNGCProofsForTest()
-	t.Cleanup(monitoring.ResetNGCProofsForTest)
-
+// TestWalletMint_410Gone documents the v0.3.3+ posture of
+// POST /api/v1/wallet/mint: removed (see handlers.go::MintMainCoin
+// for the why). The previous 8 mint tests (TestNvidiaLockMintMainCoin_*
+// and TestSubmeshMintMainCoin_*) were deleted along with the
+// real handler body — the NVIDIA-lock / HMAC / ingest-nonce /
+// submesh-privileged-payload code paths they exercised are still
+// covered by the other consumers (`/api/v1/wallet/send`,
+// `/api/v1/tokens/mint`, etc.) so removing the mint-specific tests
+// does not regress the gate coverage.
+func TestWalletMint_410Gone(t *testing.T) {
 	h := setupTestHandlersNvidiaLock()
 	body := []byte(`{"recipient":"0123456789abcdef0123456789abcdef0123456789","amount":1}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/mint", bytes.NewReader(body))
@@ -336,191 +342,36 @@ func TestNvidiaLockMintMainCoin_403WithoutProof(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.MintMainCoin(w, req)
 
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusGone {
+		t.Fatalf("expected 410 Gone, got %d body=%s", w.Code, w.Body.String())
 	}
 	var resp map[string]interface{}
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatal(err)
+		t.Fatalf("decode 410 body: %v (raw=%s)", err, w.Body.String())
 	}
-	msg, _ := resp["message"].(string)
-	if !strings.Contains(msg, "NVIDIA lock") {
-		t.Fatalf("expected NVIDIA lock detail in message, got %q", msg)
+	if status, _ := resp["status"].(string); status != "gone" {
+		t.Errorf(`status = %q; want "gone" (raw=%s)`, status, w.Body.String())
+	}
+	if _, ok := resp["migration"].(map[string]interface{}); !ok {
+		t.Errorf("missing `migration` block in 410 body: %s", w.Body.String())
+	}
+	if reason, _ := resp["reason"].(string); reason == "" {
+		t.Errorf("empty `reason` field in 410 body: %s", w.Body.String())
 	}
 }
 
-func TestNvidiaLockMintMainCoin_OKWithGPUProof(t *testing.T) {
-	monitoring.ResetNGCProofsForTest()
-	t.Cleanup(monitoring.ResetNGCProofsForTest)
-
-	proof := map[string]interface{}{
-		"architecture":    "NVIDIA-Locked QSDM test",
-		"cuda_proof_hash": "integration-deadbeef",
-		"gpu_fingerprint": map[string]interface{}{
-			"available": true,
-			"devices": []interface{}{
-				map[string]interface{}{"name": "Test GPU", "index": "0"},
-			},
-		},
-	}
-	raw, err := json.Marshal(proof)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := monitoring.RecordNGCProofBundle(raw); err != nil {
-		t.Fatal(err)
-	}
-
+// TestWalletMint_410GoneMethodNotAllowed asserts the
+// method-not-allowed branch still wins over the 410 — a GET
+// /api/v1/wallet/mint returns 405, not 410, because surfacing
+// 405 first matches the rest of the handler conventions and
+// keeps caller-side method-routing diagnostics clean.
+func TestWalletMint_410GoneMethodNotAllowed(t *testing.T) {
 	h := setupTestHandlersNvidiaLock()
-	body := []byte(`{"recipient":"0123456789abcdef0123456789abcdef0123456789","amount":1}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/mint", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/wallet/mint", nil)
 	w := httptest.NewRecorder()
 	h.MintMainCoin(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
-	}
-}
-
-func TestNvidiaLockMintMainCoin_403WrongProofNodeID(t *testing.T) {
-	monitoring.ResetNGCProofsForTest()
-	t.Cleanup(monitoring.ResetNGCProofsForTest)
-
-	proof := map[string]interface{}{
-		"architecture":     "NVIDIA-Locked QSDM test",
-		"cuda_proof_hash":  "h1",
-		"qsdm_node_id": "other-node",
-		"gpu_fingerprint":  map[string]interface{}{"available": true},
-	}
-	raw, _ := json.Marshal(proof)
-	if err := monitoring.RecordNGCProofBundle(raw); err != nil {
-		t.Fatal(err)
-	}
-
-	h := setupTestHandlersNvidiaLockNode("expected-node")
-	body := []byte(`{"recipient":"0123456789abcdef0123456789abcdef0123456789","amount":1}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/mint", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	h.MintMainCoin(w, req)
-
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d body=%s", w.Code, w.Body.String())
-	}
-}
-
-func TestNvidiaLockMintMainCoin_OKWithBoundNodeID(t *testing.T) {
-	monitoring.ResetNGCProofsForTest()
-	t.Cleanup(monitoring.ResetNGCProofsForTest)
-
-	proof := map[string]interface{}{
-		"architecture":     "NVIDIA-Locked QSDM test",
-		"cuda_proof_hash":  "h2",
-		"qsdm_node_id": "prod-validator-1",
-		"gpu_fingerprint":  map[string]interface{}{"available": true, "devices": []interface{}{map[string]interface{}{"name": "T", "index": "0"}}},
-	}
-	raw, _ := json.Marshal(proof)
-	if err := monitoring.RecordNGCProofBundle(raw); err != nil {
-		t.Fatal(err)
-	}
-
-	h := setupTestHandlersNvidiaLockNode("prod-validator-1")
-	body := []byte(`{"recipient":"0123456789abcdef0123456789abcdef0123456789","amount":1}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/mint", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	h.MintMainCoin(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
-	}
-}
-
-func TestNvidiaLockMintMainCoin_403WithoutHMACWhenRequired(t *testing.T) {
-	monitoring.ResetNGCProofsForTest()
-	t.Cleanup(monitoring.ResetNGCProofsForTest)
-
-	proof := map[string]interface{}{
-		"architecture":    "NVIDIA-Locked QSDM test",
-		"cuda_proof_hash": "no-hmac",
-		"timestamp_utc":   "2026-04-01T12:00:00+00:00",
-		"gpu_fingerprint": map[string]interface{}{"available": true},
-	}
-	raw, _ := json.Marshal(proof)
-	if err := monitoring.RecordNGCProofBundle(raw); err != nil {
-		t.Fatal(err)
-	}
-
-	h := setupTestHandlersNvidiaLockHMAC("Charming123")
-	body := []byte(`{"recipient":"0123456789abcdef0123456789abcdef0123456789","amount":1}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/mint", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	h.MintMainCoin(w, req)
-
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d body=%s", w.Code, w.Body.String())
-	}
-}
-
-func TestNvidiaLockMintMainCoin_OKWithHMAC(t *testing.T) {
-	monitoring.ResetNGCProofsForTest()
-	t.Cleanup(monitoring.ResetNGCProofsForTest)
-
-	secret := "Charming123"
-	raw := ngcProofBundleWithHMAC(secret, "cuda-with-mac", "2026-04-01T12:00:00+00:00", "", "")
-	if err := monitoring.RecordNGCProofBundle(raw); err != nil {
-		t.Fatal(err)
-	}
-
-	h := setupTestHandlersNvidiaLockHMAC(secret)
-	body := []byte(`{"recipient":"0123456789abcdef0123456789abcdef0123456789","amount":1}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/mint", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	h.MintMainCoin(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
-	}
-}
-
-func TestNvidiaLockMintMainCoin_SecondMintFailsAfterProofConsumed(t *testing.T) {
-	monitoring.ResetNGCProofsForTest()
-	monitoring.ResetNGCIngestNoncesForTest()
-	t.Cleanup(func() {
-		monitoring.ResetNGCProofsForTest()
-		monitoring.ResetNGCIngestNoncesForTest()
-	})
-
-	secret := "Charming123"
-	nonce, _, err := monitoring.IssueNGCIngestNonce(time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw := ngcProofBundleWithHMAC(secret, "cuda-n1", "2026-04-02T12:00:00+00:00", "", nonce)
-	if err := monitoring.RecordNGCProofBundleForIngest(raw, true, secret); err != nil {
-		t.Fatal(err)
-	}
-
-	h := setupTestHandlersNvidiaLockIngestNonce(secret, time.Hour)
-	body := []byte(`{"recipient":"0123456789abcdef0123456789abcdef0123456789","amount":1}`)
-
-	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/mint", bytes.NewReader(body))
-	req1.Header.Set("Content-Type", "application/json")
-	w1 := httptest.NewRecorder()
-	h.MintMainCoin(w1, req1)
-	if w1.Code != http.StatusOK {
-		t.Fatalf("first mint: expected 200, got %d %s", w1.Code, w1.Body.String())
-	}
-
-	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/mint", bytes.NewReader(body))
-	req2.Header.Set("Content-Type", "application/json")
-	w2 := httptest.NewRecorder()
-	h.MintMainCoin(w2, req2)
-	if w2.Code != http.StatusForbidden {
-		t.Fatalf("second mint: expected 403, got %d %s", w2.Code, w2.Body.String())
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 on GET, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -575,22 +426,12 @@ func setupTestHandlersWithSubmesh(dm *submesh.DynamicSubmeshManager, ws *wallet.
 	return NewHandlers(authManager, userStore, ws, mockStorage, logger, "", false, 0, "", "", false, 0, false, dm)
 }
 
-func TestSubmeshMintMainCoin_422OversizedPayload(t *testing.T) {
-	dm := submesh.NewDynamicSubmeshManager()
-	dm.AddOrUpdateSubmesh(&submesh.DynamicSubmesh{
-		Name: "tight", FeeThreshold: 0, PriorityLevel: 1, GeoTags: []string{"US"},
-		MaxPayloadBytes: 80,
-	})
-	h := setupTestHandlersWithSubmesh(dm, nil)
-	body := []byte(`{"recipient":"0123456789abcdef0123456789abcdef0123456789","amount":1}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/mint", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	h.MintMainCoin(w, req)
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("expected 422, got %d body=%s", w.Code, w.Body.String())
-	}
-}
+// TestSubmeshMintMainCoin_422OversizedPayload was deleted in
+// v0.3.3 (Session 91): the submesh privileged-payload gate is no
+// longer reachable via /api/v1/wallet/mint (it returns 410 Gone
+// before the submesh check). Equivalent submesh coverage is in
+// TestSubmeshSendTransaction_422NoMatchingRoute and the broader
+// pkg/submesh test suite.
 
 func TestSubmeshSendTransaction_422NoMatchingRoute(t *testing.T) {
 	ws, err := wallet.NewWalletService()

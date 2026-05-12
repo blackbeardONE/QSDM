@@ -177,6 +177,20 @@ those have their own counters and runbooks.
 
 ### 3.3 Mode C — `QSDMWalletMintBurst`
 
+> **v0.3.3 status (Session 91): this alert is now a
+> regression tripwire, not an active-incident detector.**
+> `/api/v1/wallet/mint` was removed in v0.3.3 and always
+> returns HTTP 410 Gone; the `result="success"` tag no
+> longer increments on a v0.3.3+ node. The alert is kept
+> in `alerts_qsdm.example.yml` so that a future code
+> regression (or a manual revert) which restores the
+> never-credited mint stub gets caught at the 30m
+> threshold. Operators tracking misconfigured callers
+> that still target the removed endpoint should watch
+> `rate(qsdm_wallet_mint_total{result="gone"}[5m])`
+> instead. The triage steps below apply to the legacy
+> pre-v0.3.3 posture.
+
 **Severity:** warning. **Default `for:`** 30m.
 
 **Fires when**: `qsdm_wallet_mint_total{result="success"}`
