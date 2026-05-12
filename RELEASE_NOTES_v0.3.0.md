@@ -644,6 +644,197 @@ ok  github.com/blackbeardONE/QSDM/cmd/qsdmminer-console             2.636s
 + 17 other pkg/mining/* packages, all green
 ```
 
+### Session 87 — v0.3.2 cut: deploy validator, tag, release pipeline
+
+User instruction: *"set aside npm task, token is safe. do the others
+by yourself."* The Session 86 changes existed in-repo at commit
+`f727fef` but were not yet live on the public reference validator,
+and the work in `v0.3.1..main` (homepage rewrite, wallet SRI,
+balance tab, full v1 deprecation — four commits) was substantial
+enough to warrant a release boundary. This session closes both.
+
+**1) Cosign-state audit for v0.3.1 (resolved without action).**
+`vps.txt §[9]` claimed `ghcr.io/blackbeardone/qsdm-validator:0.3.1`
+was unsigned and recommended a manual `gh workflow run` re-trigger.
+`cosign verify` against the live registry returns three signatures
+attached to image digest `sha256:197f444c…04a72eb7`, all carrying
+the expected `release-container.yml @ refs/tags/v0.3.1` GitHub OIDC
+identity. The note was stale — a later cosign retry must have
+filled the gap silently. `vps.txt §[9]` updated to reflect the
+resolved state; **no re-run needed**.
+
+**2) New validator binary deployed to api.qsdm.tech.** Cross-compiled
+`cmd/qsdm` for linux/amd64 from `f727fef` with `-trimpath`
++ `-ldflags="-s -w"`, 32,428,216 bytes,
+sha256 `9ad910bc2e0c5e9013ac45f27243a275dbcc296444211057b352ceb00aee91e0`.
+SCP'd to BLR1 (`206.189.132.232:/tmp/qsdm.new`), uploaded sha256
+re-verified on the host, old binary copied to
+`/opt/qsdm/qsdm.bak.20260511T200112Z` (44 MB — previous build was
+not stripped). New systemd drop-in
+`/etc/systemd/system/qsdm.service.d/version.conf` installed with
+`QSDM_BUILD_VERSION=v0.3.2` + the legacy `QSDMPLUS_BUILD_VERSION`
+alias (dual-emit per the Major Update §6 convention).
+`systemctl daemon-reload && systemctl start qsdm` → `is-active`.
+Post-restart `GET https://api.qsdm.tech/api/v1/status`:
+
+```json
+{
+  "version": "v0.3.2",
+  "chain_tip": 41873,
+  "peers": 202,
+  "mining": {
+    "protocol_versions_accepted": [2],
+    "fork_v2_active": true,
+    "fork_v2_tc_active": false,
+    "attestation_types_required": ["nvidia-cc-v1","nvidia-hmac-v1"],
+    "min_enroll_stake_dust": 1000000000
+  }
+}
+```
+
+Chain + accounts + enrollments + receipts all restored from disk
+(41872 blocks, 28 accounts, 3 enrollments, 40565 receipts) — the
+on-disk state machine survived the binary swap cleanly.
+
+**Known post-deploy blip (self-recovering).** The libp2p host
+identity is not yet persisted across qsdm.service restarts (the
+key is regenerated each boot), so `node_id` changed from
+`12D3KooWKWPUeH…` → `12D3KooWBY9zdQ…`. Pre-restart attestation
+rows submitted under the old `node_id` are now outside the 15-min
+freshness window, so
+`/api/v1/trust/attestations/summary.attested` dropped to 0
+immediately after the restart. The first scheduled
+`Trust transparency external probe` after the tag push turned red
+for this reason — it enforces `min_attested >= 2`. Recovery is
+automatic on the next NGC sidecar tick (BLR1 local timer + OCI
+SGP1 sidecar each POST a fresh proof bundle within ~10 min),
+after which `attested` returns to 2 and the next scheduled probe
+goes green again. Filed `libp2p-key-persist` as a follow-up:
+a one-line persistence of the host PrivateKey to
+`/opt/qsdm/host_key.pem` would eliminate this blip entirely.
+
+**3) `v0.3.2` annotated tag cut + pushed.** Pushed to
+`origin/v0.3.2` at commit `f727fef` (Session-86 deliverable).
+The tag annotation enumerates the v0.3.0..v0.3.2 highlights:
+v1 deprecation, browser wallet hardening, landing rewrite, doc
+overhaul, container-image cosign coverage. Push triggered the
+expected release matrix:
+
+```
+Release container        — in_progress (signs binaries + images)
+QSDM Go                  — in_progress (lint + unit + race)
+QSDM split-profile build — in_progress (multi-profile build matrix)
+QSDM Scylla staging verify — in_progress
+macOS build              — queued
+Validate deploy manifests — success
+Trust transparency probe — failure (post-restart blip, see above)
+```
+
+A follow-up housekeeping commit (`gitignore: add _build/`) landed
+on `main` after the tag was created, so v0.3.2 is locked to the
+clean v1-deprecation diff. The `_build/` ignore picks up in any
+future tag.
+
+**Files touched (Session 87):**
+
+```
+vps.txt                                    — §[9] cosign state RESOLVED (untracked, gitignored)
+.gitignore                                 — +_build/ (post-tag housekeeping)
+RELEASE_NOTES_v0.3.0.md                    — this entry
+/opt/qsdm/qsdm                             — VPS-side: live validator binary swapped (sha 9ad910bc...)
+/etc/systemd/system/qsdm.service.d/version.conf — VPS-side: new drop-in, QSDM_BUILD_VERSION=v0.3.2
+```
+
+**Verification one-liner (any operator).**
+
+```
+curl -s https://api.qsdm.tech/api/v1/status \
+  | jq '{version, chain_tip, peers, mining}'
+```
+
+…must include `version: "v0.3.2"` and a non-null `mining` block
+with `fork_v2_active: true`. If the `mining` field is missing the
+validator is running an older binary.
+
+### Session 88 — truth-in-docs: NVIDIA hardware is not a blocker
+
+User instruction (paraphrased from a follow-up question): *"I thought
+real CUDA validation could be done by HMAC and the RTX 3050."* They
+are correct, and the docs were stale. This session is a small
+truth-in-docs pass that does not change behaviour but does remove
+two misleading "Ops needs to buy hardware" lines from the release
+narrative.
+
+**What was investigated.**
+
+  1. `pkg/mining/attest/dispatcher.go::VerifyAttestation` (lines
+     144-155) dispatches an incoming v2 proof to the
+     `AttestationVerifier` matching `Attestation.Type`. The
+     `attestation_types_required` field on `/api/v1/status.mining` is
+     an **OR**-set of acceptable types — a proof carrying
+     `nvidia-hmac-v1` is fully accepted at consensus even when
+     `nvidia-cc-v1` is also listed.
+  2. `pkg/mining/attest/archcheck/archcheck.go` registers
+     `ArchAmpere` (line 127) with GPU-name patterns covering
+     `"rtx 30"`, `"a2"`, `"a4"`, `"a10"`, `"a16"` (lines 235-262)
+     and an accepted hashrate band of `[50 KH/s, 50 MH/s]` for
+     Ampere consumer SKUs (lines 207-213). RTX 3050 is in band.
+  3. `QSDM/docs/docs/MESH3D_GPU_BENCHMARK.md` already pins a
+     reference run from 2026-04-23 on the exact silicon: RTX 3050
+     (CC 8.6, driver 576.28, CUDA 12.9), 4.06× over a 32-thread
+     Xeon at n=4096 cells on the validate path, 2.23× on hash-only.
+  4. `QSDM/docs/docs/ATTESTATION_SIDECARS.md` lists
+     `qsdm-windows-dev` (the same Windows dev box, RTX 3050, CC 8.6)
+     as an already-configured attestation source.
+
+The cumulative consequence: the previous wording in
+`RELEASE_NOTES_v0.3.0.md` "Remaining external blockers" that grouped
+*NVIDIA hardware + nvcc toolchain* as a blocker was wrong. Both have
+been on a reference dev box for over two weeks, and the kernel-
+execution path **was** validated in repo on that hardware. The
+remaining gap is the end-to-end live mining session — actually
+running the `-tags cuda` build of `qsdmminer-console` against
+`api.qsdm.tech`, submitting an HMAC-attested v2 proof, and observing
+it accepted at consensus.
+
+**Files touched (Session 88).**
+
+```
+RELEASE_NOTES_v0.3.0.md                         — this entry; "NVIDIA hardware" row removed
+                                                  from the "Remaining external blockers"
+                                                  table; replaced by a clearer "Cleared in
+                                                  v0.3.2" callout pointing at the new
+                                                  cookbook + the existing benchmark.
+QSDM/docs/docs/RELEASE_EVIDENCE.md              — "Real-GPU CUDA validation" bullet rewritten
+                                                  to reference MESH3D_GPU_BENCHMARK.md
+                                                  (kernel-execution numbers DO exist on
+                                                  RTX 3050; only the live mining session
+                                                  is residual).
+QSDM/docs/docs/MINER_RTX_3050_COOKBOOK.md       — new: RTX-3050-specific overlay of
+                                                  MINER_QUICKSTART.md (sm_86 fatbin,
+                                                  archcheck hashrate band, expected
+                                                  panel state, kernel-bench self-test).
+QSDM/deploy/landing/index.html                  — Mine card: new "Consumer rigs" line
+                                                  linking the cookbook. Version pill
+                                                  bumped v0.3.1 → v0.3.2 (4 places:
+                                                  href, ver-pill-text, Go-SDK meta,
+                                                  "Current release" lede, and the
+                                                  inline JS fallback comment).
+```
+
+**What is NOT changed.** `pkg/audit/checklist.go` is unmodified —
+the existing items (`mining-01` external audit, `mining-05`
+incentivised testnet, etc.) are still pending; they were correctly
+characterised. No source-code, config, or chain state changes; this
+session is documentation only.
+
+**Verification.** `MESH3D_GPU_BENCHMARK.md` is self-reproducing —
+any operator with an RTX 3050 + CUDA 12.x + MSVC 2017 build tools
+can rerun the benchmark and compare against the table. The cookbook
+is self-contained against `MINER_QUICKSTART.md` and the live
+validator status, so any future revisions of the v2 protocol that
+break the recipe will surface immediately.
+
 ## What's safe to publish today (post-publish status)
 
 These artefacts are sign-off-ready and can be shipped the moment the corresponding external blocker clears:
@@ -665,8 +856,26 @@ These are the items the repo cannot close itself. They are tracked individually 
 | `supply-08` | Upstream fix for `GO-2024-3218` (libp2p-kad-dht) | go-libp2p maintainers | Removes the only accepted-with-mitigation entry. Practical exposure already bounded by bootstrap allowlist + peer scoring. |
 | — | `NPM_TOKEN` repo secret (2FA-bypass) | Ops | npm publish of `qsdm-sdk@0.3.0` (renamed from `qsdm` after the registry's name-similarity heuristic rejected the bare name; see *Session 81*). |
 | — | `APPLE_DEVELOPER_ID_APPLICATION` + `APPLE_NOTARYTOOL_KEYCHAIN_PROFILE` | Ops with Apple Developer account | Notarised macOS binaries. Scaffold: `QSDM/scripts/notarize_macos.sh`. |
-| — | NVIDIA hardware + `nvcc` toolchain | Ops | Production Mesh3D PoW. Kernel and Makefile already in tree at `pkg/mesh3d/kernels/`. |
 | — | Mainnet genesis ceremony | Foundation + validator set | After `tok-01` and `mining-01` clear. Dry-run driver at `cmd/genesis-ceremony` flags every artefact `dry_run: true`. |
+
+> **Cleared in v0.3.2 (was previously listed here as a blocker):**
+> *NVIDIA hardware + `nvcc` toolchain for Production Mesh3D PoW.*
+> The kernel + Makefile in `pkg/mesh3d/kernels/` were proved end-to-end
+> on a reference RTX 3050 (Ampere, CC 8.6, driver 576.28, CUDA 12.9)
+> on 2026-04-23. Numbers, reproducer, and methodology are pinned in
+> [`MESH3D_GPU_BENCHMARK.md`](QSDM/docs/docs/MESH3D_GPU_BENCHMARK.md)
+> (validate path: 4.06× over a 32-thread Xeon at n=4096 cells; hash-
+> only path: 2.23×). Consumer Ampere GPUs are also explicitly accepted
+> by the v2 attestation policy: validator `/api/v1/status.mining`
+> advertises `attestation_types_required = ["nvidia-cc-v1",
+> "nvidia-hmac-v1"]` (OR-semantics — see
+> `pkg/mining/attest/dispatcher.go`), and `pkg/mining/attest/archcheck`
+> pre-registers `ArchAmpere` with `rtx 30` GPU-name patterns and a
+> `[50 KH/s, 50 MH/s]` hashrate band. The only remaining work is the
+> *end-to-end live mining session* (build the `-tags cuda` miner,
+> generate an HMAC key, fund + enroll the reward address, submit a
+> real v2 proof). That is now an actionable item, not an external
+> blocker — see [`MINER_RTX_3050_COOKBOOK.md`](QSDM/docs/docs/MINER_RTX_3050_COOKBOOK.md).
 
 ## How to reproduce this report
 

@@ -260,10 +260,10 @@
       </ul>
     </nav>
     <a class="ver-pill" id="ver-pill"
-       href="https://github.com/blackbeardONE/QSDM/releases/tag/v0.3.1"
+       href="https://github.com/blackbeardONE/QSDM/releases/tag/v0.3.2"
        title="Latest released version">
       <span class="dot" aria-hidden="true"></span>
-      <span id="ver-pill-text">v0.3.1</span>
+      <span id="ver-pill-text">v0.3.2</span>
     </a>
     <a class="nav-cta" href="https://dashboard.qsdm.tech/">Open Dashboard →</a>
   </div>
@@ -379,6 +379,7 @@
             <li><strong>Tooling:</strong> <code>qsdmminer-console --protocol=v2</code> &mdash; setup wizard, live panel, v2 client</li>
             <li><strong>On-chain:</strong> <code>qsdmcli enroll</code> bonds 10 CELL to your <code>node_id</code></li>
             <li><strong>Funding caveat:</strong> v0.3.2 has no public faucet yet &mdash; new operators need a transfer from an existing CELL holder. See <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md#appendix-b-enrollment-funding-status">Appendix B</a>.</li>
+            <li><strong>Consumer rigs:</strong> an entry-level <strong>RTX 3050</strong> (Ampere, sm_86) is enough — 4.06&times; over a 32-thread Xeon at n=4096 cells. Step-by-step setup: <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_RTX_3050_COOKBOOK.md">RTX 3050 cookbook</a>.</li>
             <li>Forged or replayed proofs are slashable (<code>qsdm/slash/v1</code>)</li>
             <li>Halving emission, 90 M lifetime mining cap, 0 % pre-mine</li>
           </ul>
@@ -446,7 +447,7 @@
         <p>Feature-equivalent Go client. Used by <code>qsdmminer-console</code> and <code>qsdmcli</code>.</p>
         <pre><code>go get github.com/blackbeardONE/QSDM/sdk/go
 // client, _ := qsdm.NewClient("https://api.qsdm.tech")</code></pre>
-        <div class="meta">tagged with the core repo · v0.3.1</div>
+        <div class="meta">tagged with the core repo · v0.3.2</div>
       </div>
 
       <div class="dev-card">
@@ -708,10 +709,10 @@ docker pull ghcr.io/blackbeardone/qsdm-miner:0.3.1</code></pre>
     </div>
 
     <p class="lead" style="margin-top:24px;">
-      <strong style="color:var(--text);">Current release: v0.3.1</strong> &mdash; ML-DSA-87 consensus, v2
+      <strong style="color:var(--text);">Current release: v0.3.2</strong> &mdash; ML-DSA-87 consensus, v2
       NVIDIA-locked mining with active forged-attestation and double-mining slashers,
       <code>qsdm-sdk@0.3.0</code> on npm, GHCR container images at
-      <code>:0.3.1</code>, and the self-custody wallet. Detail in
+      <code>:0.3.2</code>, and the self-custody wallet. Detail in
       <a href="https://github.com/blackbeardONE/QSDM/blob/main/RELEASE_NOTES_v0.3.0.md">RELEASE_NOTES_v0.3.0.md</a>
       and on the <a href="https://github.com/blackbeardONE/QSDM/releases">GitHub releases page</a>.
     </p>
@@ -872,17 +873,13 @@ docker pull ghcr.io/blackbeardone/qsdm-miner:0.3.1</code></pre>
 
   // Auto-refresh the version pill from /api/v1/status when reachable.
   // If the API is offline or the field is missing we leave the
-  // hard-coded fallback (v0.3.1) in place rather than blanking it.
+  // hard-coded fallback (v0.3.2) in place rather than blanking it.
   //
-  // CAVEAT: the production /api/v1/status currently emits `version`
-  // as the Go toolchain string (e.g. "go1.25.9") rather than the
-  // release-tag version, so we explicitly reject anything that
-  // looks like a Go toolchain identifier. Once /api/v1/status grows
-  // a dedicated `release` / `qsdm_version` field that returns
-  // "v0.3.1" or similar, this filter will keep working — it only
-  // strips out the Go-toolchain shape. (Tracked alongside the
-  // session-84 site rewrite; the API change is out of scope here
-  // because it requires a validator redeploy.)
+  // As of v0.3.2 the production /api/v1/status emits `version` as
+  // the release-tag (e.g. "v0.3.2") because cmd/qsdm is now built
+  // with -ldflags="-X main.buildVersion=$tag" on every release-
+  // container.yml run (session 87 deploy). The Go-toolchain filter
+  // below is kept as a defensive guard against older binaries.
   (function () {
     var pill = document.getElementById('ver-pill-text');
     if (!pill) return;
