@@ -930,8 +930,9 @@ mainnet (`api.qsdm.tech`). It will be revised as the picture changes.
 |-------|--------|-------|
 | **Initial-operator allocation** | None on the live chain as of v0.3.2. | The genesis ceremony output for the v2-reset chain did not include a multi-operator allocation. Any CELL emitted to date has gone to the single validator-operator's miner address. |
 | **Reward from your own v2 proofs** | Available *once enrolled* — but enrollment requires 10 CELL. | The bootstrap problem this appendix exists to flag. |
-| **Transfer from an existing CELL holder** | Available via the standard transaction flow on `/api/v1/transactions`. | Today this requires an out-of-band ask to a holder. The browser wallet's *Send transaction* tab is a deferred v0.4 item; until it ships, transfers are CLI / API only. |
-| **Public bootstrap faucet** | **NOT YET SHIPPED** as of v0.3.2. | No faucet code lives in the repo today (verified by `grep -ri faucet QSDM/`). Tracked as a v0.4 item. |
+| **Transfer from an existing CELL holder (validator-signed)** | Available via `POST /api/v1/wallet/send` (requires JWT). | The validator signs the transfer from **its own wallet** (`pkg/wallet/wallet.go::CreateTransaction` always sets `Sender = ws.address`), so the JWT subject is metadata only. Fine for single-operator nodes; not a self-custody path. |
+| **Transfer from an existing CELL holder (self-custody)** | Available via `POST /api/v1/wallet/submit-signed` (v0.4.0, **no JWT — the cryptographic identity is the envelope's `public_key`**). | The holder builds + ML-DSA-87-signs the envelope locally (browser wallet's *Send transaction* tab today; a `qsdmcli wallet sign-tx` subcommand is planned for v0.4.1 — meanwhile a CLI user can construct the canonical envelope JSON by hand and pipe it through `qsdmcli wallet sign --message-file -`), POSTs it to the validator, and the server verifies `sender == hex(sha256(public_key))` plus the canonical-payload signature before debiting. See [`V040_WALLET_SEND_DESIGN.md`](V040_WALLET_SEND_DESIGN.md) and audit row `api-06`. **Known v0.4.0 gaps:** no per-account nonce (cross-`tx_id` replay possible) + non-atomic debit; both close in v0.4.1 before incentivised-testnet exposure. |
+| **Public bootstrap faucet** | **NOT YET SHIPPED** as of v0.3.3. | No faucet code lives in the repo today (verified by `grep -ri faucet QSDM/`). Tracked as a v0.4.1+ item (depends on `submit-signed` gaps closing first so a faucet can't be drained by replay). |
 
 ### B.3 Practical outcome for a fresh outside operator
 
@@ -940,10 +941,17 @@ and no relationship with an existing holder, the live mainnet
 currently does not provide a path to participate. The honest answer
 is one of:
 
-1. **Wait for the faucet** (no committed ship date).
+1. **Wait for the faucet** (no committed ship date; depends on
+   `submit-signed` replay-protection landing in v0.4.1 first).
 2. **Coordinate with an existing holder** off-chain to receive 10
-   CELL by transfer; this is what the v2 spec calls "social
-   bootstrap" and it is the de-facto path for v0.3.x.
+   CELL by transfer. v0.4.0+ lets the holder do this **without
+   uploading their private key** — they open the browser wallet's
+   *Send transaction* tab at `qsdm.tech/wallet/`, sign the envelope
+   locally with their passphrase-encrypted keystore, and POST it
+   to the validator. The validator verifies the ML-DSA-87
+   signature against the envelope's own `public_key` and never
+   sees the private key. This is what the v2 spec calls "social
+   bootstrap" and it is the de-facto path for v0.3.x → v0.4.x.
 3. **Run a local devnet** instead of the public mainnet — the v2
    verifier accepts whatever `FORK_V2_HEIGHT` you pin via
    `SetForkV2Height`, so you can stand up a private chain that

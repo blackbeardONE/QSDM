@@ -1,9 +1,16 @@
 // qsdm.tech/wallet/ — browser-side wallet client.
 //
 // Threading model:
-//   1) wasm_exec.js + wallet.wasm produce 5 globals:
-//        qsdm_wallet_generate / _address_from_public_key / _sign / _verify / _version
+//   1) wasm_exec.js + wallet.wasm produce 6 globals:
+//        qsdm_wallet_generate / _address_from_public_key / _sign / _verify /
+//        _sign_transaction / _version
 //      Plus qsdm_wallet_ready === true.
+//      `_sign_transaction` was added in v0.4.0 Phase B (Session 96) to back
+//      the new Send tab. It bundles canonical-payload marshalling +
+//      ML-DSA-87 signing into a single call so the canonical bytes are
+//      produced by Go's json.Marshal (matches the server-side
+//      pkg/api/handlers.go::SubmitSignedTransaction canonicalisation
+//      byte-for-byte, sidestepping JS/Go float-format drift).
 //   2) WebCrypto handles the symmetric envelope (PBKDF2 → AES-256-GCM)
 //      with parameters byte-identical to pkg/keystore (the Go package).
 //      This file is the source of truth for the JS side of that
@@ -213,7 +220,7 @@
       // visible TypeError in DevTools rather than a silent
       // wrong-key signature.
       const resp = await fetch('/wallet.wasm', {
-        integrity: 'sha384-yHrwzrXeXp0uvr4XuFFXM0iPZL5ZEcku33QrczqotHpO+jtnqwqemfADTrcVQHmw',
+        integrity: 'sha384-XKMSFMnk27ul5OLXqm2zFMPtsdSVUGNXK8sChbKc/Y2nIqVLEB330Ll+UDhz0Eb6',
         // `same-origin` is the implicit default for /wallet.wasm
         // because the page is served from the same origin, but
         // pinning it here means a future move to a CDN sub-domain
@@ -613,6 +620,268 @@
         </div>
       </div>`;
     setStatus('bal-status', `Balance retrieved: ${formatCell(body.balance)}`, 'ok');
+  });
+
+  // ----- Send transaction flow (v0.4.0 Phase B, Session 96) -----
+  //
+  // The Send tab is the only tab that BOTH decrypts the private key
+  // AND talks to the network. The flow:
+  //
+  //   1. Read + decrypt keystore (same path as Open / Sign).
+  //   2. Validate recipient / amount / fee / geotag client-side.
+  //   3. Derive sender = hex(sha256(public_key)) — matches what the
+  //      server checks (HTTP 400 sender_mismatch on disagreement).
+  //   4. Build an envelope object (no signature, no public_key — the
+  //      WASM helper fills those in after signing).
+  //   5. Call qsdm_wallet_sign_transaction — it canonicalises with
+  //      Go's json.Marshal (byte-identical to what the server
+  //      canonicalises against), ML-DSA-87-signs, and returns the
+  //      final envelope JSON.
+  //   6. Zero the decrypted private key buffer.
+  //   7. POST the signed envelope to /api/v1/wallet/submit-signed
+  //      and render the result.
+  //
+  // The server-side semantics are documented in
+  // QSDM/docs/docs/V040_WALLET_SEND_DESIGN.md and audited via the
+  // api-06 row in pkg/audit/checklist.go. v0.4.0 ships with two
+  // intentional gaps:
+  //   - no per-account nonce → cross-tx_id replay possible
+  //   - storage debit isn't atomic with the balance check
+  // Both are scheduled for v0.4.1. The user-facing warning text on
+  // the Send tab calls this out.
+  const SEND_ENDPOINT_DEFAULT = 'https://api.qsdm.tech/api/v1/wallet/submit-signed';
+
+  // tx_id derivation matches pkg/wallet.WalletService.CreateTransaction:
+  //   sha256(sender || recipient || timestamp.UnixNano)
+  // first 16 bytes hex. We use Date.now() * 1e6 + sub-millisecond jitter
+  // as a nanosecond-timestamp surrogate; the only consensus requirement
+  // is that distinct submissions from the same sender produce distinct
+  // tx_ids (server's idempotency check is keyed on tx_id), and a
+  // collision would just return 409 Duplicate from the validator — not
+  // a security issue, just a UX one. JS doesn't have a real ns-clock so
+  // we splice 6 hex digits of crypto.getRandomValues to push the
+  // collision probability into oblivion.
+  async function deriveTxID(senderHex, recipientHex, timestampISO) {
+    const nsHash = await crypto.subtle.digest(
+      'SHA-256',
+      utf8Encode(senderHex + recipientHex + timestampISO + bytesToHex(crypto.getRandomValues(new Uint8Array(3)))),
+    );
+    return bytesToHex(new Uint8Array(nsHash).slice(0, 16));
+  }
+
+  // Permissive amount parser: accepts "1", "1.5", "0.01", " 12.3 " etc.
+  // Returns a finite, non-negative number or throws with a useful
+  // message. Caller is responsible for the amount > 0 / fee >= 0 split.
+  function parseCellAmount(label, raw) {
+    const s = (raw || '').trim();
+    if (!s) throw new Error(`${label} is required`);
+    const n = Number(s);
+    if (!Number.isFinite(n)) throw new Error(`${label} is not a number: "${s}"`);
+    if (n < 0) throw new Error(`${label} cannot be negative`);
+    return n;
+  }
+
+  $('send-btn').addEventListener('click', async () => {
+    if (!wasmReady) {
+      setStatus('send-status', 'WASM not ready yet', 'err');
+      return;
+    }
+    if (typeof window.qsdm_wallet_sign_transaction !== 'function') {
+      setStatus(
+        'send-status',
+        'this WASM build is missing qsdm_wallet_sign_transaction — rebuild wallet.wasm with the v0.4.0+ source',
+        'err',
+      );
+      return;
+    }
+
+    // --- input validation (before we touch the keystore) ---
+    const recipient = ($('send-recipient').value || '').trim().toLowerCase();
+    if (!isValidAddress(recipient)) {
+      setStatus('send-status', `recipient is not a valid 64-hex-char address (got ${recipient.length} chars)`, 'err');
+      return;
+    }
+    let amount, fee;
+    try {
+      amount = parseCellAmount('amount', $('send-amount').value);
+      fee = parseCellAmount('fee', $('send-fee').value);
+    } catch (e) {
+      setStatus('send-status', e.message, 'err');
+      return;
+    }
+    if (amount <= 0) {
+      setStatus('send-status', 'amount must be > 0', 'err');
+      return;
+    }
+    const geotag = ($('send-geotag').value || '').trim().toUpperCase();
+    if (!/^[A-Z]{2,3}$/.test(geotag)) {
+      setStatus('send-status', `geotag must be 2–3 letters (got "${geotag}")`, 'err');
+      return;
+    }
+    // parent_cells is optional; if empty we send two placeholder
+    // hex64s so the validator's ValidateParentCells gate is satisfied.
+    // pkg/wallet.CreateTransaction does the same thing server-side
+    // when called with fewer than 2 parents (the "parent1"/"parent2"
+    // strings on that path are NOT 64-hex though, so we use real
+    // hex-shaped placeholders here — the validator's regex is
+    // shape-only, no on-chain existence check).
+    let parentCells = ($('send-parents').value || '')
+      .split(/[,\n\s]+/).map(s => s.trim()).filter(Boolean);
+    if (parentCells.length === 0) {
+      parentCells = [
+        '00000000000000000000000000000000000000000000000000000000000000a1',
+        '00000000000000000000000000000000000000000000000000000000000000a2',
+      ];
+    }
+    for (const p of parentCells) {
+      if (!/^[0-9a-f]{32,128}$/i.test(p)) {
+        setStatus('send-status', `parent cell "${p.slice(0, 16)}…" is not hex (32–128 chars)`, 'err');
+        return;
+      }
+    }
+    const endpoint = ($('send-endpoint').value || '').trim() || SEND_ENDPOINT_DEFAULT;
+
+    // --- decrypt + sign ---
+    setStatusBusy('send-status', 'reading & decrypting keystore…');
+    let ks;
+    try {
+      ks = await readKeystoreFromFile($('send-file'));
+    } catch (e) {
+      setStatus('send-status', `keystore: ${e.message}`, 'err');
+      return;
+    }
+    let priv;
+    try {
+      priv = await decryptPrivateKey(ks, $('send-pass').value);
+    } catch (e) {
+      setStatus('send-status', e.message, 'err');
+      return;
+    }
+    // Sender = hex(sha256(public_key)). The keystore stores the
+    // public_key in cleartext (it's not a secret), and we verified
+    // address == sha256(public_key) during validateKeystore. So
+    // ks.address IS the sender — no extra hashing needed here.
+    const sender = ks.address;
+    if (sender === recipient) {
+      setStatus('send-status', 'sender == recipient (refusing to send to yourself)', 'err');
+      priv.fill(0);
+      return;
+    }
+
+    setStatusBusy('send-status', 'signing transaction (ML-DSA-87)…');
+    await new Promise(r => setTimeout(r, 0)); // yield for spinner paint
+
+    const timestamp = new Date().toISOString();
+    let txID;
+    try {
+      txID = await deriveTxID(sender, recipient, timestamp);
+    } catch (e) {
+      setStatus('send-status', `tx_id derivation failed: ${e.message}`, 'err');
+      priv.fill(0);
+      return;
+    }
+
+    // The envelope we hand to WASM. WASM canonicalises + signs +
+    // re-marshals; we don't have to set signature/public_key here
+    // (and shouldn't — WASM strips them defensively before signing).
+    // Field order in this object is irrelevant to the canonical
+    // bytes because WASM re-marshals through the Go struct.
+    const envelope = {
+      id: txID,
+      sender: sender,
+      recipient: recipient,
+      amount: amount,
+      fee: fee,
+      geotag: geotag,
+      parent_cells: parentCells,
+      timestamp: timestamp,
+    };
+
+    const signed = window.qsdm_wallet_sign_transaction(
+      JSON.stringify(envelope),
+      bytesToHex(priv),
+      ks.public_key,
+    );
+    // Zero the decrypted private key reference before anything else.
+    priv.fill(0);
+
+    if (typeof signed !== 'string') {
+      setStatus('send-status', `signing failed: ${signed && signed.error ? signed.error : 'unknown'}`, 'err');
+      return;
+    }
+
+    // --- POST the signed envelope ---
+    setStatusBusy('send-status', `submitting to ${endpoint}…`);
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 30_000);
+    let resp;
+    try {
+      resp = await fetch(endpoint, {
+        method: 'POST',
+        credentials: 'omit',
+        signal: ctl.signal,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: signed,
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      const reason = e.name === 'AbortError' ? 'timed out after 30s' : e.message;
+      setStatus('send-status', `network error: ${reason}`, 'err');
+      return;
+    }
+    clearTimeout(timer);
+
+    let body, bodyText;
+    try {
+      bodyText = await resp.text();
+      body = bodyText ? JSON.parse(bodyText) : {};
+    } catch (e) {
+      setStatus('send-status', `bad JSON from API: ${e.message} (raw: ${(bodyText || '').slice(0, 120)})`, 'err');
+      return;
+    }
+
+    // Server result paths:
+    //   200 + status:"accepted" + transaction_id + broadcast
+    //   409 + status:"duplicate" + transaction_id  (idempotent retry)
+    //   400 / 402 / 422 / 500 + {error: "..."}
+    const ok = resp.ok || resp.status === 409;
+    const statusLabel = ok ? (body.status || 'accepted') : 'error';
+    const colour = ok ? 'ok' : 'err';
+
+    const r = $('send-result');
+    r.hidden = false;
+    const renderedTxID = body.transaction_id || txID;
+    r.innerHTML = `
+      <div class="result" style="${ok ? '' : 'border-color: rgba(255,107,107,.5); background: rgba(255,107,107,.05);'}">
+        <h3 style="${ok ? '' : 'color: var(--danger)'}">${ok ? 'Submitted' : 'Rejected'}</h3>
+        <div class="kv">
+          <div class="k">tx_id</div><div class="v">${escapeHtml(renderedTxID)}</div>
+          <div class="k">status</div><div class="v"><strong class="${colour}">${escapeHtml(statusLabel)}</strong></div>
+          <div class="k">broadcast</div><div class="v">${escapeHtml(body.broadcast || '—')}</div>
+          <div class="k">sender</div><div class="v">${escapeHtml(sender)}</div>
+          <div class="k">recipient</div><div class="v">${escapeHtml(recipient)}</div>
+          <div class="k">amount</div><div class="v"><strong>${escapeHtml(formatCell(amount))}</strong></div>
+          <div class="k">fee</div><div class="v">${escapeHtml(formatCell(fee))}</div>
+          <div class="k">HTTP</div><div class="v">${resp.status} ${escapeHtml(resp.statusText)}</div>
+          <div class="k">raw response</div><div class="v long"><code>${escapeHtml(bodyText.slice(0, 800))}</code></div>
+        </div>
+        ${ok ? `
+          <div class="status-line" style="margin-top:14px">
+            The envelope is on the wire. <strong>Until v0.4.1 closes the
+            atomicity gap</strong>, double-check your balance after a
+            few seconds to confirm the debit landed cleanly.
+          </div>
+        ` : ''}
+      </div>`;
+    setStatus('send-status', ok
+      ? `${statusLabel}: ${formatCell(amount)} → ${recipient.slice(0, 12)}… (tx ${renderedTxID.slice(0, 12)}…)`
+      : `HTTP ${resp.status}: ${(body && (body.error || body.detail || body.message)) || resp.statusText}`,
+      colour);
+    // Wipe the passphrase field on success or terminal error.
+    $('send-pass').value = '';
   });
 
   // ----- Go! -----

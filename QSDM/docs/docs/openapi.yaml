@@ -478,6 +478,181 @@ paths:
         '503':
           $ref: '#/components/responses/WalletService503'
 
+  /wallet/submit-signed:
+    post:
+      tags:
+        - Wallet
+      summary: Submit a self-custody signed transaction (v0.4.0)
+      description: |
+        Accepts a fully **client-signed** `wallet.TransactionData` envelope and applies the balance change iff the envelope's ML-DSA-87 signature verifies against its own embedded `public_key` AND `sender == hex(sha256(public_key))`.
+
+        Use this endpoint instead of `/wallet/send` when the signer is **NOT** the validator's own wallet — i.e. for the browser wallet at `qsdm.tech/wallet/` (Send tab) or any third-party SDK that holds the user's ML-DSA-87 private key locally. The endpoint is intentionally **unauthenticated**: the cryptographic identity IS the envelope's `public_key`, and demanding a JWT on top would force the caller to reveal a server-side session identity that has no bearing on the on-chain debit. Per-IP rate-limit caps at 10 requests/min, matching `/wallet/send`.
+
+        ## Canonical signing payload
+
+        The signature is computed over the JSON-marshalled `wallet.TransactionData` with `signature` and `public_key` fields cleared (`signature` emits as `""`; `public_key` is omitted via `omitempty`). Marshalling uses Go's `encoding/json` default struct-order field emission. The reference browser-wallet WASM helper (`qsdm_wallet_sign_transaction`) is the source of truth — it runs Go's own `json.Marshal` to avoid float-format drift between Go and JavaScript.
+
+        ## Idempotency
+
+        Idempotent on `tx_id`. A duplicate POST returns **409 Conflict** with `status: "duplicate"` and echoes the original `transaction_id`. The handler is safe to retry.
+
+        ## Server-side invariants enforced
+
+        On every call the handler enforces:
+
+        1. **Sender binding** — `sender == hex(sha256(public_key))`. Mismatch → 400, `qsdm_wallet_send_total{result="sender_mismatch"}`.
+        2. **Signature verification** — ML-DSA-87 verified against the envelope's own `public_key` with the canonical payload above. Mismatch → 422, `result="signature_invalid"`.
+        3. **Balance pre-flight** — `storage.GetBalance(sender) ≥ amount + fee`. Shortfall → 402, `result="insufficient_balance"`.
+        4. **Idempotency** — `storage.GetTransaction(tx_id)` hit → 409 + `status="duplicate"`, `result="duplicate"`.
+        5. **Submesh policy** — same gate as `/wallet/send` (`enforceSubmeshWalletSend`). Reject → 422, increments `qsdm_submesh_api_wallet_reject_*`.
+
+        ## Known v0.4.0 gaps
+
+        v0.4.0 ships with two intentional gaps (tracked in `pkg/audit/checklist.go::api-06` and `QSDM/docs/docs/V040_WALLET_SEND_DESIGN.md`):
+
+        1. **No per-account nonce** → cross-`tx_id` replay possible if the caller controls the timestamp inside the `tx_id` seed. Same-`tx_id` replay IS prevented via the 409 path. Fix planned for v0.4.1 (per-sender monotonically-increasing nonce).
+        2. **Non-atomic debit** → `storage.UpdateBalance` warns-and-proceeds on negative balance, so a concurrent race between two simultaneous submit-signed calls from the same sender can drop the on-disk balance below zero. Fix planned for v0.4.1 (single-transaction atomic debit/credit with `CHECK` constraint).
+
+        Both gaps must close before `mining-05` (incentivised testnet) exposure. They are **not a regression** — `/wallet/send` has the same posture today — but they ARE blockers for public balance-bearing endpoint exposure on a balance-bearing chain.
+      operationId: submitSignedTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+                - sender
+                - recipient
+                - amount
+                - public_key
+                - signature
+                - timestamp
+              properties:
+                id:
+                  type: string
+                  description: |
+                    Transaction ID — first 16 hex chars (8 bytes) of `sha256(sender || recipient || timestamp_ns)`. Must be unique per logical transaction; reuse triggers the 409 idempotency path.
+                  example: "f2a8b4c6d8e1f0a3b5c7d9e2f4a6b8c0"
+                sender:
+                  type: string
+                  description: |
+                    Sender address — `hex(sha256(public_key))`, 64 hex chars. MUST match the envelope's `public_key` field byte-exactly or the handler returns 400.
+                  example: "605ab7550bd6c74ce3e5b394c1f6334cea0f6e2951938ae7fc5c775a7e1ac7e2"
+                recipient:
+                  type: string
+                  description: Recipient address — `hex(sha256(recipient_public_key))`, 64 hex chars.
+                amount:
+                  type: number
+                  format: float
+                  minimum: 0.00000001
+                  description: Transaction amount in CELL. Minimum 1 dust = 10^-8 CELL.
+                fee:
+                  type: number
+                  format: float
+                  minimum: 0
+                  description: Transaction fee in CELL. Set to 0 to omit; submesh routing may still reject a 0-fee envelope on a fee-gated submesh.
+                geotag:
+                  type: string
+                  description: ISO-3166-1 geographic tag used by the submesh router. Optional but accepted by every submesh profile.
+                  example: "US"
+                parent_cells:
+                  type: array
+                  items:
+                    type: string
+                  maxItems: 10
+                  description: Parent cell tx_ids (alphanumeric, 16–128 chars each). Two or more recommended for PoE consensus parents.
+                signature:
+                  type: string
+                  description: |
+                    Hex-encoded ML-DSA-87 signature (9254 hex chars = 4627 raw bytes) over the canonical payload described above. Produced by `qsdm_wallet_sign_transaction` (browser WASM) or `qsdmcli wallet sign-tx` (CLI).
+                public_key:
+                  type: string
+                  description: Hex-encoded ML-DSA-87 packed public key (5184 hex chars = 2592 raw bytes).
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: RFC 3339 UTC timestamp.
+                  example: "2026-05-13T15:34:56Z"
+      responses:
+        '200':
+          description: Transaction accepted and stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id:
+                    type: string
+                    description: Echo of the envelope's `id` field.
+                  status:
+                    type: string
+                    enum: ["accepted"]
+                  broadcast:
+                    type: string
+                    enum: ["p2p", "local-only"]
+                    description: Indicates whether the p2p tx broadcaster was wired. `local-only` is normal for single-node test deployments.
+              examples:
+                accepted:
+                  summary: Accepted (p2p broadcast)
+                  value:
+                    transaction_id: "f2a8b4c6d8e1f0a3b5c7d9e2f4a6b8c0"
+                    status: "accepted"
+                    broadcast: "p2p"
+        '400':
+          description: |
+            Validation failure. Common reasons:
+            * Malformed envelope JSON (`invalid envelope: ...`)
+            * `sender != hex(sha256(public_key))` (`sender does not match hex(sha256(public_key))`)
+            * Address/amount/fee/geotag/parent_cells shape rejected by the input validator
+            * `public_key` or `signature` not valid hex
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '402':
+          description: |
+            Insufficient balance — `storage.GetBalance(sender) < amount + fee`. The body reports both numbers verbatim so the client can render the shortfall.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                shortfall:
+                  summary: Sender lacks funds
+                  value:
+                    error: Payment Required
+                    message: "insufficient balance: have 0.5, need 1.01"
+                    status: 402
+        '405':
+          description: Method not allowed — only POST is accepted.
+        '409':
+          description: |
+            Duplicate `tx_id` — the envelope has already been stored. Body echoes the original `transaction_id` and reports `status: "duplicate"`. The handler is idempotent; treat the 409 as success-equivalent.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id:
+                    type: string
+                  status:
+                    type: string
+                    enum: ["duplicate"]
+        '422':
+          description: |
+            * **Signature invalid** — the ML-DSA-87 signature does not verify against the envelope's `public_key` over the canonical payload. Increments `qsdm_wallet_send_total{result="signature_invalid"}`.
+            * **Submesh route rejected** — fee/geotag combination doesn't match any loaded submesh profile, or the signed envelope exceeds the matched profile's `max_tx_size`. Same posture as `/wallet/send`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Storage write failed.
+        '503':
+          $ref: '#/components/responses/WalletService503'
+
   /wallet/address:
     get:
       tags:

@@ -1,7 +1,9 @@
 # v0.4 — Browser-Wallet "Send transaction" Design
 
-> Status: **Phase A backend SHIPPED in v0.4.0** (session 95) ·
-> **Phase B (WASM + browser UI) deferred to next session.**
+> Status: **Phase A backend SHIPPED** (session 95) · **Phase B
+> WASM helper + browser Send tab + OpenAPI doc + landing-site
+> wallet.wasm rebuild + Appendix B refresh SHIPPED** (session 96). ·
+> **Production deploy: pending tag cut (v0.4.0).**
 > Tracking issue: `browser-wallet-send` (was: "deferred to v0.4" in
 > sessions 91–93 backlog).
 > Scope: server endpoint + WASM signing helper + browser UI for
@@ -27,18 +29,57 @@
 > - Audit row `api-06` flipped from "design" to "backend
 >   implemented" with the known-gap list inline.
 >
-> **Session 95 (Phase A) deferred to next session (Phase B):**
-> - WASM `wallet.wasm` helper for client-side
->   ML-DSA-87 canonical-payload signing of a
->   `wallet.TransactionData` envelope.
-> - Browser-wallet "Send" tab (5th tab) in
->   `QSDM/deploy/landing/wallet.html` + glue JS in `wallet.js`.
-> - SRI re-hash of `wallet.js` + `wallet.wasm` after rebuild.
+> **Session 96 (Phase B) delivered:**
+> - `qsdm_wallet_sign_transaction(envelope_json, private_key_hex,
+>   public_key_hex)` WASM helper in
+>   `wasm_modules/wallet/cmd/qsdm-wallet/main.go`. Canonicalises +
+>   ML-DSA-87-signs an envelope inside the WASM module so the
+>   canonical bytes are produced by Go's `json.Marshal` (matches
+>   the server-side `pkg/api/handlers.go::SubmitSignedTransaction`
+>   canonicalisation byte-for-byte; sidesteps JS/Go float-format
+>   drift). API version bumped: `qsdm-wallet v1` → `qsdm-wallet
+>   v2 / ml-dsa-87 / circl`.
+> - 5th browser tab "Send transaction" in
+>   `QSDM/deploy/landing/wallet.html`. Form: keystore + passphrase
+>   + recipient + amount + fee + geotag + optional parent_cells +
+>   overridable validator endpoint. UI calls out the v0.4.0
+>   replay/atomicity gaps inline.
+> - `wallet.js` Send flow: keystore decrypt → derive sender from
+>   `ks.address` (already validated against `sha256(public_key)`
+>   in `validateKeystore`) → build envelope → WASM-sign → POST to
+>   `/api/v1/wallet/submit-signed`. Renders HTTP 200/409/4xx
+>   uniformly, zeroes the decrypted private key after the sign
+>   call.
+> - `wallet.wasm` rebuilt from the v0.4.0 source
+>   (`qsdm_wallet_sign_transaction` exported global confirmed in
+>   the binary; 3.88 MB). SRI hashes re-hashed via
+>   `./QSDM/scripts/build_wallet_wasm.sh --refresh-sri-only`:
+>   `wallet.wasm` →
+>   `sha384-XKMSFMnk27ul5OLXqm2zFMPtsdSVUGNXK8sChbKc/Y2nIqVLEB330Ll+UDhz0Eb6`,
+>   `wallet.js` →
+>   `sha384-RhWdFOoBDj5QlZ5eRwbYEpB3l2HVjLomt2F99v6OVWklQij/UogtRsNqoEl3P0O2`,
+>   `wasm_exec.js` unchanged.
 > - OpenAPI `paths./wallet/submit-signed` entry in
->   `QSDM/docs/docs/openapi.yaml`.
-> - `MINER_QUICKSTART.md` Appendix B refresh to call out the new
->   self-custody path alongside the existing validator-signed
->   `/wallet/send`.
+>   `QSDM/docs/docs/openapi.yaml`. Documents all 8 result tags,
+>   the canonical-payload contract, and the v0.4.0 known gaps.
+> - `MINER_QUICKSTART.md` Appendix B refresh: the
+>   "Transfer from an existing CELL holder" row was split into a
+>   validator-signed row (existing `/wallet/send`) and a
+>   self-custody row (new `/wallet/submit-signed`). The "Run a
+>   local devnet" alternative was rewritten to point to the
+>   browser wallet's Send tab.
+>
+> **Deferred from Phase B (tracked for v0.4.1):**
+> - `qsdmcli wallet sign-tx` CLI subcommand (non-browser
+>   self-custody envelope signing). CLI users today can still
+>   sign the canonical JSON via `qsdmcli wallet sign
+>   --message-file -` and assemble the envelope themselves.
+> - Cosign-signed `v0.4.0` release tag (binaries +
+>   `release-container.yml`).
+> - BLR1 production deploy (still serving v0.3.3-s91; no
+>   `/wallet/submit-signed` reachable on the live mainnet yet).
+> - Per-account nonce schema (v0.4.0 known gap #1).
+> - Atomic debit/credit storage layer (v0.4.0 known gap #2).
 
 ## TL;DR for impatient reviewers
 
