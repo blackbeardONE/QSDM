@@ -42,6 +42,11 @@ var (
 	walletSendSignatureInvalid   atomic.Uint64 // 422: ML-DSA-87 signature does not verify under envelope.public_key
 	walletSendInsufficientBalance atomic.Uint64 // 402: storage.GetBalance(sender) < amount + fee
 	walletSendDuplicate          atomic.Uint64 // 409: tx_id already stored (idempotent retry)
+	// v0.4.1 (Session 99) — replay-protection result tags. See
+	// QSDM/docs/docs/V041_REPLAY_PROTECTION_DESIGN.md.
+	walletSendNonceReplay        atomic.Uint64 // 409: envelope.nonce <= stored last-seen for sender
+	walletSendNonceConflict      atomic.Uint64 // 409: atomic-debit CAS rejected on concurrent submit
+	walletSendNonceLookupFailed  atomic.Uint64 // 500: storage.GetNonce error (DB unavailable)
 )
 
 // Result tags for qsdm_wallet_send_total.
@@ -58,6 +63,11 @@ const (
 	WalletSendResultSignatureInvalid    = "signature_invalid"
 	WalletSendResultInsufficientBalance = "insufficient_balance"
 	WalletSendResultDuplicate           = "duplicate"
+	// v0.4.1 — added for replay protection (Session 99). See
+	// QSDM/docs/docs/V041_REPLAY_PROTECTION_DESIGN.md.
+	WalletSendResultNonceReplay       = "nonce_replay"
+	WalletSendResultNonceConflict     = "nonce_conflict"
+	WalletSendResultNonceLookupFailed = "nonce_lookup_failed"
 )
 
 // RecordWalletSend increments qsdm_wallet_send_total{result=...} by 1.
@@ -91,6 +101,12 @@ func RecordWalletSend(result string) {
 		walletSendInsufficientBalance.Add(1)
 	case WalletSendResultDuplicate:
 		walletSendDuplicate.Add(1)
+	case WalletSendResultNonceReplay:
+		walletSendNonceReplay.Add(1)
+	case WalletSendResultNonceConflict:
+		walletSendNonceConflict.Add(1)
+	case WalletSendResultNonceLookupFailed:
+		walletSendNonceLookupFailed.Add(1)
 	}
 }
 
@@ -114,6 +130,9 @@ func WalletSendCounts() []struct {
 		{WalletSendResultSignatureInvalid, walletSendSignatureInvalid.Load()},
 		{WalletSendResultInsufficientBalance, walletSendInsufficientBalance.Load()},
 		{WalletSendResultDuplicate, walletSendDuplicate.Load()},
+		{WalletSendResultNonceReplay, walletSendNonceReplay.Load()},
+		{WalletSendResultNonceConflict, walletSendNonceConflict.Load()},
+		{WalletSendResultNonceLookupFailed, walletSendNonceLookupFailed.Load()},
 	}
 }
 

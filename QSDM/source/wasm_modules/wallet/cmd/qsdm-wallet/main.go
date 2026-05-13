@@ -200,6 +200,16 @@ type txEnvelope struct {
 	Fee         float64  `json:"fee"`
 	GeoTag      string   `json:"geotag"`
 	ParentCells []string `json:"parent_cells"`
+	// Nonce is the v0.4.1 per-sender replay counter (Session 99,
+	// see QSDM/docs/docs/V041_REPLAY_PROTECTION_DESIGN.md). Must
+	// match pkg/wallet.TransactionData field-for-field so the
+	// browser-side canonical bytes are byte-identical to what the
+	// server reconstructs in pkg/api/handlers.go::SubmitSignedTransaction.
+	// `omitempty` means a Nonce of 0 (the Go zero-value, what
+	// v0.4.0 envelopes carry) drops out of the JSON entirely,
+	// matching the v0.4.0 canonical form so old signatures still
+	// verify on a v0.4.1 server.
+	Nonce uint64 `json:"nonce,omitempty"`
 	Signature   string   `json:"signature"`
 	PublicKey   string   `json:"public_key,omitempty"`
 	Timestamp   string   `json:"timestamp"`

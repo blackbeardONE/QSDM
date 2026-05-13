@@ -86,7 +86,17 @@ func NewStorage(dbPath string) (*Storage, error) {
 	}
 
 	log.Println("SQLite storage initialized with WAL mode and performance pragmas")
-	return &Storage{db: db}, nil
+
+	// v0.4.1 (Session 99): migrate the balances table to the
+	// nonce + CHECK(balance >= 0) shape if it's still in v0.4.0
+	// form. Idempotent — short-circuits on subsequent boots once
+	// the migration is applied. See sqlite_v041.go.
+	s := &Storage{db: db}
+	if migErr := s.migrateBalancesToV041(); migErr != nil {
+		db.Close()
+		return nil, fmt.Errorf("v041 balances migration failed: %w", migErr)
+	}
+	return s, nil
 }
 
 func (s *Storage) StoreTransaction(data []byte) (resErr error) {

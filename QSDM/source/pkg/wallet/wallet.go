@@ -40,6 +40,21 @@ type TransactionData struct {
 	Fee         float64  `json:"fee"`
 	GeoTag      string   `json:"geotag"`
 	ParentCells []string `json:"parent_cells"`
+	// Nonce is the per-sender monotonically-increasing replay
+	// counter added in v0.4.1 (Session 99, see
+	// QSDM/docs/docs/V041_REPLAY_PROTECTION_DESIGN.md).
+	//
+	// `omitempty` is intentional: a nonce of 0 is the
+	// backward-compat legacy path (v0.4.0 envelopes, which never
+	// carried this field) and we want json.Marshal to emit
+	// byte-for-byte the same canonical signing payload v0.4.0
+	// clients produced — so existing signatures continue to
+	// verify on a v0.4.1 server. A nonce of 1 or greater opts
+	// into the v0.4.1 replay-protection path: the handler
+	// checks env.Nonce > stored_last_nonce[sender] before
+	// applying the debit, and atomic-commits the bump alongside
+	// the balance change.
+	Nonce uint64 `json:"nonce,omitempty"`
 	Signature   string   `json:"signature"`
 	// PublicKey is hex-encoded ML-DSA-87 public key (for P2P preflight / verifiers); not part of the signed payload.
 	PublicKey string `json:"public_key,omitempty"`

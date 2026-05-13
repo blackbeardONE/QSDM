@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -135,4 +136,27 @@ func (fs *FileStorage) GetRecentTransactions(address string, limit int) ([]map[s
 // GetTransaction returns error (file storage doesn't support transaction lookup by ID)
 func (fs *FileStorage) GetTransaction(txID string) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("transaction lookup not supported by file storage")
+}
+
+// v0.4.1 (Session 99): per-account nonce + atomic-debit stubs.
+// FileStorage doesn't track balances at all (GetBalance returns
+// 0, UpdateBalance is a no-op), so the v0.4.1 replay-protection
+// path is genuinely meaningless here — there's no balance to
+// debit and no nonce to bump. The honest answer for a
+// file-storage-backed validator is "you cannot use
+// /wallet/submit-signed; pick a real backend." We surface that
+// cleanly so the handler doesn't fall through to a silent no-op.
+func (fs *FileStorage) GetNonce(address string) (uint64, error) {
+	return 0, fmt.Errorf("FileStorage.GetNonce: file storage does not track per-account nonces (use SQLite or Scylla for v0.4.1 replay protection)")
+}
+
+func (fs *FileStorage) ApplyTransferAtomic(
+	ctx context.Context,
+	sender, recipient string,
+	amount, fee float64,
+	envelopeNonce uint64,
+	txID string,
+	rawEnvelope []byte,
+) error {
+	return fmt.Errorf("FileStorage.ApplyTransferAtomic: file storage does not support atomic transfers (use SQLite or Scylla for v0.4.1)")
 }

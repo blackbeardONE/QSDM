@@ -781,6 +781,28 @@ func (s *ScyllaStorage) GetTransaction(txID string) (map[string]interface{}, err
 	return tx, nil
 }
 
+// v0.4.1 (Session 99): per-account nonce + atomic-debit stubs.
+// Real Scylla LWT (CAS) implementation lands in Session 100/101
+// per QSDM/docs/docs/V041_REPLAY_PROTECTION_DESIGN.md §3.2. Until
+// then a Scylla-backed validator returns "not yet implemented"
+// rather than silently falling through to the v0.4.0 non-atomic
+// path — operators wanting v0.4.1 replay protection on Scylla
+// should hold the upgrade until §3.2 ships.
+func (s *ScyllaStorage) GetNonce(address string) (uint64, error) {
+	return 0, fmt.Errorf("ScyllaStorage.GetNonce: not yet implemented (v0.4.1 §3.2)")
+}
+
+func (s *ScyllaStorage) ApplyTransferAtomic(
+	ctx context.Context,
+	sender, recipient string,
+	amount, fee float64,
+	envelopeNonce uint64,
+	txID string,
+	rawEnvelope []byte,
+) error {
+	return fmt.Errorf("ScyllaStorage.ApplyTransferAtomic: not yet implemented (v0.4.1 §3.2 — CQL LWT pending)")
+}
+
 // Ready runs a lightweight cluster query.
 func (s *ScyllaStorage) Ready() (resErr error) {
 	defer func() {
