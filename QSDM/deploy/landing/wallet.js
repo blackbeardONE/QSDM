@@ -609,7 +609,7 @@
           <code>qsdmminer-console --protocol=v2</code>.
           See <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">MINER_QUICKSTART</a>
           (and <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md#appendix-b-enrollment-funding-status">Appendix&nbsp;B</a>
-          for the funding caveat &mdash; v0.3.2 has no public faucet yet).
+          for the funding caveat &mdash; v0.3.3 has no public faucet yet).
         </div>
       </div>`;
     setStatus('bal-status', `Balance retrieved: ${formatCell(body.balance)}`, 'ok');
