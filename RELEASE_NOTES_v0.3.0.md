@@ -6,15 +6,15 @@
 
 | | Value |
 |---|---|
-| Target tag (Go core) | `v0.3.3` — **pushed** (`https://github.com/blackbeardONE/QSDM/releases/tag/v0.3.3`). Predecessors: `v0.3.0` (foundation), `v0.3.1`, `v0.3.2` (v1 deprecation), `v0.3.3` (sessions 89-91 durability + mint deprecation, 2026-05-12). |
+| Target tag (Go core) | `v0.4.0` — **pushed** (`https://github.com/blackbeardONE/QSDM/releases/tag/v0.4.0`). Predecessors: `v0.3.0` (foundation), `v0.3.1`, `v0.3.2` (v1 deprecation), `v0.3.3` (sessions 89-91 durability + mint deprecation, 2026-05-12), `v0.4.0` (sessions 95-97 self-custody Send transaction backend + browser tab + WASM signing, 2026-05-13). |
 | Target tag (JavaScript SDK) | `sdk-js-v0.3.0` — held local pending `NPM_TOKEN` |
-| Verified at git HEAD | `de2bf30` (session 73 baseline) → `c00fccd` (session 78, green release run) → `03edf41` (session 91, v0.3.3 tag head) |
-| Green CI run | `release-container.yml` run `25650171771` (10 / 10 jobs success) |
-| Container images | `ghcr.io/blackbeardone/{qsdm,qsdm-validator,qsdm-miner}:0.3.0` (cosign-signed + SPDX SBOM attested) |
-| Release assets | 66 files (20 binaries + 22 `.sig` + 22 `.pem` + source SBOM + `SHA256SUMS`) |
+| Verified at git HEAD | `de2bf30` (session 73 baseline) → `c00fccd` (session 78, green release run) → `03edf41` (session 91, v0.3.3 tag head) → `318ed5e` (session 96, v0.4.0 tag head) |
+| Green CI run | `release-container.yml` run `25811046765` (10 / 10 jobs success at v0.4.0, was `25650171771` at v0.3.0) |
+| Container images | `ghcr.io/blackbeardone/{qsdm,qsdm-validator,qsdm-miner}:0.4.0` (cosign-signed + SPDX SBOM attested; manifest-list digests pinned in `RELEASE_EVIDENCE_v0.4.0.md`) |
+| Release assets | v0.4.0 surface: 53 files (15 binaries + 17 `.sig` + 17 `.pem` + 3 SBOMs + `SHA256SUMS`) |
 | Go toolchain | `1.25.10` (declared in `go.mod`; auto-fetched by every runner from the local bootstrap toolchain) |
 | `golang.org/x/net` | `v0.53.0` |
-| Audit-checklist size | 56 items in `pkg/audit/checklist.go` (full-suite render: 84 items including review-driven extras) — `store-05` (Session 90, NGC ring persister), `net-05` (Session 89, libp2p host key), and `api-05` (Session 91, `/wallet/mint` → 410) |
+| Audit-checklist size | 56 items in `pkg/audit/checklist.go` (full-suite render: 84 items including review-driven extras) — `store-05` (Session 90, NGC ring persister), `net-05` (Session 89, libp2p host key), `api-05` (Session 91, `/wallet/mint` → 410), and `api-06` (Session 96, self-custody `/wallet/submit-signed`) |
 | `govulncheck` reachable findings | 1 (`GO-2024-3218`, tracked) |
 | Non-`-short` test pass rate | 67 / 67 packages |
 | JS SDK test pass rate | 17 / 17 cases |
@@ -1347,20 +1347,192 @@ exposure. They are not a regression — `/wallet/send` has the
 exact same posture today — but they ARE a real blocker for
 public endpoint exposure on a balance-bearing chain.
 
-**Production-deploy posture.** No emergency push needed. v0.4.0
-binaries do not exist yet on BLR1; the next planned deploy will
-cut a `v0.4.0` tag (after Phase B closes) and ship the
-self-custody endpoint alongside the existing `/wallet/send`. The
-endpoint is in the source tree today (`03edf41`→`HEAD`), so a
-private replay against a local validator is straightforward via
-the `TestSubmitSigned_*` fixtures.
+**Production-deploy posture (at end-of-Session-95).** No emergency
+push needed. v0.4.0 binaries do not exist yet on BLR1; the next
+planned deploy will cut a `v0.4.0` tag (after Phase B closes) and
+ship the self-custody endpoint alongside the existing
+`/wallet/send`. The endpoint is in the source tree today
+(`03edf41`→`HEAD`), so a private replay against a local
+validator is straightforward via the `TestSubmitSigned_*` fixtures.
+
+### Session 96 — v0.4.0 Phase B: WASM signing helper + browser Send tab shipped
+
+Phase B of the v0.4 design closes the source-tree side of the
+self-custody Send flow. With the v0.4.0 Phase A backend already in
+place (Session 95), Phase B is what makes the new endpoint actually
+useful to a browser user — without it the only callers would be
+custom JS hand-built against the OpenAPI spec.
+
+**What landed:**
+
+- **WASM signing helper.**
+  `QSDM/source/wasm_modules/wallet/cmd/qsdm-wallet/main.go` gains a
+  new exported global `qsdm_wallet_sign_transaction(envelope_json,
+  private_key_hex, public_key_hex) → signed_envelope_json`. The
+  helper (a) parses the envelope into a local `txEnvelope` struct
+  that mirrors `pkg/wallet.TransactionData` field-for-field,
+  (b) clears `signature` + `public_key`, (c) cross-checks that the
+  envelope's `sender` matches `hex(sha256(public_key_hex))` —
+  rejects with an inline error if not — (d) `json.Marshal`s the
+  cleared envelope into the canonical signing-payload bytes (this
+  is the byte-for-byte counterpart to the server-side canonical
+  form; using Go's `json.Marshal` on both sides sidesteps the
+  JS/Go float-format drift that bites on small fee values like
+  `1e-7` → Go `"1e-07"` vs. JS `"1e-7"`), (e) ML-DSA-87-signs the
+  canonical bytes via the existing `circl/mldsa87` codepath, and
+  (f) re-marshals the final envelope with `signature` + `public_key`
+  populated. The WASM module's `apiVersion` constant ticks
+  `v1 → v2` so anyone caching the old build can fail-loud.
+- **Browser Send tab.**
+  `QSDM/deploy/landing/wallet.html` gains a fifth tab `Send
+  transaction` next to the existing Generate / Encrypt / Decrypt /
+  Balance tabs. The form takes `recipient`, `amount`, `fee`,
+  `geotag`, optional `parent_cells`, optional endpoint override,
+  and an inline warning banner about the two v0.4.0 known gaps
+  (no per-account nonce, non-atomic debit). The submit handler in
+  `wallet.js` (a) reads the user's keystore file, (b) prompts for
+  the keystore passphrase, (c) decrypts the ML-DSA-87 private key
+  into a JS `Uint8Array` (zeroed on completion), (d) builds the
+  unsigned envelope including a `tx_id` of
+  `sha256(sender|recipient|amount|fee|geotag|nanoseconds)[:32]`,
+  (e) invokes `qsdm_wallet_sign_transaction`, and (f) POSTs the
+  signed envelope to `/api/v1/wallet/submit-signed`. Result is
+  rendered as a status line (success / 4xx-rejection / network
+  error) that surfaces the server-emitted error reason verbatim.
+- **WASM rebuild + SRI refresh.** `QSDM/deploy/landing/wallet.wasm`
+  grew from ~3.24 MB to ~3.88 MB to embed the new export
+  (`qsdm_wallet_sign_transaction` confirmed present via
+  `wasm-objdump -x | grep` and again via a runtime
+  `globalThis.qsdm_wallet_sign_transaction` typeof check). SRI
+  hashes refreshed:
+  - `wallet.wasm` →
+    `sha384-XKMSFMnk27ul5OLXqm2zFMPtsdSVUGNXK8sChbKc/Y2nIqVLEB330Ll+UDhz0Eb6`
+  - `wallet.js` (initial Phase B value) →
+    `sha384-RhWdFOoBDj5QlZ5eRwbYEpB3l2HVjLomt2F99v6OVWklQij/UogtRsNqoEl3P0O2`
+    (refreshed to `S7vr1mAtCqz5ww1XEdINXJXYsqupNK3tsjS3a/RO97wbxLlON5grl3/ZrvPsVJgZ`
+    at the Session 97 v0.4.0 landing pill bump).
+- **OpenAPI doc.** `QSDM/docs/docs/openapi.yaml` gains a full
+  entry for `/wallet/submit-signed` documenting the request/response
+  bodies, the canonical signing-payload contract, idempotency
+  semantics, the 8 `qsdm_wallet_send_total{result=…}` tags, and
+  the two v0.4.0 known gaps.
+- **MINER_QUICKSTART Appendix B.** Split the "Transfer from
+  existing CELL holder" path into two rows — validator-signed
+  (`/wallet/send`, requires the CELL holder to own a validator
+  enrollment) and self-custody (`/wallet/submit-signed`, signed in
+  the holder's browser tab, no validator-side wallet needed).
+- **Audit row.** `api-06` flipped from BACKEND IMPLEMENTED →
+  FULLY IMPLEMENTED with the in-line gap-tracking preserved.
+- **Status update on
+  [`V040_WALLET_SEND_DESIGN.md`](QSDM/docs/docs/V040_WALLET_SEND_DESIGN.md):**
+  Phase A + Phase B both marked SHIPPED. Future-work section
+  retains the per-account nonce + atomic debit/credit items.
+
+**Closing state of Session 96.** All v0.4.0 source-tree work is
+complete on commit `318ed5e` — handler, route, rate-limit,
+metric tags, tests, WASM helper, browser tab, OpenAPI, runbook,
+audit row. **No production deploy yet** — that ships in
+Session 97.
+
+### Session 97 — v0.4.0 tag cut + BLR1 deploy + supply-chain evidence
+
+What this session does: take the source-tree-complete v0.4.0 code
+from Session 96 (`318ed5e`) and produce a publicly-verifiable
+production release with live anchors.
+
+**What landed:**
+
+1. **Push two unpushed Phase A + Phase B commits** to
+   `origin/main` (`0984a98..318ed5e`). Clean fast-forward; no
+   force-push.
+2. **Annotated tag `v0.4.0` at `318ed5e`** with the full release
+   description inline (headline, at-a-glance, known v0.4.0 gaps,
+   what's safe to publish, pending external blockers). Pushed to
+   origin.
+3. **`release-container.yml` run `25811046765`** — fired
+   automatically on the tag push. **10/10 jobs green**: 5
+   per-platform binary builds (linux/amd64, linux/arm64,
+   darwin/amd64, darwin/arm64, windows/amd64), source SBOM,
+   3 GHCR image builds (`qsdm`, `qsdm-validator`, `qsdm-miner`),
+   and the attach-binaries-and-signatures step. 53 cosign-signed
+   assets attached to the release page (15 binaries + 17 `.sig`
+   + 17 `.pem` + 3 SBOMs + `SHA256SUMS`).
+4. **Cosign + Rekor evidence pass** documented in
+   [`RELEASE_EVIDENCE_v0.4.0.md`](QSDM/docs/docs/RELEASE_EVIDENCE_v0.4.0.md).
+   7/7 supply-chain checks green: SHA256SUMS,
+   `qsdmminer-console-linux-amd64`, `qsdm-source-sbom.spdx.json`,
+   `ghcr.io/blackbeardone/qsdm:0.4.0`,
+   `ghcr.io/blackbeardone/qsdm-validator:0.4.0`,
+   `ghcr.io/blackbeardone/qsdm-miner:0.4.0`, and binary
+   content-hash anchor (`7009d562dfb302ed…3e2e8711`). The
+   evidence file also pins the OCI manifest-list digests
+   (`sha256:00ccc73d…1325`, `sha256:a6cff859…ac28e`,
+   `sha256:5176fb9c…1590`) for tag-immune verification, and the
+   `wallet.wasm` SRI hash for browser-wallet integrity.
+5. **BLR1 binary swap.** Cross-compiled `cmd/qsdm` on Windows
+   (`go.exe build -trimpath -ldflags '-s -w -X ...buildinfo.Version=v0.4.0
+   -X ...buildinfo.GitSHA=318ed5e -X ...buildinfo.BuildDate=2026-05-13T16:05:00Z'
+   -o qsdm-v0.4.0-linux-amd64 ./cmd/qsdm`), validated locally
+   (`SubmitSignedTransaction` and `/wallet/submit-signed` strings
+   present in the 30.96 MB ELF; sha256
+   `2874f088039bace6662754e2461c1f229b223a42deefc185fae5270e46d6d4fb`),
+   scp'd to BLR1, stopped `qsdm.service`, swapped
+   `/opt/qsdm/qsdm` (backup at `/opt/qsdm/qsdm.v033.bak`), bumped
+   `QSDM_BUILD_VERSION` to `v0.4.0` in
+   `/etc/systemd/system/qsdm.service.d/version.conf`, reloaded
+   systemd, restarted. **All journalctl lines clean** — chain
+   restored from disk (`tip_height=57743`, `accounts_loaded=38`,
+   `enrollments_loaded=3`, `receipts_loaded=56436`), v2
+   attestation dispatcher wired, spec-check baseline loaded.
+6. **Live-environment verification.** Per
+   `RELEASE_EVIDENCE_v0.4.0.md` "Live-environment anchors"
+   table: `https://api.qsdm.tech/api/v1/status` now reports
+   `"version":"v0.4.0"`; `POST /api/v1/wallet/submit-signed` with
+   body `{}` returns **HTTP 400 + `"invalid sender address: ...
+   cannot be empty"`** (proves the handler is in the routing
+   tree, parsed the JSON, and rejected on the first contract
+   check exactly as designed); GET on the same path returns
+   **HTTP 405 + `"method not allowed"`** (proves route is
+   registered POST-only). On v0.3.3 both probes returned HTTP
+   302 — the status-code split is the strong route-registered
+   signal that the v0.4.0 handler is now serving.
+7. **qsdm.tech landing pill bump.** `QSDM/deploy/landing/index.html`
+   ver-pill text `v0.3.3 → v0.4.0`, GitHub release link bumped,
+   funding caveat rewritten to surface the new Send tab path,
+   Current release lead paragraph rewritten around self-custody
+   Send. `wallet.js` funding-caveat string also bumped. `wallet.js`
+   SRI hash recomputed
+   (`S7vr1mAtCqz5ww1XEdINXJXYsqupNK3tsjS3a/RO97wbxLlON5grl3/ZrvPsVJgZ`)
+   and installed in `wallet.html`. WASM SRI unchanged (3.88 MB
+   binary already deployed in Session 96 — but BLR1 had only the
+   3.24 MB pre-v0.4 build; pushed the correct 3.88 MB build now,
+   so the public sha384 over `https://qsdm.tech/wallet.wasm`
+   matches the SRI in `wallet.js` byte-for-byte:
+   `XKMSFMnk27ul5OLXqm2zFMPtsdSVUGNXK8sChbKc/Y2nIqVLEB330Ll+UDhz0Eb6`).
+8. **Backups preserved on BLR1:**
+   - Binary: `/opt/qsdm/qsdm.v033.bak`
+     (sha256 `4ceefbb75b04b1d472d2a94ec6cccdc35ce045b29e1455eef4add0f06a5dc876`).
+   - Landing dir: `/var/www/qsdm.v033.bak.20260513T161123Z/`.
+
+**Risk profile of the v0.4.0 deploy.** Same as v0.3.3 — solo
+validator (no peer set to coordinate with), backup binary on
+disk, ~5-second cold-start chain restore from disk on
+`systemctl restart`. The two `mining/submit` requests in the
+post-deploy journal tail (last 5 lines) confirm in-flight mining
+work survived the swap (`POST /api/v1/mining/submit status:200
+duration_ms:2`). No data-plane state was touched — `chain.ndjson`,
+`accounts.json`, `enrollment.json`, `receipts.ndjson`, NGC
+attestation persistence (`store-05`), and the libp2p host key
+(`net-05`) all carry forward.
 
 ## What's safe to publish today (post-publish status)
 
 These artefacts are sign-off-ready and can be shipped the moment the corresponding external blocker clears:
 
-- ✅ **GHCR container images** (`qsdm`, `qsdm-validator`, `qsdm-miner` `:0.3.0`). **Published.** `release-container.yml` keyless-signs them via Sigstore OIDC and attaches an SPDX 2.3 SBOM as a cosign attestation. Reproducible with `cosign verify` (see `V030_POST_RELEASE_VERIFICATION.md` §"Step 5").
-- ✅ **Linux / Windows / macOS binaries** (`qsdmminer`, `qsdmminer-console`, `trustcheck`, `genesis-ceremony` × 5 platforms = 20 binaries) with cosign signatures and a source SBOM. **Published.** Reproducible with `cosign verify-blob` (see `V030_POST_RELEASE_VERIFICATION.md` §"Step 4").
+- ✅ **GHCR container images** (`qsdm`, `qsdm-validator`, `qsdm-miner` `:0.4.0`). **Published and live.** `release-container.yml` keyless-signs them via Sigstore OIDC and attaches an SPDX 2.3 SBOM as a cosign attestation. v0.4.0 verification re-run on 2026-05-13 — see [`RELEASE_EVIDENCE_v0.4.0.md`](QSDM/docs/docs/RELEASE_EVIDENCE_v0.4.0.md) for manifest-list digests and reproduction commands.
+- ✅ **Linux / Windows / macOS binaries** (`qsdmminer-console`, `trustcheck`, `genesis-ceremony` × 5 platforms = 15 binaries) with cosign signatures and a source SBOM. **Published and verified.** v0.4.0 release page carries 53 cosign-signed assets total. Reproducible with `cosign verify-blob` (see `V030_POST_RELEASE_VERIFICATION.md` §"Step 4" and `RELEASE_EVIDENCE_v0.4.0.md` §"Reproducing this evidence").
+- ✅ **BLR1 production validator at v0.4.0.** `https://api.qsdm.tech/api/v1/status` reports `"version":"v0.4.0"`; the new self-custody endpoint `/api/v1/wallet/submit-signed` is live and reachable from the public domain (POST `{}` → HTTP 400 invalid-sender, GET → HTTP 405 method-not-allowed). v0.3.3 binary preserved at `/opt/qsdm/qsdm.v033.bak` for rollback.
+- ✅ **qsdm.tech landing pill + browser-wallet Send tab.** Pill text and GitHub release link both at v0.4.0; new self-custody Send tab live at `https://qsdm.tech/wallet/`; `wallet.wasm` and `wallet.js` SRI hashes on the served files match the in-tree integrity hashes byte-for-byte.
 - ⏳ **`qsdm-sdk@0.3.0` on npm.** Re-push tag `sdk-js-v0.3.0` (moved to the post-rename commit); the `.github/workflows/sdk-javascript-publish.yml` workflow validates that the tag suffix matches `package.json`, re-runs the test suite as a `prepublishOnly` gate, and runs `npm publish --provenance --access public`. External blocker: `NPM_TOKEN` repo secret with 2FA-bypass (the previous attempt under the bare name `qsdm` was rejected by the registry's typo-squatting heuristic — see *Session 81*; the package was renamed `qsdm-sdk` to satisfy that check while preserving the QSDM brand).
 
 ## Remaining external blockers
