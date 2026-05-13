@@ -200,6 +200,16 @@ func isPublicEndpoint(path string) bool {
 		"/api/v1/wallet/create", // Public for game server integration
 		"/api/v1/wallet/balance", // Public for game server to check balances (address required in query)
 		"/api/v1/wallet/mint",    // Removed in v0.3.3 (Session 91): always returns 410 Gone with a migration message. Kept in publicPaths so external callers that still hit the path receive a structured 410 instead of a confusing 401 redirect to /api/auth/login.
+		// /api/v1/wallet/submit-signed is the v0.4.0 (Session 95)
+		// self-custody send endpoint. Intentionally public because the
+		// cryptographic identity IS the envelope's `public_key` field
+		// (sender = hex(sha256(public_key)), verified inside the
+		// handler) — demanding a JWT on top would force the user to
+		// reveal a server-side session identity that has no bearing on
+		// the on-chain debit. Per-IP rate-limit (security.go) handles
+		// abuse; `result=signature_invalid` / `result=sender_mismatch`
+		// counters surface a misbehaving caller.
+		"/api/v1/wallet/submit-signed",
 		"/api/v1/monitoring/ngc-proof",
 		"/api/v1/monitoring/ngc-challenge",
 		"/api/v1/monitoring/ngc-proofs",

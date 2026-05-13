@@ -201,7 +201,17 @@ func (rl *RateLimiter) getEndpointLimit(path, method string) int {
 	sensitiveEndpoints := map[string]int{
 		"/api/v1/auth/login":    5,  // 5 requests per minute for login
 		"/api/v1/auth/register": 3, // 3 requests per minute for registration
-		"/api/v1/wallet/send":  10, // 10 transactions per minute
+		"/api/v1/wallet/send":          10, // 10 transactions per minute
+		// v0.4.0 (Session 95) self-custody endpoint. Same per-minute
+		// ceiling as /wallet/send. We don't go lower because a
+		// well-funded honest user might fan out small payments (e.g.
+		// game-NPC payouts) and 10/min is already the tightest
+		// reasonable bound. We don't go higher because every accepted
+		// call writes a row to storage + broadcasts on the p2p tx
+		// topic, and a misbehaving signer would otherwise be free to
+		// flood the gossip mesh with cryptographically-valid envelopes
+		// that drain ONLY their own balance (until they hit 402).
+		"/api/v1/wallet/submit-signed": 10,
 		"/api/v1/monitoring/ngc-proof":    30, // NGC sidecar batches
 		"/api/v1/monitoring/ngc-challenge": 15, // tight: nonce minting (per IP per minute)
 		"/api/v1/monitoring/ngc-proofs":   60, // dashboard polling

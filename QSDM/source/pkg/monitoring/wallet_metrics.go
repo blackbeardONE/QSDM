@@ -28,11 +28,20 @@ import "sync/atomic"
 var (
 	walletSendSuccess          atomic.Uint64 // 201 created, tx stored, optional broadcast
 	walletSendInvalidRequest   atomic.Uint64 // 400: validation failure (recipient/amount/fee/geotag/parents)
-	walletSendUnauthenticated  atomic.Uint64 // 401: missing/invalid Claims
+	walletSendUnauthenticated  atomic.Uint64 // 401: missing/invalid Claims (legacy /wallet/send) or signature invalid (/wallet/submit-signed)
 	walletSendNvidiaLockBlocked atomic.Uint64 // 403: NVIDIA-lock gate denied (no qualifying NGC proof)
 	walletSendNoWalletService  atomic.Uint64 // 503: wallet service not initialized
 	walletSendTxCreateFailed   atomic.Uint64 // 500: WalletService.CreateTransaction error
 	walletSendStoreFailed      atomic.Uint64 // 500: storage.StoreTransaction error
+	// v0.4.0 (Session 95) — terminal outcomes specific to the
+	// self-custody POST /api/v1/wallet/submit-signed handler. They
+	// share the `qsdm_wallet_send_total` family because they're
+	// semantically "a transaction got sent", just with a different
+	// signer-identity model.
+	walletSendSenderMismatch     atomic.Uint64 // 400: envelope.sender != hex(sha256(envelope.public_key))
+	walletSendSignatureInvalid   atomic.Uint64 // 422: ML-DSA-87 signature does not verify under envelope.public_key
+	walletSendInsufficientBalance atomic.Uint64 // 402: storage.GetBalance(sender) < amount + fee
+	walletSendDuplicate          atomic.Uint64 // 409: tx_id already stored (idempotent retry)
 )
 
 // Result tags for qsdm_wallet_send_total.
@@ -44,6 +53,11 @@ const (
 	WalletSendResultNoWalletService   = "no_wallet_service"
 	WalletSendResultTxCreateFailed    = "tx_create_failed"
 	WalletSendResultStoreFailed       = "store_failed"
+	// v0.4.0 — added for /api/v1/wallet/submit-signed (Session 95).
+	WalletSendResultSenderMismatch      = "sender_mismatch"
+	WalletSendResultSignatureInvalid    = "signature_invalid"
+	WalletSendResultInsufficientBalance = "insufficient_balance"
+	WalletSendResultDuplicate           = "duplicate"
 )
 
 // RecordWalletSend increments qsdm_wallet_send_total{result=...} by 1.
@@ -69,6 +83,14 @@ func RecordWalletSend(result string) {
 		walletSendTxCreateFailed.Add(1)
 	case WalletSendResultStoreFailed:
 		walletSendStoreFailed.Add(1)
+	case WalletSendResultSenderMismatch:
+		walletSendSenderMismatch.Add(1)
+	case WalletSendResultSignatureInvalid:
+		walletSendSignatureInvalid.Add(1)
+	case WalletSendResultInsufficientBalance:
+		walletSendInsufficientBalance.Add(1)
+	case WalletSendResultDuplicate:
+		walletSendDuplicate.Add(1)
 	}
 }
 
@@ -88,6 +110,10 @@ func WalletSendCounts() []struct {
 		{WalletSendResultNoWalletService, walletSendNoWalletService.Load()},
 		{WalletSendResultTxCreateFailed, walletSendTxCreateFailed.Load()},
 		{WalletSendResultStoreFailed, walletSendStoreFailed.Load()},
+		{WalletSendResultSenderMismatch, walletSendSenderMismatch.Load()},
+		{WalletSendResultSignatureInvalid, walletSendSignatureInvalid.Load()},
+		{WalletSendResultInsufficientBalance, walletSendInsufficientBalance.Load()},
+		{WalletSendResultDuplicate, walletSendDuplicate.Load()},
 	}
 }
 
@@ -257,7 +283,7 @@ func walletPrometheusMetrics() []Metric {
 	for _, p := range WalletSendCounts() {
 		out = append(out, Metric{
 			Name: "qsdm_wallet_send_total",
-			Help: "POST /api/v1/wallet/send terminal outcomes by per-result tag (success / invalid_request / unauthenticated / nvidia_lock_blocked / no_wallet_service / tx_create_failed / store_failed). Submesh-policy and dedupe rejects live in their own dedicated counters (qsdm_submesh_api_wallet_reject_*_total and qsdm_p2p_wallet_ingress_dedupe_skip_total).",
+			Help: "Terminal outcomes for POST /api/v1/wallet/send (validator-signed) and POST /api/v1/wallet/submit-signed (self-custody, v0.4.0). Per-result tags: success / invalid_request / unauthenticated / nvidia_lock_blocked / no_wallet_service / tx_create_failed / store_failed / sender_mismatch / signature_invalid / insufficient_balance / duplicate. The sender_mismatch + signature_invalid + insufficient_balance + duplicate tags increment only on the submit-signed path. Submesh-policy and dedupe rejects live in their own dedicated counters (qsdm_submesh_api_wallet_reject_*_total and qsdm_p2p_wallet_ingress_dedupe_skip_total).",
 			Type: MetricCounter,
 			Value: float64(p.Count),
 			Labels: map[string]string{"result": p.Result},

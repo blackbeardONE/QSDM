@@ -1260,6 +1260,101 @@ exposure today is bounded by the fact that no real caller targets
 the endpoint (no game-server integration exists), so the surface
 is theoretical until a malicious caller stumbles onto the path.
 
+### Session 95 — v0.4.0 Phase A: `POST /api/v1/wallet/submit-signed` backend shipped
+
+The v0.4 design surfaced in Session 94 (see
+[`V040_WALLET_SEND_DESIGN.md`](QSDM/docs/docs/V040_WALLET_SEND_DESIGN.md))
+identified an architectural mismatch between the existing
+`/api/v1/wallet/send` (which signs from the validator's own
+wallet — `pkg/wallet/wallet.go::CreateTransaction` always sets
+`Sender = ws.address` and ignores JWT claims) and the
+self-custody browser-wallet use case where the user's private
+key never leaves the browser. Session 95 closes Phase A of that
+design: the **server-side backend is live in the source tree**;
+Phase B (WASM `walletSignTransaction` helper + browser "Send"
+tab + `wallet.wasm` rebuild + OpenAPI doc) is the next session's
+deliverable.
+
+**What landed:**
+
+- **New handler** at `pkg/api/handlers.go::SubmitSignedTransaction`
+  bound to `POST /api/v1/wallet/submit-signed`. Five invariants
+  enforced on every request: (a) `sender == hex(sha256(public_key))`
+  cryptographic binding (counter:
+  `qsdm_wallet_send_total{result="sender_mismatch"}`); (b) ML-DSA-87
+  signature verified over the canonical payload (envelope JSON
+  with `signature` + `public_key` cleared, then `json.Marshal`
+  with Go's default struct-order field emission) against the
+  envelope's own `public_key` — there is no codepath that falls
+  back to a validator-side keypair (counter: `signature_invalid`);
+  (c) pre-flight `storage.GetBalance(sender)` check returning
+  HTTP 402 on shortfall (counter: `insufficient_balance`);
+  (d) idempotency on `tx_id` via `storage.GetTransaction` —
+  first call returns 200 + `status:"accepted"`, duplicate returns
+  409 + `status:"duplicate"` (counter: `duplicate`); (e) every
+  terminal path increments `qsdm_wallet_send_total{result=...}`
+  with one of `{success, invalid_request, sender_mismatch,
+  signature_invalid, insufficient_balance, duplicate,
+  store_failed, no_wallet_service}`.
+- **Storage interface bump:** `pkg/api/server.go::StorageInterface`
+  now includes `GetTransaction(txID string) (map[string]interface{}, error)`.
+  All three backends (SQLite, Scylla, file-storage) already
+  implement it; the local `Storage` interface in
+  `cmd/qsdm/main.go` was matched.
+- **Monitoring:** `pkg/monitoring/wallet_metrics.go` gained four
+  new result tags (`sender_mismatch`, `signature_invalid`,
+  `insufficient_balance`, `duplicate`) on the
+  `qsdm_wallet_send_total` family. Exposition surface remains
+  one counter per (endpoint, result) so existing dashboards keep
+  evaluating against present series.
+- **Public-path + rate-limit wiring:** `pkg/api/middleware.go`
+  adds `/api/v1/wallet/submit-signed` to `publicPaths` (the
+  cryptographic identity IS the envelope's `public_key` — JWT
+  would add nothing); `pkg/api/security.go` caps it at 10 req/min
+  per IP, identical to `/wallet/send`.
+- **Tests:** 8-case matrix in `pkg/api/handlers_test.go`
+  (`TestSubmitSigned_{HappyPath,MethodNotAllowed,MalformedJSON,SenderMismatch,BadSignature,DuplicateTxID,InsufficientBalance,NoWalletService}`)
+  — all green on the non-CGO `circl/mldsa87` build. The mock
+  storage was upgraded from "lies about every tx_id existing" to a
+  real `transactions[txID]` indexed map so the idempotency tests
+  can distinguish first-send from duplicate-send.
+- **Audit row:** `api-06` flipped from "DESIGN PHASE" to
+  "BACKEND IMPLEMENTED" with the known-gap list inline. Row
+  count unchanged (56).
+
+**Known v0.4.0 gaps shipped intentionally (tracked in
+`V040_WALLET_SEND_DESIGN.md` Future work):**
+
+1. **No per-account nonce.** A client controlling the nanosecond
+   timestamp inside the `tx_id` seed can craft arbitrarily many
+   distinct `tx_id`s for the same logical transfer. Same-`tx_id`
+   replay IS prevented (the 409-duplicate path); cross-`tx_id`
+   replay is NOT. Fix planned for **v0.4.1** (per-sender
+   monotonically-increasing nonce, rejected if the new envelope's
+   nonce ≤ the last-seen one for that sender).
+2. **Non-atomic balance debit.**
+   `pkg/storage/sqlite.go::UpdateBalance` warns-and-proceeds on
+   negative balance (it logs `"Warning: failed to update sender
+   balance"` but doesn't roll back). The pre-flight `GetBalance`
+   check we do here closes the obvious case, but a concurrent
+   race between two simultaneous submit-signed calls from the
+   same sender can still drive the on-disk balance below zero.
+   Fix planned for **v0.4.1** (single-transaction atomic
+   debit/credit with a balance-non-negative `CHECK` constraint).
+
+Both gaps must close before `mining-05` (incentivised testnet)
+exposure. They are not a regression — `/wallet/send` has the
+exact same posture today — but they ARE a real blocker for
+public endpoint exposure on a balance-bearing chain.
+
+**Production-deploy posture.** No emergency push needed. v0.4.0
+binaries do not exist yet on BLR1; the next planned deploy will
+cut a `v0.4.0` tag (after Phase B closes) and ship the
+self-custody endpoint alongside the existing `/wallet/send`. The
+endpoint is in the source tree today (`03edf41`→`HEAD`), so a
+private replay against a local validator is straightforward via
+the `TestSubmitSigned_*` fixtures.
+
 ## What's safe to publish today (post-publish status)
 
 These artefacts are sign-off-ready and can be shipped the moment the corresponding external blocker clears:

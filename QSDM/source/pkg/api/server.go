@@ -54,6 +54,11 @@ type StorageInterface interface {
 	GetBalance(address string) (float64, error)
 	// Ready returns nil if the storage backend is reachable (used by GET /api/v1/health/ready).
 	Ready() error
+	// GetTransaction returns the stored envelope for a tx_id, or
+	// an error (which on a "not found" miss is a wrapped storage
+	// error rather than (nil, nil)). Added in v0.4.0 (Session 95)
+	// for the /wallet/submit-signed idempotency check.
+	GetTransaction(txID string) (map[string]interface{}, error)
 }
 
 // NewServer creates a new API server instance.

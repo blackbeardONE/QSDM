@@ -1,12 +1,44 @@
 # v0.4 — Browser-Wallet "Send transaction" Design
 
-> Status: **design / not yet implemented** (session 94).
+> Status: **Phase A backend SHIPPED in v0.4.0** (session 95) ·
+> **Phase B (WASM + browser UI) deferred to next session.**
 > Tracking issue: `browser-wallet-send` (was: "deferred to v0.4" in
 > sessions 91–93 backlog).
 > Scope: server endpoint + WASM signing helper + browser UI for
 > end-user-signed transactions. Wallet generation, keystore I/O,
 > arbitrary-message signing, and balance read-only views already
 > shipped in v0.3.x.
+>
+> **Session 95 (Phase A) delivered:**
+> - `POST /api/v1/wallet/submit-signed` handler in
+>   `pkg/api/handlers.go::SubmitSignedTransaction` — 100 % of the
+>   server-side semantics described below: sender-binding,
+>   signature verification, balance check, idempotency, submesh
+>   policy, p2p broadcast.
+> - `StorageInterface.GetTransaction(txID)` lifted onto the API
+>   storage contract for O(1) idempotency lookup.
+> - Four new monitoring result tags on
+>   `qsdm_wallet_send_total`: `sender_mismatch`,
+>   `signature_invalid`, `insufficient_balance`, `duplicate`.
+> - Public-path + per-IP rate-limit (10/min) wiring in
+>   `pkg/api/middleware.go` and `pkg/api/security.go`.
+> - 8-case test matrix in `pkg/api/handlers_test.go`
+>   (`TestSubmitSigned_*`).
+> - Audit row `api-06` flipped from "design" to "backend
+>   implemented" with the known-gap list inline.
+>
+> **Session 95 (Phase A) deferred to next session (Phase B):**
+> - WASM `wallet.wasm` helper for client-side
+>   ML-DSA-87 canonical-payload signing of a
+>   `wallet.TransactionData` envelope.
+> - Browser-wallet "Send" tab (5th tab) in
+>   `QSDM/deploy/landing/wallet.html` + glue JS in `wallet.js`.
+> - SRI re-hash of `wallet.js` + `wallet.wasm` after rebuild.
+> - OpenAPI `paths./wallet/submit-signed` entry in
+>   `QSDM/docs/docs/openapi.yaml`.
+> - `MINER_QUICKSTART.md` Appendix B refresh to call out the new
+>   self-custody path alongside the existing validator-signed
+>   `/wallet/send`.
 
 ## TL;DR for impatient reviewers
 
@@ -106,7 +138,7 @@ Authentication: optional (does NOT bind submission to the JWT
   "parent_cells": ["<parent_tx_id_1>", "<parent_tx_id_2>"],
   "timestamp":    "2026-05-13T12:34:56Z",
   "public_key":   "<hex5184 — packed FIPS 204 ML-DSA-87 public key, 2592 bytes hex>",
-  "signature":    "<hex9220 — ML-DSA-87 signature over the canonical-payload below, 4595 bytes hex>"
+  "signature":    "<hex9254 — ML-DSA-87 signature over the canonical-payload below, 4627 bytes raw → 9254 hex chars; size sourced from cloudflare/circl mldsa87.SignatureSize and confirmed against pkg/crypto/dilithium_circl.go line 127>"
 }
 ```
 

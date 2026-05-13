@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,6 +37,18 @@ func newMockStorage() *mockStorage {
 }
 
 func (m *mockStorage) StoreTransaction(data []byte) error {
+	// v0.4.0 (Session 95): index by the envelope's tx_id when
+	// present so the /wallet/submit-signed idempotency tests can
+	// exercise the GetTransaction lookup path. Falls back to the
+	// legacy "test" key for older payload shapes (auth login mint
+	// envelopes etc.) that don't carry an `id`.
+	var probe map[string]interface{}
+	if err := json.Unmarshal(data, &probe); err == nil {
+		if id, ok := probe["id"].(string); ok && id != "" {
+			m.transactions[id] = data
+			return nil
+		}
+	}
 	m.transactions["test"] = data
 	return nil
 }
@@ -72,12 +85,22 @@ func (m *mockStorage) GetRecentTransactions(address string, limit int) ([]map[st
 }
 
 func (m *mockStorage) GetTransaction(txID string) (map[string]interface{}, error) {
-	return map[string]interface{}{
-		"id":        txID,
-		"sender":    "sender1",
-		"recipient": "recipient1",
-		"amount":    10.0,
-	}, nil
+	// v0.4.0 (Session 95): do a real lookup against the indexed
+	// store so /wallet/submit-signed idempotency tests can
+	// distinguish "first send" (404-equivalent error) from
+	// "duplicate send" (200 with envelope). Prior to v0.4.0 this
+	// always returned a stub map — fine for the only previous
+	// caller (a single-purpose response-shape test) but a
+	// foot-gun for the new handler.
+	raw, ok := m.transactions[txID]
+	if !ok {
+		return nil, fmt.Errorf("transaction not found: %s", txID)
+	}
+	var tx map[string]interface{}
+	if err := json.Unmarshal(raw, &tx); err != nil {
+		return nil, err
+	}
+	return tx, nil
 }
 
 func setupTestHandlers() *Handlers {
@@ -521,5 +544,246 @@ func TestSendTransaction_meshCompanionSecondBroadcast(t *testing.T) {
 	}
 	if got := monitoring.MeshCompanionPublishCount(); got != before+1 {
 		t.Fatalf("mesh_companion_publish_total: before=%d after=%d want +1", before, got)
+	}
+}
+
+// ============================================================
+// v0.4.0 (Session 95) — POST /api/v1/wallet/submit-signed tests
+// ============================================================
+//
+// These tests exercise the self-custody signed-envelope handler
+// added in v0.4.0. Every test builds a fresh ML-DSA-87 keypair
+// (via wallet.NewWalletService — circl backend on non-CGO,
+// liboqs on CGO), constructs a TransactionData envelope, signs
+// it with the correct canonical-payload (signature + public_key
+// fields cleared, then re-marshalled in struct field order), and
+// asserts on the handler's terminal posture.
+
+// buildSignedEnvelope is the v0.4.0 test fixture: produce a
+// wire-correct, ML-DSA-87-signed wallet.TransactionData ready
+// for POST /api/v1/wallet/submit-signed. Caller can mutate the
+// returned envelope before re-marshalling to test bad-input
+// cases (sender mismatch, corrupted signature, etc.).
+func buildSignedEnvelope(t *testing.T, ws *wallet.WalletService, recipient string, amount, fee float64, parents []string) wallet.TransactionData {
+	t.Helper()
+	pubKey := ws.GetPublicKey()
+	if pubKey == nil {
+		t.Fatal("ws.GetPublicKey returned nil; cannot build signed envelope")
+	}
+	addrHash := sha256.Sum256(pubKey)
+	sender := hex.EncodeToString(addrHash[:])
+
+	now := time.Now().UTC()
+	txIDSeed := sha256.Sum256([]byte(sender + recipient + now.Format(time.RFC3339Nano)))
+	env := wallet.TransactionData{
+		ID:          hex.EncodeToString(txIDSeed[:16]),
+		Sender:      sender,
+		Recipient:   recipient,
+		Amount:      amount,
+		Fee:         fee,
+		GeoTag:      "US",
+		ParentCells: parents,
+		Timestamp:   now.Format(time.RFC3339),
+	}
+	canonical, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshal canonical envelope: %v", err)
+	}
+	sig, err := ws.SignData(canonical)
+	if err != nil {
+		t.Fatalf("sign canonical envelope: %v", err)
+	}
+	env.Signature = hex.EncodeToString(sig)
+	env.PublicKey = hex.EncodeToString(pubKey)
+	return env
+}
+
+// postSubmitSigned is a tiny helper that wires the request shape
+// the handler expects.
+func postSubmitSigned(t *testing.T, h *Handlers, env wallet.TransactionData) *httptest.ResponseRecorder {
+	t.Helper()
+	b, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshal envelope: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/submit-signed", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.SubmitSignedTransaction(w, req)
+	return w
+}
+
+func TestSubmitSigned_HappyPath(t *testing.T) {
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Skipf("wallet requires CGO / Dilithium: %v", err)
+	}
+	h := setupTestHandlersWithSubmesh(nil, ws)
+
+	recipient := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	env := buildSignedEnvelope(t, ws, recipient, 1.0, 0.01, []string{
+		strings.Repeat("a", 32), strings.Repeat("b", 32),
+	})
+
+	w := postSubmitSigned(t, h, env)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp SubmitSignedTransactionResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.TransactionID != env.ID {
+		t.Fatalf("tx_id mismatch: want %q got %q", env.ID, resp.TransactionID)
+	}
+	if resp.Status != "accepted" {
+		t.Fatalf("status: want 'accepted' got %q", resp.Status)
+	}
+}
+
+func TestSubmitSigned_MethodNotAllowed(t *testing.T) {
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Skipf("wallet requires CGO / Dilithium: %v", err)
+	}
+	h := setupTestHandlersWithSubmesh(nil, ws)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/wallet/submit-signed", nil)
+	w := httptest.NewRecorder()
+	h.SubmitSignedTransaction(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestSubmitSigned_MalformedJSON(t *testing.T) {
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Skipf("wallet requires CGO / Dilithium: %v", err)
+	}
+	h := setupTestHandlersWithSubmesh(nil, ws)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/submit-signed", bytes.NewReader([]byte("{not json")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.SubmitSignedTransaction(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestSubmitSigned_SenderMismatch(t *testing.T) {
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Skipf("wallet requires CGO / Dilithium: %v", err)
+	}
+	h := setupTestHandlersWithSubmesh(nil, ws)
+
+	recipient := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	env := buildSignedEnvelope(t, ws, recipient, 1.0, 0.01, []string{
+		strings.Repeat("a", 32), strings.Repeat("b", 32),
+	})
+	env.Sender = strings.Repeat("f", 64) // valid hex64 shape, wrong identity
+
+	w := postSubmitSigned(t, h, env)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "sender does not match") {
+		t.Fatalf("expected sender-mismatch error, got body=%s", w.Body.String())
+	}
+}
+
+func TestSubmitSigned_BadSignature(t *testing.T) {
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Skipf("wallet requires CGO / Dilithium: %v", err)
+	}
+	h := setupTestHandlersWithSubmesh(nil, ws)
+
+	recipient := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	env := buildSignedEnvelope(t, ws, recipient, 1.0, 0.01, []string{
+		strings.Repeat("a", 32), strings.Repeat("b", 32),
+	})
+	// Flip one byte of the signature (preserving hex length).
+	sig := []byte(env.Signature)
+	if sig[0] == '0' {
+		sig[0] = '1'
+	} else {
+		sig[0] = '0'
+	}
+	env.Signature = string(sig)
+
+	w := postSubmitSigned(t, h, env)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestSubmitSigned_DuplicateTxID(t *testing.T) {
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Skipf("wallet requires CGO / Dilithium: %v", err)
+	}
+	h := setupTestHandlersWithSubmesh(nil, ws)
+
+	recipient := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	env := buildSignedEnvelope(t, ws, recipient, 1.0, 0.01, []string{
+		strings.Repeat("a", 32), strings.Repeat("b", 32),
+	})
+	w1 := postSubmitSigned(t, h, env)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("first submit: expected 200, got %d body=%s", w1.Code, w1.Body.String())
+	}
+	w2 := postSubmitSigned(t, h, env)
+	if w2.Code != http.StatusConflict {
+		t.Fatalf("second submit: expected 409 duplicate, got %d body=%s", w2.Code, w2.Body.String())
+	}
+	var resp SubmitSignedTransactionResponse
+	if err := json.Unmarshal(w2.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode duplicate response: %v", err)
+	}
+	if resp.Status != "duplicate" {
+		t.Fatalf("status: want 'duplicate' got %q", resp.Status)
+	}
+}
+
+func TestSubmitSigned_InsufficientBalance(t *testing.T) {
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Skipf("wallet requires CGO / Dilithium: %v", err)
+	}
+	h := setupTestHandlersWithSubmesh(nil, ws)
+
+	pubKey := ws.GetPublicKey()
+	addrHash := sha256.Sum256(pubKey)
+	sender := hex.EncodeToString(addrHash[:])
+
+	// Pre-fund the sender with 0.5 CELL — below the 1.0 + 0.01 = 1.01 ask.
+	// We have to reach into the mock directly because StorageInterface
+	// doesn't expose SetBalance.
+	mock := h.storage.(*mockStorage)
+	mock.balances[sender] = 0.5
+
+	recipient := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	env := buildSignedEnvelope(t, ws, recipient, 1.0, 0.01, []string{
+		strings.Repeat("a", 32), strings.Repeat("b", 32),
+	})
+	w := postSubmitSigned(t, h, env)
+	if w.Code != http.StatusPaymentRequired {
+		t.Fatalf("expected 402, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestSubmitSigned_NoWalletService(t *testing.T) {
+	logger := logging.NewLogger("test.log", false)
+	authManager, _ := NewAuthManager()
+	userStore := NewUserStore()
+	mock := newMockStorage()
+	h := NewHandlers(authManager, userStore, nil, mock, logger, "", false, 0, "", "", false, 0, false, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/submit-signed", bytes.NewReader([]byte("{}")))
+	w := httptest.NewRecorder()
+	h.SubmitSignedTransaction(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 (no wallet service), got %d body=%s", w.Code, w.Body.String())
 	}
 }

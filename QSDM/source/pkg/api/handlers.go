@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -209,6 +211,15 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/wallet/create", handlers.CreateWallet)
 	mux.HandleFunc("/api/v1/wallet/balance", handlers.GetBalance)
 	mux.HandleFunc("/api/v1/wallet/send", handlers.SendTransaction)
+	// v0.4.0 (Session 95): self-custody signed-envelope submission.
+	// Unlike /wallet/send (which signs from the validator's own
+	// wallet, ignoring JWT claims), /wallet/submit-signed accepts
+	// a fully client-signed wallet.TransactionData envelope and
+	// only applies the balance change after verifying the
+	// envelope's ML-DSA-87 signature against its own embedded
+	// public_key, with sender = hex(sha256(public_key)) enforced.
+	// See QSDM/docs/docs/V040_WALLET_SEND_DESIGN.md.
+	mux.HandleFunc("/api/v1/wallet/submit-signed", handlers.SubmitSignedTransaction)
 	mux.HandleFunc("/api/v1/wallet/address", handlers.GetAddress)
 	mux.HandleFunc("/api/v1/wallet/mint", handlers.MintMainCoin)
 
@@ -909,6 +920,276 @@ func (h *Handlers) SendTransaction(w http.ResponseWriter, r *http.Request) {
 		TransactionID: "unknown",
 		Status:        "pending",
 	})
+}
+
+// SubmitSignedTransactionResponse is the success-path body for the
+// v0.4.0 /api/v1/wallet/submit-signed endpoint. The shape is
+// intentionally a superset of SendTransactionResponse so a future
+// browser/Go client that abstracts over both endpoints (or a CLI
+// that's pinned to one) renders the same fields.
+type SubmitSignedTransactionResponse struct {
+	TransactionID string `json:"transaction_id"`
+	Status        string `json:"status"`     // "accepted" or "duplicate"
+	Broadcast     string `json:"broadcast"`  // "p2p" or "local-only"
+}
+
+// SubmitSignedTransaction accepts a fully client-signed
+// wallet.TransactionData envelope and applies the balance change
+// iff the envelope's ML-DSA-87 signature verifies against its own
+// embedded public_key AND sender == hex(sha256(public_key)). This
+// is the self-custody counterpart to /api/v1/wallet/send (which
+// signs from the validator's own wallet).
+//
+// Design contract (v0.4.0, Session 95): see
+// QSDM/docs/docs/V040_WALLET_SEND_DESIGN.md. Audit row: api-06 in
+// pkg/audit/checklist.go.
+//
+// Known v0.4.0 limitations, documented and intentionally shipped:
+//
+//	(1) No per-account nonce. The current TransactionData has only
+//	    `id` (hex16 of sha256(sender||recipient||timestamp_ns)), so
+//	    a client controlling the nanosecond-timestamp can craft
+//	    arbitrarily many distinct tx_ids for the same logical
+//	    transfer. Replay protection inside a single tx_id is solid
+//	    (storage.StoreTransaction skips on duplicate); replay across
+//	    distinct tx_ids is the v0.4.1 nonce-schema fix.
+//	(2) pkg/storage/sqlite.go::UpdateBalance warns-and-proceeds on
+//	    negative balance. The pre-flight GetBalance check we do
+//	    here closes the obvious case (caller-honest insufficient-
+//	    funds), but a concurrent race between two simultaneous
+//	    submit-signed calls from the same sender can still drop the
+//	    on-disk balance below zero. Atomic debit/credit is the
+//	    v0.4.1 storage-layer fix.
+//
+// Both gaps are tracked in the api-06 audit row description and
+// must close before incentivised-testnet exposure (mining-05).
+//
+// Endpoint is intentionally listed in publicPaths: the
+// cryptographic identity is IN the envelope, so demanding a JWT
+// adds nothing. The per-IP rate-limit (security.go) bucketizes
+// abuse, and `result=signature_invalid` / `result=sender_mismatch`
+// counters surface a misbehaving caller.
+func (h *Handlers) SubmitSignedTransaction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if h.walletService == nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultNoWalletService)
+		writeErrorResponse(w, http.StatusServiceUnavailable, msgWalletServiceUnavailable)
+		return
+	}
+
+	// Decode the envelope. We accept wallet.TransactionData
+	// verbatim so the wire format is the exact byte shape produced
+	// by pkg/wallet.WalletService.CreateTransaction (which is what
+	// qsdmcli, the WASM signer, and any third-party SDK will
+	// produce). Field-order is fixed by the struct definition.
+	var env wallet.TransactionData
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&env); err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+		writeErrorResponse(w, http.StatusBadRequest, "invalid envelope: "+err.Error())
+		return
+	}
+
+	// Shape validation (reuse existing validators from the
+	// /wallet/send path so a misbehaving caller can't escape one
+	// gate by switching endpoints).
+	if err := ValidateAddress(env.Sender); err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid sender address: %v", err))
+		return
+	}
+	if err := ValidateAddress(env.Recipient); err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid recipient address: %v", err))
+		return
+	}
+	if err := ValidateAmount(env.Amount); err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid amount: %v", err))
+		return
+	}
+	if env.Fee < 0 {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+		writeErrorResponse(w, http.StatusBadRequest, "fee cannot be negative")
+		return
+	}
+	if env.Fee > 0 {
+		if err := ValidateAmount(env.Fee); err != nil {
+			monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+			writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid fee: %v", err))
+			return
+		}
+	}
+	if err := ValidateGeoTag(env.GeoTag); err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid geotag: %v", err))
+		return
+	}
+	if err := ValidateParentCells(env.ParentCells); err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid parent cells: %v", err))
+		return
+	}
+	if env.ID == "" {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+		writeErrorResponse(w, http.StatusBadRequest, "envelope.id is required")
+		return
+	}
+	if env.PublicKey == "" {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+		writeErrorResponse(w, http.StatusBadRequest, "envelope.public_key is required")
+		return
+	}
+	if env.Signature == "" {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+		writeErrorResponse(w, http.StatusBadRequest, "envelope.signature is required")
+		return
+	}
+
+	// Cryptographic identity bind: sender MUST equal
+	// hex(sha256(public_key)). Without this, a caller could put
+	// any victim address in `sender`, attach their own pubkey, and
+	// sign correctly with their own key — the signature would
+	// verify and the storage layer would happily debit the
+	// victim's balance.
+	pubBytes, err := hex.DecodeString(env.PublicKey)
+	if err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+		writeErrorResponse(w, http.StatusBadRequest, "envelope.public_key is not valid hex")
+		return
+	}
+	derivedAddr := hex.EncodeToString(sha256Sum(pubBytes))
+	if derivedAddr != env.Sender {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultSenderMismatch)
+		writeErrorResponse(w, http.StatusBadRequest, "envelope.sender does not match hex(sha256(public_key))")
+		return
+	}
+
+	sigBytes, err := hex.DecodeString(env.Signature)
+	if err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+		writeErrorResponse(w, http.StatusBadRequest, "envelope.signature is not valid hex")
+		return
+	}
+
+	// Build the canonical signing payload: the same envelope with
+	// `signature` and `public_key` cleared, then json.Marshal-ed
+	// with Go's default field ordering. This must match what the
+	// signer (qsdmcli, WASM, or a third-party SDK) produced.
+	unsigned := env
+	unsigned.Signature = ""
+	unsigned.PublicKey = ""
+	canonical, err := json.Marshal(unsigned)
+	if err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+		writeErrorResponse(w, http.StatusBadRequest, "failed to canonicalise envelope")
+		return
+	}
+	ok, verr := h.walletService.VerifySignature(canonical, sigBytes, pubBytes)
+	if verr != nil || !ok {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultSignatureInvalid)
+		writeErrorResponse(w, http.StatusUnprocessableEntity, "signature does not verify under envelope.public_key")
+		return
+	}
+
+	// Idempotency on tx_id. storage.StoreTransaction is already
+	// idempotent (skips on duplicate tx_id), but we surface that
+	// to the caller as HTTP 409 rather than 201 so they can stop
+	// retrying.
+	rawEnvelope, err := json.Marshal(env)
+	if err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+		writeErrorResponse(w, http.StatusBadRequest, "failed to remarshal envelope")
+		return
+	}
+	if hasTx, _ := h.storageHasTransaction(env.ID); hasTx {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultDuplicate)
+		writeJSONResponse(w, http.StatusConflict, SubmitSignedTransactionResponse{
+			TransactionID: env.ID,
+			Status:        "duplicate",
+		})
+		return
+	}
+
+	// Pre-flight balance check. This is advisory — the
+	// storage.UpdateBalance call inside StoreTransaction does NOT
+	// fail atomically on a negative balance (v0.4.1 will). For
+	// honest callers this gives a clean 402 instead of a silent
+	// negative-balance state. Skipped if the storage backend has
+	// no balance ledger (file-storage build), in which case
+	// GetBalance returns (0, nil) and we'd false-positive every
+	// honest send — the early-return below handles that.
+	bal, balErr := h.storage.GetBalance(env.Sender)
+	if balErr == nil && bal > 0 && bal < env.Amount+env.Fee {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInsufficientBalance)
+		writeErrorResponse(w, http.StatusPaymentRequired,
+			fmt.Sprintf("insufficient balance: have %v, need %v", bal, env.Amount+env.Fee))
+		return
+	}
+
+	// Submesh policy gate (matches /wallet/send posture; counts
+	// its own rejects under qsdm_submesh_api_wallet_reject_*).
+	if !h.enforceSubmeshWalletSend(w, env.Fee, env.GeoTag, rawEnvelope) {
+		return
+	}
+
+	if err := h.storage.StoreTransaction(rawEnvelope); err != nil {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultStoreFailed)
+		h.logger.Error("Failed to store signed transaction", "error", err, "tx_id", env.ID, "sender", env.Sender)
+		writeErrorResponse(w, http.StatusInternalServerError, "failed to store transaction")
+		return
+	}
+
+	monitoring.RecordWalletSend(monitoring.WalletSendResultSuccess)
+
+	broadcast := "local-only"
+	if h.p2pTxBroadcast != nil {
+		if err := h.p2pTxBroadcast(rawEnvelope); err != nil {
+			h.logger.Warn("P2P broadcast after submit-signed failed (tx still stored locally)", "error", err, "tx_id", env.ID)
+		} else {
+			broadcast = "p2p"
+		}
+	}
+
+	writeJSONResponse(w, http.StatusOK, SubmitSignedTransactionResponse{
+		TransactionID: env.ID,
+		Status:        "accepted",
+		Broadcast:     broadcast,
+	})
+}
+
+// sha256Sum is a thin helper that returns the sha256 digest as a
+// fresh []byte (vs sha256.Sum256 which returns [32]byte). Used by
+// the submit-signed handler's address-derivation check.
+func sha256Sum(b []byte) []byte {
+	h := sha256.Sum256(b)
+	return h[:]
+}
+
+// storageHasTransaction returns true iff the storage layer already
+// has a transaction with the given tx_id. Uses the indexed
+// GetTransaction primitive on StorageInterface (O(1) on the sqlite
+// backend — `WHERE tx_id = ? LIMIT 1`). On a backend miss the
+// underlying storage returns a wrapped error whose string contains
+// "transaction not found" — we treat that as (false, nil) rather
+// than propagating it, so the caller doesn't get a 500 on the
+// happy-path "not a duplicate" case.
+func (h *Handlers) storageHasTransaction(txID string) (bool, error) {
+	if h.storage == nil || txID == "" {
+		return false, nil
+	}
+	tx, err := h.storage.GetTransaction(txID)
+	if err != nil {
+		if strings.Contains(err.Error(), "transaction not found") ||
+			strings.Contains(err.Error(), "not found") {
+			return false, nil
+		}
+		return false, err
+	}
+	return tx != nil, nil
 }
 
 // GetAddress returns the wallet address

@@ -70,6 +70,13 @@ type Storage interface {
 	Close() error
 	GetBalance(address string) (float64, error)
 	Ready() error
+	// GetTransaction is the indexed lookup primitive added in
+	// v0.4.0 (Session 95) for the /wallet/submit-signed
+	// idempotency check. All three backends (SQLite, Scylla,
+	// FileStorage) already implement it; we surface it on the
+	// local interface so api.NewServer's StorageInterface
+	// satisfies-check passes against `storageBackend`.
+	GetTransaction(txID string) (map[string]interface{}, error)
 }
 
 type scyllaStorageAdapter struct {
