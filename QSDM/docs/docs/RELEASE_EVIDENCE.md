@@ -1,6 +1,9 @@
 # Release Evidence Bundles
 
 > One reproducible command produces a self-contained directory the next reviewer (operator, auditor, foundation member, or future-you) can read end-to-end without re-running the toolchain.
+>
+> **Per-release supply-chain proofs:**
+> [`RELEASE_EVIDENCE_v0.3.3.md`](RELEASE_EVIDENCE_v0.3.3.md) — 7/7 cosign + Rekor checks against the v0.3.3 release line (sessions 89–91 collapsed: libp2p key persistence, NGC ring persistence, `/wallet/mint` 410). Verified from a non-runner workstation.
 
 Released artefacts only mean something if a third party can verify them. The release-evidence bundle exists so that "we ran the tests, they passed" becomes "here is the hash-pinned manifest of the exact commands, outputs, and binaries — re-run any of them and you must get the same result, byte-for-byte".
 
