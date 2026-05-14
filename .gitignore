@@ -327,3 +327,5 @@ desktop.ini
 
 # session 87 (2026-05-12): local cross-compile output for ad-hoc deploys
 _build/
+# session 100 (2026-05-14): local cross-compile output for v0.4.x BLR1 deploys
+/.deploy/
