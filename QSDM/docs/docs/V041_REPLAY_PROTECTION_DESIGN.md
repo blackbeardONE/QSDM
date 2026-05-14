@@ -58,9 +58,19 @@
 > HTTP 402 `insufficient_balance` from `GetBalance() == 0`,
 > never reaching the new code path.
 >
-> **Remaining (operator-side, NOT release-blocking)**:
->   - Independent cosign / Rekor verification from a third-party
->     workstation (out-of-band supply-chain audit gesture).
+> **Independent cosign / Rekor verification (Session 100,
+> 2026-05-14)**: 5-asset out-of-band sweep with cosign v2.4.1
+> from a workstation outside the CI runner returned
+> `Verified OK` for `qsdmminer-console-linux-amd64`,
+> `SHA256SUMS`, and all 3 GHCR images (`qsdm:0.4.1`,
+> `qsdm-validator:0.4.1`, `qsdm-miner:0.4.1`). Cert OID
+> `1.3.6.1.4.1.57264.1.21` resolved to signing run
+> `25855056334`. Full per-asset table + reproducer in
+> [`RELEASE_EVIDENCE_v0.4.1.md`](RELEASE_EVIDENCE_v0.4.1.md)
+> §"Independent cosign / Rekor evidence". This closes the
+> v0.4.1 evidence pass.
+>
+> **Remaining (informational, NOT release-blocking)**:
 >   - Optional: `TestSqliteV041Migration_FromV040DB` storage-layer
 >     migration test (requires a CGO build environment; not a
 >     release blocker because the schema-only migration is exercised

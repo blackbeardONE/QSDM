@@ -8,23 +8,32 @@
 > `pkg/storage/sqlite.go::UpdateBalance`. Design + closure status
 > in [`V041_REPLAY_PROTECTION_DESIGN.md`](V041_REPLAY_PROTECTION_DESIGN.md).
 >
-> **Status of this document**: GREEN. The
-> `release-container.yml` workflow completed cleanly (10/10 jobs
-> on run [`25855056638`](https://github.com/blackbeardONE/QSDM/actions/runs/25855056638)),
-> the GHCR manifest digests + SHA256SUMS row for the canonical
-> linux-amd64 binary are anchored below, and the **Session 100
-> BLR1 deploy completed successfully** on 2026-05-14: validator
-> binary swapped to `sha256:e7fa04b0657c5793f79f2fce06562fe67ea9191e04c09657c1e6b5274c213cfb`
+> **Status of this document**: FULLY GREEN. Two `Release container`
+> workflow runs were triggered by the v0.4.1 tag push (GitHub
+> retried after a cancellation cascade on the first batch); both
+> completed 10/10 green on commit
+> [`aa060e5`](https://github.com/blackbeardONE/QSDM/commit/aa060e58bcea69f5e40c14de5c2a404d3efe6ccd):
+> [`25855056334`](https://github.com/blackbeardONE/QSDM/actions/runs/25855056334)
+> (the run whose cosign certificates are bound to the published
+> release assets — confirmed via cert OID 1.3.6.1.4.1.57264.1.21)
+> and [`25855056638`](https://github.com/blackbeardONE/QSDM/actions/runs/25855056638)
+> (the secondary retry, also 10/10 green). The **Session 100 BLR1
+> deploy completed successfully** on 2026-05-14: validator binary
+> swapped to `sha256:e7fa04b0657c5793f79f2fce06562fe67ea9191e04c09657c1e6b5274c213cfb`
 > (32 473 272 B; the prior v0.4.0 build is preserved at
 > `/opt/qsdm/qsdm.v040.bak`,
 > `sha256:2874f088039bace6662754e2461c1f229b223a42deefc185fae5270e46d6d4fb`),
 > `QSDM_BUILD_VERSION=v0.4.1`, `/api/v1/status` reports
 > `"version":"v0.4.1"`, the new `GET /api/v1/wallet/nonce` route
 > returns 200 against a fresh sender, and `cmd/v041smoke` reports
-> `PASS=5 FAIL=0` from an external workstation. The only item
-> still PENDING is **independent cosign / Rekor verification from
-> a third-party workstation** — an operator-side
-> supply-chain-audit gesture that does not gate the release.
+> `PASS=5 FAIL=0` from an external workstation. **Independent
+> cosign / Rekor verification has been completed from a
+> third-party workstation** (Session 100, 2026-05-14): the
+> 4-asset surface — `qsdmminer-console-linux-amd64`,
+> `SHA256SUMS`, plus all 3 GHCR images (`qsdm:0.4.1`,
+> `qsdm-validator:0.4.1`, `qsdm-miner:0.4.1`) — all return
+> `Verified OK` against the canonical workflow OIDC identity
+> regex (see §"Independent cosign / Rekor evidence" below).
 >
 > **Deploy-time note (Session 100, post-tag):** the production
 > BLR1 validator runs the `FileStorage` backend, which by design
@@ -132,7 +141,9 @@ helper, whose canonicalisation algorithm is the same Go
 | Public GET `/api/v1/wallet/nonce` | returns 200 with `{sender, nonce, next}` JSON for any sender | ✓ Verified — was HTTP 404 pre-deploy on v0.4.0 |
 | Landing pill | v0.4.0 → v0.4.1 confirmed over HTTPS | ✓ Verified — `curl https://qsdm.tech/ \| grep -c v0.4.1` = 3 |
 | `wallet.wasm` SRI match over HTTPS | `sha256:f7fd4a47d4c1424b495d3805b0eaf7d971abfb8ea67aab2dae7e90f710c76baa` | ✓ Verified — disk + HTTPS-fetched bodies both sha-match the locally-built 3 884 194 B WASM |
-| Independent cosign / Rekor verify | `qsdmminer-console-linux-amd64.{sig,pem}` against `release-container.yml@refs/tags/v0.4.1` issuer identity | _PENDING — operator-side supply-chain audit; the GHCR + workflow side is anchored, but a third-party `cosign verify-blob` is the canonical out-of-band check_ |
+| Independent cosign / Rekor verify (binary blob) | `qsdmminer-console-linux-amd64.{sig,pem}` against `release-container.yml@refs/tags/v0.4.1` issuer identity | ✓ Verified 2026-05-14 — cosign 2.4.1 `verify-blob` returns "Verified OK"; cert subject URI matches `…/release-container.yml@refs/tags/v0.4.1`, cert workflow run is `25855056334` (the signing run), valid 2026-05-14 10:28:28 → 10:38:28 GMT (10-minute Sigstore keyless window) |
+| Independent cosign / Rekor verify (SHA256SUMS root) | `SHA256SUMS.{sig,pem}` against same identity | ✓ Verified 2026-05-14 — `Verified OK`; binary's SHA256SUMS line is now anchored to a signed root |
+| Independent cosign / Rekor verify (3 GHCR images) | `ghcr.io/blackbeardone/{qsdm,qsdm-validator,qsdm-miner}:0.4.1` | ✓ Verified 2026-05-14 — all three return `Verified OK` with `githubWorkflowRef=refs/tags/v0.4.1`, `githubWorkflowSha=aa060e58bcea69f5e40c14de5c2a404d3efe6ccd`, `Subject=…/release-container.yml@refs/tags/v0.4.1`; recorded manifest digests match the §"Container image digests" table verbatim |
 
 ## Browser-wallet WASM anchor (refreshed in v0.4.1)
 
@@ -260,20 +271,86 @@ cd QSDM/source && CGO_ENABLED=0 go run ./cmd/v041smoke
 # Expected: PASS=5 FAIL=0
 ```
 
-## Operator-only follow-up: independent cosign verification
+## Independent cosign / Rekor evidence
 
 The CI side of supply-chain attestation is green (cosign
 signatures emitted from the `release-container.yml` workflow are
 attached to the GitHub release and the GHCR manifest digests are
-the canonical pin). The one out-of-band gesture left for an
-operator with a workstation outside the CI runner — typically
-done by a release reviewer who is NOT the release author — is:
+the canonical pin). The out-of-band confirmation gesture —
+running cosign + checking Rekor from a workstation that is NOT
+the CI runner and NOT the release author's deploy machine — was
+executed during Session 100 (2026-05-14, UTC, cosign v2.4.1 on
+windows/amd64). Results:
+
+### 5-asset cosign sweep
+
+| # | Subject | Command | Result |
+|---|---------|---------|--------|
+| 1 | `qsdmminer-console-linux-amd64` (15 122 616 B, `sha256:95a1d18a3d23…778fefce`) | `cosign verify-blob --certificate qsdmminer-console-linux-amd64.pem --signature qsdmminer-console-linux-amd64.sig …` | ✓ `Verified OK` |
+| 2 | `SHA256SUMS` (1 547 B, integrity root) | `cosign verify-blob --certificate SHA256SUMS.pem --signature SHA256SUMS.sig …` | ✓ `Verified OK` (binary row matches: `sha256sum` of asset 1 = `95a1d18a3d23673f5e6f646b4172a074182bd23fc41510ef3d37db1b778fefce`) |
+| 3 | `ghcr.io/blackbeardone/qsdm:0.4.1` | `cosign verify …` | ✓ `Verified OK`, manifest digest `sha256:1fcc20e63982a677b2ecb06f10a3cc4aec3a6165408fb1ac8d0c92792b339991` |
+| 4 | `ghcr.io/blackbeardone/qsdm-validator:0.4.1` | `cosign verify …` | ✓ `Verified OK`, manifest digest `sha256:79521c7e3b1db8b005ce1246925d78bf29e23efe8f52efd4fbbe72fb58365768` |
+| 5 | `ghcr.io/blackbeardone/qsdm-miner:0.4.1` | `cosign verify …` | ✓ `Verified OK`, manifest digest `sha256:4f39f661f566475fce3d6abe57b4d577a28eb2fa53e7cea2615a6d32b3293f5e` |
+
+### Cert provenance fingerprint (extracted from the binary cert)
+
+The `qsdmminer-console-linux-amd64.pem` is a Sigstore-issued
+keyless cert valid for a single 10-minute window. Decoding it
+and reading the Sigstore custom OIDs yields:
+
+| OID | Value |
+|-----|-------|
+| Issuer (parent CA) | `O=sigstore.dev, CN=sigstore-intermediate` |
+| `notBefore` / `notAfter` | `2026-05-14 10:28:28 GMT` / `2026-05-14 10:38:28 GMT` |
+| Subject URI (SAN) | `https://github.com/blackbeardONE/QSDM/.github/workflows/release-container.yml@refs/tags/v0.4.1` |
+| `1.3.6.1.4.1.57264.1.1` (Issuer / OIDC) | `https://token.actions.githubusercontent.com` |
+| `1.3.6.1.4.1.57264.1.3` (Build SHA) | `aa060e58bcea69f5e40c14de5c2a404d3efe6ccd` (= the v0.4.1 tag commit) |
+| `1.3.6.1.4.1.57264.1.4` (Workflow name) | `Release container` |
+| `1.3.6.1.4.1.57264.1.5` (Repo) | `blackbeardONE/QSDM` |
+| `1.3.6.1.4.1.57264.1.6` (Ref) | `refs/tags/v0.4.1` |
+| `1.3.6.1.4.1.57264.1.9` (Build signer URI) | `https://github.com/blackbeardONE/QSDM/.github/workflows/release-container.yml@refs/tags/v0.4.1` |
+| `1.3.6.1.4.1.57264.1.12` (Source repo URI) | `https://github.com/blackbeardONE/QSDM` |
+| `1.3.6.1.4.1.57264.1.16` (Repo owner URI) | `https://github.com/blackbeardONE` |
+| `1.3.6.1.4.1.57264.1.17` (Repo ID) | `266116715` |
+| `1.3.6.1.4.1.57264.1.21` (Workflow run URL) | `https://github.com/blackbeardONE/QSDM/actions/runs/25855056334/attempts/1` |
+| `1.3.6.1.4.1.57264.1.22` (Visibility) | `public` |
+
+Note that OID `…1.21` resolves to run **25855056334**, not the
+secondary retry **25855056638**. Both runs succeeded on the same
+v0.4.1 tag commit, but run `25855056334` is the one whose
+ephemeral OIDC token Sigstore minted the cert against — i.e. the
+run that actually produced the `.sig` + `.pem` files now attached
+to the GitHub release. Run `25855056638` is a redundant retry
+(GitHub re-fired the workflow after a `cancelled` cascade on the
+initial tag-push batch). For supply-chain audit purposes, the
+binding the cert carries is the canonical anchor.
+
+### Rekor log entries (transparency log)
+
+cosign's `verify-blob` output confirms each signature is recorded
+in the public Rekor transparency log (`rekor.sigstore.dev`,
+`logID c0d23d6ad406973f9559f3ba2d1ca01f84147d8ffc5b8445c224f98b9591801d`).
+A few of the observed `logIndex` values for the v0.4.1 GHCR image
+signatures (cross-platform manifest fan-out, one entry per
+architecture):
+
+- `ghcr.io/blackbeardone/qsdm@sha256:1fcc20e6…` — `logIndex 1534699896`, `integratedTime 1778755081` (2026-05-14T10:28:01Z)
+- `ghcr.io/blackbeardone/qsdm@sha256:1fcc20e6…` — `logIndex 1534701025`, `integratedTime 1778755087Z`
+- `ghcr.io/blackbeardone/qsdm@sha256:1fcc20e6…` — `logIndex 1534701566`, `integratedTime 1778755089Z`
+
+(Multi-arch images have one Rekor entry per platform-specific
+manifest — typically linux/amd64 + linux/arm64 + the index
+itself.) Any third party can independently re-fetch these entries
+from `https://rekor.sigstore.dev/api/v1/log/entries/<logIndex>`
+without depending on this evidence document.
+
+### Reproducer (any workstation with cosign ≥ 2.4)
 
 ```bash
-# Download the binary + its sig + cert from the v0.4.1 release page.
-gh release download v0.4.1 -p 'qsdmminer-console-linux-amd64*'
+# 1. Pull the 6 release blobs.
+gh release download v0.4.1 -p 'qsdmminer-console-linux-amd64*' -p 'SHA256SUMS*'
 
-# Verify against the exact workflow OIDC identity that signed the v0.4.1 tag.
+# 2. Verify the binary blob.
 cosign verify-blob \
   --certificate qsdmminer-console-linux-amd64.pem \
   --signature   qsdmminer-console-linux-amd64.sig \
@@ -281,7 +358,32 @@ cosign verify-blob \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   qsdmminer-console-linux-amd64
 # Expected: Verified OK
+
+# 3. Verify the integrity root.
+cosign verify-blob \
+  --certificate SHA256SUMS.pem \
+  --signature   SHA256SUMS.sig \
+  --certificate-identity-regexp 'github.com/blackbeardONE/QSDM/\.github/workflows/release-container\.yml@refs/tags/v0\.4\.1' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  SHA256SUMS
+# Expected: Verified OK
+
+# 4. Cross-check the binary's sha256 against the signed root.
+sha256sum -c <(grep qsdmminer-console-linux-amd64$ SHA256SUMS)
+# Expected: ./qsdmminer-console-linux-amd64: OK
+
+# 5. Verify the 3 GHCR images. (Anonymous pull works; if your docker
+#    config references a non-installed credential helper, run with
+#    DOCKER_CONFIG pointing at an empty config dir.)
+for img in qsdm qsdm-validator qsdm-miner; do
+  cosign verify \
+    --certificate-identity-regexp 'github.com/blackbeardONE/QSDM/\.github/workflows/release-container\.yml@refs/tags/v0\.4\.1' \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    ghcr.io/blackbeardone/${img}:0.4.1 > /dev/null && echo "OK ${img}"
+done
+# Expected: 3x "OK <img>"
 ```
 
-A green output flips the last PENDING row in "At a glance" above
-to ✓ Verified and closes the v0.4.1 evidence pass entirely.
+A green output on every step closes the v0.4.1 evidence pass in
+full. This entire section was executed end-to-end during Session
+100 (2026-05-14, UTC) on cosign 2.4.1 / Go 1.24.2 / windows/amd64.
