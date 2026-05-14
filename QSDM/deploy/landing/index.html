@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>QSDM — Quantum-Secure Dynamic Mesh Ledger · Cell (CELL)</title>
-<meta name="description" content="QSDM is a quantum-secure distributed ledger with a dynamic mesh topology and a native coin, Cell (CELL). Post-quantum signatures (ML-DSA-87, NIST FIPS 204), Proof-of-Entanglement BFT consensus on CPU-only validators, NVIDIA-locked GPU mining for Cell emission, and a self-custody browser wallet." />
+<meta name="description" content="QSDM is a quantum-secure distributed ledger with a dynamic mesh topology and a native coin, Cell (CELL). Post-quantum signatures (ML-DSA-87, NIST FIPS 204), Proof-of-Entanglement BFT consensus on CPU-only validators, NVIDIA-locked GPU mining, and a self-custody browser wallet." />
 <meta name="theme-color" content="#0b1220" />
 <meta property="og:title" content="QSDM — Quantum-Secure Dynamic Mesh Ledger · Cell (CELL)" />
 <meta property="og:description" content="Post-quantum signatures. NVIDIA-locked GPU mining. CPU-only validators. Self-custody wallet in the browser." />
@@ -12,6 +12,21 @@
 <meta property="og:url" content="https://qsdm.tech/" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b1220'/%3E%3Cpath d='M12 32l10-10 10 10-10 10z' fill='%2376b900'/%3E%3Cpath d='M32 20l10 12-10 12-10-12z' fill='%2300d1b2' opacity='.85'/%3E%3C/svg%3E" />
 <style>
+  /* QSDM landing — simplified.
+   *
+   * Single screen of value, single screen of "what next?".
+   *   1. Sticky nav: brand · 4 links · version pill · dashboard CTA.
+   *   2. Hero: PQ pitch, two CTAs, four stat tiles.
+   *   3. Three product cards: wallet / miner / validator.
+   *   4. Documentation callout pointing at the new /docs/ portal.
+   *   5. Compact two-row footer.
+   *
+   * Removed since v0.4.0:
+   *   "Build", "Why", "Compare", "Roadmap", and the architecture SVG.
+   *   All five now live in the /docs/ knowledge base — picking them up
+   *   from one place is closer to how users actually navigate, and it
+   *   keeps the home page legible on a phone in one thumb-flick.
+   */
   :root {
     --bg: #0a101d;
     --bg-2: #0f172a;
@@ -21,14 +36,12 @@
     --text: #e6edf7;
     --text-2: #9fb0c9;
     --muted: #6d7e99;
-    --accent: #76b900;           /* NVIDIA green */
-    --accent-2: #00d1b2;          /* QSDM teal */
-    --accent-3: #6ea8ff;          /* cool highlight */
-    --danger: #ff6b6b;
+    --accent: #76b900;
+    --accent-2: #00d1b2;
+    --accent-3: #6ea8ff;
     --success: #3ddc97;
     --radius: 14px;
     --radius-sm: 8px;
-    --shadow: 0 10px 30px -12px rgba(0,0,0,.55);
     --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, "Cascadia Mono", Consolas, monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
   }
@@ -49,15 +62,10 @@
   a { color: var(--accent-3); text-decoration: none; }
   a:hover { color: #a7c5ff; text-decoration: underline; }
   code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: .9em; }
-  pre {
-    font-family: var(--mono); background: #0a1326; color: var(--text);
-    padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border);
-    overflow-x: auto; font-size: 12.5px; line-height: 1.55; margin: 8px 0 0;
-  }
-  pre code { background: transparent; padding: 0; }
 
-  /* --- Layout --- */
   .container { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+
+  /* --- Nav --- */
   .nav {
     position: sticky; top: 0; z-index: 20;
     backdrop-filter: saturate(140%) blur(10px);
@@ -71,7 +79,7 @@
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .2px; }
   .brand svg { width: 28px; height: 28px; display: block; }
   .nav ul { list-style: none; display: flex; gap: 22px; padding: 0; margin: 0; }
-  .nav a.navlink { color: var(--text-2); font-size: 14px; }
+  .nav a.navlink { color: var(--text-2); font-size: 14px; font-weight: 500; }
   .nav a.navlink:hover { color: var(--text); text-decoration: none; }
   .nav-cta {
     display: inline-flex; align-items: center; gap: 8px;
@@ -80,9 +88,6 @@
   }
   .nav-cta:hover { background: #85cd08; color: #0a1400; text-decoration: none; }
 
-  /* Compact "version" pill in the nav. Auto-fed by /api/v1/status if
-     reachable, otherwise falls back to the hard-coded release line
-     (see <script> at the bottom of the page). */
   .ver-pill {
     display: inline-flex; align-items: center; gap: 8px;
     font: 600 12px/1 var(--mono);
@@ -96,10 +101,14 @@
   }
   .ver-pill:hover { color: var(--text); border-color: var(--accent-2); text-decoration: none; }
   .ver-pill .dot { width: 6px; height: 6px; border-radius: 999px; background: var(--success); box-shadow: 0 0 8px rgba(61,220,151,.55); }
-  @media (max-width: 900px) { .ver-pill { display: none; } }
+  @media (max-width: 980px) { .ver-pill { display: none; } .nav ul { gap: 14px; } }
+  @media (max-width: 720px) {
+    .nav ul { display: none; }
+    .nav-cta { padding: 7px 10px; font-size: 12px; }
+  }
 
   /* --- Hero --- */
-  .hero { padding: 64px 0 36px; }
+  .hero { padding: 80px 0 24px; }
   .eyebrow {
     display: inline-flex; align-items: center; gap: 8px;
     padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px;
@@ -108,19 +117,19 @@
   }
   .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 10px var(--success); }
   h1 {
-    font-size: clamp(34px, 5vw, 56px); line-height: 1.08; margin: 18px 0 14px;
-    letter-spacing: -0.02em;
+    font-size: clamp(36px, 5.4vw, 60px); line-height: 1.05; margin: 18px 0 16px;
+    letter-spacing: -0.025em; font-weight: 700;
     background: linear-gradient(180deg, #ffffff 0%, #c8d3e6 100%);
     -webkit-background-clip: text; background-clip: text; color: transparent;
   }
   h1 .accent { background: linear-gradient(120deg, #b6ff3a 0%, #76b900 60%); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .lede { color: var(--text-2); font-size: 18px; max-width: 880px; }
+  .lede { color: var(--text-2); font-size: 18px; max-width: 760px; }
   .lede strong { color: var(--text); }
 
-  .cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 26px; }
   .btn {
     display: inline-flex; align-items: center; gap: 8px;
-    padding: 11px 16px; border-radius: 10px; border: 1px solid var(--border);
+    padding: 12px 18px; border-radius: 10px; border: 1px solid var(--border);
     color: var(--text); background: var(--panel-2); font-weight: 600; font-size: 14px;
     cursor: pointer; transition: transform .08s ease, border-color .12s ease, background .12s ease;
   }
@@ -129,109 +138,89 @@
   .btn-primary:hover { background: #85cd08; color: #0a1400; }
   .btn-ghost { background: transparent; }
 
-  /* Hero stat row */
   .hero-stats {
     display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
-    margin-top: 38px;
+    margin-top: 48px;
   }
   @media (max-width: 900px) { .hero-stats { grid-template-columns: repeat(2, 1fr); } }
   .stat {
     border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel);
-    padding: 16px 16px 14px;
+    padding: 18px;
   }
   .stat .k { color: var(--muted); font-size: 11.5px; letter-spacing: .6px; text-transform: uppercase; }
-  .stat .v { color: var(--text); font-size: 22px; font-weight: 700; margin-top: 4px; letter-spacing: -.01em; }
+  .stat .v { color: var(--text); font-size: 22px; font-weight: 700; margin-top: 6px; letter-spacing: -.01em; }
   .stat .sub { color: var(--text-2); font-size: 12.5px; margin-top: 4px; }
 
   /* --- Sections --- */
-  section { padding: 56px 0; border-top: 1px solid var(--border); }
+  section { padding: 64px 0; }
+  section.bordered { border-top: 1px solid var(--border); }
   section h2 {
     font-size: clamp(26px, 3vw, 34px); letter-spacing: -.01em; margin: 12px 0 8px;
   }
-  section .lead { color: var(--text-2); max-width: 880px; }
+  section .lead { color: var(--text-2); max-width: 760px; }
 
-  /* "Three ways" card grid */
-  .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 22px; }
+  /* Three product cards */
+  .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 28px; }
   @media (max-width: 900px) { .three { grid-template-columns: 1fr; } }
   .way {
     position: relative;
     border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel);
-    padding: 22px 22px 20px;
+    padding: 24px;
     display: flex; flex-direction: column;
   }
   .way.accent { border-color: rgba(0,209,178,.4); background: linear-gradient(180deg, rgba(0,209,178,.04), var(--panel) 80%); }
   .way.green  { border-color: rgba(118,185,0,.35); background: linear-gradient(180deg, rgba(118,185,0,.05), var(--panel) 80%); }
-  .way h3 { margin: 4px 0 6px; font-size: 20px; letter-spacing: -.01em; }
+  .way h3 { margin: 4px 0 8px; font-size: 20px; letter-spacing: -.01em; }
   .way p  { color: var(--text-2); margin: 4px 0 0; font-size: 14.5px; }
   .way .tag {
     display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .6px;
     color: var(--muted); text-transform: uppercase; margin-bottom: 4px;
   }
   .way .body  { flex: 1; }
-  .way .foot  { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
-  .way ul { margin: 10px 0 0; padding-left: 18px; color: var(--text-2); font-size: 13.5px; }
-  .way ul li { margin: 3px 0; }
+  .way .foot  { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
 
-  /* Developer code-tabs */
-  .dev-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 22px; }
-  @media (max-width: 900px) { .dev-grid { grid-template-columns: 1fr; } }
-  .dev-card {
-    border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel);
-    padding: 18px 20px 18px;
+  /* Big docs callout */
+  .docs-callout {
+    margin-top: 28px;
+    display: grid; grid-template-columns: 1.3fr 1fr; gap: 24px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background:
+      radial-gradient(600px 200px at 10% 0%, rgba(0,209,178,.10), transparent 60%),
+      radial-gradient(400px 200px at 100% 100%, rgba(118,185,0,.08), transparent 60%),
+      var(--panel);
+    padding: 30px;
   }
-  .dev-card h4 { margin: 0; font-size: 15px; color: var(--text); }
-  .dev-card p  { margin: 4px 0 8px; color: var(--text-2); font-size: 13.5px; }
-  .dev-card .meta { margin-top: 6px; font-size: 12.5px; color: var(--muted); font-family: var(--mono); }
-  .dev-card a { color: var(--accent-3); }
+  @media (max-width: 820px) { .docs-callout { grid-template-columns: 1fr; padding: 22px; } }
+  .docs-callout h3 { margin: 4px 0 8px; font-size: 22px; letter-spacing: -.01em; }
+  .docs-callout p  { color: var(--text-2); margin: 0 0 14px; font-size: 14.5px; }
+  .docs-callout .docs-cats {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 16px;
+    margin-top: 6px;
+  }
+  .docs-callout .docs-cats a {
+    color: var(--text-2); font-size: 14px;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 0;
+  }
+  .docs-callout .docs-cats a::before { content: "›"; color: var(--accent-2); font-weight: 700; }
+  .docs-callout .docs-cats a:hover { color: var(--text); text-decoration: none; }
 
-  /* Benefits grid */
-  .bens { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 22px; }
-  @media (max-width: 900px) { .bens { grid-template-columns: 1fr 1fr; } }
-  @media (max-width: 600px) { .bens { grid-template-columns: 1fr; } }
-  .ben { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; background: var(--panel); }
-  .ben .badge { display: inline-block; color: var(--accent-2); font-size: 10.5px; letter-spacing: .7px; text-transform: uppercase; border: 1px solid rgba(0,209,178,.35); border-radius: 999px; padding: 2px 8px; }
-  .ben h4 { margin: 8px 0 4px; font-size: 15px; }
-  .ben p  { margin: 0; color: var(--text-2); font-size: 13.5px; }
-
-  /* Compare table */
-  .table-wrap { overflow-x: auto; margin-top: 22px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--panel); }
-  table.compare { width: 100%; border-collapse: collapse; min-width: 820px; font-size: 13.5px; }
-  table.compare th, table.compare td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
-  table.compare th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; background: rgba(255,255,255,.02); }
-  table.compare td.feat { color: var(--text); font-weight: 600; }
-  table.compare td.qsdm { color: var(--text); background: rgba(0,209,178,.05); }
-  .tick { color: var(--success); font-weight: 700; }
-  .cross { color: var(--danger); font-weight: 700; }
-  .partial { color: #ffb454; font-weight: 700; }
-
-  /* Roadmap */
-  .phases { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 22px; }
-  @media (max-width: 900px) { .phases { grid-template-columns: 1fr; } }
-  .phase { position: relative; border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; background: var(--panel); }
-  .phase::before { content: attr(data-phase); position: absolute; top: -10px; left: 14px; padding: 3px 8px; font-size: 10.5px; letter-spacing: .7px; color: var(--accent-2); background: var(--bg); border: 1px solid var(--border); border-radius: 999px; }
-  .phase h4 { margin: 6px 0 6px; font-size: 17px; }
-  .phase p  { color: var(--text-2); font-size: 13.5px; margin: 0 0 8px; }
-  .phase ul { margin: 0; padding-left: 18px; color: var(--text-2); font-size: 13px; }
-  .phase ul li { margin: 3px 0; }
-  .phase .status { position: absolute; top: 18px; right: 18px; font-size: 11px; letter-spacing: .6px; padding: 3px 8px; border-radius: 999px; }
-  .phase .status.shipped { color: #052; background: rgba(61,220,151,.18); border: 1px solid rgba(61,220,151,.5); }
-  .phase .status.live    { color: #00d1b2; background: rgba(0,209,178,.10); border: 1px solid rgba(0,209,178,.5); }
-  .phase .status.planned { color: var(--accent-3); background: rgba(110,168,255,.10); border: 1px solid rgba(110,168,255,.45); }
-
-  /* Architecture */
-  .arch { border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; background: var(--panel); margin-top: 22px; }
-  .arch svg { width: 100%; height: auto; display: block; }
-
-  /* Footer */
-  footer { margin-top: 0; padding: 48px 0 64px; border-top: 1px solid var(--border); color: var(--muted); }
-  .footer-grid { display: grid; grid-template-columns: 1.3fr repeat(3, 1fr); gap: 30px; }
-  @media (max-width: 820px) { .footer-grid { grid-template-columns: 1fr 1fr; } }
-  footer h5 { color: var(--text); font-size: 13px; letter-spacing: .6px; text-transform: uppercase; margin: 0 0 10px; }
-  footer ul { list-style: none; padding: 0; margin: 0; }
-  footer ul li { margin: 6px 0; font-size: 14px; }
-  footer ul li a { color: var(--text-2); }
-  footer ul li a:hover { color: var(--text); }
-  .legal { display: flex; justify-content: space-between; align-items: center; margin-top: 32px; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px; }
+  /* --- Footer --- */
+  footer { padding: 36px 0 48px; border-top: 1px solid var(--border); color: var(--muted); }
+  .footer-top { display: flex; justify-content: space-between; gap: 30px; flex-wrap: wrap; align-items: flex-start; }
+  .footer-top .brand-block { max-width: 360px; }
+  .footer-top .brand-block p { margin: 12px 0 0; color: var(--text-2); font-size: 14px; }
+  .footer-links { display: flex; gap: 32px; flex-wrap: wrap; }
+  .footer-links h5 { color: var(--text); font-size: 12px; letter-spacing: .6px; text-transform: uppercase; margin: 0 0 10px; }
+  .footer-links ul { list-style: none; padding: 0; margin: 0; }
+  .footer-links li { margin: 6px 0; font-size: 14px; }
+  .footer-links a { color: var(--text-2); }
+  .footer-links a:hover { color: var(--text); }
+  .legal {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--border);
+    font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;
+  }
 </style>
 </head>
 <body>
@@ -248,15 +237,10 @@
     </a>
     <nav aria-label="Primary">
       <ul>
-        <li><a class="navlink" href="#use">Use</a></li>
-        <li><a class="navlink" href="#build">Build</a></li>
-        <li><a class="navlink" href="#why">Why</a></li>
-        <li><a class="navlink" href="#compare">Compare</a></li>
-        <li><a class="navlink" href="#roadmap">Roadmap</a></li>
         <li><a class="navlink" href="/wallet.html">Wallet</a></li>
-        <li><a class="navlink" href="/download.html">Download</a></li>
+        <li><a class="navlink" href="/download.html">Mine</a></li>
+        <li><a class="navlink" href="/docs/">Docs</a></li>
         <li><a class="navlink" href="/validators.html">Validators</a></li>
-        <li><a class="navlink" href="/trust.html">Trust</a></li>
       </ul>
     </nav>
     <a class="ver-pill" id="ver-pill"
@@ -271,26 +255,22 @@
 
 <main>
 
-<section class="hero" style="border-top:none">
+<section class="hero">
   <div class="container">
-    <span class="eyebrow"><span class="dot"></span> MAINNET PREVIEW · NIST FIPS 204 · NVIDIA-LOCKED</span>
+    <span class="eyebrow"><span class="dot"></span> MAINNET PREVIEW · FIPS 204 · NVIDIA-LOCKED</span>
     <h1>
-      Post-quantum distributed trust,<br/>
+      Post-quantum trust,<br/>
       <span class="accent">NVIDIA GPU-attested</span> by design.
     </h1>
     <p class="lede">
-      <strong>QSDM</strong> is the <strong>Quantum-Secure Dynamic Mesh Ledger</strong> &mdash; a non-AI,
-      hardware-agnostic electronic-cash and smart-contract fabric with a native coin,
-      <strong>Cell (CELL)</strong>. <strong>ML-DSA-87</strong> post-quantum signatures, a dynamic
-      2D/3D mesh topology, <em>Proof-of-Entanglement</em> BFT consensus on
-      <strong>CPU-only validators</strong>, and an additive <strong>NVIDIA-locked GPU mining layer</strong>
-      that mints Cell from attested proofs.
+      <strong>QSDM</strong> is the Quantum-Secure Dynamic Mesh Ledger &mdash; <strong>ML-DSA-87</strong>
+      post-quantum signatures, CPU-only validators, an NVIDIA-locked mining layer that mints the
+      native coin <strong>Cell (CELL)</strong>, and a self-custody wallet that runs in your browser.
     </p>
     <div class="cta-row">
-      <a class="btn btn-primary" href="/wallet.html">Get a Wallet</a>
-      <a class="btn" href="#mine">Mine Cell</a>
-      <a class="btn" href="#validate">Run a Validator</a>
-      <a class="btn btn-ghost" href="https://dashboard.qsdm.tech/">Open Dashboard</a>
+      <a class="btn btn-primary" href="/wallet.html">Get a wallet</a>
+      <a class="btn" href="/docs/#/quick-start">Read the docs</a>
+      <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM" rel="noopener">GitHub →</a>
     </div>
 
     <div class="hero-stats">
@@ -307,7 +287,7 @@
       <div class="stat">
         <div class="k">Native coin</div>
         <div class="v">Cell (CELL)</div>
-        <div class="sub">100 M cap · 4-year halvings · 0% pre-mine</div>
+        <div class="sub">100 M cap · halving emission · 0 % pre-mine</div>
       </div>
       <div class="stat">
         <div class="k">Wallet</div>
@@ -318,97 +298,62 @@
   </div>
 </section>
 
-<!-- ============================================================
-     Section 1: USE — the three primary user paths.
-     Lifted out of the previous /products + /mine + /validate
-     trio (1100 lines combined) into a single, side-by-side
-     "what do I do with QSDM today?" answer. Order is
-     wallet → miner → validator because that is the path of
-     least friction (5 seconds → 5 minutes → 30 minutes).
-     ============================================================ -->
-<section id="use">
+<!-- Three product cards: the only "what can I do?" surface on the home page.
+     Detailed quickstarts, the API reference, runbooks, and design docs all
+     live behind the docs callout below. -->
+<section class="bordered" id="use">
   <div class="container">
-    <span class="eyebrow">Use QSDM</span>
-    <h2>Three ways to use it today.</h2>
+    <span class="eyebrow">Three ways in</span>
+    <h2>Hold it. Mine it. Validate it.</h2>
     <p class="lead">
-      You don't need a server to start. A QSDM wallet runs in your browser; mining runs on a home
-      NVIDIA GPU; a validator runs on a modest VPS. Each path is independent and production-usable
-      on its own.
+      Each path is independent and production-usable on its own. No server to start with the wallet;
+      a home NVIDIA GPU to mine; a modest VPS to validate.
     </p>
 
     <div class="three">
       <article class="way accent">
-        <span class="tag">Wallet · Browser + CLI · Self-custody</span>
-        <h3>Hold &amp; sign with ML-DSA-87</h3>
+        <span class="tag">Wallet · Browser + CLI</span>
+        <h3>Self-custody, in 30 seconds</h3>
         <div class="body">
           <p>
-            The wallet at <a href="/wallet.html"><code>qsdm.tech/wallet.html</code></a> generates a
-            quantum-secure keypair, encrypts the private key with your passphrase, and lets you
-            sign or verify any message &mdash; <strong>entirely in your browser</strong>. The
-            companion <code>qsdmcli wallet</code> subcommand produces byte-identical keystores
-            offline.
+            Generate an ML-DSA-87 keypair, encrypt it with your passphrase, sign and send transactions
+            &mdash; entirely in your browser. Same WASM code as the validator, no extension required.
           </p>
-          <ul>
-            <li>PBKDF2-HMAC-SHA-256 (600 000 iterations) + AES-256-GCM</li>
-            <li>Browser WASM module reuses <code>cloudflare/circl</code> &mdash; same code as the validator</li>
-            <li>No server keeps your key; nothing about a generated keypair leaves your tab</li>
-          </ul>
         </div>
         <div class="foot">
-          <a class="btn btn-primary" href="/wallet.html">Open Wallet</a>
-          <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/WEB_WALLET.md">Threat model</a>
+          <a class="btn btn-primary" href="/wallet.html">Open wallet</a>
+          <a class="btn btn-ghost" href="/docs/#/web-wallet">How it works</a>
         </div>
       </article>
 
-      <article class="way green" id="mine">
-        <span class="tag">Miner · NVIDIA-locked · v2 only</span>
+      <article class="way green">
+        <span class="tag">Miner · NVIDIA-locked · v2</span>
         <h3>Mine Cell on your GPU</h3>
         <div class="body">
           <p>
-            Mining mints <strong>Cell (CELL)</strong> from attested NVIDIA proofs. The
-            live mainnet runs <strong>v2 only</strong> &mdash; the v1 CPU path is
-            rejected at consensus (<code>ReasonBadVersion</code>) and the v1 reference
-            binary is no longer a public release artefact. Every accepted proof
-            carries an NVIDIA attestation: <code>nvidia-cc-v1</code> on Hopper /
-            Blackwell datacenter GPUs with Confidential Compute, or
-            <code>nvidia-hmac-v1</code> on consumer RTX cards with a registered
-            <code>(node_id, gpu_uuid, hmac_key)</code> tuple and a 10 CELL bond.
+            Mining mints CELL from attested NVIDIA proofs. Stake 10 CELL, register your
+            <code>(node_id, gpu_uuid)</code>, run <code>qsdmminer-console</code>. An entry-level
+            <strong>RTX 3050</strong> is already 4× a 32-thread Xeon at n=4096.
           </p>
-          <ul>
-            <li><strong>Hardware:</strong> any NVIDIA GPU you control + a host clock within 60 s of UTC</li>
-            <li><strong>Tooling:</strong> <code>qsdmminer-console --protocol=v2</code> &mdash; setup wizard, live panel, v2 client</li>
-            <li><strong>On-chain:</strong> <code>qsdmcli enroll</code> bonds 10 CELL to your <code>node_id</code></li>
-            <li><strong>Funding caveat:</strong> v0.4.0 has no public faucet yet &mdash; new operators need a transfer from an existing CELL holder. The browser wallet's <a href="https://qsdm.tech/wallet/">Send transaction</a> tab (v0.4.0 Phase B) lets a holder sign a self-custody transfer entirely in-browser. See <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md#appendix-b-enrollment-funding-status">Appendix B</a>.</li>
-            <li><strong>Consumer rigs:</strong> an entry-level <strong>RTX 3050</strong> (Ampere, sm_86) is enough — 4.06&times; over a 32-thread Xeon at n=4096 cells. Step-by-step setup: <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_RTX_3050_COOKBOOK.md">RTX 3050 cookbook</a>.</li>
-            <li>Forged or replayed proofs are slashable (<code>qsdm/slash/v1</code>)</li>
-            <li>Halving emission, 90 M lifetime mining cap, 0 % pre-mine</li>
-          </ul>
         </div>
         <div class="foot">
-          <a class="btn btn-primary" href="/download.html">Download Miner</a>
-          <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">Quick-start (v2)</a>
+          <a class="btn btn-primary" href="/download.html">Download miner</a>
+          <a class="btn btn-ghost" href="/docs/#/miner-quickstart">Quick-start</a>
         </div>
       </article>
 
-      <article class="way" id="validate">
-        <span class="tag">Validator · CPU-only · VPS-class</span>
+      <article class="way">
+        <span class="tag">Validator · CPU-only · VPS</span>
         <h3>Run a validator</h3>
         <div class="body">
           <p>
-            Validators are the consensus tier. They run Proof-of-Entanglement + BFT on
-            <strong>CPU-only VPS-class hardware</strong> and earn transaction fees.
-            <strong>No GPU required.</strong> NVIDIA NGC attestation is available as an opt-in
-            transparency signal, but it never gates consensus.
+            Validators run Proof-of-Entanglement + BFT on <strong>CPU-only VPS-class hardware</strong>
+            and earn transaction fees. No GPU required; NGC attestation is an opt-in transparency signal,
+            never a consensus gate.
           </p>
-          <ul>
-            <li>4–8 vCPU, 8–16 GB RAM, 200 GB NVMe, 1 Gbps symmetric</li>
-            <li>Ubuntu 24.04+ and Windows 10+ today; macOS in development</li>
-            <li>libp2p + GossipSub · SQLite + Zstd → ScyllaDB migration path</li>
-            <li>Dashboard, Prometheus, audit reports, signed releases</li>
-          </ul>
         </div>
         <div class="foot">
-          <a class="btn btn-primary" href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/VALIDATOR_QUICKSTART.md">Validator quick-start</a>
+          <a class="btn btn-primary" href="/docs/#/validator-quickstart">Validator quick-start</a>
           <a class="btn btn-ghost" href="/validators.html">Live validators</a>
         </div>
       </article>
@@ -416,404 +361,49 @@
   </div>
 </section>
 
-<!-- ============================================================
-     Section 2: BUILD — developer entry points.
-     This is the section the old index.html was missing entirely.
-     The JS SDK was published to npm as qsdm-sdk (not qsdm — the
-     bare name was rejected by npm's typo-squatting heuristic;
-     see RELEASE_NOTES Session 81). Surfacing all five build
-     paths in one block answers "what do I import?" in seconds.
-     ============================================================ -->
-<section id="build">
+<!-- Documentation callout: the new /docs/ portal replaces the previous
+     Build / Why / Compare / Roadmap / Architecture sections on the home
+     page. The portal is hand-curated against the ~70 markdown files
+     under QSDM/docs/docs/ and fetches them live from main. -->
+<section class="bordered" id="docs">
   <div class="container">
-    <span class="eyebrow">Build on QSDM</span>
-    <h2>Five ways in. One protocol.</h2>
+    <span class="eyebrow">Knowledge base</span>
+    <h2>One page for everything else.</h2>
     <p class="lead">
-      Every QSDM surface is open. Pick the seam that fits your stack &mdash; the wire format,
-      the public REST API, and the on-chain envelope are identical across all of them.
+      Quickstarts, runbooks, protocol design, API reference, cryptography comparisons,
+      release evidence &mdash; the whole knowledge base in one searchable portal,
+      sourced live from <code>main</code>.
     </p>
 
-    <div class="dev-grid">
-      <div class="dev-card">
-        <h4>JavaScript SDK · npm</h4>
-        <p>Type-safe ESM/CJS client. Wallet, transactions, mining-API helpers, signed status fetch.</p>
-        <pre><code>npm install qsdm-sdk
-# import { QSDMClient } from 'qsdm-sdk'</code></pre>
-        <div class="meta">qsdm-sdk@0.3.0 · MIT · SLSA v1 provenance · <a href="https://www.npmjs.com/package/qsdm-sdk">npmjs.com/package/qsdm-sdk</a></div>
+    <div class="docs-callout">
+      <div>
+        <h3>QSDM Docs &mdash; the knowledge base</h3>
+        <p>
+          Every quickstart, every runbook, every design doc. Curated against the ~70 markdown files
+          in the repo, indexed by section, served straight from the main branch so there's never a
+          stale page.
+        </p>
+        <div class="cta-row" style="margin-top:18px;">
+          <a class="btn btn-primary" href="/docs/">Open the docs portal →</a>
+          <a class="btn btn-ghost" href="/docs/#/quick-start">5-minute quick start</a>
+        </div>
       </div>
-
-      <div class="dev-card">
-        <h4>Go SDK</h4>
-        <p>Feature-equivalent Go client. Used by <code>qsdmminer-console</code> and <code>qsdmcli</code>.</p>
-        <pre><code>go get github.com/blackbeardONE/QSDM/sdk/go
-// client, _ := qsdm.NewClient("https://api.qsdm.tech")</code></pre>
-        <div class="meta">tagged with the core repo · v0.4.0</div>
+      <div>
+        <div class="docs-cats">
+          <a href="/docs/#/quick-start">Quick start</a>
+          <a href="/docs/#/miner-quickstart">Miner quick-start</a>
+          <a href="/docs/#/validator-quickstart">Validator quick-start</a>
+          <a href="/docs/#/web-wallet">Web wallet</a>
+          <a href="/docs/#/api-reference">API reference</a>
+          <a href="/docs/#/cell-tokenomics">CELL tokenomics</a>
+          <a href="/docs/#/cryptography">Cryptography</a>
+          <a href="/docs/#/architecture">Architecture</a>
+          <a href="/docs/#/roadmap">Roadmap</a>
+          <a href="/docs/#/runbooks/index">Runbooks</a>
+          <a href="/docs/#/release-evidence-040">Release evidence v0.4.0</a>
+          <a href="/docs/#/contributing">Contributing</a>
+        </div>
       </div>
-
-      <div class="dev-card">
-        <h4>Browser WASM Wallet</h4>
-        <p>Drop-in <code>wallet.wasm</code> + <code>wasm_exec.js</code>. Stateless keypair / sign / verify.</p>
-        <pre><code>&lt;script src="/wasm_exec.js"&gt;&lt;/script&gt;
-&lt;script src="/wallet.js"&gt;&lt;/script&gt;
-// qsdm_wallet_generate(), qsdm_wallet_sign(...)</code></pre>
-        <div class="meta">~3.2 MB · pure Go-WASM · no CGO · ML-DSA-87 via circl</div>
-      </div>
-
-      <div class="dev-card">
-        <h4>Public REST API</h4>
-        <p>Health, status, mining challenge, enrollment / slashing reads + writes, transaction submit.</p>
-        <pre><code>curl https://api.qsdm.tech/api/v1/health
-curl https://api.qsdm.tech/api/v1/status</code></pre>
-        <div class="meta">JWT auth · TLS at the edge · paginated cursors · OpenAPI in repo</div>
-      </div>
-
-      <div class="dev-card">
-        <h4>Container images · GHCR</h4>
-        <p>Validator, full-node, and miner images. Cosign-signed · SPDX SBOM attached as attestation.</p>
-        <pre><code>docker pull ghcr.io/blackbeardone/qsdm-validator:0.3.1
-docker pull ghcr.io/blackbeardone/qsdm-miner:0.3.1</code></pre>
-        <div class="meta">Sigstore keyless · verify with <code>cosign verify</code></div>
-      </div>
-
-      <div class="dev-card">
-        <h4>Smart contracts · WASM</h4>
-        <p>Native WASM contract runtime. <code>qsdm/enroll/v1</code> and <code>qsdm/slash/v1</code> live.</p>
-        <pre><code>// Wallet, validator, and mining contracts
-// see source/contracts/ in the repo</code></pre>
-        <div class="meta">Deterministic gas · pinned imports · canonical-codec txs</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================
-     Section 3: WHY — eight benefit cards, kept short.
-     Replaces the longer prose section in the previous index.
-     Each card is one badge + one line of expansion; together
-     they cover post-quantum, hardware-binding, throughput,
-     energy, non-AI governance, openness, operability, and
-     auditability.
-     ============================================================ -->
-<section id="why">
-  <div class="container">
-    <span class="eyebrow">Why it matters</span>
-    <h2>Post-quantum, hardware-bound, non-AI.</h2>
-    <p class="lead">
-      QSDM combines three properties that no other production ledger ships together: lattice-based
-      signatures that survive a quantum adversary, GPU-anchored mining identity, and
-      Proof-of-Entanglement consensus that doesn't burn watts to order transactions.
-    </p>
-    <div class="bens">
-      <div class="ben">
-        <span class="badge">Post-quantum</span>
-        <h4>Harvest-now-decrypt-later safe</h4>
-        <p>ML-DSA-87 (NIST FIPS 204) keeps today's signatures verifiable after ECDSA and RSA are broken.</p>
-      </div>
-      <div class="ben">
-        <span class="badge">Hardware-bound</span>
-        <h4>Sybil-resistant by silicon</h4>
-        <p>Miners attest with an NVIDIA-locked proof bound to an enrolled operator key. Cloning costs real money &mdash; the bond burns on forgery.</p>
-      </div>
-      <div class="ben">
-        <span class="badge">Throughput</span>
-        <h4>Mesh, not a chain</h4>
-        <p>Cells can have multiple parents. Submeshes route by fee and geotag. No single block interval throttles the network.</p>
-      </div>
-      <div class="ben">
-        <span class="badge">Energy</span>
-        <h4>No PoW in consensus</h4>
-        <p>PoE uses cryptographic linkage, not brute hashing. The GPU mining layer is additive and can halt with zero impact on chain liveness.</p>
-      </div>
-      <div class="ben">
-        <span class="badge">Non-AI</span>
-        <h4>Deterministic governance</h4>
-        <p>Rule-based quarantines, snapshot voting, manual submesh templates. Auditable, reproducible, AI-free.</p>
-      </div>
-      <div class="ben">
-        <span class="badge">Open</span>
-        <h4>libp2p + WASM + REST</h4>
-        <p>GossipSub transport, WebAssembly contracts, REST + Prometheus endpoints. Nothing proprietary at the seams.</p>
-      </div>
-      <div class="ben">
-        <span class="badge">Operable</span>
-        <h4>Single binary · two platforms</h4>
-        <p>One Go binary. Ubuntu 24.04+ and Windows 10+ today; macOS in development. Systemd + Caddy deploy in under an hour.</p>
-      </div>
-      <div class="ben">
-        <span class="badge">Auditable</span>
-        <h4>Metrics + signed releases</h4>
-        <p>Prometheus scrape, audit reports with severity gates, cosign-signed binaries + container images, SLSA-attested npm tarball.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================
-     Section 4: COMPARE — preserved verbatim from the previous
-     index. It is genuinely useful and not bloated; the dimension
-     list (data structure, consensus, signatures, energy, etc.)
-     is the most-shared section on this page.
-     ============================================================ -->
-<section id="compare">
-  <div class="container">
-    <span class="eyebrow">Comparison</span>
-    <h2>QSDM vs. traditional blockchains and DAGs.</h2>
-    <p class="lead">
-      Like-for-like against representative production systems. Values reflect each system's
-      default mainnet configuration, not maximal lab setups.
-    </p>
-    <div class="table-wrap">
-      <table class="compare">
-        <thead>
-          <tr>
-            <th>Dimension</th>
-            <th>QSDM</th>
-            <th>Bitcoin · PoW</th>
-            <th>Ethereum · PoS</th>
-            <th>IOTA / Hedera · DAG</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="feat">Data structure</td>
-            <td class="qsdm">Dynamic 2D/3D mesh, multi-parent cells</td>
-            <td>Linear chain</td>
-            <td>Linear chain</td>
-            <td>Directed acyclic graph</td>
-          </tr>
-          <tr>
-            <td class="feat">Consensus</td>
-            <td class="qsdm">PoE + BFT · CPU-only validators</td>
-            <td>Proof-of-Work</td>
-            <td>Proof-of-Stake (Gasper)</td>
-            <td>Tangle / Hashgraph</td>
-          </tr>
-          <tr>
-            <td class="feat">Mining / emission</td>
-            <td class="qsdm">Additive GPU track · NVIDIA-locked · <em>never</em> orders blocks</td>
-            <td>Mining <strong>is</strong> consensus</td>
-            <td>No mining; staking = consensus</td>
-            <td>No mining; DAG voting</td>
-          </tr>
-          <tr>
-            <td class="feat">Quantum-safe signatures</td>
-            <td class="qsdm"><span class="tick">✓</span> ML-DSA-87 (FIPS 204, 256-bit)</td>
-            <td><span class="cross">✗</span> ECDSA (secp256k1)</td>
-            <td><span class="cross">✗</span> BLS12-381 / ECDSA</td>
-            <td><span class="partial">◐</span> varies; mostly classical</td>
-          </tr>
-          <tr>
-            <td class="feat">GPU-attested identity</td>
-            <td class="qsdm"><span class="tick">✓</span> NVIDIA CC + HMAC, on-chain enrollment</td>
-            <td><span class="cross">✗</span></td>
-            <td><span class="cross">✗</span></td>
-            <td><span class="cross">✗</span></td>
-          </tr>
-          <tr>
-            <td class="feat">Self-custody wallet</td>
-            <td class="qsdm"><span class="tick">✓</span> Browser WASM + CLI, no server custody</td>
-            <td><span class="partial">◐</span> via third-party</td>
-            <td><span class="partial">◐</span> via third-party</td>
-            <td><span class="partial">◐</span> via third-party</td>
-          </tr>
-          <tr>
-            <td class="feat">Energy profile</td>
-            <td class="qsdm">Low; CPU validators, GPU only for emission</td>
-            <td>Very high (hash mining)</td>
-            <td>Low (staking)</td>
-            <td>Low</td>
-          </tr>
-          <tr>
-            <td class="feat">Finality</td>
-            <td class="qsdm">PoE + finality gadget, reorg-bounded</td>
-            <td>Probabilistic (6 blocks)</td>
-            <td>Epoch-based (~12–15 min)</td>
-            <td>Varies; often probabilistic</td>
-          </tr>
-          <tr>
-            <td class="feat">AI/ML dependencies</td>
-            <td class="qsdm"><span class="tick">None</span> &mdash; rule-based governance</td>
-            <td>None</td>
-            <td>None (core); apps vary</td>
-            <td>Varies</td>
-          </tr>
-          <tr>
-            <td class="feat">Smart contracts</td>
-            <td class="qsdm">WASM (wallet, enrollment, slashing)</td>
-            <td>Script (non-Turing)</td>
-            <td>EVM</td>
-            <td>EVM (Hedera), limited (IOTA)</td>
-          </tr>
-          <tr>
-            <td class="feat">Deployment footprint</td>
-            <td class="qsdm">1 Go binary · Linux / Windows</td>
-            <td>Full node required</td>
-            <td>Execution + consensus client</td>
-            <td>Protocol-specific tooling</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="lead" style="font-size:12px; color:var(--muted); margin-top:14px;">
-      Figures shown are representative of default mainnet configurations. QSDM quantum-safe primitives
-      are based on NIST FIPS 204 (ML-DSA), standardized in 2024.
-    </p>
-  </div>
-</section>
-
-<!-- ============================================================
-     Section 5: ROADMAP — compressed from the previous 300-word
-     single-paragraph slash internals to three phase cards plus
-     a short "current release" line. Detail lives in
-     RELEASE_NOTES_v0.3.0.md (linked) rather than on the home page.
-     ============================================================ -->
-<section id="roadmap">
-  <div class="container">
-    <span class="eyebrow">Roadmap</span>
-    <h2>Three phases shipped. One protocol live.</h2>
-    <p class="lead">
-      Each phase is deliverable on its own. All three product phases are in production today; the
-      v2 NVIDIA-locked mining protocol and the self-custody wallet landed in 2026 H1.
-    </p>
-    <div class="phases">
-      <div class="phase" data-phase="Phase 1">
-        <h4>2D Mesh launch</h4>
-        <p>Stable 2D mesh, manual bootstrapping, Proof-of-Entanglement, ML-DSA-87, SQLite + Zstd.</p>
-        <ul>
-          <li>libp2p + GossipSub networking</li>
-          <li>Batch signing (10–100× single-tx)</li>
-          <li>Operator dashboard · Caddy · UFW</li>
-        </ul>
-        <span class="status shipped">Shipped</span>
-      </div>
-      <div class="phase" data-phase="Phase 2">
-        <h4>Scalability &amp; SDKs</h4>
-        <p>Dynamic submeshes, WASM contract SDK, ScyllaDB migration path, JavaScript + Go SDKs.</p>
-        <ul>
-          <li>Fee + geotag submesh routing</li>
-          <li>WASM wallet &amp; validator integration</li>
-          <li>SQLite → ScyllaDB migrate with dry-run</li>
-        </ul>
-        <span class="status shipped">Shipped</span>
-      </div>
-      <div class="phase" data-phase="Phase 3">
-        <h4>3D Mesh &amp; v2 mining</h4>
-        <p>3D mesh validation, NVIDIA-locked mining, on-chain enrollment + slashing, reputation healing.</p>
-        <ul>
-          <li>v2 attestation (CC + HMAC) end-to-end</li>
-          <li>On-chain enrollment + 2-of-3 slashers live</li>
-          <li>Self-custody wallet (browser + CLI)</li>
-        </ul>
-        <span class="status live">Live</span>
-      </div>
-    </div>
-
-    <p class="lead" style="margin-top:24px;">
-      <strong style="color:var(--text);">Current release: v0.4.0</strong> &mdash; ML-DSA-87 consensus, v2
-      NVIDIA-locked mining with active forged-attestation and double-mining slashers,
-      <code>qsdm-sdk@0.3.0</code> on npm, GHCR container images at
-      <code>:0.4.0</code>, and the self-custody wallet now includes a
-      <strong>Send transaction</strong> tab that signs a fully
-      client-side ML-DSA-87 envelope and POSTs it to the new
-      <code>/api/v1/wallet/submit-signed</code> endpoint &mdash; the
-      sender's private key never leaves the browser. Detail in
-      <a href="https://github.com/blackbeardONE/QSDM/blob/main/RELEASE_NOTES_v0.3.0.md">RELEASE_NOTES_v0.3.0.md</a>
-      and on the <a href="https://github.com/blackbeardONE/QSDM/releases">GitHub releases page</a>.
-    </p>
-  </div>
-</section>
-
-<!-- ============================================================
-     Section 6: ARCHITECTURE — kept from the previous index.
-     Compact SVG that the wallet card now lives under (Browser
-     row), so the diagram covers the new product surface without
-     a layout rewrite.
-     ============================================================ -->
-<section id="architecture">
-  <div class="container">
-    <span class="eyebrow">Under the hood</span>
-    <h2>How the pieces fit.</h2>
-    <p class="lead">
-      A single Go binary terminates consensus, storage, and the public API. Caddy fronts TLS;
-      libp2p is the peer transport. The browser wallet talks to the same REST surface as the SDKs.
-    </p>
-    <div class="arch">
-      <svg viewBox="0 0 980 380" role="img" aria-label="QSDM architecture overview">
-        <style>
-          .b { fill:#0e1830; stroke:#2a3a5e; stroke-width:1.2; }
-          .b2{ fill:#102032; stroke:#33486f; stroke-width:1.2; }
-          .t { fill:#e6edf7; font: 600 13px var(--mono); }
-          .tt{ fill:#9fb0c9; font: 500 11.5px var(--mono); }
-          .line { stroke:#33486f; stroke-width:1.4; fill:none; }
-          .line.dash { stroke-dasharray:4 4; }
-        </style>
-
-        <!-- Browser / SDK clients (now includes Wallet) -->
-        <rect class="b" x="20" y="30" width="190" height="80" rx="10"/>
-        <text class="t" x="35" y="52">Browser / SDKs / Wallet</text>
-        <text class="tt" x="35" y="72">Go · JS · WASM · qsdmcli</text>
-        <text class="tt" x="35" y="90">wallet.wasm · wallet.js</text>
-
-        <!-- Caddy -->
-        <rect class="b" x="230" y="30" width="170" height="60" rx="10"/>
-        <text class="t" x="245" y="55">Caddy · TLS edge</text>
-        <text class="tt" x="245" y="75">qsdm.tech / api / dashboard</text>
-
-        <!-- API -->
-        <rect class="b2" x="440" y="10" width="220" height="100" rx="10"/>
-        <text class="t" x="455" y="35">QSDM binary · API</text>
-        <text class="tt" x="455" y="55">/api/v1/health · /status · /mining</text>
-        <text class="tt" x="455" y="72">JWT · mTLS admin · audit log</text>
-        <text class="tt" x="455" y="89">:8443 (HTTP behind Caddy)</text>
-
-        <!-- Dashboard -->
-        <rect class="b2" x="700" y="10" width="240" height="100" rx="10"/>
-        <text class="t" x="715" y="35">Operator Dashboard</text>
-        <text class="tt" x="715" y="55">WebSocket topology · Prometheus</text>
-        <text class="tt" x="715" y="72">Login → /api/v1/auth proxy</text>
-        <text class="tt" x="715" y="89">:8081</text>
-
-        <!-- Consensus -->
-        <rect class="b" x="440" y="140" width="220" height="80" rx="10"/>
-        <text class="t" x="455" y="165">Proof-of-Entanglement</text>
-        <text class="tt" x="455" y="183">CPU-only · no proof-of-work</text>
-        <text class="tt" x="455" y="200">Mempool · BFT · Finality gadget</text>
-
-        <!-- Storage -->
-        <rect class="b" x="700" y="140" width="240" height="80" rx="10"/>
-        <text class="t" x="715" y="165">Storage</text>
-        <text class="tt" x="715" y="183">SQLite + Zstd → ScyllaDB (opt)</text>
-        <text class="tt" x="715" y="200">Row-level compression, MVs</text>
-
-        <!-- libp2p -->
-        <rect class="b" x="230" y="140" width="170" height="80" rx="10"/>
-        <text class="t" x="245" y="165">libp2p · :4001</text>
-        <text class="tt" x="245" y="183">GossipSub · PEX</text>
-        <text class="tt" x="245" y="200">Tx · Blocks · Evidence</text>
-
-        <!-- Miner / NVIDIA -->
-        <rect x="230" y="260" width="430" height="80" rx="10" fill="#0f1a0a" stroke="#76b900" stroke-width="1.4"/>
-        <text class="t" x="245" y="285" fill="#dff3b3">NVIDIA-locked miner (v2)</text>
-        <text class="tt" x="245" y="303" fill="#bcd790">Enroll · attest · slash · 60s freshness</text>
-        <text class="tt" x="245" y="320" fill="#bcd790">POST /api/v1/mining/{challenge,enroll,slash}</text>
-
-        <!-- Self-custody wallet seam -->
-        <rect x="700" y="260" width="240" height="80" rx="10" fill="#0c1626" stroke="#00d1b2" stroke-width="1.2"/>
-        <text class="t" x="715" y="285" fill="#d3f7ef">Self-custody wallet</text>
-        <text class="tt" x="715" y="303" fill="#a8e0d4">PBKDF2 + AES-GCM keystore</text>
-        <text class="tt" x="715" y="320" fill="#a8e0d4">Sign locally · submit via /wallet/send</text>
-
-        <!-- lines -->
-        <path class="line" d="M210 70 H 230"/>
-        <path class="line" d="M400 60 H 440"/>
-        <path class="line" d="M660 60 H 700"/>
-        <path class="line" d="M550 110 V 140"/>
-        <path class="line" d="M820 110 V 140"/>
-        <path class="line" d="M315 220 V 260"/>
-        <path class="line dash" d="M660 180 H 700"/>
-        <path class="line dash" d="M820 260 V 220"/>
-        <path class="line dash" d="M210 90 C 200 220 240 280 230 300"/>
-      </svg>
     </div>
   </div>
 </section>
@@ -822,8 +412,8 @@ docker pull ghcr.io/blackbeardone/qsdm-miner:0.3.1</code></pre>
 
 <footer>
   <div class="container">
-    <div class="footer-grid">
-      <div>
+    <div class="footer-top">
+      <div class="brand-block">
         <a class="brand" href="/" style="text-decoration:none">
           <svg viewBox="0 0 64 64" aria-hidden="true" style="width:28px;height:28px">
             <rect width="64" height="64" rx="12" fill="#0b1220"/>
@@ -832,37 +422,48 @@ docker pull ghcr.io/blackbeardone/qsdm-miner:0.3.1</code></pre>
           </svg>
           <span style="color:var(--text)">QSDM<span style="color:var(--accent)"> · CELL</span></span>
         </a>
-        <p style="margin:12px 0 0; color:var(--text-2); font-size:14px; max-width:340px;">
+        <p>
           Quantum-Secure Dynamic Mesh Ledger. Native coin: <strong>Cell (CELL)</strong>.
           Post-quantum consensus, NVIDIA-attested mining, self-custody wallet.
         </p>
       </div>
-      <div>
-        <h5>Use</h5>
-        <ul>
-          <li><a href="/wallet.html">Self-custody wallet</a></li>
-          <li><a href="/download.html">Download miner</a></li>
-          <li><a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/VALIDATOR_QUICKSTART.md">Validator quick-start</a></li>
-          <li><a href="https://dashboard.qsdm.tech/">Operator dashboard</a></li>
-        </ul>
-      </div>
-      <div>
-        <h5>Build</h5>
-        <ul>
-          <li><a href="https://www.npmjs.com/package/qsdm-sdk">qsdm-sdk on npm</a></li>
-          <li><a href="https://github.com/blackbeardONE/QSDM">GitHub source</a></li>
-          <li><a href="https://api.qsdm.tech/api/v1/health">/api/v1/health</a></li>
-          <li><a href="https://github.com/blackbeardONE/QSDM/releases">Releases</a></li>
-        </ul>
-      </div>
-      <div>
-        <h5>Operations</h5>
-        <ul>
-          <li><a href="/trust.html">Attestation transparency</a></li>
-          <li><a href="/chain.html">Chain status</a></li>
-          <li><a href="/validators.html">Validators / bootstrap</a></li>
-          <li><a href="mailto:admin@qsdm.tech">admin@qsdm.tech</a></li>
-        </ul>
+      <div class="footer-links">
+        <div>
+          <h5>Product</h5>
+          <ul>
+            <li><a href="/wallet.html">Wallet</a></li>
+            <li><a href="/download.html">Miner</a></li>
+            <li><a href="/validators.html">Validators</a></li>
+            <li><a href="https://dashboard.qsdm.tech/">Dashboard</a></li>
+          </ul>
+        </div>
+        <div>
+          <h5>Docs</h5>
+          <ul>
+            <li><a href="/docs/#/quick-start">Quick start</a></li>
+            <li><a href="/docs/#/api-reference">API reference</a></li>
+            <li><a href="/docs/#/runbooks/index">Runbooks</a></li>
+            <li><a href="/docs/">All docs</a></li>
+          </ul>
+        </div>
+        <div>
+          <h5>Build</h5>
+          <ul>
+            <li><a href="https://github.com/blackbeardONE/QSDM" rel="noopener">GitHub</a></li>
+            <li><a href="https://www.npmjs.com/package/qsdm-sdk" rel="noopener">qsdm-sdk on npm</a></li>
+            <li><a href="https://github.com/blackbeardONE/QSDM/releases" rel="noopener">Releases</a></li>
+            <li><a href="https://api.qsdm.tech/api/v1/health">/api/v1/health</a></li>
+          </ul>
+        </div>
+        <div>
+          <h5>Trust</h5>
+          <ul>
+            <li><a href="/trust.html">Attestation transparency</a></li>
+            <li><a href="/chain.html">Chain status</a></li>
+            <li><a href="/docs/#/security-audit">Security audit</a></li>
+            <li><a href="mailto:admin@qsdm.tech">admin@qsdm.tech</a></li>
+          </ul>
+        </div>
       </div>
     </div>
     <div class="legal">
@@ -875,23 +476,15 @@ docker pull ghcr.io/blackbeardone/qsdm-miner:0.3.1</code></pre>
 <script>
   document.getElementById('y').textContent = new Date().getFullYear();
 
-  // Auto-refresh the version pill from /api/v1/status when reachable.
-  // If the API is offline or the field is missing we leave the
-  // hard-coded fallback (v0.4.0) in place rather than blanking it.
-  //
-  // As of v0.4.0 the production /api/v1/status emits `version` as
-  // the release-tag (e.g. "v0.4.0") because the systemd unit on
-  // BLR1 sets QSDM_BUILD_VERSION=v0.4.0 (session 97 tag bump). The
-  // Go-toolchain filter below is kept as a defensive guard against
-  // older binaries that fell back to runtime.Version().
+  /* Version-pill auto-refresh from /api/v1/status (with fallback to the
+     hard-coded release tag). Kept verbatim from v0.4.0 — see Session 97
+     commit notes for why the Go-toolchain guard is intentional. */
   (function () {
     var pill = document.getElementById('ver-pill-text');
     if (!pill) return;
     var endpoints = ['/api/v1/status', 'https://api.qsdm.tech/api/v1/status'];
     var goToolchain = /^go\d+(\.\d+){1,2}$/;
     function pickVersion(j) {
-      // Prefer purpose-built fields. `version` is intentionally last
-      // because the validator currently puts the Go toolchain there.
       var candidates = [j.qsdm_version, j.release_version, j.release, j.build_version, j.version];
       for (var i = 0; i < candidates.length; i++) {
         var v = candidates[i];

@@ -1,0 +1,15 @@
+# Robots policy for qsdm.tech.
+#
+# Public marketing + docs portal: all-allow. Sensitive surfaces
+# (admin, dashboard, validator log viewer) live on dashboard.qsdm.tech
+# and api.qsdm.tech respectively and are NOT served from this origin,
+# so there's nothing here we need to gate.
+
+User-agent: *
+Allow: /
+
+# The browser wallet keeps the keystore in IndexedDB on the visitor's
+# device; nothing about a key ever leaves the page. No crawler-blocking
+# directive is needed there either.
+
+Sitemap: https://qsdm.tech/sitemap.xml

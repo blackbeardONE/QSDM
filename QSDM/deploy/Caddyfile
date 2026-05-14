@@ -10,7 +10,6 @@
 #   A   qsdm.tech     -> 206.189.132.232
 #   A   www.qsdm.tech -> 206.189.132.232
 # and remove the `# ` in front of the `qsdm.tech, www.qsdm.tech { ... }` block below.
-
 {
 	# ACME email for LE notifications
 	email admin@qsdm.tech
@@ -95,7 +94,7 @@ qsdm.tech {
 	root * /var/www/qsdm
 
 	# /app (+ trailing) goes to the operator dashboard
-	redir /app   https://dashboard.qsdm.tech/ 302
+	redir /app https://dashboard.qsdm.tech/ 302
 	redir /app/* https://dashboard.qsdm.tech/ 302
 
 	# Public API pass-through (login/register/wallet/health) -> qsdm :8443
@@ -116,9 +115,13 @@ qsdm.tech {
 		}
 	}
 
-	# Everything else: serve the corporate landing site from /var/www/qsdm
+	# Everything else: serve the corporate landing site from /var/www/qsdm.
+	# `{path}/index.html` makes nested directory homes work — without it
+	# `/docs/` would fall through to the apex landing instead of serving
+	# the docs SPA shell at /var/www/qsdm/docs/index.html. The final
+	# `/index.html` fallback is the SPA-friendly catch-all for the apex.
 	handle {
-		try_files {path} /index.html
+		try_files {path} {path}/index.html /index.html
 		file_server
 	}
 
@@ -135,7 +138,14 @@ qsdm.tech {
 		# 'unsafe-eval' — it allows WebAssembly compilation but not
 		# eval() / Function() / setTimeout(string, …) — and is the
 		# minimum delta required for the wallet page to work.
-		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self' https://api.qsdm.tech https://dashboard.qsdm.tech; frame-ancestors 'none'; upgrade-insecure-requests"
+		#
+		# connect-src adds raw.githubusercontent.com + api.github.com so
+		# the /docs/ SPA can fetch markdown live from the main branch
+		# and refresh the version pill from /releases/latest. img-src
+		# adds raw.githubusercontent.com so embedded screenshots in
+		# docs render. No CDN is in script-src — markdown-it is vendored
+		# locally at /docs/lib/markdown-it.min.js with SRI.
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self' https://api.qsdm.tech https://dashboard.qsdm.tech https://raw.githubusercontent.com https://api.github.com; frame-ancestors 'none'; upgrade-insecure-requests"
 		X-Frame-Options DENY
 		Permissions-Policy "geolocation=(), microphone=(), camera=()"
 		-Server
