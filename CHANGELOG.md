@@ -14,6 +14,111 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`pkg/crypto` test catch-up + `crypto-*` audit flip — 3 critical /
+  high blockers closed (54 → 57, 63.53 % → 67.06 %, 2026-05-14
+  post-`d5b176b`).** Highest-severity sweep so far: takes out two of
+  the three remaining `SevCritical` blockers (`crypto-01` ML-DSA
+  keygen + `crypto-02` HMAC fallback) and one of the three remaining
+  `SevHigh` crypto blockers (`crypto-05` mTLS validation). Live score
+  on `https://api.qsdm.tech/api/v1/audit/summary` moves from
+  **54/85 passed (63.53 %)** to **57/85 passed (67.06 %)**, blocking
+  findings drop from 19 to 16. Out of the cryptography category's
+  5 rows, all 5 are now `StatusPassed`.
+  - **Pre-existing `RequestSigner` HMAC-fallback bug fixed**
+    (`pkg/api/security.go`). The original `hmacSecret()` helper
+    returned a literal `[]byte("Charming123")` when the operator
+    had not configured `QSDM_JWT_HMAC_SECRET` — simultaneously
+    hardcoded, low-entropy, AND banned by `config.go::Validate`'s
+    strict-mode check that rejects any secret prefixed with
+    `charming123` (case-insensitive). The fix moves
+    `RequestSigner` to the same lazy-random pattern
+    `AuthManager.jwtHMACSecretBytes` already used: 32 B from
+    `crypto/rand`, cached behind a `sync.Mutex` for the life of the
+    `*RequestSigner`. The CGO+liboqs and circl-backend paths are
+    unaffected — the HMAC fallback only fires when both the
+    operator-supplied secret AND the Dilithium handle are nil
+    (an emergency CGO build whose liboqs.dll failed to load).
+  - **New `pkg/api/hmac_fallback_test.go` (4 tests, all green
+    under `CGO_ENABLED=0 go test ./pkg/api/...`).**
+    `TestRequestSigner_HMACFallback_NotHardcoded` is the headline
+    crypto-02 guard: it asserts the ephemeral key is 32 B, NOT the
+    historical `Charming123` literal, stable across calls within
+    one instance, distinct across two independent instances, and
+    has ≥20 distinct byte values (a `crypto/rand` 32 B draw
+    averages ~22, a hardcoded ASCII string would have ~8).
+    `TestRequestSigner_HMACFallback_ExplicitOverride` pins the
+    operator-supplied-secret path.
+    `TestAuthManager_JWTHMACFallback_NotHardcoded` mirrors the
+    same invariants on `AuthManager.jwtHMACSecretBytes` so a
+    future refactor that reintroduces a hardcoded fallback on
+    either side fails CI.
+    `TestRequestSigner_SignVerify_RoundTrip_UnderEphemeralHMAC`
+    is the round-trip case the emergency-fallback build path
+    needs; it skips when a Dilithium backend is present (which
+    is every standard build).
+  - **New `pkg/crypto/dilithium_circl_csprng_test.go` (3 tests,
+    all green under `CGO_ENABLED=0`).**
+    `TestCircl_KeygenCSPRNG_NoCollisions` calls `NewDilithium`
+    N=64 times and asserts every public key is distinct — a
+    keygen wired to a fixed seed or low-entropy source would
+    collide quickly.
+    `TestCircl_FIPS204_SizesConformToStrength3` pins
+    `mldsa87.{PublicKeySize, SignatureSize, SeedSize}` to the
+    exact 2592 / 4627 / 32 values fixed by **NIST FIPS 204 §6.1
+    Table 2** for the strength-3 / 256-bit-security parameter set;
+    this complements the existing Stage A
+    `TestCircl_FIPS204_SizesMatchTxsigConstants` (which checks
+    against `pkg/chain/txsig.go` literals) so a future contributor
+    that updates BOTH txsig and the circl import in tandem still
+    fails CI.
+    `TestCircl_FIPS204_DeterministicKeygen_FromFixedSeed` proves
+    the FIPS 204 §6 deterministic-keygen contract (same seed →
+    byte-identical packed pubkey).
+  - **2 new mTLS rejection tests in `pkg/api/mtls_test.go`,
+    closing crypto-05's three legs.** The existing suite already
+    covered "untrusted CAs" (`TestMTLSRejectsWrongCA` +
+    `TestMTLSRejectsUnauthenticatedClient`). This commit adds
+    `TestMTLSRejectsExpiredClientCert` (back-dated `NotBefore=-4h`
+    / `NotAfter=-2h` on a CA-trusted leaf — server rejects with
+    x509 `certificate has expired or is not yet valid`) and
+    `TestMTLSRejectsWrongSAN` (CA-trusted leaf whose SAN is
+    `evil.example.com`; rejected by a `VerifyPeerCertificate`
+    hook that pins the connecting peer to `127.0.0.1`, matching
+    the operator pattern documented in `deploy/README.md`).
+  - **Audit checklist (`pkg/audit/checklist.go`):** 3 items
+    flipped to `StatusPassed` with
+    `ReviewedBy="evidence:in-tree-tests"` and
+    `ReviewedAt="2026-05-14T20:00:00Z"`: `crypto-01` ML-DSA key
+    generation (critical), `crypto-02` HMAC fallback security
+    (critical), `crypto-05` mTLS certificate validation (high).
+    Each `Notes` field carries pointers to the source code,
+    the specific test functions, the FIPS 204 §6.1 Table 2
+    parameter values, and the historical `Charming123`-banned-by-
+    strict-mode rationale for the `RequestSigner` fix.
+    `runtimeVerifiedItems` extended to 57 entries; e2e
+    `TestE2E_AuditChecklistReview` rebased to use `authz-01` +
+    `sc-01` for the +2 pending → passed delta (both are still
+    `SevCritical` pending in `defaultItems()`).
+  - **Test posture (windows/amd64, `CGO_ENABLED=0`, go1.25.0):**
+    `pkg/crypto` 0.461s (CSPRNG + FIPS 204 tests pass with
+    `-run 'Circl_(KeygenCSPRNG|FIPS204)'`), `pkg/audit` 1.301s,
+    `internal/dashboard` 2.506s, `tests` `-run Audit` 1.516s.
+    `pkg/api` still shows the parallel session's pre-existing
+    `TestRequestTimeout_SlowHandlerCancelled` flake in their
+    still-untracked `request_timeout_test.go`; not part of
+    this commit, not related to the crypto pass.
+  - **BLR1 live deploy:** binary cross-compiled from this commit
+    (`-trimpath -ldflags='-s -w' CGO_ENABLED=0 GOOS=linux
+    GOARCH=amd64`, sha256
+    `4278a207d8833e13c425cf089855c5f72365f18ee412377137a7645bcca0ba35`,
+    32,649,400 bytes), `scp`'d, atomic `mv` over `/opt/qsdm/qsdm`
+    (previous binary preserved as
+    `/opt/qsdm/qsdm.pre-crypto-flip.bak`), `systemctl restart
+    qsdm.service` → `active (running)`, PID 336974, chain restored.
+    Post-swap `/api/v1/audit/summary` reports **57/85 passed
+    (67.06 %)** with `evidence_provenance` `{in-tree: 22,
+    in-tree-tests: 23, live-deploy: 12}` and `blocking_count: 16`.
+
 - **K8s runtime hardening + `runtime-*` audit catch-up — 6 items flipped
   to `StatusPassed` (2026-05-14, post-`2655df1`).** Brings the
   `pkg/audit` checklist's container-runtime row in line with the

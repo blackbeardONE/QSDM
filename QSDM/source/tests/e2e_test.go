@@ -345,15 +345,18 @@ func TestE2E_AuditChecklistReview(t *testing.T) {
 		t.Fatalf("expected 30+ items, got %d", baseline["total"])
 	}
 
-	// Review some critical items. crypto-01 and crypto-02 are still pending
-	// in defaultItems() (formal ML-DSA / HMAC-fallback review not yet
-	// performed) so the passed delta from this block is exactly +2;
-	// bridge-01 is also pending (bridge secret-handling review not yet
-	// performed) so the failed delta is exactly +1. (Note: auth-01 was the
-	// historic pick here; it flipped to StatusPassed in the 2026-05-14
-	// audit-evidence catch-up pass — see pkg/audit/checklist.go.)
-	cl.UpdateStatus("crypto-01", audit.StatusPassed, "auditor", "ML-DSA key gen verified")
-	cl.UpdateStatus("crypto-02", audit.StatusPassed, "auditor", "HMAC ephemeral key confirmed")
+	// Review some critical items. authz-01 (RBAC enforcement) and
+	// sc-01 (WASM sandbox isolation) are still pending in
+	// defaultItems() so the passed delta from this block is
+	// exactly +2; bridge-01 is also pending (bridge secret-handling
+	// review not yet performed) so the failed delta is exactly +1.
+	// (Note: auth-01 was the historic pick here; it flipped to
+	// StatusPassed in the 2026-05-14 audit-evidence catch-up pass.
+	// crypto-01 and crypto-02 were the next picks; they flipped to
+	// StatusPassed in the 2026-05-14 pkg/crypto test catch-up — see
+	// pkg/audit/checklist.go for the in-tree-tests evidence pointers.)
+	cl.UpdateStatus("authz-01", audit.StatusPassed, "auditor", "RBAC enforcement verified")
+	cl.UpdateStatus("sc-01", audit.StatusPassed, "auditor", "WASM sandbox isolation verified")
 	cl.UpdateStatus("bridge-01", audit.StatusFailed, "auditor", "needs bridge secret rotation policy")
 
 	summary := cl.Summary()
@@ -367,7 +370,7 @@ func TestE2E_AuditChecklistReview(t *testing.T) {
 
 	pending := cl.PendingCritical()
 	for _, item := range pending {
-		if item.ID == "crypto-01" || item.ID == "crypto-02" {
+		if item.ID == "authz-01" || item.ID == "sc-01" {
 			t.Fatalf("reviewed items should not be in pending: %s", item.ID)
 		}
 	}

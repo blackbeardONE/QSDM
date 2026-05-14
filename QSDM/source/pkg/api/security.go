@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -16,34 +17,79 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 )
 
-// SecurityHeaders adds military-grade security headers
+// SecurityHeaders adds the canonical set of HTTP security headers required
+// by the audit baseline (HIGH-5). The header list intentionally tracks the
+// OWASP Secure Headers Project's "must-have" set, plus the cross-origin
+// isolation policies (COOP/CORP) introduced after Spectre to prevent
+// cross-origin sidechannel leakage.
+//
+// Each header is annotated with the threat it mitigates so the audit
+// reviewer can map the implementation back to the recommendation table.
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// HSTS - Force HTTPS
-		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
-		
-		// X-Frame-Options - Prevent clickjacking
-		w.Header().Set("X-Frame-Options", "DENY")
-		
-		// X-Content-Type-Options - Prevent MIME sniffing
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		
-		// X-XSS-Protection
-		w.Header().Set("X-XSS-Protection", "1; mode=block")
-		
-		// Content-Security-Policy - Strict CSP (no script-src unsafe-inline: login + import map use /static/*.js|.json)
-		w.Header().Set("Content-Security-Policy",
-			"default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net; connect-src 'self'; frame-ancestors 'none';")
-		
-		// Referrer-Policy
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		
-		// Permissions-Policy
-		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
-		
-		// Remove server information
-		w.Header().Set("Server", "")
-		
+		h := w.Header()
+
+		// HSTS — forces HTTPS for at least 1 year, including subdomains, and
+		// declares this host preload-eligible.  Mitigates SSL-strip / on-path
+		// downgrade.
+		h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+
+		// X-Frame-Options — defence-in-depth clickjacking guard (legacy
+		// browsers that ignore frame-ancestors below).
+		h.Set("X-Frame-Options", "DENY")
+
+		// X-Content-Type-Options — disables MIME-sniffing.  Prevents the
+		// "user uploaded text.txt that the browser decided to render as
+		// text/html with embedded <script>" attack class.
+		h.Set("X-Content-Type-Options", "nosniff")
+
+		// X-XSS-Protection — legacy header; ignored by modern Chromium but
+		// still respected by older Edge/Safari/IE.  We keep the strict
+		// "block on detection" mode.
+		h.Set("X-XSS-Protection", "1; mode=block")
+
+		// Content-Security-Policy — strict CSP.  No 'unsafe-inline' for
+		// script-src (login and import map are served from /static/*.js|.json).
+		// frame-ancestors 'none' is the modern clickjacking guard.
+		// base-uri 'self' blocks <base> hijack; form-action 'self' stops
+		// authenticated form-post exfiltration; object-src 'none' kills
+		// legacy plugin attack surface.
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; "+
+				"script-src 'self' https://cdn.jsdelivr.net; "+
+				"style-src 'self' 'unsafe-inline'; "+
+				"img-src 'self' data:; "+
+				"font-src 'self' https://cdn.jsdelivr.net; "+
+				"connect-src 'self'; "+
+				"frame-ancestors 'none'; "+
+				"base-uri 'self'; "+
+				"form-action 'self'; "+
+				"object-src 'none'")
+
+		// Referrer-Policy — the audit baseline (HIGH-5) specifies
+		// strict-origin-when-cross-origin: full URL on same-origin, origin
+		// only on cross-origin HTTPS, nothing on HTTPS→HTTP downgrades.
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+
+		// Permissions-Policy — explicitly disable powerful APIs that no
+		// QSDM endpoint needs.  Reduces the blast radius of a successful
+		// XSS that smuggles past CSP.
+		h.Set("Permissions-Policy",
+			"geolocation=(), microphone=(), camera=(), payment=(), usb=(), accelerometer=(), gyroscope=(), magnetometer=()")
+
+		// Cross-Origin-Opener-Policy — isolates the browsing context group
+		// so a malicious popup cannot access window.opener of an
+		// authenticated dashboard tab.
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+
+		// Cross-Origin-Resource-Policy — prevents other origins from
+		// embedding API responses (e.g. <img src="…/wallet/balance">).
+		h.Set("Cross-Origin-Resource-Policy", "same-origin")
+
+		// Remove server fingerprint.  net/http won't emit Server: by
+		// default in Go 1.20+, but we clear it explicitly to be safe.
+		h.Set("Server", "")
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -161,6 +207,9 @@ func (rl *RateLimiter) RateLimitMiddleware(next http.Handler) http.Handler {
 			if strings.Contains(r.URL.Path, "/monitoring/ngc-challenge") {
 				monitoring.RecordNGCChallengeRateLimited()
 			}
+			// MED-8: surface every 429 in the security metrics stream so
+			// alerting can detect brute-force / scraping attempts.
+			monitoring.RecordRateLimitViolation()
 			w.Header().Set("Retry-After", fmt.Sprintf("%.0f", rl.window.Seconds()))
 			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 			return
@@ -245,13 +294,46 @@ func (rl *RateLimiter) getClientIdentifier(r *http.Request) string {
 	return "ip:" + ip
 }
 
-// RequestSigner handles request signing and verification
+// RequestSigner handles request signing and verification.
+//
+// When the build links Dilithium (CGO+liboqs or the pure-Go circl
+// backend), every sign/verify hits the quantum-safe path. When
+// Dilithium is unavailable AND the operator did NOT supply an
+// explicit HMAC secret via NewRequestSigner, hmacSecret() lazily
+// generates a 32-byte ephemeral key from crypto/rand on first call
+// and caches it for the life of the process. This matches
+// AuthManager.jwtHMACSecretBytes()'s policy and closes the
+// crypto-02 audit-checklist row ("HMAC fallback uses random
+// ephemeral key, not hardcoded, when ML-DSA is unavailable").
+//
+// Earlier versions of this file returned a literal []byte("Charming123")
+// as the fallback secret. That string is also the demo-prefix
+// banned by config.go::Validate when QSDM_STRICT_SECRETS=true, so
+// the old code would have been rejected by strict-mode startup
+// anyway — leaving it in the dev path was a footgun the audit
+// checklist correctly flagged. The fix is the lazy-random pattern
+// AuthManager already used.
+//
+// Cross-process consistency: if you need two QSDM processes to
+// accept each other's signatures (e.g. a validator + dashboard
+// sharing the same authentication realm), pass the same
+// hmacFallbackSecret to NewRequestSigner on both sides. Without
+// an explicit secret, each process generates its own ephemeral
+// key on first use and cross-process signatures will not validate
+// — that is the correct security default for the "Dilithium
+// unavailable" path.
 type RequestSigner struct {
-	dilithium     *crypto.Dilithium
-	hmacFallback  []byte // used when dilithium is nil; defaults in hmacSecret() if unset
+	dilithium    *crypto.Dilithium
+	// hmacMu guards hmacFallback for the lazy-init race between
+	// the first SignRequest and a concurrent VerifyRequest.
+	hmacMu       sync.Mutex
+	hmacFallback []byte // explicit secret from constructor, or lazily-generated 32 B ephemeral
 }
 
-// NewRequestSigner creates a new request signer. hmacFallbackSecret is used for HMAC when Dilithium is unavailable (non-CGO); empty keeps the dev default.
+// NewRequestSigner creates a new request signer. hmacFallbackSecret
+// is used for HMAC when Dilithium is unavailable (non-CGO); empty
+// leaves the fallback secret unset, so hmacSecret() will lazily
+// generate a 32-byte ephemeral key from crypto/rand on first use.
 func NewRequestSigner(hmacFallbackSecret string) (*RequestSigner, error) {
 	d := crypto.NewDilithium()
 	// Allow nil Dilithium for non-CGO builds (uses fallback signing)
@@ -265,10 +347,27 @@ func NewRequestSigner(hmacFallbackSecret string) (*RequestSigner, error) {
 }
 
 func (rs *RequestSigner) hmacSecret() []byte {
+	rs.hmacMu.Lock()
+	defer rs.hmacMu.Unlock()
 	if len(rs.hmacFallback) > 0 {
 		return rs.hmacFallback
 	}
-	return []byte("Charming123")
+	// Lazy-generate a 32-byte ephemeral key from crypto/rand on
+	// first use. Cached for the life of the process so subsequent
+	// Sign/Verify pairs see the same key. Matches the
+	// AuthManager.jwtHMACSecretBytes() policy; see the crypto-02
+	// audit-checklist Notes for the threat-model rationale.
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand failure is fatal for any signing path; the
+		// best we can do is surface a non-empty key that will be
+		// stable for this process so Sign/Verify still round-trip.
+		// In practice rand.Read on a healthy system never fails;
+		// this branch exists so the function is total.
+		b = []byte("qsdm-rand-fallback-unreachable-in-practice-key-32b")
+	}
+	rs.hmacFallback = b
+	return rs.hmacFallback
 }
 
 // SignRequest signs a request body with quantum-safe signature (or HMAC fallback)
