@@ -408,23 +408,245 @@ public `POST /wallet/submit-signed` returns HTTP 400
       `score: 31.76, summary: {total:85 passed:27 pending:58
       failed:0 waived:0}`.
 
-## [v0.3.3] - 2026-05-13
+## [v0.3.3] - 2026-05-12
 
 **Tag:** `v0.3.3` @ `03edf41612585b378908839bafa6f42974311781`
 (2026-05-12T13:35:07+08:00).
-**Release theme:** `/api/v1/wallet/mint` deprecation to HTTP 410
-Gone — closes the supply-inflation surface left over from the
-seed-faucet era (Sessions 89-91).
+**Release theme:** node-state persistence across restarts +
+`/api/v1/wallet/mint` deprecation to HTTP 410 Gone — closes the
+supply-inflation surface from the seed-faucet era and pins
+peer identity / NGC attestation state so a validator restart
+doesn't blow away its peer.ID or its in-memory NGC ring
+(Sessions 88-91).
 
-> **Historical-content note.** Entries below this point are dated
-> 2026-05-06 and earlier. They were on main when v0.3.3 was
-> tagged but most of them actually shipped in the v0.3.0 / v0.3.1
-> / v0.3.2 windows (and a few even before the QSDM rebrand on
-> 2026-04-22). A finer-grained back-fill into
-> `[v0.3.2]` / `[v0.3.1]` / `[v0.3.0]` is deferred —
-> Keep-a-Changelog cleanliness sits below release-evidence
-> accuracy for the v0.4.x cycle. Until then, treat this
-> `[v0.3.3]` section as the "everything pre-v0.4.0" catchment.
+**Commits in window (v0.3.2..v0.3.3):**
+- `03edf41` — `api`: deprecate `/api/v1/wallet/mint` to HTTP 410
+  Gone (Session 91).
+- `7440af9` — `docs`: Session 90 release notes (NGC attestation
+  ring persistence deployed).
+- `69fb006` — `monitoring`: persist NGC attestation ring across
+  restarts (Session 90).
+- `193fa84` — `docs`: Session 89 release notes (libp2p host key
+  persistence deployed).
+- `b1f72ef` — `networking`: persist libp2p host key across
+  restarts (Session 89).
+- `fc07424` — `docs`: truth-in-docs sweep — NVIDIA hardware is
+  not a v2 blocker (Session 88).
+- `ed9a3f9` — `gitignore`: add `_build/` (local cross-compile
+  output).
+
+### Removed
+
+- **`POST /api/v1/wallet/mint` → HTTP 410 Gone (`api-05`,
+  Session 91, `03edf41`).** The legacy seed-faucet mint route
+  used to return `{tx_id, status:"accepted"}` for arbitrary
+  callers — a supply-inflation surface that had no business
+  surviving the move to a Cell tokenomics model with a fixed
+  mint schedule. The route now responds with HTTP 410 Gone and a
+  migration block in the body pointing operators at the
+  legitimate paths (validator coinbase rewards via PoE block
+  rewards; testnet faucet via the operator-only `qsdmcli
+  mint` admin path). New monitoring tag
+  `qsdm_wallet_mint_total{result="gone"}` is live on the
+  Prometheus endpoint and on the dashboard so any leftover
+  client hitting the route shows up immediately.
+- **Audit row `api-05` flipped to `StatusPassed`** with the
+  evidence anchor `evidence:live-deploy / Session 91`.
+
+### Added
+
+- **libp2p host-key persistence across restarts (`net-05`,
+  Session 89, `b1f72ef`).** Previously a validator restart
+  generated a fresh libp2p identity, breaking peer reputation,
+  enrollment registry entries, and any peer-pinned routes.
+  Host key is now persisted to `<stateDir>/qsdm_host_key.pem`
+  on first generation and reloaded on subsequent boots. Audit
+  row `net-05` flipped to `StatusPassed` with evidence anchor
+  `evidence:live-deploy / Session 89`.
+- **NGC attestation ring persistence across restarts (`store-05`,
+  Session 90, `69fb006`).** The in-memory NGC attestation
+  ring previously dropped every received attestation on
+  validator restart, leaving a multi-minute hole in trust
+  scores after every redeploy. Ring is now serialised to
+  `<stateDir>/qsdm_ngc_ring.json` on shutdown + every
+  configurable checkpoint interval and restored on boot. Audit
+  row `store-05` flipped to `StatusPassed` with evidence anchor
+  `evidence:live-deploy / Session 90`.
+
+### Changed
+
+- **Truth-in-docs sweep (Session 88, `fc07424`).** Removed
+  several blocker-language references to NVIDIA hardware from
+  the v2 mining-protocol docs — the v2 protocol does NOT
+  require NVIDIA hardware (CPU-only validators are
+  first-class). The NGC attestation path remains a CUDA-only
+  enhancement but is not a v2 release blocker.
+
+## [v0.3.2] - 2026-05-12
+
+**Tag:** `v0.3.2` @ `f727fef6d2111ed8418c83e49f702057481b3e6f`
+(2026-05-12T03:54:39+08:00).
+**Release theme:** v1 API deprecation posture + browser-wallet
+SRI hardening + landing-page facelift to surface the v0.3.1
+wallet shipment.
+
+**Commits in window (v0.3.1..v0.3.2):**
+- `f727fef` — `v1 deprecation`: status posture, miner preflight,
+  release matrix, doc rewrite.
+- `d373254` — `wallet`: SRI on `wallet.{html,js,wasm}` + read-
+  only balance tab.
+- `29f1646` — `landing`: fix version-pill JS + add Wallet nav
+  link to secondary pages.
+- `06fc8d1` — `landing`: rewrite `index.html` — surface wallet
+  + `qsdm-sdk` + v0.3.1 + cut redundancy.
+
+### Added
+
+- **Subresource Integrity hashes on browser-wallet assets
+  (`d373254`).** `wallet.html`, `wallet.js`, and `wallet.wasm`
+  shipped on `qsdm.tech` now carry SHA-384 SRI attributes so a
+  modified asset (compromised CDN, MITM rewrite) fails to load
+  rather than silently signing transactions for an attacker.
+  Read-only **balance tab** added: shows current Cell balance
+  for the loaded keystore without requiring a network round-
+  trip through the trusted `/wallet/send` legacy route.
+- **Wallet nav link on every secondary landing page
+  (`29f1646`).** Footer / nav across all `qsdm.tech`
+  secondary pages now points to `/wallet/` consistently —
+  previously buried in `/index.html` only.
+
+### Changed
+
+- **Landing page `index.html` rewrite (`06fc8d1`).** Surfaces
+  the browser wallet, the `qsdm-sdk` npm package, and the
+  v0.3.1 release pill directly above the fold. Removed three
+  redundant sections that duplicated docs-portal content.
+  Version-pill JS bug fix in `29f1646` (was pinning to
+  literal `v0.3.0` regardless of build).
+- **`/api/v1/*` deprecation posture refresh (`f727fef`).** Status
+  endpoint now signals v1 deprecation alongside the v2
+  promotion timeline. Miner preflight calls out the same.
+  Release-matrix doc rewritten to match the actual binary
+  matrix shipped by `release-container.yml`.
+
+## [v0.3.1] - 2026-05-12
+
+**Tag:** `v0.3.1` @ `bda45834ae5d032608039eed9ecf75c083046887`
+(2026-05-12T02:29:34+08:00).
+**Release theme:** self-custody browser wallet ships to
+`qsdm.tech` — CLI + browser are byte-compatible, signed
+transactions verify identically across both paths. Also: the
+`qsdm` npm SDK package is renamed to `qsdm-sdk` after npm's
+name-similarity heuristic rejected the bare name on first
+publish.
+
+**Commits in window (v0.3.0..v0.3.1):**
+- `bda4583` — `deploy`: ship browser wallet to `qsdm.tech` +
+  CSP `wasm-unsafe-eval` + Go SSH deploy tool.
+- `909554e` — Session 82: self-custody wallet (CLI + browser,
+  byte-compatible).
+- `f0f78df` — `docs`: record `qsdm-sdk@0.3.0` publish (registry
+  URL, Rekor logIndex, shasum).
+- `38592d7` — `sdk/js`: rename npm package `qsdm` → `qsdm-sdk`
+  (registry name-similarity rejection).
+- `5361b1c` — Session 80 (cont'd 2): wrap macOS smoke check
+  in `timeout` to avoid validator-startup hang.
+- `923d235` — Session 80 (cont'd): fix liboqs universal2
+  cross-compile bug exposed by green CI.
+- `f83722e` — Session 80: fix latent no-CGO bug in
+  `build_macos.sh` + clear macos-build queue.
+- `ae88fdc` — `chore(deps)`: bump
+  `github.com/libp2p/go-libp2p-pubsub` in `/QSDM/source` (#11).
+- `12afbfe` — Session 79: third-party post-release verification
+  of v0.3.0.
+
+### Added
+
+- **Self-custody browser wallet ships to `qsdm.tech`
+  (Session 82, `909554e` + `bda4583`).** First end-to-end
+  release of the browser wallet alongside the existing CLI
+  wallet. Both produce **byte-compatible signatures** — a
+  transaction generated in the browser verifies on every
+  validator that accepts a CLI-generated one, and vice versa.
+  Deploy path uses a new Go SSH deploy tool to push the wallet
+  assets to `qsdm.tech` with SRI hashes computed locally and
+  Content-Security-Policy `wasm-unsafe-eval` directive added
+  so the wallet WASM module can load without weakening CSP
+  for the rest of the site.
+- **npm package `qsdm-sdk` published (Sessions 79-81,
+  `38592d7` + `f0f78df`).** First public release of the
+  JavaScript SDK on the npm registry. Bare name `qsdm` was
+  rejected on first publish by npm's name-similarity
+  heuristic against a long-dormant unrelated package — the
+  package id is now `qsdm-sdk`. Brand, repo, binaries, and
+  import-time symbols are unaffected; only the npm package
+  id has the `-sdk` suffix. Publish recorded with Rekor
+  logIndex + shasum in the docs portal for downstream
+  verification.
+
+### Fixed
+
+- **liboqs universal2 cross-compile bug (Session 80,
+  `923d235`).** The macOS `build_macos.sh` script's
+  universal2 path produced binaries with a corrupted liboqs
+  segment that crashed on first ML-DSA-87 keygen call. Fixed
+  the cross-compile invocation; CI macos-build queue cleared.
+- **macOS smoke-check hang (Session 80, `5361b1c`).** The
+  post-build smoke check's validator-startup probe could
+  hang indefinitely on macOS runners under specific
+  conditions (no peers discovered before TestMain timeout).
+  Wrapped in `timeout 30s` so the test fails fast instead
+  of stalling the whole pipeline.
+- **No-CGO build path on macOS (Session 80, `f83722e`).**
+  Latent bug in `build_macos.sh` where the no-CGO fallback
+  path tried to link liboqs anyway, breaking builds on
+  systems without Homebrew OpenSSL@3. Now correctly takes
+  the circl pure-Go path under `QSDM_NO_CGO=1`.
+
+### Changed
+
+- **Dependency bump:** `github.com/libp2p/go-libp2p-pubsub`
+  updated via Dependabot PR #11 (`ae88fdc`).
+
+### Security
+
+- **Third-party post-release verification of v0.3.0
+  (Session 79, `12afbfe`).** Independent cosign + Rekor
+  verification of the v0.3.0 release artifacts from a
+  third-party workstation — out-of-band signoff before
+  pushing the v0.3.1 cut. All v0.3.0 artifacts verified
+  against the `release-container.yml@refs/tags/v0.3.0`
+  Sigstore OIDC identity.
+
+## [v0.3.0] - 2026-05-11
+
+**Tag:** `v0.3.0` @ `c00fccd93a66c5317aaaa03b80e9a09d111e87bd`
+(2026-05-11T12:23:14+08:00).
+**Release theme:** first tagged release after the **QSDM**
+rebrand on 2026-04-22 (rebrand from the historical "QSDM"
+naming window). Native coin renamed to **Cell (CELL)**;
+release-evidence tooling, release-container CI pipeline,
+GHCR case-sensitivity fix, and the Stage-A/B retirement of
+the always-stub `dilithium` / `wallet` / `poe` / `wasm_sdk`
+backends all shipped in this release.
+
+**Tag history note.** `v0.3.0` was re-tagged on commit
+`134abf1` after Session 75's CI fixes — the original
+attempt failed `release-container.yml` because of a GHCR
+case-sensitivity issue (Session 76's
+`83c1128`) and a broken bash for-loop in the release-tag
+matrix (Session 78's `c00fccd`).
+
+> **Historical-content note.** Entries below this point cover
+> the **2026-04-22 → 2026-05-11** window — everything from
+> the QSDM rebrand through the v0.3.0 cut. They were on main
+> when v0.3.0 was tagged. A few entries at the bottom of the
+> section reference work that pre-dates the rebrand and was
+> carried forward; those are kept in place rather than
+> archived because they remain user-relevant features
+> (governance, mining v2 spec, etc.). The
+> `## [v0.3.0]` header here is therefore the
+> "everything pre-v0.3.1 / pre-rebrand-rebase" catchment.
 
 ### Added
 
