@@ -8,13 +8,16 @@
 > `pkg/storage/sqlite.go::UpdateBalance`. Design + closure status
 > in [`V041_REPLAY_PROTECTION_DESIGN.md`](V041_REPLAY_PROTECTION_DESIGN.md).
 >
-> **Status of this document**: PRE-DEPLOY skeleton committed
-> alongside the v0.4.1 tag cut. The cosign / Rekor / GHCR / BLR1
-> verification sections marked **PENDING** below will be filled in
-> by the operator once `release-container.yml` finishes the build
-> and the BLR1 binary swap completes. Once those sections turn
-> green, this header note is removed and the doc becomes the
-> canonical v0.4.1 supply-chain evidence.
+> **Status of this document**: PARTIALLY FILLED. The
+> `release-container.yml` workflow completed cleanly (10/10 jobs
+> on run [`25855056638`](https://github.com/blackbeardONE/QSDM/actions/runs/25855056638))
+> and the GHCR manifest digests + SHA256SUMS row for the canonical
+> linux-amd64 binary are anchored below. Still PENDING (operator
+> step): independent cosign / Rekor verification from a
+> third-party workstation, the BLR1 binary swap, and the six
+> live-deploy probes against `https://api.qsdm.tech`. Once those
+> sections turn green, this header note is removed and the doc
+> becomes the canonical v0.4.1 supply-chain evidence.
 >
 > Companion documents:
 > [`RELEASE_EVIDENCE_v0.4.0.md`](RELEASE_EVIDENCE_v0.4.0.md) (v0.4.0
@@ -89,13 +92,15 @@ helper, whose canonicalisation algorithm is the same Go
 
 | Verification | Subject | Result |
 |--------------|---------|--------|
-| SHA256SUMS (root of binary integrity tree) | `release-container.yml@refs/tags/v0.4.1` | _PENDING — needs release-container.yml workflow run_ |
-| Individual binary signature (`qsdmminer-console-linux-amd64`) | same | _PENDING_ |
-| Source SBOM (`qsdm-source-sbom.spdx.json`) | same | _PENDING_ |
-| Container `ghcr.io/blackbeardone/qsdm:0.4.1` | same | _PENDING_ |
-| Container `ghcr.io/blackbeardone/qsdm-validator:0.4.1` | same | _PENDING_ |
-| Container `ghcr.io/blackbeardone/qsdm-miner:0.4.1` | same | _PENDING_ |
-| Binary content hash vs SHA256SUMS row | `qsdmminer-console-linux-amd64` | _PENDING_ |
+| `release-container.yml` workflow run | [`25855056638`](https://github.com/blackbeardONE/QSDM/actions/runs/25855056638) @ `refs/tags/v0.4.1` | ✓ 10/10 jobs green |
+| Release-artefact count | GitHub release `v0.4.1` | ✓ 53 cosign-signed assets attached (15 binaries + 17 `.sig` + 17 `.pem` + 3 SBOMs + SHA256SUMS) |
+| SHA256SUMS (root of binary integrity tree) | `release-container.yml@refs/tags/v0.4.1` | ✓ Attached (`.pem` + `.sig`) |
+| Individual binary signature (`qsdmminer-console-linux-amd64`) | same | ✓ Attached (`.pem` + `.sig`) — independent cosign verify PENDING |
+| Source SBOM (`qsdm-source-sbom.spdx.json`) | same | ✓ Attached + signed |
+| Container `ghcr.io/blackbeardone/qsdm:0.4.1` | manifest digest `sha256:1fcc20e6…` | ✓ Published — independent cosign verify PENDING |
+| Container `ghcr.io/blackbeardone/qsdm-validator:0.4.1` | manifest digest `sha256:79521c7e…` | ✓ Published — independent cosign verify PENDING |
+| Container `ghcr.io/blackbeardone/qsdm-miner:0.4.1` | manifest digest `sha256:4f39f661…` | ✓ Published — independent cosign verify PENDING |
+| Binary content hash vs SHA256SUMS row | `qsdmminer-console-linux-amd64` | ✓ MATCH (`95a1d18a3d23…778fefce`) |
 | BLR1 binary swap (validator runs v0.4.1) | `/api/v1/status` reports `v0.4.1` | _PENDING — operator step_ |
 | Public POST `/wallet/submit-signed` v0.4.1 wire | nonce field accepted; `nonce_replay` 409 surfaces | _PENDING_ |
 | `cmd/v041smoke` 5/5 against production | nonce endpoint + nonce-conflict CAS visible | _PENDING_ |
@@ -129,16 +134,66 @@ curl -sSL https://qsdm.tech/wallet.js   | openssl dgst -sha384 -binary | base64 
 
 ## Provenance fingerprint
 
-_PENDING — fill in after `release-container.yml@refs/tags/v0.4.1`
-completes._ Same Sigstore OID extraction process as
-[`RELEASE_EVIDENCE_v0.4.0.md`](RELEASE_EVIDENCE_v0.4.0.md#provenance-fingerprint),
-but the workflow ref + run URL will rebind to `refs/tags/v0.4.1`
-and the next workflow run number.
+Every cosign certificate emitted by the v0.4.1 release run will
+carry the following Sigstore custom-OID claims (all identical
+across binaries and containers, which is the whole point — they
+pin every artefact to the same workflow run). Operator
+extraction from the binary cosign cert with
+`openssl x509 -in <decoded.pem> -noout -text`:
 
-## Container image digests
+| Sigstore OID | Expected value |
+|--------------|----------------|
+| `1.3.6.1.4.1.57264.1.1` (Issuer) | `https://token.actions.githubusercontent.com` |
+| `1.3.6.1.4.1.57264.1.9` (Build signer URI) | `https://github.com/blackbeardONE/QSDM/.github/workflows/release-container.yml@refs/tags/v0.4.1` |
+| `1.3.6.1.4.1.57264.1.12` (Source repo URI) | `https://github.com/blackbeardONE/QSDM` |
+| `1.3.6.1.4.1.57264.1.16` (Repo owner URI) | `https://github.com/blackbeardONE` |
+| `1.3.6.1.4.1.57264.1.18` (Workflow ref) | `https://github.com/blackbeardONE/QSDM/.github/workflows/release-container.yml@refs/tags/v0.4.1` |
+| `1.3.6.1.4.1.57264.1.21` (Workflow run URL) | `https://github.com/blackbeardONE/QSDM/actions/runs/25855056638/attempts/1` |
+| Subject URI | `https://github.com/blackbeardONE/QSDM/.github/workflows/release-container.yml@refs/tags/v0.4.1` |
+| Issuer (parent CA) | `O=sigstore.dev, CN=sigstore-intermediate` |
 
-_PENDING — fill in after `release-container.yml@refs/tags/v0.4.1`
-completes._
+A future build that reproduces the same source tree (same tag
+commit, same workflow ref) MUST still match these OID values. A
+mismatch on any of those OIDs is the operator trip-wire for
+"someone hand-uploaded an artefact under the v0.4.1 tag without
+going through the workflow."
+
+## Container image digests (immutable references)
+
+The Sigstore signatures bind to the manifest digest, not the
+`:0.4.1` tag. Anyone pulling the images can reference these
+digests instead of the mutable tag and still get a cosign
+verification match. All three are OCI image indexes
+(`application/vnd.oci.image.index.v1+json`) fanning out to
+per-architecture manifests, queried via
+`HEAD https://ghcr.io/v2/blackbeardone/<image>/manifests/0.4.1`:
+
+| Image | Manifest-list digest |
+|-------|----------------------|
+| `ghcr.io/blackbeardone/qsdm@<digest>` | `sha256:1fcc20e63982a677b2ecb06f10a3cc4aec3a6165408fb1ac8d0c92792b339991` |
+| `ghcr.io/blackbeardone/qsdm-validator@<digest>` | `sha256:79521c7e3b1db8b005ce1246925d78bf29e23efe8f52efd4fbbe72fb58365768` |
+| `ghcr.io/blackbeardone/qsdm-miner@<digest>` | `sha256:4f39f661f566475fce3d6abe57b4d577a28eb2fa53e7cea2615a6d32b3293f5e` |
+
+The `qsdm` image digest `sha256:1fcc20e6…` is also referenced as
+the SPDX SBOM artefact attached to the GitHub release
+(`blackbeardone-qsdm_sha256_1fcc20e6…spdx.json`, 437 982 B),
+which provides the in-band linkage between the published
+container and its SBOM without depending on the mutable
+`:0.4.1` tag.
+
+## Binary content hash anchor
+
+| File | SHA-256 |
+|------|---------|
+| `qsdmminer-console-linux-amd64` (15 122 616 bytes) | `95a1d18a3d23673f5e6f646b4172a074182bd23fc41510ef3d37db1b778fefce` |
+| `SHA256SUMS` (signed root) | (line-matched against the file above) |
+
+Operator self-check on Linux:
+
+```bash
+sha256sum -c <(grep qsdmminer-console-linux-amd64$ SHA256SUMS)
+# Expected: ./qsdmminer-console-linux-amd64: OK
+```
 
 ## Live post-deploy probes
 
