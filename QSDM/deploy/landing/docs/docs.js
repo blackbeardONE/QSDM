@@ -112,6 +112,7 @@
       title: "Reference",
       items: [
         { slug: "api-reference",         title: "API reference",                 repoPath: DOCS_PREFIX_REPO + "/API_REFERENCE.md" },
+        { slug: "api-versioning",        title: "API versioning",                repoPath: DOCS_PREFIX_REPO + "/API_VERSIONING.md", badge: "new" },
         { slug: "api-security",          title: "API security",                  repoPath: DOCS_PREFIX_REPO + "/API_SECURITY.md" },
         { slug: "cli-phase2",            title: "Phase 2 CLI guide",             repoPath: DOCS_PREFIX_REPO + "/PHASE2_CLI_USER_GUIDE.md" },
         { slug: "troubleshooting",       title: "Troubleshooting",               repoPath: DOCS_PREFIX_REPO + "/TROUBLESHOOTING.md" },

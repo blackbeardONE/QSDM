@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>API status — QSDM · Cell (CELL)</title>
+<meta name="description" content="QSDM API versioning at a glance: the HTTP API is at /api/v1/* and is stable; the mining protocol is v2-only at consensus (FORK_V2_HEIGHT = 0). The two versions are independent — 'v1 deprecation' in v0.3.2 retired mining protocol v1, not the HTTP URL prefix." />
+<meta name="theme-color" content="#0b1220" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b1220'/%3E%3Cpath d='M12 32l10-10 10 10-10 10z' fill='%2376b900'/%3E%3Cpath d='M32 20l10 12-10 12-10-12z' fill='%2300d1b2' opacity='.85'/%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #0a101d;
+    --panel: #111a2e;
+    --border: #1f2a44;
+    --text: #e6edf7;
+    --text-2: #9fb0c9;
+    --muted: #6d7e99;
+    --accent: #76b900;
+    --accent-2: #00d1b2;
+    --accent-3: #6ea8ff;
+    --danger: #ff6b6b;
+    --warn: #ffb454;
+    --success: #3ddc97;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
+  a { color: var(--accent-3); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .container { max-width: 960px; margin: 0 auto; padding: 36px 20px; }
+  header { border-bottom: 1px solid var(--border); }
+  header .container { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; }
+  .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 700; letter-spacing: 0.2px; }
+  .brand svg { width: 26px; height: 26px; }
+  h1 { font-size: 36px; line-height: 1.1; margin: 0 0 12px; }
+  h2 { font-size: 22px; margin: 32px 0 10px; }
+  h3 { font-size: 16px; margin: 18px 0 8px; color: var(--text); }
+  .lede { color: var(--text-2); font-size: 17px; line-height: 1.55; max-width: 720px; }
+  p { color: var(--text-2); line-height: 1.6; }
+  code, .mono { font-family: var(--mono); font-size: 13.5px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 24px;
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px; font-size: 12px;
+    border: 1px solid var(--border); background: rgba(255,255,255,0.02);
+    color: var(--text-2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px;
+  }
+  .pill.ok { color: var(--success); border-color: rgba(61,220,151,0.35); background: rgba(61,220,151,0.05); }
+  .pill.warn { color: var(--warn); border-color: rgba(255,180,84,0.35); background: rgba(255,180,84,0.05); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .status-healthy  { background: var(--success); box-shadow: 0 0 8px var(--success); }
+  .status-degraded { background: var(--warn);    box-shadow: 0 0 8px var(--warn); }
+  .status-outage   { background: var(--danger);  box-shadow: 0 0 8px var(--danger); }
+  .status-unknown  { background: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-2); font-weight: 600; }
+  td.mono { font-family: var(--mono); }
+  .scope-note {
+    padding: 12px 16px; border-left: 3px solid var(--accent);
+    background: rgba(118,185,0,0.04); color: var(--text-2); font-size: 13px; line-height: 1.55;
+    margin: 20px 0;
+  }
+  .scope-note strong { color: var(--text); }
+  .grid-2 {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+    margin: 18px 0 8px;
+  }
+  @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
+  .endpoint-row { display: flex; align-items: baseline; gap: 12px; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+  .endpoint-row:last-child { border-bottom: none; }
+  .endpoint-row .method { font-family: var(--mono); font-size: 11px; color: var(--accent); font-weight: 700; min-width: 44px; }
+  .endpoint-row .path { font-family: var(--mono); font-size: 13.5px; }
+  .endpoint-row .note { color: var(--muted); font-size: 12.5px; }
+  footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+  footer .container { padding: 20px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="container">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <rect width="64" height="64" rx="12" fill="#0b1220"/>
+        <path d="M12 32l10-10 10 10-10 10z" fill="#76b900"/>
+        <path d="M32 20l10 12-10 12-10-12z" fill="#00d1b2" opacity=".85"/>
+      </svg>
+      <span>QSDM<span style="color:var(--accent)"> · CELL</span></span>
+    </a>
+    <nav style="display:flex; gap:18px; font-size:14px;">
+      <a href="/">← Back to landing</a>
+      <a href="/wallet.html">Wallet</a>
+      <a href="/validators.html">Validators</a>
+      <a href="/chain.html">Chain</a>
+      <a href="/download.html">Download</a>
+    </nav>
+  </div>
+</header>
+
+<main class="container">
+  <span class="pill"><span class="dot" id="status-dot"></span> <span id="status-label">loading</span></span>
+  <h1>API status</h1>
+  <p class="lede">
+    QSDM has <strong>two</strong> versioned surfaces, and they version <strong>independently</strong>.
+    The most common source of confusion: visitors see <code>/api/v1/health</code> in our footer and
+    assume the API is "old", because we shipped a "v1 deprecation" in v0.3.2.
+    It's not — that deprecation was about the <strong>mining protocol</strong>, not the
+    HTTP URL prefix.
+  </p>
+
+  <div class="scope-note">
+    <strong>TL;DR.</strong> The <strong>HTTP API is v1</strong> and stable. There is no
+    <code>/api/v2/*</code> endpoint and none planned for the v0.4.x cycle. The
+    <strong>mining protocol is v2-only</strong> at consensus
+    (<code>FORK_V2_HEIGHT&nbsp;=&nbsp;0</code>) — every v1 proof is rejected at admission, and
+    the v1 reference miner (<code>cmd/qsdmminer</code>) was dropped from the public release
+    matrix in v0.3.2. The two "v1"s are unrelated.
+  </div>
+
+  <h2>The two versions, side by side</h2>
+  <div class="grid-2">
+    <section class="panel">
+      <span class="pill ok">Stable</span>
+      <h3 style="margin-top: 10px;">HTTP API — <code>/api/v1/*</code></h3>
+      <p>
+        Every public endpoint lives under <code>/api/v1/*</code>. This includes the
+        wallet self-custody flow (<code>POST /api/v1/wallet/submit-signed</code>,
+        <code>GET /api/v1/wallet/nonce</code>, <code>GET /api/v1/wallet/balance</code>),
+        the trust/attestation transparency feeds, the mining work / submit / penalty
+        endpoints, and the live <code>/api/v1/status</code> health surface.
+      </p>
+      <p style="margin-top:10px;">
+        The <code>v1</code> in the URL is the API URL prefix, not a deprecation flag.
+        It signals stable wire compatibility — any change that would break a v1 client
+        ships behind a new top-level prefix; there is no plan to do that in the v0.4.x cycle.
+      </p>
+      <p style="margin-top:10px; color: var(--muted); font-size: 13px;">
+        Source: <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/API_REFERENCE.md">API_REFERENCE.md</a>,
+        <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/API_VERSIONING.md">API_VERSIONING.md</a>.
+      </p>
+    </section>
+    <section class="panel">
+      <span class="pill warn">v1 retired at consensus</span>
+      <h3 style="margin-top: 10px;">Mining protocol — v2 only</h3>
+      <p>
+        The mining protocol is independent of the HTTP API. Mainnet activated
+        <code>FORK_V2_HEIGHT&nbsp;=&nbsp;0</code> at the Phase-4 chain reset, which means
+        every v1 proof (CPU-only PoW) is rejected at admission with
+        <code>ReasonBadVersion</code>. The v1 reference miner
+        <code>cmd/qsdmminer</code> is no longer cross-compiled or signed by
+        <code>release-container.yml</code> — only <code>qsdmminer-console --protocol=v2</code>
+        is published.
+      </p>
+      <p style="margin-top:10px;">
+        Live <code>GET /api/v1/status</code> self-advertises the posture in its
+        <code>mining</code> block: <code>protocol_versions_accepted:&nbsp;[2]</code>,
+        <code>fork_v2_active:&nbsp;true</code>. Both <code>qsdmminer</code> and
+        <code>qsdmminer-console</code> preflight this on startup and refuse to mine
+        with a v1 caller against a v2-active validator.
+      </p>
+      <p style="margin-top:10px; color: var(--muted); font-size: 13px;">
+        Source: <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL_V2.md">MINING_PROTOCOL_V2.md</a>,
+        <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">MINER_QUICKSTART.md</a>.
+      </p>
+    </section>
+  </div>
+
+  <h2>Live HTTP API surface</h2>
+  <p>The endpoints visitors can probe right now from any browser or
+    <code>curl</code> command — same paths an SDK would call.</p>
+  <section class="panel">
+    <div class="endpoint-row">
+      <span class="method">GET</span>
+      <a class="path" href="https://api.qsdm.tech/api/v1/health">https://api.qsdm.tech/api/v1/health</a>
+      <span class="note">— liveness; returns 200 OK if the node is up.</span>
+    </div>
+    <div class="endpoint-row">
+      <span class="method">GET</span>
+      <a class="path" href="https://api.qsdm.tech/api/v1/status">https://api.qsdm.tech/api/v1/status</a>
+      <span class="note">— node id, chain tip, peer count, mining posture.</span>
+    </div>
+    <div class="endpoint-row">
+      <span class="method">GET</span>
+      <a class="path" href="https://api.qsdm.tech/api/v1/wallet/nonce?sender=000000000000000000000000000000000000000000000000000000000000abcd">https://api.qsdm.tech/api/v1/wallet/nonce?sender=&lt;hex64&gt;</a>
+      <span class="note">— next nonce for a sender; new in v0.4.1.</span>
+    </div>
+    <div class="endpoint-row">
+      <span class="method">POST</span>
+      <span class="path">https://api.qsdm.tech/api/v1/wallet/submit-signed</span>
+      <span class="note">— self-custody signed-tx submission; v0.4.0 + replay protection in v0.4.1.</span>
+    </div>
+    <div class="endpoint-row">
+      <span class="method">GET</span>
+      <a class="path" href="https://api.qsdm.tech/api/v1/trust/attestations/summary">https://api.qsdm.tech/api/v1/trust/attestations/summary</a>
+      <span class="note">— attested-validator counts (opt-in transparency).</span>
+    </div>
+    <div class="endpoint-row">
+      <span class="method">GET</span>
+      <a class="path" href="https://api.qsdm.tech/api/v1/mining/work">https://api.qsdm.tech/api/v1/mining/work</a>
+      <span class="note">— work template for miners; v2 attestation gating applies.</span>
+    </div>
+  </section>
+  <p style="margin-top:14px; color: var(--muted); font-size:13px;">
+    Retired in v0.3.3: <code>POST /api/v1/wallet/mint</code> now returns <strong>HTTP 410 Gone</strong>
+    with a migration block. The supply-inflation surface from the seed-faucet era is
+    structurally closed; any client still hitting it shows up in the
+    <code>qsdm_wallet_mint_total{result="gone"}</code> counter on the dashboard.
+  </p>
+
+  <h2>Why "v1 deprecation" did not move the URL</h2>
+  <p>
+    The change in <code>v0.3.2</code> (commit <code>f727fef</code>) was a
+    <strong>posture refresh</strong> on <code>/api/v1/status</code>, a
+    preflight gate in both miners, and a documentation rewrite of
+    <code>MINER_QUICKSTART.md</code> — all about the mining-protocol version
+    selected by the miner before it asks for work. The HTTP server's URL routing
+    was untouched. Test
+    <code>TestDeriveMetricsURL_RejectsMissingV1Suffix</code> in
+    <code>cmd/qsdmcli</code> explicitly rejects <code>/api/v2</code> as a base URL —
+    no such surface exists in the running validator.
+  </p>
+
+  <h2>Live posture (auto-refresh)</h2>
+  <section class="panel">
+    <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:10px;">
+      <div>
+        <div style="color:var(--text-2); font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">HTTP API</div>
+        <div class="mono" id="http-api-line" style="font-size:18px; margin-top:6px;">—</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="color:var(--text-2); font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">Mining protocol accepted</div>
+        <div class="mono" id="mining-protos-line" style="font-size:18px; margin-top:6px;">—</div>
+      </div>
+    </div>
+    <div style="margin-top:14px; color: var(--muted); font-size: 12.5px;">
+      Source: <span class="mono">GET /api/v1/status</span>. Last checked
+      <span class="mono" id="last-checked">—</span>.
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="container">
+    Sources: <span class="mono">GET /api/v1/health</span>,
+    <span class="mono">GET /api/v1/status</span>.
+    This page refreshes every 60&nbsp;s. © <span id="y"></span> QSDM · Cell (CELL).
+  </div>
+</footer>
+
+<script>
+(function () {
+  document.getElementById('y').textContent = new Date().getFullYear();
+  var endpoints = ['/api/v1/status', 'https://api.qsdm.tech/api/v1/status'];
+
+  function setStatus(state, label) {
+    var dot = document.getElementById('status-dot');
+    dot.className = 'dot status-' + (state || 'unknown');
+    document.getElementById('status-label').textContent = label || state || 'unknown';
+  }
+
+  function fmtTime(d) {
+    if (!d) return '—';
+    var hh = String(d.getUTCHours()).padStart(2, '0');
+    var mm = String(d.getUTCMinutes()).padStart(2, '0');
+    var ss = String(d.getUTCSeconds()).padStart(2, '0');
+    return hh + ':' + mm + ':' + ss + ' UTC';
+  }
+
+  function applyStatus(j) {
+    var httpLine = '/api/v1/*  (stable)';
+    var mining = (j && j.mining) || {};
+    var accepted = Array.isArray(mining.protocol_versions_accepted)
+      ? mining.protocol_versions_accepted.join(', ')
+      : '—';
+    document.getElementById('http-api-line').textContent = httpLine;
+    document.getElementById('mining-protos-line').textContent = accepted
+      ? 'v' + accepted + (mining.fork_v2_active === true ? ' (v2 active)' : '')
+      : '—';
+    document.getElementById('last-checked').textContent = fmtTime(new Date());
+    setStatus('healthy', 'live');
+  }
+
+  function tryFetch(i) {
+    if (i >= endpoints.length) { setStatus('outage', 'unavailable'); return; }
+    fetch(endpoints[i], { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j) { tryFetch(i + 1); return; }
+        applyStatus(j);
+      })
+      .catch(function () { tryFetch(i + 1); });
+  }
+
+  function refresh() { tryFetch(0); }
+  refresh();
+  setInterval(refresh, 60000);
+})();
+</script>
+</body>
+</html>
