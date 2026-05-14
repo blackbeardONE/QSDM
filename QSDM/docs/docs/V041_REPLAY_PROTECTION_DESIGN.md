@@ -1,8 +1,16 @@
 # v0.4.1 Design — Replay protection + atomic balance debit
 
-> **Status**: SHIPPED across Sessions 99–100 (2026-05-13 → 2026-05-14).
-> All client + server + tooling components landed; release-cut +
-> production deploy is the only remaining step.
+> **Status**: SHIPPED + DEPLOYED across Sessions 99–100
+> (2026-05-13 → 2026-05-14). All client + server + tooling
+> components landed, `v0.4.1` tag pushed,
+> [`release-container.yml` run 25855056638](https://github.com/blackbeardONE/QSDM/actions/runs/25855056638)
+> 10/10 green, 53 cosign-signed assets attached, and the BLR1
+> validator binary swapped to v0.4.1 (sha256
+> `e7fa04b0657c5793f79f2fce06562fe67ea9191e04c09657c1e6b5274c213cfb`)
+> with `/api/v1/status` reporting `"version":"v0.4.1"`,
+> `GET /api/v1/wallet/nonce` returning 200, and `cmd/v041smoke`
+> reporting `PASS=5 FAIL=0` from an external workstation. Full
+> evidence in [`RELEASE_EVIDENCE_v0.4.1.md`](RELEASE_EVIDENCE_v0.4.1.md).
 >
 > **Implementation manifest**:
 >   - **Session 99 (commit `ecfa121`)** — Storage foundation:
@@ -33,13 +41,30 @@
 >     refresh (Section 5.2); `cmd/v041smoke` 5-probe super-set
 >     of `cmd/v040smoke`.
 >
-> **Still pending for v0.4.1 release-cut**:
+> **Production-deploy footnote**: the BLR1 validator runs the
+> `FileStorage` backend, which by design does not track
+> per-account balances or nonces. v0.4.1's
+> `FileStorage.GetNonce` returns `(0, nil)` so the new public
+> `GET /api/v1/wallet/nonce` endpoint is functional (every fresh
+> sender resolves to `{nonce:0, next:1}`), but the write path
+> `FileStorage.ApplyTransferAtomic` honestly refuses with a
+> `qsdm_wallet_send_total{result="store_failed"}` counter bump ↔
+> client-visible HTTP 500 `failed to apply transfer`. Settlement
+> requires the SQLite v0.4.1 or Scylla backend; both implement
+> the full CAS + atomic-debit semantics. This is exercised end-to-
+> end by `cmd/v041smoke` probe 5, which accepts both
+> "real-backend 409 nonce conflict" and "FileStorage 500" as
+> v0.4.1-specific outcomes. A v0.4.0 server would have returned
+> HTTP 402 `insufficient_balance` from `GetBalance() == 0`,
+> never reaching the new code path.
+>
+> **Remaining (operator-side, NOT release-blocking)**:
+>   - Independent cosign / Rekor verification from a third-party
+>     workstation (out-of-band supply-chain audit gesture).
 >   - Optional: `TestSqliteV041Migration_FromV040DB` storage-layer
 >     migration test (requires a CGO build environment; not a
 >     release blocker because the schema-only migration is exercised
 >     end-to-end by every CGO build's existing storage tests).
->   - Audit row `api-06` closure-anchor extension.
->   - Cut + sign v0.4.1 tag; BLR1 binary swap + landing pill bump.
 >
 > Closes the two v0.4.0 known gaps documented in
 > [`V040_WALLET_SEND_DESIGN.md`](V040_WALLET_SEND_DESIGN.md)

@@ -138,16 +138,40 @@ func (fs *FileStorage) GetTransaction(txID string) (map[string]interface{}, erro
 	return nil, fmt.Errorf("transaction lookup not supported by file storage")
 }
 
-// v0.4.1 (Session 99): per-account nonce + atomic-debit stubs.
-// FileStorage doesn't track balances at all (GetBalance returns
-// 0, UpdateBalance is a no-op), so the v0.4.1 replay-protection
-// path is genuinely meaningless here — there's no balance to
-// debit and no nonce to bump. The honest answer for a
-// file-storage-backed validator is "you cannot use
-// /wallet/submit-signed; pick a real backend." We surface that
-// cleanly so the handler doesn't fall through to a silent no-op.
+// v0.4.1 (Session 99 → Session 100 deploy fix): per-account nonce
+// + atomic-debit stubs.
+//
+// FileStorage doesn't track per-account state at all — GetBalance
+// returns 0 unconditionally, UpdateBalance is a no-op, and there
+// is no persisted nonce store. The honest semantic for the
+// READ-ONLY GetNonce path is therefore "this backend has no state,
+// so every sender's last-applied nonce is 0", which is symmetric
+// with GetBalance's silent-zero behavior. Returning that as
+// (0, nil) keeps the public GET /api/v1/wallet/nonce endpoint
+// functional on a FileStorage-backed validator (the production
+// BLR1 node ran on FileStorage as of v0.4.0), so self-custody
+// clients can probe the route to detect v0.4.1 presence and
+// resolve `next: 1` for their first submission. Replays against
+// such a node still cannot land because the WRITE path
+// (ApplyTransferAtomic) honestly refuses below — which makes
+// /wallet/submit-signed return 500 "file storage does not support
+// atomic transfers", visible in qsdm_wallet_send_total{result=
+// "store_failed"}.
+//
+// Net effect on a FileStorage-backed validator:
+//   GET  /wallet/nonce          → 200 {nonce:0, next:1}   (was 500 in
+//                                                          the pre-fix v0.4.1)
+//   POST /wallet/submit-signed  → 500 store_failed         (same as before
+//                                                          the fix — settlement
+//                                                          path always required
+//                                                          SQLite or Scylla)
+//
+// This keeps the READ surface consistent across backends and
+// pushes the WRITE-side limitation onto a single, named result
+// tag operators can monitor. The SQLite v0.4.1 (sqlite_v041.go)
+// + Scylla (scylla.go) backends do the real CAS + atomic debit.
 func (fs *FileStorage) GetNonce(address string) (uint64, error) {
-	return 0, fmt.Errorf("FileStorage.GetNonce: file storage does not track per-account nonces (use SQLite or Scylla for v0.4.1 replay protection)")
+	return 0, nil
 }
 
 func (fs *FileStorage) ApplyTransferAtomic(
