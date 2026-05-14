@@ -21,6 +21,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/envcompat"
 	"github.com/blackbeardONE/QSDM/pkg/mesh3d"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
+	"github.com/blackbeardONE/QSDM/pkg/storage"
 	"github.com/blackbeardONE/QSDM/pkg/submesh"
 	"github.com/blackbeardONE/QSDM/pkg/wallet"
 )
@@ -1095,52 +1096,94 @@ func (h *Handlers) SubmitSignedTransaction(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Idempotency on tx_id. storage.StoreTransaction is already
-	// idempotent (skips on duplicate tx_id), but we surface that
-	// to the caller as HTTP 409 rather than 201 so they can stop
-	// retrying.
 	rawEnvelope, err := json.Marshal(env)
 	if err != nil {
 		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
 		writeErrorResponse(w, http.StatusBadRequest, "failed to remarshal envelope")
 		return
 	}
-	if hasTx, _ := h.storageHasTransaction(env.ID); hasTx {
-		monitoring.RecordWalletSend(monitoring.WalletSendResultDuplicate)
-		writeJSONResponse(w, http.StatusConflict, SubmitSignedTransactionResponse{
-			TransactionID: env.ID,
-			Status:        "duplicate",
-		})
-		return
-	}
 
-	// Pre-flight balance check. This is advisory — the
-	// storage.UpdateBalance call inside StoreTransaction does NOT
-	// fail atomically on a negative balance (v0.4.1 will). For
-	// honest callers this gives a clean 402 instead of a silent
-	// negative-balance state. Skipped if the storage backend has
-	// no balance ledger (file-storage build), in which case
-	// GetBalance returns (0, nil) and we'd false-positive every
-	// honest send — the early-return below handles that.
-	bal, balErr := h.storage.GetBalance(env.Sender)
-	if balErr == nil && bal > 0 && bal < env.Amount+env.Fee {
-		monitoring.RecordWalletSend(monitoring.WalletSendResultInsufficientBalance)
-		writeErrorResponse(w, http.StatusPaymentRequired,
-			fmt.Sprintf("insufficient balance: have %v, need %v", bal, env.Amount+env.Fee))
-		return
+	// v0.4.1 (Session 100): nonce-replay gate, fires only for
+	// envelopes that opt in to the new wire format
+	// (envelope.nonce >= 1). v0.4.0 envelopes (nonce omitted →
+	// Go zero-value 0) fall through unchanged for the
+	// backward-compat window documented in
+	// V041_REPLAY_PROTECTION_DESIGN.md §2.3.
+	//
+	// We intentionally run this BEFORE the submesh-policy gate
+	// so that nonce-replay rejections don't bump the submesh
+	// metric counters. ErrTxAlreadyExists from
+	// ApplyTransferAtomic below covers the v0.4.0 cross-tx_id
+	// case; this branch covers the new cross-nonce case which
+	// no v0.4.0 envelope can hit.
+	if env.Nonce >= 1 {
+		last, nerr := h.storage.GetNonce(env.Sender)
+		if nerr != nil {
+			monitoring.RecordWalletSend(monitoring.WalletSendResultNonceLookupFailed)
+			h.logger.Error("Nonce lookup failed", "error", nerr, "sender", env.Sender)
+			writeErrorResponse(w, http.StatusInternalServerError, "nonce lookup failed")
+			return
+		}
+		if env.Nonce <= last {
+			monitoring.RecordWalletSend(monitoring.WalletSendResultNonceReplay)
+			writeErrorResponse(w, http.StatusConflict,
+				fmt.Sprintf("nonce replay: envelope nonce %d <= last-seen %d", env.Nonce, last))
+			return
+		}
 	}
 
 	// Submesh policy gate (matches /wallet/send posture; counts
 	// its own rejects under qsdm_submesh_api_wallet_reject_*).
+	// Runs before ApplyTransferAtomic so policy-rejected
+	// envelopes don't touch storage at all.
 	if !h.enforceSubmeshWalletSend(w, env.Fee, env.GeoTag, rawEnvelope) {
 		return
 	}
 
-	if err := h.storage.StoreTransaction(rawEnvelope); err != nil {
-		monitoring.RecordWalletSend(monitoring.WalletSendResultStoreFailed)
-		h.logger.Error("Failed to store signed transaction", "error", err, "tx_id", env.ID, "sender", env.Sender)
-		writeErrorResponse(w, http.StatusInternalServerError, "failed to store transaction")
-		return
+	// v0.4.1: single ACID step replaces the v0.4.0 sequence of
+	//   storageHasTransaction(env.ID) → 409 duplicate
+	//   storage.GetBalance(sender)    → 402 insufficient
+	//   storage.StoreTransaction(raw) → INSERT + UpdateBalance×2
+	// The new primitive enforces all four invariants
+	// (tx_id uniqueness, nonce CAS, balance >= amount+fee,
+	// debit+credit atomicity) inside a single BEGIN; COMMIT;
+	// transaction. See V041_REPLAY_PROTECTION_DESIGN.md §4.2.
+	if err := h.storage.ApplyTransferAtomic(
+		r.Context(),
+		env.Sender, env.Recipient,
+		env.Amount, env.Fee,
+		env.Nonce, env.ID,
+		rawEnvelope,
+	); err != nil {
+		switch {
+		case errors.Is(err, storage.ErrTxAlreadyExists):
+			monitoring.RecordWalletSend(monitoring.WalletSendResultDuplicate)
+			writeJSONResponse(w, http.StatusConflict, SubmitSignedTransactionResponse{
+				TransactionID: env.ID,
+				Status:        "duplicate",
+			})
+			return
+		case errors.Is(err, storage.ErrInsufficientBalance):
+			monitoring.RecordWalletSend(monitoring.WalletSendResultInsufficientBalance)
+			writeErrorResponse(w, http.StatusPaymentRequired,
+				"insufficient balance for amount + fee")
+			return
+		case errors.Is(err, storage.ErrNonceConflict):
+			// ErrNonceConflict from ApplyTransferAtomic means
+			// the sender's stored nonce moved between our
+			// GetNonce probe above and the atomic UPDATE — a
+			// concurrent submit-signed raced us. The caller
+			// can safely retry after re-reading the nonce.
+			monitoring.RecordWalletSend(monitoring.WalletSendResultNonceConflict)
+			writeErrorResponse(w, http.StatusConflict,
+				"nonce conflict: concurrent submit raced; retry after re-reading nonce")
+			return
+		default:
+			monitoring.RecordWalletSend(monitoring.WalletSendResultStoreFailed)
+			h.logger.Error("ApplyTransferAtomic failed", "error", err, "tx_id", env.ID, "sender", env.Sender)
+			writeErrorResponse(w, http.StatusInternalServerError, "failed to apply transfer")
+			return
+		}
 	}
 
 	monitoring.RecordWalletSend(monitoring.WalletSendResultSuccess)

@@ -77,6 +77,23 @@ type Storage interface {
 	// local interface so api.NewServer's StorageInterface
 	// satisfies-check passes against `storageBackend`.
 	GetTransaction(txID string) (map[string]interface{}, error)
+	// GetNonce + ApplyTransferAtomic are the v0.4.1 (Session 100)
+	// replay-protection + atomic-debit primitives. Surfaced on the
+	// local interface for the same reason as GetTransaction —
+	// keeps the api.NewServer satisfies-check honest. Defined on
+	// all three backends in pkg/storage/{sqlite_v041,scylla,
+	// file_storage,sqlite_stub}.go (the Scylla + file-storage
+	// stubs return wrapped errors so a misconfigured backend
+	// fails loud rather than silently allowing replays).
+	GetNonce(address string) (uint64, error)
+	ApplyTransferAtomic(
+		ctx context.Context,
+		sender, recipient string,
+		amount, fee float64,
+		envelopeNonce uint64,
+		txID string,
+		rawEnvelope []byte,
+	) error
 }
 
 type scyllaStorageAdapter struct {

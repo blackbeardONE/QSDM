@@ -1,6 +1,33 @@
 # v0.4.1 Design — Replay protection + atomic balance debit
 
-> **Status**: design / in progress (Session 99, 2026-05-13).
+> **Status**: handler-side IMPLEMENTED in Session 100 (2026-05-14).
+> Storage foundation landed in Session 99 (commit `ecfa121`):
+> design doc + nonce wire-format + atomic-debit interface +
+> SQLite v0.4.1 schema migration + 3 new monitoring result tags.
+> Handler integration landed in Session 100: the
+> `SubmitSignedTransaction` handler now calls
+> `storage.GetNonce()` for the replay gate and
+> `storage.ApplyTransferAtomic()` for the single-ACID-step
+> transfer (replacing the v0.4.0 trio of
+> `storageHasTransaction` + `GetBalance` + `StoreTransaction`).
+> The `StorageInterface` in `pkg/api/server.go` was extended
+> with the two new methods so the satisfies-check is honest at
+> compile time across all backends (SQLite + Scylla + file).
+> Test posture: 5 new `TestSubmitSigned_*` cases green
+> (HappyPath_WithNonce, LegacyV040Envelope, NonceReplay,
+> NonceConflict, NonceLookupFailed) + all 8 v0.4.0 tests still
+> green = 13/13 PASS in `pkg/api`.
+>
+> Still pending for the v0.4.1 release-cut:
+>   - `qsdmcli wallet sign-tx` CLI subcommand (Section 5.3)
+>   - Browser-wallet UI nonce input + `GET /api/v1/wallet/nonce/{sender}`
+>     helper endpoint (Section 5.2) + WASM rebuild + SRI refresh
+>   - `cmd/v041smoke` super-set of `cmd/v040smoke` with nonce probes
+>   - `TestSqliteV041Migration_FromV040DB` storage-layer migration
+>     test (requires a CGO build environment)
+>   - Audit row `api-06` closure note + Notes field anchor
+>   - Cut and sign v0.4.1 tag; BLR1 binary swap + landing pill bump
+>
 > Closes the two v0.4.0 known gaps documented in
 > [`V040_WALLET_SEND_DESIGN.md`](V040_WALLET_SEND_DESIGN.md)
 > "Future work":

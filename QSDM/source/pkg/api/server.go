@@ -59,6 +59,44 @@ type StorageInterface interface {
 	// error rather than (nil, nil)). Added in v0.4.0 (Session 95)
 	// for the /wallet/submit-signed idempotency check.
 	GetTransaction(txID string) (map[string]interface{}, error)
+	// GetNonce returns the last-applied nonce for `address`.
+	// Returns (0, nil) for an address that has never sent a
+	// v0.4.1 envelope (the contract is "0 means new sender").
+	// Added in v0.4.1 (Session 100) for /wallet/submit-signed
+	// replay protection (see V041_REPLAY_PROTECTION_DESIGN.md
+	// §4.1). Backends that don't track per-account nonces
+	// (file_storage, legacy scylla pre-LWT) return a wrapped
+	// error so the handler can degrade cleanly rather than
+	// silently allowing replays.
+	GetNonce(address string) (uint64, error)
+	// ApplyTransferAtomic is the v0.4.1 single-transaction
+	// debit + credit + nonce-bump + tx-insert primitive used
+	// by the /wallet/submit-signed handler. Replaces the v0.4.0
+	// non-atomic sequence (pre-flight GetBalance + GetTransaction
+	// + StoreTransaction → which internally called UpdateBalance
+	// twice without an enclosing transaction).
+	//
+	// Returns one of the sentinels declared in pkg/storage:
+	//   ErrInsufficientBalance — sender balance < amount + fee
+	//   ErrNonceConflict       — sender's nonce no longer matches
+	//                            the pre-image (concurrent submit)
+	//   ErrTxAlreadyExists     — tx_id already in transactions
+	// or a wrapped backend-internal storage error. See
+	// V041_REPLAY_PROTECTION_DESIGN.md §4.2.
+	//
+	// envelopeNonce == 0 puts ApplyTransferAtomic on the legacy
+	// v0.4.0 path: no nonce check, no nonce bump, but the balance
+	// + tx_id checks still fire. This is the bi-directional
+	// backward-compatibility guarantee for v0.4.0 wallets that
+	// have not yet rebuilt against the new wire-format.
+	ApplyTransferAtomic(
+		ctx context.Context,
+		sender, recipient string,
+		amount, fee float64,
+		envelopeNonce uint64,
+		txID string,
+		rawEnvelope []byte,
+	) error
 }
 
 // NewServer creates a new API server instance.

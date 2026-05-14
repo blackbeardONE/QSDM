@@ -18,21 +18,35 @@ import (
 	"github.com/blackbeardONE/QSDM/internal/logging"
 	"github.com/blackbeardONE/QSDM/pkg/branding"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
+	"github.com/blackbeardONE/QSDM/pkg/storage"
 	"github.com/blackbeardONE/QSDM/pkg/submesh"
 	"github.com/blackbeardONE/QSDM/pkg/wallet"
 )
 
-// mockStorage is a simple mock storage for testing
+// mockStorage is a simple mock storage for testing.
+//
+// v0.4.1 (Session 100): extended with `nonces` map and an in-memory
+// ApplyTransferAtomic implementation that mirrors the sentinel
+// posture of pkg/storage.Storage. The handler now exercises both
+// paths through this mock, so the unit-test coverage of
+// SubmitSignedTransaction stays meaningful without spinning up a
+// real SQLite database. Tests that need to inject a storage-side
+// fault (e.g. TestSubmitSigned_NonceLookupFailed) can override
+// `getNonceErr` / `applyTransferErr` directly on the instance.
 type mockStorage struct {
-	transactions map[string][]byte
-	balances     map[string]float64
-	readyErr     error
+	transactions     map[string][]byte
+	balances         map[string]float64
+	nonces           map[string]uint64
+	readyErr         error
+	getNonceErr      error // injectable: makes GetNonce return this error verbatim
+	applyTransferErr error // injectable: makes ApplyTransferAtomic return this error verbatim
 }
 
 func newMockStorage() *mockStorage {
 	return &mockStorage{
 		transactions: make(map[string][]byte),
 		balances:     make(map[string]float64),
+		nonces:       make(map[string]uint64),
 	}
 }
 
@@ -101,6 +115,62 @@ func (m *mockStorage) GetTransaction(txID string) (map[string]interface{}, error
 		return nil, err
 	}
 	return tx, nil
+}
+
+// GetNonce returns the per-account nonce stored against `address`.
+// v0.4.1 (Session 100). Honours the injectable fault `getNonceErr`
+// so tests can exercise the "nonce lookup failed" handler branch
+// without an external fixture.
+func (m *mockStorage) GetNonce(address string) (uint64, error) {
+	if m.getNonceErr != nil {
+		return 0, m.getNonceErr
+	}
+	return m.nonces[address], nil
+}
+
+// ApplyTransferAtomic mirrors pkg/storage/sqlite_v041.go's invariants
+// in pure Go so the handler's v0.4.1 path is exercised end-to-end
+// in the test suite. Enforces (in order):
+//   - injectable `applyTransferErr` override
+//   - tx_id uniqueness                  → storage.ErrTxAlreadyExists
+//   - envelopeNonce vs stored nonce CAS → storage.ErrNonceConflict
+//     (only when envelopeNonce >= 1; envelopeNonce == 0 is the
+//     legacy v0.4.0 path — no nonce check, no nonce bump)
+//   - balance >= amount + fee           → storage.ErrInsufficientBalance
+//
+// All three sentinels are package-level vars in pkg/storage; the
+// handler maps them onto HTTP codes + monitoring tags.
+func (m *mockStorage) ApplyTransferAtomic(
+	ctx context.Context,
+	sender, recipient string,
+	amount, fee float64,
+	envelopeNonce uint64,
+	txID string,
+	rawEnvelope []byte,
+) error {
+	if m.applyTransferErr != nil {
+		return m.applyTransferErr
+	}
+	if _, dup := m.transactions[txID]; dup {
+		return storage.ErrTxAlreadyExists
+	}
+	if envelopeNonce >= 1 {
+		want := m.nonces[sender] + 1
+		if envelopeNonce != want {
+			return storage.ErrNonceConflict
+		}
+	}
+	total := amount + fee
+	if m.balances[sender] < total {
+		return storage.ErrInsufficientBalance
+	}
+	m.balances[sender] -= total
+	m.balances[recipient] += amount
+	if envelopeNonce >= 1 {
+		m.nonces[sender] = envelopeNonce
+	}
+	m.transactions[txID] = append([]byte(nil), rawEnvelope...)
+	return nil
 }
 
 func setupTestHandlers() *Handlers {
@@ -620,6 +690,16 @@ func TestSubmitSigned_HappyPath(t *testing.T) {
 	}
 	h := setupTestHandlersWithSubmesh(nil, ws)
 
+	// v0.4.1: the atomic-transfer primitive now enforces
+	// balance >= amount + fee unconditionally (v0.4.0's
+	// pre-flight check skipped balance==0). Pre-fund the
+	// sender so the happy-path still asserts the success
+	// posture rather than the new InsufficientBalance branch.
+	pubKey := ws.GetPublicKey()
+	addrHash := sha256.Sum256(pubKey)
+	sender := hex.EncodeToString(addrHash[:])
+	h.storage.(*mockStorage).balances[sender] = 5.0
+
 	recipient := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	env := buildSignedEnvelope(t, ws, recipient, 1.0, 0.01, []string{
 		strings.Repeat("a", 32), strings.Repeat("b", 32),
@@ -725,6 +805,14 @@ func TestSubmitSigned_DuplicateTxID(t *testing.T) {
 	}
 	h := setupTestHandlersWithSubmesh(nil, ws)
 
+	// Same pre-fund requirement as TestSubmitSigned_HappyPath:
+	// the first submit must succeed before the second can hit
+	// the duplicate-tx_id branch.
+	pubKey := ws.GetPublicKey()
+	addrHash := sha256.Sum256(pubKey)
+	sender := hex.EncodeToString(addrHash[:])
+	h.storage.(*mockStorage).balances[sender] = 5.0
+
 	recipient := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	env := buildSignedEnvelope(t, ws, recipient, 1.0, 0.01, []string{
 		strings.Repeat("a", 32), strings.Repeat("b", 32),
@@ -786,4 +874,275 @@ func TestSubmitSigned_NoWalletService(t *testing.T) {
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 (no wallet service), got %d body=%s", w.Code, w.Body.String())
 	}
+}
+
+// =============================================================
+// v0.4.1 (Session 100) tests for the replay-protection +
+// atomic-debit path on POST /api/v1/wallet/submit-signed.
+//
+// All five tests below pivot on the new Nonce field added to
+// wallet.TransactionData in Session 99 (commit ecfa121). The
+// envelope canonicalisation contract is unchanged structurally
+// (json.Marshal of the struct minus signature + public_key);
+// Nonce just appears as a new field with json tag "nonce".
+//
+// Coverage:
+//   - TestSubmitSigned_HappyPath_WithNonce       Nonce=1 round-trip
+//   - TestSubmitSigned_LegacyV040Envelope        Nonce=0 backward-compat
+//   - TestSubmitSigned_NonceReplay               Nonce <= last-seen → 409
+//   - TestSubmitSigned_NonceConflict             concurrent-CAS → 409
+//   - TestSubmitSigned_NonceLookupFailed         storage-side error → 500
+// =============================================================
+
+// buildSignedEnvelopeWithNonce is the v0.4.1 fixture: like
+// buildSignedEnvelope but stamps a non-zero Nonce onto the
+// canonical bytes before signing. Crucially, the sign-then-marshal
+// sequence ensures the signature covers the new field — exactly
+// matching what the WASM/CLI signer produces (the omitempty tag
+// on Nonce means a zero value drops out of the canonical bytes
+// entirely, preserving v0.4.0 wire compatibility).
+func buildSignedEnvelopeWithNonce(t *testing.T, ws *wallet.WalletService, recipient string, amount, fee float64, parents []string, nonce uint64) wallet.TransactionData {
+	t.Helper()
+	env := buildSignedEnvelope(t, ws, recipient, amount, fee, parents)
+	// Re-sign with the nonce field set so the signature covers it.
+	env.Signature = ""
+	env.PublicKey = ""
+	env.Nonce = nonce
+	canonical, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshal canonical envelope w/ nonce: %v", err)
+	}
+	sig, err := ws.SignData(canonical)
+	if err != nil {
+		t.Fatalf("sign canonical envelope w/ nonce: %v", err)
+	}
+	env.Signature = hex.EncodeToString(sig)
+	env.PublicKey = hex.EncodeToString(ws.GetPublicKey())
+	return env
+}
+
+// TestSubmitSigned_HappyPath_WithNonce asserts that an envelope
+// with Nonce=1 takes the v0.4.1 path: GetNonce returns 0 (new
+// sender), 1 > 0 so the replay gate clears, ApplyTransferAtomic
+// debits + credits + bumps the stored nonce to 1.
+func TestSubmitSigned_HappyPath_WithNonce(t *testing.T) {
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Skipf("wallet requires CGO / Dilithium: %v", err)
+	}
+	h := setupTestHandlersWithSubmesh(nil, ws)
+	mock := h.storage.(*mockStorage)
+
+	pubKey := ws.GetPublicKey()
+	addrHash := sha256.Sum256(pubKey)
+	sender := hex.EncodeToString(addrHash[:])
+	mock.balances[sender] = 5.0
+
+	recipient := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	env := buildSignedEnvelopeWithNonce(t, ws, recipient, 1.0, 0.01, []string{
+		strings.Repeat("a", 32), strings.Repeat("b", 32),
+	}, 1)
+
+	w := postSubmitSigned(t, h, env)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	if mock.nonces[sender] != 1 {
+		t.Fatalf("stored nonce: want 1 got %d", mock.nonces[sender])
+	}
+	if got := mock.balances[sender]; got != 5.0-1.01 {
+		t.Fatalf("sender balance: want %v got %v", 5.0-1.01, got)
+	}
+	if got := mock.balances[recipient]; got != 1.0 {
+		t.Fatalf("recipient balance: want 1.0 got %v", got)
+	}
+}
+
+// TestSubmitSigned_LegacyV040Envelope asserts the backward-compat
+// promise from V041_REPLAY_PROTECTION_DESIGN.md §2.3: a v0.4.0
+// envelope (no Nonce field, omitempty drops it from canonical
+// bytes) still serves 200 through the new handler. The stored
+// nonce stays at 0 because legacy envelopes never bump it.
+func TestSubmitSigned_LegacyV040Envelope(t *testing.T) {
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Skipf("wallet requires CGO / Dilithium: %v", err)
+	}
+	h := setupTestHandlersWithSubmesh(nil, ws)
+	mock := h.storage.(*mockStorage)
+
+	pubKey := ws.GetPublicKey()
+	addrHash := sha256.Sum256(pubKey)
+	sender := hex.EncodeToString(addrHash[:])
+	mock.balances[sender] = 5.0
+
+	recipient := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	env := buildSignedEnvelope(t, ws, recipient, 1.0, 0.01, []string{
+		strings.Repeat("a", 32), strings.Repeat("b", 32),
+	})
+	if env.Nonce != 0 {
+		t.Fatalf("legacy envelope must have Nonce==0, got %d", env.Nonce)
+	}
+
+	w := postSubmitSigned(t, h, env)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for legacy envelope, got %d body=%s", w.Code, w.Body.String())
+	}
+	if got := mock.nonces[sender]; got != 0 {
+		t.Fatalf("legacy path must NOT bump nonce; got stored nonce %d", got)
+	}
+}
+
+// TestSubmitSigned_NonceReplay asserts that re-submitting an
+// envelope with a nonce <= the last-seen stored nonce returns
+// HTTP 409 and bumps qsdm_wallet_send_total{result=nonce_replay}.
+// The handler must short-circuit BEFORE the atomic-debit call
+// so a replay never even touches the balance ledger.
+func TestSubmitSigned_NonceReplay(t *testing.T) {
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Skipf("wallet requires CGO / Dilithium: %v", err)
+	}
+	h := setupTestHandlersWithSubmesh(nil, ws)
+	mock := h.storage.(*mockStorage)
+
+	pubKey := ws.GetPublicKey()
+	addrHash := sha256.Sum256(pubKey)
+	sender := hex.EncodeToString(addrHash[:])
+	mock.balances[sender] = 5.0
+	// Simulate a prior successful send: stored nonce = 1.
+	mock.nonces[sender] = 1
+
+	recipient := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	// Replay with the same Nonce=1 the sender already used.
+	env := buildSignedEnvelopeWithNonce(t, ws, recipient, 1.0, 0.01, []string{
+		strings.Repeat("a", 32), strings.Repeat("b", 32),
+	}, 1)
+
+	before := monitoring.WalletSendCounts()
+	w := postSubmitSigned(t, h, env)
+	after := monitoring.WalletSendCounts()
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 nonce_replay, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "nonce replay") {
+		t.Fatalf("expected nonce-replay error, got body=%s", w.Body.String())
+	}
+	if delta := walletSendDelta(before, after, monitoring.WalletSendResultNonceReplay); delta != 1 {
+		t.Fatalf("qsdm_wallet_send_total{result=nonce_replay} delta: want 1 got %d", delta)
+	}
+	// Balances must not have moved.
+	if mock.balances[sender] != 5.0 {
+		t.Fatalf("replay must not debit sender; balance now %v", mock.balances[sender])
+	}
+	if _, exists := mock.balances[recipient]; exists {
+		t.Fatalf("replay must not credit recipient; balance entry created: %v", mock.balances[recipient])
+	}
+}
+
+// TestSubmitSigned_NonceConflict asserts that when the GetNonce
+// pre-flight read agrees but the storage-side CAS rejects (a
+// concurrent submit raced our envelope), the handler maps the
+// storage.ErrNonceConflict sentinel to HTTP 409 with the
+// nonce_conflict result tag. Distinct from nonce_replay: the
+// caller's nonce is structurally correct but the storage state
+// moved between our read and our write.
+func TestSubmitSigned_NonceConflict(t *testing.T) {
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Skipf("wallet requires CGO / Dilithium: %v", err)
+	}
+	h := setupTestHandlersWithSubmesh(nil, ws)
+	mock := h.storage.(*mockStorage)
+
+	pubKey := ws.GetPublicKey()
+	addrHash := sha256.Sum256(pubKey)
+	sender := hex.EncodeToString(addrHash[:])
+	mock.balances[sender] = 5.0
+	// Stored nonce starts at 0. The envelope below will pass the
+	// pre-flight (1 > 0) but the injected applyTransferErr forces
+	// the CAS-conflict path inside ApplyTransferAtomic.
+	mock.applyTransferErr = storage.ErrNonceConflict
+
+	recipient := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	env := buildSignedEnvelopeWithNonce(t, ws, recipient, 1.0, 0.01, []string{
+		strings.Repeat("a", 32), strings.Repeat("b", 32),
+	}, 1)
+
+	before := monitoring.WalletSendCounts()
+	w := postSubmitSigned(t, h, env)
+	after := monitoring.WalletSendCounts()
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 nonce_conflict, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "nonce conflict") {
+		t.Fatalf("expected nonce-conflict error, got body=%s", w.Body.String())
+	}
+	if delta := walletSendDelta(before, after, monitoring.WalletSendResultNonceConflict); delta != 1 {
+		t.Fatalf("qsdm_wallet_send_total{result=nonce_conflict} delta: want 1 got %d", delta)
+	}
+}
+
+// TestSubmitSigned_NonceLookupFailed asserts that when the
+// storage-side GetNonce call returns an error (db disk failure,
+// connection-pool exhaustion, etc.), the handler returns HTTP 500
+// and bumps qsdm_wallet_send_total{result=nonce_lookup_failed}.
+// This is the only branch where the handler must fail closed —
+// silently allowing replays on a storage fault would defeat the
+// whole point of v0.4.1.
+func TestSubmitSigned_NonceLookupFailed(t *testing.T) {
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Skipf("wallet requires CGO / Dilithium: %v", err)
+	}
+	h := setupTestHandlersWithSubmesh(nil, ws)
+	mock := h.storage.(*mockStorage)
+	mock.getNonceErr = errors.New("simulated storage I/O failure")
+
+	pubKey := ws.GetPublicKey()
+	addrHash := sha256.Sum256(pubKey)
+	sender := hex.EncodeToString(addrHash[:])
+	mock.balances[sender] = 5.0
+
+	recipient := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	env := buildSignedEnvelopeWithNonce(t, ws, recipient, 1.0, 0.01, []string{
+		strings.Repeat("a", 32), strings.Repeat("b", 32),
+	}, 1)
+
+	before := monitoring.WalletSendCounts()
+	w := postSubmitSigned(t, h, env)
+	after := monitoring.WalletSendCounts()
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 nonce_lookup_failed, got %d body=%s", w.Code, w.Body.String())
+	}
+	if delta := walletSendDelta(before, after, monitoring.WalletSendResultNonceLookupFailed); delta != 1 {
+		t.Fatalf("qsdm_wallet_send_total{result=nonce_lookup_failed} delta: want 1 got %d", delta)
+	}
+}
+
+// walletSendDelta scans the WalletSendCounts() slice for the
+// counter named `result` and returns (after - before). Avoids
+// hard-coding indices and survives reordering of the result-tag
+// table in pkg/monitoring/wallet_metrics.go. The return type is
+// int64 (not uint64) so an "after < before" surprise reads as a
+// negative diff rather than silently wrapping.
+func walletSendDelta(before, after []struct {
+	Result string
+	Count  uint64
+}, result string) int64 {
+	var b, a uint64
+	for _, c := range before {
+		if c.Result == result {
+			b = c.Count
+		}
+	}
+	for _, c := range after {
+		if c.Result == result {
+			a = c.Count
+		}
+	}
+	return int64(a) - int64(b)
 }
