@@ -95,6 +95,91 @@ attempt to retroactively enumerate that history.
     `{in-tree: 22, in-tree-tests: 20, live-deploy: 12}` and
     `blocking_count: 19`.
 
+- **Audit checklist Group-A evidence-discipline flip — 4 items
+  pre-flipped to `StatusPassed` (2026-05-14, post-`8edd91c`).**
+  Closes the four remaining items from Session 100c's read-only
+  scan whose evidence was already sitting in-tree but `8edd91c`
+  hadn't picked up — narrower scope than the 17-item batch
+  before it (each item carries a precise file-and-line pointer
+  to the evidence) and explicitly held the line on
+  evidence-discipline by **dropping `rotation-02`** from the
+  intended 5-item batch when no rotation runbook turned out to
+  exist in the repo. Score on
+  `https://api.qsdm.tech/api/v1/audit/summary` moves from
+  **44/85 passed (51.76 %)** to **48/85 passed (56.47 %)** —
+  a 4-point delta, no new code, no tests rewritten beyond the
+  drift-guard list extension.
+  - **Items flipped (each cites the exact source-tree pointer in
+    its `Notes` field):**
+    - `infra-03` "Dependency audit" (low) →
+      `evidence:in-tree-tests`. `.github/workflows/qsdm-go.yml`
+      line 128 dedicated `govulncheck` job (delegates to
+      `QSDM/scripts/govulncheck-filter.sh`); same workflow
+      already cited as the basis for `supply-02` (transitive
+      CVE scanning), so this is the operator-facing companion
+      finding rather than a new evidence claim.
+    - `supply-06` "Reproducible builds" (medium) →
+      `evidence:live-deploy`. `release-container.yml` lines
+      39-40+163-169 cross-compile every binary with
+      `go build -trimpath -ldflags="${LDFLAGS}" CGO_ENABLED=0`
+      across 5 platforms; `qsdm-split-profile.yml` line 196
+      runs a per-PR reproducibility-smoke job; v0.4.2 evidence
+      doc cites byte-identical match between the GHCR-image
+      binary and a workstation cross-compile from tag
+      `2039035` (`sha256:7fd07587df071b7766a2784533526969febe68012e2932671643178d1e8fe0dd`).
+    - `supply-07` "Dependency pinning policy" (medium) →
+      `evidence:in-tree`. `.github/dependabot.yml` ships
+      weekly `gomod` scan on `/QSDM/source` plus monthly
+      `github-actions` scan on `/`, with a documented
+      `github.com/libp2p/*` major-version exception (those
+      modules ship as `+incompatible` pseudo-releases that
+      cannot be applied without rewriting every import — full
+      rationale verbatim in the dependabot.yml comments). Go
+      module integrity verified by the `qsdm-go.yml`
+      `mod-verify` step from `supply-01`.
+    - `runtime-06` "Liveness / readiness probes" (medium) →
+      `evidence:in-tree`. `validator-statefulset.yaml` lines
+      107-120 wire both probes to `/api/v1/health/live`
+      (`initialDelaySeconds=60 periodSeconds=30`) and
+      `/api/v1/health/ready` (`initialDelaySeconds=30
+      periodSeconds=10`); probe targets bound by
+      `pkg/api/handlers.go` lines 200-202.
+  - **Out-of-batch (deliberately dropped):** `rotation-02` "mTLS
+    certificate rotation" was pre-listed as a Group-A candidate
+    on the strength of an assumed `MTLS_CERTIFICATE_ROTATION.md`
+    runbook; a `Get-ChildItem -Recurse | Where-Object
+    Name -match rotation` over the docs tree turned up zero
+    matches, so the row stays `pending`. This is the
+    "evidence-discipline-over-headline-score" choice the
+    Session-75 baseline rule was designed to enforce: a
+    runtime-verified row whose evidence is fictitious is worse
+    than a `pending` row.
+  - **Drift guard (`pkg/audit/checklist_extra_test.go`):** the
+    `runtimeVerifiedItems` allow-list is extended from 44 to 48
+    entries (`infra-03`, `supply-06`, `supply-07`, `runtime-06`
+    appended). `TestChecklist_PassedCountMatchesRuntimeVerifiedList`
+    re-anchors at 48; a regression that flips one of these back
+    to pending without removing it from the allow-list now
+    fails CI.
+  - **Race-condition note (interleaving with `8edd91c`).** The
+    Session 100c readiness scan started with `passed=27`; the
+    `8edd91c` 17-item batch landed mid-scan and preempted three
+    of the original Group-A candidates (`crypto-04`,
+    `store-01`, `store-03`) before this commit could reach
+    them. The remaining four were the intersection of "still
+    pending after `8edd91c`" and "Session 100c evidence
+    discipline survives." `ReviewedAt="2026-05-14T19:30:00Z"`
+    is one hour after the `8edd91c` batch's
+    `2026-05-14T18:30:00Z` to keep the timestamp ordering
+    legible in the `/api/v1/audit/items` JSON response.
+  - **Test posture (Windows/amd64, `CGO_ENABLED=0`,
+    `GOTOOLCHAIN=auto` resolving to go1.25.10 on top of locally
+    installed go1.25.5):** `pkg/audit` OK 0.472s,
+    `pkg/api` OK 2.632s `-short`, `internal/dashboard` OK
+    2.097s `-short`, `tests/` `-run Audit` OK 1.222s. Score
+    progression now anchored to `48/85 = 56.47 %` until
+    `d5b176b` lifts it to `54/85 = 63.53 %`.
+
 - **Audit checklist evidence catch-up — 17 items pre-flipped to
   `StatusPassed` (2026-05-14, post-v0.4.2-tag).** Closes the
   evidence-on-paper-but-not-on-checklist gap surfaced by the
