@@ -332,6 +332,8 @@ ssh -L 8081:localhost:8081 user@qsdm-server
 - Dashboard: `http://localhost:8081/`
 - Metrics: `http://localhost:8081/api/metrics`
 - Health: `http://localhost:8081/api/health`
+- Audit summary: `http://localhost:8081/api/audit/summary`
+- Audit items: `http://localhost:8081/api/audit/items` (filterable: `?category=`, `?severity=`, `?status=`)
 
 ---
 

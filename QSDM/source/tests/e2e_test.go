@@ -340,22 +340,26 @@ func TestE2E_AlertingRules(t *testing.T) {
 func TestE2E_AuditChecklistReview(t *testing.T) {
 	cl := audit.NewChecklist()
 
-	summary := cl.Summary()
-	if summary["total"] < 30 {
-		t.Fatalf("expected 30+ items, got %d", summary["total"])
+	baseline := cl.Summary()
+	if baseline["total"] < 30 {
+		t.Fatalf("expected 30+ items, got %d", baseline["total"])
 	}
 
-	// Review some critical items
+	// Review some critical items. crypto-01 and crypto-02 are still pending
+	// in defaultItems() (no live-deploy or test-coverage evidence yet) so the
+	// passed delta from this block is exactly +2; auth-01 is also pending so
+	// the failed delta is exactly +1.
 	cl.UpdateStatus("crypto-01", audit.StatusPassed, "auditor", "ML-DSA key gen verified")
 	cl.UpdateStatus("crypto-02", audit.StatusPassed, "auditor", "HMAC ephemeral key confirmed")
 	cl.UpdateStatus("auth-01", audit.StatusFailed, "auditor", "needs bcrypt cost increase")
 
-	summary = cl.Summary()
-	if summary["passed"] != 2 {
-		t.Fatalf("expected 2 passed, got %d", summary["passed"])
+	summary := cl.Summary()
+	if got, want := summary["passed"]-baseline["passed"], 2; got != want {
+		t.Fatalf("expected passed delta %d, got %d (baseline=%d, summary=%d)",
+			want, got, baseline["passed"], summary["passed"])
 	}
-	if summary["failed"] != 1 {
-		t.Fatalf("expected 1 failed, got %d", summary["failed"])
+	if got, want := summary["failed"]-baseline["failed"], 1; got != want {
+		t.Fatalf("expected failed delta %d, got %d", want, got)
 	}
 
 	pending := cl.PendingCritical()

@@ -7,15 +7,38 @@ import (
 	"testing"
 )
 
-func TestChecklist_Score_EmptyStart(t *testing.T) {
+// resetAllToPending resets every item on the checklist to StatusPending so that
+// score-math tests can exercise specific transitions independently of the
+// fresh-checklist baseline (which now starts with runtime-verified items
+// pre-flipped to StatusPassed; see TestChecklist_RuntimeVerifiedItemsPassed).
+func resetAllToPending(cl *Checklist) {
+	for _, it := range cl.Items() {
+		_ = cl.UpdateStatus(it.ID, StatusPending, "test-reset", "")
+	}
+}
+
+func TestChecklist_Score_AllPending_IsZero(t *testing.T) {
 	cl := NewChecklist()
+	resetAllToPending(cl)
 	if got := cl.Score(); got != 0 {
 		t.Fatalf("expected score 0 with all pending, got %v", got)
 	}
 }
 
+func TestChecklist_Score_FreshChecklist_HasRuntimeBaseline(t *testing.T) {
+	cl := NewChecklist()
+	score := cl.Score()
+	if score <= 0 {
+		t.Fatal("expected non-zero baseline score from runtime-verified items")
+	}
+	if score >= 100 {
+		t.Fatalf("baseline score should be < 100 while audit work is in flight, got %.2f", score)
+	}
+}
+
 func TestChecklist_Score_HalfPassed(t *testing.T) {
 	cl := NewChecklist()
+	resetAllToPending(cl)
 	items := cl.Items()
 	half := len(items) / 2
 	for i := 0; i < half; i++ {

@@ -14,6 +14,186 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Audit checklist tile — operator-dashboard wire-up (2026-05-14).**
+  Closes the operator-visibility gap from the 2026-05-13 audit-checklist
+  flip: the 27→passed delta now had no live surface, so
+  `dashboard.qsdm.tech` was still showing the same tiles as before
+  (a viewer would have had to run `cmd/auditreport` on a developer's
+  laptop to see the 31.8% score). The dashboard server
+  (`internal/dashboard`) now owns an in-process `audit.NewChecklist()`
+  and exposes two read-only endpoints behind the existing
+  `requireAuth` wrapper:
+  - `GET /api/audit/summary` — bucket counts (`total / passed / pending /
+    failed / waived`), the (passed+waived)/total score as a 0..100
+    float, `has_blocking_findings`, the count of still-pending
+    critical+high items, a top-5 preview of those items (id /
+    category / severity / title), and a 4-bucket
+    `evidence_provenance` breakdown
+    (`evidence:live-deploy / evidence:in-tree-tests / evidence:in-tree
+    / other`) so the passed count isn't a black box.
+  - `GET /api/audit/items` — the full filterable items list with
+    optional `?category=`, `?severity=`, `?status=` query
+    parameters validated against closed enums (a typo'd value
+    returns 400 — operators triaging a regression must NOT see
+    "all items" when they intended to filter). Echoes the applied
+    filters back via an `omitempty` block, matching the
+    `dashboardAttestRejectionsView` contract.
+  - **Frontend tile** rendered in `internal/dashboard/static/index.html`
+    + `dashboard.js`: a new "Audit Checklist Progress" card on the
+    main grid, polling at the existing 2-second cadence. Score is
+    tinted (≥80 green / ≥40 amber / red below) and the blocking
+    pill flips green to amber when `has_blocking_findings` is true.
+    The top-5 preview renders one row per still-blocking item with
+    the severity, ID, category, and title — operators see at a
+    glance which controls still gate production.
+  - **Drift guards (new tests, all green):**
+    - `TestHandleAuditSummary_ShapeAndCounts` re-derives the score
+      from the buckets, asserts the bucket sum invariant, and
+      verifies every preview entry has critical/high severity AND
+      pending/failed status (the definition of "blocking").
+    - `TestHandleAuditItems_FilterByStatus_Passed_MatchesPreFlippedCount`
+      asserts the items-endpoint count of `status=passed` equals
+      `summary["passed"]` from the same in-process checklist —
+      catches a future drift between the two surfaces.
+    - `TestHandleAuditItems_TypoFilters_400` walks each filter
+      with a deliberately typo'd value and confirms 400 (no
+      silent passthrough).
+    - `TestAuditTile_StaticAssetsContainRequiredSymbols` string-
+      searches the embedded `dashboard.js` and `index.html` for
+      the poller function name, the fetch URL, every DOM id the
+      renderer writes to, and the `evidence:*` provenance keys —
+      ship-stops a refactor that unhooks any half of the JS↔HTML
+      bridge.
+  - **Operator-visible delta.** Polling `/api/audit/summary` from
+    a logged-in session now returns
+    `summary:{total:85,passed:27,pending:58,...}, score:31.76,
+    has_blocking_findings:true, blocking_count:N,
+    blocking_preview:[crypto-01, crypto-02, …],
+    evidence_provenance:{live-deploy:11,in-tree-tests:8,in-tree:8,other:0}`.
+    The dashboard tile renders the score prominently with a
+    coloured pill for the blocking-findings state.
+  - **Out of scope (deferred to a follow-up).** No mirror under
+    `/api/v1/audit/*` on the public API server yet — the
+    transparency-public version (matching the trust-attestation
+    precedent) lands separately. `OpenAPI` spec untouched for the
+    same reason; `DASHBOARD_ACCESS.md` is updated.
+
+### Changed
+
+- **4-hour pubsub soak — extended-duration validation (2026-05-13).**
+  Long-haul follow-up to session 74's 10-min smoke. Same harness
+  (`tests/soak_pubsub_test.go`, build tag `soak`) and same mesh
+  configuration — 4 libp2p hosts in star topology, 2 producers per host,
+  50 Hz per producer, 256-byte payloads — with `QSDM_SOAK_DURATION` bumped
+  from 10 m to 4 h. Result: **PASS in 14,401.74 s**.
+  - **5,759,998 publishes** out of a target of 5,760,000
+    (4 × 2 × 50 × 14,400 s) — **0.00003 % miss**, 2 messages short over
+    the full 4 hours.
+  - **17,279,994 cross-host receipts** — exactly target (every publish
+    received by every other host); zero drops in the in-process mesh.
+  - **Per-host receive totals: [4,319,998 / 4,319,999 / 4,319,998 /
+    4,319,999]** — total spread across all 4 hosts is **2 messages over
+    14,400 s** (median 4,319,998.5, range ±0.5). Tighter than the 10-min
+    smoke's ±2.5, which means the steady-state mesh is *cleaner* than the
+    warmup-affected short run — the 50 % / 200 % fairness assertion has
+    huge headroom even at this extended duration.
+  - Zero partitions (every receiver saw > 0 messages from every other
+    host on every check), zero sustained-error windows (no host hit >100
+    consecutive publish errors at any point), no degradation in publish
+    or receive rate over the run (the 10-second status logs confirm the
+    `4000 sent / 12000 rx` per-tick cadence held end-to-end).
+  - Evidence file: `_session75_soak_pubsub_4h.log` (1,461 lines,
+    10-second cadence). Closes the "ready for `QSDM_SOAK_DURATION=4h`
+    runs" promise from session 72.
+
+- **Audit checklist: 27 runtime-verified items flipped to `StatusPassed`
+  (2026-05-13).** `pkg/audit/checklist.go` previously initialised every one
+  of the 85 audit-checklist items to `StatusPending`, so the operator
+  dashboard's audit tile and the `cmd/auditreport` CLI both reported a
+  flat "0/85, score 0%" baseline regardless of how much in-tree or
+  live-deploy evidence we had already captured. Each `defaultItems()`
+  literal is now stamped with `Status: StatusPassed`,
+  `ReviewedBy: "evidence:..."`, `ReviewedAt: ts("2026-05-13T...")`, and
+  `Notes:` pointing at the underlying evidence (session number, named
+  test, or commit hash) when the control is genuinely verified. The
+  reviewer field is one of three closed-enum strings — guarded by
+  `TestChecklist_RuntimeVerifiedReviewerProvenance`:
+  - `evidence:live-deploy` — verified live on `api.qsdm.tech` /
+    `dashboard.qsdm.tech` (with session-number proof).
+  - `evidence:in-tree-tests` — covered by named tests, green in the
+    most recent verification matrix (session 74's 67/67 packages).
+  - `evidence:in-tree` — implementation / CI machinery is in tree
+    (build tags, workflow files, deprecation-shim retirements).
+  - **Items flipped (27 total).** Live-deploy: `net-05` (peer.ID
+    persistence, Session 89), `store-05` (NGC ring restore, Session
+    90), `api-05` (wallet/mint stub→410 Gone, Session 91), `api-06`
+    (self-custody submit-signed, Sessions 95-98), `rebrand-01`
+    (rebrand sweep verified live), `rebrand-06` (53 cosign-signed
+    v0.4.0 assets), `tok-03` (`/api/v1/status` emission snapshot
+    live), `supply-01` (`go mod verify` clean), `supply-02`
+    (`govulncheck` clean except tracked `supply-08`), `supply-04`
+    (3 SPDX-2.3 SBOMs attached to v0.4.0), `supply-05` (cosign
+    keyless signing). In-tree-tests: `rebrand-04`, `rebrand-07`,
+    `tok-02`, `mining-03`, `mining-04`, `trust-01`, `trust-03`,
+    `trust-06`. In-tree: `rebrand-02` (env-var shim retired in
+    db9b590), `rebrand-05` (dual-emit retired in db9b590),
+    `mining-02` (validator-only build tag isolates miner from
+    consensus), `store-04` (recentrejects FilePersister wired),
+    `trust-02` (scope_note in handler), `trust-04` (normaliseRegion
+    closed-enum), `trust-05` (cross-checks mining-02), `supply-08`
+    (`GO-2024-3218` accepted-with-mitigation per Session 73).
+  - **Operator-visible delta.** `cmd/auditreport`'s rendered summary
+    moves from `passed:0 failed:0 pending:85 waived:0 score:0.0%` to
+    `passed:27 failed:0 pending:58 waived:0 score:31.8%`. The
+    operator dashboard's audit tile (`internal/dashboard/static/`)
+    polls the same surface and now reflects the same step.
+    `HasBlockingFindings()` still returns true (all
+    critical/high crypto, auth, authz, sc-01, bridge-01 etc.
+    remain pending — no premature green-light), so the
+    `cmd/auditreport -gate` exit-2 contract is unchanged.
+  - **Item-status drift guard (new tests, all green):**
+    - `TestChecklist_RuntimeVerifiedItemsPassed` walks a
+      const list of 27 IDs and asserts each is `StatusPassed`
+      with `ReviewedBy`, `ReviewedAt`, `Notes` populated.
+    - `TestChecklist_RuntimeVerifiedReviewerProvenance` asserts
+      `ReviewedBy` is one of the three allowed `evidence:*`
+      prefixes, so future flips can't smuggle in arbitrary
+      reviewer strings.
+    - `TestChecklist_PassedCountMatchesRuntimeVerifiedList`
+      pins `summary["passed"] == len(runtimeVerifiedItems)` so
+      adding a flip without updating the test list (or vice
+      versa) fails CI.
+  - **Score-math tests refactored.** `TestChecklist_Score_*`
+    previously assumed an all-pending baseline; now uses a new
+    `resetAllToPending()` helper to exercise the score math
+    independently of the new constructor state. New positive test
+    `TestChecklist_Score_FreshChecklist_HasRuntimeBaseline` pins
+    that `Score()` is non-zero out of the box and < 100 while
+    audit work is in flight. `TestE2E_AuditChecklistReview` was
+    similarly updated to assert deltas against a captured baseline
+    instead of absolute counts.
+  - **No data is fabricated.** Every flipped item has its
+    underlying evidence already recorded in this CHANGELOG, in
+    `NEXT_STEPS.md`, or in a named in-tree test that ran green in
+    session 74's verification matrix. Items without that level of
+    evidence (all `crypto-*`, `auth-*`, `authz-*`, `sc-*`,
+    `bridge-*`, the externally-blocked `rebrand-03` / `tok-01` /
+    `mining-01` / `mining-05`, etc.) remain `StatusPending`.
+    Those are the legitimate gates that still need wall-clock
+    review.
+  - Verified locally (`CGO_ENABLED=0`, windows/amd64,
+    `go1.25.10`):
+    - `go test ./pkg/audit/... -count=1` — **22/22 green**.
+    - `go test ./tests/... -short -count=1 -run TestE2E_Audit` —
+      **green**.
+    - `go vet ./pkg/audit/... ./cmd/auditreport/... ./tests/...`
+      — clean.
+    - `go run ./cmd/auditreport -format json -gate=false` —
+      `score: 31.76, summary: {total:85 passed:27 pending:58
+      failed:0 waived:0}`.
+
+### Added
+
 - **Boot-time binary-capabilities info-metric (2026-05-06).**
   New collector `qsdm_binary_capabilities` (value=1) exposes
   the build-tag-determined backend identity of the running

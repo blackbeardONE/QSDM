@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/api"
+	"github.com/blackbeardONE/QSDM/pkg/audit"
 	"github.com/blackbeardONE/QSDM/pkg/branding"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 	"github.com/blackbeardONE/QSDM/pkg/networking"
@@ -65,6 +66,16 @@ type Dashboard struct {
 	wsMetricsPusher   *MetricsPusher
 	wsMetricsPushMu   sync.Mutex
 	wsMetricsInterval time.Duration
+
+	// auditChecklist owns the in-process audit.Checklist
+	// powering /api/audit/summary and /api/audit/items (see
+	// audit.go in this package). Initialised in NewDashboard
+	// to a fresh audit.NewChecklist() so the runtime-verified
+	// items pre-flipped in pkg/audit/checklist.go are visible
+	// from the first poll. The Checklist is internally
+	// guarded by an RWMutex, so the per-instance pointer is
+	// concurrency-safe for the polling frontend.
+	auditChecklist *audit.Checklist
 }
 
 type dashboardSessionEntry struct {
@@ -117,6 +128,7 @@ func NewDashboard(metrics *monitoring.Metrics, healthChecker *monitoring.HealthC
 		apiBackendURL:         strings.TrimSpace(apiBackendURL),
 		sessions:              make(map[string]dashboardSessionEntry),
 		wsHub:                 hub,
+		auditChecklist:        audit.NewChecklist(),
 	}
 }
 
@@ -265,6 +277,16 @@ func (d *Dashboard) buildHandler() (http.Handler, error) {
 	// shape.
 	mux.HandleFunc("/api/mining/enrollment-overview", d.requireAuth(d.handleEnrollmentOverview))
 
+	// Audit checklist tile (Session 76 wire-up). Two read-only
+	// endpoints feeding the audit-progress card on the
+	// dashboard: /api/audit/summary returns the bucket-count +
+	// score + blocking-preview envelope, /api/audit/items
+	// returns the filterable items list. Implementation in
+	// audit.go; see pkg/audit/checklist.go for the data
+	// source.
+	mux.HandleFunc("/api/audit/summary", d.requireAuth(d.handleAuditSummary))
+	mux.HandleFunc("/api/audit/items", d.requireAuth(d.handleAuditItems))
+
 	// mTLS certificate management (admin only — certs are security-sensitive)
 	mux.HandleFunc("/api/mtls/generate", d.requireAdmin(d.handleMTLSGenerate))
 	mux.HandleFunc("/api/mtls/status", d.requireAuth(d.handleMTLSStatus))
@@ -308,7 +330,7 @@ func (d *Dashboard) Start() error {
 		log.Printf("Dashboard authentication: DISABLED (INSECURE - development only)")
 	}
 	log.Printf("Dashboard will be available at http://localhost:%s", d.port)
-	log.Printf("API endpoints: /api/metrics, /api/metrics/prometheus, /api/health, /api/topology, /api/mesh3d-viz, /api/ngc-proofs (require authentication)")
+	log.Printf("API endpoints: /api/metrics, /api/metrics/prometheus, /api/health, /api/topology, /api/mesh3d-viz, /api/ngc-proofs, /api/audit/summary, /api/audit/items (require authentication)")
 
 	// Verify embedded files are available
 	entries, err := fs.ReadDir(staticFiles, "static")

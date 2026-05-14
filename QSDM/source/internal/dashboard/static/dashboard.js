@@ -1617,6 +1617,97 @@ function updateTrustPanel() {
         .catch(() => { /* keep panel in loading state */ });
 }
 
+// updateAuditChecklist polls /api/audit/summary (see
+// internal/dashboard/audit.go) and renders the audit-progress
+// card. Stays defensive against partial responses (any missing
+// field collapses to "—") so a future shape addition can't
+// blank-screen the tile mid-deploy. Same posture as
+// updateTrustPanel / updateNodeStatus.
+function updateAuditChecklist() {
+    fetch('/api/audit/summary', dashFetchOpts)
+        .then(response => response.ok ? response.json() : Promise.reject(response.status))
+        .then(data => {
+            const summary = (data && data.summary) || {};
+            const total = summary.total || 0;
+            const passed = summary.passed || 0;
+            const pending = summary.pending || 0;
+            const failed = summary.failed || 0;
+            const waived = summary.waived || 0;
+
+            const scoreEl    = document.getElementById('audit-score');
+            const passedEl   = document.getElementById('audit-passed');
+            const pendingEl  = document.getElementById('audit-pending');
+            const failedEl   = document.getElementById('audit-failed-waived');
+            const blockEl    = document.getElementById('audit-blocking-count');
+            const previewEl  = document.getElementById('audit-blocking-preview');
+            const provEl     = document.getElementById('audit-provenance');
+
+            if (scoreEl) {
+                const score = typeof data.score === 'number' ? data.score : 0;
+                scoreEl.textContent = total > 0 ? score.toFixed(1) + '%' : '—';
+                // Tint the score: green ≥80, amber ≥40, red below.
+                if (total === 0) {
+                    scoreEl.style.color = '#a0a0a0';
+                } else if (score >= 80) {
+                    scoreEl.style.color = '#7ed321';
+                } else if (score >= 40) {
+                    scoreEl.style.color = '#f5a623';
+                } else {
+                    scoreEl.style.color = '#4a9eff'; // matches the default "large" colour
+                }
+            }
+            if (passedEl)  passedEl.textContent  = passed + ' of ' + total;
+            if (pendingEl) pendingEl.textContent = String(pending);
+            if (failedEl)  failedEl.textContent  = failed + ' / ' + waived;
+
+            const blockingCount = data.blocking_count || 0;
+            if (blockEl) {
+                blockEl.textContent = data.has_blocking_findings
+                    ? blockingCount + ' still pending'
+                    : '0 — none blocking';
+                blockEl.style.color = data.has_blocking_findings ? '#f5a623' : '#7ed321';
+            }
+
+            if (previewEl) {
+                const preview = Array.isArray(data.blocking_preview) ? data.blocking_preview : [];
+                if (preview.length === 0) {
+                    previewEl.innerHTML = '<em style="color:#7ed321;">No critical or high items still pending.</em>';
+                } else {
+                    const rows = preview.map(it => {
+                        const sev = String(it.severity || '').toUpperCase();
+                        const sevColor = sev === 'CRITICAL' ? '#d0021b' : '#f5a623';
+                        const id = String(it.id || '').replace(/[^a-z0-9_-]/gi, '');
+                        const title = String(it.title || '').replace(/</g, '&lt;');
+                        const cat = String(it.category || '').replace(/</g, '&lt;');
+                        return '<div style="display:flex;gap:8px;align-items:baseline;">'
+                             + '<span style="color:' + sevColor + ';font-weight:bold;width:62px;flex-shrink:0;">' + sev + '</span>'
+                             + '<code style="color:#7bd3ff;width:130px;flex-shrink:0;">' + id + '</code>'
+                             + '<span style="color:#888;font-size:10px;width:100px;flex-shrink:0;">' + cat + '</span>'
+                             + '<span>' + title + '</span>'
+                             + '</div>';
+                    }).join('');
+                    let header = '<div style="color:#a0a0a0;margin-bottom:4px;">Top blocking (max ' + preview.length + '):</div>';
+                    previewEl.innerHTML = header + rows;
+                }
+            }
+
+            if (provEl) {
+                const p = data.evidence_provenance || {};
+                const live = p['evidence:live-deploy']   || 0;
+                const tests = p['evidence:in-tree-tests'] || 0;
+                const intree = p['evidence:in-tree']     || 0;
+                const other = p['other']                 || 0;
+                let line = '<span class="metric-label">Evidence:</span> '
+                         + '<code>' + live + '</code> live · '
+                         + '<code>' + tests + '</code> tests · '
+                         + '<code>' + intree + '</code> in-tree';
+                if (other > 0) line += ' · <code>' + other + '</code> other';
+                provEl.innerHTML = line;
+            }
+        })
+        .catch(() => { /* keep tile in last-rendered state; transient errors don't blank the panel */ });
+}
+
 function startPolling() {
     updateInterval = setInterval(() => {
         updateMetrics();
@@ -1641,6 +1732,7 @@ function startPolling() {
         updateTopology();
         updateNodeStatus();
         updateTrustPanel();
+        updateAuditChecklist();
     }, 2000);
 }
 
@@ -1661,6 +1753,7 @@ function startUpdates() {
     updateTopology();
     updateNodeStatus();
     updateTrustPanel();
+    updateAuditChecklist();
     initMTLS();
     loadUserRole();
 

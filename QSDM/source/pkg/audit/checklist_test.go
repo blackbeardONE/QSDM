@@ -18,8 +18,21 @@ func TestChecklist_Summary(t *testing.T) {
 	if summary["total"] < 30 {
 		t.Fatalf("expected total >= 30, got %d", summary["total"])
 	}
-	if summary["pending"] != summary["total"] {
-		t.Fatalf("all items should be pending initially: pending=%d, total=%d", summary["pending"], summary["total"])
+	// Status counts must sum to total — every item lives in exactly one bucket.
+	sum := summary["pending"] + summary["passed"] + summary["failed"] + summary["waived"]
+	if sum != summary["total"] {
+		t.Fatalf("status counts should sum to total: pending=%d passed=%d failed=%d waived=%d total=%d",
+			summary["pending"], summary["passed"], summary["failed"], summary["waived"], summary["total"])
+	}
+	// Runtime-verified items are pre-flipped to passed in defaultItems()
+	// (see TestChecklist_RuntimeVerifiedItemsPassed for the per-item list).
+	if summary["passed"] == 0 {
+		t.Fatal("expected runtime-verified items to be pre-flipped to StatusPassed; got 0 passed")
+	}
+	// Audit work is not finished — some items still need wall-clock review
+	// (counsel sign-off, external audit, ops onboarding).
+	if summary["pending"] == 0 {
+		t.Fatal("expected at least some items to remain pending (audit work in flight); got 0 pending")
 	}
 }
 

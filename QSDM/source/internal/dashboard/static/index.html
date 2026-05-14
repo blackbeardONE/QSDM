@@ -403,6 +403,42 @@
                 </p>
             </div>
 
+            <!-- Audit Checklist Progress (Session 76) -->
+            <!-- Backed by /api/audit/summary (handleAuditSummary in
+                 internal/dashboard/audit.go). Surfaces the
+                 pkg/audit checklist's bucket counts, score, and
+                 the top-N still-blocking critical/high items so
+                 operators see at a glance how much of the
+                 v0.x security audit has been runtime-verified. -->
+            <div class="card">
+                <h2>🛡️ Audit Checklist Progress</h2>
+                <div class="metric">
+                    <span class="metric-label">Score</span>
+                    <span class="metric-value large" id="audit-score">—</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Passed</span>
+                    <span class="metric-value" id="audit-passed">—</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Pending</span>
+                    <span class="metric-value" id="audit-pending">—</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Failed / Waived</span>
+                    <span class="metric-value" id="audit-failed-waived">—</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Blocking (critical+high)</span>
+                    <span class="metric-value" id="audit-blocking-count">—</span>
+                </div>
+                <div id="audit-blocking-preview" style="margin: 10px 0; font-size: 12px; color: #a0a0a0; line-height: 1.5;"></div>
+                <div id="audit-provenance" style="margin: 10px 0 6px; font-size: 11px; color: #888; line-height: 1.5;"></div>
+                <p style="color: var(--text-muted, #9fb0c9); font-size: 12px; margin: 6px 0 0; line-height: 1.45;">
+                    Live read of <code>pkg/audit</code>. Score = (passed + waived) / total. Items flip from <em>pending</em> only with cited evidence — see <code>evidence:live-deploy</code> / <code>evidence:in-tree-tests</code> / <code>evidence:in-tree</code> in the breakdown.
+                </p>
+            </div>
+
             <!-- System Metrics -->
             <div class="card">
                 <h2>⚙️ System Metrics</h2>
