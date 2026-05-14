@@ -19,7 +19,9 @@ info:
     - Role-based access control
     
     **Submesh policy (optional):** When the node loads `[network] submesh_config` / `QSDM_SUBMESH_CONFIG` (legacy alias: `QSDM_SUBMESH_CONFIG`), some ledger routes may return **422 Unprocessable Entity** if fee+geotag do not match a profile or the serialized payload exceeds `max_tx_size` (wallet send), or mint/token-create exceeds the strictest profile cap. See main README “Submesh profiles”.
-  version: 1.0.0
+
+    **Public read (transparency) endpoints — v1.1.0 catch-up.** A growing set of read-only routes is intentionally unauthenticated so SDK clients, third-party aggregators, and the public landing page widget at `https://qsdm.tech/trust` can scrape verifiable signals without an operator-granted session: `/status`, `/wallet/balance`, `/wallet/nonce`, `/audit/summary`, `/audit/items`, `/trust/attestations/summary`, `/trust/attestations/recent`, `/attest/recent-rejections`, `/receipts`, `/receipts/{tx_id}`. All are rate-limited per-IP by the same limiter that protects authenticated routes; the audit checklist text is already public from the open-source repo, and the trust posture is "always show X of Y, never just X" (see `NVIDIA_LOCK_CONSENSUS_SCOPE.md`).
+  version: 1.1.0
   contact:
     name: QSDM Development Team
     url: https://github.com/blackbeardONE/QSDM
@@ -33,6 +35,8 @@ servers:
 tags:
   - name: Health
     description: Health check endpoints
+  - name: Status
+    description: Public node status (node_role, coin metadata, branding) — unauthenticated
   - name: Authentication
     description: User authentication and registration
   - name: Wallet
@@ -43,6 +47,18 @@ tags:
     description: Transaction validation
   - name: Monitoring
     description: NGC proof ingest and operator endpoints (shared ingest secret header; not JWT)
+  - name: Trust
+    description: Transparency endpoints for NGC attestations (Major Update §8.5; opt-in, anti-claim widget — always renders "X of Y", never just "X")
+  - name: Audit
+    description: Transparency endpoints for the operator audit checklist (pkg/audit). Public-API mirror of the bearer-gated dashboard endpoints under /api/audit/*
+  - name: Attest
+    description: Transparency endpoints for the v2 mining attestation rejection ring (pkg/mining/attest)
+  - name: Governance
+    description: v2 mining runtime parameter tuning (read endpoints; writes flow through /transactions with a qsdm/gov/v1 envelope)
+  - name: Receipts
+    description: Public chain transparency — per-tx outcome probes and the recent-transactions list feeding the chain dashboard
+  - name: Network
+    description: Live network topology projection consumed by the dashboard WebGL renderer
 
 paths:
   /health:
@@ -871,7 +887,7 @@ paths:
       parameters:
         - name: limit
           in: query
-          description: Maximum number of transactions to return (default: 50, max: 1000)
+          description: "Maximum number of transactions to return (default: 50, max: 1000)"
           schema:
             type: integer
             minimum: 1
@@ -993,6 +1009,491 @@ paths:
         '401':
           description: Unauthorized
 
+  # --------------------------------------------------------------------------
+  # Status (public)
+  # --------------------------------------------------------------------------
+
+  /status:
+    get:
+      tags:
+        - Status
+      summary: Public node status
+      description: |
+        Unauthenticated public-read endpoint surfacing the `node_role`
+        (`validator`/`miner`), build profile, mining flag, the native
+        coin metadata (Cell / CELL / 8 decimals), branding strings,
+        and a snapshot of the §8 emission schedule. Powers the SDK
+        client's "what kind of node am I talking to?" probe and the
+        dashboard's network/role/coin pills.
+      operationId: nodeStatus
+      responses:
+        '200':
+          description: Node status snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeStatus'
+
+  # --------------------------------------------------------------------------
+  # Wallet — v0.4.1 nonce helper
+  # --------------------------------------------------------------------------
+
+  /wallet/nonce:
+    get:
+      tags:
+        - Wallet
+      summary: Read next nonce for a self-custody envelope
+      description: |
+        v0.4.1 (Session 100) public-read helper that lets a self-custody
+        client fetch the next envelope nonce without an authenticated
+        session. Symmetric with `/wallet/balance`: read-only,
+        address-required-in-query, no JWT. The returned `nonce` is the
+        next allowed value the chain will accept for a `tx.nonce` field
+        on this address. Replay protection is enforced server-side by
+        `pkg/storage` on `submit-signed`. See
+        `V041_REPLAY_PROTECTION_DESIGN.md` §5.2.
+      operationId: walletNonce
+      parameters:
+        - name: address
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Wallet address (sender = hex(sha256(public_key)))
+      responses:
+        '200':
+          description: Next allowed nonce
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  address:
+                    type: string
+                  nonce:
+                    type: integer
+                    format: int64
+                    description: Next acceptable transaction nonce
+        '400':
+          description: Missing or malformed `address`
+
+  # --------------------------------------------------------------------------
+  # Audit — transparency surface (Session 77 / v0.4.2)
+  # --------------------------------------------------------------------------
+
+  /audit/summary:
+    get:
+      tags:
+        - Audit
+      summary: Audit checklist summary
+      description: |
+        Public-API mirror of the dashboard's `/api/audit/summary`
+        (bearer-gated). Returns bucket counts, score, blocking-findings
+        flag and preview, and a 4-bucket evidence-provenance breakdown
+        of the runtime-verified items in `pkg/audit/checklist.go`.
+
+        Wire shape is byte-for-byte identical to the dashboard view, so
+        an SDK client can drop-replace
+        `https://dashboard.qsdm.tech/api/audit/summary` with
+        `https://api.qsdm.tech/api/v1/audit/summary` and get the same
+        JSON. Pinned by `TestAuditAPI_WireParity_DashboardAndAPI`.
+
+        Cache: `Cache-Control: public, max-age=60`. A flip is a Git
+        commit + redeploy event; 60 s of staleness is acceptable.
+      operationId: auditSummary
+      responses:
+        '200':
+          description: Current audit checklist summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditSummary'
+        '405':
+          description: Method not allowed (only GET)
+
+  /audit/items:
+    get:
+      tags:
+        - Audit
+      summary: Audit checklist items (filterable)
+      description: |
+        Full filterable items list, public mirror of the dashboard's
+        `/api/audit/items`. All three filters are closed-enum
+        validated against `pkg/audit` constants — a typo'd value
+        returns **400**, NOT a silent "all items" passthrough.
+        Applied filters are echoed back via `filters` (omitted when
+        no filter is set).
+      operationId: auditItems
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - cryptography
+              - authentication
+              - authorisation
+              - network
+              - smart_contracts
+              - bridge
+              - storage
+              - api
+              - governance
+              - infrastructure
+              - supply_chain
+              - runtime
+              - secret_rotation
+              - rebrand
+              - tokenomics
+              - mining_audit
+              - trust_api
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [critical, high, medium, low, info]
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, passed, failed, waived]
+      responses:
+        '200':
+          description: Filtered items list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditItemsResponse'
+        '400':
+          description: Closed-enum filter parameter mis-typed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '405':
+          description: Method not allowed
+
+  # --------------------------------------------------------------------------
+  # Trust — transparency surface (Major Update §8.5)
+  # --------------------------------------------------------------------------
+
+  /trust/attestations/summary:
+    get:
+      tags:
+        - Trust
+      summary: NGC attestation summary
+      description: |
+        Anti-claim transparency widget (§8.5.3). Always returns "X of
+        Y attested" so the consumer can never display a bare count.
+        Zero opt-in and NGC-outage states are legal 200 responses —
+        they are NOT hidden, NOT loading-forever. Returns **503
+        warming up** for the first 60 s after the aggregator starts,
+        and **404** if the operator opted out by setting
+        `TrustDisabled=true`.
+
+        Cache: `Cache-Control: public, max-age=5`.
+      operationId: trustSummary
+      responses:
+        '200':
+          description: Aggregator summary snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustSummary'
+        '404':
+          description: Trust endpoints disabled on this node
+        '503':
+          description: Trust aggregator warming up (first 60 s after start)
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying
+
+  /trust/attestations/recent:
+    get:
+      tags:
+        - Trust
+      summary: NGC attestation recent rows
+      description: |
+        Up to `limit` of the freshest attestation rows sorted
+        newest-first. `node_id_prefix` is always first-8 + "…" +
+        last-4 chars of the peer ID — the aggregator enforces this
+        redaction before cache insertion. `region_hint` is the
+        coarse 4-bucket taxonomy from §8.5.3.
+      operationId: trustRecent
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: Page size; clamped to [1, 200].
+      responses:
+        '200':
+          description: Recent attestations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustRecent'
+        '400':
+          description: Invalid limit
+        '404':
+          description: Trust endpoints disabled on this node
+        '503':
+          description: Trust aggregator warming up
+
+  # --------------------------------------------------------------------------
+  # Attest — v2 mining attestation rejection ring (transparency)
+  # --------------------------------------------------------------------------
+
+  /attest/recent-rejections:
+    get:
+      tags:
+        - Attest
+      summary: Recent attestation rejections
+      description: |
+        Bounded ring buffer of the most recent attestation-rejection
+        records plus per-field rune-truncation counters. Public so
+        independent observers can cross-check a validator's advisory
+        state without an operator-granted session. The handler
+        validates the `kind` filter against an authoritative
+        closed-enum allow-list (typo → 400). When the v2 store has
+        not been wired (v1-only deployments), the response is still
+        200 with an empty records array and zero-valued metrics —
+        operators want to see "store: not wired" rather than a
+        blank tile.
+      operationId: recentRejections
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - archspoof_unknown_arch
+              - archspoof_gpu_name_mismatch
+              - archspoof_cc_subject_mismatch
+              - hashrate_out_of_band
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+          description: Drop records strictly older than this Unix-seconds timestamp
+      responses:
+        '200':
+          description: Recent rejection records + metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available:
+                    type: boolean
+                  records:
+                    type: array
+                    items:
+                      type: object
+                  total_matches:
+                    type: integer
+                  limit:
+                    type: integer
+                  filters:
+                    type: object
+                    additionalProperties: true
+                  metrics:
+                    type: object
+                    additionalProperties: true
+        '400':
+          description: Bad limit / kind / since query parameter
+
+  # --------------------------------------------------------------------------
+  # Governance — v2 mining runtime parameter tuning (read endpoints)
+  # --------------------------------------------------------------------------
+
+  /governance/params:
+    get:
+      tags:
+        - Governance
+      summary: Governance parameters snapshot
+      description: |
+        Read companion to the off-chain `qsdm/gov/v1` write path that
+        flows through `/transactions`. Returns 503 until a provider
+        is installed via `api.SetGovernanceProvider(...)`. See
+        `MINING_PROTOCOL_V2.md` §9.4.
+      operationId: governanceParams
+      responses:
+        '200':
+          description: Governance parameter snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '503':
+          description: Governance provider not wired
+
+  /governance/params/{name}:
+    get:
+      tags:
+        - Governance
+      summary: Single governance parameter
+      description: |
+        Path-routed companion to `/governance/params`. Mux pattern
+        order in `pkg/api/handlers.go` matters: the trailing-slash
+        variant comes first so `/params/{name}` routes through this
+        handler.
+      operationId: governanceParam
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Parameter value
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          description: Parameter unknown
+        '503':
+          description: Governance provider not wired
+
+  # --------------------------------------------------------------------------
+  # Receipts — public chain transparency
+  # --------------------------------------------------------------------------
+
+  /receipts:
+    get:
+      tags:
+        - Receipts
+      summary: Recent transactions list
+      description: |
+        Height-range list endpoint that powers the chain dashboard's
+        "recent transactions" tile. Public — anyone observing the
+        chain can independently render the recent-tx stream without
+        an operator session. Returns 503 until a probe is wired.
+      operationId: receiptsRecent
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+      responses:
+        '200':
+          description: Recent receipts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  receipts:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '400':
+          description: Invalid limit
+        '503':
+          description: Receipts probe not wired
+
+  /receipts/{tx_id}:
+    get:
+      tags:
+        - Receipts
+      summary: Per-transaction receipt
+      description: |
+        Read-only per-tx outcome probe (TxApplied / TxFailed log +
+        status code). Receipts live on-chain implicitly via the
+        state-root hash, so exposing them publicly is the canonical
+        "trust transparency" posture: anyone who saw a tx submission
+        can independently confirm it landed and at what status.
+      operationId: receiptByTxID
+      parameters:
+        - name: tx_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Receipt
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          description: tx_id unknown or FIFO-evicted from the bounded store
+        '503':
+          description: Receipts probe not wired
+
+  # --------------------------------------------------------------------------
+  # Network — live topology projection (auth)
+  # --------------------------------------------------------------------------
+
+  /network/topology:
+    get:
+      tags:
+        - Network
+      summary: Live network topology
+      description: |
+        Live JSON projection of the current peer set. The shape
+        matches `internal/topology.BuildLiveView` so the existing
+        dashboard WebGL renderer can consume it directly. Returns
+        an empty topology (200) when no `TopologyProvider` is
+        installed — keeps the dashboard UI functional on
+        cold-start.
+      operationId: networkTopology
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Topology projection
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  live_peer_count:
+                    type: integer
+                  healthy_peers:
+                    type: integer
+                  cells:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '401':
+          description: Unauthorized
+
 components:
   responses:
     SubmeshPolicy422:
@@ -1054,4 +1555,273 @@ components:
           type: string
         status:
           type: integer
+
+    # ------------------------------------------------------------------
+    # Status (public)
+    # ------------------------------------------------------------------
+
+    NodeStatus:
+      type: object
+      description: Public node status snapshot returned by GET /status.
+      properties:
+        node_role:
+          type: string
+          enum: [validator, miner]
+          description: Configured role of this process
+        build_profile:
+          type: string
+          description: Compile-time build profile (e.g. `full`, `validator-only`)
+        mining_enabled:
+          type: boolean
+        coin:
+          type: object
+          description: Native coin metadata (Cell / CELL / 8 decimals)
+          additionalProperties: true
+        branding:
+          type: object
+          description: Project branding strings (name, repository, docs URL)
+          additionalProperties: true
+        emission:
+          type: object
+          description: Snapshot of the §8 emission schedule (current epoch, reward, halving height, supply cap)
+          additionalProperties: true
+        version:
+          type: string
+          description: Semver of the running binary
+
+    # ------------------------------------------------------------------
+    # Audit checklist (Session 77 / v0.4.2)
+    # ------------------------------------------------------------------
+
+    AuditSummary:
+      type: object
+      description: |
+        Wire shape of GET /audit/summary. Mirrors
+        `dashboardAuditSummaryView` in `internal/dashboard/audit.go`
+        byte-for-byte; pinned by `TestAuditAPI_WireParity_DashboardAndAPI`.
+      required:
+        - summary
+        - score
+        - has_blocking_findings
+        - blocking_count
+        - blocking_preview
+        - evidence_provenance
+        - generated_at
+      properties:
+        summary:
+          type: object
+          description: |
+            Bucket-count dictionary `{total, passed, pending, failed,
+            waived}` from `audit.Checklist.Summary()`.
+          additionalProperties:
+            type: integer
+          example:
+            total: 85
+            passed: 27
+            pending: 58
+            failed: 0
+            waived: 0
+        score:
+          type: number
+          format: double
+          description: |
+            (passed + waived) / total expressed as a 0..100 float.
+        has_blocking_findings:
+          type: boolean
+          description: |
+            True if ANY critical/high item is still pending or failed.
+            The single-bit "is the audit gated?" answer for clients
+            that don't want to count buckets.
+        blocking_count:
+          type: integer
+          description: |
+            Total count of critical+high items still pending or
+            failed. Distinct from `len(blocking_preview)` which is
+            capped at 5.
+        blocking_preview:
+          type: array
+          description: |
+            Up to 5 still-blocking items in checklist insertion order.
+            Empty (not nil) array when nothing blocks.
+          items:
+            $ref: '#/components/schemas/AuditBlockingItem'
+        evidence_provenance:
+          type: object
+          description: |
+            Count breakdown of the passed items by `ReviewedBy` prefix.
+            Always emits the three canonical `evidence:*` buckets (even
+            at zero) plus an `other` bucket for forward-compat drift
+            detection.
+          additionalProperties:
+            type: integer
+          example:
+            evidence:live-deploy: 11
+            evidence:in-tree-tests: 8
+            evidence:in-tree: 8
+            other: 0
+        generated_at:
+          type: string
+          format: date-time
+          description: RFC3339 wall-clock timestamp at response time
+
+    AuditBlockingItem:
+      type: object
+      description: One row of AuditSummary.blocking_preview.
+      required: [id, category, severity, status, title]
+      properties:
+        id:
+          type: string
+          example: crypto-01
+        category:
+          type: string
+          example: cryptography
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        status:
+          type: string
+          enum: [pending, passed, failed, waived]
+        title:
+          type: string
+
+    AuditItemsResponse:
+      type: object
+      description: Wire shape of GET /audit/items.
+      required: [items, total_matches, generated_at]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditChecklistItem'
+        total_matches:
+          type: integer
+          description: Always equal to `len(items)`; explicit so clients render "showing N matches" without counting.
+        filters:
+          $ref: '#/components/schemas/AuditEchoedFilters'
+        generated_at:
+          type: string
+          format: date-time
+
+    AuditChecklistItem:
+      type: object
+      description: |
+        One row of `pkg/audit.ChecklistItem` as serialised by the
+        public API. Includes review provenance (`reviewed_by`,
+        `reviewed_at`) for items that have been flipped from
+        pending.
+      properties:
+        id:
+          type: string
+        category:
+          type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        status:
+          type: string
+          enum: [pending, passed, failed, waived]
+        title:
+          type: string
+        description:
+          type: string
+        reviewed_by:
+          type: string
+          description: |
+            Closed-enum reviewer prefix for runtime-verified items —
+            one of `evidence:live-deploy`, `evidence:in-tree-tests`,
+            `evidence:in-tree`. Empty string for items still pending.
+        reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+
+    AuditEchoedFilters:
+      type: object
+      description: |
+        Server-side echo of the filter parameters actually applied.
+        Omitted from the response (per `omitempty`) when no filter
+        was set.
+      properties:
+        category:
+          type: string
+        severity:
+          type: string
+        status:
+          type: string
+
+    # ------------------------------------------------------------------
+    # Trust attestation (Major Update §8.5)
+    # ------------------------------------------------------------------
+
+    TrustSummary:
+      type: object
+      description: Anti-claim transparency widget payload (§8.5.3).
+      required: [attested, total_public, ratio, fresh_within, last_checked_at, ngc_service_status, scope_note]
+      properties:
+        attested:
+          type: integer
+        total_public:
+          type: integer
+          description: Always emitted so UI can render "X of Y" — never bare "X".
+        ratio:
+          type: number
+          format: double
+          description: attested / total_public (0..1)
+        fresh_within:
+          type: string
+          description: Freshness window as a Go duration string (e.g. "15m0s")
+        last_attested_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: RFC3339; null when no attestation has ever been seen
+        last_checked_at:
+          type: string
+          format: date-time
+        ngc_service_status:
+          type: string
+          enum: [healthy, degraded, outage]
+        scope_note:
+          type: string
+          description: Verbatim reminder that NVIDIA-lock is opt-in, not a consensus rule (§8.5.2). Scrapers cannot strip the caveat without tampering with the body.
+
+    TrustAttestation:
+      type: object
+      description: One row of TrustRecent.attestations.
+      required: [node_id_prefix, attested_at, fresh_age_seconds, gpu_available, ngc_hmac_ok, region_hint]
+      properties:
+        node_id_prefix:
+          type: string
+          description: First-8 + "…" + last-4 chars of the peer ID. Aggregator-enforced redaction.
+        attested_at:
+          type: string
+          format: date-time
+        fresh_age_seconds:
+          type: integer
+          format: int64
+        gpu_architecture:
+          type: string
+        gpu_available:
+          type: boolean
+        ngc_hmac_ok:
+          type: boolean
+        region_hint:
+          type: string
+          enum: [eu, us, apac, other]
+
+    TrustRecent:
+      type: object
+      description: Wire shape of GET /trust/attestations/recent.
+      required: [fresh_within, count, attestations]
+      properties:
+        fresh_within:
+          type: string
+        count:
+          type: integer
+        attestations:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrustAttestation'
 

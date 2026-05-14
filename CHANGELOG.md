@@ -14,6 +14,137 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **OpenAPI catch-up pass — `docs/docs/openapi.yaml` v1.0.0 → v1.1.0
+  (2026-05-14).** Closes the lag between the actual `/api/v1/*`
+  surface and the published spec. The pre-edit YAML covered only
+  the v0.1-era core (health, auth, wallet, tokens, transactions,
+  validator, monitoring/ngc-*); every endpoint family added by
+  Phases 2–5 of the Major Update plus the v0.4.x rollout was
+  undocumented. This commit adds **12 new path entries**, **7 new
+  tags**, **9 new schema components**, and fixes a pre-existing
+  **strict-YAML scannability bug** (`(default: 50, max: 1000)` on
+  the `/transactions` `limit` parameter description — unquoted
+  `: ` tripped `pyyaml.safe_load`; quoted now). End-to-end
+  validated by `python -c "import yaml; yaml.safe_load(...)"`
+  after the edits → `openapi=3.0.3, version=1.1.0, paths=31,
+  tags=13, schemas=10`, with every documented path
+  cross-checked 1:1 against a route registered in
+  `pkg/api/handlers.go` (manual diff; no phantoms).
+  - **New paths (12):** `/status`, `/wallet/nonce`,
+    `/audit/summary`, `/audit/items`,
+    `/trust/attestations/summary`, `/trust/attestations/recent`,
+    `/attest/recent-rejections`, `/governance/params`,
+    `/governance/params/{name}`, `/receipts`, `/receipts/{tx_id}`,
+    `/network/topology`. Selection criterion: every public-read
+    transparency endpoint added through v0.4.2 plus the operator
+    surfaces with stable wire shapes (`/status`, `/wallet/nonce`,
+    `/governance/params`, `/network/topology`).
+  - **New tags (7):** `Status`, `Trust`, `Audit`, `Attest`,
+    `Governance`, `Receipts`, `Network` — each carries a
+    one-line description that names the source-of-truth doc /
+    package (e.g. `Major Update §8.5`, `pkg/audit`,
+    `MINING_PROTOCOL_V2.md §9.4`) so a future maintainer can
+    locate the binding contract without grepping the repo.
+  - **New schema components (9):** `NodeStatus`, `AuditSummary`,
+    `AuditBlockingItem`, `AuditItemsResponse`,
+    `AuditChecklistItem`, `AuditEchoedFilters`, `TrustSummary`,
+    `TrustAttestation`, `TrustRecent`. Closed-enum filter values
+    on `/audit/items` and `/attest/recent-rejections` are spelt
+    out inline (`enum: [critical, high, medium, low, info]`,
+    `enum: [pending, passed, failed, waived]`, the four
+    rejection kinds) so a client SDK code generator emits typed
+    unions without a second lookup.
+  - **Wire-shape parity guard:** the `AuditSummary` schema's
+    `description` cites `TestAuditAPI_WireParity_DashboardAndAPI`
+    from `pkg/api/handlers_audit_test.go`, so a future spec
+    drift surfaces in the same Go test that already pins
+    `dashboardAuditSummaryView` ↔ public-`AuditSummary` field
+    parity (the YAML schema is now the third pin alongside the
+    two Go structs).
+  - **Description block** under `info:` gains a "Public read
+    (transparency) endpoints — v1.1.0 catch-up" paragraph
+    enumerating every route intentionally unauthenticated, so a
+    consumer reading the spec top-down knows what to expect
+    without crawling the per-route `security` blocks. The
+    paragraph also names the rate-limit posture and links the
+    "X of Y, never just X" anti-claim guarantee from
+    `NVIDIA_LOCK_CONSENSUS_SCOPE.md`.
+  - **Out of scope (deferred to a follow-up doc pass).** Mining
+    endpoints (~14, `/mining/*`) — they have their own auditor
+    packet (`AUDIT_PACKET_MINING.md`) and the wire shapes are
+    governed by `MINING_PROTOCOL_V2.md` §3–7. Cross-chain bridge
+    (`/bridge/*`) and smart contracts (`/contracts/*`) — sprawling
+    state machines whose schemas are best authored against the
+    package source rather than retro-fitted from handler
+    signatures. Also deferred: `/tokens/list`. Adding any of
+    these is a separate, self-contained PR; they are explicitly
+    not v1.1.0 scope.
+
+- **`https://qsdm.tech/api.html` — visitor-facing API status page (2026-05-14).**
+  Disambiguates `/api/v1/*` (stable HTTP URL prefix) from
+  "mining-protocol v1 deprecation" (v0.3.2 retirement of CPU-only
+  PoW at consensus). The Build → API status link in every landing
+  footer points here; the page has a TL;DR scope note, side-by-side
+  panels for the two axes, a live-posture widget polling
+  `/api/v1/status` every 60 s, and a list of live `/api/v1/*`
+  endpoints visitors can probe from the browser. Companion docs-
+  portal article at
+  [`API_VERSIONING.md`](QSDM/docs/docs/API_VERSIONING.md)
+  surfaced through **Reference → API versioning** with badge=new.
+  Commits `3314fca` + `ad8862a` (post-v0.4.2-tag). Footer Build
+  link in `landing/index.html` flipped from `/api/v1/health` to
+  `/api.html`.
+- **`landing/api.html` + `API_VERSIONING.md` rsync'd to BLR1
+  (2026-05-14).** Static-asset deploy via `cmd/qsdm-deploy-landing`
+  (Go SSH tool from v0.3.1). Final verification:
+  `https://qsdm.tech/api.html` returns HTTP 200; live-posture
+  widget polls show `protocol_versions_accepted: [2]`,
+  `fork_v2_active: true`. Docs portal SPA fetches
+  `API_VERSIONING.md` from `raw.githubusercontent.com/.../main/`
+  with no separate deploy.
+- **CHANGELOG release-section back-fill: `[v0.4.1]`, `[v0.4.0]`,
+  `[v0.3.3]`, `[v0.3.2]`, `[v0.3.1]`, `[v0.3.0]` (2026-05-14).**
+  The CHANGELOG previously had only `[Unreleased]` despite six
+  tags shipping in the v0.3.x → v0.4.x window. Reconstructed
+  proper Keep-a-Changelog sections from git log within each
+  tag-to-tag commit range; anchored each section to its tag
+  commit, `release-container.yml` run ID, BLR1 deploy SHA, and
+  the release-evidence doc. Commits `682ed55` + `a189cf7`.
+
+## [v0.4.2] - 2026-05-14
+
+**Release theme:** audit-checklist transparency — the runtime-
+verified score (currently 27/85 passed, 31.8 %) is now visible on
+both the bearer-gated operator dashboard at
+`https://dashboard.qsdm.tech` and the public API server at
+`https://api.qsdm.tech/api/v1/audit/{summary,items}`. External
+audit aggregators, SDK consumers, and third-party verifiers can
+now read the score without an operator-granted session.
+
+**Tag:** `v0.4.2` @ `2039035602c56f87801610dd93d2135fe7696864`
+(2026-05-15T02:04:48+08:00).
+**Release workflow run:** `release-container.yml`
+[run 25862…](https://github.com/blackbeardONE/QSDM/actions/workflows/release-container.yml)
+— success on push of tag `v0.4.2` at commit `2039035`; 53 cosign-
+signed assets attached to
+[the v0.4.2 GitHub release](https://github.com/blackbeardONE/QSDM/releases/tag/v0.4.2);
+3 GHCR images (`qsdm`, `qsdm-validator`, `qsdm-miner`) signed
+against `release-container.yml@refs/tags/v0.4.2`.
+**BLR1 deploy:** binary atomic-swap to v0.4.2 tag-faithful build
+(SHA `7fd07587…1e8fe0dd`) + systemd
+`QSDM_BUILD_VERSION=v0.4.2` env refresh + landing pill bumped to
+v0.4.2 (this commit).
+**Live verification:** `https://api.qsdm.tech/api/v1/status` reports
+`"version":"v0.4.2"` + `mining.protocol_versions_accepted:[2]` +
+`fork_v2_active:true`;
+`https://api.qsdm.tech/api/v1/audit/summary` returns HTTP 200 with
+`{passed:27,pending:58,failed:0,total:85,score:31.76}` and a
+blocking-preview of 5 critical/high pending items
+(`crypto-01,…`).
+**Evidence:** [`RELEASE_EVIDENCE_v0.4.2.md`](QSDM/docs/docs/RELEASE_EVIDENCE_v0.4.2.md).
+
+### Added
+
 - **Audit checklist transparency endpoints — public-API mirror (2026-05-14).**
   Closes the third-party-visibility gap from the 2026-05-14 dashboard
   tile (commit `48c0229`): the `/api/audit/{summary,items}` routes
