@@ -78,6 +78,222 @@ attempt to retroactively enumerate that history.
     precedent) lands separately. `OpenAPI` spec untouched for the
     same reason; `DASHBOARD_ACCESS.md` is updated.
 
+## [v0.4.1] - 2026-05-14
+
+**Release theme:** replay protection — per-account nonce + atomic
+debit/credit on the self-custody `/wallet/submit-signed` path
+(Sessions 98-100). Closes the two security gaps documented in
+`V040_WALLET_SEND_DESIGN.md §"Open issues"`: cross-`tx_id`
+re-submission of a captured envelope (mitigated by the new
+nonce gate) and the v0.4.0 non-atomic
+`HasTransaction → GetBalance → StoreTransaction`
+trio that could double-spend under concurrent submits
+(mitigated by a single `ApplyTransferAtomic` storage call).
+
+**Tag:** `v0.4.1` @ `aa060e58bcea69f5e40c14de5c2a404d3efe6ccd`
+(2026-05-14T18:23:56+08:00).
+**Release workflow run:** `release-container.yml`
+[run 25855056334](https://github.com/blackbeardONE/QSDM/actions/runs/25855056334)
+— 10/10 jobs green; 53 cosign-signed assets attached;
+3 GHCR images (`qsdm`, `qsdm-validator`, `qsdm-miner`) signed
+against the `release-container.yml@refs/tags/v0.4.1` Sigstore
+OIDC identity.
+**BLR1 deploy:** binary atomic-swap to v0.4.1 +
+`QSDM_BUILD_VERSION=v0.4.1` systemd refresh + landing pill
+bumped to v0.4.1 (Session 100, commit 47d22f7).
+**Evidence:** [`RELEASE_EVIDENCE_v0.4.1.md`](QSDM/docs/docs/RELEASE_EVIDENCE_v0.4.1.md)
+(FULLY GREEN — 8/8 verification rows green including independent
+cosign verify);
+[`V041_REPLAY_PROTECTION_DESIGN.md`](QSDM/docs/docs/V041_REPLAY_PROTECTION_DESIGN.md)
+(SHIPPED + DEPLOYED).
+
+### Added
+
+- **Per-account nonce + `ApplyTransferAtomic` storage contract.**
+  `pkg/api/server.go::StorageInterface` extended with two new
+  methods so the v0.4.1 handler can enforce the new invariants
+  inside the storage transaction boundary:
+  - `GetNonce(address) (uint64, error)` — returns the last-applied
+    nonce for an address (0 for unseen senders, symmetric with
+    `GetBalance` returning 0). Wired through `cmd/qsdm/main.go`'s
+    local `Storage` interface in lockstep.
+  - `ApplyTransferAtomic(ctx, sender, recipient, amount, fee, envelopeNonce, txID, rawEnvelope) error`
+    — single-shot atomic: txID uniqueness CAS, nonce CAS
+    (`envelopeNonce == lastNonce + 1`), balance check
+    (`balance >= amount + fee`), debit + credit + nonce bump + tx
+    archival. SQLite + Scylla backends implement the full path;
+    `FileStorage` returns a deliberate
+    `"file storage does not support atomic transfers"` error
+    (see the "FileStorage stub" entry below for why the read-side
+    nonce path is silent-zero instead).
+  - Foundation commit: `ecfa121` (Session 99 — design doc +
+    storage interface + tests). Handler integration: `8659b04`
+    (Session 100). Client + tooling + smoke + browser UI:
+    `2bdacb8`.
+- **`POST /api/v1/wallet/submit-signed` nonce-replay gate.**
+  `pkg/api/handlers.go::SubmitSignedTransaction` now decodes the
+  envelope's `nonce` field, calls
+  `storage.GetNonce(sender) → last`, rejects with HTTP 409 and
+  monitoring tag `result="nonce_conflict"` if
+  `envelopeNonce <= last`, and replaces the v0.4.0
+  `HasTransaction → GetBalance → StoreTransaction` trio with a
+  single `ApplyTransferAtomic` call. Legacy v0.4.0 envelopes
+  without a `nonce` field continue to land via the v0.4.0 code
+  path (with the documented non-atomicity caveat) — operators can
+  cut over clients incrementally. Handler delta: +89/-36.
+  Tests: 5 new — `HappyPath_WithNonce`, `LegacyV040Envelope`,
+  `NonceReplay`, `NonceConflict`, `NonceLookupFailed`; 8 existing
+  v0.4.0 tests still green (2 needed pre-fund tweak for the new
+  atomic path). 13/13 PASS in `pkg/api`.
+- **`GET /api/v1/wallet/nonce?sender=<hex64>` endpoint.** New
+  public read endpoint returns `{nonce, next}` so self-custody
+  clients can resolve the correct envelope nonce before signing.
+  Handler: `pkg/api/handlers.go::WalletNonce`. Rate-limited by
+  the same wallet bucket as `/wallet/submit-signed`. Tests:
+  6 new — `HappyPath_New`, `HappyPath_AfterSubmit`,
+  `MethodNotAllowed`, `MissingSender`, `InvalidSender`,
+  `StorageError`, `E2EBump`. OpenAPI spec entry added.
+- **`qsdmcli wallet sign-tx` subcommand.** New CLI subcommand
+  generates a v0.4.1 envelope (canonical payload + nonce auto-
+  fetch via `/wallet/nonce` or explicit `--nonce`) and either
+  prints to stdout or POSTs to `/wallet/submit-signed`. 5 tests
+  including a hard guarantee (`TestWalletSignTx_VerifiesAgainstServerCanonicalisation`)
+  that the produced signature verifies against the server's
+  byte-for-byte canonical payload constructor (prevents
+  client/server canonicalisation drift). Drain-on-deadlock fix
+  for stdout pipe in `runSignTx` test helper.
+- **Browser wallet Send tab — nonce input + auto-fetch
+  (`wasm_modules/wallet/`).** The Send tab gained a Nonce input
+  (manual entry) and an auto-fetch button that calls
+  `/wallet/nonce` to resolve `next` for the current address. WASM
+  helper `qsdm_wallet_sign_transaction` accepts an explicit nonce
+  field. SRI hashes refreshed: `wallet.wasm` =
+  `sha384-XKMSE…Eb6`, `wallet.js` = `sha384-RhWdF…P0O2`. Production
+  binary on `qsdm.tech` rebuilt; HTTPS-fetched bytes hash-match
+  the in-tree SHA.
+- **`cmd/v041smoke` — live-pipeline smoke test (5 probes).**
+  Super-set of `cmd/v040smoke`. Probes:
+  1. `bad-sig` → expect HTTP 422 `signature_invalid` (carry-over).
+  2. `sender-mismatch` → expect HTTP 400 (carry-over).
+  3. `malformed-json` → expect HTTP 400 (carry-over).
+  4. `nonce-endpoint-shape` → expect HTTP 200 with `{nonce, next}`
+     (new in v0.4.1).
+  5. `nonce-conflict` → expect HTTP 409 `nonce_conflict` for
+     SQLite/Scylla nodes, **HTTP 500 `failed to apply transfer`**
+     for FileStorage nodes (both indicate the v0.4.1 code path is
+     active; see "FileStorage stub" below). 5/5 PASS against
+     `https://api.qsdm.tech/api/v1/wallet/submit-signed`
+     (Session 100 post-deploy).
+- **`FileStorage` v0.4.1 read-side stub (Session 100 deploy fix,
+  commit 47d22f7).** `FileStorage.GetNonce` returns `(0, nil)`
+  (symmetric with `FileStorage.GetBalance`'s silent-zero) so the
+  new `/wallet/nonce` endpoint works on a FileStorage-backed
+  validator (the production BLR1 node ran on FileStorage as of
+  v0.4.0). Self-custody clients can probe the route to detect
+  v0.4.1 presence and resolve `next: 1` for their first
+  submission. The WRITE path (`ApplyTransferAtomic`) honestly
+  refuses below — operators see `qsdm_wallet_send_total{result="store_failed"}`
+  for any actual transfer attempt on a FileStorage node (SQLite
+  or Scylla remains required for settlement). Documented
+  in-source with the deploy-fix rationale and the read-vs-write
+  asymmetry.
+
+### Changed
+
+- **`api-06` audit row.** Description and notes rewritten to
+  capture the full v0.4.0 → v0.4.1 arc: backend handler
+  + browser send tab v0.4.0 (Sessions 95-98), replay protection
+  + atomic debit v0.4.1 (Sessions 99-100), independent cosign
+  verify (Session 100 closure). Now `StatusPassed` with
+  `evidence:live-deploy` provenance.
+
+### Security
+
+- **Independent cosign + Rekor verification (Session 100,
+  commit 9052719).** Third-party-workstation reproduction
+  verified 5/5 v0.4.1 artifacts without trusting any
+  CI-supplied envelope:
+  - `qsdmminer-console-linux-amd64` blob signature — Verified OK.
+  - `SHA256SUMS` root signature — Verified OK.
+  - `ghcr.io/blackbeardone/qsdm:0.4.1` image signature — Verified OK.
+  - `ghcr.io/blackbeardone/qsdm-validator:0.4.1` image signature — Verified OK.
+  - `ghcr.io/blackbeardone/qsdm-miner:0.4.1` image signature — Verified OK.
+
+  All five certificates bind to the same Sigstore OIDC identity
+  (`release-container.yml@refs/tags/v0.4.1` at commit
+  `aa060e5`); signing run is GitHub Actions run `25855056334`;
+  Rekor log ID `c0d23d6a…9591801d`, log index range
+  `1534699896-1534701566`. Out-of-band evidence captured in
+  `RELEASE_EVIDENCE_v0.4.1.md §"Independent cosign / Rekor
+  evidence"`.
+
+## [v0.4.0] - 2026-05-14
+
+**Release theme:** self-custody signed-transaction submission
+end-to-end — server handler, WASM signing helper, and browser
+wallet Send tab. The native `Cell (CELL)` coin can now move
+between addresses without the validator ever seeing or holding
+the sender's private key. Closes `api-06` ("Self-custody signed
+transaction submission") from Phase-1.
+
+**Tag:** `v0.4.0` @ `318ed5efc366d384820ec2ec7c24f3208715fe4d`
+(2026-05-14T00:01:52+08:00).
+**Release workflow run:** `release-container.yml`
+[run 25811046765](https://github.com/blackbeardONE/QSDM/actions/runs/25811046765)
+— 10/10 jobs green; 53 cosign-signed assets attached;
+3 GHCR images cosign-verified.
+**BLR1 deploy:** binary swap (sha256 `2874f088…`) +
+`QSDM_BUILD_VERSION=v0.4.0` + landing pill bumped to v0.4.0.
+**Live verification:** `GET /api/v1/status` reports v0.4.0;
+public `POST /wallet/submit-signed` returns HTTP 400
+`invalid-sender` (was 302 in v0.3.x), `wallet.wasm` SRI
+`XKMS…Eb6` matches over HTTPS.
+**Evidence:** [`RELEASE_EVIDENCE_v0.4.0.md`](QSDM/docs/docs/RELEASE_EVIDENCE_v0.4.0.md);
+[`V040_WALLET_SEND_DESIGN.md`](QSDM/docs/docs/V040_WALLET_SEND_DESIGN.md).
+
+### Added
+
+- **`POST /api/v1/wallet/submit-signed` (Phase A, Session 95).**
+  Self-custody signed-transaction handler. Accepts the canonical
+  envelope (`{tx: {id, sender, recipient, amount, fee, ts},
+  pubkey, signature}`), enforces `sender == sha256(pubkey)[:32]`,
+  verifies the ML-DSA-87 signature over the canonical payload,
+  checks balance and txID uniqueness, then archives. 8/8 new
+  tests green (`TestSubmitSigned_HappyPath`, `_BadSig`,
+  `_SenderMismatch`, `_MalformedJSON`, `_DuplicateTxID`,
+  `_InsufficientBalance`, `_RateLimited`, `_MissingSignature`).
+  `StorageInterface` extended with `GetTransaction`.
+  Monitoring: `qsdm_wallet_send_total` gained 4 new result tags
+  (`sender_mismatch`, `signature_invalid`,
+  `insufficient_balance`, `duplicate`).
+- **WASM `qsdm_wallet_sign_transaction` helper (Phase B,
+  Session 96).** New global exported by `wasm_modules/wallet/`
+  — accepts `{sender, recipient, amount, fee}` + private-key
+  bytes, returns the v0.4.0 canonical envelope ready to POST.
+  Build: 3.88 MB binary, SRI `sha384-XKMS…Eb6`. Pure-Go via
+  Stage-B wazero — no CGO, no liboqs DLLs, ships in every
+  build.
+- **Browser wallet "Send transaction" tab (Phase B,
+  Session 96).** New tab in `wasm_modules/wallet/wallet.html`
+  + `wallet.js` wires the WASM helper through a recipient /
+  amount / fee form, POSTs to `/wallet/submit-signed`, and
+  renders the server's `{tx_id, status}` response. Replaces
+  the legacy server-trusted `/wallet/send` UI on the homepage
+  (kept available for one release for any operator using the
+  old wallet flow).
+- **OpenAPI doc + `MINER_QUICKSTART.md` Appendix B.** OpenAPI
+  spec entry for `/wallet/submit-signed` documents the
+  canonical-payload contract and the 8 result tags.
+  `MINER_QUICKSTART.md` Appendix B refreshed with the new
+  self-custody flow.
+- **`cmd/v040smoke` — live-pipeline smoke test (3 probes,
+  Session 98).** 3/3 PASS against
+  `https://api.qsdm.tech/api/v1/wallet/submit-signed`. Probes:
+  bad-sig → HTTP 422 `signature_invalid`; sender-mismatch →
+  HTTP 400 `sender does not match`; malformed-json → HTTP 400
+  `unexpected EOF`. Anchored in `RELEASE_EVIDENCE_v0.4.0.md`
+  and the `api-06` audit row.
+
 ### Changed
 
 - **4-hour pubsub soak — extended-duration validation (2026-05-13).**
@@ -191,6 +407,24 @@ attempt to retroactively enumerate that history.
     - `go run ./cmd/auditreport -format json -gate=false` —
       `score: 31.76, summary: {total:85 passed:27 pending:58
       failed:0 waived:0}`.
+
+## [v0.3.3] - 2026-05-13
+
+**Tag:** `v0.3.3` @ `03edf41612585b378908839bafa6f42974311781`
+(2026-05-12T13:35:07+08:00).
+**Release theme:** `/api/v1/wallet/mint` deprecation to HTTP 410
+Gone — closes the supply-inflation surface left over from the
+seed-faucet era (Sessions 89-91).
+
+> **Historical-content note.** Entries below this point are dated
+> 2026-05-06 and earlier. They were on main when v0.3.3 was
+> tagged but most of them actually shipped in the v0.3.0 / v0.3.1
+> / v0.3.2 windows (and a few even before the QSDM rebrand on
+> 2026-04-22). A finer-grained back-fill into
+> `[v0.3.2]` / `[v0.3.1]` / `[v0.3.0]` is deferred —
+> Keep-a-Changelog cleanliness sits below release-evidence
+> accuracy for the v0.4.x cycle. Until then, treat this
+> `[v0.3.3]` section as the "everything pre-v0.4.0" catchment.
 
 ### Added
 
