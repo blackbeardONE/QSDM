@@ -307,6 +307,17 @@ func isPublicEndpoint(path string) bool {
 		// handlers themselves gate behaviour on aggregator state.
 		"/api/v1/trust/attestations/summary",
 		"/api/v1/trust/attestations/recent",
+		// Audit-checklist transparency endpoints (Session 77).
+		// Same justification as the trust block above: third
+		// parties (SDK consumers, landing page widget, external
+		// audit aggregators) need to read the runtime-verified
+		// audit score without an operator-granted session. The
+		// underlying ChecklistItem text is already public from
+		// the open-source repo, so the only thing being exposed
+		// is the per-item Status/ReviewedBy/ReviewedAt — which
+		// is exactly the transparency signal we want to advertise.
+		"/api/v1/audit/summary",
+		"/api/v1/audit/items",
 	}
 	for _, publicPath := range publicPaths {
 		if path == publicPath {

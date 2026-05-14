@@ -14,6 +14,76 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Audit checklist transparency endpoints — public-API mirror (2026-05-14).**
+  Closes the third-party-visibility gap from the 2026-05-14 dashboard
+  tile (commit `48c0229`): the `/api/audit/{summary,items}` routes
+  added there are bearer-gated through `requireAuth`, so SDK
+  consumers, the public landing page widget at
+  `https://qsdm.tech/trust`, and external audit aggregators couldn't
+  read the runtime-verified score without an operator-granted
+  session. This commit lifts the same data onto the public API
+  server's `/api/v1/*` surface, matching the
+  `/api/v1/trust/attestations/*` precedent (Major Update §8.5):
+  - `GET /api/v1/audit/summary` — bucket counts (`total / passed /
+    pending / failed / waived`), `score` (0..100 float),
+    `has_blocking_findings`, `blocking_count`, top-5
+    `blocking_preview` of still-pending critical/high items
+    (id/category/severity/status/title), 4-bucket
+    `evidence_provenance` map (`evidence:live-deploy /
+    evidence:in-tree-tests / evidence:in-tree / other`),
+    `generated_at` RFC3339 stamp.
+  - `GET /api/v1/audit/items` — full filterable items list with
+    closed-enum `?category=` / `?severity=` / `?status=` query
+    parameters validated against the `pkg/audit` constant
+    allow-lists. A typo'd value returns 400 (no silent
+    passthrough — clients that mis-type a filter must NOT see
+    "all items"); applied filters are echoed back via an
+    `omitempty` block so a bare-call response doesn't carry
+    `"filters":{}`.
+  - **Wire-shape parity** with the bearer-gated dashboard
+    endpoints: every JSON field the dashboard's
+    `dashboardAuditSummaryView` serialises is also present on
+    the public `AuditSummary`, so a client switching between
+    `https://dashboard.qsdm.tech/api/audit/summary` and
+    `https://api.qsdm.tech/api/v1/audit/summary` gets identical
+    JSON. Pinned by `TestAuditAPI_WireParity_DashboardAndAPI`.
+  - **Public posture:** both routes added to `publicPaths` in
+    `pkg/api/middleware.go` so the rate-limited per-IP limiter
+    handles abuse rather than auth gating, and external
+    consumers don't need an operator session. The audit
+    checklist text is already public from the open-source
+    repo, so the only thing newly exposed is the per-item
+    Status/ReviewedBy/ReviewedAt — which is exactly the
+    transparency signal we want to advertise.
+  - **Cache headers:** `Cache-Control: public, max-age=60` on
+    both endpoints. A flip is a Git commit + redeploy event,
+    so 60 s of staleness is acceptable; caps origin-fetch QPS
+    at ~SDK-clients/60.
+  - **Singleton checklist:** package-level `sync.Once`-guarded
+    `audit.Checklist` so summary and items always agree on the
+    same in-process state (covered by
+    `TestAuditItemsHandler_FilterByStatus_Passed_MatchesSummary`),
+    and a future admin endpoint that mutates state via
+    `UpdateStatus` propagates to both surfaces in lock-step.
+  - **Drift guards (10 new tests / 14 sub-cases — all green):**
+    `TestAuditSummaryHandler_{MethodNotAllowed,ShapeAndCounts}`,
+    `TestAuditItemsHandler_{MethodNotAllowed,FullList_NoFilters,
+    FilterByStatus_Passed_MatchesSummary,FilterByCategory,
+    TypoFilters_400 (4 sub-cases),CombinedFilters?}`,
+    `TestAuditAPI_PublicEndpointAllowList` (regressing the
+    `publicPaths` allowlist would silently 401 every external
+    consumer), `TestAuditAPI_AllowedFilterEnumsMatchPkgAudit`
+    (a future `pkg/audit` category constant addition without
+    matching API allow-list extension fails CI),
+    `TestAuditAPI_WireParity_DashboardAndAPI`.
+  - **Out of scope (deferred to a follow-up).**
+    `docs/docs/openapi.yaml` is not extended — the spec
+    already lags the actual API surface (no `/trust/*`, no
+    `/mining/*`, no `/governance/*`), and bringing it
+    end-to-end current is a dedicated documentation pass; this
+    commit follows the trust-endpoint precedent of "wire it up,
+    document in CHANGELOG, OpenAPI catches up separately."
+
 - **Audit checklist tile — operator-dashboard wire-up (2026-05-14).**
   Closes the operator-visibility gap from the 2026-05-13 audit-checklist
   flip: the 27→passed delta now had no live surface, so

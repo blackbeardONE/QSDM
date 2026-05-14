@@ -414,6 +414,17 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/trust/attestations/summary", handlers.TrustSummaryHandler)
 	mux.HandleFunc("/api/v1/trust/attestations/recent", handlers.TrustRecentHandler)
 
+	// Audit checklist transparency endpoints (Session 77 wire-up).
+	// Public-API mirror of internal/dashboard's /api/audit/{summary,
+	// items} so SDK consumers, the public landing page widget, and
+	// third-party audit aggregators can read the runtime-verified
+	// score without an operator session. Same posture as
+	// /api/v1/trust/attestations/* — registered unconditionally,
+	// in publicPaths (see middleware.isPublicEndpoint), rate-limited
+	// by the per-IP limiter in security.go.
+	mux.HandleFunc("/api/v1/audit/summary", handlers.AuditSummaryHandler)
+	mux.HandleFunc("/api/v1/audit/items", handlers.AuditItemsHandler)
+
 	if s.adminAPI != nil {
 		s.adminAPI.RegisterRoutes(mux)
 	}
