@@ -346,12 +346,15 @@ func TestE2E_AuditChecklistReview(t *testing.T) {
 	}
 
 	// Review some critical items. crypto-01 and crypto-02 are still pending
-	// in defaultItems() (no live-deploy or test-coverage evidence yet) so the
-	// passed delta from this block is exactly +2; auth-01 is also pending so
-	// the failed delta is exactly +1.
+	// in defaultItems() (formal ML-DSA / HMAC-fallback review not yet
+	// performed) so the passed delta from this block is exactly +2;
+	// bridge-01 is also pending (bridge secret-handling review not yet
+	// performed) so the failed delta is exactly +1. (Note: auth-01 was the
+	// historic pick here; it flipped to StatusPassed in the 2026-05-14
+	// audit-evidence catch-up pass — see pkg/audit/checklist.go.)
 	cl.UpdateStatus("crypto-01", audit.StatusPassed, "auditor", "ML-DSA key gen verified")
 	cl.UpdateStatus("crypto-02", audit.StatusPassed, "auditor", "HMAC ephemeral key confirmed")
-	cl.UpdateStatus("auth-01", audit.StatusFailed, "auditor", "needs bcrypt cost increase")
+	cl.UpdateStatus("bridge-01", audit.StatusFailed, "auditor", "needs bridge secret rotation policy")
 
 	summary := cl.Summary()
 	if got, want := summary["passed"]-baseline["passed"], 2; got != want {

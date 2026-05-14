@@ -11,8 +11,12 @@ import "testing"
 // ReviewedAt in defaultItems() is a CI failure.
 var runtimeVerifiedItems = []string{
 	"net-05",
-	"store-04", "store-05",
-	"api-05", "api-06",
+	"store-01", "store-03", "store-04", "store-05",
+	"api-01", "api-02", "api-03", "api-05", "api-06",
+	"auth-01", "auth-02", "auth-03", "auth-05",
+	"crypto-03", "crypto-04",
+	"sc-02", "sc-03", "sc-04",
+	"gov-01", "gov-02", "gov-03",
 	"rebrand-01", "rebrand-02", "rebrand-04", "rebrand-05", "rebrand-06", "rebrand-07",
 	"tok-02", "tok-03",
 	"mining-02", "mining-03", "mining-04",

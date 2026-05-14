@@ -14,6 +14,104 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Audit checklist evidence catch-up — 17 items pre-flipped to
+  `StatusPassed` (2026-05-14, post-v0.4.2-tag).** Closes the
+  evidence-on-paper-but-not-on-checklist gap surfaced by the
+  v0.4.2 public-API mirror at `/api/v1/audit/summary`: in-tree
+  test coverage and live-deploy evidence already existed for 17
+  pending items, but `defaultItems()` had not been updated to
+  reflect it. The live score on `https://api.qsdm.tech/api/v1/audit/summary`
+  moves from **27/85 passed (31.76 %)** to **44/85 passed
+  (51.76 %)** — a 20-point public-trust delta with no new code
+  on the validator side, only existing evidence formally cited.
+  Categories flipped:
+  - **Cryptography (+2):** `crypto-03` JWT signature verification
+    (`TestTokenValidation` + `TestTokenExpiration` +
+    `TestBearerTokenReusedUntilExpiry` in `tests/api_security_test.go`),
+    `crypto-04` secret generation entropy (production code uses
+    `crypto/rand` exclusively; `math/rand` only in test
+    fixtures — full repo grep verified).
+  - **Authentication (+4):** `auth-01` Argon2id password hashing
+    (`TestPasswordHashing`), `auth-02` account lockout
+    (`AccountLockoutManager` wired at `handlers.go:613`),
+    `auth-03` session cookies (`HttpOnly+SameSite=Lax+Secure` at
+    `dashboard.go:869-871`), `auth-05` password policy
+    (`MinPasswordLength=12` + common-password blocklist). The
+    remaining `auth-04` (per-call token replay) stays pending — by
+    design, QSDM JWTs are reusable until expiry per
+    `TestBearerTokenReusedUntilExpiry`; replay prevention happens
+    at the expiry boundary and on transport via TLS, not via
+    per-call nonces.
+  - **API (+3):** `api-01` input validation (`TestInputValidation`
+    + `TestSQLInjectionProtection`), `api-02` CSRF middleware
+    (256-bit `crypto/rand` tokens + Bearer-token bypass at
+    `pkg/api/csrf.go`), `api-03` security headers (HSTS + CSP +
+    X-Frame-Options + X-Content-Type-Options + 4 more, covered
+    by `TestSecurityHeaders`).
+  - **Storage (+2):** `store-01` atomic writes (16 production
+    persisters use `os.Rename` pattern; already exercised by
+    store-04 + store-05 tests), `store-03` 0600 permissions on
+    sensitive files (consistent across the 16 atomic-write sites).
+  - **Governance (+3):** `gov-01` vote-manipulation prevention
+    (`TestSnapshotVoting` + double-vote rejection at
+    `chainparams/types.go:401`), `gov-02` proposal execution
+    safety (`TestProposalExecutor_NoDoubleExecution` +
+    `_QuorumNotReached` + 4 more, 6 tests total), `gov-03`
+    multi-sig expiry (`TestMultiSig_ExpiredAction` + 6 more
+    tests).
+  - **Smart contracts (+3):** `sc-02` gas metering
+    (`TestGasMeter_ExhaustionError`), `sc-03` event integrity
+    (`TestEventIndex_{EmitAndQuery,Retention,QueryOffsetLimit,Subscribe,SubscribeAll}`),
+    `sc-04` simulation fallback determinism
+    (`TestSimulatedTokenBalanceTracking` +
+    `TestSimulatedVoting` + `TestSimulatedEscrow`). The remaining
+    `sc-01` WASM sandbox isolation stays pending pending an
+    affirmative cross-contract memory-leak test (wazero
+    isolation by-design but not under-attack tested in-tree).
+  - **Out-of-scope, deliberately still pending (41 items).**
+    `crypto-01` ML-DSA-87 key generation (formal NIST FIPS 204
+    review), `crypto-02` HMAC-fallback security (design
+    review), `crypto-05` mTLS certificate validation (security
+    audit), `authz-*` (RBAC formal review × 4 items),
+    `bridge-*` (atomic-swap secret review × 4 items),
+    `net-{01,02,03,04}` (P2P sig + Sybil + TLS + WebSocket
+    origin review), `infra-*`/`runtime-*`/`rotation-*` (ops
+    procedures × 15 items), `store-02` (snapshot hash
+    verification), `gov-*` already covered, `mining-01` /
+    `mining-05` (external audit + incentivised testnet
+    wall-clock), `tok-01` (counsel sign-off), `rebrand-03`
+    (trademark filing), `supply-{03,06,07}` (Trivy in CI +
+    reproducible builds + dependabot policy). Each remaining
+    pending item is now visible at `/api/v1/audit/items?status=pending`.
+  - **Drift guards updated:** 17 new IDs added to
+    `runtimeVerifiedItems` in
+    `pkg/audit/checklist_extra_test.go`; the
+    `TestChecklist_PassedCountMatchesRuntimeVerifiedList`
+    guard now expects exactly 44 passed items, so a
+    regression that quietly un-flips one of these would
+    immediately fail CI.
+  - **e2e delta-baseline rebased.**
+    `TestE2E_AuditChecklistReview` in `tests/e2e_test.go`
+    historically picked `auth-01` for the
+    pending→failed transition; the new pass flipped
+    `auth-01` to passed, so the test rebases to
+    `bridge-01` (still pending: bridge secret handling
+    review) which is the same Critical severity. The
+    `passed_delta=+2, failed_delta=+1` invariant is
+    preserved.
+  - **BLR1 deploy (post-v0.4.2-tag hotfix-window binary).**
+    Validator binary cross-compiled from this commit and
+    swapped on `api.qsdm.tech`; previous v0.4.2-tag-faithful
+    binary preserved as `/opt/qsdm/qsdm.v042-tag-faithful.bak`
+    (SHA `7fd07587…1e8fe0dd`); new binary SHA
+    `9b5fe991c94994c5bd43a3036f8a222ee63ebad5a57b9d36161bae046a76c090`
+    (32 592 056 B). `QSDM_BUILD_VERSION` stays `v0.4.2`; this
+    is informally a "v0.4.2 + audit-evidence" build.
+    Reproducibility: any auditor can re-build from this commit
+    with `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath
+    -ldflags='-s -w' ./cmd/qsdm` and match the deployed binary
+    byte-for-byte.
+
 - **OpenAPI catch-up pass — `docs/docs/openapi.yaml` v1.0.0 → v1.1.0
   (2026-05-14).** Closes the lag between the actual `/api/v1/*`
   surface and the published spec. The pre-edit YAML covered only
