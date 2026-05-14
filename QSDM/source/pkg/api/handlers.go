@@ -221,6 +221,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// public_key, with sender = hex(sha256(public_key)) enforced.
 	// See QSDM/docs/docs/V040_WALLET_SEND_DESIGN.md.
 	mux.HandleFunc("/api/v1/wallet/submit-signed", handlers.SubmitSignedTransaction)
+	// v0.4.1 (Session 100): public-read helper that lets a
+	// self-custody client build the next envelope's `nonce` field
+	// without an authenticated session. See
+	// QSDM/docs/docs/V041_REPLAY_PROTECTION_DESIGN.md §5.2/§5.3.
+	mux.HandleFunc("/api/v1/wallet/nonce", handlers.GetWalletNonce)
 	mux.HandleFunc("/api/v1/wallet/address", handlers.GetAddress)
 	mux.HandleFunc("/api/v1/wallet/mint", handlers.MintMainCoin)
 
@@ -769,6 +774,70 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, http.StatusOK, map[string]interface{}{
 		"address": address,
 		"balance": balance,
+	})
+}
+
+// GetWalletNonceResponse is the shape returned by GET /api/v1/wallet/nonce.
+// `nonce` is the LAST-APPLIED nonce — callers building a v0.4.1
+// envelope must use `nonce + 1`. Surfaced here as a distinct field
+// (rather than pre-incrementing server-side) so a caller who
+// crashes mid-flight can re-query without server-side state drift.
+type GetWalletNonceResponse struct {
+	Sender string `json:"sender"`
+	Nonce  uint64 `json:"nonce"`
+	// Next is sugar: the value the caller should put in the next
+	// envelope's `nonce` field (nonce + 1). Provided so wallets
+	// that build envelopes from a template don't need to do the
+	// arithmetic themselves.
+	Next uint64 `json:"next"`
+}
+
+// GetWalletNonce returns the last-applied nonce for `sender` so a
+// v0.4.1 self-custody client can build the next envelope with
+// `nonce: response.next`. Public-read endpoint (matches the
+// balance/{address} posture). The endpoint is fail-closed on
+// storage errors: a 500 here keeps the client from defaulting to
+// nonce=1 against a storage layer it can't trust.
+//
+// Added in v0.4.1 (Session 100) per V041_REPLAY_PROTECTION_DESIGN.md
+// §5.2 (browser-wallet integration) + §5.3 (qsdmcli wallet sign-tx).
+// Validators that expose this endpoint MUST be on v0.4.1+; v0.4.0
+// validators 404 (route not registered).
+func (h *Handlers) GetWalletNonce(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	sender := r.URL.Query().Get("sender")
+	if sender == "" {
+		// Allow JWT-authenticated callers to query their own nonce
+		// without re-typing the sender field — symmetric with
+		// /wallet/balance, where claims.Address backs up the
+		// query param.
+		if claims, ok := r.Context().Value("claims").(*Claims); ok {
+			sender = claims.Address
+		} else {
+			writeErrorResponse(w, http.StatusBadRequest, "sender query parameter is required")
+			return
+		}
+	}
+	if err := ValidateAddress(sender); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid sender address: %v", err))
+		return
+	}
+
+	nonce, err := h.storage.GetNonce(sender)
+	if err != nil {
+		h.logger.Error("GetWalletNonce: storage error", "error", err, "sender", sender)
+		writeErrorResponse(w, http.StatusInternalServerError, "failed to read nonce from storage")
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, GetWalletNonceResponse{
+		Sender: sender,
+		Nonce:  nonce,
+		Next:   nonce + 1,
 	})
 }
 

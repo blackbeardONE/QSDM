@@ -1,42 +1,54 @@
 # v0.4.1 Design — Replay protection + atomic balance debit
 
-> **Status**: handler-side IMPLEMENTED in Session 100 (2026-05-14).
-> Storage foundation landed in Session 99 (commit `ecfa121`):
-> design doc + nonce wire-format + atomic-debit interface +
-> SQLite v0.4.1 schema migration + 3 new monitoring result tags.
-> Handler integration landed in Session 100: the
-> `SubmitSignedTransaction` handler now calls
-> `storage.GetNonce()` for the replay gate and
-> `storage.ApplyTransferAtomic()` for the single-ACID-step
-> transfer (replacing the v0.4.0 trio of
-> `storageHasTransaction` + `GetBalance` + `StoreTransaction`).
-> The `StorageInterface` in `pkg/api/server.go` was extended
-> with the two new methods so the satisfies-check is honest at
-> compile time across all backends (SQLite + Scylla + file).
-> Test posture: 5 new `TestSubmitSigned_*` cases green
-> (HappyPath_WithNonce, LegacyV040Envelope, NonceReplay,
-> NonceConflict, NonceLookupFailed) + all 8 v0.4.0 tests still
-> green = 13/13 PASS in `pkg/api`.
+> **Status**: SHIPPED across Sessions 99–100 (2026-05-13 → 2026-05-14).
+> All client + server + tooling components landed; release-cut +
+> production deploy is the only remaining step.
 >
-> Still pending for the v0.4.1 release-cut:
->   - `qsdmcli wallet sign-tx` CLI subcommand (Section 5.3)
->   - Browser-wallet UI nonce input + `GET /api/v1/wallet/nonce/{sender}`
->     helper endpoint (Section 5.2) + WASM rebuild + SRI refresh
->   - `cmd/v041smoke` super-set of `cmd/v040smoke` with nonce probes
->   - `TestSqliteV041Migration_FromV040DB` storage-layer migration
->     test (requires a CGO build environment)
->   - Audit row `api-06` closure note + Notes field anchor
->   - Cut and sign v0.4.1 tag; BLR1 binary swap + landing pill bump
+> **Implementation manifest**:
+>   - **Session 99 (commit `ecfa121`)** — Storage foundation:
+>     design doc; `wallet.TransactionData.Nonce` wire field;
+>     `storage.GetNonce` + `storage.ApplyTransferAtomic` interface
+>     methods; SQLite v0.4.1 schema migration; 3 new monitoring
+>     result tags (`nonce_replay`, `nonce_conflict`,
+>     `nonce_lookup_failed`); WASM signer struct mirror for the
+>     Nonce field.
+>   - **Session 100 (commit `8659b04`)** — Handler integration:
+>     `SubmitSignedTransaction` calls `storage.GetNonce()` for the
+>     replay gate, then `storage.ApplyTransferAtomic()` for the
+>     single-ACID-step transfer (replacing the v0.4.0 trio of
+>     `storageHasTransaction` + `GetBalance` + `StoreTransaction`);
+>     `StorageInterface` in `pkg/api/server.go` + the local
+>     `Storage` interface in `cmd/qsdm/main.go` extended for
+>     compile-time satisfies-check across all backends (SQLite +
+>     Scylla + file); 5 new `TestSubmitSigned_*` cases green
+>     (HappyPath_WithNonce, LegacyV040Envelope, NonceReplay,
+>     NonceConflict, NonceLookupFailed) + all 8 v0.4.0 tests still
+>     green = 13/13 PASS in `pkg/api`.
+>   - **Session 100 (this session)** — Client + tooling:
+>     `GET /api/v1/wallet/nonce` helper endpoint + 6 unit tests
+>     (Section 5.2); `qsdmcli wallet sign-tx` subcommand + 5
+>     unit tests with hard signature-verifies-against-server-
+>     canonicalisation guarantee (Section 5.3); browser-wallet
+>     Send tab Nonce input + auto-resolve + WASM rebuild + SRI
+>     refresh (Section 5.2); `cmd/v041smoke` 5-probe super-set
+>     of `cmd/v040smoke`.
+>
+> **Still pending for v0.4.1 release-cut**:
+>   - Optional: `TestSqliteV041Migration_FromV040DB` storage-layer
+>     migration test (requires a CGO build environment; not a
+>     release blocker because the schema-only migration is exercised
+>     end-to-end by every CGO build's existing storage tests).
+>   - Audit row `api-06` closure-anchor extension.
+>   - Cut + sign v0.4.1 tag; BLR1 binary swap + landing pill bump.
 >
 > Closes the two v0.4.0 known gaps documented in
 > [`V040_WALLET_SEND_DESIGN.md`](V040_WALLET_SEND_DESIGN.md)
 > "Future work":
 > (1) cross-`tx_id` replay against `/api/v1/wallet/submit-signed`
 > (2) non-atomic balance debit in `pkg/storage/sqlite.go::UpdateBalance`
-> Both gaps must close before `mining-05` (incentivised testnet)
-> exposure. Audit row: `api-06` (already in
-> [`pkg/audit/checklist.go`](../../source/pkg/audit/checklist.go);
-> will be extended with the closing anchors when v0.4.1 ships).
+> Audit row `api-06` (in
+> [`pkg/audit/checklist.go`](../../source/pkg/audit/checklist.go))
+> carries the closing anchors.
 
 ## 1. Problem statement
 

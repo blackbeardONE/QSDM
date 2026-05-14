@@ -220,7 +220,7 @@
       // visible TypeError in DevTools rather than a silent
       // wrong-key signature.
       const resp = await fetch('/wallet.wasm', {
-        integrity: 'sha384-XKMSFMnk27ul5OLXqm2zFMPtsdSVUGNXK8sChbKc/Y2nIqVLEB330Ll+UDhz0Eb6',
+        integrity: 'sha384-HOd3kgcQwL/Gb+ujOF5phQeYLv73om7peCWQkN/mif3mQmBSefaCP1q1V8q0AE04',
         // `same-origin` is the implicit default for /wallet.wasm
         // because the page is served from the same origin, but
         // pinning it here means a future move to a CDN sub-domain
@@ -651,6 +651,64 @@
   // the Send tab calls this out.
   const SEND_ENDPOINT_DEFAULT = 'https://api.qsdm.tech/api/v1/wallet/submit-signed';
 
+  // v0.4.1 (Session 100): derive the GET /wallet/nonce URL from the
+  // submit-signed endpoint so a self-hosted validator's URL works
+  // for both calls. The transformation is just a tail rewrite, so
+  // operators don't need a second config field on the form.
+  function deriveNonceEndpoint(submitSignedURL) {
+    if (submitSignedURL.endsWith('/submit-signed')) {
+      return submitSignedURL.slice(0, -'/submit-signed'.length) + '/nonce';
+    }
+    // Fallback: assume the operator pasted a base URL and append.
+    return submitSignedURL.replace(/\/$/, '') + '/nonce';
+  }
+
+  // fetchNextNonce queries GET /api/v1/wallet/nonce?sender=<addr> and
+  // returns the response's `next` field. Fail-closed: any network
+  // error, non-200, or shape drift throws so the caller can surface
+  // a clean error to the user (rather than silently stamping nonce=1
+  // against a validator we don't trust). v0.4.0 validators 404 here
+  // (no route registered) — those callers should leave the Nonce
+  // field empty AND interpret the absence of v0.4.1 features as
+  // "I'm pointed at a v0.4.0 validator."
+  async function fetchNextNonce(submitSignedURL, sender) {
+    const nonceURL = deriveNonceEndpoint(submitSignedURL) + '?sender=' + encodeURIComponent(sender);
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 10_000);
+    let resp;
+    try {
+      resp = await fetch(nonceURL, {
+        method: 'GET',
+        credentials: 'omit',
+        signal: ctl.signal,
+        headers: { 'Accept': 'application/json' },
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      throw new Error(e.name === 'AbortError'
+        ? `nonce lookup timed out after 10s (${nonceURL})`
+        : `nonce lookup network error: ${e.message}`);
+    }
+    clearTimeout(timer);
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => '');
+      throw new Error(`nonce lookup ${resp.status}: ${txt.slice(0, 200) || '(empty body)'}`);
+    }
+    let body;
+    try {
+      body = await resp.json();
+    } catch (e) {
+      throw new Error(`nonce lookup returned non-JSON: ${e.message}`);
+    }
+    if (body.sender !== sender) {
+      throw new Error(`nonce response sender mismatch: want ${sender}, got ${body.sender}`);
+    }
+    if (typeof body.next !== 'number' || body.next !== body.nonce + 1) {
+      throw new Error(`nonce response inconsistent: nonce=${body.nonce} next=${body.next}`);
+    }
+    return body.next;
+  }
+
   // tx_id derivation matches pkg/wallet.WalletService.CreateTransaction:
   //   sha256(sender || recipient || timestamp.UnixNano)
   // first 16 bytes hex. We use Date.now() * 1e6 + sub-millisecond jitter
@@ -768,7 +826,34 @@
       return;
     }
 
-    setStatusBusy('send-status', 'signing transaction (ML-DSA-87)…');
+    // v0.4.1: resolve the nonce. Three paths:
+    //   1. user typed a positive integer → use as-is
+    //   2. user left blank / typed "auto" → GET /wallet/nonce, use `next`
+    //   3. fetch fails → surface the error and bail (do NOT silently
+    //      fall back to 0 — that would put the user on the legacy
+    //      backward-compat path without their consent)
+    let nonce = 0;
+    const nonceRaw = ($('send-nonce').value || '').trim().toLowerCase();
+    if (nonceRaw && nonceRaw !== 'auto') {
+      const parsed = Number(nonceRaw);
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        setStatus('send-status', `nonce must be a positive integer or "auto" (got "${nonceRaw}")`, 'err');
+        priv.fill(0);
+        return;
+      }
+      nonce = parsed;
+    } else {
+      setStatusBusy('send-status', 'fetching nonce from validator…');
+      try {
+        nonce = await fetchNextNonce(endpoint, sender);
+      } catch (e) {
+        setStatus('send-status', e.message, 'err');
+        priv.fill(0);
+        return;
+      }
+    }
+
+    setStatusBusy('send-status', `signing transaction (ML-DSA-87) with nonce=${nonce}…`);
     await new Promise(r => setTimeout(r, 0)); // yield for spinner paint
 
     const timestamp = new Date().toISOString();
@@ -786,6 +871,11 @@
     // (and shouldn't — WASM strips them defensively before signing).
     // Field order in this object is irrelevant to the canonical
     // bytes because WASM re-marshals through the Go struct.
+    // v0.4.1: include `nonce` so the canonical bytes match what the
+    // server reconstructs. `omitempty` on the Go side drops a Nonce
+    // of 0 from the wire, so the JS-side conditional below keeps
+    // legacy v0.4.0 (nonce=0) envelopes byte-identical to what
+    // pre-v0.4.1 browser builds produced.
     const envelope = {
       id: txID,
       sender: sender,
@@ -796,6 +886,9 @@
       parent_cells: parentCells,
       timestamp: timestamp,
     };
+    if (nonce > 0) {
+      envelope.nonce = nonce;
+    }
 
     const signed = window.qsdm_wallet_sign_transaction(
       JSON.stringify(envelope),
@@ -845,10 +938,31 @@
 
     // Server result paths:
     //   200 + status:"accepted" + transaction_id + broadcast
-    //   409 + status:"duplicate" + transaction_id  (idempotent retry)
+    //   409 + status:"duplicate" + transaction_id  (idempotent retry — accept)
+    //   409 + error:"nonce replay …"               (v0.4.1: client must
+    //                                               re-fetch nonce + re-sign)
+    //   409 + error:"nonce conflict …"             (v0.4.1: concurrent submit
+    //                                               raced; safe to retry as-is)
     //   400 / 402 / 422 / 500 + {error: "..."}
-    const ok = resp.ok || resp.status === 409;
-    const statusLabel = ok ? (body.status || 'accepted') : 'error';
+    //
+    // We treat the legacy duplicate (status field present) as a soft
+    // success, but the new nonce_replay / nonce_conflict cases get
+    // tagged as errors so the user sees what happened. Heuristic:
+    // if the body has an explicit `status:"duplicate"` we accept it,
+    // otherwise a 409 is treated as an error and the body.error
+    // payload tells the user why.
+    const isDuplicate = resp.status === 409 && body.status === 'duplicate';
+    const ok = resp.ok || isDuplicate;
+    let statusLabel;
+    if (ok) {
+      statusLabel = body.status || 'accepted';
+    } else if (resp.status === 409 && body.error && /nonce replay/i.test(body.error)) {
+      statusLabel = 'nonce_replay';
+    } else if (resp.status === 409 && body.error && /nonce conflict/i.test(body.error)) {
+      statusLabel = 'nonce_conflict';
+    } else {
+      statusLabel = 'error';
+    }
     const colour = ok ? 'ok' : 'err';
 
     const r = $('send-result');
@@ -870,9 +984,10 @@
         </div>
         ${ok ? `
           <div class="status-line" style="margin-top:14px">
-            The envelope is on the wire. <strong>Until v0.4.1 closes the
-            atomicity gap</strong>, double-check your balance after a
-            few seconds to confirm the debit landed cleanly.
+            The envelope is on the wire. v0.4.1's atomic debit guarantees
+            the recipient credit and sender debit either both land or
+            both fail — no more half-applied transfers. Click
+            <em>Check balance</em> in the Balance tab to confirm.
           </div>
         ` : ''}
       </div>`;

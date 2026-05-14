@@ -210,6 +210,12 @@ func isPublicEndpoint(path string) bool {
 		// abuse; `result=signature_invalid` / `result=sender_mismatch`
 		// counters surface a misbehaving caller.
 		"/api/v1/wallet/submit-signed",
+		// /api/v1/wallet/nonce is the v0.4.1 (Session 100) public-read
+		// helper that lets a self-custody client fetch the next
+		// envelope nonce without an authenticated session. Symmetric
+		// with /wallet/balance: read-only, address-required-in-query,
+		// no JWT. See V041_REPLAY_PROTECTION_DESIGN.md §5.2.
+		"/api/v1/wallet/nonce",
 		"/api/v1/monitoring/ngc-proof",
 		"/api/v1/monitoring/ngc-challenge",
 		"/api/v1/monitoring/ngc-proofs",

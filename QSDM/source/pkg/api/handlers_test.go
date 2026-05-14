@@ -1123,6 +1123,166 @@ func TestSubmitSigned_NonceLookupFailed(t *testing.T) {
 	}
 }
 
+// =============================================================
+// GET /api/v1/wallet/nonce  (v0.4.1, Session 100)
+// =============================================================
+
+// postGetNonce wires the request shape the handler expects. We
+// use httptest.NewRequest with a query param rather than a
+// path-param parser because /wallet/nonce is registered with
+// `mux.HandleFunc` (exact-match, no trailing slash) — symmetric
+// with /wallet/balance.
+func getWalletNonce(t *testing.T, h *Handlers, sender string) *httptest.ResponseRecorder {
+	t.Helper()
+	url := "/api/v1/wallet/nonce"
+	if sender != "" {
+		url += "?sender=" + sender
+	}
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	w := httptest.NewRecorder()
+	h.GetWalletNonce(w, req)
+	return w
+}
+
+func TestGetWalletNonce_HappyPath_New(t *testing.T) {
+	h := setupTestHandlers()
+	sender := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+	w := getWalletNonce(t, h, sender)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp GetWalletNonceResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Sender != sender {
+		t.Fatalf("sender echo: want %q got %q", sender, resp.Sender)
+	}
+	if resp.Nonce != 0 {
+		t.Fatalf("new-sender nonce: want 0 got %d", resp.Nonce)
+	}
+	if resp.Next != 1 {
+		t.Fatalf("new-sender next: want 1 got %d", resp.Next)
+	}
+}
+
+func TestGetWalletNonce_HappyPath_AfterSubmit(t *testing.T) {
+	h := setupTestHandlers()
+	sender := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	// Simulate a prior successful v0.4.1 submit by setting the
+	// stored nonce directly. End-to-end coverage that the handler
+	// observes the bump happens in TestGetWalletNonce_E2EBump.
+	h.storage.(*mockStorage).nonces[sender] = 7
+
+	w := getWalletNonce(t, h, sender)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp GetWalletNonceResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Nonce != 7 {
+		t.Fatalf("nonce: want 7 got %d", resp.Nonce)
+	}
+	if resp.Next != 8 {
+		t.Fatalf("next: want 8 got %d", resp.Next)
+	}
+}
+
+func TestGetWalletNonce_MethodNotAllowed(t *testing.T) {
+	h := setupTestHandlers()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/nonce?sender=abc", nil)
+	w := httptest.NewRecorder()
+	h.GetWalletNonce(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestGetWalletNonce_MissingSender(t *testing.T) {
+	h := setupTestHandlers()
+	w := getWalletNonce(t, h, "")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "sender") {
+		t.Fatalf("expected 'sender' in body, got %s", w.Body.String())
+	}
+}
+
+func TestGetWalletNonce_InvalidSender(t *testing.T) {
+	h := setupTestHandlers()
+	// Too short → fails ValidateAddress's hex64 shape check.
+	w := getWalletNonce(t, h, "abc")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestGetWalletNonce_StorageError(t *testing.T) {
+	h := setupTestHandlers()
+	mock := h.storage.(*mockStorage)
+	mock.getNonceErr = errors.New("simulated storage I/O failure")
+
+	sender := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	w := getWalletNonce(t, h, sender)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 (fail-closed on storage error), got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+// TestGetWalletNonce_E2EBump asserts that a successful
+// /wallet/submit-signed bumps the nonce visible via
+// /wallet/nonce. This is the integration that lets a client
+// build envelope N+1 immediately after envelope N is accepted.
+func TestGetWalletNonce_E2EBump(t *testing.T) {
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Skipf("wallet requires CGO / Dilithium: %v", err)
+	}
+	h := setupTestHandlersWithSubmesh(nil, ws)
+	mock := h.storage.(*mockStorage)
+
+	pubKey := ws.GetPublicKey()
+	addrHash := sha256.Sum256(pubKey)
+	sender := hex.EncodeToString(addrHash[:])
+	mock.balances[sender] = 100.0
+
+	// Step 1: pre-submit nonce should be 0/1.
+	w1 := getWalletNonce(t, h, sender)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("pre-submit GET nonce: want 200 got %d body=%s", w1.Code, w1.Body.String())
+	}
+	var pre GetWalletNonceResponse
+	_ = json.Unmarshal(w1.Body.Bytes(), &pre)
+	if pre.Nonce != 0 || pre.Next != 1 {
+		t.Fatalf("pre-submit: want nonce=0 next=1 got nonce=%d next=%d", pre.Nonce, pre.Next)
+	}
+
+	// Step 2: submit a v0.4.1 envelope with Nonce=pre.Next.
+	recipient := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	env := buildSignedEnvelopeWithNonce(t, ws, recipient, 1.0, 0.01, []string{
+		strings.Repeat("a", 32), strings.Repeat("b", 32),
+	}, pre.Next)
+	w2 := postSubmitSigned(t, h, env)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("submit-signed: want 200 got %d body=%s", w2.Code, w2.Body.String())
+	}
+
+	// Step 3: post-submit nonce should be bumped to pre.Next.
+	w3 := getWalletNonce(t, h, sender)
+	var post GetWalletNonceResponse
+	_ = json.Unmarshal(w3.Body.Bytes(), &post)
+	if post.Nonce != pre.Next {
+		t.Fatalf("post-submit nonce: want %d got %d", pre.Next, post.Nonce)
+	}
+	if post.Next != pre.Next+1 {
+		t.Fatalf("post-submit next: want %d got %d", pre.Next+1, post.Next)
+	}
+}
+
 // walletSendDelta scans the WalletSendCounts() slice for the
 // counter named `result` and returns (after - before). Avoids
 // hard-coding indices and survives reordering of the result-tag

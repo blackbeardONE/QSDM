@@ -380,12 +380,14 @@
         key and enforces <code>sender == hex(sha256(public_key))</code>,
         so the validator can never spend on your behalf.
       </p>
-      <p style="color: var(--warning); font-size: 13px; margin: -8px 0 14px">
-        ⚠ <strong>v0.4.0 limitations:</strong> no per-account nonce
-        (cross-tx_id replay is theoretically possible) and the storage
-        layer's debit is not atomic with the balance check. Both are
-        scheduled fixes for v0.4.1. Until that lands, only spend from
-        wallets whose passphrase + keystore have never been exposed.
+      <p style="font-size: 13px; margin: -8px 0 14px; color: var(--text-2)">
+        <strong>v0.4.1 replay protection:</strong> every send carries a
+        per-account <code>nonce</code> that the validator atomically
+        bumps inside the same transaction as the balance debit. Replays
+        (same envelope, same nonce, twice) return HTTP 409
+        <code>nonce_replay</code> rather than double-spending. The
+        Nonce field below auto-resolves from the validator before
+        sign-time; you can override it manually for off-line ceremonies.
       </p>
       <div class="field">
         <label>Keystore file</label>
@@ -418,10 +420,17 @@
         <label>Parent cells <span class="hint">optional · comma-separated tx_ids</span></label>
         <textarea id="send-parents" placeholder="(leave empty to auto-fill with placeholder parents — fine for testnet)"></textarea>
       </div>
-      <div class="field">
-        <label>Validator endpoint <span class="hint">override only if you self-host</span></label>
-        <input type="text" id="send-endpoint" autocomplete="off"
-               value="https://api.qsdm.tech/api/v1/wallet/submit-signed" />
+      <div class="row">
+        <div class="field">
+          <label>Nonce <span class="hint">v0.4.1 · per-sender · auto = ask validator</span></label>
+          <input type="text" id="send-nonce" autocomplete="off" placeholder="auto"
+                 inputmode="numeric" pattern="[0-9]*" />
+        </div>
+        <div class="field" style="flex:2">
+          <label>Validator endpoint <span class="hint">override only if you self-host</span></label>
+          <input type="text" id="send-endpoint" autocomplete="off"
+                 value="https://api.qsdm.tech/api/v1/wallet/submit-signed" />
+        </div>
       </div>
       <div class="actions">
         <button class="btn btn-primary" id="send-btn">Sign &amp; send</button>
@@ -521,6 +530,6 @@ ADDR=$(./qsdmcli wallet show | awk '/^address/{print $2}')
   Manual edits to these literals will work but are not required.
 -->
 <script src="/wasm_exec.js" integrity="sha384-PWCs+V4BDf9yY1yjkD/p+9xNEs4iEbuvq+HezAOJiY3XL5GI6VyJXMsvnjiwNbce" crossorigin="anonymous"></script>
-<script src="/wallet.js" integrity="sha384-S7vr1mAtCqz5ww1XEdINXJXYsqupNK3tsjS3a/RO97wbxLlON5grl3/ZrvPsVJgZ" crossorigin="anonymous"></script>
+<script src="/wallet.js" integrity="sha384-8BO6kH4J1WSt3LmqWNeT4LpuLReHbVTWJ1YH8GCtikE9hPnw5QBGDUyfIYj3gYpC" crossorigin="anonymous"></script>
 </body>
 </html>

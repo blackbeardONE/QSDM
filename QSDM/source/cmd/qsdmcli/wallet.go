@@ -18,6 +18,9 @@
 //	qsdmcli wallet show     [--in PATH]
 //	qsdmcli wallet inspect  [--in PATH] [--passphrase-file FILE]
 //	qsdmcli wallet sign     [--in PATH] [--passphrase-file FILE] [--message HEX | --message-file PATH]
+//	qsdmcli wallet sign-tx  [--in PATH] [--passphrase-file FILE]
+//	                        [--envelope-file PATH | '-'] [--nonce N | --auto-nonce]
+//	                        [--api-url URL] [--api-timeout DUR]
 //
 // `new` produces an encrypted keystore and prints only the address to
 // stdout — friendly for piping straight into a miner:
@@ -70,6 +73,8 @@ func (c *CLI) walletCommand(args []string) error {
 		return c.walletInspect(rest)
 	case "sign":
 		return c.walletSign(rest)
+	case "sign-tx":
+		return c.walletSignTx(rest)
 	case "help", "-h", "--help":
 		fmt.Fprint(os.Stdout, walletHelp)
 		return nil
@@ -79,7 +84,7 @@ func (c *CLI) walletCommand(args []string) error {
 }
 
 func walletUsageError() error {
-	return fmt.Errorf("usage: qsdmcli wallet <new|show|inspect|sign> [flags]\n\n%s", walletHelp)
+	return fmt.Errorf("usage: qsdmcli wallet <new|show|inspect|sign|sign-tx> [flags]\n\n%s", walletHelp)
 }
 
 const walletHelp = `qsdmcli wallet — self-custody keystore (ML-DSA-87)
@@ -93,6 +98,13 @@ Subcommands:
            the encrypted private key. Prompts for passphrase.
   sign     Decrypt the keystore and sign a message with the wallet's
            private key. Prompts for passphrase. Outputs hex signature.
+  sign-tx  v0.4.1: produce a fully-signed self-custody envelope ready
+           for POST /api/v1/wallet/submit-signed. Reads an unsigned
+           envelope (JSON on stdin by default), stamps the v0.4.1
+           nonce (literal via --nonce, fetched via --auto-nonce, or
+           left as the v0.4.0 backward-compat 0), signs the canonical
+           bytes with the keystore key, and writes the signed
+           envelope to stdout.
 
 Common flags:
   --in   PATH           Keystore file to read (default: ~/.qsdm/wallet.json)
@@ -104,12 +116,21 @@ Common flags:
   --message      HEX    Hex-encoded message bytes to sign (sign only).
   --message-file PATH   Read message bytes to sign from a file (sign only;
                         use '-' for stdin). Mutually exclusive with --message.
+  --envelope-file PATH  JSON envelope to sign (sign-tx only; default: stdin).
+  --nonce N             v0.4.1 nonce (sign-tx only; mutually exclusive with --auto-nonce).
+  --auto-nonce          Resolve nonce from --api-url before signing (sign-tx only).
+  --api-url URL         Validator base URL for --auto-nonce (default: https://api.qsdm.tech).
+  --api-timeout DUR     HTTP timeout for --auto-nonce (default: 10s).
 
 Examples:
   qsdmcli wallet new
   qsdmcli wallet new --out ~/.qsdm/miner.json --passphrase-file pass.txt
   qsdmcli wallet show
   qsdmcli wallet sign --message-file tx.json > tx.sig.hex
+  # Build envelope.json (no signature/public_key/nonce fields), then:
+  qsdmcli wallet sign-tx --auto-nonce < envelope.json \
+    | curl -fsS -H 'Content-Type: application/json' --data-binary @- \
+           https://api.qsdm.tech/api/v1/wallet/submit-signed
 `
 
 func (c *CLI) walletNew(args []string) error {
