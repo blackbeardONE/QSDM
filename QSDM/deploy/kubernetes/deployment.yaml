@@ -102,6 +102,8 @@ spec:
           mountPath: /app/data
         - name: logs
           mountPath: /app/logs
+        - name: tmp
+          mountPath: /tmp
         resources:
           requests:
             memory: "512Mi"
@@ -126,10 +128,28 @@ spec:
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
+        # Brought to parity with validator-statefulset.yaml so the
+        # legacy single-image deploy path is not a security
+        # regression. See QSDM/deploy/kubernetes/networkpolicy.yaml
+        # for the egress controls and the runtime-* audit-checklist
+        # items in pkg/audit/checklist.go for the requirement
+        # rationale.
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
       volumes:
       - name: data
         persistentVolumeClaim:
           claimName: qsdm-data
       - name: logs
+        emptyDir: {}
+      - name: tmp
         emptyDir: {}
 

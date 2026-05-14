@@ -23,7 +23,7 @@ var runtimeVerifiedItems = []string{
 	"trust-01", "trust-02", "trust-03", "trust-04", "trust-05", "trust-06",
 	"supply-01", "supply-02", "supply-04", "supply-05", "supply-06", "supply-07", "supply-08",
 	"infra-03",
-	"runtime-06",
+	"runtime-01", "runtime-02", "runtime-03", "runtime-04", "runtime-05", "runtime-06", "runtime-07",
 }
 
 func TestChecklist_RuntimeVerifiedItemsPassed(t *testing.T) {

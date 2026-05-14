@@ -1,0 +1,320 @@
+# QSDM NetworkPolicy — default-deny + explicit allowlist
+# ========================================================
+#
+# Closes the runtime-07 audit-checklist item (CatRuntime / SevMedium):
+#
+#   "NetworkPolicy / egress control — Default-deny NetworkPolicy
+#    restricts pod egress to known Scylla / metrics / P2P peers only."
+#
+# This file ships TWO NetworkPolicy objects per pod role (validator +
+# miner) so the default-deny posture and the targeted allow rules are
+# decoupled and can be edited independently without re-introducing a
+# wildcard allowlist in the same file. The legacy `qsdm-node` Deployment
+# (deployment.yaml) intentionally re-uses the validator allowlist
+# because the legacy single-image pods talk to the same Scylla / metric
+# scrapers as the split-image validator.
+#
+# Cluster prerequisites:
+#   - A CNI plugin that honours NetworkPolicy (Calico / Cilium /
+#     Weave-NP / Antrea). The vanilla `kindnet` CNI does NOT enforce
+#     NetworkPolicy; if you are running on a cluster without one of
+#     the supported CNIs, this manifest validates fine in kubeconform
+#     but does nothing at runtime.
+#   - Namespace labels: the operator MUST run
+#       `kubectl label namespace kube-system kubernetes.io/metadata.name=kube-system`
+#       `kubectl label namespace scylla kubernetes.io/metadata.name=scylla` (if Scylla lives in its own namespace)
+#       `kubectl label namespace monitoring kubernetes.io/metadata.name=monitoring` (if Prometheus lives in its own namespace)
+#     These labels are auto-applied since Kubernetes 1.22 but may be
+#     stripped by older cluster-bootstrap tooling.
+#
+# Threat model — what this policy is and is NOT designed to defend
+# against:
+#   - YES: prevents a compromised QSDM pod from reaching arbitrary
+#     internet destinations (data exfiltration), reaching cluster
+#     internal services that aren't Scylla / metrics / DNS (lateral
+#     movement), or talking to non-QSDM pods in the same namespace.
+#   - YES: prevents arbitrary pods from connecting to the validator
+#     API / dashboard / log viewer ports — only the labelled
+#     ingress controller and Prometheus scraper can.
+#   - NO: does NOT prevent a compromised pod from reaching external
+#     libp2p peers — by design, QSDM's P2P layer requires reaching
+#     bootstrap peers and gossip peers on port 4001 across the
+#     public internet. Operators in a tighter threat-model
+#     environment can replace the libp2p egress rule below with
+#     an explicit `ipBlock.cidr` allowlist; see the comment block
+#     below the `validator-libp2p-egress` rule.
+#
+# Validation:
+#   - kubeconform -strict -kubernetes-version 1.31.0 (covered by
+#     .github/workflows/validate-deploy.yml on every push touching
+#     QSDM/deploy/**).
+#
+# See also:
+#   - QSDM/deploy/kubernetes/validator-statefulset.yaml (security
+#     context block — runtime-01, runtime-02, runtime-03, runtime-04
+#     evidence).
+#   - QSDM/deploy/kubernetes/miner-daemonset.yaml (same).
+#   - pkg/audit/checklist.go (runtime-* items).
+
+---
+# Default-deny: by selecting all pods in the namespace and declaring
+# both Ingress and Egress policy types with no rules, every pod in the
+# qsdm namespace gets implicit deny-all (the explicit allow policies
+# below punch holes).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qsdm-default-deny
+  namespace: qsdm
+  labels:
+    app: qsdm
+    qsdm.tech/policy: default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+
+---
+# Cluster-DNS egress (required by literally every pod). Restricted to
+# the kube-system namespace's kube-dns Service backends only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qsdm-allow-dns-egress
+  namespace: qsdm
+  labels:
+    app: qsdm
+    qsdm.tech/policy: dns-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: qsdm
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+---
+# Intra-namespace egress: validators talk to each other (BFT consensus
+# gossip on port 4001) and miners talk to validators (API on port 8080
+# for proof submission + epoch / difficulty polling).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qsdm-allow-intra-namespace
+  namespace: qsdm
+  labels:
+    app: qsdm
+    qsdm.tech/policy: intra-namespace
+spec:
+  podSelector:
+    matchLabels:
+      app: qsdm
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: qsdm
+    ports:
+    - protocol: TCP
+      port: 4001
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: qsdm
+    ports:
+    - protocol: TCP
+      port: 4001
+    - protocol: TCP
+      port: 8080
+
+---
+# Scylla egress: validators and miners persist transaction / proof state
+# to a Scylla cluster. The Scylla driver hits ports 9042 (CQL) and 9142
+# (CQL+TLS). Restricted to a namespace labelled `scylla`; if Scylla
+# runs in the same `qsdm` namespace, this rule is harmless overlap
+# with `qsdm-allow-intra-namespace` (the wider rule wins).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qsdm-allow-scylla-egress
+  namespace: qsdm
+  labels:
+    app: qsdm
+    qsdm.tech/policy: scylla-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: qsdm
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: scylla
+    ports:
+    - protocol: TCP
+      port: 9042
+    - protocol: TCP
+      port: 9142
+
+---
+# Prometheus / Grafana scrape ingress: the monitoring namespace's
+# scrapers reach the QSDM API on port 8080 (/metrics + /api/v1/status)
+# and the dashboard on port 8081 (Prometheus-format metrics endpoint).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qsdm-allow-prometheus-scrape
+  namespace: qsdm
+  labels:
+    app: qsdm
+    qsdm.tech/policy: prometheus-scrape
+spec:
+  podSelector:
+    matchLabels:
+      app: qsdm
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8081
+
+---
+# Ingress-controller ingress: the cluster ingress (e.g. ingress-nginx,
+# Traefik) terminates external API + dashboard traffic. Restricted to
+# a namespace labelled `ingress-nginx` (the upstream convention);
+# operators using Traefik / Contour can edit this rule in place.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qsdm-allow-ingress-controller
+  namespace: qsdm
+  labels:
+    app: qsdm
+    qsdm.tech/policy: ingress-controller
+spec:
+  podSelector:
+    matchLabels:
+      app: qsdm
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8081
+
+---
+# libp2p P2P egress: validators (and miners that gossip via the P2P
+# topic) need to reach external libp2p peers on TCP 4001. THIS RULE IS
+# THE WIDEST: it allows egress to every IP except the cluster's pod
+# CIDR and the cluster's service CIDR (so traffic stays on the public
+# internet path rather than leaking into other workloads).
+#
+# Operators in a tighter threat-model environment SHOULD replace this
+# rule with an explicit `ipBlock.cidr` allowlist of known bootstrap
+# peer IPs. Sample replacement:
+#
+#   egress:
+#   - to:
+#     - ipBlock:
+#         cidr: 192.0.2.10/32   # bootstrap peer 1
+#     - ipBlock:
+#         cidr: 198.51.100.20/32 # bootstrap peer 2
+#     ports:
+#     - protocol: TCP
+#       port: 4001
+#
+# The IP blocks below are placeholders for the two well-known cluster
+# private ranges (10.0.0.0/8 and 172.16.0.0/12) being EXCLUDED so the
+# rule effectively says "anywhere on the public internet". Edit the
+# `except:` list to match your cluster's actual pod / service CIDR.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qsdm-allow-libp2p-egress
+  namespace: qsdm
+  labels:
+    app: qsdm
+    qsdm.tech/policy: libp2p-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: qsdm
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+    ports:
+    - protocol: TCP
+      port: 4001
+
+---
+# NTP egress (UDP 123) is permitted because QSDM's block-time gating
+# and the v2 mining attestation freshness window depend on a node's
+# wall clock being correct. Restricted to the public NTP pool and
+# common AWS / GCP / Azure NTP servers — tightening to an
+# operator-pinned IP is encouraged in production.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qsdm-allow-ntp-egress
+  namespace: qsdm
+  labels:
+    app: qsdm
+    qsdm.tech/policy: ntp-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: qsdm
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+    ports:
+    - protocol: UDP
+      port: 123

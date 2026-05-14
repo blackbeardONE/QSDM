@@ -87,16 +87,21 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: BOOTSTRAP_PEERS
+          value: "qsdm-validator-0.qsdm-validator.qsdm.svc.cluster.local:4001"
         envFrom:
         - configMapRef:
             name: qsdm-config
-        - name: BOOTSTRAP_PEERS
-          value: "qsdm-validator-0.qsdm-validator.qsdm.svc.cluster.local:4001"
         volumeMounts:
         - name: data
           mountPath: /app/data
         - name: logs
           mountPath: /app/logs
+        # Writable scratch for processes that need /tmp under a
+        # read-only root filesystem (Go's os.TempDir, libp2p
+        # ephemeral state, container runtime helpers).
+        - name: tmp
+          mountPath: /tmp
         resources:
           requests:
             memory: "1Gi"
@@ -121,13 +126,34 @@ spec:
           timeoutSeconds: 5
           failureThreshold: 3
         securityContext:
+          # runtime-01: container runs as a non-root UID. The
+          #             validator image (Dockerfile.validator) sets
+          #             USER 65532 at build time.
           runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532
+          # runtime-02: read-only root filesystem. Writable paths
+          #             are mounted explicitly: /app/data (PVC),
+          #             /app/logs (emptyDir), /tmp (emptyDir).
+          readOnlyRootFilesystem: true
+          # runtime-03: drop ALL Linux capabilities; the validator
+          #             needs no privileged operations.
           allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: false
           capabilities:
             drop: ["ALL"]
+          # runtime-04: enforce RuntimeDefault seccomp profile so
+          #             the container is restricted to the syscall
+          #             allowlist that ships with containerd /
+          #             cri-o / dockerd. (AppArmor profile is set
+          #             via pod-level annotation when the cluster
+          #             ships AppArmor; see networkpolicy.yaml
+          #             companion file.)
+          seccompProfile:
+            type: RuntimeDefault
       volumes:
       - name: logs
+        emptyDir: {}
+      - name: tmp
         emptyDir: {}
   volumeClaimTemplates:
   - metadata:

@@ -14,6 +14,87 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **K8s runtime hardening + `runtime-*` audit catch-up — 6 items flipped
+  to `StatusPassed` (2026-05-14, post-`2655df1`).** Brings the
+  `pkg/audit` checklist's container-runtime row in line with the
+  hardening already encoded in `QSDM/deploy/kubernetes/*.yaml` and
+  closes the only remaining row that needed a brand-new manifest
+  (`runtime-07` NetworkPolicy). Live score on `https://api.qsdm.tech/api/v1/audit/summary`
+  moves from **48/85 passed (56.47 %)** to **54/85 passed (63.53 %)** —
+  a 7-point delta, blocking-findings count drops from 22 to 19.
+  - **K8s pod-security context (`runtime-01..05`):** all 3 deploy
+    manifests (`validator-statefulset.yaml`, `miner-daemonset.yaml`,
+    legacy `deployment.yaml`) now carry a uniform
+    `securityContext` block: `runAsNonRoot=true` +
+    `runAsUser=65532` + `runAsGroup=65532`,
+    `readOnlyRootFilesystem=true` (with explicit `/tmp` `emptyDir`
+    for Go `os.TempDir` + libp2p ephemeral state + CUDA driver
+    cache on the miner), `capabilities.drop=[ALL]`,
+    `allowPrivilegeEscalation=false`, and
+    `seccompProfile.type=RuntimeDefault`. The legacy `deployment.yaml`
+    previously had no `securityContext` at all — this commit brings
+    it to parity so the legacy single-image path is not a security
+    regression vs the split validator + miner topology.
+  - **NetworkPolicy default-deny (`runtime-07`):** new
+    `QSDM/deploy/kubernetes/networkpolicy.yaml` ships 8
+    `NetworkPolicy` resources for the `qsdm` namespace —
+    `qsdm-default-deny` (empty Ingress+Egress on all pods), plus
+    seven targeted allowlist rules: cluster DNS egress (kube-system
+    `k8s-app=kube-dns` UDP+TCP/53), intra-namespace ingress+egress
+    (TCP/4001 P2P + TCP/8080 miner→validator), Scylla egress
+    (namespace `scylla` TCP/9042+9142), Prometheus scrape ingress
+    (namespace `monitoring` TCP/8080+8081), ingress-controller
+    ingress (namespace `ingress-nginx` TCP/8080+8081), libp2p
+    public-internet egress (TCP/4001 with private-CIDR exclusions),
+    and NTP egress (UDP/123 for v2 mining-attestation freshness).
+    Threat-model boundaries are documented inline.
+  - **Drift guard:** `.github/workflows/validate-deploy.yml`'s
+    `kubernetes-dry-run` `kubeconform -strict
+    -kubernetes-version 1.31.0` sweep now covers all 10 manifest
+    files including the two split-image specs and `networkpolicy.yaml`
+    (19/19 resources Valid locally with kubeconform v0.6.7;
+    `envFrom[1]` schema regression in `validator-statefulset.yaml`
+    fixed in passing — the `BOOTSTRAP_PEERS` literal was misplaced
+    under `envFrom` instead of `env`, which would have been caught
+    by the schema sweep the moment the validator manifest was
+    added to it).
+  - **Audit checklist (`pkg/audit/checklist.go`):** 6 items flipped
+    to `StatusPassed` with `ReviewedBy="evidence:in-tree"` and
+    `ReviewedAt="2026-05-14T19:45:00Z"`: `runtime-01` Non-root
+    container user (high), `runtime-02` Read-only root filesystem
+    (high), `runtime-03` Linux capability drop (medium),
+    `runtime-04` Seccomp / AppArmor profile (medium), `runtime-05`
+    Resource limits (high), `runtime-07` NetworkPolicy / egress
+    control (medium). (`runtime-06` liveness/readiness probes was
+    already flipped in `2655df1` by a parallel session.) Each
+    `Notes` field carries a precise pointer to the manifest +
+    `securityContext` field (or the `networkpolicy.yaml` resource
+    list) that closes the row, plus the kubeconform CI sweep
+    citation as the drift guard.
+  - **Test posture (windows/amd64, CGO_ENABLED=0, go1.25.0 via
+    `GOTOOLCHAIN=go1.25.0+auto`, `GOSUMDB=sum.golang.org`):**
+    `pkg/audit` (all checklist + report tests including the
+    `TestChecklist_PassedCountMatchesRuntimeVerifiedList` drift
+    guard now keyed off a 54-entry `runtimeVerifiedItems` list)
+    OK 0.661s; `internal/dashboard` OK 3.683s; `tests/` `-run
+    Audit` OK 2.381s. `pkg/api` shows one pre-existing flake in
+    the parallel session's still-untracked `request_timeout_test.go`
+    expecting `request_timeout_total >= 1` — unrelated to this
+    change; that file is not part of this commit.
+  - **BLR1 live deploy:** binary cross-compiled from this commit
+    (`-trimpath -ldflags='-s -w' CGO_ENABLED=0 GOOS=linux GOARCH=amd64`,
+    sha256 `8b488ce0c7f0fc336b734f0e27e8b6e19f273263b9bb7af87fa3b92e84f8a119`,
+    32,645,304 bytes), uploaded via scp, atomically swapped at
+    `/opt/qsdm/qsdm` (previous v0.4.2-tag-faithful + audit-flip-17
+    + Group-A-flip-4 binary preserved as
+    `/opt/qsdm/qsdm.pre-runtime-flip.bak`), `systemctl restart
+    qsdm.service` — service `active (running)`, PID 336732, chain
+    + accounts + receipts restored, blockdriver re-armed at
+    height 67613. Post-swap `/api/v1/audit/summary` reports
+    **54/85 passed (63.53 %)** with `evidence_provenance`
+    `{in-tree: 22, in-tree-tests: 20, live-deploy: 12}` and
+    `blocking_count: 19`.
+
 - **Audit checklist evidence catch-up — 17 items pre-flipped to
   `StatusPassed` (2026-05-14, post-v0.4.2-tag).** Closes the
   evidence-on-paper-but-not-on-checklist gap surfaced by the

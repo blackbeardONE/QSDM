@@ -105,6 +105,11 @@ spec:
           mountPath: /app/data
         - name: logs
           mountPath: /app/logs
+        # Writable scratch for processes that need /tmp under a
+        # read-only root filesystem (Go's os.TempDir, libp2p
+        # ephemeral state, CUDA driver cache).
+        - name: tmp
+          mountPath: /tmp
         livenessProbe:
           httpGet:
             path: /api/v1/health/live
@@ -122,12 +127,33 @@ spec:
           timeoutSeconds: 5
           failureThreshold: 3
         securityContext:
+          # runtime-01: container runs as a non-root UID. The
+          #             miner image (Dockerfile.miner) sets
+          #             USER 65532 at build time.
           runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532
+          # runtime-02: read-only root filesystem. Writable paths
+          #             are mounted explicitly: /app/data (emptyDir),
+          #             /app/logs (emptyDir), /tmp (emptyDir).
+          readOnlyRootFilesystem: true
+          # runtime-03: drop ALL Linux capabilities; the miner
+          #             needs no privileged operations (CUDA
+          #             devices are accessed via the nvidia
+          #             runtime class, not a Linux capability).
           allowPrivilegeEscalation: false
           capabilities:
             drop: ["ALL"]
+          # runtime-04: RuntimeDefault seccomp profile. The miner
+          #             needs the same syscall surface as the
+          #             validator plus CUDA ioctl which is already
+          #             in the default allowlist.
+          seccompProfile:
+            type: RuntimeDefault
       volumes:
       - name: data
         emptyDir: {}
       - name: logs
+        emptyDir: {}
+      - name: tmp
         emptyDir: {}

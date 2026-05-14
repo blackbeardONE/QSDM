@@ -70,7 +70,17 @@ jobs:
           # -summary      : human-readable summary at the end
           # -schema-location default : upstream Kubernetes schemas
           # -kubernetes-version: pin to a currently-supported minor
-          for f in namespace.yaml configmap.yaml secret.yaml pvc.yaml deployment.yaml service.yaml statefulset.yaml; do
+          for f in \
+              namespace.yaml \
+              configmap.yaml \
+              secret.yaml \
+              pvc.yaml \
+              deployment.yaml \
+              service.yaml \
+              statefulset.yaml \
+              validator-statefulset.yaml \
+              miner-daemonset.yaml \
+              networkpolicy.yaml; do
             echo "==> $f"
             kubeconform -strict -summary \
               -kubernetes-version 1.31.0 \
