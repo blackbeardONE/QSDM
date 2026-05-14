@@ -49,6 +49,12 @@ Every public endpoint lives under `/api/v1/*`. This includes:
 - **Trust / attestation transparency.**
   - `GET  /api/v1/trust/attestations/summary`
   - `GET  /api/v1/trust/attestations/recent`
+- **Audit-checklist transparency** (new in commit
+  [`2039035`](https://github.com/blackbeardONE/QSDM/commit/2039035),
+  matches the trust-attestation precedent).
+  - `GET  /api/v1/audit/summary`
+  - `GET  /api/v1/audit/items`
+    (closed-enum `?category=` / `?severity=` / `?status=` filters)
 - **Mining.**
   - `GET  /api/v1/mining/work`
   - `POST /api/v1/mining/submit`
