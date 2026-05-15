@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/blackbeardONE/QSDM/internal/logging"
@@ -15,6 +16,10 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/wallet"
 )
 
+// getEnvForCORS reads an env var. Wrapped to keep server.go's CORS
+// wiring testable — replaced via osGetenv in setupMiddleware.
+func getEnvForCORS(name string) string { return os.Getenv(name) }
+
 // Server represents the HTTP API server
 type Server struct {
 	config        *config.Config
@@ -24,6 +29,7 @@ type Server struct {
 	rateLimiter   *RateLimiter
 	requestSigner *RequestSigner
 	csrfManager   *CSRFManager
+	revocations      *TokenRevocationStore
 	walletService    *wallet.WalletService
 	storage          StorageInterface
 	submeshManager   *submesh.DynamicSubmeshManager
@@ -153,6 +159,12 @@ func NewServer(cfg *config.Config, logger *logging.Logger, walletService *wallet
 	// Initialize CSRF manager
 	csrfManager := NewCSRFManager()
 
+	// Initialize token revocation store (MED-7). Attaching it now means
+	// every JWT validation runs through the revocation check, and the
+	// /auth/logout handler has somewhere to record explicit logouts.
+	revocations := NewTokenRevocationStore()
+	authManager.SetRevocationStore(revocations)
+
 	return &Server{
 		config:           cfg,
 		logger:           logger,
@@ -164,6 +176,7 @@ func NewServer(cfg *config.Config, logger *logging.Logger, walletService *wallet
 		storage:          storage,
 		submeshManager:   submeshManager,
 		csrfManager:      csrfManager,
+		revocations:      revocations,
 	}, nil
 }
 
@@ -332,6 +345,15 @@ func (s *Server) Start() error {
 
 // Stop gracefully stops the server
 func (s *Server) Stop() error {
+	// Release background goroutines owned by per-server stores so a
+	// repeated start/stop sequence (test suites, hot-reload paths) does
+	// not leak workers.
+	if s.csrfManager != nil {
+		s.csrfManager.Stop()
+	}
+	if s.revocations != nil {
+		s.revocations.Stop()
+	}
 	if s.httpServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -398,32 +420,74 @@ func (s *Server) SetPeerCountSource(fn func() int) {
 	s.pendingPeerCountSource = fn
 }
 
-// setupMiddleware configures all security middleware
+// setupMiddleware configures all security middleware.
+//
+// Composition convention: each wrap returns a handler that calls the
+// inner one, so the LAST call in this function is the OUTERMOST layer
+// on the wire. We layer security from "infrastructure" (TLS-ish, CORS,
+// headers) outward, then resource limits (rate limit, request timeout),
+// then policy (CSRF, signing, auth, admin gate).
+//
+// Specifically:
+//
+//	wire → SecurityHeaders → CORS → AuditLog → DeprecationMiddleware
+//	     → RequestTimeout → RateLimit → CSRF → RequestSigning
+//	     → AuthMiddleware → AdminAccessMiddleware → mux
+//
+// SecurityHeaders is OUTERMOST so even an early-rejection 4xx response
+// (e.g. CORS denial) still carries HSTS/CSP/etc. — without this,
+// preflight failures would emit unhardened bodies.
+//
+// RequestTimeout sits before RateLimit so a request that would have been
+// rate-limited cannot also pin a worker via the deadline; conversely it
+// sits outside CSRF/Auth so handler logic always runs under the deadline.
 func (s *Server) setupMiddleware(handler http.Handler) http.Handler {
-	// Order matters: outermost to innermost
-	
-	// 1. Security headers (outermost)
-	handler = SecurityHeaders(handler)
-	
-	// 2. Audit logging (log all requests)
-	handler = AuditLogMiddleware(s.logger)(handler)
-	
-	// 3. Rate limiting (prevent DDoS)
-	handler = s.rateLimiter.RateLimitMiddleware(handler)
-	
-	// 4. CSRF protection (prevent cross-site request forgery)
-	handler = CSRFMiddleware(s.csrfManager)(handler)
-	
-	// 5. Request signing (validate request integrity)
-	handler = RequestSigningMiddleware(s.requestSigner, s.logger)(handler)
-	
-	// 6. Authentication (validate tokens)
-	handler = AuthMiddleware(s.authManager, s.logger)(handler)
-
-	// 7. Optional stricter /api/admin access (role + mTLS)
+	// 9. Optional stricter /api/admin access (role + mTLS)
 	handler = AdminAccessMiddleware(s.config, s.logger)(handler)
 
+	// 8. Authentication (validate tokens, populates claims context)
+	handler = AuthMiddleware(s.authManager, s.logger)(handler)
+
+	// 7. Request signing (validate request integrity)
+	handler = RequestSigningMiddleware(s.requestSigner, s.logger)(handler)
+
+	// 6. CSRF protection (prevent cross-site request forgery)
+	handler = CSRFMiddleware(s.csrfManager)(handler)
+
+	// 5. Rate limiting (prevent DDoS / brute force)
+	handler = s.rateLimiter.RateLimitMiddleware(handler)
+
+	// 4. Per-request context timeout (MED-5). Default 30s; bypass for
+	//    websocket / streaming routes is built into the middleware.
+	handler = RequestTimeoutMiddleware(DefaultRequestTimeout)(handler)
+
+	// 3. API version deprecation handling (MED-4). Emits Deprecation /
+	//    Sunset / Link headers; returns 410 Gone for sunset versions.
+	handler = DeprecationMiddleware()(handler)
+
+	// 2. Audit logging (log all requests). Sits outside the security
+	//    decisions so we capture both accepted and rejected traffic.
+	handler = AuditLogMiddleware(s.logger)(handler)
+
+	// 1b. CORS (MED-6). Applied OUTSIDE the audit log so denied
+	//     preflights still produce one log line, but INSIDE security
+	//     headers so the 403 carries HSTS/CSP.
+	handler = CORSMiddleware(LoadCORSConfigFromEnv(osGetenv))(handler)
+
+	// 1a. Security headers (HIGH-5) — outermost so every response,
+	//     including early CORS / rate-limit / auth denials, carries the
+	//     canonical security header set.
+	handler = SecurityHeaders(handler)
+
 	return handler
+}
+
+// osGetenv is a tiny indirection so tests can shim out os.Getenv. We
+// avoid pulling in the test-only "envcompat" path here because the CORS
+// loader only needs the bare reader; richer fallback semantics are
+// reserved for the structured config loader.
+var osGetenv = func(name string) string {
+	return getEnvForCORS(name)
 }
 
 // LoadTokenRegistry loads persisted user-created tokens from path.

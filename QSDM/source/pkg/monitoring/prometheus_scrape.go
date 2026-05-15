@@ -90,6 +90,14 @@ func GlobalScrapePrometheusExporter() *PrometheusExporter {
 		// unset), so existing /metrics output remains
 		// bit-identical.
 		globalScrapeExporter.RegisterCollector("qsdm_spec_penalty", specPenaltyPrometheusMetrics)
+		// qsdm_security_* counters from security_metrics.go (MED-8).
+		// Surfaces failed logins, account lockouts, rate-limit
+		// violations, CSRF rejections, invalid/missing JWT, request
+		// signature failures, per-request timeouts, CORS rejections,
+		// and token revocations. Designed for SOC alerting:
+		// each counter is monotonic and any non-zero rate represents
+		// either a misconfigured client or a probing attacker.
+		globalScrapeExporter.RegisterCollector("qsdm_security", SecurityMetricsCollector())
 	})
 	return globalScrapeExporter
 }

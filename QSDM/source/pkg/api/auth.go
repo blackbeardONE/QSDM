@@ -44,6 +44,11 @@ type AuthManager struct {
 	lockoutManager *AccountLockoutManager
 	// jwtHMACFallback: when Dilithium is nil (non-CGO), used for JWT HMAC instead of the hardcoded dev key.
 	jwtHMACFallback []byte
+	// revocations stores tokens revoked by /auth/logout (or admin action).
+	// nil until SetRevocationStore wires one — leaving it nil keeps the
+	// legacy "tokens are valid until they expire" behaviour for embedded
+	// callers / tests that do not want the background sweeper.
+	revocations *TokenRevocationStore
 }
 
 // NewAuthManager creates a new authentication manager
@@ -67,6 +72,38 @@ func (am *AuthManager) SetJWTHMACFallbackSecret(secret string) {
 	if s != "" {
 		am.jwtHMACFallback = []byte(s)
 	}
+}
+
+// SetRevocationStore attaches a TokenRevocationStore. When set,
+// ValidateToken consults it BEFORE returning success, and the /auth/logout
+// handler can call Revoke to invalidate the caller's token. Server.Start
+// wires a default store; tests can leave it nil to keep behaviour
+// identical to the pre-revocation baseline.
+func (am *AuthManager) SetRevocationStore(s *TokenRevocationStore) {
+	am.mu.Lock()
+	am.revocations = s
+	am.mu.Unlock()
+}
+
+// RevocationStore returns the attached store (nil if none).
+func (am *AuthManager) RevocationStore() *TokenRevocationStore {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+	return am.revocations
+}
+
+// RevokeToken adds the claims' nonce to the revocation store, if one is
+// attached. No-op when no store is wired so embedded callers keep the
+// legacy behaviour.
+func (am *AuthManager) RevokeToken(claims *Claims) {
+	if claims == nil {
+		return
+	}
+	store := am.RevocationStore()
+	if store == nil {
+		return
+	}
+	store.Revoke(claims.Nonce, time.Unix(claims.ExpiresAt, 0))
 }
 
 func (am *AuthManager) jwtHMACSecretBytes() []byte {
@@ -229,6 +266,14 @@ func (am *AuthManager) ValidateToken(token string) (*Claims, error) {
 
 	// Do not consume claims.Nonce here: access tokens are sent on every request (cookie / Bearer)
 	// until expiry; single-use nonce tracking would reject the second request with the same token.
+
+	// Revocation check (MED-7): a token whose nonce is on the revocation
+	// list — typically because /auth/logout was hit — is treated as
+	// expired. The RevocationStore self-evicts entries past their natural
+	// expiry so this lookup is bounded.
+	if store := am.RevocationStore(); store != nil && store.IsRevoked(claims.Nonce) {
+		return nil, errors.New("token revoked")
+	}
 
 	return &claims, nil
 }

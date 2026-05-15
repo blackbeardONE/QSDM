@@ -4,8 +4,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -17,6 +19,23 @@ var (
 	ErrInvalidString      = errors.New("string validation failed")
 	ErrStringTooLong      = errors.New("string exceeds maximum length")
 	ErrStringTooShort     = errors.New("string below minimum length")
+	ErrInvalidTimestamp  = errors.New("invalid timestamp")
+)
+
+// Timestamp validation window constants (MED-3).
+//
+// MaxClockSkew bounds how far in the future a client-supplied timestamp
+// may sit before being rejected. Half a minute covers reasonable NTP
+// drift; anything beyond suggests the client clock is misconfigured or
+// the request is being replayed from a different epoch.
+//
+// MaxTransactionAge bounds how far in the past a timestamp may sit.
+// Twenty-four hours is the longest a legitimate offline-signed wallet
+// envelope might wait before broadcast (e.g. air-gapped signer flow);
+// older envelopes are treated as replay candidates.
+const (
+	MaxClockSkew       = 30 * time.Second
+	MaxTransactionAge  = 24 * time.Hour
 )
 
 // Validation constants
@@ -92,19 +111,57 @@ func ValidateTransactionID(txID string) error {
 
 // ValidateAmount validates a transaction amount
 func ValidateAmount(amount float64) error {
+	// NaN / Infinity must be caught BEFORE the range comparisons —
+	// math.IsNaN(amount) is false-by-construction in the > comparison
+	// below (any comparison with NaN is false), but Infinity does NOT
+	// fail the < MinAmount check, so without these guards an attacker
+	// can submit +Inf as the amount.
+	if math.IsNaN(amount) {
+		return fmt.Errorf("%w: amount is NaN", ErrInvalidAmount)
+	}
+	if math.IsInf(amount, 0) {
+		return fmt.Errorf("%w: amount is infinite", ErrInvalidAmount)
+	}
+
 	if amount < MinAmount {
 		return fmt.Errorf("%w: amount %.8f is below minimum %.8f", ErrInvalidAmount, amount, MinAmount)
 	}
-	
+
 	if amount > float64(MaxAmount) {
 		return fmt.Errorf("%w: amount %.2f exceeds maximum %d", ErrInvalidAmount, amount, MaxAmount)
 	}
-	
-	// Check for NaN or Infinity
-	if amount != amount { // NaN check
-		return fmt.Errorf("%w: amount is NaN", ErrInvalidAmount)
+
+	return nil
+}
+
+// ValidateTimestamp parses an RFC3339 timestamp string and rejects
+// values that fall outside the [now-MaxTransactionAge, now+MaxClockSkew]
+// window (MED-3).
+//
+// Empty timestamps are permitted because the legacy P2P transaction wire
+// format does not always carry one; the consensus layer applies its own
+// freshness check via the signed block header. Callers that want to
+// require a timestamp should check tx.Timestamp != "" before invoking
+// ValidateTimestamp.
+func ValidateTimestamp(ts string) error {
+	if ts == "" {
+		return nil
 	}
-	
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		// Try the nanosecond variant for wire formats that emit one.
+		t, err = time.Parse(time.RFC3339Nano, ts)
+		if err != nil {
+			return fmt.Errorf("%w: must be RFC3339 (got %q)", ErrInvalidTimestamp, SanitizeString(ts, 64))
+		}
+	}
+	now := time.Now()
+	if t.After(now.Add(MaxClockSkew)) {
+		return fmt.Errorf("%w: timestamp is more than %s in the future", ErrInvalidTimestamp, MaxClockSkew)
+	}
+	if t.Before(now.Add(-MaxTransactionAge)) {
+		return fmt.Errorf("%w: timestamp is older than %s", ErrInvalidTimestamp, MaxTransactionAge)
+	}
 	return nil
 }
 

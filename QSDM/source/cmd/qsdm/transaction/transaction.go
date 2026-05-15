@@ -53,7 +53,17 @@ func HandleTransaction(logger *logging.Logger, msg []byte, dynamicManager *subme
 		return
 	}
 
-	logger.Info("Processing P2P transaction", "sender", tx.Sender, "recipient", tx.Recipient, "amount", tx.Amount, "fee", tx.Fee)
+	// MED-2: sanitize user-supplied strings before logging. The fields are
+	// already format-validated above (hex address, bounded length), but
+	// defence-in-depth costs nothing — if a future ParseTransaction relax
+	// permits richer characters, log injection (CWE-117) cannot bypass
+	// the structured-logging guard.
+	logger.Info("Processing P2P transaction",
+		"sender", api.SanitizeForLog(tx.Sender),
+		"recipient", api.SanitizeForLog(tx.Recipient),
+		"amount", tx.Amount,
+		"fee", tx.Fee,
+	)
 
 	ds, subErr := dynamicManager.MatchP2POrReject(tx.Fee, tx.GeoTag, msg)
 	if subErr != nil {
@@ -293,6 +303,12 @@ func ParseTransaction(msg []byte) (*Transaction, error) {
 	}
 	if err := api.ValidateOptionalMLDSAPublicKeyHex(tx.PublicKey); err != nil {
 		return nil, fmt.Errorf("public_key validation failed: %w", err)
+	}
+	// MED-3 (timestamp): bounded freshness window prevents replay of
+	// year-old envelopes and rejects clocks set far in the future
+	// (e.g. an attacker trying to game a future-state validation rule).
+	if err := api.ValidateTimestamp(tx.Timestamp); err != nil {
+		return nil, fmt.Errorf("timestamp validation failed: %w", err)
 	}
 
 	return &tx, nil

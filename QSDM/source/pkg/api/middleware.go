@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/blackbeardONE/QSDM/internal/logging"
+	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 )
 
 // AuthMiddleware validates JWT tokens
@@ -26,6 +27,7 @@ func AuthMiddleware(authManager *AuthManager, logger *logging.Logger) func(http.
 			// Extract token from Authorization header
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
+				monitoring.RecordAuthMissingToken()
 				writeErrorResponse(w, http.StatusUnauthorized, "missing authorization header")
 				return
 			}
@@ -33,6 +35,7 @@ func AuthMiddleware(authManager *AuthManager, logger *logging.Logger) func(http.
 			// Parse "Bearer <token>"
 			parts := strings.Split(authHeader, " ")
 			if len(parts) != 2 || parts[0] != "Bearer" {
+				monitoring.RecordAuthInvalidToken()
 				writeErrorResponse(w, http.StatusUnauthorized, "invalid authorization format")
 				return
 			}
@@ -42,7 +45,8 @@ func AuthMiddleware(authManager *AuthManager, logger *logging.Logger) func(http.
 			// Validate token
 			claims, err := authManager.ValidateToken(token)
 			if err != nil {
-				logger.Warn("Token validation failed", "error", err, "path", r.URL.Path)
+				monitoring.RecordAuthInvalidToken()
+				logger.Warn("Token validation failed", "error", err, "path", SanitizeForLog(r.URL.Path))
 				writeErrorResponse(w, http.StatusUnauthorized, "invalid or expired token")
 				return
 			}
@@ -125,7 +129,8 @@ func RequestSigningMiddleware(signer *RequestSigner, logger *logging.Logger) fun
 
 			// Verify signature
 			if err := signer.VerifyRequest(body, timestamp, nonce, signature); err != nil {
-				logger.Warn("Request signature verification failed", "error", err, "path", r.URL.Path)
+				monitoring.RecordRequestSignatureFailed()
+				logger.Warn("Request signature verification failed", "error", err, "path", SanitizeForLog(r.URL.Path))
 				writeErrorResponse(w, http.StatusUnauthorized, "invalid request signature")
 				return
 			}
@@ -197,6 +202,13 @@ func isPublicEndpoint(path string) bool {
 		"/api/v1/status",
 		"/api/v1/auth/login",
 		"/api/v1/auth/register",
+		// CSRF token issuer. Public so a fresh browser session can
+		// fetch the token BEFORE having a login cookie (the token is
+		// then echoed back on the /auth/login POST). The handler
+		// itself sets the qsdm_csrf cookie + returns the value; it
+		// has no side-effect beyond cookie issuance, so the same
+		// threat model that lets /status be public applies here.
+		CSRFTokenEndpoint,
 		"/api/v1/wallet/create", // Public for game server integration
 		"/api/v1/wallet/balance", // Public for game server to check balances (address required in query)
 		"/api/v1/wallet/mint",    // Removed in v0.3.3 (Session 91): always returns 410 Gone with a migration message. Kept in publicPaths so external callers that still hit the path receive a structured 410 instead of a confusing 401 redirect to /api/auth/login.

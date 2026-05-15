@@ -61,7 +61,17 @@ type Handlers struct {
 	nodeRole        string
 	peerCountSource func() int
 	chainTipSource  func() uint64
+
+	// csrfManager is the (optional) issuer/validator used by the
+	// GET /api/v1/csrf-token endpoint. The server populates it via
+	// SetCSRFManager during registerRoutes; tests can leave it nil
+	// and the handler will return 503.
+	csrfManager *CSRFManager
 }
+
+// SetCSRFManager attaches the per-server CSRFManager so the CSRF token
+// endpoint can mint + cookie tokens. Wired by Server.registerRoutes.
+func (h *Handlers) SetCSRFManager(cm *CSRFManager) { h.csrfManager = cm }
 
 // NewHandlers creates a new handlers instance
 func NewHandlers(authManager *AuthManager, userStore *UserStore, walletService *wallet.WalletService, storage StorageInterface, logger *logging.Logger, ngcIngestSecret string, nvidiaLockEnabled bool, nvidiaLockMaxAge time.Duration, nvidiaLockExpectedNodeID string, nvidiaLockProofHMACSecret string, nvidiaLockRequireIngestNonce bool, nvidiaLockIngestNonceTTL time.Duration, nvidiaLockGateP2P bool, submeshManager *submesh.DynamicSubmeshManager) *Handlers {
@@ -172,6 +182,9 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	if s.config != nil {
 		handlers.SetNodeRole(s.config.NodeRole)
 	}
+	if s.csrfManager != nil {
+		handlers.SetCSRFManager(s.csrfManager)
+	}
 	s.handlers = handlers
 	// Apply any pre-Start status-source hooks that were
 	// captured before s.handlers existed. Without this,
@@ -207,6 +220,24 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Authentication endpoints (public)
 	mux.HandleFunc("/api/v1/auth/login", handlers.Login)
 	mux.HandleFunc("/api/v1/auth/register", handlers.Register)
+
+	// CSRF token issuer (public): clients fetch a fresh token here before
+	// any cookie-authenticated state-changing call. Issuing is read-only
+	// (GET) and side-effect-free apart from setting the qsdm_csrf cookie,
+	// so it lives in publicPaths (see middleware.isPublicEndpoint) and
+	// bypasses auth — the threat model is identical to /auth/login.
+	mux.HandleFunc(CSRFTokenEndpoint, handlers.CSRFTokenHandler)
+
+	// Logout (MED-7): authenticated; revokes the caller's JWT via the
+	// TokenRevocationStore. Registered after Login/Register so the auth
+	// middleware injects claims into the context.
+	mux.HandleFunc("/api/v1/auth/logout", handlers.Logout)
+
+	// Versions probe (MED-4): public read of the API version catalogue
+	// (status, deprecation, sunset). Lets SDKs detect upcoming breaks
+	// without paying the cost of every endpoint emitting Deprecation
+	// headers on every response.
+	mux.HandleFunc("/api/v1/versions", handlers.Versions)
 
 	// Wallet endpoints (authenticated)
 	mux.HandleFunc("/api/v1/wallet/create", handlers.CreateWallet)
@@ -564,6 +595,89 @@ func (h *Handlers) HealthReady(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Logout revokes the caller's current access token by adding its nonce
+// to the revocation store. Subsequent requests presenting the same JWT
+// are rejected by AuthMiddleware via the revocation check in
+// AuthManager.ValidateToken.
+//
+// Authentication is REQUIRED (claims must be present in context) — the
+// route is registered on the auth-protected path so AuthMiddleware
+// populates the claims before this handler runs. Calling /auth/logout
+// without a valid Bearer token returns 401, which is the same posture
+// as every other authenticated endpoint.
+//
+// The handler is safe under concurrent logout-then-reuse races: the
+// revocation entry lives for the full natural token lifetime, so any
+// in-flight request that already started a handler completes (the
+// revocation only blocks NEW calls past the auth middleware).
+func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	claims, ok := r.Context().Value("claims").(*Claims)
+	if !ok || claims == nil {
+		writeErrorResponse(w, http.StatusUnauthorized, "missing authentication")
+		return
+	}
+	if h.authManager == nil {
+		writeErrorResponse(w, http.StatusServiceUnavailable, "auth manager not configured")
+		return
+	}
+	h.authManager.RevokeToken(claims)
+	writeJSONResponse(w, http.StatusOK, map[string]interface{}{
+		"message": "logged out",
+	})
+}
+
+// CSRFTokenHandler issues a fresh CSRF token for the calling client.
+//
+// Contract: GET /api/v1/csrf-token returns
+//
+//	{ "csrf_token": "<base64url>", "expires_in_seconds": 3600 }
+//
+// and ALSO sets the qsdm_csrf cookie (Secure, SameSite=Strict) carrying the
+// same value. State-changing requests must echo the token in the
+// X-CSRF-Token header; the CSRFMiddleware enforces both the double-submit
+// (cookie == header) and synchronizer-token (server-side store) checks.
+//
+// Method-not-allowed and service-unavailable responses match the rest of
+// the API: 405 for non-GET, 503 with a clear detail when no manager is
+// wired (defense against running an API server that forgot to bootstrap
+// CSRF — the dashboard would silently fall over otherwise).
+//
+// When the caller is authenticated (claims in context), the issued token
+// is bound to claims.UserID so it cannot be replayed across users.
+func (h *Handlers) CSRFTokenHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if h.csrfManager == nil {
+		writeErrorResponse(w, http.StatusServiceUnavailable, "CSRF manager not configured")
+		return
+	}
+
+	var userID string
+	if claims, ok := r.Context().Value("claims").(*Claims); ok && claims != nil {
+		userID = claims.UserID
+	}
+
+	token, err := h.csrfManager.IssueToken(w, userID, r.TLS != nil)
+	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("Failed to issue CSRF token", "error", err)
+		}
+		writeErrorResponse(w, http.StatusInternalServerError, "failed to issue CSRF token")
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, map[string]interface{}{
+		"csrf_token":         token,
+		"expires_in_seconds": int(defaultCSRFTokenTTL.Seconds()),
+	})
+}
+
 // LoginRequest represents a login request
 type LoginRequest struct {
 	Address  string `json:"address"`
@@ -601,7 +715,11 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	// Check if account is locked
 	locked, lockErr := h.authManager.IsAccountLocked(req.Address)
 	if locked {
-		h.logger.Warn("Login attempt on locked account", "address", req.Address, "error", lockErr)
+		// MED-2: sanitize the address before logging — even though
+		// ValidateAddress already rejected non-hex inputs above, defence
+		// in depth keeps log forging (CWE-117) impossible if a future
+		// validator change loosens the address grammar.
+		h.logger.Warn("Login attempt on locked account", "address", SanitizeForLog(req.Address), "error", lockErr)
 		writeErrorResponse(w, http.StatusTooManyRequests, lockErr.Error())
 		return
 	}
@@ -609,12 +727,19 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	// Authenticate user
 	user, err := h.userStore.AuthenticateUser(req.Address, req.Password)
 	if err != nil {
+		// MED-8: surface the failed-login event in the security metrics
+		// stream so SOC alerting can catch credential-stuffing waves
+		// before the per-account lockout kicks in.
+		monitoring.RecordFailedLogin()
 		// Record failed attempt
 		h.authManager.RecordFailedAttempt(req.Address)
 
 		// Get remaining attempts
 		remaining := h.authManager.GetRemainingAttempts(req.Address)
-		h.logger.Warn("Authentication failed", "address", req.Address, "error", err, "remaining_attempts", remaining)
+		h.logger.Warn("Authentication failed", "address", SanitizeForLog(req.Address), "error", err, "remaining_attempts", remaining)
+		if remaining <= 0 {
+			monitoring.RecordAccountLockout()
+		}
 
 		if remaining > 0 {
 			writeErrorResponse(w, http.StatusUnauthorized, fmt.Sprintf("invalid credentials. %d attempts remaining", remaining))
@@ -636,8 +761,8 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		15*time.Minute,
 	)
 	if err != nil {
-		h.logger.Error("Failed to create access token", "error", err)
-		writeErrorResponse(w, http.StatusInternalServerError, "failed to create token")
+		// MED-1: log full details server-side, return correlation id only.
+		WriteServerError(w, h.logger, "create_access_token", err)
 		return
 	}
 
@@ -650,8 +775,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		7*24*time.Hour,
 	)
 	if err != nil {
-		h.logger.Error("Failed to create refresh token", "error", err)
-		writeErrorResponse(w, http.StatusInternalServerError, "failed to create token")
+		WriteServerError(w, h.logger, "create_refresh_token", err)
 		return
 	}
 
@@ -705,8 +829,8 @@ func (h *Handlers) Register(w http.ResponseWriter, r *http.Request) {
 			writeErrorResponse(w, http.StatusConflict, "user already exists")
 			return
 		}
-		h.logger.Error("Failed to register user", "error", err)
-		writeErrorResponse(w, http.StatusInternalServerError, "failed to register user")
+		// MED-1: do not echo raw storage / crypto errors back to the user.
+		WriteServerError(w, h.logger, "register_user", err)
 		return
 	}
 

@@ -55,7 +55,11 @@ func buildP2PTestTxMessageWithGeo(t *testing.T, poe *consensus.ProofOfEntangleme
 		GeoTag:      geoTag,
 		ParentCells: []string{parent1, parent2},
 		Signature:   "",
-		Timestamp:   "2010-01-02T15:04:05Z",
+		// Fresh timestamp so MED-3 freshness validation (24h window, 30s
+		// future clock-skew) accepts the envelope. Pre-MED-3 the wire
+		// fixture used a 2010-fixed value because ParseTransaction
+		// ignored the field.
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
 	}
 	body, err := json.Marshal(withoutSig)
 	if err != nil {
