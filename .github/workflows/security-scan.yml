@@ -1,0 +1,264 @@
+# Security static analysis — gosec / govulncheck / staticcheck.
+#
+# The qsdm-go.yml workflow validates that the code compiles and the
+# unit tests pass. This workflow asks a different question: does the
+# new code introduce *new* security findings against three industry-
+# standard scanners?
+#
+#   - gosec        — security-focused linter (CWE-keyed rules).
+#   - govulncheck  — Go vulnerability database scanner with call-graph
+#                    reachability analysis (only fails on a finding
+#                    that is actually reachable from main).
+#   - staticcheck  — general-purpose static analyser that catches the
+#                    SA1029-class context-key bugs and the U1000
+#                    dead-code regressions the security audit pass
+#                    cleared in 91c2dd2.
+#
+# Baseline ceilings
+# -----------------
+# The QSDM security audit (QSDM/docs/docs/SECURITY_AUDIT.md) at
+# v0.4.2 documents the following finding counts as "tracked for
+# follow-up, not introduced by the hardening pass". The CI ceilings
+# below match that documentation exactly:
+#
+#   gosec        : <=11 findings   (handlers_mining G115 x2,
+#                                   ngc_proof_persist G304 x4,
+#                                   user_persist + token_registry
+#                                   G304 x2, autocert G710 x1,
+#                                   mtls G306 x2)
+#   staticcheck  : <=12 findings   (account_lockout S1024/S1012,
+#                                   handlers* U1000 dead code,
+#                                   handlers_status nodeStatusConfig
+#                                   U1000, handlers_mining S1016)
+#   govulncheck  : <=1 vulnerability
+#                  (GO-2024-3218 / CVE-2023-26248, IPFS Kad-DHT
+#                   content censorship; no upstream fix exists; QSDM
+#                   only uses Kad-DHT for peer discovery, with
+#                   QSDM_BOOTSTRAP_PEERS as the fallback).
+#
+# A PR that LOWERS a ceiling must update both the ceiling and the
+# SECURITY_AUDIT.md follow-up section in the same commit. A PR that
+# tries to RAISE a ceiling will be rejected at review time.
+#
+# Running locally
+# ---------------
+# Each job exposes the exact tool invocation it uses. To reproduce a
+# CI failure locally:
+#
+#   cd QSDM/source
+#   gosec        -fmt=text -severity=medium -confidence=medium ./pkg/api/... ./pkg/monitoring/... ./cmd/qsdm/...
+#   staticcheck  ./pkg/api/...
+#   govulncheck  ./...
+name: Security scan
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-scan-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "QSDM/source/**"
+      - ".github/workflows/security-scan.yml"
+  pull_request:
+    paths:
+      - "QSDM/source/**"
+      - ".github/workflows/security-scan.yml"
+
+jobs:
+  # ---------------------------------------------------------------
+  # gosec — security-focused linter with CWE rule mapping.
+  # ---------------------------------------------------------------
+  gosec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+          cache-dependency-path: QSDM/source/go.sum
+
+      # Pin a version. gosec's rule set evolves; floating @latest
+      # would let a benign rule-tightening pass turn into a CI break.
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.21.4
+
+      - name: Run gosec
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          # gosec -no-fail emits findings to stdout and a JSON report
+          # to disk but exits 0. We then count findings against the
+          # documented baseline ourselves; this lets us print the
+          # full report on failure rather than gosec's truncated
+          # default.
+          gosec -fmt=text -severity=medium -confidence=medium -no-fail \
+            ./pkg/api/... ./pkg/monitoring/... ./cmd/qsdm/transaction/... \
+            | tee gosec.txt
+          gosec -fmt=json -severity=medium -confidence=medium -no-fail \
+            -out=gosec.json \
+            ./pkg/api/... ./pkg/monitoring/... ./cmd/qsdm/transaction/...
+
+      - name: Enforce baseline ceiling (<=11 medium+ findings)
+        working-directory: QSDM/source
+        run: |
+          set -euo pipefail
+          BASELINE=11
+          ACTUAL=$(jq '.Stats.found' gosec.json)
+          echo "gosec medium+ findings: actual=$ACTUAL baseline=$BASELINE"
+          if [ "$ACTUAL" -gt "$BASELINE" ]; then
+            echo "::error::gosec finding count ($ACTUAL) exceeds baseline ($BASELINE)."
+            echo "::error::Review the gosec.txt output above. Either fix the new finding"
+            echo "::error::or, if the increase is intentional, update BASELINE in"
+            echo "::error::.github/workflows/security-scan.yml AND the matching"
+            echo "::error::section in QSDM/docs/docs/SECURITY_AUDIT.md in the same PR."
+            exit 1
+          fi
+          if [ "$ACTUAL" -lt "$BASELINE" ]; then
+            echo "::warning::gosec count dropped ($ACTUAL < $BASELINE) -- consider tightening the baseline."
+          fi
+
+      - name: Upload gosec report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gosec-report
+          path: |
+            QSDM/source/gosec.txt
+            QSDM/source/gosec.json
+          retention-days: 30
+
+  # ---------------------------------------------------------------
+  # staticcheck — general-purpose Go static analyser.
+  # ---------------------------------------------------------------
+  staticcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+          cache-dependency-path: QSDM/source/go.sum
+
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.6.1
+
+      - name: Run staticcheck
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          # staticcheck exits 1 if any finding is reported. Use
+          # `|| true` so we can pipe to our own counter; pipefail
+          # is disabled for this single command via subshell.
+          (set +o pipefail; staticcheck ./pkg/api/... 2>&1 | tee staticcheck.txt) || true
+
+      - name: Enforce baseline ceiling (<=12 findings in pkg/api)
+        working-directory: QSDM/source
+        run: |
+          set -euo pipefail
+          BASELINE=12
+          # staticcheck emits one finding per line in
+          #   file.go:line:col: message (CODE)
+          # format. Count non-empty lines.
+          ACTUAL=$(grep -cE '^[^:]+\.go:[0-9]+:[0-9]+:' staticcheck.txt || true)
+          echo "staticcheck pkg/api findings: actual=$ACTUAL baseline=$BASELINE"
+          if [ "$ACTUAL" -gt "$BASELINE" ]; then
+            echo "::error::staticcheck finding count ($ACTUAL) exceeds baseline ($BASELINE)."
+            echo "::error::Review the staticcheck.txt output above. Either fix the new finding"
+            echo "::error::or, if the increase is intentional, update BASELINE in"
+            echo "::error::.github/workflows/security-scan.yml AND the matching"
+            echo "::error::section in QSDM/docs/docs/SECURITY_AUDIT.md in the same PR."
+            exit 1
+          fi
+          if [ "$ACTUAL" -lt "$BASELINE" ]; then
+            echo "::warning::staticcheck count dropped ($ACTUAL < $BASELINE) -- consider tightening the baseline."
+          fi
+
+      - name: Upload staticcheck report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staticcheck-report
+          path: QSDM/source/staticcheck.txt
+          retention-days: 30
+
+  # ---------------------------------------------------------------
+  # govulncheck — Go vulnerability DB scanner with reachability.
+  # ---------------------------------------------------------------
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+          cache-dependency-path: QSDM/source/go.sum
+
+      - name: Install govulncheck
+        # govulncheck is versioned via the Go toolchain; install at
+        # latest because the only meaningful "drift" risk is the
+        # vulnerability DATABASE, which the tool fetches at run-time
+        # regardless of the binary version.
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          # -json gives a structured stream we can count; we still
+          # emit the human-readable text so the CI logs are useful.
+          govulncheck ./... | tee govulncheck.txt || true
+          govulncheck -json ./... > govulncheck.json || true
+
+      - name: Enforce baseline ceiling (<=1 vulnerability)
+        working-directory: QSDM/source
+        run: |
+          set -euo pipefail
+          BASELINE=1
+          # govulncheck -json emits one OSV record per finding under
+          # a top-level "osv" key, but the stream is one JSON object
+          # per line (NDJSON). Filter for "finding" records that have
+          # both "osv" and "trace" set (those are call-graph-reachable
+          # findings, the only kind that counts).
+          if [ ! -s govulncheck.json ]; then
+            echo "::error::govulncheck produced no output -- network failure?"
+            exit 1
+          fi
+          ACTUAL=$(jq -r 'select(.finding.trace != null) | .finding.osv' govulncheck.json \
+                     | sort -u | grep -c '^GO-' || true)
+          echo "govulncheck reachable vulnerabilities: actual=$ACTUAL baseline=$BASELINE"
+          if [ "$ACTUAL" -gt "$BASELINE" ]; then
+            echo "::error::govulncheck reachable-vulnerability count ($ACTUAL) exceeds baseline ($BASELINE)."
+            echo "::error::Review the govulncheck.txt output above. Either upgrade the affected"
+            echo "::error::dependency, refactor away the reachable call site, or, if the new"
+            echo "::error::finding has no upstream fix (e.g. another GO-XXXX-3218 case), update"
+            echo "::error::BASELINE in .github/workflows/security-scan.yml AND add a disposition"
+            echo "::error::block to QSDM/docs/docs/SECURITY_AUDIT.md in the same PR."
+            exit 1
+          fi
+          if [ "$ACTUAL" -lt "$BASELINE" ]; then
+            echo "::warning::govulncheck count dropped ($ACTUAL < $BASELINE) -- consider tightening the baseline."
+          fi
+
+      - name: Upload govulncheck report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: govulncheck-report
+          path: |
+            QSDM/source/govulncheck.txt
+            QSDM/source/govulncheck.json
+          retention-days: 30
