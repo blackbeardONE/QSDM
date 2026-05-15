@@ -999,6 +999,46 @@
     $('send-pass').value = '';
   });
 
+  // ----- Public API for the in-page vault UX layer -----
+  //
+  // wallet.html ships a "Your QSDM Wallet" panel above the 5
+  // existing tabs (Generate / Open / Sign / Balance / Send) that
+  // gives users a MetaMask-style persistent experience:
+  // encrypted vault in localStorage, password-gate on tab open,
+  // idle auto-lock, address-and-balance dashboard, copy-address,
+  // and an activity log of recent sends.
+  //
+  // That panel is driven by an inline <script> at the bottom of
+  // wallet.html. To keep the same byte-for-byte keystore +
+  // canonical-payload semantics that the existing tabs rely on,
+  // we expose a NARROW surface here on window.QSDMWallet so the
+  // inline UX script doesn't have to duplicate the WebCrypto
+  // (PBKDF2 + AES-GCM) or address-derivation logic. Everything
+  // exported here is already used internally above; the inline
+  // script gets the same primitives via the same names.
+  //
+  // Stability contract: this surface is a public API the
+  // wallet.html inline script depends on. Adding fields is
+  // fine; renaming or removing existing fields will silently
+  // break the persistent vault flow at runtime. The "vault"
+  // namespace is reserved for the per-tab encrypted blob.
+  window.QSDMWallet = {
+    isValidAddress: isValidAddress,
+    decryptPrivateKey: decryptPrivateKey,
+    encryptPrivateKey: encryptPrivateKey,
+    buildKeystore: buildKeystore,
+    validateKeystore: validateKeystore,
+    bytesToHex: bytesToHex,
+    hexToBytes: hexToBytes,
+    formatCell: formatCell,
+    BALANCE_ENDPOINT: BALANCE_ENDPOINT,
+    isReady: function () { return wasmReady === true && window.qsdm_wallet_ready === true; },
+    version: function () {
+      return typeof window.qsdm_wallet_version === 'function'
+        ? window.qsdm_wallet_version() : 'unknown';
+    },
+  };
+
   // ----- Go! -----
   bootWASM();
 })();

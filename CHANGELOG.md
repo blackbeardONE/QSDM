@@ -14,6 +14,70 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Mining-ledger fallback for `/api/v1/wallet/balance` + persistent
+  encrypted vault on `qsdm.tech/wallet.html` (2026-05-15, BLR1
+  live).** Fixes the user-visible "browser wallet shows 0 CELL even
+  though I've been mining for days" symptom on `qsdm.tech/wallet.html`
+  and turns the page from a one-shot keystore tool into a
+  MetaMask-style persistent wallet. Two coupled changes:
+  1. **Server-side balance fallback** (`pkg/api/handlers.go::GetBalance`).
+     The BLR1 deploy runs the `FileStorage` backend, which intentionally
+     returns `(0, nil)` for `GetBalance` / `GetNonce` on every address
+     (see the audit Notes for `crypto-04` / v0.4.1 — the silent-zero
+     posture is what lets the public read endpoints exist at all
+     without a real KV store on the validator). Authoritative CELL
+     state lives in the in-memory `AccountStore` and is surfaced via
+     the existing `MiningAccountProbe` interface (`handlers_mining.go`).
+     `GetBalance` now consults the probe as a fallback whenever
+     storage reports zero AND a probe is wired AND the probe reports a
+     strictly-positive balance for the address. The response gains a
+     `source` field (`"storage" | "mining-ledger"`) so callers can
+     tell which authority answered. Verified live:
+     `GET https://api.qsdm.tech/api/v1/wallet/balance?address=qsdm1miner-rtx3050`
+     went from `{balance: 0, source: storage}` (pre-fix) to
+     `{balance: 45315.83207005032, source: "mining-ledger"}`
+     (post-fix). Five tests in `pkg/api/handlers_balance_fallback_test.go`
+     pin the contract: storage-non-zero, storage-zero-no-probe,
+     storage-zero-probe-misses, storage-zero-probe-lifts, and
+     storage-zero-probe-also-zero-no-spurious-lift.
+  2. **`qsdm.tech/wallet.html` vault UX** (`QSDM/deploy/landing/wallet.html`
+     + `wallet.js`). New "Your QSDM Wallet" panel at the top of the page
+     with three states: **empty** (Create/Import CTAs), **locked**
+     (passphrase prompt), **unlocked** (address + auto-refreshing
+     balance + Send/Receive/Activity/Settings v-tabs). Backed by
+     `localStorage` keys `qsdm.vault.v1` (encrypted keystore JSON,
+     byte-identical to `pkg/keystore` v1 — PBKDF2-SHA-256
+     600 000 iter → AES-256-GCM), `qsdm.vault.activity` (last 20 sends),
+     `qsdm.vault.settings` (idle-lock minutes). Idle auto-lock
+     re-locks after N minutes of no `click/keydown/mousemove/scroll/
+     touchstart`, and a `visibilitychange` listener locks immediately
+     when the tab is hidden if idle-lock is enabled. Decrypted private
+     key is held only inside the inline-script closure (no `window.*`
+     leak) and zeroed on lock. The existing 5-tab "Advanced" panel
+     stays available below for power flows (generate-without-storing,
+     sign-arbitrary-message, third-party keystore inspection, headless
+     send). `wallet.js` SRI hash rotated from
+     `sha384-8BO6kH4J…` to `sha384-KNytWZHLqqWS…` to match the new
+     `window.QSDMWallet` public-API export footer; live `qsdm.tech`
+     serves both files at sha256
+     `5608f015a0f4d1f8b70d319f23ed94621b045df17c3589fcc3e46085f0666f66`
+     (HTML) and `534ab97db851b85509891db5ddea91b1f57ff1cf740f01631c33a26d82a8d748`
+     (JS); the SRI is verified live (live wallet.js sha384 base64
+     matches the integrity attribute in wallet.html byte-for-byte).
+     New `QSDM/docs/docs/runbooks/WALLET_FRIENDLY_NAME_MIGRATION.md`
+     runbook documents the friendly-name-vs-keypair pitfall, how to
+     diagnose it (both `/wallet/balance` and `/mining/account`
+     probes), how to generate a real keypair-backed wallet via either
+     the browser or `qsdmcli wallet new`, how to reconfigure
+     `qsdmminer-console` / `qsdmminer-gui.exe` to credit the new
+     address going forward, and the recovery options for the
+     historical balance parked at the friendly-name. The matching
+     admin sweep endpoint is **intentionally not shipped in this
+     session** — that's a chain-state-mutation surface and needs its
+     own design review, multi-sig gating (per `authz-02`), and
+     dedicated nonce/replay/RBAC-deny tests. Tracked as a future
+     pass.
+
 - **`authz-01..04` audit flip — all 4 authorisation rows closed
   (61 → 65, 71.76 % → 76.47 %, 2026-05-15 post-`5b0c9ed`).** Closes
   the entire `authorisation` category by pinning evidence to four

@@ -908,10 +908,35 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Mining-ledger fallback. The storage backend on a solo-validator
+	// FileStorage deploy silently returns zero for every address (see
+	// pkg/storage/file_storage.go and the audit Notes for crypto-04 /
+	// v0.4.1 — FileStorage.GetBalance + GetNonce are intentional zero
+	// stubs so the public read endpoints don't 500). That means the
+	// authoritative CELL ledger lives in the validator's in-memory
+	// AccountStore, surfaced via the MiningAccountProbe interface
+	// (see handlers_mining.go::SetMiningAccountProbe). When storage
+	// reports zero AND a probe is wired AND the probe reports a
+	// real balance, we lift the response to the probe value. The
+	// `source` field records which authority answered so clients
+	// (qsdm.tech/wallet.html, qsdmcli, dashboards) can tell whether
+	// the number is canonical chain-state or storage-backend state.
+	source := "storage"
+	if balance == 0 {
+		if probe := currentMiningAccountProbe(); probe != nil {
+			probeBal, _, present := probe.BalanceOf(address)
+			if present && probeBal > 0 {
+				balance = probeBal
+				source = "mining-ledger"
+			}
+		}
+	}
+
 	monitoring.RecordWalletBalanceQuery(monitoring.WalletBalanceResultSuccess)
 	writeJSONResponse(w, http.StatusOK, map[string]interface{}{
 		"address": address,
 		"balance": balance,
+		"source":  source,
 	})
 }
 

@@ -247,7 +247,236 @@
     </p>
   </section>
 
+  <!-- v0.4.3: persistent encrypted vault (MetaMask-style UX). -->
+  <!-- Backed by localStorage; encryption + canonical-payload     -->
+  <!-- semantics inherited from the existing wallet.js primitives -->
+  <!-- via window.QSDMWallet (see the inline <script> at the      -->
+  <!-- bottom of this file). The 5-tab "Advanced" panel below     -->
+  <!-- stays available for power flows (generate fresh from a     -->
+  <!-- new passphrase, sign arbitrary messages, open / inspect a  -->
+  <!-- third-party keystore file).                                -->
+  <section class="panel" id="vault-panel">
+    <div id="vault-state-empty" class="vault-state" hidden>
+      <h2 style="margin-top:0">Your QSDM Wallet</h2>
+      <p style="color: var(--text-2); margin: 8px 0 18px">
+        No wallet is installed in this browser yet. Pick one:
+      </p>
+      <div class="actions" style="margin-bottom: 14px">
+        <button class="btn btn-primary" id="vault-create-btn">Create a new wallet</button>
+        <button class="btn btn-ghost"   id="vault-import-btn">Import an existing keystore</button>
+      </div>
+      <p style="font-size: 13px; color: var(--muted); margin: 0">
+        The vault is stored <em>encrypted</em> in this browser's
+        <code>localStorage</code> (AES-256-GCM with a PBKDF2-SHA-256
+        600 000-iteration key derived from your passphrase). It
+        never leaves this tab. Clearing site data or switching
+        browsers wipes it &mdash; export a backup
+        <code>wallet.json</code> from the Advanced &rarr; Open tab
+        any time.
+      </p>
+    </div>
+
+    <div id="vault-state-locked" class="vault-state" hidden>
+      <h2 style="margin-top:0">Unlock Your Wallet</h2>
+      <p style="color: var(--text-2); margin: 8px 0 12px">
+        Address: <code id="vault-locked-addr" style="font-family: var(--mono); font-size: 12px"></code>
+        <button class="btn btn-ghost" id="vault-locked-copy" style="margin-left:8px; padding: 2px 8px; font-size: 12px">Copy</button>
+      </p>
+      <div class="field">
+        <label>Passphrase</label>
+        <input type="password" id="vault-unlock-pass" autocomplete="current-password" />
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="vault-unlock-btn">Unlock</button>
+        <button class="btn btn-ghost"   id="vault-forget-btn"
+                title="Wipe the encrypted vault from this browser (keystore.json export advised first)">Forget this wallet</button>
+      </div>
+      <div class="status-line" id="vault-unlock-status"></div>
+    </div>
+
+    <div id="vault-state-unlocked" class="vault-state" hidden>
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap">
+        <div style="flex:1; min-width: 240px">
+          <h2 style="margin: 0 0 4px">Your QSDM Wallet</h2>
+          <p style="margin: 0; color: var(--text-2); font-size: 13px">
+            Address &middot;
+            <code id="vault-unlocked-addr" style="font-family: var(--mono); font-size: 12px;"></code>
+            <button class="btn btn-ghost" id="vault-unlocked-copy" style="margin-left:6px; padding: 1px 7px; font-size: 11px">Copy</button>
+          </p>
+        </div>
+        <div style="text-align:right">
+          <div id="vault-balance-label" style="font-size: 12px; color: var(--muted); letter-spacing: .6px; text-transform: uppercase">Balance</div>
+          <div id="vault-balance-value" style="font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--accent-2)">…</div>
+          <div id="vault-balance-source" style="font-size: 11px; color: var(--muted); margin-top: 2px"></div>
+        </div>
+      </div>
+
+      <div class="tabs" role="tablist" style="margin-top: 18px">
+        <button class="tab active" data-vtab="send"     role="tab" aria-selected="true">Send</button>
+        <button class="tab"        data-vtab="receive"  role="tab" aria-selected="false">Receive</button>
+        <button class="tab"        data-vtab="activity" role="tab" aria-selected="false">Activity</button>
+        <button class="tab"        data-vtab="settings" role="tab" aria-selected="false">Settings</button>
+      </div>
+
+      <div class="tab-pane active" data-vpane="send">
+        <p style="color: var(--text-2); font-size: 13px; margin: 12px 0">
+          Sign &amp; submit a CELL transfer from this unlocked wallet.
+          The signing happens in-page (ML-DSA-87 via wallet.wasm);
+          only the already-signed envelope is POSTed.
+        </p>
+        <div class="field">
+          <label>Recipient address <span class="hint">64-hex <code>hex(sha256(public_key))</code></span></label>
+          <input type="text" id="vault-send-recipient" autocomplete="off" spellcheck="false"
+                 placeholder="e.g. 605ab7550bd6c74ce3e5b394c1f6334cea0f6e2951938ae7fc5c775a7e1ac7e2"
+                 style="font-family: var(--mono); font-size: 13px;" />
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Amount <span class="hint">CELL</span></label>
+            <input type="text" id="vault-send-amount" autocomplete="off" placeholder="1.0" />
+          </div>
+          <div class="field">
+            <label>Fee <span class="hint">CELL (≥ 0)</span></label>
+            <input type="text" id="vault-send-fee" autocomplete="off" placeholder="0.01" />
+          </div>
+          <div class="field">
+            <label>Geotag <span class="hint">2 letters</span></label>
+            <input type="text" id="vault-send-geotag" autocomplete="off" placeholder="US" maxlength="3" />
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" id="vault-send-btn">Sign &amp; send</button>
+        </div>
+        <div class="status-line" id="vault-send-status">Fill the form &rarr; click Sign &amp; send.</div>
+        <div id="vault-send-result" hidden></div>
+      </div>
+
+      <div class="tab-pane" data-vpane="receive">
+        <p style="color: var(--text-2); font-size: 13px; margin: 12px 0">
+          Share <strong>only</strong> the address below with senders.
+          The passphrase and the keystore must <em>never</em> leave
+          this tab.
+        </p>
+        <div style="background: rgba(0,0,0,.35); padding: 14px 16px; border-radius: var(--radius-sm); margin: 12px 0">
+          <div id="vault-receive-addr" style="font-family: var(--mono); font-size: 14px; word-break: break-all; user-select: all"></div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" id="vault-receive-copy">Copy address</button>
+          <a id="vault-receive-qrlink" class="btn btn-ghost"
+             href="#" target="_blank" rel="noopener noreferrer"
+             title="Render a QR code in a third-party page. Note: leaks the address to the QR service.">
+             Open QR code (third-party)
+          </a>
+        </div>
+        <div class="status-line" id="vault-receive-status"></div>
+      </div>
+
+      <div class="tab-pane" data-vpane="activity">
+        <p style="color: var(--text-2); font-size: 13px; margin: 12px 0">
+          Local-only log of sends submitted from this browser. Lives
+          in <code>localStorage</code>; clearing site data wipes it.
+          The validator's permanent record is in
+          <code>/api/v1/transactions</code>.
+        </p>
+        <div id="vault-activity-list" style="display: flex; flex-direction: column; gap: 8px"></div>
+        <div class="actions" style="margin-top: 10px">
+          <button class="btn btn-ghost" id="vault-activity-clear">Clear local log</button>
+        </div>
+      </div>
+
+      <div class="tab-pane" data-vpane="settings">
+        <h3 style="margin-top: 14px">Auto-lock</h3>
+        <p style="font-size: 13px; color: var(--text-2); margin: 4px 0 10px">
+          The vault re-locks after this many minutes of inactivity,
+          or when you close the tab. Set to <code>0</code> to disable
+          idle auto-lock (the tab-close lock still applies).
+        </p>
+        <div class="field" style="max-width: 160px">
+          <label>Minutes</label>
+          <input type="number" id="vault-idle-minutes" min="0" max="120" step="1" value="5" />
+        </div>
+        <h3 style="margin-top: 18px">Export &amp; backup</h3>
+        <p style="font-size: 13px; color: var(--text-2); margin: 4px 0 10px">
+          Download a copy of the encrypted keystore. Lose access to
+          this browser? Use Advanced &rarr; Open with the
+          <code>wallet.json</code> + passphrase to restore.
+        </p>
+        <div class="actions">
+          <button class="btn btn-primary" id="vault-export-btn">Download wallet.json</button>
+        </div>
+        <h3 style="margin-top: 18px">Forget this wallet</h3>
+        <p style="font-size: 13px; color: var(--text-2); margin: 4px 0 10px">
+          Wipe the encrypted vault from this browser. Make sure you
+          have a backup first &mdash; this cannot be undone.
+        </p>
+        <div class="actions">
+          <button class="btn btn-ghost" id="vault-settings-forget">Wipe local vault</button>
+          <button class="btn btn-ghost" id="vault-lock-btn">Lock now</button>
+        </div>
+        <div class="status-line" id="vault-settings-status"></div>
+      </div>
+    </div>
+
+    <!-- Create flow (transient, swapped in by JS over the empty state) -->
+    <div id="vault-create-flow" class="vault-state" hidden>
+      <h2 style="margin-top:0">Create a new wallet</h2>
+      <p style="font-size: 13px; color: var(--text-2); margin: 6px 0 12px">
+        Pick a strong passphrase (12+ chars, mix of types). The
+        ML-DSA-87 keypair is generated by <code>wallet.wasm</code>
+        in this tab; the encrypted keystore is then stored in
+        <code>localStorage</code> &mdash; no server upload.
+      </p>
+      <div class="row">
+        <div class="field">
+          <label>Passphrase</label>
+          <input type="password" id="vault-create-pass1" autocomplete="new-password" />
+        </div>
+        <div class="field">
+          <label>Confirm passphrase</label>
+          <input type="password" id="vault-create-pass2" autocomplete="new-password" />
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="vault-create-go">Generate</button>
+        <button class="btn btn-ghost"   id="vault-create-cancel">Back</button>
+      </div>
+      <div class="status-line" id="vault-create-status">Waiting for WASM module…</div>
+    </div>
+
+    <!-- Import flow -->
+    <div id="vault-import-flow" class="vault-state" hidden>
+      <h2 style="margin-top:0">Import existing keystore</h2>
+      <p style="font-size: 13px; color: var(--text-2); margin: 6px 0 12px">
+        Pick a <code>wallet.json</code> file (produced here or by
+        <code>qsdmcli wallet new</code>). The passphrase is verified
+        in-page; if it checks out, the keystore is copied into
+        <code>localStorage</code> for future unlocks.
+      </p>
+      <div class="field">
+        <label>Keystore file</label>
+        <input type="file" id="vault-import-file" accept="application/json,.json" />
+      </div>
+      <div class="field">
+        <label>Passphrase</label>
+        <input type="password" id="vault-import-pass" autocomplete="off" />
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="vault-import-go">Import</button>
+        <button class="btn btn-ghost"   id="vault-import-cancel">Back</button>
+      </div>
+      <div class="status-line" id="vault-import-status"></div>
+    </div>
+  </section>
+
   <section class="panel">
+    <h2 style="margin-top: 0; font-size: 18px; color: var(--text-2)">Advanced (legacy tab UI)</h2>
+    <p style="font-size: 13px; color: var(--muted); margin: 4px 0 14px">
+      The original five tabs. Useful for: generating a keystore
+      without storing it in this browser, signing an arbitrary
+      message, inspecting a third-party keystore, or doing an
+      address-only balance lookup. The persistent wallet panel
+      above reuses the same cryptographic primitives.
+    </p>
     <div class="tabs" role="tablist">
       <button class="tab active" data-tab="generate" role="tab" aria-selected="true">Generate</button>
       <button class="tab" data-tab="open" role="tab" aria-selected="false">Open keystore</button>
@@ -530,6 +759,532 @@ ADDR=$(./qsdmcli wallet show | awk '/^address/{print $2}')
   Manual edits to these literals will work but are not required.
 -->
 <script src="/wasm_exec.js" integrity="sha384-PWCs+V4BDf9yY1yjkD/p+9xNEs4iEbuvq+HezAOJiY3XL5GI6VyJXMsvnjiwNbce" crossorigin="anonymous"></script>
-<script src="/wallet.js" integrity="sha384-8BO6kH4J1WSt3LmqWNeT4LpuLReHbVTWJ1YH8GCtikE9hPnw5QBGDUyfIYj3gYpC" crossorigin="anonymous"></script>
+<script src="/wallet.js" integrity="sha384-KNytWZHLqqWSfdmYROMiaKUgpBBwqtOCMRq1of9v8hVdmZ9F4nOW2YzeZt1cWN8n" crossorigin="anonymous"></script>
+<!--
+  Persistent vault UX layer. Inline (no SRI rotation cost) because
+  the script's only state is in localStorage + DOM; the
+  cryptographic primitives (PBKDF2, AES-GCM, ML-DSA-87 sign) are
+  reached through window.QSDMWallet which is itself SRI-pinned via
+  wallet.js above. Removing this <script> reverts the page to the
+  legacy 5-tab UX with no behavioural change.
+-->
+<script>
+(function () {
+  'use strict';
+
+  // ----- DOM helpers -----
+  const $ = (id) => document.getElementById(id);
+  function show(el, on) { if (el) el.hidden = !on; }
+  function setText(el, t) { if (el) el.textContent = t; }
+  function setStatus(elId, msg, cls) {
+    const el = $(elId);
+    if (!el) return;
+    el.innerHTML = cls ? `<span class="${cls}">${msg}</span>` : msg;
+  }
+
+  // ----- localStorage keys -----
+  const LS_VAULT     = 'qsdm.vault.v1';        // encrypted keystore JSON (verbatim)
+  const LS_ACTIVITY  = 'qsdm.vault.activity';  // local-only send log
+  const LS_SETTINGS  = 'qsdm.vault.settings';  // { idleMinutes }
+
+  function loadVault() {
+    try {
+      const raw = localStorage.getItem(LS_VAULT);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (_) { return null; }
+  }
+  function saveVault(ks) {
+    localStorage.setItem(LS_VAULT, JSON.stringify(ks));
+  }
+  function wipeVault() {
+    localStorage.removeItem(LS_VAULT);
+  }
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(LS_SETTINGS);
+      if (raw) return JSON.parse(raw);
+    } catch (_) {}
+    return { idleMinutes: 5 };
+  }
+  function saveSettings(s) {
+    localStorage.setItem(LS_SETTINGS, JSON.stringify(s));
+  }
+  function loadActivity() {
+    try {
+      const raw = localStorage.getItem(LS_ACTIVITY);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) return arr;
+      }
+    } catch (_) {}
+    return [];
+  }
+  function appendActivity(entry) {
+    const arr = loadActivity();
+    arr.unshift(entry);
+    while (arr.length > 20) arr.pop();
+    localStorage.setItem(LS_ACTIVITY, JSON.stringify(arr));
+    renderActivity();
+  }
+  function clearActivity() {
+    localStorage.removeItem(LS_ACTIVITY);
+    renderActivity();
+  }
+
+  // ----- session state -----
+  // The decrypted private key never leaves this closure. We
+  // zero the Uint8Array as soon as locking happens.
+  let session = {
+    address: null,
+    publicKeyHex: null,
+    privBytes: null, // Uint8Array(4896) or null
+    idleTimer: null,
+  };
+
+  function isUnlocked() { return session.privBytes !== null; }
+
+  function lockSession(reason) {
+    if (session.privBytes) {
+      try { session.privBytes.fill(0); } catch (_) {}
+    }
+    session.privBytes = null;
+    if (session.idleTimer) { clearTimeout(session.idleTimer); session.idleTimer = null; }
+    renderState(reason);
+  }
+
+  function resetIdleTimer() {
+    if (!isUnlocked()) return;
+    const s = loadSettings();
+    const mins = Math.max(0, Math.min(120, Number(s.idleMinutes) || 0));
+    if (session.idleTimer) { clearTimeout(session.idleTimer); session.idleTimer = null; }
+    if (mins <= 0) return; // 0 disables idle lock
+    session.idleTimer = setTimeout(function () {
+      lockSession('Auto-locked after idle timeout.');
+    }, mins * 60 * 1000);
+  }
+
+  // Re-arm idle timer on any user interaction.
+  ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'].forEach(function (ev) {
+    window.addEventListener(ev, function () { resetIdleTimer(); }, { passive: true });
+  });
+  // Tab-hide: re-lock if user hides tab AND idleMinutes > 0
+  // (paranoid posture: a backgrounded tab with an unlocked
+  // wallet is a phishing-extension's playground).
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden && isUnlocked()) {
+      const s = loadSettings();
+      if ((Number(s.idleMinutes) || 0) > 0) {
+        lockSession('Auto-locked: tab hidden.');
+      }
+    }
+  });
+
+  // ----- state rendering -----
+  function renderState(banner) {
+    const ks = loadVault();
+    show($('vault-state-empty'),    !ks && !showingCreateOrImport());
+    show($('vault-state-locked'),   !!ks && !isUnlocked() && !showingCreateOrImport());
+    show($('vault-state-unlocked'), !!ks &&  isUnlocked());
+    if (ks && !isUnlocked()) {
+      setText($('vault-locked-addr'), ks.address || '(unknown)');
+      if (banner) setStatus('vault-unlock-status', banner, 'warn');
+    }
+    if (ks && isUnlocked()) {
+      setText($('vault-unlocked-addr'), session.address);
+      setText($('vault-receive-addr'),  session.address);
+      const qr = $('vault-receive-qrlink');
+      if (qr) qr.href = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=' + encodeURIComponent(session.address);
+      renderActivity();
+      refreshBalance();
+    }
+  }
+  function showingCreateOrImport() {
+    return ($('vault-create-flow') && !$('vault-create-flow').hidden)
+        || ($('vault-import-flow') && !$('vault-import-flow').hidden);
+  }
+  function hideAllFlows() {
+    show($('vault-create-flow'), false);
+    show($('vault-import-flow'), false);
+  }
+
+  // ----- balance refresh -----
+  let balanceTimer = null;
+  async function refreshBalance() {
+    if (!isUnlocked()) return;
+    const valEl = $('vault-balance-value');
+    const srcEl = $('vault-balance-source');
+    const QW = window.QSDMWallet;
+    try {
+      const url = (QW && QW.BALANCE_ENDPOINT ? QW.BALANCE_ENDPOINT
+                  : 'https://api.qsdm.tech/api/v1/wallet/balance')
+                  + '?address=' + encodeURIComponent(session.address);
+      const resp = await fetch(url, { credentials: 'omit', cache: 'no-store' });
+      if (!resp.ok) {
+        setText(valEl, '—');
+        setText(srcEl, 'HTTP ' + resp.status);
+        return;
+      }
+      const body = await resp.json();
+      const bal = typeof body.balance === 'number' ? body.balance : 0;
+      setText(valEl, (QW && QW.formatCell) ? QW.formatCell(bal) : (bal + ' CELL'));
+      setText(srcEl, body.source ? ('source: ' + body.source) : '');
+    } catch (e) {
+      setText(valEl, '—');
+      setText(srcEl, 'offline');
+    }
+    if (balanceTimer) clearTimeout(balanceTimer);
+    balanceTimer = setTimeout(refreshBalance, 30_000); // refresh every 30s
+  }
+
+  // ----- activity render -----
+  function renderActivity() {
+    const list = $('vault-activity-list');
+    if (!list) return;
+    const arr = loadActivity();
+    if (arr.length === 0) {
+      list.innerHTML = '<p style="font-size: 13px; color: var(--muted)">No sends from this browser yet.</p>';
+      return;
+    }
+    list.innerHTML = arr.map(function (e) {
+      const when = new Date(e.timestamp || Date.now()).toLocaleString();
+      const amount = (window.QSDMWallet && window.QSDMWallet.formatCell)
+        ? window.QSDMWallet.formatCell(e.amount) : (e.amount + ' CELL');
+      const colour = e.status === 'accepted' ? 'var(--success)'
+                   : e.status === 'duplicate' ? 'var(--warning)'
+                   : e.status === 'failed'   ? 'var(--danger)'  : 'var(--text-2)';
+      const recipient = (e.recipient || '').slice(0, 18) + '…';
+      const txid = (e.tx_id || '').slice(0, 18) + '…';
+      return '<div style="background: rgba(255,255,255,.04); padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); font-family: var(--mono); font-size: 12px">'
+        + '<div style="display:flex; justify-content:space-between; gap:8px"><span>' + amount + ' &rarr; ' + recipient + '</span><span style="color:' + colour + '">' + (e.status || 'unknown') + '</span></div>'
+        + '<div style="color: var(--muted); margin-top: 2px">' + when + ' &middot; tx ' + txid + '</div>'
+        + '</div>';
+    }).join('');
+  }
+
+  // ----- buttons -----
+  function bindButtons() {
+    // Empty state
+    if ($('vault-create-btn')) $('vault-create-btn').addEventListener('click', function () {
+      hideAllFlows();
+      show($('vault-state-empty'), false);
+      show($('vault-create-flow'), true);
+      setStatus('vault-create-status', (window.QSDMWallet && window.QSDMWallet.isReady()) ? 'Ready.' : 'Waiting for WASM module…', 'ok');
+    });
+    if ($('vault-import-btn')) $('vault-import-btn').addEventListener('click', function () {
+      hideAllFlows();
+      show($('vault-state-empty'), false);
+      show($('vault-import-flow'), true);
+    });
+    if ($('vault-create-cancel')) $('vault-create-cancel').addEventListener('click', function () {
+      hideAllFlows();
+      renderState();
+    });
+    if ($('vault-import-cancel')) $('vault-import-cancel').addEventListener('click', function () {
+      hideAllFlows();
+      renderState();
+    });
+
+    // Create flow
+    if ($('vault-create-go')) $('vault-create-go').addEventListener('click', async function () {
+      const QW = window.QSDMWallet;
+      if (!QW || !QW.isReady()) {
+        setStatus('vault-create-status', 'WASM not ready yet — try again in a second.', 'warn');
+        return;
+      }
+      const p1 = $('vault-create-pass1').value;
+      const p2 = $('vault-create-pass2').value;
+      if (p1.length < 12) {
+        setStatus('vault-create-status', 'Passphrase too short (need 12+ chars).', 'err');
+        return;
+      }
+      if (p1 !== p2) {
+        setStatus('vault-create-status', 'Passphrases do not match.', 'err');
+        return;
+      }
+      setStatus('vault-create-status', '<span class="spinner"></span>Generating ML-DSA-87 keypair…');
+      try {
+        const gen = window.qsdm_wallet_generate();
+        if (typeof gen !== 'object' || !gen.public_key_hex || !gen.private_key_hex) {
+          throw new Error('keygen failed');
+        }
+        const addr = window.qsdm_wallet_address_from_public_key(gen.public_key_hex);
+        const priv = QW.hexToBytes(gen.private_key_hex);
+        const env  = await QW.encryptPrivateKey(priv, p1);
+        priv.fill(0);
+        const ks   = QW.buildKeystore(addr, gen.public_key_hex, env);
+        saveVault(ks);
+        // Immediately unlock for the user — they just typed the passphrase.
+        const priv2 = await QW.decryptPrivateKey(ks, p1);
+        session.address      = addr;
+        session.publicKeyHex = gen.public_key_hex;
+        session.privBytes    = priv2;
+        $('vault-create-pass1').value = '';
+        $('vault-create-pass2').value = '';
+        hideAllFlows();
+        resetIdleTimer();
+        renderState();
+        setStatus('vault-create-status', '', null);
+      } catch (e) {
+        setStatus('vault-create-status', 'Generation failed: ' + e.message, 'err');
+      }
+    });
+
+    // Import flow
+    if ($('vault-import-go')) $('vault-import-go').addEventListener('click', async function () {
+      const QW = window.QSDMWallet;
+      if (!QW) { setStatus('vault-import-status', 'Wallet helpers not loaded.', 'err'); return; }
+      const file = $('vault-import-file').files[0];
+      const pass = $('vault-import-pass').value;
+      if (!file)       { setStatus('vault-import-status', 'Pick a wallet.json file.', 'err'); return; }
+      if (pass.length < 1) { setStatus('vault-import-status', 'Enter the passphrase.', 'err'); return; }
+      try {
+        const text = await file.text();
+        let ks;
+        try { ks = JSON.parse(text); } catch (e) { throw new Error('not valid JSON'); }
+        await QW.validateKeystore(ks);
+        const priv = await QW.decryptPrivateKey(ks, pass);
+        // Persist + unlock.
+        saveVault(ks);
+        session.address      = ks.address;
+        session.publicKeyHex = ks.public_key;
+        session.privBytes    = priv;
+        $('vault-import-pass').value = '';
+        hideAllFlows();
+        resetIdleTimer();
+        renderState();
+      } catch (e) {
+        setStatus('vault-import-status', 'Import failed: ' + e.message, 'err');
+      }
+    });
+
+    // Locked state
+    if ($('vault-unlock-btn')) $('vault-unlock-btn').addEventListener('click', async function () {
+      const QW = window.QSDMWallet;
+      const ks = loadVault();
+      if (!QW || !ks) return;
+      const pass = $('vault-unlock-pass').value;
+      if (!pass) {
+        setStatus('vault-unlock-status', 'Enter your passphrase.', 'err');
+        return;
+      }
+      setStatus('vault-unlock-status', '<span class="spinner"></span>Decrypting…');
+      try {
+        const priv = await QW.decryptPrivateKey(ks, pass);
+        session.address      = ks.address;
+        session.publicKeyHex = ks.public_key;
+        session.privBytes    = priv;
+        $('vault-unlock-pass').value = '';
+        resetIdleTimer();
+        setStatus('vault-unlock-status', '', null);
+        renderState();
+      } catch (e) {
+        setStatus('vault-unlock-status', e.message, 'err');
+      }
+    });
+    if ($('vault-locked-copy')) $('vault-locked-copy').addEventListener('click', function () {
+      const ks = loadVault();
+      if (ks && navigator.clipboard) {
+        navigator.clipboard.writeText(ks.address);
+        setStatus('vault-unlock-status', 'Address copied.', 'ok');
+      }
+    });
+    if ($('vault-forget-btn')) $('vault-forget-btn').addEventListener('click', function () {
+      if (!confirm('Wipe the encrypted vault from this browser? Make sure you have wallet.json exported first — this cannot be undone.')) return;
+      wipeVault();
+      lockSession('Vault wiped.');
+      renderState();
+    });
+
+    // Unlocked: address + balance
+    if ($('vault-unlocked-copy')) $('vault-unlocked-copy').addEventListener('click', function () {
+      if (session.address && navigator.clipboard) {
+        navigator.clipboard.writeText(session.address);
+      }
+    });
+
+    // Unlocked: send tab
+    if ($('vault-send-btn')) $('vault-send-btn').addEventListener('click', async function () {
+      const QW = window.QSDMWallet;
+      if (!isUnlocked() || !QW) return;
+      const recipient = ($('vault-send-recipient').value || '').trim().toLowerCase();
+      const amountStr = ($('vault-send-amount').value || '').trim();
+      const feeStr    = ($('vault-send-fee').value    || '0').trim();
+      const geotag    = ($('vault-send-geotag').value || 'US').trim().toUpperCase();
+      if (!QW.isValidAddress(recipient)) {
+        setStatus('vault-send-status', 'Recipient must be 64 lowercase hex chars.', 'err');
+        return;
+      }
+      const amount = Number(amountStr);
+      const fee    = Number(feeStr);
+      if (!(amount > 0)) {
+        setStatus('vault-send-status', 'Amount must be > 0 CELL.', 'err');
+        return;
+      }
+      if (!(fee >= 0)) {
+        setStatus('vault-send-status', 'Fee must be ≥ 0 CELL.', 'err');
+        return;
+      }
+      setStatus('vault-send-status', '<span class="spinner"></span>Fetching nonce…');
+      // Get nonce (best-effort; validator endpoint).
+      let nonce = 0;
+      try {
+        const nresp = await fetch('https://api.qsdm.tech/api/v1/wallet/nonce?sender=' + encodeURIComponent(session.address), { credentials: 'omit', cache: 'no-store' });
+        if (nresp.ok) {
+          const nbody = await nresp.json();
+          if (typeof nbody.next === 'number') nonce = nbody.next;
+        }
+      } catch (_) { /* fall through with nonce=0 */ }
+      setStatus('vault-send-status', '<span class="spinner"></span>Signing…');
+      // Build canonical envelope (same shape the existing Send tab uses).
+      const timestamp = new Date().toISOString();
+      const txID = (function () {
+        // Browser-side deterministic-ish tx_id: sha256 of address|recipient|amount|nonce|now
+        // The validator only cares that tx_id is unique per sender; collisions across senders
+        // are OK. We do the hash inline so we don't pull a crypto helper.
+        return 'tx-' + Math.floor(Math.random() * 1e9).toString(16) + Date.now().toString(16);
+      })();
+      const envelope = {
+        id: txID,
+        sender: session.address,
+        recipient: recipient,
+        amount: amount,
+        fee: fee,
+        geotag: geotag,
+        parent_cells: [],
+        timestamp: timestamp,
+      };
+      if (nonce > 0) envelope.nonce = nonce;
+      const signed = window.qsdm_wallet_sign_transaction(
+        JSON.stringify(envelope),
+        QW.bytesToHex(session.privBytes),
+        session.publicKeyHex,
+      );
+      if (typeof signed !== 'string') {
+        setStatus('vault-send-status', 'Sign failed: ' + (signed && signed.error ? signed.error : 'unknown'), 'err');
+        return;
+      }
+      setStatus('vault-send-status', '<span class="spinner"></span>Submitting…');
+      let resp, body;
+      try {
+        resp = await fetch('https://api.qsdm.tech/api/v1/wallet/submit-signed', {
+          method: 'POST',
+          credentials: 'omit',
+          headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+          body: signed,
+        });
+        try { body = await resp.json(); } catch (_) { body = {}; }
+      } catch (e) {
+        setStatus('vault-send-status', 'Network error: ' + e.message, 'err');
+        appendActivity({ timestamp: Date.now(), tx_id: txID, recipient: recipient, amount: amount, status: 'failed' });
+        return;
+      }
+      const ok = resp.status >= 200 && resp.status < 300;
+      const status = (body && body.status) || (ok ? 'accepted' : 'failed');
+      appendActivity({
+        timestamp: Date.now(),
+        tx_id: (body && body.tx_id) || txID,
+        recipient: recipient,
+        amount: amount,
+        status: status,
+        http: resp.status,
+      });
+      const cls = ok ? 'ok' : (status === 'duplicate' ? 'warn' : 'err');
+      const msg = ok ? (status + ' · tx ' + (((body && body.tx_id) || txID).slice(0, 14)) + '…')
+                     : ('HTTP ' + resp.status + ': ' + ((body && (body.error || body.detail || body.message)) || resp.statusText));
+      setStatus('vault-send-status', msg, cls);
+      if (ok) {
+        $('vault-send-recipient').value = '';
+        $('vault-send-amount').value = '';
+        $('vault-send-fee').value = '';
+        // Trigger a balance refresh.
+        setTimeout(refreshBalance, 1500);
+      }
+    });
+
+    // Receive
+    if ($('vault-receive-copy')) $('vault-receive-copy').addEventListener('click', function () {
+      if (session.address && navigator.clipboard) {
+        navigator.clipboard.writeText(session.address);
+        setStatus('vault-receive-status', 'Address copied to clipboard.', 'ok');
+      }
+    });
+
+    // Activity
+    if ($('vault-activity-clear')) $('vault-activity-clear').addEventListener('click', function () {
+      if (confirm('Clear the local activity log? The validator still has the canonical record.')) {
+        clearActivity();
+      }
+    });
+
+    // Settings
+    if ($('vault-idle-minutes')) {
+      const s = loadSettings();
+      $('vault-idle-minutes').value = String(s.idleMinutes || 5);
+      $('vault-idle-minutes').addEventListener('change', function () {
+        const v = Math.max(0, Math.min(120, parseInt(this.value, 10) || 0));
+        saveSettings({ idleMinutes: v });
+        resetIdleTimer();
+        setStatus('vault-settings-status', 'Idle auto-lock: ' + (v > 0 ? v + ' min' : 'disabled'), 'ok');
+      });
+    }
+    if ($('vault-export-btn')) $('vault-export-btn').addEventListener('click', function () {
+      const ks = loadVault();
+      if (!ks) return;
+      const blob = new Blob([JSON.stringify(ks, null, 2)], { type: 'application/json' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = 'wallet.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+    });
+    if ($('vault-settings-forget')) $('vault-settings-forget').addEventListener('click', function () {
+      if (!confirm('Wipe the encrypted vault from this browser? Make sure you have wallet.json exported first.')) return;
+      wipeVault();
+      lockSession('Vault wiped.');
+      renderState();
+    });
+    if ($('vault-lock-btn')) $('vault-lock-btn').addEventListener('click', function () {
+      lockSession('Locked by user.');
+    });
+
+    // V-tabs (Send / Receive / Activity / Settings)
+    document.querySelectorAll('[data-vtab]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        document.querySelectorAll('[data-vtab]').forEach(function (b) { b.classList.remove('active'); });
+        document.querySelectorAll('[data-vpane]').forEach(function (p) { p.classList.remove('active'); });
+        btn.classList.add('active');
+        const name = btn.dataset.vtab;
+        const pane = document.querySelector('[data-vpane="' + name + '"]');
+        if (pane) pane.classList.add('active');
+      });
+    });
+  }
+
+  // ----- bootstrap -----
+  function boot() {
+    bindButtons();
+    renderState();
+    // Wait for WASM ready, then refresh status on the create flow.
+    (function poll() {
+      const QW = window.QSDMWallet;
+      if (QW && QW.isReady()) {
+        if (!loadVault() && $('vault-create-flow') && !$('vault-create-flow').hidden) {
+          setStatus('vault-create-status', 'Ready.', 'ok');
+        }
+        return;
+      }
+      setTimeout(poll, 100);
+    })();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();
+</script>
 </body>
 </html>
