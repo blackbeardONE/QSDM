@@ -1518,3 +1518,245 @@ tests:
             description: "qsdm_p2p_wallet_ingress_dedupe_skip_total on\ni1 has been incrementing at\n> 1/sec sustained for ≥15m. Inbound wallet\ntransactions are being deduplicated at high\nvolume — a peer (or many peers) is re-sending\nthe same tx_ids repeatedly via mesh wire +\nJSON gossip.\n\nCommon causes:\n  - A peer that rejoined recently and is\n    replaying its mempool aggressively.\n  - A buggy relayer with too-tight retry\n    cadence.\n  - Adversarial re-broadcast spam aimed at\n    amplifying gossip volume.\n\nThis is INFO severity because dedupe is\nactively protecting the chain — duplicates\nare not getting double-applied. The signal\nis useful for capacity planning and for\nspotting the buggy/adversarial source\nbefore they scale up.\n"
             runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#33-mode-c--qsdmp2pwalletingressdedupeburst"
             summary: "i1: wallet-tx dedupe skip rate > 1/sec for ≥15m"
+
+  # -------------------------------------------------------------------
+  # qsdm-security — MED-8 security event counters
+  # SECURITY_INCIDENT.md §3.1 .. §3.9
+  # -------------------------------------------------------------------
+
+  - name: "QSDMSecurityFailedLoginBurst — rate > 1/sec, for:10m"
+    interval: 1m
+    # 120/min = 2/sec sustained, 2x the 1/s
+    # threshold. 5m rate window saturates at 5m,
+    # then for:10m fires at 15m.
+    input_series:
+      - series: 'qsdm_security_failed_logins_total{instance="i1"}'
+        values: '0+120x30'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: QSDMSecurityFailedLoginBurst
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: QSDMSecurityFailedLoginBurst
+        exp_alerts:
+        - exp_labels:
+            instance: "i1"
+            severity: "warning"
+            subsystem: "security"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+            description: "qsdm_security_failed_logins_total is climbing\nat >1/s sustained for 10m. The AccountLockout\nmiddleware has not yet tripped (otherwise\nQSDMSecurityAccountLockoutBurst would also be\nfiring), which means the attacker is either\nspraying many usernames OR the lockout\nthreshold is set too high for the observed\nattack rate. SECURITY_INCIDENT.md §3.1 lists\nthe standard triage: tail audit log for the\ndistinct username count and source-IP /16\ndistribution, then decide between\nQSDM_LOCKOUT_THRESHOLD tightening (single\ntarget) or an upstream WAF block list\n(many targets / few IPs).\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#31-qsdmsecurityfailedloginburst"
+            summary: "i1: failed-login rate >1/s for 10m"
+
+  - name: "QSDMSecurityAccountLockoutBurst — increase > 5 in 15m, for:5m"
+    interval: 1m
+    # 1/min for 30m → increase[15m] reaches 15.
+    # 15m window saturates at 15m, for:5m fires at 20m.
+    input_series:
+      - series: 'qsdm_security_account_lockouts_total{instance="i1"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: QSDMSecurityAccountLockoutBurst
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: QSDMSecurityAccountLockoutBurst
+        exp_alerts:
+        - exp_labels:
+            instance: "i1"
+            severity: "critical"
+            subsystem: "security"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+            description: "qsdm_security_account_lockouts_total\nincremented by >5 in 15m. The lockout\nmanager only fires after the configured\nconsecutive-failure threshold, so this\nrepresents at least 5 distinct accounts\nthat absorbed enough wrong-password\nattempts to trigger lockout — a strong\nsignal of a coordinated credential-spray\nor stolen-password-dump replay. Cross-\nreference QSDMSecurityFailedLoginBurst\n(should be co-firing) and capture the\nfull audit log slice for forensics\nbefore the rate decays.\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#32-qsdmsecurityaccountlockoutburst"
+            summary: "i1: >5 account lockouts in 15m"
+
+  - name: "QSDMSecurityRateLimitViolationSpike — rate > 5/sec, for:10m"
+    interval: 1m
+    # 600/min = 10/sec sustained, 2x the 5/s
+    # threshold. 5m rate window saturates at 5m,
+    # then for:10m fires at 15m.
+    input_series:
+      - series: 'qsdm_security_rate_limit_violations_total{instance="i1"}'
+        values: '0+600x30'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: QSDMSecurityRateLimitViolationSpike
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: QSDMSecurityRateLimitViolationSpike
+        exp_alerts:
+        - exp_labels:
+            instance: "i1"
+            severity: "warning"
+            subsystem: "security"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+            description: "qsdm_security_rate_limit_violations_total\nis incrementing at >5/s sustained for 10m.\nPer-IP and per-role limits are tripping\nfaster than legitimate traffic ever would.\nTriage by aggregating the audit log on\nclient_ip — if the offender is a single\n/32 it is almost certainly a script and\ncan be hard-blocked at the LB; if the\noffender is a wide /16 the rate-limit\ntier should hold the line on its own\n(legitimate burst, no action needed).\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#33-qsdmsecurityratelimitviolationspike"
+            summary: "i1: rate-limit rejections >5/s for 10m"
+
+  - name: "QSDMSecurityCSRFFailureSpike — rate > 0.1/sec, for:5m"
+    interval: 1m
+    # 12/min = 0.2/sec sustained, 2x the 0.1/s
+    # threshold. 5m rate window saturates at 5m,
+    # then for:5m fires at 10m.
+    input_series:
+      - series: 'qsdm_security_csrf_failures_total{instance="i1"}'
+        values: '0+12x30'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: QSDMSecurityCSRFFailureSpike
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: QSDMSecurityCSRFFailureSpike
+        exp_alerts:
+        - exp_labels:
+            instance: "i1"
+            severity: "warning"
+            subsystem: "security"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+            description: "qsdm_security_csrf_failures_total is\nincrementing at >0.1/s sustained for 5m.\nCSRFMiddleware rejected a state-changing\nrequest because either the X-CSRF-Token\nheader was missing/mismatched against the\nqsdm_csrf cookie, OR the synchronizer-\ntoken store rejected it (expired / not\nissued / user-bind mismatch). A healthy\nbrowser SDK that fetched the token from\nGET /api/v1/csrf-token should never\ntrigger this — so the alert means either\nan active attack probe OR a freshly-\ndeployed client that skipped the\nhandshake. The audit log entry names\nwhich of the two conditions tripped.\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#34-qsdmsecuritycsrffailurespike"
+            summary: "i1: CSRF failures >0.1/s for 5m"
+
+  - name: "QSDMSecurityInvalidTokenSpike — rate > 1/sec, for:10m"
+    interval: 1m
+    # 120/min = 2/sec sustained, 2x the 1/s
+    # threshold.
+    input_series:
+      - series: 'qsdm_security_auth_invalid_token_total{instance="i1"}'
+        values: '0+120x30'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: QSDMSecurityInvalidTokenSpike
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: QSDMSecurityInvalidTokenSpike
+        exp_alerts:
+        - exp_labels:
+            instance: "i1"
+            severity: "warning"
+            subsystem: "security"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+            description: "qsdm_security_auth_invalid_token_total is\nclimbing at >1/s sustained for 10m.\nAuthMiddleware rejected presented JWTs as\nsignature-invalid, expired, or unparseable.\nOne-shot bursts are expected immediately\nafter a server-side ML-DSA key rotation —\nthe alert's 10m for: filters that. A\nsustained signal means a probe is trying\nforged JWTs OR an SDK was deployed with\nthe wrong issuer / audience / signing key.\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#35-qsdmsecurityinvalidtokenspike"
+            summary: "i1: invalid-JWT rate >1/s for 10m"
+
+  - name: "QSDMSecurityTokenRevokedHit — increase > 0 in 15m, for:5m"
+    interval: 1m
+    # 1/min for 30m → increase[15m] > 0 from t=1m.
+    # for:5m fires at 5m (rounded to scrape boundary).
+    input_series:
+      - series: 'qsdm_security_token_revoked_hits_total{instance="i1"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: QSDMSecurityTokenRevokedHit
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: QSDMSecurityTokenRevokedHit
+        exp_alerts:
+        - exp_labels:
+            instance: "i1"
+            severity: "critical"
+            subsystem: "security"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+            description: "qsdm_security_token_revoked_hits_total\nincremented in the last 15m. The\nTokenRevocationStore caught a JWT that\nits rightful owner had explicitly logged\nout (POST /api/v1/auth/logout). Because\nthe token's signature was still valid\n(otherwise AuthMiddleware would have\nfailed earlier), the replayer holds a\ncopy of the raw JWT — i.e. the token\nleaked. Treat as a credential-compromise\nevent. SECURITY_INCIDENT.md §3.6 walks\nthrough the forensic capture, the\nmandatory rotation of the user's\nkeystore, and the audit-log evidence\npreservation steps.\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#36-qsdmsecuritytokenrevokedhit"
+            summary: "i1: revoked-JWT replay attempt"
+
+  - name: "QSDMSecurityRequestSignatureFailureSpike — rate > 0.1/sec, for:5m"
+    interval: 1m
+    # 12/min = 0.2/sec sustained, 2x the 0.1/s
+    # threshold.
+    input_series:
+      - series: 'qsdm_security_request_signature_failed_total{instance="i1"}'
+        values: '0+12x30'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: QSDMSecurityRequestSignatureFailureSpike
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: QSDMSecurityRequestSignatureFailureSpike
+        exp_alerts:
+        - exp_labels:
+            instance: "i1"
+            severity: "warning"
+            subsystem: "security"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+            description: "qsdm_security_request_signature_failed_total\nis climbing at >0.1/s sustained for 5m.\nRequestSigningMiddleware rejected the\nHMAC over (method, path, body, ts) on\ninbound requests. Likely causes, in\ndescending order of probability:\n  1. SDK upgrade without the matching\n     secret update.\n  2. Clock skew between client and\n     server > MaxClockSkew (30s).\n  3. Active man-in-the-middle tampering\n     with bodies of in-flight requests.\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#37-qsdmsecurityrequestsignaturefailurespike"
+            summary: "i1: request signature failures >0.1/s for 5m"
+
+  - name: "QSDMSecurityRequestTimeoutSpike — rate > 0.5/sec, for:10m"
+    interval: 1m
+    # 60/min = 1/sec sustained, 2x the 0.5/s
+    # threshold.
+    input_series:
+      - series: 'qsdm_security_request_timeout_total{instance="i1"}'
+        values: '0+60x30'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: QSDMSecurityRequestTimeoutSpike
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: QSDMSecurityRequestTimeoutSpike
+        exp_alerts:
+        - exp_labels:
+            instance: "i1"
+            severity: "warning"
+            subsystem: "security"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+            description: "qsdm_security_request_timeout_total is\nincrementing at >0.5/s sustained for 10m.\nRequestTimeoutMiddleware cancelled the\nhandler context after the 30s deadline.\nTriage by correlating with handler-\nlatency histograms — if a single route\ndominates, it is a code-path bug; if\nthe distribution is flat across routes,\nit is a connection-holding attacker\n(Slowloris / hold-and-stall) and the\nmitigation is an upstream Read/Write\ntimeout reduction at the LB / proxy.\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#38-qsdmsecurityrequesttimeoutspike"
+            summary: "i1: per-request timeouts >0.5/s for 10m"
+
+  - name: "QSDMSecurityCORSRejectionSpike — rate > 1/sec, for:10m"
+    interval: 1m
+    # 120/min = 2/sec sustained, 2x the 1/s
+    # threshold.
+    input_series:
+      - series: 'qsdm_security_cors_rejections_total{instance="i1"}'
+        values: '0+120x30'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: QSDMSecurityCORSRejectionSpike
+        # Condition holds at this checkpoint but `for:` has not
+        # elapsed; no alert should be firing yet.
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: QSDMSecurityCORSRejectionSpike
+        exp_alerts:
+        - exp_labels:
+            instance: "i1"
+            severity: "warning"
+            subsystem: "security"
+          exp_annotations:
+            dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+            description: "qsdm_security_cors_rejections_total is\nclimbing at >1/s sustained for 10m.\nCORSMiddleware rejected a browser\npreflight or actual request because its\nOrigin header did not appear in the\nQSDM_CORS_ALLOWED_ORIGINS allowlist.\nTriage by aggregating on the rejected\nOrigin: a single repeated value means\na missing entry on the allowlist; a wide\ndistribution is a scanner that should be\nignored.\n"
+            runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#39-qsdmsecuritycorsrejectionspike"
+            summary: "i1: CORS rejections >1/s for 10m"

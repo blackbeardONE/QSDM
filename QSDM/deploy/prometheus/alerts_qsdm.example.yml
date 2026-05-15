@@ -2788,3 +2788,292 @@ groups:
             guard. The next planned apply WILL fail —
             this is the precursor signal to
             QSDMHotReloadApplyFailures.
+
+  # -----------------------------------------------------------------
+  # qsdm-security — MED-8 security event counters
+  # -----------------------------------------------------------------
+  # Surfaces the 11 atomic counters published by
+  # pkg/monitoring/security_metrics.go under the
+  # qsdm_security_* prefix. These counters are
+  # recorded from every middleware in the chain
+  # documented in pkg/api/server.go::setupMiddleware
+  # (SecurityHeaders → CORS → Audit → Deprecation →
+  # RequestTimeout → RateLimit → CSRF →
+  # RequestSigning → Auth → AdminAccess → mux), so
+  # an alert firing here pins the failure to a
+  # specific layer of the request-processing stack.
+  # The compatible runbook is SECURITY_INCIDENT.md;
+  # per-alert anchors are linked in each rule below.
+  # Thresholds chosen so a healthy operator-only
+  # node (admin login from a tooling jumpbox a few
+  # times a day, occasional SDK refresh) does NOT
+  # alarm — every threshold is calibrated against
+  # the SECURITY_AUDIT.md baseline traffic profile.
+  - name: qsdm-security
+    rules:
+      - alert: QSDMSecurityFailedLoginBurst
+        # >1 failed-login/sec sustained for 10m is well
+        # above the legitimate fat-fingered-password
+        # baseline and below the rate-limit threshold —
+        # the gap is exactly the credential-stuffing /
+        # password-spray window.
+        expr: rate(qsdm_security_failed_logins_total[5m]) > 1.0
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: security
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#31-qsdmsecurityfailedloginburst"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          summary: "{{ $labels.instance }}: failed-login rate >1/s for 10m"
+          description: |
+            qsdm_security_failed_logins_total is climbing
+            at >1/s sustained for 10m. The AccountLockout
+            middleware has not yet tripped (otherwise
+            QSDMSecurityAccountLockoutBurst would also be
+            firing), which means the attacker is either
+            spraying many usernames OR the lockout
+            threshold is set too high for the observed
+            attack rate. SECURITY_INCIDENT.md §3.1 lists
+            the standard triage: tail audit log for the
+            distinct username count and source-IP /16
+            distribution, then decide between
+            QSDM_LOCKOUT_THRESHOLD tightening (single
+            target) or an upstream WAF block list
+            (many targets / few IPs).
+
+      - alert: QSDMSecurityAccountLockoutBurst
+        # AccountLockoutManager only fires after N
+        # consecutive failures. >5 distinct lockouts
+        # in 15m means a coordinated, multi-user
+        # attack landed past the password layer —
+        # promote to HIGH severity.
+        expr: increase(qsdm_security_account_lockouts_total[15m]) > 5
+        for: 5m
+        labels:
+          severity: critical
+          subsystem: security
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#32-qsdmsecurityaccountlockoutburst"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          summary: "{{ $labels.instance }}: >5 account lockouts in 15m"
+          description: |
+            qsdm_security_account_lockouts_total
+            incremented by >5 in 15m. The lockout
+            manager only fires after the configured
+            consecutive-failure threshold, so this
+            represents at least 5 distinct accounts
+            that absorbed enough wrong-password
+            attempts to trigger lockout — a strong
+            signal of a coordinated credential-spray
+            or stolen-password-dump replay. Cross-
+            reference QSDMSecurityFailedLoginBurst
+            (should be co-firing) and capture the
+            full audit log slice for forensics
+            before the rate decays.
+
+      - alert: QSDMSecurityRateLimitViolationSpike
+        # >5 rate-limit-rejections/sec sustained for 10m
+        # = scraper / scripted client / DoS. Below this
+        # threshold a single misbehaving SDK can show
+        # transient rate-limit hits without it being an
+        # attack — so we want a conservative trigger.
+        expr: rate(qsdm_security_rate_limit_violations_total[5m]) > 5.0
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: security
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#33-qsdmsecurityratelimitviolationspike"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          summary: "{{ $labels.instance }}: rate-limit rejections >5/s for 10m"
+          description: |
+            qsdm_security_rate_limit_violations_total
+            is incrementing at >5/s sustained for 10m.
+            Per-IP and per-role limits are tripping
+            faster than legitimate traffic ever would.
+            Triage by aggregating the audit log on
+            client_ip — if the offender is a single
+            /32 it is almost certainly a script and
+            can be hard-blocked at the LB; if the
+            offender is a wide /16 the rate-limit
+            tier should hold the line on its own
+            (legitimate burst, no action needed).
+
+      - alert: QSDMSecurityCSRFFailureSpike
+        # CSRF failures from a healthy browser SDK
+        # should be ZERO once a client picks up its
+        # token. Sustained >0.1/s for 5m → either an
+        # active CSRF probe OR a deployed client that
+        # forgot to wire X-CSRF-Token, both worth
+        # immediate paging.
+        expr: rate(qsdm_security_csrf_failures_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: security
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#34-qsdmsecuritycsrffailurespike"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          summary: "{{ $labels.instance }}: CSRF failures >0.1/s for 5m"
+          description: |
+            qsdm_security_csrf_failures_total is
+            incrementing at >0.1/s sustained for 5m.
+            CSRFMiddleware rejected a state-changing
+            request because either the X-CSRF-Token
+            header was missing/mismatched against the
+            qsdm_csrf cookie, OR the synchronizer-
+            token store rejected it (expired / not
+            issued / user-bind mismatch). A healthy
+            browser SDK that fetched the token from
+            GET /api/v1/csrf-token should never
+            trigger this — so the alert means either
+            an active attack probe OR a freshly-
+            deployed client that skipped the
+            handshake. The audit log entry names
+            which of the two conditions tripped.
+
+      - alert: QSDMSecurityInvalidTokenSpike
+        # Stale JWTs from an old client deploy will
+        # produce a one-shot burst that decays in
+        # minutes. Sustained >1/s for 10m is a brute-
+        # force JWT forgery attempt OR a wholly-broken
+        # signing key on a peer / SDK.
+        expr: rate(qsdm_security_auth_invalid_token_total[5m]) > 1.0
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: security
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#35-qsdmsecurityinvalidtokenspike"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          summary: "{{ $labels.instance }}: invalid-JWT rate >1/s for 10m"
+          description: |
+            qsdm_security_auth_invalid_token_total is
+            climbing at >1/s sustained for 10m.
+            AuthMiddleware rejected presented JWTs as
+            signature-invalid, expired, or unparseable.
+            One-shot bursts are expected immediately
+            after a server-side ML-DSA key rotation —
+            the alert's 10m for: filters that. A
+            sustained signal means a probe is trying
+            forged JWTs OR an SDK was deployed with
+            the wrong issuer / audience / signing key.
+
+      - alert: QSDMSecurityTokenRevokedHit
+        # ANY hit on a revoked-token nonce is by
+        # definition post-logout replay. We do not
+        # want to ride out a 10-minute window
+        # waiting for "enough" hits — one is enough.
+        expr: increase(qsdm_security_token_revoked_hits_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          subsystem: security
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#36-qsdmsecuritytokenrevokedhit"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          summary: "{{ $labels.instance }}: revoked-JWT replay attempt"
+          description: |
+            qsdm_security_token_revoked_hits_total
+            incremented in the last 15m. The
+            TokenRevocationStore caught a JWT that
+            its rightful owner had explicitly logged
+            out (POST /api/v1/auth/logout). Because
+            the token's signature was still valid
+            (otherwise AuthMiddleware would have
+            failed earlier), the replayer holds a
+            copy of the raw JWT — i.e. the token
+            leaked. Treat as a credential-compromise
+            event. SECURITY_INCIDENT.md §3.6 walks
+            through the forensic capture, the
+            mandatory rotation of the user's
+            keystore, and the audit-log evidence
+            preservation steps.
+
+      - alert: QSDMSecurityRequestSignatureFailureSpike
+        # The request-signing middleware verifies a
+        # client-attached HMAC over (method, path,
+        # body, ts). Failures are typically
+        # operator-error during SDK rollout, but
+        # sustained >0.1/s for 5m is a tamper signal
+        # worth investigating.
+        expr: rate(qsdm_security_request_signature_failed_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: security
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#37-qsdmsecurityrequestsignaturefailurespike"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          summary: "{{ $labels.instance }}: request signature failures >0.1/s for 5m"
+          description: |
+            qsdm_security_request_signature_failed_total
+            is climbing at >0.1/s sustained for 5m.
+            RequestSigningMiddleware rejected the
+            HMAC over (method, path, body, ts) on
+            inbound requests. Likely causes, in
+            descending order of probability:
+              1. SDK upgrade without the matching
+                 secret update.
+              2. Clock skew between client and
+                 server > MaxClockSkew (30s).
+              3. Active man-in-the-middle tampering
+                 with bodies of in-flight requests.
+
+      - alert: QSDMSecurityRequestTimeoutSpike
+        # Per-request context timeout (MED-5) hits
+        # are a slow-handler signal in normal
+        # operation, but sustained >0.5/s for 10m
+        # while overall request rate is steady is
+        # the classic Slowloris fingerprint.
+        expr: rate(qsdm_security_request_timeout_total[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: security
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#38-qsdmsecurityrequesttimeoutspike"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          summary: "{{ $labels.instance }}: per-request timeouts >0.5/s for 10m"
+          description: |
+            qsdm_security_request_timeout_total is
+            incrementing at >0.5/s sustained for 10m.
+            RequestTimeoutMiddleware cancelled the
+            handler context after the 30s deadline.
+            Triage by correlating with handler-
+            latency histograms — if a single route
+            dominates, it is a code-path bug; if
+            the distribution is flat across routes,
+            it is a connection-holding attacker
+            (Slowloris / hold-and-stall) and the
+            mitigation is an upstream Read/Write
+            timeout reduction at the LB / proxy.
+
+      - alert: QSDMSecurityCORSRejectionSpike
+        # CORS rejections from a properly-configured
+        # SDK are normally zero. >1/s sustained for
+        # 10m is a deployed client that lost its
+        # origin entry OR an unauthorised cross-
+        # origin probe.
+        expr: rate(qsdm_security_cors_rejections_total[5m]) > 1.0
+        for: 10m
+        labels:
+          severity: warning
+          subsystem: security
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#39-qsdmsecuritycorsrejectionspike"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          summary: "{{ $labels.instance }}: CORS rejections >1/s for 10m"
+          description: |
+            qsdm_security_cors_rejections_total is
+            climbing at >1/s sustained for 10m.
+            CORSMiddleware rejected a browser
+            preflight or actual request because its
+            Origin header did not appear in the
+            QSDM_CORS_ALLOWED_ORIGINS allowlist.
+            Triage by aggregating on the rejected
+            Origin: a single repeated value means
+            a missing entry on the allowlist; a wide
+            distribution is a scanner that should be
+            ignored.

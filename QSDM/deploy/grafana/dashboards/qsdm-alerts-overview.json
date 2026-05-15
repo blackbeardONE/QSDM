@@ -49,7 +49,7 @@
         "x": 0,
         "y": 0
       },
-      "id": 153,
+      "id": 162,
       "panels": [],
       "title": "ARCH_SPOOF_INCIDENT.md  (3 alerts)",
       "type": "row"
@@ -257,7 +257,7 @@
         "x": 0,
         "y": 7
       },
-      "id": 154,
+      "id": 163,
       "panels": [],
       "title": "CONTRACTS_BRIDGE_INCIDENT.md  (2 alerts)",
       "type": "row"
@@ -400,7 +400,7 @@
         "x": 0,
         "y": 14
       },
-      "id": 155,
+      "id": 164,
       "panels": [],
       "title": "ENROLLMENT_INCIDENT.md  (5 alerts)",
       "type": "row"
@@ -738,7 +738,7 @@
         "x": 0,
         "y": 27
       },
-      "id": 156,
+      "id": 165,
       "panels": [],
       "title": "GOVERNANCE_AUTHORITY_INCIDENT.md  (3 alerts)",
       "type": "row"
@@ -946,7 +946,7 @@
         "x": 0,
         "y": 34
       },
-      "id": 157,
+      "id": 166,
       "panels": [],
       "title": "HOT_RELOAD_INCIDENT.md  (2 alerts)",
       "type": "row"
@@ -1089,7 +1089,7 @@
         "x": 0,
         "y": 41
       },
-      "id": 158,
+      "id": 167,
       "panels": [],
       "title": "MINING_LIVENESS.md  (2 alerts)",
       "type": "row"
@@ -1232,7 +1232,7 @@
         "x": 0,
         "y": 48
       },
-      "id": 159,
+      "id": 168,
       "panels": [],
       "title": "NETWORKING_INCIDENT.md  (3 alerts)",
       "type": "row"
@@ -1440,7 +1440,7 @@
         "x": 0,
         "y": 55
       },
-      "id": 160,
+      "id": 169,
       "panels": [],
       "title": "NGC_SUBMISSION_INCIDENT.md  (2 alerts)",
       "type": "row"
@@ -1583,7 +1583,7 @@
         "x": 0,
         "y": 62
       },
-      "id": 161,
+      "id": 170,
       "panels": [],
       "title": "OPERATOR_HYGIENE_INCIDENT.md  (4 alerts)",
       "type": "row"
@@ -1856,7 +1856,7 @@
         "x": 0,
         "y": 69
       },
-      "id": 162,
+      "id": 171,
       "panels": [],
       "title": "QUARANTINE_INCIDENT.md  (2 alerts)",
       "type": "row"
@@ -1999,7 +1999,7 @@
         "x": 0,
         "y": 76
       },
-      "id": 163,
+      "id": 172,
       "panels": [],
       "title": "REJECTION_FLOOD.md  (5 alerts)",
       "type": "row"
@@ -2337,7 +2337,7 @@
         "x": 0,
         "y": 89
       },
-      "id": 164,
+      "id": 173,
       "panels": [],
       "title": "REPUTATION_INCIDENT.md  (2 alerts)",
       "type": "row"
@@ -2480,7 +2480,605 @@
         "x": 0,
         "y": 96
       },
-      "id": 165,
+      "id": 174,
+      "panels": [],
+      "title": "SECURITY_INCIDENT.md  (9 alerts)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "**Alert**: `QSDMSecurityFailedLoginBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_failed_logins_total[5m]) > 1.0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#31-qsdmsecurityfailedloginburst",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 97
+      },
+      "id": 43,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(qsdm_security_failed_logins_total[5m])",
+          "instant": false,
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "QSDMSecurityFailedLoginBurst",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "**Alert**: `QSDMSecurityAccountLockoutBurst`\n\n**Severity**: `critical`\n\n**Trigger**: `increase(qsdm_security_account_lockouts_total[15m]) > 5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#32-qsdmsecurityaccountlockoutburst",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 5.0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 97
+      },
+      "id": 40,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "increase(qsdm_security_account_lockouts_total[15m])",
+          "instant": false,
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "QSDMSecurityAccountLockoutBurst",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "**Alert**: `QSDMSecurityRateLimitViolationSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_rate_limit_violations_total[5m]) > 5.0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#33-qsdmsecurityratelimitviolationspike",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 5.0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 97
+      },
+      "id": 45,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(qsdm_security_rate_limit_violations_total[5m])",
+          "instant": false,
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "QSDMSecurityRateLimitViolationSpike",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "**Alert**: `QSDMSecurityCSRFFailureSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_csrf_failures_total[5m]) > 0.1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#34-qsdmsecuritycsrffailurespike",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 97
+      },
+      "id": 42,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(qsdm_security_csrf_failures_total[5m])",
+          "instant": false,
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "QSDMSecurityCSRFFailureSpike",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "**Alert**: `QSDMSecurityInvalidTokenSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_auth_invalid_token_total[5m]) > 1.0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#35-qsdmsecurityinvalidtokenspike",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 103
+      },
+      "id": 44,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(qsdm_security_auth_invalid_token_total[5m])",
+          "instant": false,
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "QSDMSecurityInvalidTokenSpike",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "**Alert**: `QSDMSecurityTokenRevokedHit`\n\n**Severity**: `critical`\n\n**Trigger**: `increase(qsdm_security_token_revoked_hits_total[15m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#36-qsdmsecuritytokenrevokedhit",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 103
+      },
+      "id": 48,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "increase(qsdm_security_token_revoked_hits_total[15m])",
+          "instant": false,
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "QSDMSecurityTokenRevokedHit",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "**Alert**: `QSDMSecurityRequestSignatureFailureSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_request_signature_failed_total[5m]) > 0.1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#37-qsdmsecurityrequestsignaturefailurespike",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 103
+      },
+      "id": 46,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(qsdm_security_request_signature_failed_total[5m])",
+          "instant": false,
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "QSDMSecurityRequestSignatureFailureSpike",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "**Alert**: `QSDMSecurityRequestTimeoutSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_request_timeout_total[5m]) > 0.5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#38-qsdmsecurityrequesttimeoutspike",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.5
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 103
+      },
+      "id": 47,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(qsdm_security_request_timeout_total[5m])",
+          "instant": false,
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "QSDMSecurityRequestTimeoutSpike",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "**Alert**: `QSDMSecurityCORSRejectionSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_cors_rejections_total[5m]) > 1.0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#39-qsdmsecuritycorsrejectionspike",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 109
+      },
+      "id": 41,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(qsdm_security_cors_rejections_total[5m])",
+          "instant": false,
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "QSDMSecurityCORSRejectionSpike",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 115
+      },
+      "id": 175,
       "panels": [],
       "title": "SLASHING_INCIDENT.md  (4 alerts)",
       "type": "row"
@@ -2517,7 +3115,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 97
+        "y": 116
       },
       "id": 25,
       "options": {
@@ -2582,7 +3180,7 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 97
+        "y": 116
       },
       "id": 27,
       "options": {
@@ -2647,7 +3245,7 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 97
+        "y": 116
       },
       "id": 26,
       "options": {
@@ -2712,7 +3310,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 97
+        "y": 116
       },
       "id": 17,
       "options": {
@@ -2751,9 +3349,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 103
+        "y": 122
       },
-      "id": 166,
+      "id": 176,
       "panels": [],
       "title": "STORAGE_INCIDENT.md  (2 alerts)",
       "type": "row"
@@ -2790,9 +3388,9 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 104
+        "y": 123
       },
-      "id": 41,
+      "id": 50,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -2855,9 +3453,9 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 104
+        "y": 123
       },
-      "id": 40,
+      "id": 49,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -2894,9 +3492,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 110
+        "y": 129
       },
-      "id": 167,
+      "id": 177,
       "panels": [],
       "title": "STUB_DEPLOYMENT_INCIDENT.md  (1 alert)",
       "type": "row"
@@ -2933,9 +3531,9 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 111
+        "y": 130
       },
-      "id": 42,
+      "id": 51,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -2972,9 +3570,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 117
+        "y": 136
       },
-      "id": 168,
+      "id": 178,
       "panels": [],
       "title": "SUBMESH_POLICY_INCIDENT.md  (2 alerts)",
       "type": "row"
@@ -3011,9 +3609,9 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 118
+        "y": 137
       },
-      "id": 44,
+      "id": 53,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -3076,9 +3674,9 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 118
+        "y": 137
       },
-      "id": 43,
+      "id": 52,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -3115,9 +3713,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 124
+        "y": 143
       },
-      "id": 169,
+      "id": 179,
       "panels": [],
       "title": "TRUST_INCIDENT.md  (6 alerts)",
       "type": "row"
@@ -3154,9 +3752,9 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 125
+        "y": 144
       },
-      "id": 50,
+      "id": 59,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -3219,9 +3817,9 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 125
+        "y": 144
       },
-      "id": 47,
+      "id": 56,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -3284,9 +3882,9 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 125
+        "y": 144
       },
-      "id": 46,
+      "id": 55,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -3349,9 +3947,9 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 125
+        "y": 144
       },
-      "id": 49,
+      "id": 58,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -3414,9 +4012,9 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 131
+        "y": 150
       },
-      "id": 48,
+      "id": 57,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -3479,9 +4077,9 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 131
+        "y": 150
       },
-      "id": 45,
+      "id": 54,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -3518,9 +4116,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 137
+        "y": 156
       },
-      "id": 170,
+      "id": 180,
       "panels": [],
       "title": "WALLET_INCIDENT.md  (3 alerts)",
       "type": "row"
@@ -3557,9 +4155,9 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 138
+        "y": 157
       },
-      "id": 52,
+      "id": 61,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -3622,9 +4220,9 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 138
+        "y": 157
       },
-      "id": 53,
+      "id": 62,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -3687,9 +4285,9 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 138
+        "y": 157
       },
-      "id": 51,
+      "id": 60,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
