@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -86,7 +85,7 @@ func TestLogoutHandler_RevokesToken(t *testing.T) {
 	h := &Handlers{authManager: am}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
-	req = req.WithContext(context.WithValue(req.Context(), "claims", claims))
+	req = req.WithContext(ContextWithClaims(req.Context(), claims))
 	w := httptest.NewRecorder()
 	h.Logout(w, req)
 

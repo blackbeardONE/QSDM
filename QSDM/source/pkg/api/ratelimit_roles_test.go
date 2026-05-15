@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -125,7 +124,7 @@ func TestRoleRateLimiter_Middleware_WithClaims(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		req := httptest.NewRequest("GET", "/api/v1/test", nil)
-		ctx := context.WithValue(req.Context(), "claims", &Claims{Address: "user_addr", Role: "user"})
+		ctx := ContextWithClaims(req.Context(), &Claims{Address: "user_addr", Role: "user"})
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req.WithContext(ctx))
 		if rr.Code != http.StatusOK {
@@ -134,7 +133,7 @@ func TestRoleRateLimiter_Middleware_WithClaims(t *testing.T) {
 	}
 
 	req := httptest.NewRequest("GET", "/api/v1/test", nil)
-	ctx := context.WithValue(req.Context(), "claims", &Claims{Address: "user_addr", Role: "user"})
+	ctx := ContextWithClaims(req.Context(), &Claims{Address: "user_addr", Role: "user"})
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req.WithContext(ctx))
 	if rr.Code != http.StatusTooManyRequests {

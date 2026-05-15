@@ -36,7 +36,7 @@ func (h *Handlers) DeployContract(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims, ok := r.Context().Value("claims").(*Claims)
+	claims, ok := ClaimsFromContext(r.Context())
 	if !ok {
 		writeErrorResponse(w, http.StatusUnauthorized, "missing authentication")
 		return

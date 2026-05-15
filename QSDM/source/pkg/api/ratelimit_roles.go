@@ -128,7 +128,7 @@ func (rl *RoleRateLimiter) Middleware(next http.Handler) http.Handler {
 		role := "anonymous"
 		identifier := clientIP(r)
 
-		if claims, ok := r.Context().Value("claims").(*Claims); ok && claims != nil {
+		if claims, ok := ClaimsFromContext(r.Context()); ok {
 			if claims.Role != "" {
 				role = claims.Role
 			}

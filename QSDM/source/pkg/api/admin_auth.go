@@ -40,8 +40,8 @@ func AdminAccessMiddleware(cfg *config.Config, logger *logging.Logger) func(http
 				}
 			}
 			if cfg.AdminAPIRequireRole {
-				claims, ok := r.Context().Value("claims").(*Claims)
-				if !ok || claims == nil {
+				claims, ok := ClaimsFromContext(r.Context())
+				if !ok {
 					writeErrorResponse(w, http.StatusUnauthorized, "admin API requires authentication")
 					return
 				}

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -45,7 +44,7 @@ func TestAdminAccessMiddleware_AdminRole(t *testing.T) {
 		t.Fatalf("expected 401 without claims, got %d", w.Code)
 	}
 
-	ctx := context.WithValue(req.Context(), "claims", &Claims{Role: "user", UserID: "u1"})
+	ctx := ContextWithClaims(req.Context(), &Claims{Role: "user", UserID: "u1"})
 	req2 := httptest.NewRequest(http.MethodGet, "/api/admin/x", nil).WithContext(ctx)
 	w2 := httptest.NewRecorder()
 	h.ServeHTTP(w2, req2)
@@ -53,7 +52,7 @@ func TestAdminAccessMiddleware_AdminRole(t *testing.T) {
 		t.Fatalf("expected 403 for non-admin role, got %d", w2.Code)
 	}
 
-	ctx3 := context.WithValue(req.Context(), "claims", &Claims{Role: "admin", UserID: "alice"})
+	ctx3 := ContextWithClaims(req.Context(), &Claims{Role: "admin", UserID: "alice"})
 	req3 := httptest.NewRequest(http.MethodGet, "/api/admin/x", nil).WithContext(ctx3)
 	w3 := httptest.NewRecorder()
 	h.ServeHTTP(w3, req3)

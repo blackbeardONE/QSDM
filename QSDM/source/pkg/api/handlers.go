@@ -615,8 +615,8 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 		writeErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	claims, ok := r.Context().Value("claims").(*Claims)
-	if !ok || claims == nil {
+	claims, ok := ClaimsFromContext(r.Context())
+	if !ok {
 		writeErrorResponse(w, http.StatusUnauthorized, "missing authentication")
 		return
 	}
@@ -659,7 +659,7 @@ func (h *Handlers) CSRFTokenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var userID string
-	if claims, ok := r.Context().Value("claims").(*Claims); ok && claims != nil {
+	if claims, ok := ClaimsFromContext(r.Context()); ok {
 		userID = claims.UserID
 	}
 
@@ -889,7 +889,7 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 	address := r.URL.Query().Get("address")
 	if address == "" {
 		// Try to get from authenticated user if available
-		if claims, ok := r.Context().Value("claims").(*Claims); ok {
+		if claims, ok := ClaimsFromContext(r.Context()); ok {
 			address = claims.Address
 		} else {
 			writeErrorResponse(w, http.StatusBadRequest, "address parameter is required")
@@ -950,7 +950,7 @@ func (h *Handlers) GetWalletNonce(w http.ResponseWriter, r *http.Request) {
 		// without re-typing the sender field — symmetric with
 		// /wallet/balance, where claims.Address backs up the
 		// query param.
-		if claims, ok := r.Context().Value("claims").(*Claims); ok {
+		if claims, ok := ClaimsFromContext(r.Context()); ok {
 			sender = claims.Address
 		} else {
 			writeErrorResponse(w, http.StatusBadRequest, "sender query parameter is required")
@@ -1004,7 +1004,7 @@ func (h *Handlers) SendTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims, ok := r.Context().Value("claims").(*Claims)
+	claims, ok := ClaimsFromContext(r.Context())
 	if !ok {
 		monitoring.RecordWalletSend(monitoring.WalletSendResultUnauthenticated)
 		writeErrorResponse(w, http.StatusUnauthorized, "missing authentication")
@@ -1473,7 +1473,7 @@ func (h *Handlers) GetTransactions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	claims, ok := r.Context().Value("claims").(*Claims)
+	claims, ok := ClaimsFromContext(r.Context())
 	if !ok {
 		writeErrorResponse(w, http.StatusUnauthorized, "missing authentication")
 		return

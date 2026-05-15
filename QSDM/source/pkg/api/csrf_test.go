@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -278,7 +277,7 @@ func TestCSRFMiddleware_UserBindingEnforced(t *testing.T) {
 	// Bob attempts to replay Alice's token while authenticated as Bob.
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/send", strings.NewReader("{}"))
 	req.Header.Set(CSRFHeader, tok)
-	ctx := context.WithValue(req.Context(), "claims", &Claims{UserID: "bob"})
+	ctx := ContextWithClaims(req.Context(), &Claims{UserID: "bob"})
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -289,7 +288,7 @@ func TestCSRFMiddleware_UserBindingEnforced(t *testing.T) {
 	// Alice presents her own token while authenticated as Alice — passes.
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/send", strings.NewReader("{}"))
 	req2.Header.Set(CSRFHeader, tok)
-	ctx2 := context.WithValue(req2.Context(), "claims", &Claims{UserID: "alice"})
+	ctx2 := ContextWithClaims(req2.Context(), &Claims{UserID: "alice"})
 	req2 = req2.WithContext(ctx2)
 	w2 := httptest.NewRecorder()
 	h.ServeHTTP(w2, req2)
@@ -412,7 +411,7 @@ func TestCSRFTokenHandler_BindsToClaims(t *testing.T) {
 	h := &Handlers{csrfManager: cm}
 
 	req := httptest.NewRequest(http.MethodGet, CSRFTokenEndpoint, nil)
-	ctx := context.WithValue(req.Context(), "claims", &Claims{UserID: "alice"})
+	ctx := ContextWithClaims(req.Context(), &Claims{UserID: "alice"})
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
 	h.CSRFTokenHandler(w, req)

@@ -198,11 +198,18 @@ func (cm *CSRFManager) IssueToken(w http.ResponseWriter, userID string, secure b
 	if err != nil {
 		return "", err
 	}
+	// #nosec G124 -- HttpOnly intentionally false: the double-submit cookie
+	// pattern requires the client SDK to read this cookie and echo its value
+	// into CSRFHeader on every state-changing request. The token is bound to
+	// the authenticated user (claims.UserID) and validated by
+	// ValidateTokenForUser, so JS-readability does not expand the attack
+	// surface against the synchronizer-token check. Secure+SameSite=Strict
+	// + CSRF middleware together neutralise the standard CSRF threat model.
 	http.SetCookie(w, &http.Cookie{
 		Name:     CSRFCookie,
 		Value:    token,
 		Path:     "/",
-		HttpOnly: false, // intentionally readable by client JS so the SDK can mirror it into CSRFHeader
+		HttpOnly: false,
 		Secure:   secure,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   int(cm.tokenTTL.Seconds()),
@@ -265,7 +272,7 @@ func CSRFMiddleware(csrfManager *CSRFManager) func(http.Handler) http.Handler {
 
 			// Synchronizer-token check (server-side store + optional user binding).
 			var userID string
-			if claims, ok := r.Context().Value("claims").(*Claims); ok && claims != nil {
+			if claims, ok := ClaimsFromContext(r.Context()); ok {
 				userID = claims.UserID
 			}
 			if err := csrfManager.ValidateTokenForUser(headerToken, userID); err != nil {

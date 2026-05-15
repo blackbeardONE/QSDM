@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
@@ -173,15 +172,6 @@ func CORSMiddleware(cfg *CORSConfig) func(http.Handler) http.Handler {
 		})
 	}
 }
-
-// corsConfigCacheKey is the once.Do-style guard that prevents repeated
-// reparsing of the same config string on every request hot path.
-type corsConfigCache struct {
-	once sync.Once
-	cfg  *CORSConfig
-}
-
-var defaultCORSCache corsConfigCache
 
 // LoadCORSConfigFromEnv parses the QSDM_CORS_ALLOWED_ORIGINS env var (and
 // optional companions) into a CORSConfig. Empty environment → empty

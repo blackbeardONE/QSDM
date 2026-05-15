@@ -2,7 +2,6 @@ package api
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -51,9 +50,7 @@ func AuthMiddleware(authManager *AuthManager, logger *logging.Logger) func(http.
 				return
 			}
 
-			// Add claims to request context
-			ctx := context.WithValue(r.Context(), "claims", claims)
-			next.ServeHTTP(w, r.WithContext(ctx))
+			next.ServeHTTP(w, r.WithContext(ContextWithClaims(r.Context(), claims)))
 		})
 	}
 }
@@ -62,7 +59,7 @@ func AuthMiddleware(authManager *AuthManager, logger *logging.Logger) func(http.
 func RoleMiddleware(allowedRoles []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			claims, ok := r.Context().Value("claims").(*Claims)
+			claims, ok := ClaimsFromContext(r.Context())
 			if !ok {
 				writeErrorResponse(w, http.StatusUnauthorized, "missing authentication")
 				return
@@ -151,7 +148,7 @@ func AuditLogMiddleware(logger *logging.Logger) func(http.Handler) http.Handler 
 
 			// Extract user info from context if available
 			var userID, role string
-			if claims, ok := r.Context().Value("claims").(*Claims); ok {
+			if claims, ok := ClaimsFromContext(r.Context()); ok {
 				userID = claims.UserID
 				role = claims.Role
 			}

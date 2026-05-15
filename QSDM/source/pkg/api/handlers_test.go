@@ -550,7 +550,7 @@ func TestSubmeshSendTransaction_422NoMatchingRoute(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/send", bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
-	ctx := context.WithValue(req.Context(), "claims", &Claims{Address: ws.GetAddress(), Role: "user"})
+	ctx := ContextWithClaims(req.Context(), &Claims{Address: ws.GetAddress(), Role: "user"})
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
 	h.SendTransaction(w, req)
@@ -595,7 +595,7 @@ func TestSendTransaction_meshCompanionSecondBroadcast(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/send", bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
-	ctx := context.WithValue(req.Context(), "claims", &Claims{Address: ws.GetAddress(), Role: "user"})
+	ctx := ContextWithClaims(req.Context(), &Claims{Address: ws.GetAddress(), Role: "user"})
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
 	h.SendTransaction(w, req)
