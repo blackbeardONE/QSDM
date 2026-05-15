@@ -116,7 +116,7 @@
         { slug: "api-security",          title: "API security",                  repoPath: DOCS_PREFIX_REPO + "/API_SECURITY.md" },
         { slug: "cli-phase2",            title: "Phase 2 CLI guide",             repoPath: DOCS_PREFIX_REPO + "/PHASE2_CLI_USER_GUIDE.md" },
         { slug: "troubleshooting",       title: "Troubleshooting",               repoPath: DOCS_PREFIX_REPO + "/TROUBLESHOOTING.md" },
-        { slug: "security-audit",        title: "Security audit",                repoPath: DOCS_PREFIX_REPO + "/SECURITY_AUDIT.md" },
+        { slug: "security-audit",        title: "Security audit",                repoPath: DOCS_PREFIX_REPO + "/SECURITY_AUDIT.md", badge: "updated" },
         { slug: "comparative",           title: "Comparative analysis",          repoPath: DOCS_PREFIX_REPO + "/COMPARATIVE_ANALYSIS.md" },
         { slug: "final-comparison",      title: "Final comparison",              repoPath: DOCS_PREFIX_REPO + "/FINAL_COMPARISON.md" },
         { slug: "release-evidence-042",  title: "Release evidence v0.4.2",       repoPath: DOCS_PREFIX_REPO + "/RELEASE_EVIDENCE_v0.4.2.md", badge: "new" },
@@ -302,8 +302,9 @@
       html += '<div class="nav-section-title">' + escapeHtml(sec.title) + "</div>";
       sec.items.forEach(function (it) {
         var b = "";
-        if (it.badge === "new")  b = ' <span class="badge new">NEW</span>';
-        if (it.badge === "beta") b = ' <span class="badge beta">BETA</span>';
+        if (it.badge === "new")     b = ' <span class="badge new">NEW</span>';
+        if (it.badge === "beta")    b = ' <span class="badge beta">BETA</span>';
+        if (it.badge === "updated") b = ' <span class="badge updated">UPDATED</span>';
         html += '<a class="nav-item" data-slug="' + escapeAttr(it.slug) + '" href="#/' + escapeAttr(it.slug) + '">'
               + escapeHtml(it.title) + b + "</a>";
       });

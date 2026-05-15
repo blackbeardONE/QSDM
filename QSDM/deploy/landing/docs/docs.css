@@ -184,6 +184,7 @@ a:hover { color: var(--accent-2); text-decoration: underline; }
 }
 .nav-item .badge.new { color: var(--accent); }
 .nav-item .badge.beta { color: var(--accent-3); }
+.nav-item .badge.updated { color: var(--accent-3); }
 .nav-item.hidden { display: none; }
 .nav-section.hidden { display: none; }
 
