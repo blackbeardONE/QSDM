@@ -14,6 +14,92 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **WASM sandbox isolation test catch-up — `sc-01` (Critical) flipped
+  (60 → 61, 70.59 % → 71.76 %, 2026-05-15 post-`91c2dd2`).** Closes
+  the last `SevCritical` blocker in the `smart_contracts` category
+  with a hand-assembled WebAssembly module and two layers of
+  isolation tests. After this pass, `pkg/audit`'s
+  `smart_contracts` row is **4/4 PASSED**.
+  - **75-byte hand-assembled WASM 1.0 module
+    (`isolationModuleWASM`)** in
+    `pkg/wasm/isolation_test.go` + `pkg/contracts/wasm_isolation_test.go`.
+    Exports `memory` (1 page = 64 KiB), `set(value: i32) -> ()`
+    that writes the parameter to `memory[0..4]` via `i32.store`,
+    and `get() -> i32` that reads it back via `i32.load`. The
+    file header decodes the binary byte-by-byte against Wasm
+    1.0 §5 (type / function / memory / export / code sections)
+    so a future reader doesn't need a hex dump tool to validate
+    the bytecode.
+  - **Layer 1 — wazero memory model
+    (`pkg/wasm/isolation_test.go`, 2 tests):**
+    - `TestWazeroRuntime_LinearMemory_IsolatedBetweenInstances` —
+      instantiate the same bytecode in two separate
+      `WazeroRuntime`s, write `42` into A and `99` into B,
+      assert each `get()` returns its own write. Re-run with a
+      third write into B to catch a "shared-but-not-instantly-
+      observable" failure mode the pair-of-writes would miss.
+    - `TestWazeroRuntime_RuntimeInstance_Distinct` — structural
+      guard that `NewWazeroRuntime` returns fresh
+      `wazero.Runtime` + `wazero.Module` pointers per call
+      (a process-wide-singleton regression would silently pass
+      the linear-memory test).
+  - **Layer 2 — engine wiring
+    (`pkg/contracts/wasm_isolation_test.go`, 3 tests):**
+    - `TestContractEngine_PerContract_RuntimeIsolation_NoCrossLeak`
+      — deploy two contracts via `engine.DeployContract` with
+      byte-identical bytecode, drive `engine.contractRTs[contract-A]`
+      and `[contract-B]` through their `set`/`get` exports,
+      assert no cross-contract state leak (the headline `sc-01`
+      assertion).
+    - `TestContractEngine_DeployContract_FreshRuntimePerContract`
+      — deploy 3 contracts, assert the 3 `*WazeroRuntime` Go
+      pointers are mutually distinct (catches a regression
+      that promoted the first `rt` into a shared `wazeroRT`).
+    - `TestContractEngine_DeployContract_NonWASMSkipsRuntime`
+      — negative: plain-text + truncated-Wasm payloads must
+      NOT acquire a runtime entry. The engine's
+      error-tolerant `DeployContract` (engine.go:134 `if rtErr
+      == nil`) silently ignores Wasm-compile failures, so this
+      test pins the "no runtime for non-Wasm code" invariant.
+  - **Audit checklist (`pkg/audit/checklist.go`):** `sc-01`
+    flipped to `StatusPassed` with
+    `ReviewedBy="evidence:in-tree-tests"` and
+    `ReviewedAt="2026-05-15T16:30:00Z"`. `Notes` field carries
+    pointers to all 5 test functions, the engine-wiring code
+    sites (`engine.go:132-137` deploy + `engine.go:250-258`
+    execute lookup), and the two-layer isolation rationale.
+    `runtimeVerifiedItems` extended in
+    `pkg/audit/checklist_extra_test.go` to include `sc-01`.
+  - **e2e test rebase (`tests/e2e_test.go`):**
+    `TestE2E_AuditChecklistReview` previously used `authz-01` +
+    `sc-01` for the `+2 pending → passed` delta. With `sc-01`
+    now `StatusPassed` in `defaultItems()`, that delta would be
+    `+1`. Swap `sc-01` for `tok-01` (still `SevCritical`
+    pending, BLOCKED on external counsel — a test-only
+    mutation, not a claim about external review status).
+  - **Test posture (windows/amd64, `CGO_ENABLED=0`, go1.25.0
+    via `GOTOOLCHAIN=go1.25.0+auto`, `GOSUMDB=sum.golang.org`):**
+    `pkg/wasm` 0.627s (`-run 'WazeroRuntime_(LinearMemory|RuntimeInstance)'`)
+    + 1.428s full short suite; `pkg/contracts` 1.087s
+    (`-run 'PerContract_RuntimeIsolation|DeployContract_(FreshRuntime|NonWASMSkips)'`)
+    + 0.691s full suite; `pkg/audit` 0.512s;
+    `tests/` `-short -run Audit` 1.380s.
+  - **BLR1 live deploy:** binary cross-compiled from this
+    commit (`-trimpath -ldflags='-s -w' CGO_ENABLED=0 GOOS=linux
+    GOARCH=amd64`), sha256
+    `1cd9949cb545cca25b168f72ad5024badc9fdf897a4b3e59a961baa45819b649`,
+    32,653,496 bytes. Atomic `mv` over `/opt/qsdm/qsdm`
+    (previous binary at `/opt/qsdm/qsdm.pre-wasm-iso.bak`),
+    `systemctl restart qsdm.service` → `active (running)`,
+    PID 347730, chain restored. Caddy returned 502 for ~3s
+    while the node finished its `restored from disk` boot
+    sequence; live `/api/v1/audit/summary` reports **60/85
+    passed (70.59 %)** post-stabilisation, blocking findings
+    **14** (down from 16). The +3 vs the previous deploy's
+    57/85 reflects parallel session `61a0626`'s `infra-01` +
+    `infra-02` flips landing on the same binary together with
+    this pass's `sc-01`.
+
 - **`infra-01` + `infra-02` audit flip — 2 items + Dockerfile USER
   drift fix + `AuthManager` Charming123 unreachable-fallback
   cleanup (57 → 59, 67.06 % → 69.41 %, 2026-05-15 post-`db82128`).**

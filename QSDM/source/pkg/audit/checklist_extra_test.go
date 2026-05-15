@@ -15,7 +15,7 @@ var runtimeVerifiedItems = []string{
 	"api-01", "api-02", "api-03", "api-05", "api-06",
 	"auth-01", "auth-02", "auth-03", "auth-05",
 	"crypto-01", "crypto-02", "crypto-03", "crypto-04", "crypto-05",
-	"sc-02", "sc-03", "sc-04",
+	"sc-01", "sc-02", "sc-03", "sc-04",
 	"gov-01", "gov-02", "gov-03",
 	"rebrand-01", "rebrand-02", "rebrand-04", "rebrand-05", "rebrand-06", "rebrand-07",
 	"tok-02", "tok-03",
