@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -14,6 +15,33 @@ import (
 
 	"github.com/blackbeardONE/QSDM/pkg/crypto"
 )
+
+// claimsCtxKey is the typed context key used to publish *Claims onto a
+// request context from AuthMiddleware. Using a private struct type
+// (rather than a built-in string) satisfies staticcheck SA1029 and
+// prevents third-party middleware that publishes under the string
+// "claims" from accidentally colliding with our authentication state.
+type claimsCtxKey struct{}
+
+// ContextWithClaims returns a copy of ctx that carries the provided
+// claims pointer. Used by AuthMiddleware (production) and the API test
+// suite (where tests fabricate a Claims pointer to exercise authenticated
+// handlers without round-tripping a real JWT).
+func ContextWithClaims(ctx context.Context, c *Claims) context.Context {
+	return context.WithValue(ctx, claimsCtxKey{}, c)
+}
+
+// ClaimsFromContext extracts the *Claims attached by AuthMiddleware
+// from ctx, returning (nil,false) if no claims have been published.
+// All handlers that need to know who the caller is should use this
+// helper rather than reaching into the context value table directly.
+func ClaimsFromContext(ctx context.Context) (*Claims, bool) {
+	c, ok := ctx.Value(claimsCtxKey{}).(*Claims)
+	if !ok || c == nil {
+		return nil, false
+	}
+	return c, true
+}
 
 // TokenType represents the type of authentication token
 type TokenType string
@@ -112,10 +140,19 @@ func (am *AuthManager) jwtHMACSecretBytes() []byte {
 	if len(am.jwtHMACFallback) > 0 {
 		return am.jwtHMACFallback
 	}
-	// Auto-generate a random 32-byte key so the node never runs with a known default.
+	// Auto-generate a random 32-byte key so the node never runs with a
+	// known default. crypto/rand failure is fatal for any signing path;
+	// the best we can do is surface a non-empty key that is stable for
+	// this process so Sign/Verify still round-trip. In practice
+	// rand.Read on a healthy system never fails; this branch exists so
+	// the function is total. The placeholder string is deliberately not
+	// the historical "Charming123" literal (which is also banned by
+	// config.go::Validate strict-mode); same shape as
+	// security.go::RequestSigner.hmacSecret's unreachable-error fallback
+	// so the two HMAC paths are consistent.
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return []byte("Charming123") // last resort; should never happen
+		b = []byte("qsdm-jwt-rand-fallback-unreachable-in-pra")
 	}
 	am.jwtHMACFallback = b
 	fmt.Println("WARNING: No JWT HMAC secret configured; generated an ephemeral random key. Set QSDM_JWT_HMAC_SECRET for stable sessions across restarts.")

@@ -22,7 +22,7 @@ var runtimeVerifiedItems = []string{
 	"mining-02", "mining-03", "mining-04",
 	"trust-01", "trust-02", "trust-03", "trust-04", "trust-05", "trust-06",
 	"supply-01", "supply-02", "supply-04", "supply-05", "supply-06", "supply-07", "supply-08",
-	"infra-03",
+	"infra-01", "infra-02", "infra-03",
 	"runtime-01", "runtime-02", "runtime-03", "runtime-04", "runtime-05", "runtime-06", "runtime-07",
 }
 

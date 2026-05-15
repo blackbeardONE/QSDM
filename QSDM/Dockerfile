@@ -87,4 +87,14 @@ ENV QSDM_MINING_ENABLED=false
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
   CMD wget -q -O- http://127.0.0.1:8080/api/v1/health/live > /dev/null || exit 1
 
+# Minimal non-root user for the runtime stage (mirrors Dockerfile.validator
+# lines 91-95 — keep in sync per the comment at the top of this file).
+# K8s deploy paths get the same invariant via securityContext.runAsUser=65532
+# in QSDM/deploy/kubernetes/deployment.yaml (commit d5b176b); this directive
+# closes the docker-run-without-securityContext path so the legacy single-
+# image build is not a regression vs the split validator + miner topology.
+RUN addgroup -S qsdm && adduser -S -G qsdm qsdm && \
+    mkdir -p /app/data && chown -R qsdm:qsdm /app
+USER qsdm
+
 CMD ["qsdm"]

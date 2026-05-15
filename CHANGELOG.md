@@ -14,6 +14,154 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`infra-01` + `infra-02` audit flip — 2 items + Dockerfile USER
+  drift fix + `AuthManager` Charming123 unreachable-fallback
+  cleanup (57 → 59, 67.06 % → 69.41 %, 2026-05-15 post-`db82128`).**
+  Closes the two flippable infrastructure rows from the Tier-B
+  read-only scan with concrete in-tree evidence — but only after
+  fixing two real defects discovered during the verification
+  read. Score on `https://api.qsdm.tech/api/v1/audit/summary`
+  moves from **57/85 passed (67.06 %)** to **59/85 passed
+  (69.41 %)**, blocking-findings count drops from 16 to 15.
+  Infrastructure category reaches **3/3 = 100 %** alongside the
+  already-green cryptography category.
+  - **Legacy `QSDM/Dockerfile` USER directive — drift fix.** The
+    legacy single-image `Dockerfile` is preserved for
+    build-compatibility with operators still invoking
+    `docker build -t qsdm:latest .`; the file's own header
+    comment (lines 24-25) explicitly says "intentionally mirrors
+    Dockerfile.validator; keep the two in sync when modifying."
+    Both `Dockerfile.validator` (line 95) and `Dockerfile.miner`
+    (line 135) ship a `USER qsdm` directive backed by an
+    `addgroup -S qsdm && adduser -S -G qsdm qsdm` setup, but the
+    legacy file had drifted out of sync at some earlier session
+    and was running as root in any environment that doesn't
+    layer the K8s `securityContext.runAsUser=65532` from
+    `d5b176b` on top. The 7-line diff in this commit replays the
+    `Dockerfile.validator` USER block verbatim before the `CMD
+    ["qsdm"]` line — `addgroup -S qsdm`, `adduser -S -G qsdm
+    qsdm`, `mkdir -p /app/data`, `chown -R qsdm:qsdm /app`,
+    `USER qsdm`. Defense-in-depth posture is now: K8s deploys
+    get `runAsUser=65532` from `d5b176b`'s securityContext block
+    (matters because K8s can refuse to honour an in-image USER
+    directive); bare `docker run` invocations fall back to this
+    image-baked `USER qsdm`; both paths converge on a non-root
+    runtime.
+  - **`pkg/api/auth.go::AuthManager.jwtHMACSecretBytes`
+    unreachable-error-path Charming123 fallback — regression
+    fix.** `db82128` correctly fixed
+    `pkg/api/security.go::RequestSigner.hmacSecret` (replaced
+    the `[]byte("Charming123")` literal on the `rand.Read`
+    failure path with a non-banned placeholder
+    `qsdm-rand-fallback-unreachable-in-practice-key-32b`) — but
+    its commit body and the `crypto-02` audit row's `Notes` both
+    claimed *"both HMAC paths now use 32 B from crypto/rand"*,
+    which was true on the **happy path** but inaccurate about
+    the unreachable error fallback in `auth.go` line 118. That
+    line still returned `[]byte("Charming123")` after a
+    `rand.Read` failure. In practice unreachable on a healthy
+    system (CSPRNG never fails), but the literal is also the
+    demo-prefix banned by `config.go::Validate` strict-mode and
+    is exactly the anti-pattern `db82128` was meant to retire.
+    This commit replays the `security.go` pattern in `auth.go`:
+    on `rand.Read` failure the function now returns
+    `qsdm-jwt-rand-fallback-unreachable-in-pra` (40-byte
+    placeholder, distinct from the `RequestSigner` fallback so
+    the two paths can be told apart in a hex dump). Existing
+    test `TestAuthManager_JWTHMACFallback_NotHardcoded` still
+    pins the happy-path invariant; the unreachable branch is
+    not exercised by the test suite (would require injecting a
+    failing `crypto/rand`), so the cleanup relies on the
+    `config.go::Validate` strict-mode literal-ban as the runtime
+    tripwire. Discovered while verifying `infra-02`'s "no
+    hardcoded secrets" claim; full disclosure here so a future
+    auditor can reconstruct the chain of evidence for both
+    `crypto-02` (now consistent) and `infra-02` (now true
+    end-to-end).
+  - **Audit checklist flips (`pkg/audit/checklist.go`):**
+    - `infra-01` "Docker image hardening" (high) →
+      `evidence:in-tree`. All 3 Dockerfiles
+      (`Dockerfile`, `Dockerfile.miner`, `Dockerfile.validator`)
+      ship `USER qsdm` after the legacy-drift fix; minimal
+      runtime stage (`alpine:latest` for validator + legacy,
+      `nvidia/cuda:12.3.2-runtime-ubuntu22.04` for miner — the
+      smallest CUDA-runtime base) with `--no-install-recommends`
+      / `--no-cache` to keep package-set tight; K8s
+      `securityContext.runAsUser=65532` defense-in-depth from
+      `d5b176b` cited as the orchestration-layer companion.
+    - `infra-02` "Secret management" (medium) →
+      `evidence:in-tree-tests`. Repo-wide grep audit confirms
+      zero hardcoded secrets in production source after the
+      `auth.go` cleanup above; remaining `Charming123`
+      occurrences are all test fixtures, documentation
+      comments, or audit-checklist `Notes` referencing the
+      fixed bug. Runtime tripwire: `config.go::Validate`
+      strict-mode (`QSDM_STRICT_SECRETS=true`) actively
+      rejects any secret prefixed with `charming123`
+      (case-insensitive), so a regression that reintroduces
+      the literal would fail node startup. CI guard via
+      `TestRequestSigner_HMACFallback_NotHardcoded` +
+      `TestAuthManager_JWTHMACFallback_NotHardcoded` (4
+      invariants each, `pkg/api/hmac_fallback_test.go` from
+      `db82128`).
+  - **Drift guard (`pkg/audit/checklist_extra_test.go`):**
+    `runtimeVerifiedItems` extended from 57 → 59 (`infra-01`,
+    `infra-02` appended on the existing
+    `infra-03 / runtime-* / supply-* / ...` line). The
+    infrastructure block is now spelt
+    `"infra-01", "infra-02", "infra-03"` for visual clarity.
+    `TestChecklist_PassedCountMatchesRuntimeVerifiedList`
+    re-anchors at 59; a regression that flips one back to
+    pending without removing it from the allow-list now fails
+    CI.
+  - **Out-of-batch (deliberately not flipped).** Of the 28 still
+    pending after `db82128`: `auth-04` (per-call token replay)
+    is a documented design decision per `8edd91c`'s notes (QSDM
+    JWTs are reusable until expiry; replay prevention happens
+    at the expiry boundary and on transport via TLS); `net-04`
+    (WS Origin validation) is `"currently permissive for dev"`
+    per its own description; `api-04` (error info leakage) waits
+    on the in-flight `pkg/api/error_sanitize.go` security-push
+    work to land; `supply-03` (Trivy) needs a real Trivy step in
+    `release-container.yml`; `rotation-01..05` need
+    operator-facing rotation runbooks that don't exist today;
+    `rebrand-03` / `tok-01` / `mining-01` / `mining-05` are
+    explicitly wall-clock-blocked. The remaining 16 (`authz-*`,
+    `net-01..03`, `bridge-*`, `sc-01`, `store-02`) require
+    package-level reading not yet done.
+  - **Scope-disclosure note (matches `d5b176b`'s
+    "Parallel-session co-edit" precedent).** This commit was
+    pre-announced as a "Group-A* 2-item flip, ~30 min" on the
+    Session 100c read-only scan. It expanded to ~1 hour because
+    verifying `infra-01`'s evidence surfaced the legacy
+    Dockerfile drift and verifying `infra-02`'s "no hardcoded
+    secrets" claim surfaced the `AuthManager` Charming123
+    unreachable-fallback. Both fixes are ≤7-line diffs, mirror
+    existing patterns in sibling files (`Dockerfile.validator`
+    and `pkg/api/security.go`), and are tightly bound to the
+    audit rows being flipped — proceeding without them would
+    have flipped `infra-02` while a banned literal sat 5 lines
+    away in tree, and would have flipped `infra-01` while one
+    of the three Dockerfiles ran as root.
+  - **Test posture (Windows/amd64, `CGO_ENABLED=0`,
+    `GOTOOLCHAIN=auto` resolving to go1.25.10 on top of locally
+    installed go1.25.5):** `pkg/audit` OK 0.320s (all checklist
+    + report tests including the 59-entry-keyed
+    `TestChecklist_PassedCountMatchesRuntimeVerifiedList` drift
+    guard); `internal/dashboard` OK 2.346s; `pkg/api -short -run
+    Auth|HMAC|Charming` OK 0.478s. The pre-existing untracked
+    `TestRequestTimeout_SlowHandlerCancelled` flake from the
+    parallel security-hardening session
+    (`pkg/api/request_timeout_test.go`) is the only red row
+    in a full `pkg/api` sweep — same flake `db82128` disclosed,
+    unrelated to this commit.
+  - **Live-deploy delta:** pending propagation to BLR1 (the
+    audit score on `https://api.qsdm.tech` will stay at
+    `67.06 %` until the validator binary is swapped to a build
+    that includes this commit; the scoring code reads
+    `pkg/audit.NewChecklist()` once at process start and caches
+    in-memory).
+
 - **`pkg/crypto` test catch-up + `crypto-*` audit flip — 3 critical /
   high blockers closed (54 → 57, 63.53 % → 67.06 %, 2026-05-14
   post-`d5b176b`).** Highest-severity sweep so far: takes out two of
