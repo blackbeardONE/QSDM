@@ -14,6 +14,142 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`authz-01..04` audit flip — all 4 authorisation rows closed
+  (61 → 65, 71.76 % → 76.47 %, 2026-05-15 post-`5b0c9ed`).** Closes
+  the entire `authorisation` category by pinning evidence to four
+  existing in-tree test files that prove the underlying controls.
+  Live score on `https://api.qsdm.tech/api/v1/audit/summary`
+  observed **65/85 (76.47 %)** with `blocking_count=11` post-deploy
+  (was 14 pre-deploy). The 4 flips drop 3 blocking items
+  (`authz-01` SevCritical, `authz-02` SevHigh, `authz-04` SevHigh);
+  `authz-03` is SevMedium so does not count as blocking but still
+  contributes to the percentage. Note: the live count moves +5 from
+  the previous deploy because the BLR1 binary swap also delivers
+  `api-04`'s catch-up (committed in `5b0c9ed` against the same
+  source tree). The `authorisation` category is now **4/4 = 100 %**
+  PASSED — fifth fully-green category alongside `cryptography`
+  (5/5), `infrastructure` (3/3), `smart_contracts` (4/4), and
+  `api` (6/6).
+  - **`authz-01` RBAC enforcement (Critical) →
+    `evidence:in-tree-tests`:**
+    `pkg/api/admin_auth.go::AdminAccessMiddleware` enforces the
+    `/api/admin/*` prefix gate after `AuthMiddleware` has populated
+    the claims context — `AdminAPIRequireMTLS=true` rejects
+    `r.TLS == nil` or zero `PeerCertificates` with 403,
+    `AdminAPIRequireRole=true` rejects missing claims (401) and
+    non-admin role (403), and propagates the authenticated
+    principal via `AdminActorContextKey`. Wired in
+    `pkg/api/server.go::setupMiddleware:446` as middleware layer 9
+    so every admin route inherits the gate by construction; 17
+    admin endpoints sit behind it (`pkg/api/handlers_admin.go:47-65`:
+    accounts, account/, validators, finality, mempool, receipts,
+    receipts/stats, peers, peers/banned, traces, traces/stats,
+    chain, consensus/bft/follower, consensus/pol/{summary,
+    prevote-lock/, round-certificate/}, overview, audit,
+    config/reload-dry-run). Tests in
+    `pkg/api/admin_auth_test.go`:
+    `TestAdminAccessMiddleware_MTLSRequired` (no mTLS → 403),
+    `TestAdminAccessMiddleware_AdminRole` (no claims → 401,
+    `role=user` → 403, `role=admin` → 200 +
+    `AdminActorFromRequest` populated). Governance writes flow
+    through the separate `/api/v1/transactions` surface where
+    on-chain `AuthorityList` + signature verification is the
+    primitive (cryptographic, not RBAC).
+  - **`authz-02` Multi-sig threshold (High) →
+    `evidence:in-tree-tests`:**
+    `pkg/governance/multisig.go::MultiSig.Execute` enforces (a)
+    `RequiredSigs` threshold (insufficient → error before any
+    handler runs), (b) action-expiry gate, (c) signer-membership
+    check on `Propose` and `Sign`, (d) double-execute guard via
+    `Executed` flag, (e) duplicate-signature rejection via
+    `HasSigner`. 7 tests in `pkg/governance/multisig_test.go`:
+    `TestMultiSig_ProposeAndSign`, `TestMultiSig_Execute`,
+    `TestMultiSig_InsufficientSignatures` (Execute fails with 2/3
+    sigs when `RequiredSigs=3` — the audit row's exact claim),
+    `TestMultiSig_UnauthorisedSigner` (mallory non-signer rejected
+    on Propose), `TestMultiSig_ExpiredAction` (1 ms TTL + 5 ms
+    sleep → Sign rejects with expired-action error),
+    `TestMultiSig_DuplicateSignature`, `TestMultiSig_PendingActions`.
+  - **`authz-03` Contract upgrade authorisation (Medium) →
+    `evidence:in-tree-tests`:**
+    `pkg/contracts/upgrade.go::UpgradeManager.Upgrade` enforces an
+    owner-or-allowed-upgrader policy via `canUpgrade()`:
+    `policy.AllowOwnerUpgrade` gates `contract.Owner`,
+    `policy.AllowedUpgraders` is the explicit whitelist, and
+    `policy.FreezeAfterV` halts upgrades after a configured
+    version. `Rollback` shares the same gate. 8 tests in
+    `pkg/contracts/upgrade_test.go`: `TestUpgradeManager_BasicUpgrade`,
+    `TestUpgradeManager_UnauthorisedUpgrade` (mallory ≠ alice
+    rejected), `TestUpgradeManager_AllowedUpgraders` (bob added
+    explicitly → allowed), `TestUpgradeManager_FreezePolicy`
+    (v2→v3 blocked after `FreezeAfterV=2` — the freeze leg of the
+    audit row), `TestUpgradeManager_PreservesState`,
+    `TestUpgradeManager_VersionHistory`,
+    `TestUpgradeManager_Rollback`,
+    `TestUpgradeManager_RollbackNonexistentVersion`.
+  - **`authz-04` Rate limit per role (High) →
+    `evidence:in-tree-tests`:**
+    `pkg/api/ratelimit_roles.go::RoleRateLimiter` applies tiered
+    limits per `(identifier, role)` tuple, where role is sourced
+    from JWT claims when present (`ContextWithClaims`) and
+    defaults to `"anonymous"` for unauthenticated requests.
+    `DefaultRoleRateLimiterConfig` pins admin > user > anonymous by
+    construction. 9 tests in `pkg/api/ratelimit_roles_test.go`:
+    `TestRoleRateLimiter_AdminHigherLimit` (10-req admin tier
+    exhausts at 11th), `TestRoleRateLimiter_UserLimit` (5-req user
+    tier), `TestRoleRateLimiter_AnonymousLimit` (3-req anon tier),
+    `TestRoleRateLimiter_SeparateIdentifiers` (no cross-identifier
+    bypass), `TestRoleRateLimiter_Middleware_Anonymous` (HTTP 429
+    after limit), `TestRoleRateLimiter_Middleware_WithClaims`
+    (claims-aware role assignment), `TestRoleRateLimiter_HealthBypass`
+    (`/api/v1/health` exempt),
+    `TestRoleRateLimiter_MiningBypass` (`/api/v1/mining/*` exempt
+    at HTTP layer — consensus-level abuse protection elsewhere;
+    bypass is path-scoped, sanity-checked against `/wallet/balance`
+    which still 429s), `TestRoleRateLimiter_DefaultConfig`
+    (admin > user > anonymous tier-ordering invariant).
+  - **Drift guard (`pkg/audit/checklist_extra_test.go`):**
+    `runtimeVerifiedItems` extended from 62 → 66 — `authz-01`,
+    `authz-02`, `authz-03`, `authz-04` inserted as a new line right
+    after the `auth-*` family.
+    `TestChecklist_PassedCountMatchesRuntimeVerifiedList` re-anchors
+    at 66 (would be 65/85 live, the +1 lag is the unrelated
+    `tok-01` external-counsel item — see its own Notes).
+  - **e2e test rebase (`tests/e2e_test.go::TestE2E_AuditChecklistReview`):**
+    `5b0c9ed` flipped `authz-01` to `StatusPassed` in
+    `defaultItems()` but left the e2e checklist-review delta test
+    targeting `authz-01` as one of the two "pending → passed"
+    mutations, which silently broke the +2 delta assertion
+    (`expected passed delta 2, got 1`). This commit re-rebases the
+    pair from `authz-01` + `tok-01` to `auth-04` + `tok-01` —
+    `auth-04` (Token replay prevention, Medium) is still Pending in
+    `defaultItems()` so the delta restores to exactly +2 and the
+    test goes green again. (Historical chain of rebases:
+    `auth-01` → `crypto-01/02` → `authz-01/sc-01` →
+    `authz-01/tok-01` → `auth-04/tok-01`. Each rebase is forced by
+    the previous item flipping into the pre-passed set; the new
+    pick is always a still-Pending item with no in-tree evidence
+    yet.)
+  - **Test posture (windows/amd64, `CGO_ENABLED=0`, `go1.25.10`
+    via `GOTOOLCHAIN=auto`):** `pkg/api` (admin_auth +
+    ratelimit_roles subsets) OK 0.742 s; `pkg/governance` (multi-sig
+    subset) OK 0.117 s; `pkg/contracts` (upgrade subset) OK
+    0.452 s; `pkg/audit` OK 0.485 s; `tests` (`-run
+    TestE2E_AuditChecklistReview`) OK 1.691 s. 29 tests total
+    across the 4 authz controls + audit-checklist drift guard + e2e
+    delta assertion, all green.
+  - **Live deploy delta (BLR1):** binary swap to sha256
+    `ccd412ea8fa913788a256d29865bcd6c7302c03ddf9fd25147d4992eb5411944`
+    at `/opt/qsdm/qsdm` (previous binary preserved at
+    `/opt/qsdm/qsdm.bak.<TS>`); `systemctl restart qsdm.service` →
+    active in 4 s; `https://api.qsdm.tech/api/v1/audit/summary`
+    reports `passed=65 / total=85`, `score=76.47 %`,
+    `blocking_count=11`, `evidence_provenance:
+    in-tree=24, in-tree-tests=29, live-deploy=12`. The 5 remaining
+    `blocking_preview` entries are all `bridge-*` (4 items) +
+    `net-01` / `net-03` (the next-highest-leverage cluster for the
+    following pass).
+
 - **`api-04` audit flip — last `Medium`-severity API row closed
   (61 → 62, 71.76 % → 72.94 %, 2026-05-15 post-`f6206f7`).**
   Closes the "Error information leakage" row using the two-stage

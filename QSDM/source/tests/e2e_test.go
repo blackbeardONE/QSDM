@@ -345,8 +345,8 @@ func TestE2E_AuditChecklistReview(t *testing.T) {
 		t.Fatalf("expected 30+ items, got %d", baseline["total"])
 	}
 
-	// Review some critical items. authz-01 (RBAC enforcement) and
-	// tok-01 (genesis policy sign-off) are still pending in
+	// Review some critical items. auth-04 (JWT replay prevention)
+	// and tok-01 (genesis policy sign-off) are still pending in
 	// defaultItems() so the passed delta from this block is
 	// exactly +2; bridge-01 is also pending (bridge secret-handling
 	// review not yet performed) so the failed delta is exactly +1.
@@ -355,12 +355,16 @@ func TestE2E_AuditChecklistReview(t *testing.T) {
 	// crypto-01 and crypto-02 were the next picks; they flipped to
 	// StatusPassed in the 2026-05-14 pkg/crypto test catch-up.
 	// sc-01 was the next pick; it flipped to StatusPassed in the
-	// 2026-05-15 pkg/wasm + pkg/contracts isolation-test catch-up —
-	// see pkg/audit/checklist.go for the in-tree-tests evidence
-	// pointers. tok-01 is BLOCKED on external counsel review per
-	// its own Notes; using it here is a test-only mutation, not a
-	// claim that the underlying review has happened.)
-	cl.UpdateStatus("authz-01", audit.StatusPassed, "auditor", "RBAC enforcement verified")
+	// 2026-05-15 pkg/wasm + pkg/contracts isolation-test catch-up.
+	// authz-01 was the next pick; it flipped to StatusPassed in
+	// the 2026-05-15 pkg/api/admin_auth + pkg/governance/multisig
+	// + pkg/contracts/upgrade + pkg/api/ratelimit_roles authz-*
+	// catch-up — see pkg/audit/checklist.go for the in-tree-tests
+	// evidence pointers. tok-01 is BLOCKED on external counsel
+	// review per its own Notes; using it here is a test-only
+	// mutation, not a claim that the underlying review has
+	// happened.)
+	cl.UpdateStatus("auth-04", audit.StatusPassed, "auditor", "JWT replay prevention verified")
 	cl.UpdateStatus("tok-01", audit.StatusPassed, "auditor", "Genesis policy sign-off verified")
 	cl.UpdateStatus("bridge-01", audit.StatusFailed, "auditor", "needs bridge secret rotation policy")
 
@@ -375,7 +379,7 @@ func TestE2E_AuditChecklistReview(t *testing.T) {
 
 	pending := cl.PendingCritical()
 	for _, item := range pending {
-		if item.ID == "authz-01" || item.ID == "tok-01" {
+		if item.ID == "auth-04" || item.ID == "tok-01" {
 			t.Fatalf("reviewed items should not be in pending: %s", item.ID)
 		}
 	}
