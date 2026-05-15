@@ -79,7 +79,13 @@ func (h *Handlers) BridgeLockAsset(w http.ResponseWriter, r *http.Request) {
 
 	lock, err := h.bridgeProtocol.LockAsset(ctx, req.SourceChain, req.TargetChain, req.Asset, req.Amount, req.Recipient, expiry)
 	if err != nil {
-		writeErrorResponse(w, http.StatusInternalServerError, err.Error())
+		// MED-1: log full details server-side, return correlation id only.
+		// Pre-fix this was a silent leak: the raw bridgeProtocol error
+		// (storage backend, journal failure, validation internals) was
+		// echoed to the client AND was NOT recorded in the structured
+		// log, so an operator had no record to correlate against the
+		// caller's report.
+		WriteServerError(w, h.logger, "bridge_lock_asset", err)
 		return
 	}
 
@@ -295,7 +301,11 @@ func (h *Handlers) SwapInitiate(w http.ResponseWriter, r *http.Request) {
 		req.InitiatorAddress, req.ParticipantAddress,
 		expiry)
 	if err != nil {
-		writeErrorResponse(w, http.StatusInternalServerError, err.Error())
+		// MED-1: log full details server-side, return correlation id only.
+		// Same silent-leak class as the LockAsset path above —
+		// raw atomicSwap error left both the client surface and the log
+		// unsanitized.
+		WriteServerError(w, h.logger, "bridge_initiate_swap", err)
 		return
 	}
 

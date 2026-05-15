@@ -12,6 +12,63 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Fixed
+
+- **MED-1 leak-path completion — 3 residual `err.Error()` 5xx leaks
+  closed in `pkg/api` (2026-05-15 post-`cd70d8f`).** `56145e1`'s
+  MED-1 sanitization pass migrated 3 of the 13 5xx paths in
+  `pkg/api/handlers*.go` to the new `WriteServerError` helper
+  (`Login` / `Register` / `CreateToken` — the auth surfaces). 9
+  of the remaining 10 already used generic strings (`"failed to
+  get balance"`, `"nonce lookup failed"`, etc.), so the audit
+  row `api-04` was only **mostly** clean. This commit fixes the
+  remaining 3 leak sites that still echoed raw `err.Error()` /
+  `fmt.Sprintf("...: %v", err)` to the client.
+  - **`handlers.go:867` `CreateWallet`** — leaked the raw
+    `wallet.NewWalletService()` error string. The error can
+    identify the storage backend (Scylla vs SQLite vs memory)
+    or surface a CGO/liboqs build state, which an
+    unauthenticated `POST /api/v1/wallet` caller could probe to
+    fingerprint the deployment. Pre-fix also had a redundant
+    `h.logger.Error("Failed to create new wallet", "error", err)`
+    one line above; replaced both with a single
+    `WriteServerError(w, h.logger, "create_wallet", err)` (which
+    logs internally and returns the correlation ID only when
+    `QSDM_PRODUCTION_MODE=true`).
+  - **`handlers_bridge.go:82` `LockAsset`** (POST
+    `/api/v1/bridge/lock`) — silent leak: the raw
+    `bridgeProtocol.LockAsset` error (storage / journal /
+    validation internals) was echoed to the client AND was NOT
+    recorded in the structured log, so an operator had no record
+    to correlate against the caller's report. Now logged via
+    `WriteServerError(w, h.logger, "bridge_lock_asset", err)`.
+  - **`handlers_bridge.go:298` `InitiateSwap`** (POST
+    `/api/v1/bridge/swap`) — same silent-leak class as the
+    `LockAsset` path above; raw `atomicSwap.InitiateSwap` error
+    left both surfaces unsanitized. Now logged via
+    `WriteServerError(w, h.logger, "bridge_initiate_swap", err)`.
+  - **Repo-wide grep audit** (post-fix): zero
+    `writeErrorResponse(w, http.StatusInternalServerError,
+    ... err ...)` occurrences left in the production
+    `pkg/api/` package. Remaining `err.Error()` writes are all
+    4xx paths (validation / authentication failures whose
+    message text is part of the API contract per the
+    `error_sanitize.go` doc-block at lines 63-65 — "Use
+    writeErrorResponse for 4xx errors that are deliberately
+    user-facing").
+  - **Audit row `api-04` not flipped in this commit.** When this
+    fix was prepared the working tree had a parallel ops session
+    queueing the `sc-01` flip in the same `pkg/audit/checklist.go`
+    file. Editing the contested file would either have raced
+    `cd70d8f` or accidentally captured ops's WASM-isolation work.
+    `api-04` is now safe to flip in any subsequent commit —
+    leaving that for whichever session lands the next batch.
+  - **Test posture (windows/amd64, `CGO_ENABLED=0`,
+    `GOTOOLCHAIN=auto`):** `pkg/api -short -run
+    "Wallet|Bridge|Error|Sanitize|Login|Register|Token"` OK
+    1.714s; package-wide `go build ./pkg/api/...` clean; full
+    `go vet` clean.
+
 ### Added
 
 - **WASM sandbox isolation test catch-up — `sc-01` (Critical) flipped

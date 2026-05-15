@@ -863,8 +863,11 @@ func (h *Handlers) CreateWallet(w http.ResponseWriter, r *http.Request) {
 	newWallet, err := wallet.NewWalletService()
 	if err != nil {
 		monitoring.RecordWalletCreate(monitoring.WalletCreateResultFailed)
-		h.logger.Error("Failed to create new wallet", "error", err)
-		writeErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("failed to create wallet: %v", err))
+		// MED-1: log full details server-side, return correlation id only.
+		// Pre-fix this leaked the raw wallet/crypto error string (which
+		// can identify the storage backend or surface a CGO/liboqs build
+		// state) to the unauthenticated POST /api/v1/wallet caller.
+		WriteServerError(w, h.logger, "create_wallet", err)
 		return
 	}
 
