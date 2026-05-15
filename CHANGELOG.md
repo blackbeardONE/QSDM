@@ -12,6 +12,69 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Added
+
+- **`api-04` audit flip — last `Medium`-severity API row closed
+  (61 → 62, 71.76 % → 72.94 %, 2026-05-15 post-`f6206f7`).**
+  Closes the "Error information leakage" row using the two-stage
+  fix narrative now fully in tree: `56145e1`'s MED-1 sanitization
+  pass (introduced `WriteServerError` + `SanitizeForLog` helpers,
+  migrated 3 of 13 5xx paths) + `96e8aa9`'s leak-path completion
+  (closed the 3 residual sites in `handlers.go::CreateWallet`,
+  `handlers_bridge.go::LockAsset`, and
+  `handlers_bridge.go::InitiateSwap`). Score on
+  `https://api.qsdm.tech/api/v1/audit/summary` will move from
+  **61/85 (71.76 %)** to **62/85 (72.94 %)** on next BLR1 binary
+  swap; blocking-findings count drops from 14 to 13. The
+  `api` category is now **6/6 = 100 %** PASSED — fourth
+  fully-green category alongside `cryptography`,
+  `infrastructure`, and `smart_contracts`.
+  - **Evidence chain (`evidence:in-tree`):** repo-wide
+    `git grep` audit on 2026-05-15 confirms zero
+    `writeErrorResponse(w, http.StatusInternalServerError, ...
+    err ...)` occurrences in production `pkg/api/`. The 12 other
+    5xx paths in `handlers.go` (lines 671, 904, 968, 1070,
+    1086, 1328, 1388, 1501, 1510, 1553, 1677, 1841) all use
+    deliberately generic strings (`"failed to issue CSRF
+    token"`, `"failed to get balance"`, `"nonce lookup failed"`,
+    `"failed to apply transfer"`, `"failed to get
+    transactions"`, etc.) that reveal no internal state, code
+    paths, or file paths. Remaining `err.Error()` writes are all
+    4xx validation / authentication paths whose message text is
+    part of the API contract per `error_sanitize.go`'s doc-block
+    at lines 63-65 ("Use writeErrorResponse for 4xx errors that
+    are deliberately user-facing").
+  - **CI guard:** `f6206f7` (the LOW-2 follow-up that landed
+    minutes before this flip) wired `gosec` + `staticcheck` +
+    `govulncheck` enforcement into `.github/workflows/qsdm-go.yml`,
+    so a future regression that re-introduces `err.Error()` on a
+    5xx path is flagged by `staticcheck` SA1019/SA4006 +
+    `gosec` G104 at PR review time.
+  - **Drift guard
+    (`pkg/audit/checklist_extra_test.go`):** `runtimeVerifiedItems`
+    extended from 61 → 62 — `api-04` inserted into the existing
+    `api-*` line so the API category now reads
+    `"api-01", "api-02", "api-03", "api-04", "api-05", "api-06"`
+    in source order.
+    `TestChecklist_PassedCountMatchesRuntimeVerifiedList`
+    re-anchors at 62; a regression that flips one back to
+    pending without removing it from the allow-list now fails CI.
+  - **Race posture:** `pkg/audit/checklist.go` was uncontested for
+    1.5 hours before this flip (last touched by `cd70d8f` at
+    ~12:46 AM local). The intervening ops commits (`a3d7720`
+    MED-8 alert surface, `f6206f7` LOW-2 CI enforcement) closed
+    audit-doc follow-ups but did not flip any checklist row.
+    Both `a3d7720` and `f6206f7` were committed locally but not
+    yet pushed when this flip was prepared; the push of this
+    commit will piggyback them to `origin/main`.
+  - **Test posture (windows/amd64, `CGO_ENABLED=0`,
+    `GOTOOLCHAIN=auto`):** `pkg/audit` OK 0.205s (drift guard +
+    runtime-verified-items list now keyed at 62);
+    `internal/dashboard` OK 2.033s; `tests/ -short -run Audit`
+    OK 1.322s (the e2e checklist-review delta test still uses
+    the `cd70d8f`-rebased `authz-01` + `tok-01` pair, untouched
+    by this flip).
+
 ### Fixed
 
 - **MED-1 leak-path completion — 3 residual `err.Error()` 5xx leaks
