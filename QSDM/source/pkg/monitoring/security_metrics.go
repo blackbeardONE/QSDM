@@ -15,17 +15,19 @@ import (
 // shared sync.RWMutex on Metrics is a measurable contention source when
 // the validator is under load.
 var (
-	failedLoginsTotal           atomic.Int64
-	accountLockoutsTotal        atomic.Int64
-	rateLimitViolationsTotal    atomic.Int64
-	csrfFailuresTotal           atomic.Int64
-	authInvalidTokenTotal       atomic.Int64
-	authMissingTokenTotal       atomic.Int64
-	tokenRevocationsTotal       atomic.Int64
-	tokenRevokedHitsTotal       atomic.Int64
-	requestSignatureFailedTotal atomic.Int64
-	requestTimeoutTotal         atomic.Int64
-	corsRejectionsTotal         atomic.Int64
+	failedLoginsTotal                       atomic.Int64
+	accountLockoutsTotal                    atomic.Int64
+	rateLimitViolationsTotal                atomic.Int64
+	csrfFailuresTotal                       atomic.Int64
+	authInvalidTokenTotal                   atomic.Int64
+	authMissingTokenTotal                   atomic.Int64
+	tokenRevocationsTotal                   atomic.Int64
+	tokenRevokedHitsTotal                   atomic.Int64
+	requestSignatureFailedTotal             atomic.Int64
+	requestTimeoutTotal                     atomic.Int64
+	corsRejectionsTotal                     atomic.Int64
+	jwtSecondaryKeyHitsTotal                atomic.Int64
+	requestSignatureSecondaryKeyHitsTotal   atomic.Int64
 )
 
 // RecordFailedLogin increments the failed-login counter. Called from the
@@ -80,19 +82,42 @@ func RecordRequestTimeout() { requestTimeoutTotal.Add(1) }
 // single origin indicate a misconfigured client or a probing attacker.
 func RecordCORSRejection() { corsRejectionsTotal.Add(1) }
 
+// RecordJWTSecondaryKeyHit increments the counter for JWT verifications
+// that succeeded against the VERIFY-ONLY secondary key during a
+// rotation window (audit row rotation-01). The counter is the
+// operator's "is the rotation window being exercised?" signal — a
+// flat counter for >= max(access-token-TTL, refresh-token-TTL)
+// means no in-flight tokens still need the old key, so the operator
+// can clear the secondary (cutover complete). A non-zero rate after
+// the window should have closed means a stale client is still
+// presenting old-key tokens; usually benign (long-lived refresh
+// tokens) but worth investigating.
+func RecordJWTSecondaryKeyHit() { jwtSecondaryKeyHitsTotal.Add(1) }
+
+// RecordRequestSignatureSecondaryKeyHit increments the counter for
+// X-Signature verifications that succeeded against the VERIFY-ONLY
+// secondary request-signing key during a rotation window. Same
+// semantic as RecordJWTSecondaryKeyHit but for the per-request
+// HMAC path (security.go::RequestSigner.VerifyRequest).
+func RecordRequestSignatureSecondaryKeyHit() {
+	requestSignatureSecondaryKeyHitsTotal.Add(1)
+}
+
 // --- Read accessors (used by SecurityMetricsCollector and dashboard JSON) ---
 
-func FailedLoginsCount() int64           { return failedLoginsTotal.Load() }
-func AccountLockoutsCount() int64        { return accountLockoutsTotal.Load() }
-func RateLimitViolationsCount() int64    { return rateLimitViolationsTotal.Load() }
-func CSRFFailuresCount() int64           { return csrfFailuresTotal.Load() }
-func AuthInvalidTokenCount() int64       { return authInvalidTokenTotal.Load() }
-func AuthMissingTokenCount() int64       { return authMissingTokenTotal.Load() }
-func TokenRevocationsCount() int64       { return tokenRevocationsTotal.Load() }
-func TokenRevokedHitsCount() int64       { return tokenRevokedHitsTotal.Load() }
-func RequestSignatureFailedCount() int64 { return requestSignatureFailedTotal.Load() }
-func RequestTimeoutCount() int64         { return requestTimeoutTotal.Load() }
-func CORSRejectionsCount() int64         { return corsRejectionsTotal.Load() }
+func FailedLoginsCount() int64                       { return failedLoginsTotal.Load() }
+func AccountLockoutsCount() int64                    { return accountLockoutsTotal.Load() }
+func RateLimitViolationsCount() int64                { return rateLimitViolationsTotal.Load() }
+func CSRFFailuresCount() int64                       { return csrfFailuresTotal.Load() }
+func AuthInvalidTokenCount() int64                   { return authInvalidTokenTotal.Load() }
+func AuthMissingTokenCount() int64                   { return authMissingTokenTotal.Load() }
+func TokenRevocationsCount() int64                   { return tokenRevocationsTotal.Load() }
+func TokenRevokedHitsCount() int64                   { return tokenRevokedHitsTotal.Load() }
+func RequestSignatureFailedCount() int64             { return requestSignatureFailedTotal.Load() }
+func RequestTimeoutCount() int64                     { return requestTimeoutTotal.Load() }
+func CORSRejectionsCount() int64                     { return corsRejectionsTotal.Load() }
+func JWTSecondaryKeyHitsCount() int64                { return jwtSecondaryKeyHitsTotal.Load() }
+func RequestSignatureSecondaryKeyHitsCount() int64   { return requestSignatureSecondaryKeyHitsTotal.Load() }
 
 // ResetSecurityMetricsForTest zeroes every counter. Test-only.
 func ResetSecurityMetricsForTest() {
@@ -107,6 +132,8 @@ func ResetSecurityMetricsForTest() {
 	requestSignatureFailedTotal.Store(0)
 	requestTimeoutTotal.Store(0)
 	corsRejectionsTotal.Store(0)
+	jwtSecondaryKeyHitsTotal.Store(0)
+	requestSignatureSecondaryKeyHitsTotal.Store(0)
 }
 
 // SecurityMetricsCollector returns a Prometheus collector for the security
@@ -128,6 +155,8 @@ func SecurityMetricsCollector() MetricCollector {
 			{Name: "qsdm_security_request_signature_failed_total", Help: "Requests with failed X-Signature verification.", Type: MetricCounter, Value: float64(RequestSignatureFailedCount())},
 			{Name: "qsdm_security_request_timeout_total", Help: "Requests cancelled by the per-request context deadline.", Type: MetricCounter, Value: float64(RequestTimeoutCount())},
 			{Name: "qsdm_security_cors_rejections_total", Help: "Requests rejected by CORS middleware (origin not on allowlist).", Type: MetricCounter, Value: float64(CORSRejectionsCount())},
+			{Name: "qsdm_security_jwt_secondary_key_hits_total", Help: "JWT verifications that succeeded against the rotation-window secondary HMAC key (audit row rotation-01). Flat for >= max-token-TTL means cutover is safe.", Type: MetricCounter, Value: float64(JWTSecondaryKeyHitsCount())},
+			{Name: "qsdm_security_request_signature_secondary_key_hits_total", Help: "X-Signature verifications that succeeded against the rotation-window secondary HMAC key (audit row rotation-01). Flat means no in-flight signed requests still need the old key.", Type: MetricCounter, Value: float64(RequestSignatureSecondaryKeyHitsCount())},
 		}
 	}
 }

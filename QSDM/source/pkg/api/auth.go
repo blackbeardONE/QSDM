@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/crypto"
+	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 )
 
 // claimsCtxKey is the typed context key used to publish *Claims onto a
@@ -72,6 +73,23 @@ type AuthManager struct {
 	lockoutManager *AccountLockoutManager
 	// jwtHMACFallback: when Dilithium is nil (non-CGO), used for JWT HMAC instead of the hardcoded dev key.
 	jwtHMACFallback []byte
+	// jwtHMACFallbackSecondary: VERIFY-ONLY secondary key for zero-downtime
+	// key rotation (audit row rotation-01). When set, ValidateToken first
+	// tries the primary key and falls back to the secondary on mismatch.
+	// New tokens are always signed with the PRIMARY key — the secondary
+	// is decommissioning-only. Empty (nil) when no rotation is in flight.
+	//
+	// Rotation procedure (runbook: JWT_KEY_ROTATION.md):
+	//
+	//  T0 (steady state):   primary=A   secondary=unset
+	//  T1 (window opens):   primary=B   secondary=A   <- A-signed tokens still accepted
+	//  T2 (window closes):  primary=B   secondary=unset
+	//
+	// The window must be at least as long as the longest in-flight token
+	// lifetime (default access-token TTL = 24h; refresh = 7d). The metric
+	// qsdm_security_jwt_secondary_key_hits_total goes flat once every
+	// A-signed token has expired; at that point the operator deploys T2.
+	jwtHMACFallbackSecondary []byte
 	// revocations stores tokens revoked by /auth/logout (or admin action).
 	// nil until SetRevocationStore wires one — leaving it nil keeps the
 	// legacy "tokens are valid until they expire" behaviour for embedded
@@ -95,11 +113,82 @@ func NewAuthManager() (*AuthManager, error) {
 
 // SetJWTHMACFallbackSecret sets the HMAC key for JWT signing/verification when Dilithium is unavailable.
 // Empty leaves the built-in development default (not for production).
+//
+// Also records the wall-clock SET time for the rotation-monitoring
+// gauge (audit row rotation-05). The gauge emits a NEGATIVE age-in-
+// days under kind=jwt_primary so the operator's alert rule can fire
+// when the secret has been in place beyond the rotation policy.
+// Subject is fixed at "jwt-hmac-primary" so subsequent
+// SetJWTHMACFallbackSecret calls UPDATE the entry rather than
+// appending duplicate series.
 func (am *AuthManager) SetJWTHMACFallbackSecret(secret string) {
 	s := strings.TrimSpace(secret)
 	if s != "" {
+		am.mu.Lock()
 		am.jwtHMACFallback = []byte(s)
+		am.mu.Unlock()
+		monitoring.RecordSecretSetTime(monitoring.SecretExpiryKindJWTPrimary, "jwt-hmac-primary", time.Now())
 	}
+}
+
+// SetJWTHMACFallbackSecondarySecret installs (or, with an empty
+// argument, removes) the VERIFY-ONLY secondary HMAC key used during
+// a key-rotation window. Audit row rotation-01.
+//
+// Contract:
+//
+//   - The secondary key is consulted by ValidateToken's HMAC fallback
+//     path AFTER the primary key fails, ONLY when len(secondary) > 0.
+//   - The secondary key is NEVER used to sign new tokens — CreateToken
+//     always reads jwtHMACFallback (the primary).
+//   - Setting the secondary to the same bytes as the primary is rejected
+//     as a no-op (no rotation in flight; nothing to verify against the
+//     primary that the primary itself would not already match).
+//
+// Empty input clears the secondary (cutover complete). See the runbook
+// at QSDM/docs/docs/runbooks/JWT_KEY_ROTATION.md.
+func (am *AuthManager) SetJWTHMACFallbackSecondarySecret(secret string) {
+	s := strings.TrimSpace(secret)
+	am.mu.Lock()
+	if s == "" {
+		am.jwtHMACFallbackSecondary = nil
+		am.mu.Unlock()
+		// rotation-05: secondary cleared at cutover. Stop emitting
+		// the age-in-days gauge so a stale series doesn't keep
+		// firing the alert after the rotation window closes.
+		monitoring.ClearSecretExpiry(monitoring.SecretExpiryKindJWTSecondary, "jwt-hmac-secondary")
+		return
+	}
+	if len(am.jwtHMACFallback) > 0 && hmac.Equal([]byte(s), am.jwtHMACFallback) {
+		am.jwtHMACFallbackSecondary = nil
+		am.mu.Unlock()
+		monitoring.ClearSecretExpiry(monitoring.SecretExpiryKindJWTSecondary, "jwt-hmac-secondary")
+		return
+	}
+	am.jwtHMACFallbackSecondary = []byte(s)
+	am.mu.Unlock()
+	// rotation-05: register the secondary's wall-clock install time.
+	// During rotation the alert rule is mostly informational (a
+	// per-kind threshold can be wired to fire if the secondary is
+	// left in place too long after the rotation window should have
+	// closed).
+	monitoring.RecordSecretSetTime(monitoring.SecretExpiryKindJWTSecondary, "jwt-hmac-secondary", time.Now())
+}
+
+// jwtHMACSecondaryBytes returns the secondary HMAC key bytes (or nil
+// when no rotation is in flight). VERIFY-ONLY accessor — never call
+// this from a sign path. Returns a fresh slice so a concurrent
+// SetJWTHMACFallbackSecondarySecret rebinding the field cannot mutate
+// the returned slice mid-Verify.
+func (am *AuthManager) jwtHMACSecondaryBytes() []byte {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+	if len(am.jwtHMACFallbackSecondary) == 0 {
+		return nil
+	}
+	out := make([]byte, len(am.jwtHMACFallbackSecondary))
+	copy(out, am.jwtHMACFallbackSecondary)
+	return out
 }
 
 // SetRevocationStore attaches a TokenRevocationStore. When set,
@@ -281,12 +370,38 @@ func (am *AuthManager) ValidateToken(token string) (*Claims, error) {
 			return nil, errors.New("invalid token signature")
 		}
 	} else {
-		// Fallback: Verify HMAC-SHA256 for non-CGO builds
-		h := hmac.New(sha256.New, am.jwtHMACSecretBytes())
+		// Fallback: Verify HMAC-SHA256 for non-CGO builds.
+		//
+		// Dual-key verify (audit row rotation-01): try the primary
+		// key first; if it does not match AND a secondary key is
+		// configured (rotation window in flight), try the secondary.
+		// A secondary hit increments
+		// qsdm_security_jwt_secondary_key_hits_total so the operator
+		// can confirm the window is being exercised before completing
+		// the cutover by clearing the secondary. The primary remains
+		// the only key used to SIGN new tokens (see CreateToken).
+		primary := am.jwtHMACSecretBytes()
+		h := hmac.New(sha256.New, primary)
 		h.Write(claimsJSON)
 		expectedSignature := h.Sum(nil)
 		if !hmac.Equal(signature, expectedSignature) {
-			return nil, errors.New("invalid token signature")
+			secondary := am.jwtHMACSecondaryBytes()
+			if len(secondary) == 0 {
+				return nil, errors.New("invalid token signature")
+			}
+			h2 := hmac.New(sha256.New, secondary)
+			h2.Write(claimsJSON)
+			expectedSecondary := h2.Sum(nil)
+			if !hmac.Equal(signature, expectedSecondary) {
+				return nil, errors.New("invalid token signature")
+			}
+			// Token verified against the rotation-window secondary.
+			// Increment the operator-visible counter — the rotation
+			// runbook gates "cutover complete" on this counter going
+			// flat (i.e., no in-flight tokens still rely on the old
+			// key). The hit is not a security event in itself: a
+			// pre-rotation token IS still valid until its exp, by design.
+			monitoring.RecordJWTSecondaryKeyHit()
 		}
 	}
 

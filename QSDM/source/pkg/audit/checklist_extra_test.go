@@ -10,10 +10,12 @@ import "testing"
 // hash). Adding an item to this list without populating Status / ReviewedBy /
 // ReviewedAt in defaultItems() is a CI failure.
 var runtimeVerifiedItems = []string{
-	"net-05",
-	"store-01", "store-03", "store-04", "store-05",
+	"net-01", "net-02", "net-03", "net-04", "net-05",
+	"bridge-01", "bridge-02", "bridge-03", "bridge-04",
+	"rotation-01", "rotation-02", "rotation-03", "rotation-04", "rotation-05",
+	"store-01", "store-02", "store-03", "store-04", "store-05",
 	"api-01", "api-02", "api-03", "api-04", "api-05", "api-06",
-	"auth-01", "auth-02", "auth-03", "auth-05",
+	"auth-01", "auth-02", "auth-03", "auth-04", "auth-05",
 	"authz-01", "authz-02", "authz-03", "authz-04",
 	"crypto-01", "crypto-02", "crypto-03", "crypto-04", "crypto-05",
 	"sc-01", "sc-02", "sc-03", "sc-04",
@@ -22,7 +24,7 @@ var runtimeVerifiedItems = []string{
 	"tok-02", "tok-03",
 	"mining-02", "mining-03", "mining-04",
 	"trust-01", "trust-02", "trust-03", "trust-04", "trust-05", "trust-06",
-	"supply-01", "supply-02", "supply-04", "supply-05", "supply-06", "supply-07", "supply-08",
+	"supply-01", "supply-02", "supply-03", "supply-04", "supply-05", "supply-06", "supply-07", "supply-08",
 	"infra-01", "infra-02", "infra-03",
 	"runtime-01", "runtime-02", "runtime-03", "runtime-04", "runtime-05", "runtime-06", "runtime-07",
 }

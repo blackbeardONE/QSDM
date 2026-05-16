@@ -4,16 +4,161 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 	"github.com/gorilla/websocket"
 )
+
+// wsAllowedOriginsValue is read atomically by the upgrader's
+// CheckOrigin callback. Updated by SetWebSocketAllowedOrigins so a
+// test or operator runbook can change the allowlist without
+// restarting the dashboard process. nil pointer ⇒ allowlist not yet
+// initialised ⇒ permissive (production wiring MUST call
+// SetWebSocketAllowedOrigins at boot; the dev path leaves it nil so
+// `wscat` works locally).
+var wsAllowedOriginsValue atomic.Pointer[[]string]
+
+// initialiseWSAllowedOriginsFromEnv reads the production-default
+// origin list at first use. We allow either an explicit
+// QSDM_WS_ALLOWED_ORIGINS list (comma-separated) OR fall back to
+// QSDM_CORS_ALLOWED_ORIGINS so the operator runbook for setting up
+// a public dashboard does not require two separate variables.
+// Empty / unset means "no allowlist" (dev mode).
+//
+// Audit row net-04 ("WebSocket origin validation"): the upgrader's
+// CheckOrigin used to be `func(*http.Request) bool { return true }`.
+// That is permissive for ALL origins — fine in dev but in production
+// it lets any web page on any domain open a WebSocket against the
+// validator's dashboard, which can be a CSRF-shaped surface for any
+// streaming endpoint that pushes account / metrics data. Switching
+// to the allowlist-checked closure below closes that gap; the
+// counter qsdm_security_cors_rejections_total is bumped on each
+// reject so dashboards can alert on probing.
+var wsAllowedOriginsInitOnce sync.Once
+
+func initialiseWSAllowedOriginsFromEnv() {
+	wsAllowedOriginsInitOnce.Do(func() {
+		raw := strings.TrimSpace(os.Getenv("QSDM_WS_ALLOWED_ORIGINS"))
+		if raw == "" {
+			raw = strings.TrimSpace(os.Getenv("QSDM_CORS_ALLOWED_ORIGINS"))
+		}
+		if raw == "" {
+			return
+		}
+		list := splitAndTrim(raw)
+		if len(list) > 0 {
+			SetWebSocketAllowedOrigins(list)
+		}
+	})
+}
+
+func splitAndTrim(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// SetWebSocketAllowedOrigins installs (or, with an empty slice,
+// clears) the allowlist consulted by the WebSocket upgrader's
+// CheckOrigin callback. Concurrency-safe; safe to call from a
+// config-reload path.
+//
+// An entry matches if it exactly equals the request's Origin header
+// (after URL-canonicalisation: scheme + host[:port], lower-cased
+// host). Wildcards / subdomain glob are intentionally NOT supported
+// — the audit row asks for "production validates Origin", and a
+// strict-match allowlist is the simplest implementation that is
+// also the safest.
+func SetWebSocketAllowedOrigins(origins []string) {
+	if len(origins) == 0 {
+		wsAllowedOriginsValue.Store(nil)
+		return
+	}
+	// Canonicalise: lowercase the host so a mismatched-case Origin
+	// (e.g. "https://Dashboard.Qsdm.Tech") still matches.
+	cleaned := make([]string, 0, len(origins))
+	for _, o := range origins {
+		u, err := url.Parse(strings.TrimSpace(o))
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			continue
+		}
+		canon := u.Scheme + "://" + strings.ToLower(u.Host)
+		cleaned = append(cleaned, canon)
+	}
+	cp := append([]string(nil), cleaned...)
+	wsAllowedOriginsValue.Store(&cp)
+}
+
+// WebSocketAllowedOriginsSnapshot returns a copy of the current
+// allowlist (or nil if none is installed). Used by tests and
+// /api/v1/status dashboards to confirm the wiring matches the
+// operator's expectation.
+func WebSocketAllowedOriginsSnapshot() []string {
+	p := wsAllowedOriginsValue.Load()
+	if p == nil {
+		return nil
+	}
+	out := make([]string, len(*p))
+	copy(out, *p)
+	return out
+}
+
+// wsCheckOrigin is the production CheckOrigin callback. Empty
+// allowlist ⇒ permissive (dev mode); installed allowlist ⇒
+// strict match against canonicalised scheme://host.
+func wsCheckOrigin(r *http.Request) bool {
+	initialiseWSAllowedOriginsFromEnv()
+	p := wsAllowedOriginsValue.Load()
+	if p == nil || len(*p) == 0 {
+		// Dev mode: no allowlist configured. Production deploys are
+		// expected to set QSDM_WS_ALLOWED_ORIGINS or fall through to
+		// QSDM_CORS_ALLOWED_ORIGINS — see audit row net-04.
+		return true
+	}
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		// No Origin header: typical for non-browser clients (wscat,
+		// k6, etc). In production we REJECT these to keep the gate
+		// CSRF-shaped: any user-agent presenting a WebSocket upgrade
+		// from a page that knows what it's doing will set Origin.
+		monitoring.RecordCORSRejection()
+		return false
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		monitoring.RecordCORSRejection()
+		return false
+	}
+	canon := u.Scheme + "://" + strings.ToLower(u.Host)
+	for _, allowed := range *p {
+		if canon == allowed {
+			return true
+		}
+	}
+	monitoring.RecordCORSRejection()
+	return false
+}
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 4096,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+	// Audit row net-04: production validates Origin against the
+	// allowlist set by SetWebSocketAllowedOrigins (or its env
+	// equivalents QSDM_WS_ALLOWED_ORIGINS /
+	// QSDM_CORS_ALLOWED_ORIGINS). Unset allowlist preserves the
+	// permissive dev-mode behaviour.
+	CheckOrigin: wsCheckOrigin,
 }
 
 // WSMessage is a typed envelope for WebSocket push messages.

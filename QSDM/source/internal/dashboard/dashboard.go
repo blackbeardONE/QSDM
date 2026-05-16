@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -105,6 +106,14 @@ func NewDashboard(metrics *monitoring.Metrics, healthChecker *monitoring.HealthC
 			authManager = nil
 		} else {
 			authManager.SetJWTHMACFallbackSecret(jwtHMACSecret)
+			// rotation-01: dashboard shares the same AuthManager as the
+			// API in cmd/qsdm; this branch fires only when the dashboard
+			// builds its OWN AuthManager (test/embedded callers). Reading
+			// the secondary from the same env var keeps single-source-of-
+			// truth for the rotation window.
+			if secondary := strings.TrimSpace(os.Getenv("QSDM_JWT_HMAC_SECRET_SECONDARY")); secondary != "" {
+				authManager.SetJWTHMACFallbackSecondarySecret(secondary)
+			}
 		}
 	}
 

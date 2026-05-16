@@ -349,8 +349,12 @@ func main() {
 		logger.Warn("Failed to initialize shared auth manager", "error", err)
 	} else {
 		sam.SetJWTHMACFallbackSecret(cfg.JWTHMACSecret)
+		sam.SetJWTHMACFallbackSecondarySecret(cfg.JWTHMACSecretSecondary)
 		sharedAuth = sam
 		logger.Info("Shared JWT auth manager initialized for API and dashboard")
+		if cfg.JWTHMACSecretSecondary != "" {
+			logger.Warn("rotation-01: JWT/API-key VERIFY-ONLY secondary key is active; cutover gate is qsdm_security_jwt_secondary_key_hits_total going flat for >= max-token-TTL")
+		}
 	}
 
 	// Configure alerting webhook (env QSDM_ALERT_WEBHOOK or config)
@@ -479,10 +483,23 @@ func main() {
 	}
 	healthChecker.UpdateComponentHealth("network", monitoring.HealthStatusHealthy, "Network initialized")
 
-	// Start DHT-based bootstrap discovery for WAN peer finding
-	if len(cfg.BootstrapPeers) > 0 || true { // always start DHT; IPFS defaults used if no custom peers
+	// Start DHT-based bootstrap discovery for WAN peer finding.
+	//
+	// Audit row net-02 (DHT Sybil resistance): production deploys
+	// run with AllowPublicBootstrapFallback=false (fail closed when
+	// no bootstrap peers are configured, do NOT join the public
+	// IPFS DHT). The opt-in dev knob is QSDM_ALLOW_PUBLIC_DHT_FALLBACK=1
+	// — sourced from env directly here rather than threading another
+	// field through Config, because the property is operationally
+	// driven and we want it visible at the boot log.
+	{
 		bsCfg := networking.BootstrapConfig{
-			BootstrapPeers: cfg.BootstrapPeers,
+			BootstrapPeers:               cfg.BootstrapPeers,
+			AllowPublicBootstrapFallback: strings.EqualFold(strings.TrimSpace(os.Getenv("QSDM_ALLOW_PUBLIC_DHT_FALLBACK")), "1"),
+		}
+		if bsCfg.AllowPublicBootstrapFallback {
+			logger.Warn("DHT bootstrap: QSDM_ALLOW_PUBLIC_DHT_FALLBACK=1 — joining PUBLIC IPFS bootstrap network (DEV ONLY, weakens Sybil resistance)",
+				"audit_row", "net-02")
 		}
 		bsDisc, bsErr := networking.NewBootstrapDiscovery(ctx, net.Host, bsCfg, logger)
 		if bsErr != nil {
@@ -490,6 +507,8 @@ func main() {
 		} else {
 			logger.Info("DHT bootstrap discovery started",
 				"bootstrap_peers", len(cfg.BootstrapPeers),
+				"public_fallback", bsCfg.AllowPublicBootstrapFallback,
+				"protocol_prefix", string(networking.QSDMDHTProtocolPrefix),
 			)
 			defer bsDisc.Close()
 		}

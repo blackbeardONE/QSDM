@@ -98,6 +98,15 @@ func GlobalScrapePrometheusExporter() *PrometheusExporter {
 		// each counter is monotonic and any non-zero rate represents
 		// either a misconfigured client or a probing attacker.
 		globalScrapeExporter.RegisterCollector("qsdm_security", SecurityMetricsCollector())
+		// qsdm_security_secret_days_until_expiry{kind,subject} from
+		// expiry_gauge.go (audit row rotation-05). Surfaces TLS
+		// cert NotAfter and HMAC-secret age so Prometheus can alert
+		// when a secret is within N days of expiry (or, for HMAC
+		// kinds where there's no intrinsic expiry, when the age
+		// since last Set exceeds the operator's rotation policy).
+		// Emits NOTHING when the process has not yet registered any
+		// secret (very early boot, or test paths that skip TLS).
+		globalScrapeExporter.RegisterCollector("qsdm_security_rotation", SecretExpiryCollector())
 	})
 	return globalScrapeExporter
 }

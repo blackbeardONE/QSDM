@@ -213,6 +213,18 @@ func (sm *SnapshotManager) Stop() {
 	sm.wg.Wait()
 }
 
+// ErrSnapshotIntegrity is returned by LoadSnapshot / LatestSnapshot when
+// the SHA-256 of the snapshot's Data field does not match the Hash
+// embedded in the same file. Audit row store-02 ("Snapshot hash
+// verification"): a snapshot tampered on disk (bit-rot, malicious
+// modification, partial write) is rejected at load time instead of
+// being silently fed back into the chain replay path.
+//
+// Wrapped by fmt.Errorf in readSnapshotFile so callers can use
+// errors.Is(err, ErrSnapshotIntegrity) to special-case integrity
+// failures from generic I/O failures.
+var ErrSnapshotIntegrity = fmt.Errorf("snapshot integrity check failed")
+
 func (sm *SnapshotManager) readSnapshotFile(filename string) (*Snapshot, error) {
 	path := filepath.Join(sm.dir, filename)
 	data, err := os.ReadFile(path)
@@ -223,6 +235,38 @@ func (sm *SnapshotManager) readSnapshotFile(filename string) (*Snapshot, error) 
 	if err := json.Unmarshal(data, &snap); err != nil {
 		return nil, fmt.Errorf("unmarshal snapshot: %w", err)
 	}
+
+	// Integrity verification (audit row store-02). Re-marshal the
+	// Data field with the SAME settings TakeSnapshot used
+	// (json.MarshalIndent(data, "", "  ")) and SHA-256 the result.
+	// MUST match the Hash field saved in the snapshot file. If it
+	// does not, the file has been tampered with or corrupted
+	// between TakeSnapshot and now — refuse to feed it into the
+	// state-restore pipeline.
+	//
+	// The Hash field MUST be a non-empty hex string for a snapshot
+	// produced by TakeSnapshot. An empty Hash on a snapshot file is
+	// treated as a tampered-by-stripping case (someone wrote a
+	// snapshot without going through TakeSnapshot) — also rejected.
+	if snap.Hash == "" {
+		return nil, fmt.Errorf("%w: snapshot %q has empty Hash field; not produced by TakeSnapshot",
+			ErrSnapshotIntegrity, filename)
+	}
+	expected, err := json.MarshalIndent(snap.Data, "", "  ")
+	if err != nil {
+		// Re-marshaling a map[string]interface{} that just round-tripped
+		// through json.Unmarshal should not be able to fail. Treat as
+		// an integrity failure (we can't verify, so we can't trust).
+		return nil, fmt.Errorf("%w: snapshot %q: re-marshal for hash check: %v",
+			ErrSnapshotIntegrity, filename, err)
+	}
+	gotBytes := sha256.Sum256(expected)
+	got := hex.EncodeToString(gotBytes[:])
+	if got != snap.Hash {
+		return nil, fmt.Errorf("%w: snapshot %q hash mismatch: stored=%s recomputed=%s (tampered or corrupted)",
+			ErrSnapshotIntegrity, filename, snap.Hash, got)
+	}
+
 	return &snap, nil
 }
 

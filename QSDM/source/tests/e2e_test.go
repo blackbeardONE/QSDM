@@ -345,28 +345,74 @@ func TestE2E_AuditChecklistReview(t *testing.T) {
 		t.Fatalf("expected 30+ items, got %d", baseline["total"])
 	}
 
-	// Review some critical items. auth-04 (JWT replay prevention)
-	// and tok-01 (genesis policy sign-off) are still pending in
-	// defaultItems() so the passed delta from this block is
-	// exactly +2; bridge-01 is also pending (bridge secret-handling
-	// review not yet performed) so the failed delta is exactly +1.
-	// (Note: auth-01 was the historic pick here; it flipped to
-	// StatusPassed in the 2026-05-14 audit-evidence catch-up pass.
-	// crypto-01 and crypto-02 were the next picks; they flipped to
-	// StatusPassed in the 2026-05-14 pkg/crypto test catch-up.
-	// sc-01 was the next pick; it flipped to StatusPassed in the
-	// 2026-05-15 pkg/wasm + pkg/contracts isolation-test catch-up.
-	// authz-01 was the next pick; it flipped to StatusPassed in
-	// the 2026-05-15 pkg/api/admin_auth + pkg/governance/multisig
-	// + pkg/contracts/upgrade + pkg/api/ratelimit_roles authz-*
-	// catch-up — see pkg/audit/checklist.go for the in-tree-tests
-	// evidence pointers. tok-01 is BLOCKED on external counsel
-	// review per its own Notes; using it here is a test-only
-	// mutation, not a claim that the underlying review has
-	// happened.)
-	cl.UpdateStatus("auth-04", audit.StatusPassed, "auditor", "JWT replay prevention verified")
+	// Review some items. mining-05 (incentivized testnet
+	// readiness) and tok-01 (genesis policy sign-off) are still
+	// pending in defaultItems() so the passed delta from this
+	// block is exactly +2; rebrand-03 (trademark filings
+	// initiated) is also pending so the failed delta is exactly
+	// +1.
+	//
+	// Rebase history for this test's "flip-to-failed" subject —
+	// each prior pick was retired as its row flipped to passed in
+	// defaultItems(), so the test got rebased onto the next
+	// still-pending row in the same neighbourhood:
+	//
+	//   auth-01 (historic) → flipped 2026-05-14 audit-evidence
+	//     catch-up pass.
+	//   crypto-01 / crypto-02 → flipped 2026-05-14 pkg/crypto test
+	//     catch-up.
+	//   sc-01 → flipped 2026-05-15 pkg/wasm + pkg/contracts
+	//     isolation-test catch-up.
+	//   authz-01 → flipped 2026-05-15 pkg/api/admin_auth +
+	//     pkg/governance/multisig + pkg/contracts/upgrade +
+	//     pkg/api/ratelimit_roles authz-* catch-up.
+	//   bridge-01 → flipped 2026-05-15 bridge cluster catch-up
+	//     (secret-handling + lock-expiry + fee-integrity +
+	//     relayer-retry all in tree-tests).
+	//   rotation-04 → flipped 2026-05-15 rotation cluster catch-up
+	//     (this commit; runbook BRIDGE_SECRET_ROTATION.md +
+	//     rotation-02 MTLS_CERT_ROTATION.md + rotation-03
+	//     SCYLLA_AUTH_ROTATION.md all landed together).
+	//   supply-03 → flipped 2026-05-16 supply-chain Trivy gate
+	//     catch-up (the two-channel Trivy gate had been live in
+	//     .github/workflows/release-container.yml +
+	//     security-scan-containers.yml since v0.4.0 / 6173e5e —
+	//     evidence flip surfaced the in-tree control to the audit
+	//     row that asked for it).
+	//   rotation-01 → flipped 2026-05-16 dual-accept window landed
+	//     in pkg/api/auth.go + pkg/api/security.go: secondary
+	//     verify-only HMAC key for both the JWT path and the
+	//     X-Signature path, gated by two new secondary-hit metrics
+	//     so cutover is data-driven. Runbook
+	//     QSDM/docs/docs/runbooks/JWT_KEY_ROTATION.md.
+	//   auth-04 / net-04 / store-02 → flipped 2026-05-16
+	//     medium-severity sweep (auth-04 evidence flip surfacing
+	//     the three-layer replay prevention; net-04 fix to
+	//     replace the dashboard WebSocket's permissive
+	//     CheckOrigin with an allowlist-checked closure; store-02
+	//     fix to verify snapshot SHA-256 on load).
+	//   net-02 / rotation-05 → flipped 2026-05-16 paired sweep
+	//     (net-02 hardened pkg/networking/bootstrap.go with the
+	//     QSDM-private DHT protocol prefix, removed the public-
+	//     IPFS bootstrap fallback by default, added the
+	//     AllowedPeers allowlist; rotation-05 added the
+	//     qsdm_security_secret_days_until_expiry gauge in
+	//     pkg/monitoring/expiry_gauge.go + matching Prometheus
+	//     alert rules in alerts_qsdm.example.yml::qsdm-secret-
+	//     rotation).
+	//   rebrand-03 (current pick): the trademark filings row
+	//     remains wall-clock-blocked on legal counsel; using it
+	//     as the +failed mutation subject doesn't claim anything
+	//     about the underlying filing status.
+	//
+	// tok-01 and mining-05 are BOTH wall-clock-blocked on
+	// external parties (tok-01: counsel; mining-05: marketing +
+	// faucet infra). Using them as +passed mutation subjects is a
+	// test-only mutation, not a claim that the underlying gate
+	// has been satisfied.
+	cl.UpdateStatus("mining-05", audit.StatusPassed, "auditor", "incentivized testnet readiness verified")
 	cl.UpdateStatus("tok-01", audit.StatusPassed, "auditor", "Genesis policy sign-off verified")
-	cl.UpdateStatus("bridge-01", audit.StatusFailed, "auditor", "needs bridge secret rotation policy")
+	cl.UpdateStatus("rebrand-03", audit.StatusFailed, "auditor", "needs trademark filings initiated")
 
 	summary := cl.Summary()
 	if got, want := summary["passed"]-baseline["passed"], 2; got != want {
@@ -379,7 +425,7 @@ func TestE2E_AuditChecklistReview(t *testing.T) {
 
 	pending := cl.PendingCritical()
 	for _, item := range pending {
-		if item.ID == "auth-04" || item.ID == "tok-01" {
+		if item.ID == "mining-05" || item.ID == "tok-01" {
 			t.Fatalf("reviewed items should not be in pending: %s", item.ID)
 		}
 	}

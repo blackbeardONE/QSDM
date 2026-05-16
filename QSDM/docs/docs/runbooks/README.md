@@ -86,6 +86,7 @@ link directly to the relevant `### 3.x Mode X` (or
 | `QSDMP2PGossipIngressStalled`                  | warning      | `qsdm-p2p`                        | [`NETWORKING_INCIDENT.md` §3.2](NETWORKING_INCIDENT.md#32-mode-b--qsdmp2pgossipingressstalled)         |
 | `QSDMP2PNoPeers`                               | warning      | `qsdm-p2p`                        | [`NETWORKING_INCIDENT.md` §3.1](NETWORKING_INCIDENT.md#31-mode-a--qsdmp2pnopeers)                      |
 | `QSDMP2PWalletIngressDedupeBurst`              | info         | `qsdm-p2p`                        | [`NETWORKING_INCIDENT.md` §3.3](NETWORKING_INCIDENT.md#33-mode-c--qsdmp2pwalletingressdedupeburst)     |
+| `QSDMPeerAttesterAbsent`                       | warning      | `qsdm-v2-peer-attester`           | [`DEPLOYMENT_TOPOLOGY.md` §8 Mode A](DEPLOYMENT_TOPOLOGY.md#mode-a--qsdmpeerattesterabsent) |
 | `QSDMQuarantineAnySubmesh`                     | warning      | `qsdm-quarantine`                 | [`QUARANTINE_INCIDENT.md` §3.1](QUARANTINE_INCIDENT.md#31-mode-a--qsdmquarantineanysubmesh) |
 | `QSDMQuarantineMajorityIsolated`               | **critical** | `qsdm-quarantine`                 | [`QUARANTINE_INCIDENT.md` §3.2](QUARANTINE_INCIDENT.md#32-mode-b--qsdmquarantinemajorityisolated) |
 | `QSDMReputationBanRatioHigh`                   | warning      | `qsdm-reputation`                 | [`REPUTATION_INCIDENT.md` §3.1](REPUTATION_INCIDENT.md#31-mode-a--qsdmreputationbanratiohigh)      |
@@ -105,8 +106,8 @@ link directly to the relevant `### 3.x Mode X` (or
 | `QSDMWalletSendErrorRate`                      | warning      | `qsdm-wallet`                     | [`WALLET_INCIDENT.md` §3.1](WALLET_INCIDENT.md#31-mode-a--qsdmwalletsenderrorrate)         |
 | `QSDMWalletStorageErrorBurst`                  | warning      | `qsdm-wallet`                     | [`WALLET_INCIDENT.md` §3.2](WALLET_INCIDENT.md#32-mode-b--qsdmwalletstorageerrorburst)     |
 
-**Total: 53 alerts. Severity distribution: 9 critical
-/ 39 warning / 5 info.**
+**Total: 54 alerts. Severity distribution: 9 critical
+/ 40 warning / 5 info.**
 
 ---
 

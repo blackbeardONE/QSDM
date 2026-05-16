@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMReputationBanRatioHigh`\n\n**Severity**: `warning`\n\n**Trigger**: `(qsdm_reputation_peers_banned / qsdm_reputation_peers_total) > 0.5 and qsdm_reputation_peers_total >= 4`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md#31-mode-a--qsdmreputationbanratiohigh",
+      "description": "**Alert**: `QSDMPeerAttesterAbsent`\n\n**Severity**: `warning`\n\n**Trigger**: `up{job=~\"qsdm-peer-attester-.+\"} == 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/DEPLOYMENT_TOPOLOGY.md#mode-a--qsdmpeerattesterabsent",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -75,7 +75,7 @@
         "x": 0,
         "y": 0
       },
-      "id": 39,
+      "id": 36,
       "options": {
         "colorMode": "background",
         "graphMode": "area",
@@ -96,79 +96,14 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "(qsdm_reputation_peers_banned / qsdm_reputation_peers_total) > 0.5 and qsdm_reputation_peers_total >= 4",
+          "expr": "up{job=~\"qsdm-peer-attester-.+\"} == 0",
           "instant": false,
           "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "QSDMReputationBanRatioHigh",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "description": "**Alert**: `QSDMReputationScoreCollapse`\n\n**Severity**: `info`\n\n**Trigger**: `qsdm_reputation_score_min < -100 and qsdm_reputation_peers_total >= 4`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md#32-mode-b--qsdmreputationscorecollapse",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 6,
-        "x": 6,
-        "y": 0
-      },
-      "id": 40,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "qsdm_reputation_score_min < -100 and qsdm_reputation_peers_total >= 4",
-          "instant": false,
-          "legendFormat": "{{instance}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "QSDMReputationScoreCollapse",
+      "title": "QSDMPeerAttesterAbsent",
       "type": "stat"
     }
   ],
@@ -188,8 +123,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "QSDM — Reputation Incident",
-  "uid": "qsdm-runbook-reputation-incident",
+  "title": "QSDM — Deployment Topology",
+  "uid": "qsdm-runbook-deployment-topology",
   "version": 1,
   "weekStart": ""
 }

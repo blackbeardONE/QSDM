@@ -3077,3 +3077,168 @@ groups:
             a missing entry on the allowlist; a wide
             distribution is a scanner that should be
             ignored.
+
+  # -----------------------------------------------------------------
+  # v2 peer-attester (Public Challenge Issuer) tunnel liveness
+  # -----------------------------------------------------------------
+  # Each [[peer]] in /opt/qsdm/peer_signers.toml that is also
+  # reachable over the reverse tunnel (qsdm-attester home-side +
+  # qsdm-relay BLR1-side + Caddy /attest/* route) gets a Prometheus
+  # scrape job named qsdm-peer-attester-<slot>. up=0 sustained
+  # 5m means the validator's Tier-2 telemetry oracle has lost its
+  # 5-minute reference-profile feed: NOT a fatal consensus event,
+  # but the validator silently falls back on its own attester for
+  # the GPU SKU catalog, weakening the anti-spoof posture. The
+  # alert is warning (not page) because spec-check tolerates the
+  # fallback for hours; the operator should fix it within shift.
+  - name: qsdm-v2-peer-attester
+    rules:
+      - alert: QSDMPeerAttesterAbsent
+        # up=0 sustained 5m. Five-minute window is one
+        # full QSDM_PEER_ATTESTER_REFRESH interval; we
+        # want to alert AFTER the validator's next
+        # scheduled fetch would also fail, not before.
+        expr: |
+          up{job=~"qsdm-peer-attester-.+"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: v2-peer-attester
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/DEPLOYMENT_TOPOLOGY.md#mode-a--qsdmpeerattesterabsent"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-deployment-topology.json"
+          summary: "{{ $labels.peer_slot }}: peer attester unreachable via tunnel for >=5m"
+          description: |
+            Prometheus has been unable to scrape
+            {{ $labels.peer_slot }} (signer_id={{
+            $labels.peer_signer_id }}) for >=5m. The
+            Tier-2 telemetry oracle on this validator
+            depends on a successful 5-minute fetch
+            from
+            https://api.qsdm.tech/attest/{{ $labels.peer_slot }}/api/v1/telemetry/reference;
+            when that fetch fails the validator
+            silently falls back on its own attester
+            for the GPU SKU catalog, weakening the
+            anti-spoof posture.
+
+            Triage map (DEPLOYMENT_TOPOLOGY.md §6
+            failure modes):
+              - 502 on the public path -> home
+                attester process down; restart the
+                launcher on the home box (runbook §5).
+              - 401 on the public path -> Caddy is
+                mis-routing /attest/* to the main
+                API; re-apply the handle_path directive
+                (§2) and `systemctl restart caddy`.
+              - timeout -> Caddy or the relay itself
+                is down; check
+                `systemctl status caddy qsdm-relay`.
+
+  # -----------------------------------------------------------------
+  # rotation-05: secret / cert rotation monitoring
+  # -----------------------------------------------------------------
+  # The qsdm_security_secret_days_until_expiry gauge is emitted by
+  # pkg/monitoring/expiry_gauge.go. Two semantics live in one
+  # series — distinguished by the `kind` label:
+  #
+  #   * kind="tls_cert" / "mtls_client_ca": value = (NotAfter - now)
+  #     in days. POSITIVE while the cert is still valid, NEGATIVE
+  #     once it expires. Alert on `< 30` to fire 30 days before
+  #     expiry, `< 7` for the urgent rotation window.
+  #
+  #   * kind="jwt_primary" / "request_sig_primary" /
+  #     "jwt_secondary" / "request_sig_secondary": value =
+  #     -(age-since-set in days). The trick is intentional — the
+  #     gauge is uniformly "negative means worse, positive means
+  #     better" so a single dashboard panel reads naturally. Alert
+  #     on `<= -90` for the primary keys to fire when an HMAC
+  #     secret has been in place longer than the rotation policy.
+  #     Secondary kinds: alert on `<= -7` to fire when a rotation
+  #     window has been left open for more than a week (the JWT
+  #     rotation runbook prescribes 24h-7d depending on token TTL).
+  - name: qsdm-secret-rotation
+    rules:
+      - alert: QSDMTLSCertNearExpiry
+        expr: |
+          qsdm_security_secret_days_until_expiry{kind=~"tls_cert|mtls_client_ca"} < 30
+        for: 1h
+        labels:
+          severity: warning
+          audit_row: rotation-05
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/MTLS_CERT_ROTATION.md#31-qsdmtlscertnearexpiry"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          summary: |
+            TLS / mTLS cert near expiry (<30 days)
+          description: |
+            qsdm_security_secret_days_until_expiry for
+            kind={{ $labels.kind }} subject={{ $labels.subject }}
+            has dropped below 30 days. Rotate the cert
+            (autocert renews automatically; manual deploys
+            follow the mTLS rotation runbook). Once the new
+            cert is loaded the gauge will jump back to
+            (new NotAfter - now), so this alert auto-resolves
+            on successful rotation.
+
+      - alert: QSDMTLSCertCriticalExpiry
+        expr: |
+          qsdm_security_secret_days_until_expiry{kind=~"tls_cert|mtls_client_ca"} < 7
+        for: 15m
+        labels:
+          severity: critical
+          audit_row: rotation-05
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/MTLS_CERT_ROTATION.md#32-qsdmtlscertcriticalexpiry"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          summary: |
+            TLS / mTLS cert CRITICALLY near expiry (<7 days)
+          description: |
+            kind={{ $labels.kind }} subject={{ $labels.subject }}
+            cert is within 7 days of expiry — rotate NOW.
+            A negative value means the cert has already
+            expired; any incoming TLS handshake will fail.
+
+      - alert: QSDMJWTPrimaryKeyAgedOut
+        expr: |
+          qsdm_security_secret_days_until_expiry{kind=~"jwt_primary|request_sig_primary"} <= -90
+        for: 6h
+        labels:
+          severity: warning
+          audit_row: rotation-05
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/JWT_KEY_ROTATION.md#31-qsdmjwtprimarykeyagedout"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          summary: |
+            JWT / request-sig primary HMAC older than 90d — rotate
+          description: |
+            The primary HMAC key for kind={{ $labels.kind }}
+            subject={{ $labels.subject }} was set more than 90
+            days ago (gauge value <= -90). QSDM's rotation
+            policy is 90 days; install a new primary and use
+            the dual-accept secondary path documented in the
+            JWT_KEY_ROTATION runbook. Setting a new primary
+            resets the gauge so this alert auto-resolves on
+            cutover.
+
+      - alert: QSDMJWTSecondaryKeyWindowLeftOpen
+        expr: |
+          qsdm_security_secret_days_until_expiry{kind=~"jwt_secondary|request_sig_secondary"} <= -7
+        for: 1h
+        labels:
+          severity: warning
+          audit_row: rotation-05
+        annotations:
+          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/JWT_KEY_ROTATION.md#32-qsdmjwtsecondarykeywindowleftopen"
+          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          summary: |
+            JWT secondary HMAC rotation window left open >7d
+          description: |
+            The rotation runbook gates "cutover complete" on
+            qsdm_security_jwt_secondary_key_hits_total going
+            flat. If it's been flat AND the window has been
+            open for more than 7 days, the operator has likely
+            forgotten to clear the secondary. Clear with
+            QSDM_JWT_HMAC_SECRET_SECONDARY="" + systemctl
+            restart qsdm (calls
+            SetJWTHMACFallbackSecondarySecret("") +
+            ClearSecretExpiry, so this alert auto-resolves).

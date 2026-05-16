@@ -323,17 +323,31 @@ func (rl *RateLimiter) getClientIdentifier(r *http.Request) string {
 // — that is the correct security default for the "Dilithium
 // unavailable" path.
 type RequestSigner struct {
-	dilithium    *crypto.Dilithium
-	// hmacMu guards hmacFallback for the lazy-init race between
-	// the first SignRequest and a concurrent VerifyRequest.
-	hmacMu       sync.Mutex
-	hmacFallback []byte // explicit secret from constructor, or lazily-generated 32 B ephemeral
+	dilithium *crypto.Dilithium
+	// hmacMu guards hmacFallback + hmacFallbackSecondary for the
+	// lazy-init race between the first SignRequest and a concurrent
+	// VerifyRequest, and for SetSecondaryHMACSecret rebinding the
+	// secondary mid-rotation.
+	hmacMu sync.Mutex
+	hmacFallback []byte // explicit primary secret, or lazily-generated 32 B ephemeral
+	// hmacFallbackSecondary: VERIFY-ONLY secondary key for zero-downtime
+	// HMAC rotation (audit row rotation-01). When set, VerifyRequest first
+	// tries the primary; if it does not match, it tries the secondary and
+	// — on success — increments
+	// qsdm_security_request_signature_secondary_key_hits_total so the
+	// operator can confirm the window is being exercised before completing
+	// the cutover. SignRequest NEVER reads this field — new signatures
+	// are always primary-only.
+	hmacFallbackSecondary []byte
 }
 
 // NewRequestSigner creates a new request signer. hmacFallbackSecret
 // is used for HMAC when Dilithium is unavailable (non-CGO); empty
 // leaves the fallback secret unset, so hmacSecret() will lazily
 // generate a 32-byte ephemeral key from crypto/rand on first use.
+//
+// Use SetSecondaryHMACSecret after construction to install a
+// rotation-window VERIFY-ONLY secondary key (audit row rotation-01).
 func NewRequestSigner(hmacFallbackSecret string) (*RequestSigner, error) {
 	d := crypto.NewDilithium()
 	// Allow nil Dilithium for non-CGO builds (uses fallback signing)
@@ -344,6 +358,45 @@ func NewRequestSigner(hmacFallbackSecret string) (*RequestSigner, error) {
 		rs.hmacFallback = []byte(s)
 	}
 	return rs, nil
+}
+
+// SetSecondaryHMACSecret installs (or clears, with an empty argument)
+// the VERIFY-ONLY secondary HMAC key used during a key-rotation
+// window. The secondary key is consulted by VerifyRequest's HMAC
+// fallback path AFTER the primary fails. New signatures are ALWAYS
+// produced with the primary (SignRequest never reads the secondary).
+//
+// Setting the secondary to the same bytes as the primary is rejected
+// as a no-op: a same-key "rotation" would mean the secondary hit
+// counter never increments, defeating the runbook's gating check.
+//
+// See QSDM/docs/docs/runbooks/JWT_KEY_ROTATION.md for the procedure.
+func (rs *RequestSigner) SetSecondaryHMACSecret(secret string) {
+	s := strings.TrimSpace(secret)
+	rs.hmacMu.Lock()
+	defer rs.hmacMu.Unlock()
+	if s == "" {
+		rs.hmacFallbackSecondary = nil
+		return
+	}
+	if len(rs.hmacFallback) > 0 && hmac.Equal([]byte(s), rs.hmacFallback) {
+		rs.hmacFallbackSecondary = nil
+		return
+	}
+	rs.hmacFallbackSecondary = []byte(s)
+}
+
+// secondaryHMACSecret returns the rotation-window secondary key
+// (or nil when no rotation is in flight). VERIFY-ONLY accessor.
+func (rs *RequestSigner) secondaryHMACSecret() []byte {
+	rs.hmacMu.Lock()
+	defer rs.hmacMu.Unlock()
+	if len(rs.hmacFallbackSecondary) == 0 {
+		return nil
+	}
+	out := make([]byte, len(rs.hmacFallbackSecondary))
+	copy(out, rs.hmacFallbackSecondary)
+	return out
 }
 
 func (rs *RequestSigner) hmacSecret() []byte {
@@ -415,12 +468,29 @@ func (rs *RequestSigner) VerifyRequest(body []byte, timestamp int64, nonce strin
 			return errors.New("invalid request signature")
 		}
 	} else {
-		// Fallback: Verify HMAC-SHA256 for non-CGO builds
+		// Fallback: Verify HMAC-SHA256 for non-CGO builds.
+		//
+		// Dual-key verify (audit row rotation-01): try primary first;
+		// on mismatch, if a rotation-window secondary is configured,
+		// try the secondary. A secondary hit increments
+		// qsdm_security_request_signature_secondary_key_hits_total
+		// so operators can confirm the window is being exercised
+		// before clearing the secondary at cutover.
 		h := hmac.New(sha256.New, rs.hmacSecret())
 		h.Write(payloadBytes)
 		expectedSignature := h.Sum(nil)
 		if !hmac.Equal(signature, expectedSignature) {
-			return errors.New("invalid request signature")
+			secondary := rs.secondaryHMACSecret()
+			if len(secondary) == 0 {
+				return errors.New("invalid request signature")
+			}
+			h2 := hmac.New(sha256.New, secondary)
+			h2.Write(payloadBytes)
+			expectedSecondary := h2.Sum(nil)
+			if !hmac.Equal(signature, expectedSecondary) {
+				return errors.New("invalid request signature")
+			}
+			monitoring.RecordRequestSignatureSecondaryKeyHit()
 		}
 	}
 	

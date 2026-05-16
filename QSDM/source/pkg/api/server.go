@@ -12,6 +12,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/bridge"
 	"github.com/blackbeardONE/QSDM/pkg/config"
 	"github.com/blackbeardONE/QSDM/pkg/contracts"
+	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 	"github.com/blackbeardONE/QSDM/pkg/submesh"
 	"github.com/blackbeardONE/QSDM/pkg/wallet"
 )
@@ -119,6 +120,8 @@ func NewServer(cfg *config.Config, logger *logging.Logger, walletService *wallet
 			return nil, fmt.Errorf("failed to create auth manager: %w", err)
 		}
 		authManager.SetJWTHMACFallbackSecret(cfg.JWTHMACSecret)
+		// rotation-01: optional VERIFY-ONLY secondary key
+		authManager.SetJWTHMACFallbackSecondarySecret(cfg.JWTHMACSecretSecondary)
 	}
 
 	// Initialize user store. When UserStorePath is configured (the
@@ -155,6 +158,8 @@ func NewServer(cfg *config.Config, logger *logging.Logger, walletService *wallet
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request signer: %w", err)
 	}
+	// rotation-01: optional VERIFY-ONLY secondary key on the same surface
+	requestSigner.SetSecondaryHMACSecret(cfg.JWTHMACSecretSecondary)
 
 	// Initialize CSRF manager
 	csrfManager := NewCSRFManager()
@@ -324,9 +329,35 @@ func (s *Server) Start() error {
 			if err != nil {
 				return fmt.Errorf("failed to generate self-signed certificate: %w", err)
 			}
+			// rotation-05: register the self-signed cert's NotAfter
+			// for the rotation-monitoring gauge. Self-signed is the
+			// dev path so the resulting alert says "rotate me" loud
+			// when the operator forgets to swap in a real cert.
+			if notAfter, gErr := monitoring.RecordCertExpiryFromFile(monitoring.SecretExpiryKindTLSCert, certFile, certFile); gErr == nil {
+				s.logger.Info("TLS cert expiry registered with rotation gauge",
+					"audit_row", "rotation-05",
+					"path", certFile,
+					"not_after", notAfter.Format(time.RFC3339),
+					"days_until_expiry", int(time.Until(notAfter).Hours()/24),
+				)
+			} else {
+				s.logger.Warn("TLS cert expiry gauge registration failed", "path", certFile, "error", gErr)
+			}
 			return s.httpServer.ListenAndServeTLS(certFile, keyFile)
 		}
 
+		// rotation-05: register the operator-supplied cert's NotAfter
+		// for the rotation-monitoring gauge.
+		if notAfter, gErr := monitoring.RecordCertExpiryFromFile(monitoring.SecretExpiryKindTLSCert, certFile, certFile); gErr == nil {
+			s.logger.Info("TLS cert expiry registered with rotation gauge",
+				"audit_row", "rotation-05",
+				"path", certFile,
+				"not_after", notAfter.Format(time.RFC3339),
+				"days_until_expiry", int(time.Until(notAfter).Hours()/24),
+			)
+		} else {
+			s.logger.Warn("TLS cert expiry gauge registration failed", "path", certFile, "error", gErr)
+		}
 		return s.httpServer.ListenAndServeTLS(certFile, keyFile)
 	} else {
 		// HTTP mode (development only - NOT recommended for production)

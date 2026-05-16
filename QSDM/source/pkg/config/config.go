@@ -158,6 +158,19 @@ type Config struct {
 	// JWTHMACSecret: HMAC key for JWT and request-signing fallback when Dilithium/CGO is unavailable (non-CGO builds).
 	JWTHMACSecret string
 
+	// JWTHMACSecretSecondary: VERIFY-ONLY secondary HMAC key used during
+	// a key-rotation window (audit row rotation-01). When set, the
+	// AuthManager.ValidateToken + RequestSigner.VerifyRequest fallback
+	// paths try the primary key first and fall back to this secondary
+	// on mismatch, incrementing
+	// qsdm_security_jwt_secondary_key_hits_total /
+	// qsdm_security_request_signature_secondary_key_hits_total
+	// respectively. New tokens / signatures are ALWAYS produced with
+	// JWTHMACSecret (the primary) — the secondary is decommissioning-
+	// only. Leave empty when no rotation is in flight. Runbook:
+	// QSDM/docs/docs/runbooks/JWT_KEY_ROTATION.md.
+	JWTHMACSecretSecondary string
+
 	// AdminAPIRequireRole: when true, /api/admin/* requires JWT role "admin" (after AuthMiddleware).
 	AdminAPIRequireRole bool
 	// AdminAPIRequireMTLS: when true, /api/admin/* requires a verified TLS client certificate.
@@ -693,6 +706,13 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if val := envPreferred("QSDM_JWT_HMAC_SECRET", "QSDM_JWT_HMAC_SECRET"); val != "" {
 		cfg.JWTHMACSecret = val
+	}
+	// Optional VERIFY-ONLY secondary key for the rotation window.
+	// Env var only — there is intentionally no TOML/YAML field for the
+	// secondary because the rotation window is operational (deploy +
+	// restart driven), not part of the long-lived service config.
+	if val := envPreferred("QSDM_JWT_HMAC_SECRET_SECONDARY", "QSDM_JWT_HMAC_SECRET_SECONDARY"); val != "" {
+		cfg.JWTHMACSecretSecondary = val
 	}
 	if val := envPreferred("QSDM_NVIDIA_LOCK_REQUIRE_INGEST_NONCE", "QSDM_NVIDIA_LOCK_REQUIRE_INGEST_NONCE"); val != "" {
 		cfg.NvidiaLockRequireIngestNonce = val == "true" || val == "1"

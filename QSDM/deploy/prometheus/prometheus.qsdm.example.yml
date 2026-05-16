@@ -40,3 +40,38 @@ scrape_configs:
     authorization:
       type: Bearer
       credentials: PASTE_METRICS_SCRAPE_SECRET_HERE
+
+  # Peer-attester (Public Challenge Issuer) scrape. Each [[peer]]
+  # in /opt/qsdm/peer_signers.toml that is also reachable over
+  # the reverse tunnel gets one of these blocks. The target is
+  # the PUBLIC HTTPS path (NOT the relay's 127.0.0.1:7710
+  # directly) so every scrape validates the full Caddy -> relay
+  # -> yamux tunnel -> home attester chain. If the chain breaks,
+  # the scrape fails, up=0, and the QSDMPeerAttesterAbsent alert
+  # fires after 5m. See QSDM/docs/docs/runbooks/DEPLOYMENT_TOPOLOGY.md.
+  #
+  # Copy + edit this stanza per peer attester you allowlist:
+  #   - job_name: qsdm-peer-attester-<slot>   <- must match the
+  #                                              regex in
+  #                                              QSDMPeerAttesterAbsent's
+  #                                              expr (qsdm-peer-attester-.+).
+  #   - replace 'PUBLIC_HOST' with the public hostname Caddy
+  #     terminates TLS on (e.g. api.qsdm.tech).
+  #   - replace '<slot>' with the entry from the relay slot
+  #     allowlist (relay_slots.toml).
+  #   - paste the peer's signer_id + slot + role labels so
+  #     dashboards / alerts can drill down by peer attester.
+  - job_name: qsdm-peer-attester-blackbeard-3050
+    scrape_interval: 30s
+    scrape_timeout: 15s
+    metrics_path: /attest/blackbeard-3050/metrics
+    scheme: https
+    static_configs:
+      - targets:
+          - PUBLIC_HOST                  # e.g. api.qsdm.tech
+        labels:
+          peer_signer_id: 'attester-12a0d1aa082b7e28'
+          peer_slot:      'blackbeard-3050'
+          peer_role:      'pci'
+          peer_arch:      'ampere'
+          peer_gpu:       'rtx-3050'

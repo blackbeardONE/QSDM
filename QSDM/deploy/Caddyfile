@@ -39,6 +39,33 @@ api.qsdm.tech, node.qsdm.tech {
 		}
 	}
 
+	# Tunnel handshake (attester -> relay) inbound on the tunnel-listen port :7700.
+	# Path is /_tunnel/connect with HTTP/1.1 Upgrade to qsdm-tunnel/1. Caddy passes
+	# the upgrade through transparently; yamux takes over on the hijacked conn.
+	# See QSDM/docs/docs/runbooks/DEPLOYMENT_TOPOLOGY.md for the home-attester
+	# bring-up and the docs/docs/TUNNEL_QUICKSTART.md companion in the source
+	# tree for the full wire protocol.
+	handle /_tunnel/connect {
+		reverse_proxy 127.0.0.1:7700 {
+			header_up X-Forwarded-Proto https
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# Reverse-tunnel ingress (Public Challenge Issuer surface):
+	# /attest/<slot>/<path>  ->  qsdm-relay :7710  ->  yamux session  ->  home attester
+	# handle_path strips the /attest prefix so the relay sees /<slot>/<path>.
+	# Once a tunnel client is registered, miners anywhere on the internet can
+	# pull challenges signed by that attester via this path. With no live
+	# tunnel session for the slot, the relay returns 502 (NOT routed back to
+	# the main API — that would 401 with a misleading auth message).
+	handle_path /attest/* {
+		reverse_proxy 127.0.0.1:7710 {
+			header_up X-Forwarded-Proto https
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
 	handle {
 		reverse_proxy 127.0.0.1:8443 {
 			header_up X-Forwarded-Proto https

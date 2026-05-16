@@ -15,6 +15,33 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 )
 
+// DefaultPubsubSignaturePolicy is the message-signature policy applied
+// to every libp2p pubsub instance the production wiring creates. We
+// pin StrictSign (= signed-and-verified) explicitly rather than rely
+// on the go-libp2p-pubsub library default so the property is
+// locally-declared and won't silently regress on dependency upgrade.
+//
+// Under StrictSign, the pubsub layer:
+//
+//   - Wraps every outbound payload from topic.Publish in a
+//     pubsub_pb.Message envelope and signs the envelope with the
+//     host's libp2p identity private key (libp2p.Identity option in
+//     SetupLibP2PWithPortAndKey + loadOrCreateHostKey).
+//   - Verifies every inbound envelope's signature against the sender's
+//     claimed peer.ID; messages that fail verification are dropped
+//     BEFORE reaching topic.Subscribe consumers (see pubsub
+//     ValidationError handling in upstream pubsub.go::pushMsg).
+//   - Rejects messages with absent or malformed signatures the same
+//     way as bad-sig messages — so an attacker can't bypass the gate
+//     by stripping the signature field.
+//
+// Audit row net-01 ("P2P message authentication") evidence path:
+//
+//	pkg/networking/libp2p.go::SetupLibP2PWithPortAndKey   (this file)
+//	pkg/networking/pubsub_signpolicy_test.go              (round-trip + presence-of-option test)
+//	pkg/networking/pubsub_two_hosts_test.go               (broader round-trip smoke)
+var DefaultPubsubSignaturePolicy = pubsub.StrictSign
+
 type DiscoveryNotifee struct {
 	h      host.Host
 	logger *logging.Logger
@@ -104,7 +131,19 @@ func SetupLibP2PWithPortAndKey(ctx context.Context, logger *logging.Logger, port
 		return nil, fmt.Errorf("failed to start mDNS service")
 	}
 
-	ps, err := pubsub.NewGossipSub(ctx, h)
+	// pubsub.StrictSign is the secure baseline: every published message
+	// is wrapped in an envelope signed by the sender's libp2p identity
+	// key, every received message is rejected unless the envelope
+	// signature verifies against the sender's claimed peer.ID. This is
+	// also the go-libp2p-pubsub default, but we pin it EXPLICITLY here
+	// so the property does not silently regress if a future upstream
+	// version flips the default — relying on a dependency's defaults
+	// is weaker evidence than a locally-declared invariant. Audit row
+	// net-01 ("P2P message authentication") is satisfied by this line
+	// plus DefaultPubsubSignaturePolicy below + the round-trip test
+	// in pubsub_signpolicy_test.go.
+	ps, err := pubsub.NewGossipSub(ctx, h,
+		pubsub.WithMessageSignaturePolicy(DefaultPubsubSignaturePolicy))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pubsub: %w", err)
 	}

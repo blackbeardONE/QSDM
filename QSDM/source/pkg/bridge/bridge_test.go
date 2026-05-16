@@ -57,6 +57,39 @@ func TestRefundBeforeExpiry(t *testing.T) {
 	}
 }
 
+// TestRedeemAfterExpiry pins the OTHER half of the lock-expiry gate
+// (audit row bridge-02): a redeem with the CORRECT secret must still
+// fail if the lock has already expired. Without this we'd only be
+// testing the "wrong secret" rejection path; the time-window invariant
+// would slip unobserved if a refactor accidentally let RedeemAsset
+// skip the time.Now().After(ExpiresAt) check in protocol.go:126.
+//
+// We give the lock a 1ns expiry and sleep 5ms before redeeming —
+// avoids any monotonic-clock race while still completing in well
+// under a second. The status transition to LockStatusExpired is also
+// asserted so a future refactor that removed the status-update line
+// but kept the error return would be caught.
+func TestRedeemAfterExpiry(t *testing.T) {
+	bp, err := NewBridgeProtocol()
+	if err != nil {
+		t.Skipf("Bridge needs Dilithium (CGO): %v", err)
+	}
+	ctx := context.Background()
+	lock, err := bp.LockAsset(ctx, "qsdm", "ethereum", "QSD", 10.0, "0xR", 1*time.Nanosecond)
+	if err != nil {
+		t.Fatalf("LockAsset: %v", err)
+	}
+	time.Sleep(5 * time.Millisecond)
+
+	if err := bp.RedeemAsset(ctx, lock.ID, lock.Secret); err == nil {
+		t.Fatal("expected error: lock has expired (redeem-after-expiry must fail)")
+	}
+	got, _ := bp.GetLock(lock.ID)
+	if got.Status != LockStatusExpired {
+		t.Fatalf("expected status=expired after rejected redeem, got %s", got.Status)
+	}
+}
+
 func TestListLocks(t *testing.T) {
 	bp, err := NewBridgeProtocol()
 	if err != nil {
