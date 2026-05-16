@@ -14,6 +14,74 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **External-engagement wrappers for the four wall-clock-blocked
+  audit rows (2026-05-16).** With the internal audit checklist at
+  95.29% (81/85) and every actionable row closed, the only
+  remaining path to 100% runs through external parties — counsel,
+  an auditor, the market (testnet operations), and a trademark
+  office. Each of those four rows now has an engagement-ready
+  wrapper artefact: the document QSDM emails to the external
+  party. Drafting these in-tree (rather than ad-hoc per
+  engagement) means the engagement scope, commercial terms,
+  deliverables, and selection criteria are reviewable in version
+  control instead of locked in someone's drafts folder.
+  - `QSDM/docs/docs/audit/MINING_AUDITOR_RFP.md` — RFP for the
+    `mining-01` mining-protocol external audit. Companion to the
+    pre-existing technical packet at
+    `QSDM/docs/docs/AUDIT_PACKET_MINING.md`; the RFP handles
+    engagement-level concerns (scope, three classes of expected
+    deliverable, auditor qualifications, 14-week timeline,
+    commercial guidance, selection criteria, confidentiality
+    posture, sign-off) without duplicating the technical reading
+    guide.
+  - `QSDM/docs/docs/audit/COUNSEL_BRIEF_TOKENOMICS.md` — counsel
+    brief for the `tok-01` tokenomics sign-off. Six numbered
+    question groups: securities-law characterisation under U.S.
+    federal law (with treasury-allocation sub-questions), MTL /
+    MSB posture, OFAC sanctions exposure, IRS tax
+    characterisation, IP / contributor-license posture
+    (Apache-2.0 ICA vs CLA), jurisdictional / corporate-form.
+    Marked privileged + confidential; not legal advice;
+    distribution gated on engagement-letter execution.
+  - `QSDM/docs/docs/audit/TESTNET_LAUNCH_PLAN.md` — operational
+    plan for the `mining-05` incentivized testnet launch. §3
+    pre-launch checklists (infrastructure, software, docs,
+    faucet abuse-resistance, PR), §4 T-7/T-0/T+14 launch
+    sequence, §7 gate criteria (continuous-uptime, distinct-
+    miner-key count, retarget-cycle completion, faucet hygiene,
+    zero P0/P1 incidents) that the audit row's flip from
+    `pending` to `passed` is conditioned on.
+  - `QSDM/docs/docs/audit/TRADEMARK_FILING_INTAKE.md` — intake
+    packet for the `rebrand-03` trademark filings. Four primary
+    marks (QSDM, Quantum-Safe Distributed Mining, Cell, CELL),
+    three first-tier jurisdictions (US / EU / India), classes
+    9 and 42, preliminary prior-art observations (with the
+    "Cell" mark flagged as the highest-risk wordmark),
+    specimens-of-use catalogue.
+  - `QSDM/docs/docs/audit/EXTERNAL_REQUESTS.md` — status board
+    indexing the four wrappers, the engagement-state machine
+    (`pending → pending → failed → passed`), and the dependency
+    graph among the four rows for mainnet launch sequencing.
+  - `QSDM/docs/docs/NEXT_STEPS.md` — chronological narrative
+    log of wall-clock-blocked work, one section per active item
+    (`A1..A4`) with recent history and open questions for the
+    project lead. Referenced by-name from the four audit-row
+    Notes; this file's existence closes the long-standing "see
+    NEXT_STEPS.md" broken-link in the audit checklist.
+  - `pkg/audit/checklist.go` — `Notes` field updated for each of
+    the four rows (`mining-01`, `tok-01`, `mining-05`,
+    `rebrand-03`) to reference its engagement-ready wrapper. The
+    rows remain `StatusPending` (the answer is in motion, not
+    yet delivered); the audit-row UI now points operators at the
+    in-flight engagement document instead of leaving the cell
+    blank. Build + `go test ./pkg/audit/...` clean.
+  - **Score impact:** none today (rows remain `pending`). The
+    structural impact is that the four rows are no longer
+    "blocked on a vague external party" but "blocked on the
+    project lead distributing a specific document to a named
+    counterparty"; the wrappers convert wall-clock-blocked-by-
+    inertia into wall-clock-blocked-by-deliberate-choice.
+
 - **Webviewer hardening: private mux + path tightening + `?tail=N`
   knob (2026-05-16).** Three defense-in-depth changes to
   `internal/webviewer` discovered while investigating an
