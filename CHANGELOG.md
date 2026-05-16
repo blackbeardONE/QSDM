@@ -14,6 +14,65 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Per-row deep-link permalinks on `audit.html`
+  (2026-05-16).** Pairing fragment to the previous Category-
+  breakdown and Embed-snippet work: any audit row is now
+  individually addressable. Visiting
+  `https://qsdm.tech/audit.html#row=rotation-01` (or any other
+  row id) auto-opens the row, scrolls it into view with the
+  sticky table-header offset honoured, briefly pulses an accent-
+  blue flash so the visitor's eye lands on the right place, and
+  reflects the row in the URL hash. Toggling a row by click also
+  updates the hash, so a paste-the-URL share preserves "I was
+  looking at this specific row" state. Lets RFP attachments,
+  blog citations, Slack-shared findings, and the engagement-
+  letter pre-flight docs reference exact audit rows by URL
+  instead of "open the page, ctrl-F for the id, then expand".
+  - **Hash shape.** `#row=<id>` rather than the legacy
+    `#<id>` convention. The `key=value` form prevents collision
+    with the browser's "auto-scroll to element with matching
+    id" default, which would otherwise fire BEFORE the items
+    table renders and land on a nonexistent target. Owning the
+    hash key gives us deterministic scroll control via
+    `requestAnimationFrame` + `scrollIntoView({block: 'start'})`.
+  - **CSS scroll-margin.** The sticky `<thead>` would otherwise
+    paint OVER the scrolled-to row. A `scroll-margin-top: 60px`
+    on `tr.row` reserves space for the header at the top of the
+    viewport. 60 px is measured against the rendered header
+    height in Chrome 121 and revisited if `th` padding changes.
+  - **Flash animation.** 2.2 s keyframe pulse using only
+    `background-color` + `box-shadow` so it does not reflow the
+    table (transform / width changes would cause the sticky
+    `<thead>` to repaint and look janky). `@keyframes
+    audit-row-flash` is removed via `setTimeout` after the
+    animation duration so the row settles back into the normal
+    `.open` background.
+  - **Auto-refresh interaction.** The 60 s `setInterval`-driven
+    items refresh re-renders the table and re-calls
+    `openRowFromHash`; a `lastAppliedRowHash` guard suppresses
+    the flash on the refresh path so a deep-linked row does not
+    re-flash every minute (which would read as "something is
+    broken" rather than "you are looking at this row"). Reset
+    on `hashchange` so a back / forward replay DOES re-flash.
+  - **Cross-filter behaviour.** If a category filter is active
+    and the deep-linked row belongs to a different category,
+    the category filter clears so the row is actually visible.
+    Status / severity are NOT auto-cleared because they're
+    orthogonal dimensions the URL also carries — the visitor
+    presumably wants both filters AND the row. A deep-linked
+    row that genuinely fails the visible filters silently
+    no-ops (the hash is preserved so clearing the filter
+    surfaces the row later).
+  - **`hashchange` listener.** Address-bar paste of a new
+    `#row=<id>` value re-applies through the same code path
+    as the initial load. `replaceState` (used internally for
+    URL syncing) does NOT trigger `hashchange`, so the
+    back-stack stays clean.
+  - **Implementation.** ~120 lines of JS appended to the
+    existing script block plus a small CSS keyframe.
+    `cssEscape` is a tiny polyfill scoped to the row-id
+    character set (kebab/dot alphanumeric); the full
+    `CSS.escape` API is unnecessary.
 - **Category breakdown drill-down on `audit.html`
   (2026-05-16).** New panel between Evidence provenance and the
   Blocking findings card that renders a grid of clickable

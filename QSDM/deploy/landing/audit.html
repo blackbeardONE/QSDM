@@ -146,6 +146,25 @@
   tr.row:hover { background: rgba(110,168,255,0.04); }
   tr.row.open { background: rgba(110,168,255,0.06); }
   tr.row td { cursor: pointer; }
+  /* scroll-margin-top is the offset applied when scrollIntoView lands
+   * on this element, accounting for the sticky thead so a deep-linked
+   * row is not painted UNDER the header. 60px matches the rendered
+   * height of th (10px top/bottom padding + 12px content + 1px
+   * border + ~25px safety) — measured in Chrome 121 against the
+   * rendered table; revisit if the th padding ever changes. */
+  tr.row { scroll-margin-top: 60px; }
+  /* Permalink flash: brief tint + outline pulse when a row is
+   * landed on via #row=<id>. Auto-removes after the animation;
+   * see flashDeepLinkedRow() in the script block. The keyframes
+   * use only background-color + box-shadow so the animation
+   * does NOT reflow the table (transform / width changes would
+   * cause the sticky thead to repaint and look janky). */
+  @keyframes audit-row-flash {
+    0%   { background: rgba(110,168,255,0.30); box-shadow: inset 0 0 0 2px var(--accent-3); }
+    60%  { background: rgba(110,168,255,0.20); box-shadow: inset 0 0 0 2px var(--accent-3); }
+    100% { background: rgba(110,168,255,0.06); box-shadow: inset 0 0 0 0   transparent; }
+  }
+  tr.row.flash { animation: audit-row-flash 2200ms ease-out 1; }
   tr.detail td { padding: 0; cursor: default; }
   tr.detail .inner {
     padding: 14px 16px 18px 16px;
@@ -615,7 +634,9 @@ GET https://api.qsdm.tech/api/v1/audit/badge.svg   # equivalent</code></pre>
 
   // Persist the current filterState into the URL so the visible
   // page state survives a copy-paste of the URL or a browser
-  // refresh, without polluting the back-stack.
+  // refresh, without polluting the back-stack. Preserves any
+  // existing #row=<id> permalink hash so toggling a chip while a
+  // deep-linked row is open does not "lose" the permalink.
   function syncURLFromFilters() {
     var p = new URLSearchParams();
     if (filterState.status)   p.set('status',   filterState.status);
@@ -623,6 +644,29 @@ GET https://api.qsdm.tech/api/v1/audit/badge.svg   # equivalent</code></pre>
     if (filterState.category) p.set('category', filterState.category);
     var qs = p.toString();
     var newURL = window.location.pathname + (qs ? '?' + qs : '') + window.location.hash;
+    try { window.history.replaceState(null, '', newURL); } catch (e) { /* ignore */ }
+  }
+
+  // Parse the #row=<id> permalink from the URL hash. The hash is
+  // intentionally a `key=value` shape (not just `#id`) so it does
+  // not collide with the legacy "fragment is the element id"
+  // browser convention — that convention would force the page to
+  // auto-scroll to a DOM element with id="<id>" the moment the
+  // hash is set, before our JS has had a chance to render the
+  // items table. Using #row=<id> lets us own the scroll target.
+  function parseRowHash() {
+    var h = (window.location.hash || '').replace(/^#/, '');
+    if (h.indexOf('row=') !== 0) return '';
+    return h.slice(4).trim().toLowerCase();
+  }
+
+  // Write a #row=<id> permalink hash without scrolling (the
+  // default `location.hash = ...` setter scrolls to the matching
+  // element and we already manage scroll ourselves). Empty id
+  // strips the hash entirely.
+  function writeRowHash(id) {
+    var p = window.location.search;
+    var newURL = window.location.pathname + p + (id ? '#row=' + id : '');
     try { window.history.replaceState(null, '', newURL); } catch (e) { /* ignore */ }
   }
 
@@ -744,6 +788,13 @@ GET https://api.qsdm.tech/api/v1/audit/badge.svg   # equivalent</code></pre>
         // load; reflect it visually in the chip rows now that we
         // have the data to count against.
         applyFiltersFromState();
+        // Apply the #row=<id> permalink AFTER renderItems so the
+        // target <tr> exists in the DOM. openRowFromHash is a
+        // no-op when there is no hash, or when the hash points
+        // to an unknown id, so we can call it unconditionally
+        // on every items refresh — the 60s setInterval refresh
+        // will preserve a deep-linked row's open state.
+        openRowFromHash();
       },
       function() {
         document.getElementById('items-body').innerHTML =
@@ -962,7 +1013,104 @@ GET https://api.qsdm.tech/api/v1/audit/badge.svg   # equivalent</code></pre>
     } else {
       openIds[id] = true;
     }
+    // Sync the #row=<id> permalink to the URL. The convention:
+    //   - opening a row sets the hash to that row's id, so a
+    //     paste-the-URL share lands a viewer back on that row
+    //   - closing the row strips the hash, because there is no
+    //     meaningful "currently focused" row left
+    //   - opening a SECOND row (which leaves the first open too)
+    //     updates the hash to the most-recently-opened one,
+    //     because that's the row the user just expressed
+    //     interest in
+    if (openIds[id]) {
+      writeRowHash(id);
+    } else if (parseRowHash() === id) {
+      writeRowHash('');
+    }
     renderItems();
+  }
+
+  // Pulse the deep-linked row briefly so a visitor's eye is
+  // drawn to it. The .flash class is removed after the keyframe
+  // duration (matched in CSS) so the row settles back to its
+  // normal .open background. CSS animation handles all of the
+  // visual work; this function just toggles the class.
+  function flashDeepLinkedRow(id) {
+    var tr = document.querySelector('tr.row[data-id="' + cssEscape(id) + '"]');
+    if (!tr) return;
+    tr.classList.remove('flash');
+    // Force reflow so the keyframe animation restarts when
+    // openRowFromHash is called twice in a row (e.g. on
+    // hashchange via back-button replay).
+    void tr.offsetWidth;
+    tr.classList.add('flash');
+    setTimeout(function() { tr.classList.remove('flash'); }, 2400);
+  }
+
+  // CSS.escape() polyfill suffices for our use (audit row IDs
+  // are kebab/dot-separated alnum like "rotation-01" or
+  // "store-02"); the full polyfill is unnecessary here.
+  function cssEscape(s) {
+    return String(s).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+  }
+
+  // Tracks the last hash value that triggered a scroll+flash, so
+  // the 60s auto-refresh doesn't keep re-flashing a row the
+  // visitor has already been pulled to. Reset whenever the hash
+  // changes externally (hashchange listener below) so a back-
+  // button replay DOES re-flash.
+  var lastAppliedRowHash = null;
+
+  // openRowFromHash: ensures the row whose id matches the
+  // current #row=<id> hash is expanded, scrolled into view, and
+  // briefly highlighted. Called on initial load (deferred until
+  // items have rendered), on hashchange (back/forward replay),
+  // and on every items refresh (the 60s setInterval) — the
+  // lastAppliedRowHash guard makes the refresh path a no-op
+  // for the flash, but still preserves the row's open state.
+  function openRowFromHash() {
+    var id = parseRowHash();
+    if (!id) {
+      lastAppliedRowHash = null;
+      return;
+    }
+    // Filtered-out: don't surface an error; just no-op so the
+    // hash is preserved when the user clears the filter the
+    // row will re-render and become visible again.
+    var match = lastItems.filter(function(it) { return it.id === id; });
+    if (match.length === 0) return;
+    // If a category filter is active and the deep-linked row
+    // belongs to a different category, clear the category
+    // filter so the row is actually visible. Status/severity
+    // are NOT auto-cleared because they're orthogonal
+    // dimensions the URL also carries — the visitor presumably
+    // wants both filters AND the row.
+    if (filterState.category && match[0].category !== filterState.category) {
+      filterState.category = '';
+      syncURLFromFilters();
+      renderCategoryBreakdown();
+    }
+    openIds[id] = true;
+    // Only scroll + flash if this is a NEW hash for us (initial
+    // load or hashchange) — not on the 60s auto-refresh that
+    // also calls into this function. Without this guard the row
+    // would flash every minute, which reads as "something is
+    // broken" rather than "you have been pulled to this row".
+    var shouldFlash = (lastAppliedRowHash !== id);
+    lastAppliedRowHash = id;
+    renderItems();
+    if (!shouldFlash) return;
+    // requestAnimationFrame ensures the new <tr> is in the DOM
+    // before scrollIntoView fires; without it, the scroll
+    // target can be the OLD <tr> that renderItems() just
+    // replaced, which leads to a no-op scroll.
+    window.requestAnimationFrame(function() {
+      var tr = document.querySelector('tr.row[data-id="' + cssEscape(id) + '"]');
+      if (tr) {
+        tr.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        flashDeepLinkedRow(id);
+      }
+    });
   }
 
   function renderChipCounts() {
@@ -1006,6 +1154,18 @@ GET https://api.qsdm.tech/api/v1/audit/badge.svg   # equivalent</code></pre>
   // is the explicit affordance for the "ok I'm done filtering"
   // intent, in case the visitor scrolled away from the cards.
   document.getElementById('cat-clear-btn').addEventListener('click', clearCategoryFilter);
+
+  // Back/forward navigation between deep-linked rows: when the
+  // browser fires hashchange (because the user pressed Back
+  // after opening multiple rows in sequence, or pasted a new
+  // hash into the address bar without reloading), re-apply the
+  // current hash. openRowFromHash is idempotent — calling it
+  // when the row is already open just refreshes the flash
+  // animation, which is the right cue ("yes, you're looking at
+  // this row").
+  window.addEventListener('hashchange', function() {
+    openRowFromHash();
+  });
 
   loadSummary();
   loadItems();
