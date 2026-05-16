@@ -65,6 +65,35 @@
     margin: 20px 0;
   }
   .scope-note strong { color: var(--text); }
+  /* "Verified by public audit" cross-reference callout — closes the
+   * visual loop between this page (live attestation data) and the
+   * audit checklist that pins the rules this page operates under.
+   * The badge is the live SVG from /api/v1/audit/badge.svg; clicking
+   * the panel takes the visitor to the trust_api category view on
+   * audit.html which lists the 6 audit rows that govern this
+   * surface. Accent-blue border to distinguish from the green
+   * .scope-note (which is "we are limiting this claim's scope")
+   * vs this one which is "this claim is itself audited". */
+  .audit-callout {
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+    padding: 14px 18px; margin: 20px 0;
+    border: 1px solid var(--border); border-left: 3px solid var(--accent-3);
+    background: rgba(110,168,255,0.05);
+    border-radius: 10px;
+  }
+  .audit-callout .audit-callout-badge {
+    flex: 0 0 auto;
+    padding: 10px 12px;
+    background: rgba(0,0,0,.30);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex; align-items: center;
+  }
+  .audit-callout .audit-callout-badge img { display: block; height: 20px; }
+  .audit-callout .audit-callout-text { flex: 1 1 280px; color: var(--text-2); font-size: 13.5px; line-height: 1.55; }
+  .audit-callout .audit-callout-text strong { color: var(--text); }
+  .audit-callout .audit-callout-text a { color: var(--accent-3); font-weight: 600; }
+  .audit-callout .audit-callout-text code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: 12px; color: var(--text); }
   footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
   footer .container { padding: 20px; }
 </style>
@@ -107,6 +136,27 @@
     admits validators without a GPU. A missing or stale attestation <em>never</em> causes
     a validator to be excluded from consensus, block proposal, or finality.
     See <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md">NVIDIA_LOCK_CONSENSUS_SCOPE.md</a>.
+  </div>
+
+  <!-- Cross-reference to the public audit checklist. The trust-API
+       category has 6 rows pinning the contract of the endpoints this
+       page consumes; clicking the badge or the CTA opens audit.html
+       pre-filtered to those 6 rows via the ?category=trust_api deep
+       link shipped in commit 770ce52. -->
+  <div class="audit-callout">
+    <a class="audit-callout-badge" href="/audit.html?category=trust_api"
+       title="Open the 6 trust-API audit rows on audit.html">
+      <img src="/api/v1/audit/badge.svg" alt="QSDM audit score (live)" />
+    </a>
+    <div class="audit-callout-text">
+      <strong>This page is itself audited.</strong>
+      The <code>/api/v1/trust/attestations/*</code> contract is pinned by
+      6 rows in the public audit checklist
+      (<code>trust_api</code> category, all passing). Click the badge
+      to see them, or visit
+      <a href="/audit.html?category=trust_api">audit.html?category=trust_api</a>
+      for the live view.
+    </div>
   </div>
 
   <section class="panel" style="margin: 22px 0;">
@@ -169,6 +219,25 @@
     document.getElementById('status-label').textContent = label || state || 'unknown';
   }
 
+  // Defensive HTML escaping for every API-supplied string before it
+  // is interpolated into innerHTML below. The /api/v1/trust/
+  // attestations/* endpoint is trusted (it's our own server), but
+  // (a) "trusted today" is not the same as "trusted forever" — a
+  // future scraper-side feature could fan in third-party data, and
+  // (b) defence-in-depth costs basically nothing. Mirrors the
+  // identical helper in audit.html which has been live-verified to
+  // shut down innerHTML injection even when the corpus contains
+  // attacker-shaped strings.
+  function escapeHTML(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function ratioCell(attested, total) {
     return '<span class="small">' + attested + '</span> of <span class="small">' + total + '</span>';
   }
@@ -208,14 +277,22 @@
           return;
         }
         var rows = data.attestations.map(function(a) {
-          var age = a.fresh_age_seconds;
+          // Coerce + clamp the age value (a Number from the API)
+          // before any string concatenation, so a non-Number from
+          // a future API change can't produce "NaNs" / "[object
+          // Object]m s" in the rendered table.
+          var age = (typeof a.fresh_age_seconds === 'number' && a.fresh_age_seconds >= 0)
+            ? Math.floor(a.fresh_age_seconds) : 0;
           var ageStr = age < 60 ? age + 's' : Math.floor(age / 60) + 'm ' + (age % 60) + 's';
+          // All API-supplied strings go through escapeHTML before
+          // hitting innerHTML — see escapeHTML() comment above for
+          // the defence-in-depth rationale.
           return '<tr>'
-            + '<td class="mono">' + a.node_id_prefix + '</td>'
-            + '<td>' + ageStr + '</td>'
-            + '<td>' + (a.gpu_architecture || '—') + '</td>'
+            + '<td class="mono">' + escapeHTML(a.node_id_prefix) + '</td>'
+            + '<td>' + escapeHTML(ageStr) + '</td>'
+            + '<td>' + escapeHTML(a.gpu_architecture || '—') + '</td>'
             + '<td>' + (a.ngc_hmac_ok ? '✓' : '✗') + '</td>'
-            + '<td>' + (a.region_hint || 'other') + '</td>'
+            + '<td>' + escapeHTML(a.region_hint || 'other') + '</td>'
             + '</tr>';
         }).join('');
         body.innerHTML = rows;

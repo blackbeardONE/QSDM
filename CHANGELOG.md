@@ -14,6 +14,52 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Audit cross-reference on `trust.html` + defensive HTML
+  escaping (2026-05-16).** Closes the reverse loop in the
+  audit/trust cross-link story: the trust strip on the homepage
+  already points to `/trust.html`, but visitors landing there
+  had no visible indication that the page's own transparency
+  claim is itself audited. A new accent-blue
+  <code>.audit-callout</code> panel just below the existing
+  <code>.scope-note</code> renders the live audit badge from
+  <code>/api/v1/audit/badge.svg</code> alongside one sentence
+  of context ("This page is itself audited; the
+  <code>/api/v1/trust/attestations/*</code> contract is pinned
+  by 6 rows in the <code>trust_api</code> category, all
+  passing") and a deep-link CTA to
+  <code>/audit.html?category=trust_api</code>. The deep-link
+  exercises the <code>?category=&lt;name&gt;</code> URL parameter
+  shipped in commit <code>770ce52</code>, so a click lands the
+  visitor on the audit page pre-filtered to exactly the 6 rows
+  that pin this surface. Visual treatment is distinct from
+  <code>.scope-note</code> (green) and reads as
+  "this claim is itself audited" rather than
+  "we are limiting this claim's scope".
+
+### Fixed
+
+- **`trust.html` attestation table — defensive HTML escaping
+  + numeric coercion on API-supplied strings (2026-05-16).**
+  The <code>recent-body</code> innerHTML interpolation was
+  emitting <code>a.node_id_prefix</code>,
+  <code>a.gpu_architecture</code>, and <code>a.region_hint</code>
+  directly from the <code>/api/v1/trust/attestations/recent</code>
+  response into the table without escaping. The endpoint is our
+  own server and the corpus is tightly controlled, so this was
+  not exploitable in practice — but the defence-in-depth costs
+  nothing and matches the rigour <code>audit.html</code> has
+  carried since day one. Added the same <code>escapeHTML</code>
+  helper used in <code>audit.html</code> and routed every
+  API-supplied string through it. Also added defensive numeric
+  coercion on <code>a.fresh_age_seconds</code> with a
+  <code>Number</code> + non-negative check so a future API
+  change that returned <code>null</code> / <code>undefined</code>
+  / a string for the age cannot render
+  <code>"NaNs"</code> / <code>"[object Object]m s"</code> in
+  the rendered table. Boolean
+  <code>a.ngc_hmac_ok</code> still goes through a direct
+  ternary &mdash; booleans don't need escaping and the
+  &#10003; / &#10007; glyphs are the intent.
 - **Trust strip on the homepage `https://qsdm.tech/`
   (2026-05-16).** New three-pillar transparency section between
   the "Three ways in" product cards and the Docs callout. Closes
