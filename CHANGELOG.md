@@ -14,6 +14,78 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Webviewer hardening: private mux + path tightening + `?tail=N`
+  knob (2026-05-16).** Three defense-in-depth changes to
+  `internal/webviewer` discovered while investigating an
+  apparent-leak alarm during the audit-row sweep. The alarm was a
+  false positive — `:8080` is loopback-only and Caddy does NOT
+  reverse-proxy it — but the underlying code had real ergonomic +
+  defense-in-depth gaps worth closing.
+  - **Private `*http.ServeMux`.** The webviewer used to register
+    its handlers on the GLOBAL `http.DefaultServeMux` (line 85
+    pre-change) and run `srv.ListenAndServe` without setting
+    `srv.Handler`, so the listener inherited DefaultServeMux. Any
+    future contributor importing `net/http/pprof` or registering
+    `expvar.Publish` would have silently exposed those debug
+    handlers on the webviewer port — a Go-stdlib foot-gun that a
+    binary-CVE scanner would catch but a pre-commit grep would not.
+    `newMux` now builds a private mux and `srv.Handler = mux` wires
+    only the two intended routes. No pprof/expvar imports exist in
+    the binary today, so the current exposure is unchanged; this is
+    insurance against a future innocent debug-only import.
+  - **Path tightening.** Pre-change the `/` handler was a catch-all
+    that served the full log file on EVERY path (`/api/foobar`,
+    `/thisdoesnotexist`, `/api/metrics/prometheus`, etc.) because
+    Go's `http.ServeMux` matches `/` as a prefix unless the handler
+    enforces equality. Operators probing the wrong port for a
+    Prometheus exposition or admin API would receive 31MB+ of
+    access logs instead of a clean 404, which (a) was confusing
+    and (b) expanded the surface that a leaked basic-auth creds
+    incident would expose. The new `isLogViewPath` helper enforces
+    an explicit allowlist (`/`, `/log`, `/view`); every other path
+    returns 404 with no log content in the body.
+  - **`?tail=N` query knob.** Pre-change every request streamed the
+    entire log file (we observed 31MB+ growing by ~1.3KB per
+    request as new lines arrived). The new knob caps the response
+    to the LAST N matching lines, composes correctly with the
+    pre-existing `level=` and `keyword=` filters (tail applies AFTER
+    filtering, so "last 200 ERROR-level lines mentioning audit-row"
+    is exactly what you get), and is capped at `MaxTailLines =
+    100_000` so an authenticated attacker can't ask for an absurd
+    line count. Live verification on BLR1: `?tail=3` returns 1018
+    bytes; the unbounded path still returns the full log for
+    backward-compat callers that omit the param.
+  - **Headers.** Both `/` and `/stream` now emit
+    `X-Content-Type-Options: nosniff`. The other security headers
+    (`Cache-Control: no-cache, no-store, must-revalidate`,
+    `Pragma: no-cache`, `Expires: 0`) are preserved.
+  - **Stale Caddyfile comment fixed.** The header comment over the
+    `api.qsdm.tech` site block stated the webviewer was gated by
+    "admin/password" — out-of-date since the
+    `ErrInsecureDefaultCreds` policy landed. New comment explicitly
+    notes :8080 is intentionally NOT reverse-proxied and warns
+    future operators against doing so without a separate FQDN +
+    IP-allowlist.
+  - **Test coverage.** `internal/webviewer/webviewer_routing_test.go`
+    (17 new tests in addition to the 8 pre-existing credential-
+    policy tests; total 25 PASS): unknown-path-404 across 9 sample
+    paths; allowed-paths-serve-log across `/`, `/log`, `/view`;
+    `?tail=N` caps to last N; tail composes with keyword; level
+    filter preserved; `parseTail` sanitises empty/negative/
+    non-numeric/over-cap input; `isLogViewPath` unit table;
+    **private-mux isolation** (registers a sentinel handler
+    returning 418 on `http.DefaultServeMux` at test time, then
+    confirms the webviewer's private mux does NOT serve it — pins
+    the defense-in-depth invariant against future regression).
+  - **Deployment.** `qsdm.linux-amd64`
+    `sha256:b77deff7585eb2de2dc6578685d726cb8d9689027a7393b7bff4dd2a0bda52ad`
+    deployed to BLR1 via atomic swap
+    (`/opt/qsdm/qsdm.bak.20260516-075422` preserved for rollback).
+    Live verification: `GET :8080/api/foobar -> 404` (was 200 with
+    31MB body); `GET :8080/?tail=3 -> 200, 1018 bytes`; allowed
+    paths still serve log content; `systemctl is-active qsdm ->
+    active`.
+
 - **Audit score push: medium-severity sweep #2 — `net-02` + `rotation-05`
   flipped to `passed` in a paired sweep, score 92.94% (79/85) →
   95.29% (81/85), blocking findings unchanged (2; both wall-clock-
