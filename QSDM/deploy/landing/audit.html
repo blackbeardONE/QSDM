@@ -355,13 +355,80 @@
     Click any row to expand its description, notes, and review provenance.
     Showing <span id="visible-count">—</span> of <span id="total-count">—</span> rows.
   </p>
+
+  <!--
+    Embed section: drop-in artefacts for third-party transparency.
+    The badge is a server-rendered shields.io-style SVG at
+    /api/v1/audit/badge.svg — every page-load fetches a fresh score
+    from origin (60 s edge cache). Width auto-sizes to the score
+    text; colour cascades on the standard shields.io ladder
+    (brightgreen >= 95, yellowgreen >= 85, etc.).
+  -->
+  <h2 style="margin-top: 40px;">Embed</h2>
+  <div class="panel" style="padding: 22px;">
+    <p style="margin-top:0; color:var(--muted); font-size:13.5px; line-height:1.55;">
+      Hot-link the badge below from any README, exchange listing,
+      validator dashboard, blog post, or status page. The SVG is
+      server-rendered on every request, so the score is always
+      live (60&nbsp;s edge cache). Drop-in <code>&lt;img&gt;</code>
+      works across GitHub, GitLab, Notion, Bear, and every
+      mainstream Markdown renderer — no CORS, no JS, no iframe.
+    </p>
+
+    <div style="margin: 16px 0 20px; padding: 14px 16px; background: rgba(255,255,255,.04); border: 1px solid var(--panel-border); border-radius: 8px;">
+      <div style="font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 10px;">
+        Live preview
+      </div>
+      <img src="/api/v1/audit/badge.svg"
+           alt="QSDM audit score (live)"
+           style="display: block; height: 20px;" />
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr; gap: 14px;">
+      <div>
+        <div style="font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px;">
+          Markdown (GitHub READMEs)
+        </div>
+        <pre style="margin:0; padding: 10px 12px; background: rgba(0,0,0,.35); border: 1px solid var(--panel-border); border-radius: 6px; font-family: var(--mono); font-size: 12.5px; color: var(--text); overflow-x: auto; line-height: 1.45;"><code>[![QSDM audit](https://qsdm.tech/api/v1/audit/badge.svg)](https://qsdm.tech/audit.html)</code></pre>
+      </div>
+
+      <div>
+        <div style="font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px;">
+          HTML &lt;img&gt; (blogs, dashboards, status pages)
+        </div>
+        <pre style="margin:0; padding: 10px 12px; background: rgba(0,0,0,.35); border: 1px solid var(--panel-border); border-radius: 6px; font-family: var(--mono); font-size: 12.5px; color: var(--text); overflow-x: auto; line-height: 1.45;"><code>&lt;a href="https://qsdm.tech/audit.html"&gt;
+  &lt;img src="https://qsdm.tech/api/v1/audit/badge.svg" alt="QSDM audit score" /&gt;
+&lt;/a&gt;</code></pre>
+      </div>
+
+      <div>
+        <div style="font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px;">
+          Raw endpoint
+        </div>
+        <pre style="margin:0; padding: 10px 12px; background: rgba(0,0,0,.35); border: 1px solid var(--panel-border); border-radius: 6px; font-family: var(--mono); font-size: 12.5px; color: var(--text); overflow-x: auto; line-height: 1.45;"><code>GET https://qsdm.tech/api/v1/audit/badge.svg
+GET https://api.qsdm.tech/api/v1/audit/badge.svg   # equivalent</code></pre>
+      </div>
+    </div>
+
+    <p style="margin: 18px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.55;">
+      Colour ladder: <strong style="color:#4c1;">≥95% brightgreen</strong>
+      &middot; <strong style="color:#c8c821;">≥85% yellowgreen</strong>
+      &middot; <strong style="color:#dfb317;">≥70% yellow</strong>
+      &middot; <strong style="color:#fe7d37;">≥50% orange</strong>
+      &middot; <strong style="color:#e05d44;">&lt;50% red</strong>.
+      Pinned by <code>scoreColour</code> in
+      <code>pkg/api/handlers_audit_badge.go</code>; threshold drift
+      fails CI via <code>TestAuditBadge_ColourThresholds</code>.
+    </p>
+  </div>
 </main>
 
 <footer>
   <div class="container">
     Source:
-    <span class="mono">GET /api/v1/audit/summary</span> and
-    <span class="mono">/api/v1/audit/items</span>.
+    <span class="mono">GET /api/v1/audit/summary</span>,
+    <span class="mono">/api/v1/audit/items</span>,
+    <span class="mono">/api/v1/audit/badge.svg</span>.
     Refreshes every 60&nbsp;s. Repository:
     <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/source/pkg/audit/checklist.go">pkg/audit/checklist.go</a>.
     © <span id="y"></span> QSDM · Cell (CELL).

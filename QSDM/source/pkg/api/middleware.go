@@ -327,6 +327,11 @@ func isPublicEndpoint(path string) bool {
 		// is exactly the transparency signal we want to advertise.
 		"/api/v1/audit/summary",
 		"/api/v1/audit/items",
+		// /api/v1/audit/badge.svg — server-rendered SVG audit
+		// badge. Public for the same reasons as summary/items
+		// above (and a step beyond — a badge is meant to be
+		// embedded by third parties who CANNOT supply auth).
+		"/api/v1/audit/badge.svg",
 	}
 	for _, publicPath := range publicPaths {
 		if path == publicPath {

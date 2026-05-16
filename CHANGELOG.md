@@ -14,6 +14,77 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Public SVG audit badge at
+  `https://qsdm.tech/api/v1/audit/badge.svg` (2026-05-16).** A
+  server-rendered shields.io-style 20px status pill that any
+  third party can hot-link from a GitHub README, exchange
+  listing page, validator dashboard, blog post, or status page.
+  Drop-in `<img src="...">` works everywhere (no CORS, no JS,
+  no iframe) — every page-load of the consuming surface pulls
+  fresh score data from origin, with a 60s edge cache. Standard
+  shields.io aesthetic so ecosystem aggregators (DefiLlama-
+  style trackers, L2Beat-style dashboards) recognise the
+  pattern at a glance.
+  - **Endpoint shape.** `GET /api/v1/audit/badge.svg` returns
+    `image/svg+xml; charset=utf-8` + `Cache-Control:
+    public, max-age=60` + `X-Content-Type-Options: nosniff`.
+    No auth (in `publicPaths` alongside `/api/v1/audit/summary`
+    and `/api/v1/audit/items`); rate-limited by the existing
+    per-IP limiter in `security.go`. ~870 bytes per render.
+  - **Self-contained SVG.** No external font, no external
+    image, no script tag. Font cascade
+    `Verdana → Geneva → DejaVu Sans → sans-serif` so the badge
+    renders identically across Chrome, Firefox, Safari, and the
+    various GitHub README HTML pipelines. The shadow-at-y15 +
+    face-at-y14 trick from the shields.io reference gives the
+    glyphs that classic "engraved" look on coloured backgrounds.
+  - **Colour ladder.** Standard shields.io:
+    `≥95 brightgreen #4c1` (QSDM today at 95.29%) /
+    `≥85 yellowgreen #a4a61d` /
+    `≥70 yellow #dfb317` /
+    `≥50 orange #fe7d37` /
+    `<50 red #e05d44`. Pinned with
+    `TestAuditBadge_ColourThresholds` (table-driven on every
+    boundary + boundary-1) so a refactor that swaps the
+    brightgreen/yellowgreen threshold fails CI rather than
+    silently darkening every embedded README.
+  - **Failsafe.** If the checklist somehow has zero items
+    (a misconfiguration we shouldn't ever ship but defend
+    against anyway) the badge renders `0/0` red instead of
+    the float-div-by-zero `NaN%` that some browsers render
+    as the literal text. Pinned with
+    `TestAuditBadge_GlyphWidth_NonZeroForCommonGlyphs`.
+  - **Width math.** Auto-sized from a glyph table tuned to
+    the actual rendered widths of 11pt Verdana in Chrome 121.
+    `TestAuditBadge_RendererPanelWidth` asserts the total
+    SVG width matches `labelText + valueText + 4·hPadding`
+    so a tuning drift in either the glyph table or the
+    renderer's padding math fails CI rather than clipping
+    "85)" off the right edge of the badge.
+  - **Live in production.** Deployed in this commit to BLR1.
+    New binary
+    `sha256:2c65dbf0b22c60d5e9ae4bddb1e23a9cd03ab8951db3e5959b2f4300e030be6e`
+    swapped atomically over
+    `sha256:809e2ae7c4feda5b27a9c58b049dc8c2b4c32f3ca5e4e790d3f4a93fbda04ee8`
+    (the previous live build);
+    `https://qsdm.tech/api/v1/audit/badge.svg` returns 200
+    with the brightgreen-95.29% pill. Loopback note: the
+    deploy hit a one-shot perms regression
+    (`-rwxr-x--- root:root` instead of `-rwxr-xr-x`) that
+    broke `User=qsdm` execve before the corrective
+    `chmod 0755`; future deploys should match `qsdm.bak.*`
+    permissions rather than tightening to 0750 — captured
+    here as a deployment-pitfall note.
+- **Embed snippets section on `audit.html`.** New
+  `<h2>Embed</h2>` panel just above the footer with a live
+  inline preview of the badge plus three copy-paste blocks:
+  Markdown (for GitHub READMEs), HTML `<img>` (for blogs and
+  dashboards), and the raw endpoint URL. Colour ladder
+  legend at the bottom of the panel cross-references
+  `scoreColour` in `pkg/api/handlers_audit_badge.go` and the
+  CI test. Footer "Source" line updated to mention
+  `/api/v1/audit/badge.svg` alongside `/summary` and `/items`.
+  Audit page is now 32.1 KB on the wire (up from ~28 KB).
 - **Public audit-status page at `https://qsdm.tech/audit.html`
   (2026-05-16).** The internal audit checklist (95.29%, 81/85 passed)
   was previously visible only via the operator dashboard (bearer-

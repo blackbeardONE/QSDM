@@ -455,6 +455,14 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// by the per-IP limiter in security.go.
 	mux.HandleFunc("/api/v1/audit/summary", handlers.AuditSummaryHandler)
 	mux.HandleFunc("/api/v1/audit/items", handlers.AuditItemsHandler)
+	// /api/v1/audit/badge.svg — shields.io-style SVG status pill
+	// rendered server-side from the current checklist. Drop-in
+	// `<img src="...">` works in GitHub READMEs, exchange listings,
+	// validator dashboards, and any other surface that renders
+	// HTML; no CORS friction (SVG via <img> is universally
+	// allowed). 60s edge cache via Cache-Control, see
+	// handlers_audit_badge.go.
+	mux.HandleFunc("/api/v1/audit/badge.svg", handlers.AuditBadgeHandler)
 
 	if s.adminAPI != nil {
 		s.adminAPI.RegisterRoutes(mux)
