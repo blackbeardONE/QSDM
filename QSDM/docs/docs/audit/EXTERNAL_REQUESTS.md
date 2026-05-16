@@ -117,5 +117,14 @@ wrapper moves states.
   doc the `mining-05` testnet will lean on.
 - `pkg/audit/checklist.go` — the source of truth for every audit
   row's status and notes.
-- `NEXT_STEPS.md` (root of `QSDM/docs/docs/`) — running log of
-  wall-clock-blocked work items.
+
+> **A note on the project's planning-notes posture.** The project's
+> `.gitignore` excludes `**/NEXT_STEPS.md`, `BUILD_STATUS.md`,
+> `PROJECT_STATUS.md`, and similar planning-narrative files by
+> deliberate convention (these tend to go stale faster than they
+> can be cleaned up, and end up cluttering history). This file —
+> `EXTERNAL_REQUESTS.md` — is the project's *tracked* status
+> board, and is the canonical place for engagement state. A local
+> contributor may keep an untracked `NEXT_STEPS.md` alongside the
+> repo for personal chronological notes; that file does not feed
+> back into the audit-row Notes or the engagement state machine.

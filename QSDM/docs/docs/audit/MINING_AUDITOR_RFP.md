@@ -10,7 +10,8 @@
 > Once a firm is engaged, the row in
 > [`pkg/audit/checklist.go`](../../../source/pkg/audit/checklist.go) moves
 > from `pending` to `failed` with `Notes` naming the engagement, then to
-> `passed` on receipt of the final report.
+> `passed` on receipt of the final report. Engagement state is
+> tracked in [`EXTERNAL_REQUESTS.md`](./EXTERNAL_REQUESTS.md).
 >
 > **Distribution:** under NDA. The audit-row Notes are public; the firm
 > identities and proposal contents are not until QSDM publishes the

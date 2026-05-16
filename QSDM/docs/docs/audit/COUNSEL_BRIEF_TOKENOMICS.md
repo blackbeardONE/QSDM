@@ -280,8 +280,9 @@ the engagement letter is signed:
 - The row's `Status` may flip from `pending` to `failed` during the
   active engagement (to surface that the answer is in motion); it
   flips to `passed` on receipt of the opinion letter.
-- The opinion-letter delivery date is recorded in `NEXT_STEPS.md`
-  (to be created) and in the row's `ReviewedAt` timestamp.
+- The opinion-letter delivery date is recorded in
+  [`EXTERNAL_REQUESTS.md`](./EXTERNAL_REQUESTS.md) (status board)
+  and in the row's `ReviewedAt` timestamp.
 
 The opinion letter itself is archived under privileged cover; only
 its existence, date, and high-level conclusions (if counsel approves)

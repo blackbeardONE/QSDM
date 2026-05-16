@@ -240,7 +240,7 @@ QSDM cannot launch until:
 ## 8. Internal tracking
 
 This plan is the wall-clock-blocking artifact for audit row
-`mining-05`. Progress against the §3 checklist is tracked in
-`NEXT_STEPS.md` (to be created); on launch, the audit-row Notes
-field is updated to reference the launch announcement URL and the
-first-week retrospective document.
+`mining-05`. Engagement state is tracked in
+[`EXTERNAL_REQUESTS.md`](./EXTERNAL_REQUESTS.md); on launch, the
+audit-row Notes field is updated to reference the launch
+announcement URL and the first-week retrospective document.
