@@ -12,11 +12,16 @@ import (
 // newTestCSRFManager builds a CSRFManager whose cleanup interval is tiny
 // (so an eviction smoke-test does not block CI) and registers Cleanup to
 // release the background goroutine.
+//
+// Uses newCSRFManagerWithIntervals so the cleanupInterval is set BEFORE
+// the cleanup goroutine starts — the previous incarnation of this helper
+// post-mutated cm.cleanupInterval after NewCSRFManager had already started
+// the goroutine, which (a) was a data race and (b) gave the goroutine the
+// 5-minute default ticker often enough to make
+// TestCSRF_BackgroundCleanupEvictsExpired flaky in CI.
 func newTestCSRFManager(t *testing.T) *CSRFManager {
 	t.Helper()
-	cm := NewCSRFManager()
-	// Tighten cleanup so TestCSRF_BackgroundCleanup completes quickly.
-	cm.cleanupInterval = 50 * time.Millisecond
+	cm := newCSRFManagerWithIntervals(defaultCSRFTokenTTL, 50*time.Millisecond)
 	t.Cleanup(cm.Stop)
 	return cm
 }
@@ -317,15 +322,25 @@ func TestCSRFMiddleware_FormValueFallback(t *testing.T) {
 }
 
 func TestCSRF_BackgroundCleanupEvictsExpired(t *testing.T) {
-	cm := newTestCSRFManager(t)
-	cm.tokenTTL = 10 * time.Millisecond
+	// Build a manager with tight TTL + cleanup interval BEFORE the
+	// goroutine starts. The previous incarnation of this test relied
+	// on post-construction mutation of cm.tokenTTL and cm.cleanupInterval,
+	// which raced against the cleanup goroutine's ticker construction
+	// and made the test ~20–40% flaky under suite load. Routing
+	// everything through newCSRFManagerWithIntervals is the deterministic
+	// fix for both the data race and the eviction-timing flake.
+	cm := newCSRFManagerWithIntervals(10*time.Millisecond, 50*time.Millisecond)
+	t.Cleanup(cm.Stop)
 
 	tok, err := cm.GenerateToken()
 	if err != nil {
 		t.Fatalf("GenerateToken: %v", err)
 	}
 
-	// Wait for at least one cleanup tick after expiry.
+	// Wait for at least one cleanup tick after expiry. Token TTL is
+	// 10ms; cleanup interval is 50ms; we wait 200ms which is at least
+	// four full cleanup ticks past expiry. If eviction has not landed
+	// by then, the cleanup goroutine is genuinely wedged — fail.
 	time.Sleep(200 * time.Millisecond)
 
 	cm.mu.RLock()

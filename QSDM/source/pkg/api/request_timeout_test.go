@@ -25,6 +25,15 @@ func TestRequestTimeout_FastHandlerPasses(t *testing.T) {
 func TestRequestTimeout_SlowHandlerCancelled(t *testing.T) {
 	monitoring.ResetSecurityMetricsForTest()
 
+	// 20ms deadline vs 200ms sleep is a 10× margin. Previously this
+	// test was ~40% flaky in isolation because the middleware gated
+	// the metric increment on errors.Is(ctx.Err(), context.DeadlineExceeded),
+	// which reflects the context's cancel-state — not whether the
+	// deadline passed. TimeoutHandler emitted a 503 promptly on its
+	// own derived child context, but our outer ctx's async cancel
+	// had a microsecond window where ctx.Err() still returned nil.
+	// The fix in request_timeout.go uses time.Now().After(deadline)
+	// instead, which is race-free; this test pins the fix.
 	h := RequestTimeoutMiddleware(20 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Block until the per-request deadline fires. We don't read
 		// ctx.Done() here because the middleware uses TimeoutHandler,

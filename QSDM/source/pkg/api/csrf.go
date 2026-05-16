@@ -69,11 +69,30 @@ type csrfToken struct {
 // NewCSRFManager creates a new CSRF manager and starts its background
 // cleanup goroutine. Call Stop() to terminate the goroutine.
 func NewCSRFManager() *CSRFManager {
+	return newCSRFManagerWithIntervals(defaultCSRFTokenTTL, defaultCSRFCleanupInterval)
+}
+
+// newCSRFManagerWithIntervals constructs a CSRFManager with caller-supplied
+// tokenTTL and cleanupInterval and starts its background cleanup goroutine
+// AFTER the fields are populated. Package-private so tests can build a
+// fast-cycling manager without racing against the production constructor.
+//
+// History: TestCSRF_BackgroundCleanupEvictsExpired used to mutate
+// cm.cleanupInterval AFTER calling NewCSRFManager(), which had already
+// `go cm.runCleanup()`'d a goroutine that captured the field via
+// time.NewTicker(cm.cleanupInterval) at goroutine entry. The mutation was
+// a data race against the goroutine's read AND a logical race against
+// the ticker construction: depending on scheduler ordering, the ticker
+// could end up using the 5-minute default and the eviction test would
+// time out in CI. Routing all construction through this helper makes the
+// field assignment happens-before the goroutine start, eliminating both
+// hazards in one constructor call.
+func newCSRFManagerWithIntervals(tokenTTL, cleanupInterval time.Duration) *CSRFManager {
 	cm := &CSRFManager{
 		tokens:          make(map[string]*csrfToken),
-		tokenTTL:        defaultCSRFTokenTTL,
+		tokenTTL:        tokenTTL,
 		tokenSize:       defaultCSRFTokenSize,
-		cleanupInterval: defaultCSRFCleanupInterval,
+		cleanupInterval: cleanupInterval,
 		stopCh:          make(chan struct{}),
 	}
 	go cm.runCleanup()

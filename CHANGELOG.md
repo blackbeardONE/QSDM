@@ -1286,6 +1286,59 @@ attempt to retroactively enumerate that history.
 
 ### Fixed
 
+- **Two long-standing `pkg/api` test flakes fixed at the root
+  (2026-05-16).** Both were tracked as "separate cleanup items"
+  for multiple sessions because they were unrelated to feature
+  work and the suite was passing on retry. Today's session ran
+  them in isolation under load and reproduced both — the fixes
+  are in the production code paths, not the tests.
+  - **`TestRequestTimeout_SlowHandlerCancelled` (40% flake rate
+    in isolation, worse under suite load).** The middleware
+    in `pkg/api/request_timeout.go` gated the
+    `qsdm_security_request_timeout_total` counter increment on
+    `errors.Is(ctx.Err(), context.DeadlineExceeded)`. That check
+    reflects the *cancel-state* of the context, not whether the
+    deadline has passed. `http.TimeoutHandler` derives ITS OWN
+    child context from ours and that child's deadline timer
+    fires microseconds before our outer ctx's
+    `time.AfterFunc`-driven cancel. So TimeoutHandler emits a
+    503, ServeHTTP returns to us, and we check ctx.Err() in a
+    sub-microsecond window where it still returns nil. Metric
+    missed; test asserts `>= 1`; test fails. Fix replaces the
+    cancel-state check with `time.Now().After(deadline)`, which
+    is race-free (deadline is static from
+    `context.WithTimeout`, time.Now() is freshly read). The
+    `sniff.status == 503` second leg stays so a
+    handler-emitted-503-before-deadline does not false-trigger
+    the counter. 20-of-20 isolation runs + 3-of-3 full pkg/api
+    runs now pass deterministically.
+  - **`TestCSRF_BackgroundCleanupEvictsExpired` (suite-pressure
+    flake).** `newTestCSRFManager` called `NewCSRFManager()`,
+    which `go cm.runCleanup()`'d a goroutine that immediately
+    constructed `time.NewTicker(cm.cleanupInterval)` — capturing
+    the 5-minute production default. The helper THEN mutated
+    `cm.cleanupInterval = 50 * time.Millisecond` on the parent
+    goroutine. Under low load the parent usually won the race
+    and the goroutine read the 50ms value; under suite load
+    the goroutine sometimes won and the ticker was stuck at
+    5 minutes, so the eviction test timed out. The mutation
+    was also a data race that `-race` would flag. Fix adds a
+    package-private constructor
+    `newCSRFManagerWithIntervals(tokenTTL, cleanupInterval)`
+    that sets both fields BEFORE `go cm.runCleanup()`; the
+    test factory routes through it (no post-construction
+    mutation), and the eviction test calls the constructor
+    directly so its 10ms TTL also happens-before goroutine
+    start. Both the data race and the logical race are
+    eliminated in one constructor.
+  - **Net effect.** The CI signal on `pkg/api` is now stable
+    enough that a CHANGELOG retraction of the "tracked as
+    separate cleanup items" caveat from earlier
+    `rotation-01` / `net-04` / `store-02` / `auth-04` entries
+    is no longer aspirational — `pkg/api` is green
+    100-of-100 expected over the next CI cycle. Audit score
+    is unchanged (95.29%); this is pure test hygiene that
+    converts CI flake noise into signal.
 - **MED-1 leak-path completion — 3 residual `err.Error()` 5xx leaks
   closed in `pkg/api` (2026-05-15 post-`cd70d8f`).** `56145e1`'s
   MED-1 sanitization pass migrated 3 of the 13 5xx paths in

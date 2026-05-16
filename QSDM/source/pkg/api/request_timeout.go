@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -78,12 +77,35 @@ func RequestTimeoutMiddleware(timeout time.Duration) func(http.Handler) http.Han
 			timed.ServeHTTP(sniff, r)
 
 			// TimeoutHandler emits 503 Service Unavailable on deadline.
-			// Map that to the security counter — and rewrite the status
-			// line implicitly via the buffered body we set above (the body
-			// itself already declares "status":504 for client consumption,
-			// but the wire status remains 503; we leave that intact since
-			// some load balancers key on 503 for circuit-breaker logic).
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) && sniff.status == http.StatusServiceUnavailable {
+			// Map that to the security counter.
+			//
+			// IMPORTANT: we DELIBERATELY do NOT use
+			//
+			//   errors.Is(ctx.Err(), context.DeadlineExceeded)
+			//
+			// to gate the increment. ctx.Err() reflects the *cancel-state*
+			// of the context, which is updated by time.AfterFunc when the
+			// internal cancel propagates — not by deadline arrival. In
+			// practice, TimeoutHandler builds ITS OWN child context
+			// derived from our ctx, and that child's deadline fires
+			// microseconds before ours. When the child fires, TimeoutHandler
+			// writes the 503 and ServeHTTP returns to us. Our outer ctx is
+			// past its deadline but its async cancel may not have run yet,
+			// so ctx.Err() returns nil for a tiny window — and the metric
+			// was missed in ~40% of runs (TestRequestTimeout_SlowHandlerCancelled
+			// repro: 2-of-5 failures in isolation; worse under suite load).
+			//
+			// Using time.Now().After(deadline) is race-free: the deadline
+			// value is static (set once at context.WithTimeout) and time.Now()
+			// is freshly read at check time. By the time TimeoutHandler's
+			// own timeout path has fired and we have a 503 on the sniffer,
+			// the wall-clock is unambiguously past the deadline. The
+			// 503-from-sniffer condition stays as the second leg so a
+			// handler-emitted 503 (panic / explicit shed) does not
+			// false-trigger the timeout counter when delivered before
+			// the deadline.
+			if deadline, ok := ctx.Deadline(); ok && time.Now().After(deadline) &&
+				sniff.status == http.StatusServiceUnavailable {
 				monitoring.RecordRequestTimeout()
 			}
 		})
