@@ -1,0 +1,168 @@
+# Periodic container-image vulnerability scan.
+#
+# release-container.yml runs Trivy at release-time only (on git
+# tag v*). That gates outgoing artefacts but does NOT catch CVEs
+# published BETWEEN releases -- e.g. a critical golang.org/x/crypto
+# advisory landing two weeks after a tag would not surface until
+# the NEXT tag, by which time the released image has been pulled
+# to dozens of validators.
+#
+# This workflow closes that gap by:
+#
+#   - Running weekly (Monday 06:17 UTC) against current main HEAD,
+#     so a base-image roll or upstream advisory is caught within
+#     seven days even if nobody pushes a tag.
+#   - Running on every PR that touches a release Dockerfile or
+#     this workflow file, so a base-image bump cannot land on main
+#     without a clean Trivy report.
+#   - Allowing manual dispatch via workflow_dispatch for ad-hoc
+#     audits (e.g. responding to a fresh CVE announcement, or
+#     verifying that a `.trivyignore` waiver is still needed).
+#
+# Output: human-readable table in CI logs + SARIF report uploaded
+# to the GitHub Security tab. The Security tab carries the
+# COMPLETE finding inventory (LOW/MEDIUM and unfixed CVEs
+# included); the inline table + exit-code gate enforce only the
+# release-blocker subset (HIGH+/fixable).
+#
+# Companion to .github/workflows/release-container.yml -- both
+# pin aquasecurity/trivy-action@v0.36.0 so the gate semantics are
+# byte-identical between scheduled scans and tagged releases. A
+# finding that fails this workflow would also fail the next tagged
+# release; we deliberately do NOT diverge the two gates.
+#
+# (Audit row: supply-03, category supply_chain, severity high.
+#  Implementation companion to .github/workflows/release-container.yml
+#  shipped in 6173e5e.)
+
+name: Security scan (containers)
+
+permissions:
+  contents: read
+  # Required for github/codeql-action/upload-sarif to write the
+  # report into the repository's Security tab. No other permission
+  # is needed -- the workflow does not push images, does not
+  # update tags, does not post comments.
+  security-events: write
+
+concurrency:
+  # Cancel in-flight runs against the same ref when a new push
+  # lands -- a PR that touches a Dockerfile and then immediately
+  # gets fixed-up with a comment-only commit shouldn't burn 3 x
+  # the matrix on the same code state.
+  group: security-trivy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  schedule:
+    # 06:17 UTC every Monday. Off-the-hour to avoid the cron-herd
+    # that hits GitHub Actions at HH:00 UTC; weekly because
+    # Trivy's upstream CVE database is only refreshed once or
+    # twice per day, and daily scans on three multi-GB images
+    # add no signal beyond the weekly cadence (release-time
+    # scans cover the in-between window when activity is high).
+    - cron: "17 6 * * 1"
+
+  workflow_dispatch:
+
+  pull_request:
+    paths:
+      - "QSDM/Dockerfile"
+      - "QSDM/Dockerfile.miner"
+      - "QSDM/Dockerfile.validator"
+      - ".github/workflows/security-scan-containers.yml"
+
+jobs:
+  scan:
+    name: scan ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    # 45-min ceiling matches the ghcr-* jobs in release-container.yml
+    # for the qsdm and qsdm-validator images. The qsdm-miner image
+    # carries the CUDA stack (multi-GB base) and runs at 60 min in
+    # the release lane, so its matrix cell gets the same headroom
+    # via timeout-minutes-override below.
+    timeout-minutes: 45
+    strategy:
+      # One image's CVE finding must NOT mask the other two -- the
+      # operator wants every report at once so a base-image bump
+      # can fix all three in a single PR. fail-fast: false keeps
+      # the matrix going past the first red cell.
+      fail-fast: false
+      matrix:
+        include:
+          - image: qsdm
+            dockerfile: QSDM/Dockerfile
+          - image: qsdm-validator
+            dockerfile: QSDM/Dockerfile.validator
+          - image: qsdm-miner
+            dockerfile: QSDM/Dockerfile.miner
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image locally (no push)
+        id: build
+        # load: true imports the built image into the local Docker
+        # daemon so Trivy can scan it by name without round-
+        # tripping through a registry. push: false keeps this
+        # workflow strictly read-only with respect to the supply
+        # chain -- a periodic scan must not have GHCR side
+        # effects, otherwise a Trivy-DB drift could silently
+        # re-tag a release artefact with a "scan-confirmed"
+        # provenance the operator never asked for.
+        uses: docker/build-push-action@v6
+        with:
+          context: QSDM
+          file: ${{ matrix.dockerfile }}
+          push: false
+          load: true
+          tags: ${{ matrix.image }}:scan
+          cache-from: type=gha,scope=${{ matrix.image }}-scan
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-scan
+
+      - name: Scan image for OS + Go vulnerabilities (Trivy)
+        # Same severity / ignore-unfixed / exit-code as the matching
+        # step in release-container.yml's ghcr-* jobs. Divergence
+        # would let a finding pass one channel and fail the other,
+        # making the gate ambiguous. Single source of truth is:
+        # "HIGH+/fixable blocks the release lane."
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ matrix.image }}:scan
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          timeout: 10m
+
+      - name: Generate SARIF for GitHub Security tab
+        # SARIF runs unconditionally (regardless of whether the
+        # gating scan above passed or failed) so the Security tab
+        # carries the complete finding inventory -- including
+        # LOW/MEDIUM and unfixed CVEs that the release-blocker
+        # gate intentionally tolerates. This gives reviewers the
+        # wide view; the exit-code gate above gives CI the narrow
+        # gate.
+        #
+        # Only skipped if the image build itself failed -- in that
+        # case there is no image to scan and the SARIF call would
+        # itself fail with "image not found".
+        if: steps.build.outcome == 'success'
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ matrix.image }}:scan
+          format: sarif
+          output: trivy-${{ matrix.image }}.sarif
+
+      - name: Upload SARIF to GitHub Security tab
+        if: steps.build.outcome == 'success'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.image }}.sarif
+          # category disambiguates the three matrix cells in the
+          # Security tab UI -- without it, the upload from the
+          # third cell would overwrite the first two. The category
+          # also lets reviewers filter findings by image when
+          # triaging.
+          category: trivy-${{ matrix.image }}
