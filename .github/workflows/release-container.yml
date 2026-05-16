@@ -435,6 +435,39 @@ jobs:
           set -euo pipefail
           docker pull "${{ steps.imgbase.outputs.ref }}@${{ steps.build.outputs.digest }}"
 
+      # Container-image vulnerability scan (audit row supply-03,
+      # category: supply_chain). Trivy walks the image filesystem,
+      # extracts the OS package metadata + Go module manifests
+      # (CGO_ENABLED=0 means the Go binary's stdlib is reported via
+      # the embedded buildinfo section), and matches each entry
+      # against the Trivy CVE database.
+      #
+      # Gate is intentionally narrow:
+      #   - severity HIGH,CRITICAL  -> ignore LOW/MEDIUM noise
+      #   - ignore-unfixed=true     -> tolerate distro-package CVEs
+      #                                 with no upstream fix (we
+      #                                 cannot patch what does not
+      #                                 yet exist; an unfixed CRITICAL
+      #                                 is reported in the table but
+      #                                 does NOT fail the job)
+      #   - exit-code 1             -> any HIGH+/fixable finding
+      #                                 fails the release before it
+      #                                 is signed or pushed to GHCR
+      # An operator who needs to ship a release while a fix is in
+      # flight adds the CVE to QSDM/.trivyignore (one CVE-id per
+      # line) and opens a follow-up issue documenting the waiver
+      # timeline. The .trivyignore file does not exist yet because
+      # the current image set has no waivers.
+      - name: Scan image for OS + Go vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.imgbase.outputs.ref }}@${{ steps.build.outputs.digest }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          timeout: 10m
+
       - name: Generate image SBOM (SPDX) and attach to image
         uses: anchore/sbom-action@v0
         with:
@@ -532,6 +565,22 @@ jobs:
           set -euo pipefail
           docker pull "${{ steps.imgbase.outputs.ref }}@${{ steps.build.outputs.digest }}"
 
+      # See ghcr-legacy job for the full rationale of the Trivy
+      # gate (audit row supply-03 / category supply_chain). The
+      # validator image runs CPU-only (no CUDA), so its attack
+      # surface is exactly the qsdm Go binary plus whatever the
+      # base image in QSDM/Dockerfile.validator contributes -- the
+      # smallest of the three release images.
+      - name: Scan image for OS + Go vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.imgbase.outputs.ref }}@${{ steps.build.outputs.digest }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          timeout: 10m
+
       - name: Generate image SBOM (SPDX) and attach
         uses: anchore/sbom-action@v0
         with:
@@ -618,6 +667,27 @@ jobs:
         run: |
           set -euo pipefail
           docker pull "${{ steps.imgbase.outputs.ref }}@${{ steps.build.outputs.digest }}"
+
+      # See ghcr-legacy job for the full rationale of the Trivy
+      # gate (audit row supply-03 / category supply_chain). The
+      # miner image carries the CUDA / NVIDIA driver stack on top
+      # of the qsdm Go binary, so its attack surface is the largest
+      # of the three release images and the most likely to surface
+      # a fixable HIGH+ CVE on a base-image roll. Operators who hit
+      # a fail here have two clean options: (a) bump the CUDA base
+      # image in QSDM/Dockerfile.miner to the next NVIDIA-published
+      # tag, or (b) waive the specific CVE in QSDM/.trivyignore with
+      # a follow-up issue. Do NOT broaden severity / ignore-unfixed
+      # here as a workaround -- that drops the gate for every image.
+      - name: Scan image for OS + Go vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.imgbase.outputs.ref }}@${{ steps.build.outputs.digest }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          timeout: 10m
 
       - name: Generate image SBOM (SPDX) and attach
         uses: anchore/sbom-action@v0
