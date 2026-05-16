@@ -205,6 +205,44 @@
   .docs-callout .docs-cats a::before { content: "›"; color: var(--accent-2); font-weight: 700; }
   .docs-callout .docs-cats a:hover { color: var(--text); text-decoration: none; }
 
+  /* --- Trust strip ---
+   * Three-column transparency surface between "Three ways in" and the
+   * Docs callout. The first pillar embeds the live audit badge SVG
+   * served from /api/v1/audit/badge.svg, so every homepage load
+   * paints the current 95.29% (or wherever the score moves) front-
+   * and-centre with no static-content drift risk. The two other
+   * pillars frame the same surface in the broader transparency
+   * context (attestation receipts + the Apache-2.0 source repo).
+   * Visual treatment is the existing .way card vocabulary with a
+   * subtler border so the trust pillars read as "context" rather
+   * than "product CTA".
+   */
+  .trust-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 18px; margin-top: 28px;
+  }
+  @media (max-width: 900px) { .trust-grid { grid-template-columns: 1fr; } }
+  .trust-pillar {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--panel);
+    padding: 22px 24px;
+    display: flex; flex-direction: column;
+  }
+  .trust-pillar h3 { margin: 0 0 8px; font-size: 18px; letter-spacing: -.01em; }
+  .trust-pillar p  { color: var(--text-2); margin: 0; font-size: 14px; line-height: 1.55; flex: 1; }
+  .trust-pillar code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: 12.5px; color: var(--text); }
+  .trust-badge {
+    margin: 16px 0;
+    padding: 12px 14px;
+    background: rgba(0,0,0,.30);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex; justify-content: center; align-items: center;
+    min-height: 44px;
+  }
+  .trust-badge img { display: block; height: 20px; }
+  .trust-foot { margin-top: 18px; }
+
   /* --- Footer --- */
   footer { padding: 36px 0 48px; border-top: 1px solid var(--border); color: var(--muted); }
   .footer-top { display: flex; justify-content: space-between; gap: 30px; flex-wrap: wrap; align-items: flex-start; }
@@ -356,6 +394,73 @@
         <div class="foot">
           <a class="btn btn-primary" href="/docs/#/validator-quickstart">Validator quick-start</a>
           <a class="btn btn-ghost" href="/validators.html">Live validators</a>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- Trust strip: three-pillar transparency surface bridging the "Three
+     ways in" product cards above and the Docs callout below. The
+     audit pillar embeds the live shields.io-style SVG badge served
+     from /api/v1/audit/badge.svg so the headline score auto-refreshes
+     on every page-load without drifting against a hand-edited static
+     number. See trust-strip CSS rules + handlers_audit_badge.go for
+     the badge endpoint. -->
+<section class="bordered" id="trust">
+  <div class="container">
+    <span class="eyebrow"><span class="dot"></span> Public transparency</span>
+    <h2>Verifiable end to end.</h2>
+    <p class="lead">
+      Every claim on this site points at an artefact you can run, read, or scrape:
+      a live audit checklist whose evidence lives in-tree, attestation receipts
+      published every block, and the full source on GitHub under Apache 2.0.
+    </p>
+
+    <div class="trust-grid">
+      <article class="trust-pillar">
+        <h3>Public audit</h3>
+        <p>
+          85 audit rows tracked in <code>pkg/audit/checklist.go</code>. Every
+          passed row points at runnable in-tree evidence &mdash; a Go test, a
+          live-deploy probe, or a source-tree artefact. Live API at
+          <code>/api/v1/audit/{summary,items,badge.svg}</code>.
+        </p>
+        <div class="trust-badge" aria-label="Live QSDM audit score">
+          <a href="/audit.html" title="Live QSDM audit score &mdash; click to read the full checklist">
+            <img src="/api/v1/audit/badge.svg" alt="QSDM audit score (live)" />
+          </a>
+        </div>
+        <div class="trust-foot">
+          <a class="btn btn-primary" href="/audit.html">Read the audit &rarr;</a>
+        </div>
+      </article>
+
+      <article class="trust-pillar">
+        <h3>Attestation transparency</h3>
+        <p>
+          Every NGC attestation (NVIDIA GPU Confidential Computing) and every
+          PoE+BFT consensus round produces a receipt anyone can verify against
+          the chain. Public attestation index at
+          <code>/api/v1/trust/attestations/*</code>; same JSON the operator
+          dashboard tile consumes.
+        </p>
+        <div class="trust-foot" style="margin-top:auto;">
+          <a class="btn" href="/trust.html">View attestations &rarr;</a>
+        </div>
+      </article>
+
+      <article class="trust-pillar">
+        <h3>Open source</h3>
+        <p>
+          Full source under Apache 2.0 at
+          <code>github.com/blackbeardONE/QSDM</code>. CI-pinned tests,
+          runbooks, design documents, and release evidence in the same repo.
+          No private forks, no vendored mystery binaries; every release is
+          reproducible from the commit it carries.
+        </p>
+        <div class="trust-foot" style="margin-top:auto;">
+          <a class="btn" href="https://github.com/blackbeardONE/QSDM" rel="noopener">GitHub &rarr;</a>
         </div>
       </article>
     </div>

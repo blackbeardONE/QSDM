@@ -14,6 +14,41 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Trust strip on the homepage `https://qsdm.tech/`
+  (2026-05-16).** New three-pillar transparency section between
+  the "Three ways in" product cards and the Docs callout. Closes
+  the visibility gap where the public audit work shipped earlier
+  in the session was only reachable via the nav link &mdash;
+  every uncommitted visitor now sees the live audit score
+  front-and-centre on the entry page. The three pillars frame
+  the same transparency story in three independently-verifiable
+  surfaces:
+  - **Public audit.** Embeds the live SVG badge served from
+    <code>/api/v1/audit/badge.svg</code> (same endpoint shipped
+    earlier today) so the headline score paints from origin on
+    every page-load with zero static-content drift risk.
+    Primary CTA links to <code>/audit.html</code>.
+  - **Attestation transparency.** Frames the existing
+    <code>/api/v1/trust/attestations/*</code> surface and the
+    NGC + PoE+BFT receipt story for visitors who don't yet know
+    the operator-dashboard tile shape. CTA links to
+    <code>/trust.html</code>.
+  - **Open source.** Apache-2.0 + reproducible-build claim, with
+    a GitHub CTA. Counterbalances the badge pillar visually so
+    the trust strip reads as "context", not "product CTA".
+  - **Same-origin badge fetch.** The homepage serves from
+    <code>qsdm.tech</code> and the badge is at
+    <code>qsdm.tech/api/v1/audit/badge.svg</code> via Caddy's
+    <code>@api path /api/v1/*</code> reverse_proxy &mdash; no
+    CORS request, no preflight, no api.qsdm.tech round-trip.
+    Verified: badge endpoint returns 200,
+    <code>image/svg+xml; charset=utf-8</code>, 869 bytes,
+    brightgreen panel (#4c1) for the current 95.29% score.
+  - **Deploy.** index.html is now 27.3 KB on the wire (up from
+    ~24 KB). Backup at
+    <code>/var/backups/qsdm-landing/20260516-171304/index.html</code>
+    for one-step rollback; Caddy <code>file_server</code> picks
+    up the new file immediately, no service restart.
 - **Per-row deep-link permalinks on `audit.html`
   (2026-05-16).** Pairing fragment to the previous Category-
   breakdown and Embed-snippet work: any audit row is now
