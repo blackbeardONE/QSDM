@@ -89,11 +89,21 @@ RUN cd source && CGO_ENABLED=1 \
 FROM nvidia/cuda:12.3.2-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    libsqlite3-0 \
-    libssl3 \
-    wget \
+# `apt-get upgrade` pulls the Ubuntu 22.04 security pocket on every
+# build so base-image CVEs that land BETWEEN NVIDIA CUDA base bumps
+# (e.g. the GnuPG OOB-write family CVE-2025-68973 found by the
+# periodic Trivy scan -- see .github/workflows/security-scan-containers.yml)
+# get patched into outgoing miner images without waiting for an
+# upstream nvidia/cuda:*-runtime-ubuntu22.04 refresh. The validator
+# and legacy images run on Alpine 3.23.4 and do not need this; this
+# is specific to the CUDA-runtime Ubuntu base.
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates \
+       libsqlite3-0 \
+       libssl3 \
+       wget \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/lib/liboqs.so* /usr/local/lib/
