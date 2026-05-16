@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Public audit — QSDM · Cell (CELL)</title>
+<meta name="description" content="QSDM public audit checklist. Live score, evidence provenance breakdown, and the four wall-clock-blocked rows with their engagement-ready wrapper artefacts. Sourced from /api/v1/audit/summary and /api/v1/audit/items — the same JSON the SDK and dashboard tile consume." />
+<meta name="theme-color" content="#0b1220" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b1220'/%3E%3Cpath d='M12 32l10-10 10 10-10 10z' fill='%2376b900'/%3E%3Cpath d='M32 20l10 12-10 12-10-12z' fill='%2300d1b2' opacity='.85'/%3E%3C/svg%3E" />
+<style>
+  /* QSDM public audit page. Modelled directly on trust.html — same
+   * brand voice, same colour tokens, same fetch-with-fallback
+   * strategy, same 60-second refresh cadence.
+   *
+   * The shape:
+   *   1. Score panel — headline % + bucket counts + has-blocking pill.
+   *   2. Evidence provenance — three-column breakdown of *how* the
+   *      passed rows became passed (live-deploy / in-tree-tests /
+   *      in-tree). This is the bit that distinguishes a real audit
+   *      checklist from a marketing checklist: every passed row
+   *      points at runnable evidence.
+   *   3. Blocking findings — only rendered when has_blocking_findings
+   *      is true. Top-5 capped at the API; full list reachable via
+   *      "View all pending" CTA.
+   *   4. Filter chips — closed-enum, mirrors the API filter contract.
+   *   5. Items table — 85 rows, sticky header, click-to-expand for
+   *      Notes / ReviewedBy / ReviewedAt.
+   *
+   * Anti-features (intentional):
+   *   - No build step. Pure HTML / CSS / vanilla JS, no React, no
+   *     bundler, no npm.
+   *   - No analytics or telemetry. The page makes exactly two
+   *     fetches against the public API.
+   *   - No edit/admin path. The checklist is read-only from this
+   *     surface; mutation happens in the source tree via PR.
+   */
+  :root {
+    --bg: #0a101d;
+    --panel: #111a2e;
+    --panel-2: #152238;
+    --border: #1f2a44;
+    --text: #e6edf7;
+    --text-2: #9fb0c9;
+    --muted: #6d7e99;
+    --accent: #76b900;
+    --accent-2: #00d1b2;
+    --accent-3: #6ea8ff;
+    --danger: #ff6b6b;
+    --warn: #ffb454;
+    --success: #3ddc97;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
+  a { color: var(--accent-3); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .container { max-width: 1120px; margin: 0 auto; padding: 36px 20px; }
+  header { border-bottom: 1px solid var(--border); }
+  header .container { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; gap: 16px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 700; letter-spacing: 0.2px; }
+  .brand svg { width: 26px; height: 26px; }
+  h1 { font-size: 36px; line-height: 1.1; margin: 0 0 12px; }
+  h2 { font-size: 22px; margin: 32px 0 12px; }
+  h3 { font-size: 15px; margin: 0 0 6px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; }
+  .lede { color: var(--text-2); font-size: 17px; line-height: 1.55; max-width: 760px; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 24px;
+  }
+  .panel-tight { padding: 16px 18px; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  @media (max-width: 720px) {
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  }
+
+  /* score panel */
+  .score-big { font-family: var(--mono); font-size: 64px; font-weight: 700; letter-spacing: -1.5px; line-height: 1; }
+  .score-big .small { font-size: 22px; color: var(--text-2); font-weight: 500; margin-left: 8px; }
+  .bucket-tile {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .bucket-tile .label { color: var(--text-2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px; font-weight: 600; margin-bottom: 4px; }
+  .bucket-tile .value { font-family: var(--mono); font-size: 24px; font-weight: 700; }
+  .bucket-tile.passed  .value { color: var(--success); }
+  .bucket-tile.pending .value { color: var(--warn); }
+  .bucket-tile.failed  .value { color: var(--danger); }
+  .bucket-tile.waived  .value { color: var(--muted); }
+
+  /* pills */
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 999px; font-size: 11.5px;
+    border: 1px solid var(--border); background: rgba(255,255,255,0.02);
+    color: var(--text-2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px;
+    white-space: nowrap;
+  }
+  .pill.severity-critical { color: #ffb1b1; border-color: #4a1f2a; background: rgba(255,107,107,0.07); }
+  .pill.severity-high     { color: #ffcf9c; border-color: #4a311a; background: rgba(255,180,84,0.07); }
+  .pill.severity-medium   { color: #cfe4ff; border-color: #1f3252; background: rgba(110,168,255,0.07); }
+  .pill.severity-low      { color: var(--text-2); }
+  .pill.severity-info     { color: var(--muted); }
+  .pill.status-passed     { color: #aef3ce; border-color: #1f4633; background: rgba(61,220,151,0.07); }
+  .pill.status-pending    { color: #ffd9a7; border-color: #4a311a; background: rgba(255,180,84,0.08); }
+  .pill.status-failed     { color: #ffb1b1; border-color: #4a1f2a; background: rgba(255,107,107,0.08); }
+  .pill.status-waived     { color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .dot.status-healthy  { background: var(--success); box-shadow: 0 0 8px var(--success); }
+  .dot.status-blocked  { background: var(--warn);    box-shadow: 0 0 8px var(--warn); }
+  .dot.status-failed   { background: var(--danger);  box-shadow: 0 0 8px var(--danger); }
+  .dot.status-unknown  { background: var(--muted); }
+
+  /* filter chip row */
+  .filterbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; align-items: center; }
+  .filterbar .label { color: var(--text-2); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-right: 4px; }
+  .chip {
+    cursor: pointer; user-select: none;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 11px; border-radius: 999px; font-size: 12.5px;
+    border: 1px solid var(--border); background: rgba(255,255,255,0.02);
+    color: var(--text-2); font-weight: 500;
+  }
+  .chip:hover { color: var(--text); border-color: #2f3f60; }
+  .chip.active {
+    background: rgba(118,185,0,0.10); border-color: #3a5f1c; color: #d3ee9b;
+  }
+  .chip .count { font-family: var(--mono); color: var(--muted); font-size: 11px; }
+  .chip.active .count { color: #b9e167; }
+
+  /* items table */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th {
+    color: var(--text-2); font-weight: 600; font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    background: var(--panel); position: sticky; top: 0;
+  }
+  tr.row { transition: background-color 0.08s ease; }
+  tr.row:hover { background: rgba(110,168,255,0.04); }
+  tr.row.open { background: rgba(110,168,255,0.06); }
+  tr.row td { cursor: pointer; }
+  tr.detail td { padding: 0; cursor: default; }
+  tr.detail .inner {
+    padding: 14px 16px 18px 16px;
+    background: var(--panel-2);
+    border-left: 3px solid var(--accent-3);
+    font-size: 13.5px; color: var(--text-2); line-height: 1.6;
+  }
+  tr.detail .inner h4 {
+    color: var(--text); margin: 0 0 4px; font-size: 13px;
+    text-transform: uppercase; letter-spacing: 0.6px;
+  }
+  tr.detail .inner .field { margin-bottom: 12px; }
+  tr.detail .inner .field:last-child { margin-bottom: 0; }
+  tr.detail .inner .mono { font-family: var(--mono); font-size: 12.5px; color: var(--text); }
+  td.mono { font-family: var(--mono); color: var(--text); }
+  td.id { font-family: var(--mono); color: var(--accent-2); font-size: 13px; }
+  td.title { color: var(--text); }
+  td.category { color: var(--text-2); font-size: 12px; }
+
+  .scope-note {
+    padding: 12px 16px; border-left: 3px solid var(--accent);
+    background: rgba(118,185,0,0.04); color: var(--text-2); font-size: 13px; line-height: 1.55;
+    margin: 20px 0;
+  }
+  .scope-note strong { color: var(--text); }
+  .scope-note code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: 12px; color: var(--text); }
+
+  .blocking-card {
+    padding: 14px 16px; margin: 8px 0;
+    border-radius: 10px;
+    background: rgba(255,180,84,0.05);
+    border: 1px solid #3a2a14;
+  }
+  .blocking-card .title { color: var(--text); font-weight: 600; margin-top: 4px; }
+  .blocking-card .meta { color: var(--text-2); font-size: 12.5px; margin-top: 6px; display: flex; gap: 10px; flex-wrap: wrap; }
+
+  .meter { background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; height: 10px; overflow: hidden; margin-top: 8px; }
+  .meter .fill { height: 100%; background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%); transition: width 0.3s ease; }
+
+  footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+  footer .container { padding: 20px; max-width: 1120px; }
+  footer .mono { font-family: var(--mono); }
+  .empty {
+    color: var(--muted); padding: 18px 12px; text-align: center;
+  }
+  .sr { position: absolute; left: -9999px; }
+
+  /* keyboard-focus visibility */
+  .chip:focus-visible, tr.row td:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent-3); outline-offset: 2px; border-radius: 6px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="container">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <rect width="64" height="64" rx="12" fill="#0b1220"/>
+        <path d="M12 32l10-10 10 10-10 10z" fill="#76b900"/>
+        <path d="M32 20l10 12-10 12-10-12z" fill="#00d1b2" opacity=".85"/>
+      </svg>
+      <span>QSDM<span style="color:var(--accent)"> · CELL</span></span>
+    </a>
+    <nav style="display:flex; gap:18px; font-size:14px;">
+      <a href="/">← Back to landing</a>
+      <a href="/trust.html">Trust</a>
+      <a href="/validators.html">Validators</a>
+      <a href="/chain.html">Chain</a>
+      <a href="/wallet.html">Wallet</a>
+    </nav>
+  </div>
+</header>
+
+<main class="container">
+  <span class="pill"><span class="dot status-unknown" id="status-dot"></span> <span id="status-label">loading</span></span>
+  <h1>Public audit checklist</h1>
+  <p class="lede">
+    Live snapshot of the QSDM internal audit checklist. Every row points at runnable
+    in-tree evidence (a test file, a live deployment, or a verifiable source-tree
+    artefact). The score and items below are fetched directly from the public API —
+    the same JSON the SDK and the operator dashboard tile consume.
+  </p>
+
+  <div class="scope-note">
+    <strong>Scope:</strong> this is an <em>internal</em> audit checklist maintained
+    in <code>pkg/audit/checklist.go</code>; it is not a substitute for the
+    <em>external</em> security audit tracked by row <code>mining-01</code> (RFP
+    drafted, see <code>QSDM/docs/docs/audit/MINING_AUDITOR_RFP.md</code>). The
+    internal checklist surfaces <strong>what we have done</strong>; the external
+    audit will surface <strong>what we missed</strong>. Treat the internal
+    score as a necessary, not sufficient, signal of readiness.
+  </div>
+
+  <!-- Score panel -->
+  <section class="panel" style="margin: 22px 0;">
+    <div class="grid-2" style="align-items: center;">
+      <div>
+        <h3>Audit score</h3>
+        <div class="score-big" id="score">— <span class="small">of 100</span></div>
+        <div class="meter" aria-hidden="true"><div class="fill" id="meter" style="width:0%"></div></div>
+        <div style="color:var(--muted); font-size:12px; margin-top:8px;">
+          (passed + waived) ÷ total — same formula as <code>audit.Checklist.Score()</code>.
+        </div>
+      </div>
+      <div>
+        <h3>Bucket counts</h3>
+        <div class="grid-4">
+          <div class="bucket-tile passed">
+            <div class="label">Passed</div>
+            <div class="value" id="bucket-passed">—</div>
+          </div>
+          <div class="bucket-tile pending">
+            <div class="label">Pending</div>
+            <div class="value" id="bucket-pending">—</div>
+          </div>
+          <div class="bucket-tile failed">
+            <div class="label">Failed</div>
+            <div class="value" id="bucket-failed">—</div>
+          </div>
+          <div class="bucket-tile waived">
+            <div class="label">Waived</div>
+            <div class="value" id="bucket-waived">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Evidence provenance -->
+  <h2>Evidence provenance</h2>
+  <p style="color:var(--text-2); margin: 0 0 12px; max-width: 760px;">
+    <em>How</em> the passed rows became passed. A row marked
+    <code>evidence:live-deploy</code> has been verified against the
+    production validator at <code>api.qsdm.tech</code>; <code>in-tree-tests</code>
+    means a Go test pins the behaviour in CI; <code>in-tree</code> means
+    the evidence is a source-tree artefact (a config, a runbook, a build flag).
+  </p>
+  <div class="grid-3">
+    <div class="panel panel-tight">
+      <h3>Live deploy</h3>
+      <div class="score-big" id="prov-live" style="font-size: 32px;">—</div>
+      <div style="color:var(--muted); font-size:12px;">verified against api.qsdm.tech</div>
+    </div>
+    <div class="panel panel-tight">
+      <h3>In-tree tests</h3>
+      <div class="score-big" id="prov-tests" style="font-size: 32px;">—</div>
+      <div style="color:var(--muted); font-size:12px;">pinned in CI by Go tests</div>
+    </div>
+    <div class="panel panel-tight">
+      <h3>In-tree</h3>
+      <div class="score-big" id="prov-itree" style="font-size: 32px;">—</div>
+      <div style="color:var(--muted); font-size:12px;">source-tree artefacts</div>
+    </div>
+  </div>
+
+  <!-- Blocking findings (only when present) -->
+  <section id="blocking-section" style="display:none;">
+    <h2>Blocking findings</h2>
+    <p style="color:var(--text-2); margin: 0 0 12px; max-width: 760px;">
+      Critical and high-severity rows that are still <code>pending</code> or
+      <code>failed</code>. Each of these is wall-clock-blocked on an external
+      party (an auditor, counsel, the market, or a trademark office). The
+      engagement-ready wrapper documents live in
+      <code>QSDM/docs/docs/audit/</code>.
+    </p>
+    <div id="blocking-list"></div>
+  </section>
+
+  <!-- Items table -->
+  <h2>All audit rows</h2>
+  <div class="filterbar" id="filter-status">
+    <span class="label">Status</span>
+    <button class="chip active" data-status="">All <span class="count" id="cnt-status-all"></span></button>
+    <button class="chip" data-status="passed">Passed <span class="count" id="cnt-status-passed"></span></button>
+    <button class="chip" data-status="pending">Pending <span class="count" id="cnt-status-pending"></span></button>
+    <button class="chip" data-status="failed">Failed <span class="count" id="cnt-status-failed"></span></button>
+    <button class="chip" data-status="waived">Waived <span class="count" id="cnt-status-waived"></span></button>
+  </div>
+  <div class="filterbar" id="filter-severity">
+    <span class="label">Severity</span>
+    <button class="chip active" data-severity="">All</button>
+    <button class="chip" data-severity="critical">Critical</button>
+    <button class="chip" data-severity="high">High</button>
+    <button class="chip" data-severity="medium">Medium</button>
+    <button class="chip" data-severity="low">Low</button>
+    <button class="chip" data-severity="info">Info</button>
+  </div>
+
+  <div class="panel" style="padding: 0;">
+    <table aria-describedby="items-desc">
+      <thead>
+        <tr>
+          <th style="width: 12%;">ID</th>
+          <th style="width: 14%;">Category</th>
+          <th style="width: 10%;">Severity</th>
+          <th style="width: 10%;">Status</th>
+          <th>Title</th>
+        </tr>
+      </thead>
+      <tbody id="items-body">
+        <tr><td colspan="5" class="empty">loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p id="items-desc" style="color:var(--muted); font-size:12.5px; margin-top:10px;">
+    Click any row to expand its description, notes, and review provenance.
+    Showing <span id="visible-count">—</span> of <span id="total-count">—</span> rows.
+  </p>
+</main>
+
+<footer>
+  <div class="container">
+    Source:
+    <span class="mono">GET /api/v1/audit/summary</span> and
+    <span class="mono">/api/v1/audit/items</span>.
+    Refreshes every 60&nbsp;s. Repository:
+    <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/source/pkg/audit/checklist.go">pkg/audit/checklist.go</a>.
+    © <span id="y"></span> QSDM · Cell (CELL).
+  </div>
+</footer>
+
+<script>
+(function() {
+  document.getElementById('y').textContent = new Date().getFullYear();
+
+  // Endpoints with same-origin first, then api.qsdm.tech fallback.
+  // Mirrors the trust.html pattern so the page works both when
+  // served from api.qsdm.tech (same-origin) and from a static
+  // host (CORS-allowed cross-origin).
+  var endpoints = {
+    summary: ['/api/v1/audit/summary', 'https://api.qsdm.tech/api/v1/audit/summary'],
+    items:   ['/api/v1/audit/items',   'https://api.qsdm.tech/api/v1/audit/items']
+  };
+
+  // Currently-selected filter state. Empty string = "no filter".
+  var filterState = { status: '', severity: '' };
+
+  // Last full items list received from the API. Re-rendered when
+  // filters change so we don't hammer the API on every chip click.
+  var lastItems = [];
+  // Track which row IDs are expanded so a refresh doesn't collapse
+  // a user's currently-open row.
+  var openIds = Object.create(null);
+
+  function setStatus(state, label) {
+    var dot = document.getElementById('status-dot');
+    dot.className = 'dot status-' + (state || 'unknown');
+    document.getElementById('status-label').textContent = label || state || 'unknown';
+  }
+
+  function tryEach(list, i, onData, onError) {
+    if (i >= list.length) { onError(); return; }
+    fetch(list[i], { headers: { 'Accept': 'application/json' } })
+      .then(function(res) {
+        if (!res.ok) throw new Error('http ' + res.status);
+        return res.json();
+      })
+      .then(function(data) { onData(data); })
+      .catch(function() { tryEach(list, i + 1, onData, onError); });
+  }
+
+  function fmtScore(n) {
+    if (typeof n !== 'number' || isNaN(n)) return '—';
+    return n.toFixed(2);
+  }
+
+  function loadSummary() {
+    tryEach(endpoints.summary, 0,
+      function(data) {
+        document.getElementById('score').innerHTML =
+          fmtScore(data.score) + '<span class="small">% of 100</span>';
+        document.getElementById('meter').style.width =
+          Math.min(100, Math.max(0, data.score || 0)) + '%';
+
+        var s = data.summary || {};
+        document.getElementById('bucket-passed').textContent  = (s.passed  != null ? s.passed  : '—');
+        document.getElementById('bucket-pending').textContent = (s.pending != null ? s.pending : '—');
+        document.getElementById('bucket-failed').textContent  = (s.failed  != null ? s.failed  : '—');
+        document.getElementById('bucket-waived').textContent  = (s.waived  != null ? s.waived  : '—');
+
+        var p = data.evidence_provenance || {};
+        document.getElementById('prov-live').textContent  = (p['evidence:live-deploy']   != null ? p['evidence:live-deploy']   : '—');
+        document.getElementById('prov-tests').textContent = (p['evidence:in-tree-tests'] != null ? p['evidence:in-tree-tests'] : '—');
+        document.getElementById('prov-itree').textContent = (p['evidence:in-tree']       != null ? p['evidence:in-tree']       : '—');
+
+        renderBlocking(data);
+
+        if (data.has_blocking_findings) {
+          setStatus('blocked', data.blocking_count + ' blocker(s)');
+        } else {
+          setStatus('healthy', 'no blockers');
+        }
+      },
+      function() { setStatus('failed', 'API unavailable'); }
+    );
+  }
+
+  function escapeHTML(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function renderBlocking(data) {
+    var section = document.getElementById('blocking-section');
+    var list = document.getElementById('blocking-list');
+    var preview = data.blocking_preview || [];
+    if (!data.has_blocking_findings || preview.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = '';
+    var html = preview.map(function(b) {
+      return '<div class="blocking-card">'
+        + '<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">'
+        + '<span class="pill severity-' + escapeHTML(b.severity) + '">' + escapeHTML(b.severity) + '</span>'
+        + '<span class="pill status-'   + escapeHTML(b.status)   + '">' + escapeHTML(b.status)   + '</span>'
+        + '<span class="mono" style="color:var(--accent-2);">' + escapeHTML(b.id) + '</span>'
+        + '<span style="color:var(--muted); font-size:12.5px;">' + escapeHTML(b.category) + '</span>'
+        + '</div>'
+        + '<div class="title">' + escapeHTML(b.title) + '</div>'
+        + '</div>';
+    }).join('');
+    if (data.blocking_count > preview.length) {
+      html += '<div style="color:var(--text-2); font-size:13px; margin-top:8px;">'
+        + '+ ' + (data.blocking_count - preview.length) + ' more — '
+        + '<a href="#" id="show-all-pending">view all pending</a>'
+        + '</div>';
+    }
+    list.innerHTML = html;
+    var showAll = document.getElementById('show-all-pending');
+    if (showAll) {
+      showAll.addEventListener('click', function(ev) {
+        ev.preventDefault();
+        selectStatusChip('pending');
+        document.querySelector('#filter-status').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  }
+
+  function loadItems() {
+    tryEach(endpoints.items, 0,
+      function(data) {
+        lastItems = (data.items || []).slice();
+        renderItems();
+        renderChipCounts();
+      },
+      function() {
+        document.getElementById('items-body').innerHTML =
+          '<tr><td colspan="5" class="empty">items API unavailable</td></tr>';
+      }
+    );
+  }
+
+  function passesFilters(it) {
+    if (filterState.status   && it.status   !== filterState.status)   return false;
+    if (filterState.severity && it.severity !== filterState.severity) return false;
+    return true;
+  }
+
+  function renderItems() {
+    var body = document.getElementById('items-body');
+    var filtered = lastItems.filter(passesFilters);
+    document.getElementById('visible-count').textContent = filtered.length;
+    document.getElementById('total-count').textContent = lastItems.length;
+    if (filtered.length === 0) {
+      body.innerHTML = '<tr><td colspan="5" class="empty">no rows match the current filters</td></tr>';
+      return;
+    }
+    var html = filtered.map(function(it) {
+      var open = !!openIds[it.id];
+      var rowCls = 'row' + (open ? ' open' : '');
+      var head = '<tr class="' + rowCls + '" data-id="' + escapeHTML(it.id) + '" tabindex="0" role="button" aria-expanded="' + (open ? 'true' : 'false') + '">'
+        + '<td class="id">' + escapeHTML(it.id) + '</td>'
+        + '<td class="category">' + escapeHTML(it.category) + '</td>'
+        + '<td><span class="pill severity-' + escapeHTML(it.severity) + '">' + escapeHTML(it.severity) + '</span></td>'
+        + '<td><span class="pill status-'   + escapeHTML(it.status)   + '">' + escapeHTML(it.status)   + '</span></td>'
+        + '<td class="title">' + escapeHTML(it.title) + '</td>'
+        + '</tr>';
+      if (!open) return head;
+      var detail = '<tr class="detail" data-detail-for="' + escapeHTML(it.id) + '"><td colspan="5"><div class="inner">'
+        + '<div class="field"><h4>Description</h4>' + escapeHTML(it.description || '—') + '</div>'
+        + (it.notes ? '<div class="field"><h4>Notes</h4>' + escapeHTML(it.notes) + '</div>' : '')
+        + (it.reviewed_by ? '<div class="field"><h4>Reviewed by</h4><span class="mono">' + escapeHTML(it.reviewed_by) + '</span></div>' : '')
+        + (it.reviewed_at ? '<div class="field"><h4>Reviewed at</h4><span class="mono">' + escapeHTML(it.reviewed_at) + '</span></div>' : '')
+        + '</div></td></tr>';
+      return head + detail;
+    }).join('');
+    body.innerHTML = html;
+    // Re-bind row-click handlers after innerHTML rebuild.
+    Array.prototype.forEach.call(body.querySelectorAll('tr.row'), function(tr) {
+      tr.addEventListener('click', function() { toggleRow(tr.getAttribute('data-id')); });
+      tr.addEventListener('keydown', function(ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          toggleRow(tr.getAttribute('data-id'));
+        }
+      });
+    });
+  }
+
+  function toggleRow(id) {
+    if (openIds[id]) {
+      delete openIds[id];
+    } else {
+      openIds[id] = true;
+    }
+    renderItems();
+  }
+
+  function renderChipCounts() {
+    var counts = { '': lastItems.length, passed: 0, pending: 0, failed: 0, waived: 0 };
+    lastItems.forEach(function(it) {
+      if (counts[it.status] != null) counts[it.status]++;
+    });
+    document.getElementById('cnt-status-all').textContent     = counts[''];
+    document.getElementById('cnt-status-passed').textContent  = counts.passed;
+    document.getElementById('cnt-status-pending').textContent = counts.pending;
+    document.getElementById('cnt-status-failed').textContent  = counts.failed;
+    document.getElementById('cnt-status-waived').textContent  = counts.waived;
+  }
+
+  function wireChips(barId, key) {
+    var bar = document.getElementById(barId);
+    Array.prototype.forEach.call(bar.querySelectorAll('button.chip'), function(btn) {
+      btn.addEventListener('click', function() {
+        var v = btn.getAttribute('data-' + key) || '';
+        filterState[key] = v;
+        Array.prototype.forEach.call(bar.querySelectorAll('button.chip'), function(b) {
+          b.classList.toggle('active', b === btn);
+        });
+        renderItems();
+      });
+    });
+  }
+
+  function selectStatusChip(status) {
+    var bar = document.getElementById('filter-status');
+    var target = bar.querySelector('button.chip[data-status="' + status + '"]');
+    if (target) target.click();
+  }
+
+  wireChips('filter-status', 'status');
+  wireChips('filter-severity', 'severity');
+
+  loadSummary();
+  loadItems();
+  setInterval(function() { loadSummary(); loadItems(); }, 60000);
+})();
+</script>
+</body>
+</html>

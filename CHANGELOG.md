@@ -14,6 +14,78 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Public audit-status page at `https://qsdm.tech/audit.html`
+  (2026-05-16).** The internal audit checklist (95.29%, 81/85 passed)
+  was previously visible only via the operator dashboard (bearer-
+  gated) or by reading `pkg/audit/checklist.go` directly. The new
+  page surfaces the same data to anyone with a browser, sourced
+  live from the public `/api/v1/audit/summary` and
+  `/api/v1/audit/items` endpoints — the same JSON the SDK and the
+  dashboard tile consume. No build step (vanilla HTML/CSS/JS), no
+  framework, no analytics; refreshes every 60 s.
+  - **Score panel.** Big `95.29` headline; 4-bucket counts
+    (passed / pending / failed / waived); 100% progress meter;
+    `has_blocking_findings` indicator dot in the header pill.
+  - **Evidence provenance.** Three-tile breakdown of *how* each
+    passed row became passed — `evidence:live-deploy` (12) /
+    `evidence:in-tree-tests` (41) / `evidence:in-tree` (28). This
+    is the bit that distinguishes a real audit checklist from a
+    marketing checklist: every passed row points at runnable
+    in-tree evidence.
+  - **Blocking findings card.** Renders only when
+    `has_blocking_findings` is true. Top-5 critical/high pending
+    items (today: `tok-01` + `mining-01`) with severity, status,
+    ID, category, and title; "+ N more — view all pending" CTA
+    links to the filtered table.
+  - **Filter chips + items table.** Closed-enum filters mirroring
+    the API contract (`status` ∈ {all, passed, pending, failed,
+    waived}; `severity` ∈ {all, critical, high, medium, low,
+    info}). Items table with sticky header, 85 rows, click-to-
+    expand for Description / Notes / ReviewedBy / ReviewedAt.
+    Counts on the chips are live-computed from `lastItems`.
+  - **Scope note.** Spells out the meta-caveat that this is an
+    *internal* audit checklist (what we have done), not a
+    substitute for the *external* audit tracked by row
+    `mining-01` (what we missed). Points readers at the
+    engagement-ready RFP at
+    `QSDM/docs/docs/audit/MINING_AUDITOR_RFP.md`.
+  - **Navigation.** Audit link added to `index.html` nav + Trust
+    footer, and to `trust.html`, `wallet.html`, `validators.html`,
+    `chain.html`, `download.html` cross-page navs. `sitemap.xml`
+    bumped with the new URL at `priority=0.7, changefreq=weekly`.
+  - **Same-origin fetch with cross-origin fallback.** Mirrors
+    the `trust.html` pattern: tries `/api/v1/audit/*` first
+    (same-origin via Caddy's `@api path /api/v1/*` reverse_proxy
+    to `127.0.0.1:8443`), falls back to
+    `https://api.qsdm.tech/api/v1/audit/*` (CORS-allowed cross-
+    origin). Works whether the page is served from `qsdm.tech`,
+    a local static server, or any third-party clone.
+  - **Defensive HTML escaping** on every interpolated value
+    (`escapeHTML` for ID / category / severity / status / title /
+    description / notes / reviewed_by / reviewed_at). Prevents
+    a malicious audit row text from injecting markup into the
+    page even though the API server controls the corpus.
+  - **Deployment.** Eight landing files synced atomically to
+    `/var/www/qsdm/` on BLR1 with backup at
+    `/var/backups/qsdm-landing/20260516-082751/`. Caddy
+    `file_server` picks up the new files immediately; no reload
+    needed. New qsdm binary
+    `sha256:809e2ae7c4feda5b27a9c58b049dc8c2b4c32f3ca5e4e790d3f4a93fbda04ee8`
+    deployed (combines the audit-row Notes updates from
+    `9fd8f40` + `69587b4` with the previously-deployed webviewer
+    hardening); `systemctl is-active qsdm -> active`; webviewer
+    `:8080/api/foobar -> 404` and `:8080/?tail=3 -> 200, 657 bytes`
+    regressions intact; net-02 isolation mode still confirmed in
+    the post-restart boot log.
+  - **Live verification.** `https://qsdm.tech/audit.html` returns
+    200 (28KB); `https://qsdm.tech/api/v1/audit/summary` returns
+    `score=95.29, passed=81, pending=4, blocking_count=2`. The
+    four pending rows' Notes now reference their engagement-ready
+    wrappers (`MINING_AUDITOR_RFP.md`, `COUNSEL_BRIEF_TOKENOMICS.md`,
+    `TESTNET_LAUNCH_PLAN.md`, `TRADEMARK_FILING_INTAKE.md`), so
+    a visitor clicking a pending row sees the in-flight engagement
+    document name rather than a blank cell.
+
 - **External-engagement wrappers for the four wall-clock-blocked
   audit rows (2026-05-16).** With the internal audit checklist at
   95.29% (81/85) and every actionable row closed, the only
