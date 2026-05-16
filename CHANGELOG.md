@@ -14,6 +14,57 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Category breakdown drill-down on `audit.html`
+  (2026-05-16).** New panel between Evidence provenance and the
+  Blocking findings card that renders a grid of clickable
+  per-category cards aggregated from the live
+  `/api/v1/audit/items` data. Tells the story the flat
+  85-row table couldn't: <em>where</em> QSDM's audit evidence
+  concentrates and <em>where</em> the gaps cluster.
+  - **Per-card visualisation.** Category name (title-cased
+    from the snake_case enum), score percentage, total/passed
+    ratio, and a mini stacked progress bar with the same
+    palette as the bucket-count tiles
+    (`passed=success` / `pending=warn` / `failed=danger` /
+    `waived=muted`). Sub-line meta-text lists the non-zero
+    bucket counts with matching colours, so a glance at
+    one card tells the whole status story for that category.
+  - **Click-to-filter.** Each card is a button: clicking sets
+    `filterState.category`, dims the other cards, highlights
+    the selected one, scrolls the items table into view, and
+    updates the URL via `history.replaceState`. Clicking the
+    already-active card (or the "Clear" pill above the grid)
+    clears the filter. Keyboard-accessible: `tabindex="0"` +
+    Enter/Space handlers.
+  - **Deep-linkable URLs.** `?category=tokenomics`,
+    `?status=pending&severity=critical`, and combinations
+    thereof are read on page load and applied to
+    `filterState` before the first render. The URL syncs
+    back via `history.replaceState` on every chip / card
+    click, so the visible state is always copy-paste-able
+    without polluting the back-stack. Lets RFP attachments,
+    blog posts, and the engagement-letter pre-flight docs
+    link directly to "show me only the rows that block
+    `mining-01`".
+  - **Today's shape.** Three categories show pending rows
+    (`mining_audit` 60% with 2 pending, `tokenomics` 67%
+    with 1 pending, `rebrand` 86% with 1 pending), 14
+    others at 100%. The visual makes the
+    "external-engagement-blocked" story immediately legible:
+    the work is broadly done across cryptography, network,
+    auth, supply-chain, runtime, etc., and the gaps are
+    tightly clustered in three categories — all wall-clock-
+    blocked on external parties (auditor / counsel /
+    trademark filings / launch sequence).
+  - **Implementation.** ~110 lines of CSS + ~210 lines of
+    JS appended to `audit.html`. `aggregateByCategory(items)`
+    walks `lastItems` exactly once and returns an ordered
+    list of `{category, total, passed, pending, failed,
+    waived, score}` records in the canonical
+    `defaultItems()` order from the Go source. No new API
+    surface; same `/api/v1/audit/items` endpoint that
+    powers the table below it. Page is now 47.6 KB on the
+    wire (up from ~32 KB).
 - **Public SVG audit badge at
   `https://qsdm.tech/api/v1/audit/badge.svg` (2026-05-16).** A
   server-rendered shields.io-style 20px status pill that any

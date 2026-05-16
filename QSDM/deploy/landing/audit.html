@@ -185,6 +185,112 @@
   .meter { background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; height: 10px; overflow: hidden; margin-top: 8px; }
   .meter .fill { height: 100%; background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%); transition: width 0.3s ease; }
 
+  /* Category breakdown panel
+   *
+   * Each card aggregates per-category status counts from lastItems and
+   * doubles as the category filter control. Clicking a card sets
+   * filterState.category and scrolls to the items table; clicking the
+   * already-active card (or the explicit "all categories" pill above
+   * the grid) clears the filter. The active state has a slightly
+   * elevated background and an accent-coloured left border so a
+   * visitor can see at a glance which category is currently driving
+   * the table below.
+   *
+   * The stacked mini-bar mirrors the bucket palette from the
+   * bucket-tile / .pill rules above (passed=success / pending=warn /
+   * failed=danger / waived=muted), so the colour vocabulary across
+   * the whole page is one set of meanings.
+   */
+  .cat-clear-row { margin: 0 0 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .cat-clear-row .label { color: var(--text-2); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-right: 4px; }
+  .cat-clear-row .chip.cat-clear { background: rgba(118,185,0,0.10); border-color: #3a5f1c; color: #d3ee9b; }
+  .cat-clear-row .chip.cat-clear:hover { background: rgba(118,185,0,0.18); }
+  .cat-clear-row .chip.cat-clear-inactive {
+    background: rgba(255,255,255,0.02);
+    border-color: var(--border);
+    color: var(--text-2);
+    cursor: default;
+  }
+  .cat-clear-row .chip.cat-clear-inactive:hover { background: rgba(255,255,255,0.02); border-color: var(--border); }
+  .cat-active-indicator { color: var(--text-2); font-size: 12.5px; }
+  .cat-active-indicator .mono { font-family: var(--mono); color: var(--accent-2); }
+
+  .cat-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin: 6px 0 22px;
+  }
+  @media (max-width: 980px) {
+    .cat-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 560px) {
+    .cat-grid { grid-template-columns: 1fr; }
+  }
+  .cat-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.08s ease, border-color 0.08s ease;
+  }
+  .cat-card:hover {
+    background: var(--panel-2);
+    border-color: #2f3f60;
+    border-left-color: var(--accent-3);
+  }
+  .cat-card.active {
+    background: var(--panel-2);
+    border-color: #3a5f1c;
+    border-left-color: var(--accent);
+  }
+  .cat-card.dim { opacity: 0.55; }
+  .cat-card.dim:hover { opacity: 1; }
+  .cat-card .head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 8px; margin-bottom: 6px;
+  }
+  .cat-card .name {
+    color: var(--text); font-size: 13px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .cat-card .ratio {
+    font-family: var(--mono); color: var(--text-2); font-size: 12.5px; white-space: nowrap;
+  }
+  .cat-card .ratio .score {
+    color: var(--text); font-weight: 700;
+  }
+  /* stacked bar: each .seg is a div with a flex-grow proportional to
+   * the per-status count; the segment order matches the bucket-tile
+   * colours so visual scanning ("more green = healthier") works
+   * without a legend. */
+  .cat-bar {
+    display: flex;
+    height: 6px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+    margin: 2px 0 6px;
+  }
+  .cat-bar .seg { height: 100%; }
+  .cat-bar .seg.passed  { background: var(--success); }
+  .cat-bar .seg.pending { background: var(--warn); }
+  .cat-bar .seg.failed  { background: var(--danger); }
+  .cat-bar .seg.waived  { background: var(--muted); }
+
+  .cat-meta {
+    color: var(--muted); font-size: 11.5px;
+    display: flex; gap: 10px; flex-wrap: wrap;
+  }
+  .cat-meta .pcount { color: var(--success); }
+  .cat-meta .ncount { color: var(--warn); }
+  .cat-meta .fcount { color: var(--danger); }
+  .cat-meta .wcount { color: var(--muted); }
+
   footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
   footer .container { padding: 20px; max-width: 1120px; }
   footer .mono { font-family: var(--mono); }
@@ -302,6 +408,39 @@
     </div>
   </div>
 
+  <!-- Category breakdown
+       Per-category aggregation rendered as clickable cards: each card
+       shows total / passed-share / mini stacked bar, and acts as the
+       category filter for the items table below. The 17 audit categories
+       are defined by allowedAuditAPICategories in pkg/api/handlers_audit.go
+       and pkg/audit/checklist.go; renderCategoryBreakdown() picks them up
+       dynamically so a new category constant added in either of those
+       sources surfaces here on the next deploy without an audit.html
+       edit. Deep-linkable via ?category=<name>; selection state is
+       reflected in the URL via history.replaceState (no reload).
+  -->
+  <h2 style="margin-top: 30px;">Category breakdown</h2>
+  <p style="color:var(--text-2); margin: 0 0 14px; max-width: 760px;">
+    Where the work concentrates and where the gaps are. Click any
+    category to drill into the items table below — same rows as
+    <code>?category=&lt;name&gt;</code> on
+    <code>/api/v1/audit/items</code>. Bars use the same palette as the
+    bucket counts: <span style="color:var(--success);">passed</span> /
+    <span style="color:var(--warn);">pending</span> /
+    <span style="color:var(--danger);">failed</span> /
+    <span style="color:var(--muted);">waived</span>.
+  </p>
+  <div class="cat-clear-row" id="cat-clear-row">
+    <span class="label">Filter:</span>
+    <span id="cat-active-indicator" class="cat-active-indicator">All categories</span>
+    <button id="cat-clear-btn" class="chip cat-clear-inactive" type="button" aria-label="Clear category filter" disabled>
+      Clear
+    </button>
+  </div>
+  <div class="cat-grid" id="cat-grid">
+    <div class="empty" style="grid-column: 1 / -1;">loading…</div>
+  </div>
+
   <!-- Blocking findings (only when present) -->
   <section id="blocking-section" style="display:none;">
     <h2>Blocking findings</h2>
@@ -316,7 +455,7 @@
   </section>
 
   <!-- Items table -->
-  <h2>All audit rows</h2>
+  <h2 id="items-heading">All audit rows</h2>
   <div class="filterbar" id="filter-status">
     <span class="label">Status</span>
     <button class="chip active" data-status="">All <span class="count" id="cnt-status-all"></span></button>
@@ -449,7 +588,43 @@ GET https://api.qsdm.tech/api/v1/audit/badge.svg   # equivalent</code></pre>
   };
 
   // Currently-selected filter state. Empty string = "no filter".
-  var filterState = { status: '', severity: '' };
+  // status / severity are driven by the chip rows below the items
+  // table; category is driven by the Category breakdown cards above
+  // it. Both are independent filter dimensions ANDed together in
+  // passesFilters. Initial values are pulled from the URL so a
+  // deep-link like /audit.html?category=tokenomics&status=pending
+  // lands on the filtered view directly.
+  var filterState = (function() {
+    var p = new URLSearchParams(window.location.search);
+    function pick(key, allowed) {
+      var v = (p.get(key) || '').trim().toLowerCase();
+      return allowed.indexOf(v) >= 0 ? v : '';
+    }
+    return {
+      status:   pick('status',   ['', 'passed', 'pending', 'failed', 'waived']),
+      severity: pick('severity', ['', 'critical', 'high', 'medium', 'low', 'info']),
+      // category allow-list is open here because we don't want to
+      // hard-code the 17 enum values in two places (the Go source
+      // already enforces the closed-enum on /api/v1/audit/items);
+      // an invalid category from the URL just renders the empty
+      // state for the table, which is the right "you mis-typed the
+      // filter" signal.
+      category: (p.get('category') || '').trim().toLowerCase()
+    };
+  })();
+
+  // Persist the current filterState into the URL so the visible
+  // page state survives a copy-paste of the URL or a browser
+  // refresh, without polluting the back-stack.
+  function syncURLFromFilters() {
+    var p = new URLSearchParams();
+    if (filterState.status)   p.set('status',   filterState.status);
+    if (filterState.severity) p.set('severity', filterState.severity);
+    if (filterState.category) p.set('category', filterState.category);
+    var qs = p.toString();
+    var newURL = window.location.pathname + (qs ? '?' + qs : '') + window.location.hash;
+    try { window.history.replaceState(null, '', newURL); } catch (e) { /* ignore */ }
+  }
 
   // Last full items list received from the API. Re-rendered when
   // filters change so we don't hammer the API on every chip click.
@@ -562,12 +737,19 @@ GET https://api.qsdm.tech/api/v1/audit/badge.svg   # equivalent</code></pre>
     tryEach(endpoints.items, 0,
       function(data) {
         lastItems = (data.items || []).slice();
+        renderCategoryBreakdown();
         renderItems();
         renderChipCounts();
+        // The initial filterState may have come from the URL on
+        // load; reflect it visually in the chip rows now that we
+        // have the data to count against.
+        applyFiltersFromState();
       },
       function() {
         document.getElementById('items-body').innerHTML =
           '<tr><td colspan="5" class="empty">items API unavailable</td></tr>';
+        document.getElementById('cat-grid').innerHTML =
+          '<div class="empty" style="grid-column: 1 / -1;">items API unavailable</div>';
       }
     );
   }
@@ -575,7 +757,162 @@ GET https://api.qsdm.tech/api/v1/audit/badge.svg   # equivalent</code></pre>
   function passesFilters(it) {
     if (filterState.status   && it.status   !== filterState.status)   return false;
     if (filterState.severity && it.severity !== filterState.severity) return false;
+    if (filterState.category && it.category !== filterState.category) return false;
     return true;
+  }
+
+  // Per-category aggregation from lastItems → an ordered list of
+  // {category, total, passed, pending, failed, waived, score}.
+  // Category insertion order is the order each category FIRST
+  // appears in lastItems (which is the canonical defaultItems()
+  // order from the Go source), so the visual layout matches the
+  // order operators read the checklist in code review.
+  function aggregateByCategory(items) {
+    var byCat = Object.create(null);
+    var order = [];
+    items.forEach(function(it) {
+      var c = it.category || 'unknown';
+      if (!byCat[c]) {
+        byCat[c] = { category: c, total: 0, passed: 0, pending: 0, failed: 0, waived: 0 };
+        order.push(c);
+      }
+      byCat[c].total++;
+      if (byCat[c][it.status] != null) byCat[c][it.status]++;
+    });
+    return order.map(function(c) {
+      var b = byCat[c];
+      b.score = b.total > 0
+        ? ((b.passed + b.waived) / b.total) * 100.0
+        : 0;
+      return b;
+    });
+  }
+
+  // Pretty-print a snake_case audit category like
+  // "smart_contracts" as "Smart contracts" (capitalise first letter
+  // only — "API" stays "Api" which is a known minor uglification
+  // and not worth a special-case table).
+  function prettyCategory(s) {
+    if (!s) return '';
+    var spaced = String(s).replace(/_/g, ' ');
+    return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+  }
+
+  function renderCategoryBreakdown() {
+    var grid = document.getElementById('cat-grid');
+    if (lastItems.length === 0) {
+      grid.innerHTML = '<div class="empty" style="grid-column: 1 / -1;">no items loaded</div>';
+      return;
+    }
+    var rows = aggregateByCategory(lastItems);
+    var active = filterState.category;
+    grid.innerHTML = rows.map(function(r) {
+      var cls = 'cat-card';
+      if (active && r.category === active) cls += ' active';
+      else if (active)                     cls += ' dim';
+      // Stacked-bar segments use flex-grow proportional to the
+      // count; segments with zero count collapse to width 0 via
+      // flex-basis: 0 (the default). Order matches the bucket
+      // tile palette: passed → pending → failed → waived.
+      var passedPct  = (r.passed  / r.total) * 100;
+      var pendingPct = (r.pending / r.total) * 100;
+      var failedPct  = (r.failed  / r.total) * 100;
+      var waivedPct  = (r.waived  / r.total) * 100;
+      var meta = [];
+      if (r.passed)  meta.push('<span class="pcount">' + r.passed  + ' passed</span>');
+      if (r.pending) meta.push('<span class="ncount">' + r.pending + ' pending</span>');
+      if (r.failed)  meta.push('<span class="fcount">' + r.failed  + ' failed</span>');
+      if (r.waived)  meta.push('<span class="wcount">' + r.waived  + ' waived</span>');
+      return '<div class="' + cls + '" tabindex="0" role="button"'
+        + ' data-category="' + escapeHTML(r.category) + '"'
+        + ' aria-pressed="' + (active && r.category === active ? 'true' : 'false') + '"'
+        + ' aria-label="' + escapeHTML(prettyCategory(r.category)) + ': '
+            + r.passed + ' passed of ' + r.total + ' total. '
+            + 'Click to ' + (active && r.category === active ? 'clear' : 'filter to') + ' this category.">'
+        + '<div class="head">'
+          + '<div class="name">' + escapeHTML(prettyCategory(r.category)) + '</div>'
+          + '<div class="ratio"><span class="score">' + r.score.toFixed(0) + '%</span> · ' + r.passed + '/' + r.total + '</div>'
+        + '</div>'
+        + '<div class="cat-bar" aria-hidden="true">'
+          + (r.passed  ? '<div class="seg passed"  style="flex: ' + passedPct  + ';"></div>' : '')
+          + (r.pending ? '<div class="seg pending" style="flex: ' + pendingPct + ';"></div>' : '')
+          + (r.failed  ? '<div class="seg failed"  style="flex: ' + failedPct  + ';"></div>' : '')
+          + (r.waived  ? '<div class="seg waived"  style="flex: ' + waivedPct  + ';"></div>' : '')
+        + '</div>'
+        + '<div class="cat-meta">' + meta.join('<span style="color:var(--border);">·</span>') + '</div>'
+        + '</div>';
+    }).join('');
+    // Rebind click + keyboard handlers after innerHTML rebuild.
+    Array.prototype.forEach.call(grid.querySelectorAll('.cat-card'), function(card) {
+      card.addEventListener('click', function() { onCategoryCardClick(card.getAttribute('data-category')); });
+      card.addEventListener('keydown', function(ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          onCategoryCardClick(card.getAttribute('data-category'));
+        }
+      });
+    });
+    renderCategoryClearBar();
+  }
+
+  function renderCategoryClearBar() {
+    var ind = document.getElementById('cat-active-indicator');
+    var btn = document.getElementById('cat-clear-btn');
+    if (filterState.category) {
+      ind.innerHTML = 'Showing category <span class="mono">' + escapeHTML(filterState.category) + '</span>';
+      btn.classList.remove('cat-clear-inactive');
+      btn.classList.add('cat-clear');
+      btn.disabled = false;
+    } else {
+      ind.textContent = 'All categories';
+      btn.classList.remove('cat-clear');
+      btn.classList.add('cat-clear-inactive');
+      btn.disabled = true;
+    }
+  }
+
+  function onCategoryCardClick(cat) {
+    // Clicking the already-active card clears the filter.
+    if (filterState.category === cat) {
+      filterState.category = '';
+    } else {
+      filterState.category = cat;
+    }
+    syncURLFromFilters();
+    renderCategoryBreakdown();
+    renderItems();
+    if (filterState.category) {
+      // Scroll the items table into view so the visitor sees the
+      // filtered rows immediately. block: 'start' lines the
+      // section heading up with the top of the viewport.
+      var tableHeading = document.querySelector('h2#items-heading') ||
+                         document.querySelector('h2[data-anchor="items-table"]');
+      if (tableHeading) {
+        tableHeading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  }
+
+  function clearCategoryFilter() {
+    if (!filterState.category) return;
+    filterState.category = '';
+    syncURLFromFilters();
+    renderCategoryBreakdown();
+    renderItems();
+  }
+
+  // Apply current filterState to the chip rows on load (in case the
+  // initial state came from the URL). Idempotent — safe to call
+  // every time the items list refreshes.
+  function applyFiltersFromState() {
+    ['status', 'severity'].forEach(function(key) {
+      var bar = document.getElementById('filter-' + key);
+      if (!bar) return;
+      Array.prototype.forEach.call(bar.querySelectorAll('button.chip'), function(b) {
+        var v = b.getAttribute('data-' + key) || '';
+        b.classList.toggle('active', v === filterState[key]);
+      });
+    });
   }
 
   function renderItems() {
@@ -649,6 +986,7 @@ GET https://api.qsdm.tech/api/v1/audit/badge.svg   # equivalent</code></pre>
         Array.prototype.forEach.call(bar.querySelectorAll('button.chip'), function(b) {
           b.classList.toggle('active', b === btn);
         });
+        syncURLFromFilters();
         renderItems();
       });
     });
@@ -662,6 +1000,12 @@ GET https://api.qsdm.tech/api/v1/audit/badge.svg   # equivalent</code></pre>
 
   wireChips('filter-status', 'status');
   wireChips('filter-severity', 'severity');
+
+  // Clear-category button (the pill above the cards). The cards
+  // themselves also clear the filter when re-clicked; this button
+  // is the explicit affordance for the "ok I'm done filtering"
+  // intent, in case the visitor scrolled away from the cards.
+  document.getElementById('cat-clear-btn').addEventListener('click', clearCategoryFilter);
 
   loadSummary();
   loadItems();
