@@ -121,6 +121,31 @@
   nav.subnav { display: flex; gap: 18px; margin-bottom: 8px; flex-wrap: wrap; }
   nav.subnav a { color: var(--text-2); font-size: 14px; }
   nav.subnav a.active { color: var(--accent-2); font-weight: 600; }
+  /* "Verified by public audit" cross-reference callout — same
+   * vocabulary as trust.html / validators.html so the visual
+   * treatment is consistent across every page that cross-references
+   * the audit checklist. Accent-blue border to distinguish from
+   * the green "live data" panels around it. */
+  .audit-callout {
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+    padding: 14px 18px; margin: 20px 0;
+    border: 1px solid var(--border); border-left: 3px solid var(--accent-3);
+    background: rgba(110,168,255,0.05);
+    border-radius: 10px;
+  }
+  .audit-callout .audit-callout-badge {
+    flex: 0 0 auto;
+    padding: 10px 12px;
+    background: rgba(0,0,0,.30);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex; align-items: center;
+  }
+  .audit-callout .audit-callout-badge img { display: block; height: 20px; }
+  .audit-callout .audit-callout-text { flex: 1 1 280px; color: var(--text-2); font-size: 13.5px; line-height: 1.55; }
+  .audit-callout .audit-callout-text strong { color: var(--text); }
+  .audit-callout .audit-callout-text a { color: var(--accent-3); font-weight: 600; }
+  .audit-callout .audit-callout-text code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: 12px; color: var(--text); }
 </style>
 </head>
 <body>
@@ -149,6 +174,32 @@
     All data sourced from the public <code>/api/v1/*</code> endpoints — verifiable independently
     by anyone with <code>curl</code> + <code>jq</code>.
   </p>
+
+  <!-- Cross-reference to the public audit checklist. The chain
+       integrity surface (hashing, signatures, ML-DSA-87 / Dilithium
+       keypair generation, JWT verification, mTLS) is pinned by 5
+       rows in the cryptography category. Contract execution
+       semantics (wazero sandbox isolation, gas metering, event
+       integrity) is pinned by 4 rows in smart_contracts. Deep-link
+       lands the visitor on the rows that govern WHY the data on
+       this page can be trusted. -->
+  <div class="audit-callout">
+    <a class="audit-callout-badge" href="/audit.html?category=cryptography"
+       title="Open the 5 cryptography audit rows on audit.html">
+      <img src="/api/v1/audit/badge.svg" alt="QSDM audit score (live)" />
+    </a>
+    <div class="audit-callout-text">
+      <strong>The chain's integrity is itself audited.</strong>
+      The cryptographic primitives that make this snapshot trustworthy
+      &mdash; ML-DSA-87 (FIPS 204) keypair generation, HMAC fallback,
+      JWT verification, mTLS &mdash; are pinned by 5 rows in the
+      <code>cryptography</code> category of the public audit checklist,
+      all passing. Contract execution semantics are pinned by 4 rows
+      under <code>smart_contracts</code>. See
+      <a href="/audit.html?category=cryptography">audit.html?category=cryptography</a>
+      for the live view.
+    </div>
+  </div>
 
   <h2>Network</h2>
   <div class="grid">

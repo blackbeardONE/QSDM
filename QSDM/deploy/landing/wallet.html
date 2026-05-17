@@ -181,6 +181,38 @@
   footer { padding: 48px 0 32px; color: var(--text-2); border-top: 1px solid var(--border); margin-top: 24px; font-size: 13px; }
   footer p { margin: 0 0 6px; }
 
+  /* "Verified by public audit" cross-reference callout — same
+   * vocabulary as the other landing pages (trust, validators,
+   * chain, download) so the visual treatment is consistent across
+   * every page that cross-references the audit checklist. On the
+   * wallet page this matters extra: the visitor is about to
+   * generate a private key in this browser tab, and a phishing
+   * clone could replace the WASM. The callout points them at the
+   * 5 cryptography audit rows that pin the production posture,
+   * and the badge image itself is served from api.qsdm.tech (a
+   * mismatched origin in a clone would 404 the badge, giving an
+   * additional visual canary). */
+  .audit-callout {
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+    padding: 14px 18px; margin: 20px 0;
+    border: 1px solid var(--border); border-left: 3px solid var(--accent-3);
+    background: rgba(110,168,255,0.05);
+    border-radius: 10px;
+  }
+  .audit-callout .audit-callout-badge {
+    flex: 0 0 auto;
+    padding: 10px 12px;
+    background: rgba(0,0,0,.30);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex; align-items: center;
+  }
+  .audit-callout .audit-callout-badge img { display: block; height: 20px; }
+  .audit-callout .audit-callout-text { flex: 1 1 280px; color: var(--text-2); font-size: 13.5px; line-height: 1.55; }
+  .audit-callout .audit-callout-text strong { color: var(--text); }
+  .audit-callout .audit-callout-text a { color: var(--accent-3); font-weight: 600; }
+  .audit-callout .audit-callout-text code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: 12px; color: var(--text); }
+
   @media (max-width: 700px) {
     .nav ul { gap: 12px; }
     .kv { grid-template-columns: 90px 1fr; }
@@ -224,6 +256,35 @@
       validators, this site's web server, or any third party.</strong> Compatible
       byte-for-byte with <code>qsdmcli wallet</code>.
     </p>
+
+    <!-- Cross-reference to the public audit checklist. ML-DSA-87
+         keypair gen, JWT verification (for the wallet's calls into
+         /api/v1/*), HMAC fallback, secret entropy and mTLS are all
+         pinned by 5 rows in the cryptography category, all passing.
+         Adjacent REST/JSON contract semantics for the endpoints the
+         wallet calls into are pinned by 6 rows under api. The badge
+         image uses a same-origin path (/api/v1/audit/badge.svg) for
+         consistency with the rest of the site; on a phishing clone
+         of this page served from a different origin, the badge will
+         404 — a visual canary that augments the address-bar check
+         already called out in the red panel above. -->
+    <div class="audit-callout">
+      <a class="audit-callout-badge" href="/audit.html?category=cryptography"
+         title="Open the 5 cryptography audit rows on audit.html">
+        <img src="/api/v1/audit/badge.svg" alt="QSDM audit score (live)" />
+      </a>
+      <div class="audit-callout-text">
+        <strong>This wallet's trust surface is itself audited.</strong>
+        <code>ML-DSA-87</code> CSPRNG keygen, <code>AES-256-GCM</code>
+        encryption, HMAC fallback entropy, JWT verification and mTLS
+        are pinned by 5 rows in the <code>cryptography</code>
+        category of the public audit checklist, all passing. The
+        REST/JSON contract for the endpoints the wallet calls is
+        pinned by 6 rows under <code>api</code>. See
+        <a href="/audit.html?category=cryptography">audit.html?category=cryptography</a>
+        for the live view.
+      </div>
+    </div>
   </section>
 
   <section class="panel warn">

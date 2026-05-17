@@ -75,6 +75,32 @@
   .btn:hover { background: var(--panel-2); text-decoration: none; }
   .btn.primary { background: var(--accent); color: #0a1400; border-color: #5d9600; }
   .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  /* "Verified by public audit" cross-reference callout — same
+   * vocabulary as trust.html so the visual treatment is consistent
+   * across every page that cross-references the audit checklist.
+   * Accent-blue border to distinguish from the green ".panel.hl"
+   * callouts (which are "this is the canonical / live" signal) —
+   * this one reads as "this surface is itself audited". */
+  .audit-callout {
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+    padding: 14px 18px; margin: 20px 0;
+    border: 1px solid var(--border); border-left: 3px solid var(--accent-3);
+    background: rgba(110,168,255,0.05);
+    border-radius: 10px;
+  }
+  .audit-callout .audit-callout-badge {
+    flex: 0 0 auto;
+    padding: 10px 12px;
+    background: rgba(0,0,0,.30);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex; align-items: center;
+  }
+  .audit-callout .audit-callout-badge img { display: block; height: 20px; }
+  .audit-callout .audit-callout-text { flex: 1 1 280px; color: var(--text-2); font-size: 13.5px; line-height: 1.55; }
+  .audit-callout .audit-callout-text strong { color: var(--text); }
+  .audit-callout .audit-callout-text a { color: var(--accent-3); font-weight: 600; }
+  .audit-callout .audit-callout-text code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: 12px; color: var(--text); }
 </style>
 </head>
 <body>
@@ -109,6 +135,29 @@
   validator uses this value once, at startup, to discover the libp2p mesh. After the handshake your node
   gossips directly with every other peer — <code>api.qsdm.tech</code> is a bootstrap, not a hub.
 </p>
+
+<!-- Cross-reference to the public audit checklist. The network
+     category pins the rules under which the validator mesh
+     operates (DHT Sybil resistance, libp2p P2P stack, peer
+     discovery, bootstrap protocol). 5 rows in that category, all
+     passing as of the latest deploy. -->
+<div class="audit-callout">
+  <a class="audit-callout-badge" href="/audit.html?category=network"
+     title="Open the 5 network audit rows on audit.html">
+    <img src="/api/v1/audit/badge.svg" alt="QSDM audit score (live)" />
+  </a>
+  <div class="audit-callout-text">
+    <strong>The validator network is itself audited.</strong>
+    DHT Sybil resistance, libp2p P2P stack, peer discovery, and
+    the bootstrap protocol you wire into <code>bootstrap_peers</code>
+    below are pinned by 5 rows in the <code>network</code> category
+    of the public audit checklist &mdash; all passing. Operational
+    infra (deploy hygiene, systemd, log rotation) is pinned by 3
+    rows under <code>infrastructure</code>. See
+    <a href="/audit.html?category=network">audit.html?category=network</a>
+    for the live view.
+  </div>
+</div>
 
 <div class="panel hl">
   <span class="tag ok">Canonical · Testnet · Live</span>

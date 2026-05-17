@@ -14,6 +14,49 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Audit cross-reference callouts on `validators.html`,
+  `chain.html`, `download.html`, and `wallet.html` (2026-05-17).**
+  Extends the audit-callout pattern shipped on `trust.html` to
+  the remaining four product landing pages, completing the
+  "every public surface points back at the audit checklist
+  that pins its contract" story. Each page now carries an
+  accent-blue <code>.audit-callout</code> panel just below
+  its hero/lede, rendering the live audit badge from
+  <code>/api/v1/audit/badge.svg</code> alongside one sentence
+  of context naming the specific audit category that governs
+  that surface, plus a deep-link CTA into
+  <code>/audit.html?category=&lt;cat&gt;</code> using the
+  query-param filter shipped in commit <code>770ce52</code>.
+  Per-page deep-link targets:
+  <code>validators.html</code> &rarr; <code>network</code>
+  (5 rows pinning DHT Sybil resistance, libp2p stack, peer
+  discovery, bootstrap protocol); <code>chain.html</code>
+  &rarr; <code>cryptography</code> (5 rows pinning ML-DSA-87
+  keygen, JWT verification, HMAC fallback, mTLS);
+  <code>download.html</code> &rarr; <code>supply_chain</code>
+  (8 rows &mdash; the highest-row-count category in the audit
+  &mdash; pinning <code>go mod verify</code>,
+  <code>govulncheck</code>, Trivy image scanning, SPDX/CycloneDX
+  SBOM, cosign signing, reproducible <code>-trimpath</code>
+  builds, dependabot pinning, and the documented
+  GO-2024-3218 mitigation register);
+  <code>wallet.html</code> &rarr; <code>cryptography</code>
+  (same 5 rows that pin the keystore primitives). All four
+  callouts share byte-identical CSS (consistent visual treatment
+  across the site &mdash; same colour, same border-left accent,
+  same badge framing) so the pattern is recognisable to
+  returning visitors. On <code>wallet.html</code> specifically,
+  the badge's same-origin path doubles as a phishing canary:
+  a clone of the wallet page served from a different origin
+  will 404 the badge image, augmenting the address-bar check
+  already called out in the page's red warning panel.
+  Deployed to BLR1 and verified live: each page renders 200,
+  contains <code>audit-callout</code> in markup, contains its
+  category deep-link in href, and references
+  <code>/api/v1/audit/badge.svg</code>. Live audit score at
+  deploy: 95.29% (81/85 rows) &mdash; embedded by every page
+  via the SVG badge endpoint.
+
 - **Audit cross-reference on `trust.html` + defensive HTML
   escaping (2026-05-16).** Closes the reverse loop in the
   audit/trust cross-link story: the trust strip on the homepage

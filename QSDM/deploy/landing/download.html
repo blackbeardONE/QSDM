@@ -157,6 +157,35 @@
   ol.steps li { margin: 10px 0; color: var(--text-2); }
   ol.steps li strong { color: var(--text); }
 
+  /* "Verified by public audit" cross-reference callout. Same
+   * vocabulary as trust.html / validators.html / chain.html so the
+   * visual treatment is consistent across every page that
+   * cross-references the audit checklist. On the download page this
+   * is the highest-signal callout the site ships: visitors are
+   * about to run an unsigned binary on their own machine, and the
+   * supply-chain category is the strongest answer to "can I trust
+   * this build". */
+  .audit-callout {
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+    padding: 14px 18px; margin: 20px 0;
+    border: 1px solid var(--border); border-left: 3px solid var(--accent-3);
+    background: rgba(110,168,255,0.05);
+    border-radius: 10px;
+  }
+  .audit-callout .audit-callout-badge {
+    flex: 0 0 auto;
+    padding: 10px 12px;
+    background: rgba(0,0,0,.30);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex; align-items: center;
+  }
+  .audit-callout .audit-callout-badge img { display: block; height: 20px; }
+  .audit-callout .audit-callout-text { flex: 1 1 280px; color: var(--text-2); font-size: 13.5px; line-height: 1.55; }
+  .audit-callout .audit-callout-text strong { color: var(--text); }
+  .audit-callout .audit-callout-text a { color: var(--accent-3); font-weight: 600; }
+  .audit-callout .audit-callout-text code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: 12px; color: var(--text); }
+
   footer {
     padding: 28px 0; color: var(--muted); font-size: 13px; text-align: center;
   }
@@ -196,6 +225,39 @@
     </div>
     <div class="small" style="margin-top: 10px" id="auto-sha"></div>
     <div class="small" style="margin-top: 6px" id="auto-installer-note"></div>
+  </div>
+</section>
+
+<!-- Cross-reference to the public audit checklist. The download
+     page is the single most security-critical landing surface in
+     the site — visitors are about to run an unsigned binary on
+     their own machine — so the supply-chain category (the highest-
+     row-count category in the audit, 8 rows all passing) is the
+     strongest answer to "can I trust this build". Covers
+     go mod verify (supply-01), govulncheck (supply-02), Trivy
+     container scanning (supply-03), CycloneDX SBOM (supply-04),
+     cosign signing (supply-05), reproducible builds with
+     -trimpath (supply-06), dependabot dependency pinning
+     (supply-07), and the documented GO-2024-3218 mitigation
+     register (supply-08). -->
+<section>
+  <div class="audit-callout">
+    <a class="audit-callout-badge" href="/audit.html?category=supply_chain"
+       title="Open the 8 supply-chain audit rows on audit.html">
+      <img src="/api/v1/audit/badge.svg" alt="QSDM audit score (live)" />
+    </a>
+    <div class="audit-callout-text">
+      <strong>The binaries above are themselves audited.</strong>
+      How they're built &mdash; <code>go mod verify</code>,
+      <code>govulncheck</code>, Trivy image scanning, SPDX/CycloneDX
+      SBOM, cosign signing, reproducible <code>-trimpath</code>
+      builds, dependabot pinning &mdash; is pinned by 8 rows in the
+      <code>supply_chain</code> category of the public audit
+      checklist (the highest-row-count category in the audit), all
+      passing. See
+      <a href="/audit.html?category=supply_chain">audit.html?category=supply_chain</a>
+      for the live view.
+    </div>
   </div>
 </section>
 
