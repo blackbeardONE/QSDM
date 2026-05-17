@@ -47,7 +47,7 @@
                 control in git/GitHub.
 
   Transparency surfaces:
-    /audit.html                   — public audit checklist (85 rows)
+    /audit.html                   — public audit checklist (86 rows)
     /api/v1/audit/summary         — machine-readable score + counts
     /api/v1/audit/items           — machine-readable per-row list
     /api/v1/audit/badge.svg       — embeddable SVG badge
