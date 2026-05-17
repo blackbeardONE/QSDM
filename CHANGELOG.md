@@ -12,6 +12,56 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Added
+
+- **Audit row `infra-04` — Public security-disclosure file
+  (RFC 9116) (2026-05-17).** Self-referential closure on the
+  transparency story: the public audit checklist now audits its
+  own discovery file. New row added under <code>CatInfra</code>
+  at <code>SevLow</code>, status pre-flipped to
+  <code>StatusPassed</code> with
+  <code>ReviewedBy=evidence:live-deploy</code> and
+  <code>ReviewedAt=2026-05-17T15:00:00Z</code>. Notes field is
+  operator-grade (~340 words): cites the canonical
+  <code>.well-known</code> + compatibility root paths, the
+  Caddyfile <code>try_files</code> handler order that makes
+  real files take precedence over the SPA fallback, the live
+  HTTP 200 + <code>text/plain</code> verification for both
+  files, every one of the 8 RFC 9116 fields with its specific
+  value, the historical HTML-fallback bug eliminated by commit
+  <code>881efc8</code>, the companion <code>humans.txt</code>
+  surface, and the deliberate deferral of the optional
+  RFC 9116 §3.2 PGP-signing path (no project release PGP key
+  in flight). Also added <code>"infra-04"</code> to
+  <code>runtimeVerifiedItems</code> in
+  <code>checklist_extra_test.go</code> so the
+  <code>TestChecklist_RuntimeVerifiedItemsPassed</code> /
+  <code>TestChecklist_RuntimeVerifiedReviewerProvenance</code> /
+  <code>TestChecklist_PassedCountMatchesRuntimeVerifiedList</code>
+  contract trio stays in lockstep — drift between the row's
+  status and the test list is a CI failure. Built + deployed
+  to BLR1: <code>go test ./pkg/audit/...</code> green
+  (<code>0.694 s</code>),
+  <code>go test ./pkg/api/... -run TestAudit</code> green
+  (<code>1.169 s</code>),
+  <code>GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build
+  -trimpath -ldflags="-s -w" -o qsdm.linux-amd64
+  ./cmd/qsdm</code> produced a 32.7 MB binary in 8.9 s, scp'd
+  to <code>/tmp/qsdm.new</code> on BLR1, swapped in under
+  <code>/opt/qsdm/qsdm</code> at <code>0755 qsdm:qsdm</code>,
+  systemd restart clean, all four loopback listeners bound
+  (<code>:4001</code> libp2p, <code>:8080</code> webviewer,
+  <code>:8081</code> dashboard, <code>:8443</code> API).
+  Live audit moved from
+  <strong>81 passed / 85 total / 95.29%</strong> to
+  <strong>82 passed / 86 total / 95.35%</strong>; evidence
+  provenance counts incremented in-tree=28 +0,
+  in-tree-tests=41 +0, live-deploy=12&rarr;<strong>13</strong>
+  (this row); SVG badge aria-label updated to
+  <code>QSDM audit: 95.35% (82/86)</code> end-to-end via the
+  same <code>/api/v1/audit/badge.svg</code> endpoint every
+  product page renders.
+
 ### Fixed
 
 - **Broken transparency surface on the live site
