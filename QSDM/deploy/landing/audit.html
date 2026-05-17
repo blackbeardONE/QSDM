@@ -7,6 +7,137 @@
 <meta name="description" content="QSDM public audit checklist. Live score, evidence provenance breakdown, and the four wall-clock-blocked rows with their engagement-ready wrapper artefacts. Sourced from /api/v1/audit/summary and /api/v1/audit/items — the same JSON the SDK and dashboard tile consume." />
 <meta name="theme-color" content="#0b1220" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b1220'/%3E%3Cpath d='M12 32l10-10 10 10-10 10z' fill='%2376b900'/%3E%3Cpath d='M32 20l10 12-10 12-10-12z' fill='%2300d1b2' opacity='.85'/%3E%3C/svg%3E" />
+<!--
+  JSON-LD structured data — schema.org Dataset. Registers the QSDM
+  public audit checklist with crawlers (Google, Bing, etc.) as a
+  first-class dataset so that searches for "QSDM audit", "QSDM
+  transparency", "QSDM public audit" can surface a rich-card
+  result with the score, distribution endpoints, license, and
+  last-modified date inline instead of a vanilla blue link.
+
+  Schema pinned to schema.org/Dataset per Google's structured-data
+  guide at
+  https://developers.google.com/search/docs/appearance/structured-data/dataset.
+
+  Three Distribution / ImageObject entries cover every machine-
+  readable surface the page already publishes for SDK consumers
+  and embedders:
+
+    - /api/v1/audit/summary    → application/json  (score + bucket counts)
+    - /api/v1/audit/items      → application/json  (per-row full list)
+    - /api/v1/audit/badge.svg  → image/svg+xml     (embeddable badge)
+
+  variableMeasured enumerates the four measured properties on the
+  dataset — score (percent), status, severity, category — with
+  the status / severity / category closed-enums kept verbatim in
+  sync with allowedAuditAPI{Statuses,Severities,Categories} in
+  pkg/api/handlers_audit.go. Drift between the two is caught by
+  TestAuditAPI_AllowedFilterEnumsMatchPkgAudit at the API level,
+  but a stale enum in this block does not break the rich card —
+  it only makes the structured description less accurate.
+
+  dateModified is the static-HTML date of the last meaningful
+  checklist change. Update on checklist.go edits that touch a
+  row's Status, Notes, or ReviewedAt. The page below this script
+  tag also renders live per-row ReviewedAt timestamps from the
+  /api/v1/audit/items response, so a stale dateModified here only
+  costs a freshness signal in the rich card, not correctness on
+  the page itself.
+
+  No HTML comments are permitted INSIDE the <script
+  type="application/ld+json"> body — JSON does not have a comment
+  grammar. All rationale lives in this outer HTML comment.
+-->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Dataset",
+  "name": "QSDM Public Audit Checklist",
+  "alternateName": [
+    "QSDM Audit",
+    "QSDM Public Audit",
+    "QSDM Transparency Checklist"
+  ],
+  "description": "The QSDM public audit checklist: a row-by-row record of every security, supply-chain, cryptography, network, and infrastructure invariant the QSDM testnet upholds, with status (passed / failed / waived), severity (critical / high / medium / low / info), and provenance (live-deploy / in-tree-tests / in-tree) tracked per row. Same data shipped to the SDK and validator dashboard via /api/v1/audit/summary and /api/v1/audit/items.",
+  "url": "https://qsdm.tech/audit.html",
+  "identifier": "https://qsdm.tech/audit.html",
+  "keywords": [
+    "blockchain audit",
+    "post-quantum security audit",
+    "supply-chain transparency",
+    "QSDM",
+    "ML-DSA-87",
+    "FIPS 204",
+    "open-source audit checklist"
+  ],
+  "license": "https://opensource.org/license/mit/",
+  "isAccessibleForFree": true,
+  "creativeWorkStatus": "Published",
+  "inLanguage": "en",
+  "dateModified": "2026-05-17",
+  "temporalCoverage": "2026-04-22/..",
+  "publisher": {
+    "@type": "Organization",
+    "name": "QSDM",
+    "url": "https://qsdm.tech",
+    "sameAs": [
+      "https://github.com/blackbeardONE/QSDM"
+    ]
+  },
+  "creator": {
+    "@type": "Organization",
+    "name": "QSDM",
+    "url": "https://qsdm.tech"
+  },
+  "distribution": [
+    {
+      "@type": "DataDownload",
+      "name": "Audit summary (JSON)",
+      "description": "Top-level score and per-status / per-severity bucket counts.",
+      "encodingFormat": "application/json",
+      "contentUrl": "https://qsdm.tech/api/v1/audit/summary"
+    },
+    {
+      "@type": "DataDownload",
+      "name": "Audit items (JSON)",
+      "description": "Full per-row checklist with status, severity, category, notes, evidence pointers, and reviewer timestamps.",
+      "encodingFormat": "application/json",
+      "contentUrl": "https://qsdm.tech/api/v1/audit/items"
+    },
+    {
+      "@type": "ImageObject",
+      "name": "Audit score badge (SVG)",
+      "description": "Server-rendered shields.io-style SVG badge — embeddable in third-party READMEs, dashboards, and exchange listings. Same endpoint the homepage trust strip and every product landing page render.",
+      "encodingFormat": "image/svg+xml",
+      "contentUrl": "https://qsdm.tech/api/v1/audit/badge.svg"
+    }
+  ],
+  "variableMeasured": [
+    {
+      "@type": "PropertyValue",
+      "name": "Audit score",
+      "description": "Aggregate percentage of audit rows passed (or waived with documented mitigation).",
+      "unitText": "percent"
+    },
+    {
+      "@type": "PropertyValue",
+      "name": "Status",
+      "description": "Per-row audit status. Closed enum: passed, failed, pending, waived."
+    },
+    {
+      "@type": "PropertyValue",
+      "name": "Severity",
+      "description": "Per-row severity if the invariant fails. Closed enum: critical, high, medium, low, info."
+    },
+    {
+      "@type": "PropertyValue",
+      "name": "Category",
+      "description": "Per-row audit category. Closed enum: cryptography, authentication, authorisation, network, smart_contracts, bridge, storage, api, governance, infrastructure, supply_chain, runtime, secret_rotation, rebrand, tokenomics, mining_audit, trust_api."
+    }
+  ],
+  "mainEntityOfPage": "https://qsdm.tech/audit.html"
+}
+</script>
 <style>
   /* QSDM public audit page. Modelled directly on trust.html — same
    * brand voice, same colour tokens, same fetch-with-fallback

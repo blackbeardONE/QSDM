@@ -14,6 +14,51 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **JSON-LD `schema.org/Dataset` structured data on `audit.html`
+  (2026-05-17).** Registers the QSDM public audit checklist as a
+  first-class Dataset with crawlers (Google, Bing, etc.) so that
+  searches for *"QSDM audit"*, *"QSDM transparency"*, or *"QSDM
+  public audit"* can surface a rich-card Dataset result with the
+  score, license, distribution endpoints, and last-modified date
+  inline &mdash; instead of a vanilla blue link. The
+  <code>&lt;script type="application/ld+json"&gt;</code> block
+  lives in the page's <code>&lt;head&gt;</code> and is keyed to
+  the schema documented at
+  <a href="https://developers.google.com/search/docs/appearance/structured-data/dataset">developers.google.com/search/.../dataset</a>.
+  Fields populated: <code>@type</code> Dataset,
+  <code>name</code>, <code>alternateName</code> &times; 3,
+  <code>description</code> (429 chars),
+  <code>url</code> / <code>identifier</code>,
+  <code>keywords</code> &times; 7,
+  <code>license</code> = MIT (<code>opensource.org/license/mit/</code>,
+  matching the repo LICENSE), <code>isAccessibleForFree</code>,
+  <code>creativeWorkStatus</code>, <code>inLanguage</code>,
+  <code>dateModified</code>, <code>temporalCoverage</code>
+  (<code>2026-04-22/..</code>, open-ended from the Major Update
+  rebrand), <code>publisher</code> + <code>creator</code> as
+  Organization (with <code>sameAs</code> pointing at the GitHub
+  repo). The <code>distribution</code> array covers all three
+  machine-readable surfaces the page already publishes:
+  <code>/api/v1/audit/summary</code> (DataDownload,
+  application/json &mdash; score + bucket counts),
+  <code>/api/v1/audit/items</code> (DataDownload,
+  application/json &mdash; full per-row list),
+  <code>/api/v1/audit/badge.svg</code> (ImageObject,
+  image/svg+xml &mdash; embeddable badge). The
+  <code>variableMeasured</code> array enumerates 4 PropertyValue
+  entries (score, status, severity, category) with the
+  status/severity/category closed enums kept verbatim in sync
+  with <code>allowedAuditAPI{Statuses,Severities,Categories}</code>
+  in <code>pkg/api/handlers_audit.go</code>. Block validated
+  locally via <code>PowerShell ConvertFrom-Json</code> (parses
+  clean, 3492 bytes JSON, 3 distributions, 4 variables) and
+  verified live: <code>https://qsdm.tech/audit.html</code>
+  serves the script tag, the <code>@type: Dataset</code> field,
+  the license URL, and both summary/badge distribution URLs;
+  the live JSON-LD re-parses successfully through the same
+  ConvertFrom-Json round-trip. Rationale documented in the
+  outer HTML comment in the page source.
+
 - **Audit cross-reference callouts on `validators.html`,
   `chain.html`, `download.html`, and `wallet.html` (2026-05-17).**
   Extends the audit-callout pattern shipped on `trust.html` to
