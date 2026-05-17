@@ -12,7 +12,103 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Broken transparency surface on the live site
+  (2026-05-17).** A direct probe of <code>qsdm.tech</code>
+  found that <code>/.well-known/security.txt</code>,
+  <code>/security.txt</code>, and <code>/humans.txt</code> all
+  returned HTTP 200 &mdash; but the body each one delivered was
+  the <em>homepage HTML</em>, because Caddy's SPA
+  <code>try_files ... /index.html</code> catch-all was matching
+  every unknown path. This silently broke RFC 9116 discovery and
+  the W3C humans-of-the-project convention: a security
+  researcher checking for a vulnerability disclosure file got
+  <code>&lt;!doctype html&gt;</code> back, which is arguably
+  worse than a clean 404 (200 inflates uptime + crawler-success
+  counters while actually delivering nothing useful). Root cause
+  was simple absence &mdash; there was no
+  <code>.well-known/</code> directory on the webroot and no
+  <code>security.txt</code> / <code>humans.txt</code> files
+  anywhere on the server or in source control. Fixed by adding
+  real files (next entry below). Also: <code>sitemap.xml</code>
+  was stale &mdash; every <code>&lt;lastmod&gt;</code> said
+  <code>2026-05-13</code>, before the SVG audit badge,
+  per-row deep-links, category breakdown, homepage trust strip,
+  trust.html cross-reference, four landing-page callouts, and
+  JSON-LD Dataset structured-data work shipped this week.
+  Refreshed to today's date with the new
+  <code>/.well-known/security.txt</code> entry added.
+
 ### Added
+
+- **RFC 9116 security disclosure surface
+  + W3C humans.txt + sitemap.xml refresh (2026-05-17).**
+  Replaces the broken HTML-fallback responses described above
+  with real, indexable transparency files:
+
+  - <code>QSDM/deploy/landing/.well-known/security.txt</code>
+    (canonical RFC 9116 location, served as
+    <code>text/plain; charset=utf-8</code>) &mdash; 8 fields:
+    two <code>Contact</code> (GitHub Security Advisories
+    private-disclosure form + <code>mailto:admin@qsdm.tech</code>,
+    matching the Caddy ACME registration email known to be
+    live), <code>Expires</code> (<code>2027-05-17T00:00:00Z</code>,
+    the RFC 9116 §2.5.5 one-year maximum),
+    <code>Preferred-Languages: en</code>, two
+    <code>Canonical</code> entries (well-known + root paths),
+    <code>Policy</code> (deep-link to
+    <code>QSDM/docs/docs/SECURITY_AUDIT.md</code> on GitHub
+    main &mdash; the project's existing security posture
+    document, 18 historical findings tracked with current
+    status), and <code>Acknowledgments</code>
+    (project's GitHub Security Advisories page). The header
+    comment documents the response-time policy (72 h ack /
+    14 d fix-or-mitigation target for critical/high) and
+    asks reporters to reference audit-row IDs when applicable
+    &mdash; closes the loop with the public audit checklist.
+    Industry-standard surface; many enterprise vendor-security
+    checklists require <code>security.txt</code> presence
+    during procurement / due diligence (Mozilla Observatory
+    docks points without it, as does Google's web.dev
+    transparency scoring).
+  - <code>QSDM/deploy/landing/security.txt</code> &mdash;
+    byte-identical copy at the root path (RFC 9116 §3
+    "compatibility location" for scanners that still probe
+    <code>/security.txt</code> rather than the canonical
+    well-known path).
+  - <code>QSDM/deploy/landing/humans.txt</code> &mdash; W3C
+    humanstxt.org-style team / thanks / colophon manifest.
+    Three blocks: <code>/* TEAM */</code> (project lead +
+    Cursor/Claude pair-programming acknowledgement &mdash;
+    every "session N" comment in the source tree was
+    co-edited in a Cursor session), <code>/* THANKS */</code>
+    (the load-bearing open-source projects + every testnet
+    operator), <code>/* SITE */</code> (the technology
+    colophon and a complete index of the eight transparency
+    surfaces the site publishes).
+  - <code>QSDM/deploy/landing/sitemap.xml</code> &mdash;
+    refreshed: every <code>&lt;lastmod&gt;</code> bumped to
+    its file's actual last-meaningful-edit date,
+    <code>audit.html</code> priority raised from 0.7 to 0.95
+    (now the second-highest behind the apex landing, matching
+    its cross-referenced role across every product page),
+    <code>trust.html</code> raised from 0.6 to 0.85 (same
+    rationale), and a 9th entry added for
+    <code>/.well-known/security.txt</code> at priority 0.3
+    (annual changefreq). Inline header comment now documents
+    the priority calibration so future edits don't
+    inadvertently regress.
+
+  Verified live: <code>https://qsdm.tech/.well-known/security.txt</code>,
+  <code>https://qsdm.tech/security.txt</code>,
+  <code>https://qsdm.tech/humans.txt</code>, and
+  <code>https://qsdm.tech/sitemap.xml</code> all return 200
+  with the correct <code>text/plain</code> /
+  <code>text/xml</code> Content-Type and the expected per-file
+  signatures (8 RFC 9116 fields on the security files, 3
+  W3C blocks on humans, 9 URL entries on the sitemap with
+  valid XML structure).
 
 - **JSON-LD `schema.org/Dataset` structured data on `audit.html`
   (2026-05-17).** Registers the QSDM public audit checklist as a

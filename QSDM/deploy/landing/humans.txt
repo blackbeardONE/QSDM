@@ -1,0 +1,58 @@
+/* humanstxt.org — the humans responsible & technology colophon */
+
+/* TEAM */
+
+  Project lead, sole founder: Joedel Lopez Dalioan (Blackbeard)
+  GitHub:                     https://github.com/blackbeardONE
+  Project:                    https://github.com/blackbeardONE/QSDM
+  Location:                   Manila, Philippines
+
+  AI pair-programming partner: Cursor / Claude (sessions 60+ — every
+  source file with a "session N" comment was co-edited in a Cursor
+  session, with all decisions, deploys, and signatures owned by the
+  human above).
+
+
+/* THANKS */
+
+  The QSDM testnet stands on the shoulders of these open-source
+  projects (full list in QSDM/source/go.mod):
+
+  - libp2p           — peer-to-peer networking
+  - cloudflare/circl — post-quantum signatures (ML-DSA-87 / FIPS 204)
+  - wazero          — pure-Go WebAssembly runtime for smart contracts
+  - Caddy           — TLS termination + reverse proxy at the edge
+  - Prometheus      — operational metrics scrape target
+  - Grafana         — dashboard rendering
+
+  And to every operator running a validator or a miner against the
+  Phase-4 testnet — your bug reports, log paste-ins, and "this
+  doesn't work" pings are why the public audit score is where it
+  is. Thank you.
+
+
+/* SITE */
+
+  Last update:  2026-05-17
+  Language:     English
+  Doctype:      HTML5
+  Standards:    HTML5, CSS3, JSON-LD (schema.org/Dataset), RFC 9116
+  Components:   Vanilla HTML + CSS + JavaScript — no build step,
+                no React, no bundler. Every page is hand-edited and
+                shipped as a single self-contained file. The browser
+                wallet at /wallet.html embeds /wallet.wasm
+                (cloudflare/circl ML-DSA-87 compiled to WebAssembly).
+  Software:     Backend in Go 1.25, frontend in vanilla JS, edge in
+                Caddy, observability in Prometheus + Grafana, source
+                control in git/GitHub.
+
+  Transparency surfaces:
+    /audit.html                   — public audit checklist (85 rows)
+    /api/v1/audit/summary         — machine-readable score + counts
+    /api/v1/audit/items           — machine-readable per-row list
+    /api/v1/audit/badge.svg       — embeddable SVG badge
+    /trust.html                   — recent attestations + scope notes
+    /api/v1/trust/attestations/*  — machine-readable attestation feed
+    /.well-known/security.txt     — RFC 9116 security disclosure
+    /sitemap.xml                  — site index
+    /humans.txt                   — this file

@@ -9,17 +9,42 @@
   is what crawlers index. Deep-linking inside /docs/ still works for
   humans via the in-app sidebar.
 
+  Priorities are calibrated as follows:
+    1.0   the apex landing — the marketing entry point.
+    0.95  the public audit checklist (audit.html) — the highest-value
+          transparency surface the project ships, cross-referenced from
+          every product page via the .audit-callout pattern (commits
+          5f9b9d1, 123dff5) and tagged with JSON-LD schema.org/Dataset
+          (commit 21cc4fe).
+    0.9   /docs/ (canonical knowledge base), /wallet.html (the
+          high-leverage interactive surface).
+    0.85  /trust.html — the attestation transparency feed; same tier
+          as audit.html in the cross-reference story.
+    0.8   /download.html — entry point for new miners.
+    0.7   /validators.html — entry point for new validator operators.
+    0.6   /chain.html — live status board (refreshes every 10s; the
+          machine-readable signal is in /api/v1/*).
+
   Whenever a new top-level static page is added under /var/www/qsdm/,
-  append it here. Last-mod dates are coarse on purpose — they're
-  refreshed at the same cadence as the landing's `<lastmod>` here.
+  append it here. Last-mod dates are refreshed in the same commit
+  that touches the file — the date here MUST be no older than the
+  file's last meaningful content change, otherwise crawlers will
+  skip the re-crawl and the change won't be re-indexed.
 -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 
   <url>
     <loc>https://qsdm.tech/</loc>
-    <lastmod>2026-05-13</lastmod>
+    <lastmod>2026-05-17</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+  </url>
+
+  <url>
+    <loc>https://qsdm.tech/audit.html</loc>
+    <lastmod>2026-05-17</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
   </url>
 
   <url>
@@ -31,44 +56,44 @@
 
   <url>
     <loc>https://qsdm.tech/wallet.html</loc>
-    <lastmod>2026-05-13</lastmod>
+    <lastmod>2026-05-17</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
 
   <url>
+    <loc>https://qsdm.tech/trust.html</loc>
+    <lastmod>2026-05-16</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <url>
     <loc>https://qsdm.tech/download.html</loc>
-    <lastmod>2026-05-13</lastmod>
+    <lastmod>2026-05-17</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
 
   <url>
     <loc>https://qsdm.tech/validators.html</loc>
-    <lastmod>2026-05-13</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>
-
-  <url>
-    <loc>https://qsdm.tech/trust.html</loc>
-    <lastmod>2026-05-13</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-
-  <url>
-    <loc>https://qsdm.tech/audit.html</loc>
-    <lastmod>2026-05-16</lastmod>
+    <lastmod>2026-05-17</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
 
   <url>
     <loc>https://qsdm.tech/chain.html</loc>
-    <lastmod>2026-05-13</lastmod>
-    <changefreq>monthly</changefreq>
+    <lastmod>2026-05-17</lastmod>
+    <changefreq>daily</changefreq>
     <priority>0.6</priority>
+  </url>
+
+  <url>
+    <loc>https://qsdm.tech/.well-known/security.txt</loc>
+    <lastmod>2026-05-17</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
   </url>
 
 </urlset>

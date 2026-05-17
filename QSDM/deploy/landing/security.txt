@@ -1,0 +1,36 @@
+# QSDM security disclosure policy (RFC 9116 / securitytxt.org).
+#
+# Compatibility location — the canonical file lives at
+# https://qsdm.tech/.well-known/security.txt per RFC 9116 §3.
+# This /security.txt is identical byte-for-byte and is served for
+# clients that still probe the legacy root path (Mozilla
+# Observatory, some bug-bounty platforms, older scanners).
+#
+# If you have found a potential security issue in the QSDM
+# testnet — the validator (api.qsdm.tech), the public website
+# (qsdm.tech), the browser wallet (/wallet.html / wallet.wasm),
+# the consumer miner binaries, the SDK, or any /api/v1/* endpoint —
+# please report it through one of the Contact channels below.
+#
+# Please do NOT open a public GitHub issue or a public pull request
+# for a security finding. The GitHub Security Advisory channel (the
+# first Contact link below) is the canonical private-disclosure
+# surface and lets us coordinate a fix + a coordinated public
+# advisory without exposing the issue mid-flight. We will
+# acknowledge new reports within 72 hours and aim to ship a fix
+# (or a documented mitigation) within 14 days for critical/high
+# severity findings.
+#
+# The QSDM project publishes a row-by-row public audit checklist
+# at https://qsdm.tech/audit.html — current score, evidence
+# provenance, and category breakdown. If your finding maps to an
+# existing audit row, please reference the row ID in your report.
+
+Contact: https://github.com/blackbeardONE/QSDM/security/advisories/new
+Contact: mailto:admin@qsdm.tech
+Expires: 2027-05-17T00:00:00Z
+Preferred-Languages: en
+Canonical: https://qsdm.tech/.well-known/security.txt
+Canonical: https://qsdm.tech/security.txt
+Policy: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/SECURITY_AUDIT.md
+Acknowledgments: https://github.com/blackbeardONE/QSDM/security/advisories
