@@ -7,6 +7,7 @@ on:
       - "QSDM/deploy/**"
       - "QSDM/docs/docs/runbooks/**"
       - "scripts/check_runbook_coverage.py"
+      - "scripts/check_sitemap_freshness.py"
       - "scripts/gen_promtool_tests.py"
       - "scripts/gen_grafana_dashboards.py"
       - ".github/workflows/validate-deploy.yml"
@@ -15,6 +16,7 @@ on:
       - "QSDM/deploy/**"
       - "QSDM/docs/docs/runbooks/**"
       - "scripts/check_runbook_coverage.py"
+      - "scripts/check_sitemap_freshness.py"
       - "scripts/gen_promtool_tests.py"
       - "scripts/gen_grafana_dashboards.py"
       - ".github/workflows/validate-deploy.yml"
@@ -255,3 +257,53 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/check_runbook_coverage.py
+
+  # sitemap-freshness lints QSDM/deploy/landing/sitemap.xml against
+  # the source-of-truth files in QSDM/deploy/landing/, enforcing the
+  # contract documented in the sitemap header (lines 46-50):
+  #
+  #   "the date here MUST be no older than the file's last meaningful
+  #    content change, otherwise crawlers will skip the re-crawl and
+  #    the change won't be re-indexed."
+  #
+  # The script ships two backends:
+  #
+  #   --mode online   HEAD each <loc> against https://qsdm.tech and
+  #                   compare to served Last-Modified. Designed for
+  #                   operator post-deploy verification; requires
+  #                   outbound network reach.
+  #
+  #   --mode offline  Map each <loc> to the source file in
+  #                   QSDM/deploy/landing/ and compare sitemap
+  #                   <lastmod> to `git log -1 --format=%cI -- <file>`.
+  #                   Designed for CI: deterministic, no network.
+  #
+  # We run --mode offline here. It catches the same drift class
+  # (sitemap claims an older <lastmod> than reality) before the
+  # commit even merges, closing the recurrence-class for the ad-hoc
+  # ops fix in commit 6927f9b. The online lint stays available for
+  # operators to run post-deploy, where Caddy's served Last-Modified
+  # may legitimately be newer than git (e.g. server-side `touch` for
+  # cache rotation, as in commit 29bbdff for /docs/).
+  #
+  # IMPORTANT: this job requires `fetch-depth: 0` on the checkout
+  # step. With the default shallow clone (depth=1), `git log -1`
+  # returns the HEAD commit for every file (because that's the only
+  # commit in the fetched history), which makes the lint pass
+  # vacuously. Full history is needed so each file's most-recent
+  # touching commit is correctly resolved.
+  sitemap-freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Lint sitemap freshness (offline mode, git-backed)
+        run: |
+          set -euo pipefail
+          python scripts/check_sitemap_freshness.py --mode offline

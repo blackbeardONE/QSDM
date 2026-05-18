@@ -14,6 +14,70 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`infra-05` follow-on — `--mode offline` + CI wiring for
+  `check_sitemap_freshness.py` (2026-05-18).** Closes the
+  deliberate-deferral note in the original `infra-05` row, which
+  called out that "wire-into-CI is intentionally a separate
+  follow-up" and "offline-from-git mode comparing `<lastmod>` to
+  `git log -1 --format=%cI` is a natural extension when CI wiring
+  is in scope." Both follow-ups now landed in the same commit.
+
+  - **`scripts/check_sitemap_freshness.py`** gained a
+    `--mode {online,offline}` flag (default `online` preserves the
+    pre-existing operator post-deploy verification behavior;
+    `--mode offline` switches the source-of-truth backend from
+    HEAD against `https://qsdm.tech` to `git log -1 --format=%cI`
+    against the corresponding source file under
+    `QSDM/deploy/landing/`). URL-to-source mapping uses the
+    natural Caddy convention (`/` → `index.html`, `/foo/` →
+    `foo/index.html`, `/foo.html` → `foo.html`, nested paths
+    preserved). Per-URL skip semantics mirror online mode: a
+    sitemap entry whose source file does not exist in the repo,
+    or whose source file is untracked / never-committed, is
+    reported but does not fail the run (same shape as how online
+    mode treats 4xx responses and missing `Last-Modified`
+    headers). Online mode is **strictly preserved** for operator
+    use; the new mode is purely additive.
+  - **`.github/workflows/validate-deploy.yml`** gained a new
+    `sitemap-freshness` job that runs `--mode offline` on every
+    push/PR that touches `QSDM/deploy/**` or
+    `scripts/check_sitemap_freshness.py`. Mirrors the existing
+    `runbook-coverage` job pattern (`actions/setup-python@v5` +
+    Python 3.12 + stdlib-only invocation, no extra deps). The
+    checkout step pins `fetch-depth: 0` because shallow clones
+    return the HEAD commit's date for every file under
+    `git log -1 -- <file>` (the only commit visible in the fetched
+    history), which would make the lint pass vacuously; full
+    history is required for each file's most-recent touching
+    commit to resolve correctly.
+  - **Verification.** Offline-mode dry-run against the current
+    tree: `python scripts/check_sitemap_freshness.py --mode offline`
+    returns exit 0 with `OK: 11/11 URL(s) pass the freshness
+    contract (mode=offline)`. Online-mode regression check:
+    same script with `--mode online` against `https://qsdm.tech`
+    returns exit 0 with `OK: 11/11 URL(s) pass the freshness
+    contract (mode=online)` — pre-existing behavior unchanged.
+    Negative-test canary in a throwaway git clone with `/audit.html`
+    `<lastmod>` artificially regressed to 2026-04-01 returned
+    exit 1 with the precise drift message including the bump-to
+    date (2026-05-18) and the raw `git log` ISO-8601 committer
+    timestamp (`2026-05-18T20:35:19+08:00`). One informational
+    cross-mode divergence observed (not a failure): `/docs/`
+    shows `sitemap=2026-05-18 > git=2026-05-15` under offline
+    mode, because ops's `29bbdff` did a server-side `touch` on
+    `/var/www/qsdm/docs/index.html` for cache rotation without
+    changing git content, so served `Last-Modified` rotated
+    forward but git mtime did not; the `sitemap >= source`
+    contract is satisfied under both backends.
+  - **Why it matters.** The recurrence-class for the original
+    drift incident (ops's `6927f9b` — sitemap shipping with stale
+    `<lastmod>` dates that contradict the served `Last-Modified`)
+    is now gated at PR time, before merge, in addition to the
+    operator-runnable online mode and the periodic operator
+    workflow. Same pattern as `infra-03`'s govulncheck script + CI
+    wiring: ad-hoc ops fix → executable in-tree contract → CI
+    invariant.
+
 - **Audit row `infra-05` — Sitemap lastmod freshness contract,
   enforced by `scripts/check_sitemap_freshness.py` (2026-05-18).**
   Converts the sitemap-freshness policy from a human-maintained
