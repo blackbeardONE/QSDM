@@ -14,6 +14,36 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **Transparency footer strip on all seven landing pages
+  (2026-05-18).** Single byte-identical
+  <code>&lt;nav aria-label="Transparency resources"
+  class="transparency-strip"&gt;</code> block appended to the
+  footer of every landing page &mdash; <code>index.html</code>,
+  <code>audit.html</code>, <code>trust.html</code>,
+  <code>validators.html</code>, <code>chain.html</code>,
+  <code>download.html</code>, <code>wallet.html</code>. Six
+  links per strip, separated by middots: Public audit
+  (<code>/audit.html</code>), Attestation transparency
+  (<code>/trust.html</code>), Security disclosure (RFC 9116)
+  (<code>/.well-known/security.txt</code>), Humans
+  (<code>/humans.txt</code>), Sitemap
+  (<code>/sitemap.xml</code>), Status badge SVG
+  (<code>/api/v1/audit/badge.svg</code>). Surfaces the
+  transparency files shipped in <code>881efc8</code> at every
+  exit-page footer instead of leaving them as wire-level-only
+  resources that visitors had to know to look for. Markup is
+  byte-identical across all seven pages on purpose &mdash;
+  when a new transparency surface is added, it goes here
+  ONCE and gets duplicated in the same sweep (mechanical
+  drift was the failure mode that motivated the
+  <code>74a828b</code> "85 → 86 rows" + <code>279687b</code>
+  "3 → 4 infrastructure rows" cleanup commits). Verified live:
+  all seven pages serve the strip with all six link-target
+  signatures present in markup; all six targets resolve
+  HTTP 200 with the correct Content-Type
+  (<code>text/html</code> / <code>text/plain</code> /
+  <code>text/xml</code> / <code>image/svg+xml</code>).
+
 - **Audit row `infra-04` — Public security-disclosure file
   (RFC 9116) (2026-05-17).** Self-referential closure on the
   transparency story: the public audit checklist now audits its

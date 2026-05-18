@@ -578,6 +578,23 @@
       <div>© <span id="y"></span> QSDM · Cell (CELL) · All rights reserved.</div>
       <div>Built on libp2p · liboqs (ML-DSA-87) · <a href="https://github.com/cloudflare/circl">cloudflare/circl</a> · Caddy · Go.</div>
     </div>
+
+    <!-- Transparency links — same row on every page; points at the
+         well-known files shipped in 881efc8 (security.txt, humans.txt,
+         sitemap.xml) and the audit/trust transparency pages. Keeping
+         the markup byte-identical across all seven landing pages
+         makes drift impossible — when a new transparency surface is
+         added, it goes here ONCE and gets duplicated in the same
+         sweep. See footer-links transparency-strip in 1a808e0+. -->
+    <nav aria-label="Transparency resources" class="transparency-strip" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);line-height:1.8;">
+      <strong style="color:var(--text-2);font-weight:600;letter-spacing:.3px;text-transform:uppercase;font-size:11px;">Transparency:</strong>
+      <a href="/audit.html">Public audit</a> ·
+      <a href="/trust.html">Attestation transparency</a> ·
+      <a href="/.well-known/security.txt">Security disclosure (RFC 9116)</a> ·
+      <a href="/humans.txt">Humans</a> ·
+      <a href="/sitemap.xml">Sitemap</a> ·
+      <a href="/api/v1/audit/badge.svg">Status badge (SVG)</a>
+    </nav>
   </div>
 </footer>
 
