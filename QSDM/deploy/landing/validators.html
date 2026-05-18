@@ -167,14 +167,29 @@
   </p>
 
   <h3>libp2p bootstrap multiaddr</h3>
-  <pre id="multiaddr-live">/ip4/206.189.132.232/tcp/4001/p2p/<span id="peer-id">12D3KooWMq2gCNsiM2Q6eGAHyYMLgSMb3p5o91xtkxEXo8ocpapp</span></pre>
+  <pre id="multiaddr-live">/ip4/206.189.132.232/tcp/4001/p2p/<span id="peer-id">12D3KooWRH4MGiaRYMZEr9LvdxYrpePT5LPbNqLTMGukD32yhkZ8</span></pre>
   <p style="color:var(--muted); font-size:12.5px; margin-top:6px;">
     This is the value you paste into <code>bootstrap_peers</code> in your
     <code>qsdm.toml</code> / <code>qsdm.yaml</code>, or into the
-    <code>BOOTSTRAP_PEERS</code> environment variable for Docker deployments. The peer-id rotates when
-    the node's libp2p private key rotates — this page updates on every redeploy; the
-    <code>/api/v1/status</code> endpoint below is the live source of truth between redeploys.
+    <code>BOOTSTRAP_PEERS</code> environment variable for Docker deployments. The peer-id rotates
+    when the node's libp2p private key rotates. The values on this page refresh live from
+    <code>/api/v1/status</code> every 30&nbsp;s in a browser; the static HTML is also re-synced on
+    every redeploy so <code>curl</code> / non-JS crawlers see the current value too.
   </p>
+
+  <!-- Live operator-facing status row, populated from /api/v1/status
+       on page load and refreshed every 30 s by the IIFE at the bottom
+       of this file. Until the fetch completes (or if it fails — offline,
+       CORS, validator down), every value reads "—". Per-field "—"
+       persists when the API omits or returns a non-matching type for
+       the field, so the row is robust against API-shape drift. -->
+  <div id="status-live" aria-label="Live validator status from /api/v1/status" style="display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;margin-top:10px;padding:10px 14px;background:rgba(0,0,0,0.20);border:1px solid var(--border);border-radius:8px;font-size:12.5px;color:var(--text-2);">
+    <span><span style="color:var(--muted)">Peers:</span> <strong id="st-peers" style="color:var(--text);font-family:var(--mono);">—</strong></span>
+    <span><span style="color:var(--muted)">Chain tip:</span> <strong id="st-tip" style="color:var(--text);font-family:var(--mono);">—</strong></span>
+    <span><span style="color:var(--muted)">Uptime:</span> <strong id="st-uptime" style="color:var(--text);font-family:var(--mono);">—</strong></span>
+    <span><span style="color:var(--muted)">Version:</span> <strong id="st-version" style="color:var(--text);font-family:var(--mono);">—</strong></span>
+    <span style="margin-left:auto;color:var(--muted);font-size:11px;">refreshed <span id="st-refreshed">—</span></span>
+  </div>
 
   <h3>Public endpoints</h3>
   <div class="kv">
@@ -207,15 +222,15 @@
   <pre>[network]
 port            = 4001
 bootstrap_peers = [
-  "/ip4/206.189.132.232/tcp/4001/p2p/12D3KooWMq2gCNsiM2Q6eGAHyYMLgSMb3p5o91xtkxEXo8ocpapp",
+  "/ip4/206.189.132.232/tcp/4001/p2p/12D3KooWRH4MGiaRYMZEr9LvdxYrpePT5LPbNqLTMGukD32yhkZ8",
 ]</pre>
 
   <h3>Environment variable (Docker / systemd)</h3>
-  <pre>BOOTSTRAP_PEERS=/ip4/206.189.132.232/tcp/4001/p2p/12D3KooWMq2gCNsiM2Q6eGAHyYMLgSMb3p5o91xtkxEXo8ocpapp</pre>
+  <pre>BOOTSTRAP_PEERS=/ip4/206.189.132.232/tcp/4001/p2p/12D3KooWRH4MGiaRYMZEr9LvdxYrpePT5LPbNqLTMGukD32yhkZ8</pre>
 
   <h3>CLI (<code>bring-up-validator.sh</code>)</h3>
   <pre>sudo bash QSDM/deploy/bring-up-validator.sh \
-  --bootstrap /ip4/206.189.132.232/tcp/4001/p2p/12D3KooWMq2gCNsiM2Q6eGAHyYMLgSMb3p5o91xtkxEXo8ocpapp</pre>
+  --bootstrap /ip4/206.189.132.232/tcp/4001/p2p/12D3KooWRH4MGiaRYMZEr9LvdxYrpePT5LPbNqLTMGukD32yhkZ8</pre>
 
   <p style="color:var(--muted); font-size:12.5px; margin-top:12px;">
     Full procedure: see the <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/OPERATOR_GUIDE.md">Operator Guide</a>
@@ -281,27 +296,94 @@ bootstrap_peers = [
 </footer>
 
 <script>
-  document.getElementById('y').textContent = new Date().getFullYear();
+  (function() {
+    "use strict";
 
-  // Best-effort live refresh of the peer-id from /api/v1/status. Falls
-  // back silently to the static value rendered server-side above.
-  (async () => {
-    try {
-      const res = await fetch('/api/v1/status', { cache: 'no-store' });
-      if (!res.ok) return;
-      const j = await res.json();
-      if (j && typeof j.node_id === 'string' && /^12D3Koo[A-Za-z0-9]+$/.test(j.node_id)) {
-        const el = document.getElementById('peer-id');
-        if (el && el.textContent !== j.node_id) {
-          el.textContent = j.node_id;
-          // Also refresh the copy-pasted snippets below so operators always
-          // grab the live value.
-          document.querySelectorAll('pre').forEach(pre => {
-            pre.innerHTML = pre.innerHTML.replace(/12D3Koo[A-Za-z0-9]+/g, j.node_id);
-          });
+    document.getElementById('y').textContent = new Date().getFullYear();
+
+    // refresh() fetches /api/v1/status and updates the page:
+    //   1. The peer-id span + every 12D3Koo… occurrence inside <pre>
+    //      blocks (the TOML / env-var / CLI bootstrap examples below
+    //      the multiaddr panel).
+    //   2. The new live status strip — peers, chain tip, uptime,
+    //      version — and a small "refreshed HH:MM:SS" timestamp.
+    //
+    // Per-field defensive checks: each strip field only updates if
+    // /api/v1/status returned a value of the expected type. A future
+    // API change that drops a field or changes its shape silently
+    // leaves the prior value (or the initial "—" placeholder) in
+    // place — never NaN / "[object Object]" / "undefined".
+    //
+    // Hard-fails (network down, validator restart, CORS, 5xx) are
+    // swallowed by the catch — the static HTML rendered server-side
+    // is the always-good fallback, including for non-JS crawlers.
+    //
+    // Cadence: one refresh on DOMContentLoaded equivalent (this
+    // script tag sits at the bottom of <body> so the DOM is ready
+    // when it runs), then setInterval at 30 s. Single tab → ~2880
+    // requests/day; rate limiting at the validator is per-IP and
+    // does not gate this endpoint, so even hundreds of concurrent
+    // viewers stay comfortably under any threshold.
+    function setText(id, txt) {
+      var el = document.getElementById(id);
+      if (el) el.textContent = txt;
+    }
+
+    function fmtNum(n) {
+      if (typeof n !== 'number' || !isFinite(n) || n < 0) return '—';
+      return n.toLocaleString();
+    }
+
+    function fmtRefreshedAt(d) {
+      // HH:MM:SS in the visitor's locale — the absolute clock-time
+      // is more useful for "is this stale?" than a "5 s ago" string
+      // that requires the visitor to keep doing the math.
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    async function refresh() {
+      try {
+        const res = await fetch('/api/v1/status', { cache: 'no-store' });
+        if (!res.ok) return;
+        const j = await res.json();
+        if (!j || typeof j !== 'object') return;
+
+        // (1) Peer-id propagation — original behaviour, kept byte-
+        // identical: validate against the libp2p multihash prefix
+        // (12D3Koo… + base58btc body) before any DOM write, so a
+        // bogus or empty node_id does not blow away the static
+        // fallback. Updates the headline #peer-id span first, then
+        // sweeps every <pre> block for any 12D3Koo… run so the
+        // copy-paste examples (TOML, env var, bring-up-validator.sh)
+        // also stay current. Guard on textContent !== node_id keeps
+        // us from churning the DOM (and any text-selection state)
+        // on every 30 s refresh when the value is unchanged.
+        if (typeof j.node_id === 'string' && /^12D3Koo[A-Za-z0-9]+$/.test(j.node_id)) {
+          const el = document.getElementById('peer-id');
+          if (el && el.textContent !== j.node_id) {
+            el.textContent = j.node_id;
+            document.querySelectorAll('pre').forEach(function(pre) {
+              pre.innerHTML = pre.innerHTML.replace(/12D3Koo[A-Za-z0-9]+/g, j.node_id);
+            });
+          }
         }
+
+        // (2) Live status strip — each field only updates when the
+        // API returned a value of the expected type. Missing /
+        // wrong-type fields leave the prior rendered text intact.
+        if (typeof j.peers === 'number') setText('st-peers', fmtNum(j.peers));
+        if (typeof j.chain_tip === 'number') setText('st-tip', fmtNum(j.chain_tip));
+        if (typeof j.uptime === 'string' && j.uptime) setText('st-uptime', j.uptime);
+        if (typeof j.version === 'string' && j.version) setText('st-version', j.version);
+        setText('st-refreshed', fmtRefreshedAt(new Date()));
+      } catch (_e) {
+        // offline / CORS / 5xx — keep static value (and prior strip
+        // values if we've succeeded at least once this session).
       }
-    } catch (_e) { /* offline / CORS / 404 — keep static value */ }
+    }
+
+    refresh();
+    setInterval(refresh, 30000);
   })();
 </script>
 

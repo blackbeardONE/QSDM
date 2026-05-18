@@ -14,6 +14,63 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`validators.html` live operator status strip + periodic
+  refresh + static peer-id resync (2026-05-18).** Three
+  interlocking improvements on a single page, single commit:
+
+  1. **Static peer-id sync.** The 4 hard-coded
+     <code>12D3Koo…</code> occurrences (the headline
+     multiaddr <code>&lt;span id="peer-id"&gt;</code> plus the
+     three copy-paste examples for TOML config, env-var, and
+     <code>bring-up-validator.sh</code>) were stale &mdash;
+     baked at <code>12D3KooWMq2gCNsi…</code> from the original
+     commit <code>612972b</code> while the live validator
+     rotated to <code>12D3KooWRH4MGiaR…</code> after the
+     host-key persistence work in net-05. Browsers got the
+     right value via the JS fetcher already in the page, but
+     non-JS consumers (curl, search-engine crawlers, off-line
+     <code>save-page-as</code>) were copy-pasting an unconnectable
+     bootstrap peer. All 4 occurrences resynced to the current
+     live value. The JS fetcher continues to keep this in sync
+     between deploys for browsers.
+  2. **Live operator status strip.** New
+     <code>&lt;div id="status-live"&gt;</code> just below the
+     multiaddr panel surfaces four data points already published
+     by <code>/api/v1/status</code> but never previously displayed
+     on the page: peer count, chain tip, uptime, and version,
+     plus a small "refreshed HH:MM:SS" stamp so visitors can see
+     the value is live. The page header even pointed at the
+     endpoint ("returns current node-id, chain tip, peer count")
+     but never actually rendered any of the three downstream
+     fields &mdash; this surfaces them in one row, monospace
+     so the numbers line up visually.
+  3. **Periodic refresh + defensive guards.** Refactored the
+     existing single-shot IIFE into a named
+     <code>refresh()</code> function called once on load and
+     then on a 30 s <code>setInterval</code>. Each strip field
+     only updates when the API returned a value of the expected
+     type (number for peers / chain_tip, non-empty string for
+     uptime / version), so an API-shape regression silently
+     keeps the prior good value rather than rendering
+     <code>NaN</code> / <code>"[object Object]"</code> /
+     <code>"undefined"</code>. Hard fails (network down,
+     validator restart, CORS, 5xx) are caught and the static
+     HTML rendered server-side remains the always-good
+     fallback. Cadence math documented in the script header
+     (one tab → ~2880 req/day, comfortably under any per-IP
+     rate-limit threshold).
+
+  Prose under the multiaddr also updated to acknowledge the
+  live fetch (previous wording "this page updates on every
+  redeploy" was misleading &mdash; the page actually live-fetches
+  every 30 s in a browser). Verified live: served HTML now
+  contains <code>12D3KooWRH4MGiaR…</code> at all 4 occurrences,
+  carries the <code>#status-live</code> strip + all 4 metric
+  IDs, and the script contains <code>function refresh</code>
+  + <code>setInterval(refresh, 30000)</code>. Local Node
+  <code>--check</code> syntax-validates the 4253-char script
+  body. Linter clean on the full page.
+
 - **Transparency footer strip on all seven landing pages
   (2026-05-18).** Single byte-identical
   <code>&lt;nav aria-label="Transparency resources"
