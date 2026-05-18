@@ -12,6 +12,63 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Added
+
+- **`infra-06`: Production binary symbol-strip lint
+  (`scripts/check_binary_strip.py`, 2026-05-18).** Encodes the
+  unwritten production convention that surfaced manually during
+  the `f8c1c90` BLR1 deploy cycle: every Go binary shipped to
+  `/opt/qsdm/qsdm` since 2026-05-13 has been built with
+  `-ldflags='-s -w'` to strip both the symbol table (`-s`) and
+  the DWARF debug info (`-w`); the first cross-compile produced
+  for that deploy forgot the flag and weighed in at 45.6 MB vs
+  the live 32.7 MB — caught only by hand-comparing
+  `ls -la /opt/qsdm/qsdm.bak.*` sizes before the swap. Functionally
+  the unstripped form behaves identically, but it leaks function
+  names + source file paths into any pprof/debugger snapshot a
+  researcher might later capture, and inflates the .bak rotation
+  footprint on the BLR1 disk by ~40%. Stdlib-only (no
+  `pyelftools`/`lief` dep) two-tier strategy mirrors
+  `scripts/check_runbook_coverage.py` and
+  `scripts/check_sitemap_freshness.py`: prefer
+  `file --brief <path>` (canonical libmagic-based marker every
+  Linux distro ships, prints `, stripped` vs `, not stripped`),
+  fall back to manual ELF section-header parse via the `struct`
+  module that asserts `.debug_info` section is absent (both `-s`
+  and `-w` drop the entire `.debug_*` family on Go-built ELFs).
+  `--remote root@host` mode runs `ssh <host> file --brief <path>`
+  so a Windows operator can lint the live `/opt/qsdm/qsdm` in
+  place without copying it down — pairs with
+  `check_sitemap_freshness.py` as the post-deploy verification
+  suite. Exit codes mirror the other infra lints (0 pass, 1
+  violation, 2 setup error); non-ELF inputs (Windows .exe, macOS
+  Mach-O) are reported and skipped, not failed, because the
+  strip convention is scoped to the Linux/amd64 production
+  binary on BLR1. Three code paths smoke-tested locally before
+  ship: `--help` parses + cites `audit row infra-06`; a Windows
+  .exe in-tree (`qsdmminer-v1.exe`) returns exit 0 with the
+  `skip` line via the non-ELF early-return; companion remote
+  verification of `/opt/qsdm/qsdm` returned `ok …: stripped (ok)`
+  at 2026-05-18 16:30 UTC via the canonical `file` path on BLR1
+  (recorded in the `infra-06` row's Notes). New audit row added
+  to `QSDM/source/pkg/audit/checklist.go` (line 275, between
+  `infra-05` and the supply-chain block) with status
+  `evidence:in-tree` (the script is the evidence; live ops's
+  remote run is the live-deploy confirmation), and
+  `checklist_extra_test.go` `runtimeVerifiedItems` updated in
+  the same patch so the row is covered by the existing
+  per-row coverage assertion. `go test ./pkg/audit/... -count=1`
+  green after the change. Total audit row count moves from 87
+  to 88; live `/api/v1/audit/*` will continue to serve 87 (the
+  `f8c1c90` build) until the next BLR1 deploy picks up the new
+  row — that is the normal source-leads-live transient that the
+  `infra-05` lint is designed to catch and that the next deploy
+  closes. CI wiring (a release-flavored build in
+  `validate-deploy.yml` that lints the resulting artifact via
+  this script before upload) is intentionally a follow-up so
+  the script's local + `--remote` mode lands separately from
+  the CI surface where it's most useful.
+
 ### Changed
 
 - **Top-level `README.md` Repository Layout table now lists
