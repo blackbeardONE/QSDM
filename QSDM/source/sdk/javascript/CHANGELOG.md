@@ -6,6 +6,21 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [0.3.1] — 2026-05-18
 
+### Typings
+
+- **`@deprecated` JSDoc tags added to `qsdm.d.ts` for the four
+  removed-in-0.4.0 methods** (`getRecentTransactions`, `getPeers`,
+  `getMetricsJSON`, `getMetricsPrometheus`). TypeScript compilers
+  and IDEs that honor JSDoc deprecation tags (VS Code, Cursor,
+  WebStorm, etc.) will now show strikethrough on usages plus the
+  migration path inline. Without this, runtime callers reading
+  the JS file see the deprecation banners but TypeScript users
+  importing only the type surface would not. `getTransaction` also
+  carries a JSDoc note about the 0.3.1 plural-path fix so a future
+  reader can correlate the spec, the runtime SDK, and the typings
+  without three-file triangulation. No declared interface or class
+  signature changed; this is type-system metadata only.
+
 ### Fixed
 
 - **`getTransaction(txID)` now hits the correct path.** Earlier
