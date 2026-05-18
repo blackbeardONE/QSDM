@@ -17,6 +17,7 @@ import (
 	"github.com/blackbeardONE/QSDM/internal/logging"
 	"github.com/blackbeardONE/QSDM/pkg/branding"
 	"github.com/blackbeardONE/QSDM/pkg/bridge"
+	"github.com/blackbeardONE/QSDM/pkg/buildinfo"
 	"github.com/blackbeardONE/QSDM/pkg/contracts"
 	"github.com/blackbeardONE/QSDM/pkg/envcompat"
 	"github.com/blackbeardONE/QSDM/pkg/mesh3d"
@@ -531,7 +532,17 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]interface{}{
 		"status":    "healthy",
 		"timestamp": time.Now().Unix(),
-		"version":   "1.0.0",
+		// Source-of-truth release identifier injected via
+		// `-ldflags -X pkg/buildinfo.Version=<tag>` during the
+		// release-flavored build. Falls back to "dev" for builds
+		// produced outside the release pipeline (the documented
+		// "built outside release pipeline" sentinel in
+		// pkg/buildinfo/buildinfo.go). Replaces a hard-coded
+		// "1.0.0" string that predated the v0.x.y semver tagging
+		// convention and misled operators reading /api/v1/health.
+		"version":   buildinfo.Version,
+		"git_sha":   buildinfo.GitSHA,
+		"build_date": buildinfo.BuildDate,
 		"product":   branding.Name,
 		"tagline":   branding.Tagline,
 		"nvidia_lock": map[string]interface{}{
