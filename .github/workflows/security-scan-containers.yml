@@ -123,7 +123,7 @@ jobs:
         # effects, otherwise a Trivy-DB drift could silently
         # re-tag a release artefact with a "scan-confirmed"
         # provenance the operator never asked for.
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: QSDM
           file: ${{ matrix.dockerfile }}
