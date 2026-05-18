@@ -78,7 +78,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: QSDM/source/go.mod
           cache-dependency-path: QSDM/source/go.sum
@@ -143,7 +143,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: QSDM/source/go.mod
           cache-dependency-path: QSDM/source/go.sum
@@ -200,7 +200,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: QSDM/source/go.mod
           cache-dependency-path: QSDM/source/go.sum
