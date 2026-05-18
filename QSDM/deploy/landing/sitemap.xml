@@ -14,16 +14,34 @@
     0.95  the public audit checklist (audit.html) — the highest-value
           transparency surface the project ships, cross-referenced from
           every product page via the .audit-callout pattern (commits
-          5f9b9d1, 123dff5) and tagged with JSON-LD schema.org/Dataset
-          (commit 21cc4fe).
+          5f9b9d1, 123dff5, 35fe618) and tagged with JSON-LD
+          schema.org/Dataset (commit 21cc4fe).
     0.9   /docs/ (canonical knowledge base), /wallet.html (the
           high-leverage interactive surface).
     0.85  /trust.html — the attestation transparency feed; same tier
           as audit.html in the cross-reference story.
     0.8   /download.html — entry point for new miners.
+    0.75  /api.html — the canonical "two-versions" explainer that
+          disambiguates the HTTP /api/v1/* URL prefix (stable) from
+          the v2-only mining protocol (FORK_V2_HEIGHT=0). Same
+          developer-facing tier as download.html but one notch below
+          since the consumer download flow has broader audience
+          reach. Inherited the .audit-callout + Transparency footer
+          strip in 35fe618 (family-parity upgrade).
     0.7   /validators.html — entry point for new validator operators.
     0.6   /chain.html — live status board (refreshes every 10s; the
           machine-readable signal is in /api/v1/*).
+    0.3   /.well-known/security.txt, /humans.txt — RFC 9116 / W3C
+          transparency surfaces. Low priority not because they're
+          unimportant but because they change rarely (annual
+          security.txt rotation per RFC 9116 §2.5.5; humans.txt
+          on team/role changes only); a low priority signals
+          "real surface, low re-crawl cadence" rather than
+          "deprecated." The compatibility /security.txt root copy
+          is intentionally NOT listed here — it is byte-identical
+          to /.well-known/security.txt and listing both would split
+          crawler authority signal across two URLs that resolve to
+          the same content.
 
   Whenever a new top-level static page is added under /var/www/qsdm/,
   append it here. Last-mod dates are refreshed in the same commit
@@ -76,6 +94,13 @@
   </url>
 
   <url>
+    <loc>https://qsdm.tech/api.html</loc>
+    <lastmod>2026-05-18</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.75</priority>
+  </url>
+
+  <url>
     <loc>https://qsdm.tech/validators.html</loc>
     <lastmod>2026-05-17</lastmod>
     <changefreq>weekly</changefreq>
@@ -91,6 +116,13 @@
 
   <url>
     <loc>https://qsdm.tech/.well-known/security.txt</loc>
+    <lastmod>2026-05-17</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+
+  <url>
+    <loc>https://qsdm.tech/humans.txt</loc>
     <lastmod>2026-05-17</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>

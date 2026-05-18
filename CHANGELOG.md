@@ -14,6 +14,59 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`sitemap.xml` discoverability gap fill — `/api.html` + `/humans.txt`
+  added; header priority table refreshed (2026-05-18).** Two real
+  transparency surfaces existed on the live site but were not
+  advertised to crawlers via the canonical sitemap, leaving them
+  reachable only via the in-page Transparency footer strip (a
+  cross-link chain that depends on a crawler already being on
+  another QSDM page):
+
+  1. **`/api.html` added at priority `0.75`, lastmod `2026-05-18`,
+     `changefreq=weekly`.** The "two-versions" explainer that
+     disambiguates the HTTP `/api/v1/*` URL prefix (stable) from
+     the v2-only mining protocol (`FORK_V2_HEIGHT=0`) is now
+     advertised between `download.html` (0.8, consumer-facing
+     download flow) and `validators.html` (0.7, operator entry
+     point). The 0.75 slot reflects developer-facing-explainer
+     reach: high relevance for the exact `qsdm api v1` /
+     `qsdm api versioning` query class, narrower audience than
+     the consumer download page. The lastmod matches the family-
+     parity upgrade commit (35fe618) earlier today that gave the
+     page its audit-callout, Audit/Trust nav links, and byte-
+     identical Transparency footer strip. Closes the most
+     embarrassing crawler gap: an explainer page linked from the
+     homepage footer was effectively invisible to organic search.
+  2. **`/humans.txt` added at priority `0.3`, lastmod `2026-05-17`,
+     `changefreq=yearly`.** The W3C-style team/credits/colophon
+     manifest shipped alongside `/.well-known/security.txt` in
+     commit 881efc8 was tracked by the sitemap's sibling RFC 9116
+     entry but had no entry of its own. The 0.3 priority is the
+     deliberate "real surface, low re-crawl cadence" signal that
+     matches the security.txt entry — same tier, same intent.
+  3. **Header comment priority-table refresh.** The in-file
+     priority calibration documentation now lists the new 0.75
+     tier with its rationale, lists the 0.3 tier (previously
+     present in data but undocumented in the comment), and notes
+     that the compatibility `/security.txt` root copy is
+     intentionally NOT in the sitemap — it is byte-identical to
+     `/.well-known/security.txt` and listing both would split
+     crawler authority signal across two URLs resolving to the
+     same content. Also threaded a cross-reference to commit
+     35fe618 into the audit-callout commit list so future
+     readers can trace the .audit-callout family adoption.
+
+  Live verification on 2026-05-18: `GET https://qsdm.tech/sitemap.xml`
+  → HTTP 200, Content-Type=`text/xml`, size=4806 bytes (byte-match
+  local). XML well-formed under `System.Xml.XmlDocument.Load`; 11
+  `<url>` entries (was 9); priority field monotonically descending
+  (1.0 → 0.95 → 0.9 → 0.9 → 0.85 → 0.8 → 0.75 → 0.7 → 0.6 → 0.3
+  → 0.3); served entries include the new `/api.html` and
+  `/humans.txt` `<loc>` blocks; `robots.txt` still points crawlers
+  to `https://qsdm.tech/sitemap.xml` so the discovery loop is
+  intact. Single-page edit; deployed standalone (no other landing
+  pages touched), so the change set is reviewable in one diff.
+
 - **`api.html` family-upgrade — audit cross-reference callout +
   Audit/Trust nav links + Transparency footer strip (2026-05-18).**
   The `api.html` page (the "two-versions" explainer at
