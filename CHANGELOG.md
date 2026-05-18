@@ -14,6 +14,92 @@ attempt to retroactively enumerate that history.
 
 ### Changed
 
+- **`/api/v1/status` `version` field now sourced from
+  `pkg/buildinfo` (with env-var fallback for backwards
+  compatibility) — closes cross-endpoint version drift
+  with `/api/v1/health` (2026-05-18).** Sister fix to the
+  earlier `/api/v1/health` wiring (`d753463`). Verification
+  of the v0.4.3 release-cut surfaced a second source ↔ live
+  drift: `/api/v1/health` correctly reported `"v0.4.3"`
+  (from the new `buildinfo.Version` wiring) while
+  `/api/v1/status` still reported `"v0.4.2"` — the value of
+  the systemd `version.conf` drop-in's
+  `$QSDM_BUILD_VERSION` env var, pinned to v0.4.2 at the
+  2026-05-14 release-cut and never updated for the
+  subsequent `f8c1c90`, `299cb84`, or `9e39439` BLR1
+  binary swaps. Two endpoints, same binary, disagreeing
+  on what version is running — exactly the failure mode
+  the v0.4.3 release theme was built to eliminate.
+
+  Root cause: `pkg/api/handlers_status.go::statusVersion()`
+  preferred the env var (a workaround the BLR1 systemd unit
+  inherited from the pre-`buildinfo` era when
+  `statusVersion()` fell back to `runtime.Version()` →
+  `"go1.25.10"`). With `buildinfo` now wired in
+  `/api/v1/health`, the env-var workaround became actively
+  misleading.
+
+  Fix: reorder `statusVersion()`'s resolution chain so the
+  build-time `-X buildinfo.Version` injection wins:
+
+    1. `buildinfo.Version` if `!= "dev"` (canonical;
+       agrees with `/api/v1/health`)
+    2. `$QSDM_BUILD_VERSION` env var (operator escape
+       hatch; preserves the workaround pattern for
+       labelled dev builds)
+    3. `$QSDMPLUS_BUILD_VERSION` env var (Major Update
+       §6 dual-emit legacy alias)
+    4. `runtime.Version()` (deliberately ugly last-resort
+       fallback so operators reading the response can
+       tell at a glance that neither `-X` nor any env
+       var was set)
+
+  Documented inline so the next operator understands why
+  the env-var workaround is kept (backwards compat +
+  labelled dev builds) but is no longer the default.
+
+  `StatusResponse` also gains two new top-level fields
+  for parity with the `/api/v1/health` response (and the
+  SDK `NodeStatus` type below):
+
+    ```go
+    GitSHA    string `json:"git_sha,omitempty"`
+    BuildDate string `json:"build_date,omitempty"`
+    ```
+
+  Strictly additive (`omitempty`, no field removed, no
+  semantics change to existing fields) — backwards-
+  compatible per the API versioning policy in
+  `pkg/api/versioning.go` ("Minor changes are strictly
+  additive and never break a v1 client").
+
+  **SDK**: `sdk/go/client.go::NodeStatus` mirrors the
+  new fields with the same JSON tags and an "Added in
+  v0.4.4" docstring noting "pairs with the matching
+  field on `/api/v1/health` and lets a consumer map a
+  running endpoint to a specific commit without scraping
+  log timestamps".
+
+  Live verification (post-deploy 2026-05-18 21:14 UTC):
+
+  ```
+  $ curl -s https://qsdm.tech/api/v1/health | grep -oE '"(version|git_sha|build_date)":"[^"]+"'
+  "build_date":"2026-05-18T21:13:07Z"
+  "git_sha":"9e39439"
+  "version":"v0.4.3-3-g9e39439"
+
+  $ curl -s https://qsdm.tech/api/v1/status | grep -oE '"(version|git_sha|build_date)":"[^"]+"'
+  "version":"v0.4.3-3-g9e39439"
+  "git_sha":"9e39439"
+  "build_date":"2026-05-18T21:13:07Z"
+  ```
+
+  Two endpoints, same binary, byte-equivalent trio. The
+  buildinfo.Version=v0.4.3-3-g9e39439 (from
+  `git describe --tags --always --dirty` → `git describe`
+  on a clean tree) correctly overrode the stale
+  `$QSDM_BUILD_VERSION=v0.4.2` env var.
+
 - **`/api/v1/health` `version` field now sourced from
   `pkg/buildinfo` instead of a hard-coded `"1.0.0"` string
   (2026-05-18).** The hard-coded value predated the project's
@@ -33,6 +119,68 @@ attempt to retroactively enumerate that history.
   without guessing from log timestamps.
 
 ### Deployed
+
+- **BLR1 qsdm binary swap — closes the
+  `/api/v1/status` ↔ `/api/v1/health` version drift
+  (2026-05-18 21:13 UTC).** Companion deploy to the
+  `statusVersion()` refactor + `StatusResponse` extension
+  above (commit `9e39439`). Picks up:
+  - `pkg/api/handlers_status.go`: buildinfo-first
+    resolution order in `statusVersion()`; `GitSHA` +
+    `BuildDate` fields on `StatusResponse`.
+  - `sdk/go/client.go`: matching `GitSHA` + `BuildDate`
+    fields on `NodeStatus`.
+
+  Build:
+
+  ```
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath \
+      -ldflags="-s -w \
+        -X github.com/blackbeardONE/QSDM/pkg/buildinfo.Version=v0.4.3-3-g9e39439 \
+        -X github.com/blackbeardONE/QSDM/pkg/buildinfo.GitSHA=9e39439 \
+        -X github.com/blackbeardONE/QSDM/pkg/buildinfo.BuildDate=2026-05-18T21:13:07Z" \
+      -o qsdm.linux-amd64 ./cmd/qsdm
+  ```
+
+  Version string is `git describe --tags --always` output
+  ("v0.4.3 + 3 commits past the tag at SHA 9e39439") —
+  the universal git-native idiom for "labelled build
+  off a tagged commit + N additional commits", same
+  convention `release_evidence.{sh,ps1}` and
+  `build_release.ps1` documentation already implies.
+  This is the first BLR1 deploy to use the
+  `git describe` label; prior swaps used hardcoded
+  pre-release suffixes which were ad-hoc.
+
+  Result: 32,751,800 bytes (31.23 MB; +4 KB vs the
+  `d3e44cd` build for the same reason as the prior
+  delta — additional `-X` literals in the binary's
+  read-only string table); sha256
+  `c366bdf4f3e00f6cc0a26154268b4abe33b7cd5722c529024f8ad870dc03ffb1`.
+  Self-linted with `python scripts/check_binary_strip.py
+  qsdm.linux-amd64` → exit 0 before scp. Atomic swap
+  onto `/opt/qsdm/qsdm` with `qsdm.bak.20260519-051340`
+  rollback path; 8-attempt Caddy upstream-pool 502
+  transient before HTTP 200 healthy (longer than prior
+  swaps but converged cleanly — same documented
+  refresh-pattern, just slower this time).
+
+  Live verification 2026-05-18 21:14 UTC: both
+  `/api/v1/health` and `/api/v1/status` return the
+  byte-equivalent version trio
+  (`"version":"v0.4.3-3-g9e39439"`,
+  `"git_sha":"9e39439"`,
+  `"build_date":"2026-05-18T21:13:07Z"`). Audit score
+  unchanged at `passed: 84, total: 88, score:
+  95.45454...%` — this deploy is a version-string +
+  field-addition refresh, not an audit-row change. The
+  stale systemd `version.conf` drop-in
+  (`Environment="QSDM_BUILD_VERSION=v0.4.2"`) is now
+  vestigial — kept as an operator escape-hatch
+  resolution chain entry but no longer wins by default.
+  Removing it from the BLR1 systemd unit is a separate
+  cleanup follow-up (harmless to leave in place).
 
 - **BLR1 qsdm binary swap — first release-flavored build with
   full `-X buildinfo.*` injection (2026-05-18 17:15 UTC).**
