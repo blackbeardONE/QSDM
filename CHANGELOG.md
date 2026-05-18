@@ -94,6 +94,38 @@ attempt to retroactively enumerate that history.
 
 ### Fixed
 
+- **`supply-03` Trivy cron resilience: weekly &rarr; twice-weekly
+  (2026-05-18).** The Monday 2026-05-18 06:17 UTC scheduled fire
+  of <code>.github/workflows/security-scan-containers.yml</code>
+  (the periodic-Trivy workflow shipped in <code>7bd69b5</code>
+  three days prior) was silently dropped by GitHub Actions during
+  a transient infrastructure dip in the 02:00&ndash;06:30 UTC
+  window. Diagnostic via the GitHub Actions REST API: the
+  <code>trustcheck-external</code> workflow on the same repo
+  uses <code>cron: "*/30 * * * *"</code> and missed every fire
+  in that window (last pre-dip run 2026-05-18T02:01:19Z, first
+  post-dip recovery 2026-05-18T06:35:15Z &mdash; a 4&nbsp;h&nbsp;34&nbsp;m
+  gap that brackets the 06:17 expected fire). No GitHub status
+  incident was raised for this window (most recent Actions
+  incident: 2026-05-15). With a once-weekly cron, that single
+  missed fire blanks supply-03 coverage for a full seven days
+  before the next attempt. Fixed by changing the cron from
+  <code>"17 6 * * 1"</code> (Monday only) to
+  <code>"17 6 * * 1,4"</code> (Monday + Thursday), narrowing
+  the worst-case coverage gap to 3&ndash;4 days at the cost of
+  one additional scan-run per week (Trivy's upstream CVE DB
+  refreshes 1&ndash;2x daily so even twice-weekly is over-sampling
+  the DB &mdash; the extra runner minutes are paid purely for
+  resilience against single-day GH Actions outages, not for
+  tighter CVE freshness). Workflow file is structurally correct
+  (registered <code>active</code>, <code>id=277699352</code>);
+  no other change needed. The 2026-05-18 fire will not get a
+  make-up run; first scheduled execution under the new cadence
+  is Thursday 2026-05-21 06:17 UTC. Rationale and incident date
+  inlined into the schedule comment so future readers (or
+  future-me, after another similar dip) can see at a glance
+  why the cron is twice-weekly instead of weekly.
+
 - **Broken transparency surface on the live site
   (2026-05-17).** A direct probe of <code>qsdm.tech</code>
   found that <code>/.well-known/security.txt</code>,

@@ -55,13 +55,25 @@ concurrency:
 
 on:
   schedule:
-    # 06:17 UTC every Monday. Off-the-hour to avoid the cron-herd
-    # that hits GitHub Actions at HH:00 UTC; weekly because
-    # Trivy's upstream CVE database is only refreshed once or
-    # twice per day, and daily scans on three multi-GB images
-    # add no signal beyond the weekly cadence (release-time
-    # scans cover the in-between window when activity is high).
-    - cron: "17 6 * * 1"
+    # 06:17 UTC every Monday AND Thursday. Off-the-hour to avoid
+    # the cron-herd that hits GitHub Actions at HH:00 UTC.
+    #
+    # Twice-weekly (was once-weekly until 2026-05-18) because the
+    # Monday 2026-05-18 06:17 UTC fire was silently dropped by GH
+    # Actions during a transient infrastructure dip in the
+    # 02:00-06:30 UTC window (the trustcheck-external workflow's
+    # */30 schedule on the same repo also missed every fire in
+    # that window, then recovered at 06:35). With a once-weekly
+    # cron, that one missed fire blanks supply-03 coverage for a
+    # full seven days; doubling the cadence to Mon+Thu narrows
+    # the worst-case coverage gap to 3-4 days at the cost of a
+    # second scan-run per week.
+    #
+    # Trivy's upstream CVE database refreshes 1-2x daily, so even
+    # twice-weekly is over-sampling the DB; we are paying the
+    # extra runner minutes purely for resilience against single-
+    # day GH Actions outages, not for tighter CVE freshness.
+    - cron: "17 6 * * 1,4"
 
   workflow_dispatch:
 
