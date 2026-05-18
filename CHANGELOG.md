@@ -12,8 +12,81 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Changed
+
+- **`/api/v1/health` `version` field now sourced from
+  `pkg/buildinfo` instead of a hard-coded `"1.0.0"` string
+  (2026-05-18).** The hard-coded value predated the project's
+  v0.x.y semver tagging convention. Every tagged release since
+  v0.3.0 has actually been `< 1.0.0`, but `/api/v1/health`
+  continued to report `"version":"1.0.0"` — the exact kind of
+  source ↔ live drift the v0.4.3 release-theme work spent the
+  last four days eliminating. Now reads from `buildinfo.Version`
+  (semver tag injected via `-ldflags -X` at release-build time;
+  falls back to the documented `"dev"` sentinel for builds
+  produced outside the release pipeline). Response also picks
+  up two new top-level keys for the same reason: `git_sha`
+  (short SHA, `buildinfo.GitSHA`) and `build_date`
+  (RFC 3339 UTC, `buildinfo.BuildDate`). With these three,
+  operators and external audit reviewers can now map a running
+  health endpoint to a specific commit + release artefact
+  without guessing from log timestamps.
+
+### Deployed
+
+- **BLR1 qsdm binary swap — first release-flavored build with
+  full `-X buildinfo.*` injection (2026-05-18 17:15 UTC).**
+  Companion to the version-wiring change above, and the first
+  binary on `/opt/qsdm/qsdm` to carry an injected
+  `buildinfo.Version` instead of the `"dev"` sentinel. Build
+  command:
+
+  ```
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath \
+      -ldflags="-s -w \
+        -X github.com/blackbeardONE/QSDM/pkg/buildinfo.Version=v0.4.3 \
+        -X github.com/blackbeardONE/QSDM/pkg/buildinfo.GitSHA=22bbe2e \
+        -X github.com/blackbeardONE/QSDM/pkg/buildinfo.BuildDate=2026-05-18T17:15:13Z" \
+      -o qsdm.linux-amd64 ./cmd/qsdm
+  ```
+
+  Result: 32,747,704 bytes (31.23 MB; +4 KB vs the prior
+  `299cb84` build, consistent with the extra `-X` literals
+  embedded in the binary's read-only string table); sha256
+  `15f945c4c603a2eca256cff3c521ca1fe88e132bafb86ba5aab338467c1d5729`.
+  Self-linted with `python scripts/check_binary_strip.py
+  qsdm.linux-amd64` → exit 0 before scp. Atomic swap onto
+  `/opt/qsdm/qsdm` with `qsdm.bak.20260519-011550` rollback
+  path; same ~10 s Caddy upstream-pool 502 transient as the
+  prior two deploys, then HTTP 200 healthy.
+
+  Live verification 2026-05-18 17:18 UTC:
+
+  ```
+  $ curl -s https://qsdm.tech/api/v1/health | grep -oE \
+      '"(status|product|version|git_sha|build_date)":"[^"]+"'
+  "build_date":"2026-05-18T17:15:13Z"
+  "git_sha":"22bbe2e"
+  "product":"QSDM"
+  "status":"healthy"
+  "version":"v0.4.3"
+  ```
+
+  Audit score unchanged at `passed: 84, total: 88, score:
+  95.45454...%` — this deploy is a version-string refresh, not
+  an audit-row change. Closes the last "hard-coded fact that
+  pretends to be live data" instance the v0.4.3 release window
+  knew about: the `/api/v1/health` `version` field now reflects
+  the actual release tag of the running binary, end-to-end from
+  `git tag -a v0.4.3` → `-X buildinfo.Version=v0.4.3` →
+  serialized JSON response.
+
+### Added
+
 <!-- Next-release entries land here. v0.4.3 was cut on 2026-05-19;
-     this block stays empty until the next user-visible change lands. -->
+     above sections are post-v0.4.3 improvements that will ship in
+     the next tagged release. -->
 
 ## [v0.4.3] - 2026-05-19
 
