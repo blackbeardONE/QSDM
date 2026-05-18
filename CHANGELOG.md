@@ -330,6 +330,29 @@ attempt to retroactively enumerate that history.
 
 ### Fixed
 
+- **`.gitignore` blind spot for dot-prefix commit-message
+  scratch files (2026-05-18).** Existing
+  <code>_commit_msg.txt</code> / <code>_tmp_commit_msg.txt</code>
+  patterns only match underscore-prefix names, but ops automation
+  uses <code>.commit_msg_docs.txt</code> (dot-prefix) for scoped
+  commit drafts and the local assistant tooling uses
+  <code>.git_commit_msg.tmp</code> &mdash; both leak into
+  <code>git status</code>'s untracked-file list and one slipped
+  this far when ops's <code>29bbdff</code> commit landed
+  (post-commit cleanup didn't fire). A careless
+  <code>git add .</code> on top of the leaked file would commit
+  a draft commit-message body into the public tree. Hardened
+  the pattern set with three additions
+  (<code>.commit_msg*</code>, <code>.git_commit_msg.tmp</code>,
+  <code>*_commit_msg.tmp</code>) and inlined a comment naming
+  the three active conventions and the leak observed today, so
+  the next operator hitting the same drift sees the rationale
+  without git-blame archaeology. Verified by
+  <code>git check-ignore -v</code> against 7 representative
+  scratch-name shapes (all ignored) and 3 real-name shapes
+  (none falsely ignored, including the cautionary
+  <code>commit_msg.go</code> hypothetical).
+
 - **Sitemap lastmod refresh on 8 entries that drifted past
   same-commit policy (2026-05-18).** The sitemap.xml header
   comment (lines 46&ndash;50) is explicit:

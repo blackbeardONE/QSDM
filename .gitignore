@@ -26,9 +26,21 @@ vps.txt
 
 # Scratch commit-message buffer used for HEREDOC-free git commits
 # on Windows/PowerShell shells. The actual commit body lives in
-# git history; the buffer is throwaway.
+# git history; the buffer is throwaway. The patterns cover the
+# three conventions in active use across the project's tooling:
+#   _commit_msg.txt          underscore-prefix (legacy)
+#   _tmp_commit_msg.txt      underscore-prefix tmp variant
+#   .commit_msg*             dot-prefix family (e.g. ops automation
+#                            uses .commit_msg_docs.txt for scoped
+#                            commit drafts; observed leaking to
+#                            git status on 2026-05-18)
+#   .git_commit_msg.tmp      dot-prefix .tmp variant (assistant's)
+#   *_commit_msg.tmp         arbitrary-prefix .tmp variant
 _commit_msg.txt
 _tmp_commit_msg.txt
+.commit_msg*
+.git_commit_msg.tmp
+*_commit_msg.tmp
 
 # Local session evidence files emitted by ad-hoc verification runs
 # (govulncheck, syft, soak harnesses). Useful operator breadcrumbs
