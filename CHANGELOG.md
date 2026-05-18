@@ -12,6 +12,71 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Docs SPA shell drift + sitemap `<lastmod>` violated its own
+  freshness contract (2026-05-18).** Three interlocking fixes on a
+  single bounded surface:
+
+  1. **In-repo docs SPA shell was 1 day newer than the live
+     BLR1 copy.** `QSDM/deploy/landing/docs/docs.js` (28327 B,
+     last touched 2026-05-15) and `docs.css` (11625 B, same date)
+     had drifted ahead of the live `/var/www/qsdm/docs/docs.js`
+     (28215 B, +112 B older) and `docs.css` (11161 B, +464 B
+     older), which themselves were dated 2026-05-14. Diff was
+     tiny but real — verified by SHA-256: docs.js
+     `244d82b0acbc...` (local) vs `18069e661b7f...` (live);
+     docs.css `8609a6eecf05...` (local) vs `8ff83f978f0f...`
+     (live). The companion `lib/markdown-it.min.js`
+     (sha256:38c70a1e7ca91ab4…) and `index.html`
+     (sha256:a4501699d5c9…) were byte-identical and did not need
+     redeploy; index.html got an in-place `touch` only so the
+     `Last-Modified` header from Caddy on `GET /docs/` rotates
+     forward.
+  2. **Sitemap's `/docs/` `<lastmod>` was 2026-05-13** — older
+     than every artifact on disk (live 2026-05-14, repo
+     2026-05-15) and crucially older than Caddy's served
+     `Last-Modified: Thu, 14 May 2026 19:09:36 GMT`. This is the
+     exact failure mode the sitemap header comment warns
+     against: "the date here MUST be no older than the file's
+     last meaningful content change, otherwise crawlers will
+     skip the re-crawl and the change won't be re-indexed."
+     Google and Bing both treat sitemap `<lastmod>` as the lower
+     bound for re-crawl scheduling; a 2026-05-13 sitemap declaration
+     told them "we already have everything past this date" while
+     the SPA shell, the on-runtime-fetched markdown content
+     (including today's audit-drift fix and `EXTERNAL_REQUESTS.md`
+     additions), and the new audit-callout family upgrade on the
+     other landing pages were all newer.
+  3. **Architectural note (why this fix is narrow).** Per the
+     `docs.js` module header (commit 3314fca), the docs SPA's
+     202 markdown files are NOT hosted on BLR1 — they're fetched
+     at runtime from
+     `https://raw.githubusercontent.com/.../main/QSDM/docs/docs/*.md`.
+     This means every content change in `QSDM/docs/docs/` is
+     already live to visitors the moment it lands on `origin/main`
+     (no redeploy needed). The drift was confined to the SPA
+     shell (`docs.js` + `docs.css` JS/CSS bundle) and the sitemap
+     declaration; the markdown corpus rides directly off the git
+     remote and was never stale.
+
+  Deployment: `scp` (no `-p`, so fresh mtimes) of `docs.js` +
+  `docs.css` to `/var/www/qsdm/docs/`, plus an in-place `touch`
+  on `index.html` to rotate its mtime (content was byte-identical
+  to the repo so a full upload would have produced an identical
+  file with only the timestamp changed). All three normalised to
+  `caddy:caddy 0644`. Sitemap `<lastmod>2026-05-13</lastmod>`
+  bumped to `2026-05-18`. Live verification on 2026-05-18:
+  `HEAD https://qsdm.tech/docs/` now returns
+  `last-modified: Mon, 18 May 2026 12:05:26 GMT` + ETag
+  `dilsezrdt3k632x` + content-length 3993 (byte-matching repo
+  index.html); `HEAD .../docs.js` content-length 28327 (matches
+  repo); `HEAD .../docs.css` content-length 11625 (matches repo);
+  `GET .../sitemap.xml` returns the new
+  `<lastmod>2026-05-18</lastmod>` for the `/docs/` entry,
+  size=4806, byte-identical to local. Closes the documented
+  contract violation in the sitemap's own header comment.
+
 ### Added
 
 - **`sitemap.xml` discoverability gap fill — `/api.html` + `/humans.txt`
