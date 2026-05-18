@@ -14,6 +14,69 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **OpenAPI v1.1.0 catch-up: 4 missing public-facing routes added
+  to `QSDM/docs/docs/openapi.yaml` (2026-05-18).** Brings the spec
+  into parity with the actually-deployed public API surface for
+  endpoints that have shipped but were not yet documented in the
+  spec the SDK scrapes from. All four were already routed,
+  rate-limited, and unit-tested in `pkg/api/`; the gap was strictly
+  documentation. No handler changes; no version bump (still
+  1.1.0 — the additions are purely additive within the existing
+  `v1.1.0 catch-up` scope already announced in `info.description`).
+
+  - **`POST /auth/logout`** (Authentication, bearer-required) —
+    revokes the caller's current JWT nonce via the server-side
+    revocation store (handler: `pkg/api/handlers.go::Logout`,
+    tests: `pkg/api/token_revocation_test.go`). Documents the
+    405/401/503 error postures alongside the 200 success.
+  - **`GET /tokens/list`** (Wallet, public-read,
+    rate-limited 60/min per IP) — full token catalogue including
+    Cell (`main_cell`), the deprecated `main_coin` legacy alias
+    (kept for pre-rebrand integrations through the Major Update
+    deprecation window; same Cell coin on the wire), and every
+    secondary token registered via `POST /tokens/create`.
+    Handler: `pkg/api/handlers.go::ListTokens`. Limiter pin
+    documented in `pkg/api/security.go:270`.
+  - **`GET /audit/badge.svg`** (Audit, public-read) —
+    server-rendered shields.io-style SVG status pill carrying the
+    current audit score and `passed+waived/total` bucket counts,
+    coloured on the standard shields.io ladder
+    (`>=95` brightgreen `#4c1`, `>=85` yellowgreen `#a4a61d`,
+    `>=70` yellow `#dfb317`, `>=50` orange `#fe7d37`,
+    otherwise red `#e05d44`). Documents the
+    `Cache-Control: public, max-age=60` and
+    `X-Content-Type-Options: nosniff` headers, the 405 non-GET
+    posture, and the static `0/0` fail-safe path that prevents
+    a `NaN%` render on a zero-item checklist. Handler:
+    `pkg/api/handlers_audit_badge.go::AuditBadgeHandler`.
+  - **`GET /versions`** (Versions, public-read) — API version
+    catalogue with lifecycle metadata (`active` / `deprecated`
+    / `sunset`) plus optional `deprecated_at`, `sunset_at`,
+    `successor_version`, and `migration_guide_url` fields per
+    entry, mirroring the `APIVersion` struct in
+    `pkg/api/versioning.go`. Documents the MED-4 deprecation
+    flow (`Deprecation` / `Sunset` / `Link` headers from the
+    `DeprecationMiddleware`, 410 Gone on sunset).
+    A new `Versions` tag was added to the spec's `tags`
+    section to host the operation.
+
+  - **`info.description` public-read enumeration** updated to
+    list `/versions`, `/tokens/list`, and `/audit/badge.svg`
+    alongside the previously-listed `/status`, `/wallet/balance`,
+    `/wallet/nonce`, `/audit/summary`, `/audit/items`,
+    `/trust/attestations/*`, `/attest/recent-rejections`,
+    `/receipts`, `/receipts/{tx_id}`. Closes the spec-vs-handler
+    drift on the public-read transparency surface.
+
+  - **Verification.** YAML parses clean (`yaml.safe_load`).
+    OpenAPI 3.0.3 self-consistency lint passes: 35 paths /
+    10 schemas / 14 tags, every path-operation tag is declared
+    in the top-level `tags:` block, every local `$ref:` resolves
+    to a defined schema or response. Method-and-path table for
+    the four additions confirms the spec matches the actual
+    handlers: `/auth/logout` POST,
+    `/audit/badge.svg` GET, `/versions` GET, `/tokens/list` GET.
+
 - **`infra-05` follow-on — `--mode offline` + CI wiring for
   `check_sitemap_freshness.py` (2026-05-18).** Closes the
   deliberate-deferral note in the original `infra-05` row, which

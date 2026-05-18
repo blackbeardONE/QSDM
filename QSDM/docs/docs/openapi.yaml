@@ -20,7 +20,7 @@ info:
     
     **Submesh policy (optional):** When the node loads `[network] submesh_config` / `QSDM_SUBMESH_CONFIG` (legacy alias: `QSDM_SUBMESH_CONFIG`), some ledger routes may return **422 Unprocessable Entity** if fee+geotag do not match a profile or the serialized payload exceeds `max_tx_size` (wallet send), or mint/token-create exceeds the strictest profile cap. See main README “Submesh profiles”.
 
-    **Public read (transparency) endpoints — v1.1.0 catch-up.** A growing set of read-only routes is intentionally unauthenticated so SDK clients, third-party aggregators, and the public landing page widget at `https://qsdm.tech/trust` can scrape verifiable signals without an operator-granted session: `/status`, `/wallet/balance`, `/wallet/nonce`, `/audit/summary`, `/audit/items`, `/trust/attestations/summary`, `/trust/attestations/recent`, `/attest/recent-rejections`, `/receipts`, `/receipts/{tx_id}`. All are rate-limited per-IP by the same limiter that protects authenticated routes; the audit checklist text is already public from the open-source repo, and the trust posture is "always show X of Y, never just X" (see `NVIDIA_LOCK_CONSENSUS_SCOPE.md`).
+    **Public read (transparency) endpoints — v1.1.0 catch-up.** A growing set of read-only routes is intentionally unauthenticated so SDK clients, third-party aggregators, and the public landing page widget at `https://qsdm.tech/trust` can scrape verifiable signals without an operator-granted session: `/status`, `/versions`, `/wallet/balance`, `/wallet/nonce`, `/tokens/list`, `/audit/summary`, `/audit/items`, `/audit/badge.svg`, `/trust/attestations/summary`, `/trust/attestations/recent`, `/attest/recent-rejections`, `/receipts`, `/receipts/{tx_id}`. All are rate-limited per-IP by the same limiter that protects authenticated routes; the audit checklist text is already public from the open-source repo, and the trust posture is "always show X of Y, never just X" (see `NVIDIA_LOCK_CONSENSUS_SCOPE.md`).
   version: 1.1.0
   contact:
     name: QSDM Development Team
@@ -57,6 +57,8 @@ tags:
     description: v2 mining runtime parameter tuning (read endpoints; writes flow through /transactions with a qsdm/gov/v1 envelope)
   - name: Receipts
     description: Public chain transparency — per-tx outcome probes and the recent-transactions list feeding the chain dashboard
+  - name: Versions
+    description: API version catalogue + lifecycle metadata (MED-4 deprecation flow)
   - name: Network
     description: Live network topology projection consumed by the dashboard WebGL renderer
 
@@ -351,6 +353,45 @@ paths:
                     example: 900
         '401':
           description: Invalid credentials
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Revoke the caller's current access token
+      description: |
+        Adds the caller's current JWT nonce to the server-side
+        revocation store. Subsequent requests presenting the same
+        token are rejected by `AuthMiddleware` via the revocation
+        check in `AuthManager.ValidateToken`. Authentication is
+        REQUIRED — calling without a valid Bearer token returns
+        **401** (same posture as every other authenticated route).
+
+        The handler is safe under concurrent logout-then-reuse
+        races: the revocation entry lives for the full natural
+        token lifetime, so any in-flight request that already
+        passed the auth middleware completes; the revocation only
+        blocks NEW calls past `AuthMiddleware`.
+      operationId: logout
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Token revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "logged out"
+        '401':
+          description: Missing or invalid authentication
+        '405':
+          description: Method not allowed (only POST)
+        '503':
+          description: Auth manager not configured on this node
 
   /wallet/create:
     post:
@@ -875,6 +916,60 @@ paths:
         '422':
           $ref: '#/components/responses/SubmeshPolicy422'
 
+  /tokens/list:
+    get:
+      tags:
+        - Wallet
+      summary: List all tokens on the QSDM ledger
+      description: |
+        Public-read enumeration of every token registered on the
+        ledger: the canonical native coin (Cell / CELL / 8 decimals;
+        see `QSDM/docs/docs/CELL_TOKENOMICS.md`), its deprecated
+        legacy alias (`main_coin` — kept for pre-rebrand
+        integrations through the Major Update deprecation window;
+        same Cell coin on the wire), plus every secondary token
+        registered via `POST /tokens/create`.
+
+        Unauthenticated; rate-limited at 60/min via the same
+        per-IP limiter that protects authenticated routes.
+        Designed for SDK clients and the public landing-page
+        widgets that render token catalogues without an
+        operator-granted session.
+      operationId: listTokens
+      responses:
+        '200':
+          description: Token catalogue
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tokens:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        token_id:
+                          type: string
+                          example: "main_cell"
+                        name:
+                          type: string
+                          example: "Cell"
+                        symbol:
+                          type: string
+                          example: "CELL"
+                        decimals:
+                          type: integer
+                          example: 8
+                        total_supply:
+                          type: number
+                          format: float
+                  count:
+                    type: integer
+                    description: Number of tokens in the catalogue (matches `len(tokens)`)
+        '405':
+          description: Method not allowed (only GET)
+
   /transactions:
     get:
       tags:
@@ -1175,6 +1270,58 @@ paths:
                 $ref: '#/components/schemas/Error'
         '405':
           description: Method not allowed
+
+  /audit/badge.svg:
+    get:
+      tags:
+        - Audit
+      summary: Server-rendered SVG audit-score badge
+      description: |
+        Renders a 20-pixel-tall, shields.io-style status pill SVG
+        with the current audit score and bucket totals (e.g.
+        `QSDM audit | 95.40% (83/87)`). Colour is computed from the
+        score on the standard shields.io ladder:
+
+        | Score range  | Colour       | Hex     |
+        |--------------|--------------|---------|
+        | `>= 95`      | brightgreen  | `#4c1`  |
+        | `>= 85`      | yellowgreen  | `#a4a61d` |
+        | `>= 70`      | yellow       | `#dfb317` |
+        | `>= 50`      | orange       | `#fe7d37` |
+        | `< 50`       | red          | `#e05d44` |
+
+        The badge bucket count displays `passed+waived` over `total`
+        (matching what the dashboard scoreboard surfaces). When the
+        checklist somehow has zero items the renderer fails safe to
+        a static `0/0` instead of the literal text `NaN%` that some
+        browsers would display from a div-by-zero — an obvious
+        "something is wrong on the server" signal that does not
+        break the badge image.
+
+        Public read (no auth, no signing). Cached 60 s
+        (`Cache-Control: public, max-age=60`); a flip is a Git
+        commit + redeploy event so 60 s of staleness is acceptable.
+        `X-Content-Type-Options: nosniff` on every response.
+      operationId: auditBadgeSVG
+      responses:
+        '200':
+          description: SVG badge image
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: "public, max-age=60"
+            X-Content-Type-Options:
+              schema:
+                type: string
+                example: "nosniff"
+          content:
+            image/svg+xml:
+              schema:
+                type: string
+                description: Shields.io-style two-panel SVG (label + value)
+        '405':
+          description: Method not allowed (only GET)
 
   # --------------------------------------------------------------------------
   # Trust — transparency surface (Major Update §8.5)
@@ -1493,6 +1640,85 @@ paths:
                       additionalProperties: true
         '401':
           description: Unauthorized
+
+  # --------------------------------------------------------------------------
+  # Versions — API version catalogue (MED-4)
+  # --------------------------------------------------------------------------
+
+  /versions:
+    get:
+      tags:
+        - Versions
+      summary: API version catalogue
+      description: |
+        Returns the catalogue of every registered API major version
+        (today: just `v1`) with lifecycle status and, where set,
+        deprecation / sunset / successor metadata. Designed so an
+        SDK can render a "deprecated" badge in tooling without
+        scraping every endpoint response for `Deprecation` /
+        `Sunset` headers.
+
+        Lifecycle states (`status` field):
+
+        - `active`     — version is the supported current line.
+        - `deprecated` — still routed; responses carry
+                         `Deprecation: true|<RFC1123>` and (if set)
+                         `Sunset: <RFC1123>` plus `Link
+                         rel="successor-version"` /
+                         `Link rel="deprecation"`. See
+                         `DeprecationMiddleware` in
+                         `pkg/api/versioning.go`.
+        - `sunset`     — middleware short-circuits with **410 Gone**
+                         and a JSON body pointing at the migration
+                         guide.
+
+        The `current` field names the supported version (e.g.
+        `"v1"`). Rate-limited per-IP by the standard limiter; no
+        bearer auth required.
+      operationId: apiVersions
+      responses:
+        '200':
+          description: Version catalogue
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current:
+                    type: string
+                    example: "v1"
+                  versions:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - name
+                        - prefix
+                        - status
+                      properties:
+                        name:
+                          type: string
+                          example: "v1"
+                        prefix:
+                          type: string
+                          example: "/api/v1"
+                        status:
+                          type: string
+                          enum: [active, deprecated, sunset]
+                        deprecated_at:
+                          type: string
+                          format: date-time
+                        sunset_at:
+                          type: string
+                          format: date-time
+                        successor_version:
+                          type: string
+                          example: "v2"
+                        migration_guide_url:
+                          type: string
+                          format: uri
+        '405':
+          description: Method not allowed (only GET)
 
 components:
   responses:
