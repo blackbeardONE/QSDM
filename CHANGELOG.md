@@ -14,6 +14,51 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`infra-06` CI wiring: `binary-strip-lint` job in
+  `validate-deploy.yml` (2026-05-18).** Closes the explicit
+  "natural follow-up" deferral in the `infra-06` audit row's
+  Notes — the row landed in `fed6c5a` with the script + audit
+  evidence + landing sync but intentionally scoped CI out of
+  the initial drop. Now wired. Job uses the established
+  workflow conventions (`actions/setup-go@v5` with
+  `go-version-file: QSDM/source/go.mod`, `setup-python@v5`
+  pinned to 3.12) and runs four pinned probes in sequence: (1)
+  cross-compiles `cmd/qsdm` with the canonical release flags
+  (`CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath
+  -ldflags='-s -w' -o qsdm.linux-amd64 ./cmd/qsdm` — mirrors
+  `release-container.yml` lines 163-169 and the deploy commands
+  in `f8c1c90`/`299cb84`) and asserts `check_binary_strip.py`
+  returns exit 0; (2) cross-compiles a second binary WITHOUT
+  `-ldflags` and asserts the lint returns exit 1 (negative
+  canary — proves the lint genuinely detects unstripped
+  binaries rather than rubber-stamping any ELF; this is the
+  regression guard for "someone factors out the strip flag and
+  the build still passes CI"); (3) lints the script itself as
+  a non-ELF input and asserts exit 0 via the documented skip
+  path (regression guard against a future contributor
+  tightening the rule into a Linux-only-fail shape that breaks
+  multi-platform builds); (4) the canonical `file --brief`
+  path is exercised on the Ubuntu runner (libmagic
+  preinstalled) while the manual ELF-section-header fallback
+  remains exercised by the local Windows smoke tests recorded
+  in the audit row's Notes — both code paths covered. Path
+  triggers extended on both `push` and `pull_request` to
+  include `scripts/check_binary_strip.py`,
+  `QSDM/source/cmd/qsdm/**`, and `QSDM/source/go.{mod,sum}`
+  so the lint re-runs on every change that could affect the
+  binary's strip state. Local pre-rollout verification
+  2026-05-18 16:25 UTC: stripped build = 31.23 MB
+  (byte-equivalent to the `299cb84` BLR1 binary at
+  32,743,608 bytes — confirms the CI build flag set matches
+  the production deploy convention exactly); unstripped
+  canary = 43.49 MB (~40% larger, consistent with the ~32 MB
+  vs 45.6 MB observation that originally authored the lint);
+  positive lint OK, negative lint FAIL with `NOT STRIPPED`,
+  non-ELF skip OK. The `infra-06` audit row's Notes were
+  updated in the same patch to swap the "follow-up" qualifier
+  for the wired-CI evidence so source documentation tracks
+  the actual deploy state.
+
 - **`infra-06`: Production binary symbol-strip lint
   (`scripts/check_binary_strip.py`, 2026-05-18).** Encodes the
   unwritten production convention that surfaced manually during

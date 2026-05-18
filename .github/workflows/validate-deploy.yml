@@ -8,18 +8,26 @@ on:
       - "QSDM/docs/docs/runbooks/**"
       - "scripts/check_runbook_coverage.py"
       - "scripts/check_sitemap_freshness.py"
+      - "scripts/check_binary_strip.py"
       - "scripts/gen_promtool_tests.py"
       - "scripts/gen_grafana_dashboards.py"
       - ".github/workflows/validate-deploy.yml"
+      - "QSDM/source/cmd/qsdm/**"
+      - "QSDM/source/go.mod"
+      - "QSDM/source/go.sum"
   pull_request:
     paths:
       - "QSDM/deploy/**"
       - "QSDM/docs/docs/runbooks/**"
       - "scripts/check_runbook_coverage.py"
       - "scripts/check_sitemap_freshness.py"
+      - "scripts/check_binary_strip.py"
       - "scripts/gen_promtool_tests.py"
       - "scripts/gen_grafana_dashboards.py"
       - ".github/workflows/validate-deploy.yml"
+      - "QSDM/source/cmd/qsdm/**"
+      - "QSDM/source/go.mod"
+      - "QSDM/source/go.sum"
   workflow_dispatch:
 
 concurrency:
@@ -307,3 +315,108 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/check_sitemap_freshness.py --mode offline
+
+  # binary-strip-lint enforces audit row infra-06: every Go binary
+  # shipped to /opt/qsdm/qsdm on BLR1 MUST be built with
+  # `-trimpath -ldflags='-s -w'` to strip both the symbol table
+  # (-s) and the DWARF debug info (-w). Functionally the unstripped
+  # form behaves identically, but it leaks function names + source
+  # paths into any pprof/debugger snapshot a researcher might later
+  # capture, and inflates the .bak rotation footprint on BLR1 by
+  # ~40% (~45.6 MB unstripped vs ~32 MB stripped).
+  #
+  # The CI guardrail follows the same release-flavored build pattern
+  # as release-container.yml lines 163-169 and the f8c1c90/299cb84
+  # BLR1 deploys: cross-compile cmd/qsdm with the canonical flags,
+  # then lint the resulting artifact with scripts/check_binary_strip.py.
+  # The Ubuntu runner has the libmagic-based `file` command
+  # preinstalled, so the canonical fast path is exercised here; the
+  # script's manual ELF-section-header fallback is exercised by the
+  # local smoke tests recorded in the audit row's Notes.
+  #
+  # Two negative tests run alongside the canonical positive test:
+  #
+  #   1. A second build without -ldflags is linted and MUST fail
+  #      (exit 1) — proves the lint genuinely detects unstripped
+  #      binaries rather than rubber-stamping anything that looks
+  #      like an ELF.
+  #   2. A non-ELF input (the script itself) is linted and MUST
+  #      pass (exit 0) — proves the documented non-ELF skip path
+  #      still works on a fresh runner.
+  #
+  # Closes the recurrence-class for the failure mode authored
+  # manually at 2026-05-18 15:45 UTC during the infra-05 deploy
+  # cycle: the first qsdm cross-compile that day omitted
+  # `-ldflags='-s -w'` and was only caught by hand-comparing
+  # `ls -la /opt/qsdm/qsdm.bak.*` sizes before the swap.
+  binary-strip-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cross-compile qsdm with canonical release flags (positive)
+        working-directory: QSDM/source
+        run: |
+          set -euo pipefail
+          # Mirrors release-container.yml lines 163-169 + the f8c1c90
+          # and 299cb84 BLR1 deploy commands. -trimpath strips the
+          # build cwd from runtime stack traces; -s drops the symbol
+          # table; -w drops the DWARF debug info. CGO_ENABLED=0
+          # keeps the binary statically linked so the lint result is
+          # not perturbed by libc-version drift.
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -ldflags='-s -w' \
+                     -o "$GITHUB_WORKSPACE/qsdm.linux-amd64" \
+                     ./cmd/qsdm
+          ls -la "$GITHUB_WORKSPACE/qsdm.linux-amd64"
+          file "$GITHUB_WORKSPACE/qsdm.linux-amd64"
+
+      - name: Cross-compile qsdm WITHOUT strip flags (negative canary)
+        working-directory: QSDM/source
+        run: |
+          set -euo pipefail
+          # Same source, no -ldflags. Should produce a measurably
+          # larger binary that the lint's `file --brief` path
+          # detects as ", not stripped".
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -o "$GITHUB_WORKSPACE/qsdm.unstripped" \
+                     ./cmd/qsdm
+          ls -la "$GITHUB_WORKSPACE/qsdm.unstripped"
+          file "$GITHUB_WORKSPACE/qsdm.unstripped"
+
+      - name: Lint stripped artifact (MUST pass)
+        run: |
+          set -euo pipefail
+          python scripts/check_binary_strip.py "$GITHUB_WORKSPACE/qsdm.linux-amd64"
+
+      - name: Lint unstripped artifact (MUST fail — negative canary)
+        run: |
+          set -euo pipefail
+          # We expect exit 1 from the lint here; if it returns 0,
+          # the lint is broken (false-passing on an unstripped
+          # binary) and CI must fail. Wrap the call so a 0 exit
+          # becomes the failure signal, and a 1 exit becomes the
+          # pass signal.
+          if python scripts/check_binary_strip.py "$GITHUB_WORKSPACE/qsdm.unstripped"; then
+            echo "::error::check_binary_strip.py false-passed on an unstripped binary; the lint is broken"
+            exit 1
+          fi
+          echo "OK: lint correctly detected the unstripped negative canary"
+
+      - name: Lint non-ELF input (MUST pass via skip path)
+        run: |
+          set -euo pipefail
+          # The script itself is a valid non-ELF file. The
+          # documented contract is "report and skip; do not fail".
+          # Verifies the skip path still works on a fresh runner
+          # so a future contributor doesn't accidentally tighten
+          # it into a multi-platform-breaking rule.
+          python scripts/check_binary_strip.py scripts/check_binary_strip.py
