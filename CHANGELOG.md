@@ -12,6 +12,59 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+<!-- Next-release entries land here. v0.4.3 was cut on 2026-05-19;
+     this block stays empty until the next user-visible change lands. -->
+
+## [v0.4.3] - 2026-05-19
+
+**Release theme:** audit deepening + CI invariants + transparency
+hygiene. Four new audit rows land (`infra-01` Docker base-image pin,
+`infra-04` RFC 9116 `security.txt` + W3C `humans.txt`, `infra-05`
+sitemap `<lastmod>` freshness contract, `infra-06` production
+binary symbol-strip lint). Three new executable invariants ride
+alongside in CI: `runbook-coverage` (already present, hardened),
+`sitemap-freshness` (online + offline modes, wired into
+`validate-deploy.yml`), and `binary-strip-lint` (wired into both
+`validate-deploy.yml` for the in-CI qsdm artifact and
+`release-container.yml` for all 15 customer-facing release
+binaries across the linux/amd64+arm64, darwin/amd64+arm64,
+windows/amd64 matrix). Two new stdlib-only Python scripts ship as
+the matching evidence (`scripts/check_sitemap_freshness.py` 516
+LoC, `scripts/check_binary_strip.py` 308 LoC). The public
+disclosure surface picks up `https://qsdm.tech/.well-known/security.txt`
+(RFC 9116, 8 fields incl. 2× `Contact`, 2× `Canonical`, `Expires`,
+`Policy`, `Acknowledgments`), the legacy `/security.txt` mirror,
+and the W3C `humans.txt` transparency index. All 8 landing pages
+gain the Transparency footer strip with byte-identical content,
+and the score arc reaches **95.45 %** (84/88) — up from 95.29 %
+at the start of this release window (and v0.4.2's 31.76 %
+starting baseline). The four still-pending rows (`tok-01`,
+`mining-01`, `rebrand-03`, `mining-05`) are now exclusively
+wall-clock / external-engagement blocked: counsel briefs and RFP
+packets are engagement-ready under `QSDM/docs/docs/audit/`, and
+no remaining technical / autonomous-reach work blocks them.
+
+Other notable structural improvements: `pkg/audit` runtime
+hardening adds 6 new `runtime-*` rows (`d5b176b`, k8s deployment
+hardening posture), `openapi.yaml` gains 4 missing public-facing
+routes (`auth/logout`, `tokens/list`, `audit/badge.svg`,
+`versions`) and `API_REFERENCE.md` was rewritten end-to-end (9
+factual errors fixed, `openapi.yaml` now declared canonical), the
+Go + JS SDKs ship coordinated 0.3.1 deprecations for the 4
+`/transaction/{id}` singular-typo methods (fixed + `@deprecated`
+JSDoc / Go-comment shims that proxy to the correct plural
+endpoints for two releases), the docs SPA shell drift on BLR1
+(`29bbdff`) and the sitemap `<lastmod>` policy violation
+(`6927f9b`) both got proper recurrence-class fixes (the latter
+authored `infra-05`), Trivy supply-chain scanning moved from
+weekly to twice-weekly (Mon + Thu), and the validators landing
+page gained a live status strip with periodic refresh +
+peer-id resync.
+
+Score progression visible in commit history this window:
+**95.29 % → 95.35 % (infra-04) → 95.40 % (infra-05) →
+95.45 % (infra-06)**.
+
 ### Fixed
 
 - **`sitemap-freshness` CI lint failure on `fed6c5a` ↔
