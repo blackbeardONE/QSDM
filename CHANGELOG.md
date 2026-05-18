@@ -12,6 +12,99 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Added
+
+- **Audit row `infra-05` — Sitemap lastmod freshness contract,
+  enforced by `scripts/check_sitemap_freshness.py` (2026-05-18).**
+  Converts the sitemap-freshness policy from a human-maintained
+  convention (documented in `QSDM/deploy/landing/sitemap.xml`
+  header comment lines 46-50, caught after-the-fact by ops in
+  commit `6927f9b` after it had already shipped stale to crawlers)
+  into an executable, script-enforced contract. Same structural
+  pattern as `infra-03` (govulncheck wrapper script + audit row
+  + CI-runnable invariant) and `check_runbook_coverage.py`
+  (in-tree lint that pins runbook coverage).
+
+  - **`scripts/check_sitemap_freshness.py`** — ~250 lines,
+    stdlib-only by deliberate choice (mirrors
+    `check_runbook_coverage.py`; no `requests` dependency for a
+    script that does one HEAD per URL). Parses
+    `QSDM/deploy/landing/sitemap.xml`; for each `<url>` issues
+    `HEAD <origin><path>` against the live origin (default
+    `https://qsdm.tech`); parses the served `Last-Modified`
+    header into a date; fails (exit 1) if sitemap `<lastmod>` is
+    strictly older than the served `Last-Modified.date()`. The
+    matching case (`==`) and the sitemap-ahead case (`>`) both
+    pass — the latter is harmless because a crawler that
+    re-fetches just observes the current `Last-Modified` is
+    still `≤` today. Skips (reported, not failed): non-200
+    responses (a separate class of issue handled upstream by
+    link-coverage; the lint doesn't compound the failure) and
+    200 responses without a `Last-Modified` header (some
+    endpoints intentionally omit it). Exit codes mirror
+    `check_runbook_coverage.py`: `0` pass, `1` violation,
+    `2` setup error (sitemap missing / origin unreachable /
+    sitemap XML malformed).
+  - **Live verification 2026-05-18**:
+    `python3 scripts/check_sitemap_freshness.py` against
+    `https://qsdm.tech` returns exit 0 with `OK: 11/11 URL(s)
+    pass the freshness contract` — 9 entries match exactly
+    (`==`), 1 sitemap entry leads served (`humans.txt`:
+    sitemap=2026-05-18 > served=2026-05-17, harmless), 1 entry
+    matches at 2026-05-17 (`.well-known/security.txt`).
+  - **Failure-path canary verified** by artificially regressing
+    `/docs/` `<lastmod>` to `2026-01-01`: script returned exit 1
+    with the precise drift message including the suggested
+    bump-to date (`2026-05-18`) and the raw RFC 2822
+    `Last-Modified` header value (`'Mon, 18 May 2026 12:05:26
+    GMT'`); sitemap then restored byte-for-byte to its
+    committed state and re-run confirmed exit 0.
+  - **Audit row added**: `infra-05`, `CatInfra`, `SevLow`,
+    `StatusPassed`, `ReviewedBy: evidence:in-tree`,
+    `ReviewedAt: 2026-05-18T12:30:00Z`. Inserted after
+    `infra-04` to preserve numerical ordering in
+    `pkg/audit/checklist.go`. Added to `runtimeVerifiedItems`
+    in `pkg/audit/checklist_extra_test.go` so
+    `TestChecklist_PassedCountMatchesRuntimeVerifiedList`,
+    `TestChecklist_RuntimeVerifiedItemsPassed`, and
+    `TestChecklist_RuntimeVerifiedReviewerProvenance` all stay
+    green.
+  - **Cascading count bumps** in the same commit so the
+    landing-page numerics stay consistent with
+    `pkg/audit/checklist.go`:
+    - `index.html`: "86 audit rows" → "87 audit rows" (Trust
+      strip pillar copy) and "95.35%" → "95.40%" (CSS comment
+      example illustrating where the live SVG paints the
+      score — bumped to reflect new 83/87 ratio).
+    - `audit.html`: "Items table — 86 rows" → "87 rows"
+      (JS header comment documenting the rendered table size).
+    - `humans.txt`: "(86 rows)" → "(87 rows)" (transparency
+      manifest line for `/audit.html`).
+    - `validators.html`: "4 rows under infrastructure" →
+      "5 rows under infrastructure" (audit-callout text
+      pinning the per-category count).
+  - **Wire-into-CI is a deliberate follow-up**, not part of
+    this commit: the script is online and CI doesn't always
+    have outbound network reach to the production origin; an
+    offline-from-git mode that compares `<lastmod>` to
+    `git log -1 --format=%cI` per file is the natural extension
+    when CI wiring is in scope.
+  - **Live binary redeploy is also a deliberate follow-up**:
+    `/api/v1/audit/summary` and `/api/v1/audit/badge.svg` will
+    continue to render the old 82/86 / 95.35% values until the
+    qsdm validator binary is rebuilt with the new
+    `defaultItems()` slice and re-shipped to BLR1. The audit
+    checklist source-of-truth is `pkg/audit/checklist.go`,
+    which is now at 87 rows.
+
+  Closes the recurrence class for the failure mode that
+  produced `6927f9b`: anyone touching a landing page now has a
+  one-command pre-deploy gate
+  (`python3 scripts/check_sitemap_freshness.py`) that surfaces
+  stale `<lastmod>` drift before ship, and operators have a
+  post-deploy verification step they can run from any machine
+  with network reach to `https://qsdm.tech`.
+
 ### Fixed
 
 - **Docs SPA shell drift + sitemap `<lastmod>` violated its own
@@ -329,6 +422,57 @@ attempt to retroactively enumerate that history.
   product page renders.
 
 ### Fixed
+
+- **`infra-02` follow-on: two `Charming123` literals removed
+  from the public OpenAPI spec + the Kubernetes secret template
+  (2026-05-18).** The 2026-05-15 grep audit referenced in the
+  <code>infra-02</code> row Notes claimed the only remaining
+  <code>Charming123</code> literals were in test fixtures, code
+  comments narrating the historical bug, and audit-row Notes
+  referencing the fix. A repo-wide re-grep today found two
+  surfaces the original audit missed because they pre-date the
+  rebrand and have been carried forward unchanged from the
+  <code>6bc7c5d</code> initial public import:
+  <ul>
+    <li><code>QSDM/docs/docs/openapi.yaml</code> &mdash;
+        <strong>two</strong> instances of
+        <code>example: "Charming123!"</code>, one each on
+        <code>/auth/login</code> and <code>/auth/register</code>.
+        These are the canonical password examples in the
+        public OpenAPI spec, which means anyone reading the
+        spec or generating an SDK doc set saw the bug-fix-subject
+        string presented as the recommended sample value.
+        Replaced with <code>"&lt;your-strong-password&gt;"</code>
+        on both endpoints &mdash; obvious placeholder, not a
+        default credential.</li>
+    <li><code>QSDM/deploy/kubernetes/secret.yaml</code> &mdash;
+        <strong>two</strong> commented-out placeholders
+        (<code>api_key: "Charming123"</code> and
+        <code>scylla_password: "Charming123"</code>). Anyone
+        using the YAML as a starting template for their own
+        QSDM deployment saw the same literal a second time.
+        Replaced with <code>"&lt;replace-with-strong-secret&gt;"</code>
+        / <code>"&lt;replace-with-scylla-password&gt;"</code>,
+        and added an inline comment stating that the
+        placeholder is NOT a default credential.</li>
+  </ul>
+  Extended the <code>infra-02</code> Notes field in
+  <code>pkg/audit/checklist.go</code> with a 2026-05-18
+  paragraph naming both surfaces and the cleanup, so the
+  audit-row narrative is honest about the catch-up rather than
+  silently moving on. <code>go test ./pkg/audit/...</code>
+  green (0.154&nbsp;s) post-edit; the runtime-verified contract
+  trio
+  (<code>TestChecklist_RuntimeVerifiedItemsPassed</code> /
+  <code>TestChecklist_RuntimeVerifiedReviewerProvenance</code> /
+  <code>TestChecklist_PassedCountMatchesRuntimeVerifiedList</code>)
+  unchanged because the row's <code>Status</code> /
+  <code>ReviewedBy</code> / <code>ReviewedAt</code> fields are
+  unchanged &mdash; only the human-readable Notes prose was
+  extended. Repo-wide re-grep on
+  <code>QSDM/docs/docs/openapi.yaml</code> and
+  <code>QSDM/deploy/kubernetes/</code> now returns zero matches
+  for <code>Charming123</code>.
 
 - **`.gitignore` blind spot for dot-prefix commit-message
   scratch files (2026-05-18).** Existing

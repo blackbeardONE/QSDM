@@ -288,7 +288,7 @@ paths:
                   format: password
                   minLength: 8
                   description: User password (minimum 8 characters)
-                  example: "Charming123!"
+                  example: "<your-strong-password>"
       responses:
         '201':
           description: User registered successfully
@@ -330,7 +330,7 @@ paths:
                 password:
                   type: string
                   format: password
-                  example: "Charming123!"
+                  example: "<your-strong-password>"
       responses:
         '200':
           description: Authentication successful
