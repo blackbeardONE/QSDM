@@ -89,6 +89,86 @@ attempt to retroactively enumerate that history.
 
 ### Deployed
 
+- **BLR1 qsdm binary swap — closes the infra-06 source ↔ live
+  drift (2026-05-18 16:06 UTC).** Companion deploy to the
+  `infra-06` source landing above: with the new audit row in
+  `checklist.go` and the four landing surfaces bumped to
+  `88/84/95.45%`, the live `/api/v1/audit/*` endpoints still
+  served `83/87/95.40%` from the 15:46 UTC swap binary — the
+  exact source ↔ live transient the `infra-06` row itself
+  warns about. This swap closes the gap so static + dynamic
+  surfaces agree again.
+
+  Bounded fix (same pattern as the 15:46 swap below, with
+  one improvement):
+
+  1. **Pre-flight**: `CGO_ENABLED=0 go test ./pkg/audit/...
+     -count=1` → 22 tests passed; `go vet ./...` clean.
+  2. **Cross-compile**: `CGO_ENABLED=0 GOOS=linux
+     GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o
+     qsdm.linux-amd64 ./cmd/qsdm` — the 15:46 build used
+     `-ldflags='-s -w'` only; this build adds `-trimpath`
+     to match the canonical pattern from
+     `QSDM/scripts/release_evidence.sh:198-199` and
+     `QSDM/scripts/build_release.ps1:197-203` (strips build
+     paths from runtime stack traces — desirable for
+     production, no leaked operator filesystem layout).
+     sha256
+     `199b14f4dcabd1830f0ff2c0f6556b1fce9e15ed4660d595f849231c6a54b452`,
+     31.23 MB stripped (32,743,608 bytes; ~127 KB smaller
+     than the 15:46 build because `-trimpath` removes the
+     embedded build paths the 15:46 binary still carried).
+  3. **Self-lint**: `python scripts/check_binary_strip.py
+     qsdm.linux-amd64` → `OK: 1 stripped binary` (exit 0)
+     via the ELF-parse fallback (no `file` command on the
+     Windows build host). The new `infra-06` lint smoke-
+     tests its own output before ship — closes the loop
+     between the new audit row's evidence script and the
+     binary it gates.
+  4. **scp** to `/opt/qsdm/qsdm.new` on BLR1; smoke-tested
+     via `chmod +x && /opt/qsdm/qsdm.new --help` printing
+     the same `Node role: validator (build profile: full,
+     mining_enabled=false)` boot line as the live binary.
+  5. **Atomic swap with rollback**: `cp -p /opt/qsdm/qsdm
+     /opt/qsdm/qsdm.bak.20260519-000509` (preserve perms +
+     ownership for a clean rollback path), then
+     `mv /opt/qsdm/qsdm.new /opt/qsdm/qsdm`,
+     `chown qsdm:qsdm`, `chmod 0755`, `systemctl restart
+     qsdm`. `systemctl is-active qsdm` returned `active`
+     within 4 s.
+  6. **Re-verify**: same ~10 s Caddy upstream-pool refresh
+     transient (HTTP 502 on the first attempt; HTTP 200 on
+     the retry — pattern documented in the 15:46 entry
+     below and infra-05 audit row's Notes).
+     `GET /api/v1/health` → 200, JSON envelope with
+     `"status":"healthy"`. `GET /api/v1/audit/summary` →
+     `{"summary":{"failed":0,"passed":84,"pending":4,
+     "total":88,"waived":0},"score":95.45454545454545,
+     "has_blocking_findings":true,"blocking_count":2,
+     "blocking_preview":[{"id":"tok-01",...},
+     {"id":"mining-01",...}],
+     "evidence_provenance":{"evidence:in-tree":30,
+     "evidence:in-tree-tests":41,"evidence:live-deploy":13,
+     "other":0}}` — passed +1 (83 → 84), total +1 (87 →
+     88), `evidence:in-tree` +1 (29 → 30) all align with
+     `infra-06` being the single new row tagged
+     `evidence:in-tree`. `GET /api/v1/audit/badge.svg`
+     renders `95.45% (84/88)` (was `95.40% (83/87)`).
+     `GET /api/v1/audit/items` returns 6 `infra-*` entries
+     (`infra-01` through `infra-06`), with `infra-06`'s
+     title `Production binary symbol-strip lint
+     (script-enforced)` matching source byte-for-byte.
+
+  Closes the source ↔ live drift opened by the `infra-06`
+  Added entry above: all 4 static surfaces
+  (`index.html`, `audit.html`, `humans.txt`,
+  `validators.html`) and all 3 dynamic surfaces
+  (`/api/v1/audit/{summary,items,badge.svg}`) now agree
+  on `88/84/95.45%`. Rollback path: `mv /opt/qsdm/qsdm
+  /opt/qsdm/qsdm.failed && mv
+  /opt/qsdm/qsdm.bak.20260519-000509 /opt/qsdm/qsdm &&
+  systemctl restart qsdm`.
+
 - **BLR1 qsdm binary swap — closes the infra-05 source ↔ live
   drift (2026-05-18 15:46 UTC).** The `infra-05` source landed
   in `d362c81`/`80c7faf` earlier today added a new audit row
