@@ -73,6 +73,43 @@ func TestClient_ErrAPI_NotFound(t *testing.T) {
 	}
 }
 
+// TestClient_GetTransaction_PinsPluralPath is the regression guard
+// for commit b7e3a38: GetTransaction must hit /api/v1/transactions/{id}
+// (plural) and not the pre-rebrand /api/v1/transaction/{id} (singular,
+// 404 in production). Symmetric to the JS-side guard added in the
+// same commit at sdk/javascript/qsdm.test.js. The httptest server
+// would have happily responded to either URL — a positive path-pin
+// is required for the test to actually catch a typo revival.
+func TestClient_GetTransaction_PinsPluralPath(t *testing.T) {
+	const wantURL = "/api/v1/transactions/tx-77"
+	srv, c := newTestServer(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != wantURL {
+			t.Errorf("GetTransaction URL path: want %q, got %q "+
+				"(regression of the pre-0.3.1 singular typo? see "+
+				"pkg/api/handlers.go:269-270 for the canonical mux registration)",
+				wantURL, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":     "tx-77",
+			"amount": 12.5,
+			"status": "confirmed",
+		})
+	})
+	defer srv.Close()
+
+	out, err := c.GetTransaction("tx-77")
+	if err != nil {
+		t.Fatalf("GetTransaction: %v", err)
+	}
+	if out["id"] != "tx-77" {
+		t.Fatalf("expected id=tx-77, got %v (full=%+v)", out["id"], out)
+	}
+	if out["status"] != "confirmed" {
+		t.Fatalf("expected status=confirmed, got %v (full=%+v)", out["status"], out)
+	}
+}
+
 func TestClient_Unauthorized(t *testing.T) {
 	srv, c := newTestServer(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "nope", http.StatusUnauthorized)

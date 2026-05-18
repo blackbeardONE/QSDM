@@ -14,6 +14,25 @@ attempt to retroactively enumerate that history.
 
 ### Fixed
 
+- **Go SDK regression-guard test for the singular-`transaction`
+  typo class (2026-05-18).** Follow-on to the SDK fix in
+  `b7e3a38`: that commit added a path-pinned positive-path test
+  on the JS side (`assert.equal(req.url, '/api/v1/transactions/tx-7')`
+  in `sdk/javascript/qsdm.test.js`), but the symmetric Go-side
+  test (`sdk/go/client_test.go`) was still using only an
+  error-handling shape that would have happily passed against
+  either the singular or plural path. Added
+  `TestClient_GetTransaction_PinsPluralPath` which asserts
+  `r.URL.Path == "/api/v1/transactions/tx-77"` on a positive
+  response and checks the parsed body fields. A future revival
+  of the pre-rebrand singular typo (or any other path-shape
+  drift on `GetTransaction`) now fails CI before merge —
+  symmetric closure of the same recurrence-class on both SDK
+  surfaces. Test header cites `pkg/api/handlers.go:269-270` as
+  the canonical mux registration line so the next reader can
+  trace the contract end-to-end. `go test ./sdk/go/...` →
+  exit 0; the new test is the 9th in the suite.
+
 - **SDK fix: both Go and JavaScript SDKs now hit the correct
   transaction path (2026-05-18).** `GetTransaction` / `getTransaction`
   was calling `GET /api/v1/transaction/{id}` (singular) in both
