@@ -30,6 +30,7 @@ relevant quantum adversaries tomorrow.
 | [**`apps/`**](apps/) | **Products and sidecars** that use the node but are not required to run the core ledger. |
 | [**`apps/qsdm-landing/`**](apps/qsdm-landing/) | Static marketing site served at `qsdm.tech`. (Folder name retained during the rebrand deprecation window.) |
 | [**`apps/qsdm-nvidia-ngc/`**](apps/qsdm-nvidia-ngc/) | Optional NVIDIA NGC GPU attestation sidecar — opt-in, per-operator API policy, **not** a consensus rule. See [`QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md`](QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md). |
+| [**`apps/game-integration/`**](apps/game-integration/) | Stub + checklist for hooking an external game or app to the QSDM HTTP API (see [`apps/game-integration/NEXT_STEPS.md`](apps/game-integration/NEXT_STEPS.md)). Not itself a deliverable; the actual game projects live in their own repositories and consume the node via [`QSDM/source/sdk/`](QSDM/source/sdk/). |
 
 ## Start here
 

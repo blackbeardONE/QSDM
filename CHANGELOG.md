@@ -12,6 +12,24 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Changed
+
+- **Top-level `README.md` Repository Layout table now lists
+  `apps/game-integration/` (2026-05-18).** Both `QSDM/README.md:34`
+  and `apps/README.md:7` already acknowledged the third
+  `apps/` subdirectory ("game-integration notes" and a dedicated
+  table row, respectively); the top-level README was the only
+  surface that omitted it. New row distinguishes its scope from
+  the sibling app folders — it is explicitly a stub + checklist
+  pointing at `apps/game-integration/NEXT_STEPS.md`, not a
+  deliverable; the actual game projects live in separate
+  repositories and consume the node via `QSDM/source/sdk/`.
+  Closes the symmetry gap between the three READMEs that
+  describe `apps/`. Verified: every link target in the
+  top-level README's Repository Layout table now resolves
+  (12/12 paths checked, including
+  `apps/game-integration/NEXT_STEPS.md`).
+
 ### Deployed
 
 - **BLR1 qsdm binary swap — closes the infra-05 source ↔ live
