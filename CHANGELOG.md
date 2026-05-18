@@ -12,7 +12,82 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`sitemap-freshness` CI lint failure on `fed6c5a` ↔
+  `0f0f00e`: 4 sitemap `<lastmod>` entries bumped to
+  2026-05-19 (2026-05-19).** The `infra-06` source drop in
+  `fed6c5a` bumped 4 landing files (`audit.html`,
+  `humans.txt`, `index.html`, `validators.html`) but forgot
+  to bump the matching `<lastmod>` entries in
+  `QSDM/deploy/landing/sitemap.xml`. The `sitemap-freshness`
+  CI job (the very lint added in `741626a` to catch this
+  exact drift class) correctly fired on `fed6c5a` at
+  2026-05-18 16:06:39 UTC and reported failure: git
+  commit timestamp was `2026-05-19T00:06:17+08:00` (PHT,
+  past local midnight), making `git.date() = 2026-05-19`
+  while sitemap still said `2026-05-18` for the four
+  affected URLs (`/`, `/audit.html`, `/validators.html`,
+  `/humans.txt`). The lint correctly enforced the
+  documented contract ("sitemap `<lastmod>` MUST be no
+  older than the file's last meaningful content change")
+  — drift caused by a commit that crossed the local
+  timezone's midnight boundary, exactly the kind of
+  mechanical slip the lint exists to catch.
+
+  Why the regression sat red for 4 commits (`fed6c5a` ↔
+  `0f0f00e`): the assistant was committing without a
+  `gh` CLI on PATH and had not yet wired the GitHub REST
+  API check-runs query into its workflow. The commits
+  `2963064`/`299cb84`/`6a2c8a8` did not touch
+  `QSDM/deploy/**`, so the workflow's path filter
+  correctly suppressed re-runs for those — but
+  `fed6c5a` and `0f0f00e` (the latter touched
+  `validate-deploy.yml` itself) both fired and went red
+  silently. Resolved by:
+
+    1. Bumping 4 sitemap `<lastmod>` entries to
+       `2026-05-19` (the date matching the actual git
+       commit timestamps for those files in the
+       contributor's local timezone).
+    2. Capability uplift documented separately under
+       `### Added` below: the assistant can now query
+       `https://api.github.com/repos/.../commits/{sha}/check-runs`
+       anonymously (60 req/hr public-repo limit, more
+       than enough for verification) — this prevents
+       the same 4-commit-blind-window class from
+       recurring.
+
+  Local re-verification after sitemap bump:
+  `python scripts/check_sitemap_freshness.py --mode offline`
+  → `OK: 11/11 URL(s) pass the freshness contract
+  (mode=offline)`; exit 0. Negative-test reproduction
+  before fix returned the precise FAIL message expected
+  by the lint's authoring (sitemap older-than git for
+  the 4 URLs in `fed6c5a`'s touchset, with bump-to date
+  and raw `git log -1 --format=%cI` timestamp shown).
+
 ### Added
+
+- **CI verification capability via GitHub REST API
+  (anonymous check-runs query, 2026-05-19).** Replaces
+  the previously-noted external inflection point ("no
+  `gh` CLI on PATH to verify CI run outcomes") with a
+  light-weight authentication-free probe against
+  `https://api.github.com/repos/blackbeardONE/QSDM/commits/{sha}/check-runs`
+  — anonymous requests to public-repo endpoints work
+  with a 60-req/hr rate limit, which is more than
+  enough for verifying the handful of runs the
+  assistant produces per session. The capability has
+  already paid for itself in this session: it surfaced
+  the silently-failing `sitemap-freshness` job on
+  `fed6c5a`/`0f0f00e` (above) which had been red for
+  4 commits without anyone catching it. Future sessions
+  should run a `check-runs` query as a routine
+  post-push verification step (one
+  `Invoke-RestMethod` call, no install, no auth) to
+  preserve the invariant that every push is observed
+  green or fixed before the next commit lands.
 
 - **`infra-06` release-pipeline coverage:
   `release-container.yml` now strip-lints every customer-facing
