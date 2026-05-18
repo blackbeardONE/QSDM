@@ -80,6 +80,31 @@
   .endpoint-row .note { color: var(--muted); font-size: 12.5px; }
   footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
   footer .container { padding: 20px; }
+
+  /* Audit cross-reference callout — byte-identical pattern across the
+   * seven landing pages. Same-origin badge fetch from /api/v1/audit/badge.svg
+   * means a mismatched-origin clone of this page will 404 the badge,
+   * an additional visual canary on top of the address-bar check. */
+  .audit-callout {
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+    padding: 14px 18px; margin: 20px 0;
+    border: 1px solid var(--border); border-left: 3px solid var(--accent-3);
+    background: rgba(110,168,255,0.05);
+    border-radius: 10px;
+  }
+  .audit-callout .audit-callout-badge {
+    flex: 0 0 auto;
+    padding: 10px 12px;
+    background: rgba(0,0,0,.30);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex; align-items: center;
+  }
+  .audit-callout .audit-callout-badge img { display: block; height: 20px; }
+  .audit-callout .audit-callout-text { flex: 1 1 280px; color: var(--text-2); font-size: 13.5px; line-height: 1.55; }
+  .audit-callout .audit-callout-text strong { color: var(--text); }
+  .audit-callout .audit-callout-text a { color: var(--accent-3); font-weight: 600; }
+  .audit-callout .audit-callout-text code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: 12px; color: var(--text); }
 </style>
 </head>
 <body>
@@ -99,6 +124,8 @@
       <a href="/validators.html">Validators</a>
       <a href="/chain.html">Chain</a>
       <a href="/download.html">Download</a>
+      <a href="/audit.html">Audit</a>
+      <a href="/trust.html">Trust</a>
     </nav>
   </div>
 </header>
@@ -121,6 +148,29 @@
     (<code>FORK_V2_HEIGHT&nbsp;=&nbsp;0</code>) — every v1 proof is rejected at admission, and
     the v1 reference miner (<code>cmd/qsdmminer</code>) was dropped from the public release
     matrix in v0.3.2. The two "v1"s are unrelated.
+  </div>
+
+  <div class="audit-callout">
+    <a class="audit-callout-badge" href="/audit.html?category=api"
+       title="Open the 6 api audit rows on audit.html">
+      <img src="/api/v1/audit/badge.svg" alt="QSDM audit score (live)" />
+    </a>
+    <div class="audit-callout-text">
+      <strong>The HTTP API contract is independently audited.</strong>
+      The <code>/api/v1/*</code> URL stability, wallet self-custody flow,
+      replay protection, CORS posture, JWT verification and the
+      <code>POST /api/v1/wallet/mint</code> retirement (HTTP&nbsp;410 Gone)
+      are pinned by 6 rows in the <code>api</code> category of the
+      public audit checklist, all passing. Cross-cutting auth and
+      transport posture (mTLS, CSRF, JWT secondary-key rotation) lives
+      under <code>cryptography</code> (5 rows) and <code>network</code>
+      (5 rows). The page you are reading also resolves to a live audit
+      surface — <a href="https://api.qsdm.tech/api/v1/audit/summary"><code>GET /api/v1/audit/summary</code></a>
+      returns the same score and blocking-findings count this badge
+      renders, so the badge cannot drift from the JSON contract. See
+      <a href="/audit.html?category=api">audit.html?category=api</a>
+      for the deep-linked view.
+    </div>
   </div>
 
   <h2>The two versions, side by side</h2>
@@ -255,6 +305,18 @@
     Sources: <span class="mono">GET /api/v1/health</span>,
     <span class="mono">GET /api/v1/status</span>.
     This page refreshes every 60&nbsp;s. © <span id="y"></span> QSDM · Cell (CELL).
+
+    <!-- Transparency links — byte-identical across all eight landing
+         pages. See index.html for rationale. -->
+    <nav aria-label="Transparency resources" class="transparency-strip" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);line-height:1.8;">
+      <strong style="color:var(--text-2);font-weight:600;letter-spacing:.3px;text-transform:uppercase;font-size:11px;">Transparency:</strong>
+      <a href="/audit.html">Public audit</a> ·
+      <a href="/trust.html">Attestation transparency</a> ·
+      <a href="/.well-known/security.txt">Security disclosure (RFC 9116)</a> ·
+      <a href="/humans.txt">Humans</a> ·
+      <a href="/sitemap.xml">Sitemap</a> ·
+      <a href="/api/v1/audit/badge.svg">Status badge (SVG)</a>
+    </nav>
   </div>
 </footer>
 

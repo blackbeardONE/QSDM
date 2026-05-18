@@ -14,6 +14,67 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`api.html` family-upgrade — audit cross-reference callout +
+  Audit/Trust nav links + Transparency footer strip (2026-05-18).**
+  The `api.html` page (the "two-versions" explainer at
+  <https://qsdm.tech/api.html> that disambiguates the HTTP
+  `/api/v1/*` URL prefix from the v2-only mining protocol) was the
+  one landing page that hadn't received the family upgrade the
+  other seven got in the audit-callout / transparency-strip / Audit
+  nav-link series. The in-repo copy
+  (`QSDM/deploy/landing/api.html`, last touched in `ad8862a`) and
+  the live BLR1 copy at `/var/www/qsdm/api.html` were byte-identical
+  going in — there was no source-control drift, just an outdated
+  template relative to its siblings. Three additions, plus one
+  family-wide annotation refresh:
+
+  1. **Audit cross-reference callout** — same pattern the other
+     seven landing pages adopted — linking
+     `/audit.html?category=api` (6 rows pinning URL stability,
+     wallet self-custody flow, replay protection, CORS posture, JWT
+     verification, and the `POST /api/v1/wallet/mint` HTTP 410 Gone
+     retirement) and cross-referencing the
+     `GET /api/v1/audit/summary` endpoint that backs the live SVG
+     badge on the callout. The badge is fetched same-origin from
+     `/api/v1/audit/badge.svg`, so a mismatched-origin clone of the
+     page 404s the badge as a visual canary. The callout sits
+     directly under the TL;DR `.scope-note`, so anyone landing on
+     the page sees the audit-checklist link in the first viewport.
+  2. **Audit + Trust nav links** added to the header so the audit
+     surface is one click from the API explainer (previously the
+     only way in was via the footer Transparency strip).
+  3. **Byte-identical Transparency footer strip** appended (Public
+     audit · Attestation transparency · Security disclosure RFC 9116
+     · Humans · Sitemap · Status badge SVG). The transparency
+     footer is now byte-identical across **all eight** landing
+     pages — `index.html`, `trust.html`, `audit.html`,
+     `wallet.html`, `chain.html`, `download.html`,
+     `validators.html`, and `api.html`.
+  4. **Family-wide annotation refresh**: bumped the
+     "byte-identical across all seven landing pages" comment on the
+     other 7 pages (and the rationale block in `index.html`) to
+     "eight" so the page-count annotation matches reality, the
+     comment itself stays byte-identical across the family, and a
+     future ninth-page candidate can grep for the count to find
+     every site that needs to be touched.
+
+  Deployment: `scp -p` of all eight HTML files to
+  `/var/www/qsdm/`, plus `chown caddy:caddy + chmod 0664` on
+  `api.html` to bring its owner/perms in line with the rest of the
+  directory (the `-p` flag preserved the local `root:root` owner,
+  which is fine for read but breaks if Caddy ever needs to
+  group-write for a swap-in). Live verification on 2026-05-18:
+  `GET https://qsdm.tech/api.html` → HTTP 200,
+  Content-Type=`text/html`, size=19411 bytes (byte-matching the
+  local file); 20 hits across the seven verification patterns
+  (`audit-callout`, `transparency-strip`, `/audit.html`,
+  `/trust.html`, `/.well-known/security.txt`,
+  `/api/v1/audit/badge.svg`, `category=api`); and all 8 pages now
+  return ≥1 hit on `transparency-strip` from the live origin.
+  Brings the API explainer page to feature parity with the rest of
+  the landing-page family and closes the last "page without an
+  audit footprint" gap in the public site.
+
 - **`validators.html` live operator status strip + periodic
   refresh + static peer-id resync (2026-05-18).** Three
   interlocking improvements on a single page, single commit:
