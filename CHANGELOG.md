@@ -12,6 +12,77 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Changed
+
+- **`QSDM/docs/docs/API_REFERENCE.md` rewritten for accuracy
+  (2026-05-18).** The README's primary "API reference" link
+  (`README.md:41`) had drifted badly — the file claimed nine
+  factually wrong things about the deployed API surface, written
+  back when the project still used a different path-prefix scheme
+  and a smaller endpoint set. Curated tutorial-style structure
+  preserved; every endpoint, every header, every response shape
+  re-verified against the source-of-truth files in `pkg/api/`
+  and `openapi.yaml`. Footer carries a "Last verified" date so
+  future drift can be measured against this baseline.
+
+  Errors corrected (with the source-of-truth file that was used
+  to verify):
+  - `X-API-Key` was documented as an authentication mechanism;
+    it is **not** — `pkg/api/security.go::getClientIdentifier`
+    only uses it as an opaque per-client identifier for the rate
+    limiter. JWT Bearer is the only auth credential. Replaced
+    the misleading section with an explicit "rate-limit
+    identifier — not authentication" callout.
+  - `GET /api/v1/wallet/transactions` was documented as a real
+    endpoint; it is not — no handler is registered for that
+    path (the JS SDK calls it; that is a separate bug being
+    tracked outside this change). Removed the section. Real
+    chain-transparency feeds are at `/api/v1/receipts` and
+    `/api/v1/receipts/{tx_id}`; documented those instead.
+  - `GET /api/v1/transaction/<tx_id>` (singular) was documented;
+    the actual handler at `pkg/api/handlers.go:269-270` is
+    plural with brace-syntax: `GET /api/v1/transactions/{tx_id}`.
+  - `GET /api/metrics` was documented; the main API server has
+    no such endpoint. The `/metrics` path exists only on the
+    `qsdm-attester` and `qsdm-relay` standalone services (root
+    path, no `/api` prefix), per `cmd/qsdm-attester/server.go:155`
+    and `cmd/qsdm-relay/server.go:130`. Removed the misleading
+    section.
+  - `GET /api/health` was documented; the actual paths are
+    `/api/v1/health`, `/api/v1/health/live`, and
+    `/api/v1/health/ready` (and they are exempt from rate
+    limiting, which the old doc did not mention).
+  - `GET /api/topology` was documented; the actual path is
+    `GET /api/v1/network/topology` and it requires bearer auth.
+  - The `POST /auth/login` response was documented as carrying a
+    `csrf_token` field; the actual `LoginResponse` struct in
+    `pkg/api/handlers.go:697` carries only
+    `{access_token, refresh_token, expires_in}`. CSRF tokens are
+    issued by a separate endpoint (`GET /api/v1/csrf-token` —
+    `CSRFTokenHandler`); documented that flow under a new
+    "CSRF tokens" subsection that also notes the bearer-auth
+    bypass per `CSRFMiddleware` rule #3 (cookie-authenticated
+    browser flows only).
+  - "WebSocket support is planned for future releases" — false:
+    `GET /api/v1/contracts/traces/ws` already streams contract
+    traces over a WebSocket connection (handler at
+    `pkg/api/handlers_traces.go:86`; documented its
+    request-timeout-exemption per `pkg/api/request_timeout.go:28`).
+  - JS SDK import was `@qsdm/sdk`; the actual NPM package name
+    per `QSDM/source/sdk/javascript/package.json` is
+    `qsdm-sdk` (no scope prefix). Fixed the import statement.
+  - Added missing public-read endpoints to the curated section
+    (`/auth/logout`, `/tokens/list`, `/audit/badge.svg`,
+    `/versions`) — the same four routes added to `openapi.yaml`
+    earlier today, surfaced here for SDK authors.
+  - Added a Versioning catalogue section documenting `/versions`
+    and the MED-4 deprecation flow (Deprecation/Sunset/Link
+    headers from `DeprecationMiddleware`, 410 Gone on sunset).
+
+  All other content (rate-limit table, error response shape,
+  Go SDK import, top-level structure) re-validated and kept
+  where already correct.
+
 ### Added
 
 - **OpenAPI v1.1.0 catch-up: 4 missing public-facing routes added
