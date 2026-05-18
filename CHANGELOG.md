@@ -212,6 +212,41 @@ attempt to retroactively enumerate that history.
 
 ### Fixed
 
+- **`infra-01` Dockerfile drift control: `FROM alpine:latest`
+  &rarr; `FROM alpine:3.23` (2026-05-18).** Surfaced by a local
+  Trivy <code>config</code>-mode scan (v0.70.0) of all three
+  release Dockerfiles ahead of Thursday's first scheduled run of
+  <code>security-scan-containers.yml</code> under the new
+  Mon+Thu cadence shipped earlier today. Trivy
+  <strong>DS-0001</strong> ("Specify a tag in the FROM statement
+  for image 'alpine'", MEDIUM) flagged
+  <code>QSDM/Dockerfile</code> and
+  <code>QSDM/Dockerfile.validator</code>; <code>:latest</code>
+  is mutable on the Docker Hub side, so every container rebuild
+  could silently pick up a different Alpine minor version
+  whenever upstream re-tags <code>:latest</code>. Already-running
+  images on production resolve to Alpine 3.23.4 today (per the
+  <code>b4f86b5</code> Dockerfile.miner notes), so the pin to
+  <code>alpine:3.23</code> is a same-state-as-today fix &mdash;
+  no functional change, only future-drift control. Patch level
+  is intentionally left floating (<code>3.23</code>, not
+  <code>3.23.4</code>) so apk-side CVE fixes get pulled in on
+  every rebuild without a Dockerfile bump, matching the
+  philosophy of the <code>apt-get upgrade</code> in
+  <code>Dockerfile.miner</code> and the minor-version pin
+  convention already used by the CUDA base
+  (<code>nvidia/cuda:12.5.0-runtime-ubuntu22.04</code>) in
+  <code>Dockerfile.miner</code>. Scan posture per Dockerfile
+  drops from 4 MEDIUM/0 HIGH/0 CRITICAL to 3 MEDIUM/0 HIGH/0
+  CRITICAL; the remaining MEDIUMs are all <strong>DS-0013</strong>
+  ("RUN should not be used to change directory") which is a
+  stylistic recommendation that changes build behaviour
+  (<code>WORKDIR</code> persists across instructions, <code>cd</code>
+  doesn't) and is deliberately not fixed in the same pass.
+  <code>Dockerfile.miner</code> already uses a pinned base
+  (<code>nvidia/cuda:12.5.0-runtime-ubuntu22.04</code>) so the
+  DS-0001 finding does not apply there.
+
 - **Stale audit-count drift on three more surfaces (2026-05-18).**
   Follow-on sweep to the <code>74a828b</code> "85 &rarr; 86 rows"
   +&nbsp;<code>279687b</code> "3 &rarr; 4 infrastructure rows"

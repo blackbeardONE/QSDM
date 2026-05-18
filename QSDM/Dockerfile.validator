@@ -54,7 +54,14 @@ RUN cd source && CGO_ENABLED=1 \
         -o ../qsdm-validator ./cmd/qsdm
 
 # ---- runtime stage ---------------------------------------------------------
-FROM alpine:latest
+# Pin to Alpine 3.23 (minor-version pin, patch auto-pickup) instead of
+# alpine:latest. Surfaces by Trivy DS-0001 in the periodic
+# .github/workflows/security-scan-containers.yml run; matches the
+# minor-version pinning convention already used in Dockerfile.miner
+# (nvidia/cuda:12.5.0-runtime-ubuntu22.04). The patch level is
+# intentionally left floating so apk-side CVE fixes get pulled on
+# every rebuild without a Dockerfile bump.
+FROM alpine:3.23
 
 RUN apk update && apk add --no-cache \
     ca-certificates \
