@@ -101,7 +101,7 @@ func (h *Handlers) AuditBadgeHandler(w http.ResponseWriter, r *http.Request) {
 		value = "0/0"
 	} else {
 		score = cl.Score()
-		// e.g. "95.35% (82/86)" — the bucket counts let a casual
+		// e.g. "95.40% (83/87)" — the bucket counts let a casual
 		// observer sanity-check the score without a calculator.
 		// Excludes waived from the passed count because the
 		// passed-side displayed here is the unambiguous "green"

@@ -107,6 +107,49 @@ attempt to retroactively enumerate that history.
 
 ### Fixed
 
+- **Stale 95.35% / 82-of-86 drift on 2 surfaces after `infra-05`
+  pushed totals 86 &rarr; 87 (2026-05-18).** Same drift-cleanup
+  pattern as <code>80debbc</code> earlier today (95.29% &rarr;
+  95.35% sweep), now on the next score transition. Ops's
+  <code>80c7faf</code> commit added the
+  <code>infra-05</code> sitemap-lastmod-freshness contract row
+  pre-flipped to passed, and bumped the cascading landing-page
+  numerics (<code>index.html</code>, <code>audit.html</code>,
+  <code>humans.txt</code>, <code>validators.html</code>) in the
+  same commit, but two surfaces fell outside that commit's
+  bounded scope and stayed at the old 82/86 baseline:
+  <ul>
+    <li><code>QSDM/docs/docs/audit/EXTERNAL_REQUESTS.md</code>
+        score-impact-analysis prose said the checklist is at
+        "95.35% (82 of 86 passed)" with an "all four close
+        cleanly &rarr; 100.00% (86 of 86)" target. Refreshed
+        to 95.40% (83/87) baseline and 100.00% (87/87) target.
+        Added a second 2026-05-18 <em>Rolling status</em>
+        entry capturing the 86 &rarr; 87 transition (the first
+        2026-05-18 entry already records the 85 &rarr; 86
+        transition from <code>infra-04</code>); the four
+        wall-clock-blocked rows tracked here are unchanged
+        across both transitions, only the denominator and the
+        passed-count moved.</li>
+    <li><code>QSDM/source/pkg/api/handlers_audit_badge.go:104</code>
+        had an "e.g. \"95.35% (82/86)\"" illustrative comment in
+        the badge handler &mdash; refreshed to 95.40% (83/87).
+        (Comment-only; the handler itself emits the live score
+        via <code>cl.Score()</code>, so the deployed badge
+        endpoint is unaffected. Same comment was previously
+        bumped 95.29% &rarr; 95.35% in <code>80debbc</code>.)</li>
+  </ul>
+  <code>go test ./pkg/audit/... ./pkg/api/...
+  -run "TestAudit|TestChecklist"</code> green
+  (<code>0.078&nbsp;s</code> + <code>1.418&nbsp;s</code>) post-edit.
+  Live <code>/api/v1/audit/summary</code> and
+  <code>/api/v1/audit/badge.svg</code> still render
+  82/86 / 95.35% until the qsdm validator binary is rebuilt
+  with the new <code>defaultItems()</code> slice and re-shipped
+  to BLR1 (per the <code>80c7faf</code> "Live binary redeploy
+  is also a deliberate follow-up" note); this docs/comment
+  refresh is purely the static-doc side of the same transition.
+
 - **Docs SPA shell drift + sitemap `<lastmod>` violated its own
   freshness contract (2026-05-18).** Three interlocking fixes on a
   single bounded surface:

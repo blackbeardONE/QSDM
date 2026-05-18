@@ -8,14 +8,18 @@
 > wait into a request-in-flight.
 >
 > The score-impact analysis: as of 2026-05-18, the internal audit
-> checklist is at 95.35% (82 of 86 passed). The four rows tracked
+> checklist is at 95.40% (83 of 87 passed). The four rows tracked
 > here are the entirety of what's left. If all four close cleanly,
-> the score goes to 100.00% (86 of 86). (Baseline was 81/85 when
+> the score goes to 100.00% (87 of 87). (Baseline was 81/85 when
 > this index was first drafted on 2026-05-16; the totals moved
 > to 86 on 2026-05-17 when `infra-04` — Public security-disclosure
 > file (RFC 9116) — was added and pre-flipped to passed in the
-> same commit, leaving the four wall-clock-blocked rows here
-> unchanged. See the Rolling status entry for 2026-05-18 below.)
+> same commit, then to 87 on 2026-05-18 when `infra-05` — Sitemap
+> lastmod freshness contract, script-enforced — was added in
+> commit `80c7faf` and pre-flipped to passed. The four wall-clock-
+> blocked rows here are unchanged across both transitions; only
+> the denominator and the passed-count moved. See the Rolling
+> status entries below.)
 
 ## Status board
 
@@ -107,6 +111,7 @@ wrapper moves states.
 |------|-----|--------|
 | 2026-05-16 | all four | wrappers drafted under `QSDM/docs/docs/audit/` |
 | 2026-05-18 | (board-level) | total-row count refreshed from 85 → 86 after `infra-04` (RFC 9116 security.txt) was added 2026-05-17 and pre-flipped to passed; the four wall-clock-blocked rows tracked here are unchanged. Score-impact analysis above updated from 95.29% (81/85) baseline to 95.35% (82/86) and the "all four close" target updated from 85/85 to 86/86. No engagement-state changes. |
+| 2026-05-18 | (board-level) | second total-row count refresh of the day, 86 → 87 after `infra-05` (Sitemap lastmod freshness contract, script-enforced) was added in commit `80c7faf` and pre-flipped to passed. The four wall-clock-blocked rows tracked here are again unchanged. Score-impact analysis above updated from 95.35% (82/86) baseline to 95.40% (83/87) and the "all four close" target updated from 86/86 to 87/87. No engagement-state changes. |
 | (next) | | (to be filled) |
 
 ## Related artefacts
