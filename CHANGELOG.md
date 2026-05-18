@@ -212,6 +212,52 @@ attempt to retroactively enumerate that history.
 
 ### Fixed
 
+- **Stale audit-count drift on three more surfaces (2026-05-18).**
+  Follow-on sweep to the <code>74a828b</code> "85 &rarr; 86 rows"
+  +&nbsp;<code>279687b</code> "3 &rarr; 4 infrastructure rows"
+  cleanup, picking up sites that the first pass missed because
+  they referenced the score by percentage rather than row count:
+  <ul>
+    <li><code>QSDM/docs/docs/audit/EXTERNAL_REQUESTS.md</code> &mdash;
+        score-impact-analysis prose said "internal audit checklist
+        is at 95.29% (81 of 85 passed)" and "if all four close
+        cleanly, the score goes to 100.00% (85 of 85)". Refreshed
+        to 95.35% (82/86) baseline and 100.00% (86/86) target,
+        with an explicit note that the four wall-clock-blocked
+        rows tracked in the status board (<code>tok-01</code>,
+        <code>mining-01</code>, <code>mining-05</code>,
+        <code>rebrand-03</code>) are themselves unchanged &mdash;
+        only the denominator moved. Added a 2026-05-18
+        <em>Rolling status</em> entry recording the row-count
+        refresh so the doc's own audit trail is intact.</li>
+    <li><code>QSDM/deploy/landing/index.html</code> trust-strip
+        comment said "paints the current 95.29% (or wherever the
+        score moves) front-and-centre" &mdash; refreshed to
+        95.35%. (Comment-only; user-visible markup is unaffected
+        because the badge is fetched live from
+        <code>/api/v1/audit/badge.svg</code>.)</li>
+    <li><code>QSDM/source/pkg/api/handlers_audit_badge.go</code>
+        had an <em>"e.g. \"95.29% (81/85)\""</em> illustrative
+        comment in the badge-handler &mdash; refreshed to
+        95.35% (82/86). (Comment-only; the code itself emits
+        the live score via <code>cl.Score()</code>.)</li>
+  </ul>
+  Sites deliberately <strong>not</strong> touched because they
+  are correct historical pins:
+  <code>handlers_audit_badge_test.go</code> (test fixtures whose
+  job is glyph-table coverage, not score-currency &mdash; the
+  glyph set is unchanged between "95.29% (81/85)" and "95.35%
+  (82/86)" so the test still tests what it tests),
+  <code>TESTNET_LAUNCH_PLAN.md</code> (column header explicitly
+  says "Status (as of plan-author date)"),
+  <code>MINING_AUDITOR_RFP.md</code> ("score at time of this
+  RFP" is a deliberate pin),
+  <code>handlers_audit_badge.go:164</code> ("causes \"95.29%\"
+  to clip on the right" narrates a specific historical clipping
+  bug; refreshing would make the anecdote false), and the
+  CHANGELOG itself (every per-entry score reference is a
+  historical pin to the entry's date).
+
 - **`supply-03` Trivy cron resilience: weekly &rarr; twice-weekly
   (2026-05-18).** The Monday 2026-05-18 06:17 UTC scheduled fire
   of <code>.github/workflows/security-scan-containers.yml</code>

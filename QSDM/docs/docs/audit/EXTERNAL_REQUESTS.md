@@ -7,10 +7,15 @@
 > wrapper artefact under this directory that turns the wall-clock
 > wait into a request-in-flight.
 >
-> The score-impact analysis: at the time this index lands, the
-> internal audit checklist is at 95.29% (81 of 85 passed). The four
-> rows tracked here are the entirety of what's left. If all four
-> close cleanly, the score goes to 100.00% (85 of 85).
+> The score-impact analysis: as of 2026-05-18, the internal audit
+> checklist is at 95.35% (82 of 86 passed). The four rows tracked
+> here are the entirety of what's left. If all four close cleanly,
+> the score goes to 100.00% (86 of 86). (Baseline was 81/85 when
+> this index was first drafted on 2026-05-16; the totals moved
+> to 86 on 2026-05-17 when `infra-04` — Public security-disclosure
+> file (RFC 9116) — was added and pre-flipped to passed in the
+> same commit, leaving the four wall-clock-blocked rows here
+> unchanged. See the Rolling status entry for 2026-05-18 below.)
 
 ## Status board
 
@@ -101,6 +106,7 @@ wrapper moves states.
 | Date | Row | Update |
 |------|-----|--------|
 | 2026-05-16 | all four | wrappers drafted under `QSDM/docs/docs/audit/` |
+| 2026-05-18 | (board-level) | total-row count refreshed from 85 → 86 after `infra-04` (RFC 9116 security.txt) was added 2026-05-17 and pre-flipped to passed; the four wall-clock-blocked rows tracked here are unchanged. Score-impact analysis above updated from 95.29% (81/85) baseline to 95.35% (82/86) and the "all four close" target updated from 85/85 to 86/86. No engagement-state changes. |
 | (next) | | (to be filled) |
 
 ## Related artefacts
