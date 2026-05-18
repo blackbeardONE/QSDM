@@ -12,6 +12,97 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Deployed
+
+- **BLR1 qsdm binary swap — closes the infra-05 source ↔ live
+  drift (2026-05-18 15:46 UTC).** The `infra-05` source landed
+  in `d362c81`/`80c7faf` earlier today added a new audit row
+  (`Sitemap lastmod freshness contract`) and bumped the
+  expected score, but until the qsdm validator binary was
+  rebuilt and shipped to BLR1, the live `/api/v1/audit/*`
+  surfaces continued to serve `passed: 82, total: 86,
+  score: 95.34883%` from the previous build (mtime
+  2026-05-17 20:39 UTC). Static landing pages declared 87
+  rows while the dynamic API insisted on 86 — exactly the
+  kind of source ↔ live drift the project's transparency
+  posture is meant to avoid.
+
+  Bounded fix:
+
+  1. **Pre-flight**: `CGO_ENABLED=0 go test ./pkg/audit/...
+     -count=1 -timeout 30s` green, `go vet ./cmd/qsdm/...`
+     clean, `go vet ./pkg/audit/...` clean.
+  2. **Cross-compile**: `CGO_ENABLED=0 GOOS=linux
+     GOARCH=amd64 go build -ldflags='-s -w' -o
+     qsdm.linux-amd64 ./cmd/qsdm` per the canonical
+     `QSDM/scripts/go-build-no-cgo.sh` pattern, plus the
+     `-ldflags='-s -w'` strip flags that every production
+     binary on BLR1 since 2026-05-13 has been built with
+     (all `.bak` files in the ~32 MB range; the first
+     un-stripped attempt produced a 45.6 MB outlier that
+     would have been an immediately-visible anomaly in
+     the `/opt/qsdm/qsdm.bak.*` ls). sha256
+     `f92b22c729c2322c176d9051226ddc38232130fcf7a74a42841e924289fcfca1`,
+     32.87 MB stripped (+132 KB vs the live 32.73 MB
+     binary, consistent with `infra-05`'s ~5 KB Notes
+     field in `defaultItems()` plus minor toolchain
+     variance).
+  3. **scp** to `/opt/qsdm/qsdm.new` on BLR1.
+  4. **Smoke test**: `/opt/qsdm/qsdm.new --help` printed
+     boot messages including `Node role: validator (build
+     profile: full, mining_enabled=false)` — confirms the
+     binary parses config and reaches the role-bootstrap
+     step before any port-binding (catches a corrupted
+     binary or missing config without touching the active
+     service).
+  5. **Atomic swap with rollback**: `cp -p /opt/qsdm/qsdm
+     /opt/qsdm/qsdm.bak.20260518-234649` (preserve perms
+     so a rollback `mv` works without `chmod`), then
+     `mv /opt/qsdm/qsdm.new /opt/qsdm/qsdm`, `chown
+     qsdm:qsdm`, `systemctl restart qsdm`. The `mv` is
+     atomic because source + destination are on the same
+     filesystem.
+  6. **Re-verify**: PID rotated `388968` → `404140`,
+     `ActiveEnterTimestamp=2026-05-18 15:46:53 UTC`,
+     `NRestarts=0` (clean restart, no crash loop).
+     `GET /api/v1/health` returned HTTP 502 for ~10s while
+     the qsdm Go server bound its sockets and Caddy's
+     upstream connection pool refreshed (documented prior
+     pattern noted in session-26 logs, not a regression).
+     Subsequent verification on a 10 s retry:
+     `GET /api/v1/health` → HTTP 200 `application/json`;
+     `GET /api/v1/audit/summary` → `{"summary":
+     {"failed":0,"passed":83,"pending":4,"total":87,
+     "waived":0},"score":95.40229885057471,
+     "has_blocking_findings":true,"blocking_count":2,
+     "blocking_preview":[{"id":"tok-01",...},
+     {"id":"mining-01",...}]}` exactly as expected.
+     `GET /api/v1/audit/badge.svg` now renders
+     `95.40% (83/87)` (was `95.35% (82/86)`).
+     `GET /api/v1/audit/items` returns 5 `infra-*`
+     entries (`infra-01` through `infra-05`), with the new
+     row's title `Sitemap lastmod freshness contract
+     (script-enforced)` matching source. `journalctl -u
+     qsdm -n 3` shows live API request traffic
+     (`/api/v1/mining/work`, `/api/v1/mining/challenge`)
+     returning 200 in 0–2 ms — the validator is genuinely
+     serving, not just bound to ports.
+
+  Closes the most visible source ↔ live drift in the
+  project right now: static landing-page strings (`87
+  audit rows` on `index.html`, `humans.txt`,
+  `audit.html`), the audit-callout badge SVGs on all 8
+  landing pages (now rendering 95.40%), and the
+  machine-readable `/api/v1/audit/{summary,items,
+  badge.svg}` endpoints all agree on the same 83/87/95.40
+  numbers. Rollback path: `mv /opt/qsdm/qsdm
+  /opt/qsdm/qsdm.failed && mv
+  /opt/qsdm/qsdm.bak.20260518-234649 /opt/qsdm/qsdm &&
+  systemctl restart qsdm` (binary is preserved at
+  `qsdm:qsdm 0755` per `cp -p`). The chain tip continued
+  cleanly past the restart with no skipped blocks
+  observable in `journalctl`.
+
 ### Fixed
 
 - **Go SDK regression-guard test for the singular-`transaction`
