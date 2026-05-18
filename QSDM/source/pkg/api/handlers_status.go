@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/branding"
+	"github.com/blackbeardONE/QSDM/pkg/buildinfo"
 	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/config"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
@@ -34,6 +35,8 @@ var nodeStartTime = time.Now()
 type StatusResponse struct {
 	NodeID     string         `json:"node_id,omitempty"`
 	Version    string         `json:"version,omitempty"`
+	GitSHA     string         `json:"git_sha,omitempty"`
+	BuildDate  string         `json:"build_date,omitempty"`
 	Uptime     string         `json:"uptime,omitempty"`
 	ChainTip   uint64         `json:"chain_tip"`
 	Peers      int            `json:"peers"`
@@ -199,9 +202,11 @@ func (h *Handlers) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	emittedCell := formatDustAsCell(emitted)
 
 	resp := StatusResponse{
-		NodeID:   h.nodeID,
-		Version:  statusVersion(),
-		Uptime:   time.Since(nodeStartTime).Truncate(time.Second).String(),
+		NodeID:    h.nodeID,
+		Version:   statusVersion(),
+		GitSHA:    buildinfo.GitSHA,
+		BuildDate: buildinfo.BuildDate,
+		Uptime:    time.Since(nodeStartTime).Truncate(time.Second).String(),
 		ChainTip: chainTip,
 		Peers:    peers,
 		NodeRole: role.String(),
@@ -367,10 +372,38 @@ func buildMiningInfo(chainTip uint64) *MiningInfo {
 	return info
 }
 
-// statusVersion returns the build version string, preferring the Go version
-// plus any `QSDM_BUILD_VERSION` (or legacy `QSDMPLUS_BUILD_VERSION`) set at
-// build time.
+// statusVersion returns the build version string reported by
+// GET /api/v1/status's `version` field. Resolution order:
+//
+//  1. `pkg/buildinfo.Version` if it has been injected at build time
+//     (i.e. != the documented "dev" sentinel). This is the canonical
+//     source of truth and matches what GET /api/v1/health reports;
+//     keeping these two endpoints byte-equivalent on a -X-injected
+//     binary is what prevents the "status says v0.4.2, health says
+//     v0.4.3" cross-endpoint drift class observed on BLR1 between
+//     the v0.4.2 release-cut (which set the systemd `version.conf`
+//     env var) and the v0.4.3 binary swap (which injected
+//     `buildinfo.Version=v0.4.3` but left the env var stale).
+//
+//  2. `QSDM_BUILD_VERSION` environment variable. Operator escape
+//     hatch retained for backwards compatibility with the systemd
+//     `version.conf` drop-in that pre-dated buildinfo's adoption
+//     in /api/v1/*, and for dev builds where the operator wants a
+//     labelled version without rebuilding with `-X`.
+//
+//  3. `QSDMPLUS_BUILD_VERSION` environment variable. Legacy alias
+//     from the Major Update §6 dual-emit secret-rebrand convention.
+//
+//  4. `runtime.Version()` (e.g. "go1.25.10"). Last-resort fallback
+//     reached only when neither `-X` nor any env var was set. This
+//     value is the Go toolchain version, NOT the QSDM release
+//     version — it is a deliberately ugly fallback so operators
+//     reading the response can tell at a glance that the build
+//     pipeline forgot to inject a real version.
 func statusVersion() string {
+	if buildinfo.Version != "dev" {
+		return buildinfo.Version
+	}
 	if v := strings.TrimSpace(os.Getenv("QSDM_BUILD_VERSION")); v != "" {
 		return v
 	}

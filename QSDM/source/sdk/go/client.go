@@ -158,8 +158,22 @@ func (c *Client) GetReadiness(ctx context.Context) (*HealthStatus, error) {
 // live Tokenomics block-emission snapshot. These fields are populated when
 // present but the older minimal fields remain backwards-compatible.
 type NodeStatus struct {
-	NodeID     string                 `json:"node_id,omitempty"`
-	Version    string                 `json:"version,omitempty"`
+	NodeID    string `json:"node_id,omitempty"`
+	Version   string `json:"version,omitempty"`
+	// GitSHA is the short git commit SHA the running binary was
+	// built from. Populated when the validator binary was built
+	// with `-ldflags -X pkg/buildinfo.GitSHA=<short-sha>` (the
+	// canonical release pipeline pattern; see
+	// release_evidence.{sh,ps1} and build_release.ps1). Empty
+	// string for dev builds where the SHA was not injected.
+	// Added in v0.4.4: pairs with the matching field on
+	// /api/v1/health and lets a consumer map a running endpoint
+	// to a specific commit without scraping log timestamps.
+	GitSHA string `json:"git_sha,omitempty"`
+	// BuildDate is the UTC RFC 3339 timestamp at which the running
+	// binary was built. Same -ldflags-injection mechanism as
+	// GitSHA; empty for dev builds. Added in v0.4.4.
+	BuildDate  string                 `json:"build_date,omitempty"`
 	Uptime     string                 `json:"uptime,omitempty"`
 	ChainTip   uint64                 `json:"chain_tip,omitempty"`
 	Peers      int                    `json:"peers,omitempty"`
