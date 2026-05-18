@@ -265,6 +265,44 @@ attempt to retroactively enumerate that history.
 
 ### Fixed
 
+- **Sitemap lastmod refresh on 8 entries that drifted past
+  same-commit policy (2026-05-18).** The sitemap.xml header
+  comment (lines 46&ndash;50) is explicit:
+  &ldquo;Last-mod dates are refreshed in the same commit that
+  touches the file &mdash; the date here MUST be no older than
+  the file's last meaningful content change, otherwise crawlers
+  will skip the re-crawl and the change won't be re-indexed.&rdquo;
+  Today's chain of landing-page commits
+  (<code>0603d4a</code> transparency footer strip on all 7 pages,
+  <code>66fadc1</code> validators.html live-status strip,
+  <code>35fe618</code> api.html audit callout + nav,
+  <code>74a828b</code> "85&nbsp;rows" &rarr; "86&nbsp;rows" bump
+  including <code>humans.txt</code>,
+  <code>80debbc</code> trust-strip 95.29% &rarr; 95.35%) all
+  shipped without refreshing the corresponding
+  <code>&lt;lastmod&gt;</code> values, so a crawler reading the
+  sitemap would see &ldquo;nothing changed since 2026-05-17&rdquo;
+  and skip re-crawling content that materially changed.
+  Refreshed 8 entries to <code>2026-05-18</code>:
+  <code>/</code>, <code>/audit.html</code>,
+  <code>/wallet.html</code>, <code>/trust.html</code>,
+  <code>/download.html</code>, <code>/validators.html</code>,
+  <code>/chain.html</code>, <code>/humans.txt</code>.
+  Two entries deliberately <strong>not</strong> bumped because
+  their content is genuinely unchanged today:
+  <code>/docs/</code> (last touched 2026-05-13;
+  the docs index has not had a meaningful update since the
+  Phase-5 sweep) and
+  <code>/.well-known/security.txt</code> (RFC 9116 file added
+  2026-05-17 by <code>881efc8</code> and unchanged since;
+  next refresh is the annual rotation per RFC 9116 &sect;2.5.5).
+  Also extends the <code>8855912</code>
+  &ldquo;sitemap.xml: advertise /api.html and /humans.txt&rdquo;
+  commit which added the two new <code>&lt;url&gt;</code> entries
+  but left the existing-entry lastmods alone &mdash; the same
+  same-commit policy that mandates the refresh applies to the
+  sitemap-extension commit, so both are now caught up.
+
 - **`infra-01` Dockerfile drift control: `FROM alpine:latest`
   &rarr; `FROM alpine:3.23` (2026-05-18).** Surfaced by a local
   Trivy <code>config</code>-mode scan (v0.70.0) of all three
