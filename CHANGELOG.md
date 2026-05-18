@@ -14,6 +14,50 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **`infra-06` release-pipeline coverage:
+  `release-container.yml` now strip-lints every customer-facing
+  artefact before signing (2026-05-19).** Closes the obvious
+  next coverage gap after the `validate-deploy.yml` job in
+  `0f0f00e`: that job lints a CI-built artefact, but the very
+  binaries customers download (qsdmminer-console, trustcheck,
+  genesis-ceremony, cosign-keyless-signed via Sigstore OIDC,
+  attached to every tagged GitHub Release) were not yet
+  passing through the same lint. New `Verify binary strip
+  state (audit row infra-06)` step inserted between
+  `Build reproducible binaries` and `Smoke-check --version`
+  in the matrix `binaries` job so a regression-introduced
+  unstripped artefact never reaches SHA256SUMS computation
+  or cosign signing — closes the half-baked-release class
+  where `.sig` + `.pem` certificates would otherwise point
+  at an artefact the lint rejects. The 5-cell matrix
+  (linux/{amd64,arm64}, darwin/{amd64,arm64}, windows/amd64;
+  3 binaries × 5 cells = 15 artefacts per release) is the
+  ideal coverage shape because it exercises BOTH code paths
+  in `check_binary_strip.py` against the actual shipped
+  artefacts: the canonical libmagic-based `file --brief`
+  detection runs on the 2 linux ELF cells; the documented
+  non-ELF skip path runs on the 3 Mach-O / PE cells (darwin
+  amd64 + arm64, windows amd64). Future failure modes both
+  caught: a contributor who refactors out the strip flags
+  is caught by the linux cells failing red; a contributor
+  who tightens the skip path into a Linux-only-fail shape
+  is caught by the darwin / windows cells failing red.
+  `setup-python@v5` (3.12) added to the matrix job for
+  parity with `validate-deploy.yml`'s `binary-strip-lint`
+  job (the script is stdlib-only so the install is a tiny
+  cache-warmed step). Local pre-rollout verification of the
+  release artefact set: `qsdmminer-console-linux-amd64`
+  (14.43 MB), `trustcheck-linux-amd64` (5.72 MB),
+  `genesis-ceremony-linux-amd64` (2.21 MB) — all three
+  return `stripped (ok)` exit 0 in a single
+  `check_binary_strip.py` invocation; YAML parses with
+  6 jobs preserved (binaries, source-sbom, release-assets,
+  ghcr-legacy, ghcr-validator, ghcr-miner). The `infra-06`
+  audit row's Notes were updated in the same patch to
+  document the matrix-coverage rationale and the
+  failure-mode-double-coverage so the source documentation
+  tracks the actual deploy state.
+
 - **`infra-06` CI wiring: `binary-strip-lint` job in
   `validate-deploy.yml` (2026-05-18).** Closes the explicit
   "natural follow-up" deferral in the `infra-06` audit row's

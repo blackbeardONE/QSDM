@@ -96,6 +96,10 @@ jobs:
         with:
           go-version-file: QSDM/source/go.mod
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Resolve release tag
         id: tag
         run: |
@@ -170,6 +174,50 @@ jobs:
             -o "/tmp/artefacts/genesis-ceremony-${suffix}" ./cmd/genesis-ceremony
 
           ls -la /tmp/artefacts
+
+      # Audit row infra-06 (scripts/check_binary_strip.py): every Go
+      # binary shipped to customers from this matrix MUST be built
+      # with -trimpath -ldflags='-s -w'. The build step above is
+      # supposed to do that, but a future contributor refactoring
+      # LDFLAGS could silently drop the strip flags and ship an
+      # unstripped artefact to a tagged release — leaking function
+      # names + source paths into pprof/debugger snapshots, and
+      # inflating download sizes ~40% (~32 MB stripped vs ~45.6 MB
+      # unstripped, observed in the f8c1c90 BLR1 deploy incident
+      # that authored this lint).
+      #
+      # The lint is exercised on every matrix cell, which is the
+      # correct coverage shape because:
+      #
+      #   linux/amd64   -> ELF; canonical `file --brief` path
+      #                    asserts ", stripped"
+      #   linux/arm64   -> ELF; canonical path same as above
+      #   darwin/amd64  -> Mach-O; non-ELF skip path returns exit 0
+      #                    with `not an ELF binary (skipped)`
+      #   darwin/arm64  -> Mach-O; same skip path
+      #   windows/amd64 -> PE; same skip path
+      #
+      # Both code paths in check_binary_strip.py are therefore
+      # exercised by CI on the actual customer-facing artefacts —
+      # the canonical detection path on the ELF cells, the
+      # documented skip path on the Mach-O / PE cells. A future
+      # contributor who tightens the skip path into a
+      # multi-platform-breaking rule will be caught by the darwin
+      # / windows cells failing red.
+      #
+      # Run BEFORE SHA256SUMS so a regression-introduced
+      # unstripped binary never gets its hash computed and signed,
+      # avoiding a half-baked release where the .sig + .pem
+      # certificates point at an artefact the lint would have
+      # rejected.
+      - name: Verify binary strip state (audit row infra-06)
+        run: |
+          set -euo pipefail
+          suffix="${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
+          python scripts/check_binary_strip.py \
+            "/tmp/artefacts/qsdmminer-console-${suffix}" \
+            "/tmp/artefacts/trustcheck-${suffix}" \
+            "/tmp/artefacts/genesis-ceremony-${suffix}"
 
       - name: Smoke-check --version on a native-arch artefact
         # Only the linux/amd64 matrix cell runs the native binary —
