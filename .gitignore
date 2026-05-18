@@ -288,6 +288,7 @@ desktop.ini
 # bloat the repo and risk an out-of-date binary shadowing the
 # source.
 /QSDM/source/qsdm-linux-amd64
+/QSDM/source/qsdm.linux-amd64
 /QSDM/source/qsdmminer.exe
 /QSDM/source/qsdm.exe
 /QSDM/source/qsdmminer-console.exe
