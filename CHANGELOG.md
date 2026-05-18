@@ -12,6 +12,79 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Fixed
+
+- **SDK fix: both Go and JavaScript SDKs now hit the correct
+  transaction path (2026-05-18).** `GetTransaction` / `getTransaction`
+  was calling `GET /api/v1/transaction/{id}` (singular) in both
+  SDKs; the actual handler is registered at
+  `GET /api/v1/transactions/{id}` (plural) per
+  `pkg/api/handlers.go:269-270` and `openapi.yaml`'s
+  `/transactions/{txId}` entry. Production calls would 404 silently;
+  the bug was not caught because both SDK test suites spin up
+  `httptest`-style fake servers that accept any URL and assert only
+  on query parameters / response shape.
+
+  - **Go SDK** (`QSDM/source/sdk/go/client.go`): path corrected on
+    `GetTransactionContext`. The Go test suite did not pin the URL
+    path on `GetTransaction` (it asserts on `IsNotFound` only), so
+    no test changes were required; `go test ./sdk/go/...` continues
+    to pass.
+  - **JS SDK** (`QSDM/source/sdk/javascript/qsdm.js`): path
+    corrected on `getTransaction`. The corresponding test
+    (`qsdm.test.js:106-120`) did pin the singular path
+    (`assert.equal(req.url, '/api/v1/transaction/tx-7')`); fixed in
+    the same commit and the assertion strengthened to be the
+    regression guard for future drift. All 17 JS tests pass
+    (`node --test qsdm.test.js`).
+  - **JS SDK version** bumped 0.3.0 → 0.3.1; `package.json` and
+    `sdk/javascript/CHANGELOG.md` updated accordingly. The publish
+    workflow (`.github/workflows/sdk-javascript-publish.yml`) is
+    tag-triggered, so this commit alone does not publish — an
+    operator-driven `git tag sdk-js-v0.3.1` push is required to
+    ship the patch to npm.
+
+### Deprecated
+
+- **Four SDK methods that target endpoints not registered on the
+  public `pkg/api` server (2026-05-18).** Found while verifying the
+  facts that went into today's `API_REFERENCE.md` rewrite. All four
+  have always returned `ApiError 404` against any production node;
+  this commit annotates them with explicit "deprecated 0.3.1,
+  pending removal in 0.4.0" docstrings and migration paths so the
+  next time a user lands on them they know why and where to go
+  instead. JSDoc / Go-doc carry the precise endpoint that each
+  method should have hit (or the alternative when no public
+  equivalent exists). Same annotations applied to both Go and JS
+  SDKs except `getRecentTransactions` (JS-only — Go SDK has no
+  corresponding method).
+
+  - `getRecentTransactions(address, limit)` (JS only) — calls
+    `/api/v1/wallet/transactions`, which has no handler. No
+    per-address recent-tx endpoint exists on the public surface
+    today; recent-tx feed callers should use
+    `GET /api/v1/receipts` (chain transparency, paginated) and
+    filter client-side, or maintain their own off-chain index.
+  - `GetPeers` / `getPeers` — calls `/api/v1/network/peers`, which
+    has no handler. Closest analogues are `/api/admin/peers`
+    (admin-only, mTLS-required; `pkg/api/handlers_admin.go:54`) and
+    the dashboard's `/api/topology`
+    (`internal/dashboard/dashboard.go:261`); neither is reachable
+    from a JWT-bearer SDK client. Use `GetNetworkTopology` /
+    `getNetworkTopology` for the same data instead.
+  - `GetMetricsJSON` / `getMetricsJSON` — calls `/api/metrics`,
+    registered only on the operator dashboard server
+    (`internal/dashboard/dashboard.go:258`, `requireAuth`-gated),
+    not on the public `pkg/api`.
+  - `GetMetricsPrometheus` / `getMetricsPrometheus` — same
+    dashboard-only mismatch; calls `/api/metrics/prometheus`.
+
+  README method-catalogue table at
+  `QSDM/source/sdk/javascript/README.md` updated to mark these
+  rows ⚠ deprecated, with the migration path inline. No method
+  signatures changed; this is a documentation + JSDoc-banner
+  release. `node --test qsdm.test.js` continues to pass 17/17.
+
 ### Changed
 
 - **`QSDM/docs/docs/API_REFERENCE.md` rewritten for accuracy

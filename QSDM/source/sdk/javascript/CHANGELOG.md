@@ -4,6 +4,54 @@ All notable changes to the published `qsdm-sdk` npm package are recorded here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] — 2026-05-18
+
+### Fixed
+
+- **`getTransaction(txID)` now hits the correct path.** Earlier
+  builds (≤0.3.0) called `GET /api/v1/transaction/{id}` (singular),
+  which returns 404 in production — the typo dated back to the
+  pre-rebrand scaffolding window. The actual handler is registered
+  at `GET /api/v1/transactions/{id}` (plural) per
+  `pkg/api/handlers.go:269-270` and the `openapi.yaml` spec entry
+  for `/transactions/{txId}`. The bug was not caught earlier
+  because `qsdm.test.js` starts a fake `httptest`-style server that
+  accepts any URL and asserts only on query parameters; the test
+  is now path-pinned (`assert.equal(req.url, '/api/v1/transactions/tx-7')`)
+  so a future regression of this kind fails CI.
+
+### Deprecated
+
+Four methods continue to call endpoints that are not registered on
+the public `pkg/api` server. They have always returned `ApiError`
+with `status: 404` against any production node; the JSDoc on each
+now states this explicitly and gives the migration path. Pending
+removal in **0.4.0**:
+
+- `getRecentTransactions(address, limit)` — calls
+  `/api/v1/wallet/transactions`, which has no handler. The public
+  surface has no per-address recent-tx endpoint today; callers
+  wanting a recent-tx feed should use
+  `GET /api/v1/receipts` (paginated chain transparency feed) and
+  filter client-side, or maintain their own off-chain index.
+- `getPeers()` — calls `/api/v1/network/peers`. Closest analogues
+  are `/api/admin/peers` (admin-only, mTLS-required;
+  `pkg/api/handlers_admin.go:54`) and the dashboard's
+  `/api/topology` (`internal/dashboard/dashboard.go:261`); neither
+  is reachable from a JWT-bearer SDK client. Use
+  `getNetworkTopology()` for the same data instead.
+- `getMetricsJSON()` — calls `/api/metrics`, which is registered
+  only on the operator dashboard server
+  (`internal/dashboard/dashboard.go:258`, `requireAuth`-gated),
+  not on the public API.
+- `getMetricsPrometheus()` — same dashboard-only mismatch; calls
+  `/api/metrics/prometheus`.
+
+No public method or constructor signature changes; this is a
+patch-level release. All 17 existing tests still pass; the
+`getTransaction` test is the only one whose assertions were
+strengthened.
+
 ## [0.3.0] — 2026-05-11
 
 ### Changed (publish-time rename)

@@ -108,9 +108,18 @@ func (c *Client) GetTransaction(txID string) (map[string]interface{}, error) {
 }
 
 // GetTransactionContext is GetTransaction with an explicit context.
+//
+// The endpoint is GET /api/v1/transactions/{tx_id} (note the plural
+// "transactions"; the path uses the brace-syntax form in openapi.yaml
+// and the actual mux registration at pkg/api/handlers.go:269-270).
+// Earlier SDK builds (≤0.3.0) hit /api/v1/transaction/{id} (singular)
+// which returns 404 in production — the typo dated back to the
+// pre-rebrand scaffolding window and was not caught because the SDK
+// tests start a fake httptest server that accepts any URL. Fixed in
+// 0.3.1.
 func (c *Client) GetTransactionContext(ctx context.Context, txID string) (map[string]interface{}, error) {
 	var resp map[string]interface{}
-	if err := c.do(ctx, http.MethodGet, "/api/v1/transaction/"+url.PathEscape(txID), nil, &resp); err != nil {
+	if err := c.do(ctx, http.MethodGet, "/api/v1/transactions/"+url.PathEscape(txID), nil, &resp); err != nil {
 		return nil, err
 	}
 	return resp, nil
@@ -255,8 +264,18 @@ func (c *Client) GetNodeStatus(ctx context.Context) (*NodeStatus, error) {
 	return ns, nil
 }
 
-// GetPeers returns the current peer list from the node. The shape is opaque to the SDK
-// (it mirrors whatever the server returns).
+// GetPeers returns the current peer list from the node.
+//
+// DEPRECATED in 0.3.1: this method targets /api/v1/network/peers,
+// which is not registered on the public pkg/api server (verified
+// against pkg/api/handlers.go's mux). The closest analogues are
+// /api/admin/peers (admin-only, mTLS-required, see
+// pkg/api/handlers_admin.go:54) and /api/topology on the operator
+// dashboard (cookie-or-bearer auth, internal/dashboard/dashboard.go:261).
+// Neither is reachable from a JWT-bearer SDK client. Calling this
+// method against a production node returns ApiError 404. Pending
+// removal in 0.4.0 once a public peer-summary endpoint exists or
+// callers migrate to GetNetworkTopology.
 func (c *Client) GetPeers(ctx context.Context) ([]map[string]interface{}, error) {
 	var resp struct {
 		Peers []map[string]interface{} `json:"peers"`
@@ -267,7 +286,16 @@ func (c *Client) GetPeers(ctx context.Context) ([]map[string]interface{}, error)
 	return resp.Peers, nil
 }
 
-// GetMetricsJSON returns the node's JSON metrics snapshot (from /api/metrics).
+// GetMetricsJSON returns the node's JSON metrics snapshot.
+//
+// DEPRECATED in 0.3.1: /api/metrics is registered only on the
+// operator dashboard server (internal/dashboard/dashboard.go:258,
+// requireAuth-gated), not on the public pkg/api server the SDK
+// targets. Production calls against a pkg/api node return
+// ApiError 404. For Prometheus scrape access from the dashboard,
+// callers should hit the dashboard's /api/metrics/prometheus
+// endpoint directly with the appropriate dashboard credentials.
+// Pending removal in 0.4.0.
 func (c *Client) GetMetricsJSON(ctx context.Context) (map[string]interface{}, error) {
 	var resp map[string]interface{}
 	if err := c.do(ctx, http.MethodGet, "/api/metrics", nil, &resp); err != nil {
@@ -277,6 +305,10 @@ func (c *Client) GetMetricsJSON(ctx context.Context) (map[string]interface{}, er
 }
 
 // GetMetricsPrometheus returns the raw Prometheus text exposition.
+//
+// DEPRECATED in 0.3.1: see GetMetricsJSON. Same dashboard-vs-
+// public-API mismatch; production calls against a pkg/api node
+// return ApiError 404. Pending removal in 0.4.0.
 func (c *Client) GetMetricsPrometheus(ctx context.Context) (string, error) {
 	req, err := c.newRequest(ctx, http.MethodGet, "/api/metrics/prometheus", nil)
 	if err != nil {

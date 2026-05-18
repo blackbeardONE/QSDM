@@ -103,9 +103,13 @@ test('sendTransaction POSTs JSON and returns the transaction_id', async () => {
     }
 });
 
-test('getTransaction returns the parsed JSON', async () => {
+test('getTransaction hits /api/v1/transactions/{id} (plural; pinned to actual handler path)', async () => {
+    // Path pin matches pkg/api/handlers.go:269-270 mux registration.
+    // 0.3.0 and earlier hit the singular /api/v1/transaction/{id},
+    // which 404s in production. Fixed in 0.3.1 — this assertion is
+    // the regression guard.
     const { srv, baseURL } = await startServer((req, res) => {
-        assert.equal(req.url, '/api/v1/transaction/tx-7');
+        assert.equal(req.url, '/api/v1/transactions/tx-7');
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ id: 'tx-7', amount: 3.14 }));
     });

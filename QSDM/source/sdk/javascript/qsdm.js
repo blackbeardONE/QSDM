@@ -72,10 +72,32 @@ class QSDMClient {
         return out.transaction_id;
     }
 
+    /**
+     * Retrieve a transaction by ID.
+     *
+     * Endpoint: GET /api/v1/transactions/{tx_id} (plural; the path
+     * uses the brace-syntax form in openapi.yaml and the actual mux
+     * registration at pkg/api/handlers.go:269-270). Earlier SDK
+     * builds (≤0.3.0) hit /api/v1/transaction/{id} (singular) which
+     * returns 404 in production — the typo dated back to the
+     * pre-rebrand scaffolding window and was not caught because the
+     * SDK tests start a fake httptest server that accepts any URL.
+     * Fixed in 0.3.1.
+     */
     async getTransaction(txID) {
-        return this._request('GET', `/api/v1/transaction/${encodeURIComponent(txID)}`);
+        return this._request('GET', `/api/v1/transactions/${encodeURIComponent(txID)}`);
     }
 
+    /**
+     * @deprecated 0.3.1. /api/v1/wallet/transactions is not registered
+     * on the public pkg/api server (verified against handlers.go's
+     * mux). There is no per-address recent-transactions endpoint on
+     * the public surface today; callers wanting a recent-tx feed
+     * should use GET /api/v1/receipts (paginated chain transparency
+     * feed) or maintain their own per-address index off-chain.
+     * Production calls against a pkg/api node return ApiError 404.
+     * Pending removal in 0.4.0.
+     */
     async getRecentTransactions(address, limit = 10) {
         const q = encodeURIComponent(address);
         return this._request('GET', `/api/v1/wallet/transactions?address=${q}&limit=${limit}`);
@@ -125,6 +147,17 @@ class QSDMClient {
         };
     }
 
+    /**
+     * @deprecated 0.3.1. /api/v1/network/peers is not registered on
+     * the public pkg/api server (verified against handlers.go's mux).
+     * The closest analogues are /api/admin/peers (admin-only,
+     * mTLS-required, pkg/api/handlers_admin.go:54) and /api/topology
+     * on the operator dashboard (internal/dashboard/dashboard.go:261).
+     * Neither is reachable from a JWT-bearer SDK client. Production
+     * calls against a pkg/api node return ApiError 404. For peer
+     * topology data callers should use getNetworkTopology() instead.
+     * Pending removal in 0.4.0.
+     */
     async getPeers() {
         const out = await this._request('GET', '/api/v1/network/peers');
         return Array.isArray(out.peers) ? out.peers : [];
@@ -136,7 +169,20 @@ class QSDMClient {
 
     // --- metrics ---
 
+    /**
+     * @deprecated 0.3.1. /api/metrics is registered only on the
+     * operator dashboard server (internal/dashboard/dashboard.go:258,
+     * requireAuth-gated), not on the public pkg/api server the SDK
+     * targets. Production calls against a pkg/api node return
+     * ApiError 404. Pending removal in 0.4.0.
+     */
     async getMetricsJSON()       { return this._request('GET', '/api/metrics'); }
+
+    /**
+     * @deprecated 0.3.1. See getMetricsJSON. Same dashboard-vs-
+     * public-API mismatch; production calls against a pkg/api node
+     * return ApiError 404. Pending removal in 0.4.0.
+     */
     async getMetricsPrometheus() { return this._requestText('GET', '/api/metrics/prometheus'); }
 
     // --- internals ---
