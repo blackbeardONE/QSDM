@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Explorer — QSDM · Cell (CELL)</title>
+<meta name="description" content="Search QSDM blocks, transactions, and accounts. Public blockchain explorer for Cell (CELL), backed by QSDM /api/v1 transparency endpoints." />
+<meta name="theme-color" content="#0b1220" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b1220'/%3E%3Cpath d='M12 32l10-10 10 10-10 10z' fill='%2376b900'/%3E%3Cpath d='M32 20l10 12-10 12-10-12z' fill='%2300d1b2' opacity='.85'/%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #0a101d;
+    --panel: #111a2e;
+    --panel-2: #152238;
+    --border: #1f2a44;
+    --text: #e6edf7;
+    --text-2: #9fb0c9;
+    --muted: #6d7e99;
+    --accent: #76b900;
+    --accent-2: #00d1b2;
+    --accent-3: #6ea8ff;
+    --success: #3ddc97;
+    --warn: #ffb454;
+    --danger: #ff6b6b;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--sans); line-height: 1.5; }
+  body {
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgba(118,185,0,.10), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, rgba(0,209,178,.10), transparent 60%),
+      linear-gradient(180deg, var(--bg) 0%, #0f172a 100%);
+    min-height: 100vh;
+  }
+  a { color: var(--accent-3); text-decoration: none; }
+  a:hover { color: #a7c5ff; text-decoration: underline; }
+  code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: .92em; }
+  pre {
+    font-family: var(--mono); background: rgba(0,0,0,.35); padding: 14px 16px;
+    border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; font-size: 13px;
+    white-space: pre-wrap; word-break: break-word; max-height: 520px;
+  }
+  .container { max-width: 1180px; margin: 0 auto; padding: 36px 20px; }
+  header { border-bottom: 1px solid var(--border); background: rgba(10,16,29,.72); backdrop-filter: saturate(140%) blur(10px); position: sticky; top: 0; z-index: 10; }
+  header .container { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 700; }
+  .brand svg { width: 26px; height: 26px; }
+  .brand .plus { color: var(--accent); }
+  nav.subnav { display: flex; gap: 18px; flex-wrap: wrap; }
+  nav.subnav a { color: var(--text-2); font-size: 14px; }
+  nav.subnav a.active { color: var(--accent-2); font-weight: 600; }
+  h1 { font-size: clamp(34px, 5vw, 54px); line-height: 1.05; margin: 0 0 12px; letter-spacing: -.02em; }
+  h2 { font-size: 22px; margin: 0 0 10px; letter-spacing: -.01em; }
+  h3 { color: var(--text-2); font-size: 13px; letter-spacing: .7px; text-transform: uppercase; margin: 22px 0 8px; }
+  .lede { color: var(--text-2); font-size: 17px; max-width: 820px; }
+  .hero {
+    border: 1px solid var(--border); border-radius: 16px; padding: 28px;
+    background:
+      radial-gradient(700px 180px at 5% 0%, rgba(0,209,178,.12), transparent 70%),
+      linear-gradient(180deg, rgba(17,26,46,.92), rgba(21,34,56,.92));
+    box-shadow: 0 10px 30px -12px rgba(0,0,0,.55);
+  }
+  .live-dot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--success); margin-right: 8px; box-shadow: 0 0 12px rgba(61,220,151,.8);
+  }
+  .search {
+    display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 22px;
+  }
+  .search input {
+    width: 100%; font-family: var(--mono); font-size: 15px; color: var(--text);
+    background: rgba(0,0,0,.35); border: 1px solid var(--border); border-radius: 10px;
+    padding: 13px 14px; outline: none;
+  }
+  .search input:focus { border-color: var(--accent-2); }
+  .search button, .btn {
+    background: var(--accent); color: #0a1400; font-weight: 700; border: 1px solid #5d9600;
+    padding: 12px 18px; border-radius: 10px; cursor: pointer; font-family: var(--sans);
+  }
+  .search button:hover, .btn:hover { filter: brightness(1.05); text-decoration: none; }
+  .hint { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+  .grid { display: grid; gap: 16px; margin-top: 18px; }
+  .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  @media (max-width: 900px) {
+    .stats, .two { grid-template-columns: 1fr; }
+    .search { grid-template-columns: 1fr; }
+    header .container { align-items: flex-start; flex-direction: column; }
+  }
+  .panel, .stat-card {
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px;
+    box-shadow: 0 10px 30px -12px rgba(0,0,0,.55);
+  }
+  .stat-card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; }
+  .stat-card .value { font-family: var(--mono); font-size: 22px; font-weight: 700; word-break: break-word; }
+  .stat-card .sub { color: var(--text-2); font-size: 12px; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
+  td { color: var(--text); word-break: break-all; }
+  td.num, th.num { text-align: right; }
+  .kv { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 9px 16px; font-family: var(--mono); font-size: 13px; }
+  .kv .k { color: var(--muted); }
+  .kv .v { word-break: break-all; }
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-family: var(--mono);
+    background: rgba(110,168,255,.1); color: var(--accent-3); border: 1px solid rgba(110,168,255,.3);
+  }
+  .pill.ok { background: rgba(61,220,151,.1); color: var(--success); border-color: rgba(61,220,151,.3); }
+  .pill.err { background: rgba(255,107,107,.1); color: var(--danger); border-color: rgba(255,107,107,.3); }
+  .empty { color: var(--muted); font-style: italic; padding: 14px 0; }
+  .errbox { color: var(--danger); font-family: var(--mono); font-size: 13px; padding: 10px 12px; background: rgba(255,107,107,.06); border-radius: 8px; border: 1px solid rgba(255,107,107,.2); }
+  .notice { color: var(--text-2); font-size: 13px; padding: 12px 14px; background: rgba(110,168,255,.06); border: 1px solid rgba(110,168,255,.22); border-radius: 10px; margin-top: 12px; }
+  .section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 24px; }
+  .section-title .mini { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 34px; padding-top: 18px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<header>
+  <div class="container">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="12" fill="#0b1220"/><path d="M12 32l10-10 10 10-10 10z" fill="#76b900"/><path d="M32 20l10 12-10 12-10-12z" fill="#00d1b2" opacity=".85"/></svg>
+      <span>QSDM<span class="plus">+</span></span>
+    </a>
+    <nav class="subnav" aria-label="Primary">
+      <a href="/">Home</a>
+      <a href="/wallet.html">Wallet</a>
+      <a href="/explorer.html" class="active">Explorer</a>
+      <a href="/chain.html">Chain</a>
+      <a href="/validators.html">Validators</a>
+      <a href="/audit.html">Audit</a>
+      <a href="/trust.html">Trust</a>
+      <a href="/download.html">Download</a>
+    </nav>
+  </div>
+</header>
+
+<main class="container">
+  <section class="hero">
+    <h1><span class="live-dot"></span>QSDM Explorer</h1>
+    <p class="lede">
+      Search QSDM blocks, transaction receipts, and CELL accounts using the public
+      <code>/api/v1</code> transparency endpoints. This MVP is live-read only:
+      full lifetime account history arrives with the phase-2 indexer.
+    </p>
+    <form class="search" id="search-form">
+      <input id="search-input" autocomplete="off" spellcheck="false"
+        placeholder="Search block height, transaction id, or QSDM address" />
+      <button type="submit">Search</button>
+    </form>
+    <div class="hint">
+      Tip: numeric values open block heights. Long hashes try transaction receipt first, then account lookup.
+    </div>
+  </section>
+
+  <section class="grid stats" aria-label="Network stats">
+    <div class="stat-card">
+      <div class="label">Chain tip</div>
+      <div class="value" data-stat="tip">...</div>
+      <div class="sub" data-stat="tip-sub">block height</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Block reward</div>
+      <div class="value" data-stat="reward">...</div>
+      <div class="sub">CELL per sealed block</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Recent txs</div>
+      <div class="value" data-stat="txs">...</div>
+      <div class="sub">visible in public receipt feed</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Node status</div>
+      <div class="value" data-stat="status">...</div>
+      <div class="sub" data-stat="status-sub">public API</div>
+    </div>
+  </section>
+
+  <section id="detail-panel" class="panel" style="display:none"></section>
+
+  <section class="grid two">
+    <div class="panel">
+      <div class="section-title" style="margin-top:0">
+        <h2>Latest Blocks</h2>
+        <span class="mini" id="blocks-range">loading</span>
+      </div>
+      <div id="blocks-content" class="empty">Loading blocks...</div>
+    </div>
+    <div class="panel">
+      <div class="section-title" style="margin-top:0">
+        <h2>Recent Transactions</h2>
+        <span class="mini" id="receipts-range">loading</span>
+      </div>
+      <div id="receipts-content" class="empty">Loading transactions...</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Explorer MVP Notes</h2>
+    <div class="notice">
+      Account pages show current balance/nonce plus activity discoverable from the recent public feed.
+      QSDM is presented here as a native CELL coin network. Deep address-indexed transaction
+      history, block-by-hash lookup, and richer CELL analytics require the phase-2 explorer indexer.
+    </div>
+  </section>
+
+  <footer>
+    QSDM testnet · Cell (CELL) · <a href="/chain.html">chain status</a> ·
+    <a href="/api.html">API</a> · <span id="last-updated">not loaded yet</span>
+  </footer>
+</main>
+
+<script>
+"use strict";
+
+const API_BASE = "/api/v1";
+const REFRESH_MS = 15_000;
+
+let latestBlocks = [];
+let latestReceipts = [];
+
+function escapeHTML(s) {
+  if (s === null || s === undefined) return "";
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+function fmtNum(n) {
+  if (n === null || n === undefined || n === "") return "—";
+  return Number(n).toLocaleString();
+}
+
+function fmtTime(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString();
+}
+
+function fmtCellFromDust(dust) {
+  if (dust === null || dust === undefined) return "—";
+  return (Number(dust) / 1e8).toLocaleString(undefined, { maximumFractionDigits: 8 });
+}
+
+function shortHash(h, n = 8) {
+  if (!h) return "—";
+  const s = String(h);
+  if (s.length <= 2 * n + 3) return s;
+  return `${s.slice(0, n)}…${s.slice(-n)}`;
+}
+
+function statusPill(status) {
+  const ok = Number(status) === 1 || status === "ok" || status === "accepted" || status === true;
+  const label = status === undefined || status === null ? "unknown" : String(status);
+  return `<span class="pill ${ok ? "ok" : ""}">${escapeHTML(label)}</span>`;
+}
+
+async function fetchJSON(path) {
+  const res = await fetch(API_BASE + path, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
+  return res.json();
+}
+
+function setStat(name, value, sub) {
+  const v = document.querySelector(`[data-stat="${name}"]`);
+  if (v) v.textContent = value;
+  if (sub !== undefined) {
+    const s = document.querySelector(`[data-stat="${name}-sub"]`);
+    if (s) s.textContent = sub;
+  }
+}
+
+function detailPanel(title, body) {
+  const root = document.getElementById("detail-panel");
+  root.style.display = "block";
+  root.innerHTML = `<h2>${escapeHTML(title)}</h2>${body}`;
+  root.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderError(title, err) {
+  detailPanel(title, `<div class="errbox">${escapeHTML(err.message || err)}</div>`);
+}
+
+function blockLink(height) {
+  return `/explorer.html?block=${encodeURIComponent(height)}`;
+}
+
+function txLink(txid) {
+  return `/explorer.html?tx=${encodeURIComponent(txid)}`;
+}
+
+function accountLink(address) {
+  return `/explorer.html?address=${encodeURIComponent(address)}`;
+}
+
+async function loadStats() {
+  try {
+    const [status, emission] = await Promise.allSettled([
+      fetchJSON("/status"),
+      fetchJSON("/mining/emission")
+    ]);
+
+    if (emission.status === "fulfilled") {
+      const e = emission.value;
+      setStat("tip", fmtNum(e.chain_tip), `epoch ${fmtNum(e.current_epoch)}`);
+      setStat("reward", e.block_reward_cell || fmtCellFromDust(e.block_reward_dust));
+    } else if (status.status === "fulfilled") {
+      setStat("tip", fmtNum(status.value.chain_tip));
+    }
+
+    if (status.status === "fulfilled") {
+      const s = status.value;
+      setStat("status", "online", `${s.node_role || s.network || "qsdm"} · ${s.version || "version unknown"}`);
+    } else {
+      setStat("status", "degraded", status.reason.message);
+    }
+  } catch (err) {
+    console.error("stats failed", err);
+  }
+}
+
+async function loadBlocks() {
+  const root = document.getElementById("blocks-content");
+  try {
+    const data = await fetchJSON("/mining/blocks?limit=20");
+    latestBlocks = (data.headers || []).slice().sort((a, b) => Number(b.height) - Number(a.height));
+    document.getElementById("blocks-range").textContent = `tip ${fmtNum(data.tip)}`;
+    if (latestBlocks.length === 0) {
+      root.innerHTML = `<div class="empty">No blocks yet.</div>`;
+      return;
+    }
+    root.innerHTML = `
+      <table>
+        <thead><tr>
+          <th class="num">Height</th><th>Hash</th><th class="num">Txs</th><th>Producer</th><th>Time</th>
+        </tr></thead>
+        <tbody>${latestBlocks.map(b => `
+          <tr>
+            <td class="num"><a href="${blockLink(b.height)}">${fmtNum(b.height)}</a></td>
+            <td title="${escapeHTML(b.hash)}">${escapeHTML(shortHash(b.hash))}</td>
+            <td class="num">${fmtNum(b.tx_count || 0)}</td>
+            <td title="${escapeHTML(b.producer_id || "")}">${escapeHTML(shortHash(b.producer_id, 6))}</td>
+            <td>${escapeHTML(fmtTime(b.timestamp))}</td>
+          </tr>`).join("")}</tbody>
+      </table>`;
+  } catch (err) {
+    root.innerHTML = `<div class="errbox">Failed to load blocks: ${escapeHTML(err.message)}</div>`;
+  }
+}
+
+async function loadReceipts() {
+  const root = document.getElementById("receipts-content");
+  try {
+    const data = await fetchJSON("/receipts?limit=25");
+    latestReceipts = data.receipts || [];
+    document.getElementById("receipts-range").textContent = `${fmtNum(latestReceipts.length)} shown`;
+    setStat("txs", fmtNum(latestReceipts.length));
+    if (latestReceipts.length === 0) {
+      root.innerHTML = `<div class="empty">No recent transactions.</div>`;
+      return;
+    }
+    root.innerHTML = `
+      <table>
+        <thead><tr>
+          <th>Tx ID</th><th class="num">Block</th><th>Status</th><th class="num">Fee</th><th>Time</th>
+        </tr></thead>
+        <tbody>${latestReceipts.map(r => `
+          <tr>
+            <td title="${escapeHTML(r.tx_id)}"><a href="${txLink(r.tx_id)}">${escapeHTML(shortHash(r.tx_id, 10))}</a></td>
+            <td class="num"><a href="${blockLink(r.block_height)}">${fmtNum(r.block_height)}</a></td>
+            <td>${statusPill(r.status)}</td>
+            <td class="num">${r.fee === undefined ? "—" : escapeHTML(r.fee)}</td>
+            <td>${escapeHTML(fmtTime(r.timestamp))}</td>
+          </tr>`).join("")}</tbody>
+      </table>`;
+  } catch (err) {
+    root.innerHTML = `<div class="errbox">Failed to load transactions: ${escapeHTML(err.message)}</div>`;
+  }
+}
+
+function pickBlockTransactions(block) {
+  if (!block || typeof block !== "object") return [];
+  return block.transactions || block.txs || block.Txs || block.Transactions || [];
+}
+
+async function showBlock(height) {
+  try {
+    const h = String(height).trim();
+    const headerData = await fetchJSON(`/mining/blocks?from=${encodeURIComponent(h)}&to=${encodeURIComponent(h)}&limit=1`);
+    const header = (headerData.headers || [])[0] || null;
+    if (!header) {
+      throw new Error(`block ${h} was not found or the block probe is not wired`);
+    }
+    detailPanel(`Block ${h}`, `
+      <div class="kv">
+        <div class="k">height</div><div class="v">${escapeHTML(header?.height ?? h)}</div>
+        <div class="k">hash</div><div class="v">${escapeHTML(header?.hash || "—")}</div>
+        <div class="k">previous</div><div class="v">${escapeHTML(header?.prev_hash || "—")}</div>
+        <div class="k">state root</div><div class="v">${escapeHTML(header?.state_root || "—")}</div>
+        <div class="k">tx root</div><div class="v">${escapeHTML(header?.tx_root || "—")}</div>
+        <div class="k">tx count</div><div class="v">${fmtNum(header?.tx_count)}</div>
+        <div class="k">producer</div><div class="v">${escapeHTML(header?.producer_id || "—")}</div>
+        <div class="k">timestamp</div><div class="v">${escapeHTML(fmtTime(header?.timestamp))}</div>
+      </div>
+      <div class="notice">Full block payload and transaction lists are reserved for the phase-2 indexer. The public explorer currently uses <code>/mining/blocks</code> block headers.</div>`);
+  } catch (err) {
+    renderError("Block lookup failed", err);
+  }
+}
+
+function txIdFromBlockTx(tx) {
+  return tx?.id || tx?.tx_id || tx?.transaction_id || tx?.ID || "";
+}
+
+function renderTxListFromBlock(txs) {
+  return `
+    <table>
+      <thead><tr><th>Tx ID</th><th>Type</th><th>Sender</th><th>Size</th></tr></thead>
+      <tbody>${txs.map(tx => {
+        const txid = txIdFromBlockTx(tx);
+        const sender = tx.sender || tx.from || tx.owner || "";
+        return `<tr>
+          <td>${txid ? `<a href="${txLink(txid)}">${escapeHTML(shortHash(txid, 10))}</a>` : "—"}</td>
+          <td>${escapeHTML(tx.type || tx.kind || tx.action || "transaction")}</td>
+          <td title="${escapeHTML(sender)}">${escapeHTML(shortHash(sender, 8))}</td>
+          <td class="num">${fmtNum(JSON.stringify(tx).length)} B</td>
+        </tr>`;
+      }).join("")}</tbody>
+    </table>`;
+}
+
+async function showTx(txid) {
+  try {
+    const r = await fetchJSON(`/receipts/${encodeURIComponent(txid)}`);
+    renderTxReceipt(txid, r);
+  } catch (err) {
+    renderError("Transaction lookup failed", err);
+  }
+}
+
+function renderTxReceipt(txid, r) {
+  detailPanel(`Transaction ${shortHash(txid, 12)}`, `
+    <div class="kv">
+      <div class="k">tx id</div><div class="v">${escapeHTML(r.tx_id || txid)}</div>
+      <div class="k">block</div><div class="v"><a href="${blockLink(r.block_height)}">${fmtNum(r.block_height)}</a></div>
+      <div class="k">block hash</div><div class="v">${escapeHTML(r.block_hash || "—")}</div>
+      <div class="k">status</div><div class="v">${statusPill(r.status)}</div>
+      <div class="k">fee</div><div class="v">${r.fee === undefined ? "—" : escapeHTML(r.fee)}</div>
+      <div class="k">gas used</div><div class="v">${fmtNum(r.gas_used)}</div>
+      <div class="k">contract</div><div class="v">${escapeHTML(r.contract_id || "—")}</div>
+      <div class="k">index</div><div class="v">${fmtNum(r.index_in_block)}</div>
+      <div class="k">timestamp</div><div class="v">${escapeHTML(fmtTime(r.timestamp))}</div>
+      <div class="k">error</div><div class="v">${escapeHTML(r.error || "—")}</div>
+    </div>
+    ${renderLogs(r.logs || [])}
+    <h3>Raw receipt</h3><pre>${escapeHTML(JSON.stringify(r, null, 2))}</pre>`);
+}
+
+function renderLogs(logs) {
+  if (!logs.length) return `<div class="notice">No logs on this receipt.</div>`;
+  return `
+    <h3>Logs</h3>
+    <table>
+      <thead><tr><th class="num">Index</th><th>Topic</th><th>Data</th></tr></thead>
+      <tbody>${logs.map(log => `
+        <tr>
+          <td class="num">${fmtNum(log.index)}</td>
+          <td>${escapeHTML(log.topic)}</td>
+          <td><pre style="margin:0;max-height:180px">${escapeHTML(JSON.stringify(log.data || {}, null, 2))}</pre></td>
+        </tr>`).join("")}</tbody>
+    </table>`;
+}
+
+async function showAccount(address) {
+  try {
+    const [balanceRes, nonceRes, miningRes] = await Promise.allSettled([
+      fetchJSON(`/wallet/balance?address=${encodeURIComponent(address)}`),
+      fetchJSON(`/wallet/nonce?sender=${encodeURIComponent(address)}`),
+      fetchJSON(`/mining/account?address=${encodeURIComponent(address)}`)
+    ]);
+    const balance = balanceRes.status === "fulfilled" ? balanceRes.value : null;
+    const nonce = nonceRes.status === "fulfilled" ? nonceRes.value : null;
+    const mining = miningRes.status === "fulfilled" ? miningRes.value : null;
+    if (!balance && !mining) {
+      throw new Error("account lookup failed on wallet and mining-ledger endpoints");
+    }
+    const activity = latestReceipts.filter(r => JSON.stringify(r).toLowerCase().includes(address.toLowerCase()));
+    detailPanel(`Account ${shortHash(address, 12)}`, `
+      <div class="kv">
+        <div class="k">address</div><div class="v">${escapeHTML(address)}</div>
+        <div class="k">balance</div><div class="v">${escapeHTML(balance?.balance ?? mining?.balance ?? "—")} CELL</div>
+        <div class="k">balance source</div><div class="v">${escapeHTML(balance?.source || (mining ? "mining-ledger" : "—"))}</div>
+        <div class="k">nonce</div><div class="v">${escapeHTML(nonce?.nonce ?? mining?.nonce ?? "—")}</div>
+        <div class="k">next nonce</div><div class="v">${escapeHTML(nonce?.next ?? "—")}</div>
+        <div class="k">present on chain</div><div class="v">${mining ? escapeHTML(String(mining.present)) : "unknown"}</div>
+      </div>
+      <div class="notice">
+        This MVP does not have a full address index yet. Recent activity below is best-effort from the visible public receipt window.
+      </div>
+      ${activity.length ? renderReceiptTable(activity) : `<div class="empty">No matching recent public activity found for this address.</div>`}`);
+  } catch (err) {
+    renderError("Account lookup failed", err);
+  }
+}
+
+function renderReceiptTable(receipts) {
+  return `
+    <table>
+      <thead><tr><th>Tx ID</th><th class="num">Block</th><th>Status</th><th>Time</th></tr></thead>
+      <tbody>${receipts.map(r => `
+        <tr>
+          <td><a href="${txLink(r.tx_id)}">${escapeHTML(shortHash(r.tx_id, 10))}</a></td>
+          <td class="num"><a href="${blockLink(r.block_height)}">${fmtNum(r.block_height)}</a></td>
+          <td>${statusPill(r.status)}</td>
+          <td>${escapeHTML(fmtTime(r.timestamp))}</td>
+        </tr>`).join("")}</tbody>
+    </table>`;
+}
+
+async function runSearch(query, pushState = true) {
+  const q = query.trim();
+  if (!q) return;
+  document.getElementById("search-input").value = q;
+  if (/^\d+$/.test(q)) {
+    if (pushState) history.pushState(null, "", `/explorer.html?block=${encodeURIComponent(q)}`);
+    await showBlock(q);
+    return;
+  }
+  if (pushState) history.pushState(null, "", `/explorer.html?q=${encodeURIComponent(q)}`);
+  if (/^[a-fA-F0-9]{32,256}$/.test(q)) {
+    try {
+      const receipt = await fetchJSON(`/receipts/${encodeURIComponent(q)}`);
+      renderTxReceipt(q, receipt);
+      return;
+    } catch {
+      await showAccount(q);
+      return;
+    }
+  }
+  await showAccount(q);
+}
+
+async function routeFromURL() {
+  const params = new URLSearchParams(location.search);
+  const block = params.get("block") || params.get("height");
+  const tx = params.get("tx") || params.get("tx_id");
+  const address = params.get("address");
+  const q = params.get("q");
+  if (block) return showBlock(block);
+  if (tx) return showTx(tx);
+  if (address) return showAccount(address);
+  if (q) return runSearch(q, false);
+}
+
+async function refreshAll() {
+  await Promise.all([loadStats(), loadBlocks(), loadReceipts()]);
+  document.getElementById("last-updated").textContent = `updated ${new Date().toLocaleTimeString()}`;
+}
+
+document.getElementById("search-form").addEventListener("submit", event => {
+  event.preventDefault();
+  runSearch(document.getElementById("search-input").value);
+});
+
+window.addEventListener("popstate", routeFromURL);
+
+refreshAll().then(routeFromURL);
+setInterval(refreshAll, REFRESH_MS);
+</script>
+</body>
+</html>

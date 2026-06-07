@@ -205,7 +205,67 @@ exactly the same thing for short UTF-8 messages.
 
 ---
 
-## 6. Known limitations / roadmap
+## 6. Sky Fang wallet-link automation
+
+Sky Fang's QSDM integration uses a link challenge minted inside the game:
+
+```text
+QSDM-LINK:<short-code>:<nonce>
+```
+
+The player-facing flow is the QSDM Hive deep-link path. Manual public-key and
+signature copy-paste is no longer the normal path:
+
+```text
+qsdm-hive://skyfang-link?challenge_url=<url>&submit_url=<url>&return_url=<url>
+```
+
+Current player flow:
+
+1. Player opens `https://skyfang.xyz/dashboard/qsdm` and signs in to Sky Fang.
+2. Player clicks **Confirm with QSDM Hive** on the Windows PC that has Hive
+   installed. Hive signs the Sky Fang challenge locally and posts
+   `{code, public_key, signature}` back to Sky Fang.
+
+The Android game can open the same Sky Fang page for status and handoff, but
+the wallet signature still happens in QSDM Hive on Windows because that is
+where the QSDM keystore lives. The flow stays on `skyfang.xyz`; the
+`qsdm.tech/wallet` page is no longer part of the normal player path.
+The legacy mobile entry point `https://skyfang.xyz/link-wallet` is kept as a
+compatibility redirect to `https://skyfang.xyz/dashboard/qsdm`.
+
+The in-game `/qsdmlink` command remains a shortcut that shows a short-lived
+Sky Fang confirmation URL:
+
+```text
+https://skyfang.xyz/api/qsdm/link-confirm?code=<short-code>
+```
+
+That page also shows **Confirm with QSDM Hive** and opens the
+`qsdm-hive://skyfang-link...` deep link.
+
+Why this is the best quick path:
+
+- QSDM Hive registers the `qsdm-hive://` protocol.
+- `qsdmcli wallet sign` already signs arbitrary messages with ML-DSA-87.
+- The private key stays in the local wallet/keystore; Sky Fang never sees it.
+- No Chrome Web Store review, no extension key custody, and no new browser
+  security model for v1.
+
+A browser extension can still be a phase-2 product, but it is more work:
+
+- It needs a secure extension keystore and unlock UX.
+- It needs ML-DSA-87 signing in WASM inside the extension.
+- It must mediate origin permissions for `skyfang.xyz` and `qsdm.tech`.
+- It requires packaging/signing/review and ongoing update management.
+
+The wallet page's manual Sign tab is a developer/emergency diagnostic fallback
+only. For players, install QSDM Hive and use the one-click Sky Fang confirmation
+page.
+
+---
+
+## 7. Known limitations / roadmap
 
 - The wallet page does not currently broadcast signed transactions; it
   produces the signature and leaves transport to the operator (curl,

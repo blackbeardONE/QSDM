@@ -233,6 +233,7 @@
     <nav aria-label="Primary">
       <ul>
         <li><a class="navlink" href="/">Home</a></li>
+        <li><a class="navlink" href="/explorer.html">Explorer</a></li>
         <li><a class="navlink" href="/chain.html">Chain</a></li>
         <li><a class="navlink" href="/validators.html">Validators</a></li>
         <li><a class="navlink" href="/download.html">Miner</a></li>
@@ -306,6 +307,33 @@
       3) The same keystore format is produced by the offline CLI: <code>qsdmcli
       wallet new</code>. If you'd rather not trust a webpage, use the CLI on a
       machine you control — the keystore opens here either way.
+    </p>
+  </section>
+
+  <section class="panel success">
+    <h2>Game account linking (Sky Fang)</h2>
+    <p>
+      QSDM is integrated into <strong>Sky Fang</strong> as an earn-only CELL
+      reward rail. The normal player flow uses <strong>QSDM Hive</strong>, not
+      manual public-key or signature copy-paste: open the Sky Fang QSDM page,
+      sign in, then click <strong>Confirm with QSDM Hive</strong> on the Windows
+      PC that has Hive installed.
+    </p>
+    <p>
+      Sky Fang opens <code>qsdm-hive://skyfang-link</code>. Hive shows the
+      exact link challenge, signs it locally with your QSDM ML-DSA-87 wallet,
+      and returns the proof to Sky Fang. Your private key never leaves Hive, and
+      Sky Fang only receives the public proof needed to bind the account. Android
+      players use the same Sky Fang page for status/handoff; the link no longer
+      redirects through this QSDM wallet page.
+    </p>
+    <div class="actions">
+      <a class="btn btn-primary" href="https://skyfang.xyz/download/qsdm-hive/windows" rel="noopener" target="_blank">Download QSDM Hive</a>
+      <a class="btn btn-ghost" href="https://skyfang.xyz/login?next=/dashboard/qsdm" rel="noopener" target="_blank">Open Sky Fang QSDM page</a>
+    </div>
+    <p style="margin: 12px 0 0; font-size: 13px; color: var(--muted)">
+      The Advanced &rarr; Sign message tab below is kept for developer and
+      emergency diagnostics. It is not the recommended Sky Fang player flow.
     </p>
   </section>
 

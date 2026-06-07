@@ -72,7 +72,6 @@ an operator-granted session:
 - `/api/v1/versions`
 - `/api/v1/wallet/balance`
 - `/api/v1/wallet/nonce`
-- `/api/v1/tokens/list`
 - `/api/v1/audit/summary`
 - `/api/v1/audit/items`
 - `/api/v1/audit/badge.svg`
@@ -167,15 +166,19 @@ back to a validator-side keypair. Replay protection comes from the
 per-address monotonic nonce — fetch the next acceptable value via
 `GET /api/v1/wallet/nonce` first.
 
-#### List tokens (public read)
+#### Native CELL coin metadata
 
-**GET** `/api/v1/tokens/list`
+QSDM's public ecosystem is currently **CELL-only**. Treat Cell
+(`CELL`) as the network's native coin, not as a secondary token. The
+public wallet/account surfaces are `/wallet/balance`,
+`/wallet/nonce`, `/receipts`, `/mining/blocks`, and
+`/status`.
 
-Returns the token catalogue: the canonical Cell coin (`main_cell`),
-its deprecated `main_coin` legacy alias (kept for pre-rebrand
-integrations through the Major Update deprecation window — same
-Cell coin on the wire), and any operator-registered secondary
-tokens.
+The codebase still contains early secondary-token scaffolding under
+`/api/v1/tokens/*`, but those routes are not part of the public
+explorer or Sky Fang integration surface. Do not build product flows
+or user messaging around secondary tokens until QSDM ships a real token
+standard, token balances, transfers, and explorer support.
 
 ### Transactions
 
@@ -317,8 +320,8 @@ clients that lose it).
 
 Default: **100 requests per client per minute**. Specific routes are
 pinned tighter in `pkg/api/security.go` — for example
-`/monitoring/ngc-challenge` is pinned at 15/min and
-`/tokens/list` at 60/min. `GET /api/v1/health` and `/api/v1/health/*`
+`/monitoring/ngc-challenge` is pinned at 15/min. `GET /api/v1/health`
+and `/api/v1/health/*`
 are exempt so probes are not throttled.
 
 Every response carries the standard limit headers:

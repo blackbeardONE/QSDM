@@ -29,6 +29,9 @@
           reach. Inherited the .audit-callout + Transparency footer
           strip in 35fe618 (family-parity upgrade).
     0.7   /validators.html — entry point for new validator operators.
+    0.65  /explorer.html — public block / tx / account explorer that
+          consumes the same /api/v1 transparency endpoints as the
+          chain status board, but adds search and detail views.
     0.6   /chain.html — live status board (refreshes every 10s; the
           machine-readable signal is in /api/v1/*).
     0.3   /.well-known/security.txt, /humans.txt — RFC 9116 / W3C
@@ -112,6 +115,13 @@
     <lastmod>2026-05-18</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.6</priority>
+  </url>
+
+  <url>
+    <loc>https://qsdm.tech/explorer.html</loc>
+    <lastmod>2026-06-07</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.65</priority>
   </url>
 
   <url>

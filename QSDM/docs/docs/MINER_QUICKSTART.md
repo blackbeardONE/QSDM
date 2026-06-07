@@ -915,9 +915,10 @@ mainnet (`api.qsdm.tech`). It will be revised as the picture changes.
   `AddBalance` operation. A balance query on the recipient after
   a "successful" mint POST always returned zero.
   v0.3.3 (Session 91) replaced the handler with **HTTP 410 Gone**
-  + a structured `migration` JSON block pointing callers to either
-  `/api/v1/wallet/send` (peer transfer — see §B.2 row 3) or
-  `/api/v1/tokens/mint` (named token mint — actually wired). The
+  + a structured `migration` JSON block pointing callers to CELL
+  peer-transfer routes. Secondary token minting exists only as early
+  scaffolding and is not part of the public QSDM ecosystem strategy.
+  The
   `qsdm_wallet_mint_total{result="gone"}` Prometheus counter
   surfaces any caller that still targets the removed endpoint.
 - **`/api/v1/wallet/balance`.** Read-only, public, returns the
