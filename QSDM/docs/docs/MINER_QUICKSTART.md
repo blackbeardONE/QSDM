@@ -1,5 +1,10 @@
 # MINER_QUICKSTART — Mine QSDM on mainnet (v2 NVIDIA-locked)
 
+> **Consumer path:** install QSDM Hive and run the QSDM Miner task there.
+> Hive manages the wallet, signed task loop, local status, and consumer mining
+> controls. This quickstart is the advanced/operator console path for
+> `qsdmminer-console`; QSDM no longer ships a separate consumer GUI miner.
+
 > **Status:** As of v0.3.2 the live QSDM chain at `https://api.qsdm.tech`
 > runs **v2 only** at consensus (`FORK_V2_HEIGHT = 0`, see
 > [`MINING_PROTOCOL_V2.md §10.4`](./MINING_PROTOCOL_V2.md) and the
@@ -27,12 +32,12 @@
 > Both miner binaries refuse to start a v1 mining loop against a
 > v2-active validator unless `--allow-v1` is explicitly passed.
 
-This document walks a home operator through:
+This document walks an advanced home operator through:
 
 1. [Pre-requisites](#1-requirements) — what hardware, software, and on-chain state you need before you start.
 2. [Reward address](#2-reward-address) — generate a self-custody QSDM keystore.
 3. [HMAC key + enrollment](#3-hmac-key--on-chain-enrollment) — register your `(node_id, gpu_uuid, hmac_key)` on chain and bond the 10 CELL stake.
-4. [Mine](#4-mine) — start `qsdmminer-console --protocol=v2` and watch the live panel.
+4. [Mine](#4-mine) — start `qsdmminer-console --protocol=v2` and watch the terminal panel.
 5. [Lifecycle commands](#5-lifecycle-commands) — unenroll, slash, browse the registry, stream events.
 6. [Troubleshooting](#6-troubleshooting) and [Reporting bugs](#7-reporting-bugs).
 7. [Appendix A](#appendix-a-v1-audit--local-devnet-builds) — building `cmd/qsdmminer` for v1 audit / local-devnet only.

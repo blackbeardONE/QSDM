@@ -80,7 +80,7 @@ $ErrorActionPreference = 'Stop'
 # components into Blackbeard. The check runs against
 # MANIFEST.publish.json (or the live MANIFEST.json if no
 # publish copy exists), and the upload aborts on any hit.
-$PrivateComponents = @('qsdm-detect')
+$PrivateComponents = @('qsdm-detect', 'qsdmminer-gui')
 
 $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $DeployDir   = Split-Path -Parent $ScriptDir

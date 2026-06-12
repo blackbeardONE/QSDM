@@ -1,6 +1,6 @@
 # Runbook — Migrating mining rewards off a friendly-name address
 
-> **Audience:** operators whose miner GUI / CLI was bootstrapped against a
+> **Audience:** operators whose miner CLI / service was bootstrapped against a
 > non-hex "friendly name" reward address (e.g. `qsdm1miner-rtx3050`).
 > Symptom: `qsdm.tech/wallet.html` keeps showing **0 CELL** even after days
 > of mining, but `GET /api/v1/mining/account?address=<friendly-name>` shows
@@ -90,17 +90,17 @@ address.
   --gpu-arch=ada
 ```
 
-### `qsdmminer-gui.exe` (Windows GUI)
+### QSDM Hive task miner
 
-The GUI exposes the same `address` field under its **Settings** panel.
-Paste the new 64-hex address, click **Save**, restart the miner.
+For consumer setups, use QSDM Hive as the task surface and wallet
+manager. Hive starts the QSDM Miner task with the active QSDM wallet
+as the reward address. If the miner service was previously installed
+with a friendly-name reward address, update the service config at
+`%USERPROFILE%\.qsdm\miner.toml` so `reward_address` is the new
+64-hex wallet address, then restart the `QSDMMiner` service.
 
-If the GUI also persists the address in a config file, find it in:
-- `%APPDATA%\qsdmminer\config.toml` (preferred location)
-- next to the `qsdmminer-gui.exe` binary as `qsdmminer-gui.ini`
-- the registry under `HKCU\Software\QSDM\Miner`
-
-Edit `address` to the new 64-hex value and restart.
+The legacy `qsdmminer-gui.exe` is no longer a consumer path. Do not use
+it for new setups; use QSDM Hive or `qsdmminer-console`.
 
 ## 4. Verify forward credit
 

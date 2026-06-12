@@ -5,24 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>QSDM Wallet — Self-Custody, Quantum-Secure (ML-DSA-87)</title>
 <meta name="description" content="Generate a self-custody QSDM wallet in your browser. ML-DSA-87 (FIPS 204) keypair generated entirely client-side; private key never leaves this tab. PBKDF2-SHA256 (600k iterations) + AES-256-GCM passphrase-encrypted keystore, byte-compatible with `qsdmcli wallet new`. Plus a read-only public-address balance lookup that queries api.qsdm.tech." />
-<meta name="theme-color" content="#0b1220" />
+<meta name="theme-color" content="#07171d" />
 <meta property="og:title" content="QSDM Wallet — Self-Custody, Quantum-Secure" />
 <meta property="og:description" content="Generate a QSDM (Cell / CELL) reward address in your browser. ML-DSA-87 keys, AES-256-GCM encrypted keystore, zero server-side custody." />
 <meta property="og:type" content="website" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b1220'/%3E%3Cpath d='M12 32l10-10 10 10-10 10z' fill='%2376b900'/%3E%3Cpath d='M32 20l10 12-10 12-10-12z' fill='%2300d1b2' opacity='.85'/%3E%3C/svg%3E" />
+<link rel="icon" href="/assets/qsdm-hive-icon.png" />
 <style>
   :root {
-    --bg: #0a101d;
-    --bg-2: #0f172a;
-    --panel: #111a2e;
-    --panel-2: #152238;
-    --border: #1f2a44;
-    --text: #e6edf7;
-    --text-2: #9fb0c9;
-    --muted: #6d7e99;
-    --accent: #76b900;
-    --accent-2: #00d1b2;
-    --accent-3: #6ea8ff;
+    --bg: #07171d;
+    --bg-2: #0a252d;
+    --panel: #102f38;
+    --panel-2: #173d48;
+    --border: rgba(142, 220, 224, .18);
+    --text: #f4fbfd;
+    --text-2: #adc6cc;
+    --muted: #7fa3aa;
+    --accent: #d6b75f;
+    --accent-2: #8edce0;
+    --accent-3: #8edce0;
     --danger: #ff6b6b;
     --success: #3ddc97;
     --warning: #e8c547;
@@ -38,8 +38,8 @@
     font-family: var(--sans);
     color: var(--text);
     background:
-      radial-gradient(1200px 600px at 10% -10%, rgba(118,185,0,.10), transparent 60%),
-      radial-gradient(900px 500px at 100% 0%, rgba(0,209,178,.10), transparent 60%),
+      radial-gradient(1200px 600px at 10% -10%, rgba(214,183,95,.10), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, rgba(142,220,224,.10), transparent 60%),
       linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
     min-height: 100vh;
     line-height: 1.55;
@@ -47,14 +47,14 @@
     text-rendering: optimizeLegibility;
   }
   a { color: var(--accent-3); text-decoration: none; }
-  a:hover { color: #a7c5ff; text-decoration: underline; }
+  a:hover { color: #c1f3f5; text-decoration: underline; }
   code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: .9em; }
 
   .container { max-width: 980px; margin: 0 auto; padding: 0 24px; }
   .nav {
     position: sticky; top: 0; z-index: 20;
     backdrop-filter: saturate(140%) blur(10px);
-    background: rgba(10,16,29,.72);
+    background: rgba(7,23,29,.72);
     border-bottom: 1px solid var(--border);
   }
   .nav-inner {
@@ -74,7 +74,7 @@
     display: inline-flex; align-items: center; gap: 8px;
     padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px;
     color: var(--accent-2); font-size: 12px; font-weight: 600; letter-spacing: .8px; text-transform: uppercase;
-    background: rgba(0,209,178,.06);
+    background: rgba(142,220,224,.06);
   }
   h1 {
     font-size: clamp(28px, 4.4vw, 44px); line-height: 1.1; margin: 14px 0 10px;
@@ -96,7 +96,7 @@
     margin: 0 0 6px; font-size: 22px; letter-spacing: -0.01em;
   }
   section.panel p { color: var(--text-2); margin: 0 0 16px; }
-  section.panel.warn { border-color: rgba(232,197,71,.4); background: linear-gradient(180deg, rgba(232,197,71,.06), rgba(15,23,42,.7)); }
+  section.panel.warn { border-color: rgba(232,197,71,.4); background: linear-gradient(180deg, rgba(232,197,71,.06), rgba(10,37,45,.7)); }
   section.panel.warn h2 { color: var(--warning); }
   section.panel.success { border-color: rgba(61,220,151,.4); }
   section.panel.success h2 { color: var(--success); }
@@ -124,10 +124,10 @@
     cursor: pointer;
     transition: transform .15s ease, background .15s ease, border-color .15s ease;
   }
-  .btn:hover:not(:disabled) { background: var(--panel-2); border-color: #2b3a5e; }
+  .btn:hover:not(:disabled) { background: var(--panel-2); border-color: rgba(142,220,224,.32); }
   .btn:disabled { opacity: .4; cursor: not-allowed; }
-  .btn-primary { background: var(--accent); color: #0a1400; border-color: #5d9600; }
-  .btn-primary:hover:not(:disabled) { background: #85cd08; color: #0a1400; }
+  .btn-primary { background: var(--accent); color: #061216; border-color: rgba(214, 183, 95, .55); }
+  .btn-primary:hover:not(:disabled) { background: #e5c76d; color: #061216; }
   .btn-ghost { background: transparent; }
   .btn-danger { background: rgba(255,107,107,.08); color: var(--danger); border-color: rgba(255,107,107,.35); }
 
@@ -196,7 +196,7 @@
     display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
     padding: 14px 18px; margin: 20px 0;
     border: 1px solid var(--border); border-left: 3px solid var(--accent-3);
-    background: rgba(110,168,255,0.05);
+    background: rgba(142,220,224,0.05);
     border-radius: 10px;
   }
   .audit-callout .audit-callout-badge {
@@ -224,9 +224,9 @@
   <div class="container nav-inner">
     <a class="brand" href="/">
       <svg viewBox="0 0 64 64" aria-hidden="true">
-        <rect width="64" height="64" rx="12" fill="#0b1220"></rect>
-        <path d="M12 32l10-10 10 10-10 10z" fill="#76b900"></path>
-        <path d="M32 20l10 12-10 12-10-12z" fill="#00d1b2" opacity=".85"></path>
+        <rect width="64" height="64" rx="12" fill="#07171d"></rect>
+        <path d="M12 32l10-10 10 10-10 10z" fill="#d6b75f"></path>
+        <path d="M32 20l10 12-10 12-10-12z" fill="#8edce0" opacity=".85"></path>
       </svg>
       <span>QSDM</span>
     </a>
@@ -236,7 +236,7 @@
         <li><a class="navlink" href="/explorer.html">Explorer</a></li>
         <li><a class="navlink" href="/chain.html">Chain</a></li>
         <li><a class="navlink" href="/validators.html">Validators</a></li>
-        <li><a class="navlink" href="/download.html">Miner</a></li>
+        <li><a class="navlink" href="/download.html">Download Hive</a></li>
         <li><a class="navlink current" href="/wallet.html">Wallet</a></li>
         <li><a class="navlink" href="/audit.html">Audit</a></li>
         <li><a class="navlink" href="/trust.html">Trust</a></li>
@@ -797,11 +797,12 @@
     <h2>Or do it from the CLI</h2>
     <p>
       Identical keystore format, but offline. Useful for cold-storage flows where
-      you don't want even a static webpage in the trust chain. The mining step
-      uses <code>qsdmminer-console --protocol=v2</code> against the live
-      NVIDIA-locked mainnet; the legacy CPU <code>qsdmminer</code> binary is no
-      longer a public release artefact (mainnet rejects its v1 proofs at
-      consensus &mdash; see
+      you don't want even a static webpage in the trust chain. Consumers should
+      import the keystore into QSDM Hive and run eligible tasks there. Advanced
+      operators can use <code>qsdmminer-console --protocol=v2</code> against the
+      live NVIDIA-locked mainnet; no separate consumer GUI miner is shipped, and
+      the legacy CPU <code>qsdmminer</code> binary is no longer a public release
+      artefact (mainnet rejects its v1 proofs at consensus &mdash; see
       <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">MINER_QUICKSTART</a>).
     </p>
     <pre style="background:rgba(0,0,0,.35);padding:14px 16px;border-radius:var(--radius-sm);overflow-x:auto;font-family:var(--mono);font-size:13px;color:var(--text);margin:0"># Build once

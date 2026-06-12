@@ -76,7 +76,7 @@ strengthened.
   `esm`, `tsdx`, etc.) on first-publish, so the package was rebranded under
   the conventional `<project>-sdk` suffix. No other identifiers change: the
   on-chain brand is still QSDM, the GitHub repo is still `blackbeardONE/QSDM`,
-  the binaries are still `qsdm` / `qsdmminer-gui`, the import-time class is
+  the binaries are still `qsdm` / `qsdmminer-console`, the import-time class is
   still `QSDMClient`. Only the `npm install <name>` and `require()` strings
   pick up the `-sdk` suffix. The provenance attestation from the rejected
   publish attempt is preserved on Rekor at logIndex `1506312160` for audit.

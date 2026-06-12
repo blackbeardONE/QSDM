@@ -1,4 +1,4 @@
-# build_release.ps1 — produce signed-ready consumer miner releases.
+# build_release.ps1 — produce signed-ready console miner releases.
 #
 # Builds qsdmminer for the supported (os, arch) tuples and writes the
 # artifacts plus a SHA256SUMS.txt under release/. Run from the repo
@@ -7,9 +7,9 @@
 # does the right thing.
 #
 # The output binary is named `qsdmminer` (not `qsdmminer-console`) to
-# match the consumer-facing brand. The Go module command we build is
-# still cmd/qsdmminer-console — that's the canonical source for the
-# user-friendly miner with the wizard, live panel, --idle-only, and
+# keep the operator-facing command short. The Go module command we
+# build is still cmd/qsdmminer-console — that's the canonical source
+# for the console miner with the wizard, live panel, --idle-only, and
 # --service mode wired in. cmd/qsdmminer (no suffix) stays in tree as
 # the audit-only minimal reference miner.
 #
@@ -121,7 +121,7 @@ if ($Platforms) {
 }
 
 # Each entry of $Components describes what we build per platform.
-# By default we ship all three: the consumer miner, the cli wallet
+# By default we ship all three: the console miner, the cli wallet
 # tool, and the home attester. -SkipCli and -SkipAttester let an
 # operator publish a slimmer release without rebuilding the world.
 #

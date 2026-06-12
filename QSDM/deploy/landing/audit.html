@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Public audit — QSDM · Cell (CELL)</title>
 <meta name="description" content="QSDM public audit checklist. Live score, evidence provenance breakdown, and the four wall-clock-blocked rows with their engagement-ready wrapper artefacts. Sourced from /api/v1/audit/summary and /api/v1/audit/items — the same JSON the SDK and dashboard tile consume." />
-<meta name="theme-color" content="#0b1220" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b1220'/%3E%3Cpath d='M12 32l10-10 10 10-10 10z' fill='%2376b900'/%3E%3Cpath d='M32 20l10 12-10 12-10-12z' fill='%2300d1b2' opacity='.85'/%3E%3C/svg%3E" />
+<meta name="theme-color" content="#07171d" />
+<link rel="icon" href="/assets/qsdm-hive-icon.png" />
 <!--
   JSON-LD structured data — schema.org Dataset. Registers the QSDM
   public audit checklist with crawlers (Google, Bing, etc.) as a
@@ -166,16 +166,16 @@
    *     surface; mutation happens in the source tree via PR.
    */
   :root {
-    --bg: #0a101d;
-    --panel: #111a2e;
-    --panel-2: #152238;
-    --border: #1f2a44;
-    --text: #e6edf7;
-    --text-2: #9fb0c9;
-    --muted: #6d7e99;
-    --accent: #76b900;
-    --accent-2: #00d1b2;
-    --accent-3: #6ea8ff;
+    --bg: #07171d;
+    --panel: #102f38;
+    --panel-2: #173d48;
+    --border: rgba(142, 220, 224, .18);
+    --text: #f4fbfd;
+    --text-2: #adc6cc;
+    --muted: #7fa3aa;
+    --accent: #d6b75f;
+    --accent-2: #8edce0;
+    --accent-3: #8edce0;
     --danger: #ff6b6b;
     --warn: #ffb454;
     --success: #3ddc97;
@@ -235,7 +235,7 @@
   }
   .pill.severity-critical { color: #ffb1b1; border-color: #4a1f2a; background: rgba(255,107,107,0.07); }
   .pill.severity-high     { color: #ffcf9c; border-color: #4a311a; background: rgba(255,180,84,0.07); }
-  .pill.severity-medium   { color: #cfe4ff; border-color: #1f3252; background: rgba(110,168,255,0.07); }
+  .pill.severity-medium   { color: #d7f5f6; border-color: rgba(142,220,224,.28); background: rgba(142,220,224,0.07); }
   .pill.severity-low      { color: var(--text-2); }
   .pill.severity-info     { color: var(--muted); }
   .pill.status-passed     { color: #aef3ce; border-color: #1f4633; background: rgba(61,220,151,0.07); }
@@ -258,12 +258,12 @@
     border: 1px solid var(--border); background: rgba(255,255,255,0.02);
     color: var(--text-2); font-weight: 500;
   }
-  .chip:hover { color: var(--text); border-color: #2f3f60; }
+  .chip:hover { color: var(--text); border-color: rgba(142,220,224,.34); }
   .chip.active {
-    background: rgba(118,185,0,0.10); border-color: #3a5f1c; color: #d3ee9b;
+    background: rgba(214,183,95,0.10); border-color: rgba(214,183,95,.45); color: #f0dc92;
   }
   .chip .count { font-family: var(--mono); color: var(--muted); font-size: 11px; }
-  .chip.active .count { color: #b9e167; }
+  .chip.active .count { color: #d6b75f; }
 
   /* items table */
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -274,8 +274,8 @@
     background: var(--panel); position: sticky; top: 0;
   }
   tr.row { transition: background-color 0.08s ease; }
-  tr.row:hover { background: rgba(110,168,255,0.04); }
-  tr.row.open { background: rgba(110,168,255,0.06); }
+  tr.row:hover { background: rgba(142,220,224,0.04); }
+  tr.row.open { background: rgba(142,220,224,0.06); }
   tr.row td { cursor: pointer; }
   /* scroll-margin-top is the offset applied when scrollIntoView lands
    * on this element, accounting for the sticky thead so a deep-linked
@@ -291,9 +291,9 @@
    * does NOT reflow the table (transform / width changes would
    * cause the sticky thead to repaint and look janky). */
   @keyframes audit-row-flash {
-    0%   { background: rgba(110,168,255,0.30); box-shadow: inset 0 0 0 2px var(--accent-3); }
-    60%  { background: rgba(110,168,255,0.20); box-shadow: inset 0 0 0 2px var(--accent-3); }
-    100% { background: rgba(110,168,255,0.06); box-shadow: inset 0 0 0 0   transparent; }
+    0%   { background: rgba(142,220,224,0.30); box-shadow: inset 0 0 0 2px var(--accent-3); }
+    60%  { background: rgba(142,220,224,0.20); box-shadow: inset 0 0 0 2px var(--accent-3); }
+    100% { background: rgba(142,220,224,0.06); box-shadow: inset 0 0 0 0   transparent; }
   }
   tr.row.flash { animation: audit-row-flash 2200ms ease-out 1; }
   tr.detail td { padding: 0; cursor: default; }
@@ -317,7 +317,7 @@
 
   .scope-note {
     padding: 12px 16px; border-left: 3px solid var(--accent);
-    background: rgba(118,185,0,0.04); color: var(--text-2); font-size: 13px; line-height: 1.55;
+    background: rgba(214,183,95,0.04); color: var(--text-2); font-size: 13px; line-height: 1.55;
     margin: 20px 0;
   }
   .scope-note strong { color: var(--text); }
@@ -353,8 +353,8 @@
    */
   .cat-clear-row { margin: 0 0 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .cat-clear-row .label { color: var(--text-2); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-right: 4px; }
-  .cat-clear-row .chip.cat-clear { background: rgba(118,185,0,0.10); border-color: #3a5f1c; color: #d3ee9b; }
-  .cat-clear-row .chip.cat-clear:hover { background: rgba(118,185,0,0.18); }
+  .cat-clear-row .chip.cat-clear { background: rgba(214,183,95,0.10); border-color: rgba(214,183,95,.45); color: #f0dc92; }
+  .cat-clear-row .chip.cat-clear:hover { background: rgba(214,183,95,0.18); }
   .cat-clear-row .chip.cat-clear-inactive {
     background: rgba(255,255,255,0.02);
     border-color: var(--border);
@@ -389,12 +389,12 @@
   }
   .cat-card:hover {
     background: var(--panel-2);
-    border-color: #2f3f60;
+    border-color: rgba(142,220,224,.34);
     border-left-color: var(--accent-3);
   }
   .cat-card.active {
     background: var(--panel-2);
-    border-color: #3a5f1c;
+    border-color: rgba(214,183,95,.45);
     border-left-color: var(--accent);
   }
   .cat-card.dim { opacity: 0.55; }
@@ -460,9 +460,9 @@
   <div class="container">
     <a class="brand" href="/">
       <svg viewBox="0 0 64 64" aria-hidden="true">
-        <rect width="64" height="64" rx="12" fill="#0b1220"/>
-        <path d="M12 32l10-10 10 10-10 10z" fill="#76b900"/>
-        <path d="M32 20l10 12-10 12-10-12z" fill="#00d1b2" opacity=".85"/>
+        <rect width="64" height="64" rx="12" fill="#07171d"/>
+        <path d="M12 32l10-10 10 10-10 10z" fill="#d6b75f"/>
+        <path d="M32 20l10 12-10 12-10-12z" fill="#8edce0" opacity=".85"/>
       </svg>
       <span>QSDM<span style="color:var(--accent)"> · CELL</span></span>
     </a>

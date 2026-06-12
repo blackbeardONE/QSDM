@@ -46,6 +46,94 @@
       ],
     },
     {
+      title: "Hive + Integrations",
+      items: [
+        {
+          slug: "qsdm-hive",
+          title: "Hive app guide",
+          repoPath: DOCS_PREFIX_REPO + "/QSDM_HIVE.md",
+          badge: "new",
+          inlineMarkdown: [
+            "# QSDM Hive",
+            "",
+            "QSDM Hive is the Windows client for CELL wallets, signed QSDM tasks, integrations, NVIDIA-only protocol mining, and CPU shared edge participation.",
+            "",
+            "## Install path",
+            "",
+            "Hive is the public release path for most users. It is the recommended way to use CELL wallets, run signed tasks, link integrations, and start eligible mining work. The standalone console miner remains an advanced operator artifact. QSDM does not ship a separate consumer GUI miner.",
+            "",
+            "1. Install QSDM Hive.",
+            "2. Create or import a QSDM wallet.",
+            "3. Back up the QSDM keystore JSON and passphrase.",
+            "4. Run CELL tasks, integrations, or qualifying mining work.",
+            "",
+            "## Wallet backup",
+            "",
+            "QSDM CELL wallet recovery uses the **QSDM keystore JSON plus its passphrase**. Hive profile phrases, when present, restore only local Hive profile data. They are not CELL wallet recovery phrases.",
+            "",
+            "## Tasks in Hive",
+            "",
+            "- **QSDM Miner** is NVIDIA-only protocol mining for supported GPUs. Minimum path: NVIDIA Turing or newer, CUDA compute capability 7.5+, working NVIDIA drivers/nvidia-smi, and a funded QSDM signer.",
+            "- **QSDM Edge Worker** enables CPU shared edge participation for users without NVIDIA GPUs.",
+            "- **Sky Fang - MMORPG** verifies that a Sky Fang account is linked to the active QSDM wallet before reward proofs are submitted.",
+            "",
+            "## Console mining",
+            "",
+            "Advanced operators can run `qsdmminer-console` directly when they need a terminal-first service workflow. Consumer setups should use Hive. The retired GUI miner is not a public release path.",
+            "",
+            "## Networking",
+            "",
+            "Hive uses local services for the desktop app and node monitor. Public reachability should go through the QSDM home gateway or network tunnel unless an operator intentionally exposes validator services.",
+            "",
+            "## Related pages",
+            "",
+            "- [Download QSDM Hive](/download.html)",
+            "- [CELL tokenomics](#/cell-tokenomics)",
+            "- [Sky Fang official website](https://skyfang.xyz/)",
+            "- [Sky Fang integration notes](https://skyfang.xyz/docs)",
+            "- [Miner quickstart](#/miner-quickstart)",
+            "- [Wallet explanation](#/wallet-explanation)"
+          ].join("\n")
+        },
+        {
+          slug: "sky-fang-online",
+          title: "Sky Fang - MMORPG",
+          repoPath: DOCS_PREFIX_REPO + "/SKY_FANG_ONLINE.md",
+          badge: "new",
+          inlineMarkdown: [
+            "# Sky Fang - MMORPG",
+            "",
+            "Sky Fang Online is a play-to-earn MMORPG integration powered by QSDM and CELL.",
+            "",
+            "## User flow",
+            "",
+            "1. Open Sky Fang at <https://skyfang.xyz/>.",
+            "2. Link the active QSDM wallet from QSDM Hive.",
+            "3. Return to Hive and run the **QSDM Sky Fang Link** task.",
+            "",
+            "Hive should verify the active wallet against Sky Fang before submitting the one-time reward proof. If the wallet is not linked, the task must stay blocked and show the wallet address that needs linking.",
+            "",
+            "## What this proves",
+            "",
+            "- A game account can bind to a QSDM wallet.",
+            "- A Hive task can verify that binding before reward submission.",
+            "- CELL can be used as the reward asset for integrations.",
+            "",
+            "## Operational notes",
+            "",
+            "Sky Fang link status is served by the Sky Fang site. If the site returns 503, Hive should treat the proof as not verifiable instead of granting rewards.",
+            "",
+            "## Related pages",
+            "",
+            "- [QSDM Hive guide](#/qsdm-hive)",
+            "- [Sky Fang official website](https://skyfang.xyz/)",
+            "- [Sky Fang integration notes](https://skyfang.xyz/docs)",
+            "- [CELL tokenomics](#/cell-tokenomics)"
+          ].join("\n")
+        },
+      ],
+    },
+    {
       title: "Wallet (self-custody)",
       items: [
         { slug: "web-wallet",         title: "Web wallet",                       repoPath: DOCS_PREFIX_REPO + "/WEB_WALLET.md" },
@@ -271,6 +359,9 @@
     // Pure anchor — keep
     if (href.charAt(0) === "#") return { href: href, external: false };
 
+    // Site-root local link — keep
+    if (href.charAt(0) === "/") return { href: href, external: false };
+
     // Absolute URL
     if (/^https?:\/\//i.test(href) || /^mailto:/i.test(href)) {
       return { href: href, external: true };
@@ -360,10 +451,12 @@
       + '<h1>QSDM knowledge base</h1>'
       + '<p>Quickstarts, runbooks, protocol design, and reference for the '
       + '<strong>Quantum-Secure Dynamic Mesh Ledger</strong>. Everything you '
-      + 'need to run a node, mine on an RTX, self-custody CELL, or operate a validator.</p>'
+      + 'need to use QSDM Hive, self-custody CELL, run integrations, mine on NVIDIA hardware, join CPU shared edge tasks, or operate a validator.</p>'
       + '<div class="welcome-cards">'
       + cardHtml("quick-start",        "Quick start",        "Get a local node + wallet running in 5 minutes.")
-      + cardHtml("miner-quickstart",   "Mine on NVIDIA",     "Stake 10 CELL, start the audit-packet miner, earn rewards.")
+      + cardHtml("qsdm-hive",          "QSDM Hive",          "Windows client for CELL wallets, tasks, integrations, and mining paths.")
+      + cardHtml("sky-fang-online",    "Sky Fang - MMORPG",  "Play-to-earn MMORPG integration powered by QSDM and CELL.")
+      + cardHtml("miner-quickstart",   "Mine on NVIDIA",     "Run the optional miner task if your GPU and signer qualify.")
       + cardHtml("validator-quickstart","Run a validator",   "CPU-only validator, attestation sidecars, NGC submission.")
       + cardHtml("web-wallet",         "Web wallet",         "ML-DSA-87 self-custody in the browser, no extension.")
       + cardHtml("api-reference",      "API reference",      "Public HTTP endpoints with auth + replay semantics.")
@@ -388,6 +481,19 @@
     setActiveNav(item.slug);
     updateEditLink(item);
     document.title = item.title + " — QSDM Docs";
+
+    if (item.inlineMarkdown) {
+      var envInline = { repoPath: item.repoPath || "" };
+      setContent(md.render(item.inlineMarkdown, envInline));
+      enhanceCodeBlocks();
+      if (anchor) {
+        var inlineTarget = document.getElementById(anchor);
+        if (inlineTarget) inlineTarget.scrollIntoView({ behavior: "instant", block: "start" });
+      } else {
+        window.scrollTo(0, 0);
+      }
+      return;
+    }
 
     var url = RAW_BASE + encRepoPath(item.repoPath);
     fetch(url, { cache: "no-cache" })

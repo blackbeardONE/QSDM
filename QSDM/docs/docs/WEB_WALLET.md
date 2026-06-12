@@ -166,13 +166,16 @@ A QSDM operator (you, on `blackbeardONE/QSDM`) ships the wallet by:
 
 ## 5. Practical recipes
 
-### 5a. Generate an address and pipe it into a miner
+### 5a. Generate an address for Hive or the console miner
 
 ```bash
 # CLI path — quietest, scriptable
 ./qsdmcli wallet new --passphrase-file ./pass.txt --out ~/.qsdm/wallet.json
 ADDR="$(./qsdmcli wallet show --in ~/.qsdm/wallet.json | awk '/^address/{print $2}')"
-./qsdmminer --validator=https://api.qsdm.tech --address="$ADDR" --batch-count=1
+
+# Consumer path: import the keystore JSON in QSDM Hive and run eligible tasks.
+# Advanced/operator path: use qsdmminer-console with a v2 NVIDIA enrollment.
+./qsdmminer-console --protocol=v2 --validator=https://api.qsdm.tech --address="$ADDR"
 ```
 
 ### 5b. Read an address out of a keystore without revealing the private key

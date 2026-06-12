@@ -3,29 +3,28 @@
  * Three-column layout on desktop (sidebar | content | optional outline),
  * collapses to single-column on mobile with a slide-in sidebar.
  * Visual language matches the QSDM landing page:
- *   --accent  = NVIDIA green (#76b900)
- *   --accent-2= QSDM teal   (#00d1b2)
- *   dark blue background, slate panels, cool-gray copy.
+ *   corporate dark teal background, restrained gold accents,
+ *   cool cyan links, and compact documentation panels.
  */
 
 :root {
-  --bg: #0a101d;
-  --bg-2: #0f172a;
-  --panel: #0e1729;
-  --panel-2: #131e36;
-  --border: #1f2a44;
-  --border-2: #283454;
-  --text: #e6edf7;
-  --text-2: #b8c4d8;
-  --muted: #7d8aa4;
-  --accent: #76b900;
-  --accent-2: #00d1b2;
-  --accent-3: #6ea8ff;
-  --code-bg: #0a1224;
-  --code-fg: #d9e2f1;
+  --bg: #07171d;
+  --bg-2: #0a252d;
+  --panel: #102f38;
+  --panel-2: #173d48;
+  --border: rgba(203, 232, 235, 0.22);
+  --border-2: rgba(203, 232, 235, 0.34);
+  --text: #f4fbfd;
+  --text-2: #d8eff2;
+  --muted: #adc6cc;
+  --accent: #d6b75f;
+  --accent-2: #8edce0;
+  --accent-3: #8edce0;
+  --code-bg: #061116;
+  --code-fg: #e5f4f6;
   --radius: 10px;
   --radius-sm: 6px;
-  --header-h: 56px;
+  --header-h: 72px;
   --sidebar-w: 280px;
   --maxw-content: 920px;
 }
@@ -35,7 +34,9 @@
 html, body {
   margin: 0;
   padding: 0;
-  background: var(--bg);
+  background:
+    linear-gradient(180deg, rgba(7, 23, 29, 0.16), rgba(7, 23, 29, 0.96)),
+    linear-gradient(135deg, #061116 0%, var(--bg) 44%, #0b3440 100%);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Inter", Roboto, Helvetica, Arial, sans-serif;
   font-size: 15.5px;
@@ -49,7 +50,7 @@ a:hover { color: var(--accent-2); text-decoration: underline; }
 
 .skip-link {
   position: absolute; left: -9999px;
-  background: var(--accent); color: #0b1220;
+  background: var(--accent); color: #061116;
   padding: 8px 12px; border-radius: var(--radius-sm);
   z-index: 1000; font-weight: 600;
 }
@@ -60,9 +61,9 @@ a:hover { color: var(--accent-2); text-decoration: underline; }
 .docs-header {
   position: sticky; top: 0; z-index: 50;
   height: var(--header-h);
-  background: rgba(10, 16, 29, 0.92);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(6, 17, 22, 0.86);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--border);
 }
 .docs-header-inner {
@@ -77,12 +78,17 @@ a:hover { color: var(--accent-2); text-decoration: underline; }
   flex-shrink: 0;
 }
 .docs-brand:hover { text-decoration: none; }
+.docs-brand-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+}
 .docs-brand-text strong { color: var(--text); letter-spacing: .02em; }
 .docs-brand-text em { color: var(--muted); font-style: normal; margin-left: 4px; font-weight: 500; }
 .docs-search-wrap { flex: 1; display: flex; justify-content: center; }
 #docsSearch {
   width: 100%; max-width: 380px;
-  background: var(--panel); color: var(--text);
+  background: rgba(16, 47, 56, 0.86); color: var(--text);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 7px 12px; font-size: 14px;
@@ -93,12 +99,12 @@ a:hover { color: var(--accent-2); text-decoration: underline; }
 .docs-header-right { display: flex; align-items: center; gap: 12px; }
 .docs-pill {
   display: inline-flex; align-items: center; gap: 6px;
-  background: var(--panel); border: 1px solid var(--border-2);
+  background: rgba(16, 47, 56, 0.86); border: 1px solid var(--border-2);
   border-radius: 999px; padding: 4px 10px; font-size: 12px;
   color: var(--text-2); font-weight: 500; text-decoration: none;
 }
 .docs-pill:hover { border-color: var(--accent-2); color: var(--text); text-decoration: none; }
-.docs-pill .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.docs-pill .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #67d69b; }
 .docs-link { font-size: 14px; color: var(--text-2); }
 .docs-link:hover { color: var(--text); text-decoration: none; }
 .docs-sidebar-toggle {
@@ -125,7 +131,7 @@ a:hover { color: var(--accent-2); text-decoration: underline; }
   align-self: start;
   height: calc(100vh - var(--header-h));
   overflow-y: auto;
-  background: var(--bg-2);
+  background: rgba(10, 37, 45, 0.86);
   border-right: 1px solid var(--border);
   padding: 18px 8px 28px;
   scrollbar-width: thin;
@@ -159,20 +165,20 @@ a:hover { color: var(--accent-2); text-decoration: underline; }
   line-height: 1.4;
 }
 .nav-item:hover {
-  background: var(--panel);
+  background: rgba(16, 47, 56, 0.86);
   color: var(--text);
   text-decoration: none;
 }
 .nav-item.active {
-  background: var(--panel-2);
+  background: rgba(23, 61, 72, 0.92);
   color: var(--text);
   font-weight: 600;
-  border-left: 2px solid var(--accent-2);
+  border-left: 2px solid var(--accent);
   padding-left: 12px;
 }
 .nav-item .badge {
   display: inline-block;
-  background: var(--panel-2);
+  background: rgba(23, 61, 72, 0.92);
   color: var(--accent);
   border-radius: 999px;
   font-size: 10px;
@@ -200,7 +206,7 @@ a:hover { color: var(--accent-2); text-decoration: underline; }
 
 .docs-main {
   display: flex; flex-direction: column;
-  padding: 36px 40px 80px;
+  padding: 42px 40px 80px;
   min-width: 0;
 }
 .markdown-body {
@@ -248,8 +254,8 @@ a:hover { color: var(--accent-2); text-decoration: underline; }
 .markdown-body blockquote {
   margin: 14px 0;
   padding: 10px 14px;
-  background: var(--panel);
-  border-left: 3px solid var(--accent-2);
+  background: rgba(16, 47, 56, 0.86);
+  border-left: 3px solid var(--accent);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   color: var(--text-2);
 }
