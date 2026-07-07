@@ -20,6 +20,8 @@ package chain
 // stay in sync with the underlying EnrollmentApplier tests.
 
 import (
+	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -45,6 +47,21 @@ func awareFixture(t *testing.T, aliceCELL float64, heightFn func() uint64) (*Enr
 		aware.SetHeightFn(heightFn)
 	}
 	return aware, accounts, ea
+}
+
+func taskActionTx(t *testing.T, action TaskAction) *mempool.Tx {
+	t.Helper()
+	raw, err := json.Marshal(action)
+	if err != nil {
+		t.Fatalf("marshal task action: %v", err)
+	}
+	return &mempool.Tx{
+		ID:         action.ID,
+		Sender:     action.Sender,
+		Nonce:      action.Nonce,
+		ContractID: TaskContractID,
+		Payload:    raw,
+	}
 }
 
 func TestNewEnrollmentAwareApplier_PanicsOnNilAccounts(t *testing.T) {
@@ -192,6 +209,70 @@ func TestEnrollmentAwareApplier_ApplyTx_NilInputs(t *testing.T) {
 	}
 }
 
+func TestEnrollmentAwareApplier_ApplyTx_TaskActionPath(t *testing.T) {
+	aware, _, _ := awareFixture(t, 100, nil)
+	tasks := NewTaskStateStore()
+	aware.SetTaskStateStore(tasks)
+
+	stake := taskActionTx(t, TaskAction{
+		ID:        "task-action-stake-0001",
+		Sender:    fxAlice,
+		TaskID:    "task-1",
+		Action:    "stake",
+		Amount:    1,
+		Nonce:     0,
+		Timestamp: "2026-05-28T00:00:00Z",
+	})
+	if err := aware.ApplyTx(stake); err != nil {
+		t.Fatalf("task stake ApplyTx: %v", err)
+	}
+
+	start := taskActionTx(t, TaskAction{
+		ID:        "task-action-start-0001",
+		Sender:    fxAlice,
+		TaskID:    "task-1",
+		Action:    "start",
+		Nonce:     1,
+		Timestamp: "2026-05-28T00:01:00Z",
+	})
+	if err := aware.ApplyTx(start); err != nil {
+		t.Fatalf("task start ApplyTx: %v", err)
+	}
+
+	state, ok := tasks.GetTask("task-1")
+	if !ok {
+		t.Fatal("task state missing")
+	}
+	participant := state.Participants[fxAlice]
+	if !participant.Running {
+		t.Fatalf("participant should be running: %+v", participant)
+	}
+	if state.RunningCount != 1 {
+		t.Errorf("RunningCount: got %d, want 1", state.RunningCount)
+	}
+	alice, _ := aware.Accounts().Get(fxAlice)
+	if alice.Balance != 99 || alice.Nonce != 2 {
+		t.Fatalf("task actions should stake and consume nonce: %+v, want balance 99 nonce 2", alice)
+	}
+}
+
+func TestEnrollmentAwareApplier_ApplyTx_TaskActionRejectsWithoutStore(t *testing.T) {
+	accounts := NewAccountStore()
+	aware := NewEnrollmentAwareApplier(accounts, nil)
+
+	err := aware.ApplyTx(taskActionTx(t, TaskAction{
+		ID:        "task-action-start-0001",
+		Sender:    fxAlice,
+		TaskID:    "task-1",
+		Action:    "start",
+		Nonce:     0,
+		Timestamp: "2026-05-28T00:00:00Z",
+	}))
+	if !errors.Is(err, ErrTaskStateNotWired) {
+		t.Fatalf("want ErrTaskStateNotWired, got %v", err)
+	}
+}
+
 // -----------------------------------------------------------------------------
 // StateRoot + accessors
 // -----------------------------------------------------------------------------
@@ -207,6 +288,31 @@ func TestEnrollmentAwareApplier_StateRoot_DelegatesToAccounts(t *testing.T) {
 	}
 }
 
+func TestEnrollmentAwareApplier_StateRoot_FoldsTaskStateWhenPresent(t *testing.T) {
+	aware, accounts, _ := awareFixture(t, 100, nil)
+	tasks := NewTaskStateStore()
+	aware.SetTaskStateStore(tasks)
+
+	if got, want := aware.StateRoot(), accounts.StateRoot(); got != want {
+		t.Errorf("empty task store should preserve legacy root: got %q, want %q", got, want)
+	}
+
+	if err := aware.ApplyTx(taskActionTx(t, TaskAction{
+		ID:        "task-action-stake-0001",
+		Sender:    fxAlice,
+		TaskID:    "task-1",
+		Action:    "stake",
+		Amount:    1,
+		Nonce:     0,
+		Timestamp: "2026-05-28T00:00:00Z",
+	})); err != nil {
+		t.Fatalf("task action ApplyTx: %v", err)
+	}
+	if got, accountRoot := aware.StateRoot(), accounts.StateRoot(); got == accountRoot {
+		t.Fatalf("StateRoot should include non-empty task state, still got account root %q", got)
+	}
+}
+
 func TestEnrollmentAwareApplier_Accessors(t *testing.T) {
 	aware, accounts, ea := awareFixture(t, 100, nil)
 	if aware.Accounts() != accounts {
@@ -215,10 +321,15 @@ func TestEnrollmentAwareApplier_Accessors(t *testing.T) {
 	if aware.EnrollmentApplier() != ea {
 		t.Error("EnrollmentApplier() did not return the wired applier")
 	}
+	tasks := NewTaskStateStore()
+	aware.SetTaskStateStore(tasks)
+	if aware.TaskStateStore() != tasks {
+		t.Error("TaskStateStore() did not return the wired store")
+	}
 
 	// Nil receivers on accessors must not panic.
 	var nilShim *EnrollmentAwareApplier
-	if nilShim.Accounts() != nil || nilShim.EnrollmentApplier() != nil {
+	if nilShim.Accounts() != nil || nilShim.EnrollmentApplier() != nil || nilShim.TaskStateStore() != nil {
 		t.Error("nil receiver accessors should return nil, not panic")
 	}
 	if got := nilShim.StateRoot(); got != "" {

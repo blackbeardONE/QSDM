@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # Set env vars so docker-compose validators POST proof bundles to a local QSDM API.
 # Usage: ./scripts/wire-qsdm.sh <api_port> <ngc_ingest_secret> [proof_node_id] [proof_hmac_secret]
-# Example: ./scripts/wire-qsdm.sh 8080 "Charming123" "validator-1" "Charming123"
+# Example: ./scripts/wire-qsdm.sh 8080 "<random-32-byte-secret>" "validator-1" "<separate-random-32-byte-hmac-secret>"
 # Then: docker compose up --build  (from apps/qsdm-nvidia-ngc)
 
 API_PORT="${1:-}"

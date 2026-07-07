@@ -468,7 +468,7 @@ Subsequent POST/PUT/DELETE/PATCH (cookie-session callers):
 - ✅ **58 dedicated security regression tests** (CSRF 24, CORS 7, request-timeout 3, error-sanitize 5, log-sanitize 4, token-revocation 6, versioning 5, security-headers 1, timestamp 7)
 - ✅ Full `go test ./...` runs clean across every package
 - ✅ `go vet ./...` clean
-- ✅ `gosec`, `staticcheck`, **and** `govulncheck` enforced on every push / PR via [`.github/workflows/security-scan.yml`](../../../.github/workflows/security-scan.yml). Each tool has a documented baseline ceiling (`gosec ≤11`, `staticcheck ≤12`, `govulncheck ≤1`) anchored on the v0.4.2 hardening pass — CI fails on any regression above the ceiling and warns when the count drops (signaling the baseline should be tightened).
+- ✅ `gosec`, `staticcheck`, **and** `govulncheck` enforced on every push / PR via [`.github/workflows/security-scan.yml`](../../../.github/workflows/security-scan.yml). Each tool has a documented baseline ceiling (`gosec ≤11`, `staticcheck ≤12`, `govulncheck =0`) anchored on the v0.4.2 hardening pass and tightened after Kad-DHT removal — CI fails on any regression above the ceiling.
 
 **Baseline-disposition table** (each ceiling traces to specific tracked-for-follow-up findings that the hardening pass did NOT introduce):
 
@@ -476,7 +476,7 @@ Subsequent POST/PUT/DELETE/PATCH (cookie-session callers):
 |---------------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `gosec`       | ≤ 11    | `handlers_mining.go` G115 ×2 (`int(limit)` casts), `ngc_proof_persist.go` G304 ×4, `user_persist.go` G304, `token_registry.go` G304, `autocert.go` G710, `mtls.go` G306 ×2                                                                  |
 | `staticcheck` | ≤ 12    | `account_lockout.go` S1024/S1012, `handlers*.go` U1000 dead code, `handlers_mining.go` S1016, `handlers_status.go` U1000 `nodeStatusConfig`, plus 4 helper-fn U1000 in test files                                                            |
-| `govulncheck` | ≤ 1     | `GO-2024-3218` / `CVE-2023-26248` (IPFS Kad-DHT content censorship; no upstream fix exists across any version; QSDM uses Kad-DHT for peer discovery only, with `QSDM_BOOTSTRAP_PEERS` as the critical-path fallback)                          |
+| `govulncheck` | 0       | No accepted residual findings. `GO-2024-3218` / `CVE-2023-26248` was closed by removing Kad-DHT discovery and dialing explicit `QSDM_BOOTSTRAP_PEERS` only.                                      |
 
 **What is still pending:**
 - ⏳ External penetration testing

@@ -277,8 +277,12 @@ function Invoke-Step {
         Write-Host "    (dry-run; not executed)" -ForegroundColor DarkGray
         return 0
     }
-    & $Exe @ArgsList
-    return $LASTEXITCODE
+    $output = & $Exe @ArgsList 2>&1
+    $exitCode = $LASTEXITCODE
+    if ($output) {
+        $output | ForEach-Object { Write-Host $_ }
+    }
+    return [int]$exitCode
 }
 
 # Ensure remote dir exists before any scp. Multi-tag deploys

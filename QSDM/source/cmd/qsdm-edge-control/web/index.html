@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QSDM Edge Control</title>
+    <link rel="icon" href="/assets/qsdm.png" />
+    <link rel="stylesheet" href="/assets/app.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <img src="/assets/qsdm.png" alt="" width="38" height="38" />
+        <div>
+          <strong>QSDM Edge Control</strong>
+          <span id="version-label">Starting...</span>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span class="status-badge" id="global-status">Stopped</span>
+        <button class="icon-button" id="refresh-button" type="button" title="Refresh" aria-label="Refresh">&#8635;</button>
+        <button class="icon-button" id="quit-button" type="button" title="Quit Edge Control" aria-label="Quit Edge Control">&times;</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="summary-band" aria-labelledby="summary-heading">
+        <div>
+          <span class="eyebrow" id="summary-heading">This computer</span>
+          <strong id="summary-role">Agent</strong>
+          <span id="summary-detail">Waiting for a Relay pairing code</span>
+        </div>
+        <div class="summary-metrics" id="summary-metrics"></div>
+      </section>
+
+      <nav class="role-switch" aria-label="Computer role">
+        <button type="button" data-role="agent" class="role-button active">
+          <strong>Agent</strong>
+          <span>Share this computer</span>
+        </button>
+        <button type="button" data-role="relay" class="role-button">
+          <strong>Relay</strong>
+          <span>Coordinate trusted computers</span>
+        </button>
+      </nav>
+
+      <div class="notice error hidden" id="error-notice" role="alert"></div>
+
+      <section id="agent-panel" class="workspace" aria-labelledby="agent-title">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">Agent setup</span>
+            <h1 id="agent-title">Connect this computer</h1>
+          </div>
+          <span class="connection-state" id="agent-paired-state">Not paired</span>
+        </div>
+
+        <div class="form-grid connection-grid">
+          <label class="field wide">
+            <span>Agent pairing code</span>
+            <textarea id="agent-code" rows="3" placeholder="Paste the code shown by your Relay"></textarea>
+          </label>
+          <button class="button secondary align-end" id="pair-agent-button" type="button">Connect</button>
+          <label class="field">
+            <span>Computer name</span>
+            <input id="worker-id" type="text" maxlength="64" autocomplete="off" />
+          </label>
+          <div class="read-only-field">
+            <span>Relay</span>
+            <strong id="agent-relay-address">Not connected</strong>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="section-heading compact">
+          <div>
+            <span class="eyebrow">Contribution limits</span>
+            <h2>Resources shared by this computer</h2>
+          </div>
+          <span class="system-note" id="agent-system-note"></span>
+        </div>
+        <div class="resource-list">
+          <div class="resource-row">
+            <label class="resource-toggle">
+              <input id="agent-cpu-enabled" type="checkbox" />
+              <span><strong>CPU</strong><small id="cpu-detail"></small></span>
+            </label>
+            <label class="slider-field">
+              <span>Work share <output id="agent-cpu-output">50%</output></span>
+              <input id="agent-cpu-share" type="range" min="1" max="100" step="1" />
+            </label>
+          </div>
+          <div class="resource-row">
+            <label class="resource-toggle">
+              <input id="agent-ram-enabled" type="checkbox" />
+              <span><strong>Memory</strong><small id="ram-detail"></small></span>
+            </label>
+            <label class="slider-field">
+              <span>Memory limit <output id="agent-ram-output">25%</output></span>
+              <input id="agent-ram-share" type="range" min="1" max="100" step="1" />
+            </label>
+          </div>
+          <div class="resource-row" id="agent-gpu-row">
+            <label class="resource-toggle">
+              <input id="agent-gpu-enabled" type="checkbox" />
+              <span><strong>NVIDIA GPU</strong><small id="gpu-detail"></small></span>
+            </label>
+            <label class="slider-field">
+              <span>Work share <output id="agent-gpu-output">25%</output></span>
+              <input id="agent-gpu-share" type="range" min="1" max="100" step="1" />
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section id="relay-panel" class="workspace hidden" aria-labelledby="relay-title">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">Relay setup</span>
+            <h1 id="relay-title">Coordinate your trusted computers</h1>
+          </div>
+          <span class="connection-state" id="relay-token-state">Keys not created</span>
+        </div>
+
+        <div class="form-grid">
+          <label class="toggle-field wide">
+            <input id="relay-lan-enabled" type="checkbox" />
+            <span><strong>Allow computers on my private network</strong><small>Relay remains unavailable from the public internet.</small></span>
+          </label>
+          <label class="field">
+            <span>Relay port</span>
+            <input id="relay-port" type="number" min="1024" max="65535" />
+          </label>
+          <label class="field">
+            <span>Address shared with Agents</span>
+            <input id="relay-address" type="url" placeholder="http://192.168.1.10:7740" />
+          </label>
+        </div>
+
+        <div class="action-strip">
+          <button class="button secondary" id="show-pairing-button" type="button">Agent pairing code</button>
+          <button class="button secondary" id="connect-mother-button" type="button">Use this QSDM Hive as Mother Hive</button>
+          <span id="mother-state">QSDM Hive not connected</span>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="section-heading compact">
+          <div>
+            <span class="eyebrow">Relay policy</span>
+            <h2>Maximum work sent to QSDM Hive</h2>
+          </div>
+        </div>
+        <div class="resource-list">
+          <div class="resource-row">
+            <div class="resource-name"><strong>CPU work</strong><small>Across all connected Agents</small></div>
+            <label class="slider-field">
+              <span>Relay limit <output id="relay-cpu-output">50%</output></span>
+              <input id="relay-cpu-share" type="range" min="1" max="100" step="1" />
+            </label>
+          </div>
+          <div class="resource-row">
+            <div class="resource-name"><strong>Memory work</strong><small>Per verified job</small></div>
+            <label class="slider-field">
+              <span>Relay limit <output id="relay-ram-output">50%</output></span>
+              <input id="relay-ram-share" type="range" min="1" max="100" step="1" />
+            </label>
+          </div>
+          <div class="resource-row">
+            <div class="resource-name"><strong>NVIDIA GPU work</strong><small>Only compatible Agents participate</small></div>
+            <label class="slider-field">
+              <span>Relay limit <output id="relay-gpu-output">50%</output></span>
+              <input id="relay-gpu-share" type="range" min="1" max="100" step="1" />
+            </label>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+        <div class="section-heading compact">
+          <div>
+            <span class="eyebrow">Connected computers</span>
+            <h2>Agent activity</h2>
+          </div>
+          <span id="worker-count">0 Agents</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Computer</th><th>Resources</th><th>Completed</th><th>Last seen</th></tr></thead>
+            <tbody id="workers-body"><tr><td colspan="4" class="empty-row">No Agents connected</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="bottom-controls" aria-label="Edge Control actions">
+        <label class="toggle-field auto-start-toggle">
+          <input id="auto-start" type="checkbox" />
+          <span><strong>Start automatically when I sign in</strong><small>Uses the saved role and limits.</small></span>
+        </label>
+        <div class="control-actions">
+          <button class="button secondary" id="save-button" type="button">Save</button>
+          <button class="button primary" id="start-button" type="button">Start Agent</button>
+          <button class="button danger hidden" id="stop-button" type="button">Stop</button>
+        </div>
+      </section>
+
+      <details class="activity-panel">
+        <summary>Recent activity</summary>
+        <div id="activity-log" class="activity-log">No activity yet.</div>
+      </details>
+    </main>
+
+    <dialog id="pairing-dialog">
+      <form method="dialog" class="dialog-shell">
+        <div class="dialog-heading">
+          <div><span class="eyebrow">Private network</span><h2>Agent pairing code</h2></div>
+          <button class="icon-button" value="cancel" aria-label="Close">&times;</button>
+        </div>
+        <p>Paste this code once on each trusted Agent computer.</p>
+        <textarea id="pairing-code-output" rows="6" readonly></textarea>
+        <div class="dialog-actions">
+          <button class="button primary" id="copy-pairing-button" type="button">Copy code</button>
+          <button class="button secondary" value="cancel">Done</button>
+        </div>
+        <details class="advanced-secret">
+          <summary>QSDM Hive on another computer</summary>
+          <textarea id="mother-code-output" rows="5" readonly></textarea>
+          <button class="button secondary" id="copy-mother-button" type="button">Copy QSDM Hive pairing code</button>
+        </details>
+      </form>
+    </dialog>
+
+    <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+    <script src="/assets/app.js"></script>
+  </body>
+</html>

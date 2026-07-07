@@ -114,10 +114,10 @@ func NewRateLimiter(maxReqs int, window time.Duration) *RateLimiter {
 		maxReqs:  maxReqs,
 		window:   window,
 	}
-	
+
 	// Cleanup goroutine
 	go rl.cleanup()
-	
+
 	return rl
 }
 
@@ -125,7 +125,7 @@ func NewRateLimiter(maxReqs int, window time.Duration) *RateLimiter {
 func (rl *RateLimiter) cleanup() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		rl.mu.Lock()
 		now := time.Now()
@@ -142,10 +142,10 @@ func (rl *RateLimiter) cleanup() {
 func (rl *RateLimiter) Allow(identifier string) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	
+
 	entry, exists := rl.requests[identifier]
 	now := time.Now()
-	
+
 	if !exists || now.After(entry.windowEnd) {
 		// New window
 		rl.requests[identifier] = &rateLimitEntry{
@@ -154,11 +154,11 @@ func (rl *RateLimiter) Allow(identifier string) bool {
 		}
 		return true
 	}
-	
+
 	if entry.count >= rl.maxReqs {
 		return false
 	}
-	
+
 	entry.count++
 	return true
 }
@@ -191,16 +191,16 @@ func (rl *RateLimiter) RateLimitMiddleware(next http.Handler) http.Handler {
 		}
 		// Get client identifier (IP address or API key)
 		identifier := rl.getClientIdentifier(r)
-		
+
 		// Get per-endpoint rate limit (if configured)
 		endpointLimit := rl.getEndpointLimit(r.URL.Path, r.Method)
-		
+
 		// Use endpoint-specific limit if available, otherwise use default
 		limitToCheck := rl.maxReqs
 		if endpointLimit > 0 {
 			limitToCheck = endpointLimit
 		}
-		
+
 		// Check rate limit with endpoint-specific key
 		endpointKey := fmt.Sprintf("%s:%s:%s", identifier, r.Method, r.URL.Path)
 		if !rl.AllowWithLimit(endpointKey, limitToCheck) {
@@ -214,7 +214,7 @@ func (rl *RateLimiter) RateLimitMiddleware(next http.Handler) http.Handler {
 			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
-		
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -223,10 +223,10 @@ func (rl *RateLimiter) RateLimitMiddleware(next http.Handler) http.Handler {
 func (rl *RateLimiter) AllowWithLimit(identifier string, limit int) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	
+
 	entry, exists := rl.requests[identifier]
 	now := time.Now()
-	
+
 	if !exists || now.After(entry.windowEnd) {
 		// New window
 		rl.requests[identifier] = &rateLimitEntry{
@@ -235,11 +235,11 @@ func (rl *RateLimiter) AllowWithLimit(identifier string, limit int) bool {
 		}
 		return true
 	}
-	
+
 	if entry.count >= limit {
 		return false
 	}
-	
+
 	entry.count++
 	return true
 }
@@ -249,8 +249,8 @@ func (rl *RateLimiter) getEndpointLimit(path, method string) int {
 	// Sensitive endpoints have lower limits
 	sensitiveEndpoints := map[string]int{
 		"/api/v1/auth/login":    5,  // 5 requests per minute for login
-		"/api/v1/auth/register": 3, // 3 requests per minute for registration
-		"/api/v1/wallet/send":          10, // 10 transactions per minute
+		"/api/v1/auth/register": 3,  // 3 requests per minute for registration
+		"/api/v1/wallet/send":   10, // 10 transactions per minute
 		// v0.4.0 (Session 95) self-custody endpoint. Same per-minute
 		// ceiling as /wallet/send. We don't go lower because a
 		// well-funded honest user might fan out small payments (e.g.
@@ -260,21 +260,22 @@ func (rl *RateLimiter) getEndpointLimit(path, method string) int {
 		// topic, and a misbehaving signer would otherwise be free to
 		// flood the gossip mesh with cryptographically-valid envelopes
 		// that drain ONLY their own balance (until they hit 402).
-		"/api/v1/wallet/submit-signed": 10,
-		"/api/v1/monitoring/ngc-proof":    30, // NGC sidecar batches
+		"/api/v1/wallet/submit-signed":     10,
+		"/api/v1/faucet/claim":             5,
+		"/api/v1/monitoring/ngc-proof":     30, // NGC sidecar batches
 		"/api/v1/monitoring/ngc-challenge": 15, // tight: nonce minting (per IP per minute)
-		"/api/v1/monitoring/ngc-proofs":   60, // dashboard polling
-		"/api/v1/wallet/mint":           20, // public mint (game integration)
-		"/api/v1/tokens/mint":           15,
-		"/api/v1/tokens/create":         10,
-		"/api/v1/tokens/list":           60,
+		"/api/v1/monitoring/ngc-proofs":    60, // dashboard polling
+		"/api/v1/wallet/mint":              20, // public mint (game integration)
+		"/api/v1/tokens/mint":              15,
+		"/api/v1/tokens/create":            10,
+		"/api/v1/tokens/list":              60,
 	}
-	
+
 	// Check exact path match
 	if limit, ok := sensitiveEndpoints[path]; ok {
 		return limit
 	}
-	
+
 	// Default: use global limit
 	return 0
 }
@@ -285,7 +286,7 @@ func (rl *RateLimiter) getClientIdentifier(r *http.Request) string {
 	if apiKey := r.Header.Get("X-API-Key"); apiKey != "" {
 		return "api:" + apiKey
 	}
-	
+
 	// Fall back to IP address
 	ip := r.RemoteAddr
 	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
@@ -328,7 +329,7 @@ type RequestSigner struct {
 	// lazy-init race between the first SignRequest and a concurrent
 	// VerifyRequest, and for SetSecondaryHMACSecret rebinding the
 	// secondary mid-rotation.
-	hmacMu sync.Mutex
+	hmacMu       sync.Mutex
 	hmacFallback []byte // explicit primary secret, or lazily-generated 32 B ephemeral
 	// hmacFallbackSecondary: VERIFY-ONLY secondary key for zero-downtime
 	// HMAC rotation (audit row rotation-01). When set, VerifyRequest first
@@ -428,7 +429,7 @@ func (rs *RequestSigner) SignRequest(body []byte, timestamp int64, nonce string)
 	// Create signature payload: timestamp + nonce + body
 	payload := fmt.Sprintf("%d:%s:", timestamp, nonce)
 	payloadBytes := append([]byte(payload), body...)
-	
+
 	var signature []byte
 	if rs.dilithium != nil {
 		var err error
@@ -442,7 +443,7 @@ func (rs *RequestSigner) SignRequest(body []byte, timestamp int64, nonce string)
 		h.Write(payloadBytes)
 		signature = h.Sum(nil)
 	}
-	
+
 	return base64.URLEncoding.EncodeToString(signature), nil
 }
 
@@ -453,11 +454,11 @@ func (rs *RequestSigner) VerifyRequest(body []byte, timestamp int64, nonce strin
 	if err != nil {
 		return fmt.Errorf("failed to decode signature: %w", err)
 	}
-	
+
 	// Recreate payload
 	payload := fmt.Sprintf("%d:%s:", timestamp, nonce)
 	payloadBytes := append([]byte(payload), body...)
-	
+
 	// Verify signature (quantum-safe Dilithium or HMAC fallback)
 	if rs.dilithium != nil {
 		valid, err := rs.dilithium.Verify(payloadBytes, signature)
@@ -493,13 +494,13 @@ func (rs *RequestSigner) VerifyRequest(body []byte, timestamp int64, nonce strin
 			monitoring.RecordRequestSignatureSecondaryKeyHit()
 		}
 	}
-	
+
 	// Check timestamp (prevent replay attacks)
 	now := time.Now().Unix()
 	if abs(now-timestamp) > 300 { // 5 minute window
 		return errors.New("request timestamp out of window")
 	}
-	
+
 	return nil
 }
 
@@ -515,4 +516,3 @@ func abs(x int64) int64 {
 func SecureCompare(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
-

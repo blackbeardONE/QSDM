@@ -1,18 +1,20 @@
 package enrollment
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"testing"
 
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
 const (
 	tNodeID  = "rig-77"
 	tGPUUUID = "GPU-12345678-1234-1234-1234-123456789abc"
-	tSender  = "alice"
 )
 
 func tHMAC() []byte { return []byte("0123456789abcdef0123456789abcdef") }
@@ -44,15 +46,32 @@ func mustUnenrollPayload(t *testing.T) []byte {
 	return raw
 }
 
+func mustSignedEnrollmentTx(t *testing.T, payload []byte, fee float64) *mempool.Tx {
+	t.Helper()
+	pk, sk, err := mldsa87.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	pub, _ := pk.MarshalBinary()
+	sum := sha256.Sum256(pub)
+	tx := &mempool.Tx{
+		ID: "enrollment-test", Sender: hex.EncodeToString(sum[:]),
+		ContractID: SignedContractID, Payload: payload, Fee: fee,
+	}
+	env, _ := EnvelopeFromTransaction(tx)
+	canonical, _ := env.CanonicalBytes()
+	sig := make([]byte, mldsa87.SignatureSize)
+	if err := mldsa87.SignTo(sk, canonical, nil, true, sig); err != nil {
+		t.Fatalf("SignTo: %v", err)
+	}
+	tx.PublicKey = hex.EncodeToString(pub)
+	tx.Signature = hex.EncodeToString(sig)
+	return tx
+}
+
 func TestAdmissionChecker_AcceptsValidEnroll(t *testing.T) {
 	check := AdmissionChecker(nil)
-	tx := &mempool.Tx{
-		Sender:     tSender,
-		ContractID: ContractID,
-		Payload:    mustEnrollPayload(t),
-		Fee:        0.01,
-		Nonce:      0,
-	}
+	tx := mustSignedEnrollmentTx(t, mustEnrollPayload(t), 0.01)
 	if err := check(tx); err != nil {
 		t.Fatalf("valid enroll rejected: %v", err)
 	}
@@ -60,42 +79,23 @@ func TestAdmissionChecker_AcceptsValidEnroll(t *testing.T) {
 
 func TestAdmissionChecker_AcceptsValidUnenroll(t *testing.T) {
 	check := AdmissionChecker(nil)
-	tx := &mempool.Tx{
-		Sender:     tSender,
-		ContractID: ContractID,
-		Payload:    mustUnenrollPayload(t),
-		Fee:        0.001,
-	}
+	tx := mustSignedEnrollmentTx(t, mustUnenrollPayload(t), 0.001)
 	if err := check(tx); err != nil {
 		t.Fatalf("valid unenroll rejected: %v", err)
 	}
 }
 
-func TestAdmissionChecker_RejectsZeroFeeUnenroll(t *testing.T) {
+func TestAdmissionChecker_AcceptsZeroFeeUnenroll(t *testing.T) {
 	check := AdmissionChecker(nil)
-	tx := &mempool.Tx{
-		Sender:     tSender,
-		ContractID: ContractID,
-		Payload:    mustUnenrollPayload(t),
-		Fee:        0,
-	}
-	err := check(tx)
-	if err == nil {
-		t.Fatal("zero-fee unenroll should be rejected at admit time")
-	}
-	if !errors.Is(err, ErrPayloadInvalid) {
-		t.Errorf("want ErrPayloadInvalid, got %v", err)
+	tx := mustSignedEnrollmentTx(t, mustUnenrollPayload(t), 0)
+	if err := check(tx); err != nil {
+		t.Fatalf("signed zero-fee unenroll rejected: %v", err)
 	}
 }
 
 func TestAdmissionChecker_RejectsNegativeFeeEnroll(t *testing.T) {
 	check := AdmissionChecker(nil)
-	tx := &mempool.Tx{
-		Sender:     tSender,
-		ContractID: ContractID,
-		Payload:    mustEnrollPayload(t),
-		Fee:        -0.01,
-	}
+	tx := mustSignedEnrollmentTx(t, mustEnrollPayload(t), -0.01)
 	err := check(tx)
 	if err == nil {
 		t.Fatal("negative-fee enroll should be rejected at admit time")
@@ -117,12 +117,7 @@ func TestAdmissionChecker_RejectsBadStake(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	tx := &mempool.Tx{
-		Sender:     tSender,
-		ContractID: ContractID,
-		Payload:    raw,
-		Fee:        0.01,
-	}
+	tx := mustSignedEnrollmentTx(t, raw, 0.01)
 	if err := check(tx); err == nil || !errors.Is(err, ErrStakeMismatch) {
 		t.Errorf("want ErrStakeMismatch, got %v", err)
 	}
@@ -130,9 +125,9 @@ func TestAdmissionChecker_RejectsBadStake(t *testing.T) {
 
 func TestAdmissionChecker_RejectsEmptyPayload(t *testing.T) {
 	check := AdmissionChecker(nil)
-	tx := &mempool.Tx{Sender: tSender, ContractID: ContractID, Fee: 0.01}
-	if err := check(tx); err == nil || !errors.Is(err, ErrPayloadInvalid) {
-		t.Errorf("want ErrPayloadInvalid, got %v", err)
+	tx := mustSignedEnrollmentTx(t, nil, 0.01)
+	if err := check(tx); err == nil || !errors.Is(err, ErrSignedEnvelopeRequired) {
+		t.Errorf("want ErrSignedEnvelopeRequired, got %v", err)
 	}
 }
 
@@ -178,12 +173,7 @@ func TestAdmissionChecker_RejectsBadKind(t *testing.T) {
 	check := AdmissionChecker(nil)
 	// Hand-craft a payload with a bogus kind.
 	raw := []byte(`{"kind":"weird","node_id":"rig-77"}`)
-	tx := &mempool.Tx{
-		Sender:     tSender,
-		ContractID: ContractID,
-		Payload:    raw,
-		Fee:        0.01,
-	}
+	tx := mustSignedEnrollmentTx(t, raw, 0.01)
 	err := check(tx)
 	if err == nil {
 		t.Fatal("bogus kind should be rejected")
@@ -193,5 +183,20 @@ func TestAdmissionChecker_RejectsBadKind(t *testing.T) {
 	}
 	if !errors.Is(err, ErrPayloadInvalid) {
 		t.Errorf("want ErrPayloadInvalid, got %v", err)
+	}
+}
+
+func TestAdmissionChecker_RejectsLegacyUnsignedEnrollment(t *testing.T) {
+	tx := &mempool.Tx{ID: "legacy", Sender: "alice", ContractID: ContractID, Payload: mustEnrollPayload(t)}
+	if err := AdmissionChecker(nil)(tx); !errors.Is(err, ErrLegacyContractDisabled) {
+		t.Fatalf("legacy unsigned enrollment: got %v, want ErrLegacyContractDisabled", err)
+	}
+}
+
+func TestAdmissionChecker_RejectsTamperedSignedEnvelope(t *testing.T) {
+	tx := mustSignedEnrollmentTx(t, mustEnrollPayload(t), 0.01)
+	tx.Nonce++
+	if err := AdmissionChecker(nil)(tx); !errors.Is(err, ErrSignatureInvalid) {
+		t.Fatalf("tampered nonce: got %v, want ErrSignatureInvalid", err)
 	}
 }

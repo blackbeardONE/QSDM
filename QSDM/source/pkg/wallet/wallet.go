@@ -19,15 +19,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/crypto"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
 // WalletService provides wallet functionality for the QSDM node
 type WalletService struct {
 	address   string
 	dilithium *crypto.Dilithium
+	mu        sync.RWMutex
 	balance   int
 }
 
@@ -54,11 +57,60 @@ type TransactionData struct {
 	// checks env.Nonce > stored_last_nonce[sender] before
 	// applying the debit, and atomic-commits the bump alongside
 	// the balance change.
-	Nonce uint64 `json:"nonce,omitempty"`
-	Signature   string   `json:"signature"`
+	Nonce     uint64 `json:"nonce,omitempty"`
+	Signature string `json:"signature"`
 	// PublicKey is hex-encoded ML-DSA-87 public key (for P2P preflight / verifiers); not part of the signed payload.
 	PublicKey string `json:"public_key,omitempty"`
-	Timestamp string   `json:"timestamp"`
+	Timestamp string `json:"timestamp"`
+}
+
+// CanonicalBytes returns the exact payload covered by a wallet transaction's
+// ML-DSA signature. PublicKey identifies the signer but is deliberately not
+// signed; sender is bound to sha256(PublicKey) during verification.
+func (tx TransactionData) CanonicalBytes() ([]byte, error) {
+	tx.Signature = ""
+	tx.PublicKey = ""
+	return json.Marshal(tx)
+}
+
+// VerifyTransactionData performs the consensus-safe verification required
+// before a signed wallet transfer may mutate AccountStore. API admission uses
+// the same envelope, but every peer must repeat this check while replaying the
+// containing block rather than trusting the producing validator.
+func VerifyTransactionData(tx TransactionData) error {
+	if tx.ID == "" || tx.Sender == "" || tx.Recipient == "" {
+		return errors.New("wallet: id, sender, and recipient are required")
+	}
+	if tx.Nonce == 0 {
+		return errors.New("wallet: consensus transfer requires nonce >= 1")
+	}
+	if tx.Amount <= 0 || tx.Fee < 0 {
+		return errors.New("wallet: amount must be positive and fee non-negative")
+	}
+	pub, err := hex.DecodeString(tx.PublicKey)
+	if err != nil || len(pub) != mldsa87.PublicKeySize {
+		return fmt.Errorf("wallet: public_key must be %d-byte hex", mldsa87.PublicKeySize)
+	}
+	derived := sha256.Sum256(pub)
+	if tx.Sender != hex.EncodeToString(derived[:]) {
+		return errors.New("wallet: sender does not match sha256(public_key)")
+	}
+	sig, err := hex.DecodeString(tx.Signature)
+	if err != nil || len(sig) != mldsa87.SignatureSize {
+		return fmt.Errorf("wallet: signature must be %d-byte hex", mldsa87.SignatureSize)
+	}
+	canonical, err := tx.CanonicalBytes()
+	if err != nil {
+		return fmt.Errorf("wallet: canonicalize transaction: %w", err)
+	}
+	var pk mldsa87.PublicKey
+	if err := pk.UnmarshalBinary(pub); err != nil {
+		return errors.New("wallet: malformed public_key")
+	}
+	if !mldsa87.Verify(&pk, canonical, nil, sig) {
+		return errors.New("wallet: ML-DSA signature is invalid")
+	}
+	return nil
 }
 
 // NewWalletService creates a new wallet service using Dilithium directly
@@ -77,7 +129,7 @@ func NewWalletService() (*WalletService, error) {
 	return &WalletService{
 		address:   address,
 		dilithium: dilithium,
-		balance:   1000, // Initial balance for demonstration
+		balance:   0, // Balances come only from canonical ledger state.
 	}, nil
 }
 
@@ -88,7 +140,23 @@ func (ws *WalletService) GetAddress() string {
 
 // GetBalance returns the current wallet balance
 func (ws *WalletService) GetBalance() int {
+	ws.mu.RLock()
+	defer ws.mu.RUnlock()
 	return ws.balance
+}
+
+// SyncBalanceFromLedger refreshes the wallet's local preflight cache from an
+// already-validated canonical ledger balance. It does not credit chain state
+// or create CELL; transaction admission must still verify the canonical
+// account balance.
+func (ws *WalletService) SyncBalanceFromLedger(balance int) error {
+	if balance < 0 {
+		return errors.New("ledger balance cannot be negative")
+	}
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	ws.balance = balance
+	return nil
 }
 
 // CreateTransaction creates a new signed transaction
@@ -102,6 +170,8 @@ func (ws *WalletService) CreateTransaction(recipient string, amount int, fee flo
 	if fee < 0 {
 		return nil, errors.New("fee cannot be negative")
 	}
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
 	if ws.balance < amount {
 		return nil, fmt.Errorf("insufficient balance: have %d, need %d", ws.balance, amount)
 	}

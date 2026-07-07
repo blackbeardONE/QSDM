@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -47,12 +48,13 @@ type Dashboard struct {
 	healthChecker       *monitoring.HealthChecker
 	topologyMonitor     *monitoring.TopologyMonitor
 	port                string
+	bindAddress         string
 	authManager         *api.AuthManager
 	rateLimiter         *api.RateLimiter
 	ngcIngestConfigured bool
-	nvidiaLock            DashboardNvidiaLock
-	metricsScrapeSecret   string
-	strictDashboardAuth   bool
+	nvidiaLock          DashboardNvidiaLock
+	metricsScrapeSecret string
+	strictDashboardAuth bool
 	// apiBackendURL is the in-process API base (e.g. http://127.0.0.1:8080). When set, login/register are reverse-proxied so the browser can POST same-origin from the dashboard port.
 	apiBackendURL string
 
@@ -94,6 +96,12 @@ type dashboardLoginRequest struct {
 // If sharedAuth is non-nil, it is used for JWT validation (must match api.Server's AuthManager when using ML-DSA / CGO).
 // If sharedAuth is nil, a separate AuthManager is created (tests only; production qsdm passes a shared instance).
 func NewDashboard(metrics *monitoring.Metrics, healthChecker *monitoring.HealthChecker, port string, ngcIngestConfigured bool, nvidiaLock DashboardNvidiaLock, jwtHMACSecret string, metricsScrapeSecret string, strictDashboardAuth bool, apiBackendURL string, sharedAuth *api.AuthManager) *Dashboard {
+	return NewDashboardWithBindAddress(metrics, healthChecker, port, "", ngcIngestConfigured, nvidiaLock, jwtHMACSecret, metricsScrapeSecret, strictDashboardAuth, apiBackendURL, sharedAuth)
+}
+
+// NewDashboardWithBindAddress creates a dashboard bound to a specific local
+// address. Empty bindAddress preserves the historical all-interfaces listener.
+func NewDashboardWithBindAddress(metrics *monitoring.Metrics, healthChecker *monitoring.HealthChecker, port string, bindAddress string, ngcIngestConfigured bool, nvidiaLock DashboardNvidiaLock, jwtHMACSecret string, metricsScrapeSecret string, strictDashboardAuth bool, apiBackendURL string, sharedAuth *api.AuthManager) *Dashboard {
 	var authManager *api.AuthManager
 	if sharedAuth != nil {
 		authManager = sharedAuth
@@ -124,20 +132,21 @@ func NewDashboard(metrics *monitoring.Metrics, healthChecker *monitoring.HealthC
 	hub.Run()
 
 	return &Dashboard{
-		metrics:               metrics,
-		healthChecker:         healthChecker,
-		topologyMonitor:       nil, // Will be set via SetNetwork
-		port:                  port,
-		authManager:           authManager,
-		rateLimiter:           rateLimiter,
-		ngcIngestConfigured:   ngcIngestConfigured,
-		nvidiaLock:            nvidiaLock,
-		metricsScrapeSecret:   strings.TrimSpace(metricsScrapeSecret),
-		strictDashboardAuth:   strictDashboardAuth,
-		apiBackendURL:         strings.TrimSpace(apiBackendURL),
-		sessions:              make(map[string]dashboardSessionEntry),
-		wsHub:                 hub,
-		auditChecklist:        audit.NewChecklist(),
+		metrics:             metrics,
+		healthChecker:       healthChecker,
+		topologyMonitor:     nil, // Will be set via SetNetwork
+		port:                port,
+		bindAddress:         strings.TrimSpace(bindAddress),
+		authManager:         authManager,
+		rateLimiter:         rateLimiter,
+		ngcIngestConfigured: ngcIngestConfigured,
+		nvidiaLock:          nvidiaLock,
+		metricsScrapeSecret: strings.TrimSpace(metricsScrapeSecret),
+		strictDashboardAuth: strictDashboardAuth,
+		apiBackendURL:       strings.TrimSpace(apiBackendURL),
+		sessions:            make(map[string]dashboardSessionEntry),
+		wsHub:               hub,
+		auditChecklist:      audit.NewChecklist(),
 	}
 }
 
@@ -317,7 +326,7 @@ func (d *Dashboard) Start() error {
 	}
 
 	server := &http.Server{
-		Addr:           ":" + d.port,
+		Addr:           net.JoinHostPort(d.bindAddress, d.port),
 		Handler:        handler,
 		ReadTimeout:    15 * time.Second,
 		WriteTimeout:   15 * time.Second,
@@ -325,7 +334,7 @@ func (d *Dashboard) Start() error {
 		MaxHeaderBytes: 1 << 20, // 1MB
 	}
 
-	log.Printf("Dashboard server starting on port %s", d.port)
+	log.Printf("Dashboard server starting on %s", net.JoinHostPort(d.bindAddress, d.port))
 	if d.authManager != nil {
 		log.Printf("Dashboard authentication: ENABLED (JWT tokens required)")
 		log.Printf("Login endpoint: http://localhost:%s/api/auth/login", d.port)
@@ -356,7 +365,7 @@ func (d *Dashboard) Start() error {
 	d.StartWSPush(2 * time.Second)
 
 	// Start server and handle errors
-	log.Printf("Starting HTTP server on :%s", d.port)
+	log.Printf("Starting HTTP server on %s", net.JoinHostPort(d.bindAddress, d.port))
 	err = server.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
 		log.Printf("ERROR: Dashboard server failed: %v", err)
@@ -459,10 +468,10 @@ func (d *Dashboard) handleNGCProofs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"ingest_configured":  d.ngcIngestConfigured,
-		"count":              len(summaries),
-		"proofs":             summaries,
-		"ngc_proof_ingest":   monitoring.NGCIngestStatsMap(),
+		"ingest_configured": d.ngcIngestConfigured,
+		"count":             len(summaries),
+		"proofs":            summaries,
+		"ngc_proof_ingest":  monitoring.NGCIngestStatsMap(),
 		"nvidia_lock": map[string]interface{}{
 			"enabled":                          nv.Enabled,
 			"proof_ok":                         lockOK,

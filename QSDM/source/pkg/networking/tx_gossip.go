@@ -6,6 +6,7 @@ import (
 
 	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
+	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
 	"github.com/blackbeardONE/QSDM/pkg/walletp2p"
 )
 
@@ -30,13 +31,52 @@ func (ti *TxGossipIngress) SetTxGossipRelay(r *TxGossipRelay) {
 // HandlePeerMessage validates a signed transaction gossip payload.
 func (ti *TxGossipIngress) HandlePeerMessage(peerID string, payload []byte) (chain.GossipVerdict, error) {
 	var stx chain.SignedTx
-	if err := json.Unmarshal(payload, &stx); err != nil {
+	if err := json.Unmarshal(payload, &stx); err == nil && stx.Tx != nil {
+		return ti.handleSignedTx(peerID, payload, &stx)
+	}
+
+	var env enrollment.SignedEnvelope
+	if err := json.Unmarshal(payload, &env); err == nil && env.ContractID == enrollment.SignedContractID && env.ID != "" {
+		return ti.handleEnrollmentEnvelope(peerID, payload, env)
+	}
+
+	if ti.rep != nil {
+		ti.rep.RecordEvent(peerID, EventInvalidTx, 0)
+	}
+	return chain.GossipRejected, fmt.Errorf("invalid gossip payload")
+}
+
+func (ti *TxGossipIngress) handleEnrollmentEnvelope(peerID string, payload []byte, env enrollment.SignedEnvelope) (chain.GossipVerdict, error) {
+	if err := enrollment.VerifySignedEnvelope(env); err != nil {
 		if ti.rep != nil {
 			ti.rep.RecordEvent(peerID, EventInvalidTx, 0)
 		}
-		return chain.GossipRejected, fmt.Errorf("invalid gossip payload: %w", err)
+		return chain.GossipRejected, fmt.Errorf("invalid enrollment gossip signature: %w", err)
 	}
-	return ti.handleSignedTx(peerID, payload, &stx)
+	tx, err := env.ToTransaction()
+	if err != nil {
+		if ti.rep != nil {
+			ti.rep.RecordEvent(peerID, EventInvalidTx, 0)
+		}
+		return chain.GossipRejected, fmt.Errorf("invalid enrollment gossip transaction: %w", err)
+	}
+	if ti.pool == nil {
+		return chain.GossipRejected, fmt.Errorf("transaction mempool unavailable")
+	}
+	if err := ti.pool.Add(tx); err != nil {
+		if ti.rep != nil {
+			ti.rep.RecordEvent(peerID, EventInvalidTx, 0)
+		}
+		return chain.GossipRejected, fmt.Errorf("enrollment gossip admission failed: %w", err)
+	}
+	if ti.rep != nil {
+		ti.rep.RecordEvent(peerID, EventValidTx, 0)
+	}
+	walletp2p.NoteIngested(tx.ID)
+	if ti.relay != nil && len(payload) > 0 {
+		_ = ti.relay.MaybePublish(tx.ID, payload)
+	}
+	return chain.GossipAccepted, nil
 }
 
 func (ti *TxGossipIngress) handleSignedTx(peerID string, payload []byte, stx *chain.SignedTx) (chain.GossipVerdict, error) {
@@ -71,13 +111,14 @@ func (ti *TxGossipIngress) TryConsumeGossip(peerID string, payload []byte) bool 
 		return false
 	}
 	var stx chain.SignedTx
-	if err := json.Unmarshal(payload, &stx); err != nil {
+	if err := json.Unmarshal(payload, &stx); err == nil && stx.Tx != nil {
+		verdict, _ := ti.handleSignedTx(peerID, payload, &stx)
+		return verdict == chain.GossipAccepted || verdict == chain.GossipQuarantined
+	}
+	var env enrollment.SignedEnvelope
+	if err := json.Unmarshal(payload, &env); err != nil || env.ContractID != enrollment.SignedContractID || env.ID == "" {
 		return false
 	}
-	if stx.Tx == nil {
-		return false
-	}
-	verdict, _ := ti.handleSignedTx(peerID, payload, &stx)
-	return verdict == chain.GossipAccepted || verdict == chain.GossipQuarantined
+	verdict, _ := ti.handleEnrollmentEnvelope(peerID, payload, env)
+	return verdict == chain.GossipAccepted
 }
-

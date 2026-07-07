@@ -396,10 +396,11 @@ Environment:
   QSDM_TOKEN      Bearer token for authentication
 
 v2 mining flags (enroll | unenroll | slash):
-  enroll      --sender STR --node-id STR --gpu-uuid STR --hmac-key HEX
+  enroll      --node-id STR --gpu-uuid STR (--hmac-key-file FILE | --hmac-key HEX)
+              [--in KEYSTORE] [--passphrase-file FILE] [--sender STR]
               [--stake DUST] [--nonce N] [--fee CELL] [--memo STR] [--id STR]
-  unenroll    --sender STR --node-id STR
-              [--reason STR] [--nonce N] [--fee CELL] [--id STR]
+  unenroll    --node-id STR [--in KEYSTORE] [--passphrase-file FILE]
+              [--sender STR] [--reason STR] [--nonce N] [--fee CELL] [--id STR]
   slash       --sender STR --node-id STR --evidence-kind KIND --amount DUST
               (--evidence-file PATH | --evidence-hex HEX)
               [--memo STR] [--nonce N] [--fee CELL] [--id STR]

@@ -59,16 +59,16 @@ port = 8443
 enable_tls = true
 tls_cert_file = ""  # Path to TLS certificate file
 tls_key_file = ""    # Path to TLS private key file
-# NGC sidecar proof ingest: set env QSDM_NGC_INGEST_SECRET (e.g. Charming123 for local dev) or QSDM_NGC_INGEST_SECRET (see apps/qsdm-nvidia-ngc/README.md)
+# NGC sidecar proof ingest: set QSDM_NGC_INGEST_SECRET from a secret store to a unique random value (see apps/qsdm-nvidia-ngc/README.md)
 # NVIDIA-lock (optional): require recent GPU-attested NGC proof before mint/send/create-token APIs
 # nvidia_lock = false
 # nvidia_lock_max_proof_age = "15m"
 # nvidia_lock_expected_node_id = ""  # optional; must match sidecar QSDM_NGC_PROOF_NODE_ID in proof JSON
-# nvidia_lock_proof_hmac_secret = "Charming123"  # optional example; match sidecar QSDM_NGC_PROOF_HMAC_SECRET
+# nvidia_lock_proof_hmac_secret = "<replace-with-random-32-byte-secret>"  # match sidecar QSDM_NGC_PROOF_HMAC_SECRET
 # nvidia_lock_require_ingest_nonce = false  # if true: GET /api/v1/monitoring/ngc-challenge + single-use nonce per ingest; proof consumed after one lock pass (requires HMAC secret)
 # nvidia_lock_gate_p2p = false  # if true (with nvidia_lock): drop libp2p-received txs after PoE validation unless a qualifying proof exists (non-consuming check; env QSDM_NVIDIA_LOCK_GATE_P2P)
 # nvidia_lock_ingest_nonce_ttl = "10m"
-# jwt_hmac_secret = "Charming123"  # optional example; non-CGO JWT/request-signing HMAC
+# jwt_hmac_secret = "<replace-with-separate-random-32-byte-secret>"  # non-CGO JWT/request-signing HMAC
 # strict_secrets = false  # if true: reject secrets < 16 chars or charming123* prefix (or set env QSDM_STRICT_SECRETS=true; overrides file)
 # Global HTTP API rate limit (per IP or X-API-Key); health routes exempt (env QSDM_API_RATE_LIMIT_MAX / WINDOW)
 # rate_limit_max_requests = 100
@@ -108,4 +108,3 @@ disabled = false              # true -> /api/v1/trust/attestations/* returns 404
 fresh_within = "15m"          # attestations older than this are treated as stale
 refresh_interval = "10s"      # background cache rebuild cadence
 region_hint = ""              # "eu" | "us" | "apac" | "other" | "" (coarse bucket)
-

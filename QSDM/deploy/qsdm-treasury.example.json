@@ -1,0 +1,30 @@
+{
+  "referral": {
+    "enabled": false,
+    "claimsEnabled": false,
+    "autoStart": false,
+    "signerUrl": "http://127.0.0.1:8897",
+    "keystorePath": "C:\\secure\\qsdm\\referral-wallet.json",
+    "passphraseFile": "C:\\secure\\qsdm\\referral.passphrase",
+    "signerTokenFile": "C:\\secure\\qsdm\\referral-signer.token",
+    "expectedAddress": "replace-with-referral-hot-wallet-address",
+    "rewardCell": 5,
+    "maxPayout": 5,
+    "minimumReserve": 25,
+    "feeCell": 0.001
+  },
+  "faucet": {
+    "enabled": false,
+    "autoStart": false,
+    "signerUrl": "http://127.0.0.1:8898",
+    "keystorePath": "C:\\secure\\qsdm\\onboarding-wallet.json",
+    "passphraseFile": "C:\\secure\\qsdm\\onboarding.passphrase",
+    "signerTokenFile": "C:\\secure\\qsdm\\onboarding-signer.token",
+    "expectedAddress": "replace-with-onboarding-hot-wallet-address",
+    "targetBalance": 1,
+    "maxGrant": 1,
+    "maxPayout": 1,
+    "minimumReserve": 10,
+    "feeCell": 0.001
+  }
+}

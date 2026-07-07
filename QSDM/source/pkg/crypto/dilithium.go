@@ -1,3 +1,6 @@
+//go:build cgo && !dilithium_circl
+// +build cgo,!dilithium_circl
+
 package crypto
 
 /*
@@ -12,7 +15,7 @@ package crypto
 // Returns: 0 = failed, 1 = loaded
 static int preload_liboqs_dll() {
     HMODULE hOqs = NULL;
-    
+
     // Try current directory first (most reliable)
     hOqs = LoadLibraryA(".\\liboqs.dll");
     if (!hOqs) {
@@ -23,7 +26,7 @@ static int preload_liboqs_dll() {
             hOqs = LoadLibraryA("liboqs.dll");
         }
     }
-    
+
     if (hOqs) {
         return 1;
     }
@@ -37,7 +40,7 @@ static int preload_openssl_dlls() {
     HMODULE hSsl = NULL;
     int loaded = 0;
     DWORD lastError = 0;
-    
+
     // Try current directory first (most reliable)
     hCrypto = LoadLibraryA(".\\libcrypto-3-x64.dll");
     if (!hCrypto) {
@@ -49,7 +52,7 @@ static int preload_openssl_dlls() {
             hCrypto = LoadLibraryA("libcrypto-3-x64.dll");
         }
     }
-    
+
     // Also try to load libssl (some OpenSSL functions may need it)
     hSsl = LoadLibraryA(".\\libssl-3-x64.dll");
     if (!hSsl) {
@@ -58,28 +61,28 @@ static int preload_openssl_dlls() {
             hSsl = LoadLibraryA("libssl-3-x64.dll");
         }
     }
-    
+
     // Check if both loaded successfully
     if (hCrypto && hSsl) {
         loaded = 1;
-        
+
         // Try to verify OpenSSL is actually functional by getting a function pointer
         // This helps catch cases where DLL loads but symbols aren't available
         typedef const char* (*OpenSSL_version_func)(int);
         typedef void (*OpenSSL_add_all_algorithms_func)(void);
-        
+
         OpenSSL_version_func openssl_version = (OpenSSL_version_func)GetProcAddress(hCrypto, "OpenSSL_version");
         OpenSSL_add_all_algorithms_func openssl_add_all = (OpenSSL_add_all_algorithms_func)GetProcAddress(hCrypto, "OpenSSL_add_all_algorithms");
         typedef int (*OPENSSL_init_crypto_func)(unsigned long, void*);
         OPENSSL_init_crypto_func openssl_init_crypto = (OPENSSL_init_crypto_func)GetProcAddress(hCrypto, "OPENSSL_init_crypto");
-        
+
         if (openssl_version) {
             // Try calling it to ensure it's actually working
             const char* version = openssl_version(0);
             if (version && strlen(version) > 0) {
                 // OpenSSL is functional - return 2 to indicate verified
                 loaded = 2;
-                
+
                 // CRITICAL: Initialize OpenSSL before liboqs tries to use it
                 // OpenSSL 3.x requires explicit initialization
                 if (openssl_init_crypto) {
@@ -100,7 +103,7 @@ static int preload_openssl_dlls() {
             lastError = GetLastError();
         }
     }
-    
+
     // Don't free the handles - we need them to stay loaded
     // The DLLs will be unloaded when the process exits
     return loaded;
@@ -135,7 +138,7 @@ func NewDilithium() *Dilithium {
 			fmt.Printf("  - CGO initialization failure\n")
 		}
 	}()
-	
+
 	// On Windows, preload OpenSSL DLLs BEFORE CGO tries to load liboqs.dll
 	// This ensures OpenSSL symbols are available when liboqs.dll loads (Windows only)
 	// Note: We don't manually load liboqs.dll - CGO will load it automatically
@@ -161,7 +164,7 @@ func NewDilithium() *Dilithium {
 	// }
 	// #endif
 	// On Linux, OpenSSL is linked normally via CGO, so no DLL preloading needed
-	
+
 	// Try to initialize liboqs - this may fail if OpenSSL DLL is missing
 	// even if liboqs is statically linked, because liboqs depends on OpenSSL
 	// NOTE: Dilithium was removed in liboqs 0.15.0+, replaced by ML-DSA (FIPS 204)
@@ -169,23 +172,23 @@ func NewDilithium() *Dilithium {
 	// - ML-DSA-87: 256-bit security, 0.5 ms signing (maximum security)
 	// - ML-DSA-65: 192-bit security, 0.4 ms signing (balanced)
 	// - ML-DSA-44: 128-bit security, 0.3 ms signing (fastest, same security as Bitcoin/Ethereum)
-	// 
+	//
 	// Current: ML-DSA-87 (maximum security)
 	// To optimize for speed, change to "ML-DSA-44" or "ML-DSA-65"
 	cname := C.CString("ML-DSA-87")
 	defer C.free(unsafe.Pointer(cname))
-	
+
 	// Try to initialize liboqs signature scheme
 	// Note: Even if DLLs are preloaded and OpenSSL is initialized, OQS_SIG_new may fail if:
 	// 1. OpenSSL version mismatch (liboqs built against different OpenSSL version)
 	// 2. Missing OpenSSL dependencies (other DLLs that OpenSSL needs)
 	// 3. liboqs.dll cannot resolve OpenSSL symbols (Windows DLL symbol resolution issue)
 	// 4. liboqs internal initialization failure (algorithm not available, etc.)
-	
+
 	// Add a small delay to ensure DLLs are fully loaded and initialized
 	// This helps with Windows DLL loading timing issues
 	time.Sleep(10 * time.Millisecond)
-	
+
 	sig := C.OQS_SIG_new(cname)
 	if sig == nil {
 		fmt.Println("")
@@ -237,7 +240,7 @@ func NewDilithium() *Dilithium {
 		fmt.Println("")
 		return nil
 	}
-	
+
 	d := &Dilithium{sig: sig}
 	// Generate key pair
 	pk := make([]byte, sig.length_public_key)
@@ -298,9 +301,9 @@ func (d *Dilithium) SignOptimized(message []byte) ([]byte, error) {
 	if d.sig == nil {
 		return nil, errors.New("Dilithium not initialized (hint: ensure liboqs.dll and OpenSSL DLLs are available, check CGO is enabled)")
 	}
-	
+
 	optimizer := GetSigningOptimizer()
-	
+
 	// Get buffer from pool to reduce allocations
 	var sigBuf []byte
 	if pooled := optimizer.sigBufPool.Get(); pooled != nil {
@@ -309,12 +312,12 @@ func (d *Dilithium) SignOptimized(message []byte) ([]byte, error) {
 	} else {
 		sigBuf = make([]byte, d.sig.length_signature)
 	}
-	
+
 	// Ensure buffer is large enough
 	if len(sigBuf) < int(d.sig.length_signature) {
 		sigBuf = make([]byte, d.sig.length_signature)
 	}
-	
+
 	var sigLen C.size_t
 	ret := C.OQS_SIG_sign(
 		d.sig,
@@ -327,7 +330,7 @@ func (d *Dilithium) SignOptimized(message []byte) ([]byte, error) {
 	if ret != C.OQS_SUCCESS {
 		return nil, fmt.Errorf("failed to sign message with ML-DSA-87 (hint: check liboqs initialization and message format, error code: %d)", ret)
 	}
-	
+
 	// Return a copy to avoid issues with pooled buffer
 	result := make([]byte, sigLen)
 	copy(result, sigBuf[:sigLen])
@@ -341,11 +344,11 @@ func (d *Dilithium) SignBatchOptimized(messages [][]byte) ([][]byte, error) {
 	if d.sig == nil {
 		return nil, errors.New("Dilithium not initialized (hint: ensure liboqs.dll and OpenSSL DLLs are available, check CGO is enabled)")
 	}
-	
+
 	results := make([][]byte, len(messages))
 	errors := make([]error, len(messages))
 	var wg sync.WaitGroup
-	
+
 	// Sign all messages in parallel
 	for i, msg := range messages {
 		wg.Add(1)
@@ -360,9 +363,9 @@ func (d *Dilithium) SignBatchOptimized(messages [][]byte) ([][]byte, error) {
 			results[idx] = sig
 		}(i, msg)
 	}
-	
+
 	wg.Wait()
-	
+
 	// Check for errors
 	for i, err := range errors {
 		if err != nil {
@@ -372,7 +375,7 @@ func (d *Dilithium) SignBatchOptimized(messages [][]byte) ([][]byte, error) {
 			return nil, fmt.Errorf("signing failed for message at index %d", i)
 		}
 	}
-	
+
 	return results, nil
 }
 

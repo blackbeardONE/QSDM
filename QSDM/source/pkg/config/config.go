@@ -33,8 +33,9 @@ type Config struct {
 	MiningEnabled bool
 
 	// Network
-	NetworkPort      int
-	BootstrapPeers   []string
+	NetworkPort        int
+	NetworkBindAddress string
+	BootstrapPeers     []string
 	// NetworkHostKeyPath: optional file persisting the libp2p host
 	// PrivateKey across restarts so peer.ID is stable. Empty (default)
 	// = ephemeral key, generated fresh every restart (acceptable for
@@ -49,10 +50,10 @@ type Config struct {
 	SubmeshConfigPath string
 	// ConfigFileUsed is the absolute path to the main config file when one was loaded; used to resolve relative submesh_config.
 	ConfigFileUsed string
-	
+
 	// Storage
-	StorageType      string // "sqlite", "scylla", or "file" (for non-CGO builds)
-	SQLitePath       string
+	StorageType string // "sqlite", "scylla", or "file" (for non-CGO builds)
+	SQLitePath  string
 	// UserStorePath: path to the JSON file that persists the dashboard
 	// user map (Argon2id password hashes). When empty the store is in-
 	// memory only, which matches legacy test behaviour but is unsafe in
@@ -61,21 +62,22 @@ type Config struct {
 	// <state_dir>/qsdm_users.json where state_dir = filepath.Dir(SQLitePath).
 	// Env override: QSDM_USER_STORE_PATH (the pre-rebrand QSDMPLUS_USER_STORE_PATH env var
 	// is no longer read; see pkg/envcompat godoc).
-	UserStorePath    string
-	ScyllaHosts      []string
-	ScyllaKeyspace   string
-	ScyllaUsername   string
-	ScyllaPassword   string
-	ScyllaTLSCaPath  string
-	ScyllaTLSCertPath string
-	ScyllaTLSKeyPath  string
+	UserStorePath               string
+	ScyllaHosts                 []string
+	ScyllaKeyspace              string
+	ScyllaUsername              string
+	ScyllaPassword              string
+	ScyllaTLSCaPath             string
+	ScyllaTLSCertPath           string
+	ScyllaTLSKeyPath            string
 	ScyllaTLSInsecureSkipVerify bool
 
 	// Monitoring
-	DashboardPort    int
-	LogViewerPort    int
-	LogFile          string
-	LogLevel         string
+	DashboardPort        int
+	DashboardBindAddress string
+	LogViewerPort        int
+	LogFile              string
+	LogLevel             string
 	// NGCProofPersistPath: optional path the in-memory NGC
 	// attestation ring (see pkg/monitoring/ngc_proofs.go) is
 	// persisted to as JSONL. When set, qsdm.service restart no
@@ -99,17 +101,18 @@ type Config struct {
 	// metrics_scrape_secret is set. (The pre-rebrand QSDMPLUS_DASHBOARD_STRICT_AUTH env var is no
 	// longer read; see pkg/envcompat godoc.)
 	DashboardStrictAuth bool
-	
+
 	// API Server
-	APIPort          int
-	TLSCertFile      string
-	TLSKeyFile       string
-	EnableTLS        bool
+	APIPort        int
+	APIBindAddress string
+	TLSCertFile    string
+	TLSKeyFile     string
+	EnableTLS      bool
 	// ACME (Let's Encrypt) auto-provisioned TLS certificates.
 	// Set ACMEDomains to enable; takes precedence over TLSCertFile/TLSKeyFile.
-	ACMEDomains      []string
-	ACMEEmail        string
-	ACMECacheDir     string
+	ACMEDomains  []string
+	ACMEEmail    string
+	ACMECacheDir string
 	// Mutual TLS (mTLS) for node-to-node API authentication.
 	MTLSCACertFile   string
 	MTLSNodeCertFile string
@@ -118,16 +121,17 @@ type Config struct {
 	// APIRateLimitMaxRequests: max HTTP requests per client per APIRateLimitWindow (default 100/min). Health routes are exempt.
 	APIRateLimitMaxRequests int
 	APIRateLimitWindow      time.Duration
-	
+
 	// Wallet
-	InitialBalance   float64
-	
+	InitialBalance float64
+
 	// Governance
-	ProposalFile     string
-	
+	ProposalFile string
+
 	// Performance
-	TransactionInterval time.Duration
-	HealthCheckInterval time.Duration
+	TransactionInterval     time.Duration
+	HealthCheckInterval     time.Duration
+	DemoTransactionsEnabled bool
 
 	// NGC sidecar: shared secret for POST /api/v1/monitoring/ngc-proof.
 	// Prefer env QSDM_NGC_INGEST_SECRET; QSDM_NGC_INGEST_SECRET is still accepted
@@ -209,11 +213,11 @@ type Config struct {
 func LoadConfig() (*Config, error) {
 	// Load .env file if it exists
 	_ = godotenv.Load()
-	
+
 	// Try to load from config file first
 	cfg := &Config{}
 	configFile := getEnvString("CONFIG_FILE", "")
-	
+
 	// If no config file specified, try common names. The post-rebrand qsdm.*
 	// names are preferred; the legacy qsdmplus.* names are still probed so
 	// existing deployments continue to work through the deprecation window.
@@ -229,7 +233,7 @@ func LoadConfig() (*Config, error) {
 			}
 		}
 	}
-	
+
 	// Check if config file exists
 	if configFile != "" {
 		if _, err := os.Stat(configFile); err == nil {
@@ -243,25 +247,25 @@ func LoadConfig() (*Config, error) {
 			}
 		}
 	}
-	
+
 	// Apply defaults for any unset values
 	applyDefaults(cfg)
-	
+
 	// Override with environment variables (highest priority)
 	applyEnvOverrides(cfg)
-	
+
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
-	
+
 	return cfg, nil
 }
 
 // loadConfigFile loads configuration from TOML or YAML file
 func loadConfigFile(path string, cfg *Config) error {
 	ext := strings.ToLower(filepath.Ext(path))
-	
+
 	switch ext {
 	case ".toml":
 		var tomlCfg ConfigTOML
@@ -276,6 +280,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		}
 		cfg.MiningEnabled = tomlCfg.Node.MiningEnabled
 		cfg.NetworkPort = tomlCfg.Network.Port
+		cfg.NetworkBindAddress = strings.TrimSpace(tomlCfg.Network.BindAddress)
 		cfg.BootstrapPeers = tomlCfg.Network.BootstrapPeers
 		cfg.SubmeshConfigPath = strings.TrimSpace(tomlCfg.Network.SubmeshConfig)
 		cfg.NetworkHostKeyPath = strings.TrimSpace(tomlCfg.Network.HostKeyPath)
@@ -284,6 +289,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.ScyllaHosts = tomlCfg.Storage.ScyllaHosts
 		cfg.ScyllaKeyspace = tomlCfg.Storage.ScyllaKeyspace
 		cfg.DashboardPort = tomlCfg.Monitoring.DashboardPort
+		cfg.DashboardBindAddress = strings.TrimSpace(tomlCfg.Monitoring.DashboardBindAddress)
 		cfg.LogViewerPort = tomlCfg.Monitoring.LogViewerPort
 		cfg.LogFile = tomlCfg.Monitoring.LogFile
 		cfg.LogLevel = tomlCfg.Monitoring.LogLevel
@@ -291,6 +297,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.DashboardStrictAuth = tomlCfg.Monitoring.StrictDashboardAuth
 		cfg.NGCProofPersistPath = strings.TrimSpace(tomlCfg.Monitoring.NGCProofPersistPath)
 		cfg.APIPort = tomlCfg.API.Port
+		cfg.APIBindAddress = strings.TrimSpace(tomlCfg.API.BindAddress)
 		cfg.EnableTLS = tomlCfg.API.EnableTLS
 		cfg.TLSCertFile = tomlCfg.API.TLSCertFile
 		cfg.TLSKeyFile = tomlCfg.API.TLSKeyFile
@@ -331,6 +338,7 @@ func loadConfigFile(path string, cfg *Config) error {
 				cfg.HealthCheckInterval = d
 			}
 		}
+		cfg.DemoTransactionsEnabled = tomlCfg.Performance.DemoTransactions
 		cfg.TrustEndpointsDisabled = tomlCfg.Trust.Disabled
 		if tomlCfg.Trust.FreshWithin != "" {
 			if d, err := time.ParseDuration(tomlCfg.Trust.FreshWithin); err == nil {
@@ -360,6 +368,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		}
 		cfg.MiningEnabled = yamlCfg.Node.MiningEnabled
 		cfg.NetworkPort = yamlCfg.Network.Port
+		cfg.NetworkBindAddress = strings.TrimSpace(yamlCfg.Network.BindAddress)
 		cfg.BootstrapPeers = yamlCfg.Network.BootstrapPeers
 		cfg.SubmeshConfigPath = strings.TrimSpace(yamlCfg.Network.SubmeshConfig)
 		cfg.NetworkHostKeyPath = strings.TrimSpace(yamlCfg.Network.HostKeyPath)
@@ -374,6 +383,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.ScyllaTLSKeyPath = yamlCfg.Storage.ScyllaTLSKeyPath
 		cfg.ScyllaTLSInsecureSkipVerify = yamlCfg.Storage.ScyllaTLSInsecureSkipVerify
 		cfg.DashboardPort = yamlCfg.Monitoring.DashboardPort
+		cfg.DashboardBindAddress = strings.TrimSpace(yamlCfg.Monitoring.DashboardBindAddress)
 		cfg.LogViewerPort = yamlCfg.Monitoring.LogViewerPort
 		cfg.LogFile = yamlCfg.Monitoring.LogFile
 		cfg.LogLevel = yamlCfg.Monitoring.LogLevel
@@ -381,6 +391,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.DashboardStrictAuth = yamlCfg.Monitoring.StrictDashboardAuth
 		cfg.NGCProofPersistPath = strings.TrimSpace(yamlCfg.Monitoring.NGCProofPersistPath)
 		cfg.APIPort = yamlCfg.API.Port
+		cfg.APIBindAddress = strings.TrimSpace(yamlCfg.API.BindAddress)
 		cfg.EnableTLS = yamlCfg.API.EnableTLS
 		cfg.TLSCertFile = yamlCfg.API.TLSCertFile
 		cfg.TLSKeyFile = yamlCfg.API.TLSKeyFile
@@ -416,6 +427,7 @@ func loadConfigFile(path string, cfg *Config) error {
 				cfg.TransactionInterval = d
 			}
 		}
+		cfg.DemoTransactionsEnabled = yamlCfg.Performance.DemoTransactions
 		cfg.TrustEndpointsDisabled = yamlCfg.Trust.Disabled
 		if yamlCfg.Trust.FreshWithin != "" {
 			if d, err := time.ParseDuration(yamlCfg.Trust.FreshWithin); err == nil {
@@ -436,7 +448,7 @@ func loadConfigFile(path string, cfg *Config) error {
 	default:
 		return fmt.Errorf("unsupported config file format: %s (supported: .toml, .yaml, .yml)", ext)
 	}
-	
+
 	return nil
 }
 
@@ -507,7 +519,7 @@ func applyDefaults(cfg *Config) {
 	if cfg.EnableTLS {
 		// Keep TLS enabled if explicitly set
 	} else {
-		cfg.EnableTLS = false  // Default to HTTP
+		cfg.EnableTLS = false // Default to HTTP
 	}
 	if cfg.InitialBalance == 0 {
 		cfg.InitialBalance = 1000.0
@@ -554,6 +566,9 @@ func applyEnvOverrides(cfg *Config) {
 	if val := getEnvString("NETWORK_PORT", ""); val != "" {
 		cfg.NetworkPort = getEnvInt("NETWORK_PORT", cfg.NetworkPort)
 	}
+	if val := strings.TrimSpace(envPreferred("QSDM_NETWORK_BIND_ADDRESS", "QSDM_NETWORK_BIND_ADDRESS")); val != "" {
+		cfg.NetworkBindAddress = val
+	}
 	if val := getEnvString("BOOTSTRAP_PEERS", ""); val != "" {
 		cfg.BootstrapPeers = getEnvStringSlice("BOOTSTRAP_PEERS", cfg.BootstrapPeers)
 	}
@@ -599,6 +614,9 @@ func applyEnvOverrides(cfg *Config) {
 	if val := getEnvString("DASHBOARD_PORT", ""); val != "" {
 		cfg.DashboardPort = getEnvInt("DASHBOARD_PORT", cfg.DashboardPort)
 	}
+	if val := strings.TrimSpace(envPreferred("QSDM_DASHBOARD_BIND_ADDRESS", "QSDM_DASHBOARD_BIND_ADDRESS")); val != "" {
+		cfg.DashboardBindAddress = val
+	}
 	if val := getEnvString("LOG_VIEWER_PORT", ""); val != "" {
 		cfg.LogViewerPort = getEnvInt("LOG_VIEWER_PORT", cfg.LogViewerPort)
 	}
@@ -625,6 +643,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if val := getEnvString("API_PORT", ""); val != "" {
 		cfg.APIPort = getEnvInt("API_PORT", cfg.APIPort)
+	}
+	if val := strings.TrimSpace(envPreferred("QSDM_API_BIND_ADDRESS", "QSDM_API_BIND_ADDRESS")); val != "" {
+		cfg.APIBindAddress = val
 	}
 	if val := envPreferred("QSDM_API_RATE_LIMIT_MAX", "QSDM_API_RATE_LIMIT_MAX"); val != "" {
 		if n, err := strconv.Atoi(val); err == nil && n > 0 {
@@ -683,6 +704,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if val := getEnvString("TRANSACTION_INTERVAL", ""); val != "" {
 		cfg.TransactionInterval = getEnvDuration("TRANSACTION_INTERVAL", cfg.TransactionInterval)
+	}
+	if val := strings.TrimSpace(getEnvString("QSDM_DEMO_TRANSACTIONS", "")); val != "" {
+		cfg.DemoTransactionsEnabled = val == "true" || val == "1" || strings.EqualFold(val, "yes")
 	}
 	if val := getEnvString("HEALTH_CHECK_INTERVAL", ""); val != "" {
 		cfg.HealthCheckInterval = getEnvDuration("HEALTH_CHECK_INTERVAL", cfg.HealthCheckInterval)
@@ -783,15 +807,15 @@ func (c *Config) Validate() error {
 	if c.NetworkPort < 1 || c.NetworkPort > 65535 {
 		return fmt.Errorf("invalid network port: %d", c.NetworkPort)
 	}
-	
+
 	if c.DashboardPort < 1 || c.DashboardPort > 65535 {
 		return fmt.Errorf("invalid dashboard port: %d", c.DashboardPort)
 	}
-	
+
 	if c.LogViewerPort < 1 || c.LogViewerPort > 65535 {
 		return fmt.Errorf("invalid log viewer port: %d", c.LogViewerPort)
 	}
-	
+
 	if c.APIPort < 1 || c.APIPort > 65535 {
 		return fmt.Errorf("invalid API port: %d", c.APIPort)
 	}
@@ -810,11 +834,11 @@ func (c *Config) Validate() error {
 	if rw < time.Second || rw > 24*time.Hour {
 		return fmt.Errorf("invalid API rate_limit_window: %v (allowed 1s..24h)", c.APIRateLimitWindow)
 	}
-	
+
 	if c.StorageType != "sqlite" && c.StorageType != "scylla" && c.StorageType != "file" {
 		return fmt.Errorf("invalid storage type: %s (must be 'sqlite', 'scylla', or 'file')", c.StorageType)
 	}
-	
+
 	if c.InitialBalance < 0 {
 		return fmt.Errorf("initial balance cannot be negative: %f", c.InitialBalance)
 	}
@@ -973,4 +997,3 @@ func trimString(s string) string {
 	}
 	return s[start:end]
 }
-

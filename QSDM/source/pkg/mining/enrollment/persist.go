@@ -30,11 +30,11 @@ package enrollment
 // the "snapshot inconsistent with itself" failure mode where
 // the persisted index drifts from the persisted records.
 //
-// Atomic write: Save writes to <path>.tmp first and renames
-// onto <path>. A crash between truncate and rename leaves
-// <path> intact, so the recovery posture is "old snapshot is
-// still loadable". Operators that want hot-fix the file can
-// edit <path>.tmp and rename it themselves.
+// Atomic write: Save writes to a same-directory temp file first and replaces
+// <path>. A crash before replacement leaves <path> intact, so the recovery
+// posture is "old snapshot is still loadable". Windows builds fall back to a
+// direct overwrite if replace-over-existing is blocked but the destination is
+// still writable.
 
 import (
 	"encoding/hex"
@@ -42,6 +42,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	"github.com/blackbeardONE/QSDM/pkg/fileutil"
 )
 
 // stateSnapshot is the on-disk shape of an InMemoryState.
@@ -94,12 +96,8 @@ func (s *InMemoryState) Save(path string) error {
 	if err != nil {
 		return fmt.Errorf("enrollment: marshal snapshot: %w", err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("enrollment: write %s: %w", tmp, err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("enrollment: rename %s -> %s: %w", tmp, path, err)
+	if err := fileutil.WriteFileAtomic(path, data, 0o644); err != nil {
+		return fmt.Errorf("enrollment: save %s: %w", path, err)
 	}
 	return nil
 }

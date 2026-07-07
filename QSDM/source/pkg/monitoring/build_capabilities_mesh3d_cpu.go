@@ -1,4 +1,4 @@
-//go:build !(cgo && (windows || (linux && cuda)))
+//go:build !(cgo && cuda)
 
 package monitoring
 
@@ -8,7 +8,7 @@ package monitoring
 // The constraint is the exact inverse of pkg/mesh3d/cuda.go's build
 // tag, so it covers the union of:
 //
-//   - pkg/mesh3d/cuda_stub.go        (cgo, but no CUDA-supported OS)
+//   - pkg/mesh3d/cuda_stub.go        (cgo, but no explicit cuda tag)
 //   - pkg/mesh3d/mesh3d_stub.go      (!cgo, every OS)
 //
 // In both cases the validator runs the CPU fallback path; this

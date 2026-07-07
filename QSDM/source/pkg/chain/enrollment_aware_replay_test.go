@@ -117,6 +117,52 @@ func TestRestoreFromChainReplay_RestoresState(t *testing.T) {
 	}
 }
 
+func TestChainReplayClone_ClonesAndRestoresTaskState(t *testing.T) {
+	accounts := NewAccountStore()
+	accounts.Credit(fxAlice, 10)
+	aware := NewEnrollmentAwareApplier(accounts, nil)
+	tasks := NewTaskStateStore()
+	aware.SetTaskStateStore(tasks)
+
+	if err := aware.ApplyTx(taskActionTx(t, TaskAction{
+		ID:        "task-action-stake-0001",
+		Sender:    fxAlice,
+		TaskID:    "task-1",
+		Action:    "stake",
+		Amount:    1,
+		Nonce:     0,
+		Timestamp: "2026-05-28T00:00:00Z",
+	})); err != nil {
+		t.Fatalf("seed task action: %v", err)
+	}
+
+	clone := aware.ChainReplayClone().(*EnrollmentAwareApplier)
+	if err := clone.ApplyTx(taskActionTx(t, TaskAction{
+		ID:        "task-action-stake-0002",
+		Sender:    fxAlice,
+		TaskID:    "task-1",
+		Action:    "stake",
+		Amount:    5,
+		Nonce:     1,
+		Timestamp: "2026-05-28T00:01:00Z",
+	})); err != nil {
+		t.Fatalf("clone task action: %v", err)
+	}
+
+	liveState, _ := tasks.GetTask("task-1")
+	if liveState.Participants[fxAlice].Stake != 1 {
+		t.Fatalf("live task state mutated by clone: %+v", liveState.Participants[fxAlice])
+	}
+
+	if err := aware.RestoreFromChainReplay(clone); err != nil {
+		t.Fatalf("restore task state: %v", err)
+	}
+	restoredState, _ := tasks.GetTask("task-1")
+	if got := restoredState.Participants[fxAlice].Stake; got != 6 {
+		t.Fatalf("restored task stake: got %v, want 6", got)
+	}
+}
+
 func TestRestoreFromChainReplay_TypeMismatch(t *testing.T) {
 	accounts := NewAccountStore()
 	state := enrollment.NewInMemoryState()

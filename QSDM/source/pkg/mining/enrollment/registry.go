@@ -13,10 +13,32 @@ package enrollment
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/blackbeardONE/QSDM/pkg/mining/attest/hmac"
 )
+
+// LegacyOwnerRevocation describes one deterministic owner-format migration.
+// The stake remains in the enrollment record until the normal unbond sweep.
+type LegacyOwnerRevocation struct {
+	NodeID    string
+	Owner     string
+	GPUUUID   string
+	StakeDust uint64
+}
+
+func canonicalWalletOwner(owner string) bool {
+	if len(owner) != 64 || owner != strings.ToLower(owner) {
+		return false
+	}
+	for _, c := range owner {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
 
 // StateBackedRegistry satisfies hmac.Registry by delegating to
 // an EnrollmentState. The wire semantics match
@@ -91,10 +113,10 @@ var _ hmac.Registry = (*StateBackedRegistry)(nil)
 // transitions need the same lock as enroll/unenroll to keep
 // SlashStake atomic with the rest of the record-mutating ops.
 type InMemoryState struct {
-	mu            sync.Mutex
-	byNodeID      map[string]*EnrollmentRecord
-	byGPUActive   map[string]string  // gpu_uuid -> currently-active node_id
-	seenEvidence  map[[32]byte]bool  // dedup key for slash evidence (replay protection)
+	mu           sync.Mutex
+	byNodeID     map[string]*EnrollmentRecord
+	byGPUActive  map[string]string // gpu_uuid -> currently-active node_id
+	seenEvidence map[[32]byte]bool // dedup key for slash evidence (replay protection)
 }
 
 // NewInMemoryState returns an empty InMemoryState.
@@ -401,6 +423,82 @@ func (s *InMemoryState) ApplyEnroll(rec EnrollmentRecord) error {
 	s.byNodeID[rec.NodeID] = &cp
 	s.byGPUActive[rec.GPUUUID] = rec.NodeID
 	return nil
+}
+
+// AccrueBondFromReward locks up to rewardDust into active deferred-bond
+// enrollments owned by owner. When one wallet owns multiple provisional rigs,
+// node IDs are filled in lexical order so every validator reaches the same
+// result independent of Go map iteration order. The return value is the dust
+// withheld from the wallet's liquid reward.
+func (s *InMemoryState) AccrueBondFromReward(owner string, rewardDust uint64) uint64 {
+	if s == nil || owner == "" || rewardDust == 0 {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ids := make([]string, 0)
+	for nodeID, rec := range s.byNodeID {
+		if rec == nil || !rec.Active() || rec.Owner != owner ||
+			rec.NormalizedBondMode() != BondModeMiningRewards || rec.FullyBonded() {
+			continue
+		}
+		ids = append(ids, nodeID)
+	}
+	sort.Strings(ids)
+
+	remainingReward := rewardDust
+	for _, nodeID := range ids {
+		rec := s.byNodeID[nodeID]
+		need := rec.BondRemainingDust()
+		locked := need
+		if locked > remainingReward {
+			locked = remainingReward
+		}
+		rec.StakeDust += locked
+		remainingReward -= locked
+		if remainingReward == 0 {
+			break
+		}
+	}
+	return rewardDust - remainingReward
+}
+
+// RevokeLegacyOwners retires active pre-wallet enrollment aliases at the fixed
+// consensus sunset height. Revocation fields use the fixed height even when a
+// node restores an older snapshot later, keeping the resulting state identical
+// across replay and restart. Node iteration is sorted for deterministic events.
+func (s *InMemoryState) RevokeLegacyOwners(currentHeight uint64) []LegacyOwnerRevocation {
+	if currentHeight < LegacyOwnerSunsetHeight {
+		return nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nodeIDs := make([]string, 0, len(s.byNodeID))
+	for nodeID := range s.byNodeID {
+		nodeIDs = append(nodeIDs, nodeID)
+	}
+	sort.Strings(nodeIDs)
+
+	var revoked []LegacyOwnerRevocation
+	for _, nodeID := range nodeIDs {
+		rec := s.byNodeID[nodeID]
+		if rec == nil || !rec.Active() || canonicalWalletOwner(rec.Owner) {
+			continue
+		}
+		rec.RevokedAtHeight = LegacyOwnerSunsetHeight
+		rec.UnbondMaturesAtHeight = LegacyOwnerSunsetHeight + UnbondWindow
+		delete(s.byGPUActive, rec.GPUUUID)
+		revoked = append(revoked, LegacyOwnerRevocation{
+			NodeID:    rec.NodeID,
+			Owner:     rec.Owner,
+			GPUUUID:   rec.GPUUUID,
+			StakeDust: rec.StakeDust,
+		})
+	}
+	return revoked
 }
 
 // ApplyUnenroll marks the named record as revoked. The record

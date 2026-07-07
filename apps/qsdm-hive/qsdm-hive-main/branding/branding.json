@@ -1,0 +1,20 @@
+{
+  "appName": "QSDM Hive",
+  "onboardingTaskID": "",
+  "colors": {
+    "base": "#0A4D68",
+    "depth-100": "#06141B",
+    "depth-90": "#0B1F28",
+    "depth-80": "#102A35",
+    "depth-70": "#173946",
+    "depth-60": "#1F4A58",
+    "depth-50": "#2E6472",
+    "depth-40": "#3F8090",
+    "depth-30": "#62A6B4",
+    "depth-20": "#9ED7DC",
+    "depth-10": "#D8F3F4",
+    "highlight": "#F7C948",
+    "gradient-start": "rgba(6, 20, 27, 1)",
+    "gradient-end": "rgba(10, 77, 104, 0.95)"
+  }
+}

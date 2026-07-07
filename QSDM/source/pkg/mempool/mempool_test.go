@@ -1,6 +1,7 @@
 package mempool
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -148,6 +149,24 @@ func TestMempool_Drain(t *testing.T) {
 	}
 	if m.Size() != 7 {
 		t.Fatalf("expected 7 remaining, got %d", m.Size())
+	}
+}
+
+func TestMempool_RejectsCompetingConsensusNonce(t *testing.T) {
+	m := New(DefaultConfig())
+	first := &Tx{ID: "first", Sender: "alice", Nonce: 7, ContractID: "qsdm/test/v1"}
+	second := &Tx{ID: "second", Sender: "alice", Nonce: 7, ContractID: "qsdm/test/v1"}
+	if err := m.Add(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Add(second); !errors.Is(err, ErrNonceAlreadyPending) {
+		t.Fatalf("second Add error = %v, want ErrNonceAlreadyPending", err)
+	}
+	if !m.Remove(first.ID) {
+		t.Fatal("failed to remove first transaction")
+	}
+	if err := m.Add(second); err != nil {
+		t.Fatalf("nonce was not released after removal: %v", err)
 	}
 }
 

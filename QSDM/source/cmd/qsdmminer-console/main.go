@@ -84,6 +84,12 @@ type Config struct {
 	BatchCount   uint32 `toml:"batch_count"`
 	PollInterval string `toml:"poll_interval"`
 	Plain        bool   `toml:"plain"`
+	// ComputeBackend controls proof search. "cuda" requires the companion
+	// qsdm-miner-cuda-solver; "cpu" retains the audit/reference path; "auto"
+	// selects CUDA when the helper is installed and otherwise uses CPU.
+	ComputeBackend string `toml:"compute_backend,omitempty"`
+	CUDASolverPath string `toml:"cuda_solver_path,omitempty"`
+	CUDABatchSize  uint64 `toml:"cuda_batch_size,omitempty"`
 
 	// ChallengeURLs, when non-empty, replaces the default
 	// "fetch from validator_url only" challenge-fetch policy
@@ -1043,16 +1049,19 @@ func main() {
 // real exit code rather than a process death.
 func realMain(parentCtx context.Context) int {
 	var (
-		configPath   = flag.String("config", defaultConfigPath(), "path to the miner config file")
-		validatorURL = flag.String("validator", "", "override config: validator base URL")
-		rewardAddr   = flag.String("address", "", "override config: reward address")
-		setup        = flag.Bool("setup", false, "force the interactive setup wizard then exit (or continue mining after)")
-		plain        = flag.Bool("plain", false, "disable the live console panel; log one line per event instead")
-		selfTest     = flag.Bool("self-test", false, "run an in-memory solve-and-verify and exit 0 on success")
-		batchCount   = flag.Uint("batch-count", 0, "override config: batches claimed per proof (0 = use config)")
-		pollInterval = flag.Duration("poll", 0, "override config: work-poll interval (0 = use config)")
-		httpTimeout  = flag.Duration("http-timeout", 30*time.Second, "per-request HTTP timeout")
-		showVersion  = flag.Bool("version", false, "print build metadata (release tag, git SHA, build date, runtime) and exit")
+		configPath     = flag.String("config", defaultConfigPath(), "path to the miner config file")
+		validatorURL   = flag.String("validator", "", "override config: validator base URL")
+		rewardAddr     = flag.String("address", "", "override config: reward address")
+		setup          = flag.Bool("setup", false, "force the interactive setup wizard then exit (or continue mining after)")
+		plain          = flag.Bool("plain", false, "disable the live console panel; log one line per event instead")
+		selfTest       = flag.Bool("self-test", false, "run an in-memory solve-and-verify and exit 0 on success")
+		batchCount     = flag.Uint("batch-count", 0, "override config: batches claimed per proof (0 = use config)")
+		pollInterval   = flag.Duration("poll", 0, "override config: work-poll interval (0 = use config)")
+		httpTimeout    = flag.Duration("http-timeout", 30*time.Second, "per-request HTTP timeout")
+		showVersion    = flag.Bool("version", false, "print build metadata (release tag, git SHA, build date, runtime) and exit")
+		computeBackend = flag.String("compute-backend", "", "proof solver: cuda, cpu, or auto (default uses config, then auto)")
+		cudaSolverPath = flag.String("cuda-solver", "", "path to qsdm-miner-cuda-solver (default: beside this executable)")
+		cudaBatchSize  = flag.Uint64("cuda-batch-size", 0, "CUDA nonce attempts per kernel launch (default 65536)")
 
 		// v2 NVIDIA-locked protocol flags. See v2.go. All empty
 		// by default; passing --protocol=v2 activates the path
@@ -1236,8 +1245,23 @@ func realMain(parentCtx context.Context) int {
 	if *pollInterval > 0 {
 		cfg.PollInterval = pollInterval.String()
 	}
+	if *computeBackend != "" {
+		cfg.ComputeBackend = strings.ToLower(strings.TrimSpace(*computeBackend))
+	}
+	if *cudaSolverPath != "" {
+		cfg.CUDASolverPath = strings.TrimSpace(*cudaSolverPath)
+	}
+	if *cudaBatchSize > 0 {
+		cfg.CUDABatchSize = *cudaBatchSize
+	}
 	if cfg.BatchCount == 0 {
 		cfg.BatchCount = 1
+	}
+	if cfg.ComputeBackend == "" {
+		cfg.ComputeBackend = "auto"
+	}
+	if cfg.CUDABatchSize == 0 {
+		cfg.CUDABatchSize = defaultCUDABatchSize
 	}
 
 	// v2 overrides: CLI wins over config file, same as v1. We
@@ -1347,6 +1371,34 @@ func realMain(parentCtx context.Context) int {
 	// QSDMMiner` is exactly equivalent to Ctrl-C here.
 	ctx, cancel := signal.NotifyContext(parentCtx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	var cudaBackend *cudaSolver
+	selectedBackend := strings.ToLower(strings.TrimSpace(cfg.ComputeBackend))
+	if selectedBackend != "cpu" && selectedBackend != "cuda" && selectedBackend != "auto" {
+		fmt.Fprintf(os.Stderr, "invalid compute_backend %q; expected cuda, cpu, or auto\n", cfg.ComputeBackend)
+		return 2
+	}
+	if selectedBackend == "cuda" || selectedBackend == "auto" {
+		helperPath, helperErr := resolveCUDASolverPath(cfg.CUDASolverPath)
+		if helperErr == nil {
+			cudaBackend, helperErr = startCUDASolver(ctx, helperPath)
+		}
+		if helperErr != nil && selectedBackend == "cuda" {
+			fmt.Fprintf(os.Stderr, "CUDA proof solver required: %v\n", helperErr)
+			return 4
+		}
+		if helperErr != nil {
+			fmt.Fprintf(os.Stderr, "qsdmminer-console: CUDA unavailable; using explicit CPU reference fallback: %v\n", helperErr)
+		}
+	}
+	if cudaBackend != nil {
+		defer cudaBackend.Close()
+		fmt.Fprintf(os.Stderr, "  compute_backend = cuda-sha3\n")
+		fmt.Fprintf(os.Stderr, "  cuda_device = %s (compute capability %s)\n", cudaBackend.DeviceName(), cudaBackend.ComputeCapability())
+		fmt.Fprintf(os.Stderr, "  cuda_batch_size = %d nonce attempts\n", cfg.CUDABatchSize)
+	} else {
+		fmt.Fprintln(os.Stderr, "  compute_backend = cpu-reference")
+	}
 
 	var rend renderer
 	if usePanel {
@@ -1521,7 +1573,7 @@ func realMain(parentCtx context.Context) int {
 		}()
 	}
 
-	runLoop(ctx, client, challengeFetcher, cfg, v2ctx, idleGateInstance, events, &attempts)
+	runLoop(ctx, client, challengeFetcher, cfg, v2ctx, idleGateInstance, cudaBackend, events, &attempts)
 	pollerWG.Wait()
 
 	events <- Event{Kind: EvShutdown, At: time.Now(), Message: "shutting down"}
@@ -1553,7 +1605,7 @@ func cliWantsContinue() bool {
 // this binary can freely evolve its UX.
 // -----------------------------------------------------------------------------
 
-func runLoop(ctx context.Context, client *http.Client, fetcher v2client.ChallengeFetcher, cfg Config, v2ctx *V2Context, gate *idleGate, events chan<- Event, attempts *uint64) {
+func runLoop(ctx context.Context, client *http.Client, fetcher v2client.ChallengeFetcher, cfg Config, v2ctx *V2Context, gate *idleGate, cudaBackend *cudaSolver, events chan<- Event, attempts *uint64) {
 	var (
 		currentEpoch uint64 = ^uint64(0)
 		currentDAG   mining.DAG
@@ -1631,20 +1683,28 @@ func runLoop(ctx context.Context, client *http.Client, fetcher v2client.Challeng
 			send(Event{Kind: EvEpochChanged, Epoch: work.Epoch, DAGSize: work.DAGSize,
 				Message: fmt.Sprintf("new mining epoch %d (N=%d)", work.Epoch, work.DAGSize)})
 			start := time.Now()
-			dag, err := mining.NewInMemoryDAG(work.Epoch, ws.Root(), work.DAGSize)
-			if err != nil {
-				send(Event{Kind: EvError, Message: "build DAG: " + err.Error()})
-				sleepOrCancel(ctx, poll)
-				continue
+			if cudaBackend != nil {
+				if err := cudaBackend.InitDAG(ctx, work.Epoch, ws.Root(), work.DAGSize); err != nil {
+					send(Event{Kind: EvError, Message: "initialize CUDA DAG: " + err.Error()})
+					return
+				}
+				currentDAG = nil
+			} else {
+				dag, err := mining.NewInMemoryDAG(work.Epoch, ws.Root(), work.DAGSize)
+				if err != nil {
+					send(Event{Kind: EvError, Message: "build DAG: " + err.Error()})
+					sleepOrCancel(ctx, poll)
+					continue
+				}
+				currentDAG = dag
 			}
 			send(Event{Kind: EvDAGReady, Epoch: work.Epoch, DAGSize: work.DAGSize,
-				Message: fmt.Sprintf("DAG built in %s", time.Since(start).Round(time.Millisecond))})
-			currentDAG = dag
+				Message: fmt.Sprintf("DAG loaded by %s in %s", map[bool]string{true: "CUDA", false: "CPU"}[cudaBackend != nil], time.Since(start).Round(time.Millisecond))})
 			currentEpoch = work.Epoch
 		}
 
 		sctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
-		res, err := mining.Solve(sctx, mining.SolverParams{
+		solverParams := mining.SolverParams{
 			Epoch:      work.Epoch,
 			Height:     work.Height,
 			HeaderHash: hdr,
@@ -1653,13 +1713,22 @@ func runLoop(ctx context.Context, client *http.Client, fetcher v2client.Challeng
 			BatchCount: batchCount,
 			Target:     target,
 			DAG:        currentDAG,
-		}, nil, attempts)
+		}
+		var res *mining.SolveResult
+		if cudaBackend != nil {
+			res, err = cudaBackend.Solve(sctx, solverParams, nil, cfg.CUDABatchSize, attempts)
+		} else {
+			res, err = mining.Solve(sctx, solverParams, nil, attempts)
+		}
 		cancel()
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				continue
 			}
 			send(Event{Kind: EvError, Message: "solve: " + err.Error()})
+			if cudaBackend != nil {
+				return
+			}
 			sleepOrCancel(ctx, poll)
 			continue
 		}

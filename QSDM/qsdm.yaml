@@ -4,16 +4,18 @@
 # Network Configuration
 network:
   port: 4001
+  bind_address: "127.0.0.1"
   bootstrap_peers: []
 
 # Storage Configuration
 storage:
-  type: "file"  # Use file storage for non-CGO builds
+  type: "sqlite"  # Local validator uses SQLite when built with CGO.
   sqlite_path: "qsdm.db"
 
 # Monitoring Configuration
 monitoring:
   dashboard_port: 8081
+  dashboard_bind_address: "127.0.0.1"
   log_viewer_port: 8082  # Changed from 8080 to avoid conflict with API
   log_file: "qsdm.log"
   log_level: "INFO"
@@ -21,6 +23,7 @@ monitoring:
 # API Server Configuration (HTTP for development)
 api:
   port: 8080
+  bind_address: "127.0.0.1"
   enable_tls: false  # Disable TLS for development
   tls_cert_file: ""
   tls_key_file: ""
@@ -35,6 +38,6 @@ governance:
 
 # Performance Configuration
 performance:
+  demo_transactions: false
   transaction_interval: "30s"
   health_check_interval: "30s"
-

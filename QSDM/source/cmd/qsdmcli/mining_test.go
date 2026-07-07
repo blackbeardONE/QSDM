@@ -4,8 +4,11 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -52,11 +55,7 @@ func newCaptureServer(t *testing.T, status int, response string) *captureServer 
 		cs.rawPath = r.URL.EscapedPath()
 		cs.rawQuery = r.URL.RawQuery
 		cs.contentType = r.Header.Get("Content-Type")
-		buf := make([]byte, r.ContentLength)
-		if r.ContentLength > 0 {
-			r.Body.Read(buf)
-		}
-		cs.body = buf
+		cs.body, _ = io.ReadAll(r.Body)
 		w.WriteHeader(status)
 		// Supply per-request bodies if configured; otherwise
 		// fall back to the static response from construction.
@@ -79,13 +78,23 @@ func (cs *captureServer) cli() *CLI {
 	return &CLI{baseURL: cs.server.URL + "/api/v1", client: http.DefaultClient}
 }
 
+func miningSignerArgs(t *testing.T) (args []string, address string) {
+	t.Helper()
+	walletPath, address, _ := makeKeystoreFile(t)
+	passPath := filepath.Join(filepath.Dir(walletPath), "passphrase.txt")
+	if err := os.WriteFile(passPath, []byte("test\n"), 0o600); err != nil {
+		t.Fatalf("write passphrase: %v", err)
+	}
+	return []string{"--in", walletPath, "--passphrase-file", passPath, "--sender", address}, address
+}
+
 func TestMiningEnroll_BuildsCanonicalEnvelope(t *testing.T) {
 	cs := newCaptureServer(t, http.StatusAccepted, `{"tx_id":"abc","status":"accepted"}`)
 	defer cs.close()
 
 	hmacHex := strings.Repeat("ab", 32)
-	args := []string{
-		"--sender", "alice",
+	signerArgs, address := miningSignerArgs(t)
+	args := append(signerArgs, []string{
 		"--node-id", "rig-77",
 		"--gpu-uuid", "GPU-12345678-1234-1234-1234-123456789abc",
 		"--hmac-key", hmacHex,
@@ -93,7 +102,7 @@ func TestMiningEnroll_BuildsCanonicalEnvelope(t *testing.T) {
 		"--fee", "0.001",
 		"--id", "tx-enroll-deterministic",
 		"--memo", "smoke",
-	}
+	}...)
 	if err := cs.cli().miningEnroll(args); err != nil {
 		t.Fatalf("miningEnroll: %v", err)
 	}
@@ -111,14 +120,18 @@ func TestMiningEnroll_BuildsCanonicalEnvelope(t *testing.T) {
 	if err := json.Unmarshal(cs.body, &env); err != nil {
 		t.Fatalf("body not JSON: %v body=%s", err, cs.body)
 	}
-	if env["sender"] != "alice" {
-		t.Errorf("sender: got %v, want alice", env["sender"])
+	if env["sender"] != address {
+		t.Errorf("sender: got %v, want %s", env["sender"], address)
 	}
 	if env["id"] != "tx-enroll-deterministic" {
 		t.Errorf("id not preserved: %v", env["id"])
 	}
-	if env["contract_id"] != enrollment.ContractID {
-		t.Errorf("contract_id: got %v, want %s", env["contract_id"], enrollment.ContractID)
+	if env["contract_id"] != enrollment.SignedContractID {
+		t.Errorf("contract_id: got %v, want %s", env["contract_id"], enrollment.SignedContractID)
+	}
+	var signed enrollment.SignedEnvelope
+	if err := json.Unmarshal(cs.body, &signed); err != nil || enrollment.VerifySignedEnvelope(signed) != nil {
+		t.Fatalf("enrollment envelope signature did not verify: decode=%v verify=%v", err, enrollment.VerifySignedEnvelope(signed))
 	}
 
 	rawB64, _ := env["payload_b64"].(string)
@@ -145,11 +158,12 @@ func TestMiningEnroll_RandomIDWhenNoneProvided(t *testing.T) {
 	defer cs.close()
 
 	hmacHex := strings.Repeat("cd", 32)
-	args := []string{
-		"--sender", "alice", "--node-id", "rig-77",
+	signerArgs, _ := miningSignerArgs(t)
+	args := append(signerArgs, []string{
+		"--node-id", "rig-77",
 		"--gpu-uuid", "GPU-12345678-1234-1234-1234-123456789abc",
 		"--hmac-key", hmacHex,
-	}
+	}...)
 	if err := cs.cli().miningEnroll(args); err != nil {
 		t.Fatalf("miningEnroll: %v", err)
 	}
@@ -199,11 +213,12 @@ func TestMiningUnenroll_BuildsCanonicalEnvelope(t *testing.T) {
 	cs := newCaptureServer(t, http.StatusAccepted, `{"tx_id":"u1","status":"accepted"}`)
 	defer cs.close()
 
-	args := []string{
-		"--sender", "alice", "--node-id", "rig-77",
+	signerArgs, _ := miningSignerArgs(t)
+	args := append(signerArgs, []string{
+		"--node-id", "rig-77",
 		"--reason", "decommissioning", "--nonce", "1", "--fee", "0.002",
 		"--id", "tx-unenroll-1",
-	}
+	}...)
 	if err := cs.cli().miningUnenroll(args); err != nil {
 		t.Fatalf("miningUnenroll: %v", err)
 	}
@@ -213,7 +228,7 @@ func TestMiningUnenroll_BuildsCanonicalEnvelope(t *testing.T) {
 
 	var env map[string]any
 	json.Unmarshal(cs.body, &env)
-	if env["contract_id"] != enrollment.ContractID {
+	if env["contract_id"] != enrollment.SignedContractID {
 		t.Errorf("contract_id: %v", env["contract_id"])
 	}
 	rawB64, _ := env["payload_b64"].(string)
@@ -421,11 +436,12 @@ func TestMiningEnroll_PropagatesHTTPError(t *testing.T) {
 	cs := newCaptureServer(t, http.StatusBadRequest, "bad payload")
 	defer cs.close()
 
-	err := cs.cli().miningEnroll([]string{
-		"--sender", "alice", "--node-id", "rig-77",
+	signerArgs, _ := miningSignerArgs(t)
+	err := cs.cli().miningEnroll(append(signerArgs, []string{
+		"--node-id", "rig-77",
 		"--gpu-uuid", "GPU-12345678-1234-1234-1234-123456789abc",
 		"--hmac-key", strings.Repeat("ab", 32),
-	})
+	}...))
 	if err == nil || !strings.Contains(err.Error(), "400") {
 		t.Errorf("400 not propagated: %v", err)
 	}

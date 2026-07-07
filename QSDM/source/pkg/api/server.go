@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/blackbeardONE/QSDM/internal/logging"
@@ -23,27 +25,27 @@ func getEnvForCORS(name string) string { return os.Getenv(name) }
 
 // Server represents the HTTP API server
 type Server struct {
-	config        *config.Config
-	logger        *logging.Logger
-	authManager   *AuthManager
-	userStore     *UserStore
-	rateLimiter   *RateLimiter
-	requestSigner *RequestSigner
-	csrfManager   *CSRFManager
-	revocations      *TokenRevocationStore
-	walletService    *wallet.WalletService
-	storage          StorageInterface
-	submeshManager   *submesh.DynamicSubmeshManager
-	contractEngine   *contracts.ContractEngine
-	bridgeProtocol   *bridge.BridgeProtocol
-	atomicSwap       *bridge.AtomicSwapProtocol
-	bridgeRelay        *bridge.P2PRelay
-	nodeID             string
-	handlers           *Handlers
-	tokenRegistryPath  string
-	httpServer         *http.Server
-	adminAPI           *AdminAPI
-	txGossipBroadcast  func([]byte) error
+	config            *config.Config
+	logger            *logging.Logger
+	authManager       *AuthManager
+	userStore         *UserStore
+	rateLimiter       *RateLimiter
+	requestSigner     *RequestSigner
+	csrfManager       *CSRFManager
+	revocations       *TokenRevocationStore
+	walletService     *wallet.WalletService
+	storage           StorageInterface
+	submeshManager    *submesh.DynamicSubmeshManager
+	contractEngine    *contracts.ContractEngine
+	bridgeProtocol    *bridge.BridgeProtocol
+	atomicSwap        *bridge.AtomicSwapProtocol
+	bridgeRelay       *bridge.P2PRelay
+	nodeID            string
+	handlers          *Handlers
+	tokenRegistryPath string
+	httpServer        *http.Server
+	adminAPI          *AdminAPI
+	txGossipBroadcast func([]byte) error
 	// Pending source callbacks captured before Start —
 	// registerRoutes is the late-binding point at which the
 	// concrete *Handlers exists, so we stash them here and
@@ -171,17 +173,17 @@ func NewServer(cfg *config.Config, logger *logging.Logger, walletService *wallet
 	authManager.SetRevocationStore(revocations)
 
 	return &Server{
-		config:           cfg,
-		logger:           logger,
-		authManager:      authManager,
-		userStore:        userStore,
-		rateLimiter:      rateLimiter,
-		requestSigner:    requestSigner,
-		walletService:    walletService,
-		storage:          storage,
-		submeshManager:   submeshManager,
-		csrfManager:      csrfManager,
-		revocations:      revocations,
+		config:         cfg,
+		logger:         logger,
+		authManager:    authManager,
+		userStore:      userStore,
+		rateLimiter:    rateLimiter,
+		requestSigner:  requestSigner,
+		walletService:  walletService,
+		storage:        storage,
+		submeshManager: submeshManager,
+		csrfManager:    csrfManager,
+		revocations:    revocations,
 	}, nil
 }
 
@@ -195,6 +197,7 @@ func (s *Server) Start() error {
 	// Create HTTP server with security middleware, then body size cap (must be on the handler the server uses).
 	handler := s.setupMiddleware(mux)
 	handler = RequestSizeLimitMiddleware(1 << 20)(handler)
+	listenAddr := s.listenAddr()
 
 	// ACME auto-provisioned TLS (Let's Encrypt) takes highest precedence
 	if len(s.config.ACMEDomains) > 0 {
@@ -209,7 +212,7 @@ func (s *Server) Start() error {
 		}
 
 		s.httpServer = &http.Server{
-			Addr:           fmt.Sprintf(":%d", s.config.APIPort),
+			Addr:           listenAddr,
 			Handler:        handler,
 			TLSConfig:      acmeTLS,
 			ReadTimeout:    15 * time.Second,
@@ -249,7 +252,7 @@ func (s *Server) Start() error {
 		}
 
 		s.httpServer = &http.Server{
-			Addr:           fmt.Sprintf(":%d", s.config.APIPort),
+			Addr:           listenAddr,
 			Handler:        handler,
 			TLSConfig:      mtlsTLS,
 			ReadTimeout:    15 * time.Second,
@@ -278,7 +281,7 @@ func (s *Server) Start() error {
 		mtlsCfg := MTLSConfig{CACertFile: caCert, NodeCertFile: nodeCert, NodeKeyFile: nodeKey}
 		mtlsTLS, _ := ConfigureMTLS(mtlsCfg)
 		s.httpServer = &http.Server{
-			Addr:           fmt.Sprintf(":%d", s.config.APIPort),
+			Addr:           listenAddr,
 			Handler:        handler,
 			TLSConfig:      mtlsTLS,
 			ReadTimeout:    15 * time.Second,
@@ -306,7 +309,7 @@ func (s *Server) Start() error {
 		}
 
 		s.httpServer = &http.Server{
-			Addr:           fmt.Sprintf(":%d", s.config.APIPort),
+			Addr:           listenAddr,
 			Handler:        handler,
 			TLSConfig:      tlsConfig,
 			ReadTimeout:    15 * time.Second,
@@ -363,15 +366,19 @@ func (s *Server) Start() error {
 		// HTTP mode (development only - NOT recommended for production)
 		s.logger.Warn("Starting API server in HTTP mode (INSECURE - development only)")
 		s.httpServer = &http.Server{
-			Addr:         fmt.Sprintf(":%d", s.config.APIPort),
-			Handler:      handler,
-			ReadTimeout:  15 * time.Second,
-			WriteTimeout: 15 * time.Second,
-			IdleTimeout:  120 * time.Second,
+			Addr:           listenAddr,
+			Handler:        handler,
+			ReadTimeout:    15 * time.Second,
+			WriteTimeout:   15 * time.Second,
+			IdleTimeout:    120 * time.Second,
 			MaxHeaderBytes: 1 << 20,
 		}
 		return s.httpServer.ListenAndServe()
 	}
+}
+
+func (s *Server) listenAddr() string {
+	return net.JoinHostPort(s.config.APIBindAddress, strconv.Itoa(s.config.APIPort))
 }
 
 // Stop gracefully stops the server
@@ -560,4 +567,3 @@ func (s *Server) SetupTestHandler() http.Handler {
 func (s *Server) RequestSigner() *RequestSigner {
 	return s.requestSigner
 }
-

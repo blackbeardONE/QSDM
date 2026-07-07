@@ -1,5 +1,5 @@
-//go:build cgo
-// +build cgo
+//go:build cgo && !dilithium_circl
+// +build cgo,!dilithium_circl
 
 package crypto
 
@@ -102,4 +102,3 @@ func TestPerformanceMetrics(t *testing.T) {
 	fmt.Printf("Throughput capacity: %.0f signing TPS, %.0f verification TPS\n", optSignTPS, verifyTPS)
 	fmt.Println()
 }
-

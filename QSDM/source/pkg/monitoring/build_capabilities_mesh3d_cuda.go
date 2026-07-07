@@ -1,6 +1,5 @@
-//go:build cgo && (windows || (linux && cuda))
-// +build cgo
-// +build windows linux,cuda
+//go:build cgo && cuda
+// +build cgo,cuda
 
 package monitoring
 

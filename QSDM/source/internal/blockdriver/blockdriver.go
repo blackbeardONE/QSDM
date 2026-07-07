@@ -51,6 +51,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -69,7 +70,7 @@ var _ miningsvc.RewardSink = (*Driver)(nil)
 // payouts in solo mode. Exported so the genesis-seal hook in
 // cmd/qsdm/main.go can use the same address — the driver
 // expects to inherit that account's nonce when it boots.
-const FunderAddress = "qsdm-system-funder"
+const FunderAddress = chain.MiningRewardFunderAddress
 
 // Defaults for the operator-tunable Config fields. Picked so
 // a fresh QSDM_SOLO_VALIDATOR_MODE=1 boot has visible
@@ -217,7 +218,6 @@ type Driver struct {
 	// confirm the emission curve was actually followed
 	// instead of silently flat-lining at 0.
 	totalEmittedCell atomic.Uint64 // dust units; load/.add via uint64
-
 
 	// funderNonce tracks the next nonce to use on a tx whose
 	// sender is FunderAddress. Initialised from the account
@@ -503,19 +503,46 @@ func (d *Driver) tick() {
 	rewardCell := d.rewardCellForHeight(nextHeight)
 	rewardDust := d.rewardDustForHeight(nextHeight)
 
-	txs := d.buildTxs(drained, drainedCount, rewardCell)
+	// The AccountStore is authoritative for the next funder nonce. Never
+	// reserve nonce space merely by constructing a transaction: a rejected
+	// block must retry the same nonce or the reward stream develops a gap that
+	// no later transaction can cross.
+	funder, ok := d.cfg.Accounts.Get(FunderAddress)
+	if !ok || funder == nil {
+		d.requeueProofs(drained)
+		d.cfg.Logger.Warn("blockdriver: funder account missing; retaining payouts")
+		d.blocksFailed.Add(1)
+		return
+	}
+	d.funderNonce.Store(funder.Nonce)
+	txs := d.buildTxs(drained, drainedCount, rewardCell, funder.Nonce)
+	added := make([]*mempool.Tx, 0, len(txs))
 	for _, tx := range txs {
 		if err := d.cfg.Pool.Add(tx); err != nil {
-			d.cfg.Logger.Warn("blockdriver: pool admission failed; dropping tx",
+			for _, admitted := range added {
+				d.cfg.Pool.Remove(admitted.ID)
+			}
+			d.requeueProofs(drained)
+			d.SyncFunderNonce()
+			d.cfg.Logger.Warn("blockdriver: pool admission failed; retaining payouts",
 				"tx_id", tx.ID,
 				"error", err.Error())
 			d.blocksFailed.Add(1)
 			return
 		}
+		added = append(added, tx)
 	}
 
 	blk, err := d.cfg.Producer.ProduceBlock()
 	if err != nil {
+		// ProduceBlock restores a failed batch to the mempool. Remove only the
+		// transactions owned by this driver, retain their proof counts, and
+		// rebuild them from the authoritative nonce on the next tick.
+		for _, tx := range txs {
+			d.cfg.Pool.Remove(tx.ID)
+		}
+		d.requeueProofs(drained)
+		d.SyncFunderNonce()
 		d.cfg.Logger.Warn("blockdriver: ProduceBlock failed",
 			"error", err.Error(),
 			"queued_payouts", len(drained))
@@ -523,19 +550,48 @@ func (d *Driver) tick() {
 		return
 	}
 	if blk == nil {
+		for _, tx := range txs {
+			d.cfg.Pool.Remove(tx.ID)
+		}
+		d.requeueProofs(drained)
+		d.SyncFunderNonce()
 		d.cfg.Logger.Warn("blockdriver: ProduceBlock returned nil block with no error")
 		d.blocksFailed.Add(1)
 		return
 	}
+
+	included := make(map[string]struct{}, len(blk.Transactions))
+	for _, tx := range blk.Transactions {
+		if tx != nil {
+			included[tx.ID] = struct{}{}
+		}
+	}
+	paidProofs := 0
+	emittedDust := uint64(0)
+	for _, tx := range txs {
+		if _, ok := included[tx.ID]; !ok {
+			if count := drained[tx.Recipient]; count > 0 {
+				d.requeueProofs(map[string]int{tx.Recipient: count})
+			}
+			continue
+		}
+		if count := drained[tx.Recipient]; count > 0 {
+			paidProofs += count
+			emittedDust += uint64(tx.Amount * float64(chain.DustPerCell))
+		}
+	}
+	if acc, exists := d.cfg.Accounts.Get(FunderAddress); exists && acc != nil {
+		d.funderNonce.Store(acc.Nonce)
+	}
 	d.blocksSealed.Add(1)
-	d.proofsPaid.Add(uint64(drainedCount))
-	if drainedCount > 0 && rewardDust > 0 {
+	d.proofsPaid.Add(uint64(paidProofs))
+	if emittedDust > 0 {
 		// totalEmittedCell tracks dust we actually paid out
 		// (i.e. excluding heartbeat-only blocks where
 		// drainedCount==0 and the reward goes unclaimed).
 		// Mirrors the "no proofs => no emission" rule
 		// CELL_TOKENOMICS implies for solo testnet bring-up.
-		d.totalEmittedCell.Add(rewardDust)
+		d.totalEmittedCell.Add(emittedDust)
 	}
 	d.cfg.Logger.Info("blockdriver: block sealed",
 		"height", blk.Height,
@@ -548,6 +604,21 @@ func (d *Driver) tick() {
 		"epoch", d.schedule.EpochForHeight(blk.Height),
 		"penalised_payouts_total", d.penalisedPayouts.Load(),
 		"withheld_dust_total", d.withheldDust.Load())
+}
+
+func (d *Driver) requeueProofs(queue map[string]int) {
+	if len(queue) == 0 {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for addr, count := range queue {
+		if addr == "" || count <= 0 {
+			continue
+		}
+		d.queue[addr] += count
+		d.queued += count
+	}
 }
 
 // rewardDustForHeight returns the dust reward for the given
@@ -596,23 +667,29 @@ func (d *Driver) rewardCellForHeight(height uint64) float64 {
 // redistributed to other miners. That keeps the supply cap
 // monotonically respected and makes the tokenomic effect of
 // Tier-3 strictly subtractive.
-func (d *Driver) buildTxs(queue map[string]int, total int, rewardCell float64) []*mempool.Tx {
+func (d *Driver) buildTxs(queue map[string]int, total int, rewardCell float64, startNonce uint64) []*mempool.Tx {
 	now := time.Now()
+	nextNonce := startNonce
 	if total == 0 || len(queue) == 0 || rewardCell <= 0 {
-		nonce := d.funderNonce.Add(1) - 1
 		return []*mempool.Tx{{
-			ID:        fmt.Sprintf("solo-heartbeat-%d-%d", nonce, now.UnixNano()),
+			ID:        fmt.Sprintf("solo-heartbeat-%d-%d", nextNonce, now.UnixNano()),
 			Sender:    FunderAddress,
 			Recipient: FunderAddress,
 			Amount:    0,
 			Fee:       0,
-			Nonce:     nonce,
+			Nonce:     nextNonce,
 			AddedAt:   now,
 		}}
 	}
 
 	out := make([]*mempool.Tx, 0, len(queue))
-	for addr, count := range queue {
+	addresses := make([]string, 0, len(queue))
+	for addr := range queue {
+		addresses = append(addresses, addr)
+	}
+	sort.Strings(addresses)
+	for _, addr := range addresses {
+		count := queue[addr]
 		baseShare := rewardCell * float64(count) / float64(total)
 		mult := d.rewardPenalty.MultiplierFor(addr)
 		// Defensive clamp: if a buggy MismatchPenalty
@@ -637,27 +714,27 @@ func (d *Driver) buildTxs(queue map[string]int, total int, rewardCell float64) [
 				d.withheldDust.Add(withheld)
 			}
 		}
-		nonce := d.funderNonce.Add(1) - 1
 		out = append(out, &mempool.Tx{
-			ID:        fmt.Sprintf("solo-reward-%d-%s", nonce, addr),
-			Sender:    FunderAddress,
-			Recipient: addr,
-			Amount:    share,
-			Fee:       0,
-			Nonce:     nonce,
-			AddedAt:   now,
+			ID:         fmt.Sprintf("solo-reward-%d-%s", nextNonce, addr),
+			Sender:     FunderAddress,
+			Recipient:  addr,
+			Amount:     share,
+			Fee:        0,
+			Nonce:      nextNonce,
+			ContractID: chain.MiningRewardContractID,
+			AddedAt:    now,
 		})
+		nextNonce++
 	}
 	if len(out) == 0 {
 		// All shares rounded out — emit a heartbeat anyway.
-		nonce := d.funderNonce.Add(1) - 1
 		out = append(out, &mempool.Tx{
-			ID:        fmt.Sprintf("solo-heartbeat-%d-%d", nonce, now.UnixNano()),
+			ID:        fmt.Sprintf("solo-heartbeat-%d-%d", nextNonce, now.UnixNano()),
 			Sender:    FunderAddress,
 			Recipient: FunderAddress,
 			Amount:    0,
 			Fee:       0,
-			Nonce:     nonce,
+			Nonce:     nextNonce,
 			AddedAt:   now,
 		})
 	}

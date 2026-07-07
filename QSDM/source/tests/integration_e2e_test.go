@@ -40,6 +40,9 @@ func TestEndToEndTransactionFlow(t *testing.T) {
 	if err != nil {
 		t.Skipf("Wallet service not available (CGO may be disabled): %v", err)
 	}
+	if err := walletService.SyncBalanceFromLedger(100); err != nil {
+		t.Fatalf("Failed to mirror test-ledger balance: %v", err)
+	}
 
 	senderAddr := walletService.GetAddress()
 	recipientAddr := "recipient1234567890abcdef1234567890abcdef12345678"
@@ -115,6 +118,9 @@ func TestMultiNodeTransactionPropagation(t *testing.T) {
 	if err != nil {
 		t.Skipf("Wallet service not available: %v", err)
 	}
+	if err := walletService1.SyncBalanceFromLedger(50); err != nil {
+		t.Fatalf("Failed to mirror test-ledger balance: %v", err)
+	}
 	txBytes, err := walletService1.CreateTransaction("recipient123", 50, 0.001, "US", []string{"p1", "p2"})
 	if err != nil {
 		t.Fatalf("Failed to create transaction: %v", err)
@@ -176,8 +182,8 @@ func TestGovernanceProposalLifecycle(t *testing.T) {
 
 	// Step 3: Cast votes
 	voters := []struct {
-		id     string
-		weight int
+		id      string
+		weight  int
 		support bool
 	}{
 		{"voter1", 3, true},
@@ -306,7 +312,7 @@ func TestPhase3ValidationFlow(t *testing.T) {
 
 	// Step 2: Set stake first to get positive reputation
 	repMgr.SetStake(nodeID, 100)
-	
+
 	// Step 3: Record valid transaction
 	quarantineMgr.RecordTransaction(submeshID, valid)
 
@@ -336,4 +342,3 @@ func TestPhase3ValidationFlow(t *testing.T) {
 
 	t.Log("Phase 3 validation flow test passed")
 }
-

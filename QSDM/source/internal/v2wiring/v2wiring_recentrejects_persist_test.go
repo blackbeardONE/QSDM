@@ -43,6 +43,8 @@ func resetWireGlobals(t *testing.T) {
 		api.SetEnrollmentLister(nil)
 		api.SetEnrollmentMempool(nil)
 		api.SetSlashMempool(nil)
+		api.SetTaskActionMempool(nil)
+		api.SetTaskStateProvider(nil)
 		api.SetSlashReceiptStore(nil)
 		api.SetSlashReceiptLister(nil)
 		api.SetRecentRejectionLister(nil)

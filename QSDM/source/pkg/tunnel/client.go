@@ -145,6 +145,12 @@ func (c *Client) runOnce(ctx context.Context) error {
 	// observable surface; yamux internals would otherwise
 	// double-print on every disconnect.
 	cfg.LogOutput = io.Discard
+	// This session often sits behind Caddy's HTTP Upgrade
+	// proxying path. yamux keepalive false-positives there
+	// can flap an otherwise healthy home tunnel while idle;
+	// the outer Run loop plus HTTP request failures already
+	// provide liveness and reconnect behaviour.
+	cfg.EnableKeepAlive = false
 
 	session, err := yamux.Server(conn, cfg, nil)
 	if err != nil {
@@ -380,4 +386,3 @@ func (p *prefixedConn) Read(b []byte) (int, error) {
 	}
 	return p.Conn.Read(b)
 }
-

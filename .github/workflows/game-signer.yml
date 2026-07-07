@@ -1,0 +1,58 @@
+name: Game Signer
+
+# Builds and tests the qsdm-game-signer sidecar (game-integration). The sidecar
+# turns {recipient, amount} into a signed + submitted self-custody CELL transfer
+# and verifies wallet-link signatures. Its tests stand up a fake QSDM node that
+# checks submitted envelopes exactly the way pkg/api does (sender bind + ML-DSA-87
+# signature over canonical bytes), so a regression in the canonicalization or
+# signing path fails here.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: game-signer-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "QSDM/source/cmd/qsdm-game-signer/**"
+      - "QSDM/source/cmd/qsdm-cell-sim/**"
+      - "QSDM/source/pkg/keystore/**"
+      - ".github/workflows/game-signer.yml"
+  pull_request:
+    paths:
+      - "QSDM/source/cmd/qsdm-game-signer/**"
+      - "QSDM/source/cmd/qsdm-cell-sim/**"
+      - "QSDM/source/pkg/keystore/**"
+      - ".github/workflows/game-signer.yml"
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - name: Build (no CGO)
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+        run: go build ./cmd/qsdm-game-signer ./cmd/qsdm-cell-sim
+
+      - name: Test (no CGO)
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+        run: go test ./cmd/qsdm-game-signer ./cmd/qsdm-cell-sim -count=1 -v -timeout 5m
+
+      - name: Vet
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+        run: go vet ./cmd/qsdm-game-signer ./cmd/qsdm-cell-sim

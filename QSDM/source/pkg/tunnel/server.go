@@ -29,7 +29,6 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -94,22 +93,23 @@ func (r *Registry) SetObserver(fn func(SlotEvent)) {
 	r.observer = fn
 }
 
-// Register installs a new session under slotID. Returns an
-// error when the slot is already taken (another tunnel
-// client is connected) — the caller MUST close the new
-// session and respond 409 to the upgrade request. We do not
-// auto-evict existing sessions because that would let an
-// attacker with valid auth race-evict a legitimate
-// connection by reconnecting in a tight loop.
+// Register installs a new session under slotID. If the slot is already
+// present, the new authenticated session replaces the old one and the old
+// yamux session is closed. This favours availability for NAT-bound home
+// clients whose previous TCP session may linger briefly on the relay after
+// the home side has already reconnected. Replacement still requires a valid
+// per-slot HMAC key, so an unauthenticated client cannot evict a slot.
 func (r *Registry) Register(slotID, signerID, remoteIP, note string, sess *yamux.Session) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.sessions == nil {
 		r.sessions = make(map[string]*registeredSession)
 	}
-	if _, exists := r.sessions[slotID]; exists {
+
+	var replaced *registeredSession
+	if cur, exists := r.sessions[slotID]; exists {
 		r.collisions.Add(1)
-		return fmt.Errorf("tunnel: slot %q already registered", slotID)
+		r.deregisters.Add(1)
+		replaced = cur
 	}
 	r.sessions[slotID] = &registeredSession{
 		session:  sess,
@@ -120,6 +120,15 @@ func (r *Registry) Register(slotID, signerID, remoteIP, note string, sess *yamux
 	}
 	r.registers.Add(1)
 	if r.observer != nil {
+		if replaced != nil {
+			r.observer(SlotEvent{
+				SlotID:    slotID,
+				SignerID:  replaced.signerID,
+				RemoteIP:  replaced.remoteIP,
+				Note:      replaced.note,
+				Connected: false,
+			})
+		}
 		r.observer(SlotEvent{
 			SlotID:    slotID,
 			SignerID:  signerID,
@@ -127,6 +136,11 @@ func (r *Registry) Register(slotID, signerID, remoteIP, note string, sess *yamux
 			Note:      note,
 			Connected: true,
 		})
+	}
+	r.mu.Unlock()
+
+	if replaced != nil {
+		_ = replaced.session.Close()
 	}
 	return nil
 }
@@ -299,6 +313,11 @@ func HandleUpgrade(reg *Registry, auth Authenticator, logf func(string, ...any))
 
 		cfg := yamux.DefaultConfig()
 		cfg.LogOutput = io.Discard
+		// Match the client-side posture: avoid idle keepalive
+		// false-positives across the HTTP Upgrade proxy path.
+		// Broken sessions still close on read/write failure and
+		// clients reconnect from their outer loop.
+		cfg.EnableKeepAlive = false
 		session, err := yamux.Client(conn, cfg, nil)
 		if err != nil {
 			_ = conn.Close()

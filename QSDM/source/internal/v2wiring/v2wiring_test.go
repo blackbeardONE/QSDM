@@ -43,6 +43,8 @@ package v2wiring_test
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -57,13 +59,51 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
 	"github.com/blackbeardONE/QSDM/pkg/mining/slashing"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
 const (
-	tAlice   = "qsdm1alice"
 	tNodeID  = "alice-rtx4090-01"
 	tGPUUUID = "GPU-abcd1234-5678-90ef-1234-567890abcdef"
 )
+
+var testEnrollmentPK, testEnrollmentSK, tAlice = newTestEnrollmentSigner()
+
+func newTestEnrollmentSigner() (*mldsa87.PublicKey, *mldsa87.PrivateKey, string) {
+	pk, sk, err := mldsa87.GenerateKey(nil)
+	if err != nil {
+		panic(err)
+	}
+	pub, err := pk.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(pub)
+	return pk, sk, hex.EncodeToString(sum[:])
+}
+
+func signEnrollmentTx(t *testing.T, tx *mempool.Tx) *mempool.Tx {
+	t.Helper()
+	if tx.Sender != tAlice {
+		t.Fatalf("test enrollment sender %q does not match signer %q", tx.Sender, tAlice)
+	}
+	env, err := enrollment.EnvelopeFromTransaction(tx)
+	if err != nil {
+		t.Fatalf("EnvelopeFromTransaction: %v", err)
+	}
+	canonical, err := env.CanonicalBytes()
+	if err != nil {
+		t.Fatalf("CanonicalBytes: %v", err)
+	}
+	sig := make([]byte, mldsa87.SignatureSize)
+	if err := mldsa87.SignTo(testEnrollmentSK, canonical, nil, true, sig); err != nil {
+		t.Fatalf("SignTo: %v", err)
+	}
+	pub, _ := testEnrollmentPK.MarshalBinary()
+	tx.Signature = hex.EncodeToString(sig)
+	tx.PublicKey = hex.EncodeToString(pub)
+	return tx
+}
 
 // rig assembles a fresh Wired bundle around a fresh AccountStore
 // and BlockProducer, exactly mirroring the cmd/qsdm/main.go boot
@@ -85,6 +125,8 @@ func buildRig(t *testing.T, aliceCELL float64) *rig {
 		api.SetEnrollmentLister(nil)
 		api.SetEnrollmentMempool(nil)
 		api.SetSlashMempool(nil)
+		api.SetTaskActionMempool(nil)
+		api.SetTaskStateProvider(nil)
 		api.SetSlashReceiptStore(nil)
 		api.SetSlashReceiptLister(nil)
 		api.SetRecentRejectionLister(nil)
@@ -104,6 +146,9 @@ func buildRig(t *testing.T, aliceCELL float64) *rig {
 	})
 	if err != nil {
 		t.Fatalf("v2wiring.Wire: %v", err)
+	}
+	if !api.TaskActionMempoolReady() {
+		t.Fatal("v2wiring.Wire did not install the signed task-action mempool")
 	}
 
 	cfg := chain.DefaultProducerConfig()
@@ -136,14 +181,14 @@ func enrollTx(t *testing.T, sender string, nonce uint64, txID string) *mempool.T
 	if err != nil {
 		t.Fatalf("EncodeEnrollPayload: %v", err)
 	}
-	return &mempool.Tx{
+	return signEnrollmentTx(t, &mempool.Tx{
 		ID:         txID,
 		Sender:     sender,
 		Nonce:      nonce,
 		Fee:        0.01,
 		Payload:    raw,
-		ContractID: enrollment.ContractID,
-	}
+		ContractID: enrollment.SignedContractID,
+	})
 }
 
 func unenrollTx(t *testing.T, sender, nodeID string, nonce uint64, txID string) *mempool.Tx {
@@ -157,13 +202,28 @@ func unenrollTx(t *testing.T, sender, nodeID string, nonce uint64, txID string) 
 	if err != nil {
 		t.Fatalf("EncodeUnenrollPayload: %v", err)
 	}
-	return &mempool.Tx{
+	return signEnrollmentTx(t, &mempool.Tx{
 		ID:         txID,
 		Sender:     sender,
 		Nonce:      nonce,
 		Fee:        0.001,
 		Payload:    raw,
-		ContractID: enrollment.ContractID,
+		ContractID: enrollment.SignedContractID,
+	})
+}
+
+func taskActionTx(t *testing.T, action chain.TaskAction) *mempool.Tx {
+	t.Helper()
+	raw, err := json.Marshal(action)
+	if err != nil {
+		t.Fatalf("marshal task action: %v", err)
+	}
+	return &mempool.Tx{
+		ID:         action.ID,
+		Sender:     action.Sender,
+		Nonce:      action.Nonce,
+		ContractID: chain.TaskContractID,
+		Payload:    raw,
 	}
 }
 
@@ -250,6 +310,166 @@ func TestWire_EnrollFlowsThroughEntireStack(t *testing.T) {
 	want := 20 - float64(mining.MinEnrollStakeDust)/1e8 - tx.Fee
 	if alice.Balance != want {
 		t.Errorf("alice balance: got %v, want %v", alice.Balance, want)
+	}
+}
+
+func TestWire_TaskActionFlowsThroughTaskState(t *testing.T) {
+	r := buildRig(t, 20)
+	if r.w.TaskState == nil {
+		t.Fatal("Wire did not expose TaskState")
+	}
+
+	stake := taskActionTx(t, chain.TaskAction{
+		ID:        "task-action-stake-0001",
+		Sender:    tAlice,
+		TaskID:    "task-1",
+		Action:    "stake",
+		Amount:    1,
+		Nonce:     0,
+		Timestamp: "2026-05-28T00:00:00Z",
+	})
+	if err := r.pool.Add(stake); err != nil {
+		t.Fatalf("task stake rejected by admission gate: %v", err)
+	}
+	produce(t, r)
+
+	start := taskActionTx(t, chain.TaskAction{
+		ID:        "task-action-start-0001",
+		Sender:    tAlice,
+		TaskID:    "task-1",
+		Action:    "start",
+		Nonce:     1,
+		Timestamp: "2026-05-28T00:01:00Z",
+	})
+	if err := r.pool.Add(start); err != nil {
+		t.Fatalf("task start rejected by admission gate: %v", err)
+	}
+
+	produce(t, r)
+
+	state, ok := r.w.TaskState.GetTask("task-1")
+	if !ok {
+		t.Fatal("task state missing after block")
+	}
+	if participant := state.Participants[tAlice]; !participant.Running {
+		t.Fatalf("participant should be running after task start: %+v", participant)
+	}
+	if got, accountRoot := r.w.Aware.StateRoot(), r.accounts.StateRoot(); got == accountRoot {
+		t.Fatalf("task action state should be committed in StateRoot, still got account root %q", got)
+	}
+}
+
+func TestWire_TaskStakeDebitsCellBalance(t *testing.T) {
+	r := buildRig(t, 20)
+
+	tx := taskActionTx(t, chain.TaskAction{
+		ID:        "task-action-stake-0001",
+		Sender:    tAlice,
+		TaskID:    "task-1",
+		Action:    "stake",
+		Amount:    5,
+		Nonce:     0,
+		Timestamp: "2026-05-28T00:00:00Z",
+	})
+	tx.Amount = 5
+	tx.Fee = 0.25
+	if err := r.pool.Add(tx); err != nil {
+		t.Fatalf("task stake rejected by admission gate: %v", err)
+	}
+
+	produce(t, r)
+
+	state, ok := r.w.TaskState.GetTask("task-1")
+	if !ok {
+		t.Fatal("task state missing after stake block")
+	}
+	if got := state.Participants[tAlice].Stake; got != 5 {
+		t.Fatalf("task stake: got %v, want 5", got)
+	}
+	alice, _ := r.accounts.Get(tAlice)
+	if alice.Balance != 14.75 || alice.Nonce != 1 {
+		t.Fatalf("alice account after task stake: %+v, want balance 14.75 nonce 1", alice)
+	}
+}
+
+func TestWire_TaskRewardClaimSettlesCellBalance(t *testing.T) {
+	r := buildRig(t, 20)
+
+	fund := taskActionTx(t, chain.TaskAction{
+		ID:        "task-action-fund-0001",
+		Sender:    tAlice,
+		TaskID:    "task-1",
+		Action:    "fund",
+		Amount:    6,
+		Nonce:     0,
+		Timestamp: "2026-05-28T00:00:00Z",
+	})
+	fund.Amount = 6
+	fund.Fee = 0.25
+	if err := r.pool.Add(fund); err != nil {
+		t.Fatalf("task fund rejected by admission gate: %v", err)
+	}
+	produce(t, r)
+
+	stake := taskActionTx(t, chain.TaskAction{
+		ID:        "task-action-stake-0002",
+		Sender:    tAlice,
+		TaskID:    "task-1",
+		Action:    "stake",
+		Amount:    2,
+		Nonce:     1,
+		Timestamp: "2026-05-28T00:01:00Z",
+	})
+	stake.Amount = 2
+	stake.Fee = 0.1
+	if err := r.pool.Add(stake); err != nil {
+		t.Fatalf("task stake rejected by admission gate: %v", err)
+	}
+	produce(t, r)
+
+	submit := taskActionTx(t, chain.TaskAction{
+		ID:        "task-action-submit-0001",
+		Sender:    tAlice,
+		TaskID:    "task-1",
+		Action:    "submit",
+		Payload:   `{"round":5,"slot":9,"submission_value":"proof-cid","reward_amount":3}`,
+		Nonce:     2,
+		Timestamp: "2026-05-28T00:02:00Z",
+	})
+	submit.Fee = 0.05
+	if err := r.pool.Add(submit); err != nil {
+		t.Fatalf("task submit rejected by admission gate: %v", err)
+	}
+	produce(t, r)
+
+	claim := taskActionTx(t, chain.TaskAction{
+		ID:        "task-action-claim-0001",
+		Sender:    tAlice,
+		TaskID:    "task-1",
+		Action:    "claim",
+		Payload:   `{"round":5}`,
+		Nonce:     3,
+		Timestamp: "2026-05-28T00:03:00Z",
+	})
+	claim.Fee = 0.1
+	if err := r.pool.Add(claim); err != nil {
+		t.Fatalf("task claim rejected by admission gate: %v", err)
+	}
+	produce(t, r)
+
+	alice, _ := r.accounts.Get(tAlice)
+	if alice.Balance != 14.5 || alice.Nonce != 4 {
+		t.Fatalf("alice account after task reward claim: %+v, want balance 14.5 nonce 4", alice)
+	}
+	state, ok := r.w.TaskState.GetTask("task-1")
+	if !ok {
+		t.Fatal("task state missing after reward claim")
+	}
+	if state.RewardPoolAmount != 3 || state.PendingRewardAmount != 0 || state.TotalRewardPaidAmount != 3 {
+		t.Fatalf("task reward accounting: %+v", state)
+	}
+	if !state.Submissions["5"][tAlice].Claimed {
+		t.Fatalf("submission should be claimed: %+v", state.Submissions["5"][tAlice])
 	}
 }
 

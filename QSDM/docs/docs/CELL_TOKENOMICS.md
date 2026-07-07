@@ -38,8 +38,8 @@ output (`amount: 12345 dust`).
 | Parameter | Value |
 |---|---|
 | Total cap | **100,000,000 CELL** (100 M) |
-| Pre-mine | **0%** |
-| Genesis treasury allocation | **10%** (10,000,000 CELL) |
+| Founder / insider allocation | **0%** |
+| Genesis protocol treasury allocation | **10%** (10,000,000 CELL) |
 | Treasury vesting | linear over 48 months, enforced on-chain, locked at genesis |
 | Mining emission | **90%** (90,000,000 CELL) over ~20 years |
 | Emission curve | halvings every 4 years (see §3) |
@@ -55,14 +55,18 @@ multisig-controlled spend address. The contract address, the multisig
 membership, and the spend policy are published in
 `QSDM/docs/docs/GENESIS.md` (Phase 0 deliverable, pending counsel review).
 
-### 2.2 Pre-mine: why zero
+### 2.2 No founder or insider premine
 
 The project commits to a **fair launch**: no public sale, no private sale,
 no ICO, no presale, no founder allocation. All 90 M mining-emission CELL
 must be earned by a miner producing a valid PoW proof. This is the cleanest
-posture against US/UK/EU securities classification; it is the single most
-important decision on this page and it is **not** negotiable in the current
-design window without revisiting Phase 0.
+distribution posture in the current design and is not negotiable without a
+public tokenomics revision and governance approval.
+
+The 10 M CELL protocol treasury is minted at genesis. In broad industry usage
+that is a premine/genesis allocation, even though it is not assigned to a
+founder or insider. QSDM uses the precise phrase **genesis protocol treasury
+allocation** and publishes its address, lock, vesting, and spending policy.
 
 ---
 
@@ -140,13 +144,15 @@ compressed-time simulation of the first halving and verify:
 | Transaction fees | Paid to validators. Denominated in dust. |
 | WASM contract gas | Gas price in dust/gas; already wired in `pkg/wasm`. |
 | Validator bonds | Future: validators stake CELL to participate; slashable. |
+| Miner enrollment bonds | 10 CELL, slashable. May be prepaid or accumulated from protocol mining rewards starting from a zero CELL balance. |
 | Bridge collateral | Future: denominate bond in CELL via `pkg/bridge`. |
 | Governance weight | Future: one CELL = one vote, in proposal-weighted voting. |
 
 Cell is **not** used to pay mining rewards out of a pre-minted pool; mining
 rewards are newly minted at block-confirmation time (a `mint` transaction
 embedded in the block by the validator who proposes, crediting the winning
-miner). This is the only path that creates new supply.
+miner). After the disclosed genesis treasury allocation, this is the only path
+that creates new supply.
 
 ---
 
@@ -179,7 +185,7 @@ Phase-0 follow-up.
 | Halving period | every 210,000 blocks (~4 years at 10-min blocks) | every 12,614,400 blocks (~4 years at 10-sec blocks) |
 | Block time | ~10 min | 10 sec (target) |
 | Initial reward | 50 BTC | 1.4280 CELL |
-| Pre-mine | 0 | 0 |
+| Founder / insider allocation | 0 | 0 |
 | Treasury | none | 10% vested linearly over 48 months |
 | Consensus | pure PoW | PoE + BFT **for consensus**, additive PoW **for emission only** |
 
@@ -196,8 +202,7 @@ supply creation.
 **Fair launch, utility-first.** There is no presale, no ICO, no public sale,
 no private sale, no airdrop of founder tokens. The treasury allocation is
 published on-chain at genesis, time-locked by a WASM contract, and spent
-only on development per a public policy document
-(`QSDM/docs/docs/TREASURY_POLICY.md`, Phase 0 deliverable).
+only under the public [Treasury Policy](TREASURY_POLICY.md).
 
 Earning paths at launch are:
 - **Mining**: buy a GPU, run `qsdm-miner`, earn Cell by producing valid
@@ -205,6 +210,19 @@ Earning paths at launch are:
 - **Validating**: operate a VPS validator node, earn transaction fees in
   Cell.
 - **Using**: use Cell to pay transaction fees on a service you care about.
+
+### 7.1 Bond from mining earnings
+
+A new NVIDIA miner does not need pre-existing CELL. The miner may submit a
+signed `mining_rewards` enrollment with a zero
+starting bond. Accepted protocol rewards are then withheld into the on-chain
+enrollment record until its 10 CELL target is reached. Only the remainder of
+the reward is credited to the spendable wallet balance. This changes reward
+destination accounting, not the emission schedule or total reward amount.
+
+The mode is opt-in. Prepaid enrollment remains available, deferred enrollments
+are still slashable for invalid proofs, and zero-balance enrollment requires
+one-time computational postage to limit persistent-state spam.
 
 The project does not sell Cell. Exchanges that choose to list Cell after
 launch operate independently; the QSDM project does not negotiate listing
@@ -214,14 +232,12 @@ allocations and does not provide market-making inventory.
 
 ## 8. Legal posture
 
-This document describes a fair-launch utility token. None of the parameters
-above are structured to accommodate a securities offering. The combination
-of (a) zero pre-mine, (b) zero founder allocation, (c) public on-chain
-treasury with published vesting, (d) coin is minted only in exchange for
-work (PoW) or consumed in exchange for network service (fees), and (e) no
-sale by the project at any time, is the strongest posture available to a
-non-custodial blockchain project against the US Howey test and the EU MiCA
-"asset-referenced token" / "e-money token" categories.
+This document describes the intended fair-launch utility-token design: zero
+founder allocation, a disclosed and vested protocol treasury, mining emission,
+and no project token sale. It is a technical and economic specification, not a
+legal conclusion. Counsel must review the implemented genesis, custody,
+distribution, marketing, and jurisdiction-specific obligations before a
+production launch.
 
 This is a posture, not a guarantee. Counsel review is required before
 mainnet genesis and before any promotional language is published on

@@ -1,5 +1,5 @@
-//go:build windows && cgo
-// +build windows,cgo
+//go:build windows && cgo && !dilithium_circl
+// +build windows,cgo,!dilithium_circl
 
 package crypto
 
@@ -10,4 +10,3 @@ package crypto
 //
 // The preload_openssl_dlls() function in dilithium.go is called just before
 // OQS_SIG_new(), which is a safer time to load DLLs.
-

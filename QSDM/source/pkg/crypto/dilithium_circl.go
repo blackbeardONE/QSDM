@@ -1,5 +1,5 @@
-//go:build !cgo
-// +build !cgo
+//go:build !cgo || dilithium_circl
+// +build !cgo dilithium_circl
 
 // Package crypto — ML-DSA-87 signature backend, pure-Go variant.
 //

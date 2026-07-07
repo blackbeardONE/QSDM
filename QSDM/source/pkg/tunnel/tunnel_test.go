@@ -160,11 +160,23 @@ func TestRegistry_RegisterLookupDeregister(t *testing.T) {
 	if !ok || got != sess {
 		t.Fatalf("Lookup returned (%v, %v)", got, ok)
 	}
-	// Duplicate register MUST fail.
-	if err := reg.Register("alice", "x", "y", "z", newFakeSession(t)); err == nil {
-		t.Fatalf("dup Register accepted")
+	// Duplicate register replaces the old authenticated session. This
+	// keeps NAT-bound clients from getting stuck behind a stale relay-side
+	// session after a reconnect.
+	next := newFakeSession(t)
+	if err := reg.Register("alice", "x", "y", "z", next); err != nil {
+		t.Fatalf("replacement Register: %v", err)
 	}
-	reg.Deregister("alice", sess)
+	got, ok = reg.Lookup("alice")
+	if !ok || got != next {
+		t.Fatalf("Lookup after replacement returned (%v, %v)", got, ok)
+	}
+	select {
+	case <-sess.CloseChan():
+	case <-time.After(time.Second):
+		t.Fatalf("replaced session was not closed")
+	}
+	reg.Deregister("alice", next)
 	if _, ok := reg.Lookup("alice"); ok {
 		t.Fatalf("post-deregister lookup returned true")
 	}

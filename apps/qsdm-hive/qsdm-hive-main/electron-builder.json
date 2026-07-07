@@ -1,0 +1,130 @@
+{
+  "productName": "QSDM Hive",
+  "appId": "tech.qsdm.hive",
+  "asar": true,
+  "asarUnpack": "**\\*.{node,dll}",
+  "files": ["dist", "node_modules", "package.json"],
+  "directories": {
+    "app": "release/app",
+    "buildResources": "assets",
+    "output": "release/build"
+  },
+  "extraResources": ["assets/**", "branding/**"],
+  "generateUpdatesFilesForAllChannels": true,
+  "mac": {
+    "mergeASARs": false,
+    "category": "public.app-category.productivity",
+    "target": [
+      {
+        "target": "default",
+        "arch": ["universal"]
+      }
+    ],
+    "type": "distribution",
+    "artifactName": "qsdm-hive-${version}-${os}-${arch}.${ext}",
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false,
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.plist",
+    "extendInfo": {
+      "NSBluetoothAlwaysUsageDescription": false
+    }
+  },
+  "dmg": {
+    "contents": [
+      {
+        "x": 130,
+        "y": 220
+      },
+      {
+        "x": 410,
+        "y": 220,
+        "type": "link",
+        "path": "/Applications"
+      }
+    ],
+    "sign": false
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": "x64"
+      }
+    ],
+    "publisherName": "QSDM",
+    "legalTrademarks": "",
+    "artifactName": "qsdm-hive-${version}-${os}-${arch}.${ext}",
+    "verifyUpdateCodeSignature": false,
+    "signDlls": false,
+    "icon": "assets/icon.ico",
+    "extraResources": [
+      {
+        "from": "native/windows/x64",
+        "to": "edge",
+        "filter": ["qsdm-edge-agent.exe", "qsdm-edge-control.exe", "qsdm-edge-gpu-helper.exe"]
+      },
+      {
+        "from": "native/windows/x64",
+        "to": "native",
+        "filter": ["qsdmcli.exe"]
+      },
+      {
+        "from": "native/windows/x64",
+        "to": "miner",
+        "filter": ["qsdmminer-console.exe", "qsdm-miner-cuda-solver.exe"]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": true,
+    "installerIcon": "assets/icon.ico",
+    "uninstallerIcon": "assets/icon.ico",
+    "uninstallDisplayName": "${productName} ${version}",
+    "deleteAppDataOnUninstall": false,
+    "unicode": true,
+    "warningsAsErrors": true,
+    "runAfterFinish": true,
+    "createDesktopShortcut": "always",
+    "createStartMenuShortcut": true,
+    "menuCategory": false
+  },
+  "linux": {
+    "target": ["AppImage", "tar.gz", "deb", "rpm"],
+    "executableName": "qsdm-hive",
+    "category": "GNOME;GTK;Network;",
+    "extraResources": [
+      {
+        "from": "native/linux/x64",
+        "to": "native",
+        "filter": ["qsdmcli"]
+      },
+      {
+        "from": "native/linux/x64",
+        "to": "edge",
+        "filter": ["qsdm-edge-agent", "qsdm-edge-control", "qsdm-edge-gpu-helper"]
+      },
+      {
+        "from": "native/linux/x64",
+        "to": "miner",
+        "filter": ["qsdmminer-console", "qsdm-miner-cuda-solver"]
+      }
+    ],
+    "desktop": {
+      "StartupWMClass": "QSDM.Hive",
+      "MimeType": "x-scheme-handler/qsdm-hive"
+    },
+    "artifactName": "qsdm-hive-${version}-${os}-${arch}.${ext}"
+  },
+  "rpm": {
+    "fpm": ["--rpm-rpmbuild-define=_build_id_links none"]
+  },
+  "afterSign": ".erb/scripts/notarize.js",
+  "afterPack": ".erb/scripts/afterPack.js",
+  "publish": [
+    {
+      "provider": "generic",
+      "url": "https://qsdm.tech/downloads"
+    }
+  ]
+}

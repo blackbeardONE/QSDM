@@ -8,6 +8,8 @@ import (
 
 	"github.com/blackbeardONE/QSDM/pkg/branding"
 	"github.com/blackbeardONE/QSDM/pkg/config"
+	"github.com/blackbeardONE/QSDM/pkg/mining"
+	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
 )
 
 // TestStatusHandler_DefaultsToValidator exercises /api/v1/status with no
@@ -15,6 +17,10 @@ import (
 // canonical coin metadata from pkg/branding without requiring any live peer
 // or chain-tip callbacks.
 func TestStatusHandler_DefaultsToValidator(t *testing.T) {
+	originalForkHeight := mining.ForkV2Height()
+	mining.SetForkV2Height(0)
+	t.Cleanup(func() { mining.SetForkV2Height(originalForkHeight) })
+
 	h := setupTestHandlers()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
@@ -56,6 +62,43 @@ func TestStatusHandler_DefaultsToValidator(t *testing.T) {
 	}
 	if resp.Network != branding.NetworkLabel() {
 		t.Errorf("Network = %q, want %q", resp.Network, branding.NetworkLabel())
+	}
+	if resp.Mining == nil || resp.Mining.EnrollmentContract != enrollment.SignedContractID {
+		t.Fatalf("Mining.EnrollmentContract = %#v, want %q", resp.Mining, enrollment.SignedContractID)
+	}
+	if !resp.Mining.SignedEnrollmentRequired {
+		t.Error("Mining.SignedEnrollmentRequired = false, want true")
+	}
+	if resp.Mining.SignedEnrollmentActivationHeight != enrollment.SignedContractActivationHeight {
+		t.Errorf("signed enrollment activation = %d, want %d", resp.Mining.SignedEnrollmentActivationHeight, enrollment.SignedContractActivationHeight)
+	}
+	if !resp.Mining.DeferredBondFromRewards {
+		t.Error("Mining.DeferredBondFromRewards = false, want true")
+	}
+	if resp.Mining.DeferredBondActivationHeight != enrollment.DeferredBondActivationHeight {
+		t.Errorf("deferred-bond activation = %d, want %d", resp.Mining.DeferredBondActivationHeight, enrollment.DeferredBondActivationHeight)
+	}
+}
+
+func TestStatusHandler_ReportsTaskActionReadiness(t *testing.T) {
+	t.Setenv(qsdmTaskActionLogPathEnv, t.TempDir()+"/task-actions.ndjson")
+	SetTaskActionMempool(&fakeSubmitter{})
+	t.Cleanup(func() { SetTaskActionMempool(nil) })
+
+	h := setupTestHandlers()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	rec := httptest.NewRecorder()
+	h.StatusHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var resp StatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.TaskActionsReady {
+		t.Fatal("TaskActionsReady = false with a configured task-action mempool")
 	}
 }
 

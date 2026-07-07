@@ -49,17 +49,17 @@ import (
 // returning the live producer + wired bundle so tests can
 // drive blocks and assert on store state.
 type govRig struct {
-	t        *testing.T
-	w        *v2wiring.Wired
-	accounts *chain.AccountStore
-	pool     *mempool.Mempool
-	producer *chain.BlockProducer
+	t         *testing.T
+	w         *v2wiring.Wired
+	accounts  *chain.AccountStore
+	pool      *mempool.Mempool
+	producer  *chain.BlockProducer
 	storePath string
 }
 
 const (
-	tBob     = "qsdm1bob-not-authority"
-	tCarol   = "qsdm1carol-second-authority"
+	tBob   = "qsdm1bob-not-authority"
+	tCarol = "qsdm1carol-second-authority"
 )
 
 // buildGovRig wires a chain with governance enabled (alice +
@@ -74,6 +74,8 @@ func buildGovRig(t *testing.T, seedCELL float64, storePath string) *govRig {
 		api.SetEnrollmentLister(nil)
 		api.SetEnrollmentMempool(nil)
 		api.SetSlashMempool(nil)
+		api.SetTaskActionMempool(nil)
+		api.SetTaskStateProvider(nil)
 		api.SetSlashReceiptStore(nil)
 		api.SetSlashReceiptLister(nil)
 		api.SetGovernanceProvider(nil)

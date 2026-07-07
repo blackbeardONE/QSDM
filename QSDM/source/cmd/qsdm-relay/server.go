@@ -296,7 +296,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		"# HELP qsdm_relay_tunnel_deregisters_total Cumulative tunnel deregistrations.\n" +
 		"# TYPE qsdm_relay_tunnel_deregisters_total counter\n" +
 		"qsdm_relay_tunnel_deregisters_total " + strconv.FormatUint(deregisters, 10) + "\n" +
-		"# HELP qsdm_relay_tunnel_collisions_total Tunnel registrations rejected because slot was already live.\n" +
+		"# HELP qsdm_relay_tunnel_collisions_total Authenticated tunnel registrations that replaced an already-live slot.\n" +
 		"# TYPE qsdm_relay_tunnel_collisions_total counter\n" +
 		"qsdm_relay_tunnel_collisions_total " + strconv.FormatUint(collisions, 10) + "\n" +
 		"# HELP qsdm_relay_proxy_requests_total Public miner HTTP requests handled.\n" +

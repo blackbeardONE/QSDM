@@ -54,7 +54,7 @@ openssl rand -hex 32
 Export it into your shell for the rest of this runbook:
 
 ```bash
-export NGC_INGEST_SECRET="7f2c3c1d0b...ef9a"
+export NGC_INGEST_SECRET="<replace-with-random-32-byte-secret>"
 ```
 
 ---
@@ -108,11 +108,11 @@ Edit `ngc.env`:
 
 ```ini
 # From https://ngc.nvidia.com/setup/api-key
-NGC_CLI_API_KEY=nvapi-xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+NGC_CLI_API_KEY=REPLACE_WITH_NGC_API_KEY
 
 # Must match the node
 QSDM_NGC_REPORT_URL=http://host.docker.internal:8080/api/v1/monitoring/ngc-proof
-QSDM_NGC_INGEST_SECRET=7f2c3c1d0b...ef9a
+QSDM_NGC_INGEST_SECRET=REPLACE_WITH_RANDOM_32_BYTE_SECRET
 ```
 
 `ngc.env` is gitignored (see `.gitignore` in this folder). Do **not** check

@@ -3,6 +3,8 @@ package networking
 import (
 	"context"
 	"fmt"
+	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -102,14 +104,22 @@ func SetupLibP2PWithPort(ctx context.Context, logger *logging.Logger, port int) 
 //   - The /api/v1/status `node_id` field is stable for dashboards and
 //     external probes.
 func SetupLibP2PWithPortAndKey(ctx context.Context, logger *logging.Logger, port int, hostKeyPath string) (*Network, error) {
+	return SetupLibP2PWithPortBindAndKey(ctx, logger, port, "", hostKeyPath)
+}
+
+// SetupLibP2PWithPortBindAndKey is like SetupLibP2PWithPortAndKey but can
+// restrict the listen socket to a single interface address. Empty bindAddress
+// preserves the historical all-interfaces IPv4+IPv6 listener.
+func SetupLibP2PWithPortBindAndKey(ctx context.Context, logger *logging.Logger, port int, bindAddress string, hostKeyPath string) (*Network, error) {
 	var opts []libp2p.Option
 	if port < 0 || port > 65535 {
 		return nil, fmt.Errorf("invalid libp2p port: %d", port)
 	}
-	opts = append(opts, libp2p.ListenAddrStrings(
-		fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port),
-		fmt.Sprintf("/ip6/::/tcp/%d", port),
-	))
+	listenAddrs, lerr := libp2pListenAddrs(port, bindAddress)
+	if lerr != nil {
+		return nil, lerr
+	}
+	opts = append(opts, libp2p.ListenAddrStrings(listenAddrs...))
 	if hostKeyPath != "" {
 		priv, kerr := loadOrCreateHostKey(hostKeyPath)
 		if kerr != nil {
@@ -185,6 +195,27 @@ func SetupLibP2PWithPortAndKey(ctx context.Context, logger *logging.Logger, port
 
 	logger.Info("LibP2P host created", "hostID", h.ID().String())
 	return net, nil
+}
+
+func libp2pListenAddrs(port int, bindAddress string) ([]string, error) {
+	bindAddress = strings.TrimSpace(bindAddress)
+	if bindAddress == "" || bindAddress == "0.0.0.0" || bindAddress == "::" || bindAddress == "[::]" {
+		return []string{
+			fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port),
+			fmt.Sprintf("/ip6/::/tcp/%d", port),
+		}, nil
+	}
+	if strings.EqualFold(bindAddress, "localhost") {
+		bindAddress = "127.0.0.1"
+	}
+	ip := net.ParseIP(bindAddress)
+	if ip == nil {
+		return nil, fmt.Errorf("invalid libp2p bind address: %q", bindAddress)
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		return []string{fmt.Sprintf("/ip4/%s/tcp/%d", ip4.String(), port)}, nil
+	}
+	return []string{fmt.Sprintf("/ip6/%s/tcp/%d", ip.String(), port)}, nil
 }
 
 // PeerCount implements netmetrics.NetworkProvider for this

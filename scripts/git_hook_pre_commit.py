@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Pre-commit hook for QSDM.
 
-Runs the runbook coverage lint, promtool's two-layer rule check
+Runs the mandatory staged-secret scan, runbook coverage lint, promtool's two-layer rule check
 (`promtool check rules` + `promtool test rules`), and amtool's
 config check (`amtool check-config`) before every commit, but
 ONLY for the checks whose inputs are part of the staged changeset.
@@ -133,6 +133,7 @@ GEN_SCRIPT = "scripts/gen_promtool_tests.py"
 GEN_DASHBOARDS_SCRIPT = "scripts/gen_grafana_dashboards.py"
 WORKFLOW_FILE = ".github/workflows/validate-deploy.yml"
 HOOK_FILE = "scripts/git_hook_pre_commit.py"
+SECRET_SCAN_SCRIPT = "scripts/check_secrets.py"
 
 # Paths whose modification triggers the runbook-coverage lint.
 # The lint also validates `dashboard_url` annotations and the
@@ -465,6 +466,13 @@ def main() -> int:
         # Empty commit, or no staged changes (somehow). Don't
         # interfere — let `git commit` produce its own error.
         return 0
+
+    secret_scan = subprocess.run(
+        [sys.executable, SECRET_SCAN_SCRIPT, "--staged"],
+        cwd=REPO_ROOT,
+    )
+    if secret_scan.returncode != 0:
+        return secret_scan.returncode
 
     runbook_hits = any_match(files, RUNBOOK_LINT_TRIGGERS)
     check_hits = any_match(files, PROMTOOL_CHECK_TRIGGERS)

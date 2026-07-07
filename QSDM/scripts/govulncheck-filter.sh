@@ -11,16 +11,10 @@
 # The raw govulncheck output is always printed so humans can see it
 # in the job log even when we pass.
 #
-# Why an allowlist: GO-2024-3218 (Kademlia DHT content censorship in
-# github.com/libp2p/go-libp2p-kad-dht) was flagged in 2024 with
-# `Fixed in: N/A`. libp2p has not shipped a patched release, and the
-# QSDM networking layer pulls in go-libp2p-kad-dht transitively
-# through the standard libp2p New() constructor. Until upstream ships
-# a fix we cannot upgrade past it without wholesale replacing the DHT
-# backend, which is a major architectural change out of scope for a
-# CI tooling commit. Suppressing ONLY this specific id (not a blanket
-# "ignore all findings") keeps the scan honest: the day govulncheck
-# reports GO-202X-YYYY that we *haven't* acknowledged, CI goes red.
+# Allowlist posture: intentionally empty. GO-2024-3218 used to be tracked
+# here while QSDM used go-libp2p-kad-dht for WAN discovery. That DHT path was
+# removed in favor of explicit bootstrap-peer dialing, so any reachable
+# govulncheck finding should now fail this gate.
 #
 # Every entry below MUST carry a tracking comment with:
 #   - the OSV id
@@ -29,13 +23,7 @@
 #     allowlist doesn't silently rot forever.
 set -euo pipefail
 
-ALLOWLIST=(
-  # GO-2024-3218  Content censorship in IPFS via Kademlia DHT abuse in
-  #               github.com/libp2p/go-libp2p-kad-dht@v0.39.0
-  #               Fixed in: N/A (upstream has no patched release)
-  #               expires=2026-10-22 (re-evaluate every ~6 months)
-  "GO-2024-3218"
-)
+ALLOWLIST=()
 
 # Capture both streams; we need stdout (findings) but also want to
 # propagate real tool failures (missing liboqs, build errors, etc.)

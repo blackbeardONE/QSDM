@@ -1,0 +1,15 @@
+# QSDM has one current repository custodian. Security-sensitive changes must
+# request that owner's review even when broader collaboration is enabled.
+* @blackbeardONE
+
+/QSDM/source/pkg/wallet/ @blackbeardONE
+/QSDM/source/pkg/keystore/ @blackbeardONE
+/QSDM/source/pkg/chain/ @blackbeardONE
+/QSDM/source/pkg/mining/ @blackbeardONE
+/QSDM/source/pkg/networking/ @blackbeardONE
+/QSDM/source/pkg/api/ @blackbeardONE
+/QSDM/scripts/*treasury* @blackbeardONE
+/QSDM/deploy/*treasury* @blackbeardONE
+/apps/qsdm-hive/qsdm-hive-main/src/main/security/ @blackbeardONE
+/.github/workflows/ @blackbeardONE
+/scripts/check_secrets.py @blackbeardONE

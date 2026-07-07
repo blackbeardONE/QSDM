@@ -41,16 +41,16 @@ api:
   enable_tls: true
   tls_cert_file: ""  # Path to TLS certificate file
   tls_key_file: ""    # Path to TLS private key file
-  # NGC sidecar: QSDM_NGC_INGEST_SECRET (e.g. Charming123 for local dev) or QSDM_NGC_INGEST_SECRET
+  # NGC sidecar: load QSDM_NGC_INGEST_SECRET from a secret store with a unique random value
   # NVIDIA-lock: require recent GPU-attested proof for mint/send/create-token
   # nvidia_lock: false
   # nvidia_lock_max_proof_age: "15m"
   # nvidia_lock_expected_node_id: ""  # optional; match QSDM_NGC_PROOF_NODE_ID on sidecar
-  # nvidia_lock_proof_hmac_secret: "Charming123"  # optional example; match sidecar
+  # nvidia_lock_proof_hmac_secret: "<replace-with-random-32-byte-secret>"  # match sidecar
   # nvidia_lock_require_ingest_nonce: false
   # nvidia_lock_gate_p2p: false  # optional: gate libp2p transaction storage (with nvidia_lock); env QSDM_NVIDIA_LOCK_GATE_P2P
   # nvidia_lock_ingest_nonce_ttl: "10m"
-  # jwt_hmac_secret: "Charming123"  # optional example (env: QSDM_JWT_HMAC_SECRET)
+  # jwt_hmac_secret: "<replace-with-separate-random-32-byte-secret>"  # env: QSDM_JWT_HMAC_SECRET
   # strict_secrets: false  # true: reject weak secrets at startup (env QSDM_STRICT_SECRETS overrides)
   # rate_limit_max_requests: 100  # global API limit per client window (health exempt)
   # rate_limit_window: "1m"
@@ -76,4 +76,3 @@ trust:
   fresh_within: "15m"        # attestations older than this are treated as stale
   refresh_interval: "10s"    # background cache rebuild cadence
   region_hint: ""            # "eu" | "us" | "apac" | "other" | ""
-

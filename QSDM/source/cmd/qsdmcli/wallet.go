@@ -21,6 +21,8 @@
 //	qsdmcli wallet sign-tx  [--in PATH] [--passphrase-file FILE]
 //	                        [--envelope-file PATH | '-'] [--nonce N | --auto-nonce]
 //	                        [--api-url URL] [--api-timeout DUR]
+//	qsdmcli wallet sign-task-action [--in PATH] [--passphrase-file FILE]
+//	                                [--envelope-file PATH | '-'] [--nonce N]
 //
 // `new` produces an encrypted keystore and prints only the address to
 // stdout — friendly for piping straight into a miner:
@@ -75,6 +77,8 @@ func (c *CLI) walletCommand(args []string) error {
 		return c.walletSign(rest)
 	case "sign-tx":
 		return c.walletSignTx(rest)
+	case "sign-task-action":
+		return c.walletSignTaskAction(rest)
 	case "help", "-h", "--help":
 		fmt.Fprint(os.Stdout, walletHelp)
 		return nil
@@ -84,7 +88,7 @@ func (c *CLI) walletCommand(args []string) error {
 }
 
 func walletUsageError() error {
-	return fmt.Errorf("usage: qsdmcli wallet <new|show|inspect|sign|sign-tx> [flags]\n\n%s", walletHelp)
+	return fmt.Errorf("usage: qsdmcli wallet <new|show|inspect|sign|sign-tx|sign-task-action> [flags]\n\n%s", walletHelp)
 }
 
 const walletHelp = `qsdmcli wallet — self-custody keystore (ML-DSA-87)
@@ -105,6 +109,12 @@ Subcommands:
            left as the v0.4.0 backward-compat 0), signs the canonical
            bytes with the keystore key, and writes the signed
            envelope to stdout.
+  sign-task-action
+           Produce a fully-signed QSDM task action envelope ready for
+           POST /api/v1/tasks/actions/submit-signed. Reads an unsigned
+           envelope (JSON on stdin by default), optionally stamps
+           --nonce, signs the canonical bytes with the keystore key,
+           and writes the signed envelope to stdout.
 
 Common flags:
   --in   PATH           Keystore file to read (default: ~/.qsdm/wallet.json)
@@ -116,8 +126,10 @@ Common flags:
   --message      HEX    Hex-encoded message bytes to sign (sign only).
   --message-file PATH   Read message bytes to sign from a file (sign only;
                         use '-' for stdin). Mutually exclusive with --message.
-  --envelope-file PATH  JSON envelope to sign (sign-tx only; default: stdin).
-  --nonce N             v0.4.1 nonce (sign-tx only; mutually exclusive with --auto-nonce).
+  --envelope-file PATH  JSON envelope to sign (sign-tx or sign-task-action;
+                        default: stdin).
+  --nonce N             Nonce to stamp (sign-tx or sign-task-action;
+                        mutually exclusive with --auto-nonce for sign-tx).
   --auto-nonce          Resolve nonce from --api-url before signing (sign-tx only).
   --api-url URL         Validator base URL for --auto-nonce (default: https://api.qsdm.tech).
   --api-timeout DUR     HTTP timeout for --auto-nonce (default: 10s).
@@ -131,6 +143,9 @@ Examples:
   qsdmcli wallet sign-tx --auto-nonce < envelope.json \
     | curl -fsS -H 'Content-Type: application/json' --data-binary @- \
            https://api.qsdm.tech/api/v1/wallet/submit-signed
+  qsdmcli wallet sign-task-action < task-action.json \
+    | curl -fsS -H 'Content-Type: application/json' --data-binary @- \
+           https://api.qsdm.tech/api/v1/tasks/actions/submit-signed
 `
 
 func (c *CLI) walletNew(args []string) error {

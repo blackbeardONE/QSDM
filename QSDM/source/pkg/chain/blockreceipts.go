@@ -37,6 +37,7 @@ func (rp *ReceiptProducer) ProduceBlockWithReceipts() (*Block, []*TxReceipt, err
 	if len(txs) == 0 {
 		return nil, nil, fmt.Errorf("no transactions to include")
 	}
+	orderSenderNonces(txs)
 
 	var included []*mempool.Tx
 	var totalFees float64

@@ -74,6 +74,13 @@ Nvidia Token
 *.env
 !*.env.example
 
+# Treasury runtime configuration contains signer bearer tokens. Keystores and
+# passphrase files must also remain outside source control.
+**/qsdm-treasury.json
+**/treasury/*.json
+**/treasury/*.passphrase
+**/treasury/*.token
+
 # TLS material used during early local testing. Production edge
 # certs live on the VPS, not here.
 QSDM/api_server.crt
@@ -84,6 +91,33 @@ QSDM/api_server.key
 *.p12
 *.pfx
 *.jks
+
+# Wallets, signer credentials, SSH keys, and encrypted custody archives. Public
+# wallet registries and funding plans use explicit names outside these patterns.
+*.key
+*.ppk
+*.token
+*.passphrase
+*.passphrase.*
+*.keystore
+*.keystore.json
+*.seed
+*.aes256
+**/wallet.json
+**/wallet-*.json
+**/signer.token
+**/*.signed.json
+**/*.unsigned.json
+**/ecosystem-wallets.private*.json
+**/credentials.json
+**/.npmrc
+**/.netrc
+**/.ssh/
+**/.aws/
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
 
 
 # ------------------------------------------------------------
@@ -165,6 +199,13 @@ stop-qsdm-local.ps1
 # ------------------------------------------------------------
 apps/game-integration/
 
+# Separate private repositories and local historical copies. These directories
+# may contain their own Git metadata, deployment credentials, or old secrets.
+/external/
+/Archived/
+/QSDM-source-office-copy-*/
+/QSDM-source-office-copy-*.zip
+
 
 # ------------------------------------------------------------
 # Agent-specific rules / tooling (not part of QSDM)
@@ -206,6 +247,19 @@ coverage.out
 *.cov
 *.coverprofile
 
+# Go — local tool/cache directories and editor/atomic-write leftovers
+# produced under the QSDM source tree during local verification.
+QSDM/source/.cache/
+QSDM/source/**/*.go.[0-9]*
+
+# Test runs write signed wallet transaction blobs here. They are generated
+# evidence, not fixtures, and can contain public keys and signatures.
+/QSDM/source/tests/test_data/
+/QSDM/source/tests/test_e2e_data/
+/QSDM/source/tests/test_node1_data/
+/QSDM/source/tests/test_node2_data/
+/QSDM/source/tests/test_stress_data/
+
 # CUDA kernel build artefacts produced by QSDM/scripts/build_kernels.ps1
 # (nvcc + gendef + dlltool). The only checked-in file is the .cu source;
 # every derived product below is regenerated from it per-host.
@@ -237,6 +291,10 @@ QSDM/databases/*.db-journal
 QSDM/databases/*.db-wal
 QSDM/databases/*.db-shm
 QSDM/databases/*_[0-9]*.sql
+QSDM/source/pkg/storage/*.db
+QSDM/source/pkg/storage/*.db-journal
+QSDM/source/pkg/storage/*.db-wal
+QSDM/source/pkg/storage/*.db-shm
 
 # Per-transaction storage blobs written by the local node.
 QSDM/storage/tx_*.dat
@@ -310,6 +368,10 @@ desktop.ini
 # Local one-shot release-style staging directory.
 /dist/
 
+# A copied Electron runtime manifest can appear at the workspace root during
+# unpacking. The real Hive manifests live under apps/qsdm-hive/.
+/package.json
+
 # Cross-platform consumer release artifacts produced by
 # QSDM/scripts/build_release.ps1. Contains the per-platform
 # qsdmminer / qsdmcli / qsdm-attester binaries plus
@@ -319,6 +381,15 @@ desktop.ini
 # create the same "stale binary shadows fresh source" risk
 # the per-target rules above guard against.
 /release/
+
+# Website and desktop packaging output. Release artifacts are published through
+# the release pipeline and must not be committed to source control.
+/QSDM/deploy/landing/downloads/
+/apps/qsdm-hive/qsdm-hive-main/native/
+/apps/qsdm-hive/qsdm-hive-main/release/build-*/
+/apps/qsdm-edge-agent/*
+!/apps/qsdm-edge-agent/README.md
+!/apps/qsdm-edge-agent/VERSION
 
 # Stderr captures from local repro runs.
 *.err

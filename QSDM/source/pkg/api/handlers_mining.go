@@ -17,15 +17,15 @@ import (
 // MiningWork is the payload a miner fetches from
 // GET /api/v1/mining/work?height=<h>. All byte fields are lowercase hex.
 type MiningWork struct {
-	Epoch             uint64              `json:"epoch"`
-	Height            uint64              `json:"height"`
-	HeaderHash        string              `json:"header_hash"`
-	Difficulty        string              `json:"difficulty"`          // decimal string
-	DAGSize           uint32              `json:"dag_size"`            // N entries
-	WorkSetRoot       string              `json:"workset_root"`        // hex root
-	WorkSet           []MiningWorkBatch   `json:"workset"`             // canonical order
-	BatchCountMaximum uint32              `json:"batch_count_maximum"` // per §7 step 8
-	BlocksPerEpoch    uint64              `json:"blocks_per_epoch"`
+	Epoch             uint64            `json:"epoch"`
+	Height            uint64            `json:"height"`
+	HeaderHash        string            `json:"header_hash"`
+	Difficulty        string            `json:"difficulty"`          // decimal string
+	DAGSize           uint32            `json:"dag_size"`            // N entries
+	WorkSetRoot       string            `json:"workset_root"`        // hex root
+	WorkSet           []MiningWorkBatch `json:"workset"`             // canonical order
+	BatchCountMaximum uint32            `json:"batch_count_maximum"` // per §7 step 8
+	BlocksPerEpoch    uint64            `json:"blocks_per_epoch"`
 }
 
 // MiningWorkBatch is one batch in the MiningWork.workset array. The cells
@@ -109,15 +109,15 @@ func currentMiningService() MiningService {
 
 // MiningAccountProbe is the read-only contract the
 // /api/v1/mining/account endpoint uses to surface CELL
-// balances from the live AccountStore. Wired by the validator
-// in solo-validator mode so operators can see mining rewards
-// land. Without a probe, the endpoint returns 503 with
+// balances from the live AccountStore. Wired by validators in
+// every node mode so miners can read their canonical enrollment
+// balance and nonce. Without a probe, the endpoint returns 503 with
 // "balance probe not configured" — distinct from "service not
 // configured" so debugging is unambiguous.
 //
 // The contract is intentionally thin (one method) so the
-// implementation in cmd/qsdm/main.go is a one-line closure
-// that calls adminAccounts.Get.
+// implementation in cmd/qsdm/main.go is a thin adapter over
+// the canonical AccountStore.
 type MiningAccountProbe interface {
 	// BalanceOf returns the CELL balance and nonce of an
 	// address, plus a `present` flag distinguishing
@@ -136,8 +136,7 @@ type miningAccountProbeHolder struct {
 var miningAccountProbeRegistry = &miningAccountProbeHolder{}
 
 // SetMiningAccountProbe installs (or removes, when probe==nil)
-// the process-wide balance probe. Outside solo mode, the
-// validator does not wire one and the endpoint stays at 503.
+// the process-wide canonical balance probe.
 func SetMiningAccountProbe(probe MiningAccountProbe) {
 	miningAccountProbeRegistry.mu.Lock()
 	defer miningAccountProbeRegistry.mu.Unlock()
@@ -280,17 +279,17 @@ type MiningReceiptProbe interface {
 // caller that already has a chain-package consumer (e.g.
 // qsdmcli watch) can switch between the two without remapping.
 type TxReceiptView struct {
-	TxID         string                 `json:"tx_id"`
-	BlockHeight  uint64                 `json:"block_height"`
-	BlockHash    string                 `json:"block_hash,omitempty"`
-	Status       uint8                  `json:"status"`
-	GasUsed      int64                  `json:"gas_used"`
-	Fee          float64                `json:"fee"`
-	Logs         []TxReceiptLogView     `json:"logs,omitempty"`
-	Error        string                 `json:"error,omitempty"`
-	Timestamp    string                 `json:"timestamp"`
-	ContractID   string                 `json:"contract_id,omitempty"`
-	IndexInBlock int                    `json:"index_in_block"`
+	TxID         string             `json:"tx_id"`
+	BlockHeight  uint64             `json:"block_height"`
+	BlockHash    string             `json:"block_hash,omitempty"`
+	Status       uint8              `json:"status"`
+	GasUsed      int64              `json:"gas_used"`
+	Fee          float64            `json:"fee"`
+	Logs         []TxReceiptLogView `json:"logs,omitempty"`
+	Error        string             `json:"error,omitempty"`
+	Timestamp    string             `json:"timestamp"`
+	ContractID   string             `json:"contract_id,omitempty"`
+	IndexInBlock int                `json:"index_in_block"`
 }
 
 // TxReceiptLogView mirrors chain.LogEntry on the wire.
@@ -492,9 +491,13 @@ func currentMiningReceiptProbe() MiningReceiptProbe {
 //
 // 200 OK + TxReceiptView on hit.
 // 400 on missing or oversize tx_id (defensive — same posture
-//     as the slash-receipt handler's tx_id length check).
+//
+//	as the slash-receipt handler's tx_id length check).
+//
 // 404 on miss (the canonical "this tx never landed" answer;
-//     callers can poll for inclusion).
+//
+//	callers can poll for inclusion).
+//
 // 405 on non-GET.
 // 503 until SetMiningReceiptProbe is wired.
 //
@@ -590,12 +593,39 @@ type MiningBlocksResponse struct {
 	Headers []MiningBlockHeader `json:"headers"`
 }
 
+// ChainBlocksProbe is the read-only contract for the full block catch-up feed.
+// Blocks are returned as JSON-ready values so pkg/api stays decoupled from
+// pkg/chain while still exposing replayable block payloads to peers.
+type ChainBlocksProbe interface {
+	BlocksInRange(from, to uint64) []json.RawMessage
+	Tip() uint64
+}
+
+// ChainBlocksMaxLimit keeps the full-block feed intentionally smaller than the
+// header feed. These payloads include transactions and are meant for incremental
+// catch-up windows, not bulk archival export.
+const ChainBlocksMaxLimit = 64
+
+type ChainBlocksResponse struct {
+	Tip    uint64            `json:"tip"`
+	From   uint64            `json:"from"`
+	To     uint64            `json:"to"`
+	Blocks []json.RawMessage `json:"blocks"`
+}
+
 type miningBlocksProbeHolder struct {
 	mu    sync.RWMutex
 	probe MiningBlocksProbe
 }
 
 var miningBlocksProbeRegistry = &miningBlocksProbeHolder{}
+
+type chainBlocksProbeHolder struct {
+	mu    sync.RWMutex
+	probe ChainBlocksProbe
+}
+
+var chainBlocksProbeRegistry = &chainBlocksProbeHolder{}
 
 // SetMiningBlocksProbe installs (or removes, when probe==nil)
 // the process-wide block-header probe. Wired by cmd/qsdm/main.go
@@ -608,10 +638,24 @@ func SetMiningBlocksProbe(probe MiningBlocksProbe) {
 	miningBlocksProbeRegistry.probe = probe
 }
 
+// SetChainBlocksProbe installs (or removes, when probe==nil) the process-wide
+// full block feed used by /api/v1/chain/blocks.
+func SetChainBlocksProbe(probe ChainBlocksProbe) {
+	chainBlocksProbeRegistry.mu.Lock()
+	defer chainBlocksProbeRegistry.mu.Unlock()
+	chainBlocksProbeRegistry.probe = probe
+}
+
 func currentMiningBlocksProbe() MiningBlocksProbe {
 	miningBlocksProbeRegistry.mu.RLock()
 	defer miningBlocksProbeRegistry.mu.RUnlock()
 	return miningBlocksProbeRegistry.probe
+}
+
+func currentChainBlocksProbe() ChainBlocksProbe {
+	chainBlocksProbeRegistry.mu.RLock()
+	defer chainBlocksProbeRegistry.mu.RUnlock()
+	return chainBlocksProbeRegistry.probe
 }
 
 // MiningBlocksHandler serves GET /api/v1/mining/blocks.
@@ -709,10 +753,102 @@ func (h *Handlers) MiningBlocksHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ChainBlocksHandler serves GET /api/v1/chain/blocks.
+//
+// Query params:
+//
+//	?from=<height>   default = max(0, tip - default_limit + 1)
+//	?to=<height>     default = tip
+//	?limit=<n>       default = 16, capped at ChainBlocksMaxLimit.
+func (h *Handlers) ChainBlocksHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	probe := currentChainBlocksProbe()
+	if probe == nil {
+		writeMiningUnavailable(w, "chain blocks probe not configured")
+		return
+	}
+	tip := probe.Tip()
+
+	q := r.URL.Query()
+	limit := uint64(16)
+	if raw := q.Get("limit"); raw != "" {
+		v, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			http.Error(w, "limit must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		limit = v
+	}
+	if limit == 0 {
+		limit = 16
+	}
+	if limit > ChainBlocksMaxLimit {
+		limit = ChainBlocksMaxLimit
+	}
+
+	var from, to uint64
+	var fromSet, toSet bool
+	if raw := q.Get("to"); raw != "" {
+		v, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			http.Error(w, "to must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		to = v
+		toSet = true
+	} else {
+		to = tip
+	}
+	if to > tip {
+		to = tip
+	}
+	if raw := q.Get("from"); raw != "" {
+		v, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			http.Error(w, "from must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		from = v
+		fromSet = true
+	} else if to+1 > limit {
+		from = to + 1 - limit
+	} else {
+		from = 0
+	}
+	if fromSet && toSet && from > to {
+		http.Error(w, "from must be <= to", http.StatusBadRequest)
+		return
+	}
+	if from > to {
+		from = to
+	}
+	if to-from+1 > limit {
+		to = from + limit - 1
+	}
+
+	blocks := probe.BlocksInRange(from, to)
+	if len(blocks) > int(limit) {
+		blocks = blocks[:int(limit)]
+	}
+	if blocks == nil {
+		blocks = []json.RawMessage{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(ChainBlocksResponse{
+		Tip:    tip,
+		From:   from,
+		To:     to,
+		Blocks: blocks,
+	})
+}
+
 // MiningAccountHandler serves GET /api/v1/mining/account?address=<addr>.
-// Returns 503 when no probe is wired (canonical posture
-// outside solo mode). Returns 400 when the address parameter
-// is missing.
+// Returns 503 when no probe is wired and 400 when the address
+// parameter is missing.
 func (h *Handlers) MiningAccountHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)

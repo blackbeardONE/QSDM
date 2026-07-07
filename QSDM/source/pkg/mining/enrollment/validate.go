@@ -52,9 +52,26 @@ func ValidateEnrollFields(p EnrollPayload, sender string) error {
 		return fmt.Errorf("%w: hmac_key length %d > MaxHMACKeyLen %d",
 			ErrPayloadInvalid, len(p.HMACKey), MaxHMACKeyLen)
 	}
-	if p.StakeDust != mining.MinEnrollStakeDust {
-		return fmt.Errorf("%w: stake_dust %d != required %d",
-			ErrStakeMismatch, p.StakeDust, mining.MinEnrollStakeDust)
+	switch p.BondMode {
+	case "", BondModeUpfront:
+		if p.StakeDust != mining.MinEnrollStakeDust {
+			return fmt.Errorf("%w: upfront stake_dust %d != required %d",
+				ErrStakeMismatch, p.StakeDust, mining.MinEnrollStakeDust)
+		}
+		if p.WorkNonce != 0 {
+			return fmt.Errorf("%w: work_nonce is only valid for %q bond mode",
+				ErrPayloadInvalid, BondModeMiningRewards)
+		}
+	case BondModeMiningRewards:
+		if p.StakeDust != 0 {
+			return fmt.Errorf("%w: mining-rewards enrollment must start with stake_dust 0, got %d",
+				ErrStakeMismatch, p.StakeDust)
+		}
+		if err := ValidateDeferredBondWork(p); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("%w: unsupported bond_mode %q", ErrPayloadInvalid, p.BondMode)
 	}
 	if len(p.Memo) > MaxMemoLen {
 		return fmt.Errorf("%w: memo length %d > MaxMemoLen %d",
@@ -102,7 +119,7 @@ func ValidateEnrollAgainstState(
 	if state == nil {
 		return fmt.Errorf("%w: enrollment state is nil", ErrPayloadInvalid)
 	}
-	if senderBalanceDust < p.StakeDust {
+	if p.BondMode != BondModeMiningRewards && senderBalanceDust < p.StakeDust {
 		return fmt.Errorf("%w: sender has %d dust, need %d",
 			ErrInsufficientBalance, senderBalanceDust, p.StakeDust)
 	}

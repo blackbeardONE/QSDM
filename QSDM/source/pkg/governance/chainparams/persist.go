@@ -48,10 +48,9 @@ package chainparams
 //
 // # Atomicity
 //
-// SaveSnapshot writes through a `<path>.tmp` file then renames
-// over `<path>`. On Windows the rename can fail if `<path>`
-// exists, so we Remove before Rename. Same posture as
-// staking_persist.go.
+// SaveSnapshot writes through a same-directory temp file then replaces
+// `<path>`. Windows builds fall back to a direct overwrite if the OS refuses
+// replace-over-existing even though the destination remains writable.
 //
 // # Concurrency
 //
@@ -70,6 +69,8 @@ import (
 	"os"
 	"sort"
 	"time"
+
+	"github.com/blackbeardONE/QSDM/pkg/fileutil"
 )
 
 // SnapshotVersion is the on-disk format version. Bumping it is
@@ -94,11 +95,11 @@ const snapshotMinSupportedVersion = 1
 // snapshotDoc is the on-disk JSON shape. JSON tags are the wire
 // contract; renaming them is a breaking change.
 type snapshotDoc struct {
-	Version             int                          `json:"version"`
-	SavedAt             string                       `json:"saved_at"`
-	Active              map[string]uint64            `json:"active"`
-	Pending             []snapshotPending            `json:"pending"`
-	AuthorityProposals  []snapshotAuthorityProposal  `json:"authority_proposals,omitempty"`
+	Version            int                         `json:"version"`
+	SavedAt            string                      `json:"saved_at"`
+	Active             map[string]uint64           `json:"active"`
+	Pending            []snapshotPending           `json:"pending"`
+	AuthorityProposals []snapshotAuthorityProposal `json:"authority_proposals,omitempty"`
 }
 
 // snapshotPending mirrors ParamChange but with explicit JSON
@@ -118,12 +119,12 @@ type snapshotPending struct {
 // metadata so a replay reconstructs the deterministic order
 // the in-memory store enforces.
 type snapshotAuthorityProposal struct {
-	Op              AuthorityOp           `json:"op"`
-	Address         string                `json:"address"`
-	EffectiveHeight uint64                `json:"effective_height"`
-	Voters          []snapshotAuthVote    `json:"voters"`
-	Crossed         bool                  `json:"crossed"`
-	CrossedAtHeight uint64                `json:"crossed_at_height,omitempty"`
+	Op              AuthorityOp        `json:"op"`
+	Address         string             `json:"address"`
+	EffectiveHeight uint64             `json:"effective_height"`
+	Voters          []snapshotAuthVote `json:"voters"`
+	Crossed         bool               `json:"crossed"`
+	CrossedAtHeight uint64             `json:"crossed_at_height,omitempty"`
 }
 
 // snapshotAuthVote mirrors AuthorityVote.
@@ -213,19 +214,8 @@ func SaveSnapshotWith(store ParamStore, votes AuthorityVoteStore, path string) e
 	if err != nil {
 		return fmt.Errorf("chainparams: marshal snapshot: %w", err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, out, 0o600); err != nil {
-		return fmt.Errorf("chainparams: write tmp snapshot: %w", err)
-	}
-	// Windows rename-over-existing fails; Remove first.
-	// The window between Remove and Rename is non-critical:
-	// a crash there leaves <path> missing and <path>.tmp
-	// containing the new snapshot, which LoadOrNew handles
-	// (it falls back to defaults on missing path; an
-	// operator can manually rename .tmp → final).
-	_ = os.Remove(path)
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("chainparams: rename snapshot: %w", err)
+	if err := fileutil.WriteFileAtomic(path, out, 0o600); err != nil {
+		return fmt.Errorf("chainparams: save snapshot: %w", err)
 	}
 	return nil
 }

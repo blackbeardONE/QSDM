@@ -13,10 +13,8 @@
 #                            pkg/audit/checklist.go (reviewer-facing).
 #   03_go_mod_verify.txt   - `go mod verify` (cryptographic check of
 #                            every module in go.sum).
-#   04_govulncheck.txt     - reachable-call-graph CVE scan. The known
-#                            accepted-with-mitigation finding
-#                            GO-2024-3218 is documented in
-#                            QSDM/scripts/govulncheck-filter.sh.
+#   04_govulncheck.txt     - reachable-call-graph CVE scan. The
+#                            allowlist is intentionally empty.
 #   05_go_vet.txt          - default + soak-tag vet sweep.
 #   06_go_test_full.txt    - `go test ./... -count=1` (non-`-short`),
 #                            tail captured. Pass/fail per package.
@@ -328,8 +326,7 @@ $manifestLines += '#  1. 02_audit_report.md  - the 81-item security checklist. F
 $manifestLines += '#                            critical/high item to passed/failed/waived'
 $manifestLines += '#                            via cmd/auditreport -input <reviewed.json>.'
 $manifestLines += '#  2. 03_go_mod_verify    - must end "all modules verified".'
-$manifestLines += '#  3. 04_govulncheck      - only GO-2024-3218 may remain (tracked by'
-$manifestLines += '#                            QSDM/scripts/govulncheck-filter.sh).'
+$manifestLines += '#  3. 04_govulncheck      - must report zero reachable findings.'
 $manifestLines += '#  4. 06_go_test_full     - last lines must show ok / no FAIL.'
 $manifestLines += '#  5. 09_binaries         - every cmd should report go1.25.10+ banner.'
 $manifestLines += '#  6. 10_soak_summary     - mempool + pubsub soaks PASS at >= 10 min.'

@@ -19,7 +19,7 @@ Do **not** commit API keys. Use a local env file (see `ngc.env.example`).
 
 ```bash
 # Linux / macOS
-export NGC_CLI_API_KEY="Charming123"
+export NGC_CLI_API_KEY="<replace-with-ngc-api-key>"
 echo "$NGC_CLI_API_KEY" | docker login nvcr.io -u '$oauthtoken' --password-stdin
 ```
 
@@ -44,7 +44,7 @@ From **`apps/qsdm-nvidia-ngc/`**, PowerShell:
 Linux / macOS equivalent:
 
 ```bash
-export NGC_CLI_API_KEY="Charming123"
+export NGC_CLI_API_KEY="<replace-with-ngc-api-key>"
 echo "$NGC_CLI_API_KEY" | docker login nvcr.io -u '$oauthtoken' --password-stdin
 docker manifest inspect nvcr.io/nvidia/pytorch:24.07-py3
 ```
@@ -87,16 +87,16 @@ chmod +x scripts/run-gpu.sh
 
 Quick helpers (set env for **this shell** before `docker compose up`):
 
-- Windows: `.\scripts\wire-qsdm.ps1 -ApiPort 8080 -Secret "Charming123"`  
+- Windows: `.\scripts\wire-qsdm.ps1 -ApiPort 8080 -Secret "<random-32-byte-secret>"`
   With node binding: add `-ProofNodeId "validator-1"` (same value as `QSDM_NVIDIA_LOCK_EXPECTED_NODE_ID` on the node).
 - Linux / macOS: `chmod +x scripts/wire-qsdm.sh` then  
-  `./scripts/wire-qsdm.sh 8080 "Charming123"` or  
-  `./scripts/wire-qsdm.sh 8080 "Charming123" "validator-1" "Charming123"`
+  `./scripts/wire-qsdm.sh 8080 "<random-32-byte-secret>"` or
+  `./scripts/wire-qsdm.sh 8080 "<random-32-byte-secret>" "validator-1" "<separate-random-32-byte-hmac-secret>"`
 
 1. Start QSDM with a shared secret:
 
    ```bash
-   export QSDM_NGC_INGEST_SECRET="Charming123"
+   export QSDM_NGC_INGEST_SECRET="<random-32-byte-secret>"
    ```
 
 2. Set the sidecar env (compose snippet or shell):
@@ -107,7 +107,7 @@ Quick helpers (set env for **this shell** before `docker compose up`):
 3. List ingested summaries (requires the same header):
 
    ```bash
-   curl -sS -H "X-QSDM-NGC-Secret: Charming123" \
+   curl -sS -H "X-QSDM-NGC-Secret: <random-32-byte-secret>" \
      http://127.0.0.1:8080/api/v1/monitoring/ngc-proofs
    ```
 

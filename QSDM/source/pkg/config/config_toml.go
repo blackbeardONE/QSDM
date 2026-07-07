@@ -64,6 +64,7 @@ type NodeConfig struct {
 
 type NetworkConfig struct {
 	Port           int      `toml:"port"`
+	BindAddress    string   `toml:"bind_address" yaml:"bind_address"`
 	BootstrapPeers []string `toml:"bootstrap_peers"`
 	// SubmeshConfig: optional path to a micropayments-style profile (.toml/.yaml) loaded at startup.
 	SubmeshConfig string `toml:"submesh_config" yaml:"submesh_config"`
@@ -92,12 +93,13 @@ type StorageConfig struct {
 }
 
 type MonitoringConfig struct {
-	DashboardPort       int    `toml:"dashboard_port" yaml:"dashboard_port"`
-	LogViewerPort       int    `toml:"log_viewer_port" yaml:"log_viewer_port"`
-	LogFile             string `toml:"log_file" yaml:"log_file"`
-	LogLevel            string `toml:"log_level" yaml:"log_level"`
-	MetricsScrapeSecret string `toml:"metrics_scrape_secret" yaml:"metrics_scrape_secret"`
-	StrictDashboardAuth bool   `toml:"strict_dashboard_auth" yaml:"strict_dashboard_auth"`
+	DashboardPort        int    `toml:"dashboard_port" yaml:"dashboard_port"`
+	DashboardBindAddress string `toml:"dashboard_bind_address" yaml:"dashboard_bind_address"`
+	LogViewerPort        int    `toml:"log_viewer_port" yaml:"log_viewer_port"`
+	LogFile              string `toml:"log_file" yaml:"log_file"`
+	LogLevel             string `toml:"log_level" yaml:"log_level"`
+	MetricsScrapeSecret  string `toml:"metrics_scrape_secret" yaml:"metrics_scrape_secret"`
+	StrictDashboardAuth  bool   `toml:"strict_dashboard_auth" yaml:"strict_dashboard_auth"`
 	// NGCProofPersistPath: optional file path the in-memory NGC
 	// attestation ring is persisted to as JSONL. Empty (default)
 	// = legacy in-memory-only ring; non-empty = pre-restart
@@ -110,6 +112,7 @@ type MonitoringConfig struct {
 
 type APIConfig struct {
 	Port                         int    `toml:"port" yaml:"port"`
+	BindAddress                  string `toml:"bind_address" yaml:"bind_address"`
 	EnableTLS                    bool   `toml:"enable_tls" yaml:"enable_tls"`
 	TLSCertFile                  string `toml:"tls_cert_file" yaml:"tls_cert_file"`
 	TLSKeyFile                   string `toml:"tls_key_file" yaml:"tls_key_file"`
@@ -138,6 +141,7 @@ type GovernanceConfig struct {
 }
 
 type PerformanceConfig struct {
-	TransactionInterval string `toml:"transaction_interval"`
-	HealthCheckInterval string `toml:"health_check_interval"`
+	TransactionInterval string `toml:"transaction_interval" yaml:"transaction_interval"`
+	HealthCheckInterval string `toml:"health_check_interval" yaml:"health_check_interval"`
+	DemoTransactions    bool   `toml:"demo_transactions" yaml:"demo_transactions"`
 }

@@ -25,6 +25,8 @@ package chain
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"math"
 	"strings"
@@ -33,6 +35,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
 	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
 // -----------------------------------------------------------------------------
@@ -204,6 +207,29 @@ func fxEnrollTx(t *testing.T, sender string, nonce uint64) *mempool.Tx {
 	}
 }
 
+func fxSignedEnrollTx(t *testing.T, nonce uint64) (*mempool.Tx, string) {
+	t.Helper()
+	pk, sk, err := mldsa87.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	pub, _ := pk.MarshalBinary()
+	sum := sha256.Sum256(pub)
+	sender := hex.EncodeToString(sum[:])
+	tx := fxEnrollTx(t, sender, nonce)
+	tx.ID = "signed-enroll-test"
+	tx.ContractID = enrollment.SignedContractID
+	env, _ := enrollment.EnvelopeFromTransaction(tx)
+	canonical, _ := env.CanonicalBytes()
+	sig := make([]byte, mldsa87.SignatureSize)
+	if err := mldsa87.SignTo(sk, canonical, nil, true, sig); err != nil {
+		t.Fatalf("SignTo: %v", err)
+	}
+	tx.PublicKey = hex.EncodeToString(pub)
+	tx.Signature = hex.EncodeToString(sig)
+	return tx, sender
+}
+
 func fxUnenrollTx(t *testing.T, sender, nodeID string, nonce uint64, fee float64) *mempool.Tx {
 	t.Helper()
 	payload := enrollment.UnenrollPayload{
@@ -265,6 +291,38 @@ func TestApplyEnrollmentTx_CorruptPayload(t *testing.T) {
 	}
 	if err := a.ApplyEnrollmentTx(tx, 1); err == nil {
 		t.Error("corrupt payload should error")
+	}
+}
+
+func TestApplyEnrollmentTx_LegacyRejectedAtActivationHeight(t *testing.T) {
+	a := aliceWallet(t, 100)
+	err := a.ApplyEnrollmentTx(
+		fxEnrollTx(t, fxAlice, 0),
+		enrollment.SignedContractActivationHeight,
+	)
+	if !errors.Is(err, enrollment.ErrLegacyContractDisabled) {
+		t.Fatalf("legacy enrollment at activation: got %v", err)
+	}
+}
+
+func TestApplyEnrollmentTx_SignedAcceptedAtActivationHeight(t *testing.T) {
+	tx, sender := fxSignedEnrollTx(t, 0)
+	accounts := NewAccountStore()
+	accounts.Credit(sender, 100)
+	a := NewEnrollmentApplier(accounts, enrollment.NewInMemoryState())
+	if err := a.ApplyEnrollmentTx(tx, enrollment.SignedContractActivationHeight); err != nil {
+		t.Fatalf("signed enrollment: %v", err)
+	}
+}
+
+func TestApplyEnrollmentTx_TamperedSignedRejected(t *testing.T) {
+	tx, sender := fxSignedEnrollTx(t, 0)
+	tx.Fee += 1
+	accounts := NewAccountStore()
+	accounts.Credit(sender, 100)
+	a := NewEnrollmentApplier(accounts, enrollment.NewInMemoryState())
+	if err := a.ApplyEnrollmentTx(tx, enrollment.SignedContractActivationHeight); !errors.Is(err, enrollment.ErrSignatureInvalid) {
+		t.Fatalf("tampered signed enrollment: got %v, want ErrSignatureInvalid", err)
 	}
 }
 
@@ -470,12 +528,12 @@ func TestApplyEnrollmentTx_Unenroll_ZeroFee(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 	tx := fxUnenrollTx(t, fxAlice, fxNodeID, 1, 0) // fee = 0
-	err := a.ApplyEnrollmentTx(tx, 50)
-	if err == nil {
-		t.Fatal("zero fee unenroll should error")
+	if err := a.ApplyEnrollmentTx(tx, 50); err != nil {
+		t.Fatalf("signed zero-fee unenroll rejected: %v", err)
 	}
-	if !strings.Contains(err.Error(), "positive Fee") {
-		t.Errorf("error should mention positive Fee: %v", err)
+	rec, err := a.State.Lookup(fxNodeID)
+	if err != nil || rec == nil || rec.Active() {
+		t.Fatalf("zero-fee unenroll did not revoke record: rec=%+v err=%v", rec, err)
 	}
 }
 

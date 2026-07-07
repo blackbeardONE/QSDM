@@ -2,6 +2,7 @@ package blockdriver
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -465,10 +466,9 @@ func TestTick_HeartbeatWhenScheduleAtZero(t *testing.T) {
 // production boot sequence: an out-of-band tx (the genesis-
 // seal heartbeat in cmd/qsdm/main.go) consumes nonce=0 from
 // the funder before the driver gets to issue its first tx.
-// Without SyncFunderNonce, the driver would re-issue at
-// nonce=0 and ApplyTx would reject. With SyncFunderNonce
-// called between the out-of-band tx and Start, the next
-// tick uses nonce=1 and succeeds.
+// The driver now re-reads the AccountStore at every tick, so it
+// automatically absorbs the out-of-band nonce. SyncFunderNonce
+// remains an explicit boot-time/operator probe and is idempotent.
 func TestSyncFunderNonce_AbsorbsOutOfBandTx(t *testing.T) {
 	cfg := validCfg(t)
 	d, err := New(cfg)
@@ -485,25 +485,56 @@ func TestSyncFunderNonce_AbsorbsOutOfBandTx(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("oob tx setup: %v", err)
 	}
-	// Without sync, the driver still thinks funderNonce=0 →
-	// next tick would be rejected. Confirm tick is in fact
-	// rejected before sync.
+	// The tick must pick up nonce=1 from AccountStore without a
+	// manual sync and seal successfully.
 	d.OnAcceptedProof("qsdm1early")
 	d.tick()
-	if d.Stats().BlocksFailed == 0 {
-		t.Fatal("expected first tick to fail with stale nonce, but it succeeded")
+	if got := d.Stats().BlocksFailed; got != 0 {
+		t.Fatalf("automatic nonce resync: blocks failed got %d want 0", got)
+	}
+	if got := d.Stats().BlocksSealed; got != 1 {
+		t.Fatalf("automatic nonce resync: blocks sealed got %d want 1", got)
 	}
 
-	// Now sync — driver's nonce should match AccountStore's.
+	// Explicit sync remains safe and reflects the post-seal nonce.
 	d.SyncFunderNonce()
-	if got, want := d.Stats().FunderNonce, uint64(1); got != want {
+	if got, want := d.Stats().FunderNonce, uint64(2); got != want {
 		t.Fatalf("after sync: nonce got %d want %d", got, want)
 	}
-	// And the next tick should succeed.
+	// And the next tick should continue the same nonce stream.
 	d.OnAcceptedProof("qsdm1latee")
 	d.tick()
-	if got := d.Stats().BlocksSealed; got != 1 {
-		t.Fatalf("post-sync tick: blocks sealed got %d want 1", got)
+	if got := d.Stats().BlocksSealed; got != 2 {
+		t.Fatalf("post-sync tick: blocks sealed got %d want 2", got)
+	}
+}
+
+func TestTick_RetainsProofsAndNonceAfterSealFailure(t *testing.T) {
+	cfg := validCfg(t)
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	cfg.Producer.SetSealGuard(func() error { return errors.New("persistence unavailable") })
+	d.OnAcceptedProof("qsdm1retry")
+	d.tick()
+	stats := d.Stats()
+	if stats.BlocksFailed != 1 || stats.QueueDepth != 1 || stats.FunderNonce != 0 {
+		t.Fatalf("failed tick stats = %+v, want failed=1 queue=1 nonce=0", stats)
+	}
+	if got := cfg.Pool.Size(); got != 0 {
+		t.Fatalf("driver transaction leaked into pool after failure: size=%d", got)
+	}
+
+	cfg.Producer.SetSealGuard(nil)
+	d.tick()
+	stats = d.Stats()
+	if stats.BlocksSealed != 1 || stats.QueueDepth != 0 || stats.ProofsPaid != 1 {
+		t.Fatalf("retry stats = %+v, want sealed=1 queue=0 paid=1", stats)
+	}
+	miner, ok := cfg.Accounts.Get("qsdm1retry")
+	if !ok || miner.Balance <= 0 {
+		t.Fatalf("retained proof was not paid: %+v", miner)
 	}
 }
 

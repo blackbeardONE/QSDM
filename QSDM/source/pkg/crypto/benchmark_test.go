@@ -1,5 +1,5 @@
-//go:build cgo
-// +build cgo
+//go:build cgo && !dilithium_circl
+// +build cgo,!dilithium_circl
 
 package crypto
 
@@ -17,10 +17,10 @@ func BenchmarkSign(b *testing.B) {
 	defer d.Free()
 
 	message := []byte("test message for signing benchmark")
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		_, err := d.Sign(message)
 		if err != nil {
@@ -38,10 +38,10 @@ func BenchmarkSignOptimized(b *testing.B) {
 	defer d.Free()
 
 	message := []byte("test message for optimized signing benchmark")
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		_, err := d.SignOptimized(message)
 		if err != nil {
@@ -59,10 +59,10 @@ func BenchmarkSignCompressed(b *testing.B) {
 	defer d.Free()
 
 	message := []byte("test message for compressed signing benchmark")
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		_, err := d.SignCompressed(message)
 		if err != nil {
@@ -84,10 +84,10 @@ func BenchmarkVerify(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Failed to create signature: %v", err)
 	}
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		valid, err := d.Verify(message, signature)
 		if err != nil {
@@ -112,10 +112,10 @@ func BenchmarkSignBatchOptimized(b *testing.B) {
 	for i := range messages {
 		messages[i] = []byte("test message for batch signing benchmark " + string(rune(i)))
 	}
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		_, err := d.SignBatchOptimized(messages)
 		if err != nil {
@@ -178,7 +178,7 @@ func TestSignatureCompressionRatio(t *testing.T) {
 	if ratio > maxTolerableRatioPct {
 		t.Errorf("Compression wrapper inflates signature by more than 10%%: ratio=%.2f%% (orig=%d, compressed=%d)", ratio, originalSize, compressedSize)
 	}
-	
+
 	// Verify we can decompress and verify
 	valid, err := d.VerifyCompressed(message, compressed)
 	if err != nil {
@@ -199,7 +199,7 @@ func TestSigningPerformanceComparison(t *testing.T) {
 
 	message := []byte("test message for performance comparison")
 	iterations := 100
-	
+
 	// Benchmark regular signing
 	start := time.Now()
 	for i := 0; i < iterations; i++ {
@@ -210,7 +210,7 @@ func TestSigningPerformanceComparison(t *testing.T) {
 	}
 	regularTime := time.Since(start)
 	regularAvg := regularTime / time.Duration(iterations)
-	
+
 	// Benchmark optimized signing
 	start = time.Now()
 	for i := 0; i < iterations; i++ {
@@ -221,14 +221,14 @@ func TestSigningPerformanceComparison(t *testing.T) {
 	}
 	optimizedTime := time.Since(start)
 	optimizedAvg := optimizedTime / time.Duration(iterations)
-	
+
 	// Calculate improvement
 	improvement := float64(regularTime-optimizedTime) / float64(regularTime) * 100
-	
+
 	t.Logf("Regular signing (100 iterations): %v (avg: %v per signature)", regularTime, regularAvg)
 	t.Logf("Optimized signing (100 iterations): %v (avg: %v per signature)", optimizedTime, optimizedAvg)
 	t.Logf("Performance improvement: %.2f%%", improvement)
-	
+
 	// Optimized should be at least as fast (or slightly faster)
 	if optimizedTime > regularTime*110/100 {
 		t.Logf("Warning: Optimized signing is slower than expected (within 10%% is acceptable)")
@@ -245,29 +245,28 @@ func TestBatchSigningPerformance(t *testing.T) {
 
 	// Test different batch sizes
 	batchSizes := []int{1, 5, 10, 20, 50}
-	
+
 	for _, size := range batchSizes {
 		messages := make([][]byte, size)
 		for i := range messages {
 			messages[i] = []byte("test message for batch " + string(rune(i)))
 		}
-		
+
 		// Time batch signing
 		start := time.Now()
 		signatures, err := d.SignBatchOptimized(messages)
 		batchTime := time.Since(start)
-		
+
 		if err != nil {
 			t.Fatalf("Batch signing failed for size %d: %v", size, err)
 		}
-		
+
 		if len(signatures) != size {
 			t.Fatalf("Expected %d signatures, got %d", size, len(signatures))
 		}
-		
+
 		avgTime := batchTime / time.Duration(size)
-		
+
 		t.Logf("Batch size %d: total %v, avg %v per signature", size, batchTime, avgTime)
 	}
 }
-

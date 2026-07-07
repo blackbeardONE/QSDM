@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,6 +22,10 @@ var ErrBFTExtensionBlocked = errors.New("chain: BFT extension blocked until the 
 
 // ErrPreSealRequiresAccountStore is returned when PreSealBFTRound is set but the applier is not *AccountStore.
 var ErrPreSealRequiresAccountStore = errors.New("chain: pre-seal BFT requires *AccountStore applier for speculative apply")
+
+// ErrSealGuardBlocked is returned when a runtime safety dependency, such as
+// durable chain persistence, has failed and no further blocks may be sealed.
+var ErrSealGuardBlocked = errors.New("chain: block sealing disabled by runtime safety guard")
 
 // ErrExternalAppendNeedsAccountStore is returned when the applier does not implement ChainReplayApplier
 // (clone/replay/rollback required for safe external append).
@@ -47,15 +52,15 @@ func (e *ExternalAppendConflictError) Unwrap() error { return ErrExternalAppendC
 
 // Block represents a finalised block in the chain.
 type Block struct {
-	Height       uint64          `json:"height"`
-	PrevHash     string          `json:"prev_hash"`
-	Hash         string          `json:"hash"`
-	Timestamp    time.Time       `json:"timestamp"`
-	Transactions []*mempool.Tx   `json:"transactions"`
-	StateRoot    string          `json:"state_root"`
-	TotalFees    float64         `json:"total_fees"`
-	GasUsed      int64           `json:"gas_used"`
-	ProducerID   string          `json:"producer_id"`
+	Height       uint64        `json:"height"`
+	PrevHash     string        `json:"prev_hash"`
+	Hash         string        `json:"hash"`
+	Timestamp    time.Time     `json:"timestamp"`
+	Transactions []*mempool.Tx `json:"transactions"`
+	StateRoot    string        `json:"state_root"`
+	TotalFees    float64       `json:"total_fees"`
+	GasUsed      int64         `json:"gas_used"`
+	ProducerID   string        `json:"producer_id"`
 }
 
 // BlockHeader is the lightweight header for SPV validation.
@@ -99,18 +104,22 @@ type ChainReplayApplier interface {
 
 // BlockProducer assembles blocks from the mempool.
 type BlockProducer struct {
-	mu           sync.Mutex
-	pool         *mempool.Mempool
-	applier      StateApplier
-	chain        []*Block
-	maxTxBlock   int
-	producerID   string
-	polFollower  *PolFollower
+	mu          sync.Mutex
+	pool        *mempool.Mempool
+	applier     StateApplier
+	chain       []*Block
+	maxTxBlock  int
+	producerID  string
+	polFollower *PolFollower
 	// bftSealGate, when set, requires BFTConsensus.IsCommitted(tip.Height) before sealing the next block.
 	bftSealGate *BFTConsensus
 	// preSealBFTRound, when set, runs after txs are applied to a cloned AccountStore and before the live
 	// applier is mutated; it receives the tentative block (hash/state root) and must commit BFT for its height.
 	preSealBFTRound func(tentative *Block) error
+	// sealGuard is checked before local production and external append. It lets
+	// persistence fail closed after an I/O error instead of creating more blocks
+	// that cannot be durably journaled.
+	sealGuard func() error
 	// OnSealed runs after a block is appended and the producer lock is released (best-effort hooks).
 	OnSealed func()
 	// OnSealedBlock runs after a block is appended and bp.mu is
@@ -206,6 +215,17 @@ func (bp *BlockProducer) SetPreSealBFTRound(fn func(tentative *Block) error) {
 	bp.preSealBFTRound = fn
 }
 
+// SetSealGuard installs a runtime safety check that must pass before any block
+// is committed. A nil guard disables the check.
+func (bp *BlockProducer) SetSealGuard(fn func() error) {
+	if bp == nil {
+		return
+	}
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+	bp.sealGuard = fn
+}
+
 // ProduceBlock drains up to MaxTxPerBlock transactions, applies them, and seals a new block.
 //
 // When SetPreSealBFTRound is configured with an *AccountStore applier, txs are applied to a clone first,
@@ -244,6 +264,12 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 		}
 	}()
 
+	if bp.sealGuard != nil {
+		if guardErr := bp.sealGuard(); guardErr != nil {
+			return nil, fmt.Errorf("%w: %v", ErrSealGuardBlocked, guardErr)
+		}
+	}
+
 	if bp.polFollower != nil && len(bp.chain) > 0 {
 		last := bp.chain[len(bp.chain)-1]
 		if !bp.polFollower.CanExtendFromTip(last.Height, last.StateRoot) {
@@ -268,6 +294,7 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 	if len(txs) == 0 {
 		return nil, fmt.Errorf("no transactions to include")
 	}
+	orderSenderNonces(txs)
 
 	var prevHash string
 	var height uint64
@@ -372,6 +399,47 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 	// are already targeted).
 	sealedReceiptStore = bp.appendReceipts
 	return block, nil
+}
+
+// orderSenderNonces preserves the mempool's inter-sender selection order while
+// making every sender's transactions execute in ascending nonce order. Heap
+// ordering is intentionally fee-oriented and is not stable for equal fees; a
+// pair of protocol-reward transactions can therefore otherwise execute as
+// N+1, N. The first transaction fails, N succeeds, and the next block is left
+// with an unrecoverable nonce gap. Replacing only each sender's occupied slots
+// avoids changing which transactions were selected for the block.
+func orderSenderNonces(txs []*mempool.Tx) {
+	if len(txs) < 2 {
+		return
+	}
+	bySender := make(map[string][]*mempool.Tx)
+	for _, tx := range txs {
+		if tx == nil || tx.Sender == "" {
+			continue
+		}
+		bySender[tx.Sender] = append(bySender[tx.Sender], tx)
+	}
+	for _, group := range bySender {
+		if len(group) < 2 {
+			continue
+		}
+		sort.SliceStable(group, func(i, j int) bool {
+			if group[i].Nonce != group[j].Nonce {
+				return group[i].Nonce < group[j].Nonce
+			}
+			return group[i].ID < group[j].ID
+		})
+	}
+	next := make(map[string]int, len(bySender))
+	for i, tx := range txs {
+		if tx == nil || tx.Sender == "" {
+			continue
+		}
+		group := bySender[tx.Sender]
+		idx := next[tx.Sender]
+		txs[i] = group[idx]
+		next[tx.Sender] = idx + 1
+	}
 }
 
 // localTxOutcome records what happened to one drained tx during a
@@ -510,6 +578,12 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 
 	var runSealedHook bool
 	bp.mu.Lock()
+	if bp.sealGuard != nil {
+		if guardErr := bp.sealGuard(); guardErr != nil {
+			bp.mu.Unlock()
+			return fmt.Errorf("%w: %v", ErrSealGuardBlocked, guardErr)
+		}
+	}
 	for _, b := range bp.chain {
 		if b.Height == blk.Height {
 			if b.Hash == blk.Hash {
@@ -743,9 +817,18 @@ func (bp *BlockProducer) RestoreChain(blocks []*Block) error {
 		if blk == nil {
 			return fmt.Errorf("chain: RestoreChain encountered nil block at index %d", i)
 		}
-		if i > 0 && blk.Height != blocks[i-1].Height+1 {
-			return fmt.Errorf("chain: RestoreChain non-contiguous heights at index %d (prev %d, this %d)",
-				i, blocks[i-1].Height, blk.Height)
+		if want := computeBlockHash(blk); blk.Hash != want {
+			return fmt.Errorf("chain: RestoreChain invalid block hash at index %d height %d", i, blk.Height)
+		}
+		if i > 0 {
+			prev := blocks[i-1]
+			if blk.Height != prev.Height+1 {
+				return fmt.Errorf("chain: RestoreChain non-contiguous heights at index %d (prev %d, this %d)",
+					i, prev.Height, blk.Height)
+			}
+			if blk.PrevHash != prev.Hash {
+				return fmt.Errorf("chain: RestoreChain broken hash link at index %d height %d", i, blk.Height)
+			}
 		}
 	}
 	bp.chain = blocks

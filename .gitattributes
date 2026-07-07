@@ -41,3 +41,13 @@ QSDM/deploy/landing/*.js   text eol=lf
 QSDM/deploy/landing/*.css  text eol=lf
 QSDM/deploy/landing/*.svg  text eol=lf
 QSDM/deploy/landing/*.wasm binary
+
+# A subset of historical Go and repository metadata files use CRLF in the
+# canonical blobs. Treat the carriage return as part of the line ending while
+# still detecting real trailing spaces and tabs.
+*.go       whitespace=cr-at-eol
+.gitignore whitespace=cr-at-eol
+
+# Unified patches encode context lines with a leading marker; checking those
+# markers as source indentation produces false positives in `git diff --check`.
+*.patch -whitespace

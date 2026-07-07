@@ -6,7 +6,7 @@
   <title>QSDM Hive Download</title>
   <meta
     name="description"
-    content="Download QSDM Hive for Windows. Hive includes CELL wallet tools, signed QSDM tasks, integrations, NVIDIA-only mining task access, and CPU shared edge participation."
+    content="Download QSDM Hive for Windows or Linux. Hive includes CELL wallet tools, signed QSDM tasks, integrations, NVIDIA-attested mining task access, and pooled CPU, GPU, and RAM participation."
   />
   <meta name="theme-color" content="#07171d" />
   <link rel="icon" href="/assets/qsdm-hive-icon.png" />
@@ -232,8 +232,15 @@
     }
 
     .checksum code {
+      display: block;
+      margin-top: 5px;
       color: var(--text);
       font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    }
+
+    .checksum code + strong {
+      display: block;
+      margin-top: 14px;
     }
 
     section {
@@ -345,10 +352,10 @@
   <main class="shell">
     <section class="hero" aria-labelledby="download-title">
       <div>
-        <h1 id="download-title">QSDM Hive for Windows</h1>
+        <h1 id="download-title">QSDM Hive</h1>
         <p class="lead">
-          Install Hive for CELL wallet management, signed QSDM tasks, integrations,
-          NVIDIA-only mining access, and CPU shared edge participation.
+          Install Hive on Windows or Linux for CELL wallet management, signed QSDM
+          tasks, integrations, NVIDIA-attested mining access, and pooled CPU, GPU, and RAM participation.
         </p>
       </div>
       <div class="hero-icon" aria-hidden="true">
@@ -358,26 +365,85 @@
 
     <section class="panel" aria-labelledby="installer-title">
       <div>
-        <span class="version">Version 1.3.48</span>
+        <span class="version">Version 1.3.87</span>
         <h2 id="installer-title">Windows installer</h2>
         <p>
           Recommended for all users. Hive is the public release path for wallets,
-          tasks, integrations, and mining access. The console miner remains an
-          advanced operator artifact; no separate consumer GUI miner is shipped.
+          tasks, integrations, and NVIDIA mining access. Hive bundles the console
+          miner it supervises; no separate consumer GUI miner is shipped.
         </p>
         <div class="actions">
-          <a class="button primary" href="/downloads/qsdm-hive-1.3.48-win-x64.exe">Download Installer</a>
+          <a class="button primary" href="/downloads/qsdm-hive-1.3.87-win-x64.exe">Download Installer</a>
           <a class="button" href="/docs/#/qsdm-hive">Installation Notes</a>
+          <a class="button" href="/downloads/SHA256SUMS-win.txt">Checksum</a>
         </div>
       </div>
       <div class="checksum">
         SHA-256:
-        <code>CF34F4C6CBC6D2CDB4E3C215165C2865AE66C655420195E942D868820117E6B5</code>
+        <code>9B05FC97E72ABBB4ECD1430DCE62305935E1275DA116E5726F980F698208977E</code>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="linux-title">
+      <div>
+        <span class="version">Version 1.3.87</span>
+        <h2 id="linux-title">Linux x86-64</h2>
+        <p>
+          Use the AppImage on a desktop Linux distribution with GTK 3. Linux Hive
+          reads the ledger directly from canonical QSDM Core while task metadata uses
+          the restricted home-validator gateway. Ordinary users do not need to install
+          or run a local Core. Wallet keys remain local,
+          the native QSDM signer and console miner are bundled with Hive, wallet-address copying uses
+          the native desktop clipboard, and task eligibility reads the active signer's
+          confirmed CELL balance. Legacy native task labels are normalized to CELL,
+          so a funded signer can start eligible gateway tasks normally. Signed miner
+          enrollment is submitted to canonical Core. Transient route failures now show
+          Reconnecting, retain confirmed values, and require repeated failures before a
+          short outage circuit opens. Actual chain mismatches still fail closed.
+        </p>
+        <div class="actions">
+          <a class="button primary" href="/downloads/qsdm-hive-1.3.87-linux-x86_64.AppImage" download="qsdm-hive-1.3.87-linux-x86_64.AppImage">Download AppImage</a>
+          <a class="button" href="/downloads/qsdm-hive-1.3.87-linux-x64.tar.gz" download="qsdm-hive-1.3.87-linux-x64.tar.gz">Portable tar.gz</a>
+          <a class="button" href="/downloads/qsdm-hive-1.3.87-linux-SHA256SUMS.txt">Checksums</a>
+        </div>
+      </div>
+      <div class="checksum">
+        <strong>AppImage SHA-256</strong>
+        <code>2BF08FCC6FDA6BE311A11E9A42A188B8788D791DF6A790CB1442949693834777</code>
+        <strong>tar.gz SHA-256</strong>
+        <code>1066FEF07A47C0E8CC261D6B77F66CA965176A72FB4CB74B54199C6C0AA59D1D</code>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="edge-agent-title">
+      <div>
+        <span class="version">Edge Control 1.3.2</span>
+        <h2 id="edge-agent-title">Agent and Relay utilities</h2>
+        <p>
+          Hive already includes the correct agent and NVIDIA helper for its operating
+          system. The standalone bundles add a local Edge Control window for trusted
+          laboratory or office computers. These are support utilities, not another
+          QSDM client. Choose Agent or Relay, paste one pairing code, and set CPU,
+          GPU, or RAM limits with sliders. QSDM Hive remains the only desktop client
+          and assumes the Mother Hive role for the group.
+        </p>
+        <div class="actions">
+          <a class="button primary" href="/downloads/qsdm-edge-agent-1.3.2-windows-x86_64.zip">Windows Edge Control</a>
+          <a class="button primary" href="/downloads/qsdm-edge-agent-1.3.2-linux-x86_64.tar.gz">Linux Edge Control</a>
+          <a class="button" href="/downloads/qsdm-edge-agent-1.3.2-SHA256SUMS.txt">Checksums</a>
+          <a class="button" href="/docs/#/edge-pool">Deployment guide</a>
+        </div>
+      </div>
+      <div class="checksum">
+        Agents use outbound authenticated requests and execute only fixed QSDM CPU,
+        CUDA GPU, or RAM jobs. The Relay has separate Agent and QSDM Hive credentials,
+        enforces resource percentages, and exposes no remote shell. Linux includes
+        supervised Agent and Relay services.
       </div>
     </section>
 
     <section aria-labelledby="release-title">
-      <h2 id="release-title">Release 1.3.48</h2>
+      <h2 id="release-title">Current Hive releases</h2>
       <div class="grid-2">
         <article class="card">
           <strong>Wallet and recovery</strong>
@@ -386,8 +452,8 @@
         </article>
         <article class="card">
           <strong>Tasks and rewards</strong>
-          <h3>Signed CELL action loop</h3>
-          <p>Task start, stake, submit, and claim actions are signed through the active QSDM wallet.</p>
+          <h3>Consensus Task Studio</h3>
+          <p>Publish signed task manifests and receive compatible catalog updates without reinstalling Hive.</p>
         </article>
         <article class="card">
           <strong>Mining</strong>
@@ -396,8 +462,13 @@
         </article>
         <article class="card">
           <strong>Integrations</strong>
-          <h3>Sky Fang + CPU edge</h3>
-          <p>Sky Fang wallet-link checks and CPU-friendly shared edge tasks are included in Hive.</p>
+          <h3>Sky Fang + pooled edge</h3>
+          <p>Sky Fang wallet-link checks and bounded CPU, NVIDIA GPU, and RAM edge tasks are included in Hive.</p>
+        </article>
+        <article class="card">
+          <strong>Hive 1.3.87</strong>
+          <h3>Transparent pooled-compute policy</h3>
+          <p>Mother Hive now displays the 70% contributor, 15% operator, and 15% ecosystem target plus the explicit ecosystem-treasury configuration state.</p>
         </article>
       </div>
     </section>
@@ -424,22 +495,22 @@
       <h2 id="operator-title">Mining paths</h2>
       <div class="grid-2">
         <article class="card">
-          <strong>NVIDIA-only protocol mining</strong>
+          <strong>NVIDIA-attested protocol mining</strong>
           <h3>QSDM Miner task</h3>
           <p>
-            For supported NVIDIA GPUs only: Turing or newer, CUDA compute capability
-            7.5+, working NVIDIA driver/nvidia-smi, and a funded QSDM signer.
-            Consumers run this from Hive; advanced operators can use
+            Requires an eligible NVIDIA Turing-or-newer GPU for v2 identity,
+            attestation, and CUDA SHA3 proof search. The Tensor-Core fork remains
+            a separate future consensus activation. Consumers run this from Hive; advanced operators can use
             <code>qsdmminer-console</code>.
           </p>
           <a href="/docs/#/miner-quickstart">Miner requirements</a>
         </article>
         <article class="card">
-          <strong>CPU enabled</strong>
-          <h3>Shared edge participation</h3>
+          <strong>CPU, GPU, and RAM</strong>
+          <h3>Pooled edge participation</h3>
           <p>
-            Users without NVIDIA GPUs can still qualify through CPU-friendly shared
-            edge tasks, wallet-linked verification, and future pooled compute work.
+            Users without NVIDIA GPUs can contribute bounded CPU or RAM. Supported
+            NVIDIA systems can contribute CUDA capacity separately from protocol mining.
           </p>
           <a href="/docs/#/qsdm-hive">Hive task model</a>
         </article>

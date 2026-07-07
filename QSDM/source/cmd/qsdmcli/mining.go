@@ -35,18 +35,14 @@ package main
 //     exactly the same code the mempool admission gate uses
 //     to validate it. There's no second path that can drift.
 //
-// Signing model: this CLI does NOT cryptographically sign the
-// envelope. The validator's AccountStore identifies the sender
-// by string and debits balance + nonce; replay protection is
-// provided by the mempool's tx-id deduplication + the chain's
-// nonce ordering. This matches the existing `qsdmcli tx` shape.
-// Future work (wallet / envelope-signing roadmap; tracked
-// alongside MINING_PROTOCOL_V2.md §13.5) may add Dilithium-signed
-// envelopes; when it does, this file gains a single signing call
-// inside buildEnvelope().
+// Enroll and unenroll use qsdm/enroll/v2 and are signed locally with the
+// operator's ML-DSA-87 keystore. The private key never leaves qsdmcli. The
+// validator verifies attribution at HTTP admission, mempool admission, and
+// consensus application.
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -57,9 +53,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/blackbeardONE/QSDM/pkg/keystore"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
 	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
 	"github.com/blackbeardONE/QSDM/pkg/mining/slashing"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
 // envelope is the wire shape POST'd to all three write
@@ -90,6 +88,57 @@ func generateTxID() string {
 		return "qsdmcli-rand-failed"
 	}
 	return hex.EncodeToString(b[:])
+}
+
+func signEnrollmentEnvelope(env enrollment.SignedEnvelope, walletPath, passphraseFile string) (enrollment.SignedEnvelope, error) {
+	path, err := defaultWalletPath(walletPath)
+	if err != nil {
+		return enrollment.SignedEnvelope{}, err
+	}
+	ks, err := loadKeystore(path)
+	if err != nil {
+		return enrollment.SignedEnvelope{}, err
+	}
+	passphrase, err := readPassphrase(passphraseFile, false)
+	if err != nil {
+		return enrollment.SignedEnvelope{}, fmt.Errorf("read passphrase: %w", err)
+	}
+	defer zero(passphrase)
+	priv, err := keystore.Decrypt(ks, passphrase)
+	if err != nil {
+		return enrollment.SignedEnvelope{}, err
+	}
+	defer zero(priv)
+
+	pub, err := hex.DecodeString(ks.PublicKey)
+	if err != nil {
+		return enrollment.SignedEnvelope{}, fmt.Errorf("keystore public_key not hex: %w", err)
+	}
+	sum := sha256.Sum256(pub)
+	address := hex.EncodeToString(sum[:])
+	if env.Sender == "" {
+		env.Sender = address
+	} else if env.Sender != address {
+		return enrollment.SignedEnvelope{}, fmt.Errorf("--sender %s does not match keystore address %s", env.Sender, address)
+	}
+	env.ContractID = enrollment.SignedContractID
+	env.Signature = ""
+	env.PublicKey = ""
+	canonical, err := env.CanonicalBytes()
+	if err != nil {
+		return enrollment.SignedEnvelope{}, fmt.Errorf("canonicalize enrollment envelope: %w", err)
+	}
+	var sk mldsa87.PrivateKey
+	if err := sk.UnmarshalBinary(priv); err != nil {
+		return enrollment.SignedEnvelope{}, fmt.Errorf("private key parse: %w", err)
+	}
+	sig := make([]byte, mldsa87.SignatureSize)
+	if err := mldsa87.SignTo(&sk, canonical, nil, true, sig); err != nil {
+		return enrollment.SignedEnvelope{}, fmt.Errorf("sign enrollment: %w", err)
+	}
+	env.Signature = hex.EncodeToString(sig)
+	env.PublicKey = ks.PublicKey
+	return env, nil
 }
 
 // readEvidenceBytes loads evidence-blob bytes from one of
@@ -130,12 +179,17 @@ func (c *CLI) miningEnroll(args []string) error {
 	fs := flag.NewFlagSet("enroll", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var (
-		sender  = fs.String("sender", "", "account address that will own the enrollment (required)")
-		nodeID  = fs.String("node-id", "", "operator-chosen NodeID for the rig (required)")
-		gpuUUID = fs.String("gpu-uuid", "", "NVIDIA GPU UUID, e.g. GPU-12345678-... (required)")
-		hmacHex = fs.String("hmac-key", "", "32-byte HMAC key, hex-encoded (required)")
-		stake   = fs.Uint64("stake", mining.MinEnrollStakeDust,
+		sender         = fs.String("sender", "", "account address (optional; derived from keystore and checked when supplied)")
+		wallet         = fs.String("in", "", "QSDM keystore path (default: ~/.qsdm/wallet.json)")
+		passphraseFile = fs.String("passphrase-file", "", "read wallet passphrase from file ('-' for stdin); empty = prompt")
+		nodeID         = fs.String("node-id", "", "operator-chosen NodeID for the rig (required)")
+		gpuUUID        = fs.String("gpu-uuid", "", "NVIDIA GPU UUID, e.g. GPU-12345678-... (required)")
+		hmacHex        = fs.String("hmac-key", "", "32-byte HMAC key, hex-encoded")
+		hmacKeyFile    = fs.String("hmac-key-file", "", "read the hex HMAC key from a private file (preferred)")
+		stake          = fs.Uint64("stake", mining.MinEnrollStakeDust,
 			"bond amount in dust (default = mining.MinEnrollStakeDust = 10 CELL)")
+		bondFromRewards = fs.Bool("bond-from-rewards", false,
+			"start with zero CELL and lock protocol mining rewards until the enrollment bond is filled")
 		nonce = fs.Uint64("nonce", 0, "account nonce; must match validator-side AccountStore")
 		fee   = fs.Float64("fee", 0.001, "tx fee in CELL")
 		memo  = fs.String("memo", "", "optional human-readable memo (≤256 bytes)")
@@ -144,12 +198,32 @@ func (c *CLI) miningEnroll(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *sender == "" || *nodeID == "" || *gpuUUID == "" || *hmacHex == "" {
+	feeExplicit := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "fee" {
+			feeExplicit = true
+		}
+	})
+	if *bondFromRewards && !feeExplicit {
+		*fee = 0
+	}
+	if *nodeID == "" || *gpuUUID == "" || (*hmacHex == "" && *hmacKeyFile == "") {
 		fs.Usage()
-		return fmt.Errorf("--sender, --node-id, --gpu-uuid, --hmac-key are required")
+		return fmt.Errorf("--node-id, --gpu-uuid, and one of --hmac-key or --hmac-key-file are required")
+	}
+	if *hmacHex != "" && *hmacKeyFile != "" {
+		return fmt.Errorf("use only one of --hmac-key or --hmac-key-file")
+	}
+	hmacValue := strings.TrimSpace(*hmacHex)
+	if *hmacKeyFile != "" {
+		rawKey, err := os.ReadFile(*hmacKeyFile)
+		if err != nil {
+			return fmt.Errorf("read --hmac-key-file: %w", err)
+		}
+		hmacValue = strings.TrimSpace(string(rawKey))
 	}
 
-	hmacKey, err := hex.DecodeString(*hmacHex)
+	hmacKey, err := hex.DecodeString(hmacValue)
 	if err != nil {
 		return fmt.Errorf("--hmac-key must be valid hex: %w", err)
 	}
@@ -162,6 +236,16 @@ func (c *CLI) miningEnroll(args []string) error {
 		StakeDust: *stake,
 		Memo:      *memo,
 	}
+	if *bondFromRewards {
+		payload.StakeDust = 0
+		payload.BondMode = enrollment.BondModeMiningRewards
+		workNonce, attempts, workErr := enrollment.FindDeferredBondWork(payload)
+		if workErr != nil {
+			return fmt.Errorf("compute deferred-bond enrollment work: %w", workErr)
+		}
+		payload.WorkNonce = workNonce
+		fmt.Fprintf(os.Stderr, "Deferred-bond enrollment work completed after %d attempts.\n", attempts)
+	}
 	raw, err := enrollment.EncodeEnrollPayload(payload)
 	if err != nil {
 		return fmt.Errorf("encode payload: %w", err)
@@ -171,14 +255,15 @@ func (c *CLI) miningEnroll(args []string) error {
 	if id == "" {
 		id = generateTxID()
 	}
-	body, err := c.post("/mining/enroll", envelope{
-		"id":          id,
-		"sender":      *sender,
-		"nonce":       *nonce,
-		"fee":         *fee,
-		"contract_id": enrollment.ContractID,
-		"payload_b64": base64.StdEncoding.EncodeToString(raw),
-	})
+	env, err := signEnrollmentEnvelope(enrollment.SignedEnvelope{
+		ID: id, Sender: *sender, Nonce: *nonce, Fee: *fee,
+		ContractID: enrollment.SignedContractID,
+		PayloadB64: base64.StdEncoding.EncodeToString(raw),
+	}, *wallet, *passphraseFile)
+	if err != nil {
+		return err
+	}
+	body, err := c.post("/mining/enroll", env)
 	if err != nil {
 		return err
 	}
@@ -197,19 +282,21 @@ func (c *CLI) miningUnenroll(args []string) error {
 	fs := flag.NewFlagSet("unenroll", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var (
-		sender = fs.String("sender", "", "account address that owns the enrollment (required)")
-		nodeID = fs.String("node-id", "", "NodeID to retire (required)")
-		reason = fs.String("reason", "", "optional human-readable reason (≤256 bytes)")
-		nonce  = fs.Uint64("nonce", 0, "account nonce; must match validator-side AccountStore")
-		fee    = fs.Float64("fee", 0.001, "tx fee in CELL")
-		txID   = fs.String("id", "", "mempool tx id (default = random hex)")
+		sender         = fs.String("sender", "", "account address (optional; derived from keystore and checked when supplied)")
+		wallet         = fs.String("in", "", "QSDM keystore path (default: ~/.qsdm/wallet.json)")
+		passphraseFile = fs.String("passphrase-file", "", "read wallet passphrase from file ('-' for stdin); empty = prompt")
+		nodeID         = fs.String("node-id", "", "NodeID to retire (required)")
+		reason         = fs.String("reason", "", "optional human-readable reason (≤256 bytes)")
+		nonce          = fs.Uint64("nonce", 0, "account nonce; must match validator-side AccountStore")
+		fee            = fs.Float64("fee", 0.001, "tx fee in CELL")
+		txID           = fs.String("id", "", "mempool tx id (default = random hex)")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *sender == "" || *nodeID == "" {
+	if *nodeID == "" {
 		fs.Usage()
-		return fmt.Errorf("--sender and --node-id are required")
+		return fmt.Errorf("--node-id is required")
 	}
 
 	payload := enrollment.UnenrollPayload{
@@ -226,14 +313,15 @@ func (c *CLI) miningUnenroll(args []string) error {
 	if id == "" {
 		id = generateTxID()
 	}
-	body, err := c.post("/mining/unenroll", envelope{
-		"id":          id,
-		"sender":      *sender,
-		"nonce":       *nonce,
-		"fee":         *fee,
-		"contract_id": enrollment.ContractID,
-		"payload_b64": base64.StdEncoding.EncodeToString(raw),
-	})
+	env, err := signEnrollmentEnvelope(enrollment.SignedEnvelope{
+		ID: id, Sender: *sender, Nonce: *nonce, Fee: *fee,
+		ContractID: enrollment.SignedContractID,
+		PayloadB64: base64.StdEncoding.EncodeToString(raw),
+	}, *wallet, *passphraseFile)
+	if err != nil {
+		return err
+	}
+	body, err := c.post("/mining/unenroll", env)
 	if err != nil {
 		return err
 	}

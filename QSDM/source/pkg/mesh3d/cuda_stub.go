@@ -1,7 +1,5 @@
-//go:build cgo && !(windows || (linux && cuda))
-// +build cgo
-// +build !windows
-// +build !linux !cuda
+//go:build cgo && !cuda
+// +build cgo,!cuda
 
 package mesh3d
 
@@ -60,4 +58,3 @@ func (c *CUDAAccelerator) Info() GPUInfo {
 func (c *CUDAAccelerator) RuntimeVersion() int {
 	return 0
 }
-

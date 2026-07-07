@@ -13,16 +13,19 @@ func requireWallet(t *testing.T) {
 
 func TestGetBalance(t *testing.T) {
 	requireWallet(t)
-	if GetBalance() != 1000 {
-		t.Errorf("expected balance 1000, got %d", GetBalance())
+	if GetBalance() != 0 {
+		t.Errorf("expected canonical-ledger balance 0, got %d", GetBalance())
 	}
 }
 
-func TestSendTransaction(t *testing.T) {
+func TestSendTransactionRequiresCanonicalFunds(t *testing.T) {
 	requireWallet(t)
 	_, err := SendTransaction("recipient", 100, 0, "", nil)
-	if err != nil {
-		t.Fatalf("SendTransaction: %v", err)
+	if err == nil {
+		t.Fatal("expected an unfunded wallet to reject the transfer")
+	}
+	if GetBalance() != 0 {
+		t.Errorf("failed transfer changed balance: got %d", GetBalance())
 	}
 }
 

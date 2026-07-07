@@ -10,12 +10,12 @@ import (
 
 func TestPathVersion(t *testing.T) {
 	cases := map[string]string{
-		"/api/v1/status":         "v1",
-		"/api/v2/foo/bar":        "v2",
-		"/api/v1":                "v1",
-		"/api/":                  "",
-		"/healthz":               "",
-		"":                       "",
+		"/api/v1/status":  "v1",
+		"/api/v2/foo/bar": "v2",
+		"/api/v1":         "v1",
+		"/api/":           "",
+		"/healthz":        "",
+		"":                "",
 	}
 	for in, want := range cases {
 		if got := pathVersion(in); got != want {
@@ -128,5 +128,11 @@ func TestVersionsHandler_ListsCatalog(t *testing.T) {
 	}
 	if len(body.Versions) == 0 {
 		t.Error("expected at least one version in catalogue")
+	}
+}
+
+func TestVersionsEndpoint_IsPublic(t *testing.T) {
+	if !isPublicEndpoint("/api/v1/versions") {
+		t.Fatal("/api/v1/versions must stay public for SDK discovery")
 	}
 }

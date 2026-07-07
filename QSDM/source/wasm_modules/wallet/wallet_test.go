@@ -15,19 +15,19 @@ func requireWalletcore(t *testing.T) {
 
 func TestWalletBalance(t *testing.T) {
 	requireWalletcore(t)
-	if walletcore.GetBalance() != 1000 {
-		t.Errorf("expected initial balance 1000, got %d", walletcore.GetBalance())
+	if walletcore.GetBalance() != 0 {
+		t.Errorf("expected canonical-ledger balance 0, got %d", walletcore.GetBalance())
 	}
 }
 
-func TestSendTransaction(t *testing.T) {
+func TestSendTransactionRequiresCanonicalFunds(t *testing.T) {
 	requireWalletcore(t)
 	_, err := walletcore.SendTransaction("recipient-address", 100, 0, "", nil)
-	if err != nil {
-		t.Fatalf("SendTransaction: %v", err)
+	if err == nil {
+		t.Fatal("expected an unfunded wallet to reject the transfer")
 	}
-	if walletcore.GetBalance() != 900 {
-		t.Errorf("expected balance 900 after send, got %d", walletcore.GetBalance())
+	if walletcore.GetBalance() != 0 {
+		t.Errorf("failed transfer changed balance: got %d", walletcore.GetBalance())
 	}
 }
 

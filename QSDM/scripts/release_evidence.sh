@@ -268,8 +268,7 @@ capture_step '10_soak_summary.txt' 'most recent soak summaries (best-effort)' so
 #                            critical/high item to passed/failed/waived
 #                            via cmd/auditreport -input <reviewed.json>.
 #  2. 03_go_mod_verify    - must end "all modules verified".
-#  3. 04_govulncheck      - only GO-2024-3218 may remain (tracked by
-#                            QSDM/scripts/govulncheck-filter.sh).
+#  3. 04_govulncheck      - must report zero reachable findings.
 #  4. 06_go_test_full     - last lines must show ok / no FAIL.
 #  5. 09_binaries         - every cmd should report go1.25.10+ banner.
 #  6. 10_soak_summary     - mempool + pubsub soaks PASS at >= 10 min.

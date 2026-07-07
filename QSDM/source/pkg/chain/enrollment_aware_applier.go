@@ -56,6 +56,8 @@ package chain
 //     therefore work end-to-end with enrollment txs.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"sync"
 
@@ -77,6 +79,7 @@ type EnrollmentAwareApplier struct {
 	enrollment *EnrollmentApplier
 	slasher    *SlashApplier
 	gov        *GovApplier
+	tasks      *TaskStateStore
 
 	mu       sync.RWMutex
 	heightFn func() uint64
@@ -144,7 +147,7 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 	if tx == nil {
 		return errors.New("chain: nil tx")
 	}
-	if tx.ContractID == enrollment.ContractID {
+	if enrollment.IsContractID(tx.ContractID) {
 		if a.enrollment == nil {
 			return ErrEnrollmentNotWired
 		}
@@ -153,6 +156,12 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 			return ErrEnrollmentHeightUnset
 		}
 		return a.enrollment.ApplyEnrollmentTx(tx, h)
+	}
+	if tx.ContractID == MiningRewardContractID {
+		if a.enrollment == nil {
+			return ErrEnrollmentNotWired
+		}
+		return a.enrollment.ApplyMiningRewardTx(tx)
 	}
 	if tx.ContractID == slashing.ContractID {
 		if a.slasher == nil {
@@ -174,7 +183,41 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 		}
 		return a.gov.ApplyGovTx(tx, h)
 	}
+	if tx.ContractID == TaskContractID {
+		tasks := a.TaskStateStore()
+		if tasks == nil {
+			return ErrTaskStateNotWired
+		}
+		return tasks.ApplyEconomicTx(tx, a.accounts)
+	}
+	if tx.ContractID == WalletTransferContractID {
+		return ApplyWalletTransferTx(a.accounts, tx)
+	}
 	return a.accounts.ApplyTx(tx)
+}
+
+// SetTaskStateStore installs (or clears) the QSDM task-action
+// state store. Task txs use the qsdm/tasks/v1 ContractID and
+// are rejected with ErrTaskStateNotWired until this store is
+// attached.
+func (a *EnrollmentAwareApplier) SetTaskStateStore(tasks *TaskStateStore) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.tasks = tasks
+}
+
+// TaskStateStore returns the configured task-action state store,
+// or nil if task actions are not wired on this node.
+func (a *EnrollmentAwareApplier) TaskStateStore() *TaskStateStore {
+	if a == nil {
+		return nil
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.tasks
 }
 
 // SetGovApplier installs (or clears) the governance applier.
@@ -238,16 +281,26 @@ func (a *EnrollmentAwareApplier) SlashApplier() *SlashApplier {
 	return a.slasher
 }
 
-// StateRoot implements StateApplier. Today the state root is
-// sourced purely from the account store; enrollment state
-// mutations that flow through AccountStore (stake debit / sweep
-// credit) are reflected here. Folding enrollment-state hashes
-// into the block state root is a follow-on consensus change.
+// StateRoot implements StateApplier. The legacy no-task path
+// remains the bare account root for compatibility. Once a task
+// action has landed, the deterministic task state root is folded
+// in so qsdm/tasks/v1 blocks commit to both CELL ledger movement
+// and task lifecycle state.
 func (a *EnrollmentAwareApplier) StateRoot() string {
 	if a == nil || a.accounts == nil {
 		return ""
 	}
-	return a.accounts.StateRoot()
+	accountRoot := a.accounts.StateRoot()
+	tasks := a.TaskStateStore()
+	if tasks == nil || tasks.Count() == 0 {
+		return accountRoot
+	}
+	h := sha256.New()
+	h.Write([]byte("accounts:"))
+	h.Write([]byte(accountRoot))
+	h.Write([]byte("\ntasks:"))
+	h.Write([]byte(tasks.StateRoot()))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // Sweep releases every enrollment whose unbond window matures
@@ -356,6 +409,10 @@ var (
 	// authority submitting against a validator that hasn't
 	// enabled the v2 governance surface yet.
 	ErrGovernanceNotWired = errors.New("chain: gov tx received but no GovApplier is wired")
+
+	// ErrTaskStateNotWired is returned when a qsdm/tasks/v1
+	// tx arrives at a node that has no TaskStateStore configured.
+	ErrTaskStateNotWired = errors.New("chain: task action tx received but no TaskStateStore is wired")
 )
 
 // Compile-time interface assertions.
@@ -409,8 +466,12 @@ func (a *EnrollmentAwareApplier) ChainReplayClone() ChainReplayApplier {
 	// deterministic / stateless so they pass through by value.
 	a.mu.RLock()
 	liveSlasher := a.slasher
+	liveTasks := a.tasks
 	clone.heightFn = a.heightFn
 	a.mu.RUnlock()
+	if liveTasks != nil {
+		clone.tasks = liveTasks.ChainReplayClone().(*TaskStateStore)
+	}
 	if liveSlasher != nil {
 		sm, ok := sharedMutator.(SlasherStateMutator)
 		if !ok {
@@ -462,19 +523,29 @@ func (a *EnrollmentAwareApplier) RestoreFromChainReplay(from ChainReplayApplier)
 	if err := a.accounts.RestoreFromChainReplay(other.accounts); err != nil {
 		return err
 	}
-	if a.enrollment == nil && other.enrollment == nil {
+	if a.enrollment != nil || other.enrollment != nil {
+		if a.enrollment == nil || other.enrollment == nil {
+			return errors.New("chain: RestoreFromChainReplay enrollment applier presence mismatch")
+		}
+		srcState, ok := other.enrollment.State.(enrollment.CloneableState)
+		if !ok {
+			return errors.New("chain: source enrollment state does not implement enrollment.CloneableState")
+		}
+		dstState, ok := a.enrollment.State.(enrollment.CloneableState)
+		if !ok {
+			return errors.New("chain: live enrollment state does not implement enrollment.CloneableState")
+		}
+		if err := dstState.Restore(srcState); err != nil {
+			return err
+		}
+	}
+	liveTasks := a.TaskStateStore()
+	otherTasks := other.TaskStateStore()
+	if liveTasks == nil && otherTasks == nil {
 		return nil
 	}
-	if a.enrollment == nil || other.enrollment == nil {
-		return errors.New("chain: RestoreFromChainReplay enrollment applier presence mismatch")
+	if liveTasks == nil || otherTasks == nil {
+		return errors.New("chain: RestoreFromChainReplay task state presence mismatch")
 	}
-	srcState, ok := other.enrollment.State.(enrollment.CloneableState)
-	if !ok {
-		return errors.New("chain: source enrollment state does not implement enrollment.CloneableState")
-	}
-	dstState, ok := a.enrollment.State.(enrollment.CloneableState)
-	if !ok {
-		return errors.New("chain: live enrollment state does not implement enrollment.CloneableState")
-	}
-	return dstState.Restore(srcState)
+	return liveTasks.RestoreFromChainReplay(otherTasks)
 }

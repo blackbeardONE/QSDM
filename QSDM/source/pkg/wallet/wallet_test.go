@@ -45,6 +45,9 @@ func TestTwoWalletsHaveDifferentAddresses(t *testing.T) {
 
 func TestCreateTransaction(t *testing.T) {
 	ws, _ := NewWalletService()
+	if err := ws.SyncBalanceFromLedger(10); err != nil {
+		t.Fatalf("SyncBalanceFromLedger: %v", err)
+	}
 	txBytes, err := ws.CreateTransaction("recipient_abc", 10, 0.01, "US", []string{"p1", "p2"})
 	if err != nil {
 		t.Fatalf("CreateTransaction error: %v", err)
@@ -63,6 +66,23 @@ func TestCreateTransaction(t *testing.T) {
 	}
 	if txData["signature"] == nil || txData["signature"] == "" {
 		t.Error("expected non-empty signature")
+	}
+}
+
+func TestSyncBalanceFromLedgerRejectsNegativeBalance(t *testing.T) {
+	ws, _ := NewWalletService()
+	if err := ws.SyncBalanceFromLedger(-1); err == nil {
+		t.Fatal("expected negative ledger balance to be rejected")
+	}
+	if ws.GetBalance() != 0 {
+		t.Fatalf("rejected sync changed balance: got %d", ws.GetBalance())
+	}
+}
+
+func TestNewWalletHasNoDemonstrationBalance(t *testing.T) {
+	ws, _ := NewWalletService()
+	if ws.GetBalance() != 0 {
+		t.Fatalf("new wallet balance=%d, want canonical-ledger zero", ws.GetBalance())
 	}
 }
 

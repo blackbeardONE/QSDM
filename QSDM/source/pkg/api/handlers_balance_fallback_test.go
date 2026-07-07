@@ -19,17 +19,15 @@ package api
 //
 // The contract pinned by these tests:
 //
-//   (1) storage non-zero -> response is storage value, source=storage
-//   (2) storage zero, no probe wired -> response is 0, source=storage
+//   (1) no probe wired -> response is storage value, source=storage
+//   (2) probe wired with record -> response is probe value, source=mining-ledger
 //   (3) storage zero, probe wired but no record for address ->
 //       response is 0, source=storage
 //   (4) storage zero, probe wired with non-zero record for
 //       address -> response is the probe value, source=mining-ledger
 //   (5) storage zero, probe wired with zero record (present=true,
 //       balance=0 — "received and spent everything") ->
-//       response is 0, source=storage (we only lift when the
-//       probe value is strictly > 0; equal-zero gives no new
-//       information so we don't add a misleading source label)
+//       response is 0, source=mining-ledger
 
 import (
 	"encoding/json"
@@ -73,6 +71,36 @@ func TestGetBalance_StorageNonZero_NoFallback(t *testing.T) {
 	}
 	if source != "storage" {
 		t.Errorf("source: want storage, got %q", source)
+	}
+}
+
+func TestGetBalance_ProbePresent_PrefersMiningLedgerOverStorage(t *testing.T) {
+	SetMiningAccountProbe(&fakeAccountProbe{
+		addrs: map[string]struct {
+			bal   float64
+			nonce uint64
+		}{
+			"test_address": {bal: 77.7, nonce: 2},
+		},
+	})
+	t.Cleanup(func() { SetMiningAccountProbe(nil) })
+
+	h := setupTestHandlers()
+	h.storage.(*mockStorage).SetBalance("test_address", 123.456)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/wallet/balance?address=test_address", nil)
+	rec := httptest.NewRecorder()
+	h.GetBalance(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	_, bal, source := decodeBalanceResp(t, rec.Body.Bytes())
+	if bal != 77.7 {
+		t.Errorf("balance: want live mining-ledger value 77.7, got %v", bal)
+	}
+	if source != "mining-ledger" {
+		t.Errorf("source: want mining-ledger, got %q", source)
 	}
 }
 
@@ -197,7 +225,7 @@ func TestGetBalance_StorageZero_ProbeAlsoZero_NoSpuriousLift(t *testing.T) {
 	if bal != 0 {
 		t.Errorf("balance: want 0, got %v", bal)
 	}
-	if source != "storage" {
-		t.Errorf("source: want storage when probe also reports 0 (no lift), got %q", source)
+	if source != "mining-ledger" {
+		t.Errorf("source: want mining-ledger when probe has a zero-balance account, got %q", source)
 	}
 }

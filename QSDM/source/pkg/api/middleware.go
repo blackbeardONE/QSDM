@@ -197,6 +197,10 @@ func isPublicEndpoint(path string) bool {
 		"/api/v1/health/live",
 		"/api/v1/health/ready",
 		"/api/v1/status",
+		// Public API version catalogue. Read-only SDK discovery surface;
+		// see versioning.go.
+		"/api/v1/versions",
+		"/api/v1/tasks",
 		"/api/v1/auth/login",
 		"/api/v1/auth/register",
 		// CSRF token issuer. Public so a fresh browser session can
@@ -206,9 +210,25 @@ func isPublicEndpoint(path string) bool {
 		// has no side-effect beyond cookie issuance, so the same
 		// threat model that lets /status be public applies here.
 		CSRFTokenEndpoint,
-		"/api/v1/wallet/create", // Public for game server integration
+		"/api/v1/wallet/create",  // Public for game server integration
 		"/api/v1/wallet/balance", // Public for game server to check balances (address required in query)
 		"/api/v1/wallet/mint",    // Removed in v0.3.3 (Session 91): always returns 410 Gone with a migration message. Kept in publicPaths so external callers that still hit the path receive a structured 410 instead of a confusing 401 redirect to /api/auth/login.
+		// /api/v1/faucet/claim is only active for a local solo
+		// validator and performs its own loopback + shared-secret
+		// admission check. It stays public so Hive can claim starter
+		// CELL without needing a dashboard JWT or CSRF cookie.
+		"/api/v1/faucet/claim",
+		// Public transparency probe for the CELL pool used by Hive's
+		// referral program. It is read-only and exposes only the configured
+		// pool address, balance, and reward rule.
+		"/api/v1/referrals/reward-pool",
+		// Referral registration and claiming are public because the
+		// registration envelope is signed by the referred wallet, and the
+		// claim endpoint only pays the already-bound referrer after one-time
+		// eligibility checks pass.
+		"/api/v1/referrals/register-signed",
+		"/api/v1/referrals/status",
+		"/api/v1/referrals/claim",
 		// /api/v1/wallet/submit-signed is the v0.4.0 (Session 95)
 		// self-custody send endpoint. Intentionally public because the
 		// cryptographic identity IS the envelope's `public_key` field
@@ -250,6 +270,11 @@ func isPublicEndpoint(path string) bool {
 		// height-ascending order. Same threat model as
 		// /status: pure transparency, no secret leakage.
 		"/api/v1/mining/blocks",
+		// /chain/blocks is a bounded read-only full block feed
+		// for validator catch-up over gateway transports. The
+		// receiver still verifies hash, continuity, and state
+		// root before appending.
+		"/api/v1/chain/blocks",
 		// /mining/spec-anomalies surfaces the Tier-2
 		// telemetry advisory checker output: the most-
 		// recent N proofs whose claimed GPU specs
@@ -355,6 +380,12 @@ func isPublicEndpoint(path string) bool {
 	if strings.HasPrefix(path, "/api/v1/receipts/") {
 		return true
 	}
+	// QSDM-native task registry reads are intentionally public:
+	// task marketplace metadata is non-secret and Hive needs to
+	// discover it before the user has a dashboard session.
+	if strings.HasPrefix(path, "/api/v1/tasks/") {
+		return true
+	}
 	return false
 }
 
@@ -396,9 +427,8 @@ func RequestSizeLimitMiddleware(maxSize int64) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Limit request body size
 			r.Body = http.MaxBytesReader(w, r.Body, maxSize)
-			
+
 			next.ServeHTTP(w, r)
 		})
 	}
 }
-

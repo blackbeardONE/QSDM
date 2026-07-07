@@ -1,50 +1,55 @@
 const fs = require('fs');
 const path = require('path');
+const assert = require('assert/strict');
 const { WASI } = require('wasi');
-const goWasmRuntime = require('./go_wasm_runtime.js');
 
-async function runWasmModule(wasmPath) {
-  console.log(`Running WASM module: ${wasmPath}`);
+require('./go.wasm.js');
 
-  if (!fs.existsSync(wasmPath)) {
-    console.error(`WASM file not found: ${wasmPath}`);
-    return;
-  }
+function readWasm(wasmPath) {
+  assert.ok(fs.existsSync(wasmPath), `WASM file not found: ${wasmPath}`);
+  return fs.readFileSync(wasmPath);
+}
 
-  const wasmBuffer = fs.readFileSync(wasmPath);
-
-  const go = new goWasmRuntime.Go();
+async function runWalletWasi(wasmPath) {
   const wasi = new WASI({
+    version: 'preview1',
     args: [],
-    env: process.env,
-    preopens: {
-      '/': process.cwd()
-    }
+    env: {},
+    preopens: {}
   });
 
-  const importObject = {
-    ...go.importObject,
-    ...wasi.getImportObject()
-  };
+  const { instance } = await WebAssembly.instantiate(readWasm(wasmPath), {
+    wasi_snapshot_preview1: wasi.wasiImport
+  });
 
-  try {
-    const { instance } = await WebAssembly.instantiate(wasmBuffer, importObject);
-    wasi.start(instance);
-    await go.run(instance);
-    console.log(`WASM module ${wasmPath} executed successfully.`);
-  } catch (err) {
-    console.error(`Error running WASM module ${wasmPath}:`, err);
-  }
+  assert.equal(typeof instance.exports.memory, 'object');
+  assert.equal(typeof instance.exports._start, 'function');
+  wasi.start(instance);
+}
+
+async function runValidatorGo(wasmPath) {
+  assert.equal(typeof globalThis.Go, 'function', 'Go WASM runtime was not loaded');
+
+  const go = new globalThis.Go();
+  const { instance } = await WebAssembly.instantiate(readWasm(wasmPath), go.importObject);
+
+  assert.equal(typeof instance.exports.run, 'function');
+  await go.run(instance);
 }
 
 async function main() {
-  const walletWasm = path.resolve(__dirname, '../wasm_modules/wallet/wallet.wasm');
-  const validatorWasm = path.resolve(__dirname, '../wasm_modules/validator/validator.wasm');
+  const wasmRoot = path.resolve(__dirname, '../source/wasm_modules');
 
-  await runWasmModule(walletWasm);
-  await runWasmModule(validatorWasm);
+  await runWalletWasi(path.join(wasmRoot, 'wallet/wallet.wasm'));
+  console.log('wallet.wasm loaded and started');
 
-  console.log('Node.js Go WASM integration tests completed.');
+  await runValidatorGo(path.join(wasmRoot, 'validator/validator.wasm'));
+  console.log('validator.wasm loaded and started');
+
+  console.log('Node.js WASM integration tests completed successfully.');
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

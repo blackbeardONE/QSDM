@@ -22,7 +22,8 @@ package v2wiring
 // Scope:
 //
 //   - Constructs *enrollment.InMemoryState, *EnrollmentApplier,
-//     *EnrollmentAwareApplier, optional *SlashApplier.
+//     *EnrollmentAwareApplier, *chain.TaskStateStore, optional
+//     *SlashApplier.
 //   - Registers the monitoring state-provider so the four
 //     `qsdm_enrollment_*` gauges populate.
 //   - Composes a stacked mempool admission gate
@@ -40,7 +41,7 @@ package v2wiring
 //     api.SetEnrollmentLister; and the live receipt store
 //     to api/v1/mining/slash/{tx_id} via
 //     api.SetSlashReceiptStore. One Wire() call lights up
-//     the entire v2 mining HTTP surface (read + write).
+//     the entire v2 mining/task HTTP surface (read + write).
 //
 // Out of scope:
 //
@@ -357,6 +358,7 @@ type Wired struct {
 	Gov             *chain.GovApplier
 	GovParams       *chainparams.InMemoryParamStore
 	GovAuthVotes    *chainparams.InMemoryAuthorityVoteStore
+	TaskState       *chain.TaskStateStore
 
 	// RecentRejections is the bounded ring of §4.6 attestation
 	// rejections (arch-spoof / hashrate-band / cc-cert-subject).
@@ -398,6 +400,8 @@ func Wire(cfg Config) (*Wired, error) {
 	state := enrollment.NewInMemoryState()
 	enrollAp := chain.NewEnrollmentApplier(cfg.Accounts, state)
 	aware := chain.NewEnrollmentAwareApplier(cfg.Accounts, enrollAp)
+	taskState := chain.NewTaskStateStore()
+	aware.SetTaskStateStore(taskState)
 
 	// Slasher arm. Build the production dispatcher with the
 	// real registry, all three verifiers wired (forgedattest,
@@ -652,6 +656,8 @@ func Wire(cfg Config) (*Wired, error) {
 	// state, no separate read replica or cache.
 	api.SetEnrollmentMempool(cfg.Pool)
 	api.SetSlashMempool(cfg.Pool)
+	api.SetTaskActionMempool(cfg.Pool)
+	api.SetTaskStateProvider(taskState)
 	api.SetEnrollmentRegistry(state)
 	api.SetEnrollmentLister(state)
 	// Both interfaces are satisfied by the same chain-side
@@ -673,8 +679,8 @@ func Wire(cfg Config) (*Wired, error) {
 	// slashReceiptAdapter so pkg/api stays free of
 	// pkg/governance/chainparams + pkg/chain imports.
 	api.SetGovernanceProvider(governanceProviderAdapter{
-		store:    govStore,
-		applier:  govApplier,
+		store:   govStore,
+		applier: govApplier,
 	})
 
 	enrollHook := aware.SealedBlockHook(cfg.LogSweepError)
@@ -739,6 +745,7 @@ func Wire(cfg Config) (*Wired, error) {
 		Gov:              govApplier,
 		GovParams:        govStore,
 		GovAuthVotes:     govVotes,
+		TaskState:        taskState,
 		RecentRejections: rejectionStore,
 		SealedBlockHook:  hook,
 	}, nil

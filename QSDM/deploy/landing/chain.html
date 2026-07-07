@@ -240,7 +240,8 @@
   <p class="lede" style="font-size: 14px;">
     Each row is a NodeID bonded by a NVIDIA GPU UUID. The HMAC key in the on-chain enrollment
     is what the v2 attestation gate verifies on every <code>/api/v1/mining/submit</code>.
-    Slashed or revoked records show their phase here.
+    Slashed or revoked records show their phase here. Public NodeIDs are partially masked for
+    operator privacy.
   </p>
   <div class="panel" id="enroll-panel">
     <div id="enroll-content" class="empty">Loading enrollments…</div>
@@ -331,6 +332,13 @@ function shortHash(h, n) {
   return `${h.slice(0, n)}…${h.slice(-n)}`;
 }
 
+function maskNodeID(value) {
+  const nodeID = String(value || "");
+  if (!nodeID) return "—";
+  if (nodeID.length <= 10) return "•".repeat(nodeID.length);
+  return `${nodeID.slice(0, 6)}••••${nodeID.slice(-4)}`;
+}
+
 async function fetchJSON(path) {
   const res = await fetch(API_BASE + path, { cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
@@ -376,7 +384,7 @@ async function refreshEnrollments() {
       const stake = fmtCellFromDust(r.stake_dust);
       return `
         <tr>
-          <td>${escapeHTML(r.node_id)}</td>
+          <td aria-label="Masked Node ID">${escapeHTML(maskNodeID(r.node_id))}</td>
           <td>${escapeHTML(r.owner)}</td>
           <td title="${escapeHTML(r.gpu_uuid)}">${escapeHTML(shortHash(r.gpu_uuid, 8))}</td>
           <td class="num">${stake} CELL</td>
@@ -387,7 +395,7 @@ async function refreshEnrollments() {
     root.innerHTML = `
       <table>
         <thead><tr>
-          <th>Node ID</th><th>Owner</th><th>GPU UUID</th>
+          <th>Node ID (masked)</th><th>Owner</th><th>GPU UUID</th>
           <th class="num">Stake</th><th class="num">Enrolled @</th><th>Phase</th>
         </tr></thead>
         <tbody>${rows}</tbody>
@@ -511,14 +519,13 @@ async function refreshBlocks() {
     }
     const rows = headers.map(b => {
       const ts = b.timestamp ? new Date(b.timestamp).toLocaleTimeString() : "—";
-      const producer = b.producer_id ? shortHash(b.producer_id, 6) : "—";
       return `
         <tr>
           <td class="num">${fmtNum(b.height)}</td>
           <td>${escapeHTML(ts)}</td>
           <td title="${escapeHTML(b.hash)}">${escapeHTML(shortHash(b.hash, 8))}</td>
           <td class="num">${b.tx_count || 0}</td>
-          <td title="${escapeHTML(b.producer_id || '')}">${escapeHTML(producer)}</td>
+          <td aria-label="Masked producer Node ID">${escapeHTML(maskNodeID(b.producer_id))}</td>
         </tr>`;
     }).join("");
     root.innerHTML = `

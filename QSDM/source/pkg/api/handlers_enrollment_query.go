@@ -96,6 +96,10 @@ type EnrollmentRecordView struct {
 	Owner                 string `json:"owner"`
 	GPUUUID               string `json:"gpu_uuid"`
 	StakeDust             uint64 `json:"stake_dust"`
+	BondMode              string `json:"bond_mode"`
+	RequiredStakeDust     uint64 `json:"required_stake_dust"`
+	BondRemainingDust     uint64 `json:"bond_remaining_dust"`
+	FullyBonded           bool   `json:"fully_bonded"`
 	EnrolledAtHeight      uint64 `json:"enrolled_at_height"`
 	RevokedAtHeight       uint64 `json:"revoked_at_height,omitempty"`
 	UnbondMaturesAtHeight uint64 `json:"unbond_matures_at_height,omitempty"`
@@ -133,6 +137,10 @@ func viewFromRecord(rec *enrollment.EnrollmentRecord) EnrollmentRecordView {
 		Owner:                 rec.Owner,
 		GPUUUID:               rec.GPUUUID,
 		StakeDust:             rec.StakeDust,
+		BondMode:              string(rec.NormalizedBondMode()),
+		RequiredStakeDust:     rec.RequiredBondDust(),
+		BondRemainingDust:     rec.BondRemainingDust(),
+		FullyBonded:           rec.FullyBonded(),
 		EnrolledAtHeight:      rec.EnrolledAtHeight,
 		RevokedAtHeight:       rec.RevokedAtHeight,
 		UnbondMaturesAtHeight: rec.UnbondMaturesAtHeight,

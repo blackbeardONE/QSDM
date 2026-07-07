@@ -54,6 +54,7 @@ import (
 	"math"
 
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
+	"github.com/blackbeardONE/QSDM/pkg/mining"
 	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
 )
 
@@ -86,6 +87,14 @@ type EnrollmentStateMutator interface {
 	// (SweepMaturedEnrollments below) credits the stake back
 	// to each record's Owner.
 	SweepMaturedUnbonds(currentHeight uint64) []enrollment.UnbondRelease
+
+	// AccrueBondFromReward diverts protocol mining reward into active
+	// deferred-bond records and returns the amount locked in dust.
+	AccrueBondFromReward(owner string, rewardDust uint64) uint64
+
+	// RevokeLegacyOwners retires active enrollment aliases that cannot sign
+	// v2 wallet actions once the fixed consensus sunset height is reached.
+	RevokeLegacyOwners(currentHeight uint64) []enrollment.LegacyOwnerRevocation
 }
 
 // EnrollmentApplier is the chain-side adapter that bridges a
@@ -145,12 +154,13 @@ func (a *EnrollmentApplier) publisher() ChainEventPublisher {
 // transaction at block `height`. Returns nil on success; on any
 // validation or apply error, the receiver's state is untouched.
 //
-// The caller is responsible for having verified the tx's
-// signature and mempool fee rules BEFORE handing it to this
-// adapter — this method trusts tx.Sender as already-attributed
-// and tx.Nonce as claimed.
+// Signed v2 envelopes are verified again here even if mempool admission
+// already checked them. This consensus-layer verification prevents a block
+// producer from bypassing attribution by injecting directly into a block.
+// Legacy v1 transactions are accepted only before the fixed activation
+// height so historical chain replay remains deterministic.
 //
-// tx.ContractID MUST equal enrollment.ContractID; any other
+// tx.ContractID MUST identify an enrollment contract; any other
 // value returns ErrNotEnrollmentTx so callers can detect
 // accidental misrouting instead of silently dropping the tx.
 func (a *EnrollmentApplier) ApplyEnrollmentTx(tx *mempool.Tx, height uint64) error {
@@ -180,10 +190,18 @@ func (a *EnrollmentApplier) ApplyEnrollmentTx(tx *mempool.Tx, height uint64) err
 		return err
 	}
 
-	if tx.ContractID != enrollment.ContractID {
+	if !enrollment.IsContractID(tx.ContractID) {
 		return rejectTop(EnrollRejectReasonWrongContract,
-			fmt.Errorf("%w: got %q, want %q",
-				ErrNotEnrollmentTx, tx.ContractID, enrollment.ContractID))
+			fmt.Errorf("%w: got %q", ErrNotEnrollmentTx, tx.ContractID))
+	}
+	if tx.ContractID == enrollment.ContractID {
+		if height >= enrollment.SignedContractActivationHeight {
+			return rejectTop(EnrollRejectReasonSignature,
+				fmt.Errorf("%w at height %d", enrollment.ErrLegacyContractDisabled, height))
+		}
+	} else if err := enrollment.VerifySignedTransaction(tx); err != nil {
+		return rejectTop(EnrollRejectReasonSignature,
+			fmt.Errorf("chain: verify signed enrollment: %w", err))
 	}
 
 	kind, err := enrollment.PeekKind(tx.Payload)
@@ -237,13 +255,31 @@ func (a *EnrollmentApplier) applyEnroll(tx *mempool.Tx, height uint64) error {
 		return rejectEnroll(reason, payload.NodeID,
 			fmt.Errorf("chain: stateless enroll validation: %w", err))
 	}
+	if payload.BondMode == enrollment.BondModeMiningRewards &&
+		tx.ContractID != enrollment.SignedContractID {
+		return rejectEnroll(EnrollRejectReasonSignature, payload.NodeID,
+			fmt.Errorf("%w: deferred-bond enrollment requires %s",
+				enrollment.ErrLegacyContractDisabled,
+				enrollment.SignedContractID))
+	}
+	if payload.BondMode == enrollment.BondModeMiningRewards &&
+		height < enrollment.DeferredBondActivationHeight {
+		return rejectEnroll(EnrollRejectReasonStakeMismatch, payload.NodeID,
+			fmt.Errorf("%w: activates at height %d (current %d)",
+				enrollment.ErrDeferredBondNotActive,
+				enrollment.DeferredBondActivationHeight, height))
+	}
 
 	senderAcc, ok := a.Accounts.Get(tx.Sender)
-	if !ok {
+	deferredBond := payload.BondMode == enrollment.BondModeMiningRewards
+	if !ok && !deferredBond {
 		return rejectEnroll(EnrollRejectReasonInsufficient, payload.NodeID,
 			fmt.Errorf("chain: enroll sender %q has no account", tx.Sender))
 	}
-	senderBalanceDust := balanceToDust(senderAcc.Balance)
+	var senderBalanceDust uint64
+	if senderAcc != nil {
+		senderBalanceDust = balanceToDust(senderAcc.Balance)
+	}
 
 	if err := enrollment.ValidateEnrollAgainstState(payload, senderBalanceDust, a.State); err != nil {
 		// Stateful failures map to specific reasons.
@@ -281,18 +317,28 @@ func (a *EnrollmentApplier) applyEnroll(tx *mempool.Tx, height uint64) error {
 	//      "fee-on-acceptance" model used everywhere else.
 	stakeCELL := dustToBalance(payload.StakeDust)
 	totalDebit := stakeCELL + tx.Fee
-	if err := a.Accounts.DebitAndBumpNonce(tx.Sender, totalDebit, tx.Nonce); err != nil {
+	charge := a.Accounts.DebitAndBumpNonce
+	if totalDebit == 0 {
+		if deferredBond {
+			charge = a.Accounts.ChargeAndBumpNonceAllowCreate
+		} else {
+			charge = a.Accounts.ChargeAndBumpNonce
+		}
+	}
+	if err := charge(tx.Sender, totalDebit, tx.Nonce); err != nil {
 		return rejectEnroll(EnrollRejectReasonInsufficient, payload.NodeID,
 			fmt.Errorf("chain: debit stake+fee: %w", err))
 	}
 
 	rec := enrollment.EnrollmentRecord{
-		NodeID:           payload.NodeID,
-		Owner:            tx.Sender,
-		GPUUUID:          payload.GPUUUID,
-		HMACKey:          append([]byte(nil), payload.HMACKey...),
-		StakeDust:        payload.StakeDust,
-		EnrolledAtHeight: height,
+		NodeID:            payload.NodeID,
+		Owner:             tx.Sender,
+		GPUUUID:           payload.GPUUUID,
+		HMACKey:           append([]byte(nil), payload.HMACKey...),
+		StakeDust:         payload.StakeDust,
+		BondMode:          payload.BondMode,
+		RequiredStakeDust: mining.MinEnrollStakeDust,
+		EnrolledAtHeight:  height,
 	}
 	if err := a.State.ApplyEnroll(rec); err != nil {
 		// Roll back the STAKE only. Fee remains burned (validator
@@ -363,20 +409,14 @@ func (a *EnrollmentApplier) applyUnenroll(tx *mempool.Tx, height uint64) error {
 			fmt.Errorf("chain: stateful unenroll validation: %w", err))
 	}
 
-	// Unenroll txs carry no balance transfer. To keep the
-	// nonce-bump consistent with enroll, we charge tx.Fee as
-	// the minimal debit. Callers who want a zero-fee unenroll
-	// still have to pay the mempool's minimum fee, which is
-	// set outside this package. A non-zero tx.Fee is REQUIRED
-	// so DebitAndBumpNonce's positive-amount precondition
-	// holds; we deliberately surface that as an explicit error
-	// rather than letting AccountStore's internal check
-	// produce a less-specific message.
-	if tx.Fee <= 0 {
+	// Unenroll carries no balance transfer. ChargeAndBumpNonce permits a
+	// signed zero-fee exit for a deferred miner that has not earned liquid
+	// CELL yet while retaining nonce-based replay protection.
+	if tx.Fee < 0 {
 		return rejectUnenroll(UnenrollRejectReasonFee, payload.NodeID,
-			errors.New("chain: unenroll tx requires a positive Fee for nonce accounting"))
+			errors.New("chain: unenroll tx fee cannot be negative"))
 	}
-	if err := a.Accounts.DebitAndBumpNonce(tx.Sender, tx.Fee, tx.Nonce); err != nil {
+	if err := a.Accounts.ChargeAndBumpNonce(tx.Sender, tx.Fee, tx.Nonce); err != nil {
 		return rejectUnenroll(UnenrollRejectReasonFee, payload.NodeID,
 			fmt.Errorf("chain: debit unenroll fee: %w", err))
 	}
@@ -418,6 +458,16 @@ func (a *EnrollmentApplier) applyUnenroll(tx *mempool.Tx, height uint64) error {
 func (a *EnrollmentApplier) SweepMaturedEnrollments(height uint64) ([]enrollment.UnbondRelease, error) {
 	if a == nil {
 		return nil, errors.New("chain: nil EnrollmentApplier")
+	}
+	for _, revoked := range a.State.RevokeLegacyOwners(height) {
+		a.publisher().PublishEnrollment(EnrollmentEvent{
+			Kind:      EnrollmentEventLegacyOwnerSunset,
+			Height:    enrollment.LegacyOwnerSunsetHeight,
+			Sender:    "protocol/legacy-owner-sunset",
+			NodeID:    revoked.NodeID,
+			Owner:     revoked.Owner,
+			StakeDust: revoked.StakeDust,
+		})
 	}
 	released := a.State.SweepMaturedUnbonds(height)
 	if len(released) > 0 {

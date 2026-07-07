@@ -1,4 +1,4 @@
-//go:build cgo && (windows || (linux && cuda))
+//go:build cgo && cuda
 
 package mesh3d
 

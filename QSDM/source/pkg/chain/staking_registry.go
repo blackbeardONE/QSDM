@@ -9,10 +9,12 @@ func countProducerBlocks(bp *BlockProducer) map[string]int {
 	if bp == nil {
 		return out
 	}
-	h := bp.ChainHeight()
-	for height := uint64(0); height <= h; height++ {
-		b, ok := bp.GetBlock(height)
-		if !ok || b.ProducerID == "" {
+	// Walk the chain once under one lock. The old height loop called GetBlock,
+	// which itself scanned the full slice, making restart O(height * blocks).
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+	for _, b := range bp.chain {
+		if b == nil || b.ProducerID == "" {
 			continue
 		}
 		out[b.ProducerID]++

@@ -1,6 +1,5 @@
-//go:build cgo && (windows || (linux && cuda))
-// +build cgo
-// +build windows linux,cuda
+//go:build cgo && cuda
+// +build cgo,cuda
 
 package mesh3d
 
@@ -62,8 +61,8 @@ import (
 
 // CUDAAccelerator provides GPU-accelerated validation for 3D mesh
 type CUDAAccelerator struct {
-	initialized  bool
-	deviceName   string
+	initialized   bool
+	deviceName    string
 	kernelsLinked bool
 }
 
@@ -90,8 +89,8 @@ func NewCUDAAccelerator() *CUDAAccelerator {
 	}
 
 	return &CUDAAccelerator{
-		initialized:  true,
-		deviceName:   devName,
+		initialized:   true,
+		deviceName:    devName,
 		kernelsLinked: true,
 	}
 }

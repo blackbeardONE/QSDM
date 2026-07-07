@@ -142,6 +142,7 @@ const (
 	EnrollRejectReasonFee           = "fee_invalid"
 	EnrollRejectReasonWrongContract = "wrong_contract"
 	EnrollRejectReasonAdmission     = "admission_failed"
+	EnrollRejectReasonSignature     = "signature_invalid"
 	EnrollRejectReasonOther         = "other"
 
 	UnenrollRejectReasonNotEnrolled    = "not_enrolled"
@@ -156,22 +157,22 @@ const (
 // pkg/chain unit tests don't have to wire anything.
 type noopRecorder struct{}
 
-func (noopRecorder) RecordSlashApplied(string, uint64)       {}
-func (noopRecorder) RecordSlashReward(uint64, uint64)        {}
-func (noopRecorder) RecordSlashRejected(string)              {}
-func (noopRecorder) RecordSlashAutoRevoke(string)            {}
-func (noopRecorder) RecordEnrollmentApplied()                {}
-func (noopRecorder) RecordUnenrollmentApplied()              {}
-func (noopRecorder) RecordEnrollmentRejected(string)         {}
-func (noopRecorder) RecordUnenrollmentRejected(string)       {}
-func (noopRecorder) RecordEnrollmentUnbondSwept(uint64)      {}
-func (noopRecorder) RecordGovParamStaged(string)             {}
-func (noopRecorder) RecordGovParamActivated(string, uint64)  {}
-func (noopRecorder) RecordGovParamRejected(string)           {}
-func (noopRecorder) RecordGovAuthorityVoted(string)          {}
-func (noopRecorder) RecordGovAuthorityCrossed(string)        {}
+func (noopRecorder) RecordSlashApplied(string, uint64)          {}
+func (noopRecorder) RecordSlashReward(uint64, uint64)           {}
+func (noopRecorder) RecordSlashRejected(string)                 {}
+func (noopRecorder) RecordSlashAutoRevoke(string)               {}
+func (noopRecorder) RecordEnrollmentApplied()                   {}
+func (noopRecorder) RecordUnenrollmentApplied()                 {}
+func (noopRecorder) RecordEnrollmentRejected(string)            {}
+func (noopRecorder) RecordUnenrollmentRejected(string)          {}
+func (noopRecorder) RecordEnrollmentUnbondSwept(uint64)         {}
+func (noopRecorder) RecordGovParamStaged(string)                {}
+func (noopRecorder) RecordGovParamActivated(string, uint64)     {}
+func (noopRecorder) RecordGovParamRejected(string)              {}
+func (noopRecorder) RecordGovAuthorityVoted(string)             {}
+func (noopRecorder) RecordGovAuthorityCrossed(string)           {}
 func (noopRecorder) RecordGovAuthorityActivated(string, uint64) {}
-func (noopRecorder) RecordGovAuthorityRejected(string)       {}
+func (noopRecorder) RecordGovAuthorityRejected(string)          {}
 
 // recorderHolder wraps a MetricsRecorder so atomic.Value's
 // "all stored values must share an identical concrete type"
@@ -345,11 +346,12 @@ type EnrollmentEvent struct {
 type EnrollmentEventKind string
 
 const (
-	EnrollmentEventEnrollApplied    EnrollmentEventKind = "enroll-applied"
-	EnrollmentEventEnrollRejected   EnrollmentEventKind = "enroll-rejected"
-	EnrollmentEventUnenrollApplied  EnrollmentEventKind = "unenroll-applied"
-	EnrollmentEventUnenrollRejected EnrollmentEventKind = "unenroll-rejected"
-	EnrollmentEventSweep            EnrollmentEventKind = "sweep"
+	EnrollmentEventEnrollApplied     EnrollmentEventKind = "enroll-applied"
+	EnrollmentEventEnrollRejected    EnrollmentEventKind = "enroll-rejected"
+	EnrollmentEventUnenrollApplied   EnrollmentEventKind = "unenroll-applied"
+	EnrollmentEventUnenrollRejected  EnrollmentEventKind = "unenroll-rejected"
+	EnrollmentEventLegacyOwnerSunset EnrollmentEventKind = "legacy-owner-sunset"
+	EnrollmentEventSweep             EnrollmentEventKind = "sweep"
 )
 
 // ChainEventPublisher is the consumer-facing surface. The
@@ -472,15 +474,15 @@ type GovParamEvent struct {
 // Gov reject reason tags. Stable, narrow, mapped 1:1 to the
 // rejection branches in gov_apply.go.
 const (
-	GovRejectReasonDecode         = "decode_failed"
-	GovRejectReasonWrongContract  = "wrong_contract"
-	GovRejectReasonFee            = "fee_invalid"
-	GovRejectReasonUnauthorized   = "unauthorized"
-	GovRejectReasonNotConfigured  = "not_configured"
-	GovRejectReasonHeightInPast   = "effective_height_in_past"
-	GovRejectReasonHeightTooFar   = "effective_height_too_far"
-	GovRejectReasonStageRejected  = "stage_rejected"
-	GovRejectReasonNonceFee       = "nonce_or_fee_failed"
+	GovRejectReasonDecode        = "decode_failed"
+	GovRejectReasonWrongContract = "wrong_contract"
+	GovRejectReasonFee           = "fee_invalid"
+	GovRejectReasonUnauthorized  = "unauthorized"
+	GovRejectReasonNotConfigured = "not_configured"
+	GovRejectReasonHeightInPast  = "effective_height_in_past"
+	GovRejectReasonHeightTooFar  = "effective_height_too_far"
+	GovRejectReasonStageRejected = "stage_rejected"
+	GovRejectReasonNonceFee      = "nonce_or_fee_failed"
 	// GovRejectReasonAuthorityAlreadyPresent is emitted when
 	// an `authority-set / add` proposal targets an address
 	// already on the live AuthorityList.

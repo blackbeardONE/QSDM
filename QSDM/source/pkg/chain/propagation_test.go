@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	libp2p "github.com/libp2p/go-libp2p"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
 
 func setupPropagationTest(t *testing.T) (*pubsub.PubSub, *pubsub.Topic, *pubsub.Subscription) {
@@ -152,6 +152,53 @@ func TestBlockPropagator_RejectInvalidBlock(t *testing.T) {
 	bp.handleMessage(msg)
 	if received != 0 {
 		t.Fatal("invalid block should not reach handler")
+	}
+}
+
+func TestBlockPropagator_BlockResponseTargetsNode(t *testing.T) {
+	var mu sync.Mutex
+	var received []uint64
+
+	bp := &BlockPropagator{
+		nodeID: "local",
+		seen:   make(map[string]time.Time),
+		handler: func(block *Block) error {
+			mu.Lock()
+			defer mu.Unlock()
+			received = append(received, block.Height)
+			return nil
+		},
+	}
+
+	block := makeBlock(7)
+	block.Hash = computeBlockHash(block)
+	responsePayload, _ := json.Marshal(BlockResponse{
+		From:   7,
+		To:     7,
+		Blocks: []*Block{block},
+	})
+
+	bp.handleMessage(BlockP2PMessage{
+		Kind:       BlockMessageResponse,
+		Payload:    responsePayload,
+		OriginNode: "remote",
+		TargetNode: "someone-else",
+	})
+	if len(received) != 0 {
+		t.Fatal("response for another node should be ignored")
+	}
+
+	bp.handleMessage(BlockP2PMessage{
+		Kind:       BlockMessageResponse,
+		Payload:    responsePayload,
+		OriginNode: "remote",
+		TargetNode: "local",
+	})
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(received) != 1 || received[0] != 7 {
+		t.Fatalf("expected block 7 to be handled once, got %v", received)
 	}
 }
 

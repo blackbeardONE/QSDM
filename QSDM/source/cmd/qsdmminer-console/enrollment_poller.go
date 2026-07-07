@@ -86,12 +86,12 @@ const MinEnrollmentPollInterval = 5 * time.Second
 type EnrollmentPhase string
 
 const (
-	PhaseUnknown    EnrollmentPhase = "unknown"
-	PhaseActive     EnrollmentPhase = "active"
-	PhasePending    EnrollmentPhase = "pending_unbond"
-	PhaseRevoked    EnrollmentPhase = "revoked"
-	PhaseNotFound   EnrollmentPhase = "not_found"
-	PhaseUnconfig   EnrollmentPhase = "unconfigured" // validator is v1-only / 503
+	PhaseUnknown  EnrollmentPhase = "unknown"
+	PhaseActive   EnrollmentPhase = "active"
+	PhasePending  EnrollmentPhase = "pending_unbond"
+	PhaseRevoked  EnrollmentPhase = "revoked"
+	PhaseNotFound EnrollmentPhase = "not_found"
+	PhaseUnconfig EnrollmentPhase = "unconfigured" // validator is v1-only / 503
 )
 
 // EnrollmentStatus is the merged view of one poll cycle. The
@@ -106,6 +106,10 @@ type EnrollmentStatus struct {
 	NodeID                string
 	Phase                 EnrollmentPhase
 	StakeDust             uint64
+	BondMode              string
+	RequiredStakeDust     uint64
+	BondRemainingDust     uint64
+	FullyBonded           bool
 	Slashable             bool
 	EnrolledAtHeight      uint64
 	RevokedAtHeight       uint64
@@ -137,6 +141,10 @@ type enrollmentRecordWire struct {
 	Owner                 string `json:"owner"`
 	GPUUUID               string `json:"gpu_uuid"`
 	StakeDust             uint64 `json:"stake_dust"`
+	BondMode              string `json:"bond_mode"`
+	RequiredStakeDust     uint64 `json:"required_stake_dust"`
+	BondRemainingDust     uint64 `json:"bond_remaining_dust"`
+	FullyBonded           bool   `json:"fully_bonded"`
 	EnrolledAtHeight      uint64 `json:"enrolled_at_height"`
 	RevokedAtHeight       uint64 `json:"revoked_at_height,omitempty"`
 	UnbondMaturesAtHeight uint64 `json:"unbond_matures_at_height,omitempty"`
@@ -368,6 +376,10 @@ func (p *EnrollmentPoller) PollOnceWithContext(ctx context.Context) EnrollmentSt
 	}
 
 	st.StakeDust = w.StakeDust
+	st.BondMode = w.BondMode
+	st.RequiredStakeDust = w.RequiredStakeDust
+	st.BondRemainingDust = w.BondRemainingDust
+	st.FullyBonded = w.FullyBonded
 	st.EnrolledAtHeight = w.EnrolledAtHeight
 	st.RevokedAtHeight = w.RevokedAtHeight
 	st.UnbondMaturesAtHeight = w.UnbondMaturesAtHeight

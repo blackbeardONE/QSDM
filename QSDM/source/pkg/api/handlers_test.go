@@ -17,6 +17,7 @@ import (
 
 	"github.com/blackbeardONE/QSDM/internal/logging"
 	"github.com/blackbeardONE/QSDM/pkg/branding"
+	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 	"github.com/blackbeardONE/QSDM/pkg/storage"
 	"github.com/blackbeardONE/QSDM/pkg/submesh"
@@ -40,6 +41,56 @@ type mockStorage struct {
 	readyErr         error
 	getNonceErr      error // injectable: makes GetNonce return this error verbatim
 	applyTransferErr error // injectable: makes ApplyTransferAtomic return this error verbatim
+}
+
+type fakeLocalWalletLedger struct {
+	balances map[string]float64
+	nonces   map[string]uint64
+	present  map[string]bool
+	applyErr error
+}
+
+func (f *fakeLocalWalletLedger) BalanceOf(address string) (float64, uint64, bool) {
+	if f == nil {
+		return 0, 0, false
+	}
+	present := f.present[address]
+	if !present {
+		_, present = f.balances[address]
+	}
+	if !present {
+		_, present = f.nonces[address]
+	}
+	return f.balances[address], f.nonces[address], present
+}
+
+func (f *fakeLocalWalletLedger) ApplyTransfer(txID, sender, recipient string, amount, fee float64, envelopeNonce uint64) error {
+	if f.applyErr != nil {
+		return f.applyErr
+	}
+	if f.balances == nil {
+		f.balances = make(map[string]float64)
+	}
+	if f.nonces == nil {
+		f.nonces = make(map[string]uint64)
+	}
+	if f.present == nil {
+		f.present = make(map[string]bool)
+	}
+	want := f.nonces[sender] + 1
+	if envelopeNonce != want {
+		return storage.ErrNonceConflict
+	}
+	total := amount + fee
+	if f.balances[sender] < total {
+		return storage.ErrInsufficientBalance
+	}
+	f.balances[sender] -= total
+	f.balances[recipient] += amount
+	f.nonces[sender] = envelopeNonce
+	f.present[sender] = true
+	f.present[recipient] = true
+	return nil
 }
 
 func newMockStorage() *mockStorage {
@@ -216,11 +267,11 @@ func setupTestHandlersNvidiaLockIngestNonce(hmacSecret string, nonceTTL time.Dur
 
 func ngcProofBundleWithHMAC(secret, cudaHash, tsUTC, nodeID, ingestNonce string) []byte {
 	m := map[string]interface{}{
-		"architecture":     "NVIDIA-Locked QSDM test",
-		"cuda_proof_hash":  cudaHash,
-		"timestamp_utc":    tsUTC,
-		"qsdm_node_id": nodeID,
-		"gpu_fingerprint":  map[string]interface{}{"available": true, "devices": []interface{}{map[string]interface{}{"name": "G", "index": "0"}}},
+		"architecture":    "NVIDIA-Locked QSDM test",
+		"cuda_proof_hash": cudaHash,
+		"timestamp_utc":   tsUTC,
+		"qsdm_node_id":    nodeID,
+		"gpu_fingerprint": map[string]interface{}{"available": true, "devices": []interface{}{map[string]interface{}{"name": "G", "index": "0"}}},
 	}
 	if strings.TrimSpace(ingestNonce) != "" {
 		m["qsdm_ingest_nonce"] = ingestNonce
@@ -512,6 +563,10 @@ func TestNGCIngestChallenge_okWhenEnabled(t *testing.T) {
 }
 
 func setupTestHandlersWithSubmesh(dm *submesh.DynamicSubmeshManager, ws *wallet.WalletService) *Handlers {
+	// These tests exercise routing after transaction construction. Mirror an
+	// explicit test-ledger balance instead of relying on the retired 1,000 CELL
+	// wallet constructor grant.
+	_ = ws.SyncBalanceFromLedger(1000)
 	logger := logging.NewLogger("test.log", false)
 	authManager, _ := NewAuthManager()
 	userStore := NewUserStore()
@@ -958,6 +1013,88 @@ func TestSubmitSigned_HappyPath_WithNonce(t *testing.T) {
 	}
 }
 
+func TestSubmitSigned_LocalWalletLedger_WithNonce(t *testing.T) {
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Skipf("wallet requires CGO / Dilithium: %v", err)
+	}
+	h := setupTestHandlersWithSubmesh(nil, ws)
+	mock := h.storage.(*mockStorage)
+
+	pubKey := ws.GetPublicKey()
+	addrHash := sha256.Sum256(pubKey)
+	sender := hex.EncodeToString(addrHash[:])
+	recipient := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+	ledger := &fakeLocalWalletLedger{
+		balances: map[string]float64{sender: 5.0},
+		nonces:   map[string]uint64{sender: 0},
+		present:  map[string]bool{sender: true},
+	}
+	SetLocalWalletTransferLedger(ledger)
+	t.Cleanup(func() { SetLocalWalletTransferLedger(nil) })
+
+	env := buildSignedEnvelopeWithNonce(t, ws, recipient, 1.0, 0.01, []string{
+		strings.Repeat("a", 32), strings.Repeat("b", 32),
+	}, 1)
+
+	w := postSubmitSigned(t, h, env)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	if got := ledger.balances[sender]; got != 5.0-1.01 {
+		t.Fatalf("ledger sender balance: want %v got %v", 5.0-1.01, got)
+	}
+	if got := ledger.balances[recipient]; got != 1.0 {
+		t.Fatalf("ledger recipient balance: want 1.0 got %v", got)
+	}
+	if got := ledger.nonces[sender]; got != 1 {
+		t.Fatalf("ledger nonce: want 1 got %d", got)
+	}
+	if got := mock.balances[sender]; got != 0 {
+		t.Fatalf("storage balance should not be the spend authority in local-ledger mode; got %v", got)
+	}
+}
+
+func TestSubmitSigned_QueuesCanonicalBlockTransfer(t *testing.T) {
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Skipf("wallet unavailable: %v", err)
+	}
+	h := setupTestHandlersWithSubmesh(nil, ws)
+	sender := ws.GetAddress()
+	recipient := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	pool := &fakeSubmitter{}
+	SetLocalWalletTransferLedger(nil)
+	SetWalletTransferMempool(pool)
+	SetMiningAccountProbe(&fakeAccountProbe{addrs: map[string]struct {
+		bal   float64
+		nonce uint64
+	}{sender: {bal: 5, nonce: 0}}})
+	t.Cleanup(func() {
+		SetWalletTransferMempool(nil)
+		SetMiningAccountProbe(nil)
+	})
+
+	env := buildSignedEnvelopeWithNonce(t, ws, recipient, 1.0, 0.01, []string{
+		strings.Repeat("a", 32), strings.Repeat("b", 32),
+	}, 1)
+	w := postSubmitSigned(t, h, env)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d body=%s", w.Code, w.Body.String())
+	}
+	if len(pool.added) != 1 {
+		t.Fatalf("queued transactions = %d, want 1", len(pool.added))
+	}
+	got := pool.added[0]
+	if got.ContractID != chain.WalletTransferContractID || got.Nonce != 0 || got.Amount != 1 || got.Recipient != recipient {
+		t.Fatalf("unexpected queued transfer: %+v", got)
+	}
+	if balance := h.storage.(*mockStorage).balances[sender]; balance != 0 {
+		t.Fatalf("secondary storage mutated before block commit: %v", balance)
+	}
+}
+
 // TestSubmitSigned_LegacyV040Envelope asserts the backward-compat
 // promise from V041_REPLAY_PROTECTION_DESIGN.md §2.3: a v0.4.0
 // envelope (no Nonce field, omitempty drops it from canonical
@@ -1164,6 +1301,34 @@ func TestGetWalletNonce_HappyPath_New(t *testing.T) {
 	}
 	if resp.Next != 1 {
 		t.Fatalf("new-sender next: want 1 got %d", resp.Next)
+	}
+}
+
+func TestGetWalletNonce_LocalWalletLedgerPreferred(t *testing.T) {
+	h := setupTestHandlers()
+	sender := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	h.storage.(*mockStorage).nonces[sender] = 2
+
+	SetLocalWalletTransferLedger(&fakeLocalWalletLedger{
+		balances: map[string]float64{sender: 1.0},
+		nonces:   map[string]uint64{sender: 9},
+		present:  map[string]bool{sender: true},
+	})
+	t.Cleanup(func() { SetLocalWalletTransferLedger(nil) })
+
+	w := getWalletNonce(t, h, sender)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp GetWalletNonceResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Nonce != 9 {
+		t.Fatalf("nonce: want local ledger nonce 9 got %d", resp.Nonce)
+	}
+	if resp.Next != 10 {
+		t.Fatalf("next: want 10 got %d", resp.Next)
 	}
 }
 

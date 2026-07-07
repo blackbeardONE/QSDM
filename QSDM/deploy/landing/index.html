@@ -6,7 +6,7 @@
   <title>QSDM - Hive, CELL, and Integrations</title>
   <meta
     name="description"
-    content="QSDM Hive is the Windows client for CELL wallets, signed QSDM tasks, integrations, NVIDIA-only mining, and CPU shared edge participation."
+    content="QSDM Hive is the Windows and Linux client for CELL wallets, signed QSDM tasks, integrations, NVIDIA-attested mining, and CPU shared edge participation."
   />
   <meta name="theme-color" content="#07171d" />
   <link rel="icon" href="/assets/qsdm-hive-icon.png" />
@@ -252,6 +252,178 @@
       background: rgba(255, 255, 255, 0.05);
     }
 
+    .slider-frame {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background:
+        linear-gradient(135deg, rgba(16, 47, 56, 0.92), rgba(6, 17, 22, 0.82)),
+        #0b2730;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+    }
+
+    .slider-track {
+      display: flex;
+      transition: transform 420ms ease;
+      will-change: transform;
+    }
+
+    .slide {
+      min-width: 100%;
+      display: grid;
+      grid-template-columns: minmax(0, 0.72fr) minmax(260px, 0.38fr);
+      gap: 28px;
+      align-items: center;
+      padding: clamp(24px, 5vw, 46px);
+    }
+
+    .slide-eyebrow {
+      display: inline-flex;
+      margin-bottom: 16px;
+      padding: 8px 12px;
+      border: 1px solid rgba(142, 220, 224, 0.36);
+      border-radius: 999px;
+      color: var(--cyan);
+      background: rgba(142, 220, 224, 0.08);
+      font-size: 0.8rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .slide h2 {
+      max-width: 720px;
+    }
+
+    .slide p {
+      max-width: 690px;
+      color: #d8eff2;
+      font-size: 1.05rem;
+    }
+
+    .slide-panel {
+      border: 1px solid rgba(203, 232, 235, 0.18);
+      border-radius: 12px;
+      padding: 20px;
+      background: rgba(5, 15, 20, 0.48);
+    }
+
+    .slide-panel strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--gold);
+      font-size: 0.86rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .slide-panel ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .slide-panel li + li {
+      margin-top: 8px;
+    }
+
+    .slide-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .slider-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px clamp(18px, 4vw, 32px);
+      border-top: 1px solid rgba(203, 232, 235, 0.14);
+      background: rgba(6, 17, 22, 0.42);
+    }
+
+    .hero .slider-frame {
+      z-index: 1;
+      max-width: 920px;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .hero .slide {
+      padding: 0;
+    }
+
+    .hero .slide h1,
+    .hero .slide h2 {
+      margin-bottom: 16px;
+      font-size: clamp(3.2rem, 8vw, 6.2rem);
+      line-height: 0.98;
+      font-weight: 900;
+    }
+
+    .hero .slide p {
+      font-size: clamp(1.08rem, 2vw, 1.28rem);
+    }
+
+    .hero .slider-controls {
+      margin-top: 26px;
+      padding: 0;
+      border-top: 0;
+      background: transparent;
+    }
+
+    .slider-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .slider-tab,
+    .slider-arrow {
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.05);
+      cursor: pointer;
+      font: inherit;
+      font-weight: 800;
+    }
+
+    .slider-tab {
+      min-height: 38px;
+      padding: 8px 12px;
+      border-radius: 999px;
+    }
+
+    .slider-tab[aria-selected="true"] {
+      color: var(--ink);
+      background: var(--gold);
+      border-color: rgba(214, 183, 95, 0.9);
+    }
+
+    .slider-arrows {
+      display: flex;
+      gap: 8px;
+    }
+
+    .slider-arrow {
+      width: 38px;
+      height: 38px;
+      border-radius: 999px;
+    }
+
+    .slider-arrow:hover,
+    .slider-arrow:focus-visible,
+    .slider-tab:hover,
+    .slider-tab:focus-visible {
+      color: var(--text);
+      outline: none;
+      border-color: rgba(142, 220, 224, 0.58);
+    }
+
     section {
       padding: 70px 0;
       border-top: 1px solid rgba(203, 232, 235, 0.1);
@@ -410,6 +582,7 @@
     @media (max-width: 900px) {
       .grid-3,
       .grid-2,
+      .slide,
       .integration-card,
       .docs-band {
         grid-template-columns: 1fr;
@@ -448,6 +621,15 @@
         align-items: flex-start;
         flex-direction: column;
       }
+
+      .slider-controls {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .slider-arrows {
+        justify-content: flex-end;
+      }
     }
   </style>
   <script type="application/ld+json">
@@ -456,8 +638,8 @@
       "@type": "SoftwareApplication",
       "name": "QSDM Hive",
       "applicationCategory": "FinanceApplication",
-      "operatingSystem": "Windows",
-      "description": "Windows client for CELL wallets, signed QSDM tasks, integrations, NVIDIA-only mining, and CPU shared edge participation.",
+      "operatingSystem": "Windows, Linux",
+      "description": "Windows and Linux client for CELL wallets, signed QSDM tasks, integrations, NVIDIA-attested mining, and CPU shared edge participation.",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     }
   </script>
@@ -484,20 +666,103 @@
   <main id="main">
     <section class="hero" aria-labelledby="hero-title">
       <div class="shell">
-        <h1 id="hero-title">QSDM Hive</h1>
-        <p class="lead">
-          The Windows client for CELL wallets, signed QSDM tasks, integrations,
-          NVIDIA-only protocol mining, and CPU shared edge participation.
-        </p>
-        <div class="actions">
-          <a class="button primary" href="/download.html">Download Hive</a>
-          <a class="button" href="/docs/#/qsdm-hive">Read Docs</a>
-        </div>
-        <div class="note-row" aria-label="Release notes">
-          <span class="pill">Hive 1.3.48 for Windows</span>
-          <span class="pill">NVIDIA GPU mining</span>
-          <span class="pill">CPU shared edge tasks</span>
-          <span class="pill">CELL keystore JSON + passphrase</span>
+        <div class="slider-frame" data-slider>
+          <div class="slider-track">
+            <article class="slide" id="slide-qsdm" aria-label="QSDM overview">
+              <div>
+                <span class="slide-eyebrow">QSDM network</span>
+                <h1 id="hero-title">QSDM</h1>
+                <p class="lead">
+                  The quantum-secure ledger for CELL balances, signed actions,
+                  mining receipts, and public transparency.
+                </p>
+                <div class="actions">
+                  <a class="button primary" href="/explorer.html">Open Explorer</a>
+                  <a class="button" href="/docs/#/architecture">Read Architecture</a>
+                </div>
+                <div class="note-row" aria-label="QSDM highlights">
+                  <span class="pill">Native CELL coin</span>
+                  <span class="pill">Quantum-safe signing</span>
+                  <span class="pill">Public explorer</span>
+                </div>
+              </div>
+              <aside class="slide-panel">
+                <strong>Core focus</strong>
+                <ul>
+                  <li>Native CELL coin.</li>
+                  <li>Post-quantum wallet verification.</li>
+                  <li>Public explorer and receipts.</li>
+                </ul>
+              </aside>
+            </article>
+
+            <article class="slide" id="slide-hive" aria-label="QSDM Hive overview">
+              <div>
+                <span class="slide-eyebrow">Desktop client</span>
+                <h2>QSDM Hive</h2>
+                <p class="lead">
+                  The Windows and Linux client for CELL wallets, QSDM tasks, local signing,
+                  mining visibility, and Sky Fang account linking.
+                </p>
+                <div class="actions">
+                  <a class="button primary" href="/download.html">Download Hive</a>
+                  <a class="button" href="/docs/#/qsdm-hive">Hive Guide</a>
+                </div>
+                <div class="note-row" aria-label="QSDM Hive highlights">
+                  <span class="pill">Hive 1.3.87 Windows / Linux</span>
+                  <span class="pill">NVIDIA CUDA mining</span>
+                  <span class="pill">CPU shared edge tasks</span>
+                </div>
+              </div>
+              <aside class="slide-panel">
+                <strong>User path</strong>
+                <ul>
+                  <li>Create or import a CELL wallet.</li>
+                  <li>Run QSDM tasks from one app.</li>
+                  <li>Sign Sky Fang links locally.</li>
+                </ul>
+              </aside>
+            </article>
+
+            <article class="slide" id="slide-skyfang" aria-label="Sky Fang overview">
+              <div>
+                <span class="slide-eyebrow">MMORPG integration</span>
+                <h2>Sky Fang</h2>
+                <p class="lead">
+                  A play-to-earn MMORPG where CELL eligibility is unlocked by
+                  linking the game account to QSDM Hive, without pay-to-win power.
+                </p>
+                <div class="actions">
+                  <a class="button primary" href="https://skyfang.xyz/">Visit Sky Fang</a>
+                  <a class="button" href="/wallet.html">Wallet Link Help</a>
+                </div>
+                <div class="note-row" aria-label="Sky Fang highlights">
+                  <span class="pill">Play-to-earn MMORPG</span>
+                  <span class="pill">No pay-to-win</span>
+                  <span class="pill">Hive-linked CELL rewards</span>
+                </div>
+              </div>
+              <aside class="slide-panel">
+                <strong>Integration stance</strong>
+                <ul>
+                  <li>Players earn through gameplay.</li>
+                  <li>Hive proves wallet ownership.</li>
+                  <li>CELL does not buy combat power.</li>
+                </ul>
+              </aside>
+            </article>
+          </div>
+          <div class="slider-controls" aria-label="Ecosystem slider controls">
+            <div class="slider-tabs" role="tablist" aria-label="Choose ecosystem topic">
+              <button class="slider-tab" type="button" role="tab" aria-selected="true" aria-controls="slide-qsdm" data-slide="0">QSDM</button>
+              <button class="slider-tab" type="button" role="tab" aria-selected="false" aria-controls="slide-hive" data-slide="1">QSDM Hive</button>
+              <button class="slider-tab" type="button" role="tab" aria-selected="false" aria-controls="slide-skyfang" data-slide="2">Sky Fang</button>
+            </div>
+            <div class="slider-arrows">
+              <button class="slider-arrow" type="button" aria-label="Previous ecosystem topic" data-slide-prev>&lt;</button>
+              <button class="slider-arrow" type="button" aria-label="Next ecosystem topic" data-slide-next>&gt;</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -542,12 +807,13 @@
         </div>
         <div class="grid-2">
           <article class="card mining-card">
-            <strong>NVIDIA-only protocol mining</strong>
+            <strong>NVIDIA-attested protocol mining</strong>
             <h3>QSDM Miner</h3>
             <p>
-              The miner task is for supported NVIDIA GPUs only. Minimum path:
-              NVIDIA Turing or newer, CUDA compute capability 7.5+, working NVIDIA
-              driver/nvidia-smi, and a funded QSDM signer wallet.
+              The miner task requires an eligible NVIDIA Turing-or-newer GPU for
+              v2 identity, attestation, and CUDA SHA3/DAG proof search. Hive fails
+              closed if GPU solving is unavailable. The Tensor-Core fork is a
+              separate future consensus activation.
               Advanced operators may use the console miner; there is no separate
               consumer GUI miner release.
             </p>
@@ -583,8 +849,9 @@
             <span class="integration-label">Sky Fang - MMORPG</span>
             <h3>Play-to-earn MMORPG powered by QSDM and CELL</h3>
             <p>
-              Sky Fang Online demonstrates QSDM account linking, wallet ownership checks,
-              and CELL reward eligibility through Hive.
+              Sky Fang Online demonstrates play-to-earn CELL eligibility through
+              QSDM account linking, Hive wallet ownership checks, and anti-pay-to-win
+              reward rules.
             </p>
             <div class="integration-actions">
               <a class="button primary" href="https://skyfang.xyz/">Sky Fang Official Website</a>
@@ -631,5 +898,43 @@
       <span><a href="/docs/">Docs</a> · <a href="/audit.html">Audit</a> · <a href="/chain.html">Status</a></span>
     </div>
   </footer>
+  <script>
+    (() => {
+      const slider = document.querySelector('[data-slider]');
+      if (!slider) return;
+
+      const track = slider.querySelector('.slider-track');
+      const tabs = Array.from(slider.querySelectorAll('[data-slide]'));
+      const previous = slider.querySelector('[data-slide-prev]');
+      const next = slider.querySelector('[data-slide-next]');
+      let active = 0;
+
+      const showSlide = (index) => {
+        active = (index + tabs.length) % tabs.length;
+        track.style.transform = `translateX(-${active * 100}%)`;
+        tabs.forEach((tab, tabIndex) => {
+          tab.setAttribute('aria-selected', String(tabIndex === active));
+        });
+      };
+
+      tabs.forEach((tab) => {
+        tab.addEventListener('click', () => showSlide(Number(tab.dataset.slide || 0)));
+      });
+
+      previous.addEventListener('click', () => showSlide(active - 1));
+      next.addEventListener('click', () => showSlide(active + 1));
+
+      slider.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault();
+          showSlide(active - 1);
+        }
+        if (event.key === 'ArrowRight') {
+          event.preventDefault();
+          showSlide(active + 1);
+        }
+      });
+    })();
+  </script>
 </body>
 </html>

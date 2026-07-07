@@ -1,0 +1,195 @@
+:root {
+  --bg: #f5f6f8;
+  --text: #171a1f;
+  --muted: #626975;
+  --panel: #ffffff;
+  --line: #d9dde3;
+  --green: #197a4d;
+  --green-bg: #e7f5ee;
+  --amber: #9a6500;
+  --amber-bg: #fff3d8;
+  --red: #b42318;
+  --red-bg: #fde7e4;
+  --ink: #222832;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.brand, .top-actions, .actions, .panel-head, .log-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mark {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #20242b;
+  color: #54d18f;
+  font-weight: 800;
+  font-size: 22px;
+}
+
+h1, h2 { margin: 0; letter-spacing: 0; }
+h1 { font-size: 20px; }
+h2 { font-size: 16px; }
+p { margin: 2px 0 0; color: var(--muted); }
+main { padding: 22px; max-width: 1240px; margin: 0 auto; }
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.wide { margin-top: 14px; }
+.panel-head { justify-content: space-between; align-items: flex-start; }
+
+.status, .pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ok, .safe { color: var(--green); background: var(--green-bg); border-color: #b8dfc8; }
+.warn { color: var(--amber); background: var(--amber-bg); border-color: #efd18e; }
+.bad { color: var(--red); background: var(--red-bg); border-color: #f0b8b2; }
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.facts div {
+  min-height: 52px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  background: #fafbfc;
+}
+
+dt { color: var(--muted); font-size: 12px; }
+dd {
+  margin: 2px 0 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  min-height: 34px;
+  padding: 7px 12px;
+  text-decoration: none;
+  cursor: pointer;
+  font-weight: 700;
+}
+.btn.primary { background: #1f7a53; color: #fff; border-color: #1f7a53; }
+.btn.ghost { background: transparent; }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+
+.actions { flex-wrap: wrap; }
+.subtle { color: var(--muted); font-size: 12px; }
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  border: 1px solid #efd18e;
+  background: var(--amber-bg);
+  color: var(--amber);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.banner[hidden] { display: none; }
+
+.listener-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.listener {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 9px;
+  background: #fafbfc;
+}
+
+select {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  min-height: 34px;
+  padding: 6px 10px;
+  font: inherit;
+}
+
+pre {
+  margin: 12px 0 0;
+  height: 300px;
+  overflow: auto;
+  background: #111418;
+  color: #e7ecf3;
+  border-radius: 8px;
+  padding: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  max-width: min(520px, calc(100vw - 36px));
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #20242b;
+  color: #fff;
+  box-shadow: 0 10px 28px rgba(0,0,0,.22);
+  white-space: pre-wrap;
+}
+
+@media (max-width: 900px) {
+  .topbar { align-items: flex-start; flex-direction: column; }
+  .status-grid, .listener-list { grid-template-columns: 1fr; }
+}

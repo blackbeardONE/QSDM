@@ -11,11 +11,20 @@ func TestProposalExecutor_PassedProposal(t *testing.T) {
 	dir := t.TempDir()
 	sv := NewSnapshotVoting(filepath.Join(dir, "proposals.json"))
 
-	sv.AddProposal("prop1", "Increase block size", 800*time.Millisecond, 2)
-	sv.Vote("prop1", "voter1", 3, true)
-	sv.Vote("prop1", "voter2", 2, false)
+	if err := sv.AddProposal("prop1", "Increase block size", time.Hour, 2); err != nil {
+		t.Fatalf("AddProposal: %v", err)
+	}
+	if err := sv.Vote("prop1", "voter1", 3, true); err != nil {
+		t.Fatalf("Vote voter1: %v", err)
+	}
+	if err := sv.Vote("prop1", "voter2", 2, false); err != nil {
+		t.Fatalf("Vote voter2: %v", err)
+	}
 
-	time.Sleep(900 * time.Millisecond) // ensure proposal is past ExpiresAt under scheduler load
+	// Expire the fixture explicitly instead of relying on scheduler timing.
+	sv.Mu.Lock()
+	sv.Proposals["prop1"].ExpiresAt = time.Now().Add(-time.Millisecond)
+	sv.Mu.Unlock()
 	passed, err := sv.FinalizeProposal("prop1")
 	if err != nil {
 		t.Fatalf("FinalizeProposal: %v", err)

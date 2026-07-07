@@ -59,11 +59,17 @@ func AdmissionChecker(prev func(*mempool.Tx) error) func(*mempool.Tx) error {
 		if tx == nil {
 			return errors.New("enrollment admit: nil tx")
 		}
-		if tx.ContractID != ContractID {
+		if !IsContractID(tx.ContractID) {
 			if prev != nil {
 				return prev(tx)
 			}
 			return nil
+		}
+		if tx.ContractID == ContractID {
+			return ErrLegacyContractDisabled
+		}
+		if err := VerifySignedTransaction(tx); err != nil {
+			return fmt.Errorf("enrollment admit signature: %w", err)
 		}
 
 		// Enrollment-tagged tx: must have a payload.
@@ -85,11 +91,9 @@ func AdmissionChecker(prev func(*mempool.Tx) error) func(*mempool.Tx) error {
 			if err := ValidateEnrollFields(p, tx.Sender); err != nil {
 				return fmt.Errorf("enrollment admit (enroll fields): %w", err)
 			}
-			// Belt-and-suspenders: an enroll tx with zero or
-			// negative fee is admitted by the bare account-store
-			// path because applyEnroll has no fee-floor check.
-			// Catch it here so the pool never fills with
-			// fee-free spam masquerading as enrollment.
+			// Deferred-bond enrollment may be fee-free because the sender can
+			// legitimately have a zero balance. Its Hashcash work requirement
+			// provides admission postage instead.
 			if tx.Fee < 0 {
 				return fmt.Errorf("%w: enrollment fee must be >= 0, got %v", ErrPayloadInvalid, tx.Fee)
 			}
@@ -103,12 +107,11 @@ func AdmissionChecker(prev func(*mempool.Tx) error) func(*mempool.Tx) error {
 			if err := ValidateUnenrollFields(p, tx.Sender); err != nil {
 				return fmt.Errorf("enrollment admit (unenroll fields): %w", err)
 			}
-			// applyUnenroll requires positive Fee for nonce
-			// accounting; mirror that here so the rejection is
-			// attributable at admit time, not buried in a
-			// mid-block apply error.
-			if tx.Fee <= 0 {
-				return fmt.Errorf("%w: unenrollment requires positive Fee, got %v", ErrPayloadInvalid, tx.Fee)
+			// Signed zero-fee unenrollment is allowed so a provisional
+			// zero-balance miner can release its GPU binding. The account nonce
+			// still advances at consensus application.
+			if tx.Fee < 0 {
+				return fmt.Errorf("%w: unenrollment fee must be >= 0, got %v", ErrPayloadInvalid, tx.Fee)
 			}
 			return nil
 

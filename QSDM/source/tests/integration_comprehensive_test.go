@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blackbeardONE/QSDM/internal/logging"
 	"github.com/blackbeardONE/QSDM/pkg/consensus"
 	"github.com/blackbeardONE/QSDM/pkg/governance"
 	"github.com/blackbeardONE/QSDM/pkg/mesh3d"
@@ -17,7 +18,6 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/storage"
 	"github.com/blackbeardONE/QSDM/pkg/submesh"
 	"github.com/blackbeardONE/QSDM/pkg/wallet"
-	"github.com/blackbeardONE/QSDM/internal/logging"
 )
 
 // TestFullTransactionLifecycleComprehensive tests the complete transaction flow
@@ -37,11 +37,14 @@ func TestFullTransactionLifecycleComprehensive(t *testing.T) {
 
 	// Initialize consensus (may be nil if CGO disabled, that's OK for tests)
 	poe := consensus.NewProofOfEntanglement()
-	
+
 	// Initialize wallet service (may fail if CGO disabled, that's OK for tests)
 	walletService, err := wallet.NewWalletService()
 	if err != nil {
 		t.Skipf("Wallet service not available (CGO may be disabled): %v", err)
+	}
+	if err := walletService.SyncBalanceFromLedger(100); err != nil {
+		t.Fatalf("Failed to mirror test-ledger balance: %v", err)
 	}
 
 	// Create transaction
@@ -404,4 +407,3 @@ func TestConcurrentOperations(t *testing.T) {
 
 	t.Log("Concurrent operations test passed")
 }
-

@@ -47,7 +47,7 @@ func init() {
 		wallet = nil
 		return
 	}
-	wallet.balance = 1000 // Initial balance for demonstration
+	wallet.balance = 0 // Canonical balance is fetched from QSDM Core.
 	// Generate address from public key (hash of public key)
 	hash := sha256.Sum256(wallet.keyPair.PublicKey)
 	wallet.address = hex.EncodeToString(hash[:])

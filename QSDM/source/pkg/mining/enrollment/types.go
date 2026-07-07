@@ -3,6 +3,8 @@ package enrollment
 import (
 	"errors"
 	"time"
+
+	"github.com/blackbeardONE/QSDM/pkg/mining"
 )
 
 // ContractID is the mempool.Tx.ContractID value that tags a
@@ -17,11 +19,57 @@ import (
 // window.
 const ContractID = "qsdm/enroll/v1"
 
+// SignedContractID is the only enrollment contract accepted for new
+// submissions. It binds Sender, nonce, fee, payload, and transaction ID to
+// the operator's ML-DSA-87 wallet key.
+const SignedContractID = "qsdm/enroll/v2"
+
+// SignedContractActivationHeight is the consensus height at which unsigned
+// v1 enrollment transactions stop being valid in blocks. Honest mempools
+// reject v1 immediately; the height gate preserves deterministic replay of
+// historical blocks while preventing unsigned enrollment after migration.
+const SignedContractActivationHeight uint64 = 200_000
+
+// DeferredBondActivationHeight is the consensus height at which a miner may
+// enroll with no liquid CELL and build the required bond from protocol mining
+// rewards. Deferred enrollments are independently restricted to the signed v2
+// contract at consensus application, so updated validators can safely expose
+// the mode immediately without reopening the legacy unsigned path.
+const DeferredBondActivationHeight uint64 = 0
+
+// LegacyOwnerSunsetHeight deterministically retires active enrollment records
+// whose owners predate canonical ML-DSA wallet addresses. Those aliases cannot
+// authorize signed v2 unenrollment, so retaining them forever would strand the
+// physical GPU. Updated validators revoke them at this exact height, preserve
+// their stake through the normal unbond window, and release only the GPU UUID
+// binding for signed re-enrollment.
+const LegacyOwnerSunsetHeight uint64 = 171_500
+
+// DeferredBondWorkDifficulty is the Hashcash-style work required for a free
+// deferred-bond enrollment. It makes zero-balance enrollment practical without
+// turning the registry into a zero-cost persistent-state spam surface.
+const DeferredBondWorkDifficulty uint8 = 22
+
+// IsContractID reports whether id belongs to either enrollment generation.
+func IsContractID(id string) bool {
+	return id == ContractID || id == SignedContractID
+}
+
 // PayloadKind tags the two enrollment payload shapes that share
 // the same ContractID. Encoded as the first field of the JSON
 // payload so the decoder can dispatch before accessing
 // variant-specific fields.
 type PayloadKind string
+
+// BondMode controls how an enrollment acquires its slashable mining bond.
+// The empty value is treated as BondModeUpfront for wire compatibility with
+// every enrollment written before this field existed.
+type BondMode string
+
+const (
+	BondModeUpfront       BondMode = "upfront"
+	BondModeMiningRewards BondMode = "mining_rewards"
+)
 
 const (
 	// PayloadKindEnroll registers a (node_id, gpu_uuid,
@@ -114,6 +162,17 @@ type EnrollPayload struct {
 	// validation error instead of a silent partial debit.
 	StakeDust uint64 `json:"stake_dust"`
 
+	// BondModeMiningRewards allows StakeDust to start at zero. Protocol mining
+	// rewards are then locked into the enrollment until RequiredStakeDust is
+	// reached; only the remainder is credited to the spendable wallet balance.
+	// Empty and BondModeUpfront retain the original prepaid behavior.
+	BondMode BondMode `json:"bond_mode,omitempty"`
+
+	// WorkNonce is a one-time Hashcash nonce required only for
+	// BondModeMiningRewards. It prevents free enrollment transactions from
+	// becoming a zero-cost persistent-state denial-of-service vector.
+	WorkNonce uint64 `json:"work_nonce,omitempty"`
+
 	// Memo is a free-form optional field operators can use to
 	// tag the enrollment (rig name, location, etc.). Not
 	// consensus-critical; included in the canonical hash so
@@ -165,6 +224,14 @@ type EnrollmentRecord struct {
 	// to Owner after UnbondWindow elapses post-unenroll.
 	StakeDust uint64 `json:"stake_dust"`
 
+	// BondMode records whether the bond was prepaid or is being accumulated
+	// from protocol mining rewards. Empty means upfront for legacy records.
+	BondMode BondMode `json:"bond_mode,omitempty"`
+
+	// RequiredStakeDust pins the target bond at enrollment time. Legacy records
+	// omit it and are interpreted as requiring mining.MinEnrollStakeDust.
+	RequiredStakeDust uint64 `json:"required_stake_dust,omitempty"`
+
 	// EnrolledAtHeight is the chain height where the enroll
 	// transaction committed. Used for analytics and, post-fork,
 	// for time-since-enrolled bonus curves that governance may
@@ -195,6 +262,35 @@ type EnrollmentRecord struct {
 // mining. A revoked record is inactive even during its unbond
 // window.
 func (r EnrollmentRecord) Active() bool { return r.RevokedAtHeight == 0 }
+
+// NormalizedBondMode maps legacy empty values to the original upfront mode.
+func (r EnrollmentRecord) NormalizedBondMode() BondMode {
+	if r.BondMode == "" {
+		return BondModeUpfront
+	}
+	return r.BondMode
+}
+
+// RequiredBondDust returns the target locked bond for this record.
+func (r EnrollmentRecord) RequiredBondDust() uint64 {
+	if r.RequiredStakeDust != 0 {
+		return r.RequiredStakeDust
+	}
+	return mining.MinEnrollStakeDust
+}
+
+// BondRemainingDust returns how much more mining reward must be locked before
+// this enrollment is fully bonded.
+func (r EnrollmentRecord) BondRemainingDust() uint64 {
+	required := r.RequiredBondDust()
+	if r.StakeDust >= required {
+		return 0
+	}
+	return required - r.StakeDust
+}
+
+// FullyBonded reports whether the enrollment has reached its pinned target.
+func (r EnrollmentRecord) FullyBonded() bool { return r.BondRemainingDust() == 0 }
 
 // MatureForUnbond reports whether currentHeight has reached the
 // unbond maturity. Used by the block-time sweep to decide
@@ -245,6 +341,10 @@ var (
 	// check this; it's surfaced here so callers can uniformly
 	// wrap chain-state errors.
 	ErrInsufficientBalance = errors.New("enrollment: sender balance below stake")
+
+	// ErrDeferredBondNotActive is returned when a mining-rewards enrollment is
+	// submitted before its fixed consensus activation height.
+	ErrDeferredBondNotActive = errors.New("enrollment: bond from mining rewards is not active")
 
 	// ErrNodeIDTaken is returned when the EnrollmentState
 	// already has an active record for this NodeID.

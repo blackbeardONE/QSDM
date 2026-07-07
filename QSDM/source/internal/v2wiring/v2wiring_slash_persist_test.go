@@ -39,6 +39,8 @@ func buildRigWithPath(t *testing.T, path string) (*v2wiring.Wired, *chain.Accoun
 		api.SetEnrollmentLister(nil)
 		api.SetEnrollmentMempool(nil)
 		api.SetSlashMempool(nil)
+		api.SetTaskActionMempool(nil)
+		api.SetTaskStateProvider(nil)
 		api.SetSlashReceiptStore(nil)
 		api.SetSlashReceiptLister(nil)
 		api.SetRecentRejectionLister(nil)

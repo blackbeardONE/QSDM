@@ -21,6 +21,7 @@
 >     "mining": {
 >       "protocol_versions_accepted": [2],
 >       "fork_v2_active":            true,
+>       "fork_v2_tc_active":         false,
 >       "attestation_types_required":["nvidia-cc-v1","nvidia-hmac-v1"],
 >       "min_enroll_stake_dust":     1000000000
 >     }
@@ -31,6 +32,13 @@
 > local-devnet bring-up only — see [Appendix A](#appendix-a-v1-audit--local-devnet-builds).
 > Both miner binaries refuse to start a v1 mining loop against a
 > v2-active validator unless `--allow-v1` is explicitly passed.
+
+> **Compute-backend disclosure:** Hive 1.3.84 packages
+> `qsdm-miner-cuda-solver` beside `qsdmminer-console`. Hive starts the miner
+> with `--compute-backend=cuda`; current SHA3/DAG nonce work therefore runs on
+> the selected NVIDIA GPU and fails closed instead of silently falling back to
+> CPU. The live `fork_v2_tc_active` flag controls a future Tensor-Core
+> consensus algorithm, not whether the current CUDA SHA3 solver is active.
 
 This document walks an advanced home operator through:
 
@@ -56,18 +64,17 @@ To mine on mainnet you need:
   Blackwell consumer → the `nvidia-hmac-v1` path described in this
   doc). Non-NVIDIA GPUs and pure-CPU rigs cannot produce a valid v2
   attestation and their proofs are rejected at consensus.
+- **A working NVIDIA driver.** The release carries a statically linked CUDA
+  runtime helper, so end users do not need the full CUDA Toolkit. The driver
+  must expose the card through `nvidia-smi`, and Linux must provide glibc 2.34
+  or newer.
 - **Go 1.25+** to build the miner from source (until the cosign-signed
   `qsdmminer-console` binaries are downloaded from the GitHub release
   page directly, see step 4). No CGO required.
 - **A reward address you own** (this doc, [§2](#2-reward-address)).
-- **10 CELL** liquid on that address, to bond as the enrollment stake.
-  The stake is debited when the enroll tx is included in a block and
-  released after a 30-day unbond window. **Funding caveat:** the
-  chain reset at v2 activation means CELL supply is fresh; outside
-  operators need a route to acquire CELL before they can enroll. The
-  current bootstrap surface is documented in
-  [`MINING_PROTOCOL_V2.md §10.6 (chain reset funding)`](./MINING_PROTOCOL_V2.md)
-  and re-summarised in [§3](#3-hmac-key--on-chain-enrollment) below.
+- **A QSDM signer wallet.** Holding 10 CELL is optional. You may prepay the 10
+  CELL enrollment bond, or start from zero and let accepted mining rewards
+  fill it. Unenrollment begins a 7-day unbond window.
 - **Network access** to a validator HTTP endpoint you trust. For
   mainnet this is `https://api.qsdm.tech`; for local devnet, whatever
   your `cmd/qsdm` is bound to.
@@ -144,19 +151,13 @@ nvidia-smi --query-gpu=uuid,name,compute_cap,driver_version --format=csv,noheade
 The GPU UUID is the consensus-binding identifier — it is signed into
 your enrollment record and into every proof's attestation bundle.
 
-### 3.3 Acquire 10 CELL for the bond
+### 3.3 Choose how to build the 10 CELL bond
 
-> **Funding caveat — read this before you enroll.** As of v0.3.2 the
-> live mainnet (`api.qsdm.tech`) has **no end-user funding path for
-> new operators**. Newly-created wallets start at 0 CELL. The 10 CELL
-> enrollment stake therefore has to come from somewhere; see
-> [§Appendix B](#appendix-b-enrollment-funding-status) for the
-> currently-shipped routes (initial-operator allocation, peer
-> transfer) and the open work item (public bootstrap faucet). If you
-> do not have a funding path lined up, **stop here** and file the
-> enrollment-funding issue — submitting `qsdmcli enroll` against an
-> account with < 10 CELL produces a confusing `insufficient_balance`
-> rejection from the validator's admission gate.
+Use prepaid enrollment if the signer already has 10.001 CELL. Otherwise use
+`--bond-from-rewards`: the signed enrollment starts with zero locked CELL and
+performs one-time computational postage. Mining can begin while the bond is
+being built. The first 10 CELL of gross accepted rewards becomes locked bond;
+only reward above the target becomes spendable.
 
 ### 3.4 Submit the enroll transaction
 
@@ -172,6 +173,17 @@ export QSDM_API_URL=https://api.qsdm.tech/api/v1
   --nonce=<your-current-account-nonce>
 ```
 
+Zero-balance alternative:
+
+```bash
+./qsdmcli enroll \
+  --node-id=rig-77 \
+  --gpu-uuid=$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -1) \
+  --hmac-key=$(cat $HOME/.qsdm/hmac.key) \
+  --bond-from-rewards \
+  --nonce=0
+```
+
 The CLI builds a canonical `EnrollPayload` through
 `pkg/mining/enrollment.EncodeEnrollPayload` (the exact codec the
 mempool admission gate uses for verification) and POSTs it to
@@ -180,7 +192,8 @@ mempool admission gate uses for verification) and POSTs it to
 validator returns HTTP 202 Accepted with a `tx_id`. The bond is
 debited at block-inclusion time. Confirm with
 `./qsdmcli enrollment-status rig-77` once it's mined — you should
-see `phase: active`.
+see `phase: active`. Deferred records also report `bond_mode`,
+`required_stake_dust`, `bond_remaining_dust`, and `fully_bonded`.
 
 The full lifecycle (unbond, slash, watch) is documented in
 [§5](#5-lifecycle-commands) further down.
@@ -702,7 +715,7 @@ Operational notes:
 
 ### 5.2 Mining v2 from the console miner (panel reference)
 
-Once your enrollment record is on-chain, `qsdmminer-console` can mine v2 directly. The full loop is wired and tested end-to-end (`v2_integration_test.go`): every solved share fetches a fresh `/api/v1/mining/challenge` from the validator, builds an `nvidia-hmac-v1` attestation bundle bound to that challenge, and POSTs a `Version=2` proof. The console reuses the same `pkg/mining/v2client` module the eventual native CUDA miner will, so the end-to-end shape will not change when GPU support lands.
+Once your enrollment record is on-chain, `qsdmminer-console` can mine v2 directly. The full loop is wired and tested end-to-end (`v2_integration_test.go`): the console keeps network, enrollment, and attestation control while the companion CUDA process owns the epoch DAG and searches nonce batches. Every solved share is host-checked, receives a fresh `/api/v1/mining/challenge`, builds an `nvidia-hmac-v1` attestation bundle, and POSTs a `Version=2` proof.
 
 ### Generating an HMAC key
 
@@ -896,8 +909,9 @@ See the workflow's comment block for the rationale.
 
 ## Appendix B. Enrollment-funding status
 
-This appendix is an honest snapshot of the funding surface for v0.3.2
-mainnet (`api.qsdm.tech`). It will be revised as the picture changes.
+This appendix records the old bootstrap problem for historical context. It is
+resolved for NVIDIA protocol miners by deferred-bond enrollment. Faucets and
+peer transfers remain separate wallet-funding features.
 
 ### B.1 What the chain currently does
 
@@ -935,37 +949,17 @@ mainnet (`api.qsdm.tech`). It will be revised as the picture changes.
 | Route | Status | Notes |
 |-------|--------|-------|
 | **Initial-operator allocation** | None on the live chain as of v0.3.2. | The genesis ceremony output for the v2-reset chain did not include a multi-operator allocation. Any CELL emitted to date has gone to the single validator-operator's miner address. |
-| **Reward from your own v2 proofs** | Available *once enrolled* — but enrollment requires 10 CELL. | The bootstrap problem this appendix exists to flag. |
+| **Reward from your own v2 proofs** | Available with `--bond-from-rewards`. | Rewards fill the 10 CELL locked bond first; overflow is spendable. |
 | **Transfer from an existing CELL holder (validator-signed)** | Available via `POST /api/v1/wallet/send` (requires JWT). | The validator signs the transfer from **its own wallet** (`pkg/wallet/wallet.go::CreateTransaction` always sets `Sender = ws.address`), so the JWT subject is metadata only. Fine for single-operator nodes; not a self-custody path. |
 | **Transfer from an existing CELL holder (self-custody)** | Available via `POST /api/v1/wallet/submit-signed` (v0.4.0, **no JWT — the cryptographic identity is the envelope's `public_key`**). | The holder builds + ML-DSA-87-signs the envelope locally (browser wallet's *Send transaction* tab today; a `qsdmcli wallet sign-tx` subcommand is planned for v0.4.1 — meanwhile a CLI user can construct the canonical envelope JSON by hand and pipe it through `qsdmcli wallet sign --message-file -`), POSTs it to the validator, and the server verifies `sender == hex(sha256(public_key))` plus the canonical-payload signature before debiting. See [`V040_WALLET_SEND_DESIGN.md`](V040_WALLET_SEND_DESIGN.md) and audit row `api-06`. **Known v0.4.0 gaps:** no per-account nonce (cross-`tx_id` replay possible) + non-atomic debit; both close in v0.4.1 before incentivised-testnet exposure. |
 | **Public bootstrap faucet** | **NOT YET SHIPPED** as of v0.3.3. | No faucet code lives in the repo today (verified by `grep -ri faucet QSDM/`). Tracked as a v0.4.1+ item (depends on `submit-signed` gaps closing first so a faucet can't be drained by replay). |
 
 ### B.3 Practical outcome for a fresh outside operator
 
-If you are a brand-new operator with no pre-existing CELL holdings
-and no relationship with an existing holder, the live mainnet
-currently does not provide a path to participate. The honest answer
-is one of:
-
-1. **Wait for the faucet** (no committed ship date; depends on
-   `submit-signed` replay-protection landing in v0.4.1 first).
-2. **Coordinate with an existing holder** off-chain to receive 10
-   CELL by transfer. v0.4.0+ lets the holder do this **without
-   uploading their private key** — they open the browser wallet's
-   *Send transaction* tab at `qsdm.tech/wallet/`, sign the envelope
-   locally with their passphrase-encrypted keystore, and POST it
-   to the validator. The validator verifies the ML-DSA-87
-   signature against the envelope's own `public_key` and never
-   sees the private key. This is what the v2 spec calls "social
-   bootstrap" and it is the de-facto path for v0.3.x → v0.4.x.
-3. **Run a local devnet** instead of the public mainnet — the v2
-   verifier accepts whatever `FORK_V2_HEIGHT` you pin via
-   `SetForkV2Height`, so you can stand up a private chain that
-   gates v2 at a height you control while you wait. The same
-   `qsdmminer-console --protocol=v2` flow works against a local
-   validator.
-
-This is a known gap and the project's highest-priority operator-
-funding item. If you read this and need a funding path, please file
-the enrollment-funding issue — visibility on demand drives the
-prioritisation.
+If you are a new NVIDIA miner with no pre-existing CELL, use Hive's **Use mining
+earnings** choice or `qsdmcli enroll --bond-from-rewards` when the validator
+advertises `deferred_bond_from_rewards: true`.
+Before activation, an existing holder can transfer the bond through Hive's
+signed CELL transfer flow. A private local-validator starter grant is available
+only when that validator has a separately funded onboarding treasury; the
+public gateway deliberately does not expose an unauthenticated faucet.

@@ -73,7 +73,11 @@ func NewLoggerWithLevel(logFile string, jsonOutput bool, logLevel string) *Logge
 		Compress:   true, // compress rotated files
 	}
 
-	multiWriter := io.MultiWriter(os.Stdout, lumberjackLogger)
+	writers := []io.Writer{lumberjackLogger}
+	if logStdoutEnabled() {
+		writers = append([]io.Writer{os.Stdout}, writers...)
+	}
+	multiWriter := io.MultiWriter(writers...)
 
 	return &Logger{
 		debug:      log.New(multiWriter, "DEBUG: ", log.Ldate|log.Ltime|log.Lshortfile),
@@ -84,6 +88,15 @@ func NewLoggerWithLevel(logFile string, jsonOutput bool, logLevel string) *Logge
 		logLevel:   parseLogLevel(logLevel),
 		requestID:  "",
 		closer:     lumberjackLogger,
+	}
+}
+
+func logStdoutEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("QSDM_LOG_STDOUT"))) {
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return true
 	}
 }
 
@@ -179,18 +192,17 @@ func (l *Logger) Error(msg string, keyvals ...interface{}) {
 	}
 }
 
-
 func (l *Logger) formatJSON(level string, msg string, keyvals ...interface{}) string {
 	m := make(map[string]interface{})
 	m["level"] = level
 	m["msg"] = msg
 	m["timestamp"] = time.Now().Format(time.RFC3339)
-	
+
 	// Add request ID if available
 	if l.requestID != "" {
 		m["request_id"] = l.requestID
 	}
-	
+
 	for i := 0; i < len(keyvals)-1; i += 2 {
 		key, ok := keyvals[i].(string)
 		if ok {

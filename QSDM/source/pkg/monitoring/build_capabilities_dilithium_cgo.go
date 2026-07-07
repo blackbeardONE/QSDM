@@ -1,13 +1,15 @@
-//go:build cgo
-// +build cgo
+//go:build cgo && !dilithium_circl
+// +build cgo,!dilithium_circl
 
 package monitoring
 
 // dilithiumBackend is the static, build-tag-determined identifier of
 // the ML-DSA-87 implementation linked into this binary.
 //
-// CGO builds compile pkg/crypto/dilithium.go (liboqs FFI). The
-// symmetric file build_capabilities_dilithium_pure.go sets this to
-// "circl" for !cgo builds. Exactly one of the two files compiles
-// per binary, so the constant is process-wide stable.
+// CGO builds without the dilithium_circl override compile
+// pkg/crypto/dilithium.go (liboqs FFI). The symmetric file
+// build_capabilities_dilithium_pure.go sets this to "circl" for
+// !cgo builds and for cgo builds that explicitly opt into circl.
+// Exactly one of the two files compiles per binary, so the constant
+// is process-wide stable.
 const dilithiumBackend = "liboqs"

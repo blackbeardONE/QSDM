@@ -2,27 +2,28 @@ package api
 
 // Mining-enrollment HTTP endpoints (v2 protocol §7). Two
 // symmetric POSTs let an enrolled-or-prospective operator
-// submit `qsdm/enroll/v1` transactions through the public API
+// submit signed `qsdm/enroll/v2` transactions through the public API
 // without having to talk peer-to-peer:
 //
 //	POST /api/v1/mining/enroll      → enroll payload
 //	POST /api/v1/mining/unenroll    → unenroll payload
 //
 // Both endpoints accept the SAME wire shape: a JSON envelope
-// that carries a fully-formed mempool.Tx body plus an optional
+// that carries a fully-formed signed transaction body plus a
 // `payload_b64` field for the (already-encoded) enrollment
 // payload bytes. The handler:
 //
 //   1. Reconstructs the mempool.Tx exactly (no payload mutation,
 //      no field defaulting beyond AddedAt) so the tx hash the
 //      sender computed off-line stays valid.
-//   2. Verifies the ContractID matches enrollment.ContractID
-//      (defence in depth; the admission gate also checks).
-//   3. Verifies the payload kind matches the route — an enroll
+//   2. Verifies the ML-DSA-87 public key owns Sender and the
+//      signature covers the complete canonical envelope.
+//   3. Verifies ContractID is enrollment.SignedContractID.
+//   4. Verifies the payload kind matches the route — an enroll
 //      payload posted to /unenroll is a client error, not a
 //      consensus rejection, so we surface 400 before the pool
 //      sees it.
-//   4. Calls the configured Mempool.Add. The mempool admission
+//   5. Calls the configured Mempool.Add. The mempool admission
 //      gate (enrollment.AdmissionChecker, wired by the operator
 //      via mempool.SetAdmissionChecker) does the heavy lifting:
 //      stateless field validation runs once, here, with proper
@@ -35,13 +36,12 @@ package api
 // succeed at block time".
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
@@ -84,22 +84,14 @@ func currentEnrollmentMempool() MempoolSubmitter {
 // the raw bytes into PayloadB64. The Tx envelope carries the
 // signed-tx fields the AccountStore needs (Sender, Nonce, Fee,
 // ID). ContractID is REQUIRED and must equal
-// enrollment.ContractID; the handler rejects everything else.
+// enrollment.SignedContractID; the handler rejects everything else.
 //
 // Why base64 (not hex, not nested JSON): the canonical payload
 // IS already canonical JSON. Wrapping it again as JSON would
 // re-encode it through Go's encoder and lose the byte-for-byte
 // canonical form that the signature was computed over. base64
 // preserves the bytes exactly while still being valid JSON.
-type EnrollmentSubmitRequest struct {
-	ID         string  `json:"id"`
-	Sender     string  `json:"sender"`
-	Nonce      uint64  `json:"nonce"`
-	Fee        float64 `json:"fee"`
-	GasLimit   int64   `json:"gas_limit,omitempty"`
-	ContractID string  `json:"contract_id"`
-	PayloadB64 string  `json:"payload_b64"`
-}
+type EnrollmentSubmitRequest = enrollment.SignedEnvelope
 
 // EnrollmentSubmitResponse is the success body — minimal on
 // purpose. A 200 means the tx is in the pool; clients poll the
@@ -136,9 +128,13 @@ func (h *Handlers) serveEnrollmentSubmit(w http.ResponseWriter, r *http.Request,
 
 	defer r.Body.Close()
 	var req EnrollmentSubmitRequest
-	dec := json.NewDecoder(r.Body)
+	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := requireJSONEOF(dec); err != nil {
 		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -151,19 +147,28 @@ func (h *Handlers) serveEnrollmentSubmit(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "sender required", http.StatusBadRequest)
 		return
 	}
-	if req.ContractID != enrollment.ContractID {
-		http.Error(w, fmt.Sprintf("contract_id must be %q, got %q", enrollment.ContractID, req.ContractID), http.StatusBadRequest)
+	if req.ContractID != enrollment.SignedContractID {
+		http.Error(w, fmt.Sprintf("contract_id must be %q, got %q", enrollment.SignedContractID, req.ContractID), http.StatusBadRequest)
 		return
 	}
 	if req.PayloadB64 == "" {
 		http.Error(w, "payload_b64 required", http.StatusBadRequest)
 		return
 	}
-	payload, err := base64.StdEncoding.DecodeString(req.PayloadB64)
-	if err != nil {
-		http.Error(w, "payload_b64 not valid base64: "+err.Error(), http.StatusBadRequest)
+	if err := enrollment.VerifySignedEnvelope(req); err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, enrollment.ErrSignatureInvalid) {
+			status = http.StatusUnprocessableEntity
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
+	tx, err := req.ToTransaction()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	payload := tx.Payload
 
 	// Defence in depth: the admission gate also peeks the kind,
 	// but doing it here lets us route enroll vs unenroll cleanly
@@ -177,17 +182,6 @@ func (h *Handlers) serveEnrollmentSubmit(w http.ResponseWriter, r *http.Request,
 	if gotKind != expectedKind {
 		http.Error(w, fmt.Sprintf("payload kind %q does not match endpoint (expected %q)", gotKind, expectedKind), http.StatusBadRequest)
 		return
-	}
-
-	tx := &mempool.Tx{
-		ID:         req.ID,
-		Sender:     req.Sender,
-		Nonce:      req.Nonce,
-		Fee:        req.Fee,
-		GasLimit:   req.GasLimit,
-		ContractID: req.ContractID,
-		Payload:    payload,
-		AddedAt:    time.Now(),
 	}
 
 	if err := pool.Add(tx); err != nil {
@@ -211,10 +205,37 @@ func (h *Handlers) serveEnrollmentSubmit(w http.ResponseWriter, r *http.Request,
 		}
 	}
 
+	// Enrollment signatures cover SignedEnvelope.CanonicalBytes rather than
+	// chain.SignedTx's generic transaction hash. Relay the original envelope
+	// unchanged so peers can verify that enrollment-specific contract before
+	// admitting it to their own mempool. Without this, submissions made to a
+	// follower validator remain local and never reach the block producer.
+	if h.p2pTxBroadcast != nil {
+		wire, marshalErr := json.Marshal(req)
+		if marshalErr != nil {
+			if h.logger != nil {
+				h.logger.Warn("P2P enrollment marshal after admission failed", "tx_id", tx.ID, "error", marshalErr)
+			}
+		} else if broadcastErr := h.p2pTxBroadcast(wire); broadcastErr != nil && h.logger != nil {
+			h.logger.Warn("P2P enrollment broadcast after admission failed", "tx_id", tx.ID, "error", broadcastErr)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(EnrollmentSubmitResponse{
 		TxID:   tx.ID,
 		Status: "accepted",
 	})
+}
+
+func requireJSONEOF(dec *json.Decoder) error {
+	var extra json.RawMessage
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("request body must contain exactly one JSON object")
+		}
+		return err
+	}
+	return nil
 }

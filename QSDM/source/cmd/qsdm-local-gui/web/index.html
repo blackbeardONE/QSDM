@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>QSDM Local Node</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="mark">Q</div>
+    <div>
+      <h1>QSDM Local Node</h1>
+      <div class="subtle" id="version">loading</div>
+    </div>
+  </div>
+  <div class="top-actions">
+    <span class="pill safe" id="exposure-pill">checking</span>
+    <button id="refresh" class="btn">Refresh</button>
+    <button id="quit" class="btn ghost">Quit</button>
+  </div>
+</header>
+
+<main>
+  <section class="banner" id="admin-banner" hidden>
+    <span><strong>Administrator rights are not active.</strong> Miner service start/stop needs admin mode.</span>
+    <button data-action="/api/admin/relaunch" class="btn">Open Admin GUI</button>
+  </section>
+
+  <section class="status-grid">
+    <article class="panel" id="validator-card">
+      <div class="panel-head">
+        <div>
+          <h2>Validator</h2>
+          <p id="validator-sub">checking</p>
+        </div>
+        <span class="status" id="validator-status">...</span>
+      </div>
+      <dl class="facts">
+        <div><dt>Height</dt><dd id="validator-height">-</dd></div>
+        <div><dt>Peers</dt><dd id="validator-peers">-</dd></div>
+        <div><dt>Uptime</dt><dd id="validator-uptime">-</dd></div>
+        <div><dt>PID</dt><dd id="validator-pid">-</dd></div>
+      </dl>
+      <div class="actions">
+        <button data-action="/api/validator/start" class="btn primary">Start</button>
+        <button data-action="/api/validator/stop" class="btn">Stop</button>
+        <button data-action="/api/validator/restart" class="btn">Restart</button>
+        <a class="btn ghost" id="dashboard-link" target="_blank" rel="noreferrer">Dashboard</a>
+      </div>
+    </article>
+
+    <article class="panel" id="miner-card">
+      <div class="panel-head">
+        <div>
+          <h2>Miner</h2>
+          <p id="miner-sub">checking</p>
+        </div>
+        <span class="status" id="miner-status">...</span>
+      </div>
+      <dl class="facts">
+        <div><dt>Service</dt><dd id="miner-service">-</dd></div>
+        <div><dt>Workers</dt><dd id="miner-pids">-</dd></div>
+        <div><dt>Log</dt><dd id="miner-log">-</dd></div>
+      </dl>
+      <div class="actions">
+        <button data-action="/api/miner/start" data-requires-admin class="btn primary">Start</button>
+        <button data-action="/api/miner/stop" data-requires-admin class="btn">Stop</button>
+      </div>
+    </article>
+
+    <article class="panel" id="gateway-card">
+      <div class="panel-head">
+        <div>
+          <h2>Home Gateway</h2>
+          <p id="gateway-sub">checking</p>
+        </div>
+        <span class="status" id="gateway-status">...</span>
+      </div>
+      <dl class="facts">
+        <div><dt>Slot</dt><dd id="gateway-slot">-</dd></div>
+        <div><dt>Public</dt><dd id="gateway-public">-</dd></div>
+        <div><dt>PID</dt><dd id="gateway-pid">-</dd></div>
+      </dl>
+      <div class="actions">
+        <button data-action="/api/gateway/start" class="btn primary">Start</button>
+        <button data-action="/api/gateway/stop" class="btn">Stop</button>
+        <a class="btn ghost" id="public-link" target="_blank" rel="noreferrer">Public URL</a>
+      </div>
+    </article>
+  </section>
+
+  <section class="panel wide">
+    <div class="panel-head">
+      <div>
+        <h2>Exposure</h2>
+        <p id="exposure-summary">checking</p>
+      </div>
+      <span class="status" id="exposure-status">...</span>
+    </div>
+    <div class="listener-list" id="listeners"></div>
+  </section>
+
+  <section class="panel wide">
+    <div class="panel-head">
+      <div>
+        <h2>Logs</h2>
+        <p id="log-path">-</p>
+      </div>
+      <div class="log-controls">
+        <select id="log-kind">
+          <option value="validator">validator stdout</option>
+          <option value="validator_err">validator stderr</option>
+          <option value="validator_launcher">validator launcher</option>
+          <option value="miner">miner</option>
+          <option value="gateway">gateway events</option>
+          <option value="gateway_out">gateway stdout</option>
+        </select>
+        <button id="refresh-log" class="btn">Refresh</button>
+      </div>
+    </div>
+    <pre id="log-lines">(loading)</pre>
+  </section>
+
+  <section class="toast" id="toast" hidden></section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

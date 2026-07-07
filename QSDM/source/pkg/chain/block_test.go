@@ -34,6 +34,23 @@ func (ta *testApplier) StateRoot() string {
 	return hex.EncodeToString(h[:])
 }
 
+func TestBlockProducerSealGuardFailsClosedBeforeDrain(t *testing.T) {
+	applier := &testApplier{balances: map[string]float64{"alice": 10}}
+	pool := mempool.New(mempool.DefaultConfig())
+	tx := &mempool.Tx{ID: "guarded", Sender: "alice", Recipient: "bob", Amount: 1, Nonce: 0}
+	if err := pool.Add(tx); err != nil {
+		t.Fatal(err)
+	}
+	bp := NewBlockProducer(pool, applier, DefaultProducerConfig())
+	bp.SetSealGuard(func() error { return errors.New("disk unavailable") })
+	if _, err := bp.ProduceBlock(); !errors.Is(err, ErrSealGuardBlocked) {
+		t.Fatalf("ProduceBlock error = %v, want ErrSealGuardBlocked", err)
+	}
+	if pool.Size() != 1 {
+		t.Fatalf("guarded production drained mempool: size=%d", pool.Size())
+	}
+}
+
 func (ta *testApplier) ChainReplayClone() ChainReplayApplier {
 	out := &testApplier{balances: make(map[string]float64)}
 	for k, v := range ta.balances {
@@ -84,6 +101,34 @@ func TestBlockProducer_ProduceBlock(t *testing.T) {
 	}
 	if block.TotalFees != 9.0 {
 		t.Fatalf("expected fees 9.0, got %f", block.TotalFees)
+	}
+}
+
+func TestBlockProducer_OrdersSameSenderByNonce(t *testing.T) {
+	pool := mempool.New(mempool.DefaultConfig())
+	accounts := NewAccountStore()
+	accounts.Credit("funder", 10)
+
+	// Equal-fee heap order is not a nonce guarantee. Add N+1 first to make
+	// the regression deterministic; the producer must still apply N, N+1.
+	if err := pool.Add(&mempool.Tx{ID: "n1", Sender: "funder", Recipient: "bob", Amount: 1, Nonce: 1, ContractID: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.Add(&mempool.Tx{ID: "n0", Sender: "funder", Recipient: "alice", Amount: 1, Nonce: 0, ContractID: "test"}); err != nil {
+		t.Fatal(err)
+	}
+
+	bp := NewBlockProducer(pool, accounts, DefaultProducerConfig())
+	blk, err := bp.ProduceBlock()
+	if err != nil {
+		t.Fatalf("ProduceBlock: %v", err)
+	}
+	if len(blk.Transactions) != 2 || blk.Transactions[0].Nonce != 0 || blk.Transactions[1].Nonce != 1 {
+		t.Fatalf("transaction nonce order = %+v, want [0 1]", blk.Transactions)
+	}
+	got, _ := accounts.Get("funder")
+	if got.Nonce != 2 || got.Balance != 8 {
+		t.Fatalf("funder after block = %+v, want nonce=2 balance=8", got)
 	}
 }
 

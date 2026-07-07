@@ -14,6 +14,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/config"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
+	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
 )
 
 // nodeStartTime is captured once per process so /api/v1/status can report an
@@ -45,6 +46,10 @@ type StatusResponse struct {
 	Coin       CoinInfo       `json:"coin"`
 	Branding   BrandInfo      `json:"branding"`
 	Tokenomics TokenomicsInfo `json:"tokenomics"`
+	// TaskActionsReady is true only when signed task actions have a live
+	// validator mempool submitter. Clients can distinguish maintenance from a
+	// partially wired validator without attempting a state-changing action.
+	TaskActionsReady bool `json:"task_actions_ready"`
 
 	// Mining is the consensus-visible mining-protocol state. Miners
 	// MUST inspect this block at startup to decide which protocol to
@@ -122,6 +127,26 @@ type MiningInfo struct {
 	// dust) required for an nvidia-hmac-v1 operator enrollment. 0
 	// when v2 is not active.
 	MinEnrollStakeDust uint64 `json:"min_enroll_stake_dust,omitempty"`
+
+	// EnrollmentContract identifies the signed envelope generation clients
+	// must submit. Legacy unsigned v1 is never advertised to new clients.
+	EnrollmentContract string `json:"enrollment_contract"`
+
+	// SignedEnrollmentRequired is explicit for older clients that do not
+	// understand contract version strings.
+	SignedEnrollmentRequired bool `json:"signed_enrollment_required"`
+
+	// SignedEnrollmentActivationHeight is the consensus height after which
+	// unsigned v1 enrollment is invalid even when injected directly in a block.
+	SignedEnrollmentActivationHeight uint64 `json:"signed_enrollment_activation_height"`
+
+	// DeferredBondFromRewards advertises whether zero-balance miners may build
+	// their enrollment bond from protocol mining rewards at the current tip.
+	DeferredBondFromRewards bool `json:"deferred_bond_from_rewards"`
+
+	DeferredBondActivationHeight uint64 `json:"deferred_bond_activation_height"`
+
+	DeferredBondWorkDifficulty uint8 `json:"deferred_bond_work_difficulty"`
 }
 
 // TokenomicsInfo is the live emission-schedule snapshot at the current
@@ -147,10 +172,10 @@ type TokenomicsInfo struct {
 // pkg/branding; changing them here would desync the node's public statement of
 // its own coin and the audit checklist that verifies it.
 type CoinInfo struct {
-	Name          string `json:"name"`
-	Symbol        string `json:"symbol"`
-	Decimals      int    `json:"decimals"`
-	SmallestUnit  string `json:"smallest_unit"`
+	Name         string `json:"name"`
+	Symbol       string `json:"symbol"`
+	Decimals     int    `json:"decimals"`
+	SmallestUnit string `json:"smallest_unit"`
 }
 
 // BrandInfo advertises both the current canonical brand name and the legacy
@@ -202,15 +227,16 @@ func (h *Handlers) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	emittedCell := formatDustAsCell(emitted)
 
 	resp := StatusResponse{
-		NodeID:    h.nodeID,
-		Version:   statusVersion(),
-		GitSHA:    buildinfo.GitSHA,
-		BuildDate: buildinfo.BuildDate,
-		Uptime:    time.Since(nodeStartTime).Truncate(time.Second).String(),
-		ChainTip: chainTip,
-		Peers:    peers,
-		NodeRole: role.String(),
-		Network:  branding.NetworkLabel(),
+		NodeID:           h.nodeID,
+		Version:          statusVersion(),
+		GitSHA:           buildinfo.GitSHA,
+		BuildDate:        buildinfo.BuildDate,
+		Uptime:           time.Since(nodeStartTime).Truncate(time.Second).String(),
+		ChainTip:         chainTip,
+		Peers:            peers,
+		NodeRole:         role.String(),
+		Network:          branding.NetworkLabel(),
+		TaskActionsReady: TaskActionSubmissionReady(),
 		Coin: CoinInfo{
 			Name:         branding.CoinName,
 			Symbol:       branding.CoinSymbol,
@@ -346,8 +372,14 @@ func buildMiningInfo(chainTip uint64) *MiningInfo {
 	tcActive := tcHeight != math.MaxUint64 && chainTip >= tcHeight
 
 	info := &MiningInfo{
-		ForkV2Active:   v2Active,
-		ForkV2TCActive: tcActive,
+		ForkV2Active:                     v2Active,
+		ForkV2TCActive:                   tcActive,
+		EnrollmentContract:               enrollment.SignedContractID,
+		SignedEnrollmentRequired:         true,
+		SignedEnrollmentActivationHeight: enrollment.SignedContractActivationHeight,
+		DeferredBondFromRewards:          v2Active && chainTip >= enrollment.DeferredBondActivationHeight,
+		DeferredBondActivationHeight:     enrollment.DeferredBondActivationHeight,
+		DeferredBondWorkDifficulty:       enrollment.DeferredBondWorkDifficulty,
 	}
 	if v2Height != math.MaxUint64 {
 		info.ForkV2Height = v2Height

@@ -1,6 +1,6 @@
 # Example: set env vars so docker-compose validators POST proof bundles to a local QSDM API.
-# 1) Start the node with the same secret:  $env:QSDM_NGC_INGEST_SECRET = "Charming123"
-# 2) From this directory:  .\scripts\wire-qsdm.ps1 -ApiPort 8080 -Secret "Charming123"
+# 1) Start the node with the same secret:  $env:QSDM_NGC_INGEST_SECRET = "<random-32-byte-secret>"
+# 2) From this directory:  .\scripts\wire-qsdm.ps1 -ApiPort 8080 -Secret "<random-32-byte-secret>"
 #    Optional node binding (must match node's QSDM_NVIDIA_LOCK_EXPECTED_NODE_ID):
 #    .\scripts\wire-qsdm.ps1 -ApiPort 8080 -Secret "..." -ProofNodeId "validator-1"
 # 3)  docker compose up --build

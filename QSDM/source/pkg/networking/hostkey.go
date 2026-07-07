@@ -24,10 +24,9 @@ package networking
 //     base64 wrapper is purely to keep the on-disk file ASCII (so
 //     it greps, cats, and copy-pastes cleanly) without adding PEM
 //     headers that the proto loader would have to strip.
-//   - File mode: 0600. The file is created atomically (write to
-//     `<path>.tmp` then rename) so a crash mid-write can't leave a
-//     half-written key on disk that the next restart would fail to
-//     parse.
+//   - File mode: 0600. Persistence uses pkg/fileutil's platform-safe
+//     writer: atomic temp+rename on POSIX and a direct Windows write where
+//     antivirus/sync clients commonly deny rename of newly-created files.
 //   - We only support Ed25519 today. RSA and Secp256k1 are accepted
 //     on the load path (the proto carries the key type), so an
 //     operator who already has an RSA libp2p key from another tool
@@ -48,6 +47,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/blackbeardONE/QSDM/pkg/fileutil"
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 )
 
@@ -117,18 +117,12 @@ func loadOrCreateHostKey(path string) (libp2pcrypto.PrivKey, error) {
 	}
 	b64 := base64.StdEncoding.EncodeToString(bin)
 
-	// Atomic write: tmp file in the same directory + rename. Single
-	// trailing newline so the file is well-formed text.
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(b64+"\n"), 0o600); err != nil {
-		return nil, fmt.Errorf("write tmp host key %q: %w", tmp, err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		// Best-effort cleanup of the orphan tmp file; ignore
-		// secondary errors because the primary one is what the
-		// operator needs to see.
-		_ = os.Remove(tmp)
-		return nil, fmt.Errorf("rename tmp host key %q -> %q: %w", tmp, path, err)
+	// Keep the platform-specific replacement behavior in one place. POSIX
+	// uses a same-directory temp file + atomic rename. Windows writes the new
+	// path directly because antivirus and sync clients can deny rename even
+	// when the directory and final file are writable.
+	if err := fileutil.WriteFileAtomic(path, []byte(b64+"\n"), 0o600); err != nil {
+		return nil, fmt.Errorf("persist network host key %q: %w", path, err)
 	}
 	return priv, nil
 }

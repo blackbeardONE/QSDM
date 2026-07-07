@@ -20,6 +20,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/buildinfo"
 	"github.com/blackbeardONE/QSDM/pkg/contracts"
 	"github.com/blackbeardONE/QSDM/pkg/envcompat"
+	"github.com/blackbeardONE/QSDM/pkg/mempool"
 	"github.com/blackbeardONE/QSDM/pkg/mesh3d"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 	"github.com/blackbeardONE/QSDM/pkg/storage"
@@ -32,17 +33,17 @@ const msgWalletServiceUnavailable = "wallet service not available (wallet did no
 
 // Handlers contains all API route handlers
 type Handlers struct {
-	authManager     *AuthManager
-	userStore       *UserStore
-	walletService   *wallet.WalletService
-	storage         StorageInterface
-	mesh3dValidator *mesh3d.Mesh3DValidator
-	logger          *logging.Logger
-	ngcIngestSecret string
-	nvidiaLockEnabled bool
-	nvidiaLockMaxAge  time.Duration
-	nvidiaLockExpectedNodeID string
-	nvidiaLockProofHMACSecret string
+	authManager                  *AuthManager
+	userStore                    *UserStore
+	walletService                *wallet.WalletService
+	storage                      StorageInterface
+	mesh3dValidator              *mesh3d.Mesh3DValidator
+	logger                       *logging.Logger
+	ngcIngestSecret              string
+	nvidiaLockEnabled            bool
+	nvidiaLockMaxAge             time.Duration
+	nvidiaLockExpectedNodeID     string
+	nvidiaLockProofHMACSecret    string
 	nvidiaLockRequireIngestNonce bool
 	nvidiaLockIngestNonceTTL     time.Duration
 	nvidiaLockGateP2P            bool
@@ -98,7 +99,9 @@ func NewHandlers(authManager *AuthManager, userStore *UserStore, walletService *
 	}
 }
 
-// SetP2PTxBroadcast sets an optional callback invoked after a successful wallet send (e.g. gossip relay).
+// SetP2PTxBroadcast sets an optional callback invoked after a successful
+// transaction admission (for example wallet sends and signed miner
+// enrollments) so networked validators can relay it to the block producer.
 func (h *Handlers) SetP2PTxBroadcast(fn func([]byte) error) {
 	h.p2pTxBroadcast = fn
 }
@@ -217,6 +220,18 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 
 	// Public node status (node_role, coin metadata, branding). Unauthenticated.
 	mux.HandleFunc("/api/v1/status", handlers.StatusHandler)
+	// Read-only full block feed for bounded ledger catch-up. Receivers must
+	// still replay and verify hashes/state roots before appending.
+	mux.HandleFunc("/api/v1/chain/blocks", handlers.ChainBlocksHandler)
+
+	// QSDM-native task registry. Read-only and public so Hive, SDKs,
+	// and explorers can discover task metadata without a dashboard JWT.
+	mux.HandleFunc("/api/v1/tasks", handlers.QSDMTasksListHandler)
+	mux.HandleFunc("/api/v1/tasks/state", handlers.QSDMTaskStatesHandler)
+	mux.HandleFunc("/api/v1/tasks/actions", handlers.QSDMTaskActionsListHandler)
+	mux.HandleFunc("/api/v1/tasks/actions/submit-signed", handlers.QSDMTaskActionSubmitSignedHandler)
+	mux.HandleFunc("/api/v1/tasks/actions/", handlers.QSDMTaskActionRouteHandler)
+	mux.HandleFunc("/api/v1/tasks/", handlers.QSDMTaskRouteHandler)
 
 	// Authentication endpoints (public)
 	mux.HandleFunc("/api/v1/auth/login", handlers.Login)
@@ -260,6 +275,15 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/wallet/nonce", handlers.GetWalletNonce)
 	mux.HandleFunc("/api/v1/wallet/address", handlers.GetAddress)
 	mux.HandleFunc("/api/v1/wallet/mint", handlers.MintMainCoin)
+	// Local solo-validator starter faucet for QSDM Hive onboarding.
+	// Public middleware is bypassed only because the endpoint performs
+	// its own loopback + shared-secret check; it is disabled unless the
+	// operator explicitly sets QSDM_LOCAL_CELL_FAUCET=1.
+	mux.HandleFunc("/api/v1/faucet/claim", handlers.LocalCellFaucetClaim)
+	mux.HandleFunc("/api/v1/referrals/reward-pool", handlers.ReferralRewardPoolStatus)
+	mux.HandleFunc("/api/v1/referrals/register-signed", handlers.ReferralRegisterSigned)
+	mux.HandleFunc("/api/v1/referrals/status", handlers.ReferralStatus)
+	mux.HandleFunc("/api/v1/referrals/claim", handlers.ReferralClaim)
 
 	// Token endpoints (authenticated)
 	mux.HandleFunc("/api/v1/tokens/mint", handlers.MintToken)
@@ -540,26 +564,26 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 		// pkg/buildinfo/buildinfo.go). Replaces a hard-coded
 		// "1.0.0" string that predated the v0.x.y semver tagging
 		// convention and misled operators reading /api/v1/health.
-		"version":   buildinfo.Version,
-		"git_sha":   buildinfo.GitSHA,
+		"version":    buildinfo.Version,
+		"git_sha":    buildinfo.GitSHA,
 		"build_date": buildinfo.BuildDate,
-		"product":   branding.Name,
-		"tagline":   branding.Tagline,
+		"product":    branding.Name,
+		"tagline":    branding.Tagline,
 		"nvidia_lock": map[string]interface{}{
-			"enabled":                 h.nvidiaLockEnabled,
-			"proof_ok":                lockOK,
-			"max_proof_age_seconds":   int(h.nvidiaLockMaxAge.Seconds()),
-			"node_id_binding_enabled": nodeBinding,
-			"hmac_required":           hmacOn,
-			"ingest_nonce_required":   h.nvidiaLockRequireIngestNonce,
-			"ingest_nonce_ttl_seconds": ttl,
-			"http_blocks_total":       monitoring.NvidiaLockHTTPBlockCount(),
+			"enabled":                          h.nvidiaLockEnabled,
+			"proof_ok":                         lockOK,
+			"max_proof_age_seconds":            int(h.nvidiaLockMaxAge.Seconds()),
+			"node_id_binding_enabled":          nodeBinding,
+			"hmac_required":                    hmacOn,
+			"ingest_nonce_required":            h.nvidiaLockRequireIngestNonce,
+			"ingest_nonce_ttl_seconds":         ttl,
+			"http_blocks_total":                monitoring.NvidiaLockHTTPBlockCount(),
 			"ngc_challenge_issued_total":       monitoring.NGCChallengeIssuedCount(),
 			"ngc_challenge_rate_limited_total": monitoring.NGCChallengeRateLimitedCount(),
-			"ngc_ingest_nonce_pool_size":         monitoring.NGCIngestNoncePoolSize(),
-			"p2p_gate_enabled":                   h.nvidiaLockEnabled && h.nvidiaLockGateP2P,
-			"p2p_rejects_total":                  monitoring.NvidiaLockP2PRejectCount(),
-			"ngc_proof_ingest":                   monitoring.NGCIngestStatsMap(),
+			"ngc_ingest_nonce_pool_size":       monitoring.NGCIngestNoncePoolSize(),
+			"p2p_gate_enabled":                 h.nvidiaLockEnabled && h.nvidiaLockGateP2P,
+			"p2p_rejects_total":                monitoring.NvidiaLockP2PRejectCount(),
+			"ngc_proof_ingest":                 monitoring.NGCIngestStatsMap(),
 		},
 	}
 	writeJSONResponse(w, http.StatusOK, resp)
@@ -927,27 +951,18 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mining-ledger fallback. The storage backend on a solo-validator
-	// FileStorage deploy silently returns zero for every address (see
-	// pkg/storage/file_storage.go and the audit Notes for crypto-04 /
-	// v0.4.1 — FileStorage.GetBalance + GetNonce are intentional zero
-	// stubs so the public read endpoints don't 500). That means the
-	// authoritative CELL ledger lives in the validator's in-memory
-	// AccountStore, surfaced via the MiningAccountProbe interface
-	// (see handlers_mining.go::SetMiningAccountProbe). When storage
-	// reports zero AND a probe is wired AND the probe reports a
-	// real balance, we lift the response to the probe value. The
-	// `source` field records which authority answered so clients
-	// (qsdm.tech/wallet.html, qsdmcli, dashboards) can tell whether
-	// the number is canonical chain-state or storage-backend state.
+	// Solo-ledger preference. In solo-validator mode the authoritative
+	// CELL ledger lives in the validator's live AccountStore, surfaced
+	// via MiningAccountProbe. Prefer it whenever it has the address so
+	// balance, nonce, faucet credits, mining rewards, and Hive transfers
+	// all speak to the same QSDM state instead of drifting across a
+	// secondary storage balance table.
 	source := "storage"
-	if balance == 0 {
-		if probe := currentMiningAccountProbe(); probe != nil {
-			probeBal, _, present := probe.BalanceOf(address)
-			if present && probeBal > 0 {
-				balance = probeBal
-				source = "mining-ledger"
-			}
+	if probe := currentMiningAccountProbe(); probe != nil {
+		probeBal, _, present := probe.BalanceOf(address)
+		if present {
+			balance = probeBal
+			source = "mining-ledger"
 		}
 	}
 
@@ -1009,7 +1024,7 @@ func (h *Handlers) GetWalletNonce(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nonce, err := h.storage.GetNonce(sender)
+	nonce, err := h.walletLastNonce(sender)
 	if err != nil {
 		h.logger.Error("GetWalletNonce: storage error", "error", err, "sender", sender)
 		writeErrorResponse(w, http.StatusInternalServerError, "failed to read nonce from storage")
@@ -1181,8 +1196,8 @@ func (h *Handlers) SendTransaction(w http.ResponseWriter, r *http.Request) {
 // that's pinned to one) renders the same fields.
 type SubmitSignedTransactionResponse struct {
 	TransactionID string `json:"transaction_id"`
-	Status        string `json:"status"`     // "accepted" or "duplicate"
-	Broadcast     string `json:"broadcast"`  // "p2p" or "local-only"
+	Status        string `json:"status"`    // "accepted" or "duplicate"
+	Broadcast     string `json:"broadcast"` // "p2p" or "local-only"
 }
 
 // SubmitSignedTransaction accepts a fully client-signed
@@ -1368,7 +1383,7 @@ func (h *Handlers) SubmitSignedTransaction(w http.ResponseWriter, r *http.Reques
 	// case; this branch covers the new cross-nonce case which
 	// no v0.4.0 envelope can hit.
 	if env.Nonce >= 1 {
-		last, nerr := h.storage.GetNonce(env.Sender)
+		last, nerr := h.walletLastNonce(env.Sender)
 		if nerr != nil {
 			monitoring.RecordWalletSend(monitoring.WalletSendResultNonceLookupFailed)
 			h.logger.Error("Nonce lookup failed", "error", nerr, "sender", env.Sender)
@@ -1381,6 +1396,12 @@ func (h *Handlers) SubmitSignedTransaction(w http.ResponseWriter, r *http.Reques
 				fmt.Sprintf("nonce replay: envelope nonce %d <= last-seen %d", env.Nonce, last))
 			return
 		}
+		if env.Nonce != last+1 {
+			monitoring.RecordWalletSend(monitoring.WalletSendResultNonceConflict)
+			writeErrorResponse(w, http.StatusConflict,
+				fmt.Sprintf("nonce gap: envelope nonce %d; next required nonce is %d", env.Nonce, last+1))
+			return
+		}
 	}
 
 	// Submesh policy gate (matches /wallet/send posture; counts
@@ -1389,6 +1410,70 @@ func (h *Handlers) SubmitSignedTransaction(w http.ResponseWriter, r *http.Reques
 	// envelopes don't touch storage at all.
 	if !h.enforceSubmeshWalletSend(w, env.Fee, env.GeoTag, rawEnvelope) {
 		return
+	}
+
+	// Validators commit signed transfers through the same mempool and block
+	// replay path as every other economic action. This keeps AccountStore,
+	// persisted snapshots, and peer validators in one deterministic ledger.
+	if pool := currentWalletTransferMempool(); pool != nil {
+		if env.Nonce == 0 {
+			monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+			writeErrorResponse(w, http.StatusBadRequest, "legacy nonce-zero wallet transfers are not accepted by a validator")
+			return
+		}
+		if probe := currentMiningAccountProbe(); probe != nil {
+			balance, _, present := probe.BalanceOf(env.Sender)
+			if !present || balance < env.Amount+env.Fee {
+				monitoring.RecordWalletSend(monitoring.WalletSendResultInsufficientBalance)
+				writeErrorResponse(w, http.StatusPaymentRequired, "insufficient canonical CELL balance for amount + fee")
+				return
+			}
+		}
+		tx, err := walletTransferMempoolTx(env)
+		if err != nil {
+			monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+			writeErrorResponse(w, http.StatusBadRequest, "failed to encode signed transfer")
+			return
+		}
+		if err := pool.Add(tx); err != nil {
+			switch {
+			case errors.Is(err, mempool.ErrDuplicateTx), errors.Is(err, mempool.ErrNonceAlreadyPending):
+				monitoring.RecordWalletSend(monitoring.WalletSendResultDuplicate)
+				writeJSONResponse(w, http.StatusConflict, SubmitSignedTransactionResponse{
+					TransactionID: env.ID,
+					Status:        "duplicate",
+					Broadcast:     "block-pending",
+				})
+			case errors.Is(err, mempool.ErrMempoolFull):
+				monitoring.RecordWalletSend(monitoring.WalletSendResultStoreFailed)
+				writeErrorResponse(w, http.StatusServiceUnavailable, "validator transaction queue is full; retry after the next block")
+			default:
+				monitoring.RecordWalletSend(monitoring.WalletSendResultStoreFailed)
+				h.logger.Error("Signed transfer mempool admission failed", "error", err, "tx_id", env.ID)
+				writeErrorResponse(w, http.StatusInternalServerError, "failed to queue signed transfer")
+			}
+			return
+		}
+		monitoring.RecordWalletSend(monitoring.WalletSendResultSuccess)
+		writeJSONResponse(w, http.StatusAccepted, SubmitSignedTransactionResponse{
+			TransactionID: env.ID,
+			Status:        "pending",
+			Broadcast:     "block-pending",
+		})
+		return
+	}
+
+	if env.Nonce >= 1 {
+		if ledger := currentLocalWalletTransferLedger(); ledger != nil {
+			if _, _, present := ledger.BalanceOf(env.Sender); present {
+				if err := ledger.ApplyTransfer(env.ID, env.Sender, env.Recipient, env.Amount, env.Fee, env.Nonce); err != nil {
+					h.writeSubmitSignedApplyError(w, env, err)
+					return
+				}
+				h.finishSubmitSignedTransaction(w, env, rawEnvelope)
+				return
+			}
+		}
 	}
 
 	// v0.4.1: single ACID step replaces the v0.4.0 sequence of
@@ -1406,37 +1491,56 @@ func (h *Handlers) SubmitSignedTransaction(w http.ResponseWriter, r *http.Reques
 		env.Nonce, env.ID,
 		rawEnvelope,
 	); err != nil {
-		switch {
-		case errors.Is(err, storage.ErrTxAlreadyExists):
-			monitoring.RecordWalletSend(monitoring.WalletSendResultDuplicate)
-			writeJSONResponse(w, http.StatusConflict, SubmitSignedTransactionResponse{
-				TransactionID: env.ID,
-				Status:        "duplicate",
-			})
-			return
-		case errors.Is(err, storage.ErrInsufficientBalance):
-			monitoring.RecordWalletSend(monitoring.WalletSendResultInsufficientBalance)
-			writeErrorResponse(w, http.StatusPaymentRequired,
-				"insufficient balance for amount + fee")
-			return
-		case errors.Is(err, storage.ErrNonceConflict):
-			// ErrNonceConflict from ApplyTransferAtomic means
-			// the sender's stored nonce moved between our
-			// GetNonce probe above and the atomic UPDATE — a
-			// concurrent submit-signed raced us. The caller
-			// can safely retry after re-reading the nonce.
-			monitoring.RecordWalletSend(monitoring.WalletSendResultNonceConflict)
-			writeErrorResponse(w, http.StatusConflict,
-				"nonce conflict: concurrent submit raced; retry after re-reading nonce")
-			return
-		default:
-			monitoring.RecordWalletSend(monitoring.WalletSendResultStoreFailed)
-			h.logger.Error("ApplyTransferAtomic failed", "error", err, "tx_id", env.ID, "sender", env.Sender)
-			writeErrorResponse(w, http.StatusInternalServerError, "failed to apply transfer")
-			return
-		}
+		h.writeSubmitSignedApplyError(w, env, err)
+		return
 	}
 
+	h.finishSubmitSignedTransaction(w, env, rawEnvelope)
+}
+
+func (h *Handlers) walletLastNonce(sender string) (uint64, error) {
+	if ledger := currentLocalWalletTransferLedger(); ledger != nil {
+		_, nonce, present := ledger.BalanceOf(sender)
+		if present {
+			return nonce, nil
+		}
+	}
+	if probe := currentMiningAccountProbe(); probe != nil {
+		_, nonce, present := probe.BalanceOf(sender)
+		if present {
+			return nonce, nil
+		}
+	}
+	return h.storage.GetNonce(sender)
+}
+
+func (h *Handlers) writeSubmitSignedApplyError(w http.ResponseWriter, env wallet.TransactionData, err error) {
+	switch {
+	case errors.Is(err, storage.ErrTxAlreadyExists):
+		monitoring.RecordWalletSend(monitoring.WalletSendResultDuplicate)
+		writeJSONResponse(w, http.StatusConflict, SubmitSignedTransactionResponse{
+			TransactionID: env.ID,
+			Status:        "duplicate",
+		})
+	case errors.Is(err, storage.ErrInsufficientBalance):
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInsufficientBalance)
+		writeErrorResponse(w, http.StatusPaymentRequired,
+			"insufficient balance for amount + fee")
+	case errors.Is(err, storage.ErrNonceConflict):
+		// ErrNonceConflict means the sender's stored nonce moved
+		// between our preflight read and the atomic account apply.
+		// The caller can safely retry after re-reading the nonce.
+		monitoring.RecordWalletSend(monitoring.WalletSendResultNonceConflict)
+		writeErrorResponse(w, http.StatusConflict,
+			"nonce conflict: concurrent submit raced; retry after re-reading nonce")
+	default:
+		monitoring.RecordWalletSend(monitoring.WalletSendResultStoreFailed)
+		h.logger.Error("ApplyTransferAtomic failed", "error", err, "tx_id", env.ID, "sender", env.Sender)
+		writeErrorResponse(w, http.StatusInternalServerError, "failed to apply transfer")
+	}
+}
+
+func (h *Handlers) finishSubmitSignedTransaction(w http.ResponseWriter, env wallet.TransactionData, rawEnvelope []byte) {
 	monitoring.RecordWalletSend(monitoring.WalletSendResultSuccess)
 
 	broadcast := "local-only"
@@ -1771,12 +1875,12 @@ type MintMainCoinResponse struct {
 // REMOVED IN v0.3.3 (Session 91). The handler now returns
 // HTTP 410 Gone with a JSON body that explains the migration:
 //
-//   * To acquire CELL as a new operator, follow the peer-transfer
+//   - To acquire CELL as a new operator, follow the peer-transfer
 //     workflow in MINER_QUICKSTART.md Appendix B (an existing
 //     operator with funds POSTs `/api/v1/wallet/send` to your
 //     address), or wait for the public incentivised testnet
 //     (`mining-05` blocker in NEXT_STEPS.md / RELEASE_NOTES_v0.3.0.md).
-//   * To mint named secondary tokens (e.g. game tokens), use
+//   - To mint named secondary tokens (e.g. game tokens), use
 //     POST /api/v1/tokens/mint, which IS wired through the
 //     wallet-service and DOES update balances.
 //
@@ -1802,8 +1906,8 @@ func (h *Handlers) MintMainCoin(w http.ResponseWriter, r *http.Request) {
 	}
 	monitoring.RecordWalletMint(monitoring.WalletMintResultGone)
 	writeJSONResponse(w, http.StatusGone, map[string]interface{}{
-		"status":        "gone",
-		"reason":        "POST /api/v1/wallet/mint was a non-functional stub (returned 200 but never credited balance). Removed in v0.3.3.",
+		"status": "gone",
+		"reason": "POST /api/v1/wallet/mint was a non-functional stub (returned 200 but never credited balance). Removed in v0.3.3.",
 		"migration": map[string]string{
 			"new_operator_funding": "See MINER_QUICKSTART.md Appendix B (peer transfer via POST /api/v1/wallet/send from an existing-balance operator).",
 			"named_token_minting":  "Use POST /api/v1/tokens/mint (this IS wired through the wallet service and DOES update balances).",
@@ -2065,8 +2169,8 @@ func (h *Handlers) NGCIngestChallenge(w http.ResponseWriter, r *http.Request) {
 	monitoring.RecordNGCChallengeIssued()
 	writeJSONResponse(w, http.StatusOK, map[string]interface{}{
 		"qsdm_ingest_nonce": nonce,
-		"expires_at_unix":       exp,
-		"ttl_seconds":           int(ttl.Seconds()),
+		"expires_at_unix":   exp,
+		"ttl_seconds":       int(ttl.Seconds()),
 	})
 }
 

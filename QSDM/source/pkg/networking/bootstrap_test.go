@@ -58,16 +58,22 @@ func TestBootstrapDiscovery_TwoNodesDiscover(t *testing.T) {
 	}
 	defer h2.Close()
 
-	// Connect h2 to h1 so they share the same DHT
 	h1Info := peer.AddrInfo{ID: h1.ID(), Addrs: h1.Addrs()}
-	if err := h2.Connect(ctx, h1Info); err != nil {
-		t.Fatalf("connect h2 to h1: %v", err)
+	h1Addrs, err := peer.AddrInfoToP2pAddrs(&h1Info)
+	if err != nil {
+		t.Fatalf("h1 p2p addrs: %v", err)
+	}
+	h2Info := peer.AddrInfo{ID: h2.ID(), Addrs: h2.Addrs()}
+	h2Addrs, err := peer.AddrInfoToP2pAddrs(&h2Info)
+	if err != nil {
+		t.Fatalf("h2 p2p addrs: %v", err)
 	}
 
 	logger := logging.NewLogger("", false)
 	rendezvous := "test-discovery"
 
 	bd1, err := NewBootstrapDiscovery(ctx, h1, BootstrapConfig{
+		BootstrapPeers:    []string{h2Addrs[0].String()},
 		Rendezvous:        rendezvous,
 		DiscoveryInterval: 200 * time.Millisecond,
 		AdvertiseInterval: 200 * time.Millisecond,
@@ -78,6 +84,7 @@ func TestBootstrapDiscovery_TwoNodesDiscover(t *testing.T) {
 	defer bd1.Close()
 
 	bd2, err := NewBootstrapDiscovery(ctx, h2, BootstrapConfig{
+		BootstrapPeers:    []string{h1Addrs[0].String()},
 		Rendezvous:        rendezvous,
 		DiscoveryInterval: 200 * time.Millisecond,
 		AdvertiseInterval: 200 * time.Millisecond,
@@ -87,29 +94,36 @@ func TestBootstrapDiscovery_TwoNodesDiscover(t *testing.T) {
 	}
 	defer bd2.Close()
 
-	// Give discovery time to find each other
-	time.Sleep(3 * time.Second)
+	deadline := time.Now().Add(5 * time.Second)
+	var p1, p2 []peer.ID
+	var found1, found2 bool
+	for time.Now().Before(deadline) {
+		p1 = bd1.DiscoveredPeers()
+		p2 = bd2.DiscoveredPeers()
 
-	p1 := bd1.DiscoveredPeers()
-	p2 := bd2.DiscoveredPeers()
+		found1 = hasPeerID(p1, h2.ID())
+		found2 = hasPeerID(p2, h1.ID())
+		if found1 && found2 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
-	found1 := false
-	for _, pid := range p1 {
-		if pid == h2.ID() {
-			found1 = true
+	if !found1 {
+		t.Fatalf("node1 did not record node2 as a bootstrap peer; discovered=%v", p1)
+	}
+	if !found2 {
+		t.Fatalf("node2 did not record node1 as a bootstrap peer; discovered=%v", p2)
+	}
+}
+
+func hasPeerID(peers []peer.ID, want peer.ID) bool {
+	for _, pid := range peers {
+		if pid == want {
+			return true
 		}
 	}
-	found2 := false
-	for _, pid := range p2 {
-		if pid == h1.ID() {
-			found2 = true
-		}
-	}
-
-	t.Logf("Node1 discovered %d peers, Node2 discovered %d peers", len(p1), len(p2))
-	if !found1 && !found2 {
-		t.Log("Neither node discovered the other (may happen in CI without routing); skipping assertion")
-	}
+	return false
 }
 
 func TestParseBootstrapPeers(t *testing.T) {

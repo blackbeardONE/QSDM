@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "network": "qsdm-canonical-production-pilot",
+  "api_url": "https://api.qsdm.tech",
+  "expected_source_address": "bd7021b490c688306ca267a96d3943dfdf66166de0a9808ababcaf27cab8caff",
+  "fee_cell": "0.00100000",
+  "submit_confirmation": "FUND-QSDM-CANONICAL-PILOT-20260707",
+  "transfers": [
+    {
+      "role": "operations-treasury",
+      "address": "d89a0bfd377f2f661a8c5bebe258bcf341139e75d9df91f9276a55f452b0cd65",
+      "target_balance_cell": "1000.00000000",
+      "maximum_transfer_cell": "1000.00000000",
+      "enabled": true
+    },
+    {
+      "role": "referral-payout",
+      "address": "7a348d91003f3bf39300d4cb8b04d4b2141ed3ed251f9ba7f033272fcb63625e",
+      "target_balance_cell": "500.00000000",
+      "maximum_transfer_cell": "500.00000000",
+      "enabled": true
+    },
+    {
+      "role": "onboarding-payout",
+      "address": "f8a10131a93578dfff6c07300cd47712492d9028a45d640ec058c3b8998330a9",
+      "target_balance_cell": "100.00000000",
+      "maximum_transfer_cell": "100.00000000",
+      "enabled": true
+    },
+    {
+      "role": "edge-task-funding",
+      "address": "edb1b40c6033ce634597e8d7190cc2aca358b84c172c0ffbbc54f40d91acc01f",
+      "target_balance_cell": "1000.00000000",
+      "maximum_transfer_cell": "1000.00000000",
+      "enabled": true
+    },
+    {
+      "role": "skyfang-integration",
+      "address": "be072810c43e93f649bc9914d54f6346a567481f9a618b4168691f63c271bf8a",
+      "target_balance_cell": "0.00000000",
+      "maximum_transfer_cell": "0.00000000",
+      "enabled": false
+    },
+    {
+      "role": "protocol-reserve-vault",
+      "address": "1e2aef19f0be81e61304f1144ee86520a46f84a155c7a789e88574aed3d8f01f",
+      "target_balance_cell": "0.00000000",
+      "maximum_transfer_cell": "0.00000000",
+      "enabled": false
+    },
+    {
+      "role": "pooled-compute-ecosystem-reserve",
+      "address": "651a79b2b1790820dd73bda81be24057e1bc27377c1f1117c6db2ab79dc038ea",
+      "target_balance_cell": "0.00000000",
+      "maximum_transfer_cell": "0.00000000",
+      "enabled": false
+    }
+  ]
+}

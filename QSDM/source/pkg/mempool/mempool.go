@@ -21,16 +21,21 @@ type Tx struct {
 	// ContractID is an optional hint for contract-scoped transfers or traces; it does not affect
 	// AccountStore balance logic but is included in TxSigningHash when non-empty and copied to TxReceipt.
 	ContractID string `json:"contract_id,omitempty"`
-	AddedAt    time.Time
+	// Signature and PublicKey authenticate contract-specific envelopes that
+	// opt into signed mempool transactions (currently miner enrollment v2).
+	Signature string `json:"signature,omitempty"`
+	PublicKey string `json:"public_key,omitempty"`
+	AddedAt   time.Time
 }
 
 // priority returns the ordering key (higher = processed first).
 func (t *Tx) priority() float64 { return t.Fee }
 
 var (
-	ErrMempoolFull   = errors.New("mempool is full")
-	ErrDuplicateTx   = errors.New("transaction already in mempool")
-	ErrTxNotFound    = errors.New("transaction not found")
+	ErrMempoolFull         = errors.New("mempool is full")
+	ErrDuplicateTx         = errors.New("transaction already in mempool")
+	ErrNonceAlreadyPending = errors.New("sender nonce already pending in mempool")
+	ErrTxNotFound          = errors.New("transaction not found")
 )
 
 // Config for the mempool.
@@ -51,14 +56,18 @@ func DefaultConfig() Config {
 
 // Mempool is a fee-ordered priority queue of pending transactions.
 type Mempool struct {
-	mu       sync.RWMutex
-	pq       txPQ
-	index    map[string]int // tx ID -> position in pq (managed by heap interface)
-	lookup   map[string]*Tx // tx ID -> *Tx for O(1) retrieval
-	cfg      Config
-	admitErr func(*Tx) error // optional admission gate (e.g. POL); if non-nil, Add returns its error
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
+	mu     sync.RWMutex
+	pq     txPQ
+	index  map[string]int // tx ID -> position in pq (managed by heap interface)
+	lookup map[string]*Tx // tx ID -> *Tx for O(1) retrieval
+	// senderNonces prevents two transaction IDs from competing for the same
+	// consensus nonce. Without this guard both can be admitted, but only one
+	// can ever apply, making block contents dependent on heap tie ordering.
+	senderNonces map[string]map[uint64]string
+	cfg          Config
+	admitErr     func(*Tx) error // optional admission gate (e.g. POL); if non-nil, Add returns its error
+	stopCh       chan struct{}
+	wg           sync.WaitGroup
 }
 
 // New creates a mempool with the given config.
@@ -73,11 +82,12 @@ func New(cfg Config) *Mempool {
 		cfg.EvictInterval = 15 * time.Second
 	}
 	m := &Mempool{
-		pq:     make(txPQ, 0, 256),
-		index:  make(map[string]int),
-		lookup: make(map[string]*Tx),
-		cfg:    cfg,
-		stopCh: make(chan struct{}),
+		pq:           make(txPQ, 0, 256),
+		index:        make(map[string]int),
+		lookup:       make(map[string]*Tx),
+		senderNonces: make(map[string]map[uint64]string),
+		cfg:          cfg,
+		stopCh:       make(chan struct{}),
 	}
 	heap.Init(&m.pq)
 	return m
@@ -126,6 +136,9 @@ func (m *Mempool) Add(tx *Tx) error {
 	if _, exists := m.lookup[tx.ID]; exists {
 		return ErrDuplicateTx
 	}
+	if existingID, exists := m.pendingNonceLocked(tx); exists {
+		return fmt.Errorf("%w: sender=%s nonce=%d tx_id=%s", ErrNonceAlreadyPending, tx.Sender, tx.Nonce, existingID)
+	}
 
 	if m.admitErr != nil {
 		if err := m.admitErr(tx); err != nil {
@@ -155,6 +168,7 @@ func (m *Mempool) Add(tx *Tx) error {
 	entry := &txEntry{tx: tx, index: -1}
 	heap.Push(&m.pq, entry)
 	m.lookup[tx.ID] = tx
+	m.trackNonceLocked(tx)
 
 	return nil
 }
@@ -172,6 +186,9 @@ func (m *Mempool) RestoreTransactions(txs []*Tx) {
 			continue
 		}
 		if _, exists := m.lookup[tx.ID]; exists {
+			continue
+		}
+		if _, exists := m.pendingNonceLocked(tx); exists {
 			continue
 		}
 		if tx.AddedAt.IsZero() {
@@ -193,6 +210,7 @@ func (m *Mempool) RestoreTransactions(txs []*Tx) {
 		entry := &txEntry{tx: tx, index: -1}
 		heap.Push(&m.pq, entry)
 		m.lookup[tx.ID] = tx
+		m.trackNonceLocked(tx)
 	}
 }
 
@@ -205,6 +223,7 @@ func (m *Mempool) Pop() (*Tx, bool) {
 	}
 	entry := heap.Pop(&m.pq).(*txEntry)
 	delete(m.lookup, entry.tx.ID)
+	m.untrackNonceLocked(entry.tx)
 	return entry.tx, true
 }
 
@@ -241,11 +260,61 @@ func (m *Mempool) removeLocked(id string) bool {
 		if e.tx.ID == id {
 			heap.Remove(&m.pq, i)
 			delete(m.lookup, id)
+			m.untrackNonceLocked(e.tx)
 			return true
 		}
 	}
+	if tx, ok := m.lookup[id]; ok {
+		m.untrackNonceLocked(tx)
+	}
 	delete(m.lookup, id)
 	return false
+}
+
+func (m *Mempool) pendingNonceLocked(tx *Tx) (string, bool) {
+	if !tracksConsensusNonce(tx) {
+		return "", false
+	}
+	byNonce := m.senderNonces[tx.Sender]
+	if byNonce == nil {
+		return "", false
+	}
+	id, ok := byNonce[tx.Nonce]
+	return id, ok
+}
+
+func (m *Mempool) trackNonceLocked(tx *Tx) {
+	if !tracksConsensusNonce(tx) {
+		return
+	}
+	byNonce := m.senderNonces[tx.Sender]
+	if byNonce == nil {
+		byNonce = make(map[uint64]string)
+		m.senderNonces[tx.Sender] = byNonce
+	}
+	byNonce[tx.Nonce] = tx.ID
+}
+
+func (m *Mempool) untrackNonceLocked(tx *Tx) {
+	if !tracksConsensusNonce(tx) {
+		return
+	}
+	byNonce := m.senderNonces[tx.Sender]
+	if byNonce == nil || byNonce[tx.Nonce] != tx.ID {
+		return
+	}
+	delete(byNonce, tx.Nonce)
+	if len(byNonce) == 0 {
+		delete(m.senderNonces, tx.Sender)
+	}
+}
+
+func tracksConsensusNonce(tx *Tx) bool {
+	// Legacy untyped mempool entries predate account-level nonce admission and
+	// many test/compatibility callers leave Nonce at zero. Contract-tagged
+	// economic actions are the consensus surface that must never compete for
+	// one sender nonce.
+	return tx != nil && tx.Sender != "" && tx.ContractID != ""
 }
 
 // Size returns the number of pending transactions.
@@ -287,6 +356,7 @@ func (m *Mempool) Drain(max int) []*Tx {
 	for i := 0; i < n; i++ {
 		entry := heap.Pop(&m.pq).(*txEntry)
 		delete(m.lookup, entry.tx.ID)
+		m.untrackNonceLocked(entry.tx)
 		result = append(result, entry.tx)
 	}
 	return result
@@ -316,8 +386,8 @@ type txEntry struct {
 
 type txPQ []*txEntry
 
-func (pq txPQ) Len() int            { return len(pq) }
-func (pq txPQ) Less(i, j int) bool  { return pq[i].tx.priority() > pq[j].tx.priority() } // max-heap by fee
+func (pq txPQ) Len() int           { return len(pq) }
+func (pq txPQ) Less(i, j int) bool { return pq[i].tx.priority() > pq[j].tx.priority() } // max-heap by fee
 func (pq txPQ) Swap(i, j int) {
 	pq[i], pq[j] = pq[j], pq[i]
 	pq[i].index = i

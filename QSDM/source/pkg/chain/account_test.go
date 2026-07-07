@@ -116,6 +116,22 @@ func TestAccountStore_SequentialNonces(t *testing.T) {
 	}
 }
 
+func TestAccountStore_ChargeAndBumpNonceAllowsZeroCharge(t *testing.T) {
+	as := NewAccountStore()
+	as.Credit("alice", 10)
+
+	if err := as.ChargeAndBumpNonce("alice", 0, 0); err != nil {
+		t.Fatalf("ChargeAndBumpNonce zero charge: %v", err)
+	}
+	alice, _ := as.Get("alice")
+	if alice.Balance != 10 || alice.Nonce != 1 {
+		t.Fatalf("account after zero charge: %+v", alice)
+	}
+	if err := as.ChargeAndBumpNonce("alice", -1, 1); err == nil {
+		t.Fatal("expected negative charge rejection")
+	}
+}
+
 func TestAccountStore_RestoreFrom(t *testing.T) {
 	as := NewAccountStore()
 	as.Credit("alice", 100)

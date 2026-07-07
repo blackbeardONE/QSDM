@@ -187,3 +187,111 @@ func TestLoadChainNDJSON_PathIsRequired(t *testing.T) {
 		t.Fatal("empty-path error should NOT match os.ErrNotExist (it's a usage error, not a missing file)")
 	}
 }
+
+func TestStateLockRejectsSecondWriterAndReleases(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "validator.lock")
+	first, err := AcquireStateLock(path)
+	if err != nil {
+		t.Fatalf("first lock: %v", err)
+	}
+	if _, err := AcquireStateLock(path); err == nil {
+		t.Fatal("second lock on the same state directory should fail")
+	}
+	if err := first.Close(); err != nil {
+		t.Fatalf("close first lock: %v", err)
+	}
+	second, err := AcquireStateLock(path)
+	if err != nil {
+		t.Fatalf("lock after release: %v", err)
+	}
+	if err := second.Close(); err != nil {
+		t.Fatalf("close second lock: %v", err)
+	}
+}
+
+func TestChainJournalRejectsGapWithoutWritingIt(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "chain.ndjson")
+	blocks := threeBlockFixture()
+	if err := AppendBlockToFile(path, blocks[0]); err != nil {
+		t.Fatal(err)
+	}
+	j, err := OpenChainJournal(path, blocks[0])
+	if err != nil {
+		t.Fatalf("OpenChainJournal: %v", err)
+	}
+	if err := j.Append(blocks[2]); err == nil {
+		t.Fatal("journal should reject a block that skips the guarded tip")
+	}
+	if err := j.Append(blocks[1]); err != nil {
+		t.Fatalf("append contiguous block: %v", err)
+	}
+	if err := j.Close(); err != nil {
+		t.Fatalf("close journal: %v", err)
+	}
+	loaded, err := LoadChainNDJSON(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded) != 2 || loaded[1].Hash != blocks[1].Hash {
+		t.Fatalf("journal contents = %+v, want blocks 0 and 1 only", loaded)
+	}
+}
+
+func TestReplaceChainFileArchivesForkedJournal(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "chain.ndjson")
+	backup := filepath.Join(dir, "chain.forked.bak")
+	blocks := threeBlockFixture()
+	for _, blk := range blocks {
+		if err := AppendBlockToFile(path, blk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fork := *blocks[2]
+	fork.Timestamp = fork.Timestamp.Add(time.Second)
+	fork.Hash = computeBlockHash(&fork)
+	if err := AppendBlockToFile(path, &fork); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReplaceChainFile(path, backup, blocks); err != nil {
+		t.Fatalf("ReplaceChainFile: %v", err)
+	}
+	canonical, err := LoadChainNDJSON(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived, err := LoadChainNDJSON(backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(canonical) != 3 || len(archived) != 4 {
+		t.Fatalf("canonical=%d archived=%d, want 3 and 4", len(canonical), len(archived))
+	}
+}
+
+func TestRestoreChainRejectsBrokenHashLinkAndTamperedHash(t *testing.T) {
+	blocks := threeBlockFixture()
+	broken := make([]*Block, len(blocks))
+	for i, blk := range blocks {
+		cp := *blk
+		broken[i] = &cp
+	}
+	broken[1].PrevHash = "not-the-parent"
+	broken[1].Hash = computeBlockHash(broken[1])
+	bp := NewBlockProducer(mempool.New(mempool.DefaultConfig()), NewAccountStore(), DefaultProducerConfig())
+	if err := bp.RestoreChain(broken); err == nil {
+		t.Fatal("broken parent hash should be rejected")
+	}
+
+	tampered := make([]*Block, len(blocks))
+	for i, blk := range blocks {
+		cp := *blk
+		tampered[i] = &cp
+	}
+	tampered[2].Hash = "tampered"
+	bp = NewBlockProducer(mempool.New(mempool.DefaultConfig()), NewAccountStore(), DefaultProducerConfig())
+	if err := bp.RestoreChain(tampered); err == nil {
+		t.Fatal("tampered block hash should be rejected")
+	}
+}

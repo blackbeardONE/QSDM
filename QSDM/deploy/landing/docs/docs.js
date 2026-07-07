@@ -56,7 +56,7 @@
           inlineMarkdown: [
             "# QSDM Hive",
             "",
-            "QSDM Hive is the Windows client for CELL wallets, signed QSDM tasks, integrations, NVIDIA-only protocol mining, and CPU shared edge participation.",
+            "QSDM Hive is the Windows and Linux client for CELL wallets, signed QSDM tasks, integrations, NVIDIA-attested protocol mining, and pooled CPU, GPU, or RAM participation.",
             "",
             "## Install path",
             "",
@@ -67,15 +67,34 @@
             "3. Back up the QSDM keystore JSON and passphrase.",
             "4. Run CELL tasks, integrations, or qualifying mining work.",
             "",
+            "### Linux x86-64",
+            "",
+            "1. Download the AppImage from the [Hive download page](/download.html).",
+            "2. Run `chmod +x qsdm-hive-*-linux-x86_64.AppImage`.",
+            "3. Start it with `./qsdm-hive-*-linux-x86_64.AppImage`.",
+            "",
+            "Hive expects desktop Linux with GTK 3. Linux Hive reads chain height, wallet balances, mining accounts, and rewards directly from canonical QSDM Core. Operator task metadata and projected task state use the restricted home-validator gateway, so ordinary users do not install or run a local Core. Version 1.3.87 bundles the native `qsdmcli` signer, `qsdmminer-console`, CUDA protocol solver, Edge Control 1.3.2, Agent 1.3.2, and the CUDA edge helper. QSDM Hive is the only desktop client; Edge Control, Agent, and Relay are support utilities. Hive has a dedicated Mother Hive workspace for secure Relay pairing, Agent discovery, pooled CPU/GPU/RAM visibility, and task controls. The Miner task requires CUDA proof solving, fails closed instead of silently using CPU, and adopts a compatible packaged CUDA miner across Linux AppImage mount changes instead of starting a duplicate process. Signed task actions retry transient gateway failures with the same signed action ID, making a lost response safe without double-staking. Transient route failures show Reconnecting, retain the last confirmed values, and require two failures before a short outage circuit opens. Recently healthy APIs are not quarantined by one slow sibling route, while actual chain mismatches still fail closed. Wallet keys and signatures stay local. Hive verifies pinned genesis and a recent common block before value-bearing actions. Isolated, stale, ahead, divergent, or unverifiable ledgers cannot submit CELL transfers, stakes, rewards, referrals, faucet grants, or miner enrollment. Mining work and proofs use the canonical reward producer. Validator operators can explicitly set `QSDM_CORE_API_URL=http://127.0.0.1:8080/api/v1`; private-network overrides remain available. Mining does not require a Sky Fang account.",
+            "",
             "## Wallet backup",
             "",
             "QSDM CELL wallet recovery uses the **QSDM keystore JSON plus its passphrase**. Hive profile phrases, when present, restore only local Hive profile data. They are not CELL wallet recovery phrases.",
             "",
+            "## Task Studio",
+            "",
+            "Task Studio is available under **Add Task**. It publishes signed, versioned task manifests to the QSDM consensus catalog using the active wallet. Compatible catalog updates appear in Hive within about 15 seconds after validator finalization and do not require a Hive reinstall.",
+            "",
+            "The first safe runtime is the built-in `generic-proof-v1` capability. New executable capabilities require reviewed Hive code and a new Hive release; catalog entries cannot execute arbitrary remote JavaScript.",
+            "",
             "## Tasks in Hive",
             "",
-            "- **QSDM Miner** is NVIDIA-only protocol mining for supported GPUs. Minimum path: NVIDIA Turing or newer, CUDA compute capability 7.5+, working NVIDIA drivers/nvidia-smi, and a funded QSDM signer.",
-            "- **QSDM Edge Worker** enables CPU shared edge participation for users without NVIDIA GPUs.",
+            "- **QSDM Miner** requires an NVIDIA Turing-or-newer GPU for v2 identity, attestation, and CUDA SHA3/DAG proof search. The Tensor-Core fork is a separate future consensus activation. The 10 CELL slashable bond can be prepaid or accumulated from mining rewards starting from zero CELL. A Sky Fang account is not required.",
+            "- **QSDM Edge Worker CPU** shares bounded CPU capacity locally or through an authenticated Relay.",
+            "- **QSDM Edge Worker GPU** shares bounded NVIDIA CUDA capacity. It is pooled compute, not protocol mining.",
+            "- **QSDM Edge Worker RAM** shares a configured memory allowance for fixed memory-backed jobs.",
+            "- **Mother Hive Task** assigns the coordinator role to this QSDM Hive and displays pooled CPU, GPU, RAM, Agents, jobs, and verified Relay receipts.",
             "- **Sky Fang - MMORPG** verifies that a Sky Fang account is linked to the active QSDM wallet before reward proofs are submitted.",
+            "",
+            "For a computer laboratory, walletless Agents send fixed work to a policy-controlled Relay. Mother Hive is the role of the active QSDM Hive, not another client. The target gross revenue split is 70% contributors, 15% Mother Hive operator, and 15% ecosystem reserve. The ecosystem share requires a dedicated public pooled-compute reserve wallet; no address is configured on QSDM Core yet. Automatic settlement remains disabled until contributor wallets, chain-verifiable Relay proofs, a published ecosystem reserve address, and funded workload escrow are in place. Agents cannot receive arbitrary scripts or shell commands.",
             "",
             "## Console mining",
             "",
@@ -92,7 +111,29 @@
             "- [Sky Fang official website](https://skyfang.xyz/)",
             "- [Sky Fang integration notes](https://skyfang.xyz/docs)",
             "- [Miner quickstart](#/miner-quickstart)",
+            "- [Pooled edge-compute guide](#/edge-pool)",
             "- [Wallet explanation](#/wallet-explanation)"
+          ].join("\n")
+        },
+        {
+          slug: "edge-pool",
+          title: "Pooled edge compute",
+          repoPath: DOCS_PREFIX_REPO + "/EDGE_POOL.md",
+          badge: "new",
+          inlineMarkdown: [
+            "# QSDM Hive Mother Mode: Agents and Relay",
+            "",
+            "The edge path is `Agent computers -> QSDM Relay -> QSDM Hive (Mother Hive role) -> QSDM Core`. QSDM Hive is the only desktop client. Agents are outbound-only and walletless, and Edge Control is only a local setup utility. The Relay controls how much CPU, NVIDIA GPU, or RAM work reaches Hive.",
+            "",
+            "- Agents and Mother Hive use separate HMAC-SHA256 credentials. Requests also carry timestamps, nonces, and signed short-lived jobs.",
+            "- Agents execute fixed resource algorithms only. There is no remote shell, script runner, or arbitrary command endpoint.",
+            "- The Relay applies CPU/GPU/RAM work percentages, stores verified receipts, and exposes signed aggregate proofs to QSDM Hive.",
+            "- The target gross workload-revenue split is 70% contributors, 15% Mother Hive operator, and 15% ecosystem reserve. The ecosystem share uses a dedicated public pooled-compute reserve wallet, which is not configured on QSDM Core yet. Automatic settlement is disabled until contributor wallets, chain-verifiable proofs, a published ecosystem reserve address, and funded escrow exist.",
+            "- This model is for a trusted private LAN, not anonymous internet enrollment.",
+            "",
+            "Hive 1.3.87 bundles Edge Control 1.3.2, Agent 1.3.2, and the CUDA helper. Additional computers can use [Edge Control 1.3.2 for Windows](/downloads/qsdm-edge-agent-1.3.2-windows-x86_64.zip) or [Edge Control 1.3.2 for Linux](/downloads/qsdm-edge-agent-1.3.2-linux-x86_64.tar.gz). Open Edge Control, choose Relay on the coordinating computer, copy its Agent pairing code, then paste that code on each Agent computer. Copy the separate Mother Hive pairing code into Hive's **Mother Hive** page; Agent credentials are rejected there. New Relay setups default to 50% CPU, 40% GPU, and 25% RAM. Existing policies remain unchanged, and Hive warns when any paired Relay policy reaches 90% because 100% limits can make an interactive workstation unresponsive. CPU, NVIDIA GPU, and RAM limits are sliders; CLI commands remain available for automation. Linux also includes supervised Agent and Relay services, automatic re-registration after Relay restarts, and exactly-once durable receipts.",
+            "",
+            "See the repository guide for setup commands, resource limits, firewall guidance, and status checks."
           ].join("\n")
         },
         {
@@ -130,6 +171,12 @@
             "- [Sky Fang integration notes](https://skyfang.xyz/docs)",
             "- [CELL tokenomics](#/cell-tokenomics)"
           ].join("\n")
+        },
+        {
+          slug: "referral-reward-security",
+          title: "Referral reward security",
+          repoPath: DOCS_PREFIX_REPO + "/REFERRAL_REWARD_POOL_SECURITY.md",
+          badge: "new"
         },
       ],
     },
@@ -174,6 +221,7 @@
       title: "Protocol & design",
       items: [
         { slug: "cell-tokenomics",       title: "CELL tokenomics",               repoPath: DOCS_PREFIX_REPO + "/CELL_TOKENOMICS.md" },
+        { slug: "treasury-policy",       title: "Treasury policy",               repoPath: DOCS_PREFIX_REPO + "/TREASURY_POLICY.md" },
         { slug: "cryptography",          title: "Cryptography comparison",       repoPath: DOCS_PREFIX_REPO + "/CRYPTOGRAPHY_COMPARISON.md" },
         { slug: "attestation-sidecars",  title: "Attestation sidecars",          repoPath: DOCS_PREFIX_REPO + "/ATTESTATION_SIDECARS.md" },
         { slug: "wasm-interfaces",       title: "WASM module interfaces",        repoPath: DOCS_PREFIX_REPO + "/WASM_MODULE_INTERFACES.md" },
@@ -454,7 +502,7 @@
       + 'need to use QSDM Hive, self-custody CELL, run integrations, mine on NVIDIA hardware, join CPU shared edge tasks, or operate a validator.</p>'
       + '<div class="welcome-cards">'
       + cardHtml("quick-start",        "Quick start",        "Get a local node + wallet running in 5 minutes.")
-      + cardHtml("qsdm-hive",          "QSDM Hive",          "Windows client for CELL wallets, tasks, integrations, and mining paths.")
+      + cardHtml("qsdm-hive",          "QSDM Hive",          "Windows and Linux client for CELL wallets, tasks, integrations, and mining paths.")
       + cardHtml("sky-fang-online",    "Sky Fang - MMORPG",  "Play-to-earn MMORPG integration powered by QSDM and CELL.")
       + cardHtml("miner-quickstart",   "Mine on NVIDIA",     "Run the optional miner task if your GPU and signer qualify.")
       + cardHtml("validator-quickstart","Run a validator",   "CPU-only validator, attestation sidecars, NGC submission.")

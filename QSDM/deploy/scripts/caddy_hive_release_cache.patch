@@ -1,0 +1,24 @@
+--- Caddyfile
++++ Caddyfile
+@@ -115,6 +115,21 @@
+ 	@hive_linux_packages path /downloads/*.AppImage /downloads/*.tar.gz
+ 	header @hive_linux_packages Content-Disposition "attachment"
+ 
++	# Exact-version clients must revalidate release metadata on every check.
++	# The binaries are immutable and remain cacheable; only pointers and the
++	# human-facing release pages use this policy.
++	@hive_release_metadata path \
++		/downloads/latest.yml \
++		/downloads/alpha.yml \
++		/downloads/beta.yml \
++		/downloads/latest-linux.yml \
++		/downloads/alpha-linux.yml \
++		/downloads/beta-linux.yml \
++		/download.html \
++		/docs/docs.js \
++		/index.html
++	header @hive_release_metadata Cache-Control "no-cache, max-age=0, must-revalidate"
++
+ 	# /app (+ trailing) goes to the operator dashboard
+ 	redir /app https://dashboard.qsdm.tech/ 302
+ 	redir /app/* https://dashboard.qsdm.tech/ 302

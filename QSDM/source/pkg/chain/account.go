@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 
@@ -21,8 +22,9 @@ type Account struct {
 
 // AccountStore manages all account states and enforces nonce ordering.
 type AccountStore struct {
-	mu       sync.RWMutex
-	accounts map[string]*Account
+	mu        sync.RWMutex
+	persistMu sync.Mutex
+	accounts  map[string]*Account
 }
 
 // NewAccountStore creates an empty account store.
@@ -78,6 +80,18 @@ func (as *AccountStore) DebitAndBumpNonce(sender string, amount float64, expecte
 	if amount <= 0 {
 		return fmt.Errorf("debit amount must be positive, got %.8f", amount)
 	}
+	return as.ChargeAndBumpNonce(sender, amount, expectedNonce)
+}
+
+// ChargeAndBumpNonce atomically validates the sender nonce, charges
+// a non-negative amount, and bumps the nonce by one. It is the
+// contract-call sibling of DebitAndBumpNonce: zero-fee calls still
+// consume nonce space so replay protection stays tied to account
+// state.
+func (as *AccountStore) ChargeAndBumpNonce(sender string, amount float64, expectedNonce uint64) error {
+	if amount < 0 {
+		return fmt.Errorf("charge amount cannot be negative, got %.8f", amount)
+	}
 	as.mu.Lock()
 	defer as.mu.Unlock()
 
@@ -95,6 +109,76 @@ func (as *AccountStore) DebitAndBumpNonce(sender string, amount float64, expecte
 	}
 	acc.Balance -= amount
 	acc.Nonce++
+	return nil
+}
+
+// ChargeAndBumpNonceAllowCreate is the zero-balance onboarding variant of
+// ChargeAndBumpNonce. A missing sender may be created only for a zero charge
+// with nonce 0; all other calls retain the normal missing-account rejection.
+// Creation, validation, and nonce advancement happen under one lock so a
+// rejected enrollment cannot leave a consensus-visible empty account behind.
+func (as *AccountStore) ChargeAndBumpNonceAllowCreate(sender string, amount float64, expectedNonce uint64) error {
+	if amount < 0 {
+		return fmt.Errorf("charge amount cannot be negative, got %.8f", amount)
+	}
+	as.mu.Lock()
+	defer as.mu.Unlock()
+
+	acc, ok := as.accounts[sender]
+	if !ok {
+		if amount != 0 || expectedNonce != 0 {
+			return fmt.Errorf("sender %s not found", sender)
+		}
+		acc = &Account{Address: sender}
+		as.accounts[sender] = acc
+	}
+	if acc.Nonce != expectedNonce {
+		return fmt.Errorf("nonce mismatch for %s: expected %d, got %d",
+			sender, acc.Nonce, expectedNonce)
+	}
+	if acc.Balance < amount {
+		return fmt.Errorf("insufficient balance: have %.8f, need %.8f",
+			acc.Balance, amount)
+	}
+	acc.Balance -= amount
+	acc.Nonce++
+	return nil
+}
+
+// ApplyProtocolReward debits the full protocol reward from the system funder
+// while crediting only liquidAmount to the recipient. The difference is held
+// in consensus enrollment state as a deferred mining bond.
+func (as *AccountStore) ApplyProtocolReward(tx *mempool.Tx, liquidAmount float64) error {
+	if tx == nil {
+		return fmt.Errorf("nil protocol reward tx")
+	}
+	if liquidAmount < 0 || liquidAmount > tx.Amount {
+		return fmt.Errorf("invalid liquid reward %.8f for total %.8f", liquidAmount, tx.Amount)
+	}
+	as.mu.Lock()
+	defer as.mu.Unlock()
+
+	sender, ok := as.accounts[tx.Sender]
+	if !ok {
+		return fmt.Errorf("sender %s not found", tx.Sender)
+	}
+	if tx.Nonce != sender.Nonce {
+		return fmt.Errorf("nonce mismatch for %s: expected %d, got %d", tx.Sender, sender.Nonce, tx.Nonce)
+	}
+	total := tx.Amount + tx.Fee
+	if sender.Balance < total {
+		return fmt.Errorf("insufficient balance: have %.8f, need %.8f", sender.Balance, total)
+	}
+	sender.Balance -= total
+	sender.Nonce++
+	if liquidAmount > 0 {
+		recipient, exists := as.accounts[tx.Recipient]
+		if !exists {
+			recipient = &Account{Address: tx.Recipient}
+			as.accounts[tx.Recipient] = recipient
+		}
+		recipient.Balance += liquidAmount
+	}
 	return nil
 }
 
@@ -253,12 +337,50 @@ func (as *AccountStore) Count() int {
 
 // Save persists all accounts to a JSON file.
 func (as *AccountStore) Save(path string) error {
+	if path == "" {
+		return fmt.Errorf("account store save path is required")
+	}
+	as.persistMu.Lock()
+	defer as.persistMu.Unlock()
+
 	accounts := as.AllAccounts()
 	data, err := json.MarshalIndent(accounts, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	tmpPath := path + ".pending"
+	tmp, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	cleanup := true
+	defer func() {
+		_ = tmp.Close()
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if err := tmp.Chmod(0o644); err != nil {
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := replaceFile(tmpPath, path); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
 }
 
 // Load restores accounts from a JSON file.
