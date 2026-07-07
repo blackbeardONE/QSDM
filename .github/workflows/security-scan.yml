@@ -16,25 +16,14 @@
 #
 # Baseline ceilings
 # -----------------
-# The QSDM security audit (QSDM/docs/docs/SECURITY_AUDIT.md) at
-# v0.4.2 documents the following finding counts as "tracked for
-# follow-up, not introduced by the hardening pass". The CI ceilings
-# below match that documentation exactly:
+# The July 2026 hardening pass cleared every medium-or-higher gosec
+# finding, every staticcheck finding under pkg/api, and every reachable
+# govulncheck result. All ceilings are therefore zero: new debt fails CI
+# immediately and must be fixed or explicitly reviewed before merge.
 #
-#   gosec        : <=11 findings   (handlers_mining G115 x2,
-#                                   ngc_proof_persist G304 x4,
-#                                   user_persist + token_registry
-#                                   G304 x2, autocert G710 x1,
-#                                   mtls G306 x2)
-#   staticcheck  : <=12 findings   (account_lockout S1024/S1012,
-#                                   handlers* U1000 dead code,
-#                                   handlers_status nodeStatusConfig
-#                                   U1000, handlers_mining S1016)
-#   govulncheck  : <=1 vulnerability
-#                  (GO-2024-3218 / CVE-2023-26248, IPFS Kad-DHT
-#                   content censorship; no upstream fix exists; QSDM
-#                   only uses Kad-DHT for peer discovery, with
-#                   QSDM_BOOTSTRAP_PEERS as the fallback).
+#   gosec        : 0 findings
+#   staticcheck  : 0 findings
+#   govulncheck  : 0 reachable vulnerabilities
 #
 # A PR that LOWERS a ceiling must update both the ceiling and the
 # SECURITY_AUDIT.md follow-up section in the same commit. A PR that
@@ -86,7 +75,7 @@ jobs:
       # Pin a version. gosec's rule set evolves; floating @latest
       # would let a benign rule-tightening pass turn into a CI break.
       - name: Install gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.21.4
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.27.1
 
       - name: Run gosec
         working-directory: QSDM/source
@@ -106,11 +95,11 @@ jobs:
             -out=gosec.json \
             ./pkg/api/... ./pkg/monitoring/... ./cmd/qsdm/transaction/...
 
-      - name: Enforce baseline ceiling (<=11 medium+ findings)
+      - name: Enforce zero medium+ findings
         working-directory: QSDM/source
         run: |
           set -euo pipefail
-          BASELINE=11
+          BASELINE=0
           ACTUAL=$(jq '.Stats.found' gosec.json)
           echo "gosec medium+ findings: actual=$ACTUAL baseline=$BASELINE"
           if [ "$ACTUAL" -gt "$BASELINE" ]; then
@@ -162,11 +151,11 @@ jobs:
           # is disabled for this single command via subshell.
           (set +o pipefail; staticcheck ./pkg/api/... 2>&1 | tee staticcheck.txt) || true
 
-      - name: Enforce baseline ceiling (<=12 findings in pkg/api)
+      - name: Enforce zero findings in pkg/api
         working-directory: QSDM/source
         run: |
           set -euo pipefail
-          BASELINE=12
+          BASELINE=0
           # staticcheck emits one finding per line in
           #   file.go:line:col: message (CODE)
           # format. Count non-empty lines.
@@ -206,11 +195,9 @@ jobs:
           cache-dependency-path: QSDM/source/go.sum
 
       - name: Install govulncheck
-        # govulncheck is versioned via the Go toolchain; install at
-        # latest because the only meaningful "drift" risk is the
-        # vulnerability DATABASE, which the tool fetches at run-time
-        # regardless of the binary version.
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        # Pin scanner code for reproducibility. The vulnerability database
+        # is still refreshed at run time, so new advisories remain visible.
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
 
       - name: Run govulncheck
         working-directory: QSDM/source
@@ -223,11 +210,11 @@ jobs:
           govulncheck ./... | tee govulncheck.txt || true
           govulncheck -json ./... > govulncheck.json || true
 
-      - name: Enforce baseline ceiling (<=1 vulnerability)
+      - name: Enforce zero reachable vulnerabilities
         working-directory: QSDM/source
         run: |
           set -euo pipefail
-          BASELINE=1
+          BASELINE=0
           # govulncheck -json emits one OSV record per finding under
           # a top-level "osv" key, but the stream is one JSON object
           # per line (NDJSON). Filter for "finding" records that have

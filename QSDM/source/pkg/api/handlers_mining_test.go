@@ -19,13 +19,13 @@ import (
 // HTTP wire layer. It owns a single workset and DAG so tests can solve a
 // real proof against it.
 type fakeService struct {
-	epoch   uint64
-	height  uint64
-	header  [32]byte
-	diff    *big.Int
-	ws      mining.WorkSet
-	dag     mining.DAG
-	verify  *mining.Verifier
+	epoch  uint64
+	height uint64
+	header [32]byte
+	diff   *big.Int
+	ws     mining.WorkSet
+	dag    mining.DAG
+	verify *mining.Verifier
 }
 
 func (s *fakeService) WorkAt(height uint64) (*MiningWork, error) {
@@ -74,9 +74,6 @@ func buildFakeService(t *testing.T) *fakeService {
 	}
 	diff := big.NewInt(2)
 	header := [32]byte{0xDE, 0xAD}
-	type chainStub struct {
-		h [32]byte
-	}
 	svc := &fakeService{
 		epoch:  0,
 		height: 100,
@@ -373,10 +370,10 @@ func (p *fakeReceiptProbe) GetReceipt(txID string) (TxReceiptView, bool) {
 }
 
 type fakeReceiptsListProbe struct {
-	tip      uint64
-	byHeight map[uint64][]TxReceiptView
-	calledFrom uint64
-	calledTo   uint64
+	tip         uint64
+	byHeight    map[uint64][]TxReceiptView
+	calledFrom  uint64
+	calledTo    uint64
 	calledLimit int
 }
 

@@ -3,7 +3,6 @@ package api
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -239,48 +238,6 @@ func setupTestHandlersNvidiaLock() *Handlers {
 	userStore := NewUserStore()
 	mockStorage := newMockStorage()
 	return NewHandlers(authManager, userStore, nil, mockStorage, logger, "", true, time.Hour, "", "", false, 0, false, nil)
-}
-
-func setupTestHandlersNvidiaLockNode(expectedNodeID string) *Handlers {
-	logger := logging.NewLogger("test.log", false)
-	authManager, _ := NewAuthManager()
-	userStore := NewUserStore()
-	mockStorage := newMockStorage()
-	return NewHandlers(authManager, userStore, nil, mockStorage, logger, "", true, time.Hour, expectedNodeID, "", false, 0, false, nil)
-}
-
-func setupTestHandlersNvidiaLockHMAC(hmacSecret string) *Handlers {
-	logger := logging.NewLogger("test.log", false)
-	authManager, _ := NewAuthManager()
-	userStore := NewUserStore()
-	mockStorage := newMockStorage()
-	return NewHandlers(authManager, userStore, nil, mockStorage, logger, "", true, time.Hour, "", hmacSecret, false, 0, false, nil)
-}
-
-func setupTestHandlersNvidiaLockIngestNonce(hmacSecret string, nonceTTL time.Duration) *Handlers {
-	logger := logging.NewLogger("test.log", false)
-	authManager, _ := NewAuthManager()
-	userStore := NewUserStore()
-	mockStorage := newMockStorage()
-	return NewHandlers(authManager, userStore, nil, mockStorage, logger, "", true, time.Hour, "", hmacSecret, true, nonceTTL, false, nil)
-}
-
-func ngcProofBundleWithHMAC(secret, cudaHash, tsUTC, nodeID, ingestNonce string) []byte {
-	m := map[string]interface{}{
-		"architecture":    "NVIDIA-Locked QSDM test",
-		"cuda_proof_hash": cudaHash,
-		"timestamp_utc":   tsUTC,
-		"qsdm_node_id":    nodeID,
-		"gpu_fingerprint": map[string]interface{}{"available": true, "devices": []interface{}{map[string]interface{}{"name": "G", "index": "0"}}},
-	}
-	if strings.TrimSpace(ingestNonce) != "" {
-		m["qsdm_ingest_nonce"] = ingestNonce
-	}
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(monitoring.NGCProofHMACPayload(m)))
-	m["qsdm_proof_hmac"] = hex.EncodeToString(mac.Sum(nil))
-	raw, _ := json.Marshal(m)
-	return raw
 }
 
 func TestHealthCheck(t *testing.T) {

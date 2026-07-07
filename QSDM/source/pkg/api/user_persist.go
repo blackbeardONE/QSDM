@@ -54,7 +54,7 @@ func LoadOrNewUserStore(path string) (*UserStore, error) {
 		}
 	}
 
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) // #nosec G304 -- user-store path is trusted local process configuration.
 	if err != nil {
 		if os.IsNotExist(err) {
 			return us, nil

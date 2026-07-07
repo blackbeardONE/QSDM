@@ -63,3 +63,44 @@ func TestHTTPTreasuryPayoutRejectsPlainRemoteHTTP(t *testing.T) {
 		t.Fatal("expected non-loopback plain HTTP signer URL to be rejected")
 	}
 }
+
+func TestHTTPTreasuryPayoutRejectsNonLoopbackAndAmbiguousURLs(t *testing.T) {
+	tests := []string{
+		"https://treasury.example",
+		"http://localhost:8897",
+		"http://127.0.0.1:8897/v1/pay",
+		"http://user@127.0.0.1:8897",
+		"http://127.0.0.1:8897?target=remote",
+	}
+	for _, rawURL := range tests {
+		t.Run(rawURL, func(t *testing.T) {
+			if _, err := NewHTTPTreasuryPayoutService(rawURL, "secret", time.Second); err == nil {
+				t.Fatalf("expected treasury signer URL to be rejected: %s", rawURL)
+			}
+		})
+	}
+}
+
+func TestHTTPTreasuryPayoutRefusesRedirects(t *testing.T) {
+	destinationCalled := false
+	destination := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		destinationCalled = true
+	}))
+	defer destination.Close()
+
+	signer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, destination.URL, http.StatusTemporaryRedirect)
+	}))
+	defer signer.Close()
+
+	service, err := NewHTTPTreasuryPayoutService(signer.URL, "secret", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Status(t.Context()); err == nil {
+		t.Fatal("expected redirect response to be rejected")
+	}
+	if destinationCalled {
+		t.Fatal("treasury signer client followed a redirect")
+	}
+}

@@ -188,13 +188,6 @@ type BrandInfo struct {
 	FullTitle  string `json:"full_title,omitempty"`
 }
 
-// nodeStatusConfig is the subset of configuration the status endpoint needs.
-// Kept minimal so the handler does not require a full *config.Config on every
-// request (callers capture the snapshot once at startup).
-type nodeStatusConfig struct {
-	NodeRole config.NodeRole
-}
-
 // StatusHandler serves GET /api/v1/status.
 //
 // The handler is stateless: it reads from the Handlers struct (for node_id and
@@ -426,7 +419,7 @@ func buildMiningInfo(chainTip uint64) *MiningInfo {
 //  3. `QSDMPLUS_BUILD_VERSION` environment variable. Legacy alias
 //     from the Major Update §6 dual-emit secret-rebrand convention.
 //
-//  4. `runtime.Version()` (e.g. "go1.25.10"). Last-resort fallback
+//  4. `runtime.Version()` (e.g. "go1.25.11"). Last-resort fallback
 //     reached only when neither `-X` nor any env var was set. This
 //     value is the Go toolchain version, NOT the QSDM release
 //     version — it is a deliberately ugly fallback so operators

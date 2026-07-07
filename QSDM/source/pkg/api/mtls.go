@@ -148,10 +148,10 @@ func (b *NodeCertBundle) WriteBundleToDisk(dir string) (caCert, nodeCert, nodeKe
 	nodeCert = dir + "/node.crt"
 	nodeKey = dir + "/node.key"
 
-	if err = os.WriteFile(caCert, b.CACertPEM, 0644); err != nil {
+	if err = os.WriteFile(caCert, b.CACertPEM, 0600); err != nil {
 		return "", "", "", err
 	}
-	if err = os.WriteFile(nodeCert, b.NodeCertPEM, 0644); err != nil {
+	if err = os.WriteFile(nodeCert, b.NodeCertPEM, 0600); err != nil {
 		return "", "", "", err
 	}
 	if err = os.WriteFile(nodeKey, b.NodeKeyPEM, 0600); err != nil {

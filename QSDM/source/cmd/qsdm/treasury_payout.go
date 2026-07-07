@@ -77,7 +77,7 @@ func treasuryPayoutServiceFromEnv(urlKey, tokenKey, tokenFileKey string, require
 	token := strings.TrimSpace(os.Getenv(tokenKey))
 	tokenFile := strings.TrimSpace(os.Getenv(tokenFileKey))
 	if tokenFile != "" {
-		data, err := os.ReadFile(tokenFile)
+		data, err := os.ReadFile(tokenFile) // #nosec G304,G703 -- local token path is supplied by the trusted service operator.
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", tokenFileKey, err)
 		}

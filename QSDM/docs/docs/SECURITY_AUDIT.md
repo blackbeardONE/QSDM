@@ -468,15 +468,15 @@ Subsequent POST/PUT/DELETE/PATCH (cookie-session callers):
 - ✅ **58 dedicated security regression tests** (CSRF 24, CORS 7, request-timeout 3, error-sanitize 5, log-sanitize 4, token-revocation 6, versioning 5, security-headers 1, timestamp 7)
 - ✅ Full `go test ./...` runs clean across every package
 - ✅ `go vet ./...` clean
-- ✅ `gosec`, `staticcheck`, **and** `govulncheck` enforced on every push / PR via [`.github/workflows/security-scan.yml`](../../../.github/workflows/security-scan.yml). Each tool has a documented baseline ceiling (`gosec ≤11`, `staticcheck ≤12`, `govulncheck =0`) anchored on the v0.4.2 hardening pass and tightened after Kad-DHT removal — CI fails on any regression above the ceiling.
+- ✅ `gosec`, `staticcheck`, **and** `govulncheck` enforced on every push / PR via [`.github/workflows/security-scan.yml`](../../../.github/workflows/security-scan.yml). All three ceilings are zero after the July 2026 hardening pass, so CI fails on the first new medium-or-higher gosec finding, pkg/api staticcheck finding, or reachable vulnerability.
 
 **Baseline-disposition table** (each ceiling traces to specific tracked-for-follow-up findings that the hardening pass did NOT introduce):
 
 | Tool          | Ceiling | Findings covered (file → rule)                                                                                                                                                                                                                |
 |---------------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `gosec`       | ≤ 11    | `handlers_mining.go` G115 ×2 (`int(limit)` casts), `ngc_proof_persist.go` G304 ×4, `user_persist.go` G304, `token_registry.go` G304, `autocert.go` G710, `mtls.go` G306 ×2                                                                  |
-| `staticcheck` | ≤ 12    | `account_lockout.go` S1024/S1012, `handlers*.go` U1000 dead code, `handlers_mining.go` S1016, `handlers_status.go` U1000 `nodeStatusConfig`, plus 4 helper-fn U1000 in test files                                                            |
-| `govulncheck` | 0       | No accepted residual findings. `GO-2024-3218` / `CVE-2023-26248` was closed by removing Kad-DHT discovery and dialing explicit `QSDM_BOOTSTRAP_PEERS` only.                                      |
+| `gosec`       | 0       | No accepted residual findings. Operator-controlled local file paths carry narrow rule-specific dispositions; treasury URLs are literal-loopback-only and redirects are disabled. |
+| `staticcheck` | 0       | No accepted residual findings in `pkg/api/...`; stale helpers and dead compatibility code were removed. |
+| `govulncheck` | 0       | No accepted residual findings. Go 1.25.11 closes GO-2026-5037, GO-2026-5038, and GO-2026-5039; Kad-DHT removal previously closed GO-2024-3218 exposure. |
 
 **What is still pending:**
 - ⏳ External penetration testing

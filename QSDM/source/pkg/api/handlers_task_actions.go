@@ -142,7 +142,7 @@ func validateQSDMTaskActionEnvelope(env QSDMTaskActionEnvelope) error {
 
 func (h *Handlers) verifyQSDMTaskActionEnvelope(env QSDMTaskActionEnvelope) error {
 	if h.walletService == nil {
-		return fmt.Errorf(msgWalletServiceUnavailable)
+		return errors.New(msgWalletServiceUnavailable)
 	}
 	pubBytes, err := hex.DecodeString(env.PublicKey)
 	if err != nil {
@@ -172,27 +172,6 @@ func (h *Handlers) verifyQSDMTaskActionEnvelope(env QSDMTaskActionEnvelope) erro
 	return nil
 }
 
-func qsdmTaskActionExists(path, actionID string) (bool, error) {
-	file, err := os.Open(path)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
-	for scanner.Scan() {
-		var record QSDMTaskActionRecord
-		if err := json.Unmarshal(scanner.Bytes(), &record); err == nil && record.Envelope.ID == actionID {
-			return true, nil
-		}
-	}
-	return false, scanner.Err()
-}
-
 type qsdmTaskActionAppendResult struct {
 	Duplicate   bool
 	NonceReplay bool
@@ -200,7 +179,7 @@ type qsdmTaskActionAppendResult struct {
 }
 
 func inspectQSDMTaskActionLog(path string, env QSDMTaskActionEnvelope) (qsdmTaskActionAppendResult, error) {
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 -- path is the operator-configured task action ledger.
 	if os.IsNotExist(err) {
 		return qsdmTaskActionAppendResult{}, nil
 	}
@@ -247,7 +226,7 @@ func appendQSDMTaskAction(path string, record QSDMTaskActionRecord) (qsdmTaskAct
 	if err != nil {
 		return qsdmTaskActionAppendResult{}, err
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) // #nosec G304 -- path is the operator-configured task action ledger.
 	if err != nil {
 		return qsdmTaskActionAppendResult{}, err
 	}
@@ -259,7 +238,7 @@ func appendQSDMTaskAction(path string, record QSDMTaskActionRecord) (qsdmTaskAct
 }
 
 func readQSDMTaskActions(path, taskID, sender string, limit int) ([]QSDMTaskActionRecord, error) {
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 -- path is the operator-configured task action ledger.
 	if os.IsNotExist(err) {
 		return []QSDMTaskActionRecord{}, nil
 	}

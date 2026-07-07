@@ -1567,29 +1567,6 @@ func sha256Sum(b []byte) []byte {
 	return h[:]
 }
 
-// storageHasTransaction returns true iff the storage layer already
-// has a transaction with the given tx_id. Uses the indexed
-// GetTransaction primitive on StorageInterface (O(1) on the sqlite
-// backend — `WHERE tx_id = ? LIMIT 1`). On a backend miss the
-// underlying storage returns a wrapped error whose string contains
-// "transaction not found" — we treat that as (false, nil) rather
-// than propagating it, so the caller doesn't get a 500 on the
-// happy-path "not a duplicate" case.
-func (h *Handlers) storageHasTransaction(txID string) (bool, error) {
-	if h.storage == nil || txID == "" {
-		return false, nil
-	}
-	tx, err := h.storage.GetTransaction(txID)
-	if err != nil {
-		if strings.Contains(err.Error(), "transaction not found") ||
-			strings.Contains(err.Error(), "not found") {
-			return false, nil
-		}
-		return false, err
-	}
-	return tx != nil, nil
-}
-
 // GetAddress returns the wallet address
 func (h *Handlers) GetAddress(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

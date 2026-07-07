@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -147,10 +146,10 @@ type LocalDistinctAttestationSource interface {
 // A process that wants to opt out of serving the trust API entirely
 // leaves TrustDisabled = true; the handlers then return 404 per §8.5.3.
 type TrustConfig struct {
-	PeerProvider TrustPeerProvider
-	LocalSource  LocalAttestationSource
-	FreshWithin  time.Duration // zero → defaultFreshWithin
-	Clock        func() time.Time
+	PeerProvider  TrustPeerProvider
+	LocalSource   LocalAttestationSource
+	FreshWithin   time.Duration // zero → defaultFreshWithin
+	Clock         func() time.Time
 	TrustDisabled bool
 }
 
@@ -409,9 +408,9 @@ func mergePeer(peers []PeerAttestation, p PeerAttestation) []PeerAttestation {
 
 // trustHolder owns the process-wide aggregator instance.
 type trustHolder struct {
-	mu        sync.RWMutex
-	agg       *TrustAggregator
-	disabled  bool
+	mu       sync.RWMutex
+	agg      *TrustAggregator
+	disabled bool
 }
 
 var trustSingleton = &trustHolder{}
@@ -603,16 +602,3 @@ var (
 	_ LocalAttestationSource         = (*MonitoringLocalSource)(nil)
 	_ LocalDistinctAttestationSource = (*MonitoringLocalSource)(nil)
 )
-
-// humanDuration converts a time.Duration to something that both a human
-// and time.ParseDuration can consume. Exposed for tests.
-func humanDuration(d time.Duration) string {
-	if d == 0 {
-		return "0s"
-	}
-	if d%time.Minute == 0 {
-		return fmt.Sprintf("%dm", int(d/time.Minute))
-	}
-	return d.String()
-}
-

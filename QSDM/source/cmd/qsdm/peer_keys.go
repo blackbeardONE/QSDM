@@ -419,7 +419,7 @@ func LoadPeerKeysFromEnv() (*PeerKeyRegistry, int, error) {
 		added += n
 	}
 	if path := strings.TrimSpace(os.Getenv("QSDM_PEER_ATTESTER_KEYS_FILE")); path != "" {
-		body, err := os.ReadFile(path)
+		body, err := os.ReadFile(path) // #nosec G304,G703 -- path comes only from the trusted process environment at startup.
 		if err != nil {
 			return nil, 0, fmt.Errorf("peer-keys: read %s: %w", path, err)
 		}

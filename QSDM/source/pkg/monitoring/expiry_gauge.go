@@ -185,7 +185,7 @@ func SecretExpiryCollector() MetricCollector {
 // listener loads its cert/key pair, and by the autocert path on
 // renewal.
 func RecordCertExpiryFromFile(kind SecretExpiryKind, subject, path string) (time.Time, error) {
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 -- certificate path is trusted local monitoring configuration.
 	if err != nil {
 		return time.Time{}, fmt.Errorf("read cert: %w", err)
 	}

@@ -32,7 +32,7 @@ func (h *Handlers) SaveTokenRegistry(path string) error {
 // LoadTokenRegistry reads previously created tokens from path.
 // Missing file is not an error (returns 0, nil).
 func (h *Handlers) LoadTokenRegistry(path string) (int, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- registry path is supplied by the trusted service operator at startup.
 	if err != nil {
 		if os.IsNotExist(err) {
 			return 0, nil

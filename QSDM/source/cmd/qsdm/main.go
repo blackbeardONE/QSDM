@@ -3180,7 +3180,7 @@ func loadOrCreateChallengeKey(path string) (signerID string, key []byte, err err
 	if path == "" {
 		return "", nil, errors.New("empty challenge key path")
 	}
-	if existing, readErr := os.ReadFile(path); readErr == nil {
+	if existing, readErr := os.ReadFile(path); readErr == nil { // #nosec G304 -- startup-only operator-configured challenge key path.
 		if len(existing) != challengeKeyLen {
 			return "", nil, fmt.Errorf(
 				"challenge key at %s has length %d, expected %d (delete the file to regenerate)",
@@ -3221,16 +3221,16 @@ func deriveChallengeSignerID(key []byte) string {
 // derivation lands (Phase 4.6), this helper is deleted and
 // the WorkSet comes from chain state.
 func bringUpWorkSet() mining.WorkSet {
-	mkCell := func(prefix byte, idx int) mining.ParentCellRef {
+	mkCell := func(prefix, idx byte) mining.ParentCellRef {
 		id := []byte{
 			0xC0, 0xFF, 0xEE, 0x01,
-			prefix, byte(idx),
+			prefix, idx,
 			0xDE, 0xAD, 0xBE, 0xEF,
 			0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		}
 		var ch [32]byte
 		ch[0] = prefix
-		ch[1] = byte(idx)
+		ch[1] = idx
 		ch[2] = 0xA5
 		return mining.ParentCellRef{ID: id, ContentHash: ch}
 	}

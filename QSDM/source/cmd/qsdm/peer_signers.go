@@ -64,13 +64,13 @@ func LoadPeerSignersFile(path string) ([]PeerSigner, error) {
 	if path == "" {
 		return nil, nil
 	}
-	if _, err := os.Stat(path); err != nil {
+	if _, err := os.Stat(path); err != nil { // #nosec G703 -- operator-supplied startup configuration path, never request input.
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("peer-signers: stat %s: %w", path, err)
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304,G703 -- operator-supplied startup configuration path, never request input.
 	if err != nil {
 		return nil, fmt.Errorf("peer-signers: read %s: %w", path, err)
 	}

@@ -125,12 +125,12 @@ func NewHTTPTreasuryPayoutService(baseURL, token string, timeout time.Duration) 
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return nil, fmt.Errorf("treasury signer URL must use http or https")
 	}
-	if parsed.Scheme == "http" {
-		host := strings.ToLower(parsed.Hostname())
-		ip := net.ParseIP(host)
-		if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-			return nil, fmt.Errorf("plain HTTP treasury signer URL must use a loopback host")
-		}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+		return nil, fmt.Errorf("treasury signer URL must not contain credentials, a path, query, or fragment")
+	}
+	hostIP := net.ParseIP(parsed.Hostname())
+	if hostIP == nil || !hostIP.IsLoopback() {
+		return nil, fmt.Errorf("treasury signer URL must use a literal loopback IP address")
 	}
 	if timeout <= 0 {
 		timeout = 10 * time.Second
@@ -138,7 +138,12 @@ func NewHTTPTreasuryPayoutService(baseURL, token string, timeout time.Duration) 
 	return &HTTPTreasuryPayoutService{
 		baseURL: baseURL,
 		token:   token,
-		client:  &http.Client{Timeout: timeout},
+		client: &http.Client{
+			Timeout: timeout,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}, nil
 }
 
@@ -204,6 +209,8 @@ func (s *HTTPTreasuryPayoutService) doJSON(ctx context.Context, method, path str
 		}
 		body = bytes.NewReader(encoded)
 	}
+	// #nosec G704 -- the constructor accepts only literal loopback base URLs;
+	// path is selected by internal call sites and redirects are disabled.
 	req, err := http.NewRequestWithContext(ctx, method, s.baseURL+path, body)
 	if err != nil {
 		return err
@@ -215,6 +222,8 @@ func (s *HTTPTreasuryPayoutService) doJSON(ctx context.Context, method, path str
 	if authenticated {
 		req.Header.Set("Authorization", "Bearer "+s.token)
 	}
+	// #nosec G704 -- req is restricted to the constructor-validated loopback
+	// signer endpoint and this client refuses every redirect.
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("treasury signer request failed: %w", err)

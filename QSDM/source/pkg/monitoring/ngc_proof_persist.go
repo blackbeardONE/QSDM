@@ -94,12 +94,12 @@ type ngcPersistedLine struct {
 }
 
 var (
-	ngcPersistMu        sync.Mutex
-	ngcPersistPath      string
-	ngcPersistSoftCap   int
-	ngcPersistAppends   int          // monotonic; reset by compactLocked
-	ngcPersistOnDisk    atomic.Int64 // running record count for the dashboard gauge
-	ngcPersistErrors    atomic.Uint64
+	ngcPersistMu      sync.Mutex
+	ngcPersistPath    string
+	ngcPersistSoftCap int
+	ngcPersistAppends int          // monotonic; reset by compactLocked
+	ngcPersistOnDisk  atomic.Int64 // running record count for the dashboard gauge
+	ngcPersistErrors  atomic.Uint64
 )
 
 // SetNGCProofPersistPath enables JSONL persistence of accepted NGC
@@ -144,7 +144,7 @@ func SetNGCProofPersistPath(path string, softCap int) error {
 	// O_APPEND open does not race a permissive default. Done once
 	// at configuration time so the hot path skips the chmod
 	// syscall.
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600) // #nosec G304 -- path is internal persistence configuration.
 	if err != nil {
 		return fmt.Errorf("ngc proof persist: open %q: %w", path, err)
 	}
@@ -261,7 +261,7 @@ func loadNGCProofsFromDiskLocked() ([]ngcPersistedLine, error) {
 	if ngcPersistPath == "" {
 		return nil, nil
 	}
-	f, err := os.Open(ngcPersistPath)
+	f, err := os.Open(ngcPersistPath) // #nosec G304 -- process-private persistence path set during trusted startup.
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
@@ -328,7 +328,7 @@ func appendNGCProofToDisk(entry ngcStoredProof) {
 		return
 	}
 
-	f, err := os.OpenFile(ngcPersistPath, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o600)
+	f, err := os.OpenFile(ngcPersistPath, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- process-private persistence path set during trusted startup.
 	if err != nil {
 		ngcPersistErrors.Add(1)
 		return
@@ -408,7 +408,7 @@ func compactNGCProofsOnDiskLocked() error {
 	keep := recs[len(recs)-ngcPersistSoftCap:]
 
 	tmp := ngcPersistPath + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) // #nosec G304 -- tmp derives only from the trusted persistence path.
 	if err != nil {
 		return fmt.Errorf("ngc proof persist: create tmp %q: %w", tmp, err)
 	}

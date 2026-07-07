@@ -270,7 +270,7 @@ capture_step '10_soak_summary.txt' 'most recent soak summaries (best-effort)' so
 #  2. 03_go_mod_verify    - must end "all modules verified".
 #  3. 04_govulncheck      - must report zero reachable findings.
 #  4. 06_go_test_full     - last lines must show ok / no FAIL.
-#  5. 09_binaries         - every cmd should report go1.25.10+ banner.
+#  5. 09_binaries         - every cmd should report go1.25.11+ banner.
 #  6. 10_soak_summary     - mempool + pubsub soaks PASS at >= 10 min.
 EOF
 } >"$OUT_DIR/00_MANIFEST.txt"

@@ -8,9 +8,9 @@ import (
 
 // AccountLockoutManager manages account lockout after failed login attempts
 type AccountLockoutManager struct {
-	failedAttempts map[string]*lockoutInfo
-	mu             sync.RWMutex
-	maxAttempts    int           // Maximum failed attempts before lockout
+	failedAttempts  map[string]*lockoutInfo
+	mu              sync.RWMutex
+	maxAttempts     int           // Maximum failed attempts before lockout
 	lockoutDuration time.Duration // How long to lock account
 	windowDuration  time.Duration // Time window for counting attempts
 }
@@ -24,10 +24,10 @@ type lockoutInfo struct {
 // NewAccountLockoutManager creates a new account lockout manager
 func NewAccountLockoutManager() *AccountLockoutManager {
 	return &AccountLockoutManager{
-		failedAttempts: make(map[string]*lockoutInfo),
-		maxAttempts:     5,                    // Lock after 5 failed attempts
-		lockoutDuration: 15 * time.Minute,    // Lock for 15 minutes
-		windowDuration:  15 * time.Minute,    // Count attempts within 15 minutes
+		failedAttempts:  make(map[string]*lockoutInfo),
+		maxAttempts:     5,                // Lock after 5 failed attempts
+		lockoutDuration: 15 * time.Minute, // Lock for 15 minutes
+		windowDuration:  15 * time.Minute, // Count attempts within 15 minutes
 	}
 }
 
@@ -106,7 +106,7 @@ func (alm *AccountLockoutManager) IsLocked(identifier string) (bool, error) {
 		return false, nil
 	}
 
-	remaining := info.lockedUntil.Sub(time.Now())
+	remaining := time.Until(*info.lockedUntil)
 	return true, fmt.Errorf("account locked due to too many failed login attempts. Try again in %v", remaining.Round(time.Second))
 }
 
@@ -126,7 +126,7 @@ func (alm *AccountLockoutManager) GetRemainingAttempts(identifier string) int {
 	}
 
 	// Check if window expired
-	if time.Now().Sub(info.lastAttempt) > alm.windowDuration {
+	if time.Since(info.lastAttempt) > alm.windowDuration {
 		return alm.maxAttempts
 	}
 
@@ -158,4 +158,3 @@ func (alm *AccountLockoutManager) GetLockoutInfo(identifier string) (attempts in
 
 	return attempts, lockedUntil, nil
 }
-

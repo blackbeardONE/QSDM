@@ -1,6 +1,6 @@
 module github.com/blackbeardONE/QSDM
 
-go 1.25.10
+go 1.25.11
 
 replace github.com/wasmerio/wasmer-go-patched => ./wasmer-go-patched
 

@@ -190,7 +190,7 @@ func loadQSDMTasksFromRegistry() (QSDMTasksListResponse, error) {
 		}, nil
 	}
 
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304,G703 -- path is selected from trusted startup configuration, never the request.
 	if err != nil {
 		return QSDMTasksListResponse{}, err
 	}

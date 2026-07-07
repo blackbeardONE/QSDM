@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -533,7 +534,7 @@ func (h *Handlers) validateReferralRegistrationEnvelope(env ReferralRegistration
 
 func (h *Handlers) verifyReferralRegistrationEnvelope(env ReferralRegistrationEnvelope) error {
 	if h.walletService == nil {
-		return fmt.Errorf(msgWalletServiceUnavailable)
+		return errors.New(msgWalletServiceUnavailable)
 	}
 	pubBytes, err := hex.DecodeString(env.PublicKey)
 	if err != nil {
@@ -575,7 +576,7 @@ func loadReferralLedgerFile(path string) (referralLedgerFile, error) {
 	if strings.TrimSpace(path) == "" {
 		return store, fmt.Errorf("referral ledger path is empty")
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is the operator-configured referral ledger, not request data.
 	if os.IsNotExist(err) {
 		return store, nil
 	}

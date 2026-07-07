@@ -242,20 +242,7 @@ func (h *Handlers) MiningEmissionHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	snap := probe.Snapshot()
-	resp := MiningEmissionResponse{
-		ChainTip:               snap.ChainTip,
-		MiningCapDust:          snap.MiningCapDust,
-		BlocksPerEpoch:         snap.BlocksPerEpoch,
-		TargetBlockTimeSeconds: snap.TargetBlockTimeSeconds,
-		CurrentEpoch:           snap.CurrentEpoch,
-		BlockRewardDust:        snap.BlockRewardDust,
-		BlockRewardCell:        snap.BlockRewardCell,
-		EmittedDust:            snap.EmittedDust,
-		EmittedCell:            snap.EmittedCell,
-		RemainingDust:          snap.RemainingDust,
-		NextHalvingHeight:      snap.NextHalvingHeight,
-		NextHalvingETASeconds:  snap.NextHalvingETASeconds,
-	}
+	resp := MiningEmissionResponse(snap)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -458,7 +445,10 @@ func (h *Handlers) MiningReceiptsListHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	receipts := probe.ListByHeightRange(from, to, int(limit))
+	// #nosec G115 -- limit is clamped to the small int constant
+	// MiningReceiptsListMaxLimit before this conversion.
+	limitInt := int(limit)
+	receipts := probe.ListByHeightRange(from, to, limitInt)
 	if receipts == nil {
 		receipts = []TxReceiptView{}
 	}
@@ -467,7 +457,7 @@ func (h *Handlers) MiningReceiptsListHandler(w http.ResponseWriter, r *http.Requ
 		Tip:      tip,
 		From:     from,
 		To:       to,
-		Limit:    int(limit),
+		Limit:    limitInt,
 		Receipts: receipts,
 	})
 }
@@ -831,8 +821,11 @@ func (h *Handlers) ChainBlocksHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	blocks := probe.BlocksInRange(from, to)
-	if len(blocks) > int(limit) {
-		blocks = blocks[:int(limit)]
+	// #nosec G115 -- limit is clamped to ChainBlocksListMaxLimit before
+	// conversion, which is far below the platform int maximum.
+	limitInt := int(limit)
+	if len(blocks) > limitInt {
+		blocks = blocks[:limitInt]
 	}
 	if blocks == nil {
 		blocks = []json.RawMessage{}
