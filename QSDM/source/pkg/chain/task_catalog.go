@@ -69,6 +69,7 @@ type TaskManifest struct {
 	SourceURL          string              `json:"source_url,omitempty"`
 	IconURL            string              `json:"icon_url,omitempty"`
 	Tags               []string            `json:"tags,omitempty"`
+	AuthorizedRelayIDs []string            `json:"authorized_relay_ids,omitempty"`
 }
 
 func isTaskCatalogAction(action string) bool {
@@ -103,6 +104,7 @@ func decodeTaskManifest(action TaskAction) (TaskManifest, error) {
 	manifest.SourceURL = strings.TrimSpace(manifest.SourceURL)
 	manifest.IconURL = strings.TrimSpace(manifest.IconURL)
 	manifest.Tags = normalizeTaskManifestTags(manifest.Tags)
+	manifest.AuthorizedRelayIDs = normalizeTaskRelayIDs(manifest.AuthorizedRelayIDs)
 	return manifest, validateTaskManifest(action, manifest)
 }
 
@@ -136,6 +138,15 @@ func validateTaskManifest(action TaskAction, manifest TaskManifest) error {
 	}
 	if len(manifest.Tags) > 16 {
 		return errors.New("chain: task manifest supports at most 16 tags")
+	}
+	if len(manifest.AuthorizedRelayIDs) > 16 {
+		return errors.New("chain: task manifest supports at most 16 authorized Relay ids")
+	}
+	for _, relayID := range manifest.AuthorizedRelayIDs {
+		decoded, err := hex.DecodeString(relayID)
+		if err != nil || len(decoded) != sha256.Size {
+			return errors.New("chain: authorized Relay ids must be 32-byte hexadecimal key fingerprints")
+		}
 	}
 	for _, tag := range manifest.Tags {
 		if len(tag) == 0 || len(tag) > 32 || !taskCapabilityPattern.MatchString(tag) {
@@ -217,12 +228,29 @@ func normalizeTaskManifestTags(tags []string) []string {
 	return out
 }
 
+func normalizeTaskRelayIDs(ids []string) []string {
+	seen := map[string]struct{}{}
+	for _, raw := range ids {
+		id := strings.ToLower(strings.TrimSpace(raw))
+		if id != "" {
+			seen[id] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for id := range seen {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func cloneTaskManifest(manifest *TaskManifest) *TaskManifest {
 	if manifest == nil {
 		return nil
 	}
 	clone := *manifest
 	clone.Tags = append([]string(nil), manifest.Tags...)
+	clone.AuthorizedRelayIDs = append([]string(nil), manifest.AuthorizedRelayIDs...)
 	return &clone
 }
 

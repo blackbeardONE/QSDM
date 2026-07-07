@@ -56,6 +56,7 @@ export interface QsdmTaskManifest {
   source_url?: string;
   icon_url?: string;
   tags?: string[];
+  authorized_relay_ids?: string[];
 }
 
 export interface RawTaskData {

@@ -113,6 +113,7 @@ describe('QSDM Hive IPC validation', () => {
         audit_window: 15,
         source_url: 'https://qsdm.tech/docs/#/shared-edge',
         tags: ['qsdm', 'cell'],
+        authorized_relay_ids: ['a'.repeat(64)],
       },
     };
     expect(() =>
@@ -143,6 +144,17 @@ describe('QSDM Hive IPC validation', () => {
         },
       ])
     ).toThrow(/absolute HTTPS URL/);
+    expect(() =>
+      validateIpcPayload(Endpoints.MANAGE_QSDM_TASK_CATALOG, [
+        {
+          ...request,
+          draft: {
+            ...request.draft,
+            authorized_relay_ids: ['not-a-relay-id'],
+          },
+        },
+      ])
+    ).toThrow(/authorized_relay_ids/);
   });
 
   it('requires imported QSDM signer wallets to be JSON objects', () => {

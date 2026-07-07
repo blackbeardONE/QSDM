@@ -364,7 +364,7 @@ describe('qsdmSystemTasks', () => {
     );
   });
 
-  it('creates Mother Hive as a QSDM Hive role with fail-closed settlement', () => {
+  it('creates Mother Hive with chain-enforced 70/15/15 settlement', () => {
     const task = createQsdmMotherHiveSystemTask();
 
     expect(QSDM_MOTHER_HIVE_CONTRIBUTOR_SHARE_PERCENT).toBe(70);
@@ -394,18 +394,20 @@ describe('qsdmSystemTasks', () => {
         contributor_share_percent: QSDM_MOTHER_HIVE_CONTRIBUTOR_SHARE_PERCENT,
         mother_hive_share_percent: QSDM_MOTHER_HIVE_OPERATOR_SHARE_PERCENT,
         ecosystem_share_percent: QSDM_MOTHER_HIVE_ECOSYSTEM_SHARE_PERCENT,
-        settlement_active: false,
+        settlement_active: true,
+        settlement_protocol: 'qsdm-edge-settlement/v1',
       })
     );
-    expect(task.task_description).toContain(
-      'not transparent operating-system devices'
-    );
+    expect(task.task_description).toContain('globally replay-protected');
   });
 
   it('fails closed when Mother Hive has a configured relay', () => {
     const script = createQsdmEdgeWorkerScript();
 
     expect(script).toContain('const relayRequired = Boolean(relayTokenFile);');
+    expect(script).toContain('source: settlementSource');
+    expect(script).toContain("'/v1/settlement/bind'");
+    expect(script).toContain("'QSDM-EDGE-RELAY-ID\\0'");
     expect(script).toContain('if (relayRequired) throw error;');
     expect(script).toContain(
       'QSDM Mother Hive waiting for a verified relay receipt'

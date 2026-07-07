@@ -86,7 +86,7 @@ unresponsive and worsen network or desktop stalls. Verified capacity receipts
 show that an Agent is alive and eligible; they are not paid work when the active
 job count is zero.
 
-The target gross workload-revenue allocation is **70% to contributing Agent owners, 15% to the Mother Hive operator, and 15% to the CELL ecosystem reserve**. The ecosystem share must settle to a dedicated, publicly disclosed pooled-compute reserve wallet; it must not use the referral, onboarding, integration, or Mother Hive wallet. No ecosystem reserve address is configured on QSDM Core yet, so Hive displays **Not configured on QSDM Core**. Automatic CELL settlement is intentionally disabled until Agents bind payout wallets by signature, Relay proofs are verifiable by QSDM Core, the ecosystem reserve address is published, and each workload is backed by funded escrow. Hive does not display those target shares as earned CELL before those controls exist.
+For an authorized Relay batch, QSDM Core atomically allocates **70% to the contributor-owner wallet, 15% to the Mother Hive operator, and 15% to the CELL ecosystem reserve** at `651a79b2b1790820dd73bda81be24057e1bc27377c1f1117c6db2ab79dc038ea`. Agents remain walletless, so the paired Hive binds the owner wallet for the trusted group. Every validator verifies the Relay's ML-DSA-87 signature, manager-approved Relay ID, payout binding, round, time window, and global proof/receipt replay state. No payout occurs unless the corresponding task reward pool already contains enough CELL.
 
 Hive includes the matching agent and CUDA helper on Windows and Linux. Standalone bundles for additional laboratory computers are available from the [Hive download page](https://qsdm.tech/download.html).
 

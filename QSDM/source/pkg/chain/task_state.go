@@ -6,17 +6,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/blackbeardONE/QSDM/pkg/edgepool"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 )
 
 const TaskContractID = "qsdm/tasks/v1"
 
 const taskAmountEpsilon = 1e-9
+
+const pooledSettlementMaxSlotLag uint64 = 4
 
 var (
 	ErrDuplicateTaskAction        = errors.New("chain: duplicate task action")
@@ -31,7 +36,8 @@ var (
 	// receipt set to payout wallets, and reject receipt reuse globally. The
 	// current edge-pool HMAC proves authenticity only to the paired Hive that
 	// shares the secret; it is not independently verifiable by QSDM validators.
-	ErrPooledResourceProofNotEnforceable = errors.New("chain: pooled resource proof settlement is not yet consensus-enforceable")
+	ErrPooledResourceProofNotEnforceable     = errors.New("chain: pooled resource proof settlement is not yet consensus-enforceable")
+	ErrPooledSettlementRequiresEconomicApply = errors.New("chain: pooled resource settlement requires the economic task transaction path")
 	// ErrLegacyResourceWorkerProof identifies the pre-activation worker proof
 	// shape that omitted the resource discriminator. Consensus accepts it only
 	// while replaying historical blocks below ResourceWorkerProofActivationHeight.
@@ -77,16 +83,33 @@ type TaskParticipantState struct {
 }
 
 type TaskSubmissionState struct {
-	ActionID        string  `json:"action_id"`
-	Sender          string  `json:"sender"`
-	Round           uint64  `json:"round"`
-	Slot            uint64  `json:"slot"`
-	SubmissionValue string  `json:"submission_value"`
-	Payload         string  `json:"payload,omitempty"`
-	RewardAmount    float64 `json:"reward_amount,omitempty"`
-	Claimed         bool    `json:"claimed"`
-	ClaimedAt       string  `json:"claimed_at,omitempty"`
-	Timestamp       string  `json:"timestamp"`
+	ActionID                    string  `json:"action_id"`
+	Sender                      string  `json:"sender"`
+	Round                       uint64  `json:"round"`
+	Slot                        uint64  `json:"slot"`
+	SubmissionValue             string  `json:"submission_value"`
+	Payload                     string  `json:"payload,omitempty"`
+	RewardAmount                float64 `json:"reward_amount,omitempty"`
+	Claimed                     bool    `json:"claimed"`
+	ClaimedAt                   string  `json:"claimed_at,omitempty"`
+	Timestamp                   string  `json:"timestamp"`
+	SettlementProofID           string  `json:"settlement_proof_id,omitempty"`
+	SettlementCoordinatorID     string  `json:"settlement_coordinator_id,omitempty"`
+	SettlementContributorWallet string  `json:"settlement_contributor_wallet,omitempty"`
+	SettlementMotherHiveWallet  string  `json:"settlement_mother_hive_wallet,omitempty"`
+	SettlementEcosystemWallet   string  `json:"settlement_ecosystem_wallet,omitempty"`
+	SettlementContributorAmount float64 `json:"settlement_contributor_amount,omitempty"`
+	SettlementMotherHiveAmount  float64 `json:"settlement_mother_hive_amount,omitempty"`
+	SettlementEcosystemAmount   float64 `json:"settlement_ecosystem_amount,omitempty"`
+}
+
+type PooledRelayBinding struct {
+	CoordinatorID     string `json:"coordinator_id"`
+	RelayPublicKey    string `json:"relay_public_key"`
+	ContributorWallet string `json:"contributor_wallet"`
+	MotherHiveWallet  string `json:"mother_hive_wallet"`
+	EcosystemWallet   string `json:"ecosystem_wallet"`
+	BoundByActionID   string `json:"bound_by_action_id"`
 }
 
 type TaskState struct {
@@ -110,10 +133,20 @@ type TaskState struct {
 }
 
 type TaskStateStore struct {
-	mu          sync.RWMutex
-	tasks       map[string]*TaskState
-	actionIDs   map[string]struct{}
-	senderNonce map[string]uint64
+	mu                    sync.RWMutex
+	tasks                 map[string]*TaskState
+	actionIDs             map[string]struct{}
+	senderNonce           map[string]uint64
+	pooledRelayBindings   map[string]PooledRelayBinding
+	settledPooledProofs   map[string]string
+	settledPooledReceipts map[string]string
+}
+
+type pooledResourceSettlement struct {
+	Proof             edgepool.PoolProof
+	ContributorAmount float64
+	MotherHiveAmount  float64
+	EcosystemAmount   float64
 }
 
 type taskActionPayload struct {
@@ -158,46 +191,50 @@ const ResourceWorkerProofActivationHeight uint64 = 155_103
 
 func NewTaskStateStore() *TaskStateStore {
 	return &TaskStateStore{
-		tasks:       map[string]*TaskState{},
-		actionIDs:   map[string]struct{}{},
-		senderNonce: map[string]uint64{},
+		tasks:                 map[string]*TaskState{},
+		actionIDs:             map[string]struct{}{},
+		senderNonce:           map[string]uint64{},
+		pooledRelayBindings:   map[string]PooledRelayBinding{},
+		settledPooledProofs:   map[string]string{},
+		settledPooledReceipts: map[string]string{},
 	}
 }
 
 func (s *TaskStateStore) ApplyAction(action TaskAction) error {
-	return s.applyAction(action, false)
+	_, err := s.applyAction(action, false, false, 0)
+	return err
 }
 
-func (s *TaskStateStore) applyAction(action TaskAction, allowLegacyResourceProof bool) error {
+func (s *TaskStateStore) applyAction(action TaskAction, allowLegacyResourceProof, allowPooledSettlement bool, currentHeight uint64) (*pooledResourceSettlement, error) {
 	if s == nil {
-		return errors.New("chain: nil TaskStateStore")
+		return nil, errors.New("chain: nil TaskStateStore")
 	}
 	if action.ID == "" {
-		return errors.New("chain: task action id required")
+		return nil, errors.New("chain: task action id required")
 	}
 	if action.Sender == "" {
-		return errors.New("chain: task action sender required")
+		return nil, errors.New("chain: task action sender required")
 	}
 	if action.TaskID == "" {
-		return errors.New("chain: task action task_id required")
+		return nil, errors.New("chain: task action task_id required")
 	}
 	if action.Action == "" {
-		return errors.New("chain: task action action required")
+		return nil, errors.New("chain: task action action required")
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if _, exists := s.actionIDs[action.ID]; exists {
-		return ErrDuplicateTaskAction
+		return nil, ErrDuplicateTaskAction
 	}
 	if action.Nonce > 0 && s.senderNonce[action.Sender] >= action.Nonce {
-		return ErrTaskActionNonceReplay
+		return nil, ErrTaskActionNonceReplay
 	}
 	if isTaskCatalogAction(action.Action) {
 		task, err := s.applyTaskCatalogActionLocked(action)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		task.LastAction = action.Action
 		task.LastActionID = action.ID
@@ -206,7 +243,7 @@ func (s *TaskStateStore) applyAction(action TaskAction, allowLegacyResourceProof
 		if action.Nonce > 0 {
 			s.senderNonce[action.Sender] = action.Nonce
 		}
-		return nil
+		return nil, nil
 	}
 
 	task := s.getOrCreateTaskLocked(action.TaskID)
@@ -214,11 +251,12 @@ func (s *TaskStateStore) applyAction(action TaskAction, allowLegacyResourceProof
 	if participant.Sender == "" {
 		participant.Sender = action.Sender
 	}
+	var settlement *pooledResourceSettlement
 
 	switch action.Action {
 	case "start":
 		if participant.Stake <= 0 {
-			return ErrTaskActionRequiresStake
+			return nil, ErrTaskActionRequiresStake
 		}
 		if !participant.Running {
 			task.RunningCount++
@@ -233,18 +271,18 @@ func (s *TaskStateStore) applyAction(action TaskAction, allowLegacyResourceProof
 		participant.LastStoppedAt = action.Timestamp
 	case "stake":
 		if action.Amount <= 0 {
-			return errors.New("chain: stake action amount must be positive")
+			return nil, errors.New("chain: stake action amount must be positive")
 		}
 		participant.Stake += action.Amount
 		task.TotalStakeAmount += action.Amount
 	case "fund":
 		if action.Amount <= 0 {
-			return errors.New("chain: fund action amount must be positive")
+			return nil, errors.New("chain: fund action amount must be positive")
 		}
 		task.RewardPoolAmount += action.Amount
 	case "unstake", "withdraw":
 		if action.Amount <= 0 {
-			return errors.New("chain: unstake/withdraw action amount must be positive")
+			return nil, errors.New("chain: unstake/withdraw action amount must be positive")
 		}
 		delta := action.Amount
 		if delta > participant.Stake {
@@ -256,15 +294,20 @@ func (s *TaskStateStore) applyAction(action TaskAction, allowLegacyResourceProof
 			task.TotalStakeAmount = 0
 		}
 	case "submit":
-		if err := s.applySubmissionLocked(task, &participant, action, allowLegacyResourceProof); err != nil {
-			return err
+		var err error
+		settlement, err = s.applySubmissionLocked(task, &participant, action, allowLegacyResourceProof, allowPooledSettlement, currentHeight)
+		if err != nil {
+			return nil, err
 		}
 		participant.SubmissionCount++
+		if settlement != nil {
+			participant.ClaimCount++
+		}
 	case "claim":
 		if _, err := s.applyClaimLocked(task, &participant, action); errors.Is(err, ErrNoTaskReward) {
 			break
 		} else if err != nil {
-			return err
+			return nil, err
 		}
 		participant.ClaimCount++
 	case "migrate":
@@ -274,7 +317,7 @@ func (s *TaskStateStore) applyAction(action TaskAction, allowLegacyResourceProof
 			task.MigratedTo = payload.MigratedTo
 		}
 	default:
-		return fmt.Errorf("chain: unsupported task action %q", action.Action)
+		return nil, fmt.Errorf("chain: unsupported task action %q", action.Action)
 	}
 
 	participant.LastAction = action.Action
@@ -288,7 +331,7 @@ func (s *TaskStateStore) applyAction(action TaskAction, allowLegacyResourceProof
 	if action.Nonce > 0 {
 		s.senderNonce[action.Sender] = action.Nonce
 	}
-	return nil
+	return settlement, nil
 }
 
 func (s *TaskStateStore) ApplyActions(actions []TaskAction) error {
@@ -316,10 +359,21 @@ func (s *TaskStateStore) ApplyHistoricalTx(tx *mempool.Tx, height uint64) error 
 	if err != nil {
 		return err
 	}
-	return s.applyAction(action, height < ResourceWorkerProofActivationHeight)
+	_, err = s.applyAction(action, height < ResourceWorkerProofActivationHeight, true, height)
+	return err
 }
 
 func (s *TaskStateStore) ApplyEconomicTx(tx *mempool.Tx, accounts *AccountStore) error {
+	return s.applyEconomicTx(tx, accounts, 0)
+}
+
+// ApplyEconomicTxAtHeight applies a task transaction with the consensus block
+// height needed to bind pooled settlements to a real task round.
+func (s *TaskStateStore) ApplyEconomicTxAtHeight(tx *mempool.Tx, accounts *AccountStore, currentHeight uint64) error {
+	return s.applyEconomicTx(tx, accounts, currentHeight)
+}
+
+func (s *TaskStateStore) applyEconomicTx(tx *mempool.Tx, accounts *AccountStore, currentHeight uint64) error {
 	if accounts == nil {
 		return errors.New("chain: nil AccountStore for task action")
 	}
@@ -374,7 +428,8 @@ func (s *TaskStateStore) ApplyEconomicTx(tx *mempool.Tx, accounts *AccountStore)
 	if err := accounts.ChargeAndBumpNonce(action.Sender, charge, tx.Nonce); err != nil {
 		return err
 	}
-	if err := s.ApplyAction(action); err != nil {
+	settlement, err := s.applyAction(action, false, true, currentHeight)
+	if err != nil {
 		return restore(err)
 	}
 	if release > 0 {
@@ -382,6 +437,11 @@ func (s *TaskStateStore) ApplyEconomicTx(tx *mempool.Tx, accounts *AccountStore)
 	}
 	if claimReward > 0 {
 		accounts.Credit(action.Sender, claimReward)
+	}
+	if settlement != nil {
+		accounts.Credit(settlement.Proof.ContributorWallet, settlement.ContributorAmount)
+		accounts.Credit(settlement.Proof.MotherHiveWallet, settlement.MotherHiveAmount)
+		accounts.Credit(settlement.Proof.EcosystemWallet, settlement.EcosystemAmount)
 	}
 	return nil
 }
@@ -513,6 +573,15 @@ func (s *TaskStateStore) ChainReplayClone() ChainReplayApplier {
 	for sender, nonce := range s.senderNonce {
 		clone.senderNonce[sender] = nonce
 	}
+	for coordinatorID, binding := range s.pooledRelayBindings {
+		clone.pooledRelayBindings[coordinatorID] = binding
+	}
+	for proofID, actionID := range s.settledPooledProofs {
+		clone.settledPooledProofs[proofID] = actionID
+	}
+	for receiptID, proofID := range s.settledPooledReceipts {
+		clone.settledPooledReceipts[receiptID] = proofID
+	}
 	return clone
 }
 
@@ -538,6 +607,18 @@ func (s *TaskStateStore) RestoreFromChainReplay(from ChainReplayApplier) error {
 	for sender, nonce := range other.senderNonce {
 		senderNonce[sender] = nonce
 	}
+	pooledRelayBindings := make(map[string]PooledRelayBinding, len(other.pooledRelayBindings))
+	for coordinatorID, binding := range other.pooledRelayBindings {
+		pooledRelayBindings[coordinatorID] = binding
+	}
+	settledPooledProofs := make(map[string]string, len(other.settledPooledProofs))
+	for proofID, actionID := range other.settledPooledProofs {
+		settledPooledProofs[proofID] = actionID
+	}
+	settledPooledReceipts := make(map[string]string, len(other.settledPooledReceipts))
+	for receiptID, proofID := range other.settledPooledReceipts {
+		settledPooledReceipts[receiptID] = proofID
+	}
 	other.mu.RUnlock()
 
 	s.mu.Lock()
@@ -545,6 +626,9 @@ func (s *TaskStateStore) RestoreFromChainReplay(from ChainReplayApplier) error {
 	s.tasks = tasks
 	s.actionIDs = actionIDs
 	s.senderNonce = senderNonce
+	s.pooledRelayBindings = pooledRelayBindings
+	s.settledPooledProofs = settledPooledProofs
+	s.settledPooledReceipts = settledPooledReceipts
 	return nil
 }
 
@@ -552,7 +636,29 @@ func (s *TaskStateStore) StateRoot() string {
 	if s == nil {
 		return ""
 	}
-	tasks := s.AllTasks()
+	s.mu.RLock()
+	taskIDs := make([]string, 0, len(s.tasks))
+	for taskID := range s.tasks {
+		taskIDs = append(taskIDs, taskID)
+	}
+	sort.Strings(taskIDs)
+	tasks := make([]TaskState, 0, len(taskIDs))
+	for _, taskID := range taskIDs {
+		tasks = append(tasks, cloneTaskState(s.tasks[taskID]))
+	}
+	pooledRelayBindings := make(map[string]PooledRelayBinding, len(s.pooledRelayBindings))
+	for coordinatorID, binding := range s.pooledRelayBindings {
+		pooledRelayBindings[coordinatorID] = binding
+	}
+	settledPooledProofs := make(map[string]string, len(s.settledPooledProofs))
+	for proofID, actionID := range s.settledPooledProofs {
+		settledPooledProofs[proofID] = actionID
+	}
+	settledPooledReceipts := make(map[string]string, len(s.settledPooledReceipts))
+	for receiptID, proofID := range s.settledPooledReceipts {
+		settledPooledReceipts[receiptID] = proofID
+	}
+	s.mu.RUnlock()
 	h := sha256.New()
 	for _, task := range tasks {
 		fmt.Fprintf(h, "%s:%0.8f:%0.8f:%0.8f:%0.8f:%d:%s:%s:%t:%s;",
@@ -605,8 +711,46 @@ func (s *TaskStateStore) StateRoot() string {
 					sub.SubmissionValue, sub.Payload, sub.RewardAmount,
 					sub.Claimed, sub.ClaimedAt, sub.Timestamp,
 				)
+				if sub.SettlementProofID != "" {
+					fmt.Fprintf(h, "settlement:%s:%s:%s:%s:%s:%0.8f:%0.8f:%0.8f;",
+						sub.SettlementProofID,
+						sub.SettlementCoordinatorID,
+						sub.SettlementContributorWallet,
+						sub.SettlementMotherHiveWallet,
+						sub.SettlementEcosystemWallet,
+						sub.SettlementContributorAmount,
+						sub.SettlementMotherHiveAmount,
+						sub.SettlementEcosystemAmount,
+					)
+				}
 			}
 		}
+	}
+	coordinators := make([]string, 0, len(pooledRelayBindings))
+	for coordinatorID := range pooledRelayBindings {
+		coordinators = append(coordinators, coordinatorID)
+	}
+	sort.Strings(coordinators)
+	for _, coordinatorID := range coordinators {
+		binding := pooledRelayBindings[coordinatorID]
+		fmt.Fprintf(h, "relay:%s:%s:%s:%s:%s:%s;", coordinatorID, binding.RelayPublicKey,
+			binding.ContributorWallet, binding.MotherHiveWallet, binding.EcosystemWallet, binding.BoundByActionID)
+	}
+	proofIDs := make([]string, 0, len(settledPooledProofs))
+	for proofID := range settledPooledProofs {
+		proofIDs = append(proofIDs, proofID)
+	}
+	sort.Strings(proofIDs)
+	for _, proofID := range proofIDs {
+		fmt.Fprintf(h, "pooled-proof:%s:%s;", proofID, settledPooledProofs[proofID])
+	}
+	receiptIDs := make([]string, 0, len(settledPooledReceipts))
+	for receiptID := range settledPooledReceipts {
+		receiptIDs = append(receiptIDs, receiptID)
+	}
+	sort.Strings(receiptIDs)
+	for _, receiptID := range receiptIDs {
+		fmt.Fprintf(h, "pooled-receipt:%s:%s;", receiptID, settledPooledReceipts[receiptID])
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -625,13 +769,14 @@ func (s *TaskStateStore) getOrCreateTaskLocked(taskID string) *TaskState {
 	return task
 }
 
-func (s *TaskStateStore) applySubmissionLocked(task *TaskState, participant *TaskParticipantState, action TaskAction, allowLegacyResourceProof bool) error {
+func (s *TaskStateStore) applySubmissionLocked(task *TaskState, participant *TaskParticipantState, action TaskAction, allowLegacyResourceProof, allowPooledSettlement bool, currentHeight uint64) (*pooledResourceSettlement, error) {
 	payload := parseTaskActionPayload(action.Payload)
 	if payload.RewardAmount < 0 {
-		return errors.New("chain: submission reward amount cannot be negative")
+		return nil, errors.New("chain: submission reward amount cannot be negative")
 	}
-	if err := validateTaskSubmissionPolicy(task, participant, action, payload, allowLegacyResourceProof); err != nil {
-		return err
+	settlement, err := s.validateTaskSubmissionPolicyLocked(task, participant, action, payload, allowLegacyResourceProof, allowPooledSettlement, currentHeight)
+	if err != nil {
+		return nil, err
 	}
 	roundKey := strconv.FormatUint(payload.Round, 10)
 	existing := TaskSubmissionState{}
@@ -640,12 +785,15 @@ func (s *TaskStateStore) applySubmissionLocked(task *TaskState, participant *Tas
 		existing, hasExisting = task.Submissions[roundKey][action.Sender]
 	}
 	if hasExisting {
+		if settlement != nil {
+			return nil, errors.New("chain: pooled settlement round already has a submission from this Mother Hive wallet")
+		}
 		if existing.Claimed {
 			// A restarted task client can legitimately replay a proof for the
 			// current round after the previous proof was already claimed. Keep
 			// the claimed submission immutable and treat the later submit as a
 			// no-op so task-state projection remains replayable.
-			return nil
+			return nil, nil
 		}
 	}
 	if _, isResourceTask := systemResourceTaskPolicies[action.TaskID]; isResourceTask {
@@ -656,7 +804,7 @@ func (s *TaskStateStore) applySubmissionLocked(task *TaskState, participant *Tas
 			}
 			prior, ok := submissions[action.Sender]
 			if ok && strings.EqualFold(strings.TrimSpace(prior.SubmissionValue), value) {
-				return fmt.Errorf("chain: resource worker proof was already submitted in round %s", priorRound)
+				return nil, fmt.Errorf("chain: resource worker proof was already submitted in round %s", priorRound)
 			}
 		}
 	}
@@ -666,12 +814,15 @@ func (s *TaskStateStore) applySubmissionLocked(task *TaskState, participant *Tas
 	}
 	if payload.RewardAmount > 0 {
 		if participant.Stake <= 0 {
-			return ErrTaskActionRequiresStake
+			return nil, ErrTaskActionRequiresStake
 		}
 		if taskAmountLessThan(availableRewardPool, payload.RewardAmount) {
-			return fmt.Errorf("%w: have %.8f, need %.8f",
+			return nil, fmt.Errorf("%w: have %.8f, need %.8f",
 				ErrInsufficientTaskRewardPool, availableRewardPool, payload.RewardAmount)
 		}
+	}
+	if settlement != nil && payload.RewardAmount <= 0 {
+		return nil, errors.New("chain: pooled settlement reward must be positive")
 	}
 	if task.Submissions[roundKey] == nil {
 		task.Submissions[roundKey] = map[string]TaskSubmissionState{}
@@ -682,7 +833,23 @@ func (s *TaskStateStore) applySubmissionLocked(task *TaskState, participant *Tas
 		participant.PendingRewardAmount -= existing.RewardAmount
 		clampTaskRewardAccounting(task, participant)
 	}
-	if payload.RewardAmount > 0 {
+	if settlement != nil {
+		task.RewardPoolAmount -= payload.RewardAmount
+		task.TotalRewardPaidAmount += payload.RewardAmount
+		participantReward := 0.0
+		if strings.EqualFold(action.Sender, settlement.Proof.ContributorWallet) {
+			participantReward += settlement.ContributorAmount
+		}
+		if strings.EqualFold(action.Sender, settlement.Proof.MotherHiveWallet) {
+			participantReward += settlement.MotherHiveAmount
+		}
+		if strings.EqualFold(action.Sender, settlement.Proof.EcosystemWallet) {
+			participantReward += settlement.EcosystemAmount
+		}
+		participant.TotalRewardClaimedAmount += participantReward
+		participant.LastClaimedAt = action.Timestamp
+		clampTaskRewardAccounting(task, participant)
+	} else if payload.RewardAmount > 0 {
 		task.RewardPoolAmount -= payload.RewardAmount
 		task.PendingRewardAmount += payload.RewardAmount
 		participant.PendingRewardAmount += payload.RewardAmount
@@ -692,7 +859,7 @@ func (s *TaskStateStore) applySubmissionLocked(task *TaskState, participant *Tas
 	if value == "" {
 		value = action.Payload
 	}
-	task.Submissions[roundKey][action.Sender] = TaskSubmissionState{
+	submission := TaskSubmissionState{
 		ActionID:        action.ID,
 		Sender:          action.Sender,
 		Round:           payload.Round,
@@ -702,73 +869,219 @@ func (s *TaskStateStore) applySubmissionLocked(task *TaskState, participant *Tas
 		RewardAmount:    payload.RewardAmount,
 		Timestamp:       action.Timestamp,
 	}
-	return nil
+	if settlement != nil {
+		submission.Claimed = true
+		submission.ClaimedAt = action.Timestamp
+		submission.SettlementProofID = strings.ToLower(settlement.Proof.ProofID)
+		submission.SettlementCoordinatorID = settlement.Proof.CoordinatorID
+		submission.SettlementContributorWallet = strings.ToLower(settlement.Proof.ContributorWallet)
+		submission.SettlementMotherHiveWallet = strings.ToLower(settlement.Proof.MotherHiveWallet)
+		submission.SettlementEcosystemWallet = strings.ToLower(settlement.Proof.EcosystemWallet)
+		submission.SettlementContributorAmount = settlement.ContributorAmount
+		submission.SettlementMotherHiveAmount = settlement.MotherHiveAmount
+		submission.SettlementEcosystemAmount = settlement.EcosystemAmount
+		if _, exists := s.pooledRelayBindings[settlement.Proof.CoordinatorID]; !exists {
+			s.pooledRelayBindings[settlement.Proof.CoordinatorID] = PooledRelayBinding{
+				CoordinatorID:     settlement.Proof.CoordinatorID,
+				RelayPublicKey:    strings.ToLower(settlement.Proof.RelayPublicKey),
+				ContributorWallet: strings.ToLower(settlement.Proof.ContributorWallet),
+				MotherHiveWallet:  strings.ToLower(settlement.Proof.MotherHiveWallet),
+				EcosystemWallet:   strings.ToLower(settlement.Proof.EcosystemWallet),
+				BoundByActionID:   action.ID,
+			}
+		}
+		s.settledPooledProofs[strings.ToLower(settlement.Proof.ProofID)] = action.ID
+		for _, receiptID := range settlement.Proof.ReceiptIDs {
+			s.settledPooledReceipts[strings.ToLower(receiptID)] = strings.ToLower(settlement.Proof.ProofID)
+		}
+	}
+	task.Submissions[roundKey][action.Sender] = submission
+	return settlement, nil
 }
 
-func validateTaskSubmissionPolicy(task *TaskState, participant *TaskParticipantState, action TaskAction, payload taskActionPayload, allowLegacyResourceProof bool) error {
+func (s *TaskStateStore) validateTaskSubmissionPolicyLocked(task *TaskState, participant *TaskParticipantState, action TaskAction, payload taskActionPayload, allowLegacyResourceProof, allowPooledSettlement bool, currentHeight uint64) (*pooledResourceSettlement, error) {
 	if task.Manifest != nil {
 		if task.CatalogPaused || !task.Manifest.Active {
-			return errors.New("chain: task catalog entry is not active")
+			return nil, errors.New("chain: task catalog entry is not active")
 		}
 		if taskAmountLessThan(participant.Stake, task.Manifest.MinimumStakeAmount) {
-			return fmt.Errorf("%w: have %.8f, need %.8f",
+			return nil, fmt.Errorf("%w: have %.8f, need %.8f",
 				ErrInsufficientTaskStake, participant.Stake, task.Manifest.MinimumStakeAmount)
 		}
 		if taskAmountLessThan(task.Manifest.RewardPerRound, payload.RewardAmount) {
-			return fmt.Errorf("chain: submission reward %.8f exceeds catalog reward_per_round %.8f",
+			return nil, fmt.Errorf("chain: submission reward %.8f exceeds catalog reward_per_round %.8f",
 				payload.RewardAmount, task.Manifest.RewardPerRound)
 		}
 	}
 
 	policy, isResourceTask := systemResourceTaskPolicies[action.TaskID]
 	if !isResourceTask {
-		return nil
+		return nil, nil
 	}
 	if taskAmountLessThan(policy.MaxRoundReward, payload.RewardAmount) {
-		return fmt.Errorf("chain: %s worker reward %.8f exceeds consensus cap %.8f",
+		return nil, fmt.Errorf("chain: %s worker reward %.8f exceeds consensus cap %.8f",
 			policy.Resource, payload.RewardAmount, policy.MaxRoundReward)
 	}
 	var envelope resourceWorkerProofPayload
 	if err := json.Unmarshal([]byte(action.Payload), &envelope); err != nil {
-		return fmt.Errorf("chain: decode resource worker proof: %w", err)
+		return nil, fmt.Errorf("chain: decode resource worker proof: %w", err)
 	}
 	if allowLegacyResourceProof && strings.TrimSpace(envelope.Resource) == "" {
-		return nil
+		return nil, nil
 	}
 	if strings.TrimSpace(envelope.Resource) == "" {
-		return fmt.Errorf("%w: expected %q", ErrLegacyResourceWorkerProof, policy.Resource)
+		return nil, fmt.Errorf("%w: expected %q", ErrLegacyResourceWorkerProof, policy.Resource)
 	}
 	if strings.ToLower(strings.TrimSpace(envelope.Resource)) != policy.Resource {
-		return fmt.Errorf("chain: resource worker proof declares %q, expected %q", envelope.Resource, policy.Resource)
+		return nil, fmt.Errorf("chain: resource worker proof declares %q, expected %q", envelope.Resource, policy.Resource)
 	}
 	if strings.TrimSpace(envelope.SubmissionValue) == "" || len(envelope.Proof) == 0 {
-		return errors.New("chain: resource worker submission requires a value and proof")
+		return nil, errors.New("chain: resource worker submission requires a value and proof")
+	}
+	proofSource := strings.ToLower(strings.TrimSpace(envelope.Source))
+	if proofSource == edgepool.SettlementProofSource {
+		if !allowPooledSettlement {
+			return nil, ErrPooledSettlementRequiresEconomicApply
+		}
+		if currentHeight == 0 {
+			return nil, errors.New("chain: pooled settlement requires a consensus block height")
+		}
+		if payload.Slot > currentHeight || currentHeight-payload.Slot > pooledSettlementMaxSlotLag {
+			return nil, fmt.Errorf("chain: pooled settlement slot %d is outside current height %d", payload.Slot, currentHeight)
+		}
+		roundTime := uint64(60)
+		if task.Manifest != nil && task.Manifest.RoundTime > 0 {
+			roundTime = task.Manifest.RoundTime
+		}
+		if expectedRound := payload.Slot / roundTime; payload.Round != expectedRound {
+			return nil, fmt.Errorf("chain: pooled settlement round %d does not match slot %d / round_time %d", payload.Round, payload.Slot, roundTime)
+		}
+		var proof edgepool.PoolProof
+		if err := json.Unmarshal(envelope.Proof, &proof); err != nil {
+			return nil, fmt.Errorf("chain: decode Relay settlement proof: %w", err)
+		}
+		if err := edgepool.VerifySettlementPoolProof(proof); err != nil {
+			return nil, fmt.Errorf("chain: verify Relay settlement proof: %w", err)
+		}
+		if string(proof.Resource) != policy.Resource {
+			return nil, fmt.Errorf("chain: Relay settlement resource %q does not match task resource %q", proof.Resource, policy.Resource)
+		}
+		if !strings.EqualFold(envelope.SubmissionValue, proof.ReceiptRoot) {
+			return nil, errors.New("chain: Relay settlement submission does not match its receipt root")
+		}
+		if !strings.EqualFold(action.Sender, proof.MotherHiveWallet) {
+			return nil, errors.New("chain: task action sender does not match the Relay-bound Mother Hive wallet")
+		}
+		if !strings.EqualFold(proof.EcosystemWallet, edgepool.ProductionEcosystemWallet) {
+			return nil, errors.New("chain: Relay settlement ecosystem wallet is not the production reserve")
+		}
+		if task.Manifest == nil || !taskManifestAuthorizesRelay(task.Manifest, proof.CoordinatorID) {
+			return nil, errors.New("chain: Relay signing key is not authorized by this task manifest")
+		}
+		if err := validatePooledSettlementTime(action.Timestamp, proof); err != nil {
+			return nil, err
+		}
+		proofID := strings.ToLower(proof.ProofID)
+		if priorAction, used := s.settledPooledProofs[proofID]; used {
+			return nil, fmt.Errorf("chain: Relay settlement proof was already consumed by action %s", priorAction)
+		}
+		for _, receiptID := range proof.ReceiptIDs {
+			if priorProof, used := s.settledPooledReceipts[strings.ToLower(receiptID)]; used {
+				return nil, fmt.Errorf("chain: Relay receipt was already consumed by proof %s", priorProof)
+			}
+		}
+		if binding, exists := s.pooledRelayBindings[proof.CoordinatorID]; exists {
+			if !strings.EqualFold(binding.RelayPublicKey, proof.RelayPublicKey) ||
+				!strings.EqualFold(binding.ContributorWallet, proof.ContributorWallet) ||
+				!strings.EqualFold(binding.MotherHiveWallet, proof.MotherHiveWallet) ||
+				!strings.EqualFold(binding.EcosystemWallet, proof.EcosystemWallet) {
+				return nil, errors.New("chain: Relay key or payout wallets conflict with its consensus binding")
+			}
+		}
+		contributor, motherHive, ecosystem, err := splitPooledSettlementReward(payload.RewardAmount)
+		if err != nil {
+			return nil, err
+		}
+		return &pooledResourceSettlement{
+			Proof: proof, ContributorAmount: contributor,
+			MotherHiveAmount: motherHive, EcosystemAmount: ecosystem,
+		}, nil
 	}
 	var proof resourceWorkerProofDetails
 	if err := json.Unmarshal(envelope.Proof, &proof); err != nil {
-		return fmt.Errorf("chain: decode resource worker proof details: %w", err)
+		return nil, fmt.Errorf("chain: decode resource worker proof details: %w", err)
 	}
-	proofSource := strings.ToLower(strings.TrimSpace(envelope.Source))
 	if proofSource == "qsdm-edge-pool" || proofSource == "qsdm-edge-relay" {
 		// Shape checks are deliberately retained before the fail-closed gate so
 		// malformed payloads remain distinguishable in diagnostics. They are not
 		// sufficient to authorize CELL: a client can invent a syntactically valid
 		// root unless Core verifies the underlying Relay receipts itself.
 		if proof.JobCount <= 0 || proof.TotalUnits == 0 || !validTaskDigest(proof.ReceiptRoot) {
-			return errors.New("chain: pooled resource proof requires verified jobs, units, and receipt root")
+			return nil, errors.New("chain: pooled resource proof requires verified jobs, units, and receipt root")
 		}
 		if !strings.EqualFold(envelope.SubmissionValue, proof.ReceiptRoot) {
-			return errors.New("chain: pooled resource submission does not match its receipt root")
+			return nil, errors.New("chain: pooled resource submission does not match its receipt root")
 		}
-		return ErrPooledResourceProofNotEnforceable
+		return nil, ErrPooledResourceProofNotEnforceable
 	}
 	if strings.TrimSpace(proof.Algorithm) == "" || proof.Units == 0 || !validTaskDigest(proof.Digest) {
-		return errors.New("chain: local resource proof requires an algorithm, units, and digest")
+		return nil, errors.New("chain: local resource proof requires an algorithm, units, and digest")
 	}
 	if !strings.EqualFold(envelope.SubmissionValue, proof.Digest) {
-		return errors.New("chain: local resource submission does not match its proof digest")
+		return nil, errors.New("chain: local resource submission does not match its proof digest")
+	}
+	return nil, nil
+}
+
+func taskManifestAuthorizesRelay(manifest *TaskManifest, relayID string) bool {
+	if manifest == nil {
+		return false
+	}
+	for _, authorized := range manifest.AuthorizedRelayIDs {
+		if strings.EqualFold(authorized, relayID) {
+			return true
+		}
+	}
+	return false
+}
+
+func validatePooledSettlementTime(actionTimestamp string, proof edgepool.PoolProof) error {
+	actionTime, err := time.Parse(time.RFC3339Nano, actionTimestamp)
+	if err != nil {
+		return errors.New("chain: pooled settlement action timestamp is invalid")
+	}
+	windowStart, err := time.Parse(time.RFC3339Nano, proof.WindowStart)
+	if err != nil {
+		return errors.New("chain: pooled settlement window start is invalid")
+	}
+	windowEnd, err := time.Parse(time.RFC3339Nano, proof.WindowEnd)
+	if err != nil {
+		return errors.New("chain: pooled settlement window end is invalid")
+	}
+	if windowEnd.Before(windowStart) || windowEnd.Sub(windowStart) > 2*time.Hour {
+		return errors.New("chain: pooled settlement window is invalid or exceeds two hours")
+	}
+	if windowEnd.After(actionTime.Add(2 * time.Minute)) {
+		return errors.New("chain: pooled settlement window ends after the signed action time")
+	}
+	if actionTime.Sub(windowEnd) > 24*time.Hour {
+		return errors.New("chain: pooled settlement proof is older than 24 hours")
 	}
 	return nil
+}
+
+func splitPooledSettlementReward(reward float64) (float64, float64, float64, error) {
+	rewardDust := balanceToDust(reward)
+	if rewardDust == 0 {
+		return 0, 0, 0, errors.New("chain: pooled settlement reward is below one CELL dust")
+	}
+	if math.Abs(dustToBalance(rewardDust)-reward) > taskAmountEpsilon {
+		return 0, 0, 0, errors.New("chain: pooled settlement reward has more than eight decimal places")
+	}
+	contributorDust := rewardDust * 70 / 100
+	motherHiveDust := rewardDust * 15 / 100
+	ecosystemDust := rewardDust - contributorDust - motherHiveDust
+	return dustToBalance(contributorDust), dustToBalance(motherHiveDust), dustToBalance(ecosystemDust), nil
 }
 
 func validTaskDigest(value string) bool {

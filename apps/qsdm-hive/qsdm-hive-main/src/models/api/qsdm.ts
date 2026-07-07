@@ -237,6 +237,10 @@ export interface QsdmMotherHiveStatusResponse {
     motherHivePercent: number;
     ecosystemPercent: number;
     ecosystemWalletAddress?: string;
+    contributorWalletAddress?: string;
+    motherHiveWalletAddress?: string;
+    relaySettlementId?: string;
+    relayPublicKey?: string;
     settlementActive: boolean;
     settlementReason: string;
   };
@@ -472,6 +476,7 @@ export interface QsdmTaskCatalogDraft {
   source_url?: string;
   icon_url?: string;
   tags?: string[];
+  authorized_relay_ids?: string[];
 }
 
 export interface QsdmTaskCatalogManageRequest {

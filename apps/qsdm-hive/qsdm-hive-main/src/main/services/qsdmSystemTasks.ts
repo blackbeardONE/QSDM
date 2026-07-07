@@ -41,6 +41,9 @@ import {
   QSDM_MINER_SYSTEM_TASK_METADATA_ID,
   QSDM_MOTHER_HIVE_CONTRIBUTOR_SHARE_PERCENT,
   QSDM_MOTHER_HIVE_ECOSYSTEM_SHARE_PERCENT,
+  QSDM_MOTHER_HIVE_SETTLEMENT_SOURCE,
+  QSDM_MOTHER_HIVE_SETTLEMENT_VERSION,
+  QSDM_ECOSYSTEM_RESERVE_WALLET,
   QSDM_MOTHER_HIVE_MIN_STAKE_AMOUNT,
   QSDM_MOTHER_HIVE_OPERATOR_SHARE_PERCENT,
   QSDM_MOTHER_HIVE_SYSTEM_TASK_ID,
@@ -96,6 +99,9 @@ export {
   QSDM_MINER_SYSTEM_TASK_METADATA_ID,
   QSDM_MOTHER_HIVE_CONTRIBUTOR_SHARE_PERCENT,
   QSDM_MOTHER_HIVE_ECOSYSTEM_SHARE_PERCENT,
+  QSDM_MOTHER_HIVE_SETTLEMENT_SOURCE,
+  QSDM_MOTHER_HIVE_SETTLEMENT_VERSION,
+  QSDM_ECOSYSTEM_RESERVE_WALLET,
   QSDM_MOTHER_HIVE_MIN_STAKE_AMOUNT,
   QSDM_MOTHER_HIVE_OPERATOR_SHARE_PERCENT,
   QSDM_MOTHER_HIVE_SYSTEM_TASK_ID,
@@ -477,7 +483,7 @@ export const createQsdmMotherHiveSystemTask = (
   stake_list: {},
   task_metadata: QSDM_MOTHER_HIVE_SYSTEM_TASK_METADATA_ID,
   task_description:
-    'Run this QSDM Hive in Mother Hive mode for a paired Relay. It inventories and acknowledges pooled CPU, NVIDIA GPU, and RAM for QSDM-approved distributed workloads. Pooled resources are schedulable capacity, not transparent operating-system devices. The target revenue split is 70% contributors, 15% Mother Hive operator, and 15% CELL ecosystem reserve; automatic settlement stays disabled until worker wallets and Relay receipts are chain-verifiable.',
+    'Run this QSDM Hive in Mother Hive mode for a paired Relay. It inventories pooled CPU, NVIDIA GPU, and RAM for QSDM-approved distributed workloads. Relay batches are ML-DSA signed, wallet-bound, globally replay-protected on QSDM Core, and paid atomically: 70% to the contributor owner, 15% to the Mother Hive operator, and 15% to the CELL ecosystem reserve.',
   submissions: EMPTY_SUBMISSIONS,
   submissions_audit_trigger: EMPTY_AUDIT_TRIGGERS,
   total_stake_amount: 0,
@@ -504,9 +510,9 @@ export const createQsdmMotherHiveSystemTask = (
     contributor_share_percent: QSDM_MOTHER_HIVE_CONTRIBUTOR_SHARE_PERCENT,
     mother_hive_share_percent: QSDM_MOTHER_HIVE_OPERATOR_SHARE_PERCENT,
     ecosystem_share_percent: QSDM_MOTHER_HIVE_ECOSYSTEM_SHARE_PERCENT,
-    settlement_active: false,
-    settlement_requirement:
-      'wallet-bound workers, chain-verifiable Relay receipts, and funded workload escrow',
+    settlement_active: true,
+    settlement_protocol: QSDM_MOTHER_HIVE_SETTLEMENT_VERSION,
+    ecosystem_wallet: QSDM_ECOSYSTEM_RESERVE_WALLET,
   }),
   qsdm_vars: '{}',
   is_migrated: false,
@@ -855,7 +861,7 @@ export const getQsdmSystemTaskMetadata = (
           type: RequirementType.ADDON,
           value: '70 / 15 / 15 revenue policy',
           description:
-            'Target gross workload revenue allocation: 70% contributors, 15% Mother Hive operator, 15% ecosystem reserve. Settlement remains disabled until worker wallets and Relay receipts are chain-verifiable.',
+            'Each committed ML-DSA Relay batch is paid atomically: 70% contributor owner, 15% Mother Hive operator, and 15% ecosystem reserve.',
         },
       ],
       infoUrl: QSDM_EDGE_WORKER_INFO_URL,
@@ -940,6 +946,10 @@ const gpuHelperPath = process.env.QSDM_EDGE_GPU_HELPER || '';
 const relayUrl = process.env.QSDM_EDGE_RELAY_URL || process.env.QSDM_EDGE_POOL_URL || 'http://127.0.0.1:7740';
 const relayTokenFile = process.env.QSDM_EDGE_RELAY_TOKEN_FILE || process.env.QSDM_EDGE_POOL_TOKEN_FILE || '';
 const relayRequired = Boolean(relayTokenFile);
+const settlementVersion = '${QSDM_MOTHER_HIVE_SETTLEMENT_VERSION}';
+const settlementSource = '${QSDM_MOTHER_HIVE_SETTLEMENT_SOURCE}';
+const ecosystemWallet = '${QSDM_ECOSYSTEM_RESERVE_WALLET}';
+const contributorWallet = process.env.QSDM_EDGE_CONTRIBUTOR_WALLET || sender;
 const maxRuntimeMs = Math.max(300000, Number(process.env.QSDM_EDGE_WORKER_MAX_RUNTIME_MS || 21600000));
 const maxRssMb = Math.max(ramMiB + 128, Number(process.env.QSDM_EDGE_WORKER_MAX_RSS_MB || ramMiB + 256));
 const startedAtMs = Date.now();
@@ -947,7 +957,6 @@ let round = 0;
 let stopping = false;
 let timer = null;
 let working = false;
-let lastPoolProofId = '';
 
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
@@ -989,6 +998,64 @@ function loadRelayToken() {
   return raw.length >= 32 ? Buffer.from(raw, 'utf8') : null;
 }
 
+function relayRequest(token, method, requestPath, bodyValue) {
+  const body = bodyValue === undefined ? '' : JSON.stringify(bodyValue);
+  return new Promise((resolve, reject) => {
+    const target = new URL(requestPath, relayUrl);
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const nonce = crypto.randomBytes(16).toString('hex');
+    const workerId = ('hive-' + sender.slice(0, 24)).replace(/[^A-Za-z0-9._-]/g, '-');
+    const canonical = [method, target.pathname, timestamp, nonce, workerId, sha256(body)].join('\\n');
+    const signature = crypto.createHmac('sha256', token).update(canonical).digest('hex');
+    const transport = target.protocol === 'https:' ? https : http;
+    const request = transport.request(target, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        'X-QSDM-Worker-ID': workerId,
+        'X-QSDM-Timestamp': timestamp,
+        'X-QSDM-Nonce': nonce,
+        'X-QSDM-Signature': signature,
+      },
+      timeout: 5000,
+    }, (response) => {
+      let responseBody = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => {
+        if (responseBody.length < 131072) responseBody += chunk;
+      });
+      response.on('end', () => {
+        if (response.statusCode === 404) return resolve(null);
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          return reject(new Error('relay HTTP ' + response.statusCode + ': ' + responseBody.slice(0, 512)));
+        }
+        try {
+          return resolve(responseBody ? JSON.parse(responseBody) : {});
+        } catch (error) {
+          return reject(error);
+        }
+      });
+    });
+    request.on('timeout', () => request.destroy(new Error('relay timeout')));
+    request.on('error', reject);
+    if (body) request.write(body);
+    request.end();
+  });
+}
+
+function bindRelaySettlement(token) {
+  if (!/^[0-9a-f]{64}$/i.test(sender) || !/^[0-9a-f]{64}$/i.test(contributorWallet)) {
+    return Promise.reject(new Error('QSDM settlement wallets are not valid 32-byte addresses'));
+  }
+  return relayRequest(token, 'POST', '/v1/settlement/bind', {
+    version: settlementVersion,
+    contributor_wallet: contributorWallet.toLowerCase(),
+    mother_hive_wallet: sender.toLowerCase(),
+    ecosystem_wallet: ecosystemWallet,
+  });
+}
+
 function verifyPoolProof(token, proof) {
   if (!proof || typeof proof !== 'object' || !Array.isArray(proof.receipt_ids)) return false;
   if (!/^[0-9a-f]{64}$/i.test(String(proof.signature || ''))) return false;
@@ -1011,51 +1078,41 @@ function verifyPoolProof(token, proof) {
   return provided.length === expected.length && crypto.timingSafeEqual(provided, expected);
 }
 
-function getRelayProof() {
+function settlementRelayId(publicKey) {
+  const keyBytes = Buffer.from(String(publicKey || ''), 'hex');
+  return crypto.createHash('sha256')
+    .update(Buffer.from('QSDM-EDGE-RELAY-ID\\0', 'utf8'))
+    .update(keyBytes)
+    .digest('hex');
+}
+
+async function getRelayProof() {
   const token = loadRelayToken();
-  if (!token) return Promise.resolve(null);
-  return new Promise((resolve, reject) => {
-    const target = new URL('/v1/proofs/latest?resource=' + encodeURIComponent(resource), relayUrl);
-    const timestamp = String(Math.floor(Date.now() / 1000));
-    const nonce = crypto.randomBytes(16).toString('hex');
-    const workerId = ('hive-' + sender.slice(0, 24)).replace(/[^A-Za-z0-9._-]/g, '-');
-    const bodyHash = sha256('');
-    const canonical = ['GET', '/v1/proofs/latest', timestamp, nonce, workerId, bodyHash].join('\\n');
-    const signature = crypto.createHmac('sha256', token).update(canonical).digest('hex');
-    const transport = target.protocol === 'https:' ? https : http;
-    const request = transport.request(target, {
-      method: 'GET',
-      headers: {
-        'X-QSDM-Worker-ID': workerId,
-        'X-QSDM-Timestamp': timestamp,
-        'X-QSDM-Nonce': nonce,
-        'X-QSDM-Signature': signature,
-      },
-      timeout: 5000,
-    }, (response) => {
-      let body = '';
-      response.setEncoding('utf8');
-      response.on('data', (chunk) => {
-        if (body.length < 131072) body += chunk;
-      });
-      response.on('end', () => {
-        if (response.statusCode === 404) return resolve(null);
-        if (response.statusCode !== 200) return reject(new Error('relay HTTP ' + response.statusCode));
-        try {
-          const proof = JSON.parse(body);
-          if (!verifyPoolProof(token, proof)) {
-            return reject(new Error('relay proof signature did not verify'));
-          }
-          return resolve(proof);
-        } catch (error) {
-          return reject(error);
-        }
-      });
-    });
-    request.on('timeout', () => request.destroy(new Error('relay timeout')));
-    request.on('error', reject);
-    request.end();
-  });
+  if (!token) return null;
+  await bindRelaySettlement(token);
+  const proof = await relayRequest(
+    token,
+    'GET',
+    '/v1/proofs/latest?resource=' + encodeURIComponent(resource)
+  );
+  if (!proof) return null;
+  if (!verifyPoolProof(token, proof)) {
+    throw new Error('relay proof HMAC did not verify');
+  }
+  if (
+    proof.settlement_version !== settlementVersion ||
+    proof.contributor_wallet !== contributorWallet.toLowerCase() ||
+    proof.mother_hive_wallet !== sender.toLowerCase() ||
+    proof.ecosystem_wallet !== ecosystemWallet ||
+    !/^[0-9a-f]{64}$/i.test(String(proof.coordinator_id || '')) ||
+    !/^[0-9a-f]+$/i.test(String(proof.relay_public_key || '')) ||
+    !/^[0-9a-f]+$/i.test(String(proof.relay_signature || '')) ||
+    proof.coordinator_id.toLowerCase() !==
+      settlementRelayId(proof.relay_public_key)
+  ) {
+    throw new Error('relay settlement proof does not match the bound QSDM wallets');
+  }
+  return proof;
 }
 
 function cpuProof(seed) {
@@ -1136,18 +1193,15 @@ async function computeProof() {
       return null;
     });
     if (poolProof && poolProof.proof_id) {
-      if (poolProof.proof_id !== lastPoolProofId) {
-        lastPoolProofId = poolProof.proof_id;
-        emitProof({
-          source: 'qsdm-edge-relay',
-          worker_kind: resource + '-relay-v1',
-          resource,
-          round,
-          slot: Math.floor(Date.now() / 1000),
-          submission_value: poolProof.receipt_root,
-          proof: poolProof,
-        });
-      }
+      emitProof({
+        source: settlementSource,
+        worker_kind: resource + '-relay-v2',
+        resource,
+        round,
+        slot: Math.floor(Date.now() / 1000),
+        submission_value: poolProof.receipt_root,
+        proof: poolProof,
+      });
       return;
     }
 
@@ -1583,14 +1637,47 @@ const ensureQsdmEdgeWorkerRewardPool = async (
   }
 };
 
-const hasQsdmEdgeWorkerRoundSubmission = (
+const getQsdmEdgeWorkerRoundSubmission = (
   task: Partial<RawTaskData>,
   sender: string,
   round: number
 ) => {
   const submissions = task.submissions;
   const bySender = submissions?.[String(round)];
-  return isRecord(bySender) && Boolean(bySender[sender]);
+  return isRecord(bySender) && isRecord(bySender[sender])
+    ? bySender[sender]
+    : null;
+};
+
+const getRelaySettlementProofId = (payload: Record<string, unknown>) => {
+  if (payload.source !== QSDM_MOTHER_HIVE_SETTLEMENT_SOURCE) {
+    return '';
+  }
+  const proof = isRecord(payload.proof) ? payload.proof : null;
+  const proofId = String(proof?.proof_id || '').toLowerCase();
+  return /^[0-9a-f]{64}$/.test(proofId) ? proofId : '';
+};
+
+const submissionHasRelaySettlementProof = (
+  submission: Record<string, unknown>,
+  proofId: string
+) => {
+  if (String(submission.settlement_proof_id || '').toLowerCase() === proofId) {
+    return true;
+  }
+  try {
+    const rawPayload = submission.payload;
+    const payload =
+      typeof rawPayload === 'string'
+        ? (JSON.parse(rawPayload) as unknown)
+        : rawPayload;
+    if (!isRecord(payload) || !isRecord(payload.proof)) {
+      return false;
+    }
+    return String(payload.proof.proof_id || '').toLowerCase() === proofId;
+  } catch {
+    return false;
+  }
 };
 
 const claimQsdmEdgeWorkerReward = async (taskId: string, round: number) => {
@@ -1679,10 +1766,40 @@ const submitQsdmEdgeWorkerProof = async (
     return;
   }
 
-  if (hasQsdmEdgeWorkerRoundSubmission(liveTask, sender, clock.round)) {
+  const relaySettlementProofId = getRelaySettlementProofId(payload);
+  const existingSubmission = getQsdmEdgeWorkerRoundSubmission(
+    liveTask,
+    sender,
+    clock.round
+  );
+  if (existingSubmission) {
+    if (
+      relaySettlementProofId &&
+      submissionHasRelaySettlementProof(
+        existingSubmission,
+        relaySettlementProofId
+      )
+    ) {
+      try {
+        await acknowledgeRelaySettlementProof(relaySettlementProofId);
+        state.submittedRounds.add(clock.round);
+        writeTaskLog(
+          state.taskId,
+          `Acknowledged committed Relay settlement proof ${relaySettlementProofId} for round=${clock.round}.`
+        );
+      } catch (error: any) {
+        writeTaskLog(
+          state.taskId,
+          `Relay settlement acknowledgement will retry: ${
+            error?.message || error
+          }`
+        );
+      }
+      return;
+    }
     writeTaskLog(
       state.taskId,
-      `Skipping Edge Worker proof submit: round=${clock.round} already exists on QSDM Core.`
+      `Skipping Edge Worker proof submit: round=${clock.round} is already occupied by a different committed proof.`
     );
     state.submittedRounds.add(clock.round);
     return;
@@ -1738,7 +1855,6 @@ const submitQsdmEdgeWorkerProof = async (
         clock.round
       } slot=${clock.slot} reward=${rewardAmount}`
     );
-    state.submittedRounds.add(clock.round);
     if (rewardAmount > 0) {
       const committed = await waitForQsdmTaskActionCommit(
         response,
@@ -1746,7 +1862,16 @@ const submitQsdmEdgeWorkerProof = async (
         state.taskId
       );
       if (committed) {
-        await claimQsdmEdgeWorkerReward(state.taskId, clock.round);
+        if (relaySettlementProofId) {
+          await acknowledgeRelaySettlementProof(relaySettlementProofId);
+          writeTaskLog(
+            state.taskId,
+            `Core settled Relay proof ${relaySettlementProofId}: contributors ${QSDM_MOTHER_HIVE_CONTRIBUTOR_SHARE_PERCENT}% / Mother Hive ${QSDM_MOTHER_HIVE_OPERATOR_SHARE_PERCENT}% / ecosystem ${QSDM_MOTHER_HIVE_ECOSYSTEM_SHARE_PERCENT}%.`
+          );
+        } else {
+          await claimQsdmEdgeWorkerReward(state.taskId, clock.round);
+        }
+        state.submittedRounds.add(clock.round);
       }
     }
   } catch (error: any) {
@@ -3117,16 +3242,34 @@ type EdgeRelayStatusResponse = {
     gpu_percent?: number;
     ram_percent?: number;
   };
+  settlement_ready?: boolean;
+  settlement_relay_id?: string;
+  settlement_public_key?: string;
+  settlement_binding?: {
+    version?: string;
+    contributor_wallet?: string;
+    mother_hive_wallet?: string;
+    ecosystem_wallet?: string;
+    bound_at?: string;
+  };
+  pending_settlement_proofs?: Partial<Record<QsdmEdgeWorkerResource, string>>;
 };
 
-const motherHiveRevenuePolicy = () => ({
+const motherHiveRevenuePolicy = (status?: EdgeRelayStatusResponse) => ({
   contributorPercent: QSDM_MOTHER_HIVE_CONTRIBUTOR_SHARE_PERCENT,
   motherHivePercent: QSDM_MOTHER_HIVE_OPERATOR_SHARE_PERCENT,
   ecosystemPercent: QSDM_MOTHER_HIVE_ECOSYSTEM_SHARE_PERCENT,
-  ecosystemWalletAddress: undefined,
-  settlementActive: false,
-  settlementReason:
-    'Settlement is locked: Relay jobs are verified locally, but QSDM Core does not yet verify a Relay public-key signature, bind receipt owners to payout wallets, reject receipt reuse globally, or enforce the 70/15/15 split from funded workload escrow.',
+  contributorWalletAddress: status?.settlement_binding?.contributor_wallet,
+  motherHiveWalletAddress: status?.settlement_binding?.mother_hive_wallet,
+  ecosystemWalletAddress: QSDM_ECOSYSTEM_RESERVE_WALLET,
+  relaySettlementId: status?.settlement_relay_id,
+  relayPublicKey: status?.settlement_public_key,
+  settlementActive: Boolean(
+    status?.settlement_ready && status.settlement_binding
+  ),
+  settlementReason: status?.settlement_ready
+    ? 'Relay receipts use chain-verifiable ML-DSA settlement with global replay protection and an atomic 70/15/15 payout.'
+    : 'Start a paired Edge Worker task to bind this Relay to the active QSDM wallet before settlement can begin.',
 });
 
 const loadEdgeRelayMotherToken = (tokenFile: string) => {
@@ -3144,25 +3287,28 @@ const loadEdgeRelayMotherToken = (tokenFile: string) => {
 const motherHiveWorkerId = () =>
   `hive-${os.hostname()}`.replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 64);
 
-const readEdgeRelayStatus = async (): Promise<EdgeRelayStatusResponse> => {
+const requestEdgeRelay = async <T>(
+  method: 'GET' | 'POST',
+  requestPath: string,
+  bodyValue?: Record<string, unknown>
+): Promise<T> => {
   const relayUrl = getDefaultEdgeRelayURL();
   const tokenFile = getDefaultEdgeRelayTokenFile();
   if (!tokenFile || !fs.existsSync(tokenFile)) {
-    throw new Error(
-      'QSDM Hive is not paired with a Relay. Open Edge Control on the Relay computer and connect this QSDM Hive as Mother Hive.'
-    );
+    throw new Error('QSDM Hive is not paired with a Relay.');
   }
-  const target = new URL('/v1/status', relayUrl);
+  const target = new URL(requestPath, relayUrl);
   if (target.protocol !== 'http:' && target.protocol !== 'https:') {
     throw new Error('Relay URL must use HTTP or HTTPS');
   }
+  const body = bodyValue === undefined ? '' : JSON.stringify(bodyValue);
   const token = loadEdgeRelayMotherToken(tokenFile);
   const timestamp = String(Math.floor(Date.now() / 1000));
   const nonce = randomBytes(16).toString('hex');
   const workerId = motherHiveWorkerId();
-  const bodyHash = createHash('sha256').update('').digest('hex');
+  const bodyHash = createHash('sha256').update(body).digest('hex');
   const canonical = [
-    'GET',
+    method,
     target.pathname,
     timestamp,
     nonce,
@@ -3170,8 +3316,12 @@ const readEdgeRelayStatus = async (): Promise<EdgeRelayStatusResponse> => {
     bodyHash,
   ].join('\n');
   const signature = createHmac('sha256', token).update(canonical).digest('hex');
-  const response = await axios.get<EdgeRelayStatusResponse>(target.href, {
+  const response = await axios.request<T>({
+    url: target.href,
+    method,
+    data: body || undefined,
     headers: {
+      'Content-Type': 'application/json',
       'X-QSDM-Worker-ID': workerId,
       'X-QSDM-Timestamp': timestamp,
       'X-QSDM-Nonce': nonce,
@@ -3179,9 +3329,31 @@ const readEdgeRelayStatus = async (): Promise<EdgeRelayStatusResponse> => {
     },
     timeout: 5000,
     maxContentLength: 256 * 1024,
+    maxBodyLength: 64 * 1024,
     responseType: 'json',
+    transformRequest: [(value) => value],
   });
   return response.data;
+};
+
+const readEdgeRelayStatus = async (): Promise<EdgeRelayStatusResponse> => {
+  const tokenFile = getDefaultEdgeRelayTokenFile();
+  if (!tokenFile || !fs.existsSync(tokenFile)) {
+    throw new Error(
+      'QSDM Hive is not paired with a Relay. Open Edge Control on the Relay computer and connect this QSDM Hive as Mother Hive.'
+    );
+  }
+  return requestEdgeRelay<EdgeRelayStatusResponse>('GET', '/v1/status');
+};
+
+const acknowledgeRelaySettlementProof = async (proofId: string) => {
+  if (!/^[0-9a-f]{64}$/i.test(proofId)) {
+    throw new Error('Relay settlement proof ID is invalid');
+  }
+  await requestEdgeRelay('POST', '/v1/proofs/ack', {
+    version: QSDM_MOTHER_HIVE_SETTLEMENT_VERSION,
+    proof_id: proofId.toLowerCase(),
+  });
 };
 
 export const getQsdmMotherHiveStatus =
@@ -3268,6 +3440,7 @@ export const getQsdmMotherHiveStatus =
           gpuPercent: Math.max(0, Number(status.policy?.gpu_percent) || 0),
           ramPercent: Math.max(0, Number(status.policy?.ram_percent) || 0),
         },
+        revenuePolicy: motherHiveRevenuePolicy(status),
         detail:
           onlineWorkers.length > 0
             ? 'Pooled resources are ready for QSDM-approved distributed workloads.'
@@ -3402,7 +3575,7 @@ export const startQsdmMotherHiveSystemProcess = (): {
   );
   writeTaskLog(
     QSDM_MOTHER_HIVE_SYSTEM_TASK_ID,
-    `Revenue target contributors=${QSDM_MOTHER_HIVE_CONTRIBUTOR_SHARE_PERCENT}% mother_hive=${QSDM_MOTHER_HIVE_OPERATOR_SHARE_PERCENT}% ecosystem=${QSDM_MOTHER_HIVE_ECOSYSTEM_SHARE_PERCENT}% settlement=disabled-pending-chain-verification`
+    `Settlement protocol=${QSDM_MOTHER_HIVE_SETTLEMENT_VERSION} contributors=${QSDM_MOTHER_HIVE_CONTRIBUTOR_SHARE_PERCENT}% mother_hive=${QSDM_MOTHER_HIVE_OPERATOR_SHARE_PERCENT}% ecosystem=${QSDM_MOTHER_HIVE_ECOSYSTEM_SHARE_PERCENT}% ecosystem_wallet=${QSDM_ECOSYSTEM_RESERVE_WALLET}`
   );
 
   const child = spawn(executablePath, [scriptPath], {

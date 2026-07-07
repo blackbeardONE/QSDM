@@ -345,6 +345,25 @@ const validateTaskCatalogManage = (endpoint: string, payload: unknown) => {
       }
     });
   }
+
+  const relayIds = draft.authorized_relay_ids;
+  if (relayIds !== undefined && relayIds !== null) {
+    if (!Array.isArray(relayIds) || relayIds.length > 16) {
+      invalid(
+        endpoint,
+        'authorized_relay_ids must be an array with at most 16 values'
+      );
+    }
+    (relayIds as unknown[]).forEach((relayId) => {
+      if (
+        typeof relayId !== 'string' ||
+        relayId.length !== 64 ||
+        !/^[0-9a-fA-F]+$/.test(relayId)
+      ) {
+        invalid(endpoint, 'authorized_relay_ids contains an invalid value');
+      }
+    });
+  }
 };
 
 const validateSignerImport = (endpoint: string, payload: unknown) => {

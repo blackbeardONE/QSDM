@@ -19,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
 const maxCoordinatorRequestBody = 64 * 1024
@@ -61,6 +63,11 @@ type Coordinator struct {
 	persistMu     sync.Mutex
 	verifySlots   chan struct{}
 	motherSeenAt  time.Time
+
+	settlementSigner    *mldsa87.PrivateKey
+	settlementPublicKey string
+	settlementRelayID   string
+	settlement          settlementState
 }
 
 // Relay and RelayConfig are the preferred names for new deployments. The
@@ -153,16 +160,32 @@ func NewCoordinator(config CoordinatorConfig) (*Coordinator, error) {
 	if err := os.MkdirAll(config.StateDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create coordinator state directory: %w", err)
 	}
+	settlementSigner, settlementPublicKey, err := loadOrCreateRelaySigningKey(config.StateDir)
+	if err != nil {
+		return nil, err
+	}
+	settlementRelayID, err := SettlementRelayID(settlementPublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("derive Relay settlement identity: %w", err)
+	}
+	settlement, err := loadSettlementState(config.StateDir, settlementPublicKey)
+	if err != nil {
+		return nil, err
+	}
 
 	coordinator := &Coordinator{
-		config:        config,
-		startedAt:     time.Now().UTC(),
-		workers:       map[string]WorkerStatus{},
-		jobs:          map[string]Job{},
-		receiptsByJob: map[string]Receipt{},
-		completing:    map[string]struct{}{},
-		nonces:        map[string]time.Time{},
-		verifySlots:   make(chan struct{}, config.MaxVerifications),
+		config:              config,
+		startedAt:           time.Now().UTC(),
+		workers:             map[string]WorkerStatus{},
+		jobs:                map[string]Job{},
+		receiptsByJob:       map[string]Receipt{},
+		completing:          map[string]struct{}{},
+		nonces:              map[string]time.Time{},
+		verifySlots:         make(chan struct{}, config.MaxVerifications),
+		settlementSigner:    settlementSigner,
+		settlementPublicKey: settlementPublicKey,
+		settlementRelayID:   settlementRelayID,
+		settlement:          settlement,
 	}
 	if err := coordinator.loadReceipts(); err != nil {
 		return nil, err
@@ -199,6 +222,8 @@ func (c *Coordinator) Handler() http.Handler {
 	mux.HandleFunc("/v1/jobs/lease", c.handleLease)
 	mux.HandleFunc("/v1/jobs/complete", c.handleComplete)
 	mux.HandleFunc("/v1/status", c.handleStatus)
+	mux.HandleFunc("/v1/settlement/bind", c.handleSettlementBind)
+	mux.HandleFunc("/v1/proofs/ack", c.handleSettlementAck)
 	mux.HandleFunc("/v1/proofs/latest", c.handleLatestProof)
 	return mux
 }
@@ -479,12 +504,74 @@ func (c *Coordinator) handleLatestProof(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	c.markMotherSeen()
-	proof := c.LatestProof(resource, time.Now().UTC())
-	if proof.JobCount == 0 {
-		writePoolError(w, http.StatusNotFound, "no verified receipts are available for this resource")
+	proof, err := c.LatestSettlementProof(resource, time.Now().UTC())
+	if errors.Is(err, errSettlementNotBound) {
+		writePoolError(w, http.StatusPreconditionRequired, err.Error())
+		return
+	}
+	if errors.Is(err, errNoSettlementReceipts) {
+		writePoolError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if err != nil {
+		writePoolError(w, http.StatusInternalServerError, "settlement proof could not be prepared")
 		return
 	}
 	writePoolJSON(w, http.StatusOK, proof)
+}
+
+func (c *Coordinator) handleSettlementBind(w http.ResponseWriter, r *http.Request) {
+	body, _, ok := c.authenticate(w, r, c.config.MotherToken, "mother")
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		writePoolError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var request SettlementBindRequest
+	if err := decodePoolJSON(body, &request); err != nil {
+		writePoolError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	binding, err := c.BindSettlement(request, time.Now().UTC())
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, errSettlementBindingConflict) {
+			status = http.StatusConflict
+		}
+		writePoolError(w, status, err.Error())
+		return
+	}
+	c.markMotherSeen()
+	writePoolJSON(w, http.StatusOK, binding)
+}
+
+func (c *Coordinator) handleSettlementAck(w http.ResponseWriter, r *http.Request) {
+	body, _, ok := c.authenticate(w, r, c.config.MotherToken, "mother")
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		writePoolError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var request SettlementAckRequest
+	if err := decodePoolJSON(body, &request); err != nil {
+		writePoolError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, err := c.AcknowledgeSettlementProof(request, time.Now().UTC())
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, errSettlementProofNotFound) {
+			status = http.StatusNotFound
+		}
+		writePoolError(w, status, err.Error())
+		return
+	}
+	c.markMotherSeen()
+	writePoolJSON(w, http.StatusOK, result)
 }
 
 func (c *Coordinator) Status() PoolStatus {
@@ -500,6 +587,7 @@ func (c *Coordinator) Status() PoolStatus {
 	for _, receipt := range c.receipts {
 		counts[receipt.Resource]++
 	}
+	settlement := cloneSettlementState(c.settlement)
 	return PoolStatus{
 		Version:       ProtocolVersion,
 		CoordinatorID: c.config.ID,
@@ -513,11 +601,16 @@ func (c *Coordinator) Status() PoolStatus {
 			GPUUnits:   scaledRelayUnits(c.config.GPUUnits, c.config.GPUPercent),
 			RAMMiB:     scaledRelayUnits(c.config.RAMMiB, c.config.RAMPercent),
 		},
-		MotherSeenAt:  formatOptionalTime(c.motherSeenAt),
-		StartedAt:     c.startedAt.Format(time.RFC3339Nano),
-		Workers:       workers,
-		ActiveLeases:  len(c.jobs),
-		ReceiptCounts: counts,
+		MotherSeenAt:            formatOptionalTime(c.motherSeenAt),
+		StartedAt:               c.startedAt.Format(time.RFC3339Nano),
+		Workers:                 workers,
+		ActiveLeases:            len(c.jobs),
+		ReceiptCounts:           counts,
+		SettlementReady:         settlement.Binding != nil,
+		SettlementRelayID:       c.settlementRelayID,
+		SettlementPublicKey:     c.settlementPublicKey,
+		SettlementBinding:       settlement.Binding,
+		PendingSettlementProofs: settlementPendingProofIDs(settlement),
 	}
 }
 

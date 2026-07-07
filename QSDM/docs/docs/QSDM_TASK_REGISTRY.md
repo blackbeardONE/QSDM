@@ -99,6 +99,9 @@ Registration is permissionless. The registering signer becomes the immutable man
   "audit_window": 15,
   "metadata_url": "https://qsdm.tech/tasks/qsdm-shared-edge",
   "source_url": "https://qsdm.tech/docs/#/qsdm-shared-edge",
+  "authorized_relay_ids": [
+    "64-character-key-derived-relay-id"
+  ],
   "tags": ["cell", "cpu", "qsdm"]
 }
 ```
@@ -111,6 +114,8 @@ Catalog actions are:
 - `catalog-resume`: manager-only reactivation.
 
 Bootstrap trust and catalog publication are separate. A permissionless task is synchronized but unverified. Hive lists it under **Show non-verified tasks** until an operator or governance process places that task ID in the trusted bootstrap registry.
+
+`authorized_relay_ids` is optional for ordinary tasks and required for pooled CPU, GPU, or RAM settlement. Each value is the 32-byte hexadecimal ID shown by Edge Control and derived from the Relay's persistent ML-DSA-87 public key. The task manager can rotate or revoke Relay authorization only through the next signed catalog version. Core still verifies the full public key and signature in every proof; the manifest stores only its compact key-derived ID.
 
 ## Runtime Safety
 
@@ -151,6 +156,7 @@ When `qsdm/tasks/v1` actions are included in a block, they consume the sender's 
 - `fund` debits CELL from the sender and locks it in the task reward pool.
 - `submit` records proof metadata. If the payload includes `reward_amount`, the sender must have task stake and the reward is reserved from the funded reward pool into the sender's pending reward balance.
 - `claim` pays claimable pending rewards back to the sender's AccountStore balance. Double-claims are rejected without mutating account or task state.
+- A `qsdm-edge-relay-v2` resource submission is settled in the `submit` transaction itself. Core requires an authorized Relay ID, rejects proof or receipt reuse globally, and atomically pays 70% to the bound contributor owner, 15% to Mother Hive, and 15% to the fixed ecosystem reserve. There is no second `claim` action for that batch.
 
 The `/tasks` overlay exposes pending rewards through `available_balances`, includes `reward_pool_amount`, `pending_reward_amount`, and `total_reward_paid_amount`, and annotates submissions with `reward_amount`, `claimed`, and `claimed_at`.
 

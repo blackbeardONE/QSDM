@@ -450,16 +450,42 @@ export function MotherHiveView() {
                 %
               </div>
               <div className="mt-3 flex justify-between gap-3 text-xs text-white/70">
+                <span>Contributor wallet</span>
+                <span className="break-all text-right">
+                  {status?.revenuePolicy.contributorWalletAddress ||
+                    'Waiting for Relay binding'}
+                </span>
+              </div>
+              <div className="mt-3 flex justify-between gap-3 text-xs text-white/70">
+                <span>Mother Hive wallet</span>
+                <span className="break-all text-right">
+                  {status?.revenuePolicy.motherHiveWalletAddress ||
+                    'Waiting for Relay binding'}
+                </span>
+              </div>
+              <div className="mt-3 flex justify-between gap-3 text-xs text-white/70">
                 <span>Ecosystem treasury</span>
                 <span className="break-all text-right">
                   {status?.revenuePolicy.ecosystemWalletAddress ||
                     'Not configured on QSDM Core'}
                 </span>
               </div>
+              <div className="mt-3 flex justify-between gap-3 text-xs text-white/70">
+                <span>Settlement Relay ID</span>
+                <span className="break-all text-right">
+                  {status?.revenuePolicy.relaySettlementId ||
+                    'Waiting for Relay identity'}
+                </span>
+              </div>
               {!status?.revenuePolicy.settlementActive && (
                 <p className="mt-2 text-xs text-finnieOrange">
                   {status?.revenuePolicy.settlementReason ||
                     'Settlement remains disabled until Relay receipts are enforceable on QSDM Core.'}
+                </p>
+              )}
+              {status?.revenuePolicy.settlementActive && (
+                <p className="mt-2 text-xs text-green-300">
+                  {status.revenuePolicy.settlementReason}
                 </p>
               )}
             </div>

@@ -32,11 +32,12 @@ faucet configuration at the same wallet.
 
 Tier 2E must also be distinct from referral, onboarding, integration, task,
 Mother Hive operator, and contributor wallets. It receives existing CELL from
-funded workload settlement; it does not mint CELL. No Tier 2E production
-address is configured today. Publish the address and custody policy before
-enabling pooled-compute settlement, and commit the same address in QSDM Core's
-consensus-visible workload policy. Until then, Hive must display the ecosystem
-treasury as unconfigured and settlement must remain disabled.
+funded workload settlement; it does not mint CELL. The production Tier 2E
+address is
+`651a79b2b1790820dd73bda81be24057e1bc27377c1f1117c6db2ab79dc038ea`.
+The same address is consensus-bound in QSDM Core. Pooled settlement remains
+fail-closed unless the task manifest authorizes the Relay's key-derived ID and
+the task reward pool is funded.
 
 QSDM does not yet ship the Tier 0 multisig and vesting contract described by
 the tokenomics specification. Those contracts, their tests, and an external

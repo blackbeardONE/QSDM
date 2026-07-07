@@ -32,6 +32,7 @@ export function TaskStudio({ onClose }: Props) {
   const [sourceUrl, setSourceUrl] = useState('');
   const [iconUrl, setIconUrl] = useState('');
   const [tags, setTags] = useState('qsdm,cell');
+  const [authorizedRelayIds, setAuthorizedRelayIds] = useState('');
   const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
@@ -76,6 +77,10 @@ export function TaskStudio({ onClose }: Props) {
       .split(',')
       .map((tag) => tag.trim().toLowerCase())
       .filter(Boolean);
+    const normalizedRelayIds = authorizedRelayIds
+      .split(/[\s,]+/)
+      .map((key) => key.trim().toLowerCase())
+      .filter(Boolean);
     runOperation({
       operation: 'publish',
       taskId: taskId.trim(),
@@ -100,6 +105,9 @@ export function TaskStudio({ onClose }: Props) {
         source_url: sourceUrl.trim() || undefined,
         icon_url: iconUrl.trim() || undefined,
         tags: normalizedTags,
+        authorized_relay_ids: normalizedRelayIds.length
+          ? normalizedRelayIds
+          : undefined,
       },
     });
   };
@@ -240,6 +248,15 @@ export function TaskStudio({ onClose }: Props) {
             value={tags}
             onChange={(event) => setTags(event.target.value)}
             className={inputClassName}
+          />
+        </label>
+
+        <label className={`${labelClassName} col-span-4`}>
+          Authorized Relay IDs
+          <textarea
+            value={authorizedRelayIds}
+            onChange={(event) => setAuthorizedRelayIds(event.target.value)}
+            className={`${inputClassName} h-20 py-2 font-mono resize-none`}
           />
         </label>
 

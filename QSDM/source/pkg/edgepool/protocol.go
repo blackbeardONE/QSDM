@@ -16,7 +16,12 @@ import (
 )
 
 const (
-	ProtocolVersion = "qsdm-edge-pool/v1"
+	ProtocolVersion           = "qsdm-edge-pool/v1"
+	SettlementProtocolVersion = "qsdm-edge-settlement/v1"
+	SettlementProofSource     = "qsdm-edge-relay-v2"
+	// ProductionEcosystemWallet is the consensus-bound reserve that receives
+	// the ecosystem share of every pooled resource settlement.
+	ProductionEcosystemWallet = "651a79b2b1790820dd73bda81be24057e1bc27377c1f1117c6db2ab79dc038ea"
 
 	HeaderWorkerID  = "X-QSDM-Worker-ID"
 	HeaderTimestamp = "X-QSDM-Timestamp"
@@ -134,19 +139,56 @@ type Receipt struct {
 }
 
 type PoolProof struct {
-	Version        string       `json:"version"`
-	ProofID        string       `json:"proof_id"`
-	CoordinatorID  string       `json:"coordinator_id"`
-	Resource       ResourceKind `json:"resource"`
-	WindowStart    string       `json:"window_start"`
-	WindowEnd      string       `json:"window_end"`
-	WorkerCount    int          `json:"worker_count"`
-	JobCount       int          `json:"job_count"`
-	TotalUnits     uint64       `json:"total_units"`
-	TotalMemoryMiB uint64       `json:"total_memory_mib,omitempty"`
-	ReceiptRoot    string       `json:"receipt_root"`
-	ReceiptIDs     []string     `json:"receipt_ids"`
-	Signature      string       `json:"signature"`
+	Version           string       `json:"version"`
+	ProofID           string       `json:"proof_id"`
+	CoordinatorID     string       `json:"coordinator_id"`
+	Resource          ResourceKind `json:"resource"`
+	WindowStart       string       `json:"window_start"`
+	WindowEnd         string       `json:"window_end"`
+	WorkerCount       int          `json:"worker_count"`
+	JobCount          int          `json:"job_count"`
+	TotalUnits        uint64       `json:"total_units"`
+	TotalMemoryMiB    uint64       `json:"total_memory_mib,omitempty"`
+	ReceiptRoot       string       `json:"receipt_root"`
+	ReceiptIDs        []string     `json:"receipt_ids"`
+	Signature         string       `json:"signature"`
+	SettlementVersion string       `json:"settlement_version,omitempty"`
+	ContributorWallet string       `json:"contributor_wallet,omitempty"`
+	MotherHiveWallet  string       `json:"mother_hive_wallet,omitempty"`
+	EcosystemWallet   string       `json:"ecosystem_wallet,omitempty"`
+	RelayPublicKey    string       `json:"relay_public_key,omitempty"`
+	RelaySignature    string       `json:"relay_signature,omitempty"`
+}
+
+// SettlementBinding fixes the three payout roles for a Relay. The binding is
+// write-once through the authenticated Mother Hive endpoint; changing any
+// wallet requires an explicit local Relay reset instead of a remote request.
+type SettlementBinding struct {
+	Version           string `json:"version"`
+	ContributorWallet string `json:"contributor_wallet"`
+	MotherHiveWallet  string `json:"mother_hive_wallet"`
+	EcosystemWallet   string `json:"ecosystem_wallet"`
+	BoundAt           string `json:"bound_at"`
+}
+
+type SettlementBindRequest struct {
+	Version           string `json:"version"`
+	ContributorWallet string `json:"contributor_wallet"`
+	MotherHiveWallet  string `json:"mother_hive_wallet"`
+	EcosystemWallet   string `json:"ecosystem_wallet"`
+}
+
+type SettlementAckRequest struct {
+	Version string `json:"version"`
+	ProofID string `json:"proof_id"`
+}
+
+type SettlementAckResponse struct {
+	OK               bool         `json:"ok"`
+	ProofID          string       `json:"proof_id"`
+	Resource         ResourceKind `json:"resource"`
+	ConsumedReceipts int          `json:"consumed_receipts"`
+	AcknowledgedAt   string       `json:"acknowledged_at"`
 }
 
 type WorkerStatus struct {
@@ -173,16 +215,21 @@ type RelayPolicy struct {
 }
 
 type PoolStatus struct {
-	Version       string                  `json:"version"`
-	CoordinatorID string                  `json:"coordinator_id"`
-	RelayID       string                  `json:"relay_id"`
-	Role          string                  `json:"role"`
-	Policy        RelayPolicy             `json:"policy"`
-	MotherSeenAt  string                  `json:"mother_hive_last_seen_at,omitempty"`
-	StartedAt     string                  `json:"started_at"`
-	Workers       []WorkerStatus          `json:"workers"`
-	ActiveLeases  int                     `json:"active_leases"`
-	ReceiptCounts map[ResourceKind]uint64 `json:"receipt_counts"`
+	Version                 string                  `json:"version"`
+	CoordinatorID           string                  `json:"coordinator_id"`
+	RelayID                 string                  `json:"relay_id"`
+	Role                    string                  `json:"role"`
+	Policy                  RelayPolicy             `json:"policy"`
+	MotherSeenAt            string                  `json:"mother_hive_last_seen_at,omitempty"`
+	StartedAt               string                  `json:"started_at"`
+	Workers                 []WorkerStatus          `json:"workers"`
+	ActiveLeases            int                     `json:"active_leases"`
+	ReceiptCounts           map[ResourceKind]uint64 `json:"receipt_counts"`
+	SettlementReady         bool                    `json:"settlement_ready"`
+	SettlementRelayID       string                  `json:"settlement_relay_id,omitempty"`
+	SettlementPublicKey     string                  `json:"settlement_public_key,omitempty"`
+	SettlementBinding       *SettlementBinding      `json:"settlement_binding,omitempty"`
+	PendingSettlementProofs map[ResourceKind]string `json:"pending_settlement_proofs,omitempty"`
 }
 
 func ValidateWorkerID(workerID string) error {

@@ -188,7 +188,8 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 		if tasks == nil {
 			return ErrTaskStateNotWired
 		}
-		return tasks.ApplyEconomicTx(tx, a.accounts)
+		h, _ := a.currentHeight()
+		return tasks.ApplyEconomicTxAtHeight(tx, a.accounts, h)
 	}
 	if tx.ContractID == WalletTransferContractID {
 		return ApplyWalletTransferTx(a.accounts, tx)

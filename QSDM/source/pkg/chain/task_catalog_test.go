@@ -28,6 +28,7 @@ func testTaskManifest(t *testing.T, taskID, manager string, version uint64) stri
 		SourceURL:          "https://qsdm.tech/docs/#/tasks/shared-edge",
 		IconURL:            "https://qsdm.tech/assets/qsdm-task.png",
 		Tags:               []string{"CELL", "qsdm", "cell"},
+		AuthorizedRelayIDs: []string{strings.Repeat("A", 64), strings.Repeat("a", 64)},
 		Runtime: TaskRuntimeManifest{
 			Kind:              "capability",
 			Capability:        "generic-proof-v1",
@@ -77,6 +78,9 @@ func TestTaskCatalog_RegisterAndClone(t *testing.T) {
 	if got := strings.Join(state.Manifest.Tags, ","); got != "cell,qsdm" {
 		t.Fatalf("normalized tags: got %q want %q", got, "cell,qsdm")
 	}
+	if got := strings.Join(state.Manifest.AuthorizedRelayIDs, ","); got != strings.Repeat("a", 64) {
+		t.Fatalf("normalized Relay ids: got %q", got)
+	}
 	if rootAfter := store.StateRoot(); rootAfter == rootBefore {
 		t.Fatal("catalog registration did not change state root")
 	}
@@ -90,9 +94,27 @@ func TestTaskCatalog_RegisterAndClone(t *testing.T) {
 		t.Fatalf("catalog manifest missing from replay clone: %+v", clonedState.Manifest)
 	}
 	clonedState.Manifest.Tags[0] = "changed"
+	clonedState.Manifest.AuthorizedRelayIDs = append(clonedState.Manifest.AuthorizedRelayIDs, "changed")
 	original, _ := store.GetTask("shared-edge")
 	if original.Manifest.Tags[0] == "changed" {
 		t.Fatal("catalog manifest tags were not deep-cloned")
+	}
+	if len(original.Manifest.AuthorizedRelayIDs) != 1 {
+		t.Fatal("catalog authorized Relay ids were not deep-cloned")
+	}
+}
+
+func TestTaskCatalogRejectsInvalidAuthorizedRelayID(t *testing.T) {
+	action := testCatalogAction(t, "catalog-register-relay", TaskActionCatalogRegister, "shared-edge", "alice", 1, 1)
+	var manifest TaskManifest
+	if err := json.Unmarshal([]byte(action.Payload), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.AuthorizedRelayIDs = []string{"not-a-relay-id"}
+	raw, _ := json.Marshal(manifest)
+	action.Payload = string(raw)
+	if err := NewTaskStateStore().ApplyAction(action); err == nil || !strings.Contains(err.Error(), "authorized Relay ids") {
+		t.Fatalf("invalid authorized Relay id returned %v", err)
 	}
 }
 
