@@ -16,6 +16,7 @@ $ErrLog = Join-Path $LocalRoot "local-gui-persist.err.log"
 New-Item -ItemType Directory -Force -Path $LocalRoot | Out-Null
 
 $candidates = @(
+    "qsdm-local-gui-home-server.exe",
     "qsdm-local-gui-hive-v2.exe",
     "qsdm-local-gui-hive.exe",
     "qsdm-local-gui-persist.exe",
@@ -37,7 +38,7 @@ if ($null -eq $ExePath) {
 }
 
 $running = Get-Process -ErrorAction SilentlyContinue | Where-Object {
-    $_.ProcessName -in @("qsdm-local-gui-hive-v2", "qsdm-local-gui-hive", "qsdm-local-gui-persist", "qsdm-local-gui-next", "qsdm-local-gui-sqlite", "qsdm-local-gui")
+    $_.ProcessName -like "qsdm-local-gui*"
 }
 if ($running -and -not $AllowParallel) {
     Write-Host "QSDM local GUI is already running."

@@ -118,7 +118,8 @@ if ($Networked) {
         publicP2P = $PublicP2P.IsPresent
         updatedAtUtc = [DateTime]::UtcNow.ToString("o")
     }
-    $modeConfig | ConvertTo-Json | Set-Content -LiteralPath $ModeConfigPath -Encoding UTF8
+    $modeJson = $modeConfig | ConvertTo-Json
+    [IO.File]::WriteAllText($ModeConfigPath, $modeJson, [Text.UTF8Encoding]::new($false))
 }
 
 function Write-LauncherLog {
@@ -577,6 +578,127 @@ function Stop-ExistingValidator {
     }
 }
 
+function Test-ValidGovernanceSnapshot {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $false
+    }
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($Path)
+        if ($bytes.Length -eq 0 -or [Array]::IndexOf($bytes, [byte]0) -ge 0) {
+            return $false
+        }
+        $doc = [System.Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json -ErrorAction Stop
+        return ($null -ne $doc.version -and $null -ne $doc.active)
+    } catch {
+        return $false
+    }
+}
+
+function Repair-GovernanceSnapshot {
+    $snapshot = Join-Path $RunDir "qsdm_governance.json"
+    $lastGood = "$snapshot.last-good"
+    if (-not (Test-Path -LiteralPath $snapshot)) {
+        return
+    }
+    if (Test-ValidGovernanceSnapshot -Path $snapshot) {
+        if (-not (Test-ValidGovernanceSnapshot -Path $lastGood)) {
+            [System.IO.File]::Copy($snapshot, $lastGood, $true)
+            Write-LauncherLog "seeded last-good governance snapshot"
+        }
+        return
+    }
+    if (-not (Test-ValidGovernanceSnapshot -Path $lastGood)) {
+        throw "Governance snapshot is corrupt and no valid last-good copy exists: $snapshot"
+    }
+
+    $stamp = [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssZ")
+    $quarantine = "$snapshot.corrupt-$stamp.bak"
+    [System.IO.File]::Copy($snapshot, $quarantine, $false)
+    [System.IO.File]::Copy($lastGood, $snapshot, $true)
+    Write-LauncherLog "restored corrupt governance snapshot from last-good backup=$quarantine"
+}
+
+function Repair-ZeroFilledJournalTail {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+    $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    try {
+        $originalLength = $stream.Length
+        if ($originalLength -eq 0) {
+            return
+        }
+        $zeroStart = $originalLength
+        $cursor = $originalLength
+        $foundNonZero = $false
+        while ($cursor -gt 0 -and -not $foundNonZero) {
+            $size = [int][Math]::Min(65536, $cursor)
+            $start = $cursor - $size
+            $buffer = [byte[]]::new($size)
+            $stream.Seek($start, [IO.SeekOrigin]::Begin) | Out-Null
+            $read = $stream.Read($buffer, 0, $size)
+            for ($i = $read - 1; $i -ge 0; $i--) {
+                if ($buffer[$i] -eq 0) {
+                    $zeroStart = $start + $i
+                    continue
+                }
+                $foundNonZero = $true
+                break
+            }
+            $cursor = $start
+        }
+        if ($zeroStart -eq $originalLength) {
+            return
+        }
+
+        $truncateAt = $zeroStart
+        if ($zeroStart -gt 0) {
+            $stream.Seek($zeroStart - 1, [IO.SeekOrigin]::Begin) | Out-Null
+            $previous = $stream.ReadByte()
+            if ($previous -ne 10) {
+                $cursor = $zeroStart
+                $foundNewline = $false
+                while ($cursor -gt 0 -and -not $foundNewline) {
+                    $size = [int][Math]::Min(65536, $cursor)
+                    $start = $cursor - $size
+                    $buffer = [byte[]]::new($size)
+                    $stream.Seek($start, [IO.SeekOrigin]::Begin) | Out-Null
+                    $read = $stream.Read($buffer, 0, $size)
+                    for ($i = $read - 1; $i -ge 0; $i--) {
+                        if ($buffer[$i] -eq 10) {
+                            $truncateAt = $start + $i + 1
+                            $foundNewline = $true
+                            break
+                        }
+                    }
+                    $cursor = $start
+                }
+                if (-not $foundNewline) {
+                    throw "Journal contains a zero-filled tail but no complete line to recover: $Path"
+                }
+            }
+        }
+    } finally {
+        $stream.Dispose()
+    }
+
+    $stamp = [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssZ")
+    $backup = "$Path.corrupt-tail-$stamp.bak"
+    [IO.File]::Copy($Path, $backup, $false)
+    $writer = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try {
+        $writer.SetLength($truncateAt)
+        $writer.Flush($true)
+    } finally {
+        $writer.Dispose()
+    }
+    Write-LauncherLog "trimmed zero-filled journal tail path=$Path original_bytes=$originalLength recovered_bytes=$truncateAt backup=$backup"
+}
+
 Ensure-QsdmHiveTaskRegistry
 Acquire-LauncherLock
 
@@ -598,6 +720,9 @@ if ($Restart) {
     Start-Sleep -Seconds 2
 }
 
+Repair-GovernanceSnapshot
+Repair-ZeroFilledJournalTail -Path (Join-Path $RunDir "qsdm_receipts.ndjson")
+
 if (-not (Test-Path -LiteralPath $ExePath)) {
     Write-LauncherLog "missing validator binary: $ExePath"
     throw "Missing validator binary: $ExePath"
@@ -615,6 +740,22 @@ $env:QSDM_NETWORKED_CATCHUP_MODE = if ($Networked) { "1" } else { "0" }
 $env:QSDM_PRODUCTION_MODE = "true"
 $env:QSDM_V2_ACTIVE = "1"
 $env:QSDM_REQUIRE_SQLITE_STORAGE = "1"
+$requiredNoProxy = @("127.0.0.1", "localhost")
+if ($Networked -and -not [string]::IsNullOrWhiteSpace($ChainSyncUrls)) {
+    foreach ($syncUrl in @($ChainSyncUrls -split ',')) {
+        try {
+            $syncHost = ([Uri]$syncUrl.Trim()).Host
+            if (-not [string]::IsNullOrWhiteSpace($syncHost)) {
+                $requiredNoProxy += $syncHost
+            }
+        } catch {
+            Write-LauncherLog "ignored invalid chain sync URL while building NO_PROXY: $syncUrl"
+        }
+    }
+}
+$existingNoProxy = @($env:NO_PROXY -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+$env:NO_PROXY = (@($existingNoProxy + $requiredNoProxy) | Sort-Object -Unique) -join ','
+$env:no_proxy = $env:NO_PROXY
 $env:CONFIG_FILE = $ConfigPath
 $env:QSDM_TASK_REGISTRY_PATH = $TaskRegistryPath
 $env:QSDM_TASK_ACTION_LOG_PATH = $TaskActionLogPath

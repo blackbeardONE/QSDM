@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -79,6 +80,32 @@ func TestLoadState_MissingFile(t *testing.T) {
 	}
 	if lc != 0 || sc != 0 {
 		t.Errorf("expected 0,0 counts for missing file, got %d,%d", lc, sc)
+	}
+}
+
+func TestLoadState_RecoversCorruptPrimaryFromLastGood(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bridge_state.json")
+	bp := &BridgeProtocol{locks: map[string]*Lock{
+		"lock1": {ID: "lock1", Status: LockStatusLocked, Amount: 2},
+	}}
+	if err := SaveState(path, bp, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	restored := &BridgeProtocol{locks: make(map[string]*Lock)}
+	locks, _, err := LoadState(path, restored, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if locks != 1 || restored.locks["lock1"] == nil {
+		t.Fatalf("restored locks = %d, state = %#v", locks, restored.locks)
+	}
+	if data, err := os.ReadFile(path); err != nil || !json.Valid(data) {
+		t.Fatalf("primary was not repaired: data=%q err=%v", data, err)
 	}
 }
 

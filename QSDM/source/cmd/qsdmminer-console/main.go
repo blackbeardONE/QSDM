@@ -1037,6 +1037,9 @@ func main() {
 	if handled, code := runWindowsServiceIfNeeded(realMain); handled {
 		os.Exit(code)
 	}
+	if handled, code := handoffWindowsServiceIfNeeded(os.Args[1:]); handled {
+		os.Exit(code)
+	}
 	os.Exit(realMain(context.Background()))
 }
 

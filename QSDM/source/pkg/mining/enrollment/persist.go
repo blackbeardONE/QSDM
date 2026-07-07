@@ -30,11 +30,10 @@ package enrollment
 // the "snapshot inconsistent with itself" failure mode where
 // the persisted index drifts from the persisted records.
 //
-// Atomic write: Save writes to a same-directory temp file first and replaces
-// <path>. A crash before replacement leaves <path> intact, so the recovery
-// posture is "old snapshot is still loadable". Windows builds fall back to a
-// direct overwrite if replace-over-existing is blocked but the destination is
-// still writable.
+// Atomic write: Save writes through same-directory temp files and replaces
+// <path>. A crash before replacement leaves <path> intact. A separately
+// replaced <path>.last-good file permits verified recovery from storage-level
+// corruption without silently discarding miner enrollment state.
 
 import (
 	"encoding/hex"
@@ -96,6 +95,9 @@ func (s *InMemoryState) Save(path string) error {
 	if err != nil {
 		return fmt.Errorf("enrollment: marshal snapshot: %w", err)
 	}
+	if err := fileutil.WriteFileAtomic(path+".last-good", data, 0o644); err != nil {
+		return fmt.Errorf("enrollment: save last-good %s: %w", path, err)
+	}
 	if err := fileutil.WriteFileAtomic(path, data, 0o644); err != nil {
 		return fmt.Errorf("enrollment: save %s: %w", path, err)
 	}
@@ -135,7 +137,18 @@ func (s *InMemoryState) Load(path string) (int, error) {
 	}
 	var snap stateSnapshot
 	if err := json.Unmarshal(raw, &snap); err != nil {
-		return 0, fmt.Errorf("enrollment: parse %s: %w", path, err)
+		primaryErr := err
+		backupPath := path + ".last-good"
+		backup, backupErr := os.ReadFile(backupPath)
+		if backupErr != nil {
+			return 0, fmt.Errorf("enrollment: parse %s: %w", path, primaryErr)
+		}
+		if backupErr = json.Unmarshal(backup, &snap); backupErr != nil {
+			return 0, fmt.Errorf("enrollment: parse %s: %w (last-good snapshot is also invalid: %v)", path, primaryErr, backupErr)
+		}
+		if backupErr = fileutil.WriteFileAtomic(path, backup, 0o644); backupErr != nil {
+			return 0, fmt.Errorf("enrollment: restore %s from last-good: %w", path, backupErr)
+		}
 	}
 
 	s.mu.Lock()

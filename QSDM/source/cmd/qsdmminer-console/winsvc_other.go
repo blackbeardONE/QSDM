@@ -15,3 +15,7 @@ import "context"
 func runWindowsServiceIfNeeded(_ func(context.Context) int) (handled bool, exitCode int) {
 	return false, 0
 }
+
+func handoffWindowsServiceIfNeeded(_ []string) (handled bool, exitCode int) {
+	return false, 0
+}

@@ -129,6 +129,7 @@ $stdoutLog = 'C:\Users\Windows 10\.qsdm\attester-stdout.log'
 $proc = Start-Process `
     -FilePath $exe `
     -ArgumentList @(
+        '-listen', '127.0.0.1:7733',
         '-relay', 'https://api.qsdm.tech',
         '-slot',  'blackbeard-3050',
         '-note',  'blackbeard-3050-home'
@@ -145,7 +146,9 @@ via Start-Process (which does its own quoting) — note
 that we **omit** `-key` to fall back on the binary's
 default `~/.qsdm/attester.key`, dodging the
 `Start-Process -ArgumentList` space-splitting bug.
-The binary's default `-listen :7733` is also kept.
+The launcher explicitly binds `127.0.0.1:7733`. Public access is provided by
+the authenticated outbound relay tunnel; binding `:7733` would unnecessarily
+expose the challenge issuer on every local network interface.
 
 ### 3.3 Auto-start mechanism
 

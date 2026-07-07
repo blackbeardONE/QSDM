@@ -272,6 +272,33 @@ func TestTaskStateStore_ResourceWorkerProofAndRewardPolicy(t *testing.T) {
 	}
 }
 
+func TestTaskStateStore_RejectsUnverifiablePooledResourceProof(t *testing.T) {
+	const root = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	for _, source := range []string{"qsdm-edge-pool", "qsdm-edge-relay"} {
+		t.Run(source, func(t *testing.T) {
+			store := NewTaskStateStore()
+			if err := store.ApplyActions([]TaskAction{
+				{ID: source + "-stake", Sender: "alice", TaskID: "qsdm-edge-worker", Action: "stake", Amount: 1, Timestamp: "2026-07-08T00:00:00Z"},
+				{ID: source + "-fund", Sender: "sponsor", TaskID: "qsdm-edge-worker", Action: "fund", Amount: 1, Timestamp: "2026-07-08T00:00:01Z"},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			payload := `{"round":1,"slot":10,"source":"` + source + `","resource":"cpu","submission_value":"` + root + `","reward_amount":0.05,"proof":{"job_count":2,"total_units":1000,"receipt_root":"` + root + `"}}`
+			err := store.ApplyAction(TaskAction{
+				ID: source + "-submit", Sender: "alice", TaskID: "qsdm-edge-worker",
+				Action: "submit", Payload: payload, Timestamp: "2026-07-08T00:00:02Z",
+			})
+			if !errors.Is(err, ErrPooledResourceProofNotEnforceable) {
+				t.Fatalf("pooled proof error = %v, want ErrPooledResourceProofNotEnforceable", err)
+			}
+			state, _ := store.GetTask("qsdm-edge-worker")
+			if state.RewardPoolAmount != 1 || state.PendingRewardAmount != 0 {
+				t.Fatalf("pooled proof mutated reward accounting: %+v", state)
+			}
+		})
+	}
+}
+
 func TestTaskStateStore_CatalogRewardAndStakeLimitsAreConsensusEnforced(t *testing.T) {
 	store := NewTaskStateStore()
 	manifest := TaskManifest{

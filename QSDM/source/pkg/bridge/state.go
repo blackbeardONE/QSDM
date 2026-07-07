@@ -6,6 +6,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/blackbeardONE/QSDM/pkg/fileutil"
 )
 
 // bridgeState is the on-disk representation of all bridge + swap state.
@@ -78,12 +80,11 @@ func SaveState(path string, bp *BridgeProtocol, asp *AtomicSwapProtocol) error {
 		return fmt.Errorf("marshal bridge state: %w", err)
 	}
 
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		return fmt.Errorf("write bridge state: %w", err)
+	if err := fileutil.WriteFileAtomic(path+".last-good", data, 0o600); err != nil {
+		return fmt.Errorf("write bridge state backup: %w", err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("rename bridge state: %w", err)
+	if err := fileutil.WriteFileAtomic(path, data, 0o600); err != nil {
+		return fmt.Errorf("write bridge state: %w", err)
 	}
 	return nil
 }
@@ -101,7 +102,17 @@ func LoadState(path string, bp *BridgeProtocol, asp *AtomicSwapProtocol) (lockCo
 
 	var st bridgeState
 	if err := json.Unmarshal(data, &st); err != nil {
-		return 0, 0, fmt.Errorf("unmarshal bridge state: %w", err)
+		primaryErr := err
+		backup, backupErr := os.ReadFile(path + ".last-good")
+		if backupErr != nil {
+			return 0, 0, fmt.Errorf("unmarshal bridge state: %w (backup unavailable: %v)", primaryErr, backupErr)
+		}
+		if backupErr = json.Unmarshal(backup, &st); backupErr != nil {
+			return 0, 0, fmt.Errorf("unmarshal bridge state: %w (backup invalid: %v)", primaryErr, backupErr)
+		}
+		if repairErr := fileutil.WriteFileAtomic(path, backup, 0o600); repairErr != nil {
+			return 0, 0, fmt.Errorf("recover bridge state from backup: %w", repairErr)
+		}
 	}
 
 	if bp != nil && len(st.Locks) > 0 {

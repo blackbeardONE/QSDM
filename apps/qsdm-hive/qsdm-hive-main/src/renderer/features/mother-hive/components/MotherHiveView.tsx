@@ -458,8 +458,8 @@ export function MotherHiveView() {
               </div>
               {!status?.revenuePolicy.settlementActive && (
                 <p className="mt-2 text-xs text-finnieOrange">
-                  Settlement remains disabled until Relay receipts are
-                  enforceable on QSDM Core.
+                  {status?.revenuePolicy.settlementReason ||
+                    'Settlement remains disabled until Relay receipts are enforceable on QSDM Core.'}
                 </p>
               )}
             </div>

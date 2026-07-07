@@ -5,6 +5,8 @@ param(
     [string]$TaskName = "QSDM-Local-Stack",
     [int]$IntervalSeconds = 30,
     [int]$RestartAfterFailures = 10,
+    [int]$GatewayRestartAfterFailures = 3,
+    [switch]$NoPublicGatewayCheck,
     [switch]$Highest,
     [switch]$RemoveStartupFallback,
     [switch]$NoStartupFallback,
@@ -29,10 +31,15 @@ if (-not (Test-Path -LiteralPath $WatchdogScript)) {
     throw "Missing watchdog script: $WatchdogScript"
 }
 
-$watchdogArgs = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$WatchdogScript`" -QsdmRoot `"$QsdmRoot`" -Relay `"$Relay`" -Slot `"$Slot`" -IntervalSeconds $IntervalSeconds -RestartAfterFailures $RestartAfterFailures"
+$watchdogArgs = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$WatchdogScript`" -QsdmRoot `"$QsdmRoot`" -Relay `"$Relay`" -Slot `"$Slot`" -IntervalSeconds $IntervalSeconds -RestartAfterFailures $RestartAfterFailures -GatewayRestartAfterFailures $GatewayRestartAfterFailures"
+if (-not $NoPublicGatewayCheck) {
+    $watchdogArgs += " -CheckPublicGateway"
+} else {
+    $watchdogArgs += " -NoPublicGatewayCheck"
+}
 $taskRun = "powershell.exe $watchdogArgs"
 
-Write-InstallLog "install requested task=$TaskName highest=$Highest root=$QsdmRoot"
+Write-InstallLog "install requested task=$TaskName highest=$Highest root=$QsdmRoot check_public_gateway=$(-not $NoPublicGatewayCheck.IsPresent)"
 
 try {
     $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $watchdogArgs -WorkingDirectory $QsdmRoot
@@ -54,7 +61,12 @@ try {
         -Trigger $trigger `
         -Settings $settings `
         -Principal $principal `
-        -Force | Out-Null
+        -Force `
+        -ErrorAction Stop | Out-Null
+
+    if (-not (Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop)) {
+        throw "Scheduled task registration returned without creating $TaskName"
+    }
 
     Write-InstallLog "registered scheduled task run_level=$runLevel"
 } catch {
@@ -91,7 +103,7 @@ if ($RemoveStartupFallback) {
 
 if (-not $NoRunNow) {
     try {
-        Start-ScheduledTask -TaskName $TaskName
+        Start-ScheduledTask -TaskName $TaskName -ErrorAction Stop
         Write-InstallLog "started scheduled task"
     } catch {
         Write-InstallLog "scheduled task start failed: $($_.Exception.Message)"

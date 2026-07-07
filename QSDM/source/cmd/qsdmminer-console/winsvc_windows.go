@@ -40,8 +40,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"golang.org/x/sys/windows/svc"
+	"golang.org/x/sys/windows/svc/mgr"
 )
 
 // winServiceName is the canonical service name. It must match the
@@ -87,6 +90,82 @@ func runWindowsServiceIfNeeded(realMain func(context.Context) int) (handled bool
 		return true, 1
 	}
 	return true, h.exitCode
+}
+
+// handoffWindowsServiceIfNeeded handles the child process created by the
+// staged updater on Windows. The old service process promotes and starts the
+// new executable immediately before it exits. That child is not SCM-owned, so
+// it must wait for the old service instance to stop and then ask SCM to launch
+// the promoted binary from the registered service path. Without this handoff,
+// Task Manager can show an untracked SYSTEM miner while SCM reports Stopped.
+func handoffWindowsServiceIfNeeded(args []string) (handled bool, exitCode int) {
+	if !hasWindowsServiceFlag(args) {
+		return false, 0
+	}
+	isService, err := svc.IsWindowsService()
+	if err == nil && isService {
+		return false, 0
+	}
+
+	manager, err := mgr.Connect()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "qsdmminer: connect to service manager for update handoff: %v\n", err)
+		return true, 1
+	}
+	defer manager.Disconnect()
+	service, err := manager.OpenService(winServiceName)
+	if err != nil {
+		// --service remains usable in development before the service is
+		// installed; only take over when the registered service exists.
+		return false, 0
+	}
+	defer service.Close()
+
+	deadline := time.Now().Add(30 * time.Second)
+	startRequested := false
+	for time.Now().Before(deadline) {
+		status, queryErr := service.Query()
+		if queryErr != nil {
+			fmt.Fprintf(os.Stderr, "qsdmminer: query service during update handoff: %v\n", queryErr)
+			return true, 1
+		}
+		switch status.State {
+		case svc.Running:
+			return true, 0
+		case svc.Stopped:
+			if !startRequested {
+				if startErr := service.Start(); startErr != nil {
+					// SCM recovery may win the race between Query and Start.
+					if raced, racedErr := service.Query(); racedErr == nil &&
+						(raced.State == svc.Running || raced.State == svc.StartPending) {
+						startRequested = true
+						break
+					}
+					fmt.Fprintf(os.Stderr, "qsdmminer: start promoted service: %v\n", startErr)
+					return true, 1
+				}
+				startRequested = true
+			}
+		case svc.StartPending, svc.StopPending:
+			// Wait for SCM to finish the in-flight transition.
+		default:
+			fmt.Fprintf(os.Stderr, "qsdmminer: service is in unsupported handoff state %d\n", status.State)
+			return true, 1
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	fmt.Fprintln(os.Stderr, "qsdmminer: timed out waiting for promoted service to start")
+	return true, 1
+}
+
+func hasWindowsServiceFlag(args []string) bool {
+	for _, arg := range args {
+		name := strings.TrimLeft(strings.SplitN(arg, "=", 2)[0], "-")
+		if strings.EqualFold(name, "service") {
+			return true
+		}
+	}
+	return false
 }
 
 // winSvcHandler implements svc.Handler. The single Execute call

@@ -26,6 +26,12 @@ var (
 	ErrInsufficientTaskRewardPool = errors.New("chain: insufficient task reward pool")
 	ErrNoTaskReward               = errors.New("chain: no claimable task reward")
 	ErrTaskActionRequiresStake    = errors.New("chain: task action requires task stake")
+	// ErrPooledResourceProofNotEnforceable keeps Relay-backed rewards fail
+	// closed until validators can verify a Relay public-key signature, bind the
+	// receipt set to payout wallets, and reject receipt reuse globally. The
+	// current edge-pool HMAC proves authenticity only to the paired Hive that
+	// shares the secret; it is not independently verifiable by QSDM validators.
+	ErrPooledResourceProofNotEnforceable = errors.New("chain: pooled resource proof settlement is not yet consensus-enforceable")
 	// ErrLegacyResourceWorkerProof identifies the pre-activation worker proof
 	// shape that omitted the resource discriminator. Consensus accepts it only
 	// while replaying historical blocks below ResourceWorkerProofActivationHeight.
@@ -742,14 +748,19 @@ func validateTaskSubmissionPolicy(task *TaskState, participant *TaskParticipantS
 	if err := json.Unmarshal(envelope.Proof, &proof); err != nil {
 		return fmt.Errorf("chain: decode resource worker proof details: %w", err)
 	}
-	if strings.EqualFold(strings.TrimSpace(envelope.Source), "qsdm-edge-pool") {
+	proofSource := strings.ToLower(strings.TrimSpace(envelope.Source))
+	if proofSource == "qsdm-edge-pool" || proofSource == "qsdm-edge-relay" {
+		// Shape checks are deliberately retained before the fail-closed gate so
+		// malformed payloads remain distinguishable in diagnostics. They are not
+		// sufficient to authorize CELL: a client can invent a syntactically valid
+		// root unless Core verifies the underlying Relay receipts itself.
 		if proof.JobCount <= 0 || proof.TotalUnits == 0 || !validTaskDigest(proof.ReceiptRoot) {
 			return errors.New("chain: pooled resource proof requires verified jobs, units, and receipt root")
 		}
 		if !strings.EqualFold(envelope.SubmissionValue, proof.ReceiptRoot) {
 			return errors.New("chain: pooled resource submission does not match its receipt root")
 		}
-		return nil
+		return ErrPooledResourceProofNotEnforceable
 	}
 	if strings.TrimSpace(proof.Algorithm) == "" || proof.Units == 0 || !validTaskDigest(proof.Digest) {
 		return errors.New("chain: local resource proof requires an algorithm, units, and digest")

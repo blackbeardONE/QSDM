@@ -10,6 +10,22 @@ import (
 	"golang.org/x/sys/windows/svc"
 )
 
+func TestHasWindowsServiceFlag(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want bool
+	}{
+		{args: []string{"--service"}, want: true},
+		{args: []string{"--service=true"}, want: true},
+		{args: []string{"-SERVICE"}, want: true},
+		{args: []string{"--version"}, want: false},
+	} {
+		if got := hasWindowsServiceFlag(tc.args); got != tc.want {
+			t.Fatalf("hasWindowsServiceFlag(%v) = %v, want %v", tc.args, got, tc.want)
+		}
+	}
+}
+
 // drainStatus collects every svc.Status the handler emits until the
 // channel is closed or the timeout fires. Tests assert on the
 // observed sequence of states (StartPending → Running → StopPending

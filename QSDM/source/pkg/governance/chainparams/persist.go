@@ -214,6 +214,12 @@ func SaveSnapshotWith(store ParamStore, votes AuthorityVoteStore, path string) e
 	if err != nil {
 		return fmt.Errorf("chainparams: marshal snapshot: %w", err)
 	}
+	// Keep a separately replaced last-good copy. Atomic replacement protects
+	// the primary from process interruption; this companion also gives startup
+	// a verified recovery point for filesystem or hardware-level corruption.
+	if err := fileutil.WriteFileAtomic(path+".last-good", out, 0o600); err != nil {
+		return fmt.Errorf("chainparams: save last-good snapshot: %w", err)
+	}
 	if err := fileutil.WriteFileAtomic(path, out, 0o600); err != nil {
 		return fmt.Errorf("chainparams: save snapshot: %w", err)
 	}
@@ -261,7 +267,18 @@ func LoadOrNewWith(path string) (*InMemoryParamStore, *InMemoryAuthorityVoteStor
 	}
 	var doc snapshotDoc
 	if err := json.Unmarshal(b, &doc); err != nil {
-		return nil, nil, fmt.Errorf("chainparams: parse snapshot %q: %w", path, err)
+		primaryErr := err
+		backupPath := path + ".last-good"
+		backup, backupErr := os.ReadFile(backupPath)
+		if backupErr != nil {
+			return nil, nil, fmt.Errorf("chainparams: parse snapshot %q: %w", path, primaryErr)
+		}
+		if backupErr = json.Unmarshal(backup, &doc); backupErr != nil {
+			return nil, nil, fmt.Errorf("chainparams: parse snapshot %q: %w (last-good snapshot is also invalid: %v)", path, primaryErr, backupErr)
+		}
+		if backupErr = fileutil.WriteFileAtomic(path, backup, 0o600); backupErr != nil {
+			return nil, nil, fmt.Errorf("chainparams: restore snapshot %q from last-good: %w", path, backupErr)
+		}
 	}
 	if doc.Version < snapshotMinSupportedVersion || doc.Version > SnapshotVersion {
 		return nil, nil, fmt.Errorf(

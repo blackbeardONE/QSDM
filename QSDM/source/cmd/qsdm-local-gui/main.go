@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -57,10 +58,7 @@ var validatorProcessNames = []string{
 	"qsdm-sqlite",
 	"qsdm-sqlite-next",
 	"qsdm-local-validator",
-	"qsdm-local-validator-sqlite.hotfix",
-	"qsdm-local-validator-sqlite.candidate",
-	"qsdm-local-validator-sqlite.new",
-	"qsdm-local-validator-sqlite",
+	"qsdm-local-validator-sqlite*",
 	"qsdm-local-validator-next",
 	"qsdm-local-validator-hive",
 	"qsdm-local-validator-hive.new",
@@ -97,17 +95,19 @@ type adminSnapshot struct {
 }
 
 type validatorSnapshot struct {
-	Running   bool           `json:"running"`
-	Ready     bool           `json:"ready"`
-	Error     string         `json:"error,omitempty"`
-	NodeID    string         `json:"node_id,omitempty"`
-	Role      string         `json:"role,omitempty"`
-	ChainTip  int64          `json:"chain_tip,omitempty"`
-	Peers     int64          `json:"peers,omitempty"`
-	Uptime    string         `json:"uptime,omitempty"`
-	V2Active  bool           `json:"v2_active"`
-	Processes []processInfo  `json:"processes"`
-	Listeners []listenerInfo `json:"listeners"`
+	Running        bool           `json:"running"`
+	Ready          bool           `json:"ready"`
+	ConfiguredMode string         `json:"configured_mode"`
+	ActiveMode     string         `json:"active_mode"`
+	Error          string         `json:"error,omitempty"`
+	NodeID         string         `json:"node_id,omitempty"`
+	Role           string         `json:"role,omitempty"`
+	ChainTip       int64          `json:"chain_tip,omitempty"`
+	Peers          int64          `json:"peers,omitempty"`
+	Uptime         string         `json:"uptime,omitempty"`
+	V2Active       bool           `json:"v2_active"`
+	Processes      []processInfo  `json:"processes"`
+	Listeners      []listenerInfo `json:"listeners"`
 }
 
 type minerSnapshot struct {
@@ -290,8 +290,7 @@ func (s *state) handleValidatorStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	out, err := runCommand(r.Context(), 45*time.Second, "powershell.exe",
-		"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", s.validatorScript)
+	out, err := runCommand(r.Context(), 45*time.Second, "powershell.exe", s.validatorLauncherArgs()...)
 	writeAction(w, out, err)
 }
 
@@ -311,8 +310,7 @@ func (s *state) handleValidatorRestart(w http.ResponseWriter, r *http.Request) {
 	}
 	stopOut, _ := s.stopValidator(r.Context())
 	time.Sleep(1200 * time.Millisecond)
-	startOut, err := runCommand(r.Context(), 45*time.Second, "powershell.exe",
-		"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", s.validatorScript)
+	startOut, err := runCommand(r.Context(), 45*time.Second, "powershell.exe", s.validatorLauncherArgs()...)
 	writeAction(w, strings.TrimSpace(stopOut+"\n"+startOut), err)
 }
 
@@ -473,9 +471,12 @@ func (s *state) heartbeatReaper(srv *http.Server) {
 func (s *state) snapshot(ctx context.Context) snapshot {
 	valProcesses := queryProcesses(validatorProcessNames, s.localRoot)
 	valListeners := queryListeners([]int{4001, 8080, 8081})
+	mode := s.validatorModeConfig()
 	val := validatorSnapshot{
-		Processes: valProcesses,
-		Listeners: valListeners,
+		Processes:      valProcesses,
+		Listeners:      valListeners,
+		ConfiguredMode: mode.Mode,
+		ActiveMode:     activeValidatorMode(s.localRoot, valProcesses),
 	}
 	val.Ready = httpStatusOK(ctx, validatorReady, 3*time.Second)
 	if api, err := fetchMap(ctx, validatorAPI+"/api/v1/status", 3*time.Second); err == nil {
@@ -549,11 +550,12 @@ func (s *state) stopValidator(ctx context.Context) (string, error) {
 }
 
 func (s *state) logPath(kind string) string {
+	runDir := filepath.Join(s.localRoot, s.validatorModeConfig().runDirName())
 	switch kind {
 	case "validator_err":
-		return filepath.Join(s.localRoot, "run-v2", "stderr.autostart.log")
+		return filepath.Join(runDir, "stderr.autostart.log")
 	case "validator_launcher":
-		return filepath.Join(s.localRoot, "run-v2", "launcher.log")
+		return filepath.Join(runDir, "launcher.log")
 	case "gateway":
 		return filepath.Join(s.localRoot, "home-gateway.err.log")
 	case "gateway_out":
@@ -563,8 +565,78 @@ func (s *state) logPath(kind string) string {
 	case "miner":
 		return defaultMinerLogPath()
 	default:
-		return filepath.Join(s.localRoot, "run-v2", "stdout.autostart.log")
+		return filepath.Join(runDir, "stdout.autostart.log")
 	}
+}
+
+type validatorModeConfig struct {
+	Mode           string `json:"mode"`
+	ChainSyncURLs  string `json:"chainSyncUrls"`
+	BootstrapPeers string `json:"bootstrapPeers"`
+	PublicP2P      bool   `json:"publicP2P"`
+}
+
+func (c validatorModeConfig) runDirName() string {
+	if c.Mode == "networked" {
+		return "run-networked"
+	}
+	return "run-v2"
+}
+
+func (s *state) validatorModeConfig() validatorModeConfig {
+	cfg := validatorModeConfig{Mode: "solo", ChainSyncURLs: defaultRelay + "/api/v1"}
+	b, err := os.ReadFile(filepath.Join(s.localRoot, "validator-mode.json"))
+	if err != nil {
+		return cfg
+	}
+	b = bytes.TrimPrefix(b, []byte{0xEF, 0xBB, 0xBF})
+	var stored validatorModeConfig
+	if json.Unmarshal(b, &stored) != nil || stored.Mode != "networked" {
+		return cfg
+	}
+	if strings.TrimSpace(stored.ChainSyncURLs) == "" {
+		stored.ChainSyncURLs = cfg.ChainSyncURLs
+	}
+	return stored
+}
+
+func (s *state) validatorLauncherArgs() []string {
+	args := []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", s.validatorScript}
+	cfg := s.validatorModeConfig()
+	if cfg.Mode != "networked" {
+		return args
+	}
+	args = append(args, "-Networked", "-ChainSyncUrls", cfg.ChainSyncURLs)
+	if strings.TrimSpace(cfg.BootstrapPeers) != "" {
+		args = append(args, "-BootstrapPeers", cfg.BootstrapPeers)
+	}
+	if cfg.PublicP2P {
+		args = append(args, "-PublicP2P")
+	}
+	return args
+}
+
+func activeValidatorMode(localRoot string, processes []processInfo) string {
+	running := make(map[int]struct{}, len(processes))
+	for _, process := range processes {
+		running[process.PID] = struct{}{}
+	}
+	for _, candidate := range []struct {
+		mode string
+		dir  string
+	}{{"networked", "run-networked"}, {"solo", "run-v2"}} {
+		b, err := os.ReadFile(filepath.Join(localRoot, candidate.dir, "qsdm.autostart.pid"))
+		if err != nil {
+			continue
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+		if err == nil {
+			if _, ok := running[pid]; ok {
+				return candidate.mode
+			}
+		}
+	}
+	return "unknown"
 }
 
 func runCommand(parent context.Context, timeout time.Duration, name string, args ...string) (string, error) {

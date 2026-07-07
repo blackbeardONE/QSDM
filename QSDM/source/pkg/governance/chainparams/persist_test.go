@@ -302,6 +302,38 @@ func TestLoadOrNew_RejectsMalformedJSON(t *testing.T) {
 	}
 }
 
+func TestLoadOrNew_RecoversMalformedPrimaryFromLastGood(t *testing.T) {
+	spec, name := firstParam(t)
+	want := midValue(spec)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "recover.json")
+
+	store := NewInMemoryParamStore()
+	store.SetForTesting(string(name), want)
+	if err := SaveSnapshot(store, path); err != nil {
+		t.Fatalf("SaveSnapshot: %v", err)
+	}
+	if err := os.WriteFile(path, make([]byte, 218), 0o600); err != nil {
+		t.Fatalf("corrupt primary: %v", err)
+	}
+
+	loaded, err := LoadOrNew(path)
+	if err != nil {
+		t.Fatalf("LoadOrNew should recover from last-good: %v", err)
+	}
+	if got, _ := loaded.ActiveValue(string(name)); got != want {
+		t.Fatalf("recovered value = %d, want %d", got, want)
+	}
+	var restored snapshotDoc
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &restored); err != nil {
+		t.Fatalf("primary was not restored as valid JSON: %v", err)
+	}
+}
+
 // -----------------------------------------------------------------------------
 // Atomic write: tmp file gets cleaned up on success
 // -----------------------------------------------------------------------------

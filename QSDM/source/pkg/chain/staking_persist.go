@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/blackbeardONE/QSDM/pkg/fileutil"
 )
 
 const stakingPersistVersion = 1
@@ -15,9 +17,9 @@ type stakingPersistBond struct {
 }
 
 type stakingPersistDoc struct {
-	V      int                 `json:"v"`
+	V      int                  `json:"v"`
 	Bonds  []stakingPersistBond `json:"bonds"`
-	Unbond []unbondEntry       `json:"unbond"`
+	Unbond []unbondEntry        `json:"unbond"`
 }
 
 // LoadOrNewStakingLedger loads staking state from path, or returns an empty ledger when the file is missing.
@@ -29,12 +31,19 @@ func LoadOrNewStakingLedger(path string) (*StakingLedger, error) {
 		}
 		return nil, err
 	}
-	var doc stakingPersistDoc
-	if err := json.Unmarshal(b, &doc); err != nil {
-		return nil, fmt.Errorf("staking ledger json: %w", err)
-	}
-	if doc.V != stakingPersistVersion {
-		return nil, fmt.Errorf("unsupported staking ledger version %d", doc.V)
+	doc, decodeErr := decodeStakingPersistDoc(b)
+	if decodeErr != nil {
+		backup, backupErr := os.ReadFile(path + ".last-good")
+		if backupErr != nil {
+			return nil, fmt.Errorf("%w (backup unavailable: %v)", decodeErr, backupErr)
+		}
+		doc, backupErr = decodeStakingPersistDoc(backup)
+		if backupErr != nil {
+			return nil, fmt.Errorf("%w (backup invalid: %v)", decodeErr, backupErr)
+		}
+		if repairErr := fileutil.WriteFileAtomic(path, backup, 0o600); repairErr != nil {
+			return nil, fmt.Errorf("recover staking ledger from backup: %w", repairErr)
+		}
 	}
 	sl := NewStakingLedger()
 	sl.mu.Lock()
@@ -76,10 +85,22 @@ func SaveStakingLedger(sl *StakingLedger, path string) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, out, 0o600); err != nil {
-		return err
+	if err := fileutil.WriteFileAtomic(path+".last-good", out, 0o600); err != nil {
+		return fmt.Errorf("write staking ledger backup: %w", err)
 	}
-	_ = os.Remove(path)
-	return os.Rename(tmp, path)
+	if err := fileutil.WriteFileAtomic(path, out, 0o600); err != nil {
+		return fmt.Errorf("write staking ledger: %w", err)
+	}
+	return nil
+}
+
+func decodeStakingPersistDoc(data []byte) (stakingPersistDoc, error) {
+	var doc stakingPersistDoc
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return stakingPersistDoc{}, fmt.Errorf("staking ledger json: %w", err)
+	}
+	if doc.V != stakingPersistVersion {
+		return stakingPersistDoc{}, fmt.Errorf("unsupported staking ledger version %d", doc.V)
+	}
+	return doc, nil
 }

@@ -1,6 +1,8 @@
 package enrollment
 
 import (
+	"bytes"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -129,5 +131,34 @@ func TestInMemoryState_RoundTrip_PreservesRevokedRecord(t *testing.T) {
 	// error (which is reserved for I/O / lock failures).
 	if got, err := restored.GPUUUIDBound("GPU-Z"); err != nil || got != "" {
 		t.Fatalf("revoked GPU bound after restore: got %q err %v", got, err)
+	}
+}
+
+func TestInMemoryState_Load_RecoversCorruptPrimaryFromLastGood(t *testing.T) {
+	s := NewInMemoryState()
+	if err := s.ApplyEnroll(mkRecord("rig-recover", "qsdm1recover", "GPU-R", 100, 5)); err != nil {
+		t.Fatalf("ApplyEnroll: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "enrollment.json")
+	if err := s.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := os.WriteFile(path, make([]byte, 512), 0o644); err != nil {
+		t.Fatalf("corrupt primary: %v", err)
+	}
+
+	restored := NewInMemoryState()
+	loaded, err := restored.Load(path)
+	if err != nil {
+		t.Fatalf("Load should recover from last-good: %v", err)
+	}
+	if loaded != 1 {
+		t.Fatalf("loaded = %d, want 1", loaded)
+	}
+	if _, err := restored.Lookup("rig-recover"); err != nil {
+		t.Fatalf("Lookup recovered record: %v", err)
+	}
+	if b, err := os.ReadFile(path); err != nil || bytes.IndexByte(b, 0) >= 0 {
+		t.Fatalf("primary snapshot was not restored: err=%v", err)
 	}
 }

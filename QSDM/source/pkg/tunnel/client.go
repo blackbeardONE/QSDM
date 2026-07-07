@@ -93,7 +93,21 @@ type Client struct {
 	// connection.
 	MinBackoff time.Duration
 	MaxBackoff time.Duration
+
+	// StableSessionDuration controls how long an established session must
+	// survive before a later disconnect resets reconnect backoff. Zero uses
+	// 30 seconds. This prevents a brief WAN flap after hours of service from
+	// inheriting backoff accumulated by old, unrelated disconnects.
+	StableSessionDuration time.Duration
 }
+
+type sessionEndedError struct {
+	cause  error
+	uptime time.Duration
+}
+
+func (e *sessionEndedError) Error() string { return e.cause.Error() }
+func (e *sessionEndedError) Unwrap() error { return e.cause }
 
 // Run blocks until ctx is cancelled. It runs an outer reconnect
 // loop: dial, serve, on disconnect wait backoff, repeat. Returns
@@ -115,6 +129,7 @@ func (c *Client) Run(ctx context.Context) error {
 			// Clean shutdown.
 			return nil
 		}
+		backoff = c.reconnectBackoff(backoff, err)
 		logf("tunnel: session ended", "err", err.Error(), "retry_in", backoff.String())
 		select {
 		case <-ctx.Done():
@@ -145,12 +160,12 @@ func (c *Client) runOnce(ctx context.Context) error {
 	// observable surface; yamux internals would otherwise
 	// double-print on every disconnect.
 	cfg.LogOutput = io.Discard
-	// This session often sits behind Caddy's HTTP Upgrade
-	// proxying path. yamux keepalive false-positives there
-	// can flap an otherwise healthy home tunnel while idle;
-	// the outer Run loop plus HTTP request failures already
-	// provide liveness and reconnect behaviour.
-	cfg.EnableKeepAlive = false
+	// Detect half-open home connections even while the public route is idle.
+	// Without yamux keepalives a dead relay-side TCP session can leave the
+	// gateway process alive indefinitely while every public request returns
+	// 502. The outer Run loop reconnects after the keepalive closes the session.
+	cfg.EnableKeepAlive = true
+	cfg.KeepAliveInterval = 30 * time.Second
 
 	session, err := yamux.Server(conn, cfg, nil)
 	if err != nil {
@@ -160,13 +175,19 @@ func (c *Client) runOnce(ctx context.Context) error {
 	defer session.Close()
 
 	c.logger()("tunnel: session established", "slot", c.SlotID, "relay", c.RelayURL)
+	sessionStarted := time.Now()
 
 	// Stop the session when ctx cancels. Without this, a
 	// hung session would prevent Run from returning on
 	// shutdown.
+	sessionDone := make(chan struct{})
+	defer close(sessionDone)
 	go func() {
-		<-ctx.Done()
-		_ = session.Close()
+		select {
+		case <-ctx.Done():
+			_ = session.Close()
+		case <-sessionDone:
+		}
 	}()
 
 	// http.Serve blocks until the listener (the yamux
@@ -182,9 +203,12 @@ func (c *Client) runOnce(ctx context.Context) error {
 	if err := srv.Serve(session); err != nil &&
 		!errors.Is(err, yamux.ErrSessionShutdown) &&
 		!strings.Contains(err.Error(), "use of closed network connection") {
-		return fmt.Errorf("http serve: %w", err)
+		return &sessionEndedError{cause: fmt.Errorf("http serve: %w", err), uptime: time.Since(sessionStarted)}
 	}
-	return nil
+	if ctx.Err() != nil {
+		return context.Canceled
+	}
+	return &sessionEndedError{cause: errors.New("tunnel session closed by relay"), uptime: time.Since(sessionStarted)}
 }
 
 // dial opens the relay-side TCP+TLS connection AND completes
@@ -355,6 +379,21 @@ func (c *Client) maxBackoff() time.Duration {
 		return 60 * time.Second
 	}
 	return c.MaxBackoff
+}
+
+func (c *Client) stableSessionDuration() time.Duration {
+	if c.StableSessionDuration <= 0 {
+		return 30 * time.Second
+	}
+	return c.StableSessionDuration
+}
+
+func (c *Client) reconnectBackoff(current time.Duration, err error) time.Duration {
+	var sessionErr *sessionEndedError
+	if errors.As(err, &sessionErr) && sessionErr.uptime >= c.stableSessionDuration() {
+		return c.minBackoff()
+	}
+	return current
 }
 
 // readSmall drains up to n bytes from r without panicking on

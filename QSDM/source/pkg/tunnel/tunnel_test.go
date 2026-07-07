@@ -451,6 +451,34 @@ func TestRoundTrip_RealTunnel(t *testing.T) {
 		t.Errorf("concurrent: %v", e)
 	}
 
+	// A dead relay session must be detected and replaced without restarting the
+	// home gateway process. This is the production half-open/502 recovery path.
+	original, ok := reg.Lookup(slot)
+	if !ok {
+		t.Fatalf("slot %q missing before reconnect test", slot)
+	}
+	_ = original.Close()
+	reconnectDeadline := time.After(5 * time.Second)
+	for {
+		if replacement, found := reg.Lookup(slot); found && replacement != original {
+			break
+		}
+		select {
+		case <-reconnectDeadline:
+			t.Fatalf("tunnel did not reconnect slot %q within 5s", slot)
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	reconnected, err := miner.Get(relayProxy.URL + "/" + slot + "/echo/reconnected")
+	if err != nil {
+		t.Fatalf("request after reconnect: %v", err)
+	}
+	reconnectedBody, _ := io.ReadAll(reconnected.Body)
+	_ = reconnected.Body.Close()
+	if string(reconnectedBody) != "echo:/echo/reconnected" {
+		t.Fatalf("body after reconnect=%q", reconnectedBody)
+	}
+
 	// --- Cancel cleanly; client.Run should return nil ---
 	cancel()
 	select {
@@ -472,6 +500,21 @@ func TestRoundTrip_RealTunnel(t *testing.T) {
 			time.Sleep(20 * time.Millisecond)
 		}
 		t.Fatalf("slot %q still registered after client shutdown", slot)
+	}
+}
+
+func TestClientStableSessionResetsReconnectBackoff(t *testing.T) {
+	client := &Client{MinBackoff: time.Second, StableSessionDuration: 30 * time.Second}
+	backoff := 16 * time.Second
+	err := &sessionEndedError{cause: errors.New("link lost"), uptime: 31 * time.Second}
+
+	backoff = client.reconnectBackoff(backoff, err)
+	if backoff != time.Second {
+		t.Fatalf("backoff = %s, want 1s after stable session", backoff)
+	}
+	short := &sessionEndedError{cause: errors.New("protocol rejected"), uptime: time.Second}
+	if got := client.reconnectBackoff(16*time.Second, short); got != 16*time.Second {
+		t.Fatalf("short-session backoff = %s, want 16s", got)
 	}
 }
 

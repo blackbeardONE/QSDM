@@ -3126,7 +3126,7 @@ const motherHiveRevenuePolicy = () => ({
   ecosystemWalletAddress: undefined,
   settlementActive: false,
   settlementReason:
-    'Automatic CELL settlement requires wallet-bound workers, chain-verifiable Relay receipts, and funded workload escrow.',
+    'Settlement is locked: Relay jobs are verified locally, but QSDM Core does not yet verify a Relay public-key signature, bind receipt owners to payout wallets, reject receipt reuse globally, or enforce the 70/15/15 split from funded workload escrow.',
 });
 
 const loadEdgeRelayMotherToken = (tokenFile: string) => {

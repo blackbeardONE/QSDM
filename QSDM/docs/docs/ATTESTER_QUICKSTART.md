@@ -154,7 +154,7 @@ the miner picks one URL.
 
 | Task | Command |
 |------|---------|
-| Start attester | `.\qsdm-attester.exe --listen :7733 --note "your-tag"` |
+| Start attester | `.\qsdm-attester.exe --listen 127.0.0.1:7733 --note "your-tag"` |
 | Start at boot (Windows) | `New-ScheduledTaskAction` + `Register-ScheduledTask` (or run as a service via NSSM) |
 | Start at boot (Linux) | systemd unit; `ExecStart=/usr/local/bin/qsdm-attester-linux-amd64 --listen :7733` |
 | Rotate key | Stop attester, delete `~/.qsdm/attester.key`, start. Will print a NEW signer_id; coordinate with validator operator to update `peer_signers.toml`. |

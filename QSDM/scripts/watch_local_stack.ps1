@@ -5,7 +5,9 @@ param(
     [string]$Backend = "http://127.0.0.1:8080",
     [int]$IntervalSeconds = 30,
     [int]$RestartAfterFailures = 10,
+    [int]$GatewayRestartAfterFailures = 3,
     [switch]$CheckPublicGateway,
+    [switch]$NoPublicGatewayCheck,
     [switch]$Once
 )
 
@@ -40,7 +42,10 @@ $PidPath = Join-Path $LocalRoot "watchdog.pid"
 $ValidatorScript = Join-Path $QsdmRoot "scripts\start_local_validator.ps1"
 $GatewayScript = Join-Path $QsdmRoot "scripts\start_home_gateway.ps1"
 $ReadyUrl = "$Backend/api/v1/health/ready"
-$PublicUrl = "$Relay/attest/$Slot/api/v1/status"
+$PublicBaseUrl = "$Relay/attest/$Slot/api/v1"
+$PublicUrl = "$PublicBaseUrl/status"
+$QsdmCli = Join-Path $QsdmRoot "source\qsdmcli.exe"
+$PublicGatewayCheckEnabled = -not $NoPublicGatewayCheck.IsPresent
 $ValidatorProcessNames = @(
     "qsdm-local-validator",
     "qsdm-local-validator-sqlite*",
@@ -83,6 +88,27 @@ function Test-HttpOk {
         return ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300)
     } catch {
         return $false
+    }
+}
+
+function Test-PublicGatewayOk {
+    # Windows PowerShell's Schannel can fail before sending an HTTPS request on
+    # otherwise healthy hosts (SEC_E_NO_CREDENTIALS). qsdmcli uses Go's TLS
+    # stack and is part of this installation, so use it as the authoritative
+    # public-route probe instead of turning a local TLS-client fault into a
+    # gateway restart loop.
+    if (-not (Test-Path -LiteralPath $QsdmCli)) {
+        return Test-HttpOk -Url $PublicUrl -TimeoutSeconds 10
+    }
+    $oldApiUrl = $env:QSDM_API_URL
+    try {
+        $env:QSDM_API_URL = $PublicBaseUrl
+        & $QsdmCli status *> $null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    } finally {
+        $env:QSDM_API_URL = $oldApiUrl
     }
 }
 
@@ -185,7 +211,7 @@ $validatorFailures = 0
 $gatewayFailures = 0
 
 try {
-    Write-WatchdogLog "watchdog started root=$QsdmRoot relay=$Relay slot=$Slot check_public_gateway=$($CheckPublicGateway.IsPresent) once=$Once"
+    Write-WatchdogLog "watchdog started root=$QsdmRoot relay=$Relay slot=$Slot check_public_gateway=$PublicGatewayCheckEnabled once=$Once"
     do {
         try {
             $validatorReady = Test-HttpOk -Url $ReadyUrl -TimeoutSeconds 5
@@ -219,16 +245,22 @@ try {
                     Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
                 }
                 $gatewayFailures = 0
-            } elseif ($validatorReady -and $gatewayCount -eq 1 -and $CheckPublicGateway) {
-                if (Test-HttpOk -Url $PublicUrl -TimeoutSeconds 10) {
+            } elseif ($validatorReady -and $gatewayCount -eq 1 -and $PublicGatewayCheckEnabled) {
+                if (Test-PublicGatewayOk) {
                     if ($gatewayFailures -gt 0) {
                         Write-WatchdogLog "gateway public check recovered after $gatewayFailures failure(s)"
                     }
                     $gatewayFailures = 0
                 } else {
                     $gatewayFailures++
-                    if ($gatewayFailures -eq 1 -or ($gatewayFailures % $RestartAfterFailures) -eq 0) {
-                        Write-WatchdogLog "gateway public check failed failure=$gatewayFailures url=$PublicUrl; leaving gateway running"
+                    if ($gatewayFailures -ge $GatewayRestartAfterFailures) {
+                        Write-WatchdogLog "gateway public check failed failure=$gatewayFailures url=$PublicUrl; restarting stale tunnel"
+                        Stop-StackProcesses -Names $GatewayProcessNames
+                        Start-Gateway
+                        Start-Sleep -Seconds 2
+                        $gatewayFailures = 0
+                    } elseif ($gatewayFailures -eq 1) {
+                        Write-WatchdogLog "gateway public check failed failure=$gatewayFailures url=$PublicUrl; waiting before recovery"
                     }
                 }
             }
