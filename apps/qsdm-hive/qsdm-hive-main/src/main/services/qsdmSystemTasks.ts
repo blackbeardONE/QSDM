@@ -1,3 +1,4 @@
+// cspell:words conso healthz nosniff qsdmminer splitmix
 import { ChildProcess, execFile, spawn } from 'child_process';
 import { createHash, createHmac, randomBytes } from 'crypto';
 import { EventEmitter } from 'events';
@@ -61,6 +62,7 @@ import {
   QsdmEdgeWorkerResource,
 } from 'config/qsdmSystemTasks';
 import { getAppDataPath } from 'main/node/helpers/getAppDataPath';
+import { AsyncSingleFlight } from 'main/services/asyncSingleFlight';
 import { qsdmGetFirstJson, qsdmGetJson } from 'main/services/qsdmHttpRead';
 import {
   assertQsdmMinerEnrollmentReady,
@@ -70,7 +72,6 @@ import {
   getDefaultEdgeRelayTokenFile,
   getDefaultEdgeRelayURL,
 } from 'main/services/qsdmMotherHiveRelayConfig';
-import { AsyncSingleFlight } from 'main/services/asyncSingleFlight';
 import { submitQsdmTaskActionIntent } from 'main/services/qsdmTaskActions';
 import { getQsdmTaskActionSender } from 'main/services/qsdmTaskActionSigner';
 import { RawTaskData, RequirementType, TaskMetadata } from 'models';
@@ -154,6 +155,7 @@ const QSDM_TASK_ACTION_COMMIT_POLL_MS = 2000;
 const QSDM_TASK_ACTION_COMMIT_TIMEOUT_MS = 120000;
 const QSDM_CELL_DENOMINATION_FACTOR = 10 ** QSDM_CELL_DECIMALS;
 const QSDM_CELL_DENOMINATION_NORMALIZATION_LIMIT = 1_000_000;
+const QSDM_COMPUTE_GATEWAY_PROTOCOL_VERSION = 'qsdm-compute-gateway/v1';
 
 type QsdmStatusResponse = {
   chain_tip?: number;
@@ -1273,12 +1275,18 @@ const os = require('os');
 
 const relayUrl = process.env.QSDM_EDGE_RELAY_URL || 'http://127.0.0.1:7740';
 const tokenFile = process.env.QSDM_EDGE_RELAY_TOKEN_FILE || '';
+const gatewayTokenFile = process.env.QSDM_COMPUTE_GATEWAY_TOKEN_FILE || '';
+const gatewayHost = '127.0.0.1';
+const gatewayPort = Math.max(1024, Math.min(65535, Number(process.env.QSDM_COMPUTE_GATEWAY_PORT || 7742)));
+const computeProtocol = '${QSDM_COMPUTE_GATEWAY_PROTOCOL_VERSION}';
 const intervalMs = Math.max(5000, Number(process.env.QSDM_MOTHER_HIVE_INTERVAL_MS || 15000));
 const maxRuntimeMs = Math.max(300000, Number(process.env.QSDM_MOTHER_HIVE_MAX_RUNTIME_MS || 21600000));
 const startedAt = Date.now();
 let timer = null;
+let gatewayServer = null;
 let stopping = false;
 let checking = false;
+const requestTimes = [];
 
 function loadToken() {
   if (!tokenFile || !fs.existsSync(tokenFile)) throw new Error('Relay pairing credential is missing');
@@ -1289,21 +1297,37 @@ function loadToken() {
   return token;
 }
 
-function requestStatus() {
+function loadGatewayToken() {
+  if (!gatewayTokenFile || !fs.existsSync(gatewayTokenFile)) throw new Error('Compute Gateway credential is missing');
+  const token = fs.readFileSync(gatewayTokenFile, 'utf8').trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(token)) throw new Error('Compute Gateway credential is invalid');
+  return token;
+}
+
+function safeEqual(left, right) {
+  const a = Buffer.from(String(left || ''), 'utf8');
+  const b = Buffer.from(String(right || ''), 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function relayRequest(method, requestPath, bodyValue) {
   return new Promise((resolve, reject) => {
     const token = loadToken();
-    const target = new URL('/v1/status', relayUrl);
+    const target = new URL(requestPath, relayUrl);
     if (target.protocol !== 'http:' && target.protocol !== 'https:') return reject(new Error('Relay URL must use HTTP or HTTPS'));
+    const body = bodyValue === undefined ? '' : JSON.stringify(bodyValue);
     const timestamp = String(Math.floor(Date.now() / 1000));
     const nonce = crypto.randomBytes(16).toString('hex');
     const workerId = ('hive-' + os.hostname()).replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 64);
-    const bodyHash = crypto.createHash('sha256').update('').digest('hex');
-    const canonical = ['GET', target.pathname, timestamp, nonce, workerId, bodyHash].join('\\n');
+    const bodyHash = crypto.createHash('sha256').update(body).digest('hex');
+    const canonical = [method, target.pathname, timestamp, nonce, workerId, bodyHash].join('\\n');
     const signature = crypto.createHmac('sha256', token).update(canonical).digest('hex');
     const transport = target.protocol === 'https:' ? https : http;
     const request = transport.request(target, {
-      method: 'GET',
+      method,
       headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
         'X-QSDM-Worker-ID': workerId,
         'X-QSDM-Timestamp': timestamp,
         'X-QSDM-Nonce': nonce,
@@ -1315,13 +1339,133 @@ function requestStatus() {
       response.setEncoding('utf8');
       response.on('data', (chunk) => { if (body.length < 262144) body += chunk; });
       response.on('end', () => {
-        if (response.statusCode !== 200) return reject(new Error('Relay HTTP ' + response.statusCode));
-        try { return resolve(JSON.parse(body)); } catch (error) { return reject(error); }
+        let value = {};
+        try { value = body ? JSON.parse(body) : {}; } catch (error) { return reject(error); }
+        return resolve({ statusCode: Number(response.statusCode || 500), value });
       });
     });
     request.on('timeout', () => request.destroy(new Error('Relay timeout')));
     request.on('error', reject);
+    if (body) request.write(body);
     request.end();
+  });
+}
+
+function writeJSON(response, statusCode, value) {
+  const raw = JSON.stringify(value || {});
+  response.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(raw),
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  response.end(raw);
+}
+
+function authorizeGateway(request) {
+  const prefix = 'Bearer ';
+  const authorization = String(request.headers.authorization || '');
+  if (!authorization.startsWith(prefix)) return false;
+  return safeEqual(authorization.slice(prefix.length).trim().toLowerCase(), loadGatewayToken());
+}
+
+function allowGatewayRequest() {
+  const cutoff = Date.now() - 60000;
+  while (requestTimes.length && requestTimes[0] < cutoff) requestTimes.shift();
+  if (requestTimes.length >= 120) return false;
+  requestTimes.push(Date.now());
+  return true;
+}
+
+function readGatewayBody(request) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    request.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > 16384) {
+        reject(Object.assign(new Error('request body exceeds 16 KiB'), { statusCode: 413 }));
+        request.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on('end', () => {
+      if (!chunks.length) return resolve(undefined);
+      try { return resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+      catch (error) { return reject(Object.assign(new Error('request body is not valid JSON'), { statusCode: 400 })); }
+    });
+    request.on('error', reject);
+  });
+}
+
+async function handleGateway(request, response) {
+  try {
+    const requestURL = new URL(request.url || '/', 'http://' + gatewayHost + ':' + gatewayPort);
+    if (!authorizeGateway(request)) {
+      writeJSON(response, 401, { error: 'valid Compute Gateway bearer token required' });
+      return;
+    }
+    if (!allowGatewayRequest()) {
+      response.setHeader('Retry-After', '1');
+      writeJSON(response, 429, { error: 'Compute Gateway request rate exceeded' });
+      return;
+    }
+    if (requestURL.pathname === '/healthz' && request.method === 'GET') {
+      writeJSON(response, 200, {
+        ok: true,
+        service: 'qsdm-mother-hive-compute-gateway',
+        protocol: computeProtocol,
+      });
+      return;
+    }
+
+    let relayPath = '';
+    let bodyValue;
+    if (requestURL.pathname === '/v1/jobs') {
+      if (request.method === 'GET') {
+        relayPath = '/v1/compute/jobs' + (requestURL.search || '');
+      } else if (request.method === 'POST') {
+        relayPath = '/v1/compute/jobs';
+        bodyValue = await readGatewayBody(request);
+        if (!bodyValue || typeof bodyValue !== 'object' || Array.isArray(bodyValue)) {
+          writeJSON(response, 400, { error: 'job request must be a JSON object' });
+          return;
+        }
+        bodyValue.version = computeProtocol;
+      } else {
+        writeJSON(response, 405, { error: 'method not allowed' });
+        return;
+      }
+    } else {
+      const match = requestURL.pathname.match(/^\\/v1\\/jobs\\/([0-9a-fA-F]{32})$/);
+      if (!match || (request.method !== 'GET' && request.method !== 'DELETE')) {
+        writeJSON(response, 404, { error: 'route not found' });
+        return;
+      }
+      relayPath = '/v1/compute/jobs/' + match[1].toLowerCase();
+    }
+
+    const relayResponse = await relayRequest(request.method, relayPath, bodyValue);
+    writeJSON(response, relayResponse.statusCode, relayResponse.value);
+  } catch (error) {
+    writeJSON(response, Number(error.statusCode || 502), { error: error.message || 'Compute Gateway failed' });
+  }
+}
+
+function startGateway() {
+  loadGatewayToken();
+  gatewayServer = http.createServer((request, response) => {
+    handleGateway(request, response);
+  });
+  gatewayServer.requestTimeout = 15000;
+  gatewayServer.headersTimeout = 5000;
+  gatewayServer.listen(gatewayPort, gatewayHost, () => {
+    console.log('QSDM Compute Gateway listening on http://' + gatewayHost + ':' + gatewayPort);
+  });
+  gatewayServer.on('error', (error) => {
+    console.error('QSDM Compute Gateway failed: ' + error.message);
+    shutdown('gateway-error', 1);
   });
 }
 
@@ -1330,7 +1474,9 @@ async function heartbeat() {
   if (Date.now() - startedAt >= maxRuntimeMs) return shutdown('max-runtime');
   checking = true;
   try {
-    const status = await requestStatus();
+    const relayResponse = await relayRequest('GET', '/v1/status');
+    if (relayResponse.statusCode !== 200) throw new Error('Relay HTTP ' + relayResponse.statusCode);
+    const status = relayResponse.value;
     console.log('QSDM_MOTHER_HIVE_STATUS ' + JSON.stringify({
       relay_id: status.relay_id || status.coordinator_id,
       workers: Array.isArray(status.workers) ? status.workers.length : 0,
@@ -1345,15 +1491,22 @@ async function heartbeat() {
   }
 }
 
-function shutdown(signal) {
+function shutdown(signal, exitCode) {
   if (stopping) return;
   stopping = true;
   if (timer) clearInterval(timer);
   console.log('QSDM Hive Mother mode stopping signal=' + signal);
-  process.exit(0);
+  const finish = () => process.exit(Number(exitCode || 0));
+  if (gatewayServer) {
+    gatewayServer.close(finish);
+    setTimeout(finish, 2000).unref();
+  } else {
+    finish();
+  }
 }
 
 console.log('QSDM Hive Mother mode started relay=' + relayUrl);
+startGateway();
 heartbeat();
 timer = setInterval(heartbeat, intervalMs);
 process.on('SIGINT', () => shutdown('SIGINT'));
@@ -1427,12 +1580,11 @@ const getQsdmTaskParticipantStakeCell = (
   >;
 
   for (const [participantKey, participant] of Object.entries(participants)) {
-    if (!isRecord(participant)) {
-      continue;
-    }
-    const participantSender = String(participant.sender || participantKey);
-    if (participantSender.toLowerCase() === normalizedSender) {
-      return normalizeQsdmSystemTaskCoreCellAmount(participant.stake);
+    if (isRecord(participant)) {
+      const participantSender = String(participant.sender || participantKey);
+      if (participantSender.toLowerCase() === normalizedSender) {
+        return normalizeQsdmSystemTaskCoreCellAmount(participant.stake);
+      }
     }
   }
 
@@ -1653,11 +1805,13 @@ const getQsdmEdgeWorkerRoundSubmission = (
   sender: string,
   round: number
 ) => {
-  const submissions = task.submissions;
-  const bySender = submissions?.[String(round)];
-  return isRecord(bySender) && isRecord(bySender[sender])
-    ? bySender[sender]
-    : null;
+  const { submissions = {} } = task;
+  const { [String(round)]: bySender } = submissions;
+  if (!isRecord(bySender)) {
+    return null;
+  }
+  const { [sender]: submission } = bySender;
+  return isRecord(submission) ? submission : null;
 };
 
 const getRelaySettlementProofId = (payload: Record<string, unknown>) => {
@@ -3213,6 +3367,40 @@ const ensureEdgeWorkerScript = (taskId: string) => {
 const getMotherHiveDirectory = () =>
   path.join(getAppDataPath(), 'namespace', QSDM_MOTHER_HIVE_SYSTEM_TASK_ID);
 
+const getQsdmComputeGatewayTokenFile = () =>
+  path.join(getMotherHiveDirectory(), 'compute-gateway.token');
+
+const getQsdmComputeGatewayEndpoint = () => {
+  const configuredPort = Number(process.env.QSDM_COMPUTE_GATEWAY_PORT || 7742);
+  const port =
+    Number.isInteger(configuredPort) &&
+    configuredPort >= 1024 &&
+    configuredPort <= 65535
+      ? configuredPort
+      : 7742;
+  return `http://127.0.0.1:${port}`;
+};
+
+const ensureQsdmComputeGatewayTokenFile = () => {
+  const tokenFile = getQsdmComputeGatewayTokenFile();
+  fs.mkdirSync(path.dirname(tokenFile), { recursive: true, mode: 0o700 });
+  if (fs.existsSync(tokenFile)) {
+    const existing = fs.readFileSync(tokenFile, 'utf8').trim();
+    if (!/^[0-9a-fA-F]{64}$/.test(existing)) {
+      throw new Error('Compute Gateway credential is invalid');
+    }
+    fs.chmodSync(tokenFile, 0o600);
+    return tokenFile;
+  }
+  fs.writeFileSync(tokenFile, `${randomBytes(32).toString('hex')}\n`, {
+    encoding: 'utf8',
+    mode: 0o600,
+    flag: 'wx',
+  });
+  fs.chmodSync(tokenFile, 0o600);
+  return tokenFile;
+};
+
 const ensureMotherHiveScript = () => {
   const scriptPath = path.join(getMotherHiveDirectory(), 'mother-hive.js');
   fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
@@ -3269,6 +3457,43 @@ type EdgeRelayStatusResponse = {
     bound_at?: string;
   };
   pending_settlement_proofs?: Partial<Record<QsdmEdgeWorkerResource, string>>;
+  compute_queue?: {
+    queued?: number;
+    leased?: number;
+    completed?: number;
+    cancelled?: number;
+    expired?: number;
+  };
+};
+
+const readQsdmComputeGatewayHealth = async () => {
+  const endpoint = getQsdmComputeGatewayEndpoint();
+  const tokenFile = getQsdmComputeGatewayTokenFile();
+  try {
+    if (!fs.existsSync(tokenFile)) {
+      return false;
+    }
+    const token = fs.readFileSync(tokenFile, 'utf8').trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(token)) {
+      return false;
+    }
+    const response = await axios.get<{
+      ok?: boolean;
+      protocol?: string;
+    }>(`${endpoint}/healthz`, {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 1000,
+      maxContentLength: 16 * 1024,
+      responseType: 'json',
+      proxy: false,
+    });
+    return Boolean(
+      response.data?.ok &&
+        response.data?.protocol === QSDM_COMPUTE_GATEWAY_PROTOCOL_VERSION
+    );
+  } catch {
+    return false;
+  }
 };
 
 const motherHiveRevenuePolicy = (status?: EdgeRelayStatusResponse) => ({
@@ -3376,6 +3601,8 @@ export const getQsdmMotherHiveStatus =
   async (): Promise<QsdmMotherHiveStatusResponse> => {
     const relayUrl = getDefaultEdgeRelayURL();
     const tokenFile = getDefaultEdgeRelayTokenFile();
+    const computeGatewayTokenFile = getQsdmComputeGatewayTokenFile();
+    const computeGatewayOnline = await readQsdmComputeGatewayHealth();
     const base: QsdmMotherHiveStatusResponse = {
       configured: Boolean(tokenFile && fs.existsSync(tokenFile)),
       connected: false,
@@ -3388,6 +3615,21 @@ export const getQsdmMotherHiveStatus =
       pooledGpuCount: 0,
       pooledGpuMemoryMiB: 0,
       activeJobs: 0,
+      applicationJobs: {
+        queued: 0,
+        leased: 0,
+        completed: 0,
+        cancelled: 0,
+        expired: 0,
+      },
+      computeGateway: {
+        endpoint: getQsdmComputeGatewayEndpoint(),
+        tokenFile: fs.existsSync(computeGatewayTokenFile)
+          ? computeGatewayTokenFile
+          : undefined,
+        online: computeGatewayOnline,
+        protocol: QSDM_COMPUTE_GATEWAY_PROTOCOL_VERSION,
+      },
       verifiedReceipts: { cpu: 0, gpu: 0, ram: 0 },
       revenuePolicy: motherHiveRevenuePolicy(),
       workloadMode: 'qsdm-approved-distributed-jobs',
@@ -3446,6 +3688,13 @@ export const getQsdmMotherHiveStatus =
           0
         ),
         activeJobs: Math.max(0, Number(status.active_leases) || 0),
+        applicationJobs: {
+          queued: Math.max(0, Number(status.compute_queue?.queued) || 0),
+          leased: Math.max(0, Number(status.compute_queue?.leased) || 0),
+          completed: Math.max(0, Number(status.compute_queue?.completed) || 0),
+          cancelled: Math.max(0, Number(status.compute_queue?.cancelled) || 0),
+          expired: Math.max(0, Number(status.compute_queue?.expired) || 0),
+        },
         verifiedReceipts: {
           cpu: Math.max(0, Number(status.receipt_counts?.cpu) || 0),
           gpu: Math.max(0, Number(status.receipt_counts?.gpu) || 0),
@@ -3577,6 +3826,7 @@ export const startQsdmMotherHiveSystemProcess = (): {
   executablePath: string;
 } => {
   const tokenFile = assertQsdmMotherHiveConfigured();
+  const computeGatewayTokenFile = ensureQsdmComputeGatewayTokenFile();
   const executablePath = process.execPath;
   const scriptPath = ensureMotherHiveScript();
   const logPath = path.join(getMotherHiveDirectory(), 'task.log');
@@ -3584,6 +3834,10 @@ export const startQsdmMotherHiveSystemProcess = (): {
   writeTaskLog(
     QSDM_MOTHER_HIVE_SYSTEM_TASK_ID,
     `Starting QSDM Hive Mother mode relay=${getDefaultEdgeRelayURL()}`
+  );
+  writeTaskLog(
+    QSDM_MOTHER_HIVE_SYSTEM_TASK_ID,
+    `Application Compute Gateway endpoint=${getQsdmComputeGatewayEndpoint()} token_file=${computeGatewayTokenFile}`
   );
   writeTaskLog(
     QSDM_MOTHER_HIVE_SYSTEM_TASK_ID,
@@ -3604,6 +3858,10 @@ export const startQsdmMotherHiveSystemProcess = (): {
       ELECTRON_RUN_AS_NODE: '1',
       QSDM_EDGE_RELAY_URL: getDefaultEdgeRelayURL(),
       QSDM_EDGE_RELAY_TOKEN_FILE: tokenFile,
+      QSDM_COMPUTE_GATEWAY_TOKEN_FILE: computeGatewayTokenFile,
+      QSDM_COMPUTE_GATEWAY_PORT: String(
+        new URL(getQsdmComputeGatewayEndpoint()).port
+      ),
     },
   });
 
@@ -3736,16 +3994,19 @@ const readProcessLogTail = (logPath: string, maxLines = 12) => {
       return '';
     }
 
-    return fs
-      .readFileSync(logPath, 'utf8')
-      .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .slice(-maxLines)
-      .join('\n')
-      .replace(/(hmac(?:[_ -]?key)?\s*[=:]\s*)\S+/gi, '$1[redacted]')
-      .slice(-2000);
+    return (
+      fs
+        .readFileSync(logPath, 'utf8')
+        // eslint-disable-next-line no-control-regex
+        .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(-maxLines)
+        .join('\n')
+        .replace(/(hmac(?:[_ -]?key)?\s*[=:]\s*)\S+/gi, '$1[redacted]')
+        .slice(-2000)
+    );
   } catch {
     return '';
   }
@@ -3779,7 +4040,7 @@ export const startQsdmMinerSystemProcess = async (): Promise<{
   await assertQsdmMinerEnrollmentReady();
   const executablePath = getMinerExecutablePath();
   const configUpdate = setQsdmMinerRewardAddressToSigner();
-  const configPath = configUpdate.configPath;
+  const { configPath } = configUpdate;
   const logPath = getMinerLogPath();
 
   if (configUpdate.updated) {

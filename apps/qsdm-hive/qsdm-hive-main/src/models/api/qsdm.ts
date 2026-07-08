@@ -222,6 +222,19 @@ export interface QsdmMotherHiveStatusResponse {
   pooledGpuCount: number;
   pooledGpuMemoryMiB: number;
   activeJobs: number;
+  applicationJobs: {
+    queued: number;
+    leased: number;
+    completed: number;
+    cancelled: number;
+    expired: number;
+  };
+  computeGateway: {
+    endpoint: string;
+    tokenFile?: string;
+    online: boolean;
+    protocol: 'qsdm-compute-gateway/v1';
+  };
   verifiedReceipts: {
     cpu: number;
     gpu: number;

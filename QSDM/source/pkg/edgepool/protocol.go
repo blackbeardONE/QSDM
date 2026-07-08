@@ -17,6 +17,7 @@ import (
 
 const (
 	ProtocolVersion           = "qsdm-edge-pool/v1"
+	ComputeProtocolVersion    = "qsdm-compute-gateway/v1"
 	SettlementProtocolVersion = "qsdm-edge-settlement/v1"
 	SettlementProofSource     = "qsdm-edge-relay-v2"
 	// ProductionEcosystemWallet is the consensus-bound reserve that receives
@@ -34,6 +35,7 @@ const (
 )
 
 var workerIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+var computeRequestIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$`)
 
 type ResourceKind string
 
@@ -119,6 +121,69 @@ type JobResult struct {
 	DurationMS int64             `json:"duration_ms"`
 	Completed  string            `json:"completed_at"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
+}
+
+type ComputeJobState string
+
+const (
+	ComputeJobQueued    ComputeJobState = "queued"
+	ComputeJobLeased    ComputeJobState = "leased"
+	ComputeJobCompleted ComputeJobState = "completed"
+	ComputeJobCancelled ComputeJobState = "cancelled"
+	ComputeJobExpired   ComputeJobState = "expired"
+)
+
+func (s ComputeJobState) terminal() bool {
+	return s == ComputeJobCompleted || s == ComputeJobCancelled || s == ComputeJobExpired
+}
+
+// ComputeJobSubmitRequest is the deliberately narrow application-facing job
+// contract. Applications select a resource budget; they never upload scripts,
+// commands, binaries, or arbitrary executable payloads to Agent computers.
+type ComputeJobSubmitRequest struct {
+	Version         string       `json:"version"`
+	ClientRequestID string       `json:"client_request_id"`
+	Resource        ResourceKind `json:"resource"`
+	Units           uint64       `json:"units,omitempty"`
+	MemoryMiB       uint64       `json:"memory_mib,omitempty"`
+	DeadlineSeconds uint64       `json:"deadline_seconds,omitempty"`
+}
+
+// ComputeJobRecord is returned to a local application through Mother Hive.
+// Seed is retained so completed deterministic work can be independently
+// reproduced; it is random job data, not a credential.
+type ComputeJobRecord struct {
+	Version         string            `json:"version"`
+	ID              string            `json:"id"`
+	ClientRequestID string            `json:"client_request_id"`
+	Resource        ResourceKind      `json:"resource"`
+	Algorithm       string            `json:"algorithm"`
+	Seed            string            `json:"seed"`
+	Units           uint64            `json:"units"`
+	MemoryMiB       uint64            `json:"memory_mib,omitempty"`
+	State           ComputeJobState   `json:"state"`
+	WorkerID        string            `json:"worker_id,omitempty"`
+	CreatedAt       string            `json:"created_at"`
+	UpdatedAt       string            `json:"updated_at"`
+	DeadlineAt      string            `json:"deadline_at"`
+	LeaseExpiresAt  string            `json:"lease_expires_at,omitempty"`
+	ReceiptID       string            `json:"receipt_id,omitempty"`
+	Result          *JobResult        `json:"result,omitempty"`
+	LastError       string            `json:"last_error,omitempty"`
+	Metadata        map[string]string `json:"metadata,omitempty"`
+}
+
+type ComputeJobList struct {
+	Version string             `json:"version"`
+	Jobs    []ComputeJobRecord `json:"jobs"`
+}
+
+type ComputeQueueStatus struct {
+	Queued    int `json:"queued"`
+	Leased    int `json:"leased"`
+	Completed int `json:"completed"`
+	Cancelled int `json:"cancelled"`
+	Expired   int `json:"expired"`
 }
 
 type Receipt struct {
@@ -230,11 +295,19 @@ type PoolStatus struct {
 	SettlementPublicKey     string                  `json:"settlement_public_key,omitempty"`
 	SettlementBinding       *SettlementBinding      `json:"settlement_binding,omitempty"`
 	PendingSettlementProofs map[ResourceKind]string `json:"pending_settlement_proofs,omitempty"`
+	ComputeQueue            ComputeQueueStatus      `json:"compute_queue"`
 }
 
 func ValidateWorkerID(workerID string) error {
 	if !workerIDPattern.MatchString(workerID) {
 		return errors.New("worker_id must contain 1-64 letters, numbers, dots, underscores, or hyphens")
+	}
+	return nil
+}
+
+func ValidateComputeRequestID(requestID string) error {
+	if !computeRequestIDPattern.MatchString(requestID) {
+		return errors.New("client_request_id must contain 8-128 letters, numbers, dots, underscores, or hyphens")
 	}
 	return nil
 }

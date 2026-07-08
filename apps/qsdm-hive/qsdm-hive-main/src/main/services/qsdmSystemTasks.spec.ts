@@ -1,23 +1,17 @@
-import axios from 'axios';
+// cspell:words conso healthz qsdmminer
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import vm from 'vm';
 
-const mockGetQsdmTaskActionSender = jest.fn();
-
-jest.mock('axios', () => ({
-  get: jest.fn(),
-}));
-
-jest.mock('main/services/qsdmTaskActionSigner', () => ({
-  getQsdmTaskActionSender: () => mockGetQsdmTaskActionSender(),
-}));
+import axios from 'axios';
 
 import {
   createQsdmEdgeWorkerSystemTask,
   createQsdmEdgeWorkerScript,
   createQsdmGPUWorkerSystemTask,
   createQsdmMinerSystemTask,
+  createQsdmMotherHiveScript,
   createQsdmMotherHiveSystemTask,
   createQsdmRAMWorkerSystemTask,
   buildQsdmMinerLaunchArgs,
@@ -68,6 +62,16 @@ import {
   hasRewardedQsdmTaskSubmissionForSender,
   verifyQsdmSkyFangWalletLinked,
 } from './qsdmSystemTasks';
+
+const mockGetQsdmTaskActionSender = jest.fn();
+
+jest.mock('axios', () => ({
+  get: jest.fn(),
+}));
+
+jest.mock('main/services/qsdmTaskActionSigner', () => ({
+  getQsdmTaskActionSender: () => mockGetQsdmTaskActionSender(),
+}));
 
 const mockedAxiosGet = axios.get as jest.Mock;
 const linkedSender =
@@ -399,6 +403,25 @@ describe('qsdmSystemTasks', () => {
       })
     );
     expect(task.task_description).toContain('globally replay-protected');
+  });
+
+  it('creates a loopback-only authenticated application Compute Gateway', () => {
+    const script = createQsdmMotherHiveScript();
+
+    expect(() => new vm.Script(script)).not.toThrow();
+    expect(script).toContain("const gatewayHost = '127.0.0.1';");
+    expect(script).toContain(
+      "const computeProtocol = 'qsdm-compute-gateway/v1';"
+    );
+    expect(script).toContain('authorization.startsWith(prefix)');
+    expect(script).toContain("'/v1/compute/jobs'");
+    expect(script).toContain('request body exceeds 16 KiB');
+    expect(script.indexOf('if (!authorizeGateway(request))')).toBeLessThan(
+      script.indexOf("requestURL.pathname === '/healthz'")
+    );
+    expect(script).not.toContain('relay: relayUrl');
+    expect(script).not.toContain('0.0.0.0');
+    expect(script).not.toContain('child_process');
   });
 
   it('fails closed when Mother Hive has a configured relay', () => {

@@ -53,16 +53,19 @@ type Coordinator struct {
 	config    CoordinatorConfig
 	startedAt time.Time
 
-	mu            sync.Mutex
-	workers       map[string]WorkerStatus
-	jobs          map[string]Job
-	receipts      []Receipt
-	receiptsByJob map[string]Receipt
-	completing    map[string]struct{}
-	nonces        map[string]time.Time
-	persistMu     sync.Mutex
-	verifySlots   chan struct{}
-	motherSeenAt  time.Time
+	mu               sync.Mutex
+	workers          map[string]WorkerStatus
+	jobs             map[string]Job
+	receipts         []Receipt
+	receiptsByJob    map[string]Receipt
+	completing       map[string]struct{}
+	computeJobs      map[string]*ComputeJobRecord
+	computeByRequest map[string]string
+	computeOrder     []string
+	nonces           map[string]time.Time
+	persistMu        sync.Mutex
+	verifySlots      chan struct{}
+	motherSeenAt     time.Time
 
 	settlementSigner    *mldsa87.PrivateKey
 	settlementPublicKey string
@@ -180,6 +183,8 @@ func NewCoordinator(config CoordinatorConfig) (*Coordinator, error) {
 		jobs:                map[string]Job{},
 		receiptsByJob:       map[string]Receipt{},
 		completing:          map[string]struct{}{},
+		computeJobs:         map[string]*ComputeJobRecord{},
+		computeByRequest:    map[string]string{},
 		nonces:              map[string]time.Time{},
 		verifySlots:         make(chan struct{}, config.MaxVerifications),
 		settlementSigner:    settlementSigner,
@@ -188,6 +193,9 @@ func NewCoordinator(config CoordinatorConfig) (*Coordinator, error) {
 		settlement:          settlement,
 	}
 	if err := coordinator.loadReceipts(); err != nil {
+		return nil, err
+	}
+	if err := coordinator.loadComputeJobs(); err != nil {
 		return nil, err
 	}
 	return coordinator, nil
@@ -221,6 +229,8 @@ func (c *Coordinator) Handler() http.Handler {
 	mux.HandleFunc("/v1/register", c.handleRegister)
 	mux.HandleFunc("/v1/jobs/lease", c.handleLease)
 	mux.HandleFunc("/v1/jobs/complete", c.handleComplete)
+	mux.HandleFunc("/v1/compute/jobs", c.handleComputeJobs)
+	mux.HandleFunc("/v1/compute/jobs/", c.handleComputeJob)
 	mux.HandleFunc("/v1/status", c.handleStatus)
 	mux.HandleFunc("/v1/settlement/bind", c.handleSettlementBind)
 	mux.HandleFunc("/v1/proofs/ack", c.handleSettlementAck)
@@ -370,6 +380,17 @@ func (c *Coordinator) handleLease(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if job, leased, err := c.leaseComputeJobLocked(worker, request, now); err != nil {
+		c.mu.Unlock()
+		writePoolError(w, http.StatusInternalServerError, "application compute job could not be leased")
+		return
+	} else if leased {
+		worker.LastSeenAt = now.Format(time.RFC3339Nano)
+		c.workers[workerID] = worker
+		c.mu.Unlock()
+		writePoolJSON(w, http.StatusOK, job)
+		return
+	}
 
 	job, err := c.newJobLocked(worker, request, now)
 	if err != nil {
@@ -407,6 +428,13 @@ func (c *Coordinator) handleComplete(w http.ResponseWriter, r *http.Request) {
 	if existing, exists := c.receiptsByJob[result.JobID]; exists {
 		c.mu.Unlock()
 		if receiptMatchesResult(existing, result) {
+			c.mu.Lock()
+			persistErr := c.completeComputeJobLocked(existing, result)
+			c.mu.Unlock()
+			if persistErr != nil {
+				writePoolError(w, http.StatusInternalServerError, "verified application result could not be persisted")
+				return
+			}
 			writePoolJSON(w, http.StatusOK, existing)
 			return
 		}
@@ -472,7 +500,12 @@ func (c *Coordinator) handleComplete(w http.ResponseWriter, r *http.Request) {
 	c.workers[workerID] = worker
 	c.receipts = append(c.receipts, receipt)
 	c.receiptsByJob[receipt.JobID] = receipt
+	computePersistErr := c.completeComputeJobLocked(receipt, result)
 	c.mu.Unlock()
+	if computePersistErr != nil {
+		writePoolError(w, http.StatusInternalServerError, "verified application result could not be persisted")
+		return
+	}
 	writePoolJSON(w, http.StatusOK, receipt)
 }
 
@@ -611,6 +644,7 @@ func (c *Coordinator) Status() PoolStatus {
 		SettlementPublicKey:     c.settlementPublicKey,
 		SettlementBinding:       settlement.Binding,
 		PendingSettlementProofs: settlementPendingProofIDs(settlement),
+		ComputeQueue:            c.computeQueueStatusLocked(),
 	}
 }
 
@@ -770,6 +804,7 @@ func (c *Coordinator) rejectJob(workerID, jobID string) {
 	defer c.mu.Unlock()
 	delete(c.jobs, jobID)
 	delete(c.completing, jobID)
+	c.releaseComputeJobLocked(jobID, time.Now().UTC(), "Agent result failed verification; job returned to queue")
 	worker := c.workers[workerID]
 	worker.RejectedJobs++
 	worker.LastSeenAt = time.Now().UTC().Format(time.RFC3339Nano)
@@ -828,6 +863,9 @@ func (c *Coordinator) pruneLocked(now time.Time) {
 		if err != nil || now.After(expires) {
 			delete(c.jobs, id)
 		}
+	}
+	if c.pruneComputeJobsLocked(now) {
+		_ = c.persistComputeJobsLocked()
 	}
 	c.pruneNoncesLocked(now)
 }

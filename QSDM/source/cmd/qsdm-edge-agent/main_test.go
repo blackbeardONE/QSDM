@@ -1,6 +1,12 @@
 package main
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestAgentRelayURLPrefersNewFieldAndSupportsLegacyCoordinator(t *testing.T) {
 	if got := agentRelayURL(agentFileConfig{Relay: "http://relay:7740", Coordinator: "http://old:7740"}); got != "http://relay:7740" {
@@ -32,5 +38,36 @@ func TestResolveRelayTokenPathsSeparatesMotherHive(t *testing.T) {
 func TestResolveRelayTokenPathsRequiresAgentCredential(t *testing.T) {
 	if _, _, err := resolveRelayTokenPaths("", "", "mother.token"); err == nil {
 		t.Fatal("Mother Hive token without an agent token was accepted")
+	}
+}
+
+func TestComputeGatewayClientUsesBearerTokenOnLoopback(t *testing.T) {
+	token := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	tokenFile := filepath.Join(t.TempDir(), "compute.token")
+	if err := os.WriteFile(tokenFile, []byte(token+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+token {
+			http.Error(w, "missing token", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"version":"qsdm-compute-gateway/v1","jobs":[]}`))
+	}))
+	defer server.Close()
+
+	if err := computeGatewayJSON(http.MethodGet, server.URL, "/v1/jobs", tokenFile, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestComputeGatewayClientRejectsNonLoopbackAddress(t *testing.T) {
+	tokenFile := filepath.Join(t.TempDir(), "compute.token")
+	if err := os.WriteFile(tokenFile, []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := computeGatewayJSON(http.MethodGet, "https://example.com", "/v1/jobs", tokenFile, nil); err == nil {
+		t.Fatal("compute client accepted a non-loopback gateway")
 	}
 }

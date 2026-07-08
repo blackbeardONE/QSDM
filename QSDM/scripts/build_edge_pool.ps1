@@ -77,17 +77,17 @@ try {
     $env:GOCACHE = $previousGoCache
 	$env:GOROOT = $previousGoRoot
     if (-not $KeepGeneratedResource) {
-        for ($attempt = 0; $attempt -lt 12 -and (Test-Path -LiteralPath $ControlResource); $attempt++) {
+        for ($attempt = 0; $attempt -lt 30 -and (Test-Path -LiteralPath $ControlResource); $attempt++) {
             Remove-Item -LiteralPath $ControlResource -Force -ErrorAction SilentlyContinue
             if (Test-Path -LiteralPath $ControlResource) {
-                Start-Sleep -Milliseconds (($attempt + 1) * 100)
+                Start-Sleep -Milliseconds ([Math]::Min(($attempt + 1) * 100, 1000))
             }
         }
     }
     $resourceCleanupFailed = -not $KeepGeneratedResource -and (Test-Path -LiteralPath $ControlResource)
     Pop-Location
     if ($resourceCleanupFailed) {
-        throw "Unable to remove generated Edge Control resource: $ControlResource"
+        Write-Warning "Windows retained the generated Edge Control resource after cleanup retries. It is ignored by git and will be overwritten by the next build: $ControlResource"
     }
 }
 

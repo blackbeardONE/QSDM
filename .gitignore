@@ -251,6 +251,7 @@ coverage.out
 # produced under the QSDM source tree during local verification.
 QSDM/source/.cache/
 QSDM/source/**/*.go.[0-9]*
+/QSDM/source/cmd/qsdm-edge-control/rsrc_windows_amd64.syso
 
 # Test runs write signed wallet transaction blobs here. They are generated
 # evidence, not fixtures, and can contain public keys and signatures.

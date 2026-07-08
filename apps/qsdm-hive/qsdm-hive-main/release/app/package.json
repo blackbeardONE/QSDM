@@ -1,6 +1,6 @@
 {
   "name": "qsdm-hive-runtime",
-  "version": "1.3.90",
+  "version": "1.3.91",
   "description": "Desktop GUI and runtime for QSDM Hive node operations",
   "license": "MIT",
   "author": {

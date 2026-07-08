@@ -1,6 +1,7 @@
 import {
   faArrowRightFromBracket,
   faCircleCheck,
+  faCopy,
   faLink,
   faMemory,
   faMicrochip,
@@ -195,6 +196,13 @@ export function MotherHiveView() {
     taskMutation.isLoading ||
     stakeMutation.isLoading;
 
+  const copyComputeGatewayEndpoint = async () => {
+    const endpoint = status?.computeGateway.endpoint;
+    if (!endpoint) return;
+    await navigator.clipboard.writeText(endpoint);
+    toast.success('Compute Gateway endpoint copied.');
+  };
+
   return (
     <div className="h-full overflow-y-auto pr-2 pb-12 text-white">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/20 pb-4">
@@ -337,21 +345,91 @@ export function MotherHiveView() {
           />
           <Metric
             icon={<FontAwesomeIcon icon={faMicrochip} />}
-            label="Virtual CPU"
+            label="Pooled CPU capacity"
             value={`${status?.pooledCpuThreads || 0} threads`}
           />
           <Metric
             icon={<FontAwesomeIcon icon={faMicrochip} />}
-            label="Virtual GPU"
+            label="Pooled GPU capacity"
             value={`${status?.pooledGpuCount || 0} GPU / ${formatMemory(
               status?.pooledGpuMemoryMiB || 0
             )}`}
           />
           <Metric
             icon={<FontAwesomeIcon icon={faMemory} />}
-            label="Virtual RAM"
+            label="Pooled RAM capacity"
             value={formatMemory(status?.pooledRamMiB || 0)}
           />
+        </div>
+      </section>
+
+      <section className="border-t border-white/15 py-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Application Compute Gateway</h2>
+            <p className="mt-1 text-xs text-white/55">
+              Authenticated local API for bounded Relay workloads
+            </p>
+          </div>
+          <div
+            className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
+              status?.computeGateway.online
+                ? 'bg-finnieEmerald/20 text-finnieTeal-100'
+                : 'bg-finnieOrange/15 text-finnieOrange'
+            }`}
+          >
+            <FontAwesomeIcon
+              icon={
+                status?.computeGateway.online
+                  ? faCircleCheck
+                  : faTriangleExclamation
+              }
+            />
+            {status?.computeGateway.online ? 'API online' : 'Start Mother Hive'}
+          </div>
+        </div>
+        <div className="mt-4 grid gap-x-8 gap-y-3 text-sm lg:grid-cols-2">
+          <div className="min-w-0">
+            <div className="text-xs text-finnieTeal-100">Endpoint</div>
+            <div className="mt-1 flex min-w-0 items-center gap-2">
+              <code className="min-w-0 flex-1 truncate text-white/80">
+                {status?.computeGateway.endpoint || 'http://127.0.0.1:7742'}
+              </code>
+              <Button
+                onlyIcon
+                label="Copy Compute Gateway endpoint"
+                title="Copy Compute Gateway endpoint"
+                icon={<FontAwesomeIcon icon={faCopy} />}
+                onClick={copyComputeGatewayEndpoint}
+                disabled={!status?.computeGateway.endpoint}
+                className="h-9 w-9 rounded-md border border-white/20"
+              />
+            </div>
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs text-finnieTeal-100">Credential file</div>
+            <code
+              className="mt-1 block truncate text-white/80"
+              title={status?.computeGateway.tokenFile}
+            >
+              {status?.computeGateway.tokenFile ||
+                'Created when Mother Hive starts'}
+            </code>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-5">
+          {[
+            ['Queued', status?.applicationJobs.queued || 0],
+            ['Running', status?.applicationJobs.leased || 0],
+            ['Completed', status?.applicationJobs.completed || 0],
+            ['Cancelled', status?.applicationJobs.cancelled || 0],
+            ['Expired', status?.applicationJobs.expired || 0],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="border-t border-white/15 pt-2">
+              <div className="text-white/55">{label}</div>
+              <div className="mt-1 text-base font-semibold">{value}</div>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -412,6 +490,13 @@ export function MotherHiveView() {
                 <div className="flex justify-between gap-3">
                   <span>Active jobs</span>
                   <span>{status?.activeJobs || 0}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span>Application jobs</span>
+                  <span>
+                    {(status?.applicationJobs.queued || 0) +
+                      (status?.applicationJobs.leased || 0)}
+                  </span>
                 </div>
                 <div className="flex justify-between gap-3">
                   <span>Verified CPU receipts</span>

@@ -22,11 +22,11 @@ This is not a public anonymous enrollment mechanism. Do not expose the Relay dir
 
 ## Downloads
 
-- Windows x86-64 bundle: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.1-windows-x86_64.zip`
-- Linux x86-64 bundle: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.1-linux-x86_64.tar.gz`
-- Checksums: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.1-SHA256SUMS.txt`
+- Windows x86-64 bundle: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.4-windows-x86_64.zip`
+- Linux x86-64 bundle: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.4-linux-x86_64.tar.gz`
+- Checksums: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.4-SHA256SUMS.txt`
 
-QSDM Hive 1.3.83 and newer bundles Edge Control 1.3.1, Agent 1.3.1, and the CUDA helper. Standalone bundles are for additional laboratory computers.
+QSDM Hive 1.3.91 and newer bundles Edge Control 1.3.4, Agent 1.3.4, and the CUDA helper. Standalone bundles are for additional laboratory computers.
 
 ## Edge Control GUI
 
@@ -114,7 +114,7 @@ qsdm-edge-agent.exe configure-agent `
 
 The current CUDA helper requires NVIDIA Turing or newer, compute capability 7.5+, and a working NVIDIA driver. GPU Edge Worker is shared compute and is separate from QSDM protocol mining.
 
-`--background` detaches the process without a visible console window. `--silent` writes only to the log file. Agent 1.3.1 re-registers after a Relay restart and retries a completed result until its exactly-once receipt is acknowledged.
+`--background` detaches the process without a visible console window. `--silent` writes only to the log file. Agent 1.3.4 re-registers after a Relay restart and retries a completed result until its exactly-once receipt is acknowledged.
 
 Linux agents can run silently in the same way:
 
@@ -147,8 +147,20 @@ The installer copies the agent, token, configuration, and optional GPU helper in
 qsdm-edge-agent.exe status --relay http://RELAY-HOST:7740 --mother-token-file mother-hive.token
 ```
 
+## Mother Hive application jobs
+
+Hive 1.3.91 opens an authenticated, loopback-only Compute Gateway while the Mother Hive task is running. Applications can submit bounded work without receiving the Relay's Mother credential:
+
+```powershell
+qsdm-edge-agent.exe compute submit --request-id local-app-0001 --resource cpu --units 100000
+qsdm-edge-agent.exe compute list
+qsdm-edge-agent.exe compute status --id COMPUTE_JOB_ID
+```
+
+The default gateway is `http://127.0.0.1:7742`; the client discovers Hive's private application token automatically. Only the built-in CPU, GPU, and RAM algorithms are accepted. The pool is an explicit job API, not transparent operating-system RAM or a local CUDA device.
+
 ## CELL accounting
 
-The target gross workload-revenue split is 80% to contributors, 10% to the QSDM Hive Mother operator, and 10% to the ecosystem reserve. Agent PCs remain walletless in the current protocol, so automatic settlement is disabled until each contributor binds a payout wallet, Relay proofs are publicly verifiable by QSDM Core, and a workload escrow is funded. A verified receipt does not mint CELL by itself.
+For each Core-accepted Relay batch, the gross workload revenue split is 70% to the contributor-owner wallet bound by Mother Hive, 15% to the Mother Hive operator, and 15% to the CELL ecosystem reserve. Agent PCs remain walletless. Payout requires a funded task reward pool, an authorized Relay ID, and chain-valid signed receipts; a verified receipt does not mint CELL by itself.
 
 The old `coordinator` commands, `--coordinator` option, and one-token setup remain migration aliases.

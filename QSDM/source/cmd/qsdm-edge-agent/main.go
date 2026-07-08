@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -9,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -79,6 +83,8 @@ func run(args []string) error {
 		return runConfigureAgent(args[1:])
 	case "status":
 		return runStatus(args[1:])
+	case "compute":
+		return runCompute(args[1:])
 	case "install-service":
 		return runInstallService(args[1:])
 	case "uninstall-service":
@@ -127,6 +133,136 @@ func runToken(args []string) error {
 	}
 	fmt.Printf("Created edge-pool token: %s\n", *output)
 	return nil
+}
+
+func runCompute(args []string) error {
+	if len(args) == 0 {
+		return errors.New("compute requires submit, status, list, or cancel")
+	}
+	switch args[0] {
+	case "submit":
+		flags := flag.NewFlagSet("compute submit", flag.ContinueOnError)
+		gateway := flags.String("gateway", "http://127.0.0.1:7742", "Mother Hive Compute Gateway URL")
+		tokenFile := flags.String("token-file", defaultComputeGatewayTokenFile(), "Compute Gateway token file")
+		requestID := flags.String("request-id", "", "idempotent application request id")
+		resource := flags.String("resource", "cpu", "cpu, gpu, or ram")
+		units := flags.Uint64("units", 0, "CPU/GPU work units; zero uses the Relay policy")
+		ramMiB := flags.Uint64("ram-mib", 0, "RAM MiB; zero uses the Relay policy")
+		deadline := flags.Uint64("deadline-seconds", 900, "job deadline from 30 to 3600 seconds")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *requestID == "" {
+			randomID := make([]byte, 8)
+			if _, err := rand.Read(randomID); err != nil {
+				return err
+			}
+			*requestID = "app-" + strconv.FormatInt(time.Now().UTC().Unix(), 10) + "-" + hex.EncodeToString(randomID)
+		}
+		request := edgepool.ComputeJobSubmitRequest{
+			Version:         edgepool.ComputeProtocolVersion,
+			ClientRequestID: *requestID,
+			Resource:        edgepool.ResourceKind(strings.ToLower(strings.TrimSpace(*resource))),
+			Units:           *units,
+			MemoryMiB:       *ramMiB,
+			DeadlineSeconds: *deadline,
+		}
+		return computeGatewayJSON(http.MethodPost, *gateway, "/v1/jobs", *tokenFile, request)
+	case "status", "cancel":
+		flags := flag.NewFlagSet("compute "+args[0], flag.ContinueOnError)
+		gateway := flags.String("gateway", "http://127.0.0.1:7742", "Mother Hive Compute Gateway URL")
+		tokenFile := flags.String("token-file", defaultComputeGatewayTokenFile(), "Compute Gateway token file")
+		jobID := flags.String("id", "", "compute job id")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if decoded, err := hex.DecodeString(*jobID); err != nil || len(decoded) != 16 {
+			return errors.New("--id must be a 16-byte hexadecimal compute job id")
+		}
+		method := http.MethodGet
+		if args[0] == "cancel" {
+			method = http.MethodDelete
+		}
+		return computeGatewayJSON(method, *gateway, "/v1/jobs/"+strings.ToLower(*jobID), *tokenFile, nil)
+	case "list":
+		flags := flag.NewFlagSet("compute list", flag.ContinueOnError)
+		gateway := flags.String("gateway", "http://127.0.0.1:7742", "Mother Hive Compute Gateway URL")
+		tokenFile := flags.String("token-file", defaultComputeGatewayTokenFile(), "Compute Gateway token file")
+		limit := flags.Int("limit", 20, "number of recent jobs from 1 to 100")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *limit < 1 || *limit > 100 {
+			return errors.New("--limit must be between 1 and 100")
+		}
+		return computeGatewayJSON(http.MethodGet, *gateway, "/v1/jobs?limit="+strconv.Itoa(*limit), *tokenFile, nil)
+	default:
+		return fmt.Errorf("unknown compute command %q", args[0])
+	}
+}
+
+func computeGatewayJSON(method, gatewayURL, requestPath, tokenFile string, requestBody any) error {
+	tokenRaw, err := os.ReadFile(tokenFile)
+	if err != nil {
+		return fmt.Errorf("read Compute Gateway token: %w", err)
+	}
+	token := strings.ToLower(strings.TrimSpace(string(tokenRaw)))
+	if decoded, err := hex.DecodeString(token); err != nil || len(decoded) != 32 {
+		return errors.New("Compute Gateway token must contain 64 hexadecimal characters")
+	}
+	base := strings.TrimRight(strings.TrimSpace(gatewayURL), "/")
+	if base != "http://127.0.0.1:7742" && !strings.HasPrefix(base, "http://127.0.0.1:") && !strings.HasPrefix(base, "http://localhost:") {
+		return errors.New("Compute Gateway must use a loopback HTTP address")
+	}
+	body := []byte(nil)
+	if requestBody != nil {
+		body, err = json.Marshal(requestBody)
+		if err != nil {
+			return err
+		}
+	}
+	request, err := http.NewRequest(method, base+requestPath, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 20 * time.Second}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	responseRaw, err := io.ReadAll(io.LimitReader(response.Body, 256*1024+1))
+	if err != nil {
+		return err
+	}
+	if len(responseRaw) > 256*1024 {
+		return errors.New("Compute Gateway response exceeded 256 KiB")
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("Compute Gateway returned HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(responseRaw)))
+	}
+	var formatted bytes.Buffer
+	if err := json.Indent(&formatted, responseRaw, "", "  "); err != nil {
+		return fmt.Errorf("decode Compute Gateway response: %w", err)
+	}
+	fmt.Println(formatted.String())
+	return nil
+}
+
+func defaultComputeGatewayTokenFile() string {
+	if configured := strings.TrimSpace(os.Getenv("QSDM_COMPUTE_GATEWAY_TOKEN_FILE")); configured != "" {
+		return configured
+	}
+	if runtime.GOOS == "windows" {
+		return filepath.Join(os.Getenv("APPDATA"), "qsdm-hive", "namespace", "qsdm-mother-hive", "compute-gateway.token")
+	}
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "compute-gateway.token"
+	}
+	return filepath.Join(configDir, "qsdm-hive", "namespace", "qsdm-mother-hive", "compute-gateway.token")
 }
 
 func runRelay(args []string) error {
@@ -423,6 +559,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  configure-agent   Create a worker configuration file")
 	fmt.Fprintln(w, "  agent             Run an outbound-only CPU/RAM/GPU worker")
 	fmt.Fprintln(w, "  status            Show authenticated pool status")
+	fmt.Fprintln(w, "  compute           Submit and inspect local Mother Hive application jobs")
 	fmt.Fprintln(w, "  install-service   Install and start the persistent Linux user service (Linux only)")
 	fmt.Fprintln(w, "  uninstall-service Stop and remove the Linux user service (Linux only)")
 	fmt.Fprintln(w, "  service-status    Show Linux user-service status and recent logs (Linux only)")
