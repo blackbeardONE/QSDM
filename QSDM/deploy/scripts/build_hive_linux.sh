@@ -14,6 +14,7 @@ edge_agent="$native_dir/qsdm-edge-agent"
 edge_control="$native_dir/qsdm-edge-control"
 gpu_helper="$native_dir/qsdm-edge-gpu-helper"
 miner="$native_dir/qsdmminer-console"
+cuda_solver="$native_dir/qsdm-miner-cuda-solver"
 
 mkdir -p "$output_dir"
 mkdir -p "$native_dir"
@@ -81,6 +82,29 @@ elif [[ -f "$miner" ]]; then
   chmod 0755 "$miner"
 else
   echo "The Linux QSDM console miner is missing and Go is unavailable." >&2
+  exit 69
+fi
+
+if [[ -n "${QSDM_PREBUILT_CUDA_SOLVER:-}" ]]; then
+  if [[ ! -f "$QSDM_PREBUILT_CUDA_SOLVER" ]]; then
+    echo "QSDM_PREBUILT_CUDA_SOLVER does not point to a file." >&2
+    exit 66
+  fi
+  install -m 0755 "$QSDM_PREBUILT_CUDA_SOLVER" "$cuda_solver"
+elif command -v nvcc >/dev/null 2>&1; then
+  cuda_host_compiler="$(command -v g++-12 || command -v g++)"
+  nvcc -O3 -std=c++17 -ccbin "$cuda_host_compiler" \
+    -gencode arch=compute_75,code=sm_75 \
+    -gencode arch=compute_86,code=sm_86 \
+    -gencode arch=compute_89,code=sm_89 \
+    -gencode arch=compute_90,code=sm_90 \
+    "$qsdm_source_dir/cmd/qsdm-miner-cuda-solver/main.cu" \
+    -o "$cuda_solver"
+  chmod 0755 "$cuda_solver"
+elif [[ -f "$cuda_solver" ]]; then
+  chmod 0755 "$cuda_solver"
+else
+  echo "The Linux QSDM CUDA miner solver is missing and nvcc is unavailable." >&2
   exit 69
 fi
 
@@ -169,6 +193,7 @@ test -x "$output_dir/linux-unpacked/resources/edge/qsdm-edge-agent"
 test -x "$output_dir/linux-unpacked/resources/edge/qsdm-edge-control"
 test -x "$output_dir/linux-unpacked/resources/edge/qsdm-edge-gpu-helper"
 test -x "$output_dir/linux-unpacked/resources/miner/qsdmminer-console"
+test -x "$output_dir/linux-unpacked/resources/miner/qsdm-miner-cuda-solver"
 "$output_dir/linux-unpacked/resources/miner/qsdmminer-console" --version
 
 version="$hive_version"

@@ -19,7 +19,7 @@ does not ship a separate consumer GUI miner.
 Linux Hive connects directly to the canonical public QSDM Core for ledger,
 wallet, chain-height, and mining-reward reads. Task catalog metadata continues
 through the restricted home-validator gateway. Ordinary desktop users do not
-install a local validator. Version 1.3.88 bundles the native `qsdmcli` signer,
+install a local validator. Version 1.3.89 bundles the native `qsdmcli` signer,
 supervised console miner, CUDA protocol solver, edge agent, and CUDA edge
 helper.
 Open **Settings > Wallet** to create a new
@@ -39,7 +39,7 @@ Legacy `KOII` catalog labels without a token mint are normalized to native CELL
 tasks, so a funded signer can stake and run them.
 
 The home gateway intentionally supplies operator task metadata and projected
-task state. Hive 1.3.88 isolates that route behind a bounded outage circuit.
+task state. Hive 1.3.89 isolates that route behind a bounded outage circuit.
 One isolated timeout retries normally; two transient failures within 30 seconds
 open the route for 20 seconds. A recently healthy API cannot be quarantined by
 one slow sibling route. Confirmed task, balance, reward, and chain values remain

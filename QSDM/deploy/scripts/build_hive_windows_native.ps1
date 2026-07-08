@@ -36,6 +36,8 @@ $buildInfo = "-s -w -X github.com/blackbeardONE/QSDM/pkg/buildinfo.Version=hive-
 $controlIcon = Join-Path $hive 'assets\icon.ico'
 $controlResourceBuilder = Join-Path $workspace 'QSDM\scripts\build_edge_control_windows_resource.ps1'
 $controlResource = Join-Path $qsdm 'cmd\qsdm-edge-control\rsrc_windows_amd64.syso'
+$cudaSolverBuilder = Join-Path $workspace 'QSDM\scripts\build_miner_cuda.ps1'
+$cudaSolver = Join-Path $native 'qsdm-miner-cuda-solver.exe'
 
 New-Item -ItemType Directory -Force -Path $native | Out-Null
 New-Item -ItemType Directory -Force -Path $goCache | Out-Null
@@ -79,8 +81,14 @@ finally {
     }
 }
 
+& $cudaSolverBuilder
+if ($LASTEXITCODE -ne 0) { throw 'QSDM CUDA miner solver build failed.' }
+
 & (Join-Path $native 'qsdmminer-console.exe') --version
 if ($LASTEXITCODE -ne 0) { throw 'Packaged qsdmminer-console failed its version probe.' }
+
+& $cudaSolver --self-test
+if ($LASTEXITCODE -ne 0) { throw 'Packaged QSDM CUDA miner solver failed its self-test.' }
 
 & (Join-Path $native 'qsdm-edge-agent.exe') --version
 if ($LASTEXITCODE -ne 0) { throw 'Packaged qsdm-edge-agent failed its version probe.' }

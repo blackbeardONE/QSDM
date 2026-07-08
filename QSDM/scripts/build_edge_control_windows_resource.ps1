@@ -34,7 +34,7 @@ if (-not $windresCommand) {
 }
 $windresExe = $windresCommand.Source
 $previousPath = $env:Path
-$env:Path = "$(Split-Path -Parent $windresExe);$previousPath"
+$env:Path = "$(Split-Path -Parent $windresExe);$env:SystemRoot\System32"
 
 $outputDirectory = Split-Path -Parent $OutputPath
 $workDirectory = Join-Path ([IO.Path]::GetTempPath()) "qsdm-edge-control-resource-$PID"
