@@ -365,7 +365,7 @@
 
     <section class="panel" aria-labelledby="installer-title">
       <div>
-        <span class="version">Version 1.3.90</span>
+        <span class="version">Version 1.3.91</span>
         <h2 id="installer-title">Windows installer</h2>
         <p>
           Recommended for all users. Hive is the public release path for wallets,
@@ -373,20 +373,20 @@
           miner it supervises; no separate consumer GUI miner is shipped.
         </p>
         <div class="actions">
-          <a class="button primary" href="/downloads/qsdm-hive-1.3.90-win-x64.exe">Download Installer</a>
+          <a class="button primary" href="/downloads/qsdm-hive-1.3.91-win-x64.exe">Download Installer</a>
           <a class="button" href="/docs/#/qsdm-hive">Installation Notes</a>
           <a class="button" href="/downloads/SHA256SUMS-win.txt">Checksum</a>
         </div>
       </div>
       <div class="checksum">
         SHA-256:
-        <code>735675A81006B01E3E51ECD39B55FBE4F049F11AB2F4FFA0BE443118647C618D</code>
+        <code>4B563C8CDAA541FFD551EF485FFFCC2F162160A112EE4A47A21CF072F7897396</code>
       </div>
     </section>
 
     <section class="panel" aria-labelledby="linux-title">
       <div>
-        <span class="version">Version 1.3.90</span>
+        <span class="version">Version 1.3.91</span>
         <h2 id="linux-title">Linux x86-64</h2>
         <p>
           Use the AppImage on a desktop Linux distribution with GTK 3. Linux Hive
@@ -402,22 +402,22 @@
           short outage circuit opens. Actual chain mismatches still fail closed.
         </p>
         <div class="actions">
-          <a class="button primary" href="/downloads/qsdm-hive-1.3.90-linux-x86_64.AppImage" download="qsdm-hive-1.3.90-linux-x86_64.AppImage">Download AppImage</a>
-          <a class="button" href="/downloads/qsdm-hive-1.3.90-linux-x64.tar.gz" download="qsdm-hive-1.3.90-linux-x64.tar.gz">Portable tar.gz</a>
-          <a class="button" href="/downloads/qsdm-hive-1.3.90-linux-SHA256SUMS.txt">Checksums</a>
+          <a class="button primary" href="/downloads/qsdm-hive-1.3.91-linux-x86_64.AppImage" download="qsdm-hive-1.3.91-linux-x86_64.AppImage">Download AppImage</a>
+          <a class="button" href="/downloads/qsdm-hive-1.3.91-linux-x64.tar.gz" download="qsdm-hive-1.3.91-linux-x64.tar.gz">Portable tar.gz</a>
+          <a class="button" href="/downloads/qsdm-hive-1.3.91-linux-SHA256SUMS.txt">Checksums</a>
         </div>
       </div>
       <div class="checksum">
         <strong>AppImage SHA-256</strong>
-        <code>B816EF8BF2CA5BB25D22E5C7000097881D438535006A3F15DDF06D30626C7B88</code>
+        <code>8660E4BAD534E37169CF53EA487D367FC90E4072859D8F7C8C3CE4C0A3ABBAC8</code>
         <strong>tar.gz SHA-256</strong>
-        <code>12FD8A4C8D893DFEFDB439C01C3BD99D0225FC89B489BABFFA9635EB884385FC</code>
+        <code>374333E2EEF1789E869F08B831A152FFDA3944A150560216661E928B7E0FC424</code>
       </div>
     </section>
 
     <section class="panel" aria-labelledby="edge-agent-title">
       <div>
-        <span class="version">Edge Control 1.3.3</span>
+        <span class="version">Edge Control 1.3.4</span>
         <h2 id="edge-agent-title">Agent and Relay utilities</h2>
         <p>
           Hive already includes the correct agent and NVIDIA helper for its operating
@@ -428,9 +428,9 @@
           and assumes the Mother Hive role for the group.
         </p>
         <div class="actions">
-          <a class="button primary" href="/downloads/qsdm-edge-agent-1.3.3-windows-x86_64.zip">Windows Edge Control</a>
-          <a class="button primary" href="/downloads/qsdm-edge-agent-1.3.3-linux-x86_64.tar.gz">Linux Edge Control</a>
-          <a class="button" href="/downloads/qsdm-edge-agent-1.3.3-SHA256SUMS.txt">Checksums</a>
+          <a class="button primary" href="/downloads/qsdm-edge-agent-1.3.4-windows-x86_64.zip">Windows Edge Control</a>
+          <a class="button primary" href="/downloads/qsdm-edge-agent-1.3.4-linux-x86_64.tar.gz">Linux Edge Control</a>
+          <a class="button" href="/downloads/qsdm-edge-agent-1.3.4-SHA256SUMS.txt">Checksums</a>
           <a class="button" href="/docs/#/edge-pool">Deployment guide</a>
         </div>
       </div>
@@ -466,9 +466,9 @@
           <p>Sky Fang wallet-link checks and bounded CPU, NVIDIA GPU, and RAM edge tasks are included in Hive.</p>
         </article>
         <article class="card">
-          <strong>Hive 1.3.90</strong>
-          <h3>One supervised CUDA miner</h3>
-          <p>Concurrent startup and restore paths now share one launch operation, preventing duplicate protocol miners. Every package still requires the embedded CUDA solver.</p>
+          <strong>Hive 1.3.91</strong>
+          <h3>Application Compute Gateway</h3>
+          <p>Native apps can submit bounded CPU, NVIDIA GPU, or RAM jobs through Mother Hive's authenticated loopback gateway and receive durable Relay receipts.</p>
         </article>
       </div>
     </section>
@@ -487,6 +487,10 @@
         <article class="card">
           <h3>Integrations</h3>
           <p>Connect apps such as Sky Fang Online to QSDM wallet ownership and CELL reward eligibility.</p>
+        </article>
+        <article class="card">
+          <h3>Pooled application jobs</h3>
+          <p>Use the local authenticated API or packaged CLI to submit fixed work to a paired Relay without exposing remote administration.</p>
         </article>
       </div>
     </section>
