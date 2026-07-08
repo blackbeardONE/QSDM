@@ -52,12 +52,14 @@ jobs:
           go build -trimpath -ldflags "-s -w" -o ../../apps/qsdm-hive/qsdm-hive-main/native/linux/x64/qsdmcli ./cmd/qsdmcli
           EDGE_AGENT_VERSION="$(tr -d '[:space:]' < ../../apps/qsdm-edge-agent/VERSION)"
           go build -trimpath -ldflags "-s -w -X main.version=${EDGE_AGENT_VERSION}" -o ../../apps/qsdm-hive/qsdm-hive-main/native/linux/x64/qsdm-edge-agent ./cmd/qsdm-edge-agent
+          go build -trimpath -ldflags "-s -w -X main.version=${EDGE_AGENT_VERSION}" -o ../../apps/qsdm-hive/qsdm-hive-main/native/linux/x64/qsdm-edge-control ./cmd/qsdm-edge-control
           HIVE_VERSION="$(node -p "require('../../apps/qsdm-hive/qsdm-hive-main/release/app/package.json').version")"
           BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           GIT_SHA="$(git rev-parse --short HEAD)"
           go build -trimpath -ldflags "-s -w -X github.com/blackbeardONE/QSDM/pkg/buildinfo.Version=hive-v${HIVE_VERSION} -X github.com/blackbeardONE/QSDM/pkg/buildinfo.GitSHA=${GIT_SHA} -X github.com/blackbeardONE/QSDM/pkg/buildinfo.BuildDate=${BUILD_DATE}" -o ../../apps/qsdm-hive/qsdm-hive-main/native/linux/x64/qsdmminer-console ./cmd/qsdmminer-console
           chmod 0755 ../../apps/qsdm-hive/qsdm-hive-main/native/linux/x64/qsdmcli
           chmod 0755 ../../apps/qsdm-hive/qsdm-hive-main/native/linux/x64/qsdm-edge-agent
+          chmod 0755 ../../apps/qsdm-hive/qsdm-hive-main/native/linux/x64/qsdm-edge-control
           chmod 0755 ../../apps/qsdm-hive/qsdm-hive-main/native/linux/x64/qsdmminer-console
 
       - name: Install CUDA compiler and build Linux GPU helper
@@ -67,7 +69,15 @@ jobs:
           nvcc -O3 -std=c++17 -arch=sm_75 -ccbin g++-12 \
             QSDM/source/cmd/qsdm-edge-gpu-helper/main.cu \
             -o apps/qsdm-hive/qsdm-hive-main/native/linux/x64/qsdm-edge-gpu-helper
+          nvcc -O3 -std=c++17 -ccbin g++-12 \
+            -gencode arch=compute_75,code=sm_75 \
+            -gencode arch=compute_86,code=sm_86 \
+            -gencode arch=compute_89,code=sm_89 \
+            -gencode arch=compute_90,code=sm_90 \
+            QSDM/source/cmd/qsdm-miner-cuda-solver/main.cu \
+            -o apps/qsdm-hive/qsdm-hive-main/native/linux/x64/qsdm-miner-cuda-solver
           chmod 0755 apps/qsdm-hive/qsdm-hive-main/native/linux/x64/qsdm-edge-gpu-helper
+          chmod 0755 apps/qsdm-hive/qsdm-hive-main/native/linux/x64/qsdm-miner-cuda-solver
 
       - name: Install Hive dependencies
         working-directory: apps/qsdm-hive/qsdm-hive-main
@@ -94,10 +104,13 @@ jobs:
         run: |
           test -x release/build-linux/linux-unpacked/resources/native/qsdmcli
           test -x release/build-linux/linux-unpacked/resources/edge/qsdm-edge-agent
+          test -x release/build-linux/linux-unpacked/resources/edge/qsdm-edge-control
           test -x release/build-linux/linux-unpacked/resources/edge/qsdm-edge-gpu-helper
           test -x release/build-linux/linux-unpacked/resources/miner/qsdmminer-console
-          tar -tvf release/build-linux/qsdm-hive-*-linux-x64.tar.gz | grep -E -- '-rwxr-xr-x.*resources/(native/qsdmcli|edge/qsdm-edge-agent|edge/qsdm-edge-gpu-helper|miner/qsdmminer-console)$'
+          test -x release/build-linux/linux-unpacked/resources/miner/qsdm-miner-cuda-solver
+          tar -tvf release/build-linux/qsdm-hive-*-linux-x64.tar.gz | grep -E -- '-rwxr-xr-x.*resources/(native/qsdmcli|edge/qsdm-edge-agent|edge/qsdm-edge-control|edge/qsdm-edge-gpu-helper|miner/qsdmminer-console|miner/qsdm-miner-cuda-solver)$'
           release/build-linux/linux-unpacked/resources/edge/qsdm-edge-agent version
+          release/build-linux/linux-unpacked/resources/edge/qsdm-edge-control version
           release/build-linux/linux-unpacked/resources/miner/qsdmminer-console --version
 
       - uses: actions/upload-artifact@v4
