@@ -440,11 +440,20 @@ describe('qsdmSystemTasks', () => {
 
   it('loads the one-click Edge Control Mother Hive connection', () => {
     const originalAppData = process.env.APPDATA;
+    const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
     const originalRelayURL = process.env.QSDM_EDGE_RELAY_URL;
     const originalRelayToken = process.env.QSDM_EDGE_RELAY_TOKEN_FILE;
     delete process.env.QSDM_EDGE_RELAY_URL;
     delete process.env.QSDM_EDGE_RELAY_TOKEN_FILE;
-    process.env.APPDATA = 'C:\\Users\\tester\\AppData\\Roaming';
+    const configRoot = path.join(os.tmpdir(), 'qsdm-edge-config-test');
+    const expectedTokenFile = path.join(
+      configRoot,
+      'QSDM',
+      'edge-pool',
+      'mother-hive.token'
+    );
+    process.env.APPDATA = configRoot;
+    process.env.XDG_CONFIG_HOME = configRoot;
     const readFile = jest.spyOn(fs, 'readFileSync').mockImplementation(((
       filePath: fs.PathOrFileDescriptor
     ) => {
@@ -452,8 +461,7 @@ describe('qsdmSystemTasks', () => {
         return JSON.stringify({
           schema_version: 1,
           relay_url: 'http://192.168.1.10:7740',
-          token_file:
-            'C:\\Users\\tester\\AppData\\Roaming\\QSDM\\edge-pool\\mother-hive.token',
+          token_file: expectedTokenFile,
         });
       }
       throw new Error(`Unexpected read: ${String(filePath)}`);
@@ -465,14 +473,14 @@ describe('qsdmSystemTasks', () => {
       );
 
     expect(getDefaultEdgeRelayURL()).toBe('http://192.168.1.10:7740');
-    expect(getDefaultEdgeRelayTokenFile()).toBe(
-      'C:\\Users\\tester\\AppData\\Roaming\\QSDM\\edge-pool\\mother-hive.token'
-    );
+    expect(getDefaultEdgeRelayTokenFile()).toBe(expectedTokenFile);
 
     readFile.mockRestore();
     exists.mockRestore();
     if (originalAppData === undefined) delete process.env.APPDATA;
     else process.env.APPDATA = originalAppData;
+    if (originalXdgConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
     if (originalRelayURL === undefined) delete process.env.QSDM_EDGE_RELAY_URL;
     else process.env.QSDM_EDGE_RELAY_URL = originalRelayURL;
     if (originalRelayToken === undefined)
