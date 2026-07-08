@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -69,5 +70,13 @@ func TestComputeGatewayClientRejectsNonLoopbackAddress(t *testing.T) {
 	}
 	if err := computeGatewayJSON(http.MethodGet, "https://example.com", "/v1/jobs", tokenFile, nil); err == nil {
 		t.Fatal("compute client accepted a non-loopback gateway")
+	}
+}
+
+func TestDefaultComputeGatewayTokenFileUsesHiveApplicationData(t *testing.T) {
+	t.Setenv("QSDM_COMPUTE_GATEWAY_TOKEN_FILE", "")
+	want := filepath.Join("QSDM-Hive", "namespace", "qsdm-mother-hive", "compute-gateway.token")
+	if got := defaultComputeGatewayTokenFile(); !strings.HasSuffix(got, want) {
+		t.Fatalf("default Compute Gateway token path = %q, want suffix %q", got, want)
 	}
 }

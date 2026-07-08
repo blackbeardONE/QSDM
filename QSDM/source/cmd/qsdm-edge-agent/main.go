@@ -255,14 +255,11 @@ func defaultComputeGatewayTokenFile() string {
 	if configured := strings.TrimSpace(os.Getenv("QSDM_COMPUTE_GATEWAY_TOKEN_FILE")); configured != "" {
 		return configured
 	}
-	if runtime.GOOS == "windows" {
-		return filepath.Join(os.Getenv("APPDATA"), "qsdm-hive", "namespace", "qsdm-mother-hive", "compute-gateway.token")
-	}
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return "compute-gateway.token"
 	}
-	return filepath.Join(configDir, "qsdm-hive", "namespace", "qsdm-mother-hive", "compute-gateway.token")
+	return filepath.Join(configDir, "QSDM-Hive", "namespace", "qsdm-mother-hive", "compute-gateway.token")
 }
 
 func runRelay(args []string) error {
