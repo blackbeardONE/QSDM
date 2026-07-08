@@ -70,8 +70,9 @@ import {
   getDefaultEdgeRelayTokenFile,
   getDefaultEdgeRelayURL,
 } from 'main/services/qsdmMotherHiveRelayConfig';
-import { getQsdmTaskActionSender } from 'main/services/qsdmTaskActionSigner';
+import { AsyncSingleFlight } from 'main/services/asyncSingleFlight';
 import { submitQsdmTaskActionIntent } from 'main/services/qsdmTaskActions';
+import { getQsdmTaskActionSender } from 'main/services/qsdmTaskActionSigner';
 import { RawTaskData, RequirementType, TaskMetadata } from 'models';
 import {
   QsdmMiningAccountResponse,
@@ -239,6 +240,16 @@ export type QsdmMinerProcessInfo = {
   commandLine?: string;
   startTime?: string;
 };
+
+type QsdmManagedSystemProcess = {
+  child: ChildProcess;
+  secret: string;
+  logPath: string;
+  executablePath: string;
+};
+
+const qsdmMinerStartSingleFlight =
+  new AsyncSingleFlight<QsdmManagedSystemProcess>();
 
 export type QsdmMinerRewardAddressInfo = {
   address: string;
@@ -3095,12 +3106,7 @@ const createAdoptedProcessChild = (
 
 export const adoptQsdmMinerSystemProcess = (
   processInfo: QsdmMinerProcessInfo
-): {
-  child: ChildProcess;
-  secret: string;
-  logPath: string;
-  executablePath: string;
-} => {
+): QsdmManagedSystemProcess => {
   const logPath = getMinerLogPath();
   const executablePath = processInfo.executablePath || getMinerExecutablePath();
 
@@ -3125,48 +3131,58 @@ export const adoptQsdmMinerSystemProcess = (
   };
 };
 
-export const startOrAdoptQsdmMinerSystemProcess = async (): Promise<{
-  child: ChildProcess;
-  secret: string;
-  logPath: string;
-  executablePath: string;
-}> => {
-  const processInfo = await getQsdmMinerSystemProcessInfo();
-  if (processInfo) {
-    await assertQsdmMinerEnrollmentReady();
-    await stopExtraQsdmMinerSystemProcesses(processInfo.pid);
-    return adoptQsdmMinerSystemProcess(processInfo);
-  }
-
-  const unmanagedProcesses = await getQsdmMinerSystemProcesses();
-  if (unmanagedProcesses.length > 0) {
-    writeTaskLog(
-      QSDM_MINER_SYSTEM_TASK_ID,
-      `Ignoring ${unmanagedProcesses.length} legacy or externally managed miner process(es); Hive only adopts its packaged CUDA miner.`
-    );
-  }
-
-  try {
-    return await startQsdmMinerSystemProcess();
-  } catch (error) {
-    // A previous AppImage miner can become visible between the initial probe
-    // and spawn, or can outlive an unclean Electron shutdown. If the new
-    // process loses that single-instance race, adopt the compatible process
-    // instead of reporting a false configuration failure while it mines.
-    const collisionProcess = await getQsdmMinerSystemProcessInfo();
-    if (!collisionProcess) {
-      throw error;
+const startOrAdoptQsdmMinerSystemProcessUnlocked =
+  async (): Promise<QsdmManagedSystemProcess> => {
+    const processInfo = await getQsdmMinerSystemProcessInfo();
+    if (processInfo) {
+      await assertQsdmMinerEnrollmentReady();
+      await stopExtraQsdmMinerSystemProcesses(processInfo.pid);
+      return adoptQsdmMinerSystemProcess(processInfo);
     }
 
-    await assertQsdmMinerEnrollmentReady();
-    await stopExtraQsdmMinerSystemProcesses(collisionProcess.pid);
-    writeTaskLog(
-      QSDM_MINER_SYSTEM_TASK_ID,
-      `Miner launch collided with an existing compatible process; adopting pid=${collisionProcess.pid}`
+    const unmanagedProcesses = await getQsdmMinerSystemProcesses();
+    if (unmanagedProcesses.length > 0) {
+      writeTaskLog(
+        QSDM_MINER_SYSTEM_TASK_ID,
+        `Ignoring ${unmanagedProcesses.length} legacy or externally managed miner process(es); Hive only adopts its packaged CUDA miner.`
+      );
+    }
+
+    try {
+      return await startQsdmMinerSystemProcess();
+    } catch (error) {
+      // A previous AppImage miner can become visible between the initial probe
+      // and spawn, or can outlive an unclean Electron shutdown. If the new
+      // process loses that single-instance race, adopt the compatible process
+      // instead of reporting a false configuration failure while it mines.
+      const collisionProcess = await getQsdmMinerSystemProcessInfo();
+      if (!collisionProcess) {
+        throw error;
+      }
+
+      await assertQsdmMinerEnrollmentReady();
+      await stopExtraQsdmMinerSystemProcesses(collisionProcess.pid);
+      writeTaskLog(
+        QSDM_MINER_SYSTEM_TASK_ID,
+        `Miner launch collided with an existing compatible process; adopting pid=${collisionProcess.pid}`
+      );
+      return adoptQsdmMinerSystemProcess(collisionProcess);
+    }
+  };
+
+export const startOrAdoptQsdmMinerSystemProcess =
+  async (): Promise<QsdmManagedSystemProcess> => {
+    if (qsdmMinerStartSingleFlight.isRunning) {
+      writeTaskLog(
+        QSDM_MINER_SYSTEM_TASK_ID,
+        'Joining the in-flight QSDM Miner startup instead of launching a duplicate process.'
+      );
+    }
+
+    return qsdmMinerStartSingleFlight.run(
+      startOrAdoptQsdmMinerSystemProcessUnlocked
     );
-    return adoptQsdmMinerSystemProcess(collisionProcess);
-  }
-};
+  };
 
 const writeTaskLog = (taskId: string, message: string) => {
   if (!message) {
