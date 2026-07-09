@@ -1279,6 +1279,7 @@ const gatewayTokenFile = process.env.QSDM_COMPUTE_GATEWAY_TOKEN_FILE || '';
 const gatewayHost = '127.0.0.1';
 const gatewayPort = Math.max(1024, Math.min(65535, Number(process.env.QSDM_COMPUTE_GATEWAY_PORT || 7742)));
 const computeProtocol = '${QSDM_COMPUTE_GATEWAY_PROTOCOL_VERSION}';
+const virtualComputeVersion = 'qsdm-virtual-compute/v1';
 const intervalMs = Math.max(5000, Number(process.env.QSDM_MOTHER_HIVE_INTERVAL_MS || 15000));
 const maxRuntimeMs = Math.max(300000, Number(process.env.QSDM_MOTHER_HIVE_MAX_RUNTIME_MS || 21600000));
 const startedAt = Date.now();
@@ -1377,6 +1378,87 @@ function allowGatewayRequest() {
   return true;
 }
 
+const workloadCatalog = [
+  {
+    id: 'qsdm.cpu.hash-chain.v1',
+    name: 'CPU deterministic compute',
+    resource: 'cpu',
+    algorithm: 'sha256-chain-v1',
+    deterministic: true,
+  },
+  {
+    id: 'qsdm.gpu.cuda-mix.v1',
+    name: 'NVIDIA GPU deterministic compute',
+    resource: 'gpu',
+    algorithm: 'cuda-splitmix64-v1',
+    deterministic: true,
+  },
+  {
+    id: 'qsdm.ram.memory-scan.v1',
+    name: 'RAM deterministic compute',
+    resource: 'ram',
+    algorithm: 'ram-splitmix64-v1',
+    deterministic: true,
+  },
+];
+
+function virtualResourceSnapshot(status) {
+  const now = Date.now();
+  const workers = Array.isArray(status.workers) ? status.workers : [];
+  const online = workers.filter((worker) => {
+    const lastSeen = Date.parse(String(worker.last_seen_at || ''));
+    return Number.isFinite(lastSeen) && now - lastSeen <= 120000;
+  });
+  const totals = online.reduce((result, worker) => {
+    const capabilities = worker.capabilities || {};
+    const resources = Array.isArray(capabilities.resources) ? capabilities.resources : [];
+    if (resources.includes('cpu')) result.cpuThreads += Math.max(0, Number(capabilities.cpu_threads || 0));
+    if (resources.includes('ram')) result.ramMiB += Math.max(0, Number(capabilities.ram_mib || 0));
+    if (resources.includes('gpu')) {
+      const gpus = Array.isArray(capabilities.gpus) ? capabilities.gpus : [];
+      result.gpuCount += gpus.length;
+      result.gpuMemoryMiB += gpus.reduce((sum, gpu) => sum + Math.max(0, Number(gpu.memory_mib || 0)), 0);
+    }
+    return result;
+  }, { cpuThreads: 0, ramMiB: 0, gpuCount: 0, gpuMemoryMiB: 0 });
+  const policy = status.policy || {};
+  const available = {
+    cpu: totals.cpuThreads > 0,
+    gpu: totals.gpuCount > 0,
+    ram: totals.ramMiB > 0,
+  };
+  return {
+    version: virtualComputeVersion,
+    compute_protocol: computeProtocol,
+    mode: 'distributed',
+    os_device_projection: false,
+    online_agents: online.length,
+    resources: {
+      cpu: {
+        available: available.cpu,
+        threads: totals.cpuThreads,
+        policy_percent: Math.max(0, Number(policy.cpu_percent || 0)),
+      },
+      gpu: {
+        available: available.gpu,
+        devices: totals.gpuCount,
+        memory_mib: totals.gpuMemoryMiB,
+        policy_percent: Math.max(0, Number(policy.gpu_percent || 0)),
+      },
+      ram: {
+        available: available.ram,
+        memory_mib: totals.ramMiB,
+        policy_percent: Math.max(0, Number(policy.ram_percent || 0)),
+      },
+    },
+    workloads: workloadCatalog.map((workload) => ({
+      ...workload,
+      available: Boolean(available[workload.resource]),
+    })),
+    checked_at: new Date().toISOString(),
+  };
+}
+
 function readGatewayBody(request) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -1416,7 +1498,25 @@ async function handleGateway(request, response) {
         ok: true,
         service: 'qsdm-mother-hive-compute-gateway',
         protocol: computeProtocol,
+        runtime: virtualComputeVersion,
       });
+      return;
+    }
+
+    if ((requestURL.pathname === '/v1/resources' || requestURL.pathname === '/v1/workloads') && request.method === 'GET') {
+      const relayResponse = await relayRequest('GET', '/v1/status');
+      if (relayResponse.statusCode !== 200) {
+        writeJSON(response, relayResponse.statusCode, relayResponse.value);
+        return;
+      }
+      const snapshot = virtualResourceSnapshot(relayResponse.value || {});
+      writeJSON(
+        response,
+        200,
+        requestURL.pathname === '/v1/workloads'
+          ? { version: virtualComputeVersion, workloads: snapshot.workloads }
+          : snapshot
+      );
       return;
     }
 
@@ -3367,10 +3467,10 @@ const ensureEdgeWorkerScript = (taskId: string) => {
 const getMotherHiveDirectory = () =>
   path.join(getAppDataPath(), 'namespace', QSDM_MOTHER_HIVE_SYSTEM_TASK_ID);
 
-const getQsdmComputeGatewayTokenFile = () =>
+export const getQsdmComputeGatewayTokenFile = () =>
   path.join(getMotherHiveDirectory(), 'compute-gateway.token');
 
-const getQsdmComputeGatewayEndpoint = () => {
+export const getQsdmComputeGatewayEndpoint = () => {
   const configuredPort = Number(process.env.QSDM_COMPUTE_GATEWAY_PORT || 7742);
   const port =
     Number.isInteger(configuredPort) &&

@@ -86,7 +86,9 @@ unresponsive and worsen network or desktop stalls. Verified capacity receipts
 show that an Agent is alive and eligible; they are not paid work when the active
 job count is zero.
 
-Hive 1.3.93 adds an **Application Compute Gateway** to the Mother Hive task. While the task and its paired Relay are online, native applications can submit fixed CPU, NVIDIA GPU, or RAM jobs through the authenticated loopback endpoint at `http://127.0.0.1:7742`. Hive shows its status and private credential path on the Mother Hive page. The gateway queues work durably on the Relay, returns verified results and receipts, and never accepts uploaded code, scripts, commands, or executables. Unmodified applications cannot see the pool as local hardware; they must use this API or the packaged `qsdm-edge-agent compute` commands. See the [pooled edge-compute guide](EDGE_POOL.md#application-compute-gateway) for examples.
+Hive 1.3.93 adds an **Application Compute Gateway** to the Mother Hive task. While the task and its paired Relay are online, native applications can submit fixed CPU, NVIDIA GPU, or RAM jobs through the authenticated loopback endpoint at `http://127.0.0.1:7742`. Hive shows its status and private credential path on the Mother Hive page. The gateway queues work durably on the Relay, returns verified results and receipts, and never accepts uploaded code, scripts, commands, or executables. Unmodified applications cannot see the pool as local hardware; they must use this API or the packaged `qsdm-edge-agent compute` commands.
+
+Hive 1.3.94 adds the **Virtual Compute Runtime** workbench. Operators can select a live pooled resource, run a bounded workload, monitor queue and Agent state, cancel active work, and see verified receipts directly from the Mother Hive page. Discovery routes report available capacity and the reviewed workload catalog without exposing the private gateway credential to renderer code. See the [pooled edge-compute guide](EDGE_POOL.md#virtual-compute-runtime) for the contract and the [federation design](EDGE_FEDERATION.md) for the proposed cross-location path.
 
 For an authorized Relay batch, QSDM Core atomically allocates **70% to the contributor-owner wallet, 15% to the Mother Hive operator, and 15% to the CELL ecosystem reserve** at `651a79b2b1790820dd73bda81be24057e1bc27377c1f1117c6db2ab79dc038ea`. Agents remain walletless, so the paired Hive binds the owner wallet for the trusted group. Every validator verifies the Relay's ML-DSA-87 signature, manager-approved Relay ID, payout binding, round, time window, and global proof/receipt replay state. No payout occurs unless the corresponding task reward pool already contains enough CELL.
 
@@ -118,4 +120,5 @@ Hive uses local services for the desktop app and node monitor. Public reachabili
 - [Sky Fang integration notes](https://skyfang.xyz/docs)
 - [Miner quickstart](MINER_QUICKSTART.md)
 - [Pooled edge-compute guide](EDGE_POOL.md)
+- [Mother Hive federation design](EDGE_FEDERATION.md)
 - [Wallet explanation](WALLET_EXPLANATION.md)

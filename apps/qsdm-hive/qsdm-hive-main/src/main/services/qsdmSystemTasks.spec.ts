@@ -424,11 +424,23 @@ describe('qsdmSystemTasks', () => {
     expect(script).toContain(
       "const computeProtocol = 'qsdm-compute-gateway/v1';"
     );
+    expect(script).toContain(
+      "const virtualComputeVersion = 'qsdm-virtual-compute/v1';"
+    );
+    expect(script).toContain("requestURL.pathname === '/v1/resources'");
+    expect(script).toContain("requestURL.pathname === '/v1/workloads'");
+    expect(script).toContain('os_device_projection: false');
+    expect(script).toContain("id: 'qsdm.cpu.hash-chain.v1'");
+    expect(script).toContain("id: 'qsdm.gpu.cuda-mix.v1'");
+    expect(script).toContain("id: 'qsdm.ram.memory-scan.v1'");
     expect(script).toContain('authorization.startsWith(prefix)');
     expect(script).toContain("'/v1/compute/jobs'");
     expect(script).toContain('request body exceeds 16 KiB');
     expect(script.indexOf('if (!authorizeGateway(request))')).toBeLessThan(
       script.indexOf("requestURL.pathname === '/healthz'")
+    );
+    expect(script.indexOf('if (!authorizeGateway(request))')).toBeLessThan(
+      script.indexOf("requestURL.pathname === '/v1/resources'")
     );
     expect(script).not.toContain('relay: relayUrl');
     expect(script).not.toContain('0.0.0.0');

@@ -266,6 +266,100 @@ export interface QsdmMotherHivePairRequest {
   pairingCode: string;
 }
 
+export type QsdmVirtualComputeResource = 'cpu' | 'gpu' | 'ram';
+
+export type QsdmVirtualComputeJobState =
+  | 'queued'
+  | 'leased'
+  | 'completed'
+  | 'cancelled'
+  | 'expired';
+
+export interface QsdmVirtualComputeWorkload {
+  id: string;
+  name: string;
+  resource: QsdmVirtualComputeResource;
+  algorithm: string;
+  deterministic: boolean;
+  available: boolean;
+}
+
+export interface QsdmVirtualComputeResourcesResponse {
+  version: 'qsdm-virtual-compute/v1';
+  compute_protocol: 'qsdm-compute-gateway/v1';
+  mode: 'distributed';
+  os_device_projection: false;
+  online_agents: number;
+  resources: {
+    cpu: {
+      available: boolean;
+      threads: number;
+      policy_percent: number;
+    };
+    gpu: {
+      available: boolean;
+      devices: number;
+      memory_mib: number;
+      policy_percent: number;
+    };
+    ram: {
+      available: boolean;
+      memory_mib: number;
+      policy_percent: number;
+    };
+  };
+  workloads: QsdmVirtualComputeWorkload[];
+  checked_at: string;
+}
+
+export interface QsdmVirtualComputeJobResult {
+  version: string;
+  job_id: string;
+  worker_id: string;
+  resource: QsdmVirtualComputeResource;
+  algorithm: string;
+  digest: string;
+  units: number;
+  memory_mib?: number;
+  duration_ms: number;
+  completed_at: string;
+}
+
+export interface QsdmVirtualComputeJob {
+  version: string;
+  id: string;
+  client_request_id: string;
+  resource: QsdmVirtualComputeResource;
+  algorithm: string;
+  seed: string;
+  units: number;
+  memory_mib?: number;
+  state: QsdmVirtualComputeJobState;
+  worker_id?: string;
+  created_at: string;
+  updated_at: string;
+  deadline_at: string;
+  receipt_id?: string;
+  result?: QsdmVirtualComputeJobResult;
+  last_error?: string;
+}
+
+export interface QsdmVirtualComputeJobList {
+  version: string;
+  jobs: QsdmVirtualComputeJob[];
+}
+
+export interface QsdmVirtualComputeSubmitRequest {
+  resource: QsdmVirtualComputeResource;
+  units?: number;
+  memoryMiB?: number;
+  deadlineSeconds?: number;
+}
+
+export interface QsdmVirtualComputeCancelRequest {
+  jobId: string;
+}
+
 export interface QsdmSkyFangLinkStatusResponse {
   configured: boolean;
   linked: boolean;

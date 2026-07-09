@@ -511,6 +511,41 @@ export const validateIpcPayload = (
       });
       break;
     }
+    case Endpoints.SUBMIT_QSDM_VIRTUAL_COMPUTE_JOB: {
+      const object = ensureObject(endpoint, payload);
+      const resource = ensureString(endpoint, object, 'resource', {
+        max: 3,
+        pattern: /^(cpu|gpu|ram)$/,
+      });
+      ensureOptionalNumber(endpoint, object, 'deadlineSeconds', {
+        min: 30,
+        max: 3600,
+        integer: true,
+      });
+      if (resource === 'ram') {
+        ensureOptionalNumber(endpoint, object, 'memoryMiB', {
+          min: 1,
+          max: 1024,
+          integer: true,
+        });
+      } else {
+        ensureOptionalNumber(endpoint, object, 'units', {
+          min: 1,
+          max: resource === 'gpu' ? 100_000_000 : 20_000_000,
+          integer: true,
+        });
+      }
+      break;
+    }
+    case Endpoints.CANCEL_QSDM_VIRTUAL_COMPUTE_JOB: {
+      const object = ensureObject(endpoint, payload);
+      ensureString(endpoint, object, 'jobId', {
+        min: 32,
+        max: 32,
+        pattern: /^[0-9a-fA-F]{32}$/,
+      });
+      break;
+    }
     case Endpoints.CLAIM_QSDM_CELL_FAUCET:
       validateFaucetClaim(endpoint, payload);
       break;
@@ -533,6 +568,8 @@ export const validateIpcPayload = (
     case Endpoints.SET_QSDM_MINER_REWARD_ADDRESS_TO_SIGNER:
     case Endpoints.GET_QSDM_REFERRAL_REWARD_POOL_STATUS:
     case Endpoints.DISCONNECT_QSDM_MOTHER_HIVE:
+    case Endpoints.GET_QSDM_VIRTUAL_COMPUTE_RESOURCES:
+    case Endpoints.GET_QSDM_VIRTUAL_COMPUTE_JOBS:
     case Endpoints.QUIT_APP:
       ensureNoPayload(endpoint, args);
       break;

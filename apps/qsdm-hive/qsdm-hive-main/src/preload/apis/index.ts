@@ -61,6 +61,12 @@ import getQsdmCoreStatus from './getQsdmCoreStatus';
 import getQsdmMinerRewardStatus from './getQsdmMinerRewardStatus';
 import getQsdmMotherHiveStatus from './getQsdmMotherHiveStatus';
 import {
+  cancelQsdmVirtualComputeJob,
+  getQsdmVirtualComputeJobs,
+  getQsdmVirtualComputeResources,
+  submitQsdmVirtualComputeJob,
+} from './qsdmVirtualCompute';
+import {
   disconnectQsdmMotherHive,
   pairQsdmMotherHive,
 } from './pairQsdmMotherHive';
@@ -194,6 +200,10 @@ export default {
   getQsdmMotherHiveStatus,
   pairQsdmMotherHive,
   disconnectQsdmMotherHive,
+  getQsdmVirtualComputeResources,
+  getQsdmVirtualComputeJobs,
+  submitQsdmVirtualComputeJob,
+  cancelQsdmVirtualComputeJob,
   getQsdmSkyFangLinkStatus,
   linkQsdmSkyFangAccount,
   createQsdmSignerWallet,

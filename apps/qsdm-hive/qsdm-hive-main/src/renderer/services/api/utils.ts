@@ -15,6 +15,8 @@ import type {
   QsdmSignedCellLoopRequest,
   QsdmSignedTransactionEnvelope,
   QsdmTaskActionEnvelope,
+  QsdmVirtualComputeCancelRequest,
+  QsdmVirtualComputeSubmitRequest,
 } from 'models/api/qsdm';
 
 /** Utils */
@@ -147,6 +149,26 @@ export const pairQsdmMotherHive = async (pairingCode: string) => {
 
 export const disconnectQsdmMotherHive = async () => {
   return window.main.disconnectQsdmMotherHive();
+};
+
+export const getQsdmVirtualComputeResources = async () => {
+  return window.main.getQsdmVirtualComputeResources();
+};
+
+export const getQsdmVirtualComputeJobs = async () => {
+  return window.main.getQsdmVirtualComputeJobs();
+};
+
+export const submitQsdmVirtualComputeJob = async (
+  payload: QsdmVirtualComputeSubmitRequest
+) => {
+  return window.main.submitQsdmVirtualComputeJob(payload);
+};
+
+export const cancelQsdmVirtualComputeJob = async (
+  payload: QsdmVirtualComputeCancelRequest
+) => {
+  return window.main.cancelQsdmVirtualComputeJob(payload);
 };
 
 export const getQsdmSkyFangLinkStatus = async () => {

@@ -27,6 +27,8 @@ export enum QueryKeys {
   QsdmCellAccount = 'QsdmCellAccount',
   QsdmMinerRewardStatus = 'QsdmMinerRewardStatus',
   QsdmMotherHiveStatus = 'QsdmMotherHiveStatus',
+  QsdmVirtualComputeResources = 'QsdmVirtualComputeResources',
+  QsdmVirtualComputeJobs = 'QsdmVirtualComputeJobs',
   QsdmSkyFangLinkStatus = 'QsdmSkyFangLinkStatus',
   NodeInitialized = 'NodeInitialized',
   ReferralCode = 'ReferralCode',

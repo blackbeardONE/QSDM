@@ -56,11 +56,17 @@ const endpointToControllerMap: Record<
   [Endpoints.GET_QSDM_CELL_ACCOUNT]: controllers.getQsdmCellAccount,
   [Endpoints.GET_QSDM_MINER_REWARD_STATUS]:
     controllers.getQsdmMinerRewardStatus,
-  [Endpoints.GET_QSDM_MOTHER_HIVE_STATUS]:
-    controllers.getQsdmMotherHiveStatus,
+  [Endpoints.GET_QSDM_MOTHER_HIVE_STATUS]: controllers.getQsdmMotherHiveStatus,
   [Endpoints.PAIR_QSDM_MOTHER_HIVE]: controllers.pairQsdmMotherHive,
-  [Endpoints.DISCONNECT_QSDM_MOTHER_HIVE]:
-    controllers.disconnectQsdmMotherHive,
+  [Endpoints.DISCONNECT_QSDM_MOTHER_HIVE]: controllers.disconnectQsdmMotherHive,
+  [Endpoints.GET_QSDM_VIRTUAL_COMPUTE_RESOURCES]:
+    controllers.getQsdmVirtualComputeResources,
+  [Endpoints.GET_QSDM_VIRTUAL_COMPUTE_JOBS]:
+    controllers.getQsdmVirtualComputeJobs,
+  [Endpoints.SUBMIT_QSDM_VIRTUAL_COMPUTE_JOB]:
+    controllers.submitQsdmVirtualComputeJob,
+  [Endpoints.CANCEL_QSDM_VIRTUAL_COMPUTE_JOB]:
+    controllers.cancelQsdmVirtualComputeJob,
   [Endpoints.GET_QSDM_SKYFANG_LINK_STATUS]:
     controllers.getQsdmSkyFangLinkStatus,
   [Endpoints.LINK_QSDM_SKYFANG_ACCOUNT]: controllers.linkQsdmSkyFangAccount,

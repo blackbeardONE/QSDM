@@ -74,6 +74,21 @@ For a RAM job, use `--resource ram --ram-mib 64`. For an NVIDIA job, use `--reso
 
 This gateway makes pooled resources usable by applications that integrate with the API or CLI. It does not turn remote RAM into ordinary process memory, expose a remote GPU as a local CUDA device, or accelerate unmodified applications. A general application must split its workload into supported jobs and submit those jobs explicitly.
 
+## Virtual Compute Runtime
+
+QSDM Hive 1.3.94 adds a **Virtual Compute Runtime** workbench to the Mother Hive page. The workbench discovers live Agent capacity, lets the operator select CPU, NVIDIA GPU, or RAM, submits a bounded workload, and shows queue state, the Agent that accepted the job, duration, cancellation, and verified receipt status. It uses the private Application Compute Gateway through Electron's main process; the renderer never receives the gateway token.
+
+The runtime identifies itself as `qsdm-virtual-compute/v1` and exposes two read-only discovery routes in addition to the existing job routes:
+
+- `GET /v1/resources` returns current CPU threads, GPU count and memory, RAM allowance, Relay limits, and the number of online Agents.
+- `GET /v1/workloads` returns the signed-in Hive's supported fixed workload catalog.
+
+The first catalog contains `qsdm.cpu.hash-chain.v1`, `qsdm.gpu.cuda-mix.v1`, and `qsdm.ram.memory-scan.v1`. They prove and exercise distributed execution without opening a remote-code path. An application integration can use the same authenticated API or the packaged CLI.
+
+This is a logical compute pool. Operating systems cannot safely present internet or LAN resources as ordinary physical CPU cores, process RAM, or a local CUDA device. Applications must use a QSDM adapter that partitions work into supported jobs. Broader workloads should be added as reviewed, versioned capabilities rather than arbitrary commands.
+
+Cross-location sharing is a separate protocol stage. See the [Mother Hive federation design](EDGE_FEDERATION.md); the current private Relay credential must not be exposed or reused as an internet federation credential.
+
 ## Build
 
 From the repository root on the Windows build workstation:

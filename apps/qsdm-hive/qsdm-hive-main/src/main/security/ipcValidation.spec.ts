@@ -190,4 +190,45 @@ describe('QSDM Hive IPC validation', () => {
       ])
     ).toThrow(/outside the allowed range/);
   });
+
+  it('allows only bounded Virtual Compute workloads', () => {
+    expect(() =>
+      validateIpcPayload(Endpoints.SUBMIT_QSDM_VIRTUAL_COMPUTE_JOB, [
+        { resource: 'cpu', units: 100_000, deadlineSeconds: 300 },
+      ])
+    ).not.toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.SUBMIT_QSDM_VIRTUAL_COMPUTE_JOB, [
+        { resource: 'ram', memoryMiB: 16 },
+      ])
+    ).not.toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.SUBMIT_QSDM_VIRTUAL_COMPUTE_JOB, [
+        { resource: 'shell', units: 1 },
+      ])
+    ).toThrow(/resource/);
+    expect(() =>
+      validateIpcPayload(Endpoints.SUBMIT_QSDM_VIRTUAL_COMPUTE_JOB, [
+        { resource: 'gpu', units: 100_000_001 },
+      ])
+    ).toThrow(/units is above/);
+  });
+
+  it('validates Virtual Compute reads and cancellation IDs', () => {
+    expect(() =>
+      validateIpcPayload(Endpoints.GET_QSDM_VIRTUAL_COMPUTE_RESOURCES, [
+        undefined,
+      ])
+    ).not.toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.CANCEL_QSDM_VIRTUAL_COMPUTE_JOB, [
+        { jobId: 'a'.repeat(32) },
+      ])
+    ).not.toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.CANCEL_QSDM_VIRTUAL_COMPUTE_JOB, [
+        { jobId: '../other-job' },
+      ])
+    ).toThrow(/jobId/);
+  });
 });

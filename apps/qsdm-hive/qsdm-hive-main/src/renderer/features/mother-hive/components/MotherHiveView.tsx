@@ -1,5 +1,6 @@
 import {
   faArrowRightFromBracket,
+  faBolt,
   faCircleCheck,
   faCopy,
   faLink,
@@ -23,19 +24,29 @@ import {
   QSDM_MOTHER_HIVE_OPERATOR_SHARE_PERCENT,
   QSDM_MOTHER_HIVE_SYSTEM_TASK_ID,
 } from 'config/qsdmSystemTasks';
-import { QsdmMotherHiveStatusResponse } from 'models/api/qsdm';
+import {
+  QsdmMotherHiveStatusResponse,
+  QsdmVirtualComputeJob,
+  QsdmVirtualComputeJobList,
+  QsdmVirtualComputeResource,
+  QsdmVirtualComputeResourcesResponse,
+} from 'models/api/qsdm';
 import { Button, LoadingSpinner } from 'renderer/components/ui';
 import { useMyTaskStake } from 'renderer/features/tasks/hooks/useMyTaskStake';
 import { useStakeOnTask } from 'renderer/features/tasks/hooks/useStakeOnTask';
 import {
+  cancelQsdmVirtualComputeJob,
   disconnectQsdmMotherHive,
   getIsTaskRunning,
   getQsdmMotherHiveStatus,
+  getQsdmVirtualComputeJobs,
+  getQsdmVirtualComputeResources,
   getTasksById,
   pairQsdmMotherHive,
   QueryKeys,
   startTask,
   stopTask,
+  submitQsdmVirtualComputeJob,
 } from 'renderer/services';
 import { getErrorToDisplay } from 'renderer/utils';
 import { getCellFromBaseUnits } from 'utils';
@@ -44,6 +55,20 @@ const formatMemory = (valueMiB: number) =>
   valueMiB >= 1024
     ? `${(valueMiB / 1024).toFixed(valueMiB >= 10240 ? 0 : 1)} GiB`
     : `${Math.round(valueMiB)} MiB`;
+
+const defaultWorkBudget: Record<QsdmVirtualComputeResource, number> = {
+  cpu: 100_000,
+  gpu: 1_000_000,
+  ram: 16,
+};
+
+const jobStateLabel: Record<QsdmVirtualComputeJob['state'], string> = {
+  queued: 'Queued',
+  leased: 'Running',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+  expired: 'Expired',
+};
 
 function Metric({
   icon,
@@ -68,6 +93,9 @@ function Metric({
 export function MotherHiveView() {
   const queryClient = useQueryClient();
   const [pairingCode, setPairingCode] = useState('');
+  const [selectedResource, setSelectedResource] =
+    useState<QsdmVirtualComputeResource>('cpu');
+  const [workBudget, setWorkBudget] = useState(defaultWorkBudget.cpu);
 
   const statusQuery = useQuery<QsdmMotherHiveStatusResponse>(
     QueryKeys.QsdmMotherHiveStatus,
@@ -94,6 +122,27 @@ export function MotherHiveView() {
   const stakeMutation = useStakeOnTask({ skipIfItIsAlreadyStaked: true });
 
   const status = statusQuery.data;
+  const computeGatewayOnline = Boolean(status?.computeGateway.online);
+  const resourcesQuery = useQuery<QsdmVirtualComputeResourcesResponse>(
+    QueryKeys.QsdmVirtualComputeResources,
+    getQsdmVirtualComputeResources,
+    {
+      enabled: computeGatewayOnline,
+      refetchInterval: 10000,
+      staleTime: 4000,
+      retry: 1,
+    }
+  );
+  const jobsQuery = useQuery<QsdmVirtualComputeJobList>(
+    QueryKeys.QsdmVirtualComputeJobs,
+    getQsdmVirtualComputeJobs,
+    {
+      enabled: computeGatewayOnline,
+      refetchInterval: 3000,
+      staleTime: 1000,
+      retry: 1,
+    }
+  );
   const task = taskQuery.data;
   const isRunning = Boolean(runningQuery.data);
   const currentStake = Number(stakeQuery.data) || 0;
@@ -102,12 +151,16 @@ export function MotherHiveView() {
   const missingStake = Math.max(0, minimumStake - currentStake);
 
   const refresh = async () => {
-    await Promise.all([
+    const refreshes: Promise<unknown>[] = [
       statusQuery.refetch(),
       taskQuery.refetch(),
       runningQuery.refetch(),
       stakeQuery.refetch(),
-    ]);
+    ];
+    if (computeGatewayOnline) {
+      refreshes.push(resourcesQuery.refetch(), jobsQuery.refetch());
+    }
+    await Promise.all(refreshes);
   };
 
   const pairMutation = useMutation(
@@ -178,6 +231,53 @@ export function MotherHiveView() {
     }
   );
 
+  const virtualJobMutation = useMutation(
+    () =>
+      submitQsdmVirtualComputeJob(
+        selectedResource === 'ram'
+          ? {
+              resource: selectedResource,
+              memoryMiB: workBudget,
+            }
+          : {
+              resource: selectedResource,
+              units: workBudget,
+            }
+      ),
+    {
+      onSuccess: (job) => {
+        toast.success(`${selectedResource.toUpperCase()} workload queued.`);
+        queryClient.setQueryData<QsdmVirtualComputeJobList>(
+          QueryKeys.QsdmVirtualComputeJobs,
+          (current) => ({
+            version: current?.version || 'qsdm-compute-gateway/v1',
+            jobs: [job, ...(current?.jobs || [])].slice(0, 20),
+          })
+        );
+      },
+      onError: (error: Error) => {
+        toast.error(
+          getErrorToDisplay(error) || 'Could not queue the pooled workload.'
+        );
+      },
+    }
+  );
+
+  const cancelVirtualJobMutation = useMutation(
+    (jobId: string) => cancelQsdmVirtualComputeJob({ jobId }),
+    {
+      onSuccess: () => {
+        toast.success('Workload cancelled.');
+        queryClient.invalidateQueries(QueryKeys.QsdmVirtualComputeJobs);
+      },
+      onError: (error: Error) => {
+        toast.error(
+          getErrorToDisplay(error) || 'Could not cancel the workload.'
+        );
+      },
+    }
+  );
+
   const onlineWorkers = useMemo(
     () => status?.workers.filter((worker) => worker.online) || [],
     [status?.workers]
@@ -195,6 +295,16 @@ export function MotherHiveView() {
     disconnectMutation.isLoading ||
     taskMutation.isLoading ||
     stakeMutation.isLoading;
+  const resourceSnapshot = resourcesQuery.data;
+  const jobs = jobsQuery.data?.jobs || [];
+  const selectedResourceAvailable = Boolean(
+    resourceSnapshot?.resources[selectedResource].available
+  );
+
+  const selectResource = (resource: QsdmVirtualComputeResource) => {
+    setSelectedResource(resource);
+    setWorkBudget(defaultWorkBudget[resource]);
+  };
 
   const copyComputeGatewayEndpoint = async () => {
     const endpoint = status?.computeGateway.endpoint;
@@ -430,6 +540,158 @@ export function MotherHiveView() {
               <div className="mt-1 text-base font-semibold">{value}</div>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="border-t border-white/15 py-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Virtual Compute Runtime</h2>
+            <p className="mt-1 text-xs text-white/55">
+              Run distributed workloads on the connected resource pool
+            </p>
+          </div>
+          <div
+            className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
+              resourceSnapshot?.online_agents
+                ? 'bg-finnieEmerald/20 text-finnieTeal-100'
+                : 'bg-finnieOrange/15 text-finnieOrange'
+            }`}
+          >
+            <FontAwesomeIcon
+              icon={
+                resourceSnapshot?.online_agents
+                  ? faCircleCheck
+                  : faTriangleExclamation
+              }
+            />
+            {resourceSnapshot?.online_agents
+              ? `${resourceSnapshot.online_agents} Agent${
+                  resourceSnapshot.online_agents === 1 ? '' : 's'
+                } ready`
+              : 'No compute Agent ready'}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-[auto_minmax(180px,260px)_180px] lg:items-end">
+          <div>
+            <div className="mb-2 text-xs text-finnieTeal-100">Resource</div>
+            <div
+              role="group"
+              aria-label="Virtual Compute resource"
+              className="grid h-10 grid-cols-3 overflow-hidden rounded-md border border-white/15"
+            >
+              {(['cpu', 'gpu', 'ram'] as QsdmVirtualComputeResource[]).map(
+                (resource) => (
+                  <button
+                    key={resource}
+                    type="button"
+                    onClick={() => selectResource(resource)}
+                    aria-pressed={selectedResource === resource}
+                    className={`px-5 text-sm uppercase transition-colors ${
+                      selectedResource === resource
+                        ? 'bg-finnieTeal text-finnieBlue-dark'
+                        : 'bg-finnieBlue-light-tertiary text-white/75 hover:bg-white/10'
+                    }`}
+                  >
+                    {resource}
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+          <label className="block min-w-0">
+            <span className="mb-2 block text-xs text-finnieTeal-100">
+              {selectedResource === 'ram' ? 'Memory MiB' : 'Work units'}
+            </span>
+            <input
+              type="number"
+              min={1}
+              max={
+                selectedResource === 'ram'
+                  ? 1024
+                  : selectedResource === 'gpu'
+                  ? 100_000_000
+                  : 20_000_000
+              }
+              step={1}
+              value={workBudget}
+              onChange={(event) => setWorkBudget(Number(event.target.value))}
+              className="h-10 w-full rounded-md border border-white/15 bg-finnieBlue-light-tertiary px-3 text-sm outline-none focus:border-finnieTeal"
+            />
+          </label>
+          <Button
+            label="Run workload"
+            icon={<FontAwesomeIcon icon={faBolt} />}
+            onClick={() => virtualJobMutation.mutate()}
+            disabled={
+              !computeGatewayOnline ||
+              !selectedResourceAvailable ||
+              !Number.isInteger(workBudget) ||
+              workBudget < 1 ||
+              virtualJobMutation.isLoading
+            }
+            loading={virtualJobMutation.isLoading}
+            className="h-10 w-[180px] bg-finnieTeal text-finnieBlue-dark"
+          />
+        </div>
+
+        <div className="mt-5 overflow-x-auto rounded-md border border-white/10">
+          <table className="w-full table-fixed text-left text-xs">
+            <thead className="bg-finnieBlue-light-secondary text-finnieTeal-100">
+              <tr>
+                <th className="w-[18%] px-3 py-2 font-medium">Resource</th>
+                <th className="w-[18%] px-3 py-2 font-medium">Status</th>
+                <th className="w-[28%] px-3 py-2 font-medium">Agent</th>
+                <th className="w-[20%] px-3 py-2 font-medium">Duration</th>
+                <th className="w-[16%] px-3 py-2 text-right font-medium">
+                  Action
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.slice(0, 8).map((job) => (
+                <tr key={job.id} className="border-t border-white/10">
+                  <td className="px-3 py-3 uppercase">{job.resource}</td>
+                  <td className="px-3 py-3">{jobStateLabel[job.state]}</td>
+                  <td className="truncate px-3 py-3" title={job.worker_id}>
+                    {job.worker_id || '-'}
+                  </td>
+                  <td className="px-3 py-3">
+                    {job.result
+                      ? `${Math.max(0, job.result.duration_ms)} ms`
+                      : '-'}
+                  </td>
+                  <td className="px-3 py-3 text-right">
+                    {['queued', 'leased'].includes(job.state) ? (
+                      <button
+                        type="button"
+                        onClick={() => cancelVirtualJobMutation.mutate(job.id)}
+                        disabled={cancelVirtualJobMutation.isLoading}
+                        className="text-finnieOrange hover:text-white disabled:opacity-40"
+                      >
+                        Cancel
+                      </button>
+                    ) : (
+                      <span className="text-white/45">
+                        {job.receipt_id ? 'Verified' : '-'}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {!jobs.length && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-3 py-8 text-center text-white/55"
+                  >
+                    No pooled workloads submitted yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
 
