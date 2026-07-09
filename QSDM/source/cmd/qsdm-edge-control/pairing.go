@@ -7,20 +7,27 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 const pairingCodePrefix = "QSDM-EDGE-1."
 
 type pairingPayload struct {
-	Version  int    `json:"version"`
-	Kind     string `json:"kind"`
-	RelayURL string `json:"relay_url"`
-	Token    string `json:"token"`
+	Version        int      `json:"version"`
+	Kind           string   `json:"kind"`
+	RelayURL       string   `json:"relay_url"`
+	Token          string   `json:"token"`
+	OfferID        string   `json:"offer_id,omitempty"`
+	ProviderName   string   `json:"provider_name,omitempty"`
+	ProviderWallet string   `json:"provider_wallet,omitempty"`
+	ConsumerWallet string   `json:"consumer_wallet,omitempty"`
+	ExpiresAt      string   `json:"expires_at,omitempty"`
+	WorkloadIDs    []string `json:"workload_ids,omitempty"`
 }
 
 func encodePairingCode(kind, relayURL string, token []byte) (string, error) {
-	if kind != "agent" && kind != "mother" {
-		return "", errors.New("pairing code kind must be agent or mother")
+	if kind != "agent" && kind != "mother" && kind != "mother-federation" {
+		return "", errors.New("pairing code kind must be agent, mother, or mother-federation")
 	}
 	if len(token) < 32 {
 		return "", errors.New("pairing token must contain at least 32 bytes")
@@ -34,6 +41,38 @@ func encodePairingCode(kind, relayURL string, token []byte) (string, error) {
 		Kind:     kind,
 		RelayURL: parsed.String(),
 		Token:    hex.EncodeToString(token),
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	return pairingCodePrefix + base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func encodeFederationPairingCode(relayURL string, token []byte, providerName string) (string, error) {
+	parsed, err := validateRelayURL(relayURL, false)
+	if err != nil {
+		return "", err
+	}
+	if parsed.Scheme != "https" {
+		return "", errors.New("internet federation invitations require an https:// Relay address")
+	}
+	payload := pairingPayload{
+		Version:      1,
+		Kind:         "mother-federation",
+		RelayURL:     parsed.String(),
+		Token:        hex.EncodeToString(token),
+		OfferID:      fmt.Sprintf("edge-%d", time.Now().UTC().Unix()),
+		ProviderName: strings.TrimSpace(providerName),
+		ExpiresAt:    time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339),
+		WorkloadIDs: []string{
+			"qsdm.cpu.hash-chain.v1",
+			"qsdm.gpu.cuda-mix.v1",
+			"qsdm.ram.memory-scan.v1",
+		},
+	}
+	if payload.ProviderName == "" {
+		payload.ProviderName = "QSDM Edge Relay"
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {

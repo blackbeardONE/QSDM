@@ -3,6 +3,7 @@ import {
   faBolt,
   faCircleCheck,
   faCopy,
+  faGlobe,
   faLink,
   faMemory,
   faMicrochip,
@@ -122,6 +123,16 @@ export function MotherHiveView() {
   const stakeMutation = useStakeOnTask({ skipIfItIsAlreadyStaked: true });
 
   const status = statusQuery.data;
+  const relayConnection = status?.relayConnection;
+  const federationMode =
+    relayConnection?.mode === 'internet-federation';
+  const federationExpiry = relayConnection?.expiresAt
+    ? new Date(relayConnection.expiresAt)
+    : null;
+  const federationExpiryText =
+    federationExpiry && Number.isFinite(federationExpiry.getTime())
+      ? federationExpiry.toLocaleString()
+      : undefined;
   const computeGatewayOnline = Boolean(status?.computeGateway.online);
   const resourcesQuery = useQuery<QsdmVirtualComputeResourcesResponse>(
     QueryKeys.QsdmVirtualComputeResources,
@@ -336,9 +347,13 @@ export function MotherHiveView() {
             {statusQuery.isLoading
               ? 'Checking Relay'
               : status?.connected
-              ? 'Relay connected'
+              ? federationMode
+                ? 'Federated Relay connected'
+                : 'Relay connected'
               : status?.configured
-              ? 'Relay unavailable'
+              ? federationMode
+                ? 'Federated Relay unavailable'
+                : 'Relay unavailable'
               : 'Relay not paired'}
           </div>
           <Button
@@ -361,8 +376,8 @@ export function MotherHiveView() {
               type="password"
               value={pairingCode}
               onChange={(event) => setPairingCode(event.target.value)}
-              placeholder="Mother Hive pairing code"
-              aria-label="Mother Hive pairing code"
+              placeholder="Mother Hive pairing or federation invitation code"
+              aria-label="Mother Hive pairing or federation invitation code"
               className="h-10 min-w-0 flex-1 rounded-md border border-white/15 bg-finnieBlue-light-tertiary px-3 text-sm outline-none focus:border-finnieTeal"
             />
             <Button
@@ -375,11 +390,63 @@ export function MotherHiveView() {
             />
           </div>
           <p className="mt-2 text-xs text-white/55">
-            Paste the Mother Hive code from QSDM Edge Control on the Relay
-            computer.
+            Paste a local Mother Hive pairing code, or a time-limited internet
+            federation invitation from a trusted Relay provider.
           </p>
           {status?.detail && (
             <p className="mt-2 text-sm text-white/70">{status.detail}</p>
+          )}
+          {relayConnection && (
+            <div className="mt-4 grid gap-3 rounded-md border border-white/10 bg-finnieBlue-light-transparent p-3 text-xs text-white/70 sm:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <div className="flex items-center gap-2 text-finnieTeal-100">
+                  <FontAwesomeIcon icon={federationMode ? faGlobe : faServer} />
+                  <span>Connection</span>
+                </div>
+                <div className="mt-1 font-semibold text-white">
+                  {federationMode ? 'Internet federation' : 'Private Relay'}
+                </div>
+              </div>
+              <div>
+                <div className="text-finnieTeal-100">Provider</div>
+                <div className="mt-1 break-words font-semibold text-white">
+                  {relayConnection.providerName || 'Local operator'}
+                </div>
+              </div>
+              <div>
+                <div className="text-finnieTeal-100">Offer</div>
+                <div className="mt-1 break-all font-semibold text-white">
+                  {relayConnection.offerId || '-'}
+                </div>
+              </div>
+              <div>
+                <div className="text-finnieTeal-100">Expires</div>
+                <div className="mt-1 font-semibold text-white">
+                  {federationExpiryText || '-'}
+                </div>
+              </div>
+              {federationMode && (
+                <div className="sm:col-span-2 xl:col-span-4">
+                  <div className="text-finnieTeal-100">Federation guardrails</div>
+                  <div className="mt-1 grid gap-2 lg:grid-cols-3">
+                    <span className="break-all">
+                      Provider wallet:{' '}
+                      {relayConnection.providerWallet || 'not declared'}
+                    </span>
+                    <span className="break-all">
+                      Allowed wallet:{' '}
+                      {relayConnection.consumerWallet || 'any invited Hive'}
+                    </span>
+                    <span className="break-words">
+                      Workloads:{' '}
+                      {relayConnection.workloadIds?.length
+                        ? relayConnection.workloadIds.join(', ')
+                        : 'QSDM-approved runtime catalog'}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
         <div className="flex items-end">

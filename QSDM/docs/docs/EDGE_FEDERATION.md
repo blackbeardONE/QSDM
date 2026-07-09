@@ -1,6 +1,6 @@
 # Mother Hive Internet Federation
 
-Status: design proposal. The private-LAN Virtual Compute Runtime is implemented first; internet federation is not enabled by the current release.
+Status: private federation pilot implemented in Hive/Edge Control. Public provider discovery, Core escrow leases, and marketplace settlement remain future phases.
 
 ## Answer
 
@@ -26,7 +26,18 @@ The Federation Gateway routes authenticated envelopes. It does not hold Agent cr
 
 A Hive can enable provider mode, consumer mode, or both. Version 1 must forbid recursive forwarding: a consumer cannot re-advertise capacity imported from another provider. This keeps accounting one hop and prevents loops or double-counted resources.
 
-## Protocol
+## Private Pilot Flow
+
+1. The provider runs a Relay behind HTTPS, usually through the QSDM edge route or a private reverse proxy.
+2. Edge Control generates a separate **Internet federation invitation** only when the Relay address is HTTPS.
+3. The invitation contains the Relay URL, a dedicated Mother Hive token, workload IDs, provider name, offer ID, and a short expiry.
+4. The consumer pastes that invitation into Hive's Mother Hive page.
+5. Hive stores the token in its private config area, marks the connection as `internet-federation`, and shows the provider, offer, expiry, allowed wallet metadata, and workload IDs.
+6. Applications still submit work only through Hive's authenticated loopback Compute Gateway. The remote Relay receives only approved CPU/GPU/RAM workload requests.
+
+This pilot is intentional: it proves cross-location routing without opening Agent ports, exposing the loopback gateway, or granting arbitrary remote execution.
+
+## Full Protocol
 
 1. The provider publishes a wallet-signed `ComputeOffer`: Relay ID, supported workload IDs, CPU/GPU/RAM ceilings, region, price, expiry, and privacy policy.
 2. The consumer selects an offer and submits a wallet-signed `ComputeLeaseIntent` with workload ID, budget, deadline, maximum price, nonce, and idempotency key.
@@ -65,8 +76,8 @@ No setting should imply that remote RAM or GPU becomes a local operating-system 
 
 ## Rollout
 
-1. **Local runtime:** ship discovery, bounded workbench controls, receipts, and application API on one paired Relay.
-2. **Private remote pilot:** connect two operator-owned sites with an outbound tunnel and fixed allowlists; no public marketplace.
+1. **Local runtime:** shipped discovery, bounded workbench controls, receipts, and application API on one paired Relay.
+2. **Private remote pilot:** shipped HTTPS federation invitations and remote-mode Hive status; use fixed trust relationships, not a public marketplace.
 3. **Core leases:** add offer, reservation, lease, cancellation, receipt, and settlement consensus records with replay tests.
 4. **Federation Gateway:** deploy redundant stateless routers, certificate rotation, quotas, and health reporting.
 5. **Public opt-in:** enable provider discovery only after economic-abuse, privacy, failover, and independent security reviews pass.

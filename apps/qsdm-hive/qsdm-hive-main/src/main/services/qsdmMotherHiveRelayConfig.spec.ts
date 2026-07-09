@@ -24,6 +24,19 @@ const pairingCode = (overrides: Record<string, unknown> = {}) => {
   )}`;
 };
 
+const federationCode = (overrides: Record<string, unknown> = {}) =>
+  pairingCode({
+    kind: 'mother-federation',
+    relay_url: 'https://node.qsdm.tech',
+    offer_id: 'offer-home-lab',
+    provider_name: 'Home Lab',
+    provider_wallet: 'a'.repeat(64),
+    consumer_wallet: 'b'.repeat(64),
+    expires_at: new Date(Date.now() + 3600_000).toISOString(),
+    workload_ids: ['qsdm.cpu.hash-chain.v1', 'qsdm.ram.memory-scan.v1'],
+    ...overrides,
+  });
+
 describe('Mother Hive Relay configuration', () => {
   const originalAppData = process.env.APPDATA;
   const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
@@ -54,6 +67,7 @@ describe('Mother Hive Relay configuration', () => {
     const result = pairQsdmMotherHiveRelay(pairingCode());
 
     expect(result.relay_url).toBe('http://192.168.50.10:7740/');
+    expect(result.connection_mode).toBe('private-lan');
     expect(fs.existsSync(result.token_file)).toBe(true);
     expect(fs.readFileSync(result.token_file, 'utf8').trim()).toBe(
       'ab'.repeat(32)
@@ -61,6 +75,37 @@ describe('Mother Hive Relay configuration', () => {
     expect(getEdgeRelayConnectionConfig()).toEqual(result);
     expect(getDefaultEdgeRelayURL()).toBe(result.relay_url);
     expect(getDefaultEdgeRelayTokenFile()).toBe(result.token_file);
+  });
+
+  it('imports an HTTPS internet federation invitation with provider metadata', () => {
+    const result = pairQsdmMotherHiveRelay(federationCode());
+
+    expect(result.relay_url).toBe('https://node.qsdm.tech/');
+    expect(result.connection_mode).toBe('internet-federation');
+    expect(result.offer_id).toBe('offer-home-lab');
+    expect(result.provider_name).toBe('Home Lab');
+    expect(result.workload_ids).toEqual([
+      'qsdm.cpu.hash-chain.v1',
+      'qsdm.ram.memory-scan.v1',
+    ]);
+    expect(path.basename(result.token_file)).toMatch(/^hive-federation-/);
+    expect(getEdgeRelayConnectionConfig()).toEqual(result);
+  });
+
+  it('rejects federation invitations without HTTPS or a valid expiry', () => {
+    expect(() =>
+      pairQsdmMotherHiveRelay(
+        federationCode({ relay_url: 'http://node.qsdm.tech' })
+      )
+    ).toThrow('HTTPS Relay address');
+    expect(() =>
+      pairQsdmMotherHiveRelay(federationCode({ expires_at: undefined }))
+    ).toThrow('no expiry');
+    expect(() =>
+      pairQsdmMotherHiveRelay(
+        federationCode({ expires_at: new Date(Date.now() - 1000).toISOString() })
+      )
+    ).toThrow('expired');
   });
 
   it('rejects Agent codes and unexpected pairing data', () => {

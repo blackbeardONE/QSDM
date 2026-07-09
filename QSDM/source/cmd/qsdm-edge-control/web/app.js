@@ -258,6 +258,7 @@ async function showPairingCode() {
     const codes = await api("/api/pairing-codes");
     byId("pairing-code-output").value = codes.agent_code;
     byId("mother-code-output").value = codes.mother_code;
+    byId("federation-code-output").value = codes.federation_code || "Set the Relay address to an HTTPS URL before creating an internet federation invitation.";
     byId("pairing-dialog").showModal();
   } catch (error) {
     showToast(error.message, true);
@@ -359,6 +360,14 @@ byId("show-pairing-button").addEventListener("click", showPairingCode);
 byId("connect-mother-button").addEventListener("click", connectMother);
 byId("copy-pairing-button").addEventListener("click", () => copyText(byId("pairing-code-output").value, "Agent pairing code copied"));
 byId("copy-mother-button").addEventListener("click", () => copyText(byId("mother-code-output").value, "QSDM Hive pairing code copied"));
+byId("copy-federation-button").addEventListener("click", () => {
+  const value = byId("federation-code-output").value;
+  if (!value.startsWith("QSDM-EDGE-1.")) {
+    showToast("Configure an HTTPS Relay address before copying a federation invitation", true);
+    return;
+  }
+  copyText(value, "Federation invitation copied");
+});
 byId("refresh-button").addEventListener("click", () => loadState());
 byId("quit-button").addEventListener("click", async () => {
   if (!window.confirm("Quit QSDM Edge Control? Running Agent or Relay work will stop.")) return;
@@ -368,6 +377,7 @@ byId("quit-button").addEventListener("click", async () => {
 byId("pairing-dialog").addEventListener("close", () => {
   byId("pairing-code-output").value = "";
   byId("mother-code-output").value = "";
+  byId("federation-code-output").value = "";
 });
 byId("relay-port").addEventListener("change", () => {
   try {

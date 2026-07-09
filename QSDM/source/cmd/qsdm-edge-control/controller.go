@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -88,9 +89,10 @@ type controllerSnapshot struct {
 }
 
 type pairingCodes struct {
-	AgentCode  string `json:"agent_code"`
-	MotherCode string `json:"mother_code"`
-	RelayURL   string `json:"relay_url"`
+	AgentCode      string `json:"agent_code"`
+	MotherCode     string `json:"mother_code"`
+	FederationCode string `json:"federation_code,omitempty"`
+	RelayURL       string `json:"relay_url"`
 }
 
 type controller struct {
@@ -438,7 +440,19 @@ func (c *controller) getPairingCodes() (pairingCodes, error) {
 	if err != nil {
 		return pairingCodes{}, err
 	}
-	return pairingCodes{AgentCode: agentCode, MotherCode: motherCode, RelayURL: relayURL}, nil
+	federationCode := ""
+	if strings.HasPrefix(strings.ToLower(relayURL), "https://") {
+		federationCode, err = encodeFederationPairingCode(relayURL, motherToken, c.system.Hostname)
+		if err != nil {
+			return pairingCodes{}, err
+		}
+	}
+	return pairingCodes{
+		AgentCode:      agentCode,
+		MotherCode:     motherCode,
+		FederationCode: federationCode,
+		RelayURL:       relayURL,
+	}, nil
 }
 
 func (c *controller) connectLocalMother() error {

@@ -69,6 +69,7 @@ import {
   prepareQsdmMinerV2Config,
 } from 'main/services/qsdmMinerEnrollment';
 import {
+  getEdgeRelayConnectionConfig,
   getDefaultEdgeRelayTokenFile,
   getDefaultEdgeRelayURL,
 } from 'main/services/qsdmMotherHiveRelayConfig';
@@ -3701,6 +3702,7 @@ export const getQsdmMotherHiveStatus =
   async (): Promise<QsdmMotherHiveStatusResponse> => {
     const relayUrl = getDefaultEdgeRelayURL();
     const tokenFile = getDefaultEdgeRelayTokenFile();
+    const configuredConnection = getEdgeRelayConnectionConfig();
     const computeGatewayTokenFile = getQsdmComputeGatewayTokenFile();
     const computeGatewayOnline = await readQsdmComputeGatewayHealth();
     const base: QsdmMotherHiveStatusResponse = {
@@ -3708,6 +3710,19 @@ export const getQsdmMotherHiveStatus =
       connected: false,
       role: 'qsdm-hive-mother',
       relayUrl,
+      relayConnection: configuredConnection
+        ? {
+            mode: configuredConnection.connection_mode,
+            remote:
+              configuredConnection.connection_mode === 'internet-federation',
+            offerId: configuredConnection.offer_id,
+            providerName: configuredConnection.provider_name,
+            providerWallet: configuredConnection.provider_wallet,
+            consumerWallet: configuredConnection.consumer_wallet,
+            expiresAt: configuredConnection.expires_at,
+            workloadIds: configuredConnection.workload_ids,
+          }
+        : undefined,
       workers: [],
       onlineWorkers: 0,
       pooledCpuThreads: 0,
@@ -3808,7 +3823,9 @@ export const getQsdmMotherHiveStatus =
         revenuePolicy: motherHiveRevenuePolicy(status),
         detail:
           onlineWorkers.length > 0
-            ? 'Pooled resources are ready for QSDM-approved distributed workloads.'
+            ? configuredConnection?.connection_mode === 'internet-federation'
+              ? 'Federated pooled resources are ready for QSDM-approved distributed workloads.'
+              : 'Pooled resources are ready for QSDM-approved distributed workloads.'
             : 'Relay is connected, but no Agent has checked in during the last two minutes.',
         checkedAt: new Date().toISOString(),
       };

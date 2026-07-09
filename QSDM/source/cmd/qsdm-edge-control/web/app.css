@@ -586,6 +586,11 @@ dialog::backdrop {
   color: var(--muted);
 }
 
+.dialog-shell .small-note {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+}
+
 .dialog-shell textarea {
   font-family: Consolas, "Liberation Mono", monospace;
   font-size: 0.78rem;

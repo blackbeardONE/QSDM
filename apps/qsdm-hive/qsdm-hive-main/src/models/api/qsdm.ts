@@ -215,6 +215,16 @@ export interface QsdmMotherHiveStatusResponse {
   role: 'qsdm-hive-mother';
   relayUrl?: string;
   relayId?: string;
+  relayConnection?: {
+    mode: 'private-lan' | 'internet-federation';
+    remote: boolean;
+    offerId?: string;
+    providerName?: string;
+    providerWallet?: string;
+    consumerWallet?: string;
+    expiresAt?: string;
+    workloadIds?: string[];
+  };
   workers: QsdmMotherHiveWorkerStatus[];
   onlineWorkers: number;
   pooledCpuThreads: number;
