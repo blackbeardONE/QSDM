@@ -79,6 +79,7 @@ import {
   isQsdmMotherHiveSystemTask,
   isQsdmSkyFangLinkSystemTask,
   isQsdmSystemTask,
+  isCurrentQsdmTaskChild,
   mergeQsdmSystemTasks,
   requireQsdmSkyFangWalletLinkedForSkyFangLink,
   startQsdmEdgeWorkerSystemProcess,
@@ -701,6 +702,19 @@ export class QsdmHiveTaskService {
     secret: string,
     taskInfo?: RawTaskData
   ): Promise<void> {
+    const existingRuntime = this.RUNNING_TASKS[taskAccountPubKey];
+    if (existingRuntime) {
+      if (existingRuntime.child !== childTaskProcess) {
+        console.warn(
+          `Ignoring duplicate QSDM task runtime for ${taskAccountPubKey}; process ${existingRuntime.child.pid} is already tracked.`
+        );
+        if (!childTaskProcess.killed) {
+          childTaskProcess.kill('SIGTERM');
+        }
+      }
+      return;
+    }
+
     this.clearQsdmSystemTaskRestart(taskAccountPubKey);
 
     this.RUNNING_TASKS[taskAccountPubKey] = {
@@ -1015,7 +1029,9 @@ export class QsdmHiveTaskService {
         );
         await this.handleQsdmNativeTaskProcessExit(
           taskAccountPubKey,
-          'qsdm-system-process-exit'
+          'qsdm-system-process-exit',
+          undefined,
+          child
         );
       });
 
@@ -1079,7 +1095,9 @@ export class QsdmHiveTaskService {
         );
         await this.handleQsdmNativeTaskProcessExit(
           taskAccountPubKey,
-          'qsdm-system-process-exit'
+          'qsdm-system-process-exit',
+          undefined,
+          child
         );
       });
 
@@ -1126,7 +1144,9 @@ export class QsdmHiveTaskService {
         );
         await this.handleQsdmNativeTaskProcessExit(
           taskAccountPubKey,
-          'qsdm-system-process-exit'
+          'qsdm-system-process-exit',
+          undefined,
+          child
         );
       });
 
@@ -1167,7 +1187,9 @@ export class QsdmHiveTaskService {
       );
       await this.handleQsdmNativeTaskProcessExit(
         taskAccountPubKey,
-        'qsdm-system-process-exit'
+        'qsdm-system-process-exit',
+        undefined,
+        child
       );
     });
 
@@ -1266,11 +1288,13 @@ export class QsdmHiveTaskService {
     this.clearQsdmSystemTaskRestart(taskAccountPubKey);
 
     if (isQsdmSystemTask(taskAccountPubKey)) {
-      this.RUNNING_TASKS[taskAccountPubKey].child.kill('SIGTERM');
+      const child = this.RUNNING_TASKS[taskAccountPubKey].child;
+      child.kill('SIGTERM');
       await this.handleQsdmNativeTaskProcessExit(
         taskAccountPubKey,
         'local-task-stop',
-        skipRemoveFromRunningTasks
+        skipRemoveFromRunningTasks,
+        child
       );
       return;
     }
@@ -1344,9 +1368,16 @@ export class QsdmHiveTaskService {
   async handleQsdmNativeTaskProcessExit(
     taskAccountPubKey: string,
     reason = 'local-task-exit',
-    skipRemoveFromRunningTasks?: boolean
+    skipRemoveFromRunningTasks?: boolean,
+    expectedChild?: ChildProcess
   ) {
-    if (!this.RUNNING_TASKS[taskAccountPubKey]) {
+    const activeRuntime = this.RUNNING_TASKS[taskAccountPubKey];
+    if (!isCurrentQsdmTaskChild(activeRuntime?.child, expectedChild)) {
+      if (activeRuntime && expectedChild) {
+        console.warn(
+          `Ignoring stale process exit for ${taskAccountPubKey}; process ${activeRuntime.child.pid} remains active.`
+        );
+      }
       return;
     }
 

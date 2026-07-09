@@ -363,7 +363,9 @@ const startTask = async (
         );
         await qsdmHiveTasks.handleQsdmNativeTaskProcessExit(
           taskAccountPubKey,
-          'qsdm-system-process-exit'
+          'qsdm-system-process-exit',
+          undefined,
+          child
         );
       });
 

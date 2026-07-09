@@ -2,7 +2,11 @@ import axios from 'axios';
 import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 
-import { buildQsdmCoreApiUrl } from 'config/qsdm';
+import {
+  getQsdmCoreConnectionMode,
+  getQsdmRuntimeCoreApiUrl,
+  QSDM_CANONICAL_API_URL,
+} from 'config/qsdm';
 import {
   QsdmTaskAction,
   QsdmTaskActionEnvelope,
@@ -95,6 +99,26 @@ const readEnv = (key: string, fallback = '') => {
 
 const makeActionId = (action: QsdmTaskAction) =>
   `hive_${action}_${Date.now()}_${randomBytes(8).toString('hex')}`;
+
+export const resolveQsdmTaskActionApiUrl = ({
+  runtimeApiUrl = getQsdmRuntimeCoreApiUrl(),
+  canonicalApiUrl = QSDM_CANONICAL_API_URL,
+}: {
+  runtimeApiUrl?: string;
+  canonicalApiUrl?: string;
+} = {}) => {
+  const connectionMode = getQsdmCoreConnectionMode(
+    runtimeApiUrl,
+    undefined,
+    canonicalApiUrl
+  );
+  const selectedApiUrl =
+    connectionMode === 'custom' ? runtimeApiUrl : canonicalApiUrl;
+  return selectedApiUrl.replace(/\/+$/, '');
+};
+
+const buildQsdmTaskActionApiUrl = (path: string) =>
+  `${resolveQsdmTaskActionApiUrl()}/${path.replace(/^\/+/, '')}`;
 
 const LOCAL_NONCE_BURST_WINDOW_MS = 30_000;
 const TASK_ACTION_NONCE_COMMIT_POLL_MS = 1000;
@@ -225,20 +249,16 @@ const buildPayload = (payload?: string | Record<string, unknown>) => {
   return typeof payload === 'string' ? payload : JSON.stringify(payload);
 };
 
-const buildUrl = (path: string, params: Record<string, string>) => {
-  const url = new URL(buildQsdmCoreApiUrl(path));
-  Object.entries(params).forEach(([key, value]) => {
-    url.searchParams.set(key, value);
-  });
-  return url.toString();
-};
-
 const getTaskActionAccountNonce = async (
   sender: string
 ): Promise<number | undefined> => {
   try {
     const response = await axios.get<QsdmMiningAccountResponse>(
-      buildUrl('/mining/account', { address: sender }),
+      (() => {
+        const url = new URL(buildQsdmTaskActionApiUrl('/mining/account'));
+        url.searchParams.set('address', sender);
+        return url.toString();
+      })(),
       { timeout: 10000 }
     );
     return Number.isFinite(response.data.nonce)
@@ -539,7 +559,7 @@ export const submitQsdmTaskActionIntent = async ({
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
           const response = await axios.post<QsdmTaskActionSubmitResponse>(
-            buildQsdmCoreApiUrl('/tasks/actions/submit-signed'),
+            buildQsdmTaskActionApiUrl('/tasks/actions/submit-signed'),
             signedEnvelope,
             { timeout: 10000 }
           );
@@ -549,7 +569,12 @@ export const submitQsdmTaskActionIntent = async ({
             client_nonce: signedEnvelope.nonce,
           };
         } catch (error) {
-          if (axios.isAxiosError(error) && error.response?.status === 409) {
+          if (
+            axios.isAxiosError(error) &&
+            [409, 422].includes(error.response?.status || 0) &&
+            error.response?.data &&
+            typeof error.response.data === 'object'
+          ) {
             return {
               ...(error.response.data as QsdmTaskActionSubmitResponse),
               client_nonce: signedEnvelope.nonce,

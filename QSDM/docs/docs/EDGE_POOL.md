@@ -37,7 +37,7 @@ This protocol is intended for a trusted laboratory. Do not expose the Relay as a
 
 ## Downloads
 
-QSDM Hive 1.3.91 and newer includes Edge Control 1.3.4, Agent 1.3.4, and the CUDA helper. Additional trusted computers can use:
+QSDM Hive 1.3.93 and newer includes Edge Control 1.3.4, Agent 1.3.4, and the CUDA helper. Additional trusted computers can use:
 
 - [Windows x86-64 Edge Control bundle](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.4-windows-x86_64.zip)
 - [Linux x86-64 Edge Control bundle](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.4-linux-x86_64.tar.gz)
@@ -118,6 +118,49 @@ On Linux, install the Relay as a supervised user service:
 ```
 
 Restrict TCP 7740 to the private laboratory subnet. Existing coordinator receipt journals remain in place during migration.
+
+### Production Internet Relay
+
+The production Relay is supervised by systemd, listens only on
+`127.0.0.1:7740`, and is exposed through the existing Caddy TLS endpoint at
+`https://node.qsdm.tech/v1/*`. Port 7740 must not be opened in the host
+firewall. An unauthenticated request must return `401`.
+
+Install or repair that service from a verified Edge Agent release already on
+the server:
+
+```bash
+sudo QSDM_EDGE_RELAY_VERSION=1.3.4 \
+  QSDM_EDGE_RELAY_SHA256=d4d1bd9f07888e7607403458092ade5006b8c088565b6d78f38dc5d5528f2afb \
+  bash QSDM/deploy/scripts/install_edge_relay.sh
+```
+
+The installer verifies the binary before replacing it, keeps existing Agent
+and Mother credentials, stores durable jobs and receipts below
+`/var/lib/qsdm-edge`, validates Caddy before reload, and fails if the Relay
+does not become healthy. Copy role credentials through the pairing workflow;
+never put either token in source control, command history, screenshots, or
+support logs.
+
+Hive reads can use a local synchronized validator or the restricted home
+gateway. Signed wallet and task actions use the canonical Core endpoint unless
+an operator explicitly configured a custom Core. This prevents a local
+follower outage or stale nonce reservation from creating a second task-action
+history. The local and canonical `/api/v1/status` chain tips and the Mother
+Hive task `state_root` should agree before an operator treats the deployment as
+healthy.
+
+Production verification is complete only when all of the following hold:
+
+- `qsdm-edge-relay.service` is active after a service restart.
+- The Relay owns only loopback port 7740; Caddy owns the public TLS listener.
+- Hive has exactly one Mother Hive child and one loopback Compute Gateway on
+  port 7742.
+- A bounded application job completes through port 7742 and returns a durable
+  Relay receipt.
+- Reusing its application request ID returns the same job, while changing the
+  body with that ID is rejected.
+- The completed job and receipt still exist after a Relay restart.
 
 ## Agent setup
 

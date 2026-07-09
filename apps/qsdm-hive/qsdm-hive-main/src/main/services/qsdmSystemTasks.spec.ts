@@ -17,6 +17,7 @@ import {
   buildQsdmMinerLaunchArgs,
   isMinerProcessFromCandidates,
   isPortableHiveMinerProcess,
+  isCurrentQsdmTaskChild,
   buildProcessStartupExitDetail,
   getQsdmSystemTaskById,
   getQsdmSystemTaskMetadata,
@@ -82,6 +83,16 @@ describe('qsdmSystemTasks', () => {
     mockedAxiosGet.mockReset();
     mockGetQsdmTaskActionSender.mockReset();
     mockGetQsdmTaskActionSender.mockReturnValue(linkedSender);
+  });
+
+  it('only accepts the currently tracked child when handling a task exit', () => {
+    const active = {} as import('child_process').ChildProcess;
+    const stale = {} as import('child_process').ChildProcess;
+
+    expect(isCurrentQsdmTaskChild(undefined, active)).toBe(false);
+    expect(isCurrentQsdmTaskChild(active)).toBe(true);
+    expect(isCurrentQsdmTaskChild(active, active)).toBe(true);
+    expect(isCurrentQsdmTaskChild(active, stale)).toBe(false);
   });
 
   it('prefers the packaged console miner on Linux and Windows', () => {

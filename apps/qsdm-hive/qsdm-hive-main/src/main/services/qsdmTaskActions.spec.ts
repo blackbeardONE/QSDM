@@ -5,6 +5,7 @@ import { PassThrough } from 'stream';
 
 import {
   __resetQsdmTaskActionNonceReservationsForTests,
+  resolveQsdmTaskActionApiUrl,
   submitQsdmTaskActionIntent,
 } from './qsdmTaskActions';
 
@@ -65,6 +66,29 @@ describe('qsdmTaskActions', () => {
     process.env = originalEnv;
     jest.useRealTimers();
   });
+
+  it.each([
+    ['http://127.0.0.1:8080/api/v1', 'https://canonical.example/api/v1'],
+    [
+      'https://api.qsdm.tech/attest/home-validator/api/v1',
+      'https://canonical.example/api/v1',
+    ],
+    [
+      'https://canonical.example/api/v1',
+      'https://canonical.example/api/v1',
+    ],
+    ['https://private.example/api/v1/', 'https://private.example/api/v1'],
+  ])(
+    'routes signed task actions from %s to %s',
+    (runtimeApiUrl, expected) => {
+      expect(
+        resolveQsdmTaskActionApiUrl({
+          runtimeApiUrl,
+          canonicalApiUrl: 'https://canonical.example/api/v1',
+        })
+      ).toBe(expected);
+    }
+  );
 
   it('signs with qsdmcli and posts the signed task action envelope', async () => {
     const child = createMockChild();
@@ -143,11 +167,11 @@ describe('qsdmTaskActions', () => {
     });
     expect(unsignedEnvelope.id).toMatch(/^hive_start_\d+_[0-9a-f]{16}$/);
     expect(mockedAxiosGet).toHaveBeenCalledWith(
-      `http://127.0.0.1:8080/api/v1/mining/account?address=${process.env.QSDM_TASK_ACTION_SENDER}`,
+      `https://api.qsdm.tech/api/v1/mining/account?address=${process.env.QSDM_TASK_ACTION_SENDER}`,
       { timeout: 10000 }
     );
     expect(mockedAxiosPost).toHaveBeenCalledWith(
-      'http://127.0.0.1:8080/api/v1/tasks/actions/submit-signed',
+      'https://api.qsdm.tech/api/v1/tasks/actions/submit-signed',
       signedEnvelope,
       { timeout: 10000 }
     );
@@ -209,6 +233,54 @@ describe('qsdmTaskActions', () => {
     expect(mockedAxiosPost).toHaveBeenCalledTimes(2);
     expect(mockedAxiosPost.mock.calls[0][1]).toEqual(
       mockedAxiosPost.mock.calls[1][1]
+    );
+  });
+
+  it('surfaces a validator mempool rejection instead of a generic Axios 422', async () => {
+    const child = createMockChild();
+    mockedSpawn.mockReturnValue(child);
+    mockedAxiosGet.mockResolvedValue({ data: { nonce: 2 } });
+    const signedEnvelope = {
+      id: 'hive_stake_1234567890_rejected',
+      sender: process.env.QSDM_TASK_ACTION_SENDER,
+      task_id: 'qsdm-mother-hive',
+      action: 'stake',
+      amount: 1,
+      timestamp: '2026-07-09T00:00:00.000Z',
+      nonce: 2,
+      signature: 'sig',
+      public_key: 'pub',
+    };
+    mockedAxiosPost.mockRejectedValue({
+      isAxiosError: true,
+      message: 'Request failed with status code 422',
+      response: {
+        status: 422,
+        data: {
+          action_id: signedEnvelope.id,
+          status: 'rejected',
+          sender: signedEnvelope.sender,
+          task_id: signedEnvelope.task_id,
+          action: signedEnvelope.action,
+          mempool_submitted: false,
+          mempool_status: 'rejected',
+          mempool_error: 'sender nonce already pending in mempool',
+        },
+      },
+    });
+
+    const promise = submitQsdmTaskActionIntent({
+      taskId: signedEnvelope.task_id,
+      action: 'stake',
+      amount: 1,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    child.stdout.write(JSON.stringify(signedEnvelope));
+    child.stdout.end();
+    child.emit('close', 0);
+
+    await expect(promise).rejects.toThrow(
+      'sender nonce already pending in mempool'
     );
   });
 

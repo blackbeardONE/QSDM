@@ -1041,6 +1041,11 @@ func main() {
 
 	adminAccounts := chain.NewAccountStore()
 	adminPool := mempool.New(mempool.DefaultConfig())
+	// New constructs the queue but deliberately does not start its background
+	// lifecycle. Without the sweeper, an uncommitted transaction can reserve a
+	// sender nonce forever and block every later signed wallet/task action.
+	adminPool.Start()
+	defer adminPool.Stop()
 	adminFinality := chain.NewFinalityGadget(chain.DefaultFinalityConfig())
 	polFollower.SetAnchorFinality(true)
 	adminFinality.SetPolFollower(polFollower)

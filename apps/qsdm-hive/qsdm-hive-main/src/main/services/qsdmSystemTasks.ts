@@ -4103,3 +4103,8 @@ export const startQsdmMinerSystemProcess = async (): Promise<{
     executablePath,
   };
 };
+
+export const isCurrentQsdmTaskChild = (
+  activeChild: ChildProcess | undefined,
+  expectedChild?: ChildProcess
+) => Boolean(activeChild && (!expectedChild || activeChild === expectedChild));
