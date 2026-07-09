@@ -30,6 +30,7 @@
 # terminated here at Caddy). :8081 is the dashboard (also loopback-only behind Caddy).
 api.qsdm.tech, node.qsdm.tech {
 	encode zstd gzip
+	import /etc/caddy/qsdm-edge-relay.caddy
 
 	@health path /api/v1/health /api/v1/health/live /api/v1/health/ready
 	handle @health {

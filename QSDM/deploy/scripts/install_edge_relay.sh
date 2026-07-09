@@ -128,7 +128,7 @@ if ! grep -Fq 'import /etc/caddy/qsdm-edge-relay.caddy' "${caddyfile}"; then
   patched_caddyfile="$(mktemp /etc/caddy/Caddyfile.edge-relay.XXXXXX)"
   awk '
     { print }
-    $0 == "api.qsdm.tech, node.qsdm.tech {" { in_public_api = 1; next }
+    $0 ~ /^api\.qsdm\.tech, node\.qsdm\.tech \{[[:space:]]*$/ { in_public_api = 1; next }
     in_public_api && $0 ~ /^[[:space:]]*encode[[:space:]]/ {
       print "\timport /etc/caddy/qsdm-edge-relay.caddy"
       in_public_api = 0
