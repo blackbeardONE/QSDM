@@ -1,3 +1,4 @@
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -51,6 +52,50 @@ exports.default = async function afterPack(context) {
     }
     if (platform === 'linux') {
       fs.chmodSync(executable, 0o755);
+    }
+  }
+
+  const appVersion = String(context.packager.appInfo.version).trim();
+  const edgeVersionPath = path.resolve(
+    __dirname,
+    '../../../..',
+    'qsdm-edge-agent',
+    'VERSION'
+  );
+  const edgeVersion = fs.readFileSync(edgeVersionPath, 'utf8').trim();
+  const versionProbes = [
+    {
+      executable: executables[0],
+      expectedPrefix: `qsdm-edge-agent ${edgeVersion} (`,
+    },
+    {
+      executable: executables[1],
+      expectedPrefix: `qsdm-edge-control ${edgeVersion} (`,
+    },
+    {
+      executable: executables[4],
+      expectedPrefix: `qsdmminer-console hive-v${appVersion} (`,
+    },
+  ];
+
+  for (const probe of versionProbes) {
+    let output;
+    try {
+      output = execFileSync(probe.executable, ['--version'], {
+        encoding: 'utf8',
+        timeout: 15000,
+        windowsHide: true,
+      }).trim();
+    } catch (error) {
+      throw new Error(
+        `Could not verify packaged executable version: ${probe.executable}: ${error.message}`
+      );
+    }
+
+    if (!output.startsWith(probe.expectedPrefix)) {
+      throw new Error(
+        `Packaged executable version mismatch: ${probe.executable}; expected prefix "${probe.expectedPrefix}", got "${output}"`
+      );
     }
   }
 };

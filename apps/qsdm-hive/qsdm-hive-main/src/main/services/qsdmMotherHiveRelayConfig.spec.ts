@@ -24,10 +24,12 @@ const pairingCode = (overrides: Record<string, unknown> = {}) => {
   )}`;
 };
 
-const federationCode = (overrides: Record<string, unknown> = {}) =>
-  pairingCode({
+const federationCode = (overrides: Record<string, unknown> = {}) => {
+  const payload = {
+    version: 2,
     kind: 'mother-federation',
     relay_url: 'https://node.qsdm.tech',
+    token: 'cd'.repeat(32),
     offer_id: 'offer-home-lab',
     provider_name: 'Home Lab',
     provider_wallet: 'a'.repeat(64),
@@ -35,7 +37,26 @@ const federationCode = (overrides: Record<string, unknown> = {}) =>
     expires_at: new Date(Date.now() + 3600_000).toISOString(),
     workload_ids: ['qsdm.cpu.hash-chain.v1', 'qsdm.ram.memory-scan.v1'],
     ...overrides,
-  });
+  };
+  const context = {
+    version: 1,
+    relay_url: payload.relay_url,
+    offer_id: payload.offer_id,
+    provider_name: payload.provider_name,
+    provider_wallet: payload.provider_wallet,
+    consumer_wallet: payload.consumer_wallet,
+    expires_at: payload.expires_at,
+    workload_ids: payload.workload_ids,
+  };
+  return `QSDM-EDGE-2.${Buffer.from(
+    JSON.stringify({
+      ...payload,
+      federation_context: Buffer.from(JSON.stringify(context)).toString(
+        'base64url'
+      ),
+    })
+  ).toString('base64url')}`;
+};
 
 describe('Mother Hive Relay configuration', () => {
   const originalAppData = process.env.APPDATA;
@@ -103,9 +124,59 @@ describe('Mother Hive Relay configuration', () => {
     ).toThrow('no expiry');
     expect(() =>
       pairQsdmMotherHiveRelay(
-        federationCode({ expires_at: new Date(Date.now() - 1000).toISOString() })
+        federationCode({
+          expires_at: new Date(Date.now() - 1000).toISOString(),
+        })
       )
     ).toThrow('expired');
+    expect(() =>
+      pairQsdmMotherHiveRelay(
+        federationCode({
+          expires_at: new Date(Date.now() + 26 * 3600_000).toISOString(),
+        })
+      )
+    ).toThrow('maximum lifetime');
+    expect(() =>
+      pairQsdmMotherHiveRelay(federationCode({ workload_ids: [] }))
+    ).toThrow('context is invalid');
+  });
+
+  it('rejects legacy federation invitations that expose a permanent token', () => {
+    expect(() =>
+      pairQsdmMotherHiveRelay(
+        pairingCode({
+          kind: 'mother-federation',
+          expires_at: new Date(Date.now() + 3600_000).toISOString(),
+        })
+      )
+    ).toThrow('permanent legacy credential');
+  });
+
+  it('never falls back to another token when a saved connection is invalid or expired', () => {
+    const configDirectory = path.dirname(getEdgeRelayConnectionConfigPath());
+    fs.mkdirSync(configDirectory, { recursive: true });
+    fs.writeFileSync(
+      path.join(configDirectory, 'mother-hive.token'),
+      `${'ef'.repeat(32)}\n`
+    );
+    fs.writeFileSync(getEdgeRelayConnectionConfigPath(), '{"broken":true}\n');
+    expect(getDefaultEdgeRelayTokenFile()).toBe('');
+
+    const result = pairQsdmMotherHiveRelay(
+      federationCode({
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+      })
+    );
+    const config = JSON.parse(
+      fs.readFileSync(getEdgeRelayConnectionConfigPath(), 'utf8')
+    ) as Record<string, unknown>;
+    config.expires_at = new Date(Date.now() - 1000).toISOString();
+    fs.writeFileSync(
+      getEdgeRelayConnectionConfigPath(),
+      `${JSON.stringify(config)}\n`
+    );
+    expect(fs.existsSync(result.token_file)).toBe(true);
+    expect(getDefaultEdgeRelayTokenFile()).toBe('');
   });
 
   it('rejects Agent codes and unexpected pairing data', () => {

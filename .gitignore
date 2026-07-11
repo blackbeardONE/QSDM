@@ -63,6 +63,17 @@ qsdm_governance.json
 qsdm_receipts.ndjson
 qsdm_staking.json
 
+# Root-level state emitted by the local validator/bridge when launched from the
+# workspace. Preserve these files for recovery and diagnostics, but never treat
+# them as source or release inputs.
+/qsdm.db
+/qsdm.db-journal
+/qsdm.db-wal
+/qsdm.db-shm
+/qsdm-validator.state.lock
+/qsdm_bridge_state.json.last-good
+/.qsdm_bridge_state.json.last-good.*.tmp
+
 # Legacy NVIDIA token file (pre-NGC-bundle era).
 Nvidia Token
 

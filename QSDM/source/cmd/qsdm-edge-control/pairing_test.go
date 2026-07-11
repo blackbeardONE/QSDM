@@ -44,6 +44,12 @@ func TestPairingCodeRejectsDamagedInput(t *testing.T) {
 	}
 }
 
+func TestGenericPairingCodeCannotExposeFederationAccess(t *testing.T) {
+	if _, err := encodePairingCode("mother-federation", "https://node.qsdm.tech", bytes.Repeat([]byte{0x44}, 32)); err == nil {
+		t.Fatal("generic pairing encoder created a federation credential")
+	}
+}
+
 func TestFederationPairingCodeRequiresHTTPS(t *testing.T) {
 	token := bytes.Repeat([]byte{0x7c}, 32)
 	if _, err := encodeFederationPairingCode("http://node.qsdm.tech", token, "Lab"); err == nil {
@@ -52,6 +58,9 @@ func TestFederationPairingCodeRequiresHTTPS(t *testing.T) {
 	code, err := encodeFederationPairingCode("https://node.qsdm.tech", token, "Lab")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.HasPrefix(code, federationPairingCodePrefix) {
+		t.Fatalf("federation code %q does not use the expiring credential prefix", code)
 	}
 	payload, decoded, err := decodePairingCode(code, "mother-federation")
 	if err != nil {
@@ -66,7 +75,33 @@ func TestFederationPairingCodeRequiresHTTPS(t *testing.T) {
 	if expiry, err := time.Parse(time.RFC3339, payload.ExpiresAt); err != nil || !expiry.After(time.Now()) {
 		t.Fatalf("invalid federation expiry %q: %v", payload.ExpiresAt, err)
 	}
-	if !bytes.Equal(decoded, token) {
-		t.Fatal("decoded token does not match")
+	if payload.Version != 2 || payload.FederationContext == "" {
+		t.Fatal("federation invitation is missing its v2 credential context")
+	}
+	if bytes.Equal(decoded, token) {
+		t.Fatal("federation invitation exposed the permanent Mother Hive token")
+	}
+}
+
+func TestFederationPairingCodesUseUniqueOfferIDs(t *testing.T) {
+	token := bytes.Repeat([]byte{0x5d}, 32)
+	first, err := encodeFederationPairingCode("https://node.qsdm.tech", token, "Lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := encodeFederationPairingCode("https://node.qsdm.tech", token, "Lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstPayload, _, err := decodePairingCode(first, "mother-federation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondPayload, _, err := decodePairingCode(second, "mother-federation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstPayload.OfferID == secondPayload.OfferID {
+		t.Fatalf("federation offer id was reused: %s", firstPayload.OfferID)
 	}
 }

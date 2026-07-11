@@ -1,18 +1,94 @@
-# Feature Summary of Quantum-Secure Dynamic Mesh Ledger (QSDM)
+# Feature Summary — QSDM
 
-- **Quantum-Safe Cryptography:** Utilizes CRYSTALS-Dilithium for quantum-resistant digital signatures.
-- **Modular Architecture:** Developed in phases with clear separation of concerns for networking, consensus, storage, and governance.
-- **Proof-of-Entanglement Consensus:** Validates transactions by checking multiple parent cells, ensuring quantum-safe consensus.
-- **Dynamic Submesh Management:** Supports manual creation and management of submeshes with fee thresholds, priority levels, and geographic tags.
-- **WASM SDK Integration:** Enables wallet and validator modules using WebAssembly without AI dependencies.
-- **Rule-Based Quarantine and Reputation System:** Isolates malicious submeshes and penalizes bad actors based on transaction validity.
-- **Hardware Optimization:** Designed for mid-tier PCs with GPU acceleration (CUDA) for 3D mesh validation in later phases.
-- **Efficient Storage:** Uses SQLite with Zstandard compression initially, with plans for ScyllaDB integration for high throughput.
-- **Governance via Snapshot Voting:** Token-weighted voting system for manual governance of submesh rules and network parameters.
-- **Transparent and Manual Governance:** Avoids black-box AI, relying on explicit rules and community voting.
-- **Real-Time Web Log Viewer:** Provides monitoring and debugging capabilities through a web interface.
-- **Command-Line Interfaces:** CLI tools for managing dynamic submeshes and governance voting.
-- **Hardware-Agnostic Design:** Optimized for a range of hardware configurations without AI/ML dependencies.
-- **Scalable and Extensible:** Designed to evolve through phases, adding scalability, self-healing, and advanced security features.
+**Last Updated:** July 2026 · Ledger release **v0.4.3** · Hive **1.3.95** · Edge Control **1.3.5**
 
-This feature set positions QSDM as a secure, scalable, and transparent decentralized ledger system resistant to quantum attacks and suitable for diverse hardware environments.
+QSDM (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger whose native coin is **Cell (CELL)**. Validators run PoE + BFT consensus; miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the consumer desktop client; optional edge, home-gateway, and attestation tools support operators.
+
+---
+
+## Ledger & consensus
+
+- **Proof-of-Entanglement (PoE) + BFT** on a dynamic mesh (not a linear blockchain).
+- **ML-DSA-87** transaction signatures (NIST FIPS 204) with Zstd compression and batch signing.
+- **3D mesh validation**, rule-based quarantine, and staked reputation penalties.
+- **Dynamic submeshes** with fee thresholds, priority routing, and geotags.
+- **SQLite + Zstd** storage; **ScyllaDB** path available for high throughput.
+- **libp2p + GossipSub** peer mesh; Phase 4 bootstrap via `api.qsdm.tech`.
+
+## CELL tokenomics
+
+- **100M hard cap**, **0% founder allocation**, **10% genesis treasury** (48-month vesting), **90% mining emission** with 4-year halvings.
+- Validators earn **transaction fees only** (no block subsidy).
+- Tokenomics surface on `GET /api/v1/status` and the operator dashboard.
+
+## Node roles (enforced)
+
+- **Validator** — CPU-only, `mining_enabled=false`, public REST API, consensus.
+- **Miner** — separate process/machine, NVIDIA GPU, HTTPS to validator `/api/v1/mining/*`.
+- No combined full-node mode.
+
+## Mining (protocol v2)
+
+- NVIDIA-locked proofs (`nvidia-cc-v1`, `nvidia-hmac-v1`); Turing-or-newer GPU required for protocol mining.
+- Public mining API: work, challenge, submit, enrollment, emission, blocks, slash.
+- On-chain enrollment with **10 CELL** slashable bond; Hashcash anti-spam.
+- Consumer path: **QSDM Hive** Miner task (CUDA solver bundled).
+- Operator path: `qsdmminer-console`; Tensor-Core fork is a future consensus activation.
+
+## Wallet & self-custody
+
+- Operator wallet API plus **`POST /api/v1/wallet/submit-signed`** self-custody path.
+- Browser wallet at `/wallet/` — client-side ML-DSA-87 keystore (WASM + WebCrypto).
+- `qsdmcli` for wallet new/show/sign and task/governance helpers.
+- Public receipts: `GET /api/v1/receipts`, `GET /api/v1/receipts/{tx_id}`.
+
+## Tasks, staking & rewards
+
+- Consensus task catalog (`qsdm/tasks/v1`): fund, stake, start, stop, submit, claim, unstake, withdraw.
+- **Task Studio** in Hive publishes signed `generic-proof-v1` manifests.
+- Edge-pool settlement split: **70%** contributor / **15%** Mother Hive operator / **15%** ecosystem reserve.
+
+## Governance & bridge
+
+- Snapshot-style token-weighted voting for submesh rules and chain params.
+- Atomic swap / lock-redeem-refund bridge (`pkg/bridge`) with audited secret handling.
+
+## QSDM Hive (desktop)
+
+- Windows and Linux client for CELL wallets, signed tasks, mining visibility, and integrations.
+- Bundles native signer, console miner, CUDA solver, Edge Control/Agent, and Mother Hive workspace.
+- Application Compute Gateway on `127.0.0.1:7742` for bounded local jobs.
+- Sky Fang MMORPG wallet-link task (earn-only CELL; no pay-to-win power).
+
+## Edge compute pool
+
+- Topology: **Agent PCs → Relay → QSDM Hive (Mother) → QSDM Core**.
+- Walletless Agents; fixed algorithms only (no remote shell/scripts).
+- Separate HMAC credentials, resource caps, durable receipts.
+
+## Home / local operator stack
+
+- Local validator scripts and loopback **qsdm-local-gui**.
+- **qsdm-home-gateway** — narrow public mining/status allowlist via outbound relay tunnel.
+- **qsdm-tray-monitor** — Windows tray health poll → `%APPDATA%\QSDM-Tray-Monitor\status.json`.
+- Watchdog, treasury/referral/faucet signer health checks.
+
+## Trust, attestation & transparency
+
+- Optional **NGC sidecar** and NVIDIA-lock API gates (transparency/policy, not consensus).
+- Trust APIs: `/api/v1/trust/attestations/summary`, `.../recent`.
+- Public audit checklist, explorer, chain status board, and security.txt on [qsdm.tech](https://qsdm.tech).
+
+## SDKs & tooling
+
+- Go SDK (`QSDM/source/sdk/go/`) and JavaScript SDK (`qsdm-sdk` on npm).
+- WASM wallet module; OpenAPI + API reference; 25+ operator runbooks.
+- Docker / Kubernetes deploy manifests; signed releases (Sigstore) and SBOM.
+
+---
+
+## What is not claimed
+
+- Silence CLI is an optional Cursor/agent helper, not a QSDM product feature.
+- Production CUDA miner packaging after external security review remains a release gate.
+- Mainnet genesis remains blocked on counsel sign-off, mining audit, and ceremony items (see `ROADMAP.md` / `NEXT_STEPS.md`).

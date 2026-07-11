@@ -37,11 +37,11 @@ This protocol is intended for a trusted laboratory. Do not expose the Relay as a
 
 ## Downloads
 
-QSDM Hive 1.3.93 and newer includes Edge Control 1.3.4, Agent 1.3.4, and the CUDA helper. Additional trusted computers can use:
+QSDM Hive 1.3.95 includes Edge Control 1.3.5, Agent 1.3.5, and the CUDA helper. Additional trusted computers can use:
 
-- [Windows x86-64 Edge Control bundle](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.4-windows-x86_64.zip)
-- [Linux x86-64 Edge Control bundle](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.4-linux-x86_64.tar.gz)
-- [Edge Control checksums](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.4-SHA256SUMS.txt)
+- [Windows x86-64 Edge Control bundle](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.5-windows-x86_64.zip)
+- [Linux x86-64 Edge Control bundle](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.5-linux-x86_64.tar.gz)
+- [Edge Control checksums](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.5-SHA256SUMS.txt)
 
 ## Edge Control GUI
 
@@ -87,7 +87,7 @@ The first catalog contains `qsdm.cpu.hash-chain.v1`, `qsdm.gpu.cuda-mix.v1`, and
 
 This is a logical compute pool. Operating systems cannot safely present internet or LAN resources as ordinary physical CPU cores, process RAM, or a local CUDA device. Applications must use a QSDM adapter that partitions work into supported jobs. Broader workloads should be added as reviewed, versioned capabilities rather than arbitrary commands.
 
-Cross-location sharing is a separate protocol stage. See the [Mother Hive federation design](EDGE_FEDERATION.md); the current private Relay credential must not be exposed or reused as an internet federation credential.
+Cross-location sharing is available as a private HTTPS federation pilot. See the [Mother Hive federation guide](EDGE_FEDERATION.md). Internet invitations use a separate expiring derived credential; never expose or reuse the permanent private-LAN Mother Hive credential.
 
 ## Build
 

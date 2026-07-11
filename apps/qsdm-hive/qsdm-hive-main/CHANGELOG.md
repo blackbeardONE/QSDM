@@ -1,3 +1,11 @@
+## [1.3.95]
+- Packaging: Host-native builds now rebuild bundled tools, reject stale miner or Edge versions, and block partial direct Electron publishing.
+- Runtime cleanup: Removed the disabled Grok browser-automation flow and its obsolete native `sleep` dependency chain.
+- Mother Hive federation: Added expiring QSDM-EDGE-2 HTTPS invitations with derived credentials, random offer IDs, immutable context validation, workload allowlists, and automatic one-time migration away from permanent legacy federation credentials.
+- Mother Hive recovery: Expired or damaged Relay pairings can always be disconnected and replaced.
+- Release alignment: Bundles Edge Control and Agent 1.3.5 and publishes matching Windows/Linux metadata.
+- Website: Fixed narrow-screen header and hero overflow and aligned active product documentation with the shipped versions.
+
 ## [1.2.1]
 - Task Upgrades: Allow upgrading tasks even with low balance if the previous version is still staked.
 - VIP Status: Automated adjustments based on real-time VIP token balance.

@@ -70,6 +70,7 @@ import {
 } from 'main/services/qsdmMinerEnrollment';
 import {
   getEdgeRelayConnectionConfig,
+  getEdgeRelayFederationContext,
   getDefaultEdgeRelayTokenFile,
   getDefaultEdgeRelayURL,
 } from 'main/services/qsdmMotherHiveRelayConfig';
@@ -959,6 +960,7 @@ const gpuUnits = Math.max(1000, Math.min(100000000, Number(process.env.QSDM_EDGE
 const gpuHelperPath = process.env.QSDM_EDGE_GPU_HELPER || '';
 const relayUrl = process.env.QSDM_EDGE_RELAY_URL || process.env.QSDM_EDGE_POOL_URL || 'http://127.0.0.1:7740';
 const relayTokenFile = process.env.QSDM_EDGE_RELAY_TOKEN_FILE || process.env.QSDM_EDGE_POOL_TOKEN_FILE || '';
+const federationContext = process.env.QSDM_EDGE_FEDERATION_CONTEXT || '';
 const relayRequired = Boolean(relayTokenFile);
 const settlementVersion = '${QSDM_MOTHER_HIVE_SETTLEMENT_VERSION}';
 const settlementSource = '${QSDM_MOTHER_HIVE_SETTLEMENT_SOURCE}';
@@ -1022,16 +1024,18 @@ function relayRequest(token, method, requestPath, bodyValue) {
     const canonical = [method, target.pathname, timestamp, nonce, workerId, sha256(body)].join('\\n');
     const signature = crypto.createHmac('sha256', token).update(canonical).digest('hex');
     const transport = target.protocol === 'https:' ? https : http;
+    const headers = {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(body),
+      'X-QSDM-Worker-ID': workerId,
+      'X-QSDM-Timestamp': timestamp,
+      'X-QSDM-Nonce': nonce,
+      'X-QSDM-Signature': signature,
+    };
+    if (federationContext) headers['X-QSDM-Federation-Context'] = federationContext;
     const request = transport.request(target, {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-        'X-QSDM-Worker-ID': workerId,
-        'X-QSDM-Timestamp': timestamp,
-        'X-QSDM-Nonce': nonce,
-        'X-QSDM-Signature': signature,
-      },
+      headers,
       timeout: 5000,
     }, (response) => {
       let responseBody = '';
@@ -1276,6 +1280,7 @@ const os = require('os');
 
 const relayUrl = process.env.QSDM_EDGE_RELAY_URL || 'http://127.0.0.1:7740';
 const tokenFile = process.env.QSDM_EDGE_RELAY_TOKEN_FILE || '';
+const federationContext = process.env.QSDM_EDGE_FEDERATION_CONTEXT || '';
 const gatewayTokenFile = process.env.QSDM_COMPUTE_GATEWAY_TOKEN_FILE || '';
 const gatewayHost = '127.0.0.1';
 const gatewayPort = Math.max(1024, Math.min(65535, Number(process.env.QSDM_COMPUTE_GATEWAY_PORT || 7742)));
@@ -1325,16 +1330,18 @@ function relayRequest(method, requestPath, bodyValue) {
     const canonical = [method, target.pathname, timestamp, nonce, workerId, bodyHash].join('\\n');
     const signature = crypto.createHmac('sha256', token).update(canonical).digest('hex');
     const transport = target.protocol === 'https:' ? https : http;
+    const headers = {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(body),
+      'X-QSDM-Worker-ID': workerId,
+      'X-QSDM-Timestamp': timestamp,
+      'X-QSDM-Nonce': nonce,
+      'X-QSDM-Signature': signature,
+    };
+    if (federationContext) headers['X-QSDM-Federation-Context'] = federationContext;
     const request = transport.request(target, {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-        'X-QSDM-Worker-ID': workerId,
-        'X-QSDM-Timestamp': timestamp,
-        'X-QSDM-Nonce': nonce,
-        'X-QSDM-Signature': signature,
-      },
+      headers,
       timeout: 5000,
     }, (response) => {
       let body = '';
@@ -3510,6 +3517,16 @@ const ensureMotherHiveScript = () => {
 };
 
 export const assertQsdmMotherHiveConfigured = () => {
+  const configuredConnection = getEdgeRelayConnectionConfig();
+  if (
+    configuredConnection?.connection_mode === 'internet-federation' &&
+    configuredConnection.expires_at &&
+    Date.parse(configuredConnection.expires_at) <= Date.now()
+  ) {
+    throw new Error(
+      'The Mother Hive federation invitation has expired. Create and pair a new invitation in QSDM Edge Control.'
+    );
+  }
   const tokenFile = getDefaultEdgeRelayTokenFile();
   if (!tokenFile || !fs.existsSync(tokenFile)) {
     throw new Error(
@@ -3658,17 +3675,22 @@ const requestEdgeRelay = async <T>(
     bodyHash,
   ].join('\n');
   const signature = createHmac('sha256', token).update(canonical).digest('hex');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-QSDM-Worker-ID': workerId,
+    'X-QSDM-Timestamp': timestamp,
+    'X-QSDM-Nonce': nonce,
+    'X-QSDM-Signature': signature,
+  };
+  const federationContext = getEdgeRelayFederationContext();
+  if (federationContext) {
+    headers['X-QSDM-Federation-Context'] = federationContext;
+  }
   const response = await axios.request<T>({
     url: target.href,
     method,
     data: body || undefined,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-QSDM-Worker-ID': workerId,
-      'X-QSDM-Timestamp': timestamp,
-      'X-QSDM-Nonce': nonce,
-      'X-QSDM-Signature': signature,
-    },
+    headers,
     timeout: 5000,
     maxContentLength: 256 * 1024,
     maxBodyLength: 64 * 1024,
@@ -3703,6 +3725,11 @@ export const getQsdmMotherHiveStatus =
     const relayUrl = getDefaultEdgeRelayURL();
     const tokenFile = getDefaultEdgeRelayTokenFile();
     const configuredConnection = getEdgeRelayConnectionConfig();
+    const federationExpired = Boolean(
+      configuredConnection?.connection_mode === 'internet-federation' &&
+        configuredConnection.expires_at &&
+        Date.parse(configuredConnection.expires_at) <= Date.now()
+    );
     const computeGatewayTokenFile = getQsdmComputeGatewayTokenFile();
     const computeGatewayOnline = await readQsdmComputeGatewayHealth();
     const base: QsdmMotherHiveStatusResponse = {
@@ -3721,6 +3748,7 @@ export const getQsdmMotherHiveStatus =
             consumerWallet: configuredConnection.consumer_wallet,
             expiresAt: configuredConnection.expires_at,
             workloadIds: configuredConnection.workload_ids,
+            expired: federationExpired,
           }
         : undefined,
       workers: [],
@@ -3913,6 +3941,7 @@ export const startQsdmEdgeWorkerSystemProcess = (
       QSDM_EDGE_RESOURCE: resource,
       QSDM_EDGE_RELAY_URL: getDefaultEdgeRelayURL(),
       QSDM_EDGE_RELAY_TOKEN_FILE: getDefaultEdgeRelayTokenFile(),
+      QSDM_EDGE_FEDERATION_CONTEXT: getEdgeRelayFederationContext(),
       QSDM_EDGE_GPU_HELPER: gpuHelperPath,
       QSDM_TASK_ACTION_SENDER: getQsdmTaskActionSender(),
     },
@@ -3975,6 +4004,7 @@ export const startQsdmMotherHiveSystemProcess = (): {
       ELECTRON_RUN_AS_NODE: '1',
       QSDM_EDGE_RELAY_URL: getDefaultEdgeRelayURL(),
       QSDM_EDGE_RELAY_TOKEN_FILE: tokenFile,
+      QSDM_EDGE_FEDERATION_CONTEXT: getEdgeRelayFederationContext(),
       QSDM_COMPUTE_GATEWAY_TOKEN_FILE: computeGatewayTokenFile,
       QSDM_COMPUTE_GATEWAY_PORT: String(
         new URL(getQsdmComputeGatewayEndpoint()).port

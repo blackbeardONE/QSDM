@@ -5,33 +5,41 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Explorer — QSDM · Cell (CELL)</title>
 <meta name="description" content="Search QSDM blocks, transactions, and accounts. Public blockchain explorer for Cell (CELL), backed by QSDM /api/v1 transparency endpoints." />
-<meta name="theme-color" content="#07171d" />
+<meta name="theme-color" content="#061116" />
 <link rel="icon" href="/assets/qsdm-hive-icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/assets/site.css" />
+
 <style>
   :root {
-    --bg: #07171d;
-    --panel: #102f38;
-    --panel-2: #173d48;
-    --border: rgba(142, 220, 224, .18);
+    --bg: #061116;
+    --bg-2: #0a1f26;
+    --panel: #0c242c;
+    --panel-2: #12323c;
+    --border: rgba(142, 220, 224, 0.16);
     --text: #f4fbfd;
-    --text-2: #adc6cc;
-    --muted: #7fa3aa;
+    --text-2: rgba(244, 251, 253, 0.62);
+    --muted: rgba(173, 198, 204, 0.72);
+    --gold: #d6b75f;
+    --teal: #8edce0;
     --accent: #d6b75f;
     --accent-2: #8edce0;
     --accent-3: #8edce0;
-    --success: #3ddc97;
-    --warn: #ffb454;
+    --ink: #061116;
     --danger: #ff6b6b;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+    --warn: #ffb454;
+    --success: #3ddc97;
+    --warning: #e8c547;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: "Outfit", system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--sans); line-height: 1.5; }
   body {
     background:
-      radial-gradient(1200px 600px at 10% -10%, rgba(214,183,95,.10), transparent 60%),
-      radial-gradient(900px 500px at 100% 0%, rgba(142,220,224,.10), transparent 60%),
-      linear-gradient(180deg, var(--bg) 0%, #0a252d 100%);
+      var(--bg);
     min-height: 100vh;
   }
   a { color: var(--accent-3); text-decoration: none; }
@@ -43,7 +51,7 @@
     white-space: pre-wrap; word-break: break-word; max-height: 520px;
   }
   .container { max-width: 1180px; margin: 0 auto; padding: 36px 20px; }
-  header { border-bottom: 1px solid var(--border); background: rgba(7,23,29,.72); backdrop-filter: saturate(140%) blur(10px); position: sticky; top: 0; z-index: 10; }
+  header { border-bottom: 1px solid var(--border); background: rgba(6,17,22,.82); backdrop-filter: saturate(140%) blur(10px); position: sticky; top: 0; z-index: 10; }
   header .container { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; gap: 16px; }
   .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 700; }
   .brand svg { width: 26px; height: 26px; }
@@ -51,16 +59,14 @@
   nav.subnav { display: flex; gap: 18px; flex-wrap: wrap; }
   nav.subnav a { color: var(--text-2); font-size: 14px; }
   nav.subnav a.active { color: var(--accent-2); font-weight: 600; }
-  h1 { font-size: clamp(34px, 5vw, 54px); line-height: 1.05; margin: 0 0 12px; letter-spacing: -.02em; }
-  h2 { font-size: 22px; margin: 0 0 10px; letter-spacing: -.01em; }
+  h1 { font-size: 54px; line-height: 1.05; margin: 0 0 12px; letter-spacing: 0; overflow-wrap: anywhere; }
+  h2 { font-size: 22px; margin: 0 0 10px; letter-spacing: 0; }
+  @media (max-width: 639px) { h1 { font-size: 34px; } }
   h3 { color: var(--text-2); font-size: 13px; letter-spacing: .7px; text-transform: uppercase; margin: 22px 0 8px; }
   .lede { color: var(--text-2); font-size: 17px; max-width: 820px; }
   .hero {
-    border: 1px solid var(--border); border-radius: 16px; padding: 28px;
-    background:
-      radial-gradient(700px 180px at 5% 0%, rgba(142,220,224,.12), transparent 70%),
-      linear-gradient(180deg, rgba(16,47,56,.92), rgba(23,61,72,.92));
-    box-shadow: 0 10px 30px -12px rgba(0,0,0,.55);
+    border: 1px solid var(--border); border-radius: 8px; padding: 28px;
+    background: var(--panel);
   }
   .live-dot {
     display: inline-block; width: 9px; height: 9px; border-radius: 50%;
@@ -71,13 +77,13 @@
   }
   .search input {
     width: 100%; font-family: var(--mono); font-size: 15px; color: var(--text);
-    background: rgba(0,0,0,.35); border: 1px solid var(--border); border-radius: 10px;
+    background: rgba(0,0,0,.35); border: 1px solid var(--border); border-radius: 8px;
     padding: 13px 14px; outline: none;
   }
   .search input:focus { border-color: var(--accent-2); }
   .search button, .btn {
-    background: var(--accent); color: #061216; font-weight: 700; border: 1px solid rgba(214, 183, 95, .55);
-    padding: 12px 18px; border-radius: 10px; cursor: pointer; font-family: var(--sans);
+    background: var(--gold, var(--accent)); color: var(--ink, #061116); font-weight: 700; border: 1px solid rgba(214, 183, 95, .55);
+    padding: 12px 18px; border-radius: 8px; cursor: pointer; font-family: var(--sans);
   }
   .search button:hover, .btn:hover { filter: brightness(1.05); text-decoration: none; }
   .hint { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
@@ -90,8 +96,8 @@
     header .container { align-items: flex-start; flex-direction: column; }
   }
   .panel, .stat-card {
-    background: linear-gradient(180deg, var(--panel), var(--panel-2));
-    border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px;
+    background: var(--panel);
+    border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px;
     box-shadow: 0 10px 30px -12px rgba(0,0,0,.55);
   }
   .stat-card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; }
@@ -113,29 +119,49 @@
   .pill.err { background: rgba(255,107,107,.1); color: var(--danger); border-color: rgba(255,107,107,.3); }
   .empty { color: var(--muted); font-style: italic; padding: 14px 0; }
   .errbox { color: var(--danger); font-family: var(--mono); font-size: 13px; padding: 10px 12px; background: rgba(255,107,107,.06); border-radius: 8px; border: 1px solid rgba(255,107,107,.2); }
-  .notice { color: var(--text-2); font-size: 13px; padding: 12px 14px; background: rgba(142,220,224,.06); border: 1px solid rgba(142,220,224,.22); border-radius: 10px; margin-top: 12px; }
+  .notice { color: var(--text-2); font-size: 13px; padding: 12px 14px; background: rgba(142,220,224,.06); border: 1px solid rgba(142,220,224,.22); border-radius: 8px; margin-top: 12px; }
   .section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 24px; }
   .section-title .mini { color: var(--muted); font-size: 12px; font-family: var(--mono); }
   footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 34px; padding-top: 18px; border-top: 1px solid var(--border); }
 </style>
 </head>
 <body>
-<header>
-  <div class="container">
-    <a class="brand" href="/">
-      <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="12" fill="#07171d"/><path d="M12 32l10-10 10 10-10 10z" fill="#d6b75f"/><path d="M32 20l10 12-10 12-10-12z" fill="#8edce0" opacity=".85"/></svg>
-      <span>QSDM<span class="plus">+</span></span>
+<header class="site-header">
+  <div class="site-header-inner">
+    <a class="site-brand" href="/">
+      <img src="/assets/qsdm-hive-icon.png" alt="" />
+      <span>QSDM</span>
     </a>
-    <nav class="subnav" aria-label="Primary">
+    <nav class="site-nav" aria-label="Primary">
       <a href="/">Home</a>
       <a href="/wallet.html">Wallet</a>
       <a href="/explorer.html" class="active">Explorer</a>
       <a href="/chain.html">Chain</a>
       <a href="/validators.html">Validators</a>
+      <a href="/docs/">Docs</a>
       <a href="/audit.html">Audit</a>
       <a href="/trust.html">Trust</a>
-      <a href="/download.html">Download</a>
+      <a href="/api.html">API</a>
     </nav>
+    <div class="site-actions">
+      <a class="site-btn site-btn-ghost" href="/wallet.html">Wallet</a>
+      <a class="site-btn site-btn-solid" href="/download.html">Download</a>
+      <button class="site-menu-toggle" type="button" id="siteMenuToggle" aria-label="Open menu" aria-expanded="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 7H4V5H20V7ZM20 13H4V11H20V13ZM20 19H4V17H20V19Z"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="site-mobile-nav" id="siteMobileNav">
+    <a href="/">Home</a>
+    <a href="/wallet.html">Wallet</a>
+    <a href="/explorer.html">Explorer</a>
+    <a href="/chain.html">Chain</a>
+    <a href="/validators.html">Validators</a>
+    <a href="/docs/">Docs</a>
+    <a href="/audit.html">Audit</a>
+    <a href="/trust.html">Trust</a>
+    <a href="/api.html">API</a>
+    <a href="/download.html">Download</a>
   </div>
 </header>
 
@@ -572,5 +598,6 @@ window.addEventListener("popstate", routeFromURL);
 refreshAll().then(routeFromURL);
 setInterval(refreshAll, REFRESH_MS);
 </script>
+  <script src="/assets/site-nav.js"></script>
 </body>
 </html>

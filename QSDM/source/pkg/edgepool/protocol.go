@@ -24,10 +24,11 @@ const (
 	// the ecosystem share of every pooled resource settlement.
 	ProductionEcosystemWallet = "651a79b2b1790820dd73bda81be24057e1bc27377c1f1117c6db2ab79dc038ea"
 
-	HeaderWorkerID  = "X-QSDM-Worker-ID"
-	HeaderTimestamp = "X-QSDM-Timestamp"
-	HeaderNonce     = "X-QSDM-Nonce"
-	HeaderSignature = "X-QSDM-Signature"
+	HeaderWorkerID          = "X-QSDM-Worker-ID"
+	HeaderTimestamp         = "X-QSDM-Timestamp"
+	HeaderNonce             = "X-QSDM-Nonce"
+	HeaderSignature         = "X-QSDM-Signature"
+	HeaderFederationContext = "X-QSDM-Federation-Context"
 
 	ResourceCPU ResourceKind = "cpu"
 	ResourceGPU ResourceKind = "gpu"

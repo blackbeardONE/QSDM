@@ -39,7 +39,7 @@ type computeStateSnapshot struct {
 }
 
 func (c *Coordinator) handleComputeJobs(w http.ResponseWriter, r *http.Request) {
-	body, _, ok := c.authenticate(w, r, c.config.MotherToken, "mother")
+	body, _, authentication, ok := c.authenticateMother(w, r)
 	if !ok {
 		return
 	}
@@ -50,6 +50,10 @@ func (c *Coordinator) handleComputeJobs(w http.ResponseWriter, r *http.Request) 
 		var request ComputeJobSubmitRequest
 		if err := decodePoolJSON(body, &request); err != nil {
 			writePoolError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if authentication.Federation != nil && !authentication.Federation.AllowsResource(request.Resource) {
+			writePoolError(w, http.StatusForbidden, "federation invitation does not allow this workload")
 			return
 		}
 		record, err := c.SubmitComputeJob(request, time.Now().UTC())
@@ -85,7 +89,7 @@ func (c *Coordinator) handleComputeJobs(w http.ResponseWriter, r *http.Request) 
 }
 
 func (c *Coordinator) handleComputeJob(w http.ResponseWriter, r *http.Request) {
-	_, _, ok := c.authenticate(w, r, c.config.MotherToken, "mother")
+	_, _, _, ok := c.authenticateMother(w, r)
 	if !ok {
 		return
 	}

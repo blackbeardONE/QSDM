@@ -435,6 +435,7 @@ describe('qsdmSystemTasks', () => {
     expect(script).toContain("id: 'qsdm.ram.memory-scan.v1'");
     expect(script).toContain('authorization.startsWith(prefix)');
     expect(script).toContain("'/v1/compute/jobs'");
+    expect(script).toContain("headers['X-QSDM-Federation-Context']");
     expect(script).toContain('request body exceeds 16 KiB');
     expect(script.indexOf('if (!authorizeGateway(request))')).toBeLessThan(
       script.indexOf("requestURL.pathname === '/healthz'")
@@ -450,9 +451,11 @@ describe('qsdmSystemTasks', () => {
   it('fails closed when Mother Hive has a configured relay', () => {
     const script = createQsdmEdgeWorkerScript();
 
+    expect(() => new vm.Script(script)).not.toThrow();
     expect(script).toContain('const relayRequired = Boolean(relayTokenFile);');
     expect(script).toContain('source: settlementSource');
     expect(script).toContain("'/v1/settlement/bind'");
+    expect(script).toContain("headers['X-QSDM-Federation-Context']");
     expect(script).toContain("'QSDM-EDGE-RELAY-ID\\0'");
     expect(script).toContain('if (relayRequired) throw error;');
     expect(script).toContain(
@@ -495,7 +498,7 @@ describe('qsdmSystemTasks', () => {
         String(filePath).endsWith('mother-hive.token')
       );
 
-    expect(getDefaultEdgeRelayURL()).toBe('http://192.168.1.10:7740');
+    expect(getDefaultEdgeRelayURL()).toBe('http://192.168.1.10:7740/');
     expect(getDefaultEdgeRelayTokenFile()).toBe(expectedTokenFile);
 
     readFile.mockRestore();

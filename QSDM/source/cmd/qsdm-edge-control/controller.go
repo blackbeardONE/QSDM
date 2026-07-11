@@ -326,6 +326,9 @@ func (c *controller) prepareAgent(settings agentSettings) (func(context.Context)
 }
 
 func (c *controller) prepareRelay(settings relaySettings) (*edgepool.Relay, func(context.Context) error, error) {
+	if err := c.ensureFederationV2MotherToken(settings); err != nil {
+		return nil, nil, err
+	}
 	agentToken, motherToken, err := c.ensureRelayTokens()
 	if err != nil {
 		return nil, nil, err
@@ -351,6 +354,33 @@ func (c *controller) prepareRelay(settings relaySettings) (*edgepool.Relay, func
 		return nil, nil, err
 	}
 	return relay, relay.Serve, nil
+}
+
+func (c *controller) ensureFederationV2MotherToken(settings relaySettings) error {
+	if !settings.AllowLAN || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(settings.AdvertisedURL)), "https://") {
+		return nil
+	}
+	markerPath := filepath.Join(c.paths.PoolDir, "federation-v2.ready")
+	if _, err := os.Stat(markerPath); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect federation credential migration: %w", err)
+	}
+	if err := os.MkdirAll(c.paths.PoolDir, 0o700); err != nil {
+		return err
+	}
+	token, err := edgepool.GenerateToken()
+	if err != nil {
+		return fmt.Errorf("rotate Mother Hive key for federation v2: %w", err)
+	}
+	if err := edgepool.WriteTokenFile(c.paths.MotherToken, token); err != nil {
+		return fmt.Errorf("persist federation v2 Mother Hive key: %w", err)
+	}
+	if err := writePrivateFile(markerPath, []byte("QSDM-EDGE-FEDERATION-v2\n")); err != nil {
+		return fmt.Errorf("persist federation v2 migration marker: %w", err)
+	}
+	c.events.add("Mother Hive key rotated for expiring federation v2 invitations")
+	return nil
 }
 
 func (c *controller) ensureRelayTokens() ([]byte, []byte, error) {
@@ -424,6 +454,9 @@ func (c *controller) getPairingCodes() (pairingCodes, error) {
 	c.mu.Lock()
 	settings := c.settings.Relay
 	c.mu.Unlock()
+	if err := c.ensureFederationV2MotherToken(settings); err != nil {
+		return pairingCodes{}, err
+	}
 	agentToken, motherToken, err := c.ensureRelayTokens()
 	if err != nil {
 		return pairingCodes{}, err

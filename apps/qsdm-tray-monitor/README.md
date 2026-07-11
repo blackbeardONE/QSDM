@@ -1,13 +1,23 @@
 # QSDM Tray Monitor
 
 Tiny Windows notification-area monitor for the local QSDM home node.
+Documented on the public docs portal at
+[qsdm.tech/docs/#/tray-monitor](https://qsdm.tech/docs/#/tray-monitor)
+(after the landing deploy that ships this entry).
 
 It watches:
 
-- local validator readiness on `127.0.0.1:8080`
-- QSDMMiner service/process state
+- validator readiness, chain progress, peers, build, configured/active mode,
+  process count, and task-action readiness
+- QSDMMiner service/process state and recent accepted-proof activity
 - home gateway process and public relay status
-- local GUI process
+- attester health and listener exposure
+- referral/faucet treasury signer health
+- local stack watchdog and local GUI processes
+- monitored TCP listeners; Home Server services must remain loopback-only
+
+Every poll writes a machine-readable snapshot to
+`%APPDATA%\QSDM-Tray-Monitor\status.json`.
 
 The app has no normal Exit command. It is tray-only and meant to stay running.
 It can still be stopped by the operator with Task Manager or by removing its

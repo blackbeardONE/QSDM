@@ -30,7 +30,6 @@
 # terminated here at Caddy). :8081 is the dashboard (also loopback-only behind Caddy).
 api.qsdm.tech, node.qsdm.tech {
 	encode zstd gzip
-	import /etc/caddy/qsdm-edge-relay.caddy
 
 	@health path /api/v1/health /api/v1/health/live /api/v1/health/ready
 	handle @health {
@@ -204,7 +203,10 @@ qsdm.tech {
 		# adds raw.githubusercontent.com so embedded screenshots in
 		# docs render. No CDN is in script-src — markdown-it is vendored
 		# locally at /docs/lib/markdown-it.min.js with SRI.
-		Content-Security-Policy "default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self' https://api.qsdm.tech https://dashboard.qsdm.tech https://raw.githubusercontent.com https://api.github.com; frame-ancestors 'none'; upgrade-insecure-requests"
+		# font-src / style-src allow Google Fonts for Syne + Figtree on the
+		# marketing landing (index.html, download.html). Docs SPA and wallet
+		# pages do not depend on those hosts.
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self' https://api.qsdm.tech https://dashboard.qsdm.tech https://raw.githubusercontent.com https://api.github.com; frame-ancestors 'none'; upgrade-insecure-requests"
 		X-Frame-Options DENY
 		Permissions-Policy "geolocation=(), microphone=(), camera=()"
 		-Server

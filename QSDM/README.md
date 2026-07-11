@@ -31,7 +31,7 @@ QSDM is developed in phases:
 
 ## Repository layout (QSDM monorepo)
 
-This directory (**`QSDM/`**) is the **QSDM ledger node** (electronic cash / token APIs, consensus, storage). Sibling folders under the workspace root live in **`apps/`** (marketing site, NGC sidecar, game-integration notes). See the root **`README.md`** one level up.
+This directory (**`QSDM/`**) is the **QSDM ledger node** (electronic cash / token APIs, consensus, storage, mining, governance, bridge). The production website is **`deploy/landing/`** (qsdm.tech). Sibling products live under **`apps/`** (Hive, edge agent, tray monitor, NGC sidecar). See the root **`README.md`** one level up for the full map and current feature summary.
 
 ### Optional: NGC sidecar and NVIDIA-lock (HTTP API)
 
