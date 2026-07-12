@@ -13,8 +13,8 @@
 #                            pkg/audit/checklist.go (reviewer-facing).
 #   03_go_mod_verify.txt   - `go mod verify` (cryptographic check of
 #                            every module in go.sum).
-#   04_govulncheck.txt     - reachable-call-graph CVE scan. The
-#                            allowlist is intentionally empty.
+#   04_govulncheck.txt     - imported-package / reachable-symbol CVE
+#                            scan. The allowlist is intentionally empty.
 #   05_go_vet.txt          - default + soak-tag vet sweep.
 #   06_go_test_full.txt    - `go test ./... -count=1` (non-`-short`),
 #                            tail captured. Pass/fail per package.
@@ -166,15 +166,16 @@ Invoke-CaptureStep '03_go_mod_verify.txt' 'go mod verify (cryptographic)' {
     }
 }
 
-# 04 - govulncheck reachable scan.
+# 04 - govulncheck affected package/symbol scan.
 if ($Quick) {
     "# skipped (-Quick)" | Set-Content -Path (Join-Path $OutDir '04_govulncheck.txt') -Encoding utf8
 } else {
-    Invoke-CaptureStep '04_govulncheck.txt' 'govulncheck ./... (reachable findings)' {
+    Invoke-CaptureStep '04_govulncheck.txt' 'govulncheck ./... (affected package/symbol findings)' {
         Push-Location $sourceDir
         try {
             $env:CGO_ENABLED = '0'
-            & go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+            $goExe = (Get-Command go -ErrorAction Stop).Source
+            & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'govulncheck-filter.ps1') -GoExe $goExe
         } finally {
             Pop-Location
         }

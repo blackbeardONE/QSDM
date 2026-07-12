@@ -42,7 +42,7 @@ else
 	export QSDM_METRICS_REGISTER_STRICT=1
 	unset CGO_CFLAGS CGO_LDFLAGS 2>/dev/null || true
 	export CGO_ENABLED=0
-	go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+	bash "$QSDM_ROOT/scripts/govulncheck-filter.sh"
 fi
 
 echo "OK: ci-local-parity finished"

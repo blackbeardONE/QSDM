@@ -8,8 +8,8 @@
 #   1 if any OSV is reported that is NOT in the allowlist (NEW vuln
 #     surfaced -- that is what we actually want to break CI on).
 #
-# The raw govulncheck output is always printed so humans can see it
-# in the job log even when we pass.
+# Scanner diagnostics and affected-finding summaries are always printed so
+# humans can see the classification in the job log even when the gate passes.
 #
 # Allowlist posture: intentionally empty. GO-2024-3218 used to be tracked
 # here while QSDM used go-libp2p-kad-dht for WAN discovery. That DHT path was
@@ -52,23 +52,24 @@ fi
 #      MODULE VERSION. Most of these are NOT reachable from our call
 #      graph. Filtering on this field alone yields 100+ false positives.
 #
-#   2. {"finding": {"osv": "GO-...", ...}} -- a package or symbol
-#      finding. Only records with a non-empty trace demonstrate a reachable
-#      call path in QSDM; newer scanner versions also emit untraced notices.
+#   2. {"finding": {"osv": "GO-...", ...}} -- a module, package, or
+#      symbol finding. A module-only notice has a one-frame trace containing
+#      module/version but no package. Package and symbol findings include a
+#      package path and demonstrate that affected code enters QSDM's build.
 #
-# Only traced records from (2) should gate CI. The earlier version keyed off
-# (1) and surfaced GO-2020-0006, GO-2021-0067, and ~150 other advisories
-# that our binary cannot actually reach.
-findings_jq='select(.finding.trace != null and (.finding.trace | length > 0)) | .finding.osv'
+# Only package/symbol records from (2) should gate CI. The earlier versions
+# keyed off either (1) or any non-empty trace; the latter incorrectly counted
+# module-only notices emitted by newer scanners.
+findings_jq='select(any(.finding.trace[]?; (.package // "") != "")) | .finding.osv'
 
-# Human-readable re-render of the reachable findings for the job log.
-echo "==== govulncheck reachable findings ===="
+# Human-readable re-render of affected package/symbol findings for the log.
+echo "==== govulncheck affected package/symbol findings ===="
 if command -v jq >/dev/null 2>&1; then
   # Pair each finding id with the first OSV summary we saw for it, so
   # the log is self-explanatory without having to cross-reference.
   jq -r --slurp '
     (map(select(.osv))     | map({(.osv.id): (.osv.summary // "(no summary)")}) | add) as $summaries
-    | (map(select(.finding.trace != null and (.finding.trace | length > 0))) | map(.finding.osv) | unique) as $hits
+    | (map(select(any(.finding.trace[]?; (.package // "") != ""))) | map(.finding.osv) | unique) as $hits
     | $hits[] | . + "  " + ($summaries[.] // "(no summary)")
   ' "${raw_out}" || true
 else
@@ -88,7 +89,7 @@ if [ "${rc}" -ne 0 ] && [ "${rc}" -ne 3 ]; then
   exit "${rc}"
 fi
 
-# Collect unique OSV ids actually REACHABLE (not the raw catalog).
+# Collect unique OSV ids that reach an imported package (not the raw catalog).
 if command -v jq >/dev/null 2>&1; then
   reported="$(jq -r "${findings_jq}" "${raw_out}" | sort -u)"
 else

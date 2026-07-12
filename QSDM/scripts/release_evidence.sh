@@ -134,9 +134,9 @@ if [ "$QUICK" = "1" ]; then
 else
   vuln_step() {
     cd "$SOURCE_DIR"
-    CGO_ENABLED=0 go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+    CGO_ENABLED=0 bash "$SCRIPT_DIR/govulncheck-filter.sh"
   }
-  capture_step '04_govulncheck.txt' 'govulncheck ./... (reachable findings)' vuln_step
+  capture_step '04_govulncheck.txt' 'govulncheck ./... (affected package/symbol findings)' vuln_step
 fi
 
 # 05 - go vet (default + soak).
