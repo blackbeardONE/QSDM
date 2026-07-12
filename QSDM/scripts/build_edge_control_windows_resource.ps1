@@ -37,7 +37,7 @@ $previousPath = $env:Path
 $env:Path = "$(Split-Path -Parent $windresExe);$env:SystemRoot\System32"
 
 $outputDirectory = Split-Path -Parent $OutputPath
-$workDirectory = Join-Path ([IO.Path]::GetTempPath()) "qsdm-edge-control-resource-$PID"
+$workDirectory = Join-Path ([IO.Path]::GetTempPath()) "qsdm-edge-control-resource-$PID-$([guid]::NewGuid().ToString('N'))"
 $resourceScript = Join-Path $workDirectory 'qsdm-edge-control.rc'
 $localIcon = Join-Path $workDirectory 'qsdm-edge-control.ico'
 
@@ -81,9 +81,21 @@ END
 
     Push-Location $workDirectory
     try {
-        & $windresExe -J rc -O coff -F pe-x86-64 --use-temp-file -i $resourceScript -o $OutputPath
-        if ($LASTEXITCODE -ne 0) {
-            throw "windres.exe failed with exit code $LASTEXITCODE"
+        $compiled = $false
+        $lastExitCode = 0
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            Remove-Item -LiteralPath $OutputPath -Force -ErrorAction SilentlyContinue
+            & $windresExe -J rc -O coff -F pe-x86-64 --use-temp-file -i $resourceScript -o $OutputPath
+            $lastExitCode = $LASTEXITCODE
+            if ($lastExitCode -eq 0 -and (Test-Path -LiteralPath $OutputPath -PathType Leaf)) {
+                $compiled = $true
+                break
+            }
+            Write-Warning "windres.exe attempt $attempt of 3 failed with exit code $lastExitCode; retrying with a clean output."
+            Start-Sleep -Milliseconds (250 * $attempt)
+        }
+        if (-not $compiled) {
+            throw "windres.exe failed after 3 attempts (last exit code $lastExitCode)"
         }
     }
     finally {
