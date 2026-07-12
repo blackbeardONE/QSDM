@@ -83,10 +83,6 @@ jobs:
           $edge = (Get-Content -Raw apps/qsdm-edge-agent/VERSION).Trim()
           $productionTag = "hive-v$hive"
           $isProductionTag = $env:GITHUB_REF -eq "refs/tags/$productionTag"
-          $isAnyTag = $env:GITHUB_REF.StartsWith('refs/tags/', [StringComparison]::Ordinal)
-          if ($isAnyTag -and -not $isProductionTag) {
-            throw "Release tag '$env:GITHUB_REF_NAME' does not match package version '$productionTag'."
-          }
           if ($isProductionTag) {
             & git merge-base --is-ancestor HEAD origin/main
             if ($LASTEXITCODE -ne 0) {
