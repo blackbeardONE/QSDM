@@ -66,7 +66,7 @@ jobs:
         with:
           cuda: "12.9.1"
           method: network
-          sub-packages: '["nvcc", "visual_studio_integration"]'
+          sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
 
       - name: Select stable native tools
         shell: pwsh
@@ -74,6 +74,14 @@ jobs:
           "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
           windres.exe --version
           nvcc --version
+          foreach ($requiredCudaFile in @(
+            (Join-Path $env:CUDA_PATH 'include\cuda_runtime.h'),
+            (Join-Path $env:CUDA_PATH 'lib\x64\cudart.lib')
+          )) {
+            if (-not (Test-Path -LiteralPath $requiredCudaFile -PathType Leaf)) {
+              throw "Required CUDA development file is missing: $requiredCudaFile"
+            }
+          }
 
       - name: Read coupled versions
         id: versions
