@@ -224,6 +224,7 @@ export interface QsdmMotherHiveStatusResponse {
     consumerWallet?: string;
     expiresAt?: string;
     workloadIds?: string[];
+    expired?: boolean;
   };
   workers: QsdmMotherHiveWorkerStatus[];
   onlineWorkers: number;

@@ -33,21 +33,31 @@
 
 /* SITE */
 
-  Last update:  2026-05-17
+  Last update:  2026-07-09
   Language:     English
   Doctype:      HTML5
-  Standards:    HTML5, CSS3, JSON-LD (schema.org/Dataset), RFC 9116
+  Standards:    HTML5, CSS3, JSON-LD (schema.org/SoftwareApplication), RFC 9116
   Components:   Vanilla HTML + CSS + JavaScript — no build step,
-                no React, no bundler. Every page is hand-edited and
-                shipped as a single self-contained file. The browser
-                wallet at /wallet.html embeds /wallet.wasm
+                no React, no bundler. Marketing pages are hand-edited.
+                The docs SPA at /docs/ fetches Markdown from GitHub main.
+                The browser wallet at /wallet.html embeds /wallet.wasm
                 (cloudflare/circl ML-DSA-87 compiled to WebAssembly).
-  Software:     Backend in Go 1.25, frontend in vanilla JS, edge in
+  Software:     Backend in Go, frontend in vanilla JS, edge in
                 Caddy, observability in Prometheus + Grafana, source
-                control in git/GitHub.
+                control in git/GitHub. Desktop client: QSDM Hive.
+
+  Product surfaces:
+    /                             — Hive + CELL + capabilities
+    /download.html                — Hive 1.3.95 + Edge Control 1.3.5
+    /docs/                        — knowledge-base SPA
+    /wallet.html                  — self-custody ML-DSA-87 wallet
+    /explorer.html                — blocks, txs, accounts
+    /validators.html              — bootstrap peers
+    /chain.html                   — live status board
+    /api.html                     — HTTP v1 vs mining v2 explainer
 
   Transparency surfaces:
-    /audit.html                   — public audit checklist (88 rows)
+    /audit.html                   — public audit checklist
     /api/v1/audit/summary         — machine-readable score + counts
     /api/v1/audit/items           — machine-readable per-row list
     /api/v1/audit/badge.svg       — embeddable SVG badge

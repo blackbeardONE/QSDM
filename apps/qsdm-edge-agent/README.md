@@ -22,11 +22,11 @@ This is not a public anonymous enrollment mechanism. Do not expose the Relay dir
 
 ## Downloads
 
-- Windows x86-64 bundle: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.4-windows-x86_64.zip`
-- Linux x86-64 bundle: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.4-linux-x86_64.tar.gz`
-- Checksums: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.4-SHA256SUMS.txt`
+- Windows x86-64 bundle: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.5-windows-x86_64.zip`
+- Linux x86-64 bundle: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.5-linux-x86_64.tar.gz`
+- Checksums: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.5-SHA256SUMS.txt`
 
-QSDM Hive 1.3.91 and newer bundles Edge Control 1.3.4, Agent 1.3.4, and the CUDA helper. Standalone bundles are for additional laboratory computers.
+QSDM Hive 1.3.95 bundles Edge Control 1.3.5, Agent 1.3.5, and the CUDA helper. Standalone bundles are for additional laboratory computers.
 
 ## Edge Control GUI
 
@@ -114,7 +114,7 @@ qsdm-edge-agent.exe configure-agent `
 
 The current CUDA helper requires NVIDIA Turing or newer, compute capability 7.5+, and a working NVIDIA driver. GPU Edge Worker is shared compute and is separate from QSDM protocol mining.
 
-`--background` detaches the process without a visible console window. `--silent` writes only to the log file. Agent 1.3.4 re-registers after a Relay restart and retries a completed result until its exactly-once receipt is acknowledged.
+`--background` detaches the process without a visible console window. `--silent` writes only to the log file. Agent 1.3.5 re-registers after a Relay restart and retries a completed result until its exactly-once receipt is acknowledged.
 
 Linux agents can run silently in the same way:
 

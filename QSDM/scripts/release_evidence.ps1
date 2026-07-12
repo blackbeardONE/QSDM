@@ -13,8 +13,8 @@
 #                            pkg/audit/checklist.go (reviewer-facing).
 #   03_go_mod_verify.txt   - `go mod verify` (cryptographic check of
 #                            every module in go.sum).
-#   04_govulncheck.txt     - reachable-call-graph CVE scan. The
-#                            allowlist is intentionally empty.
+#   04_govulncheck.txt     - imported-package / reachable-symbol CVE
+#                            scan. The allowlist is intentionally empty.
 #   05_go_vet.txt          - default + soak-tag vet sweep.
 #   06_go_test_full.txt    - `go test ./... -count=1` (non-`-short`),
 #                            tail captured. Pass/fail per package.
@@ -166,15 +166,16 @@ Invoke-CaptureStep '03_go_mod_verify.txt' 'go mod verify (cryptographic)' {
     }
 }
 
-# 04 - govulncheck reachable scan.
+# 04 - govulncheck affected package/symbol scan.
 if ($Quick) {
     "# skipped (-Quick)" | Set-Content -Path (Join-Path $OutDir '04_govulncheck.txt') -Encoding utf8
 } else {
-    Invoke-CaptureStep '04_govulncheck.txt' 'govulncheck ./... (reachable findings)' {
+    Invoke-CaptureStep '04_govulncheck.txt' 'govulncheck ./... (affected package/symbol findings)' {
         Push-Location $sourceDir
         try {
             $env:CGO_ENABLED = '0'
-            & go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+            $goExe = (Get-Command go -ErrorAction Stop).Source
+            & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'govulncheck-filter.ps1') -GoExe $goExe
         } finally {
             Pop-Location
         }
@@ -328,7 +329,7 @@ $manifestLines += '#                            via cmd/auditreport -input <revi
 $manifestLines += '#  2. 03_go_mod_verify    - must end "all modules verified".'
 $manifestLines += '#  3. 04_govulncheck      - must report zero reachable findings.'
 $manifestLines += '#  4. 06_go_test_full     - last lines must show ok / no FAIL.'
-$manifestLines += '#  5. 09_binaries         - every cmd should report go1.25.11+ banner.'
+$manifestLines += '#  5. 09_binaries         - every cmd should report go1.25.12+ banner.'
 $manifestLines += '#  6. 10_soak_summary     - mempool + pubsub soaks PASS at >= 10 min.'
 $manifestLines -join "`r`n" | Set-Content -Path $manifestPath -Encoding utf8
 

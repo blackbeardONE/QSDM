@@ -5,8 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Public audit — QSDM · Cell (CELL)</title>
 <meta name="description" content="QSDM public audit checklist. Live score, evidence provenance breakdown, and the four wall-clock-blocked rows with their engagement-ready wrapper artefacts. Sourced from /api/v1/audit/summary and /api/v1/audit/items — the same JSON the SDK and dashboard tile consume." />
-<meta name="theme-color" content="#07171d" />
+<meta name="theme-color" content="#061116" />
 <link rel="icon" href="/assets/qsdm-hive-icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/assets/site.css" />
+
 <!--
   JSON-LD structured data — schema.org Dataset. Registers the QSDM
   public audit checklist with crawlers (Google, Bing, etc.) as a
@@ -166,21 +171,26 @@
    *     surface; mutation happens in the source tree via PR.
    */
   :root {
-    --bg: #07171d;
-    --panel: #102f38;
-    --panel-2: #173d48;
-    --border: rgba(142, 220, 224, .18);
+    --bg: #061116;
+    --bg-2: #0a1f26;
+    --panel: #0c242c;
+    --panel-2: #12323c;
+    --border: rgba(142, 220, 224, 0.16);
     --text: #f4fbfd;
-    --text-2: #adc6cc;
-    --muted: #7fa3aa;
+    --text-2: rgba(244, 251, 253, 0.62);
+    --muted: rgba(173, 198, 204, 0.72);
+    --gold: #d6b75f;
+    --teal: #8edce0;
     --accent: #d6b75f;
     --accent-2: #8edce0;
     --accent-3: #8edce0;
+    --ink: #061116;
     --danger: #ff6b6b;
     --warn: #ffb454;
     --success: #3ddc97;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+    --warning: #e8c547;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: "Outfit", system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
@@ -199,7 +209,7 @@
   .panel {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: 8px;
     padding: 22px 24px;
   }
   .panel-tight { padding: 16px 18px; }
@@ -212,10 +222,10 @@
   }
 
   /* score panel */
-  .score-big { font-family: var(--mono); font-size: 64px; font-weight: 700; letter-spacing: -1.5px; line-height: 1; }
+  .score-big { font-family: var(--mono); font-size: 64px; font-weight: 700; letter-spacing: 0; line-height: 1; }
   .score-big .small { font-size: 22px; color: var(--text-2); font-weight: 500; margin-left: 8px; }
   .bucket-tile {
-    background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
     padding: 12px 14px;
   }
   .bucket-tile .label { color: var(--text-2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px; font-weight: 600; margin-bottom: 4px; }
@@ -325,7 +335,7 @@
 
   .blocking-card {
     padding: 14px 16px; margin: 8px 0;
-    border-radius: 10px;
+    border-radius: 8px;
     background: rgba(255,180,84,0.05);
     border: 1px solid #3a2a14;
   }
@@ -333,7 +343,7 @@
   .blocking-card .meta { color: var(--text-2); font-size: 12.5px; margin-top: 6px; display: flex; gap: 10px; flex-wrap: wrap; }
 
   .meter { background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; height: 10px; overflow: hidden; margin-top: 8px; }
-  .meter .fill { height: 100%; background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%); transition: width 0.3s ease; }
+  .meter .fill { height: 100%; background: var(--accent-2); transition: width 0.3s ease; }
 
   /* Category breakdown panel
    *
@@ -381,7 +391,7 @@
     background: var(--panel);
     border: 1px solid var(--border);
     border-left: 3px solid var(--border);
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 12px 14px;
     cursor: pointer;
     user-select: none;
@@ -456,24 +466,42 @@
 </style>
 </head>
 <body>
-<header>
-  <div class="container">
-    <a class="brand" href="/">
-      <svg viewBox="0 0 64 64" aria-hidden="true">
-        <rect width="64" height="64" rx="12" fill="#07171d"/>
-        <path d="M12 32l10-10 10 10-10 10z" fill="#d6b75f"/>
-        <path d="M32 20l10 12-10 12-10-12z" fill="#8edce0" opacity=".85"/>
-      </svg>
-      <span>QSDM<span style="color:var(--accent)"> · CELL</span></span>
+<header class="site-header">
+  <div class="site-header-inner">
+    <a class="site-brand" href="/">
+      <img src="/assets/qsdm-hive-icon.png" alt="" />
+      <span>QSDM</span>
     </a>
-    <nav style="display:flex; gap:18px; font-size:14px;">
-      <a href="/">← Back to landing</a>
-      <a href="/trust.html">Trust</a>
-      <a href="/validators.html">Validators</a>
+    <nav class="site-nav" aria-label="Primary">
+      <a href="/">Home</a>
+      <a href="/wallet.html">Wallet</a>
       <a href="/explorer.html">Explorer</a>
       <a href="/chain.html">Chain</a>
-      <a href="/wallet.html">Wallet</a>
+      <a href="/validators.html">Validators</a>
+      <a href="/docs/">Docs</a>
+      <a href="/audit.html" class="active">Audit</a>
+      <a href="/trust.html">Trust</a>
+      <a href="/api.html">API</a>
     </nav>
+    <div class="site-actions">
+      <a class="site-btn site-btn-ghost" href="/wallet.html">Wallet</a>
+      <a class="site-btn site-btn-solid" href="/download.html">Download</a>
+      <button class="site-menu-toggle" type="button" id="siteMenuToggle" aria-label="Open menu" aria-expanded="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 7H4V5H20V7ZM20 13H4V11H20V13ZM20 19H4V17H20V19Z"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="site-mobile-nav" id="siteMobileNav">
+    <a href="/">Home</a>
+    <a href="/wallet.html">Wallet</a>
+    <a href="/explorer.html">Explorer</a>
+    <a href="/chain.html">Chain</a>
+    <a href="/validators.html">Validators</a>
+    <a href="/docs/">Docs</a>
+    <a href="/audit.html">Audit</a>
+    <a href="/trust.html">Trust</a>
+    <a href="/api.html">API</a>
+    <a href="/download.html">Download</a>
   </div>
 </header>
 
@@ -1316,5 +1344,6 @@ GET https://api.qsdm.tech/api/v1/audit/badge.svg   # equivalent</code></pre>
   setInterval(function() { loadSummary(); loadItems(); }, 60000);
 })();
 </script>
+  <script src="/assets/site-nav.js"></script>
 </body>
 </html>

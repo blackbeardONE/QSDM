@@ -5,25 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Chain status — QSDM · Cell (CELL)</title>
 <meta name="description" content="Live status of the QSDM testnet: chain tip, block reward emission, active GPU enrollments, recent blocks." />
-<meta name="theme-color" content="#07171d" />
+<meta name="theme-color" content="#061116" />
 <link rel="icon" href="/assets/qsdm-hive-icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/assets/site.css" />
+
 <style>
   :root {
-    --bg: #07171d;
-    --panel: #102f38;
-    --panel-2: #173d48;
-    --border: rgba(142, 220, 224, .18);
+    --bg: #061116;
+    --bg-2: #0a1f26;
+    --panel: #0c242c;
+    --panel-2: #12323c;
+    --border: rgba(142, 220, 224, 0.16);
     --text: #f4fbfd;
-    --text-2: #adc6cc;
-    --muted: #7fa3aa;
+    --text-2: rgba(244, 251, 253, 0.62);
+    --muted: rgba(173, 198, 204, 0.72);
+    --gold: #d6b75f;
+    --teal: #8edce0;
     --accent: #d6b75f;
     --accent-2: #8edce0;
     --accent-3: #8edce0;
-    --success: #3ddc97;
-    --warn: #ffb454;
+    --ink: #061116;
     --danger: #ff6b6b;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+    --warn: #ffb454;
+    --success: #3ddc97;
+    --warning: #e8c547;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: "Outfit", system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--sans); line-height: 1.5; }
@@ -36,12 +46,12 @@
     white-space: pre-wrap; word-break: break-all;
   }
   .container { max-width: 1080px; margin: 0 auto; padding: 36px 20px; }
-  header { border-bottom: 1px solid var(--border); background: rgba(7,23,29,.72); backdrop-filter: saturate(140%) blur(10px); position: sticky; top: 0; z-index: 10; }
+  header { border-bottom: 1px solid var(--border); background: rgba(6,17,22,.82); backdrop-filter: saturate(140%) blur(10px); position: sticky; top: 0; z-index: 10; }
   header .container { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; }
   .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 700; }
   .brand svg { width: 26px; height: 26px; }
   .brand .plus { color: var(--accent); }
-  h1 { font-size: 34px; line-height: 1.1; margin: 0 0 10px; letter-spacing: -0.01em; }
+  h1 { font-size: 34px; line-height: 1.1; margin: 0 0 10px; letter-spacing: 0; }
   h2 { font-size: 20px; margin: 30px 0 8px; }
   h3 { font-size: 16px; margin: 20px 0 6px; color: var(--text-2); font-weight: 700; letter-spacing: .3px; text-transform: uppercase; }
   .lede { color: var(--text-2); font-size: 17px; max-width: 740px; }
@@ -52,14 +62,14 @@
     margin-top: 18px;
   }
   .panel {
-    background: linear-gradient(180deg, var(--panel), var(--panel-2));
-    border: 1px solid var(--border); border-radius: 12px; padding: 22px 24px;
+    background: var(--panel);
+    border: 1px solid var(--border); border-radius: 8px; padding: 22px 24px;
     box-shadow: 0 10px 30px -12px rgba(0,0,0,.55); margin-top: 18px;
   }
-  .panel.hl { border-color: rgba(214,183,95,.35); background: linear-gradient(180deg, rgba(214,183,95,.06), var(--panel-2)); }
+  .panel.hl { border-color: rgba(214,183,95,.35); background: var(--panel-2); }
   .stat-card {
-    background: linear-gradient(180deg, var(--panel), var(--panel-2));
-    border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+    background: var(--panel);
+    border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px;
   }
   .stat-card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; }
   .stat-card .value { color: var(--text); font-family: var(--mono); font-size: 22px; font-weight: 600; }
@@ -101,7 +111,7 @@
   }
   .lookup input:focus { border-color: var(--accent-2); outline: none; }
   .lookup button {
-    background: var(--accent); color: #07171d; font-weight: 700; border: 0;
+    background: var(--gold, var(--accent)); color: var(--ink, #061116); font-weight: 700; border: 0;
     padding: 9px 16px; border-radius: 6px; cursor: pointer; font-family: var(--sans);
   }
   .lookup button:hover { filter: brightness(1.05); }
@@ -131,7 +141,7 @@
     padding: 14px 18px; margin: 20px 0;
     border: 1px solid var(--border); border-left: 3px solid var(--accent-3);
     background: rgba(142,220,224,0.05);
-    border-radius: 10px;
+    border-radius: 8px;
   }
   .audit-callout .audit-callout-badge {
     flex: 0 0 auto;
@@ -149,22 +159,42 @@
 </style>
 </head>
 <body>
-<header>
-  <div class="container">
-    <a class="brand" href="/">
-      <svg viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#07171d"/><path d="M12 32l10-10 10 10-10 10z" fill="#d6b75f"/><path d="M32 20l10 12-10 12-10-12z" fill="#8edce0" opacity=".85"/></svg>
-      <span>QSDM<span class="plus">+</span></span>
+<header class="site-header">
+  <div class="site-header-inner">
+    <a class="site-brand" href="/">
+      <img src="/assets/qsdm-hive-icon.png" alt="" />
+      <span>QSDM</span>
     </a>
-    <nav class="subnav">
+    <nav class="site-nav" aria-label="Primary">
       <a href="/">Home</a>
       <a href="/wallet.html">Wallet</a>
       <a href="/explorer.html">Explorer</a>
+      <a href="/chain.html" class="active">Chain</a>
       <a href="/validators.html">Validators</a>
+      <a href="/docs/">Docs</a>
       <a href="/audit.html">Audit</a>
       <a href="/trust.html">Trust</a>
-      <a href="/chain.html" class="active">Chain</a>
-      <a href="/download.html">Download</a>
+      <a href="/api.html">API</a>
     </nav>
+    <div class="site-actions">
+      <a class="site-btn site-btn-ghost" href="/wallet.html">Wallet</a>
+      <a class="site-btn site-btn-solid" href="/download.html">Download</a>
+      <button class="site-menu-toggle" type="button" id="siteMenuToggle" aria-label="Open menu" aria-expanded="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 7H4V5H20V7ZM20 13H4V11H20V13ZM20 19H4V17H20V19Z"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="site-mobile-nav" id="siteMobileNav">
+    <a href="/">Home</a>
+    <a href="/wallet.html">Wallet</a>
+    <a href="/explorer.html">Explorer</a>
+    <a href="/chain.html">Chain</a>
+    <a href="/validators.html">Validators</a>
+    <a href="/docs/">Docs</a>
+    <a href="/audit.html">Audit</a>
+    <a href="/trust.html">Trust</a>
+    <a href="/api.html">API</a>
+    <a href="/download.html">Download</a>
   </div>
 </header>
 
@@ -585,5 +615,6 @@ refreshAll();
 lookupAccount();
 setInterval(refreshAll, REFRESH_MS);
 </script>
+  <script src="/assets/site-nav.js"></script>
 </body>
 </html>

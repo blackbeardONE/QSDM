@@ -30,26 +30,33 @@ npm test
 
 ## Packaging
 
+Before producing or publishing a package, follow the canonical
+[QSDM Build and Release Guidelines](../../../QSDM/docs/docs/BUILD_AND_RELEASE_GUIDELINES.md).
+They define the cross-platform test matrix, QSDM evidence, version gate,
+artifact integrity, and release-owner signoff.
+
+Use the host-native package command. It rebuilds and verifies the bundled QSDM
+CLI, miner, Edge tools, and CUDA helper before Electron creates an artifact:
+
 ```sh
 npm run package
 ```
 
-Packaged builds are written to `release/build/`.
+Windows artifacts are written to `release/build/`. Linux artifacts are written
+to `release/build-linux/` and must be built on Linux. Direct Electron Builder
+publishing is disabled; the release host publishes a verified Windows/Linux set
+with `QSDM/deploy/scripts/publish_hive_release.sh`.
+
+Production Windows packaging requires a trusted, timestamped Authenticode
+identity whose publisher is `QSDM`. `npm run package` fails closed when any
+required executable is unsigned. `npm run package:windows:unsigned` exists only
+for local smoke testing and must never be published or placed behind an updater
+manifest.
 
 ## Support
 
 - Documentation: https://qsdm.tech/docs
 - Website and support: https://qsdm.tech
-
-## Orca
-
-In QSDM Hive, go to Settings > Task Extensions and install Orca. If automatic installation fails, use the manual instructions at https://docs.chaindeck.io/orcaNode.
-
-On Linux, virtualization support may require qemu:
-
-```sh
-apt install qemu-system
-```
 
 ## License
 

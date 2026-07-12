@@ -1,8 +1,8 @@
 /* QSDM Docs SPA
  *
  * - Hash-based router (#/slug)
- * - Sidebar TOC is a curated, hand-ordered manifest of the ~70 .md files
- *   under QSDM/docs/docs/ (+ runbooks/).
+ * - Sidebar TOC is a curated, hand-ordered manifest of the docs under
+ *   QSDM/docs/docs/ (+ runbooks/ and a few source/docs paths).
  * - Markdown is fetched at runtime from raw.githubusercontent.com main, so
  *   docs are always current without a redeploy.
  * - Renders with markdown-it (vendored locally at /docs/lib/markdown-it.min.js).
@@ -73,7 +73,7 @@
             "2. Run `chmod +x qsdm-hive-*-linux-x86_64.AppImage`.",
             "3. Start it with `./qsdm-hive-*-linux-x86_64.AppImage`.",
             "",
-            "Hive expects desktop Linux with GTK 3. Linux Hive reads chain height, wallet balances, mining accounts, and rewards directly from canonical QSDM Core. Operator task metadata and projected task state use the restricted home-validator gateway, so ordinary users do not install or run a local Core. Version 1.3.93 bundles the native `qsdmcli` signer, `qsdmminer-console`, CUDA protocol solver, Edge Control 1.3.4, Agent 1.3.4, and the CUDA edge helper. QSDM Hive is the only desktop client; Edge Control, Agent, and Relay are support utilities. Hive has a dedicated Mother Hive workspace for secure Relay pairing, Agent discovery, pooled CPU/GPU/RAM visibility, chain-settlement identity, task controls, and an authenticated loopback Compute Gateway for applications. The Miner task requires CUDA proof solving, fails closed instead of silently using CPU, serializes concurrent launch requests, and adopts a compatible packaged CUDA miner across Linux AppImage mount changes instead of starting a duplicate process. Signed task actions are submitted to canonical QSDM Core even when Hive reads through a local follower or home gateway, and retry transient gateway failures with the same signed action ID, making a lost response safe without double-staking. Transient route failures show Reconnecting, retain the last confirmed values, and require two failures before a short outage circuit opens. Recently healthy APIs are not quarantined by one slow sibling route, while actual chain mismatches still fail closed. Wallet keys and signatures stay local. Hive verifies pinned genesis and a recent common block before value-bearing actions. Isolated, stale, ahead, divergent, or unverifiable ledgers cannot submit CELL transfers, stakes, rewards, referrals, faucet grants, or miner enrollment. Mining work and proofs use the canonical reward producer. Validator operators can explicitly set `QSDM_CORE_API_URL=http://127.0.0.1:8080/api/v1`; private-network overrides remain available. Mining does not require a Sky Fang account.",
+            "Hive expects desktop Linux with GTK 3. Linux Hive reads chain height, wallet balances, mining accounts, and rewards directly from canonical QSDM Core. Operator task metadata and projected task state use the restricted home-validator gateway, so ordinary users do not install or run a local Core. Version 1.3.95 bundles the native `qsdmcli` signer, `qsdmminer-console`, CUDA protocol solver, Edge Control 1.3.5, Agent 1.3.5, and the CUDA edge helper. QSDM Hive is the only desktop client; Edge Control, Agent, and Relay are support utilities. Hive has a dedicated Mother Hive workspace for secure Relay pairing, Agent discovery, pooled CPU/GPU/RAM visibility, chain-settlement identity, task controls, and an authenticated loopback Compute Gateway for applications. The Miner task requires CUDA proof solving, fails closed instead of silently using CPU, serializes concurrent launch requests, and adopts a compatible packaged CUDA miner across Linux AppImage mount changes instead of starting a duplicate process. Signed task actions are submitted to canonical QSDM Core even when Hive reads through a local follower or home gateway, and retry transient gateway failures with the same signed action ID, making a lost response safe without double-staking. Transient route failures show Reconnecting, retain the last confirmed values, and require two failures before a short outage circuit opens. Recently healthy APIs are not quarantined by one slow sibling route, while actual chain mismatches still fail closed. Wallet keys and signatures stay local. Hive verifies pinned genesis and a recent common block before value-bearing actions. Isolated, stale, ahead, divergent, or unverifiable ledgers cannot submit CELL transfers, stakes, rewards, referrals, faucet grants, or miner enrollment. Mining work and proofs use the canonical reward producer. Validator operators can explicitly set `QSDM_CORE_API_URL=http://127.0.0.1:8080/api/v1`; private-network overrides remain available. Mining does not require a Sky Fang account.",
             "",
             "## Wallet backup",
             "",
@@ -114,6 +114,7 @@
             "- [Sky Fang integration notes](https://skyfang.xyz/docs)",
             "- [Miner quickstart](#/miner-quickstart)",
             "- [Pooled edge-compute guide](#/edge-pool)",
+            "- [Mother Hive federation design](#/edge-federation)",
             "- [Wallet explanation](#/wallet-explanation)"
           ].join("\n")
         },
@@ -133,11 +134,30 @@
             "- The gross workload-revenue split is enforced by QSDM Core: 70% contributor-owner, 15% Mother Hive operator, and the remaining 15% ecosystem reserve. The fixed reserve address is `651a79b2b1790820dd73bda81be24057e1bc27377c1f1117c6db2ab79dc038ea`. Settlement fails closed unless the task pool is funded and the signed Relay fingerprint is authorized by the task manager on-chain.",
             "- This model is for a trusted private LAN, not anonymous internet enrollment.",
             "",
-            "Hive 1.3.93 bundles Edge Control 1.3.4, Agent 1.3.4, and the CUDA helper. Additional computers can use [Edge Control 1.3.4 for Windows](/downloads/qsdm-edge-agent-1.3.4-windows-x86_64.zip) or [Edge Control 1.3.4 for Linux](/downloads/qsdm-edge-agent-1.3.4-linux-x86_64.tar.gz). Open Edge Control, choose Relay on the coordinating computer, copy its Agent pairing code, then paste that code on each Agent computer. Copy the separate Mother Hive pairing code into Hive's **Mother Hive** page; Agent credentials are rejected there. New Relay setups default to 50% CPU, 40% GPU, and 25% RAM. Existing policies remain unchanged, and Hive warns when any paired Relay policy reaches 90% because 100% limits can make an interactive workstation unresponsive. CPU, NVIDIA GPU, and RAM limits are sliders; CLI commands remain available for automation. Linux also includes supervised Agent and Relay services, automatic re-registration after Relay restarts, exactly-once durable receipts, and a durable application queue exposed through Hive's authenticated loopback gateway.",
+            "Hive 1.3.95 bundles Edge Control 1.3.5, Agent 1.3.5, and the CUDA helper. Additional computers can use [Edge Control 1.3.5 for Windows](/downloads/qsdm-edge-agent-1.3.5-windows-x86_64.zip) or [Edge Control 1.3.5 for Linux](/downloads/qsdm-edge-agent-1.3.5-linux-x86_64.tar.gz). Open Edge Control, choose Relay on the coordinating computer, copy its Agent pairing code, then paste that code on each Agent computer. Copy the separate Mother Hive pairing code into Hive's **Mother Hive** page; Agent credentials are rejected there. New Relay setups default to 50% CPU, 40% GPU, and 25% RAM. Existing policies remain unchanged, and Hive warns when any paired Relay policy reaches 90% because 100% limits can make an interactive workstation unresponsive. CPU, NVIDIA GPU, and RAM limits are sliders; CLI commands remain available for automation. Linux also includes supervised Agent and Relay services, automatic re-registration after Relay restarts, exactly-once durable receipts, and a durable application queue exposed through Hive's authenticated loopback gateway.",
             "",
-            "Applications use the packaged `qsdm-edge-agent compute submit`, `compute list`, and `compute status` commands or the loopback HTTP API. Uploaded code, scripts, commands, and binaries are rejected by design.",
+            "Hive 1.3.94 adds a Virtual Compute Runtime workbench for resource discovery, bounded CPU/GPU/RAM submission, cancellation, Agent assignment, duration, and verified receipt status. Applications use the packaged `qsdm-edge-agent compute submit`, `compute list`, and `compute status` commands or the loopback HTTP API. Uploaded code, scripts, commands, and binaries are rejected by design.",
             "",
-            "See the repository guide for setup commands, resource limits, firewall guidance, and status checks."
+            "This is a logical schedulable pool, not operating-system hardware projection. See the repository guide for setup commands, resource limits, firewall guidance, and status checks, and see [Mother Hive federation](#/edge-federation) for the private cross-location pilot."
+          ].join("\n")
+        },
+        {
+          slug: "edge-federation",
+          title: "Mother Hive federation",
+          repoPath: DOCS_PREFIX_REPO + "/EDGE_FEDERATION.md",
+          badge: "pilot",
+          inlineMarkdown: [
+            "# Mother Hive Internet Federation",
+            "",
+            "Status: private HTTPS federation pilot. Public provider discovery, Core escrow leases, and marketplace settlement are not enabled yet.",
+            "",
+            "A Mother Hive can consume capacity from another location, but it cannot target an arbitrary Hive by IP. The provider explicitly creates a 24-hour QSDM-EDGE-2 invitation for an HTTPS Relay, and the consumer imports it in Hive.",
+            "",
+            "`Provider Agents -> Provider HTTPS Relay <- Consumer Mother Hive; signed settlement proof -> QSDM Core`",
+            "",
+            "The invitation contains a workload-scoped credential derived from the Relay's private Mother Hive key. Hive and Relay reject expired, overlong, non-canonical, or unsupported workload contexts. The permanent LAN credential is never copied into an internet invitation.",
+            "",
+            "The pilot is for a dedicated fixed-trust provider/consumer relationship and reviewed one-hop workloads. Imported capacity cannot be re-advertised, and remote resources are not presented as ordinary local RAM or a CUDA device. Use the future marketplace only after Core reservation, escrow, gateway routing, quotas, and independent security review are complete."
           ].join("\n")
         },
         {
@@ -179,7 +199,18 @@
         {
           slug: "referral-reward-security",
           title: "Referral reward security",
-          repoPath: DOCS_PREFIX_REPO + "/REFERRAL_REWARD_POOL_SECURITY.md",
+          repoPath: "QSDM/source/docs/docs/REFERRAL_REWARD_POOL_SECURITY.md"
+        },
+        {
+          slug: "task-registry",
+          title: "Task registry",
+          repoPath: DOCS_PREFIX_REPO + "/QSDM_TASK_REGISTRY.md",
+          badge: "new"
+        },
+        {
+          slug: "tray-monitor",
+          title: "Tray monitor (Windows)",
+          repoPath: "apps/qsdm-tray-monitor/README.md",
           badge: "new"
         },
       ],
@@ -189,9 +220,9 @@
       items: [
         { slug: "web-wallet",         title: "Web wallet",                       repoPath: DOCS_PREFIX_REPO + "/WEB_WALLET.md" },
         { slug: "wallet-explanation", title: "How the wallet works",             repoPath: DOCS_PREFIX_REPO + "/WALLET_EXPLANATION.md" },
-        { slug: "wallet-send",        title: "Send transaction (v0.4)",          repoPath: DOCS_PREFIX_REPO + "/V040_WALLET_SEND_DESIGN.md", badge: "new" },
+        { slug: "wallet-send",        title: "Send transaction (v0.4)",          repoPath: DOCS_PREFIX_REPO + "/V040_WALLET_SEND_DESIGN.md" },
         { slug: "p2p-wallet-ingress", title: "P2P wallet tx ingress",            repoPath: DOCS_PREFIX_REPO + "/P2P_WALLET_TX_INGRESS.md" },
-        { slug: "replay-protection",  title: "Replay protection (v0.4.1)",       repoPath: DOCS_PREFIX_REPO + "/V041_REPLAY_PROTECTION_DESIGN.md", badge: "beta" },
+        { slug: "replay-protection",  title: "Replay protection (v0.4.1)",       repoPath: DOCS_PREFIX_REPO + "/V041_REPLAY_PROTECTION_DESIGN.md" },
       ],
     },
     {
@@ -214,6 +245,7 @@
         { slug: "validator-quickstart", title: "Validator quickstart",           repoPath: DOCS_PREFIX_REPO + "/VALIDATOR_QUICKSTART.md" },
         { slug: "attester-quickstart",  title: "Attester quickstart",            repoPath: DOCS_PREFIX_REPO + "/ATTESTER_QUICKSTART.md" },
         { slug: "operator-guide",       title: "Operator guide",                 repoPath: DOCS_PREFIX_REPO + "/OPERATOR_GUIDE.md" },
+        { slug: "home-gateway",         title: "Home gateway",                   repoPath: DOCS_PREFIX_REPO + "/HOME_GATEWAY.md", badge: "new" },
         { slug: "production-deploy",    title: "Production deployment",          repoPath: DOCS_PREFIX_REPO + "/PRODUCTION_DEPLOYMENT.md" },
         { slug: "production-readiness", title: "Production readiness",           repoPath: DOCS_PREFIX_REPO + "/PRODUCTION_READINESS.md" },
         { slug: "ubuntu-deploy",        title: "Ubuntu deployment",              repoPath: DOCS_PREFIX_REPO + "/UBUNTU_DEPLOYMENT.md" },
@@ -252,19 +284,19 @@
       title: "Reference",
       items: [
         { slug: "api-reference",         title: "API reference",                 repoPath: DOCS_PREFIX_REPO + "/API_REFERENCE.md" },
-        { slug: "api-versioning",        title: "API versioning",                repoPath: DOCS_PREFIX_REPO + "/API_VERSIONING.md", badge: "new" },
+        { slug: "api-versioning",        title: "API versioning",                repoPath: DOCS_PREFIX_REPO + "/API_VERSIONING.md" },
         { slug: "api-security",          title: "API security",                  repoPath: DOCS_PREFIX_REPO + "/API_SECURITY.md" },
         { slug: "cli-phase2",            title: "Phase 2 CLI guide",             repoPath: DOCS_PREFIX_REPO + "/PHASE2_CLI_USER_GUIDE.md" },
         { slug: "troubleshooting",       title: "Troubleshooting",               repoPath: DOCS_PREFIX_REPO + "/TROUBLESHOOTING.md" },
-        { slug: "security-audit",        title: "Security audit",                repoPath: DOCS_PREFIX_REPO + "/SECURITY_AUDIT.md", badge: "updated" },
+        { slug: "security-audit",        title: "Security audit",                repoPath: DOCS_PREFIX_REPO + "/SECURITY_AUDIT.md" },
         { slug: "comparative",           title: "Comparative analysis",          repoPath: DOCS_PREFIX_REPO + "/COMPARATIVE_ANALYSIS.md" },
         { slug: "final-comparison",      title: "Final comparison",              repoPath: DOCS_PREFIX_REPO + "/FINAL_COMPARISON.md" },
-        { slug: "release-evidence-042",  title: "Release evidence v0.4.2",       repoPath: DOCS_PREFIX_REPO + "/RELEASE_EVIDENCE_v0.4.2.md", badge: "new" },
+        { slug: "release-evidence-042",  title: "Release evidence v0.4.2",       repoPath: DOCS_PREFIX_REPO + "/RELEASE_EVIDENCE_v0.4.2.md" },
         { slug: "release-evidence-041",  title: "Release evidence v0.4.1",       repoPath: DOCS_PREFIX_REPO + "/RELEASE_EVIDENCE_v0.4.1.md" },
         { slug: "release-evidence-040",  title: "Release evidence v0.4.0",       repoPath: DOCS_PREFIX_REPO + "/RELEASE_EVIDENCE_v0.4.0.md" },
         { slug: "release-evidence-033",  title: "Release evidence v0.3.3",       repoPath: DOCS_PREFIX_REPO + "/RELEASE_EVIDENCE_v0.3.3.md" },
         { slug: "release-evidence",      title: "Release evidence (rollup)",     repoPath: DOCS_PREFIX_REPO + "/RELEASE_EVIDENCE.md" },
-        { slug: "docs-portal-evidence",  title: "Docs portal ship log",          repoPath: DOCS_PREFIX_REPO + "/DOCS_PORTAL_EVIDENCE.md", badge: "new" },
+        { slug: "docs-portal-evidence",  title: "Docs portal ship log",          repoPath: DOCS_PREFIX_REPO + "/DOCS_PORTAL_EVIDENCE.md" },
         { slug: "v030-postrelease",      title: "v0.3.0 post-release verify",    repoPath: DOCS_PREFIX_REPO + "/V030_POST_RELEASE_VERIFICATION.md" },
       ],
     },
@@ -290,6 +322,13 @@
         { slug: "runbooks/contracts-bridge",     title: "Contracts/bridge incident",     repoPath: DOCS_PREFIX_REPO + "/runbooks/CONTRACTS_BRIDGE_INCIDENT.md" },
         { slug: "runbooks/stub-deployment",      title: "Stub deployment incident",      repoPath: DOCS_PREFIX_REPO + "/runbooks/STUB_DEPLOYMENT_INCIDENT.md" },
         { slug: "runbooks/operator-hygiene",     title: "Operator hygiene incident",     repoPath: DOCS_PREFIX_REPO + "/runbooks/OPERATOR_HYGIENE_INCIDENT.md" },
+        { slug: "runbooks/deployment-topology",  title: "Deployment topology",           repoPath: DOCS_PREFIX_REPO + "/runbooks/DEPLOYMENT_TOPOLOGY.md" },
+        { slug: "runbooks/security-incident",    title: "Security incident",             repoPath: DOCS_PREFIX_REPO + "/runbooks/SECURITY_INCIDENT.md" },
+        { slug: "runbooks/jwt-key-rotation",     title: "JWT key rotation",              repoPath: DOCS_PREFIX_REPO + "/runbooks/JWT_KEY_ROTATION.md" },
+        { slug: "runbooks/mtls-cert-rotation",   title: "mTLS cert rotation",            repoPath: DOCS_PREFIX_REPO + "/runbooks/MTLS_CERT_ROTATION.md" },
+        { slug: "runbooks/scylla-auth-rotation", title: "Scylla auth rotation",          repoPath: DOCS_PREFIX_REPO + "/runbooks/SCYLLA_AUTH_ROTATION.md" },
+        { slug: "runbooks/bridge-secret-rotation", title: "Bridge secret rotation",      repoPath: DOCS_PREFIX_REPO + "/runbooks/BRIDGE_SECRET_ROTATION.md" },
+        { slug: "runbooks/wallet-friendly-name", title: "Wallet friendly-name migration", repoPath: DOCS_PREFIX_REPO + "/runbooks/WALLET_FRIENDLY_NAME_MIGRATION.md" },
       ],
     },
     {
@@ -502,14 +541,15 @@
       + '<div class="doc-welcome">'
       + '<h1>QSDM knowledge base</h1>'
       + '<p>Quickstarts, runbooks, protocol design, and reference for the '
-      + '<strong>Quantum-Secure Dynamic Mesh Ledger</strong>. Everything you '
-      + 'need to use QSDM Hive, self-custody CELL, run integrations, mine on NVIDIA hardware, join CPU shared edge tasks, or operate a validator.</p>'
+      + '<strong>Quantum-Secure Dynamic Mesh Ledger</strong>. Use QSDM Hive, self-custody CELL, '
+      + 'mine on NVIDIA hardware, run Mother Hive edge pools, operate a home gateway, or run a validator.</p>'
       + '<div class="welcome-cards">'
-      + cardHtml("quick-start",        "Quick start",        "Get a local node + wallet running in 5 minutes.")
-      + cardHtml("qsdm-hive",          "QSDM Hive",          "Windows and Linux client for CELL wallets, tasks, integrations, and mining paths.")
-      + cardHtml("sky-fang-online",    "Sky Fang - MMORPG",  "Play-to-earn MMORPG integration powered by QSDM and CELL.")
-      + cardHtml("miner-quickstart",   "Mine on NVIDIA",     "Run the optional miner task if your GPU and signer qualify.")
-      + cardHtml("validator-quickstart","Run a validator",   "CPU-only validator, attestation sidecars, NGC submission.")
+      + cardHtml("feature-summary",    "Feature summary",    "Current shipped capabilities across Core, Hive, mining, and edge.")
+      + cardHtml("operator-guide",     "Operator guide",     "Pick a role, hardware path, and bootstrap peer.")
+      + cardHtml("qsdm-hive",          "QSDM Hive",          "Windows and Linux client for CELL wallets, tasks, mining, and edge.")
+      + cardHtml("home-gateway",       "Home gateway",       "Publish mining/status without exposing wallet or admin APIs.")
+      + cardHtml("miner-quickstart",   "Mine on NVIDIA",     "Protocol v2 miner path for Turing-or-newer GPUs.")
+      + cardHtml("edge-pool",          "Edge pool",          "Agent → Relay → Mother Hive → Core settlement model.")
       + cardHtml("web-wallet",         "Web wallet",         "ML-DSA-87 self-custody in the browser, no extension.")
       + cardHtml("api-reference",      "API reference",      "Public HTTP endpoints with auth + replay semantics.")
       + cardHtml("runbooks/index",     "Runbooks",           "Incident response, on-call procedures, recovery.")

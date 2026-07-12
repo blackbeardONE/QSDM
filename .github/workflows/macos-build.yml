@@ -3,8 +3,8 @@
 # Two jobs run in parallel on every push that touches macOS-relevant files:
 #
 #   1. macos-build-no-cgo  (~5min) — `QSDM_NO_CGO=1` pure-Go build on
-#      both Apple Silicon (`macos-14`, arm64) and Intel (`macos-13`,
-#      amd64). Smoke-checks `--version` so a regression in
+#      both Apple Silicon (`macos-15`, arm64) and Intel
+#      (`macos-15-intel`, amd64). Smoke-checks `--version` so a regression in
 #      `pkg/buildinfo` wiring is caught.
 #
 #   2. macos-build-cgo     (~12min) — full CGO + liboqs build via
@@ -51,9 +51,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-14   # Apple Silicon (arm64)
+          - runner: macos-15   # Apple Silicon (arm64)
             arch: arm64
-          - runner: macos-13   # Intel (amd64)
+          - runner: macos-15-intel   # Intel (amd64)
             arch: amd64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
@@ -96,9 +96,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-14
+          - runner: macos-15
             arch: arm64
-          - runner: macos-13
+          - runner: macos-15-intel
             arch: amd64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30

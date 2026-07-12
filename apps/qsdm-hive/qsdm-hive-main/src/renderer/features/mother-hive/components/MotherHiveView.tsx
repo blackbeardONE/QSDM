@@ -124,8 +124,8 @@ export function MotherHiveView() {
 
   const status = statusQuery.data;
   const relayConnection = status?.relayConnection;
-  const federationMode =
-    relayConnection?.mode === 'internet-federation';
+  const federationMode = relayConnection?.mode === 'internet-federation';
+  const federationExpired = Boolean(federationMode && relayConnection?.expired);
   const federationExpiry = relayConnection?.expiresAt
     ? new Date(relayConnection.expiresAt)
     : null;
@@ -346,6 +346,8 @@ export function MotherHiveView() {
             />
             {statusQuery.isLoading
               ? 'Checking Relay'
+              : federationExpired
+              ? 'Federation invitation expired'
               : status?.connected
               ? federationMode
                 ? 'Federated Relay connected'
@@ -396,6 +398,21 @@ export function MotherHiveView() {
           {status?.detail && (
             <p className="mt-2 text-sm text-white/70">{status.detail}</p>
           )}
+          {federationExpired && (
+            <div
+              role="alert"
+              className="mt-3 flex items-start gap-2 border-l-2 border-finnieOrange bg-finnieOrange/10 px-3 py-2 text-sm text-finnieOrange"
+            >
+              <FontAwesomeIcon
+                icon={faTriangleExclamation}
+                className="mt-0.5"
+              />
+              <span>
+                This federation credential is no longer accepted. Generate a new
+                invitation in QSDM Edge Control and pair it here.
+              </span>
+            </div>
+          )}
           {relayConnection && (
             <div className="mt-4 grid gap-3 rounded-md border border-white/10 bg-finnieBlue-light-transparent p-3 text-xs text-white/70 sm:grid-cols-2 xl:grid-cols-4">
               <div>
@@ -403,7 +420,11 @@ export function MotherHiveView() {
                   <FontAwesomeIcon icon={federationMode ? faGlobe : faServer} />
                   <span>Connection</span>
                 </div>
-                <div className="mt-1 font-semibold text-white">
+                <div
+                  className={`mt-1 font-semibold ${
+                    federationExpired ? 'text-finnieOrange' : 'text-white'
+                  }`}
+                >
                   {federationMode ? 'Internet federation' : 'Private Relay'}
                 </div>
               </div>
@@ -427,7 +448,9 @@ export function MotherHiveView() {
               </div>
               {federationMode && (
                 <div className="sm:col-span-2 xl:col-span-4">
-                  <div className="text-finnieTeal-100">Federation guardrails</div>
+                  <div className="text-finnieTeal-100">
+                    Federation guardrails
+                  </div>
                   <div className="mt-1 grid gap-2 lg:grid-cols-3">
                     <span className="break-all">
                       Provider wallet:{' '}
@@ -454,7 +477,7 @@ export function MotherHiveView() {
             label="Disconnect"
             icon={<FontAwesomeIcon icon={faArrowRightFromBracket} />}
             onClick={() => disconnectMutation.mutate()}
-            disabled={!status?.configured || busy}
+            disabled={busy}
             loading={disconnectMutation.isLoading}
             className="w-[150px] border border-white/20 bg-transparent"
           />

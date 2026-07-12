@@ -73,6 +73,11 @@ type Coordinator struct {
 	settlement          settlementState
 }
 
+type motherAuthentication struct {
+	Token      []byte
+	Federation *FederationContext
+}
+
 // Relay and RelayConfig are the preferred names for new deployments. The
 // coordinator names remain aliases so existing laboratories can upgrade
 // without changing state files or automation in one step.
@@ -510,7 +515,7 @@ func (c *Coordinator) handleComplete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Coordinator) handleStatus(w http.ResponseWriter, r *http.Request) {
-	_, _, ok := c.authenticate(w, r, c.config.MotherToken, "mother")
+	_, _, _, ok := c.authenticateMother(w, r)
 	if !ok {
 		return
 	}
@@ -523,7 +528,7 @@ func (c *Coordinator) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Coordinator) handleLatestProof(w http.ResponseWriter, r *http.Request) {
-	_, _, ok := c.authenticate(w, r, c.config.MotherToken, "mother")
+	_, _, authentication, ok := c.authenticateMother(w, r)
 	if !ok {
 		return
 	}
@@ -534,6 +539,10 @@ func (c *Coordinator) handleLatestProof(w http.ResponseWriter, r *http.Request) 
 	resource := ResourceKind(strings.ToLower(strings.TrimSpace(r.URL.Query().Get("resource"))))
 	if !resource.Valid() {
 		writePoolError(w, http.StatusBadRequest, "resource must be cpu, gpu, or ram")
+		return
+	}
+	if authentication.Federation != nil && !authentication.Federation.AllowsResource(resource) {
+		writePoolError(w, http.StatusForbidden, "federation invitation does not allow this workload")
 		return
 	}
 	c.markMotherSeen()
@@ -550,11 +559,12 @@ func (c *Coordinator) handleLatestProof(w http.ResponseWriter, r *http.Request) 
 		writePoolError(w, http.StatusInternalServerError, "settlement proof could not be prepared")
 		return
 	}
+	proof.Signature = PoolProofSignature(authentication.Token, proof)
 	writePoolJSON(w, http.StatusOK, proof)
 }
 
 func (c *Coordinator) handleSettlementBind(w http.ResponseWriter, r *http.Request) {
-	body, _, ok := c.authenticate(w, r, c.config.MotherToken, "mother")
+	body, _, authentication, ok := c.authenticateMother(w, r)
 	if !ok {
 		return
 	}
@@ -565,6 +575,11 @@ func (c *Coordinator) handleSettlementBind(w http.ResponseWriter, r *http.Reques
 	var request SettlementBindRequest
 	if err := decodePoolJSON(body, &request); err != nil {
 		writePoolError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if authentication.Federation != nil && authentication.Federation.ConsumerWallet != "" &&
+		!strings.EqualFold(authentication.Federation.ConsumerWallet, request.MotherHiveWallet) {
+		writePoolError(w, http.StatusForbidden, "federation invitation is bound to a different Mother Hive wallet")
 		return
 	}
 	binding, err := c.BindSettlement(request, time.Now().UTC())
@@ -581,7 +596,7 @@ func (c *Coordinator) handleSettlementBind(w http.ResponseWriter, r *http.Reques
 }
 
 func (c *Coordinator) handleSettlementAck(w http.ResponseWriter, r *http.Request) {
-	body, _, ok := c.authenticate(w, r, c.config.MotherToken, "mother")
+	body, _, _, ok := c.authenticateMother(w, r)
 	if !ok {
 		return
 	}
@@ -766,6 +781,24 @@ func (c *Coordinator) authenticate(w http.ResponseWriter, r *http.Request, token
 	c.nonces[nonceKey] = now.Add(c.config.MaxClockSkew)
 	c.mu.Unlock()
 	return body, workerID, true
+}
+
+func (c *Coordinator) authenticateMother(w http.ResponseWriter, r *http.Request) ([]byte, string, motherAuthentication, bool) {
+	encodedContext := strings.TrimSpace(r.Header.Get(HeaderFederationContext))
+	if encodedContext == "" {
+		body, workerID, ok := c.authenticate(w, r, c.config.MotherToken, "mother")
+		return body, workerID, motherAuthentication{Token: c.config.MotherToken}, ok
+	}
+	token, contextValue, err := DeriveFederationToken(c.config.MotherToken, encodedContext, time.Now().UTC())
+	if err != nil {
+		writePoolError(w, http.StatusUnauthorized, err.Error())
+		return nil, "", motherAuthentication{}, false
+	}
+	body, workerID, ok := c.authenticate(w, r, token, "mother-federation:"+contextValue.OfferID)
+	if !ok {
+		return nil, "", motherAuthentication{}, false
+	}
+	return body, workerID, motherAuthentication{Token: token, Federation: &contextValue}, true
 }
 
 func (c *Coordinator) markMotherSeen() {

@@ -5,32 +5,38 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>QSDM Wallet — Self-Custody, Quantum-Secure (ML-DSA-87)</title>
 <meta name="description" content="Generate a self-custody QSDM wallet in your browser. ML-DSA-87 (FIPS 204) keypair generated entirely client-side; private key never leaves this tab. PBKDF2-SHA256 (600k iterations) + AES-256-GCM passphrase-encrypted keystore, byte-compatible with `qsdmcli wallet new`. Plus a read-only public-address balance lookup that queries api.qsdm.tech." />
-<meta name="theme-color" content="#07171d" />
+<meta name="theme-color" content="#061116" />
 <meta property="og:title" content="QSDM Wallet — Self-Custody, Quantum-Secure" />
 <meta property="og:description" content="Generate a QSDM (Cell / CELL) reward address in your browser. ML-DSA-87 keys, AES-256-GCM encrypted keystore, zero server-side custody." />
 <meta property="og:type" content="website" />
 <link rel="icon" href="/assets/qsdm-hive-icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/assets/site.css" />
+
 <style>
   :root {
-    --bg: #07171d;
-    --bg-2: #0a252d;
-    --panel: #102f38;
-    --panel-2: #173d48;
-    --border: rgba(142, 220, 224, .18);
+    --bg: #061116;
+    --bg-2: #0a1f26;
+    --panel: #0c242c;
+    --panel-2: #12323c;
+    --border: rgba(142, 220, 224, 0.16);
     --text: #f4fbfd;
-    --text-2: #adc6cc;
-    --muted: #7fa3aa;
+    --text-2: rgba(244, 251, 253, 0.62);
+    --muted: rgba(173, 198, 204, 0.72);
+    --gold: #d6b75f;
+    --teal: #8edce0;
     --accent: #d6b75f;
     --accent-2: #8edce0;
     --accent-3: #8edce0;
+    --ink: #061116;
     --danger: #ff6b6b;
+    --warn: #ffb454;
     --success: #3ddc97;
     --warning: #e8c547;
-    --radius: 14px;
-    --radius-sm: 8px;
-    --shadow: 0 10px 30px -12px rgba(0,0,0,.55);
-    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, "Cascadia Mono", Consolas, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: "Outfit", system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -38,9 +44,7 @@
     font-family: var(--sans);
     color: var(--text);
     background:
-      radial-gradient(1200px 600px at 10% -10%, rgba(214,183,95,.10), transparent 60%),
-      radial-gradient(900px 500px at 100% 0%, rgba(142,220,224,.10), transparent 60%),
-      linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+      var(--bg);
     min-height: 100vh;
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
@@ -54,7 +58,7 @@
   .nav {
     position: sticky; top: 0; z-index: 20;
     backdrop-filter: saturate(140%) blur(10px);
-    background: rgba(7,23,29,.72);
+    background: rgba(6,17,22,.82);
     border-bottom: 1px solid var(--border);
   }
   .nav-inner {
@@ -77,26 +81,25 @@
     background: rgba(142,220,224,.06);
   }
   h1 {
-    font-size: clamp(28px, 4.4vw, 44px); line-height: 1.1; margin: 14px 0 10px;
-    letter-spacing: -0.02em;
-    background: linear-gradient(180deg, #ffffff 0%, #c8d3e6 100%);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
+    font-size: 44px; line-height: 1.1; margin: 14px 0 10px;
+    letter-spacing: 0; overflow-wrap: anywhere;
+    color: var(--text);
   }
-  h1 .accent { background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  h1 .accent { color: var(--accent); }
   .lede { color: var(--text-2); font-size: 17px; max-width: 760px; }
 
   section.panel {
     border: 1px solid var(--border); border-radius: var(--radius);
-    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    background: var(--panel);
     box-shadow: var(--shadow);
     padding: 26px;
     margin: 22px 0;
   }
   section.panel h2 {
-    margin: 0 0 6px; font-size: 22px; letter-spacing: -0.01em;
+    margin: 0 0 6px; font-size: 22px; letter-spacing: 0;
   }
   section.panel p { color: var(--text-2); margin: 0 0 16px; }
-  section.panel.warn { border-color: rgba(232,197,71,.4); background: linear-gradient(180deg, rgba(232,197,71,.06), rgba(10,37,45,.7)); }
+  section.panel.warn { border-color: rgba(232,197,71,.4); background: rgba(232,197,71,.06); }
   section.panel.warn h2 { color: var(--warning); }
   section.panel.success { border-color: rgba(61,220,151,.4); }
   section.panel.success h2 { color: var(--success); }
@@ -119,15 +122,15 @@
 
   .btn {
     display: inline-flex; align-items: center; gap: 8px;
-    padding: 11px 18px; border-radius: 10px; font-weight: 600; font-size: 14px;
+    padding: 11px 18px; border-radius: 8px; font-weight: 600; font-size: 14px;
     border: 1px solid var(--border); background: var(--panel); color: var(--text);
     cursor: pointer;
     transition: transform .15s ease, background .15s ease, border-color .15s ease;
   }
   .btn:hover:not(:disabled) { background: var(--panel-2); border-color: rgba(142,220,224,.32); }
   .btn:disabled { opacity: .4; cursor: not-allowed; }
-  .btn-primary { background: var(--accent); color: #061216; border-color: rgba(214, 183, 95, .55); }
-  .btn-primary:hover:not(:disabled) { background: #e5c76d; color: #061216; }
+  .btn-primary { background: var(--gold, var(--accent)); color: var(--ink, #061116); border-color: rgba(214, 183, 95, .55); }
+  .btn-primary:hover:not(:disabled) { background: #e5c76d; color: #000; }
   .btn-ghost { background: transparent; }
   .btn-danger { background: rgba(255,107,107,.08); color: var(--danger); border-color: rgba(255,107,107,.35); }
 
@@ -197,7 +200,7 @@
     padding: 14px 18px; margin: 20px 0;
     border: 1px solid var(--border); border-left: 3px solid var(--accent-3);
     background: rgba(142,220,224,0.05);
-    border-radius: 10px;
+    border-radius: 8px;
   }
   .audit-callout .audit-callout-badge {
     flex: 0 0 auto;
@@ -214,34 +217,49 @@
   .audit-callout .audit-callout-text code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: 12px; color: var(--text); }
 
   @media (max-width: 700px) {
+    h1 { font-size: 28px; }
     .nav ul { gap: 12px; }
     .kv { grid-template-columns: 90px 1fr; }
   }
 </style>
 </head>
 <body>
-<header class="nav">
-  <div class="container nav-inner">
-    <a class="brand" href="/">
-      <svg viewBox="0 0 64 64" aria-hidden="true">
-        <rect width="64" height="64" rx="12" fill="#07171d"></rect>
-        <path d="M12 32l10-10 10 10-10 10z" fill="#d6b75f"></path>
-        <path d="M32 20l10 12-10 12-10-12z" fill="#8edce0" opacity=".85"></path>
-      </svg>
+<header class="site-header">
+  <div class="site-header-inner">
+    <a class="site-brand" href="/">
+      <img src="/assets/qsdm-hive-icon.png" alt="" />
       <span>QSDM</span>
     </a>
-    <nav aria-label="Primary">
-      <ul>
-        <li><a class="navlink" href="/">Home</a></li>
-        <li><a class="navlink" href="/explorer.html">Explorer</a></li>
-        <li><a class="navlink" href="/chain.html">Chain</a></li>
-        <li><a class="navlink" href="/validators.html">Validators</a></li>
-        <li><a class="navlink" href="/download.html">Download Hive</a></li>
-        <li><a class="navlink current" href="/wallet.html">Wallet</a></li>
-        <li><a class="navlink" href="/audit.html">Audit</a></li>
-        <li><a class="navlink" href="/trust.html">Trust</a></li>
-      </ul>
+    <nav class="site-nav" aria-label="Primary">
+      <a href="/">Home</a>
+      <a href="/wallet.html" class="active">Wallet</a>
+      <a href="/explorer.html">Explorer</a>
+      <a href="/chain.html">Chain</a>
+      <a href="/validators.html">Validators</a>
+      <a href="/docs/">Docs</a>
+      <a href="/audit.html">Audit</a>
+      <a href="/trust.html">Trust</a>
+      <a href="/api.html">API</a>
     </nav>
+    <div class="site-actions">
+      <a class="site-btn site-btn-ghost" href="/wallet.html">Wallet</a>
+      <a class="site-btn site-btn-solid" href="/download.html">Download</a>
+      <button class="site-menu-toggle" type="button" id="siteMenuToggle" aria-label="Open menu" aria-expanded="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 7H4V5H20V7ZM20 13H4V11H20V13ZM20 19H4V17H20V19Z"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="site-mobile-nav" id="siteMobileNav">
+    <a href="/">Home</a>
+    <a href="/wallet.html">Wallet</a>
+    <a href="/explorer.html">Explorer</a>
+    <a href="/chain.html">Chain</a>
+    <a href="/validators.html">Validators</a>
+    <a href="/docs/">Docs</a>
+    <a href="/audit.html">Audit</a>
+    <a href="/trust.html">Trust</a>
+    <a href="/api.html">API</a>
+    <a href="/download.html">Download</a>
   </div>
 </header>
 
@@ -1387,5 +1405,6 @@ ADDR=$(./qsdmcli wallet show | awk '/^address/{print $2}')
   }
 })();
 </script>
+  <script src="/assets/site-nav.js"></script>
 </body>
 </html>

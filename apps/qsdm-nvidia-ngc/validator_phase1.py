@@ -217,6 +217,28 @@ def _retry_after_seconds(http_err: urllib.error.HTTPError) -> float:
     return 65.0
 
 
+def _report_ssl_context() -> ssl.SSLContext:
+    if _env_preferred("QSDM_NGC_REPORT_INSECURE_TLS", "QSDMPLUS_NGC_REPORT_INSECURE_TLS").lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context
+
+    ca_bundle = _env_preferred("QSDM_NGC_CA_BUNDLE", "QSDMPLUS_NGC_CA_BUNDLE")
+    if ca_bundle:
+        return ssl.create_default_context(cafile=ca_bundle)
+
+    try:
+        import certifi
+    except ImportError:
+        return ssl.create_default_context()
+    return ssl.create_default_context(cafile=certifi.where())
+
+
 def fetch_ingest_nonce() -> str:
     """GET /ngc-challenge when QSDM_NGC_FETCH_CHALLENGE=true (node must have nvidia_lock_require_ingest_nonce)."""
     if _env_preferred("QSDM_NGC_FETCH_CHALLENGE", "QSDMPLUS_NGC_FETCH_CHALLENGE").lower() not in ("1", "true", "yes"):
@@ -236,19 +258,10 @@ def fetch_ingest_nonce() -> str:
         max_retries = max(1, min(12, int(max_retries_raw or "4")))
     except ValueError:
         max_retries = 4
-    ctx = None
-    if _env_preferred("QSDM_NGC_REPORT_INSECURE_TLS", "QSDMPLUS_NGC_REPORT_INSECURE_TLS").lower() in (
-        "1",
-        "true",
-        "yes",
-    ):
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
+    ctx = _report_ssl_context()
     _challenge_jitter_sleep()
     for attempt in range(max_retries):
         req = urllib.request.Request(url, method="GET")
-        req.add_header("X-QSDM-NGC-Secret", secret)
         req.add_header("X-QSDM-NGC-Secret", secret)
         try:
             with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
@@ -280,33 +293,38 @@ def attach_proof_hmac(block: dict) -> None:
     block["qsdm_proof_hmac"] = hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()
 
 
-def maybe_report_to_qsdm(block: dict) -> None:
-    """POST proof bundle to QSDM API (branded env: QSDM_*; legacy QSDMPLUS_* still supported)."""
+def maybe_report_to_qsdm(block: dict) -> bool:
+    """POST a proof bundle and report whether configured delivery succeeded."""
     url = _env_preferred("QSDM_NGC_REPORT_URL", "QSDMPLUS_NGC_REPORT_URL")
     if not url:
-        return
+        return True
     secret = _env_preferred("QSDM_NGC_INGEST_SECRET", "QSDMPLUS_NGC_INGEST_SECRET")
     if not secret:
-        return
-    payload = json.dumps(block).encode("utf-8")
-    req = urllib.request.Request(url, data=payload, method="POST")
-    req.add_header("Content-Type", "application/json")
-    req.add_header("X-QSDM-NGC-Secret", secret)
-    req.add_header("X-QSDM-NGC-Secret", secret)
-    ctx = None
-    if _env_preferred("QSDM_NGC_REPORT_INSECURE_TLS", "QSDMPLUS_NGC_REPORT_INSECURE_TLS").lower() in (
-        "1",
-        "true",
-        "yes",
-    ):
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
+        print(
+            json.dumps(
+                {
+                    "ngc_report_error": (
+                        "QSDM_NGC_INGEST_SECRET is required when "
+                        "QSDM_NGC_REPORT_URL is configured"
+                    )
+                }
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
+        return False
+    ctx = _report_ssl_context()
     try:
+        payload = json.dumps(block).encode("utf-8")
+        req = urllib.request.Request(url, data=payload, method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("X-QSDM-NGC-Secret", secret)
         with urllib.request.urlopen(req, timeout=20, context=ctx) as resp:
             _ = resp.read()
-    except (urllib.error.URLError, OSError) as e:
+        return True
+    except (urllib.error.URLError, OSError, ValueError) as e:
         print(json.dumps({"ngc_report_error": str(e)}), file=sys.stderr, flush=True)
+        return False
 
 
 def gossip_block_summary(block: dict) -> None:
@@ -376,7 +394,9 @@ def build_block() -> dict:
 def main() -> int:
     block = build_block()
     gossip_block_summary(block)
-    maybe_report_to_qsdm(block)
+    report_succeeded = maybe_report_to_qsdm(block)
+    if not report_succeeded:
+        return 1
     print(json.dumps(block, indent=2))
     return 0
 

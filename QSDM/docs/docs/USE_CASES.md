@@ -1,347 +1,210 @@
 # QSDM Use Cases
 
-**Last Updated:** December 2024
+**Last Updated:** July 2026
 
 ---
 
 ## Overview
 
-**QSDM** (Quantum-Secure Dynamic Mesh Ledger) is a quantum-resistant, mesh-based distributed ledger system designed for secure, scalable, and future-proof decentralized applications. This document outlines the primary use cases where QSDM provides significant advantages.
+**QSDM** (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger with native coin **Cell (CELL)**. Validators run PoE + BFT consensus; miners mint CELL with NVIDIA-attested Proof-of-Work. **QSDM Hive** is the Windows/Linux client for wallets, signed tasks, mining, and integrations. This document lists where the stack fits today.
 
 ---
 
 ## 1. Electronic Cash & Payments
 
-### Primary Use Case
-QSDM is designed as a **decentralized electronic cash system** with quantum-safe cryptography.
+### Primary use case
+Decentralized electronic cash with quantum-safe cryptography.
 
 ### Characteristics
-- ✅ **Quantum-safe transactions** - ML-DSA-87 (256-bit security)
-- ✅ **Fast verification** - 1.76x faster than ECDSA (0.19 ms)
-- ✅ **Parallel processing** - No block delays
-- ✅ **Compressed signatures** - 50% size reduction with zstd
+- Quantum-safe transactions — ML-DSA-87 (NIST FIPS 204)
+- Self-custody browser wallet and Hive desktop wallets
+- Public receipts and explorer for verification
+- Compressed signatures with Zstd
 
 ### Applications
-- **Digital payments** - Peer-to-peer transactions
-- **Micropayments** - Low-fee, high-volume transactions
-- **Cross-border payments** - Fast, secure international transfers
-- **Remittances** - Cost-effective money transfers
-
-### Example
-```
-Phase 1: Create "micropayments" submesh with low fees
-Phase 2: Community votes to optimize for high throughput
-Phase 3: Malicious actors automatically quarantined
-```
+- Peer-to-peer CELL transfers
+- Micropayments and low-fee submeshes
+- Cross-border remittances with long-term signature security
 
 ---
 
 ## 2. Quantum-Safe Financial Services
 
-### Use Case
-Financial institutions and services requiring **long-term security** against quantum computing threats.
+### Use case
+Services that need long-term security against cryptographically relevant quantum adversaries.
 
 ### Why QSDM?
-- **Future-proof** - ML-DSA-87 is NIST FIPS 204 standard
-- **256-bit security** - Highest quantum-safe security level
-- **Regulatory compliance** - NIST-approved algorithms
+- ML-DSA-87 is NIST FIPS 204
+- Explicit node-role split (validators vs miners)
+- Transparent audit and trust APIs on the reference node
 
 ### Applications
-- **Digital asset custody** - Long-term secure storage
-- **Smart contracts** - Quantum-safe contract execution (via WASM)
-- **DeFi protocols** - Decentralized finance with quantum resistance
-- **Central bank digital currencies (CBDCs)** - Government-backed digital currencies
+- Digital asset custody
+- WASM smart contracts
+- DeFi-style protocols that require post-quantum signatures
 
 ---
 
-## 3. High-Throughput Transaction Processing
+## 3. Consumer Mining & Protocol Emission
 
-### Use Case
-Applications requiring **high transaction throughput** without block delays.
+### Use case
+GPU operators mint CELL under Mining Protocol v2.
 
 ### Why QSDM?
-- **Parallel validation** - Multiple transactions simultaneously
-- **No block size limits** - Transactions validated immediately
-- **Dynamic submesh routing** - Load distribution across submeshes
-- **Optimized performance** - Memory pooling, batch signing
+- NVIDIA-attested proofs (Turing+)
+- On-chain enrollment with slashable bond
+- Hive Miner task for consumers; `qsdmminer-console` for operators
 
 ### Applications
-- **Payment processors** - High-volume payment processing
-- **Gaming economies** - In-game transactions and NFTs
-- **Supply chain tracking** - High-frequency transaction logging
-- **IoT device networks** - Many small transactions from devices
-
-### Performance
-- **Signing:** <1 ms per transaction (ML-DSA-87)
-- **Verification:** 0.19 ms (faster than ECDSA)
-- **Batch signing:** 10-100x faster for multiple transactions
+- Home NVIDIA mining via Hive
+- Lab/office mining fleets against a home gateway or public validator
+- Emission and slash transparency via public mining APIs
 
 ---
 
-## 4. Decentralized Applications (DApps)
+## 4. Signed Task Markets & Staking
 
-### Use Case
-Building decentralized applications on a quantum-safe platform.
+### Use case
+Permissionless task catalogs with fund/stake/start/submit/claim flows.
 
 ### Why QSDM?
-- **WASM SDK** - Build custom wallet and validator modules
-- **Modular architecture** - Easy to extend and customize
-- **No AI dependencies** - Transparent, rule-based governance
-- **Hardware-agnostic** - Runs on various hardware configurations
+- Consensus task registry (`qsdm/tasks/v1`)
+- Task Studio in Hive publishes signed manifests
+- Replay-safe signed action IDs
 
 ### Applications
-- **Decentralized exchanges (DEXs)** - Quantum-safe trading
-- **NFT marketplaces** - Quantum-safe digital asset trading
-- **Identity systems** - Quantum-safe digital identity
-- **Voting systems** - Secure, transparent governance
-
-### Example: WASM Wallet Integration
-```javascript
-// Load WASM wallet module
-const wallet = await loadWASMWallet('wallet.wasm');
-const balance = await wallet.getBalance();
-await wallet.sendTransaction(recipient, amount);
-```
+- Wallet-linked verification tasks
+- Reward pools with on-chain stake
+- Integration tasks (e.g. Sky Fang account link)
 
 ---
 
-## 5. IoT & Edge Computing
+## 5. Pooled Edge Compute (Mother Hive)
 
-### Use Case
-Internet of Things (IoT) devices and edge computing applications requiring secure, lightweight transactions.
+### Use case
+Trusted LAN or lab pools of CPU, NVIDIA GPU, and RAM capacity settled in CELL.
 
 ### Why QSDM?
-- **Lightweight** - Optimized for resource-constrained devices
-- **Fast verification** - Low latency for edge devices
-- **Compressed storage** - 60-70% compression ratio
-- **Parallel processing** - Handles many simultaneous device transactions
+- Agent → Relay → Hive (Mother) → Core topology
+- Walletless Agents; fixed algorithms only (no remote shell)
+- Core-enforced 70% / 15% / 15% settlement split
 
 ### Applications
-- **Smart city infrastructure** - Traffic, energy, waste management
-- **Industrial IoT** - Manufacturing and supply chain
-- **Agricultural IoT** - Crop monitoring and automation
-- **Healthcare IoT** - Medical device data logging
+- Computer laboratories
+- Office batch jobs via Application Compute Gateway (`127.0.0.1:7742`)
+- Bounded CUDA helper work separate from protocol mining
 
 ---
 
-## 6. Supply Chain & Logistics
+## 6. Game & App Integrations
 
-### Use Case
-Tracking goods and services through supply chains with immutable, quantum-safe records.
+### Use case
+External apps bind accounts to QSDM wallets and pay earn-only CELL rewards.
 
 ### Why QSDM?
-- **Immutable records** - Mesh-based ledger ensures data integrity
-- **Geographic tags** - Track location-based transactions
-- **High throughput** - Handle many tracking events
-- **Quantum-safe** - Long-term data security
+- Hive local signing and ownership proofs
+- Anti-pay-to-win stance for combat power
+- Public wallet and receipt surfaces for verification
 
 ### Applications
-- **Product provenance** - Track origin and authenticity
-- **Food safety** - Trace food from farm to table
-- **Pharmaceutical tracking** - Prevent counterfeiting
-- **Luxury goods** - Verify authenticity
+- **Sky Fang Online** — play-to-earn MMORPG wallet link
+- Future games/apps via HTTP API and SDKs
 
 ---
 
-## 7. Governance & Voting Systems
+## 7. Home Validator Operation
 
-### Use Case
-Transparent, secure governance and voting systems.
+### Use case
+Run a CPU validator at home without exposing wallet/admin APIs.
 
 ### Why QSDM?
-- **Snapshot-based voting** - Token-weighted governance
-- **Transparent rules** - No black-box AI
-- **Manual governance** - Community-driven decisions
-- **Quantum-safe** - Long-term vote integrity
+- `qsdm-home-gateway` narrow public allowlist via outbound relay
+- Local GUI + tray monitor for health
+- Loopback-bound Core with optional public mining/status only
 
 ### Applications
-- **DAO governance** - Decentralized autonomous organizations
-- **Corporate voting** - Shareholder voting
-- **Public elections** - Secure, transparent voting (future)
-- **Community decisions** - Local governance
-
-### Example
-```
-Phase 2: Community votes on submesh rules
-Phase 3: Manual voting on quarantines and reputation penalties
-```
+- Bootstrap peers for Phase 4 testnet
+- Private validators that still accept mining work
+- Operator hygiene with tray status snapshots
 
 ---
 
-## 8. Data Integrity & Notarization
+## 8. Governance & Submesh Policy
 
-### Use Case
-Creating tamper-proof, quantum-safe records of data and documents.
+### Use case
+Token-weighted parameter and submesh rule changes without black-box automation.
 
 ### Why QSDM?
-- **Immutable records** - Mesh structure ensures data integrity
-- **Quantum-safe signatures** - Long-term cryptographic security
-- **Timestamping** - Accurate transaction timestamps
-- **Compressed storage** - Efficient long-term storage
+- Snapshot-style governance voting
+- Explicit submesh fee/priority/geotag profiles
+- Quarantine and reputation with staked deposits
 
 ### Applications
-- **Document notarization** - Legal document verification
-- **Academic credentials** - Degree and certificate verification
-- **Intellectual property** - Patent and copyright records
-- **Medical records** - Secure, immutable health data
+- DAO-style parameter votes
+- Fee-market submeshes
+- Community quarantine decisions
 
 ---
 
-## 9. Gaming & Virtual Economies
+## 9. Cross-Chain Bridge Flows
 
-### Use Case
-In-game economies, virtual assets, and gaming transactions.
+### Use case
+Atomic lock / redeem / refund swaps with audited secret handling.
 
 ### Why QSDM?
-- **High throughput** - Handle many in-game transactions
-- **Fast verification** - Low latency for gaming
-- **NFT support** - Quantum-safe digital assets
-- **Micropayments** - Low-fee in-game purchases
+- Bridge package with expiry and fee integrity checks
+- Incident runbooks for contracts/bridge events
 
 ### Applications
-- **In-game currencies** - Virtual money systems
-- **NFT marketplaces** - Gaming asset trading
-- **Cross-game assets** - Portable virtual items
-- **Esports payments** - Tournament prize distribution
+- CELL-adjacent interoperability experiments
+- Future CELL-denominated bridge collateral (see tokenomics)
 
 ---
 
-## 10. Research & Development
+## 10. Transparency & Operator Assurance
 
-### Use Case
-Research applications requiring quantum-safe distributed ledger technology.
+### Use case
+Public proof that a deployment matches its claimed security posture.
 
 ### Why QSDM?
-- **Open source** - Transparent implementation
-- **Modular design** - Easy to extend and experiment
-- **No AI dependencies** - Predictable, debuggable behavior
-- **Documentation** - Comprehensive technical documentation
+- Public audit checklist and badge
+- Trust attestation summary/recent feeds
+- Explorer, chain status board, security.txt
 
 ### Applications
-- **Cryptography research** - Testing quantum-safe algorithms
-- **Distributed systems research** - Mesh architecture studies
-- **Consensus mechanism research** - Proof-of-Entanglement analysis
-- **Performance optimization** - Benchmarking and optimization
+- External auditors and researchers
+- Operator onboarding without trusting marketing copy
+- CI trust probes (`trustcheck`)
 
 ---
 
-## Use Case Comparison
+## Getting started
 
-| Use Case | Throughput | Security | Latency | Quantum-Safe |
-|----------|-----------|----------|---------|--------------|
-| **Electronic Cash** | High | Critical | Low | ✅ Required |
-| **Financial Services** | Medium | Critical | Medium | ✅ Required |
-| **High-Throughput** | Very High | High | Very Low | ✅ Required |
-| **DApps** | High | High | Low | ✅ Required |
-| **IoT** | Very High | High | Very Low | ✅ Required |
-| **Supply Chain** | High | High | Medium | ✅ Required |
-| **Governance** | Medium | Critical | Medium | ✅ Required |
-| **Notarization** | Low | Critical | Medium | ✅ Required |
-| **Gaming** | Very High | Medium | Very Low | ✅ Required |
-| **Research** | Variable | High | Variable | ✅ Required |
+### Consumers
+1. [Download QSDM Hive](https://qsdm.tech/download.html)
+2. [Hive guide](https://qsdm.tech/docs/#/qsdm-hive)
+3. [CELL tokenomics](https://qsdm.tech/docs/#/cell-tokenomics)
 
----
+### Operators
+1. [Operator guide](https://qsdm.tech/docs/#/operator-guide)
+2. [Validator quickstart](https://qsdm.tech/docs/#/validator-quickstart) or [Miner quickstart](https://qsdm.tech/docs/#/miner-quickstart)
+3. [Home gateway](https://qsdm.tech/docs/#/home-gateway) for home public surfaces
 
-## Key Advantages for All Use Cases
-
-### 1. Quantum-Safe by Default
-- **ML-DSA-87** - NIST FIPS 204 standard
-- **256-bit security** - Highest quantum-safe level
-- **Future-proof** - Resistant to quantum computing attacks
-
-### 2. High Performance
-- **Fast signing** - <1 ms per transaction
-- **Faster verification** - 1.76x faster than ECDSA
-- **Parallel processing** - No sequential block delays
-- **Optimized storage** - 60-70% compression
-
-### 3. Scalability
-- **Dynamic submeshes** - Load distribution
-- **Priority routing** - Fee-based transaction routing
-- **No block limits** - Unlimited transaction capacity
-- **Hardware optimization** - GPU acceleration (Phase 3)
-
-### 4. Transparency
-- **No AI black-box** - Rule-based, transparent logic
-- **Manual governance** - Community-driven decisions
-- **Open source** - Full code visibility
-- **Comprehensive logging** - Real-time monitoring
-
-### 5. Flexibility
-- **WASM SDK** - Custom wallet and validator modules
-- **Modular architecture** - Easy to extend
-- **Hardware-agnostic** - Runs on various configurations
-- **Phase-based development** - Gradual feature rollout
-
----
-
-## Example Implementation Scenarios
-
-### Scenario 1: Micropayment Platform
-```
-1. Create "micropayments" submesh with low fees
-2. Route high-volume transactions to dedicated submesh
-3. Use batch signing for efficiency (10-100x faster)
-4. Monitor and quarantine malicious actors automatically
-```
-
-### Scenario 2: Supply Chain Tracking
-```
-1. Create "supply-chain" submesh with geographic tags
-2. Track products through mesh with immutable records
-3. Use compressed signatures for storage efficiency
-4. Verify authenticity with quantum-safe signatures
-```
-
-### Scenario 3: DeFi Protocol
-```
-1. Build custom WASM validator for DeFi rules
-2. Use governance voting for protocol upgrades
-3. Implement reputation system for validators
-4. Ensure quantum-safe smart contract execution
-```
-
----
-
-## Getting Started
-
-### For Developers
-1. **Read documentation** - `docs/QUICK_START.md`
-2. **Set up development environment** - `docs/UBUNTU_DEPLOYMENT.md`
-3. **Explore WASM SDK** - `docs/WASM_MODULE_INTERFACES.md`
-4. **Review architecture** - `docs/ARCHITECTURE_EXPLAINED.md`
-
-### For Businesses
-1. **Understand use cases** - This document
-2. **Review security** - `docs/CRYPTOGRAPHY_COMPARISON.md`
-3. **Check performance** - `docs/PERFORMANCE_BENCHMARK_REPORT.md`
-4. **Plan deployment** - `docs/UBUNTU_DEPLOYMENT.md`
+### Developers
+1. [API reference](https://qsdm.tech/docs/#/api-reference)
+2. [Web wallet](https://qsdm.tech/docs/#/web-wallet)
+3. SDKs under `QSDM/source/sdk/`
 
 ---
 
 ## Summary
 
-QSDM is suitable for **any application requiring**:
-- ✅ **Quantum-safe cryptography** (long-term security)
-- ✅ **High transaction throughput** (parallel processing)
-- ✅ **Low latency** (fast verification)
-- ✅ **Transparent governance** (no AI black-box)
-- ✅ **Scalable architecture** (dynamic submeshes)
-- ✅ **Flexible development** (WASM SDK, modular design)
+QSDM fits applications that need:
 
-**Primary use cases:**
-1. Electronic cash and payments
-2. Quantum-safe financial services
-3. High-throughput transaction processing
-4. Decentralized applications (DApps)
-5. IoT and edge computing
-6. Supply chain and logistics
-7. Governance and voting
-8. Data integrity and notarization
-9. Gaming and virtual economies
-10. Research and development
+- Post-quantum signatures (ML-DSA-87)
+- Native CELL balances, stake, and mining emission
+- Consumer Hive path plus operator Core path
+- Signed tasks and optional edge compute pools
+- Public audit/trust surfaces
 
----
-
-*QSDM: Quantum-Safe Mesh Ledger for the Future* 🚀
-
+**Primary use cases today:** electronic cash, consumer/operator mining, signed task markets, Mother Hive edge pools, game wallet linking, home validators, governance, bridge experiments, and transparency tooling.

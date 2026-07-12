@@ -281,6 +281,8 @@ NVIDIA GPU already visible to PyTorch.
    QSDM_NGC_REPORT_URL=https://<your-node>/api/v1/monitoring/ngc-proof
    QSDM_NGC_INGEST_SECRET=<32-byte-hex>
    QSDM_NGC_PROOF_NODE_ID=<free-form-label>
+   # Optional only when Python cannot locate trusted roots automatically:
+   # QSDM_NGC_CA_BUNDLE=C:\path\to\trusted-ca-bundle.pem
    ```
 
 2. Smoke-test once:
@@ -290,10 +292,27 @@ NVIDIA GPU already visible to PyTorch.
      -EnvFile .\apps\qsdm-nvidia-ngc\ngc.local.env
    ```
 
-3. Register the scheduled task (user-level, no admin required).
-   `local-attest.ps1` now handles its own transcript + rotation
-   (10 MiB cap, 3 archives) when you pass `-LogPath`, so the command
-   line stays short and the log file never grows unbounded:
+3. Register or repair the scheduled task (user-level, no admin
+   required). The installer resolves the current repository path and
+   replaces any stale action left by a directory rename:
+
+   ```powershell
+   .\apps\qsdm-nvidia-ngc\scripts\install-windows-attestation-task.ps1 `
+     -StartNow
+   ```
+
+   The task runs every 10 minutes by default. `local-attest.ps1`
+   handles its own transcript + rotation (10 MiB cap, 3 archives), and
+   the task arguments contain only the env-file path, not its secret.
+   The installer also removes inherited access from the env file and
+   grants access only to the current account, `SYSTEM`, and local
+   administrators.
+
+   To repair only an existing env file's permissions without changing
+   Task Scheduler, run the installer with `-ProtectCredentialOnly`.
+
+   Equivalent manual registration is shown below for operators who
+   need custom Task Scheduler settings:
 
    ```powershell
    $repo = (Resolve-Path .).Path

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # govulncheck-filter.sh
 # =====================
-# Run `govulncheck -json ./...` from the current working directory,
+# Run govulncheck v1.6.0 in JSON mode from the current working directory,
 # then exit:
 #   0 if every reported OSV id is in the allowlist below,
 #   0 if no OSVs were reported at all,
 #   1 if any OSV is reported that is NOT in the allowlist (NEW vuln
 #     surfaced -- that is what we actually want to break CI on).
 #
-# The raw govulncheck output is always printed so humans can see it
-# in the job log even when we pass.
+# Scanner diagnostics and affected-finding summaries are always printed so
+# humans can see the classification in the job log even when the gate passes.
 #
 # Allowlist posture: intentionally empty. GO-2024-3218 used to be tracked
 # here while QSDM used go-libp2p-kad-dht for WAN discovery. That DHT path was
@@ -33,7 +33,7 @@ raw_err="$(mktemp)"
 trap 'rm -f "${raw_out}" "${raw_err}"' EXIT
 
 set +e
-go run golang.org/x/vuln/cmd/govulncheck@latest -json ./... \
+go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 -json ./... \
     >"${raw_out}" 2>"${raw_err}"
 rc=$?
 set -e
@@ -52,29 +52,29 @@ fi
 #      MODULE VERSION. Most of these are NOT reachable from our call
 #      graph. Filtering on this field alone yields 100+ false positives.
 #
-#   2. {"finding": {"osv": "GO-...", ...}} -- an actual FINDING, i.e.
-#      govulncheck's dataflow analysis has demonstrated a reachable
-#      call path in our code. This is the text-mode equivalent of the
-#      "Vulnerability #N: GO-..." sections the default reporter shows.
+#   2. {"finding": {"osv": "GO-...", ...}} -- a module, package, or
+#      symbol finding. A module-only notice has a one-frame trace containing
+#      module/version but no package. Package and symbol findings include a
+#      package path and demonstrate that affected code enters QSDM's build.
 #
-# Only (2) should gate CI. The earlier version of this script keyed off
-# (1) and surfaced GO-2020-0006, GO-2021-0067, and ~150 other advisories
-# that our binary cannot actually reach.
-findings_jq='select(.finding) | .finding.osv'
+# Only package/symbol records from (2) should gate CI. The earlier versions
+# keyed off either (1) or any non-empty trace; the latter incorrectly counted
+# module-only notices emitted by newer scanners.
+findings_jq='select(any(.finding.trace[]?; (.package // "") != "")) | .finding.osv'
 
-# Human-readable re-render of the reachable findings for the job log.
-echo "==== govulncheck reachable findings ===="
+# Human-readable re-render of affected package/symbol findings for the log.
+echo "==== govulncheck affected package/symbol findings ===="
 if command -v jq >/dev/null 2>&1; then
   # Pair each finding id with the first OSV summary we saw for it, so
   # the log is self-explanatory without having to cross-reference.
   jq -r --slurp '
     (map(select(.osv))     | map({(.osv.id): (.osv.summary // "(no summary)")}) | add) as $summaries
-    | (map(select(.finding)) | map(.finding.osv) | unique) as $hits
+    | (map(select(any(.finding.trace[]?; (.package // "") != ""))) | map(.finding.osv) | unique) as $hits
     | $hits[] | . + "  " + ($summaries[.] // "(no summary)")
   ' "${raw_out}" || true
 else
-  grep -oE '"finding":\{"osv":"GO-[0-9]{4}-[0-9]+"' "${raw_out}" \
-    | sed -E 's/.*"osv":"([^"]+)".*/\1/' | sort -u || true
+  echo "jq is required to distinguish reachable traces from module notices" >&2
+  exit 2
 fi
 echo "========================================"
 
@@ -89,12 +89,12 @@ if [ "${rc}" -ne 0 ] && [ "${rc}" -ne 3 ]; then
   exit "${rc}"
 fi
 
-# Collect unique OSV ids actually REACHABLE (not the raw catalog).
+# Collect unique OSV ids that reach an imported package (not the raw catalog).
 if command -v jq >/dev/null 2>&1; then
   reported="$(jq -r "${findings_jq}" "${raw_out}" | sort -u)"
 else
-  reported="$(grep -oE '"finding":\{"osv":"GO-[0-9]{4}-[0-9]+"' "${raw_out}" \
-              | sed -E 's/.*"osv":"([^"]+)".*/\1/' | sort -u)"
+  echo "jq is required to distinguish reachable traces from module notices" >&2
+  exit 2
 fi
 
 if [ -z "${reported}" ]; then

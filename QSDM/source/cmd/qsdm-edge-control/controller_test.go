@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"net"
 	"os"
 	"path/filepath"
@@ -9,6 +10,41 @@ import (
 
 	"github.com/blackbeardONE/QSDM/pkg/edgepool"
 )
+
+func TestHTTPSRelayRotatesLegacyMotherTokenOnce(t *testing.T) {
+	paths := testControlPaths(t, "federation-rotation")
+	settings := defaultSettings()
+	settings.Relay.AllowLAN = true
+	settings.Relay.AdvertisedURL = "https://relay.example.test"
+	controller := newController(paths, settings, "test")
+	legacy := bytes.Repeat([]byte{0x31}, 32)
+	if err := os.MkdirAll(paths.PoolDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := edgepool.WriteTokenFile(paths.MotherToken, legacy); err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.ensureFederationV2MotherToken(settings.Relay); err != nil {
+		t.Fatal(err)
+	}
+	rotated, err := edgepool.LoadTokenFile(paths.MotherToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(rotated, legacy) {
+		t.Fatal("legacy Mother Hive token was not rotated")
+	}
+	if err := controller.ensureFederationV2MotherToken(settings.Relay); err != nil {
+		t.Fatal(err)
+	}
+	stable, err := edgepool.LoadTokenFile(paths.MotherToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(stable, rotated) {
+		t.Fatal("federation v2 Mother Hive token rotated more than once")
+	}
+}
 
 func TestAgentRelayControllerLifecycle(t *testing.T) {
 	port := reservePort(t)

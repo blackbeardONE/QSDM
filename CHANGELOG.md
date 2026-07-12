@@ -12,7 +12,48 @@ attempt to retroactively enumerate that history.
 
 ## [Unreleased]
 
+### Added
+
+- **QSDM Hive 1.3.95 and Edge Control/Agent 1.3.5 private federation pilot
+  (2026-07-12).** Edge Control now creates 24-hour `QSDM-EDGE-2` HTTPS
+  invitations with cryptographically random offer IDs and workload-scoped
+  credentials derived from the private Mother Hive key. Hive persists the
+  invitation context privately, displays provider/expiry/scope information,
+  and sends the immutable context on Relay requests. Public provider discovery,
+  Core escrow leases, and marketplace routing remain explicitly out of scope.
+
+- **Canonical QSDM build and release guidelines (2026-07-12).** The new policy
+  defines clean-source, QSDM evidence, pure-Go ML-DSA, cross-platform build,
+  native-binary integrity, artifact smoke, rollback, and human signoff gates.
+  The paused external review project is not part of the workflow or artifacts.
+
+- **QSDM Hive 1.3.94 Virtual Compute Runtime (2026-07-09).** Mother Hive now discovers live pooled CPU, NVIDIA GPU, and RAM capacity; provides bounded workload controls; shows queue, Agent assignment, duration, cancellation, and verified receipt state; and keeps the private loopback gateway token outside renderer code. The gateway adds authenticated `/v1/resources` and `/v1/workloads` discovery routes while preserving the fixed-workload, no-remote-shell security boundary. A separate design specifies opt-in, wallet-authenticated, one-hop Mother Hive federation across locations without exposing Agent or private Mother credentials.
+
 ### Changed
+
+- **Hive release integrity (2026-07-12).** Host-native packaging now rebuilds
+  bundled QSDM tools, rejects stale miner or Edge versions, and blocks partial
+  direct Electron publishing. The disabled Grok browser-automation flow and its
+  obsolete native `sleep` dependency chain were removed.
+
+- **Website and docs refreshed to match current capabilities
+  (2026-07-09).** Landing (`QSDM/deploy/landing/`) now
+  foregrounds Hive 1.3.95, Edge Control 1.3.5, ledger
+  v0.4.3, signed tasks, Mother Hive edge pools, home
+  gateway, tray monitor, governance/bridge, and public
+  audit/trust surfaces. Docs portal adds home gateway,
+  task registry, tray monitor, and missing runbooks;
+  referral-security path fixed; version pill default
+  bumped to v0.4.3. `Feature Summary.md` and
+  `USE_CASES.md` rewritten for the Hive-era product.
+  Root/`apps` READMEs point at `QSDM/deploy/landing/`
+  instead of the legacy `apps/qsdm-landing/` stub.
+
+- **Home-server monitor and repository runtime hygiene (2026-07-12).** The tray
+  monitor now has one canonical source entry point and checks validator mode,
+  chain progress, miner proofs, gateway, attester, treasury, GUI, and listener
+  exposure. Local ledger databases, journals, locks, and bridge snapshots stay
+  on disk but are excluded from source-control and release candidates.
 
 - **`/api/v1/status` `version` field now sourced from
   `pkg/buildinfo` (with env-var fallback for backwards

@@ -1,9 +1,9 @@
-# Docs Portal Evidence — 2026-05-14
+# Docs Portal Evidence — 2026-07-09
 
-> Ship log for the **qsdm.tech landing simplification + `/docs/`
-> knowledge-base portal**. Companion to the `RELEASE_EVIDENCE_*` files;
-> this is the static-site equivalent — no new binary or container,
-> just a Caddy webroot delta and a curated SPA.
+> Ship log for the **qsdm.tech landing + `/docs/` knowledge-base portal**.
+> Companion to the `RELEASE_EVIDENCE_*` files; this is the static-site
+> equivalent — no new binary or container, just a Caddy webroot delta
+> and a curated SPA.
 >
 > Reproduce by curling the URLs in §"Live probes" from any host.
 
@@ -11,22 +11,23 @@
 
 | Surface | Status |
 |---|---|
-| Landing page (`qsdm.tech/`) — nav cut 9 → 4 (Wallet · Mine · Docs · Validators); Build / Why / Compare / Roadmap / Architecture-SVG sections removed (moved to /docs/); new "Knowledge base" callout | LIVE |
-| Docs portal (`qsdm.tech/docs/`) — Challonge-style SPA with sidebar, hash routing, client-side markdown render, live fetch from main | LIVE |
-| `sitemap.xml`, `robots.txt` | LIVE |
-| Caddyfile CSP — `connect-src` extended with `https://raw.githubusercontent.com` + `https://api.github.com`; `img-src` extended with `raw.githubusercontent.com`; `try_files` chain fix (`{path} {path}/index.html /index.html`) | LIVE |
+| Landing page (`qsdm.tech/`) — capabilities section, unified product nav (Download · Wallet · Capabilities · Mining · Docs · Explorer · Audit · Trust), Hive/CELL/edge/home-gateway messaging aligned to v0.4.3 + Hive 1.3.95 | LIVE (after deploy) |
+| Docs portal (`qsdm.tech/docs/`) — SPA with sidebar, hash routing, client-side markdown render, live fetch from main; adds home gateway, task registry, tray monitor, missing runbooks; referral path fixed | LIVE (after deploy) |
+| `sitemap.xml`, `robots.txt`, `humans.txt` | LIVE (after deploy) |
+| Caddyfile CSP — `connect-src` includes `https://raw.githubusercontent.com` + `https://api.github.com`; `img-src` includes `raw.githubusercontent.com` | LIVE |
 
-No backend changes. Caddy was restarted (admin API is `off` so reload
-isn't available — same constraint as the v0.4.0 deploy).
+No backend changes required for docs content updates that only touch
+Markdown under `QSDM/docs/docs/` (fetched live from `main`). Shell
+files under `QSDM/deploy/landing/` require a landing deploy.
 
 ## Docs portal at a glance
 
-- 65 entries across 9 sections (Get started · Wallet · Mining ·
-  Validators & operators · Protocol & design · Performance · Reference
-  · Runbooks · Project).
+- ~95 curated entries across 9 sections (Get started · Hive +
+  Integrations · Wallet · Mining · Validators & operators · Protocol &
+  design · Performance · Reference · Runbooks · Project).
 - Source of truth is the curated `SECTIONS` manifest in
   `QSDM/deploy/landing/docs/docs.js`. Each entry has `{ slug, title,
-  repoPath, badge? }`.
+  repoPath, badge? }` (some Hive/edge pages also ship `inlineMarkdown`).
 - Markdown is fetched at runtime from `raw.githubusercontent.com/
   blackbeardONE/QSDM/main/<repoPath>`. **No mirror, no rebuild
   needed** — pushing to `main` updates docs on the next page load.
@@ -34,7 +35,7 @@ isn't available — same constraint as the v0.4.0 deploy).
   (123 618 B) with SRI
   `sha384-wLhprpjsmjc/XYIcF+LpMxd8yS1gss6jhevOp6F6zhiIoFK6AmHtm4bGKtehTani`.
   No CDN in `script-src`.
-- The version pill auto-refreshes from
+- The version pill defaults to **v0.4.3** and auto-refreshes from
   `api.github.com/repos/blackbeardONE/QSDM/releases/latest`.
 - Filenames with literal spaces (one entry — `Feature Summary.md`)
   are handled by an `encRepoPath()` helper that splits on `/` and
@@ -59,11 +60,8 @@ $ curl -s -o /dev/null -w '%{http_code}\n' https://qsdm.tech/robots.txt
 200
 $ curl -sI https://qsdm.tech/docs/ | grep -i content-security-policy
 content-security-policy: default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self' https://api.qsdm.tech https://dashboard.qsdm.tech https://raw.githubusercontent.com https://api.github.com; frame-ancestors 'none'; upgrade-insecure-requests
-$ curl -s https://qsdm.tech/ | grep -oE 'navlink"[^>]*>[A-Za-z]+' | sed 's/.*>//'
-Wallet
-Mine
-Docs
-Validators
+$ curl -s https://qsdm.tech/ | grep -oE 'href="[^"]+"' | head
+(expect Download, Wallet, Capabilities, Mining, Docs, Explorer, Audit, Trust)
 $ curl -sI -H 'Origin: https://qsdm.tech' \
     https://raw.githubusercontent.com/blackbeardONE/QSDM/main/QSDM/docs/docs/QUICK_START.md \
   | grep -iE 'access-control-allow-origin|content-type'

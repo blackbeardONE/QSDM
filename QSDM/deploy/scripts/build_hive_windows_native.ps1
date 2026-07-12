@@ -2,6 +2,7 @@ param(
     [string]$HiveSourceDir = "apps/qsdm-hive/qsdm-hive-main",
     [string]$QsdmSourceDir = "QSDM/source",
     [string]$EdgeAgentVersion = "",
+    [string]$GoExe = "",
     [switch]$KeepGeneratedResource
 )
 
@@ -13,12 +14,34 @@ $qsdm = (Resolve-Path (Join-Path $workspace $QsdmSourceDir)).Path
 $native = Join-Path $hive 'native\windows\x64'
 $goCache = Join-Path $workspace '.cache\go-build'
 $officialGo = Join-Path $env:ProgramFiles 'Go\bin\go.exe'
-$go = if (Test-Path -LiteralPath $officialGo) {
+$goOverride = if ($GoExe) { $GoExe } else { $env:QSDM_GO_EXE }
+$go = if ($goOverride) {
+    if (-not (Test-Path -LiteralPath $goOverride -PathType Leaf)) {
+        throw "Configured Go executable was not found: $goOverride"
+    }
+    (Resolve-Path -LiteralPath $goOverride).Path
+} elseif (Test-Path -LiteralPath $officialGo) {
     $officialGo
 } else {
     (Get-Command go -ErrorAction Stop).Source
 }
 $goRoot = Split-Path -Parent (Split-Path -Parent $go)
+$goVersionOutput = (& $go version).Trim()
+if ($LASTEXITCODE -ne 0 -or $goVersionOutput -notmatch '\bgo(\d+\.\d+\.\d+)\b') {
+    throw "Unable to determine Go version from $go"
+}
+$goVersion = [version]$Matches[1]
+$requiredGoLine = Get-Content -LiteralPath (Join-Path $qsdm 'go.mod') |
+    Where-Object { $_ -match '^go\s+(\d+\.\d+\.\d+)\s*$' } |
+    Select-Object -First 1
+if (-not $requiredGoLine) {
+    throw 'QSDM go.mod does not contain a MAJOR.MINOR.PATCH go directive.'
+}
+$requiredGo = [version]([regex]::Match($requiredGoLine, '^go\s+(\d+\.\d+\.\d+)\s*$').Groups[1].Value)
+if ($goVersion -lt $requiredGo) {
+    throw "Go $requiredGo or newer is required; selected $goVersion from $go. Set QSDM_GO_EXE to a current Go SDK."
+}
+Write-Host "Using $goVersionOutput from $go"
 $version = (Get-Content -Raw (Join-Path $hive 'release\app\package.json') | ConvertFrom-Json).version
 $edgeVersionFile = Join-Path $workspace 'apps\qsdm-edge-agent\VERSION'
 if (-not $EdgeAgentVersion) {

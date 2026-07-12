@@ -55,7 +55,7 @@
     "publisherName": "QSDM",
     "legalTrademarks": "",
     "artifactName": "qsdm-hive-${version}-${os}-${arch}.${ext}",
-    "verifyUpdateCodeSignature": false,
+    "verifyUpdateCodeSignature": true,
     "signDlls": false,
     "icon": "assets/icon.ico",
     "extraResources": [

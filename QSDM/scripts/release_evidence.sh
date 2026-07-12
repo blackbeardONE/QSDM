@@ -134,9 +134,9 @@ if [ "$QUICK" = "1" ]; then
 else
   vuln_step() {
     cd "$SOURCE_DIR"
-    CGO_ENABLED=0 go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+    CGO_ENABLED=0 bash "$SCRIPT_DIR/govulncheck-filter.sh"
   }
-  capture_step '04_govulncheck.txt' 'govulncheck ./... (reachable findings)' vuln_step
+  capture_step '04_govulncheck.txt' 'govulncheck ./... (affected package/symbol findings)' vuln_step
 fi
 
 # 05 - go vet (default + soak).
@@ -270,7 +270,7 @@ capture_step '10_soak_summary.txt' 'most recent soak summaries (best-effort)' so
 #  2. 03_go_mod_verify    - must end "all modules verified".
 #  3. 04_govulncheck      - must report zero reachable findings.
 #  4. 06_go_test_full     - last lines must show ok / no FAIL.
-#  5. 09_binaries         - every cmd should report go1.25.11+ banner.
+#  5. 09_binaries         - every cmd should report go1.25.12+ banner.
 #  6. 10_soak_summary     - mempool + pubsub soaks PASS at >= 10 min.
 EOF
 } >"$OUT_DIR/00_MANIFEST.txt"

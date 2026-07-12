@@ -419,7 +419,7 @@ func buildMiningInfo(chainTip uint64) *MiningInfo {
 //  3. `QSDMPLUS_BUILD_VERSION` environment variable. Legacy alias
 //     from the Major Update §6 dual-emit secret-rebrand convention.
 //
-//  4. `runtime.Version()` (e.g. "go1.25.11"). Last-resort fallback
+//  4. `runtime.Version()` (e.g. "go1.25.12"). Last-resort fallback
 //     reached only when neither `-X` nor any env var was set. This
 //     value is the Go toolchain version, NOT the QSDM release
 //     version — it is a deliberately ugly fallback so operators

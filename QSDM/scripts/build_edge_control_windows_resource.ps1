@@ -35,9 +35,14 @@ if (-not $windresCommand) {
 $windresExe = $windresCommand.Source
 $previousPath = $env:Path
 $env:Path = "$(Split-Path -Parent $windresExe);$env:SystemRoot\System32"
+$savedEnvironment = @{}
+$sanitizedEnvironmentNames = @(
+    'VSCODE_NLS_CONFIG',
+    'VSCODE_L10N_BUNDLE_LOCATION'
+)
 
 $outputDirectory = Split-Path -Parent $OutputPath
-$workDirectory = Join-Path ([IO.Path]::GetTempPath()) "qsdm-edge-control-resource-$PID"
+$workDirectory = Join-Path ([IO.Path]::GetTempPath()) "qsdm-edge-control-resource-$PID-$([guid]::NewGuid().ToString('N'))"
 $resourceScript = Join-Path $workDirectory 'qsdm-edge-control.rc'
 $localIcon = Join-Path $workDirectory 'qsdm-edge-control.ico'
 
@@ -45,6 +50,18 @@ New-Item -ItemType Directory -Force -Path $workDirectory | Out-Null
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 
 try {
+    # MinGW's child gcc process can misinterpret VS Code/Cursor's JSON NLS
+    # payload as a response-file fragment when windres is launched through
+    # npm -> Windows PowerShell. These variables are editor-only; keep them
+    # out of the native compiler process and restore them after the build.
+    foreach ($name in $sanitizedEnvironmentNames) {
+        $value = [Environment]::GetEnvironmentVariable($name, [EnvironmentVariableTarget]::Process)
+        if ($null -ne $value) {
+            $savedEnvironment[$name] = $value
+            [Environment]::SetEnvironmentVariable($name, $null, [EnvironmentVariableTarget]::Process)
+        }
+    }
+
     Copy-Item -LiteralPath $IconPath -Destination $localIcon -Force
     $resourceSource = @"
 1 ICON "qsdm-edge-control.ico"
@@ -81,9 +98,25 @@ END
 
     Push-Location $workDirectory
     try {
-        & $windresExe -J rc -O coff -F pe-x86-64 --use-temp-file -i $resourceScript -o $OutputPath
-        if ($LASTEXITCODE -ne 0) {
-            throw "windres.exe failed with exit code $LASTEXITCODE"
+        $compiled = $false
+        $lastExitCode = 0
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            Remove-Item -LiteralPath $OutputPath -Force -ErrorAction SilentlyContinue
+            # The MinGW --use-temp-file path can corrupt gcc input when this
+            # script is launched by npm through Windows PowerShell 5, leaking
+            # arbitrary environment fragments as phantom filenames. The
+            # resource is small, so the normal preprocessor pipe is safer.
+            & $windresExe -J rc -O coff -F pe-x86-64 -i $resourceScript -o $OutputPath
+            $lastExitCode = $LASTEXITCODE
+            if ($lastExitCode -eq 0 -and (Test-Path -LiteralPath $OutputPath -PathType Leaf)) {
+                $compiled = $true
+                break
+            }
+            Write-Warning "windres.exe attempt $attempt of 3 failed with exit code $lastExitCode; retrying with a clean output."
+            Start-Sleep -Milliseconds (250 * $attempt)
+        }
+        if (-not $compiled) {
+            throw "windres.exe failed after 3 attempts (last exit code $lastExitCode)"
         }
     }
     finally {
@@ -92,5 +125,8 @@ END
 }
 finally {
     $env:Path = $previousPath
+    foreach ($name in $savedEnvironment.Keys) {
+        [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], [EnvironmentVariableTarget]::Process)
+    }
     Remove-Item -LiteralPath $workDirectory -Recurse -Force -ErrorAction SilentlyContinue
 }

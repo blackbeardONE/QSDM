@@ -46,7 +46,20 @@ QSDM/deploy/landing/*.wasm binary
 # canonical blobs. Treat the carriage return as part of the line ending while
 # still detecting real trailing spaces and tabs.
 *.go       whitespace=cr-at-eol
+*.ps1      whitespace=cr-at-eol
 .gitignore whitespace=cr-at-eol
+
+# Historical documentation and web/config assets contain a mix of canonical LF
+# and CRLF blobs. Ignore only the CR byte at line endings while continuing to
+# report actual trailing spaces and tabs. Explicit eol=lf rules above still
+# control deployed landing assets and scripts.
+*.md       whitespace=cr-at-eol
+*.html     whitespace=cr-at-eol
+*.js       whitespace=cr-at-eol
+*.css      whitespace=cr-at-eol
+*.xml      whitespace=cr-at-eol
+*.txt      whitespace=cr-at-eol
+QSDM/deploy/Caddyfile whitespace=cr-at-eol
 
 # Unified patches encode context lines with a leading marker; checking those
 # markers as source indentation produces false positives in `git diff --check`.
