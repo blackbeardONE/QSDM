@@ -60,7 +60,15 @@ QSDM_NGC_INGEST_SECRET=<same secret as the BLR1 node>
 QSDM_NGC_PROOF_NODE_ID=qsdm-windows-dev
 ```
 
-Scheduled Task creation (one-shot):
+Scheduled Task creation or repair (one-shot, from the repository root):
+
+```powershell
+.\apps\qsdm-nvidia-ngc\scripts\install-windows-attestation-task.ps1 -StartNow
+```
+
+The installer resolves the current checkout path, replaces stale task
+actions after a directory rename, and keeps the ingest secret out of
+Task Scheduler arguments. Equivalent manual creation:
 
 ```powershell
 $action = New-ScheduledTaskAction `

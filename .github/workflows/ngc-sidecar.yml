@@ -1,0 +1,39 @@
+name: NGC sidecar
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "apps/qsdm-nvidia-ngc/**"
+      - ".github/workflows/ngc-sidecar.yml"
+  pull_request:
+    paths:
+      - "apps/qsdm-nvidia-ngc/**"
+      - ".github/workflows/ngc-sidecar.yml"
+
+concurrency:
+  group: ngc-sidecar-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Compile and test the NGC proof sidecar
+        working-directory: apps/qsdm-nvidia-ngc
+        run: |
+          python -m py_compile validator_phase1.py test_validator_phase1.py
+          python -m unittest -v test_validator_phase1.py
