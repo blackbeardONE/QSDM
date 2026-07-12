@@ -4,7 +4,8 @@ param(
     [ValidateRange(1, 60)]
     [int]$IntervalMinutes = 10,
     [string]$LogPath = (Join-Path $env:LOCALAPPDATA 'QSDM\ngc-attest.log'),
-    [switch]$StartNow
+    [switch]$StartNow,
+    [switch]$ProtectCredentialOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,6 +18,48 @@ if (-not $EnvFile) {
 
 $runner = (Resolve-Path -LiteralPath $runner).Path
 $EnvFile = (Resolve-Path -LiteralPath $EnvFile).Path
+
+function Protect-CredentialFile {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $acl = Get-Acl -LiteralPath $Path
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($existingRule in @($acl.Access)) {
+        $null = $acl.RemoveAccessRuleSpecific($existingRule)
+    }
+
+    $identities = @(
+        [Security.Principal.WindowsIdentity]::GetCurrent().User
+        [Security.Principal.SecurityIdentifier]::new(
+            [Security.Principal.WellKnownSidType]::LocalSystemSid,
+            $null
+        )
+        [Security.Principal.SecurityIdentifier]::new(
+            [Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid,
+            $null
+        )
+    )
+    foreach ($identity in $identities) {
+        $rule = [Security.AccessControl.FileSystemAccessRule]::new(
+            $identity,
+            [Security.AccessControl.FileSystemRights]::FullControl,
+            [Security.AccessControl.AccessControlType]::Allow
+        )
+        $acl.AddAccessRule($rule)
+    }
+    Set-Acl -LiteralPath $Path -AclObject $acl
+}
+
+Protect-CredentialFile -Path $EnvFile
+
+if ($ProtectCredentialOnly) {
+    [pscustomobject]@{
+        EnvFile = $EnvFile
+        CredentialFileAclProtected = (Get-Acl -LiteralPath $EnvFile).AreAccessRulesProtected
+    }
+    return
+}
+
 if ([string]::IsNullOrWhiteSpace($LogPath)) {
     throw 'LogPath must not be empty.'
 }
@@ -72,4 +115,5 @@ $registered = Get-ScheduledTask -TaskName $TaskName
     EnvFile = $EnvFile
     IntervalMinutes = $IntervalMinutes
     Started = [bool]$StartNow
+    CredentialFileAclProtected = (Get-Acl -LiteralPath $EnvFile).AreAccessRulesProtected
 }

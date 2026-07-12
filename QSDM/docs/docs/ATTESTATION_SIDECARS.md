@@ -68,7 +68,9 @@ Scheduled Task creation or repair (one-shot, from the repository root):
 
 The installer resolves the current checkout path, replaces stale task
 actions after a directory rename, and keeps the ingest secret out of
-Task Scheduler arguments. Equivalent manual creation:
+Task Scheduler arguments. It also restricts the env-file ACL to the
+current account, `SYSTEM`, and local administrators. Equivalent manual
+creation:
 
 ```powershell
 $action = New-ScheduledTaskAction `

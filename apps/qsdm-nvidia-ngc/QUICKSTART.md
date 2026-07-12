@@ -304,6 +304,12 @@ NVIDIA GPU already visible to PyTorch.
    The task runs every 10 minutes by default. `local-attest.ps1`
    handles its own transcript + rotation (10 MiB cap, 3 archives), and
    the task arguments contain only the env-file path, not its secret.
+   The installer also removes inherited access from the env file and
+   grants access only to the current account, `SYSTEM`, and local
+   administrators.
+
+   To repair only an existing env file's permissions without changing
+   Task Scheduler, run the installer with `-ProtectCredentialOnly`.
 
    Equivalent manual registration is shown below for operators who
    need custom Task Scheduler settings:

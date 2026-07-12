@@ -146,6 +146,11 @@ tool build and CUDA self-test, then packages Electron. On Linux it delegates to
 `QSDM/deploy/scripts/build_hive_linux.sh`. The Electron `afterPack` gate rejects
 a miner whose embedded Hive version differs from the app and rejects Edge Agent
 or Edge Control versions that differ from `apps/qsdm-edge-agent/VERSION`.
+The Windows command then rejects the release unless the installer, desktop
+executable, and all bundled QSDM executables have valid timestamped
+Authenticode signatures from the configured publisher. Use
+`npm run package:windows:unsigned` only for local smoke testing; its output is
+not a publishable release.
 Direct `npm run release` publishing is intentionally blocked: publish only the
 joint, verified Windows/Linux artifact set through
 `QSDM/deploy/scripts/publish_hive_release.sh`.
@@ -187,7 +192,9 @@ retain:
 
 - release notes and migration/rollback instructions;
 - artifact manifest and SHA-256 checksums;
-- signatures and certificate/transparency evidence where configured;
+- Windows Authenticode signatures and trusted timestamp evidence (mandatory
+  for production Hive releases), plus other certificate/transparency evidence
+  where configured;
 - SBOM and dependency provenance where configured;
 - QSDM Core release-evidence bundle;
 - security review summary, findings disposition, and coverage gaps, with

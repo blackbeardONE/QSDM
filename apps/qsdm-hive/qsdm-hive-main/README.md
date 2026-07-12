@@ -47,6 +47,12 @@ to `release/build-linux/` and must be built on Linux. Direct Electron Builder
 publishing is disabled; the release host publishes a verified Windows/Linux set
 with `QSDM/deploy/scripts/publish_hive_release.sh`.
 
+Production Windows packaging requires a trusted, timestamped Authenticode
+identity whose publisher is `QSDM`. `npm run package` fails closed when any
+required executable is unsigned. `npm run package:windows:unsigned` exists only
+for local smoke testing and must never be published or placed behind an updater
+manifest.
+
 ## Support
 
 - Documentation: https://qsdm.tech/docs
