@@ -13,7 +13,7 @@ $hiveVersion = (Get-Content -Raw (Join-Path $hiveRoot 'release\app\package.json'
 $edgeVersion = (Get-Content -Raw (Join-Path $PSScriptRoot '..\..\..\apps\qsdm-edge-agent\VERSION')).Trim()
 
 $files = @(
-    @{ Path = 'QSDM Hive.exe'; Description = 'Desktop GUI and runtime for QSDM Hive node operations'; FileVersion = $hiveVersion; Original = '' },
+    @{ Path = 'QSDM Hive.exe'; Description = 'QSDM Hive'; FileVersion = $hiveVersion; Original = '' },
     @{ Path = 'resources\edge\qsdm-edge-agent.exe'; Description = 'QSDM Edge Agent'; FileVersion = $edgeVersion; Original = 'qsdm-edge-agent.exe' },
     @{ Path = 'resources\edge\qsdm-edge-control.exe'; Description = 'QSDM Edge Control'; FileVersion = $edgeVersion; Original = 'qsdm-edge-control.exe' },
     @{ Path = 'resources\edge\qsdm-edge-gpu-helper.exe'; Description = 'QSDM Edge GPU Helper'; FileVersion = $hiveVersion; Original = 'qsdm-edge-gpu-helper.exe' },
