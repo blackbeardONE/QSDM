@@ -148,9 +148,19 @@ a miner whose embedded Hive version differs from the app and rejects Edge Agent
 or Edge Control versions that differ from `apps/qsdm-edge-agent/VERSION`.
 The Windows command then rejects the release unless the installer, desktop
 executable, and all bundled QSDM executables have valid timestamped
-Authenticode signatures from the configured publisher. Use
+Authenticode signatures from the configured publisher. A SignPath Foundation
+release uses the two-stage GitHub-hosted workflow in
+`.github/workflows/qsdm-hive-windows.yml`: sign the unpacked QSDM executables,
+package that signed directory with electron-builder `--prepackaged`, then sign
+the outer NSIS installer. The workflow extracts the QSDM executables from NSIS
+and requires their hashes to match the signed source payload. Signing only the
+installer is not sufficient. Use
 `npm run package:windows:unsigned` only for local smoke testing; its output is
 not a publishable release.
+The first SignPath Foundation-signed Windows release is a publisher transition
+and must be installed manually after verifying its signature and checksum.
+Only subsequent releases signed by the same publisher use the normal updater
+path.
 Direct `npm run release` publishing is intentionally blocked: publish only the
 joint, verified Windows/Linux artifact set through
 `QSDM/deploy/scripts/publish_hive_release.sh`.

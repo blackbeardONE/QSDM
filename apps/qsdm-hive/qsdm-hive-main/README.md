@@ -48,10 +48,19 @@ publishing is disabled; the release host publishes a verified Windows/Linux set
 with `QSDM/deploy/scripts/publish_hive_release.sh`.
 
 Production Windows packaging requires a trusted, timestamped Authenticode
-identity whose publisher is `QSDM`. `npm run package` fails closed when any
+identity whose publisher exactly matches the approved release configuration.
+The local first-party default is `QSDM`; the pending open-source SignPath
+workflow uses `SignPath Foundation`. `npm run package` fails closed when any
 required executable is unsigned. `npm run package:windows:unsigned` exists only
 for local smoke testing and must never be published or placed behind an updater
 manifest.
+
+QSDM is preparing an application for the SignPath Foundation open-source
+program. Until it is accepted, SignPath signing is not available and unsigned
+Windows packages remain development artifacts. The repository
+[code signing policy](../../../CODE_SIGNING_POLICY.md) defines the trusted-build
+and manual-approval flow; the [privacy policy](../../../PRIVACY.md) documents
+Hive's local and network data boundaries.
 
 ## Support
 

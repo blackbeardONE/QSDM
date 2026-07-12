@@ -1,0 +1,310 @@
+name: QSDM Hive Windows
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "hive-v*"
+  pull_request:
+    paths:
+      - "apps/qsdm-hive/qsdm-hive-main/**"
+      - "apps/qsdm-edge-agent/**"
+      - "QSDM/source/cmd/qsdmcli/**"
+      - "QSDM/source/cmd/qsdmminer-console/**"
+      - "QSDM/source/cmd/qsdm-edge-agent/**"
+      - "QSDM/source/cmd/qsdm-edge-control/**"
+      - "QSDM/source/cmd/qsdm-edge-gpu-helper/**"
+      - "QSDM/source/cmd/qsdm-miner-cuda-solver/**"
+      - "QSDM/deploy/scripts/build_hive_windows_native.ps1"
+      - "QSDM/deploy/scripts/prepare_hive_signpath_payload.ps1"
+      - "QSDM/deploy/scripts/verify_hive_windows_metadata.ps1"
+      - "QSDM/deploy/scripts/verify_hive_nsis_payload.ps1"
+      - "QSDM/deploy/scripts/verify_hive_windows_signature.ps1"
+      - "QSDM/scripts/build_edge_gpu_helper.ps1"
+      - "QSDM/scripts/build_miner_cuda.ps1"
+      - "QSDM/scripts/build_windows_version_resource.ps1"
+      - ".signpath/**"
+      - ".github/workflows/qsdm-hive-windows.yml"
+
+concurrency:
+  group: qsdm-hive-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-unsigned-candidate:
+    runs-on: windows-2022
+    timeout-minutes: 75
+    outputs:
+      artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+      hive-version: ${{ steps.versions.outputs.hive }}
+      edge-version: ${{ steps.versions.outputs.edge }}
+      is-production-tag: ${{ steps.versions.outputs.is-production-tag }}
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: QSDM/source/go.mod
+          cache-dependency-path: QSDM/source/go.sum
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            apps/qsdm-hive/qsdm-hive-main/package-lock.json
+            apps/qsdm-hive/qsdm-hive-main/release/app/package-lock.json
+
+      - name: Install CUDA compiler
+        uses: Jimver/cuda-toolkit@3d45d157f327c09c04b50ee6ccdea2d9d017ec76 # v0.2.35
+        with:
+          cuda: "12.9.1"
+          method: network
+          sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
+
+      - name: Select stable native tools
+        shell: pwsh
+        run: |
+          "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          windres.exe --version
+          nvcc --version
+          foreach ($requiredCudaFile in @(
+            (Join-Path $env:CUDA_PATH 'include\cuda_runtime.h'),
+            (Join-Path $env:CUDA_PATH 'lib\x64\cudart.lib')
+          )) {
+            if (-not (Test-Path -LiteralPath $requiredCudaFile -PathType Leaf)) {
+              throw "Required CUDA development file is missing: $requiredCudaFile"
+            }
+          }
+
+      - name: Read coupled versions
+        id: versions
+        shell: pwsh
+        run: |
+          $hive = (Get-Content -Raw apps/qsdm-hive/qsdm-hive-main/release/app/package.json | ConvertFrom-Json).version
+          $edge = (Get-Content -Raw apps/qsdm-edge-agent/VERSION).Trim()
+          $productionTag = "hive-v$hive"
+          $isProductionTag = $env:GITHUB_REF -eq "refs/tags/$productionTag"
+          if ($isProductionTag) {
+            & git merge-base --is-ancestor HEAD origin/main
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Production Hive tags must point to a commit already contained in origin/main.'
+            }
+          }
+          "hive=$hive" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "edge=$edge" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "is-production-tag=$($isProductionTag.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Install Hive dependencies
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: |
+          npm ci --ignore-scripts
+          npm --prefix release/app ci --ignore-scripts
+          npm exec electron-builder -- install-app-deps
+
+      - name: Build native QSDM tools
+        shell: pwsh
+        run: ./QSDM/deploy/scripts/build_hive_windows_native.ps1 -SkipCudaRuntimeSelfTest
+
+      - name: Test Hive integration
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: |
+          npx tsc --noEmit
+          npm test -- --runInBand src/main/services/qsdmSystemTasks.spec.ts src/main/services/qsdmTaskActions.spec.ts
+
+      - name: Build unpacked Hive candidate
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: |
+          npm run build
+          npx electron-builder build --win dir --x64 --publish never --config.directories.output=release/signpath --config.win.publisherName="SignPath Foundation"
+
+      - name: Prepare provenance payload
+        shell: pwsh
+        run: |
+          ./QSDM/deploy/scripts/prepare_hive_signpath_payload.ps1 `
+            -UnpackedDirectory apps/qsdm-hive/qsdm-hive-main/release/signpath/win-unpacked `
+            -OutputDirectory .cache/signpath
+
+      - name: Upload unsigned signing input
+        id: upload-unsigned
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qsdm-hive-${{ steps.versions.outputs.hive }}-windows-signpath-input-UNSIGNED
+          path: .cache/signpath/qsdm-hive-${{ steps.versions.outputs.hive }}-windows-unpacked-unsigned.zip
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload unsigned build evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qsdm-hive-${{ steps.versions.outputs.hive }}-windows-build-evidence
+          path: |
+            .cache/signpath/qsdm-hive-${{ steps.versions.outputs.hive }}-windows-unpacked-manifest.json
+            apps/qsdm-hive/qsdm-hive-main/release/signpath/windows-metadata-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
+  sign-production:
+    if: needs.build-unsigned-candidate.outputs.is-production-tag == 'true' && github.run_attempt == 1
+    needs: build-unsigned-candidate
+    runs-on: windows-2022
+    timeout-minutes: 45
+    environment: signpath-production
+    permissions:
+      actions: read
+      contents: read
+    env:
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+      SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+      SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+      HIVE_VERSION: ${{ needs.build-unsigned-candidate.outputs.hive-version }}
+      EDGE_VERSION: ${{ needs.build-unsigned-candidate.outputs.edge-version }}
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 1
+
+      - name: Require approved SignPath configuration
+        shell: pwsh
+        run: |
+          $required = @(
+            'SIGNPATH_API_TOKEN',
+            'SIGNPATH_ORGANIZATION_ID',
+            'SIGNPATH_PROJECT_SLUG',
+            'SIGNPATH_SIGNING_POLICY_SLUG'
+          )
+          foreach ($name in $required) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Required SignPath configuration is missing: $name"
+            }
+          }
+
+      - name: Sign unpacked QSDM executables
+        id: sign-unpacked
+        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: hive-unpacked-v1
+          github-artifact-id: ${{ needs.build-unsigned-candidate.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: apps/qsdm-hive/qsdm-hive-main/release/signpath-signed-input
+          parameters: |
+            version: "${{ env.HIVE_VERSION }}"
+            edgeVersion: "${{ env.EDGE_VERSION }}"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/qsdm-hive/qsdm-hive-main/package-lock.json
+
+      - name: Install packaging dependencies
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: npm ci --ignore-scripts
+
+      - name: Restore signed unpacked app
+        shell: pwsh
+        run: |
+          $signedPayloads = @(Get-ChildItem `
+            apps/qsdm-hive/qsdm-hive-main/release/signpath-signed-input `
+            -Recurse `
+            -Filter "qsdm-hive-$env:HIVE_VERSION-windows-unpacked-unsigned.zip")
+          if ($signedPayloads.Count -ne 1) {
+            throw "Expected one signed unpacked payload, found $($signedPayloads.Count)."
+          }
+          $target = 'apps/qsdm-hive/qsdm-hive-main/release/signpath-final/win-unpacked'
+          New-Item -ItemType Directory -Force -Path (Split-Path $target -Parent) | Out-Null
+          Expand-Archive -LiteralPath $signedPayloads[0].FullName -DestinationPath (Split-Path $target -Parent) -Force
+          if (-not (Test-Path -LiteralPath (Join-Path $target 'QSDM Hive.exe'))) {
+            throw 'The signed SignPath payload did not contain win-unpacked/QSDM Hive.exe.'
+          }
+
+      - name: Verify signed unpacked payload
+        shell: pwsh
+        run: |
+          ./QSDM/deploy/scripts/verify_hive_windows_signature.ps1 `
+            -ReleaseDirectory apps/qsdm-hive/qsdm-hive-main/release/signpath-final `
+            -ExpectedPublisher 'SignPath Foundation' `
+            -UnpackedOnly
+
+      - name: Package signed payload into NSIS
+        shell: pwsh
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: |
+          npx electron-builder build `
+            --win nsis `
+            --x64 `
+            --prepackaged release/signpath-final/win-unpacked `
+            --publish never `
+            --config.directories.output=release/signpath-installer `
+            --config.win.publisherName="SignPath Foundation"
+
+      - name: Upload unsigned outer installer
+        id: upload-installer
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qsdm-hive-${{ env.HIVE_VERSION }}-windows-installer-signing-input-UNSIGNED
+          path: apps/qsdm-hive/qsdm-hive-main/release/signpath-installer/qsdm-hive-${{ env.HIVE_VERSION }}-win-x64.exe
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign outer installer
+        id: sign-installer
+        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: hive-installer-v1
+          github-artifact-id: ${{ steps.upload-installer.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: apps/qsdm-hive/qsdm-hive-main/release/signpath-signed-installer
+          parameters: |
+            version: "${{ env.HIVE_VERSION }}"
+
+      - name: Assemble and verify signed release
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem `
+            apps/qsdm-hive/qsdm-hive-main/release/signpath-signed-installer `
+            -Recurse `
+            -Filter "qsdm-hive-$env:HIVE_VERSION-win-x64.exe")
+          if ($installers.Count -ne 1) {
+            throw "Expected one signed installer, found $($installers.Count)."
+          }
+          $final = 'apps/qsdm-hive/qsdm-hive-main/release/signpath-final'
+          Copy-Item -LiteralPath $installers[0].FullName -Destination $final -Force
+          ./QSDM/deploy/scripts/verify_hive_windows_signature.ps1 `
+            -ReleaseDirectory $final `
+            -ExpectedPublisher 'SignPath Foundation'
+          $installer = Join-Path $final "qsdm-hive-$env:HIVE_VERSION-win-x64.exe"
+          ./QSDM/deploy/scripts/verify_hive_nsis_payload.ps1 `
+            -InstallerPath $installer `
+            -SignedUnpackedDirectory (Join-Path $final 'win-unpacked') `
+            -EvidencePath (Join-Path $final 'windows-nsis-payload-evidence.json')
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path -Leaf $installer)" | Set-Content -LiteralPath (Join-Path $final 'SHA256SUMS-win.txt') -Encoding ascii
+
+      - name: Upload signed release
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qsdm-hive-${{ env.HIVE_VERSION }}-windows-SIGNED
+          path: |
+            apps/qsdm-hive/qsdm-hive-main/release/signpath-final/qsdm-hive-${{ env.HIVE_VERSION }}-win-x64.exe
+            apps/qsdm-hive/qsdm-hive-main/release/signpath-final/SHA256SUMS-win.txt
+            apps/qsdm-hive/qsdm-hive-main/release/signpath-final/windows-nsis-payload-evidence.json
+            apps/qsdm-hive/qsdm-hive-main/release/signpath-final/windows-signature-evidence.json
+          if-no-files-found: error
+          retention-days: 30
