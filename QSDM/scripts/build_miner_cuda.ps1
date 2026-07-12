@@ -1,6 +1,8 @@
 param(
     [string]$Output = "",
-    [string]$CudaPath = $env:CUDA_PATH
+    [string]$CudaPath = $env:CUDA_PATH,
+    [string]$Version = "",
+    [switch]$SkipRuntimeSelfTest
 )
 
 $ErrorActionPreference = "Stop"
@@ -9,7 +11,15 @@ Set-StrictMode -Version Latest
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $Source = Join-Path $RepoRoot "QSDM\source\cmd\qsdm-miner-cuda-solver\main.cu"
 $HiveNative = Join-Path $RepoRoot "apps\qsdm-hive\qsdm-hive-main\native\windows\x64"
+$HiveRoot = Join-Path $RepoRoot "apps\qsdm-hive\qsdm-hive-main"
 $VsWhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+
+if (-not $Version) {
+    $Version = (Get-Content -Raw (Join-Path $HiveRoot 'release\app\package.json') | ConvertFrom-Json).version
+}
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw 'Version must use MAJOR.MINOR.PATCH format.'
+}
 
 if (-not $CudaPath) {
     $CudaPath = Get-ChildItem "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA" -Directory -ErrorAction SilentlyContinue |
@@ -41,7 +51,19 @@ if (-not $Output) {
     $Output = [System.IO.Path]::GetFullPath($Output)
     $Destination = $Output
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Output) | Out-Null
+    $BuildDirectory = Split-Path -Parent $Output
 }
+
+$ResourceObject = Join-Path $BuildDirectory 'qsdm-miner-cuda-solver-version.obj'
+& (Join-Path $PSScriptRoot 'build_windows_version_resource.ps1') `
+    -ProductVersion $Version `
+    -FileVersion $Version `
+    -ProductName 'QSDM Hive' `
+    -FileDescription 'QSDM CUDA Miner Solver' `
+    -InternalName 'qsdm-miner-cuda-solver' `
+    -OriginalFilename 'qsdm-miner-cuda-solver.exe' `
+    -IconPath (Join-Path $HiveRoot 'assets\icon.ico') `
+    -OutputPath $ResourceObject
 
 & $Nvcc `
     -O3 `
@@ -53,14 +75,17 @@ if (-not $Output) {
     -allow-unsupported-compiler `
     -ccbin $Compiler.DirectoryName `
     $Source `
+    $ResourceObject `
     -o $Output
 if ($LASTEXITCODE -ne 0) {
     throw "CUDA miner solver build failed with exit code $LASTEXITCODE"
 }
 
-& $Output --self-test
-if ($LASTEXITCODE -ne 0) {
-    throw "CUDA miner solver self-test failed with exit code $LASTEXITCODE"
+if (-not $SkipRuntimeSelfTest) {
+    & $Output --self-test
+    if ($LASTEXITCODE -ne 0) {
+        throw "CUDA miner solver self-test failed with exit code $LASTEXITCODE"
+    }
 }
 
 if ($Destination -ne $Output) {

@@ -3,7 +3,8 @@ param(
     [string]$QsdmSourceDir = "QSDM/source",
     [string]$EdgeAgentVersion = "",
     [string]$GoExe = "",
-    [switch]$KeepGeneratedResource
+    [switch]$KeepGeneratedResource,
+    [switch]$SkipCudaRuntimeSelfTest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,6 +14,7 @@ $hive = (Resolve-Path (Join-Path $workspace $HiveSourceDir)).Path
 $qsdm = (Resolve-Path (Join-Path $workspace $QsdmSourceDir)).Path
 $native = Join-Path $hive 'native\windows\x64'
 $goCache = Join-Path $workspace '.cache\go-build'
+$goModCache = Join-Path $workspace '.cache\go-mod'
 $officialGo = Join-Path $env:ProgramFiles 'Go\bin\go.exe'
 $goOverride = if ($GoExe) { $GoExe } else { $env:QSDM_GO_EXE }
 $go = if ($goOverride) {
@@ -25,12 +27,6 @@ $go = if ($goOverride) {
 } else {
     (Get-Command go -ErrorAction Stop).Source
 }
-$goRoot = Split-Path -Parent (Split-Path -Parent $go)
-$goVersionOutput = (& $go version).Trim()
-if ($LASTEXITCODE -ne 0 -or $goVersionOutput -notmatch '\bgo(\d+\.\d+\.\d+)\b') {
-    throw "Unable to determine Go version from $go"
-}
-$goVersion = [version]$Matches[1]
 $requiredGoLine = Get-Content -LiteralPath (Join-Path $qsdm 'go.mod') |
     Where-Object { $_ -match '^go\s+(\d+\.\d+\.\d+)\s*$' } |
     Select-Object -First 1
@@ -38,10 +34,24 @@ if (-not $requiredGoLine) {
     throw 'QSDM go.mod does not contain a MAJOR.MINOR.PATCH go directive.'
 }
 $requiredGo = [version]([regex]::Match($requiredGoLine, '^go\s+(\d+\.\d+\.\d+)\s*$').Groups[1].Value)
-if ($goVersion -lt $requiredGo) {
-    throw "Go $requiredGo or newer is required; selected $goVersion from $go. Set QSDM_GO_EXE to a current Go SDK."
+$env:GOTOOLCHAIN = 'auto'
+$env:GOMODCACHE = $goModCache
+New-Item -ItemType Directory -Force -Path $goModCache | Out-Null
+Push-Location $qsdm
+try {
+    $goVersionOutput = (& $go env GOVERSION).Trim()
+    if ($LASTEXITCODE -ne 0 -or $goVersionOutput -notmatch '^go(\d+\.\d+\.\d+)$') {
+        throw "Unable to select the Go toolchain required by $qsdm\go.mod using $go"
+    }
+    $goVersion = [version]$Matches[1]
 }
-Write-Host "Using $goVersionOutput from $go"
+finally {
+    Pop-Location
+}
+if ($goVersion -lt $requiredGo) {
+    throw "Go $requiredGo or newer is required; automatic toolchain selection returned $goVersion from $go. Set QSDM_GO_EXE to a current Go SDK."
+}
+Write-Host "Using $goVersionOutput through $go"
 $version = (Get-Content -Raw (Join-Path $hive 'release\app\package.json') | ConvertFrom-Json).version
 $edgeVersionFile = Join-Path $workspace 'apps\qsdm-edge-agent\VERSION'
 if (-not $EdgeAgentVersion) {
@@ -57,20 +67,59 @@ $gitSha = (& git -C $qsdm rev-parse --short HEAD).Trim()
 $buildDate = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 $buildInfo = "-s -w -X github.com/blackbeardONE/QSDM/pkg/buildinfo.Version=hive-v$version -X github.com/blackbeardONE/QSDM/pkg/buildinfo.GitSHA=$gitSha -X github.com/blackbeardONE/QSDM/pkg/buildinfo.BuildDate=$buildDate"
 $controlIcon = Join-Path $hive 'assets\icon.ico'
-$controlResourceBuilder = Join-Path $workspace 'QSDM\scripts\build_edge_control_windows_resource.ps1'
-$controlResource = Join-Path $qsdm 'cmd\qsdm-edge-control\rsrc_windows_amd64.syso'
+$versionResourceBuilder = Join-Path $workspace 'QSDM\scripts\build_windows_version_resource.ps1'
 $cudaSolverBuilder = Join-Path $workspace 'QSDM\scripts\build_miner_cuda.ps1'
+$edgeGpuBuilder = Join-Path $workspace 'QSDM\scripts\build_edge_gpu_helper.ps1'
 $cudaSolver = Join-Path $native 'qsdm-miner-cuda-solver.exe'
+$edgeGpuHelper = Join-Path $native 'qsdm-edge-gpu-helper.exe'
+
+$resourceSpecs = @(
+    @{
+        Path = Join-Path $qsdm 'cmd\qsdmcli\rsrc_windows_amd64.syso'
+        FileVersion = $version
+        Description = 'QSDM Command Line Interface'
+        InternalName = 'qsdmcli'
+        OriginalFilename = 'qsdmcli.exe'
+    },
+    @{
+        Path = Join-Path $qsdm 'cmd\qsdmminer-console\rsrc_windows_amd64.syso'
+        FileVersion = $version
+        Description = 'QSDM Console Miner'
+        InternalName = 'qsdmminer-console'
+        OriginalFilename = 'qsdmminer-console.exe'
+    },
+    @{
+        Path = Join-Path $qsdm 'cmd\qsdm-edge-agent\rsrc_windows_amd64.syso'
+        FileVersion = $EdgeAgentVersion
+        Description = 'QSDM Edge Agent'
+        InternalName = 'qsdm-edge-agent'
+        OriginalFilename = 'qsdm-edge-agent.exe'
+    },
+    @{
+        Path = Join-Path $qsdm 'cmd\qsdm-edge-control\rsrc_windows_amd64.syso'
+        FileVersion = $EdgeAgentVersion
+        Description = 'QSDM Edge Control'
+        InternalName = 'qsdm-edge-control'
+        OriginalFilename = 'qsdm-edge-control.exe'
+    }
+)
 
 New-Item -ItemType Directory -Force -Path $native | Out-Null
 New-Item -ItemType Directory -Force -Path $goCache | Out-Null
 
-& $controlResourceBuilder -Version $EdgeAgentVersion -IconPath $controlIcon -OutputPath $controlResource
+foreach ($resource in $resourceSpecs) {
+    & $versionResourceBuilder `
+        -ProductVersion $version `
+        -FileVersion $resource.FileVersion `
+        -ProductName 'QSDM Hive' `
+        -FileDescription $resource.Description `
+        -InternalName $resource.InternalName `
+        -OriginalFilename $resource.OriginalFilename `
+        -IconPath $controlIcon `
+        -OutputPath $resource.Path
+}
 Push-Location $qsdm
 try {
-    if (Test-Path -LiteralPath (Join-Path $goRoot 'src')) {
-        $env:GOROOT = $goRoot
-    }
     $env:GOCACHE = $goCache
     $env:CGO_ENABLED = '0'
     $env:GOOS = 'windows'
@@ -89,29 +138,48 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "qsdm-edge-control build failed with exit code $LASTEXITCODE" }
 }
 finally {
+    $resourceCleanupFailed = @()
     if (-not $KeepGeneratedResource) {
-        for ($attempt = 0; $attempt -lt 30 -and (Test-Path -LiteralPath $controlResource); $attempt++) {
-            Remove-Item -LiteralPath $controlResource -Force -ErrorAction SilentlyContinue
-            if (Test-Path -LiteralPath $controlResource) {
-                Start-Sleep -Milliseconds ([Math]::Min(($attempt + 1) * 100, 1000))
+        foreach ($resource in $resourceSpecs) {
+            for ($attempt = 0; $attempt -lt 30 -and (Test-Path -LiteralPath $resource.Path); $attempt++) {
+                Remove-Item -LiteralPath $resource.Path -Force -ErrorAction SilentlyContinue
+                if (Test-Path -LiteralPath $resource.Path) {
+                    Start-Sleep -Milliseconds ([Math]::Min(($attempt + 1) * 100, 1000))
+                }
+            }
+            if (Test-Path -LiteralPath $resource.Path) {
+                $resourceCleanupFailed += $resource.Path
             }
         }
     }
-    $resourceCleanupFailed = -not $KeepGeneratedResource -and (Test-Path -LiteralPath $controlResource)
     Pop-Location
-    if ($resourceCleanupFailed) {
-        Write-Warning "Windows retained the generated Edge Control resource after cleanup retries. It is ignored by git and will be overwritten by the next build: $controlResource"
+    if ($resourceCleanupFailed.Count -gt 0) {
+        Write-Warning "Windows retained generated version resources after cleanup retries. They are ignored by git and will be overwritten by the next build: $($resourceCleanupFailed -join ', ')"
     }
 }
 
-& $cudaSolverBuilder
+$cudaArguments = @{
+    Version = $version
+    SkipRuntimeSelfTest = [bool]$SkipCudaRuntimeSelfTest
+}
+& $cudaSolverBuilder @cudaArguments
 if ($LASTEXITCODE -ne 0) { throw 'QSDM CUDA miner solver build failed.' }
+
+& $edgeGpuBuilder @cudaArguments
+if ($LASTEXITCODE -ne 0) { throw 'QSDM Edge GPU Helper build failed.' }
 
 & (Join-Path $native 'qsdmminer-console.exe') --version
 if ($LASTEXITCODE -ne 0) { throw 'Packaged qsdmminer-console failed its version probe.' }
 
-& $cudaSolver --self-test
-if ($LASTEXITCODE -ne 0) { throw 'Packaged QSDM CUDA miner solver failed its self-test.' }
+if (-not $SkipCudaRuntimeSelfTest) {
+    & $cudaSolver --self-test
+    if ($LASTEXITCODE -ne 0) { throw 'Packaged QSDM CUDA miner solver failed its self-test.' }
+
+    $gpuResult = & $edgeGpuHelper --seed ('00' * 32) --units 1024 --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or -not $gpuResult.gpu_name) {
+        throw 'Packaged QSDM Edge GPU Helper failed its runtime self-test.'
+    }
+}
 
 & (Join-Path $native 'qsdm-edge-agent.exe') --version
 if ($LASTEXITCODE -ne 0) { throw 'Packaged qsdm-edge-agent failed its version probe.' }

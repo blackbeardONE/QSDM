@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+    <parameter name="edgeVersion" required="true" />
+  </parameters>
+  <zip-file>
+    <zip-file path="qsdm-hive-${version}-windows-unpacked-unsigned.zip">
+      <directory path="win-unpacked">
+      <pe-file path="QSDM Hive.exe"
+               product-name="QSDM Hive"
+               product-version="${version}.0"
+               file-version="${version}"
+               company-name="QSDM">
+        <authenticode-sign description="QSDM Hive" description-url="https://qsdm.tech" />
+      </pe-file>
+      <directory path="resources">
+        <directory path="edge">
+          <pe-file path="qsdm-edge-agent.exe"
+                   product-name="QSDM Hive"
+                   product-version="${version}.0"
+                   file-version="${edgeVersion}.0"
+                   company-name="QSDM"
+                   original-filename="qsdm-edge-agent.exe">
+            <authenticode-sign description="QSDM Edge Agent" description-url="https://qsdm.tech" />
+          </pe-file>
+          <pe-file path="qsdm-edge-control.exe"
+                   product-name="QSDM Hive"
+                   product-version="${version}.0"
+                   file-version="${edgeVersion}.0"
+                   company-name="QSDM"
+                   original-filename="qsdm-edge-control.exe">
+            <authenticode-sign description="QSDM Edge Control" description-url="https://qsdm.tech" />
+          </pe-file>
+          <pe-file path="qsdm-edge-gpu-helper.exe"
+                   product-name="QSDM Hive"
+                   product-version="${version}.0"
+                   file-version="${version}.0"
+                   company-name="QSDM"
+                   original-filename="qsdm-edge-gpu-helper.exe">
+            <authenticode-sign description="QSDM Edge GPU Helper" description-url="https://qsdm.tech" />
+          </pe-file>
+        </directory>
+        <directory path="native">
+          <pe-file path="qsdmcli.exe"
+                   product-name="QSDM Hive"
+                   product-version="${version}.0"
+                   file-version="${version}.0"
+                   company-name="QSDM"
+                   original-filename="qsdmcli.exe">
+            <authenticode-sign description="QSDM Command Line Interface" description-url="https://qsdm.tech" />
+          </pe-file>
+        </directory>
+        <directory path="miner">
+          <pe-file path="qsdmminer-console.exe"
+                   product-name="QSDM Hive"
+                   product-version="${version}.0"
+                   file-version="${version}.0"
+                   company-name="QSDM"
+                   original-filename="qsdmminer-console.exe">
+            <authenticode-sign description="QSDM Console Miner" description-url="https://qsdm.tech" />
+          </pe-file>
+          <pe-file path="qsdm-miner-cuda-solver.exe"
+                   product-name="QSDM Hive"
+                   product-version="${version}.0"
+                   file-version="${version}.0"
+                   company-name="QSDM"
+                   original-filename="qsdm-miner-cuda-solver.exe">
+            <authenticode-sign description="QSDM CUDA Miner Solver" description-url="https://qsdm.tech" />
+          </pe-file>
+        </directory>
+      </directory>
+      </directory>
+    </zip-file>
+  </zip-file>
+</artifact-configuration>

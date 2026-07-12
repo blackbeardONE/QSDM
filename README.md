@@ -49,6 +49,9 @@ Latest tagged ledger release: **v0.4.3**. Public site: [qsdm.tech](https://qsdm.
 - **API reference:** [`QSDM/docs/docs/API_REFERENCE.md`](QSDM/docs/docs/API_REFERENCE.md) and [`openapi.yaml`](QSDM/docs/docs/openapi.yaml)
 - **Protocol specs:** [`MINING_PROTOCOL_V2.md`](QSDM/docs/docs/MINING_PROTOCOL_V2.md), [`NODE_ROLES.md`](QSDM/docs/docs/NODE_ROLES.md), [`CELL_TOKENOMICS.md`](QSDM/docs/docs/CELL_TOKENOMICS.md)
 - **Release notes:** [`CHANGELOG.md`](CHANGELOG.md)
+- **Code signing policy:** [`CODE_SIGNING_POLICY.md`](CODE_SIGNING_POLICY.md)
+- **Privacy policy:** [`PRIVACY.md`](PRIVACY.md)
+- **Security reporting:** [`SECURITY.md`](SECURITY.md)
 
 > **New?** The operator wiki answers the three questions every new node
 > operator asks: *do I need an NVIDIA GPU, do I need a paid NGC plan, and
@@ -79,3 +82,11 @@ for why NVIDIA-lock is a transparency signal, not a consensus rule.
 The ledger node and sidecars are permissively licensed. Vendored
 third-party dependencies under `QSDM/source/wasmer-go-patched/` retain
 their own licences (see [`QSDM/source/wasmer-go-patched/LICENSE`](QSDM/source/wasmer-go-patched/LICENSE)).
+
+## Windows signing
+
+QSDM is preparing an application for free open-source signing through
+SignPath Foundation. The application is pending, and no artifact may be
+represented as SignPath-signed until it passes the repository's release gates.
+See the [code signing policy](CODE_SIGNING_POLICY.md) for roles, provenance,
+approval, verification, and incident-response requirements.

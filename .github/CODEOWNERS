@@ -12,4 +12,7 @@
 /QSDM/deploy/*treasury* @blackbeardONE
 /apps/qsdm-hive/qsdm-hive-main/src/main/security/ @blackbeardONE
 /.github/workflows/ @blackbeardONE
+/.signpath/ @blackbeardONE
+/CODE_SIGNING_POLICY.md @blackbeardONE
+/PRIVACY.md @blackbeardONE
 /scripts/check_secrets.py @blackbeardONE

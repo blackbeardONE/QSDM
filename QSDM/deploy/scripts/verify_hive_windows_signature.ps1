@@ -5,7 +5,9 @@ param(
 
     [string]$ExpectedPublisher = 'QSDM',
 
-    [string]$EvidencePath
+    [string]$EvidencePath,
+
+    [switch]$UnpackedOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,8 +31,7 @@ if ([string]::IsNullOrWhiteSpace($version)) {
     throw "Packaged application version is missing from $releaseAppPackage"
 }
 
-$requiredFiles = @(
-    "qsdm-hive-$version-win-x64.exe"
+$unpackedFiles = @(
     'win-unpacked\QSDM Hive.exe'
     'win-unpacked\resources\edge\qsdm-edge-agent.exe'
     'win-unpacked\resources\edge\qsdm-edge-control.exe'
@@ -39,6 +40,11 @@ $requiredFiles = @(
     'win-unpacked\resources\miner\qsdmminer-console.exe'
     'win-unpacked\resources\miner\qsdm-miner-cuda-solver.exe'
 )
+$requiredFiles = if ($UnpackedOnly) {
+    $unpackedFiles
+} else {
+    @("qsdm-hive-$version-win-x64.exe") + $unpackedFiles
+}
 
 $evidenceFiles = @()
 foreach ($relativePath in $requiredFiles) {
@@ -98,6 +104,7 @@ $evidence = [ordered]@{
     schema = 'qsdm.windows-signature-evidence.v1'
     generated_at = (Get-Date).ToUniversalTime().ToString('o')
     version = $version
+    scope = if ($UnpackedOnly) { 'unpacked' } else { 'release' }
     expected_publisher = $ExpectedPublisher
     files = $evidenceFiles
 }
