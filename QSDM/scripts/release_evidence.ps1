@@ -174,7 +174,7 @@ if ($Quick) {
         Push-Location $sourceDir
         try {
             $env:CGO_ENABLED = '0'
-            & go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+            & go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
         } finally {
             Pop-Location
         }
@@ -328,7 +328,7 @@ $manifestLines += '#                            via cmd/auditreport -input <revi
 $manifestLines += '#  2. 03_go_mod_verify    - must end "all modules verified".'
 $manifestLines += '#  3. 04_govulncheck      - must report zero reachable findings.'
 $manifestLines += '#  4. 06_go_test_full     - last lines must show ok / no FAIL.'
-$manifestLines += '#  5. 09_binaries         - every cmd should report go1.25.11+ banner.'
+$manifestLines += '#  5. 09_binaries         - every cmd should report go1.25.12+ banner.'
 $manifestLines += '#  6. 10_soak_summary     - mempool + pubsub soaks PASS at >= 10 min.'
 $manifestLines -join "`r`n" | Set-Content -Path $manifestPath -Encoding utf8
 

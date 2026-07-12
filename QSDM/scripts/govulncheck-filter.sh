@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # govulncheck-filter.sh
 # =====================
-# Run `govulncheck -json ./...` from the current working directory,
+# Run govulncheck v1.6.0 in JSON mode from the current working directory,
 # then exit:
 #   0 if every reported OSV id is in the allowlist below,
 #   0 if no OSVs were reported at all,
@@ -33,7 +33,7 @@ raw_err="$(mktemp)"
 trap 'rm -f "${raw_out}" "${raw_err}"' EXIT
 
 set +e
-go run golang.org/x/vuln/cmd/govulncheck@latest -json ./... \
+go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 -json ./... \
     >"${raw_out}" 2>"${raw_err}"
 rc=$?
 set -e
@@ -52,15 +52,14 @@ fi
 #      MODULE VERSION. Most of these are NOT reachable from our call
 #      graph. Filtering on this field alone yields 100+ false positives.
 #
-#   2. {"finding": {"osv": "GO-...", ...}} -- an actual FINDING, i.e.
-#      govulncheck's dataflow analysis has demonstrated a reachable
-#      call path in our code. This is the text-mode equivalent of the
-#      "Vulnerability #N: GO-..." sections the default reporter shows.
+#   2. {"finding": {"osv": "GO-...", ...}} -- a package or symbol
+#      finding. Only records with a non-empty trace demonstrate a reachable
+#      call path in QSDM; newer scanner versions also emit untraced notices.
 #
-# Only (2) should gate CI. The earlier version of this script keyed off
+# Only traced records from (2) should gate CI. The earlier version keyed off
 # (1) and surfaced GO-2020-0006, GO-2021-0067, and ~150 other advisories
 # that our binary cannot actually reach.
-findings_jq='select(.finding) | .finding.osv'
+findings_jq='select(.finding.trace != null and (.finding.trace | length > 0)) | .finding.osv'
 
 # Human-readable re-render of the reachable findings for the job log.
 echo "==== govulncheck reachable findings ===="
@@ -69,12 +68,12 @@ if command -v jq >/dev/null 2>&1; then
   # the log is self-explanatory without having to cross-reference.
   jq -r --slurp '
     (map(select(.osv))     | map({(.osv.id): (.osv.summary // "(no summary)")}) | add) as $summaries
-    | (map(select(.finding)) | map(.finding.osv) | unique) as $hits
+    | (map(select(.finding.trace != null and (.finding.trace | length > 0))) | map(.finding.osv) | unique) as $hits
     | $hits[] | . + "  " + ($summaries[.] // "(no summary)")
   ' "${raw_out}" || true
 else
-  grep -oE '"finding":\{"osv":"GO-[0-9]{4}-[0-9]+"' "${raw_out}" \
-    | sed -E 's/.*"osv":"([^"]+)".*/\1/' | sort -u || true
+  echo "jq is required to distinguish reachable traces from module notices" >&2
+  exit 2
 fi
 echo "========================================"
 
@@ -93,8 +92,8 @@ fi
 if command -v jq >/dev/null 2>&1; then
   reported="$(jq -r "${findings_jq}" "${raw_out}" | sort -u)"
 else
-  reported="$(grep -oE '"finding":\{"osv":"GO-[0-9]{4}-[0-9]+"' "${raw_out}" \
-              | sed -E 's/.*"osv":"([^"]+)".*/\1/' | sort -u)"
+  echo "jq is required to distinguish reachable traces from module notices" >&2
+  exit 2
 fi
 
 if [ -z "${reported}" ]; then

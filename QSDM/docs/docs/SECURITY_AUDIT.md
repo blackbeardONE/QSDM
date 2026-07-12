@@ -476,7 +476,7 @@ Subsequent POST/PUT/DELETE/PATCH (cookie-session callers):
 |---------------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `gosec`       | 0       | No accepted residual findings. Operator-controlled local file paths carry narrow rule-specific dispositions; treasury URLs are literal-loopback-only and redirects are disabled. |
 | `staticcheck` | 0       | No accepted residual findings in `pkg/api/...`; stale helpers and dead compatibility code were removed. |
-| `govulncheck` | 0       | No accepted residual findings. Go 1.25.11 closes GO-2026-5037, GO-2026-5038, and GO-2026-5039; Kad-DHT removal previously closed GO-2024-3218 exposure. |
+| `govulncheck` | 0       | No accepted residual findings. Go 1.25.12 closes GO-2026-4970 and GO-2026-5856; quic-go 0.59.1 closes GO-2026-5676. Untraced module notices do not count as reachable findings. Kad-DHT removal previously closed GO-2024-3218 exposure. |
 
 **What is still pending:**
 - ⏳ External penetration testing

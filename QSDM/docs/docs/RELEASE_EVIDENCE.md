@@ -48,7 +48,7 @@ Every bundle contains the same eleven files. Each artefact has a self-describing
 | `06_go_test_full.txt` | `go test ./... -count=1 -timeout 900s` (non-`-short`). | Every test, no skips. Tail must show `ok` for every package and no `FAIL`. |
 | `07_jssdk_tests.txt` | `node --test sdk/javascript/qsdm.test.js`. | 17 cases must all pass — they cover every public SDK method, both auth headers, base-URL trimming, timeout abort, and every `ApiError` path. |
 | `08_npm_pack.txt` | `npm pack --dry-run` from `sdk/javascript/`. | The auditor sees the exact tarball manifest that would land on `npmjs.com`: 6 files, ~6.3 kB packed, `LICENSE` + `CHANGELOG.md` present. Anything missing means the SDK is *not* publish-ready. |
-| `09_binaries.txt` | For every `cmd/*`: clean build with `-trimpath -ldflags="-s -w"`, then sha256, size, and the first line of `--version`. | Reviewer verifies that the binaries an operator would install all stamp the expected Go toolchain version (currently `go1.25.11`). The sha256 lets the operator independently re-build and compare. |
+| `09_binaries.txt` | For every `cmd/*`: clean build with `-trimpath -ldflags="-s -w"`, then sha256, size, and the first line of `--version`. | Reviewer verifies that the binaries an operator would install all stamp the expected Go toolchain version (currently `go1.25.12`). The sha256 lets the operator independently re-build and compare. |
 | `10_soak_summary.txt` | Tail of any `_tmp_soak_*` logs in the repo root. | Latest mempool soak (10 min, 19.1 M txs, 31.9 K tx/sec — session 73) and pubsub soak (10 min, 4 hosts, 239 987 publishes, per-host receipts within 6 over 600 s — session 74) summaries. If absent, the file embeds the exact one-liners to reproduce them. |
 
 ## How a reviewer should use a bundle

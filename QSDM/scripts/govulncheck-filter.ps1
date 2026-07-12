@@ -8,6 +8,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$GovulncheckVersion = 'v1.6.0'
 
 # Intentionally empty. GO-2024-3218 was removed from the reachable graph by
 # replacing Kad-DHT discovery with explicit bootstrap-peer dialing.
@@ -49,7 +50,7 @@ try {
 	Remove-Item Env:CGO_LDFLAGS -ErrorAction SilentlyContinue
 	$env:QSDM_METRICS_REGISTER_STRICT = '1'
 
-	& $GoExe run golang.org/x/vuln/cmd/govulncheck@latest -json ./... > $outFile 2> $errFile
+	& $GoExe run "golang.org/x/vuln/cmd/govulncheck@$GovulncheckVersion" -json ./... > $outFile 2> $errFile
 	$rc = $LASTEXITCODE
 
 	if ((Test-Path $errFile) -and (Get-Item $errFile).Length -gt 0) {
@@ -63,7 +64,10 @@ try {
 
 	$content = [System.IO.File]::ReadAllText($outFile)
 	$reported = New-Object 'System.Collections.Generic.HashSet[string]'
-	$findingPattern = '"finding"\s*:\s*\{\s*"osv"\s*:\s*"(GO-[0-9]{4}-[0-9]+)"'
+	# A finding without a non-empty trace is a package/module notice, not a
+	# demonstrated call path. Stop at the next finding so an untraced notice
+	# cannot borrow a later record's trace.
+	$findingPattern = '(?s)"finding"\s*:\s*\{\s*"osv"\s*:\s*"(GO-[0-9]{4}-[0-9]+)"(?:(?!"finding"\s*:).)*?"trace"\s*:\s*\[(?!\s*\])'
 	foreach ($match in [regex]::Matches($content, $findingPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)) {
 		[void]$reported.Add($match.Groups[1].Value)
 	}

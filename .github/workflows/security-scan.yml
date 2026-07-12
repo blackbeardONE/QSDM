@@ -197,7 +197,7 @@ jobs:
       - name: Install govulncheck
         # Pin scanner code for reproducibility. The vulnerability database
         # is still refreshed at run time, so new advisories remain visible.
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
 
       - name: Run govulncheck
         working-directory: QSDM/source

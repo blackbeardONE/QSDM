@@ -14,7 +14,7 @@ else
 	export CGO_ENABLED=0
 	unset CGO_CFLAGS CGO_LDFLAGS 2>/dev/null || true
 	export QSDM_METRICS_REGISTER_STRICT=1
-	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 fi
 
 echo "OK: security-local-check finished"

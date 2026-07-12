@@ -1,6 +1,6 @@
 module github.com/blackbeardONE/QSDM
 
-go 1.25.11
+go 1.25.12
 
 replace github.com/wasmerio/wasmer-go-patched => ./wasmer-go-patched
 
@@ -24,6 +24,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/libp2p/go-yamux/v5 v5.0.1
 	github.com/multiformats/go-multiaddr v0.16.1
+	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/tetratelabs/wazero v1.11.0
 	golang.org/x/crypto v0.52.0
 	golang.org/x/sys v0.45.0
@@ -74,7 +75,6 @@ require (
 	github.com/multiformats/go-multistream v0.6.1 // indirect
 	github.com/multiformats/go-varint v0.1.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
 	github.com/pion/datachannel v1.5.10 // indirect
 	github.com/pion/dtls/v3 v3.1.2 // indirect
 	github.com/pion/ice/v4 v4.0.10 // indirect
@@ -97,7 +97,7 @@ require (
 	github.com/prometheus/common v0.67.5 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
-	github.com/quic-go/quic-go v0.59.0 // indirect
+	github.com/quic-go/quic-go v0.59.1 // indirect
 	github.com/quic-go/webtransport-go v0.10.0 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
