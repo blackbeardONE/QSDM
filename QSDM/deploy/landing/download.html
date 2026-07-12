@@ -135,6 +135,13 @@
 
     .btn-solid:hover { background: #e0c56f; }
 
+    .btn[aria-disabled="true"] {
+      opacity: 0.58;
+      cursor: not-allowed;
+      pointer-events: none;
+      transform: none;
+    }
+
     @media (min-width: 1024px) {
       .nav-mid { display: flex; }
     }
@@ -354,7 +361,7 @@
 
   <main class="shell">
     <section class="hero" aria-labelledby="download-title">
-      <span class="tag">Hive 1.3.95 · Edge Control 1.3.5</span>
+      <span class="tag">Hive 1.3.95 signing candidate · Edge Control 1.3.5</span>
       <h1 id="download-title">Download QSDM Hive</h1>
       <p class="lead">
         Windows and Linux client for CELL wallets, signed tasks, NVIDIA mining,
@@ -398,43 +405,46 @@
 
     <section class="panel" aria-labelledby="installer-title">
       <div>
-        <span class="version">Version 1.3.95</span>
+        <span class="version">Version 1.3.95 · signing pending</span>
         <h2 id="installer-title">Windows installer</h2>
         <p>
           Recommended for all users. Hive is the public release path for wallets,
-          tasks, integrations, and NVIDIA mining access. No separate consumer GUI miner is shipped.
+          tasks, integrations, and NVIDIA mining access. The current installer is
+          withheld until the trusted signing transition is complete. No separate
+          consumer GUI miner is shipped.
         </p>
         <div class="actions">
-          <a class="btn btn-solid" href="/downloads/qsdm-hive-1.3.95-win-x64.exe">Download installer</a>
+          <span class="btn btn-solid" aria-disabled="true">Signed installer pending</span>
+          <a class="btn btn-ghost" href="/downloads/qsdm-hive-1.3.94-win-x64.exe">Archived unsigned 1.3.94</a>
           <a class="btn btn-ghost" href="/docs/#/qsdm-hive">Installation notes</a>
-          <a class="btn btn-ghost" href="/downloads/SHA256SUMS-win.txt">Checksum</a>
         </div>
       </div>
       <div class="checksum">
-        SHA-256
-        <code>4B563C8CDAA541FFD551EF485FFFCC2F162160A112EE4A47A21CF072F7897396</code>
+        <strong>1.3.95 release status</strong>
+        <code>Not published. Signature and checksum pending.</code>
+        <span>The 1.3.94 archive is retained only as evidence of the previously released application format.</span>
       </div>
     </section>
 
     <section class="panel" aria-labelledby="linux-title">
       <div>
-        <span class="version">Version 1.3.95</span>
+        <span class="version">Version 1.3.95 · promotion pending</span>
         <h2 id="linux-title">Linux x86-64</h2>
         <p>
           Use the AppImage on desktop Linux with GTK 3. Ordinary users do not need a local Core.
-          Wallet keys stay local; signed miner enrollment goes to canonical Core.
+          Wallet keys stay local; signed miner enrollment goes to canonical Core. The verified
+          CI build has not yet been promoted to the public download host.
         </p>
         <div class="actions">
-          <a class="btn btn-solid" href="/downloads/qsdm-hive-1.3.95-linux-x86_64.AppImage" download>Download AppImage</a>
-          <a class="btn btn-ghost" href="/downloads/qsdm-hive-1.3.95-linux-x64.tar.gz" download>Portable tar.gz</a>
-          <a class="btn btn-ghost" href="/downloads/qsdm-hive-1.3.95-linux-SHA256SUMS.txt">Checksums</a>
+          <span class="btn btn-solid" aria-disabled="true">Linux 1.3.95 pending</span>
+          <a class="btn btn-ghost" href="/downloads/qsdm-hive-1.3.94-linux-x86_64.AppImage" download>Archived 1.3.94 AppImage</a>
+          <a class="btn btn-ghost" href="/downloads/qsdm-hive-1.3.94-linux-x64.tar.gz" download>Archived 1.3.94 tar.gz</a>
         </div>
       </div>
       <div class="checksum">
-        <strong>AppImage SHA-256</strong>
-        <code>8660E4BAD534E37169CF53EA487D367FC90E4072859D8F7C8C3CE4C0A3ABBAC8</code>
-        <strong>tar.gz SHA-256</strong>
-        <code>374333E2EEF1789E869F08B831A152FFDA3944A150560216661E928B7E0FC424</code>
+        <strong>1.3.95 release status</strong>
+        <code>Not published. Promotion checksum pending.</code>
+        <span>Archived packages are not presented as the current approved client.</span>
       </div>
     </section>
 
