@@ -147,6 +147,12 @@ qsdm.tech {
 		/index.html
 	header @hive_release_metadata Cache-Control "no-cache, max-age=0, must-revalidate"
 
+	# Never send the HTML application shell for a missing release artifact.
+	# Installers and update metadata must either be the requested file or a 404.
+	handle /downloads/* {
+		file_server
+	}
+
 	# /app (+ trailing) goes to the operator dashboard
 	redir /app https://dashboard.qsdm.tech/ 302
 	redir /app/* https://dashboard.qsdm.tech/ 302
