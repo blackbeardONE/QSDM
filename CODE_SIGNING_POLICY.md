@@ -70,8 +70,15 @@ tooling support that check.
 7. Checksums, signature evidence, source revision, release notes, and rollback
    instructions are retained with the immutable release.
 
-Unsigned artifacts are named and retained only as development or signing-input
-artifacts. They must never be copied to the public updater or download paths.
+Unsigned artifacts are normally retained only as development or signing-input
+artifacts. A repository-owner-approved prerelease may be published only under
+the isolated `/downloads/unsigned-preview/` path when all of these controls
+apply: the version has an `unsigned-preview` prerelease suffix, the download
+page identifies the missing Authenticode signature and SmartScreen impact, the
+artifact and build evidence have published SHA-256 checksums, automatic updates
+are disabled, and stable updater manifests are unchanged. An unsigned preview
+must never be described as a production or trusted release and must never
+replace bytes at an existing immutable URL.
 
 The first SignPath Foundation-signed release is a publisher transition from
 existing unsigned or locally identified builds. It requires a manual installer
@@ -89,7 +96,8 @@ A signing request is denied when any of these conditions is true:
 - bundled QSDM component versions do not match the Hive release;
 - a wallet, passphrase, token, deployment credential, local database, or other
   private runtime state is present in the artifact;
-- required Windows metadata or final Authenticode verification is missing; or
+- required Windows metadata is missing, or final Authenticode verification is
+  missing for a stable production release; or
 - the release owner has not explicitly approved promotion.
 
 Mining remains opt-in and visible to the user. The signed application must
@@ -106,9 +114,11 @@ Get-AuthenticodeSignature .\qsdm-hive-<version>-win-x64.exe |
 Get-FileHash .\qsdm-hive-<version>-win-x64.exe -Algorithm SHA256
 ```
 
-The signature status must be `Valid`, the publisher must match the publisher
-declared for that release, and the SHA-256 value must match QSDM's immutable
-release manifest.
+For stable releases, the signature status must be `Valid`, the publisher must
+match the publisher declared for that release, and the SHA-256 value must match
+QSDM's immutable release manifest. A page explicitly labeled **Unsigned
+Preview** is expected to report `NotSigned`; users must verify its SHA-256 and
+understand that a checksum does not establish publisher identity.
 
 ## Privacy and incident response
 

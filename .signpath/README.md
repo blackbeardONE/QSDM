@@ -2,7 +2,9 @@
 
 These files describe the intended SignPath Foundation configuration for QSDM
 Hive. The application is pending. They do not provide a certificate and do not
-make an unsigned artifact publishable.
+make an unsigned artifact trusted. A separately labeled unsigned preview may be
+published only under the isolated controls in `CODE_SIGNING_POLICY.md`; it is
+never promoted through the stable updater.
 
 ## Intended project configuration
 

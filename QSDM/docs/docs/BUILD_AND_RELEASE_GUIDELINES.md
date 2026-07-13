@@ -155,8 +155,11 @@ package that signed directory with electron-builder `--prepackaged`, then sign
 the outer NSIS installer. The workflow extracts the QSDM executables from NSIS
 and requires their hashes to match the signed source payload. Signing only the
 installer is not sufficient. Use
-`npm run package:windows:unsigned` only for local smoke testing; its output is
-not a publishable release.
+`npm run package:windows:unsigned` normally produces local smoke-test or signing
+input. A repository-owner-approved unsigned prerelease may be published only
+through the isolated `/downloads/unsigned-preview/` channel defined in
+`CODE_SIGNING_POLICY.md`; it must not modify stable updater manifests or enable
+automatic updates.
 The first SignPath Foundation-signed Windows release is a publisher transition
 and must be installed manually after verifying its signature and checksum.
 Only subsequent releases signed by the same publisher use the normal updater

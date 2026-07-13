@@ -361,7 +361,7 @@
 
   <main class="shell">
     <section class="hero" aria-labelledby="download-title">
-      <span class="tag">Hive 1.3.95 signing candidate · Edge Control 1.3.5</span>
+      <span class="tag">Hive 1.3.95 unsigned preview · Edge Control 1.3.5</span>
       <h1 id="download-title">Download QSDM Hive</h1>
       <p class="lead">
         Windows and Linux client for CELL wallets, signed tasks, NVIDIA mining,
@@ -374,8 +374,8 @@
         <span class="version">Release integrity</span>
         <h2 id="integrity-title">Open-source signing path</h2>
         <p>
-          QSDM is preparing an application for SignPath Foundation signing.
-          The application is pending, and no Windows artifact is represented
+          QSDM has submitted an application for SignPath Foundation signing.
+          Review is pending, and no Windows artifact is represented
           as SignPath-signed until its Authenticode signature passes the public
           release gates.
         </p>
@@ -405,24 +405,26 @@
 
     <section class="panel" aria-labelledby="installer-title">
       <div>
-        <span class="version">Version 1.3.95 · signing pending</span>
+        <span class="version">Version 1.3.95-unsigned-preview.1 · early access</span>
         <h2 id="installer-title">Windows installer</h2>
         <p>
-          Recommended for all users. Hive is the public release path for wallets,
-          tasks, integrations, and NVIDIA mining access. The current installer is
-          withheld until the trusted signing transition is complete. No separate
-          consumer GUI miner is shipped.
+          Optional early-access build for users who need the current Hive fixes
+          before trusted signing is available. This installer has no Authenticode
+          publisher signature, so Windows SmartScreen may warn. It is isolated
+          from mandatory and automatic updates. No separate consumer GUI miner is
+          shipped.
         </p>
         <div class="actions">
-          <span class="btn btn-solid" aria-disabled="true">Signed installer pending</span>
+          <a class="btn btn-solid" href="/downloads/unsigned-preview/qsdm-hive-1.3.95-unsigned-preview.1-win-x64.exe" download>Download unsigned preview</a>
+          <a class="btn btn-ghost" href="/downloads/unsigned-preview/qsdm-hive-1.3.95-unsigned-preview.1-SHA256SUMS.txt">Checksums</a>
           <a class="btn btn-ghost" href="/downloads/qsdm-hive-1.3.94-win-x64.exe">Archived unsigned 1.3.94</a>
           <a class="btn btn-ghost" href="/docs/#/qsdm-hive">Installation notes</a>
         </div>
       </div>
       <div class="checksum">
-        <strong>1.3.95 release status</strong>
-        <code>Not published. Signature and checksum pending.</code>
-        <span>The 1.3.94 archive is retained only as evidence of the previously released application format.</span>
+        <strong>Unsigned preview verification</strong>
+        <code>SHA-256 c046da424b26f07da0e0859b4a0df97090b31be511141e7623cd5cc4cef913a6</code>
+        <span>Expected Authenticode status: NotSigned. Verify the hash before running. The first SignPath-signed release will use a newer version and a manual installer transition.</span>
       </div>
     </section>
 
