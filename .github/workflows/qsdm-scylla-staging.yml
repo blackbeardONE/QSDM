@@ -40,9 +40,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: QSDM/source/go.mod
 
@@ -65,7 +65,7 @@ jobs:
 
       - name: Cache liboqs install
         id: liboqs-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: QSDM/liboqs_install
           key: liboqs-install-${{ runner.os }}-${{ hashFiles('QSDM/scripts/rebuild_liboqs.sh') }}

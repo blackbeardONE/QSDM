@@ -36,6 +36,10 @@ The pre-commit hook scans staged content, and GitHub Actions scans every tracked
 file. These controls reduce risk but do not replace human review or key
 rotation after an exposure.
 
+Every third-party GitHub Action is pinned to a reviewed 40-character commit
+SHA. `python scripts/check_workflow_action_pins.py` enforces that policy in the
+Secret scan workflow so a mutable tag or branch cannot silently change CI code.
+
 ## Custody incidents
 
 If a secret may have entered Git history, treat it as compromised immediately:

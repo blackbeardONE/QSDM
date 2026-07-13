@@ -26,7 +26,7 @@
 # release-blocker subset (HIGH+/fixable).
 #
 # Companion to .github/workflows/release-container.yml -- both
-# pin aquasecurity/trivy-action@v0.36.0 so the gate semantics are
+# pin aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0 so the gate semantics are
 # byte-identical between scheduled scans and tagged releases. A
 # finding that fails this workflow would also fail the next tagged
 # release; we deliberately do NOT diverge the two gates.
@@ -109,9 +109,9 @@ jobs:
           - image: qsdm-miner
             dockerfile: QSDM/Dockerfile.miner
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build image locally (no push)
         id: build
@@ -123,7 +123,7 @@ jobs:
         # effects, otherwise a Trivy-DB drift could silently
         # re-tag a release artefact with a "scan-confirmed"
         # provenance the operator never asked for.
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: QSDM
           file: ${{ matrix.dockerfile }}
@@ -139,7 +139,7 @@ jobs:
         # would let a finding pass one channel and fail the other,
         # making the gate ambiguous. Single source of truth is:
         # "HIGH+/fixable blocks the release lane."
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ matrix.image }}:scan
           format: table
@@ -161,7 +161,7 @@ jobs:
         # case there is no image to scan and the SARIF call would
         # itself fail with "image not found".
         if: steps.build.outcome == 'success'
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ matrix.image }}:scan
           format: sarif
@@ -169,7 +169,7 @@ jobs:
 
       - name: Upload SARIF to GitHub Security tab
         if: steps.build.outcome == 'success'
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@02c5e83432fe5497fd85b873b6c9f16a8578e1d9 # v3
         with:
           sarif_file: trivy-${{ matrix.image }}.sarif
           # category disambiguates the three matrix cells in the

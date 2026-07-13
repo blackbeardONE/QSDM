@@ -78,6 +78,10 @@ CONTENT_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("stripe-live-key", re.compile(r"\b(?:sk|rk)_live_[0-9A-Za-z]{16,}\b")),
     ("openai-api-key", re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b")),
     (
+        "nvidia-ngc-api-key",
+        re.compile(r"\bnvapi-[A-Za-z0-9_-]{20,}\b", re.IGNORECASE),
+    ),
+    (
         "credential-in-url",
         re.compile(
             r"\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis)://"

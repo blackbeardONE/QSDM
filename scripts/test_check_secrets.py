@@ -22,6 +22,11 @@ class SecretScannerTests(unittest.TestCase):
         findings = content_findings("config.txt", token.encode())
         self.assertIn("github-access-token", {finding.rule for finding in findings})
 
+    def test_rejects_nvidia_ngc_tokens(self) -> None:
+        token = "nvapi-" + "A" * 32
+        findings = content_findings("quickstart.md", token.encode())
+        self.assertIn("nvidia-ngc-api-key", {finding.rule for finding in findings})
+
     def test_rejects_literal_qsdm_secret_assignment(self) -> None:
         content = f"QSDM_SIGNER_TOKEN={'a' * 64}\n"
         findings = content_findings("runtime.env", content.encode())

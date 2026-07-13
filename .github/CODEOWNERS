@@ -16,3 +16,4 @@
 /CODE_SIGNING_POLICY.md @blackbeardONE
 /PRIVACY.md @blackbeardONE
 /scripts/check_secrets.py @blackbeardONE
+/scripts/check_workflow_action_pins.py @blackbeardONE
