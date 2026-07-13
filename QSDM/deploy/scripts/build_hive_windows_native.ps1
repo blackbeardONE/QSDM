@@ -53,6 +53,10 @@ if ($goVersion -lt $requiredGo) {
 }
 Write-Host "Using $goVersionOutput through $go"
 $version = (Get-Content -Raw (Join-Path $hive 'release\app\package.json') | ConvertFrom-Json).version
+if ($version -notmatch '^(\d+\.\d+\.\d+)(?:-[0-9A-Za-z.-]+)?$') {
+    throw 'Hive version must use SemVer MAJOR.MINOR.PATCH with an optional prerelease suffix.'
+}
+$binaryVersion = $Matches[1]
 $edgeVersionFile = Join-Path $workspace 'apps\qsdm-edge-agent\VERSION'
 if (-not $EdgeAgentVersion) {
     if (-not (Test-Path -LiteralPath $edgeVersionFile)) {
@@ -76,14 +80,14 @@ $edgeGpuHelper = Join-Path $native 'qsdm-edge-gpu-helper.exe'
 $resourceSpecs = @(
     @{
         Path = Join-Path $qsdm 'cmd\qsdmcli\rsrc_windows_amd64.syso'
-        FileVersion = $version
+        FileVersion = $binaryVersion
         Description = 'QSDM Command Line Interface'
         InternalName = 'qsdmcli'
         OriginalFilename = 'qsdmcli.exe'
     },
     @{
         Path = Join-Path $qsdm 'cmd\qsdmminer-console\rsrc_windows_amd64.syso'
-        FileVersion = $version
+        FileVersion = $binaryVersion
         Description = 'QSDM Console Miner'
         InternalName = 'qsdmminer-console'
         OriginalFilename = 'qsdmminer-console.exe'
@@ -109,7 +113,7 @@ New-Item -ItemType Directory -Force -Path $goCache | Out-Null
 
 foreach ($resource in $resourceSpecs) {
     & $versionResourceBuilder `
-        -ProductVersion $version `
+        -ProductVersion $binaryVersion `
         -FileVersion $resource.FileVersion `
         -ProductName 'QSDM Hive' `
         -FileDescription $resource.Description `
@@ -159,7 +163,7 @@ finally {
 }
 
 $cudaArguments = @{
-    Version = $version
+    Version = $binaryVersion
     SkipRuntimeSelfTest = [bool]$SkipCudaRuntimeSelfTest
 }
 & $cudaSolverBuilder @cudaArguments

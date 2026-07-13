@@ -4,6 +4,7 @@ import {
   getCurrentHiveVersion,
   getHiveVersionManifestUrl,
   getHiveVersionPolicyStatus,
+  isUnsignedPreviewHiveVersion,
   parseHiveReleaseManifest,
   resetHiveVersionPolicyCacheForTests,
 } from './hiveVersionPolicy';
@@ -66,14 +67,24 @@ describe('hiveVersionPolicy', () => {
   });
 
   it('uses the platform-specific electron-builder manifest', () => {
-    expect(getDefaultHiveVersionManifestUrl('win32')).toBe(
+    expect(getDefaultHiveVersionManifestUrl('win32', '1.3.95')).toBe(
       'https://qsdm.tech/downloads/latest.yml'
     );
-    expect(getDefaultHiveVersionManifestUrl('linux')).toBe(
+    expect(getDefaultHiveVersionManifestUrl('linux', '1.3.95')).toBe(
       'https://qsdm.tech/downloads/latest-linux.yml'
     );
-    expect(getDefaultHiveVersionManifestUrl('darwin')).toBe(
+    expect(getDefaultHiveVersionManifestUrl('darwin', '1.3.95')).toBe(
       'https://qsdm.tech/downloads/latest-mac.yml'
+    );
+  });
+
+  it('isolates unsigned previews from the production release manifest', () => {
+    const previewVersion = '1.3.95-unsigned-preview.1';
+
+    expect(isUnsignedPreviewHiveVersion(previewVersion)).toBe(true);
+    expect(isUnsignedPreviewHiveVersion('1.3.95')).toBe(false);
+    expect(getDefaultHiveVersionManifestUrl('win32', previewVersion)).toBe(
+      'https://qsdm.tech/downloads/unsigned-preview/latest.yml'
     );
   });
 

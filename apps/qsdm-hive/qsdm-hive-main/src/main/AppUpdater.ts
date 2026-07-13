@@ -9,15 +9,30 @@ import { RendererEndpoints } from 'config/endpoints';
 import { app } from './app';
 import getUserConfig from './controllers/getUserConfig';
 import { getAppDataPath } from './node/helpers/getAppDataPath';
+import {
+  getCurrentHiveVersion,
+  isUnsignedPreviewHiveVersion,
+} from './services/hiveVersionPolicy';
 
 const CHECK_INTERVAL = 6 * 1000 * 60 * 60;
 const QSDM_HIVE_UPDATE_FEED_URL = 'https://qsdm.tech/downloads';
+const QSDM_HIVE_UNSIGNED_PREVIEW_UPDATE_FEED_URL =
+  'https://qsdm.tech/downloads/unsigned-preview';
 
 let interval: NodeJS.Timer | null = null;
 let updaterConfigured = false;
 let listenersConfigured = false;
 
-export function shouldEnableAutoUpdates(env: NodeJS.ProcessEnv = process.env) {
+export function shouldEnableAutoUpdates(
+  env: NodeJS.ProcessEnv = process.env,
+  currentVersion = getCurrentHiveVersion()
+) {
+  // An unsigned preview must never become an automatic trust transition.
+  // Preview users move to the first signed stable release manually.
+  if (isUnsignedPreviewHiveVersion(currentVersion)) {
+    return false;
+  }
+
   if (env.QSDM_DISABLE_AUTO_UPDATES === '1') {
     return false;
   }
@@ -28,11 +43,18 @@ export function shouldEnableAutoUpdates(env: NodeJS.ProcessEnv = process.env) {
   return app.isPackaged || env.NODE_ENV === 'production';
 }
 
-export function getQsdmHiveUpdateFeedUrl(env: NodeJS.ProcessEnv = process.env) {
+export function getQsdmHiveUpdateFeedUrl(
+  env: NodeJS.ProcessEnv = process.env,
+  currentVersion = getCurrentHiveVersion()
+) {
+  const defaultFeedUrl = isUnsignedPreviewHiveVersion(currentVersion)
+    ? QSDM_HIVE_UNSIGNED_PREVIEW_UPDATE_FEED_URL
+    : QSDM_HIVE_UPDATE_FEED_URL;
+
   return (
     env.QSDM_HIVE_UPDATE_FEED_URL?.trim() ||
     env.QSDM_HIVE_UPDATE_BASE_URL?.trim() ||
-    QSDM_HIVE_UPDATE_FEED_URL
+    defaultFeedUrl
   );
 }
 

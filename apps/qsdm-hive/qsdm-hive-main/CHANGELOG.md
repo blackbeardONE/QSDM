@@ -1,4 +1,6 @@
-## [1.3.95]
+## [1.3.95-unsigned-preview.1]
+
+- Release channel: Publishes an explicitly unsigned Windows preview on an isolated manifest; automatic updates remain disabled until the manual transition to the first SignPath-signed stable release.
 - Packaging: Host-native builds now rebuild bundled tools, reject stale miner or Edge versions, and block partial direct Electron publishing.
 - Runtime cleanup: Removed the disabled Grok browser-automation flow and its obsolete native `sleep` dependency chain.
 - Mother Hive federation: Added expiring QSDM-EDGE-2 HTTPS invitations with derived credentials, random offer IDs, immutable context validation, workload allowlists, and automatic one-time migration away from permanent legacy federation credentials.
@@ -7,6 +9,7 @@
 - Website: Fixed narrow-screen header and hero overflow and aligned active product documentation with the shipped versions.
 
 ## [1.2.1]
+
 - Task Upgrades: Allow upgrading tasks even with low balance if the previous version is still staked.
 - VIP Status: Automated adjustments based on real-time VIP token balance.
 - Task Fetching: Improved reliability when remote servers are temporarily unavailable.
@@ -16,19 +19,23 @@
 - Zoom Level: Enforced consistent zoom level across the app.
 
 ## [1.2.0]
+
 - Notifications: Introduced a modernized notification style with improved spacing.
 - Rewards Distribution: Enhanced logic for more reliable task rewards distribution.
 
 ## [1.1.5]
+
 - Task Extension Helper: Introduced a tool for quick and secure retrieval of API keys, starting with support for Yifojjeth tasks.
 
 ## [1.1.4]
+
 - Bonus Task View: Added a dedicated view for ended Bonus task seasons.
 - KPL Balances: Enabled vertical scrolling for extensive KPL token lists.
 - Markdown Support: Task descriptions now support Markdown formatting.
 - VIP Theme Fixes: Corrected thumbnail shadow issues in VIP theme.
 
 ## [1.1.3]
+
 - Orca Logs: Optimized to reduce log file size by saving only key logs.
 - Wallet Display: Active wallet now expands by default for better visibility.
 - Network Tunneling: Auto-enforced for secure connections during networking features.
@@ -38,6 +45,7 @@
 - UX Enhancements: Improved token item interactions and redesigned the Claim Rewards button with a glowing animation.
 
 ## [1.1.2]
+
 - Task Upgrade Flow: Streamlined UI for upgrading tasks.
 - Extension Repair: Simplified process to restore proper variable pairings in tasks.
 - Onboarding: Rolled out improvements for a smoother user experience.
@@ -46,6 +54,7 @@
 - KPL Rewards: Adjusted UX for clearer display of miner rewards.
 
 ## [1.1.1]
+
 - Notifications: Resolved missing titles in external notifications.
 - Orca Enhancements: Improved installation process and status detection for Mac and Linux users.
 - RPC Status Widget: Redesigned for clarity and consistency.
@@ -53,6 +62,7 @@
 - UI Touch-ups: Various subtle improvements across the app.
 
 ## [1.1.0]
+
 - ORCA Add-on: Introduced a sandboxed environment for secure task execution.
 - VIP Skin: Launched an exclusive app skin for VIP users.
 - Notifications: Enhanced layout for externally triggered notifications.
@@ -60,16 +70,19 @@
 - UI Fixes: Polished various elements for improved user experience.
 
 ## [1.0.4]
+
 - Task States: Implemented caching to reduce RPC node load.
 - Bonus Task: Prepared groundwork for a new Bonus Task feature.
 
 ## [1.0.3]
+
 - KPL Rewards UX: Adjusted progress bar for clearer reward distribution.
 - Banner State: Made bottom banner state persistent across sessions.
 - Task Restart: Added a restart option for faulty tasks.
 - Animations: Introduced subtle animations for smoother interactions.
 
 ## [1.0.2]
+
 - Stake Modal: Fixed predefined stake value issue.
 - CELL Balances: Displayed dollar values using CoinGecko API with caching.
 - Rewards Bar: Resolved negative value display and added "Reconnecting" state.
@@ -77,12 +90,14 @@
 - Navbar Layout: Fixed misalignment issues for new users.
 
 ## [1.0.1]
+
 - Migration Flow: Enhanced UX for users with CELL tokens but insufficient KPL balance.
 - Bug Fixes: Resolved issues with node initialization, referral banner, and balance display.
 - UI Updates: Removed token launch counter widget and re-added task search filters.
 - Network Switch: Enabled mainnet switch for ready users.
 
 ## [1.0.0]
+
 - Mainnet Migration: Transitioned Desktop Node to mainnet, including token migration and vesting.
 - Transaction Checks: Added confirmation checks for staking, unstaking, and claiming.
 - Task Visibility: Restored switch to show/hide non-verified tasks.

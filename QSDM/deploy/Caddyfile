@@ -131,6 +131,8 @@ qsdm.tech {
 	# Release binaries must download instead of being rendered as documents.
 	@hive_linux_packages path /downloads/*.AppImage /downloads/*.tar.gz
 	header @hive_linux_packages Content-Disposition "attachment"
+	@hive_preview_packages path /downloads/unsigned-preview/*.exe
+	header @hive_preview_packages Content-Disposition "attachment"
 
 	# Exact-version clients must revalidate release metadata on every check.
 	# The binaries are immutable and remain cacheable; only pointers and the
@@ -142,6 +144,7 @@ qsdm.tech {
 		/downloads/latest-linux.yml \
 		/downloads/alpha-linux.yml \
 		/downloads/beta-linux.yml \
+		/downloads/unsigned-preview/latest.yml \
 		/download.html \
 		/docs/docs.js \
 		/index.html
