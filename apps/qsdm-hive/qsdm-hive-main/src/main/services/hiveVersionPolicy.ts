@@ -7,6 +7,8 @@ import { Endpoints } from 'config/endpoints';
 import { app } from '../app';
 
 const DEFAULT_MANIFEST_BASE_URL = 'https://qsdm.tech/downloads';
+const UNSIGNED_PREVIEW_MANIFEST_BASE_URL =
+  'https://qsdm.tech/downloads/unsigned-preview';
 const DEFAULT_DOWNLOAD_URL = 'https://qsdm.tech/download.html';
 const POLICY_CACHE_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 10000;
@@ -79,7 +81,14 @@ export function getHiveVersionManifestUrl(
   );
 }
 
-export function getDefaultHiveVersionManifestUrl(platform: NodeJS.Platform) {
+export function isUnsignedPreviewHiveVersion(version: string) {
+  return /^\d+\.\d+\.\d+-unsigned-preview\.\d+$/.test(version.trim());
+}
+
+export function getDefaultHiveVersionManifestUrl(
+  platform: NodeJS.Platform,
+  currentVersion = getCurrentHiveVersion()
+) {
   const manifestName =
     platform === 'linux'
       ? 'latest-linux.yml'
@@ -87,7 +96,11 @@ export function getDefaultHiveVersionManifestUrl(platform: NodeJS.Platform) {
       ? 'latest-mac.yml'
       : 'latest.yml';
 
-  return `${DEFAULT_MANIFEST_BASE_URL}/${manifestName}`;
+  const manifestBaseUrl = isUnsignedPreviewHiveVersion(currentVersion)
+    ? UNSIGNED_PREVIEW_MANIFEST_BASE_URL
+    : DEFAULT_MANIFEST_BASE_URL;
+
+  return `${manifestBaseUrl}/${manifestName}`;
 }
 
 export function parseHiveReleaseManifest(

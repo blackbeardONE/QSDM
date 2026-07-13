@@ -10,16 +10,20 @@ Set-StrictMode -Version Latest
 $unpackedRoot = (Resolve-Path -LiteralPath $UnpackedDirectory).Path
 $hiveRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\apps\qsdm-hive\qsdm-hive-main')).Path
 $hiveVersion = (Get-Content -Raw (Join-Path $hiveRoot 'release\app\package.json') | ConvertFrom-Json).version
+if ($hiveVersion -notmatch '^(\d+\.\d+\.\d+)(?:-[0-9A-Za-z.-]+)?$') {
+    throw 'Hive version must use SemVer MAJOR.MINOR.PATCH with an optional prerelease suffix.'
+}
+$hiveBinaryVersion = $Matches[1]
 $edgeVersion = (Get-Content -Raw (Join-Path $PSScriptRoot '..\..\..\apps\qsdm-edge-agent\VERSION')).Trim()
 
 $files = @(
-    @{ Path = 'QSDM Hive.exe'; Description = 'QSDM Hive'; FileVersion = $hiveVersion; Original = '' },
+    @{ Path = 'QSDM Hive.exe'; Description = 'QSDM Hive'; FileVersion = $hiveBinaryVersion; Original = '' },
     @{ Path = 'resources\edge\qsdm-edge-agent.exe'; Description = 'QSDM Edge Agent'; FileVersion = $edgeVersion; Original = 'qsdm-edge-agent.exe' },
     @{ Path = 'resources\edge\qsdm-edge-control.exe'; Description = 'QSDM Edge Control'; FileVersion = $edgeVersion; Original = 'qsdm-edge-control.exe' },
-    @{ Path = 'resources\edge\qsdm-edge-gpu-helper.exe'; Description = 'QSDM Edge GPU Helper'; FileVersion = $hiveVersion; Original = 'qsdm-edge-gpu-helper.exe' },
-    @{ Path = 'resources\native\qsdmcli.exe'; Description = 'QSDM Command Line Interface'; FileVersion = $hiveVersion; Original = 'qsdmcli.exe' },
-    @{ Path = 'resources\miner\qsdmminer-console.exe'; Description = 'QSDM Console Miner'; FileVersion = $hiveVersion; Original = 'qsdmminer-console.exe' },
-    @{ Path = 'resources\miner\qsdm-miner-cuda-solver.exe'; Description = 'QSDM CUDA Miner Solver'; FileVersion = $hiveVersion; Original = 'qsdm-miner-cuda-solver.exe' }
+    @{ Path = 'resources\edge\qsdm-edge-gpu-helper.exe'; Description = 'QSDM Edge GPU Helper'; FileVersion = $hiveBinaryVersion; Original = 'qsdm-edge-gpu-helper.exe' },
+    @{ Path = 'resources\native\qsdmcli.exe'; Description = 'QSDM Command Line Interface'; FileVersion = $hiveBinaryVersion; Original = 'qsdmcli.exe' },
+    @{ Path = 'resources\miner\qsdmminer-console.exe'; Description = 'QSDM Console Miner'; FileVersion = $hiveBinaryVersion; Original = 'qsdmminer-console.exe' },
+    @{ Path = 'resources\miner\qsdm-miner-cuda-solver.exe'; Description = 'QSDM CUDA Miner Solver'; FileVersion = $hiveBinaryVersion; Original = 'qsdm-miner-cuda-solver.exe' }
 )
 
 $evidence = @()
@@ -36,7 +40,7 @@ foreach ($file in $files) {
     if ($versionInfo.CompanyName -cne 'QSDM') {
         throw "CompanyName mismatch for $($file.Path): '$($versionInfo.CompanyName)'"
     }
-    if ($versionInfo.ProductVersion -notlike "$hiveVersion*") {
+    if ($versionInfo.ProductVersion -notlike "$hiveBinaryVersion*") {
         throw "ProductVersion mismatch for $($file.Path): '$($versionInfo.ProductVersion)'"
     }
     if ($versionInfo.FileVersion -notlike "$($file.FileVersion)*") {
