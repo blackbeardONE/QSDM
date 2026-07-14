@@ -5,6 +5,7 @@ import {
   getFullCellFromBaseUnits,
 } from './currencyConversion';
 import { throwDetailedError } from './error';
+import { formatHiveVersion } from './formatHiveVersion';
 import { getBestTooltipPosition } from './getBestTooltipPosition';
 import { getCreatedAtDate } from './getCreatedAtDate';
 import {
@@ -22,6 +23,7 @@ export {
   getBaseUnitsFromCell,
   throwDetailedError,
   getCreatedAtDate,
+  formatHiveVersion,
   formatUrl,
   isValidUrl,
   whitelistedFilter,

@@ -6,6 +6,7 @@ import {
   getHiveVersionPolicy,
   openBrowserWindow,
 } from 'renderer/services';
+import { formatHiveVersion } from 'utils';
 
 import { usePlatformCheck } from '../../hooks/usePlatform';
 
@@ -103,12 +104,13 @@ export function ForceNodeUpdate() {
       )}
       {isCurrent && isAutoUpdateSupported && (
         <div className="text-sm text-white">
-          QSDM Hive is approved: {policy?.currentVersion}.
+          QSDM Hive is current: {formatHiveVersion(policy?.currentVersion)}.
         </div>
       )}
       {updateRequired && isAutoUpdateSupported && (
         <div className="text-sm text-white">
-          Downloading approved Hive {policy?.requiredVersion ?? 'release'}.
+          Downloading Hive{' '}
+          {formatHiveVersion(policy?.requiredVersion) ?? 'release'}.
         </div>
       )}
       {mutation.isLoading && (

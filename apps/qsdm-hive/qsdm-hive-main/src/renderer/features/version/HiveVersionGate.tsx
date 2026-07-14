@@ -8,6 +8,7 @@ import {
   openBrowserWindow,
   quitApp,
 } from 'renderer/services';
+import { formatHiveVersion } from 'utils';
 
 type Props = {
   children: React.ReactNode;
@@ -43,7 +44,10 @@ export function HiveVersionGate({ children }: Props): JSX.Element {
     await openBrowserWindow(downloadUrl);
     setTimeout(() => {
       quitApp().catch((error) => {
-        console.error('Failed to quit stale QSDM Hive after update link', error);
+        console.error(
+          'Failed to quit stale QSDM Hive after update link',
+          error
+        );
       });
     }, 800);
   };
@@ -53,11 +57,12 @@ export function HiveVersionGate({ children }: Props): JSX.Element {
   }
 
   if (policy?.compatible) {
-    return <>{children}</>;
+    return children as JSX.Element;
   }
 
-  const requiredVersion = policy?.requiredVersion || 'latest approved release';
-  const currentVersion = policy?.currentVersion || 'unknown';
+  const requiredVersion =
+    formatHiveVersion(policy?.requiredVersion) || 'latest approved release';
+  const currentVersion = formatHiveVersion(policy?.currentVersion) || 'unknown';
   const reason =
     policy?.reason === 'manifest-unavailable'
       ? 'Hive could not verify the approved release manifest.'

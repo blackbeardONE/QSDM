@@ -1,6 +1,6 @@
-## [1.3.95-unsigned-preview.1]
+## [1.3.95]
 
-- Release channel: Publishes an explicitly unsigned Windows preview on an isolated manifest; automatic updates remain disabled until the manual transition to the first SignPath-signed stable release.
+- Release channel: Publishes Windows 1.3.95 on an isolated manifest; automatic updates remain disabled until the manual transition after SignPath publisher approval.
 - Packaging: Host-native builds now rebuild bundled tools, reject stale miner or Edge versions, and block partial direct Electron publishing.
 - Runtime cleanup: Removed the disabled Grok browser-automation flow and its obsolete native `sleep` dependency chain.
 - Mother Hive federation: Added expiring QSDM-EDGE-2 HTTPS invitations with derived credentials, random offer IDs, immutable context validation, workload allowlists, and automatic one-time migration away from permanent legacy federation credentials.
