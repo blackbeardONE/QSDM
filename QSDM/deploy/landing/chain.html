@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Chain status — QSDM · Cell (CELL)</title>
-<meta name="description" content="Live status of the QSDM testnet: chain tip, block reward emission, active GPU enrollments, recent blocks." />
+<meta name="description" content="Live status of the QSDM public network: chain tip, block reward emission, active GPU enrollments, recent blocks." />
 <meta name="theme-color" content="#061116" />
 <link rel="icon" href="/assets/qsdm-hive-icon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -201,7 +201,7 @@
 <div class="container">
   <h1><span class="live-dot"></span>Chain status</h1>
   <p class="lede">
-    Live snapshot of the QSDM testnet. Auto-refreshes every <strong>10 s</strong>.
+    Live snapshot of the QSDM public network. Auto-refreshes every <strong>10 s</strong>.
     All data sourced from the public <code>/api/v1/*</code> endpoints — verifiable independently
     by anyone with <code>curl</code> + <code>jq</code>.
   </p>
@@ -291,8 +291,8 @@
 
   <h2>Recent blocks</h2>
   <p class="lede" style="font-size: 14px;">
-    The last <strong>20 blocks</strong> sealed. Producer is the validator that ran the seal;
-    on a solo testnet that is the BLR1 blockdriver.
+    The last <strong>20 blocks</strong> sealed. Producer is masked for operator privacy;
+    the full NodeID is not displayed on the public website.
   </p>
   <div class="panel" id="blocks-panel">
     <div id="blocks-content" class="empty">Loading blocks…</div>
@@ -305,15 +305,15 @@
   </p>
   <div class="panel">
     <div class="lookup">
-      <input id="account-input" type="text" placeholder="qsdm1miner-rtx3050"
-             value="qsdm1miner-rtx3050" autocomplete="off" spellcheck="false" />
+      <input id="account-input" type="text" placeholder="QSDM wallet address"
+             value="" autocomplete="off" spellcheck="false" />
       <button id="account-button" type="button">Lookup</button>
     </div>
     <div id="account-result" style="margin-top: 14px; font-family: var(--mono); font-size: 13.5px;"></div>
   </div>
 
   <div class="footer">
-    Data refreshed <span id="last-updated">never</span> · Self-hosted on BLR1 · MIT-licensed source at
+    Data refreshed <span id="last-updated">never</span> · Public QSDM status · MIT-licensed source at
     <a href="https://github.com/blackbeardONE/QSDM" target="_blank" rel="noopener">github.com/blackbeardONE/QSDM</a>
 
     <!-- Transparency links — byte-identical across all eight landing
@@ -575,7 +575,7 @@ async function lookupAccount() {
   const root = document.getElementById("account-result");
   const addr = document.getElementById("account-input").value.trim();
   if (!addr) {
-    root.innerHTML = `<div class="empty">Enter an address.</div>`;
+    root.innerHTML = `<div class="empty">Enter a QSDM wallet address to inspect its current balance and nonce.</div>`;
     return;
   }
   root.innerHTML = `<div class="empty">Loading…</div>`;
@@ -612,7 +612,6 @@ document.getElementById("account-input").addEventListener("keydown", e => {
 });
 
 refreshAll();
-lookupAccount();
 setInterval(refreshAll, REFRESH_MS);
 </script>
   <script src="/assets/site-nav.js"></script>

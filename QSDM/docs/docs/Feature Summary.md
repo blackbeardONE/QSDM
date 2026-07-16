@@ -2,7 +2,7 @@
 
 **Last Updated:** July 2026 · Ledger release **v0.4.3** · Hive **1.3.95** · Edge Control **1.3.5**
 
-QSDM (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger whose native coin is **Cell (CELL)**. Validators run PoE + BFT consensus; miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the consumer desktop client; optional edge, home-gateway, and attestation tools support operators.
+QSDM (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger whose native coin is **Cell (CELL)**. Validators run PoE + BFT consensus; miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
 
 ---
 
@@ -32,7 +32,7 @@ QSDM (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger whose native co
 - NVIDIA-locked proofs (`nvidia-cc-v1`, `nvidia-hmac-v1`); Turing-or-newer GPU required for protocol mining.
 - Public mining API: work, challenge, submit, enrollment, emission, blocks, slash.
 - On-chain enrollment with **10 CELL** slashable bond; Hashcash anti-spam.
-- Consumer path: **QSDM Hive** Miner task (CUDA solver bundled).
+- Consumer path: **QSDM Hive** Miner task (CUDA solver bundled). Miners can start from zero liquid CELL by choosing deferred bond from accepted mining earnings.
 - Operator path: `qsdmminer-console`; Tensor-Core fork is a future consensus activation.
 
 ## Wallet & self-custody
@@ -45,7 +45,7 @@ QSDM (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger whose native co
 ## Tasks, staking & rewards
 
 - Consensus task catalog (`qsdm/tasks/v1`): fund, stake, start, stop, submit, claim, unstake, withdraw.
-- **Task Studio** in Hive publishes signed `generic-proof-v1` manifests.
+- **Task Studio** in Hive publishes signed `generic-proof-v1` manifests; compatible catalog changes appear without reinstalling Hive.
 - Edge-pool settlement split: **70%** contributor / **15%** Mother Hive operator / **15%** ecosystem reserve.
 
 ## Governance & bridge
@@ -55,8 +55,8 @@ QSDM (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger whose native co
 
 ## QSDM Hive (desktop)
 
-- Windows and Linux client for CELL wallets, signed tasks, mining visibility, and integrations.
-- Bundles native signer, console miner, CUDA solver, Edge Control/Agent, and Mother Hive workspace.
+- Windows and Linux client for CELL wallets, signed tasks, mining, edge pools, and integrations.
+- Bundles native signer, console miner, CUDA solver, Edge Control/Agent, and the Mother Hive workspace.
 - Application Compute Gateway on `127.0.0.1:7742` for bounded local jobs.
 - Sky Fang MMORPG wallet-link task (earn-only CELL; no pay-to-win power).
 
@@ -90,5 +90,5 @@ QSDM (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger whose native co
 ## What is not claimed
 
 - Silence CLI is an optional Cursor/agent helper, not a QSDM product feature.
-- Production CUDA miner packaging after external security review remains a release gate.
-- Mainnet genesis remains blocked on counsel sign-off, mining audit, and ceremony items (see `ROADMAP.md` / `NEXT_STEPS.md`).
+- Public packages remain unsigned on Windows until the SignPath Foundation application is approved; verify checksums before installing.
+- Broad public edge-compute federation and marketplace settlement remain gated on Core lease/escrow records, quotas, and independent security review.

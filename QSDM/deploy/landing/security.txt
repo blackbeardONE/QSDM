@@ -7,7 +7,7 @@
 # Observatory, some bug-bounty platforms, older scanners).
 #
 # If you have found a potential security issue in the QSDM
-# testnet — the validator (api.qsdm.tech), the public website
+# public network — the validator (api.qsdm.tech), the public website
 # (qsdm.tech), the browser wallet (/wallet.html / wallet.wasm),
 # QSDM Hive, the console miner binaries, the SDK, or any /api/v1/* endpoint —
 # please report it through one of the Contact channels below.

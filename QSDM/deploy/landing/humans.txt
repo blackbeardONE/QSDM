@@ -15,7 +15,7 @@
 
 /* THANKS */
 
-  The QSDM testnet stands on the shoulders of these open-source
+  The QSDM public network stands on the shoulders of these open-source
   projects (full list in QSDM/source/go.mod):
 
   - libp2p           — peer-to-peer networking
@@ -25,8 +25,8 @@
   - Prometheus      — operational metrics scrape target
   - Grafana         — dashboard rendering
 
-  And to every operator running a validator or a miner against the
-  Phase-4 testnet — your bug reports, log paste-ins, and "this
+  And to every operator running a validator, miner, Hive, or Relay against
+  the public network — your bug reports, log paste-ins, and "this
   doesn't work" pings are why the public audit score is where it
   is. Thank you.
 

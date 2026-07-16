@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Explorer — QSDM · Cell (CELL)</title>
-<meta name="description" content="Search QSDM blocks, transactions, and accounts. Public blockchain explorer for Cell (CELL), backed by QSDM /api/v1 transparency endpoints." />
+<meta name="description" content="Search QSDM blocks, transaction receipts, and CELL accounts. Public explorer backed by QSDM /api/v1 transparency endpoints." />
 <meta name="theme-color" content="#061116" />
 <link rel="icon" href="/assets/qsdm-hive-icon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -170,8 +170,8 @@
     <h1><span class="live-dot"></span>QSDM Explorer</h1>
     <p class="lede">
       Search QSDM blocks, transaction receipts, and CELL accounts using the public
-      <code>/api/v1</code> transparency endpoints. This MVP is live-read only:
-      full lifetime account history arrives with the phase-2 indexer.
+      <code>/api/v1</code> transparency endpoints. This explorer is live-read only:
+      deep lifetime account history arrives with the dedicated indexer.
     </p>
     <form class="search" id="search-form">
       <input id="search-input" autocomplete="off" spellcheck="false"
@@ -179,7 +179,8 @@
       <button type="submit">Search</button>
     </form>
     <div class="hint">
-      Tip: numeric values open block heights. Long hashes try transaction receipt first, then account lookup.
+      Tip: numeric values open block heights. Long hashes try transaction receipts first, then account lookup.
+      You can also use <code>?block=</code>, <code>?tx=</code>, or <code>?address=</code> links.
     </div>
   </section>
 
@@ -226,16 +227,17 @@
   </section>
 
   <section class="panel">
-    <h2>Explorer MVP Notes</h2>
+    <h2>Explorer notes</h2>
     <div class="notice">
       Account pages show current balance/nonce plus activity discoverable from the recent public feed.
       QSDM is presented here as a native CELL coin network. Deep address-indexed transaction
-      history, block-by-hash lookup, and richer CELL analytics require the phase-2 explorer indexer.
+      history, block-by-hash lookup, rich miner analytics, and long-range task history require the
+      dedicated explorer indexer.
     </div>
   </section>
 
   <footer>
-    QSDM testnet · Cell (CELL) · <a href="/chain.html">chain status</a> ·
+    QSDM public network · Cell (CELL) · <a href="/chain.html">chain status</a> ·
     <a href="/api.html">API</a> · <span id="last-updated">not loaded yet</span>
   </footer>
 </main>
@@ -244,6 +246,7 @@
 "use strict";
 
 const API_BASE = "/api/v1";
+const CANONICAL_API_BASE = "https://api.qsdm.tech/api/v1";
 const REFRESH_MS = 15_000;
 
 let latestBlocks = [];
@@ -280,6 +283,20 @@ function shortHash(h, n = 8) {
   return `${s.slice(0, n)}…${s.slice(-n)}`;
 }
 
+function normalizeSearchInput(value) {
+  let q = String(value || "").trim();
+  if (!q) return "";
+  try {
+    const u = new URL(q);
+    const params = u.searchParams;
+    q = params.get("block") || params.get("height") || params.get("tx") ||
+      params.get("tx_id") || params.get("address") || params.get("q") || q;
+  } catch (_) {
+    // Plain search term, not a URL.
+  }
+  return q.trim().replace(/^qsdm:\/\//i, "");
+}
+
 function statusPill(status) {
   const ok = Number(status) === 1 || status === "ok" || status === "accepted" || status === true;
   const label = status === undefined || status === null ? "unknown" : String(status);
@@ -287,9 +304,19 @@ function statusPill(status) {
 }
 
 async function fetchJSON(path) {
-  const res = await fetch(API_BASE + path, { cache: "no-store" });
-  if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
-  return res.json();
+  const localURL = API_BASE + path;
+  try {
+    const res = await fetch(localURL, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
+    return res.json();
+  } catch (localErr) {
+    if (location.hostname === "qsdm.tech" || location.hostname === "www.qsdm.tech") {
+      throw localErr;
+    }
+    const res = await fetch(CANONICAL_API_BASE + path, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status} on canonical ${path}`);
+    return res.json();
+  }
 }
 
 function setStat(name, value, sub) {
@@ -433,7 +460,7 @@ async function showBlock(height) {
         <div class="k">producer</div><div class="v">${escapeHTML(header?.producer_id || "—")}</div>
         <div class="k">timestamp</div><div class="v">${escapeHTML(fmtTime(header?.timestamp))}</div>
       </div>
-      <div class="notice">Full block payload and transaction lists are reserved for the phase-2 indexer. The public explorer currently uses <code>/mining/blocks</code> block headers.</div>`);
+      <div class="notice">Full block payload and transaction lists are reserved for the dedicated indexer. The public explorer currently uses <code>/mining/blocks</code> block headers.</div>`);
   } catch (err) {
     renderError("Block lookup failed", err);
   }
@@ -526,7 +553,7 @@ async function showAccount(address) {
         <div class="k">present on chain</div><div class="v">${mining ? escapeHTML(String(mining.present)) : "unknown"}</div>
       </div>
       <div class="notice">
-        This MVP does not have a full address index yet. Recent activity below is best-effort from the visible public receipt window.
+        This explorer does not have a full address index yet. Recent activity below is best-effort from the visible public receipt window.
       </div>
       ${activity.length ? renderReceiptTable(activity) : `<div class="empty">No matching recent public activity found for this address.</div>`}`);
   } catch (err) {
@@ -549,7 +576,7 @@ function renderReceiptTable(receipts) {
 }
 
 async function runSearch(query, pushState = true) {
-  const q = query.trim();
+  const q = normalizeSearchInput(query);
   if (!q) return;
   document.getElementById("search-input").value = q;
   if (/^\d+$/.test(q)) {
@@ -567,6 +594,10 @@ async function runSearch(query, pushState = true) {
       await showAccount(q);
       return;
     }
+  }
+  if (q.length < 16) {
+    renderError("Search needs more detail", new Error("Enter a block height, transaction id, full wallet address, or explorer URL."));
+    return;
   }
   await showAccount(q);
 }

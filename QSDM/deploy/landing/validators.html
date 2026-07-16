@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Validators &amp; bootstrap peers — QSDM · Cell (CELL)</title>
-<meta name="description" content="Canonical bootstrap multiaddr and public endpoints for the QSDM testnet. Use these values as the seed in your validator's bootstrap_peers configuration." />
+<meta name="description" content="Canonical bootstrap multiaddr and public endpoints for the QSDM public network. Use these values as the seed in your validator's bootstrap_peers configuration." />
 <meta name="theme-color" content="#061116" />
 <link rel="icon" href="/assets/qsdm-hive-icon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -159,7 +159,7 @@
 
 <h1>Validators &amp; bootstrap peers</h1>
 <p class="lede">
-  This page publishes the canonical bootstrap multiaddr for the <strong>QSDM Phase&nbsp;4 testnet</strong>. A new
+  This page publishes the canonical bootstrap multiaddr for the <strong>QSDM public network</strong>. A new
   validator uses this value once, at startup, to discover the libp2p mesh. After the handshake your node
   gossips directly with every other peer — <code>api.qsdm.tech</code> is a bootstrap, not a hub.
 </p>
@@ -188,10 +188,10 @@
 </div>
 
 <div class="panel hl">
-  <span class="tag ok">Canonical · Testnet · Live</span>
+  <span class="tag ok">Canonical · Public · Live</span>
   <h2 style="margin-top:8px">Reference validator — <code>api.qsdm.tech</code></h2>
   <p style="color:var(--text-2); margin:6px 0 4px;">
-    The genesis validator for the Phase 4 testnet. Operated by the QSDM project.
+    The canonical bootstrap validator for the public QSDM network. Operated by the QSDM project.
   </p>
 
   <h3>libp2p bootstrap multiaddr</h3>
@@ -270,7 +270,7 @@ bootstrap_peers = [
 <div class="panel">
   <h2>Why only one bootstrap peer?</h2>
   <p style="color:var(--text-2);">
-    Phase 4 testnet is early — <code>api.qsdm.tech</code> is currently the genesis validator. As more
+    The public network is still early — <code>api.qsdm.tech</code> is currently the canonical bootstrap validator. As more
     operators stand up validators, this page will list multiple bootstrap peers (any single one is enough to
     join the mesh). The protocol does not assign privileged status to the project's VPS; you are welcome to
     stand up your own validator and become an alternate bootstrap peer. To have your validator listed here,
@@ -290,8 +290,8 @@ bootstrap_peers = [
   </p>
   <pre>curl -s https://api.qsdm.tech/api/v1/status | jq -r .node_id</pre>
   <p style="color:var(--muted); font-size:12.5px;">
-    The IP (<code>206.189.132.232</code>) and port (<code>4001/tcp</code>) do not change within a Phase 4
-    release cycle.
+    The IP (<code>206.189.132.232</code>) and port (<code>4001/tcp</code>) are intentionally stable for
+    public bootstrap configuration.
   </p>
 </div>
 
@@ -307,7 +307,7 @@ bootstrap_peers = [
 <footer>
   <div class="container">
     <div>© <span id="y"></span> QSDM · Cell (CELL).</div>
-    <div>Phase 4 testnet. Bootstrap peer updated on every redeploy.</div>
+    <div>Public QSDM network. Bootstrap peer updated on every redeploy.</div>
 
     <!-- Transparency links — byte-identical across all eight landing
          pages. See index.html for rationale. -->

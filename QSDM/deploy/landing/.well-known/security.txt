@@ -1,9 +1,9 @@
 # QSDM security disclosure policy (RFC 9116 / securitytxt.org).
 #
 # If you have found a potential security issue in the QSDM
-# testnet — the validator (api.qsdm.tech), the public website
+# public network — the validator (api.qsdm.tech), the public website
 # (qsdm.tech), the browser wallet (/wallet.html / wallet.wasm),
-# the consumer miner binaries, the SDK, or any /api/v1/* endpoint —
+# QSDM Hive, console miner binaries, the SDK, or any /api/v1/* endpoint —
 # please report it through one of the Contact channels below.
 #
 # Please do NOT open a public GitHub issue or a public pull request
