@@ -146,24 +146,25 @@ tool build and CUDA self-test, then packages Electron. On Linux it delegates to
 `QSDM/deploy/scripts/build_hive_linux.sh`. The Electron `afterPack` gate rejects
 a miner whose embedded Hive version differs from the app and rejects Edge Agent
 or Edge Control versions that differ from `apps/qsdm-edge-agent/VERSION`.
-The Windows command then rejects the release unless the installer, desktop
-executable, and all bundled QSDM executables have valid timestamped
-Authenticode signatures from the configured publisher. A SignPath Foundation
-release uses the two-stage GitHub-hosted workflow in
+The Windows command packages the installer and records release evidence. QSDM
+does not currently have a public Authenticode certificate: the SignPath
+Foundation application was declined until the project has more external trust
+signals. Stable Windows releases may therefore be unsigned only when the release
+owner explicitly approves that posture, the download page discloses the
+SmartScreen impact, and SHA-256 checksums are published at immutable URLs.
+When Authenticode signing becomes available, a SignPath or paid signing release
+uses the two-stage GitHub-hosted workflow in
 `.github/workflows/qsdm-hive-windows.yml`: sign the unpacked QSDM executables,
 package that signed directory with electron-builder `--prepackaged`, then sign
 the outer NSIS installer. The workflow extracts the QSDM executables from NSIS
 and requires their hashes to match the signed source payload. Signing only the
 installer is not sufficient. Use
-`npm run package:windows:unsigned` normally produces local smoke-test or signing
-input. A repository-owner-approved unsigned prerelease may be published only
-through the isolated `/downloads/unsigned-preview/` channel defined in
-`CODE_SIGNING_POLICY.md`; it must not modify stable updater manifests or enable
-automatic updates.
-The first SignPath Foundation-signed Windows release is a publisher transition
-and must be installed manually after verifying its signature and checksum.
-Only subsequent releases signed by the same publisher use the normal updater
-path.
+`npm run package:windows:unsigned` to produce the current Windows installer or
+future signing input. Unsigned releases must never be described as signed or
+Windows verified-publisher builds.
+The first Authenticode-signed Windows release is a publisher transition and
+must be installed manually after verifying its signature and checksum. Only
+subsequent releases signed by the same publisher use the normal updater path.
 Direct `npm run release` publishing is intentionally blocked: publish only the
 joint, verified Windows/Linux artifact set through
 `QSDM/deploy/scripts/publish_hive_release.sh`.
@@ -205,9 +206,9 @@ retain:
 
 - release notes and migration/rollback instructions;
 - artifact manifest and SHA-256 checksums;
-- Windows Authenticode signatures and trusted timestamp evidence (mandatory
-  for production Hive releases), plus other certificate/transparency evidence
-  where configured;
+- Windows Authenticode signatures and trusted timestamp evidence where
+  available; otherwise explicit unsigned-release approval plus SHA-256 evidence
+  and SmartScreen disclosure;
 - SBOM and dependency provenance where configured;
 - QSDM Core release-evidence bundle;
 - security review summary, findings disposition, and coverage gaps, with

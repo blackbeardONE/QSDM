@@ -372,23 +372,23 @@
     <section class="panel" aria-labelledby="integrity-title">
       <div>
         <span class="version">Release integrity</span>
-        <h2 id="integrity-title">Open-source signing path</h2>
+        <h2 id="integrity-title">Release integrity</h2>
         <p>
-          QSDM has submitted an application for SignPath Foundation signing.
-          Review is pending, and no Windows artifact is represented
-          as SignPath-signed until its Authenticode signature passes the public
-          release gates.
+          QSDM Hive for Windows is currently published without Microsoft
+          Authenticode signing. The SignPath Foundation application was declined
+          for now because QSDM needs more external public adoption signals
+          before Foundation sponsorship is available.
         </p>
         <p>
-          Planned acknowledgement: Free code signing provided by
-          <a href="https://signpath.io/" rel="noopener" target="_blank">SignPath.io</a>,
-          certificate by
-          <a href="https://signpath.org/" rel="noopener" target="_blank">SignPath Foundation</a>.
+          Verify the SHA-256 checksum before installing. A checksum detects
+          changed bytes; it does not make Windows show a verified publisher.
+          SmartScreen may warn until QSDM has a paid or accepted Authenticode
+          signing path.
         </p>
         <p>
-          The first SignPath Foundation-signed release will require a manual
-          installer upgrade because it changes the trusted publisher. Signed
-          automatic updates resume after that transition.
+          QSDM-native release signatures can add project-level authenticity
+          for manifests and artifacts, but they are separate from Microsoft
+          Authenticode trust.
         </p>
         <div class="actions">
           <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/CODE_SIGNING_POLICY.md" rel="noopener" target="_blank">Code signing policy</a>
@@ -397,9 +397,8 @@
         </div>
       </div>
       <div class="checksum">
-        A checksum detects changed bytes. A valid Authenticode signature also
-        identifies the verified publisher. Production Windows publication
-        requires both.
+        Current Windows builds are unsigned. Trust the release only after the
+        versioned download URL and SHA-256 checksum match the public manifest.
       </div>
     </section>
 
@@ -409,9 +408,9 @@
         <h2 id="installer-title">Windows installer</h2>
         <p>
           Current QSDM Hive release for Windows. Automatic update checks use the
-          normal latest-release channel. Windows SmartScreen may warn while the
-          SignPath publisher application is pending. No separate consumer GUI miner
-          is shipped.
+          normal latest-release channel. Windows SmartScreen may warn because
+          this installer is not Authenticode-signed. No separate consumer GUI
+          miner is shipped.
         </p>
         <div class="actions">
           <a class="btn btn-solid" href="/downloads/qsdm-hive-1.3.95-win-x64.exe" download>Download Hive 1.3.95</a>
@@ -423,7 +422,7 @@
       <div class="checksum">
         <strong>Release verification</strong>
         <code>See SHA256SUMS-win.txt</code>
-        <span>Verify the hash before running. Windows publisher verification remains pending while the SignPath application is reviewed.</span>
+        <span>Verify the hash before running. This Windows installer is unsigned and may trigger SmartScreen.</span>
       </div>
     </section>
 

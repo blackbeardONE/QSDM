@@ -165,6 +165,7 @@
         { slug: "cli-phase2",            title: "Phase 2 CLI guide",             repoPath: DOCS_PREFIX_REPO + "/PHASE2_CLI_USER_GUIDE.md" },
         { slug: "troubleshooting",       title: "Troubleshooting",               repoPath: DOCS_PREFIX_REPO + "/TROUBLESHOOTING.md" },
         { slug: "security-audit",        title: "Security audit",                repoPath: DOCS_PREFIX_REPO + "/SECURITY_AUDIT.md" },
+        { slug: "native-release-signing", title: "QSDM-native release signing",  repoPath: DOCS_PREFIX_REPO + "/QSDM_NATIVE_RELEASE_SIGNING.md", badge: "new" },
         { slug: "comparative",           title: "Comparative analysis",          repoPath: DOCS_PREFIX_REPO + "/COMPARATIVE_ANALYSIS.md" },
         { slug: "final-comparison",      title: "Final comparison",              repoPath: DOCS_PREFIX_REPO + "/FINAL_COMPARISON.md" },
         { slug: "release-evidence-042",  title: "Release evidence v0.4.2",       repoPath: DOCS_PREFIX_REPO + "/RELEASE_EVIDENCE_v0.4.2.md" },

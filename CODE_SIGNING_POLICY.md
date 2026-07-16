@@ -6,20 +6,25 @@ and the [security policy](SECURITY.md).
 
 ## Signing status
 
-QSDM is preparing an application for the SignPath Foundation open-source code
-signing program. The application is pending. No QSDM artifact may be described
-as SignPath-signed until SignPath Foundation accepts the project and the final
-artifact passes the verification gates in this repository.
+QSDM applied for the SignPath Foundation open-source code signing program, but
+the application was declined for now because the project does not yet have
+enough external public trust signals for Foundation sponsorship. No QSDM
+artifact may be described as SignPath-signed unless a future paid or Foundation
+subscription signs that exact artifact and the final verification gates pass.
 
-Planned open-source signing acknowledgement:
+Current public Windows Hive releases are unsigned by Microsoft Authenticode.
+They may be published through the stable QSDM channel only when the release
+owner explicitly approves the unsigned posture, all release gates pass, and
+SHA-256 checksums are published at immutable URLs. Windows SmartScreen may warn
+because unsigned installers have no Microsoft publisher reputation.
 
-> Free code signing provided by [SignPath.io](https://signpath.io/), certificate
-> by [SignPath Foundation](https://signpath.org/).
+QSDM may add a project-native release signature over the release manifest and
+artifacts. That proves continuity with a QSDM-controlled release key, but it
+does not make Windows show a verified publisher and does not replace
+Authenticode, timestamping, or SmartScreen reputation.
 
-The certificate used by that program is issued to SignPath Foundation. Windows
-will therefore show SignPath Foundation as the verified publisher. QSDM will
-not substitute a self-signed certificate or install a private root certificate
-on consumer computers to imitate public trust.
+QSDM will not substitute a self-signed certificate or install a private root
+certificate on consumer computers to imitate public Windows trust.
 
 ## Project and roles
 
@@ -58,32 +63,32 @@ tooling support that check.
 3. The unsigned payload is uploaded as a GitHub Actions artifact before the
    SignPath connector receives the request. Local workstation uploads are for
    diagnosis only and are not production release inputs.
-4. SignPath verifies build origin and signs only paths permitted by the QSDM
-   artifact configuration. Each production request requires manual approval.
+4. When Authenticode signing is available, SignPath or the paid signing provider
+   verifies build origin and signs only paths permitted by the QSDM artifact
+   configuration. Each production request requires manual approval.
 5. The signed payload is packaged into the installer, and the installer is
    submitted as a separate signing request from the same workflow and commit.
 6. `QSDM/deploy/scripts/verify_hive_nsis_payload.ps1` requires every embedded
    QSDM executable to match the signed source payload byte-for-byte, and
    `verify_hive_windows_signature.ps1` rejects the release unless every
    required executable and the installer has a valid, timestamped
-   Authenticode signature from the configured publisher.
+   Authenticode signature from the configured publisher when Authenticode
+   signing is part of that release.
 7. Checksums, signature evidence, source revision, release notes, and rollback
    instructions are retained with the immutable release.
 
-Unsigned artifacts are normally retained only as development or signing-input
-artifacts. A repository-owner-approved prerelease may be published only under
-the isolated `/downloads/unsigned-preview/` path when all of these controls
-apply: the version has an `unsigned-preview` prerelease suffix, the download
-page identifies the missing Authenticode signature and SmartScreen impact, the
-artifact and build evidence have published SHA-256 checksums, automatic updates
-are disabled, and stable updater manifests are unchanged. An unsigned preview
-must never be described as a production or trusted release and must never
-replace bytes at an existing immutable URL.
+Unsigned artifacts are acceptable only while QSDM is in the indie/no-certificate
+release posture and only with explicit disclosure on the download page. They
+must never be described as Authenticode-signed, SignPath-signed, or Windows
+verified-publisher releases. They must never replace bytes at an existing
+immutable URL. The stable updater may point at an unsigned release only after
+the owner approves the release notes, checksum evidence, smoke-test results,
+and SmartScreen disclosure.
 
-The first SignPath Foundation-signed release is a publisher transition from
-existing unsigned or locally identified builds. It requires a manual installer
-upgrade after signature and checksum verification. Automatic updates resume
-only between releases signed by the same trusted publisher identity.
+The first Authenticode-signed release is a publisher transition from existing
+unsigned or locally identified builds. It requires a manual installer upgrade
+after signature and checksum verification. Automatic updates resume only
+between releases signed by the same trusted publisher identity.
 
 ## Release requirements
 
@@ -96,8 +101,8 @@ A signing request is denied when any of these conditions is true:
 - bundled QSDM component versions do not match the Hive release;
 - a wallet, passphrase, token, deployment credential, local database, or other
   private runtime state is present in the artifact;
-- required Windows metadata is missing, or final Authenticode verification is
-  missing for a stable production release; or
+- required Windows metadata is missing; Authenticode verification is missing
+  for a release that claims Authenticode signing; or
 - the release owner has not explicitly approved promotion.
 
 Mining remains opt-in and visible to the user. The signed application must
@@ -114,11 +119,12 @@ Get-AuthenticodeSignature .\qsdm-hive-<version>-win-x64.exe |
 Get-FileHash .\qsdm-hive-<version>-win-x64.exe -Algorithm SHA256
 ```
 
-For stable releases, the signature status must be `Valid`, the publisher must
-match the publisher declared for that release, and the SHA-256 value must match
-QSDM's immutable release manifest. A page explicitly labeled **Unsigned
-Preview** is expected to report `NotSigned`; users must verify its SHA-256 and
-understand that a checksum does not establish publisher identity.
+For Authenticode-signed releases, the signature status must be `Valid`, the
+publisher must match the publisher declared for that release, and the SHA-256
+value must match QSDM's immutable release manifest. For current unsigned indie
+releases, `Get-AuthenticodeSignature` is expected to report `NotSigned`; users
+must verify SHA-256 and understand that a checksum detects changed bytes but
+does not establish Microsoft-recognized publisher identity.
 
 ## Privacy and incident response
 
