@@ -1,5 +1,7 @@
 import { generateMnemonic, validateMnemonic } from 'bip39';
 
+import type { Event } from 'electron';
+
 const generateSeedPhrase = async (event: Event): Promise<string> => {
   const seedPhrase = generateMnemonic().trim();
 

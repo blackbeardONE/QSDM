@@ -55,7 +55,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "20"
+          node-version: "22.12.0"
           cache: npm
           cache-dependency-path: |
             apps/qsdm-hive/qsdm-hive-main/package-lock.json
@@ -122,7 +122,41 @@ jobs:
         working-directory: apps/qsdm-hive/qsdm-hive-main
         run: |
           npm run build
-          npx electron-builder build --win dir --x64 --publish never --config.directories.output=release/signpath --config.win.publisherName="SignPath Foundation"
+          npx electron-builder build --win dir --x64 --publish never --config.directories.output=release/signpath
+
+      - name: Smoke test packaged Hive renderer
+        shell: pwsh
+        run: |
+          $smokeRoot = Join-Path $env:RUNNER_TEMP 'qsdm-hive-renderer-smoke'
+          New-Item -ItemType Directory -Force -Path $smokeRoot | Out-Null
+          $env:QSDM_HIVE_APPDATA_ROOT = $smokeRoot
+          $env:QSDM_HIVE_SMOKE_TEST = '1'
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          $executable = 'apps/qsdm-hive/qsdm-hive-main/release/signpath/win-unpacked/QSDM Hive.exe'
+          $process = Start-Process -FilePath $executable -PassThru -WindowStyle Hidden
+          if (-not $process.WaitForExit(45000)) {
+            $process.Kill($true)
+            throw 'Packaged Hive renderer smoke test timed out.'
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "Packaged Hive renderer smoke test exited with code $($process.ExitCode)."
+          }
+          $resultPath = Join-Path $smokeRoot 'qsdm-hive/logs/smoke-result.json'
+          if (-not (Test-Path -LiteralPath $resultPath -PathType Leaf)) {
+            throw 'Packaged Hive renderer did not write smoke-result.json.'
+          }
+          $result = Get-Content -Raw -LiteralPath $resultPath | ConvertFrom-Json
+          if (
+            $result.status -ne 'ok' -or
+            -not $result.renderer.hasRoot -or
+            $result.renderer.rootChildren -lt 1 -or
+            -not $result.renderer.hasMainBridge -or
+            -not $result.renderer.hasCoreStatusApi -or
+            -not $result.renderer.hasBrandingFolderPathApi
+          ) {
+            throw "Packaged Hive renderer smoke check failed: $($result | ConvertTo-Json -Depth 8 -Compress)"
+          }
+          $result | ConvertTo-Json -Depth 8
 
       - name: Prepare provenance payload
         shell: pwsh
@@ -151,7 +185,9 @@ jobs:
           retention-days: 30
 
   sign-production:
-    if: needs.build-unsigned-candidate.outputs.is-production-tag == 'true' && github.run_attempt == 1
+    # Authenticode remains optional until QSDM has an approved certificate.
+    # Native ML-DSA release signing is handled by the offline release process.
+    if: needs.build-unsigned-candidate.outputs.is-production-tag == 'true' && github.run_attempt == 1 && vars.SIGNPATH_ENABLED == 'true'
     needs: build-unsigned-candidate
     runs-on: windows-2022
     timeout-minutes: 45
@@ -205,7 +241,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "20"
+          node-version: "22.12.0"
           cache: npm
           cache-dependency-path: apps/qsdm-hive/qsdm-hive-main/package-lock.json
 
@@ -247,8 +283,7 @@ jobs:
             --x64 `
             --prepackaged release/signpath-final/win-unpacked `
             --publish never `
-            --config.directories.output=release/signpath-installer `
-            --config.win.publisherName="SignPath Foundation"
+            --config.directories.output=release/signpath-installer
 
       - name: Upload unsigned outer installer
         id: upload-installer

@@ -5,6 +5,7 @@ import { resetPin } from './auth';
 import { fetchS3FolderContents } from './aws';
 import {
   copyBrandingFolder,
+  getBrandingFolderPath,
   getBrandingConfig,
   getBrandLogo,
   validateBrandingFolder,
@@ -33,10 +34,6 @@ import { verifyMessage } from './faucet';
 import fetchKPLTokenMetadata from './fetchKPLTokenMetadata';
 import fetchMultipleKPLTokenMetadata from './fetchMultipleKPLTokenMetadata';
 import generateSeedPhrase from './generateSeedPhrase';
-import {
-  getQsdmReferralRewardPoolStatus,
-  getQsdmReferralStatus,
-} from './getQsdmReferralStatus';
 import getAccountBalance from './getAccountBalance';
 import getActiveAccountName from './getActiveAccountName';
 import getAllAccounts from './getAllAccounts';
@@ -61,15 +58,9 @@ import getQsdmCoreStatus from './getQsdmCoreStatus';
 import getQsdmMinerRewardStatus from './getQsdmMinerRewardStatus';
 import getQsdmMotherHiveStatus from './getQsdmMotherHiveStatus';
 import {
-  cancelQsdmVirtualComputeJob,
-  getQsdmVirtualComputeJobs,
-  getQsdmVirtualComputeResources,
-  submitQsdmVirtualComputeJob,
-} from './qsdmVirtualCompute';
-import {
-  disconnectQsdmMotherHive,
-  pairQsdmMotherHive,
-} from './pairQsdmMotherHive';
+  getQsdmReferralRewardPoolStatus,
+  getQsdmReferralStatus,
+} from './getQsdmReferralStatus';
 import getQsdmSkyFangLinkStatus from './getQsdmSkyFangLinkStatus';
 import getRentAmount from './getRentAmount';
 import getRetryDataByTaskId from './getRetryDataByTaskId';
@@ -114,7 +105,17 @@ import onVariablesUpdatedFromMainProcess from './onVariablesUpdatedFromMainProce
 import openBrowserWindow from './openBrowserWindow';
 import openLogfileFolder from './openLogfileFolder';
 import openNodeLogfileFolder from './openNodeLogfileFolder';
+import {
+  disconnectQsdmMotherHive,
+  pairQsdmMotherHive,
+} from './pairQsdmMotherHive';
 import { getRunnedPrivateTasks, setRunnedPrivateTasks } from './privateTasks';
+import {
+  cancelQsdmVirtualComputeJob,
+  getQsdmVirtualComputeJobs,
+  getQsdmVirtualComputeResources,
+  submitQsdmVirtualComputeJob,
+} from './qsdmVirtualCompute';
 import quitApp from './quitApp';
 import recoverKPLStakingAccount from './recoverKPLStakingAccount';
 import recoverLostTokens from './recoverLostTokens';
@@ -184,6 +185,7 @@ import withdrawStake from './withdrawStake';
 
 export default {
   getBrandLogo,
+  getBrandingFolderPath,
   validateBrandingFolder,
   copyBrandingFolder,
   copyTextToClipboard,

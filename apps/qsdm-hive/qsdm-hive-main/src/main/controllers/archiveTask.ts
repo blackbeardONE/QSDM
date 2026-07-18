@@ -1,10 +1,12 @@
-import { PublicKey } from 'vendor/qsdm-chain/web3';
 import { ArchiveTaskParams } from 'models';
+import { PublicKey } from 'vendor/qsdm-chain/web3';
 
 import qsdmHiveTasks from '../services/qsdmHiveTasks';
 
 import claimReward from './claimReward';
 import { claimRewardKPL } from './claimRewardKPL';
+
+import type { Event } from 'electron';
 
 export const archiveTask = async (_: Event, payload: ArchiveTaskParams) => {
   if (!payload.skipClaimRewards) {

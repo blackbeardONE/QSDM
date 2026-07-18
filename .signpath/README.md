@@ -18,6 +18,8 @@ Current release posture:
 - QSDM Hive 1.3.96 authenticates release manifests and installer hashes with a
   pinned ML-DSA-87 project key, but that does not replace Microsoft
   Authenticode trust.
+- The optional GitHub `sign-production` job runs only when the repository
+  variable `SIGNPATH_ENABLED` is exactly `true`.
 - Paid SignPath/Authenticode or a future accepted Foundation reapplication
   remains the path to Windows verified-publisher UX.
 
@@ -39,7 +41,9 @@ Current release posture:
    the `SIGNPATH_API_TOKEN` GitHub Actions secret.
 4. Store `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG`, and
    `SIGNPATH_SIGNING_POLICY_SLUG` as repository variables. Use the intended
-   slugs above unless SignPath assigned different values.
+   slugs above unless SignPath assigned different values. Set
+   `SIGNPATH_ENABLED=true` only after all credentials and policy controls are
+   ready.
 5. Upload the two XML files in this directory as the named artifact
    configurations and inspect their resolved artifact trees.
 6. Configure the production policy for manual approval and configure the

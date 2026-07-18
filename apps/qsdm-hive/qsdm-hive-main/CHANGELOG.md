@@ -1,3 +1,12 @@
+## [1.3.97]
+
+- Runtime security: Upgraded the embedded desktop runtime from end-of-life Electron 23 to supported Electron 43.1.1, with Node 22.12+ and electron-builder 26.15.3 as the release baseline.
+- Dependency security: Removed legacy `web3.storage`, `localtunnel`, AWS SDK v2, and browser crypto compatibility paths; the complete Hive and packaged-runtime graphs now pass a live audit against the official npm registry with zero advisories.
+- Network safety: Legacy local-tunnel setup now fails closed and leaves public reachability to the QSDM home or canonical gateway instead of installing an unmanaged tunnel client.
+- Sandbox compatibility: Migrated user-selected branding paths to Electron's preload-only `webUtils` API and aligned controller event types with current Electron definitions.
+- Release validation: Windows and Linux workflows now launch the packaged renderer and require a mounted React root plus the sandboxed preload bridge before uploading artifacts.
+- Release operations: Authenticode signing remains explicitly opt-in through `SIGNPATH_ENABLED=true`, while QSDM-native ML-DSA release verification remains mandatory.
+
 ## [1.3.96]
 
 - Release integrity: Hive now authenticates atomic Windows and Linux release envelopes with a pinned QSDM ML-DSA-87 public key.

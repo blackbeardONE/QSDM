@@ -10,6 +10,12 @@
     "output": "release/build"
   },
   "extraResources": ["assets/**", "branding/**"],
+  "protocols": [
+    {
+      "name": "QSDM Hive URL",
+      "schemes": ["qsdm-hive"]
+    }
+  ],
   "generateUpdatesFilesForAllChannels": true,
   "mac": {
     "mergeASARs": false,
@@ -52,17 +58,20 @@
         "arch": "x64"
       }
     ],
-    "publisherName": "QSDM",
     "legalTrademarks": "",
     "artifactName": "qsdm-hive-${version}-${os}-${arch}.${ext}",
-    "verifyUpdateCodeSignature": true,
-    "signDlls": false,
+    "verifyUpdateCodeSignature": false,
+    "signExecutable": false,
     "icon": "assets/icon.ico",
     "extraResources": [
       {
         "from": "native/windows/x64",
         "to": "edge",
-        "filter": ["qsdm-edge-agent.exe", "qsdm-edge-control.exe", "qsdm-edge-gpu-helper.exe"]
+        "filter": [
+          "qsdm-edge-agent.exe",
+          "qsdm-edge-control.exe",
+          "qsdm-edge-gpu-helper.exe"
+        ]
       },
       {
         "from": "native/windows/x64",
@@ -92,6 +101,7 @@
   "linux": {
     "target": ["AppImage", "tar.gz", "deb", "rpm"],
     "executableName": "qsdm-hive",
+    "syncDesktopName": true,
     "category": "GNOME;GTK;Network;",
     "extraResources": [
       {
@@ -102,7 +112,11 @@
       {
         "from": "native/linux/x64",
         "to": "edge",
-        "filter": ["qsdm-edge-agent", "qsdm-edge-control", "qsdm-edge-gpu-helper"]
+        "filter": [
+          "qsdm-edge-agent",
+          "qsdm-edge-control",
+          "qsdm-edge-gpu-helper"
+        ]
       },
       {
         "from": "native/linux/x64",
@@ -110,10 +124,6 @@
         "filter": ["qsdmminer-console", "qsdm-miner-cuda-solver"]
       }
     ],
-    "desktop": {
-      "StartupWMClass": "QSDM.Hive",
-      "MimeType": "x-scheme-handler/qsdm-hive"
-    },
     "artifactName": "qsdm-hive-${version}-${os}-${arch}.${ext}"
   },
   "rpm": {

@@ -6,6 +6,7 @@ import * as path from 'path';
 import axios from 'axios';
 import { Express, Request, Response } from 'express';
 import { debounce } from 'lodash';
+
 import getUserConfig from 'main/controllers/getUserConfig';
 import qsdmHiveTasks from 'main/services/qsdmHiveTasks';
 
@@ -231,7 +232,8 @@ async function setUpLocalTunnel(): Promise<void> {
       }
       await namespaceInstance.storeSet('subdomain', subdomain);
     } else {
-      throw new Error(result.error);
+      await namespaceInstance.storeSet('Port_Exposure', 'Gateway');
+      logToConsoleAndToLogFile(result.error || 'Legacy task tunnel disabled');
     }
   } catch (error: any) {
     await handleLocalTunnelError(error);

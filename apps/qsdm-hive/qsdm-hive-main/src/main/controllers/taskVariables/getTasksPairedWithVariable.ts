@@ -1,4 +1,5 @@
 import { isString } from 'lodash';
+
 import { parseRawK2TaskData } from 'main/node/helpers/parseRawK2TaskData';
 import qsdmHiveTasks from 'main/services/qsdmHiveTasks';
 import {
@@ -9,6 +10,8 @@ import {
 import { throwDetailedError } from 'utils';
 
 import { getStoredPairedTaskVariables } from './getStoredPairedTaskVariables';
+
+import type { Event } from 'electron';
 
 export const getTasksPairedWithVariable = async (
   _: Event,

@@ -3,6 +3,8 @@ import path from 'path';
 
 import { getAppDataPath } from '../node/helpers/getAppDataPath';
 
+import type { Event } from 'electron';
+
 interface BrandingConfig {
   appName: string;
   logo: string;

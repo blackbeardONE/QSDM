@@ -1,5 +1,17 @@
+import { webUtils } from 'electron';
+
 import config from 'config';
 import sendMessage from 'preload/sendMessage';
+
+export const getBrandingFolderPath = (file: File): string => {
+  const filePath = webUtils.getPathForFile(file);
+  const separatorIndex = Math.max(
+    filePath.lastIndexOf('/'),
+    filePath.lastIndexOf('\\')
+  );
+
+  return separatorIndex > 0 ? filePath.slice(0, separatorIndex) : '';
+};
 
 export const validateBrandingFolder = (folderPath: string): Promise<boolean> =>
   sendMessage(config.endpoints.VALIDATE_BRANDING_FOLDER, folderPath);

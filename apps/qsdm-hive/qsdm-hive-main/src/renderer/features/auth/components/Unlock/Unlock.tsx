@@ -1,4 +1,3 @@
-import { Icon } from 'vendor/qsdm-styleguide';
 import { compare } from 'bcryptjs';
 import React, { useState } from 'react';
 import { useDropzone } from 'react-dropzone';
@@ -10,6 +9,7 @@ import { useBrandLogo } from 'renderer/features/common/hooks/useBrandLogo';
 import { useUserAppConfig } from 'renderer/features/settings/hooks';
 import { useDeepLinkingContext } from 'renderer/features/tasks/context/deep-linking-context';
 import { AppRoute } from 'renderer/types/routes';
+import { Icon } from 'vendor/qsdm-styleguide';
 
 declare module 'react' {
   interface InputHTMLAttributes<T> extends HTMLAttributes<T> {
@@ -79,12 +79,16 @@ export function Unlock() {
     setRestartCountdown(null);
 
     const firstFile = acceptedFiles[0];
-    if (!firstFile?.path) {
+    if (!firstFile) {
       setBrandingError('Invalid folder');
       return;
     }
 
-    const folderPath = firstFile.path.split('/').slice(0, -1).join('/');
+    const folderPath = window.main.getBrandingFolderPath(firstFile);
+    if (!folderPath) {
+      setBrandingError('Invalid folder');
+      return;
+    }
 
     try {
       const isValid = await window.main.validateBrandingFolder(folderPath);

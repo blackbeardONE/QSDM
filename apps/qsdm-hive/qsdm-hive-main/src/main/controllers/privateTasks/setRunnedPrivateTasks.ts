@@ -4,6 +4,8 @@ import { PersistentStoreKeys } from '../types';
 
 import { getRunnedPrivateTasks } from './getRunnedPrivateTasks';
 
+import type { Event } from 'electron';
+
 export const setRunnedPrivateTask = async (
   _event: Event,
   payload: {

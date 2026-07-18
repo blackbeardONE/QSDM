@@ -20,9 +20,6 @@ const MOCKED_NEW_TASK_PUBLIC_KEY = 'new-test-pubkey';
 jest.mock('is-ipfs', () => ({
   cid: jest.fn(),
 }));
-jest.mock('web3.storage', () => ({
-  Web3Storage: jest.fn(),
-}));
 jest.mock('./startTask', () => ({
   __esModule: true,
   default: jest.fn(),

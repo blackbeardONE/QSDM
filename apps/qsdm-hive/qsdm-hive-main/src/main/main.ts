@@ -9,15 +9,15 @@ import {
   shell,
   Tray,
 } from 'electron';
-import type { Event } from 'electron';
 import fsSync from 'fs';
 import fs from 'fs/promises';
 import http from 'http';
 import https from 'https';
 import path from 'path';
 
-import { RendererEndpoints } from 'config/endpoints';
 import { get } from 'lodash';
+
+import { RendererEndpoints } from 'config/endpoints';
 import { UserAppConfig } from 'models';
 
 import { app } from './app';
@@ -43,14 +43,18 @@ import ExecutableMonitor from './services/ExecutableMonitorService';
 import qsdmHiveTasks from './services/qsdmHiveTasks';
 import { resolveHtmlPath, sleep } from './util';
 
+import type { Event } from 'electron';
+
 const isDev = process.env.NODE_ENV === 'development';
 const isDebug = isDev || process.env.DEBUG_PROD === 'true';
-const isProductionRuntime = app.isPackaged || process.env.NODE_ENV === 'production';
+const isProductionRuntime =
+  app.isPackaged || process.env.NODE_ENV === 'production';
 const DEV_RENDERER_WAIT_ATTEMPTS = 90;
 const DEV_RENDERER_WAIT_MS = 1000;
+const SMOKE_RENDERER_WAIT_ATTEMPTS = 40;
+const SMOKE_RENDERER_WAIT_MS = 250;
 const isSmokeTest = process.env.QSDM_HIVE_SMOKE_TEST === '1';
 
-const isMac = process.platform === 'darwin';
 let tray: Tray | null = null;
 
 let mainWindow: BrowserWindow | null = null;
@@ -62,7 +66,8 @@ const writeStartupLog = (
   try {
     const appDataRoot =
       process.env.QSDM_HIVE_APPDATA_ROOT ||
-      process.env.APPDATA || path.join(app.getPath('appData'), 'Roaming');
+      process.env.APPDATA ||
+      path.join(app.getPath('appData'), 'Roaming');
     const logDir = path.join(appDataRoot, 'qsdm-hive', 'logs');
     fsSync.mkdirSync(logDir, { recursive: true });
     const detailText = details ? ` ${JSON.stringify(details)}` : '';
@@ -82,7 +87,8 @@ const writeSmokeResult = (
   try {
     const appDataRoot =
       process.env.QSDM_HIVE_APPDATA_ROOT ||
-      process.env.APPDATA || path.join(app.getPath('appData'), 'Roaming');
+      process.env.APPDATA ||
+      path.join(app.getPath('appData'), 'Roaming');
     const logDir = path.join(appDataRoot, 'qsdm-hive', 'logs');
     fsSync.mkdirSync(logDir, { recursive: true });
     fsSync.writeFileSync(
@@ -388,10 +394,9 @@ const loadWindowUrl = async (url: string, attempts = 1) => {
           url
         );
         await sleep(250);
-        continue;
+      } else {
+        throw error;
       }
-
-      throw error;
     }
   }
 
@@ -475,6 +480,69 @@ const loadRenderer = async () => {
       error?.message || 'The renderer could not be loaded. Restart QSDM Hive.'
     );
   }
+};
+
+type RendererSmokeProbe = {
+  documentUrl: string;
+  hasRoot: boolean;
+  rootChildren: number;
+  hasMainBridge: boolean;
+  hasCoreStatusApi: boolean;
+  hasBrandingFolderPathApi: boolean;
+};
+
+const waitForRendererSmokeProbe = async (): Promise<RendererSmokeProbe> => {
+  let lastProbe: RendererSmokeProbe | undefined;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= SMOKE_RENDERER_WAIT_ATTEMPTS; attempt += 1) {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      throw new Error(
+        'Hive smoke window closed before the renderer was ready.'
+      );
+    }
+
+    try {
+      const probe: RendererSmokeProbe =
+        await mainWindow.webContents.executeJavaScript(
+          `(() => {
+          const root = document.getElementById('root');
+          return {
+            documentUrl: window.location.href,
+            hasRoot: Boolean(root),
+            rootChildren: root?.childElementCount ?? 0,
+            hasMainBridge: typeof window.main === 'object',
+            hasCoreStatusApi:
+              typeof window.main?.getQsdmCoreStatus === 'function',
+            hasBrandingFolderPathApi:
+              typeof window.main?.getBrandingFolderPath === 'function',
+          };
+        })()`,
+          true
+        );
+      lastProbe = probe;
+      if (
+        probe.hasRoot &&
+        probe.rootChildren > 0 &&
+        probe.hasMainBridge &&
+        probe.hasCoreStatusApi &&
+        probe.hasBrandingFolderPathApi
+      ) {
+        return probe;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+
+    await sleep(SMOKE_RENDERER_WAIT_MS);
+  }
+
+  throw new Error(
+    `Hive renderer smoke probe timed out: ${JSON.stringify({
+      lastProbe,
+      lastError: lastError instanceof Error ? lastError.message : lastError,
+    })}`
+  );
 };
 
 export const appCleanup = async () => {
@@ -605,7 +673,7 @@ const createWindow = async () => {
 
   let mainWindowWasShown = false;
   const showMainWindow = () => {
-    if (!mainWindow || mainWindowWasShown) {
+    if (isSmokeTest || !mainWindow || mainWindowWasShown) {
       return;
     }
     mainWindowWasShown = true;
@@ -622,20 +690,6 @@ const createWindow = async () => {
 
   mainWindow.once('ready-to-show', showMainWindow);
   mainWindow.webContents.once('did-finish-load', showMainWindow);
-  await loadStartupScreen(
-    'Starting QSDM Hive',
-    'Preparing the desktop shell, local wallet, task state, and QSDM Core connection.'
-  );
-  if (isSmokeTest) {
-    writeSmokeResult('ok', {
-      resourcesPath: getRuntimePath('assets'),
-      preloadPath: getPreloadPath(),
-    });
-    writeStartupLog('smoke test complete; quitting');
-    app.isQuitting = true;
-    setTimeout(() => app.quit(), 250);
-    return;
-  }
   mainWindow.webContents.on(
     'console-message',
     (_event, level, message, line, sourceId) => {
@@ -644,6 +698,31 @@ const createWindow = async () => {
       }
     }
   );
+  await loadStartupScreen(
+    'Starting QSDM Hive',
+    'Preparing the desktop shell, local wallet, task state, and QSDM Core connection.'
+  );
+  if (isSmokeTest) {
+    try {
+      await loadRenderer();
+      const renderer = await waitForRendererSmokeProbe();
+      writeSmokeResult('ok', {
+        resourcesPath: getRuntimePath('assets'),
+        preloadPath: getPreloadPath(),
+        renderer,
+      });
+      writeStartupLog('renderer smoke test complete; quitting', { renderer });
+      app.isQuitting = true;
+      setTimeout(() => app.quit(), 250);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeSmokeResult('failed', { message });
+      writeStartupLog('renderer smoke test failed; exiting', { message });
+      app.isQuitting = true;
+      setTimeout(() => app.exit(1), 250);
+    }
+    return;
+  }
   setTimeout(showMainWindow, 10000);
 
   await main().catch((err): void => {

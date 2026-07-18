@@ -37,7 +37,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "20"
+          node-version: "22.12.0"
           cache: npm
           cache-dependency-path: |
             apps/qsdm-hive/qsdm-hive-main/package-lock.json
@@ -65,7 +65,7 @@ jobs:
       - name: Install CUDA compiler and build Linux GPU helper
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends nvidia-cuda-toolkit
+          sudo apt-get install -y --no-install-recommends nvidia-cuda-toolkit xvfb
           nvcc -O3 -std=c++17 -arch=sm_75 -ccbin g++-12 \
             QSDM/source/cmd/qsdm-edge-gpu-helper/main.cu \
             -o apps/qsdm-hive/qsdm-hive-main/native/linux/x64/qsdm-edge-gpu-helper
@@ -99,6 +99,20 @@ jobs:
       - name: Package AppImage and tarball
         working-directory: apps/qsdm-hive/qsdm-hive-main
         run: npx electron-builder build --linux AppImage tar.gz --x64 --publish never --config.directories.output=release/build-linux
+
+      - name: Smoke test packaged Hive renderer
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: |
+          set -euo pipefail
+          smoke_root="$RUNNER_TEMP/qsdm-hive-renderer-smoke"
+          mkdir -p "$smoke_root"
+          export QSDM_HIVE_APPDATA_ROOT="$smoke_root"
+          export QSDM_HIVE_SMOKE_TEST=1
+          unset ELECTRON_RUN_AS_NODE
+          timeout --preserve-status 45s xvfb-run -a release/build-linux/linux-unpacked/qsdm-hive
+          result="$smoke_root/qsdm-hive/logs/smoke-result.json"
+          test -f "$result"
+          node -e "const fs=require('fs');const r=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const ok=r.status==='ok'&&r.renderer?.hasRoot&&r.renderer.rootChildren>0&&r.renderer.hasMainBridge&&r.renderer.hasCoreStatusApi&&r.renderer.hasBrandingFolderPathApi;if(!ok)throw new Error(JSON.stringify(r));console.log(JSON.stringify(r,null,2));" "$result"
 
       - name: Verify native executables
         working-directory: apps/qsdm-hive/qsdm-hive-main

@@ -1,20 +1,23 @@
-import { QSDM_TASK_RUNTIME_MODE } from 'config/qsdm';
-import { getMyTaskStakeInfo } from 'vendor/qsdm-chain/taskNode';
 import { isNumber } from 'lodash';
+
+import { QSDM_TASK_RUNTIME_MODE } from 'config/qsdm';
 import {
   getKplStakingAccountKeypair,
   getStakingAccountKeypair,
 } from 'main/node/helpers';
 import { getQsdmTaskActionSender } from 'main/services/qsdmTaskActionSigner';
+import {
+  getCachedQsdmTaskStakeInDenomination,
+  getConfirmedQsdmTaskStakeInDenomination,
+} from 'main/services/qsdmTaskStake';
 import sdk from 'main/services/sdk';
 import {
   getTaskDataFromCache,
   saveStakeRecordToCache,
 } from 'main/services/tasks-cache-utils';
-import {
-  getCachedQsdmTaskStakeInDenomination,
-  getConfirmedQsdmTaskStakeInDenomination,
-} from 'main/services/qsdmTaskStake';
+import { getMyTaskStakeInfo } from 'vendor/qsdm-chain/taskNode';
+
+import type { Event } from 'electron';
 
 export type GetMyTaskStakeParams = {
   taskAccountPubKey: string;

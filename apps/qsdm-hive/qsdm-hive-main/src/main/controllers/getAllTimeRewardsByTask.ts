@@ -15,6 +15,8 @@ import { throwDetailedError } from '../../utils';
 
 import { getAllTimeRewards } from './getAllTimeRewards';
 
+import type { Event } from 'electron';
+
 export const getAllTimeRewardsByTask = async (
   _: Event,
   { taskId }: GetAllTimeRewardsParam

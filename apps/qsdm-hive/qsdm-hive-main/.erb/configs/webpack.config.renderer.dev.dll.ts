@@ -29,7 +29,6 @@ const configuration: webpack.Configuration = {
 
   externals: [
     'fsevents',
-    'crypto-browserify',
     '@aptabase/electron',
     '@nestjs/microservices',
     '@nestjs/microservices/microservices-module',

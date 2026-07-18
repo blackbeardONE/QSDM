@@ -1,23 +1,17 @@
-const localtunnel: any = require('localtunnel');
+interface TunnelErrorEmitter {
+  on(event: 'error', listener: (error: Error) => void): void;
+}
 
 const startLocalTunnel = async (): Promise<{
   success: boolean;
   result?: string;
   error?: string;
-  tunnel?: any;
+  tunnel?: TunnelErrorEmitter;
 }> => {
-  try {
-    const tunnel = await localtunnel({ port: 30017 });
-    return {
-      success: true,
-      result: tunnel.url,
-      tunnel,
-    };
-  } catch (error: any) {
-    return {
-      success: false,
-      error: error.message,
-    };
-  }
+  return {
+    success: false,
+    error:
+      'Third-party localtunnel exposure is disabled. QSDM Core remains available through the configured home or canonical gateway.',
+  };
 };
 export default startLocalTunnel;

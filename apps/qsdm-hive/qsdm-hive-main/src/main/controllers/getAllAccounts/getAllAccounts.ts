@@ -1,12 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 
-import { Keypair } from 'vendor/qsdm-chain/web3';
 import { getAppDataPath } from 'main/node/helpers/getAppDataPath';
 import sdk from 'main/services/sdk';
 import { getAllAccountsResponse } from 'models/api';
+import { Keypair } from 'vendor/qsdm-chain/web3';
 
 import { getCurrentActiveAccountName } from '../../node/helpers';
+
+import type { Event } from 'electron';
 
 export const getAllAccounts = async (
   _: Event,
