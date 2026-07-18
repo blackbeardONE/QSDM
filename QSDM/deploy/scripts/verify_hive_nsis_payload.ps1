@@ -21,10 +21,19 @@ $signedRoot = (Resolve-Path -LiteralPath $SignedUnpackedDirectory).Path
 if (-not $SevenZipPath) {
     $bundledSevenZip = Join-Path $workspace `
         'apps\qsdm-hive\qsdm-hive-main\node_modules\7zip-bin\win\x64\7za.exe'
+    $builderCacheSevenZip = if ($env:LOCALAPPDATA) {
+        Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA `
+            'electron-builder\Cache\7zip@*\*\bin\7za.exe') `
+            -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+    }
     $sevenZipCommand = Get-Command 7z.exe, 7za.exe -ErrorAction SilentlyContinue |
         Select-Object -First 1
     if (Test-Path -LiteralPath $bundledSevenZip -PathType Leaf) {
         $SevenZipPath = $bundledSevenZip
+    } elseif ($builderCacheSevenZip) {
+        $SevenZipPath = $builderCacheSevenZip.FullName
     } elseif ($sevenZipCommand) {
         $SevenZipPath = $sevenZipCommand.Source
     }
