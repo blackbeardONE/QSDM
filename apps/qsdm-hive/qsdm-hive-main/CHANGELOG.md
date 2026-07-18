@@ -1,3 +1,7 @@
+## [1.3.98]
+
+- Linux release validation: Configure Electron's packaged `chrome-sandbox` helper with the required root ownership and setuid permissions in CI before running the hidden renderer smoke test. Sandbox enforcement remains enabled.
+
 ## [1.3.97]
 
 - Runtime security: Upgraded the embedded desktop runtime from end-of-life Electron 23 to supported Electron 43.1.1, with Node 22.12+ and electron-builder 26.15.3 as the release baseline.

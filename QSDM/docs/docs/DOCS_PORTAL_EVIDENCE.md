@@ -11,7 +11,7 @@
 
 | Surface | Status |
 |---|---|
-| Landing page (`qsdm.tech/`) — capabilities section, unified product nav (Download · Wallet · Capabilities · Mining · Docs · Explorer · Audit · Trust), Hive/CELL/edge/home-gateway messaging aligned to v0.4.3 + Hive 1.3.97 | LIVE (after deploy) |
+| Landing page (`qsdm.tech/`) — capabilities section, unified product nav (Download · Wallet · Capabilities · Mining · Docs · Explorer · Audit · Trust), Hive/CELL/edge/home-gateway messaging aligned to v0.4.3 + Hive 1.3.98 | LIVE (after deploy) |
 | Docs portal (`qsdm.tech/docs/`) — SPA with sidebar, hash routing, client-side markdown render, live fetch from main; adds home gateway, task registry, tray monitor, missing runbooks; referral path fixed | LIVE (after deploy) |
 | `sitemap.xml`, `robots.txt`, `humans.txt` | LIVE (after deploy) |
 | Caddyfile CSP — `connect-src` includes `https://raw.githubusercontent.com` + `https://api.github.com`; `img-src` includes `raw.githubusercontent.com` | LIVE |

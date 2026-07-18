@@ -19,7 +19,7 @@ does not ship a separate consumer GUI miner.
 Linux Hive connects directly to the canonical public QSDM Core for ledger,
 wallet, chain-height, and mining-reward reads. Task catalog metadata continues
 through the restricted home-validator gateway. Ordinary desktop users do not
-install a local validator. Version 1.3.97 bundles the native `qsdmcli` signer,
+install a local validator. Version 1.3.98 bundles the native `qsdmcli` signer,
 supervised console miner, CUDA protocol solver, edge agent, and CUDA edge
 helper on the supported Electron 43 runtime.
 Open **Settings > Wallet** to create a new

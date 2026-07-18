@@ -109,6 +109,10 @@ jobs:
           export QSDM_HIVE_APPDATA_ROOT="$smoke_root"
           export QSDM_HIVE_SMOKE_TEST=1
           unset ELECTRON_RUN_AS_NODE
+          sandbox_helper="release/build-linux/linux-unpacked/chrome-sandbox"
+          sudo chown root:root "$sandbox_helper"
+          sudo chmod 4755 "$sandbox_helper"
+          test "$(stat -c '%U:%G %a' "$sandbox_helper")" = "root:root 4755"
           timeout --preserve-status 45s xvfb-run -a release/build-linux/linux-unpacked/qsdm-hive
           result="$smoke_root/qsdm-hive/logs/smoke-result.json"
           test -f "$result"
