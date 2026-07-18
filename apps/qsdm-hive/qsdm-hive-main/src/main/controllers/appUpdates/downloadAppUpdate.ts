@@ -1,10 +1,12 @@
-import { Event } from 'electron';
-
 import { autoUpdater } from 'electron-updater';
 
-import { ensureAppUpdaterConfigured } from '../../AppUpdater';
+import {
+  ensureAppUpdaterConfigured,
+  ensureTrustedReleaseForUpdate,
+} from '../../AppUpdater';
 
-export const downloadAppUpdate = async (event: Event): Promise<string[]> => {
+export const downloadAppUpdate = async (): Promise<string[]> => {
   await ensureAppUpdaterConfigured();
+  await ensureTrustedReleaseForUpdate(true);
   return autoUpdater.downloadUpdate();
 };

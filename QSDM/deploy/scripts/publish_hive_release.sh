@@ -46,8 +46,13 @@ update_manifests=(
   alpha-linux.yml
   beta-linux.yml
 )
+signed_release_manifests=(
+  qsdm-hive-release-windows.json
+  qsdm-hive-release-linux.json
+)
 
-for file in "${immutable_downloads[@]}" "${update_manifests[@]}"; do
+for file in "${immutable_downloads[@]}" "${update_manifests[@]}" \
+  "${signed_release_manifests[@]}"; do
   test -f "$stage_dir/downloads/$file"
 done
 for file in index.html download.html docs/index.html docs/docs.js; do
@@ -63,6 +68,16 @@ done
 
 for manifest in "${update_manifests[@]}"; do
   grep -qx "version: ${hive_version}" "$stage_dir/downloads/$manifest"
+done
+for manifest in "${signed_release_manifests[@]}"; do
+  grep -q '"schema": "qsdm.signed-release.v1"' "$stage_dir/downloads/$manifest"
+  grep -q '"key_id": "10ab9c5710761d4c9dca59d42446e9ea0e3315d15cdc3715df1dcb8c96fa07a1"' \
+    "$stage_dir/downloads/$manifest"
+  manifest_payload="$(sed -n 's/.*"manifest_base64": "\([^"]*\)".*/\1/p' \
+    "$stage_dir/downloads/$manifest")"
+  test -n "$manifest_payload"
+  printf '%s' "$manifest_payload" | base64 --decode | \
+    grep -q '"version": "'"${hive_version}"'"'
 done
 
 install -d -o caddy -g caddy -m 0755 "$webroot" "$downloads" "$webroot/docs"
@@ -100,9 +115,17 @@ atomic_install "$stage_dir/docs/docs.js" "$webroot/docs/docs.js"
 for file in "${update_manifests[@]}"; do
   atomic_install "$stage_dir/downloads/$file" "$downloads/$file"
 done
+for file in "${signed_release_manifests[@]}"; do
+  atomic_install "$stage_dir/downloads/$file" "$downloads/$file"
+done
 
 curl --fail --silent --show-error --max-time 30 \
   "https://qsdm.tech/downloads/latest.yml" | grep -qx "version: ${hive_version}"
+for manifest in "${signed_release_manifests[@]}"; do
+  curl --fail --silent --show-error --max-time 30 \
+    "https://qsdm.tech/downloads/$manifest" | \
+    grep -q '"schema": "qsdm.signed-release.v1"'
+done
 curl --fail --silent --show-error --max-time 30 \
   "https://qsdm.tech/download.html" | grep -q "Agent and Relay utilities"
 

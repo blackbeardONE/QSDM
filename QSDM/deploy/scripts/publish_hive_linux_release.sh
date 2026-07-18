@@ -28,6 +28,7 @@ required_downloads=(
   "$provenance"
   "$evidence"
   "latest-linux.yml"
+  "qsdm-hive-release-linux.json"
 )
 
 for file in "${required_downloads[@]}"; do
@@ -41,6 +42,15 @@ test -f "$stage_dir/download.html"
 )
 grep -qx "version: ${hive_version}" "$stage_dir/downloads/latest-linux.yml"
 grep -q "url: ${appimage}" "$stage_dir/downloads/latest-linux.yml"
+grep -q '"schema": "qsdm.signed-release.v1"' \
+  "$stage_dir/downloads/qsdm-hive-release-linux.json"
+grep -q '"key_id": "10ab9c5710761d4c9dca59d42446e9ea0e3315d15cdc3715df1dcb8c96fa07a1"' \
+  "$stage_dir/downloads/qsdm-hive-release-linux.json"
+manifest_payload="$(sed -n 's/.*"manifest_base64": "\([^"]*\)".*/\1/p' \
+  "$stage_dir/downloads/qsdm-hive-release-linux.json")"
+test -n "$manifest_payload"
+printf '%s' "$manifest_payload" | base64 --decode | \
+  grep -q '"version": "'"${hive_version}"'"'
 
 install -d -o caddy -g caddy -m 0755 "$webroot" "$downloads"
 
@@ -85,9 +95,14 @@ install_pointer "$stage_dir/download.html" "$webroot/download.html"
 
 # The Linux exact-version policy moves last. Windows latest.yml is untouched.
 install_pointer "$stage_dir/downloads/latest-linux.yml" "$downloads/latest-linux.yml"
+install_pointer "$stage_dir/downloads/qsdm-hive-release-linux.json" \
+  "$downloads/qsdm-hive-release-linux.json"
 
 curl --fail --silent --show-error --max-time 30 \
   "https://qsdm.tech/downloads/latest-linux.yml" | grep -qx "version: ${hive_version}"
+curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/downloads/qsdm-hive-release-linux.json" | \
+  grep -q '"schema": "qsdm.signed-release.v1"'
 curl --fail --silent --show-error --max-time 30 \
   "https://qsdm.tech/download.html" | grep -q "qsdm-hive-${hive_version}-linux-x86_64.AppImage"
 

@@ -1,3 +1,10 @@
+## [1.3.96]
+
+- Release integrity: Hive now authenticates atomic Windows and Linux release envelopes with a pinned QSDM ML-DSA-87 public key.
+- Update safety: Updater metadata and downloaded installers must match the signed filename, platform, size, SHA-256, version, and validity window before installation.
+- Release operations: Added offline-key initialization, deterministic manifest signing, immediate signature verification, and fail-closed publisher gates for both platforms.
+- Version policy: Exact-version enforcement now derives its approved version only from an authenticated QSDM release manifest.
+
 ## [1.3.95]
 
 - Release channel: Publishes Windows 1.3.95 on an isolated manifest; automatic updates remain disabled until the manual transition after SignPath publisher approval.

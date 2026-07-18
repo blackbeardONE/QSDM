@@ -1,18 +1,19 @@
-import http from 'http';
-import https from 'https';
 import { URL } from 'url';
 
 import { Endpoints } from 'config/endpoints';
 
 import { app } from '../app';
 
+import {
+  getQsdmHiveReleaseManifestUrl,
+  getVerifiedQsdmHiveRelease,
+} from './qsdmReleaseManifest';
+
 const DEFAULT_MANIFEST_BASE_URL = 'https://qsdm.tech/downloads';
 const UNSIGNED_PREVIEW_MANIFEST_BASE_URL =
   'https://qsdm.tech/downloads/unsigned-preview';
 const DEFAULT_DOWNLOAD_URL = 'https://qsdm.tech/download.html';
 const POLICY_CACHE_MS = 5 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 10000;
-const MAX_REDIRECTS = 5;
 
 export type HiveVersionPolicyStatus = {
   compatible: boolean;
@@ -79,6 +80,13 @@ export function getHiveVersionManifestUrl(
   return (
     process.env.QSDM_HIVE_VERSION_MANIFEST_URL?.trim() || defaultManifestUrl
   );
+}
+
+export function getHiveSignedReleaseManifestUrl(
+  platform: NodeJS.Platform = process.platform
+) {
+  const baseUrl = getHiveReleaseBaseUrl();
+  return getQsdmHiveReleaseManifestUrl(platform, baseUrl);
 }
 
 export function isUnsignedPreviewHiveVersion(version: string) {
@@ -192,7 +200,7 @@ export async function assertHiveVersionPolicyAllowsEndpoint(
 
 async function resolveHiveVersionPolicyStatus(): Promise<HiveVersionPolicyStatus> {
   const currentVersion = getCurrentHiveVersion();
-  const manifestUrl = getHiveVersionManifestUrl();
+  const manifestUrl = getHiveSignedReleaseManifestUrl();
   const fallbackDownloadUrl = getHiveDownloadUrl();
 
   if (isVersionPolicyDisabledForThisProcess()) {
@@ -221,17 +229,17 @@ async function resolveHiveVersionPolicyStatus(): Promise<HiveVersionPolicyStatus
   }
 
   try {
-    const manifestText = await fetchText(manifestUrl);
-    const manifest = parseHiveReleaseManifest(manifestText, manifestUrl);
-    if (!manifest.version) {
-      throw new Error('Version manifest did not include a version field.');
-    }
+    const release = await getVerifiedQsdmHiveRelease({
+      platform: process.platform,
+      baseUrl: getHiveReleaseBaseUrl(),
+      forceRefresh: true,
+    });
 
     return buildPolicyStatus({
       currentVersion,
-      requiredVersion: manifest.version,
-      manifestUrl,
-      downloadUrl: manifest.downloadUrl || fallbackDownloadUrl,
+      requiredVersion: release.manifest.version,
+      manifestUrl: release.manifestUrl,
+      downloadUrl: release.installerUrl || fallbackDownloadUrl,
     });
   } catch (error) {
     return {
@@ -292,6 +300,21 @@ function getHiveDownloadUrl() {
   return process.env.QSDM_HIVE_DOWNLOAD_URL?.trim() || DEFAULT_DOWNLOAD_URL;
 }
 
+function getHiveReleaseBaseUrl() {
+  if (!canUseLocalHiveVersionPolicyOverrides()) {
+    return DEFAULT_MANIFEST_BASE_URL;
+  }
+
+  const explicitSignedManifest =
+    process.env.QSDM_HIVE_RELEASE_MANIFEST_URL?.trim();
+  if (explicitSignedManifest) {
+    return new URL('.', explicitSignedManifest).toString();
+  }
+  return (
+    process.env.QSDM_HIVE_UPDATE_BASE_URL?.trim() || DEFAULT_MANIFEST_BASE_URL
+  );
+}
+
 function isVersionPolicyDisabledForThisProcess() {
   if (
     canUseLocalHiveVersionPolicyOverrides() &&
@@ -313,65 +336,4 @@ export function canUseLocalHiveVersionPolicyOverrides() {
 
 function isProductionHiveRuntime() {
   return Boolean(app.isPackaged) || process.env.NODE_ENV === 'production';
-}
-
-function fetchText(url: string, redirects = 0): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const parsedUrl = new URL(url);
-    const client = parsedUrl.protocol === 'http:' ? http : https;
-    const request = client.get(
-      parsedUrl,
-      {
-        timeout: REQUEST_TIMEOUT_MS,
-        headers: {
-          Accept: 'application/x-yaml, application/json, text/plain, */*',
-          'User-Agent': `QSDM-Hive/${getCurrentHiveVersion()}`,
-        },
-      },
-      (response) => {
-        if (
-          response.statusCode &&
-          response.statusCode >= 300 &&
-          response.statusCode < 400 &&
-          response.headers.location
-        ) {
-          if (redirects >= MAX_REDIRECTS) {
-            response.resume();
-            reject(new Error('Version manifest redirected too many times.'));
-            return;
-          }
-          response.resume();
-          fetchText(
-            new URL(response.headers.location, url).toString(),
-            redirects + 1
-          )
-            .then(resolve)
-            .catch(reject);
-          return;
-        }
-
-        if (response.statusCode !== 200) {
-          response.resume();
-          reject(
-            new Error(
-              `Version manifest request failed with status ${response.statusCode}`
-            )
-          );
-          return;
-        }
-
-        let body = '';
-        response.setEncoding('utf8');
-        response.on('data', (chunk) => {
-          body += chunk;
-        });
-        response.on('end', () => resolve(body));
-      }
-    );
-
-    request.on('timeout', () => {
-      request.destroy(new Error('Version manifest request timed out.'));
-    });
-    request.on('error', reject);
-  });
 }

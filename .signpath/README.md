@@ -15,9 +15,10 @@ Current release posture:
 - Users must verify SHA-256 checksums from `qsdm.tech/downloads`.
 - Windows SmartScreen may warn because the publisher has no established
   Authenticode reputation.
-- QSDM may add QSDM-native manifest signatures to prove a file came from the
-  project, but that does not replace Microsoft Authenticode trust.
-- Paid SignPath/AuthentiCode or a future accepted Foundation reapplication
+- QSDM Hive 1.3.96 authenticates release manifests and installer hashes with a
+  pinned ML-DSA-87 project key, but that does not replace Microsoft
+  Authenticode trust.
+- Paid SignPath/Authenticode or a future accepted Foundation reapplication
   remains the path to Windows verified-publisher UX.
 
 ## Intended project configuration

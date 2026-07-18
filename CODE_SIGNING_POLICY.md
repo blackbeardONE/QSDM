@@ -18,8 +18,9 @@ owner explicitly approves the unsigned posture, all release gates pass, and
 SHA-256 checksums are published at immutable URLs. Windows SmartScreen may warn
 because unsigned installers have no Microsoft publisher reputation.
 
-QSDM may add a project-native release signature over the release manifest and
-artifacts. That proves continuity with a QSDM-controlled release key, but it
+QSDM Hive 1.3.96 adds a project-native ML-DSA-87 signature over its release
+manifest and verifies installer hashes before installation. That proves
+continuity with a QSDM-controlled release key, but it
 does not make Windows show a verified publisher and does not replace
 Authenticode, timestamping, or SmartScreen reputation.
 

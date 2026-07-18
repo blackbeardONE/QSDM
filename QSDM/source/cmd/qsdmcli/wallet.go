@@ -18,6 +18,8 @@
 //	qsdmcli wallet show     [--in PATH]
 //	qsdmcli wallet inspect  [--in PATH] [--passphrase-file FILE]
 //	qsdmcli wallet sign     [--in PATH] [--passphrase-file FILE] [--message HEX | --message-file PATH]
+//	qsdmcli wallet verify   --public-key HEX [--message HEX | --message-file PATH]
+//	                        [--signature HEX | --signature-file PATH]
 //	qsdmcli wallet sign-tx  [--in PATH] [--passphrase-file FILE]
 //	                        [--envelope-file PATH | '-'] [--nonce N | --auto-nonce]
 //	                        [--api-url URL] [--api-timeout DUR]
@@ -75,6 +77,8 @@ func (c *CLI) walletCommand(args []string) error {
 		return c.walletInspect(rest)
 	case "sign":
 		return c.walletSign(rest)
+	case "verify":
+		return c.walletVerify(rest)
 	case "sign-tx":
 		return c.walletSignTx(rest)
 	case "sign-task-action":
@@ -88,7 +92,7 @@ func (c *CLI) walletCommand(args []string) error {
 }
 
 func walletUsageError() error {
-	return fmt.Errorf("usage: qsdmcli wallet <new|show|inspect|sign|sign-tx|sign-task-action> [flags]\n\n%s", walletHelp)
+	return fmt.Errorf("usage: qsdmcli wallet <new|show|inspect|sign|verify|sign-tx|sign-task-action> [flags]\n\n%s", walletHelp)
 }
 
 const walletHelp = `qsdmcli wallet — self-custody keystore (ML-DSA-87)
@@ -102,6 +106,8 @@ Subcommands:
            the encrypted private key. Prompts for passphrase.
   sign     Decrypt the keystore and sign a message with the wallet's
            private key. Prompts for passphrase. Outputs hex signature.
+  verify   Verify an ML-DSA-87 signature with a public key. This command
+           never opens a keystore and is suitable for release verification.
   sign-tx  v0.4.1: produce a fully-signed self-custody envelope ready
            for POST /api/v1/wallet/submit-signed. Reads an unsigned
            envelope (JSON on stdin by default), stamps the v0.4.1
@@ -124,8 +130,13 @@ Common flags:
                         Omit to prompt interactively without echo.
   --force               Overwrite an existing keystore (new only). Off by default.
   --message      HEX    Hex-encoded message bytes to sign (sign only).
-  --message-file PATH   Read message bytes to sign from a file (sign only;
+  --message-file PATH   Read message bytes to sign or verify from a file;
                         use '-' for stdin). Mutually exclusive with --message.
+  --public-key HEX      ML-DSA-87 public key to use for verification.
+  --public-key-file PATH
+                        Read the public-key hex from a file (verify only).
+  --signature HEX       ML-DSA-87 signature to verify.
+  --signature-file PATH Read signature hex from a file (verify only).
   --envelope-file PATH  JSON envelope to sign (sign-tx or sign-task-action;
                         default: stdin).
   --nonce N             Nonce to stamp (sign-tx or sign-task-action;
@@ -139,6 +150,9 @@ Examples:
   qsdmcli wallet new --out ~/.qsdm/miner.json --passphrase-file pass.txt
   qsdmcli wallet show
   qsdmcli wallet sign --message-file tx.json > tx.sig.hex
+  qsdmcli wallet verify --public-key "$PUBLIC_KEY" \
+      --message-file release-manifest.json \
+      --signature-file release-manifest.sig
   # Build envelope.json (no signature/public_key/nonce fields), then:
   qsdmcli wallet sign-tx --auto-nonce < envelope.json \
     | curl -fsS -H 'Content-Type: application/json' --data-binary @- \
@@ -357,6 +371,93 @@ func (c *CLI) walletSign(args []string) error {
 	fmt.Fprintf(os.Stderr, "signed %d bytes with %s (%d-byte ML-DSA-87 signature)\n",
 		len(message), ks.Address, len(sig))
 	fmt.Println(hex.EncodeToString(sig))
+	return nil
+}
+
+func (c *CLI) walletVerify(args []string) error {
+	fs := flag.NewFlagSet("wallet verify", flag.ContinueOnError)
+	publicKeyHex := fs.String("public-key", "", "hex-encoded ML-DSA-87 public key")
+	publicKeyFile := fs.String("public-key-file", "", "file containing a hex-encoded ML-DSA-87 public key")
+	signatureHex := fs.String("signature", "", "hex-encoded ML-DSA-87 signature")
+	signatureFile := fs.String("signature-file", "", "file containing a hex-encoded ML-DSA-87 signature")
+	msgHex := fs.String("message", "", "hex-encoded message bytes")
+	msgFile := fs.String("message-file", "", "file containing raw message bytes ('-' for stdin)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	publicKey, err := readHexValue("public-key", *publicKeyHex, *publicKeyFile)
+	if err != nil {
+		return err
+	}
+	signature, err := readHexValue("signature", *signatureHex, *signatureFile)
+	if err != nil {
+		return err
+	}
+
+	if (*msgHex == "" && *msgFile == "") || (*msgHex != "" && *msgFile != "") {
+		return fmt.Errorf("--message OR --message-file is required (and they are mutually exclusive)")
+	}
+	var message []byte
+	if *msgHex != "" {
+		message, err = hex.DecodeString(strings.TrimSpace(*msgHex))
+		if err != nil {
+			return fmt.Errorf("--message hex: %w", err)
+		}
+	} else {
+		message, err = readAllFromPathOrStdin(*msgFile)
+		if err != nil {
+			return fmt.Errorf("--message-file: %w", err)
+		}
+	}
+	if len(message) == 0 {
+		return fmt.Errorf("message is empty")
+	}
+
+	if err := verifyMLDSA87Signature(publicKey, signature, message); err != nil {
+		return err
+	}
+	fmt.Println("OK: ML-DSA-87 signature verified")
+	return nil
+}
+
+func readHexValue(flagName, inline, sourceFile string) (string, error) {
+	if (strings.TrimSpace(inline) == "") == (strings.TrimSpace(sourceFile) == "") {
+		return "", fmt.Errorf("exactly one of --%s or --%s-file is required", flagName, flagName)
+	}
+	if strings.TrimSpace(inline) != "" {
+		return strings.TrimSpace(inline), nil
+	}
+	b, err := readAllFromPathOrStdin(sourceFile)
+	if err != nil {
+		return "", fmt.Errorf("read %s file: %w", flagName, err)
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+func verifyMLDSA87Signature(publicKeyHex, signatureHex string, message []byte) error {
+	publicKeyBytes, err := hex.DecodeString(strings.TrimSpace(publicKeyHex))
+	if err != nil {
+		return fmt.Errorf("public key hex: %w", err)
+	}
+	if len(publicKeyBytes) != mldsa87.PublicKeySize {
+		return fmt.Errorf("public key must be %d bytes, got %d", mldsa87.PublicKeySize, len(publicKeyBytes))
+	}
+	signatureBytes, err := hex.DecodeString(strings.TrimSpace(signatureHex))
+	if err != nil {
+		return fmt.Errorf("signature hex: %w", err)
+	}
+	if len(signatureBytes) != mldsa87.SignatureSize {
+		return fmt.Errorf("signature must be %d bytes, got %d", mldsa87.SignatureSize, len(signatureBytes))
+	}
+
+	var publicKey mldsa87.PublicKey
+	if err := publicKey.UnmarshalBinary(publicKeyBytes); err != nil {
+		return fmt.Errorf("public key parse: %w", err)
+	}
+	if !mldsa87.Verify(&publicKey, message, nil, signatureBytes) {
+		return fmt.Errorf("ML-DSA-87 signature verification failed")
+	}
 	return nil
 }
 

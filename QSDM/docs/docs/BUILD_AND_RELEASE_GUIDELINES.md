@@ -177,6 +177,27 @@ Before packaging Hive, confirm the bundled native directory contains the exact
 reviewed Core/CLI, miner, Edge Agent, and Edge Control versions expected by the
 release. Record their SHA-256 hashes before and after packaging.
 
+After Windows and Linux artifacts are final, generate both QSDM-native signed
+release envelopes from the dedicated signing account:
+
+```powershell
+pwsh QSDM/deploy/scripts/new_hive_release_manifest.ps1 `
+  -Platform windows -Version <version> `
+  -DownloadsDirectory <staged-downloads-directory> `
+  -Commit <full-commit>
+
+pwsh QSDM/deploy/scripts/new_hive_release_manifest.ps1 `
+  -Platform linux -Version <version> `
+  -DownloadsDirectory <staged-downloads-directory> `
+  -Commit <full-commit>
+```
+
+The joint publisher requires `qsdm-hive-release-windows.json` and
+`qsdm-hive-release-linux.json`. Hive authenticates those ML-DSA-87 envelopes,
+the updater metadata they identify, and the downloaded installer before
+installation. See [QSDM-native release signing](QSDM_NATIVE_RELEASE_SIGNING.md)
+for key custody, failure behavior, and incident response.
+
 ### 6. Smoke-test the actual artifacts
 
 Use clean or disposable Windows and Linux profiles. At minimum verify:
@@ -195,6 +216,8 @@ Use clean or disposable Windows and Linux profiles. At minimum verify:
   rejection, and federation key rotation;
 - public download URL, update manifest, checksums, signatures, and installer
   metadata resolve to the same approved version.
+- a modified signed envelope, updater manifest, installer, wrong-platform
+  manifest, expired manifest, and unapproved signing key are all rejected.
 
 Do not use production wallets or unrelated nodes for destructive testing.
 
@@ -206,6 +229,8 @@ retain:
 
 - release notes and migration/rollback instructions;
 - artifact manifest and SHA-256 checksums;
+- both QSDM-native signed release envelopes generated from the pinned release
+  key;
 - Windows Authenticode signatures and trusted timestamp evidence where
   available; otherwise explicit unsigned-release approval plus SHA-256 evidence
   and SmartScreen disclosure;

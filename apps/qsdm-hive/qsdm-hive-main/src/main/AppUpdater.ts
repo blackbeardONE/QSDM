@@ -1,8 +1,13 @@
 import { BrowserWindow, dialog } from 'electron';
+import fs from 'fs';
 import path from 'path';
 
 import log from 'electron-log';
-import { autoUpdater } from 'electron-updater';
+import {
+  autoUpdater,
+  UpdateDownloadedEvent,
+  UpdateInfo,
+} from 'electron-updater';
 
 import { RendererEndpoints } from 'config/endpoints';
 
@@ -13,15 +18,25 @@ import {
   getCurrentHiveVersion,
   isUnsignedPreviewHiveVersion,
 } from './services/hiveVersionPolicy';
+import {
+  getVerifiedQsdmHiveRelease,
+  VerifiedQsdmHiveRelease,
+  verifyDownloadedQsdmHiveUpdate,
+} from './services/qsdmReleaseManifest';
 
 const CHECK_INTERVAL = 6 * 1000 * 60 * 60;
 const QSDM_HIVE_UPDATE_FEED_URL = 'https://qsdm.tech/downloads';
 const QSDM_HIVE_UNSIGNED_PREVIEW_UPDATE_FEED_URL =
   'https://qsdm.tech/downloads/unsigned-preview';
 
+type AutoUpdaterCacheApp = {
+  baseCachePath: string;
+};
+
 let interval: NodeJS.Timer | null = null;
 let updaterConfigured = false;
 let listenersConfigured = false;
+let trustedRelease: VerifiedQsdmHiveRelease | null = null;
 
 export function shouldEnableAutoUpdates(
   env: NodeJS.ProcessEnv = process.env,
@@ -76,7 +91,29 @@ export async function initializeAppUpdater(
 
 export async function checkForUpdates() {
   await ensureAppUpdaterConfigured();
+  await ensureTrustedReleaseForUpdate(true);
   return autoUpdater.checkForUpdatesAndNotify();
+}
+
+export async function ensureTrustedReleaseForUpdate(forceRefresh = false) {
+  const release = await getVerifiedQsdmHiveRelease({
+    platform: process.platform,
+    baseUrl: getQsdmHiveUpdateFeedUrl(),
+    forceRefresh,
+  });
+  trustedRelease = release;
+  return release;
+}
+
+function assertUpdateInfoMatchesTrustedRelease(
+  info: UpdateInfo,
+  release: VerifiedQsdmHiveRelease
+) {
+  if (info.version !== release.manifest.version) {
+    throw new Error(
+      `Updater offered ${info.version}, but the signed QSDM release is ${release.manifest.version}.`
+    );
+  }
 }
 
 export async function ensureAppUpdaterConfigured() {
@@ -98,20 +135,17 @@ export async function ensureAppUpdaterConfigured() {
     url: getQsdmHiveUpdateFeedUrl(),
   });
 
+  const updaterCacheApp = (
+    autoUpdater as unknown as { app: AutoUpdaterCacheApp }
+  ).app;
   console.log('QSDM Hive updater feed ', getQsdmHiveUpdateFeedUrl());
-  console.log(
-    'original updater cache path ',
-    (autoUpdater as any).app.baseCachePath
-  );
-  Object.defineProperty((autoUpdater as any).app, 'baseCachePath', {
+  console.log('original updater cache path ', updaterCacheApp.baseCachePath);
+  Object.defineProperty(updaterCacheApp, 'baseCachePath', {
     get() {
       return path.join(getAppDataPath(), 'updater-cache');
     },
   });
-  console.log(
-    'overwritten updater cache path ',
-    (autoUpdater as any).app.baseCachePath
-  );
+  console.log('overwritten updater cache path ', updaterCacheApp.baseCachePath);
   updaterConfigured = true;
 }
 
@@ -124,27 +158,52 @@ function setListeners(
   }
   listenersConfigured = true;
 
-  autoUpdater.on('update-available', (info) => {
-    getUserConfig()
-      .then((appConfig) => {
-        // const mainWindow = BrowserWindow.getFocusedWindow();
-        if (!appConfig?.autoUpdatesDisabled) {
-          // If autoUpdatesDisabled is not set, autoupdates are enabled
-          // if auto updates are enabled, download the update
-          autoUpdater.downloadUpdate();
-        } else if (mainWindow) {
-          // if auto updates are disabled, inform the user about the update
-          mainWindow.webContents.send(RendererEndpoints.UPDATE_AVAILABLE, info);
-        }
-      })
-      .catch((error) => {
-        console.log(error);
-      });
+  autoUpdater.on('update-available', async (info) => {
+    try {
+      const release = await ensureTrustedReleaseForUpdate();
+      assertUpdateInfoMatchesTrustedRelease(info, release);
+      const appConfig = await getUserConfig();
+      // const mainWindow = BrowserWindow.getFocusedWindow();
+      if (!appConfig?.autoUpdatesDisabled) {
+        await autoUpdater.downloadUpdate();
+      } else if (mainWindow) {
+        mainWindow.webContents.send(RendererEndpoints.UPDATE_AVAILABLE, info);
+      }
+    } catch (error) {
+      log.error('QSDM Hive refused an untrusted update offer', error);
+      dialog.showErrorBox(
+        'QSDM Hive Update Blocked',
+        `Hive could not authenticate the release metadata. ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
   });
 
-  autoUpdater.on('update-downloaded', (info) => {
+  autoUpdater.on('update-downloaded', async (info: UpdateDownloadedEvent) => {
     console.log('Update downloaded');
     console.log(info);
+
+    try {
+      const release =
+        trustedRelease || (await ensureTrustedReleaseForUpdate(true));
+      assertUpdateInfoMatchesTrustedRelease(info, release);
+      await verifyDownloadedQsdmHiveUpdate(info.downloadedFile, release);
+    } catch (error) {
+      log.error('QSDM Hive refused a downloaded update', error);
+      if (info.downloadedFile) {
+        await fs.promises.unlink(info.downloadedFile).catch((unlinkError) => {
+          log.warn('Could not remove rejected Hive update', unlinkError);
+        });
+      }
+      dialog.showErrorBox(
+        'QSDM Hive Update Rejected',
+        `The downloaded installer did not match the signed QSDM release. ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+      return;
+    }
 
     getUserConfig()
       .then((appConfig) => {
@@ -182,6 +241,7 @@ function createCheckForTheUpdatesInterval() {
     interval = setInterval(() => {
       console.log('interval update check');
       ensureAppUpdaterConfigured()
+        .then(() => ensureTrustedReleaseForUpdate(true))
         .then(() => autoUpdater.checkForUpdates())
         .catch((error) =>
           console.error('QSDM Hive update check failed', error)
@@ -193,6 +253,7 @@ function createCheckForTheUpdatesInterval() {
   setTimeout(() => {
     console.log('initial update check');
     ensureAppUpdaterConfigured()
+      .then(() => ensureTrustedReleaseForUpdate(true))
       .then(() => autoUpdater.checkForUpdates())
       .catch((error) => console.error('QSDM Hive update check failed', error));
   }, 25000);

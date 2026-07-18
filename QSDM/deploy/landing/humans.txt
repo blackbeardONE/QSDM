@@ -48,7 +48,7 @@
 
   Product surfaces:
     /                             — Hive + CELL + capabilities
-    /download.html                — Hive 1.3.95 + Edge Control 1.3.5
+    /download.html                — Hive 1.3.96 + Edge Control 1.3.5
     /docs/                        — knowledge-base SPA
     /wallet.html                  — self-custody ML-DSA-87 wallet
     /explorer.html                — blocks, txs, accounts

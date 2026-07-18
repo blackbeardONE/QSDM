@@ -26,6 +26,7 @@ required_downloads=(
   "qsdm-hive-${hive_version}-release-provenance.json"
   "qsdm-hive-${hive_version}-windows-metadata-evidence.json"
   "qsdm-hive-${hive_version}-windows-nsis-evidence.json"
+  "qsdm-hive-release-windows.json"
 )
 
 for file in "${required_downloads[@]}"; do
@@ -39,6 +40,15 @@ test -f "$stage_dir/download.html"
 )
 grep -qx "version: ${hive_version}" "$stage_dir/downloads/latest.yml"
 grep -q "url: ${installer}" "$stage_dir/downloads/latest.yml"
+grep -q '"schema": "qsdm.signed-release.v1"' \
+  "$stage_dir/downloads/qsdm-hive-release-windows.json"
+grep -q '"key_id": "10ab9c5710761d4c9dca59d42446e9ea0e3315d15cdc3715df1dcb8c96fa07a1"' \
+  "$stage_dir/downloads/qsdm-hive-release-windows.json"
+manifest_payload="$(sed -n 's/.*"manifest_base64": "\([^"]*\)".*/\1/p' \
+  "$stage_dir/downloads/qsdm-hive-release-windows.json")"
+test -n "$manifest_payload"
+printf '%s' "$manifest_payload" | base64 --decode | \
+  grep -q '"version": "'"${hive_version}"'"'
 
 install -d -o caddy -g caddy -m 0755 "$webroot" "$downloads"
 
@@ -87,9 +97,14 @@ install_pointer "$stage_dir/download.html" "$webroot/download.html"
 
 # Exact-version clients see the release only after every referenced byte is public.
 install_pointer "$stage_dir/downloads/latest.yml" "$downloads/latest.yml"
+install_pointer "$stage_dir/downloads/qsdm-hive-release-windows.json" \
+  "$downloads/qsdm-hive-release-windows.json"
 
 curl --fail --silent --show-error --max-time 30 \
   "https://qsdm.tech/downloads/latest.yml" | grep -qx "version: ${hive_version}"
+curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/downloads/qsdm-hive-release-windows.json" | \
+  grep -q '"schema": "qsdm.signed-release.v1"'
 curl --fail --silent --show-error --max-time 30 \
   "https://qsdm.tech/download.html" | grep -q "Version ${hive_version}"
 
