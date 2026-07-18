@@ -221,6 +221,40 @@ Use clean or disposable Windows and Linux profiles. At minimum verify:
 
 Do not use production wallets or unrelated nodes for destructive testing.
 
+After installing and starting the candidate, run the read-only production
+acceptance harness on both operating systems. Replace the example values with
+the exact release version and full source commit:
+
+```powershell
+pwsh QSDM/scripts/hive_production_acceptance.ps1 `
+  -ExpectedVersion <version> `
+  -ExpectedCommit <full-commit> `
+  -RequireGpuMining `
+  -OutputPath E:\QSDM-release-evidence\<version>\hive-windows.json
+```
+
+```bash
+bash QSDM/scripts/hive_production_acceptance.sh \
+  --expected-version <version> \
+  --expected-commit <full-commit> \
+  --require-gpu-mining \
+  --output "$HOME/qsdm-release-evidence/<version>/hive-linux.json"
+```
+
+The Linux command normally discovers the version from the AppImage process. If
+the launcher strips the version from its process metadata, pass
+`--installed-version <version>`. Both harnesses verify the Windows and Linux
+release channels, pinned ML-DSA release signature when `qsdmcli` is available,
+installed runtime, Core synchronization, task catalog, Mother Hive protocol,
+read-only signer balance and nonce, NVIDIA solver activity, Edge/Mother Hive
+runtime, and recent logs. They never submit wallet or task actions, and wallet
+addresses are masked in the report.
+
+A harness failure blocks promotion. Warnings require release-owner review; use
+`-StrictWarnings` on Windows or `--strict-warnings` on Linux when the release
+must be completely warning-free. Store both
+`qsdm.hive.production-acceptance.v1` JSON reports with the release evidence.
+
 ### 7. Publish and verify
 
 Publish versioned, immutable artifacts first. Update the `latest` pointer only
