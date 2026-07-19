@@ -86,6 +86,10 @@ jobs:
         with:
           go-version-file: QSDM/source/go.mod
 
+      - name: Test generated release-cache maintenance guardrails
+        shell: pwsh
+        run: pwsh -NoProfile -File QSDM/scripts/test_generated_cache_maintenance.ps1
+
       - name: Go test (wasm preflight integration)
         working-directory: QSDM/source
         env:

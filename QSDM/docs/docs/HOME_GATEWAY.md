@@ -55,6 +55,28 @@ Run after the relay slot is configured:
 .\scripts\start_home_gateway.ps1 -Relay https://relay.example -Slot your-slot-id
 ```
 
+## Disk Resilience
+
+Validators reserve 2 GiB of free space for ledger persistence by default. Block
+sealing and peer block admission pause before that reserve is crossed, then
+resume automatically after space is restored. Override the threshold only when
+the state volume has been sized deliberately:
+
+```text
+QSDM_MIN_PERSISTENCE_FREE_BYTES=2147483648
+```
+
+The value must be an unsigned byte count of at least 256 MiB. A persistence
+write error still fails closed until restart; startup can repair only one fully
+appended journal block when the saved state root proves that the block was not
+committed.
+
+On Windows home-validator installations, `watch_local_stack.ps1` runs
+`maintain_generated_cache.ps1` every 30 minutes. It retains the newest builds
+and may remove only old entries directly under `.cache/release` and
+`.cache/releases`. It never removes validator state, recovery archives,
+wallets, signing material, or `.cache/private`.
+
 ## Relay Side
 
 Add a slot to the relay allowlist:
