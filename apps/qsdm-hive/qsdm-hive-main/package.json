@@ -24,7 +24,7 @@
     "native:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ../../../QSDM/deploy/scripts/build_hive_windows_native.ps1",
     "package": "node ./.erb/scripts/package-host.js",
     "package:electron": "ts-node ./.erb/scripts/clean.js dist && npm run build && electron-builder build --publish never",
-    "package:linux": "bash ../../../QSDM/deploy/scripts/build_hive_linux.sh",
+    "package:linux": "bash ../../../QSDM/deploy/scripts/build_hive_linux.sh . release/build-linux",
     "package:windows": "npm run native:windows && npm run package:electron && npm run verify:windows-signature",
     "package:windows:unsigned": "npm run native:windows && npm run package:electron",
     "verify:windows-signature": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ../../../QSDM/deploy/scripts/verify_hive_windows_signature.ps1 -ReleaseDirectory release/build -ExpectedPublisher QSDM",
@@ -300,5 +300,5 @@
     ],
     "logLevel": "quiet"
   },
-  "version": "1.3.99"
+  "version": "1.4.0"
 }

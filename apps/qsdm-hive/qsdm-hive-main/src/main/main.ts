@@ -49,6 +49,7 @@ import {
   startQsdmWalletProviderBroker,
   stopQsdmWalletProviderBroker,
 } from './services/qsdmWalletProviderBroker';
+import { registerQsdmWalletProviderNativeHost } from './services/qsdmWalletProviderNativeHost';
 import { resolveHtmlPath, sleep } from './util';
 
 import type { Event } from 'electron';
@@ -600,6 +601,18 @@ const installExtensions = async () => {
 
 const main = async (): Promise<void> => {
   initHandlers();
+
+  if (isProductionRuntime && !isSmokeTest) {
+    try {
+      const registration = registerQsdmWalletProviderNativeHost();
+      console.log('QSDM browser wallet bridge registered', registration);
+    } catch (error) {
+      console.warn(
+        'QSDM browser wallet bridge registration failed; Hive wallet remains available locally.',
+        error
+      );
+    }
+  }
 
   const signerSecretStatus = initializeQsdmSignerSecretStore();
   console.log('QSDM signer secret storage initialized', {

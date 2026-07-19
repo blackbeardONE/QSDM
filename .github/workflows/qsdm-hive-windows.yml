@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - "apps/qsdm-hive/qsdm-hive-main/**"
+      - "apps/qsdm-hive-wallet-extension/**"
       - "apps/qsdm-edge-agent/**"
       - "QSDM/source/cmd/qsdmcli/**"
       - "QSDM/source/cmd/qsdm-hive-wallet-host/**"
@@ -118,7 +119,11 @@ jobs:
         working-directory: apps/qsdm-hive/qsdm-hive-main
         run: |
           npx tsc --noEmit
-          npm test -- --runInBand src/main/services/qsdmSystemTasks.spec.ts src/main/services/qsdmTaskActions.spec.ts src/main/services/qsdmWalletProviderBroker.spec.ts src/main/services/qsdmSignerSecretStore.spec.ts src/main/controllers/qsdm/unlockQsdmSignerWallet.spec.ts
+          npm test -- --runInBand src/main/services/qsdmSystemTasks.spec.ts src/main/services/qsdmTaskActions.spec.ts src/main/services/qsdmWalletProviderBroker.spec.ts src/main/services/qsdmWalletProviderNativeHost.spec.ts src/main/services/qsdmSignerSecretStore.spec.ts src/main/controllers/qsdm/unlockQsdmSignerWallet.spec.ts
+
+      - name: Test browser wallet extension
+        working-directory: apps/qsdm-hive-wallet-extension
+        run: node tests/run-acceptance.mjs
 
       - name: Build unpacked Hive candidate
         working-directory: apps/qsdm-hive/qsdm-hive-main

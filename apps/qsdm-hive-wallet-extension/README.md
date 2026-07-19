@@ -1,62 +1,41 @@
-# QSDM Hive Wallet Extension
+# QSDM Wallet Extension
 
-QSDM Hive Wallet exposes a small `window.qsdm` provider to HTTPS websites.
-The extension never stores a QSDM private key, keystore JSON, or passphrase.
-All privileged operations are forwarded through the browser native-messaging
-API to QSDM Hive and require approval in Hive.
+The extension lets websites use the active wallet in QSDM Hive. It is a secure
+provider, not a second wallet vault: it never stores a private key, keystore
+JSON, or passphrase.
 
-## Wallet creation and import
+## User flow
 
-The extension is deliberately not a second wallet vault. Users open
-**QSDM Hive > Settings > Wallet**, then either create a native QSDM wallet or
-import an encrypted QSDM keystore JSON with its passphrase. Hive keeps the
-active signer in operating-system-protected storage where available. The
-extension discovers only the active public address and asks Hive to approve
-each connection, signature, or CELL transfer.
+1. Create or import a wallet once in **QSDM Hive > Settings > Wallet**.
+2. Keep Hive running in the notification area.
+3. Open a supported website and select **Connect QSDM Wallet**.
+4. Approve the website once in Hive.
 
-This means users import a wallet once in Hive. They do not upload the keystore
-to every website or browser profile, and websites never receive the keystore,
-private key, or passphrase.
+The website remains connected to that wallet until the user disconnects it in
+the extension or revokes it under **Hive > Settings > Wallet > Connected
+Sites**. Signatures and CELL transfers always require a fresh Hive approval.
 
-## Development install
+There is no separate extension account, password, recovery phrase, or wallet
+import. This avoids creating another copy of the user's wallet secrets.
 
-1. Build the `qsdm-hive-wallet-host` native executable through the normal Hive
-   Windows or Linux native build.
-2. Open the browser extensions page, enable developer mode, and load this
-   directory as an unpacked extension.
-3. Copy the generated extension ID.
-4. Run `native-host/install-windows.ps1 -ExtensionId <id>` on Windows or
-   `native-host/install-linux.sh <id>` on Linux from the packaged extension
-   resource directory.
-5. Start QSDM Hive and open the extension popup.
+## Installation
 
-This first package targets Chromium browsers (Chrome and Edge). Production
-distribution must use a fixed Chrome Web Store or Edge Add-ons ID.
-The native-host manifest must allow only that published extension ID.
+Packaged Hive releases register the native browser bridge automatically for
+the current user. This requires no administrator access. The extension has the
+stable Chromium ID `habkkkednignfkoffhpbjahcjbikkahh`.
 
-## Windows acceptance test
+Until the extension is published in browser stores, install it once:
 
-Run the isolated end-to-end check after building the Windows native tools:
+1. Open the browser extensions page and enable developer mode.
+2. Choose **Load unpacked** and select the bundled `wallet-extension` folder.
+3. Start or restart QSDM Hive.
 
-```powershell
-node tests/run-acceptance.mjs
-```
+Chrome, Edge, Chromium, and Brave are supported. Users upgrading from the old
+random-ID development build should remove it and load the current bundled
+extension once. Daily use is automatic after that migration.
 
-The test launches Chrome or Edge with a temporary profile, discovers the
-unpacked extension ID, registers the native host for the current user, and
-exercises the real extension and native-messaging executable against a local
-mock broker. It verifies connect, account lookup, balance, message signing,
-transaction forwarding, disconnect, unsupported-method rejection, account
-events, and the popup. No private wallet is opened and no CELL is broadcast.
-Use `--browser <path>` to choose a browser or `--headful` if a browser build
-does not permit extensions in unified headless mode.
-
-With QSDM Hive running, verify the compiled native host against the live local
-broker without requesting a signature or broadcasting CELL:
-
-```powershell
-node tests/probe-live-broker.mjs
-```
+The scripts in `native-host` remain available for development diagnostics;
+normal packaged installs do not require running them manually.
 
 ## Website API
 
@@ -74,3 +53,21 @@ const signature = await window.qsdm.request({
 Supported methods are `qsdm_requestAccounts`, `qsdm_accounts`,
 `qsdm_getBalance`, `qsdm_signMessage`, `qsdm_sendTransaction`, and
 `qsdm_disconnect`.
+
+## Verification
+
+After building the Windows native tools, run:
+
+```powershell
+node tests/run-acceptance.mjs
+```
+
+The isolated test validates the pinned extension ID, provider, native host,
+popup, permissions, signing request, transfer request, and disconnect flow. It
+does not open a private wallet or broadcast CELL.
+
+With Hive running, this read-only probe checks the live local bridge:
+
+```powershell
+node tests/probe-live-broker.mjs
+```

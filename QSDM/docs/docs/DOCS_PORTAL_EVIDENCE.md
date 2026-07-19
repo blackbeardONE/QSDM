@@ -9,12 +9,12 @@
 
 ## What shipped
 
-| Surface | Status |
-|---|---|
-| Landing page (`qsdm.tech/`) — capabilities section, unified product nav (Download · Wallet · Capabilities · Mining · Docs · Explorer · Audit · Trust), Hive/CELL/edge/home-gateway messaging aligned to v0.4.3 + Hive 1.3.99 | LIVE (after deploy) |
-| Docs portal (`qsdm.tech/docs/`) — SPA with sidebar, hash routing, client-side markdown render, live fetch from main; adds home gateway, task registry, tray monitor, missing runbooks; referral path fixed | LIVE (after deploy) |
-| `sitemap.xml`, `robots.txt`, `humans.txt` | LIVE (after deploy) |
-| Caddyfile CSP — `connect-src` includes `https://raw.githubusercontent.com` + `https://api.github.com`; `img-src` includes `raw.githubusercontent.com` | LIVE |
+| Surface                                                                                                                                                                                                                     | Status              |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| Landing page (`qsdm.tech/`) — capabilities section, unified product nav (Download · Wallet · Capabilities · Mining · Docs · Explorer · Audit · Trust), Hive/CELL/edge/home-gateway messaging aligned to v0.4.3 + Hive 1.4.0 | LIVE (after deploy) |
+| Docs portal (`qsdm.tech/docs/`) — SPA with sidebar, hash routing, client-side markdown render, live fetch from main; adds home gateway, task registry, tray monitor, missing runbooks; referral path fixed                  | LIVE (after deploy) |
+| `sitemap.xml`, `robots.txt`, `humans.txt`                                                                                                                                                                                   | LIVE (after deploy) |
+| Caddyfile CSP — `connect-src` includes `https://raw.githubusercontent.com` + `https://api.github.com`; `img-src` includes `raw.githubusercontent.com`                                                                       | LIVE                |
 
 No backend changes required for docs content updates that only touch
 Markdown under `QSDM/docs/docs/` (fetched live from `main`). Shell
@@ -27,9 +27,9 @@ files under `QSDM/deploy/landing/` require a landing deploy.
   design · Performance · Reference · Runbooks · Project).
 - Source of truth is the curated `SECTIONS` manifest in
   `QSDM/deploy/landing/docs/docs.js`. Each entry has `{ slug, title,
-  repoPath, badge? }` (some Hive/edge pages also ship `inlineMarkdown`).
+repoPath, badge? }` (some Hive/edge pages also ship `inlineMarkdown`).
 - Markdown is fetched at runtime from `raw.githubusercontent.com/
-  blackbeardONE/QSDM/main/<repoPath>`. **No mirror, no rebuild
+blackbeardONE/QSDM/main/<repoPath>`. **No mirror, no rebuild
   needed** — pushing to `main` updates docs on the next page load.
 - `markdown-it@14.1.0` is vendored at `/docs/lib/markdown-it.min.js`
   (123 618 B) with SRI
@@ -120,7 +120,7 @@ QSDM/deploy/Caddyfile                (CSP `connect-src` + `img-src` +
                                       `try_files` chain; ran caddy fmt)
 ```
 
-## What's *not* in scope
+## What's _not_ in scope
 
 - No new backend or WASM artefacts — the v0.4.0 binary, container,
   and `wallet.wasm` are unchanged. The release pipeline did not run.

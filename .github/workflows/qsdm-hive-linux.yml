@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - "apps/qsdm-hive/qsdm-hive-main/**"
+      - "apps/qsdm-hive-wallet-extension/**"
       - "apps/qsdm-edge-agent/**"
       - "QSDM/source/cmd/qsdmcli/**"
       - "QSDM/source/cmd/qsdm-hive-wallet-host/**"
@@ -103,7 +104,7 @@ jobs:
         working-directory: apps/qsdm-hive/qsdm-hive-main
         run: |
           npx tsc --noEmit
-          npm test -- --runInBand src/main/services/qsdmSystemTasks.spec.ts src/main/services/qsdmTaskActions.spec.ts
+          npm test -- --runInBand src/main/services/qsdmSystemTasks.spec.ts src/main/services/qsdmTaskActions.spec.ts src/main/services/qsdmWalletProviderBroker.spec.ts src/main/services/qsdmWalletProviderNativeHost.spec.ts
 
       - name: Build Hive
         working-directory: apps/qsdm-hive/qsdm-hive-main

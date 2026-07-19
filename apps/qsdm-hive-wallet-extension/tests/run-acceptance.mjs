@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 const TEST_ADDRESS =
   '13d786706accfbe77c5ddf6fc6757e1cca07bd01aff0cad3dcf9411d92cf11c9';
 const PROVIDER_VERSION = 'qsdm-hive-wallet-provider/v1';
+const EXPECTED_EXTENSION_ID = 'habkkkednignfkoffhpbjahcjbikkahh';
 
 const testsDirectory = path.dirname(fileURLToPath(import.meta.url));
 const extensionDirectory = path.resolve(testsDirectory, '..');
@@ -510,6 +511,11 @@ try {
   if (!extensionId) {
     throw new Error('Chromium did not return an extension ID.');
   }
+  assert.equal(
+    extensionId,
+    EXPECTED_EXTENSION_ID,
+    'The unpacked extension must retain its pinned production identity.'
+  );
   installNativeHost(extensionId);
   stage('testing website provider methods');
   const result = await withTimeout(
@@ -551,7 +557,7 @@ try {
     popup.waitForFunction(
       () =>
         document.querySelector('#hive-status')?.textContent ===
-        'Hive connected',
+        'Wallet ready',
       { timeout: 10000 }
     ),
     12000,
@@ -569,7 +575,14 @@ try {
     '#wallet-address',
     (element) => element.textContent
   );
-  assert.equal(popupAddress, TEST_ADDRESS);
+  assert.equal(
+    popupAddress,
+    `${TEST_ADDRESS.slice(0, 10)}...${TEST_ADDRESS.slice(-8)}`
+  );
+  assert.equal(
+    await popup.$eval('#site-name', (element) => element.textContent),
+    'Unavailable on this page'
+  );
 
   const methods = requests.map((request) => request.method);
   assert.deepEqual(methods, [

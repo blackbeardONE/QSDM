@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 1 || ! "$1" =~ ^[a-p]{32}$ ]]; then
-  echo "usage: $0 <32-character-extension-id> [native-host-path]" >&2
+extension_id="${1:-habkkkednignfkoffhpbjahcjbikkahh}"
+if [[ ! "$extension_id" =~ ^[a-p]{32}$ ]]; then
+  echo "usage: $0 [32-character-extension-id] [native-host-path]" >&2
   exit 64
 fi
 
-extension_id="$1"
 host_path="${2:-$(cd "$(dirname "$0")/../../native" && pwd)/qsdm-hive-wallet-host}"
 host_path="$(readlink -f "$host_path")"
 if [[ ! -x "$host_path" ]]; then
@@ -34,4 +34,4 @@ for directory in \
   chmod 0600 "$directory/tech.qsdm.hive_wallet.json"
 done
 
-echo "QSDM Hive Wallet bridge registered for extension $extension_id"
+echo "QSDM Wallet bridge registered for extension $extension_id"

@@ -45,11 +45,36 @@ p {
 }
 
 section {
-  margin: 16px 0;
+  margin: 12px 0;
   padding: 12px;
   border: 1px solid #315564;
   border-radius: 6px;
   background: #0d2a35;
+}
+
+.site-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.site-row strong {
+  min-width: 0;
+}
+
+.site-state {
+  flex: 0 0 auto;
+  border: 1px solid #456975;
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #a8c3cb;
+  font-size: 10px;
+}
+
+.site-state.connected {
+  border-color: #3b9d88;
+  color: #55dfc1;
 }
 
 .label {
@@ -71,6 +96,7 @@ strong {
   min-height: 18px;
   margin: 0 0 10px;
   color: #f7c66c;
+  line-height: 1.4;
 }
 
 .custody {
