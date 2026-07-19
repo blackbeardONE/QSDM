@@ -73,6 +73,12 @@ for platform in windows linux; do
   test -n "$payload"
   printf '%s' "$payload" | base64 --decode | \
     grep -q '"version": "'"${hive_version}"'"'
+  if [[ "$platform" == "windows" ]]; then
+    printf '%s' "$payload" | base64 --decode | \
+      grep -q '"name": "'"${wallet_extension}"'"'
+    printf '%s' "$payload" | base64 --decode | \
+      grep -q '"name": "'"${wallet_extension_checksums}"'"'
+  fi
 done
 
 install -d -o caddy -g caddy -m 0755 "$webroot" "$downloads"

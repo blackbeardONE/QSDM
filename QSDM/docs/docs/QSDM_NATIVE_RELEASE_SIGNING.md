@@ -72,7 +72,9 @@ pwsh QSDM/deploy/scripts/new_hive_release_manifest.ps1 `
 
 The signer validates the updater version and installer name, hashes every
 required artifact, signs the exact manifest bytes, and immediately verifies its
-own signature through `qsdmcli wallet verify`.
+own signature through `qsdmcli wallet verify`. The Windows envelope also
+authenticates the versioned QSDM Wallet browser-extension ZIP and checksum file;
+the extension is never published as a checksum-only side artifact.
 
 Publish only through the QSDM Hive publisher scripts. They require both signed
 envelopes, verify their pinned key ID and inner version, publish immutable

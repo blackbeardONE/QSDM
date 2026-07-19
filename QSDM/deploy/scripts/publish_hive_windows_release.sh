@@ -10,6 +10,7 @@ stage_dir="$(cd "$1" && pwd)"
 hive_version="$2"
 webroot="${3:-/var/www/qsdm}"
 downloads="$webroot/downloads"
+wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.2.0}"
 
 if [[ ! "$hive_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "invalid Hive version: $hive_version" >&2
@@ -18,6 +19,8 @@ fi
 
 installer="qsdm-hive-${hive_version}-win-x64.exe"
 blockmap="${installer}.blockmap"
+wallet_extension="qsdm-hive-wallet-extension-${wallet_extension_version}.zip"
+wallet_extension_checksums="qsdm-hive-wallet-extension-${wallet_extension_version}-SHA256SUMS.txt"
 required_downloads=(
   "$installer"
   "$blockmap"
@@ -26,6 +29,8 @@ required_downloads=(
   "qsdm-hive-${hive_version}-release-provenance.json"
   "qsdm-hive-${hive_version}-windows-metadata-evidence.json"
   "qsdm-hive-${hive_version}-windows-nsis-evidence.json"
+  "$wallet_extension"
+  "$wallet_extension_checksums"
   "qsdm-hive-release-windows.json"
 )
 
@@ -37,6 +42,7 @@ test -f "$stage_dir/download.html"
 (
   cd "$stage_dir/downloads"
   sha256sum -c SHA256SUMS-win.txt
+  sha256sum -c "$wallet_extension_checksums"
 )
 grep -qx "version: ${hive_version}" "$stage_dir/downloads/latest.yml"
 grep -q "url: ${installer}" "$stage_dir/downloads/latest.yml"
@@ -49,6 +55,8 @@ manifest_payload="$(sed -n 's/.*"manifest_base64": "\([^"]*\)".*/\1/p' \
 test -n "$manifest_payload"
 printf '%s' "$manifest_payload" | base64 --decode | \
   grep -q '"version": "'"${hive_version}"'"'
+printf '%s' "$manifest_payload" | base64 --decode | \
+  grep -q '"name": "'"${wallet_extension}"'"'
 
 install -d -o caddy -g caddy -m 0755 "$webroot" "$downloads"
 
@@ -76,7 +84,9 @@ for file in \
   "$blockmap" \
   "qsdm-hive-${hive_version}-release-provenance.json" \
   "qsdm-hive-${hive_version}-windows-metadata-evidence.json" \
-  "qsdm-hive-${hive_version}-windows-nsis-evidence.json"; do
+  "qsdm-hive-${hive_version}-windows-nsis-evidence.json" \
+  "$wallet_extension" \
+  "$wallet_extension_checksums"; do
   atomic_install "$stage_dir/downloads/$file" "$downloads/$file"
 done
 
@@ -90,8 +100,10 @@ install_pointer() {
 
 install_pointer "$stage_dir/downloads/SHA256SUMS-win.txt" "$downloads/SHA256SUMS-win.txt"
 
-curl --fail --silent --show-error --head --max-time 30 \
-  "https://qsdm.tech/downloads/$installer" >/dev/null
+for file in "$installer" "$wallet_extension" "$wallet_extension_checksums"; do
+  curl --fail --silent --show-error --head --max-time 30 \
+    "https://qsdm.tech/downloads/$file" >/dev/null
+done
 
 install_pointer "$stage_dir/download.html" "$webroot/download.html"
 
