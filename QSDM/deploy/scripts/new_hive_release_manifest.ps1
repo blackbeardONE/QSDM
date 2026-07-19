@@ -12,6 +12,7 @@ param(
     [string]$SigningDirectory = "",
     [string]$QsdmCliPath = "",
     [string]$Commit = "",
+    [string]$WalletExtensionVersion = "",
     [ValidateRange(1, 120)]
     [int]$ValidDays = 90
 )
@@ -27,6 +28,18 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') {
 }
 
 $workspace = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+if (-not $WalletExtensionVersion) {
+    $walletExtensionManifestPath = Join-Path $workspace 'apps\qsdm-hive-wallet-extension\manifest.json'
+    if (-not (Test-Path -LiteralPath $walletExtensionManifestPath -PathType Leaf)) {
+        throw "Wallet extension manifest is missing: $walletExtensionManifestPath"
+    }
+    $WalletExtensionVersion = [string](
+        Get-Content -Raw -LiteralPath $walletExtensionManifestPath | ConvertFrom-Json
+    ).version
+}
+if ($WalletExtensionVersion -notmatch '^\d+\.\d+\.\d+$') {
+    throw 'WalletExtensionVersion must use MAJOR.MINOR.PATCH format.'
+}
 $DownloadsDirectory = (Resolve-Path -LiteralPath $DownloadsDirectory).Path
 if (-not $SigningDirectory) {
     $SigningDirectory = Join-Path $workspace '.cache\qsdm-release-signing'
@@ -93,7 +106,9 @@ if ($Platform -eq 'windows') {
         @{ Name = 'SHA256SUMS-win.txt'; Role = 'checksums'; Required = $true },
         @{ Name = "qsdm-hive-$Version-release-provenance.json"; Role = 'provenance'; Required = $false },
         @{ Name = "qsdm-hive-$Version-windows-metadata-evidence.json"; Role = 'evidence'; Required = $false },
-        @{ Name = "qsdm-hive-$Version-windows-nsis-evidence.json"; Role = 'evidence'; Required = $false }
+        @{ Name = "qsdm-hive-$Version-windows-nsis-evidence.json"; Role = 'evidence'; Required = $false },
+        @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion.zip"; Role = 'browser-extension'; Required = $true },
+        @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion-SHA256SUMS.txt"; Role = 'browser-extension-checksums'; Required = $true }
     )
 } else {
     $manifestName = 'qsdm-hive-release-linux.json'

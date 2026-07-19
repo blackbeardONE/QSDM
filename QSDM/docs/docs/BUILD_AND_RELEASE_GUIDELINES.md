@@ -172,7 +172,9 @@ Direct `npm run release` publishing is intentionally blocked: publish only the
 joint, verified Windows/Linux artifact set through
 `QSDM/deploy/scripts/publish_hive_release.sh`. When Edge Agent artifacts are
 unchanged, use `publish_hive_dual_platform_release.sh`; it publishes both Hive
-platform payloads before moving either exact-version pointer.
+platform payloads and the versioned browser-extension package before moving
+either exact-version pointer. The Windows ML-DSA release envelope must include
+the extension ZIP and its versioned checksum file.
 
 Build and smoke-test Hive on each supported operating system. A Windows package
 does not validate Linux AppImage behavior, and a Linux package does not validate
