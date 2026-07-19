@@ -296,6 +296,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install Windows CGO toolchain
+        id: msys2
+        if: matrix.os == 'windows'
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc
+
       - name: Resolve release tag
         id: tag
         shell: bash
@@ -341,13 +350,20 @@ jobs:
           BUILD_DATE: ${{ steps.meta.outputs.date }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $mingw = 'C:\msys64\mingw64\bin'
-          if (-not (Test-Path (Join-Path $mingw 'gcc.exe'))) {
-            throw 'MSYS2 MinGW gcc is unavailable on windows-latest.'
+          $msys2Root = '${{ steps.msys2.outputs.msys2-location }}'
+          $mingw = Join-Path $msys2Root 'ucrt64\bin'
+          $gcc = Join-Path $mingw 'gcc.exe'
+          if (-not (Test-Path -LiteralPath $gcc -PathType Leaf)) {
+            throw "MSYS2 UCRT64 gcc is unavailable at $gcc."
           }
           $env:PATH = "$mingw;$env:PATH"
-          $env:CC = Join-Path $mingw 'gcc.exe'
+          $env:CC = $gcc
           $env:CGO_ENABLED = '1'
+          $compiler = ((& $gcc --version 2>&1) | Select-Object -First 1 | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0 -or -not $compiler) {
+            throw 'MSYS2 UCRT64 gcc could not execute in PowerShell.'
+          }
+          Write-Host "Using $compiler"
           $tag = $env:RELEASE_TAG
           $sha = $env:BUILD_SHA
           $date = $env:BUILD_DATE
