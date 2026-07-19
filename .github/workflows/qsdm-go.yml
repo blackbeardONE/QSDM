@@ -97,6 +97,55 @@ jobs:
       - name: Test (short, no CGO)
         run: bash QSDM/scripts/go-test-short-no-cgo.sh
 
+  windows-validator-cgo-build:
+    name: Windows validator (CGO + SQLite)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - name: Install Windows CGO toolchain
+        id: msys2
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc
+
+      - name: Build and smoke-check native validator
+        shell: pwsh
+        working-directory: QSDM/source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msys2Root = '${{ steps.msys2.outputs.msys2-location }}'
+          $mingw = Join-Path $msys2Root 'ucrt64\bin'
+          $gcc = Join-Path $mingw 'gcc.exe'
+          if (-not (Test-Path -LiteralPath $gcc -PathType Leaf)) {
+            throw "MSYS2 UCRT64 gcc is unavailable at $gcc."
+          }
+          $env:PATH = "$mingw;$env:PATH"
+          $env:CC = $gcc
+          $env:CGO_ENABLED = '1'
+          $compiler = ((& $gcc --version 2>&1) | Select-Object -First 1 | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0 -or -not $compiler) {
+            throw 'MSYS2 UCRT64 gcc could not execute in PowerShell.'
+          }
+          Write-Host "Using $compiler"
+          $output = Join-Path $env:RUNNER_TEMP 'qsdm-validator.exe'
+          $ldflags = '-s -w -extldflags=-Wl,--stack,33554432'
+          & go build -trimpath -tags 'validator_only,dilithium_circl' -ldflags $ldflags -o $output .\cmd\qsdm
+          if ($LASTEXITCODE -ne 0) { throw "go build failed with exit code $LASTEXITCODE" }
+          $version = ((& $output --version 2>&1) | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'qsdm-validator.exe --version failed' }
+          Write-Host $version
+          if ($version -notmatch '^qsdm dev ') {
+            throw "unexpected validator version output: $version"
+          }
+
   # Rust wasm_module + wazero validate_raw preflight (no CGO).
   wasm-preflight-smoke:
     runs-on: ubuntu-latest

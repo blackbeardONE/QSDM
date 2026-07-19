@@ -45,6 +45,13 @@ attempt to retroactively enumerate that history.
 
 ### Changed
 
+- **QSDM Core v0.4.7-rc.4 Windows release compatibility (2026-07-20).**
+  Native Windows validator packaging now provisions a pinned MSYS2 action and
+  its UCRT64 GCC toolchain instead of relying on the compiler path from a
+  particular GitHub-hosted runner image. The workflow validates the resolved
+  compiler before building the CGO-backed SQLite validator, and pull requests
+  now reproduce that native Windows build before release tagging.
+
 - **Validator package privilege and rollback hardening (2026-07-20).** Linux
   packages keep root-managed executables and checksummed rollback state apart
   from the unprivileged service data directory. Windows packages run Core as
