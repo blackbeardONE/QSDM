@@ -9,7 +9,15 @@
     "buildResources": "assets",
     "output": "release/build"
   },
-  "extraResources": ["assets/**", "branding/**"],
+  "extraResources": [
+    "assets/**",
+    "branding/**",
+    {
+      "from": "../../qsdm-hive-wallet-extension",
+      "to": "wallet-extension",
+      "filter": ["**/*"]
+    }
+  ],
   "protocols": [
     {
       "name": "QSDM Hive URL",
@@ -76,7 +84,7 @@
       {
         "from": "native/windows/x64",
         "to": "native",
-        "filter": ["qsdmcli.exe"]
+        "filter": ["qsdmcli.exe", "qsdm-hive-wallet-host.exe"]
       },
       {
         "from": "native/windows/x64",
@@ -107,7 +115,7 @@
       {
         "from": "native/linux/x64",
         "to": "native",
-        "filter": ["qsdmcli"]
+        "filter": ["qsdmcli", "qsdm-hive-wallet-host"]
       },
       {
         "from": "native/linux/x64",

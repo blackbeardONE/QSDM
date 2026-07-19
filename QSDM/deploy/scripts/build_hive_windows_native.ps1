@@ -93,6 +93,13 @@ $resourceSpecs = @(
         OriginalFilename = 'qsdmminer-console.exe'
     },
     @{
+        Path = Join-Path $qsdm 'cmd\qsdm-hive-wallet-host\rsrc_windows_amd64.syso'
+        FileVersion = $binaryVersion
+        Description = 'QSDM Hive Wallet Browser Bridge'
+        InternalName = 'qsdm-hive-wallet-host'
+        OriginalFilename = 'qsdm-hive-wallet-host.exe'
+    },
+    @{
         Path = Join-Path $qsdm 'cmd\qsdm-edge-agent\rsrc_windows_amd64.syso'
         FileVersion = $EdgeAgentVersion
         Description = 'QSDM Edge Agent'
@@ -131,6 +138,9 @@ try {
 
     & $go build -trimpath -tags dilithium_circl -ldflags '-s -w' -o (Join-Path $native 'qsdmcli.exe') ./cmd/qsdmcli
     if ($LASTEXITCODE -ne 0) { throw "qsdmcli build failed with exit code $LASTEXITCODE" }
+
+    & $go build -trimpath -ldflags '-s -w -H=windowsgui' -o (Join-Path $native 'qsdm-hive-wallet-host.exe') ./cmd/qsdm-hive-wallet-host
+    if ($LASTEXITCODE -ne 0) { throw "qsdm-hive-wallet-host build failed with exit code $LASTEXITCODE" }
 
     & $go build -trimpath -ldflags $buildInfo -o (Join-Path $native 'qsdmminer-console.exe') ./cmd/qsdmminer-console
     if ($LASTEXITCODE -ne 0) { throw "qsdmminer-console build failed with exit code $LASTEXITCODE" }

@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "QSDM Hive Wallet",
+  "short_name": "QSDM Wallet",
+  "description": "Connect websites to the ML-DSA wallet secured by QSDM Hive.",
+  "version": "0.1.0",
+  "permissions": ["nativeMessaging", "activeTab"],
+  "icons": {
+    "16": "qsdm-hive-icon.png",
+    "32": "qsdm-hive-icon.png",
+    "48": "qsdm-hive-icon.png",
+    "128": "qsdm-hive-icon.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "QSDM Hive Wallet",
+    "default_popup": "popup.html",
+    "default_icon": "qsdm-hive-icon.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+      "js": ["provider.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    }
+  ]
+}

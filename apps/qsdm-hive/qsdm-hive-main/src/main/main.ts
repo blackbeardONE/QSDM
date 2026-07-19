@@ -41,6 +41,14 @@ import { configureMainWindowSecurity } from './security/externalNavigation';
 import { trackEvent } from './services/analytics';
 import ExecutableMonitor from './services/ExecutableMonitorService';
 import qsdmHiveTasks from './services/qsdmHiveTasks';
+import {
+  cleanupQsdmSignerSecretStore,
+  initializeQsdmSignerSecretStore,
+} from './services/qsdmSignerSecretStore';
+import {
+  startQsdmWalletProviderBroker,
+  stopQsdmWalletProviderBroker,
+} from './services/qsdmWalletProviderBroker';
 import { resolveHtmlPath, sleep } from './util';
 
 import type { Event } from 'electron';
@@ -593,6 +601,31 @@ const installExtensions = async () => {
 const main = async (): Promise<void> => {
   initHandlers();
 
+  const signerSecretStatus = initializeQsdmSignerSecretStore();
+  console.log('QSDM signer secret storage initialized', {
+    configured: signerSecretStatus.configured,
+    protectedAtRest: signerSecretStatus.protectedAtRest,
+    reason:
+      'reason' in signerSecretStatus ? signerSecretStatus.reason : undefined,
+  });
+
+  const showHiveWindow = () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  };
+  await startQsdmWalletProviderBroker({
+    showHive: showHiveWindow,
+    openWallet: () => {
+      showHiveWindow();
+      mainWindow?.webContents.send(
+        RendererEndpoints.NAVIDATE_TO_ROUTE,
+        '/settings/wallet'
+      );
+    },
+  });
+
   let allAccounts = await getAllAccounts({} as Event);
   await getCurrentActiveAccountName().catch(async () => {
     console.warn(
@@ -777,6 +810,8 @@ const createWindow = async () => {
 
   app.on('before-quit', async () => {
     if (app.isQuitting) return;
+    stopQsdmWalletProviderBroker();
+    cleanupQsdmSignerSecretStore();
     await appCleanup();
 
     trackEvent('app_closed');
@@ -1092,6 +1127,8 @@ app.on('activate', () => {
 });
 
 app.on('will-quit', () => {
+  stopQsdmWalletProviderBroker();
+  cleanupQsdmSignerSecretStore();
   app.isQuitting = true;
 });
 

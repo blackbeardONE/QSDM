@@ -42,6 +42,13 @@ export const shell = {
   openPath: jest.fn(),
 };
 
+export const safeStorage = {
+  isEncryptionAvailable: jest.fn(() => true),
+  getSelectedStorageBackend: jest.fn(() => 'dpapi'),
+  encryptString: jest.fn((value: string) => Buffer.from(value, 'utf-8')),
+  decryptString: jest.fn((value: Buffer) => value.toString('utf-8')),
+};
+
 export const ipcMain = {
   on: jest.fn(),
   handle: jest.fn(),

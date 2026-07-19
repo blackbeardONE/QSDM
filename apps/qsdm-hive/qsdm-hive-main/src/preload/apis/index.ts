@@ -62,6 +62,7 @@ import {
   getQsdmReferralStatus,
 } from './getQsdmReferralStatus';
 import getQsdmSkyFangLinkStatus from './getQsdmSkyFangLinkStatus';
+import getQsdmWalletProviderPermissions from './getQsdmWalletProviderPermissions';
 import getRentAmount from './getRentAmount';
 import getRetryDataByTaskId from './getRetryDataByTaskId';
 import getRPCStatus from './getRPCStatus';
@@ -81,6 +82,7 @@ import getTimeToNextReward from './getTimeToNextReward';
 import getUserConfig from './getUserConfig';
 import getVersion from './getVersion';
 import importQsdmSignerWallet from './importQsdmSignerWallet';
+import unlockQsdmSignerWallet from './unlockQsdmSignerWallet';
 import initializeTasks from './initializeTasks';
 import isValidWalletAddress from './isValidWalletAddress';
 import { fetchKPLList, getKPLBalance, transferKplToken } from './kplTokens';
@@ -123,6 +125,7 @@ import recoverStakingAccount from './recoverStakingAccount';
 import redeemTokensInNewNetwork from './redeemTokensInNewNetwork';
 import registerQsdmReferral from './registerQsdmReferral';
 import removeAccountByName from './removeAccountByName';
+import revokeQsdmWalletProviderPermission from './revokeQsdmWalletProviderPermission';
 import runQsdmSignedCellLoop from './runQsdmSignedCellLoop';
 import saveTaskThumbnail from './saveTaskThumbnail';
 import {
@@ -211,6 +214,9 @@ export default {
   createQsdmSignerWallet,
   exportQsdmSignerWalletBackup,
   importQsdmSignerWallet,
+  unlockQsdmSignerWallet,
+  getQsdmWalletProviderPermissions,
+  revokeQsdmWalletProviderPermission,
   claimQsdmCellFaucet,
   getQsdmReferralStatus,
   getQsdmReferralRewardPoolStatus,

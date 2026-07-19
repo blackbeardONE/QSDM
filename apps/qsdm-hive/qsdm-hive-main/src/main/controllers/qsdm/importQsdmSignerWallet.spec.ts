@@ -28,6 +28,17 @@ jest.mock('main/services/qsdmTaskActionSigner', () => ({
   getQsdmTaskActionCliPath: () => 'qsdmcli.exe',
 }));
 
+jest.mock('main/services/qsdmSignerSecretStore', () => ({
+  backupQsdmEncryptedPassphrase: jest.fn(),
+  persistQsdmSignerPassphrase: ({ passphrase, signerDir }: any) => {
+    const pathModule = require('path');
+    const fsModule = require('fs');
+    const passphraseFile = pathModule.join(signerDir, 'session-passphrase.txt');
+    fsModule.writeFileSync(passphraseFile, passphrase);
+    return { passphraseFile, protectedAtRest: true };
+  },
+}));
+
 import { importQsdmSignerWallet } from './importQsdmSignerWallet';
 
 const keystoreJson = JSON.stringify({
@@ -65,7 +76,7 @@ describe('importQsdmSignerWallet', () => {
     });
 
     const keystorePath = path.join(mockSignerDir, 'wallet.json');
-    const passphraseFile = path.join(mockSignerDir, 'passphrase.txt');
+    const passphraseFile = path.join(mockSignerDir, 'session-passphrase.txt');
 
     expect(response).toEqual({
       address: 'qsdm-address-1',

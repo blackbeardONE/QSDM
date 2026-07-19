@@ -10,6 +10,10 @@ import {
   getQsdmTaskActionCliPath,
 } from 'main/services/qsdmTaskActionSigner';
 import {
+  backupQsdmEncryptedPassphrase,
+  persistQsdmSignerPassphrase,
+} from 'main/services/qsdmSignerSecretStore';
+import {
   QsdmSignerWalletImportRequest,
   QsdmSignerWalletImportResponse,
 } from 'models/api/qsdm';
@@ -125,12 +129,16 @@ export const importQsdmSignerWallet = async (
     fs.mkdirSync(signerDir, { recursive: true, mode: 0o700 });
     backupExistingFile(keystorePath);
     backupExistingFile(passphraseFile);
+    backupQsdmEncryptedPassphrase(signerDir);
     writeFilePrivate(keystorePath, payload.keystoreJson);
-    writeFilePrivate(passphraseFile, payload.passphrase);
+    const storedPassphrase = persistQsdmSignerPassphrase({
+      passphrase: payload.passphrase,
+      signerDir,
+    });
 
     activateQsdmImportedSignerPaths({
       keystorePath,
-      passphraseFile,
+      passphraseFile: storedPassphrase.passphraseFile,
       sender: walletInfo.address,
     });
 
@@ -138,7 +146,7 @@ export const importQsdmSignerWallet = async (
       address: walletInfo.address,
       publicKey: walletInfo.public_key,
       keystorePath,
-      passphraseFile,
+      passphraseFile: storedPassphrase.passphraseFile,
     };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });

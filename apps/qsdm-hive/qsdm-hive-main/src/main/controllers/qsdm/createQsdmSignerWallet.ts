@@ -8,6 +8,10 @@ import {
   getQsdmDefaultLocalSignerPaths,
   getQsdmTaskActionCliPath,
 } from 'main/services/qsdmTaskActionSigner';
+import {
+  hasQsdmStoredPassphrase,
+  persistQsdmSignerPassphrase,
+} from 'main/services/qsdmSignerSecretStore';
 
 import type { Event } from 'electron';
 import type {
@@ -60,7 +64,7 @@ export const createQsdmSignerWallet = async (
 
   const { signerDir, keystorePath, passphraseFile } =
     getQsdmDefaultLocalSignerPaths();
-  if (fs.existsSync(keystorePath) || fs.existsSync(passphraseFile)) {
+  if (fs.existsSync(keystorePath) || hasQsdmStoredPassphrase(signerDir)) {
     throw new Error(
       'A QSDM signer wallet already exists. Back it up before replacing it.'
     );
@@ -140,25 +144,27 @@ export const createQsdmSignerWallet = async (
 
     try {
       writeFilePrivate(keystorePath, fs.readFileSync(tmpKeystorePath, 'utf-8'));
-      writeFilePrivate(passphraseFile, passphrase);
+      const storedPassphrase = persistQsdmSignerPassphrase({
+        passphrase,
+        signerDir,
+      });
+      activateQsdmImportedSignerPaths({
+        keystorePath,
+        passphraseFile: storedPassphrase.passphraseFile,
+        sender: walletInfo.address,
+      });
+
+      return {
+        address: walletInfo.address,
+        publicKey: walletInfo.public_key,
+        keystorePath,
+        passphraseFile: storedPassphrase.passphraseFile,
+      };
     } catch (error) {
       fs.rmSync(keystorePath, { force: true });
       fs.rmSync(passphraseFile, { force: true });
       throw error;
     }
-
-    activateQsdmImportedSignerPaths({
-      keystorePath,
-      passphraseFile,
-      sender: walletInfo.address,
-    });
-
-    return {
-      address: walletInfo.address,
-      publicKey: walletInfo.public_key,
-      keystorePath,
-      passphraseFile,
-    };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

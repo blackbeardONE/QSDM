@@ -5,7 +5,6 @@ import path from 'path';
 
 import {
   getQsdmTaskActionKeystorePath,
-  getQsdmTaskActionPassphraseFile,
   getQsdmTaskActionSender,
 } from 'main/services/qsdmTaskActionSigner';
 import { QsdmSignerWalletBackupResponse } from 'models/api/qsdm';
@@ -32,11 +31,9 @@ export const exportQsdmSignerWalletBackup = async (
   _: Event
 ): Promise<QsdmSignerWalletBackupResponse> => {
   const keystorePath = getQsdmTaskActionKeystorePath();
-  const passphraseFile = getQsdmTaskActionPassphraseFile();
   const address = getQsdmTaskActionSender();
 
   requireFile(keystorePath, 'QSDM keystore JSON');
-  requireFile(passphraseFile, 'QSDM wallet passphrase file');
 
   const selection = await dialog.showOpenDialog({
     title: 'Choose QSDM wallet backup folder',
@@ -52,18 +49,11 @@ export const exportQsdmSignerWalletBackup = async (
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const suffix = `${safeFilePart(address)}-${stamp}`;
   const keystoreBackupPath = path.join(backupDir, `qsdm-wallet-${suffix}.json`);
-  const passphraseBackupPath = path.join(
-    backupDir,
-    `qsdm-wallet-${suffix}.passphrase.txt`
-  );
-
   copyPrivate(keystorePath, keystoreBackupPath);
-  copyPrivate(passphraseFile, passphraseBackupPath);
 
   return {
     exported: true,
     address: address || undefined,
     keystoreBackupPath,
-    passphraseBackupPath,
   };
 };

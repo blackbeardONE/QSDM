@@ -1,4 +1,4 @@
-import React, { ChangeEvent, useMemo, useState } from 'react';
+import React, { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 
@@ -17,9 +17,12 @@ import {
   exportQsdmSignerWalletBackup,
   getQsdmCellAccount,
   getQsdmCoreStatus,
+  getQsdmWalletProviderPermissions,
   importQsdmSignerWallet,
   QueryKeys,
+  revokeQsdmWalletProviderPermission,
   transferCellFromMainWallet,
+  unlockQsdmSignerWallet,
 } from 'renderer/services';
 import { isValidWalletAddress } from 'renderer/utils';
 
@@ -37,6 +40,15 @@ const getErrorMessage = (error: unknown) => {
 
 const formatPath = (filePath?: string) => filePath || 'Not discovered';
 
+const formatPermissionDate = (value: string) => {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? 'Unknown' : parsed.toLocaleString();
+};
+
+const WALLET_PROVIDER_PERMISSIONS_QUERY_KEY = [
+  'qsdm-wallet-provider-permissions',
+];
+
 export function QsdmWalletPanel() {
   const queryClient = useQueryClient();
   const { copyToClipboard, copied } = useClipboard();
@@ -46,13 +58,15 @@ export function QsdmWalletPanel() {
   const [keystoreJson, setKeystoreJson] = useState('');
   const [keystoreFileName, setKeystoreFileName] = useState('');
   const [passphrase, setPassphrase] = useState('');
-  const [walletSetupMode, setWalletSetupMode] = useState<'create' | 'import'>(
-    'create'
-  );
+  const [unlockPassphrase, setUnlockPassphrase] = useState('');
+  const [walletSetupMode, setWalletSetupMode] = useState<
+    'create' | 'unlock' | 'import'
+  >('create');
   const [newPassphrase, setNewPassphrase] = useState('');
   const [confirmPassphrase, setConfirmPassphrase] = useState('');
   const [createMessage, setCreateMessage] = useState('');
   const [importMessage, setImportMessage] = useState('');
+  const [unlockMessage, setUnlockMessage] = useState('');
   const [backupMessage, setBackupMessage] = useState('');
   const [transferMessage, setTransferMessage] = useState('');
 
@@ -80,6 +94,16 @@ export function QsdmWalletPanel() {
     }
   );
 
+  const {
+    data: providerPermissions,
+    isLoading: providerPermissionsLoading,
+    error: providerPermissionsError,
+  } = useQuery(
+    WALLET_PROVIDER_PERMISSIONS_QUERY_KEY,
+    getQsdmWalletProviderPermissions,
+    { refetchInterval: 30000 }
+  );
+
   const signer = coreStatus?.taskSigner;
   const address = cellAccount?.address || signer?.sender;
   const balance = cellAccount?.balance;
@@ -99,10 +123,19 @@ export function QsdmWalletPanel() {
   }, [recipient, recipientIsValid]);
 
   const canImportSigner = !!keystoreJson.trim() && !!passphrase;
+  const canUnlockSigner = !!signer?.keystorePath && !!unlockPassphrase;
   const canCreateSigner =
     !signer?.ready &&
     newPassphrase.length >= 12 &&
     newPassphrase === confirmPassphrase;
+
+  useEffect(() => {
+    if (!signer?.ready && signer?.keystorePath) {
+      setWalletSetupMode((current) =>
+        current === 'create' ? 'unlock' : current
+      );
+    }
+  }, [signer?.keystorePath, signer?.ready]);
 
   const {
     mutate: createSigner,
@@ -115,7 +148,7 @@ export function QsdmWalletPanel() {
       setCreateMessage(
         `Created ${formatAddress(
           result.address
-        )}. Back up the keystore and passphrase now.`
+        )}. Back up the encrypted keystore and keep your passphrase separately.`
       );
       await refresh();
       await queryClient.invalidateQueries([QueryKeys.AccountBalance]);
@@ -200,12 +233,49 @@ export function QsdmWalletPanel() {
         return;
       }
       setBackupMessage(
-        `Backed up wallet JSON and passphrase for ${formatAddress(
+        `Backed up encrypted wallet JSON for ${formatAddress(
           result.address
-        )}.`
+        )}. Your passphrase is intentionally not copied beside it.`
       );
     },
   });
+
+  const {
+    mutate: unlockSigner,
+    isLoading: unlockingSigner,
+    error: unlockSignerError,
+  } = useMutation(
+    () => unlockQsdmSignerWallet({ passphrase: unlockPassphrase }),
+    {
+      onSuccess: async (result) => {
+        setUnlockPassphrase('');
+        setUnlockMessage(`Unlocked ${formatAddress(result.address)}`);
+        await refresh();
+        await queryClient.invalidateQueries([QueryKeys.AccountBalance]);
+        await queryClient.invalidateQueries([QueryKeys.MainAccountBalance]);
+      },
+    }
+  );
+
+  const {
+    mutate: revokeProviderPermission,
+    isLoading: revokingProviderPermission,
+    error: revokeProviderPermissionError,
+  } = useMutation(
+    (origin: string) => revokeQsdmWalletProviderPermission({ origin }),
+    {
+      onSuccess: async (result) => {
+        toast.success(
+          result.revoked
+            ? `Disconnected ${result.origin}`
+            : `${result.origin} was already disconnected`
+        );
+        await queryClient.invalidateQueries(
+          WALLET_PROVIDER_PERMISSIONS_QUERY_KEY
+        );
+      },
+    }
+  );
 
   const refresh = async () => {
     await queryClient.invalidateQueries([QueryKeys.QsdmCoreStatus]);
@@ -313,8 +383,8 @@ export function QsdmWalletPanel() {
             Keystore JSON + passphrase
           </div>
           <div className="pt-1 text-xs text-finnieGray-secondary">
-            Back up both files. The passphrase is saved as a file because QSDM
-            does not use seed phrases.
+            Back up the encrypted JSON and store its passphrase separately. Hive
+            protects its local copy with the operating system when available.
           </div>
           <Button
             label="Backup Wallet"
@@ -332,12 +402,85 @@ export function QsdmWalletPanel() {
         </div>
         <div className="rounded-md bg-finnieBlue-light-tertiary p-4">
           <div className="text-xs text-finnieGray-secondary">
-            Passphrase File
+            Local Passphrase
           </div>
           <div className="pt-2 text-xs font-semibold break-all">
-            {formatPath(signer?.passphraseFile)}
+            {signer?.ready ? 'Managed by QSDM Hive' : 'Not configured'}
           </div>
         </div>
+      </div>
+
+      <div className="mt-5 border-t border-finnieGray-tertiary pt-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-base font-semibold">Connected Sites</div>
+            <div className="pt-1 text-xs text-finnieGray-secondary">
+              Websites use the QSDM Hive Wallet extension to request access.
+              Your keystore and passphrase remain inside Hive, and every
+              signature or CELL transfer still requires approval here.
+            </div>
+          </div>
+          <span className="text-xs text-finnieGray-secondary">
+            {providerPermissions?.permissions.length || 0} connected
+          </span>
+        </div>
+
+        <div className="pt-3">
+          {providerPermissionsLoading ? (
+            <LoadingSpinner />
+          ) : providerPermissions?.permissions.length ? (
+            <div className="divide-y divide-finnieGray-tertiary">
+              {providerPermissions.permissions.map((permission) => {
+                const isActiveWallet =
+                  permission.address.toLowerCase() === address?.toLowerCase();
+                return (
+                  <div
+                    key={`${permission.origin}:${permission.address}`}
+                    className="flex flex-wrap items-center justify-between gap-3 py-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold">
+                        {permission.origin}
+                      </div>
+                      <div className="pt-1 text-xs text-finnieGray-secondary">
+                        Wallet {formatAddress(permission.address)} | Last used{' '}
+                        {formatPermissionDate(permission.lastUsedAt)}
+                      </div>
+                      {!isActiveWallet && (
+                        <div className="pt-1 text-xs text-finnieOrange">
+                          This grant belongs to a different wallet and is not
+                          active.
+                        </div>
+                      )}
+                    </div>
+                    <Button
+                      label="Revoke"
+                      onClick={() =>
+                        revokeProviderPermission(permission.origin)
+                      }
+                      disabled={revokingProviderPermission}
+                      className="h-9 w-24 bg-finnieBlue-light-secondary"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-sm text-finnieGray-secondary">
+              No websites are connected to this Hive installation.
+            </div>
+          )}
+        </div>
+        <ErrorMessage
+          error={
+            providerPermissionsError || revokeProviderPermissionError
+              ? `Connected-site management failed: ${getErrorMessage(
+                  providerPermissionsError || revokeProviderPermissionError
+                )}`
+              : null
+          }
+          className="py-2"
+        />
       </div>
 
       <div className="flex gap-2 pt-5" role="tablist" aria-label="Wallet setup">
@@ -352,6 +495,19 @@ export function QsdmWalletPanel() {
         >
           Create New Wallet
         </button>
+        {!!signer?.keystorePath && !signer?.ready && (
+          <button
+            type="button"
+            className={`h-9 px-4 rounded-md text-sm font-semibold ${
+              walletSetupMode === 'unlock'
+                ? 'bg-finnieTeal-100 text-finnieBlue-dark'
+                : 'bg-finnieBlue-light-tertiary text-white'
+            }`}
+            onClick={() => setWalletSetupMode('unlock')}
+          >
+            Unlock Existing Wallet
+          </button>
+        )}
         <button
           type="button"
           className={`h-9 px-4 rounded-md text-sm font-semibold ${
@@ -412,6 +568,40 @@ export function QsdmWalletPanel() {
               onClick={() => createSigner()}
               disabled={!canCreateSigner || creatingSigner}
               loading={creatingSigner}
+              className="h-10 w-full bg-finnieTeal-100 text-finnieBlue-dark"
+            />
+          </div>
+        </div>
+      )}
+
+      {walletSetupMode === 'unlock' && (
+        <div className="grid grid-cols-1 gap-3 pt-3 md:grid-cols-[1fr_180px]">
+          <div>
+            <label
+              className="text-xs text-finnieGray-secondary"
+              htmlFor="qsdm-unlock-passphrase"
+            >
+              Existing wallet passphrase
+            </label>
+            <input
+              id="qsdm-unlock-passphrase"
+              value={unlockPassphrase}
+              onChange={(event) => {
+                setUnlockMessage('');
+                setUnlockPassphrase(event.target.value);
+              }}
+              type="password"
+              autoComplete="current-password"
+              className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none"
+              placeholder="Passphrase for the wallet already on this device"
+            />
+          </div>
+          <div className="flex items-end">
+            <Button
+              label="Unlock Wallet"
+              onClick={() => unlockSigner()}
+              disabled={!canUnlockSigner || unlockingSigner}
+              loading={unlockingSigner}
               className="h-10 w-full bg-finnieTeal-100 text-finnieBlue-dark"
             />
           </div>
@@ -516,6 +706,21 @@ export function QsdmWalletPanel() {
             {importMessage}
           </div>
         )}
+        <ErrorMessage
+          error={
+            unlockSignerError
+              ? `QSDM wallet unlock failed: ${getErrorMessage(
+                  unlockSignerError
+                )}`
+              : null
+          }
+          className="py-2"
+        />
+        {unlockMessage && (
+          <div className="py-2 text-sm text-finnieEmerald-light">
+            {unlockMessage}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-3 pt-5 md:grid-cols-[1fr_180px_140px]">
@@ -599,8 +804,10 @@ export function QsdmWalletPanel() {
         </div>
       )}
       <div className="pt-2 text-xs text-finnieGray-secondary">
-        Core ({coreStatus?.coreConnectionMode || QSDM_BRIDGE_CONFIG.coreConnectionMode}):{' '}
-        {coreStatus?.effectiveCoreApiUrl || QSDM_BRIDGE_CONFIG.coreApiUrl}
+        Core (
+        {coreStatus?.coreConnectionMode ||
+          QSDM_BRIDGE_CONFIG.coreConnectionMode}
+        ): {coreStatus?.effectiveCoreApiUrl || QSDM_BRIDGE_CONFIG.coreApiUrl}
       </div>
     </section>
   );

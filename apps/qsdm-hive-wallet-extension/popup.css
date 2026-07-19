@@ -1,0 +1,104 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", Arial, sans-serif;
+  background: #071f29;
+  color: #f5fbfc;
+}
+
+body {
+  width: 330px;
+  margin: 0;
+  padding: 18px;
+  background: #071f29;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #315564;
+}
+
+.mark {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: #102f3b;
+  color: #55dfc1;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+h1 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+p {
+  margin: 4px 0 0;
+  color: #a8c3cb;
+  font-size: 12px;
+}
+
+section {
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid #315564;
+  border-radius: 6px;
+  background: #0d2a35;
+}
+
+.label {
+  display: block;
+  margin-bottom: 6px;
+  color: #8eb4be;
+  font-size: 11px;
+}
+
+strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.notice {
+  min-height: 18px;
+  margin: 0 0 10px;
+  color: #f7c66c;
+}
+
+.custody {
+  color: #b8cbd1;
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 12px 0 0;
+}
+
+button {
+  width: 100%;
+  min-height: 40px;
+  margin-top: 8px;
+  border: 0;
+  border-radius: 5px;
+  background: #58dfc2;
+  color: #08242e;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.secondary {
+  border: 1px solid #7399a3;
+  background: transparent;
+  color: #f5fbfc;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

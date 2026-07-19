@@ -33,6 +33,12 @@ exports.default = async function afterPack(context) {
     path.join(
       context.appOutDir,
       'resources',
+      'native',
+      `qsdm-hive-wallet-host${extension}`
+    ),
+    path.join(
+      context.appOutDir,
+      'resources',
       'miner',
       `qsdmminer-console${extension}`
     ),
@@ -55,6 +61,33 @@ exports.default = async function afterPack(context) {
     }
   }
 
+  const extensionManifest = path.join(
+    context.appOutDir,
+    'resources',
+    'wallet-extension',
+    'manifest.json'
+  );
+  if (!fs.existsSync(extensionManifest)) {
+    throw new Error(
+      `QSDM Hive Wallet extension was not packaged: ${extensionManifest}`
+    );
+  }
+  if (platform === 'linux') {
+    const installer = path.join(
+      context.appOutDir,
+      'resources',
+      'wallet-extension',
+      'native-host',
+      'install-linux.sh'
+    );
+    if (!fs.existsSync(installer)) {
+      throw new Error(
+        `QSDM native-host installer was not packaged: ${installer}`
+      );
+    }
+    fs.chmodSync(installer, 0o755);
+  }
+
   const appVersion = String(context.packager.appInfo.version).trim();
   const edgeVersionPath = path.resolve(
     __dirname,
@@ -73,7 +106,7 @@ exports.default = async function afterPack(context) {
       expectedPrefix: `qsdm-edge-control ${edgeVersion} (`,
     },
     {
-      executable: executables[4],
+      executable: executables[5],
       expectedPrefix: `qsdmminer-console hive-v${appVersion} (`,
     },
   ];

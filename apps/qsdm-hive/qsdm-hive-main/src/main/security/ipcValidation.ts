@@ -1,3 +1,4 @@
+// cspell:ignore runtimes
 import { Endpoints } from 'config/endpoints';
 
 import { isAllowedExternalUrl } from './externalNavigation';
@@ -388,6 +389,11 @@ const validateSignerCreate = (endpoint: string, payload: unknown) => {
   ensureString(endpoint, object, 'passphrase', { min: 12, max: 4096 });
 };
 
+const validateSignerUnlock = (endpoint: string, payload: unknown) => {
+  const object = ensureObject(endpoint, payload);
+  ensureString(endpoint, object, 'passphrase', { min: 1, max: 4096 });
+};
+
 const validateSkyFangLink = (endpoint: string, payload: unknown) => {
   const object = ensureObject(endpoint, payload);
   ensureString(endpoint, object, 'code', { min: 4, max: 256 });
@@ -499,6 +505,9 @@ export const validateIpcPayload = (
     case Endpoints.IMPORT_QSDM_SIGNER_WALLET:
       validateSignerImport(endpoint, payload);
       break;
+    case Endpoints.UNLOCK_QSDM_SIGNER_WALLET:
+      validateSignerUnlock(endpoint, payload);
+      break;
     case Endpoints.LINK_QSDM_SKYFANG_ACCOUNT:
       validateSkyFangLink(endpoint, payload);
       break;
@@ -564,7 +573,13 @@ export const validateIpcPayload = (
     case Endpoints.GET_HIVE_VERSION_POLICY:
       validateHiveVersionPolicyOptions(endpoint, payload);
       break;
+    case Endpoints.REVOKE_QSDM_WALLET_PROVIDER_PERMISSION: {
+      const object = ensureObject(endpoint, payload);
+      ensureString(endpoint, object, 'origin', { max: 2048 });
+      break;
+    }
     case Endpoints.EXPORT_QSDM_SIGNER_WALLET_BACKUP:
+    case Endpoints.GET_QSDM_WALLET_PROVIDER_PERMISSIONS:
     case Endpoints.SET_QSDM_MINER_REWARD_ADDRESS_TO_SIGNER:
     case Endpoints.GET_QSDM_REFERRAL_REWARD_POOL_STATUS:
     case Endpoints.DISCONNECT_QSDM_MOTHER_HIVE:

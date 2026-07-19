@@ -1,3 +1,11 @@
+## [1.3.99]
+
+- Browser wallet: Added the QSDM Hive Wallet extension and a localhost-only, authenticated wallet-provider broker for permissioned website connections and transaction approvals.
+- Wallet security: Browser code never receives or stores the QSDM keystore or passphrase; Hive retains signer custody and uses OS-protected local secret storage.
+- Wallet recovery: An unreadable OS-protected passphrase is quarantined without deleting the keystore, Hive continues starting, and the existing wallet can be unlocked with its passphrase without re-uploading the JSON file.
+- Native messaging: Bundled the QSDM browser native host and provider assets with Windows and Linux packages so installed Hive releases can serve the extension without source-tree dependencies.
+- Developer runtime: Added an Electron 43-compatible CommonJS bootstrap for TypeScript path aliases during local development.
+
 ## [1.3.98]
 
 - Linux release validation: Configure Electron's packaged `chrome-sandbox` helper with the required root ownership and setuid permissions in CI before running the hidden renderer smoke test. Sandbox enforcement remains enabled.

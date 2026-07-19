@@ -12,11 +12,13 @@ import type {
   QsdmReferralStatusResponse,
   QsdmSignerWalletCreateRequest,
   QsdmSignerWalletImportRequest,
+  QsdmSignerWalletUnlockRequest,
   QsdmSignedCellLoopRequest,
   QsdmSignedTransactionEnvelope,
   QsdmTaskActionEnvelope,
   QsdmVirtualComputeCancelRequest,
   QsdmVirtualComputeSubmitRequest,
+  QsdmWalletProviderRevokeRequest,
 } from 'models/api/qsdm';
 
 /** Utils */
@@ -197,8 +199,24 @@ export const importQsdmSignerWallet = async (
   return window.main.importQsdmSignerWallet(payload);
 };
 
+export const unlockQsdmSignerWallet = async (
+  payload: QsdmSignerWalletUnlockRequest
+) => {
+  return window.main.unlockQsdmSignerWallet(payload);
+};
+
 export const exportQsdmSignerWalletBackup = async () => {
   return window.main.exportQsdmSignerWalletBackup();
+};
+
+export const getQsdmWalletProviderPermissions = async () => {
+  return window.main.getQsdmWalletProviderPermissions();
+};
+
+export const revokeQsdmWalletProviderPermission = async (
+  payload: QsdmWalletProviderRevokeRequest
+) => {
+  return window.main.revokeQsdmWalletProviderPermission(payload);
 };
 
 export const claimQsdmCellFaucet = async (

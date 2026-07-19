@@ -112,6 +112,10 @@ export interface QsdmSignerWalletCreateRequest {
   passphrase: string;
 }
 
+export interface QsdmSignerWalletUnlockRequest {
+  passphrase: string;
+}
+
 export interface QsdmSignerWalletImportResponse {
   address: string;
   publicKey: string;
@@ -123,7 +127,26 @@ export interface QsdmSignerWalletBackupResponse {
   exported: boolean;
   address?: string;
   keystoreBackupPath?: string;
-  passphraseBackupPath?: string;
+}
+
+export interface QsdmWalletProviderPermission {
+  origin: string;
+  address: string;
+  connectedAt: string;
+  lastUsedAt: string;
+}
+
+export interface QsdmWalletProviderPermissionsResponse {
+  permissions: QsdmWalletProviderPermission[];
+}
+
+export interface QsdmWalletProviderRevokeRequest {
+  origin: string;
+}
+
+export interface QsdmWalletProviderRevokeResponse {
+  origin: string;
+  revoked: boolean;
 }
 
 export interface QsdmWalletBalanceResponse {

@@ -1,5 +1,6 @@
-import axios from 'axios';
 import { dialog, shell } from 'electron';
+
+import axios from 'axios';
 
 import { RendererEndpoints } from 'config/endpoints';
 import { DeepLinkRoute } from 'renderer/types/routes';
@@ -7,7 +8,6 @@ import { sendEventAllWindows } from 'utils/sendEventAllWindows';
 
 import { storeTaskVariable } from './controllers';
 import { signQsdmMessageWithCli } from './services/qsdmTaskActions';
-import { signMessageWithSystemWallet } from './util';
 
 const allowedAppRoutes = Object.values(DeepLinkRoute);
 function checkIfRouteIsValid(route: string): boolean {
@@ -47,7 +47,9 @@ const parseHttpUrl = (value: string, label: string) => {
   const url = new URL(value);
   const localHttp = url.protocol === 'http:' && LOCAL_HOSTS.has(url.hostname);
   if (url.protocol !== 'https:' && !localHttp) {
-    throw new Error(`${label} must use https, except localhost development URLs`);
+    throw new Error(
+      `${label} must use https, except localhost development URLs`
+    );
   }
   return url;
 };
@@ -88,10 +90,14 @@ const validateSkyFangLinkUrls = ({
   returnURL: URL | null;
 }) => {
   if (!sameOrigin(challengeURL, submitURL)) {
-    throw new Error('Sky Fang submit_url must use the same origin as challenge_url');
+    throw new Error(
+      'Sky Fang submit_url must use the same origin as challenge_url'
+    );
   }
   if (returnURL && !sameOrigin(challengeURL, returnURL)) {
-    throw new Error('Sky Fang return_url must use the same origin as challenge_url');
+    throw new Error(
+      'Sky Fang return_url must use the same origin as challenge_url'
+    );
   }
 };
 
@@ -120,7 +126,10 @@ const handleSkyFangLink = async (searchParams: URLSearchParams) => {
     const challenge = challengeResponse.data || {};
     const message = challenge.message || '';
     const code =
-      searchParams.get('code') || challenge.code || challengeURL.searchParams.get('code') || '';
+      searchParams.get('code') ||
+      challenge.code ||
+      challengeURL.searchParams.get('code') ||
+      '';
 
     if (!message.startsWith('QSDM-LINK:')) {
       throw new Error('Sky Fang challenge is not a QSDM-LINK message');
@@ -197,7 +206,7 @@ const handleSkyFangLink = async (searchParams: URLSearchParams) => {
 };
 
 export const handleDeepLinks = async (argv: string[]) => {
-  console.log('- DEEP LINK -', { argv });
+  console.log('QSDM Hive deep-link scan', { argumentCount: argv.length });
   for (const arg of argv) {
     if (arg.startsWith('qsdm-hive://')) {
       const deepLink = arg;
@@ -205,7 +214,7 @@ export const handleDeepLinks = async (argv: string[]) => {
       const searchParams = new URLSearchParams(url.search);
 
       const action = url.host;
-      console.log({ deepLink });
+      console.log('QSDM Hive deep link received', { action });
 
       switch (action) {
         case 'open': {
@@ -219,37 +228,73 @@ export const handleDeepLinks = async (argv: string[]) => {
           break;
         }
         case 'skyfang-link': {
-          void handleSkyFangLink(searchParams);
+          await handleSkyFangLink(searchParams);
           break;
         }
         case 'sign-message': {
           const data = searchParams.get('data') || '';
-          const callbackURL = searchParams.get('callback');
-          console.log({ action, data, callbackURL });
+          const callbackURLRaw = searchParams.get('callback');
+          let callbackURL: URL | null = null;
+          try {
+            callbackURL = callbackURLRaw
+              ? parseHttpUrl(callbackURLRaw, 'callback')
+              : null;
+          } catch (error) {
+            await dialog.showMessageBox({
+              title: 'QSDM signature request rejected',
+              message: getErrorMessage(error),
+              type: 'error',
+              buttons: ['OK'],
+            });
+            break;
+          }
+          if (!data.trim()) break;
           dialog
             .showMessageBox({
-              title: 'Requesting to sign message',
-              message: `Action: ${action}`,
-              type: 'info',
-              buttons: ['Sign', 'Cancel'],
+              title: 'Sign QSDM message',
+              message: `${
+                callbackURL?.origin || 'An external application'
+              } is requesting a QSDM wallet signature.`,
+              detail: data,
+              type: 'question',
+              buttons: ['Sign', 'Reject'],
+              defaultId: 1,
+              cancelId: 1,
             })
             .then(async (response) => {
               const buttonIndex = response.response;
-              let signedMessage;
               switch (buttonIndex) {
                 case 0:
-                  console.log('SIGNED BUTTON CALLED');
-                  signedMessage = await signMessageWithSystemWallet(data);
-                  if (callbackURL) {
-                    const callbackURLWithParams = `${callbackURL}?signedMessage=${signedMessage}`;
-                    console.log('callbackURLWithParams', callbackURLWithParams);
-                    shell.openExternal(callbackURLWithParams);
+                  {
+                    const signedMessage = await signQsdmMessageWithCli(data);
+                    if (callbackURL) {
+                      callbackURL.searchParams.set(
+                        'address',
+                        signedMessage.address
+                      );
+                      callbackURL.searchParams.set(
+                        'public_key',
+                        signedMessage.public_key
+                      );
+                      callbackURL.searchParams.set(
+                        'signature',
+                        signedMessage.signature
+                      );
+                      shell.openExternal(callbackURL.toString());
+                    }
                   }
                   break;
                 default:
-                  console.log('CANCEL BUTTON CALLED');
                   break;
               }
+            })
+            .catch(async (error) => {
+              await dialog.showMessageBox({
+                title: 'QSDM signature failed',
+                message: getErrorMessage(error),
+                type: 'error',
+                buttons: ['OK'],
+              });
             });
           break;
         }

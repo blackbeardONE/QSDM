@@ -191,6 +191,20 @@ describe('QSDM Hive IPC validation', () => {
     ).toThrow(/outside the allowed range/);
   });
 
+  it('accepts a bounded passphrase for an existing QSDM wallet', () => {
+    expect(() =>
+      validateIpcPayload(Endpoints.UNLOCK_QSDM_SIGNER_WALLET, [
+        { passphrase: 'test-existing-passphrase' },
+      ])
+    ).not.toThrow();
+
+    expect(() =>
+      validateIpcPayload(Endpoints.UNLOCK_QSDM_SIGNER_WALLET, [
+        { passphrase: '' },
+      ])
+    ).toThrow(/outside the allowed range/);
+  });
+
   it('allows only bounded Virtual Compute workloads', () => {
     expect(() =>
       validateIpcPayload(Endpoints.SUBMIT_QSDM_VIRTUAL_COMPUTE_JOB, [
@@ -230,5 +244,23 @@ describe('QSDM Hive IPC validation', () => {
         { jobId: '../other-job' },
       ])
     ).toThrow(/jobId/);
+  });
+
+  it('validates wallet-provider permission management payloads', () => {
+    expect(() =>
+      validateIpcPayload(Endpoints.GET_QSDM_WALLET_PROVIDER_PERMISSIONS, [
+        undefined,
+      ])
+    ).not.toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.REVOKE_QSDM_WALLET_PROVIDER_PERMISSION, [
+        { origin: 'https://example.com' },
+      ])
+    ).not.toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.REVOKE_QSDM_WALLET_PROVIDER_PERMISSION, [
+        { origin: '' },
+      ])
+    ).toThrow(/origin/);
   });
 });

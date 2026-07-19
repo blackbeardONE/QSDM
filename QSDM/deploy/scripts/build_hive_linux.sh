@@ -15,6 +15,7 @@ edge_control="$native_dir/qsdm-edge-control"
 gpu_helper="$native_dir/qsdm-edge-gpu-helper"
 miner="$native_dir/qsdmminer-console"
 cuda_solver="$native_dir/qsdm-miner-cuda-solver"
+wallet_host="$native_dir/qsdm-hive-wallet-host"
 
 mkdir -p "$output_dir"
 mkdir -p "$native_dir"
@@ -58,6 +59,24 @@ elif [[ -f "$native_dir/qsdmcli" ]]; then
   chmod 0755 "$native_dir/qsdmcli"
 else
   echo "Go is required to build the bundled QSDM signer CLI." >&2
+  exit 69
+fi
+
+if command -v go >/dev/null 2>&1; then
+  qsdm_source_dir="$(cd "$qsdm_source_dir" && pwd)"
+  (
+    cd "$qsdm_source_dir"
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+      -trimpath \
+      -ldflags="-s -w" \
+      -o "$wallet_host" \
+      ./cmd/qsdm-hive-wallet-host
+  )
+  chmod 0755 "$wallet_host"
+elif [[ -f "$wallet_host" ]]; then
+  chmod 0755 "$wallet_host"
+else
+  echo "The Linux QSDM Hive wallet native host is missing and Go is unavailable." >&2
   exit 69
 fi
 
@@ -189,6 +208,7 @@ npm exec electron-builder -- \
   "--config.directories.output=$output_dir"
 
 test -x "$output_dir/linux-unpacked/resources/native/qsdmcli"
+test -x "$output_dir/linux-unpacked/resources/native/qsdm-hive-wallet-host"
 test -x "$output_dir/linux-unpacked/resources/edge/qsdm-edge-agent"
 test -x "$output_dir/linux-unpacked/resources/edge/qsdm-edge-control"
 test -x "$output_dir/linux-unpacked/resources/edge/qsdm-edge-gpu-helper"

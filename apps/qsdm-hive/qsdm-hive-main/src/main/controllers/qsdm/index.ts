@@ -11,6 +11,8 @@ export * from './qsdmVirtualCompute';
 export * from './getQsdmSkyFangLinkStatus';
 export * from './exportQsdmSignerWalletBackup';
 export * from './importQsdmSignerWallet';
+export * from './unlockQsdmSignerWallet';
+export * from './qsdmWalletProviderPermissions';
 export * from './linkQsdmSkyFangAccount';
 export * from './manageQsdmTaskCatalog';
 export * from './registerQsdmReferral';

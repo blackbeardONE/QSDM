@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>QSDM Hive Wallet</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <div class="mark" aria-hidden="true">Q</div>
+      <div>
+        <h1>QSDM Hive Wallet</h1>
+        <p id="hive-status">Checking Hive...</p>
+      </div>
+    </header>
+    <main>
+      <section>
+        <span class="label">Active wallet</span>
+        <strong id="wallet-address">Not connected</strong>
+      </section>
+      <p class="custody">
+        Create or import wallets in QSDM Hive. This extension never stores your
+        keystore or passphrase.
+      </p>
+      <p class="notice" id="notice" role="status"></p>
+      <button id="connect-site" type="button">Connect This Site</button>
+      <button id="open-wallet" class="secondary" type="button">
+        Open Wallet Management
+      </button>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -31,6 +31,17 @@ jest.mock('main/services/qsdmTaskActionSigner', () => ({
   getQsdmTaskActionCliPath: () => 'qsdmcli',
 }));
 
+jest.mock('main/services/qsdmSignerSecretStore', () => ({
+  hasQsdmStoredPassphrase: () => false,
+  persistQsdmSignerPassphrase: ({ passphrase, signerDir }: any) => {
+    const pathModule = require('path');
+    const fsModule = require('fs');
+    const passphraseFile = pathModule.join(signerDir, 'session-passphrase.txt');
+    fsModule.writeFileSync(passphraseFile, passphrase);
+    return { passphraseFile, protectedAtRest: true };
+  },
+}));
+
 const mockSpawnSync = spawnSync as jest.Mock;
 const mockActivateQsdmImportedSignerPaths =
   activateQsdmImportedSignerPaths as jest.Mock;
@@ -78,7 +89,7 @@ describe('createQsdmSignerWallet', () => {
     });
 
     const keystorePath = path.join(mockSignerDir, 'wallet.json');
-    const passphraseFile = path.join(mockSignerDir, 'passphrase.txt');
+    const passphraseFile = path.join(mockSignerDir, 'session-passphrase.txt');
     expect(response).toEqual({
       address: 'qsdm-created-address',
       publicKey: 'qsdm-created-public-key',
