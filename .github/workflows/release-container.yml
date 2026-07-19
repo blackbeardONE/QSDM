@@ -21,6 +21,8 @@
 # banner in cmd/qsdmminer-console/main.go.
 #
 #   Binaries (attached to the GitHub Release as assets):
+#     qsdm-validator-<tag>-linux-amd64.tar.gz — SQLite validator + safe updater/rollback
+#     qsdm-validator-<tag>-windows-amd64.zip   — SQLite validator + safe updater/rollback
 #     qsdmminer-console-<os>-<arch>[.exe]    — friendly console miner (wizard + live panel); ONLY shipped miner since v0.3.2 (NVIDIA-locked v2 protocol)
 #     trustcheck-<os>-<arch>[.exe]           — black-box transparency scraper
 #     genesis-ceremony-<os>-<arch>[.exe]     — mainnet genesis dry-run tool
@@ -36,10 +38,10 @@
 #                       QSDM/docs/docs/MINER_QUICKSTART.md "Appendix: v1
 #                       audit path".
 #
-# Reproducibility: every binary is built with `-trimpath` (strip cwd
-# paths from debug info), CGO_ENABLED=0 (static), and `-ldflags="-s -w"`
-# (strip symbol + DWARF tables). Build is deterministic given the
-# same Go toolchain version pinned by QSDM/source/go.mod.
+# Reproducibility: utility binaries are static CGO_ENABLED=0 builds. Native
+# validator packages intentionally use CGO_ENABLED=1 for SQLite durability.
+# Both paths use `-trimpath`, stripped symbol/DWARF tables, pinned Go metadata,
+# checksums, and keyless release signatures.
 name: Release container
 
 on:
@@ -91,6 +93,9 @@ jobs:
             ext: ".exe"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
@@ -102,13 +107,9 @@ jobs:
 
       - name: Resolve release tag
         id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-          else
-            # Strip refs/tags/ prefix.
-            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-          fi
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: bash .github/scripts/resolve-release-tag.sh
 
       - name: Resolve build metadata (git SHA, UTC build date)
         id: meta
@@ -117,12 +118,15 @@ jobs:
         # tagged artefact reliably identifies the exact commit +
         # build-time pair that produced it. Dev builds (local `go
         # build`, `go run`) keep their "dev"/"unknown" sentinels.
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
+          set -euo pipefail
           SHA="${GITHUB_SHA:0:7}"
           DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
           echo "date=${DATE}" >> "$GITHUB_OUTPUT"
-          echo "Building with SHA=${SHA} DATE=${DATE} TAG=${{ steps.tag.outputs.tag }}"
+          echo "Building with SHA=${SHA} DATE=${DATE} TAG=${RELEASE_TAG}"
 
       - name: Build reproducible binaries
         working-directory: QSDM/source
@@ -130,6 +134,9 @@ jobs:
           CGO_ENABLED: "0"
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          BUILD_SHA: ${{ steps.meta.outputs.sha }}
+          BUILD_DATE: ${{ steps.meta.outputs.date }}
         run: |
           set -euo pipefail
           # Three public release binaries are shipped from this job:
@@ -160,9 +167,9 @@ jobs:
           suffix="${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
 
           LDFLAGS="-s -w \
-            -X github.com/blackbeardONE/QSDM/pkg/buildinfo.Version=${{ steps.tag.outputs.tag }} \
-            -X github.com/blackbeardONE/QSDM/pkg/buildinfo.GitSHA=${{ steps.meta.outputs.sha }} \
-            -X github.com/blackbeardONE/QSDM/pkg/buildinfo.BuildDate=${{ steps.meta.outputs.date }}"
+            -X github.com/blackbeardONE/QSDM/pkg/buildinfo.Version=${RELEASE_TAG} \
+            -X github.com/blackbeardONE/QSDM/pkg/buildinfo.GitSHA=${BUILD_SHA} \
+            -X github.com/blackbeardONE/QSDM/pkg/buildinfo.BuildDate=${BUILD_DATE}"
 
           go build -trimpath -ldflags="${LDFLAGS}" \
             -o "/tmp/artefacts/qsdmminer-console-${suffix}" ./cmd/qsdmminer-console
@@ -226,15 +233,18 @@ jobs:
         # prints "dev"/"unknown" despite the ldflags injection
         # working — it means a cmd/ main forgot to wire pkg/buildinfo.
         if: matrix.os == 'linux' && matrix.arch == 'amd64'
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          BUILD_SHA: ${{ steps.meta.outputs.sha }}
         run: |
           set -euo pipefail
           suffix="${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
           for bin in qsdmminer-console trustcheck genesis-ceremony; do
             out="$(/tmp/artefacts/${bin}-${suffix} --version)"
             echo "${bin}: ${out}"
-            echo "${out}" | grep -q "${{ steps.tag.outputs.tag }}" \
-              || { echo "FAIL: ${bin} --version missing tag ${{ steps.tag.outputs.tag }}"; exit 1; }
-            echo "${out}" | grep -q "${{ steps.meta.outputs.sha }}" \
+            echo "${out}" | grep -Fq "$RELEASE_TAG" \
+              || { echo "FAIL: ${bin} --version missing tag $RELEASE_TAG"; exit 1; }
+            echo "${out}" | grep -Fq "$BUILD_SHA" \
               || { echo "FAIL: ${bin} --version missing git SHA"; exit 1; }
           done
 
@@ -256,6 +266,173 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Production validator packages are deliberately separate from the static
+  # utility-binary matrix above. Validators require SQLite, so these native
+  # amd64 builds keep CGO enabled. The dilithium_circl tag supplies the same
+  # ML-DSA-87 wire format without shipping a host-specific liboqs DLL/SO.
+  validator-packages:
+    name: validator package (${{ matrix.os }}/amd64)
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runner: ubuntu-latest
+          - os: windows
+            runner: windows-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: bash .github/scripts/resolve-release-tag.sh
+
+      - name: Resolve build metadata
+        id: meta
+        shell: bash
+        run: |
+          echo "sha=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Build Linux validator (CGO + SQLite)
+        if: matrix.os == 'linux'
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "1"
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          BUILD_SHA: ${{ steps.meta.outputs.sha }}
+          BUILD_DATE: ${{ steps.meta.outputs.date }}
+        run: |
+          set -euo pipefail
+          LDFLAGS="-s -w \
+            -X github.com/blackbeardONE/QSDM/pkg/buildinfo.Version=${RELEASE_TAG} \
+            -X github.com/blackbeardONE/QSDM/pkg/buildinfo.GitSHA=${BUILD_SHA} \
+            -X github.com/blackbeardONE/QSDM/pkg/buildinfo.BuildDate=${BUILD_DATE}"
+          go build -trimpath -tags "validator_only,dilithium_circl" \
+            -ldflags="${LDFLAGS}" -o "${RUNNER_TEMP}/qsdm-validator" ./cmd/qsdm
+          "${RUNNER_TEMP}/qsdm-validator" --version | tee "${RUNNER_TEMP}/validator-version.txt"
+          grep -Fq "$RELEASE_TAG" "${RUNNER_TEMP}/validator-version.txt"
+          grep -Fq "$BUILD_SHA" "${RUNNER_TEMP}/validator-version.txt"
+          python ../../scripts/check_binary_strip.py "${RUNNER_TEMP}/qsdm-validator"
+
+      - name: Build Windows validator (CGO + SQLite)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        working-directory: QSDM/source
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          BUILD_SHA: ${{ steps.meta.outputs.sha }}
+          BUILD_DATE: ${{ steps.meta.outputs.date }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $mingw = 'C:\msys64\mingw64\bin'
+          if (-not (Test-Path (Join-Path $mingw 'gcc.exe'))) {
+            throw 'MSYS2 MinGW gcc is unavailable on windows-latest.'
+          }
+          $env:PATH = "$mingw;$env:PATH"
+          $env:CC = Join-Path $mingw 'gcc.exe'
+          $env:CGO_ENABLED = '1'
+          $tag = $env:RELEASE_TAG
+          $sha = $env:BUILD_SHA
+          $date = $env:BUILD_DATE
+          $ldflags = "-s -w -extldflags=-Wl,--stack,33554432 -X github.com/blackbeardONE/QSDM/pkg/buildinfo.Version=$tag -X github.com/blackbeardONE/QSDM/pkg/buildinfo.GitSHA=$sha -X github.com/blackbeardONE/QSDM/pkg/buildinfo.BuildDate=$date"
+          $output = Join-Path $env:RUNNER_TEMP 'qsdm-validator.exe'
+          & go build -trimpath -tags 'validator_only,dilithium_circl' -ldflags $ldflags -o $output .\cmd\qsdm
+          if ($LASTEXITCODE -ne 0) { throw "go build failed with exit code $LASTEXITCODE" }
+          $version = ((& $output --version 2>&1) | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'qsdm-validator.exe --version failed' }
+          Write-Host $version
+          if ($version -notmatch [regex]::Escape($tag) -or $version -notmatch [regex]::Escape($sha)) {
+            throw "version output does not contain release metadata: $version"
+          }
+          & python ..\..\scripts\check_binary_strip.py $output
+          if ($LASTEXITCODE -ne 0) { throw 'binary strip check failed' }
+
+      - name: Stage Linux package
+        if: matrix.os == 'linux'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="$RELEASE_TAG"
+          folder="qsdm-validator-${tag}-linux-amd64"
+          stage="${RUNNER_TEMP}/validator-package/${folder}"
+          assets="${RUNNER_TEMP}/validator-assets"
+          mkdir -p "$stage" "$assets"
+          cp "${RUNNER_TEMP}/qsdm-validator" "$stage/qsdm-validator"
+          cp QSDM/deploy/validator-package/install-or-update.sh "$stage/"
+          cp QSDM/deploy/validator-package/rollback.sh "$stage/"
+          cp QSDM/deploy/validator-package/README.md "$stage/"
+          cp QSDM/config/qsdm.toml.example "$stage/"
+          chmod 0755 "$stage/qsdm-validator" "$stage/install-or-update.sh" "$stage/rollback.sh"
+          (
+            cd "$stage"
+            sha256sum qsdm-validator install-or-update.sh rollback.sh README.md qsdm.toml.example > SHA256SUMS.txt
+          )
+          tar -C "${RUNNER_TEMP}/validator-package" -czf "$assets/${folder}.tar.gz" "$folder"
+          (
+            cd "$assets"
+            sha256sum "${folder}.tar.gz" > SHA256SUMS-validator-linux-amd64
+          )
+
+      - name: Stage Windows package
+        if: matrix.os == 'windows'
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = $env:RELEASE_TAG
+          $folderName = "qsdm-validator-$tag-windows-amd64"
+          $packageRoot = Join-Path $env:RUNNER_TEMP 'validator-package'
+          $stage = Join-Path $packageRoot $folderName
+          $assets = Join-Path $env:RUNNER_TEMP 'validator-assets'
+          New-Item -ItemType Directory -Force -Path $stage, $assets | Out-Null
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'qsdm-validator.exe') (Join-Path $stage 'qsdm-validator.exe')
+          Copy-Item QSDM\deploy\validator-package\install-or-update.ps1 $stage
+          Copy-Item QSDM\deploy\validator-package\rollback.ps1 $stage
+          Copy-Item QSDM\deploy\validator-package\README.md $stage
+          Copy-Item QSDM\config\qsdm.toml.example $stage
+          $names = @('qsdm-validator.exe', 'install-or-update.ps1', 'rollback.ps1', 'README.md', 'qsdm.toml.example')
+          $lines = foreach ($name in $names) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $stage $name)).Hash.ToLowerInvariant()
+            "$hash  $name"
+          }
+          [IO.File]::WriteAllLines((Join-Path $stage 'SHA256SUMS.txt'), $lines, [Text.UTF8Encoding]::new($false))
+          $archive = Join-Path $assets "$folderName.zip"
+          Compress-Archive -LiteralPath $stage -DestinationPath $archive -CompressionLevel Optimal
+          $archiveHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText(
+            (Join-Path $assets 'SHA256SUMS-validator-windows-amd64'),
+            "$archiveHash  $folderName.zip`n",
+            [Text.UTF8Encoding]::new($false)
+          )
+
+      - name: Upload validator package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: binaries-validator-${{ matrix.os }}-amd64
+          path: ${{ runner.temp }}/validator-assets/*
+          if-no-files-found: error
+          retention-days: 7
+
   # ---------------------------------------------------------------------------
   # Source SBOM. Generated once per release and attached to every artefact
   # type below (binaries + each container image), so reviewers can audit
@@ -270,6 +447,14 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Validate release tag checkout
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: bash .github/scripts/resolve-release-tag.sh
 
       - name: Generate SBOM for QSDM/source (full Go module + transitive deps)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
@@ -306,11 +491,14 @@ jobs:
   # ---------------------------------------------------------------------------
   release-assets:
     name: attach binaries + SBOM + signatures to release
-    needs: [binaries, source-sbom]
+    needs: [binaries, validator-packages, source-sbom]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
 
       - name: Install cosign (keyless Sigstore signer)
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
@@ -319,12 +507,9 @@ jobs:
 
       - name: Resolve release tag
         id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-          fi
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: bash .github/scripts/resolve-release-tag.sh
 
       - name: Download all matrix artefacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -357,7 +542,7 @@ jobs:
         run: |
           set -euo pipefail
           cd /tmp/assets
-          for f in qsdmminer-console-* trustcheck-* genesis-ceremony-* SHA256SUMS qsdm-source-sbom.spdx.json; do
+          for f in qsdm-validator-* qsdmminer-console-* trustcheck-* genesis-ceremony-* SHA256SUMS qsdm-source-sbom.spdx.json; do
             # Skip already-produced .sig / .pem so a re-run is idempotent.
             case "$f" in
               *.sig|*.pem) continue ;;
@@ -374,9 +559,11 @@ jobs:
       - name: Attach assets to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          GH_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          TAG="${{ steps.tag.outputs.tag }}"
+          TAG="$RELEASE_TAG"
           # Create the release if it doesn't already exist (re-run
           # from workflow_dispatch is a no-op against an existing
           # release; upload --clobber replaces assets in place).
@@ -387,9 +574,9 @@ jobs:
           # pushed (it's what triggered this workflow), so the
           # verification was always redundant. Pass --repo explicitly
           # so neither gh call needs to be inside a git working tree.
-          REPO_FLAG="--repo ${{ github.repository }}"
-          if ! gh release view "$TAG" $REPO_FLAG >/dev/null 2>&1; then
-            gh release create "$TAG" $REPO_FLAG \
+          REPO_FLAG=(--repo "$GH_REPOSITORY")
+          if ! gh release view "$TAG" "${REPO_FLAG[@]}" >/dev/null 2>&1; then
+            gh release create "$TAG" "${REPO_FLAG[@]}" \
               --title "$TAG" \
               --notes "Automated release by .github/workflows/release-container.yml. SBOM (SPDX 2.3) and per-asset cosign keyless signatures attached. See CHANGELOG.md."
           fi
@@ -409,7 +596,7 @@ jobs:
           # /tmp/assets contains only the exact set of release
           # artefacts at this point.
           ls -1
-          gh release upload "$TAG" $REPO_FLAG --clobber ./*
+          gh release upload "$TAG" "${REPO_FLAG[@]}" --clobber ./*
 
   # ---------------------------------------------------------------------------
   # Container images.
@@ -420,6 +607,15 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: tag
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: bash .github/scripts/resolve-release-tag.sh
 
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
@@ -456,9 +652,9 @@ jobs:
         with:
           images: ${{ steps.imgbase.outputs.ref }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=semver,pattern={{version}},value=${{ steps.tag.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.tag.outputs.tag }}
+            type=semver,pattern={{major}},value=${{ steps.tag.outputs.tag }}
 
       - name: Build and push (legacy qsdm name)
         id: build
@@ -564,6 +760,15 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: tag
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: bash .github/scripts/resolve-release-tag.sh
 
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
@@ -592,9 +797,9 @@ jobs:
         with:
           images: ${{ steps.imgbase.outputs.ref }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=semver,pattern={{version}},value=${{ steps.tag.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.tag.outputs.tag }}
+            type=semver,pattern={{major}},value=${{ steps.tag.outputs.tag }}
 
       - name: Build and push validator image
         id: build
@@ -667,6 +872,15 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: tag
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: bash .github/scripts/resolve-release-tag.sh
 
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
@@ -695,9 +909,9 @@ jobs:
         with:
           images: ${{ steps.imgbase.outputs.ref }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=semver,pattern={{version}},value=${{ steps.tag.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.tag.outputs.tag }}
+            type=semver,pattern={{major}},value=${{ steps.tag.outputs.tag }}
 
       - name: Build and push miner image
         id: build
