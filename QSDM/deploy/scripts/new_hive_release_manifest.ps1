@@ -19,6 +19,19 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Keep this vocabulary compatible with already-released Hive clients. New
+# artifact kinds must use one of these generic authenticated roles until a
+# client that understands a new role has been deployed everywhere.
+$supportedArtifactRoles = @(
+    'updater-manifest',
+    'installer',
+    'blockmap',
+    'portable-archive',
+    'checksums',
+    'provenance',
+    'evidence'
+)
+
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw 'Release signing currently requires the Windows user who owns the DPAPI-protected key.'
 }
@@ -107,8 +120,8 @@ if ($Platform -eq 'windows') {
         @{ Name = "qsdm-hive-$Version-release-provenance.json"; Role = 'provenance'; Required = $false },
         @{ Name = "qsdm-hive-$Version-windows-metadata-evidence.json"; Role = 'evidence'; Required = $false },
         @{ Name = "qsdm-hive-$Version-windows-nsis-evidence.json"; Role = 'evidence'; Required = $false },
-        @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion.zip"; Role = 'browser-extension'; Required = $true },
-        @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion-SHA256SUMS.txt"; Role = 'browser-extension-checksums'; Required = $true }
+        @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion.zip"; Role = 'portable-archive'; Required = $true },
+        @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion-SHA256SUMS.txt"; Role = 'checksums'; Required = $true }
     )
 } else {
     $manifestName = 'qsdm-hive-release-linux.json'
@@ -120,6 +133,16 @@ if ($Platform -eq 'windows') {
         @{ Name = "qsdm-hive-$Version-linux-release-provenance.json"; Role = 'provenance'; Required = $false },
         @{ Name = "qsdm-hive-$Version-linux-payload-evidence.json"; Role = 'evidence'; Required = $false }
     )
+}
+
+$unsupportedSpecs = @($specs | Where-Object {
+    [string]$_.Role -notin $supportedArtifactRoles
+})
+if ($unsupportedSpecs.Count -gt 0) {
+    $unsupportedRoles = @($unsupportedSpecs | ForEach-Object {
+        [string]$_.Role
+    } | Sort-Object -Unique) -join ', '
+    throw "Release manifest contains roles unsupported by released Hive clients: $unsupportedRoles"
 }
 
 $updaterMetadataPath = Join-Path $DownloadsDirectory $specs[0].Name
