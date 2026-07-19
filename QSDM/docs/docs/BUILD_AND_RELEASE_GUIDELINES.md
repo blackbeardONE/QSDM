@@ -161,7 +161,10 @@ and requires their hashes to match the signed source payload. Signing only the
 installer is not sufficient. Use
 `npm run package:windows:unsigned` to produce the current Windows installer or
 future signing input. Unsigned releases must never be described as signed or
-Windows verified-publisher builds.
+Windows verified-publisher builds. A production `hive-v<version>` tag packages
+the unsigned stable installer under the pinned Node 22 workflow when SignPath
+is disabled, verifies its NSIS payload, and uploads checksums, metadata
+evidence, and provenance as one release artifact.
 The first Authenticode-signed Windows release is a publisher transition and
 must be installed manually after verifying its signature and checksum. Only
 subsequent releases signed by the same publisher use the normal updater path.

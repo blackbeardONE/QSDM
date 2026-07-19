@@ -13,12 +13,14 @@ on:
       - "apps/qsdm-hive/qsdm-hive-main/**"
       - "apps/qsdm-edge-agent/**"
       - "QSDM/source/cmd/qsdmcli/**"
+      - "QSDM/source/cmd/qsdm-hive-wallet-host/**"
       - "QSDM/source/cmd/qsdmminer-console/**"
       - "QSDM/source/cmd/qsdm-edge-agent/**"
       - "QSDM/source/cmd/qsdm-edge-control/**"
       - "QSDM/source/cmd/qsdm-edge-gpu-helper/**"
       - "QSDM/source/cmd/qsdm-miner-cuda-solver/**"
       - "QSDM/deploy/scripts/build_hive_windows_native.ps1"
+      - "QSDM/deploy/scripts/new_hive_windows_release_provenance.ps1"
       - "QSDM/deploy/scripts/prepare_hive_signpath_payload.ps1"
       - "QSDM/deploy/scripts/verify_hive_windows_metadata.ps1"
       - "QSDM/deploy/scripts/verify_hive_nsis_payload.ps1"
@@ -116,7 +118,7 @@ jobs:
         working-directory: apps/qsdm-hive/qsdm-hive-main
         run: |
           npx tsc --noEmit
-          npm test -- --runInBand src/main/services/qsdmSystemTasks.spec.ts src/main/services/qsdmTaskActions.spec.ts
+          npm test -- --runInBand src/main/services/qsdmSystemTasks.spec.ts src/main/services/qsdmTaskActions.spec.ts src/main/services/qsdmWalletProviderBroker.spec.ts src/main/services/qsdmSignerSecretStore.spec.ts src/main/controllers/qsdm/unlockQsdmSignerWallet.spec.ts
 
       - name: Build unpacked Hive candidate
         working-directory: apps/qsdm-hive/qsdm-hive-main
@@ -181,6 +183,54 @@ jobs:
           path: |
             .cache/signpath/qsdm-hive-${{ steps.versions.outputs.hive }}-windows-unpacked-manifest.json
             apps/qsdm-hive/qsdm-hive-main/release/signpath/windows-metadata-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Package unsigned stable installer
+        if: steps.versions.outputs.is-production-tag == 'true' && vars.SIGNPATH_ENABLED != 'true'
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: |
+          npx electron-builder build --win nsis --x64 --prepackaged release/signpath/win-unpacked --publish never --config.directories.output=release/unsigned-final
+
+      - name: Verify unsigned stable installer
+        if: steps.versions.outputs.is-production-tag == 'true' && vars.SIGNPATH_ENABLED != 'true'
+        shell: pwsh
+        run: |
+          $version = '${{ steps.versions.outputs.hive }}'
+          $source = 'apps/qsdm-hive/qsdm-hive-main/release/signpath/win-unpacked'
+          $output = 'apps/qsdm-hive/qsdm-hive-main/release/unsigned-final'
+          $installer = Join-Path $output "qsdm-hive-$version-win-x64.exe"
+          $metadata = 'apps/qsdm-hive/qsdm-hive-main/release/signpath/windows-metadata-evidence.json'
+          $nsis = Join-Path $output "qsdm-hive-$version-windows-nsis-evidence.json"
+          ./QSDM/deploy/scripts/verify_hive_nsis_payload.ps1 `
+            -InstallerPath $installer `
+            -SignedUnpackedDirectory $source `
+            -EvidencePath $nsis
+          Copy-Item -LiteralPath $metadata `
+            -Destination (Join-Path $output "qsdm-hive-$version-windows-metadata-evidence.json")
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path -Leaf $installer)" | Set-Content `
+            -LiteralPath (Join-Path $output 'SHA256SUMS-win.txt') -Encoding ascii
+          ./QSDM/deploy/scripts/new_hive_windows_release_provenance.ps1 `
+            -Version $version `
+            -InstallerPath $installer `
+            -MetadataEvidencePath $metadata `
+            -NsisEvidencePath $nsis `
+            -OutputPath (Join-Path $output "qsdm-hive-$version-release-provenance.json")
+
+      - name: Upload unsigned stable release
+        if: steps.versions.outputs.is-production-tag == 'true' && vars.SIGNPATH_ENABLED != 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qsdm-hive-${{ steps.versions.outputs.hive }}-windows-UNSIGNED
+          path: |
+            apps/qsdm-hive/qsdm-hive-main/release/unsigned-final/qsdm-hive-${{ steps.versions.outputs.hive }}-win-x64.exe
+            apps/qsdm-hive/qsdm-hive-main/release/unsigned-final/qsdm-hive-${{ steps.versions.outputs.hive }}-win-x64.exe.blockmap
+            apps/qsdm-hive/qsdm-hive-main/release/unsigned-final/latest.yml
+            apps/qsdm-hive/qsdm-hive-main/release/unsigned-final/SHA256SUMS-win.txt
+            apps/qsdm-hive/qsdm-hive-main/release/unsigned-final/qsdm-hive-${{ steps.versions.outputs.hive }}-release-provenance.json
+            apps/qsdm-hive/qsdm-hive-main/release/unsigned-final/qsdm-hive-${{ steps.versions.outputs.hive }}-windows-metadata-evidence.json
+            apps/qsdm-hive/qsdm-hive-main/release/unsigned-final/qsdm-hive-${{ steps.versions.outputs.hive }}-windows-nsis-evidence.json
           if-no-files-found: error
           retention-days: 30
 

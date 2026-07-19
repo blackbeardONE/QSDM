@@ -49,6 +49,7 @@ $requiredFiles = @(
     'resources\edge\qsdm-edge-control.exe'
     'resources\edge\qsdm-edge-gpu-helper.exe'
     'resources\native\qsdmcli.exe'
+    'resources\native\qsdm-hive-wallet-host.exe'
     'resources\miner\qsdmminer-console.exe'
     'resources\miner\qsdm-miner-cuda-solver.exe'
 )

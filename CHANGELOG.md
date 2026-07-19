@@ -14,6 +14,13 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **QSDM Hive 1.3.99 wallet browser provider (2026-07-19).** Added the
+  QSDM Hive Wallet extension, an authenticated loopback broker, and bundled
+  native browser hosts for Windows and Linux. Websites receive only the active
+  public address and approved results; keystores and passphrases remain in
+  Hive. Existing keystores can now be unlocked after an unreadable
+  OS-protected passphrase is safely quarantined.
+
 - **QSDM Hive 1.3.95 and Edge Control/Agent 1.3.5 private federation pilot
   (2026-07-12).** Edge Control now creates 24-hour `QSDM-EDGE-2` HTTPS
   invitations with cryptographically random offer IDs and workload-scoped
@@ -30,6 +37,10 @@ attempt to retroactively enumerate that history.
 - **QSDM Hive 1.3.94 Virtual Compute Runtime (2026-07-09).** Mother Hive now discovers live pooled CPU, NVIDIA GPU, and RAM capacity; provides bounded workload controls; shows queue, Agent assignment, duration, cancellation, and verified receipt state; and keeps the private loopback gateway token outside renderer code. The gateway adds authenticated `/v1/resources` and `/v1/workloads` discovery routes while preserving the fixed-workload, no-remote-shell security boundary. A separate design specifies opt-in, wallet-authenticated, one-hop Mother Hive federation across locations without exposing Agent or private Mother credentials.
 
 ### Changed
+
+- **Hive release verification (2026-07-19).** Windows metadata and NSIS
+  payload evidence now require the wallet browser bridge, and Linux CI builds
+  and verifies the same native host before publishing an artifact.
 
 - **Hive release integrity (2026-07-12).** Host-native packaging now rebuilds
   bundled QSDM tools, rejects stale miner or Edge versions, and blocks partial

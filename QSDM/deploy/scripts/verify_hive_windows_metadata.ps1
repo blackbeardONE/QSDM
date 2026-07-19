@@ -22,6 +22,7 @@ $files = @(
     @{ Path = 'resources\edge\qsdm-edge-control.exe'; Description = 'QSDM Edge Control'; FileVersion = $edgeVersion; Original = 'qsdm-edge-control.exe' },
     @{ Path = 'resources\edge\qsdm-edge-gpu-helper.exe'; Description = 'QSDM Edge GPU Helper'; FileVersion = $hiveBinaryVersion; Original = 'qsdm-edge-gpu-helper.exe' },
     @{ Path = 'resources\native\qsdmcli.exe'; Description = 'QSDM Command Line Interface'; FileVersion = $hiveBinaryVersion; Original = 'qsdmcli.exe' },
+    @{ Path = 'resources\native\qsdm-hive-wallet-host.exe'; Description = 'QSDM Hive Wallet Browser Bridge'; FileVersion = $hiveBinaryVersion; Original = 'qsdm-hive-wallet-host.exe' },
     @{ Path = 'resources\miner\qsdmminer-console.exe'; Description = 'QSDM Console Miner'; FileVersion = $hiveBinaryVersion; Original = 'qsdmminer-console.exe' },
     @{ Path = 'resources\miner\qsdm-miner-cuda-solver.exe'; Description = 'QSDM CUDA Miner Solver'; FileVersion = $hiveBinaryVersion; Original = 'qsdm-miner-cuda-solver.exe' }
 )
