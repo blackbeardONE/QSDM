@@ -4,6 +4,7 @@ import {
   getQsdmReleaseTrustKey,
   getVerifiedQsdmHiveRelease,
   parseAndValidateQsdmHiveReleaseManifest,
+  QsdmReleaseArtifact,
   resetVerifiedQsdmHiveReleaseCacheForTests,
 } from './qsdmReleaseManifest';
 
@@ -18,7 +19,7 @@ const updaterMetadata = Buffer.from(
 
 const artifact = (
   name: string,
-  role: 'updater-manifest' | 'installer',
+  role: QsdmReleaseArtifact['role'],
   bytes: Buffer
 ) => ({
   name,
@@ -93,6 +94,41 @@ describe('QSDM signed release manifest', () => {
         new Date('2026-07-19T00:00:00.000Z')
       )
     ).toThrow('invalid role');
+  });
+
+  it('accepts an authenticated wallet extension using stable artifact roles', () => {
+    const manifest = buildManifest();
+    manifest.artifacts.push(
+      artifact(
+        'qsdm-hive-wallet-extension-0.2.0.zip',
+        'portable-archive',
+        Buffer.from('extension')
+      ),
+      artifact(
+        'qsdm-hive-wallet-extension-0.2.0-SHA256SUMS.txt',
+        'checksums',
+        Buffer.from('extension checksum')
+      )
+    );
+
+    const parsed = parseAndValidateQsdmHiveReleaseManifest(
+      Buffer.from(JSON.stringify(manifest)),
+      'windows',
+      new Date('2026-07-19T00:00:00.000Z')
+    );
+
+    expect(parsed.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'qsdm-hive-wallet-extension-0.2.0.zip',
+          role: 'portable-archive',
+        }),
+        expect.objectContaining({
+          name: 'qsdm-hive-wallet-extension-0.2.0-SHA256SUMS.txt',
+          role: 'checksums',
+        }),
+      ])
+    );
   });
 
   it('rejects updater metadata that differs from the signed hash', async () => {
