@@ -91,6 +91,11 @@ official extension has a stable pinned ID. The bridge listens only on loopback,
 authenticates each browser-host request with an ephemeral 256-bit token, and is
 not a public network API.
 
+Download the versioned extension package from the QSDM download page, verify
+its SHA-256 checksum, unzip it, and load that folder once from the browser's
+extension page. Browser-store installation will replace this one-time setup
+after the extension is approved by the relevant stores.
+
 ## Tasks in Hive
 
 - **QSDM Miner** requires an NVIDIA Turing-or-newer GPU (CUDA compute capability 7.5+). Hive 1.3.93 runs the current SHA3/DAG proof search through the packaged CUDA solver and refuses to start the task if that solver, a compatible driver, or the GPU is unavailable. Windows and Linux release builds fail before publication if either mining executable is missing. Concurrent restore and startup requests share one launch operation, so one Hive task supervises one CUDA miner. On Linux it recognizes the same packaged miner across AppImage mount changes and adopts that process after an unclean Hive restart instead of launching a conflicting duplicate. It also ignores obsolete protected Windows miner services instead of adopting them as the current task. `fork_v2_tc_active` describes the future Tensor-Core consensus algorithm; it is separate from today's CUDA SHA3 backend. A zero-balance signer may choose **Use mining earnings**: accepted mining rewards fill the 10 CELL slashable bond first, then subsequent rewards become spendable. Operators who already hold CELL may still lock the bond immediately.

@@ -10,6 +10,7 @@ stage_dir="$(cd "$1" && pwd)"
 hive_version="$2"
 webroot="${3:-/var/www/qsdm}"
 downloads="$webroot/downloads"
+wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.2.0}"
 
 if [[ ! "$hive_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "invalid Hive version: $hive_version" >&2
@@ -20,6 +21,8 @@ windows_installer="qsdm-hive-${hive_version}-win-x64.exe"
 linux_appimage="qsdm-hive-${hive_version}-linux-x86_64.AppImage"
 linux_archive="qsdm-hive-${hive_version}-linux-x64.tar.gz"
 linux_checksums="qsdm-hive-${hive_version}-linux-SHA256SUMS.txt"
+wallet_extension="qsdm-hive-wallet-extension-${wallet_extension_version}.zip"
+wallet_extension_checksums="qsdm-hive-wallet-extension-${wallet_extension_version}-SHA256SUMS.txt"
 
 immutable_downloads=(
   "$windows_installer"
@@ -32,6 +35,8 @@ immutable_downloads=(
   "$linux_checksums"
   "qsdm-hive-${hive_version}-linux-release-provenance.json"
   "qsdm-hive-${hive_version}-linux-payload-evidence.json"
+  "$wallet_extension"
+  "$wallet_extension_checksums"
 )
 pointer_downloads=(
   "SHA256SUMS-win.txt"
@@ -50,11 +55,13 @@ test -f "$stage_dir/download.html"
   cd "$stage_dir/downloads"
   sha256sum -c SHA256SUMS-win.txt
   sha256sum -c "$linux_checksums"
+  sha256sum -c "$wallet_extension_checksums"
 )
 grep -qx "version: ${hive_version}" "$stage_dir/downloads/latest.yml"
 grep -qx "version: ${hive_version}" "$stage_dir/downloads/latest-linux.yml"
 grep -q "url: ${windows_installer}" "$stage_dir/downloads/latest.yml"
 grep -q "url: ${linux_appimage}" "$stage_dir/downloads/latest-linux.yml"
+grep -q "$wallet_extension" "$stage_dir/download.html"
 grep -q "Version ${hive_version}" "$stage_dir/download.html"
 
 for platform in windows linux; do
@@ -100,7 +107,8 @@ for file in "${immutable_downloads[@]}"; do
   atomic_install_immutable "$stage_dir/downloads/$file" "$downloads/$file"
 done
 
-for file in "$windows_installer" "$linux_appimage" "$linux_archive"; do
+for file in "$windows_installer" "$linux_appimage" "$linux_archive" \
+  "$wallet_extension" "$wallet_extension_checksums"; do
   curl --fail --silent --show-error --head --max-time 30 \
     "https://qsdm.tech/downloads/$file" >/dev/null
 done
