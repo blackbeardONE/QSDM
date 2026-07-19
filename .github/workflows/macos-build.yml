@@ -77,18 +77,17 @@ jobs:
         run: |
           set -euo pipefail
           file ./qsdm
-          # cmd/qsdm is the validator binary, not the miner. It does NOT
-          # implement --version (any unknown flag is ignored and the
-          # binary starts a full validator node, which would run forever
-          # until the job's timeout-minutes hits). Wrap every invocation
-          # in `timeout 5` so the smoke check stays a smoke check.
-          # If qsdm ever grows a real --version flag, the timeout still
-          # passes for a fast-exit binary, so this is safe both ways.
-          timeout 5 ./qsdm --version 2>/dev/null \
-            || timeout 5 ./qsdm version 2>/dev/null \
-            || true
+          out="$(./qsdm --version)"
+          echo "$out"
+          echo "$out" | grep -q '^qsdm '
+          echo "$out" | grep -q 'dev'
           # uname -m should match matrix arch.
-          test "$(uname -m)" = "$(timeout 5 ./qsdm --arch 2>/dev/null || uname -m)" || true
+          case "$(uname -m)" in
+            x86_64) expected_arch=amd64 ;;
+            arm64) expected_arch=arm64 ;;
+            *) echo "unsupported runner architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          echo "$out" | grep -q "darwin/${expected_arch}"
 
   macos-build-cgo:
     name: macOS CGO + liboqs (${{ matrix.runner }})

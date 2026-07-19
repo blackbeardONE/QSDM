@@ -32,6 +32,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/api"
 	"github.com/blackbeardONE/QSDM/pkg/branding"
 	"github.com/blackbeardONE/QSDM/pkg/bridge"
+	"github.com/blackbeardONE/QSDM/pkg/buildinfo"
 	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/config"
 	"github.com/blackbeardONE/QSDM/pkg/consensus"
@@ -62,6 +63,19 @@ import (
 var logger *logging.Logger
 var metrics *monitoring.Metrics
 var healthChecker *monitoring.HealthChecker
+
+func printVersionIfRequested(args []string, w io.Writer) bool {
+	if len(args) != 1 {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(args[0])) {
+	case "--version", "-version", "version":
+		fmt.Fprintln(w, buildinfo.String("qsdm"))
+		return true
+	default:
+		return false
+	}
+}
 
 func replayTaskStateFromBlocks(taskState *chain.TaskStateStore, blocks []*chain.Block) (int, error) {
 	if taskState == nil {
@@ -467,6 +481,13 @@ func main() {
 			os.Exit(1)
 		}
 	}()
+
+	// Build metadata must be available without configuration, storage, crypto,
+	// or network initialization. Operators and release automation rely on this
+	// command being side-effect free and returning immediately.
+	if printVersionIfRequested(os.Args[1:], os.Stdout) {
+		return
+	}
 
 	// Early console output to verify the application starts
 	// Use os.Stdout directly and flush to ensure output appears immediately

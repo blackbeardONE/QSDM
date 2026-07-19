@@ -14,6 +14,13 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **QSDM Core v0.4.7-rc.3 native validator release path (2026-07-20).**
+  Releases now include production-capable SQLite validator packages for Linux
+  amd64 and Windows amd64, with embedded build identity, inner and release-level
+  checksums, Sigstore-signed archives, conservative install/update scripts, and
+  reversible executable-only rollback. Operator state, databases, identities,
+  wallets, keys, and configuration are never bundled or replaced.
+
 - **QSDM Hive 1.3.99 wallet browser provider (2026-07-19).** Added the
   QSDM Hive Wallet extension, an authenticated loopback broker, and bundled
   native browser hosts for Windows and Linux. Websites receive only the active
@@ -37,6 +44,20 @@ attempt to retroactively enumerate that history.
 - **QSDM Hive 1.3.94 Virtual Compute Runtime (2026-07-09).** Mother Hive now discovers live pooled CPU, NVIDIA GPU, and RAM capacity; provides bounded workload controls; shows queue, Agent assignment, duration, cancellation, and verified receipt state; and keeps the private loopback gateway token outside renderer code. The gateway adds authenticated `/v1/resources` and `/v1/workloads` discovery routes while preserving the fixed-workload, no-remote-shell security boundary. A separate design specifies opt-in, wallet-authenticated, one-hop Mother Hive federation across locations without exposing Agent or private Mother credentials.
 
 ### Changed
+
+- **Validator package privilege and rollback hardening (2026-07-20).** Linux
+  packages keep root-managed executables and checksummed rollback state apart
+  from the unprivileged service data directory. Windows packages run Core as
+  `LOCAL SERVICE` with a separate writable data directory. Both platforms
+  accept liveness only when the exact installed process owns the configured
+  loopback API port, preserve custom service settings across updates, and
+  reject unsafe, unrelated, or overlapping install/data paths.
+
+- **Side-effect-free Core build identification (2026-07-20).** `qsdm
+  --version` now prints canonical version, commit, build date, Go toolchain, OS,
+  and architecture metadata and exits before configuration, storage, crypto, or
+  networking startup. Release dispatch tags are strictly validated before they
+  enter build or upload shell steps.
 
 - **Hive release verification (2026-07-19).** Windows metadata and NSIS
   payload evidence now require the wallet browser bridge, and Linux CI builds
@@ -169,6 +190,12 @@ attempt to retroactively enumerate that history.
   operators and external audit reviewers can now map a running
   health endpoint to a specific commit + release artefact
   without guessing from log timestamps.
+
+### Fixed
+
+- **Unix persistence-capacity arithmetic (2026-07-20).** Validator disk-space
+  checks now reject invalid filesystem block sizes and detect multiplication
+  overflow instead of converting or wrapping unsafe kernel values.
 
 ### Deployed
 

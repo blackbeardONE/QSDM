@@ -65,6 +65,34 @@ jobs:
       - name: Build (no CGO)
         run: bash QSDM/scripts/go-build-no-cgo.sh /tmp/qsdm
 
+      - name: Smoke-check validator version command
+        run: |
+          set -euo pipefail
+          out="$(/tmp/qsdm --version)"
+          echo "$out"
+          echo "$out" | grep -q '^qsdm dev '
+
+      - name: Parse validator package operator scripts
+        run: |
+          set -euo pipefail
+          bash -n .github/scripts/resolve-release-tag.sh
+          bash -n QSDM/deploy/validator-package/install-or-update.sh
+          bash -n QSDM/deploy/validator-package/rollback.sh
+          pwsh -NoProfile -Command '
+            $errors = @()
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path "QSDM/deploy/validator-package/install-or-update.ps1"),
+              [ref]$null,
+              [ref]$errors
+            ) | Out-Null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path "QSDM/deploy/validator-package/rollback.ps1"),
+              [ref]$null,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count) { throw ($errors | Out-String) }
+          '
+
       # Short tests cover API, monitoring (NVIDIA-lock/HMAC), dashboard, etc. (no GPU required).
       - name: Test (short, no CGO)
         run: bash QSDM/scripts/go-test-short-no-cgo.sh

@@ -82,6 +82,23 @@ in the output.
 > docker build -f QSDM/Dockerfile.validator -t qsdm/validator:local QSDM/
 > ```
 
+### Native release package
+
+Each Core release also publishes production-capable native packages for
+Linux amd64 and Windows amd64. The packages include SQLite support, embedded
+build metadata, an unpacked-binary checksum, and conservative install/update
+and rollback scripts. Download them from the matching GitHub release:
+
+```text
+qsdm-validator-<version>-linux-amd64.tar.gz
+qsdm-validator-<version>-windows-amd64.zip
+```
+
+Verify the archive against the release-level `SHA256SUMS` and Sigstore
+certificate before unpacking. Then read the package `README.md`. The scripts
+replace only the executable and preserve chain state, identity material,
+wallets, configuration, and timestamped rollback binaries.
+
 ---
 
 ## 3. Create the host directories
