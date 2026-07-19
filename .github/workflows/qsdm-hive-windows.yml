@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - "apps/qsdm-hive/qsdm-hive-main/**"
+      - "apps/qsdm-hive-wallet-extension/**"
       - "apps/qsdm-edge-agent/**"
       - "QSDM/source/cmd/qsdmcli/**"
       - "QSDM/source/cmd/qsdm-hive-wallet-host/**"
@@ -118,7 +119,31 @@ jobs:
         working-directory: apps/qsdm-hive/qsdm-hive-main
         run: |
           npx tsc --noEmit
-          npm test -- --runInBand src/main/services/qsdmSystemTasks.spec.ts src/main/services/qsdmTaskActions.spec.ts src/main/services/qsdmWalletProviderBroker.spec.ts src/main/services/qsdmSignerSecretStore.spec.ts src/main/controllers/qsdm/unlockQsdmSignerWallet.spec.ts
+          npm test -- --runInBand src/main/services/qsdmSystemTasks.spec.ts src/main/services/qsdmTaskActions.spec.ts src/main/services/qsdmWalletProviderBroker.spec.ts src/main/services/qsdmWalletProviderNativeHost.spec.ts src/main/services/qsdmSignerSecretStore.spec.ts src/main/controllers/qsdm/unlockQsdmSignerWallet.spec.ts
+
+      - name: Test browser wallet extension
+        working-directory: apps/qsdm-hive-wallet-extension
+        run: node tests/run-acceptance.mjs
+
+      - name: Package browser wallet extension
+        shell: pwsh
+        run: |
+          $output = Join-Path $env:RUNNER_TEMP 'qsdm-hive-wallet-extension'
+          $package = ./apps/qsdm-hive-wallet-extension/package-extension.ps1 `
+            -OutputDirectory $output
+          $checksum = Join-Path $output "qsdm-hive-wallet-extension-$($package.Version)-SHA256SUMS.txt"
+          "$($package.Sha256)  $(Split-Path -Leaf $package.Path)" | `
+            Set-Content -LiteralPath $checksum -Encoding ascii
+
+      - name: Upload browser wallet extension
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qsdm-hive-wallet-extension-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/qsdm-hive-wallet-extension/qsdm-hive-wallet-extension-*.zip
+            ${{ runner.temp }}/qsdm-hive-wallet-extension/qsdm-hive-wallet-extension-*-SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Build unpacked Hive candidate
         working-directory: apps/qsdm-hive/qsdm-hive-main

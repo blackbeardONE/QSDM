@@ -15,7 +15,20 @@
     {
       "from": "../../qsdm-hive-wallet-extension",
       "to": "wallet-extension",
-      "filter": ["**/*"]
+      "filter": [
+        "manifest.json",
+        "background.js",
+        "content.js",
+        "provider.js",
+        "popup.html",
+        "popup.css",
+        "popup.js",
+        "qsdm-hive-icon.png",
+        "README.md",
+        "SECURITY.md",
+        "native-host/install-windows.ps1",
+        "native-host/install-linux.sh"
+      ]
     }
   ],
   "protocols": [

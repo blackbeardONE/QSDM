@@ -1,3 +1,11 @@
+## [1.4.0]
+
+- Unified wallet: The active wallet in Hive is now presented as the user's single QSDM account across Hive and connected websites; the extension never creates or stores a second wallet.
+- One-time setup: Hive automatically registers its secure browser bridge for the current Windows or Linux user without administrator access or manual extension-ID configuration.
+- Stable identity: The bundled Chromium extension has a pinned ID, and Hive validates that ID before registering the native host.
+- Website connections: The extension popup shows the current site and supports direct connect or disconnect, while Hive retains exact-origin permissions and separate approvals for signatures and CELL transfers.
+- Package hardening: Hive bundles only the browser extension runtime, security notes, and diagnostic registration helpers instead of old archives and test assets.
+
 ## [1.3.99]
 
 - Browser wallet: Added the QSDM Hive Wallet extension and a localhost-only, authenticated wallet-provider broker for permissioned website connections and transaction approvals.

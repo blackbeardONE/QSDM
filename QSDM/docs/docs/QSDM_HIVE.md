@@ -19,7 +19,7 @@ does not ship a separate consumer GUI miner.
 Linux Hive connects directly to the canonical public QSDM Core for ledger,
 wallet, chain-height, and mining-reward reads. Task catalog metadata continues
 through the restricted home-validator gateway. Ordinary desktop users do not
-install a local validator. Version 1.3.99 bundles the native `qsdmcli` signer,
+install a local validator. Version 1.4.0 bundles the native `qsdmcli` signer,
 supervised console miner, CUDA protocol solver, edge agent, and CUDA edge
 helper on the supported Electron 43 runtime.
 Open **Settings > Wallet** to create a new
@@ -70,22 +70,31 @@ Task Studio initially publishes the built-in `generic-proof-v1` capability. New 
 
 QSDM CELL wallet recovery uses the **QSDM keystore JSON plus its passphrase**. Hive profile phrases, when present, restore only local Hive profile data. They are not CELL wallet recovery phrases.
 
-## Hive Wallet browser extension
+## QSDM Wallet browser extension
 
-The QSDM Hive Wallet extension gives Chromium websites a small `window.qsdm`
+The QSDM Wallet extension gives Chromium websites a small `window.qsdm`
 provider without copying a wallet into the browser. Create or import the wallet
-once in **Settings > Wallet**. The extension sees only the active public
-address; the encrypted keystore and passphrase stay in Hive.
+once in **Settings > Wallet** and keep Hive running in the notification area.
+The extension uses that same active wallet and sees only its public address;
+the encrypted keystore and passphrase stay in Hive.
 
-When a site asks to connect, sign a message, or send CELL, Hive comes to the
-foreground and displays an approval prompt with the exact site and operation.
-Connections are scoped to the site's exact HTTPS origin and active wallet.
-Review or revoke them under **Settings > Wallet > Connected Sites**. HTTP is
-accepted only for local development on `localhost` or `127.0.0.1`.
+Connect a website once from the site or extension popup. Hive remembers that
+exact HTTPS origin until it is disconnected or revoked under **Settings >
+Wallet > Connected Sites**. Signing and CELL transfers remain separate actions:
+Hive comes to the foreground and shows the exact site and operation before each
+approval. HTTP is accepted only for local development on `localhost` or
+`127.0.0.1`.
 
-The initial extension package supports Chrome and Edge on Windows and Linux.
-The native bridge listens only on loopback, authenticates each browser-host
-request with an ephemeral 256-bit token, and is not a public network API.
+Hive 1.4.0 automatically registers the secure native bridge for the current
+user on Chrome, Edge, Chromium, and Brave without administrator access. The
+official extension has a stable pinned ID. The bridge listens only on loopback,
+authenticates each browser-host request with an ephemeral 256-bit token, and is
+not a public network API.
+
+Download the versioned extension package from the QSDM download page, verify
+its SHA-256 checksum, unzip it, and load that folder once from the browser's
+extension page. Browser-store installation will replace this one-time setup
+after the extension is approved by the relevant stores.
 
 ## Tasks in Hive
 

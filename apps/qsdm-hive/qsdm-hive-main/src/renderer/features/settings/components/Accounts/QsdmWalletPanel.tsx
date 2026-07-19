@@ -317,10 +317,10 @@ export function QsdmWalletPanel() {
     <section className="w-[90%] p-5 mb-6 rounded-lg border border-purple-1 bg-purple-1 bg-opacity-20">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="text-xl font-semibold">QSDM Signer Wallet</div>
+          <div className="text-xl font-semibold">QSDM Wallet</div>
           <div className="pt-1 text-sm text-finnieGray-secondary">
-            Native CELL balance and signed wallet actions from QSDM Core.
-            Recovery uses a QSDM keystore JSON file plus passphrase.
+            Your QSDM account for Hive, CELL, tasks, and connected websites.
+            Wallet recovery uses its keystore JSON and passphrase.
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -415,9 +415,10 @@ export function QsdmWalletPanel() {
           <div>
             <div className="text-base font-semibold">Connected Sites</div>
             <div className="pt-1 text-xs text-finnieGray-secondary">
-              Websites use the QSDM Hive Wallet extension to request access.
-              Your keystore and passphrase remain inside Hive, and every
-              signature or CELL transfer still requires approval here.
+              Connect each website once with the QSDM Wallet extension. Hive
+              remembers approved sites until you revoke them here. Your keystore
+              and passphrase never leave Hive, and every signature or CELL
+              transfer still requires your approval.
             </div>
           </div>
           <span className="text-xs text-finnieGray-secondary">
@@ -467,7 +468,7 @@ export function QsdmWalletPanel() {
             </div>
           ) : (
             <div className="text-sm text-finnieGray-secondary">
-              No websites are connected to this Hive installation.
+              No websites are connected to this wallet yet.
             </div>
           )}
         </div>

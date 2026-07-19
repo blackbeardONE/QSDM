@@ -1,6 +1,5 @@
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$ExtensionId,
+    [string]$ExtensionId = 'habkkkednignfkoffhpbjahcjbikkahh',
     [string]$HostPath = ""
 )
 
@@ -35,4 +34,4 @@ foreach ($registryPath in $registryRoots) {
     New-Item -Force -Path $registryPath | Out-Null
     Set-Item -LiteralPath $registryPath -Value $manifestPath
 }
-Write-Host "QSDM Hive Wallet bridge registered for extension $ExtensionId"
+Write-Host "QSDM Wallet bridge registered for extension $ExtensionId"
