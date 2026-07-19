@@ -90,6 +90,84 @@ func replayTaskStateFromBlocks(taskState *chain.TaskStateStore, blocks []*chain.
 	return replayed, nil
 }
 
+type persistedStateRestore struct {
+	blocks      []*chain.Block
+	taskState   *chain.TaskStateStore
+	taskActions int
+	stateRoot   string
+	backupPath  string
+	recovered   bool
+}
+
+func evaluatePersistedState(accounts *chain.AccountStore, blocks []*chain.Block) (persistedStateRestore, error) {
+	if accounts == nil {
+		return persistedStateRestore{}, errors.New("persisted state restore requires an account snapshot")
+	}
+	tasks := chain.NewTaskStateStore()
+	taskActions, err := replayTaskStateFromBlocks(tasks, blocks)
+	if err != nil {
+		return persistedStateRestore{}, err
+	}
+	aware := chain.NewEnrollmentAwareApplier(accounts, nil)
+	aware.SetTaskStateStore(tasks)
+	return persistedStateRestore{
+		blocks:      blocks,
+		taskState:   tasks,
+		taskActions: taskActions,
+		stateRoot:   aware.StateRoot(),
+	}, nil
+}
+
+// reconcilePersistedStateTail handles the only safe automatic crash gap: the
+// chain journal contains one fully written block whose account snapshot was
+// never committed. The saved accounts plus replayed task state must match the
+// immediately preceding block exactly. Any wider mismatch remains fail-closed.
+func reconcilePersistedStateTail(chainPath string, accounts *chain.AccountStore, blocks []*chain.Block, now time.Time) (persistedStateRestore, error) {
+	if len(blocks) == 0 {
+		return persistedStateRestore{}, errors.New("persisted state restore requires at least one block")
+	}
+	tip := blocks[len(blocks)-1]
+	if tip == nil {
+		return persistedStateRestore{}, fmt.Errorf("persisted state restore has a nil tip at index %d", len(blocks)-1)
+	}
+
+	current, err := evaluatePersistedState(accounts, blocks)
+	if err != nil {
+		return persistedStateRestore{}, fmt.Errorf("replay canonical tip height %d: %w", tip.Height, err)
+	}
+	if current.stateRoot == tip.StateRoot {
+		return current, nil
+	}
+	if len(blocks) < 2 {
+		return persistedStateRestore{}, fmt.Errorf(
+			"persisted state does not match canonical tip height=%d hash=%s (snapshot_root=%s tip_root=%s); no preceding block exists for bounded recovery",
+			tip.Height, tip.Hash, current.stateRoot, tip.StateRoot)
+	}
+
+	priorBlocks := blocks[:len(blocks)-1]
+	priorTip := priorBlocks[len(priorBlocks)-1]
+	if priorTip == nil {
+		return persistedStateRestore{}, fmt.Errorf("persisted state restore has a nil preceding block at index %d", len(priorBlocks)-1)
+	}
+	prior, err := evaluatePersistedState(accounts, priorBlocks)
+	if err != nil {
+		return persistedStateRestore{}, fmt.Errorf("replay preceding tip height %d: %w", priorTip.Height, err)
+	}
+	if prior.stateRoot != priorTip.StateRoot {
+		return persistedStateRestore{}, fmt.Errorf(
+			"persisted state matches neither canonical tip nor its predecessor (tip_height=%d snapshot_root=%s tip_root=%s predecessor_height=%d predecessor_snapshot_root=%s predecessor_root=%s); refusing automatic recovery",
+			tip.Height, current.stateRoot, tip.StateRoot, priorTip.Height, prior.stateRoot, priorTip.StateRoot)
+	}
+
+	backupPath := fmt.Sprintf("%s.uncommitted-tail-%s.bak", chainPath, now.UTC().Format("20060102T150405.000000000Z"))
+	if err := chain.ReplaceChainFile(chainPath, backupPath, priorBlocks); err != nil {
+		return persistedStateRestore{}, fmt.Errorf("archive one-block uncommitted journal tail: %w", err)
+	}
+	prior.backupPath = backupPath
+	prior.recovered = true
+	return prior, nil
+}
+
 func canonicalPersistedChain(blocks []*chain.Block) ([]*chain.Block, int) {
 	if len(blocks) <= 1 {
 		return blocks, 0
@@ -1536,9 +1614,12 @@ func main() {
 	// the contract the seal-skip branch was already written
 	// against, so no other code-paths change.
 	//
-	// Order matters during hydrate: load CHAIN first (it
-	// determines HasTip), then ACCOUNTS. If the chain shows
-	// blocks but the accounts file is missing, we fail-fast
+	// Order matters during hydrate: read CHAIN first, then load
+	// ACCOUNTS before installing either into the live producer.
+	// This lets startup prove the account/task snapshot matches
+	// the journal tip and recover one fully appended but
+	// uncommitted tail block after a crash or disk-full event. If
+	// the chain shows blocks but the accounts file is missing, we fail-fast
 	// rather than boot a half-restored state where balances
 	// are zero but tip is non-zero — that combination would
 	// cause the next reward tx (funder.nonce>0 expected) to
@@ -1572,23 +1653,35 @@ func main() {
 				"chain_path", chainStatePath,
 				"backup_path", backupPath)
 		}
-		if err := adminProducer.RestoreChain(restoreBlocks); err != nil {
-			log.Fatalf("chain restore: producer hydrate from %s (%d blocks): %v",
-				chainStatePath, len(restoreBlocks), err)
-		}
 		loadedAccounts, loadErr := adminAccounts.Load(accountsStatePath)
 		if loadErr != nil {
 			log.Fatalf("chain restore: accounts file %s missing or unreadable while chain has %d blocks (%v) — refusing to boot a half-restored state. Either restore the matching accounts file or wipe %s to reset the chain.",
 				accountsStatePath, len(restoreBlocks), loadErr, chainStatePath)
 		}
-		loadedTaskActions, taskReplayErr := replayTaskStateFromBlocks(v2Wired.TaskState, restoreBlocks)
-		if taskReplayErr != nil {
-			log.Fatalf("chain restore: task state replay from %s failed after %d task actions: %v",
-				chainStatePath, loadedTaskActions, taskReplayErr)
+		discardedTailHeight := restoreBlocks[len(restoreBlocks)-1].Height
+		restoredState, reconcileErr := reconcilePersistedStateTail(chainStatePath, adminAccounts, restoreBlocks, time.Now())
+		if reconcileErr != nil {
+			log.Fatalf("chain restore: %v", reconcileErr)
 		}
+		restoreBlocks = restoredState.blocks
+		if restoredState.recovered {
+			logger.Warn("chain restore: recovered one fully appended block whose account snapshot was not committed",
+				"recovered_tip_height", restoreBlocks[len(restoreBlocks)-1].Height,
+				"discarded_height", discardedTailHeight,
+				"chain_path", chainStatePath,
+				"backup_path", restoredState.backupPath)
+		}
+		if err := adminProducer.RestoreChain(restoreBlocks); err != nil {
+			log.Fatalf("chain restore: producer hydrate from %s (%d blocks): %v",
+				chainStatePath, len(restoreBlocks), err)
+		}
+		if err := v2Wired.TaskState.RestoreFromChainReplay(restoredState.taskState); err != nil {
+			log.Fatalf("chain restore: install replayed task state from %s: %v", chainStatePath, err)
+		}
+		loadedTaskActions := restoredState.taskActions
 		if tip, ok := adminProducer.LatestBlock(); ok {
 			if stateRoot := v2Wired.StateApplier.StateRoot(); stateRoot != tip.StateRoot {
-				log.Fatalf("chain restore: persisted state does not match canonical tip height=%d hash=%s (snapshot_root=%s tip_root=%s). Refusing to produce on an inconsistent ledger.",
+				log.Fatalf("chain restore: reconciled state does not match canonical tip height=%d hash=%s (snapshot_root=%s tip_root=%s). Refusing to produce on an inconsistent ledger.",
 					tip.Height, tip.Hash, stateRoot, tip.StateRoot)
 			}
 		}
@@ -1667,7 +1760,8 @@ func main() {
 			// Neither file present — fresh chain or hand-cleared. No-op.
 		}
 		logger.Info("Chain + accounts + enrollments + receipts restored from disk",
-			"blocks", len(persistedBlocks),
+			"blocks", len(restoreBlocks),
+			"journal_blocks_loaded", len(persistedBlocks),
 			"tip_height", adminProducer.TipHeight(),
 			"accounts_loaded", loadedAccounts,
 			"enrollments_loaded", loadedEnrollments,
@@ -1696,6 +1790,13 @@ func main() {
 			logger.Warn("chain persistence: journal close failed", "path", chainStatePath, "error_str", err.Error())
 		}
 	}()
+	persistenceReserve, reserveErr := parsePersistenceReserve(os.Getenv(persistenceReserveEnv))
+	if reserveErr != nil {
+		log.Fatalf("chain persistence: invalid disk reserve: %v", reserveErr)
+	}
+	logger.Info("Chain persistence disk reserve enabled",
+		"state_path", stateDir,
+		"minimum_free_bytes", persistenceReserve)
 	var persistenceMu sync.RWMutex
 	var persistenceErr error
 	markPersistenceFailed := func(err error) {
@@ -1712,10 +1813,40 @@ func main() {
 		}
 		persistenceMu.Unlock()
 	}
+	var diskPressureMu sync.Mutex
+	diskPressureActive := false
 	adminProducer.SetSealGuard(func() error {
 		persistenceMu.RLock()
-		defer persistenceMu.RUnlock()
-		return persistenceErr
+		failed := persistenceErr
+		persistenceMu.RUnlock()
+		if failed != nil {
+			return failed
+		}
+
+		available, capacityErr := checkPersistenceCapacity(stateDir, persistenceReserve, availableDiskBytes)
+		diskPressureMu.Lock()
+		defer diskPressureMu.Unlock()
+		if capacityErr != nil {
+			if !diskPressureActive {
+				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusUnhealthy, capacityErr.Error())
+				logger.Error("chain persistence paused before sealing because the disk reserve is unavailable",
+					"state_path", stateDir,
+					"available_bytes", available,
+					"minimum_free_bytes", persistenceReserve,
+					"error_str", capacityErr.Error())
+			}
+			diskPressureActive = true
+			return capacityErr
+		}
+		if diskPressureActive {
+			diskPressureActive = false
+			healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, "Persistence disk reserve restored")
+			logger.Info("Chain persistence resumed after disk reserve recovery",
+				"state_path", stateDir,
+				"available_bytes", available,
+				"minimum_free_bytes", persistenceReserve)
+		}
+		return nil
 	})
 
 	// Compose persistence with whatever OnSealedBlock the
@@ -1730,12 +1861,10 @@ func main() {
 	//  2. AppendBlockToFile (chain log gains the block)
 	//  3. AccountStore.Save (accounts catch up to chain)
 	//
-	// If a crash interrupts between (2) and (3): on
-	// restart, chain has block N, accounts trail at N-1.
-	// This is recoverable but not yet auto-recovered (the
-	// fail-fast above is the safe default — operator wipes
-	// or hand-replays). That's acceptable for testnet; a
-	// future commit can add chain-replay-on-mismatch.
+	// If a crash interrupts between (2) and (3), startup archives
+	// the original journal and removes exactly block N only when
+	// the persisted account/task root matches N-1. Wider state
+	// mismatches remain fail-closed for operator investigation.
 	var blockPropagator *chain.BlockPropagator
 	priorSealedBlockHook := adminProducer.OnSealedBlock
 	adminProducer.OnSealedBlock = func(blk *chain.Block) {

@@ -6,6 +6,12 @@ param(
     [int]$IntervalSeconds = 30,
     [int]$RestartAfterFailures = 10,
     [int]$GatewayRestartAfterFailures = 3,
+    [ValidateRange(1, 1440)]
+    [int]$CacheMaintenanceMinutes = 30,
+    [ValidateRange(0, 1024)]
+    [double]$MinimumFreeGiB = 5,
+    [ValidateRange(0, 1024)]
+    [double]$TargetFreeGiB = 8,
     [switch]$CheckPublicGateway,
     [switch]$NoPublicGatewayCheck,
     [switch]$Once
@@ -41,6 +47,7 @@ $LogPath = Join-Path $LocalRoot "watchdog.log"
 $PidPath = Join-Path $LocalRoot "watchdog.pid"
 $ValidatorScript = Join-Path $QsdmRoot "scripts\start_local_validator.ps1"
 $GatewayScript = Join-Path $QsdmRoot "scripts\start_home_gateway.ps1"
+$CacheMaintenanceScript = Join-Path $QsdmRoot "scripts\maintain_generated_cache.ps1"
 $ReadyUrl = "$Backend/api/v1/health/ready"
 $PublicBaseUrl = "$Relay/attest/$Slot/api/v1"
 $PublicUrl = "$PublicBaseUrl/status"
@@ -200,6 +207,26 @@ function Start-Gateway {
     Write-WatchdogLog "home gateway launcher pid=$($process.Id)"
 }
 
+function Invoke-GeneratedCacheMaintenance {
+    if (-not (Test-Path -LiteralPath $CacheMaintenanceScript -PathType Leaf)) {
+        Write-WatchdogLog "generated cache maintenance script is missing: $CacheMaintenanceScript"
+        return
+    }
+    try {
+        $raw = (& $CacheMaintenanceScript -QsdmRoot $QsdmRoot `
+            -MinimumFreeGiB $MinimumFreeGiB -TargetFreeGiB $TargetFreeGiB `
+            -Apply) -join "`n"
+        $result = $raw | ConvertFrom-Json
+        if ([int]$result.removed_count -gt 0 -or [bool]$result.disk_pressure) {
+            Write-WatchdogLog ("generated cache maintenance removed_count={0} removed_bytes={1} initial_free_bytes={2} final_free_bytes={3} reserve_satisfied={4}" -f `
+                $result.removed_count, $result.removed_bytes, $result.initial_free_bytes, `
+                $result.final_free_bytes, $result.reserve_satisfied)
+        }
+    } catch {
+        Write-WatchdogLog "generated cache maintenance failed: $($_.Exception.Message)"
+    }
+}
+
 $mutex = [System.Threading.Mutex]::new($false, "Local\QSDMLocalStackWatchdog")
 if (-not $mutex.WaitOne(0)) {
     Write-WatchdogLog "another watchdog instance is already running"
@@ -209,11 +236,16 @@ Set-Content -LiteralPath $PidPath -Value ([string]$PID)
 
 $validatorFailures = 0
 $gatewayFailures = 0
+$lastCacheMaintenance = [DateTime]::MinValue
 
 try {
     Write-WatchdogLog "watchdog started root=$QsdmRoot relay=$Relay slot=$Slot check_public_gateway=$PublicGatewayCheckEnabled once=$Once"
     do {
         try {
+            if (((Get-Date) - $lastCacheMaintenance).TotalMinutes -ge $CacheMaintenanceMinutes) {
+                Invoke-GeneratedCacheMaintenance
+                $lastCacheMaintenance = Get-Date
+            }
             $validatorReady = Test-HttpOk -Url $ReadyUrl -TimeoutSeconds 5
             if ($validatorReady) {
                 $validatorFailures = 0
