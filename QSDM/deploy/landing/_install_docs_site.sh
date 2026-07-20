@@ -13,13 +13,16 @@
 #   /var/www/qsdm/docs/lib/markdown-it.min.js
 #   /etc/caddy/Caddyfile                  ← extended connect-src CSP
 #
-# Then: validate Caddyfile, reload Caddy, probe live URLs.
+# Then: validate any replacement Caddyfile, restart Caddy when required, and
+# probe live URLs. The production Caddy admin API is intentionally disabled,
+# so systemctl reload cannot be used there.
 
 set -euo pipefail
 
 TGZ="${1:-/tmp/qsdm_docs_site.tgz}"
 WEBROOT="/var/www/qsdm"
 STAGE="/tmp/qsdm_docs_site_stage"
+CADDY_CHANGED=false
 
 if [[ ! -f "$TGZ" ]]; then
   echo "missing tarball: $TGZ" >&2
@@ -42,13 +45,17 @@ install -o caddy -g caddy -m 0644 "$STAGE/docs/lib/markdown-it.min.js" "$WEBROOT
 if [[ -f "$STAGE/Caddyfile" ]]; then
   echo "=== installing Caddyfile ==="
   install -o root -g root -m 0644 "$STAGE/Caddyfile" "/etc/caddy/Caddyfile"
+  CADDY_CHANGED=true
 fi
 
-echo "=== Caddyfile validate ==="
-caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+if [[ "$CADDY_CHANGED" == true ]]; then
+  echo "=== Caddyfile validate ==="
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
-echo "=== systemctl reload caddy ==="
-systemctl reload caddy
+  echo "=== bounded systemctl restart caddy ==="
+  timeout 20 systemctl restart caddy
+fi
+systemctl is-active --quiet caddy
 
 echo
 echo "=== live probes (HEAD) ==="
@@ -59,16 +66,16 @@ for u in \
   https://qsdm.tech/docs/docs.js                  \
   https://qsdm.tech/docs/lib/markdown-it.min.js   \
 ; do
-  curl -s -o /dev/null -w "  %{http_code}  %{size_download} bytes  $u\n" -I "$u"
+  curl --max-time 10 -s -o /dev/null -w "  %{http_code}  %{size_download} bytes  $u\n" -I "$u"
 done
 
 echo
 echo "=== CSP check ==="
-curl -sI https://qsdm.tech/ | grep -i "content-security-policy" | head -n 1
+curl --max-time 10 -sI https://qsdm.tech/ | grep -i "content-security-policy" | head -n 1
 
 echo
 echo "=== landing nav menu items ==="
-curl -s https://qsdm.tech/ | grep -oE 'navlink"[^>]*>[A-Za-z]+' | sed 's/.*>//' | head -n 6
+curl --max-time 10 -s https://qsdm.tech/ | grep -oE 'navlink"[^>]*>[A-Za-z]+' | sed 's/.*>//' | head -n 6
 
 echo
 echo "=== docs SPA pulled markdown-it SRI ==="
