@@ -11,11 +11,12 @@
 
 | Surface                                                                                                                                                                                                                     | Status              |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| Landing page (`qsdm.tech/`) — QSDM Online first, unified product navigation, Hive/CELL/edge/home-gateway messaging aligned to deployed Core candidate v0.4.7-rc.4 + Hive 1.4.0 | LIVE (after deploy) |
-| QSDM Online (`qsdm.tech/online.html`) — live canonical status, explorer/API/trust entry points, local-signing workflow, and explicit non-custodial boundary | LIVE (after deploy) |
+| Landing page (`qsdm.tech/`) — QSDM product portfolio, including QSDM Network, Hive/CELL, edge compute, and the QSDM VPN product at `qsdm.online` | LIVE (after deploy) |
+| QSDM Network (`qsdm.tech/network.html`) — live canonical status, explorer/API/trust entry points, local-signing workflow, and explicit non-custodial boundary | LIVE (after deploy) |
+| QSDM VPN (`qsdm.online`) — Android private access, assigned profiles, device-aware activation, quota visibility, and operator dashboard | LIVE |
 | Docs portal (`qsdm.tech/docs/`) — SPA with sidebar, hash routing, client-side markdown render, live fetch from main; adds home gateway, task registry, tray monitor, missing runbooks; referral path fixed                  | LIVE (after deploy) |
 | `sitemap.xml`, `robots.txt`, `humans.txt`                                                                                                                                                                                   | LIVE (after deploy) |
-| Caddyfile CSP — `connect-src` includes `https://raw.githubusercontent.com` for live docs and same-origin QSDM Online status; `img-src` includes `raw.githubusercontent.com`                                                   | LIVE (after deploy) |
+| Caddyfile CSP — `connect-src` includes `https://raw.githubusercontent.com` for live docs and same-origin QSDM Network status; `img-src` includes `raw.githubusercontent.com`                                                   | LIVE (after deploy) |
 
 No backend changes required for docs content updates that only touch
 Markdown under `QSDM/docs/docs/` (fetched live from `main`). Shell
@@ -37,7 +38,7 @@ blackbeardONE/QSDM/main/<repoPath>`. **No mirror, no rebuild
   `sha384-wLhprpjsmjc/XYIcF+LpMxd8yS1gss6jhevOp6F6zhiIoFK6AmHtm4bGKtehTani`.
   No CDN in `script-src`.
 - The version pill defaults to **v0.4.7-rc.4** and auto-refreshes from
-  QSDM Online at `/api/v1/status`. Its link resolves to the exact deployed
+  QSDM Network at `/api/v1/status`. Its link resolves to the exact deployed
   Git revision when the status response includes `git_sha`.
 - Filenames with literal spaces (one entry — `Feature Summary.md`)
   are handled by an `encRepoPath()` helper that splits on `/` and

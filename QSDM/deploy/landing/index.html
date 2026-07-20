@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>QSDM Online — Live Quantum-Secure Mesh Ledger</title>
+  <title>QSDM — Network, Hive, CELL and QSDM VPN</title>
   <meta
     name="description"
-    content="QSDM Online is the live public network for CELL, QSDM Hive, signed tasks, NVIDIA mining, edge pools, explorer, APIs, and transparent trust feeds."
+    content="QSDM brings together the CELL network, QSDM Hive, NVIDIA mining, pooled edge compute, and the QSDM VPN product at qsdm.online."
   />
   <meta name="theme-color" content="#061116" />
   <link rel="icon" href="/assets/qsdm-hive-icon.png" />
@@ -309,6 +309,60 @@
     @media (min-width: 640px) {
       .product-card { min-height: 260px; }
       .product-card-featured { grid-column: 1 / -1; min-height: 300px; }
+    }
+
+    .product-facts {
+      display: grid;
+      align-self: stretch;
+      margin-top: 1.25rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .product-facts span {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .product-facts small {
+      color: var(--muted-2);
+      font-size: 0.76rem;
+    }
+
+    .product-facts strong {
+      color: var(--fg);
+      font-size: 0.88rem;
+      font-weight: 500;
+      text-align: right;
+    }
+
+    @media (min-width: 800px) {
+      .product-card-featured {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(18rem, 0.85fr);
+        grid-template-rows: auto auto 1fr auto;
+        column-gap: 3rem;
+        align-items: end;
+        justify-content: initial;
+      }
+
+      .product-card-featured .product-kicker,
+      .product-card-featured h3,
+      .product-card-featured p,
+      .product-card-featured .product-link {
+        grid-column: 1;
+      }
+
+      .product-card-featured .product-facts {
+        grid-column: 2;
+        grid-row: 1 / 5;
+        align-content: center;
+        align-self: stretch;
+        margin-top: 0;
+      }
     }
 
     .product-card:hover {
@@ -680,7 +734,7 @@
       "name": "QSDM",
       "applicationCategory": "FinanceApplication",
       "operatingSystem": "Windows, Linux",
-      "description": "QSDM Online public network with CELL, QSDM Hive, NVIDIA-attested mining, signed tasks, pooled edge compute, explorer, and trust APIs.",
+      "description": "QSDM ecosystem with the CELL network, QSDM Hive, NVIDIA-attested mining, pooled edge compute, and QSDM VPN.",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     }
   </script>
@@ -697,7 +751,8 @@
         </a>
         <div class="nav-mid">
           <a href="#products">Products</a>
-          <a href="/online.html">QSDM Online</a>
+          <a href="/network.html">Network</a>
+          <a href="https://qsdm.online/">QSDM VPN</a>
           <a href="#api">Developers</a>
           <a href="#capabilities">Capabilities</a>
           <a href="/docs/">Docs</a>
@@ -714,7 +769,8 @@
       </nav>
       <div class="mobile-nav" id="mobileNav">
         <a href="#products">Products</a>
-        <a href="/online.html">QSDM Online</a>
+        <a href="/network.html">Network</a>
+        <a href="https://qsdm.online/">QSDM VPN</a>
         <a href="#api">Developers</a>
         <a href="#capabilities">Capabilities</a>
         <a href="/docs/">Docs</a>
@@ -730,20 +786,20 @@
     <section class="hero">
       <div class="shell">
         <div class="hero-inner">
-          <a class="announce" href="/online.html">
+          <a class="announce" href="https://qsdm.online/">
             <span class="announce-tag">New</span>
-            QSDM Online · Core v0.4.7-rc.4 · Hive 1.4.0
+            QSDM VPN for Android · Version 1.0.0 · Build 7
           </a>
           <h1>
-            QSDM Online<br />
-            <span class="dim">the live network for CELL.</span>
+            QSDM<br />
+            <span class="dim">Network. Compute. Private access.</span>
           </h1>
           <p class="hero-lead">
-            Connect Hive, wallets, signed tasks, NVIDIA mining, and Mother Hive edge pools
-            to one public, independently verifiable ledger.
+            Run CELL wallets and signed work in Hive, verify the public network,
+            pool edge resources, or connect through the separate QSDM VPN product.
           </p>
           <div class="hero-actions">
-            <a class="btn btn-solid" href="/online.html">Open QSDM Online</a>
+            <a class="btn btn-solid" href="https://qsdm.online/">Explore QSDM VPN</a>
             <a class="btn btn-ghost" href="/download.html">Download Hive</a>
           </div>
         </div>
@@ -753,9 +809,20 @@
     <section class="products" id="products" aria-label="Products">
       <div class="shell">
         <div class="product-grid">
-          <a class="product-card product-card-featured" href="/online.html">
+          <a class="product-card product-card-featured" href="https://qsdm.online/">
+            <span class="product-kicker">Private network access</span>
+            <h3>QSDM VPN</h3>
+            <p>Android activation, assigned profiles, device-aware access, visible quotas, and one operator dashboard for users and service administration.</p>
+            <span class="product-facts" aria-label="QSDM VPN release facts">
+              <span><small>Android release</small><strong>1.0.0 · Build 7</strong></span>
+              <span><small>Platform</small><strong>Android 7.0+</strong></span>
+              <span><small>Control plane</small><strong>Operator dashboard live</strong></span>
+            </span>
+            <span class="product-link">Open qsdm.online <span>→</span></span>
+          </a>
+          <a class="product-card" href="/network.html">
             <span class="product-kicker">Live public network</span>
-            <h3>QSDM Online</h3>
+            <h3>QSDM Network</h3>
             <p>Canonical CELL access, chain status, explorer, APIs, and trust feeds. Keys and signing stay on your device.</p>
             <span class="product-link">View live network <span>→</span></span>
           </a>
@@ -889,7 +956,8 @@ st, _ := client.<span class="fn">Status</span>(ctx)
         </div>
         <div class="news-list">
           <a href="/docs/#/operator-guide"><strong>Operator guide</strong><span>Start here</span></a>
-          <a href="/docs/#/qsdm-online"><strong>QSDM Online</strong><span>Public network</span></a>
+          <a href="/docs/#/qsdm-vpn"><strong>QSDM VPN</strong><span>Android + operator dashboard</span></a>
+          <a href="/docs/#/qsdm-network"><strong>QSDM Network</strong><span>Public CELL network</span></a>
           <a href="/docs/#/qsdm-hive"><strong>QSDM Hive guide</strong><span>Desktop</span></a>
           <a href="/docs/#/feature-summary"><strong>Feature summary</strong><span>Capabilities</span></a>
           <a href="/docs/#/cell-tokenomics"><strong>CELL tokenomics</strong><span>Supply</span></a>
@@ -945,7 +1013,8 @@ st, _ := client.<span class="fn">Status</span>(ctx)
         </div>
         <div class="footer-col">
           <h4>Product</h4>
-          <a href="/online.html">QSDM Online</a>
+          <a href="/network.html">QSDM Network</a>
+          <a href="https://qsdm.online/">QSDM VPN</a>
           <a href="/download.html">Download</a>
           <a href="/wallet.html">Wallet</a>
           <a href="/explorer.html">Explorer</a>
@@ -970,7 +1039,7 @@ st, _ := client.<span class="fn">Status</span>(ctx)
       </div>
       <div class="footer-bottom">
         <span>© 2024–2026 QSDM · <a href="https://github.com/blackbeardONE/QSDM/blob/main/LICENSE">MIT License</a></span>
-        <span>Hive · CELL · public transparency</span>
+        <span>Hive · CELL · QSDM VPN · public transparency</span>
       </div>
     </div>
   </footer>

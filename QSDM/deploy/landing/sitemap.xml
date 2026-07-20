@@ -16,7 +16,7 @@
           every product page via the .audit-callout pattern (commits
           5f9b9d1, 123dff5, 35fe618) and tagged with JSON-LD
           schema.org/Dataset (commit 21cc4fe).
-    0.9   /online.html (live public-network product), /docs/
+    0.9   /network.html (live public-network surface), /docs/
           (canonical knowledge base), /wallet.html (the high-leverage
           interactive surface).
     0.85  /trust.html — the attestation transparency feed; same tier
@@ -63,7 +63,7 @@
   </url>
 
   <url>
-    <loc>https://qsdm.tech/online.html</loc>
+    <loc>https://qsdm.tech/network.html</loc>
     <lastmod>2026-07-20</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>

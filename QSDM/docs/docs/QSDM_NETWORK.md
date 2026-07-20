@@ -1,16 +1,16 @@
-# QSDM Online
+# QSDM Network
 
 **Status:** Live public network
 
 **Deployed Core candidate:** `v0.4.7-rc.4` (`f362829`)
 **Public gateway:** `https://api.qsdm.tech/api/v1`
 
-QSDM Online is the hosted public-access surface for the QSDM network. It lets
+QSDM Network is the hosted public-access surface for the CELL ledger. It lets
 QSDM Hive, supported websites, and integrations read canonical CELL state and
 submit signed actions without requiring every user to operate a local
 validator.
 
-QSDM Online is **not** a custodial wallet and is not a second desktop client.
+QSDM Network is **not** a custodial wallet and is not a second desktop client.
 QSDM Hive remains the consumer application and keeps wallet secrets and signing
 on the user's device.
 
@@ -29,7 +29,7 @@ on the user's device.
 
 1. Install QSDM Hive for Windows or Linux.
 2. Create or import a QSDM keystore wallet in Hive.
-3. Hive selects the canonical QSDM Online gateway when a healthy local Core is
+3. Hive selects the canonical QSDM Network gateway when a healthy local Core is
    not available.
 4. Public reads go to the gateway. Wallet transfers, task actions, staking, and
    supported website approvals are signed locally before submission.
@@ -57,10 +57,10 @@ the public wallet address and only signatures the user explicitly approves.
 - blocks, receipts, stake, rewards, and other consensus records; and
 - validator, mining, audit, and attestation data intended for transparency.
 
-QSDM Online must never request a wallet passphrase or raw keystore. A website
+QSDM Network must never request a wallet passphrase or raw keystore. A website
 that asks for either is outside the supported QSDM wallet-link workflow.
 
-## Local Core and QSDM Online
+## Local Core and QSDM Network
 
 Hive can use a healthy local Core for an operator-controlled workflow. When no
 local Core is present, it can use the canonical gateway. These paths must agree
@@ -68,7 +68,7 @@ on chain identity and state; failover must not convert a timeout into a zero
 balance or silently submit an action to a different network.
 
 Validator operators should continue to use the validator and home-gateway
-runbooks. QSDM Online does not replace validator operation, peer synchronization,
+runbooks. QSDM Network does not replace validator operation, peer synchronization,
 or local backup procedures.
 
 ## Availability behavior
@@ -78,12 +78,13 @@ Core cannot confirm the active network or account nonce. Hive should preserve
 the last confirmed balance and height as stale data instead of displaying a
 temporary timeout as a confirmed zero.
 
-The live product page at `https://qsdm.tech/online.html` reports current network
+The live network page at `https://qsdm.tech/network.html` reports current network
 status directly from the canonical status endpoint.
 
 ## Related pages
 
 - [QSDM Hive](QSDM_HIVE.md)
+- [QSDM VPN](QSDM_VPN.md)
 - [API reference](API_REFERENCE.md)
 - [Web wallet](WEB_WALLET.md)
 - [Validator quickstart](VALIDATOR_QUICKSTART.md)
