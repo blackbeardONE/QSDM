@@ -209,7 +209,7 @@
           <div class="network-node">
             <small>Chain height</small>
             <strong id="chainHeight">—</strong>
-            <code>canonical ledger</code>
+            <code>public chain</code>
           </div>
           <div class="network-node">
             <small>Core revision</small>
@@ -228,15 +228,15 @@
     <section class="band" aria-labelledby="surfaces-title">
       <div class="shell">
         <div class="section-head">
-          <h2 id="surfaces-title">One public network. Four clear surfaces.</h2>
-          <p>QSDM Network groups the public services already used by Hive, operators, integrations, and independent reviewers.</p>
+          <h2 id="surfaces-title">One public network. Four clear services.</h2>
+          <p>QSDM Network provides the public services used by Hive, operators, integrations, and independent reviewers.</p>
         </div>
         <div class="surface-grid">
           <article class="surface">
             <span class="surface-kicker">01 / NETWORK</span>
-            <h3>Canonical gateway</h3>
+            <h3>Public gateway</h3>
             <p>Public chain reads and signed-envelope submission for clients that do not run a local validator.</p>
-            <a href="https://api.qsdm.tech/api/v1/status">View machine status &rarr;</a>
+            <a href="https://api.qsdm.tech/api/v1/status">View live API status &rarr;</a>
           </article>
           <article class="surface">
             <span class="surface-kicker">02 / DATA</span>
@@ -248,7 +248,7 @@
             <span class="surface-kicker">03 / BUILD</span>
             <h3>Public HTTP API</h3>
             <p>Integrate CELL balances, receipts, mining, governance, task state, and signed actions through HTTP v1.</p>
-            <a href="/api.html">Review API surface &rarr;</a>
+            <a href="/api.html">Review the API &rarr;</a>
           </article>
           <article class="surface">
             <span class="surface-kicker">04 / VERIFY</span>
@@ -264,7 +264,7 @@
       <div class="shell">
         <div class="section-head">
           <h2 id="flow-title">Local approval. Public verification.</h2>
-          <p>QSDM Network transports and verifies signed intent. It does not become the wallet owner.</p>
+          <p>QSDM Network receives requests signed on your device and verifies them. It never receives your private key.</p>
         </div>
         <div class="flow">
           <article class="flow-step">
@@ -280,7 +280,7 @@
           <article class="flow-step">
             <span class="flow-index">STEP 3</span>
             <h3>Core verifies</h3>
-            <p>QSDM Network admits valid signed envelopes and exposes resulting public chain state.</p>
+            <p>QSDM Core checks the wallet signature and applies valid requests to the public chain.</p>
           </article>
         </div>
       </div>
@@ -372,7 +372,7 @@
                 break;
               }
             } catch (_) {
-              // Try the canonical API when the same-origin proxy is unavailable.
+              // Try the public API when the same-origin proxy is unavailable.
             }
           }
           if (!status) throw new Error("QSDM Network status is unavailable");

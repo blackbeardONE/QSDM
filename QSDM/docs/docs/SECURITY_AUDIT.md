@@ -448,7 +448,7 @@ Subsequent POST/PUT/DELETE/PATCH (cookie-session callers):
 
 **Severity:** 🟢 **LOW**
 
-**Status:** **PARTIALLY ADDRESSED** — this audit document is now the canonical security overview, plus every fix references its implementation file. A dedicated developer-facing "security best practices" guide is still pending.
+**Status:** **PARTIALLY ADDRESSED** — this audit document is now the primary security overview, plus every fix references its implementation file. A dedicated developer-facing "security best practices" guide is still pending.
 
 **Recommendation:**
 - ⏳ Create a security guide for application developers

@@ -2,7 +2,7 @@
 
 QSDM Core exposes a synchronized, versioned task catalog for QSDM Hive and SDK clients. Catalog manifests are `qsdm/tasks/v1` consensus state, so validators replay the same signed publications and derive the same catalog state root.
 
-The local JSON registry remains a bootstrap and recovery input. It can mark built-in tasks as trusted, but it is not the network source of truth for catalog versions, manager ownership, stake, rewards, or task activity.
+The local JSON registry remains a bootstrap and recovery input. It can mark built-in tasks as trusted, but the network records catalog versions, manager ownership, stake, rewards, and task activity.
 
 ## How Task Distribution Works
 

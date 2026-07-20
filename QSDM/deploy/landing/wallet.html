@@ -1331,7 +1331,7 @@ ADDR=$(./qsdmcli wallet show | awk '/^address/{print $2}')
 
     // Activity
     if ($('vault-activity-clear')) $('vault-activity-clear').addEventListener('click', function () {
-      if (confirm('Clear the local activity log? The validator still has the canonical record.')) {
+      if (confirm('Clear the local activity log? The validator still has the confirmed record.')) {
         clearActivity();
       }
     });

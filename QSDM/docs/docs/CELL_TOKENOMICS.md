@@ -81,7 +81,7 @@ The per-block reward is computed as `floor(epoch_allocation_dust /
 blocks_per_epoch)` using integer math — these are the EXACT values
 returned by `pkg/chain.EmissionSchedule.BlockRewardDust` at each epoch
 boundary, not rounded display values. See `pkg/chain/emission.go` and its
-unit tests for the canonical definition.
+unit tests for the exact token definition.
 
 | Epoch | Years | Epoch allocation (CELL) | Block reward (dust) | Block reward (CELL) | Cumulative (CELL, approx) | % of mining cap |
 |---|---|---:|---:|---:|---:|---:|

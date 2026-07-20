@@ -713,18 +713,35 @@
     }
 
     @media (max-width: 767px) {
-      .hero h1 { font-size: 3rem; }
+      .nav-right > .btn { display: none; }
+      .hero h1 { font-size: 2.25rem; }
+      .hero-inner { min-width: 0; }
+      .announce {
+        max-width: 100%;
+        justify-content: center;
+        white-space: normal;
+      }
+      .hero-actions .btn {
+        flex: 1 1 10rem;
+        max-width: 14rem;
+      }
+      .product-facts span {
+        align-items: flex-start;
+        gap: 0.75rem;
+      }
+      .product-facts strong {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
       .section-head h2 { font-size: 2.5rem; }
     }
 
     @media (max-width: 479px) {
-      .nav-right > .btn { display: none; }
       .nav { gap: 0.5rem; }
       .hero { padding: 3rem 0 4rem; }
       .hero h1 { font-size: 2rem; line-height: 1.12; }
       .hero-lead { font-size: 1rem; }
       .section-head h2 { font-size: 2rem; }
-      .announce { max-width: 100%; }
     }
   </style>
   <script type="application/ld+json">
@@ -795,8 +812,8 @@
             <span class="dim">Network. Compute. Private access.</span>
           </h1>
           <p class="hero-lead">
-            Run CELL wallets and signed work in Hive, verify the public network,
-            pool edge resources, or connect through the separate QSDM VPN product.
+            Use QSDM Hive for CELL wallets and approved tasks, check the public
+            network, pool trusted computers, or use QSDM VPN for private access.
           </p>
           <div class="hero-actions">
             <a class="btn btn-solid" href="https://qsdm.online/">Explore QSDM VPN</a>
@@ -812,7 +829,7 @@
           <a class="product-card product-card-featured" href="https://qsdm.online/">
             <span class="product-kicker">Private network access</span>
             <h3>QSDM VPN</h3>
-            <p>Android activation, assigned profiles, device-aware access, visible quotas, and one operator dashboard for users and service administration.</p>
+            <p>Private Android access with device activation, assigned profiles, visible data limits, and an operator dashboard.</p>
             <span class="product-facts" aria-label="QSDM VPN release facts">
               <span><small>Android release</small><strong>1.0.0 · Build 7</strong></span>
               <span><small>Platform</small><strong>Android 7.0+</strong></span>
@@ -823,31 +840,31 @@
           <a class="product-card" href="/network.html">
             <span class="product-kicker">Live public network</span>
             <h3>QSDM Network</h3>
-            <p>Canonical CELL access, chain status, explorer, APIs, and trust feeds. Keys and signing stay on your device.</p>
+            <p>Public CELL balances, chain status, explorer, API, and trust records. Your keys stay on your device.</p>
             <span class="product-link">View live network <span>→</span></span>
           </a>
           <a class="product-card" href="/docs/#/qsdm-hive">
             <span class="product-kicker">Desktop</span>
             <h3>QSDM Hive</h3>
-            <p>Windows and Linux client for CELL wallets, Task Studio, NVIDIA mining, and Mother Hive.</p>
+            <p>The Windows and Linux app for CELL wallets, tasks, NVIDIA mining, and Mother Hive.</p>
             <span class="product-link">Open guide <span>→</span></span>
           </a>
           <a class="product-card" href="/wallet.html">
             <span class="product-kicker">Self-custody</span>
             <h3>Web wallet</h3>
-            <p>Browser ML-DSA-87 keystore with signed submit and replay protection.</p>
+            <p>Create or import a CELL wallet and sign transactions on your device.</p>
             <span class="product-link">Open wallet <span>→</span></span>
           </a>
           <a class="product-card" href="/docs/#/miner-quickstart">
             <span class="product-kicker">Protocol mining</span>
             <h3>NVIDIA Miner</h3>
-            <p>Mining Protocol v2 with attestation, enrollment bond, and CUDA proofs.</p>
+            <p>NVIDIA-only CELL mining with wallet enrollment and CUDA proof search.</p>
             <span class="product-link">Miner requirements <span>→</span></span>
           </a>
           <a class="product-card" href="/docs/#/edge-pool">
             <span class="product-kicker">Edge compute</span>
             <h3>Mother Hive</h3>
-            <p>Agent → Relay → Hive → Core pools for bounded CPU, NVIDIA GPU, and RAM jobs.</p>
+            <p>Pool controlled CPU, NVIDIA GPU, and RAM capacity from trusted Agent computers.</p>
             <span class="product-link">Edge pool guide <span>→</span></span>
           </a>
         </div>
@@ -859,10 +876,10 @@
         <div class="api-layout">
           <div>
             <div class="section-head">
-              <h2 id="api-title">One API.<br /><span class="dim">Every surface.</span></h2>
+              <h2 id="api-title">One API.<br /><span class="dim">Public QSDM data.</span></h2>
               <p>
-                Status, wallets, mining, receipts, governance, and trust —
-                all through the public HTTP v1 surface.
+                Read status, wallets, mining, receipts, governance, and trust
+                records through the public HTTP v1 API.
               </p>
             </div>
             <div class="hero-actions" style="justify-content: flex-start;">
@@ -926,7 +943,7 @@ st, _ := client.<span class="fn">Status</span>(ctx)
           </article>
           <article class="cap-item">
             <h3>Task catalog</h3>
-            <p>Fund, stake, start, submit, and claim through signed consensus actions.</p>
+            <p>Fund, stake, start, submit, and claim with wallet-signed actions checked by QSDM Core.</p>
           </article>
           <article class="cap-item">
             <h3>Governance &amp; bridge</h3>

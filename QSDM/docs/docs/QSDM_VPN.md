@@ -27,7 +27,7 @@ tasks, mining, and edge participation.
 The current public release page identifies the artifact as
 `QSDM-VPN-1.0.0-build7.apk` and provides the authoritative download link,
 size, platform requirement, and checksum. Those values can change with a new
-release, so operators should use the live download page as the source of truth.
+release, so operators should use the live download page for the latest version.
 
 ## Operator dashboard
 

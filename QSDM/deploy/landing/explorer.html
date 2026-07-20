@@ -246,7 +246,7 @@
 "use strict";
 
 const API_BASE = "/api/v1";
-const CANONICAL_API_BASE = "https://api.qsdm.tech/api/v1";
+const PUBLIC_API_BASE = "https://api.qsdm.tech/api/v1";
 const REFRESH_MS = 15_000;
 
 let latestBlocks = [];
@@ -313,8 +313,8 @@ async function fetchJSON(path) {
     if (location.hostname === "qsdm.tech" || location.hostname === "www.qsdm.tech") {
       throw localErr;
     }
-    const res = await fetch(CANONICAL_API_BASE + path, { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status} on canonical ${path}`);
+    const res = await fetch(PUBLIC_API_BASE + path, { cache: "no-store" });
+    if (!res.ok) throw new Error(`Public API returned HTTP ${res.status} for ${path}`);
     return res.json();
   }
 }
