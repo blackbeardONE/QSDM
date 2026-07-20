@@ -12,6 +12,12 @@ class SecretScannerTests(unittest.TestCase):
         self.assertIsNotNone(path_finding("server/identity.ppk"))
         self.assertIsNone(path_finding("examples/service.env.example"))
 
+    def test_rejects_private_operator_script_paths(self) -> None:
+        self.assertIsNotNone(path_finding("scripts/local/deploy.ps1"))
+        self.assertIsNotNone(path_finding("QSDM/scripts/private/fund.sh"))
+        self.assertIsNotNone(path_finding("QSDM/scripts/deploy.local.ps1"))
+        self.assertIsNone(path_finding("QSDM/scripts/build_release.ps1"))
+
     def test_rejects_private_key_blocks(self) -> None:
         key_block = "-----BEGIN " + "PRIVATE KEY-----\nredacted\n"
         findings = content_findings("notes.txt", key_block.encode())
@@ -53,6 +59,30 @@ class SecretScannerTests(unittest.TestCase):
         findings = content_findings("renamed.json", keystore.encode())
         self.assertIn(
             "encrypted-wallet-keystore", {finding.rule for finding in findings}
+        )
+
+    def test_rejects_personal_identifiers_in_public_scripts(self) -> None:
+        windows_home = "C:" + "\\Users\\Alice\\.qsdm\\wallet.json"
+        unix_home = "/home/" + "alice/.qsdm/wallet.json"
+        consumer_email = "alice" + "@gmail.com"
+        content = f"{windows_home}\n{unix_home}\n{consumer_email}\n"
+        rules = {
+            finding.rule
+            for finding in content_findings("QSDM/scripts/operator.ps1", content.encode())
+        }
+        self.assertIn("literal-personal-windows-home", rules)
+        self.assertIn("literal-personal-unix-home", rules)
+        self.assertIn("consumer-email-address", rules)
+
+    def test_allows_portable_script_placeholders(self) -> None:
+        content = (
+            "C:" + "\\Users\\<you>\\.qsdm\\wallet.json\n"
+            "/home/" + "${USER}/.qsdm/wallet.json\n"
+            "qsdm-test@example.com\n"
+        )
+        self.assertEqual(
+            content_findings("QSDM/scripts/operator.example.ps1", content.encode()),
+            [],
         )
 
 

@@ -57,6 +57,15 @@ PATH_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         "local-environment-file",
         re.compile(r"(?:^|/)\.env(?:\..*)?$", re.IGNORECASE),
     ),
+    (
+        "private-operator-script",
+        re.compile(
+            r"(?:^|/)scripts/(?:local|private)(?:/|$)|"
+            r"(?:^|/)scripts/(?:[^/]+/)*[^/]+\.(?:local|private)\."
+            r"(?:ps1|sh|py|bat|cmd)$",
+            re.IGNORECASE,
+        ),
+    ),
 )
 
 
@@ -146,6 +155,35 @@ CONFIG_LIKE_SUFFIXES = {
     ".yaml",
     ".yml",
 }
+
+SCRIPT_SUFFIXES = {".ps1", ".sh", ".py", ".bat", ".cmd"}
+
+SCRIPT_PRIVACY_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "literal-personal-windows-home",
+        re.compile(
+            r"\b[A-Za-z]:\\Users\\"
+            r"(?!<[^>]+>)(?!Public(?:\\|$))(?!Default(?:\\|$))"
+            r"[^\\\s\"']+",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "literal-personal-unix-home",
+        re.compile(
+            r"/home/(?!<[^>]+>)(?!\$\{?)[A-Za-z0-9._-]+(?:/|\b)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "consumer-email-address",
+        re.compile(
+            r"\b[A-Z0-9._%+-]+@"
+            r"(?:gmail|yahoo|outlook|hotmail|protonmail)\.com\b",
+            re.IGNORECASE,
+        ),
+    ),
+)
 
 
 def run_git(args: list[str]) -> bytes:
@@ -275,6 +313,15 @@ def content_findings(path: str, data: bytes) -> list[Finding]:
             findings.append(Finding(path, rule, line))
 
     suffix = Path(path).suffix.lower()
+    normalized_path = path.replace("\\", "/").lower()
+    if suffix in SCRIPT_SUFFIXES and (
+        normalized_path.startswith("scripts/") or "/scripts/" in normalized_path
+    ):
+        for rule, pattern in SCRIPT_PRIVACY_RULES:
+            for match in pattern.finditer(text):
+                line = text.count("\n", 0, match.start()) + 1
+                findings.append(Finding(path, rule, line))
+
     for line_number, line in enumerate(text.splitlines(), start=1):
         assignment = SECRET_ASSIGNMENT.match(line) if suffix in CONFIG_LIKE_SUFFIXES else None
         if assignment:

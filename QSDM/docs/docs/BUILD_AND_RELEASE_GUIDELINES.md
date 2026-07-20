@@ -64,6 +64,21 @@ Stop for an active merge, rebase, or cherry-pick; unexpected untracked files;
 missing submodules; secret-scan findings; or a source revision that differs from
 the approved candidate.
 
+### Public and private scripts
+
+Tracked files under `scripts/` and `QSDM/scripts/` are part of the public QSDM
+source release. Keep only portable build, test, security, migration, and
+operator automation there. Scripts must accept credentials through environment
+variables, protected files, or the platform secret store; they must not embed
+wallet material, tokens, personal home paths, personal email addresses, or
+workstation-specific credentials.
+
+Private one-off helpers belong under `scripts/local/`, `scripts/private/`,
+`QSDM/scripts/local/`, or `QSDM/scripts/private/`. Those directories and
+`.local.*` / `.private.*` script names are ignored. The tracked secret scanner
+also rejects those paths if they are force-added, and checks public scripts for
+literal personal home paths and consumer email addresses.
+
 ### 3. Run the assurance gates
 
 1. Review the full committed and working-tree delta for security, compatibility,
