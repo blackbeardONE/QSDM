@@ -7,14 +7,16 @@ for f in index.html wallet.html wallet.js ; do
   echo "updated /var/www/qsdm/$f"
   rm -f "/tmp/$f"
 done
-systemctl reload caddy
+# Static files are served directly from the webroot and require no Caddy
+# reload. Production disables the Caddy admin API, so reload would fail.
+systemctl is-active --quiet caddy
 echo "=== live probes ==="
-curl -s -o /dev/null -w "index     http=%{http_code} bytes=%{size_download}\n" https://qsdm.tech/
-curl -s -o /dev/null -w "wallet    http=%{http_code} bytes=%{size_download}\n" https://qsdm.tech/wallet.html
-curl -s -o /dev/null -w "wallet.js http=%{http_code} bytes=%{size_download}\n" https://qsdm.tech/wallet.js
+curl --max-time 10 -s -o /dev/null -w "index     http=%{http_code} bytes=%{size_download}\n" https://qsdm.tech/
+curl --max-time 10 -s -o /dev/null -w "wallet    http=%{http_code} bytes=%{size_download}\n" https://qsdm.tech/wallet.html
+curl --max-time 10 -s -o /dev/null -w "wallet.js http=%{http_code} bytes=%{size_download}\n" https://qsdm.tech/wallet.js
 echo
 echo "=== version pill markers ==="
-curl -s https://qsdm.tech/ | grep -E "ver-pill-text|releases/tag/v|Current release:" | head -n 4
+curl --max-time 10 -s https://qsdm.tech/ | grep -E "ver-pill-text|releases/tag/v|Current release:" | head -n 4
 echo
 echo "=== wallet.js SRI on wallet.html ==="
 grep -E "wallet.js.*integrity" /var/www/qsdm/wallet.html

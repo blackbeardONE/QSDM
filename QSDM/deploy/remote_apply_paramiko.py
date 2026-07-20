@@ -31,9 +31,8 @@
 #   4. Ensures the server's /opt/qsdm/qsdm.toml has a [trust]
 #      section (non-destructively appended if missing) so the newly
 #      wired transparency endpoints publish on first restart.
-#   5. Reloads the Caddyfile if present so the trust.html page + new
-#      /api/v1/trust/attestations/* routes are reachable via the public
-#      hostname without a manual step.
+#   5. Verifies Caddy remains active after the static-site update. Static
+#      files are served directly and do not require a reload or restart.
 #   6. Smoke-probes the new trust endpoints locally on the server and
 #      prints the HTTP codes + small JSON excerpt, so the operator does
 #      not need to run remote_verify_paramiko.py separately just to
@@ -186,19 +185,12 @@ else
   echo "  (skipped: /var/www/qsdm or /root/QSDM/deploy/landing missing)"
 fi
 
-echo '===[ Caddy reload (if installed) ]==='
+echo '===[ Caddy state (if installed) ]==='
 if systemctl list-unit-files | grep -q '^caddy\.service'; then
-  # Caddy's "reload" returns non-zero on this host whenever its admin
-  # API is disabled ("admin off" in Caddyfile) even though the config
-  # update itself succeeds, because systemd interprets the
-  # reload-via-exec-ReloadCmd result as failed. We suppress stderr/stdout
-  # from reload specifically, fall back to a full restart, and only
-  # surface the final is-active state. This keeps the deploy log quiet
-  # when everything is healthy, and still shows a red is-active=failed
-  # signal if the service is genuinely down.
-  systemctl reload caddy >/dev/null 2>&1 || systemctl restart caddy >/dev/null 2>&1 || true
-  caddy_state=$(systemctl is-active caddy 2>&1 || true)
-  echo "  caddy: $caddy_state"
+  # The production Caddy admin API is intentionally disabled. A static-file
+  # publish does not require a reload; fail the deploy if Caddy is not active.
+  systemctl is-active --quiet caddy
+  echo "  caddy: active"
 fi
 
 echo '===[ listening sockets ]==='
