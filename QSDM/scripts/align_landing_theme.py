@@ -15,7 +15,7 @@ FONT_LINKS = """\
 """
 
 NAV_ITEMS = [
-    ("/online.html", "Online", "online"),
+    ("/network.html", "Network", "network"),
     ("/wallet.html", "Wallet", "wallet"),
     ("/explorer.html", "Explorer", "explorer"),
     ("/chain.html", "Chain", "chain"),
@@ -161,7 +161,7 @@ def align_docs_index() -> None:
         )
     html = html.replace(
         "Knowledge base for QSDM, QSDM Hive, CELL, integrations, NVIDIA-attested mining, CPU shared edge participation, and operator runbooks.",
-        "Knowledge base for QSDM Core, Hive, CELL, NVIDIA mining, Mother Hive edge pools, home gateway, wallets, and operator runbooks.",
+        "Knowledge base for QSDM Network, QSDM VPN, Core, Hive, CELL, NVIDIA mining, Mother Hive edge pools, wallets, and operator runbooks.",
     )
     path.write_text(html, encoding="utf-8", newline="\n")
     print("aligned docs/index.html")
@@ -169,7 +169,7 @@ def align_docs_index() -> None:
 
 def main() -> None:
     pages = [
-        ("online.html", "online"),
+        ("network.html", "network"),
         ("explorer.html", "explorer"),
         ("audit.html", "audit"),
         ("trust.html", "trust"),

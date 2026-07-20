@@ -208,7 +208,7 @@ qsdm.tech {
 		#
 		# connect-src adds raw.githubusercontent.com so the /docs/ SPA can
 		# fetch markdown live from the main branch. The deployed-version pill
-		# reads QSDM Online through the same-origin /api/v1/status proxy. img-src
+		# reads QSDM Network through the same-origin /api/v1/status proxy. img-src
 		# adds raw.githubusercontent.com so embedded screenshots in
 		# docs render. No CDN is in script-src — markdown-it is vendored
 		# locally at /docs/lib/markdown-it.min.js with SRI.
