@@ -11,10 +11,11 @@
 
 | Surface                                                                                                                                                                                                                     | Status              |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| Landing page (`qsdm.tech/`) — capabilities section, unified product nav (Download · Wallet · Capabilities · Mining · Docs · Explorer · Audit · Trust), Hive/CELL/edge/home-gateway messaging aligned to v0.4.3 + Hive 1.4.0 | LIVE (after deploy) |
+| Landing page (`qsdm.tech/`) — QSDM Online first, unified product navigation, Hive/CELL/edge/home-gateway messaging aligned to deployed Core candidate v0.4.7-rc.4 + Hive 1.4.0 | LIVE (after deploy) |
+| QSDM Online (`qsdm.tech/online.html`) — live canonical status, explorer/API/trust entry points, local-signing workflow, and explicit non-custodial boundary | LIVE (after deploy) |
 | Docs portal (`qsdm.tech/docs/`) — SPA with sidebar, hash routing, client-side markdown render, live fetch from main; adds home gateway, task registry, tray monitor, missing runbooks; referral path fixed                  | LIVE (after deploy) |
 | `sitemap.xml`, `robots.txt`, `humans.txt`                                                                                                                                                                                   | LIVE (after deploy) |
-| Caddyfile CSP — `connect-src` includes `https://raw.githubusercontent.com` + `https://api.github.com`; `img-src` includes `raw.githubusercontent.com`                                                                       | LIVE                |
+| Caddyfile CSP — `connect-src` includes `https://raw.githubusercontent.com` for live docs and same-origin QSDM Online status; `img-src` includes `raw.githubusercontent.com`                                                   | LIVE (after deploy) |
 
 No backend changes required for docs content updates that only touch
 Markdown under `QSDM/docs/docs/` (fetched live from `main`). Shell
@@ -35,8 +36,9 @@ blackbeardONE/QSDM/main/<repoPath>`. **No mirror, no rebuild
   (123 618 B) with SRI
   `sha384-wLhprpjsmjc/XYIcF+LpMxd8yS1gss6jhevOp6F6zhiIoFK6AmHtm4bGKtehTani`.
   No CDN in `script-src`.
-- The version pill defaults to **v0.4.3** and auto-refreshes from
-  `api.github.com/repos/blackbeardONE/QSDM/releases/latest`.
+- The version pill defaults to **v0.4.7-rc.4** and auto-refreshes from
+  QSDM Online at `/api/v1/status`. Its link resolves to the exact deployed
+  Git revision when the status response includes `git_sha`.
 - Filenames with literal spaces (one entry — `Feature Summary.md`)
   are handled by an `encRepoPath()` helper that splits on `/` and
   `encodeURIComponent`-s each segment, preserving slashes.
@@ -59,7 +61,7 @@ $ curl -s -o /dev/null -w '%{http_code}\n' https://qsdm.tech/sitemap.xml
 $ curl -s -o /dev/null -w '%{http_code}\n' https://qsdm.tech/robots.txt
 200
 $ curl -sI https://qsdm.tech/docs/ | grep -i content-security-policy
-content-security-policy: default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self' https://api.qsdm.tech https://dashboard.qsdm.tech https://raw.githubusercontent.com https://api.github.com; frame-ancestors 'none'; upgrade-insecure-requests
+content-security-policy: default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self' https://api.qsdm.tech https://dashboard.qsdm.tech https://raw.githubusercontent.com; frame-ancestors 'none'; upgrade-insecure-requests
 $ curl -s https://qsdm.tech/ | grep -oE 'href="[^"]+"' | head
 (expect Download, Wallet, Capabilities, Mining, Docs, Explorer, Audit, Trust)
 $ curl -sI -H 'Origin: https://qsdm.tech' \

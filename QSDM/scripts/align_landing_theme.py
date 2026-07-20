@@ -15,7 +15,7 @@ FONT_LINKS = """\
 """
 
 NAV_ITEMS = [
-    ("/", "Home", "home"),
+    ("/online.html", "Online", "online"),
     ("/wallet.html", "Wallet", "wallet"),
     ("/explorer.html", "Explorer", "explorer"),
     ("/chain.html", "Chain", "chain"),
@@ -151,7 +151,7 @@ def align_docs_index() -> None:
     path = ROOT / "docs" / "index.html"
     html = path.read_text(encoding="utf-8")
     html = html.replace('content="#07171d"', 'content="#000000"')
-    html = html.replace("v0.4.2", "v0.4.3")
+    html = re.sub(r"v0\.4\.[0-9]+(?:-rc\.[0-9]+)?", "v0.4.7-rc.4", html)
     html = inject_fonts(html)
     if 'href="/">Home' not in html:
         html = html.replace(
@@ -169,6 +169,7 @@ def align_docs_index() -> None:
 
 def main() -> None:
     pages = [
+        ("online.html", "online"),
         ("explorer.html", "explorer"),
         ("audit.html", "audit"),
         ("trust.html", "trust"),
