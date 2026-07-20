@@ -261,6 +261,8 @@ a:hover { color: #b8eef0; text-decoration: underline; }
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 1px 6px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .markdown-body pre {
   background: var(--code-bg);
@@ -281,6 +283,9 @@ a:hover { color: #b8eef0; text-decoration: underline; }
   padding: 0;
   font-size: 13.5px;
   line-height: 1.55;
+  overflow-wrap: normal;
+  word-break: normal;
+  white-space: pre;
 }
 .copy-btn {
   position: absolute;
