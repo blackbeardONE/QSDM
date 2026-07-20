@@ -52,7 +52,7 @@ initial sync.
 `https://api.qsdm.tech/` is the reference deployment we operate. It
 plays two roles right now:
 
-1. **Canonical bootstrap peer.** A new validator uses its libp2p
+1. **Official bootstrap peer.** A new validator uses its libp2p
    multiaddr to discover the mesh the first time it starts. After that
    handshake, your validator gossips with every other validator
    directly. Bootstrap ≠ sync.
@@ -491,7 +491,7 @@ A few practical notes:
 
 ## 8. Further reading
 
-- [`NODE_ROLES.md`](./NODE_ROLES.md) — canonical role split
+- [`NODE_ROLES.md`](./NODE_ROLES.md) — official role definitions
   rationale.
 - [`VALIDATOR_QUICKSTART.md`](./VALIDATOR_QUICKSTART.md) — validator
   install reference.
@@ -516,4 +516,4 @@ A few practical notes:
 > **Corrections welcome.** If this guide contradicts any of the
 > documents above, the documents above are authoritative — open a
 > PR against this file. The goal of `OPERATOR_GUIDE.md` is to be the
-> single entry point, not a source of truth for protocol details.
+> single entry point, not the protocol specification.

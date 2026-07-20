@@ -388,8 +388,8 @@
           signing path.
         </p>
         <p>
-          QSDM-native ML-DSA-87 signatures authenticate release manifests and
-          artifact hashes independently of Microsoft Authenticode trust.
+          QSDM also signs each release manifest and file hash with ML-DSA-87.
+          This check is separate from Microsoft Authenticode.
         </p>
         <div class="actions">
           <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/CODE_SIGNING_POLICY.md" rel="noopener" target="_blank">Code signing policy</a>
@@ -434,7 +434,7 @@
         <p>
           Use the AppImage on desktop Linux with GTK 3, or the tar package for a portable
           installation. Ordinary users do not need a local Core. Wallet keys stay local;
-          signed miner enrollment goes to canonical Core.
+          signed miner enrollment goes to the production QSDM Network.
         </p>
         <div class="actions">
           <a class="btn btn-solid" href="/downloads/qsdm-hive-1.4.0-linux-x86_64.AppImage" download>Download AppImage</a>
@@ -476,18 +476,18 @@
         <span class="version">Edge Control 1.3.5</span>
         <h2 id="edge-agent-title">Agent and Relay utilities</h2>
         <p>
-          Standalone Edge Control for trusted lab or office computers. Support utilities only —
-          QSDM Hive remains the desktop client and Mother Hive role.
+          Agent and Relay utilities for trusted lab or office computers. These are
+          support tools. QSDM Hive remains the desktop app and Mother Hive coordinator.
         </p>
         <div class="actions">
-          <a class="btn btn-solid" href="/downloads/qsdm-edge-agent-1.3.5-windows-x86_64.zip">Windows Edge Control</a>
-          <a class="btn btn-solid" href="/downloads/qsdm-edge-agent-1.3.5-linux-x86_64.tar.gz">Linux Edge Control</a>
+          <a class="btn btn-solid" href="/downloads/qsdm-edge-agent-1.3.5-windows-x86_64.zip">Windows Agent bundle</a>
+          <a class="btn btn-solid" href="/downloads/qsdm-edge-agent-1.3.5-linux-x86_64.tar.gz">Linux Agent bundle</a>
           <a class="btn btn-ghost" href="/docs/#/edge-pool">Deployment guide</a>
         </div>
       </div>
       <div class="checksum">
-        Agents use outbound authenticated requests and execute only fixed QSDM CPU,
-        CUDA GPU, or RAM jobs. No remote shell.
+        Agents connect outward with authentication and run only approved QSDM CPU,
+        CUDA GPU, or RAM jobs. They do not provide a remote shell.
       </div>
     </section>
 
@@ -511,7 +511,7 @@
       <article class="card">
         <strong>Edge</strong>
         <h3>Mother Hive</h3>
-        <p>Bounded CPU, NVIDIA GPU, and RAM jobs with durable Relay receipts.</p>
+        <p>Controlled CPU, NVIDIA GPU, and RAM jobs with saved Relay receipts.</p>
       </article>
       <article class="card">
         <strong>Integrations</strong>
@@ -544,7 +544,7 @@
         <strong>Pooled compute</strong>
         <h3>Edge participation</h3>
         <p>
-          Contribute bounded CPU or RAM without a protocol-mining GPU. CUDA capacity
+          Contribute controlled CPU or RAM without a protocol-mining GPU. CUDA capacity
           is separate from protocol mining.
         </p>
         <p style="margin-top:0.85rem"><a href="/docs/#/edge-pool">Edge pool model</a></p>

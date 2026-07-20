@@ -290,5 +290,5 @@ For each running node:
   (lands in Phase 4.1).
 - `QSDM/docs/docs/NODE_ROLES.md` — validator vs miner hardware model
   (lands in Phase 3.2).
-- `QSDM/source/pkg/branding/branding.go` — canonical product identity constants.
+- `QSDM/source/pkg/branding/branding.go` — official product identity constants.
 - `QSDM/source/pkg/envcompat/envcompat.go` — env-var deprecation shim.

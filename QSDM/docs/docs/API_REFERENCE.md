@@ -1,6 +1,6 @@
 # QSDM API Reference
 
-> **Canonical source.** This document is a curated, tutorial-style
+> **Primary reference.** This document is a curated, tutorial-style
 > reference designed to onboard new SDK and integration authors. The
 > complete machine-readable specification — every endpoint, every
 > request and response shape, every error code — is
@@ -151,7 +151,7 @@ Symmetric with `/wallet/balance`: read-only, no JWT, no signing.
 **POST** `/api/v1/wallet/send`
 
 Submits a transaction via the operator-managed wallet path. Returns
-the canonical `transaction_id` and an initial `pending` status.
+the network-assigned `transaction_id` and an initial `pending` status.
 See `openapi.yaml` for the submesh-`422` and NVIDIA-lock-`403`
 response shapes.
 
@@ -405,7 +405,7 @@ catalogue and the deprecation-header contract.
 
 ## Support
 
-For issues, documentation gaps, or canonical-spec drift, open an
+For issues, documentation gaps, or differences from the OpenAPI specification, open an
 issue on [GitHub](https://github.com/blackbeardONE/QSDM) or refer to
 the project documentation under `QSDM/docs/docs/` — particularly
 [`openapi.yaml`](openapi.yaml) for the machine-readable spec.

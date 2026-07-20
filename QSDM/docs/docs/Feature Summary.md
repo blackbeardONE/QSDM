@@ -4,7 +4,7 @@
 
 QSDM (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger whose native coin is **Cell (CELL)**. Validators run PoE + BFT consensus; miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
 
-**QSDM Network** is the live public-network surface: canonical gateway, chain
+**QSDM Network** provides the production gateway, chain
 status, explorer, HTTP API, trust feeds, and audit evidence. It lets ordinary
 Hive users connect without operating a local Core while keeping wallet keys and
 signing on their own device.
@@ -13,7 +13,7 @@ signing on their own device.
 `https://qsdm.online/`. Its current public surface includes an Android client,
 token and device activation, assigned VPN profiles, quota visibility, and an
 operator dashboard at `https://vpn.qsdm.online/`. QSDM VPN is a QSDM product;
-it is not the CELL canonical gateway or another Hive client.
+it is not the CELL network gateway or another Hive client.
 
 ---
 

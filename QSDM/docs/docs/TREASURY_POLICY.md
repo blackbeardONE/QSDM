@@ -59,9 +59,9 @@ In broad industry terminology, CELL created for a treasury at genesis is a
 therefore say "0% founder or insider premine" rather than the ambiguous "0%
 premine."
 
-If canonical genesis has not been finalized, the preferred source for referral
-and onboarding budgets is the vested 10% protocol allocation. If canonical
-genesis has already launched without that allocation, do **not** mint it later.
+If the official genesis state has not been finalized, the preferred source for
+referral and onboarding budgets is the vested 10% protocol allocation. If the
+network has already launched without that allocation, do **not** mint it later.
 Fund programs from legitimately mined CELL, protocol fee revenue approved by
 governance, or disclosed sponsor revenue transferred into the Operations
 Treasury.
@@ -139,11 +139,11 @@ wallet address before reporting startup success.
 Both signer URLs must use loopback HTTP or authenticated HTTPS. Core refuses
 to send a bearer token over plain HTTP to a non-loopback host.
 
-## 6. Canonical ledger readiness
+## 6. Production network readiness
 
 Never fund a Tier 2 wallet from a validator merely because its API is healthy.
-The validator must be connected to the canonical network, caught up, and agree
-with the canonical gateway on sampled block hashes and wallet state.
+The validator must be connected to the production network, caught up, and
+agree with the production gateway on sampled block hashes and wallet state.
 
 On Windows, start the validator in networked mode:
 
@@ -170,7 +170,7 @@ pwsh -File QSDM/scripts/test_treasury_readiness.ps1 `
 The gate requires all of the following:
 
 1. At least one live peer.
-2. Local height no more than the configured lag behind the canonical gateway.
+2. Local height no more than the configured lag behind the production gateway.
 3. Matching genesis, near-tip, and tip block hashes.
 4. Matching balance and nonce for the funding, referral, and onboarding
    wallets.
@@ -180,13 +180,13 @@ The gate requires all of the following:
 
 The historical pilot chain contains legacy state transitions that were not all
 serialized into block transactions. A clean validator therefore needs a
-trusted canonical checkpoint before ordinary block catch-up can continue. A
+trusted network checkpoint before ordinary block catch-up can continue. A
 checkpoint is acceptable only when its archive hash is verified, its tip hash
 and state root match `/api/v1/chain/blocks`, and Core's own restore-time state
 root validation succeeds. Do not import an account JSON file by itself.
 
 The previous local solo state must be retained as an archive for audit, never
-merged with the canonical networked state. Balances that exist only in that
+merged with the accepted production state. Balances that exist only in that
 solo archive are not spendable production CELL.
 
 ## 7. Funding and payout flow
@@ -205,8 +205,8 @@ uses the same signed-transfer path. Run it first without `-Submit` for a dry
 run. `QSDM/scripts/fund_treasury_wallet.ps1` provides the same dry-run-first
 flow for referral, onboarding, integration, and operations wallets.
 
-For the canonical pilot, the public target balances and expected funding
-wallet are committed in
+For the production pilot, the public target balances and expected funding
+wallet are stored in
 `QSDM/deploy/canonical-pilot-funding-plan.json`. On the Linux workstation that
 holds that funding wallet, run the guarded batch helper without `--submit`
 first:
@@ -220,8 +220,8 @@ bash QSDM/scripts/fund_ecosystem_wallets_linux.sh \
 
 After reviewing the exact missing balances, add `--submit`. The helper refuses
 a different source wallet, checks the public policy ceilings, transfers only
-the difference between the canonical balance and each target, waits for each
-transfer to appear on the canonical ledger, and stops before the next transfer
+the difference between the confirmed balance and each target, waits for each
+transfer to appear on the production ledger, and stops before the next transfer
 if confirmation is ambiguous. It intentionally does not fund Sky Fang, the
 protocol reserve, or the pooled-compute reserve.
 
@@ -232,7 +232,7 @@ topped local wallets through the faucet. The production runtime ignores that
 legacy referral account and rejects the retired seed environment variables.
 It does not silently delete historical state.
 
-Before declaring an existing ledger canonical production state, inventory all
+Before declaring an existing ledger the production state, inventory all
 direct credits and environment prefunds. Either start from an audited genesis
 snapshot that excludes them or approve a deterministic, network-wide state
 migration. Editing one validator's JSON ledger is not an acceptable burn or
@@ -247,7 +247,7 @@ wallets. That does not by itself make the current chain a finished mainnet.
 Before a mainnet declaration, QSDM still needs all of the following:
 
 1. Implement and externally audit the Tier 0 ML-DSA multisig and vesting rules.
-2. Publish one canonical genesis manifest containing the exact treasury
+2. Publish one official genesis manifest containing the exact treasury
    allocation, vesting schedule, wallet addresses, and cryptographic hash.
 3. Replace or formally redesign the solo-validator block driver's synthetic
    `qsdm-system-funder` reserve as consensus-native issuance. Its current

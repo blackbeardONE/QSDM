@@ -12,7 +12,7 @@
 | Surface                                                                                                                                                                                                                     | Status              |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
 | Landing page (`qsdm.tech/`) — QSDM product portfolio, including QSDM Network, Hive/CELL, edge compute, and the QSDM VPN product at `qsdm.online` | LIVE (after deploy) |
-| QSDM Network (`qsdm.tech/network.html`) — live canonical status, explorer/API/trust entry points, local-signing workflow, and explicit non-custodial boundary | LIVE (after deploy) |
+| QSDM Network (`qsdm.tech/network.html`) — live network status, explorer/API/trust entry points, local-signing workflow, and explicit non-custodial boundary | LIVE (after deploy) |
 | QSDM VPN (`qsdm.online`) — Android private access, assigned profiles, device-aware activation, quota visibility, and operator dashboard | LIVE |
 | Docs portal (`qsdm.tech/docs/`) — SPA with sidebar, hash routing, client-side markdown render, live fetch from main; adds home gateway, task registry, tray monitor, missing runbooks; referral path fixed                  | LIVE (after deploy) |
 | `sitemap.xml`, `robots.txt`, `humans.txt`                                                                                                                                                                                   | LIVE (after deploy) |
@@ -27,7 +27,7 @@ files under `QSDM/deploy/landing/` require a landing deploy.
 - ~95 curated entries across 9 sections (Get started · Hive +
   Integrations · Wallet · Mining · Validators & operators · Protocol &
   design · Performance · Reference · Runbooks · Project).
-- Source of truth is the curated `SECTIONS` manifest in
+- Navigation comes from the curated `SECTIONS` manifest in
   `QSDM/deploy/landing/docs/docs.js`. Each entry has `{ slug, title,
 repoPath, badge? }` (some Hive/edge pages also ship `inlineMarkdown`).
 - Markdown is fetched at runtime from `raw.githubusercontent.com/

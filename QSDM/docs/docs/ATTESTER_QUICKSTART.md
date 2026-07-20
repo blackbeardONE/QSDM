@@ -182,7 +182,7 @@ plan. The next roles build on the same daemon process:
 | **#1 — Public challenge issuer** | This document | ✅ Shipped |
 | **#2 — Reference telemetry oracle** | Publish signed Ampere/Ada/Blackwell fingerprints; cross-check spoofers | Planned |
 | **#3 — Hardware CA** | Sign other miners' HMAC enrollment keys after attesting their hardware | Planned |
-| **#4 — Tier-1 hashrate calibration peg** | Chain publishes your sustained hashrate as the canonical Ampere baseline | Planned |
+| **#4 — Tier-1 hashrate calibration peg** | Chain publishes your sustained hashrate as the reference Ampere baseline | Planned |
 | **#5 — Relay / gossip node** | Rebroadcast proofs and blocks across the network | Planned |
 
 See the parent design discussion for ordering and rationale.

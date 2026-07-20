@@ -7,6 +7,18 @@ Thank you for your interest in contributing to the Quantum-Secure Dynamic Mesh L
 - Use `gofmt` for Go code formatting.
 - Use `rustfmt` for Rust code formatting.
 
+## Language and Terminology
+- Use clear, familiar words and short sentences in interfaces, documentation,
+  logs, release notes, and contributor messages.
+- Define technical terms when they are necessary. Do not use jargon merely as
+  a shorter way to say `official`, `production`, or `accepted`.
+- Use `canonical` only for its precise technical meaning, such as a normalized
+  byte representation that every implementation must produce identically.
+- Keep protocol and API names exact even when the surrounding explanation uses
+  plain language.
+- Follow the full plain-language policy in the
+  [QSDM Build and Release Guidelines](BUILD_AND_RELEASE_GUIDELINES.md#plain-language-and-terminology).
+
 ## Commit Messages
 - Use clear, concise commit messages.
 - Follow the format: `type(scope): subject`

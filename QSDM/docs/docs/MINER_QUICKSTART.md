@@ -284,7 +284,7 @@ subcommands so operators do not need to hand-build canonical payloads
 or remember endpoint paths.
 
 The subsections below — enroll, check, unbond, slash, browse, watch —
-are the canonical operator surface. Step 3.4 above used `qsdmcli
+are the official operator commands. Step 3.4 above used `qsdmcli
 enroll` once; the same binary covers the rest.
 
 ### 5.1 `qsdmcli` subcommands
@@ -830,7 +830,7 @@ Cross-reference: [`MINING_PROTOCOL_V2.md §7 (Verifier)`](./MINING_PROTOCOL_V2.m
 The legitimate uses for the v1 path are:
 
 - **Protocol audit.** Reading `cmd/qsdmminer` plus `pkg/mining/pow.go`
-  is the canonical reference for the original SHA3-256 DAG walk
+  is the primary reference for the original SHA3-256 DAG walk
   described in [`MINING_PROTOCOL.md`](./MINING_PROTOCOL.md). The v1
   consensus implementation stays in-tree under
   `ComputeMixDigestV1` so v1 historical blocks (if any chain ever
@@ -917,7 +917,7 @@ peer transfers remain separate wallet-funding features.
 
 - **Block emission.** A fresh `EmissionSchedule.BlockRewardDust(h)`
   CELL is credited to the winning miner address on every block that
-  contains an accepted v2 proof. The schedule is the canonical 90 M
+  contains an accepted v2 proof. The fixed schedule has a 90 M
   CELL cap with 4-year halvings (see `pkg/chain/emission`).
 - **System funder.** `internal/blockdriver` seeds the internal
   `FunderAddress = "qsdm-system-funder"` account with

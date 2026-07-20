@@ -158,10 +158,10 @@ never put either token in source control, command history, screenshots, or
 support logs.
 
 Hive reads can use a local synchronized validator or the restricted home
-gateway. Signed wallet and task actions use the canonical Core endpoint unless
+gateway. Signed wallet and task actions use the production Core endpoint unless
 an operator explicitly configured a custom Core. This prevents a local
 follower outage or stale nonce reservation from creating a second task-action
-history. The local and canonical `/api/v1/status` chain tips and the Mother
+history. The local and production `/api/v1/status` chain tips and the Mother
 Hive task `state_root` should agree before an operator treats the deployment as
 healthy.
 

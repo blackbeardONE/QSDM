@@ -437,7 +437,7 @@
       + '<div class="welcome-cards">'
       + cardHtml("feature-summary",    "Feature summary",    "Current shipped capabilities across Core, Hive, mining, and edge.")
       + cardHtml("qsdm-vpn",           "QSDM VPN",           "Android private access, assigned profiles, quotas, and operator dashboard.")
-      + cardHtml("qsdm-network",       "QSDM Network",       "Live public CELL network, canonical gateway, explorer, APIs, and custody boundary.")
+      + cardHtml("qsdm-network",       "QSDM Network",       "Public CELL network, gateway, explorer, API, and wallet safety boundary.")
       + cardHtml("operator-guide",     "Operator guide",     "Pick a role, hardware path, and bootstrap peer.")
       + cardHtml("qsdm-hive",          "QSDM Hive",          "Windows and Linux client for CELL wallets, tasks, mining, and edge.")
       + cardHtml("home-gateway",       "Home gateway",       "Publish mining/status without exposing wallet or admin APIs.")
@@ -599,7 +599,7 @@
     });
   }
 
-  // ----- deployed Core version (QSDM Network is the source of truth) -----
+  // ----- deployed Core version (read from the official network status API) -----
 
   function refreshVersionPill() {
     var endpoints = ["/api/v1/status", "https://api.qsdm.tech/api/v1/status"];

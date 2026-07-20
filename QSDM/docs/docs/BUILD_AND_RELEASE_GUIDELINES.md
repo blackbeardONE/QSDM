@@ -1,6 +1,6 @@
 # QSDM Build and Release Guidelines
 
-This is the canonical build and release policy for QSDM Core, QSDM Hive,
+This is the official build and release policy for QSDM Core, QSDM Hive,
 the console miner, Edge Agent, Edge Control, and their Windows and Linux
 packages. Component READMEs may add commands, but they must not weaken these
 gates.
@@ -26,6 +26,35 @@ gates.
 
 Read the repository [security policy](../../../SECURITY.md) before handling a
 release candidate.
+
+## Plain language and terminology
+
+Use the clearest, simplest wording that remains technically accurate in the
+user interface, documentation, logs, release notes, and contributor messages.
+
+- Prefer familiar words and short sentences. Define an unavoidable technical
+  term the first time it appears.
+- Name the actual thing instead of using an abstract substitute. For example,
+  write `production gateway`, `official release`, `accepted chain state`, or
+  `authoritative specification` instead of using `canonical` as a general
+  synonym for all four.
+- Reserve `canonical` for cases where it has a precise technical meaning, such
+  as canonical JSON, normalized byte encoding, or a protocol rule that requires
+  every implementation to produce the same representation. State that meaning
+  nearby when the audience may not know it.
+- Keep protocol, API, and code identifiers exact. Plain language must not blur
+  security boundaries, change normative requirements, or rename a wire-format
+  field.
+- Write user-facing failures as: what happened, what remains safe, and the next
+  action. Do not expose stack traces, internal jargon, or unexplained acronyms
+  as the primary message.
+- Use one stable product name for each component: QSDM Core, QSDM Hive, QSDM
+  Network, CELL, QSDM VPN, Edge Agent, Edge Control, and Mother Hive. Explain a
+  new role before shortening or abbreviating it.
+
+Review wording as part of every user-facing change. If a knowledgeable reader
+and a first-time user can understand the same sentence without losing
+precision, prefer that sentence.
 
 ## Build workflow
 
@@ -156,7 +185,7 @@ npm run package
 Pop-Location
 ```
 
-`npm run package` is host-aware. On Windows it first runs the canonical native
+`npm run package` is host-aware. On Windows it first runs the official native
 tool build and CUDA self-test, then packages Electron. On Linux it delegates to
 `QSDM/deploy/scripts/build_hive_linux.sh`. The Electron `afterPack` gate rejects
 a miner whose embedded Hive version differs from the app and rejects Edge Agent
@@ -228,7 +257,7 @@ Use clean or disposable Windows and Linux profiles. At minimum verify:
 - exact-version enforcement for older, current, and unapproved newer clients;
 - wallet create/import, keystore JSON backup, passphrase handling, signing, and
   clipboard behavior without logging secret material;
-- local Core and canonical gateway status, failover, timeout recovery, and no
+- local Core and production gateway status, failover, timeout recovery, and no
   false zero balance during a transient outage;
 - task catalog, staking persistence, rewards, round status, and restart restore;
 - console and Hive NVIDIA mining with observed GPU utilization and accepted

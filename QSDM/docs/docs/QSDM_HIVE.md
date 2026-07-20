@@ -1,10 +1,14 @@
 # QSDM Hive
 
-QSDM Hive is the only QSDM desktop client. It provides CELL wallets, signed QSDM tasks, integrations, NVIDIA-attested protocol mining, and pooled CPU, GPU, or RAM participation. Agent, Relay, and Edge Control binaries are headless or local setup utilities; they are not alternative QSDM clients and do not hold a user wallet.
+QSDM Hive is the only QSDM desktop client. It provides CELL wallets, signed
+QSDM tasks, integrations, NVIDIA-attested protocol mining, and pooled CPU,
+GPU, or RAM participation. Agent, Relay, and Edge Control programs run in the
+background or help with local setup. They are not alternative QSDM clients and
+do not hold a user wallet.
 
 ## Install path
 
-Hive is the public release path for most users. It is the recommended way to use
+Hive is the recommended desktop app for most users. Use it to manage
 CELL wallets, run signed tasks, link integrations, and start eligible mining
 work. The standalone console miner remains an advanced operator artifact. QSDM
 does not ship a separate consumer GUI miner.
@@ -16,7 +20,7 @@ does not ship a separate consumer GUI miner.
 
 ## Linux x86-64
 
-Linux Hive connects directly to the canonical public QSDM Core for ledger,
+Linux Hive connects directly to the production QSDM Network gateway for ledger,
 wallet, chain-height, and mining-reward reads. Task catalog metadata continues
 through the restricted home-validator gateway. Ordinary desktop users do not
 install a local validator. Version 1.4.0 bundles the native `qsdmcli` signer,
@@ -37,25 +41,25 @@ CELL** and the wallet address instead of a claim action. Hive offers a one-time
 starter grant only when a local validator is connected to a separately funded
 onboarding treasury signer. The grant is a normal signed transfer, not minted
 or directly credited CELL. Task availability, staking,
-private tasks, and upgrades use the active QSDM signer's canonical CELL
+private tasks, and upgrades use the active QSDM signer's confirmed CELL
 balance rather than the legacy Hive profile account.
 Legacy `KOII` catalog labels without a token mint are normalized to native CELL
 tasks, so a funded signer can stake and run them.
 
-The home gateway intentionally supplies operator task metadata and projected
-task state. Hive 1.3.93 isolates that route behind a bounded outage circuit.
-One isolated timeout retries normally; two transient failures within 30 seconds
-open the route for 20 seconds. A recently healthy API cannot be quarantined by
-one slow sibling route. Confirmed task, balance, reward, and chain values remain
-visible with a **Reconnecting** state for brief outages, while actual chain
-mismatches continue to fail closed. Hive
+The home gateway supplies operator task details and projected task state. Hive
+1.3.93 limits repeated requests when that service is unavailable. One timeout
+is retried normally. Two temporary failures within 30 seconds pause that route
+for 20 seconds. One slow related endpoint cannot pause a recently healthy API.
+Confirmed task, balance, reward, and chain values remain visible with a
+**Reconnecting** label during a brief outage. Hive blocks signed actions when
+the chain identity does not match. Hive
 obtains the mining account nonce and submits the signed `qsdm/enroll/v2`
-transaction to canonical Core. Canonical Core
-verifies ML-DSA wallet ownership and deferred-bond work before gossiping the
-enrollment to validators. Local and explicitly configured custom Core URLs are
+transaction to the production QSDM Core service. QSDM Core
+verifies ML-DSA wallet ownership and deferred-bond work before sharing the
+enrollment with validators. Local and explicitly configured custom Core URLs are
 left unchanged.
 
-Signed task actions use bounded retries for transient network and HTTP 5xx
+Signed task actions use limited retries for temporary network and HTTP 5xx
 failures. Every retry reuses the same signed action ID, nonce, and payload; a
 validator duplicate response confirms the earlier submission instead of
 creating a second stake or transfer.
@@ -130,7 +134,7 @@ Resource-worker rewards are paid only from an existing funded task pool. Hive do
 
 Advanced operators can run `qsdmminer-console` directly when they need a
 terminal-first service workflow. Consumer setups should use Hive. The retired
-GUI miner is not a public release path.
+GUI miner is not a supported consumer app.
 
 Deferred enrollment is explicit, not a stake bypass. Hive displays the locked
 bond, target, and spendable wallet balance separately. The enrollment carries
