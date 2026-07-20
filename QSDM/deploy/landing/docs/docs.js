@@ -49,6 +49,12 @@
       title: "Hive + Integrations",
       items: [
         {
+          slug: "qsdm-online",
+          title: "QSDM Online",
+          repoPath: DOCS_PREFIX_REPO + "/QSDM_ONLINE.md",
+          badge: "new"
+        },
+        {
           slug: "qsdm-hive",
           title: "Hive app guide",
           repoPath: DOCS_PREFIX_REPO + "/QSDM_HIVE.md",
@@ -419,9 +425,10 @@
       + '<h1>QSDM knowledge base</h1>'
       + '<p>Quickstarts, runbooks, protocol design, and reference for the '
       + '<strong>Quantum-Secure Dynamic Mesh Ledger</strong>. Use QSDM Hive, self-custody CELL, '
-      + 'mine on NVIDIA hardware, run Mother Hive edge pools, operate a home gateway, or run a validator.</p>'
+      + 'connect through QSDM Online, mine on NVIDIA hardware, run Mother Hive edge pools, operate a home gateway, or run a validator.</p>'
       + '<div class="welcome-cards">'
       + cardHtml("feature-summary",    "Feature summary",    "Current shipped capabilities across Core, Hive, mining, and edge.")
+      + cardHtml("qsdm-online",        "QSDM Online",        "Live public CELL network, canonical gateway, explorer, APIs, and custody boundary.")
       + cardHtml("operator-guide",     "Operator guide",     "Pick a role, hardware path, and bootstrap peer.")
       + cardHtml("qsdm-hive",          "QSDM Hive",          "Windows and Linux client for CELL wallets, tasks, mining, and edge.")
       + cardHtml("home-gateway",       "Home gateway",       "Publish mining/status without exposing wallet or admin APIs.")
@@ -583,22 +590,32 @@
     });
   }
 
-  // ----- version pill auto-bump (fetches latest release tag) -----
+  // ----- deployed Core version (QSDM Online is the source of truth) -----
 
   function refreshVersionPill() {
-    fetch("https://api.github.com/repos/" + GH_USER + "/" + GH_REPO + "/releases/latest", { cache: "no-cache" })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (rel) {
-        if (!rel || !rel.tag_name) return;
+    var endpoints = ["/api/v1/status", "https://api.qsdm.tech/api/v1/status"];
+
+    function fetchStatus(index) {
+      if (index >= endpoints.length) return Promise.resolve(null);
+      return fetch(endpoints[index], { cache: "no-store", headers: { Accept: "application/json" } })
+        .then(function (r) { return r.ok ? r.json() : fetchStatus(index + 1); })
+        .catch(function () { return fetchStatus(index + 1); });
+    }
+
+    fetchStatus(0)
+      .then(function (status) {
+        if (!status || !status.version) return;
         var pill = document.getElementById("ver-pill");
         var txt  = document.getElementById("ver-pill-text");
         if (pill && txt) {
-          txt.textContent = rel.tag_name;
-          pill.setAttribute("href", rel.html_url || pill.getAttribute("href"));
-          pill.setAttribute("title", "Latest release: " + rel.tag_name);
+          txt.textContent = status.version;
+          if (status.git_sha) {
+            pill.setAttribute("href", "https://github.com/" + GH_USER + "/" + GH_REPO + "/commit/" + encodeURIComponent(status.git_sha));
+          }
+          pill.setAttribute("title", "Deployed QSDM Online Core: " + status.version);
         }
       })
-      .catch(function () { /* offline / rate-limited — keep static value */ });
+      .catch(function () { /* offline — keep the static deployed value */ });
   }
 
   // ----- utils -----

@@ -99,6 +99,7 @@ a:hover { color: #b8eef0; text-decoration: underline; }
   background: var(--panel); border: 1px solid var(--border);
   border-radius: 999px; padding: 4px 10px; font-size: 12px;
   color: var(--text-2); font-weight: 500; text-decoration: none;
+  white-space: nowrap;
 }
 .docs-pill:hover { border-color: var(--border-2); color: var(--text); text-decoration: none; }
 .docs-pill .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #3ddc97; }
@@ -202,6 +203,7 @@ a:hover { color: #b8eef0; text-decoration: underline; }
 .markdown-body {
   width: 100%;
   max-width: var(--maxw-content);
+  min-width: 0;
   margin: 0;
   color: var(--text);
 }
@@ -373,6 +375,10 @@ a:hover { color: #b8eef0; text-decoration: underline; }
 
 @media (max-width: 900px) {
   .doc-welcome h1 { font-size: 2rem; }
+  .docs-header-inner { gap: 8px; padding: 0 12px; }
+  .docs-search-wrap { display: none; }
+  .docs-header-right { min-width: 0; margin-left: auto; gap: 6px; }
+  .docs-header-right .docs-link { display: none; }
   .docs-sidebar-toggle { display: inline-flex; }
   .docs-layout { grid-template-columns: 1fr; }
   .docs-sidebar {
@@ -388,4 +394,17 @@ a:hover { color: #b8eef0; text-decoration: underline; }
   }
   .docs-sidebar.open { transform: translateX(0); }
   .docs-main { padding: 28px 18px 60px; }
+  .markdown-body table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-2) transparent;
+  }
+}
+
+@media (max-width: 420px) {
+  .docs-brand { gap: 7px; }
+  .docs-brand-text em { display: none; }
+  .docs-pill { padding: 4px 8px; }
 }

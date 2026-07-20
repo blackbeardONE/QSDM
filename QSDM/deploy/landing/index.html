@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>QSDM — Quantum-Secure Mesh Ledger</title>
+  <title>QSDM Online — Live Quantum-Secure Mesh Ledger</title>
   <meta
     name="description"
-    content="QSDM is a post-quantum mesh ledger for CELL. Hive handles wallets, signed tasks, NVIDIA mining, and edge pools. Operators get validators, home gateways, audit, and trust APIs."
+    content="QSDM Online is the live public network for CELL, QSDM Hive, signed tasks, NVIDIA mining, edge pools, explorer, APIs, and transparent trust feeds."
   />
   <meta name="theme-color" content="#061116" />
   <link rel="icon" href="/assets/qsdm-hive-icon.png" />
@@ -308,6 +308,7 @@
 
     @media (min-width: 640px) {
       .product-card { min-height: 260px; }
+      .product-card-featured { grid-column: 1 / -1; min-height: 300px; }
     }
 
     .product-card:hover {
@@ -679,7 +680,7 @@
       "name": "QSDM",
       "applicationCategory": "FinanceApplication",
       "operatingSystem": "Windows, Linux",
-      "description": "Post-quantum mesh ledger with CELL, QSDM Hive desktop client, NVIDIA-attested mining, signed tasks, and pooled edge compute.",
+      "description": "QSDM Online public network with CELL, QSDM Hive, NVIDIA-attested mining, signed tasks, pooled edge compute, explorer, and trust APIs.",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     }
   </script>
@@ -696,6 +697,7 @@
         </a>
         <div class="nav-mid">
           <a href="#products">Products</a>
+          <a href="/online.html">QSDM Online</a>
           <a href="#api">Developers</a>
           <a href="#capabilities">Capabilities</a>
           <a href="/docs/">Docs</a>
@@ -712,6 +714,7 @@
       </nav>
       <div class="mobile-nav" id="mobileNav">
         <a href="#products">Products</a>
+        <a href="/online.html">QSDM Online</a>
         <a href="#api">Developers</a>
         <a href="#capabilities">Capabilities</a>
         <a href="/docs/">Docs</a>
@@ -727,21 +730,21 @@
     <section class="hero">
       <div class="shell">
         <div class="hero-inner">
-          <a class="announce" href="/docs/#/feature-summary">
+          <a class="announce" href="/online.html">
             <span class="announce-tag">New</span>
-            Ledger v0.4.3 · Hive 1.4.0
+            QSDM Online · Core v0.4.7-rc.4 · Hive 1.4.0
           </a>
           <h1>
-            Quantum-secure ledger<br />
-            <span class="dim">for everything you build.</span>
+            QSDM Online<br />
+            <span class="dim">the live network for CELL.</span>
           </h1>
           <p class="hero-lead">
-            CELL wallets, signed tasks, NVIDIA mining, and Mother Hive edge pools —
-            with public audit, explorer, and trust surfaces.
+            Connect Hive, wallets, signed tasks, NVIDIA mining, and Mother Hive edge pools
+            to one public, independently verifiable ledger.
           </p>
           <div class="hero-actions">
-            <a class="btn btn-solid" href="/download.html">Download Hive</a>
-            <a class="btn btn-ghost" href="/docs/">Explore docs →</a>
+            <a class="btn btn-solid" href="/online.html">Open QSDM Online</a>
+            <a class="btn btn-ghost" href="/download.html">Download Hive</a>
           </div>
         </div>
       </div>
@@ -750,6 +753,12 @@
     <section class="products" id="products" aria-label="Products">
       <div class="shell">
         <div class="product-grid">
+          <a class="product-card product-card-featured" href="/online.html">
+            <span class="product-kicker">Live public network</span>
+            <h3>QSDM Online</h3>
+            <p>Canonical CELL access, chain status, explorer, APIs, and trust feeds. Keys and signing stay on your device.</p>
+            <span class="product-link">View live network <span>→</span></span>
+          </a>
           <a class="product-card" href="/docs/#/qsdm-hive">
             <span class="product-kicker">Desktop</span>
             <h3>QSDM Hive</h3>
@@ -799,8 +808,8 @@
                 <p>Post-quantum signatures</p>
               </div>
               <div>
-                <p>v0.4.3</p>
-                <p>Current ledger release</p>
+                <p>v0.4.7-rc.4</p>
+                <p>Deployed Core candidate</p>
               </div>
               <div>
                 <p>PoE + BFT</p>
@@ -880,6 +889,7 @@ st, _ := client.<span class="fn">Status</span>(ctx)
         </div>
         <div class="news-list">
           <a href="/docs/#/operator-guide"><strong>Operator guide</strong><span>Start here</span></a>
+          <a href="/docs/#/qsdm-online"><strong>QSDM Online</strong><span>Public network</span></a>
           <a href="/docs/#/qsdm-hive"><strong>QSDM Hive guide</strong><span>Desktop</span></a>
           <a href="/docs/#/feature-summary"><strong>Feature summary</strong><span>Capabilities</span></a>
           <a href="/docs/#/cell-tokenomics"><strong>CELL tokenomics</strong><span>Supply</span></a>
@@ -935,6 +945,7 @@ st, _ := client.<span class="fn">Status</span>(ctx)
         </div>
         <div class="footer-col">
           <h4>Product</h4>
+          <a href="/online.html">QSDM Online</a>
           <a href="/download.html">Download</a>
           <a href="/wallet.html">Wallet</a>
           <a href="/explorer.html">Explorer</a>
