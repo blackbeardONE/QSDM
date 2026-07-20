@@ -200,6 +200,19 @@ stop-qsdm-local.ps1
 /QSDM/restart.ps1
 /QSDM/setup.ps1
 
+# Private operator helpers belong in these directories or use a `.local.*` /
+# `.private.*` filename. The tracked secret scanner also rejects force-adding
+# these paths, so a local credential-bearing helper cannot silently become a
+# release input.
+/scripts/local/
+/scripts/private/
+/QSDM/scripts/local/
+/QSDM/scripts/private/
+/scripts/**/*.local.*
+/scripts/**/*.private.*
+/QSDM/scripts/**/*.local.*
+/QSDM/scripts/**/*.private.*
+
 
 # ------------------------------------------------------------
 # 4) Projects unrelated to the QSDM ledger
