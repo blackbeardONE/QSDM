@@ -50,7 +50,7 @@
     /                             — QSDM product portfolio
     /network.html                 — live public CELL network and custody boundary
     https://qsdm.online/          — QSDM VPN product and Android release
-    /download.html                — Hive 1.4.2 + Wallet Extension 0.2.0 + Edge Control 1.3.7
+    /download.html                — Hive 1.4.3 + Wallet Extension 0.2.0 + Edge Control 1.3.7
     /docs/                        — knowledge-base SPA
     /wallet.html                  — self-custody ML-DSA-87 wallet
     /explorer.html                — blocks, txs, accounts

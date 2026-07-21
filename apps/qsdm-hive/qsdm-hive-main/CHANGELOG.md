@@ -1,4 +1,4 @@
-## [1.4.2]
+## [1.4.3]
 
 - Capacity reporting: Mother Hive now distinguishes each Agent's offered CPU, GPU, and RAM capacity from Relay per-job safety limits.
 - RAM sharing: Agent RAM advertisements can represent the configured percentage of real system memory instead of being capped at one GiB.
