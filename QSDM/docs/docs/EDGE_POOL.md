@@ -39,11 +39,11 @@ This protocol is intended for a trusted laboratory. Do not expose the Relay as a
 
 ## Downloads
 
-QSDM Hive 1.4.1 includes Edge Control 1.3.6, Agent 1.3.6, and the CUDA helper. Additional trusted computers can use:
+The current QSDM Hive source packages Edge Control 1.3.7, Agent 1.3.7, and the CUDA helper. Additional trusted computers can use:
 
-- [Windows x86-64 Edge Control bundle](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.6-windows-x86_64.zip)
-- [Linux x86-64 Edge Control bundle](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.6-linux-x86_64.tar.gz)
-- [Edge Control checksums](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.6-SHA256SUMS.txt)
+- [Windows x86-64 Edge Control bundle](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.7-windows-x86_64.zip)
+- [Linux x86-64 Edge Control bundle](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.7-linux-x86_64.tar.gz)
+- [Edge Control checksums](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.7-SHA256SUMS.txt)
 
 ## Edge Control GUI
 

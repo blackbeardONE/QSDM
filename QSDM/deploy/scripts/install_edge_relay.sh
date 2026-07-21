@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-relay_version="${QSDM_EDGE_RELAY_VERSION:-1.3.4}"
-relay_sha256="${QSDM_EDGE_RELAY_SHA256:-d4d1bd9f07888e7607403458092ade5006b8c088565b6d78f38dc5d5528f2afb}"
+relay_version="${QSDM_EDGE_RELAY_VERSION:-1.3.7}"
+relay_sha256="${QSDM_EDGE_RELAY_SHA256:-ecb0e3ed148880d6fbe0d3d9835b3c500273de0fe8f0602ce1d67844095e64bd}"
 source_binary="${QSDM_EDGE_RELAY_SOURCE:-/var/www/qsdm/downloads/qsdm-edge-agent-${relay_version}-linux-x86_64}"
 install_root="/opt/qsdm-edge"
 config_root="/etc/qsdm-edge"

@@ -282,6 +282,9 @@ export interface QsdmMotherHiveStatusResponse {
     cpuPercent: number;
     gpuPercent: number;
     ramPercent: number;
+    cpuUnitsPerJob: number;
+    gpuUnitsPerJob: number;
+    ramMiBPerJob: number;
   };
   revenuePolicy: {
     contributorPercent: number;

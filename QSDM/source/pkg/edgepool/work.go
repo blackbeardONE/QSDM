@@ -22,7 +22,13 @@ const (
 
 	MaxCPUUnits uint64 = 20_000_000
 	MaxGPUUnits uint64 = 100_000_000
-	MaxRAMMiB   uint64 = 1024
+	// MaxRAMMiB is the memory ceiling for one verified RAM job. Relay-side
+	// verification repeats the allocation, so this remains deliberately lower
+	// than the total capacity an Agent may offer.
+	MaxRAMMiB uint64 = 1024
+	// MaxAgentRAMMiB bounds advertised aggregate capacity independently from
+	// the per-job ceiling. It also matches the Relay capability validator.
+	MaxAgentRAMMiB uint64 = 1024 * 1024
 )
 
 type GPUHelperOutput struct {
