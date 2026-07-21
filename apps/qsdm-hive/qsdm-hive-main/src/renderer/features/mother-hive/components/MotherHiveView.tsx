@@ -125,6 +125,7 @@ export function MotherHiveView() {
   const status = statusQuery.data;
   const relayConnection = status?.relayConnection;
   const federationMode = relayConnection?.mode === 'internet-federation';
+  const multiMotherMode = relayConnection?.mode === 'private-multi-hive';
   const federationExpired = Boolean(federationMode && relayConnection?.expired);
   const federationExpiry = relayConnection?.expiresAt
     ? new Date(relayConnection.expiresAt)
@@ -429,21 +430,31 @@ export function MotherHiveView() {
                 </div>
               </div>
               <div>
-                <div className="text-finnieTeal-100">Provider</div>
+                <div className="text-finnieTeal-100">
+                  {multiMotherMode ? 'This Hive' : 'Provider'}
+                </div>
                 <div className="mt-1 break-words font-semibold text-white">
-                  {relayConnection.providerName || 'Local operator'}
+                  {multiMotherMode
+                    ? status?.motherName || relayConnection.motherName
+                    : relayConnection.providerName || 'Local operator'}
                 </div>
               </div>
               <div>
-                <div className="text-finnieTeal-100">Offer</div>
+                <div className="text-finnieTeal-100">
+                  {multiMotherMode ? 'Private identity' : 'Offer'}
+                </div>
                 <div className="mt-1 break-all font-semibold text-white">
-                  {relayConnection.offerId || '-'}
+                  {multiMotherMode
+                    ? status?.motherId || relayConnection.motherId
+                    : relayConnection.offerId || '-'}
                 </div>
               </div>
               <div>
-                <div className="text-finnieTeal-100">Expires</div>
+                <div className="text-finnieTeal-100">
+                  {multiMotherMode ? 'Credential' : 'Expires'}
+                </div>
                 <div className="mt-1 font-semibold text-white">
-                  {federationExpiryText || '-'}
+                  {multiMotherMode ? 'Revocable at Relay' : federationExpiryText || '-'}
                 </div>
               </div>
               {federationMode && (

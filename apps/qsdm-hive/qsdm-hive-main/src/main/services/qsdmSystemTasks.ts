@@ -71,6 +71,7 @@ import {
 import {
   getEdgeRelayConnectionConfig,
   getEdgeRelayFederationContext,
+  getEdgeRelayMotherContext,
   getDefaultEdgeRelayTokenFile,
   getDefaultEdgeRelayURL,
 } from 'main/services/qsdmMotherHiveRelayConfig';
@@ -961,6 +962,7 @@ const gpuHelperPath = process.env.QSDM_EDGE_GPU_HELPER || '';
 const relayUrl = process.env.QSDM_EDGE_RELAY_URL || process.env.QSDM_EDGE_POOL_URL || 'http://127.0.0.1:7740';
 const relayTokenFile = process.env.QSDM_EDGE_RELAY_TOKEN_FILE || process.env.QSDM_EDGE_POOL_TOKEN_FILE || '';
 const federationContext = process.env.QSDM_EDGE_FEDERATION_CONTEXT || '';
+const motherContext = process.env.QSDM_EDGE_MOTHER_CONTEXT || '';
 const relayRequired = Boolean(relayTokenFile);
 const settlementVersion = '${QSDM_MOTHER_HIVE_SETTLEMENT_VERSION}';
 const settlementSource = '${QSDM_MOTHER_HIVE_SETTLEMENT_SOURCE}';
@@ -1033,6 +1035,7 @@ function relayRequest(token, method, requestPath, bodyValue) {
       'X-QSDM-Signature': signature,
     };
     if (federationContext) headers['X-QSDM-Federation-Context'] = federationContext;
+    if (motherContext) headers['X-QSDM-Mother-Context'] = motherContext;
     const request = transport.request(target, {
       method,
       headers,
@@ -1281,6 +1284,7 @@ const os = require('os');
 const relayUrl = process.env.QSDM_EDGE_RELAY_URL || 'http://127.0.0.1:7740';
 const tokenFile = process.env.QSDM_EDGE_RELAY_TOKEN_FILE || '';
 const federationContext = process.env.QSDM_EDGE_FEDERATION_CONTEXT || '';
+const motherContext = process.env.QSDM_EDGE_MOTHER_CONTEXT || '';
 const gatewayTokenFile = process.env.QSDM_COMPUTE_GATEWAY_TOKEN_FILE || '';
 const gatewayHost = '127.0.0.1';
 const gatewayPort = Math.max(1024, Math.min(65535, Number(process.env.QSDM_COMPUTE_GATEWAY_PORT || 7742)));
@@ -1339,6 +1343,7 @@ function relayRequest(method, requestPath, bodyValue) {
       'X-QSDM-Signature': signature,
     };
     if (federationContext) headers['X-QSDM-Federation-Context'] = federationContext;
+    if (motherContext) headers['X-QSDM-Mother-Context'] = motherContext;
     const request = transport.request(target, {
       method,
       headers,
@@ -3539,6 +3544,8 @@ export const assertQsdmMotherHiveConfigured = () => {
 type EdgeRelayStatusResponse = {
   relay_id?: string;
   coordinator_id?: string;
+  mother_hive_id?: string;
+  mother_hive_name?: string;
   active_leases?: number;
   workers?: Array<{
     worker_id?: string;
@@ -3686,6 +3693,10 @@ const requestEdgeRelay = async <T>(
   if (federationContext) {
     headers['X-QSDM-Federation-Context'] = federationContext;
   }
+  const motherContext = getEdgeRelayMotherContext();
+  if (motherContext) {
+    headers['X-QSDM-Mother-Context'] = motherContext;
+  }
   const response = await axios.request<T>({
     url: target.href,
     method,
@@ -3749,6 +3760,8 @@ export const getQsdmMotherHiveStatus =
             expiresAt: configuredConnection.expires_at,
             workloadIds: configuredConnection.workload_ids,
             expired: federationExpired,
+            motherId: configuredConnection.mother_id,
+            motherName: configuredConnection.mother_name,
           }
         : undefined,
       workers: [],
@@ -3812,6 +3825,9 @@ export const getQsdmMotherHiveStatus =
         ...base,
         connected: true,
         relayId: status.relay_id || status.coordinator_id,
+        motherId: status.mother_hive_id || configuredConnection?.mother_id,
+        motherName:
+          status.mother_hive_name || configuredConnection?.mother_name,
         workers,
         onlineWorkers: onlineWorkers.length,
         pooledCpuThreads: onlineWorkers.reduce(
@@ -3942,6 +3958,7 @@ export const startQsdmEdgeWorkerSystemProcess = (
       QSDM_EDGE_RELAY_URL: getDefaultEdgeRelayURL(),
       QSDM_EDGE_RELAY_TOKEN_FILE: getDefaultEdgeRelayTokenFile(),
       QSDM_EDGE_FEDERATION_CONTEXT: getEdgeRelayFederationContext(),
+      QSDM_EDGE_MOTHER_CONTEXT: getEdgeRelayMotherContext(),
       QSDM_EDGE_GPU_HELPER: gpuHelperPath,
       QSDM_TASK_ACTION_SENDER: getQsdmTaskActionSender(),
     },
@@ -4005,6 +4022,7 @@ export const startQsdmMotherHiveSystemProcess = (): {
       QSDM_EDGE_RELAY_URL: getDefaultEdgeRelayURL(),
       QSDM_EDGE_RELAY_TOKEN_FILE: tokenFile,
       QSDM_EDGE_FEDERATION_CONTEXT: getEdgeRelayFederationContext(),
+      QSDM_EDGE_MOTHER_CONTEXT: getEdgeRelayMotherContext(),
       QSDM_COMPUTE_GATEWAY_TOKEN_FILE: computeGatewayTokenFile,
       QSDM_COMPUTE_GATEWAY_PORT: String(
         new URL(getQsdmComputeGatewayEndpoint()).port

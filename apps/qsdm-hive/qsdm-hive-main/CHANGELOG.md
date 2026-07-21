@@ -1,3 +1,11 @@
+## [1.4.1]
+
+- Multi-Hive Relay: One local Relay can now serve several named QSDM Hives with separate, revocable credentials.
+- Tenant isolation: Jobs, request IDs, cancellation, receipts, payout bindings, settlement proofs, and acknowledgements are isolated per Mother Hive.
+- Safer revocation: Revoking one Hive cancels its unfinished work without disconnecting other Hives or Agents.
+- Pairing UX: Edge Control creates `QSDM-EDGE-3` codes and shows every paired Hive; Hive displays the paired name and identity.
+- Compatibility: Existing single-Hive Relay setups continue through the legacy tenant while operators migrate to named pairing codes.
+
 ## [1.4.0]
 
 - Unified wallet: The active wallet in Hive is now presented as the user's single QSDM account across Hive and connected websites; the extension never creates or stores a second wallet.

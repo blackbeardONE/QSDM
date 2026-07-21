@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -90,9 +91,14 @@ type controllerSnapshot struct {
 
 type pairingCodes struct {
 	AgentCode      string `json:"agent_code"`
-	MotherCode     string `json:"mother_code"`
 	FederationCode string `json:"federation_code,omitempty"`
 	RelayURL       string `json:"relay_url"`
+}
+
+type motherPairingCode struct {
+	Code       string `json:"code"`
+	MotherID   string `json:"mother_id"`
+	MotherName string `json:"mother_name"`
 }
 
 type controller struct {
@@ -373,13 +379,16 @@ func (c *controller) ensureFederationV2MotherToken(settings relaySettings) error
 	if err != nil {
 		return fmt.Errorf("rotate Mother Hive key for federation v2: %w", err)
 	}
+	if err := edgepool.RevokeAllMotherTenants(c.paths.PoolDir, time.Now().UTC()); err != nil {
+		return fmt.Errorf("revoke derived Mother Hive identities before key rotation: %w", err)
+	}
 	if err := edgepool.WriteTokenFile(c.paths.MotherToken, token); err != nil {
 		return fmt.Errorf("persist federation v2 Mother Hive key: %w", err)
 	}
 	if err := writePrivateFile(markerPath, []byte("QSDM-EDGE-FEDERATION-v2\n")); err != nil {
 		return fmt.Errorf("persist federation v2 migration marker: %w", err)
 	}
-	c.events.add("Mother Hive key rotated for expiring federation v2 invitations")
+	c.events.add("Mother Hive key rotated for federation v2; older derived Hive identities were revoked")
 	return nil
 }
 
@@ -469,10 +478,6 @@ func (c *controller) getPairingCodes() (pairingCodes, error) {
 	if err != nil {
 		return pairingCodes{}, err
 	}
-	motherCode, err := encodePairingCode("mother", relayURL, motherToken)
-	if err != nil {
-		return pairingCodes{}, err
-	}
 	federationCode := ""
 	if strings.HasPrefix(strings.ToLower(relayURL), "https://") {
 		federationCode, err = encodeFederationPairingCode(relayURL, motherToken, c.system.Hostname)
@@ -482,33 +487,150 @@ func (c *controller) getPairingCodes() (pairingCodes, error) {
 	}
 	return pairingCodes{
 		AgentCode:      agentCode,
-		MotherCode:     motherCode,
 		FederationCode: federationCode,
 		RelayURL:       relayURL,
 	}, nil
 }
 
+func (c *controller) createMotherPairingCode(name string) (motherPairingCode, error) {
+	c.mu.Lock()
+	settings := c.settings.Relay
+	c.mu.Unlock()
+	if err := c.ensureFederationV2MotherToken(settings); err != nil {
+		return motherPairingCode{}, err
+	}
+	_, motherToken, err := c.ensureRelayTokens()
+	if err != nil {
+		return motherPairingCode{}, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "QSDM Hive"
+	}
+	relayURL := fmt.Sprintf("http://127.0.0.1:%d", settings.Port)
+	if settings.AllowLAN {
+		relayURL = settings.AdvertisedURL
+	}
+	code, tenant, err := encodeLocalMotherPairingCode(relayURL, c.paths.PoolDir, motherToken, name)
+	if err != nil {
+		return motherPairingCode{}, err
+	}
+	c.events.add("Created pairing code for " + tenant.MotherName)
+	return motherPairingCode{Code: code, MotherID: tenant.MotherID, MotherName: tenant.MotherName}, nil
+}
+
 func (c *controller) connectLocalMother() error {
-	_, _, err := c.ensureRelayTokens()
+	_, motherToken, err := c.ensureRelayTokens()
 	if err != nil {
 		return err
 	}
 	c.mu.Lock()
 	port := c.settings.Relay.Port
 	c.mu.Unlock()
-	config := motherHiveConfig{
-		SchemaVersion: 1,
-		RelayURL:      fmt.Sprintf("http://127.0.0.1:%d", port),
-		TokenFile:     c.paths.MotherToken,
+	name := c.system.Hostname + " QSDM Hive"
+	relayURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	if config, ok := reusableLocalMotherConfig(c.paths.MotherConfig, c.paths.PoolDir, motherToken); ok {
+		if config.RelayURL != relayURL {
+			config.RelayURL = relayURL
+			if err := writeMotherHiveConfig(c.paths.MotherConfig, config); err != nil {
+				return err
+			}
+		}
+		c.events.add("QSDM Hive is already connected on this computer")
+		return nil
 	}
+	encodedContext, scopedToken, tenant, err := edgepool.CreateMotherTenantCredential(
+		c.paths.PoolDir,
+		motherToken,
+		name,
+		time.Now().UTC(),
+	)
+	if err != nil {
+		return err
+	}
+	tokenPath := filepath.Join(c.paths.PoolDir, "hive-mother-"+tenant.MotherID+".token")
+	if err := edgepool.WriteTokenFile(tokenPath, scopedToken); err != nil {
+		return err
+	}
+	config := motherHiveConfig{
+		SchemaVersion:  1,
+		RelayURL:       relayURL,
+		TokenFile:      tokenPath,
+		ConnectionMode: "private-multi-hive",
+		MotherID:       tenant.MotherID,
+		MotherName:     tenant.MotherName,
+		MotherContext:  encodedContext,
+	}
+	if err := writeMotherHiveConfig(c.paths.MotherConfig, config); err != nil {
+		return err
+	}
+	c.events.add("Mother Hive connected on this computer")
+	return nil
+}
+
+func reusableLocalMotherConfig(path, stateDir string, motherToken []byte) (motherHiveConfig, bool) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return motherHiveConfig{}, false
+	}
+	var config motherHiveConfig
+	if json.Unmarshal(raw, &config) != nil ||
+		config.SchemaVersion != 1 ||
+		config.ConnectionMode != "private-multi-hive" ||
+		config.MotherID == "" ||
+		config.MotherName == "" ||
+		config.MotherContext == "" {
+		return motherHiveConfig{}, false
+	}
+	contextValue, err := edgepool.DecodeMotherContext(config.MotherContext)
+	if err != nil || contextValue.MotherID != config.MotherID || contextValue.MotherName != config.MotherName {
+		return motherHiveConfig{}, false
+	}
+	expectedToken, _, err := edgepool.DeriveMotherToken(motherToken, config.MotherContext)
+	if err != nil {
+		return motherHiveConfig{}, false
+	}
+	storedToken, err := edgepool.LoadTokenFile(config.TokenFile)
+	if err != nil || !hmac.Equal(storedToken, expectedToken) {
+		return motherHiveConfig{}, false
+	}
+	tenants, err := edgepool.ListMotherTenants(stateDir)
+	if err != nil {
+		return motherHiveConfig{}, false
+	}
+	for _, tenant := range tenants {
+		if tenant.MotherID == config.MotherID && tenant.RevokedAt == "" {
+			return config, true
+		}
+	}
+	return motherHiveConfig{}, false
+}
+
+func writeMotherHiveConfig(path string, config motherHiveConfig) error {
 	raw, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := writePrivateFile(c.paths.MotherConfig, append(raw, '\n')); err != nil {
+	return writePrivateFile(path, append(raw, '\n'))
+}
+
+func (c *controller) revokeMother(motherID string) error {
+	now := time.Now().UTC()
+	if err := edgepool.RevokeMotherTenant(c.paths.PoolDir, motherID, now); err != nil {
 		return err
 	}
-	c.events.add("Mother Hive connected on this computer")
+	c.mu.Lock()
+	relay := c.relay
+	c.mu.Unlock()
+	cancelled := 0
+	if relay != nil {
+		var err error
+		cancelled, err = relay.CancelComputeJobsForMother(motherID, now)
+		if err != nil {
+			return err
+		}
+	}
+	c.events.add(fmt.Sprintf("Revoked Mother Hive %s and cancelled %d unfinished jobs", motherID, cancelled))
 	return nil
 }
 

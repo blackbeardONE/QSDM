@@ -139,7 +139,7 @@ func TestVerifySettlementPoolProofRejectsTampering(t *testing.T) {
 	if err := VerifySettlementPoolProof(proof); err == nil {
 		t.Fatal("tampered settlement proof verified")
 	}
-	proof = relay.settlement.Pending[ResourceCPU]
+	proof = settlementTenant(relay.settlement, LegacyMotherID).Pending[ResourceCPU]
 	proof.CoordinatorID = "relay-friendly-name"
 	if err := VerifySettlementPoolProof(proof); err == nil || !strings.Contains(err.Error(), "not derived") {
 		t.Fatalf("non-derived Relay coordinator id returned %v", err)

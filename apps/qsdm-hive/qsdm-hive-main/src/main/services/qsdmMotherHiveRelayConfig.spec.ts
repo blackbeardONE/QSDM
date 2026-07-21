@@ -8,6 +8,7 @@ import {
   getDefaultEdgeRelayURL,
   getEdgeRelayConnectionConfig,
   getEdgeRelayConnectionConfigPath,
+  getEdgeRelayMotherContext,
   pairQsdmMotherHiveRelay,
 } from './qsdmMotherHiveRelayConfig';
 
@@ -56,6 +57,30 @@ const federationCode = (overrides: Record<string, unknown> = {}) => {
       ),
     })
   ).toString('base64url')}`;
+};
+
+const localMotherCode = (overrides: Record<string, unknown> = {}) => {
+  const context = {
+    version: 1,
+    mother_id: 'mother-' + 'a'.repeat(24),
+    mother_name: 'Office Mother Hive',
+    issued_at: new Date(
+      Math.floor((Date.now() - 1000) / 1000) * 1000
+    ).toISOString().replace('.000Z', 'Z'),
+  };
+  const payload = {
+    version: 3,
+    kind: 'mother-local',
+    relay_url: 'http://192.168.50.10:7740',
+    token: 'de'.repeat(32),
+    mother_id: context.mother_id,
+    mother_name: context.mother_name,
+    mother_context: Buffer.from(JSON.stringify(context)).toString('base64url'),
+    ...overrides,
+  };
+  return `QSDM-EDGE-3.${Buffer.from(JSON.stringify(payload)).toString(
+    'base64url'
+  )}`;
 };
 
 describe('Mother Hive Relay configuration', () => {
@@ -111,6 +136,27 @@ describe('Mother Hive Relay configuration', () => {
     ]);
     expect(path.basename(result.token_file)).toMatch(/^hive-federation-/);
     expect(getEdgeRelayConnectionConfig()).toEqual(result);
+  });
+
+  it('imports a private per-Hive Relay identity without storing the Relay master key', () => {
+    const result = pairQsdmMotherHiveRelay(localMotherCode());
+
+    expect(result.connection_mode).toBe('private-multi-hive');
+    expect(result.mother_id).toBe('mother-' + 'a'.repeat(24));
+    expect(result.mother_name).toBe('Office Mother Hive');
+    expect(getEdgeRelayMotherContext()).toBe(result.mother_context);
+    expect(fs.readFileSync(result.token_file, 'utf8').trim()).toBe(
+      'de'.repeat(32)
+    );
+    expect(path.basename(result.token_file)).toMatch(/^hive-mother-/);
+  });
+
+  it('rejects a local Mother Hive payload under a legacy credential prefix', () => {
+    expect(() =>
+      pairQsdmMotherHiveRelay(
+        localMotherCode().replace('QSDM-EDGE-3.', 'QSDM-EDGE-1.')
+      )
+    ).toThrow('wrong credential format');
   });
 
   it('rejects federation invitations without HTTPS or a valid expiry', () => {

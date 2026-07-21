@@ -105,3 +105,30 @@ func TestFederationPairingCodesUseUniqueOfferIDs(t *testing.T) {
 		t.Fatalf("federation offer id was reused: %s", firstPayload.OfferID)
 	}
 }
+
+func TestLocalMotherPairingCodesUseScopedRevocableCredentials(t *testing.T) {
+	stateDir := t.TempDir()
+	master := bytes.Repeat([]byte{0x55}, 32)
+	code, tenant, err := encodeLocalMotherPairingCode(
+		"http://192.168.1.20:7740",
+		stateDir,
+		master,
+		"Office Mother Hive",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(code, localMotherPairingCodePrefix) {
+		t.Fatalf("local Mother Hive code %q has the wrong prefix", code)
+	}
+	payload, token, err := decodePairingCode(code, "mother-local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.MotherID != tenant.MotherID || payload.MotherName != tenant.MotherName || payload.MotherContext == "" {
+		t.Fatalf("local Mother Hive payload did not preserve its identity: %+v", payload)
+	}
+	if bytes.Equal(token, master) {
+		t.Fatal("local Mother Hive pairing code exposed the Relay master token")
+	}
+}

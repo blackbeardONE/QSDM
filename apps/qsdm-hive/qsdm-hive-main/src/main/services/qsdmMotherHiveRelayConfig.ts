@@ -5,6 +5,7 @@ import path from 'path';
 
 const PAIRING_CODE_PREFIX = 'QSDM-EDGE-1.';
 const FEDERATION_PAIRING_CODE_PREFIX = 'QSDM-EDGE-2.';
+const LOCAL_MOTHER_PAIRING_CODE_PREFIX = 'QSDM-EDGE-3.';
 const PAIRING_CODE_MAX_LENGTH = 4096;
 const MAX_FEDERATION_INVITATION_MS = 25 * 60 * 60 * 1000;
 const OWNED_TOKEN_PREFIX = 'hive-mother-';
@@ -15,7 +16,10 @@ const FEDERATION_WORKLOAD_IDS = [
   'qsdm.ram.memory-scan.v1',
 ] as const;
 
-export type EdgeRelayConnectionMode = 'private-lan' | 'internet-federation';
+export type EdgeRelayConnectionMode =
+  | 'private-lan'
+  | 'private-multi-hive'
+  | 'internet-federation';
 
 export type EdgeRelayConnectionConfig = {
   schema_version: 1;
@@ -29,11 +33,14 @@ export type EdgeRelayConnectionConfig = {
   expires_at?: string;
   workload_ids?: string[];
   federation_context?: string;
+  mother_id?: string;
+  mother_name?: string;
+  mother_context?: string;
 };
 
 type MotherHivePairingPayload = {
-  version: 1 | 2;
-  kind: 'mother' | 'mother-federation';
+  version: 1 | 2 | 3;
+  kind: 'mother' | 'mother-federation' | 'mother-local';
   relay_url: string;
   token: string;
   offer_id?: string;
@@ -43,6 +50,9 @@ type MotherHivePairingPayload = {
   expires_at?: string;
   workload_ids?: string[];
   federation_context?: string;
+  mother_id?: string;
+  mother_name?: string;
+  mother_context?: string;
 };
 
 const getConfigRoot = () => {
@@ -171,6 +181,49 @@ const decodeFederationContext = (encoded: string) => {
   return context;
 };
 
+const decodeLocalMotherContext = (encoded: string) => {
+  if (!encoded || encoded.length > 2048) {
+    throw new Error('The private Mother Hive invitation has no context.');
+  }
+  let parsed: unknown;
+  try {
+    const raw = Buffer.from(encoded, 'base64url');
+    if (raw.toString('base64url') !== encoded) {
+      throw new Error('non-canonical Mother Hive context');
+    }
+    parsed = JSON.parse(raw.toString('utf8'));
+  } catch {
+    throw new Error('The private Mother Hive invitation is damaged.');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('The private Mother Hive invitation is damaged.');
+  }
+  const context = parsed as Record<string, unknown>;
+  const allowedKeys = new Set([
+    'version',
+    'mother_id',
+    'mother_name',
+    'issued_at',
+  ]);
+  if (
+    Object.keys(context).some((key) => !allowedKeys.has(key)) ||
+    context.version !== 1 ||
+    typeof context.mother_id !== 'string' ||
+    !/^mother-[0-9a-f]{24}$/.test(context.mother_id) ||
+    typeof context.mother_name !== 'string' ||
+    !/^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,63}$/.test(context.mother_name) ||
+    typeof context.issued_at !== 'string' ||
+    !Number.isFinite(Date.parse(context.issued_at)) ||
+    Date.parse(context.issued_at) > Date.now() + 5 * 60 * 1000
+  ) {
+    throw new Error('The private Mother Hive invitation is invalid.');
+  }
+  if (Buffer.from(JSON.stringify(context), 'utf8').toString('base64url') !== encoded) {
+    throw new Error('The private Mother Hive invitation is not canonical.');
+  }
+  return context;
+};
+
 const isConnectionConfig = (
   value: Partial<EdgeRelayConnectionConfig>
 ): value is EdgeRelayConnectionConfig => {
@@ -186,7 +239,11 @@ const isConnectionConfig = (
     normalizeRelayURL(value.relay_url);
     if (
       value.connection_mode &&
-      !['private-lan', 'internet-federation'].includes(value.connection_mode)
+      ![
+        'private-lan',
+        'private-multi-hive',
+        'internet-federation',
+      ].includes(value.connection_mode)
     ) {
       return false;
     }
@@ -210,6 +267,22 @@ const isConnectionConfig = (
         context.expires_at !== value.expires_at ||
         JSON.stringify(context.workload_ids || []) !==
           JSON.stringify(value.workload_ids || [])
+      ) {
+        return false;
+      }
+    }
+    if (value.connection_mode === 'private-multi-hive') {
+      if (
+        typeof value.mother_context !== 'string' ||
+        typeof value.mother_id !== 'string' ||
+        typeof value.mother_name !== 'string'
+      ) {
+        return false;
+      }
+      const context = decodeLocalMotherContext(value.mother_context);
+      if (
+        context.mother_id !== value.mother_id ||
+        context.mother_name !== value.mother_name
       ) {
         return false;
       }
@@ -295,6 +368,17 @@ export const getEdgeRelayFederationContext = () => {
   return configuredConnection.federation_context || '';
 };
 
+export const getEdgeRelayMotherContext = () => {
+  const configuredConnection = getEdgeRelayConnectionConfig();
+  if (
+    !configuredConnection ||
+    configuredConnection.connection_mode !== 'private-multi-hive'
+  ) {
+    return '';
+  }
+  return configuredConnection.mother_context || '';
+};
+
 const decodeMotherHivePairingCode = (
   value: string
 ): MotherHivePairingPayload => {
@@ -302,7 +386,8 @@ const decodeMotherHivePairingCode = (
   if (
     pairingCode.length > PAIRING_CODE_MAX_LENGTH ||
     (!pairingCode.startsWith(PAIRING_CODE_PREFIX) &&
-      !pairingCode.startsWith(FEDERATION_PAIRING_CODE_PREFIX))
+      !pairingCode.startsWith(FEDERATION_PAIRING_CODE_PREFIX) &&
+      !pairingCode.startsWith(LOCAL_MOTHER_PAIRING_CODE_PREFIX))
   ) {
     throw new Error(
       'Paste the Mother Hive pairing code shown by QSDM Edge Control.'
@@ -313,6 +398,8 @@ const decodeMotherHivePairingCode = (
   try {
     const prefix = pairingCode.startsWith(FEDERATION_PAIRING_CODE_PREFIX)
       ? FEDERATION_PAIRING_CODE_PREFIX
+      : pairingCode.startsWith(LOCAL_MOTHER_PAIRING_CODE_PREFIX)
+      ? LOCAL_MOTHER_PAIRING_CODE_PREFIX
       : PAIRING_CODE_PREFIX;
     const encoded = pairingCode.slice(prefix.length);
     parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
@@ -336,21 +423,43 @@ const decodeMotherHivePairingCode = (
     'expires_at',
     'workload_ids',
     'federation_context',
+    'mother_id',
+    'mother_name',
+    'mother_context',
   ]);
   if (Object.keys(payload).some((key) => !allowedKeys.has(key))) {
     throw new Error('The Mother Hive pairing code contains unexpected data.');
   }
-  if (!['mother', 'mother-federation'].includes(String(payload.kind))) {
+  if (
+    !['mother', 'mother-federation', 'mother-local'].includes(
+      String(payload.kind)
+    )
+  ) {
     throw new Error('This pairing code is not a Mother Hive code.');
   }
   const isFederation = payload.kind === 'mother-federation';
+  const isLocalMother = payload.kind === 'mother-local';
   if (isFederation && payload.version !== 2) {
     throw new Error(
       'This federation invitation uses a permanent legacy credential. Create a new invitation in the latest QSDM Edge Control.'
     );
   }
-  if (!isFederation && payload.version !== 1) {
+  if (
+    (isLocalMother && payload.version !== 3) ||
+    (!isFederation && !isLocalMother && payload.version !== 1)
+  ) {
     throw new Error('This pairing code version is not supported.');
+  }
+  if (
+    (isFederation &&
+      !pairingCode.startsWith(FEDERATION_PAIRING_CODE_PREFIX)) ||
+    (isLocalMother &&
+      !pairingCode.startsWith(LOCAL_MOTHER_PAIRING_CODE_PREFIX)) ||
+    (!isFederation &&
+      !isLocalMother &&
+      !pairingCode.startsWith(PAIRING_CODE_PREFIX))
+  ) {
+    throw new Error('This pairing code uses the wrong credential format.');
   }
   if (typeof payload.relay_url !== 'string') {
     throw new Error('The Mother Hive pairing code has no Relay address.');
@@ -429,6 +538,23 @@ const decodeMotherHivePairingCode = (
     }
   }
 
+  const motherContext = isLocalMother
+    ? typeof payload.mother_context === 'string'
+      ? payload.mother_context
+      : ''
+    : undefined;
+  if (isLocalMother) {
+    const context = decodeLocalMotherContext(motherContext || '');
+    if (
+      context.mother_id !== payload.mother_id ||
+      context.mother_name !== payload.mother_name
+    ) {
+      throw new Error(
+        'The Mother Hive invitation metadata does not match its credential context.'
+      );
+    }
+  }
+
   return {
     version: payload.version as MotherHivePairingPayload['version'],
     kind: payload.kind as MotherHivePairingPayload['kind'],
@@ -456,6 +582,11 @@ const decodeMotherHivePairingCode = (
     expires_at: expiresAt,
     workload_ids: workloadIds,
     federation_context: federationContext,
+    mother_id:
+      typeof payload.mother_id === 'string' ? payload.mother_id : undefined,
+    mother_name:
+      typeof payload.mother_name === 'string' ? payload.mother_name : undefined,
+    mother_context: motherContext,
   };
 };
 
@@ -509,6 +640,8 @@ export const pairQsdmMotherHiveRelay = (
   const connectionMode: EdgeRelayConnectionMode =
     payload.kind === 'mother-federation'
       ? 'internet-federation'
+      : payload.kind === 'mother-local'
+      ? 'private-multi-hive'
       : 'private-lan';
   const tokenFingerprint = createHash('sha256')
     .update(payload.token, 'hex')
@@ -534,6 +667,9 @@ export const pairQsdmMotherHiveRelay = (
     expires_at: payload.expires_at,
     workload_ids: payload.workload_ids,
     federation_context: payload.federation_context,
+    mother_id: payload.mother_id,
+    mother_name: payload.mother_name,
+    mother_context: payload.mother_context,
   };
 
   writePrivateFileAtomic(tokenPath, `${payload.token}\n`);
