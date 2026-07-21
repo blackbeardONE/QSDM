@@ -4,6 +4,7 @@
 - RAM sharing: Agent RAM advertisements can represent the configured percentage of real system memory instead of being capped at one GiB.
 - Relay clarity: Edge Control shows the real RAM amount next to its percentage and labels CPU/GPU controls as per-job allowances.
 - Bundled tools: Windows and Linux packages include QSDM Edge Agent and Edge Control 1.3.7 with the corrected aggregate-capacity model.
+- Security: Updated the Go support modules to include the fix for GO-2026-5970 in `golang.org/x/text`.
 
 ## [1.4.1]
 
