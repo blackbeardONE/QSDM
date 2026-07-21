@@ -15,14 +15,15 @@ import (
 )
 
 const (
-	computeStateVersion      = "qsdm-compute-state/v1"
-	defaultComputeDeadline   = 15 * time.Minute
-	minimumComputeDeadline   = 30 * time.Second
-	maximumComputeDeadline   = time.Hour
-	maximumQueuedComputeJobs = 256
-	maximumComputeJobHistory = 1024
-	defaultComputeListLimit  = 50
-	maximumComputeListLimit  = 100
+	computeStateVersion        = "qsdm-compute-state/v1"
+	defaultComputeDeadline     = 15 * time.Minute
+	minimumComputeDeadline     = 30 * time.Second
+	maximumComputeDeadline     = time.Hour
+	maximumQueuedComputeJobs   = 256
+	maximumQueuedJobsPerMother = 64
+	maximumComputeJobHistory   = 1024
+	defaultComputeListLimit    = 50
+	maximumComputeListLimit    = 100
 )
 
 var (
@@ -43,7 +44,7 @@ func (c *Coordinator) handleComputeJobs(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	c.markMotherSeen()
+	c.markMotherSeen(authentication.MotherID)
 
 	switch r.Method {
 	case http.MethodPost:
@@ -56,7 +57,7 @@ func (c *Coordinator) handleComputeJobs(w http.ResponseWriter, r *http.Request) 
 			writePoolError(w, http.StatusForbidden, "federation invitation does not allow this workload")
 			return
 		}
-		record, err := c.SubmitComputeJob(request, time.Now().UTC())
+		record, err := c.SubmitComputeJobForMother(authentication.MotherID, request, time.Now().UTC())
 		if err != nil {
 			status := http.StatusBadRequest
 			switch {
@@ -81,7 +82,7 @@ func (c *Coordinator) handleComputeJobs(w http.ResponseWriter, r *http.Request) 
 		}
 		writePoolJSON(w, http.StatusOK, ComputeJobList{
 			Version: ComputeProtocolVersion,
-			Jobs:    c.ListComputeJobs(limit, time.Now().UTC()),
+			Jobs:    c.ListComputeJobsForMother(authentication.MotherID, limit, time.Now().UTC()),
 		})
 	default:
 		writePoolError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -89,11 +90,11 @@ func (c *Coordinator) handleComputeJobs(w http.ResponseWriter, r *http.Request) 
 }
 
 func (c *Coordinator) handleComputeJob(w http.ResponseWriter, r *http.Request) {
-	_, _, _, ok := c.authenticateMother(w, r)
+	_, _, authentication, ok := c.authenticateMother(w, r)
 	if !ok {
 		return
 	}
-	c.markMotherSeen()
+	c.markMotherSeen(authentication.MotherID)
 
 	jobID := strings.TrimPrefix(r.URL.Path, "/v1/compute/jobs/")
 	if len(jobID) != 32 {
@@ -111,9 +112,9 @@ func (c *Coordinator) handleComputeJob(w http.ResponseWriter, r *http.Request) {
 	)
 	switch r.Method {
 	case http.MethodGet:
-		record, err = c.ComputeJob(jobID, time.Now().UTC())
+		record, err = c.ComputeJobForMother(authentication.MotherID, jobID, time.Now().UTC())
 	case http.MethodDelete:
-		record, err = c.CancelComputeJob(jobID, time.Now().UTC())
+		record, err = c.CancelComputeJobForMother(authentication.MotherID, jobID, time.Now().UTC())
 	default:
 		writePoolError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -133,6 +134,14 @@ func (c *Coordinator) handleComputeJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Coordinator) SubmitComputeJob(request ComputeJobSubmitRequest, now time.Time) (ComputeJobRecord, error) {
+	return c.SubmitComputeJobForMother(LegacyMotherID, request, now)
+}
+
+func (c *Coordinator) SubmitComputeJobForMother(motherID string, request ComputeJobSubmitRequest, now time.Time) (ComputeJobRecord, error) {
+	motherID = normalizeReceiptMotherID(motherID)
+	if !validMotherTenantID(motherID) {
+		return ComputeJobRecord{}, errors.New("Mother Hive identity is invalid")
+	}
 	if request.Version != ComputeProtocolVersion {
 		return ComputeJobRecord{}, fmt.Errorf("version must be %q", ComputeProtocolVersion)
 	}
@@ -157,7 +166,8 @@ func (c *Coordinator) SubmitComputeJob(request ComputeJobSubmitRequest, now time
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.pruneLocked(now)
-	if existingID := c.computeByRequest[request.ClientRequestID]; existingID != "" {
+	requestKey := computeRequestKey(motherID, request.ClientRequestID)
+	if existingID := c.computeByRequest[requestKey]; existingID != "" {
 		existing := c.computeJobs[existingID]
 		if existing != nil && computeRequestMatches(*existing, request.Resource, units, memoryMiB, deadline) {
 			return cloneComputeJob(*existing), nil
@@ -165,6 +175,9 @@ func (c *Coordinator) SubmitComputeJob(request ComputeJobSubmitRequest, now time
 		return ComputeJobRecord{}, errComputeJobConflict
 	}
 	if c.activeComputeJobsLocked() >= maximumQueuedComputeJobs {
+		return ComputeJobRecord{}, errComputeQueueFull
+	}
+	if c.activeComputeJobsForMotherLocked(motherID) >= maximumQueuedJobsPerMother {
 		return ComputeJobRecord{}, errComputeQueueFull
 	}
 
@@ -180,6 +193,7 @@ func (c *Coordinator) SubmitComputeJob(request ComputeJobSubmitRequest, now time
 	record := &ComputeJobRecord{
 		Version:         ComputeProtocolVersion,
 		ID:              id,
+		MotherID:        motherID,
 		ClientRequestID: request.ClientRequestID,
 		Resource:        request.Resource,
 		Algorithm:       algorithm,
@@ -192,11 +206,11 @@ func (c *Coordinator) SubmitComputeJob(request ComputeJobSubmitRequest, now time
 		DeadlineAt:      now.Add(deadline).UTC().Format(time.RFC3339Nano),
 	}
 	c.computeJobs[id] = record
-	c.computeByRequest[request.ClientRequestID] = id
+	c.computeByRequest[requestKey] = id
 	c.computeOrder = append(c.computeOrder, id)
 	if err := c.persistComputeJobsLocked(); err != nil {
 		delete(c.computeJobs, id)
-		delete(c.computeByRequest, request.ClientRequestID)
+		delete(c.computeByRequest, requestKey)
 		c.computeOrder = c.computeOrder[:len(c.computeOrder)-1]
 		return ComputeJobRecord{}, fmt.Errorf("persist compute job: %w", err)
 	}
@@ -204,17 +218,27 @@ func (c *Coordinator) SubmitComputeJob(request ComputeJobSubmitRequest, now time
 }
 
 func (c *Coordinator) ComputeJob(jobID string, now time.Time) (ComputeJobRecord, error) {
+	return c.ComputeJobForMother(LegacyMotherID, jobID, now)
+}
+
+func (c *Coordinator) ComputeJobForMother(motherID, jobID string, now time.Time) (ComputeJobRecord, error) {
+	motherID = normalizeReceiptMotherID(motherID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.pruneLocked(now)
 	record := c.computeJobs[strings.ToLower(jobID)]
-	if record == nil {
+	if record == nil || normalizeReceiptMotherID(record.MotherID) != motherID {
 		return ComputeJobRecord{}, errComputeJobNotFound
 	}
 	return cloneComputeJob(*record), nil
 }
 
 func (c *Coordinator) ListComputeJobs(limit int, now time.Time) []ComputeJobRecord {
+	return c.ListComputeJobsForMother(LegacyMotherID, limit, now)
+}
+
+func (c *Coordinator) ListComputeJobsForMother(motherID string, limit int, now time.Time) []ComputeJobRecord {
+	motherID = normalizeReceiptMotherID(motherID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.pruneLocked(now)
@@ -223,7 +247,7 @@ func (c *Coordinator) ListComputeJobs(limit int, now time.Time) []ComputeJobReco
 	}
 	out := make([]ComputeJobRecord, 0, limit)
 	for index := len(c.computeOrder) - 1; index >= 0 && len(out) < limit; index-- {
-		if record := c.computeJobs[c.computeOrder[index]]; record != nil {
+		if record := c.computeJobs[c.computeOrder[index]]; record != nil && normalizeReceiptMotherID(record.MotherID) == motherID {
 			out = append(out, cloneComputeJob(*record))
 		}
 	}
@@ -231,10 +255,15 @@ func (c *Coordinator) ListComputeJobs(limit int, now time.Time) []ComputeJobReco
 }
 
 func (c *Coordinator) CancelComputeJob(jobID string, now time.Time) (ComputeJobRecord, error) {
+	return c.CancelComputeJobForMother(LegacyMotherID, jobID, now)
+}
+
+func (c *Coordinator) CancelComputeJobForMother(motherID, jobID string, now time.Time) (ComputeJobRecord, error) {
+	motherID = normalizeReceiptMotherID(motherID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	record := c.computeJobs[strings.ToLower(jobID)]
-	if record == nil {
+	if record == nil || normalizeReceiptMotherID(record.MotherID) != motherID {
 		return ComputeJobRecord{}, errComputeJobNotFound
 	}
 	if record.State.terminal() {
@@ -259,6 +288,57 @@ func (c *Coordinator) CancelComputeJob(jobID string, now time.Time) (ComputeJobR
 		return ComputeJobRecord{}, fmt.Errorf("persist compute cancellation: %w", err)
 	}
 	return cloneComputeJob(*record), nil
+}
+
+// CancelComputeJobsForMother stops all unfinished application jobs owned by a
+// revoked Mother Hive. Jobs already inside result verification finish
+// verification, but the revoked Hive cannot retrieve or settle them.
+func (c *Coordinator) CancelComputeJobsForMother(motherID string, now time.Time) (int, error) {
+	motherID = normalizeReceiptMotherID(motherID)
+	if !validMotherTenantID(motherID) {
+		return 0, errors.New("Mother Hive identity is invalid")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	type changedJob struct {
+		record       *ComputeJobRecord
+		previous     ComputeJobRecord
+		activeJob    Job
+		hadActiveJob bool
+	}
+	changed := make([]changedJob, 0)
+	for _, record := range c.computeJobs {
+		if normalizeReceiptMotherID(record.MotherID) != motherID || record.State.terminal() {
+			continue
+		}
+		if _, completing := c.completing[record.ID]; completing {
+			continue
+		}
+		activeJob, hadActiveJob := c.jobs[record.ID]
+		changed = append(changed, changedJob{
+			record: record, previous: cloneComputeJob(*record),
+			activeJob: activeJob, hadActiveJob: hadActiveJob,
+		})
+		delete(c.jobs, record.ID)
+		delete(c.completing, record.ID)
+		record.State = ComputeJobCancelled
+		record.UpdatedAt = now.UTC().Format(time.RFC3339Nano)
+		record.LeaseExpiresAt = ""
+		record.LastError = "cancelled because Mother Hive access was revoked"
+	}
+	if len(changed) == 0 {
+		return 0, nil
+	}
+	if err := c.persistComputeJobsLocked(); err != nil {
+		for _, item := range changed {
+			*item.record = item.previous
+			if item.hadActiveJob {
+				c.jobs[item.record.ID] = item.activeJob
+			}
+		}
+		return 0, fmt.Errorf("persist revoked Mother Hive job cancellation: %w", err)
+	}
+	return len(changed), nil
 }
 
 func computeRequestMatches(record ComputeJobRecord, resource ResourceKind, units, memoryMiB uint64, deadline time.Duration) bool {
@@ -330,6 +410,7 @@ func (c *Coordinator) leaseComputeJobLocked(worker WorkerStatus, request LeaseRe
 		job := Job{
 			Version:   ProtocolVersion,
 			ID:        record.ID,
+			MotherID:  normalizeReceiptMotherID(record.MotherID),
 			WorkerID:  worker.WorkerID,
 			Resource:  record.Resource,
 			Algorithm: record.Algorithm,
@@ -452,8 +533,15 @@ func (c *Coordinator) pruneComputeJobsLocked(now time.Time) bool {
 }
 
 func (c *Coordinator) computeQueueStatusLocked() ComputeQueueStatus {
+	return c.computeQueueStatusForMotherLocked("")
+}
+
+func (c *Coordinator) computeQueueStatusForMotherLocked(motherID string) ComputeQueueStatus {
 	var status ComputeQueueStatus
 	for _, record := range c.computeJobs {
+		if motherID != "" && normalizeReceiptMotherID(record.MotherID) != normalizeReceiptMotherID(motherID) {
+			continue
+		}
 		switch record.State {
 		case ComputeJobQueued:
 			status.Queued++
@@ -473,6 +561,15 @@ func (c *Coordinator) computeQueueStatusLocked() ComputeQueueStatus {
 func (c *Coordinator) activeComputeJobsLocked() int {
 	status := c.computeQueueStatusLocked()
 	return status.Queued + status.Leased
+}
+
+func (c *Coordinator) activeComputeJobsForMotherLocked(motherID string) int {
+	status := c.computeQueueStatusForMotherLocked(motherID)
+	return status.Queued + status.Leased
+}
+
+func computeRequestKey(motherID, requestID string) string {
+	return normalizeReceiptMotherID(motherID) + "\x00" + requestID
 }
 
 func (c *Coordinator) computeJobsPath() string {
@@ -495,11 +592,17 @@ func (c *Coordinator) loadComputeJobs() error {
 		return errors.New("compute job state has an unsupported version or size")
 	}
 	now := time.Now().UTC()
+	activeMothers, err := activeMotherTenantIDs(c.config.StateDir)
+	if err != nil {
+		return fmt.Errorf("read active Mother Hive identities: %w", err)
+	}
 	for _, stored := range snapshot.Jobs {
+		stored.MotherID = normalizeReceiptMotherID(stored.MotherID)
 		if err := validateStoredComputeJob(stored); err != nil {
 			return fmt.Errorf("compute job state contains invalid job %q: %w", stored.ID, err)
 		}
-		if _, exists := c.computeJobs[stored.ID]; exists || c.computeByRequest[stored.ClientRequestID] != "" {
+		requestKey := computeRequestKey(stored.MotherID, stored.ClientRequestID)
+		if _, exists := c.computeJobs[stored.ID]; exists || c.computeByRequest[requestKey] != "" {
 			return errors.New("compute job state contains duplicate identities")
 		}
 		record := cloneComputeJob(stored)
@@ -512,15 +615,24 @@ func (c *Coordinator) loadComputeJobs() error {
 			record.ReceiptID = receipt.ReceiptID
 			record.Result = &result
 			record.LastError = ""
-		} else if record.State == ComputeJobLeased {
-			record.State = ComputeJobQueued
-			record.WorkerID = ""
-			record.LeaseExpiresAt = ""
-			record.UpdatedAt = now.Format(time.RFC3339Nano)
-			record.LastError = "Relay restarted; job returned to queue"
+		} else {
+			_, activeMother := activeMothers[record.MotherID]
+			if motherIDPattern.MatchString(record.MotherID) && !activeMother && !record.State.terminal() {
+				record.State = ComputeJobCancelled
+				record.WorkerID = ""
+				record.LeaseExpiresAt = ""
+				record.UpdatedAt = now.Format(time.RFC3339Nano)
+				record.LastError = "cancelled because Mother Hive access is no longer active"
+			} else if record.State == ComputeJobLeased {
+				record.State = ComputeJobQueued
+				record.WorkerID = ""
+				record.LeaseExpiresAt = ""
+				record.UpdatedAt = now.Format(time.RFC3339Nano)
+				record.LastError = "Relay restarted; job returned to queue"
+			}
 		}
 		c.computeJobs[record.ID] = &record
-		c.computeByRequest[record.ClientRequestID] = record.ID
+		c.computeByRequest[requestKey] = record.ID
 		c.computeOrder = append(c.computeOrder, record.ID)
 	}
 	c.pruneComputeJobsLocked(now)
@@ -530,6 +642,9 @@ func (c *Coordinator) loadComputeJobs() error {
 func validateStoredComputeJob(record ComputeJobRecord) error {
 	if record.Version != ComputeProtocolVersion {
 		return errors.New("invalid protocol version")
+	}
+	if !validMotherTenantID(record.MotherID) {
+		return errors.New("invalid Mother Hive identity")
 	}
 	if decoded, err := hex.DecodeString(record.ID); err != nil || len(decoded) != 16 {
 		return errors.New("invalid job id")
@@ -589,8 +704,8 @@ func (c *Coordinator) persistComputeJobsLocked() error {
 	raw = append(raw, '\n')
 	path := c.computeJobsPath()
 	temporary := path + ".tmp"
-	c.persistMu.Lock()
-	defer c.persistMu.Unlock()
+	c.computePersistMu.Lock()
+	defer c.computePersistMu.Unlock()
 	if err := os.WriteFile(temporary, raw, 0o600); err != nil {
 		return err
 	}
@@ -619,7 +734,7 @@ func (c *Coordinator) trimComputeHistoryLocked() {
 		}
 		id := c.computeOrder[removeAt]
 		if record := c.computeJobs[id]; record != nil {
-			delete(c.computeByRequest, record.ClientRequestID)
+			delete(c.computeByRequest, computeRequestKey(record.MotherID, record.ClientRequestID))
 		}
 		delete(c.computeJobs, id)
 		c.computeOrder = append(c.computeOrder[:removeAt], c.computeOrder[removeAt+1:]...)

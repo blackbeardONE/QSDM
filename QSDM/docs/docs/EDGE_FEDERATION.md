@@ -40,13 +40,13 @@ A Hive can enable provider mode, consumer mode, or both. Version 1 must forbid r
 6. Hive sends the immutable federation context with every signed Relay request. The Relay derives the expected credential from its private Mother Hive key, rejects expired contexts, and rejects compute resources outside the invitation workload list.
 7. Applications still submit work only through Hive's authenticated loopback Compute Gateway. The remote Relay receives only approved CPU/GPU/RAM workload requests.
 
-Legacy `QSDM-EDGE-1` federation invitations exposed the same long-lived credential used by a local Mother Hive. Current Hive builds reject those invitations; generate a new invitation in current Edge Control. Private-LAN `QSDM-EDGE-1` Agent and Mother Hive pairing remains supported.
+Legacy `QSDM-EDGE-1` federation invitations exposed the same long-lived credential used by a local Mother Hive. Current Hive builds reject those invitations. `QSDM-EDGE-1` remains only the Agent pairing format and a migration format for old local Hive configurations. Generate a named `QSDM-EDGE-3` code for every current private-LAN Mother Hive.
 
 When an HTTPS Relay first upgrades to federation v2, Edge Control rotates its Mother Hive key once and records a private migration marker. This revokes previously copied v1 federation credentials. A same-machine one-click Mother Hive config follows the rotated token file automatically; any copied private Mother Hive code must be paired again.
 
 This pilot is intentional: it proves cross-location routing without opening Agent ports, exposing the loopback gateway, or granting arbitrary remote execution.
 
-Use a dedicated Relay for one fixed-trust provider/consumer relationship during the pilot. Do not share the same Relay across unrelated consumers; per-consumer job visibility, cancellation isolation, pricing, reservations, and disputes belong to the future Core-lease phase.
+One Relay can safely serve several named Mother Hives: local and federation credentials isolate job visibility, request idempotency, cancellation, receipts, payout bindings, and settlement acknowledgements. Internet federation is still a fixed-trust pilot. Pricing, reservations, escrow, capacity guarantees, and dispute handling belong to the future Core-lease phase, so do not advertise the Relay as an anonymous public compute market.
 
 ## Full Protocol
 

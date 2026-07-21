@@ -89,7 +89,11 @@ function renderState(state) {
   byId("summary-detail").textContent = summaryText(state, role);
   renderMetrics(state, role);
   renderWorkers(state.relay);
+  renderMothers(state.relay);
   renderActivity(state.activity);
+  if (!byId("mother-name-input").value) {
+    byId("mother-name-input").value = `${state.system.hostname} QSDM Hive`;
+  }
 
   const errorNotice = byId("error-notice");
   errorNotice.textContent = state.last_error || "";
@@ -162,6 +166,46 @@ function renderWorkers(relay) {
       cell.textContent = value;
       row.append(cell);
     });
+    body.append(row);
+  });
+}
+
+function renderMothers(relay) {
+  const body = byId("mothers-body");
+  body.replaceChildren();
+  const mothers = relay?.mother_hives || [];
+  const active = mothers.filter((mother) => !mother.revoked_at);
+  byId("mother-count").textContent = `${active.length} ${active.length === 1 ? "Mother Hive" : "Mother Hives"}`;
+  if (!mothers.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 4;
+    cell.className = "empty-row";
+    cell.textContent = "No Mother Hives paired";
+    row.append(cell);
+    body.append(row);
+    return;
+  }
+  mothers.forEach((mother) => {
+    const row = document.createElement("tr");
+    const name = document.createElement("td");
+    name.textContent = mother.mother_name;
+    const identity = document.createElement("td");
+    identity.textContent = `${mother.mother_id.slice(0, 14)}...`;
+    const seen = document.createElement("td");
+    seen.textContent = mother.last_seen_at ? relativeTime(mother.last_seen_at) : "Never";
+    const access = document.createElement("td");
+    if (mother.revoked_at) {
+      access.textContent = "Revoked";
+    } else {
+      const button = document.createElement("button");
+      button.className = "button danger compact-button";
+      button.type = "button";
+      button.textContent = "Revoke";
+      button.addEventListener("click", () => revokeMother(mother));
+      access.append(button);
+    }
+    row.append(name, identity, seen, access);
     body.append(row);
   });
 }
@@ -257,9 +301,37 @@ async function showPairingCode() {
     await saveSettings(false);
     const codes = await api("/api/pairing-codes");
     byId("pairing-code-output").value = codes.agent_code;
-    byId("mother-code-output").value = codes.mother_code;
+    byId("mother-code-output").value = "";
     byId("federation-code-output").value = codes.federation_code || "Set the Relay address to an HTTPS URL before creating an internet federation invitation.";
     byId("pairing-dialog").showModal();
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+async function createMotherPairingCode() {
+  try {
+    const result = await api("/api/mother-pairing-code", {
+      method: "POST",
+      body: { name: byId("mother-name-input").value.trim() },
+    });
+    byId("mother-code-output").value = result.code;
+    showToast(`Private pairing code created for ${result.mother_name}`);
+    await loadState(false);
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+async function revokeMother(mother) {
+  if (!window.confirm(`Revoke Relay access for ${mother.mother_name}?`)) return;
+  try {
+    await api("/api/mother-hives/revoke", {
+      method: "POST",
+      body: { mother_id: mother.mother_id },
+    });
+    showToast(`${mother.mother_name} can no longer use this Relay`);
+    await loadState(false);
   } catch (error) {
     showToast(error.message, true);
   }
@@ -358,11 +430,19 @@ byId("stop-button").addEventListener("click", stopControl);
 byId("pair-agent-button").addEventListener("click", pairAgent);
 byId("show-pairing-button").addEventListener("click", showPairingCode);
 byId("connect-mother-button").addEventListener("click", connectMother);
+byId("create-mother-button").addEventListener("click", createMotherPairingCode);
 byId("copy-pairing-button").addEventListener("click", () => copyText(byId("pairing-code-output").value, "Agent pairing code copied"));
-byId("copy-mother-button").addEventListener("click", () => copyText(byId("mother-code-output").value, "QSDM Hive pairing code copied"));
+byId("copy-mother-button").addEventListener("click", () => {
+  const value = byId("mother-code-output").value;
+  if (!value.startsWith("QSDM-EDGE-3.")) {
+    showToast("Create a private QSDM Hive pairing code first", true);
+    return;
+  }
+  copyText(value, "QSDM Hive pairing code copied");
+});
 byId("copy-federation-button").addEventListener("click", () => {
   const value = byId("federation-code-output").value;
-  if (!value.startsWith("QSDM-EDGE-1.")) {
+  if (!value.startsWith("QSDM-EDGE-2.")) {
     showToast("Configure an HTTPS Relay address before copying a federation invitation", true);
     return;
   }

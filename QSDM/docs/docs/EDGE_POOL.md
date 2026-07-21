@@ -3,15 +3,17 @@
 QSDM pooled edge compute uses an explicit path:
 
 ```text
-Agent computers -> QSDM Relay -> QSDM Hive (Mother Hive role) -> QSDM Core
+Agent computers -> QSDM Relay -> one or more QSDM Hives (Mother Hive role) -> QSDM Core
 ```
 
 ## Topology
 
 - **Agents** are walletless, outbound-only workers that execute fixed QSDM CPU, NVIDIA GPU, or RAM jobs.
-- **Relay** authenticates agents, applies resource ceilings, verifies results, stores receipts, and signs aggregate proofs.
+- **Relay** authenticates Agents, applies resource ceilings, verifies results, stores receipts, signs aggregate proofs, and keeps each connected Mother Hive's jobs and settlement state separate.
 - **QSDM Hive** is the only desktop client and owns the active CELL wallet. **Mother Hive** is the role it assumes while coordinating a paired Relay.
 - Relay and QSDM Hive may run on the same computer or separate trusted machines. Edge Control is a setup utility, not another client.
+
+Agents do not need QSDM Hive. Install the standalone Agent on each contributing computer and pair it with the local Relay. Install Hive only on computers that will act as Mother Hives and submit work to that Relay.
 
 For each accepted Relay batch, QSDM Core atomically allocates 70% to the contributor-owner wallet, 15% to the Mother Hive operator, and 15% to the CELL ecosystem reserve at `651a79b2b1790820dd73bda81be24057e1bc27377c1f1117c6db2ab79dc038ea`. Agents remain walletless; Mother Hive binds the contributor-owner wallet for the trusted group. Payouts use only an already-funded task reward pool and do not mint CELL.
 
@@ -22,7 +24,7 @@ Settlement is fail-closed. A task manager must add the Relay's key-derived 64-ch
 The agent is not a remote administration tool.
 
 - No remote shell, arbitrary command, script, file-browser, or executable-download endpoint exists.
-- Agents and the QSDM Hive Mother role use different 256-bit HMAC credentials. Agent credentials cannot read Mother-role proofs, and the Hive credential cannot register as an Agent.
+- Agents and Mother Hives use different 256-bit HMAC credentials. Each Mother Hive receives its own derived, revocable credential; it cannot read, cancel, or settle another Hive's jobs. Agent credentials cannot read Mother-role proofs, and a Hive credential cannot register as an Agent.
 - Requests use HMAC-SHA256, timestamps, single-use nonces, signed short-lived jobs, and bounded bodies. Settlement batches also carry a persistent ML-DSA-87 Relay signature independently verifiable by every validator.
 - CPU iterations, GPU operations, RAM MiB, runtime, worker count, and proof receipt count have hard limits.
 - RAM buffers are cleared after each job.
@@ -37,11 +39,11 @@ This protocol is intended for a trusted laboratory. Do not expose the Relay as a
 
 ## Downloads
 
-QSDM Hive 1.4.0 includes Edge Control 1.3.5, Agent 1.3.5, and the CUDA helper. Additional trusted computers can use:
+QSDM Hive 1.4.1 includes Edge Control 1.3.6, Agent 1.3.6, and the CUDA helper. Additional trusted computers can use:
 
-- [Windows x86-64 Edge Control bundle](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.5-windows-x86_64.zip)
-- [Linux x86-64 Edge Control bundle](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.5-linux-x86_64.tar.gz)
-- [Edge Control checksums](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.5-SHA256SUMS.txt)
+- [Windows x86-64 Edge Control bundle](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.6-windows-x86_64.zip)
+- [Linux x86-64 Edge Control bundle](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.6-linux-x86_64.tar.gz)
+- [Edge Control checksums](https://qsdm.tech/downloads/qsdm-edge-agent-1.3.6-SHA256SUMS.txt)
 
 ## Edge Control GUI
 
@@ -116,7 +118,9 @@ qsdm-edge-agent.exe relay `
   --ram-percent 25
 ```
 
-Copy only `agent.token` to Agents. Copy only `mother-hive.token` to the QSDM Hive computer at `%APPDATA%\QSDM\edge-pool\mother-hive.token` on Windows or `$HOME/.config/QSDM/edge-pool/mother-hive.token` on Linux. The internal filename remains unchanged for compatibility. For a remote Relay, set `QSDM_EDGE_RELAY_URL` and `QSDM_EDGE_RELAY_TOKEN_FILE` for Hive.
+Copy only `agent.token` to Agents. Keep `mother-hive.token` on the Relay: it is the Relay's master Mother-Hive secret and must never be copied to Hive. In Edge Control, give each Hive a clear name and choose **Create Mother Hive code**. Paste the resulting `QSDM-EDGE-3` code into that Hive's **Mother Hive** page. The code contains a separate derived credential and a Relay-registered identity that can be revoked without disconnecting other Hives.
+
+Create a different code for every Hive. A Relay can serve several local Mother Hives concurrently; jobs, request IDs, cancellation, receipt visibility, payout bindings, and settlement acknowledgements remain isolated by Mother-Hive identity. Revoking a Hive also cancels its unfinished jobs. The Agent pool is shared capacity, so Relay scheduling determines which eligible Agent accepts each job.
 
 If a Relay credential is configured, the QSDM Hive Mother role fails closed when the Relay is unavailable or has no verified receipt. It does not substitute local work for pooled work.
 
@@ -169,8 +173,8 @@ Production verification is complete only when all of the following hold:
 
 - `qsdm-edge-relay.service` is active after a service restart.
 - The Relay owns only loopback port 7740; Caddy owns the public TLS listener.
-- Hive has exactly one Mother Hive child and one loopback Compute Gateway on
-  port 7742.
+- Each connected Hive has exactly one Mother Hive child and one loopback
+  Compute Gateway on port 7742. One Relay may serve multiple Hives.
 - A bounded application job completes through port 7742 and returns a durable
   Relay receipt.
 - Reusing its application request ID returns the same job, while changing the

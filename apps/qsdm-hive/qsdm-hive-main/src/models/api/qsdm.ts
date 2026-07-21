@@ -238,8 +238,10 @@ export interface QsdmMotherHiveStatusResponse {
   role: 'qsdm-hive-mother';
   relayUrl?: string;
   relayId?: string;
+  motherId?: string;
+  motherName?: string;
   relayConnection?: {
-    mode: 'private-lan' | 'internet-federation';
+    mode: 'private-lan' | 'private-multi-hive' | 'internet-federation';
     remote: boolean;
     offerId?: string;
     providerName?: string;
@@ -248,6 +250,8 @@ export interface QsdmMotherHiveStatusResponse {
     expiresAt?: string;
     workloadIds?: string[];
     expired?: boolean;
+    motherId?: string;
+    motherName?: string;
   };
   workers: QsdmMotherHiveWorkerStatus[];
   onlineWorkers: number;

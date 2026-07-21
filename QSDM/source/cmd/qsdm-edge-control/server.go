@@ -57,6 +57,8 @@ func (s *controlServer) handler() http.Handler {
 	mux.Handle("/api/stop", s.authenticated(http.HandlerFunc(s.handleStop)))
 	mux.Handle("/api/pair-agent", s.authenticated(http.HandlerFunc(s.handlePairAgent)))
 	mux.Handle("/api/pairing-codes", s.authenticated(http.HandlerFunc(s.handlePairingCodes)))
+	mux.Handle("/api/mother-pairing-code", s.authenticated(http.HandlerFunc(s.handleMotherPairingCode)))
+	mux.Handle("/api/mother-hives/revoke", s.authenticated(http.HandlerFunc(s.handleRevokeMother)))
 	mux.Handle("/api/connect-mother", s.authenticated(http.HandlerFunc(s.handleConnectMother)))
 	mux.Handle("/api/quit", s.authenticated(http.HandlerFunc(s.handleQuit)))
 	return s.securityHeaders(mux)
@@ -171,6 +173,43 @@ func (s *controlServer) handlePairingCodes(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeControlJSON(w, http.StatusOK, codes)
+}
+
+func (s *controlServer) handleMotherPairingCode(w http.ResponseWriter, r *http.Request) {
+	if !requireLocalPost(w, r) {
+		return
+	}
+	var request struct {
+		Name string `json:"name"`
+	}
+	if err := decodeControlJSON(r, &request); err != nil {
+		writeControlError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	code, err := s.controller.createMotherPairingCode(request.Name)
+	if err != nil {
+		writeControlError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	writeControlJSON(w, http.StatusOK, code)
+}
+
+func (s *controlServer) handleRevokeMother(w http.ResponseWriter, r *http.Request) {
+	if !requireLocalPost(w, r) {
+		return
+	}
+	var request struct {
+		MotherID string `json:"mother_id"`
+	}
+	if err := decodeControlJSON(r, &request); err != nil {
+		writeControlError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.controller.revokeMother(request.MotherID); err != nil {
+		writeControlError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	writeControlJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *controlServer) handleConnectMother(w http.ResponseWriter, r *http.Request) {

@@ -3,14 +3,14 @@
 `qsdm-edge-agent` pools bounded CPU, NVIDIA GPU, and RAM work from trusted computers:
 
 ```text
-Agent computers -> QSDM Relay -> QSDM Hive (Mother Hive role) -> QSDM Core
+Agent computers -> QSDM Relay -> one or more QSDM Hives (Mother Hive role) -> QSDM Core
 ```
 
-QSDM Hive is the only desktop client. Agents are outbound-only and walletless, while Edge Control is only a local setup utility. The Relay enforces resource ceilings, verifies fixed QSDM jobs, stores receipts, and reports aggregate proofs. Mother Hive is the role assumed by the active QSDM Hive that owns the CELL wallet.
+QSDM Hive is the only desktop client. Agents are outbound-only and walletless, while Edge Control is only a local setup utility. The Relay enforces resource ceilings, verifies fixed QSDM jobs, stores receipts, and reports aggregate proofs. Mother Hive is the role assumed by an active QSDM Hive that owns a CELL wallet. One Relay can serve several named Mother Hives without sharing their jobs or settlement state.
 
 ## Security model
 
-- Agents and the QSDM Hive Mother role use separate 256-bit HMAC credentials. Neither credential can impersonate the other role.
+- Agents and Mother Hives use separate 256-bit HMAC credentials. Every Mother Hive receives its own derived, revocable credential and cannot read, cancel, or settle another Hive's work.
 - Requests carry a timestamp and single-use nonce. Relay jobs are signed and expire after a short lease.
 - Agents execute only built-in CPU, RAM, or CUDA algorithms. There is no remote shell, script runner, file browser, or arbitrary command endpoint.
 - CPU units, RAM MiB, GPU units, request sizes, job time, and worker counts are capped.
@@ -22,11 +22,11 @@ This is not a public anonymous enrollment mechanism. Do not expose the Relay dir
 
 ## Downloads
 
-- Windows x86-64 bundle: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.5-windows-x86_64.zip`
-- Linux x86-64 bundle: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.5-linux-x86_64.tar.gz`
-- Checksums: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.5-SHA256SUMS.txt`
+- Windows x86-64 bundle: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.6-windows-x86_64.zip`
+- Linux x86-64 bundle: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.6-linux-x86_64.tar.gz`
+- Checksums: `https://qsdm.tech/downloads/qsdm-edge-agent-1.3.6-SHA256SUMS.txt`
 
-QSDM Hive 1.3.95 bundles Edge Control 1.3.5, Agent 1.3.5, and the CUDA helper. Standalone bundles are for additional laboratory computers.
+QSDM Hive 1.4.1 bundles Edge Control 1.3.6, Agent 1.3.6, and the CUDA helper. Standalone bundles are for additional laboratory computers.
 
 ## Edge Control GUI
 
@@ -55,7 +55,7 @@ qsdm-edge-agent.exe relay --listen 0.0.0.0:7740 --allow-lan `
 
 Restrict inbound TCP 7740 to the laboratory subnet. Percentages scale QSDM work units, not operating-system utilization. An agent's lower contribution limit always wins.
 
-Copy only `mother-hive.token` to the computer running QSDM Hive at `%APPDATA%\QSDM\edge-pool\mother-hive.token` or `$HOME/.config/QSDM/edge-pool/mother-hive.token`. The filename is retained for protocol compatibility. For a remote Relay, set `QSDM_EDGE_RELAY_URL` and `QSDM_EDGE_RELAY_TOKEN_FILE`.
+Keep `mother-hive.token` on the Relay. It is the Relay's master Mother-Hive secret and must not be copied to Hive. Open Edge Control on the Relay, name the Hive, choose **Create Mother Hive code**, and paste the resulting `QSDM-EDGE-3` code into that Hive's **Mother Hive** page. Create a different code for each Hive. Edge Control can revoke one Hive without disconnecting the others.
 
 Linux computer A uses the same protocol:
 
@@ -114,7 +114,7 @@ qsdm-edge-agent.exe configure-agent `
 
 The current CUDA helper requires NVIDIA Turing or newer, compute capability 7.5+, and a working NVIDIA driver. GPU Edge Worker is shared compute and is separate from QSDM protocol mining.
 
-`--background` detaches the process without a visible console window. `--silent` writes only to the log file. Agent 1.3.5 re-registers after a Relay restart and retries a completed result until its exactly-once receipt is acknowledged.
+`--background` detaches the process without a visible console window. `--silent` writes only to the log file. Agent 1.3.6 re-registers after a Relay restart and retries a completed result until its exactly-once receipt is acknowledged.
 
 Linux agents can run silently in the same way:
 

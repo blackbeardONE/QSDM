@@ -476,6 +476,11 @@ input[type="range"] {
   border-color: #a34a57;
 }
 
+.button.compact-button {
+  min-height: 30px;
+  padding: 5px 10px;
+}
+
 .table-wrap {
   width: 100%;
   overflow-x: auto;

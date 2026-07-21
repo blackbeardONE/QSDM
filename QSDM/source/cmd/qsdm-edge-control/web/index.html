@@ -190,6 +190,21 @@
             <tbody id="workers-body"><tr><td colspan="4" class="empty-row">No Agents connected</td></tr></tbody>
           </table>
         </div>
+
+        <div class="section-divider"></div>
+        <div class="section-heading compact">
+          <div>
+            <span class="eyebrow">Workload owners</span>
+            <h2>Paired Mother Hives</h2>
+          </div>
+          <span id="mother-count">0 Mother Hives</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>QSDM Hive</th><th>Identity</th><th>Last seen</th><th>Access</th></tr></thead>
+            <tbody id="mothers-body"><tr><td colspan="4" class="empty-row">No Mother Hives paired</td></tr></tbody>
+          </table>
+        </div>
       </section>
 
       <section class="bottom-controls" aria-label="Edge Control actions">
@@ -224,6 +239,12 @@
         </div>
         <details class="advanced-secret">
           <summary>QSDM Hive on another computer</summary>
+          <p class="small-note">Create a separate named code for every QSDM Hive. Each Hive sees only its own jobs and settlement.</p>
+          <label class="field">
+            <span>QSDM Hive name</span>
+            <input id="mother-name-input" maxlength="64" placeholder="Office Mother Hive" />
+          </label>
+          <button class="button secondary" id="create-mother-button" type="button">Create private pairing code</button>
           <textarea id="mother-code-output" rows="5" readonly></textarea>
           <button class="button secondary" id="copy-mother-button" type="button">Copy QSDM Hive pairing code</button>
         </details>

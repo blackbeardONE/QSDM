@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	pairingCodePrefix           = "QSDM-EDGE-1."
-	federationPairingCodePrefix = "QSDM-EDGE-2."
+	pairingCodePrefix            = "QSDM-EDGE-1."
+	federationPairingCodePrefix  = "QSDM-EDGE-2."
+	localMotherPairingCodePrefix = "QSDM-EDGE-3."
 )
 
 type pairingPayload struct {
@@ -30,6 +31,9 @@ type pairingPayload struct {
 	ExpiresAt         string   `json:"expires_at,omitempty"`
 	WorkloadIDs       []string `json:"workload_ids,omitempty"`
 	FederationContext string   `json:"federation_context,omitempty"`
+	MotherID          string   `json:"mother_id,omitempty"`
+	MotherName        string   `json:"mother_name,omitempty"`
+	MotherContext     string   `json:"mother_context,omitempty"`
 }
 
 func encodePairingCode(kind, relayURL string, token []byte) (string, error) {
@@ -108,14 +112,46 @@ func encodeFederationPairingCode(relayURL string, token []byte, providerName str
 	return federationPairingCodePrefix + base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
+func encodeLocalMotherPairingCode(relayURL, stateDir string, token []byte, motherName string) (string, edgepool.MotherTenantStatus, error) {
+	parsed, err := validateRelayURL(relayURL, false)
+	if err != nil {
+		return "", edgepool.MotherTenantStatus{}, err
+	}
+	encodedContext, scopedToken, tenant, err := edgepool.CreateMotherTenantCredential(
+		stateDir,
+		token,
+		motherName,
+		time.Now().UTC(),
+	)
+	if err != nil {
+		return "", edgepool.MotherTenantStatus{}, err
+	}
+	payload := pairingPayload{
+		Version:       3,
+		Kind:          "mother-local",
+		RelayURL:      parsed.String(),
+		Token:         hex.EncodeToString(scopedToken),
+		MotherID:      tenant.MotherID,
+		MotherName:    tenant.MotherName,
+		MotherContext: encodedContext,
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", edgepool.MotherTenantStatus{}, err
+	}
+	return localMotherPairingCodePrefix + base64.RawURLEncoding.EncodeToString(raw), tenant, nil
+}
+
 func decodePairingCode(value, expectedKind string) (pairingPayload, []byte, error) {
 	value = strings.TrimSpace(value)
-	if len(value) > 4096 || (!strings.HasPrefix(value, pairingCodePrefix) && !strings.HasPrefix(value, federationPairingCodePrefix)) {
+	if len(value) > 4096 || (!strings.HasPrefix(value, pairingCodePrefix) && !strings.HasPrefix(value, federationPairingCodePrefix) && !strings.HasPrefix(value, localMotherPairingCodePrefix)) {
 		return pairingPayload{}, nil, errors.New("this is not a valid QSDM Edge pairing code")
 	}
 	prefix := pairingCodePrefix
 	if strings.HasPrefix(value, federationPairingCodePrefix) {
 		prefix = federationPairingCodePrefix
+	} else if strings.HasPrefix(value, localMotherPairingCodePrefix) {
+		prefix = localMotherPairingCodePrefix
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(value, prefix))
 	if err != nil {
@@ -133,12 +169,17 @@ func decodePairingCode(value, expectedKind string) (pairingPayload, []byte, erro
 	expectedVersion := 1
 	if expectedKind == "mother-federation" {
 		expectedVersion = 2
+	} else if expectedKind == "mother-local" {
+		expectedVersion = 3
 	}
 	if payload.Kind != expectedKind {
 		return pairingPayload{}, nil, fmt.Errorf("this pairing code is for %s, not %s", payload.Kind, expectedKind)
 	}
 	if expectedKind == "mother-federation" && (payload.Version != expectedVersion || prefix != federationPairingCodePrefix) {
 		return pairingPayload{}, nil, errors.New("legacy federation invitation is not server-expiring; create a new invitation")
+	}
+	if expectedKind == "mother-local" && (payload.Version != expectedVersion || prefix != localMotherPairingCodePrefix) {
+		return pairingPayload{}, nil, errors.New("local Mother Hive pairing code is not scoped to one Hive")
 	}
 	if payload.Version != expectedVersion {
 		return pairingPayload{}, nil, fmt.Errorf("pairing code version %d is not supported", payload.Version)
@@ -165,6 +206,15 @@ func decodePairingCode(value, expectedKind string) (pairingPayload, []byte, erro
 			payload.ConsumerWallet != contextValue.ConsumerWallet || payload.ExpiresAt != contextValue.ExpiresAt ||
 			strings.Join(payload.WorkloadIDs, "\n") != strings.Join(contextValue.WorkloadIDs, "\n") {
 			return pairingPayload{}, nil, errors.New("federation invitation metadata does not match its credential context")
+		}
+	}
+	if expectedKind == "mother-local" {
+		contextValue, err := edgepool.DecodeMotherContext(payload.MotherContext)
+		if err != nil {
+			return pairingPayload{}, nil, fmt.Errorf("Mother Hive context: %w", err)
+		}
+		if payload.MotherID != contextValue.MotherID || payload.MotherName != contextValue.MotherName {
+			return pairingPayload{}, nil, errors.New("Mother Hive invitation metadata does not match its credential context")
 		}
 	}
 	return payload, token, nil

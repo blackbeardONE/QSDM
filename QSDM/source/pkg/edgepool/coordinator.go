@@ -63,9 +63,11 @@ type Coordinator struct {
 	computeByRequest map[string]string
 	computeOrder     []string
 	nonces           map[string]time.Time
-	persistMu        sync.Mutex
+	receiptPersistMu sync.Mutex
+	computePersistMu sync.Mutex
+	settlePersistMu  sync.Mutex
 	verifySlots      chan struct{}
-	motherSeenAt     time.Time
+	motherSeenAt     map[string]time.Time
 
 	settlementSigner    *mldsa87.PrivateKey
 	settlementPublicKey string
@@ -76,6 +78,9 @@ type Coordinator struct {
 type motherAuthentication struct {
 	Token      []byte
 	Federation *FederationContext
+	Mother     *MotherContext
+	MotherID   string
+	MotherName string
 }
 
 // Relay and RelayConfig are the preferred names for new deployments. The
@@ -191,6 +196,7 @@ func NewCoordinator(config CoordinatorConfig) (*Coordinator, error) {
 		computeJobs:         map[string]*ComputeJobRecord{},
 		computeByRequest:    map[string]string{},
 		nonces:              map[string]time.Time{},
+		motherSeenAt:        map[string]time.Time{},
 		verifySlots:         make(chan struct{}, config.MaxVerifications),
 		settlementSigner:    settlementSigner,
 		settlementPublicKey: settlementPublicKey,
@@ -490,7 +496,7 @@ func (c *Coordinator) handleComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	receipt := c.makeReceipt(result)
+	receipt := c.makeReceiptForJob(job, result)
 	if err := c.appendReceipt(receipt); err != nil {
 		c.clearCompleting(result.JobID)
 		writePoolError(w, http.StatusInternalServerError, "verified result could not be persisted")
@@ -515,7 +521,7 @@ func (c *Coordinator) handleComplete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Coordinator) handleStatus(w http.ResponseWriter, r *http.Request) {
-	_, _, _, ok := c.authenticateMother(w, r)
+	_, _, authentication, ok := c.authenticateMother(w, r)
 	if !ok {
 		return
 	}
@@ -523,8 +529,8 @@ func (c *Coordinator) handleStatus(w http.ResponseWriter, r *http.Request) {
 		writePoolError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	c.markMotherSeen()
-	writePoolJSON(w, http.StatusOK, c.Status())
+	c.markMotherSeen(authentication.MotherID)
+	writePoolJSON(w, http.StatusOK, c.StatusForMother(authentication.MotherID, authentication.MotherName))
 }
 
 func (c *Coordinator) handleLatestProof(w http.ResponseWriter, r *http.Request) {
@@ -545,8 +551,8 @@ func (c *Coordinator) handleLatestProof(w http.ResponseWriter, r *http.Request) 
 		writePoolError(w, http.StatusForbidden, "federation invitation does not allow this workload")
 		return
 	}
-	c.markMotherSeen()
-	proof, err := c.LatestSettlementProof(resource, time.Now().UTC())
+	c.markMotherSeen(authentication.MotherID)
+	proof, err := c.LatestSettlementProofForMother(authentication.MotherID, resource, time.Now().UTC())
 	if errors.Is(err, errSettlementNotBound) {
 		writePoolError(w, http.StatusPreconditionRequired, err.Error())
 		return
@@ -582,7 +588,7 @@ func (c *Coordinator) handleSettlementBind(w http.ResponseWriter, r *http.Reques
 		writePoolError(w, http.StatusForbidden, "federation invitation is bound to a different Mother Hive wallet")
 		return
 	}
-	binding, err := c.BindSettlement(request, time.Now().UTC())
+	binding, err := c.BindSettlementForMother(authentication.MotherID, request, time.Now().UTC())
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, errSettlementBindingConflict) {
@@ -591,12 +597,12 @@ func (c *Coordinator) handleSettlementBind(w http.ResponseWriter, r *http.Reques
 		writePoolError(w, status, err.Error())
 		return
 	}
-	c.markMotherSeen()
+	c.markMotherSeen(authentication.MotherID)
 	writePoolJSON(w, http.StatusOK, binding)
 }
 
 func (c *Coordinator) handleSettlementAck(w http.ResponseWriter, r *http.Request) {
-	body, _, _, ok := c.authenticateMother(w, r)
+	body, _, authentication, ok := c.authenticateMother(w, r)
 	if !ok {
 		return
 	}
@@ -609,7 +615,7 @@ func (c *Coordinator) handleSettlementAck(w http.ResponseWriter, r *http.Request
 		writePoolError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := c.AcknowledgeSettlementProof(request, time.Now().UTC())
+	result, err := c.AcknowledgeSettlementProofForMother(authentication.MotherID, request, time.Now().UTC())
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, errSettlementProofNotFound) {
@@ -618,11 +624,26 @@ func (c *Coordinator) handleSettlementAck(w http.ResponseWriter, r *http.Request
 		writePoolError(w, status, err.Error())
 		return
 	}
-	c.markMotherSeen()
+	c.markMotherSeen(authentication.MotherID)
 	writePoolJSON(w, http.StatusOK, result)
 }
 
 func (c *Coordinator) Status() PoolStatus {
+	return c.statusForMother(LegacyMotherID, "Legacy Mother Hive", true)
+}
+
+// StatusForMother returns shared Agent capacity plus only the authenticated
+// Hive's jobs, receipts, and settlement binding.
+func (c *Coordinator) StatusForMother(motherID, motherName string) PoolStatus {
+	return c.statusForMother(motherID, motherName, false)
+}
+
+func (c *Coordinator) statusForMother(motherID, motherName string, includeMotherRegistry bool) PoolStatus {
+	motherID = normalizeReceiptMotherID(motherID)
+	var motherHives []MotherTenantStatus
+	if includeMotherRegistry {
+		motherHives, _ = ListMotherTenants(c.config.StateDir)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.pruneLocked(time.Now().UTC())
@@ -633,14 +654,28 @@ func (c *Coordinator) Status() PoolStatus {
 	sort.Slice(workers, func(i, j int) bool { return workers[i].WorkerID < workers[j].WorkerID })
 	counts := map[ResourceKind]uint64{ResourceCPU: 0, ResourceGPU: 0, ResourceRAM: 0}
 	for _, receipt := range c.receipts {
-		counts[receipt.Resource]++
+		if normalizeReceiptMotherID(receipt.MotherID) == motherID {
+			counts[receipt.Resource]++
+		}
 	}
-	settlement := cloneSettlementState(c.settlement)
+	activeLeases := 0
+	for _, job := range c.jobs {
+		if normalizeReceiptMotherID(job.MotherID) == motherID {
+			activeLeases++
+		}
+	}
+	for index := range motherHives {
+		motherHives[index].LastSeenAt = formatOptionalTime(c.motherSeenAt[motherHives[index].MotherID])
+	}
+	settlement := settlementTenant(c.settlement, motherID)
 	return PoolStatus{
 		Version:       ProtocolVersion,
 		CoordinatorID: c.config.ID,
 		RelayID:       c.config.ID,
 		Role:          "relay",
+		MotherID:      motherID,
+		MotherName:    motherName,
+		MotherHives:   motherHives,
 		Policy: RelayPolicy{
 			CPUPercent: c.config.CPUPercent,
 			GPUPercent: c.config.GPUPercent,
@@ -649,17 +684,17 @@ func (c *Coordinator) Status() PoolStatus {
 			GPUUnits:   scaledRelayUnits(c.config.GPUUnits, c.config.GPUPercent),
 			RAMMiB:     scaledRelayUnits(c.config.RAMMiB, c.config.RAMPercent),
 		},
-		MotherSeenAt:            formatOptionalTime(c.motherSeenAt),
+		MotherSeenAt:            formatOptionalTime(c.motherSeenAt[motherID]),
 		StartedAt:               c.startedAt.Format(time.RFC3339Nano),
 		Workers:                 workers,
-		ActiveLeases:            len(c.jobs),
+		ActiveLeases:            activeLeases,
 		ReceiptCounts:           counts,
 		SettlementReady:         settlement.Binding != nil,
 		SettlementRelayID:       c.settlementRelayID,
 		SettlementPublicKey:     c.settlementPublicKey,
 		SettlementBinding:       settlement.Binding,
 		PendingSettlementProofs: settlementPendingProofIDs(settlement),
-		ComputeQueue:            c.computeQueueStatusLocked(),
+		ComputeQueue:            c.computeQueueStatusForMotherLocked(motherID),
 	}
 }
 
@@ -670,7 +705,7 @@ func (c *Coordinator) LatestProof(resource ResourceKind, now time.Time) PoolProo
 	selected := make([]Receipt, 0, c.config.MaxProofReceipts)
 	for index := len(c.receipts) - 1; index >= 0 && len(selected) < c.config.MaxProofReceipts; index-- {
 		receipt := c.receipts[index]
-		if receipt.Resource != resource {
+		if receipt.Resource != resource || normalizeReceiptMotherID(receipt.MotherID) != LegacyMotherID {
 			continue
 		}
 		accepted, err := time.Parse(time.RFC3339Nano, receipt.AcceptedAt)
@@ -696,6 +731,7 @@ func (c *Coordinator) newJobLocked(worker WorkerStatus, request LeaseRequest, no
 	job := Job{
 		Version:   ProtocolVersion,
 		ID:        hex.EncodeToString(idBytes),
+		MotherID:  LegacyMotherID,
 		WorkerID:  worker.WorkerID,
 		Resource:  request.Resource,
 		Seed:      hex.EncodeToString(seed),
@@ -784,12 +820,46 @@ func (c *Coordinator) authenticate(w http.ResponseWriter, r *http.Request, token
 }
 
 func (c *Coordinator) authenticateMother(w http.ResponseWriter, r *http.Request) ([]byte, string, motherAuthentication, bool) {
-	encodedContext := strings.TrimSpace(r.Header.Get(HeaderFederationContext))
-	if encodedContext == "" {
-		body, workerID, ok := c.authenticate(w, r, c.config.MotherToken, "mother")
-		return body, workerID, motherAuthentication{Token: c.config.MotherToken}, ok
+	encodedFederation := strings.TrimSpace(r.Header.Get(HeaderFederationContext))
+	encodedMother := strings.TrimSpace(r.Header.Get(HeaderMotherContext))
+	if encodedFederation != "" && encodedMother != "" {
+		writePoolError(w, http.StatusUnauthorized, "request cannot combine local Mother Hive and federation contexts")
+		return nil, "", motherAuthentication{}, false
 	}
-	token, contextValue, err := DeriveFederationToken(c.config.MotherToken, encodedContext, time.Now().UTC())
+	if encodedMother != "" {
+		token, contextValue, err := DeriveMotherToken(c.config.MotherToken, encodedMother)
+		if err != nil {
+			writePoolError(w, http.StatusUnauthorized, err.Error())
+			return nil, "", motherAuthentication{}, false
+		}
+		registered, err := authorizeMotherTenant(c.config.StateDir, encodedMother)
+		if err != nil || registered.MotherID != contextValue.MotherID {
+			if err == nil {
+				err = errors.New("Mother Hive registration does not match its credential")
+			}
+			writePoolError(w, http.StatusUnauthorized, err.Error())
+			return nil, "", motherAuthentication{}, false
+		}
+		body, workerID, ok := c.authenticate(w, r, token, "mother-local:"+contextValue.MotherID)
+		if !ok {
+			return nil, "", motherAuthentication{}, false
+		}
+		return body, workerID, motherAuthentication{
+			Token:      token,
+			Mother:     &contextValue,
+			MotherID:   contextValue.MotherID,
+			MotherName: contextValue.MotherName,
+		}, true
+	}
+	if encodedFederation == "" {
+		body, workerID, ok := c.authenticate(w, r, c.config.MotherToken, "mother")
+		return body, workerID, motherAuthentication{
+			Token:      c.config.MotherToken,
+			MotherID:   LegacyMotherID,
+			MotherName: "Legacy Mother Hive",
+		}, ok
+	}
+	token, contextValue, err := DeriveFederationToken(c.config.MotherToken, encodedFederation, time.Now().UTC())
 	if err != nil {
 		writePoolError(w, http.StatusUnauthorized, err.Error())
 		return nil, "", motherAuthentication{}, false
@@ -798,12 +868,17 @@ func (c *Coordinator) authenticateMother(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return nil, "", motherAuthentication{}, false
 	}
-	return body, workerID, motherAuthentication{Token: token, Federation: &contextValue}, true
+	return body, workerID, motherAuthentication{
+		Token:      token,
+		Federation: &contextValue,
+		MotherID:   federationMotherID(encodedFederation),
+		MotherName: contextValue.ProviderName,
+	}, true
 }
 
-func (c *Coordinator) markMotherSeen() {
+func (c *Coordinator) markMotherSeen(motherID string) {
 	c.mu.Lock()
-	c.motherSeenAt = time.Now().UTC()
+	c.motherSeenAt[normalizeReceiptMotherID(motherID)] = time.Now().UTC()
 	c.mu.Unlock()
 }
 
@@ -861,21 +936,27 @@ func receiptMatchesResult(receipt Receipt, result JobResult) bool {
 }
 
 func (c *Coordinator) makeReceipt(result JobResult) Receipt {
+	return c.makeReceiptForJob(Job{MotherID: LegacyMotherID}, result)
+}
+
+func (c *Coordinator) makeReceiptForJob(job Job, result JobResult) Receipt {
 	accepted := time.Now().UTC().Format(time.RFC3339Nano)
-	identity := strings.Join([]string{
-		ProtocolVersion,
+	motherID := normalizeReceiptMotherID(job.MotherID)
+	identity := receiptIdentity(
 		c.config.ID,
+		motherID,
 		result.JobID,
 		result.WorkerID,
-		string(result.Resource),
+		result.Resource,
 		result.Digest,
-		strconv.FormatUint(result.Units, 10),
-	}, ":")
+		result.Units,
+	)
 	digest := sha256.Sum256([]byte(identity))
 	return Receipt{
 		Version:       ProtocolVersion,
 		ReceiptID:     hex.EncodeToString(digest[:]),
 		JobID:         result.JobID,
+		MotherID:      motherID,
 		WorkerID:      result.WorkerID,
 		Resource:      result.Resource,
 		Algorithm:     result.Algorithm,
@@ -916,8 +997,8 @@ func (c *Coordinator) receiptsPath() string {
 }
 
 func (c *Coordinator) appendReceipt(receipt Receipt) error {
-	c.persistMu.Lock()
-	defer c.persistMu.Unlock()
+	c.receiptPersistMu.Lock()
+	defer c.receiptPersistMu.Unlock()
 
 	raw, err := json.Marshal(receipt)
 	if err != nil {
@@ -951,6 +1032,7 @@ func (c *Coordinator) loadReceipts() error {
 		if err := json.Unmarshal(line, &receipt); err != nil {
 			return fmt.Errorf("edge receipt log contains invalid JSON: %w", err)
 		}
+		receipt.MotherID = normalizeReceiptMotherID(receipt.MotherID)
 		if err := c.validateStoredReceipt(receipt); err != nil {
 			return fmt.Errorf("edge receipt log contains an invalid receipt: %w", err)
 		}
@@ -973,7 +1055,7 @@ func (c *Coordinator) validateStoredReceipt(receipt Receipt) error {
 	if receipt.Version != ProtocolVersion || receipt.CoordinatorID != c.config.ID {
 		return errors.New("receipt protocol or coordinator identity does not match")
 	}
-	if receipt.JobID == "" || ValidateWorkerID(receipt.WorkerID) != nil || !receipt.Resource.Valid() {
+	if receipt.JobID == "" || !validMotherTenantID(receipt.MotherID) || ValidateWorkerID(receipt.WorkerID) != nil || !receipt.Resource.Valid() {
 		return errors.New("receipt job, worker, or resource is invalid")
 	}
 	if receipt.Units == 0 || receipt.DurationMS <= 0 {
@@ -1003,20 +1085,36 @@ func (c *Coordinator) validateStoredReceipt(receipt Receipt) error {
 	if err != nil || len(digest) != sha256.Size {
 		return errors.New("receipt digest is invalid")
 	}
-	identity := strings.Join([]string{
-		ProtocolVersion,
+	identity := receiptIdentity(
 		receipt.CoordinatorID,
+		receipt.MotherID,
 		receipt.JobID,
 		receipt.WorkerID,
-		string(receipt.Resource),
-		strings.ToLower(receipt.Digest),
-		strconv.FormatUint(receipt.Units, 10),
-	}, ":")
+		receipt.Resource,
+		receipt.Digest,
+		receipt.Units,
+	)
 	expected := sha256.Sum256([]byte(identity))
 	if !strings.EqualFold(receipt.ReceiptID, hex.EncodeToString(expected[:])) {
 		return errors.New("receipt identity does not verify")
 	}
 	return validateResultMetadata(receipt.Metadata)
+}
+
+func receiptIdentity(coordinatorID, motherID, jobID, workerID string, resource ResourceKind, digest string, units uint64) string {
+	parts := []string{
+		ProtocolVersion,
+		coordinatorID,
+		jobID,
+		workerID,
+		string(resource),
+		strings.ToLower(digest),
+		strconv.FormatUint(units, 10),
+	}
+	if normalized := normalizeReceiptMotherID(motherID); normalized != LegacyMotherID {
+		parts = append(parts, normalized)
+	}
+	return strings.Join(parts, ":")
 }
 
 func validateCapabilities(capabilities Capabilities) error {

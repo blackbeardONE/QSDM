@@ -20,7 +20,9 @@ import (
 const (
 	relaySigningKeyFileName = "relay-signing-key.json"
 	settlementStateFileName = "settlement-state.json"
-	settlementStateVersion  = 1
+	relaySigningKeyVersion  = 1
+	settlementStateVersion  = 2
+	legacySettlementVersion = 1
 )
 
 var (
@@ -36,7 +38,19 @@ type relaySigningKeyFile struct {
 	PrivateKey string `json:"private_key"`
 }
 
+type tenantSettlementState struct {
+	Binding            *SettlementBinding               `json:"binding,omitempty"`
+	Pending            map[ResourceKind]PoolProof       `json:"pending"`
+	AcknowledgedProofs map[string]SettlementAckResponse `json:"acknowledged_proofs"`
+}
+
 type settlementState struct {
+	Version          int                              `json:"version"`
+	Tenants          map[string]tenantSettlementState `json:"tenants"`
+	ConsumedReceipts map[string]string                `json:"consumed_receipts"`
+}
+
+type legacySettlementState struct {
 	Version            int                              `json:"version"`
 	Binding            *SettlementBinding               `json:"binding,omitempty"`
 	Pending            map[ResourceKind]PoolProof       `json:"pending"`
@@ -71,9 +85,15 @@ type settlementProofSignedBody struct {
 
 func newSettlementState() settlementState {
 	return settlementState{
-		Version:            settlementStateVersion,
+		Version:          settlementStateVersion,
+		Tenants:          map[string]tenantSettlementState{},
+		ConsumedReceipts: map[string]string{},
+	}
+}
+
+func newTenantSettlementState() tenantSettlementState {
+	return tenantSettlementState{
 		Pending:            map[ResourceKind]PoolProof{},
-		ConsumedReceipts:   map[string]string{},
 		AcknowledgedProofs: map[string]SettlementAckResponse{},
 	}
 }
@@ -81,21 +101,46 @@ func newSettlementState() settlementState {
 func cloneSettlementState(state settlementState) settlementState {
 	out := newSettlementState()
 	out.Version = state.Version
-	if state.Binding != nil {
-		binding := *state.Binding
-		out.Binding = &binding
-	}
-	for resource, proof := range state.Pending {
-		proof.ReceiptIDs = append([]string(nil), proof.ReceiptIDs...)
-		out.Pending[resource] = proof
+	for motherID, tenant := range state.Tenants {
+		cloned := newTenantSettlementState()
+		if tenant.Binding != nil {
+			binding := *tenant.Binding
+			cloned.Binding = &binding
+		}
+		for resource, proof := range tenant.Pending {
+			proof.ReceiptIDs = append([]string(nil), proof.ReceiptIDs...)
+			cloned.Pending[resource] = proof
+		}
+		for proofID, acknowledgement := range tenant.AcknowledgedProofs {
+			cloned.AcknowledgedProofs[proofID] = acknowledgement
+		}
+		out.Tenants[motherID] = cloned
 	}
 	for receiptID, proofID := range state.ConsumedReceipts {
 		out.ConsumedReceipts[receiptID] = proofID
 	}
-	for proofID, acknowledgement := range state.AcknowledgedProofs {
-		out.AcknowledgedProofs[proofID] = acknowledgement
-	}
 	return out
+}
+
+func settlementTenant(state settlementState, motherID string) tenantSettlementState {
+	motherID = normalizeReceiptMotherID(motherID)
+	stored, ok := state.Tenants[motherID]
+	if !ok {
+		return newTenantSettlementState()
+	}
+	tenant := newTenantSettlementState()
+	if stored.Binding != nil {
+		binding := *stored.Binding
+		tenant.Binding = &binding
+	}
+	for resource, proof := range stored.Pending {
+		proof.ReceiptIDs = append([]string(nil), proof.ReceiptIDs...)
+		tenant.Pending[resource] = proof
+	}
+	for proofID, acknowledgement := range stored.AcknowledgedProofs {
+		tenant.AcknowledgedProofs[proofID] = acknowledgement
+	}
+	return tenant
 }
 
 func validSettlementWallet(address string) bool {
@@ -295,7 +340,7 @@ func loadOrCreateRelaySigningKey(stateDir string) (*mldsa87.PrivateKey, string, 
 			return nil, "", marshalErr
 		}
 		encoded, marshalErr := json.MarshalIndent(relaySigningKeyFile{
-			Version:    settlementStateVersion,
+			Version:    relaySigningKeyVersion,
 			PublicKey:  hex.EncodeToString(publicBytes),
 			PrivateKey: hex.EncodeToString(privateBytes),
 		}, "", "  ")
@@ -312,7 +357,7 @@ func loadOrCreateRelaySigningKey(stateDir string) (*mldsa87.PrivateKey, string, 
 		return nil, "", fmt.Errorf("read Relay ML-DSA-87 key: %w", err)
 	}
 	var encoded relaySigningKeyFile
-	if err := json.Unmarshal(raw, &encoded); err != nil || encoded.Version != settlementStateVersion {
+	if err := json.Unmarshal(raw, &encoded); err != nil || encoded.Version != relaySigningKeyVersion {
 		return nil, "", errors.New("Relay signing key file is invalid")
 	}
 	publicBytes, err := hex.DecodeString(encoded.PublicKey)
@@ -350,37 +395,63 @@ func loadSettlementState(stateDir string, relayPublicKey string) (settlementStat
 	if err != nil {
 		return settlementState{}, fmt.Errorf("read Relay settlement state: %w", err)
 	}
-	state := newSettlementState()
-	if err := json.Unmarshal(raw, &state); err != nil || state.Version != settlementStateVersion {
+	var header struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &header); err != nil {
 		return settlementState{}, errors.New("Relay settlement state is invalid")
 	}
-	if state.Pending == nil {
-		state.Pending = map[ResourceKind]PoolProof{}
+	state := newSettlementState()
+	switch header.Version {
+	case legacySettlementVersion:
+		var legacy legacySettlementState
+		if err := json.Unmarshal(raw, &legacy); err != nil {
+			return settlementState{}, errors.New("Relay settlement state is invalid")
+		}
+		state.ConsumedReceipts = legacy.ConsumedReceipts
+		state.Tenants[LegacyMotherID] = tenantSettlementState{
+			Binding:            legacy.Binding,
+			Pending:            legacy.Pending,
+			AcknowledgedProofs: legacy.AcknowledgedProofs,
+		}
+	case settlementStateVersion:
+		if err := json.Unmarshal(raw, &state); err != nil {
+			return settlementState{}, errors.New("Relay settlement state is invalid")
+		}
+	default:
+		return settlementState{}, errors.New("Relay settlement state has an unsupported version")
+	}
+	if state.Tenants == nil {
+		state.Tenants = map[string]tenantSettlementState{}
 	}
 	if state.ConsumedReceipts == nil {
 		state.ConsumedReceipts = map[string]string{}
 	}
-	if state.AcknowledgedProofs == nil {
-		state.AcknowledgedProofs = map[string]SettlementAckResponse{}
-	}
-	if state.Binding != nil {
-		if err := validateSettlementBinding(*state.Binding); err != nil {
-			return settlementState{}, fmt.Errorf("invalid persisted settlement binding: %w", err)
+	for motherID := range state.Tenants {
+		if !validMotherTenantID(motherID) {
+			return settlementState{}, errors.New("persisted settlement has an invalid Mother Hive identity")
 		}
-	}
-	for resource, proof := range state.Pending {
-		if resource != proof.Resource || !strings.EqualFold(proof.RelayPublicKey, relayPublicKey) {
-			return settlementState{}, errors.New("persisted settlement proof does not match this Relay key")
+		tenant := settlementTenant(state, motherID)
+		if tenant.Binding != nil {
+			if err := validateSettlementBinding(*tenant.Binding); err != nil {
+				return settlementState{}, fmt.Errorf("invalid persisted settlement binding: %w", err)
+			}
 		}
-		if err := VerifySettlementPoolProof(proof); err != nil {
-			return settlementState{}, fmt.Errorf("invalid persisted settlement proof: %w", err)
+		for resource, proof := range tenant.Pending {
+			if resource != proof.Resource || !strings.EqualFold(proof.RelayPublicKey, relayPublicKey) {
+				return settlementState{}, errors.New("persisted settlement proof does not match this Relay key")
+			}
+			if err := VerifySettlementPoolProof(proof); err != nil {
+				return settlementState{}, fmt.Errorf("invalid persisted settlement proof: %w", err)
+			}
+			if tenant.Binding == nil ||
+				!strings.EqualFold(proof.ContributorWallet, tenant.Binding.ContributorWallet) ||
+				!strings.EqualFold(proof.MotherHiveWallet, tenant.Binding.MotherHiveWallet) ||
+				!strings.EqualFold(proof.EcosystemWallet, tenant.Binding.EcosystemWallet) {
+				return settlementState{}, errors.New("persisted settlement proof does not match the Mother Hive payout binding")
+			}
 		}
-		if state.Binding == nil ||
-			!strings.EqualFold(proof.ContributorWallet, state.Binding.ContributorWallet) ||
-			!strings.EqualFold(proof.MotherHiveWallet, state.Binding.MotherHiveWallet) ||
-			!strings.EqualFold(proof.EcosystemWallet, state.Binding.EcosystemWallet) {
-			return settlementState{}, errors.New("persisted settlement proof does not match the Relay payout binding")
-		}
+		state.Tenants[motherID] = tenant
 	}
 	return state, nil
 }
@@ -394,7 +465,7 @@ func saveSettlementState(path string, state settlementState) error {
 	return fileutil.WriteFileAtomic(path, raw, 0o600)
 }
 
-func settlementPendingProofIDs(state settlementState) map[ResourceKind]string {
+func settlementPendingProofIDs(state tenantSettlementState) map[ResourceKind]string {
 	out := make(map[ResourceKind]string, len(state.Pending))
 	for resource, proof := range state.Pending {
 		out[resource] = proof.ProofID
@@ -402,10 +473,10 @@ func settlementPendingProofIDs(state settlementState) map[ResourceKind]string {
 	return out
 }
 
-func sortedUnconsumedReceipts(receipts []Receipt, consumed map[string]string, resource ResourceKind, cutoff time.Time, limit int) []Receipt {
+func sortedUnconsumedReceipts(receipts []Receipt, consumed map[string]string, motherID string, resource ResourceKind, cutoff time.Time, limit int) []Receipt {
 	selected := make([]Receipt, 0, limit)
 	for _, receipt := range receipts {
-		if receipt.Resource != resource {
+		if receipt.Resource != resource || normalizeReceiptMotherID(receipt.MotherID) != normalizeReceiptMotherID(motherID) {
 			continue
 		}
 		if _, used := consumed[strings.ToLower(receipt.ReceiptID)]; used {
@@ -431,6 +502,14 @@ func (c *Coordinator) settlementPath() string {
 // BindSettlement fixes payout destinations for this Relay. The operation is
 // idempotent for the same addresses and rejects remote rebinding.
 func (c *Coordinator) BindSettlement(request SettlementBindRequest, now time.Time) (SettlementBinding, error) {
+	return c.BindSettlementForMother(LegacyMotherID, request, now)
+}
+
+func (c *Coordinator) BindSettlementForMother(motherID string, request SettlementBindRequest, now time.Time) (SettlementBinding, error) {
+	motherID = normalizeReceiptMotherID(motherID)
+	if !validMotherTenantID(motherID) {
+		return SettlementBinding{}, errors.New("Mother Hive identity is invalid")
+	}
 	binding := SettlementBinding{
 		Version:           strings.TrimSpace(request.Version),
 		ContributorWallet: strings.ToLower(strings.TrimSpace(request.ContributorWallet)),
@@ -442,12 +521,13 @@ func (c *Coordinator) BindSettlement(request SettlementBindRequest, now time.Tim
 		return SettlementBinding{}, err
 	}
 
-	c.persistMu.Lock()
-	defer c.persistMu.Unlock()
+	c.settlePersistMu.Lock()
+	defer c.settlePersistMu.Unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.settlement.Binding != nil {
-		existing := *c.settlement.Binding
+	tenant := settlementTenant(c.settlement, motherID)
+	if tenant.Binding != nil {
+		existing := *tenant.Binding
 		if existing.Version == binding.Version &&
 			strings.EqualFold(existing.ContributorWallet, binding.ContributorWallet) &&
 			strings.EqualFold(existing.MotherHiveWallet, binding.MotherHiveWallet) &&
@@ -457,7 +537,8 @@ func (c *Coordinator) BindSettlement(request SettlementBindRequest, now time.Tim
 		return SettlementBinding{}, errSettlementBindingConflict
 	}
 	next := cloneSettlementState(c.settlement)
-	next.Binding = &binding
+	tenant.Binding = &binding
+	next.Tenants[motherID] = tenant
 	if err := saveSettlementState(c.settlementPath(), next); err != nil {
 		return SettlementBinding{}, fmt.Errorf("persist Relay settlement binding: %w", err)
 	}
@@ -468,24 +549,34 @@ func (c *Coordinator) BindSettlement(request SettlementBindRequest, now time.Tim
 // LatestSettlementProof returns the same pending proof until the Mother Hive
 // acknowledges that exact proof after a successful chain commit.
 func (c *Coordinator) LatestSettlementProof(resource ResourceKind, now time.Time) (PoolProof, error) {
+	return c.LatestSettlementProofForMother(LegacyMotherID, resource, now)
+}
+
+func (c *Coordinator) LatestSettlementProofForMother(motherID string, resource ResourceKind, now time.Time) (PoolProof, error) {
+	motherID = normalizeReceiptMotherID(motherID)
+	if !validMotherTenantID(motherID) {
+		return PoolProof{}, errors.New("Mother Hive identity is invalid")
+	}
 	if !resource.Valid() {
 		return PoolProof{}, errors.New("settlement resource must be cpu, gpu, or ram")
 	}
-	c.persistMu.Lock()
-	defer c.persistMu.Unlock()
+	c.settlePersistMu.Lock()
+	defer c.settlePersistMu.Unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if pending, ok := c.settlement.Pending[resource]; ok {
+	tenant := settlementTenant(c.settlement, motherID)
+	if pending, ok := tenant.Pending[resource]; ok {
 		pending.ReceiptIDs = append([]string(nil), pending.ReceiptIDs...)
 		return pending, nil
 	}
-	if c.settlement.Binding == nil {
+	if tenant.Binding == nil {
 		return PoolProof{}, errSettlementNotBound
 	}
 	selected := sortedUnconsumedReceipts(
 		c.receipts,
 		c.settlement.ConsumedReceipts,
+		motherID,
 		resource,
 		now.UTC().Add(-c.config.ProofWindow),
 		c.config.MaxProofReceipts,
@@ -499,9 +590,9 @@ func (c *Coordinator) LatestSettlementProof(resource ResourceKind, now time.Time
 	}
 	proof := AggregateReceipts(relayID, resource, selected, now.UTC())
 	proof.SettlementVersion = SettlementProtocolVersion
-	proof.ContributorWallet = c.settlement.Binding.ContributorWallet
-	proof.MotherHiveWallet = c.settlement.Binding.MotherHiveWallet
-	proof.EcosystemWallet = c.settlement.Binding.EcosystemWallet
+	proof.ContributorWallet = tenant.Binding.ContributorWallet
+	proof.MotherHiveWallet = tenant.Binding.MotherHiveWallet
+	proof.EcosystemWallet = tenant.Binding.EcosystemWallet
 	proof.RelayPublicKey = c.settlementPublicKey
 	proofID, err := SettlementProofID(proof)
 	if err != nil {
@@ -523,7 +614,8 @@ func (c *Coordinator) LatestSettlementProof(resource ResourceKind, now time.Time
 	}
 
 	next := cloneSettlementState(c.settlement)
-	next.Pending[resource] = proof
+	tenant.Pending[resource] = proof
+	next.Tenants[motherID] = tenant
 	if err := saveSettlementState(c.settlementPath(), next); err != nil {
 		return PoolProof{}, fmt.Errorf("persist pending Relay settlement proof: %w", err)
 	}
@@ -534,6 +626,14 @@ func (c *Coordinator) LatestSettlementProof(resource ResourceKind, now time.Time
 // AcknowledgeSettlementProof consumes a batch only after Hive observed its
 // task action committed by QSDM Core. Repeated acknowledgement is idempotent.
 func (c *Coordinator) AcknowledgeSettlementProof(request SettlementAckRequest, now time.Time) (SettlementAckResponse, error) {
+	return c.AcknowledgeSettlementProofForMother(LegacyMotherID, request, now)
+}
+
+func (c *Coordinator) AcknowledgeSettlementProofForMother(motherID string, request SettlementAckRequest, now time.Time) (SettlementAckResponse, error) {
+	motherID = normalizeReceiptMotherID(motherID)
+	if !validMotherTenantID(motherID) {
+		return SettlementAckResponse{}, errors.New("Mother Hive identity is invalid")
+	}
 	if strings.TrimSpace(request.Version) != SettlementProtocolVersion {
 		return SettlementAckResponse{}, fmt.Errorf("settlement acknowledgement version must be %q", SettlementProtocolVersion)
 	}
@@ -542,16 +642,17 @@ func (c *Coordinator) AcknowledgeSettlementProof(request SettlementAckRequest, n
 		return SettlementAckResponse{}, errors.New("settlement acknowledgement proof id is invalid")
 	}
 
-	c.persistMu.Lock()
-	defer c.persistMu.Unlock()
+	c.settlePersistMu.Lock()
+	defer c.settlePersistMu.Unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if acknowledged, ok := c.settlement.AcknowledgedProofs[proofID]; ok {
+	tenant := settlementTenant(c.settlement, motherID)
+	if acknowledged, ok := tenant.AcknowledgedProofs[proofID]; ok {
 		return acknowledged, nil
 	}
 	var resource ResourceKind
 	var proof PoolProof
-	for candidateResource, candidate := range c.settlement.Pending {
+	for candidateResource, candidate := range tenant.Pending {
 		if strings.EqualFold(candidate.ProofID, proofID) {
 			resource = candidateResource
 			proof = candidate
@@ -569,11 +670,12 @@ func (c *Coordinator) AcknowledgeSettlementProof(request SettlementAckRequest, n
 		AcknowledgedAt:   now.UTC().Format(time.RFC3339Nano),
 	}
 	next := cloneSettlementState(c.settlement)
-	delete(next.Pending, resource)
+	delete(tenant.Pending, resource)
 	for _, receiptID := range proof.ReceiptIDs {
 		next.ConsumedReceipts[strings.ToLower(receiptID)] = proofID
 	}
-	next.AcknowledgedProofs[proofID] = acknowledgement
+	tenant.AcknowledgedProofs[proofID] = acknowledgement
+	next.Tenants[motherID] = tenant
 	if err := saveSettlementState(c.settlementPath(), next); err != nil {
 		return SettlementAckResponse{}, fmt.Errorf("persist Relay settlement acknowledgement: %w", err)
 	}

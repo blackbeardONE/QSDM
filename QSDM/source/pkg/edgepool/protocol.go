@@ -29,6 +29,7 @@ const (
 	HeaderNonce             = "X-QSDM-Nonce"
 	HeaderSignature         = "X-QSDM-Signature"
 	HeaderFederationContext = "X-QSDM-Federation-Context"
+	HeaderMotherContext     = "X-QSDM-Mother-Context"
 
 	ResourceCPU ResourceKind = "cpu"
 	ResourceGPU ResourceKind = "gpu"
@@ -99,6 +100,7 @@ type LeaseRequest struct {
 type Job struct {
 	Version   string       `json:"version"`
 	ID        string       `json:"id"`
+	MotherID  string       `json:"mother_id,omitempty"`
 	WorkerID  string       `json:"worker_id"`
 	Resource  ResourceKind `json:"resource"`
 	Algorithm string       `json:"algorithm"`
@@ -156,6 +158,7 @@ type ComputeJobSubmitRequest struct {
 type ComputeJobRecord struct {
 	Version         string            `json:"version"`
 	ID              string            `json:"id"`
+	MotherID        string            `json:"mother_id,omitempty"`
 	ClientRequestID string            `json:"client_request_id"`
 	Resource        ResourceKind      `json:"resource"`
 	Algorithm       string            `json:"algorithm"`
@@ -191,6 +194,7 @@ type Receipt struct {
 	Version       string            `json:"version"`
 	ReceiptID     string            `json:"receipt_id"`
 	JobID         string            `json:"job_id"`
+	MotherID      string            `json:"mother_id,omitempty"`
 	WorkerID      string            `json:"worker_id"`
 	Resource      ResourceKind      `json:"resource"`
 	Algorithm     string            `json:"algorithm"`
@@ -285,6 +289,9 @@ type PoolStatus struct {
 	CoordinatorID           string                  `json:"coordinator_id"`
 	RelayID                 string                  `json:"relay_id"`
 	Role                    string                  `json:"role"`
+	MotherID                string                  `json:"mother_hive_id,omitempty"`
+	MotherName              string                  `json:"mother_hive_name,omitempty"`
+	MotherHives             []MotherTenantStatus    `json:"mother_hives,omitempty"`
 	Policy                  RelayPolicy             `json:"policy"`
 	MotherSeenAt            string                  `json:"mother_hive_last_seen_at,omitempty"`
 	StartedAt               string                  `json:"started_at"`

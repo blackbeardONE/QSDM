@@ -60,9 +60,13 @@ type controlPaths struct {
 }
 
 type motherHiveConfig struct {
-	SchemaVersion int    `json:"schema_version"`
-	RelayURL      string `json:"relay_url"`
-	TokenFile     string `json:"token_file"`
+	SchemaVersion  int    `json:"schema_version"`
+	RelayURL       string `json:"relay_url"`
+	TokenFile      string `json:"token_file"`
+	ConnectionMode string `json:"connection_mode,omitempty"`
+	MotherID       string `json:"mother_id,omitempty"`
+	MotherName     string `json:"mother_name,omitempty"`
+	MotherContext  string `json:"mother_context,omitempty"`
 }
 
 func defaultControlPaths() (controlPaths, error) {
