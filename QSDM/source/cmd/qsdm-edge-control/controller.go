@@ -696,8 +696,8 @@ func scaleUnits(ceiling uint64, percent int) uint64 {
 
 func scaleRAM(totalMiB uint64, percent int) uint64 {
 	value := totalMiB * uint64(percent) / 100
-	if value > edgepool.MaxRAMMiB {
-		value = edgepool.MaxRAMMiB
+	if value > edgepool.MaxAgentRAMMiB {
+		value = edgepool.MaxAgentRAMMiB
 	}
 	if value < 32 {
 		value = 32

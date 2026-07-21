@@ -57,6 +57,9 @@ const formatMemory = (valueMiB: number) =>
     ? `${(valueMiB / 1024).toFixed(valueMiB >= 10240 ? 0 : 1)} GiB`
     : `${Math.round(valueMiB)} MiB`;
 
+const formatWorkUnits = (value: number) =>
+  Math.max(0, Math.round(value)).toLocaleString();
+
 const defaultWorkBudget: Record<QsdmVirtualComputeResource, number> = {
   cpu: 100_000,
   gpu: 1_000_000,
@@ -529,7 +532,9 @@ export function MotherHiveView() {
           <div>
             <h2 className="font-semibold">Resource pool</h2>
             <p className="mt-1 text-xs text-white/55">
-              Online Agents reported during the last two minutes
+              Online Agents reported during the last two minutes. CPU and GPU
+              show detected hardware; RAM shows the amount Agents offered.
+              Per-job limits are listed below.
             </p>
           </div>
           {statusQuery.isFetching && <LoadingSpinner className="h-6 w-6" />}
@@ -556,19 +561,19 @@ export function MotherHiveView() {
           />
           <Metric
             icon={<FontAwesomeIcon icon={faMicrochip} />}
-            label="Pooled CPU capacity"
+            label="Detected Agent CPU"
             value={`${status?.pooledCpuThreads || 0} threads`}
           />
           <Metric
             icon={<FontAwesomeIcon icon={faMicrochip} />}
-            label="Pooled GPU capacity"
+            label="Detected Agent GPU"
             value={`${status?.pooledGpuCount || 0} GPU / ${formatMemory(
               status?.pooledGpuMemoryMiB || 0
             )}`}
           />
           <Metric
             icon={<FontAwesomeIcon icon={faMemory} />}
-            label="Pooled RAM capacity"
+            label="Agent RAM offered"
             value={formatMemory(status?.pooledRamMiB || 0)}
           />
         </div>
@@ -805,9 +810,9 @@ export function MotherHiveView() {
                 <thead className="bg-finnieBlue-light-secondary text-finnieTeal-100">
                   <tr>
                     <th className="w-[30%] px-3 py-2 font-medium">Agent</th>
-                    <th className="px-3 py-2 font-medium">CPU</th>
-                    <th className="px-3 py-2 font-medium">GPU</th>
-                    <th className="px-3 py-2 font-medium">RAM</th>
+                    <th className="px-3 py-2 font-medium">CPU detected</th>
+                    <th className="px-3 py-2 font-medium">GPU detected</th>
+                    <th className="px-3 py-2 font-medium">RAM offered</th>
                     <th className="px-3 py-2 font-medium">Jobs</th>
                   </tr>
                 </thead>
@@ -877,10 +882,40 @@ export function MotherHiveView() {
             </div>
             <div className="rounded-md border border-white/10 p-4">
               <h3 className="font-semibold">Relay limits</h3>
-              <div className="mt-3 text-xs text-white/70">
-                CPU {status?.relayPolicy?.cpuPercent || 0}% / GPU{' '}
-                {status?.relayPolicy?.gpuPercent || 0}% / RAM{' '}
-                {status?.relayPolicy?.ramPercent || 0}%
+              <div className="mt-3 space-y-2 text-xs text-white/70">
+                <div className="flex justify-between gap-3">
+                  <span>Configured percentages</span>
+                  <span className="text-right">
+                    CPU {status?.relayPolicy?.cpuPercent || 0}% / GPU{' '}
+                    {status?.relayPolicy?.gpuPercent || 0}% / RAM{' '}
+                    {status?.relayPolicy?.ramPercent || 0}%
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span>CPU work per job</span>
+                  <span>
+                    {formatWorkUnits(status?.relayPolicy?.cpuUnitsPerJob || 0)}{' '}
+                    units
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span>GPU work per job</span>
+                  <span>
+                    {formatWorkUnits(status?.relayPolicy?.gpuUnitsPerJob || 0)}{' '}
+                    units
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span>RAM per job</span>
+                  <span>
+                    {formatMemory(status?.relayPolicy?.ramMiBPerJob || 0)}
+                  </span>
+                </div>
+                <p className="pt-1 text-white/50">
+                  CPU and GPU percentages bound work units, not operating-system
+                  utilization. Each job also respects the Agent&apos;s lower
+                  limit.
+                </p>
               </div>
             </div>
             <div className="rounded-md border border-white/10 p-4">

@@ -1121,7 +1121,7 @@ func validateCapabilities(capabilities Capabilities) error {
 	if capabilities.CPUThreads < 0 || capabilities.CPUThreads > 4096 {
 		return errors.New("cpu_threads is outside the supported range")
 	}
-	if capabilities.RAMMiB > 1024*1024 {
+	if capabilities.RAMMiB > MaxAgentRAMMiB {
 		return errors.New("ram_mib is outside the supported range")
 	}
 	if len(capabilities.Resources) == 0 || len(capabilities.Resources) > 3 {

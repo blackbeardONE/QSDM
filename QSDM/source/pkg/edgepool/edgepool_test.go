@@ -84,6 +84,33 @@ func TestComputeAndVerifyResourceDigests(t *testing.T) {
 	}
 }
 
+func TestAgentRAMCapacityIsIndependentFromTheSingleJobLimit(t *testing.T) {
+	const offeredMiB = 16 * 1024 * 40 / 100
+	agent, err := NewAgent(AgentConfig{
+		RelayURL:  "https://relay.example.test",
+		Token:     testToken(),
+		WorkerID:  "large-memory-worker",
+		Resources: []ResourceKind{ResourceRAM},
+		RAMMiB:    offeredMiB,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.capabilities.RAMMiB != offeredMiB {
+		t.Fatalf("advertised RAM = %d MiB, want %d MiB", agent.capabilities.RAMMiB, offeredMiB)
+	}
+
+	job := Job{
+		Version: ProtocolVersion, ID: "oversized-ram-job", WorkerID: "large-memory-worker",
+		Resource: ResourceRAM, Algorithm: AlgorithmRAM,
+		Seed:  "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+		Units: (MaxRAMMiB + 1) * 1024 * 1024, MemoryMiB: MaxRAMMiB + 1,
+	}
+	if err := ValidateJob(job); err == nil {
+		t.Fatal("single RAM job exceeded the safety ceiling")
+	}
+}
+
 func TestCUDAHelperMatchesCoordinatorVerifier(t *testing.T) {
 	helperPath := os.Getenv("QSDM_GPU_HELPER_TEST_PATH")
 	if helperPath == "" {

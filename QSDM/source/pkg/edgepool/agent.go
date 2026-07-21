@@ -112,8 +112,8 @@ func NewAgent(config AgentConfig) (*Agent, error) {
 			config.RAMMiB = 32
 		}
 	}
-	if config.RAMMiB > MaxRAMMiB {
-		return nil, fmt.Errorf("agent RAM limit exceeds %d MiB", MaxRAMMiB)
+	if config.RAMMiB > MaxAgentRAMMiB {
+		return nil, fmt.Errorf("agent RAM capacity exceeds %d MiB", MaxAgentRAMMiB)
 	}
 	if config.CPUUnits == 0 || config.CPUUnits > MaxCPUUnits {
 		config.CPUUnits = 500_000

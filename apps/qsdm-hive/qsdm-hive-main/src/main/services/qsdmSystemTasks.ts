@@ -3570,6 +3570,9 @@ type EdgeRelayStatusResponse = {
     cpu_percent?: number;
     gpu_percent?: number;
     ram_percent?: number;
+    cpu_units_per_job?: number;
+    gpu_units_per_job?: number;
+    ram_mib_per_job?: number;
   };
   settlement_ready?: boolean;
   settlement_relay_id?: string;
@@ -3863,6 +3866,18 @@ export const getQsdmMotherHiveStatus =
           cpuPercent: Math.max(0, Number(status.policy?.cpu_percent) || 0),
           gpuPercent: Math.max(0, Number(status.policy?.gpu_percent) || 0),
           ramPercent: Math.max(0, Number(status.policy?.ram_percent) || 0),
+          cpuUnitsPerJob: Math.max(
+            0,
+            Number(status.policy?.cpu_units_per_job) || 0
+          ),
+          gpuUnitsPerJob: Math.max(
+            0,
+            Number(status.policy?.gpu_units_per_job) || 0
+          ),
+          ramMiBPerJob: Math.max(
+            0,
+            Number(status.policy?.ram_mib_per_job) || 0
+          ),
         },
         revenuePolicy: motherHiveRevenuePolicy(status),
         detail:

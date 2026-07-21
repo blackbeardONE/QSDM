@@ -1,3 +1,10 @@
+## [1.4.2]
+
+- Capacity reporting: Mother Hive now distinguishes each Agent's offered CPU, GPU, and RAM capacity from Relay per-job safety limits.
+- RAM sharing: Agent RAM advertisements can represent the configured percentage of real system memory instead of being capped at one GiB.
+- Relay clarity: Edge Control shows the real RAM amount next to its percentage and labels CPU/GPU controls as per-job allowances.
+- Bundled tools: Windows and Linux packages include QSDM Edge Agent and Edge Control 1.3.7 with the corrected aggregate-capacity model.
+
 ## [1.4.1]
 
 - Multi-Hive Relay: One local Relay can now serve several named QSDM Hives with separate, revocable credentials.

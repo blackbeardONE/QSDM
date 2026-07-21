@@ -123,7 +123,10 @@ function renderMetrics(state, role) {
     metrics.push(["Receipts", receipts]);
   } else {
     metrics.push(["CPU", `${state.settings.agent.cpu_share}%`]);
-    metrics.push(["Memory", `${state.settings.agent.ram_share}%`]);
+    metrics.push([
+      "Memory",
+      `${state.settings.agent.ram_share}% (${formatMemoryMiB(agentRAMAllowanceMiB())})`,
+    ]);
     metrics.push(["NVIDIA", state.settings.agent.gpu && state.system.gpu_ready ? `${state.settings.agent.gpu_share}%` : "Off"]);
   }
   metrics.forEach(([label, value]) => {
@@ -373,6 +376,7 @@ function updateSliderOutputs() {
   ].forEach(([input, output]) => {
     byId(output).textContent = `${byId(input).value}%`;
   });
+  byId("agent-ram-output").textContent = `${byId("agent-ram-share").value}% (${formatMemoryMiB(agentRAMAllowanceMiB())})`;
   byId("agent-cpu-share").disabled = currentState?.running || !byId("agent-cpu-enabled").checked;
   byId("agent-ram-share").disabled = currentState?.running || !byId("agent-ram-enabled").checked;
   byId("agent-gpu-share").disabled = currentState?.running || !currentState?.system.gpu_ready || !byId("agent-gpu-enabled").checked;
@@ -405,6 +409,20 @@ function friendlyRole(role) {
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString();
+}
+
+function formatMemoryMiB(value) {
+  const memoryMiB = Math.max(0, Number(value || 0));
+  if (memoryMiB >= 1024) {
+    return `${(memoryMiB / 1024).toLocaleString(undefined, { maximumFractionDigits: 1 })} GiB`;
+  }
+  return `${Math.floor(memoryMiB).toLocaleString()} MiB`;
+}
+
+function agentRAMAllowanceMiB() {
+  const totalMiB = Math.max(0, Number(currentState?.system?.total_ram_mib || 0));
+  const percent = Math.max(1, Math.min(100, Number(byId("agent-ram-share").value || 0)));
+  return Math.max(32, Math.min(1024 * 1024, Math.floor((totalMiB * percent) / 100)));
 }
 
 function relativeTime(value) {

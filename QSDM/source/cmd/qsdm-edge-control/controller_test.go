@@ -101,6 +101,20 @@ func TestAgentRelayControllerLifecycle(t *testing.T) {
 	t.Fatalf("Agent did not complete Relay work; Relay snapshot: %+v", relay.snapshot().Relay)
 }
 
+func TestScaleRAMKeepsTheConfiguredAgentAllowance(t *testing.T) {
+	const totalMiB uint64 = 16 * 1024
+	want := totalMiB * 40 / 100
+	if got := scaleRAM(totalMiB, 40); got != want {
+		t.Fatalf("scaleRAM(%d, 40) = %d MiB, want %d MiB", totalMiB, got, want)
+	}
+}
+
+func TestScaleRAMStillBoundsAdvertisedCapacity(t *testing.T) {
+	if got := scaleRAM(4*edgepool.MaxAgentRAMMiB, 100); got != edgepool.MaxAgentRAMMiB {
+		t.Fatalf("scaleRAM exceeded advertised capacity ceiling: %d MiB", got)
+	}
+}
+
 func testControlPaths(t *testing.T, name string) controlPaths {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), name)
