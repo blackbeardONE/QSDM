@@ -1,0 +1,3 @@
+provider: generic
+url: https://qsdm.tech/downloads
+updaterCacheDirName: qsdm-hive-runtime-updater

@@ -8,6 +8,33 @@ exports.default = async function afterPack(context) {
   const platform = context.electronPlatformName;
   if (platform !== 'linux' && platform !== 'win32') return;
 
+  if (platform === 'win32') {
+    const updateConfigPath = path.join(
+      context.appOutDir,
+      'resources',
+      'app-update.yml'
+    );
+    const expectedUpdateConfig = [
+      'provider: generic',
+      'url: https://qsdm.tech/downloads',
+      'updaterCacheDirName: qsdm-hive-runtime-updater',
+      '',
+    ].join('\n');
+    if (!fs.existsSync(updateConfigPath)) {
+      throw new Error(
+        `QSDM Hive updater configuration was not packaged: ${updateConfigPath}`
+      );
+    }
+    const updateConfig = fs
+      .readFileSync(updateConfigPath, 'utf8')
+      .replace(/\r\n/g, '\n');
+    if (updateConfig !== expectedUpdateConfig) {
+      throw new Error(
+        `Packaged updater configuration is invalid: ${updateConfigPath}`
+      );
+    }
+  }
+
   const extension = platform === 'win32' ? '.exe' : '';
 
   const executables = [
