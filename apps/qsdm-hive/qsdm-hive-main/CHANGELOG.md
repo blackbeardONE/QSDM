@@ -1,3 +1,9 @@
+## [1.4.5]
+
+- Windows updater repair: Packaged Hive now always includes the trusted generic updater configuration required by `electron-updater`.
+- Release validation: Windows builds reject a missing or altered updater URL and verify that the same configuration is embedded inside the final NSIS installer.
+- Upgrade path: Hive 1.4.4 remains immutable but is superseded; affected older Windows installations require this one verified manual upgrade before automatic updates can resume.
+
 ## [1.4.4]
 
 - Stake confirmation: Hive now verifies signed task actions against the same main QSDM Core that accepted them before consulting a local validator or home-gateway fallback.

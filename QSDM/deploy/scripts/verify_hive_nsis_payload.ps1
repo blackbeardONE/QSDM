@@ -45,6 +45,7 @@ $sevenZip = (Resolve-Path -LiteralPath $SevenZipPath).Path
 
 $requiredFiles = @(
     'QSDM Hive.exe'
+    'resources\app-update.yml'
     'resources\edge\qsdm-edge-agent.exe'
     'resources\edge\qsdm-edge-control.exe'
     'resources\edge\qsdm-edge-gpu-helper.exe'
@@ -76,16 +77,16 @@ try {
         $signedPath = Join-Path $signedRoot $relativePath
         $embeddedPath = Join-Path $extractRoot $relativePath
         if (-not (Test-Path -LiteralPath $signedPath -PathType Leaf)) {
-            throw "Signed source executable is missing: $signedPath"
+            throw "Signed source file is missing: $signedPath"
         }
         if (-not (Test-Path -LiteralPath $embeddedPath -PathType Leaf)) {
-            throw "NSIS installer does not contain the required executable: $relativePath"
+            throw "NSIS installer does not contain the required file: $relativePath"
         }
 
         $signedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $signedPath).Hash.ToLowerInvariant()
         $embeddedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $embeddedPath).Hash.ToLowerInvariant()
         if ($signedHash -cne $embeddedHash) {
-            throw "NSIS payload differs from the signed source executable: $relativePath"
+            throw "NSIS payload differs from the signed source file: $relativePath"
         }
 
         [ordered]@{
@@ -119,5 +120,5 @@ $evidence = [ordered]@{
 }
 $evidence | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $EvidencePath -Encoding UTF8
 
-Write-Host "Verified $($requiredFiles.Count) embedded NSIS executables against the signed Hive payload."
+Write-Host "Verified $($requiredFiles.Count) embedded NSIS files against the signed Hive payload."
 Write-Host "Evidence: $EvidencePath"

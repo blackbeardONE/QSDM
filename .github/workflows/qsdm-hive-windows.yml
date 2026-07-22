@@ -151,6 +151,24 @@ jobs:
           npm run build
           npx electron-builder build --win dir --x64 --publish never --config.directories.output=release/signpath
 
+      - name: Verify unpacked updater configuration
+        shell: pwsh
+        run: |
+          $path = 'apps/qsdm-hive/qsdm-hive-main/release/signpath/win-unpacked/resources/app-update.yml'
+          if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Packaged updater configuration is missing: $path"
+          }
+          $expected = @(
+            'provider: generic'
+            'url: https://qsdm.tech/downloads'
+            'updaterCacheDirName: qsdm-hive-runtime-updater'
+            ''
+          ) -join "`n"
+          $actual = (Get-Content -Raw -LiteralPath $path).Replace("`r`n", "`n")
+          if ($actual -cne $expected) {
+            throw "Packaged updater configuration is invalid: $path"
+          }
+
       - name: Smoke test packaged Hive renderer
         shell: pwsh
         run: |
