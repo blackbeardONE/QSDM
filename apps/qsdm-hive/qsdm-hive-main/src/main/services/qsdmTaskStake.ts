@@ -1,5 +1,5 @@
 import {
-  buildQsdmTaskReadUrls,
+  buildQsdmTaskActionReadUrls,
   QSDM_CELL_DECIMALS,
 } from 'config/qsdm';
 import {
@@ -102,7 +102,7 @@ export const getConfirmedQsdmTaskState = async (taskId: string) => {
   const encodedTaskId = encodeURIComponent(taskId);
   const errors: string[] = [];
 
-  for (const stateUrl of buildQsdmTaskReadUrls(
+  for (const stateUrl of buildQsdmTaskActionReadUrls(
     `/tasks/${encodedTaskId}/state`
   )) {
     try {
@@ -158,7 +158,7 @@ export const getConfirmedQsdmTaskStakeInCell = async (
   const encodedTaskId = encodeURIComponent(taskId);
   const errors: string[] = [];
 
-  for (const stateUrl of buildQsdmTaskReadUrls(
+  for (const stateUrl of buildQsdmTaskActionReadUrls(
     `/tasks/${encodedTaskId}/state`
   )) {
     try {
@@ -171,7 +171,7 @@ export const getConfirmedQsdmTaskStakeInCell = async (
     }
   }
 
-  for (const taskUrl of buildQsdmTaskReadUrls(
+  for (const taskUrl of buildQsdmTaskActionReadUrls(
     `/tasks/${encodedTaskId}`
   )) {
     try {

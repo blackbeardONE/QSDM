@@ -104,7 +104,7 @@ jobs:
         working-directory: apps/qsdm-hive/qsdm-hive-main
         run: |
           npx tsc --noEmit
-          npm test -- --runInBand src/main/services/qsdmSystemTasks.spec.ts src/main/services/qsdmTaskActions.spec.ts src/main/services/qsdmWalletProviderBroker.spec.ts src/main/services/qsdmWalletProviderNativeHost.spec.ts
+          npm test -- --runInBand src/config/qsdm.spec.ts src/main/services/qsdmSystemTasks.spec.ts src/main/services/qsdmTaskActions.spec.ts src/main/services/qsdmTaskStake.spec.ts src/main/services/qsdmWalletProviderBroker.spec.ts src/main/services/qsdmWalletProviderNativeHost.spec.ts
 
       - name: Build Hive
         working-directory: apps/qsdm-hive/qsdm-hive-main

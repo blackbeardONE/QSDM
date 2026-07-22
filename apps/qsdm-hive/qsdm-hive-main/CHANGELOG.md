@@ -1,3 +1,9 @@
+## [1.4.4]
+
+- Stake confirmation: Hive now verifies signed task actions against the same main QSDM Core that accepted them before consulting a local validator or home-gateway fallback.
+- Sync resilience: A reachable but lagging validator can no longer make a confirmed stake appear missing or prompt the user to stake repeatedly.
+- Release validation: Linux and Windows packaging gates now exercise endpoint selection and native stake-state regression tests.
+
 ## [1.4.3]
 
 - Capacity reporting: Mother Hive now distinguishes each Agent's offered CPU, GPU, and RAM capacity from Relay per-job safety limits.

@@ -3,8 +3,10 @@
  */
 
 import {
+  buildQsdmTaskActionReadUrls,
   getQsdmCoreConnectionMode,
   resolveQsdmCoreApiUrl,
+  resolveQsdmTaskActionCoreApiUrl,
 } from './qsdm';
 
 const gateway = 'https://api.qsdm.tech/attest/home-validator/api/v1';
@@ -59,5 +61,40 @@ describe('QSDM Core endpoint selection', () => {
         gateway
       )
     ).toBe('custom');
+  });
+
+  it('confirms signed task actions against the main Core before a stale gateway', () => {
+    expect(
+      buildQsdmTaskActionReadUrls('/tasks/task-1/state', {
+        runtimeApiUrl: gateway,
+        taskRpcApiUrl: gateway,
+        canonicalApiUrl: canonical,
+      })
+    ).toEqual([
+      `${canonical}/tasks/task-1/state`,
+      `${gateway}/tasks/task-1/state`,
+    ]);
+  });
+
+  it('uses an explicitly configured custom Core for both writes and confirmation', () => {
+    const custom = 'https://operator.example/api/v1';
+
+    expect(
+      resolveQsdmTaskActionCoreApiUrl({
+        runtimeApiUrl: custom,
+        canonicalApiUrl: canonical,
+      })
+    ).toBe(custom);
+    expect(
+      buildQsdmTaskActionReadUrls('/tasks/task-1/state', {
+        runtimeApiUrl: custom,
+        taskRpcApiUrl: gateway,
+        canonicalApiUrl: canonical,
+      })
+    ).toEqual([
+      `${custom}/tasks/task-1/state`,
+      `${gateway}/tasks/task-1/state`,
+      `${canonical}/tasks/task-1/state`,
+    ]);
   });
 });
