@@ -119,7 +119,7 @@ jobs:
         working-directory: apps/qsdm-hive/qsdm-hive-main
         run: |
           npx tsc --noEmit
-          npm test -- --runInBand src/main/services/qsdmSystemTasks.spec.ts src/main/services/qsdmTaskActions.spec.ts src/main/services/qsdmWalletProviderBroker.spec.ts src/main/services/qsdmWalletProviderNativeHost.spec.ts src/main/services/qsdmSignerSecretStore.spec.ts src/main/controllers/qsdm/unlockQsdmSignerWallet.spec.ts
+          npm test -- --runInBand src/config/qsdm.spec.ts src/main/services/qsdmSystemTasks.spec.ts src/main/services/qsdmTaskActions.spec.ts src/main/services/qsdmTaskStake.spec.ts src/main/services/qsdmWalletProviderBroker.spec.ts src/main/services/qsdmWalletProviderNativeHost.spec.ts src/main/services/qsdmSignerSecretStore.spec.ts src/main/controllers/qsdm/unlockQsdmSignerWallet.spec.ts
 
       - name: Test browser wallet extension
         working-directory: apps/qsdm-hive-wallet-extension

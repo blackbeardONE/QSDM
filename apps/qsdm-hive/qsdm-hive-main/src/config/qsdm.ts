@@ -22,8 +22,7 @@ export const QSDM_DEFAULT_LOCAL_CORE_API_URL = 'http://127.0.0.1:8080/api/v1';
 export const QSDM_OFFICIAL_GATEWAY_API_URL =
   'https://api.qsdm.tech/attest/home-validator/api/v1';
 
-export const QSDM_OFFICIAL_CANONICAL_API_URL =
-  'https://api.qsdm.tech/api/v1';
+export const QSDM_OFFICIAL_CANONICAL_API_URL = 'https://api.qsdm.tech/api/v1';
 
 export const QSDM_CANONICAL_GENESIS_HASH =
   'b6119386bb6918d0716ab9d7f51864b58c20d542e6beab261151e8d4f9a8feb6';
@@ -158,6 +157,55 @@ export const buildQsdmGatewayApiUrl = (path: string) =>
 
 export const buildQsdmCoreApiUrl = (path: string) =>
   `${getQsdmRuntimeCoreApiUrl()}/${trimLeadingSlash(path)}`;
+
+interface QsdmTaskActionEndpointOptions {
+  runtimeApiUrl?: string;
+  taskRpcApiUrl?: string;
+  canonicalApiUrl?: string;
+}
+
+export const resolveQsdmTaskActionCoreApiUrl = ({
+  runtimeApiUrl = getQsdmRuntimeCoreApiUrl(),
+  canonicalApiUrl = QSDM_CANONICAL_API_URL,
+}: Pick<
+  QsdmTaskActionEndpointOptions,
+  'runtimeApiUrl' | 'canonicalApiUrl'
+> = {}) => {
+  const connectionMode = getQsdmCoreConnectionMode(
+    runtimeApiUrl,
+    undefined,
+    canonicalApiUrl
+  );
+  return trimTrailingSlash(
+    connectionMode === 'custom' ? runtimeApiUrl : canonicalApiUrl
+  );
+};
+
+// Signed task actions must be confirmed by the same Core that accepts them.
+// Local validators and the home gateway remain useful fallbacks, but can lag
+// behind the main Core while catching up.
+export const buildQsdmTaskActionReadUrls = (
+  path: string,
+  {
+    runtimeApiUrl = getQsdmRuntimeCoreApiUrl(),
+    taskRpcApiUrl = QSDM_HIVE_API_URL,
+    canonicalApiUrl = QSDM_CANONICAL_API_URL,
+  }: QsdmTaskActionEndpointOptions = {}
+) => {
+  const normalizedPath = trimLeadingSlash(path);
+  const actionCoreApiUrl = resolveQsdmTaskActionCoreApiUrl({
+    runtimeApiUrl,
+    canonicalApiUrl,
+  });
+  const urls = [
+    actionCoreApiUrl,
+    runtimeApiUrl,
+    taskRpcApiUrl,
+    canonicalApiUrl,
+  ].map((apiUrl) => `${trimTrailingSlash(apiUrl)}/${normalizedPath}`);
+
+  return Array.from(new Set(urls));
+};
 
 export const buildQsdmTaskReadUrls = (path: string) => {
   const coreUrl = buildQsdmCoreApiUrl(path);
