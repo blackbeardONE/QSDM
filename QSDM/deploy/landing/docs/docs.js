@@ -106,6 +106,7 @@
     {
       title: "Wallet (self-custody)",
       items: [
+        { slug: "wallet-recovery",    title: "Wallet recovery",                 repoPath: DOCS_PREFIX_REPO + "/WALLET_RECOVERY.md", badge: "new" },
         { slug: "web-wallet",         title: "Web wallet",                       repoPath: DOCS_PREFIX_REPO + "/WEB_WALLET.md" },
         { slug: "wallet-explanation", title: "How the wallet works",             repoPath: DOCS_PREFIX_REPO + "/WALLET_EXPLANATION.md" },
         { slug: "wallet-send",        title: "Send transaction (v0.4)",          repoPath: DOCS_PREFIX_REPO + "/V040_WALLET_SEND_DESIGN.md" },

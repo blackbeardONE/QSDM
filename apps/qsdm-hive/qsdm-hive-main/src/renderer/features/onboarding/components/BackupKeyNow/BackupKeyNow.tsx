@@ -63,9 +63,9 @@ export function BackupKeyNow() {
 
       setBackupComplete(true);
       setBackupMessage(
-        `Backed up QSDM wallet JSON and passphrase for ${formatAddress(
+        `Backed up encrypted QSDM wallet JSON for ${formatAddress(
           result.address
-        )}.`
+        )}. Keep the passphrase separately.`
       );
       await queryClient.invalidateQueries([QueryKeys.QsdmCoreStatus]);
       await queryClient.invalidateQueries([QueryKeys.QsdmCellAccount]);
@@ -82,15 +82,19 @@ export function BackupKeyNow() {
         Back up your QSDM wallet
       </div>
       <div className="w-full mb-4">
-        Your {NATIVE_TOKEN_SYMBOL} wallet is recovered with two things: the
-        QSDM keystore JSON and its passphrase. Hive does not use a seed phrase
-        for this wallet.
+        Back up the encrypted JSON for your {NATIVE_TOKEN_SYMBOL} wallet. New
+        recovery-enabled wallets also use 24 QSDM Recovery Words; legacy wallets
+        require this JSON and its passphrase.
       </div>
 
       <div className="w-[460px] max-w-full rounded-md bg-finnieBlue-light-tertiary p-5 text-left">
         <div className="text-xs text-finnieGray-secondary">Active signer</div>
         <div className="pt-2 text-sm font-semibold">
-          {coreStatusLoading ? <LoadingSpinner /> : formatAddress(signer?.sender)}
+          {coreStatusLoading ? (
+            <LoadingSpinner />
+          ) : (
+            formatAddress(signer?.sender)
+          )}
         </div>
         <div className="pt-3 text-xs text-finnieGray-secondary break-all">
           Keystore: {signer?.keystorePath || 'Not discovered'}
@@ -103,8 +107,8 @@ export function BackupKeyNow() {
       <div className="flex flex-row items-start justify-center w-[360px] xl:w-[560px] gap-2.5 mb-4 text-sm text-[#FFA54B]">
         <Icon source={WarningCircleLine} className="h-6 w-6 mt-1" />
         <div className="text-xs text-left font-light w-fit">
-          Keep the JSON and passphrase together, private, and offline when
-          possible. Anyone with both files can recover and use the wallet.
+          Keep wallet backups private and offline. Recovery Words control a
+          recovery-enabled wallet; the JSON requires its passphrase.
         </div>
       </div>
 

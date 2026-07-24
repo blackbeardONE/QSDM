@@ -101,8 +101,9 @@ function CreatePin() {
             tooltipContent={
               <p className="max-w-[450px] xl:max-w-xl">
                 You&apos;ll use this PIN to unlock your node. If you forget it,
-                create a new local PIN and restore your CELL wallet with the
-                QSDM keystore JSON and passphrase.
+                create a new local PIN. Restore a recovery-enabled CELL wallet
+                with its 24 QSDM Recovery Words, or a legacy wallet with its
+                keystore JSON and passphrase.
               </p>
             }
           >
@@ -131,8 +132,8 @@ function CreatePin() {
             </span>
           ) : (
             <span>
-              If you forget your PIN, restore your QSDM wallet with its
-              keystore JSON and passphrase.
+              If you forget your PIN, you can create a new local PIN. Wallet
+              recovery uses QSDM Recovery Words or a legacy JSON backup.
             </span>
           )}
         </div>

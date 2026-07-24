@@ -14,6 +14,7 @@ import {
 import { useClipboard } from 'renderer/features/common/hooks';
 import {
   createQsdmSignerWallet,
+  exportQsdmSignerRecoveryWords,
   exportQsdmSignerWalletBackup,
   getQsdmCellAccount,
   getQsdmCoreStatus,
@@ -21,6 +22,7 @@ import {
   importQsdmSignerWallet,
   QueryKeys,
   revokeQsdmWalletProviderPermission,
+  restoreQsdmSignerWallet,
   transferCellFromMainWallet,
   unlockQsdmSignerWallet,
 } from 'renderer/services';
@@ -60,14 +62,23 @@ export function QsdmWalletPanel() {
   const [passphrase, setPassphrase] = useState('');
   const [unlockPassphrase, setUnlockPassphrase] = useState('');
   const [walletSetupMode, setWalletSetupMode] = useState<
-    'create' | 'unlock' | 'import'
+    'create' | 'restore' | 'unlock' | 'import'
   >('create');
   const [newPassphrase, setNewPassphrase] = useState('');
   const [confirmPassphrase, setConfirmPassphrase] = useState('');
   const [createMessage, setCreateMessage] = useState('');
+  const [createdRecoveryWords, setCreatedRecoveryWords] = useState('');
+  const [restoreRecoveryWords, setRestoreRecoveryWords] = useState('');
+  const [restorePassphrase, setRestorePassphrase] = useState('');
+  const [restoreConfirmPassphrase, setRestoreConfirmPassphrase] = useState('');
+  const [restoreReplacementAcknowledged, setRestoreReplacementAcknowledged] =
+    useState(false);
+  const [restoreMessage, setRestoreMessage] = useState('');
   const [importMessage, setImportMessage] = useState('');
   const [unlockMessage, setUnlockMessage] = useState('');
   const [backupMessage, setBackupMessage] = useState('');
+  const [recoveryExportPassphrase, setRecoveryExportPassphrase] = useState('');
+  const [recoveryExportMessage, setRecoveryExportMessage] = useState('');
   const [transferMessage, setTransferMessage] = useState('');
 
   const {
@@ -128,6 +139,11 @@ export function QsdmWalletPanel() {
     !signer?.ready &&
     newPassphrase.length >= 12 &&
     newPassphrase === confirmPassphrase;
+  const canRestoreSigner =
+    restoreRecoveryWords.trim().split(/\s+/).length === 24 &&
+    restorePassphrase.length >= 12 &&
+    restorePassphrase === restoreConfirmPassphrase &&
+    (!signer?.ready || restoreReplacementAcknowledged);
 
   useEffect(() => {
     if (!signer?.ready && signer?.keystorePath) {
@@ -145,16 +161,41 @@ export function QsdmWalletPanel() {
     onSuccess: async (result) => {
       setNewPassphrase('');
       setConfirmPassphrase('');
+      setCreatedRecoveryWords(result.recoveryWords || '');
       setCreateMessage(
         `Created ${formatAddress(
           result.address
-        )}. Back up the encrypted keystore and keep your passphrase separately.`
+        )}. Write down the 24 recovery words before leaving this screen.`
       );
       await refresh();
       await queryClient.invalidateQueries([QueryKeys.AccountBalance]);
       await queryClient.invalidateQueries([QueryKeys.MainAccountBalance]);
     },
   });
+
+  const {
+    mutate: restoreSigner,
+    isLoading: restoringSigner,
+    error: restoreSignerError,
+  } = useMutation(
+    () =>
+      restoreQsdmSignerWallet({
+        recoveryWords: restoreRecoveryWords,
+        passphrase: restorePassphrase,
+      }),
+    {
+      onSuccess: async (result) => {
+        setRestoreRecoveryWords('');
+        setRestorePassphrase('');
+        setRestoreConfirmPassphrase('');
+        setRestoreReplacementAcknowledged(false);
+        setRestoreMessage(`Restored ${formatAddress(result.address)}`);
+        await refresh();
+        await queryClient.invalidateQueries([QueryKeys.AccountBalance]);
+        await queryClient.invalidateQueries([QueryKeys.MainAccountBalance]);
+      },
+    }
+  );
 
   const {
     mutate: sendCell,
@@ -241,6 +282,27 @@ export function QsdmWalletPanel() {
   });
 
   const {
+    mutate: exportRecoveryWords,
+    isLoading: exportingRecoveryWords,
+    error: exportRecoveryWordsError,
+  } = useMutation(
+    () =>
+      exportQsdmSignerRecoveryWords({
+        passphrase: recoveryExportPassphrase,
+      }),
+    {
+      onSuccess: (result) => {
+        setRecoveryExportPassphrase('');
+        setRecoveryExportMessage(
+          result.exported
+            ? `Saved QSDM Recovery Words to ${result.recoveryBackupPath}`
+            : 'QSDM Recovery Words export was cancelled.'
+        );
+      },
+    }
+  );
+
+  const {
     mutate: unlockSigner,
     isLoading: unlockingSigner,
     error: unlockSignerError,
@@ -320,7 +382,11 @@ export function QsdmWalletPanel() {
           <div className="text-xl font-semibold">QSDM Wallet</div>
           <div className="pt-1 text-sm text-finnieGray-secondary">
             Your QSDM account for Hive, CELL, tasks, and connected websites.
-            Wallet recovery uses its keystore JSON and passphrase.
+            {!signer?.ready
+              ? ' Create or restore a wallet below.'
+              : signer.recoveryEnabled
+              ? ' This wallet can be restored with its 24 QSDM Recovery Words.'
+              : ' Legacy wallets require their keystore JSON and passphrase.'}
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -380,19 +446,54 @@ export function QsdmWalletPanel() {
         <div className="rounded-md bg-finnieBlue-light-tertiary p-4">
           <div className="text-xs text-finnieGray-secondary">Recovery</div>
           <div className="pt-2 text-sm font-semibold">
-            Keystore JSON + passphrase
+            {!signer?.ready
+              ? 'Not configured'
+              : signer.recoveryEnabled
+              ? `${signer.recoveryWords || 24} QSDM Recovery Words`
+              : 'Legacy JSON + passphrase'}
           </div>
           <div className="pt-1 text-xs text-finnieGray-secondary">
-            Back up the encrypted JSON and store its passphrase separately. Hive
-            protects its local copy with the operating system when available.
+            {!signer?.ready
+              ? 'Create a new recovery-enabled wallet or restore one below.'
+              : signer.recoveryEnabled
+              ? 'These words rebuild the same wallet. Keep the encrypted JSON too for routine backup.'
+              : 'This existing wallet predates Recovery Words. Keep both its encrypted JSON and passphrase.'}
           </div>
-          <Button
-            label="Backup Wallet"
-            onClick={() => backupSigner()}
-            disabled={!signer?.ready || backingUpSigner}
-            loading={backingUpSigner}
-            className="mt-3 h-9 w-36 bg-finnieTeal-100 text-finnieBlue-dark"
-          />
+          {signer?.recoveryEnabled && (
+            <input
+              value={recoveryExportPassphrase}
+              onChange={(event) => {
+                setRecoveryExportMessage('');
+                setRecoveryExportPassphrase(event.target.value);
+              }}
+              type="password"
+              autoComplete="current-password"
+              aria-label="Wallet passphrase for recovery export"
+              placeholder="Passphrase to export words"
+              className="mt-3 h-9 w-full rounded-md bg-finnieBlue-dark px-3 text-xs text-white outline-none"
+            />
+          )}
+          <div className="flex flex-wrap gap-2 pt-2">
+            <Button
+              label="Backup JSON"
+              onClick={() => backupSigner()}
+              disabled={!signer?.ready || backingUpSigner}
+              loading={backingUpSigner}
+              className="h-9 w-32 bg-finnieTeal-100 text-finnieBlue-dark"
+            />
+            <Button
+              label="Export Words"
+              onClick={() => exportRecoveryWords()}
+              disabled={
+                !signer?.ready ||
+                !signer?.recoveryEnabled ||
+                !recoveryExportPassphrase ||
+                exportingRecoveryWords
+              }
+              loading={exportingRecoveryWords}
+              className="h-9 w-32 bg-finnieBlue-light-secondary"
+            />
+          </div>
         </div>
         <div className="rounded-md bg-finnieBlue-light-tertiary p-4">
           <div className="text-xs text-finnieGray-secondary">Keystore JSON</div>
@@ -496,6 +597,17 @@ export function QsdmWalletPanel() {
         >
           Create New Wallet
         </button>
+        <button
+          type="button"
+          className={`h-9 px-4 rounded-md text-sm font-semibold ${
+            walletSetupMode === 'restore'
+              ? 'bg-finnieTeal-100 text-finnieBlue-dark'
+              : 'bg-finnieBlue-light-tertiary text-white'
+          }`}
+          onClick={() => setWalletSetupMode('restore')}
+        >
+          Restore with 24 Words
+        </button>
         {!!signer?.keystorePath && !signer?.ready && (
           <button
             type="button"
@@ -523,54 +635,172 @@ export function QsdmWalletPanel() {
       </div>
 
       {walletSetupMode === 'create' && (
-        <div className="grid grid-cols-1 gap-3 pt-3 md:grid-cols-[1fr_1fr_170px]">
-          <div>
-            <label
-              className="text-xs text-finnieGray-secondary"
-              htmlFor="qsdm-new-passphrase"
-            >
-              New passphrase
-            </label>
-            <input
-              id="qsdm-new-passphrase"
-              value={newPassphrase}
-              onChange={(event) => {
-                setCreateMessage('');
-                setNewPassphrase(event.target.value);
-              }}
-              type="password"
-              autoComplete="new-password"
-              className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none"
-              placeholder="At least 12 characters"
-            />
+        <div className="pt-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_170px]">
+            <div>
+              <label
+                className="text-xs text-finnieGray-secondary"
+                htmlFor="qsdm-new-passphrase"
+              >
+                New passphrase
+              </label>
+              <input
+                id="qsdm-new-passphrase"
+                value={newPassphrase}
+                onChange={(event) => {
+                  setCreateMessage('');
+                  setNewPassphrase(event.target.value);
+                }}
+                type="password"
+                autoComplete="new-password"
+                className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none"
+                placeholder="At least 12 characters"
+              />
+            </div>
+            <div>
+              <label
+                className="text-xs text-finnieGray-secondary"
+                htmlFor="qsdm-confirm-passphrase"
+              >
+                Confirm passphrase
+              </label>
+              <input
+                id="qsdm-confirm-passphrase"
+                value={confirmPassphrase}
+                onChange={(event) => {
+                  setCreateMessage('');
+                  setConfirmPassphrase(event.target.value);
+                }}
+                type="password"
+                autoComplete="new-password"
+                className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button
+                label="Create Wallet"
+                onClick={() => createSigner()}
+                disabled={!canCreateSigner || creatingSigner}
+                loading={creatingSigner}
+                className="h-10 w-full bg-finnieTeal-100 text-finnieBlue-dark"
+              />
+            </div>
           </div>
-          <div>
-            <label
-              className="text-xs text-finnieGray-secondary"
-              htmlFor="qsdm-confirm-passphrase"
-            >
-              Confirm passphrase
+          {createdRecoveryWords && (
+            <div className="mt-4 border border-finnieOrange p-4">
+              <div className="text-base font-semibold">
+                Write down these 24 QSDM Recovery Words
+              </div>
+              <div className="pt-1 text-xs text-finnieOrange">
+                Anyone with these words controls this wallet. Store them offline
+                and never send them to a website or support person.
+              </div>
+              <ol className="mt-3 grid grid-cols-2 gap-x-5 gap-y-2 md:grid-cols-4">
+                {createdRecoveryWords.split(' ').map((word, index) => (
+                  <li
+                    key={`${word}-${index}`}
+                    className="border-b border-finnieGray-tertiary py-1 text-sm"
+                  >
+                    <span className="mr-2 text-finnieGray-secondary">
+                      {index + 1}.
+                    </span>
+                    {word}
+                  </li>
+                ))}
+              </ol>
+              <Button
+                label="I Saved These Words"
+                onClick={() => setCreatedRecoveryWords('')}
+                className="mt-4 h-9 w-48 bg-finnieTeal-100 text-finnieBlue-dark"
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {walletSetupMode === 'restore' && (
+        <div className="pt-3">
+          <label
+            className="text-xs text-finnieGray-secondary"
+            htmlFor="qsdm-recovery-words"
+          >
+            24 QSDM Recovery Words
+          </label>
+          <textarea
+            id="qsdm-recovery-words"
+            value={restoreRecoveryWords}
+            onChange={(event) => {
+              setRestoreMessage('');
+              setRestoreRecoveryWords(event.target.value);
+            }}
+            rows={4}
+            autoComplete="off"
+            spellCheck={false}
+            className="mt-1 w-full resize-none rounded-md bg-finnieBlue-light-tertiary p-3 text-white outline-none"
+            placeholder="Enter all 24 words, separated by spaces"
+          />
+          {signer?.ready && (
+            <label className="mt-3 flex items-start gap-2 text-xs text-finnieOrange">
+              <input
+                type="checkbox"
+                checked={restoreReplacementAcknowledged}
+                onChange={(event) =>
+                  setRestoreReplacementAcknowledged(event.target.checked)
+                }
+                className="mt-0.5 h-4 w-4 accent-finnieTeal-100"
+              />
+              <span>
+                Replace the active signer on this device. CELL, stakes, and task
+                ownership remain with the old address and are not moved
+                automatically.
+              </span>
             </label>
-            <input
-              id="qsdm-confirm-passphrase"
-              value={confirmPassphrase}
-              onChange={(event) => {
-                setCreateMessage('');
-                setConfirmPassphrase(event.target.value);
-              }}
-              type="password"
-              autoComplete="new-password"
-              className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none"
-            />
-          </div>
-          <div className="flex items-end">
-            <Button
-              label="Create Wallet"
-              onClick={() => createSigner()}
-              disabled={!canCreateSigner || creatingSigner}
-              loading={creatingSigner}
-              className="h-10 w-full bg-finnieTeal-100 text-finnieBlue-dark"
-            />
+          )}
+          <div className="grid grid-cols-1 gap-3 pt-3 md:grid-cols-[1fr_1fr_170px]">
+            <div>
+              <label
+                className="text-xs text-finnieGray-secondary"
+                htmlFor="qsdm-restore-passphrase"
+              >
+                New local passphrase
+              </label>
+              <input
+                id="qsdm-restore-passphrase"
+                value={restorePassphrase}
+                onChange={(event) => setRestorePassphrase(event.target.value)}
+                type="password"
+                autoComplete="new-password"
+                className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none"
+                placeholder="At least 12 characters"
+              />
+            </div>
+            <div>
+              <label
+                className="text-xs text-finnieGray-secondary"
+                htmlFor="qsdm-restore-confirm-passphrase"
+              >
+                Confirm new passphrase
+              </label>
+              <input
+                id="qsdm-restore-confirm-passphrase"
+                value={restoreConfirmPassphrase}
+                onChange={(event) =>
+                  setRestoreConfirmPassphrase(event.target.value)
+                }
+                type="password"
+                autoComplete="new-password"
+                className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button
+                label="Restore Wallet"
+                onClick={() => restoreSigner()}
+                disabled={!canRestoreSigner || restoringSigner}
+                loading={restoringSigner}
+                className="h-10 w-full bg-finnieTeal-100 text-finnieBlue-dark"
+              />
+            </div>
           </div>
         </div>
       )}
@@ -679,6 +909,21 @@ export function QsdmWalletPanel() {
         )}
         <ErrorMessage
           error={
+            restoreSignerError
+              ? `QSDM wallet restore failed: ${getErrorMessage(
+                  restoreSignerError
+                )}`
+              : null
+          }
+          className="py-2"
+        />
+        {restoreMessage && (
+          <div className="py-2 text-sm text-finnieEmerald-light">
+            {restoreMessage}
+          </div>
+        )}
+        <ErrorMessage
+          error={
             backupSignerError
               ? `QSDM wallet backup failed: ${getErrorMessage(
                   backupSignerError
@@ -690,6 +935,21 @@ export function QsdmWalletPanel() {
         {backupMessage && (
           <div className="py-2 text-sm text-finnieEmerald-light">
             {backupMessage}
+          </div>
+        )}
+        <ErrorMessage
+          error={
+            exportRecoveryWordsError
+              ? `QSDM recovery export failed: ${getErrorMessage(
+                  exportRecoveryWordsError
+                )}`
+              : null
+          }
+          className="py-2"
+        />
+        {recoveryExportMessage && (
+          <div className="py-2 text-sm text-finnieEmerald-light">
+            {recoveryExportMessage}
           </div>
         )}
         <ErrorMessage

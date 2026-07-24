@@ -43,8 +43,8 @@ export const DeleteAccount = create<Props>(function DeleteAccount({
             <br />
             This will erase this local Hive profile from the Node. <br /> You
             can restore the local profile with its Hive recovery phrase, but
-            QSDM CELL signing requires the separate QSDM keystore JSON and
-            passphrase.
+            CELL wallet recovery is separate: use 24 QSDM Recovery Words for a
+            recovery-enabled wallet or JSON plus passphrase for a legacy one.
           </div>
         </div>
         <div className="px-16 pb-5">

@@ -514,6 +514,34 @@ const shouldCheckCliPath = (cliPath: string) =>
   cliPath.includes('\\') ||
   cliPath.toLowerCase().endsWith('.exe');
 
+const getQsdmRecoveryMetadata = (keystorePath: string) => {
+  if (!fileExists(keystorePath)) {
+    return { recoveryEnabled: false };
+  }
+
+  try {
+    const stat = fs.statSync(keystorePath);
+    if (!stat.isFile() || stat.size > 2 * 1024 * 1024) {
+      return { recoveryEnabled: false };
+    }
+    const parsed = JSON.parse(fs.readFileSync(keystorePath, 'utf-8')) as {
+      recovery?: { scheme?: unknown; words?: unknown };
+    };
+    const scheme = parsed.recovery?.scheme;
+    const words = parsed.recovery?.words;
+    if (scheme !== 'qsdm-wallet-recovery-v1' || words !== 24) {
+      return { recoveryEnabled: false };
+    }
+    return {
+      recoveryEnabled: true,
+      recoveryScheme: scheme,
+      recoveryWords: words,
+    };
+  } catch {
+    return { recoveryEnabled: false };
+  }
+};
+
 export const getQsdmTaskActionSignerStatus = (): QsdmTaskActionSignerStatus => {
   const mode = getQsdmTaskActionSignerMode();
   const sender = getQsdmTaskActionSender();
@@ -524,6 +552,7 @@ export const getQsdmTaskActionSignerStatus = (): QsdmTaskActionSignerStatus => {
   const cliExists = shouldCheckCliPath(cliPath) ? fileExists(cliPath) : true;
   const keystoreExists = fileExists(keystorePath);
   const passphraseExists = fileExists(passphraseFile);
+  const recovery = getQsdmRecoveryMetadata(keystorePath);
 
   const checks = {
     sender: !!sender,
@@ -546,6 +575,7 @@ export const getQsdmTaskActionSignerStatus = (): QsdmTaskActionSignerStatus => {
     cliPath,
     keystorePath: keystorePath || undefined,
     passphraseFile: passphraseFile || undefined,
+    ...recovery,
     checks,
     reason:
       missing.length > 0

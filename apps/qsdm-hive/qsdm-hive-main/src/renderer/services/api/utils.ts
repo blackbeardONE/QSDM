@@ -12,6 +12,8 @@ import type {
   QsdmReferralStatusResponse,
   QsdmSignerWalletCreateRequest,
   QsdmSignerWalletImportRequest,
+  QsdmSignerWalletRecoveryExportRequest,
+  QsdmSignerWalletRecoveryRequest,
   QsdmSignerWalletUnlockRequest,
   QsdmSignedCellLoopRequest,
   QsdmSignedTransactionEnvelope,
@@ -199,6 +201,12 @@ export const importQsdmSignerWallet = async (
   return window.main.importQsdmSignerWallet(payload);
 };
 
+export const restoreQsdmSignerWallet = async (
+  payload: QsdmSignerWalletRecoveryRequest
+) => {
+  return window.main.restoreQsdmSignerWallet(payload);
+};
+
 export const unlockQsdmSignerWallet = async (
   payload: QsdmSignerWalletUnlockRequest
 ) => {
@@ -207,6 +215,12 @@ export const unlockQsdmSignerWallet = async (
 
 export const exportQsdmSignerWalletBackup = async () => {
   return window.main.exportQsdmSignerWalletBackup();
+};
+
+export const exportQsdmSignerRecoveryWords = async (
+  payload: QsdmSignerWalletRecoveryExportRequest
+) => {
+  return window.main.exportQsdmSignerRecoveryWords(payload);
 };
 
 export const getQsdmWalletProviderPermissions = async () => {

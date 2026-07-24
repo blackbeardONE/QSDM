@@ -4,7 +4,7 @@ import os from 'os';
 import path from 'path';
 
 import {
-  hasQsdmStoredPassphrase,
+  backupQsdmEncryptedPassphrase,
   persistQsdmSignerPassphrase,
 } from 'main/services/qsdmSignerSecretStore';
 import {
@@ -15,8 +15,8 @@ import {
 
 import type { Event } from 'electron';
 import type {
-  QsdmSignerWalletCreateRequest,
   QsdmSignerWalletImportResponse,
+  QsdmSignerWalletRecoveryRequest,
 } from 'models/api/qsdm';
 
 type WalletShowResult = {
@@ -24,19 +24,25 @@ type WalletShowResult = {
   public_key?: string;
 };
 
-const getSpawnError = (result: ReturnType<typeof spawnSync>) => {
-  if (result.error) return result.error.message;
-  return result.stderr?.toString().trim() || result.stdout?.toString().trim();
-};
-
 const writeFilePrivate = (filePath: string, content: string) => {
   fs.writeFileSync(filePath, content, { mode: 0o600, flag: 'wx' });
   try {
     fs.chmodSync(filePath, 0o600);
   } catch {
-    // Windows applies the user-profile ACL instead of POSIX file modes.
+    // Windows protects files with the current user's profile ACL.
   }
 };
+
+const backupExistingFile = (filePath: string) => {
+  if (fs.existsSync(filePath)) {
+    fs.copyFileSync(filePath, `${filePath}.bak-${Date.now()}`);
+  }
+};
+
+const getSpawnError = (result: ReturnType<typeof spawnSync>) =>
+  result.error?.message ||
+  result.stderr?.toString().trim() ||
+  result.stdout?.toString().trim();
 
 const runQsdmCli = (args: string[]) => {
   const cliPath = getQsdmTaskActionCliPath();
@@ -45,7 +51,6 @@ const runQsdmCli = (args: string[]) => {
       'The native QSDM signer is unavailable. Reinstall the current QSDM Hive release.'
     );
   }
-
   return spawnSync(cliPath, args, {
     encoding: 'utf-8',
     timeout: 30000,
@@ -53,46 +58,47 @@ const runQsdmCli = (args: string[]) => {
   });
 };
 
-export const createQsdmSignerWallet = async (
+export const restoreQsdmSignerWallet = async (
   _: Event,
-  payload: QsdmSignerWalletCreateRequest
+  payload: QsdmSignerWalletRecoveryRequest
 ): Promise<QsdmSignerWalletImportResponse> => {
-  const passphrase = payload?.passphrase;
-  if (typeof passphrase !== 'string' || passphrase.length < 12) {
-    throw new Error('QSDM wallet passphrase must be at least 12 characters');
+  const recoveryWords = payload?.recoveryWords?.trim();
+  if (!recoveryWords || recoveryWords.split(/\s+/).length !== 24) {
+    throw new Error('Enter all 24 QSDM Recovery Words');
   }
-
-  const { signerDir, keystorePath, passphraseFile } =
-    getQsdmDefaultLocalSignerPaths();
-  if (fs.existsSync(keystorePath) || hasQsdmStoredPassphrase(signerDir)) {
+  if (
+    typeof payload?.passphrase !== 'string' ||
+    payload.passphrase.length < 12
+  ) {
     throw new Error(
-      'A QSDM signer wallet already exists. Back it up before replacing it.'
+      'New QSDM wallet passphrase must be at least 12 characters'
     );
   }
 
   const tmpDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'qsdm-hive-new-signer-')
+    path.join(os.tmpdir(), 'qsdm-hive-restore-signer-')
   );
   const tmpKeystorePath = path.join(tmpDir, 'wallet.json');
   const tmpPassphrasePath = path.join(tmpDir, 'passphrase.txt');
   const tmpRecoveryPath = path.join(tmpDir, 'recovery-words.txt');
 
   try {
-    writeFilePrivate(tmpPassphrasePath, passphrase);
-    const createResult = runQsdmCli([
+    writeFilePrivate(tmpPassphrasePath, payload.passphrase);
+    writeFilePrivate(tmpRecoveryPath, recoveryWords);
+    const restoreResult = runQsdmCli([
       'wallet',
-      'new',
+      'restore',
       '--out',
       tmpKeystorePath,
       '--passphrase-file',
       tmpPassphrasePath,
-      '--recovery-out',
+      '--recovery-file',
       tmpRecoveryPath,
     ]);
-    if (createResult.status !== 0) {
+    if (restoreResult.status !== 0) {
       throw new Error(
-        `QSDM wallet creation failed: ${
-          getSpawnError(createResult) || 'native signer exited unexpectedly'
+        `QSDM wallet restore failed: ${
+          getSpawnError(restoreResult) || 'native signer exited unexpectedly'
         }`
       );
     }
@@ -106,10 +112,9 @@ export const createQsdmSignerWallet = async (
     ]);
     if (showResult.status !== 0) {
       throw new Error(
-        `QSDM wallet validation failed: ${getSpawnError(showResult)}`
+        `Restored QSDM wallet validation failed: ${getSpawnError(showResult)}`
       );
     }
-
     let walletInfo: WalletShowResult;
     try {
       walletInfo = JSON.parse(showResult.stdout.trim()) as WalletShowResult;
@@ -117,16 +122,7 @@ export const createQsdmSignerWallet = async (
       throw new Error('QSDM CLI returned an unreadable wallet description');
     }
     if (!walletInfo.address || !walletInfo.public_key) {
-      throw new Error(
-        'Created QSDM wallet is missing its address or public key'
-      );
-    }
-
-    const recoveryWords = fs.readFileSync(tmpRecoveryPath, 'utf-8').trim();
-    if (recoveryWords.split(/\s+/).length !== 24) {
-      throw new Error(
-        'QSDM CLI did not return a valid 24-word wallet recovery phrase'
-      );
+      throw new Error('Restored QSDM wallet is missing key metadata');
     }
 
     const inspectResult = runQsdmCli([
@@ -139,43 +135,40 @@ export const createQsdmSignerWallet = async (
     ]);
     if (inspectResult.status !== 0) {
       throw new Error(
-        `Created QSDM wallet could not be unlocked: ${getSpawnError(
+        `Restored QSDM wallet could not be unlocked: ${getSpawnError(
           inspectResult
         )}`
       );
     }
 
+    const { signerDir, keystorePath, passphraseFile } =
+      getQsdmDefaultLocalSignerPaths();
     fs.mkdirSync(signerDir, { recursive: true, mode: 0o700 });
+    backupExistingFile(keystorePath);
+    backupExistingFile(passphraseFile);
+    backupQsdmEncryptedPassphrase(signerDir);
+    fs.copyFileSync(tmpKeystorePath, keystorePath);
     try {
-      fs.chmodSync(signerDir, 0o700);
+      fs.chmodSync(keystorePath, 0o600);
     } catch {
-      // Windows applies the user-profile ACL instead of POSIX directory modes.
+      // Windows protects files with the current user's profile ACL.
     }
+    const storedPassphrase = persistQsdmSignerPassphrase({
+      passphrase: payload.passphrase,
+      signerDir,
+    });
+    activateQsdmImportedSignerPaths({
+      keystorePath,
+      passphraseFile: storedPassphrase.passphraseFile,
+      sender: walletInfo.address,
+    });
 
-    try {
-      writeFilePrivate(keystorePath, fs.readFileSync(tmpKeystorePath, 'utf-8'));
-      const storedPassphrase = persistQsdmSignerPassphrase({
-        passphrase,
-        signerDir,
-      });
-      activateQsdmImportedSignerPaths({
-        keystorePath,
-        passphraseFile: storedPassphrase.passphraseFile,
-        sender: walletInfo.address,
-      });
-
-      return {
-        address: walletInfo.address,
-        publicKey: walletInfo.public_key,
-        keystorePath,
-        passphraseFile: storedPassphrase.passphraseFile,
-        recoveryWords,
-      };
-    } catch (error) {
-      fs.rmSync(keystorePath, { force: true });
-      fs.rmSync(passphraseFile, { force: true });
-      throw error;
-    }
+    return {
+      address: walletInfo.address,
+      publicKey: walletInfo.public_key,
+      keystorePath,
+      passphraseFile: storedPassphrase.passphraseFile,
+    };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

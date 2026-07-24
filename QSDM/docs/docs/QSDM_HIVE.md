@@ -15,7 +15,7 @@ does not ship a separate consumer GUI miner.
 
 1. Install QSDM Hive.
 2. Create or import a QSDM wallet.
-3. Back up the QSDM keystore JSON and passphrase.
+3. Write down the 24 QSDM Recovery Words and back up the encrypted JSON.
 4. Run CELL tasks, integrations, or qualifying mining work.
 
 ## Linux x86-64
@@ -27,14 +27,16 @@ install a local validator. Version 1.4.0 bundles the native `qsdmcli` signer,
 supervised console miner, CUDA protocol solver, edge agent, and CUDA edge
 helper on the supported Electron 43 runtime.
 Open **Settings > Wallet** to create a new
-ML-DSA QSDM wallet or import an existing keystore JSON plus passphrase.
+ML-DSA QSDM wallet, restore one from 24 QSDM Recovery Words, or import an
+existing keystore JSON plus passphrase.
 
 The encrypted wallet is stored with private file permissions in Hive's
 application-data directory. Hive protects its working passphrase with the
 operating-system secret store where a protected backend is available. Back up
 the encrypted keystore JSON from **Settings > Wallet**, and keep the passphrase
-separately; Hive deliberately does not export a plaintext passphrase beside
-the backup. Address
+separately. New recovery-enabled wallets also have 24 QSDM Recovery Words that
+rebuild the same wallet with a new local passphrase; Hive deliberately does not
+export a plaintext passphrase beside either backup. Address
 copying uses Electron's native Linux clipboard. The public gateway does not
 offer an unauthenticated faucet, so gateway-connected Hive shows **Receive
 CELL** and the wallet address instead of a claim action. Hive offers a one-time
@@ -72,7 +74,12 @@ Task Studio initially publishes the built-in `generic-proof-v1` capability. New 
 
 ## Wallet backup
 
-QSDM CELL wallet recovery uses the **QSDM keystore JSON plus its passphrase**. Hive profile phrases, when present, restore only local Hive profile data. They are not CELL wallet recovery phrases.
+New wallets use **24 QSDM Recovery Words**. The words rebuild the same CELL
+wallet; the passphrase protects its local encrypted JSON and may be changed
+during restore. Older random wallets continue to use **QSDM keystore JSON plus
+passphrase** and cannot receive recovery words without moving to a new wallet.
+Hive profile phrases, when present, restore only local Hive data. See [QSDM
+Wallet Recovery](WALLET_RECOVERY.md).
 
 ## QSDM Wallet browser extension
 

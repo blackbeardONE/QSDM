@@ -100,7 +100,7 @@ export const AddNewAccount = create(function AddNewAccount({
           newKey={newKey as KeyType}
           title="Your QSDM signer wallet was imported!"
           description="Hive will use this signer for CELL balance checks, staking, task starts, submissions, claims, and transfers."
-          warning="Keep the QSDM keystore JSON and passphrase backed up. Hive stores a local copy for signing, but the passphrase is still required to recover this wallet on a new device."
+          warning="Keep the encrypted QSDM JSON and passphrase backed up. If this wallet supports QSDM Recovery Words, you can export them from Settings > Wallet."
           linkAddressToExplorer={false}
         />
       ),

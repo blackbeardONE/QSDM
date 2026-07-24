@@ -110,6 +110,108 @@ func TestMarshalRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRecoveryRoundTrip(t *testing.T) {
+	pub, priv := genKeypair(t)
+	passphrase := []byte("recovery passphrase")
+	recoveryEntropy := make([]byte, RecoveryBytes)
+	if _, err := rand.Read(recoveryEntropy); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
+
+	ks, err := EncryptWithRecovery(pub, priv, recoveryEntropy, passphrase)
+	if err != nil {
+		t.Fatalf("EncryptWithRecovery: %v", err)
+	}
+	if ks.Recovery == nil {
+		t.Fatal("recovery metadata is missing")
+	}
+	if err := Validate(ks); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	got, err := DecryptRecovery(ks, passphrase)
+	if err != nil {
+		t.Fatalf("DecryptRecovery: %v", err)
+	}
+	if !bytes.Equal(got, recoveryEntropy) {
+		t.Fatal("decrypted recovery entropy differs")
+	}
+
+	data, err := Marshal(ks)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	reloaded, err := Unmarshal(data)
+	if err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	got, err = DecryptRecovery(reloaded, passphrase)
+	if err != nil {
+		t.Fatalf("DecryptRecovery after JSON round trip: %v", err)
+	}
+	if !bytes.Equal(got, recoveryEntropy) {
+		t.Fatal("recovery entropy differs after JSON round trip")
+	}
+}
+
+func TestLegacyKeystoreHasNoRecovery(t *testing.T) {
+	pub, priv := genKeypair(t)
+	ks, err := Encrypt(pub, priv, []byte("passphrase"))
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	if _, err := DecryptRecovery(ks, []byte("passphrase")); err != ErrNoRecovery {
+		t.Fatalf("DecryptRecovery error = %v, want ErrNoRecovery", err)
+	}
+}
+
+func TestRecoveryWrongPassphraseAndTamperFailClosed(t *testing.T) {
+	pub, priv := genKeypair(t)
+	recoveryEntropy := bytes.Repeat([]byte{0x5a}, RecoveryBytes)
+	ks, err := EncryptWithRecovery(pub, priv, recoveryEntropy, []byte("right passphrase"))
+	if err != nil {
+		t.Fatalf("EncryptWithRecovery: %v", err)
+	}
+	if _, err := DecryptRecovery(ks, []byte("wrong passphrase")); err != ErrInvalidPassphrase {
+		t.Fatalf("wrong passphrase error = %v, want ErrInvalidPassphrase", err)
+	}
+
+	ciphertext, _ := hex.DecodeString(ks.Recovery.Ciphertext)
+	ciphertext[0] ^= 0x01
+	ks.Recovery.Ciphertext = hex.EncodeToString(ciphertext)
+	if _, err := DecryptRecovery(ks, []byte("right passphrase")); err != ErrInvalidPassphrase {
+		t.Fatalf("tampered recovery error = %v, want ErrInvalidPassphrase", err)
+	}
+}
+
+func TestRecoveryRecordIsBoundToWalletAddress(t *testing.T) {
+	firstPub, firstPriv := genKeypair(t)
+	secondPub, secondPriv := genKeypair(t)
+	passphrase := []byte("same passphrase for swap test")
+	first, err := EncryptWithRecovery(
+		firstPub,
+		firstPriv,
+		bytes.Repeat([]byte{0x11}, RecoveryBytes),
+		passphrase,
+	)
+	if err != nil {
+		t.Fatalf("EncryptWithRecovery first: %v", err)
+	}
+	second, err := EncryptWithRecovery(
+		secondPub,
+		secondPriv,
+		bytes.Repeat([]byte{0x22}, RecoveryBytes),
+		passphrase,
+	)
+	if err != nil {
+		t.Fatalf("EncryptWithRecovery second: %v", err)
+	}
+
+	first.Recovery = second.Recovery
+	if _, err := DecryptRecovery(first, passphrase); err != ErrInvalidPassphrase {
+		t.Fatalf("swapped recovery error = %v, want ErrInvalidPassphrase", err)
+	}
+}
+
 func TestAddressIsDerivedFromPublicKey(t *testing.T) {
 	pub, priv := genKeypair(t)
 	ks, err := Encrypt(pub, priv, []byte("p"))

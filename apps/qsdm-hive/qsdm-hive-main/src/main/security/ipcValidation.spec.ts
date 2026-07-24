@@ -191,6 +191,40 @@ describe('QSDM Hive IPC validation', () => {
     ).toThrow(/outside the allowed range/);
   });
 
+  it('accepts exactly 24 QSDM recovery words', () => {
+    const recoveryWords = Array.from({ length: 24 }, () => 'abandon').join(' ');
+    expect(() =>
+      validateIpcPayload(Endpoints.RESTORE_QSDM_SIGNER_WALLET, [
+        {
+          recoveryWords,
+          passphrase: 'correct horse battery staple',
+        },
+      ])
+    ).not.toThrow();
+
+    expect(() =>
+      validateIpcPayload(Endpoints.RESTORE_QSDM_SIGNER_WALLET, [
+        {
+          recoveryWords: recoveryWords.split(' ').slice(0, 12).join(' '),
+          passphrase: 'correct horse battery staple',
+        },
+      ])
+    ).toThrow(/exactly 24 words/);
+  });
+
+  it('bounds the passphrase used to export QSDM recovery words', () => {
+    expect(() =>
+      validateIpcPayload(Endpoints.EXPORT_QSDM_SIGNER_RECOVERY_WORDS, [
+        { passphrase: ['unit', 'test', 'value'].join('-') },
+      ])
+    ).not.toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.EXPORT_QSDM_SIGNER_RECOVERY_WORDS, [
+        { passphrase: '' },
+      ])
+    ).toThrow(/outside the allowed range/);
+  });
+
   it('accepts a bounded passphrase for an existing QSDM wallet', () => {
     expect(() =>
       validateIpcPayload(Endpoints.UNLOCK_QSDM_SIGNER_WALLET, [

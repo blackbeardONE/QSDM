@@ -50,14 +50,8 @@ describe('qsdmTaskActionSigner', () => {
     fs.mkdirSync(signerDir, { recursive: true });
     const keystorePath = path.join(signerDir, 'wallet.json');
     const passphraseFile = path.join(signerDir, 'passphrase.txt');
-    const backupKeystorePath = path.join(
-      signerDir,
-      'wallet.json.bak-123'
-    );
-    const backupPassphraseFile = path.join(
-      signerDir,
-      'passphrase.txt.bak-124'
-    );
+    const backupKeystorePath = path.join(signerDir, 'wallet.json.bak-123');
+    const backupPassphraseFile = path.join(signerDir, 'passphrase.txt.bak-124');
 
     fs.writeFileSync(
       keystorePath,
@@ -141,6 +135,37 @@ describe('qsdmTaskActionSigner', () => {
     expect(status.ready).toBe(false);
     expect(status.checks.keystore).toBe(false);
     expect(status.reason).toContain('keystore');
+    expect(status.recoveryEnabled).toBe(false);
+  });
+
+  it('reports whether the active wallet supports QSDM Recovery Words', async () => {
+    const keystorePath = path.join(tmpDir, 'wallet.json');
+    const passphraseFile = path.join(tmpDir, 'passphrase.txt');
+    fs.writeFileSync(
+      keystorePath,
+      JSON.stringify({
+        type: 'qsdm-keystore',
+        address: 'recovery-wallet-address',
+        recovery: {
+          scheme: 'qsdm-wallet-recovery-v1',
+          words: 24,
+        },
+      })
+    );
+    fs.writeFileSync(passphraseFile, 'test-passphrase');
+    process.env.QSDM_TASK_ACTION_SIGNER = 'cli';
+    process.env.QSDM_TASK_ACTION_CLI_PATH = 'qsdmcli';
+    process.env.QSDM_TASK_ACTION_KEYSTORE_PATH = keystorePath;
+    process.env.QSDM_TASK_ACTION_PASSPHRASE_FILE = passphraseFile;
+
+    const { getQsdmTaskActionSignerStatus } = await import(
+      './qsdmTaskActionSigner'
+    );
+    const status = getQsdmTaskActionSignerStatus();
+
+    expect(status.recoveryEnabled).toBe(true);
+    expect(status.recoveryScheme).toBe('qsdm-wallet-recovery-v1');
+    expect(status.recoveryWords).toBe(24);
   });
 
   it('enables signed actions through the exact official gateway', async () => {
@@ -153,8 +178,7 @@ describe('qsdmTaskActionSigner', () => {
       })
     );
 
-    const gateway =
-      'https://api.qsdm.tech/attest/home-validator/api/v1';
+    const gateway = 'https://api.qsdm.tech/attest/home-validator/api/v1';
     process.env.QSDM_GATEWAY_API_URL = gateway;
     process.env.QSDM_CORE_API_URL = gateway;
     process.env.QSDM_TASK_ACTION_SIGNER = 'cli';

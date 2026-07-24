@@ -90,8 +90,8 @@ function KeyCreationMethodPick() {
       <div className="flex flex-col pl-1 text-lg text-center">
         <p className="mb-4">Create a local Hive profile for this device.</p>
         <p className="font-light">
-          CELL wallet import and recovery uses your QSDM keystore JSON and
-          passphrase.
+          CELL wallet recovery is managed separately in Settings &gt; Wallet
+          with 24 QSDM Recovery Words or a legacy JSON backup.
         </p>
       </div>
 
