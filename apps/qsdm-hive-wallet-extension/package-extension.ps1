@@ -39,7 +39,51 @@ try {
     New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
     $archive = Join-Path $OutputDirectory "qsdm-hive-wallet-extension-$version.zip"
     Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue
-    Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -CompressionLevel Optimal
+
+    # Compress-Archive records checkout-specific timestamps, so identical
+    # extension payloads can produce different immutable release bytes.
+    # Store sorted entries with a fixed ZIP timestamp for reproducible builds.
+    $archiveStream = [IO.File]::Open(
+        $archive,
+        [IO.FileMode]::CreateNew,
+        [IO.FileAccess]::ReadWrite,
+        [IO.FileShare]::None
+    )
+    $zip = [IO.Compression.ZipArchive]::new(
+        $archiveStream,
+        [IO.Compression.ZipArchiveMode]::Create,
+        $false
+    )
+    try {
+        $fixedTimestamp = [DateTimeOffset]::new(
+            2000,
+            1,
+            1,
+            0,
+            0,
+            0,
+            [TimeSpan]::Zero
+        )
+        foreach ($file in @($packageFiles | Sort-Object)) {
+            $entry = $zip.CreateEntry(
+                $file,
+                [IO.Compression.CompressionLevel]::NoCompression
+            )
+            $entry.LastWriteTime = $fixedTimestamp
+            $sourceStream = [IO.File]::OpenRead((Join-Path $stage $file))
+            $entryStream = $entry.Open()
+            try {
+                $sourceStream.CopyTo($entryStream)
+            } finally {
+                $entryStream.Dispose()
+                $sourceStream.Dispose()
+            }
+        }
+    } finally {
+        $zip.Dispose()
+        $archiveStream.Dispose()
+    }
+
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
     [pscustomobject]@{
         Path = $archive
