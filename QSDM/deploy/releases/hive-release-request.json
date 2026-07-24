@@ -1,0 +1,18 @@
+{
+  "schema": "qsdm.hive.release-request.v1",
+  "version": "1.4.6",
+  "tag": "hive-v1.4.6",
+  "source_commit": "581bd169f9f67d91639d3b066ea5afce86c9a2a0",
+  "windows": {
+    "run_id": 30128077825,
+    "artifact": "qsdm-hive-1.4.6-windows-UNSIGNED",
+    "evidence_artifact": "qsdm-hive-1.4.6-windows-build-evidence"
+  },
+  "linux": {
+    "run_id": 30128078100,
+    "artifact": "qsdm-hive-linux-581bd169f9f67d91639d3b066ea5afce86c9a2a0"
+  },
+  "wallet_extension": {
+    "artifact": "qsdm-hive-wallet-extension-581bd169f9f67d91639d3b066ea5afce86c9a2a0"
+  }
+}
