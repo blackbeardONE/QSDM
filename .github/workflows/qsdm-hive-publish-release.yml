@@ -127,8 +127,13 @@ jobs:
             cd release-assets/extension
             sha256sum -c qsdm-hive-wallet-extension-0.2.0-SHA256SUMS.txt
           )
-          sha256sum "$linux_appimage" "$linux_archive" \
-            > release-assets/linux/qsdm-hive-${VERSION}-linux-SHA256SUMS.txt
+          (
+            cd release-assets/linux
+            sha256sum \
+              "qsdm-hive-${VERSION}-linux-x86_64.AppImage" \
+              "qsdm-hive-${VERSION}-linux-x64.tar.gz" \
+              > "qsdm-hive-${VERSION}-linux-SHA256SUMS.txt"
+          )
 
           find release-assets -type f \
             ! -name ARTIFACTS-SHA256SUMS.txt -print0 | sort -z | \
