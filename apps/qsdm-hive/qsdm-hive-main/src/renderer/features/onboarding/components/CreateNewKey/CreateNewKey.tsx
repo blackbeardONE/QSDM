@@ -91,8 +91,8 @@ also known as a "stake", to run tasks on our network.`}
             </Popover>
             <span>
               {' '}
-              or ask another wallet holder for {NATIVE_TOKEN_SYMBOL}{' '}
-              to send funds to your account.
+              or ask another wallet holder for {NATIVE_TOKEN_SYMBOL} to send
+              funds to your account.
             </span>
           </span>
         </div>
@@ -124,7 +124,7 @@ also known as a "stake", to run tasks on our network.`}
         <div className="w-[25vw] h-8 text-center text-finnieTeal-100 text-xs 2xl:text-sm md2h:text-sm transition-all duration-300 ease-in-out">
           <span className="font-bold">Back It Up Anytime. </span>
           <span>
-            QSDM wallet recovery uses the keystore JSON file plus passphrase.
+            CELL wallet recovery is managed separately in Settings &gt; Wallet.
             You can export both again from Settings &gt; Wallet.
           </span>
         </div>

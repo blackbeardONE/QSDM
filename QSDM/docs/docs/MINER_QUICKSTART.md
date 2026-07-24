@@ -110,8 +110,9 @@ cd QSDM/source
 go build -o qsdmcli ./cmd/qsdmcli
 
 # Prompts twice for a passphrase, writes to ~/.qsdm/wallet.json (mode 0600),
-# prints ONLY the address to stdout so the line can be piped into a miner.
-./qsdmcli wallet new
+# writes 24 recovery words to your chosen offline path, and prints ONLY the
+# address to stdout so the line can be piped into a miner.
+./qsdmcli wallet new --recovery-out /media/offline/qsdm-recovery.txt
 # → 7a3b…1c4d   (your reward address)
 
 # Optional: inspect what's on disk without revealing the private key
@@ -120,7 +121,11 @@ go build -o qsdmcli ./cmd/qsdmcli
 
 **Path B — browser:** visit **<https://qsdm.tech/wallet.html>**, type a passphrase, click *Generate*. The page runs `wallet.wasm` locally, hands you a `qsdm-wallet-<address>.json` download. Same file format as the CLI: drop it on disk and `qsdmcli wallet show --in <file>` reads it back. The browser page never POSTs the passphrase or the private key anywhere — verify in DevTools → Network. SHA-384 Subresource Integrity is enforced on `wallet.js`, `wasm_exec.js`, and `wallet.wasm` so a CDN-side swap of any of the three would break loudly rather than silently sign keystores with rogue code.
 
-In both cases: **back up the JSON file AND the passphrase.** Losing either makes the address unrecoverable. There is no server-side recovery.
+For a recovery-enabled CLI wallet, secure the **24 QSDM Recovery Words**
+offline; they rebuild the same address with a new local passphrase. Also back
+up the encrypted JSON for routine use. The standalone browser wallet currently
+creates a legacy wallet, so its **JSON and passphrase** are both required.
+There is no server-side recovery.
 
 ## 3. HMAC key + on-chain enrollment
 

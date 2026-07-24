@@ -389,6 +389,19 @@ const validateSignerCreate = (endpoint: string, payload: unknown) => {
   ensureString(endpoint, object, 'passphrase', { min: 12, max: 4096 });
 };
 
+const validateSignerRestore = (endpoint: string, payload: unknown) => {
+  const object = ensureObject(endpoint, payload);
+  const recoveryWords = ensureString(endpoint, object, 'recoveryWords', {
+    min: 1,
+    max: 4096,
+    pattern: /^[A-Za-z\s]+$/,
+  });
+  if (recoveryWords.trim().split(/\s+/).length !== 24) {
+    invalid(endpoint, 'recoveryWords must contain exactly 24 words');
+  }
+  ensureString(endpoint, object, 'passphrase', { min: 12, max: 4096 });
+};
+
 const validateSignerUnlock = (endpoint: string, payload: unknown) => {
   const object = ensureObject(endpoint, payload);
   ensureString(endpoint, object, 'passphrase', { min: 1, max: 4096 });
@@ -502,12 +515,20 @@ export const validateIpcPayload = (
     case Endpoints.CREATE_QSDM_SIGNER_WALLET:
       validateSignerCreate(endpoint, payload);
       break;
+    case Endpoints.RESTORE_QSDM_SIGNER_WALLET:
+      validateSignerRestore(endpoint, payload);
+      break;
     case Endpoints.IMPORT_QSDM_SIGNER_WALLET:
       validateSignerImport(endpoint, payload);
       break;
     case Endpoints.UNLOCK_QSDM_SIGNER_WALLET:
       validateSignerUnlock(endpoint, payload);
       break;
+    case Endpoints.EXPORT_QSDM_SIGNER_RECOVERY_WORDS: {
+      const object = ensureObject(endpoint, payload);
+      ensureString(endpoint, object, 'passphrase', { min: 1, max: 4096 });
+      break;
+    }
     case Endpoints.LINK_QSDM_SKYFANG_ACCOUNT:
       validateSkyFangLink(endpoint, payload);
       break;

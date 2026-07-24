@@ -60,8 +60,8 @@ function ImportWithKeyPhrase({
         </div>
         <p className="px-16 pb-3 text-center text-sm text-finnieTeal-100">
           This is a legacy local-profile restore screen, not QSDM wallet
-          recovery. QSDM CELL wallets are recovered with a QSDM keystore JSON
-          file plus passphrase.
+          recovery. Restore a new CELL wallet with its 24 QSDM Recovery Words in
+          Settings &gt; Wallet; legacy wallets use JSON plus passphrase.
         </p>
 
         <ImportFromSeedPhrase

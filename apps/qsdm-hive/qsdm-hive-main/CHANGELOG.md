@@ -1,3 +1,10 @@
+## [1.4.6]
+
+- Wallet recovery: New QSDM wallets can be restored from 24 checksum-protected recovery words while retaining their ML-DSA-87 address.
+- Safer custody: Recovery material is encrypted separately inside the QSDM keystore and never passed through command-line arguments or application logs.
+- Wallet management: Hive can create, restore, and export recovery-enabled wallets, and clearly identifies legacy JSON-plus-passphrase wallets.
+- Compatibility: Existing wallets continue to work unchanged; moving a legacy wallet to recovery words requires creating a new wallet and transferring its assets and task ownership.
+
 ## [1.4.5]
 
 - Windows updater repair: Packaged Hive now always includes the trusted generic updater configuration required by `electron-updater`.

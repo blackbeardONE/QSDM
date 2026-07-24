@@ -36,7 +36,9 @@ function ImportKey() {
           tooltipContent={
             <>
               <span>This restores the local Hive profile only.</span>{' '}
-              <span>QSDM CELL wallets use keystore JSON plus passphrase.</span>
+              <span>
+                CELL wallet recovery is managed in Settings &gt; Wallet.
+              </span>
             </>
           }
         >
