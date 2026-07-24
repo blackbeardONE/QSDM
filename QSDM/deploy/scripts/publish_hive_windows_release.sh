@@ -53,10 +53,9 @@ grep -q '"key_id": "10ab9c5710761d4c9dca59d42446e9ea0e3315d15cdc3715df1dcb8c96fa
 manifest_payload="$(sed -n 's/.*"manifest_base64": "\([^"]*\)".*/\1/p' \
   "$stage_dir/downloads/qsdm-hive-release-windows.json")"
 test -n "$manifest_payload"
-printf '%s' "$manifest_payload" | base64 --decode | \
-  grep -q '"version": "'"${hive_version}"'"'
-printf '%s' "$manifest_payload" | base64 --decode | \
-  grep -q '"name": "'"${wallet_extension}"'"'
+manifest_json="$(printf '%s' "$manifest_payload" | base64 --decode)"
+grep -q '"version": "'"${hive_version}"'"' <<<"$manifest_json"
+grep -q '"name": "'"${wallet_extension}"'"' <<<"$manifest_json"
 
 install -d -o caddy -g caddy -m 0755 "$webroot" "$downloads"
 
@@ -112,12 +111,14 @@ install_pointer "$stage_dir/downloads/latest.yml" "$downloads/latest.yml"
 install_pointer "$stage_dir/downloads/qsdm-hive-release-windows.json" \
   "$downloads/qsdm-hive-release-windows.json"
 
-curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/downloads/latest.yml" | grep -qx "version: ${hive_version}"
-curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/downloads/qsdm-hive-release-windows.json" | \
-  grep -q '"schema": "qsdm.signed-release.v1"'
-curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/download.html" | grep -q "Version ${hive_version}"
+public_latest="$(curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/downloads/latest.yml")"
+grep -qx "version: ${hive_version}" <<<"$public_latest"
+public_envelope="$(curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/downloads/qsdm-hive-release-windows.json")"
+grep -q '"schema": "qsdm.signed-release.v1"' <<<"$public_envelope"
+public_download_page="$(curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/download.html")"
+grep -q "Version ${hive_version}" <<<"$public_download_page"
 
 echo "Published QSDM Hive ${hive_version} for Windows. Linux manifests unchanged."

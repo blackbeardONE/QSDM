@@ -71,13 +71,11 @@ for platform in windows linux; do
     "$envelope"
   payload="$(sed -n 's/.*"manifest_base64": "\([^"]*\)".*/\1/p' "$envelope")"
   test -n "$payload"
-  printf '%s' "$payload" | base64 --decode | \
-    grep -q '"version": "'"${hive_version}"'"'
+  manifest_json="$(printf '%s' "$payload" | base64 --decode)"
+  grep -q '"version": "'"${hive_version}"'"' <<<"$manifest_json"
   if [[ "$platform" == "windows" ]]; then
-    printf '%s' "$payload" | base64 --decode | \
-      grep -q '"name": "'"${wallet_extension}"'"'
-    printf '%s' "$payload" | base64 --decode | \
-      grep -q '"name": "'"${wallet_extension_checksums}"'"'
+    grep -q '"name": "'"${wallet_extension}"'"' <<<"$manifest_json"
+    grep -q '"name": "'"${wallet_extension_checksums}"'"' <<<"$manifest_json"
   fi
 done
 
@@ -124,16 +122,19 @@ for file in "${pointer_downloads[@]}"; do
   install_pointer "$stage_dir/downloads/$file" "$downloads/$file"
 done
 
-curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/downloads/latest.yml" | grep -qx "version: ${hive_version}"
-curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/downloads/latest-linux.yml" | grep -qx "version: ${hive_version}"
+public_latest_windows="$(curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/downloads/latest.yml")"
+grep -qx "version: ${hive_version}" <<<"$public_latest_windows"
+public_latest_linux="$(curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/downloads/latest-linux.yml")"
+grep -qx "version: ${hive_version}" <<<"$public_latest_linux"
 for platform in windows linux; do
-  curl --fail --silent --show-error --max-time 30 \
-    "https://qsdm.tech/downloads/qsdm-hive-release-${platform}.json" | \
-    grep -q '"schema": "qsdm.signed-release.v1"'
+  public_envelope="$(curl --fail --silent --show-error --max-time 30 \
+    "https://qsdm.tech/downloads/qsdm-hive-release-${platform}.json")"
+  grep -q '"schema": "qsdm.signed-release.v1"' <<<"$public_envelope"
 done
-curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/download.html" | grep -q "Version ${hive_version}"
+public_download_page="$(curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/download.html")"
+grep -q "Version ${hive_version}" <<<"$public_download_page"
 
 echo "Published QSDM Hive ${hive_version} for Windows and Linux atomically."
