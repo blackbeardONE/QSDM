@@ -32,7 +32,7 @@ export function PhraseSaveSuccess() {
       </div>
       <div className="flex items-center gap-4 text-[#FFA54B] text-[11px] text-left font-light mx-auto w-fit">
         <Icon source={WarningTalkLine} className="w-6 h-6" />
-        CELL wallet recovery uses your QSDM keystore JSON and passphrase.
+        CELL wallet recovery is managed separately in Settings &gt; Wallet.
         <br /> No one from QSDM Hive will ever ask you for either secret.
       </div>
 

@@ -29,6 +29,7 @@ import delegateStake from './delegateStake';
 import disableStayAwake from './disableStayAwake';
 import downloadAppUpdate from './downloadAppUpdate';
 import enableStayAwake from './enableStayAwake';
+import exportQsdmSignerRecoveryWords from './exportQsdmSignerRecoveryWords';
 import exportQsdmSignerWalletBackup from './exportQsdmSignerWalletBackup';
 import { verifyMessage } from './faucet';
 import fetchKPLTokenMetadata from './fetchKPLTokenMetadata';
@@ -82,7 +83,6 @@ import getTimeToNextReward from './getTimeToNextReward';
 import getUserConfig from './getUserConfig';
 import getVersion from './getVersion';
 import importQsdmSignerWallet from './importQsdmSignerWallet';
-import unlockQsdmSignerWallet from './unlockQsdmSignerWallet';
 import initializeTasks from './initializeTasks';
 import isValidWalletAddress from './isValidWalletAddress';
 import { fetchKPLList, getKPLBalance, transferKplToken } from './kplTokens';
@@ -125,6 +125,7 @@ import recoverStakingAccount from './recoverStakingAccount';
 import redeemTokensInNewNetwork from './redeemTokensInNewNetwork';
 import registerQsdmReferral from './registerQsdmReferral';
 import removeAccountByName from './removeAccountByName';
+import restoreQsdmSignerWallet from './restoreQsdmSignerWallet';
 import revokeQsdmWalletProviderPermission from './revokeQsdmWalletProviderPermission';
 import runQsdmSignedCellLoop from './runQsdmSignedCellLoop';
 import saveTaskThumbnail from './saveTaskThumbnail';
@@ -181,6 +182,7 @@ import {
   transferCellFromMainWallet,
   transferCellFromStakingWallet,
 } from './transferQsdmHive';
+import unlockQsdmSignerWallet from './unlockQsdmSignerWallet';
 import upgradeTask from './upgradeTask';
 import { checkUPnPBinary, fetchAndSaveUPnPBinary } from './upnp';
 import validateBip39Word from './validateBip39Word';
@@ -213,7 +215,9 @@ export default {
   linkQsdmSkyFangAccount,
   createQsdmSignerWallet,
   exportQsdmSignerWalletBackup,
+  exportQsdmSignerRecoveryWords,
   importQsdmSignerWallet,
+  restoreQsdmSignerWallet,
   unlockQsdmSignerWallet,
   getQsdmWalletProviderPermissions,
   revokeQsdmWalletProviderPermission,

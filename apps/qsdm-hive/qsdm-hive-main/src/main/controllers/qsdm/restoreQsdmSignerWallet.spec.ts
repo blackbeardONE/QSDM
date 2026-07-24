@@ -9,13 +9,15 @@ import path from 'path';
 
 import { activateQsdmImportedSignerPaths } from 'main/services/qsdmTaskActionSigner';
 
-import { createQsdmSignerWallet } from './createQsdmSignerWallet';
+import { restoreQsdmSignerWallet } from './restoreQsdmSignerWallet';
 
 import type { Event } from 'electron';
 
 jest.mock('child_process', () => ({
   spawnSync: jest.fn(),
 }));
+
+let mockSignerDir = '';
 
 jest.mock('main/services/qsdmTaskActionSigner', () => ({
   activateQsdmImportedSignerPaths: jest.fn(),
@@ -31,7 +33,7 @@ jest.mock('main/services/qsdmTaskActionSigner', () => ({
 }));
 
 jest.mock('main/services/qsdmSignerSecretStore', () => ({
-  hasQsdmStoredPassphrase: () => false,
+  backupQsdmEncryptedPassphrase: jest.fn(),
   persistQsdmSignerPassphrase: ({ passphrase, signerDir }: any) => {
     const pathModule = jest.requireActual<typeof import('path')>('path');
     const fsModule = jest.requireActual<typeof import('fs')>('fs');
@@ -44,37 +46,31 @@ jest.mock('main/services/qsdmSignerSecretStore', () => ({
 const mockSpawnSync = spawnSync as jest.Mock;
 const mockActivateQsdmImportedSignerPaths =
   activateQsdmImportedSignerPaths as jest.Mock;
-let mockSignerDir = '';
+const recoveryWords = Array.from(
+  { length: 24 },
+  (_, index) => `word${index + 1}`
+).join(' ');
 
-const walletJson = JSON.stringify({
-  type: 'qsdm-keystore',
-  address: 'qsdm-created-address',
-  public_key: 'qsdm-created-public-key',
-});
-
-describe('createQsdmSignerWallet', () => {
+describe('restoreQsdmSignerWallet', () => {
   beforeEach(() => {
-    mockSignerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qsdm-new-wallet-'));
+    mockSignerDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'qsdm-restore-wallet-')
+    );
     mockSpawnSync.mockReset();
     mockActivateQsdmImportedSignerPaths.mockReset();
     mockSpawnSync.mockImplementation((_cli: string, args: string[]) => {
       const command = args[1];
-      if (command === 'new') {
+      if (command === 'restore') {
         const outputPath = args[args.indexOf('--out') + 1];
-        const recoveryPath = args[args.indexOf('--recovery-out') + 1];
-        fs.writeFileSync(outputPath, walletJson);
-        fs.writeFileSync(
-          recoveryPath,
-          Array.from({ length: 24 }, (_, index) => `word${index + 1}`).join(' ')
-        );
-        return { status: 0, stdout: 'qsdm-created-address\n', stderr: '' };
+        fs.writeFileSync(outputPath, '{"type":"qsdm-keystore"}');
+        return { status: 0, stdout: 'qsdm-restored-address\n', stderr: '' };
       }
       if (command === 'show') {
         return {
           status: 0,
           stdout: JSON.stringify({
-            address: 'qsdm-created-address',
-            public_key: 'qsdm-created-public-key',
+            address: 'qsdm-restored-address',
+            public_key: 'qsdm-restored-public-key',
           }),
           stderr: '',
         };
@@ -87,43 +83,35 @@ describe('createQsdmSignerWallet', () => {
     fs.rmSync(mockSignerDir, { recursive: true, force: true });
   });
 
-  it('creates, validates, and activates a native QSDM wallet', async () => {
-    const response = await createQsdmSignerWallet({} as Event, {
+  it('restores and activates the same QSDM wallet', async () => {
+    const result = await restoreQsdmSignerWallet({} as Event, {
+      recoveryWords,
       passphrase: 'correct horse battery staple',
     });
 
     const keystorePath = path.join(mockSignerDir, 'wallet.json');
     const passphraseFile = path.join(mockSignerDir, 'session-passphrase.txt');
-    expect(response).toEqual({
-      address: 'qsdm-created-address',
-      publicKey: 'qsdm-created-public-key',
+    expect(result).toEqual({
+      address: 'qsdm-restored-address',
+      publicKey: 'qsdm-restored-public-key',
       keystorePath,
       passphraseFile,
-      recoveryWords: Array.from(
-        { length: 24 },
-        (_, index) => `word${index + 1}`
-      ).join(' '),
     });
-    expect(fs.readFileSync(keystorePath, 'utf-8')).toBe(walletJson);
-    expect(fs.readFileSync(passphraseFile, 'utf-8')).toBe(
-      'correct horse battery staple'
-    );
     expect(mockSpawnSync).toHaveBeenCalledTimes(3);
     expect(mockActivateQsdmImportedSignerPaths).toHaveBeenCalledWith({
       keystorePath,
       passphraseFile,
-      sender: 'qsdm-created-address',
+      sender: 'qsdm-restored-address',
     });
   });
 
-  it('refuses to overwrite an existing signer wallet', async () => {
-    fs.writeFileSync(path.join(mockSignerDir, 'wallet.json'), walletJson);
-
+  it('rejects incomplete recovery words before invoking qsdmcli', async () => {
     await expect(
-      createQsdmSignerWallet({} as Event, {
+      restoreQsdmSignerWallet({} as Event, {
+        recoveryWords: recoveryWords.split(' ').slice(0, 12).join(' '),
         passphrase: 'correct horse battery staple',
       })
-    ).rejects.toThrow('already exists');
+    ).rejects.toThrow('all 24');
     expect(mockSpawnSync).not.toHaveBeenCalled();
   });
 });

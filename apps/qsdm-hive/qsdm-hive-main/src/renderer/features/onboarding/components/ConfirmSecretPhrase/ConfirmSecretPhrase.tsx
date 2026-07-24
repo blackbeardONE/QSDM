@@ -20,7 +20,8 @@ export function ConfirmSecretPhrase() {
       </div>
       <div className="w-full mb-8">
         Type in the missing words to confirm this legacy local profile backup.
-        QSDM CELL wallet recovery uses keystore JSON plus passphrase.
+        This phrase restores only the local Hive profile. CELL wallet recovery
+        is managed separately in Settings &gt; Wallet.
       </div>
       <SeedPhraseConfirm
         seedPhraseValue={newSeedPhrase}

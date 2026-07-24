@@ -88,6 +88,9 @@ const Type = "qsdm-keystore"
 const (
 	KDFPBKDF2SHA256 = "pbkdf2-sha256"
 	CipherAESGCM    = "aes-256-gcm"
+	RecoveryScheme  = "qsdm-wallet-recovery-v1"
+	RecoveryWords   = 24
+	RecoveryBytes   = 32
 )
 
 // PBKDF2 parameters. The browser side derives its key under the exact same
@@ -123,6 +126,22 @@ type Keystore struct {
 	CipherParams CipherParams `json:"cipher_params"`
 	Ciphertext   string       `json:"ciphertext"`
 	CreatedAt    string       `json:"created_at"`
+	Recovery     *Recovery    `json:"recovery,omitempty"`
+}
+
+// Recovery contains an independently encrypted copy of the 256-bit recovery
+// entropy for wallets created from QSDM Recovery Words. Legacy randomly
+// generated wallets omit this block and continue to use JSON + passphrase.
+// A separate salt and nonce prevent key/nonce reuse with the private-key
+// ciphertext even though both records are protected by the same passphrase.
+type Recovery struct {
+	Scheme       string       `json:"scheme"`
+	Words        int          `json:"words"`
+	KDF          string       `json:"kdf"`
+	KDFParams    KDFParams    `json:"kdf_params"`
+	Cipher       string       `json:"cipher"`
+	CipherParams CipherParams `json:"cipher_params"`
+	Ciphertext   string       `json:"ciphertext"`
 }
 
 // KDFParams describes the password-derivation step. For
@@ -169,23 +188,9 @@ func Encrypt(publicKey, privateKey []byte, passphrase []byte) (Keystore, error) 
 		return Keystore{}, errors.New("keystore: empty passphrase refused (use a real one — a zero-byte passphrase is functionally no encryption)")
 	}
 
-	salt := make([]byte, DefaultPBKDF2SaltLen)
-	if _, err := rand.Read(salt); err != nil {
-		return Keystore{}, fmt.Errorf("keystore: salt entropy: %w", err)
-	}
-	nonce := make([]byte, GCMNonceLen)
-	if _, err := rand.Read(nonce); err != nil {
-		return Keystore{}, fmt.Errorf("keystore: nonce entropy: %w", err)
-	}
-
-	dk := pbkdf2.Key(passphrase, salt, DefaultPBKDF2Iterations, DefaultPBKDF2KeyLen, sha256.New)
-	block, err := aes.NewCipher(dk)
+	kdfParams, cipherParams, ciphertext, err := encryptSecret(privateKey, passphrase, nil)
 	if err != nil {
-		return Keystore{}, fmt.Errorf("keystore: aes.NewCipher: %w", err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return Keystore{}, fmt.Errorf("keystore: cipher.NewGCM: %w", err)
+		return Keystore{}, err
 	}
 	// Seal appends the 16-byte tag to the ciphertext; total length is
 	// len(privateKey)+16. The address bytes are not used as AAD —
@@ -194,29 +199,81 @@ func Encrypt(publicKey, privateKey []byte, passphrase []byte) (Keystore, error) 
 	// (a useful UX affordance for "which keystore am I about to open?"
 	// dialogs). Tampering with the metadata is detected separately by
 	// the post-decrypt public-key cross-check in Decrypt.
-	ct := gcm.Seal(nil, nonce, privateKey, nil)
-
 	addrSum := sha256.Sum256(publicKey)
 
 	return Keystore{
-		Version:   Version,
-		Type:      Type,
-		Algorithm: Algorithm,
-		Address:   hex.EncodeToString(addrSum[:]),
-		PublicKey: hex.EncodeToString(publicKey),
-		KDF:       KDFPBKDF2SHA256,
-		KDFParams: KDFParams{
-			Iterations: DefaultPBKDF2Iterations,
-			Salt:       hex.EncodeToString(salt),
-			KeyLen:     DefaultPBKDF2KeyLen,
-		},
-		Cipher: CipherAESGCM,
-		CipherParams: CipherParams{
-			Nonce: hex.EncodeToString(nonce),
-		},
-		Ciphertext: hex.EncodeToString(ct),
-		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
+		Version:      Version,
+		Type:         Type,
+		Algorithm:    Algorithm,
+		Address:      hex.EncodeToString(addrSum[:]),
+		PublicKey:    hex.EncodeToString(publicKey),
+		KDF:          KDFPBKDF2SHA256,
+		KDFParams:    kdfParams,
+		Cipher:       CipherAESGCM,
+		CipherParams: cipherParams,
+		Ciphertext:   ciphertext,
+		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
 	}, nil
+}
+
+// EncryptWithRecovery creates a normal encrypted keystore and attaches an
+// independently encrypted QSDM Recovery Words entropy record. recoveryEntropy
+// is exactly 32 random bytes; callers are responsible for deriving the supplied
+// keypair from that entropy according to RecoveryScheme.
+func EncryptWithRecovery(publicKey, privateKey, recoveryEntropy, passphrase []byte) (Keystore, error) {
+	if len(recoveryEntropy) != RecoveryBytes {
+		return Keystore{}, fmt.Errorf("keystore: recovery entropy must be %d bytes, got %d", RecoveryBytes, len(recoveryEntropy))
+	}
+	ks, err := Encrypt(publicKey, privateKey, passphrase)
+	if err != nil {
+		return Keystore{}, err
+	}
+	kdfParams, cipherParams, ciphertext, err := encryptSecret(
+		recoveryEntropy,
+		passphrase,
+		recoveryAAD(ks.Address),
+	)
+	if err != nil {
+		return Keystore{}, fmt.Errorf("keystore: encrypt recovery entropy: %w", err)
+	}
+	ks.Recovery = &Recovery{
+		Scheme:       RecoveryScheme,
+		Words:        RecoveryWords,
+		KDF:          KDFPBKDF2SHA256,
+		KDFParams:    kdfParams,
+		Cipher:       CipherAESGCM,
+		CipherParams: cipherParams,
+		Ciphertext:   ciphertext,
+	}
+	return ks, nil
+}
+
+func encryptSecret(secret, passphrase, additionalData []byte) (KDFParams, CipherParams, string, error) {
+	salt := make([]byte, DefaultPBKDF2SaltLen)
+	if _, err := rand.Read(salt); err != nil {
+		return KDFParams{}, CipherParams{}, "", fmt.Errorf("keystore: salt entropy: %w", err)
+	}
+	nonce := make([]byte, GCMNonceLen)
+	if _, err := rand.Read(nonce); err != nil {
+		return KDFParams{}, CipherParams{}, "", fmt.Errorf("keystore: nonce entropy: %w", err)
+	}
+
+	dk := pbkdf2.Key(passphrase, salt, DefaultPBKDF2Iterations, DefaultPBKDF2KeyLen, sha256.New)
+	defer zero(dk)
+	block, err := aes.NewCipher(dk)
+	if err != nil {
+		return KDFParams{}, CipherParams{}, "", fmt.Errorf("keystore: aes.NewCipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return KDFParams{}, CipherParams{}, "", fmt.Errorf("keystore: cipher.NewGCM: %w", err)
+	}
+	ct := gcm.Seal(nil, nonce, secret, additionalData)
+	return KDFParams{
+		Iterations: DefaultPBKDF2Iterations,
+		Salt:       hex.EncodeToString(salt),
+		KeyLen:     DefaultPBKDF2KeyLen,
+	}, CipherParams{Nonce: hex.EncodeToString(nonce)}, hex.EncodeToString(ct), nil
 }
 
 // Decrypt recovers the raw ML-DSA-87 private key bytes from a keystore
@@ -237,21 +294,55 @@ func Decrypt(ks Keystore, passphrase []byte) ([]byte, error) {
 	if len(passphrase) == 0 {
 		return nil, ErrInvalidPassphrase
 	}
+	return decryptSecret(ks.KDFParams, ks.CipherParams, ks.Ciphertext, passphrase, nil)
+}
 
-	salt, err := hex.DecodeString(ks.KDFParams.Salt)
+// DecryptRecovery returns the 256-bit recovery entropy embedded in a
+// recovery-enabled keystore. Legacy keystores return ErrNoRecovery.
+func DecryptRecovery(ks Keystore, passphrase []byte) ([]byte, error) {
+	if err := Validate(ks); err != nil {
+		return nil, err
+	}
+	if ks.Recovery == nil {
+		return nil, ErrNoRecovery
+	}
+	if len(passphrase) == 0 {
+		return nil, ErrInvalidPassphrase
+	}
+	plaintext, err := decryptSecret(
+		ks.Recovery.KDFParams,
+		ks.Recovery.CipherParams,
+		ks.Recovery.Ciphertext,
+		passphrase,
+		recoveryAAD(ks.Address),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(plaintext) != RecoveryBytes {
+		zero(plaintext)
+		return nil, fmt.Errorf("keystore: decrypted recovery entropy is %d bytes, want %d", len(plaintext), RecoveryBytes)
+	}
+	return plaintext, nil
+}
+
+func decryptSecret(kdfParams KDFParams, cipherParams CipherParams, ciphertext string, passphrase, additionalData []byte) ([]byte, error) {
+
+	salt, err := hex.DecodeString(kdfParams.Salt)
 	if err != nil || len(salt) == 0 {
 		return nil, fmt.Errorf("keystore: malformed salt: %w", err)
 	}
-	nonce, err := hex.DecodeString(ks.CipherParams.Nonce)
+	nonce, err := hex.DecodeString(cipherParams.Nonce)
 	if err != nil || len(nonce) != GCMNonceLen {
 		return nil, fmt.Errorf("keystore: malformed nonce")
 	}
-	ct, err := hex.DecodeString(ks.Ciphertext)
+	ct, err := hex.DecodeString(ciphertext)
 	if err != nil || len(ct) == 0 {
 		return nil, fmt.Errorf("keystore: malformed ciphertext")
 	}
 
-	dk := pbkdf2.Key(passphrase, salt, ks.KDFParams.Iterations, ks.KDFParams.KeyLen, sha256.New)
+	dk := pbkdf2.Key(passphrase, salt, kdfParams.Iterations, kdfParams.KeyLen, sha256.New)
+	defer zero(dk)
 	block, err := aes.NewCipher(dk)
 	if err != nil {
 		return nil, fmt.Errorf("keystore: aes.NewCipher: %w", err)
@@ -260,7 +351,7 @@ func Decrypt(ks Keystore, passphrase []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("keystore: cipher.NewGCM: %w", err)
 	}
-	pt, err := gcm.Open(nil, nonce, ct, nil)
+	pt, err := gcm.Open(nil, nonce, ct, additionalData)
 	if err != nil {
 		// All Open failures collapse to ErrInvalidPassphrase to avoid
 		// leaking "passphrase ok but ciphertext was tampered" vs
@@ -270,12 +361,21 @@ func Decrypt(ks Keystore, passphrase []byte) ([]byte, error) {
 	return pt, nil
 }
 
+func recoveryAAD(address string) []byte {
+	return []byte(RecoveryScheme + ":" + address)
+}
+
 // ErrInvalidPassphrase is returned by Decrypt for every recoverable
 // failure mode (wrong passphrase, tampered ciphertext, mutated nonce).
 // Callers must NOT log the underlying cause for these cases — that
 // information aids an attacker trying to distinguish "this passphrase is
 // close" from "this passphrase is way off".
 var ErrInvalidPassphrase = errors.New("keystore: passphrase does not match (or the keystore is corrupted)")
+
+// ErrNoRecovery distinguishes a valid legacy keystore from a malformed
+// recovery-enabled one. Existing wallets remain recoverable with their JSON
+// file and passphrase; they cannot be retroactively assigned recovery words.
+var ErrNoRecovery = errors.New("keystore: wallet was not created with QSDM Recovery Words")
 
 // Validate checks that a keystore is well-formed enough to attempt a
 // decrypt against. It does NOT verify the passphrase or the ciphertext;
@@ -325,7 +425,49 @@ func Validate(ks Keystore) error {
 			return fmt.Errorf("keystore: address does not match sha256(public_key) — file is mutated or corrupted")
 		}
 	}
+	if ks.Recovery != nil {
+		if err := validateRecovery(*ks.Recovery); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func validateRecovery(recovery Recovery) error {
+	if recovery.Scheme != RecoveryScheme {
+		return fmt.Errorf("keystore: unsupported recovery scheme %q", recovery.Scheme)
+	}
+	if recovery.Words != RecoveryWords {
+		return fmt.Errorf("keystore: recovery words=%d (want %d)", recovery.Words, RecoveryWords)
+	}
+	if recovery.KDF != KDFPBKDF2SHA256 {
+		return fmt.Errorf("keystore: bad recovery kdf %q", recovery.KDF)
+	}
+	if recovery.KDFParams.Iterations < 100_000 || recovery.KDFParams.KeyLen != DefaultPBKDF2KeyLen {
+		return fmt.Errorf("keystore: invalid recovery kdf parameters")
+	}
+	salt, err := hex.DecodeString(recovery.KDFParams.Salt)
+	if err != nil || len(salt) == 0 {
+		return fmt.Errorf("keystore: malformed recovery salt")
+	}
+	if recovery.Cipher != CipherAESGCM {
+		return fmt.Errorf("keystore: bad recovery cipher %q", recovery.Cipher)
+	}
+	nonce, err := hex.DecodeString(recovery.CipherParams.Nonce)
+	if err != nil || len(nonce) != GCMNonceLen {
+		return fmt.Errorf("keystore: malformed recovery nonce")
+	}
+	ciphertext, err := hex.DecodeString(recovery.Ciphertext)
+	if err != nil || len(ciphertext) != RecoveryBytes+16 {
+		return fmt.Errorf("keystore: malformed recovery ciphertext")
+	}
+	return nil
+}
+
+func zero(value []byte) {
+	for i := range value {
+		value[i] = 0
+	}
 }
 
 // Marshal renders the keystore to indented JSON. Indent is 2 spaces so a

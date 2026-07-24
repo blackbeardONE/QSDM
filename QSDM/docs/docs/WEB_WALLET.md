@@ -282,8 +282,9 @@ page.
   KDF, which is itself an attack surface. Holding for upstream.
 - No keystore "rename / move passphrase" flow yet. Implementable: open,
   re-encrypt with a new passphrase, save. Trivial follow-up.
-- No browser-side mnemonic seed phrase. ML-DSA-87 keys do not have a
-  deterministic / BIP-39 representation in the way Ed25519 keys do;
-  encoding 4896 bytes of secret material into a wordlist would
-  produce an unwieldy ~480-word phrase. The encrypted JSON keystore is
-  the recovery artefact instead.
+- The standalone browser wallet still creates legacy random wallets whose
+  recovery artifact is JSON + passphrase. QSDM Hive and `qsdmcli` now support
+  24-word `qsdm-wallet-recovery-v1` wallets by deterministically generating
+  ML-DSA-87 from 256-bit phrase entropy. Existing random browser wallets cannot
+  be converted in place; move funds to a newly created recovery-enabled wallet
+  if phrase recovery is required.

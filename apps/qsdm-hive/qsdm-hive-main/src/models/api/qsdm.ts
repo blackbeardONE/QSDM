@@ -93,6 +93,9 @@ export interface QsdmTaskActionSignerStatus {
   cliPath?: string;
   keystorePath?: string;
   passphraseFile?: string;
+  recoveryEnabled?: boolean;
+  recoveryScheme?: string;
+  recoveryWords?: number;
   checks: {
     sender: boolean;
     cliMode: boolean;
@@ -121,6 +124,22 @@ export interface QsdmSignerWalletImportResponse {
   publicKey: string;
   keystorePath: string;
   passphraseFile: string;
+  recoveryWords?: string;
+}
+
+export interface QsdmSignerWalletRecoveryRequest {
+  recoveryWords: string;
+  passphrase: string;
+}
+
+export interface QsdmSignerWalletRecoveryExportRequest {
+  passphrase: string;
+}
+
+export interface QsdmSignerWalletRecoveryExportResponse {
+  exported: boolean;
+  address?: string;
+  recoveryBackupPath?: string;
 }
 
 export interface QsdmSignerWalletBackupResponse {

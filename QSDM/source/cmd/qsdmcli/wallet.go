@@ -52,9 +52,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/blackbeardONE/QSDM/pkg/keystore"
+	"github.com/blackbeardONE/QSDM/pkg/walletrecovery"
 	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 	"golang.org/x/term"
 )
@@ -71,6 +73,10 @@ func (c *CLI) walletCommand(args []string) error {
 	switch sub {
 	case "new":
 		return c.walletNew(rest)
+	case "restore":
+		return c.walletRestore(rest)
+	case "export-recovery":
+		return c.walletExportRecovery(rest)
 	case "show":
 		return c.walletShow(rest)
 	case "inspect":
@@ -92,14 +98,19 @@ func (c *CLI) walletCommand(args []string) error {
 }
 
 func walletUsageError() error {
-	return fmt.Errorf("usage: qsdmcli wallet <new|show|inspect|sign|verify|sign-tx|sign-task-action> [flags]\n\n%s", walletHelp)
+	return fmt.Errorf("usage: qsdmcli wallet <new|restore|export-recovery|show|inspect|sign|verify|sign-tx|sign-task-action> [flags]\n\n%s", walletHelp)
 }
 
 const walletHelp = `qsdmcli wallet — self-custody keystore (ML-DSA-87)
 
 Subcommands:
   new      Generate a fresh keypair, write an encrypted keystore, print the
-           address. The private key never touches disk in plaintext.
+           address. Add --recovery-out to create 24 QSDM Recovery Words.
+  restore  Restore a recovery-enabled wallet from 24 QSDM Recovery Words and
+           protect the new local keystore with a new passphrase.
+  export-recovery
+           Export the 24 recovery words from a recovery-enabled keystore to a
+           private file. Legacy random wallets do not have recovery words.
   show     Print address and public key from an existing keystore. No
            passphrase required (these fields are plaintext in the file).
   inspect  Decrypt the keystore and verify the on-disk public key matches
@@ -129,6 +140,8 @@ Common flags:
                         Read passphrase from FILE (use '-' for stdin).
                         Omit to prompt interactively without echo.
   --force               Overwrite an existing keystore (new only). Off by default.
+  --recovery-out PATH   Write new/exported recovery words to PATH with mode 0600.
+  --recovery-file PATH  Read 24 recovery words from PATH (restore only).
   --message      HEX    Hex-encoded message bytes to sign (sign only).
   --message-file PATH   Read message bytes to sign or verify from a file;
                         use '-' for stdin). Mutually exclusive with --message.
@@ -147,7 +160,11 @@ Common flags:
 
 Examples:
   qsdmcli wallet new
-  qsdmcli wallet new --out ~/.qsdm/miner.json --passphrase-file pass.txt
+  qsdmcli wallet new --out ~/.qsdm/miner.json --passphrase-file pass.txt \
+      --recovery-out /media/offline/qsdm-recovery.txt
+  qsdmcli wallet restore --recovery-file /media/offline/qsdm-recovery.txt \
+      --out ~/.qsdm/wallet.json
+  qsdmcli wallet export-recovery --out /media/offline/qsdm-recovery.txt
   qsdmcli wallet show
   qsdmcli wallet sign --message-file tx.json > tx.sig.hex
   qsdmcli wallet verify --public-key "$PUBLIC_KEY" \
@@ -166,6 +183,7 @@ func (c *CLI) walletNew(args []string) error {
 	fs := flag.NewFlagSet("wallet new", flag.ContinueOnError)
 	out := fs.String("out", "", "keystore output path (default: ~/.qsdm/wallet.json)")
 	passphraseFile := fs.String("passphrase-file", "", "read passphrase from file ('-' for stdin); empty = prompt")
+	recoveryOut := fs.String("recovery-out", "", "write 24 QSDM Recovery Words to this private file")
 	force := fs.Bool("force", false, "overwrite existing keystore at --out")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -174,9 +192,21 @@ func (c *CLI) walletNew(args []string) error {
 	if err != nil {
 		return err
 	}
+	var recoveryPath string
+	if strings.TrimSpace(*recoveryOut) != "" {
+		recoveryPath = filepath.Clean(*recoveryOut)
+		if samePath(recoveryPath, path) {
+			return fmt.Errorf("--recovery-out must be different from the keystore path")
+		}
+	}
 	if !*force {
 		if _, statErr := os.Stat(path); statErr == nil {
 			return fmt.Errorf("refusing to overwrite existing keystore at %s (pass --force to override)", path)
+		}
+		if recoveryPath != "" {
+			if _, statErr := os.Stat(recoveryPath); statErr == nil {
+				return fmt.Errorf("refusing to overwrite existing recovery file at %s (pass --force to override)", recoveryPath)
+			}
 		}
 	}
 	passphrase, err := readPassphrase(*passphraseFile, true /*confirm*/)
@@ -185,21 +215,39 @@ func (c *CLI) walletNew(args []string) error {
 	}
 	defer zero(passphrase)
 
-	pk, sk, err := mldsa87.GenerateKey(nil)
-	if err != nil {
-		return fmt.Errorf("mldsa87.GenerateKey: %w", err)
+	var (
+		ks            keystore.Keystore
+		recoveryWords string
+	)
+	if strings.TrimSpace(*recoveryOut) != "" {
+		material, generationErr := walletrecovery.Generate()
+		if generationErr != nil {
+			return generationErr
+		}
+		defer material.ZeroSecrets()
+		ks, err = keystore.EncryptWithRecovery(
+			material.PublicKey,
+			material.PrivateKey,
+			material.Entropy,
+			passphrase,
+		)
+		recoveryWords = material.Words
+	} else {
+		pk, sk, generationErr := mldsa87.GenerateKey(nil)
+		if generationErr != nil {
+			return fmt.Errorf("mldsa87.GenerateKey: %w", generationErr)
+		}
+		pubBytes, marshalErr := pk.MarshalBinary()
+		if marshalErr != nil {
+			return fmt.Errorf("public key marshal: %w", marshalErr)
+		}
+		privBytes, marshalErr := sk.MarshalBinary()
+		if marshalErr != nil {
+			return fmt.Errorf("private key marshal: %w", marshalErr)
+		}
+		defer zero(privBytes)
+		ks, err = keystore.Encrypt(pubBytes, privBytes, passphrase)
 	}
-	pubBytes, err := pk.MarshalBinary()
-	if err != nil {
-		return fmt.Errorf("public key marshal: %w", err)
-	}
-	privBytes, err := sk.MarshalBinary()
-	if err != nil {
-		return fmt.Errorf("private key marshal: %w", err)
-	}
-	defer zero(privBytes)
-
-	ks, err := keystore.Encrypt(pubBytes, privBytes, passphrase)
 	if err != nil {
 		return fmt.Errorf("keystore encrypt: %w", err)
 	}
@@ -213,11 +261,151 @@ func (c *CLI) walletNew(args []string) error {
 	if err := writeFileExclusive(path, data, *force); err != nil {
 		return fmt.Errorf("write keystore: %w", err)
 	}
+	if recoveryWords != "" {
+		if err := os.MkdirAll(filepath.Dir(recoveryPath), 0o700); err != nil {
+			return fmt.Errorf("mkdir %s: %w", filepath.Dir(recoveryPath), err)
+		}
+		if err := writeFileExclusive(recoveryPath, []byte(recoveryWords+"\n"), *force); err != nil {
+			return fmt.Errorf("write recovery words: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "wrote 24 QSDM Recovery Words to %s (mode 0600)\n", recoveryPath)
+	}
 	// Stdout: only the address, so the line can be piped straight into a
 	// miner / mining-enroll command. Everything else goes to stderr.
 	fmt.Fprintf(os.Stderr, "wrote keystore to %s (mode 0600)\n", path)
-	fmt.Fprintf(os.Stderr, "store the keystore + remember the passphrase. Losing either is unrecoverable.\n")
+	if recoveryWords != "" {
+		fmt.Fprintln(os.Stderr, "keep the recovery words offline and separate from this device; they can rebuild the wallet without this JSON file")
+	} else {
+		fmt.Fprintln(os.Stderr, "legacy wallet: store the keystore + remember the passphrase. Losing either is unrecoverable")
+	}
 	fmt.Println(ks.Address)
+	return nil
+}
+
+func (c *CLI) walletRestore(args []string) error {
+	fs := flag.NewFlagSet("wallet restore", flag.ContinueOnError)
+	out := fs.String("out", "", "keystore output path (default: ~/.qsdm/wallet.json)")
+	recoveryFile := fs.String("recovery-file", "", "private file containing 24 QSDM Recovery Words")
+	passphraseFile := fs.String("passphrase-file", "", "read new keystore passphrase from file ('-' for stdin); empty = prompt")
+	force := fs.Bool("force", false, "overwrite existing keystore at --out")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*recoveryFile) == "" || *recoveryFile == "-" {
+		return fmt.Errorf("--recovery-file is required and must be a private file (stdin is refused to reduce accidental disclosure)")
+	}
+	wordsBytes, err := os.ReadFile(filepath.Clean(*recoveryFile))
+	if err != nil {
+		return fmt.Errorf("read recovery words: %w", err)
+	}
+	if len(wordsBytes) > 4096 {
+		zero(wordsBytes)
+		return fmt.Errorf("recovery words file is unexpectedly large")
+	}
+	defer zero(wordsBytes)
+
+	material, err := walletrecovery.Restore(string(wordsBytes))
+	if err != nil {
+		return err
+	}
+	defer material.ZeroSecrets()
+
+	path, err := defaultWalletPath(*out)
+	if err != nil {
+		return err
+	}
+	if !*force {
+		if _, statErr := os.Stat(path); statErr == nil {
+			return fmt.Errorf("refusing to overwrite existing keystore at %s (pass --force to override)", path)
+		}
+	}
+	passphrase, err := readPassphrase(*passphraseFile, true)
+	if err != nil {
+		return fmt.Errorf("read passphrase: %w", err)
+	}
+	defer zero(passphrase)
+
+	ks, err := keystore.EncryptWithRecovery(
+		material.PublicKey,
+		material.PrivateKey,
+		material.Entropy,
+		passphrase,
+	)
+	if err != nil {
+		return fmt.Errorf("keystore encrypt: %w", err)
+	}
+	data, err := keystore.Marshal(ks)
+	if err != nil {
+		return fmt.Errorf("keystore marshal: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(path), err)
+	}
+	if err := writeFileExclusive(path, data, *force); err != nil {
+		return fmt.Errorf("write keystore: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "restored recovery-enabled keystore to %s (mode 0600)\n", path)
+	fmt.Println(ks.Address)
+	return nil
+}
+
+func (c *CLI) walletExportRecovery(args []string) error {
+	fs := flag.NewFlagSet("wallet export-recovery", flag.ContinueOnError)
+	in := fs.String("in", "", "keystore path (default: ~/.qsdm/wallet.json)")
+	out := fs.String("out", "", "private output file for 24 QSDM Recovery Words")
+	passphraseFile := fs.String("passphrase-file", "", "read passphrase from file ('-' for stdin); empty = prompt")
+	force := fs.Bool("force", false, "overwrite an existing recovery output file")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*out) == "" || *out == "-" {
+		return fmt.Errorf("--out is required and must be a private file (stdout is refused to reduce accidental disclosure)")
+	}
+	path, err := defaultWalletPath(*in)
+	if err != nil {
+		return err
+	}
+	ks, err := loadKeystore(path)
+	if err != nil {
+		return err
+	}
+	passphrase, err := readPassphrase(*passphraseFile, false)
+	if err != nil {
+		return fmt.Errorf("read passphrase: %w", err)
+	}
+	defer zero(passphrase)
+	if _, err := verifyKeystorePrivateKey(ks, passphrase); err != nil {
+		return err
+	}
+	entropy, err := keystore.DecryptRecovery(ks, passphrase)
+	if err != nil {
+		return err
+	}
+	defer zero(entropy)
+	words, err := walletrecovery.WordsFromEntropy(entropy)
+	if err != nil {
+		return err
+	}
+	material, err := walletrecovery.Restore(words)
+	if err != nil {
+		return err
+	}
+	defer material.ZeroSecrets()
+	if material.Address != ks.Address {
+		return fmt.Errorf("recovery integrity check failed: words rebuild %s, keystore address is %s", material.Address, ks.Address)
+	}
+
+	recoveryPath := filepath.Clean(*out)
+	if samePath(recoveryPath, path) {
+		return fmt.Errorf("--out must be different from the keystore path")
+	}
+	if err := os.MkdirAll(filepath.Dir(recoveryPath), 0o700); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(recoveryPath), err)
+	}
+	if err := writeFileExclusive(recoveryPath, []byte(words+"\n"), *force); err != nil {
+		return fmt.Errorf("write recovery words: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "exported 24 QSDM Recovery Words for %s to %s (mode 0600)\n", ks.Address, recoveryPath)
 	return nil
 }
 
@@ -240,8 +428,12 @@ func (c *CLI) walletShow(args []string) error {
 		return fmt.Errorf("validate %s: %w", path, err)
 	}
 	if *jsonOut {
-		fmt.Printf("{\"path\":%q,\"address\":%q,\"public_key\":%q,\"algorithm\":%q,\"created_at\":%q}\n",
-			path, ks.Address, ks.PublicKey, ks.Algorithm, ks.CreatedAt)
+		recoveryScheme := ""
+		if ks.Recovery != nil {
+			recoveryScheme = ks.Recovery.Scheme
+		}
+		fmt.Printf("{\"path\":%q,\"address\":%q,\"public_key\":%q,\"algorithm\":%q,\"created_at\":%q,\"recovery_enabled\":%t,\"recovery_scheme\":%q}\n",
+			path, ks.Address, ks.PublicKey, ks.Algorithm, ks.CreatedAt, ks.Recovery != nil, recoveryScheme)
 		return nil
 	}
 	fmt.Printf("path        %s\n", path)
@@ -252,6 +444,11 @@ func (c *CLI) walletShow(args []string) error {
 	fmt.Printf("kdf         %s (iters=%d, key_len=%d)\n", ks.KDF, ks.KDFParams.Iterations, ks.KDFParams.KeyLen)
 	fmt.Printf("cipher      %s\n", ks.Cipher)
 	fmt.Printf("created_at  %s\n", ks.CreatedAt)
+	if ks.Recovery != nil {
+		fmt.Printf("recovery    %s (%d words)\n", ks.Recovery.Scheme, ks.Recovery.Words)
+	} else {
+		fmt.Printf("recovery    legacy JSON + passphrase only\n")
+	}
 	return nil
 }
 
@@ -276,31 +473,9 @@ func (c *CLI) walletInspect(args []string) error {
 	}
 	defer zero(passphrase)
 
-	priv, err := keystore.Decrypt(ks, passphrase)
+	stored, err := verifyKeystorePrivateKey(ks, passphrase)
 	if err != nil {
 		return err
-	}
-	defer zero(priv)
-
-	// Round-trip integrity: reconstruct the public key from the
-	// decrypted private and verify it matches the stored public_key.
-	// If they disagree, the keystore is mutated even though the
-	// AES-GCM tag verified — possible only if the metadata public_key
-	// was edited after the file was encrypted.
-	var sk mldsa87.PrivateKey
-	if err := sk.UnmarshalBinary(priv); err != nil {
-		return fmt.Errorf("private key parse: %w", err)
-	}
-	recovered, err := sk.Public().(*mldsa87.PublicKey).MarshalBinary()
-	if err != nil {
-		return fmt.Errorf("public-from-private marshal: %w", err)
-	}
-	stored, err := hex.DecodeString(ks.PublicKey)
-	if err != nil {
-		return fmt.Errorf("stored public_key hex: %w", err)
-	}
-	if !bytesEqual(recovered, stored) {
-		return fmt.Errorf("integrity check failed: public_key recovered from decrypted private key does not match the public_key field in the keystore (file was edited after encryption)")
 	}
 
 	fmt.Printf("path        %s\n", path)
@@ -309,6 +484,45 @@ func (c *CLI) walletInspect(args []string) error {
 	fmt.Printf("public_key  %s  (%d bytes, integrity-verified)\n", ks.PublicKey, len(stored))
 	fmt.Printf("OK: keystore decrypts cleanly and the decrypted private key produces the stored public key.\n")
 	return nil
+}
+
+func verifyKeystorePrivateKey(ks keystore.Keystore, passphrase []byte) ([]byte, error) {
+	priv, err := keystore.Decrypt(ks, passphrase)
+	if err != nil {
+		return nil, err
+	}
+	defer zero(priv)
+
+	// Round-trip integrity: reconstruct the public key from the decrypted
+	// private key and verify that it matches the public metadata.
+	var sk mldsa87.PrivateKey
+	if err := sk.UnmarshalBinary(priv); err != nil {
+		return nil, fmt.Errorf("private key parse: %w", err)
+	}
+	recovered, err := sk.Public().(*mldsa87.PublicKey).MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("public-from-private marshal: %w", err)
+	}
+	stored, err := hex.DecodeString(ks.PublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("stored public_key hex: %w", err)
+	}
+	if !bytesEqual(recovered, stored) {
+		return nil, fmt.Errorf("integrity check failed: public_key recovered from decrypted private key does not match the public_key field in the keystore (file was edited after encryption)")
+	}
+	return stored, nil
+}
+
+func samePath(left, right string) bool {
+	leftAbs, leftErr := filepath.Abs(left)
+	rightAbs, rightErr := filepath.Abs(right)
+	if leftErr != nil || rightErr != nil {
+		return left == right
+	}
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(leftAbs, rightAbs)
+	}
+	return leftAbs == rightAbs
 }
 
 func (c *CLI) walletSign(args []string) error {

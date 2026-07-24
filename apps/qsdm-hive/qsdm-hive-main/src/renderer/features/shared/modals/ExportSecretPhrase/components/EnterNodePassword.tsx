@@ -68,7 +68,7 @@ export function EnterNodePassword({
       if (!encryptedSecretPhrase) {
         setHasProfilePhrase(false);
         return setError(
-          "This local profile was not generated with a Hive profile phrase. Back up your CELL wallet from Settings > Wallet using QSDM keystore JSON + passphrase."
+          'This local profile was not generated with a Hive profile phrase. Back up or restore your CELL wallet from Settings > Wallet.'
         );
       }
       try {
@@ -115,7 +115,9 @@ export function EnterNodePassword({
     try {
       const result = await exportQsdmSignerWalletBackup();
       if (result.exported) {
-        setBackupMessage('QSDM wallet JSON and passphrase were backed up.');
+        setBackupMessage(
+          'Encrypted QSDM wallet JSON was backed up. Keep the passphrase separately.'
+        );
         return;
       }
       setBackupMessage('QSDM wallet backup was cancelled.');
@@ -139,20 +141,17 @@ export function EnterNodePassword({
       <div className="text-white">
         <div className="flex px-12 pt-6 text-lg font-semibold leading-6 text-white">
           Account Name:{' '}
-          <span className="ml-1 font-normal tracking-tight">
-            {accountName}
-          </span>
+          <span className="ml-1 font-normal tracking-tight">{accountName}</span>
         </div>
 
         <div className="px-12 pt-4 text-base leading-[30px] tracking-tight">
-          This local Hive profile was not generated with a profile phrase.
-          QSDM CELL wallets are recovered using the QSDM keystore JSON and its
-          passphrase.
+          This local Hive profile was not generated with a profile phrase. QSDM
+          CELL wallet recovery is managed separately in Settings &gt; Wallet.
         </div>
 
         <div className="mx-12 mt-5 rounded-md bg-finnieBlue-light-tertiary p-4 text-sm leading-6 text-finnieTeal-100">
-          Open Wallet settings to back up your real QSDM wallet files. Keep the
-          JSON and passphrase together, private, and offline when possible.
+          Open Wallet settings to export 24 QSDM Recovery Words when supported,
+          or to back up a legacy encrypted JSON wallet.
         </div>
 
         {backupMessage && (
@@ -201,8 +200,7 @@ export function EnterNodePassword({
       <p className="px-12 mt-1.5 tracking-tight w-full items-start text-start leading-[32px] text-base">
         This phrase restores only the local Hive profile.{' '}
         <span className="font-bold">
-          CELL wallet backup is in Settings &gt; Wallet as QSDM keystore JSON
-          plus passphrase.
+          CELL wallet recovery is managed separately in Settings &gt; Wallet.
         </span>
       </p>
 
@@ -224,7 +222,9 @@ export function EnterNodePassword({
       <div className="flex justify-center pt-2">
         <Button
           disabled={
-            hasProfilePhrase !== true || accountName.length === 0 || pin.length !== 6
+            hasProfilePhrase !== true ||
+            accountName.length === 0 ||
+            pin.length !== 6
           }
           onClick={handleShowPhrase}
           label="Reveal Profile Phrase"

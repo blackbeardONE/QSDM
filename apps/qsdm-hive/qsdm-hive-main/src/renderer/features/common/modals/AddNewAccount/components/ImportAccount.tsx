@@ -38,9 +38,9 @@ function ImportAccount({
       <div className="flex flex-col items-start gap-2 pt-4 pl-12">
         <div className="text-xl font-semibold text-white">Add New Account</div>
         <div className="w-[680px] py-3 text-sm leading-6 text-finnieTeal-100">
-          QSDM CELL wallets are recovered with a QSDM keystore JSON file plus
-          passphrase. This account panel only creates a local Hive profile for
-          this device.
+          New QSDM CELL wallets use 24 QSDM Recovery Words. Existing legacy
+          wallets still import with their keystore JSON and passphrase. Hive
+          profiles are local to this device.
         </div>
 
         {!hideQsdmSignerImport && (
@@ -48,7 +48,7 @@ function ImportAccount({
             onClick={() => setNextStep(Steps.ImportQsdmWallet)}
             ref={ref}
             title="Import QSDM signer wallet"
-            description="Import a QSDM keystore JSON file and passphrase for signed CELL actions."
+            description="Import an existing QSDM keystore JSON file and passphrase. Recovery Words are available in Settings > Wallet."
             icon={<Icon source={UploadLine} className="h-8 w-8" />}
           />
         )}
@@ -56,7 +56,7 @@ function ImportAccount({
           onClick={() => setNextStep(Steps.CreateNewKey)}
           ref={hideQsdmSignerImport ? ref : undefined}
           title="Create Hive profile"
-          description="Create a fresh local profile for Hive. Back up the QSDM keystore and passphrase for CELL wallet recovery."
+          description="Create a local Hive profile. This profile is separate from your CELL wallet recovery backup."
           icon={<Icon source={AddLine} className="h-8 w-8" />}
         />
       </div>
