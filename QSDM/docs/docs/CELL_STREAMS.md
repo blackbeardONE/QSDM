@@ -185,8 +185,33 @@ The Go and JavaScript SDKs expose:
 - get one stream;
 - submit a signed stream action envelope.
 
-Wallet creation, session-key custody, receipt cadence, and service start/stop
-remain application responsibilities.
+JavaScript SDK `0.3.2` also provides:
+
+- `CellStreamWallet`, which serializes nonce lookup, signing, submission, and
+  chain confirmation; and
+- `CellStreamServiceMeter`, which checkpoints active time, signs cumulative
+  receipts, retries uncertain delivery, and maps actual service start/stop to
+  stream resume/pause.
+
+The runtime persists only public state and already-signed retry payloads.
+Wallet keys and temporary session private keys stay behind caller-supplied
+signing interfaces. A platform secure keystore must own the session key.
+
+At application startup:
+
+1. call `initialize()`;
+2. ask the service whether it is actually active; and
+3. pass that result to `recover(serviceIsActive)`.
+
+Recovery never assumes that process downtime was billable. A connected
+service calls `onServiceStarted(config)` only after it is usable. A disconnect
+calls `onServiceStopped()` immediately.
+
+The provider receipt endpoint must authenticate the service session, dedupe by
+`(stream_id, sequence)`, wrap the session-signed receipt in the provider's
+wallet-signed `receipt` action, and resolve only after confirmation. The
+provider wallet signer belongs in a protected backend or hardware-backed
+signer, never in a public app.
 
 ## Economic and security boundaries
 
@@ -207,7 +232,11 @@ remain application responsibilities.
 
 ## Integration status
 
-The consensus state, replay, API, CLI signing, and Go/JavaScript SDK surfaces
-are implemented. A service such as QSDM VPN still needs its own adapter to
-create the temporary session key, count only active use, submit periodic
-receipts, and connect pause/resume to the actual service lifecycle.
+The consensus state, replay, API, CLI signing, SDK surfaces, and reusable
+JavaScript service runtime are implemented. The runtime has tests for active
+time, pause/resume/close, crash recovery, and exact signed-receipt retry.
+
+The QSDM VPN Android tunnel source is not in the QSDM repository. Its release
+does not charge CELL until that client and its provider backend call the
+runtime hooks, keep the session key in Android Keystore, and pass the
+disposable-wallet acceptance test described in the VPN guide.

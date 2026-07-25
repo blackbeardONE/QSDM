@@ -4,6 +4,28 @@ All notable changes to the published `qsdm-sdk` npm package are recorded here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/).
 
+## [0.3.2] - 2026-07-26
+
+### Added
+
+- `CellStreamWallet` for serialized nonce lookup, canonical action signing,
+  signed-envelope submission, and chain confirmation.
+- `CellStreamServiceMeter` for active-service metering, 30-second cumulative
+  receipts, lifecycle pause/resume/close, durable checkpoints, crash recovery,
+  and idempotent retry of uncertain signed receipts.
+- Canonical CELL Stream action and receipt byte helpers shared by service
+  clients and provider backends.
+- `QSDMClient.getWalletNonce(address)` for self-custody action construction.
+- A dedicated `qsdm-sdk/cell-stream-runtime` package export.
+
+### Security
+
+- Runtime persistence contains only public state and already-signed retry
+  payloads. Wallet keys and Ed25519 session private keys remain behind caller
+  supplied signing interfaces.
+- Restart recovery never bills elapsed process downtime automatically. The
+  application must report whether the paid service is actually active.
+
 ## [0.3.1] — 2026-05-18
 
 ### Typings

@@ -85,6 +85,28 @@ func (c *Client) GetBalanceContext(ctx context.Context, address string) (float64
 	return resp.Balance, nil
 }
 
+type WalletNonceResponse struct {
+	Sender string `json:"sender"`
+	Nonce  uint64 `json:"nonce"`
+	Next   uint64 `json:"next"`
+}
+
+// GetWalletNonce returns the last applied and next required nonce for a wallet.
+func (c *Client) GetWalletNonce(address string) (*WalletNonceResponse, error) {
+	return c.GetWalletNonceContext(context.Background(), address)
+}
+
+// GetWalletNonceContext is GetWalletNonce with an explicit context.
+func (c *Client) GetWalletNonceContext(ctx context.Context, address string) (*WalletNonceResponse, error) {
+	q := url.Values{}
+	q.Set("sender", address)
+	var response WalletNonceResponse
+	if err := c.do(ctx, http.MethodGet, "/api/v1/wallet/nonce?"+q.Encode(), nil, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
 // SendTransaction sends a transaction and returns its ID.
 func (c *Client) SendTransaction(from, to string, amount float64) (string, error) {
 	return c.SendTransactionContext(context.Background(), from, to, amount)

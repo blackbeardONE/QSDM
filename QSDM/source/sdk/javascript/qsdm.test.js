@@ -31,6 +31,8 @@ test('QSDMClient and helpers are exported', () => {
     assert.equal(typeof qsdm.ApiError, 'function');
     assert.equal(typeof qsdm.isNotFound, 'function');
     assert.equal(typeof qsdm.isUnauthorized, 'function');
+    assert.equal(typeof qsdm.CellStreamWallet, 'function');
+    assert.equal(typeof qsdm.CellStreamServiceMeter, 'function');
 });
 
 test('ApiError carries status / url / body and supports the type guards', () => {
@@ -76,6 +78,27 @@ test('getBalance issues a GET to /api/v1/wallet/balance and unwraps the JSON', a
         const c = new qsdm.QSDMClient(baseURL);
         const v = await c.getBalance('addr-1');
         assert.equal(v, 1.23);
+    } finally {
+        await stopServer(srv);
+    }
+});
+
+test('getWalletNonce returns the next wallet action nonce', async () => {
+    const address = '11'.repeat(32);
+    const { srv, baseURL } = await startServer((req, res) => {
+        assert.equal(
+            req.url,
+            `/api/v1/wallet/nonce?sender=${address}`
+        );
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ sender: address, nonce: 8, next: 9 }));
+    });
+    try {
+        const client = new qsdm.QSDMClient(baseURL);
+        const out = await client.getWalletNonce(address);
+        assert.equal(out.sender, address);
+        assert.equal(out.nonce, 8);
+        assert.equal(out.next, 9);
     } finally {
         await stopServer(srv);
     }

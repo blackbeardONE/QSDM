@@ -33,6 +33,32 @@ func TestClient_GetBalance(t *testing.T) {
 	}
 }
 
+func TestClient_GetWalletNonce(t *testing.T) {
+	const address = "1111111111111111111111111111111111111111111111111111111111111111"
+	srv, client := newTestServer(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/wallet/nonce" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("sender"); got != address {
+			t.Fatalf("unexpected sender query: %s", got)
+		}
+		_ = json.NewEncoder(w).Encode(WalletNonceResponse{
+			Sender: address,
+			Nonce:  8,
+			Next:   9,
+		})
+	})
+	defer srv.Close()
+
+	response, err := client.GetWalletNonce(address)
+	if err != nil {
+		t.Fatalf("GetWalletNonce: %v", err)
+	}
+	if response.Sender != address || response.Nonce != 8 || response.Next != 9 {
+		t.Fatalf("unexpected nonce response: %+v", response)
+	}
+}
+
 func TestClient_SendTransaction_PostsBody(t *testing.T) {
 	srv, c := newTestServer(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

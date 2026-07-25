@@ -67,6 +67,11 @@ class QSDMClient {
         return out.balance;
     }
 
+    async getWalletNonce(address) {
+        const q = encodeURIComponent(address);
+        return this._request('GET', `/api/v1/wallet/nonce?sender=${q}`);
+    }
+
     async sendTransaction(from, to, amount) {
         const out = await this._request('POST', '/api/v1/wallet/send', { from, to, amount });
         return out.transaction_id;
@@ -278,4 +283,5 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports.ApiError = ApiError;
     module.exports.isNotFound = isNotFound;
     module.exports.isUnauthorized = isUnauthorized;
+    Object.assign(module.exports, require('./cell-stream-runtime.js'));
 }
