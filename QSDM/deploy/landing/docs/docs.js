@@ -55,6 +55,12 @@
           badge: "new"
         },
         {
+          slug: "cell-streams",
+          title: "CELL Streams",
+          repoPath: DOCS_PREFIX_REPO + "/CELL_STREAMS.md",
+          badge: "new"
+        },
+        {
           slug: "qsdm-network",
           title: "QSDM Network",
           repoPath: DOCS_PREFIX_REPO + "/QSDM_NETWORK.md",

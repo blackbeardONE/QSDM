@@ -58,6 +58,61 @@ func TestClient_SendTransaction_PostsBody(t *testing.T) {
 	}
 }
 
+func TestClient_CELLStreamEndpoints(t *testing.T) {
+	var requests []string
+	srv, client := newTestServer(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.RequestURI())
+		switch {
+		case r.Method == http.MethodPost:
+			var envelope StreamActionEnvelope
+			if err := json.NewDecoder(r.Body).Decode(&envelope); err != nil {
+				t.Fatal(err)
+			}
+			if envelope.Action.ID != "action-1" || envelope.Signature != "aa" {
+				t.Fatalf("unexpected stream envelope: %+v", envelope)
+			}
+			_ = json.NewEncoder(w).Encode(StreamActionSubmitResponse{
+				ActionID: "action-1", Status: "accepted",
+			})
+		case strings.HasSuffix(r.URL.Path, "/stream-1"):
+			_ = json.NewEncoder(w).Encode(StreamResponse{
+				Stream: StreamState{StreamID: "stream-1"},
+			})
+		default:
+			_ = json.NewEncoder(w).Encode(StreamsResponse{Streams: []StreamState{}})
+		}
+	})
+	defer srv.Close()
+
+	if _, err := client.GetStreams(StreamFilters{
+		Payer: "payer 1", Status: "active", ServiceID: "qsdm-vpn",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetStream("stream-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.SubmitStreamAction(StreamActionEnvelope{
+		Action:    StreamAction{ID: "action-1", StreamID: "stream-1", Action: "pause"},
+		Signature: "aa", PublicKey: "bb",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 3 {
+		t.Fatalf("requests = %v", requests)
+	}
+	if !strings.Contains(requests[0], "payer=payer+1") ||
+		!strings.Contains(requests[0], "service_id=qsdm-vpn") {
+		t.Fatalf("stream filters missing: %s", requests[0])
+	}
+	if requests[1] != "GET /api/v1/streams/stream-1" {
+		t.Fatalf("get stream request = %s", requests[1])
+	}
+	if requests[2] != "POST /api/v1/streams/actions/submit-signed" {
+		t.Fatalf("submit stream request = %s", requests[2])
+	}
+}
+
 func TestClient_ErrAPI_NotFound(t *testing.T) {
 	srv, c := newTestServer(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not here", http.StatusNotFound)

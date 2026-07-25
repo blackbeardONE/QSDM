@@ -20,7 +20,7 @@ info:
     
     **Submesh policy (optional):** When the node loads `[network] submesh_config` / `QSDM_SUBMESH_CONFIG` (legacy alias: `QSDM_SUBMESH_CONFIG`), some ledger routes may return **422 Unprocessable Entity** if fee+geotag do not match a profile or the serialized payload exceeds `max_tx_size` (wallet send), or mint/token-create exceeds the strictest profile cap. See main README “Submesh profiles”.
 
-    **Public read (transparency) endpoints — v1.1.0 catch-up.** A growing set of read-only routes is intentionally unauthenticated so SDK clients, third-party aggregators, and the public landing page widget at `https://qsdm.tech/trust` can scrape verifiable signals without an operator-granted session: `/status`, `/versions`, `/wallet/balance`, `/wallet/nonce`, `/tokens/list`, `/audit/summary`, `/audit/items`, `/audit/badge.svg`, `/trust/attestations/summary`, `/trust/attestations/recent`, `/attest/recent-rejections`, `/receipts`, `/receipts/{tx_id}`. All are rate-limited per-IP by the same limiter that protects authenticated routes; the audit checklist text is already public from the open-source repo, and the trust posture is "always show X of Y, never just X" (see `NVIDIA_LOCK_CONSENSUS_SCOPE.md`).
+    **Public read (transparency) endpoints — v1.1.0 catch-up.** A growing set of read-only routes is intentionally unauthenticated so SDK clients, third-party aggregators, and the public landing page widget at `https://qsdm.tech/trust` can scrape verifiable signals without an operator-granted session: `/status`, `/versions`, `/wallet/balance`, `/wallet/nonce`, `/tokens/list`, `/audit/summary`, `/audit/items`, `/audit/badge.svg`, `/trust/attestations/summary`, `/trust/attestations/recent`, `/attest/recent-rejections`, `/receipts`, `/receipts/{tx_id}`, `/streams`, `/streams/{stream_id}`. The signed stream write `/streams/actions/submit-signed` is public because its canonical action carries its own ML-DSA wallet authorization. All are rate-limited per-IP by the same limiter that protects authenticated routes; the audit checklist text is already public from the open-source repo, and the trust posture is "always show X of Y, never just X" (see `NVIDIA_LOCK_CONSENSUS_SCOPE.md`).
   version: 1.1.0
   contact:
     name: QSDM Development Team
@@ -61,6 +61,8 @@ tags:
     description: API version catalogue + lifecycle metadata (MED-4 deprecation flow)
   - name: Network
     description: Live network topology projection consumed by the dashboard WebGL renderer
+  - name: Streams
+    description: Bounded CELL metered-payment streams with cumulative active-use receipts
 
 paths:
   /health:
@@ -1720,6 +1722,101 @@ paths:
         '405':
           description: Method not allowed (only GET)
 
+  # --------------------------------------------------------------------------
+  # CELL Streams - bounded active-use billing
+  # --------------------------------------------------------------------------
+
+  /streams/actions/submit-signed:
+    post:
+      tags:
+        - Streams
+      summary: Submit a wallet-signed CELL stream action
+      description: |
+        Accepts an ML-DSA-87 signed `qsdm/streams/v1` action. The wallet
+        signature is verified before mempool admission and again during
+        consensus application. Supported actions are open, receipt, pause,
+        resume, settle, and close.
+      operationId: submitSignedStreamAction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StreamActionEnvelope'
+      responses:
+        '200':
+          description: Action accepted or already present in the mempool
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreamActionSubmitResponse'
+        '400':
+          description: Malformed envelope
+        '422':
+          description: Invalid action shape or signature
+        '503':
+          description: Stream submission is not configured
+
+  /streams:
+    get:
+      tags:
+        - Streams
+      summary: List CELL streams
+      operationId: listStreams
+      parameters:
+        - name: payer
+          in: query
+          schema:
+            type: string
+        - name: provider
+          in: query
+          schema:
+            type: string
+        - name: service_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, paused, closed]
+      responses:
+        '200':
+          description: Consensus stream projection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreamsResponse'
+        '503':
+          description: Stream state is not configured
+
+  /streams/{stream_id}:
+    get:
+      tags:
+        - Streams
+      summary: Get one CELL stream
+      operationId: getStream
+      parameters:
+        - name: stream_id
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 128
+            pattern: '^[A-Za-z0-9._:-]+$'
+      responses:
+        '200':
+          description: Consensus stream projection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreamResponse'
+        '404':
+          description: Stream not found
+        '503':
+          description: Stream state is not configured
+
 components:
   responses:
     SubmeshPolicy422:
@@ -1781,6 +1878,243 @@ components:
           type: string
         status:
           type: integer
+
+    StreamUsageReceipt:
+      type: object
+      required:
+        - stream_id
+        - sequence
+        - cumulative_active_seconds
+        - observed_at
+        - signature
+      properties:
+        stream_id:
+          type: string
+        sequence:
+          type: integer
+          format: int64
+          minimum: 1
+        cumulative_active_seconds:
+          type: integer
+          format: int64
+          minimum: 1
+        observed_at:
+          type: string
+          format: date-time
+        signature:
+          type: string
+          description: Ed25519 signature encoded as lower-case hex
+
+    StreamAction:
+      type: object
+      required:
+        - id
+        - sender
+        - stream_id
+        - action
+        - timestamp
+      properties:
+        id:
+          type: string
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._:-]+$'
+        sender:
+          type: string
+          description: Lower-case QSDM wallet address
+        stream_id:
+          type: string
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._:-]+$'
+        action:
+          type: string
+          enum: [open, receipt, pause, resume, settle, close]
+        provider:
+          type: string
+        service_id:
+          type: string
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._:-]+$'
+        device_id_hash:
+          type: string
+          description: SHA-256 digest encoded as lower-case hex
+        session_public_key:
+          type: string
+          description: Ed25519 public key encoded as lower-case hex
+        price_dust:
+          type: integer
+          format: int64
+          minimum: 0
+        price_period_seconds:
+          type: integer
+          format: int64
+          minimum: 0
+        budget_dust:
+          type: integer
+          format: int64
+          minimum: 0
+        max_active_seconds:
+          type: integer
+          format: int64
+          minimum: 0
+        expires_at:
+          type: string
+          format: date-time
+        receipt:
+          $ref: '#/components/schemas/StreamUsageReceipt'
+        nonce:
+          type: integer
+          format: int64
+          minimum: 0
+        timestamp:
+          type: string
+          format: date-time
+
+    StreamActionEnvelope:
+      type: object
+      required:
+        - action
+        - signature
+        - public_key
+      properties:
+        action:
+          $ref: '#/components/schemas/StreamAction'
+        signature:
+          type: string
+          description: ML-DSA-87 signature encoded as hex
+        public_key:
+          type: string
+          description: ML-DSA-87 public key encoded as hex
+
+    StreamActionSubmitResponse:
+      type: object
+      properties:
+        action_id:
+          type: string
+        stream_id:
+          type: string
+        action:
+          type: string
+        sender:
+          type: string
+        status:
+          type: string
+          example: accepted
+        mempool_status:
+          type: string
+          enum: [submitted, duplicate]
+
+    StreamState:
+      type: object
+      properties:
+        stream_id:
+          type: string
+        payer:
+          type: string
+        provider:
+          type: string
+        service_id:
+          type: string
+        device_id_hash:
+          type: string
+        session_public_key:
+          type: string
+        price_dust:
+          type: integer
+          format: int64
+        price_period_seconds:
+          type: integer
+          format: int64
+        budget_dust:
+          type: integer
+          format: int64
+        max_active_seconds:
+          type: integer
+          format: int64
+        expires_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, paused, closed]
+        cumulative_active_seconds:
+          type: integer
+          format: int64
+        paused_duration_seconds:
+          type: integer
+          format: int64
+        last_receipt_sequence:
+          type: integer
+          format: int64
+        last_receipt_observed_at:
+          type: string
+          format: date-time
+        accrued_dust:
+          type: integer
+          format: int64
+        settled_dust:
+          type: integer
+          format: int64
+        refunded_dust:
+          type: integer
+          format: int64
+        opened_at:
+          type: string
+          format: date-time
+        last_paused_at:
+          type: string
+          format: date-time
+        last_resumed_at:
+          type: string
+          format: date-time
+        closed_at:
+          type: string
+          format: date-time
+        last_action:
+          type: string
+        last_action_id:
+          type: string
+        last_action_at:
+          type: string
+          format: date-time
+        action_count:
+          type: integer
+          format: int64
+        remaining_budget_dust:
+          type: integer
+          format: int64
+        unsettled_dust:
+          type: integer
+          format: int64
+
+    StreamsResponse:
+      type: object
+      properties:
+        runtime:
+          type: string
+          example: qsdm-native
+        source:
+          type: string
+          example: chain
+        state_root:
+          type: string
+        streams:
+          type: array
+          items:
+            $ref: '#/components/schemas/StreamState'
+
+    StreamResponse:
+      type: object
+      properties:
+        runtime:
+          type: string
+          example: qsdm-native
+        source:
+          type: string
+          example: chain
+        state_root:
+          type: string
+        stream:
+          $ref: '#/components/schemas/StreamState'
 
     # ------------------------------------------------------------------
     # Status (public)
@@ -2050,4 +2384,3 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TrustAttestation'
-

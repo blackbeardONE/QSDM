@@ -103,6 +103,34 @@ class QSDMClient {
         return this._request('GET', `/api/v1/wallet/transactions?address=${q}&limit=${limit}`);
     }
 
+    // --- CELL Streams ---
+
+    /**
+     * List consensus CELL metered-payment streams.
+     * @param {{payer?: string, provider?: string, status?: string, serviceId?: string}} [filters]
+     */
+    async getStreams(filters = {}) {
+        const pairs = [];
+        if (filters.payer) pairs.push(`payer=${encodeURIComponent(filters.payer)}`);
+        if (filters.provider) pairs.push(`provider=${encodeURIComponent(filters.provider)}`);
+        if (filters.status) pairs.push(`status=${encodeURIComponent(filters.status)}`);
+        if (filters.serviceId) pairs.push(`service_id=${encodeURIComponent(filters.serviceId)}`);
+        const query = pairs.length > 0 ? `?${pairs.join('&')}` : '';
+        return this._request('GET', `/api/v1/streams${query}`);
+    }
+
+    async getStream(streamID) {
+        return this._request('GET', `/api/v1/streams/${encodeURIComponent(streamID)}`);
+    }
+
+    /**
+     * Submit an envelope produced by `qsdmcli wallet sign-stream-action`
+     * or an equivalent QSDM wallet signer.
+     */
+    async submitStreamAction(envelope) {
+        return this._request('POST', '/api/v1/streams/actions/submit-signed', envelope);
+    }
+
     // --- health + node + network ---
 
     async getLiveness()   { return this._request('GET', '/api/v1/health/live'); }

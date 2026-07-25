@@ -51,6 +51,94 @@ export interface ClientOptions {
     timeoutMs?: number;
 }
 
+export interface StreamUsageReceipt {
+    stream_id: string;
+    sequence: number;
+    cumulative_active_seconds: number;
+    observed_at: string;
+    signature: string;
+}
+
+export interface StreamAction {
+    id: string;
+    sender: string;
+    stream_id: string;
+    action: 'open' | 'receipt' | 'pause' | 'resume' | 'settle' | 'close';
+    provider?: string;
+    service_id?: string;
+    device_id_hash?: string;
+    session_public_key?: string;
+    price_dust?: number;
+    price_period_seconds?: number;
+    budget_dust?: number;
+    max_active_seconds?: number;
+    expires_at?: string;
+    receipt?: StreamUsageReceipt;
+    nonce?: number;
+    timestamp: string;
+}
+
+export interface StreamActionEnvelope {
+    action: StreamAction;
+    signature: string;
+    public_key: string;
+}
+
+export interface StreamState {
+    stream_id: string;
+    payer: string;
+    provider: string;
+    service_id: string;
+    device_id_hash: string;
+    session_public_key: string;
+    price_dust: number;
+    price_period_seconds: number;
+    budget_dust: number;
+    max_active_seconds: number;
+    expires_at: string;
+    status: 'active' | 'paused' | 'closed';
+    cumulative_active_seconds: number;
+    paused_duration_seconds: number;
+    last_receipt_sequence: number;
+    last_receipt_observed_at?: string;
+    accrued_dust: number;
+    settled_dust: number;
+    refunded_dust: number;
+    remaining_budget_dust: number;
+    unsettled_dust: number;
+    opened_at: string;
+    last_paused_at?: string;
+    last_resumed_at?: string;
+    closed_at?: string;
+    last_action: string;
+    last_action_id: string;
+    last_action_at: string;
+    action_count: number;
+}
+
+export interface StreamsResponse {
+    runtime: string;
+    source: string;
+    state_root: string;
+    streams: StreamState[];
+}
+
+export interface StreamResponse {
+    runtime: string;
+    source: string;
+    state_root: string;
+    stream: StreamState;
+}
+
+export interface StreamActionSubmitResponse {
+    action_id: string;
+    stream_id: string;
+    action: string;
+    sender: string;
+    status: string;
+    mempool_status: string;
+}
+
 export class ApiError extends Error {
     readonly status: number;
     readonly url: string;
@@ -90,6 +178,15 @@ export class QSDMClient {
      * removal in 0.4.0.
      */
     getRecentTransactions(address: string, limit?: number): Promise<unknown[]>;
+
+    getStreams(filters?: {
+        payer?: string;
+        provider?: string;
+        status?: string;
+        serviceId?: string;
+    }): Promise<StreamsResponse>;
+    getStream(streamID: string): Promise<StreamResponse>;
+    submitStreamAction(envelope: StreamActionEnvelope): Promise<StreamActionSubmitResponse>;
 
     getLiveness(): Promise<HealthStatus>;
     getReadiness(): Promise<HealthStatus>;

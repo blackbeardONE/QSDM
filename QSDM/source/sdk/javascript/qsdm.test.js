@@ -140,6 +140,42 @@ test('getRecentTransactions passes address + limit query params', async () => {
     }
 });
 
+test('CELL stream methods use the public stream endpoints', async () => {
+    const seen = [];
+    const { srv, baseURL } = await startServer((req, res) => {
+        let body = '';
+        req.on('data', (chunk) => { body += chunk; });
+        req.on('end', () => {
+            seen.push({ method: req.method, url: req.url, body });
+            res.setHeader('Content-Type', 'application/json');
+            if (req.method === 'POST') {
+                res.end(JSON.stringify({ status: 'accepted', action_id: 'a1' }));
+            } else if (req.url.startsWith('/api/v1/streams/stream-1')) {
+                res.end(JSON.stringify({ stream: { stream_id: 'stream-1' } }));
+            } else {
+                res.end(JSON.stringify({ streams: [] }));
+            }
+        });
+    });
+    try {
+        const client = new qsdm.QSDMClient(baseURL);
+        await client.getStreams({ payer: 'payer 1', status: 'active', serviceId: 'qsdm-vpn' });
+        await client.getStream('stream-1');
+        const envelope = { action: { id: 'a1' }, signature: 'aa', public_key: 'bb' };
+        await client.submitStreamAction(envelope);
+        assert.equal(seen[0].method, 'GET');
+        assert.ok(seen[0].url.includes('/api/v1/streams?'));
+        assert.ok(seen[0].url.includes('payer=payer%201'));
+        assert.ok(seen[0].url.includes('service_id=qsdm-vpn'));
+        assert.equal(seen[1].url, '/api/v1/streams/stream-1');
+        assert.equal(seen[2].method, 'POST');
+        assert.equal(seen[2].url, '/api/v1/streams/actions/submit-signed');
+        assert.deepEqual(JSON.parse(seen[2].body), envelope);
+    } finally {
+        await stopServer(srv);
+    }
+});
+
 // --- health + node + network ----------------------------------------------
 
 test('liveness / readiness / health hit the right endpoints', async () => {

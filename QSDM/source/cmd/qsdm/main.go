@@ -104,13 +104,37 @@ func replayTaskStateFromBlocks(taskState *chain.TaskStateStore, blocks []*chain.
 	return replayed, nil
 }
 
+func replayStreamStateFromBlocks(streamState *chain.StreamStateStore, blocks []*chain.Block) (int, error) {
+	if streamState == nil {
+		return 0, nil
+	}
+	replayed := 0
+	for _, blk := range blocks {
+		if blk == nil {
+			continue
+		}
+		for _, tx := range blk.Transactions {
+			if tx == nil || tx.ContractID != chain.StreamContractID {
+				continue
+			}
+			if err := streamState.ApplyHistoricalTx(tx, blk.Height); err != nil {
+				return replayed, fmt.Errorf("height %d tx %s: %w", blk.Height, tx.ID, err)
+			}
+			replayed++
+		}
+	}
+	return replayed, nil
+}
+
 type persistedStateRestore struct {
-	blocks      []*chain.Block
-	taskState   *chain.TaskStateStore
-	taskActions int
-	stateRoot   string
-	backupPath  string
-	recovered   bool
+	blocks        []*chain.Block
+	taskState     *chain.TaskStateStore
+	taskActions   int
+	streamState   *chain.StreamStateStore
+	streamActions int
+	stateRoot     string
+	backupPath    string
+	recovered     bool
 }
 
 func evaluatePersistedState(accounts *chain.AccountStore, blocks []*chain.Block) (persistedStateRestore, error) {
@@ -122,13 +146,21 @@ func evaluatePersistedState(accounts *chain.AccountStore, blocks []*chain.Block)
 	if err != nil {
 		return persistedStateRestore{}, err
 	}
+	streams := chain.NewStreamStateStore()
+	streamActions, err := replayStreamStateFromBlocks(streams, blocks)
+	if err != nil {
+		return persistedStateRestore{}, err
+	}
 	aware := chain.NewEnrollmentAwareApplier(accounts, nil)
 	aware.SetTaskStateStore(tasks)
+	aware.SetStreamStateStore(streams)
 	return persistedStateRestore{
-		blocks:      blocks,
-		taskState:   tasks,
-		taskActions: taskActions,
-		stateRoot:   aware.StateRoot(),
+		blocks:        blocks,
+		taskState:     tasks,
+		taskActions:   taskActions,
+		streamState:   streams,
+		streamActions: streamActions,
+		stateRoot:     aware.StateRoot(),
 	}, nil
 }
 
@@ -1699,7 +1731,11 @@ func main() {
 		if err := v2Wired.TaskState.RestoreFromChainReplay(restoredState.taskState); err != nil {
 			log.Fatalf("chain restore: install replayed task state from %s: %v", chainStatePath, err)
 		}
+		if err := v2Wired.StreamState.RestoreFromChainReplay(restoredState.streamState); err != nil {
+			log.Fatalf("chain restore: install replayed CELL stream state from %s: %v", chainStatePath, err)
+		}
 		loadedTaskActions := restoredState.taskActions
+		loadedStreamActions := restoredState.streamActions
 		if tip, ok := adminProducer.LatestBlock(); ok {
 			if stateRoot := v2Wired.StateApplier.StateRoot(); stateRoot != tip.StateRoot {
 				log.Fatalf("chain restore: reconciled state does not match canonical tip height=%d hash=%s (snapshot_root=%s tip_root=%s). Refusing to produce on an inconsistent ledger.",
@@ -1787,6 +1823,7 @@ func main() {
 			"accounts_loaded", loadedAccounts,
 			"enrollments_loaded", loadedEnrollments,
 			"task_actions_replayed", loadedTaskActions,
+			"stream_actions_replayed", loadedStreamActions,
 			"receipts_loaded", loadedReceipts,
 			"chain_path", chainStatePath,
 			"accounts_path", accountsStatePath,

@@ -16,6 +16,18 @@ public website is `qsdm.online`; the public CELL network remains on
 `qsdm.tech`, and Hive remains the Windows and Linux client for CELL wallets,
 tasks, mining, and edge participation.
 
+## CELL metered billing path
+
+QSDM Core now contains the `qsdm/streams/v1` protocol foundation for bounded
+active-use billing. It can escrow a maximum CELL budget, accept cumulative
+session-signed active-second receipts, pause without adding billable time,
+settle earned CELL to a provider, and refund unused escrow on close.
+
+The current Android release does **not** enable this payment path yet. A VPN
+adapter must still connect tunnel lifecycle events to stream open, receipt,
+pause, resume, settle, and close actions. See [CELL Streams](CELL_STREAMS.md)
+for the protocol and integration boundary.
+
 ## User workflow
 
 1. Download the current Android APK from `https://qsdm.online/download/`.

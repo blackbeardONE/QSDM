@@ -78,9 +78,15 @@ an operator-granted session:
 - `/api/v1/trust/attestations/summary`, `.../recent`
 - `/api/v1/attest/recent-rejections`
 - `/api/v1/receipts`, `/api/v1/receipts/{tx_id}`
+- `/api/v1/streams`, `/api/v1/streams/{stream_id}`
 
 All remain rate-limited per-IP by the same limiter that protects
 authenticated routes.
+
+`POST /api/v1/streams/actions/submit-signed` is also reachable without a
+dashboard JWT because the canonical action carries its own ML-DSA wallet
+authorization. It remains rate-limited and is verified before mempool
+admission.
 
 ### Request signing
 
@@ -197,6 +203,40 @@ block reference, and attestation metadata.
 Paginated recent transactions feed used by the chain dashboard.
 Per-tx outcome probes are available at
 `GET /api/v1/receipts/{tx_id}`.
+
+### CELL Streams
+
+CELL Streams provide bounded, active-use billing without submitting one chain
+transaction per second. The payer escrows a maximum budget, a temporary session
+key signs cumulative active-second receipts, and the provider settles earned
+CELL in batches.
+
+#### Submit a signed stream action (public signed write)
+
+**POST** `/api/v1/streams/actions/submit-signed`
+
+The body contains `action`, `signature`, and `public_key`. The signature is an
+ML-DSA-87 signature over the canonical action JSON. The validator verifies the
+envelope before admitting it to the mempool and verifies it again during block
+application.
+
+Supported actions are `open`, `receipt`, `pause`, `resume`, `settle`, and
+`close`.
+
+#### List streams (public read)
+
+**GET** `/api/v1/streams`
+
+Optional filters are `payer`, `provider`, `service_id`, and `status`. Each view
+includes the consensus projection plus `remaining_budget_dust` and
+`unsettled_dust`.
+
+#### Get one stream (public read)
+
+**GET** `/api/v1/streams/{stream_id}`
+
+See [CELL Streams](CELL_STREAMS.md) for exact pricing, pause behavior,
+signatures, settlement, and service-integration requirements.
 
 ### Authentication
 
