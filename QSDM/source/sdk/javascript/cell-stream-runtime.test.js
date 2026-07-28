@@ -163,9 +163,9 @@ test('CellStreamWallet reads the nonce, signs canonical bytes, and submits', asy
     let submitted = null;
     let signedJSON = '';
     const client = {
-        async getWalletNonce(address) {
+        async getStreamActionNonce(address) {
             assert.equal(address, payer);
-            return { sender: payer, nonce: 6, next: 7 };
+            return { sender: payer, action_nonce: 7, present: true };
         },
         async submitStreamAction(envelope) {
             submitted = envelope;
@@ -194,6 +194,65 @@ test('CellStreamWallet reads the nonce, signs canonical bytes, and submits', asy
     assert.equal(result.envelope.action.id, 'action-fixed');
     assert.equal(signedJSON, JSON.stringify(result.envelope.action));
     assert.deepEqual(submitted, result.envelope);
+});
+
+test('CellStreamWallet accepts the first consensus action nonce', async () => {
+    const client = {
+        async getStreamActionNonce(address) {
+            assert.equal(address, payer);
+            return { sender: payer, action_nonce: 0, present: true };
+        },
+        async submitStreamAction(envelope) {
+            return { status: 'accepted', action_id: envelope.action.id };
+        },
+        async getStream() {
+            throw new Error('confirmation disabled');
+        },
+    };
+    const wallet = new CellStreamWallet({
+        client,
+        address: payer,
+        clock: () => 1800000000000,
+        idFactory: () => 'action-first',
+        confirmationTimeoutMs: 0,
+        async signAction() {
+            return { signature: 'aa', publicKey: 'bb' };
+        },
+    });
+    const result = await wallet.submitAction({
+        stream_id: 'vpn-device-001',
+        action: 'pause',
+    });
+    assert.equal(Object.hasOwn(result.envelope.action, 'nonce'), false);
+});
+
+test('CellStreamWallet legacy nonce fallback uses current, never transfer next', async () => {
+    const client = {
+        async getWalletNonce() {
+            return { sender: payer, nonce: 4, next: 5 };
+        },
+        async submitStreamAction(envelope) {
+            return { status: 'accepted', action_id: envelope.action.id };
+        },
+        async getStream() {
+            throw new Error('confirmation disabled');
+        },
+    };
+    const wallet = new CellStreamWallet({
+        client,
+        address: payer,
+        clock: () => 1800000000000,
+        idFactory: () => 'action-legacy',
+        confirmationTimeoutMs: 0,
+        async signAction() {
+            return { signature: 'aa', publicKey: 'bb' };
+        },
+    });
+    const result = await wallet.submitAction({
+        stream_id: 'vpn-device-001',
+        action: 'pause',
+    });
+    assert.equal(result.envelope.action.nonce, 4);
 });
 
 test('service lifecycle counts only active time and emits cumulative receipts', async () => {

@@ -111,6 +111,17 @@ class QSDMClient {
     // --- CELL Streams ---
 
     /**
+     * Return the exact consensus nonce required by the sender's next
+     * qsdm/streams/v1 action. Do not use getWalletNonce().next here:
+     * transfer envelopes and contract actions intentionally use different
+     * wire conventions.
+     */
+    async getStreamActionNonce(address) {
+        const q = encodeURIComponent(address);
+        return this._request('GET', `/api/v1/streams/nonce?sender=${q}`);
+    }
+
+    /**
      * List consensus CELL metered-payment streams.
      * @param {{payer?: string, provider?: string, status?: string, serviceId?: string}} [filters]
      */

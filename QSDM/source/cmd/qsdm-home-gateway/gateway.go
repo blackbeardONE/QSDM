@@ -99,7 +99,9 @@ func hiveConsumerRoute(method, path string) bool {
 			"/api/v1/receipts",
 			"/api/v1/tasks",
 			"/api/v1/tasks/state",
-			"/api/v1/tasks/actions":
+			"/api/v1/tasks/actions",
+			"/api/v1/streams",
+			"/api/v1/streams/nonce":
 			return true
 		}
 		if strings.HasPrefix(path, "/api/v1/receipts/") {
@@ -108,12 +110,16 @@ func hiveConsumerRoute(method, path string) bool {
 		if strings.HasPrefix(path, "/api/v1/tasks/") {
 			return true
 		}
+		if strings.HasPrefix(path, "/api/v1/streams/") {
+			return true
+		}
 	}
 
 	if method == http.MethodPost {
 		switch path {
 		case "/api/v1/wallet/submit-signed",
-			"/api/v1/tasks/actions/submit-signed":
+			"/api/v1/tasks/actions/submit-signed",
+			"/api/v1/streams/actions/submit-signed":
 			return true
 		}
 	}

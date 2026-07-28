@@ -214,11 +214,35 @@ type StreamActionSubmitResponse struct {
 	MempoolStatus string `json:"mempool_status"`
 }
 
+// StreamActionNonceResponse contains the exact current nonce required by the
+// sender's next qsdm/streams/v1 action.
+type StreamActionNonceResponse struct {
+	Runtime     string `json:"runtime"`
+	Source      string `json:"source"`
+	Sender      string `json:"sender"`
+	ActionNonce uint64 `json:"action_nonce"`
+	Present     bool   `json:"present"`
+}
+
 type StreamFilters struct {
 	Payer     string
 	Provider  string
 	Status    string
 	ServiceID string
+}
+
+func (c *Client) GetStreamActionNonce(address string) (*StreamActionNonceResponse, error) {
+	return c.GetStreamActionNonceContext(context.Background(), address)
+}
+
+func (c *Client) GetStreamActionNonceContext(ctx context.Context, address string) (*StreamActionNonceResponse, error) {
+	query := url.Values{}
+	query.Set("sender", address)
+	var response StreamActionNonceResponse
+	if err := c.do(ctx, http.MethodGet, "/api/v1/streams/nonce?"+query.Encode(), nil, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
 }
 
 func (c *Client) GetStreams(filters StreamFilters) (*StreamsResponse, error) {

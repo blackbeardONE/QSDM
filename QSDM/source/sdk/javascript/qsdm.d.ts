@@ -145,6 +145,14 @@ export interface StreamActionSubmitResponse {
     mempool_status: string;
 }
 
+export interface StreamActionNonceResponse {
+    runtime: string;
+    source: 'chain';
+    sender: string;
+    action_nonce: number;
+    present: boolean;
+}
+
 export interface CellStreamStorage {
     getItem(key: string): string | null | Promise<string | null>;
     setItem(key: string, value: string): void | Promise<void>;
@@ -308,6 +316,7 @@ export class QSDMClient {
      */
     getRecentTransactions(address: string, limit?: number): Promise<unknown[]>;
 
+    getStreamActionNonce(address: string): Promise<StreamActionNonceResponse>;
     getStreams(filters?: {
         payer?: string;
         provider?: string;

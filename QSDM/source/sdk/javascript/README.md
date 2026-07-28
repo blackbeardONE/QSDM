@@ -42,6 +42,7 @@ try {
 |--------|----------|--------|
 | `getBalance(address)` | `GET /api/v1/wallet/balance` | ✓ |
 | `getWalletNonce(address)` | `GET /api/v1/wallet/nonce` | ✓ |
+| `getStreamActionNonce(address)` | `GET /api/v1/streams/nonce` | ✓ |
 | `sendTransaction(from, to, amount)` | `POST /api/v1/wallet/send` | ✓ |
 | `getTransaction(txID)` | `GET /api/v1/transactions/{id}` (plural; fixed in 0.3.1) | ✓ |
 | `getStreams(filters)` | `GET /api/v1/streams` | ✓ |
@@ -66,7 +67,8 @@ helpers for common cases.
 
 ## Active-use CELL billing
 
-Version `0.3.2` adds the crash-safe runtime for `qsdm/streams/v1`:
+Version `0.3.3` adds the crash-safe runtime for `qsdm/streams/v1` and reads
+the action nonce directly from consensus before signing:
 
 ```js
 const {

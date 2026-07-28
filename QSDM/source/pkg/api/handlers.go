@@ -237,6 +237,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// receipts. Reads are public transparency data; writes carry their own
 	// ML-DSA wallet authorization.
 	mux.HandleFunc("/api/v1/streams", handlers.QSDMStreamsListHandler)
+	mux.HandleFunc("/api/v1/streams/nonce", handlers.QSDMStreamNonceHandler)
 	mux.HandleFunc("/api/v1/streams/actions/submit-signed", handlers.QSDMStreamActionSubmitSignedHandler)
 	mux.HandleFunc("/api/v1/streams/", handlers.QSDMStreamRouteHandler)
 

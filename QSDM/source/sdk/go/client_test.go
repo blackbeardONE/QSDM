@@ -139,6 +139,34 @@ func TestClient_CELLStreamEndpoints(t *testing.T) {
 	}
 }
 
+func TestClient_GetStreamActionNonce(t *testing.T) {
+	const address = "2222222222222222222222222222222222222222222222222222222222222222"
+	srv, client := newTestServer(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/streams/nonce" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("sender"); got != address {
+			t.Fatalf("unexpected sender query: %s", got)
+		}
+		_ = json.NewEncoder(w).Encode(StreamActionNonceResponse{
+			Runtime:     "qsdm-native",
+			Source:      "chain",
+			Sender:      address,
+			ActionNonce: 0,
+			Present:     false,
+		})
+	})
+	defer srv.Close()
+
+	response, err := client.GetStreamActionNonce(address)
+	if err != nil {
+		t.Fatalf("GetStreamActionNonce: %v", err)
+	}
+	if response.ActionNonce != 0 || response.Present {
+		t.Fatalf("unexpected stream nonce response: %+v", response)
+	}
+}
+
 func TestClient_ErrAPI_NotFound(t *testing.T) {
 	srv, c := newTestServer(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not here", http.StatusNotFound)

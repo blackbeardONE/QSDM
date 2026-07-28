@@ -78,7 +78,7 @@ an operator-granted session:
 - `/api/v1/trust/attestations/summary`, `.../recent`
 - `/api/v1/attest/recent-rejections`
 - `/api/v1/receipts`, `/api/v1/receipts/{tx_id}`
-- `/api/v1/streams`, `/api/v1/streams/{stream_id}`
+- `/api/v1/streams`, `/api/v1/streams/{stream_id}`, `/api/v1/streams/nonce`
 
 All remain rate-limited per-IP by the same limiter that protects
 authenticated routes.
@@ -222,6 +222,19 @@ application.
 
 Supported actions are `open`, `receipt`, `pause`, `resume`, `settle`, and
 `close`.
+
+#### Get the required stream action nonce (public read)
+
+**GET** `/api/v1/streams/nonce?sender=<address>`
+
+Returns `action_nonce`, the exact consensus nonce the sender must place in its
+next signed stream action. This is intentionally separate from
+`/wallet/nonce.next`, whose one-based wire value is used by wallet transfers.
+Unknown accounts return `action_nonce: 0` and `present: false`.
+
+The signed submit route returns `422 Unprocessable Entity` for a stale or
+future action nonce and `503 Service Unavailable` when live consensus account
+state cannot be read. It never guesses a nonce from cached state.
 
 #### List streams (public read)
 

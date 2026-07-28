@@ -4,6 +4,21 @@ All notable changes to the published `qsdm-sdk` npm package are recorded here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/).
 
+## [0.3.3] - 2026-07-28
+
+### Fixed
+
+- CELL Stream actions now use the live consensus `action_nonce` instead of
+  the one-based wallet-transfer `next` nonce.
+- First stream actions correctly accept nonce `0`.
+- Older clients can fall back to `/wallet/nonce.nonce`; the transfer-only
+  `.next` field is never used for stream actions.
+
+### Added
+
+- `QSDMClient.getStreamActionNonce(address)` for the explicit
+  `GET /api/v1/streams/nonce` contract.
+
 ## [0.3.2] - 2026-07-26
 
 ### Added

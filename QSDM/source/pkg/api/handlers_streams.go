@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -79,6 +80,18 @@ type QSDMStreamActionSubmitResponse struct {
 	MempoolStatus string `json:"mempool_status"`
 }
 
+// QSDMStreamNonceResponse exposes the exact nonce a sender must put in its
+// next qsdm/streams/v1 action. This intentionally differs from
+// /wallet/nonce.next: wallet transfer envelopes use a one-based wire nonce,
+// while consensus contract actions use the account's current expected nonce.
+type QSDMStreamNonceResponse struct {
+	Runtime     string `json:"runtime"`
+	Source      string `json:"source"`
+	Sender      string `json:"sender"`
+	ActionNonce uint64 `json:"action_nonce"`
+	Present     bool   `json:"present"`
+}
+
 type QSDMStreamView struct {
 	chain.StreamState
 	RemainingBudgetDust uint64 `json:"remaining_budget_dust"`
@@ -129,6 +142,39 @@ func qsdmStreamEnvelopeTx(env QSDMStreamActionEnvelope) (*mempool.Tx, error) {
 	}, nil
 }
 
+// QSDMStreamNonceHandler returns the live consensus nonce for stream actions.
+// Unknown provider accounts intentionally return nonce 0 with present=false:
+// receipt and settle actions may create that zero-balance account atomically.
+func (h *Handlers) QSDMStreamNonceHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	sender := strings.TrimSpace(r.URL.Query().Get("sender"))
+	if sender == "" {
+		writeErrorResponse(w, http.StatusBadRequest, "sender query parameter is required")
+		return
+	}
+	if err := ValidateAddress(sender); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "invalid sender address")
+		return
+	}
+	probe := currentMiningAccountProbe()
+	if probe == nil {
+		writeErrorResponse(w, http.StatusServiceUnavailable, "consensus account state is not configured")
+		return
+	}
+	_, nonce, present := probe.BalanceOf(sender)
+	writeJSONResponse(w, http.StatusOK, QSDMStreamNonceResponse{
+		Runtime:     "qsdm-native",
+		Source:      "chain",
+		Sender:      sender,
+		ActionNonce: nonce,
+		Present:     present,
+	})
+}
+
 func (h *Handlers) QSDMStreamActionSubmitSignedHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -155,6 +201,20 @@ func (h *Handlers) QSDMStreamActionSubmitSignedHandler(w http.ResponseWriter, r 
 	}
 	if err := chain.VerifyStreamActionTx(tx); err != nil {
 		writeErrorResponse(w, http.StatusUnprocessableEntity, SanitizeString(err.Error(), 512))
+		return
+	}
+	probe := currentMiningAccountProbe()
+	if probe == nil {
+		writeErrorResponse(w, http.StatusServiceUnavailable, "consensus account state is not configured")
+		return
+	}
+	_, expectedNonce, _ := probe.BalanceOf(tx.Sender)
+	if tx.Nonce != expectedNonce {
+		writeErrorResponse(w, http.StatusUnprocessableEntity, SanitizeString(
+			"stale CELL stream action nonce: got "+strconv.FormatUint(tx.Nonce, 10)+
+				", current consensus nonce is "+strconv.FormatUint(expectedNonce, 10),
+			512,
+		))
 		return
 	}
 	status := "submitted"

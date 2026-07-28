@@ -163,10 +163,21 @@ The output is ready for the signed submission endpoint.
 ## HTTP API
 
 ```text
+GET  /api/v1/streams/nonce?sender={wallet_address}
 POST /api/v1/streams/actions/submit-signed
 GET  /api/v1/streams
 GET  /api/v1/streams/{stream_id}
 ```
+
+Always put `action_nonce` from `/streams/nonce` in the next stream action.
+Do not use `/wallet/nonce.next`: that field is one-based for wallet transfer
+envelopes, while stream actions use the account's current consensus nonce.
+The first action uses nonce `0`; its zero value may be omitted from canonical
+JSON.
+
+The signed submission endpoint compares that nonce with live consensus state
+before mempool admission. A stale or replayed action returns HTTP `422`.
+Consensus repeats the same stateful check when the block is applied.
 
 List filters:
 
@@ -181,11 +192,12 @@ The read response includes `remaining_budget_dust` and `unsettled_dust`.
 
 The Go and JavaScript SDKs expose:
 
+- get the current stream action nonce;
 - list streams;
 - get one stream;
 - submit a signed stream action envelope.
 
-JavaScript SDK `0.3.2` also provides:
+JavaScript SDK `0.3.3` also provides:
 
 - `CellStreamWallet`, which serializes nonce lookup, signing, submission, and
   chain confirmation; and
@@ -222,8 +234,8 @@ signer, never in a public app.
   `budget_dust` is the only escrow amount, avoiding floating-point ambiguity.
 - Every root action is signature-checked at admission and again during block
   application.
-- Action IDs, wallet nonces, receipt sequences, timestamps, and cumulative
-  counters provide replay protection.
+- Action IDs, live consensus nonces, receipt sequences, timestamps, and
+  cumulative counters provide replay protection.
 - All consensus monetary fields use integer dust.
 - Device identifiers should be SHA-256 digests of an application-specific,
   salted identifier, never a raw hardware serial.
@@ -235,6 +247,24 @@ signer, never in a public app.
 The consensus state, replay, API, CLI signing, SDK surfaces, and reusable
 JavaScript service runtime are implemented. The runtime has tests for active
 time, pause/resume/close, crash recovery, and exact signed-receipt retry.
+
+An isolated signed acceptance run must cover this sequence before a release:
+
+1. start a solo validator with disposable state and two disposable wallets;
+2. open a stream with a 1 CELL budget;
+3. submit a session-signed receipt for 5 active seconds at a test rate of
+   2 CELL per 100 seconds;
+4. settle, pause, and close with fresh consensus nonces;
+5. verify 0.1 CELL reaches the provider and 0.9 CELL returns to the payer;
+6. replay a prior signed envelope and require HTTP `422`; and
+7. restart the validator and verify the closed stream and both balances.
+
+The 2026-07-28 Windows acceptance run passed all seven checks. It recorded
+10,000,000 dust accrued and settled, 90,000,000 dust refunded, five committed
+actions, immediate replay rejection, and state recovery after restart.
+Disposable acceptance runs may lower `QSDM_MIN_PERSISTENCE_FREE_BYTES` to its
+documented minimum when a constrained test drive is used. Production nodes
+must retain an operational disk reserve and remain fail-closed under pressure.
 
 The QSDM VPN Android tunnel source is not in the QSDM repository. Its release
 does not charge CELL until that client and its provider backend call the

@@ -185,10 +185,11 @@ function defaultSleep(ms) {
 class CellStreamWallet {
     constructor(options = {}) {
         if (!options.client ||
-            typeof options.client.getWalletNonce !== 'function' ||
+            (typeof options.client.getStreamActionNonce !== 'function' &&
+                typeof options.client.getWalletNonce !== 'function') ||
             typeof options.client.submitStreamAction !== 'function' ||
             typeof options.client.getStream !== 'function') {
-            throw new Error('CellStreamWallet requires a QSDM client with nonce and stream methods');
+            throw new Error('CellStreamWallet requires a QSDM client with action nonce and stream methods');
         }
         requireFunction(options.signAction, 'signAction');
 
@@ -211,9 +212,19 @@ class CellStreamWallet {
         if (!draft || typeof draft !== 'object') {
             throw new Error('CELL Stream action draft is required');
         }
-        const nonceResponse = await this.client.getWalletNonce(this.address);
-        const nonce = nonceResponse && nonceResponse.next;
-        requireSafeInteger(nonce, 'wallet nonce');
+        let nonce;
+        if (typeof this.client.getStreamActionNonce === 'function') {
+            const nonceResponse = await this.client.getStreamActionNonce(this.address);
+            nonce = nonceResponse && nonceResponse.action_nonce;
+        } else {
+            // Compatibility with SDK clients built before /streams/nonce.
+            // `wallet.nonce` is the current AccountStore nonce; `.next` is
+            // reserved for one-based transfer envelopes and is never valid
+            // for qsdm/streams/v1 contract actions.
+            const nonceResponse = await this.client.getWalletNonce(this.address);
+            nonce = nonceResponse && nonceResponse.nonce;
+        }
+        requireSafeInteger(nonce, 'stream action nonce', true);
         const nowMs = this.clock();
         requireSafeInteger(nowMs, 'clock time', true);
         const timestamp = new Date(nowMs).toISOString();

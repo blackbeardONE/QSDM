@@ -104,6 +104,33 @@ test('getWalletNonce returns the next wallet action nonce', async () => {
     }
 });
 
+test('getStreamActionNonce returns the current contract action nonce', async () => {
+    const address = '22'.repeat(32);
+    const { srv, baseURL } = await startServer((req, res) => {
+        assert.equal(
+            req.url,
+            `/api/v1/streams/nonce?sender=${address}`
+        );
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
+            runtime: 'qsdm-native',
+            source: 'chain',
+            sender: address,
+            action_nonce: 0,
+            present: false,
+        }));
+    });
+    try {
+        const client = new qsdm.QSDMClient(baseURL);
+        const out = await client.getStreamActionNonce(address);
+        assert.equal(out.sender, address);
+        assert.equal(out.action_nonce, 0);
+        assert.equal(out.present, false);
+    } finally {
+        await stopServer(srv);
+    }
+});
+
 test('sendTransaction POSTs JSON and returns the transaction_id', async () => {
     const { srv, baseURL } = await startServer((req, res) => {
         assert.equal(req.method, 'POST');

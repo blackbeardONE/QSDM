@@ -91,6 +91,15 @@ func TestQSDMStreamActionSubmitAndRead(t *testing.T) {
 	t.Cleanup(func() { SetStreamActionMempool(nil) })
 	h := &Handlers{}
 	env := testStreamEnvelope(t)
+	SetMiningAccountProbe(&fakeAccountProbe{
+		addrs: map[string]struct {
+			bal   float64
+			nonce uint64
+		}{
+			env.Action.Sender: {bal: 4.5, nonce: 0},
+		},
+	})
+	t.Cleanup(func() { SetMiningAccountProbe(nil) })
 
 	rec := postStreamEnvelope(t, h, env)
 	if rec.Code != http.StatusOK {
@@ -146,9 +155,128 @@ func TestQSDMStreamActionRejectsTamperedSignedAction(t *testing.T) {
 	}
 }
 
+func TestQSDMStreamActionRejectsStaleConsensusNonce(t *testing.T) {
+	pool := mempool.New(mempool.DefaultConfig())
+	SetStreamActionMempool(pool)
+	t.Cleanup(func() { SetStreamActionMempool(nil) })
+	env := testStreamEnvelope(t)
+	SetMiningAccountProbe(&fakeAccountProbe{
+		addrs: map[string]struct {
+			bal   float64
+			nonce uint64
+		}{
+			env.Action.Sender: {bal: 4.5, nonce: 1},
+		},
+	})
+	t.Cleanup(func() { SetMiningAccountProbe(nil) })
+
+	rec := postStreamEnvelope(t, &Handlers{}, env)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("stale nonce status = %d, want 422; body=%s", rec.Code, rec.Body.String())
+	}
+	if pool.Size() != 0 {
+		t.Fatalf("stale action reached mempool: size=%d", pool.Size())
+	}
+}
+
+func TestQSDMStreamActionRequiresConsensusProbe(t *testing.T) {
+	pool := mempool.New(mempool.DefaultConfig())
+	SetStreamActionMempool(pool)
+	t.Cleanup(func() { SetStreamActionMempool(nil) })
+	SetMiningAccountProbe(nil)
+	t.Cleanup(func() { SetMiningAccountProbe(nil) })
+
+	rec := postStreamEnvelope(t, &Handlers{}, testStreamEnvelope(t))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("missing probe status = %d, want 503; body=%s", rec.Code, rec.Body.String())
+	}
+	if pool.Size() != 0 {
+		t.Fatalf("action reached mempool without consensus probe: size=%d", pool.Size())
+	}
+}
+
+func TestQSDMStreamNonceReadsConsensusActionNonce(t *testing.T) {
+	env := testStreamEnvelope(t)
+	SetMiningAccountProbe(&fakeAccountProbe{
+		addrs: map[string]struct {
+			bal   float64
+			nonce uint64
+		}{
+			env.Action.Sender: {bal: 4.5, nonce: 7},
+		},
+	})
+	t.Cleanup(func() { SetMiningAccountProbe(nil) })
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/streams/nonce?sender="+env.Action.Sender,
+		nil,
+	)
+	(&Handlers{}).QSDMStreamNonceHandler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("nonce status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var response QSDMStreamNonceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.ActionNonce != 7 || !response.Present {
+		t.Fatalf("unexpected stream nonce: %+v", response)
+	}
+	if response.Source != "chain" {
+		t.Fatalf("nonce source = %q, want chain", response.Source)
+	}
+}
+
+func TestQSDMStreamNonceAllowsFirstProviderAction(t *testing.T) {
+	SetMiningAccountProbe(&fakeAccountProbe{addrs: map[string]struct {
+		bal   float64
+		nonce uint64
+	}{}})
+	t.Cleanup(func() { SetMiningAccountProbe(nil) })
+	const sender = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/streams/nonce?sender="+sender,
+		nil,
+	)
+	(&Handlers{}).QSDMStreamNonceHandler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("nonce status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var response QSDMStreamNonceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.ActionNonce != 0 || response.Present {
+		t.Fatalf("unexpected first provider nonce: %+v", response)
+	}
+}
+
+func TestQSDMStreamNonceRequiresConsensusProbe(t *testing.T) {
+	SetMiningAccountProbe(nil)
+	t.Cleanup(func() { SetMiningAccountProbe(nil) })
+	const sender = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/streams/nonce?sender="+sender,
+		nil,
+	)
+	(&Handlers{}).QSDMStreamNonceHandler(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("nonce status = %d, want 503; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestQSDMStreamEndpointsArePublic(t *testing.T) {
 	for _, path := range []string{
 		"/api/v1/streams",
+		"/api/v1/streams/nonce",
 		"/api/v1/streams/stream-1",
 		"/api/v1/streams/actions/submit-signed",
 	} {

@@ -20,7 +20,7 @@ info:
     
     **Submesh policy (optional):** When the node loads `[network] submesh_config` / `QSDM_SUBMESH_CONFIG` (legacy alias: `QSDM_SUBMESH_CONFIG`), some ledger routes may return **422 Unprocessable Entity** if fee+geotag do not match a profile or the serialized payload exceeds `max_tx_size` (wallet send), or mint/token-create exceeds the strictest profile cap. See main README “Submesh profiles”.
 
-    **Public read (transparency) endpoints — v1.1.0 catch-up.** A growing set of read-only routes is intentionally unauthenticated so SDK clients, third-party aggregators, and the public landing page widget at `https://qsdm.tech/trust` can scrape verifiable signals without an operator-granted session: `/status`, `/versions`, `/wallet/balance`, `/wallet/nonce`, `/tokens/list`, `/audit/summary`, `/audit/items`, `/audit/badge.svg`, `/trust/attestations/summary`, `/trust/attestations/recent`, `/attest/recent-rejections`, `/receipts`, `/receipts/{tx_id}`, `/streams`, `/streams/{stream_id}`. The signed stream write `/streams/actions/submit-signed` is public because its canonical action carries its own ML-DSA wallet authorization. All are rate-limited per-IP by the same limiter that protects authenticated routes; the audit checklist text is already public from the open-source repo, and the trust posture is "always show X of Y, never just X" (see `NVIDIA_LOCK_CONSENSUS_SCOPE.md`).
+    **Public read (transparency) endpoints — v1.1.0 catch-up.** A growing set of read-only routes is intentionally unauthenticated so SDK clients, third-party aggregators, and the public landing page widget at `https://qsdm.tech/trust` can scrape verifiable signals without an operator-granted session: `/status`, `/versions`, `/wallet/balance`, `/wallet/nonce`, `/tokens/list`, `/audit/summary`, `/audit/items`, `/audit/badge.svg`, `/trust/attestations/summary`, `/trust/attestations/recent`, `/attest/recent-rejections`, `/receipts`, `/receipts/{tx_id}`, `/streams`, `/streams/{stream_id}`, `/streams/nonce`. The signed stream write `/streams/actions/submit-signed` is public because its canonical action carries its own ML-DSA wallet authorization. All are rate-limited per-IP by the same limiter that protects authenticated routes; the audit checklist text is already public from the open-source repo, and the trust posture is "always show X of Y, never just X" (see `NVIDIA_LOCK_CONSENSUS_SCOPE.md`).
   version: 1.1.0
   contact:
     name: QSDM Development Team
@@ -1726,6 +1726,37 @@ paths:
   # CELL Streams - bounded active-use billing
   # --------------------------------------------------------------------------
 
+  /streams/nonce:
+    get:
+      tags:
+        - Streams
+      summary: Get the next consensus stream-action nonce
+      description: |
+        Returns the exact current account nonce required by the sender's next
+        `qsdm/streams/v1` action. This is not `/wallet/nonce.next`: wallet
+        transfer envelopes use a one-based wire nonce, while contract actions
+        use the account's current expected nonce. A first provider receipt may
+        return `action_nonce: 0` with `present: false`.
+      operationId: getStreamActionNonce
+      parameters:
+        - name: sender
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{64}$'
+      responses:
+        '200':
+          description: Current consensus action nonce
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreamActionNonceResponse'
+        '400':
+          description: Missing or invalid sender
+        '503':
+          description: Consensus account state is not configured
+
   /streams/actions/submit-signed:
     post:
       tags:
@@ -1733,7 +1764,8 @@ paths:
       summary: Submit a wallet-signed CELL stream action
       description: |
         Accepts an ML-DSA-87 signed `qsdm/streams/v1` action. The wallet
-        signature is verified before mempool admission and again during
+        signature and current consensus nonce are verified before mempool
+        admission. Signature and stateful replay checks run again during
         consensus application. Supported actions are open, receipt, pause,
         resume, settle, and close.
       operationId: submitSignedStreamAction
@@ -1753,9 +1785,9 @@ paths:
         '400':
           description: Malformed envelope
         '422':
-          description: Invalid action shape or signature
+          description: Invalid action shape, signature, or stale consensus nonce
         '503':
-          description: Stream submission is not configured
+          description: Stream submission or live consensus account state is not configured
 
   /streams:
     get:
@@ -2002,6 +2034,31 @@ components:
         mempool_status:
           type: string
           enum: [submitted, duplicate]
+
+    StreamActionNonceResponse:
+      type: object
+      required:
+        - runtime
+        - source
+        - sender
+        - action_nonce
+        - present
+      properties:
+        runtime:
+          type: string
+          enum: [qsdm-native]
+        source:
+          type: string
+          enum: [chain]
+        sender:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        action_nonce:
+          type: integer
+          format: int64
+          minimum: 0
+        present:
+          type: boolean
 
     StreamState:
       type: object
