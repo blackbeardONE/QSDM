@@ -80,6 +80,7 @@ type EnrollmentAwareApplier struct {
 	slasher    *SlashApplier
 	gov        *GovApplier
 	tasks      *TaskStateStore
+	streams    *StreamStateStore
 
 	mu       sync.RWMutex
 	heightFn func() uint64
@@ -191,6 +192,13 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 		h, _ := a.currentHeight()
 		return tasks.ApplyEconomicTxAtHeight(tx, a.accounts, h)
 	}
+	if tx.ContractID == StreamContractID {
+		streams := a.StreamStateStore()
+		if streams == nil {
+			return ErrStreamStateNotWired
+		}
+		return streams.ApplyEconomicTx(tx, a.accounts)
+	}
 	if tx.ContractID == WalletTransferContractID {
 		return ApplyWalletTransferTx(a.accounts, tx)
 	}
@@ -219,6 +227,27 @@ func (a *EnrollmentAwareApplier) TaskStateStore() *TaskStateStore {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.tasks
+}
+
+// SetStreamStateStore installs (or clears) the qsdm/streams/v1 state store.
+// Stream transactions fail closed until a store is attached.
+func (a *EnrollmentAwareApplier) SetStreamStateStore(streams *StreamStateStore) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.streams = streams
+}
+
+// StreamStateStore returns the configured CELL stream state store.
+func (a *EnrollmentAwareApplier) StreamStateStore() *StreamStateStore {
+	if a == nil {
+		return nil
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.streams
 }
 
 // SetGovApplier installs (or clears) the governance applier.
@@ -282,25 +311,33 @@ func (a *EnrollmentAwareApplier) SlashApplier() *SlashApplier {
 	return a.slasher
 }
 
-// StateRoot implements StateApplier. The legacy no-task path
-// remains the bare account root for compatibility. Once a task
-// action has landed, the deterministic task state root is folded
-// in so qsdm/tasks/v1 blocks commit to both CELL ledger movement
-// and task lifecycle state.
+// StateRoot implements StateApplier. Legacy roots remain byte-for-byte stable
+// while their corresponding feature state is empty. Once task or stream state
+// exists, each deterministic feature root is folded into the prior root.
 func (a *EnrollmentAwareApplier) StateRoot() string {
 	if a == nil || a.accounts == nil {
 		return ""
 	}
 	accountRoot := a.accounts.StateRoot()
 	tasks := a.TaskStateStore()
-	if tasks == nil || tasks.Count() == 0 {
-		return accountRoot
+	root := accountRoot
+	if tasks != nil && tasks.Count() > 0 {
+		h := sha256.New()
+		h.Write([]byte("accounts:"))
+		h.Write([]byte(accountRoot))
+		h.Write([]byte("\ntasks:"))
+		h.Write([]byte(tasks.StateRoot()))
+		root = hex.EncodeToString(h.Sum(nil))
+	}
+	streams := a.StreamStateStore()
+	if streams == nil || streams.Count() == 0 {
+		return root
 	}
 	h := sha256.New()
-	h.Write([]byte("accounts:"))
-	h.Write([]byte(accountRoot))
-	h.Write([]byte("\ntasks:"))
-	h.Write([]byte(tasks.StateRoot()))
+	h.Write([]byte("state:"))
+	h.Write([]byte(root))
+	h.Write([]byte("\nstreams:"))
+	h.Write([]byte(streams.StateRoot()))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -414,6 +451,10 @@ var (
 	// ErrTaskStateNotWired is returned when a qsdm/tasks/v1
 	// tx arrives at a node that has no TaskStateStore configured.
 	ErrTaskStateNotWired = errors.New("chain: task action tx received but no TaskStateStore is wired")
+
+	// ErrStreamStateNotWired is returned when a qsdm/streams/v1 transaction
+	// arrives at a node that has no StreamStateStore configured.
+	ErrStreamStateNotWired = errors.New("chain: CELL stream tx received but no StreamStateStore is wired")
 )
 
 // Compile-time interface assertions.
@@ -468,10 +509,14 @@ func (a *EnrollmentAwareApplier) ChainReplayClone() ChainReplayApplier {
 	a.mu.RLock()
 	liveSlasher := a.slasher
 	liveTasks := a.tasks
+	liveStreams := a.streams
 	clone.heightFn = a.heightFn
 	a.mu.RUnlock()
 	if liveTasks != nil {
 		clone.tasks = liveTasks.ChainReplayClone().(*TaskStateStore)
+	}
+	if liveStreams != nil {
+		clone.streams = liveStreams.ChainReplayClone().(*StreamStateStore)
 	}
 	if liveSlasher != nil {
 		sm, ok := sharedMutator.(SlasherStateMutator)
@@ -542,11 +587,23 @@ func (a *EnrollmentAwareApplier) RestoreFromChainReplay(from ChainReplayApplier)
 	}
 	liveTasks := a.TaskStateStore()
 	otherTasks := other.TaskStateStore()
-	if liveTasks == nil && otherTasks == nil {
-		return nil
-	}
-	if liveTasks == nil || otherTasks == nil {
+	if (liveTasks == nil) != (otherTasks == nil) {
 		return errors.New("chain: RestoreFromChainReplay task state presence mismatch")
 	}
-	return liveTasks.RestoreFromChainReplay(otherTasks)
+	if liveTasks != nil {
+		if err := liveTasks.RestoreFromChainReplay(otherTasks); err != nil {
+			return err
+		}
+	}
+	liveStreams := a.StreamStateStore()
+	otherStreams := other.StreamStateStore()
+	if (liveStreams == nil) != (otherStreams == nil) {
+		return errors.New("chain: RestoreFromChainReplay stream state presence mismatch")
+	}
+	if liveStreams != nil {
+		if err := liveStreams.RestoreFromChainReplay(otherStreams); err != nil {
+			return err
+		}
+	}
+	return nil
 }

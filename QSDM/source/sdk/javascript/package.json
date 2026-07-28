@@ -1,6 +1,6 @@
 {
   "name": "qsdm-sdk",
-  "version": "0.3.1",
+  "version": "0.3.3",
   "description": "Official JavaScript / Node.js SDK for the QSDM HTTP API (native coin: Cell / CELL). Feature parity with sdk/go.",
   "main": "qsdm.js",
   "types": "qsdm.d.ts",
@@ -9,11 +9,16 @@
       "types": "./qsdm.d.ts",
       "require": "./qsdm.js",
       "default": "./qsdm.js"
+    },
+    "./cell-stream-runtime": {
+      "types": "./cell-stream-runtime.d.ts",
+      "require": "./cell-stream-runtime.js",
+      "default": "./cell-stream-runtime.js"
     }
   },
   "scripts": {
-    "test": "node --test qsdm.test.js",
-    "prepublishOnly": "node --test qsdm.test.js"
+    "test": "node --test qsdm.test.js cell-stream-runtime.test.js",
+    "prepublishOnly": "npm test"
   },
   "keywords": [
     "qsdm",
@@ -44,6 +49,8 @@
   "files": [
     "qsdm.js",
     "qsdm.d.ts",
+    "cell-stream-runtime.js",
+    "cell-stream-runtime.d.ts",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

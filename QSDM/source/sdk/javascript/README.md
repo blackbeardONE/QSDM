@@ -41,8 +41,13 @@ try {
 | Method | Endpoint | Status |
 |--------|----------|--------|
 | `getBalance(address)` | `GET /api/v1/wallet/balance` | ✓ |
+| `getWalletNonce(address)` | `GET /api/v1/wallet/nonce` | ✓ |
+| `getStreamActionNonce(address)` | `GET /api/v1/streams/nonce` | ✓ |
 | `sendTransaction(from, to, amount)` | `POST /api/v1/wallet/send` | ✓ |
 | `getTransaction(txID)` | `GET /api/v1/transactions/{id}` (plural; fixed in 0.3.1) | ✓ |
+| `getStreams(filters)` | `GET /api/v1/streams` | ✓ |
+| `getStream(streamID)` | `GET /api/v1/streams/{stream_id}` | ✓ |
+| `submitStreamAction(envelope)` | `POST /api/v1/streams/actions/submit-signed` | ✓ |
 | `getRecentTransactions(address, limit)` | `GET /api/v1/wallet/transactions` | ⚠ deprecated 0.3.1 — endpoint not registered on the public API; use `GET /api/v1/receipts` for a recent-tx feed instead |
 | `getLiveness()` / `getReadiness()` / `getHealth()` | `GET /api/v1/health/*` | ✓ |
 | `getNodeStatus()` | `GET /api/v1/status` | ✓ |
@@ -60,6 +65,72 @@ All methods return `Promise<T>`. Errors on non-2xx responses are thrown as `ApiE
 with `status`, `url`, and `body` fields — use the `isNotFound` / `isUnauthorized`
 helpers for common cases.
 
+## Active-use CELL billing
+
+Version `0.3.3` adds the crash-safe runtime for `qsdm/streams/v1` and reads
+the action nonce directly from consensus before signing:
+
+```js
+const {
+    QSDMClient,
+    CellStreamWallet,
+    CellStreamServiceMeter,
+} = require('qsdm-sdk');
+
+const client = new QSDMClient('https://api.qsdm.tech');
+const wallet = new CellStreamWallet({
+    client,
+    address: activeWalletAddress,
+    // QSDM Hive, a native wallet bridge, or another local signer supplies this.
+    // The SDK never receives or stores the wallet private key.
+    signAction: (action, bytes) => walletBridge.signStreamAction(action, bytes),
+});
+
+const meter = new CellStreamServiceMeter({
+    wallet,
+    storage: durableNonSecretStorage,
+    sessionSigner: secureDeviceSessionSigner,
+    // This endpoint verifies the session receipt, wraps it in the provider's
+    // wallet-signed receipt action, and resolves { confirmed: true } only
+    // after QSDM confirmation.
+    receiptSubmitter: (receipt) => serviceAPI.submitUsageReceipt(receipt),
+});
+
+await meter.initialize();
+await meter.recover(await service.isActuallyActive());
+
+service.on('started', () => meter.onServiceStarted({
+    streamId: 'vpn-device-001',
+    provider: providerWalletAddress,
+    serviceId: 'qsdm-vpn',
+    deviceIdHash: saltedDeviceIDHash,
+    priceDust: 200000000,
+    pricePeriodSeconds: 2592000,
+    budgetDust: 200000000,
+    maxActiveSeconds: 2592000,
+    expiresAt: '2027-09-01T00:00:00Z',
+}));
+service.on('stopped', () => meter.onServiceStopped());
+```
+
+The service must call `onServiceStarted` only after its tunnel, session, or
+other paid capability is actually available. It must call `onServiceStopped`
+as soon as that capability stops. The meter:
+
+- checkpoints active time to durable storage;
+- submits cumulative receipts every 30 seconds and at lifecycle boundaries;
+- retries the same signed receipt after uncertain delivery;
+- does not count application downtime after a crash;
+- serializes wallet actions so one SDK instance cannot race its own nonce; and
+- stores public runtime state only, never wallet or session private keys.
+
+The temporary Ed25519 session key must live in the platform secure keystore.
+The provider-side `receiptSubmitter` must be idempotent by
+`(stream_id, sequence)`, return `{ confirmed: true }` only after chain
+confirmation, and must not hold its QSDM wallet key in a public client. A
+backend can use `CellStreamWallet.submitAction` with `action: 'receipt'` after
+authenticating the service session.
+
 ## Options
 
 ```js
@@ -73,7 +144,7 @@ new QSDMClient('http://node:8080', {
 
 ```bash
 cd sdk/javascript
-node --test qsdm.test.js
+npm test
 ```
 
 Requires Node 18+ (built-in `fetch` and `node:test`). The same command runs as

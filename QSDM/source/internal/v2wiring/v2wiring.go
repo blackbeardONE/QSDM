@@ -359,6 +359,7 @@ type Wired struct {
 	GovParams       *chainparams.InMemoryParamStore
 	GovAuthVotes    *chainparams.InMemoryAuthorityVoteStore
 	TaskState       *chain.TaskStateStore
+	StreamState     *chain.StreamStateStore
 
 	// RecentRejections is the bounded ring of §4.6 attestation
 	// rejections (arch-spoof / hashrate-band / cc-cert-subject).
@@ -402,6 +403,8 @@ func Wire(cfg Config) (*Wired, error) {
 	aware := chain.NewEnrollmentAwareApplier(cfg.Accounts, enrollAp)
 	taskState := chain.NewTaskStateStore()
 	aware.SetTaskStateStore(taskState)
+	streamState := chain.NewStreamStateStore()
+	aware.SetStreamStateStore(streamState)
 
 	// Slasher arm. Build the production dispatcher with the
 	// real registry, all three verifiers wired (forgedattest,
@@ -626,7 +629,8 @@ func Wire(cfg Config) (*Wired, error) {
 	//
 	//   - slashing.AdmissionChecker  (slash txs)
 	//   - enrollment.AdmissionChecker (enroll/unenroll txs)
-	//   - cfg.BaseAdmit               (everything else: POL/BFT)
+	//   - chain.StreamAdmissionChecker (CELL stream signatures)
+	//   - cfg.BaseAdmit                (everything else: POL/BFT)
 	//
 	// Each layer only intercepts its own ContractID and
 	// delegates other contracts down the chain, so layer order
@@ -637,7 +641,8 @@ func Wire(cfg Config) (*Wired, error) {
 	cfg.Pool.SetAdmissionChecker(
 		chainparams.AdmissionChecker(
 			slashing.AdmissionChecker(
-				enrollment.AdmissionChecker(cfg.BaseAdmit))))
+				enrollment.AdmissionChecker(
+					chain.StreamAdmissionChecker(cfg.BaseAdmit)))))
 
 	// HTTP handler hookup. All four mining endpoints
 	//
@@ -658,6 +663,8 @@ func Wire(cfg Config) (*Wired, error) {
 	api.SetSlashMempool(cfg.Pool)
 	api.SetTaskActionMempool(cfg.Pool)
 	api.SetTaskStateProvider(taskState)
+	api.SetStreamActionMempool(cfg.Pool)
+	api.SetStreamStateProvider(streamState)
 	api.SetEnrollmentRegistry(state)
 	api.SetEnrollmentLister(state)
 	// Both interfaces are satisfied by the same chain-side
@@ -746,6 +753,7 @@ func Wire(cfg Config) (*Wired, error) {
 		GovParams:        govStore,
 		GovAuthVotes:     govVotes,
 		TaskState:        taskState,
+		StreamState:      streamState,
 		RecentRejections: rejectionStore,
 		SealedBlockHook:  hook,
 	}, nil
@@ -1009,14 +1017,15 @@ func ReinstallAdmissionGate(pool *mempool.Mempool, prev func(*mempool.Tx) error)
 	if pool == nil {
 		return
 	}
-	// Mirror Wire()'s stack: gov > slashing > enrollment > prev.
+	// Mirror Wire()'s stack: gov > slashing > enrollment > streams > prev.
 	// Each layer only intercepts its own ContractID, so the
 	// order is structurally safe but kept stable for
 	// readability and ease of comparison with Wire().
 	pool.SetAdmissionChecker(
 		chainparams.AdmissionChecker(
 			slashing.AdmissionChecker(
-				enrollment.AdmissionChecker(prev))))
+				enrollment.AdmissionChecker(
+					chain.StreamAdmissionChecker(prev)))))
 }
 
 // AttachToProducer wires the post-construction half of the

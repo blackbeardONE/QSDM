@@ -16,6 +16,50 @@ public website is `qsdm.online`; the public CELL network remains on
 `qsdm.tech`, and Hive remains the Windows and Linux client for CELL wallets,
 tasks, mining, and edge participation.
 
+## CELL metered billing path
+
+QSDM Core now contains the `qsdm/streams/v1` protocol foundation for bounded
+active-use billing. It can escrow a maximum CELL budget, accept cumulative
+session-signed active-second receipts, pause without adding billable time,
+settle earned CELL to a provider, and refund unused escrow on close.
+
+The current Android release does **not** enable this payment path yet. The
+official JavaScript SDK now contains the reusable crash-safe service meter,
+but the Android tunnel source is not part of this repository and has not been
+wired or rebuilt against it. See [CELL Streams](CELL_STREAMS.md) for the
+protocol and runtime API.
+
+## Required Android integration
+
+The Android client must connect the real `VpnService` state, not a screen or
+button state, to the billing runtime:
+
+| Android event | CELL Streams call |
+|---|---|
+| Tunnel interface and protected transport are usable | `onServiceStarted(config)` |
+| User disconnect, tunnel failure, `onRevoke`, or service teardown | `onServiceStopped()` |
+| App process starts after an interruption | `initialize()`, then `recover(isTunnelActuallyActive)` |
+| User cancels service permanently | `close()` |
+
+The temporary Ed25519 session key belongs in Android Keystore. Durable meter
+state may contain the public key, counters, and signed retry payloads, but must
+not contain the session private key, QSDM keystore, or wallet passphrase.
+
+The VPN backend needs an authenticated usage-receipt endpoint. It must verify
+the receipt belongs to the authenticated device/session, dedupe
+`(stream_id, sequence)`, wrap it in a provider-wallet-signed `receipt` action,
+and return success only after QSDM confirms the action. The provider wallet
+signer must stay on protected backend infrastructure.
+
+Before release, test with disposable wallets:
+
+1. Open with a small escrow and confirm the exact balance reduction.
+2. Keep a tunnel active for at least two receipt intervals.
+3. Disconnect and confirm cumulative seconds stop increasing.
+4. Kill and restart the app, then confirm downtime was not billed.
+5. Resume, close, and verify provider settlement plus the payer refund equals
+   the original escrow exactly.
+
 ## User workflow
 
 1. Download the current Android APK from `https://qsdm.online/download/`.
