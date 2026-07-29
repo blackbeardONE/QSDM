@@ -54,6 +54,31 @@ func TestChainSyncURLsFromEnvNormalizesAndDeduplicates(t *testing.T) {
 	}
 }
 
+func TestShouldDeferLocalGenesis(t *testing.T) {
+	tests := []struct {
+		name          string
+		catchupMode   bool
+		bootstrapPeer []string
+		syncURLs      []string
+		want          bool
+	}{
+		{name: "catchup disabled", bootstrapPeer: []string{"peer"}, syncURLs: []string{"https://sync.example"}, want: false},
+		{name: "no remote source", catchupMode: true, want: false},
+		{name: "bootstrap peer", catchupMode: true, bootstrapPeer: []string{"peer"}, want: true},
+		{name: "http sync source", catchupMode: true, syncURLs: []string{"https://sync.example"}, want: true},
+		{name: "both sources", catchupMode: true, bootstrapPeer: []string{"peer"}, syncURLs: []string{"https://sync.example"}, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldDeferLocalGenesis(tt.catchupMode, tt.bootstrapPeer, tt.syncURLs)
+			if got != tt.want {
+				t.Fatalf("shouldDeferLocalGenesis()=%v want=%v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSyncHTTPChainSourceConsumesSuccessiveWindows(t *testing.T) {
 	const remoteTip = uint64(129)
 	requests := 0

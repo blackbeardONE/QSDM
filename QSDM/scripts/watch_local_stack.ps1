@@ -5,6 +5,8 @@ param(
     [string]$Backend = "http://127.0.0.1:8080",
     [int]$IntervalSeconds = 30,
     [int]$RestartAfterFailures = 10,
+    [ValidateRange(30, 900)]
+    [int]$ValidatorStartupGraceSeconds = 300,
     [int]$GatewayRestartAfterFailures = 3,
     [ValidateRange(1, 1440)]
     [int]$CacheMaintenanceMinutes = 30,
@@ -133,6 +135,20 @@ function Get-ProcessCountAny {
     return $count
 }
 
+function Get-StackProcesses {
+    param([string[]]$Names)
+
+    $seen = @{}
+    foreach ($name in $Names) {
+        foreach ($process in @(Get-Process -Name $name -ErrorAction SilentlyContinue)) {
+            if (-not $seen.ContainsKey($process.Id)) {
+                $seen[$process.Id] = $process
+            }
+        }
+    }
+    return @($seen.Values)
+}
+
 function Stop-StackProcess {
     param([string]$Name)
     Get-Process -Name $Name -ErrorAction SilentlyContinue | ForEach-Object {
@@ -156,7 +172,7 @@ function Start-Validator {
     Write-WatchdogLog "starting validator mode=$ValidatorMode"
     $stdout = Join-Path $LocalRoot "watchdog-validator-start.out.log"
     $stderr = Join-Path $LocalRoot "watchdog-validator-start.err.log"
-    $argString = "-NoProfile -ExecutionPolicy Bypass -File $(Quote-Arg $ValidatorScript) -QsdmRoot $(Quote-Arg $QsdmRoot)"
+    $argString = "-NoProfile -ExecutionPolicy Bypass -File $(Quote-Arg $ValidatorScript) -QsdmRoot $(Quote-Arg $QsdmRoot) -HealthWaitSeconds $ValidatorStartupGraceSeconds"
     if ($ValidatorMode -eq "networked") {
         $argString += " -Networked -ChainSyncUrls $(Quote-Arg $ValidatorChainSyncUrls)"
         if (-not [string]::IsNullOrWhiteSpace($ValidatorBootstrapPeers)) {
@@ -174,11 +190,13 @@ function Start-Validator {
         -RedirectStandardOutput $stdout `
         -RedirectStandardError $stderr `
         -PassThru
-    if (-not $process.WaitForExit(70000)) {
+    $launcherWaitMilliseconds = ($ValidatorStartupGraceSeconds + 30) * 1000
+    if (-not $process.WaitForExit($launcherWaitMilliseconds)) {
         Write-WatchdogLog "validator launcher timed out pid=$($process.Id)"
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
         return
     }
+    $process.Refresh()
     Write-WatchdogLog "validator launcher exited code=$($process.ExitCode)"
 }
 
@@ -239,7 +257,7 @@ $gatewayFailures = 0
 $lastCacheMaintenance = [DateTime]::MinValue
 
 try {
-    Write-WatchdogLog "watchdog started root=$QsdmRoot relay=$Relay slot=$Slot check_public_gateway=$PublicGatewayCheckEnabled once=$Once"
+    Write-WatchdogLog "watchdog started root=$QsdmRoot relay=$Relay slot=$Slot check_public_gateway=$PublicGatewayCheckEnabled validator_startup_grace_seconds=$ValidatorStartupGraceSeconds once=$Once"
     do {
         try {
             if (((Get-Date) - $lastCacheMaintenance).TotalMinutes -ge $CacheMaintenanceMinutes) {
@@ -251,14 +269,36 @@ try {
                 $validatorFailures = 0
             } else {
                 $validatorFailures++
-                $validatorCount = Get-ProcessCountAny -Names $ValidatorProcessNames
-                Write-WatchdogLog "validator not ready failure=$validatorFailures process_count=$validatorCount"
-                if ($validatorCount -eq 0 -or $validatorFailures -ge $RestartAfterFailures) {
-                    Stop-StackProcesses -Names $ValidatorProcessNames
+                $validatorProcesses = @(Get-StackProcesses -Names $ValidatorProcessNames)
+                $validatorCount = $validatorProcesses.Count
+                if ($validatorCount -eq 0) {
+                    Write-WatchdogLog "validator not ready failure=$validatorFailures process_count=0; starting validator"
                     Start-Validator
                     Start-Sleep -Seconds 2
                     $validatorReady = Test-HttpOk -Url $ReadyUrl -TimeoutSeconds 5
-                    $validatorFailures = 0
+                    $validatorFailures = if ($validatorReady) { 0 } else { 1 }
+                } else {
+                    $newestStartTime = @($validatorProcesses | ForEach-Object {
+                        try { $_.StartTime } catch { [DateTime]::MinValue }
+                    } | Sort-Object -Descending | Select-Object -First 1)
+                    $startupAgeSeconds = if ($newestStartTime.Count -eq 1 -and $newestStartTime[0] -ne [DateTime]::MinValue) {
+                        [int]((Get-Date) - $newestStartTime[0]).TotalSeconds
+                    } else {
+                        $ValidatorStartupGraceSeconds
+                    }
+                    if ($startupAgeSeconds -lt $ValidatorStartupGraceSeconds) {
+                        Write-WatchdogLog "validator not ready but startup grace is active process_count=$validatorCount age_seconds=$startupAgeSeconds grace_seconds=$ValidatorStartupGraceSeconds"
+                        $validatorFailures = 0
+                    } elseif ($validatorFailures -ge $RestartAfterFailures) {
+                        Write-WatchdogLog "validator remained unready after startup grace failure=$validatorFailures process_count=$validatorCount age_seconds=$startupAgeSeconds; restarting"
+                        Stop-StackProcesses -Names $ValidatorProcessNames
+                        Start-Validator
+                        Start-Sleep -Seconds 2
+                        $validatorReady = Test-HttpOk -Url $ReadyUrl -TimeoutSeconds 5
+                        $validatorFailures = if ($validatorReady) { 0 } else { 1 }
+                    } else {
+                        Write-WatchdogLog "validator not ready after startup grace failure=$validatorFailures process_count=$validatorCount age_seconds=$startupAgeSeconds"
+                    }
                 }
             }
 

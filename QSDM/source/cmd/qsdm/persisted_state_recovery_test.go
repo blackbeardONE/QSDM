@@ -88,6 +88,36 @@ func TestReconcilePersistedStateTailArchivesExactlyOneUncommittedBlock(t *testin
 	}
 }
 
+func TestReconcilePersistedStateTailArchivesMultipleUncommittedBlocks(t *testing.T) {
+	accounts := chain.NewAccountStore()
+	root := accounts.StateRoot()
+	b0 := recoveryBlock(0, "", root)
+	b1 := recoveryBlock(1, b0.Hash, root)
+	b2 := recoveryBlock(2, b1.Hash, "uncommitted-state-root-2")
+	b3 := recoveryBlock(3, b2.Hash, "uncommitted-state-root-3")
+	blocks := []*chain.Block{b0, b1, b2, b3}
+	path := filepath.Join(t.TempDir(), "qsdm_chain.ndjson")
+	writeRecoveryJournal(t, path, blocks)
+
+	restored, err := reconcilePersistedStateTail(path, accounts, blocks, time.Now())
+	if err != nil {
+		t.Fatalf("reconcile multi-block crash gap: %v", err)
+	}
+	if !restored.recovered || restored.discardedTail != 2 {
+		t.Fatalf("multi-block crash gap = %+v, want two discarded blocks", restored)
+	}
+	if len(restored.blocks) != 2 || restored.blocks[1].Hash != b1.Hash {
+		t.Fatalf("restored branch = %+v, want tip height 1", restored.blocks)
+	}
+	archived, err := chain.LoadChainNDJSON(restored.backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(archived) != 4 || archived[3].Hash != b3.Hash {
+		t.Fatalf("archived journal has %d blocks, want original four", len(archived))
+	}
+}
+
 func TestReconcilePersistedStateTailRebuildsTaskStateForPriorTip(t *testing.T) {
 	accounts := chain.NewAccountStore()
 	accountRoot := accounts.StateRoot()
@@ -140,7 +170,7 @@ func TestReconcilePersistedStateTailRejectsBroaderMismatch(t *testing.T) {
 	writeRecoveryJournal(t, path, blocks)
 
 	_, err := reconcilePersistedStateTail(path, accounts, blocks, time.Now())
-	if err == nil || !strings.Contains(err.Error(), "matches neither canonical tip nor its predecessor") {
+	if err == nil || !strings.Contains(err.Error(), "matches no block in the canonical journal") {
 		t.Fatalf("broader mismatch error = %v", err)
 	}
 	loaded, loadErr := chain.LoadChainNDJSON(path)
