@@ -43,10 +43,13 @@ cd QSDM\source
 go build -o .cache\local-validator\qsdm-home-gateway.exe .\cmd\qsdm-home-gateway
 ```
 
-Generate a slot key:
+Generate a slot key directly into the durable key file:
 
 ```powershell
-.\.cache\local-validator\qsdm-home-gateway.exe --generate-key
+$keyDir = Join-Path $HOME ".qsdm"
+New-Item -ItemType Directory -Force $keyDir | Out-Null
+.\.cache\local-validator\qsdm-home-gateway.exe --generate-key |
+    Set-Content -NoNewline (Join-Path $keyDir "home-gateway.key")
 ```
 
 Run after the relay slot is configured:
@@ -54,6 +57,15 @@ Run after the relay slot is configured:
 ```powershell
 .\scripts\start_home_gateway.ps1 -Relay https://relay.example -Slot your-slot-id
 ```
+
+The launcher restricts the key file to the current user, the operating system,
+and local administrators. It passes only the file path to the gateway through
+`QSDM_HOME_GATEWAY_KEY_FILE`; the key itself is not placed in process
+arguments. Direct launches should use `--key-file <path>`.
+
+`--key-hex` and `QSDM_HOME_GATEWAY_KEY_HEX` remain temporarily available for
+older deployments, but they are deprecated because inline secrets can appear
+in process inspection tools.
 
 ## Disk Resilience
 
@@ -94,5 +106,7 @@ Then run `qsdm-relay` as described in `TUNNEL_QUICKSTART.md`.
 
 - Do not expose `8080`, `8081`, or `4001` directly from a home router.
 - Keep the relay slot key private; rotate it if it is pasted into chat or logs.
+- Store the relay slot key in a protected file (`0600` on Linux). Do not pass
+  the key value through command-line arguments.
 - Keep the relay as a dumb forwarder. Consensus authority remains in the
   validator and mining proof verification remains on the validator.
