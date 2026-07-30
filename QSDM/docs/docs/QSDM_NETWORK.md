@@ -2,7 +2,7 @@
 
 **Status:** Live public network
 
-**Deployed Core candidate:** `v0.4.7-rc.7` (`9764c62`)
+**Deployed Core candidate:** `v0.4.7-rc.8` (`798d55c`)
 **Public gateway:** `https://api.qsdm.tech/api/v1`
 
 QSDM Network provides public access to the CELL ledger. It lets QSDM Hive,
