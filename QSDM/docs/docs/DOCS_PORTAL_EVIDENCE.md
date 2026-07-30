@@ -37,7 +37,7 @@ blackbeardONE/QSDM/main/<repoPath>`. **No mirror, no rebuild
   (123 618 B) with SRI
   `sha384-wLhprpjsmjc/XYIcF+LpMxd8yS1gss6jhevOp6F6zhiIoFK6AmHtm4bGKtehTani`.
   No CDN in `script-src`.
-- The version pill defaults to **v0.4.7-rc.4** and auto-refreshes from
+- The version pill defaults to **v0.4.7-rc.7** and auto-refreshes from
   QSDM Network at `/api/v1/status`. Its link resolves to the exact deployed
   Git revision when the status response includes `git_sha`.
 - Filenames with literal spaces (one entry — `Feature Summary.md`)
