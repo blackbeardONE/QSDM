@@ -36,7 +36,20 @@ Blocked by default:
 
 ## Home Side
 
-Build:
+Download the gateway for your platform from the matching
+[QSDM GitHub release](https://github.com/blackbeardONE/QSDM/releases):
+
+```text
+qsdm-home-gateway-linux-amd64
+qsdm-home-gateway-linux-arm64
+qsdm-home-gateway-windows-amd64.exe
+```
+
+Verify the file against the release-level `SHA256SUMS` and its Sigstore
+certificate before running it. The gateway `--version` output identifies the
+exact release tag and source commit.
+
+Building from source remains available for operators:
 
 ```powershell
 cd QSDM\source

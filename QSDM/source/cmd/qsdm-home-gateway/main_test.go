@@ -8,7 +8,26 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/blackbeardONE/QSDM/pkg/buildinfo"
 )
+
+func TestGatewayVersionUsesReleaseBuildInfo(t *testing.T) {
+	originalVersion, originalSHA, originalDate := buildinfo.Version, buildinfo.GitSHA, buildinfo.BuildDate
+	buildinfo.Version = "v0.4.7-rc.test"
+	buildinfo.GitSHA = "abcdef0"
+	buildinfo.BuildDate = "2026-07-30T00:00:00Z"
+	t.Cleanup(func() {
+		buildinfo.Version, buildinfo.GitSHA, buildinfo.BuildDate = originalVersion, originalSHA, originalDate
+	})
+
+	got := gatewayVersion()
+	for _, want := range []string{"qsdm-home-gateway", buildinfo.Version, buildinfo.GitSHA, buildinfo.BuildDate} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("gatewayVersion() = %q, want it to contain %q", got, want)
+		}
+	}
+}
 
 func TestLoadGatewayKeyFromProtectedFile(t *testing.T) {
 	want := bytes.Repeat([]byte{0x5a}, 32)

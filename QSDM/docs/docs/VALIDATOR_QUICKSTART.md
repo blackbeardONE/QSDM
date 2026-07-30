@@ -92,12 +92,18 @@ and rollback scripts. Download them from the matching GitHub release:
 ```text
 qsdm-validator-<version>-linux-amd64.tar.gz
 qsdm-validator-<version>-windows-amd64.zip
+qsdm-home-gateway-linux-amd64
+qsdm-home-gateway-windows-amd64.exe
 ```
 
 Verify the archive against the release-level `SHA256SUMS` and Sigstore
 certificate before unpacking. Then read the package `README.md`. The scripts
 replace only the executable and preserve chain state, identity material,
 wallets, configuration, and timestamped rollback binaries.
+
+The separately signed home-gateway binary is optional. It provides the narrow
+outbound tunnel used by a home validator without exposing the validator,
+dashboard, wallet, or admin API directly.
 
 ---
 

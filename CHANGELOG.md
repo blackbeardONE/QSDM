@@ -45,6 +45,20 @@ attempt to retroactively enumerate that history.
 
 ### Changed
 
+- **QSDM Core v0.4.7-rc.7 home-node reliability and gateway security
+  (2026-07-30).** Validator startup now recovers verified checkpoint state and
+  any fully appended journal tail without repeatedly rebuilding or restarting
+  the same node. Block acceptance and persistence are serialized to keep saved
+  state aligned with the accepted chain. Windows launchers and the watchdog
+  now use bounded startup grace and duplicate-restart protection.
+
+- **Home Gateway release and secret handling (2026-07-30).** Every tagged Core
+  release now includes checksummed and Sigstore-signed Home Gateway binaries
+  for Windows, Linux, and macOS with the same embedded release identity as
+  Core. Gateway relay keys can be read from protected files so production
+  secrets no longer need to appear in process arguments. Inline key input
+  remains temporarily available only as a deprecated compatibility path.
+
 - **QSDM Core v0.4.7-rc.4 Windows release compatibility (2026-07-20).**
   Native Windows validator packaging now provisions a pinned MSYS2 action and
   its UCRT64 GCC toolchain instead of relying on the compiler path from a
