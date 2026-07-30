@@ -88,17 +88,22 @@ function Test-GatewayKeyFileProtected {
         if (-not $acl.AreAccessRulesProtected) {
             return $false
         }
+        $rules = $acl.GetAccessRules(
+            $true,
+            $true,
+            [Security.Principal.SecurityIdentifier]
+        )
         $currentUserCanRead = $false
-        foreach ($rule in $acl.Access) {
+        foreach ($rule in $rules) {
             if ($rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow) {
                 continue
             }
-            $ruleSid = $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+            $ruleSid = $rule.IdentityReference.Value
             if ($allowedSids -notcontains $ruleSid) {
                 return $false
             }
             if ($ruleSid -eq $currentUserSid -and
-                ($rule.FileSystemRights -band [Security.AccessControl.FileSystemRights]::Read) -ne 0) {
+                ($rule.FileSystemRights -band [Security.AccessControl.FileSystemRights]::ReadData) -ne 0) {
                 $currentUserCanRead = $true
             }
         }
@@ -116,16 +121,30 @@ function Protect-GatewayKeyFile {
             return
         }
 
-        $icacls = Join-Path $env:SystemRoot "System32\icacls.exe"
         $currentUserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-        $output = & $icacls $Path `
-            "/inheritance:r" `
-            "/grant:r" `
-            "*$($currentUserSid):(F)" `
-            "*S-1-5-18:(F)" `
-            "*S-1-5-32-544:(F)" 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            throw "Unable to restrict gateway key permissions at $Path`: $($output -join ' ')"
+        $acl = Get-Acl -LiteralPath $Path
+        $acl.SetAccessRuleProtection($true, $false)
+        $rules = @($acl.GetAccessRules(
+            $true,
+            $true,
+            [Security.Principal.SecurityIdentifier]
+        ))
+        foreach ($rule in $rules) {
+            $acl.RemoveAccessRuleSpecific($rule)
+        }
+        foreach ($sidValue in @($currentUserSid, "S-1-5-18", "S-1-5-32-544")) {
+            $sid = [Security.Principal.SecurityIdentifier]::new($sidValue)
+            $rule = [Security.AccessControl.FileSystemAccessRule]::new(
+                $sid,
+                [Security.AccessControl.FileSystemRights]::FullControl,
+                [Security.AccessControl.AccessControlType]::Allow
+            )
+            $acl.AddAccessRule($rule)
+        }
+        try {
+            Set-Acl -LiteralPath $Path -AclObject $acl
+        } catch {
+            throw "Unable to restrict gateway key permissions at ${Path}: $($_.Exception.Message)"
         }
         if (-not (Test-GatewayKeyFileProtected -Path $Path)) {
             throw "Gateway key permissions remain unsafe at $Path"
@@ -158,6 +177,7 @@ $ResolvedKeyPath = (Resolve-Path -LiteralPath $KeyPath).Path
 $args = @(
     "--relay", $Relay,
     "--slot", $Slot,
+    "--key-file", $ResolvedKeyPath,
     "--backend", $Backend
 )
 if ($AllowEnrollment) {
@@ -167,10 +187,8 @@ if (-not $DisableHive) {
     $args += "--allow-hive"
 }
 
-$previousKeyFileEnv = $env:QSDM_HOME_GATEWAY_KEY_FILE
 $previousKeyHexEnv = $env:QSDM_HOME_GATEWAY_KEY_HEX
 try {
-    $env:QSDM_HOME_GATEWAY_KEY_FILE = $ResolvedKeyPath
     Remove-Item Env:QSDM_HOME_GATEWAY_KEY_HEX -ErrorAction SilentlyContinue
     $process = Start-Process `
         -FilePath $ExePath `
@@ -181,11 +199,6 @@ try {
         -RedirectStandardError $StderrLog `
         -PassThru
 } finally {
-    if ($null -eq $previousKeyFileEnv) {
-        Remove-Item Env:QSDM_HOME_GATEWAY_KEY_FILE -ErrorAction SilentlyContinue
-    } else {
-        $env:QSDM_HOME_GATEWAY_KEY_FILE = $previousKeyFileEnv
-    }
     if ($null -eq $previousKeyHexEnv) {
         Remove-Item Env:QSDM_HOME_GATEWAY_KEY_HEX -ErrorAction SilentlyContinue
     } else {

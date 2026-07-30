@@ -8,6 +8,12 @@ param(
     [ValidateRange(30, 900)]
     [int]$ValidatorStartupGraceSeconds = 300,
     [int]$GatewayRestartAfterFailures = 3,
+    [ValidateRange(5, 120)]
+    [int]$GatewayLauncherWaitSeconds = 30,
+    [ValidateRange(10, 900)]
+    [int]$GatewayRetryInitialSeconds = 30,
+    [ValidateRange(30, 3600)]
+    [int]$GatewayRetryMaxSeconds = 600,
     [ValidateRange(1, 1440)]
     [int]$CacheMaintenanceMinutes = 30,
     [ValidateRange(0, 1024)]
@@ -67,11 +73,7 @@ $ValidatorProcessNames = @(
     "qsdm-new",
     "qsdm"
 )
-$GatewayProcessNames = @(
-    "qsdm-home-gateway",
-    "qsdm-home-gateway-hive",
-    "qsdm-home-gateway-hive.new"
-)
+$GatewayProcessNames = @("qsdm-home-gateway*")
 
 $env:HTTP_PROXY = ""
 $env:HTTPS_PROXY = ""
@@ -208,21 +210,56 @@ function Quote-Arg {
 function Start-Gateway {
     if (-not (Test-Path -LiteralPath $GatewayScript)) {
         Write-WatchdogLog "missing gateway script: $GatewayScript"
-        return
+        return $false
     }
     $stdout = Join-Path $LocalRoot "home-gateway.out.log"
     $stderr = Join-Path $LocalRoot "home-gateway.err.log"
     $argString = "-NoProfile -ExecutionPolicy Bypass -File $(Quote-Arg $GatewayScript) -Relay $(Quote-Arg $Relay) -Slot $(Quote-Arg $Slot) -Backend $(Quote-Arg $Backend)"
     Write-WatchdogLog "starting home gateway relay=$Relay slot=$Slot"
-    $process = Start-Process `
-        -FilePath "powershell.exe" `
-        -ArgumentList $argString `
-        -WorkingDirectory $QsdmRoot `
-        -WindowStyle Hidden `
-        -RedirectStandardOutput $stdout `
-        -RedirectStandardError $stderr `
-        -PassThru
+    try {
+        $process = Start-Process `
+            -FilePath "powershell.exe" `
+            -ArgumentList $argString `
+            -WorkingDirectory $QsdmRoot `
+            -WindowStyle Hidden `
+            -RedirectStandardOutput $stdout `
+            -RedirectStandardError $stderr `
+            -PassThru
+    } catch {
+        Write-WatchdogLog "home gateway launcher could not start: $($_.Exception.Message)"
+        return $false
+    }
     Write-WatchdogLog "home gateway launcher pid=$($process.Id)"
+
+    if (-not $process.WaitForExit($GatewayLauncherWaitSeconds * 1000)) {
+        $gatewayProcesses = @(Get-StackProcesses -Names $GatewayProcessNames)
+        if ($gatewayProcesses.Count -gt 0) {
+            Write-WatchdogLog "home gateway became active while launcher remained open pid=$($gatewayProcesses[0].Id)"
+            return $true
+        }
+        Write-WatchdogLog "home gateway launcher timed out pid=$($process.Id)"
+        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        return $false
+    }
+
+    $process.Refresh()
+    if ($process.ExitCode -ne 0) {
+        Write-WatchdogLog "home gateway launcher exited code=$($process.ExitCode); see $stderr"
+        return $false
+    }
+
+    $startupDeadline = (Get-Date).AddSeconds(10)
+    do {
+        $gatewayProcesses = @(Get-StackProcesses -Names $GatewayProcessNames)
+        if ($gatewayProcesses.Count -gt 0) {
+            Write-WatchdogLog "home gateway active pid=$($gatewayProcesses[0].Id)"
+            return $true
+        }
+        Start-Sleep -Milliseconds 250
+    } while ((Get-Date) -lt $startupDeadline)
+
+    Write-WatchdogLog "home gateway launcher exited successfully but no gateway process became active"
+    return $false
 }
 
 function Invoke-GeneratedCacheMaintenance {
@@ -254,10 +291,12 @@ Set-Content -LiteralPath $PidPath -Value ([string]$PID)
 
 $validatorFailures = 0
 $gatewayFailures = 0
+$gatewayLaunchFailures = 0
+$nextGatewayLaunchAt = [DateTime]::MinValue
 $lastCacheMaintenance = [DateTime]::MinValue
 
 try {
-    Write-WatchdogLog "watchdog started root=$QsdmRoot relay=$Relay slot=$Slot check_public_gateway=$PublicGatewayCheckEnabled validator_startup_grace_seconds=$ValidatorStartupGraceSeconds once=$Once"
+    Write-WatchdogLog "watchdog started root=$QsdmRoot relay=$Relay slot=$Slot check_public_gateway=$PublicGatewayCheckEnabled validator_startup_grace_seconds=$ValidatorStartupGraceSeconds gateway_retry_initial_seconds=$GatewayRetryInitialSeconds gateway_retry_max_seconds=$GatewayRetryMaxSeconds once=$Once"
     do {
         try {
             if (((Get-Date) - $lastCacheMaintenance).TotalMinutes -ge $CacheMaintenanceMinutes) {
@@ -302,13 +341,26 @@ try {
                 }
             }
 
-            $gatewayProcesses = @($GatewayProcessNames | ForEach-Object {
-                Get-Process -Name $_ -ErrorAction SilentlyContinue
-            } | Sort-Object StartTime -Descending)
+            $gatewayProcesses = @(Get-StackProcesses -Names $GatewayProcessNames | Sort-Object StartTime -Descending)
             $gatewayCount = $gatewayProcesses.Count
             if ($validatorReady -and $gatewayCount -eq 0) {
-                Start-Gateway
-                $gatewayFailures = 0
+                if ((Get-Date) -ge $nextGatewayLaunchAt) {
+                    $gatewayStarted = Start-Gateway
+                    if ($gatewayStarted) {
+                        $gatewayFailures = 0
+                        $gatewayLaunchFailures = 0
+                        $nextGatewayLaunchAt = [DateTime]::MinValue
+                    } else {
+                        $gatewayLaunchFailures++
+                        $backoffPower = [Math]::Min($gatewayLaunchFailures - 1, 10)
+                        $retrySeconds = [int][Math]::Min(
+                            $GatewayRetryMaxSeconds,
+                            $GatewayRetryInitialSeconds * [Math]::Pow(2, $backoffPower)
+                        )
+                        $nextGatewayLaunchAt = (Get-Date).AddSeconds($retrySeconds)
+                        Write-WatchdogLog "home gateway launch failed count=$gatewayLaunchFailures; retrying in $retrySeconds second(s)"
+                    }
+                }
             } elseif ($validatorReady -and $gatewayCount -gt 1) {
                 $keep = $gatewayProcesses[0].Id
                 Write-WatchdogLog "multiple home gateways detected count=$gatewayCount keeping_pid=$keep"
@@ -317,7 +369,11 @@ try {
                     Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
                 }
                 $gatewayFailures = 0
+                $gatewayLaunchFailures = 0
+                $nextGatewayLaunchAt = [DateTime]::MinValue
             } elseif ($validatorReady -and $gatewayCount -eq 1 -and $PublicGatewayCheckEnabled) {
+                $gatewayLaunchFailures = 0
+                $nextGatewayLaunchAt = [DateTime]::MinValue
                 if (Test-PublicGatewayOk) {
                     if ($gatewayFailures -gt 0) {
                         Write-WatchdogLog "gateway public check recovered after $gatewayFailures failure(s)"
@@ -328,9 +384,15 @@ try {
                     if ($gatewayFailures -ge $GatewayRestartAfterFailures) {
                         Write-WatchdogLog "gateway public check failed failure=$gatewayFailures url=$PublicUrl; restarting stale tunnel"
                         Stop-StackProcesses -Names $GatewayProcessNames
-                        Start-Gateway
+                        $gatewayStarted = Start-Gateway
                         Start-Sleep -Seconds 2
                         $gatewayFailures = 0
+                        if (-not $gatewayStarted) {
+                            $gatewayLaunchFailures = 1
+                            $retrySeconds = [Math]::Min($GatewayRetryMaxSeconds, $GatewayRetryInitialSeconds)
+                            $nextGatewayLaunchAt = (Get-Date).AddSeconds($retrySeconds)
+                            Write-WatchdogLog "home gateway restart failed; retrying in $retrySeconds second(s)"
+                        }
                     } elseif ($gatewayFailures -eq 1) {
                         Write-WatchdogLog "gateway public check failed failure=$gatewayFailures url=$PublicUrl; waiting before recovery"
                     }
