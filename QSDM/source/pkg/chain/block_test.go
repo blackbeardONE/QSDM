@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -101,6 +102,67 @@ func TestBlockProducer_ProduceBlock(t *testing.T) {
 	}
 	if block.TotalFees != 9.0 {
 		t.Fatalf("expected fees 9.0, got %f", block.TotalFees)
+	}
+}
+
+func TestBlockProducerSerializesPostSealHooksBeforeNextBlock(t *testing.T) {
+	pool := mempool.New(mempool.DefaultConfig())
+	if err := pool.Add(makeTx("first", 0)); err != nil {
+		t.Fatal(err)
+	}
+	bp := NewBlockProducer(pool, newTestApplier(), DefaultProducerConfig())
+
+	firstHookEntered := make(chan struct{})
+	releaseFirstHook := make(chan struct{})
+	secondHookEntered := make(chan struct{})
+	var closeSecond sync.Once
+	bp.OnSealedBlock = func(block *Block) {
+		switch block.Height {
+		case 0:
+			close(firstHookEntered)
+			<-releaseFirstHook
+		case 1:
+			closeSecond.Do(func() { close(secondHookEntered) })
+		}
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := bp.ProduceBlock()
+		firstDone <- err
+	}()
+	select {
+	case <-firstHookEntered:
+	case <-time.After(time.Second):
+		t.Fatal("first block did not enter its post-seal hook")
+	}
+
+	if err := pool.Add(makeTx("second", 0)); err != nil {
+		t.Fatal(err)
+	}
+	secondDone := make(chan error, 1)
+	go func() {
+		_, err := bp.ProduceBlock()
+		secondDone <- err
+	}()
+
+	select {
+	case <-secondHookEntered:
+		t.Fatal("second block reached its post-seal hook before the first hook completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(releaseFirstHook)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first ProduceBlock: %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second ProduceBlock: %v", err)
+	}
+	select {
+	case <-secondHookEntered:
+	case <-time.After(time.Second):
+		t.Fatal("second block did not enter its post-seal hook")
 	}
 }
 

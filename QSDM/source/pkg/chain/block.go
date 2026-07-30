@@ -104,13 +104,18 @@ type ChainReplayApplier interface {
 
 // BlockProducer assembles blocks from the mempool.
 type BlockProducer struct {
-	mu          sync.Mutex
-	pool        *mempool.Mempool
-	applier     StateApplier
-	chain       []*Block
-	maxTxBlock  int
-	producerID  string
-	polFollower *PolFollower
+	mu sync.Mutex
+	// sealLifecycleMu keeps each accepted block and its post-seal hooks in one
+	// ordered lifecycle. Without it, concurrent HTTP and pubsub catch-up could
+	// accept N and N+1 in memory, then persist N+1 before N after bp.mu was
+	// released.
+	sealLifecycleMu sync.Mutex
+	pool            *mempool.Mempool
+	applier         StateApplier
+	chain           []*Block
+	maxTxBlock      int
+	producerID      string
+	polFollower     *PolFollower
 	// bftSealGate, when set, requires BFTConsensus.IsCommitted(tip.Height) before sealing the next block.
 	bftSealGate *BFTConsensus
 	// preSealBFTRound, when set, runs after txs are applied to a cloned AccountStore and before the live
@@ -232,6 +237,9 @@ func (bp *BlockProducer) SetSealGuard(fn func() error) {
 // the hook commits BFT for the pending height, then the same txs are applied to the live store and the
 // block is appended. Otherwise BFT is driven only after append via OnSealed.
 func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
+	bp.sealLifecycleMu.Lock()
+	defer bp.sealLifecycleMu.Unlock()
+
 	bp.mu.Lock()
 	runSealedHook := false
 	// outcomes is captured inline below as txs are applied; it
@@ -568,6 +576,9 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 	if bp == nil || blk == nil {
 		return fmt.Errorf("chain: nil producer or block")
 	}
+	bp.sealLifecycleMu.Lock()
+	defer bp.sealLifecycleMu.Unlock()
+
 	if want := computeBlockHash(blk); blk.Hash != want {
 		return fmt.Errorf("chain: external block has invalid hash")
 	}

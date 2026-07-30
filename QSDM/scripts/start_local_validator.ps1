@@ -9,7 +9,8 @@ param(
     [switch]$PublicP2P,
     [switch]$Restart,
     [string]$TreasuryConfigPath = "",
-    [int]$HealthWaitSeconds = 15,
+    [ValidateRange(3, 900)]
+    [int]$HealthWaitSeconds = 300,
     [int]$LockWaitSeconds = 5
 )
 
@@ -825,11 +826,15 @@ $process = Start-Process `
 Set-Content -LiteralPath $PidFile -Value $process.Id
 Write-LauncherLog "started validator pid=$($process.Id)"
 
-$boundedHealthWait = [Math]::Max(3, [Math]::Min($HealthWaitSeconds, 30))
+$boundedHealthWait = $HealthWaitSeconds
+$healthStartedAt = Get-Date
 $healthDeadline = (Get-Date).AddSeconds($boundedHealthWait)
+$nextProgressAt = $healthStartedAt.AddSeconds(15)
 while ((Get-Date) -lt $healthDeadline) {
     Start-Sleep -Milliseconds 500
+    $process.Refresh()
     if ($process.HasExited) {
+        $process.WaitForExit()
         Write-LauncherLog "validator exited before readiness pid=$($process.Id) exit_code=$($process.ExitCode)"
         Release-LauncherLock
         exit 1
@@ -840,8 +845,20 @@ while ((Get-Date) -lt $healthDeadline) {
         Release-LauncherLock
         exit 0
     }
+    if ((Get-Date) -ge $nextProgressAt) {
+        $elapsedSeconds = [int]((Get-Date) - $healthStartedAt).TotalSeconds
+        Write-LauncherLog "validator startup still in progress pid=$($process.Id) elapsed_seconds=$elapsedSeconds"
+        $nextProgressAt = (Get-Date).AddSeconds(15)
+    }
 }
 
-Write-LauncherLog "validator did not become ready within $boundedHealthWait seconds"
+$process.Refresh()
+if ($process.HasExited) {
+    $process.WaitForExit()
+    Write-LauncherLog "validator exited at readiness deadline pid=$($process.Id) exit_code=$($process.ExitCode)"
+    Release-LauncherLock
+    exit 1
+}
+Write-LauncherLog "validator remains alive but did not become ready within $boundedHealthWait seconds; leaving it running for watchdog observation pid=$($process.Id)"
 Release-LauncherLock
-exit 1
+exit 2

@@ -134,6 +134,7 @@ type persistedStateRestore struct {
 	streamActions int
 	stateRoot     string
 	backupPath    string
+	discardedTail int
 	recovered     bool
 }
 
@@ -164,10 +165,43 @@ func evaluatePersistedState(accounts *chain.AccountStore, blocks []*chain.Block)
 	}, nil
 }
 
-// reconcilePersistedStateTail handles the only safe automatic crash gap: the
-// chain journal contains one fully written block whose account snapshot was
-// never committed. The saved accounts plus replayed task state must match the
-// immediately preceding block exactly. Any wider mismatch remains fail-closed.
+func findPersistedSnapshotBlock(
+	accounts *chain.AccountStore,
+	blocks []*chain.Block,
+) (int, error) {
+	if accounts == nil {
+		return -1, errors.New("persisted state scan requires an account snapshot")
+	}
+	tasks := chain.NewTaskStateStore()
+	streams := chain.NewStreamStateStore()
+	aware := chain.NewEnrollmentAwareApplier(accounts, nil)
+	aware.SetTaskStateStore(tasks)
+	aware.SetStreamStateStore(streams)
+
+	match := -1
+	for index, blk := range blocks {
+		if blk == nil {
+			return -1, fmt.Errorf("persisted state scan has a nil block at index %d", index)
+		}
+		if _, err := replayTaskStateFromBlocks(tasks, []*chain.Block{blk}); err != nil {
+			return -1, fmt.Errorf("replay task state at height %d: %w", blk.Height, err)
+		}
+		if _, err := replayStreamStateFromBlocks(streams, []*chain.Block{blk}); err != nil {
+			return -1, fmt.Errorf("replay CELL stream state at height %d: %w", blk.Height, err)
+		}
+		if aware.StateRoot() == blk.StateRoot {
+			match = index
+		}
+	}
+	return match, nil
+}
+
+// reconcilePersistedStateTail repairs a journal that advanced after its
+// account snapshot was last committed. The saved accounts plus task and stream
+// actions replayed through an earlier block must reproduce that block's
+// published state root exactly. The highest exact match wins, the full journal
+// is archived, and only the unmatched tail is removed. No matching root means
+// startup remains fail-closed.
 func reconcilePersistedStateTail(chainPath string, accounts *chain.AccountStore, blocks []*chain.Block, now time.Time) (persistedStateRestore, error) {
 	if len(blocks) == 0 {
 		return persistedStateRestore{}, errors.New("persisted state restore requires at least one block")
@@ -190,28 +224,36 @@ func reconcilePersistedStateTail(chainPath string, accounts *chain.AccountStore,
 			tip.Height, tip.Hash, current.stateRoot, tip.StateRoot)
 	}
 
-	priorBlocks := blocks[:len(blocks)-1]
-	priorTip := priorBlocks[len(priorBlocks)-1]
-	if priorTip == nil {
-		return persistedStateRestore{}, fmt.Errorf("persisted state restore has a nil preceding block at index %d", len(priorBlocks)-1)
-	}
-	prior, err := evaluatePersistedState(accounts, priorBlocks)
+	matchIndex, err := findPersistedSnapshotBlock(accounts, blocks)
 	if err != nil {
-		return persistedStateRestore{}, fmt.Errorf("replay preceding tip height %d: %w", priorTip.Height, err)
+		return persistedStateRestore{}, err
 	}
-	if prior.stateRoot != priorTip.StateRoot {
+	if matchIndex < 0 {
 		return persistedStateRestore{}, fmt.Errorf(
-			"persisted state matches neither canonical tip nor its predecessor (tip_height=%d snapshot_root=%s tip_root=%s predecessor_height=%d predecessor_snapshot_root=%s predecessor_root=%s); refusing automatic recovery",
-			tip.Height, current.stateRoot, tip.StateRoot, priorTip.Height, prior.stateRoot, priorTip.StateRoot)
+			"persisted state matches no block in the canonical journal (tip_height=%d snapshot_root=%s tip_root=%s); refusing automatic recovery",
+			tip.Height, current.stateRoot, tip.StateRoot)
+	}
+
+	matchingBlocks := blocks[:matchIndex+1]
+	matchingTip := matchingBlocks[len(matchingBlocks)-1]
+	matching, err := evaluatePersistedState(accounts, matchingBlocks)
+	if err != nil {
+		return persistedStateRestore{}, fmt.Errorf("replay matching tip height %d: %w", matchingTip.Height, err)
+	}
+	if matching.stateRoot != matchingTip.StateRoot {
+		return persistedStateRestore{}, fmt.Errorf(
+			"persisted state scan selected height %d but replay root changed (snapshot_root=%s block_root=%s)",
+			matchingTip.Height, matching.stateRoot, matchingTip.StateRoot)
 	}
 
 	backupPath := fmt.Sprintf("%s.uncommitted-tail-%s.bak", chainPath, now.UTC().Format("20060102T150405.000000000Z"))
-	if err := chain.ReplaceChainFile(chainPath, backupPath, priorBlocks); err != nil {
-		return persistedStateRestore{}, fmt.Errorf("archive one-block uncommitted journal tail: %w", err)
+	if err := chain.ReplaceChainFile(chainPath, backupPath, matchingBlocks); err != nil {
+		return persistedStateRestore{}, fmt.Errorf("archive unmatched journal tail: %w", err)
 	}
-	prior.backupPath = backupPath
-	prior.recovered = true
-	return prior, nil
+	matching.backupPath = backupPath
+	matching.discardedTail = len(blocks) - len(matchingBlocks)
+	matching.recovered = true
+	return matching, nil
 }
 
 func canonicalPersistedChain(blocks []*chain.Block) ([]*chain.Block, int) {
@@ -1670,8 +1712,8 @@ func main() {
 	// Order matters during hydrate: read CHAIN first, then load
 	// ACCOUNTS before installing either into the live producer.
 	// This lets startup prove the account/task snapshot matches
-	// the journal tip and recover one fully appended but
-	// uncommitted tail block after a crash or disk-full event. If
+	// the journal tip and remove a fully appended but uncommitted
+	// journal tail after a crash or disk-full event. If
 	// the chain shows blocks but the accounts file is missing, we fail-fast
 	// rather than boot a half-restored state where balances
 	// are zero but tip is non-zero — that combination would
@@ -1718,9 +1760,10 @@ func main() {
 		}
 		restoreBlocks = restoredState.blocks
 		if restoredState.recovered {
-			logger.Warn("chain restore: recovered one fully appended block whose account snapshot was not committed",
+			logger.Warn("chain restore: removed journal tail newer than the committed account snapshot",
 				"recovered_tip_height", restoreBlocks[len(restoreBlocks)-1].Height,
-				"discarded_height", discardedTailHeight,
+				"discarded_through_height", discardedTailHeight,
+				"discarded_blocks", restoredState.discardedTail,
 				"chain_path", chainStatePath,
 				"backup_path", restoredState.backupPath)
 		}
@@ -2038,7 +2081,8 @@ func main() {
 			}
 		}()
 	}
-	if syncURLs := chainSyncURLsFromEnv(); len(syncURLs) > 0 {
+	syncURLs := chainSyncURLsFromEnv()
+	if len(syncURLs) > 0 {
 		startHTTPChainSync(ctx, logger, adminProducer, adminAccounts, syncURLs)
 	}
 
@@ -2063,10 +2107,11 @@ func main() {
 	// synthetic BFT round is unnecessary at genesis (the BFT
 	// and POL gates aren't active yet anyway) so skipping it
 	// is safe.
-	if !adminProducer.HasTip() && networkedCatchupMode && len(cfg.BootstrapPeers) > 0 {
+	if !adminProducer.HasTip() && shouldDeferLocalGenesis(networkedCatchupMode, cfg.BootstrapPeers, syncURLs) {
 		logger.Info("Networked catch-up mode: deferring local genesis seal; waiting for blocks from bootstrap peers",
 			"env_var", "QSDM_NETWORKED_CATCHUP_MODE",
 			"bootstrap_peers", len(cfg.BootstrapPeers),
+			"http_sync_sources", len(syncURLs),
 			"block_topic", chain.BlockTopicName)
 	} else if !adminProducer.HasTip() {
 		// In solo mode, fund and use the blockdriver's
@@ -2765,6 +2810,10 @@ func chainSyncURLsFromEnv() []string {
 		out = append(out, u)
 	}
 	return out
+}
+
+func shouldDeferLocalGenesis(networkedCatchupMode bool, bootstrapPeers, syncURLs []string) bool {
+	return networkedCatchupMode && (len(bootstrapPeers) > 0 || len(syncURLs) > 0)
 }
 
 type httpChainBlocksResponse struct {
