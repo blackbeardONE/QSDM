@@ -16,10 +16,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/blackbeardONE/QSDM/pkg/buildinfo"
 	"github.com/blackbeardONE/QSDM/pkg/tunnel"
 )
-
-var buildVersion = "dev"
 
 func main() {
 	os.Exit(run())
@@ -41,7 +40,7 @@ func run() int {
 	flag.Parse()
 
 	if *version {
-		fmt.Println("qsdm-home-gateway", buildVersion)
+		fmt.Println(gatewayVersion())
 		return 0
 	}
 	if *printKey {
@@ -107,6 +106,10 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+func gatewayVersion() string {
+	return buildinfo.String("qsdm-home-gateway")
 }
 
 func loadGatewayKey(keyFile, keyHex string) ([]byte, error) {
