@@ -628,7 +628,7 @@
           if (status.git_sha) {
             pill.setAttribute("href", "https://github.com/" + GH_USER + "/" + GH_REPO + "/commit/" + encodeURIComponent(status.git_sha));
           }
-          pill.setAttribute("title", "Deployed QSDM Network Core: " + status.version);
+          pill.setAttribute("title", "Running QSDM Network Core: " + status.version);
         }
       })
       .catch(function () { /* offline — keep the static deployed value */ });
