@@ -2,7 +2,7 @@
 
 **Status:** Live public network
 
-**Latest Core candidate:** `v0.4.7-rc.8` (`798d55c`)
+**Latest Core candidate:** `v0.4.7-rc.9` (`ee1d5e2`)
 **Public gateway:** `https://api.qsdm.tech/api/v1`
 
 The latest downloadable candidate and a running validator can differ during a
