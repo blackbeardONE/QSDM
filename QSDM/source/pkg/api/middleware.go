@@ -142,6 +142,7 @@ func AuditLogMiddleware(logger *logging.Logger) func(http.Handler) http.Handler 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
+			highVolumePath := isHighVolumeAuditPath(r.URL.Path)
 
 			// Create response writer wrapper to capture status code
 			rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
@@ -153,28 +154,56 @@ func AuditLogMiddleware(logger *logging.Logger) func(http.Handler) http.Handler 
 				role = claims.Role
 			}
 
-			// Log request
-			logger.Info("API request",
+			requestFields := []interface{}{
 				"method", r.Method,
 				"path", r.URL.Path,
 				"remote_addr", r.RemoteAddr,
 				"user_id", userID,
 				"role", role,
 				"user_agent", r.UserAgent(),
-			)
+			}
+			if highVolumePath {
+				logger.Debug("API request", requestFields...)
+			} else {
+				logger.Info("API request", requestFields...)
+			}
 
 			next.ServeHTTP(rw, r)
 
 			// Log response
 			duration := time.Since(start)
-			logger.Info("API response",
+			responseFields := []interface{}{
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", rw.statusCode,
 				"duration_ms", duration.Milliseconds(),
 				"user_id", userID,
-			)
+			}
+			switch {
+			case highVolumePath && rw.statusCode >= http.StatusInternalServerError:
+				logger.Error("API response", responseFields...)
+			case highVolumePath && rw.statusCode >= http.StatusBadRequest:
+				logger.Warn("API response", responseFields...)
+			case highVolumePath:
+				logger.Debug("API response", responseFields...)
+			default:
+				logger.Info("API response", responseFields...)
+			}
 		})
+	}
+}
+
+// isHighVolumeAuditPath identifies proof-loop endpoints that miners call many
+// times per second. Successful outcomes are already covered by mining metrics,
+// so emitting every request and response at INFO creates unbounded log I/O.
+func isHighVolumeAuditPath(path string) bool {
+	switch path {
+	case "/api/v1/mining/challenge",
+		"/api/v1/mining/work",
+		"/api/v1/mining/submit":
+		return true
+	default:
+		return false
 	}
 }
 

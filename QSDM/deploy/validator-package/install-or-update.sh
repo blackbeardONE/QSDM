@@ -318,6 +318,7 @@ WorkingDirectory=${DATA_DIR}
 Environment="CONFIG_FILE=${CONFIG_TARGET}"
 Environment="QSDM_PRODUCTION_MODE=1"
 Environment="QSDM_REQUIRE_SQLITE_STORAGE=1"
+Environment="QSDM_LOG_STDOUT=false"
 ExecStart=${TARGET_BINARY}
 Restart=always
 RestartSec=10

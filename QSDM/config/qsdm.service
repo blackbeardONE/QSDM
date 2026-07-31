@@ -15,6 +15,7 @@ RestartSec=10
 Environment="CGO_ENABLED=1"
 Environment="LD_LIBRARY_PATH=/opt/qsdm/liboqs_install/lib:/opt/qsdm/liboqs_install/lib64:/usr/local/lib64:/usr/local/lib"
 Environment="CONFIG_FILE=/opt/qsdm/qsdm.toml"
+Environment="QSDM_LOG_STDOUT=false"
 
 # Security settings
 NoNewPrivileges=true
