@@ -1101,140 +1101,6 @@ function updateHealth() {
         });
 }
 
-let topologyCanvas, topologyCtx;
-let topologyData = null;
-
-function initTopologyCanvas() {
-    topologyCanvas = document.getElementById('topology-canvas');
-    if (!topologyCanvas) return;
-    
-    topologyCtx = topologyCanvas.getContext('2d');
-    const container = document.getElementById('topology-container');
-    
-    function resizeCanvas() {
-        topologyCanvas.width = container.clientWidth;
-        topologyCanvas.height = container.clientHeight;
-        if (topologyData) {
-            renderTopology(topologyData);
-        }
-    }
-    
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
-}
-
-function updateTopology() {
-    fetch('/api/topology', dashFetchOpts)
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                document.getElementById('topology-loading').style.display = 'none';
-                document.getElementById('topology-error').style.display = 'block';
-                document.getElementById('topology-error').textContent = data.error;
-                return;
-            }
-            
-            document.getElementById('topology-loading').style.display = 'none';
-            document.getElementById('topology-error').style.display = 'none';
-            
-            document.getElementById('topology-peer-count').textContent = data.peerCount || 0;
-            document.getElementById('topology-connected-count').textContent = data.connectedCount || 0;
-            
-            topologyData = data;
-            renderTopology(data);
-        })
-        .catch(error => {
-            console.error('Error fetching topology:', error);
-            document.getElementById('topology-loading').style.display = 'none';
-            document.getElementById('topology-error').style.display = 'block';
-            document.getElementById('topology-error').textContent = 'Failed to load topology: ' + error.message;
-        });
-}
-
-function renderTopology(data) {
-    if (!topologyCanvas || !topologyCtx || !data.nodes || !data.edges) return;
-    
-    const width = topologyCanvas.width;
-    const height = topologyCanvas.height;
-    
-    // Clear canvas
-    topologyCtx.clearRect(0, 0, width, height);
-    
-    // Find self node
-    const selfNode = data.nodes.find(n => n.type === 'self');
-    if (!selfNode) return;
-    
-    // Position self in center
-    const centerX = width / 2;
-    const centerY = height / 2;
-    const nodePositions = {};
-    nodePositions[selfNode.id] = { x: centerX, y: centerY };
-    
-    // Position peer nodes in a circle around self
-    const peerNodes = data.nodes.filter(n => n.type !== 'self');
-    const radius = Math.min(width, height) * 0.3;
-    const angleStep = (2 * Math.PI) / Math.max(peerNodes.length, 1);
-    
-    peerNodes.forEach((node, index) => {
-        const angle = index * angleStep;
-        nodePositions[node.id] = {
-            x: centerX + radius * Math.cos(angle),
-            y: centerY + radius * Math.sin(angle)
-        };
-    });
-    
-    // Draw edges
-    data.edges.forEach(edge => {
-        const from = nodePositions[edge.from];
-        const to = nodePositions[edge.to];
-        if (!from || !to) return;
-        
-        topologyCtx.strokeStyle = edge.status === 'connected' ? '#7ed321' : '#f5a623';
-        topologyCtx.lineWidth = 2;
-        topologyCtx.globalAlpha = 0.6;
-        topologyCtx.beginPath();
-        topologyCtx.moveTo(from.x, from.y);
-        topologyCtx.lineTo(to.x, to.y);
-        topologyCtx.stroke();
-        topologyCtx.globalAlpha = 1.0;
-    });
-    
-    // Draw nodes
-    data.nodes.forEach(node => {
-        const pos = nodePositions[node.id];
-        if (!pos) return;
-        
-        let color, borderColor;
-        if (node.type === 'self') {
-            color = '#4a9eff';
-            borderColor = '#6bb3ff';
-        } else if (node.type === 'peer') {
-            color = '#7ed321';
-            borderColor = '#9ee342';
-        } else {
-            color = '#f5a623';
-            borderColor = '#ffb84d';
-        }
-        
-        // Draw node circle
-        topologyCtx.fillStyle = color;
-        topologyCtx.strokeStyle = borderColor;
-        topologyCtx.lineWidth = 2;
-        topologyCtx.beginPath();
-        topologyCtx.arc(pos.x, pos.y, 20, 0, 2 * Math.PI);
-        topologyCtx.fill();
-        topologyCtx.stroke();
-        
-        // Draw node label
-        topologyCtx.fillStyle = 'white';
-        topologyCtx.font = '10px sans-serif';
-        topologyCtx.textAlign = 'center';
-        topologyCtx.textBaseline = 'middle';
-        const label = node.label || node.id.substring(0, 4);
-        topologyCtx.fillText(label, pos.x, pos.y);
-    });
-}
-
 // ---------- Contracts ----------
 
 function updateContracts() {
@@ -1478,7 +1344,7 @@ function connectWebSocket() {
             const msg = JSON.parse(evt.data);
             if (msg.type === 'metrics') applyMetrics(msg.data);
             else if (msg.type === 'health') applyHealth(msg.data);
-            else if (msg.type === 'topology') { topologyData = msg.data; renderTopology(msg.data); applyTopologyCounts(msg.data); }
+            else if (msg.type === 'topology') applyTopology(msg.data);
         } catch (e) {}
     };
 
@@ -1527,11 +1393,12 @@ function applyHealth(data) {
     }
 }
 
-function applyTopologyCounts(data) {
-    const pc = document.getElementById('topology-peer-count');
-    const cc = document.getElementById('topology-connected-count');
-    if (pc) pc.textContent = data.peerCount || 0;
-    if (cc) cc.textContent = data.connectedCount || 0;
+// The 3D panel is the only topology view now, and viz3d.js is a module we do
+// not import from here. It publishes this hook once its renderer is live; until
+// then (or on a WebGL failure) there is nothing to feed and the push is dropped.
+function applyTopology(data) {
+    const push = window.__QSDM_VIZ_PUSH_TOPOLOGY__;
+    if (typeof push === 'function') push(data);
 }
 
 function formatEta(seconds) {
@@ -1729,7 +1596,6 @@ function startPolling() {
         }
         updateContracts();
         updateBridge();
-        updateTopology();
         updateNodeStatus();
         updateTrustPanel();
         updateAuditChecklist();
@@ -1749,8 +1615,6 @@ function startUpdates() {
     updateContracts();
     updateBridge();
     loadContractTemplates();
-    initTopologyCanvas();
-    updateTopology();
     updateNodeStatus();
     updateTrustPanel();
     updateAuditChecklist();
@@ -1762,12 +1626,7 @@ function startUpdates() {
     startPolling();
 }
 
-// Refresh topology button + contract deploy
 document.addEventListener('DOMContentLoaded', () => {
-    const refreshBtn = document.getElementById('refresh-topology');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', updateTopology);
-    }
     setupContractDeploy();
 });
 

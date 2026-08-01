@@ -150,61 +150,6 @@
             font-size: 12px;
         }
 
-        #topology-container {
-            position: relative;
-        }
-
-        .peer-node {
-            position: absolute;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 10px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: transform 0.2s;
-            border: 2px solid;
-        }
-
-        .peer-node:hover {
-            transform: scale(1.2);
-            z-index: 10;
-        }
-
-        .peer-node.self {
-            background: #4a9eff;
-            border-color: #6bb3ff;
-            color: white;
-        }
-
-        .peer-node.connected {
-            background: #7ed321;
-            border-color: #9ee342;
-            color: white;
-        }
-
-        .peer-node.disconnected {
-            background: #f5a623;
-            border-color: #ffb84d;
-            color: white;
-        }
-
-        .connection-line {
-            stroke-width: 2;
-            opacity: 0.6;
-        }
-
-        .connection-line.connected {
-            stroke: #7ed321;
-        }
-
-        .connection-line.disconnected {
-            stroke: #f5a623;
-        }
-
         .ngc-panel {
             font-size: 12px;
             color: #a0a0a0;
@@ -843,45 +788,6 @@
                     </div>
                 </div>
             </div>
-
-        <!-- Network Topology -->
-        <div class="card" style="grid-column: 1 / -1; margin-top: 20px;">
-            <h2>🌐 Network Topology</h2>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
-                <div>
-                    <span class="metric-label">Total Peers: </span>
-                    <span class="metric-value" id="topology-peer-count">0</span>
-                    <span style="margin-left: 20px;" class="metric-label">Connected: </span>
-                    <span class="metric-value" id="topology-connected-count">0</span>
-                </div>
-                <button id="refresh-topology" style="padding: 8px 16px; background: #4a9eff; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                    Refresh
-                </button>
-            </div>
-            <div id="topology-container" style="min-height: 400px; background: #0f1419; border: 1px solid #2a3441; border-radius: 4px; position: relative; overflow: hidden;">
-                <canvas id="topology-canvas" style="width: 100%; height: 100%;"></canvas>
-                <div id="topology-loading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #666;">
-                    Loading topology...
-                </div>
-                <div id="topology-error" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #d0021b; display: none;">
-                    Failed to load topology
-                </div>
-            </div>
-            <div id="topology-legend" style="margin-top: 15px; display: flex; gap: 20px; flex-wrap: wrap;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <div style="width: 12px; height: 12px; background: #4a9eff; border-radius: 50%;"></div>
-                    <span style="color: #a0a0a0; font-size: 12px;">Self</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <div style="width: 12px; height: 12px; background: #7ed321; border-radius: 50%;"></div>
-                    <span style="color: #a0a0a0; font-size: 12px;">Connected Peer</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <div style="width: 12px; height: 12px; background: #f5a623; border-radius: 50%;"></div>
-                    <span style="color: #a0a0a0; font-size: 12px;">Disconnected Peer</span>
-                </div>
-            </div>
-        </div>
 
         <!-- WebGL: live P2P graph + Phase-3 reference mesh (three.js vendored under /static/vendor) -->
         <div class="card" id="viz3d-card" style="grid-column: 1 / -1; margin-top: 20px;">

@@ -1107,22 +1107,28 @@ function setSummary(id, text) {
     if (el) el.textContent = text;
 }
 
+/** Render a /api/topology payload, whichever way it arrived. */
+function applyP2PData(data) {
+    if (!p2pViz) return;
+    if (data.error) throw new Error(data.error);
+    stats.p2p = updateP2P(p2pViz, data);
+    const empty = stats.p2p.peers === 0;
+    p2pViz.hint.textContent = empty
+        ? 'No peers connected yet — the local node is shown alone.'
+        : 'Drag to orbit · scroll to zoom · hover a node for detail';
+    setSummary('p2p-3d-summary', empty
+        ? 'No peers connected'
+        : `${stats.p2p.peers} peers · ${stats.p2p.connected} connected links`);
+    showError('p2p-3d-error', '');
+}
+
 async function refreshP2P() {
     if (!p2pViz) return;
     try {
         const res = await fetch('/api/topology', fetchOpts);
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || res.statusText);
-        if (data.error) throw new Error(data.error);
-        stats.p2p = updateP2P(p2pViz, data);
-        const empty = stats.p2p.peers === 0;
-        p2pViz.hint.textContent = empty
-            ? 'No peers connected yet — the local node is shown alone.'
-            : 'Drag to orbit · scroll to zoom · hover a node for detail';
-        setSummary('p2p-3d-summary', empty
-            ? 'No peers connected'
-            : `${stats.p2p.peers} peers · ${stats.p2p.connected} connected links`);
-        showError('p2p-3d-error', '');
+        applyP2PData(data);
     } catch (e) {
         console.warn('3D topology:', e);
         showError('p2p-3d-error', `3D P2P: ${e.message}`);
@@ -1256,9 +1262,26 @@ function init() {
         }, { rootMargin: '120px' }).observe(card);
     }
 
+    // dashboard.js owns the /ws connection and pushes topology frames here, so
+    // the panel tracks peer churn live instead of waiting out the poll below.
+    // Offscreen pushes are dropped rather than queued: rebuilding the scene
+    // graph for a panel nobody is looking at is the cost the visibility gate
+    // exists to avoid, and the poll repaints within 4s of it coming back.
+    window.__QSDM_VIZ_PUSH_TOPOLOGY__ = (data) => {
+        if (!p2pViz || !panelVisible || document.hidden) return;
+        try {
+            applyP2PData(data);
+        } catch (e) {
+            console.warn('3D topology push:', e);
+            showError('p2p-3d-error', `3D P2P: ${e.message}`);
+        }
+    };
+
     animate();
     refreshP2P();
     refreshMesh();
+    // Fallback and catch-up path: covers a dropped /ws connection, and the
+    // mesh panel, which has no push feed.
     setInterval(() => {
         if (!panelVisible || document.hidden) return;
         refreshP2P();
