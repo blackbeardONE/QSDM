@@ -244,7 +244,11 @@ func (ct *CallTracer) CompactPersistedTraces() error {
 		_ = os.Remove(tmpPath)
 		return err
 	}
-	_ = os.Remove(path)
+	// Swap atomically. tmpPath is in the same directory, so Rename replaces an
+	// existing destination on both POSIX (rename(2)) and Windows (MoveFileEx
+	// with MOVEFILE_REPLACE_EXISTING). Do not os.Remove(path) first: that opens
+	// a window where a concurrent reader — a log shipper, an operator tailing
+	// the file, or the compaction test — observes the trace file as missing.
 	return os.Rename(tmpPath, path)
 }
 
