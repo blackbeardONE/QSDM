@@ -51,9 +51,28 @@ function Remove-SignerProcessRecords {
     Remove-Item -LiteralPath $identityFile -Force -ErrorAction SilentlyContinue
 }
 
+function ConvertTo-UtcTimestamp {
+    param([Parameter(Mandatory)][object]$Value)
+
+    if ($Value -is [DateTime]) {
+        return ([DateTime]$Value).ToUniversalTime()
+    }
+    if ($Value -is [DateTimeOffset]) {
+        return ([DateTimeOffset]$Value).UtcDateTime
+    }
+    return [DateTime]::Parse(
+        [string]$Value,
+        [Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::RoundtripKind
+    ).ToUniversalTime()
+}
+
 function Get-ManagedSignerProcess {
     if (-not (Test-Path -LiteralPath $pidFile -PathType Leaf)) {
         return $null
+    }
+    if ((Get-Item -LiteralPath $pidFile -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "Refusing a reparse-point $Role signer PID file."
     }
 
     $existingPid = 0
@@ -92,8 +111,21 @@ function Get-ManagedSignerProcess {
             throw "Refusing a reparse-point $Role signer identity file."
         }
         $identity = Get-Content -LiteralPath $identityFile -Raw | ConvertFrom-Json
-        $recordedStart = [DateTimeOffset]::Parse([string]$identity.process_start_utc).UtcDateTime
-        if ([int]$identity.pid -ne $existingPid -or
+        $recordedStart = ConvertTo-UtcTimestamp -Value $identity.process_start_utc
+        $identityPortMatches = if ($null -ne $identity.PSObject.Properties['port']) {
+            [int]$identity.port -eq $Port
+        } else {
+            try {
+                $legacyHealth = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/healthz" -TimeoutSec 2
+                $legacyHealth.status -eq "ok" -and $legacyHealth.role -eq $Role
+            } catch {
+                $false
+            }
+        }
+        if ([string]$identity.schema -ne "qsdm.treasury-signer-process.v1" -or
+            [string]$identity.role -ne $Role -or
+            -not $identityPortMatches -or
+            [int]$identity.pid -ne $existingPid -or
             [IO.Path]::GetFullPath([string]$identity.binary) -ne $expectedBinary -or
             [Math]::Abs(($recordedStart - $actualStart).TotalSeconds) -gt 2 -or
             ([string]$identity.sha256).ToLowerInvariant() -ne $actualHash) {
@@ -114,6 +146,7 @@ function Write-SignerProcessIdentity {
     $identity = [ordered]@{
         schema = "qsdm.treasury-signer-process.v1"
         role = $Role
+        port = $Port
         pid = $Process.Id
         process_start_utc = $Process.StartTime.ToUniversalTime().ToString("o")
         binary = [IO.Path]::GetFullPath($binary)
@@ -162,8 +195,35 @@ try {
     foreach ($key in $keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key], "Process") }
 }
 
-Start-Sleep -Milliseconds 500
-$health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/healthz" -TimeoutSec 5
+$health = $null
+$healthDeadline = [DateTime]::UtcNow.AddSeconds(10)
+try {
+    while ([DateTime]::UtcNow -lt $healthDeadline) {
+        $process.Refresh()
+        if ($process.HasExited) {
+            throw "The $Role signer exited before becoming healthy (exit code $($process.ExitCode))."
+        }
+        try {
+            $candidateHealth = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/healthz" -TimeoutSec 2
+            if ($candidateHealth.status -eq "ok" -and $candidateHealth.role -eq $Role) {
+                $health = $candidateHealth
+                break
+            }
+        } catch {
+            # The signer can need a short moment to bind its loopback listener.
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    if ($null -eq $health) {
+        throw "The $Role signer did not become healthy on loopback port $Port within 10 seconds."
+    }
+} catch {
+    if (Get-Process -Id $process.Id -ErrorAction SilentlyContinue) {
+        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    }
+    Remove-SignerProcessRecords
+    throw
+}
 Write-Host "QSDM $Role treasury signer is running"
 Write-Host "  PID:       $($process.Id)"
 Write-Host "  URL:       http://127.0.0.1:$Port"
