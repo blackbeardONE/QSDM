@@ -163,6 +163,7 @@ qsdm.tech {
 	# Public wallet short path. Without this, /wallet can fall through to the
 	# apex landing if /var/www/qsdm/wallet/index.html is not present.
 	redir /wallet /wallet.html 302
+	redir /wallet/ /wallet.html 302
 
 	# Public API pass-through (login/register/wallet/health) -> qsdm :8443
 	@api path /api/v1/* /api/metrics
