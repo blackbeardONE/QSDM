@@ -66,7 +66,7 @@ $monitorParameters = @{
 
 Write-InstallLog "install requested task=$TaskName root=$QsdmRoot interval_minutes=$IntervalMinutes duration_hours=$DurationHours"
 & $MonitorScript @monitorParameters
-if ($LASTEXITCODE -ne 0) {
+if (-not $?) {
     throw "The initial release soak sample failed. Review $StatePath before scheduling more samples."
 }
 
