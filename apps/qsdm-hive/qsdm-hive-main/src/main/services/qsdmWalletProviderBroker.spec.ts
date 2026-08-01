@@ -182,4 +182,37 @@ describe('qsdmWalletProviderBroker', () => {
     expect(dialog.showMessageBox).not.toHaveBeenCalled();
     expect(mockSubmitQsdmWalletTransferIntent).not.toHaveBeenCalled();
   });
+
+  it('accepts CELL precision up to eight decimals and rejects finer values', async () => {
+    await handleWalletProviderRequest(request('qsdm_requestAccounts'), options);
+    (dialog.showMessageBox as jest.Mock).mockClear();
+
+    await expect(
+      handleWalletProviderRequest(
+        request('qsdm_sendTransaction', {
+          recipient: sender,
+          amount: 0.000000001,
+        }),
+        options
+      )
+    ).rejects.toThrow('no more than 8 decimal places');
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+
+    await expect(
+      handleWalletProviderRequest(
+        request('qsdm_sendTransaction', {
+          recipient: sender,
+          amount: 0.00000001,
+        }),
+        options
+      )
+    ).resolves.toEqual({
+      transaction_id: 'transaction-id',
+      status: 'accepted',
+    });
+    expect(mockSubmitQsdmWalletTransferIntent).toHaveBeenCalledWith({
+      recipient: sender,
+      amount: 0.00000001,
+    });
+  });
 });

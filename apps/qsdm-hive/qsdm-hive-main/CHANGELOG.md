@@ -1,3 +1,11 @@
+## [1.4.7]
+
+- Web wallet: qsdm.tech can connect to the active Hive wallet, display its public address and balance, and request an explicitly approved CELL transfer without receiving wallet secrets.
+- Browser support: The QSDM Wallet extension now ships reproducible universal, Chromium, and Firefox packages with stable browser identities.
+- Native bridge: Hive registers separate least-privilege native-messaging manifests for Chrome, Edge, Brave, Chromium, and Firefox on Windows and Linux.
+- Restart reliability: Browser requests reload the authenticated local broker state once when Hive restarts, avoiding stale-port failures while preserving bounded timeouts.
+- Transaction precision: Browser transfers enforce QSDM's eight-decimal CELL precision before Hive presents the approval prompt.
+
 ## [1.4.6]
 
 - Wallet recovery: New QSDM wallets can be restored from 24 checksum-protected recovery words while retaining their ML-DSA-87 address.

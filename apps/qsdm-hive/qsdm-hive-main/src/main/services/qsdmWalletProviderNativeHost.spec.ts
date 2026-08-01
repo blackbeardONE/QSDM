@@ -5,6 +5,7 @@ import path from 'path';
 import {
   deriveChromiumExtensionId,
   QSDM_WALLET_EXTENSION_ID,
+  QSDM_WALLET_FIREFOX_EXTENSION_ID,
   QSDM_WALLET_EXTENSION_PUBLIC_KEY,
   registerQsdmWalletProviderNativeHost,
 } from './qsdmWalletProviderNativeHost';
@@ -26,7 +27,12 @@ const createFixture = () => {
   fs.mkdirSync(path.dirname(nativeHostPath), { recursive: true });
   fs.writeFileSync(
     extensionManifestPath,
-    JSON.stringify({ key: QSDM_WALLET_EXTENSION_PUBLIC_KEY })
+    JSON.stringify({
+      key: QSDM_WALLET_EXTENSION_PUBLIC_KEY,
+      browser_specific_settings: {
+        gecko: { id: QSDM_WALLET_FIREFOX_EXTENSION_ID },
+      },
+    })
   );
   fs.writeFileSync(nativeHostPath, 'host');
   return { root, resourcesPath, extensionManifestPath, nativeHostPath };
@@ -39,7 +45,7 @@ describe('qsdmWalletProviderNativeHost', () => {
     );
   });
 
-  it('registers the current-user Windows native host for Chrome and Edge', () => {
+  it('registers the current-user Windows native host for Chromium and Firefox', () => {
     const fixture = createFixture();
     const registrations: Array<[string, string]> = [];
     const result = registerQsdmWalletProviderNativeHost({
@@ -52,8 +58,8 @@ describe('qsdmWalletProviderNativeHost', () => {
     });
 
     expect(result.installed).toBe(true);
-    expect(result.browsers).toEqual(['Chrome', 'Edge']);
-    expect(registrations).toHaveLength(2);
+    expect(result.browsers).toEqual(['Chrome', 'Edge', 'Firefox']);
+    expect(registrations).toHaveLength(3);
     const manifest = JSON.parse(
       fs.readFileSync(result.manifestPath as string, 'utf-8')
     ) as { path: string; allowed_origins: string[] };
@@ -61,6 +67,14 @@ describe('qsdmWalletProviderNativeHost', () => {
     expect(manifest.allowed_origins).toEqual([
       `chrome-extension://${QSDM_WALLET_EXTENSION_ID}/`,
     ]);
+    const firefoxManifest = JSON.parse(
+      fs.readFileSync(result.firefoxManifestPath as string, 'utf-8')
+    ) as { path: string; allowed_extensions: string[] };
+    expect(firefoxManifest.path).toBe(path.resolve(fixture.nativeHostPath));
+    expect(firefoxManifest.allowed_extensions).toEqual([
+      QSDM_WALLET_FIREFOX_EXTENSION_ID,
+    ]);
+    expect(registrations[2][1]).toBe(result.firefoxManifestPath);
   });
 
   it('writes private Linux native-host manifests for supported browsers', () => {
@@ -75,13 +89,28 @@ describe('qsdmWalletProviderNativeHost', () => {
     });
 
     expect(result.installed).toBe(true);
-    expect(result.browsers).toEqual(['Chrome', 'Chromium', 'Edge', 'Brave']);
+    expect(result.browsers).toEqual([
+      'Chrome',
+      'Chromium',
+      'Edge',
+      'Brave',
+      'Firefox',
+    ]);
     const chromeManifest = path.join(
       homeDirectory,
       '.config/google-chrome/NativeMessagingHosts',
       'tech.qsdm.hive_wallet.json'
     );
     expect(fs.existsSync(chromeManifest)).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(
+          homeDirectory,
+          '.mozilla/native-messaging-hosts',
+          'tech.qsdm.hive_wallet.json'
+        )
+      )
+    ).toBe(true);
     const privatePermissions = fs.statSync(chromeManifest).mode % 64 === 0;
     expect(process.platform === 'win32' || privatePermissions).toBe(true);
   });

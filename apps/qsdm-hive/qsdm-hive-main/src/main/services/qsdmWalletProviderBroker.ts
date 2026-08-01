@@ -25,6 +25,7 @@ import type {
 const BROKER_VERSION = 'qsdm-hive-wallet-provider/v1';
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_MESSAGE_BYTES = 16 * 1024;
+const CELL_DECIMAL_FACTOR = 1e8;
 const INTERNAL_EXTENSION_ORIGIN = 'qsdm-extension://wallet-popup';
 const SAFE_ADDRESS = /^[a-zA-Z0-9]{32,128}$/;
 
@@ -72,9 +73,13 @@ let approvalQueue: Promise<unknown> = Promise.resolve();
 
 const writePrivateJson = (filePath: string, value: unknown) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, {
+  const temporaryPath = `${filePath}.tmp-${process.pid}-${randomBytes(
+    6
+  ).toString('hex')}`;
+  fs.writeFileSync(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
     mode: 0o600,
   });
+  fs.renameSync(temporaryPath, filePath);
   try {
     fs.chmodSync(filePath, 0o600);
   } catch {
@@ -363,9 +368,11 @@ export const handleWalletProviderRequest = async (
     if (
       !Number.isFinite(amount) ||
       amount <= 0 ||
-      !Number.isSafeInteger(amount * 1e9)
+      !Number.isSafeInteger(amount * CELL_DECIMAL_FACTOR)
     ) {
-      throw new Error('amount must be greater than zero');
+      throw new Error(
+        'amount must be greater than zero with no more than 8 decimal places'
+      );
     }
     options.showHive();
     await enqueueApproval(() =>

@@ -14,8 +14,9 @@ it. Hive removes those temporary files during shutdown.
 
 ## Browser boundary
 
-- The official manifest pins extension ID
-  `habkkkednignfkoffhpbjahcjbikkahh`; Hive registers only this ID.
+- The official manifest pins Chromium ID
+  `habkkkednignfkoffhpbjahcjbikkahh` and Firefox ID
+  `qsdm-wallet@qsdm.tech`; Hive registers only these identities.
 - Packaged Hive releases refresh current-user native-host registration on each
   start. Registration does not require administrator access.
 - The extension requests only `nativeMessaging` and `activeTab` permissions.
@@ -33,10 +34,12 @@ messaging facility. The host accepts length-prefixed JSON on standard input and
 forwards it only to a random loopback port owned by Hive. Hive authenticates
 the host with a fresh 256-bit token stored in a private per-user file and
 rotated on every Hive start. The broker does not bind to a LAN or public
-interface.
+interface. Broker state is replaced atomically, and the native host reloads it
+once when a request lands during a Hive restart.
 
-Native-host manifests allow only the pinned official extension ID. A future
-Chrome Web Store or Edge Add-ons package must retain this identity.
+Browser-specific native-host manifests allow only the pinned official
+extension identity for that browser family. Future browser-store packages must
+retain these identities.
 
 ## Explicit limitations
 

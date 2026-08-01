@@ -10,7 +10,7 @@ stage_dir="$(cd "$1" && pwd)"
 hive_version="$2"
 webroot="${3:-/var/www/qsdm}"
 downloads="$webroot/downloads"
-wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.2.0}"
+wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.3.0}"
 
 if [[ ! "$hive_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "invalid Hive version: $hive_version" >&2
@@ -22,6 +22,8 @@ linux_appimage="qsdm-hive-${hive_version}-linux-x86_64.AppImage"
 linux_archive="qsdm-hive-${hive_version}-linux-x64.tar.gz"
 linux_checksums="qsdm-hive-${hive_version}-linux-SHA256SUMS.txt"
 wallet_extension="qsdm-hive-wallet-extension-${wallet_extension_version}.zip"
+wallet_extension_chromium="qsdm-hive-wallet-extension-${wallet_extension_version}-chromium.zip"
+wallet_extension_firefox="qsdm-hive-wallet-extension-${wallet_extension_version}-firefox.zip"
 wallet_extension_checksums="qsdm-hive-wallet-extension-${wallet_extension_version}-SHA256SUMS.txt"
 
 immutable_downloads=(
@@ -36,6 +38,8 @@ immutable_downloads=(
   "qsdm-hive-${hive_version}-linux-release-provenance.json"
   "qsdm-hive-${hive_version}-linux-payload-evidence.json"
   "$wallet_extension"
+  "$wallet_extension_chromium"
+  "$wallet_extension_firefox"
   "$wallet_extension_checksums"
 )
 pointer_downloads=(
@@ -75,6 +79,8 @@ for platform in windows linux; do
   grep -q '"version": "'"${hive_version}"'"' <<<"$manifest_json"
   if [[ "$platform" == "windows" ]]; then
     grep -q '"name": "'"${wallet_extension}"'"' <<<"$manifest_json"
+    grep -q '"name": "'"${wallet_extension_chromium}"'"' <<<"$manifest_json"
+    grep -q '"name": "'"${wallet_extension_firefox}"'"' <<<"$manifest_json"
     grep -q '"name": "'"${wallet_extension_checksums}"'"' <<<"$manifest_json"
   fi
 done
@@ -112,7 +118,8 @@ for file in "${immutable_downloads[@]}"; do
 done
 
 for file in "$windows_installer" "$linux_appimage" "$linux_archive" \
-  "$wallet_extension" "$wallet_extension_checksums"; do
+  "$wallet_extension" "$wallet_extension_chromium" \
+  "$wallet_extension_firefox" "$wallet_extension_checksums"; do
   curl --fail --silent --show-error --head --max-time 30 \
     "https://qsdm.tech/downloads/$file" >/dev/null
 done

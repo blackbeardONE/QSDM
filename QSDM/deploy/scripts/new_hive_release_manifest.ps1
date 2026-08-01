@@ -121,6 +121,8 @@ if ($Platform -eq 'windows') {
         @{ Name = "qsdm-hive-$Version-windows-metadata-evidence.json"; Role = 'evidence'; Required = $false },
         @{ Name = "qsdm-hive-$Version-windows-nsis-evidence.json"; Role = 'evidence'; Required = $false },
         @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion.zip"; Role = 'portable-archive'; Required = $true },
+        @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion-chromium.zip"; Role = 'portable-archive'; Required = $true },
+        @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion-firefox.zip"; Role = 'portable-archive'; Required = $true },
         @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion-SHA256SUMS.txt"; Role = 'checksums'; Required = $true }
     )
 } else {

@@ -33,7 +33,6 @@ jobs:
           REQUEST_FILE: QSDM/deploy/releases/hive-release-request.json
         run: |
           set -euo pipefail
-
           test "$(jq -r '.schema' "$REQUEST_FILE")" = "qsdm.hive.release-request.v1"
           version="$(jq -r '.version' "$REQUEST_FILE")"
           tag="$(jq -r '.tag' "$REQUEST_FILE")"
@@ -102,6 +101,7 @@ jobs:
           VERSION: ${{ steps.request.outputs.version }}
         run: |
           set -euo pipefail
+          EXTENSION_VERSION="$(node -p "require('./apps/qsdm-hive-wallet-extension/manifest.json').version")"
 
           windows_installer="release-assets/windows/qsdm-hive-${VERSION}-win-x64.exe"
           linux_appimage="release-assets/linux/qsdm-hive-${VERSION}-linux-x86_64.AppImage"
@@ -114,8 +114,10 @@ jobs:
           test -f "$linux_appimage"
           test -f "$linux_archive"
           test -f release-assets/linux/latest-linux.yml
-          test -f release-assets/extension/qsdm-hive-wallet-extension-0.2.0.zip
-          test -f release-assets/extension/qsdm-hive-wallet-extension-0.2.0-SHA256SUMS.txt
+          test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}.zip"
+          test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}-chromium.zip"
+          test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}-firefox.zip"
+          test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}-SHA256SUMS.txt"
 
           grep -qx "version: ${VERSION}" release-assets/windows/latest.yml
           grep -qx "version: ${VERSION}" release-assets/linux/latest-linux.yml
@@ -125,7 +127,7 @@ jobs:
           )
           (
             cd release-assets/extension
-            sha256sum -c qsdm-hive-wallet-extension-0.2.0-SHA256SUMS.txt
+            sha256sum -c "qsdm-hive-wallet-extension-${EXTENSION_VERSION}-SHA256SUMS.txt"
           )
           (
             cd release-assets/linux

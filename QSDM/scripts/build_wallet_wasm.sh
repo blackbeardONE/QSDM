@@ -112,11 +112,12 @@ fi
 # --------------------------------------------------------------------
 # Refresh Subresource Integrity (SRI) hashes.
 #
-# Three sha384 hashes have to stay in sync with the bytes that just
+# Four sha384 hashes have to stay in sync with the bytes that just
 # landed in $OUT_DIR:
 #
 #   wallet.html  →  integrity="..." for wasm_exec.js
 #   wallet.html  →  integrity="..." for wallet.js
+#   wallet.html  →  integrity="..." for wallet-provider.js
 #   wallet.js    →  integrity: '...' inside fetch('/wallet.wasm')
 #
 # Dependency order matters: editing wallet.js (to embed the new
@@ -142,6 +143,7 @@ update_sri_hashes() {
 
     local html_file="$OUT_DIR/wallet.html"
     local js_file="$OUT_DIR/wallet.js"
+    local provider_file="$OUT_DIR/wallet-provider.js"
     local wasm_file="$OUT_WASM"
     local exec_file="$OUT_EXEC"
 
@@ -152,7 +154,7 @@ update_sri_hashes() {
         printf 'sha384-%s' "$(openssl dgst -sha384 -binary "$1" | openssl base64 -A)"
     }
 
-    local exec_sri wasm_sri js_sri
+    local exec_sri wasm_sri js_sri provider_sri
     exec_sri="$(sha384_b64 "$exec_file")"
     wasm_sri="$(sha384_b64 "$wasm_file")"
 
@@ -167,6 +169,7 @@ update_sri_hashes() {
     # 2) wallet.js byte image has now changed; recompute its hash for
     #    the wallet.html substitution that follows.
     js_sri="$(sha384_b64 "$js_file")"
+    provider_sri="$(sha384_b64 "$provider_file")"
 
     # 3) wallet.html: refresh both <script integrity="…"> attributes.
     #    Each substitution is anchored on the script's src= attribute
@@ -174,6 +177,7 @@ update_sri_hashes() {
     sed -i.bak -E \
         -e "s#(src=\"/wasm_exec\\.js\" integrity=\")sha384-[A-Za-z0-9+/=]+(\")#\\1$exec_sri\\2#" \
         -e "s#(src=\"/wallet\\.js\" integrity=\")sha384-[A-Za-z0-9+/=]+(\")#\\1$js_sri\\2#" \
+        -e "s#(src=\"/wallet-provider\\.js\" integrity=\")sha384-[A-Za-z0-9+/=]+(\")#\\1$provider_sri\\2#" \
         "$html_file"
     rm -f "$html_file.bak"
 
@@ -182,6 +186,7 @@ update_sri_hashes() {
     # place; we'd rather fail the build than ship that.
     if grep -q 'WALLETJS_HASH_PLACEHOLDER' "$html_file" \
        || ! grep -q "$js_sri"   "$html_file" \
+       || ! grep -q "$provider_sri" "$html_file" \
        || ! grep -q "$exec_sri" "$html_file" \
        || ! grep -q "$wasm_sri" "$js_file"; then
         echo "ERROR: SRI refresh did not produce expected hashes" >&2
@@ -189,6 +194,7 @@ update_sri_hashes() {
         echo "       js_file=$js_file" >&2
         echo "       expected wasm sri=$wasm_sri" >&2
         echo "       expected js   sri=$js_sri" >&2
+        echo "       expected provider sri=$provider_sri" >&2
         echo "       expected exec sri=$exec_sri" >&2
         exit 1
     fi
@@ -196,6 +202,7 @@ update_sri_hashes() {
     echo "==> SRI hashes refreshed:"
     echo "    wallet.wasm  → $wasm_sri"
     echo "    wallet.js    → $js_sri"
+    echo "    wallet-provider.js → $provider_sri"
     echo "    wasm_exec.js → $exec_sri"
 }
 

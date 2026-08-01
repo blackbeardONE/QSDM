@@ -1,6 +1,6 @@
 # Feature Summary — QSDM
 
-**Last Updated:** July 2026 · Latest Core candidate **v0.4.7-rc.9** · Hive **1.4.6** · Edge Control **1.3.7**
+**Last Updated:** August 2026 · Latest Core candidate **v0.4.7-rc.9** · Hive **1.4.7** · Edge Control **1.3.7**
 
 QSDM (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger whose native coin is **Cell (CELL)**. Validators run PoE + BFT consensus; miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
 
@@ -70,7 +70,7 @@ it is not the CELL network gateway or another Hive client.
 
 - Windows and Linux client for CELL wallets, signed tasks, mining, edge pools, and integrations.
 - Bundles native signer, console miner, CUDA solver, Edge Control/Agent, and the Mother Hive workspace.
-- One QSDM wallet serves Hive and connected websites. The Chromium extension automatically reaches the active Hive wallet while exact-origin permissions and per-action approvals keep the keystore and passphrase out of the browser.
+- One QSDM wallet serves Hive and connected websites. The Chrome, Edge, and Firefox extension packages reach the active Hive wallet while exact-origin permissions and per-action approvals keep the keystore and passphrase out of the browser.
 - Application Compute Gateway on `127.0.0.1:7742` for bounded local jobs.
 - Sky Fang MMORPG wallet-link task (earn-only CELL; no pay-to-win power).
 

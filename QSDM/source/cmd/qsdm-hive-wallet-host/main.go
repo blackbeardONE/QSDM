@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -20,13 +21,17 @@ const (
 	providerVersion = "qsdm-hive-wallet-provider/v1"
 	maxInputBytes   = 1024 * 1024
 	maxOutputBytes  = 1024 * 1024
+	brokerTimeout   = 115 * time.Second
+	brokerRetryWait = 250 * time.Millisecond
 )
 
 type brokerState struct {
-	Version string `json:"version"`
-	Host    string `json:"host"`
-	Port    int    `json:"port"`
-	Token   string `json:"token"`
+	Version   string `json:"version"`
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	Token     string `json:"token"`
+	PID       int    `json:"pid"`
+	StartedAt string `json:"startedAt"`
 }
 
 type nativeError struct {
@@ -100,7 +105,8 @@ func loadBrokerState() (brokerState, error) {
 	if err := json.Unmarshal(raw, &state); err != nil {
 		return brokerState{}, fmt.Errorf("invalid QSDM Hive broker state: %w", err)
 	}
-	if state.Version != providerVersion || state.Host != "127.0.0.1" || state.Port < 1 || state.Port > 65535 || len(state.Token) != 64 || strings.Trim(state.Token, "0123456789abcdef") != "" {
+	startedAt, startedAtErr := time.Parse(time.RFC3339, state.StartedAt)
+	if state.Version != providerVersion || state.Host != "127.0.0.1" || state.Port < 1 || state.Port > 65535 || len(state.Token) != 64 || strings.Trim(state.Token, "0123456789abcdef") != "" || state.PID < 1 || startedAtErr != nil || startedAt.After(time.Now().Add(5*time.Minute)) {
 		return brokerState{}, errors.New("QSDM Hive broker state failed validation")
 	}
 	return state, nil
@@ -140,11 +146,7 @@ func errorPayload(err error) []byte {
 	return payload
 }
 
-func forwardToHive(payload []byte) ([]byte, error) {
-	state, err := loadBrokerState()
-	if err != nil {
-		return nil, err
-	}
+func forwardWithState(payload []byte, state brokerState) ([]byte, error) {
 	endpoint := fmt.Sprintf("http://127.0.0.1:%d/v1/request", state.Port)
 	parsed, err := url.Parse(endpoint)
 	if err != nil || parsed.Hostname() != "127.0.0.1" {
@@ -157,10 +159,10 @@ func forwardToHive(payload []byte) ([]byte, error) {
 	}
 	request.Header.Set("Authorization", "Bearer "+state.Token)
 	request.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 2 * time.Minute}
+	client := &http.Client{Timeout: brokerTimeout}
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("QSDM Hive wallet broker is unavailable: %w", err)
+		return nil, err
 	}
 	defer response.Body.Close()
 	result, err := io.ReadAll(io.LimitReader(response.Body, maxOutputBytes+1))
@@ -172,6 +174,35 @@ func forwardToHive(payload []byte) ([]byte, error) {
 	}
 	if !json.Valid(result) {
 		return nil, errors.New("QSDM Hive returned an invalid response")
+	}
+	return result, nil
+}
+
+func forwardToHive(payload []byte) ([]byte, error) {
+	state, err := loadBrokerState()
+	if err != nil {
+		return nil, err
+	}
+	result, err := forwardWithState(payload, state)
+	if err == nil {
+		return result, nil
+	}
+
+	var networkError net.Error
+	if errors.As(err, &networkError) && networkError.Timeout() {
+		return nil, errors.New("QSDM Hive did not answer the wallet request in time")
+	}
+
+	// Hive may replace broker.json while Electron restarts. Reload once so a
+	// request that landed during that short handoff uses the new port and token.
+	time.Sleep(brokerRetryWait)
+	retryState, stateErr := loadBrokerState()
+	if stateErr != nil {
+		return nil, stateErr
+	}
+	result, retryErr := forwardWithState(payload, retryState)
+	if retryErr != nil {
+		return nil, errors.New("QSDM Hive wallet broker is unavailable; restart QSDM Hive and try again")
 	}
 	return result, nil
 }

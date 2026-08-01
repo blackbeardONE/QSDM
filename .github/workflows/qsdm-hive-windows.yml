@@ -129,11 +129,15 @@ jobs:
         shell: pwsh
         run: |
           $output = Join-Path $env:RUNNER_TEMP 'qsdm-hive-wallet-extension'
-          $package = ./apps/qsdm-hive-wallet-extension/package-extension.ps1 `
-            -OutputDirectory $output
-          $checksum = Join-Path $output "qsdm-hive-wallet-extension-$($package.Version)-SHA256SUMS.txt"
-          "$($package.Sha256)  $(Split-Path -Leaf $package.Path)" | `
-            Set-Content -LiteralPath $checksum -Encoding ascii
+          $packages = @(./apps/qsdm-hive-wallet-extension/package-extension.ps1 `
+            -OutputDirectory $output)
+          if ($packages.Count -ne 3) {
+            throw "Expected universal, Chromium, and Firefox extension packages."
+          }
+          $checksum = Join-Path $output "qsdm-hive-wallet-extension-$($packages[0].Version)-SHA256SUMS.txt"
+          @($packages | Sort-Object Path | ForEach-Object {
+            "$($_.Sha256)  $(Split-Path -Leaf $_.Path)"
+          }) | Set-Content -LiteralPath $checksum -Encoding ascii
 
       - name: Upload browser wallet extension
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

@@ -8,11 +8,12 @@ JSON, or passphrase.
 
 1. Create or import a wallet once in **QSDM Hive > Settings > Wallet**.
 2. Keep Hive running in the notification area.
-3. Open a supported website and select **Connect QSDM Wallet**.
+3. Open `https://qsdm.tech/wallet.html` or another supported website and select
+   **Connect Hive wallet**.
 4. Approve the website once in Hive.
 
-The website remains connected to that wallet until the user disconnects it in
-the extension or revokes it under **Hive > Settings > Wallet > Connected
+The website remains connected to that public address until the user disconnects
+it in the extension or revokes it under **Hive > Settings > Wallet > Connected
 Sites**. Signatures and CELL transfers always require a fresh Hive approval.
 
 There is no separate extension account, password, recovery phrase, or wallet
@@ -22,7 +23,8 @@ import. This avoids creating another copy of the user's wallet secrets.
 
 Packaged Hive releases register the native browser bridge automatically for
 the current user. This requires no administrator access. The extension has the
-stable Chromium ID `habkkkednignfkoffhpbjahcjbikkahh`.
+stable Chromium ID `habkkkednignfkoffhpbjahcjbikkahh` and Firefox ID
+`qsdm-wallet@qsdm.tech`.
 
 Until the extension is published in browser stores, install it once:
 
@@ -30,9 +32,14 @@ Until the extension is published in browser stores, install it once:
 2. Choose **Load unpacked** and select the bundled `wallet-extension` folder.
 3. Start or restart QSDM Hive.
 
-Chrome, Edge, Chromium, and Brave are supported. Users upgrading from the old
-random-ID development build should remove it and load the current bundled
-extension once. Daily use is automatic after that migration.
+Chrome, Edge, Chromium, Brave, and Firefox 128 or newer are supported. Users
+upgrading from the old random-ID development build should remove it and load
+the current bundled extension once. Daily use is automatic after that
+migration.
+
+`package-extension.ps1` produces a universal development ZIP plus separate
+Chromium and Firefox store-submission ZIPs. The browser-specific packages omit
+manifest keys that belong only to the other browser family.
 
 The scripts in `native-host` remain available for development diagnostics;
 normal packaged installs do not require running them manually.

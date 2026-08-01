@@ -4,13 +4,20 @@ Public URL: <https://qsdm.tech/wallet/>
 Source:    `QSDM/source/wasm_modules/wallet/cmd/qsdm-wallet/main.go`
             `QSDM/deploy/landing/wallet.html`
             `QSDM/deploy/landing/wallet.js`
+            `QSDM/deploy/landing/wallet-provider.js`
 Sibling:   `qsdmcli wallet new|show|inspect|sign` (CLI · same keystore format)
 
-The web wallet is a static page that generates and operates ML-DSA-87
-(FIPS 204) wallets entirely client-side. The QSDM validators play no
-role in keystore creation or storage; the only network traffic from
-`/wallet/` is the GET of `wallet.html`, `wasm_exec.js`, `wallet.wasm`,
-and `wallet.js`.
+The web wallet has two self-custody paths. Its standalone tools generate and
+operate ML-DSA-87 (FIPS 204) keystores entirely client-side. Its QSDM Hive panel
+uses the browser extension's `window.qsdm` provider to connect the active Hive
+wallet, read its public address and balance, and request a CELL transfer. The
+panel never receives the keystore or passphrase; Hive presents the site origin
+and transaction for approval before signing.
+
+Validators play no role in keystore creation or storage. Network traffic is
+limited to loading the static wallet assets, public Core reads, signed
+transaction submission, and the authenticated local Hive bridge when the user
+chooses that path.
 
 This document is the reference for what the page does, how, and why.
 

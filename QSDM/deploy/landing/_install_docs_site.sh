@@ -155,7 +155,7 @@ curl --max-time 10 -sI https://qsdm.tech/ | grep -i "content-security-policy" | 
 echo
 echo "=== content checks ==="
 curl --fail --max-time 15 -s https://qsdm.tech/ | grep -q 'QSDM VPN'
-curl --fail --max-time 15 -s https://qsdm.tech/download.html | grep -q 'Version 1.4.6'
+curl --fail --max-time 15 -s https://qsdm.tech/download.html | grep -q 'Version 1.4.7'
 curl --fail --max-time 15 -s https://qsdm.tech/network.html | grep -q 'QSDM Network'
 echo "  expected homepage, download, and network markers are present"
 

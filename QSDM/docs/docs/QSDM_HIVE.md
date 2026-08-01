@@ -83,7 +83,7 @@ Wallet Recovery](WALLET_RECOVERY.md).
 
 ## QSDM Wallet browser extension
 
-The QSDM Wallet extension gives Chromium websites a small `window.qsdm`
+The QSDM Wallet extension gives Chrome, Edge, and Firefox websites a small `window.qsdm`
 provider without copying a wallet into the browser. Create or import the wallet
 once in **Settings > Wallet** and keep Hive running in the notification area.
 The extension uses that same active wallet and sees only its public address;
@@ -96,16 +96,16 @@ Hive comes to the foreground and shows the exact site and operation before each
 approval. HTTP is accepted only for local development on `localhost` or
 `127.0.0.1`.
 
-Hive 1.4.0 automatically registers the secure native bridge for the current
-user on Chrome, Edge, Chromium, and Brave without administrator access. The
-official extension has a stable pinned ID. The bridge listens only on loopback,
-authenticates each browser-host request with an ephemeral 256-bit token, and is
-not a public network API.
+Hive 1.4.7 automatically registers separate secure native bridges for the
+current user on Chrome, Edge, Chromium, Brave, and Firefox without administrator
+access. The official Chromium and Firefox packages each have a stable pinned
+identity. The bridge listens only on loopback, authenticates each browser-host
+request with an ephemeral 256-bit token, and is not a public network API.
 
-Download the versioned extension package from the QSDM download page, verify
-its SHA-256 checksum, unzip it, and load that folder once from the browser's
-extension page. Browser-store installation will replace this one-time setup
-after the extension is approved by the relevant stores.
+Download the versioned package for your browser from the QSDM download page,
+verify its SHA-256 checksum, extract it, and load that folder once from the
+browser's extension page. Browser-store installation will replace this one-time
+setup after the extension is approved by the relevant stores.
 
 ## Tasks in Hive
 
