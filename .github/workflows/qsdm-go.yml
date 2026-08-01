@@ -92,6 +92,7 @@ jobs:
             ) | Out-Null
             foreach ($script in @(
               "QSDM/scripts/start_local_validator.ps1",
+              "QSDM/scripts/start_treasury_signer.ps1",
               "QSDM/scripts/watch_local_stack.ps1",
               "QSDM/scripts/update_local_validator.ps1",
               "QSDM/scripts/test_local_validator_updater.ps1",
