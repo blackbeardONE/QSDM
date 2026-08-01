@@ -97,7 +97,8 @@ jobs:
               "QSDM/scripts/update_local_validator.ps1",
               "QSDM/scripts/test_local_validator_updater.ps1",
               "QSDM/scripts/test_local_validator_updater_transaction.ps1",
-              "QSDM/scripts/test_local_validator_updater_transaction_supervised.ps1"
+              "QSDM/scripts/test_local_validator_updater_transaction_supervised.ps1",
+              "QSDM/scripts/test_treasury_signer_process_identity.ps1"
             )) {
               [System.Management.Automation.Language.Parser]::ParseFile(
                 (Resolve-Path $script),
@@ -169,6 +170,10 @@ jobs:
           if (-not $result.success) {
             throw "Local validator updater harness did not pass."
           }
+
+      - name: Test treasury signer stale PID protection
+        shell: pwsh
+        run: .\QSDM\scripts\test_treasury_signer_process_identity.ps1
 
       - name: Test transactional local validator update and rollback
         shell: pwsh

@@ -11,6 +11,7 @@ param(
     [double]$MaxPayout = 0,
     [double]$MinimumReserve = 0,
     [double]$FeeCell = 0.001,
+    [ValidateRange(1, 60)][int]$HealthWaitSeconds = 10,
     [switch]$Restart
 )
 
@@ -196,7 +197,7 @@ try {
 }
 
 $health = $null
-$healthDeadline = [DateTime]::UtcNow.AddSeconds(10)
+$healthDeadline = [DateTime]::UtcNow.AddSeconds($HealthWaitSeconds)
 try {
     while ([DateTime]::UtcNow -lt $healthDeadline) {
         $process.Refresh()
@@ -215,7 +216,7 @@ try {
         Start-Sleep -Milliseconds 250
     }
     if ($null -eq $health) {
-        throw "The $Role signer did not become healthy on loopback port $Port within 10 seconds."
+        throw "The $Role signer did not become healthy on loopback port $Port within $HealthWaitSeconds seconds."
     }
 } catch {
     if (Get-Process -Id $process.Id -ErrorAction SilentlyContinue) {
