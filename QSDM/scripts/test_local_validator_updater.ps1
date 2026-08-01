@@ -214,6 +214,43 @@ public static class $cosignClassName
     }
     Assert-True -Value $tamperRejected -Message "A tampered release archive was not rejected."
 
+    $originalManifest = Get-Content -LiteralPath $Manifest -Raw
+    Move-Item -LiteralPath $Archive -Destination "$Archive.valid"
+    try {
+        $unsafeZip = [IO.Compression.ZipFile]::Open(
+            $Archive,
+            [IO.Compression.ZipArchiveMode]::Create
+        )
+        try {
+            $unsafeEntry = $unsafeZip.CreateEntry("package/payload.txt`:hidden")
+            $unsafeWriter = New-Object IO.StreamWriter($unsafeEntry.Open())
+            try {
+                $unsafeWriter.Write("fixture")
+            } finally {
+                $unsafeWriter.Dispose()
+            }
+        } finally {
+            $unsafeZip.Dispose()
+        }
+        $unsafeHash = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant()
+        [IO.File]::WriteAllText(
+            $Manifest,
+            "$unsafeHash  $([IO.Path]::GetFileName($Archive))`n",
+            [Text.UTF8Encoding]::new($false)
+        )
+        $unsafePathRejected = $false
+        try {
+            Invoke-VerifyOnly | Out-Null
+        } catch {
+            $unsafePathRejected = $_.Exception.Message -like "*unsafe Windows path*"
+        }
+        Assert-True -Value $unsafePathRejected -Message "An alternate-stream ZIP entry was not rejected."
+    } finally {
+        Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue
+        Move-Item -LiteralPath "$Archive.valid" -Destination $Archive
+        [IO.File]::WriteAllText($Manifest, $originalManifest, [Text.UTF8Encoding]::new($false))
+    }
+
     $unsignedActivationRejected = $false
     try {
         & $Updater `
@@ -270,6 +307,7 @@ public static class $cosignClassName
         verified_package = $true
         signature_verifier_orchestration = $true
         tamper_rejected = $true
+        unsafe_archive_path_rejected = $true
         unsigned_activation_rejected = $true
         overlapping_update_rejected = $true
     } | ConvertTo-Json -Compress

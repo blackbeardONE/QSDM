@@ -524,18 +524,38 @@ function Expand-VerifiedZip {
     Add-Type -AssemblyName System.IO.Compression.FileSystem | Out-Null
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
     $destinationPrefix = [IO.Path]::GetFullPath($Destination).TrimEnd('\') + '\'
+    $maxEntries = 256
+    $maxSingleEntryBytes = [long]384 * 1024 * 1024
+    $maxExpandedBytes = [long]512 * 1024 * 1024
+    $totalExpandedBytes = [long]0
     $archive = [IO.Compression.ZipFile]::OpenRead($ArchivePath)
     try {
+        if ($archive.Entries.Count -gt $maxEntries) {
+            throw "Release archive contains $($archive.Entries.Count) entries; maximum is $maxEntries."
+        }
         foreach ($entry in $archive.Entries) {
             $entryName = $entry.FullName.Replace('/', '\')
             if ([string]::IsNullOrWhiteSpace($entryName)) {
                 continue
+            }
+            $pathSegments = @($entryName.TrimEnd('\').Split('\'))
+            if ($entryName.StartsWith('\') -or [IO.Path]::IsPathRooted($entryName) -or
+                $entryName.Contains(':') -or $entryName.IndexOf([char]0) -ge 0 -or
+                @($pathSegments | Where-Object { $_ -in @('', '.', '..') }).Count -gt 0) {
+                throw "Release archive contains an unsafe Windows path: $($entry.FullName)"
             }
             $attributes = [uint32]([int64]$entry.ExternalAttributes -band 0xffffffffL)
             $unixType = (($attributes -shr 16) -band 0xF000)
             if ($unixType -eq 0xA000) {
                 throw "Release archive contains a symbolic link: $($entry.FullName)"
             }
+            if ([long]$entry.Length -gt $maxSingleEntryBytes) {
+                throw "Release archive entry exceeds the $maxSingleEntryBytes byte limit: $($entry.FullName)"
+            }
+            if ([long]$entry.Length -gt ($maxExpandedBytes - $totalExpandedBytes)) {
+                throw "Release archive exceeds the $maxExpandedBytes byte expanded-size limit."
+            }
+            $totalExpandedBytes += [long]$entry.Length
             $destinationPath = [IO.Path]::GetFullPath((Join-Path $Destination $entryName))
             if (-not $destinationPath.StartsWith($destinationPrefix, [StringComparison]::OrdinalIgnoreCase)) {
                 throw "Release archive entry escapes the staging directory: $($entry.FullName)"
