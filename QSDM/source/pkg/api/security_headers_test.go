@@ -44,4 +44,19 @@ func TestSecurityHeaders_Baseline(t *testing.T) {
 			t.Errorf("%s: %q does not contain %q", name, got, want)
 		}
 	}
+
+	// script-src and font-src must stay first-party. The dashboard briefly
+	// allowed https://cdn.jsdelivr.net so an import map could pull three.js
+	// from a CDN; that is now vendored under /static/vendor, and re-adding a
+	// third-party origin would hand an external host script execution inside
+	// an authenticated operator session.
+	csp := w.Header().Get("Content-Security-Policy")
+	for _, directive := range []string{"script-src 'self';", "font-src 'self';"} {
+		if !strings.Contains(csp, directive) {
+			t.Errorf("CSP %q does not contain first-party directive %q", csp, directive)
+		}
+	}
+	if strings.Contains(csp, "cdn.jsdelivr.net") {
+		t.Errorf("CSP re-introduced a third-party CDN origin: %q", csp)
+	}
 }

@@ -49,17 +49,20 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		h.Set("X-XSS-Protection", "1; mode=block")
 
 		// Content-Security-Policy — strict CSP.  No 'unsafe-inline' for
-		// script-src (login and import map are served from /static/*.js|.json).
+		// script-src; every script is served from /static/*.js, including
+		// three.js under /static/vendor (see internal/dashboard/static/
+		// vendor/README.md).  No third-party script or font origin is
+		// allowed, so a CDN compromise cannot reach the operator dashboard.
 		// frame-ancestors 'none' is the modern clickjacking guard.
 		// base-uri 'self' blocks <base> hijack; form-action 'self' stops
 		// authenticated form-post exfiltration; object-src 'none' kills
 		// legacy plugin attack surface.
 		h.Set("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self' https://cdn.jsdelivr.net; "+
+				"script-src 'self'; "+
 				"style-src 'self' 'unsafe-inline'; "+
 				"img-src 'self' data:; "+
-				"font-src 'self' https://cdn.jsdelivr.net; "+
+				"font-src 'self'; "+
 				"connect-src 'self'; "+
 				"frame-ancestors 'none'; "+
 				"base-uri 'self'; "+

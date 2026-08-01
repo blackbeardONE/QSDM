@@ -286,8 +286,87 @@
             margin: 6px 0 10px;
             line-height: 1.4;
         }
+
+        .viz-3d-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .viz-3d-head h3 {
+            color: #a0a0a0;
+            font-size: 14px;
+            margin: 0;
+        }
+
+        .viz-3d-summary {
+            color: #4a9eff;
+            font-size: 12px;
+            font-family: monospace;
+            white-space: nowrap;
+        }
+
+        .viz-3d-hint {
+            position: absolute;
+            left: 10px;
+            bottom: 8px;
+            color: #5d6b7a;
+            font-size: 11px;
+            pointer-events: none;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        .viz-3d-tip {
+            position: absolute;
+            top: 0;
+            left: 0;
+            max-width: 220px;
+            padding: 7px 9px;
+            border: 1px solid #2f435a;
+            border-radius: 4px;
+            background: rgba(10, 16, 23, 0.94);
+            color: #cbd7e3;
+            font-size: 11px;
+            line-height: 1.5;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 120ms ease;
+            z-index: 3;
+        }
+
+        .viz-3d-tip.is-open {
+            opacity: 1;
+        }
+
+        .viz-3d-tip strong {
+            color: #8fc7ff;
+            word-break: break-all;
+        }
+
+        .viz-3d-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px 18px;
+            margin-top: 10px;
+        }
+
+        .viz-3d-legend span {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            color: #8b97a5;
+            font-size: 11px;
+        }
+
+        .viz-3d-legend i {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            display: inline-block;
+        }
     </style>
-    <script type="importmap" src="/static/importmap.json"></script>
 </head>
 <body>
     <div class="container">
@@ -804,20 +883,39 @@
             </div>
         </div>
 
-        <!-- WebGL: live P2P graph + Phase-3 reference mesh (Three.js from jsDelivr; see CSP in pkg/api/security.go) -->
-        <div class="card" style="grid-column: 1 / -1; margin-top: 20px;">
+        <!-- WebGL: live P2P graph + Phase-3 reference mesh (three.js vendored under /static/vendor) -->
+        <div class="card" id="viz3d-card" style="grid-column: 1 / -1; margin-top: 20px;">
             <h2>🧊 3D visualization</h2>
-            <p class="viz-3d-caption">Interactive WebGL: drag to orbit, scroll to zoom. Left = live libp2p peers from this node. Right = illustrative Phase-3 parent-cell geometry (not on-chain state).</p>
+            <p class="viz-3d-caption">Interactive WebGL: drag to orbit, scroll to zoom, hover a node for detail. Left = live libp2p peers from this node. Right = illustrative Phase-3 parent-cell geometry (not on-chain state).</p>
             <div class="viz-3d-grid">
                 <div>
-                    <h3 style="color:#a0a0a0;font-size:14px;margin-bottom:8px;">Libp2p topology</h3>
+                    <div class="viz-3d-head">
+                        <h3>Libp2p topology</h3>
+                        <span class="viz-3d-summary" id="p2p-3d-summary">Loading…</span>
+                    </div>
                     <div id="p2p-3d-container" class="viz-3d-container" aria-label="3D peer topology"></div>
+                    <div class="viz-3d-legend">
+                        <span><i style="background:#4a9eff"></i>Local node</span>
+                        <span><i style="background:#7ed321"></i>Connected peer</span>
+                        <span><i style="background:#f5a623"></i>Degraded reputation</span>
+                        <span><i style="background:#46535f"></i>Offline (inner shell)</span>
+                    </div>
+                    <p class="viz-3d-caption">Pulses travel each link faster the lower its latency, and denser the more messages it carries.</p>
                     <div id="p2p-3d-error" class="viz-3d-error"></div>
                 </div>
                 <div>
-                    <h3 style="color:#a0a0a0;font-size:14px;margin-bottom:8px;">Phase-3 mesh (reference)</h3>
-                    <p id="mesh3d-3d-caption" class="viz-3d-caption">Loading…</p>
+                    <div class="viz-3d-head">
+                        <h3>Phase-3 mesh (reference)</h3>
+                        <span class="viz-3d-summary" id="mesh3d-3d-summary">Loading…</span>
+                    </div>
                     <div id="mesh3d-3d-container" class="viz-3d-container" aria-label="3D mesh reference"></div>
+                    <div class="viz-3d-legend">
+                        <span><i style="background:#63b4f5"></i>Local cell</span>
+                        <span><i style="background:#6abf4f"></i>Parent cell</span>
+                        <span><i style="background:#4a9eff"></i>Dependency link</span>
+                        <span><i style="background:#5d7183"></i>Adjacent link</span>
+                    </div>
+                    <p id="mesh3d-3d-caption" class="viz-3d-caption">Loading…</p>
                     <div id="mesh3d-3d-error" class="viz-3d-error"></div>
                 </div>
             </div>
