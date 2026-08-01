@@ -1,5 +1,5 @@
 param(
-    [string]$QsdmRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
+    [string]$QsdmRoot = "",
     [string]$Relay = "https://api.qsdm.tech",
     [string]$Slot = "home-validator",
     [string]$Backend = "http://127.0.0.1:8080",
@@ -24,6 +24,11 @@ param(
     [switch]$NoPublicGatewayCheck,
     [switch]$Once
 )
+
+if ([string]::IsNullOrWhiteSpace($QsdmRoot)) {
+    $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $QsdmRoot = (Resolve-Path (Join-Path $scriptDirectory "..")).Path
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -53,6 +58,7 @@ $RunDirName = if ($ValidatorMode -eq "networked") { "run-networked" } else { "ru
 $RunDir = Join-Path $LocalRoot $RunDirName
 $LogPath = Join-Path $LocalRoot "watchdog.log"
 $PidPath = Join-Path $LocalRoot "watchdog.pid"
+$IdentityPath = Join-Path $LocalRoot "watchdog.process.json"
 $ValidatorScript = Join-Path $QsdmRoot "scripts\start_local_validator.ps1"
 $GatewayScript = Join-Path $QsdmRoot "scripts\start_home_gateway.ps1"
 $CacheMaintenanceScript = Join-Path $QsdmRoot "scripts\maintain_generated_cache.ps1"
@@ -87,6 +93,73 @@ function Write-WatchdogLog {
     param([string]$Message)
     $stamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssK"
     Add-Content -LiteralPath $LogPath -Value "$stamp $Message"
+}
+
+function Get-NativeProcessStartUtc {
+    param([Parameter(Mandatory)][int]$ProcessIdentifier)
+
+    if (-not ("QsdmProcessTimes" -as [type])) {
+        Add-Type -TypeDefinition @"
+using System;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+
+public static class QsdmProcessTimes
+{
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetProcessTimes(
+        IntPtr processHandle,
+        out long creationTime,
+        out long exitTime,
+        out long kernelTime,
+        out long userTime);
+
+    public static DateTime GetStartTimeUtc(int processId)
+    {
+        using (Process process = Process.GetProcessById(processId))
+        {
+            long creationTime;
+            long exitTime;
+            long kernelTime;
+            long userTime;
+            if (!GetProcessTimes(
+                process.Handle,
+                out creationTime,
+                out exitTime,
+                out kernelTime,
+                out userTime))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            return DateTime.FromFileTimeUtc(creationTime);
+        }
+    }
+}
+"@
+    }
+    return [QsdmProcessTimes]::GetStartTimeUtc($ProcessIdentifier)
+}
+
+function Write-WatchdogIdentity {
+    $process = Get-Process -Id $PID -ErrorAction Stop
+    $identity = [ordered]@{
+        schema = "qsdm.watchdog-process.v1"
+        pid = $PID
+        process_start_utc = (Get-NativeProcessStartUtc -ProcessIdentifier $PID).ToString("o")
+        process_path = $process.Path
+        script = [IO.Path]::GetFullPath($PSCommandPath)
+        script_sha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        qsdm_root = $QsdmRoot
+        written_at_utc = [DateTime]::UtcNow.ToString("o")
+    }
+    $tempPath = "$IdentityPath.tmp-$PID"
+    [IO.File]::WriteAllText(
+        $tempPath,
+        ($identity | ConvertTo-Json),
+        [Text.UTF8Encoding]::new($false)
+    )
+    Move-Item -LiteralPath $tempPath -Destination $IdentityPath -Force
 }
 
 function Test-HttpOk {
@@ -288,6 +361,7 @@ if (-not $mutex.WaitOne(0)) {
     exit 0
 }
 Set-Content -LiteralPath $PidPath -Value ([string]$PID)
+Write-WatchdogIdentity
 
 $validatorFailures = 0
 $gatewayFailures = 0
@@ -413,6 +487,16 @@ try {
         $currentPid = (Get-Content -LiteralPath $PidPath -Raw).Trim()
         if ($currentPid -eq [string]$PID) {
             Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if (Test-Path -LiteralPath $IdentityPath) {
+        try {
+            $identity = Get-Content -LiteralPath $IdentityPath -Raw | ConvertFrom-Json
+            if ([int]$identity.pid -eq $PID) {
+                Remove-Item -LiteralPath $IdentityPath -Force -ErrorAction SilentlyContinue
+            }
+        } catch {
+            Write-WatchdogLog "could not parse watchdog process identity while clearing it: $($_.Exception.Message)"
         }
     }
     $mutex.ReleaseMutex() | Out-Null

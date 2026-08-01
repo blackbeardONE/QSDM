@@ -333,6 +333,17 @@ exact version as current.
 
 - A failed gate blocks promotion; it is not converted to a warning merely to
   finish a release.
+- Windows home-validator updates must use the tracked bounded updater. The
+  update transaction must verify the signed release hash tree, use recorded
+  PIDs, preserve node identity and state, write a machine-readable result, and
+  restore the previous verified binary on any failed post-start check.
+- Do not install, query, recreate, or start Windows scheduled tasks from the
+  binary replacement transaction. Scheduled-task maintenance is a separate
+  install/repair workflow and must not block validator rollback.
+- Every process stop, child command, API request, readiness poll, lock wait,
+  and watchdog restoration must have an explicit deadline. Never add an
+  unbounded `Wait-Process`, recursive machine-wide search, CIM process sweep,
+  or Task Scheduler query to the hot update path.
 - Never replace bytes behind an existing version or tag. Fix the issue and bump
   the version.
 - Keep the previous immutable artifacts available for investigation, but do not

@@ -1,5 +1,5 @@
 param(
-    [string]$QsdmRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
+    [string]$QsdmRoot = "",
     [string]$HealthUrl = "http://127.0.0.1:8080/api/v1/health/ready",
     [string]$TaskRegistryPath = "",
     [string]$TaskActionLogPath = "",
@@ -14,10 +14,16 @@ param(
     [int]$LockWaitSeconds = 5
 )
 
+if ([string]::IsNullOrWhiteSpace($QsdmRoot)) {
+    $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $QsdmRoot = (Resolve-Path (Join-Path $scriptDirectory "..")).Path
+}
+
 $ErrorActionPreference = "Stop"
 
 $LocalRoot = Join-Path $QsdmRoot "source\.cache\local-validator"
 $ModeConfigPath = Join-Path $LocalRoot "validator-mode.json"
+$ActiveBinaryStatePath = Join-Path $LocalRoot "validator-active.json"
 $RunDirName = if ($Networked) { "run-networked" } else { "run-v2" }
 $RunDir = Join-Path $LocalRoot $RunDirName
 $NetworkHostKeyPath = Join-Path $RunDir "qsdm_network_host.key"
@@ -50,6 +56,49 @@ function Select-NewestExistingPath {
         Select-Object -First 1 -ExpandProperty FullName
 }
 
+function Resolve-ActiveValidatorBinary {
+    if (-not (Test-Path -LiteralPath $ActiveBinaryStatePath)) {
+        return ""
+    }
+    if (-not (Test-Path -LiteralPath $ActiveBinaryStatePath -PathType Leaf)) {
+        throw "Validator active-binary state is not a file: $ActiveBinaryStatePath"
+    }
+    if ((Get-Item -LiteralPath $ActiveBinaryStatePath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "Refusing a reparse-point validator active-binary state: $ActiveBinaryStatePath"
+    }
+
+    try {
+        $state = Get-Content -LiteralPath $ActiveBinaryStatePath -Raw | ConvertFrom-Json
+    } catch {
+        throw "Invalid validator active-binary state at ${ActiveBinaryStatePath}: $($_.Exception.Message)"
+    }
+    $binaryName = ([string]$state.binary).Trim()
+    $expectedHash = ([string]$state.sha256).Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($binaryName) -or [IO.Path]::GetFileName($binaryName) -ne $binaryName) {
+        throw "Validator active-binary state must contain a file name without directory components."
+    }
+    if ($expectedHash -notmatch '^[0-9a-f]{64}$') {
+        throw "Validator active-binary state has an invalid SHA-256 value."
+    }
+
+    $candidate = [IO.Path]::GetFullPath((Join-Path $LocalRoot $binaryName))
+    $rootPrefix = [IO.Path]::GetFullPath($LocalRoot).TrimEnd('\') + '\'
+    if (-not $candidate.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Validator active-binary state resolves outside the managed validator directory."
+    }
+    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+        throw "Active validator binary is missing: $candidate"
+    }
+    if ((Get-Item -LiteralPath $candidate -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "Refusing a reparse-point active validator binary: $candidate"
+    }
+    $actualHash = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $expectedHash) {
+        throw "Active validator binary checksum mismatch: $candidate"
+    }
+    return $candidate
+}
+
 $ValidatorProcessNames = @(
     "qsdm-local-validator",
     "qsdm-local-validator-sqlite*",
@@ -68,28 +117,31 @@ $DiscoveredSQLiteExePaths = @(
         Where-Object { $_.Name -notlike "*.tmp.exe" } |
         Select-Object -ExpandProperty FullName
 )
-$ExePath = Select-NewestExistingPath -Paths (@(
-    $LocalValidatorTreasuryExePath,
-    $LocalValidatorTaskCatalogExePath,
-    $LocalValidatorSQLiteHotfixExePath,
-    $LocalValidatorSQLiteCandidateExePath,
-    $LocalValidatorSQLiteNewExePath,
-    $LocalValidatorSQLiteExePath
-) + $DiscoveredSQLiteExePaths)
+$ExePath = Resolve-ActiveValidatorBinary
 if (-not $ExePath) {
-    $ExePath = Select-NewestExistingPath @(
-        $LocalValidatorHiveNewExePath,
-        $LocalValidatorHiveExePath,
-        $LocalValidatorExePath,
-        $SQLiteNextExePath,
-        $SQLiteExePath
-    )
-}
-if (-not $ExePath) {
-    $ExePath = Select-NewestExistingPath @($CandidateExePath, $PrimaryExePath)
-}
-if (-not $ExePath) {
-    $ExePath = $PrimaryExePath
+    $ExePath = Select-NewestExistingPath -Paths (@(
+        $LocalValidatorTreasuryExePath,
+        $LocalValidatorTaskCatalogExePath,
+        $LocalValidatorSQLiteHotfixExePath,
+        $LocalValidatorSQLiteCandidateExePath,
+        $LocalValidatorSQLiteNewExePath,
+        $LocalValidatorSQLiteExePath
+    ) + $DiscoveredSQLiteExePaths)
+    if (-not $ExePath) {
+        $ExePath = Select-NewestExistingPath @(
+            $LocalValidatorHiveNewExePath,
+            $LocalValidatorHiveExePath,
+            $LocalValidatorExePath,
+            $SQLiteNextExePath,
+            $SQLiteExePath
+        )
+    }
+    if (-not $ExePath) {
+        $ExePath = Select-NewestExistingPath @($CandidateExePath, $PrimaryExePath)
+    }
+    if (-not $ExePath) {
+        $ExePath = $PrimaryExePath
+    }
 }
 $ConfigPath = Join-Path $QsdmRoot "qsdm.yaml"
 $LauncherLog = Join-Path $RunDir "launcher.log"
@@ -97,6 +149,7 @@ $LauncherLockPath = Join-Path $RunDir "launcher.lock"
 $StdoutLog = Join-Path $RunDir "stdout.autostart.log"
 $StderrLog = Join-Path $RunDir "stderr.autostart.log"
 $PidFile = Join-Path $RunDir "qsdm.autostart.pid"
+$ProcessIdentityPath = Join-Path $RunDir "qsdm.autostart.process.json"
 $PrefundAccountsPath = Join-Path $RunDir "qsdm-prefund-accounts.txt"
 $FaucetTokenPath = Join-Path $RunDir "qsdm-local-faucet.token"
 $ReferralLedgerPath = Join-Path $RunDir "qsdm-referral-ledger.json"
@@ -127,6 +180,51 @@ function Write-LauncherLog {
     param([string]$Message)
     $stamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssK"
     Add-Content -LiteralPath $LauncherLog -Value "$stamp $Message"
+}
+
+function Write-ValidatorProcessIdentity {
+    param(
+        [Parameter(Mandatory)][System.Diagnostics.Process]$Process,
+        [Parameter(Mandatory)][string]$BinaryPath
+    )
+
+    $identity = [ordered]@{
+        schema = "qsdm.validator-process.v1"
+        pid = $Process.Id
+        process_start_utc = $Process.StartTime.ToUniversalTime().ToString("o")
+        binary = [IO.Path]::GetFullPath($BinaryPath)
+        sha256 = (Get-FileHash -LiteralPath $BinaryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        launcher_pid = $PID
+        written_at_utc = [DateTime]::UtcNow.ToString("o")
+    }
+    $tempPath = "$ProcessIdentityPath.tmp-$PID"
+    [IO.File]::WriteAllText(
+        $tempPath,
+        ($identity | ConvertTo-Json),
+        [Text.UTF8Encoding]::new($false)
+    )
+    Move-Item -LiteralPath $tempPath -Destination $ProcessIdentityPath -Force
+}
+
+function Clear-ValidatorProcessIdentity {
+    param([int]$ExpectedPid)
+
+    if (Test-Path -LiteralPath $ProcessIdentityPath) {
+        try {
+            $identity = Get-Content -LiteralPath $ProcessIdentityPath -Raw | ConvertFrom-Json
+            if ([int]$identity.pid -eq $ExpectedPid) {
+                Remove-Item -LiteralPath $ProcessIdentityPath -Force -ErrorAction SilentlyContinue
+            }
+        } catch {
+            Write-LauncherLog "could not parse validator process identity while clearing it: $($_.Exception.Message)"
+        }
+    }
+    if (Test-Path -LiteralPath $PidFile) {
+        $pidText = (Get-Content -LiteralPath $PidFile -Raw).Trim()
+        if ($pidText -eq [string]$ExpectedPid) {
+            Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 function Import-TreasuryConfig {
@@ -577,6 +675,8 @@ function Stop-ExistingValidator {
             Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
         }
     }
+    Remove-Item -LiteralPath $ProcessIdentityPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
 }
 
 function Test-ValidGovernanceSnapshot {
@@ -824,6 +924,7 @@ $process = Start-Process `
     -PassThru
 
 Set-Content -LiteralPath $PidFile -Value $process.Id
+Write-ValidatorProcessIdentity -Process $process -BinaryPath $ExePath
 Write-LauncherLog "started validator pid=$($process.Id)"
 
 $boundedHealthWait = $HealthWaitSeconds
@@ -836,6 +937,7 @@ while ((Get-Date) -lt $healthDeadline) {
     if ($process.HasExited) {
         $process.WaitForExit()
         Write-LauncherLog "validator exited before readiness pid=$($process.Id) exit_code=$($process.ExitCode)"
+        Clear-ValidatorProcessIdentity -ExpectedPid $process.Id
         Release-LauncherLock
         exit 1
     }
@@ -856,6 +958,7 @@ $process.Refresh()
 if ($process.HasExited) {
     $process.WaitForExit()
     Write-LauncherLog "validator exited at readiness deadline pid=$($process.Id) exit_code=$($process.ExitCode)"
+    Clear-ValidatorProcessIdentity -ExpectedPid $process.Id
     Release-LauncherLock
     exit 1
 }
