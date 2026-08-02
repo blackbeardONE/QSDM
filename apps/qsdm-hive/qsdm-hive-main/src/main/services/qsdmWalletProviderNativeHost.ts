@@ -6,7 +6,7 @@ import path from 'path';
 
 import { getAppDataPath } from 'main/node/helpers/getAppDataPath';
 
-// cspell:ignore abcdefghijklmnop habkkkednignfkoffhpbjahcjbikkahh HKCU
+// cspell:ignore abcdefghijklmnop habkkkednignfkoffhpbjahcjbikkahh homapiejinlbjdhhdegcbnldkpkodepo HKCU
 const NATIVE_HOST_NAME = 'tech.qsdm.hive_wallet';
 
 // Public key material is safe to ship. Chromium uses it only to keep the
@@ -15,6 +15,12 @@ export const QSDM_WALLET_EXTENSION_PUBLIC_KEY =
   'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsHFgzuSZnQ2vWQ8EvlpUWU52nITYq9niLfQh7Qf/O4x9xFzM4dyypGl3gqqkcyc85lUZ//FH4xNd6kYB8PxKgR0NwhlHTMWOgFrHWRpsSvvRSMakpgVewVymn0DnvJOj0Pl8wIshbSh2XAYNI0xyMi5zuWK4kIPABhTh1VFLzd45g27fyz36Yyj+ZI7XCOPiRL5qNPJ+Ou9oBvPEnuBhFdQQrKR8pGYqKl/o8nb4Ynv+5wtooh8D1nZwoR2YA6JjwiFN6tzmc1egtNmAiIYG3Cn58jItYANsA6f9Gq8PwR0HjodGRgDXOWq525Q/dOAmnwLjAt/9L1HW5NBy5xrYhQIDAQAB';
 
 export const QSDM_WALLET_EXTENSION_ID = 'habkkkednignfkoffhpbjahcjbikkahh';
+export const QSDM_WALLET_STORE_EXTENSION_ID =
+  'homapiejinlbjdhhdegcbnldkpkodepo';
+export const QSDM_WALLET_TRUSTED_EXTENSION_IDS = [
+  QSDM_WALLET_EXTENSION_ID,
+  QSDM_WALLET_STORE_EXTENSION_ID,
+] as const;
 export const QSDM_WALLET_FIREFOX_EXTENSION_ID = 'qsdm-wallet@qsdm.tech';
 
 interface ExtensionManifest {
@@ -162,7 +168,9 @@ export const registerQsdmWalletProviderNativeHost = (
     description: 'QSDM Wallet secure native bridge',
     path: nativeHostPath,
     type: 'stdio',
-    allowed_origins: [`chrome-extension://${QSDM_WALLET_EXTENSION_ID}/`],
+    allowed_origins: QSDM_WALLET_TRUSTED_EXTENSION_IDS.map(
+      (extensionId) => `chrome-extension://${extensionId}/`
+    ),
   };
   const firefoxManifest = {
     name: NATIVE_HOST_NAME,

@@ -63,6 +63,11 @@ the same verified payload but distinct names so an operator cannot confuse the
 target store. The browser-specific packages omit manifest keys that belong only
 to the other browser family. See [STORE_SUBMISSION.md](STORE_SUBMISSION.md).
 
+The Chrome Web Store assigned production ID
+`homapiejinlbjdhhdegcbnldkpkodepo` during the first upload. Hive authorizes
+that ID and the pinned development ID explicitly. Never add a wildcard or an
+operator-supplied origin to the native-host manifest.
+
 A self-hosted CRX is not the general Windows installer: consumer Chrome on
 Windows and macOS accepts direct extension installation only through the Chrome
 Web Store. Edge and managed Chromium deployments can use CRX packages, while
