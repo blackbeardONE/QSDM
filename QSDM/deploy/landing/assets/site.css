@@ -1,5 +1,12 @@
 /* QSDM shared site chrome — teal + black + white + gold.
  * Include after Google Fonts; page-local CSS may refine components.
+ *
+ * Canonical primary nav (dropdown parents):
+ *   Network ▾ · Hive ▾ · Docs · Trust ▾
+ *   CTA: Download (solid only — avoid duplicating nav labels)
+ * Network → Overview, Explorer, API, Validators
+ * Hive → Download Hive, Web wallet, QSDM VPN
+ * Trust → Public audit, Attestations
  */
 
 :root {
@@ -94,30 +101,104 @@ a:hover { color: #b8eef0; }
 .site-nav {
   display: none;
   align-items: center;
-  gap: 0.1rem;
+  gap: 0.15rem;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
 
-.site-nav a {
+.site-nav > a,
+.site-nav .site-nav-trigger {
   padding: 0.4rem 0.7rem;
   border-radius: 999px;
   color: var(--text-2) !important;
   text-decoration: none !important;
   font-size: 0.88rem;
   font-weight: 500;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   transition: color 150ms var(--ease), background 150ms var(--ease);
 }
 
-.site-nav a:hover {
+.site-nav > a:hover,
+.site-nav .site-nav-trigger:hover,
+.site-nav .site-nav-item.is-open > .site-nav-trigger {
   color: var(--text) !important;
   background: rgba(142, 220, 224, 0.08);
 }
 
-.site-nav a.active,
-.site-nav a[aria-current="page"] {
+.site-nav > a.active,
+.site-nav > a[aria-current="page"],
+.site-nav .site-nav-item.is-active > .site-nav-trigger {
   color: var(--ink) !important;
   background: var(--gold);
+}
+
+.site-nav-chevron {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-1px);
+  opacity: 0.7;
+}
+
+.site-nav-item {
+  position: relative;
+}
+
+.site-nav-panel {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  min-width: 12.5rem;
+  padding: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  display: none;
+  z-index: 50;
+}
+
+.site-nav-item.is-open > .site-nav-panel,
+.site-nav-item:hover > .site-nav-panel,
+.site-nav-item:focus-within > .site-nav-panel {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.site-nav-panel a {
+  display: block;
+  padding: 0.55rem 0.7rem;
+  border-radius: 6px;
+  color: var(--text-2) !important;
+  text-decoration: none !important;
+  font-size: 0.86rem;
+  font-weight: 500;
+}
+
+.site-nav-panel a:hover {
+  color: var(--text) !important;
+  background: rgba(142, 220, 224, 0.08);
+}
+
+.site-nav-panel a.active,
+.site-nav-panel a[aria-current="page"] {
+  color: var(--ink) !important;
+  background: var(--gold);
+}
+
+.site-nav-panel .site-nav-hint {
+  display: block;
+  margin-top: 0.15rem;
+  color: rgba(173, 198, 204, 0.45);
+  font-size: 0.72rem;
+  font-weight: 400;
 }
 
 .site-actions {
@@ -187,7 +268,7 @@ a:hover { color: #b8eef0; }
 .site-mobile-nav.is-open { display: flex; }
 
 .site-mobile-nav a {
-  padding: 0.65rem 0.2rem;
+  padding: 0.55rem 0.2rem;
   color: var(--text-2) !important;
   text-decoration: none !important;
   font-weight: 500;
@@ -196,12 +277,138 @@ a:hover { color: #b8eef0; }
 
 .site-mobile-nav a:hover { color: var(--teal) !important; }
 
+.site-mobile-nav a.active,
+.site-mobile-nav a[aria-current="page"] {
+  color: var(--gold) !important;
+}
+
+.site-mobile-group {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.55rem 0 0.35rem;
+  border-top: 1px solid var(--border);
+}
+
+.site-mobile-group:first-child { border-top: 0; padding-top: 0.15rem; }
+
+.site-mobile-label {
+  padding: 0.25rem 0.2rem 0.35rem;
+  color: rgba(173, 198, 204, 0.45);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.site-mobile-group a { padding-left: 0.85rem; }
+
 @media (min-width: 1024px) {
   .site-nav { display: flex; }
   .site-menu-toggle { display: none; }
   .site-mobile-nav { display: none !important; }
 }
 
-@media (max-width: 1023px) {
-  .site-actions .site-btn-ghost { display: none; }
+/* —— shared shell / skip link —— */
+.skip-link {
+  position: absolute;
+  top: -48px;
+  left: 16px;
+  z-index: 50;
+  padding: 10px 14px;
+  background: var(--gold);
+  color: var(--ink);
+  border-radius: 999px;
+  text-decoration: none;
+}
+.skip-link:focus { top: 16px; }
+
+.shell {
+  width: min(80rem, calc(100% - 2rem));
+  margin: 0 auto;
+}
+@media (min-width: 1024px) {
+  .shell { width: min(80rem, calc(100% - 3rem)); }
+}
+
+/* —— shared footer —— */
+.site-footer {
+  padding: 3rem 0 2.5rem;
+  border-top: 1px solid var(--border);
+  color: rgba(173, 198, 204, 0.45);
+  font-size: 0.85rem;
+}
+
+.site-footer a {
+  color: rgba(173, 198, 204, 0.45);
+  text-decoration: none;
+  transition: color 150ms var(--ease);
+}
+.site-footer a:hover { color: var(--text); }
+
+.site-footer-grid {
+  display: grid;
+  gap: 2rem;
+  margin-bottom: 2.5rem;
+}
+@media (min-width: 720px) {
+  .site-footer-grid {
+    grid-template-columns: 1.2fr repeat(3, 1fr);
+  }
+}
+
+.site-footer-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.site-footer-brand p {
+  margin: 0;
+  max-width: 28ch;
+  color: rgba(173, 198, 204, 0.45);
+}
+
+.site-footer-col h4 {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+.site-footer-col a {
+  display: block;
+  padding: 0.3rem 0;
+}
+
+.site-footer-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.site-footer-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+}
+.site-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+}
+
+.site-footer-note {
+  margin: 0 0 1rem;
+  color: rgba(173, 198, 204, 0.45);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+.site-footer-note a { color: var(--muted); }
+.site-footer-note a:hover { color: var(--text); }
+.site-footer-note .mono {
+  font-family: var(--mono);
+  font-size: 0.78em;
 }

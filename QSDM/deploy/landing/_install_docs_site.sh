@@ -149,19 +149,43 @@ for u in \
 done
 
 echo
+echo "=== advertised download checks ==="
+mapfile -t advertised_downloads < <(
+  grep -oE 'href="/downloads/[^"?#]+"' "$WEBROOT/download.html" |
+    sed -E 's/^href="([^"]+)"$/\1/' |
+    sort -u
+)
+if [[ ${#advertised_downloads[@]} -eq 0 ]]; then
+  echo "download page does not advertise any versioned files" >&2
+  exit 1
+fi
+for path in "${advertised_downloads[@]}"; do
+  curl --fail --silent --show-error --head --max-time 30 \
+    "https://qsdm.tech$path" >/dev/null
+  echo "  available  $path"
+done
+
+echo
 echo "=== CSP check ==="
-curl --max-time 10 -sI https://qsdm.tech/ | grep -i "content-security-policy" | head -n 1
+home_headers="$(curl --fail --max-time 10 -sI https://qsdm.tech/)"
+grep -im1 "content-security-policy" <<<"$home_headers"
 
 echo
 echo "=== content checks ==="
-curl --fail --max-time 15 -s https://qsdm.tech/ | grep -q 'QSDM VPN'
-curl --fail --max-time 15 -s https://qsdm.tech/download.html | grep -q 'Version 1.4.0'
-curl --fail --max-time 15 -s https://qsdm.tech/network.html | grep -q 'QSDM Network'
+home_page="$(curl --fail --max-time 15 -s https://qsdm.tech/)"
+download_page="$(curl --fail --max-time 15 -s https://qsdm.tech/download.html)"
+network_page="$(curl --fail --max-time 15 -s https://qsdm.tech/network.html)"
+grep -Fq 'The public network for CELL.' <<<"$home_page"
+grep -Fq 'View Network' <<<"$home_page"
+grep -Fq 'QSDM VPN' <<<"$home_page"
+grep -Fq 'Version 1.4.5' <<<"$download_page"
+grep -Fq 'QSDM Network' <<<"$network_page"
+grep -Fq 'href="/download.html">Download</a>' <<<"$home_page"
 echo "  expected homepage, download, and network markers are present"
 
 echo
 echo "=== docs SPA pulled markdown-it SRI ==="
-grep -oE 'integrity="sha384-[A-Za-z0-9+/=]+"' "$WEBROOT/docs/index.html" | head -n 1
+grep -o -m 1 -E 'integrity="sha384-[A-Za-z0-9+/=]+"' "$WEBROOT/docs/index.html"
 echo
 echo "=== markdown-it actual sha384 ==="
 openssl dgst -sha384 -binary "$WEBROOT/docs/lib/markdown-it.min.js" | openssl base64 -A
