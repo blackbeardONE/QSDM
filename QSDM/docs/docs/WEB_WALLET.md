@@ -269,12 +269,13 @@ private key, or passphrase. It talks to Hive through the authenticated native
 messaging bridge and exact-origin permissions, while Hive displays every
 signing or transfer approval.
 
-Until browser-store review is complete, users download the universal extension
-package once from <https://qsdm.tech/download.html>, extract it, and load the
-folder from their browser's extension page. Separate Chromium and Firefox ZIPs
-remain available as store-submission inputs. The Sky Fang deep link and the
-extension are complementary transport paths to the same Hive-held wallet, not
-separate accounts.
+Until browser-store review is complete, Chrome, Edge, Chromium, and Brave users
+download the Chromium package once from <https://qsdm.tech/download.html>,
+extract it, and load the folder from their browser's extension page. Normal
+Firefox releases require a Mozilla-signed XPI; the published Firefox ZIP is a
+submission and temporary-testing artifact until that signing step is complete.
+The Sky Fang deep link and the extension are complementary transport paths to
+the same Hive-held wallet, not separate accounts.
 
 The wallet page's manual Sign tab is a developer/emergency diagnostic fallback
 only. For players, install QSDM Hive and use the one-click Sky Fang confirmation

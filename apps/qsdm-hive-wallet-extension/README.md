@@ -26,17 +26,19 @@ the current user. This requires no administrator access. The extension has the
 stable Chromium ID `habkkkednignfkoffhpbjahcjbikkahh` and Firefox ID
 `qsdm-wallet@qsdm.tech`.
 
-Until the extension is published in browser stores, download the universal ZIP
-and install it once:
+Until the extension is published in browser stores, Chrome, Edge, Chromium, and
+Brave users can download the Chromium ZIP and install it once:
 
 1. Open the browser extensions page and enable developer mode.
 2. Extract the ZIP, choose **Load unpacked**, and select the extracted folder.
 3. Start or restart QSDM Hive.
 
-Chrome, Edge, Chromium, Brave, and Firefox 128 or newer are supported. Users
-upgrading from the old random-ID development build should remove it and load
-the current bundled extension once. Daily use is automatic after that
-migration.
+Chrome, Edge, Chromium, and Brave are supported through that manual flow.
+Firefox 128 or newer is supported by the Firefox package, but normal Firefox
+releases require Mozilla signing for a persistent installation. The unsigned
+Firefox ZIP is a store-submission and temporary-testing artifact, not a normal
+consumer installer. Users upgrading from the old random-ID Chromium build
+should remove it and load the current package once.
 
 `package-extension.ps1` produces a universal development ZIP plus separate
 Chromium and Firefox store-submission ZIPs. The browser-specific packages omit
@@ -46,8 +48,8 @@ A self-hosted CRX is not the general Windows installer: consumer Chrome on
 Windows and macOS accepts direct extension installation only through the Chrome
 Web Store. Edge and managed Chromium deployments can use CRX packages, while
 normal Firefox releases require a Mozilla-signed XPI. QSDM therefore presents
-one universal manual-install package today and will route the same install
-button to each browser's store after approval.
+one Chrome/Edge-family download today and will route the install action to each
+browser's store after approval.
 
 The scripts in `native-host` remain available for development diagnostics;
 normal packaged installs do not require running them manually.
