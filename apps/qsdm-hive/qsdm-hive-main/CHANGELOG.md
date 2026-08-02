@@ -1,16 +1,17 @@
-## [1.4.3]
+## [Unreleased]
 
 - Wallet recovery: New QSDM wallets can be restored from 24 checksum-protected recovery words while retaining their ML-DSA-87 address.
 - Safer custody: Recovery material is encrypted separately inside the QSDM keystore and never passed through command-line arguments or application logs.
 - Wallet management: Hive can create, restore, and export recovery-enabled wallets, and clearly identifies legacy JSON-plus-passphrase wallets.
 - Compatibility: Existing wallets continue to work unchanged; moving a legacy wallet to recovery words requires creating a new wallet and transferring its assets and task ownership.
 
-## [1.4.2]
+## [1.4.3]
 
 - Capacity reporting: Mother Hive now distinguishes each Agent's offered CPU, GPU, and RAM capacity from Relay per-job safety limits.
 - RAM sharing: Agent RAM advertisements can represent the configured percentage of real system memory instead of being capped at one GiB.
 - Relay clarity: Edge Control shows the real RAM amount next to its percentage and labels CPU/GPU controls as per-job allowances.
 - Bundled tools: Windows and Linux packages include QSDM Edge Agent and Edge Control 1.3.7 with the corrected aggregate-capacity model.
+- Security: Updated the Go support modules to include the fix for GO-2026-5970 in `golang.org/x/text`.
 
 ## [1.4.1]
 
