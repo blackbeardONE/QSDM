@@ -131,8 +131,8 @@ jobs:
           $output = Join-Path $env:RUNNER_TEMP 'qsdm-hive-wallet-extension'
           $packages = @(./apps/qsdm-hive-wallet-extension/package-extension.ps1 `
             -OutputDirectory $output)
-          if ($packages.Count -ne 3) {
-            throw "Expected universal, Chromium, and Firefox extension packages."
+          if ($packages.Count -ne 6) {
+            throw "Expected universal, Chromium, Chrome, Edge, Brave, and Firefox extension packages."
           }
           $checksum = Join-Path $output "qsdm-hive-wallet-extension-$($packages[0].Version)-SHA256SUMS.txt"
           @($packages | Sort-Object Path | ForEach-Object {

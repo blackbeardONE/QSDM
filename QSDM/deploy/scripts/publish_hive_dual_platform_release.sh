@@ -10,7 +10,7 @@ stage_dir="$(cd "$1" && pwd)"
 hive_version="$2"
 webroot="${3:-/var/www/qsdm}"
 downloads="$webroot/downloads"
-wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.3.0}"
+wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.4.0}"
 
 if [[ ! "$hive_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "invalid Hive version: $hive_version" >&2
@@ -23,6 +23,9 @@ linux_archive="qsdm-hive-${hive_version}-linux-x64.tar.gz"
 linux_checksums="qsdm-hive-${hive_version}-linux-SHA256SUMS.txt"
 wallet_extension="qsdm-hive-wallet-extension-${wallet_extension_version}.zip"
 wallet_extension_chromium="qsdm-hive-wallet-extension-${wallet_extension_version}-chromium.zip"
+wallet_extension_chrome="qsdm-hive-wallet-extension-${wallet_extension_version}-chrome.zip"
+wallet_extension_edge="qsdm-hive-wallet-extension-${wallet_extension_version}-edge.zip"
+wallet_extension_brave="qsdm-hive-wallet-extension-${wallet_extension_version}-brave.zip"
 wallet_extension_firefox="qsdm-hive-wallet-extension-${wallet_extension_version}-firefox.zip"
 wallet_extension_checksums="qsdm-hive-wallet-extension-${wallet_extension_version}-SHA256SUMS.txt"
 
@@ -39,6 +42,9 @@ immutable_downloads=(
   "qsdm-hive-${hive_version}-linux-payload-evidence.json"
   "$wallet_extension"
   "$wallet_extension_chromium"
+  "$wallet_extension_chrome"
+  "$wallet_extension_edge"
+  "$wallet_extension_brave"
   "$wallet_extension_firefox"
   "$wallet_extension_checksums"
 )
@@ -80,6 +86,9 @@ for platform in windows linux; do
   if [[ "$platform" == "windows" ]]; then
     grep -q '"name": "'"${wallet_extension}"'"' <<<"$manifest_json"
     grep -q '"name": "'"${wallet_extension_chromium}"'"' <<<"$manifest_json"
+    grep -q '"name": "'"${wallet_extension_chrome}"'"' <<<"$manifest_json"
+    grep -q '"name": "'"${wallet_extension_edge}"'"' <<<"$manifest_json"
+    grep -q '"name": "'"${wallet_extension_brave}"'"' <<<"$manifest_json"
     grep -q '"name": "'"${wallet_extension_firefox}"'"' <<<"$manifest_json"
     grep -q '"name": "'"${wallet_extension_checksums}"'"' <<<"$manifest_json"
   fi
@@ -119,6 +128,8 @@ done
 
 for file in "$windows_installer" "$linux_appimage" "$linux_archive" \
   "$wallet_extension" "$wallet_extension_chromium" \
+  "$wallet_extension_chrome" "$wallet_extension_edge" \
+  "$wallet_extension_brave" \
   "$wallet_extension_firefox" "$wallet_extension_checksums"; do
   curl --fail --silent --show-error --head --max-time 30 \
     "https://qsdm.tech/downloads/$file" >/dev/null

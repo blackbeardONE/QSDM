@@ -102,10 +102,13 @@ access. The official Chromium and Firefox packages each have a stable pinned
 identity. The bridge listens only on loopback, authenticates each browser-host
 request with an ephemeral 256-bit token, and is not a public network API.
 
-Download the versioned package for your browser from the QSDM download page,
-verify its SHA-256 checksum, extract it, and load that folder once from the
-browser's extension page. Browser-store installation will replace this one-time
-setup after the extension is approved by the relevant stores.
+The QSDM download page now separates Google Chrome, Microsoft Edge, Brave, and
+Mozilla Firefox. Each primary install action is reserved for that browser's
+approved store listing, so consumers will not be sent a generic ZIP. Until the
+stores approve those listings, unsigned ZIPs remain under **Advanced manual
+installation** for developers and reviewers only. Chromium manual packages
+must be extracted and loaded in Developer mode; normal Firefox requires a
+Mozilla-signed XPI.
 
 Extension 0.4.0 adds the first-run wallet handoff. A supported site requests
 `qsdm_openOnboarding`; the extension background worker opens its own

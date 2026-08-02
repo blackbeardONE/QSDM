@@ -110,6 +110,20 @@ try {
     New-DeterministicArchive -Stage $stage -Archive $chromiumArchive
     $archives += [pscustomobject]@{ Browser = 'Chromium'; Path = $chromiumArchive }
 
+    # Browser stores accept ZIP submission bundles even though consumers
+    # install the approved extension directly from the store. Keep explicit
+    # browser names so release operators cannot upload an ambiguous package.
+    foreach ($browser in @('Chrome', 'Edge', 'Brave')) {
+        $browserArchive = Join-Path $OutputDirectory (
+            "qsdm-hive-wallet-extension-$version-$($browser.ToLowerInvariant()).zip"
+        )
+        Copy-Item -LiteralPath $chromiumArchive -Destination $browserArchive
+        $archives += [pscustomobject]@{
+            Browser = $browser
+            Path = $browserArchive
+        }
+    }
+
     $firefoxManifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
     $firefoxManifest.PSObject.Properties.Remove('key')
     $firefoxManifest.background.PSObject.Properties.Remove('service_worker')

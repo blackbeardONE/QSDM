@@ -11,9 +11,12 @@ hive_version="$2"
 agent_version="$3"
 webroot="${4:-/var/www/qsdm}"
 downloads="$webroot/downloads"
-wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.3.0}"
+wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.4.0}"
 wallet_extension="qsdm-hive-wallet-extension-${wallet_extension_version}.zip"
 wallet_extension_chromium="qsdm-hive-wallet-extension-${wallet_extension_version}-chromium.zip"
+wallet_extension_chrome="qsdm-hive-wallet-extension-${wallet_extension_version}-chrome.zip"
+wallet_extension_edge="qsdm-hive-wallet-extension-${wallet_extension_version}-edge.zip"
+wallet_extension_brave="qsdm-hive-wallet-extension-${wallet_extension_version}-brave.zip"
 wallet_extension_firefox="qsdm-hive-wallet-extension-${wallet_extension_version}-firefox.zip"
 wallet_extension_checksums="qsdm-hive-wallet-extension-${wallet_extension_version}-SHA256SUMS.txt"
 
@@ -35,6 +38,9 @@ immutable_downloads=(
   "qsdm-hive-${hive_version}-linux-SHA256SUMS.txt"
   "$wallet_extension"
   "$wallet_extension_chromium"
+  "$wallet_extension_chrome"
+  "$wallet_extension_edge"
+  "$wallet_extension_brave"
   "$wallet_extension_firefox"
   "$wallet_extension_checksums"
   "qsdm-edge-agent-${agent_version}-windows-x86_64.zip"
@@ -85,6 +91,9 @@ test -n "$windows_payload"
 windows_manifest_json="$(printf '%s' "$windows_payload" | base64 --decode)"
 grep -q '"name": "'"${wallet_extension}"'"' <<<"$windows_manifest_json"
 grep -q '"name": "'"${wallet_extension_chromium}"'"' <<<"$windows_manifest_json"
+grep -q '"name": "'"${wallet_extension_chrome}"'"' <<<"$windows_manifest_json"
+grep -q '"name": "'"${wallet_extension_edge}"'"' <<<"$windows_manifest_json"
+grep -q '"name": "'"${wallet_extension_brave}"'"' <<<"$windows_manifest_json"
 grep -q '"name": "'"${wallet_extension_firefox}"'"' <<<"$windows_manifest_json"
 for manifest in "${signed_release_manifests[@]}"; do
   grep -q '"schema": "qsdm.signed-release.v1"' "$stage_dir/downloads/$manifest"
@@ -119,6 +128,9 @@ for file in \
   "qsdm-hive-${hive_version}-linux-x64.tar.gz" \
   "$wallet_extension" \
   "$wallet_extension_chromium" \
+  "$wallet_extension_chrome" \
+  "$wallet_extension_edge" \
+  "$wallet_extension_brave" \
   "$wallet_extension_firefox" \
   "$wallet_extension_checksums" \
   "qsdm-edge-agent-${agent_version}-windows-x86_64.zip" \

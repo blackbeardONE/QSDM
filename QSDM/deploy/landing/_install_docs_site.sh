@@ -52,7 +52,8 @@ fi
 for required in \
   index.html download.html network.html explorer.html validators.html \
   wallet.html wallet-provider.js wallet-start.html wallet-start.js \
-  assets/wallet-start.css \
+  assets/wallet-start.css assets/wallet-extension-install.js \
+  assets/browser-extension-distribution.json \
   assets/site.css assets/site-nav.js docs/index.html docs/docs.css \
   docs/docs.js docs/lib/markdown-it.min.js; do
   if [[ ! -f "$STAGE/$required" ]]; then
@@ -125,8 +126,14 @@ require_staged_marker download.html \
   "qsdm-hive-wallet-extension-$extension_version-chromium.zip"
 require_staged_marker download.html \
   "qsdm-hive-wallet-extension-$extension_version-firefox.zip"
-require_staged_marker download.html \
-  "qsdm-hive-wallet-extension-$extension_version.zip"
+for browser in chrome edge brave firefox; do
+  require_staged_marker download.html \
+    "data-wallet-browser-card=\"$browser\""
+  require_staged_marker assets/browser-extension-distribution.json \
+    "\"$browser\""
+done
+require_staged_marker assets/browser-extension-distribution.json \
+  '"schema": "qsdm.wallet-extension-distribution.v1"'
 require_staged_marker wallet.html '/wallet-provider.js'
 require_staged_marker wallet-start.html '/wallet-start.js'
 require_staged_marker wallet-start.html 'noindex,follow'
@@ -212,6 +219,8 @@ for u in \
   https://qsdm.tech/docs/docs.css                 \
   https://qsdm.tech/docs/docs.js                  \
   https://qsdm.tech/docs/lib/markdown-it.min.js   \
+  https://qsdm.tech/assets/wallet-extension-install.js \
+  https://qsdm.tech/assets/browser-extension-distribution.json \
 ; do
   curl --fail --max-time 15 -s -o /dev/null \
     -w "  %{http_code}  %{size_download} bytes  $u\n" "$u"
@@ -251,6 +260,10 @@ grep -Fq "Version $hive_version" <<<"$download_page"
 grep -Fq "Version $extension_version" <<<"$download_page"
 grep -Fq "qsdm-hive-wallet-extension-$extension_version-chromium.zip" \
   <<<"$download_page"
+grep -Fq 'data-wallet-browser-card="chrome"' <<<"$download_page"
+grep -Fq 'data-wallet-browser-card="edge"' <<<"$download_page"
+grep -Fq 'data-wallet-browser-card="brave"' <<<"$download_page"
+grep -Fq 'data-wallet-browser-card="firefox"' <<<"$download_page"
 grep -Fq 'QSDM Network' <<<"$network_page"
 grep -Fq 'href="/download.html">Download</a>' <<<"$home_page"
 echo "  expected homepage, download, and network markers are present"

@@ -236,9 +236,19 @@ Direct `npm run release` publishing is intentionally blocked: publish only the
 joint, verified Windows/Linux artifact set through
 `QSDM/deploy/scripts/publish_hive_release.sh`. When Edge Agent artifacts are
 unchanged, use `publish_hive_dual_platform_release.sh`; it publishes both Hive
-platform payloads and the versioned browser-extension package before moving
+platform payloads and the versioned browser-extension packages before moving
 either exact-version pointer. The Windows ML-DSA release envelope must include
-the extension ZIP and its versioned checksum file.
+the universal and legacy Chromium archives, the separately named Chrome, Edge,
+Brave, and Firefox store-submission archives, and their versioned checksum file.
+
+Browser stores are the consumer installation path. Keep one clearly labeled
+download route per browser, and publish a store link only after that listing is
+approved. ZIP archives are reviewer/developer submission artifacts and belong
+under Advanced manual installation; do not present a ZIP as the normal install
+button. Never rename a ZIP to `.crx` or `.xpi`, generate a replacement Chromium
+key to manufacture an ID, or ask users to weaken browser policy. If a store
+assigns a different extension ID, add it to Hive's native-host allowlist and
+release that compatible Hive build before activating the store listing.
 
 Build and smoke-test Hive on each supported operating system. A Windows package
 does not validate Linux AppImage behavior, and a Linux package does not validate

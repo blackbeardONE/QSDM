@@ -116,6 +116,9 @@ jobs:
           test -f release-assets/linux/latest-linux.yml
           test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}.zip"
           test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}-chromium.zip"
+          test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}-chrome.zip"
+          test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}-edge.zip"
+          test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}-brave.zip"
           test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}-firefox.zip"
           test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}-SHA256SUMS.txt"
 

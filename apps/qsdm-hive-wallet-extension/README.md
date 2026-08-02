@@ -34,8 +34,16 @@ the current user. This requires no administrator access. The extension has the
 stable Chromium ID `habkkkednignfkoffhpbjahcjbikkahh` and Firefox ID
 `qsdm-wallet@qsdm.tech`.
 
-Until the extension is published in browser stores, Chrome, Edge, Chromium, and
-Brave users can download the Chromium ZIP and install it once:
+The consumer release path is one named browser-store listing per browser:
+
+- Google Chrome: Chrome Web Store
+- Microsoft Edge: Microsoft Edge Add-ons
+- Brave: the approved Chrome Web Store listing
+- Mozilla Firefox: Firefox Add-ons
+
+Those listings are not published yet. Until approval, Chrome, Edge, Chromium,
+and Brave developers can download the advanced Chromium ZIP and install it
+once:
 
 1. Open the browser extensions page and enable developer mode.
 2. Extract the ZIP, choose **Load unpacked**, and select the extracted folder.
@@ -48,16 +56,19 @@ Firefox ZIP is a store-submission and temporary-testing artifact, not a normal
 consumer installer. Users upgrading from the old random-ID Chromium build
 should remove it and load the current package once.
 
-`package-extension.ps1` produces a universal development ZIP plus separate
-Chromium and Firefox store-submission ZIPs. The browser-specific packages omit
-manifest keys that belong only to the other browser family.
+`package-extension.ps1` produces a universal development ZIP, a legacy
+Chromium ZIP, explicit Chrome, Edge, and Brave store-submission ZIPs, and a
+Firefox store-submission ZIP. The three Chromium-family submission files have
+the same verified payload but distinct names so an operator cannot confuse the
+target store. The browser-specific packages omit manifest keys that belong only
+to the other browser family. See [STORE_SUBMISSION.md](STORE_SUBMISSION.md).
 
 A self-hosted CRX is not the general Windows installer: consumer Chrome on
 Windows and macOS accepts direct extension installation only through the Chrome
 Web Store. Edge and managed Chromium deployments can use CRX packages, while
-normal Firefox releases require a Mozilla-signed XPI. QSDM therefore presents
-one Chrome/Edge-family download today and will route the install action to each
-browser's store after approval.
+normal Firefox releases require a Mozilla-signed XPI. QSDM therefore keeps ZIP
+archives under Advanced manual installation and activates each named store
+button only after that store has approved the release.
 
 The scripts in `native-host` remain available for development diagnostics;
 normal packaged installs do not require running them manually.

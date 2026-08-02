@@ -10,7 +10,7 @@ stage_dir="$(cd "$1" && pwd)"
 hive_version="$2"
 webroot="${3:-/var/www/qsdm}"
 downloads="$webroot/downloads"
-wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.3.0}"
+wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.4.0}"
 
 if [[ ! "$hive_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "invalid Hive version: $hive_version" >&2
@@ -21,6 +21,9 @@ installer="qsdm-hive-${hive_version}-win-x64.exe"
 blockmap="${installer}.blockmap"
 wallet_extension="qsdm-hive-wallet-extension-${wallet_extension_version}.zip"
 wallet_extension_chromium="qsdm-hive-wallet-extension-${wallet_extension_version}-chromium.zip"
+wallet_extension_chrome="qsdm-hive-wallet-extension-${wallet_extension_version}-chrome.zip"
+wallet_extension_edge="qsdm-hive-wallet-extension-${wallet_extension_version}-edge.zip"
+wallet_extension_brave="qsdm-hive-wallet-extension-${wallet_extension_version}-brave.zip"
 wallet_extension_firefox="qsdm-hive-wallet-extension-${wallet_extension_version}-firefox.zip"
 wallet_extension_checksums="qsdm-hive-wallet-extension-${wallet_extension_version}-SHA256SUMS.txt"
 required_downloads=(
@@ -33,6 +36,9 @@ required_downloads=(
   "qsdm-hive-${hive_version}-windows-nsis-evidence.json"
   "$wallet_extension"
   "$wallet_extension_chromium"
+  "$wallet_extension_chrome"
+  "$wallet_extension_edge"
+  "$wallet_extension_brave"
   "$wallet_extension_firefox"
   "$wallet_extension_checksums"
   "qsdm-hive-release-windows.json"
@@ -61,6 +67,9 @@ manifest_json="$(printf '%s' "$manifest_payload" | base64 --decode)"
 grep -q '"version": "'"${hive_version}"'"' <<<"$manifest_json"
 grep -q '"name": "'"${wallet_extension}"'"' <<<"$manifest_json"
 grep -q '"name": "'"${wallet_extension_chromium}"'"' <<<"$manifest_json"
+grep -q '"name": "'"${wallet_extension_chrome}"'"' <<<"$manifest_json"
+grep -q '"name": "'"${wallet_extension_edge}"'"' <<<"$manifest_json"
+grep -q '"name": "'"${wallet_extension_brave}"'"' <<<"$manifest_json"
 grep -q '"name": "'"${wallet_extension_firefox}"'"' <<<"$manifest_json"
 
 install -d -o caddy -g caddy -m 0755 "$webroot" "$downloads"
@@ -92,6 +101,9 @@ for file in \
   "qsdm-hive-${hive_version}-windows-nsis-evidence.json" \
   "$wallet_extension" \
   "$wallet_extension_chromium" \
+  "$wallet_extension_chrome" \
+  "$wallet_extension_edge" \
+  "$wallet_extension_brave" \
   "$wallet_extension_firefox" \
   "$wallet_extension_checksums"; do
   atomic_install "$stage_dir/downloads/$file" "$downloads/$file"
@@ -108,6 +120,8 @@ install_pointer() {
 install_pointer "$stage_dir/downloads/SHA256SUMS-win.txt" "$downloads/SHA256SUMS-win.txt"
 
 for file in "$installer" "$wallet_extension" "$wallet_extension_chromium" \
+  "$wallet_extension_chrome" "$wallet_extension_edge" \
+  "$wallet_extension_brave" \
   "$wallet_extension_firefox" "$wallet_extension_checksums"; do
   curl --fail --silent --show-error --head --max-time 30 \
     "https://qsdm.tech/downloads/$file" >/dev/null

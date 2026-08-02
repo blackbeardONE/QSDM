@@ -125,6 +125,74 @@
 
     .package-options .actions { margin-top: 0.65rem; }
 
+    .wallet-extension-panel { grid-template-columns: minmax(0, 1fr); }
+    .browser-options {
+      display: grid;
+      gap: 0 1.25rem;
+      margin: 1.25rem 0 0.25rem;
+      border-bottom: 1px solid var(--border);
+    }
+    @media (min-width: 760px) {
+      .browser-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .browser-option {
+      min-width: 0;
+      padding: 1rem 0;
+      border-top: 1px solid var(--border);
+    }
+    .browser-option [hidden] { display: none !important; }
+    .browser-option.is-recommended {
+      box-shadow: inset 3px 0 0 var(--teal);
+      padding-left: 0.9rem;
+    }
+    .browser-option-header {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      min-width: 0;
+    }
+    .browser-mark {
+      display: inline-grid;
+      flex: 0 0 2.25rem;
+      width: 2.25rem;
+      height: 2.25rem;
+      place-items: center;
+      border: 1px solid rgba(142, 220, 224, 0.28);
+      border-radius: 6px;
+      color: var(--teal);
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .browser-option h3 {
+      margin: 0;
+      color: var(--text);
+      font-size: 1rem;
+      font-weight: 600;
+    }
+    .browser-channel,
+    .browser-option-copy,
+    .browser-store-state {
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    .browser-channel { display: block; margin-top: 0.08rem; }
+    .browser-option-copy { margin: 0.7rem 0 0.8rem !important; }
+    .browser-option-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.65rem;
+    }
+    .browser-store-state { color: var(--gold); }
+    .browser-recommended {
+      margin-left: auto;
+      color: var(--teal);
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+    .wallet-extension-security { margin-top: 1rem; }
+
     .checksum {
       padding: 1rem;
       border: 1px solid var(--border);
@@ -340,34 +408,105 @@
       </div>
     </section>
 
-    <section class="panel" aria-labelledby="wallet-extension-title">
+    <section id="browser-extension" class="panel wallet-extension-panel" aria-labelledby="wallet-extension-title" data-wallet-extension-version="0.4.0">
       <div>
         <span class="version">Version 0.4.0</span>
         <h2 id="wallet-extension-title">QSDM Wallet browser extension</h2>
         <p>
           Connect supported websites to the active wallet in QSDM Hive without
           copying a keystore or passphrase into the browser. Install Hive 1.4.7
-          first. The new wallet handoff opens extension onboarding when it is
-          installed and returns missing providers to this download. One Chromium package supports Chrome, Edge, Chromium, and
-          Brave. Extract it and load the folder once from the browser's
-          extension page. Normal Firefox releases require Mozilla signing.
+          first. Choose your browser below. Consumer installation will use each
+          browser's own store, with no ZIP extraction or shared generic download.
+          The listings are being prepared and remain unavailable until the
+          browser vendors approve them.
         </p>
-        <div class="actions">
-          <a class="site-btn site-btn-solid" href="/downloads/qsdm-hive-wallet-extension-0.4.0-chromium.zip" download>Download for Chrome / Edge</a>
-          <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0-SHA256SUMS.txt">Checksums</a>
-          <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/tree/main/apps/qsdm-hive-wallet-extension" rel="noopener" target="_blank">Setup guide</a>
+
+        <div class="browser-options" aria-label="Browser extension stores">
+          <article class="browser-option" data-wallet-browser-card="chrome">
+            <div class="browser-option-header">
+              <span class="browser-mark" aria-hidden="true">CH</span>
+              <div>
+                <h3>Google Chrome</h3>
+                <span class="browser-channel">Chrome Web Store</span>
+              </div>
+              <span class="browser-recommended" data-browser-recommended hidden>Recommended</span>
+            </div>
+            <p class="browser-option-copy">One-click Chrome installation after store approval.</p>
+            <div class="browser-option-actions">
+              <a class="site-btn site-btn-solid" data-browser-install hidden rel="noopener">Install in Chrome</a>
+              <span class="browser-store-state" data-browser-pending>Store listing pending</span>
+            </div>
+          </article>
+
+          <article class="browser-option" data-wallet-browser-card="edge">
+            <div class="browser-option-header">
+              <span class="browser-mark" aria-hidden="true">ED</span>
+              <div>
+                <h3>Microsoft Edge</h3>
+                <span class="browser-channel">Microsoft Edge Add-ons</span>
+              </div>
+              <span class="browser-recommended" data-browser-recommended hidden>Recommended</span>
+            </div>
+            <p class="browser-option-copy">One-click Edge installation after store approval.</p>
+            <div class="browser-option-actions">
+              <a class="site-btn site-btn-solid" data-browser-install hidden rel="noopener">Install in Edge</a>
+              <span class="browser-store-state" data-browser-pending>Store listing pending</span>
+            </div>
+          </article>
+
+          <article class="browser-option" data-wallet-browser-card="brave">
+            <div class="browser-option-header">
+              <span class="browser-mark" aria-hidden="true">BR</span>
+              <div>
+                <h3>Brave</h3>
+                <span class="browser-channel">Chrome Web Store</span>
+              </div>
+              <span class="browser-recommended" data-browser-recommended hidden>Recommended</span>
+            </div>
+            <p class="browser-option-copy">Brave uses the approved Chrome Web Store release.</p>
+            <div class="browser-option-actions">
+              <a class="site-btn site-btn-solid" data-browser-install hidden rel="noopener">Install in Brave</a>
+              <span class="browser-store-state" data-browser-pending>Store listing pending</span>
+            </div>
+          </article>
+
+          <article class="browser-option" data-wallet-browser-card="firefox">
+            <div class="browser-option-header">
+              <span class="browser-mark" aria-hidden="true">FF</span>
+              <div>
+                <h3>Mozilla Firefox</h3>
+                <span class="browser-channel">Firefox Add-ons</span>
+              </div>
+              <span class="browser-recommended" data-browser-recommended hidden>Recommended</span>
+            </div>
+            <p class="browser-option-copy">One-click Firefox installation after Mozilla signing.</p>
+            <div class="browser-option-actions">
+              <a class="site-btn site-btn-solid" data-browser-install hidden rel="noopener">Install in Firefox</a>
+              <span class="browser-store-state" data-browser-pending>Store listing pending</span>
+            </div>
+          </article>
         </div>
+
         <details class="package-options">
-          <summary>Firefox and source packages</summary>
+          <summary>Advanced manual installation</summary>
+          <p>
+            These ZIP files are developer and store-review packages, not normal
+            one-click consumer installers. Chromium browsers require Developer
+            mode and Load unpacked; normal Firefox requires a Mozilla-signed XPI.
+          </p>
           <div class="actions">
-            <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0-firefox.zip" download>Firefox submission ZIP</a>
-            <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0.zip" download>Universal source ZIP</a>
+            <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0-chromium.zip" download="qsdm-hive-wallet-extension-0.4.0-chrome.zip">Chrome manual package</a>
+            <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0-chromium.zip" download="qsdm-hive-wallet-extension-0.4.0-edge.zip">Edge manual package</a>
+            <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0-chromium.zip" download="qsdm-hive-wallet-extension-0.4.0-brave.zip">Brave manual package</a>
+            <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0-firefox.zip" download>Firefox review package</a>
+            <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0-SHA256SUMS.txt">Checksums</a>
+            <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/tree/main/apps/qsdm-hive-wallet-extension" rel="noopener" target="_blank">Manual setup guide</a>
           </div>
         </details>
       </div>
-      <div class="checksum">
+      <div class="checksum wallet-extension-security">
         <strong>Security boundary</strong>
-        <span>Hive keeps the wallet secrets. Each website connection and every signing or CELL transfer action requires explicit approval. Consumer Chrome on Windows blocks direct off-store CRX installation, and normal Firefox requires a Mozilla-signed XPI.</span>
+        <span>Hive keeps the wallet secrets. Each website connection and every signing or CELL transfer action requires explicit approval. QSDM will not disguise an unsigned archive as an installable CRX or XPI that consumer browsers reject.</span>
       </div>
     </section>
 
@@ -418,5 +557,6 @@
     </div>
   </footer>
   <script src="/assets/site-nav.js"></script>
+  <script src="/assets/wallet-extension-install.js"></script>
 </body>
 </html>
