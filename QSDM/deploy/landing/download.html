@@ -227,6 +227,20 @@
       gap: 0.5rem;
     }
 
+    .package-options {
+      margin-top: 0.8rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .package-options summary {
+      width: fit-content;
+      cursor: pointer;
+      color: var(--teal);
+    }
+
+    .package-options .actions { margin-top: 0.65rem; }
+
     .checksum {
       padding: 1rem;
       border: 1px solid var(--border);
@@ -480,20 +494,26 @@
         <p>
           Connect supported websites to the active wallet in QSDM Hive without
           copying a keystore or passphrase into the browser. Install Hive 1.4.7
-          first. Until browser-store distribution is available, extract the
-          package for your browser and load it from the browser's extension page.
+          first. One universal package supports Chrome, Edge, Chromium, Brave,
+          and Firefox for manual installation. Extract it and load the folder
+          once from the browser's extension page.
         </p>
         <div class="actions">
-          <a class="btn btn-solid" href="/downloads/qsdm-hive-wallet-extension-0.3.0-chromium.zip" download>Chrome / Edge</a>
-          <a class="btn btn-solid" href="/downloads/qsdm-hive-wallet-extension-0.3.0-firefox.zip" download>Firefox</a>
-          <a class="btn btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.3.0.zip" download>Universal ZIP</a>
+          <a class="btn btn-solid" href="/downloads/qsdm-hive-wallet-extension-0.3.0.zip" download>Download wallet extension</a>
           <a class="btn btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.3.0-SHA256SUMS.txt">Checksums</a>
           <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/tree/main/apps/qsdm-hive-wallet-extension" rel="noopener" target="_blank">Setup guide</a>
         </div>
+        <details class="package-options">
+          <summary>Browser-store submission files</summary>
+          <div class="actions">
+            <a class="btn btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.3.0-chromium.zip" download>Chromium ZIP</a>
+            <a class="btn btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.3.0-firefox.zip" download>Firefox ZIP</a>
+          </div>
+        </details>
       </div>
       <div class="checksum">
         <strong>Security boundary</strong>
-        <span>Hive keeps the wallet secrets. Each website connection and every signing or CELL transfer action requires explicit approval.</span>
+        <span>Hive keeps the wallet secrets. Each website connection and every signing or CELL transfer action requires explicit approval. Consumer Chrome on Windows accepts direct installation only through the Chrome Web Store, so an off-store CRX would not remove the one-time manual step.</span>
       </div>
     </section>
 

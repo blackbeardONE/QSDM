@@ -26,10 +26,11 @@ the current user. This requires no administrator access. The extension has the
 stable Chromium ID `habkkkednignfkoffhpbjahcjbikkahh` and Firefox ID
 `qsdm-wallet@qsdm.tech`.
 
-Until the extension is published in browser stores, install it once:
+Until the extension is published in browser stores, download the universal ZIP
+and install it once:
 
 1. Open the browser extensions page and enable developer mode.
-2. Choose **Load unpacked** and select the bundled `wallet-extension` folder.
+2. Extract the ZIP, choose **Load unpacked**, and select the extracted folder.
 3. Start or restart QSDM Hive.
 
 Chrome, Edge, Chromium, Brave, and Firefox 128 or newer are supported. Users
@@ -40,6 +41,13 @@ migration.
 `package-extension.ps1` produces a universal development ZIP plus separate
 Chromium and Firefox store-submission ZIPs. The browser-specific packages omit
 manifest keys that belong only to the other browser family.
+
+A self-hosted CRX is not the general Windows installer: consumer Chrome on
+Windows and macOS accepts direct extension installation only through the Chrome
+Web Store. Edge and managed Chromium deployments can use CRX packages, while
+normal Firefox releases require a Mozilla-signed XPI. QSDM therefore presents
+one universal manual-install package today and will route the same install
+button to each browser's store after approval.
 
 The scripts in `native-host` remain available for development diagnostics;
 normal packaged installs do not require running them manually.
