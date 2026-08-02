@@ -131,9 +131,16 @@ require_staged_marker wallet.html '/wallet-provider.js'
 require_staged_marker wallet-start.html '/wallet-start.js'
 require_staged_marker wallet-start.html 'noindex,follow'
 
-provider_sri="$(openssl dgst -sha384 -binary "$STAGE/wallet-provider.js" | openssl base64 -A)"
-require_staged_marker wallet.html "sha384-$provider_sri"
+for wallet_asset in wasm_exec.js wallet.js wallet-provider.js; do
+  wallet_sri="$(openssl dgst -sha384 -binary "$STAGE/$wallet_asset" | openssl base64 -A)"
+  require_staged_marker wallet.html "sha384-$wallet_sri"
+done
 echo "  Core $core_version / Hive $hive_version / Wallet extension $extension_version"
+
+if [[ "${QSDM_SITE_VALIDATE_ONLY:-0}" == "1" ]]; then
+  echo "DONE — staged website passed validation; no files were installed."
+  exit 0
+fi
 
 echo "=== backing up current public website to $BACKUP_DIR ==="
 install -d -o root -g root -m 0700 "$BACKUP_DIR"
@@ -240,9 +247,10 @@ network_page="$(curl --fail --max-time 15 -s https://qsdm.tech/network.html)"
 grep -Fq 'The public network for CELL.' <<<"$home_page"
 grep -Fq 'View Network' <<<"$home_page"
 grep -Fq 'QSDM VPN' <<<"$home_page"
-grep -Fq 'Version 1.4.7' <<<"$download_page"
-grep -Fq 'Version 0.4.0' <<<"$download_page"
-grep -Fq 'qsdm-hive-wallet-extension-0.4.0-chromium.zip' <<<"$download_page"
+grep -Fq "Version $hive_version" <<<"$download_page"
+grep -Fq "Version $extension_version" <<<"$download_page"
+grep -Fq "qsdm-hive-wallet-extension-$extension_version-chromium.zip" \
+  <<<"$download_page"
 grep -Fq 'QSDM Network' <<<"$network_page"
 grep -Fq 'href="/download.html">Download</a>' <<<"$home_page"
 echo "  expected homepage, download, and network markers are present"

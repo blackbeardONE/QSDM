@@ -108,6 +108,26 @@ Private one-off helpers belong under `scripts/local/`, `scripts/private/`,
 also rejects those paths if they are force-added, and checks public scripts for
 literal personal home paths and consumer email addresses.
 
+### Website deployment
+
+Build the production `qsdm.tech` package from a clean commit that is already on
+`origin/main`. Do not deploy a branch-only website snapshot, even when that
+branch has a newer layout. Merge the layout into `main` first so product facts,
+wallet flows, documentation, and deployment checks move together.
+
+Before replacing public files, the website installer must compare the staged
+pages with the versions already approved by production:
+
+- QSDM Core version from the live `/api/v1/status` response;
+- QSDM Hive version from `downloads/latest.yml`;
+- newest published Chromium QSDM Wallet extension archive;
+- required wallet-provider, onboarding, documentation, and navigation assets.
+
+Reject the package before backup or installation when any advertised version or
+required asset is stale. Keep the previous website backup, verify every
+advertised download, and compare important live files with the reviewed package
+after deployment.
+
 ### 3. Run the assurance gates
 
 1. Review the full committed and working-tree delta for security, compatibility,
