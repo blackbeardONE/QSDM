@@ -30,6 +30,13 @@ const walletProviderScriptPath = path.join(
   "landing",
   "wallet-provider.js"
 );
+const walletStartScriptPath = path.join(
+  workspaceDirectory,
+  "QSDM",
+  "deploy",
+  "landing",
+  "wallet-start.js"
+);
 
 const readArgument = (name, fallback = "") => {
   const index = process.argv.indexOf(name);
@@ -60,6 +67,7 @@ const nativeHostPath = path.resolve(
 );
 const keepProfile = process.argv.includes("--keep-profile");
 const headful = process.argv.includes("--headful");
+const screenshotDirectory = readArgument("--screenshot-directory");
 const nativeHostRegistryKeys = [
   "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\tech.qsdm.hive_wallet",
   "HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\tech.qsdm.hive_wallet",
@@ -212,6 +220,33 @@ const server = http.createServer(async (request, response) => {
       "Cache-Control": "no-store",
     });
     response.end(fs.readFileSync(walletProviderScriptPath));
+    return;
+  }
+
+  if (request.method === "GET" && request.url === "/wallet-start.js") {
+    response.writeHead(200, {
+      "Content-Type": "text/javascript; charset=utf-8",
+      "Cache-Control": "no-store",
+    });
+    response.end(fs.readFileSync(walletStartScriptPath));
+    return;
+  }
+
+  if (request.method === "GET" && request.url === "/wallet-start-acceptance") {
+    response.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+      "Content-Security-Policy": "default-src 'self'; script-src 'self'",
+    });
+    response.end(
+      '<!doctype html><html><head><title>QSDM Wallet Handoff Acceptance</title></head><body><p id="wallet-handoff-status"></p><button id="wallet-handoff-open">Open</button><script src="/wallet-start.js"></script></body></html>'
+    );
+    return;
+  }
+
+  if (request.method === "GET" && request.url === "/download.html") {
+    response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    response.end("<!doctype html><title>QSDM Download</title>");
     return;
   }
 
@@ -597,6 +632,100 @@ const runWebWalletChecks = async (browser, testUrl) => {
   }));
 };
 
+const runOnboardingChecks = async (browser, testUrl, extensionId) => {
+  const existingPages = new Set(await browser.pages());
+  const handoff = await browser.newPage();
+  handoff.on("pageerror", (error) =>
+    stage(`wallet handoff page error: ${error.message}`)
+  );
+  await handoff.goto(testUrl, { waitUntil: "domcontentloaded" });
+  await handoff.waitForFunction(
+    () =>
+      document
+        .querySelector("#wallet-handoff-status")
+        ?.textContent?.includes("opened in a new tab"),
+    { timeout: 15000 }
+  );
+
+  const onboarding = (await browser.pages()).find(
+    (page) =>
+      !existingPages.has(page) &&
+      page.url().startsWith(
+        `chrome-extension://${extensionId}/home.html#/onboarding/welcome?`
+      )
+  );
+  assert.ok(onboarding, "The website handoff must open extension onboarding.");
+  onboarding.on("pageerror", (error) =>
+    stage(`onboarding page error: ${error.message}`)
+  );
+  await onboarding.waitForFunction(
+    () =>
+      document.querySelector("#state-label")?.textContent ===
+        "Active Hive wallet" &&
+      document.querySelector("#use-hive")?.disabled === false,
+    { timeout: 15000 }
+  );
+
+  const onboardingUrl = new URL(onboarding.url());
+  const hashParams = new URLSearchParams(
+    onboardingUrl.hash.slice(onboardingUrl.hash.indexOf("?") + 1)
+  );
+  assert.equal(hashParams.get("login"), "new");
+  assert.equal(hashParams.get("origin"), expectedOrigin);
+  assert.equal(
+    await onboarding.$eval("#requesting-site", (element) => element.textContent),
+    "Requested by 127.0.0.1"
+  );
+  assert.equal((await onboarding.$$("#google-login")).length, 0);
+  assert.equal((await onboarding.$$("#apple-login")).length, 0);
+
+  await onboarding.click("#telegram-login");
+  assert.match(
+    await onboarding.$eval("#notice", (element) => element.textContent),
+    /No Telegram or email data was collected/
+  );
+  if (screenshotDirectory) {
+    fs.mkdirSync(screenshotDirectory, { recursive: true });
+    await onboarding.setViewport({ width: 1440, height: 900 });
+    await onboarding.screenshot({
+      path: path.join(screenshotDirectory, "qsdm-wallet-onboarding-desktop.png"),
+      fullPage: true,
+    });
+    await onboarding.setViewport({ width: 390, height: 844 });
+    await onboarding.screenshot({
+      path: path.join(screenshotDirectory, "qsdm-wallet-onboarding-mobile.png"),
+      fullPage: true,
+    });
+  }
+  await onboarding.click("#use-hive");
+  await onboarding.waitForFunction(
+    () =>
+      document.querySelector("#notice")?.textContent ===
+      "Wallet connected. Return to the requesting website.",
+    { timeout: 15000 }
+  );
+
+  return {
+    onboardingUrl: onboarding.url(),
+    address: await onboarding.$eval(
+      "#wallet-address",
+      (element) => element.textContent
+    ),
+  };
+};
+
+const runMissingExtensionHandoffCheck = async (browser, testUrl) => {
+  const page = await browser.newPage();
+  await page.goto(testUrl, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(
+    () =>
+      window.location.pathname === "/download.html" &&
+      window.location.hash === "#wallet-extension-title",
+    { timeout: 10000 }
+  );
+  return page.url();
+};
+
 let browser;
 let nativeHostRegistrySnapshot;
 try {
@@ -629,6 +758,19 @@ try {
     QSDM_HIVE_BROKER_STATE: brokerStatePath,
   });
   attachExtensionDiagnostics(browser);
+  stage("testing missing-extension download fallback");
+  const fallbackUrl = await withTimeout(
+    runMissingExtensionHandoffCheck(
+      browser,
+      `${expectedOrigin}/wallet-start-acceptance`
+    ),
+    15000,
+    "Missing-extension handoff check"
+  );
+  assert.equal(
+    fallbackUrl,
+    `${expectedOrigin}/download.html#wallet-extension-title`
+  );
   stage("loading unpacked extension through Chromium debugging API");
   const extensionId = await withTimeout(
     browser.installExtension(extensionDirectory),
@@ -700,6 +842,27 @@ try {
   assert.ok(webWalletMethods.includes("qsdm_getBalance"));
   assert.ok(webWalletMethods.includes("qsdm_sendTransaction"));
   assert.equal(webWalletMethods.at(-1), "qsdm_disconnect");
+
+  stage("testing installed-extension onboarding handoff");
+  const onboardingStart = requests.length;
+  const onboardingResult = await withTimeout(
+    runOnboardingChecks(
+      browser,
+      `${expectedOrigin}/wallet-start-acceptance`,
+      extensionId
+    ),
+    30000,
+    "Extension onboarding checks"
+  );
+  assert.ok(onboardingResult.onboardingUrl.includes("login=new"));
+  assert.equal(
+    onboardingResult.address,
+    `${TEST_ADDRESS.slice(0, 12)}...${TEST_ADDRESS.slice(-10)}`
+  );
+  assert.deepEqual(
+    requests.slice(onboardingStart).map((request) => request.method),
+    ["qsdm_ping", "qsdm_getWalletInfo", "qsdm_requestAccounts"]
+  );
 
   stage("testing extension popup");
   const popupStart = requests.length;

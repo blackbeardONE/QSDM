@@ -4,6 +4,7 @@
   "use strict";
 
   const PANEL_ID = "qsdm-hive-provider-panel";
+  const ONBOARDING_URL = "/wallet-start.html?login=new";
   const ADDRESS_PATTERN = /^[a-zA-Z0-9]{32,128}$/;
   const AMOUNT_PATTERN = /^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/;
   let provider = null;
@@ -99,6 +100,7 @@
       detectionTimer = null;
     }
     element("hive-provider-connect").disabled = false;
+    element("hive-provider-connect").textContent = "Connect Hive wallet";
     setText("hive-provider-state", "QSDM Wallet extension detected");
     setNotice(
       "Connect once, then approve each signature or CELL transfer in QSDM Hive.",
@@ -114,10 +116,7 @@
 
   const connect = async () => {
     if (!provider && !attachProvider()) {
-      setNotice(
-        "Install the QSDM Wallet extension and keep QSDM Hive running.",
-        "error"
-      );
+      window.location.assign(ONBOARDING_URL);
       return;
     }
     const button = element("hive-provider-connect");
@@ -298,7 +297,16 @@
           window.clearInterval(detectionTimer);
           detectionTimer = null;
         }
-      }, 10000);
+        if (!provider) {
+          element("hive-provider-connect").disabled = false;
+          element("hive-provider-connect").textContent = "Get QSDM Wallet";
+          setText("hive-provider-state", "Extension not detected");
+          setNotice(
+            "Continue to the QSDM Wallet setup. Installed extensions open onboarding; otherwise the download page opens.",
+            "info"
+          );
+        }
+      }, 2000);
     }
   };
 

@@ -6,11 +6,13 @@ JSON, or passphrase.
 
 ## User flow
 
-1. Create or import a wallet once in **QSDM Hive > Settings > Wallet**.
-2. Keep Hive running in the notification area.
-3. Open `https://qsdm.tech/wallet.html` or another supported website and select
-   **Connect Hive wallet**.
-4. Approve the website once in Hive.
+1. A supported website opens `https://qsdm.tech/wallet-start.html?login=new`.
+2. When the provider is installed, the website asks the extension to open
+   `home.html#/onboarding/welcome?login=new`. It never hard-codes or navigates
+   to a browser-specific extension ID.
+3. If the provider is missing, the handoff opens the official QSDM extension
+   download instead.
+4. Select **Use QSDM Hive Wallet** and approve the requesting website in Hive.
 
 The website remains connected to that public address until the user disconnects
 it in the extension or revokes it under **Hive > Settings > Wallet > Connected
@@ -18,6 +20,12 @@ Sites**. Signatures and CELL transfers always require a fresh Hive approval.
 
 There is no separate extension account, password, recovery phrase, or wallet
 import. This avoids creating another copy of the user's wallet secrets.
+
+The onboarding page reserves only **Telegram** and **Email** as future QSDM
+Account methods. They are not enabled until QSDM deploys server-side identity
+verification. The extension does not collect an unverified Telegram handle or
+email address, and it never embeds bot, SMTP, or account-service credentials.
+Google and Apple login are not included.
 
 ## Installation
 
@@ -67,9 +75,11 @@ const signature = await window.qsdm.request({
 });
 ```
 
-Supported methods are `qsdm_requestAccounts`, `qsdm_accounts`,
+Supported website methods are `qsdm_requestAccounts`, `qsdm_accounts`,
 `qsdm_getBalance`, `qsdm_signMessage`, `qsdm_sendTransaction`, and
-`qsdm_disconnect`.
+`qsdm_disconnect`. `qsdm_openOnboarding` is an extension-local navigation
+request: it opens the internal onboarding page and never reaches Hive or QSDM
+Core.
 
 ## Verification
 

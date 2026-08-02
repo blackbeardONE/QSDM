@@ -1,5 +1,39 @@
 const NATIVE_HOST = "tech.qsdm.hive_wallet";
 const PROVIDER_VERSION = "qsdm-hive-wallet-provider/v1";
+const ONBOARDING_METHOD = "qsdm_openOnboarding";
+let onboardingTabId = null;
+
+const normalizeOnboardingMode = (value) =>
+  value === "existing" ? "existing" : "new";
+
+const openOnboarding = async (origin, params) => {
+  const login = normalizeOnboardingMode(params?.login);
+  const page = chrome.runtime.getURL("home.html");
+  const route = new URLSearchParams({ login, origin }).toString();
+  const url = `${page}#/onboarding/welcome?${route}`;
+  let reused = false;
+  if (Number.isInteger(onboardingTabId)) {
+    try {
+      await chrome.tabs.get(onboardingTabId);
+      await chrome.tabs.update(onboardingTabId, { url, active: true });
+      reused = true;
+    } catch {
+      onboardingTabId = null;
+    }
+  }
+  if (!reused) {
+    const tab = await chrome.tabs.create({ url, active: true });
+    onboardingTabId = Number.isInteger(tab?.id) ? tab.id : null;
+  }
+  return {
+    ok: true,
+    result: { opened: true, reused },
+  };
+};
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (tabId === onboardingTabId) onboardingTabId = null;
+});
 
 const normalizeWebOrigin = (rawUrl) => {
   const parsed = new URL(rawUrl);
@@ -60,6 +94,9 @@ const sendNative = (origin, method, params) =>
 const handleMessage = async (message, sender) => {
   if (message?.source === "qsdm-hive-content") {
     const origin = normalizeWebOrigin(sender.tab?.url || sender.url || "");
+    if (message.method === ONBOARDING_METHOD) {
+      return openOnboarding(origin, message.params);
+    }
     return sendNative(origin, message.method, message.params);
   }
 

@@ -23,6 +23,9 @@ $packageFiles = @(
     'popup.html',
     'popup.css',
     'popup.js',
+    'home.html',
+    'home.css',
+    'home.js',
     'qsdm-hive-icon.png'
 )
 

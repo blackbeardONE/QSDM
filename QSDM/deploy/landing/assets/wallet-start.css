@@ -1,0 +1,158 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background: var(--bg);
+}
+
+.handoff-header {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.handoff-nav {
+  width: min(80rem, calc(100% - 2rem));
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 auto;
+}
+
+.handoff-nav a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.handoff-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-weight: 600;
+}
+
+.handoff-brand img {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+}
+
+main {
+  min-height: calc(100vh - 65px);
+  display: grid;
+  place-items: center;
+  padding: 3rem 1.25rem;
+}
+
+.handoff {
+  width: min(42rem, 100%);
+  text-align: center;
+}
+
+.handoff > img {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 1.5rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.65rem;
+  color: var(--teal);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(2rem, 6vw, 3.5rem);
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.lede {
+  max-width: 34rem;
+  margin: 1rem auto 0;
+  color: var(--text-2);
+  font-size: 1.05rem;
+}
+
+.progress {
+  width: min(22rem, 100%);
+  height: 5px;
+  margin: 2rem auto 0;
+  overflow: hidden;
+  background: var(--panel-2);
+}
+
+.progress span {
+  width: 45%;
+  height: 100%;
+  display: block;
+  background: var(--gold);
+  animation: scan 1.3s ease-in-out infinite alternate;
+}
+
+.status {
+  min-height: 3rem;
+  margin: 1rem 0 0;
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.action {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 0.65rem 1rem;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.action.primary {
+  border-color: var(--gold);
+  background: var(--gold);
+  color: var(--ink);
+}
+
+.action:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.detail {
+  margin-top: 2rem;
+  color: var(--muted-2);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
+@keyframes scan {
+  from { transform: translateX(-80%); }
+  to { transform: translateX(200%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress span {
+    width: 100%;
+    animation: none;
+  }
+}

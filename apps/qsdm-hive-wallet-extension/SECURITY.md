@@ -21,6 +21,10 @@ it. Hive removes those temporary files during shutdown.
   start. Registration does not require administrator access.
 - The extension requests only `nativeMessaging` and `activeTab` permissions.
 - Websites receive `window.qsdm`, which exposes a fixed allowlist of methods.
+- `qsdm_openOnboarding` can only ask the extension background worker to open
+  its own internal page. A website cannot choose an extension URL or execute
+  code in that page. Repeated requests reuse one onboarding tab, and websites
+  do not receive its browser tab identifier.
 - Remote sites must use HTTPS. Plain HTTP is accepted only on loopback hosts
   for local development.
 - Site access is scoped to the exact origin and active wallet address.
@@ -40,6 +44,15 @@ once when a request lands during a Hive restart.
 Browser-specific native-host manifests allow only the pinned official
 extension identity for that browser family. Future browser-store packages must
 retain these identities.
+
+## Account identity boundary
+
+Telegram and email are displayed only as reserved QSDM Account methods. Social
+identity is not wallet custody and must not become a substitute for a wallet
+signature. Until a server can verify Telegram responses and email challenges,
+the extension collects neither identifier and issues no account session.
+Provider credentials must remain server-side; they must never be packaged in
+the browser extension.
 
 ## Explicit limitations
 

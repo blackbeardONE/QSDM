@@ -51,6 +51,7 @@ fi
 
 for required in \
   index.html download.html network.html explorer.html validators.html \
+  wallet-start.html wallet-start.js assets/wallet-start.css \
   assets/site.css assets/site-nav.js docs/index.html docs/docs.css \
   docs/docs.js docs/lib/markdown-it.min.js; do
   if [[ ! -f "$STAGE/$required" ]]; then
@@ -136,6 +137,7 @@ echo "=== live probes ==="
 for u in \
   https://qsdm.tech/                              \
   https://qsdm.tech/download.html                 \
+  https://qsdm.tech/wallet-start.html?login=new  \
   https://qsdm.tech/network.html                  \
   https://qsdm.tech/explorer.html                 \
   https://qsdm.tech/validators.html               \

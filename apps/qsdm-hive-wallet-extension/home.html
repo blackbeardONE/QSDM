@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    />
+    <title>Welcome to QSDM Wallet</title>
+    <link rel="stylesheet" href="home.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <img src="qsdm-hive-icon.png" alt="" width="36" height="36" />
+        <span>QSDM Wallet</span>
+      </div>
+      <label class="language">
+        <span class="sr-only">Language</span>
+        <select aria-label="Language">
+          <option>English</option>
+        </select>
+      </label>
+    </header>
+
+    <main>
+      <section class="welcome" aria-labelledby="welcome-title">
+        <img
+          class="welcome-mark"
+          src="qsdm-hive-icon.png"
+          alt="QSDM"
+          width="76"
+          height="76"
+        />
+        <p class="eyebrow">CELL WALLET</p>
+        <h1 id="welcome-title">One wallet across QSDM</h1>
+        <p class="intro">
+          Use your active Hive wallet on supported websites. Private keys stay
+          inside QSDM Hive.
+        </p>
+
+        <div class="choices" aria-label="Account choices">
+          <button class="choice" id="telegram-login" type="button">
+            <span class="choice-icon" aria-hidden="true">T</span>
+            Continue with Telegram
+          </button>
+          <button class="choice" id="email-login" type="button">
+            <span class="choice-icon" aria-hidden="true">@</span>
+            Continue with Email
+          </button>
+
+          <div class="divider"><span>or</span></div>
+
+          <button class="choice primary" id="use-hive" type="button" disabled>
+            Use QSDM Hive Wallet
+          </button>
+          <button class="text-button" id="open-hive" type="button">
+            Open wallet management
+          </button>
+        </div>
+
+        <section class="wallet-state" aria-live="polite">
+          <span id="state-label">Checking QSDM Hive...</span>
+          <strong id="wallet-address"></strong>
+          <small id="requesting-site"></small>
+        </section>
+
+        <p class="notice" id="notice" role="status"></p>
+        <p class="legal">
+          Telegram and email account sync will activate only after QSDM Account
+          verification is deployed. This build does not collect either value.
+        </p>
+      </section>
+    </main>
+
+    <script src="home.js"></script>
+  </body>
+</html>

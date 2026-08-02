@@ -107,6 +107,18 @@ verify its SHA-256 checksum, extract it, and load that folder once from the
 browser's extension page. Browser-store installation will replace this one-time
 setup after the extension is approved by the relevant stores.
 
+Extension 0.4.0 adds the first-run wallet handoff. A supported site requests
+`qsdm_openOnboarding`; the extension background worker opens its own
+`home.html#/onboarding/welcome?login=new` route. Sites never hard-code a
+`chrome-extension://` or `moz-extension://` address. If the provider is not
+detected, `https://qsdm.tech/wallet-start.html?login=new` continues to the
+official download page.
+
+Telegram and email are the only planned QSDM Account choices shown on this
+screen. They remain inactive until a server-side Telegram verifier and email
+challenge service are deployed. No identifier is collected in the meantime,
+and social identity will not receive or replace the Hive-held wallet key.
+
 ## Tasks in Hive
 
 - **QSDM Miner** requires an NVIDIA Turing-or-newer GPU (CUDA compute capability 7.5+). Hive 1.3.93 runs the current SHA3/DAG proof search through the packaged CUDA solver and refuses to start the task if that solver, a compatible driver, or the GPU is unavailable. Windows and Linux release builds fail before publication if either mining executable is missing. Concurrent restore and startup requests share one launch operation, so one Hive task supervises one CUDA miner. On Linux it recognizes the same packaged miner across AppImage mount changes and adopts that process after an unclean Hive restart instead of launching a conflicting duplicate. It also ignores obsolete protected Windows miner services instead of adopting them as the current task. `fork_v2_tc_active` describes the future Tensor-Core consensus algorithm; it is separate from today's CUDA SHA3 backend. A zero-balance signer may choose **Use mining earnings**: accepted mining rewards fill the 10 CELL slashable bond first, then subsequent rewards become spendable. Operators who already hold CELL may still lock the bond immediately.
