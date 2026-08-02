@@ -117,10 +117,13 @@ fi
 UNEXPECTED=""
 while IFS= read -r f; do
   [ -z "$f" ] && continue
-  # Normalize: strip leading "./" and flip backslashes to forward
-  # slashes (Windows runners / git grep on mingw both spit mixed paths).
-  norm="${f#./}"
-  norm="${norm//\\//}"
+  # Normalize: flip backslashes to forward slashes, then strip the
+  # leading "./" (Windows runners / git grep on mingw both spit mixed
+  # paths). Order matters: ripgrep on Windows emits ".\CHANGELOG.md",
+  # so stripping "./" first is a no-op and leaves "./CHANGELOG.md",
+  # which never matches an allowlist entry.
+  norm="${f//\\//}"
+  norm="${norm#./}"
   allowed="no"
   for a in "${ALLOWLIST[@]}"; do
     if [ "$norm" = "$a" ]; then
