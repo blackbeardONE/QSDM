@@ -175,10 +175,21 @@ echo "=== content checks ==="
 home_page="$(curl --fail --max-time 15 -s https://qsdm.tech/)"
 download_page="$(curl --fail --max-time 15 -s https://qsdm.tech/download.html)"
 network_page="$(curl --fail --max-time 15 -s https://qsdm.tech/network.html)"
+
+# Read the advertised version out of the page we just installed instead
+# of pinning a literal here. The literal drifted 1.4.0 -> 1.4.5 -> 1.4.7
+# and a stale one fails the deploy *after* the site is already written,
+# which is the worst time to find out. Comparing the served page against
+# the installed file also catches Caddy handing back a cached copy.
+advertised_version="$(grep -o -m 1 -E 'Version [0-9]+\.[0-9]+\.[0-9]+' "$WEBROOT/download.html")"
+if [[ -z "$advertised_version" ]]; then
+  echo "download page does not advertise a version string" >&2
+  exit 1
+fi
 grep -Fq 'The public network for CELL.' <<<"$home_page"
 grep -Fq 'View Network' <<<"$home_page"
 grep -Fq 'QSDM VPN' <<<"$home_page"
-grep -Fq 'Version 1.4.5' <<<"$download_page"
+grep -Fq "$advertised_version" <<<"$download_page"
 grep -Fq 'QSDM Network' <<<"$network_page"
 grep -Fq 'href="/download.html">Download</a>' <<<"$home_page"
 echo "  expected homepage, download, and network markers are present"
