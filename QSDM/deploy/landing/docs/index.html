@@ -15,41 +15,94 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/assets/site.css" />
-
 <link rel="stylesheet" href="/docs/docs.css" />
 </head>
 <body>
 <a class="skip-link" href="#doc-main">Skip to content</a>
 
-<header class="docs-header">
-  <div class="docs-header-inner">
-    <a class="docs-brand" href="/" aria-label="Back to QSDM home">
-      <img class="docs-brand-icon" src="/assets/qsdm-hive-icon.png" alt="" />
-      <span class="docs-brand-text">
-        <strong>QSDM</strong>
-        <em>Docs</em>
-      </span>
+<header class="site-header">
+  <div class="site-header-inner">
+    <a class="site-brand" href="/" aria-label="Back to QSDM home">
+      <img src="/assets/qsdm-hive-icon.png" alt="" />
+      <span>QSDM</span>
     </a>
-    <button class="docs-sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle navigation" aria-expanded="false">
-      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </button>
-    <div class="docs-search-wrap">
-      <input type="search" id="docsSearch" placeholder="Filter pages…" aria-label="Filter pages in sidebar" autocomplete="off" spellcheck="false" />
+    <nav class="site-nav" aria-label="Primary">
+      <div class="site-nav-item">
+        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
+          Network <span class="site-nav-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="site-nav-panel" role="menu">
+          <a href="/network.html" role="menuitem">Overview<span class="site-nav-hint">Live CELL network</span></a>
+          <a href="/explorer.html" role="menuitem">Explorer<span class="site-nav-hint">Search + chain tip</span></a>
+          <a href="/api.html" role="menuitem">API<span class="site-nav-hint">HTTP v1 overview</span></a>
+          <a href="/validators.html" role="menuitem">Validators<span class="site-nav-hint">Bootstrap peers</span></a>
+        </div>
+      </div>
+      <div class="site-nav-item">
+        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
+          Hive <span class="site-nav-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="site-nav-panel" role="menu">
+          <a href="/download.html" role="menuitem">Download Hive<span class="site-nav-hint">Windows + Linux app</span></a>
+          <a href="/wallet.html" role="menuitem">Web wallet<span class="site-nav-hint">Browser self-custody</span></a>
+          <a href="https://qsdm.online/" role="menuitem">QSDM VPN<span class="site-nav-hint">Private Android access</span></a>
+        </div>
+      </div>
+      <a href="/docs/">Docs</a>
+      <div class="site-nav-item">
+        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
+          Trust <span class="site-nav-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="site-nav-panel" role="menu">
+          <a href="/audit.html" role="menuitem">Public audit<span class="site-nav-hint">Live checklist</span></a>
+          <a href="/trust.html" role="menuitem">Attestations<span class="site-nav-hint">NVIDIA feed</span></a>
+        </div>
+      </div>
+    </nav>
+    <div class="site-actions">
+      <a class="site-btn site-btn-solid" href="/download.html">Download</a>
+      <button class="site-menu-toggle" type="button" id="siteMenuToggle" aria-label="Open menu" aria-expanded="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 7H4V5H20V7ZM20 13H4V11H20V13ZM20 19H4V17H20V19Z"/></svg>
+      </button>
     </div>
-    <div class="docs-header-right">
-      <a class="docs-pill" id="ver-pill"
-         href="https://github.com/blackbeardONE/QSDM/commit/ee1d5e2e40c2241e642b2b49a75181eade8c8294"
-         title="Latest QSDM Core candidate: v0.4.7-rc.9">
-        <span class="dot" aria-hidden="true"></span>
-        <span id="ver-pill-text">v0.4.7-rc.9</span>
-      </a>
-      <a class="docs-link" href="/">Home</a>
-      <a class="docs-link" href="/network.html">Network</a>
-      <a class="docs-link" href="https://qsdm.online/">QSDM VPN</a>
-      <a class="docs-link" href="https://github.com/blackbeardONE/QSDM" rel="noopener" target="_blank">GitHub →</a>
+  </div>
+  <div class="site-mobile-nav" id="siteMobileNav">
+    <div class="site-mobile-group">
+      <div class="site-mobile-label">Network</div>
+      <a href="/network.html">Overview</a>
+      <a href="/explorer.html">Explorer</a>
+      <a href="/api.html">API</a>
+      <a href="/validators.html">Validators</a>
+    </div>
+    <div class="site-mobile-group">
+      <div class="site-mobile-label">Hive</div>
+      <a href="/download.html">Download Hive</a>
+      <a href="/wallet.html">Web wallet</a>
+      <a href="https://qsdm.online/">QSDM VPN</a>
+    </div>
+    <div class="site-mobile-group">
+      <div class="site-mobile-label">Learn</div>
+      <a href="/docs/">Docs</a>
+      <a href="/audit.html">Public audit</a>
+      <a href="/trust.html">Attestations</a>
     </div>
   </div>
 </header>
+
+<div class="docs-toolbar">
+  <button class="docs-sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle documentation sidebar" aria-expanded="false">
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </button>
+  <div class="docs-search-wrap">
+    <input type="search" id="docsSearch" placeholder="Filter pages…" aria-label="Filter pages in sidebar" autocomplete="off" spellcheck="false" />
+  </div>
+  <a class="docs-pill" id="ver-pill"
+     href="https://github.com/blackbeardONE/QSDM/commit/ee1d5e2e40c2241e642b2b49a75181eade8c8294"
+     title="Deployed QSDM Network Core: v0.4.7-rc.9">
+    <span class="dot" aria-hidden="true"></span>
+    <span id="ver-pill-text">v0.4.7-rc.9</span>
+  </a>
+</div>
 
 <div class="docs-layout">
   <aside class="docs-sidebar" id="docsSidebar" aria-label="Documentation sections">
@@ -77,6 +130,7 @@
   </main>
 </div>
 
+<script src="/assets/site-nav.js"></script>
 <script src="/docs/lib/markdown-it.min.js" integrity="sha384-wLhprpjsmjc/XYIcF+LpMxd8yS1gss6jhevOp6F6zhiIoFK6AmHtm4bGKtehTani" crossorigin="anonymous"></script>
 <script src="/docs/docs.js"></script>
 </body>

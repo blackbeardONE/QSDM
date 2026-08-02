@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>QSDM Wallet — Self-Custody, Quantum-Secure (ML-DSA-87)</title>
+<title>QSDM Web wallet — Self-custody, quantum-secure (ML-DSA-87)</title>
 <meta name="description" content="Generate a self-custody QSDM wallet in your browser. ML-DSA-87 (FIPS 204) keypair generated entirely client-side; private key never leaves this tab. PBKDF2-SHA256 (600k iterations) + AES-256-GCM passphrase-encrypted keystore, byte-compatible with `qsdmcli wallet new`. Plus a read-only public-address balance lookup that queries api.qsdm.tech." />
 <meta name="theme-color" content="#061116" />
 <meta property="og:title" content="QSDM Wallet — Self-Custody, Quantum-Secure" />
@@ -231,18 +231,39 @@
       <span>QSDM</span>
     </a>
     <nav class="site-nav" aria-label="Primary">
-      <a href="/network.html">Network</a>
-      <a href="/wallet.html" class="active">Wallet</a>
-      <a href="/explorer.html">Explorer</a>
-      <a href="/chain.html">Chain</a>
-      <a href="/validators.html">Validators</a>
+      <div class="site-nav-item">
+        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
+          Network <span class="site-nav-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="site-nav-panel" role="menu">
+          <a href="/network.html" role="menuitem">Overview<span class="site-nav-hint">Live CELL network</span></a>
+          <a href="/explorer.html" role="menuitem">Explorer<span class="site-nav-hint">Search + chain tip</span></a>
+          <a href="/api.html" role="menuitem">API<span class="site-nav-hint">HTTP v1 overview</span></a>
+          <a href="/validators.html" role="menuitem">Validators<span class="site-nav-hint">Bootstrap peers</span></a>
+        </div>
+      </div>
+      <div class="site-nav-item">
+        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
+          Hive <span class="site-nav-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="site-nav-panel" role="menu">
+          <a href="/download.html" role="menuitem">Download Hive<span class="site-nav-hint">Windows + Linux app</span></a>
+          <a href="/wallet.html" role="menuitem">Web wallet<span class="site-nav-hint">Browser self-custody</span></a>
+          <a href="https://qsdm.online/" role="menuitem">QSDM VPN<span class="site-nav-hint">Private Android access</span></a>
+        </div>
+      </div>
       <a href="/docs/">Docs</a>
-      <a href="/audit.html">Audit</a>
-      <a href="/trust.html">Trust</a>
-      <a href="/api.html">API</a>
+      <div class="site-nav-item">
+        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
+          Trust <span class="site-nav-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="site-nav-panel" role="menu">
+          <a href="/audit.html" role="menuitem">Public audit<span class="site-nav-hint">Live checklist</span></a>
+          <a href="/trust.html" role="menuitem">Attestations<span class="site-nav-hint">NVIDIA feed</span></a>
+        </div>
+      </div>
     </nav>
     <div class="site-actions">
-      <a class="site-btn site-btn-ghost" href="/wallet.html">Wallet</a>
       <a class="site-btn site-btn-solid" href="/download.html">Download</a>
       <button class="site-menu-toggle" type="button" id="siteMenuToggle" aria-label="Open menu" aria-expanded="false">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 7H4V5H20V7ZM20 13H4V11H20V13ZM20 19H4V17H20V19Z"/></svg>
@@ -250,30 +271,38 @@
     </div>
   </div>
   <div class="site-mobile-nav" id="siteMobileNav">
-    <a href="/network.html">Network</a>
-    <a href="/wallet.html">Wallet</a>
-    <a href="/explorer.html">Explorer</a>
-    <a href="/chain.html">Chain</a>
-    <a href="/validators.html">Validators</a>
-    <a href="/docs/">Docs</a>
-    <a href="/audit.html">Audit</a>
-    <a href="/trust.html">Trust</a>
-    <a href="/api.html">API</a>
-    <a href="/download.html">Download</a>
+    <div class="site-mobile-group">
+      <div class="site-mobile-label">Network</div>
+      <a href="/network.html">Overview</a>
+      <a href="/explorer.html">Explorer</a>
+      <a href="/api.html">API</a>
+      <a href="/validators.html">Validators</a>
+    </div>
+    <div class="site-mobile-group">
+      <div class="site-mobile-label">Hive</div>
+      <a href="/download.html">Download Hive</a>
+      <a href="/wallet.html">Web wallet</a>
+      <a href="https://qsdm.online/">QSDM VPN</a>
+    </div>
+    <div class="site-mobile-group">
+      <div class="site-mobile-label">Learn</div>
+      <a href="/docs/">Docs</a>
+      <a href="/audit.html">Public audit</a>
+      <a href="/trust.html">Attestations</a>
+    </div>
   </div>
 </header>
 
 <main class="container">
   <section class="hero">
-    <span class="eyebrow"><span class="dot" style="width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 10px var(--success)"></span> Self-Custody · Browser-Generated</span>
-    <h1>QSDM <span class="accent">Wallet</span></h1>
+    <span class="eyebrow"><span class="dot" style="width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 10px var(--success)"></span> Web wallet · Self-custody</span>
+    <h1>QSDM <span class="accent">Web wallet</span></h1>
     <p class="lede">
-      Generate a quantum-secure (<code>ML-DSA-87</code>, NIST FIPS 204) wallet entirely
-      inside this browser tab. The private key is created locally, encrypted with
-      <code>AES-256-GCM</code> under a passphrase you choose, and offered as a
-      downloadable JSON keystore. <strong>Nothing about the keypair touches the QSDM
-      validators, this site's web server, or any third party.</strong> Compatible
-      byte-for-byte with <code>qsdmcli wallet</code>.
+      Create or import a self-custody CELL wallet in this browser.
+      Keys are generated and encrypted locally — nothing private is uploaded.
+      For the full desktop wallet, tasks, mining, and recovery, use
+      <a href="/download.html">QSDM Hive</a>
+      (<a href="/docs/#/wallet-recovery">recovery docs</a>).
     </p>
 
     <!-- Cross-reference to the public audit checklist. ML-DSA-87
@@ -293,15 +322,10 @@
         <img src="/api/v1/audit/badge.svg" alt="QSDM audit score (live)" />
       </a>
       <div class="audit-callout-text">
-        <strong>This wallet's trust surface is itself audited.</strong>
-        <code>ML-DSA-87</code> CSPRNG keygen, <code>AES-256-GCM</code>
-        encryption, HMAC fallback entropy, JWT verification and mTLS
-        are pinned by 5 rows in the <code>cryptography</code>
-        category of the public audit checklist, all passing. The
-        REST/JSON contract for the endpoints the wallet calls is
-        pinned by 6 rows under <code>api</code>. See
-        <a href="/audit.html?category=cryptography">audit.html?category=cryptography</a>
-        for the live view.
+        <strong>Wallet crypto is audited.</strong>
+        Five <code>cryptography</code> checklist rows pin ML-DSA-87 keygen,
+        AES-GCM vault encryption, and JWT/mTLS posture.
+        See <a href="/audit.html?category=cryptography">audit.html?category=cryptography</a>.
       </div>
     </div>
   </section>
@@ -329,27 +353,10 @@
   </section>
 
   <section class="panel success">
-    <h2>Game account linking (Sky Fang)</h2>
-    <p>
-      <strong>Sky Fang</strong> is the play-to-earn MMORPG experience. The
-      earn-only CELL path is the wallet-link flow: players link their Sky Fang
-      account to <strong>QSDM Hive</strong> so CELL eligibility can be proven
-      without selling combat power.
-    </p>
-    <p>
-      The normal player flow uses <strong>QSDM Hive</strong>, not manual
-      public-key or signature copy-paste. Sky Fang opens
-      <code>qsdm-hive://skyfang-link</code>; Hive shows the exact challenge,
-      signs it locally with your QSDM ML-DSA-87 wallet, and returns the proof to
-      Sky Fang. Your private key never leaves Hive.
-    </p>
-    <div class="actions">
-      <a class="btn btn-primary" href="https://skyfang.xyz/download/qsdm-hive/windows" rel="noopener" target="_blank">Download QSDM Hive</a>
-      <a class="btn btn-ghost" href="https://skyfang.xyz/login?next=/dashboard/qsdm" rel="noopener" target="_blank">Open Sky Fang QSDM page</a>
-    </div>
-    <p style="margin: 12px 0 0; font-size: 13px; color: var(--muted)">
-      The Advanced &rarr; Sign message tab below is kept for developer and
-      emergency diagnostics. It is not the recommended Sky Fang player flow.
+    <p style="margin:0; font-size:14px; color:var(--text-2); line-height:1.55">
+      <strong>Sky Fang players:</strong> link your game account through
+      <a href="/download.html">QSDM Hive</a>, not this browser page.
+      <a href="https://skyfang.xyz/login?next=/dashboard/qsdm" rel="noopener" target="_blank">Open Sky Fang QSDM page</a>
     </p>
   </section>
 
@@ -574,25 +581,25 @@
     </div>
   </section>
 
-  <section class="panel">
-    <h2 style="margin-top: 0; font-size: 18px; color: var(--text-2)">Advanced (legacy tab UI)</h2>
-    <p style="font-size: 13px; color: var(--muted); margin: 4px 0 14px">
-      The original five tabs. Useful for: generating a keystore
-      without storing it in this browser, signing an arbitrary
-      message, inspecting a third-party keystore, or doing an
-      address-only balance lookup. The persistent wallet panel
-      above reuses the same cryptographic primitives.
-    </p>
+  <details class="panel" id="advanced-panel" style="padding:18px 20px">
+    <summary style="cursor:pointer; font-weight:600; color:var(--text-2); list-style-position:outside">
+      Advanced tools
+      <span style="display:block; font-weight:400; font-size:13px; color:var(--muted); margin-top:4px">
+        Optional: sign a message, inspect a keystore file, or use the legacy generate / balance / send tabs.
+        Everyday create, unlock, and send live in the wallet panel above.
+      </span>
+    </summary>
+    <div style="margin-top:14px">
     <div class="tabs" role="tablist">
-      <button class="tab active" data-tab="generate" role="tab" aria-selected="true">Generate</button>
+      <button class="tab" data-tab="sign" role="tab" aria-selected="true">Sign message</button>
       <button class="tab" data-tab="open" role="tab" aria-selected="false">Open keystore</button>
-      <button class="tab" data-tab="sign" role="tab" aria-selected="false">Sign message</button>
+      <button class="tab" data-tab="generate" role="tab" aria-selected="false">Generate</button>
       <button class="tab" data-tab="balance" role="tab" aria-selected="false">Check balance</button>
       <button class="tab" data-tab="send" role="tab" aria-selected="false">Send transaction</button>
     </div>
 
     <!-- Generate -->
-    <div class="tab-pane active" data-pane="generate">
+    <div class="tab-pane" data-pane="generate">
       <h2>Generate a fresh wallet</h2>
       <p>
         Choose a strong passphrase (12+ characters, mix of types). The wallet
@@ -646,7 +653,7 @@
     </div>
 
     <!-- Sign -->
-    <div class="tab-pane" data-pane="sign">
+    <div class="tab-pane active" data-pane="sign">
       <h2>Sign a message</h2>
       <p>
         Decrypt the keystore and produce a <code>ML-DSA-87</code> signature over
@@ -773,10 +780,14 @@
       <div class="status-line" id="send-status">Recipient + amount + passphrase &rarr; signed envelope &rarr; validator POST.</div>
       <div id="send-result" hidden></div>
     </div>
-  </section>
+    </div>
+  </details>
 
-  <section class="panel">
-    <h2>How this works</h2>
+  <details class="panel" style="padding:18px 20px">
+    <summary style="cursor:pointer; font-weight:600; color:var(--text-2)">
+      How this works &amp; CLI
+    </summary>
+    <div style="margin-top:14px">
     <ul style="color: var(--text-2); margin: 0; padding-left: 20px; line-height: 1.8">
       <li><strong>Keypair generation:</strong> a <code>~3 MB</code> Go WebAssembly
         module (<code>wallet.wasm</code>) runs the same <a href="https://github.com/cloudflare/circl/tree/main/sign/mldsa">cloudflare/circl</a>
@@ -807,64 +818,44 @@
         button. Confirm in DevTools → Network.</li>
       <li><strong>WASM build version:</strong> <span id="wasm-version" style="font-family: var(--mono)">loading…</span></li>
     </ul>
-  </section>
-
-  <section class="panel">
-    <h2>Or do it from the CLI</h2>
-    <p>
-      Identical keystore format, but offline. Useful for cold-storage flows where
-      you don't want even a static webpage in the trust chain. Consumers should
-      import the keystore into QSDM Hive and run eligible tasks there. Advanced
-      operators can use <code>qsdmminer-console --protocol=v2</code> against the
-      live NVIDIA-locked mainnet; no separate consumer GUI miner is shipped, and
-      the legacy CPU <code>qsdmminer</code> binary is no longer a public release
-      artefact (mainnet rejects its v1 proofs at consensus &mdash; see
-      <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">MINER_QUICKSTART</a>).
+    <h3 style="margin: 22px 0 10px; font-size: 16px; color: var(--text-2)">Or do it from the CLI</h3>
+    <p style="color: var(--text-2); font-size: 14px; line-height: 1.55">
+      Identical keystore format, offline. Import into QSDM Hive for normal use.
+      Advanced operators can use <code>qsdmminer-console --protocol=v2</code>
+      (see <a href="/docs/#/miner-quickstart">miner quickstart</a>).
     </p>
     <pre style="background:rgba(0,0,0,.35);padding:14px 16px;border-radius:var(--radius-sm);overflow-x:auto;font-family:var(--mono);font-size:13px;color:var(--text);margin:0"># Build once
 git clone https://github.com/blackbeardONE/QSDM
 cd QSDM/QSDM/source
-go build -o qsdmcli         ./cmd/qsdmcli
-go build -o qsdmminer-console ./cmd/qsdmminer-console
+go build -o qsdmcli ./cmd/qsdmcli
 
-# Wallet: generate (passphrase prompted, address printed to stdout)
+# Generate a keystore (passphrase prompted)
 ./qsdmcli wallet new --out ~/.qsdm/wallet.json
-ADDR=$(./qsdmcli wallet show | awk '/^address/{print $2}')
-
-# Mining (v2): generate the HMAC key, enroll on-chain (10 CELL bond),
-# then start the live miner against the mainnet validator.
-./qsdmminer-console --gen-hmac-key=$HOME/.qsdm/hmac.key
-./qsdmcli enroll --sender=$ADDR \
-            --node-id=rig-77 \
-            --gpu-uuid=$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -1) \
-            --hmac-key=$(cat $HOME/.qsdm/hmac.key) \
-            --nonce=&lt;your-account-nonce&gt;
-./qsdmminer-console --protocol=v2 \
-            --validator=https://api.qsdm.tech \
-            --address=$ADDR \
-            --hmac-key-path=$HOME/.qsdm/hmac.key \
-            --node-id=rig-77 \
-            --gpu-uuid=$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -1) \
-            --gpu-arch=ada</pre>
-  </section>
+./qsdmcli wallet show</pre>
+    </div>
+  </details>
 </main>
 
-<footer>
-  <div class="container">
-    <p>QSDM — Quantum-Secure Dynamic Mesh Ledger · <a href="https://github.com/blackbeardONE/QSDM">GitHub</a> · <a href="/trust.html">Trust &amp; provenance</a></p>
-    <p>This wallet page runs entirely in your browser. Source: <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/source/wasm_modules/wallet/cmd/qsdm-wallet/main.go">wasm_modules/wallet/cmd/qsdm-wallet/main.go</a> + <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/landing/wallet.js">deploy/landing/wallet.js</a></p>
-
-    <!-- Transparency links — byte-identical across all eight landing
-         pages. See index.html for rationale. -->
-    <nav aria-label="Transparency resources" class="transparency-strip" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);line-height:1.8;">
-      <strong style="color:var(--text-2);font-weight:600;letter-spacing:.3px;text-transform:uppercase;font-size:11px;">Transparency:</strong>
-      <a href="/audit.html">Public audit</a> ·
-      <a href="/trust.html">Attestation transparency</a> ·
-      <a href="/.well-known/security.txt">Security disclosure (RFC 9116)</a> ·
-      <a href="/humans.txt">Humans</a> ·
-      <a href="/sitemap.xml">Sitemap</a> ·
-      <a href="/api/v1/audit/badge.svg">Status badge (SVG)</a>
-    </nav>
+<footer class="site-footer">
+  <div class="shell">
+    <p class="site-footer-note">
+      This wallet page runs entirely in your browser.
+      Source:
+      <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/source/wasm_modules/wallet/cmd/qsdm-wallet/main.go">wallet WASM</a>
+      +
+      <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/landing/wallet.js">wallet.js</a>.
+    </p>
+    <div class="site-footer-row">
+      <span>Web wallet · CELL</span>
+      <div class="site-footer-links">
+        <a href="/docs/">Docs</a>
+        <a href="/api.html">API</a>
+        <a href="/audit.html">Audit</a>
+        <a href="/trust.html">Attestations</a>
+        <a href="/.well-known/security.txt">Security</a>
+        <a href="https://github.com/blackbeardONE/QSDM">GitHub</a>
+      </div>
+    </div>
   </div>
 </footer>
 

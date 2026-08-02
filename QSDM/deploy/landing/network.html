@@ -104,26 +104,11 @@
     }
     .boundary-row strong { color: var(--text); font-weight: 600; }
     .boundary-row span { color: var(--text-2); line-height: 1.55; }
-    .start-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
-    .start-card {
-      display: flex; flex-direction: column; min-height: 230px;
-      padding: 1.4rem; border: 1px solid var(--border); border-radius: 8px;
-      background: var(--panel); text-decoration: none;
-    }
-    .start-card:hover { border-color: var(--border-2); text-decoration: none; }
-    .start-card small { color: var(--gold); font-family: var(--mono); }
-    .start-card h3 { color: var(--text); margin: 1.5rem 0 0.5rem; font-size: 1.2rem; }
-    .start-card p { color: var(--text-2); margin: 0; line-height: 1.55; }
-    .start-card b { margin-top: auto; padding-top: 1.5rem; color: var(--teal); font-weight: 600; }
-    footer { padding: 2rem 0; color: var(--muted); }
-    .footer-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
-    .footer-links { display: flex; flex-wrap: wrap; gap: 1rem; }
-    .footer-links a { text-decoration: none; }
     @media (max-width: 800px) {
       .online-hero { min-height: auto; }
       .online-hero::before { left: 88%; }
       h1 { font-size: 3rem; }
-      .network-rail, .flow, .start-grid { grid-template-columns: 1fr; }
+      .network-rail, .flow { grid-template-columns: 1fr; }
       .network-node + .network-node, .flow-step + .flow-step { border-left: 0; border-top: 1px solid var(--border); }
       .flow-step, .flow-step + .flow-step { padding: 1.25rem 0; }
       .custody-layout { grid-template-columns: 1fr; gap: 2rem; }
@@ -160,19 +145,39 @@
       <span>QSDM</span>
     </a>
     <nav class="site-nav" aria-label="Primary">
-      <a href="/network.html" class="active">Network</a>
-      <a href="https://qsdm.online/">QSDM VPN</a>
-      <a href="/wallet.html">Wallet</a>
-      <a href="/explorer.html">Explorer</a>
-      <a href="/chain.html">Chain</a>
-      <a href="/validators.html">Validators</a>
+      <div class="site-nav-item">
+        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
+          Network <span class="site-nav-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="site-nav-panel" role="menu">
+          <a href="/network.html" role="menuitem">Overview<span class="site-nav-hint">Live CELL network</span></a>
+          <a href="/explorer.html" role="menuitem">Explorer<span class="site-nav-hint">Search + chain tip</span></a>
+          <a href="/api.html" role="menuitem">API<span class="site-nav-hint">HTTP v1 overview</span></a>
+          <a href="/validators.html" role="menuitem">Validators<span class="site-nav-hint">Bootstrap peers</span></a>
+        </div>
+      </div>
+      <div class="site-nav-item">
+        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
+          Hive <span class="site-nav-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="site-nav-panel" role="menu">
+          <a href="/download.html" role="menuitem">Download Hive<span class="site-nav-hint">Windows + Linux app</span></a>
+          <a href="/wallet.html" role="menuitem">Web wallet<span class="site-nav-hint">Browser self-custody</span></a>
+          <a href="https://qsdm.online/" role="menuitem">QSDM VPN<span class="site-nav-hint">Private Android access</span></a>
+        </div>
+      </div>
       <a href="/docs/">Docs</a>
-      <a href="/audit.html">Audit</a>
-      <a href="/trust.html">Trust</a>
-      <a href="/api.html">API</a>
+      <div class="site-nav-item">
+        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
+          Trust <span class="site-nav-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="site-nav-panel" role="menu">
+          <a href="/audit.html" role="menuitem">Public audit<span class="site-nav-hint">Live checklist</span></a>
+          <a href="/trust.html" role="menuitem">Attestations<span class="site-nav-hint">NVIDIA feed</span></a>
+        </div>
+      </div>
     </nav>
     <div class="site-actions">
-      <a class="site-btn site-btn-ghost" href="/wallet.html">Wallet</a>
       <a class="site-btn site-btn-solid" href="/download.html">Download</a>
       <button class="site-menu-toggle" type="button" id="siteMenuToggle" aria-label="Open menu" aria-expanded="false">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 7H4V5H20V7ZM20 13H4V11H20V13ZM20 19H4V17H20V19Z"/></svg>
@@ -180,17 +185,25 @@
     </div>
   </div>
   <div class="site-mobile-nav" id="siteMobileNav">
-    <a href="/network.html">Network</a>
-    <a href="https://qsdm.online/">QSDM VPN</a>
-    <a href="/wallet.html">Wallet</a>
-    <a href="/explorer.html">Explorer</a>
-    <a href="/chain.html">Chain</a>
-    <a href="/validators.html">Validators</a>
-    <a href="/docs/">Docs</a>
-    <a href="/audit.html">Audit</a>
-    <a href="/trust.html">Trust</a>
-    <a href="/api.html">API</a>
-    <a href="/download.html">Download</a>
+    <div class="site-mobile-group">
+      <div class="site-mobile-label">Network</div>
+      <a href="/network.html">Overview</a>
+      <a href="/explorer.html">Explorer</a>
+      <a href="/api.html">API</a>
+      <a href="/validators.html">Validators</a>
+    </div>
+    <div class="site-mobile-group">
+      <div class="site-mobile-label">Hive</div>
+      <a href="/download.html">Download Hive</a>
+      <a href="/wallet.html">Web wallet</a>
+      <a href="https://qsdm.online/">QSDM VPN</a>
+    </div>
+    <div class="site-mobile-group">
+      <div class="site-mobile-label">Learn</div>
+      <a href="/docs/">Docs</a>
+      <a href="/audit.html">Public audit</a>
+      <a href="/trust.html">Attestations</a>
+    </div>
   </div>
 </header>
 
@@ -240,8 +253,8 @@
           </article>
           <article class="surface">
             <span class="surface-kicker">02 / DATA</span>
-            <h3>Explorer and chain</h3>
-            <p>Inspect blocks, transactions, accounts, chain progress, and validator-visible network state.</p>
+            <h3>Explorer</h3>
+            <p>Search blocks, transactions, and accounts, plus live tip and node status from the public API.</p>
             <a href="/explorer.html">Open Explorer &rarr;</a>
           </article>
           <article class="surface">
@@ -252,9 +265,15 @@
           </article>
           <article class="surface">
             <span class="surface-kicker">04 / VERIFY</span>
-            <h3>Trust and audit</h3>
-            <p>Check attestation feeds, audit rows, release evidence, and security disclosure from public endpoints.</p>
-            <a href="/trust.html">Open trust feeds &rarr;</a>
+            <h3>Audit and attestations</h3>
+            <p>Check the public audit checklist, then drill into the optional NVIDIA attestation feed.</p>
+            <a href="/audit.html">Open audit &rarr;</a>
+          </article>
+          <article class="surface">
+            <span class="surface-kicker">05 / OPERATE</span>
+            <h3>Validators</h3>
+            <p>Bootstrap peers and public endpoints for operators joining the mesh.</p>
+            <a href="/validators.html">Validator entry &rarr;</a>
           </article>
         </div>
       </div>
@@ -300,46 +319,22 @@
         </div>
       </div>
     </section>
-
-    <section class="band band-alt" aria-labelledby="start-title">
-      <div class="shell">
-        <div class="section-head">
-          <h2 id="start-title">Choose your entry point.</h2>
-          <p>The public network is available now through the consumer client, browser-facing wallet bridge, and developer API.</p>
-        </div>
-        <div class="start-grid">
-          <a class="start-card" href="/download.html">
-            <small>FOR USERS</small>
-            <h3>QSDM Hive</h3>
-            <p>Manage CELL, approve connected sites, run signed tasks, mine, and operate Mother Hive.</p>
-            <b>Download Hive &rarr;</b>
-          </a>
-          <a class="start-card" href="/explorer.html">
-            <small>FOR EVERYONE</small>
-            <h3>Public Explorer</h3>
-            <p>Inspect chain activity and account state without installing software or creating a wallet.</p>
-            <b>Explore the chain &rarr;</b>
-          </a>
-          <a class="start-card" href="/docs/#/api-reference">
-            <small>FOR BUILDERS</small>
-            <h3>HTTP API</h3>
-            <p>Build supported websites and applications around public reads and locally signed actions.</p>
-            <b>Read API docs &rarr;</b>
-          </a>
-        </div>
-      </div>
-    </section>
   </main>
 
-  <footer>
-    <div class="shell footer-row">
-      <span>&copy; 2024–2026 QSDM &middot; QSDM Network &middot; CELL</span>
-      <div class="footer-links">
-        <a href="/docs/">Docs</a>
-        <a href="/audit.html">Audit</a>
-        <a href="https://qsdm.online/">QSDM VPN</a>
-        <a href="/.well-known/security.txt">Security</a>
-        <a href="https://github.com/blackbeardONE/QSDM">GitHub</a>
+  <footer class="site-footer">
+    <div class="shell">
+      <div class="site-footer-row">
+        <span>&copy; 2024–2026 QSDM &middot; QSDM Network &middot; CELL</span>
+        <div class="site-footer-links">
+          <a href="/docs/">Docs</a>
+          <a href="/api.html">API</a>
+          <a href="/validators.html">Validators</a>
+          <a href="/audit.html">Audit</a>
+          <a href="/trust.html">Attestations</a>
+          <a href="https://qsdm.online/">QSDM VPN</a>
+          <a href="/.well-known/security.txt">Security</a>
+          <a href="https://github.com/blackbeardONE/QSDM">GitHub</a>
+        </div>
       </div>
     </div>
   </footer>

@@ -21,6 +21,8 @@
   --radius: 8px;
   --radius-sm: 0.5rem;
   --header-h: 64px;
+  --docs-toolbar-h: 52px;
+  --chrome-h: calc(var(--header-h) + var(--docs-toolbar-h));
   --sidebar-w: 280px;
   --maxw-content: 920px;
   --sans: "Outfit", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -51,36 +53,23 @@ a:hover { color: #b8eef0; text-decoration: underline; }
 }
 .skip-link:focus { left: 12px; top: 12px; }
 
-.docs-header {
-  position: sticky; top: 0; z-index: 50;
-  height: var(--header-h);
-  background: rgba(6, 17, 22, 0.86);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--border);
-}
-.docs-header-inner {
-  display: flex; align-items: center; gap: 16px;
-  height: 100%;
+/* Docs keeps the shared site-header; this toolbar holds search + version. */
+.docs-toolbar {
+  position: sticky;
+  top: var(--header-h);
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--docs-toolbar-h);
   padding: 0 18px;
   width: min(80rem, 100%);
   margin: 0 auto;
+  background: rgba(6, 17, 22, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
 }
-.docs-brand {
-  display: inline-flex; align-items: center; gap: 10px;
-  color: var(--text); text-decoration: none;
-  font-weight: 600;
-  flex-shrink: 0;
-  letter-spacing: 0;
-}
-.docs-brand:hover { text-decoration: none; }
-.docs-brand-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-}
-.docs-brand-text strong { color: var(--text); }
-.docs-brand-text em { color: var(--muted); font-style: normal; margin-left: 4px; font-weight: 500; }
 .docs-search-wrap { flex: 1; display: flex; justify-content: center; }
 #docsSearch {
   width: 100%; max-width: 380px;
@@ -93,23 +82,22 @@ a:hover { color: #b8eef0; text-decoration: underline; }
 }
 #docsSearch::placeholder { color: var(--muted); }
 #docsSearch:focus { border-color: var(--border-2); }
-.docs-header-right { display: flex; align-items: center; gap: 10px; }
 .docs-pill {
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--panel); border: 1px solid var(--border);
   border-radius: 999px; padding: 4px 10px; font-size: 12px;
   color: var(--text-2); font-weight: 500; text-decoration: none;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .docs-pill:hover { border-color: var(--border-2); color: var(--text); text-decoration: none; }
 .docs-pill .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #3ddc97; }
-.docs-link { font-size: 14px; color: var(--text-2); }
-.docs-link:hover { color: var(--text); text-decoration: none; }
 .docs-sidebar-toggle {
   display: none;
   background: transparent; border: 1px solid var(--border); color: var(--text-2);
   border-radius: 999px; padding: 6px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 .docs-sidebar-toggle:hover { color: var(--text); border-color: var(--border-2); }
 
@@ -117,13 +105,13 @@ a:hover { color: #b8eef0; text-decoration: underline; }
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   gap: 0;
-  min-height: calc(100vh - var(--header-h));
+  min-height: calc(100vh - var(--chrome-h));
 }
 
 .docs-sidebar {
-  position: sticky; top: var(--header-h);
+  position: sticky; top: var(--chrome-h);
   align-self: start;
-  height: calc(100vh - var(--header-h));
+  height: calc(100vh - var(--chrome-h));
   overflow-y: auto;
   background: var(--bg-2);
   border-right: 1px solid var(--border);
@@ -380,18 +368,16 @@ a:hover { color: #b8eef0; text-decoration: underline; }
 
 @media (max-width: 900px) {
   .doc-welcome h1 { font-size: 2rem; }
-  .docs-header-inner { gap: 8px; padding: 0 12px; }
+  .docs-toolbar { padding: 0 12px; gap: 8px; }
   .docs-search-wrap { display: none; }
-  .docs-header-right { min-width: 0; margin-left: auto; gap: 6px; }
-  .docs-header-right .docs-link { display: none; }
   .docs-sidebar-toggle { display: inline-flex; }
   .docs-layout { grid-template-columns: 1fr; }
   .docs-sidebar {
     position: fixed;
-    top: var(--header-h);
+    top: var(--chrome-h);
     left: 0;
     width: min(320px, 88vw);
-    height: calc(100vh - var(--header-h));
+    height: calc(100vh - var(--chrome-h));
     z-index: 40;
     transform: translateX(-105%);
     transition: transform 220ms ease;
@@ -409,7 +395,5 @@ a:hover { color: #b8eef0; text-decoration: underline; }
 }
 
 @media (max-width: 420px) {
-  .docs-brand { gap: 7px; }
-  .docs-brand-text em { display: none; }
   .docs-pill { padding: 4px 8px; }
 }

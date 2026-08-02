@@ -16,135 +16,16 @@
     href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap"
     rel="stylesheet"
   />
+  <link rel="stylesheet" href="/assets/site.css" />
   <style>
-    :root {
-      color-scheme: dark;
-      --bg: #061116;
-      --fg: #f4fbfd;
-      --muted: rgba(173, 198, 204, 0.72);
-      --muted-2: rgba(173, 198, 204, 0.45);
-      --border: rgba(142, 220, 224, 0.16);
-      --border-hover: rgba(142, 220, 224, 0.34);
-      --card: #0c242c;
-      --accent: #d6b75f;
-      --gold: #d6b75f;
-      --teal: #8edce0;
-      --ink: #061116;
-      --max: 80rem;
-      --font: "Outfit", system-ui, sans-serif;
-      --mono: "IBM Plex Mono", ui-monospace, monospace;
-      --ease: cubic-bezier(0.22, 1, 0.36, 1);
-      font-family: var(--font);
-      font-size: 16px;
-    }
-
+    :root { color-scheme: dark; font-size: 16px; }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      background: var(--bg);
-      color: var(--fg);
       line-height: 1.55;
-      -webkit-font-smoothing: antialiased;
     }
-    a { color: inherit; text-decoration: none; }
     img { display: block; max-width: 100%; }
-
-    .shell {
-      width: min(var(--max), calc(100% - 2rem));
-      margin: 0 auto;
-    }
-    @media (min-width: 1024px) {
-      .shell { width: min(var(--max), calc(100% - 3rem)); }
-    }
-
-    header {
-      position: sticky;
-      top: 0;
-      z-index: 30;
-      background: rgba(6, 17, 22, 0.82);
-      backdrop-filter: blur(16px);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .nav {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      min-height: 64px;
-      gap: 1rem;
-    }
-
-    .brand {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.65rem;
-      font-weight: 600;
-      font-size: 1.05rem;
-      letter-spacing: 0;
-    }
-
-    .brand img { width: 28px; height: 28px; border-radius: 6px; }
-
-    .nav-mid {
-      display: none;
-      align-items: center;
-      gap: 0.15rem;
-    }
-
-    .nav-mid a {
-      padding: 0.45rem 0.75rem;
-      border-radius: 999px;
-      color: var(--muted);
-      font-size: 0.9rem;
-      font-weight: 500;
-    }
-
-    .nav-mid a:hover { color: var(--fg); background: rgba(142, 220, 224, 0.08); }
-
-    .nav-right { display: flex; align-items: center; gap: 0.5rem; }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 2.5rem;
-      padding: 0.5rem 1rem;
-      border-radius: 999px;
-      border: 1px solid transparent;
-      font-size: 0.9rem;
-      font-weight: 500;
-      transition: background 150ms var(--ease), transform 150ms var(--ease);
-    }
-
-    .btn:hover { transform: translateY(-1px); }
-
-    .btn-ghost {
-      color: var(--fg);
-      border-color: rgba(142, 220, 224, 0.28);
-      background: transparent;
-    }
-
-    .btn-ghost:hover { background: rgba(142, 220, 224, 0.08); }
-
-    .btn-solid {
-      color: var(--ink, #061116);
-      background: var(--gold, var(--accent));
-      border-color: rgba(214, 183, 95, 0.9);
-    }
-
-    .btn-solid:hover { background: #e0c56f; }
-
-    .btn[aria-disabled="true"] {
-      opacity: 0.58;
-      cursor: not-allowed;
-      pointer-events: none;
-      transform: none;
-    }
-
-    @media (min-width: 1024px) {
-      .nav-mid { display: flex; }
-    }
 
     main { padding: 3.5rem 0 5rem; }
 
@@ -153,7 +34,6 @@
       margin: 0 auto 3.5rem;
       text-align: center;
     }
-
     .hero .tag {
       display: inline-flex;
       margin-bottom: 1.25rem;
@@ -164,21 +44,30 @@
       font-size: 0.8rem;
       font-weight: 500;
     }
-
     h1 {
       margin: 0 0 1rem;
       font-size: 3.75rem;
       font-weight: 600;
-      letter-spacing: 0;
       line-height: 1.05;
+      color: var(--text);
       overflow-wrap: anywhere;
     }
-
     .lead {
       margin: 0;
       color: var(--muted);
       font-size: 1.08rem;
     }
+    .wallet-note {
+      margin: 1.15rem 0 0;
+      color: rgba(173, 198, 204, 0.45);
+      font-size: 0.9rem;
+    }
+    .wallet-note a {
+      color: var(--muted);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .wallet-note a:hover { color: var(--text); }
 
     .panel {
       display: grid;
@@ -186,17 +75,15 @@
       padding: 1.5rem;
       margin-bottom: 0.75rem;
       border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--card);
+      border-radius: var(--radius);
+      background: var(--panel);
     }
-
     @media (min-width: 860px) {
       .panel {
         grid-template-columns: minmax(0, 1fr) minmax(240px, 0.42fr);
         align-items: center;
       }
     }
-
     .version {
       display: inline-flex;
       margin-bottom: 0.75rem;
@@ -207,20 +94,17 @@
       font-size: 0.78rem;
       font-weight: 500;
     }
-
     h2 {
       margin: 0 0 0.65rem;
       font-size: 1.35rem;
       font-weight: 600;
-      letter-spacing: 0;
+      color: var(--text);
     }
-
     .panel p {
       margin: 0 0 1.1rem;
       color: var(--muted);
       font-size: 0.95rem;
     }
-
     .actions {
       display: flex;
       flex-wrap: wrap;
@@ -244,13 +128,12 @@
     .checksum {
       padding: 1rem;
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--radius);
       background: var(--bg);
-      color: var(--muted-2);
+      color: rgba(173, 198, 204, 0.45);
       font-size: 0.8rem;
       overflow-wrap: anywhere;
     }
-
     .checksum code {
       display: block;
       margin-top: 0.35rem;
@@ -259,129 +142,99 @@
       font-size: 0.72rem;
       line-height: 1.5;
     }
-
     .checksum strong {
       display: block;
       margin-top: 0.85rem;
       color: var(--muted);
       font-weight: 500;
     }
-
-    .section-title {
-      margin: 3rem 0 1rem;
-      font-size: 2.1rem;
-      font-weight: 600;
-      letter-spacing: 0;
-    }
-
-    .grid-2, .grid-3 {
-      display: grid;
-      gap: 0.75rem;
-    }
-
-    @media (min-width: 720px) {
-      .grid-2 { grid-template-columns: 1fr 1fr; }
-      .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
-    }
-
-    .card {
-      padding: 1.25rem;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: transparent;
-    }
-
-    .card strong {
-      display: block;
-      margin-bottom: 0.35rem;
-      color: var(--muted-2);
-      font-size: 0.75rem;
-      font-weight: 500;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-
-    .card h3 {
-      margin: 0 0 0.45rem;
-      font-size: 1.05rem;
-      font-weight: 600;
-      letter-spacing: 0;
-    }
-
-    .card p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 0.9rem;
-    }
-
-    .card a {
-      color: var(--fg);
-      border-bottom: 1px solid rgba(245, 245, 245, 0.2);
-      font-size: 0.9rem;
-      font-weight: 500;
-    }
-
-    .card code {
-      font-family: var(--mono);
-      font-size: 0.85em;
-      color: rgba(245, 245, 245, 0.7);
-    }
-
-    footer {
-      padding: 2rem 0 2.5rem;
-      border-top: 1px solid var(--border);
-      color: var(--muted-2);
-      font-size: 0.85rem;
-    }
-
-    .footer-row {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      gap: 0.75rem;
-    }
-
     @media (max-width: 639px) {
       h1 { font-size: 2.4rem; }
-      .section-title { font-size: 1.6rem; }
-      .nav-right .btn { padding-inline: 0.75rem; }
     }
-
-    footer a:hover { color: var(--fg); }
   </style>
 </head>
 <body>
-  <header>
-    <div class="shell">
-      <nav class="nav" aria-label="Primary">
-        <a class="brand" href="/">
-          <img src="/assets/qsdm-hive-icon.png" alt="" />
-          <span>QSDM</span>
-        </a>
-        <div class="nav-mid">
-          <a href="/#products">Products</a>
-          <a href="/network.html">QSDM Network</a>
-          <a href="https://qsdm.online/">QSDM VPN</a>
-          <a href="/#api">Developers</a>
-          <a href="/docs/">Docs</a>
-          <a href="/explorer.html">Explorer</a>
-          <a href="/audit.html">Audit</a>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+  <div class="site-header-inner">
+    <a class="site-brand" href="/">
+      <img src="/assets/qsdm-hive-icon.png" alt="" />
+      <span>QSDM</span>
+    </a>
+    <nav class="site-nav" aria-label="Primary">
+      <div class="site-nav-item">
+        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
+          Network <span class="site-nav-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="site-nav-panel" role="menu">
+          <a href="/network.html" role="menuitem">Overview<span class="site-nav-hint">Live CELL network</span></a>
+          <a href="/explorer.html" role="menuitem">Explorer<span class="site-nav-hint">Search + chain tip</span></a>
+          <a href="/api.html" role="menuitem">API<span class="site-nav-hint">HTTP v1 overview</span></a>
+          <a href="/validators.html" role="menuitem">Validators<span class="site-nav-hint">Bootstrap peers</span></a>
         </div>
-        <div class="nav-right">
-          <a class="btn btn-ghost" href="/wallet.html">Wallet</a>
-          <a class="btn btn-solid" href="/download.html" aria-current="page">Download Hive</a>
+      </div>
+      <div class="site-nav-item">
+        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
+          Hive <span class="site-nav-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="site-nav-panel" role="menu">
+          <a href="/download.html" role="menuitem">Download Hive<span class="site-nav-hint">Windows + Linux app</span></a>
+          <a href="/wallet.html" role="menuitem">Web wallet<span class="site-nav-hint">Browser self-custody</span></a>
+          <a href="https://qsdm.online/" role="menuitem">QSDM VPN<span class="site-nav-hint">Private Android access</span></a>
         </div>
-      </nav>
+      </div>
+      <a href="/docs/">Docs</a>
+      <div class="site-nav-item">
+        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
+          Trust <span class="site-nav-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="site-nav-panel" role="menu">
+          <a href="/audit.html" role="menuitem">Public audit<span class="site-nav-hint">Live checklist</span></a>
+          <a href="/trust.html" role="menuitem">Attestations<span class="site-nav-hint">NVIDIA feed</span></a>
+        </div>
+      </div>
+    </nav>
+    <div class="site-actions">
+      <a class="site-btn site-btn-solid" href="/download.html">Download</a>
+      <button class="site-menu-toggle" type="button" id="siteMenuToggle" aria-label="Open menu" aria-expanded="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 7H4V5H20V7ZM20 13H4V11H20V13ZM20 19H4V17H20V19Z"/></svg>
+      </button>
     </div>
-  </header>
+  </div>
+  <div class="site-mobile-nav" id="siteMobileNav">
+    <div class="site-mobile-group">
+      <div class="site-mobile-label">Network</div>
+      <a href="/network.html">Overview</a>
+      <a href="/explorer.html">Explorer</a>
+      <a href="/api.html">API</a>
+      <a href="/validators.html">Validators</a>
+    </div>
+    <div class="site-mobile-group">
+      <div class="site-mobile-label">Hive</div>
+      <a href="/download.html">Download Hive</a>
+      <a href="/wallet.html">Web wallet</a>
+      <a href="https://qsdm.online/">QSDM VPN</a>
+    </div>
+    <div class="site-mobile-group">
+      <div class="site-mobile-label">Learn</div>
+      <a href="/docs/">Docs</a>
+      <a href="/audit.html">Public audit</a>
+      <a href="/trust.html">Attestations</a>
+    </div>
+  </div>
+</header>
 
-  <main class="shell">
+  <main id="main" class="shell">
     <section class="hero" aria-labelledby="download-title">
       <span class="tag">Hive 1.4.7 · Edge Control 1.3.7</span>
       <h1 id="download-title">Download QSDM Hive</h1>
       <p class="lead">
         Windows and Linux client for CELL wallets, signed tasks, NVIDIA mining,
         and pooled CPU, GPU, and RAM participation.
+      </p>
+      <p class="wallet-note">
+        Prefer a lighter browser wallet for balance checks and basic signing?
+        Use the <a href="/wallet.html">web wallet</a>. Hive remains the full desktop client.
       </p>
     </section>
 
@@ -406,9 +259,9 @@
           This check is separate from Microsoft Authenticode.
         </p>
         <div class="actions">
-          <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/CODE_SIGNING_POLICY.md" rel="noopener" target="_blank">Code signing policy</a>
-          <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/PRIVACY.md" rel="noopener" target="_blank">Privacy policy</a>
-          <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/SECURITY.md" rel="noopener" target="_blank">Security reporting</a>
+          <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/CODE_SIGNING_POLICY.md" rel="noopener" target="_blank">Code signing policy</a>
+          <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/PRIVACY.md" rel="noopener" target="_blank">Privacy policy</a>
+          <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/SECURITY.md" rel="noopener" target="_blank">Security reporting</a>
         </div>
       </div>
       <div class="checksum">
@@ -429,9 +282,9 @@
           miner is shipped.
         </p>
         <div class="actions">
-          <a class="btn btn-solid" href="/downloads/qsdm-hive-1.4.7-win-x64.exe" download>Download Hive 1.4.7</a>
-          <a class="btn btn-ghost" href="/downloads/SHA256SUMS-win.txt">Checksums</a>
-          <a class="btn btn-ghost" href="/docs/#/qsdm-hive">Installation notes</a>
+          <a class="site-btn site-btn-solid" href="/downloads/qsdm-hive-1.4.7-win-x64.exe" download>Download Hive 1.4.7</a>
+          <a class="site-btn site-btn-ghost" href="/downloads/SHA256SUMS-win.txt">Checksums</a>
+          <a class="site-btn site-btn-ghost" href="/docs/#/qsdm-hive">Installation notes</a>
         </div>
       </div>
       <div class="checksum">
@@ -451,9 +304,9 @@
           signed miner enrollment goes to the production QSDM Network.
         </p>
         <div class="actions">
-          <a class="btn btn-solid" href="/downloads/qsdm-hive-1.4.7-linux-x86_64.AppImage" download>Download AppImage</a>
-          <a class="btn btn-solid" href="/downloads/qsdm-hive-1.4.7-linux-x64.tar.gz" download>Download tar.gz</a>
-          <a class="btn btn-ghost" href="/downloads/qsdm-hive-1.4.7-linux-SHA256SUMS.txt">Checksums</a>
+          <a class="site-btn site-btn-solid" href="/downloads/qsdm-hive-1.4.7-linux-x86_64.AppImage" download>Download AppImage</a>
+          <a class="site-btn site-btn-solid" href="/downloads/qsdm-hive-1.4.7-linux-x64.tar.gz" download>Download tar.gz</a>
+          <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-1.4.7-linux-SHA256SUMS.txt">Checksums</a>
         </div>
       </div>
       <div class="checksum">
@@ -472,12 +325,12 @@
           outbound-only Home Gateway. QSDM Hive users do not need these files.
         </p>
         <div class="actions">
-          <a class="btn btn-solid" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/qsdm-validator-v0.4.7-rc.9-windows-amd64.zip" rel="noopener">Windows validator</a>
-          <a class="btn btn-solid" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/qsdm-validator-v0.4.7-rc.9-linux-amd64.tar.gz" rel="noopener">Linux validator</a>
-          <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/qsdm-home-gateway-windows-amd64.exe" rel="noopener">Windows gateway</a>
-          <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/qsdm-home-gateway-linux-amd64" rel="noopener">Linux gateway</a>
-          <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/SHA256SUMS" rel="noopener">Checksums</a>
-          <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/releases/tag/v0.4.7-rc.9" rel="noopener" target="_blank">Release notes</a>
+          <a class="site-btn site-btn-solid" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/qsdm-validator-v0.4.7-rc.9-windows-amd64.zip" rel="noopener">Windows validator</a>
+          <a class="site-btn site-btn-solid" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/qsdm-validator-v0.4.7-rc.9-linux-amd64.tar.gz" rel="noopener">Linux validator</a>
+          <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/qsdm-home-gateway-windows-amd64.exe" rel="noopener">Windows gateway</a>
+          <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/qsdm-home-gateway-linux-amd64" rel="noopener">Linux gateway</a>
+          <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/SHA256SUMS" rel="noopener">Checksums</a>
+          <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/releases/tag/v0.4.7-rc.9" rel="noopener" target="_blank">Release notes</a>
         </div>
       </div>
       <div class="checksum">
@@ -500,15 +353,15 @@
           extension page. Normal Firefox releases require Mozilla signing.
         </p>
         <div class="actions">
-          <a class="btn btn-solid" href="/downloads/qsdm-hive-wallet-extension-0.4.0-chromium.zip" download>Download for Chrome / Edge</a>
-          <a class="btn btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0-SHA256SUMS.txt">Checksums</a>
-          <a class="btn btn-ghost" href="https://github.com/blackbeardONE/QSDM/tree/main/apps/qsdm-hive-wallet-extension" rel="noopener" target="_blank">Setup guide</a>
+          <a class="site-btn site-btn-solid" href="/downloads/qsdm-hive-wallet-extension-0.4.0-chromium.zip" download>Download for Chrome / Edge</a>
+          <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0-SHA256SUMS.txt">Checksums</a>
+          <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/tree/main/apps/qsdm-hive-wallet-extension" rel="noopener" target="_blank">Setup guide</a>
         </div>
         <details class="package-options">
           <summary>Firefox and source packages</summary>
           <div class="actions">
-            <a class="btn btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0-firefox.zip" download>Firefox submission ZIP</a>
-            <a class="btn btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0.zip" download>Universal source ZIP</a>
+            <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0-firefox.zip" download>Firefox submission ZIP</a>
+            <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0.zip" download>Universal source ZIP</a>
           </div>
         </details>
       </div>
@@ -527,10 +380,10 @@
           support tools. QSDM Hive remains the desktop app and Mother Hive coordinator.
         </p>
         <div class="actions">
-          <a class="btn btn-solid" href="/downloads/qsdm-edge-agent-1.3.7-windows-x86_64.zip">Windows Agent + Relay bundle</a>
-          <a class="btn btn-solid" href="/downloads/qsdm-edge-agent-1.3.7-linux-x86_64.tar.gz">Linux Agent + Relay bundle</a>
-          <a class="btn btn-ghost" href="/downloads/qsdm-edge-agent-1.3.7-SHA256SUMS.txt">Checksums</a>
-          <a class="btn btn-ghost" href="/docs/#/edge-pool">Deployment guide</a>
+          <a class="site-btn site-btn-solid" href="/downloads/qsdm-edge-agent-1.3.7-windows-x86_64.zip">Windows Agent + Relay bundle</a>
+          <a class="site-btn site-btn-solid" href="/downloads/qsdm-edge-agent-1.3.7-linux-x86_64.tar.gz">Linux Agent + Relay bundle</a>
+          <a class="site-btn site-btn-ghost" href="/downloads/qsdm-edge-agent-1.3.7-SHA256SUMS.txt">Checksums</a>
+          <a class="site-btn site-btn-ghost" href="/docs/#/edge-pool">Deployment guide</a>
         </div>
       </div>
       <div class="checksum">
@@ -539,72 +392,31 @@
       </div>
     </section>
 
-    <h2 class="section-title">Included in Hive</h2>
-    <div class="grid-3">
-      <article class="card">
-        <strong>Wallet</strong>
-        <h3>CELL keystore</h3>
-        <p>Backup and import with QSDM keystore JSON plus passphrase.</p>
-      </article>
-      <article class="card">
-        <strong>Tasks</strong>
-        <h3>Task Studio</h3>
-        <p>Publish signed manifests; catalog updates without reinstalling Hive.</p>
-      </article>
-      <article class="card">
-        <strong>Mining</strong>
-        <h3>NVIDIA access</h3>
-        <p>Protocol mining stays NVIDIA-only for supported GPUs.</p>
-      </article>
-      <article class="card">
-        <strong>Edge</strong>
-        <h3>Mother Hive</h3>
-        <p>Controlled CPU, NVIDIA GPU, and RAM jobs with saved Relay receipts.</p>
-      </article>
-      <article class="card">
-        <strong>Integrations</strong>
-        <h3>Sky Fang</h3>
-        <p>Wallet-link checks for play-to-earn CELL eligibility.</p>
-      </article>
-      <article class="card">
-        <strong>Operators</strong>
-        <h3>Home tools</h3>
-        <p>
-          <a href="/docs/#/home-gateway">Home gateway</a>
-          ·
-          <a href="/docs/#/tray-monitor">Tray monitor</a>
-        </p>
-      </article>
-    </div>
-
-    <h2 class="section-title">Mining paths</h2>
-    <div class="grid-2">
-      <article class="card">
-        <strong>Protocol mining</strong>
-        <h3>QSDM Miner task</h3>
-        <p>
-          NVIDIA Turing-or-newer GPU for v2 identity, attestation, and CUDA proof search.
-          Advanced operators can use <code>qsdmminer-console</code>.
-        </p>
-        <p style="margin-top:0.85rem"><a href="/docs/#/miner-quickstart">Miner requirements</a></p>
-      </article>
-      <article class="card">
-        <strong>Pooled compute</strong>
-        <h3>Edge participation</h3>
-        <p>
-          Contribute controlled CPU or RAM without a protocol-mining GPU. CUDA capacity
-          is separate from protocol mining.
-        </p>
-        <p style="margin-top:0.85rem"><a href="/docs/#/edge-pool">Edge pool model</a></p>
-      </article>
-    </div>
+    <p class="wallet-note" style="margin: 2rem 0 0; text-align: center;">
+      After install, see the
+      <a href="/docs/#/qsdm-hive">Hive guide</a>,
+      <a href="/docs/#/miner-quickstart">miner quickstart</a>,
+      and
+      <a href="/docs/#/edge-pool">edge pool</a>
+      docs.
+    </p>
   </main>
 
-  <footer>
-    <div class="shell footer-row">
-      <span>QSDM Hive is the recommended release for QSDM and CELL.</span>
-      <span><a href="/">Home</a> · <a href="/docs/">Docs</a> · <a href="/audit.html">Audit</a> · <a href="https://github.com/blackbeardONE/QSDM/blob/main/PRIVACY.md">Privacy</a> · <a href="https://github.com/blackbeardONE/QSDM/blob/main/CODE_SIGNING_POLICY.md">Code signing</a></span>
+  <footer class="site-footer">
+    <div class="shell">
+      <div class="site-footer-row">
+        <span>QSDM Hive is the recommended release for QSDM and CELL.</span>
+        <div class="site-footer-links">
+          <a href="/">Home</a>
+          <a href="/network.html">Network</a>
+          <a href="/wallet.html">Web wallet</a>
+          <a href="/docs/">Docs</a>
+          <a href="/audit.html">Audit</a>
+          <a href="https://qsdm.online/">QSDM VPN</a>
+        </div>
+      </div>
     </div>
   </footer>
+  <script src="/assets/site-nav.js"></script>
 </body>
 </html>

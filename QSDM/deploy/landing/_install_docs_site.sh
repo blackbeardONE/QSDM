@@ -51,7 +51,8 @@ fi
 
 for required in \
   index.html download.html network.html explorer.html validators.html \
-  wallet-start.html wallet-start.js assets/wallet-start.css \
+  wallet.html wallet-provider.js wallet-start.html wallet-start.js \
+  assets/wallet-start.css \
   assets/site.css assets/site-nav.js docs/index.html docs/docs.css \
   docs/docs.js docs/lib/markdown-it.min.js; do
   if [[ ! -f "$STAGE/$required" ]]; then
@@ -74,6 +75,65 @@ if [[ -f "$STAGE/Caddyfile" ]]; then
   echo "=== validating staged Caddyfile ==="
   caddy validate --config "$STAGE/Caddyfile" --adapter caddyfile
 fi
+
+require_staged_marker() {
+  local relative="$1"
+  local marker="$2"
+  if ! grep -Fq "$marker" "$STAGE/$relative"; then
+    echo "staged $relative is not aligned with the current release: missing $marker" >&2
+    exit 1
+  fi
+}
+
+echo "=== validating staged release alignment ==="
+if [[ ! -f "$WEBROOT/downloads/latest.yml" ]]; then
+  echo "current Hive updater metadata is missing" >&2
+  exit 1
+fi
+hive_version="$(awk '$1 == "version:" { print $2; exit }' "$WEBROOT/downloads/latest.yml")"
+if [[ -z "$hive_version" ]]; then
+  echo "could not read the current Hive version" >&2
+  exit 1
+fi
+
+core_status="$(curl --fail --silent --show-error --max-time 15 \
+  https://api.qsdm.tech/api/v1/status)"
+core_version="$(sed -n 's/.*"version":"\([^"]*\)".*/\1/p' <<<"$core_status")"
+if [[ -z "$core_version" ]]; then
+  echo "could not read the current Core version" >&2
+  exit 1
+fi
+
+mapfile -t extension_versions < <(
+  find "$WEBROOT/downloads" -maxdepth 1 -type f \
+    -name 'qsdm-hive-wallet-extension-*-chromium.zip' -printf '%f\n' |
+    sed -n 's/^qsdm-hive-wallet-extension-\(.*\)-chromium\.zip$/\1/p' |
+    sort -V
+)
+if [[ ${#extension_versions[@]} -eq 0 ]]; then
+  echo "no published Chromium wallet extension was found" >&2
+  exit 1
+fi
+extension_version="${extension_versions[-1]}"
+
+require_staged_marker index.html "$core_version"
+require_staged_marker docs/index.html "$core_version"
+require_staged_marker download.html "Core $core_version"
+require_staged_marker download.html "Hive $hive_version"
+require_staged_marker download.html "Version $extension_version"
+require_staged_marker download.html \
+  "qsdm-hive-wallet-extension-$extension_version-chromium.zip"
+require_staged_marker download.html \
+  "qsdm-hive-wallet-extension-$extension_version-firefox.zip"
+require_staged_marker download.html \
+  "qsdm-hive-wallet-extension-$extension_version.zip"
+require_staged_marker wallet.html '/wallet-provider.js'
+require_staged_marker wallet-start.html '/wallet-start.js'
+require_staged_marker wallet-start.html 'noindex,follow'
+
+provider_sri="$(openssl dgst -sha384 -binary "$STAGE/wallet-provider.js" | openssl base64 -A)"
+require_staged_marker wallet.html "sha384-$provider_sri"
+echo "  Core $core_version / Hive $hive_version / Wallet extension $extension_version"
 
 echo "=== backing up current public website to $BACKUP_DIR ==="
 install -d -o root -g root -m 0700 "$BACKUP_DIR"
@@ -151,19 +211,45 @@ for u in \
 done
 
 echo
+echo "=== advertised download checks ==="
+mapfile -t advertised_downloads < <(
+  grep -oE 'href="/downloads/[^"?#]+"' "$WEBROOT/download.html" |
+    sed -E 's/^href="([^"]+)"$/\1/' |
+    sort -u
+)
+if [[ ${#advertised_downloads[@]} -eq 0 ]]; then
+  echo "download page does not advertise any versioned files" >&2
+  exit 1
+fi
+for path in "${advertised_downloads[@]}"; do
+  curl --fail --silent --show-error --head --max-time 30 \
+    "https://qsdm.tech$path" >/dev/null
+  echo "  available  $path"
+done
+
+echo
 echo "=== CSP check ==="
-curl --max-time 10 -sI https://qsdm.tech/ | grep -i "content-security-policy" | head -n 1
+home_headers="$(curl --fail --max-time 10 -sI https://qsdm.tech/)"
+grep -im1 "content-security-policy" <<<"$home_headers"
 
 echo
 echo "=== content checks ==="
-curl --fail --max-time 15 -s https://qsdm.tech/ | grep -q 'QSDM VPN'
-curl --fail --max-time 15 -s https://qsdm.tech/download.html | grep -q 'Version 1.4.7'
-curl --fail --max-time 15 -s https://qsdm.tech/network.html | grep -q 'QSDM Network'
+home_page="$(curl --fail --max-time 15 -s https://qsdm.tech/)"
+download_page="$(curl --fail --max-time 15 -s https://qsdm.tech/download.html)"
+network_page="$(curl --fail --max-time 15 -s https://qsdm.tech/network.html)"
+grep -Fq 'The public network for CELL.' <<<"$home_page"
+grep -Fq 'View Network' <<<"$home_page"
+grep -Fq 'QSDM VPN' <<<"$home_page"
+grep -Fq 'Version 1.4.7' <<<"$download_page"
+grep -Fq 'Version 0.4.0' <<<"$download_page"
+grep -Fq 'qsdm-hive-wallet-extension-0.4.0-chromium.zip' <<<"$download_page"
+grep -Fq 'QSDM Network' <<<"$network_page"
+grep -Fq 'href="/download.html">Download</a>' <<<"$home_page"
 echo "  expected homepage, download, and network markers are present"
 
 echo
 echo "=== docs SPA pulled markdown-it SRI ==="
-grep -oE 'integrity="sha384-[A-Za-z0-9+/=]+"' "$WEBROOT/docs/index.html" | head -n 1
+grep -o -m 1 -E 'integrity="sha384-[A-Za-z0-9+/=]+"' "$WEBROOT/docs/index.html"
 echo
 echo "=== markdown-it actual sha384 ==="
 openssl dgst -sha384 -binary "$WEBROOT/docs/lib/markdown-it.min.js" | openssl base64 -A

@@ -473,18 +473,39 @@
       <span>QSDM</span>
     </a>
     <nav class="site-nav" aria-label="Primary">
-      <a href="/network.html">Network</a>
-      <a href="/wallet.html">Wallet</a>
-      <a href="/explorer.html">Explorer</a>
-      <a href="/chain.html">Chain</a>
-      <a href="/validators.html">Validators</a>
+      <div class="site-nav-item">
+        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
+          Network <span class="site-nav-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="site-nav-panel" role="menu">
+          <a href="/network.html" role="menuitem">Overview<span class="site-nav-hint">Live CELL network</span></a>
+          <a href="/explorer.html" role="menuitem">Explorer<span class="site-nav-hint">Search + chain tip</span></a>
+          <a href="/api.html" role="menuitem">API<span class="site-nav-hint">HTTP v1 overview</span></a>
+          <a href="/validators.html" role="menuitem">Validators<span class="site-nav-hint">Bootstrap peers</span></a>
+        </div>
+      </div>
+      <div class="site-nav-item">
+        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
+          Hive <span class="site-nav-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="site-nav-panel" role="menu">
+          <a href="/download.html" role="menuitem">Download Hive<span class="site-nav-hint">Windows + Linux app</span></a>
+          <a href="/wallet.html" role="menuitem">Web wallet<span class="site-nav-hint">Browser self-custody</span></a>
+          <a href="https://qsdm.online/" role="menuitem">QSDM VPN<span class="site-nav-hint">Private Android access</span></a>
+        </div>
+      </div>
       <a href="/docs/">Docs</a>
-      <a href="/audit.html" class="active">Audit</a>
-      <a href="/trust.html">Trust</a>
-      <a href="/api.html">API</a>
+      <div class="site-nav-item">
+        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
+          Trust <span class="site-nav-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="site-nav-panel" role="menu">
+          <a href="/audit.html" role="menuitem">Public audit<span class="site-nav-hint">Live checklist</span></a>
+          <a href="/trust.html" role="menuitem">Attestations<span class="site-nav-hint">NVIDIA feed</span></a>
+        </div>
+      </div>
     </nav>
     <div class="site-actions">
-      <a class="site-btn site-btn-ghost" href="/wallet.html">Wallet</a>
       <a class="site-btn site-btn-solid" href="/download.html">Download</a>
       <button class="site-menu-toggle" type="button" id="siteMenuToggle" aria-label="Open menu" aria-expanded="false">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 7H4V5H20V7ZM20 13H4V11H20V13ZM20 19H4V17H20V19Z"/></svg>
@@ -492,16 +513,25 @@
     </div>
   </div>
   <div class="site-mobile-nav" id="siteMobileNav">
-    <a href="/network.html">Network</a>
-    <a href="/wallet.html">Wallet</a>
-    <a href="/explorer.html">Explorer</a>
-    <a href="/chain.html">Chain</a>
-    <a href="/validators.html">Validators</a>
-    <a href="/docs/">Docs</a>
-    <a href="/audit.html">Audit</a>
-    <a href="/trust.html">Trust</a>
-    <a href="/api.html">API</a>
-    <a href="/download.html">Download</a>
+    <div class="site-mobile-group">
+      <div class="site-mobile-label">Network</div>
+      <a href="/network.html">Overview</a>
+      <a href="/explorer.html">Explorer</a>
+      <a href="/api.html">API</a>
+      <a href="/validators.html">Validators</a>
+    </div>
+    <div class="site-mobile-group">
+      <div class="site-mobile-label">Hive</div>
+      <a href="/download.html">Download Hive</a>
+      <a href="/wallet.html">Web wallet</a>
+      <a href="https://qsdm.online/">QSDM VPN</a>
+    </div>
+    <div class="site-mobile-group">
+      <div class="site-mobile-label">Learn</div>
+      <a href="/docs/">Docs</a>
+      <a href="/audit.html">Public audit</a>
+      <a href="/trust.html">Attestations</a>
+    </div>
   </div>
 </header>
 
@@ -511,7 +541,9 @@
   <p class="lede">
     Live snapshot of the QSDM internal audit checklist. Every row points at runnable
     in-tree evidence (a test file, a live deployment, or a verifiable source-tree
-    artefact). The score and items below are fetched directly from the public API —
+    artefact). For the optional NVIDIA attestation feed, see
+    <a href="/trust.html">attestation transparency</a>.
+    The score and items below are fetched directly from the public API —
     the same JSON the SDK and the operator dashboard tile consume.
   </p>
 
@@ -741,27 +773,28 @@ GET https://api.qsdm.tech/api/v1/audit/badge.svg   # equivalent</code></pre>
   </div>
 </main>
 
-<footer>
-  <div class="container">
-    Source:
-    <span class="mono">GET /api/v1/audit/summary</span>,
-    <span class="mono">/api/v1/audit/items</span>,
-    <span class="mono">/api/v1/audit/badge.svg</span>.
-    Refreshes every 60&nbsp;s. Repository:
-    <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/source/pkg/audit/checklist.go">pkg/audit/checklist.go</a>.
-    © <span id="y"></span> QSDM · Cell (CELL).
-
-    <!-- Transparency links — byte-identical across all eight landing
-         pages. See index.html for rationale. -->
-    <nav aria-label="Transparency resources" class="transparency-strip" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);line-height:1.8;">
-      <strong style="color:var(--text-2);font-weight:600;letter-spacing:.3px;text-transform:uppercase;font-size:11px;">Transparency:</strong>
-      <a href="/audit.html">Public audit</a> ·
-      <a href="/trust.html">Attestation transparency</a> ·
-      <a href="/.well-known/security.txt">Security disclosure (RFC 9116)</a> ·
-      <a href="/humans.txt">Humans</a> ·
-      <a href="/sitemap.xml">Sitemap</a> ·
-      <a href="/api/v1/audit/badge.svg">Status badge (SVG)</a>
-    </nav>
+<footer class="site-footer">
+  <div class="shell">
+    <p class="site-footer-note">
+      Source:
+      <span class="mono">GET /api/v1/audit/summary</span>,
+      <span class="mono">/api/v1/audit/items</span>,
+      <span class="mono">/api/v1/audit/badge.svg</span>.
+      Refreshes every 60&nbsp;s.
+      <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/source/pkg/audit/checklist.go">pkg/audit/checklist.go</a>.
+      © <span id="y"></span> QSDM · CELL.
+    </p>
+    <div class="site-footer-row">
+      <span>Public audit</span>
+      <div class="site-footer-links">
+        <a href="/docs/">Docs</a>
+        <a href="/api.html">API</a>
+        <a href="/audit.html">Audit</a>
+        <a href="/trust.html">Attestations</a>
+        <a href="/.well-known/security.txt">Security</a>
+        <a href="https://github.com/blackbeardONE/QSDM">GitHub</a>
+      </div>
+    </div>
   </div>
 </footer>
 
