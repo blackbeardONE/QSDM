@@ -110,17 +110,19 @@ installation** for developers and reviewers only. Chromium manual packages
 must be extracted and loaded in Developer mode; normal Firefox requires a
 Mozilla-signed XPI.
 
-Extension 0.4.0 adds the first-run wallet handoff. A supported site requests
+Extension 0.4.0 added the first-run wallet handoff. A supported site requests
 `qsdm_openOnboarding`; the extension background worker opens its own
 `home.html#/onboarding/welcome?login=new` route. Sites never hard-code a
 `chrome-extension://` or `moz-extension://` address. If the provider is not
 detected, `https://qsdm.tech/wallet-start.html?login=new` continues to the
 official download page.
 
-Telegram and email are the only planned QSDM Account choices shown on this
-screen. They remain inactive until a server-side Telegram verifier and email
-challenge service are deployed. No identifier is collected in the meantime,
-and social identity will not receive or replace the Hive-held wallet key.
+Extension 0.4.1 connects the Telegram and email choices to the QSDM Account
+dashboard. Email uses a one-time link rather than a reusable password. Telegram
+uses Authorization Code + PKCE with server-side ID-token verification. QSDM
+Account stores verified identity and linked public wallet addresses only. It
+does not receive or replace the Hive-held wallet key, and website permissions
+remain local to Hive. See the [QSDM Account guide](QSDM_ACCOUNT.md).
 
 ## Tasks in Hive
 

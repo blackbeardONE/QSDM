@@ -261,7 +261,7 @@ Why the deep-link path remains supported:
 - The private key stays in the local wallet/keystore; Sky Fang never sees it.
 - It also works when the browser extension is not installed.
 
-Hive 1.4.7 supports the QSDM Wallet extension 0.4.0 for Chrome, Edge,
+Hive 1.4.7 supports the QSDM Wallet extension for Chrome, Edge,
 Chromium, Brave, and Firefox. Supported HTTPS sites can use its `window.qsdm`
 provider for account connection, balance reads, message signing, and approved
 CELL transfers. The extension is not a second wallet: it stores no keystore,
@@ -281,8 +281,14 @@ First-run links now use <https://qsdm.tech/wallet-start.html?login=new>. An
 installed provider asks its own background worker to open
 `home.html#/onboarding/welcome?login=new`; a missing provider is sent to the
 official extension download. This avoids browser-specific extension URLs in
-websites. Telegram and email are reserved as the only social account methods,
-but neither is accepted until QSDM deploys a real server-side verifier.
+websites. Extension 0.4.1 sends Telegram and email sign-in to the HTTPS QSDM
+Account dashboard. Telegram responses and email one-time links are verified by
+the account service; the extension never receives provider credentials.
+
+An account session can view verified identity and linked public wallet
+addresses. It cannot sign, spend CELL, recover a wallet, or inherit a site's
+Hive permission. Linking a wallet requires a fresh ML-DSA ownership signature
+approved in Hive. See the [QSDM Account guide](QSDM_ACCOUNT.md).
 
 The wallet page's manual Sign tab is a developer/emergency diagnostic fallback
 only. For players, install QSDM Hive and use the one-click Sky Fang confirmation

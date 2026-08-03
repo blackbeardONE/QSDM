@@ -37,6 +37,21 @@ const walletStartScriptPath = path.join(
   "landing",
   "wallet-start.js"
 );
+const landingDirectory = path.join(
+  workspaceDirectory,
+  "QSDM",
+  "deploy",
+  "landing"
+);
+const accountPagePath = path.join(landingDirectory, "account", "index.html");
+const accountScriptPath = path.join(landingDirectory, "account", "account.js");
+const accountStylePath = path.join(landingDirectory, "account", "account.css");
+const siteStylePath = path.join(landingDirectory, "assets", "site.css");
+const siteIconPath = path.join(
+  landingDirectory,
+  "assets",
+  "qsdm-hive-icon.png"
+);
 
 const readArgument = (name, fallback = "") => {
   const index = process.argv.indexOf(name);
@@ -117,6 +132,7 @@ const brokerToken = Buffer.from(
 const requests = [];
 let connected = false;
 let expectedOrigin = "";
+let accountWallets = [];
 
 const readBody = (request) =>
   new Promise((resolve, reject) => {
@@ -172,11 +188,15 @@ const responseFor = (payload) => {
       };
     case "qsdm_signMessage":
       assert.equal(connected, true);
-      assert.deepEqual(payload.params, {
-        message: "QSDM acceptance challenge",
-      });
+      assert.equal(typeof payload.params?.message, "string");
+      assert.ok(
+        payload.params.message === "QSDM acceptance challenge" ||
+          payload.params.message ===
+            "QSDM Account acceptance wallet challenge"
+      );
       return {
         address: TEST_ADDRESS,
+        public_key: "mock-ml-dsa-public-key",
         signature: "mock-ml-dsa-signature",
       };
     case "qsdm_sendTransaction":
@@ -197,6 +217,7 @@ const responseFor = (payload) => {
 };
 
 const server = http.createServer(async (request, response) => {
+  const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
   if (request.method === "GET" && request.url === "/favicon.ico") {
     response.writeHead(204).end();
     return;
@@ -247,6 +268,126 @@ const server = http.createServer(async (request, response) => {
   if (request.method === "GET" && request.url === "/download.html") {
     response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     response.end("<!doctype html><title>QSDM Download</title>");
+    return;
+  }
+
+  const staticFiles = new Map([
+    ["/account/", [accountPagePath, "text/html; charset=utf-8"]],
+    [
+      "/account/account.js",
+      [accountScriptPath, "text/javascript; charset=utf-8"],
+    ],
+    ["/account/account.css", [accountStylePath, "text/css; charset=utf-8"]],
+    ["/assets/site.css", [siteStylePath, "text/css; charset=utf-8"]],
+    ["/assets/qsdm-hive-icon.png", [siteIconPath, "image/png"]],
+  ]);
+  if (request.method === "GET" && staticFiles.has(requestUrl.pathname)) {
+    const [filePath, contentType] = staticFiles.get(requestUrl.pathname);
+    response.writeHead(200, {
+      "Content-Type": contentType,
+      "Cache-Control": "no-store",
+    });
+    response.end(fs.readFileSync(filePath));
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    requestUrl.pathname === "/api/account/config"
+  ) {
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(
+      JSON.stringify({
+        ok: true,
+        login: { email: true, telegram: true },
+      })
+    );
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    requestUrl.pathname === "/api/account/me"
+  ) {
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(
+      JSON.stringify({
+        ok: true,
+        csrf_token: "acceptance-csrf",
+        account: {
+          id: "acct_acceptance",
+          email: "t***@example.com",
+          telegram: "",
+          wallets: accountWallets,
+        },
+      })
+    );
+    return;
+  }
+
+  if (
+    request.method === "POST" &&
+    requestUrl.pathname === "/api/account/wallets/challenge"
+  ) {
+    const payload = JSON.parse(await readBody(request));
+    assert.equal(request.headers["x-qsdm-csrf"], "acceptance-csrf");
+    assert.equal(payload.address, TEST_ADDRESS);
+    response.writeHead(201, { "Content-Type": "application/json" });
+    response.end(
+      JSON.stringify({
+        ok: true,
+        challenge: {
+          id: "acceptance-wallet-challenge",
+          message: "QSDM Account acceptance wallet challenge",
+          expires_at: new Date(Date.now() + 300000).toISOString(),
+        },
+      })
+    );
+    return;
+  }
+
+  if (
+    request.method === "POST" &&
+    requestUrl.pathname === "/api/account/wallets/confirm"
+  ) {
+    const payload = JSON.parse(await readBody(request));
+    assert.equal(request.headers["x-qsdm-csrf"], "acceptance-csrf");
+    assert.deepEqual(payload, {
+      challenge_id: "acceptance-wallet-challenge",
+      address: TEST_ADDRESS,
+      public_key: "mock-ml-dsa-public-key",
+      signature: "mock-ml-dsa-signature",
+    });
+    accountWallets = [
+      { address: TEST_ADDRESS, linked_at: new Date().toISOString() },
+    ];
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ ok: true, address: TEST_ADDRESS }));
+    return;
+  }
+
+  if (
+    request.method === "POST" &&
+    requestUrl.pathname === "/api/account/wallets/unlink"
+  ) {
+    const payload = JSON.parse(await readBody(request));
+    assert.equal(request.headers["x-qsdm-csrf"], "acceptance-csrf");
+    assert.deepEqual(payload, { address: TEST_ADDRESS });
+    accountWallets = [];
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(
+      JSON.stringify({ ok: true, address: TEST_ADDRESS, unlinked: true })
+    );
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    requestUrl.pathname === "/api/v1/wallet/balance"
+  ) {
+    assert.equal(requestUrl.searchParams.get("address"), TEST_ADDRESS);
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ balance: 42.5 }));
     return;
   }
 
@@ -632,6 +773,45 @@ const runWebWalletChecks = async (browser, testUrl) => {
   }));
 };
 
+const runAccountDashboardChecks = async (browser, testUrl) => {
+  const page = await browser.newPage();
+  page.on("pageerror", (error) =>
+    stage(`account dashboard page error: ${error.message}`)
+  );
+  await page.goto(testUrl, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(
+    () =>
+      !document.querySelector("#dashboard-view")?.hidden &&
+      document
+        .querySelector("#identity-summary")
+        ?.textContent?.includes("t***@example.com"),
+    { timeout: 15000 }
+  );
+  await page.click("#link-wallet");
+  await page.waitForFunction(
+    () =>
+      document.querySelector("#dashboard-status")?.textContent ===
+        "Wallet linked successfully." &&
+      document.querySelector("#wallet-count")?.textContent === "1" &&
+      document.querySelector("#total-balance")?.textContent === "42.5 CELL",
+    { timeout: 15000 }
+  );
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.click(".wallet-unlink");
+  await page.waitForFunction(
+    () =>
+      document.querySelector("#wallet-count")?.textContent === "0" &&
+      document.querySelector("#wallet-empty")?.hidden === false,
+    { timeout: 15000 }
+  );
+  return page.evaluate(() => ({
+    identity: document.querySelector("#identity-summary")?.textContent,
+    walletCount: document.querySelector("#wallet-count")?.textContent,
+    balance: document.querySelector("#total-balance")?.textContent,
+    status: document.querySelector("#dashboard-status")?.textContent,
+  }));
+};
+
 const runOnboardingChecks = async (browser, testUrl, extensionId) => {
   const existingPages = new Set(await browser.pages());
   const handoff = await browser.newPage();
@@ -679,11 +859,34 @@ const runOnboardingChecks = async (browser, testUrl, extensionId) => {
   assert.equal((await onboarding.$$("#google-login")).length, 0);
   assert.equal((await onboarding.$$("#apple-login")).length, 0);
 
-  await onboarding.click("#telegram-login");
-  assert.match(
-    await onboarding.$eval("#notice", (element) => element.textContent),
-    /No Telegram or email data was collected/
+  const telegramTargetPromise = browser.waitForTarget(
+    (target) =>
+      target.url() ===
+      "https://qsdm.tech/account/?login=telegram&source=extension",
+    { timeout: 15000 }
   );
+  await onboarding.click("#telegram-login");
+  const telegramTarget = await telegramTargetPromise;
+  assert.equal(
+    await onboarding.$eval("#notice", (element) => element.textContent),
+    "Opening secure Telegram login..."
+  );
+  const telegramPage = await telegramTarget.page();
+  await telegramPage?.close();
+
+  const emailTargetPromise = browser.waitForTarget(
+    (target) =>
+      target.url() === "https://qsdm.tech/account/?login=email&source=extension",
+    { timeout: 15000 }
+  );
+  await onboarding.click("#email-login");
+  const emailTarget = await emailTargetPromise;
+  assert.equal(
+    await onboarding.$eval("#notice", (element) => element.textContent),
+    "Opening secure email login..."
+  );
+  const emailPage = await emailTarget.page();
+  await emailPage?.close();
   if (screenshotDirectory) {
     fs.mkdirSync(screenshotDirectory, { recursive: true });
     await onboarding.setViewport({ width: 1440, height: 900 });
@@ -842,6 +1045,25 @@ try {
   assert.ok(webWalletMethods.includes("qsdm_getBalance"));
   assert.ok(webWalletMethods.includes("qsdm_sendTransaction"));
   assert.equal(webWalletMethods.at(-1), "qsdm_disconnect");
+
+  stage("testing QSDM Account wallet-link dashboard");
+  const accountStart = requests.length;
+  const accountResult = await withTimeout(
+    runAccountDashboardChecks(browser, `${expectedOrigin}/account/`),
+    30000,
+    "QSDM Account dashboard checks"
+  );
+  assert.match(accountResult.identity, /t\*\*\*@example\.com/);
+  assert.equal(accountResult.walletCount, "0");
+  assert.equal(accountResult.balance, "0 CELL");
+  assert.equal(
+    accountResult.status,
+    "Wallet unlinked. Your local wallet was not changed."
+  );
+  assert.deepEqual(
+    requests.slice(accountStart).map((request) => request.method),
+    ["qsdm_requestAccounts", "qsdm_signMessage"]
+  );
 
   stage("testing installed-extension onboarding handoff");
   const onboardingStart = requests.length;

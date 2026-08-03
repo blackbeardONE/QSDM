@@ -128,6 +128,16 @@ qsdm.tech {
 	encode zstd gzip
 	root * /var/www/qsdm
 
+	# QSDM Account is a separate identity-only service. It stores no wallet
+	# keys and is intentionally not part of the validator API process.
+	handle /api/account/* {
+		reverse_proxy 127.0.0.1:8092 {
+			header_up X-Forwarded-Proto https
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
 	# Release binaries must download instead of being rendered as documents.
 	@hive_linux_packages path /downloads/*.AppImage /downloads/*.tar.gz
 	header @hive_linux_packages Content-Disposition "attachment"
@@ -166,6 +176,7 @@ qsdm.tech {
 	# apex landing if /var/www/qsdm/wallet/index.html is not present.
 	redir /wallet /wallet.html 302
 	redir /wallet/ /wallet.html 302
+	redir /account /account/ 302
 
 	# Public API pass-through (login/register/wallet/health) -> qsdm :8443
 	@api path /api/v1/* /api/metrics

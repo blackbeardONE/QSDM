@@ -1,6 +1,6 @@
 # QSDM Privacy Policy
 
-Last updated: July 12, 2026
+Last updated: August 3, 2026
 
 This policy describes data handling by the open-source QSDM Hive desktop
 application and the reference services operated at `qsdm.tech`. A separately
@@ -18,6 +18,21 @@ access to the wallet.
 
 Hive's analytics functions are disabled and do not transmit product-usage
 events. Hive contains no advertising tracker.
+
+## Optional QSDM Account data
+
+When a user chooses QSDM Account, the reference account service processes an
+email address or Telegram OpenID identifier to create a browser session. Email
+uses a short-lived one-time sign-in link; Telegram responses are verified
+server-side. Identity display values are encrypted at rest. Lookup values,
+one-time tokens, and session tokens are stored as keyed hashes. The service
+also stores public wallet addresses that the user links through an ML-DSA
+ownership signature.
+
+QSDM Account does not receive wallet private keys, keystore JSON, passphrases,
+recovery phrases, or signing authority. It does not synchronize a website's
+local Hive approval. A user who does not choose QSDM Account can continue using
+Hive and the self-custody wallet without an account profile.
 
 ## Data sent when network features are used
 

@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#061116" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; img-src 'self' data:; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self' https://oauth.telegram.org"
+  />
+  <title>QSDM Account</title>
+  <meta name="description" content="Manage your QSDM identity, linked CELL wallets, and approved wallet devices." />
+  <link rel="icon" href="/assets/qsdm-hive-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/site.css" />
+  <link rel="stylesheet" href="/account/account.css" />
+</head>
+<body>
+  <header class="account-header">
+    <div class="account-header-inner">
+      <a class="account-brand" href="/">
+        <img src="/assets/qsdm-hive-icon.png" alt="" width="34" height="34" />
+        <span>QSDM Account</span>
+      </a>
+      <nav aria-label="Account navigation">
+        <a href="/wallet.html">Web wallet</a>
+        <a href="/download.html">Get Hive</a>
+        <button id="sign-out" class="button quiet" type="button" hidden>Sign out</button>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section id="loading-view" class="loading-view" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Checking your QSDM Account...</p>
+    </section>
+
+    <section id="login-view" class="login-layout" hidden aria-labelledby="login-title">
+      <div class="login-copy">
+        <p class="eyebrow">QSDM IDENTITY</p>
+        <h1 id="login-title">Your account. Your wallet stays yours.</h1>
+        <p>
+          Sign in to view linked CELL wallets and connected services. QSDM Account
+          never receives a wallet keystore, private key, or passphrase.
+        </p>
+        <dl class="boundary-list">
+          <div><dt>Account</dt><dd>Email or Telegram identifies your profile.</dd></div>
+          <div><dt>Wallet</dt><dd>Hive or the browser extension approves signatures locally.</dd></div>
+          <div><dt>Recovery</dt><dd>Your QSDM keystore JSON and passphrase remain the authority.</dd></div>
+        </dl>
+      </div>
+
+      <div class="login-panel">
+        <h2>Sign in</h2>
+        <button id="telegram-sign-in" class="button telegram" type="button">
+          Continue with Telegram
+        </button>
+        <div class="divider"><span>or use email</span></div>
+        <form id="email-form">
+          <label for="email">Email address</label>
+          <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required placeholder="you@example.com" />
+          <button id="email-submit" class="button primary" type="submit">Send one-time sign-in link</button>
+        </form>
+        <p id="login-status" class="status" role="status"></p>
+        <p class="fine-print">
+          No account password is stored. Email uses a short-lived, one-time link;
+          Telegram authorization is verified by the QSDM Account service.
+        </p>
+      </div>
+    </section>
+
+    <section id="dashboard-view" class="dashboard" hidden aria-labelledby="dashboard-title">
+      <div class="dashboard-title-row">
+        <div>
+          <p class="eyebrow">ACCOUNT DASHBOARD</p>
+          <h1 id="dashboard-title">Wallet overview</h1>
+          <p id="identity-summary" class="subtitle"></p>
+        </div>
+        <button id="link-wallet" class="button primary" type="button">Link active wallet</button>
+      </div>
+
+      <div id="dashboard-status" class="notice" role="status" hidden></div>
+
+      <section class="overview-band" aria-label="Account overview">
+        <div><span>Linked wallets</span><strong id="wallet-count">0</strong></div>
+        <div><span>Total visible balance</span><strong id="total-balance">0 CELL</strong></div>
+        <div><span>Signing authority</span><strong>Local only</strong></div>
+      </section>
+
+      <section class="dashboard-section" aria-labelledby="wallets-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="wallets-title">Linked wallets</h2>
+            <p>Public wallet records linked through an ML-DSA ownership challenge.</p>
+          </div>
+          <button id="refresh-wallets" class="button quiet" type="button">Refresh</button>
+        </div>
+        <div id="wallet-list" class="wallet-list"></div>
+        <div id="wallet-empty" class="empty-state">
+          <strong>No wallet linked yet</strong>
+          <p>Start QSDM Hive, install the wallet extension, then link the active wallet once.</p>
+          <a class="button" href="/wallet-start.html?login=new">Set up QSDM Wallet</a>
+        </div>
+      </section>
+
+      <section class="dashboard-section security-section" aria-labelledby="security-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="security-title">Security and devices</h2>
+            <p>The account session can view public data. It cannot sign or spend CELL.</p>
+          </div>
+        </div>
+        <div class="security-grid">
+          <div>
+            <span class="security-label">Current browser</span>
+            <strong>Signed in</strong>
+            <small>Protected by an HttpOnly, Secure session cookie.</small>
+          </div>
+          <div>
+            <span class="security-label">Wallet approvals</span>
+            <strong>QSDM Hive</strong>
+            <small>Every connection, signature, and transfer remains a visible local approval.</small>
+          </div>
+          <div>
+            <span class="security-label">Connected websites</span>
+            <strong>Managed locally</strong>
+            <small>Review or revoke exact-origin permissions from QSDM Hive.</small>
+          </div>
+        </div>
+        <div class="section-actions">
+          <a class="button" href="qsdm-hive://open?route=%2Fsettings%2Fwallet">Open Hive wallet management</a>
+          <a class="button quiet" href="/docs/#/web-wallet">Read wallet security guide</a>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <footer>
+    <p>QSDM Account synchronizes identity and public wallet links. It never synchronizes private wallet keys.</p>
+    <nav aria-label="Legal"><a href="/privacy.html">Privacy</a><a href="/support.html">Support</a><a href="/docs/">Documentation</a></nav>
+  </footer>
+
+  <script src="/account/account.js"></script>
+</body>
+</html>

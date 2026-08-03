@@ -21,11 +21,16 @@ Sites**. Signatures and CELL transfers always require a fresh Hive approval.
 There is no separate extension account, password, recovery phrase, or wallet
 import. This avoids creating another copy of the user's wallet secrets.
 
-The onboarding page reserves only **Telegram** and **Email** as future QSDM
-Account methods. They are not enabled until QSDM deploys server-side identity
-verification. The extension does not collect an unverified Telegram handle or
-email address, and it never embeds bot, SMTP, or account-service credentials.
-Google and Apple login are not included.
+The onboarding page offers **Telegram** and **Email** through the HTTPS QSDM
+Account dashboard. Email uses a short-lived one-time link instead of a reusable
+password. Telegram uses Authorization Code + PKCE and server-side ID-token
+verification. The extension itself collects neither identifier and never
+embeds Telegram, SMTP, or account-service credentials. Google and Apple login
+are not included.
+
+QSDM Account synchronizes verified identity and linked public wallet addresses.
+It does not synchronize site approvals, private keys, keystores, passphrases,
+or recovery phrases. Those remain local to Hive.
 
 ## Installation
 
@@ -78,9 +83,7 @@ button only after that store has approved the release.
 
 The separately signed interim CRX is for Linux Chromium and managed-browser
 deployment only. Build it with `package-crx.ps1` and a protected private key;
-never commit or publish the PEM file. The public artifact is
-`https://qsdm.tech/downloads/qsdm-hive-wallet-extension-0.4.0.crx`, and its
-Linux self-update feed is
+never commit or publish the PEM file. Its Linux self-update feed is
 `https://qsdm.tech/downloads/qsdm-hive-wallet-extension-updates.xml`.
 
 The scripts in `native-host` remain available for development diagnostics;

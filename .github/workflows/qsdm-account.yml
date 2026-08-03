@@ -1,0 +1,120 @@
+name: QSDM Account
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qsdm-account-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "QSDM/source/cmd/qsdm-account/**"
+      - "QSDM/source/pkg/account/**"
+      - "QSDM/source/pkg/crypto/**"
+      - "QSDM/source/go.mod"
+      - "QSDM/source/go.sum"
+      - "QSDM/deploy/Caddyfile"
+      - "QSDM/deploy/scripts/install_account_service.sh"
+      - "QSDM/deploy/scripts/verify_account_service.sh"
+      - "QSDM/deploy/systemd/qsdm-account*"
+      - ".github/workflows/qsdm-account.yml"
+  pull_request:
+    paths:
+      - "QSDM/source/cmd/qsdm-account/**"
+      - "QSDM/source/pkg/account/**"
+      - "QSDM/source/pkg/crypto/**"
+      - "QSDM/source/go.mod"
+      - "QSDM/source/go.sum"
+      - "QSDM/deploy/Caddyfile"
+      - "QSDM/deploy/scripts/install_account_service.sh"
+      - "QSDM/deploy/scripts/verify_account_service.sh"
+      - "QSDM/deploy/systemd/qsdm-account*"
+      - ".github/workflows/qsdm-account.yml"
+
+jobs:
+  test-build-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - name: Test and vet
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          go test ./pkg/account ./cmd/qsdm-account -count=1 -timeout 5m
+          go vet ./pkg/account ./cmd/qsdm-account
+
+      - name: Cross-build release artifacts
+        working-directory: QSDM/source
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/dist/qsdm-account"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -ldflags='-s -w' \
+            -o "$GITHUB_WORKSPACE/dist/qsdm-account/qsdm-account-linux-amd64" \
+            ./cmd/qsdm-account
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+            go build -trimpath -ldflags='-s -w' \
+            -o "$GITHUB_WORKSPACE/dist/qsdm-account/qsdm-account-linux-arm64" \
+            ./cmd/qsdm-account
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+            go build -trimpath -ldflags='-s -w' \
+            -o "$GITHUB_WORKSPACE/dist/qsdm-account/qsdm-account-windows-amd64.exe" \
+            ./cmd/qsdm-account
+
+      - name: Verify stripped Linux artifacts and checksums
+        run: |
+          set -euo pipefail
+          python scripts/check_binary_strip.py dist/qsdm-account/qsdm-account-linux-amd64
+          python scripts/check_binary_strip.py dist/qsdm-account/qsdm-account-linux-arm64
+          cd dist/qsdm-account
+          sha256sum qsdm-account-* > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+
+      - name: Smoke-test service and deployment verifier
+        env:
+          QSDM_ACCOUNT_DATA_KEY: "1111111111111111111111111111111111111111111111111111111111111111"
+          QSDM_ACCOUNT_LISTEN: "127.0.0.1:8092"
+          QSDM_ACCOUNT_PUBLIC_BASE_URL: "https://qsdm.tech"
+          QSDM_ACCOUNT_STORE_PATH: "/tmp/qsdm-account-ci.json"
+          QSDM_ACCOUNT_SMTP_HOST: "smtp.invalid"
+          QSDM_ACCOUNT_SMTP_PORT: "587"
+          QSDM_ACCOUNT_SMTP_FROM: "QSDM Account <accounts@example.invalid>"
+          QSDM_ACCOUNT_SMTP_TLS: "true"
+        run: |
+          set -euo pipefail
+          bash -n QSDM/deploy/scripts/install_account_service.sh
+          bash -n QSDM/deploy/scripts/verify_account_service.sh
+          ./dist/qsdm-account/qsdm-account-linux-amd64 >/tmp/qsdm-account.log 2>&1 &
+          service_pid=$!
+          trap 'kill "$service_pid" 2>/dev/null || true; wait "$service_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:8092/api/account/health >/dev/null; then
+              break
+            fi
+            if ! kill -0 "$service_pid" 2>/dev/null; then
+              cat /tmp/qsdm-account.log
+              exit 1
+            fi
+            sleep 0.25
+          done
+          QSDM_ACCOUNT_LOCAL_URL=http://127.0.0.1:8092 \
+            bash QSDM/deploy/scripts/verify_account_service.sh --local-only
+
+      - name: Upload account-service artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qsdm-account-${{ github.sha }}
+          path: dist/qsdm-account/
+          if-no-files-found: error
+          retention-days: 14

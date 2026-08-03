@@ -1,6 +1,6 @@
 # QSDM Deployment Guide
 
-**Last Updated:** December 2024
+**Last Updated:** August 2026
 
 ---
 
@@ -217,6 +217,32 @@ kubectl rollout restart statefulset/qsdm-node -n qsdm
 ---
 
 ## Health Checks
+
+### QSDM Account
+
+QSDM Account is an optional identity-only sidecar for `qsdm.tech/account/`.
+It is separate from Core and never stores wallet private keys, keystore JSON,
+passphrases, or recovery phrases. Build it from `QSDM/source`, complete the
+private environment file, and install it with:
+
+```bash
+CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' \
+  -o qsdm-account ./cmd/qsdm-account
+sudo ../deploy/scripts/install_account_service.sh \
+  ./qsdm-account ../deploy/systemd/qsdm-account.conf
+```
+
+The checked-in configuration is an example only. Production must provide a
+32-byte data-encryption key and at least one real provider: SMTP with STARTTLS
+or Telegram OIDC. The installer refuses placeholders and verifies the local
+service. After installing the Caddy route, verify the complete public path:
+
+```bash
+sudo /opt/qsdm/verify-account-service
+```
+
+See `docs/docs/QSDM_ACCOUNT.md` for the data boundary, provider setup, backup,
+and recovery requirements.
 
 ### Docker Compose
 

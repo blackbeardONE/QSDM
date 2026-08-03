@@ -112,6 +112,7 @@
     {
       title: "Wallet (self-custody)",
       items: [
+        { slug: "qsdm-account",       title: "QSDM Account",                   repoPath: DOCS_PREFIX_REPO + "/QSDM_ACCOUNT.md", badge: "new" },
         { slug: "wallet-recovery",    title: "Wallet recovery",                 repoPath: DOCS_PREFIX_REPO + "/WALLET_RECOVERY.md", badge: "new" },
         { slug: "web-wallet",         title: "Web wallet",                       repoPath: DOCS_PREFIX_REPO + "/WEB_WALLET.md" },
         { slug: "wallet-explanation", title: "How the wallet works",             repoPath: DOCS_PREFIX_REPO + "/WALLET_EXPLANATION.md" },

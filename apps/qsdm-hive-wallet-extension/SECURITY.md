@@ -46,12 +46,16 @@ retain these identities.
 
 ## Account identity boundary
 
-Telegram and email are displayed only as reserved QSDM Account methods. Social
-identity is not wallet custody and must not become a substitute for a wallet
-signature. Until a server can verify Telegram responses and email challenges,
-the extension collects neither identifier and issues no account session.
-Provider credentials must remain server-side; they must never be packaged in
-the browser extension.
+Telegram and email open the HTTPS QSDM Account dashboard. The account service
+verifies Telegram Authorization Code + PKCE responses and short-lived email
+magic links server-side. It encrypts identity display values at rest and stores
+only keyed hashes of login tokens and sessions. Provider credentials remain
+server-side and are never packaged in the browser extension.
+
+Social identity is not wallet custody and cannot substitute for a wallet
+signature. A public address is linked only after Hive signs a short-lived,
+account-bound ML-DSA challenge. Account sessions cannot sign messages, submit
+transactions, recover a wallet, or silently grant a website permission.
 
 ## Explicit limitations
 

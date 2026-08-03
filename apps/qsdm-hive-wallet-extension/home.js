@@ -5,8 +5,7 @@
   const PROVIDER_VERSION = "qsdm-hive-wallet-provider/v1";
   const INTERNAL_ORIGIN = "qsdm-extension://wallet-popup";
   const HIVE_WALLET_URL = "qsdm-hive://open?route=%2Fsettings%2Fwallet";
-  const SOCIAL_AUTH_NOTICE =
-    "Verified account login is not enabled yet. No Telegram or email data was collected.";
+  const ACCOUNT_URL = "https://qsdm.tech/account/";
 
   const useHiveButton = document.getElementById("use-hive");
   const openHiveButton = document.getElementById("open-hive");
@@ -134,16 +133,21 @@
     );
   };
 
-  const explainUnavailableSocialLogin = () => {
-    setNotice(SOCIAL_AUTH_NOTICE, "error");
+  const openAccountLogin = async (loginMethod) => {
+    const loginLabel = loginMethod === "telegram" ? "Telegram" : "email";
+    setNotice(`Opening secure ${loginLabel} login...`);
+    const target = new URL(ACCOUNT_URL);
+    target.searchParams.set("login", loginMethod);
+    target.searchParams.set("source", "extension");
+    await chrome.tabs.create({ url: target.toString() });
   };
 
   document
     .getElementById("telegram-login")
-    .addEventListener("click", explainUnavailableSocialLogin);
+    .addEventListener("click", () => void openAccountLogin("telegram"));
   document
     .getElementById("email-login")
-    .addEventListener("click", explainUnavailableSocialLogin);
+    .addEventListener("click", () => void openAccountLogin("email"));
 
   useHiveButton.addEventListener("click", async () => {
     if (!walletAddress) return;

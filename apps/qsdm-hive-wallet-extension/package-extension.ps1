@@ -110,14 +110,27 @@ try {
     New-DeterministicArchive -Stage $stage -Archive $chromiumArchive
     $archives += [pscustomobject]@{ Browser = 'Chromium'; Path = $chromiumArchive }
 
-    # Browser stores accept ZIP submission bundles even though consumers
-    # install the approved extension directly from the store. Keep explicit
-    # browser names so release operators cannot upload an ambiguous package.
+    # Browser stores assign and protect the production extension identity.
+    # Their upload validators reject a source-level `key`, so store bundles
+    # must omit it while the manual Chromium archive above keeps the pinned
+    # development identity.
+    $chromiumStoreManifest = Get-Content -Raw -LiteralPath (
+        Join-Path $stage 'manifest.json'
+    ) | ConvertFrom-Json
+    $chromiumStoreManifest.PSObject.Properties.Remove('key')
+    [System.IO.File]::WriteAllText(
+        (Join-Path $stage 'manifest.json'),
+        ($chromiumStoreManifest | ConvertTo-Json -Depth 12),
+        $utf8WithoutBom
+    )
+
+    # Keep explicit browser names so a release operator cannot upload an
+    # ambiguous package to the wrong review portal.
     foreach ($browser in @('Chrome', 'Edge', 'Brave')) {
         $browserArchive = Join-Path $OutputDirectory (
             "qsdm-hive-wallet-extension-$version-$($browser.ToLowerInvariant()).zip"
         )
-        Copy-Item -LiteralPath $chromiumArchive -Destination $browserArchive
+        New-DeterministicArchive -Stage $stage -Archive $browserArchive
         $archives += [pscustomobject]@{
             Browser = $browser
             Path = $browserArchive
