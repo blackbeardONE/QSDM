@@ -20,6 +20,7 @@ fi
 installer="qsdm-hive-${hive_version}-win-x64.exe"
 blockmap="${installer}.blockmap"
 wallet_extension="qsdm-hive-wallet-extension-${wallet_extension_version}.zip"
+wallet_extension_crx="qsdm-hive-wallet-extension-${wallet_extension_version}.crx"
 wallet_extension_chromium="qsdm-hive-wallet-extension-${wallet_extension_version}-chromium.zip"
 wallet_extension_chrome="qsdm-hive-wallet-extension-${wallet_extension_version}-chrome.zip"
 wallet_extension_edge="qsdm-hive-wallet-extension-${wallet_extension_version}-edge.zip"
@@ -35,6 +36,7 @@ required_downloads=(
   "qsdm-hive-${hive_version}-windows-metadata-evidence.json"
   "qsdm-hive-${hive_version}-windows-nsis-evidence.json"
   "$wallet_extension"
+  "$wallet_extension_crx"
   "$wallet_extension_chromium"
   "$wallet_extension_chrome"
   "$wallet_extension_edge"
@@ -66,6 +68,7 @@ test -n "$manifest_payload"
 manifest_json="$(printf '%s' "$manifest_payload" | base64 --decode)"
 grep -q '"version": "'"${hive_version}"'"' <<<"$manifest_json"
 grep -q '"name": "'"${wallet_extension}"'"' <<<"$manifest_json"
+grep -q '"name": "'"${wallet_extension_crx}"'"' <<<"$manifest_json"
 grep -q '"name": "'"${wallet_extension_chromium}"'"' <<<"$manifest_json"
 grep -q '"name": "'"${wallet_extension_chrome}"'"' <<<"$manifest_json"
 grep -q '"name": "'"${wallet_extension_edge}"'"' <<<"$manifest_json"
@@ -100,6 +103,7 @@ for file in \
   "qsdm-hive-${hive_version}-windows-metadata-evidence.json" \
   "qsdm-hive-${hive_version}-windows-nsis-evidence.json" \
   "$wallet_extension" \
+  "$wallet_extension_crx" \
   "$wallet_extension_chromium" \
   "$wallet_extension_chrome" \
   "$wallet_extension_edge" \
@@ -119,7 +123,8 @@ install_pointer() {
 
 install_pointer "$stage_dir/downloads/SHA256SUMS-win.txt" "$downloads/SHA256SUMS-win.txt"
 
-for file in "$installer" "$wallet_extension" "$wallet_extension_chromium" \
+for file in "$installer" "$wallet_extension" "$wallet_extension_crx" \
+  "$wallet_extension_chromium" \
   "$wallet_extension_chrome" "$wallet_extension_edge" \
   "$wallet_extension_brave" \
   "$wallet_extension_firefox" "$wallet_extension_checksums"; do

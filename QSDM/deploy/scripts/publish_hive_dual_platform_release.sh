@@ -22,6 +22,7 @@ linux_appimage="qsdm-hive-${hive_version}-linux-x86_64.AppImage"
 linux_archive="qsdm-hive-${hive_version}-linux-x64.tar.gz"
 linux_checksums="qsdm-hive-${hive_version}-linux-SHA256SUMS.txt"
 wallet_extension="qsdm-hive-wallet-extension-${wallet_extension_version}.zip"
+wallet_extension_crx="qsdm-hive-wallet-extension-${wallet_extension_version}.crx"
 wallet_extension_chromium="qsdm-hive-wallet-extension-${wallet_extension_version}-chromium.zip"
 wallet_extension_chrome="qsdm-hive-wallet-extension-${wallet_extension_version}-chrome.zip"
 wallet_extension_edge="qsdm-hive-wallet-extension-${wallet_extension_version}-edge.zip"
@@ -41,6 +42,7 @@ immutable_downloads=(
   "qsdm-hive-${hive_version}-linux-release-provenance.json"
   "qsdm-hive-${hive_version}-linux-payload-evidence.json"
   "$wallet_extension"
+  "$wallet_extension_crx"
   "$wallet_extension_chromium"
   "$wallet_extension_chrome"
   "$wallet_extension_edge"
@@ -71,7 +73,7 @@ grep -qx "version: ${hive_version}" "$stage_dir/downloads/latest.yml"
 grep -qx "version: ${hive_version}" "$stage_dir/downloads/latest-linux.yml"
 grep -q "url: ${windows_installer}" "$stage_dir/downloads/latest.yml"
 grep -q "url: ${linux_appimage}" "$stage_dir/downloads/latest-linux.yml"
-grep -q "$wallet_extension" "$stage_dir/download.html"
+grep -q "$wallet_extension_crx" "$stage_dir/download.html"
 grep -q "Version ${hive_version}" "$stage_dir/download.html"
 
 for platform in windows linux; do
@@ -85,6 +87,7 @@ for platform in windows linux; do
   grep -q '"version": "'"${hive_version}"'"' <<<"$manifest_json"
   if [[ "$platform" == "windows" ]]; then
     grep -q '"name": "'"${wallet_extension}"'"' <<<"$manifest_json"
+    grep -q '"name": "'"${wallet_extension_crx}"'"' <<<"$manifest_json"
     grep -q '"name": "'"${wallet_extension_chromium}"'"' <<<"$manifest_json"
     grep -q '"name": "'"${wallet_extension_chrome}"'"' <<<"$manifest_json"
     grep -q '"name": "'"${wallet_extension_edge}"'"' <<<"$manifest_json"
@@ -128,6 +131,7 @@ done
 
 for file in "$windows_installer" "$linux_appimage" "$linux_archive" \
   "$wallet_extension" "$wallet_extension_chromium" \
+  "$wallet_extension_crx" \
   "$wallet_extension_chrome" "$wallet_extension_edge" \
   "$wallet_extension_brave" \
   "$wallet_extension_firefox" "$wallet_extension_checksums"; do

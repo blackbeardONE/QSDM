@@ -13,6 +13,7 @@ webroot="${4:-/var/www/qsdm}"
 downloads="$webroot/downloads"
 wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.4.0}"
 wallet_extension="qsdm-hive-wallet-extension-${wallet_extension_version}.zip"
+wallet_extension_crx="qsdm-hive-wallet-extension-${wallet_extension_version}.crx"
 wallet_extension_chromium="qsdm-hive-wallet-extension-${wallet_extension_version}-chromium.zip"
 wallet_extension_chrome="qsdm-hive-wallet-extension-${wallet_extension_version}-chrome.zip"
 wallet_extension_edge="qsdm-hive-wallet-extension-${wallet_extension_version}-edge.zip"
@@ -37,6 +38,7 @@ immutable_downloads=(
   "SHA256SUMS-win.txt"
   "qsdm-hive-${hive_version}-linux-SHA256SUMS.txt"
   "$wallet_extension"
+  "$wallet_extension_crx"
   "$wallet_extension_chromium"
   "$wallet_extension_chrome"
   "$wallet_extension_edge"
@@ -90,6 +92,7 @@ windows_payload="$(sed -n 's/.*"manifest_base64": "\([^"]*\)".*/\1/p' \
 test -n "$windows_payload"
 windows_manifest_json="$(printf '%s' "$windows_payload" | base64 --decode)"
 grep -q '"name": "'"${wallet_extension}"'"' <<<"$windows_manifest_json"
+grep -q '"name": "'"${wallet_extension_crx}"'"' <<<"$windows_manifest_json"
 grep -q '"name": "'"${wallet_extension_chromium}"'"' <<<"$windows_manifest_json"
 grep -q '"name": "'"${wallet_extension_chrome}"'"' <<<"$windows_manifest_json"
 grep -q '"name": "'"${wallet_extension_edge}"'"' <<<"$windows_manifest_json"
@@ -127,6 +130,7 @@ for file in \
   "qsdm-hive-${hive_version}-linux-x86_64.AppImage" \
   "qsdm-hive-${hive_version}-linux-x64.tar.gz" \
   "$wallet_extension" \
+  "$wallet_extension_crx" \
   "$wallet_extension_chromium" \
   "$wallet_extension_chrome" \
   "$wallet_extension_edge" \
