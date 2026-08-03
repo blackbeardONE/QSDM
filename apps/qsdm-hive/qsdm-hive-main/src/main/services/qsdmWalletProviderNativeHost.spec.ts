@@ -7,6 +7,7 @@ import {
   QSDM_WALLET_EXTENSION_ID,
   QSDM_WALLET_FIREFOX_EXTENSION_ID,
   QSDM_WALLET_EXTENSION_PUBLIC_KEY,
+  QSDM_WALLET_INTERIM_CRX_EXTENSION_ID,
   QSDM_WALLET_STORE_EXTENSION_ID,
   QSDM_WALLET_TRUSTED_EXTENSION_IDS,
   registerQsdmWalletProviderNativeHost,
@@ -49,7 +50,14 @@ describe('qsdmWalletProviderNativeHost', () => {
     expect(QSDM_WALLET_STORE_EXTENSION_ID).not.toBe(
       QSDM_WALLET_EXTENSION_ID
     );
-    expect(new Set(QSDM_WALLET_TRUSTED_EXTENSION_IDS).size).toBe(2);
+    expect(QSDM_WALLET_INTERIM_CRX_EXTENSION_ID).toMatch(/^[a-p]{32}$/);
+    expect(QSDM_WALLET_INTERIM_CRX_EXTENSION_ID).not.toBe(
+      QSDM_WALLET_EXTENSION_ID
+    );
+    expect(QSDM_WALLET_INTERIM_CRX_EXTENSION_ID).not.toBe(
+      QSDM_WALLET_STORE_EXTENSION_ID
+    );
+    expect(new Set(QSDM_WALLET_TRUSTED_EXTENSION_IDS).size).toBe(3);
   });
 
   it('registers the current-user Windows native host for Chromium and Firefox', () => {

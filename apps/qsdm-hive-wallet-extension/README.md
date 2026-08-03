@@ -65,7 +65,8 @@ to the other browser family. See [STORE_SUBMISSION.md](STORE_SUBMISSION.md).
 
 The Chrome Web Store assigned production ID
 `homapiejinlbjdhhdegcbnldkpkodepo` during the first upload. Hive authorizes
-that ID and the pinned development ID explicitly. Never add a wildcard or an
+that ID, the pinned development ID, and interim CRX ID
+`nmmhneekhgaegpmbnhiacglhoncicflc` explicitly. Never add a wildcard or an
 operator-supplied origin to the native-host manifest.
 
 A self-hosted CRX is not the general Windows installer: consumer Chrome on
@@ -74,6 +75,13 @@ Web Store. Edge and managed Chromium deployments can use CRX packages, while
 normal Firefox releases require a Mozilla-signed XPI. QSDM therefore keeps ZIP
 archives under Advanced manual installation and activates each named store
 button only after that store has approved the release.
+
+The separately signed interim CRX is for Linux Chromium and managed-browser
+deployment only. Build it with `package-crx.ps1` and a protected private key;
+never commit or publish the PEM file. The public artifact is
+`https://qsdm.tech/downloads/qsdm-hive-wallet-extension-0.4.0.crx`, and its
+Linux self-update feed is
+`https://qsdm.tech/downloads/qsdm-hive-wallet-extension-updates.xml`.
 
 The scripts in `native-host` remain available for development diagnostics;
 normal packaged installs do not require running them manually.

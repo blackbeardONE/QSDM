@@ -414,8 +414,8 @@
         <h2 id="wallet-extension-title">QSDM Wallet browser extension</h2>
         <p>
           Connect supported websites to the active wallet in QSDM Hive without
-          copying a keystore or passphrase into the browser. Install Hive 1.4.7
-          first. Choose your browser below. Consumer installation will use each
+          copying a keystore or passphrase into the browser. Install the latest
+          QSDM Hive first. Choose your browser below. Consumer installation will use each
           browser's own store, with no ZIP extraction or shared generic download.
           The listings are being prepared and remain unavailable until the
           browser vendors approve them.
@@ -490,11 +490,14 @@
         <details class="package-options">
           <summary>Advanced manual installation</summary>
           <p>
-            These ZIP files are developer and store-review packages, not normal
-            one-click consumer installers. Chromium browsers require Developer
-            mode and Load unpacked; normal Firefox requires a Mozilla-signed XPI.
+            The signed CRX is available while store review is pending, but it is
+            supported only by Linux Chromium and enterprise-managed Chromium
+            browsers. Normal Chrome on Windows and macOS accepts extensions only
+            from the Chrome Web Store. ZIP files remain developer and store-review
+            packages; normal Firefox requires a Mozilla-signed XPI.
           </p>
           <div class="actions">
+            <a class="site-btn site-btn-solid" href="/downloads/qsdm-hive-wallet-extension-0.4.0.crx" download>Linux / managed Chromium CRX</a>
             <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0-chromium.zip" download="qsdm-hive-wallet-extension-0.4.0-chrome.zip">Chrome manual package</a>
             <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0-chromium.zip" download="qsdm-hive-wallet-extension-0.4.0-edge.zip">Edge manual package</a>
             <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.4.0-chromium.zip" download="qsdm-hive-wallet-extension-0.4.0-brave.zip">Brave manual package</a>
@@ -506,7 +509,7 @@
       </div>
       <div class="checksum wallet-extension-security">
         <strong>Security boundary</strong>
-        <span>Hive keeps the wallet secrets. Each website connection and every signing or CELL transfer action requires explicit approval. QSDM will not disguise an unsigned archive as an installable CRX or XPI that consumer browsers reject.</span>
+        <span>Hive keeps the wallet secrets. Each website connection and every signing or CELL transfer action requires explicit approval. The interim CRX has the pinned extension ID <code>nmmhneekhgaegpmbnhiacglhoncicflc</code>; its signing key is kept outside the public repository. Store installation remains the normal path for Windows and macOS.</span>
       </div>
     </section>
 

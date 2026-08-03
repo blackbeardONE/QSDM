@@ -6,7 +6,7 @@ import path from 'path';
 
 import { getAppDataPath } from 'main/node/helpers/getAppDataPath';
 
-// cspell:ignore abcdefghijklmnop habkkkednignfkoffhpbjahcjbikkahh homapiejinlbjdhhdegcbnldkpkodepo HKCU
+// cspell:ignore abcdefghijklmnop habkkkednignfkoffhpbjahcjbikkahh homapiejinlbjdhhdegcbnldkpkodepo nmmhneekhgaegpmbnhiacglhoncicflc HKCU
 const NATIVE_HOST_NAME = 'tech.qsdm.hive_wallet';
 
 // Public key material is safe to ship. Chromium uses it only to keep the
@@ -17,9 +17,12 @@ export const QSDM_WALLET_EXTENSION_PUBLIC_KEY =
 export const QSDM_WALLET_EXTENSION_ID = 'habkkkednignfkoffhpbjahcjbikkahh';
 export const QSDM_WALLET_STORE_EXTENSION_ID =
   'homapiejinlbjdhhdegcbnldkpkodepo';
+export const QSDM_WALLET_INTERIM_CRX_EXTENSION_ID =
+  'nmmhneekhgaegpmbnhiacglhoncicflc';
 export const QSDM_WALLET_TRUSTED_EXTENSION_IDS = [
   QSDM_WALLET_EXTENSION_ID,
   QSDM_WALLET_STORE_EXTENSION_ID,
+  QSDM_WALLET_INTERIM_CRX_EXTENSION_ID,
 ] as const;
 export const QSDM_WALLET_FIREFOX_EXTENSION_ID = 'qsdm-wallet@qsdm.tech';
 
