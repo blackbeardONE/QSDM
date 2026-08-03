@@ -1,3 +1,9 @@
+## [1.4.8]
+
+- Browser wallet distribution: Hive now authorizes the Chrome Web Store and separately signed interim CRX identities alongside the pinned development and Firefox identities.
+- Interim installation: Linux Chromium and enterprise-managed Chromium can use the public CRX while browser-store review is pending.
+- Release safety: The CRX packer validates the protected signing key, removes localhost development access, strips cross-browser manifest fields, and emits a self-update feed.
+
 ## [1.4.7]
 
 - Web wallet: qsdm.tech can connect to the active Hive wallet, display its public address and balance, and request an explicitly approved CELL transfer without receiving wallet secrets.
