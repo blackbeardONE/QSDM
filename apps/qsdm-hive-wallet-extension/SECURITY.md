@@ -14,9 +14,8 @@ it. Hive removes those temporary files during shutdown.
 
 ## Browser boundary
 
-- The official manifest pins Chromium ID
-  `habkkkednignfkoffhpbjahcjbikkahh` and Firefox ID
-  `qsdm-wallet@qsdm.tech`; Hive registers only these identities.
+- Hive registers only the pinned development, interim CRX, Chrome Web Store,
+  and Firefox identities. Wildcard extension origins are forbidden.
 - Packaged Hive releases refresh current-user native-host registration on each
   start. Registration does not require administrator access.
 - The extension requests only `nativeMessaging` and `activeTab` permissions.
