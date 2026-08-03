@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	legacyStoreVersion   = 1
-	storeVersion         = 2
-	storeKeyCheckContext = "qsdm-account-store-key-check-v1"
-	storeKeyCheckValue   = "qsdm-account-store-key-check"
+	legacyStoreVersion          = 1
+	storeVersion                = 2
+	storeKeyCheckContext        = "qsdm-account-store-key-check-v1"
+	storeKeyCheckValue          = "qsdm-account-store-key-check"
+	maxActiveSessionsPerAccount = 10
 )
 
 var (
@@ -118,6 +119,9 @@ func OpenStore(path string, key []byte) (*Store, error) {
 	if err := validateStoreDocumentKey(doc, key); err != nil {
 		return nil, err
 	}
+	if err := validateStoreDocumentStructure(doc); err != nil {
+		return nil, err
+	}
 	for i := range doc.Accounts {
 		account := doc.Accounts[i]
 		if account.ID != "" {
@@ -136,6 +140,9 @@ func OpenStore(path string, key []byte) (*Store, error) {
 		}
 	}
 	s.cleanupLocked(time.Now())
+	for accountID := range s.accounts {
+		s.pruneOldestSessionsLocked(accountID, "")
+	}
 	return s, nil
 }
 
@@ -184,6 +191,86 @@ func validateStoreDocumentKey(doc storeDocument, key []byte) error {
 		email, err := validateIdentity("qsdm-account-email-v1", link.EmailEncrypted)
 		if err != nil || link.EmailHash == "" || subtle.ConstantTimeCompare([]byte(link.EmailHash), []byte(keyedHash(key, "email", email))) != 1 {
 			return errors.New("account store data key is incorrect or the store is corrupted")
+		}
+	}
+	return nil
+}
+
+func validateStoreDocumentStructure(doc storeDocument) error {
+	accountIDs := make(map[string]struct{}, len(doc.Accounts))
+	emailOwners := make(map[string]string)
+	telegramOwners := make(map[string]string)
+	walletOwners := make(map[string]string)
+	for _, account := range doc.Accounts {
+		if account.ID == "" {
+			return errors.New("account store contains an account without an ID")
+		}
+		if _, exists := accountIDs[account.ID]; exists {
+			return errors.New("account store contains a duplicate account ID")
+		}
+		accountIDs[account.ID] = struct{}{}
+		if account.EmailHash == "" && account.TelegramSubjectHash == "" {
+			return errors.New("account store contains an account without a sign-in identity")
+		}
+		if account.EmailHash != "" {
+			if owner, exists := emailOwners[account.EmailHash]; exists && owner != account.ID {
+				return errors.New("account store contains a duplicate email identity")
+			}
+			emailOwners[account.EmailHash] = account.ID
+		}
+		if account.TelegramSubjectHash != "" {
+			if owner, exists := telegramOwners[account.TelegramSubjectHash]; exists && owner != account.ID {
+				return errors.New("account store contains a duplicate Telegram identity")
+			}
+			telegramOwners[account.TelegramSubjectHash] = account.ID
+		}
+		for _, wallet := range account.Wallets {
+			if wallet.Address == "" {
+				return errors.New("account store contains an empty wallet address")
+			}
+			if owner, exists := walletOwners[wallet.Address]; exists {
+				if owner == account.ID {
+					return errors.New("account store contains a duplicate wallet link")
+				}
+				return errors.New("account store contains a wallet linked to multiple accounts")
+			}
+			walletOwners[wallet.Address] = account.ID
+		}
+	}
+
+	sessionHashes := make(map[string]struct{}, len(doc.Sessions))
+	for _, session := range doc.Sessions {
+		if session.TokenHash == "" {
+			return errors.New("account store contains a session without a token hash")
+		}
+		if _, exists := sessionHashes[session.TokenHash]; exists {
+			return errors.New("account store contains a duplicate session")
+		}
+		sessionHashes[session.TokenHash] = struct{}{}
+		if _, exists := accountIDs[session.AccountID]; !exists {
+			return errors.New("account store contains an orphaned session")
+		}
+		if !session.ExpiresAt.After(session.CreatedAt) {
+			return errors.New("account store contains a session with an invalid lifetime")
+		}
+	}
+
+	magicLinkHashes := make(map[string]struct{}, len(doc.MagicLinks))
+	for _, link := range doc.MagicLinks {
+		if link.TokenHash == "" {
+			return errors.New("account store contains a magic link without a token hash")
+		}
+		if _, exists := magicLinkHashes[link.TokenHash]; exists {
+			return errors.New("account store contains a duplicate magic link")
+		}
+		magicLinkHashes[link.TokenHash] = struct{}{}
+		if link.AccountID != "" {
+			if _, exists := accountIDs[link.AccountID]; !exists {
+				return errors.New("account store contains an orphaned identity link")
+			}
+		}
+		if !link.ExpiresAt.After(link.CreatedAt) {
+			return errors.New("account store contains a magic link with an invalid lifetime")
 		}
 	}
 	return nil
@@ -257,6 +344,55 @@ func (s *Store) cleanupLocked(now time.Time) {
 	}
 }
 
+func (s *Store) removeSupersededMagicLinksLocked(record magicLinkRecord) map[string]magicLinkRecord {
+	removed := make(map[string]magicLinkRecord)
+	for hash, candidate := range s.magicLinks {
+		sameFlow := record.AccountID == "" && candidate.AccountID == "" && candidate.EmailHash == record.EmailHash
+		if record.AccountID != "" {
+			sameFlow = candidate.AccountID == record.AccountID
+		}
+		if sameFlow {
+			removed[hash] = candidate
+			delete(s.magicLinks, hash)
+		}
+	}
+	return removed
+}
+
+func (s *Store) pruneOldestSessionsLocked(accountID, keepHash string) map[string]sessionRecord {
+	type candidate struct {
+		hash      string
+		createdAt time.Time
+	}
+	activeCount := 0
+	candidates := make([]candidate, 0)
+	for hash, record := range s.sessions {
+		if record.AccountID != accountID {
+			continue
+		}
+		activeCount++
+		if hash != keepHash {
+			candidates = append(candidates, candidate{hash: hash, createdAt: record.CreatedAt})
+		}
+	}
+	if activeCount <= maxActiveSessionsPerAccount {
+		return nil
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].createdAt.Equal(candidates[j].createdAt) {
+			return candidates[i].hash < candidates[j].hash
+		}
+		return candidates[i].createdAt.Before(candidates[j].createdAt)
+	})
+	removeCount := activeCount - maxActiveSessionsPerAccount
+	removed := make(map[string]sessionRecord, removeCount)
+	for _, candidate := range candidates[:removeCount] {
+		removed[candidate.hash] = s.sessions[candidate.hash]
+		delete(s.sessions, candidate.hash)
+	}
+	return removed
+}
+
 func (s *Store) CreateMagicLink(email string, ttl time.Duration) (string, error) {
 	return s.createMagicLink("", email, ttl)
 }
@@ -298,9 +434,13 @@ func (s *Store) createMagicLink(accountID, email string, ttl time.Duration) (str
 		}
 	}
 	s.cleanupLocked(now)
+	removed := s.removeSupersededMagicLinksLocked(record)
 	s.magicLinks[record.TokenHash] = record
 	if err := s.saveLocked(); err != nil {
 		delete(s.magicLinks, record.TokenHash)
+		for hash, previous := range removed {
+			s.magicLinks[hash] = previous
+		}
 		return "", err
 	}
 	return token, nil
@@ -501,8 +641,12 @@ func (s *Store) CreateSession(accountID string, ttl time.Duration) (string, erro
 	}
 	s.cleanupLocked(now)
 	s.sessions[record.TokenHash] = record
+	removed := s.pruneOldestSessionsLocked(accountID, record.TokenHash)
 	if err := s.saveLocked(); err != nil {
 		delete(s.sessions, record.TokenHash)
+		for hash, previous := range removed {
+			s.sessions[hash] = previous
+		}
 		return "", err
 	}
 	return token, nil

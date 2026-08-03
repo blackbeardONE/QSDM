@@ -32,14 +32,19 @@ does not alter the local keystore or move CELL.
 
 The **Security and devices** section lists active browser-session dates without
 exposing cookie values or stored token hashes. A user can sign out every other
-browser while keeping the current one active. The account can also be deleted
-without contacting support by typing `DELETE`. Account deletion removes the
-identity, all browser sessions, pending account email links, pending Telegram
-link flows, and public wallet links. It does not delete Hive, a keystore, or
-CELL, and it cannot erase accepted ledger transactions.
+browser while keeping the current one active. Each account can have at most 10
+active browser sessions; a successful new sign-in removes the oldest session
+when that limit is reached. The account can also be deleted without contacting
+support by typing `DELETE`. Account deletion removes the identity, all browser
+sessions, pending account email links, pending Telegram link flows, and public
+wallet links. It does not delete Hive, a keystore, or CELL, and it cannot erase
+accepted ledger transactions.
 
 There is no QSDM Account password in this design. Email magic links remove a
-reusable password database while still requiring control of the mailbox.
+reusable password database while still requiring control of the mailbox. A new
+email sign-in link invalidates the older pending link for that email. A new
+email identity-link request invalidates the older pending request for that
+account.
 
 ## Security boundary
 
@@ -109,7 +114,9 @@ Account store version 2 includes an authenticated encrypted key-check record.
 Version 1 stores remain readable after every encrypted identity field validates
 with the configured key; the next successful account change upgrades the file
 to version 2. Atomic replacement keeps the previous file intact when a save
-fails, including on Windows. Back up the store before the first upgrade.
+fails, including on Windows. Store loading also rejects duplicate account IDs,
+identity ownership, wallet ownership, token hashes, and records that reference
+missing accounts. Back up the store before the first upgrade.
 
 Then install the updated Caddy route and use the fail-closed installer:
 

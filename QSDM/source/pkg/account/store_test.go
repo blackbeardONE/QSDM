@@ -183,6 +183,54 @@ func TestStoreMagicLinkPersistsEncryptedIdentityAndIsOneTime(t *testing.T) {
 	}
 }
 
+func TestStoreKeepsOnlyTheLatestMagicLinkForEachFlow(t *testing.T) {
+	store, err := OpenStore(filepath.Join(t.TempDir(), "accounts.json"), testDataKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldLogin, err := store.CreateMagicLink("person@example.com", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newLogin, err := store.CreateMagicLink("person@example.com", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ConsumeMagicLink(oldLogin); err == nil {
+		t.Fatal("superseded sign-in link remained valid")
+	}
+	if _, err := store.ConsumeMagicLink(newLogin); err != nil {
+		t.Fatalf("latest sign-in link was rejected: %v", err)
+	}
+
+	account, err := store.FindOrCreateTelegram("telegram-subject", "@operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldIdentity, err := store.CreateIdentityMagicLink(account.ID, "old@example.com", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newIdentity, err := store.CreateIdentityMagicLink(account.ID, "new@example.com", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ConsumeMagicLink(oldIdentity); err == nil {
+		t.Fatal("superseded identity-link email remained valid")
+	}
+	linked, err := store.ConsumeMagicLink(newIdentity)
+	if err != nil {
+		t.Fatalf("latest identity-link email was rejected: %v", err)
+	}
+	masked, _, err := store.IdentityView(linked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if masked != "n*w@example.com" {
+		t.Fatalf("latest email identity was not linked: %q", masked)
+	}
+}
+
 func TestStoreWalletCannotBeClaimedByTwoAccounts(t *testing.T) {
 	store, err := OpenStore(filepath.Join(t.TempDir(), "accounts.json"), testDataKey())
 	if err != nil {
@@ -251,6 +299,81 @@ func TestStoreListsAndRevokesOtherSessionsOnly(t *testing.T) {
 	}
 }
 
+func TestStoreCapsActiveSessionsPerAccount(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "accounts.json")
+	store, err := OpenStore(path, testDataKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := mustCreateEmailAccount(t, store, "person@example.com")
+	otherAccount := mustCreateEmailAccount(t, store, "other@example.com")
+	unrelated := mustCreateSession(t, store, otherAccount.ID)
+	tokens := make([]string, 0, maxActiveSessionsPerAccount+1)
+	for i := 0; i < maxActiveSessionsPerAccount+1; i++ {
+		tokens = append(tokens, mustCreateSession(t, store, account.ID))
+		time.Sleep(time.Millisecond)
+	}
+
+	views, err := store.SessionsForAccount(account.ID, tokens[len(tokens)-1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(views) != maxActiveSessionsPerAccount {
+		t.Fatalf("active session count = %d, want %d", len(views), maxActiveSessionsPerAccount)
+	}
+	if _, _, err := store.AccountForSession(tokens[0]); err == nil {
+		t.Fatal("oldest session remained active after the per-account cap")
+	}
+	for _, token := range tokens[1:] {
+		if _, _, err := store.AccountForSession(token); err != nil {
+			t.Fatalf("newer session was unexpectedly pruned: %v", err)
+		}
+	}
+	if _, _, err := store.AccountForSession(unrelated); err != nil {
+		t.Fatalf("another account's session was pruned: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacyOverflow storeDocument
+	if err := json.Unmarshal(raw, &legacyOverflow); err != nil {
+		t.Fatal(err)
+	}
+	overflowHash := keyedHash(testDataKey(), "session", "legacy-overflow")
+	now := time.Now().UTC()
+	legacyOverflow.Sessions = append(legacyOverflow.Sessions, sessionRecord{
+		TokenHash: overflowHash,
+		AccountID: account.ID,
+		CreatedAt: now.Add(-time.Hour),
+		ExpiresAt: now.Add(time.Hour),
+	})
+	raw, err = json.MarshalIndent(legacyOverflow, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenStore(path, testDataKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.mu.RLock()
+	_, overflowActive := reopened.sessions[overflowHash]
+	activeCount := 0
+	for _, record := range reopened.sessions {
+		if record.AccountID == account.ID {
+			activeCount++
+		}
+	}
+	reopened.mu.RUnlock()
+	if overflowActive || activeCount != maxActiveSessionsPerAccount {
+		t.Fatalf("startup did not prune legacy session overflow: active=%d overflow=%t", activeCount, overflowActive)
+	}
+}
+
 func TestStoreDeleteAccountRemovesSessionsAndPendingLinks(t *testing.T) {
 	store, err := OpenStore(filepath.Join(t.TempDir(), "accounts.json"), testDataKey())
 	if err != nil {
@@ -314,6 +437,168 @@ func TestStoreDestructiveChangesRollbackWhenPersistenceFails(t *testing.T) {
 		t.Fatalf("failed account deletion was not rolled back: %v", err)
 	}
 	store.path = originalPath
+}
+
+func TestStoreCredentialPruningRollsBackWhenPersistenceFails(t *testing.T) {
+	store, err := OpenStore(filepath.Join(t.TempDir(), "accounts.json"), testDataKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := mustCreateEmailAccount(t, store, "rollback@example.com")
+	tokens := make([]string, 0, maxActiveSessionsPerAccount)
+	for i := 0; i < maxActiveSessionsPerAccount; i++ {
+		tokens = append(tokens, mustCreateSession(t, store, account.ID))
+		time.Sleep(time.Millisecond)
+	}
+	oldLink, err := store.CreateMagicLink("pending@example.com", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	originalPath := store.path
+	store.path = filepath.Join(t.TempDir(), "missing", "accounts.json")
+	if _, err := store.CreateSession(account.ID, time.Minute); err == nil {
+		t.Fatal("session cap unexpectedly persisted to an invalid path")
+	}
+	if _, err := store.CreateMagicLink("pending@example.com", time.Minute); err == nil {
+		t.Fatal("magic-link replacement unexpectedly persisted to an invalid path")
+	}
+	store.path = originalPath
+
+	for _, token := range tokens {
+		if _, _, err := store.AccountForSession(token); err != nil {
+			t.Fatalf("failed session pruning was not rolled back: %v", err)
+		}
+	}
+	if _, err := store.ConsumeMagicLink(oldLink); err != nil {
+		t.Fatalf("failed magic-link replacement was not rolled back: %v", err)
+	}
+}
+
+func TestStoreRejectsDuplicateAndOrphanedRecords(t *testing.T) {
+	tests := []struct {
+		name   string
+		want   string
+		mutate func(*storeDocument, map[string]int)
+	}{
+		{
+			name: "duplicate account ID",
+			want: "duplicate account ID",
+			mutate: func(doc *storeDocument, indexes map[string]int) {
+				doc.Accounts = append(doc.Accounts, doc.Accounts[indexes["first"]])
+			},
+		},
+		{
+			name: "duplicate email identity",
+			want: "duplicate email identity",
+			mutate: func(doc *storeDocument, indexes map[string]int) {
+				first := doc.Accounts[indexes["first"]]
+				doc.Accounts[indexes["second"]].EmailHash = first.EmailHash
+				doc.Accounts[indexes["second"]].EmailEncrypted = first.EmailEncrypted
+			},
+		},
+		{
+			name: "duplicate Telegram identity",
+			want: "duplicate Telegram identity",
+			mutate: func(doc *storeDocument, indexes map[string]int) {
+				telegram := doc.Accounts[indexes["telegram"]]
+				doc.Accounts[indexes["second"]].TelegramSubjectHash = telegram.TelegramSubjectHash
+				doc.Accounts[indexes["second"]].TelegramNameEncrypted = telegram.TelegramNameEncrypted
+			},
+		},
+		{
+			name: "wallet linked twice",
+			want: "wallet linked to multiple accounts",
+			mutate: func(doc *storeDocument, indexes map[string]int) {
+				doc.Accounts[indexes["second"]].Wallets = append(
+					doc.Accounts[indexes["second"]].Wallets,
+					doc.Accounts[indexes["first"]].Wallets[0],
+				)
+			},
+		},
+		{
+			name: "orphaned session",
+			want: "orphaned session",
+			mutate: func(doc *storeDocument, _ map[string]int) {
+				doc.Sessions[0].AccountID = "acct_missing"
+			},
+		},
+		{
+			name: "orphaned identity link",
+			want: "orphaned identity link",
+			mutate: func(doc *storeDocument, _ map[string]int) {
+				doc.MagicLinks[0].AccountID = "acct_missing"
+			},
+		},
+		{
+			name: "duplicate session",
+			want: "duplicate session",
+			mutate: func(doc *storeDocument, _ map[string]int) {
+				doc.Sessions = append(doc.Sessions, doc.Sessions[0])
+			},
+		},
+		{
+			name: "duplicate magic link",
+			want: "duplicate magic link",
+			mutate: func(doc *storeDocument, _ map[string]int) {
+				doc.MagicLinks = append(doc.MagicLinks, doc.MagicLinks[0])
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "accounts.json")
+			store, err := OpenStore(path, testDataKey())
+			if err != nil {
+				t.Fatal(err)
+			}
+			first := mustCreateEmailAccount(t, store, "first@example.com")
+			second := mustCreateEmailAccount(t, store, "second@example.com")
+			telegram, err := store.FindOrCreateTelegram("pending-telegram", "@pending")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.LinkWallet(first.ID, strings.Repeat("a", 64)); err != nil {
+				t.Fatal(err)
+			}
+			mustCreateSession(t, store, first.ID)
+			if _, err := store.CreateIdentityMagicLink(telegram.ID, "pending@example.com", time.Minute); err != nil {
+				t.Fatal(err)
+			}
+
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var doc storeDocument
+			if err := json.Unmarshal(raw, &doc); err != nil {
+				t.Fatal(err)
+			}
+			indexes := make(map[string]int)
+			for i, account := range doc.Accounts {
+				switch account.ID {
+				case first.ID:
+					indexes["first"] = i
+				case second.ID:
+					indexes["second"] = i
+				case telegram.ID:
+					indexes["telegram"] = i
+				}
+			}
+			tt.mutate(&doc, indexes)
+			raw, err = json.MarshalIndent(doc, "", "  ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := OpenStore(path, testDataKey()); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("OpenStore() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
 }
 
 func mustCreateEmailAccount(t *testing.T, store *Store, email string) *Account {
