@@ -22,8 +22,9 @@ import (
 )
 
 const (
-	sessionCookieName = "__Host-qsdm_account"
-	maxRateWindows    = 8192
+	sessionCookieName   = "__Host-qsdm_account"
+	maxRateWindows      = 8192
+	maxWalletChallenges = 4096
 )
 
 var walletAddressPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -671,6 +672,11 @@ func (s *Service) createWalletChallenge(w http.ResponseWriter, r *http.Request) 
 		if !challenge.ExpiresAt.After(now) || challenge.AccountID == account.ID {
 			delete(s.challenges, key)
 		}
+	}
+	if len(s.challenges) >= maxWalletChallenges {
+		s.challengeMu.Unlock()
+		writeAPIError(w, http.StatusServiceUnavailable, "challenge_unavailable", "Wallet linking is temporarily busy. Try again shortly.")
+		return
 	}
 	s.challenges[id] = walletChallenge{AccountID: account.ID, Address: address, Message: message, ExpiresAt: expires}
 	s.challengeMu.Unlock()

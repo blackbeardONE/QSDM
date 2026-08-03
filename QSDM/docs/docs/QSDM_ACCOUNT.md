@@ -71,7 +71,10 @@ Likewise, one email or Telegram identity cannot be attached to two accounts.
 Sessions use `Secure`, `HttpOnly`, `SameSite=Lax` cookies. State-changing API
 calls also require the account's CSRF token. The service binds to loopback
 behind Caddy, applies request-size limits and rate limits, and returns
-`Cache-Control: no-store` on account APIs.
+`Cache-Control: no-store` on account APIs. Short-lived Telegram login state and
+wallet-link challenges are kept only in memory, expired on access, and bounded
+to 4,096 records each. A new account-bound Telegram flow or wallet challenge
+replaces the older record for that account.
 
 Session revocation and account deletion are persisted before the service tells
 the browser they succeeded. If the encrypted account store cannot be updated,

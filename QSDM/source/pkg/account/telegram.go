@@ -24,7 +24,10 @@ const (
 	telegramAuthorizeURL = telegramIssuer + "/auth"
 	telegramTokenURL     = telegramIssuer + "/token"
 	telegramJWKSURL      = telegramIssuer + "/.well-known/jwks.json"
+	maxTelegramOIDCFlows = 4096
 )
+
+var errTelegramFlowCapacity = errors.New("Telegram login is temporarily at capacity")
 
 type telegramFlow struct {
 	Verifier  string
@@ -100,9 +103,13 @@ func (t *telegramOIDC) startURLForAccount(now time.Time, accountID string) (stri
 
 	t.flowMu.Lock()
 	for key, flow := range t.flows {
-		if !flow.Expires.After(now) {
+		if !flow.Expires.After(now) || (accountID != "" && flow.AccountID == accountID) {
 			delete(t.flows, key)
 		}
+	}
+	if len(t.flows) >= maxTelegramOIDCFlows {
+		t.flowMu.Unlock()
+		return "", errTelegramFlowCapacity
 	}
 	t.flows[state] = telegramFlow{Verifier: verifier, Nonce: nonce, AccountID: accountID, Expires: now.Add(t.flowTTL)}
 	t.flowMu.Unlock()

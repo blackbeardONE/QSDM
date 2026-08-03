@@ -8,6 +8,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -135,5 +137,43 @@ func TestTelegramAuthorizationCodePKCEFlow(t *testing.T) {
 	}
 	if _, err := oidc.exchange(context.Background(), "test-code", state); err == nil {
 		t.Fatal("reused Telegram OIDC state was accepted")
+	}
+}
+
+func TestTelegramFlowCapacityCleanupAndAccountReplacement(t *testing.T) {
+	oidc := newTelegramOIDC(Config{
+		PublicBaseURL:        "https://qsdm.tech",
+		OIDCFlowTTL:          time.Minute,
+		TelegramClientID:     "123456",
+		TelegramClientSecret: "test-secret",
+	})
+	now := time.Now()
+	for i := 0; i < maxTelegramOIDCFlows; i++ {
+		oidc.flows[fmt.Sprintf("state-%d", i)] = telegramFlow{Expires: now.Add(time.Minute)}
+	}
+	if _, err := oidc.startURL(now); !errors.Is(err, errTelegramFlowCapacity) {
+		t.Fatalf("anonymous flow was accepted at capacity: %v", err)
+	}
+
+	oidc.flows["state-0"] = telegramFlow{Expires: now.Add(-time.Second)}
+	if _, err := oidc.startURL(now); err != nil {
+		t.Fatalf("expired flow did not free capacity: %v", err)
+	}
+	if len(oidc.flows) != maxTelegramOIDCFlows {
+		t.Fatalf("flow count after cleanup = %d, want %d", len(oidc.flows), maxTelegramOIDCFlows)
+	}
+
+	oidc.flows["state-1"] = telegramFlow{AccountID: "acct_existing", Expires: now.Add(time.Minute)}
+	if _, err := oidc.startURLForAccount(now, "acct_existing"); err != nil {
+		t.Fatalf("account-bound flow could not replace its older state at capacity: %v", err)
+	}
+	accountFlows := 0
+	for _, flow := range oidc.flows {
+		if flow.AccountID == "acct_existing" {
+			accountFlows++
+		}
+	}
+	if len(oidc.flows) != maxTelegramOIDCFlows || accountFlows != 1 {
+		t.Fatalf("account flow replacement left flows=%d accountFlows=%d", len(oidc.flows), accountFlows)
 	}
 }

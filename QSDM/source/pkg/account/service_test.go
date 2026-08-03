@@ -198,6 +198,59 @@ func TestWalletChallengeRequiresCSRF(t *testing.T) {
 	}
 }
 
+func TestWalletChallengeCapacityCleanupAndAccountReplacement(t *testing.T) {
+	service, _ := testService(t)
+	account := mustCreateEmailAccount(t, service.store, "person@example.com")
+	sessionToken := mustCreateSession(t, service.store, account.ID)
+	_, csrf, err := service.store.AccountForSession(sessionToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := &http.Cookie{Name: sessionCookieName, Value: sessionToken}
+	now := time.Now()
+	service.challengeMu.Lock()
+	for i := 0; i < maxWalletChallenges; i++ {
+		service.challenges[fmt.Sprintf("challenge-%d", i)] = walletChallenge{
+			AccountID: fmt.Sprintf("acct-other-%d", i),
+			ExpiresAt: now.Add(time.Minute),
+		}
+	}
+	service.challengeMu.Unlock()
+
+	request := map[string]string{"address": strings.Repeat("a", 64)}
+	response := requestJSON(t, service.Handler(), http.MethodPost, "/api/account/wallets/challenge", request, session, csrf)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("challenge was accepted at capacity: status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	service.challengeMu.Lock()
+	expired := service.challenges["challenge-0"]
+	expired.ExpiresAt = now.Add(-time.Second)
+	service.challenges["challenge-0"] = expired
+	service.challengeMu.Unlock()
+	response = requestJSON(t, service.Handler(), http.MethodPost, "/api/account/wallets/challenge", request, session, csrf)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expired challenge did not free capacity: status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	response = requestJSON(t, service.Handler(), http.MethodPost, "/api/account/wallets/challenge", request, session, csrf)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("account could not replace its challenge at capacity: status=%d body=%s", response.Code, response.Body.String())
+	}
+	service.challengeMu.Lock()
+	challengeCount := len(service.challenges)
+	accountChallenges := 0
+	for _, challenge := range service.challenges {
+		if challenge.AccountID == account.ID {
+			accountChallenges++
+		}
+	}
+	service.challengeMu.Unlock()
+	if challengeCount != maxWalletChallenges || accountChallenges != 1 {
+		t.Fatalf("challenge replacement left challenges=%d accountChallenges=%d", challengeCount, accountChallenges)
+	}
+}
+
 func TestAuthenticatedEmailIdentityLinkKeepsOneAccount(t *testing.T) {
 	service, mailer := testService(t)
 	account, err := service.store.FindOrCreateTelegram("telegram-existing", "@existing")
