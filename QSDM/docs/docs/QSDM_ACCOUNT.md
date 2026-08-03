@@ -30,6 +30,14 @@ provider login from transferring wallets or account data implicitly.
 A user can unlink that public address from the dashboard at any time. Unlinking
 does not alter the local keystore or move CELL.
 
+The **Security and devices** section lists active browser-session dates without
+exposing cookie values or stored token hashes. A user can sign out every other
+browser while keeping the current one active. The account can also be deleted
+without contacting support by typing `DELETE`. Account deletion removes the
+identity, all browser sessions, pending account email links, pending Telegram
+link flows, and public wallet links. It does not delete Hive, a keystore, or
+CELL, and it cannot erase accepted ledger transactions.
+
 There is no QSDM Account password in this design. Email magic links remove a
 reusable password database while still requiring control of the mailbox.
 
@@ -59,6 +67,10 @@ Sessions use `Secure`, `HttpOnly`, `SameSite=Lax` cookies. State-changing API
 calls also require the account's CSRF token. The service binds to loopback
 behind Caddy, applies request-size limits and rate limits, and returns
 `Cache-Control: no-store` on account APIs.
+
+Session revocation and account deletion are persisted before the service tells
+the browser they succeeded. If the encrypted account store cannot be updated,
+the in-memory removal is rolled back and the operation fails closed.
 
 ## Operator setup
 
@@ -116,7 +128,10 @@ not expose `/account/` as a finished product until an operator has also:
 2. received and consumed an email magic link when email is enabled;
 3. completed Telegram's callback when Telegram is enabled;
 4. linked and unlinked a test QSDM wallet through a visible Hive approval; and
-5. backed up and test-restored the encrypted store and its separately held key.
+5. revoked a second test browser session and confirmed the current one remains;
+6. deleted a disposable test account and confirmed its sessions and public
+   wallet links no longer work; and
+7. backed up and test-restored the encrypted store and its separately held key.
 
 If any check fails, leave the service stopped and keep the account route out of
 the active Caddy configuration. Never replace a failed provider with a test
@@ -131,7 +146,8 @@ They are not wallet backups and cannot recover or spend CELL.
 ## Current scope
 
 The first release supports sign-in, attaching email and Telegram as alternate
-methods for one account, sign-out, public wallet linking and unlinking, public
+methods for one account, sign-out, browser-session review and revocation,
+self-service account deletion, public wallet linking and unlinking, public
 balance display, and local Hive wallet management. Automatic merging of old
 duplicate profiles, Google and Apple sign-in, cloud wallet custody, and
 automatic synchronization of website approvals are deliberately excluded.

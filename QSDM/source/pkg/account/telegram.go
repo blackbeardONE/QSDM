@@ -131,6 +131,19 @@ func (t *telegramOIDC) consumeFlow(state string, now time.Time) (telegramFlow, e
 	return flow, nil
 }
 
+func (t *telegramOIDC) discardAccountFlows(accountID string) {
+	if accountID == "" {
+		return
+	}
+	t.flowMu.Lock()
+	defer t.flowMu.Unlock()
+	for state, flow := range t.flows {
+		if flow.AccountID == accountID {
+			delete(t.flows, state)
+		}
+	}
+}
+
 func (t *telegramOIDC) exchange(ctx context.Context, code, state string) (telegramClaims, error) {
 	flow, err := t.consumeFlow(state, time.Now())
 	if err != nil {

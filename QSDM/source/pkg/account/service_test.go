@@ -339,3 +339,97 @@ func TestRateWindowTableIsBounded(t *testing.T) {
 		t.Fatal("rate limiter accepted a new key after reaching its memory bound")
 	}
 }
+
+func TestSessionManagementEndpointsKeepTheCurrentBrowser(t *testing.T) {
+	service, _ := testService(t)
+	account := mustCreateEmailAccount(t, service.store, "sessions@example.com")
+	currentToken := mustCreateSession(t, service.store, account.ID)
+	otherToken := mustCreateSession(t, service.store, account.ID)
+	_, csrf, err := service.store.AccountForSession(currentToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := &http.Cookie{Name: sessionCookieName, Value: currentToken}
+
+	list := requestJSON(t, service.Handler(), http.MethodGet, "/api/account/sessions", nil, current, "")
+	if list.Code != http.StatusOK || strings.Contains(list.Body.String(), currentToken) || strings.Contains(list.Body.String(), "token_hash") {
+		t.Fatalf("session list leaked a secret or failed: status=%d body=%s", list.Code, list.Body.String())
+	}
+	var listed struct {
+		Sessions []SessionView `json:"sessions"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &listed); err != nil || len(listed.Sessions) != 2 || !listed.Sessions[0].Current {
+		t.Fatalf("unexpected session list: err=%v body=%s", err, list.Body.String())
+	}
+
+	withoutCSRF := requestJSON(t, service.Handler(), http.MethodPost, "/api/account/sessions/revoke-others", nil, current, "")
+	if withoutCSRF.Code != http.StatusForbidden {
+		t.Fatalf("session revocation without CSRF status=%d body=%s", withoutCSRF.Code, withoutCSRF.Body.String())
+	}
+	revoke := requestJSON(t, service.Handler(), http.MethodPost, "/api/account/sessions/revoke-others", nil, current, csrf)
+	if revoke.Code != http.StatusOK || !strings.Contains(revoke.Body.String(), `"revoked":1`) {
+		t.Fatalf("session revocation status=%d body=%s", revoke.Code, revoke.Body.String())
+	}
+	if _, _, err := service.store.AccountForSession(otherToken); err == nil {
+		t.Fatal("revoked browser session remained active")
+	}
+	if me := requestJSON(t, service.Handler(), http.MethodGet, "/api/account/me", nil, current, ""); me.Code != http.StatusOK {
+		t.Fatalf("current browser was signed out: status=%d body=%s", me.Code, me.Body.String())
+	}
+}
+
+func TestDeleteProfileRemovesAccountStateButNotByAccident(t *testing.T) {
+	service, _ := testService(t)
+	account := mustCreateEmailAccount(t, service.store, "delete@example.com")
+	sessionToken := mustCreateSession(t, service.store, account.ID)
+	_, csrf, err := service.store.AccountForSession(sessionToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := &http.Cookie{Name: sessionCookieName, Value: sessionToken}
+	pendingLogin, err := service.store.CreateMagicLink("delete@example.com", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.telegram = newTelegramOIDC(Config{
+		PublicBaseURL:        "https://qsdm.tech",
+		OIDCFlowTTL:          time.Minute,
+		TelegramClientID:     "telegram-client",
+		TelegramClientSecret: "telegram-secret",
+	})
+	if _, err := service.telegram.startURLForAccount(time.Now(), account.ID); err != nil {
+		t.Fatal(err)
+	}
+	service.challenges["delete-challenge"] = walletChallenge{AccountID: account.ID, ExpiresAt: time.Now().Add(time.Minute)}
+
+	missingCSRF := requestJSON(t, service.Handler(), http.MethodDelete, "/api/account/profile", map[string]string{"confirmation": "DELETE"}, session, "")
+	if missingCSRF.Code != http.StatusForbidden {
+		t.Fatalf("account deletion without CSRF status=%d body=%s", missingCSRF.Code, missingCSRF.Body.String())
+	}
+	wrongConfirmation := requestJSON(t, service.Handler(), http.MethodDelete, "/api/account/profile", map[string]string{"confirmation": "delete"}, session, csrf)
+	if wrongConfirmation.Code != http.StatusBadRequest {
+		t.Fatalf("account deletion accepted a weak confirmation: status=%d body=%s", wrongConfirmation.Code, wrongConfirmation.Body.String())
+	}
+	deleted := requestJSON(t, service.Handler(), http.MethodDelete, "/api/account/profile", map[string]string{"confirmation": "DELETE"}, session, csrf)
+	if deleted.Code != http.StatusOK || !strings.Contains(deleted.Body.String(), "wallet keys") {
+		t.Fatalf("account deletion status=%d body=%s", deleted.Code, deleted.Body.String())
+	}
+	if _, _, err := service.store.AccountForSession(sessionToken); err == nil {
+		t.Fatal("deleted account session remained active")
+	}
+	if _, err := service.store.ConsumeMagicLink(pendingLogin); err == nil {
+		t.Fatal("deleted account login link remained active")
+	}
+	service.challengeMu.Lock()
+	challengeCount := len(service.challenges)
+	service.challengeMu.Unlock()
+	service.telegram.flowMu.Lock()
+	flowCount := len(service.telegram.flows)
+	service.telegram.flowMu.Unlock()
+	if challengeCount != 0 || flowCount != 0 {
+		t.Fatalf("deleted account retained transient state: challenges=%d flows=%d", challengeCount, flowCount)
+	}
+	if cookies := deleted.Result().Cookies(); len(cookies) != 1 || cookies[0].Name != sessionCookieName || cookies[0].MaxAge >= 0 {
+		t.Fatalf("account deletion did not clear the browser cookie: %#v", cookies)
+	}
+}

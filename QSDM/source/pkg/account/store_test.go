@@ -151,3 +151,114 @@ func TestStoreWalletCannotBeClaimedByTwoAccounts(t *testing.T) {
 		t.Fatalf("unlinking a wallet from the wrong account was not idempotent: unlinked=%v err=%v", unlinked, err)
 	}
 }
+
+func TestStoreListsAndRevokesOtherSessionsOnly(t *testing.T) {
+	store, err := OpenStore(filepath.Join(t.TempDir(), "accounts.json"), testDataKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := mustCreateEmailAccount(t, store, "person@example.com")
+	otherAccount := mustCreateEmailAccount(t, store, "other@example.com")
+	current := mustCreateSession(t, store, account.ID)
+	other := mustCreateSession(t, store, account.ID)
+	unrelated := mustCreateSession(t, store, otherAccount.ID)
+
+	views, err := store.SessionsForAccount(account.ID, current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(views) != 2 || !views[0].Current || views[1].Current {
+		t.Fatalf("session listing exposed an invalid current-session view: %#v", views)
+	}
+	revoked, err := store.RevokeOtherSessions(account.ID, current)
+	if err != nil || revoked != 1 {
+		t.Fatalf("other session revocation failed: revoked=%d err=%v", revoked, err)
+	}
+	if _, _, err := store.AccountForSession(current); err != nil {
+		t.Fatalf("current session was revoked: %v", err)
+	}
+	if _, _, err := store.AccountForSession(other); err == nil {
+		t.Fatal("other browser session remained active")
+	}
+	if _, _, err := store.AccountForSession(unrelated); err != nil {
+		t.Fatalf("unrelated account session was revoked: %v", err)
+	}
+}
+
+func TestStoreDeleteAccountRemovesSessionsAndPendingLinks(t *testing.T) {
+	store, err := OpenStore(filepath.Join(t.TempDir(), "accounts.json"), testDataKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := mustCreateEmailAccount(t, store, "delete@example.com")
+	session := mustCreateSession(t, store, account.ID)
+	pendingLogin, err := store.CreateMagicLink("delete@example.com", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.LinkWallet(account.ID, strings.Repeat("d", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteAccount(account.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.AccountForSession(session); err == nil {
+		t.Fatal("deleted account session remained active")
+	}
+	if _, err := store.ConsumeMagicLink(pendingLogin); err == nil {
+		t.Fatal("pending same-email login survived account deletion")
+	}
+
+	telegramAccount, err := store.FindOrCreateTelegram("delete-telegram", "@delete")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pendingIdentity, err := store.CreateIdentityMagicLink(telegramAccount.ID, "pending@example.com", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteAccount(telegramAccount.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ConsumeMagicLink(pendingIdentity); err == nil {
+		t.Fatal("account-bound identity link survived account deletion")
+	}
+}
+
+func TestStoreDestructiveChangesRollbackWhenPersistenceFails(t *testing.T) {
+	store, err := OpenStore(filepath.Join(t.TempDir(), "accounts.json"), testDataKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := mustCreateEmailAccount(t, store, "rollback@example.com")
+	current := mustCreateSession(t, store, account.ID)
+	other := mustCreateSession(t, store, account.ID)
+	originalPath := store.path
+	store.path = filepath.Join(t.TempDir(), "missing", "accounts.json")
+	if _, err := store.RevokeOtherSessions(account.ID, current); err == nil {
+		t.Fatal("session revocation unexpectedly persisted to an invalid path")
+	}
+	if _, _, err := store.AccountForSession(other); err != nil {
+		t.Fatalf("failed session revocation was not rolled back: %v", err)
+	}
+	if err := store.DeleteAccount(account.ID); err == nil {
+		t.Fatal("account deletion unexpectedly persisted to an invalid path")
+	}
+	if _, _, err := store.AccountForSession(current); err != nil {
+		t.Fatalf("failed account deletion was not rolled back: %v", err)
+	}
+	store.path = originalPath
+}
+
+func mustCreateEmailAccount(t *testing.T, store *Store, email string) *Account {
+	t.Helper()
+	token, err := store.CreateMagicLink(email, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, err := store.ConsumeMagicLink(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return account
+}

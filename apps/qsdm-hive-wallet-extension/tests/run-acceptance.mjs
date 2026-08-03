@@ -134,6 +134,8 @@ let connected = false;
 let expectedOrigin = "";
 let accountWallets = [];
 let accountTelegram = "";
+let accountSessionCount = 2;
+let accountDeleted = false;
 
 const readBody = (request) =>
   new Promise((resolve, reject) => {
@@ -306,6 +308,18 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (request.method === "GET" && requestUrl.pathname === "/api/account/me") {
+    if (accountDeleted) {
+      response.writeHead(401, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify({
+          error: {
+            code: "not_authenticated",
+            message: "Sign in to QSDM Account.",
+          },
+        })
+      );
+      return;
+    }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(
       JSON.stringify({
@@ -317,6 +331,57 @@ const server = http.createServer(async (request, response) => {
           telegram: accountTelegram,
           wallets: accountWallets,
         },
+      })
+    );
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    requestUrl.pathname === "/api/account/sessions"
+  ) {
+    const now = Date.now();
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(
+      JSON.stringify({
+        ok: true,
+        sessions: Array.from({ length: accountSessionCount }, (_, index) => ({
+          created_at: new Date(now - (index + 1) * 60000).toISOString(),
+          expires_at: new Date(now + 3600000).toISOString(),
+          current: index === 0,
+        })),
+      })
+    );
+    return;
+  }
+
+  if (
+    request.method === "POST" &&
+    requestUrl.pathname === "/api/account/sessions/revoke-others"
+  ) {
+    assert.equal(request.headers["x-qsdm-csrf"], "acceptance-csrf");
+    const revoked = Math.max(0, accountSessionCount - 1);
+    accountSessionCount = 1;
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ ok: true, revoked }));
+    return;
+  }
+
+  if (
+    request.method === "DELETE" &&
+    requestUrl.pathname === "/api/account/profile"
+  ) {
+    assert.equal(request.headers["x-qsdm-csrf"], "acceptance-csrf");
+    assert.deepEqual(JSON.parse(await readBody(request)), {
+      confirmation: "DELETE",
+    });
+    accountDeleted = true;
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(
+      JSON.stringify({
+        ok: true,
+        message:
+          "QSDM Account data was deleted. Hive, wallet keys, and CELL were not changed.",
       })
     );
     return;
@@ -809,7 +874,19 @@ const runAccountDashboardChecks = async (browser, testUrl) => {
     () =>
       document.querySelector("#email-identity-value")?.textContent ===
         "t***@example.com" &&
-      document.querySelector("#add-telegram-identity")?.hidden === false,
+      document.querySelector("#add-telegram-identity")?.hidden === false &&
+      document.querySelector("#session-summary")?.textContent ===
+        "2 active browser sessions",
+    { timeout: 15000 }
+  );
+  await page.click("#revoke-other-sessions");
+  await page.waitForFunction(
+    () =>
+      document.querySelector("#session-summary")?.textContent ===
+        "1 active browser session" &&
+      document
+        .querySelector("#dashboard-status")
+        ?.textContent?.includes("Signed out 1 other browser session"),
     { timeout: 15000 }
   );
   await page.click("#add-telegram-identity");
@@ -835,7 +912,10 @@ const runAccountDashboardChecks = async (browser, testUrl) => {
     fs.mkdirSync(screenshotDirectory, { recursive: true });
     await page.setViewport({ width: 1280, height: 800 });
     await page.screenshot({
-      path: path.join(screenshotDirectory, "qsdm-account-dashboard-desktop.png"),
+      path: path.join(
+        screenshotDirectory,
+        "qsdm-account-dashboard-desktop.png"
+      ),
       fullPage: true,
     });
     await page.setViewport({ width: 390, height: 844 });
@@ -852,14 +932,60 @@ const runAccountDashboardChecks = async (browser, testUrl) => {
       document.querySelector("#wallet-empty")?.hidden === false,
     { timeout: 15000 }
   );
+  const walletStatus = await page.$eval(
+    "#dashboard-status",
+    (element) => element.textContent
+  );
+  await page.click("#open-delete-account");
+  await page.waitForFunction(
+    () => document.querySelector("#delete-account-dialog")?.open === true,
+    { timeout: 15000 }
+  );
+  if (screenshotDirectory) {
+    await page.setViewport({ width: 1280, height: 800 });
+    await page.screenshot({
+      path: path.join(
+        screenshotDirectory,
+        "qsdm-account-delete-dialog-desktop.png"
+      ),
+      fullPage: true,
+    });
+    await page.setViewport({ width: 390, height: 844 });
+    await page.screenshot({
+      path: path.join(
+        screenshotDirectory,
+        "qsdm-account-delete-dialog-mobile.png"
+      ),
+      fullPage: true,
+    });
+  }
+  await page.type("#delete-account-confirmation", "delete");
+  assert.equal(
+    await page.$eval("#confirm-delete-account", (element) => element.disabled),
+    true
+  );
+  await page.click("#delete-account-confirmation", { clickCount: 3 });
+  await page.type("#delete-account-confirmation", "DELETE");
+  await page.click("#confirm-delete-account");
+  await page.waitForFunction(
+    () =>
+      !document.querySelector("#login-view")?.hidden &&
+      document
+        .querySelector("#login-status")
+        ?.textContent?.includes("QSDM Account data was deleted"),
+    { timeout: 15000 }
+  );
   assert.deepEqual(consoleProblems, []);
-  return page.evaluate(() => ({
-    identity: document.querySelector("#identity-summary")?.textContent,
-    walletCount: document.querySelector("#wallet-count")?.textContent,
-    balance: document.querySelector("#total-balance")?.textContent,
-    status: document.querySelector("#dashboard-status")?.textContent,
-    telegram: document.querySelector("#telegram-identity-value")?.textContent,
-  }));
+  return page
+    .evaluate(() => ({
+      identity: document.querySelector("#identity-summary")?.textContent,
+      walletCount: document.querySelector("#wallet-count")?.textContent,
+      balance: document.querySelector("#total-balance")?.textContent,
+      deletionStatus: document.querySelector("#login-status")?.textContent,
+      telegram: document.querySelector("#telegram-identity-value")?.textContent,
+      sessions: document.querySelector("#session-summary")?.textContent,
+    }))
+    .then((result) => ({ ...result, walletStatus }));
 };
 
 const runOnboardingChecks = async (browser, testUrl, extensionId) => {
@@ -1117,9 +1243,11 @@ try {
   assert.equal(accountResult.balance, "0 CELL");
   assert.equal(accountResult.telegram, "@acceptance");
   assert.equal(
-    accountResult.status,
+    accountResult.walletStatus,
     "Wallet unlinked. Your local wallet was not changed."
   );
+  assert.equal(accountResult.sessions, "1 active browser session");
+  assert.match(accountResult.deletionStatus, /Account data was deleted/);
   assert.deepEqual(
     requests.slice(accountStart).map((request) => request.method),
     ["qsdm_requestAccounts", "qsdm_signMessage"]

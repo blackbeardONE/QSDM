@@ -95,6 +95,9 @@ func (s *Service) Handler() http.Handler {
 	mux.HandleFunc("/api/account/identities/telegram/start", s.startIdentityTelegram)
 	mux.HandleFunc("/api/account/me", s.me)
 	mux.HandleFunc("/api/account/logout", s.logout)
+	mux.HandleFunc("/api/account/sessions", s.sessions)
+	mux.HandleFunc("/api/account/sessions/revoke-others", s.revokeOtherSessions)
+	mux.HandleFunc("/api/account/profile", s.deleteProfile)
 	mux.HandleFunc("/api/account/wallets/challenge", s.createWalletChallenge)
 	mux.HandleFunc("/api/account/wallets/confirm", s.confirmWalletLink)
 	mux.HandleFunc("/api/account/wallets/unlink", s.unlinkWallet)
@@ -489,16 +492,21 @@ func (s *Service) currentAccount(r *http.Request) (*Account, string, string, err
 }
 
 func (s *Service) requireSession(w http.ResponseWriter, r *http.Request, csrfRequired bool) (*Account, string, bool) {
-	account, csrf, _, err := s.currentAccount(r)
+	account, csrf, _, ok := s.requireCurrentSession(w, r, csrfRequired)
+	return account, csrf, ok
+}
+
+func (s *Service) requireCurrentSession(w http.ResponseWriter, r *http.Request, csrfRequired bool) (*Account, string, string, bool) {
+	account, csrf, token, err := s.currentAccount(r)
 	if err != nil {
 		writeAPIError(w, http.StatusUnauthorized, "not_authenticated", "Sign in to QSDM Account.")
-		return nil, "", false
+		return nil, "", "", false
 	}
 	if csrfRequired && subtle.ConstantTimeCompare([]byte(r.Header.Get("X-QSDM-CSRF")), []byte(csrf)) != 1 {
 		writeAPIError(w, http.StatusForbidden, "csrf_failed", "The account security token is missing or invalid.")
-		return nil, "", false
+		return nil, "", "", false
 	}
-	return account, csrf, true
+	return account, csrf, token, true
 }
 
 func (s *Service) me(w http.ResponseWriter, r *http.Request) {
@@ -533,20 +541,98 @@ func (s *Service) logout(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	_, csrf, token, err := s.currentAccount(r)
-	if err != nil {
-		writeAPIError(w, http.StatusUnauthorized, "not_authenticated", "Sign in to QSDM Account.")
-		return
-	}
-	if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-QSDM-CSRF")), []byte(csrf)) != 1 {
-		writeAPIError(w, http.StatusForbidden, "csrf_failed", "The account security token is missing or invalid.")
+	_, _, token, ok := s.requireCurrentSession(w, r, true)
+	if !ok {
 		return
 	}
 	if err := s.store.DeleteSession(token); err != nil {
 		s.logger.Printf("account logout persistence failed: %v", err)
+		writeAPIError(w, http.StatusServiceUnavailable, "logout_failed", "Could not securely end the account session.")
+		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	clearSessionCookie(w)
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true})
+}
+
+func clearSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+}
+
+func (s *Service) sessions(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	account, _, token, ok := s.requireCurrentSession(w, r, false)
+	if !ok {
+		return
+	}
+	views, err := s.store.SessionsForAccount(account.ID, token)
+	if err != nil {
+		writeAPIError(w, http.StatusUnauthorized, "not_authenticated", "Sign in to QSDM Account.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "sessions": views})
+}
+
+func (s *Service) revokeOtherSessions(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	account, _, token, ok := s.requireCurrentSession(w, r, true)
+	if !ok {
+		return
+	}
+	revoked, err := s.store.RevokeOtherSessions(account.ID, token)
+	if err != nil {
+		s.logger.Printf("account session revocation failed for %s: %v", account.ID, err)
+		writeAPIError(w, http.StatusServiceUnavailable, "session_revocation_failed", "Could not sign out the other browser sessions.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "revoked": revoked})
+}
+
+func (s *Service) deleteProfile(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodDelete) {
+		return
+	}
+	account, _, _, ok := s.requireCurrentSession(w, r, true)
+	if !ok {
+		return
+	}
+	var request struct {
+		Confirmation string `json:"confirmation"`
+	}
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	if request.Confirmation != "DELETE" {
+		writeAPIError(w, http.StatusBadRequest, "confirmation_required", "Type DELETE to confirm account deletion.")
+		return
+	}
+	if err := s.store.DeleteAccount(account.ID); err != nil {
+		s.logger.Printf("account deletion failed for %s: %v", account.ID, err)
+		writeAPIError(w, http.StatusServiceUnavailable, "account_deletion_failed", "Could not delete the QSDM Account.")
+		return
+	}
+	s.discardAccountState(account.ID)
+	clearSessionCookie(w)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":      true,
+		"message": "QSDM Account data was deleted. Hive, wallet keys, and CELL were not changed.",
+	})
+}
+
+func (s *Service) discardAccountState(accountID string) {
+	s.challengeMu.Lock()
+	for id, challenge := range s.challenges {
+		if challenge.AccountID == accountID {
+			delete(s.challenges, id)
+		}
+	}
+	s.challengeMu.Unlock()
+	if s.telegram != nil {
+		s.telegram.discardAccountFlows(accountID)
+	}
 }
 
 func (s *Service) createWalletChallenge(w http.ResponseWriter, r *http.Request) {

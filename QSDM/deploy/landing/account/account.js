@@ -28,6 +28,19 @@
     identityEmailSubmit: document.getElementById("identity-email-submit"),
     addTelegramIdentity: document.getElementById("add-telegram-identity"),
     identityMethodStatus: document.getElementById("identity-method-status"),
+    sessionSummary: document.getElementById("session-summary"),
+    sessionDetail: document.getElementById("session-detail"),
+    revokeOtherSessions: document.getElementById("revoke-other-sessions"),
+    openDeleteAccount: document.getElementById("open-delete-account"),
+    deleteAccountDialog: document.getElementById("delete-account-dialog"),
+    deleteAccountForm: document.getElementById("delete-account-form"),
+    deleteAccountConfirmation: document.getElementById(
+      "delete-account-confirmation"
+    ),
+    deleteAccountStatus: document.getElementById("delete-account-status"),
+    confirmDeleteAccount: document.getElementById("confirm-delete-account"),
+    cancelDeleteAccount: document.getElementById("cancel-delete-account"),
+    keepAccount: document.getElementById("keep-account"),
   };
 
   let config = { login: { email: false, telegram: false } };
@@ -194,6 +207,33 @@
       : "0 CELL";
   };
 
+  const renderSessions = async () => {
+    try {
+      const payload = await api("/sessions");
+      const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+      const current = sessions.find((session) => session.current);
+      const others = sessions.filter((session) => !session.current).length;
+      elements.sessionSummary.textContent = `${
+        sessions.length
+      } active browser ${sessions.length === 1 ? "session" : "sessions"}`;
+      elements.sessionDetail.textContent = current
+        ? `This session started ${formatDate(
+            current.created_at
+          )} and expires ${formatDate(current.expires_at)}.`
+        : "The current browser session could not be identified.";
+      elements.revokeOtherSessions.disabled = others === 0;
+      elements.revokeOtherSessions.textContent = others
+        ? `Sign out ${others} other ${others === 1 ? "browser" : "browsers"}`
+        : "No other browsers signed in";
+    } catch {
+      elements.sessionSummary.textContent = "Session details unavailable";
+      elements.sessionDetail.textContent =
+        "This browser remains protected by its Secure, HttpOnly cookie.";
+      elements.revokeOtherSessions.disabled = true;
+      elements.revokeOtherSessions.textContent = "Sign out other browsers";
+    }
+  };
+
   const renderAccount = async () => {
     const identities = [account.email, account.telegram].filter(Boolean);
     elements.identity.textContent = identities.length
@@ -208,7 +248,7 @@
       Boolean(account.telegram) || !config.login.telegram;
     elements.emailIdentityForm.hidden =
       Boolean(account.email) || !config.login.email || !emailIdentityFormOpen;
-    await renderWallets();
+    await Promise.all([renderWallets(), renderSessions()]);
   };
 
   const loadSession = async () => {
@@ -346,6 +386,81 @@
     emailIdentityFormOpen = false;
     elements.signOut.disabled = false;
     setView("login");
+  });
+
+  elements.revokeOtherSessions.addEventListener("click", async () => {
+    elements.revokeOtherSessions.disabled = true;
+    setStatus(elements.dashboardStatus, "Signing out other browsers...");
+    try {
+      const payload = await api("/sessions/revoke-others", {
+        method: "POST",
+        csrf: true,
+      });
+      const revoked = Number(payload.revoked) || 0;
+      setStatus(
+        elements.dashboardStatus,
+        revoked
+          ? `Signed out ${revoked} other browser ${
+              revoked === 1 ? "session" : "sessions"
+            }.`
+          : "No other browser sessions were active.",
+        "success"
+      );
+      await renderSessions();
+    } catch (error) {
+      setStatus(elements.dashboardStatus, error.message, "error");
+      await renderSessions();
+    }
+  });
+
+  const resetDeleteAccountDialog = () => {
+    elements.deleteAccountForm.reset();
+    elements.confirmDeleteAccount.disabled = true;
+    setStatus(elements.deleteAccountStatus, "");
+  };
+
+  const closeDeleteAccountDialog = () => {
+    elements.deleteAccountDialog.close();
+  };
+
+  elements.openDeleteAccount.addEventListener("click", () => {
+    elements.deleteAccountDialog.showModal();
+    elements.deleteAccountConfirmation.focus();
+  });
+  elements.cancelDeleteAccount.addEventListener(
+    "click",
+    closeDeleteAccountDialog
+  );
+  elements.keepAccount.addEventListener("click", closeDeleteAccountDialog);
+  elements.deleteAccountDialog.addEventListener(
+    "close",
+    resetDeleteAccountDialog
+  );
+  elements.deleteAccountConfirmation.addEventListener("input", () => {
+    elements.confirmDeleteAccount.disabled =
+      elements.deleteAccountConfirmation.value !== "DELETE";
+  });
+  elements.deleteAccountForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (elements.deleteAccountConfirmation.value !== "DELETE") return;
+    elements.confirmDeleteAccount.disabled = true;
+    setStatus(elements.deleteAccountStatus, "Deleting account data...");
+    try {
+      const payload = await api("/profile", {
+        method: "DELETE",
+        csrf: true,
+        body: JSON.stringify({ confirmation: "DELETE" }),
+      });
+      closeDeleteAccountDialog();
+      account = null;
+      csrfToken = "";
+      emailIdentityFormOpen = false;
+      setView("login");
+      setStatus(elements.loginStatus, payload.message, "success");
+    } catch (error) {
+      setStatus(elements.deleteAccountStatus, error.message, "error");
+      elements.confirmDeleteAccount.disabled = false;
+    }
   });
 
   elements.linkWallet.addEventListener("click", async () => {

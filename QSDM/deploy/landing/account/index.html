@@ -143,8 +143,8 @@
         <div class="security-grid">
           <div>
             <span class="security-label">Current browser</span>
-            <strong>Signed in</strong>
-            <small>Protected by an HttpOnly, Secure session cookie.</small>
+            <strong id="session-summary">Checking sessions...</strong>
+            <small id="session-detail">Protected by an HttpOnly, Secure session cookie.</small>
           </div>
           <div>
             <span class="security-label">Wallet approvals</span>
@@ -158,12 +158,40 @@
           </div>
         </div>
         <div class="section-actions">
+          <button id="revoke-other-sessions" class="button quiet" type="button" disabled>Sign out other browsers</button>
           <a class="button" href="qsdm-hive://open?route=%2Fsettings%2Fwallet">Open Hive wallet management</a>
           <a class="button quiet" href="/docs/#/web-wallet">Read wallet security guide</a>
+        </div>
+        <div class="account-removal">
+          <div>
+            <strong>Delete QSDM Account</strong>
+            <p>Remove sign-in identities, browser sessions, and public wallet links. Hive, wallet keys, and CELL stay on your devices.</p>
+          </div>
+          <button id="open-delete-account" class="button danger" type="button">Delete account</button>
         </div>
       </section>
     </section>
   </main>
+
+  <dialog id="delete-account-dialog" aria-labelledby="delete-account-title">
+    <form id="delete-account-form" method="dialog">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">ACCOUNT REMOVAL</p>
+          <h2 id="delete-account-title">Delete QSDM Account?</h2>
+        </div>
+        <button id="cancel-delete-account" class="dialog-close" type="button" aria-label="Close">&times;</button>
+      </div>
+      <p>This permanently removes the account identity, all browser sessions, and its public wallet links. It does not delete QSDM Hive, your keystore, or CELL.</p>
+      <label for="delete-account-confirmation">Type DELETE to continue</label>
+      <input id="delete-account-confirmation" name="confirmation" type="text" autocomplete="off" spellcheck="false" required />
+      <p id="delete-account-status" class="status" role="status"></p>
+      <div class="dialog-actions">
+        <button id="keep-account" class="button quiet" type="button">Keep account</button>
+        <button id="confirm-delete-account" class="button danger" type="submit" disabled>Delete QSDM Account</button>
+      </div>
+    </form>
+  </dialog>
 
   <footer>
     <p>QSDM Account synchronizes identity and public wallet links. It never synchronizes private wallet keys.</p>

@@ -42,6 +42,12 @@ type sessionRecord struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+type SessionView struct {
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Current   bool      `json:"current"`
+}
+
 type magicLinkRecord struct {
 	TokenHash      string    `json:"token_hash"`
 	EmailHash      string    `json:"email_hash"`
@@ -442,8 +448,116 @@ func (s *Store) DeleteSession(token string) error {
 	hash := keyedHash(s.key, "session", token)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	record, ok := s.sessions[hash]
+	if !ok {
+		return nil
+	}
 	delete(s.sessions, hash)
-	return s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		s.sessions[hash] = record
+		return err
+	}
+	return nil
+}
+
+func (s *Store) SessionsForAccount(accountID, currentToken string) ([]SessionView, error) {
+	currentHash := keyedHash(s.key, "session", currentToken)
+	now := time.Now().UTC()
+	s.mu.RLock()
+	current, ok := s.sessions[currentHash]
+	if !ok || current.AccountID != accountID || !current.ExpiresAt.After(now) {
+		s.mu.RUnlock()
+		return nil, errors.New("session is invalid or expired")
+	}
+	views := make([]SessionView, 0)
+	for hash, record := range s.sessions {
+		if record.AccountID != accountID || !record.ExpiresAt.After(now) {
+			continue
+		}
+		views = append(views, SessionView{
+			CreatedAt: record.CreatedAt,
+			ExpiresAt: record.ExpiresAt,
+			Current:   subtle.ConstantTimeCompare([]byte(hash), []byte(currentHash)) == 1,
+		})
+	}
+	s.mu.RUnlock()
+	sort.SliceStable(views, func(i, j int) bool {
+		if views[i].Current != views[j].Current {
+			return views[i].Current
+		}
+		return views[i].CreatedAt.After(views[j].CreatedAt)
+	})
+	return views, nil
+}
+
+func (s *Store) RevokeOtherSessions(accountID, currentToken string) (int, error) {
+	currentHash := keyedHash(s.key, "session", currentToken)
+	now := time.Now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.sessions[currentHash]
+	if !ok || current.AccountID != accountID || !current.ExpiresAt.After(now) {
+		return 0, errors.New("session is invalid or expired")
+	}
+	removed := make(map[string]sessionRecord)
+	activeRevoked := 0
+	for hash, record := range s.sessions {
+		if record.AccountID != accountID || subtle.ConstantTimeCompare([]byte(hash), []byte(currentHash)) == 1 {
+			continue
+		}
+		if record.ExpiresAt.After(now) {
+			activeRevoked++
+		}
+		removed[hash] = record
+		delete(s.sessions, hash)
+	}
+	if len(removed) == 0 {
+		return 0, nil
+	}
+	if err := s.saveLocked(); err != nil {
+		for hash, record := range removed {
+			s.sessions[hash] = record
+		}
+		return 0, err
+	}
+	return activeRevoked, nil
+}
+
+func (s *Store) DeleteAccount(accountID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	account := s.accounts[accountID]
+	if account == nil {
+		return errors.New("account not found")
+	}
+	accountBackup := cloneAccount(account)
+	removedSessions := make(map[string]sessionRecord)
+	removedLinks := make(map[string]magicLinkRecord)
+	delete(s.accounts, accountID)
+	for hash, record := range s.sessions {
+		if record.AccountID == accountID {
+			removedSessions[hash] = record
+			delete(s.sessions, hash)
+		}
+	}
+	for hash, record := range s.magicLinks {
+		sameEmail := account.EmailHash != "" && subtle.ConstantTimeCompare([]byte(record.EmailHash), []byte(account.EmailHash)) == 1
+		if record.AccountID == accountID || sameEmail {
+			removedLinks[hash] = record
+			delete(s.magicLinks, hash)
+		}
+	}
+	if err := s.saveLocked(); err != nil {
+		s.accounts[accountID] = accountBackup
+		for hash, record := range removedSessions {
+			s.sessions[hash] = record
+		}
+		for hash, record := range removedLinks {
+			s.magicLinks[hash] = record
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *Store) LinkWallet(accountID, address string) error {
