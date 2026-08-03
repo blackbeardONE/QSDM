@@ -91,6 +91,8 @@ func (s *Service) Handler() http.Handler {
 	mux.HandleFunc("/api/account/email/verify", s.verifyEmail)
 	mux.HandleFunc("/api/account/telegram/start", s.startTelegram)
 	mux.HandleFunc("/api/account/telegram/callback", s.telegramCallback)
+	mux.HandleFunc("/api/account/identities/email/start", s.startIdentityEmail)
+	mux.HandleFunc("/api/account/identities/telegram/start", s.startIdentityTelegram)
 	mux.HandleFunc("/api/account/me", s.me)
 	mux.HandleFunc("/api/account/logout", s.logout)
 	mux.HandleFunc("/api/account/wallets/challenge", s.createWalletChallenge)
@@ -233,11 +235,29 @@ func (s *Service) startEmail(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_email", err.Error())
 		return
 	}
-	token, err := s.store.CreateMagicLink(email, s.cfg.MagicLinkTTL)
-	if err != nil {
-		s.logger.Printf("account email token creation failed: %v", err)
+	if err := s.sendMagicLink(r, email, ""); err != nil {
+		s.logger.Printf("account magic-link delivery failed: %v", err)
 		writeAPIError(w, http.StatusServiceUnavailable, "email_unavailable", "Email sign-in is temporarily unavailable.")
 		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+		"ok":      true,
+		"message": "Check your email for a one-time QSDM sign-in link.",
+	})
+}
+
+func (s *Service) sendMagicLink(r *http.Request, email, accountID string) error {
+	var (
+		token string
+		err   error
+	)
+	if accountID == "" {
+		token, err = s.store.CreateMagicLink(email, s.cfg.MagicLinkTTL)
+	} else {
+		token, err = s.store.CreateIdentityMagicLink(accountID, email, s.cfg.MagicLinkTTL)
+	}
+	if err != nil {
+		return err
 	}
 	link := s.cfg.PublicBaseURL + "/account/#email_token=" + url.QueryEscape(token)
 	ctx, cancel := contextWithTimeout(r, 20*time.Second)
@@ -246,13 +266,54 @@ func (s *Service) startEmail(w http.ResponseWriter, r *http.Request) {
 		if revokeErr := s.store.DeleteMagicLink(token); revokeErr != nil {
 			s.logger.Printf("account undelivered magic-link revocation failed: %v", revokeErr)
 		}
-		s.logger.Printf("account magic-link delivery failed: %v", err)
-		writeAPIError(w, http.StatusServiceUnavailable, "email_unavailable", "Email sign-in is temporarily unavailable.")
+		return err
+	}
+	return nil
+}
+
+func (s *Service) startIdentityEmail(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	account, _, ok := s.requireSession(w, r, true)
+	if !ok {
+		return
+	}
+	if !s.cfg.EmailEnabled() || s.mailer == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "email_unavailable", "Email sign-in is not configured.")
+		return
+	}
+	if account.EmailHash != "" {
+		writeAPIError(w, http.StatusConflict, "identity_already_set", "This QSDM Account already has an email sign-in method.")
+		return
+	}
+	if !s.allow(r, "email-link-start", 5, 15*time.Minute) {
+		writeAPIError(w, http.StatusTooManyRequests, "rate_limited", "Too many sign-in method requests. Try again later.")
+		return
+	}
+	var request struct {
+		Email string `json:"email"`
+	}
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	email, err := normalizeEmail(request.Email)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_email", err.Error())
+		return
+	}
+	if err := s.sendMagicLink(r, email, account.ID); err != nil {
+		if errors.Is(err, ErrIdentityAlreadySet) {
+			writeAPIError(w, http.StatusConflict, "identity_already_set", "This QSDM Account already has an email sign-in method.")
+			return
+		}
+		s.logger.Printf("account email identity-link delivery failed: %v", err)
+		writeAPIError(w, http.StatusServiceUnavailable, "email_unavailable", "The email sign-in method is temporarily unavailable.")
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{
 		"ok":      true,
-		"message": "Check your email for a one-time QSDM sign-in link.",
+		"message": "Check your email to add it to this QSDM Account.",
 	})
 }
 
@@ -280,6 +341,14 @@ func (s *Service) verifyEmail(w http.ResponseWriter, r *http.Request) {
 	}
 	account, err := s.store.ConsumeMagicLink(request.Token)
 	if err != nil {
+		if errors.Is(err, ErrIdentityInUse) {
+			writeAPIError(w, http.StatusConflict, "identity_in_use", "That email already signs in to another QSDM Account. No accounts were merged.")
+			return
+		}
+		if errors.Is(err, ErrIdentityAlreadySet) {
+			writeAPIError(w, http.StatusConflict, "identity_already_set", "This QSDM Account already has a different email sign-in method.")
+			return
+		}
 		writeAPIError(w, http.StatusUnauthorized, "invalid_token", "The email sign-in link is invalid or expired.")
 		return
 	}
@@ -312,6 +381,35 @@ func (s *Service) startTelegram(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, destination, http.StatusFound)
 }
 
+func (s *Service) startIdentityTelegram(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	account, _, ok := s.requireSession(w, r, true)
+	if !ok {
+		return
+	}
+	if s.telegram == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "telegram_unavailable", "Telegram sign-in is not configured.")
+		return
+	}
+	if account.TelegramSubjectHash != "" {
+		writeAPIError(w, http.StatusConflict, "identity_already_set", "This QSDM Account already has a Telegram sign-in method.")
+		return
+	}
+	if !s.allow(r, "telegram-link-start", 10, 15*time.Minute) {
+		writeAPIError(w, http.StatusTooManyRequests, "rate_limited", "Too many sign-in method requests. Try again later.")
+		return
+	}
+	destination, err := s.telegram.startURLForAccount(time.Now(), account.ID)
+	if err != nil {
+		s.logger.Printf("Telegram identity-link start failed: %v", err)
+		writeAPIError(w, http.StatusServiceUnavailable, "telegram_unavailable", "Telegram sign-in is temporarily unavailable.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "url": destination})
+}
+
 func (s *Service) telegramCallback(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
@@ -328,7 +426,29 @@ func (s *Service) telegramCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, s.cfg.PublicBaseURL+"/account/?error=telegram_failed", http.StatusFound)
 		return
 	}
-	account, err := s.store.FindOrCreateTelegram(claims.Subject, telegramDisplayName(claims))
+	var account *Account
+	if claims.FlowAccountID != "" {
+		current, _, _, sessionErr := s.currentAccount(r)
+		if sessionErr != nil || current.ID != claims.FlowAccountID {
+			http.Redirect(w, r, s.cfg.PublicBaseURL+"/account/?error=identity_session_changed", http.StatusFound)
+			return
+		}
+		account, err = s.store.LinkTelegramIdentity(claims.FlowAccountID, claims.Subject, telegramDisplayName(claims))
+		if errors.Is(err, ErrIdentityInUse) {
+			http.Redirect(w, r, s.cfg.PublicBaseURL+"/account/?error=identity_in_use", http.StatusFound)
+			return
+		}
+		if errors.Is(err, ErrIdentityAlreadySet) {
+			http.Redirect(w, r, s.cfg.PublicBaseURL+"/account/?error=identity_already_set", http.StatusFound)
+			return
+		}
+		if err == nil {
+			http.Redirect(w, r, s.cfg.PublicBaseURL+"/account/?linked=telegram", http.StatusFound)
+			return
+		}
+	} else {
+		account, err = s.store.FindOrCreateTelegram(claims.Subject, telegramDisplayName(claims))
+	}
 	if err != nil {
 		s.logger.Printf("Telegram account persistence failed: %v", err)
 		http.Redirect(w, r, s.cfg.PublicBaseURL+"/account/?error=session_unavailable", http.StatusFound)

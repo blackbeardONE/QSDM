@@ -105,7 +105,7 @@ func TestTelegramAuthorizationCodePKCEFlow(t *testing.T) {
 	oidc.jwksURL = server.URL + "/jwks"
 	oidc.httpClient = server.Client()
 
-	authorize, err := oidc.startURL(time.Now())
+	authorize, err := oidc.startURLForAccount(time.Now(), "acct_existing")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,6 +129,9 @@ func TestTelegramAuthorizationCodePKCEFlow(t *testing.T) {
 	}
 	if claims.Subject != "123456789" || telegramDisplayName(claims) != "@qsdm_test" {
 		t.Fatalf("unexpected Telegram identity: %#v", claims)
+	}
+	if claims.FlowAccountID != "acct_existing" {
+		t.Fatalf("Telegram identity-link flow lost its account binding: %#v", claims)
 	}
 	if _, err := oidc.exchange(context.Background(), "test-code", state); err == nil {
 		t.Fatal("reused Telegram OIDC state was accepted")

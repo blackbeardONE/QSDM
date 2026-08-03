@@ -15,6 +15,18 @@ public CELL wallet addresses without turning the website into a wallet vault.
 4. Hive displays the signing approval. After approval, the account dashboard
    stores the public wallet address and can show its public CELL balance.
 
+After the first sign-in, the **Sign-in methods** section can attach the other
+provider to the same account. For example, a profile first opened through an
+email link can add Telegram without creating a second wallet dashboard. Email
+verification links are bound to the active account. Telegram linking is bound
+to both the active browser session and its CSRF token before the OIDC flow
+starts.
+
+QSDM does not silently merge existing profiles. If an email address, Telegram
+identity, or wallet is already linked to another account, the operation stops
+with a conflict and neither account is changed. This prevents an identity
+provider login from transferring wallets or account data implicitly.
+
 A user can unlink that public address from the dashboard at any time. Unlinking
 does not alter the local keystore or move CELL.
 
@@ -41,6 +53,7 @@ It never stores:
 The account service accepts a wallet link only when the submitted public key
 derives the claimed QSDM address and its ML-DSA signature verifies over the
 exact one-time challenge. One public wallet cannot be attached to two accounts.
+Likewise, one email or Telegram identity cannot be attached to two accounts.
 
 Sessions use `Secure`, `HttpOnly`, `SameSite=Lax` cookies. State-changing API
 calls also require the account's CSRF token. The service binds to loopback
@@ -67,11 +80,11 @@ Store that result as `QSDM_ACCOUNT_DATA_KEY` in `/etc/qsdm/account.conf` with
 mode `0600`. Configure at least one login provider:
 
 - **Email:** SMTP submission with STARTTLS, sender address, and credentials.
-- **Telegram:** create or select the QSDM bot in BotFather, open **Bot Settings
-  > Web Login**, and allow
-  `https://qsdm.tech/api/account/telegram/callback`. Keep the displayed client
-  ID and secret only in the server environment file. Retain the default RS256
-  signing algorithm used by this verifier.
+- **Telegram:** create or select the QSDM bot in BotFather, open \*\*Bot Settings
+  > Web Login\*\*, and allow
+  > `https://qsdm.tech/api/account/telegram/callback`. Keep the displayed client
+  > ID and secret only in the server environment file. Retain the default RS256
+  > signing algorithm used by this verifier.
 
 Then install the updated Caddy route and use the fail-closed installer:
 
@@ -117,7 +130,8 @@ They are not wallet backups and cannot recover or spend CELL.
 
 ## Current scope
 
-The first release supports sign-in, sign-out, public wallet linking and
-unlinking, public balance display, and local Hive wallet management. Google and
-Apple sign-in, cloud wallet custody, and automatic synchronization of website
-approvals are deliberately excluded.
+The first release supports sign-in, attaching email and Telegram as alternate
+methods for one account, sign-out, public wallet linking and unlinking, public
+balance display, and local Hive wallet management. Automatic merging of old
+duplicate profiles, Google and Apple sign-in, cloud wallet custody, and
+automatic synchronization of website approvals are deliberately excluded.

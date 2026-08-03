@@ -27,9 +27,10 @@ const (
 )
 
 type telegramFlow struct {
-	Verifier string
-	Nonce    string
-	Expires  time.Time
+	Verifier  string
+	Nonce     string
+	AccountID string
+	Expires   time.Time
 }
 
 type telegramClaims struct {
@@ -41,6 +42,7 @@ type telegramClaims struct {
 	Nonce             string      `json:"nonce"`
 	Name              string      `json:"name"`
 	PreferredUsername string      `json:"preferred_username"`
+	FlowAccountID     string      `json:"-"`
 }
 
 type telegramOIDC struct {
@@ -77,6 +79,10 @@ func newTelegramOIDC(cfg Config) *telegramOIDC {
 }
 
 func (t *telegramOIDC) startURL(now time.Time) (string, error) {
+	return t.startURLForAccount(now, "")
+}
+
+func (t *telegramOIDC) startURLForAccount(now time.Time, accountID string) (string, error) {
 	state, err := randomToken(32)
 	if err != nil {
 		return "", err
@@ -98,7 +104,7 @@ func (t *telegramOIDC) startURL(now time.Time) (string, error) {
 			delete(t.flows, key)
 		}
 	}
-	t.flows[state] = telegramFlow{Verifier: verifier, Nonce: nonce, Expires: now.Add(t.flowTTL)}
+	t.flows[state] = telegramFlow{Verifier: verifier, Nonce: nonce, AccountID: accountID, Expires: now.Add(t.flowTTL)}
 	t.flowMu.Unlock()
 
 	query := url.Values{
@@ -167,6 +173,7 @@ func (t *telegramOIDC) exchange(ctx context.Context, code, state string) (telegr
 	if claims.Nonce != flow.Nonce {
 		return telegramClaims{}, errors.New("Telegram ID token nonce mismatch")
 	}
+	claims.FlowAccountID = flow.AccountID
 	return claims, nil
 }
 

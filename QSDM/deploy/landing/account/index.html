@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#061116" />
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'self'; img-src 'self' data:; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self' https://oauth.telegram.org"
+    content="default-src 'self'; img-src 'self' data:; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' https://oauth.telegram.org"
   />
   <title>QSDM Account</title>
   <meta name="description" content="Manage your QSDM identity, linked CELL wallets, and approved wallet devices." />
@@ -88,6 +88,33 @@
         <div><span>Linked wallets</span><strong id="wallet-count">0</strong></div>
         <div><span>Total visible balance</span><strong id="total-balance">0 CELL</strong></div>
         <div><span>Signing authority</span><strong>Local only</strong></div>
+      </section>
+
+      <section class="dashboard-section" aria-labelledby="sign-in-methods-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="sign-in-methods-title">Sign-in methods</h2>
+            <p>Email and Telegram can open this same QSDM Account. They never hold wallet keys.</p>
+          </div>
+        </div>
+        <div class="identity-method-list">
+          <article class="identity-method">
+            <div><span>Email</span><strong id="email-identity-value">Not added</strong></div>
+            <button id="add-email-identity" class="button quiet" type="button">Add email</button>
+          </article>
+          <form id="email-identity-form" class="identity-link-form" hidden>
+            <label for="identity-email">Email address</label>
+            <div>
+              <input id="identity-email" name="identity-email" type="email" autocomplete="email" maxlength="254" required placeholder="you@example.com" />
+              <button id="identity-email-submit" class="button primary" type="submit">Send verification link</button>
+            </div>
+          </form>
+          <article class="identity-method">
+            <div><span>Telegram</span><strong id="telegram-identity-value">Not added</strong></div>
+            <button id="add-telegram-identity" class="button quiet" type="button">Add Telegram</button>
+          </article>
+        </div>
+        <p id="identity-method-status" class="status" role="status"></p>
       </section>
 
       <section class="dashboard-section" aria-labelledby="wallets-title">

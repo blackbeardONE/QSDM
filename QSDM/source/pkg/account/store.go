@@ -14,6 +14,11 @@ import (
 
 const storeVersion = 1
 
+var (
+	ErrIdentityInUse      = errors.New("identity is already linked to another account")
+	ErrIdentityAlreadySet = errors.New("account already has this sign-in method")
+)
+
 type WalletLink struct {
 	Address  string    `json:"address"`
 	LinkedAt time.Time `json:"linked_at"`
@@ -41,6 +46,7 @@ type magicLinkRecord struct {
 	TokenHash      string    `json:"token_hash"`
 	EmailHash      string    `json:"email_hash"`
 	EmailEncrypted string    `json:"email_encrypted"`
+	AccountID      string    `json:"account_id,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 	ExpiresAt      time.Time `json:"expires_at"`
 }
@@ -164,6 +170,17 @@ func (s *Store) cleanupLocked(now time.Time) {
 }
 
 func (s *Store) CreateMagicLink(email string, ttl time.Duration) (string, error) {
+	return s.createMagicLink("", email, ttl)
+}
+
+func (s *Store) CreateIdentityMagicLink(accountID, email string, ttl time.Duration) (string, error) {
+	if accountID == "" {
+		return "", errors.New("account is required")
+	}
+	return s.createMagicLink(accountID, email, ttl)
+}
+
+func (s *Store) createMagicLink(accountID, email string, ttl time.Duration) (string, error) {
 	token, err := randomToken(32)
 	if err != nil {
 		return "", err
@@ -177,11 +194,21 @@ func (s *Store) CreateMagicLink(email string, ttl time.Duration) (string, error)
 		TokenHash:      keyedHash(s.key, "magic-link", token),
 		EmailHash:      keyedHash(s.key, "email", email),
 		EmailEncrypted: encrypted,
+		AccountID:      accountID,
 		CreatedAt:      now,
 		ExpiresAt:      now.Add(ttl),
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if accountID != "" {
+		account := s.accounts[accountID]
+		if account == nil {
+			return "", errors.New("account not found")
+		}
+		if account.EmailHash != "" {
+			return "", ErrIdentityAlreadySet
+		}
+	}
 	s.cleanupLocked(now)
 	s.magicLinks[record.TokenHash] = record
 	if err := s.saveLocked(); err != nil {
@@ -202,16 +229,55 @@ func (s *Store) ConsumeMagicLink(token string) (*Account, error) {
 		return nil, errors.New("magic link is invalid or expired")
 	}
 	delete(s.magicLinks, hash)
-	var account *Account
+	var identityOwner *Account
 	for _, candidate := range s.accounts {
 		if subtle.ConstantTimeCompare([]byte(candidate.EmailHash), []byte(record.EmailHash)) == 1 {
-			account = candidate
+			identityOwner = candidate
 			break
 		}
 	}
+	if record.AccountID != "" {
+		account := s.accounts[record.AccountID]
+		if account == nil {
+			if err := s.saveLocked(); err != nil {
+				s.magicLinks[hash] = record
+				return nil, err
+			}
+			return nil, errors.New("magic link account no longer exists")
+		}
+		if identityOwner != nil && identityOwner.ID != account.ID {
+			if err := s.saveLocked(); err != nil {
+				s.magicLinks[hash] = record
+				return nil, err
+			}
+			return nil, ErrIdentityInUse
+		}
+		if account.EmailHash != "" && subtle.ConstantTimeCompare([]byte(account.EmailHash), []byte(record.EmailHash)) != 1 {
+			if err := s.saveLocked(); err != nil {
+				s.magicLinks[hash] = record
+				return nil, err
+			}
+			return nil, ErrIdentityAlreadySet
+		}
+		previous := cloneAccount(account)
+		account.EmailHash = record.EmailHash
+		account.EmailEncrypted = record.EmailEncrypted
+		account.LastLoginAt = now
+		if err := s.saveLocked(); err != nil {
+			*account = *previous
+			s.magicLinks[hash] = record
+			return nil, err
+		}
+		return cloneAccount(account), nil
+	}
+
+	account := identityOwner
+	created := false
+	var previous *Account
 	if account == nil {
 		id, err := randomToken(18)
 		if err != nil {
+			s.magicLinks[hash] = record
 			return nil, err
 		}
 		account = &Account{
@@ -221,9 +287,18 @@ func (s *Store) ConsumeMagicLink(token string) (*Account, error) {
 			CreatedAt:      now,
 		}
 		s.accounts[account.ID] = account
+		created = true
+	} else {
+		previous = cloneAccount(account)
 	}
 	account.LastLoginAt = now
 	if err := s.saveLocked(); err != nil {
+		if created {
+			delete(s.accounts, account.ID)
+		} else {
+			*account = *previous
+		}
+		s.magicLinks[hash] = record
 		return nil, err
 	}
 	return cloneAccount(account), nil
@@ -253,6 +328,8 @@ func (s *Store) FindOrCreateTelegram(subject, displayName string) (*Account, err
 			break
 		}
 	}
+	created := false
+	var previous *Account
 	if account == nil {
 		id, err := randomToken(18)
 		if err != nil {
@@ -265,11 +342,53 @@ func (s *Store) FindOrCreateTelegram(subject, displayName string) (*Account, err
 			CreatedAt:             now,
 		}
 		s.accounts[account.ID] = account
+		created = true
 	} else {
+		previous = cloneAccount(account)
 		account.TelegramNameEncrypted = nameEncrypted
 	}
 	account.LastLoginAt = now
 	if err := s.saveLocked(); err != nil {
+		if created {
+			delete(s.accounts, account.ID)
+		} else {
+			*account = *previous
+		}
+		return nil, err
+	}
+	return cloneAccount(account), nil
+}
+
+func (s *Store) LinkTelegramIdentity(accountID, subject, displayName string) (*Account, error) {
+	hash := keyedHash(s.key, "telegram-subject", subject)
+	nameEncrypted, err := encryptString(s.key, "qsdm-account-telegram-name-v1", displayName)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	account := s.accounts[accountID]
+	if account == nil {
+		return nil, errors.New("account not found")
+	}
+	for _, candidate := range s.accounts {
+		if candidate.TelegramSubjectHash == "" {
+			continue
+		}
+		if subtle.ConstantTimeCompare([]byte(candidate.TelegramSubjectHash), []byte(hash)) == 1 && candidate.ID != accountID {
+			return nil, ErrIdentityInUse
+		}
+	}
+	if account.TelegramSubjectHash != "" && subtle.ConstantTimeCompare([]byte(account.TelegramSubjectHash), []byte(hash)) != 1 {
+		return nil, ErrIdentityAlreadySet
+	}
+	previous := cloneAccount(account)
+	account.TelegramSubjectHash = hash
+	account.TelegramNameEncrypted = nameEncrypted
+	account.LastLoginAt = now
+	if err := s.saveLocked(); err != nil {
+		*account = *previous
 		return nil, err
 	}
 	return cloneAccount(account), nil

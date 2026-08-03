@@ -1,6 +1,7 @@
 package account
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,72 @@ import (
 
 func testDataKey() []byte {
 	return []byte("0123456789abcdef0123456789abcdef")
+}
+
+func TestStoreLinksAlternateIdentitiesWithoutMergingAccounts(t *testing.T) {
+	store, err := OpenStore(filepath.Join(t.TempDir(), "accounts.json"), testDataKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := store.FindOrCreateTelegram("telegram-target", "@target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetWallet := strings.Repeat("b", 64)
+	if err := store.LinkWallet(target.ID, targetWallet); err != nil {
+		t.Fatal(err)
+	}
+	claimedToken, err := store.CreateMagicLink("claimed@example.com", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := store.ConsumeMagicLink(claimedToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	linkToken, err := store.CreateIdentityMagicLink(target.ID, "target@example.com", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	linked, err := store.ConsumeMagicLink(linkToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if linked.ID != target.ID || linked.TelegramSubjectHash == "" || linked.EmailHash == "" || len(linked.Wallets) != 1 || linked.Wallets[0].Address != targetWallet {
+		t.Fatalf("alternate email created or replaced an account: %#v", linked)
+	}
+
+	conflictTarget, err := store.FindOrCreateTelegram("telegram-conflict-target", "@conflict")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conflictToken, err := store.CreateIdentityMagicLink(conflictTarget.ID, "target@example.com", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ConsumeMagicLink(conflictToken); !errors.Is(err, ErrIdentityInUse) {
+		t.Fatalf("email identity conflict was not rejected: %v", err)
+	}
+	if _, err := store.LinkTelegramIdentity(claimed.ID, "telegram-target", "@target"); !errors.Is(err, ErrIdentityInUse) {
+		t.Fatalf("Telegram identity conflict was not rejected: %v", err)
+	}
+	updated, _, err := store.AccountForSession(mustCreateSession(t, store, claimed.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.TelegramSubjectHash != "" {
+		t.Fatal("conflicting Telegram identity was attached to the wrong account")
+	}
+}
+
+func mustCreateSession(t *testing.T, store *Store, accountID string) string {
+	t.Helper()
+	token, err := store.CreateSession(accountID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token
 }
 
 func TestStoreMagicLinkPersistsEncryptedIdentityAndIsOneTime(t *testing.T) {

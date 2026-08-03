@@ -79,6 +79,12 @@ input:focus { border-color: var(--teal); box-shadow: 0 0 0 2px rgba(142, 220, 22
 .dashboard-section { margin-top: 34px; }
 .section-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; padding-bottom: 13px; border-bottom: 1px solid var(--line); }
 .section-heading p { color: var(--muted); margin: 5px 0 0; font-size: 14px; }
+.identity-method-list { display: grid; gap: 8px; padding-top: 12px; }
+.identity-method { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+.identity-method span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+.identity-method strong { font-family: var(--mono); font-size: 14px; overflow-wrap: anywhere; }
+.identity-link-form { padding: 14px; border-left: 2px solid var(--teal); background: rgba(142, 220, 224, .05); }
+.identity-link-form > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
 .wallet-list { display: grid; gap: 8px; padding-top: 12px; }
 .wallet-row { display: grid; grid-template-columns: minmax(0, 1fr) 180px 140px 82px; align-items: center; gap: 18px; min-height: 72px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
 .wallet-address { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
@@ -114,6 +120,9 @@ footer nav { display: flex; gap: 18px; }
   .overview-band { grid-template-columns: 1fr; }
   .overview-band > div, .overview-band > div:first-child { padding: 13px 0; border-right: 0; border-bottom: 1px solid var(--line); }
   .overview-band > div:last-child { border-bottom: 0; }
+  .identity-method { align-items: flex-start; flex-direction: column; }
+  .identity-method .button { width: 100%; }
+  .identity-link-form > div { grid-template-columns: 1fr; }
   .wallet-row { grid-template-columns: 1fr; gap: 7px; }
   .wallet-balance { text-align: left; }
   .wallet-unlink { width: 100%; }

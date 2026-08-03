@@ -133,6 +133,7 @@ const requests = [];
 let connected = false;
 let expectedOrigin = "";
 let accountWallets = [];
+let accountTelegram = "";
 
 const readBody = (request) =>
   new Promise((resolve, reject) => {
@@ -191,8 +192,7 @@ const responseFor = (payload) => {
       assert.equal(typeof payload.params?.message, "string");
       assert.ok(
         payload.params.message === "QSDM acceptance challenge" ||
-          payload.params.message ===
-            "QSDM Account acceptance wallet challenge"
+          payload.params.message === "QSDM Account acceptance wallet challenge"
       );
       return {
         address: TEST_ADDRESS,
@@ -305,10 +305,7 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  if (
-    request.method === "GET" &&
-    requestUrl.pathname === "/api/account/me"
-  ) {
+  if (request.method === "GET" && requestUrl.pathname === "/api/account/me") {
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(
       JSON.stringify({
@@ -317,10 +314,23 @@ const server = http.createServer(async (request, response) => {
         account: {
           id: "acct_acceptance",
           email: "t***@example.com",
-          telegram: "",
+          telegram: accountTelegram,
           wallets: accountWallets,
         },
       })
+    );
+    return;
+  }
+
+  if (
+    request.method === "POST" &&
+    requestUrl.pathname === "/api/account/identities/telegram/start"
+  ) {
+    assert.equal(request.headers["x-qsdm-csrf"], "acceptance-csrf");
+    accountTelegram = "@acceptance";
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(
+      JSON.stringify({ ok: true, url: "/account/?linked=telegram" })
     );
     return;
   }
@@ -775,16 +785,41 @@ const runWebWalletChecks = async (browser, testUrl) => {
 
 const runAccountDashboardChecks = async (browser, testUrl) => {
   const page = await browser.newPage();
+  const consoleProblems = [];
   page.on("pageerror", (error) =>
     stage(`account dashboard page error: ${error.message}`)
   );
+  page.on("console", (message) => {
+    if (["error", "warning"].includes(message.type())) {
+      consoleProblems.push(`${message.type()}: ${message.text()}`);
+    }
+  });
   await page.goto(testUrl, { waitUntil: "domcontentloaded" });
+  assert.equal(await page.title(), "QSDM Account");
+  assert.equal(new URL(page.url()).pathname, "/account/");
   await page.waitForFunction(
     () =>
       !document.querySelector("#dashboard-view")?.hidden &&
       document
         .querySelector("#identity-summary")
         ?.textContent?.includes("t***@example.com"),
+    { timeout: 15000 }
+  );
+  await page.waitForFunction(
+    () =>
+      document.querySelector("#email-identity-value")?.textContent ===
+        "t***@example.com" &&
+      document.querySelector("#add-telegram-identity")?.hidden === false,
+    { timeout: 15000 }
+  );
+  await page.click("#add-telegram-identity");
+  await page.waitForFunction(
+    () =>
+      document.querySelector("#telegram-identity-value")?.textContent ===
+        "@acceptance" &&
+      document
+        .querySelector("#dashboard-status")
+        ?.textContent?.includes("Telegram now opens this QSDM Account"),
     { timeout: 15000 }
   );
   await page.click("#link-wallet");
@@ -796,6 +831,19 @@ const runAccountDashboardChecks = async (browser, testUrl) => {
       document.querySelector("#total-balance")?.textContent === "42.5 CELL",
     { timeout: 15000 }
   );
+  if (screenshotDirectory) {
+    fs.mkdirSync(screenshotDirectory, { recursive: true });
+    await page.setViewport({ width: 1280, height: 800 });
+    await page.screenshot({
+      path: path.join(screenshotDirectory, "qsdm-account-dashboard-desktop.png"),
+      fullPage: true,
+    });
+    await page.setViewport({ width: 390, height: 844 });
+    await page.screenshot({
+      path: path.join(screenshotDirectory, "qsdm-account-dashboard-mobile.png"),
+      fullPage: true,
+    });
+  }
   page.once("dialog", (dialog) => dialog.accept());
   await page.click(".wallet-unlink");
   await page.waitForFunction(
@@ -804,11 +852,13 @@ const runAccountDashboardChecks = async (browser, testUrl) => {
       document.querySelector("#wallet-empty")?.hidden === false,
     { timeout: 15000 }
   );
+  assert.deepEqual(consoleProblems, []);
   return page.evaluate(() => ({
     identity: document.querySelector("#identity-summary")?.textContent,
     walletCount: document.querySelector("#wallet-count")?.textContent,
     balance: document.querySelector("#total-balance")?.textContent,
     status: document.querySelector("#dashboard-status")?.textContent,
+    telegram: document.querySelector("#telegram-identity-value")?.textContent,
   }));
 };
 
@@ -830,9 +880,11 @@ const runOnboardingChecks = async (browser, testUrl, extensionId) => {
   const onboarding = (await browser.pages()).find(
     (page) =>
       !existingPages.has(page) &&
-      page.url().startsWith(
-        `chrome-extension://${extensionId}/home.html#/onboarding/welcome?`
-      )
+      page
+        .url()
+        .startsWith(
+          `chrome-extension://${extensionId}/home.html#/onboarding/welcome?`
+        )
   );
   assert.ok(onboarding, "The website handoff must open extension onboarding.");
   onboarding.on("pageerror", (error) =>
@@ -853,7 +905,10 @@ const runOnboardingChecks = async (browser, testUrl, extensionId) => {
   assert.equal(hashParams.get("login"), "new");
   assert.equal(hashParams.get("origin"), expectedOrigin);
   assert.equal(
-    await onboarding.$eval("#requesting-site", (element) => element.textContent),
+    await onboarding.$eval(
+      "#requesting-site",
+      (element) => element.textContent
+    ),
     "Requested by 127.0.0.1"
   );
   assert.equal((await onboarding.$$("#google-login")).length, 0);
@@ -876,7 +931,8 @@ const runOnboardingChecks = async (browser, testUrl, extensionId) => {
 
   const emailTargetPromise = browser.waitForTarget(
     (target) =>
-      target.url() === "https://qsdm.tech/account/?login=email&source=extension",
+      target.url() ===
+      "https://qsdm.tech/account/?login=email&source=extension",
     { timeout: 15000 }
   );
   await onboarding.click("#email-login");
@@ -891,7 +947,10 @@ const runOnboardingChecks = async (browser, testUrl, extensionId) => {
     fs.mkdirSync(screenshotDirectory, { recursive: true });
     await onboarding.setViewport({ width: 1440, height: 900 });
     await onboarding.screenshot({
-      path: path.join(screenshotDirectory, "qsdm-wallet-onboarding-desktop.png"),
+      path: path.join(
+        screenshotDirectory,
+        "qsdm-wallet-onboarding-desktop.png"
+      ),
       fullPage: true,
     });
     await onboarding.setViewport({ width: 390, height: 844 });
@@ -1056,6 +1115,7 @@ try {
   assert.match(accountResult.identity, /t\*\*\*@example\.com/);
   assert.equal(accountResult.walletCount, "0");
   assert.equal(accountResult.balance, "0 CELL");
+  assert.equal(accountResult.telegram, "@acceptance");
   assert.equal(
     accountResult.status,
     "Wallet unlinked. Your local wallet was not changed."

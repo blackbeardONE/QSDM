@@ -198,6 +198,86 @@ func TestWalletChallengeRequiresCSRF(t *testing.T) {
 	}
 }
 
+func TestAuthenticatedEmailIdentityLinkKeepsOneAccount(t *testing.T) {
+	service, mailer := testService(t)
+	account, err := service.store.FindOrCreateTelegram("telegram-existing", "@existing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionToken := mustCreateSession(t, service.store, account.ID)
+	_, csrf, err := service.store.AccountForSession(sessionToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := &http.Cookie{Name: sessionCookieName, Value: sessionToken}
+
+	start := requestJSON(t, service.Handler(), http.MethodPost, "/api/account/identities/email/start", map[string]string{"email": "linked@example.com"}, session, csrf)
+	if start.Code != http.StatusAccepted {
+		t.Fatalf("identity email start status=%d body=%s", start.Code, start.Body.String())
+	}
+	parsed, err := url.Parse(mailer.link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verify := requestJSON(t, service.Handler(), http.MethodPost, "/api/account/email/verify", map[string]string{"token": strings.TrimPrefix(parsed.Fragment, "email_token=")}, nil, "")
+	if verify.Code != http.StatusOK {
+		t.Fatalf("identity email verify status=%d body=%s", verify.Code, verify.Body.String())
+	}
+	linkedSession := verify.Result().Cookies()[0]
+	me := requestJSON(t, service.Handler(), http.MethodGet, "/api/account/me", nil, linkedSession, "")
+	if me.Code != http.StatusOK || !strings.Contains(me.Body.String(), account.ID) || !strings.Contains(me.Body.String(), "l****d@example.com") || !strings.Contains(me.Body.String(), "@existing") {
+		t.Fatalf("alternate login did not retain the existing account: status=%d body=%s", me.Code, me.Body.String())
+	}
+}
+
+func TestAuthenticatedTelegramStartBindsCurrentAccountAndRequiresCSRF(t *testing.T) {
+	service, mailer := testService(t)
+	_ = requestJSON(t, service.Handler(), http.MethodPost, "/api/account/email/start", map[string]string{"email": "person@example.com"}, nil, "")
+	parsed, _ := url.Parse(mailer.link)
+	verify := requestJSON(t, service.Handler(), http.MethodPost, "/api/account/email/verify", map[string]string{"token": strings.TrimPrefix(parsed.Fragment, "email_token=")}, nil, "")
+	session := verify.Result().Cookies()[0]
+	account, csrf, _, err := service.currentAccount(httptest.NewRequest(http.MethodGet, "/", nil))
+	if err == nil || account != nil || csrf != "" {
+		t.Fatal("test request unexpectedly inherited an account session")
+	}
+	account, csrf, err = service.store.AccountForSession(session.Value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.telegram = newTelegramOIDC(Config{
+		PublicBaseURL:        "https://qsdm.tech",
+		OIDCFlowTTL:          time.Minute,
+		TelegramClientID:     "telegram-client",
+		TelegramClientSecret: "telegram-secret",
+	})
+
+	withoutCSRF := requestJSON(t, service.Handler(), http.MethodPost, "/api/account/identities/telegram/start", nil, session, "")
+	if withoutCSRF.Code != http.StatusForbidden {
+		t.Fatalf("Telegram identity link without CSRF status=%d body=%s", withoutCSRF.Code, withoutCSRF.Body.String())
+	}
+	start := requestJSON(t, service.Handler(), http.MethodPost, "/api/account/identities/telegram/start", nil, session, csrf)
+	if start.Code != http.StatusOK {
+		t.Fatalf("Telegram identity start status=%d body=%s", start.Code, start.Body.String())
+	}
+	var payload struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(start.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	destination, err := url.Parse(payload.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := destination.Query().Get("state")
+	service.telegram.flowMu.Lock()
+	flow := service.telegram.flows[state]
+	service.telegram.flowMu.Unlock()
+	if state == "" || flow.AccountID != account.ID {
+		t.Fatalf("Telegram flow is not bound to the active account: state=%q flow=%#v", state, flow)
+	}
+}
+
 func TestUndeliveredEmailLinkIsRevoked(t *testing.T) {
 	service, _ := testService(t)
 	mailer := &failingMailer{}
