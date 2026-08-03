@@ -31,7 +31,13 @@ for path in "$binary" "$config" "$unit" "$verifier"; do
     exit 1
   fi
 done
-if grep -Eq 'REPLACE_WITH|smtp\.example\.com' "$config"; then
+for command_name in systemctl systemd-run; do
+  command -v "$command_name" >/dev/null 2>&1 || {
+    echo "Required command is missing: $command_name" >&2
+    exit 1
+  }
+done
+if grep -Eiq 'REPLACE_WITH|smtp\.example\.|@example\.|\.invalid([[:space:]":]|$)' "$config"; then
   echo "Account configuration still contains example placeholders." >&2
   exit 1
 fi
@@ -45,6 +51,16 @@ if ! grep -Eq '^QSDM_ACCOUNT_(SMTP_HOST|TELEGRAM_CLIENT_ID)=.+' "$config"; then
 fi
 if ! id qsdm >/dev/null 2>&1; then
   echo "The qsdm service user does not exist. Install QSDM Core first." >&2
+  exit 1
+fi
+
+# Validate the new binary and configuration before replacing a healthy
+# installation. systemd reads EnvironmentFile using the same rules as the
+# final service, so the installer never sources or prints secret values.
+if ! systemd-run --quiet --wait --pipe --collect \
+  --property="EnvironmentFile=$config" \
+  "$binary" --check-config; then
+  echo "Account configuration preflight failed; the installed service was not changed." >&2
   exit 1
 fi
 

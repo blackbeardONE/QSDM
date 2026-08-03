@@ -83,7 +83,7 @@ jobs:
 
       - name: Smoke-test service and deployment verifier
         env:
-          QSDM_ACCOUNT_DATA_KEY: "1111111111111111111111111111111111111111111111111111111111111111"
+          QSDM_ACCOUNT_DATA_KEY: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
           QSDM_ACCOUNT_LISTEN: "127.0.0.1:8092"
           QSDM_ACCOUNT_PUBLIC_BASE_URL: "https://qsdm.tech"
           QSDM_ACCOUNT_STORE_PATH: "/tmp/qsdm-account-ci.json"
@@ -95,6 +95,8 @@ jobs:
           set -euo pipefail
           bash -n QSDM/deploy/scripts/install_account_service.sh
           bash -n QSDM/deploy/scripts/verify_account_service.sh
+          ./dist/qsdm-account/qsdm-account-linux-amd64 --check-config \
+            | grep -F 'custody=local_wallet_only'
           ./dist/qsdm-account/qsdm-account-linux-amd64 >/tmp/qsdm-account.log 2>&1 &
           service_pid=$!
           trap 'kill "$service_pid" 2>/dev/null || true; wait "$service_pid" 2>/dev/null || true' EXIT

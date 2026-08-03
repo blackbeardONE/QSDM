@@ -82,3 +82,12 @@ func TestConfigRejectsPartialSMTPEvenWhenTelegramIsEnabled(t *testing.T) {
 		t.Fatalf("partial SMTP configuration was accepted: %v", err)
 	}
 }
+
+func TestConfigRejectsUniformDataKey(t *testing.T) {
+	setValidConfigEnv(t)
+	t.Setenv("QSDM_ACCOUNT_DATA_KEY", strings.Repeat("00", 32))
+	_, err := LoadConfigFromEnv()
+	if err == nil || !strings.Contains(err.Error(), "obvious weak value") {
+		t.Fatalf("uniform account data key was accepted: %v", err)
+	}
+}

@@ -70,10 +70,30 @@ func decodeDataKey(raw string) ([]byte, error) {
 		hex.DecodeString,
 	} {
 		if key, err := decode(raw); err == nil && len(key) == 32 {
+			if err := validateDataKey(key); err != nil {
+				return nil, err
+			}
 			return key, nil
 		}
 	}
 	return nil, errors.New("QSDM_ACCOUNT_DATA_KEY must encode exactly 32 random bytes")
+}
+
+func validateDataKey(key []byte) error {
+	if len(key) != 32 {
+		return errors.New("QSDM_ACCOUNT_DATA_KEY must encode exactly 32 random bytes")
+	}
+	uniform := true
+	for _, value := range key[1:] {
+		if value != key[0] {
+			uniform = false
+			break
+		}
+	}
+	if uniform {
+		return errors.New("QSDM_ACCOUNT_DATA_KEY is an obvious weak value; generate 32 random bytes")
+	}
+	return nil
 }
 
 // LoadConfigFromEnv reads the account service's intentionally small,

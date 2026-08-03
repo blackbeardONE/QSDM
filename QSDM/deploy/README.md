@@ -234,12 +234,26 @@ sudo ../deploy/scripts/install_account_service.sh \
 
 The checked-in configuration is an example only. Production must provide a
 32-byte data-encryption key and at least one real provider: SMTP with STARTTLS
-or Telegram OIDC. The installer refuses placeholders and verifies the local
-service. After installing the Caddy route, verify the complete public path:
+or Telegram OIDC. The installer refuses placeholders, rejects obvious weak
+keys, checks that the encrypted store opens, and validates the candidate before
+replacing an installed service. After installing the Caddy route, verify the
+complete public path:
 
 ```bash
 sudo /opt/qsdm/verify-account-service
 ```
+
+When the providers are configured, run their activation probes as applicable:
+
+```bash
+sudo /opt/qsdm/verify-account-service \
+  --activation-email operator-test@example.org \
+  --check-telegram
+```
+
+The email probe sends a real one-time link. The Telegram probe checks the OIDC
+redirect, PKCE controls, callback URL, and live signing keys. Complete one real
+login through each enabled provider before publishing the account dashboard.
 
 See `docs/docs/QSDM_ACCOUNT.md` for the data boundary, provider setup, backup,
 and recovery requirements.

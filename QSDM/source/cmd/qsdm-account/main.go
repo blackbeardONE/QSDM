@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -13,8 +14,22 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/account"
 )
 
+func checkConfigOnly(args []string) (bool, error) {
+	if len(args) == 0 {
+		return false, nil
+	}
+	if len(args) == 1 && args[0] == "--check-config" {
+		return true, nil
+	}
+	return false, fmt.Errorf("usage: qsdm-account [--check-config]")
+}
+
 func main() {
 	logger := log.New(os.Stdout, "qsdm-account ", log.Ldate|log.Ltime|log.LUTC|log.Lmsgprefix)
+	checkOnly, err := checkConfigOnly(os.Args[1:])
+	if err != nil {
+		logger.Fatal(err)
+	}
 	cfg, err := account.LoadConfigFromEnv()
 	if err != nil {
 		logger.Fatalf("configuration rejected: %v", err)
@@ -22,6 +37,10 @@ func main() {
 	service, err := account.NewService(cfg, nil, logger)
 	if err != nil {
 		logger.Fatalf("service initialization failed: %v", err)
+	}
+	if checkOnly {
+		logger.Printf("configuration accepted: email=%t telegram=%t custody=local_wallet_only", cfg.EmailEnabled(), cfg.TelegramEnabled())
+		return
 	}
 	server := &http.Server{
 		Addr:              cfg.ListenAddress,

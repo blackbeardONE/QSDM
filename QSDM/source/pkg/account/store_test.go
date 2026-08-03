@@ -1,6 +1,7 @@
 package account
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,6 +12,71 @@ import (
 
 func testDataKey() []byte {
 	return []byte("0123456789abcdef0123456789abcdef")
+}
+
+func TestStoreRejectsWrongDataKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "accounts.json")
+	store, err := OpenStore(path, testDataKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.FindOrCreateTelegram("telegram-subject", "@operator"); err != nil {
+		t.Fatal(err)
+	}
+	wrongKey := []byte("fedcba9876543210fedcba9876543210")
+	if _, err := OpenStore(path, wrongKey); err == nil {
+		t.Fatal("encrypted account store opened with the wrong data key")
+	}
+}
+
+func TestStoreUpgradesLegacyDocumentAfterKeyValidation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "accounts.json")
+	store, err := OpenStore(path, testDataKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, err := store.FindOrCreateTelegram("legacy-subject", "@legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy storeDocument
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	legacy.Version = legacyStoreVersion
+	legacy.KeyCheck = ""
+	raw, err = json.MarshalIndent(legacy, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenStore(path, []byte("fedcba9876543210fedcba9876543210")); err == nil {
+		t.Fatal("legacy account store opened with the wrong data key")
+	}
+	reopened, err := OpenStore(path, testDataKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reopened.CreateSession(account.ID, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var upgraded storeDocument
+	if err := json.Unmarshal(raw, &upgraded); err != nil {
+		t.Fatal(err)
+	}
+	if upgraded.Version != storeVersion || upgraded.KeyCheck == "" {
+		t.Fatalf("legacy account store was not upgraded: version=%d keyCheck=%t", upgraded.Version, upgraded.KeyCheck != "")
+	}
 }
 
 func TestStoreLinksAlternateIdentitiesWithoutMergingAccounts(t *testing.T) {

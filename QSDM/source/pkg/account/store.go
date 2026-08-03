@@ -12,7 +12,12 @@ import (
 	"time"
 )
 
-const storeVersion = 1
+const (
+	legacyStoreVersion   = 1
+	storeVersion         = 2
+	storeKeyCheckContext = "qsdm-account-store-key-check-v1"
+	storeKeyCheckValue   = "qsdm-account-store-key-check"
+)
 
 var (
 	ErrIdentityInUse      = errors.New("identity is already linked to another account")
@@ -59,6 +64,7 @@ type magicLinkRecord struct {
 
 type storeDocument struct {
 	Version    int               `json:"version"`
+	KeyCheck   string            `json:"key_check,omitempty"`
 	Accounts   []Account         `json:"accounts"`
 	Sessions   []sessionRecord   `json:"sessions"`
 	MagicLinks []magicLinkRecord `json:"magic_links"`
@@ -106,8 +112,11 @@ func OpenStore(path string, key []byte) (*Store, error) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return nil, fmt.Errorf("decode account store: %w", err)
 	}
-	if doc.Version != storeVersion {
+	if doc.Version != legacyStoreVersion && doc.Version != storeVersion {
 		return nil, fmt.Errorf("unsupported account store version %d", doc.Version)
+	}
+	if err := validateStoreDocumentKey(doc, key); err != nil {
+		return nil, err
 	}
 	for i := range doc.Accounts {
 		account := doc.Accounts[i]
@@ -130,8 +139,62 @@ func OpenStore(path string, key []byte) (*Store, error) {
 	return s, nil
 }
 
+func validateStoreDocumentKey(doc storeDocument, key []byte) error {
+	if doc.Version == storeVersion {
+		if doc.KeyCheck == "" {
+			return errors.New("account store key check is missing")
+		}
+		value, err := decryptString(key, storeKeyCheckContext, doc.KeyCheck)
+		if err != nil || subtle.ConstantTimeCompare([]byte(value), []byte(storeKeyCheckValue)) != 1 {
+			return errors.New("account store data key is incorrect or the store is corrupted")
+		}
+	}
+	validateIdentity := func(context, encrypted string) (string, error) {
+		if encrypted == "" {
+			return "", nil
+		}
+		value, err := decryptString(key, context, encrypted)
+		if err != nil {
+			return "", errors.New("account store data key is incorrect or the store is corrupted")
+		}
+		return value, nil
+	}
+	for _, account := range doc.Accounts {
+		if (account.EmailHash == "") != (account.EmailEncrypted == "") ||
+			(account.TelegramSubjectHash == "") != (account.TelegramNameEncrypted == "") {
+			return errors.New("account store identity record is corrupted")
+		}
+		if account.EmailEncrypted != "" {
+			email, err := validateIdentity("qsdm-account-email-v1", account.EmailEncrypted)
+			if err != nil || account.EmailHash == "" || subtle.ConstantTimeCompare([]byte(account.EmailHash), []byte(keyedHash(key, "email", email))) != 1 {
+				return errors.New("account store data key is incorrect or the store is corrupted")
+			}
+		}
+		if _, err := validateIdentity("qsdm-account-telegram-name-v1", account.TelegramNameEncrypted); err != nil {
+			return err
+		}
+	}
+	for _, link := range doc.MagicLinks {
+		if (link.EmailHash == "") != (link.EmailEncrypted == "") {
+			return errors.New("account store magic-link record is corrupted")
+		}
+		if link.EmailEncrypted == "" {
+			continue
+		}
+		email, err := validateIdentity("qsdm-account-email-v1", link.EmailEncrypted)
+		if err != nil || link.EmailHash == "" || subtle.ConstantTimeCompare([]byte(link.EmailHash), []byte(keyedHash(key, "email", email))) != 1 {
+			return errors.New("account store data key is incorrect or the store is corrupted")
+		}
+	}
+	return nil
+}
+
 func (s *Store) saveLocked() error {
-	doc := storeDocument{Version: storeVersion}
+	keyCheck, err := encryptString(s.key, storeKeyCheckContext, storeKeyCheckValue)
+	if err != nil {
+		return fmt.Errorf("create account store key check: %w", err)
+	}
+	doc := storeDocument{Version: storeVersion, KeyCheck: keyCheck}
 	for _, account := range s.accounts {
 		doc.Accounts = append(doc.Accounts, *account)
 	}
@@ -149,16 +212,35 @@ func (s *Store) saveLocked() error {
 		return fmt.Errorf("encode account store: %w", err)
 	}
 	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+	file, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
 		return fmt.Errorf("write account store: %w", err)
 	}
-	_ = os.Chmod(tmp, 0o600)
-	if err := os.Rename(tmp, s.path); err != nil {
-		_ = os.Remove(s.path)
-		if retryErr := os.Rename(tmp, s.path); retryErr != nil {
-			return fmt.Errorf("replace account store: %w", retryErr)
+	removeTemp := true
+	defer func() {
+		if removeTemp {
+			_ = os.Remove(tmp)
 		}
+	}()
+	if err := file.Chmod(0o600); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("secure account store permissions: %w", err)
 	}
+	if _, err := file.Write(raw); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("write account store: %w", err)
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("sync account store: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close account store: %w", err)
+	}
+	if err := replaceStoreFile(tmp, s.path); err != nil {
+		return fmt.Errorf("replace account store: %w", err)
+	}
+	removeTemp = false
 	return nil
 }
 

@@ -98,6 +98,19 @@ mode `0600`. Configure at least one login provider:
   > ID and secret only in the server environment file. Retain the default RS256
   > signing algorithm used by this verifier.
 
+Before installation, the installer runs the candidate binary in
+`--check-config` mode through a transient systemd unit. This applies the real
+`EnvironmentFile` parsing rules, rejects obvious weak encryption keys, and
+proves that an existing encrypted account store opens with the supplied key.
+It does not bind a port or print any provider secret. A failed preflight leaves
+the currently installed service unchanged.
+
+Account store version 2 includes an authenticated encrypted key-check record.
+Version 1 stores remain readable after every encrypted identity field validates
+with the configured key; the next successful account change upgrades the file
+to version 2. Atomic replacement keeps the previous file intact when a save
+fails, including on Windows. Back up the store before the first upgrade.
+
 Then install the updated Caddy route and use the fail-closed installer:
 
 ```bash
@@ -115,14 +128,31 @@ without exposing configuration secrets:
 sudo /opt/qsdm/verify-account-service
 ```
 
+For the production activation test, request a real email link and validate the
+Telegram OIDC route when those providers are enabled:
+
+```bash
+sudo /opt/qsdm/verify-account-service \
+  --activation-email operator-test@example.org \
+  --check-telegram
+```
+
+Omit the option for any provider that is intentionally disabled. The email
+check succeeds only after the SMTP server accepts the real message. The
+Telegram check validates the authorization destination, PKCE parameters,
+callback URL, and live RS256 signing-key set. Neither check completes the user
+interaction: consume the email link and complete one Telegram login manually.
+
 CI performs the same tests, vet, stripped Linux builds, Windows cross-build,
 checksums, and local health smoke in `.github/workflows/qsdm-account.yml`.
 
 ### Production activation gate
 
-The verifier proves that the process, configuration shape, and reverse proxy
-are healthy. It cannot prove ownership of an SMTP account or Telegram bot. Do
-not expose `/account/` as a finished product until an operator has also:
+The standard verifier proves that the process, configuration shape, reverse
+proxy, and public security headers are healthy. Its provider options also
+prove SMTP acceptance and Telegram routing/key availability. They cannot prove
+that a human controls the target inbox or Telegram identity. Do not expose
+`/account/` as a finished product until an operator has also:
 
 1. completed a real sign-in through every enabled provider;
 2. received and consumed an email magic link when email is enabled;
