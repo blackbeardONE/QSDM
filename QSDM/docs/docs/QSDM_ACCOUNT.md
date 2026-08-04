@@ -121,7 +121,7 @@ fails, including on Windows. Store loading also rejects duplicate account IDs,
 identity ownership, wallet ownership, token hashes, and records that reference
 missing accounts. Back up the store before the first upgrade.
 
-Then install the updated Caddy route and use the fail-closed installer:
+Install the service first. This intentionally does not expose its public API:
 
 ```bash
 sudo QSDM/deploy/scripts/install_account_service.sh \
@@ -131,8 +131,20 @@ sudo QSDM/deploy/scripts/install_account_service.sh \
 Do not enable the public dashboard until the health check succeeds and at least
 one provider reports enabled from `/api/account/config`.
 
-After Caddy is reloaded, verify both the loopback service and its public route
-without exposing configuration secrets:
+Activate the public route only after the local check succeeds:
+
+```bash
+sudo /opt/qsdm/install-account-proxy-route
+```
+
+This command merges only the account route and redirect into the live
+Caddyfile, preserving server-only imports and unrelated routes. It validates a
+candidate before replacing the file, keeps a uniquely named backup, reloads
+Caddy, and restores the previous file automatically if reload or public
+verification fails. Re-running it is safe and verifies the existing route.
+
+The activation command verifies both the loopback service and public route
+without exposing configuration secrets. It can also be run directly later:
 
 ```bash
 sudo /opt/qsdm/verify-account-service

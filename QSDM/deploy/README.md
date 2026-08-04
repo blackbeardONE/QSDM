@@ -236,12 +236,17 @@ The checked-in configuration is an example only. Production must provide a
 32-byte data-encryption key and at least one real provider: SMTP with STARTTLS
 or Telegram OIDC. The installer refuses placeholders, rejects obvious weak
 keys, checks that the encrypted store opens, and validates the candidate before
-replacing an installed service. After installing the Caddy route, verify the
-complete public path:
+replacing an installed service. Verify the local service, then merge and
+verify the public route without replacing server-specific Caddy configuration:
 
 ```bash
-sudo /opt/qsdm/verify-account-service
+sudo /opt/qsdm/verify-account-service --local-only
+sudo /opt/qsdm/install-account-proxy-route
 ```
+
+The proxy installer validates a candidate Caddyfile, retains a backup, and
+automatically restores it if Caddy reload or public verification fails. It is
+idempotent and preserves unrelated live routes and imports.
 
 When the providers are configured, run their activation probes as applicable:
 

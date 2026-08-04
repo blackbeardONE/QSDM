@@ -17,8 +17,7 @@ on:
       - "QSDM/source/go.mod"
       - "QSDM/source/go.sum"
       - "QSDM/deploy/Caddyfile"
-      - "QSDM/deploy/scripts/install_account_service.sh"
-      - "QSDM/deploy/scripts/verify_account_service.sh"
+      - "QSDM/deploy/scripts/*account*"
       - "QSDM/deploy/systemd/qsdm-account*"
       - ".github/workflows/qsdm-account.yml"
   pull_request:
@@ -29,8 +28,7 @@ on:
       - "QSDM/source/go.mod"
       - "QSDM/source/go.sum"
       - "QSDM/deploy/Caddyfile"
-      - "QSDM/deploy/scripts/install_account_service.sh"
-      - "QSDM/deploy/scripts/verify_account_service.sh"
+      - "QSDM/deploy/scripts/*account*"
       - "QSDM/deploy/systemd/qsdm-account*"
       - ".github/workflows/qsdm-account.yml"
 
@@ -94,7 +92,11 @@ jobs:
         run: |
           set -euo pipefail
           bash -n QSDM/deploy/scripts/install_account_service.sh
+          bash -n QSDM/deploy/scripts/install_account_proxy_route.sh
+          bash -n QSDM/deploy/scripts/install_account_proxy_route_test.sh
           bash -n QSDM/deploy/scripts/verify_account_service.sh
+          python3 QSDM/deploy/scripts/merge_account_caddy_route_test.py
+          sudo bash QSDM/deploy/scripts/install_account_proxy_route_test.sh
           ./dist/qsdm-account/qsdm-account-linux-amd64 --check-config \
             | grep -F 'custody=local_wallet_only'
           ./dist/qsdm-account/qsdm-account-linux-amd64 >/tmp/qsdm-account.log 2>&1 &

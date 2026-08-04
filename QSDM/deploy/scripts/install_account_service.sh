@@ -24,8 +24,10 @@ config=$(realpath "$2")
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 unit=$(realpath "$script_dir/../systemd/qsdm-account.service")
 verifier=$(realpath "$script_dir/verify_account_service.sh")
+proxy_installer=$(realpath "$script_dir/install_account_proxy_route.sh")
+caddy_merger=$(realpath "$script_dir/merge_account_caddy_route.py")
 
-for path in "$binary" "$config" "$unit" "$verifier"; do
+for path in "$binary" "$config" "$unit" "$verifier" "$proxy_installer" "$caddy_merger"; do
   if [[ ! -f "$path" ]]; then
     echo "Required file is missing: $path" >&2
     exit 1
@@ -67,6 +69,8 @@ fi
 install -d -m0755 -o root -g root /opt/qsdm /etc/qsdm
 install -m0755 -o root -g root "$binary" /opt/qsdm/qsdm-account
 install -m0755 -o root -g root "$verifier" /opt/qsdm/verify-account-service
+install -m0755 -o root -g root "$proxy_installer" /opt/qsdm/install-account-proxy-route
+install -m0755 -o root -g root "$caddy_merger" /opt/qsdm/merge-account-caddy-route.py
 install -m0600 -o root -g root "$config" /etc/qsdm/account.conf
 install -m0644 -o root -g root "$unit" /etc/systemd/system/qsdm-account.service
 
