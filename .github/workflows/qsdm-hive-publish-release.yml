@@ -154,19 +154,24 @@ jobs:
         run: |
           set -euo pipefail
 
-          cat > release-notes.md <<EOF
-          ## QSDM Hive ${VERSION}
+          awk -v version="$VERSION" '
+            $0 == "## [" version "]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' apps/qsdm-hive/qsdm-hive-main/CHANGELOG.md > release-changes.md
+          test -s release-changes.md
 
-          This release adds QSDM Recovery Words: a 24-word, checksum-protected
-          recovery format for newly created QSDM ML-DSA wallets. Legacy wallets
-          continue to use their keystore JSON and passphrase.
-
-          Source commit: \`${SOURCE_COMMIT}\`
-
-          The Windows installer is not Authenticode-signed yet. Verify release
-          checksums before installation. QSDM's ML-DSA release envelopes remain
-          the authoritative application-level signature on qsdm.tech.
-          EOF
+          {
+            echo "## QSDM Hive ${VERSION}"
+            echo
+            cat release-changes.md
+            echo
+            echo "Source commit: \`${SOURCE_COMMIT}\`"
+            echo
+            echo "The Windows installer is not Authenticode-signed yet. Verify release"
+            echo "checksums before installation. QSDM's ML-DSA release envelopes remain"
+            echo "the authoritative application-level signature on qsdm.tech."
+          } > release-notes.md
 
           mapfile -d '' assets < <(find release-assets -type f -print0 | sort -z)
           if gh release view "$TAG" >/dev/null 2>&1; then

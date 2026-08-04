@@ -10,7 +10,7 @@ stage_dir="$(cd "$1" && pwd)"
 hive_version="$2"
 webroot="${3:-/var/www/qsdm}"
 downloads="$webroot/downloads"
-wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.4.0}"
+wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.5.0}"
 
 if [[ ! "$hive_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "invalid Hive version: $hive_version" >&2
@@ -39,10 +39,7 @@ immutable_downloads=(
   "$linux_appimage"
   "$linux_archive"
   "$linux_checksums"
-  "qsdm-hive-${hive_version}-linux-release-provenance.json"
-  "qsdm-hive-${hive_version}-linux-payload-evidence.json"
   "$wallet_extension"
-  "$wallet_extension_crx"
   "$wallet_extension_chromium"
   "$wallet_extension_chrome"
   "$wallet_extension_edge"
@@ -50,6 +47,16 @@ immutable_downloads=(
   "$wallet_extension_firefox"
   "$wallet_extension_checksums"
 )
+for optional_linux_evidence in \
+  "qsdm-hive-${hive_version}-linux-release-provenance.json" \
+  "qsdm-hive-${hive_version}-linux-payload-evidence.json"; do
+  if [[ -f "$stage_dir/downloads/$optional_linux_evidence" ]]; then
+    immutable_downloads+=("$optional_linux_evidence")
+  fi
+done
+if [[ -f "$stage_dir/downloads/$wallet_extension_crx" ]]; then
+  immutable_downloads+=("$wallet_extension_crx")
+fi
 pointer_downloads=(
   "SHA256SUMS-win.txt"
   "latest.yml"
@@ -73,7 +80,6 @@ grep -qx "version: ${hive_version}" "$stage_dir/downloads/latest.yml"
 grep -qx "version: ${hive_version}" "$stage_dir/downloads/latest-linux.yml"
 grep -q "url: ${windows_installer}" "$stage_dir/downloads/latest.yml"
 grep -q "url: ${linux_appimage}" "$stage_dir/downloads/latest-linux.yml"
-grep -q "$wallet_extension_crx" "$stage_dir/download.html"
 grep -q "Version ${hive_version}" "$stage_dir/download.html"
 
 for platform in windows linux; do
@@ -87,7 +93,9 @@ for platform in windows linux; do
   grep -q '"version": "'"${hive_version}"'"' <<<"$manifest_json"
   if [[ "$platform" == "windows" ]]; then
     grep -q '"name": "'"${wallet_extension}"'"' <<<"$manifest_json"
-    grep -q '"name": "'"${wallet_extension_crx}"'"' <<<"$manifest_json"
+    if [[ -f "$stage_dir/downloads/$wallet_extension_crx" ]]; then
+      grep -q '"name": "'"${wallet_extension_crx}"'"' <<<"$manifest_json"
+    fi
     grep -q '"name": "'"${wallet_extension_chromium}"'"' <<<"$manifest_json"
     grep -q '"name": "'"${wallet_extension_chrome}"'"' <<<"$manifest_json"
     grep -q '"name": "'"${wallet_extension_edge}"'"' <<<"$manifest_json"
@@ -131,13 +139,16 @@ done
 
 for file in "$windows_installer" "$linux_appimage" "$linux_archive" \
   "$wallet_extension" "$wallet_extension_chromium" \
-  "$wallet_extension_crx" \
   "$wallet_extension_chrome" "$wallet_extension_edge" \
   "$wallet_extension_brave" \
   "$wallet_extension_firefox" "$wallet_extension_checksums"; do
   curl --fail --silent --show-error --head --max-time 30 \
     "https://qsdm.tech/downloads/$file" >/dev/null
 done
+if [[ -f "$stage_dir/downloads/$wallet_extension_crx" ]]; then
+  curl --fail --silent --show-error --head --max-time 30 \
+    "https://qsdm.tech/downloads/$wallet_extension_crx" >/dev/null
+fi
 
 install_pointer "$stage_dir/download.html" "$webroot/download.html"
 for file in "${pointer_downloads[@]}"; do

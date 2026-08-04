@@ -25,8 +25,6 @@ required_downloads=(
   "$appimage"
   "$archive"
   "$checksums"
-  "$provenance"
-  "$evidence"
   "latest-linux.yml"
   "qsdm-hive-release-linux.json"
 )
@@ -80,9 +78,15 @@ install_pointer() {
   mv -f "$temporary" "$destination"
 }
 
-# Immutable packages and their evidence become public before any pointer moves.
-for file in "$appimage" "$archive" "$provenance" "$evidence"; do
+# Immutable packages and any available evidence become public before any pointer moves.
+for file in "$appimage" "$archive"; do
   atomic_install "$stage_dir/downloads/$file" "$downloads/$file"
+done
+for optional_evidence in "$provenance" "$evidence"; do
+  if [[ -f "$stage_dir/downloads/$optional_evidence" ]]; then
+    atomic_install "$stage_dir/downloads/$optional_evidence" \
+      "$downloads/$optional_evidence"
+  fi
 done
 install_pointer "$stage_dir/downloads/$checksums" "$downloads/$checksums"
 

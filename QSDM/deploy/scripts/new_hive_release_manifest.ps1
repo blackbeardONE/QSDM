@@ -121,7 +121,10 @@ if ($Platform -eq 'windows') {
         @{ Name = "qsdm-hive-$Version-windows-metadata-evidence.json"; Role = 'evidence'; Required = $false },
         @{ Name = "qsdm-hive-$Version-windows-nsis-evidence.json"; Role = 'evidence'; Required = $false },
         @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion.zip"; Role = 'portable-archive'; Required = $true },
-        @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion.crx"; Role = 'portable-archive'; Required = $true },
+        # Store builds do not always have custody of the protected interim CRX
+        # identity. Include a CRX when it exists, but never substitute an older
+        # CRX under a newer extension version.
+        @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion.crx"; Role = 'portable-archive'; Required = $false },
         @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion-chromium.zip"; Role = 'portable-archive'; Required = $true },
         @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion-chrome.zip"; Role = 'portable-archive'; Required = $true },
         @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion-edge.zip"; Role = 'portable-archive'; Required = $true },

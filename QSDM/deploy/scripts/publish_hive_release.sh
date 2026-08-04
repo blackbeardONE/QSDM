@@ -11,7 +11,7 @@ hive_version="$2"
 agent_version="$3"
 webroot="${4:-/var/www/qsdm}"
 downloads="$webroot/downloads"
-wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.4.0}"
+wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.5.0}"
 wallet_extension="qsdm-hive-wallet-extension-${wallet_extension_version}.zip"
 wallet_extension_crx="qsdm-hive-wallet-extension-${wallet_extension_version}.crx"
 wallet_extension_chromium="qsdm-hive-wallet-extension-${wallet_extension_version}-chromium.zip"
@@ -38,7 +38,6 @@ immutable_downloads=(
   "SHA256SUMS-win.txt"
   "qsdm-hive-${hive_version}-linux-SHA256SUMS.txt"
   "$wallet_extension"
-  "$wallet_extension_crx"
   "$wallet_extension_chromium"
   "$wallet_extension_chrome"
   "$wallet_extension_edge"
@@ -55,6 +54,9 @@ immutable_downloads=(
   "qsdm-edge-gpu-helper-${agent_version}-linux-x86_64"
   "qsdm-edge-agent-${agent_version}-SHA256SUMS.txt"
 )
+if [[ -f "$stage_dir/downloads/$wallet_extension_crx" ]]; then
+  immutable_downloads+=("$wallet_extension_crx")
+fi
 update_manifests=(
   latest.yml
   alpha.yml
@@ -92,7 +94,9 @@ windows_payload="$(sed -n 's/.*"manifest_base64": "\([^"]*\)".*/\1/p' \
 test -n "$windows_payload"
 windows_manifest_json="$(printf '%s' "$windows_payload" | base64 --decode)"
 grep -q '"name": "'"${wallet_extension}"'"' <<<"$windows_manifest_json"
-grep -q '"name": "'"${wallet_extension_crx}"'"' <<<"$windows_manifest_json"
+if [[ -f "$stage_dir/downloads/$wallet_extension_crx" ]]; then
+  grep -q '"name": "'"${wallet_extension_crx}"'"' <<<"$windows_manifest_json"
+fi
 grep -q '"name": "'"${wallet_extension_chromium}"'"' <<<"$windows_manifest_json"
 grep -q '"name": "'"${wallet_extension_chrome}"'"' <<<"$windows_manifest_json"
 grep -q '"name": "'"${wallet_extension_edge}"'"' <<<"$windows_manifest_json"
@@ -130,7 +134,6 @@ for file in \
   "qsdm-hive-${hive_version}-linux-x86_64.AppImage" \
   "qsdm-hive-${hive_version}-linux-x64.tar.gz" \
   "$wallet_extension" \
-  "$wallet_extension_crx" \
   "$wallet_extension_chromium" \
   "$wallet_extension_chrome" \
   "$wallet_extension_edge" \
@@ -142,6 +145,10 @@ for file in \
   curl --fail --silent --show-error --head --max-time 30 \
     "https://qsdm.tech/downloads/$file" >/dev/null
 done
+if [[ -f "$stage_dir/downloads/$wallet_extension_crx" ]]; then
+  curl --fail --silent --show-error --head --max-time 30 \
+    "https://qsdm.tech/downloads/$wallet_extension_crx" >/dev/null
+fi
 
 atomic_install "$stage_dir/index.html" "$webroot/index.html"
 atomic_install "$stage_dir/download.html" "$webroot/download.html"
