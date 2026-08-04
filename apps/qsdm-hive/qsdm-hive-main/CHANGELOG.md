@@ -1,3 +1,9 @@
+## [1.4.11]
+
+- Browser transfers: CELL sends from the QSDM Wallet extension and web account dashboard are serialized so simultaneous approvals cannot reuse one wallet nonce.
+- Pending blocks: Hive recognizes QSDM Core's pending-transaction HTTP 409 response, waits for the committed nonce to advance, rebuilds the envelope, and retries safely.
+- Clear recovery: A nonce that remains occupied now produces a bounded, actionable message instead of a raw Axios HTTP 409 error.
+
 ## [1.4.10]
 
 - Account access: Hive Wallet settings and the browser-extension popup now open the trusted QSDM Account dashboard directly.

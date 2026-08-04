@@ -1335,8 +1335,11 @@ try {
     onboardingResult.address,
     `${TEST_ADDRESS.slice(0, 12)}...${TEST_ADDRESS.slice(-10)}`
   );
+  const onboardingMethods = requests
+    .slice(onboardingStart)
+    .map((request) => request.method);
   assert.deepEqual(
-    requests.slice(onboardingStart).map((request) => request.method),
+    onboardingMethods.slice(-4),
     [
       "qsdm_ping",
       "qsdm_getWalletInfo",

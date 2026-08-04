@@ -96,7 +96,7 @@ Hive comes to the foreground and shows the exact site and operation before each
 approval. HTTP is accepted only for local development on `localhost` or
 `127.0.0.1`.
 
-Hive 1.4.10 automatically registers separate secure native bridges for the
+Hive 1.4.11 automatically registers separate secure native bridges for the
 current user on Chrome, Edge, Chromium, Brave, and Firefox without administrator
 access. The official Chromium and Firefox packages each have a stable pinned
 identity. The bridge listens only on loopback, authenticates each browser-host
@@ -133,7 +133,7 @@ and request that transfer, but it cannot request arbitrary message signatures.
 These surfaces support CELL only.
 
 Extension 0.5.1 adds a direct QSDM Account action to the compact popup, while
-Hive 1.4.10 exposes the same trusted dashboard from Wallet settings. Onboarding
+Hive 1.4.11 exposes the same trusted dashboard from Wallet settings. Onboarding
 shows only production-enabled sign-in methods; Telegram is active today, and
 email remains hidden until outbound email delivery is configured.
 

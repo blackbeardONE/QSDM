@@ -1,6 +1,7 @@
-import axios from 'axios';
 import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
+
+import axios from 'axios';
 
 import { buildQsdmCoreApiUrl } from 'config/qsdm';
 import {
@@ -9,6 +10,7 @@ import {
   QsdmWalletNonceResponse,
 } from 'models/api/qsdm';
 
+import { assertQsdmCanonicalChainSafety } from './qsdmCanonicalChain';
 import {
   getQsdmTaskActionCliPath,
   getQsdmTaskActionKeystorePath,
@@ -16,7 +18,6 @@ import {
   getQsdmTaskActionSender,
   getQsdmTaskActionSignerMode,
 } from './qsdmTaskActionSigner';
-import { assertQsdmCanonicalChainSafety } from './qsdmCanonicalChain';
 
 type UnsignedQsdmWalletEnvelope = Omit<
   QsdmSignedTransactionEnvelope,
@@ -32,6 +33,10 @@ type QsdmWalletTransferParams = {
   fee?: number;
 };
 
+type QsdmWalletTransferConflict = 'nonce' | 'pending';
+
+let walletTransferQueue: Promise<void> = Promise.resolve();
+
 const readEnv = (key: string, fallback = '') => {
   const value = process.env[key];
   return value?.trim() || fallback;
@@ -44,6 +49,32 @@ const getSignerTimeoutMs = () => {
   const raw = readEnv('QSDM_WALLET_SIGNER_TIMEOUT_MS', '30000');
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 30000;
+};
+
+const getPendingNonceTimeoutMs = () => {
+  const raw = readEnv('QSDM_WALLET_PENDING_NONCE_TIMEOUT_MS', '20000');
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 20000;
+};
+
+const getPendingNoncePollMs = () => {
+  const raw = readEnv('QSDM_WALLET_PENDING_NONCE_POLL_MS', '500');
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 500;
+};
+
+const delay = (durationMs: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
+
+const enqueueWalletTransfer = <T>(operation: () => Promise<T>): Promise<T> => {
+  const pending = walletTransferQueue.then(operation, operation);
+  walletTransferQueue = pending.then(
+    () => undefined,
+    () => undefined
+  );
+  return pending;
 };
 
 const assertWalletSignerConfigured = () => {
@@ -137,19 +168,48 @@ const signQsdmWalletTransferWithCli = async (
   });
 };
 
-const isNonceConflict = (error: unknown) => {
+const getTransferConflict = (
+  error: unknown
+): QsdmWalletTransferConflict | undefined => {
   if (!axios.isAxiosError(error) || error.response?.status !== 409) {
-    return false;
+    return undefined;
   }
 
-  const body =
-    typeof error.response.data === 'string'
-      ? error.response.data
-      : JSON.stringify(error.response.data);
-  return body.toLowerCase().includes('nonce');
+  const { data } = error.response;
+  if (
+    data &&
+    typeof data === 'object' &&
+    'status' in data &&
+    'broadcast' in data &&
+    data.status === 'duplicate' &&
+    data.broadcast === 'block-pending'
+  ) {
+    return 'pending';
+  }
+
+  const body = typeof data === 'string' ? data : JSON.stringify(data ?? {});
+  return body.toLowerCase().includes('nonce') ? 'nonce' : undefined;
 };
 
-export const submitQsdmWalletTransferIntent = async ({
+const waitForAvailableNonce = async (sender: string, rejectedNonce: number) => {
+  const timeoutMs = getPendingNonceTimeoutMs();
+  const pollMs = getPendingNoncePollMs();
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const nextNonce = await getNextWalletNonce(sender);
+    if (nextNonce !== rejectedNonce) {
+      return nextNonce;
+    }
+    await delay(Math.min(pollMs, Math.max(1, deadline - Date.now())));
+  }
+
+  throw new Error(
+    'A previous CELL transfer is still awaiting the next block. Wait a few seconds and try again.'
+  );
+};
+
+const submitQsdmWalletTransfer = async ({
   recipient,
   amount,
   fee = 0,
@@ -184,12 +244,27 @@ export const submitQsdmWalletTransferIntent = async ({
     return response.data;
   };
 
-  try {
-    return await signAndSubmit(await getNextWalletNonce(sender));
-  } catch (error) {
-    if (isNonceConflict(error)) {
-      return signAndSubmit(await getNextWalletNonce(sender));
+  let nonce = await getNextWalletNonce(sender);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await signAndSubmit(nonce);
+    } catch (error) {
+      if (!getTransferConflict(error)) {
+        throw error;
+      }
+      if (attempt === 2) {
+        throw new Error(
+          'The CELL transfer could not reserve a wallet nonce after three attempts. Wait for the next block and try again.'
+        );
+      }
+      nonce = await waitForAvailableNonce(sender, nonce);
     }
-    throw error;
   }
+
+  throw new Error('The CELL transfer was not submitted');
 };
+
+export const submitQsdmWalletTransferIntent = (
+  params: QsdmWalletTransferParams
+): Promise<QsdmSubmitSignedTransactionResponse> =>
+  enqueueWalletTransfer(() => submitQsdmWalletTransfer(params));
