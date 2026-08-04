@@ -3,6 +3,7 @@ package keystore
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"strings"
@@ -161,6 +162,40 @@ func TestLegacyKeystoreHasNoRecovery(t *testing.T) {
 	}
 	if _, err := DecryptRecovery(ks, []byte("passphrase")); err != ErrNoRecovery {
 		t.Fatalf("DecryptRecovery error = %v, want ErrNoRecovery", err)
+	}
+}
+
+func TestAttachLegacyRecoveryPreservesWalletAndRoundTripsEntropy(t *testing.T) {
+	pub, priv := genKeypair(t)
+	passphrase := []byte("legacy recovery passphrase")
+	ks, err := Encrypt(pub, priv, passphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalCiphertext := ks.Ciphertext
+	originalAddress := ks.Address
+	entropy := bytes.Repeat([]byte{0x73}, RecoveryBytes)
+	locator := strings.Repeat("ab", sha256.Size)
+
+	upgraded, err := AttachLegacyRecovery(ks, entropy, passphrase, locator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upgraded.Address != originalAddress || upgraded.Ciphertext != originalCiphertext {
+		t.Fatal("legacy recovery changed wallet identity or private-key ciphertext")
+	}
+	if upgraded.Recovery == nil || upgraded.Recovery.Scheme != LegacyRecoveryScheme || upgraded.Recovery.Locator != locator {
+		t.Fatalf("unexpected legacy recovery metadata: %+v", upgraded.Recovery)
+	}
+	got, err := DecryptRecovery(upgraded, passphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, entropy) {
+		t.Fatal("legacy recovery entropy changed")
+	}
+	if _, err := DecryptRecovery(upgraded, []byte("wrong passphrase")); err != ErrInvalidPassphrase {
+		t.Fatalf("wrong passphrase error = %v, want ErrInvalidPassphrase", err)
 	}
 }
 

@@ -210,6 +210,38 @@ describe('QSDM Hive IPC validation', () => {
         },
       ])
     ).toThrow(/exactly 24 words/);
+
+    expect(() =>
+      validateIpcPayload(Endpoints.RESTORE_QSDM_SIGNER_WALLET, [
+        {
+          recoveryWords,
+          passphrase: 'correct horse battery staple',
+          recoveryType: 'legacy',
+        },
+      ])
+    ).not.toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.RESTORE_QSDM_SIGNER_WALLET, [
+        {
+          recoveryWords,
+          passphrase: 'correct horse battery staple',
+          recoveryType: 'guessed',
+        },
+      ])
+    ).toThrow(/invalid format/);
+  });
+
+  it('requires an existing passphrase to enable recovery for an old wallet', () => {
+    expect(() =>
+      validateIpcPayload(Endpoints.ENABLE_QSDM_SIGNER_LEGACY_RECOVERY, [
+        { passphrase: 'existing-passphrase' },
+      ])
+    ).not.toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.ENABLE_QSDM_SIGNER_LEGACY_RECOVERY, [
+        { passphrase: '' },
+      ])
+    ).toThrow(/outside the allowed range/);
   });
 
   it('bounds the passphrase used to export QSDM recovery words', () => {

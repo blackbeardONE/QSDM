@@ -241,6 +241,13 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/streams/actions/submit-signed", handlers.QSDMStreamActionSubmitSignedHandler)
 	mux.HandleFunc("/api/v1/streams/", handlers.QSDMStreamRouteHandler)
 
+	// Legacy wallet recovery capsules are encrypted client-side and registered
+	// through wallet-signed consensus actions. Reads expose ciphertext only.
+	mux.HandleFunc("/api/v1/wallet/recovery/nonce", handlers.QSDMRecoveryCapsuleNonceHandler)
+	mux.HandleFunc("/api/v1/wallet/recovery/capsules/submit-signed", handlers.QSDMRecoveryCapsuleSubmitSignedHandler)
+	mux.HandleFunc("/api/v1/wallet/recovery/capsules", handlers.QSDMRecoveryCapsuleLookupHandler)
+	mux.HandleFunc("/api/v1/wallet/recovery/capsules/", handlers.QSDMRecoveryCapsuleRouteHandler)
+
 	// Authentication endpoints (public)
 	mux.HandleFunc("/api/v1/auth/login", handlers.Login)
 	mux.HandleFunc("/api/v1/auth/register", handlers.Register)

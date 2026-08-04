@@ -1,4 +1,4 @@
-import { spawnSync } from 'child_process';
+import { execFile } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -7,6 +7,7 @@ import {
   backupQsdmEncryptedPassphrase,
   persistQsdmSignerPassphrase,
 } from 'main/services/qsdmSignerSecretStore';
+import { resolveQsdmTaskActionApiUrl } from 'main/services/qsdmTaskActions';
 import {
   activateQsdmImportedSignerPaths,
   getQsdmDefaultLocalSignerPaths,
@@ -39,7 +40,14 @@ const backupExistingFile = (filePath: string) => {
   }
 };
 
-const getSpawnError = (result: ReturnType<typeof spawnSync>) =>
+type QsdmCliResult = {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  error?: Error;
+};
+
+const getSpawnError = (result: QsdmCliResult) =>
   result.error?.message ||
   result.stderr?.toString().trim() ||
   result.stdout?.toString().trim();
@@ -51,10 +59,31 @@ const runQsdmCli = (args: string[]) => {
       'The native QSDM signer is unavailable. Reinstall the current QSDM Hive release.'
     );
   }
-  return spawnSync(cliPath, args, {
-    encoding: 'utf-8',
-    timeout: 30000,
-    windowsHide: true,
+  return new Promise<QsdmCliResult>((resolve) => {
+    execFile(
+      cliPath,
+      args,
+      {
+        encoding: 'utf-8',
+        timeout: 120000,
+        windowsHide: true,
+        maxBuffer: 1024 * 1024,
+      },
+      (error, stdout, stderr) => {
+        const errorCode = (error as (Error & { code?: number | string }) | null)
+          ?.code;
+        resolve({
+          status: error
+            ? typeof errorCode === 'number'
+              ? errorCode
+              : null
+            : 0,
+          stdout,
+          stderr,
+          error: error || undefined,
+        });
+      }
+    );
   });
 };
 
@@ -63,6 +92,7 @@ export const restoreQsdmSignerWallet = async (
   payload: QsdmSignerWalletRecoveryRequest
 ): Promise<QsdmSignerWalletImportResponse> => {
   const recoveryWords = payload?.recoveryWords?.trim();
+  const recoveryType = payload?.recoveryType || 'native';
   if (!recoveryWords || recoveryWords.split(/\s+/).length !== 24) {
     throw new Error('Enter all 24 QSDM Recovery Words');
   }
@@ -85,16 +115,20 @@ export const restoreQsdmSignerWallet = async (
   try {
     writeFilePrivate(tmpPassphrasePath, payload.passphrase);
     writeFilePrivate(tmpRecoveryPath, recoveryWords);
-    const restoreResult = runQsdmCli([
+    const restoreArgs = [
       'wallet',
-      'restore',
+      recoveryType === 'legacy' ? 'restore-legacy' : 'restore',
       '--out',
       tmpKeystorePath,
       '--passphrase-file',
       tmpPassphrasePath,
       '--recovery-file',
       tmpRecoveryPath,
-    ]);
+    ];
+    if (recoveryType === 'legacy') {
+      restoreArgs.push('--api-url', resolveQsdmTaskActionApiUrl());
+    }
+    const restoreResult = await runQsdmCli(restoreArgs);
     if (restoreResult.status !== 0) {
       throw new Error(
         `QSDM wallet restore failed: ${
@@ -103,7 +137,7 @@ export const restoreQsdmSignerWallet = async (
       );
     }
 
-    const showResult = runQsdmCli([
+    const showResult = await runQsdmCli([
       'wallet',
       'show',
       '--in',
@@ -125,7 +159,7 @@ export const restoreQsdmSignerWallet = async (
       throw new Error('Restored QSDM wallet is missing key metadata');
     }
 
-    const inspectResult = runQsdmCli([
+    const inspectResult = await runQsdmCli([
       'wallet',
       'inspect',
       '--in',

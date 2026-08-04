@@ -525,11 +525,19 @@ const getQsdmRecoveryMetadata = (keystorePath: string) => {
       return { recoveryEnabled: false };
     }
     const parsed = JSON.parse(fs.readFileSync(keystorePath, 'utf-8')) as {
-      recovery?: { scheme?: unknown; words?: unknown };
+      recovery?: { scheme?: unknown; words?: unknown; locator?: unknown };
     };
     const scheme = parsed.recovery?.scheme;
     const words = parsed.recovery?.words;
-    if (scheme !== 'qsdm-wallet-recovery-v1' || words !== 24) {
+    const supportedSchemes = new Set([
+      'qsdm-wallet-recovery-v1',
+      'qsdm-legacy-wallet-recovery-v1',
+    ]);
+    if (
+      typeof scheme !== 'string' ||
+      !supportedSchemes.has(scheme) ||
+      words !== 24
+    ) {
       return { recoveryEnabled: false };
     }
     return {

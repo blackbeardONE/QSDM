@@ -23,6 +23,7 @@ import createMissingKPLStakingKey from './createMissingKPLStakingKey';
 import createNodeWallets from './createNodeWallets';
 import createNodeWalletsFromJson from './createNodeWalletsFromJson';
 import createQsdmSignerWallet from './createQsdmSignerWallet';
+import enableQsdmSignerLegacyRecovery from './enableQsdmSignerLegacyRecovery';
 import createReferralCode from './createReferralCode';
 import creditStakingWalletFromMainWallet from './creditStakingWalletFromMainWallet';
 import delegateStake from './delegateStake';
@@ -214,6 +215,7 @@ export default {
   getQsdmSkyFangLinkStatus,
   linkQsdmSkyFangAccount,
   createQsdmSignerWallet,
+  enableQsdmSignerLegacyRecovery,
   exportQsdmSignerWalletBackup,
   exportQsdmSignerRecoveryWords,
   importQsdmSignerWallet,

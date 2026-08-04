@@ -2,6 +2,7 @@ export * from './claimQsdmCellFaucet';
 export * from './claimQsdmReferralReward';
 export * from './getQsdmReferralStatus';
 export * from './createQsdmSignerWallet';
+export * from './enableQsdmSignerLegacyRecovery';
 export * from './getQsdmCellAccount';
 export * from './getQsdmCoreStatus';
 export * from './getQsdmMinerRewardStatus';

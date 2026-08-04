@@ -130,6 +130,18 @@ export interface QsdmSignerWalletImportResponse {
 export interface QsdmSignerWalletRecoveryRequest {
   recoveryWords: string;
   passphrase: string;
+  recoveryType?: 'native' | 'legacy';
+}
+
+export interface QsdmSignerLegacyRecoveryEnableRequest {
+  passphrase: string;
+}
+
+export interface QsdmSignerLegacyRecoveryEnableResponse {
+  enabled: boolean;
+  address?: string;
+  recoveryBackupPath?: string;
+  keystoreBackupPath?: string;
 }
 
 export interface QsdmSignerWalletRecoveryExportRequest {

@@ -14,6 +14,17 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **QSDM Hive 1.4.14 recovery activation for older wallets (2026-08-05).**
+  Existing random-key ML-DSA wallets can opt into 24 QSDM Recovery Words
+  without changing their address, CELL balance, stakes, or task ownership.
+  Hive verifies the existing passphrase, saves the words privately, preserves
+  the original encrypted keystore as a backup, and registers only an
+  AES-256-GCM encrypted recovery capsule through a wallet-signed QSDM Core
+  action. Restore accepts the 24 words plus the replicated capsule and lets the
+  owner choose a new local passphrase. Activation requires the original JSON
+  and passphrase to remain usable once; neither Hive nor QSDM Core can recreate
+  a wallet whose original credentials were already lost.
+
 - **QSDM Core v0.4.7-rc.3 native validator release path (2026-07-20).**
   Releases now include production-capable SQLite validator packages for Linux
   amd64 and Windows amd64, with embedded build identity, inner and release-level

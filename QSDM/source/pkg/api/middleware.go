@@ -279,6 +279,13 @@ func isPublicEndpoint(path string) bool {
 		// with /wallet/balance: read-only, address-required-in-query,
 		// no JWT. See V041_REPLAY_PROTECTION_DESIGN.md §5.2.
 		"/api/v1/wallet/nonce",
+		// Legacy-wallet recovery registration is authenticated by the
+		// wallet's ML-DSA signature. Capsule reads expose only public,
+		// authenticated ciphertext and are needed before a lost wallet can
+		// establish any dashboard session.
+		"/api/v1/wallet/recovery/nonce",
+		"/api/v1/wallet/recovery/capsules",
+		"/api/v1/wallet/recovery/capsules/submit-signed",
 		"/api/v1/monitoring/ngc-proof",
 		"/api/v1/monitoring/ngc-challenge",
 		"/api/v1/monitoring/ngc-proofs",
@@ -424,6 +431,9 @@ func isPublicEndpoint(path string) bool {
 	// prefix is explicitly listed above and performs consensus signature
 	// verification before mempool admission.
 	if strings.HasPrefix(path, "/api/v1/streams/") {
+		return true
+	}
+	if strings.HasPrefix(path, "/api/v1/wallet/recovery/capsules/") {
 		return true
 	}
 	return false
