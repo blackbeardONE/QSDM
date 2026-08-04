@@ -3,7 +3,7 @@
  *
  * Canonical primary nav (dropdown parents):
  *   Network ▾ · Hive ▾ · Docs · Trust ▾
- *   CTA: Download (solid only — avoid duplicating nav labels)
+ *   CTA: Account · Download
  * Network → Overview, Explorer, API, Validators
  * Hive → Download Hive, QSDM Account, Web wallet, QSDM VPN
  * Trust → Public audit, Attestations
@@ -301,6 +301,13 @@ a:hover { color: #b8eef0; }
 }
 
 .site-mobile-group a { padding-left: 0.85rem; }
+
+@media (max-width: 639px) {
+  .site-header-inner { gap: 0.5rem; }
+  .site-actions { gap: 0.35rem; }
+  .site-actions > .site-btn-solid { display: none; }
+  .site-account-action { padding-inline: 0.75rem; }
+}
 
 @media (min-width: 1024px) {
   .site-nav { display: flex; }
