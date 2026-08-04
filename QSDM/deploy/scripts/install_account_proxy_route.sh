@@ -39,6 +39,15 @@ merger=${QSDM_ACCOUNT_CADDY_MERGER:-$default_merger}
 verifier=${QSDM_ACCOUNT_VERIFIER:-$default_verifier}
 caddy_command=${QSDM_CADDY_COMMAND:-caddy}
 systemctl_command=${QSDM_SYSTEMCTL_COMMAND:-systemctl}
+caddy_apply_mode=${QSDM_CADDY_APPLY_MODE:-reload}
+
+case "$caddy_apply_mode" in
+  reload|restart) ;;
+  *)
+    echo "QSDM_CADDY_APPLY_MODE must be reload or restart." >&2
+    exit 2
+    ;;
+esac
 
 for path in "$caddyfile_input" "$merger" "$verifier"; do
   if [[ ! -f "$path" ]]; then
@@ -53,6 +62,10 @@ for command_name in python3 realpath mktemp cmp install cp mv "$caddy_command" "
   }
 done
 caddyfile=$(realpath "$caddyfile_input")
+
+apply_caddy_config() {
+  "$systemctl_command" "$caddy_apply_mode" caddy.service
+}
 
 # Never publish a route that points to a missing or provider-less service.
 "$verifier" --local-only
@@ -93,13 +106,13 @@ rollback() {
   restored=$(mktemp "${caddyfile}.account-restore.XXXXXXXX")
   cp --preserve=mode,ownership,timestamps -- "$backup" "$restored"
   mv -f -- "$restored" "$caddyfile"
-  if ! "$systemctl_command" reload caddy.service; then
-    echo "CRITICAL: the previous Caddyfile was restored, but Caddy reload failed." >&2
+  if ! apply_caddy_config; then
+    echo "CRITICAL: the previous Caddyfile was restored, but Caddy $caddy_apply_mode failed." >&2
   fi
   exit 1
 }
 
-if ! "$systemctl_command" reload caddy.service; then
+if ! apply_caddy_config; then
   rollback "Caddy rejected the activated account route."
 fi
 if ! "$verifier"; then

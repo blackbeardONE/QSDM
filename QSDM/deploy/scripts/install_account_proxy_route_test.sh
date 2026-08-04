@@ -57,16 +57,25 @@ bash "$script_dir/install_account_proxy_route.sh"
 [[ -L "$work/Caddyfile-link" ]]
 grep -Fq 'import /etc/caddy/qsdm-edge-relay.caddy' "$work/Caddyfile"
 grep -Fq 'reverse_proxy 127.0.0.1:8092' "$work/Caddyfile"
+grep -Fxq 'reload caddy.service' "$work/systemctl.log"
 first_reload_count=$(wc -l <"$work/systemctl.log")
 bash "$script_dir/install_account_proxy_route.sh"
 [[ $(wc -l <"$work/systemctl.log") -eq $first_reload_count ]]
 
 cp "$work/original" "$work/Caddyfile"
+: >"$work/systemctl.log"
+export QSDM_CADDY_APPLY_MODE=restart
+bash "$script_dir/install_account_proxy_route.sh"
+grep -Fxq 'restart caddy.service' "$work/systemctl.log"
+
+cp "$work/original" "$work/Caddyfile"
 cp "$work/original" "$work/before-rollback"
+: >"$work/systemctl.log"
 touch "$QSDM_TEST_FAIL_PUBLIC"
 if bash "$script_dir/install_account_proxy_route.sh"; then
   echo "Expected public verification failure did not occur." >&2
   exit 1
 fi
 cmp -s "$work/before-rollback" "$work/Caddyfile"
+[[ $(grep -Fxc 'restart caddy.service' "$work/systemctl.log") -eq 2 ]]
 echo "Account proxy activation merge, idempotence, and rollback tests passed."

@@ -91,6 +91,7 @@ jobs:
           QSDM_ACCOUNT_SMTP_TLS: "true"
         run: |
           set -euo pipefail
+          bash -n QSDM/deploy/scripts/activate_account_service_interactive.sh
           bash -n QSDM/deploy/scripts/install_account_service.sh
           bash -n QSDM/deploy/scripts/install_account_proxy_route.sh
           bash -n QSDM/deploy/scripts/install_account_proxy_route_test.sh

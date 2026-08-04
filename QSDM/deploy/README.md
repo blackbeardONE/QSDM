@@ -239,6 +239,20 @@ keys, checks that the encrypted store opens, and validates the candidate before
 replacing an installed service. Verify the local service, then merge and
 verify the public route without replacing server-specific Caddy configuration:
 
+For a first Telegram-only installation, the interactive helper accepts the
+public Client ID as an argument and reads the Client Secret directly from the
+terminal without echoing it:
+
+```bash
+sudo ../deploy/scripts/activate_account_service_interactive.sh \
+  ./qsdm-account TELEGRAM_CLIENT_ID
+```
+
+It refuses to replace an existing `/etc/qsdm/account.conf`, which protects the
+data-encryption key used by an existing account store.
+
+For a normal installation or update, run the checks explicitly:
+
 ```bash
 sudo /opt/qsdm/verify-account-service --local-only
 sudo /opt/qsdm/install-account-proxy-route
@@ -247,6 +261,14 @@ sudo /opt/qsdm/install-account-proxy-route
 The proxy installer validates a candidate Caddyfile, retains a backup, and
 automatically restores it if Caddy reload or public verification fails. It is
 idempotent and preserves unrelated live routes and imports.
+
+The default apply mode is a zero-downtime Caddy reload. If the live Caddyfile
+intentionally contains `admin off`, a reload is unavailable; use a validated
+restart explicitly:
+
+```bash
+sudo QSDM_CADDY_APPLY_MODE=restart /opt/qsdm/install-account-proxy-route
+```
 
 When the providers are configured, run their activation probes as applicable:
 

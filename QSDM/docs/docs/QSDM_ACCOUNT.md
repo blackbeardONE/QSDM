@@ -128,6 +128,18 @@ sudo QSDM/deploy/scripts/install_account_service.sh \
   ./qsdm-account ./account.conf
 ```
 
+For a first Telegram-only installation, the interactive helper can create the
+private configuration and data key while reading the Client Secret from the
+terminal without echoing it:
+
+```bash
+sudo QSDM/deploy/scripts/activate_account_service_interactive.sh \
+  ./qsdm-account TELEGRAM_CLIENT_ID
+```
+
+The helper refuses to replace an existing `/etc/qsdm/account.conf`; use the
+normal update procedure to preserve the encryption key for an existing store.
+
 Do not enable the public dashboard until the health check succeeds and at least
 one provider reports enabled from `/api/account/config`.
 
@@ -135,6 +147,14 @@ Activate the public route only after the local check succeeds:
 
 ```bash
 sudo /opt/qsdm/install-account-proxy-route
+```
+
+The proxy installer reloads Caddy by default. A server configured with Caddy's
+`admin off` option cannot reload through the admin API, so select the validated
+restart mode explicitly:
+
+```bash
+sudo QSDM_CADDY_APPLY_MODE=restart /opt/qsdm/install-account-proxy-route
 ```
 
 This command merges only the account route and redirect into the live
