@@ -1,18 +1,18 @@
 {
   "schema": "qsdm.hive.release-request.v1",
-  "version": "1.4.11",
-  "tag": "hive-v1.4.11",
-  "source_commit": "f358fd81c65e7e423de1af5fb19406ea77b92eba",
+  "version": "1.4.12",
+  "tag": "hive-v1.4.12",
+  "source_commit": "5062dfe40c4881fb3c3522bd84cfb89e240d3372",
   "windows": {
-    "run_id": 30899776149,
-    "artifact": "qsdm-hive-1.4.11-windows-UNSIGNED",
-    "evidence_artifact": "qsdm-hive-1.4.11-windows-build-evidence"
+    "run_id": 30909806546,
+    "artifact": "qsdm-hive-1.4.12-windows-UNSIGNED",
+    "evidence_artifact": "qsdm-hive-1.4.12-windows-build-evidence"
   },
   "linux": {
-    "run_id": 30899776173,
-    "artifact": "qsdm-hive-linux-f358fd81c65e7e423de1af5fb19406ea77b92eba"
+    "run_id": 30909806576,
+    "artifact": "qsdm-hive-linux-5062dfe40c4881fb3c3522bd84cfb89e240d3372"
   },
   "wallet_extension": {
-    "artifact": "qsdm-hive-wallet-extension-f358fd81c65e7e423de1af5fb19406ea77b92eba"
+    "artifact": "qsdm-hive-wallet-extension-5062dfe40c4881fb3c3522bd84cfb89e240d3372"
   }
 }
