@@ -236,9 +236,6 @@
   document
     .getElementById("telegram-login")
     .addEventListener("click", () => void openAccountLogin("telegram"));
-  document
-    .getElementById("email-login")
-    .addEventListener("click", () => void openAccountLogin("email"));
 
   useHiveButton.addEventListener("click", async () => {
     if (!walletAddress) return;

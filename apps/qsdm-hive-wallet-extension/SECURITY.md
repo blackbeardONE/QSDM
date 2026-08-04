@@ -46,7 +46,7 @@ retain these identities.
 
 ## Account identity boundary
 
-Telegram and email open the HTTPS QSDM Account dashboard. The account service
+Telegram opens the HTTPS QSDM Account dashboard. The account service
 verifies Telegram Authorization Code + PKCE responses and short-lived email
 magic links server-side. It encrypts identity display values at rest and stores
 only keyed hashes of login tokens and sessions. Provider credentials remain

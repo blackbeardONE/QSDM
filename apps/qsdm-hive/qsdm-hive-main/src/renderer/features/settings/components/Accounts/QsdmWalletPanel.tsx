@@ -20,6 +20,7 @@ import {
   getQsdmCoreStatus,
   getQsdmWalletProviderPermissions,
   importQsdmSignerWallet,
+  openBrowserWindow,
   QueryKeys,
   revokeQsdmWalletProviderPermission,
   restoreQsdmSignerWallet,
@@ -50,6 +51,7 @@ const formatPermissionDate = (value: string) => {
 const WALLET_PROVIDER_PERMISSIONS_QUERY_KEY = [
   'qsdm-wallet-provider-permissions',
 ];
+const QSDM_ACCOUNT_URL = 'https://qsdm.tech/account/';
 
 export function QsdmWalletPanel() {
   const queryClient = useQueryClient();
@@ -399,6 +401,11 @@ export function QsdmWalletPanel() {
           >
             {signer?.ready ? 'Signer ready' : 'Signer setup needed'}
           </span>
+          <Button
+            label="QSDM Account"
+            onClick={() => openBrowserWindow(QSDM_ACCOUNT_URL)}
+            className="h-9 w-36 bg-finnieBlue-light-secondary"
+          />
           <Button
             label="Refresh"
             onClick={refresh}

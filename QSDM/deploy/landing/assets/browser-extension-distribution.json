@@ -1,6 +1,6 @@
 {
   "schema": "qsdm.wallet-extension-distribution.v1",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "channels": {
     "chrome": {
       "state": "pending",

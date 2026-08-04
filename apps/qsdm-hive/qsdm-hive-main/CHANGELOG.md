@@ -1,3 +1,9 @@
+## [1.4.10]
+
+- Account access: Hive Wallet settings and the browser-extension popup now open the trusted QSDM Account dashboard directly.
+- Provider clarity: Wallet onboarding shows only sign-in methods enabled in production; email stays hidden until outbound email delivery is configured.
+- Browser QA: Acceptance coverage verifies the popup Account destination and captures the compact wallet surface.
+
 ## [1.4.9]
 
 - Wallet dashboard: The QSDM Wallet extension can show the active Hive wallet, copy its address, refresh its live CELL balance, and request wallet-to-wallet transfers.

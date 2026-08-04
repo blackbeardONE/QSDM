@@ -6,6 +6,7 @@ const siteStateElement = document.getElementById("site-state");
 const noticeElement = document.getElementById("notice");
 const connectButton = document.getElementById("connect-site");
 const dashboardButton = document.getElementById("open-dashboard");
+const accountButton = document.getElementById("open-account");
 const openWalletButton = document.getElementById("open-wallet");
 
 const NATIVE_HOST = "tech.qsdm.hive_wallet";
@@ -13,6 +14,7 @@ const PROVIDER_VERSION = "qsdm-hive-wallet-provider/v1";
 const INTERNAL_ORIGIN = "qsdm-extension://wallet-popup";
 const HIVE_WALLET_URL = "qsdm-hive://open?route=%2Fsettings%2Fwallet";
 const WALLET_DASHBOARD_URL = chrome.runtime.getURL("home.html#/wallet");
+const ACCOUNT_URL = "https://qsdm.tech/account/";
 
 let activeOrigin = "";
 let activeSiteName = "";
@@ -224,6 +226,10 @@ connectButton.addEventListener("click", async () => {
 
 dashboardButton.addEventListener("click", async () => {
   await chrome.tabs.create({ url: WALLET_DASHBOARD_URL });
+});
+
+accountButton.addEventListener("click", async () => {
+  await chrome.tabs.create({ url: ACCOUNT_URL });
 });
 
 openWalletButton.addEventListener("click", async () => {

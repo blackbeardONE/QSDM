@@ -1051,6 +1051,7 @@ const runOnboardingChecks = async (browser, testUrl, extensionId) => {
   );
   assert.equal((await onboarding.$$("#google-login")).length, 0);
   assert.equal((await onboarding.$$("#apple-login")).length, 0);
+  assert.equal((await onboarding.$$("#email-login")).length, 0);
 
   const telegramTargetPromise = browser.waitForTarget(
     (target) =>
@@ -1067,20 +1068,6 @@ const runOnboardingChecks = async (browser, testUrl, extensionId) => {
   const telegramPage = await telegramTarget.page();
   await telegramPage?.close();
 
-  const emailTargetPromise = browser.waitForTarget(
-    (target) =>
-      target.url() ===
-      "https://qsdm.tech/account/?login=email&source=extension",
-    { timeout: 15000 }
-  );
-  await onboarding.click("#email-login");
-  const emailTarget = await emailTargetPromise;
-  assert.equal(
-    await onboarding.$eval("#notice", (element) => element.textContent),
-    "Opening secure email login..."
-  );
-  const emailPage = await emailTarget.page();
-  await emailPage?.close();
   if (screenshotDirectory) {
     fs.mkdirSync(screenshotDirectory, { recursive: true });
     await onboarding.setViewport({ width: 1440, height: 900 });
@@ -1426,6 +1413,22 @@ try {
     await popup.$eval("#wallet-balance", (element) => element.textContent),
     "42.5 CELL"
   );
+
+  const accountTargetPromise = browser.waitForTarget(
+    (target) => target.url() === "https://qsdm.tech/account/",
+    { timeout: 15000 }
+  );
+  await popup.click("#open-account");
+  const accountTarget = await accountTargetPromise;
+  const accountPage = await accountTarget.page();
+  await accountPage?.close();
+  if (screenshotDirectory) {
+    await popup.setViewport({ width: 390, height: 720 });
+    await popup.screenshot({
+      path: path.join(screenshotDirectory, "qsdm-wallet-popup.png"),
+      fullPage: true,
+    });
+  }
 
   const popupMethods = requests
     .slice(popupStart)

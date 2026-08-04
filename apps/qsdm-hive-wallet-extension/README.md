@@ -21,24 +21,30 @@ Sites**. Signatures and CELL transfers always require a fresh Hive approval.
 There is no separate extension account, password, recovery phrase, or wallet
 import. This avoids creating another copy of the user's wallet secrets.
 
-The onboarding page offers **Telegram** and **Email** through the HTTPS QSDM
-Account dashboard. Email uses a short-lived one-time link instead of a reusable
-password. Telegram uses Authorization Code + PKCE and server-side ID-token
-verification. The extension itself collects neither identifier and never
-embeds Telegram, SMTP, or account-service credentials. Google and Apple login
-are not included.
+The onboarding page offers the sign-in methods currently enabled by the HTTPS
+QSDM Account dashboard. Production currently uses **Telegram** with
+Authorization Code + PKCE and server-side ID-token verification. Email will use
+a short-lived one-time link instead of a reusable password once a production
+outbound sender is configured. The extension itself collects neither
+identifier and never embeds Telegram, SMTP, or account-service credentials.
+Google and Apple login are not included.
 
 QSDM Account synchronizes verified identity and linked public wallet addresses.
+The extension opens the production providers exposed by QSDM Account. Telegram
+is the currently enabled sign-in method; email sign-in remains hidden until a
+production outbound email sender is configured.
 It does not synchronize site approvals, private keys, keystores, passphrases,
 or recovery phrases. Those remain local to Hive.
 
 ## Wallet dashboard
 
-Extension 0.5.0 adds the everyday wallet functions without moving custody into
+Extension 0.5.1 provides the everyday wallet functions without moving custody into
 the browser:
 
 - the popup shows the active Hive wallet and its live CELL balance;
 - **Open Wallet Dashboard** opens `home.html#/wallet`;
+- **Open QSDM Account** opens the trusted production account dashboard from
+  both the popup and full wallet dashboard;
 - the dashboard copies the receiving address, refreshes the balance, and
   requests wallet-to-wallet CELL transfers; and
 - the signed-in QSDM Account dashboard can show the same active wallet and
