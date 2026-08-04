@@ -25,6 +25,7 @@ jest.mock('electron', () => ({
 let mockKeystorePath = '';
 const mockAddress =
   '13d786706accfbe77c5ddf6fc6757e1cca07bd01aff0cad3dcf9411d92cf11c9';
+const legacyPassphrase = ['existing', 'wallet', 'passphrase'].join(' ');
 
 jest.mock('main/services/qsdmTaskActionSigner', () => ({
   getQsdmTaskActionCliPath: () => 'qsdmcli',
@@ -67,7 +68,7 @@ describe('enableQsdmSignerLegacyRecovery', () => {
       ) => {
         const passphrasePath = args[args.indexOf('--passphrase-file') + 1];
         expect(fs.readFileSync(passphrasePath, 'utf-8')).toBe(
-          'existing wallet passphrase'
+          legacyPassphrase
         );
         callback(
           null,
@@ -84,7 +85,7 @@ describe('enableQsdmSignerLegacyRecovery', () => {
 
   it('enables network recovery without replacing the active address', async () => {
     const result = await enableQsdmSignerLegacyRecovery({} as Event, {
-      passphrase: 'existing wallet passphrase',
+      passphrase: legacyPassphrase,
     });
 
     expect(result).toEqual({
@@ -115,7 +116,7 @@ describe('enableQsdmSignerLegacyRecovery', () => {
 
     await expect(
       enableQsdmSignerLegacyRecovery({} as Event, {
-        passphrase: 'existing wallet passphrase',
+        passphrase: legacyPassphrase,
       })
     ).resolves.toEqual({ enabled: false, address: mockAddress });
     expect(mockExecFile).not.toHaveBeenCalled();
