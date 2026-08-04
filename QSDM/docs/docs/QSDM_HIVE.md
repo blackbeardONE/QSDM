@@ -96,7 +96,7 @@ Hive comes to the foreground and shows the exact site and operation before each
 approval. HTTP is accepted only for local development on `localhost` or
 `127.0.0.1`.
 
-Hive 1.4.7 automatically registers separate secure native bridges for the
+Hive 1.4.9 automatically registers separate secure native bridges for the
 current user on Chrome, Edge, Chromium, Brave, and Firefox without administrator
 access. The official Chromium and Firefox packages each have a stable pinned
 identity. The bridge listens only on loopback, authenticates each browser-host
@@ -123,6 +123,14 @@ uses Authorization Code + PKCE with server-side ID-token verification. QSDM
 Account stores verified identity and linked public wallet addresses only. It
 does not receive or replace the Hive-held wallet key, and website permissions
 remain local to Hive. See the [QSDM Account guide](QSDM_ACCOUNT.md).
+
+Extension 0.5.0 adds a CELL wallet dashboard. The extension popup displays the
+active wallet's live balance, while the full extension page and signed-in QSDM
+Account dashboard can copy the address and request a wallet-to-wallet CELL
+transfer. Hive still owns the key and presents every exact recipient and amount
+for approval. The extension's trusted internal page can read the active balance
+and request that transfer, but it cannot request arbitrary message signatures.
+These surfaces support CELL only.
 
 ## Tasks in Hive
 

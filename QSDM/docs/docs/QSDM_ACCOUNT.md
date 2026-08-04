@@ -14,6 +14,9 @@ public CELL wallet addresses without turning the website into a wallet vault.
    a five-minute, account-bound ownership challenge.
 4. Hive displays the signing approval. After approval, the account dashboard
    stores the public wallet address and can show its public CELL balance.
+5. With Hive and the QSDM Wallet extension running, **Active Hive wallet** can
+   read the live balance and request a CELL transfer. Hive separately displays
+   and approves the exact recipient and amount before signing.
 
 After the first sign-in, the **Sign-in methods** section can attach the other
 provider to the same account. For example, a profile first opened through an
@@ -67,6 +70,9 @@ The account service accepts a wallet link only when the submitted public key
 derives the claimed QSDM address and its ML-DSA signature verifies over the
 exact one-time challenge. One public wallet cannot be attached to two accounts.
 Likewise, one email or Telegram identity cannot be attached to two accounts.
+The active-wallet transfer panel does not change this boundary: it calls the
+local browser provider, and no signing authority is stored in the account
+service or browser session.
 
 Sessions use `Secure`, `HttpOnly`, `SameSite=Lax` cookies. State-changing API
 calls also require the account's CSRF token. The service binds to loopback
@@ -217,9 +223,10 @@ They are not wallet backups and cannot recover or spend CELL.
 
 ## Current scope
 
-The first release supports sign-in, attaching email and Telegram as alternate
+The current release supports sign-in, attaching email and Telegram as alternate
 methods for one account, sign-out, browser-session review and revocation,
 self-service account deletion, public wallet linking and unlinking, public
-balance display, and local Hive wallet management. Automatic merging of old
-duplicate profiles, Google and Apple sign-in, cloud wallet custody, and
-automatic synchronization of website approvals are deliberately excluded.
+balance display, and a local-Hive balance and CELL-transfer panel. Automatic
+merging of old duplicate profiles, Google and Apple sign-in, cloud wallet
+custody, multiple currencies, and automatic synchronization of website
+approvals are deliberately excluded.

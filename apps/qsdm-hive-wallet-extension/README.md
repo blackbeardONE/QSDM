@@ -32,6 +32,25 @@ QSDM Account synchronizes verified identity and linked public wallet addresses.
 It does not synchronize site approvals, private keys, keystores, passphrases,
 or recovery phrases. Those remain local to Hive.
 
+## Wallet dashboard
+
+Extension 0.5.0 adds the everyday wallet functions without moving custody into
+the browser:
+
+- the popup shows the active Hive wallet and its live CELL balance;
+- **Open Wallet Dashboard** opens `home.html#/wallet`;
+- the dashboard copies the receiving address, refreshes the balance, and
+  requests wallet-to-wallet CELL transfers; and
+- the signed-in QSDM Account dashboard can show the same active wallet and
+  request the same Hive-approved transfer.
+
+Every transfer displays the exact recipient and amount in QSDM Hive before it
+is signed. Closing Hive makes balance and transfer actions unavailable. The
+extension cannot export a key, recovery phrase, keystore, or passphrase, and
+its internal dashboard is not allowed to request arbitrary message signatures.
+QSDM currently supports CELL on these wallet surfaces; other currencies or
+tokens are not implied by the interface.
+
 ## Installation
 
 Packaged Hive releases register the native browser bridge automatically for
@@ -99,6 +118,14 @@ const [address] = await window.qsdm.request({
 const signature = await window.qsdm.request({
   method: "qsdm_signMessage",
   params: { message: "QSDM ownership challenge" },
+});
+
+const transfer = await window.qsdm.request({
+  method: "qsdm_sendTransaction",
+  params: {
+    recipient: "QSDM_RECIPIENT_ADDRESS",
+    amount: 1.25,
+  },
 });
 ```
 

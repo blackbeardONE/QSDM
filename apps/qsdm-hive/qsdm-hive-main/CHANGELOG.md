@@ -1,3 +1,11 @@
+## [1.4.9]
+
+- Wallet dashboard: The QSDM Wallet extension can show the active Hive wallet, copy its address, refresh its live CELL balance, and request wallet-to-wallet transfers.
+- Account dashboard: A signed-in QSDM Account can display the active local Hive wallet and request the same visibly approved CELL transfer without receiving wallet secrets.
+- Transfer safety: Internal extension transfers require the exact recipient and amount to be approved in Hive; the extension remains unable to request arbitrary message signatures.
+- Stable refresh: Balance updates retain the last verified address and balance instead of briefly blanking the wallet after a transfer.
+- Browser QA: Acceptance coverage now exercises extension and account dashboards on desktop and mobile without broadcasting real CELL.
+
 ## [1.4.8]
 
 - Browser wallet distribution: Hive now authorizes the Chrome Web Store and separately signed interim CRX identities alongside the pinned development and Firefox identities.

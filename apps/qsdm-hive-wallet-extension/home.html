@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+      content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'"
     />
     <title>Welcome to QSDM Wallet</title>
     <link rel="stylesheet" href="home.css" />
@@ -25,7 +25,7 @@
     </header>
 
     <main>
-      <section class="welcome" aria-labelledby="welcome-title">
+      <section id="onboarding-view" class="welcome" aria-labelledby="welcome-title">
         <img
           class="welcome-mark"
           src="qsdm-hive-icon.png"
@@ -71,6 +71,50 @@
           Account login stores identity and linked public wallet addresses only.
           Wallet keys and passphrases stay in QSDM Hive.
         </p>
+      </section>
+
+      <section id="wallet-dashboard" class="wallet-dashboard" aria-labelledby="wallet-title" hidden>
+        <div class="dashboard-heading">
+          <div>
+            <p class="eyebrow">ACTIVE HIVE WALLET</p>
+            <h1 id="wallet-title">Send and receive CELL</h1>
+            <p class="intro">Hive keeps the key. This page reads the live balance and sends only after you approve the exact transfer in Hive.</p>
+          </div>
+          <button id="refresh-balance" class="icon-button" type="button" title="Refresh balance" aria-label="Refresh balance">&#8635;</button>
+        </div>
+
+        <div class="wallet-summary">
+          <div class="summary-item address-item">
+            <span>Wallet address</span>
+            <strong id="dashboard-address">Checking...</strong>
+            <button id="copy-address" class="text-button compact" type="button" disabled>Copy address</button>
+          </div>
+          <div class="summary-item">
+            <span>Available balance</span>
+            <strong id="dashboard-balance">Unavailable</strong>
+            <small id="balance-state">Waiting for Hive</small>
+          </div>
+        </div>
+
+        <form id="send-form" class="send-form">
+          <fieldset id="send-fields" disabled>
+            <legend>Send CELL</legend>
+            <label for="send-recipient">Recipient wallet address</label>
+            <input id="send-recipient" name="recipient" type="text" autocomplete="off" spellcheck="false" placeholder="QSDM wallet address" required />
+            <label for="send-amount">Amount</label>
+            <div class="amount-field">
+              <input id="send-amount" name="amount" type="number" min="0.00000001" step="0.00000001" inputmode="decimal" placeholder="0.00" required />
+              <span>CELL</span>
+            </div>
+            <button id="send-cell" class="choice primary" type="submit">Review in Hive</button>
+          </fieldset>
+        </form>
+
+        <p id="transfer-status" class="notice" role="status"></p>
+        <div class="dashboard-actions">
+          <button id="open-account" class="text-button" type="button">Open QSDM Account</button>
+          <button id="dashboard-open-hive" class="text-button" type="button">Open Hive wallet management</button>
+        </div>
       </section>
     </main>
 

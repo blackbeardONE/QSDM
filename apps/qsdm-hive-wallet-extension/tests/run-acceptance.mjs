@@ -156,18 +156,16 @@ const readBody = (request) =>
 
 const responseFor = (payload) => {
   assert.equal(payload.version, PROVIDER_VERSION);
-  const popupMethods = new Set([
-    "qsdm_ping",
-    "qsdm_getWalletInfo",
-    "qsdm_openWallet",
-  ]);
-  assert.equal(
-    payload.origin,
-    popupMethods.has(payload.method)
-      ? "qsdm-extension://wallet-popup"
-      : expectedOrigin
+  const internal = payload.origin === "qsdm-extension://wallet-popup";
+  assert.ok(
+    internal || payload.origin === expectedOrigin,
+    `Unexpected wallet request origin: ${payload.origin}`
   );
-  requests.push({ method: payload.method, params: payload.params });
+  requests.push({
+    method: payload.method,
+    params: payload.params,
+    origin: payload.origin,
+  });
 
   switch (payload.method) {
     case "qsdm_ping":
@@ -182,7 +180,7 @@ const responseFor = (payload) => {
     case "qsdm_accounts":
       return connected ? [TEST_ADDRESS] : [];
     case "qsdm_getBalance":
-      assert.equal(connected, true);
+      if (!internal) assert.equal(connected, true);
       return {
         address: TEST_ADDRESS,
         balance: 42.5,
@@ -202,11 +200,9 @@ const responseFor = (payload) => {
         signature: "mock-ml-dsa-signature",
       };
     case "qsdm_sendTransaction":
-      assert.equal(connected, true);
-      assert.deepEqual(payload.params, {
-        recipient: TEST_ADDRESS,
-        amount: 0.125,
-      });
+      if (!internal) assert.equal(connected, true);
+      assert.equal(payload.params?.recipient, TEST_ADDRESS);
+      assert.ok([0.125, 0.25, 0.5].includes(payload.params?.amount));
       return { transactionId: "mock-qsdm-transaction" };
     case "qsdm_disconnect":
       connected = false;
@@ -905,8 +901,24 @@ const runAccountDashboardChecks = async (browser, testUrl) => {
       document.querySelector("#dashboard-status")?.textContent ===
         "Wallet linked successfully." &&
       document.querySelector("#wallet-count")?.textContent === "1" &&
-      document.querySelector("#total-balance")?.textContent === "42.5 CELL",
+      document.querySelector("#total-balance")?.textContent === "42.5 CELL" &&
+      document.querySelector("#active-wallet-balance")?.textContent ===
+        "42.5 CELL",
     { timeout: 15000 }
+  );
+  await page.type("#active-wallet-recipient", TEST_ADDRESS);
+  await page.type("#active-wallet-amount", "0.25");
+  await page.click("#active-wallet-send");
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("#active-wallet-status")
+        ?.textContent?.includes("mock-qsdm-transaction"),
+    { timeout: 15000 }
+  );
+  const transferStatus = await page.$eval(
+    "#active-wallet-status",
+    (element) => element.textContent
   );
   if (screenshotDirectory) {
     fs.mkdirSync(screenshotDirectory, { recursive: true });
@@ -985,7 +997,7 @@ const runAccountDashboardChecks = async (browser, testUrl) => {
       telegram: document.querySelector("#telegram-identity-value")?.textContent,
       sessions: document.querySelector("#session-summary")?.textContent,
     }))
-    .then((result) => ({ ...result, walletStatus }));
+    .then((result) => ({ ...result, walletStatus, transferStatus }));
 };
 
 const runOnboardingChecks = async (browser, testUrl, extensionId) => {
@@ -1100,6 +1112,68 @@ const runOnboardingChecks = async (browser, testUrl, extensionId) => {
       (element) => element.textContent
     ),
   };
+};
+
+const runExtensionWalletDashboardChecks = async (browser, extensionId) => {
+  const page = await browser.newPage();
+  const consoleProblems = [];
+  page.on("pageerror", (error) =>
+    consoleProblems.push(`pageerror: ${error.message}`)
+  );
+  page.on("console", (message) => {
+    if (["error", "warning"].includes(message.type())) {
+      consoleProblems.push(`${message.type()}: ${message.text()}`);
+    }
+  });
+  await page.goto(`chrome-extension://${extensionId}/home.html#/wallet`, {
+    waitUntil: "domcontentloaded",
+  });
+  await page.waitForFunction(
+    () =>
+      document.querySelector("#dashboard-balance")?.textContent ===
+        "42.5 CELL" &&
+      document.querySelector("#send-fields")?.disabled === false,
+    { timeout: 15000 }
+  );
+  assert.equal(
+    await page.$eval("#onboarding-view", (element) => element.hidden),
+    true
+  );
+  assert.equal(
+    await page.$eval("#wallet-dashboard", (element) => element.hidden),
+    false
+  );
+  await page.type("#send-recipient", TEST_ADDRESS);
+  await page.type("#send-amount", "0.5");
+  await page.click("#send-cell");
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("#transfer-status")
+        ?.textContent?.includes("mock-qsdm-transaction") &&
+      document.querySelector("#balance-state")?.textContent ===
+        "Live CELL balance" &&
+      document.querySelector("#send-fields")?.disabled === false,
+    { timeout: 15000 }
+  );
+  if (screenshotDirectory) {
+    await page.setViewport({ width: 1280, height: 800 });
+    await page.screenshot({
+      path: path.join(screenshotDirectory, "qsdm-wallet-dashboard-desktop.png"),
+      fullPage: true,
+    });
+    await page.setViewport({ width: 390, height: 844 });
+    await page.screenshot({
+      path: path.join(screenshotDirectory, "qsdm-wallet-dashboard-mobile.png"),
+      fullPage: true,
+    });
+  }
+  assert.deepEqual(consoleProblems, []);
+  return page.evaluate(() => ({
+    address: document.querySelector("#dashboard-address")?.textContent,
+    balance: document.querySelector("#dashboard-balance")?.textContent,
+    status: document.querySelector("#transfer-status")?.textContent,
+  }));
 };
 
 const runMissingExtensionHandoffCheck = async (browser, testUrl) => {
@@ -1247,11 +1321,16 @@ try {
     "Wallet unlinked. Your local wallet was not changed."
   );
   assert.equal(accountResult.sessions, "1 active browser session");
+  assert.match(accountResult.transferStatus, /mock-qsdm-transaction/);
   assert.match(accountResult.deletionStatus, /Account data was deleted/);
-  assert.deepEqual(
-    requests.slice(accountStart).map((request) => request.method),
-    ["qsdm_requestAccounts", "qsdm_signMessage"]
-  );
+  const accountMethods = requests
+    .slice(accountStart)
+    .map((request) => request.method);
+  assert.ok(accountMethods.includes("qsdm_accounts"));
+  assert.ok(accountMethods.includes("qsdm_requestAccounts"));
+  assert.ok(accountMethods.includes("qsdm_signMessage"));
+  assert.ok(accountMethods.includes("qsdm_getBalance"));
+  assert.ok(accountMethods.includes("qsdm_sendTransaction"));
 
   stage("testing installed-extension onboarding handoff");
   const onboardingStart = requests.length;
@@ -1271,7 +1350,35 @@ try {
   );
   assert.deepEqual(
     requests.slice(onboardingStart).map((request) => request.method),
-    ["qsdm_ping", "qsdm_getWalletInfo", "qsdm_requestAccounts"]
+    [
+      "qsdm_ping",
+      "qsdm_getWalletInfo",
+      "qsdm_getBalance",
+      "qsdm_requestAccounts",
+    ]
+  );
+
+  stage("testing extension wallet dashboard");
+  const dashboardStart = requests.length;
+  const walletDashboard = await withTimeout(
+    runExtensionWalletDashboardChecks(browser, extensionId),
+    30000,
+    "Extension wallet dashboard checks"
+  );
+  assert.equal(walletDashboard.address, TEST_ADDRESS);
+  assert.equal(walletDashboard.balance, "42.5 CELL");
+  assert.match(walletDashboard.status, /mock-qsdm-transaction/);
+  assert.deepEqual(
+    requests.slice(dashboardStart).map((request) => request.method),
+    [
+      "qsdm_ping",
+      "qsdm_getWalletInfo",
+      "qsdm_getBalance",
+      "qsdm_sendTransaction",
+      "qsdm_ping",
+      "qsdm_getWalletInfo",
+      "qsdm_getBalance",
+    ]
   );
 
   stage("testing extension popup");
@@ -1315,11 +1422,19 @@ try {
     await popup.$eval("#site-name", (element) => element.textContent),
     "Unavailable on this page"
   );
+  assert.equal(
+    await popup.$eval("#wallet-balance", (element) => element.textContent),
+    "42.5 CELL"
+  );
 
   const popupMethods = requests
     .slice(popupStart)
     .map((request) => request.method);
-  assert.deepEqual(popupMethods, ["qsdm_ping", "qsdm_getWalletInfo"]);
+  assert.deepEqual(popupMethods, [
+    "qsdm_ping",
+    "qsdm_getWalletInfo",
+    "qsdm_getBalance",
+  ]);
   const methods = requests.map((request) => request.method);
 
   console.log(

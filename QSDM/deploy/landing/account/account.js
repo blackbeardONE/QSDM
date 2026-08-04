@@ -19,6 +19,17 @@
     walletEmpty: document.getElementById("wallet-empty"),
     linkWallet: document.getElementById("link-wallet"),
     refreshWallets: document.getElementById("refresh-wallets"),
+    connectActiveWallet: document.getElementById("connect-active-wallet"),
+    refreshActiveWallet: document.getElementById("refresh-active-wallet"),
+    activeWalletAddress: document.getElementById("active-wallet-address"),
+    activeWalletBalance: document.getElementById("active-wallet-balance"),
+    activeWalletApproval: document.getElementById("active-wallet-approval"),
+    activeWalletSendForm: document.getElementById("active-wallet-send-form"),
+    activeWalletSendFields: document.getElementById("active-wallet-send-fields"),
+    activeWalletRecipient: document.getElementById("active-wallet-recipient"),
+    activeWalletAmount: document.getElementById("active-wallet-amount"),
+    activeWalletSend: document.getElementById("active-wallet-send"),
+    activeWalletStatus: document.getElementById("active-wallet-status"),
     dashboardStatus: document.getElementById("dashboard-status"),
     emailIdentityValue: document.getElementById("email-identity-value"),
     telegramIdentityValue: document.getElementById("telegram-identity-value"),
@@ -48,6 +59,8 @@
   let csrfToken = "";
   let emailIdentityFormOpen = false;
   let bootNotice = null;
+  let activeWalletAddress = "";
+  let activeWalletBalance = null;
 
   const setView = (name) => {
     elements.loading.hidden = name !== "loading";
@@ -116,6 +129,71 @@
       return Number.isFinite(value) ? value : null;
     } catch {
       return null;
+    }
+  };
+
+  const formatCell = (value) =>
+    Number.isFinite(Number(value))
+      ? `${Number(value).toLocaleString(undefined, {
+          maximumFractionDigits: 8,
+        })} CELL`
+      : "Unavailable";
+
+  const transferReference = (value) =>
+    value?.transaction_id ||
+    value?.transactionId ||
+    value?.tx_id ||
+    value?.id ||
+    "accepted by QSDM Core";
+
+  const refreshActiveWallet = async () => {
+    activeWalletAddress = "";
+    activeWalletBalance = null;
+    elements.activeWalletAddress.textContent = "Not connected";
+    elements.activeWalletAddress.title = "";
+    elements.activeWalletBalance.textContent = "Unavailable";
+    elements.activeWalletApproval.textContent = "Hive approval required";
+    elements.activeWalletSendFields.disabled = true;
+    elements.connectActiveWallet.disabled = false;
+    elements.refreshActiveWallet.disabled = false;
+
+    if (!window.qsdm?.request) {
+      elements.activeWalletApproval.textContent = "Wallet extension not detected";
+      setStatus(
+        elements.activeWalletStatus,
+        "Install the QSDM Wallet extension and start Hive to use the active wallet.",
+        "error"
+      );
+      return false;
+    }
+
+    try {
+      const accounts = await window.qsdm.request({ method: "qsdm_accounts" });
+      const address = Array.isArray(accounts) ? accounts[0] : "";
+      if (!/^[a-zA-Z0-9]{32,128}$/.test(address || "")) {
+        elements.activeWalletApproval.textContent = "Connection needed";
+        setStatus(
+          elements.activeWalletStatus,
+          "Connect this dashboard to the active Hive wallet."
+        );
+        return false;
+      }
+
+      const balance = await window.qsdm.request({ method: "qsdm_getBalance" });
+      activeWalletAddress = address;
+      activeWalletBalance = Number(balance?.balance);
+      if (!Number.isFinite(activeWalletBalance)) activeWalletBalance = null;
+      elements.activeWalletAddress.textContent = shorten(address);
+      elements.activeWalletAddress.title = address;
+      elements.activeWalletBalance.textContent = formatCell(activeWalletBalance);
+      elements.activeWalletApproval.textContent = "Ready in Hive";
+      elements.activeWalletSendFields.disabled = activeWalletBalance === null;
+      setStatus(elements.activeWalletStatus, "Active wallet connected.", "success");
+      return true;
+    } catch (error) {
+      elements.activeWalletApproval.textContent = "Temporarily unavailable";
+      setStatus(elements.activeWalletStatus, error.message, "error");
+      return false;
     }
   };
 
@@ -248,7 +326,11 @@
       Boolean(account.telegram) || !config.login.telegram;
     elements.emailIdentityForm.hidden =
       Boolean(account.email) || !config.login.email || !emailIdentityFormOpen;
-    await Promise.all([renderWallets(), renderSessions()]);
+    await Promise.all([
+      renderWallets(),
+      renderSessions(),
+      refreshActiveWallet(),
+    ]);
   };
 
   const loadSession = async () => {
@@ -526,6 +608,103 @@
     elements.refreshWallets.disabled = true;
     await loadSession();
     elements.refreshWallets.disabled = false;
+  });
+
+  elements.connectActiveWallet.addEventListener("click", async () => {
+    elements.connectActiveWallet.disabled = true;
+    setStatus(
+      elements.activeWalletStatus,
+      "Approve this dashboard in QSDM Hive."
+    );
+    try {
+      if (!window.qsdm?.request) {
+        throw new Error("The QSDM Wallet extension is not available.");
+      }
+      await window.qsdm.request({ method: "qsdm_requestAccounts" });
+      await refreshActiveWallet();
+    } catch (error) {
+      setStatus(elements.activeWalletStatus, error.message, "error");
+      elements.connectActiveWallet.disabled = false;
+    }
+  });
+
+  elements.refreshActiveWallet.addEventListener("click", async () => {
+    elements.refreshActiveWallet.disabled = true;
+    await refreshActiveWallet();
+  });
+
+  elements.activeWalletSendForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const recipient = elements.activeWalletRecipient.value.trim();
+    const amountText = elements.activeWalletAmount.value.trim();
+    if (!activeWalletAddress) {
+      setStatus(
+        elements.activeWalletStatus,
+        "Connect the active Hive wallet before sending CELL.",
+        "error"
+      );
+      return;
+    }
+    if (!/^[a-zA-Z0-9]{32,128}$/.test(recipient)) {
+      setStatus(
+        elements.activeWalletStatus,
+        "Enter a valid QSDM recipient wallet address.",
+        "error"
+      );
+      elements.activeWalletRecipient.focus();
+      return;
+    }
+    if (!/^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/.test(amountText)) {
+      setStatus(
+        elements.activeWalletStatus,
+        "Enter an amount greater than zero with no more than 8 decimals.",
+        "error"
+      );
+      elements.activeWalletAmount.focus();
+      return;
+    }
+    const amount = Number(amountText);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setStatus(
+        elements.activeWalletStatus,
+        "Enter an amount greater than zero.",
+        "error"
+      );
+      return;
+    }
+    if (activeWalletBalance !== null && amount > activeWalletBalance) {
+      setStatus(
+        elements.activeWalletStatus,
+        "The amount is greater than the available balance.",
+        "error"
+      );
+      return;
+    }
+
+    elements.activeWalletSendFields.disabled = true;
+    elements.activeWalletSend.textContent = "Waiting for Hive approval...";
+    setStatus(
+      elements.activeWalletStatus,
+      `Review ${amountText} CELL to ${shorten(recipient)} in QSDM Hive.`
+    );
+    try {
+      const result = await window.qsdm.request({
+        method: "qsdm_sendTransaction",
+        params: { recipient, amount },
+      });
+      elements.activeWalletSendForm.reset();
+      await Promise.all([refreshActiveWallet(), renderWallets()]);
+      setStatus(
+        elements.activeWalletStatus,
+        `Transfer ${transferReference(result)}.`,
+        "success"
+      );
+    } catch (error) {
+      setStatus(elements.activeWalletStatus, error.message, "error");
+      elements.activeWalletSendFields.disabled = false;
+    } finally {
+      elements.activeWalletSend.textContent = "Review in Hive";
+    }
   });
 
   const boot = async () => {

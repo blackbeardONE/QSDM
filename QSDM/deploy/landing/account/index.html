@@ -90,6 +90,46 @@
         <div><span>Signing authority</span><strong>Local only</strong></div>
       </section>
 
+      <section class="dashboard-section active-wallet-section" aria-labelledby="active-wallet-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="active-wallet-title">Active Hive wallet</h2>
+            <p>Check the live CELL balance and request a wallet-to-wallet transfer. Hive shows the exact recipient and amount before signing.</p>
+          </div>
+          <div class="section-actions compact-actions">
+            <button id="connect-active-wallet" class="button primary" type="button">Connect wallet</button>
+            <button id="refresh-active-wallet" class="button quiet" type="button">Refresh</button>
+          </div>
+        </div>
+        <div class="active-wallet-grid">
+          <div>
+            <span>Active address</span>
+            <strong id="active-wallet-address">Not connected</strong>
+          </div>
+          <div>
+            <span>Available balance</span>
+            <strong id="active-wallet-balance">Unavailable</strong>
+          </div>
+          <div>
+            <span>Signing</span>
+            <strong id="active-wallet-approval">Hive approval required</strong>
+          </div>
+        </div>
+        <form id="active-wallet-send-form" class="active-wallet-send-form">
+          <fieldset id="active-wallet-send-fields" disabled>
+            <label for="active-wallet-recipient">Recipient wallet address</label>
+            <input id="active-wallet-recipient" name="recipient" type="text" autocomplete="off" spellcheck="false" placeholder="QSDM wallet address" required />
+            <label for="active-wallet-amount">Amount</label>
+            <div class="cell-amount-field">
+              <input id="active-wallet-amount" name="amount" type="number" min="0.00000001" step="0.00000001" inputmode="decimal" placeholder="0.00" required />
+              <span>CELL</span>
+            </div>
+            <button id="active-wallet-send" class="button primary" type="submit">Review in Hive</button>
+          </fieldset>
+        </form>
+        <p id="active-wallet-status" class="status" role="status"></p>
+      </section>
+
       <section class="dashboard-section" aria-labelledby="sign-in-methods-title">
         <div class="section-heading">
           <div>

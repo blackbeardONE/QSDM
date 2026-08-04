@@ -1,15 +1,18 @@
 const statusElement = document.getElementById("hive-status");
 const addressElement = document.getElementById("wallet-address");
+const balanceElement = document.getElementById("wallet-balance");
 const siteNameElement = document.getElementById("site-name");
 const siteStateElement = document.getElementById("site-state");
 const noticeElement = document.getElementById("notice");
 const connectButton = document.getElementById("connect-site");
+const dashboardButton = document.getElementById("open-dashboard");
 const openWalletButton = document.getElementById("open-wallet");
 
 const NATIVE_HOST = "tech.qsdm.hive_wallet";
 const PROVIDER_VERSION = "qsdm-hive-wallet-provider/v1";
 const INTERNAL_ORIGIN = "qsdm-extension://wallet-popup";
 const HIVE_WALLET_URL = "qsdm-hive://open?route=%2Fsettings%2Fwallet";
+const WALLET_DASHBOARD_URL = chrome.runtime.getURL("home.html#/wallet");
 
 let activeOrigin = "";
 let activeSiteName = "";
@@ -83,6 +86,13 @@ const formatAddress = (address) =>
     ? `${address.slice(0, 10)}...${address.slice(-8)}`
     : address || "Wallet setup needed";
 
+const formatBalance = (value) =>
+  Number.isFinite(Number(value))
+    ? `${Number(value).toLocaleString(undefined, {
+        maximumFractionDigits: 8,
+      })} CELL`
+    : "Unavailable";
+
 const setSiteConnected = (connected) => {
   siteConnected = connected;
   siteStateElement.textContent = connected ? "Connected" : "Not connected";
@@ -112,6 +122,8 @@ const pingWithRetry = async (attempts = 4) => {
 
 const refresh = async () => {
   connectButton.disabled = true;
+  dashboardButton.disabled = true;
+  balanceElement.textContent = "Unavailable";
   setSiteConnected(false);
   try {
     await getActiveSite();
@@ -140,7 +152,9 @@ const refresh = async () => {
 
   const walletAddress = info.result?.address || "";
   const walletReady = Boolean(info.result?.ready && walletAddress);
-  statusElement.textContent = walletReady ? "Wallet ready" : "Wallet locked";
+  statusElement.textContent = walletReady
+    ? "Checking balance..."
+    : "Wallet locked";
   addressElement.textContent = formatAddress(walletAddress);
   addressElement.title = walletAddress;
   if (!walletReady) {
@@ -148,8 +162,19 @@ const refresh = async () => {
     return;
   }
 
+  dashboardButton.disabled = false;
+  const balance = await requestInternal("qsdm_getBalance", undefined, 8000);
+  balanceElement.textContent = balance?.ok
+    ? formatBalance(balance.result?.balance)
+    : "Unavailable";
+  statusElement.textContent = "Wallet ready";
+
   if (!activeOrigin) {
-    setNotice("Open an HTTPS website to connect it to this wallet.");
+    setNotice(
+      balance?.ok
+        ? "Your balance is current. Open the wallet dashboard to send CELL."
+        : balance?.error || "Open an HTTPS website to connect it to this wallet."
+    );
     return;
   }
 
@@ -195,6 +220,10 @@ connectButton.addEventListener("click", async () => {
     return;
   }
   await refresh();
+});
+
+dashboardButton.addEventListener("click", async () => {
+  await chrome.tabs.create({ url: WALLET_DASHBOARD_URL });
 });
 
 openWalletButton.addEventListener("click", async () => {

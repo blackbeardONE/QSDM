@@ -255,6 +255,57 @@ const getStringParam = (params: unknown, key: string, required = true) => {
   return value.trim();
 };
 
+const getWalletBalance = async (address: string) => {
+  const account = await getQsdmCellAccount({} as Event, { address });
+  return {
+    address,
+    balance: account.balance ?? null,
+    token: account.tokenSymbol,
+    reachable: account.reachable,
+  };
+};
+
+const sendCell = async ({
+  request,
+  origin,
+  address,
+  options,
+}: {
+  request: WalletProviderRequest;
+  origin: string;
+  address: string;
+  options: WalletProviderBrokerOptions;
+}) => {
+  const recipient = getStringParam(request.params, 'recipient');
+  if (!SAFE_ADDRESS.test(recipient)) {
+    throw new Error('recipient is not a valid QSDM wallet address');
+  }
+  const rawAmount =
+    request.params && typeof request.params === 'object'
+      ? (request.params as Record<string, unknown>).amount
+      : undefined;
+  const amount = Number(rawAmount);
+  if (
+    !Number.isFinite(amount) ||
+    amount <= 0 ||
+    !Number.isSafeInteger(amount * CELL_DECIMAL_FACTOR)
+  ) {
+    throw new Error(
+      'amount must be greater than zero with no more than 8 decimal places'
+    );
+  }
+  options.showHive();
+  await enqueueApproval(() =>
+    confirmRequest({
+      title: 'Send CELL',
+      message: `${origin} wants to send ${amount} CELL.`,
+      detail: `From: ${address}\nTo: ${recipient}\nAmount: ${amount} CELL`,
+      approveLabel: 'Send CELL',
+    })
+  );
+  return submitQsdmWalletTransferIntent({ recipient, amount });
+};
+
 export const handleWalletProviderRequest = async (
   request: WalletProviderRequest,
   options: WalletProviderBrokerOptions
@@ -294,6 +345,17 @@ export const handleWalletProviderRequest = async (
   }
 
   if (origin === INTERNAL_EXTENSION_ORIGIN) {
+    if (method === 'qsdm_getBalance') {
+      return getWalletBalance(signer.sender);
+    }
+    if (method === 'qsdm_sendTransaction') {
+      return sendCell({
+        request,
+        origin: 'QSDM Wallet extension',
+        address: signer.sender,
+        options,
+      });
+    }
     throw new Error('The extension popup cannot request wallet signatures');
   }
 
@@ -324,13 +386,7 @@ export const handleWalletProviderRequest = async (
   touchPermission(origin, address);
 
   if (method === 'qsdm_getBalance') {
-    const account = await getQsdmCellAccount({} as Event, { address });
-    return {
-      address,
-      balance: account.balance ?? null,
-      token: account.tokenSymbol,
-      reachable: account.reachable,
-    };
+    return getWalletBalance(address);
   }
 
   if (method === 'qsdm_disconnect') {
@@ -356,34 +412,7 @@ export const handleWalletProviderRequest = async (
   }
 
   if (method === 'qsdm_sendTransaction') {
-    const recipient = getStringParam(request.params, 'recipient');
-    if (!SAFE_ADDRESS.test(recipient)) {
-      throw new Error('recipient is not a valid QSDM wallet address');
-    }
-    const rawAmount =
-      request.params && typeof request.params === 'object'
-        ? (request.params as Record<string, unknown>).amount
-        : undefined;
-    const amount = Number(rawAmount);
-    if (
-      !Number.isFinite(amount) ||
-      amount <= 0 ||
-      !Number.isSafeInteger(amount * CELL_DECIMAL_FACTOR)
-    ) {
-      throw new Error(
-        'amount must be greater than zero with no more than 8 decimal places'
-      );
-    }
-    options.showHive();
-    await enqueueApproval(() =>
-      confirmRequest({
-        title: 'Send CELL',
-        message: `${origin} wants to send ${amount} CELL.`,
-        detail: `From: ${address}\nTo: ${recipient}\nAmount: ${amount} CELL`,
-        approveLabel: 'Send CELL',
-      })
-    );
-    return submitQsdmWalletTransferIntent({ recipient, amount });
+    return sendCell({ request, origin, address, options });
   }
 
   throw new Error(`Unsupported QSDM wallet method: ${method}`);
