@@ -1,3 +1,10 @@
+## [1.4.14]
+
+- Existing-wallet recovery: Legacy QSDM wallets can opt into a new 24-word recovery phrase without changing their ML-DSA address, CELL balance, stakes, or tasks.
+- Encrypted recovery: Hive encrypts the existing private key locally and QSDM Core stores only the signed, opaque recovery capsule needed to restore it on another machine.
+- Guided migration: Wallet settings can enable recovery after one JSON-and-passphrase confirmation, and the restore flow accepts the recovery phrase plus a new local passphrase.
+- Release consistency: Hive packaging now rejects mismatched application and runtime versions before producing Windows or Linux artifacts.
+
 ## [1.4.13]
 
 - Persistent system tasks: QSDM system tasks no longer stop when their Hive bounty is empty.

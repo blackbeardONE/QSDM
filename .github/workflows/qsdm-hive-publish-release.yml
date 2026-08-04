@@ -159,7 +159,10 @@ jobs:
             found && /^## \[/ { exit }
             found { print }
           ' apps/qsdm-hive/qsdm-hive-main/CHANGELOG.md > release-changes.md
-          test -s release-changes.md
+          if [[ ! -s release-changes.md ]]; then
+            echo "::error file=apps/qsdm-hive/qsdm-hive-main/CHANGELOG.md::Missing or empty release notes for Hive ${VERSION}. Add a '## [${VERSION}]' section before publishing."
+            exit 1
+          fi
 
           {
             echo "## QSDM Hive ${VERSION}"
