@@ -52,7 +52,11 @@ if ($goVersion -lt $requiredGo) {
     throw "Go $requiredGo or newer is required; automatic toolchain selection returned $goVersion from $go. Set QSDM_GO_EXE to a current Go SDK."
 }
 Write-Host "Using $goVersionOutput through $go"
+$packageVersion = (Get-Content -Raw (Join-Path $hive 'package.json') | ConvertFrom-Json).version
 $version = (Get-Content -Raw (Join-Path $hive 'release\app\package.json') | ConvertFrom-Json).version
+if ($packageVersion -ne $version) {
+    throw "Hive package version $packageVersion does not match runtime version $version. Update both manifests before packaging."
+}
 if ($version -notmatch '^(\d+\.\d+\.\d+)(?:-[0-9A-Za-z.-]+)?$') {
     throw 'Hive version must use SemVer MAJOR.MINOR.PATCH with an optional prerelease suffix.'
 }
