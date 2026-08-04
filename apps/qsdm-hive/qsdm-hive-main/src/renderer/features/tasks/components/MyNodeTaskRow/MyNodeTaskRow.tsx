@@ -35,6 +35,7 @@ import {
 } from 'config/qsdmSystemTasks';
 import { get, noop, uniqBy } from 'lodash';
 import { RequirementType, TaskPairing } from 'models';
+
 import {
   Button,
   ColumnsLayout,
@@ -110,6 +111,7 @@ import { RewardsCell } from './components/RewardsCell';
 import { Tags } from './components/Tags';
 import { Thumbnail } from './components/Thumbnail';
 import { Token } from './components/Token';
+import { isTaskBlockedByEmptyBounty } from './taskRuntimePolicy';
 
 type PropsType = {
   task: Task;
@@ -292,7 +294,11 @@ export function MyNodeTaskRow({
     taskVariables: newTaskVersionVariables,
   });
 
-  const isBountyEmpty = task.totalBountyAmount < task.bountyAmountPerRound;
+  const taskIsBlockedByEmptyBounty = isTaskBlockedByEmptyBounty({
+    isQsdmSystemTask,
+    totalBountyAmount: task.totalBountyAmount,
+    bountyAmountPerRound: task.bountyAmountPerRound,
+  });
   const { data: queriedClaimedRewards = 0 } = useQuery(
     [QueryKeys.AllTimeRewards, task.publicKey],
     () => getAllTimeRewards(task.publicKey),
@@ -632,7 +638,7 @@ export function MyNodeTaskRow({
 
   const containerClasses = `py-2 gap-y-0 min-h-[78.31px] md2:min-h-[88.55px] w-full cursor-pointer group/row ${
     isBonusTask
-      ? isBountyEmpty
+      ? taskIsBlockedByEmptyBounty
         ? 'bg-[linear-gradient(45deg,rgba(128,128,128,0.01)_0%,rgba(96,96,96,0.5)_20%,rgba(96,96,96,0.5)_80%,rgba(128,128,128,0.01)_100%)]'
         : 'bg-[linear-gradient(45deg,rgba(251,191,36,0.01)_0%,rgba(201,150,20,0.5)_20%,rgba(201,150,20,0.5)_80%,rgba(251,191,36,0.01)_100%)]'
       : [
@@ -651,7 +657,7 @@ export function MyNodeTaskRow({
       : taskStatus === TaskStatus.FLAGGED
       ? 'bg-finnieRed-500/[0.05]'
       : [TaskStatus.ERROR, TaskStatus.BLACKLISTED].includes(taskStatus) ||
-        isBountyEmpty
+        taskIsBlockedByEmptyBounty
       ? 'bg-finnieRed-500/[0.05]'
       : !isRunning
       ? 'bg-[#FFA54B]/[0.05]'
@@ -854,7 +860,7 @@ export function MyNodeTaskRow({
     if (
       displayIsRunning &&
       (!task.isActive ||
-        isBountyEmpty ||
+        taskIsBlockedByEmptyBounty ||
         task.isMigrated ||
         !hasAllVariablesPaired)
     ) {
@@ -874,7 +880,7 @@ export function MyNodeTaskRow({
     displayIsRunning,
     task.isActive,
     publicKey,
-    isBountyEmpty,
+    taskIsBlockedByEmptyBounty,
     queryCache,
     task.isMigrated,
     hasAllVariablesPaired,
@@ -893,14 +899,14 @@ export function MyNodeTaskRow({
     (isTaskNotRunning &&
       (hasNoStake ||
         isDelistedPublicTask ||
-        isBountyEmpty ||
+        taskIsBlockedByEmptyBounty ||
         !hasAllVariablesPaired));
   const toggleTaskTooltipContent = canonicalChainBlocked
     ? qsdmCoreStatus?.canonicalSafety?.detail ||
       'QSDM canonical chain verification failed'
     : getTooltipContent({
         isRunning,
-        isBountyEmpty,
+        isBountyEmpty: taskIsBlockedByEmptyBounty,
         isTaskDelisted,
         myStakeInCell,
         minStake,
@@ -1068,7 +1074,7 @@ ${isPlayPauseButtonDisabled && 'opacity-60'}`;
             src={taskThumbnail}
             taskId={publicKey}
             isBonusTask={isBonusTask}
-            isBountyEmpty={isBountyEmpty}
+            isBountyEmpty={taskIsBlockedByEmptyBounty}
           />
           {upgradeStatus === UpgradeStatus.NEW_VERSION_BEING_AUDITED ? (
             <>
@@ -1159,7 +1165,7 @@ ${isPlayPauseButtonDisabled && 'opacity-60'}`;
                 taskName={taskName}
                 isPrivate={isPrivate}
                 isBonusTask={isBonusTask}
-                isBountyEmpty={isBountyEmpty}
+                isBountyEmpty={taskIsBlockedByEmptyBounty}
               />
 
               <RewardsCell

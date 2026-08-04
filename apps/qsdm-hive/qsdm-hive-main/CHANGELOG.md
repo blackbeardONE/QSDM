@@ -1,3 +1,9 @@
+## [1.4.13]
+
+- Persistent system tasks: QSDM system tasks no longer stop when their Hive bounty is empty.
+- Edge Worker reliability: CPU, GPU, and RAM workers stay active while sponsor pools are unfunded and retry when funding becomes available.
+- Hosted task safety: ordinary hosted tasks still stop and remain blocked when their bounty cannot cover another round.
+
 ## [1.4.12]
 
 - Mandatory updates: Hive checks one second after startup and every 30 minutes, then retries temporary failures after one minute.
