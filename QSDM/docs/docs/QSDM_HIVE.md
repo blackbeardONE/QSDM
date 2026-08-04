@@ -18,6 +18,16 @@ does not ship a separate consumer GUI miner.
 3. Write down the 24 QSDM Recovery Words and back up the encrypted JSON.
 4. Run CELL tasks, integrations, or qualifying mining work.
 
+## Required updates
+
+Hive supports only the latest approved production version. It verifies the
+QSDM-signed release record one second after startup, checks again every 30
+minutes, and retries a temporary failure after one minute. When a newer
+approved release exists, Hive downloads and verifies it automatically, brings
+the app forward, and displays **Update and Restart**. An older or unapproved
+newer build remains blocked until its version exactly matches the approved
+release. Required updates cannot be disabled in settings.
+
 ## Linux x86-64
 
 Linux Hive connects directly to the production QSDM Network gateway for ledger,
@@ -96,7 +106,7 @@ Hive comes to the foreground and shows the exact site and operation before each
 approval. HTTP is accepted only for local development on `localhost` or
 `127.0.0.1`.
 
-Hive 1.4.11 automatically registers separate secure native bridges for the
+Hive 1.4.12 automatically registers separate secure native bridges for the
 current user on Chrome, Edge, Chromium, Brave, and Firefox without administrator
 access. The official Chromium and Firefox packages each have a stable pinned
 identity. The bridge listens only on loopback, authenticates each browser-host
@@ -133,7 +143,7 @@ and request that transfer, but it cannot request arbitrary message signatures.
 These surfaces support CELL only.
 
 Extension 0.5.1 adds a direct QSDM Account action to the compact popup, while
-Hive 1.4.11 exposes the same trusted dashboard from Wallet settings. Onboarding
+Hive 1.4.12 exposes the same trusted dashboard from Wallet settings. Onboarding
 shows only production-enabled sign-in methods; Telegram is active today, and
 email remains hidden until outbound email delivery is configured.
 

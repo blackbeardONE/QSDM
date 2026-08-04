@@ -31,6 +31,7 @@ export function GeneralSettings() {
       }, 2000);
       return () => clearTimeout(timeout);
     }
+    return undefined;
   }, [location.state]);
 
   const { vipAccessLevel } = useTheme();
@@ -45,7 +46,7 @@ export function GeneralSettings() {
           className="w-[280px]"
         />
         <SwitchWrapper
-          title="Automatic Updates"
+          title="Required Updates"
           switchComponent={AutoUpdates}
           className="w-[280px]"
         />

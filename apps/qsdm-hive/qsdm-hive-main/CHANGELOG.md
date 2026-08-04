@@ -1,3 +1,10 @@
+## [1.4.12]
+
+- Mandatory updates: Hive checks one second after startup and every 30 minutes, then retries temporary failures after one minute.
+- Visible installation: approved releases always reach the version gate and dashboard, bring Hive forward, and show a foreground **Update and Restart** prompt after installer verification.
+- Reliable listeners: each update subscriber now removes only its own callback, so onboarding, notifications, and settings cannot silence one another.
+- Exact-version policy: required security releases download automatically; the obsolete user switch that could appear to disable mandatory updates has been removed.
+
 ## [1.4.11]
 
 - Browser transfers: CELL sends from the QSDM Wallet extension and web account dashboard are serialized so simultaneous approvals cannot reuse one wallet nonce.

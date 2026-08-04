@@ -3,16 +3,11 @@ import fs from 'fs';
 import path from 'path';
 
 import log from 'electron-log';
-import {
-  autoUpdater,
-  UpdateDownloadedEvent,
-  UpdateInfo,
-} from 'electron-updater';
+import { autoUpdater } from 'electron-updater';
 
 import { RendererEndpoints } from 'config/endpoints';
 
 import { app } from './app';
-import getUserConfig from './controllers/getUserConfig';
 import { getAppDataPath } from './node/helpers/getAppDataPath';
 import {
   getCurrentHiveVersion,
@@ -24,7 +19,15 @@ import {
   verifyDownloadedQsdmHiveUpdate,
 } from './services/qsdmReleaseManifest';
 
-const CHECK_INTERVAL = 6 * 1000 * 60 * 60;
+import type {
+  UpdateCheckResult,
+  UpdateDownloadedEvent,
+  UpdateInfo,
+} from 'electron-updater';
+
+const CHECK_INTERVAL = 30 * 60 * 1000;
+const RETRY_INTERVAL = 60 * 1000;
+const INITIAL_CHECK_DELAY = 1000;
 const QSDM_HIVE_UPDATE_FEED_URL = 'https://qsdm.tech/downloads';
 const QSDM_HIVE_UNSIGNED_PREVIEW_UPDATE_FEED_URL =
   'https://qsdm.tech/downloads/unsigned-preview';
@@ -33,10 +36,15 @@ type AutoUpdaterCacheApp = {
   baseCachePath: string;
 };
 
-let interval: NodeJS.Timer | null = null;
+let interval: NodeJS.Timeout | null = null;
+let initialCheckTimeout: NodeJS.Timeout | null = null;
+let retryTimeout: NodeJS.Timeout | null = null;
 let updaterConfigured = false;
 let listenersConfigured = false;
 let trustedRelease: VerifiedQsdmHiveRelease | null = null;
+let updateCheckPromise: Promise<UpdateCheckResult | null> | null = null;
+let updateDownloadPromise: Promise<string[]> | null = null;
+let installPromptOpen = false;
 
 export function shouldEnableAutoUpdates(
   env: NodeJS.ProcessEnv = process.env,
@@ -48,6 +56,12 @@ export function shouldEnableAutoUpdates(
     return false;
   }
 
+  // Required production updates are part of the exact-version security gate.
+  // Environment overrides are development controls and cannot disable them.
+  if (app.isPackaged || env.NODE_ENV === 'production') {
+    return true;
+  }
+
   if (env.QSDM_DISABLE_AUTO_UPDATES === '1') {
     return false;
   }
@@ -55,7 +69,7 @@ export function shouldEnableAutoUpdates(
     return true;
   }
 
-  return app.isPackaged || env.NODE_ENV === 'production';
+  return false;
 }
 
 export function getQsdmHiveUpdateFeedUrl(
@@ -85,14 +99,33 @@ export async function initializeAppUpdater(
   }
 
   await ensureAppUpdaterConfigured();
-  createCheckForTheUpdatesInterval();
   setListeners(mainWindow, appCleanup);
+  createCheckForTheUpdatesInterval();
 }
 
 export async function checkForUpdates() {
-  await ensureAppUpdaterConfigured();
-  await ensureTrustedReleaseForUpdate(true);
-  return autoUpdater.checkForUpdatesAndNotify();
+  return runUpdateCheck('manual');
+}
+
+export async function downloadTrustedAppUpdate(): Promise<string[]> {
+  if (updateDownloadPromise) {
+    return updateDownloadPromise;
+  }
+
+  const result = await runUpdateCheck('manual download');
+  if (!result?.isUpdateAvailable) {
+    const release =
+      trustedRelease || (await ensureTrustedReleaseForUpdate(true));
+    throw new Error(
+      release.manifest.version === getCurrentHiveVersion()
+        ? 'QSDM Hive is already on the approved version.'
+        : `Automatic installation is unavailable for this version transition. Install QSDM Hive ${release.manifest.version} from ${release.installerUrl}.`
+    );
+  }
+
+  const release = trustedRelease || (await ensureTrustedReleaseForUpdate(true));
+  assertUpdateInfoMatchesTrustedRelease(result.updateInfo, release);
+  return startTrustedUpdateDownload(result.updateInfo, release);
 }
 
 export async function ensureTrustedReleaseForUpdate(forceRefresh = false) {
@@ -130,6 +163,9 @@ export async function ensureAppUpdaterConfigured() {
   autoUpdater.allowDowngrade = false;
   autoUpdater.allowPrerelease = false;
   autoUpdater.autoInstallOnAppQuit = false;
+  (
+    autoUpdater as unknown as { disableWebInstaller?: boolean }
+  ).disableWebInstaller = true;
   autoUpdater.setFeedURL({
     provider: 'generic',
     url: getQsdmHiveUpdateFeedUrl(),
@@ -141,6 +177,7 @@ export async function ensureAppUpdaterConfigured() {
   console.log('QSDM Hive updater feed ', getQsdmHiveUpdateFeedUrl());
   console.log('original updater cache path ', updaterCacheApp.baseCachePath);
   Object.defineProperty(updaterCacheApp, 'baseCachePath', {
+    configurable: true,
     get() {
       return path.join(getAppDataPath(), 'updater-cache');
     },
@@ -159,16 +196,13 @@ function setListeners(
   listenersConfigured = true;
 
   autoUpdater.on('update-available', async (info) => {
+    sendRendererEvent(mainWindow, RendererEndpoints.UPDATE_AVAILABLE, info);
+    revealMainWindow(mainWindow);
+
+    let release: VerifiedQsdmHiveRelease;
     try {
-      const release = await ensureTrustedReleaseForUpdate();
+      release = await ensureTrustedReleaseForUpdate();
       assertUpdateInfoMatchesTrustedRelease(info, release);
-      const appConfig = await getUserConfig();
-      // const mainWindow = BrowserWindow.getFocusedWindow();
-      if (!appConfig?.autoUpdatesDisabled) {
-        await autoUpdater.downloadUpdate();
-      } else if (mainWindow) {
-        mainWindow.webContents.send(RendererEndpoints.UPDATE_AVAILABLE, info);
-      }
     } catch (error) {
       log.error('QSDM Hive refused an untrusted update offer', error);
       dialog.showErrorBox(
@@ -177,7 +211,22 @@ function setListeners(
           error instanceof Error ? error.message : String(error)
         }`
       );
+      return;
     }
+
+    try {
+      await startTrustedUpdateDownload(info, release);
+    } catch (error) {
+      log.error(
+        'QSDM Hive update download failed; a retry is scheduled',
+        error
+      );
+    }
+  });
+
+  autoUpdater.on('error', (error) => {
+    log.error('QSDM Hive updater error; a retry is scheduled', error);
+    scheduleRetryCheck();
   });
 
   autoUpdater.on('update-downloaded', async (info: UpdateDownloadedEvent) => {
@@ -205,56 +254,169 @@ function setListeners(
       return;
     }
 
-    getUserConfig()
-      .then((appConfig) => {
-        if (appConfig?.autoUpdatesDisabled) {
-          mainWindow?.webContents.send(RendererEndpoints.UPDATE_DOWNLOADED);
-        }
-      })
-      .catch((error) => {
-        console.log(error);
-      });
+    sendRendererEvent(mainWindow, RendererEndpoints.UPDATE_DOWNLOADED, info);
+    revealMainWindow(mainWindow);
 
-    setTimeout(() => {
-      dialog
-        .showMessageBox({
-          type: 'question',
-          title: 'QSDM Hive',
-          buttons: ['Update and Restart'],
-          defaultId: 0,
-          cancelId: -1,
-          noLink: true,
-          message: 'The approved QSDM Hive update is ready.',
-          detail: `Version ${info.version} must be installed before Hive can continue.`,
-        })
-        .then(async () => {
-          await appCleanup();
-          app.isQuitting = true;
-          autoUpdater.quitAndInstall();
-        });
-    }, 2000);
+    if (installPromptOpen) {
+      return;
+    }
+    installPromptOpen = true;
+    try {
+      const options = {
+        type: 'question' as const,
+        title: 'QSDM Hive Update Ready',
+        buttons: ['Update and Restart'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+        message: 'The approved QSDM Hive update is ready.',
+        detail: `Version ${info.version} must be installed before Hive can continue.`,
+      };
+      const result =
+        mainWindow && !mainWindow.isDestroyed()
+          ? await dialog.showMessageBox(mainWindow, options)
+          : await dialog.showMessageBox(options);
+      if (result.response !== 0) {
+        return;
+      }
+      await appCleanup();
+      app.isQuitting = true;
+      autoUpdater.quitAndInstall();
+    } finally {
+      installPromptOpen = false;
+    }
   });
 }
 
 function createCheckForTheUpdatesInterval() {
   if (!interval) {
     interval = setInterval(() => {
-      console.log('interval update check');
-      ensureAppUpdaterConfigured()
-        .then(() => ensureTrustedReleaseForUpdate(true))
-        .then(() => autoUpdater.checkForUpdates())
-        .catch((error) =>
-          console.error('QSDM Hive update check failed', error)
-        );
+      runScheduledUpdateCheck('interval');
     }, CHECK_INTERVAL);
   }
 
-  // runs the first check 25sec after the app initialization
-  setTimeout(() => {
-    console.log('initial update check');
-    ensureAppUpdaterConfigured()
-      .then(() => ensureTrustedReleaseForUpdate(true))
-      .then(() => autoUpdater.checkForUpdates())
-      .catch((error) => console.error('QSDM Hive update check failed', error));
-  }, 25000);
+  if (!initialCheckTimeout) {
+    initialCheckTimeout = setTimeout(() => {
+      initialCheckTimeout = null;
+      runScheduledUpdateCheck('startup');
+    }, INITIAL_CHECK_DELAY);
+  }
+}
+
+async function runUpdateCheck(
+  reason: string
+): Promise<UpdateCheckResult | null> {
+  if (updateCheckPromise) {
+    return updateCheckPromise;
+  }
+
+  updateCheckPromise = (async () => {
+    log.info(`QSDM Hive ${reason} update check`);
+    await ensureAppUpdaterConfigured();
+    await ensureTrustedReleaseForUpdate(true);
+    const result = await autoUpdater.checkForUpdates();
+    clearRetryTimeout();
+    return result;
+  })()
+    .catch((error) => {
+      scheduleRetryCheck();
+      throw error;
+    })
+    .finally(() => {
+      updateCheckPromise = null;
+    });
+
+  return updateCheckPromise;
+}
+
+async function runScheduledUpdateCheck(reason: string) {
+  try {
+    await runUpdateCheck(reason);
+  } catch (error) {
+    log.error('QSDM Hive update check failed', error);
+  }
+}
+
+function scheduleRetryCheck() {
+  if (retryTimeout) {
+    return;
+  }
+  retryTimeout = setTimeout(() => {
+    retryTimeout = null;
+    runScheduledUpdateCheck('retry');
+  }, RETRY_INTERVAL);
+}
+
+function clearRetryTimeout() {
+  if (!retryTimeout) {
+    return;
+  }
+  clearTimeout(retryTimeout);
+  retryTimeout = null;
+}
+
+function startTrustedUpdateDownload(
+  info: UpdateInfo,
+  release: VerifiedQsdmHiveRelease
+): Promise<string[]> {
+  assertUpdateInfoMatchesTrustedRelease(info, release);
+  trustedRelease = release;
+  if (updateDownloadPromise) {
+    return updateDownloadPromise;
+  }
+
+  updateDownloadPromise = autoUpdater
+    .downloadUpdate()
+    .catch((error) => {
+      scheduleRetryCheck();
+      throw error;
+    })
+    .finally(() => {
+      updateDownloadPromise = null;
+    });
+  return updateDownloadPromise;
+}
+
+function sendRendererEvent(
+  mainWindow: BrowserWindow | undefined,
+  endpoint: RendererEndpoints,
+  payload?: unknown
+) {
+  if (
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    mainWindow.webContents.isDestroyed()
+  ) {
+    return;
+  }
+  mainWindow.webContents.send(endpoint, payload);
+}
+
+function revealMainWindow(mainWindow: BrowserWindow | undefined) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+export function resetAppUpdaterForTests() {
+  if (interval) {
+    clearInterval(interval);
+  }
+  if (initialCheckTimeout) {
+    clearTimeout(initialCheckTimeout);
+  }
+  clearRetryTimeout();
+  interval = null;
+  initialCheckTimeout = null;
+  updaterConfigured = false;
+  listenersConfigured = false;
+  trustedRelease = null;
+  updateCheckPromise = null;
+  updateDownloadPromise = null;
+  installPromptOpen = false;
 }
