@@ -8,6 +8,8 @@
     dashboard: document.getElementById("dashboard-view"),
     signOut: document.getElementById("sign-out"),
     telegram: document.getElementById("telegram-sign-in"),
+    loginDivider: document.getElementById("login-divider"),
+    loginFinePrint: document.getElementById("login-fine-print"),
     emailForm: document.getElementById("email-form"),
     email: document.getElementById("email"),
     emailSubmit: document.getElementById("email-submit"),
@@ -377,6 +379,22 @@
   const configureLogin = () => {
     elements.telegram.hidden = !config.login.telegram;
     elements.emailForm.hidden = !config.login.email;
+    elements.loginDivider.hidden = !(
+      config.login.email && config.login.telegram
+    );
+    if (config.login.email && config.login.telegram) {
+      elements.loginFinePrint.textContent =
+        "No account password is stored. Email uses a short-lived, one-time link; Telegram authorization is verified by the QSDM Account service.";
+    } else if (config.login.email) {
+      elements.loginFinePrint.textContent =
+        "No account password is stored. Email uses a short-lived, one-time sign-in link.";
+    } else if (config.login.telegram) {
+      elements.loginFinePrint.textContent =
+        "No account password is stored. Telegram authorization is verified by the QSDM Account service.";
+    } else {
+      elements.loginFinePrint.textContent =
+        "No sign-in provider is currently available.";
+    }
     if (!config.login.email && !config.login.telegram) {
       setStatus(
         elements.loginStatus,

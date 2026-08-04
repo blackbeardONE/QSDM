@@ -58,14 +58,14 @@
         <button id="telegram-sign-in" class="button telegram" type="button">
           Continue with Telegram
         </button>
-        <div class="divider"><span>or use email</span></div>
+        <div id="login-divider" class="divider"><span>or use email</span></div>
         <form id="email-form">
           <label for="email">Email address</label>
           <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required placeholder="you@example.com" />
           <button id="email-submit" class="button primary" type="submit">Send one-time sign-in link</button>
         </form>
         <p id="login-status" class="status" role="status"></p>
-        <p class="fine-print">
+        <p id="login-fine-print" class="fine-print">
           No account password is stored. Email uses a short-lived, one-time link;
           Telegram authorization is verified by the QSDM Account service.
         </p>
