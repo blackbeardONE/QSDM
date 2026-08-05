@@ -665,6 +665,7 @@ function Get-ValidatorMode {
         chainSyncUrls = "https://api.qsdm.tech/api/v1"
         bootstrapPeers = ""
         publicP2P = $false
+        blockProducer = $false
     }
     if (Test-Path -LiteralPath $ModeConfigPath) {
         $loaded = Get-Content -LiteralPath $ModeConfigPath -Raw | ConvertFrom-Json
@@ -675,6 +676,9 @@ function Get-ValidatorMode {
             }
             $mode.bootstrapPeers = [string]$loaded.bootstrapPeers
             $mode.publicP2P = [bool]$loaded.publicP2P
+            if ($null -ne $loaded.PSObject.Properties["blockProducer"]) {
+                $mode.blockProducer = [bool]$loaded.blockProducer
+            }
         }
     }
     return [pscustomobject]$mode
@@ -945,6 +949,9 @@ function Get-LauncherArguments {
         }
         if ([bool]$Mode.publicP2P) {
             $arguments += "-PublicP2P"
+        }
+        if ([bool]$Mode.blockProducer) {
+            $arguments += "-BlockProducer"
         }
     }
     if ($Restart) {
