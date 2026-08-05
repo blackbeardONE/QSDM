@@ -7,6 +7,7 @@ param(
     [string]$BootstrapPeers = "",
     [string]$ChainSyncUrls = "https://api.qsdm.tech/api/v1",
     [switch]$PublicP2P,
+    [switch]$BlockProducer,
     [switch]$Restart,
     [string]$TreasuryConfigPath = "",
     [ValidateRange(3, 900)]
@@ -20,6 +21,10 @@ if ([string]::IsNullOrWhiteSpace($QsdmRoot)) {
 }
 
 $ErrorActionPreference = "Stop"
+
+if ($BlockProducer -and -not $Networked) {
+    throw "-BlockProducer requires -Networked. Solo mode already owns local block production."
+}
 
 $LocalRoot = Join-Path $QsdmRoot "source\.cache\local-validator"
 $ModeConfigPath = Join-Path $LocalRoot "validator-mode.json"
@@ -170,6 +175,7 @@ if ($Networked) {
         chainSyncUrls = $ChainSyncUrls
         bootstrapPeers = $BootstrapPeers
         publicP2P = $PublicP2P.IsPresent
+        blockProducer = $BlockProducer.IsPresent
         updatedAtUtc = [DateTime]::UtcNow.ToString("o")
     }
     $modeJson = $modeConfig | ConvertTo-Json
@@ -835,6 +841,7 @@ if (-not (Test-Path -LiteralPath $ConfigPath)) {
 }
 
 $env:QSDM_SOLO_VALIDATOR_MODE = if ($Networked) { "0" } else { "1" }
+$env:QSDM_NETWORK_BLOCK_PRODUCER = if ($Networked -and $BlockProducer) { "1" } else { "0" }
 Import-TreasuryConfig -Path $TreasuryConfigPath
 
 $env:QSDM_NETWORKED_CATCHUP_MODE = if ($Networked) { "1" } else { "0" }
@@ -885,7 +892,7 @@ if ($Networked) {
     Remove-Item Env:QSDM_PREFUND_ACCOUNTS -ErrorAction SilentlyContinue
     Remove-Item Env:QSDM_GENESIS_PREFUND_ADDR -ErrorAction SilentlyContinue
     Remove-Item Env:QSDM_GENESIS_PREFUND_AMOUNT_CELL -ErrorAction SilentlyContinue
-    Write-LauncherLog "networked validator mode enabled run_dir=$RunDir bootstrap_peers=$resolvedBootstrapPeers chain_sync_urls=$ChainSyncUrls public_p2p=$($PublicP2P.IsPresent)"
+    Write-LauncherLog "networked validator mode enabled run_dir=$RunDir bootstrap_peers=$resolvedBootstrapPeers chain_sync_urls=$ChainSyncUrls public_p2p=$($PublicP2P.IsPresent) block_producer=$($BlockProducer.IsPresent)"
 } else {
     Remove-Item Env:QSDM_CHAIN_SYNC_URLS -ErrorAction SilentlyContinue
     if ($env:QSDM_LOCAL_CELL_FAUCET -eq "1") {
@@ -911,7 +918,7 @@ if ($Networked) {
         Write-LauncherLog "ignored retired development prefund file at $PrefundAccountsPath"
     }
 }
-Write-LauncherLog "task registry path=$TaskRegistryPath task action log path=$TaskActionLogPath network_host_key=$NetworkHostKeyPath run_dir=$RunDir networked=$($Networked.IsPresent) health_wait_seconds=$HealthWaitSeconds"
+Write-LauncherLog "task registry path=$TaskRegistryPath task action log path=$TaskActionLogPath network_host_key=$NetworkHostKeyPath run_dir=$RunDir networked=$($Networked.IsPresent) block_producer=$($BlockProducer.IsPresent) health_wait_seconds=$HealthWaitSeconds"
 Write-LauncherLog "selected validator binary=$ExePath"
 Reset-OversizedDuplicateLog -Path $StdoutLog
 

@@ -1345,27 +1345,31 @@ func main() {
 	v2Wired.AttachToProducer(adminProducer)
 	adminProducer.SetAppendReceiptStore(adminReceipts)
 	adminProducer.SetPolFollower(polFollower)
-	// Solo-validator mode (QSDM_SOLO_VALIDATOR_MODE=1):
-	// without peers there is no BFT quorum to commit blocks
-	// or POL gossip to publish round certificates, so the
-	// production gates would refuse to extend past genesis.
-	// Skip SetBFTSealGate and SetPreSealBFTRound in solo
-	// mode; internal/blockdriver drives ProduceBlock directly
-	// against an unguarded producer. When a peer joins, flip
-	// the env var off and these gates are restored on the
-	// next process restart — there is no consensus-relevant
-	// state to migrate because the solo chain is treated as
-	// a clean testnet origin, not a fork to merge.
+	// Local block production has two explicit roles. Solo mode is isolated;
+	// network-producer mode is the one configured leader that seals and
+	// broadcasts blocks to append-only followers. Never infer producer status
+	// from peer count: doing so could create two independent histories.
 	soloValidatorMode := envcompat.Truthy("QSDM_SOLO_VALIDATOR_MODE", "QSDM_SOLO_VALIDATOR_MODE")
-	if !soloValidatorMode {
+	networkBlockProducerMode := envcompat.Truthy("QSDM_NETWORK_BLOCK_PRODUCER", "QSDM_NETWORK_BLOCK_PRODUCER")
+	productionRole, productionRoleErr := resolveBlockProductionRole(soloValidatorMode, networkBlockProducerMode)
+	if productionRoleErr != nil {
+		log.Fatalf("invalid block production role: %v", productionRoleErr)
+	}
+	localBlockProduction := productionRole.localProductionEnabled()
+	if !localBlockProduction {
 		adminProducer.SetBFTSealGate(liveBFT)
 		adminProducer.SetPreSealBFTRound(func(blk *chain.Block) error {
 			return chain.RunSyntheticBFTRoundWithExecutor(bftExec, nodeValidatorSet, blk)
 		})
-	} else {
+	} else if productionRole == blockProductionRoleSolo {
 		logger.Info("Solo validator mode: BFT seal gate and pre-seal synthetic round disabled",
 			"env_var", "QSDM_SOLO_VALIDATOR_MODE",
 			"reason", "no peer validators to drive BFT quorum; internal/blockdriver will own block production")
+	} else {
+		logger.Info("Network producer mode: local block driver owns production and broadcasts sealed blocks",
+			"env_var", "QSDM_NETWORK_BLOCK_PRODUCER",
+			"role", productionRole,
+			"reason", "configured single leader; network followers remain append-only")
 	}
 	// Compose the admission gate. v2wiring.Wire() already
 	// installed enrollment.AdmissionChecker(nil); we replace it
@@ -1393,14 +1397,13 @@ func main() {
 		}
 		return nil
 	}
-	if soloValidatorMode {
-		// Solo: ignore the BFT/POL extension predicate
-		// because liveBFT.IsCommitted always returns false
-		// without peer votes, which would otherwise reject
-		// every solo-mode reward tx.
+	if localBlockProduction {
+		// A configured local producer owns extension decisions. The current
+		// one-validator set cannot satisfy the peer-driven BFT predicate.
 		v2wiring.ReinstallAdmissionGate(adminPool, nil)
-		logger.Info("Solo validator mode: admission gate now ignores BFT/POL predicates",
-			"reason", "no peers to vote → liveBFT.IsCommitted permanently false")
+		logger.Info("Local block producer admission gate ignores peer-driven BFT/POL predicates",
+			"role", productionRole,
+			"reason", "configured producer owns block extension")
 	} else {
 		v2wiring.ReinstallAdmissionGate(adminPool, baseAdmit)
 	}
@@ -1444,13 +1447,13 @@ func main() {
 	// promoted to operator-tunable config keys once we have a
 	// second validator that needs to agree on them. Until
 	// then, hardcoding keeps consensus byte-identical.
-	// soloDriver is constructed AFTER specCheck so the
+	// blockDriver is constructed AFTER specCheck so the
 	// optional Tier-3 RewardPenalty can be wired in at New
 	// time (the Driver field is read-only after construction
 	// to keep the buildTxs hot path branch-free). The
 	// declaration stays here so the rest of the boot code
 	// can reference it; the construction itself is below.
-	var soloDriver *blockdriver.Driver
+	var blockDriver *blockdriver.Driver
 
 	// v2 attestation dispatcher. Wired UNCONDITIONALLY (whether
 	// or not QSDM_V2_ACTIVE is set) because:
@@ -1630,11 +1633,11 @@ func main() {
 		"fork_v2_active", v2Active,
 		"effect_when_active", "post-fork proofs require nvidia-cc-v1 or nvidia-hmac-v1 attestation")
 
-	if soloValidatorMode {
-		// In solo mode the blockdriver is the miningsvc
+	if localBlockProduction {
+		// For the configured producer, the blockdriver is the miningsvc
 		// reward sink. Tier-3 reward downgrade is wired here
 		// (the deferred construction is the whole reason
-		// the soloDriver var was declared earlier instead of
+		// the blockDriver var was declared earlier instead of
 		// allocated inline). Pre-Tier-3 deployments leave
 		// RewardPenalty nil → noopRewardPenalty inside the
 		// driver, byte-identical to before.
@@ -1644,6 +1647,9 @@ func main() {
 			Accounts: adminAccounts,
 			Logger:   logger,
 		}
+		if productionRole == blockProductionRoleNetworkProducer {
+			blockdriverCfg.ProducerID = "qsdm-network-producer"
+		}
 		if specCheck != nil && specCheck.Penalty != nil {
 			// Cast: telemetrycheck.PerMinerStats already
 			// satisfies blockdriver.RewardPenalty by virtue
@@ -1651,21 +1657,22 @@ func main() {
 			// structural interface check makes this a no-
 			// op assignment at runtime.
 			blockdriverCfg.RewardPenalty = specCheck.Penalty
-			logger.Info("solo blockdriver: Tier-3 reward downgrade wired",
+			logger.Info("blockdriver: Tier-3 reward downgrade wired",
+				"role", productionRole,
 				"window_size", specCheck.Penalty.Config().WindowSize,
 				"threshold_pct", specCheck.Penalty.Config().MismatchThresholdPct,
 				"multiplier", specCheck.Penalty.Config().PenaltyMultiplier)
 		}
 		drv, drvErr := blockdriver.New(blockdriverCfg)
 		if drvErr != nil {
-			log.Fatalf("solo blockdriver wiring failed: %v", drvErr)
+			log.Fatalf("%s blockdriver wiring failed: %v", productionRole, drvErr)
 		}
-		soloDriver = drv
+		blockDriver = drv
 		// Publish the driver to the Tier-3 monitoring probe
 		// so /metrics surfaces blockdriver-side withheld-dust
 		// counters. Safe to call even when Tier-3 is off —
 		// the probe is nil-checked at scrape time.
-		SetSoloDriverForMonitoring(soloDriver)
+		SetSoloDriverForMonitoring(blockDriver)
 	}
 
 	miningSvcCfg := miningsvc.Config{
@@ -1676,8 +1683,8 @@ func main() {
 		BlocksPerEpoch: mining.DefaultBlocksPerMiningEpoch,
 		Attestation:    v2Dispatcher,
 	}
-	if soloDriver != nil {
-		miningSvcCfg.RewardSink = soloDriver
+	if blockDriver != nil {
+		miningSvcCfg.RewardSink = blockDriver
 	}
 	miningSvc, miningErr := miningsvc.New(miningSvcCfg)
 	if miningErr != nil {
@@ -1726,7 +1733,8 @@ func main() {
 		"dag_size", uint32(1024),
 		"difficulty", mining.DefaultMinDifficulty.String(),
 		"blocks_per_epoch", mining.DefaultBlocksPerMiningEpoch,
-		"reward_sink_wired", soloDriver != nil,
+		"reward_sink_wired", blockDriver != nil,
+		"block_production_role", productionRole,
 		"endpoints", "/api/v1/mining/work, /api/v1/mining/submit")
 
 	// Chain + accounts persistence (Phase 2c-vii follow-up).
@@ -2149,6 +2157,9 @@ func main() {
 	// synthetic BFT round is unnecessary at genesis (the BFT
 	// and POL gates aren't active yet anyway) so skipping it
 	// is safe.
+	if productionRole == blockProductionRoleNetworkProducer && !adminProducer.HasTip() {
+		log.Fatal("network producer requires an existing synchronized chain tip; start this node as a follower, let it catch up, then enable QSDM_NETWORK_BLOCK_PRODUCER")
+	}
 	if !adminProducer.HasTip() && shouldDeferLocalGenesis(networkedCatchupMode, cfg.BootstrapPeers, syncURLs) {
 		logger.Info("Networked catch-up mode: deferring local genesis seal; waiting for blocks from bootstrap peers",
 			"env_var", "QSDM_NETWORKED_CATCHUP_MODE",
@@ -2213,7 +2224,7 @@ func main() {
 		// re-set it on the off chance the caller flips solo
 		// mode mid-boot via another goroutine.
 		var preSealRestore func(blk *chain.Block) error
-		if !soloValidatorMode {
+		if !localBlockProduction {
 			preSealRestore = func(blk *chain.Block) error {
 				return chain.RunSyntheticBFTRoundWithExecutor(bftExec, nodeValidatorSet, blk)
 			}
@@ -2264,12 +2275,12 @@ func main() {
 		}
 	}
 
-	// Start the solo-mode block driver after genesis has
+	// Start the configured block driver after genesis has
 	// settled. If the genesis seal failed (e.g. mempool
 	// admission rejected the seed for an unexpected reason),
 	// the driver will still try every Period — its own
 	// heartbeat tx funds the chain forward.
-	if soloDriver != nil {
+	if blockDriver != nil {
 		// Re-sync the driver's funder nonce. The genesis seal
 		// above used the same funder account at nonce=0, so
 		// the AccountStore now has funder.Nonce=1 but the
@@ -2277,18 +2288,18 @@ func main() {
 		// call the very first tick would issue a reward tx at
 		// nonce=0 → ApplyTx rejects → "all transactions failed
 		// state application" → tip never advances past 0.
-		soloDriver.SyncFunderNonce()
+		blockDriver.SyncFunderNonce()
 		// Use a fresh background context so the driver
 		// outlives any request-scoped contexts. Stop is
 		// triggered by the existing graceful-shutdown handler
-		// (SIGINT/SIGTERM); see the deferred soloDriver.Stop()
+		// (SIGINT/SIGTERM); see the deferred blockDriver.Stop()
 		// registered just below.
-		soloDriver.Start(context.Background())
+		blockDriver.Start(context.Background())
 		// Best-effort hook into the existing shutdown path —
 		// the validator's main shutdown closure runs on Ctrl-C
 		// and SIGTERM and should drain in-flight ticks before
 		// closing the network.
-		defer soloDriver.Stop()
+		defer blockDriver.Stop()
 	}
 
 	bftExec.SetOnCommitted(func(height uint64, round uint32, blockHash string) {
@@ -2738,11 +2749,11 @@ func main() {
 
 		// Stop block production before closing storage or returning from main.
 		// Calling os.Exit from this goroutine used to bypass the deferred
-		// soloDriver.Stop and could leave qsdm_chain.ndjson one block ahead of
+		// blockDriver.Stop and could leave qsdm_chain.ndjson one block ahead of
 		// the accounts/enrollment snapshots during a systemd restart.
-		if soloDriver != nil {
-			soloDriver.Stop()
-			logger.Info("Solo block driver stopped and in-flight persistence drained")
+		if blockDriver != nil {
+			blockDriver.Stop()
+			logger.Info("Block driver stopped and in-flight persistence drained", "role", productionRole)
 		}
 		cancel()
 

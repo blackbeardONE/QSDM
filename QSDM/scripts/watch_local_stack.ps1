@@ -39,6 +39,7 @@ $ValidatorMode = "solo"
 $ValidatorChainSyncUrls = "https://api.qsdm.tech/api/v1"
 $ValidatorBootstrapPeers = ""
 $ValidatorPublicP2P = $false
+$ValidatorBlockProducer = $false
 if (Test-Path -LiteralPath $ModeConfigPath) {
     try {
         $modeConfig = Get-Content -Raw -LiteralPath $ModeConfigPath | ConvertFrom-Json
@@ -49,6 +50,9 @@ if (Test-Path -LiteralPath $ModeConfigPath) {
             }
             $ValidatorBootstrapPeers = [string]$modeConfig.bootstrapPeers
             $ValidatorPublicP2P = [bool]$modeConfig.publicP2P
+            if ($null -ne $modeConfig.PSObject.Properties["blockProducer"]) {
+                $ValidatorBlockProducer = [bool]$modeConfig.blockProducer
+            }
         }
     } catch {
         throw "Invalid validator mode config at ${ModeConfigPath}: $($_.Exception.Message)"
@@ -244,7 +248,7 @@ function Start-Validator {
         Write-WatchdogLog "missing validator script: $ValidatorScript"
         return
     }
-    Write-WatchdogLog "starting validator mode=$ValidatorMode"
+    Write-WatchdogLog "starting validator mode=$ValidatorMode block_producer=$ValidatorBlockProducer"
     $stdout = Join-Path $LocalRoot "watchdog-validator-start.out.log"
     $stderr = Join-Path $LocalRoot "watchdog-validator-start.err.log"
     $argString = "-NoProfile -ExecutionPolicy Bypass -File $(Quote-Arg $ValidatorScript) -QsdmRoot $(Quote-Arg $QsdmRoot) -HealthWaitSeconds $ValidatorStartupGraceSeconds"
@@ -255,6 +259,9 @@ function Start-Validator {
         }
         if ($ValidatorPublicP2P) {
             $argString += " -PublicP2P"
+        }
+        if ($ValidatorBlockProducer) {
+            $argString += " -BlockProducer"
         }
     }
     $process = Start-Process `
