@@ -7,7 +7,7 @@ Usage: sudo install-account-proxy-route
 
 Adds only the QSDM Account API route and account-page redirect to the live
 Caddyfile. The command requires a healthy local account service, validates the
-candidate Caddyfile, reloads Caddy, verifies the public route, and restores the
+candidate Caddyfile, activates Caddy, verifies the public route, and restores the
 previous Caddyfile automatically if activation fails.
 USAGE
 }
@@ -39,12 +39,12 @@ merger=${QSDM_ACCOUNT_CADDY_MERGER:-$default_merger}
 verifier=${QSDM_ACCOUNT_VERIFIER:-$default_verifier}
 caddy_command=${QSDM_CADDY_COMMAND:-caddy}
 systemctl_command=${QSDM_SYSTEMCTL_COMMAND:-systemctl}
-caddy_apply_mode=${QSDM_CADDY_APPLY_MODE:-reload}
+caddy_apply_mode=${QSDM_CADDY_APPLY_MODE:-auto}
 
 case "$caddy_apply_mode" in
-  reload|restart) ;;
+  auto|reload|restart) ;;
   *)
-    echo "QSDM_CADDY_APPLY_MODE must be reload or restart." >&2
+    echo "QSDM_CADDY_APPLY_MODE must be auto, reload, or restart." >&2
     exit 2
     ;;
 esac
@@ -55,7 +55,7 @@ for path in "$caddyfile_input" "$merger" "$verifier"; do
     exit 1
   fi
 done
-for command_name in python3 realpath mktemp cmp install cp mv "$caddy_command" "$systemctl_command"; do
+for command_name in python3 realpath mktemp cmp install cp mv grep "$caddy_command" "$systemctl_command"; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "Required command is missing: $command_name" >&2
     exit 1
@@ -64,7 +64,16 @@ done
 caddyfile=$(realpath "$caddyfile_input")
 
 apply_caddy_config() {
-  "$systemctl_command" "$caddy_apply_mode" caddy.service
+  local mode=$caddy_apply_mode
+  if [[ "$mode" == auto ]]; then
+    mode=reload
+    if grep -Eq '^[[:space:]]*admin[[:space:]]+off([[:space:]]|$)' "$caddyfile"; then
+      # Caddy's systemd ExecReload uses the admin API. A validated restart is
+      # required when that API is intentionally disabled.
+      mode=restart
+    fi
+  fi
+  "$systemctl_command" "$mode" caddy.service
 }
 
 # Never publish a route that points to a missing or provider-less service.
@@ -107,7 +116,7 @@ rollback() {
   cp --preserve=mode,ownership,timestamps -- "$backup" "$restored"
   mv -f -- "$restored" "$caddyfile"
   if ! apply_caddy_config; then
-    echo "CRITICAL: the previous Caddyfile was restored, but Caddy $caddy_apply_mode failed." >&2
+    echo "CRITICAL: the previous Caddyfile was restored, but Caddy activation failed." >&2
   fi
   exit 1
 }

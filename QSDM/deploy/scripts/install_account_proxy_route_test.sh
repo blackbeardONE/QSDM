@@ -68,9 +68,19 @@ export QSDM_CADDY_APPLY_MODE=restart
 bash "$script_dir/install_account_proxy_route.sh"
 grep -Fxq 'restart caddy.service' "$work/systemctl.log"
 
+{
+  printf '%s\n' '{' '  admin off' '}'
+  cat "$work/original"
+} >"$work/Caddyfile"
+: >"$work/systemctl.log"
+unset QSDM_CADDY_APPLY_MODE
+bash "$script_dir/install_account_proxy_route.sh"
+grep -Fxq 'restart caddy.service' "$work/systemctl.log"
+
 cp "$work/original" "$work/Caddyfile"
 cp "$work/original" "$work/before-rollback"
 : >"$work/systemctl.log"
+export QSDM_CADDY_APPLY_MODE=restart
 touch "$QSDM_TEST_FAIL_PUBLIC"
 if bash "$script_dir/install_account_proxy_route.sh"; then
   echo "Expected public verification failure did not occur." >&2
