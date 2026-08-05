@@ -1682,6 +1682,7 @@ func main() {
 		Difficulty:     new(big.Int).Set(mining.DefaultMinDifficulty),
 		BlocksPerEpoch: mining.DefaultBlocksPerMiningEpoch,
 		Attestation:    v2Dispatcher,
+		ReadOnly:       !localBlockProduction,
 	}
 	if blockDriver != nil {
 		miningSvcCfg.RewardSink = blockDriver

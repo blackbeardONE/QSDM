@@ -934,6 +934,10 @@ func (h *Handlers) MiningSubmitHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if errors.Is(err, ErrMiningUnavailable) {
+		writeMiningUnavailable(w, err.Error())
+		return
+	}
 	var rej *mining.RejectError
 	if errors.As(err, &rej) {
 		w.WriteHeader(http.StatusBadRequest)

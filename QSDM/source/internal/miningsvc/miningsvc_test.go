@@ -414,6 +414,19 @@ func TestRewardSink_NotNotifiedOnReject(t *testing.T) {
 	}
 }
 
+func TestReadOnlyServiceRefusesProofSubmission(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.ReadOnly = true
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if _, err := svc.Submit([]byte(`{"not":"even-verified"}`)); !errors.Is(err, api.ErrMiningUnavailable) {
+		t.Fatalf("Submit error = %v, want ErrMiningUnavailable", err)
+	}
+}
+
 // ---- compile-time guard --------------------------------------------------
 
 // Ensures Service satisfies api.MiningService. The package

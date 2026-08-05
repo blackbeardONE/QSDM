@@ -158,6 +158,12 @@ type Config struct {
 	// guarded by a mutex.
 	RewardSink RewardSink
 
+	// ReadOnly prevents this service from accepting proofs. Followers may
+	// still serve mining metadata, but accepting a proof without a reward
+	// sink would acknowledge work that can never be included in a producer's
+	// payout queue.
+	ReadOnly bool
+
 	// Attestation is the v2 NVIDIA-locked attestation verifier
 	// the miningsvc passes through to mining.VerifierConfig.
 	// It is consulted only for proofs whose height is at or
@@ -210,6 +216,7 @@ type Service struct {
 
 	verifier   *mining.Verifier
 	rewardSink RewardSink // optional; see Config.RewardSink
+	readOnly   bool
 }
 
 // dagCacheCap bounds the DAG map's resident size. Two is the
@@ -274,6 +281,7 @@ func New(cfg Config) (*Service, error) {
 		blocksPerEpoch: bpe,
 		dagCache:       make(map[uint64]mining.DAG, dagCacheCap),
 		rewardSink:     cfg.RewardSink,
+		readOnly:       cfg.ReadOnly,
 	}
 
 	v, err := mining.NewVerifier(mining.VerifierConfig{
@@ -355,6 +363,9 @@ func (s *Service) WorkAt(height uint64) (*api.MiningWork, error) {
 // goroutines) was rejected as harder to debug and easier to
 // silently lose payouts on a panic.
 func (s *Service) Submit(rawProofJSON []byte) ([32]byte, error) {
+	if s.readOnly {
+		return [32]byte{}, api.ErrMiningUnavailable
+	}
 	tip := s.producer.TipHeight()
 	id, err := s.verifier.Verify(rawProofJSON, tip)
 	if err != nil {
