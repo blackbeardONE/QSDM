@@ -52,7 +52,10 @@ describe('enableQsdmSignerLegacyRecovery', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qsdm-enable-recovery-'));
     mockKeystorePath = path.join(tmpDir, 'wallet.json');
     recoveryPath = path.join(tmpDir, 'recovery.txt');
-    fs.writeFileSync(mockKeystorePath, '{"type":"qsdm-keystore"}');
+    fs.writeFileSync(
+      mockKeystorePath,
+      JSON.stringify({ type: 'qsdm-keystore', address: mockAddress })
+    );
     mockShowSaveDialog.mockReset();
     mockShowSaveDialog.mockResolvedValue({
       canceled: false,
@@ -103,6 +106,8 @@ describe('enableQsdmSignerLegacyRecovery', () => {
         mockKeystorePath,
         '--recovery-out',
         recoveryPath,
+        '--expected-address',
+        mockAddress,
         '--api-url',
         'https://core.example/api/v1',
       ]),
@@ -119,6 +124,21 @@ describe('enableQsdmSignerLegacyRecovery', () => {
         passphrase: legacyPassphrase,
       })
     ).resolves.toEqual({ enabled: false, address: mockAddress });
+    expect(mockExecFile).not.toHaveBeenCalled();
+  });
+
+  it('rejects a signer and keystore mismatch before prompting or executing', async () => {
+    fs.writeFileSync(
+      mockKeystorePath,
+      JSON.stringify({ type: 'qsdm-keystore', address: '0'.repeat(64) })
+    );
+
+    await expect(
+      enableQsdmSignerLegacyRecovery({} as Event, {
+        passphrase: legacyPassphrase,
+      })
+    ).rejects.toThrow('active signer address does not match');
+    expect(mockShowSaveDialog).not.toHaveBeenCalled();
     expect(mockExecFile).not.toHaveBeenCalled();
   });
 });

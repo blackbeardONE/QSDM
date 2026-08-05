@@ -76,6 +76,23 @@ const findKeystoreBackupPath = (stderr: string) => {
   return match?.[1]?.trim();
 };
 
+const readKeystoreAddress = (keystorePath: string) => {
+  const stat = fs.statSync(keystorePath);
+  if (!stat.isFile() || stat.size > 2 * 1024 * 1024) {
+    throw new Error('The configured QSDM keystore is not a valid wallet file');
+  }
+  const parsed = JSON.parse(fs.readFileSync(keystorePath, 'utf-8')) as {
+    address?: unknown;
+  };
+  if (
+    typeof parsed.address !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(parsed.address)
+  ) {
+    throw new Error('The configured QSDM keystore has an invalid address');
+  }
+  return parsed.address;
+};
+
 export const enableQsdmSignerLegacyRecovery = async (
   _: Event,
   payload: QsdmSignerLegacyRecoveryEnableRequest
@@ -106,6 +123,12 @@ export const enableQsdmSignerLegacyRecovery = async (
       'This wallet already has recovery enabled. Use Export Words instead.'
     );
   }
+  const keystoreAddress = readKeystoreAddress(keystorePath);
+  if (keystoreAddress !== address) {
+    throw new Error(
+      `The active signer address does not match the configured keystore. Expected ${address}, found ${keystoreAddress}. Unlock or import the correct wallet before enabling recovery.`
+    );
+  }
 
   const selection = await dialog.showSaveDialog({
     title: 'Save 24 QSDM Recovery Words',
@@ -132,6 +155,8 @@ export const enableQsdmSignerLegacyRecovery = async (
       passphrasePath,
       '--recovery-out',
       selection.filePath,
+      '--expected-address',
+      address,
       '--api-url',
       resolveQsdmTaskActionApiUrl(),
       '--confirm-timeout',

@@ -294,3 +294,49 @@ func TestLegacyWalletRecoveryMigrationAndRestorePreserveAddress(t *testing.T) {
 		t.Fatalf("restored legacy identity changed: got %s want %s", restored.Address, before.Address)
 	}
 }
+
+func TestLegacyWalletRecoveryRejectsUnexpectedAddressBeforeMutation(t *testing.T) {
+	dir := t.TempDir()
+	walletPath := filepath.Join(dir, "wallet.json")
+	recoveryPath := filepath.Join(dir, "recovery.txt")
+	passphrasePath := filepath.Join(dir, "passphrase.txt")
+	if err := os.WriteFile(passphrasePath, []byte("existing wallet passphrase"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cli := &CLI{baseURL: "http://127.0.0.1:1/api/v1"}
+	if err := cli.walletNew([]string{
+		"--out", walletPath,
+		"--passphrase-file", passphrasePath,
+	}); err != nil {
+		t.Fatalf("create legacy wallet: %v", err)
+	}
+	before, err := os.ReadFile(walletPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = cli.walletEnableLegacyRecovery([]string{
+		"--in", walletPath,
+		"--passphrase-file", passphrasePath,
+		"--recovery-out", recoveryPath,
+		"--expected-address", strings.Repeat("0", 64),
+	})
+	if err == nil || !strings.Contains(err.Error(), "legacy recovery address mismatch") {
+		t.Fatalf("expected address mismatch, got %v", err)
+	}
+	if _, statErr := os.Stat(recoveryPath); !os.IsNotExist(statErr) {
+		t.Fatalf("recovery output was created before address validation: %v", statErr)
+	}
+	after, err := os.ReadFile(walletPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("keystore changed after rejected address mismatch")
+	}
+	backups, err := filepath.Glob(walletPath + ".pre-recovery-*.bak")
+	if err != nil || len(backups) != 0 {
+		t.Fatalf("unexpected migration backup count=%d err=%v", len(backups), err)
+	}
+}

@@ -171,6 +171,9 @@ Common flags:
 Legacy recovery flags:
   --api-url URL         QSDM API root ending in /api/v1. Defaults to
                         QSDM_API_URL or the CLI's configured API.
+  --expected-address ADDRESS
+                        Refuse enable-recovery unless the opened keystore has
+                        this QSDM address. Checked before any output or submit.
   --confirm-timeout DUR Wait for encrypted capsule chain confirmation
                         (default: 90s).
   --message      HEX    Hex-encoded message bytes to sign (sign only).
@@ -482,6 +485,7 @@ func (c *CLI) walletEnableLegacyRecovery(args []string) error {
 	passphraseFile := fs.String("passphrase-file", "", "read existing passphrase from file ('-' for stdin); empty = prompt")
 	recoveryOut := fs.String("recovery-out", "", "private output file for the new 24 recovery words")
 	apiURL := fs.String("api-url", "", "QSDM API root ending in /api/v1")
+	expectedAddress := fs.String("expected-address", "", "require the legacy keystore to have this QSDM address")
 	confirmTimeout := fs.Duration("confirm-timeout", 90*time.Second, "wait for chain confirmation")
 	force := fs.Bool("force", false, "overwrite an existing recovery output file")
 	if err := fs.Parse(args); err != nil {
@@ -509,6 +513,15 @@ func (c *CLI) walletEnableLegacyRecovery(args []string) error {
 	ks, err := loadKeystore(path)
 	if err != nil {
 		return err
+	}
+	if expected := strings.TrimSpace(*expectedAddress); expected != "" {
+		raw, decodeErr := hex.DecodeString(expected)
+		if decodeErr != nil || len(raw) != 32 || expected != strings.ToLower(expected) {
+			return fmt.Errorf("--expected-address must be a lowercase 64-character QSDM address")
+		}
+		if ks.Address != expected {
+			return fmt.Errorf("legacy recovery address mismatch: opened keystore %s, expected %s", ks.Address, expected)
+		}
 	}
 	if ks.Recovery != nil {
 		return fmt.Errorf("wallet %s already has %d-word recovery enabled; use export-recovery instead", ks.Address, ks.Recovery.Words)
