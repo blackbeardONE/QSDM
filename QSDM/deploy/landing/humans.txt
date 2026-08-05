@@ -49,7 +49,7 @@
   Product surfaces:
     /                             — protocol-first landing (Network + Hive/CELL)
     /network.html                 — live public CELL network and custody boundary
-    /download.html                — Hive 1.4.14 + Wallet Extension 0.5.1 + Edge Control 1.3.7
+    /download.html                — Hive 1.4.15 + Wallet Extension 0.5.1 + Edge Control 1.3.7
     /account/                     — optional identity + linked public wallet dashboard
     /docs/                        — knowledge-base SPA
     /wallet.html                  — browser web wallet (ML-DSA-87)
