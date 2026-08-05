@@ -1,3 +1,9 @@
+## [1.4.15]
+
+- Recovery identity safety: Hive verifies that the active signer matches the selected legacy keystore before asking where to save recovery words.
+- Defense in depth: `qsdmcli wallet enable-recovery` independently rejects an unexpected wallet address before creating words, submitting a capsule, backing up, or replacing the keystore.
+- Migration assurance: Regression coverage proves that a signer mismatch leaves the legacy wallet and filesystem unchanged.
+
 ## [1.4.14]
 
 - Existing-wallet recovery: Legacy QSDM wallets can opt into a new 24-word recovery phrase without changing their ML-DSA address, CELL balance, stakes, or tasks.
