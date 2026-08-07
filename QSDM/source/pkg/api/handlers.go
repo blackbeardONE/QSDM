@@ -939,6 +939,59 @@ func (h *Handlers) CreateWallet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// syncWalletPreflightBalance mirrors the validator wallet's canonical CELL
+// balance into WalletService's local preflight cache.
+//
+// Source preference matches GetBalance: the live AccountStore (via
+// MiningAccountProbe or the local transfer ledger) is authoritative in
+// solo-validator mode; storage is the fallback. A failure here is not fatal
+// — CreateTransaction's own balance check still runs, and admission
+// re-verifies the canonical account regardless.
+func (h *Handlers) syncWalletPreflightBalance() {
+	if h.walletService == nil {
+		return
+	}
+	address := h.walletService.GetAddress()
+	if address == "" {
+		return
+	}
+
+	// Only an authoritative source with an explicit `present` flag may
+	// overwrite the cache. storage.GetBalance is deliberately NOT consulted:
+	// it returns (0, nil) for an address it has never seen, which is
+	// indistinguishable from a genuinely-zero balance, so treating it as
+	// authoritative would zero the cache for any address the storage table
+	// does not track. When no source knows the address we leave the cache
+	// untouched rather than guessing.
+	balance, found := 0.0, false
+	if ledger := currentLocalWalletTransferLedger(); ledger != nil {
+		if bal, _, present := ledger.BalanceOf(address); present {
+			balance, found = bal, true
+		}
+	}
+	if !found {
+		if probe := currentMiningAccountProbe(); probe != nil {
+			if bal, _, present := probe.BalanceOf(address); present {
+				balance, found = bal, true
+			}
+		}
+	}
+	if !found {
+		return
+	}
+
+	// The preflight cache is whole-CELL; truncate rather than round so the
+	// cache can never claim more spendable CELL than the ledger holds.
+	whole := int(balance)
+	if whole < 0 {
+		whole = 0
+	}
+	if err := h.walletService.SyncBalanceFromLedger(whole); err != nil {
+		h.logger.Warn("wallet preflight balance sync failed",
+			"address", address, "error", err)
+	}
+}
+
 // GetBalance returns the wallet balance
 func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -1132,6 +1185,18 @@ func (h *Handlers) SendTransaction(w http.ResponseWriter, r *http.Request) {
 		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid parent cells: %v", err))
 		return
 	}
+
+	// Refresh the wallet's local preflight balance cache from canonical
+	// ledger state before building the transaction.
+	//
+	// WalletService starts at balance 0 by construction (balances come only
+	// from canonical ledger state) and CreateTransaction refuses to build a
+	// tx it believes is unfunded. With no caller ever syncing the cache,
+	// every /wallet/send returned "insufficient balance: have 0" as a 500.
+	// This does not credit chain state or create CELL — it mirrors an
+	// already-validated balance so the preflight check agrees with the
+	// ledger. Admission still re-verifies the canonical account.
+	h.syncWalletPreflightBalance()
 
 	// Create transaction
 	txBytes, err := h.walletService.CreateTransaction(

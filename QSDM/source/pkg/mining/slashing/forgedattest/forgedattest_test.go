@@ -511,3 +511,60 @@ func TestVerifier_Kind(t *testing.T) {
 		t.Fatalf("Kind() = %q, want %q", got, want)
 	}
 }
+
+// TestVerify_UnparseableBundleCannotSlashAVictim is the regression test for
+// a bond-theft primitive.
+//
+// node_id exists ONLY inside the attestation bundle — Evidence carries just
+// {Proof, FaultClass, Memo}, and Proof.MinerAddr is part of the same
+// attacker-supplied blob. So when the bundle does not parse there is nothing
+// in the evidence that identifies who produced it.
+//
+// The verifier used to return maxSlash() on a bundle parse failure, and it
+// did so BEFORE the bundle.NodeID == payload.NodeID binding check ever ran.
+// That let an attacker submit arbitrary garbage as the bundle, name any
+// victim in payload.NodeID, and have slash_apply drain that victim's 10 CELL
+// bond — crediting the attacker up to the 50% slash reward.
+//
+// Unattributable evidence must now fail closed.
+func TestVerify_UnparseableBundleCannotSlashAVictim(t *testing.T) {
+	t.Parallel()
+	reg, p, _ := buildSignedProof(t)
+
+	// Attacker replaces the bundle with bytes that cannot be parsed.
+	p.Attestation.BundleBase64 = "!!!not-a-valid-bundle!!!"
+
+	v := forgedattest.NewVerifier(reg, 0)
+	payload := makePayload(t, forgedattest.Evidence{Proof: p})
+	// ...and names an innocent victim as the target.
+	payload.NodeID = fxNodeID
+
+	slashDust, err := v.Verify(payload, 0)
+	if err == nil {
+		t.Fatalf("unattributable evidence must not prove an offence (got slash of %d dust)", slashDust)
+	}
+	if !errors.Is(err, slashing.ErrEvidenceVerification) {
+		t.Fatalf("error %v does not wrap ErrEvidenceVerification", err)
+	}
+	if slashDust != 0 {
+		t.Fatalf("a refused slash must return 0 dust, got %d", slashDust)
+	}
+}
+
+// A slash payload naming nobody cannot prove an offence either.
+func TestVerify_EmptyNodeIDRejected(t *testing.T) {
+	t.Parallel()
+	reg, p, _ := buildSignedProof(t)
+
+	v := forgedattest.NewVerifier(reg, 0)
+	payload := makePayload(t, forgedattest.Evidence{Proof: p})
+	payload.NodeID = ""
+
+	slashDust, err := v.Verify(payload, 0)
+	if err == nil || !errors.Is(err, slashing.ErrEvidenceVerification) {
+		t.Fatalf("want ErrEvidenceVerification for an unnamed target, got %v", err)
+	}
+	if slashDust != 0 {
+		t.Fatalf("a refused slash must return 0 dust, got %d", slashDust)
+	}
+}

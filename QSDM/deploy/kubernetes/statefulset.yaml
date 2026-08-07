@@ -21,7 +21,12 @@ spec:
     spec:
       containers:
       - name: qsdm
-        image: qsdm:latest
+        # Must match what CI actually publishes (see
+        # .github/workflows/release-container.yml). The bare `qsdm:latest`
+        # this used to carry resolves to Docker Hub and does not exist, so
+        # every apply ended in ImagePullBackOff. Pin a released tag instead
+        # of :latest for reproducible rollouts.
+        image: ghcr.io/blackbeardone/qsdm:latest
         imagePullPolicy: IfNotPresent
         ports:
         - name: network

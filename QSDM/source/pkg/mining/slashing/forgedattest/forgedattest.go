@@ -212,21 +212,39 @@ func (v *Verifier) Verify(p slashing.SlashPayload, currentHeight uint64) (uint64
 			err, slashing.ErrEvidenceVerification)
 	}
 
+	// A slash must name its target. An empty payload NodeID cannot be
+	// bound to anything, so it can never prove an offence.
+	if p.NodeID == "" {
+		return 0, fmt.Errorf(
+			"forgedattest: slash payload has no node_id: %w",
+			slashing.ErrEvidenceVerification)
+	}
+
 	// Bind the evidence's bundle.NodeID to the slash payload's
 	// NodeID. Without this an attacker could lift a faulty
 	// proof from victim B and submit it inside a slash payload
 	// that targets victim A.
 	bundle, parseErr := hmac.ParseBundle(ev.Proof.Attestation.BundleBase64)
 	if parseErr != nil {
-		// Bundle is malformed — that itself is a
-		// forged-attestation fault (a well-formed bundle is
-		// part of the v2 acceptance criteria).
-		// Still verify the slash payload's NodeID is plausibly
-		// present in the registry; if not, the slash is
-		// targeting a non-enrolled node which the chain-side
-		// applier rejects independently. We don't second-guess
-		// the chain-side check here.
-		return v.maxSlash(), nil
+		// A malformed bundle is unattributable, so it cannot slash
+		// anybody.
+		//
+		// This previously returned maxSlash() — a full bond drain —
+		// BEFORE the NodeID binding below ever ran. That was a bond-theft
+		// primitive: node_id lives only inside the bundle, and
+		// Evidence carries nothing else that identifies the accused
+		// (Proof.MinerAddr is part of the same attacker-supplied blob).
+		// So an attacker could submit garbage bytes as the bundle,
+		// name any victim in p.NodeID, and collect up to 50% of that
+		// victim's 10 CELL bond via slash_apply.
+		//
+		// A malformed bundle is indeed a protocol fault, but proving
+		// "some proof somewhere was malformed" is not proving "THIS
+		// node produced it". Attribution is the whole point of
+		// slashing, so unparseable evidence fails closed.
+		return 0, fmt.Errorf(
+			"forgedattest: attestation bundle is unparseable so the offence cannot be attributed: %v: %w",
+			parseErr, slashing.ErrEvidenceVerification)
 	}
 	if bundle.NodeID != p.NodeID {
 		return 0, fmt.Errorf(

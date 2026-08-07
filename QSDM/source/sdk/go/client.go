@@ -6,6 +6,16 @@
 //
 // The client is safe for concurrent use and does not embed any node-local state;
 // authentication is supplied through SetAPIKey or SetToken and forwarded as headers.
+//
+// # Install
+//
+//	go get github.com/blackbeardONE/QSDM/QSDM/source/sdk/go
+//
+// The doubled path segment is not a typo: the repository is
+// github.com/blackbeardONE/QSDM and this package lives at QSDM/source/sdk/go
+// within it. This package is its own Go module (see go.mod) precisely so
+// that path resolves — the parent module declares a path that does not match
+// its own location in the repo, so it is not itself go-gettable.
 package qsdm
 
 import (

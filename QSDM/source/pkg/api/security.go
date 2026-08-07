@@ -280,19 +280,20 @@ func (rl *RateLimiter) getEndpointLimit(path, method string) int {
 	return 0
 }
 
-// getClientIdentifier extracts client identifier from request
+// getClientIdentifier extracts the rate-limit bucket key for a request.
+//
+// This middleware runs BEFORE AuthMiddleware, so nothing here has been
+// authenticated yet. That makes any caller-supplied header unusable as a
+// bucket key: a key derived from one is a key the caller can rotate, and a
+// fresh key is a fresh bucket with a full quota. Keying on X-API-Key made
+// the nominal 10/min limit on /wallet/send unbounded — send a new random
+// X-API-Key per request and no bucket ever fills.
+//
+// The bucket is therefore always the client IP. Per-principal quotas are
+// enforced after authentication by RoleRateLimiter, which keys on the
+// verified claims.Address.
 func (rl *RateLimiter) getClientIdentifier(r *http.Request) string {
-	// Try API key first
-	if apiKey := r.Header.Get("X-API-Key"); apiKey != "" {
-		return "api:" + apiKey
-	}
-
-	// Fall back to IP address
-	ip := r.RemoteAddr
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		ip = strings.Split(forwarded, ",")[0]
-	}
-	return "ip:" + ip
+	return "ip:" + clientIP(r)
 }
 
 // RequestSigner handles request signing and verification.

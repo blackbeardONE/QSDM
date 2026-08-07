@@ -71,6 +71,13 @@ func NewEvidenceGossipIngress(em *chain.EvidenceManager, rep *ReputationTracker,
 
 // HandlePeerMessage decodes evidence JSON, enforces dedupe and rate limits, then processes.
 func (eg *EvidenceGossipIngress) HandlePeerMessage(peerID string, payload []byte) error {
+	// Drop banned peers before any parsing or state mutation. Without this
+	// the tracker recorded bans that nothing ever read, so a peer driven
+	// past the ban threshold kept being served exactly like an honest one.
+	if eg.rep != nil && eg.rep.IsBanned(peerID) {
+		return fmt.Errorf("evidence gossip refused: peer %s is banned", peerID)
+	}
+
 	var ev chain.ConsensusEvidence
 	if err := json.Unmarshal(payload, &ev); err != nil {
 		if eg.rep != nil {

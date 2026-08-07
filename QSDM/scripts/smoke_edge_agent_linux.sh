@@ -115,13 +115,13 @@ grep -q '^NoNewPrivileges=true$' "$installed_unit"
 grep -q "$installed_config" "$installed_unit"
 
 HOME="$service_home" XDG_CONFIG_HOME="$service_config" PATH="$fake_bin:/usr/bin:/bin" \
-  "$agent_binary" install-coordinator-service \
+  "$agent_binary" install-relay-service \
   --listen 127.0.0.1:17741 \
   --token-file "$work_dir/edge-pool.token" >/dev/null
-installed_coordinator_unit="$service_config/systemd/user/qsdm-edge-coordinator.service"
-test "$(stat -c '%a' "$installed_coordinator_unit")" = "600"
-grep -q '^Restart=always$' "$installed_coordinator_unit"
-grep -q 'coordinator --listen "127.0.0.1:17741"' "$installed_coordinator_unit"
-grep -q "$service_config/QSDM/edge-pool/coordinator" "$installed_coordinator_unit"
+installed_relay_unit="$service_config/systemd/user/qsdm-edge-relay.service"
+test "$(stat -c '%a' "$installed_relay_unit")" = "600"
+grep -q '^Restart=always$' "$installed_relay_unit"
+grep -q 'relay --listen "127.0.0.1:17741"' "$installed_relay_unit"
+grep -q "$service_config/QSDM/edge-pool/coordinator" "$installed_relay_unit"
 
-echo "Linux edge-agent smoke test passed: receipts survived restart and isolated worker/coordinator services verified."
+echo "Linux edge-agent smoke test passed: receipts survived restart and isolated Agent/Relay services verified."

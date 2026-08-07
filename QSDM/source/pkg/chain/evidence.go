@@ -29,6 +29,13 @@ type ConsensusEvidence struct {
 	BlockHashes []string     `json:"block_hashes,omitempty"`
 	Details     string       `json:"details,omitempty"`
 	Timestamp   time.Time    `json:"timestamp"`
+
+	// Proof, when present, cryptographically establishes equivocation by
+	// exhibiting two conflicting authenticated votes from the accused.
+	// Without it, equivocation evidence is only an assertion: the fields
+	// above name a validator and two hashes but bind neither to that
+	// validator's key. See evidence_proof.go.
+	Proof *EquivocationProof `json:"proof,omitempty"`
 }
 
 // EvidenceRecord stores processed evidence and outcome.
@@ -193,6 +200,16 @@ func validateEvidence(ev ConsensusEvidence) error {
 		}
 		if len(seen) < 2 {
 			return fmt.Errorf("equivocation requires conflicting block hashes")
+		}
+		// A supplied proof is ALWAYS verified — the only reason to attach
+		// one is to be checked, so an invalid proof is a hard rejection
+		// regardless of whether proofs are mandatory.
+		if ev.Proof != nil {
+			if err := ev.Proof.Verify(ev.Validator); err != nil {
+				return err
+			}
+		} else if requireEvidenceProof.Load() {
+			return ErrEvidenceProofMissing
 		}
 	case EvidenceInvalidVote:
 		if ev.Details == "" {

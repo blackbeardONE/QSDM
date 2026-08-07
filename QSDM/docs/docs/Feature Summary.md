@@ -95,7 +95,14 @@ it is not the CELL network gateway or another Hive client.
 
 ## SDKs & tooling
 
-- Go SDK (`QSDM/source/sdk/go/`) and JavaScript SDK (`qsdm-sdk` on npm).
+- Go SDK — `go get github.com/blackbeardONE/QSDM/QSDM/source/sdk/go`
+  (source at `QSDM/source/sdk/go/`; it is its own Go module so the path
+  resolves, since the parent module's declared path does not match its
+  location in the repo). JavaScript SDK: `qsdm-sdk` on npm. Current source
+  is **0.3.3**, including the corrected `/api/v1/transactions/{id}` route
+  and CELL Stream runtime; the public registry remains at **0.3.0** until
+  the normal authenticated release workflow publishes 0.3.3. Do not
+  publish the superseded 0.3.1 audit-branch package.
 - WASM wallet module; OpenAPI + API reference; 25+ operator runbooks.
 - Docker / Kubernetes deploy manifests; signed releases (Sigstore) and SBOM.
 

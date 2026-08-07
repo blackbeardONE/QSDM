@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,6 +19,13 @@ type Account struct {
 	Address string  `json:"address"`
 	Balance float64 `json:"balance"`
 	Nonce   uint64  `json:"nonce"`
+
+	// BalanceDust is the authoritative balance once the integer-dust fork
+	// is active (see account_dust.go). Below the fork it is unset and
+	// Balance is authoritative; at and above it, Balance becomes a derived
+	// mirror kept in sync for JSON and API consumers. Omitted from JSON
+	// while zero so pre-fork snapshots round-trip byte-identically.
+	BalanceDust uint64 `json:"balance_dust,omitempty"`
 }
 
 // AccountStore manages all account states and enforces nonce ordering.
@@ -25,6 +33,12 @@ type AccountStore struct {
 	mu        sync.RWMutex
 	persistMu sync.Mutex
 	accounts  map[string]*Account
+
+	// heightFn supplies the current chain height so the store can tell
+	// whether integer-dust accounting is active. Nil means pre-fork.
+	heightFn func() uint64
+	// dustMigrated records that MigrateToDust has run.
+	dustMigrated bool
 }
 
 // NewAccountStore creates an empty account store.
@@ -209,6 +223,16 @@ func (as *AccountStore) Credit(address string, amount float64) {
 		acc = &Account{Address: address}
 		as.accounts[address] = acc
 	}
+	if as.dustActiveLocked() {
+		// Integer credit. Floor the incoming amount: crediting more than
+		// was asked for would mint money out of a rounding decision.
+		d, err := CellToDust(amount)
+		if err != nil {
+			d = uint64(math.Max(0, math.Floor(amount*float64(DustPerCellInt))))
+		}
+		setBalanceDustLocked(acc, balanceDustLocked(acc)+d)
+		return
+	}
 	acc.Balance += amount
 }
 
@@ -225,6 +249,33 @@ func (as *AccountStore) ApplyTx(tx *mempool.Tx) error {
 	// Nonce check: tx.Nonce must equal sender's current nonce
 	if tx.Nonce != sender.Nonce {
 		return fmt.Errorf("nonce mismatch for %s: expected %d, got %d", tx.Sender, sender.Nonce, tx.Nonce)
+	}
+
+	if as.dustActiveLocked() {
+		// Integer transfer. Debit and credit are computed in the same
+		// unit at the same precision, so the amount leaving the sender is
+		// exactly the amount arriving — the property float64 lost when
+		// the two accounts sat at different magnitudes.
+		amountDust := floorToDust(tx.Amount)
+		feeDust := floorToDust(tx.Fee)
+		totalDust := amountDust + feeDust
+		if totalDust < amountDust { // overflow
+			return fmt.Errorf("transfer amount overflows dust range")
+		}
+		have := balanceDustLocked(sender)
+		if have < totalDust {
+			return fmt.Errorf("insufficient balance: have %d dust, need %d dust", have, totalDust)
+		}
+		setBalanceDustLocked(sender, have-totalDust)
+		sender.Nonce++
+
+		recipient, ok := as.accounts[tx.Recipient]
+		if !ok {
+			recipient = &Account{Address: tx.Recipient}
+			as.accounts[tx.Recipient] = recipient
+		}
+		setBalanceDustLocked(recipient, balanceDustLocked(recipient)+amountDust)
+		return nil
 	}
 
 	total := tx.Amount + tx.Fee
@@ -308,9 +359,19 @@ func (as *AccountStore) StateRoot() string {
 	}
 	sort.Strings(addrs)
 
+	dust := as.dustActiveLocked()
 	h := sha256.New()
 	for _, addr := range addrs {
 		acc := as.accounts[addr]
+		if dust {
+			// Integer encoding. %f below renders six decimal places, so
+			// any balance under 1e-6 CELL was invisible to the pre-fork
+			// state root even though the protocol's unit is 1e-8 — two
+			// nodes could disagree by up to 99 dust and still agree on
+			// the root.
+			fmt.Fprint(h, dustStateRootSegment(acc))
+			continue
+		}
 		fmt.Fprintf(h, "%s:%f:%d;", acc.Address, acc.Balance, acc.Nonce)
 	}
 	return hex.EncodeToString(h.Sum(nil))

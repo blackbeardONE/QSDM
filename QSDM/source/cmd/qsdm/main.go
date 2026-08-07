@@ -1177,6 +1177,17 @@ func main() {
 		}
 	}
 
+	// consensusSigner authenticates this node's BFT votes. The wallet
+	// address is SHA256(ML-DSA public key) in hex, which is exactly the
+	// identity chain.BFTValidatorAddress derives, so votes signed with this
+	// key self-certify as coming from the validator registered above.
+	var consensusSigner chain.BFTSigner
+	if walletService != nil {
+		if s := walletService.ConsensusSigner(); s != nil {
+			consensusSigner = s
+		}
+	}
+
 	nodeTxRep := networking.NewReputationTracker(networking.DefaultReputationConfig())
 	nodeEvidenceRep := networking.NewReputationTracker(networking.ReputationConfigForEvidence())
 
@@ -1219,6 +1230,34 @@ func main() {
 	bftIngress := networking.NewBFTGossipIngress(networking.DefaultBFTGossipConfig(), bftIngressExec)
 	bftIngress.SetReputationTracker(nodeTxRep)
 	bftExec.SetEvidenceManager(nodeEvidenceManager)
+
+	// Authenticate outbound consensus messages. Without a signer, prevotes
+	// and precommits go out unauthenticated and any gossip peer can forge
+	// votes for any validator — i.e. manufacture a quorum.
+	if consensusSigner != nil {
+		bftExec.SetVoteSigner(consensusSigner)
+		logger.Info("BFT vote signing enabled",
+			"validator", chain.BFTValidatorAddress(consensusSigner.GetPublicKey()))
+	} else {
+		logger.Warn("BFT vote signing disabled (no wallet key)",
+			"impact", "this node's consensus messages are unauthenticated")
+	}
+	// Inbound enforcement is opt-in so a mixed-version validator set can
+	// roll forward: signed builds emit signatures immediately, and the
+	// operator turns rejection on once every peer is upgraded. A
+	// present-but-invalid signature is always rejected regardless.
+	bftExec.SetRequireSignedVotes(cfg.RequireSignedVotes)
+	// The same switch governs POL certificates / lock proofs and block
+	// producer signatures: they are all part of one consensus-authentication
+	// rollout, so flipping them independently would leave a gap that is
+	// easy to misconfigure and hard to notice.
+	chain.SetRequireSignedCertificates(cfg.RequireSignedVotes)
+	chain.SetRequireSignedBlocks(cfg.RequireSignedVotes)
+	chain.SetRequireEvidenceProof(cfg.RequireSignedVotes)
+	logger.Info("consensus message authentication enforcement",
+		"required", cfg.RequireSignedVotes,
+		"covers", "bft votes, pol certificates, block producer signatures, equivocation proofs",
+		"hint", "set [consensus] require_signed_votes or QSDM_REQUIRE_SIGNED_VOTES=1 once all validators are upgraded")
 	var bftRelay *networking.BFTP2PRelay
 	if br, bftErr := networking.NewBFTP2PRelay(net, bftIngress, net.Host.ID().String()); bftErr != nil {
 		logger.Warn("BFT gossip relay not started", "error", bftErr)
@@ -1291,6 +1330,13 @@ func main() {
 		Pool:           adminPool,
 		BaseAdmit:      nil, // re-installed below alongside POL/BFT predicate.
 		SlashRewardBPS: chain.SlashRewardCap,
+		// Addresses permitted to submit `qsdm/gov/v1` param-set txs.
+		// Empty keeps the pre-governance posture (gov txs reject with
+		// ErrGovernanceNotConfigured and the slash applier reads static
+		// defaults). Operators activate governance by setting
+		// `[governance] authorities` in the config file or the
+		// QSDM_GOVERNANCE_AUTHORITIES env var.
+		GovernanceAuthorities: cfg.GovernanceAuthorities,
 		LogSweepError: func(h uint64, err error) {
 			logger.Warn("v2 mining: enrollment sweep failed",
 				"height", h, "error", err)
@@ -1327,6 +1373,16 @@ func main() {
 	if v2WireErr != nil {
 		log.Fatalf("v2 mining wiring failed: %v", v2WireErr)
 	}
+	// Governance activates only when authorities are configured. Log the
+	// posture explicitly: a silently-disabled governance arm is exactly the
+	// failure mode that kept this subsystem unreachable in production.
+	if len(cfg.GovernanceAuthorities) == 0 {
+		logger.Info("on-chain governance disabled (no authorities configured)",
+			"hint", "set [governance] authorities or QSDM_GOVERNANCE_AUTHORITIES to activate")
+	} else {
+		logger.Info("on-chain governance enabled",
+			"authority_count", len(cfg.GovernanceAuthorities))
+	}
 	// Keep this explicit startup invariant next to the process entrypoint. Wire
 	// installs the same pool, while the second assignment makes configuration
 	// drift visible and prevents a validator from serving signed task actions
@@ -1343,7 +1399,30 @@ func main() {
 
 	adminProducer := chain.NewBlockProducer(adminPool, v2Wired.StateApplier, prodCfg)
 	v2Wired.AttachToProducer(adminProducer)
+	// Integer-dust accounting fork. This changes both the balance
+	// arithmetic and the state-root encoding, so it is a consensus
+	// parameter: every validator must configure the same height or the
+	// network splits at activation. Wired here because the height source
+	// is the producer's tip.
+	if cfg.ForkDustHeight > 0 {
+		chain.SetForkDustHeight(cfg.ForkDustHeight)
+		adminAccounts.SetHeightFn(adminProducer.TipHeight)
+		logger.Info("integer-dust accounting fork armed",
+			"activation_height", cfg.ForkDustHeight,
+			"warning", "every validator must be configured with this exact height")
+	} else {
+		logger.Info("integer-dust accounting fork disabled",
+			"impact", "balances keep float64 arithmetic, which destroys ~0.06 CELL per reward block",
+			"hint", "set [consensus] fork_dust_height once genesis is re-derived to the 90M/10M split")
+	}
+
 	adminProducer.SetAppendReceiptStore(adminReceipts)
+	// Authenticate blocks we seal. SignBlock derives ProducerID from the
+	// key, so a producer identity that disagrees with the signing key can
+	// never be sealed.
+	if consensusSigner != nil {
+		adminProducer.SetBlockSigner(consensusSigner)
+	}
 	adminProducer.SetPolFollower(polFollower)
 	// Local block production has two explicit roles. Solo mode is isolated;
 	// network-producer mode is the one configured leader that seals and

@@ -10,6 +10,13 @@ type PrevoteLockProof struct {
 	LockedBlockHash string      `json:"locked_block_hash"`
 	CarriedFromLock string      `json:"carried_from_lock,omitempty"`
 	Prevotes        []BlockVote `json:"prevotes,omitempty"`
+
+	// Signer is the validator that produced this proof, and Auth
+	// authenticates it. Without them a POL bundle is an unattributed
+	// assertion, yet its verdict gates block production on followers.
+	// See pol_sig.go.
+	Signer string      `json:"signer,omitempty"`
+	Auth   BFTWireAuth `json:"auth,omitempty"`
 }
 
 // EncodePrevoteLockProof returns JSON bytes for wire transport.

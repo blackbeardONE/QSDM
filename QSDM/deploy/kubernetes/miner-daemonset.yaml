@@ -50,7 +50,10 @@ spec:
       runtimeClassName: nvidia
       containers:
       - name: qsdm-miner
-        image: qsdm/miner:latest
+        # CI publishes ghcr.io/<owner>/qsdm-miner (hyphen), not the
+        # Docker Hub-style qsdm/miner path this used to reference — that
+        # name does not exist and produced ImagePullBackOff on every apply.
+        image: ghcr.io/blackbeardone/qsdm-miner:latest
         imagePullPolicy: IfNotPresent
         ports:
         - name: network

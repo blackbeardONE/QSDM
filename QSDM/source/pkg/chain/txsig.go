@@ -62,6 +62,22 @@ func (s *TxSigner) PublicKeyHex() string {
 	return hex.EncodeToString(s.publicKey)
 }
 
+// Address returns the canonical wallet address this signer can spend from.
+// Transactions whose Sender is anything else are rejected by verifyEd25519
+// unless an operator has pinned a different key via RegisterKey.
+func (s *TxSigner) Address() string {
+	return Ed25519WalletAddress(s.publicKey)
+}
+
+// Ed25519WalletAddress derives the canonical wallet address for an Ed25519
+// public key: SHA256(public_key) as lower-case hex. This is the same
+// derivation verifyMLDSA applies to ML-DSA-87 keys, so both algorithms share
+// one address space and one identity rule.
+func Ed25519WalletAddress(pub ed25519.PublicKey) string {
+	sum := sha256.Sum256(pub)
+	return hex.EncodeToString(sum[:])
+}
+
 // TxSigningHash produces the canonical hash of a transaction for signing.
 // Fields are concatenated in a deterministic order.
 func TxSigningHash(tx *mempool.Tx) []byte {
@@ -147,25 +163,27 @@ func (sv *SigVerifier) MLDSAKeyCount() int {
 	return len(sv.mldsaRing)
 }
 
-// RegisterKey associates a public key with an address.
+// RegisterKey associates a public key with an address. Addresses are
+// normalized so lookups in verifyEd25519 are case- and whitespace-insensitive,
+// matching the ML-DSA ring.
 func (sv *SigVerifier) RegisterKey(address string, pubKey ed25519.PublicKey) {
 	sv.mu.Lock()
 	defer sv.mu.Unlock()
-	sv.keyring[address] = pubKey
+	sv.keyring[normalizeSigAddress(address)] = pubKey
 }
 
 // RemoveKey removes a registered key.
 func (sv *SigVerifier) RemoveKey(address string) {
 	sv.mu.Lock()
 	defer sv.mu.Unlock()
-	delete(sv.keyring, address)
+	delete(sv.keyring, normalizeSigAddress(address))
 }
 
 // GetKey returns the registered public key for an address.
 func (sv *SigVerifier) GetKey(address string) (ed25519.PublicKey, bool) {
 	sv.mu.RLock()
 	defer sv.mu.RUnlock()
-	key, ok := sv.keyring[address]
+	key, ok := sv.keyring[normalizeSigAddress(address)]
 	return key, ok
 }
 
@@ -216,14 +234,34 @@ func (sv *SigVerifier) verifyEd25519(stx *SignedTx) error {
 		return fmt.Errorf("ed25519 signature verification failed for tx %s", stx.Tx.ID)
 	}
 
+	// A valid signature only proves the holder of stx.PublicKey signed the tx —
+	// it says nothing about whether that key is allowed to spend from
+	// stx.Tx.Sender. Without the binding below, any gossip peer can present
+	// (victim-sender, attacker-key, attacker-signature) and pass verification.
+	// Sender identity is established one of two ways, mirroring verifyMLDSA:
+	//
+	//  1. An operator explicitly pinned a key for this sender via RegisterKey.
+	//     The presented key must equal it exactly.
+	//  2. Otherwise the sender must be the key's derived wallet address,
+	//     SHA256(public_key) as lower-case hex — the same derivation
+	//     verifyMLDSA enforces.
+	//
+	// Case 2 is what makes an empty keyring safe: the default is a hard
+	// binding, not an unchecked pass.
 	sv.mu.RLock()
-	registeredKey, hasKey := sv.keyring[stx.Tx.Sender]
+	registeredKey, hasKey := sv.keyring[normalizeSigAddress(stx.Tx.Sender)]
 	sv.mu.RUnlock()
 
 	if hasKey {
 		if !registeredKey.Equal(ed25519.PublicKey(stx.PublicKey)) {
 			return fmt.Errorf("public key mismatch for sender %s", stx.Tx.Sender)
 		}
+		return nil
+	}
+
+	addr := sha256.Sum256(stx.PublicKey)
+	if !strings.EqualFold(hex.EncodeToString(addr[:]), stx.Tx.Sender) {
+		return fmt.Errorf("ed25519 public key does not match sender address %s", stx.Tx.Sender)
 	}
 
 	return nil

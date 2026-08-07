@@ -8,6 +8,7 @@ on:
       - "QSDM/docs/docs/runbooks/**"
       - "scripts/check_runbook_coverage.py"
       - "scripts/check_sitemap_freshness.py"
+      - "scripts/check_sri_integrity.py"
       - "scripts/check_binary_strip.py"
       - "scripts/gen_promtool_tests.py"
       - "scripts/gen_grafana_dashboards.py"
@@ -21,6 +22,7 @@ on:
       - "QSDM/docs/docs/runbooks/**"
       - "scripts/check_runbook_coverage.py"
       - "scripts/check_sitemap_freshness.py"
+      - "scripts/check_sri_integrity.py"
       - "scripts/check_binary_strip.py"
       - "scripts/gen_promtool_tests.py"
       - "scripts/gen_grafana_dashboards.py"
@@ -315,6 +317,16 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/check_sitemap_freshness.py --mode offline
+
+      # A stale Subresource Integrity hash does not degrade gracefully:
+      # the browser refuses to execute the subresource, so the page ships
+      # looking fine and silently does nothing. wallet.html shipped in
+      # exactly that state — the wallet.js integrity literal was left
+      # behind after a rebuild, so window.QSDMWallet never existed.
+      - name: Lint Subresource Integrity hashes
+        run: |
+          set -euo pipefail
+          python scripts/check_sri_integrity.py
 
   # binary-strip-lint enforces audit row infra-06: every Go binary
   # shipped to /opt/qsdm/qsdm on BLR1 MUST be built with

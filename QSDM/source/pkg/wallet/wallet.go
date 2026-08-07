@@ -138,6 +138,24 @@ func (ws *WalletService) GetAddress() string {
 	return ws.address
 }
 
+// ConsensusSigner exposes the node's ML-DSA-87 key for authenticating BFT
+// consensus messages.
+//
+// This is the correct key for that role because the wallet address is
+// SHA256(public_key) in hex — the same derivation chain.BFTValidatorAddress
+// applies — and cmd/qsdm registers exactly that address in the validator
+// set. So a vote signed with this key self-certifies as coming from the
+// validator it names, with no separate key registry.
+//
+// Returns nil when the wallet has no key (receive-only mode), in which case
+// the node emits unsigned consensus messages.
+func (ws *WalletService) ConsensusSigner() *crypto.Dilithium {
+	if ws == nil {
+		return nil
+	}
+	return ws.dilithium
+}
+
 // GetBalance returns the current wallet balance
 func (ws *WalletService) GetBalance() int {
 	ws.mu.RLock()

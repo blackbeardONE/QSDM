@@ -23,6 +23,8 @@ const (
 	maxOutputBytes  = 1024 * 1024
 	brokerTimeout   = 115 * time.Second
 	brokerRetryWait = 250 * time.Millisecond
+	brokerReadWait  = 25 * time.Millisecond
+	brokerReadTries = 4
 )
 
 type brokerState struct {
@@ -112,6 +114,24 @@ func loadBrokerState() (brokerState, error) {
 	return state, nil
 }
 
+// loadBrokerStateForForwarding tolerates the short read window while Hive
+// replaces broker.json during a restart. Validation still happens on every
+// attempt, and a persistently invalid state is returned as an error.
+func loadBrokerStateForForwarding() (brokerState, error) {
+	var lastErr error
+	for attempt := 0; attempt < brokerReadTries; attempt++ {
+		state, err := loadBrokerState()
+		if err == nil {
+			return state, nil
+		}
+		lastErr = err
+		if attempt+1 < brokerReadTries {
+			time.Sleep(brokerReadWait)
+		}
+	}
+	return brokerState{}, lastErr
+}
+
 func readNativeMessage(reader io.Reader) ([]byte, error) {
 	var length uint32
 	if err := binary.Read(reader, binary.LittleEndian, &length); err != nil {
@@ -179,7 +199,7 @@ func forwardWithState(payload []byte, state brokerState) ([]byte, error) {
 }
 
 func forwardToHive(payload []byte) ([]byte, error) {
-	state, err := loadBrokerState()
+	state, err := loadBrokerStateForForwarding()
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +216,7 @@ func forwardToHive(payload []byte) ([]byte, error) {
 	// Hive may replace broker.json while Electron restarts. Reload once so a
 	// request that landed during that short handoff uses the new port and token.
 	time.Sleep(brokerRetryWait)
-	retryState, stateErr := loadBrokerState()
+	retryState, stateErr := loadBrokerStateForForwarding()
 	if stateErr != nil {
 		return nil, stateErr
 	}
