@@ -80,6 +80,7 @@ type EnrollmentAwareApplier struct {
 	slasher    *SlashApplier
 	gov        *GovApplier
 	tasks      *TaskStateStore
+	recovery   *RecoveryCapsuleStateStore
 
 	mu       sync.RWMutex
 	heightFn func() uint64
@@ -191,6 +192,13 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 		h, _ := a.currentHeight()
 		return tasks.ApplyEconomicTxAtHeight(tx, a.accounts, h)
 	}
+	if tx.ContractID == RecoveryCapsuleContractID {
+		recovery := a.RecoveryCapsuleStateStore()
+		if recovery == nil {
+			return ErrRecoveryCapsuleStateNotWired
+		}
+		return recovery.ApplyEconomicTx(tx, a.accounts)
+	}
 	if tx.ContractID == WalletTransferContractID {
 		return ApplyWalletTransferTx(a.accounts, tx)
 	}
@@ -219,6 +227,27 @@ func (a *EnrollmentAwareApplier) TaskStateStore() *TaskStateStore {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.tasks
+}
+
+// SetRecoveryCapsuleStateStore installs (or clears) the encrypted legacy
+// wallet recovery-capsule state store.
+func (a *EnrollmentAwareApplier) SetRecoveryCapsuleStateStore(recovery *RecoveryCapsuleStateStore) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.recovery = recovery
+}
+
+// RecoveryCapsuleStateStore returns the configured recovery-capsule store.
+func (a *EnrollmentAwareApplier) RecoveryCapsuleStateStore() *RecoveryCapsuleStateStore {
+	if a == nil {
+		return nil
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.recovery
 }
 
 // SetGovApplier installs (or clears) the governance applier.
@@ -292,15 +321,24 @@ func (a *EnrollmentAwareApplier) StateRoot() string {
 		return ""
 	}
 	accountRoot := a.accounts.StateRoot()
-	tasks := a.TaskStateStore()
-	if tasks == nil || tasks.Count() == 0 {
-		return accountRoot
+	root := accountRoot
+	if tasks := a.TaskStateStore(); tasks != nil && tasks.Count() > 0 {
+		h := sha256.New()
+		h.Write([]byte("accounts:"))
+		h.Write([]byte(accountRoot))
+		h.Write([]byte("\ntasks:"))
+		h.Write([]byte(tasks.StateRoot()))
+		root = hex.EncodeToString(h.Sum(nil))
+	}
+	recovery := a.RecoveryCapsuleStateStore()
+	if recovery == nil || recovery.Count() == 0 {
+		return root
 	}
 	h := sha256.New()
-	h.Write([]byte("accounts:"))
-	h.Write([]byte(accountRoot))
-	h.Write([]byte("\ntasks:"))
-	h.Write([]byte(tasks.StateRoot()))
+	h.Write([]byte("state:"))
+	h.Write([]byte(root))
+	h.Write([]byte("\nwallet-recovery:"))
+	h.Write([]byte(recovery.StateRoot()))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -414,6 +452,10 @@ var (
 	// ErrTaskStateNotWired is returned when a qsdm/tasks/v1
 	// tx arrives at a node that has no TaskStateStore configured.
 	ErrTaskStateNotWired = errors.New("chain: task action tx received but no TaskStateStore is wired")
+
+	// ErrRecoveryCapsuleStateNotWired is returned when a signed recovery
+	// capsule transaction reaches a node that has not installed its store.
+	ErrRecoveryCapsuleStateNotWired = errors.New("chain: wallet recovery capsule tx received but no RecoveryCapsuleStateStore is wired")
 )
 
 // Compile-time interface assertions.
@@ -468,10 +510,14 @@ func (a *EnrollmentAwareApplier) ChainReplayClone() ChainReplayApplier {
 	a.mu.RLock()
 	liveSlasher := a.slasher
 	liveTasks := a.tasks
+	liveRecovery := a.recovery
 	clone.heightFn = a.heightFn
 	a.mu.RUnlock()
 	if liveTasks != nil {
 		clone.tasks = liveTasks.ChainReplayClone().(*TaskStateStore)
+	}
+	if liveRecovery != nil {
+		clone.recovery = liveRecovery.ChainReplayClone().(*RecoveryCapsuleStateStore)
 	}
 	if liveSlasher != nil {
 		sm, ok := sharedMutator.(SlasherStateMutator)
@@ -542,11 +588,23 @@ func (a *EnrollmentAwareApplier) RestoreFromChainReplay(from ChainReplayApplier)
 	}
 	liveTasks := a.TaskStateStore()
 	otherTasks := other.TaskStateStore()
-	if liveTasks == nil && otherTasks == nil {
-		return nil
-	}
-	if liveTasks == nil || otherTasks == nil {
+	if (liveTasks == nil) != (otherTasks == nil) {
 		return errors.New("chain: RestoreFromChainReplay task state presence mismatch")
 	}
-	return liveTasks.RestoreFromChainReplay(otherTasks)
+	if liveTasks != nil {
+		if err := liveTasks.RestoreFromChainReplay(otherTasks); err != nil {
+			return err
+		}
+	}
+	liveRecovery := a.RecoveryCapsuleStateStore()
+	otherRecovery := other.RecoveryCapsuleStateStore()
+	if (liveRecovery == nil) != (otherRecovery == nil) {
+		return errors.New("chain: RestoreFromChainReplay recovery capsule state presence mismatch")
+	}
+	if liveRecovery != nil {
+		if err := liveRecovery.RestoreFromChainReplay(otherRecovery); err != nil {
+			return err
+		}
+	}
+	return nil
 }

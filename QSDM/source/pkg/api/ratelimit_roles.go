@@ -2,9 +2,11 @@ package api
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -149,9 +151,35 @@ func (rl *RoleRateLimiter) Middleware(next http.Handler) http.Handler {
 	})
 }
 
+// trustProxyHeaders controls whether X-Forwarded-For is honoured when
+// deriving a client IP. It defaults to false: X-Forwarded-For is
+// caller-supplied, so trusting it unconditionally lets any client rotate
+// its own rate-limit bucket exactly like the removed X-API-Key path did.
+// Operators terminating TLS behind a reverse proxy that overwrites the
+// header opt in with QSDM_TRUST_PROXY_HEADERS=1.
+var trustProxyHeaders atomic.Bool
+
+// SetTrustProxyHeaders declares whether this node sits behind a trusted
+// reverse proxy that rewrites X-Forwarded-For. Enable it ONLY when the
+// proxy strips client-supplied values; otherwise rate limiting becomes
+// bypassable by header rotation.
+func SetTrustProxyHeaders(trust bool) { trustProxyHeaders.Store(trust) }
+
+// TrustProxyHeaders reports the current setting.
+func TrustProxyHeaders() bool { return trustProxyHeaders.Load() }
+
 func clientIP(r *http.Request) string {
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		return strings.Split(forwarded, ",")[0]
+	if trustProxyHeaders.Load() {
+		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+			if first := strings.TrimSpace(strings.Split(forwarded, ",")[0]); first != "" {
+				return first
+			}
+		}
+	}
+	// RemoteAddr is host:port; strip the port so a client cannot mint a
+	// new bucket per source port.
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil && host != "" {
+		return host
 	}
 	return r.RemoteAddr
 }

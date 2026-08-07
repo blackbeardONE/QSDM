@@ -400,6 +400,9 @@ const validateSignerRestore = (endpoint: string, payload: unknown) => {
     invalid(endpoint, 'recoveryWords must contain exactly 24 words');
   }
   ensureString(endpoint, object, 'passphrase', { min: 12, max: 4096 });
+  ensureOptionalString(endpoint, object, 'recoveryType', {
+    pattern: /^(native|legacy)$/,
+  });
 };
 
 const validateSignerUnlock = (endpoint: string, payload: unknown) => {
@@ -515,6 +518,11 @@ export const validateIpcPayload = (
     case Endpoints.CREATE_QSDM_SIGNER_WALLET:
       validateSignerCreate(endpoint, payload);
       break;
+    case Endpoints.ENABLE_QSDM_SIGNER_LEGACY_RECOVERY: {
+      const object = ensureObject(endpoint, payload);
+      ensureString(endpoint, object, 'passphrase', { min: 1, max: 4096 });
+      break;
+    }
     case Endpoints.RESTORE_QSDM_SIGNER_WALLET:
       validateSignerRestore(endpoint, payload);
       break;

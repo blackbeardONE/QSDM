@@ -1,7 +1,4 @@
-import {
-  buildQsdmTaskReadUrls,
-  QSDM_CELL_DECIMALS,
-} from 'config/qsdm';
+import { buildQsdmTaskActionReadUrls, QSDM_CELL_DECIMALS } from 'config/qsdm';
 import {
   QsdmTaskResponse,
   QsdmTaskStateParticipant,
@@ -74,10 +71,7 @@ export const getQsdmTaskParticipantBySender = (
   }
 
   return Object.entries(participants).find(([participantKey, participant]) => {
-    const participantSender = getParticipantSender(
-      participantKey,
-      participant
-    );
+    const participantSender = getParticipantSender(participantKey, participant);
     return participantSender.toLowerCase() === normalizedSender;
   })?.[1];
 };
@@ -102,7 +96,7 @@ export const getConfirmedQsdmTaskState = async (taskId: string) => {
   const encodedTaskId = encodeURIComponent(taskId);
   const errors: string[] = [];
 
-  for (const stateUrl of buildQsdmTaskReadUrls(
+  for (const stateUrl of buildQsdmTaskActionReadUrls(
     `/tasks/${encodedTaskId}/state`
   )) {
     try {
@@ -158,7 +152,7 @@ export const getConfirmedQsdmTaskStakeInCell = async (
   const encodedTaskId = encodeURIComponent(taskId);
   const errors: string[] = [];
 
-  for (const stateUrl of buildQsdmTaskReadUrls(
+  for (const stateUrl of buildQsdmTaskActionReadUrls(
     `/tasks/${encodedTaskId}/state`
   )) {
     try {
@@ -171,7 +165,7 @@ export const getConfirmedQsdmTaskStakeInCell = async (
     }
   }
 
-  for (const taskUrl of buildQsdmTaskReadUrls(
+  for (const taskUrl of buildQsdmTaskActionReadUrls(
     `/tasks/${encodedTaskId}`
   )) {
     try {
@@ -193,9 +187,7 @@ export const getConfirmedQsdmTaskStakeInDenomination = async (
   taskId: string,
   sender = getQsdmTaskActionSender()
 ) =>
-  qsdmCellToDenomination(
-    await getConfirmedQsdmTaskStakeInCell(taskId, sender)
-  );
+  qsdmCellToDenomination(await getConfirmedQsdmTaskStakeInCell(taskId, sender));
 
 export const getQsdmTaskStakeOwnership = async (
   taskId: string,

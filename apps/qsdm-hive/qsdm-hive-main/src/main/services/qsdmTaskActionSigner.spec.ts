@@ -138,35 +138,38 @@ describe('qsdmTaskActionSigner', () => {
     expect(status.recoveryEnabled).toBe(false);
   });
 
-  it('reports whether the active wallet supports QSDM Recovery Words', async () => {
-    const keystorePath = path.join(tmpDir, 'wallet.json');
-    const passphraseFile = path.join(tmpDir, 'passphrase.txt');
-    fs.writeFileSync(
-      keystorePath,
-      JSON.stringify({
-        type: 'qsdm-keystore',
-        address: 'recovery-wallet-address',
-        recovery: {
-          scheme: 'qsdm-wallet-recovery-v1',
-          words: 24,
-        },
-      })
-    );
-    fs.writeFileSync(passphraseFile, 'test-passphrase');
-    process.env.QSDM_TASK_ACTION_SIGNER = 'cli';
-    process.env.QSDM_TASK_ACTION_CLI_PATH = 'qsdmcli';
-    process.env.QSDM_TASK_ACTION_KEYSTORE_PATH = keystorePath;
-    process.env.QSDM_TASK_ACTION_PASSPHRASE_FILE = passphraseFile;
+  it.each(['qsdm-wallet-recovery-v1', 'qsdm-legacy-wallet-recovery-v1'])(
+    'reports QSDM Recovery Words for scheme %s',
+    async (scheme) => {
+      const keystorePath = path.join(tmpDir, 'wallet.json');
+      const passphraseFile = path.join(tmpDir, 'passphrase.txt');
+      fs.writeFileSync(
+        keystorePath,
+        JSON.stringify({
+          type: 'qsdm-keystore',
+          address: 'recovery-wallet-address',
+          recovery: {
+            scheme,
+            words: 24,
+          },
+        })
+      );
+      fs.writeFileSync(passphraseFile, 'test-passphrase');
+      process.env.QSDM_TASK_ACTION_SIGNER = 'cli';
+      process.env.QSDM_TASK_ACTION_CLI_PATH = 'qsdmcli';
+      process.env.QSDM_TASK_ACTION_KEYSTORE_PATH = keystorePath;
+      process.env.QSDM_TASK_ACTION_PASSPHRASE_FILE = passphraseFile;
 
-    const { getQsdmTaskActionSignerStatus } = await import(
-      './qsdmTaskActionSigner'
-    );
-    const status = getQsdmTaskActionSignerStatus();
+      const { getQsdmTaskActionSignerStatus } = await import(
+        './qsdmTaskActionSigner'
+      );
+      const status = getQsdmTaskActionSignerStatus();
 
-    expect(status.recoveryEnabled).toBe(true);
-    expect(status.recoveryScheme).toBe('qsdm-wallet-recovery-v1');
-    expect(status.recoveryWords).toBe(24);
-  });
+      expect(status.recoveryEnabled).toBe(true);
+      expect(status.recoveryScheme).toBe(scheme);
+      expect(status.recoveryWords).toBe(24);
+    }
+  );
 
   it('enables signed actions through the exact official gateway', async () => {
     const keystorePath = path.join(tmpDir, 'wallet.json');

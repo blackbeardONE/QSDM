@@ -22,11 +22,59 @@ func TestTxSigner_SignAndVerify(t *testing.T) {
 	signer := NewTxSigner(priv)
 	verifier := NewSigVerifier()
 
-	tx := &mempool.Tx{ID: "tx1", Sender: "alice", Recipient: "bob", Amount: 10, Fee: 1, Nonce: 0}
+	// Sender must be the address derived from the signing key. A signature
+	// alone does not authorize spending from an arbitrary account.
+	tx := &mempool.Tx{ID: "tx1", Sender: signer.Address(), Recipient: "bob", Amount: 10, Fee: 1, Nonce: 0}
 	signed := signer.Sign(tx)
 
 	if err := verifier.Verify(signed); err != nil {
 		t.Fatalf("valid signature should verify: %v", err)
+	}
+}
+
+// TestSigVerifier_Ed25519RejectsSenderImpersonation is the regression test for
+// the gossip impersonation hole: with an empty keyring, verifyEd25519 used to
+// accept any (victim-sender, attacker-key, attacker-signature) triple because
+// the keyring cross-check was skipped when no key was registered. Any peer on
+// the tx-gossip topic could therefore spend from any funded account.
+func TestSigVerifier_Ed25519RejectsSenderImpersonation(t *testing.T) {
+	_, attackerPriv := makeTestKeypair(t)
+	victimPub, _ := makeTestKeypair(t)
+
+	attacker := NewTxSigner(attackerPriv)
+	verifier := NewSigVerifier() // empty keyring — the production configuration
+
+	victim := Ed25519WalletAddress(victimPub)
+	tx := &mempool.Tx{ID: "steal", Sender: victim, Recipient: attacker.Address(), Amount: 1000, Fee: 1, Nonce: 0}
+
+	// Attacker signs correctly — with their own key, for the victim's account.
+	signed := attacker.Sign(tx)
+
+	if err := verifier.Verify(signed); err == nil {
+		t.Fatal("attacker must not be able to sign a transaction on behalf of another sender")
+	}
+}
+
+// TestSigVerifier_Ed25519PinnedKeyOverridesDerivation confirms an operator can
+// still pin a key for a non-derived address via RegisterKey, and that the pin
+// is authoritative rather than additive.
+func TestSigVerifier_Ed25519PinnedKeyOverridesDerivation(t *testing.T) {
+	pub, priv := makeTestKeypair(t)
+	signer := NewTxSigner(priv)
+	verifier := NewSigVerifier()
+	verifier.RegisterKey("Alice", pub)
+
+	tx := &mempool.Tx{ID: "tx1", Sender: "alice", Recipient: "bob", Amount: 10, Fee: 1, Nonce: 0}
+	if err := verifier.Verify(signer.Sign(tx)); err != nil {
+		t.Fatalf("pinned key should authorize its address (case-insensitively): %v", err)
+	}
+
+	// A different key for that pinned address must still be refused.
+	_, otherPriv := makeTestKeypair(t)
+	other := NewTxSigner(otherPriv)
+	tx2 := &mempool.Tx{ID: "tx2", Sender: "alice", Recipient: "bob", Amount: 10, Fee: 1, Nonce: 0}
+	if err := verifier.Verify(other.Sign(tx2)); err == nil {
+		t.Fatal("a key other than the pinned one must not spend from the pinned address")
 	}
 }
 

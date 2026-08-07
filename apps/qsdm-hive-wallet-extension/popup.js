@@ -98,6 +98,23 @@ const getActiveSite = async () => {
   activeSiteName = new URL(activeOrigin).hostname;
   siteNameElement.textContent = activeSiteName;
   siteNameElement.title = activeOrigin;
+  return tab;
+};
+
+const ensureProviderInjected = async (tab) => {
+  if (!Number.isInteger(tab?.id)) {
+    throw new Error("The active browser tab is unavailable");
+  }
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ["content.js"],
+    world: "ISOLATED",
+  });
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ["provider.js"],
+    world: "MAIN",
+  });
 };
 
 const pingWithRetry = async (attempts = 4) => {
@@ -114,7 +131,8 @@ const refresh = async () => {
   connectButton.disabled = true;
   setSiteConnected(false);
   try {
-    await getActiveSite();
+    const activeTab = await getActiveSite();
+    await ensureProviderInjected(activeTab);
   } catch (error) {
     activeOrigin = "";
     activeSiteName = "";

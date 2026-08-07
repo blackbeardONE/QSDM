@@ -76,8 +76,11 @@ jobs:
         run: |
           set -euo pipefail
           bash -n .github/scripts/resolve-release-tag.sh
+          bash -n QSDM/deploy/landing/_install_docs_site.sh
+          bash -n QSDM/deploy/scripts/publish_edge_release.sh
           bash -n QSDM/deploy/validator-package/install-or-update.sh
           bash -n QSDM/deploy/validator-package/rollback.sh
+          bash -n QSDM/scripts/smoke_edge_agent_linux.sh
           pwsh -NoProfile -Command '
             $errors = @()
             [System.Management.Automation.Language.Parser]::ParseFile(
@@ -350,6 +353,48 @@ jobs:
           export CGO_LDFLAGS="-L${L} -loqs"
           export LD_LIBRARY_PATH="${L}:${LD_LIBRARY_PATH:-}"
           go test ./pkg/api/... -count=1 -short -timeout 10m -run TestSendTransaction_meshCompanionSecondBroadcast
+
+  # Full pure-Go test suite.
+  #
+  # Before this job existed, CI ran exactly four narrow `go test`
+  # invocations, and an exhaustive grep for "go test" across
+  # .github/workflows found ZERO covering pkg/storage, pkg/networking,
+  # pkg/monitoring, pkg/chain, pkg/mining or internal/**. That left the
+  # large majority of the repo's ~92k LOC of tests non-gating: 82
+  # networking tests, both SQLite suites, the mTLS suite, the API
+  # versioning suite and the rate-limit suites could all go red without
+  # failing a single check, and pkg/api ran under a single -run filter.
+  #
+  # Uses the pure-Go ML-DSA-87 backend (-tags dilithium_circl) so the job
+  # needs no liboqs build and stays fast enough to gate every push. The
+  # CGO/liboqs job above still covers the cgo backend.
+  go-test-all:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      - name: Test all packages (pure-Go ML-DSA backend)
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "1"
+          QSDM_METRICS_REGISTER_STRICT: "1"
+        run: |
+          set -euo pipefail
+          go test -tags dilithium_circl ./... -count=1 -timeout 40m
+
+      # The Go SDK is a separate module (so `go get` can resolve it), which
+      # puts it outside the ./... above. Test it explicitly or it silently
+      # stops being covered.
+      - name: Test Go SDK module
+        working-directory: QSDM/source/sdk/go
+        run: |
+          set -euo pipefail
+          go test ./... -count=1 -timeout 10m
 
   # Data race detector on hot pure-Go packages (slower than default job). Run via Actions → workflow_dispatch.
   race-hot-packages:

@@ -14,11 +14,16 @@ it. Hive removes those temporary files during shutdown.
 
 ## Browser boundary
 
-- The official manifest pins extension ID
-  `habkkkednignfkoffhpbjahcjbikkahh`; Hive registers only this ID.
+- The source manifest pins development extension ID
+  `habkkkednignfkoffhpbjahcjbikkahh`; Hive registers only explicitly trusted
+  development, interim CRX, and store IDs.
 - Packaged Hive releases refresh current-user native-host registration on each
   start. Registration does not require administrator access.
-- The extension requests only `nativeMessaging` and `activeTab` permissions.
+- The extension requests `nativeMessaging`, `activeTab`, and `scripting`.
+  `activeTab` and `scripting` provide temporary provider injection only after
+  the user clicks the extension on a website outside the built-in allowlist.
+- Automatic provider injection is restricted to QSDM, QSDM Online, and Sky
+  Fang HTTPS domains. The Chrome Web Store package has no broad host pattern.
 - Websites receive `window.qsdm`, which exposes a fixed allowlist of methods.
 - Remote sites must use HTTPS. Plain HTTP is accepted only on loopback hosts
   for local development.
@@ -35,8 +40,10 @@ the host with a fresh 256-bit token stored in a private per-user file and
 rotated on every Hive start. The broker does not bind to a LAN or public
 interface.
 
-Native-host manifests allow only the pinned official extension ID. A future
-Chrome Web Store or Edge Add-ons package must retain this identity.
+Native-host manifests allow only explicitly trusted extension IDs. The Chrome
+Web Store upload package omits the development `manifest.key`, so Chrome can
+assign the store item ID. That assigned ID must be added to Hive's allowlist
+before publication. Hive must never use a wildcard browser-extension origin.
 
 ## Explicit limitations
 

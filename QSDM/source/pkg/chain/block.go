@@ -20,8 +20,12 @@ var ErrPolExtensionBlocked = errors.New("chain: POL anchor blocks extending the 
 // ErrBFTExtensionBlocked is returned when the live BFT engine has not committed the current chain tip height yet.
 var ErrBFTExtensionBlocked = errors.New("chain: BFT extension blocked until the current tip height is committed in BFT")
 
-// ErrPreSealRequiresAccountStore is returned when PreSealBFTRound is set but the applier is not *AccountStore.
-var ErrPreSealRequiresAccountStore = errors.New("chain: pre-seal BFT requires *AccountStore applier for speculative apply")
+// ErrPreSealRequiresAccountStore is returned when PreSealBFTRound is set but
+// the applier cannot produce an isolated clone for speculative apply (i.e. it
+// does not implement ChainReplayApplier). The name is retained for
+// compatibility with existing error handling; the requirement is the
+// interface, not the *AccountStore concrete type.
+var ErrPreSealRequiresAccountStore = errors.New("chain: pre-seal BFT requires a replay-capable applier (ChainReplayApplier) for speculative apply")
 
 // ErrSealGuardBlocked is returned when a runtime safety dependency, such as
 // durable chain persistence, has failed and no further blocks may be sealed.
@@ -61,6 +65,13 @@ type Block struct {
 	TotalFees    float64       `json:"total_fees"`
 	GasUsed      int64         `json:"gas_used"`
 	ProducerID   string        `json:"producer_id"`
+
+	// ProducerAuth authenticates ProducerID. Deliberately excluded from
+	// computeBlockHash (that would be circular), so adding it does not
+	// change any existing block hash. Without it, recomputing a block's
+	// hash proves only internal consistency: an attacker can fabricate a
+	// block, claim any ProducerID, and it verifies. See block_sig.go.
+	ProducerAuth BFTWireAuth `json:"producer_auth,omitempty"`
 }
 
 // BlockHeader is the lightweight header for SPV validation.
@@ -107,6 +118,11 @@ type BlockProducer struct {
 	mu          sync.Mutex
 	pool        *mempool.Mempool
 	applier     StateApplier
+
+	// blockSigner authenticates sealed blocks. Guarded by signerMu, not
+	// mu, because ProduceBlock holds mu when it signs. See block_sig.go.
+	signerMu    sync.RWMutex
+	blockSigner BFTSigner
 	chain       []*Block
 	maxTxBlock  int
 	producerID  string
@@ -285,7 +301,7 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 	}
 
 	if bp.preSealBFTRound != nil {
-		if _, ok := bp.applier.(*AccountStore); !ok {
+		if _, ok := bp.applier.(ChainReplayApplier); !ok {
 			return nil, ErrPreSealRequiresAccountStore
 		}
 	}
@@ -311,8 +327,16 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 	var tentative *Block
 
 	if bp.preSealBFTRound != nil {
-		as := bp.applier.(*AccountStore)
-		spec := as.Clone()
+		// Speculative execution needs an isolated copy of live state, not
+		// specifically an *AccountStore. Requiring the concrete type here
+		// made block production unreachable whenever consensus was
+		// enabled: production wires *EnrollmentAwareApplier, so with
+		// QSDM_SOLO_VALIDATOR_MODE=0 every ProduceBlock returned
+		// ErrPreSealRequiresAccountStore and the node produced no blocks
+		// after genesis. Both appliers already implement
+		// ChainReplayApplier, which provides exactly the clone semantics
+		// this path needs.
+		spec := bp.applier.(ChainReplayApplier).ChainReplayClone()
 		for _, tx := range txs {
 			if err := spec.ApplyTx(tx); err != nil {
 				outcomes = append(outcomes, localTxOutcome{Tx: tx, ApplyErr: err})
@@ -386,6 +410,16 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 			ProducerID:   bp.producerID,
 		}
 		block.Hash = computeBlockHash(block)
+	}
+
+	// Authenticate the block as ours. SignBlock rewrites ProducerID to the
+	// identity the key derives and recomputes the hash, so a producerID
+	// that disagrees with the signing key cannot be sealed.
+	if signer := bp.BlockSigner(); signer != nil {
+		if err := SignBlock(block, signer); err != nil {
+			bp.pool.RestoreTransactions(txs)
+			return nil, fmt.Errorf("chain: sign produced block: %w", err)
+		}
 	}
 
 	bp.chain = append(bp.chain, block)

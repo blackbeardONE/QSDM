@@ -13,9 +13,10 @@ errors.
 
 QSDM does not compress an encrypted JSON file into the words. An arbitrary
 keystore is far larger than a short phrase, and encryption cannot make it fit
-without losing information. QSDM also does not use a private, unreviewed
-cipher. The QSDM-specific part is the versioned wallet derivation contract;
-the building blocks remain established cryptography.
+without losing information. New wallets derive their key directly from the
+words. Upgraded older wallets use the words to locate and decrypt an opaque
+recovery capsule replicated by QSDM Core. Both paths use established
+cryptographic building blocks and versioned formats.
 
 ## What each secret does
 
@@ -38,9 +39,9 @@ phrase.
 3. Write down all 24 words shown after creation and store them offline.
 4. Use **Backup JSON** for an additional encrypted backup.
 
-To restore, choose **Restore with 24 Words**, enter all words, and choose a new
-local passphrase. Hive reconstructs the same address and writes a fresh
-encrypted JSON file.
+To restore, choose **Restore with 24 Words**, select the correct recovery type,
+enter all words, and choose a new local passphrase. Hive reconstructs the same
+address and writes a fresh encrypted JSON file.
 
 **Export Words** is available only for a wallet originally created or restored
 with QSDM Recovery Words. It requires the wallet passphrase and saves the words
@@ -48,18 +49,26 @@ to a private file selected by the user.
 
 ## Existing wallets
 
-Older QSDM wallets were generated randomly and remain valid. Their recovery
-method is still **keystore JSON + passphrase**. They cannot be assigned a true
-phrase afterward because the original random key was not derived from phrase
-entropy.
+Older QSDM wallets were generated randomly and remain valid. Hive can now add
+24-word recovery without changing the wallet address:
 
-To move an older wallet to phrase recovery:
+1. Unlock the old wallet with its existing JSON and passphrase.
+2. Open **Settings > Wallet** and choose **Enable Recovery**.
+3. Save the 24 words offline and wait for QSDM Core confirmation.
+4. Keep the automatic pre-recovery JSON backup and the current encrypted JSON.
 
-1. Create a new recovery-enabled wallet and secure its 24 words.
-2. Verify the new address from the words on a second device or temporary
-   profile.
-3. Transfer CELL and task ownership using the normal signed migration paths.
-4. Keep the old JSON and passphrase until every balance and task is confirmed.
+The words derive an encryption key and an opaque locator. Hive encrypts the
+exact old ML-DSA key into a versioned AES-256-GCM capsule, signs the capsule
+registration with the wallet, and QSDM Core replicates only the ciphertext.
+Validators cannot read the private key or recovery words. On restore, choose
+**Older wallet upgraded in Hive** so Hive retrieves and decrypts that capsule.
+
+Activation requires the wallet to exist in QSDM account state and QSDM Core to
+confirm the signed capsule. Unlike a newer wallet whose key is derived directly
+from its words, an upgraded older wallet needs both its words and access to the
+replicated capsule. Keep the encrypted JSON backup as an independent recovery
+path. If both the JSON/passphrase and recovery words are lost, QSDM cannot
+recover the wallet.
 
 ## Native CLI
 
@@ -77,6 +86,16 @@ qsdmcli wallet restore --out restored-wallet.json \
 qsdmcli wallet export-recovery --in wallet.json \
   --passphrase-file passphrase.txt \
   --out offline-recovery.txt
+
+qsdmcli wallet enable-recovery --in old-wallet.json \
+  --passphrase-file old-passphrase.txt \
+  --recovery-out offline-recovery.txt \
+  --api-url https://api.qsdm.tech/attest/home-validator/api/v1
+
+qsdmcli wallet restore-legacy --out restored-old-wallet.json \
+  --passphrase-file new-passphrase.txt \
+  --recovery-file offline-recovery.txt \
+  --api-url https://api.qsdm.tech/attest/home-validator/api/v1
 ```
 
 The recovery format is `qsdm-wallet-recovery-v1`:
@@ -90,3 +109,12 @@ The recovery format is `qsdm-wallet-recovery-v1`:
 
 The phrase uses familiar BIP-39 words, but its derived wallet is QSDM-specific.
 Import it only through QSDM software.
+
+Upgraded older wallets use `qsdm-legacy-wallet-recovery-v1`:
+
+- 256 bits of operating-system random entropy encoded as 24 BIP-39 words;
+- HKDF-SHA-256 domain separation for the capsule key and opaque locator;
+- AES-256-GCM encryption of the original ML-DSA private/public key and address;
+- signed, nonce-protected capsule registration in QSDM consensus state;
+- post-decryption verification that the private key still derives the recorded
+  public key and address.

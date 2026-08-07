@@ -301,6 +301,7 @@ RestartSec=10
 Environment="CGO_ENABLED=1"
 Environment="LD_LIBRARY_PATH=${INSTALL_DIR}/liboqs_install/lib:${INSTALL_DIR}/liboqs_install/lib64:/usr/local/lib64:/usr/local/lib"
 Environment="CONFIG_FILE=${CONFIG_FILE}"
+Environment="QSDM_LOG_STDOUT=false"
 # QSDM_CONFIG_FILE is set ahead of a future Go-side migration that
 # would teach pkg/config/config.go to read it before falling back to
 # the bare CONFIG_FILE name. As of today the binary ONLY reads

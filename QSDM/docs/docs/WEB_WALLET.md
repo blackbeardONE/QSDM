@@ -7,10 +7,17 @@ Source:    `QSDM/source/wasm_modules/wallet/cmd/qsdm-wallet/main.go`
 Sibling:   `qsdmcli wallet new|show|inspect|sign` (CLI · same keystore format)
 
 The web wallet is a static page that generates and operates ML-DSA-87
-(FIPS 204) wallets entirely client-side. The QSDM validators play no
-role in keystore creation or storage; the only network traffic from
-`/wallet/` is the GET of `wallet.html`, `wasm_exec.js`, `wallet.wasm`,
-and `wallet.js`.
+(FIPS 204) wallets entirely client-side. QSDM validators play no role in
+keystore creation or storage. Create, import, unlock, and sign load only the
+static wallet assets. Balance lookup reads the public QSDM API, and Send posts
+only an already-signed transaction envelope; neither path sends the private
+key or passphrase.
+
+The current web wallet does not have a QSDM Account login. Email/password and
+Telegram login require a separate consumer identity service and an encrypted
+vault-sync boundary; validator-dashboard authentication is not suitable for
+that purpose. The accepted design and release gates are documented in
+[QSDM Account and Wallet Sync](WALLET_ACCOUNT_SYNC.md).
 
 This document is the reference for what the page does, how, and why.
 

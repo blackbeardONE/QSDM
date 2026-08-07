@@ -50,7 +50,7 @@ if [[ -n "$(find "$STAGE" -type l -print -quit)" ]]; then
 fi
 
 for required in \
-  index.html download.html network.html explorer.html validators.html \
+  index.html download.html network.html explorer.html validators.html support.html privacy.html \
   assets/site.css assets/site-nav.js docs/index.html docs/docs.css \
   docs/docs.js docs/lib/markdown-it.min.js; do
   if [[ ! -f "$STAGE/$required" ]]; then
@@ -139,6 +139,8 @@ for u in \
   https://qsdm.tech/network.html                  \
   https://qsdm.tech/explorer.html                 \
   https://qsdm.tech/validators.html               \
+  https://qsdm.tech/support.html                  \
+  https://qsdm.tech/privacy.html                  \
   https://qsdm.tech/docs/                         \
   https://qsdm.tech/docs/docs.css                 \
   https://qsdm.tech/docs/docs.js                  \

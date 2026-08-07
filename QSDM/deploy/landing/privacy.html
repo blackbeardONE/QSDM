@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QSDM Privacy Policy</title>
+  <meta name="description" content="Privacy policy for QSDM Hive, the QSDM Hive Wallet browser extension, and qsdm.tech reference services." />
+  <meta name="theme-color" content="#061116" />
+  <link rel="canonical" href="https://qsdm.tech/privacy.html" />
+  <link rel="icon" href="/assets/qsdm-hive-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/site.css" />
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; }
+    .shell { width: min(72rem, calc(100% - 2rem)); margin: 0 auto; }
+    .policy-hero { padding: 5rem 0 4rem; border-bottom: 1px solid var(--border); }
+    .eyebrow {
+      margin: 0 0 1rem; color: var(--teal); font-family: var(--mono);
+      font-size: 0.8rem; font-weight: 500;
+    }
+    h1, h2, h3, p, li { letter-spacing: 0; }
+    h1 { max-width: 760px; margin: 0; font-size: 3.8rem; line-height: 1.05; font-weight: 600; }
+    .lead { max-width: 760px; margin: 1.25rem 0 0; color: var(--text-2); font-size: 1.08rem; line-height: 1.65; }
+    .updated { margin: 1.25rem 0 0; color: var(--muted); font-family: var(--mono); font-size: 0.78rem; }
+    .policy-layout { display: grid; grid-template-columns: minmax(180px, 0.28fr) minmax(0, 1fr); gap: 4rem; padding: 4rem 0 5rem; }
+    .policy-nav { align-self: start; position: sticky; top: 6rem; border-top: 1px solid var(--border-2); }
+    .policy-nav a { display: block; padding: 0.75rem 0; border-bottom: 1px solid var(--border); color: var(--text-2); text-decoration: none; font-size: 0.92rem; }
+    .policy-nav a:hover { color: var(--teal); }
+    .policy-copy { max-width: 760px; }
+    .policy-section { padding: 0 0 2.75rem; margin: 0 0 2.75rem; border-bottom: 1px solid var(--border); scroll-margin-top: 6rem; }
+    .policy-section:last-child { margin-bottom: 0; border-bottom: 0; }
+    .policy-section h2 { margin: 0 0 1rem; font-size: 1.8rem; font-weight: 600; }
+    .policy-section h3 { margin: 1.6rem 0 0.6rem; font-size: 1.08rem; font-weight: 600; }
+    .policy-section p, .policy-section li { color: var(--text-2); line-height: 1.7; }
+    .policy-section p { margin: 0 0 1rem; }
+    .policy-section ul { margin: 0.5rem 0 1rem; padding-left: 1.25rem; }
+    .policy-section li + li { margin-top: 0.45rem; }
+    .policy-callout { padding: 1.15rem 1.25rem; border: 1px solid var(--border-2); background: var(--panel); }
+    .policy-callout strong { color: var(--text); }
+    .contact-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-top: 1.25rem; }
+    @media (max-width: 760px) {
+      .policy-hero { padding: 3.5rem 0 3rem; }
+      h1 { font-size: 2.55rem; }
+      .policy-layout { grid-template-columns: 1fr; gap: 2rem; padding-top: 2.5rem; }
+      .policy-nav { position: static; display: grid; grid-template-columns: 1fr 1fr; }
+      .policy-nav a:nth-child(odd) { padding-right: 0.75rem; }
+      .policy-nav a:nth-child(even) { padding-left: 0.75rem; border-left: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="site-brand" href="/"><img src="/assets/qsdm-hive-icon.png" alt="" /><span>QSDM</span></a>
+      <nav class="site-nav" aria-label="Primary">
+        <div class="site-nav-item">
+          <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">Network <span class="site-nav-chevron" aria-hidden="true"></span></button>
+          <div class="site-nav-panel" role="menu">
+            <a href="/network.html" role="menuitem">Overview<span class="site-nav-hint">Live CELL network</span></a>
+            <a href="/explorer.html" role="menuitem">Explorer<span class="site-nav-hint">Search + chain tip</span></a>
+            <a href="/api.html" role="menuitem">API<span class="site-nav-hint">HTTP v1 overview</span></a>
+            <a href="/validators.html" role="menuitem">Validators<span class="site-nav-hint">Bootstrap peers</span></a>
+          </div>
+        </div>
+        <div class="site-nav-item">
+          <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">Hive <span class="site-nav-chevron" aria-hidden="true"></span></button>
+          <div class="site-nav-panel" role="menu">
+            <a href="/download.html" role="menuitem">Download Hive<span class="site-nav-hint">Windows + Linux app</span></a>
+            <a href="/wallet.html" role="menuitem">Web wallet<span class="site-nav-hint">Browser self-custody</span></a>
+            <a href="/support.html" role="menuitem">Wallet support<span class="site-nav-hint">Extension help</span></a>
+          </div>
+        </div>
+        <a href="/docs/">Docs</a>
+        <div class="site-nav-item">
+          <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">Trust <span class="site-nav-chevron" aria-hidden="true"></span></button>
+          <div class="site-nav-panel" role="menu">
+            <a href="/audit.html" role="menuitem">Public audit<span class="site-nav-hint">Live checklist</span></a>
+            <a href="/trust.html" role="menuitem">Attestations<span class="site-nav-hint">NVIDIA feed</span></a>
+            <a href="/privacy.html" role="menuitem">Privacy<span class="site-nav-hint">Data handling</span></a>
+          </div>
+        </div>
+      </nav>
+      <div class="site-actions">
+        <a class="site-btn site-btn-solid" href="/download.html">Download</a>
+        <button class="site-menu-toggle" type="button" id="siteMenuToggle" aria-label="Open menu" aria-expanded="false">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 7H4V5H20V7ZM20 13H4V11H20V13ZM20 19H4V17H20V19Z"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="site-mobile-nav" id="siteMobileNav">
+      <div class="site-mobile-group"><div class="site-mobile-label">Network</div><a href="/network.html">Overview</a><a href="/explorer.html">Explorer</a><a href="/api.html">API</a><a href="/validators.html">Validators</a></div>
+      <div class="site-mobile-group"><div class="site-mobile-label">Hive</div><a href="/download.html">Download Hive</a><a href="/wallet.html">Web wallet</a><a href="/support.html">Wallet support</a></div>
+      <div class="site-mobile-group"><div class="site-mobile-label">Learn</div><a href="/docs/">Docs</a><a href="/audit.html">Public audit</a><a href="/trust.html">Attestations</a><a href="/privacy.html">Privacy</a></div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="policy-hero">
+      <div class="shell">
+        <p class="eyebrow">QSDM DATA HANDLING</p>
+        <h1>Privacy policy</h1>
+        <p class="lead">How QSDM Hive, the QSDM Hive Wallet browser extension, and the reference services at qsdm.tech handle information.</p>
+        <p class="updated">Last updated: August 2, 2026</p>
+      </div>
+    </section>
+
+    <div class="shell policy-layout">
+      <nav class="policy-nav" aria-label="Privacy policy sections">
+        <a href="#scope">Scope</a>
+        <a href="#local-data">Local data</a>
+        <a href="#extension">Browser extension</a>
+        <a href="#network-data">Network features</a>
+        <a href="#retention">Retention</a>
+        <a href="#controls">Your controls</a>
+        <a href="#contact">Contact</a>
+      </nav>
+
+      <article class="policy-copy">
+        <section class="policy-section" id="scope">
+          <h2>Scope</h2>
+          <p>This policy applies to the open-source QSDM Hive desktop application, the QSDM Hive Wallet browser extension, and the reference services operated at <strong>qsdm.tech</strong>.</p>
+          <p>A separately operated validator, task provider, Relay, website, or integration may have its own policy. Its operator controls the requests sent to that service.</p>
+        </section>
+
+        <section class="policy-section" id="local-data">
+          <h2>Data kept on your computer</h2>
+          <p>Hive stores account profiles, encrypted QSDM keystore files, settings, task state, logs, miner enrollment state, and optional Relay credentials in the operating system's application-data directories.</p>
+          <p>Wallet passphrases and private keys are intended to remain on your computer. QSDM does not hold them as account-recovery data. Losing both the keystore JSON and passphrase can permanently lose access to the wallet.</p>
+          <div class="policy-callout"><strong>No advertising tracker.</strong> Hive analytics functions are disabled and do not transmit product-usage events.</div>
+        </section>
+
+        <section class="policy-section" id="extension">
+          <h2>QSDM Hive Wallet extension</h2>
+          <p>The extension has one purpose: connect supported websites to the active QSDM wallet secured by QSDM Hive and route user-initiated wallet connection, balance, signing, and CELL transfer requests to Hive for explicit local approval.</p>
+          <h3>Information it handles</h3>
+          <ul>
+            <li>the origin of the website requesting a wallet connection, which Chrome classifies as web history;</li>
+            <li>the public wallet address, which is an account identifier, and its balance;</li>
+            <li>an allowlisted wallet method and its parameters; and</li>
+            <li>the resulting approval, rejection, signature, or transaction response.</li>
+          </ul>
+          <p>This structured data is exchanged with the QSDM Hive native messaging host on your computer. Site approvals and extension settings are stored locally until you revoke or clear them. The extension does not build or retain a general browsing history.</p>
+          <p>The provider loads automatically only on the official QSDM, QSDM Online, and Sky Fang HTTPS domains. On another HTTPS website, temporary page access is granted only after you explicitly open the extension for that tab. The store package does not request blanket host access.</p>
+          <h3>Chrome Web Store disclosure categories</h3>
+          <p>QSDM Hive Wallet declares <strong>Personally identifiable information</strong> (the public wallet address as an account identifier), <strong>Financial and payment information</strong> (wallet balance and transaction requests), and <strong>Web history</strong> (only the current website origin required for connection). It does not collect the other categories listed in the Chrome Web Store form.</p>
+          <h3>Information it does not collect</h3>
+          <ul>
+            <li>the Hive PIN, wallet private keys, keystore JSON files, passphrases, or wallet recovery material;</li>
+            <li>page content, clicks, keystrokes, or general browsing history;</li>
+            <li>personal data for sale, personalized advertising, creditworthiness, or lending decisions; or</li>
+            <li>remote executable code. Extension logic is included in the submitted package.</li>
+          </ul>
+          <div class="policy-callout"><strong>Chrome Limited Use.</strong> QSDM Hive Wallet's use and transfer of information received from browser APIs adheres to the Chrome Web Store User Data Policy, including the Limited Use requirements. Browser data is used only to provide or improve the extension's single wallet-connection purpose.</div>
+        </section>
+
+        <section class="policy-section" id="network-data">
+          <h2>Data sent for network features</h2>
+          <p>Hive sends only the information needed for a feature you start or configure. Depending on the feature, this can include:</p>
+          <ul>
+            <li>public wallet addresses and public keys;</li>
+            <li>signed transactions, task actions, proofs, and anti-replay values;</li>
+            <li>chain, balance, task, reward, and update requests;</li>
+            <li>miner enrollment identifiers, hardware capabilities, and mining proofs when mining is enabled;</li>
+            <li>bounded resource descriptions and signed workload receipts for Edge Agent, Relay, or Mother Hive participation; and</li>
+            <li>a public key, signature, and short-lived code when you explicitly link a supported integration.</li>
+          </ul>
+          <p>Private wallet keys and passphrases must not be included in those requests. Optional external notification storage is contacted only when an operator configures the required credentials.</p>
+        </section>
+
+        <section class="policy-section" id="retention">
+          <h2>Retention and disclosure</h2>
+          <p>Local data remains on your computer until you remove it, clear the relevant setting, or uninstall the software. Uninstalling Hive does not automatically destroy wallet backups or every application-data file because doing so could destroy access to funds.</p>
+          <p>Reference web and API infrastructure may retain ordinary security and operational logs, including source IP address, request time, endpoint, status, and rate-limit events. These logs are retained only as reasonably needed to operate, secure, and diagnose the services, subject to the infrastructure's configured retention.</p>
+          <p>QSDM does not sell personal information. Information is disclosed only as needed to provide a user-requested feature, to service providers operating the reference infrastructure, to comply with applicable law, or to protect users and the service from fraud, abuse, or security threats.</p>
+          <p>Public ledger transactions and accepted proofs are replicated records and generally cannot be deleted without invalidating the ledger.</p>
+        </section>
+
+        <section class="policy-section" id="controls">
+          <h2>Your controls</h2>
+          <p>Mining, task execution, website connections, transaction approvals, and resource sharing are opt-in. You can reject a request, disconnect a website or Relay, stop tasks, clear extension data, close your Hive session, or uninstall the software.</p>
+          <p>Back up the QSDM keystore before intentionally deleting local application data. Never send wallet secrets in a support request.</p>
+        </section>
+
+        <section class="policy-section" id="contact">
+          <h2>Contact</h2>
+          <p>Send privacy questions to <strong>ops@qsdm.tech</strong>. Do not include a private key, keystore file, passphrase, API token, recovery material, or approval code.</p>
+          <div class="contact-actions">
+            <a class="site-btn site-btn-solid" href="mailto:ops@qsdm.tech?subject=QSDM%20privacy%20question">Email privacy contact</a>
+            <a class="site-btn site-btn-ghost" href="/support.html">Extension support</a>
+            <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/SECURITY.md" rel="noopener" target="_blank">Security reporting</a>
+          </div>
+        </section>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell"><div class="site-footer-row"><span>QSDM privacy and data handling</span><div class="site-footer-links"><a href="/">Home</a><a href="/download.html">Download</a><a href="/docs/">Docs</a><a href="/support.html">Support</a><a href="/privacy.html">Privacy</a></div></div></div>
+  </footer>
+  <script src="/assets/site-nav.js"></script>
+</body>
+</html>

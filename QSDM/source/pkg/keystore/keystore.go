@@ -61,6 +61,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/pbkdf2"
@@ -89,8 +90,12 @@ const (
 	KDFPBKDF2SHA256 = "pbkdf2-sha256"
 	CipherAESGCM    = "aes-256-gcm"
 	RecoveryScheme  = "qsdm-wallet-recovery-v1"
-	RecoveryWords   = 24
-	RecoveryBytes   = 32
+	// LegacyRecoveryScheme protects fresh recovery entropy in an existing
+	// random-key wallet. The entropy unlocks a replicated recovery capsule;
+	// it does not deterministically generate the wallet key.
+	LegacyRecoveryScheme = "qsdm-legacy-wallet-recovery-v1"
+	RecoveryWords        = 24
+	RecoveryBytes        = 32
 )
 
 // PBKDF2 parameters. The browser side derives its key under the exact same
@@ -137,6 +142,7 @@ type Keystore struct {
 type Recovery struct {
 	Scheme       string       `json:"scheme"`
 	Words        int          `json:"words"`
+	Locator      string       `json:"locator,omitempty"`
 	KDF          string       `json:"kdf"`
 	KDFParams    KDFParams    `json:"kdf_params"`
 	Cipher       string       `json:"cipher"`
@@ -248,6 +254,52 @@ func EncryptWithRecovery(publicKey, privateKey, recoveryEntropy, passphrase []by
 	return ks, nil
 }
 
+// AttachLegacyRecovery records encrypted recovery entropy on an existing
+// random-key keystore after its recovery capsule has been accepted by QSDM
+// Core. It never changes the private-key ciphertext, public key, or address.
+func AttachLegacyRecovery(ks Keystore, recoveryEntropy, passphrase []byte, locator string) (Keystore, error) {
+	if err := Validate(ks); err != nil {
+		return Keystore{}, err
+	}
+	if len(recoveryEntropy) != RecoveryBytes {
+		return Keystore{}, fmt.Errorf("keystore: recovery entropy must be %d bytes, got %d", RecoveryBytes, len(recoveryEntropy))
+	}
+	if len(passphrase) == 0 {
+		return Keystore{}, ErrInvalidPassphrase
+	}
+	locatorBytes, err := hex.DecodeString(locator)
+	if err != nil || len(locatorBytes) != sha256.Size || locator != strings.ToLower(strings.TrimSpace(locator)) {
+		return Keystore{}, errors.New("keystore: legacy recovery locator must be a canonical 32-byte lower-case hex digest")
+	}
+	// Refuse to attach recovery metadata unless the supplied passphrase really
+	// unlocks this keystore. The decrypted key is intentionally discarded.
+	privateKey, err := Decrypt(ks, passphrase)
+	if err != nil {
+		return Keystore{}, err
+	}
+	zero(privateKey)
+
+	kdfParams, cipherParams, ciphertext, err := encryptSecret(
+		recoveryEntropy,
+		passphrase,
+		legacyRecoveryAAD(ks.Address, locator),
+	)
+	if err != nil {
+		return Keystore{}, fmt.Errorf("keystore: encrypt legacy recovery entropy: %w", err)
+	}
+	ks.Recovery = &Recovery{
+		Scheme:       LegacyRecoveryScheme,
+		Words:        RecoveryWords,
+		Locator:      locator,
+		KDF:          KDFPBKDF2SHA256,
+		KDFParams:    kdfParams,
+		Cipher:       CipherAESGCM,
+		CipherParams: cipherParams,
+		Ciphertext:   ciphertext,
+	}
+	return ks, nil
+}
+
 func encryptSecret(secret, passphrase, additionalData []byte) (KDFParams, CipherParams, string, error) {
 	salt := make([]byte, DefaultPBKDF2SaltLen)
 	if _, err := rand.Read(salt); err != nil {
@@ -309,12 +361,16 @@ func DecryptRecovery(ks Keystore, passphrase []byte) ([]byte, error) {
 	if len(passphrase) == 0 {
 		return nil, ErrInvalidPassphrase
 	}
+	aad := recoveryAAD(ks.Address)
+	if ks.Recovery.Scheme == LegacyRecoveryScheme {
+		aad = legacyRecoveryAAD(ks.Address, ks.Recovery.Locator)
+	}
 	plaintext, err := decryptSecret(
 		ks.Recovery.KDFParams,
 		ks.Recovery.CipherParams,
 		ks.Recovery.Ciphertext,
 		passphrase,
-		recoveryAAD(ks.Address),
+		aad,
 	)
 	if err != nil {
 		return nil, err
@@ -365,6 +421,10 @@ func recoveryAAD(address string) []byte {
 	return []byte(RecoveryScheme + ":" + address)
 }
 
+func legacyRecoveryAAD(address, locator string) []byte {
+	return []byte(LegacyRecoveryScheme + ":" + strings.ToLower(address) + ":" + strings.ToLower(locator))
+}
+
 // ErrInvalidPassphrase is returned by Decrypt for every recoverable
 // failure mode (wrong passphrase, tampered ciphertext, mutated nonce).
 // Callers must NOT log the underlying cause for these cases — that
@@ -372,9 +432,8 @@ func recoveryAAD(address string) []byte {
 // close" from "this passphrase is way off".
 var ErrInvalidPassphrase = errors.New("keystore: passphrase does not match (or the keystore is corrupted)")
 
-// ErrNoRecovery distinguishes a valid legacy keystore from a malformed
-// recovery-enabled one. Existing wallets remain recoverable with their JSON
-// file and passphrase; they cannot be retroactively assigned recovery words.
+// ErrNoRecovery distinguishes a wallet that has not enabled either native or
+// legacy-capsule recovery from a malformed recovery-enabled keystore.
 var ErrNoRecovery = errors.New("keystore: wallet was not created with QSDM Recovery Words")
 
 // Validate checks that a keystore is well-formed enough to attempt a
@@ -434,11 +493,20 @@ func Validate(ks Keystore) error {
 }
 
 func validateRecovery(recovery Recovery) error {
-	if recovery.Scheme != RecoveryScheme {
+	if recovery.Scheme != RecoveryScheme && recovery.Scheme != LegacyRecoveryScheme {
 		return fmt.Errorf("keystore: unsupported recovery scheme %q", recovery.Scheme)
 	}
 	if recovery.Words != RecoveryWords {
 		return fmt.Errorf("keystore: recovery words=%d (want %d)", recovery.Words, RecoveryWords)
+	}
+	if recovery.Scheme == RecoveryScheme && recovery.Locator != "" {
+		return fmt.Errorf("keystore: native recovery record must not contain a capsule locator")
+	}
+	if recovery.Scheme == LegacyRecoveryScheme {
+		locator, err := hex.DecodeString(recovery.Locator)
+		if err != nil || len(locator) != sha256.Size || recovery.Locator != strings.ToLower(strings.TrimSpace(recovery.Locator)) {
+			return fmt.Errorf("keystore: malformed legacy recovery locator")
+		}
 	}
 	if recovery.KDF != KDFPBKDF2SHA256 {
 		return fmt.Errorf("keystore: bad recovery kdf %q", recovery.KDF)

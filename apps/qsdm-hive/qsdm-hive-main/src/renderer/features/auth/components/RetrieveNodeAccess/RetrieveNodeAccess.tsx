@@ -14,9 +14,7 @@ export function RetrieveNodeAccess() {
       seedPhraseString: seedPhrase,
     });
     if (!seedPhraseMatchesOneOfTheAccounts) {
-      throw new Error(
-        'Hive recovery phrase does not match any local profiles'
-      );
+      throw new Error('Hive recovery phrase does not match any local profiles');
     }
   };
 
@@ -47,6 +45,11 @@ export function RetrieveNodeAccess() {
           </h1>
           <p className="pb-6 text-lg text-white">
             Enter your Hive recovery phrase to retrieve local node access
+          </p>
+          <p className="max-w-xl pb-6 text-sm text-finnieGray-secondary">
+            This screen restores only the local Hive profile. To add or use 24
+            QSDM Recovery Words for an older CELL wallet, unlock Hive and open
+            Settings &gt; Wallet.
           </p>
         </div>
         <SeedPhraseInput

@@ -2,7 +2,7 @@
  * @jest-environment node
  */
 
-import { spawnSync } from 'child_process';
+import { execFile } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -14,7 +14,7 @@ import { restoreQsdmSignerWallet } from './restoreQsdmSignerWallet';
 import type { Event } from 'electron';
 
 jest.mock('child_process', () => ({
-  spawnSync: jest.fn(),
+  execFile: jest.fn(),
 }));
 
 let mockSignerDir = '';
@@ -43,7 +43,11 @@ jest.mock('main/services/qsdmSignerSecretStore', () => ({
   },
 }));
 
-const mockSpawnSync = spawnSync as jest.Mock;
+jest.mock('main/services/qsdmTaskActions', () => ({
+  resolveQsdmTaskActionApiUrl: () => 'https://core.example/api/v1',
+}));
+
+const mockExecFile = execFile as unknown as jest.Mock;
 const mockActivateQsdmImportedSignerPaths =
   activateQsdmImportedSignerPaths as jest.Mock;
 const recoveryWords = Array.from(
@@ -56,27 +60,36 @@ describe('restoreQsdmSignerWallet', () => {
     mockSignerDir = fs.mkdtempSync(
       path.join(os.tmpdir(), 'qsdm-restore-wallet-')
     );
-    mockSpawnSync.mockReset();
+    mockExecFile.mockReset();
     mockActivateQsdmImportedSignerPaths.mockReset();
-    mockSpawnSync.mockImplementation((_cli: string, args: string[]) => {
-      const command = args[1];
-      if (command === 'restore') {
-        const outputPath = args[args.indexOf('--out') + 1];
-        fs.writeFileSync(outputPath, '{"type":"qsdm-keystore"}');
-        return { status: 0, stdout: 'qsdm-restored-address\n', stderr: '' };
+    mockExecFile.mockImplementation(
+      (
+        _cli: string,
+        args: string[],
+        _options: unknown,
+        callback: (error: Error | null, stdout: string, stderr: string) => void
+      ) => {
+        const command = args[1];
+        if (command === 'restore' || command === 'restore-legacy') {
+          const outputPath = args[args.indexOf('--out') + 1];
+          fs.writeFileSync(outputPath, '{"type":"qsdm-keystore"}');
+          callback(null, 'qsdm-restored-address\n', '');
+          return;
+        }
+        if (command === 'show') {
+          callback(
+            null,
+            JSON.stringify({
+              address: 'qsdm-restored-address',
+              public_key: 'qsdm-restored-public-key',
+            }),
+            ''
+          );
+          return;
+        }
+        callback(null, 'ok', '');
       }
-      if (command === 'show') {
-        return {
-          status: 0,
-          stdout: JSON.stringify({
-            address: 'qsdm-restored-address',
-            public_key: 'qsdm-restored-public-key',
-          }),
-          stderr: '',
-        };
-      }
-      return { status: 0, stdout: 'ok', stderr: '' };
-    });
+    );
   });
 
   afterEach(() => {
@@ -97,7 +110,7 @@ describe('restoreQsdmSignerWallet', () => {
       keystorePath,
       passphraseFile,
     });
-    expect(mockSpawnSync).toHaveBeenCalledTimes(3);
+    expect(mockExecFile).toHaveBeenCalledTimes(3);
     expect(mockActivateQsdmImportedSignerPaths).toHaveBeenCalledWith({
       keystorePath,
       passphraseFile,
@@ -112,6 +125,27 @@ describe('restoreQsdmSignerWallet', () => {
         passphrase: 'correct horse battery staple',
       })
     ).rejects.toThrow('all 24');
-    expect(mockSpawnSync).not.toHaveBeenCalled();
+    expect(mockExecFile).not.toHaveBeenCalled();
+  });
+
+  it('restores an upgraded older wallet from its network recovery capsule', async () => {
+    await restoreQsdmSignerWallet({} as Event, {
+      recoveryWords,
+      passphrase: 'correct horse battery staple',
+      recoveryType: 'legacy',
+    });
+
+    expect(mockExecFile).toHaveBeenNthCalledWith(
+      1,
+      'qsdmcli',
+      expect.arrayContaining([
+        'wallet',
+        'restore-legacy',
+        '--api-url',
+        'https://core.example/api/v1',
+      ]),
+      expect.objectContaining({ timeout: 120000, windowsHide: true }),
+      expect.any(Function)
+    );
   });
 });

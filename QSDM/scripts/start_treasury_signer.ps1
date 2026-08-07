@@ -11,6 +11,7 @@ param(
     [double]$MaxPayout = 0,
     [double]$MinimumReserve = 0,
     [double]$FeeCell = 0.001,
+    [ValidateRange(1, 60)][int]$HealthWaitSeconds = 10,
     [switch]$Restart
 )
 
@@ -44,16 +45,130 @@ New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 $stdout = Join-Path $runDir "stdout.log"
 $stderr = Join-Path $runDir "stderr.log"
 $pidFile = Join-Path $runDir "signer.pid"
-$existing = $null
-if (Test-Path -LiteralPath $pidFile) {
-    $existingPid = [int](Get-Content -LiteralPath $pidFile -Raw)
-    $existing = Get-Process -Id $existingPid -ErrorAction SilentlyContinue
+$identityFile = Join-Path $runDir "signer.process.json"
+
+function Remove-SignerProcessRecords {
+    Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $identityFile -Force -ErrorAction SilentlyContinue
 }
+
+function ConvertTo-UtcTimestamp {
+    param([Parameter(Mandatory)][object]$Value)
+
+    if ($Value -is [DateTime]) {
+        return ([DateTime]$Value).ToUniversalTime()
+    }
+    if ($Value -is [DateTimeOffset]) {
+        return ([DateTimeOffset]$Value).UtcDateTime
+    }
+    return [DateTime]::Parse(
+        [string]$Value,
+        [Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::RoundtripKind
+    ).ToUniversalTime()
+}
+
+function Get-ManagedSignerProcess {
+    if (-not (Test-Path -LiteralPath $pidFile -PathType Leaf)) {
+        return $null
+    }
+    if ((Get-Item -LiteralPath $pidFile -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "Refusing a reparse-point $Role signer PID file."
+    }
+
+    $existingPid = 0
+    if (-not [int]::TryParse((Get-Content -LiteralPath $pidFile -Raw).Trim(), [ref]$existingPid) -or $existingPid -le 0) {
+        Remove-SignerProcessRecords
+        return $null
+    }
+    $candidate = Get-Process -Id $existingPid -ErrorAction SilentlyContinue
+    if (-not $candidate) {
+        Remove-SignerProcessRecords
+        return $null
+    }
+
+    $expectedBinary = [IO.Path]::GetFullPath($binary)
+    $expectedProcessName = [IO.Path]::GetFileNameWithoutExtension($expectedBinary)
+    if ($candidate.ProcessName -ne $expectedProcessName) {
+        Write-Warning "Ignoring stale $Role signer PID $existingPid because it belongs to process $($candidate.ProcessName)."
+        Remove-SignerProcessRecords
+        return $null
+    }
+    try {
+        $actualBinary = [IO.Path]::GetFullPath($candidate.Path)
+    } catch {
+        throw "Cannot verify the $Role treasury signer PID $existingPid executable; refusing to stop it."
+    }
+    if ($actualBinary -ne $expectedBinary) {
+        Write-Warning "Ignoring stale $Role signer PID $existingPid because it belongs to $actualBinary."
+        Remove-SignerProcessRecords
+        return $null
+    }
+
+    $actualStart = $candidate.StartTime.ToUniversalTime()
+    $actualHash = (Get-FileHash -LiteralPath $expectedBinary -Algorithm SHA256).Hash.ToLowerInvariant()
+    if (Test-Path -LiteralPath $identityFile -PathType Leaf) {
+        if ((Get-Item -LiteralPath $identityFile -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "Refusing a reparse-point $Role signer identity file."
+        }
+        $identity = Get-Content -LiteralPath $identityFile -Raw | ConvertFrom-Json
+        $recordedStart = ConvertTo-UtcTimestamp -Value $identity.process_start_utc
+        $identityPortMatches = if ($null -ne $identity.PSObject.Properties['port']) {
+            [int]$identity.port -eq $Port
+        } else {
+            try {
+                $legacyHealth = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/healthz" -TimeoutSec 2
+                $legacyHealth.status -eq "ok" -and $legacyHealth.role -eq $Role
+            } catch {
+                $false
+            }
+        }
+        if ([string]$identity.schema -ne "qsdm.treasury-signer-process.v1" -or
+            [string]$identity.role -ne $Role -or
+            -not $identityPortMatches -or
+            [int]$identity.pid -ne $existingPid -or
+            [IO.Path]::GetFullPath([string]$identity.binary) -ne $expectedBinary -or
+            [Math]::Abs(($recordedStart - $actualStart).TotalSeconds) -gt 2 -or
+            ([string]$identity.sha256).ToLowerInvariant() -ne $actualHash) {
+            throw "The $Role treasury signer process identity does not match PID $existingPid; refusing to stop it."
+        }
+    } else {
+        $pidFileWrite = (Get-Item -LiteralPath $pidFile).LastWriteTimeUtc
+        if ([Math]::Abs(($pidFileWrite - $actualStart).TotalSeconds) -gt 15) {
+            throw "Legacy $Role signer PID record is stale; refusing to stop PID $existingPid."
+        }
+    }
+    return $candidate
+}
+
+function Write-SignerProcessIdentity {
+    param([Parameter(Mandatory)][System.Diagnostics.Process]$Process)
+
+    $identity = [ordered]@{
+        schema = "qsdm.treasury-signer-process.v1"
+        role = $Role
+        port = $Port
+        pid = $Process.Id
+        process_start_utc = $Process.StartTime.ToUniversalTime().ToString("o")
+        binary = [IO.Path]::GetFullPath($binary)
+        sha256 = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
+        launcher_pid = $PID
+        written_at_utc = [DateTime]::UtcNow.ToString("o")
+    }
+    $tempPath = "$identityFile.tmp-$PID"
+    [IO.File]::WriteAllText($tempPath, ($identity | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+    Move-Item -LiteralPath $tempPath -Destination $identityFile -Force
+}
+$existing = Get-ManagedSignerProcess
 if ($existing -and -not $Restart) {
     throw "A $Role treasury signer is already running. Use -Restart to replace it."
 }
 if ($existing) {
     Stop-Process -Id $existing.Id -Force
+    if (-not $existing.WaitForExit(10000)) {
+        throw "$Role treasury signer PID $($existing.Id) did not stop within 10 seconds."
+    }
+    Remove-SignerProcessRecords
 }
 
 $keys = @(
@@ -76,12 +191,40 @@ try {
     $env:QSDM_SIGNER_MIN_RESERVE = [string]$MinimumReserve
     $process = Start-Process -FilePath $binary -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
     Set-Content -LiteralPath $pidFile -Value $process.Id -NoNewline -Encoding ASCII
+    Write-SignerProcessIdentity -Process $process
 } finally {
     foreach ($key in $keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key], "Process") }
 }
 
-Start-Sleep -Milliseconds 500
-$health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/healthz" -TimeoutSec 5
+$health = $null
+$healthDeadline = [DateTime]::UtcNow.AddSeconds($HealthWaitSeconds)
+try {
+    while ([DateTime]::UtcNow -lt $healthDeadline) {
+        $process.Refresh()
+        if ($process.HasExited) {
+            throw "The $Role signer exited before becoming healthy (exit code $($process.ExitCode))."
+        }
+        try {
+            $candidateHealth = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/healthz" -TimeoutSec 2
+            if ($candidateHealth.status -eq "ok" -and $candidateHealth.role -eq $Role) {
+                $health = $candidateHealth
+                break
+            }
+        } catch {
+            # The signer can need a short moment to bind its loopback listener.
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    if ($null -eq $health) {
+        throw "The $Role signer did not become healthy on loopback port $Port within $HealthWaitSeconds seconds."
+    }
+} catch {
+    if (Get-Process -Id $process.Id -ErrorAction SilentlyContinue) {
+        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    }
+    Remove-SignerProcessRecords
+    throw
+}
 Write-Host "QSDM $Role treasury signer is running"
 Write-Host "  PID:       $($process.Id)"
 Write-Host "  URL:       http://127.0.0.1:$Port"

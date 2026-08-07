@@ -128,6 +128,42 @@ type Config struct {
 	// Governance
 	ProposalFile string
 
+	// RequireSignedVotes rejects inbound BFT consensus messages that carry
+	// no signature. Defaults to false so a mixed-version validator set can
+	// roll forward: signed builds emit authenticated votes immediately,
+	// and the operator enables rejection once every validator is upgraded.
+	// A present-but-invalid signature is always rejected regardless of this
+	// setting. Set via `[consensus] require_signed_votes` or
+	// QSDM_REQUIRE_SIGNED_VOTES.
+	//
+	// Leave this off only during a rollout: while it is false, an
+	// unauthenticated peer can still forge votes for any validator.
+	RequireSignedVotes bool
+
+	// ForkDustHeight activates integer-dust account accounting at the given
+	// chain height, fixing the float64 balance arithmetic that destroys
+	// ~0.06 CELL per reward block (~190k CELL/year) and the %f state-root
+	// encoding that cannot represent the protocol's 1e-8 unit.
+	//
+	// Zero (the default) means never active, leaving the legacy float64
+	// behaviour bit-for-bit intact. This is a CONSENSUS parameter: every
+	// validator must configure the same height, and genesis must first be
+	// re-derived to the documented 90M/10M split — the historical 1e15 CELL
+	// funder allocation is 1e23 dust, which overflows uint64 and will make
+	// the migration refuse to run.
+	//
+	// Set via `[consensus] fork_dust_height` or QSDM_FORK_DUST_HEIGHT.
+	ForkDustHeight uint64
+
+	// GovernanceAuthorities lists wallet addresses permitted to submit
+	// `qsdm/gov/v1` parameter-set transactions. Empty (the default) keeps
+	// on-chain governance disabled — the pre-governance posture in which
+	// SlashApplier reads static defaults forever. Populating it via
+	// `[governance] authorities` in the config file, or the
+	// QSDM_GOVERNANCE_AUTHORITIES env var (comma-separated), activates the
+	// governance arm wired in internal/v2wiring.
+	GovernanceAuthorities []string
+
 	// Performance
 	TransactionInterval     time.Duration
 	HealthCheckInterval     time.Duration
@@ -328,6 +364,9 @@ func loadConfigFile(path string, cfg *Config) error {
 		}
 		cfg.InitialBalance = tomlCfg.Wallet.InitialBalance
 		cfg.ProposalFile = tomlCfg.Governance.ProposalFile
+		cfg.GovernanceAuthorities = tomlCfg.Governance.Authorities
+		cfg.RequireSignedVotes = tomlCfg.Consensus.RequireSignedVotes
+		cfg.ForkDustHeight = tomlCfg.Consensus.ForkDustHeight
 		if tomlCfg.Performance.TransactionInterval != "" {
 			if d, err := time.ParseDuration(tomlCfg.Performance.TransactionInterval); err == nil {
 				cfg.TransactionInterval = d
@@ -422,6 +461,9 @@ func loadConfigFile(path string, cfg *Config) error {
 		}
 		cfg.InitialBalance = yamlCfg.Wallet.InitialBalance
 		cfg.ProposalFile = yamlCfg.Governance.ProposalFile
+		cfg.GovernanceAuthorities = yamlCfg.Governance.Authorities
+		cfg.RequireSignedVotes = yamlCfg.Consensus.RequireSignedVotes
+		cfg.ForkDustHeight = yamlCfg.Consensus.ForkDustHeight
 		if yamlCfg.Performance.TransactionInterval != "" {
 			if d, err := time.ParseDuration(yamlCfg.Performance.TransactionInterval); err == nil {
 				cfg.TransactionInterval = d
@@ -462,6 +504,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.BootstrapPeers == nil {
 		cfg.BootstrapPeers = []string{}
+	}
+	if cfg.GovernanceAuthorities == nil {
+		cfg.GovernanceAuthorities = []string{}
 	}
 	if cfg.StorageType == "" {
 		cfg.StorageType = "sqlite"
@@ -571,6 +616,17 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if val := getEnvString("BOOTSTRAP_PEERS", ""); val != "" {
 		cfg.BootstrapPeers = getEnvStringSlice("BOOTSTRAP_PEERS", cfg.BootstrapPeers)
+	}
+	if val := getEnvString("QSDM_GOVERNANCE_AUTHORITIES", ""); val != "" {
+		cfg.GovernanceAuthorities = getEnvStringSlice("QSDM_GOVERNANCE_AUTHORITIES", cfg.GovernanceAuthorities)
+	}
+	if v := getEnvString("QSDM_FORK_DUST_HEIGHT", ""); v != "" {
+		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
+			cfg.ForkDustHeight = h
+		}
+	}
+	if getEnvString("QSDM_REQUIRE_SIGNED_VOTES", "") != "" {
+		cfg.RequireSignedVotes = envcompat.Truthy("QSDM_REQUIRE_SIGNED_VOTES", "QSDM_REQUIRE_SIGNED_VOTES")
 	}
 	if val := strings.TrimSpace(envPreferred("QSDM_NETWORK_HOST_KEY_PATH", "QSDM_NETWORK_HOST_KEY_PATH")); val != "" {
 		cfg.NetworkHostKeyPath = val

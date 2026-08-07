@@ -55,7 +55,11 @@ spec:
                 operator: DoesNotExist
       containers:
       - name: qsdm-validator
-        image: qsdm/validator:latest
+        # CI publishes ghcr.io/<owner>/qsdm-validator (hyphen), not the
+        # Docker Hub-style qsdm/validator path this used to reference —
+        # that name does not exist and produced ImagePullBackOff on every
+        # apply.
+        image: ghcr.io/blackbeardone/qsdm-validator:latest
         imagePullPolicy: IfNotPresent
         ports:
         - name: network

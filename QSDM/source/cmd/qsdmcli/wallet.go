@@ -46,15 +46,20 @@
 package main
 
 import (
+	cryptorand "crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
+	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/keystore"
 	"github.com/blackbeardONE/QSDM/pkg/walletrecovery"
 	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
@@ -77,6 +82,10 @@ func (c *CLI) walletCommand(args []string) error {
 		return c.walletRestore(rest)
 	case "export-recovery":
 		return c.walletExportRecovery(rest)
+	case "enable-recovery":
+		return c.walletEnableLegacyRecovery(rest)
+	case "restore-legacy":
+		return c.walletRestoreLegacy(rest)
 	case "show":
 		return c.walletShow(rest)
 	case "inspect":
@@ -98,7 +107,7 @@ func (c *CLI) walletCommand(args []string) error {
 }
 
 func walletUsageError() error {
-	return fmt.Errorf("usage: qsdmcli wallet <new|restore|export-recovery|show|inspect|sign|verify|sign-tx|sign-task-action> [flags]\n\n%s", walletHelp)
+	return fmt.Errorf("usage: qsdmcli wallet <new|restore|enable-recovery|restore-legacy|export-recovery|show|inspect|sign|verify|sign-tx|sign-task-action> [flags]\n\n%s", walletHelp)
 }
 
 const walletHelp = `qsdmcli wallet — self-custody keystore (ML-DSA-87)
@@ -110,7 +119,14 @@ Subcommands:
            protect the new local keystore with a new passphrase.
   export-recovery
            Export the 24 recovery words from a recovery-enabled keystore to a
-           private file. Legacy random wallets do not have recovery words.
+           private file.
+  enable-recovery
+           Add 24 recovery words to an older JSON + passphrase wallet without
+           changing its address. Registers only encrypted key material with
+           QSDM Core, waits for chain confirmation, and keeps a JSON backup.
+  restore-legacy
+           Restore an older wallet after enable-recovery using its 24 words
+           and the encrypted capsule replicated by QSDM Core.
   show     Print address and public key from an existing keystore. No
            passphrase required (these fields are plaintext in the file).
   inspect  Decrypt the keystore and verify the on-disk public key matches
@@ -142,6 +158,15 @@ Common flags:
   --force               Overwrite an existing keystore (new only). Off by default.
   --recovery-out PATH   Write new/exported recovery words to PATH with mode 0600.
   --recovery-file PATH  Read 24 recovery words from PATH (restore only).
+
+Legacy recovery flags:
+  --api-url URL         QSDM API root ending in /api/v1. Defaults to
+                        QSDM_API_URL or the CLI's configured API.
+  --expected-address ADDRESS
+                        Refuse enable-recovery unless the opened keystore has
+                        this QSDM address. Checked before any output or submit.
+  --confirm-timeout DUR Wait for encrypted capsule chain confirmation
+                        (default: 90s).
   --message      HEX    Hex-encoded message bytes to sign (sign only).
   --message-file PATH   Read message bytes to sign or verify from a file;
                         use '-' for stdin). Mutually exclusive with --message.
@@ -165,6 +190,11 @@ Examples:
   qsdmcli wallet restore --recovery-file /media/offline/qsdm-recovery.txt \
       --out ~/.qsdm/wallet.json
   qsdmcli wallet export-recovery --out /media/offline/qsdm-recovery.txt
+  qsdmcli wallet enable-recovery --in ~/.qsdm/wallet.json \
+      --recovery-out /media/offline/qsdm-recovery.txt
+  qsdmcli wallet restore-legacy \
+      --recovery-file /media/offline/qsdm-recovery.txt \
+      --out ~/.qsdm/wallet.json
   qsdmcli wallet show
   qsdmcli wallet sign --message-file tx.json > tx.sig.hex
   qsdmcli wallet verify --public-key "$PUBLIC_KEY" \
@@ -386,13 +416,23 @@ func (c *CLI) walletExportRecovery(args []string) error {
 	if err != nil {
 		return err
 	}
-	material, err := walletrecovery.Restore(words)
-	if err != nil {
-		return err
-	}
-	defer material.ZeroSecrets()
-	if material.Address != ks.Address {
-		return fmt.Errorf("recovery integrity check failed: words rebuild %s, keystore address is %s", material.Address, ks.Address)
+	if ks.Recovery.Scheme == keystore.LegacyRecoveryScheme {
+		locator, locatorErr := walletrecovery.LegacyLocatorFromWords(words)
+		if locatorErr != nil {
+			return locatorErr
+		}
+		if locator != ks.Recovery.Locator {
+			return fmt.Errorf("legacy recovery integrity check failed: words do not match the keystore locator")
+		}
+	} else {
+		material, restoreErr := walletrecovery.Restore(words)
+		if restoreErr != nil {
+			return restoreErr
+		}
+		defer material.ZeroSecrets()
+		if material.Address != ks.Address {
+			return fmt.Errorf("recovery integrity check failed: words rebuild %s, keystore address is %s", material.Address, ks.Address)
+		}
 	}
 
 	recoveryPath := filepath.Clean(*out)
@@ -407,6 +447,319 @@ func (c *CLI) walletExportRecovery(args []string) error {
 	}
 	fmt.Fprintf(os.Stderr, "exported 24 QSDM Recovery Words for %s to %s (mode 0600)\n", ks.Address, recoveryPath)
 	return nil
+}
+
+type legacyRecoveryNonceResponse struct {
+	ActionNonce uint64 `json:"action_nonce"`
+	Present     bool   `json:"present"`
+}
+
+type legacyRecoveryCapsuleResponse struct {
+	State chain.RecoveryCapsuleState `json:"recovery"`
+}
+
+type legacyRecoveryEnvelope struct {
+	Action    chain.RecoveryCapsuleAction `json:"action"`
+	Signature string                      `json:"signature"`
+	PublicKey string                      `json:"public_key"`
+}
+
+func (c *CLI) walletEnableLegacyRecovery(args []string) error {
+	fs := flag.NewFlagSet("wallet enable-recovery", flag.ContinueOnError)
+	in := fs.String("in", "", "legacy keystore path (default: ~/.qsdm/wallet.json)")
+	passphraseFile := fs.String("passphrase-file", "", "read existing passphrase from file ('-' for stdin); empty = prompt")
+	recoveryOut := fs.String("recovery-out", "", "private output file for the new 24 recovery words")
+	apiURL := fs.String("api-url", "", "QSDM API root ending in /api/v1")
+	expectedAddress := fs.String("expected-address", "", "require the legacy keystore to have this QSDM address")
+	confirmTimeout := fs.Duration("confirm-timeout", 90*time.Second, "wait for chain confirmation")
+	force := fs.Bool("force", false, "overwrite an existing recovery output file")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*recoveryOut) == "" || *recoveryOut == "-" {
+		return fmt.Errorf("--recovery-out is required and must be a private file")
+	}
+	if *confirmTimeout <= 0 || *confirmTimeout > 10*time.Minute {
+		return fmt.Errorf("--confirm-timeout must be between 1ns and 10m")
+	}
+	path, err := defaultWalletPath(*in)
+	if err != nil {
+		return err
+	}
+	recoveryPath := filepath.Clean(*recoveryOut)
+	if samePath(path, recoveryPath) {
+		return fmt.Errorf("--recovery-out must be different from the keystore path")
+	}
+	if !*force {
+		if _, statErr := os.Stat(recoveryPath); statErr == nil {
+			return fmt.Errorf("refusing to overwrite existing recovery file at %s (pass --force to override)", recoveryPath)
+		}
+	}
+	ks, err := loadKeystore(path)
+	if err != nil {
+		return err
+	}
+	if expected := strings.TrimSpace(*expectedAddress); expected != "" {
+		raw, decodeErr := hex.DecodeString(expected)
+		if decodeErr != nil || len(raw) != 32 || expected != strings.ToLower(expected) {
+			return fmt.Errorf("--expected-address must be a lowercase 64-character QSDM address")
+		}
+		if ks.Address != expected {
+			return fmt.Errorf("legacy recovery address mismatch: opened keystore %s, expected %s", ks.Address, expected)
+		}
+	}
+	if ks.Recovery != nil {
+		return fmt.Errorf("wallet %s already has %d-word recovery enabled; use export-recovery instead", ks.Address, ks.Recovery.Words)
+	}
+	passphrase, err := readPassphrase(*passphraseFile, false)
+	if err != nil {
+		return fmt.Errorf("read passphrase: %w", err)
+	}
+	defer zero(passphrase)
+	privateKey, err := keystore.Decrypt(ks, passphrase)
+	if err != nil {
+		return err
+	}
+	defer zero(privateKey)
+	publicKey, err := verifiedPublicKey(ks, privateKey)
+	if err != nil {
+		return err
+	}
+
+	material, err := walletrecovery.GenerateLegacyCapsule(ks.Address, publicKey, privateKey)
+	if err != nil {
+		return err
+	}
+	defer material.ZeroSecrets()
+	if err := os.MkdirAll(filepath.Dir(recoveryPath), 0o700); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(recoveryPath), err)
+	}
+	if err := writeFileExclusive(recoveryPath, []byte(material.Words+"\n"), *force); err != nil {
+		return fmt.Errorf("write recovery words: %w", err)
+	}
+
+	recoveryCLI := c.recoveryAPI(*apiURL)
+	nonceBody, err := recoveryCLI.get("/wallet/recovery/nonce?sender=" + url.QueryEscape(ks.Address))
+	if err != nil {
+		return fmt.Errorf("recovery words were saved but activation did not start: %w", err)
+	}
+	var nonce legacyRecoveryNonceResponse
+	if err := json.Unmarshal(nonceBody, &nonce); err != nil {
+		return fmt.Errorf("decode recovery nonce: %w", err)
+	}
+	if !nonce.Present {
+		return fmt.Errorf("wallet %s is not present in QSDM account state; receive or mine CELL before enabling network recovery", ks.Address)
+	}
+	actionID, err := randomRecoveryActionID()
+	if err != nil {
+		return err
+	}
+	action := chain.RecoveryCapsuleAction{
+		ID:        actionID,
+		Sender:    ks.Address,
+		Action:    chain.RecoveryCapsuleActionRegister,
+		Locator:   material.Capsule.Locator,
+		Capsule:   material.Capsule,
+		Nonce:     nonce.ActionNonce,
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	message, err := chain.RecoveryCapsuleActionSigningBytes(action)
+	if err != nil {
+		return err
+	}
+	var signingKey mldsa87.PrivateKey
+	if err := signingKey.UnmarshalBinary(privateKey); err != nil {
+		return fmt.Errorf("private key parse: %w", err)
+	}
+	signature := make([]byte, mldsa87.SignatureSize)
+	if err := mldsa87.SignTo(&signingKey, message, nil, true, signature); err != nil {
+		return fmt.Errorf("sign recovery registration: %w", err)
+	}
+	if _, err := recoveryCLI.post("/wallet/recovery/capsules/submit-signed", legacyRecoveryEnvelope{
+		Action: action, Signature: hex.EncodeToString(signature), PublicKey: ks.PublicKey,
+	}); err != nil {
+		return fmt.Errorf("recovery words were saved but capsule registration was rejected; the keystore was not changed: %w", err)
+	}
+	if _, err := waitForLegacyRecoveryCapsule(recoveryCLI, material.Capsule.Locator, ks.Address, *confirmTimeout); err != nil {
+		return fmt.Errorf("capsule was submitted but not confirmed; the keystore was not changed and the words remain at %s: %w", recoveryPath, err)
+	}
+
+	migrated, err := keystore.AttachLegacyRecovery(ks, material.Entropy, passphrase, material.Capsule.Locator)
+	if err != nil {
+		return err
+	}
+	data, err := keystore.Marshal(migrated)
+	if err != nil {
+		return err
+	}
+	backupPath, err := replaceKeystoreWithBackup(path, data)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "enabled 24-word recovery for %s without changing its address\n", ks.Address)
+	fmt.Fprintf(os.Stderr, "recovery words: %s\n", recoveryPath)
+	fmt.Fprintf(os.Stderr, "original keystore backup: %s\n", backupPath)
+	fmt.Println(ks.Address)
+	return nil
+}
+
+func (c *CLI) walletRestoreLegacy(args []string) error {
+	fs := flag.NewFlagSet("wallet restore-legacy", flag.ContinueOnError)
+	out := fs.String("out", "", "keystore output path (default: ~/.qsdm/wallet.json)")
+	recoveryFile := fs.String("recovery-file", "", "private file containing 24 recovery words")
+	passphraseFile := fs.String("passphrase-file", "", "read new passphrase from file ('-' for stdin); empty = prompt")
+	apiURL := fs.String("api-url", "", "QSDM API root ending in /api/v1")
+	force := fs.Bool("force", false, "overwrite an existing keystore")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*recoveryFile) == "" || *recoveryFile == "-" {
+		return fmt.Errorf("--recovery-file is required and must be a private file")
+	}
+	wordsBytes, err := os.ReadFile(filepath.Clean(*recoveryFile))
+	if err != nil {
+		return fmt.Errorf("read recovery words: %w", err)
+	}
+	if len(wordsBytes) > 4096 {
+		zero(wordsBytes)
+		return fmt.Errorf("recovery words file is unexpectedly large")
+	}
+	defer zero(wordsBytes)
+	words := string(wordsBytes)
+	locator, err := walletrecovery.LegacyLocatorFromWords(words)
+	if err != nil {
+		return err
+	}
+	recoveryCLI := c.recoveryAPI(*apiURL)
+	response, err := fetchLegacyRecoveryCapsule(recoveryCLI, locator)
+	if err != nil {
+		return fmt.Errorf("retrieve encrypted legacy wallet recovery capsule: %w", err)
+	}
+	recovered, err := walletrecovery.RestoreLegacyCapsule(words, response.State.Capsule)
+	if err != nil {
+		return err
+	}
+	defer recovered.ZeroSecrets()
+	entropy, err := walletrecovery.LegacyRecoveryEntropyFromWords(words)
+	if err != nil {
+		return err
+	}
+	defer zero(entropy)
+	path, err := defaultWalletPath(*out)
+	if err != nil {
+		return err
+	}
+	if !*force {
+		if _, statErr := os.Stat(path); statErr == nil {
+			return fmt.Errorf("refusing to overwrite existing keystore at %s (pass --force to override)", path)
+		}
+	}
+	passphrase, err := readPassphrase(*passphraseFile, true)
+	if err != nil {
+		return fmt.Errorf("read passphrase: %w", err)
+	}
+	defer zero(passphrase)
+	ks, err := keystore.Encrypt(recovered.PublicKey, recovered.PrivateKey, passphrase)
+	if err != nil {
+		return err
+	}
+	ks, err = keystore.AttachLegacyRecovery(ks, entropy, passphrase, locator)
+	if err != nil {
+		return err
+	}
+	data, err := keystore.Marshal(ks)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	if err := writeFileExclusive(path, data, *force); err != nil {
+		return fmt.Errorf("write restored keystore: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "restored legacy wallet %s with a new local passphrase\n", ks.Address)
+	fmt.Println(ks.Address)
+	return nil
+}
+
+func verifiedPublicKey(ks keystore.Keystore, privateKey []byte) ([]byte, error) {
+	var parsed mldsa87.PrivateKey
+	if err := parsed.UnmarshalBinary(privateKey); err != nil {
+		return nil, fmt.Errorf("private key parse: %w", err)
+	}
+	publicKey, err := parsed.Public().(*mldsa87.PublicKey).MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("public-from-private marshal: %w", err)
+	}
+	stored, err := hex.DecodeString(ks.PublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("stored public key: %w", err)
+	}
+	if !bytesEqual(publicKey, stored) {
+		return nil, fmt.Errorf("keystore integrity check failed: decrypted private key does not match stored public key")
+	}
+	return publicKey, nil
+}
+
+func (c *CLI) recoveryAPI(override string) *CLI {
+	base := strings.TrimRight(strings.TrimSpace(override), "/")
+	if base == "" {
+		base = strings.TrimRight(c.baseURL, "/")
+	}
+	if !strings.HasSuffix(base, "/api/v1") {
+		base += "/api/v1"
+	}
+	return &CLI{baseURL: base, token: c.token, client: c.client}
+}
+
+func randomRecoveryActionID() (string, error) {
+	random := make([]byte, 16)
+	if _, err := cryptorand.Read(random); err != nil {
+		return "", fmt.Errorf("generate recovery action id: %w", err)
+	}
+	return "legacy-recovery-" + hex.EncodeToString(random), nil
+}
+
+func fetchLegacyRecoveryCapsule(c *CLI, locator string) (legacyRecoveryCapsuleResponse, error) {
+	body, err := c.get("/wallet/recovery/capsules/" + url.PathEscape(locator))
+	if err != nil {
+		return legacyRecoveryCapsuleResponse{}, err
+	}
+	var response legacyRecoveryCapsuleResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return legacyRecoveryCapsuleResponse{}, fmt.Errorf("decode recovery capsule: %w", err)
+	}
+	return response, nil
+}
+
+func waitForLegacyRecoveryCapsule(c *CLI, locator, owner string, timeout time.Duration) (chain.RecoveryCapsuleState, error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		response, err := fetchLegacyRecoveryCapsule(c, locator)
+		if err == nil && response.State.Owner == owner && response.State.Locator == locator {
+			return response.State, nil
+		}
+		if time.Now().After(deadline) {
+			return chain.RecoveryCapsuleState{}, fmt.Errorf("timed out after %s", timeout)
+		}
+		time.Sleep(750 * time.Millisecond)
+	}
+}
+
+func replaceKeystoreWithBackup(path string, data []byte) (string, error) {
+	original, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read original keystore for backup: %w", err)
+	}
+	backupPath := fmt.Sprintf("%s.pre-recovery-%s.bak", path, time.Now().UTC().Format("20060102T150405Z"))
+	if err := writeFileExclusive(backupPath, original, false); err != nil {
+		return "", fmt.Errorf("write original keystore backup: %w", err)
+	}
+	if err := writeFileExclusive(path, data, true); err != nil {
+		_ = writeFileExclusive(path, original, true)
+		return "", fmt.Errorf("write migrated keystore (original restored from backup): %w", err)
+	}
+	return backupPath, nil
 }
 
 func (c *CLI) walletShow(args []string) error {

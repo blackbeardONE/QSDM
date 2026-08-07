@@ -142,6 +142,7 @@ func AuditLogMiddleware(logger *logging.Logger) func(http.Handler) http.Handler 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
+			highVolumePath := isHighVolumeAuditPath(r.URL.Path)
 
 			// Create response writer wrapper to capture status code
 			rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
@@ -153,28 +154,56 @@ func AuditLogMiddleware(logger *logging.Logger) func(http.Handler) http.Handler 
 				role = claims.Role
 			}
 
-			// Log request
-			logger.Info("API request",
+			requestFields := []interface{}{
 				"method", r.Method,
 				"path", r.URL.Path,
 				"remote_addr", r.RemoteAddr,
 				"user_id", userID,
 				"role", role,
 				"user_agent", r.UserAgent(),
-			)
+			}
+			if highVolumePath {
+				logger.Debug("API request", requestFields...)
+			} else {
+				logger.Info("API request", requestFields...)
+			}
 
 			next.ServeHTTP(rw, r)
 
 			// Log response
 			duration := time.Since(start)
-			logger.Info("API response",
+			responseFields := []interface{}{
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", rw.statusCode,
 				"duration_ms", duration.Milliseconds(),
 				"user_id", userID,
-			)
+			}
+			switch {
+			case highVolumePath && rw.statusCode >= http.StatusInternalServerError:
+				logger.Error("API response", responseFields...)
+			case highVolumePath && rw.statusCode >= http.StatusBadRequest:
+				logger.Warn("API response", responseFields...)
+			case highVolumePath:
+				logger.Debug("API response", responseFields...)
+			default:
+				logger.Info("API response", responseFields...)
+			}
 		})
+	}
+}
+
+// isHighVolumeAuditPath identifies proof-loop endpoints that miners call many
+// times per second. Successful outcomes are already covered by mining metrics,
+// so emitting every request and response at INFO creates unbounded log I/O.
+func isHighVolumeAuditPath(path string) bool {
+	switch path {
+	case "/api/v1/mining/challenge",
+		"/api/v1/mining/work",
+		"/api/v1/mining/submit":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -245,6 +274,13 @@ func isPublicEndpoint(path string) bool {
 		// with /wallet/balance: read-only, address-required-in-query,
 		// no JWT. See V041_REPLAY_PROTECTION_DESIGN.md §5.2.
 		"/api/v1/wallet/nonce",
+		// Legacy-wallet recovery registration is authenticated by the
+		// wallet's ML-DSA signature. Capsule reads expose only public,
+		// authenticated ciphertext and are needed before a lost wallet can
+		// establish any dashboard session.
+		"/api/v1/wallet/recovery/nonce",
+		"/api/v1/wallet/recovery/capsules",
+		"/api/v1/wallet/recovery/capsules/submit-signed",
 		"/api/v1/monitoring/ngc-proof",
 		"/api/v1/monitoring/ngc-challenge",
 		"/api/v1/monitoring/ngc-proofs",
@@ -384,6 +420,9 @@ func isPublicEndpoint(path string) bool {
 	// task marketplace metadata is non-secret and Hive needs to
 	// discover it before the user has a dashboard session.
 	if strings.HasPrefix(path, "/api/v1/tasks/") {
+		return true
+	}
+	if strings.HasPrefix(path, "/api/v1/wallet/recovery/capsules/") {
 		return true
 	}
 	return false

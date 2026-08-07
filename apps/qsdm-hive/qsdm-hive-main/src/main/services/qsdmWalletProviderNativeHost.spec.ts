@@ -6,6 +6,9 @@ import {
   deriveChromiumExtensionId,
   QSDM_WALLET_EXTENSION_ID,
   QSDM_WALLET_EXTENSION_PUBLIC_KEY,
+  QSDM_WALLET_INTERIM_CRX_EXTENSION_ID,
+  QSDM_WALLET_STORE_EXTENSION_ID,
+  QSDM_WALLET_TRUSTED_EXTENSION_IDS,
   registerQsdmWalletProviderNativeHost,
 } from './qsdmWalletProviderNativeHost';
 
@@ -37,6 +40,18 @@ describe('qsdmWalletProviderNativeHost', () => {
     expect(deriveChromiumExtensionId(QSDM_WALLET_EXTENSION_PUBLIC_KEY)).toBe(
       QSDM_WALLET_EXTENSION_ID
     );
+    expect(QSDM_WALLET_STORE_EXTENSION_ID).toMatch(/^[a-p]{32}$/);
+    expect(QSDM_WALLET_STORE_EXTENSION_ID).not.toBe(
+      QSDM_WALLET_EXTENSION_ID
+    );
+    expect(QSDM_WALLET_INTERIM_CRX_EXTENSION_ID).toMatch(/^[a-p]{32}$/);
+    expect(QSDM_WALLET_INTERIM_CRX_EXTENSION_ID).not.toBe(
+      QSDM_WALLET_EXTENSION_ID
+    );
+    expect(QSDM_WALLET_INTERIM_CRX_EXTENSION_ID).not.toBe(
+      QSDM_WALLET_STORE_EXTENSION_ID
+    );
+    expect(new Set(QSDM_WALLET_TRUSTED_EXTENSION_IDS).size).toBe(3);
   });
 
   it('registers the current-user Windows native host for Chrome and Edge', () => {
@@ -58,9 +73,11 @@ describe('qsdmWalletProviderNativeHost', () => {
       fs.readFileSync(result.manifestPath as string, 'utf-8')
     ) as { path: string; allowed_origins: string[] };
     expect(manifest.path).toBe(path.resolve(fixture.nativeHostPath));
-    expect(manifest.allowed_origins).toEqual([
-      `chrome-extension://${QSDM_WALLET_EXTENSION_ID}/`,
-    ]);
+    expect(manifest.allowed_origins).toEqual(
+      QSDM_WALLET_TRUSTED_EXTENSION_IDS.map(
+        (extensionId) => `chrome-extension://${extensionId}/`
+      )
+    );
   });
 
   it('writes private Linux native-host manifests for supported browsers', () => {

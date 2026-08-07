@@ -14,6 +14,7 @@ import {
 import { useClipboard } from 'renderer/features/common/hooks';
 import {
   createQsdmSignerWallet,
+  enableQsdmSignerLegacyRecovery,
   exportQsdmSignerRecoveryWords,
   exportQsdmSignerWalletBackup,
   getQsdmCellAccount,
@@ -69,6 +70,9 @@ export function QsdmWalletPanel() {
   const [createMessage, setCreateMessage] = useState('');
   const [createdRecoveryWords, setCreatedRecoveryWords] = useState('');
   const [restoreRecoveryWords, setRestoreRecoveryWords] = useState('');
+  const [restoreRecoveryType, setRestoreRecoveryType] = useState<
+    'native' | 'legacy'
+  >('native');
   const [restorePassphrase, setRestorePassphrase] = useState('');
   const [restoreConfirmPassphrase, setRestoreConfirmPassphrase] = useState('');
   const [restoreReplacementAcknowledged, setRestoreReplacementAcknowledged] =
@@ -79,6 +83,8 @@ export function QsdmWalletPanel() {
   const [backupMessage, setBackupMessage] = useState('');
   const [recoveryExportPassphrase, setRecoveryExportPassphrase] = useState('');
   const [recoveryExportMessage, setRecoveryExportMessage] = useState('');
+  const [legacyRecoveryPassphrase, setLegacyRecoveryPassphrase] = useState('');
+  const [legacyRecoveryMessage, setLegacyRecoveryMessage] = useState('');
   const [transferMessage, setTransferMessage] = useState('');
 
   const {
@@ -182,6 +188,7 @@ export function QsdmWalletPanel() {
       restoreQsdmSignerWallet({
         recoveryWords: restoreRecoveryWords,
         passphrase: restorePassphrase,
+        recoveryType: restoreRecoveryType,
       }),
     {
       onSuccess: async (result) => {
@@ -303,6 +310,32 @@ export function QsdmWalletPanel() {
   );
 
   const {
+    mutate: enableLegacyRecovery,
+    isLoading: enablingLegacyRecovery,
+    error: enableLegacyRecoveryError,
+  } = useMutation(
+    () =>
+      enableQsdmSignerLegacyRecovery({
+        passphrase: legacyRecoveryPassphrase,
+      }),
+    {
+      onSuccess: async (result) => {
+        setLegacyRecoveryPassphrase('');
+        setLegacyRecoveryMessage(
+          result.enabled
+            ? `Recovery is now enabled for ${formatAddress(
+                result.address
+              )}. The wallet address did not change. Recovery Words were saved to ${
+                result.recoveryBackupPath
+              }.`
+            : 'Recovery activation was cancelled.'
+        );
+        await refresh();
+      },
+    }
+  );
+
+  const {
     mutate: unlockSigner,
     isLoading: unlockingSigner,
     error: unlockSignerError,
@@ -386,7 +419,7 @@ export function QsdmWalletPanel() {
               ? ' Create or restore a wallet below.'
               : signer.recoveryEnabled
               ? ' This wallet can be restored with its 24 QSDM Recovery Words.'
-              : ' Legacy wallets require their keystore JSON and passphrase.'}
+              : ' This older wallet can enable 24-word recovery below.'}
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -449,7 +482,11 @@ export function QsdmWalletPanel() {
             {!signer?.ready
               ? 'Not configured'
               : signer.recoveryEnabled
-              ? `${signer.recoveryWords || 24} QSDM Recovery Words`
+              ? `${signer.recoveryWords || 24} QSDM Recovery Words${
+                  signer.recoveryScheme === 'qsdm-legacy-wallet-recovery-v1'
+                    ? ' (upgraded wallet)'
+                    : ''
+                }`
               : 'Legacy JSON + passphrase'}
           </div>
           <div className="pt-1 text-xs text-finnieGray-secondary">
@@ -457,7 +494,7 @@ export function QsdmWalletPanel() {
               ? 'Create a new recovery-enabled wallet or restore one below.'
               : signer.recoveryEnabled
               ? 'These words rebuild the same wallet. Keep the encrypted JSON too for routine backup.'
-              : 'This existing wallet predates Recovery Words. Keep both its encrypted JSON and passphrase.'}
+              : 'This wallet predates Recovery Words. Enable them once with the existing passphrase; its address, CELL, stakes, and task ownership will not change.'}
           </div>
           {signer?.recoveryEnabled && (
             <input
@@ -470,6 +507,20 @@ export function QsdmWalletPanel() {
               autoComplete="current-password"
               aria-label="Wallet passphrase for recovery export"
               placeholder="Passphrase to export words"
+              className="mt-3 h-9 w-full rounded-md bg-finnieBlue-dark px-3 text-xs text-white outline-none"
+            />
+          )}
+          {signer?.ready && !signer.recoveryEnabled && (
+            <input
+              value={legacyRecoveryPassphrase}
+              onChange={(event) => {
+                setLegacyRecoveryMessage('');
+                setLegacyRecoveryPassphrase(event.target.value);
+              }}
+              type="password"
+              autoComplete="current-password"
+              aria-label="Existing wallet passphrase for recovery activation"
+              placeholder="Existing wallet passphrase"
               className="mt-3 h-9 w-full rounded-md bg-finnieBlue-dark px-3 text-xs text-white outline-none"
             />
           )}
@@ -493,6 +544,15 @@ export function QsdmWalletPanel() {
               loading={exportingRecoveryWords}
               className="h-9 w-32 bg-finnieBlue-light-secondary"
             />
+            {signer?.ready && !signer.recoveryEnabled && (
+              <Button
+                label="Enable Recovery"
+                onClick={() => enableLegacyRecovery()}
+                disabled={!legacyRecoveryPassphrase || enablingLegacyRecovery}
+                loading={enablingLegacyRecovery}
+                className="h-9 w-40 bg-finnieTeal-100 text-finnieBlue-dark"
+              />
+            )}
           </div>
         </div>
         <div className="rounded-md bg-finnieBlue-light-tertiary p-4">
@@ -720,6 +780,29 @@ export function QsdmWalletPanel() {
 
       {walletSetupMode === 'restore' && (
         <div className="pt-3">
+          <label
+            className="text-xs text-finnieGray-secondary"
+            htmlFor="qsdm-recovery-type"
+          >
+            Recovery type
+          </label>
+          <select
+            id="qsdm-recovery-type"
+            value={restoreRecoveryType}
+            onChange={(event) => {
+              setRestoreMessage('');
+              setRestoreRecoveryType(event.target.value as 'native' | 'legacy');
+            }}
+            className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none"
+          >
+            <option value="native">Newer recovery-enabled wallet</option>
+            <option value="legacy">Older wallet upgraded in Hive</option>
+          </select>
+          <div className="pb-3 pt-1 text-xs text-finnieGray-secondary">
+            {restoreRecoveryType === 'legacy'
+              ? 'Use this for an older JSON wallet after Enable Recovery was completed. Hive retrieves its encrypted recovery capsule from QSDM Core.'
+              : 'Use this for a wallet created with 24 QSDM Recovery Words.'}
+          </div>
           <label
             className="text-xs text-finnieGray-secondary"
             htmlFor="qsdm-recovery-words"
@@ -950,6 +1033,21 @@ export function QsdmWalletPanel() {
         {recoveryExportMessage && (
           <div className="py-2 text-sm text-finnieEmerald-light">
             {recoveryExportMessage}
+          </div>
+        )}
+        <ErrorMessage
+          error={
+            enableLegacyRecoveryError
+              ? `QSDM recovery activation failed: ${getErrorMessage(
+                  enableLegacyRecoveryError
+                )}`
+              : null
+          }
+          className="py-2"
+        />
+        {legacyRecoveryMessage && (
+          <div className="py-2 text-sm text-finnieEmerald-light">
+            {legacyRecoveryMessage}
           </div>
         )}
         <ErrorMessage

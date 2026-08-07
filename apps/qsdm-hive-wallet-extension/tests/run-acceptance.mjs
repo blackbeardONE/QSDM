@@ -31,6 +31,11 @@ const readArgument = (name, fallback = '') => {
     : fallback;
 };
 
+const storeScreenshotArgument = readArgument('--store-screenshot');
+const storeScreenshotPath = storeScreenshotArgument
+  ? path.resolve(storeScreenshotArgument)
+  : '';
+
 const defaultBrowser = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -583,6 +588,81 @@ try {
     await popup.$eval('#site-name', (element) => element.textContent),
     'Unavailable on this page'
   );
+
+  if (storeScreenshotPath) {
+    stage(`capturing Chrome Web Store screenshot at ${storeScreenshotPath}`);
+    fs.mkdirSync(path.dirname(storeScreenshotPath), { recursive: true });
+    await popup.setViewport({ width: 640, height: 400, deviceScaleFactor: 1 });
+    await popup.evaluate(() => {
+      const header = document.querySelector('header');
+      const main = document.querySelector('main');
+      if (!header || !main) return;
+
+      document.querySelector('#wallet-address').textContent =
+        'a1b2c3d4e5...8f9a0b1c';
+      document.querySelector('#site-name').textContent = 'qsdm.tech';
+      const siteState = document.querySelector('#site-state');
+      siteState.textContent = 'Connected';
+      siteState.classList.add('connected');
+      document.querySelector('#notice').textContent =
+        'Connection approved in QSDM Hive.';
+      document.querySelector('#connect-site').textContent =
+        'Disconnect This Site';
+      document.querySelector('#open-wallet').style.display = 'none';
+
+      const walletPanel = document.createElement('div');
+      walletPanel.style.width = '330px';
+      walletPanel.append(header, main);
+
+      const message = document.createElement('aside');
+      message.style.display = 'flex';
+      message.style.flexDirection = 'column';
+      message.style.justifyContent = 'center';
+      message.style.minWidth = '0';
+
+      const eyebrow = document.createElement('span');
+      eyebrow.textContent = 'QSDM HIVE WALLET';
+      eyebrow.style.color = '#55dfc1';
+      eyebrow.style.fontSize = '11px';
+      eyebrow.style.fontWeight = '700';
+
+      const title = document.createElement('h2');
+      title.textContent = 'Connect once. Approve in Hive.';
+      title.style.margin = '10px 0 12px';
+      title.style.fontSize = '23px';
+      title.style.lineHeight = '1.18';
+      title.style.letterSpacing = '0';
+
+      const copy = document.createElement('p');
+      copy.textContent =
+        'Private keys, keystore files, and passphrases stay outside the browser.';
+      copy.style.margin = '0';
+      copy.style.color = '#b8cbd1';
+      copy.style.fontSize = '13px';
+      copy.style.lineHeight = '1.5';
+
+      message.append(eyebrow, title, copy);
+      document.body.replaceChildren(walletPanel, message);
+      Object.assign(document.body.style, {
+        boxSizing: 'border-box',
+        display: 'grid',
+        gridTemplateColumns: '330px minmax(0, 1fr)',
+        alignItems: 'center',
+        columnGap: '28px',
+        width: '640px',
+        height: '400px',
+        margin: '0',
+        padding: '18px',
+        overflow: 'hidden',
+        background: '#071f29',
+      });
+    });
+    await popup.screenshot({
+      path: storeScreenshotPath,
+      type: 'jpeg',
+      quality: 95,
+    });
+  }
 
   const methods = requests.map((request) => request.method);
   assert.deepEqual(methods, [

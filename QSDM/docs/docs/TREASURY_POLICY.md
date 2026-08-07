@@ -151,10 +151,29 @@ On Windows, start the validator in networked mode:
 pwsh -File QSDM/scripts/start_local_validator.ps1 -Networked -Restart
 ```
 
+Networked mode is append-only by default. Exactly one synchronized validator
+may be assigned the temporary network block-producer role:
+
+```powershell
+pwsh -File QSDM/scripts/start_local_validator.ps1 `
+  -Networked `
+  -BlockProducer `
+  -Restart
+```
+
+`-BlockProducer` fails closed if the node has no existing synchronized chain
+tip. Start a new node as an ordinary networked follower first, wait for it to
+catch up, and only then assign the role. Never enable this switch on two nodes:
+automatic leader election is not implemented yet, so two producers could
+create competing histories. Changing the producer is a deliberate operator
+handoff: stop the old producer, verify the replacement has the same tip hash,
+then start the replacement with `-BlockProducer`.
+
 This choice is persisted in
 `QSDM/source/.cache/local-validator/validator-mode.json`, so the watchdog
 restarts the networked state after a crash or reboot instead of silently
-falling back to the retired solo ledger. Networked mode uses
+falling back to the retired solo ledger. The explicit block-producer role is
+persisted in the same file. Networked mode uses
 `https://api.qsdm.tech/api/v1` as its default HTTP chain source and the public
 QSDM bootstrap peer for libp2p connectivity.
 

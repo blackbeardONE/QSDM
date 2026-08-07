@@ -11,6 +11,7 @@ import type {
   QsdmReferralRegistrationRequest,
   QsdmReferralStatusResponse,
   QsdmSignerWalletCreateRequest,
+  QsdmSignerLegacyRecoveryEnableRequest,
   QsdmSignerWalletImportRequest,
   QsdmSignerWalletRecoveryExportRequest,
   QsdmSignerWalletRecoveryRequest,
@@ -193,6 +194,12 @@ export const createQsdmSignerWallet = async (
   payload: QsdmSignerWalletCreateRequest
 ) => {
   return window.main.createQsdmSignerWallet(payload);
+};
+
+export const enableQsdmSignerLegacyRecovery = async (
+  payload: QsdmSignerLegacyRecoveryEnableRequest
+) => {
+  return window.main.enableQsdmSignerLegacyRecovery(payload);
 };
 
 export const importQsdmSignerWallet = async (

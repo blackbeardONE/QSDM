@@ -22,12 +22,6 @@ $EnvFile = (Resolve-Path -LiteralPath $EnvFile).Path
 function Protect-CredentialFile {
     param([Parameter(Mandatory = $true)][string]$Path)
 
-    $acl = Get-Acl -LiteralPath $Path
-    $acl.SetAccessRuleProtection($true, $false)
-    foreach ($existingRule in @($acl.Access)) {
-        $null = $acl.RemoveAccessRuleSpecific($existingRule)
-    }
-
     $identities = @(
         [Security.Principal.WindowsIdentity]::GetCurrent().User
         [Security.Principal.SecurityIdentifier]::new(
@@ -39,6 +33,47 @@ function Protect-CredentialFile {
             $null
         )
     )
+
+    # Reapplying an unchanged protected descriptor can require
+    # SeSecurityPrivilege on some Windows builds because Get-Acl may carry a
+    # SACL alongside the DACL. Keep repeated installer runs privilege-free
+    # when the file already has exactly the intended access rules.
+    $existingAcl = Get-Acl -LiteralPath $Path
+    if ($existingAcl.AreAccessRulesProtected) {
+        $expected = @{}
+        foreach ($identity in $identities) {
+            $expected[$identity.Value] = $false
+        }
+        $matchesPolicy = $true
+        foreach ($rule in @($existingAcl.Access)) {
+            $ruleSid = $rule.IdentityReference.Translate(
+                [Security.Principal.SecurityIdentifier]
+            ).Value
+            if (
+                $rule.IsInherited -or
+                $rule.AccessControlType -ne
+                    [Security.AccessControl.AccessControlType]::Allow -or
+                -not $expected.ContainsKey($ruleSid) -or
+                ($rule.FileSystemRights -band
+                    [Security.AccessControl.FileSystemRights]::FullControl) -ne
+                    [Security.AccessControl.FileSystemRights]::FullControl
+            ) {
+                $matchesPolicy = $false
+                break
+            }
+            $expected[$ruleSid] = $true
+        }
+        if ($matchesPolicy -and -not ($expected.Values -contains $false)) {
+            return
+        }
+    }
+
+    # Build a fresh DACL instead of mutating the descriptor returned by
+    # Get-Acl. This intentionally excludes any SACL that the current process
+    # may be allowed to read but not write.
+    $acl = [Security.AccessControl.FileSecurity]::new()
+    $acl.SetAccessRuleProtection($true, $false)
+    $acl.SetOwner([Security.Principal.WindowsIdentity]::GetCurrent().User)
     foreach ($identity in $identities) {
         $rule = [Security.AccessControl.FileSystemAccessRule]::new(
             $identity,
@@ -48,6 +83,10 @@ function Protect-CredentialFile {
         $acl.AddAccessRule($rule)
     }
     Set-Acl -LiteralPath $Path -AclObject $acl
+
+    if (-not (Get-Acl -LiteralPath $Path).AreAccessRulesProtected) {
+        throw "Credential file ACL protection did not persist: $Path"
+    }
 }
 
 Protect-CredentialFile -Path $EnvFile

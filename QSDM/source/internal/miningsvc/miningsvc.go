@@ -257,7 +257,11 @@ func New(cfg Config) (*Service, error) {
 	}
 	batches := cfg.Batches
 	if batches == nil {
-		batches = acceptAllBatchValidator{}
+		// Default to the reference structural validator, not accept-all.
+		// With accept-all wired here the step-11 spot check could never
+		// fail, so QuarantineSet.Add was unreachable and the §8.3 fraud
+		// quarantine did not exist in any running node.
+		batches = mining.NewStructuralBatchValidator()
 	}
 	var dedupCap uint64
 	if cfg.DedupCapacity > 0 {
@@ -493,10 +497,11 @@ func (nonEmptyAddressValidator) ValidateAddress(a string) error {
 	return nil
 }
 
-// acceptAllBatchValidator is the default Batches
-// implementation: accept every structural batch. Bring-up
-// posture; the static WorkSet is the authoritative shape so
-// further structural validation is redundant.
+// acceptAllBatchValidator accepts every batch unconditionally. It is NOT
+// the default any more — mining.NewStructuralBatchValidator() is. Kept for
+// bring-up and tests that need the step-11 spot check disabled; wiring it
+// into a real node disables the §8.3 fraud quarantine entirely, because a
+// spot check that never fails never calls QuarantineSet.Add.
 type acceptAllBatchValidator struct{}
 
 func (acceptAllBatchValidator) ValidateBatch(_ mining.Batch) error { return nil }

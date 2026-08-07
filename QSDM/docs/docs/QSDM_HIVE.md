@@ -76,10 +76,11 @@ Task Studio initially publishes the built-in `generic-proof-v1` capability. New 
 
 New wallets use **24 QSDM Recovery Words**. The words rebuild the same CELL
 wallet; the passphrase protects its local encrypted JSON and may be changed
-during restore. Older random wallets continue to use **QSDM keystore JSON plus
-passphrase** and cannot receive recovery words without moving to a new wallet.
-Hive profile phrases, when present, restore only local Hive data. See [QSDM
-Wallet Recovery](WALLET_RECOVERY.md).
+during restore. Older random wallets can enable 24-word recovery once from
+**Settings > Wallet** using their existing passphrase. This preserves the same
+address, CELL, stakes, and task ownership while registering an encrypted
+recovery capsule with QSDM Core. Hive profile phrases, when present, restore
+only local Hive data. See [QSDM Wallet Recovery](WALLET_RECOVERY.md).
 
 ## QSDM Wallet browser extension
 

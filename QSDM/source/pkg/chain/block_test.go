@@ -353,14 +353,79 @@ func TestBlockProducer_TryAppendExternalBlockWithTx(t *testing.T) {
 	}
 }
 
-func TestBlockProducer_PreSealRequiresAccountStore(t *testing.T) {
+// bareApplier implements StateApplier and nothing else — no clone support,
+// so it cannot back speculative pre-seal execution.
+type bareApplier struct{ balances map[string]float64 }
+
+func (b *bareApplier) ApplyTx(tx *mempool.Tx) error {
+	if b.balances[tx.Sender] < tx.Amount+tx.Fee {
+		return fmt.Errorf("insufficient balance")
+	}
+	b.balances[tx.Sender] -= tx.Amount + tx.Fee
+	b.balances[tx.Recipient] += tx.Amount
+	return nil
+}
+
+func (b *bareApplier) StateRoot() string {
+	h := sha256.Sum256([]byte(fmt.Sprint(b.balances)))
+	return hex.EncodeToString(h[:])
+}
+
+// Pre-seal still refuses an applier that cannot produce an isolated clone —
+// speculative execution would otherwise mutate live state before BFT commits.
+func TestBlockProducer_PreSealRequiresReplayCapableApplier(t *testing.T) {
 	pool := mempool.New(mempool.DefaultConfig())
-	bp := NewBlockProducer(pool, newTestApplier(), DefaultProducerConfig())
+	bp := NewBlockProducer(pool, &bareApplier{balances: map[string]float64{"alice": 10000}}, DefaultProducerConfig())
 	bp.SetPreSealBFTRound(func(*Block) error { return nil })
 	pool.Add(makeTx("tx1", 1.0))
 	_, err := bp.ProduceBlock()
 	if !errors.Is(err, ErrPreSealRequiresAccountStore) {
 		t.Fatalf("expected ErrPreSealRequiresAccountStore, got %v", err)
+	}
+}
+
+// TestBlockProducer_PreSealAcceptsEnrollmentAwareApplier is the regression
+// test for consensus-mode block production being unreachable.
+//
+// The pre-seal gate used to require the applier to be exactly *AccountStore,
+// but cmd/qsdm wires *EnrollmentAwareApplier. So with
+// QSDM_SOLO_VALIDATOR_MODE=0 — i.e. any consensus-enabled node — every
+// ProduceBlock returned ErrPreSealRequiresAccountStore and the chain
+// produced no blocks after genesis. The requirement is the clone capability,
+// which EnrollmentAwareApplier has always had via ChainReplayApplier.
+func TestBlockProducer_PreSealAcceptsEnrollmentAwareApplier(t *testing.T) {
+	as := NewAccountStore()
+	as.Credit("alice", 10000)
+	applier := NewEnrollmentAwareApplier(as, nil)
+
+	pool := mempool.New(mempool.DefaultConfig())
+	bp := NewBlockProducer(pool, applier, DefaultProducerConfig())
+
+	sealed := false
+	bp.SetPreSealBFTRound(func(b *Block) error {
+		sealed = true
+		if b.StateRoot == "" {
+			t.Error("tentative block must carry the speculative state root")
+		}
+		return nil
+	})
+
+	tx := &mempool.Tx{ID: "tx1", Sender: "alice", Recipient: "bob", Amount: 5, Fee: 1, Nonce: 0}
+	pool.Add(tx)
+
+	blk, err := bp.ProduceBlock()
+	if err != nil {
+		t.Fatalf("production wiring must be able to produce blocks with BFT pre-seal: %v", err)
+	}
+	if !sealed {
+		t.Fatal("pre-seal BFT round should have run")
+	}
+	if len(blk.Transactions) != 1 {
+		t.Fatalf("expected 1 tx in block, got %d", len(blk.Transactions))
+	}
+	// Live state must equal the speculative root the round committed to.
+	if applier.StateRoot() != blk.StateRoot {
+		t.Fatalf("live state root %s != sealed block root %s", applier.StateRoot(), blk.StateRoot)
 	}
 }
 

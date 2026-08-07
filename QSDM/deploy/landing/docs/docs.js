@@ -444,7 +444,7 @@
       + cardHtml("home-gateway",       "Home gateway",       "Publish mining/status without exposing wallet or admin APIs.")
       + cardHtml("miner-quickstart",   "Mine on NVIDIA",     "Protocol v2 miner path for Turing-or-newer GPUs.")
       + cardHtml("edge-pool",          "Edge pool",          "Agent → Relay → Mother Hive → Core settlement model.")
-      + cardHtml("web-wallet",         "Web wallet",         "ML-DSA-87 self-custody in the browser, no extension.")
+      + cardHtml("web-wallet",         "Web wallet",         "ML-DSA-87 self-custody in the browser, with an optional Hive extension path.")
       + cardHtml("api-reference",      "API reference",      "Public HTTP endpoints with auth + replay semantics.")
       + cardHtml("runbooks/index",     "Runbooks",           "Incident response, on-call procedures, recovery.")
       + "</div>"

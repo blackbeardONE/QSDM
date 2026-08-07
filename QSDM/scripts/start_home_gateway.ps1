@@ -74,6 +74,90 @@ function Stop-ExistingGateway {
     }
 }
 
+function Test-GatewayKeyFileProtected {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not ($IsWindows -or $env:OS -eq "Windows_NT")) {
+        return $false
+    }
+
+    try {
+        $currentUserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $allowedSids = @($currentUserSid, "S-1-5-18", "S-1-5-32-544")
+        $acl = Get-Acl -LiteralPath $Path
+        if (-not $acl.AreAccessRulesProtected) {
+            return $false
+        }
+        $rules = $acl.GetAccessRules(
+            $true,
+            $true,
+            [Security.Principal.SecurityIdentifier]
+        )
+        $currentUserCanRead = $false
+        foreach ($rule in $rules) {
+            if ($rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow) {
+                continue
+            }
+            $ruleSid = $rule.IdentityReference.Value
+            if ($allowedSids -notcontains $ruleSid) {
+                return $false
+            }
+            if ($ruleSid -eq $currentUserSid -and
+                ($rule.FileSystemRights -band [Security.AccessControl.FileSystemRights]::ReadData) -ne 0) {
+                $currentUserCanRead = $true
+            }
+        }
+        return $currentUserCanRead
+    } catch {
+        return $false
+    }
+}
+
+function Protect-GatewayKeyFile {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if ($IsWindows -or $env:OS -eq "Windows_NT") {
+        if (Test-GatewayKeyFileProtected -Path $Path) {
+            return
+        }
+
+        $currentUserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $acl = Get-Acl -LiteralPath $Path
+        $acl.SetAccessRuleProtection($true, $false)
+        $rules = @($acl.GetAccessRules(
+            $true,
+            $true,
+            [Security.Principal.SecurityIdentifier]
+        ))
+        foreach ($rule in $rules) {
+            $acl.RemoveAccessRuleSpecific($rule)
+        }
+        foreach ($sidValue in @($currentUserSid, "S-1-5-18", "S-1-5-32-544")) {
+            $sid = [Security.Principal.SecurityIdentifier]::new($sidValue)
+            $rule = [Security.AccessControl.FileSystemAccessRule]::new(
+                $sid,
+                [Security.AccessControl.FileSystemRights]::FullControl,
+                [Security.AccessControl.AccessControlType]::Allow
+            )
+            $acl.AddAccessRule($rule)
+        }
+        try {
+            Set-Acl -LiteralPath $Path -AclObject $acl
+        } catch {
+            throw "Unable to restrict gateway key permissions at ${Path}: $($_.Exception.Message)"
+        }
+        if (-not (Test-GatewayKeyFileProtected -Path $Path)) {
+            throw "Gateway key permissions remain unsafe at $Path"
+        }
+        return
+    }
+
+    & chmod 600 -- $Path
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to restrict gateway key permissions at $Path"
+    }
+}
+
 if ($Restart) {
     Write-GatewayLauncherLog "restart requested; stopping existing gateway"
     Stop-ExistingGateway
@@ -87,11 +171,13 @@ if ($Restart) {
     }
 }
 
-$KeyHex = (Get-Content -LiteralPath $KeyPath -Raw).Trim()
+Protect-GatewayKeyFile -Path $KeyPath
+Protect-GatewayKeyFile -Path $DurableKeyPath
+$ResolvedKeyPath = (Resolve-Path -LiteralPath $KeyPath).Path
 $args = @(
     "--relay", $Relay,
     "--slot", $Slot,
-    "--key-hex", $KeyHex,
+    "--key-file", $ResolvedKeyPath,
     "--backend", $Backend
 )
 if ($AllowEnrollment) {
@@ -101,14 +187,24 @@ if (-not $DisableHive) {
     $args += "--allow-hive"
 }
 
-$process = Start-Process `
-    -FilePath $ExePath `
-    -ArgumentList $args `
-    -WorkingDirectory $LocalValidatorPath `
-    -WindowStyle Hidden `
-    -RedirectStandardOutput $StdoutLog `
-    -RedirectStandardError $StderrLog `
-    -PassThru
+$previousKeyHexEnv = $env:QSDM_HOME_GATEWAY_KEY_HEX
+try {
+    Remove-Item Env:QSDM_HOME_GATEWAY_KEY_HEX -ErrorAction SilentlyContinue
+    $process = Start-Process `
+        -FilePath $ExePath `
+        -ArgumentList $args `
+        -WorkingDirectory $LocalValidatorPath `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $StdoutLog `
+        -RedirectStandardError $StderrLog `
+        -PassThru
+} finally {
+    if ($null -eq $previousKeyHexEnv) {
+        Remove-Item Env:QSDM_HOME_GATEWAY_KEY_HEX -ErrorAction SilentlyContinue
+    } else {
+        $env:QSDM_HOME_GATEWAY_KEY_HEX = $previousKeyHexEnv
+    }
+}
 
 Set-Content -LiteralPath $PidFile -Value $process.Id
 Write-GatewayLauncherLog "started gateway pid=$($process.Id) exe=$ExePath relay=$Relay slot=$Slot backend=$Backend"

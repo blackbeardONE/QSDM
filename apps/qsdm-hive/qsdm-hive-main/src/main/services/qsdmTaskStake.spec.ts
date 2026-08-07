@@ -15,9 +15,12 @@ jest.mock('axios', () => ({
 
 jest.mock('config/qsdm', () => ({
   QSDM_CELL_DECIMALS: 9,
-  buildQsdmTaskReadUrls: (path: string) => [
-    `http://127.0.0.1:8080/api/v1/${path.replace(/^\/+/, '')}`,
-    `http://localhost:8080/api/v1/${path.replace(/^\/+/, '')}`,
+  buildQsdmTaskActionReadUrls: (path: string) => [
+    `https://api.qsdm.tech/api/v1/${path.replace(/^\/+/, '')}`,
+    `https://api.qsdm.tech/attest/home-validator/api/v1/${path.replace(
+      /^\/+/,
+      ''
+    )}`,
   ],
 }));
 
@@ -111,5 +114,44 @@ describe('qsdmTaskStake', () => {
       },
     ]);
     expect(ownership.runningForOtherSender).toBe(true);
+  });
+
+  it('does not accept a stale zero stake from the home gateway', async () => {
+    mockedAxiosGet.mockImplementation(async (url: string) => {
+      if (url.startsWith('https://api.qsdm.tech/api/v1/')) {
+        return {
+          data: {
+            task: {
+              participants: {
+                [activeSender]: {
+                  sender: activeSender,
+                  stake: 2,
+                  running: false,
+                },
+              },
+            },
+          },
+        };
+      }
+
+      return {
+        data: {
+          task: {
+            participants: {},
+          },
+        },
+      };
+    });
+
+    const { getConfirmedQsdmTaskStakeInDenomination } = await import(
+      './qsdmTaskStake'
+    );
+    const stake = await getConfirmedQsdmTaskStakeInDenomination('task-1');
+
+    expect(stake).toBe(2000000000);
+    expect(mockedAxiosGet).toHaveBeenCalledTimes(1);
+    expect(mockedAxiosGet.mock.calls[0][0]).toBe(
+      'https://api.qsdm.tech/api/v1/tasks/task-1/state'
+    );
   });
 });

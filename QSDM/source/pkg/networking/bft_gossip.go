@@ -115,6 +115,17 @@ func (g *BFTGossipIngress) SetReputationTracker(rt *ReputationTracker) {
 
 // HandlePeerMessage validates a raw GossipSub payload and forwards it to the executor.
 func (g *BFTGossipIngress) HandlePeerMessage(peerID string, payload []byte) error {
+	// Refuse banned peers up front. This ingress already penalizes provable
+	// equivocation via RecordEvent, but nothing consulted the resulting ban,
+	// so an equivocating peer kept getting its consensus messages applied.
+	g.mu.Lock()
+	rep := g.rep
+	g.mu.Unlock()
+	if rep != nil && rep.IsBanned(peerID) {
+		g.statRejectedWire.Add(1)
+		return fmt.Errorf("bft gossip refused: peer %s is banned", peerID)
+	}
+
 	var env chain.BFTWireEnvelope
 	if err := json.Unmarshal(payload, &env); err != nil {
 		g.statRejectedWire.Add(1)

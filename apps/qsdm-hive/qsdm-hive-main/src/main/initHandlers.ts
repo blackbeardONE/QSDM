@@ -73,6 +73,8 @@ const endpointToControllerMap: Record<
   [Endpoints.SET_QSDM_MINER_REWARD_ADDRESS_TO_SIGNER]:
     controllers.setQsdmMinerRewardAddressToSigner,
   [Endpoints.CREATE_QSDM_SIGNER_WALLET]: controllers.createQsdmSignerWallet,
+  [Endpoints.ENABLE_QSDM_SIGNER_LEGACY_RECOVERY]:
+    controllers.enableQsdmSignerLegacyRecovery,
   [Endpoints.RESTORE_QSDM_SIGNER_WALLET]: controllers.restoreQsdmSignerWallet,
   [Endpoints.IMPORT_QSDM_SIGNER_WALLET]: controllers.importQsdmSignerWallet,
   [Endpoints.UNLOCK_QSDM_SIGNER_WALLET]: controllers.unlockQsdmSignerWallet,

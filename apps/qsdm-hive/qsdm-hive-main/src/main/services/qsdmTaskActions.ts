@@ -3,9 +3,9 @@ import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 
 import {
-  getQsdmCoreConnectionMode,
   getQsdmRuntimeCoreApiUrl,
   QSDM_CANONICAL_API_URL,
+  resolveQsdmTaskActionCoreApiUrl,
 } from 'config/qsdm';
 import {
   QsdmTaskAction,
@@ -106,16 +106,7 @@ export const resolveQsdmTaskActionApiUrl = ({
 }: {
   runtimeApiUrl?: string;
   canonicalApiUrl?: string;
-} = {}) => {
-  const connectionMode = getQsdmCoreConnectionMode(
-    runtimeApiUrl,
-    undefined,
-    canonicalApiUrl
-  );
-  const selectedApiUrl =
-    connectionMode === 'custom' ? runtimeApiUrl : canonicalApiUrl;
-  return selectedApiUrl.replace(/\/+$/, '');
-};
+} = {}) => resolveQsdmTaskActionCoreApiUrl({ runtimeApiUrl, canonicalApiUrl });
 
 const buildQsdmTaskActionApiUrl = (path: string) =>
   `${resolveQsdmTaskActionApiUrl()}/${path.replace(/^\/+/, '')}`;

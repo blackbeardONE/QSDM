@@ -1,6 +1,14 @@
 (() => {
   "use strict";
 
+  if (globalThis.__qsdmHiveContentBridgeInstalled) return;
+  Object.defineProperty(globalThis, "__qsdmHiveContentBridgeInstalled", {
+    value: true,
+    configurable: false,
+    enumerable: false,
+    writable: false,
+  });
+
   const REQUEST_SOURCE = "qsdm-hive-provider-request";
   const RESPONSE_SOURCE = "qsdm-hive-provider-response";
   const METHODS = new Set([
