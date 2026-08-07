@@ -32,6 +32,13 @@ type RoundCertificate struct {
 	ValidatorSet  []string `json:"validators"`    // active validators at certification time (addresses)
 	CommitCount    int `json:"commit_count"`
 	NilCommitCount int `json:"nil_commit_count"`
+
+	// Signer is the validator that issued this certificate, and Auth
+	// authenticates it. CommitDigest alone is only an integrity check —
+	// anyone can recompute it over fabricated commits — so without these
+	// a certificate proves nothing about who produced it. See pol_sig.go.
+	Signer string      `json:"signer,omitempty"`
+	Auth   BFTWireAuth `json:"auth,omitempty"`
 }
 
 // BuildRoundCertificate builds a certificate from the committed round at height.

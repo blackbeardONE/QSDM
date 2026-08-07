@@ -250,6 +250,18 @@ key to manufacture an ID, or ask users to weaken browser policy. If a store
 assigns a different extension ID, add it to Hive's native-host allowlist and
 release that compatible Hive build before activating the store listing.
 
+Agent and Relay files are immutable, versioned release artifacts even though
+their local build output is excluded from Git because of its size. The normal
+joint Hive publisher validates and publishes them with Hive. If an already
+approved Agent release is missing from production, rebuild it from the matching
+source revision, run the Edge tests and Linux smoke test, then use
+`QSDM/deploy/scripts/publish_edge_release.sh <stage-dir> <agent-version>`.
+That repair publisher validates every checksum and binary version, refuses to
+replace a different same-version file, installs each file atomically, and
+checks every public URL. Do not repair this condition with ad hoc file copies.
+The website installer also checks every `/downloads/` link advertised by
+`download.html` and must fail deployment when any target is unavailable.
+
 Build and smoke-test Hive on each supported operating system. A Windows package
 does not validate Linux AppImage behavior, and a Linux package does not validate
 Windows service, UAC, tray, clipboard, or installer behavior.
@@ -285,8 +297,9 @@ Use clean or disposable Windows and Linux profiles. At minimum verify:
 
 - install, first launch, PIN gate, restart, update, and uninstall;
 - exact-version enforcement for older, current, and unapproved newer clients;
-- wallet create/import, keystore JSON backup, passphrase handling, signing, and
-  clipboard behavior without logging secret material;
+- wallet create/import, 24-word recovery create/restore/export, identical
+  address after restore, legacy JSON compatibility, passphrase handling,
+  signing, and clipboard behavior without logging secret material;
 - local Core and production gateway status, failover, timeout recovery, and no
   false zero balance during a transient outage;
 - task catalog, staking persistence, rewards, round status, and restart restore;

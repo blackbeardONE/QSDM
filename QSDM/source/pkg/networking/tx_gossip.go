@@ -30,6 +30,14 @@ func (ti *TxGossipIngress) SetTxGossipRelay(r *TxGossipRelay) {
 
 // HandlePeerMessage validates a signed transaction gossip payload.
 func (ti *TxGossipIngress) HandlePeerMessage(peerID string, payload []byte) (chain.GossipVerdict, error) {
+	// Banned peers are dropped before validation or mempool admission.
+	// This ingress penalizes invalid transactions via RecordEvent, but
+	// nothing read the resulting ban, so a peer that had already been
+	// banned for flooding invalid txs kept getting every message processed.
+	if ti.rep != nil && ti.rep.IsBanned(peerID) {
+		return chain.GossipRejected, fmt.Errorf("tx gossip refused: peer %s is banned", peerID)
+	}
+
 	var stx chain.SignedTx
 	if err := json.Unmarshal(payload, &stx); err == nil && stx.Tx != nil {
 		return ti.handleSignedTx(peerID, payload, &stx)

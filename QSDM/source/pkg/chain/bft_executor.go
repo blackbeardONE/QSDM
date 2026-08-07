@@ -18,6 +18,12 @@ type BFTExecutor struct {
 	publish  func([]byte) error
 	onCommit func(height uint64, round uint32, blockHash string)
 
+	// voteSigner authenticates outbound consensus messages (guarded by mu).
+	voteSigner BFTSigner
+
+	// requireSignedVotes rejects unsigned inbound consensus messages.
+	requireSignedVotes atomic.Bool
+
 	commitNotified map[uint64]struct{}
 	pending        *PendingProposalStore
 
@@ -224,13 +230,78 @@ func (e *BFTExecutor) BroadcastPropose(height uint64, round uint32, proposer, bl
 	if e == nil {
 		return nil
 	}
-	b, err := MarshalBFTWire(BFTWirePropose, BFTWireProposeMsg{
+	msg := BFTWireProposeMsg{
 		Height: height, Round: round, Proposer: proposer, BlockHash: blockHash, Block: body,
-	})
+	}
+	if signer := e.VoteSigner(); signer != nil {
+		if err := SignPropose(&msg, signer); err != nil {
+			return err
+		}
+	}
+	b, err := MarshalBFTWire(BFTWirePropose, msg)
 	if err != nil {
 		return err
 	}
 	return e.emit(b)
+}
+
+// SetVoteSigner installs the key used to authenticate outbound consensus
+// messages. When nil, messages are emitted unsigned — which peers running
+// with RequireSignedVotes will reject.
+func (e *BFTExecutor) SetVoteSigner(s BFTSigner) {
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.voteSigner = s
+}
+
+// VoteSigner returns the configured outbound signer, if any.
+func (e *BFTExecutor) VoteSigner() BFTSigner {
+	if e == nil {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.voteSigner
+}
+
+// SetRequireSignedVotes controls whether inbound consensus messages must
+// carry a valid authenticator.
+//
+// Defaults to false so a mixed-version network can roll forward: nodes
+// running the signed build emit signatures immediately, and operators flip
+// enforcement on once every validator is upgraded. Leaving it off preserves
+// the old, forgeable behaviour, so it should be enabled as soon as the
+// rollout completes.
+func (e *BFTExecutor) SetRequireSignedVotes(require bool) {
+	if e == nil {
+		return
+	}
+	e.requireSignedVotes.Store(require)
+}
+
+// RequireSignedVotes reports whether inbound signature enforcement is on.
+func (e *BFTExecutor) RequireSignedVotes() bool {
+	if e == nil {
+		return false
+	}
+	return e.requireSignedVotes.Load()
+}
+
+// checkInboundAuth applies the configured signature policy. When a message
+// carries an authenticator it is ALWAYS verified — a present-but-invalid
+// signature is a hard error regardless of policy, because the only reason to
+// send one is to be checked. The policy flag governs unsigned messages.
+func (e *BFTExecutor) checkInboundAuth(signed bool, verify func() error) error {
+	if !signed {
+		if e.RequireSignedVotes() {
+			return ErrBFTUnsigned
+		}
+		return nil
+	}
+	return verify()
 }
 
 // PendingBlock returns a gossip-cached block body for this height and vote value (e.g. StateRoot), if known.
@@ -316,9 +387,15 @@ func (e *BFTExecutor) BroadcastPrevote(height uint64, round uint32, validator, b
 	if e == nil {
 		return nil
 	}
-	b, err := MarshalBFTWire(BFTWirePrevote, BFTWirePrevoteMsg{
+	msg := BFTWirePrevoteMsg{
 		Height: height, Round: round, Validator: validator, BlockHash: blockHash,
-	})
+	}
+	if signer := e.VoteSigner(); signer != nil {
+		if err := SignPrevote(&msg, signer); err != nil {
+			return err
+		}
+	}
+	b, err := MarshalBFTWire(BFTWirePrevote, msg)
 	if err != nil {
 		return err
 	}
@@ -330,9 +407,15 @@ func (e *BFTExecutor) BroadcastPrecommit(height uint64, round uint32, validator,
 	if e == nil {
 		return nil
 	}
-	b, err := MarshalBFTWire(BFTWirePrecommit, BFTWirePrecommitMsg{
+	msg := BFTWirePrecommitMsg{
 		Height: height, Round: round, Validator: validator, BlockHash: blockHash,
-	})
+	}
+	if signer := e.VoteSigner(); signer != nil {
+		if err := SignPrecommit(&msg, signer); err != nil {
+			return err
+		}
+	}
+	b, err := MarshalBFTWire(BFTWirePrecommit, msg)
 	if err != nil {
 		return err
 	}
@@ -371,6 +454,9 @@ func (e *BFTExecutor) ApplyInbound(payload []byte) error {
 		if err := validateInboundProposeBlock(&m); err != nil {
 			return err
 		}
+		if err := e.checkInboundAuth(m.Auth.Signed(), func() error { return VerifyPropose(m) }); err != nil {
+			return err
+		}
 		if _, err := e.bc.Propose(m.Height, m.Round, m.Proposer, m.BlockHash); err != nil {
 			e.maybeRecordProposerEquivocation(err)
 			if isBenignBFTErr(err) {
@@ -390,6 +476,9 @@ func (e *BFTExecutor) ApplyInbound(payload []byte) error {
 		if err := json.Unmarshal(raw, &m); err != nil {
 			return err
 		}
+		if err := e.checkInboundAuth(m.Auth.Signed(), func() error { return VerifyPrevote(m) }); err != nil {
+			return err
+		}
 		if err := e.bc.PreVote(m.Height, m.Validator, m.BlockHash); err != nil {
 			if isBenignBFTErr(err) {
 				return nil
@@ -400,6 +489,9 @@ func (e *BFTExecutor) ApplyInbound(payload []byte) error {
 	case BFTWirePrecommit:
 		var m BFTWirePrecommitMsg
 		if err := json.Unmarshal(raw, &m); err != nil {
+			return err
+		}
+		if err := e.checkInboundAuth(m.Auth.Signed(), func() error { return VerifyPrecommit(m) }); err != nil {
 			return err
 		}
 		if err := e.bc.PreCommit(m.Height, m.Validator, m.BlockHash); err != nil {

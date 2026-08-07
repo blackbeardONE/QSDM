@@ -14,6 +14,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/bridge"
 	"github.com/blackbeardONE/QSDM/pkg/config"
 	"github.com/blackbeardONE/QSDM/pkg/contracts"
+	"github.com/blackbeardONE/QSDM/pkg/envcompat"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 	"github.com/blackbeardONE/QSDM/pkg/submesh"
 	"github.com/blackbeardONE/QSDM/pkg/wallet"
@@ -30,6 +31,7 @@ type Server struct {
 	authManager       *AuthManager
 	userStore         *UserStore
 	rateLimiter       *RateLimiter
+	roleRateLimiter   *RoleRateLimiter
 	requestSigner     *RequestSigner
 	csrfManager       *CSRFManager
 	revocations       *TokenRevocationStore
@@ -155,6 +157,16 @@ func NewServer(cfg *config.Config, logger *logging.Logger, walletService *wallet
 	rateLimiter := NewRateLimiter(maxRL, winRL)
 	logger.Info("API rate limiting", "max_requests_per_client", maxRL, "window", winRL.String())
 
+	// Per-role quotas, applied post-authentication.
+	roleRateLimiter := NewRoleRateLimiter(DefaultRoleRateLimiterConfig())
+
+	// X-Forwarded-For is honoured only when the operator declares a
+	// trusted reverse proxy in front of this node. Left off, client IPs
+	// come from the transport and cannot be forged by a header.
+	SetTrustProxyHeaders(envcompat.Truthy("QSDM_TRUST_PROXY_HEADERS", "QSDM_TRUST_PROXY_HEADERS"))
+	logger.Info("API client-IP source",
+		"trust_x_forwarded_for", TrustProxyHeaders())
+
 	// Initialize request signer
 	requestSigner, err := NewRequestSigner(cfg.JWTHMACSecret)
 	if err != nil {
@@ -177,7 +189,8 @@ func NewServer(cfg *config.Config, logger *logging.Logger, walletService *wallet
 		logger:         logger,
 		authManager:    authManager,
 		userStore:      userStore,
-		rateLimiter:    rateLimiter,
+		rateLimiter:     rateLimiter,
+		roleRateLimiter: roleRateLimiter,
 		requestSigner:  requestSigner,
 		walletService:  walletService,
 		storage:        storage,
@@ -482,6 +495,14 @@ func (s *Server) SetPeerCountSource(fn func() int) {
 func (s *Server) setupMiddleware(handler http.Handler) http.Handler {
 	// 9. Optional stricter /api/admin access (role + mTLS)
 	handler = AdminAccessMiddleware(s.config, s.logger)(handler)
+
+	// 8b. Per-role rate limiting. Mounted INSIDE AuthMiddleware so it runs
+	//     after claims are populated and can key buckets on the verified
+	//     claims.Address rather than anything caller-supplied. The outer
+	//     RateLimiter (step 5) is IP-based and pre-auth; this is the
+	//     per-principal quota. security.go's comment claimed both were
+	//     "mounted in series" long before either mounting existed.
+	handler = s.roleRateLimiter.Middleware(handler)
 
 	// 8. Authentication (validate tokens, populates claims context)
 	handler = AuthMiddleware(s.authManager, s.logger)(handler)

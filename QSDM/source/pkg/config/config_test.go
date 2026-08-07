@@ -251,3 +251,136 @@ func TestApplyDefaults_LogFile_legacyQsdmplusLogPicked(t *testing.T) {
 			cfg.LogFile, "qsdmplus.log")
 	}
 }
+
+// TestLoadConfigFile_TOML_GovernanceAuthorities covers the wiring gap that
+// left ~2,500 LOC of tested governance unreachable in production: the
+// v2wiring applier honoured GovernanceAuthorities, but no config path ever
+// populated it, so every `qsdm/gov/v1` tx rejected with
+// ErrGovernanceNotConfigured on a real node.
+func TestLoadConfigFile_TOML_GovernanceAuthorities(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "node.toml")
+	content := `
+[network]
+port = 4001
+
+[governance]
+authorities = ["addr-alice", "addr-carol"]
+`
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &Config{}
+	if err := loadConfigFile(p, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.GovernanceAuthorities) != 2 ||
+		cfg.GovernanceAuthorities[0] != "addr-alice" ||
+		cfg.GovernanceAuthorities[1] != "addr-carol" {
+		t.Fatalf("expected governance authorities from TOML, got %#v", cfg.GovernanceAuthorities)
+	}
+}
+
+// Absent a [governance] authorities key, governance stays disabled — the
+// documented pre-governance posture, not an error.
+func TestApplyDefaults_GovernanceAuthorities_defaultsEmpty(t *testing.T) {
+	cfg := &Config{}
+	applyDefaults(cfg)
+	if cfg.GovernanceAuthorities == nil {
+		t.Fatal("GovernanceAuthorities should default to an empty slice, not nil")
+	}
+	if len(cfg.GovernanceAuthorities) != 0 {
+		t.Fatalf("governance must default to disabled, got %#v", cfg.GovernanceAuthorities)
+	}
+}
+
+func TestApplyEnvOverrides_GovernanceAuthorities(t *testing.T) {
+	t.Setenv("QSDM_GOVERNANCE_AUTHORITIES", " addr-alice , addr-carol ,, ")
+	cfg := &Config{}
+	applyEnvOverrides(cfg)
+	if len(cfg.GovernanceAuthorities) != 2 ||
+		cfg.GovernanceAuthorities[0] != "addr-alice" ||
+		cfg.GovernanceAuthorities[1] != "addr-carol" {
+		t.Fatalf("expected trimmed authorities from env, got %#v", cfg.GovernanceAuthorities)
+	}
+}
+
+func TestLoadConfigFile_TOML_RequireSignedVotes(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "node.toml")
+	content := `
+[network]
+port = 4001
+
+[consensus]
+require_signed_votes = true
+`
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &Config{}
+	if err := loadConfigFile(p, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.RequireSignedVotes {
+		t.Fatal("expected RequireSignedVotes from [consensus] require_signed_votes")
+	}
+}
+
+// Enforcement defaults OFF so a mixed-version validator set can roll
+// forward; operators enable it once every peer signs its votes.
+func TestApplyDefaults_RequireSignedVotes_defaultsOff(t *testing.T) {
+	cfg := &Config{}
+	applyDefaults(cfg)
+	if cfg.RequireSignedVotes {
+		t.Fatal("inbound vote signature enforcement must default to off for rollout compatibility")
+	}
+}
+
+func TestApplyEnvOverrides_RequireSignedVotes(t *testing.T) {
+	t.Setenv("QSDM_REQUIRE_SIGNED_VOTES", "1")
+	cfg := &Config{}
+	applyEnvOverrides(cfg)
+	if !cfg.RequireSignedVotes {
+		t.Fatal("QSDM_REQUIRE_SIGNED_VOTES=1 should enable enforcement")
+	}
+}
+
+func TestLoadConfigFile_TOML_ForkDustHeight(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "node.toml")
+	content := `
+[network]
+port = 4001
+
+[consensus]
+fork_dust_height = 250000
+`
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &Config{}
+	if err := loadConfigFile(p, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ForkDustHeight != 250000 {
+		t.Fatalf("expected fork_dust_height 250000, got %d", cfg.ForkDustHeight)
+	}
+}
+
+// Zero means never activate. A node that has not opted in must keep the
+// legacy float64 accounting bit-for-bit, so this defaulting to anything
+// other than zero would silently fork the network.
+func TestApplyDefaults_ForkDustHeight_defaultsDisabled(t *testing.T) {
+	cfg := &Config{}
+	applyDefaults(cfg)
+	if cfg.ForkDustHeight != 0 {
+		t.Fatalf("dust fork must default to disabled, got %d", cfg.ForkDustHeight)
+	}
+}
+
+func TestApplyEnvOverrides_ForkDustHeight(t *testing.T) {
+	t.Setenv("QSDM_FORK_DUST_HEIGHT", "777")
+	cfg := &Config{}
+	applyEnvOverrides(cfg)
+	if cfg.ForkDustHeight != 777 {
+		t.Fatalf("expected 777 from env, got %d", cfg.ForkDustHeight)
+	}
+}

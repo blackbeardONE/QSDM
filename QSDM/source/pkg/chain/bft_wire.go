@@ -27,6 +27,8 @@ type BFTWireProposeMsg struct {
 	Proposer  string `json:"proposer"`
 	BlockHash string `json:"block_hash"`
 	Block     *Block `json:"block,omitempty"`
+	// Auth authenticates the proposer. See bft_sig.go.
+	Auth BFTWireAuth `json:"auth,omitempty"`
 }
 
 // BFTWirePrevoteMsg is a prevote from a validator.
@@ -35,6 +37,9 @@ type BFTWirePrevoteMsg struct {
 	Round     uint32 `json:"round"`
 	Validator string `json:"validator"`
 	BlockHash string `json:"block_hash"`
+	// Auth authenticates the validator. Without it any gossip peer can
+	// forge a prevote for any validator. See bft_sig.go.
+	Auth BFTWireAuth `json:"auth,omitempty"`
 }
 
 // BFTWirePrecommitMsg is a precommit from a validator.
@@ -43,6 +48,10 @@ type BFTWirePrecommitMsg struct {
 	Round     uint32 `json:"round"`
 	Validator string `json:"validator"`
 	BlockHash string `json:"block_hash"`
+	// Auth authenticates the validator. Without it any gossip peer can
+	// forge a precommit for any validator — i.e. manufacture a quorum.
+	// See bft_sig.go.
+	Auth BFTWireAuth `json:"auth,omitempty"`
 }
 
 // MarshalBFTWire builds a gossip payload for the given message.

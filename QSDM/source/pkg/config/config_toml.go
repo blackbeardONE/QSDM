@@ -9,6 +9,7 @@ type ConfigTOML struct {
 	API         APIConfig         `toml:"api"`
 	Wallet      WalletConfig      `toml:"wallet"`
 	Governance  GovernanceConfig  `toml:"governance"`
+	Consensus   ConsensusConfigTOML `toml:"consensus" yaml:"consensus"`
 	Performance PerformanceConfig `toml:"performance"`
 	Trust       TrustConfigTOML   `toml:"trust" yaml:"trust"`
 }
@@ -138,6 +139,26 @@ type WalletConfig struct {
 
 type GovernanceConfig struct {
 	ProposalFile string `toml:"proposal_file"`
+
+	// Authorities lists the wallet addresses permitted to submit
+	// `qsdm/gov/v1` parameter-set transactions. Empty (the default)
+	// leaves on-chain governance disabled and every gov tx rejects with
+	// chainparams.ErrGovernanceNotConfigured. Populating it is what
+	// activates the governance arm.
+	Authorities []string `toml:"authorities" yaml:"authorities"`
+}
+
+// ConsensusConfigTOML holds BFT consensus policy knobs.
+type ConsensusConfigTOML struct {
+	// RequireSignedVotes rejects unsigned inbound BFT messages. Turn this
+	// on once every validator runs a build that signs its votes.
+	RequireSignedVotes bool `toml:"require_signed_votes" yaml:"require_signed_votes"`
+
+	// ForkDustHeight activates integer-dust account accounting at the
+	// given height. Unset (0) leaves it disabled forever. Every validator
+	// MUST agree on this value — it changes the state-root encoding and
+	// the balance arithmetic, so a node with a different height forks.
+	ForkDustHeight uint64 `toml:"fork_dust_height" yaml:"fork_dust_height"`
 }
 
 type PerformanceConfig struct {
