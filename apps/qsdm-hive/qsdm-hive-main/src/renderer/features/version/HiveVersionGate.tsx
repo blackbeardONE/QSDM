@@ -69,7 +69,14 @@ export function HiveVersionGate({ children }: Props): JSX.Element {
     setUpdateStage('checking');
     setUpdateError('');
     try {
-      await checkAppUpdate();
+      const result = await checkAppUpdate();
+      if (!result?.isUpdateAvailable) {
+        setUpdateStage('manual');
+        setUpdateError(
+          'The automatic updater did not offer the required release. Use Download Installer below.'
+        );
+        return;
+      }
       setUpdateStage((current) =>
         current === 'ready' ? 'ready' : 'downloading'
       );
@@ -254,6 +261,8 @@ function getUpdateStatus(stage: UpdateStage, requiredVersion: string) {
       return 'The update is verified and ready. Approve the Update and Restart prompt.';
     case 'error':
       return 'Automatic update failed and will retry in one minute.';
+    case 'manual':
+      return 'Automatic installation is unavailable for this release.';
     default:
       return 'Starting the required automatic update...';
   }
