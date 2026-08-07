@@ -41,7 +41,10 @@ describe('HiveVersionGate updater integration', () => {
     removeUpdateAvailable.mockClear();
     removeUpdateDownloaded.mockClear();
     (checkAppUpdate as jest.Mock).mockReset();
-    (checkAppUpdate as jest.Mock).mockResolvedValue(null);
+    (checkAppUpdate as jest.Mock).mockResolvedValue({
+      isUpdateAvailable: true,
+      updateInfo: { version: '1.4.12' },
+    });
     Object.defineProperty(window, 'main', {
       configurable: true,
       value: {
@@ -94,6 +97,31 @@ describe('HiveVersionGate updater integration', () => {
     expect(
       screen.getByText(/The update is verified and ready/)
     ).toBeInTheDocument();
+  });
+
+  it('offers the installer instead of claiming a download that never started', async () => {
+    (checkAppUpdate as jest.Mock).mockResolvedValue({
+      isUpdateAvailable: false,
+      updateInfo: { version: '1.4.11' },
+    });
+    (useQuery as jest.Mock).mockReturnValue({
+      data: oldVersionPolicy,
+      isLoading: false,
+      isFetching: false,
+      refetch: jest.fn(),
+    });
+
+    render(
+      <HiveVersionGate>
+        <div>Protected Hive</div>
+      </HiveVersionGate>
+    );
+
+    expect(
+      await screen.findByText(/automatic updater did not offer/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText('Download Installer')).toBeInTheDocument();
+    expect(screen.queryByText('Protected Hive')).not.toBeInTheDocument();
   });
 
   it('keeps update listeners isolated when the gate unmounts', () => {

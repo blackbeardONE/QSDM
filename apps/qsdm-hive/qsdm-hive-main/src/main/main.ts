@@ -771,6 +771,18 @@ const createWindow = async () => {
   }
   setTimeout(showMainWindow, 10000);
 
+  const limitLogsSize = get(userConfig, 'limitLogsSize', false);
+
+  configureLogger(limitLogsSize);
+
+  console.time('Session duration');
+
+  // Start the mandatory release check before wallet, task, and Core bootstrap.
+  // A slow service bootstrap must never delay a required Hive update.
+  await initializeAppUpdater(mainWindow, appCleanup);
+
+  await setLaunchOnRestartOnByDefault(userConfig);
+
   await main().catch((err): void => {
     writeStartupLog('main bootstrap failed', {
       message: err?.message,
@@ -831,16 +843,6 @@ const createWindow = async () => {
     app.isQuitting = true;
     app.quit();
   });
-
-  const limitLogsSize = get(userConfig, 'limitLogsSize', false);
-
-  configureLogger(limitLogsSize);
-
-  console.time('Session duration');
-
-  await setLaunchOnRestartOnByDefault(userConfig);
-
-  await initializeAppUpdater(mainWindow, appCleanup);
 
   await setUpPowerStateManagement();
 

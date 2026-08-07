@@ -156,7 +156,7 @@ describe('AppUpdater mandatory update flow', () => {
     }
   });
 
-  it('checks one second after startup and always starts the trusted download', async () => {
+  it('checks immediately after startup and always starts the trusted download', async () => {
     updater.checkForUpdates.mockImplementation(async () => {
       updater.emit('update-available', updateInfo);
       return {
@@ -170,9 +170,7 @@ describe('AppUpdater mandatory update flow', () => {
       appCleanup
     );
     expect(updater.listenerCount('update-available')).toBe(1);
-    expect(updater.checkForUpdates).not.toHaveBeenCalled();
-
-    await jest.advanceTimersByTimeAsync(1000);
+    await flushPromises();
     await flushPromises();
 
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(1);
@@ -198,7 +196,7 @@ describe('AppUpdater mandatory update flow', () => {
       mainWindow as unknown as BrowserWindow,
       appCleanup
     );
-    await jest.advanceTimersByTimeAsync(1000);
+    await flushPromises();
     await flushPromises();
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(1);
 

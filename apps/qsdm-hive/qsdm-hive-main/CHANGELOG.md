@@ -1,3 +1,9 @@
+## [1.4.16]
+
+- Earlier update detection: Hive registers updater listeners and begins the signed release check before wallet, task, and Core bootstrap can delay it.
+- Honest forced-update status: when Electron cannot offer the required installer, Hive stops showing a false downloading state and presents the verified manual installer path instead.
+- Release visibility: the new application version ensures installed `1.4.15` clients can detect, download, verify, and install this release.
+
 ## [1.4.15]
 
 - Recovery identity safety: Hive verifies that the active signer matches the selected legacy keystore before asking where to save recovery words.

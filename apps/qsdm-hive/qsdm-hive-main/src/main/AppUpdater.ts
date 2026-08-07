@@ -27,7 +27,6 @@ import type {
 
 const CHECK_INTERVAL = 30 * 60 * 1000;
 const RETRY_INTERVAL = 60 * 1000;
-const INITIAL_CHECK_DELAY = 1000;
 const QSDM_HIVE_UPDATE_FEED_URL = 'https://qsdm.tech/downloads';
 const QSDM_HIVE_UNSIGNED_PREVIEW_UPDATE_FEED_URL =
   'https://qsdm.tech/downloads/unsigned-preview';
@@ -37,7 +36,6 @@ type AutoUpdaterCacheApp = {
 };
 
 let interval: NodeJS.Timeout | null = null;
-let initialCheckTimeout: NodeJS.Timeout | null = null;
 let retryTimeout: NodeJS.Timeout | null = null;
 let updaterConfigured = false;
 let listenersConfigured = false;
@@ -101,6 +99,7 @@ export async function initializeAppUpdater(
   await ensureAppUpdaterConfigured();
   setListeners(mainWindow, appCleanup);
   createCheckForTheUpdatesInterval();
+  runScheduledUpdateCheck('startup');
 }
 
 export async function checkForUpdates() {
@@ -294,13 +293,6 @@ function createCheckForTheUpdatesInterval() {
       runScheduledUpdateCheck('interval');
     }, CHECK_INTERVAL);
   }
-
-  if (!initialCheckTimeout) {
-    initialCheckTimeout = setTimeout(() => {
-      initialCheckTimeout = null;
-      runScheduledUpdateCheck('startup');
-    }, INITIAL_CHECK_DELAY);
-  }
 }
 
 async function runUpdateCheck(
@@ -407,12 +399,8 @@ export function resetAppUpdaterForTests() {
   if (interval) {
     clearInterval(interval);
   }
-  if (initialCheckTimeout) {
-    clearTimeout(initialCheckTimeout);
-  }
   clearRetryTimeout();
   interval = null;
-  initialCheckTimeout = null;
   updaterConfigured = false;
   listenersConfigured = false;
   trustedRelease = null;
