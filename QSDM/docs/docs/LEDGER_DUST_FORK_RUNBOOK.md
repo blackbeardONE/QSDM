@@ -34,6 +34,36 @@ escrow, and the 100 million CELL supply cap. Task and stream state is replayed
 from the chain journal. Wallet, node, GPU, and key identifiers are omitted from
 the output.
 
+The planner writes the manifest before returning a status. Exit code `2` means
+one or more ledger checks failed. Exit code `3` means the ledger checks passed,
+but activation is still blocked. Exit code `0` is reserved for a future state
+in which both the ledger checks and activation readiness pass. This prevents a
+CI job or operator script from treating "manifest generated" as "fork
+approved." For exploratory work only, `--allow-blocked` restores a zero exit
+after the evidence has been written.
+
+## Compare two assessments
+
+Keep every reviewed manifest. A later stopped snapshot can be compared with an
+earlier manifest from the same chain:
+
+```bash
+go run ./cmd/qsdm-ledger-fork-plan \
+  --accounts /safe-copy/current/qsdm_accounts.json \
+  --chain /safe-copy/current/qsdm_chain.ndjson \
+  --enrollment /safe-copy/current/qsdm_enrollment.json \
+  --staking /safe-copy/current/qsdm_staking.json \
+  --baseline-manifest /safe-copy/previous/ledger-fork-plan.json \
+  --out /safe-copy/current/ledger-fork-plan.json
+```
+
+The optional `comparison` object records the baseline manifest hash, height and
+signed dust deltas for issued supply, accounted supply, and accounted excess.
+It also labels the excess trend as `increased`, `decreased`, or `unchanged`.
+The planner rejects a baseline from another genesis, a newer tip, a future
+generation time, or an unsupported schema. A decreasing excess is evidence of
+drift, not permission to discard the difference.
+
 ## Current fail-closed behavior
 
 The node rejects every non-zero `fork_dust_height` during configuration
