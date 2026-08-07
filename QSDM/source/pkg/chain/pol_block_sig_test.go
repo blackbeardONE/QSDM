@@ -80,7 +80,11 @@ func TestVerifyBlockSignature_unsignedPolicy(t *testing.T) {
 	b.Hash = computeBlockHash(b)
 
 	SetRequireSignedBlocks(false)
-	t.Cleanup(func() { SetRequireSignedBlocks(false) })
+	SetSignedBlockActivationHeight(0)
+	t.Cleanup(func() {
+		SetRequireSignedBlocks(false)
+		SetSignedBlockActivationHeight(0)
+	})
 	if err := VerifyBlockSignature(b); err != nil {
 		t.Fatalf("unsigned block should pass while enforcement is off: %v", err)
 	}
@@ -88,6 +92,15 @@ func TestVerifyBlockSignature_unsignedPolicy(t *testing.T) {
 	SetRequireSignedBlocks(true)
 	if err := VerifyBlockSignature(b); !errors.Is(err, ErrBlockUnsigned) {
 		t.Fatalf("want ErrBlockUnsigned once enforcement is on, got %v", err)
+	}
+	SetSignedBlockActivationHeight(5)
+	if err := VerifyBlockSignature(b); err != nil {
+		t.Fatalf("unsigned historical block should pass below activation: %v", err)
+	}
+	b.Height = 5
+	b.Hash = computeBlockHash(b)
+	if err := VerifyBlockSignature(b); !errors.Is(err, ErrBlockUnsigned) {
+		t.Fatalf("unsigned block at activation must fail, got %v", err)
 	}
 }
 
@@ -164,7 +177,11 @@ func TestVerifyPrevoteLockProof_unsignedPolicy(t *testing.T) {
 	p := &PrevoteLockProof{Height: 5, Round: 2, LockedBlockHash: "locked"}
 
 	SetRequireSignedCertificates(false)
-	t.Cleanup(func() { SetRequireSignedCertificates(false) })
+	SetSignedCertificateActivationHeight(0)
+	t.Cleanup(func() {
+		SetRequireSignedCertificates(false)
+		SetSignedCertificateActivationHeight(0)
+	})
 	if err := VerifyPrevoteLockProof(p); err != nil {
 		t.Fatalf("unsigned proof should pass while enforcement is off: %v", err)
 	}
@@ -172,5 +189,13 @@ func TestVerifyPrevoteLockProof_unsignedPolicy(t *testing.T) {
 	SetRequireSignedCertificates(true)
 	if err := VerifyPrevoteLockProof(p); !errors.Is(err, ErrCertUnsigned) {
 		t.Fatalf("want ErrCertUnsigned once enforcement is on, got %v", err)
+	}
+	SetSignedCertificateActivationHeight(6)
+	if err := VerifyPrevoteLockProof(p); err != nil {
+		t.Fatalf("unsigned historical proof should pass below activation: %v", err)
+	}
+	p.Height = 6
+	if err := VerifyPrevoteLockProof(p); !errors.Is(err, ErrCertUnsigned) {
+		t.Fatalf("unsigned proof at activation must fail, got %v", err)
 	}
 }

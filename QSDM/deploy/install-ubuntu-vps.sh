@@ -97,6 +97,12 @@ initial_balance = 1000.0
 [governance]
 proposal_file = "/opt/qsdm/proposals.json"
 
+[consensus]
+# Keep compatibility mode until every validator runs a signing-capable build.
+require_signed_votes = false
+signed_message_activation_height = 0
+signer_key_path = "qsdm_consensus_signer.json"
+
 [performance]
 # Demo/auto-txgen cadence; production should be long or a real client
 transaction_interval = "1h"

@@ -12,6 +12,7 @@ import (
 // (where not every peer signs its votes yet) can still report equivocation.
 // An invalid proof is rejected either way.
 var requireEvidenceProof atomic.Bool
+var evidenceProofActivationHeight atomic.Uint64
 
 // SetRequireEvidenceProof controls whether equivocation evidence must carry
 // a verifiable proof. Enable once every validator signs its votes; until
@@ -20,6 +21,23 @@ func SetRequireEvidenceProof(require bool) { requireEvidenceProof.Store(require)
 
 // RequireEvidenceProof reports the current policy.
 func RequireEvidenceProof() bool { return requireEvidenceProof.Load() }
+
+// SetEvidenceProofActivationHeight sets the first height where bare
+// equivocation accusations are rejected. Zero means immediate enforcement.
+func SetEvidenceProofActivationHeight(height uint64) {
+	evidenceProofActivationHeight.Store(height)
+}
+
+// EvidenceProofActivationHeight reports the configured activation height.
+func EvidenceProofActivationHeight() uint64 { return evidenceProofActivationHeight.Load() }
+
+func evidenceProofRequiredAt(height uint64) bool {
+	if !RequireEvidenceProof() {
+		return false
+	}
+	activation := EvidenceProofActivationHeight()
+	return activation == 0 || height >= activation
+}
 
 // Cryptographic equivocation proofs.
 //

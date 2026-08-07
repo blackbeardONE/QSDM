@@ -83,6 +83,17 @@ initial_balance = 1000.0
 [governance]
 proposal_file = "proposals.json"
 
+# Consensus message authentication
+#
+# Every upgraded validator signs consensus traffic immediately with a stable,
+# validator-only ML-DSA key. Keep enforcement disabled during the upgrade
+# phase. After every validator is upgraded, operators must set both values to
+# the same approved future height; never activate one validator by itself.
+[consensus]
+require_signed_votes = false
+signed_message_activation_height = 0
+signer_key_path = "qsdm_consensus_signer.json"
+
 # Performance Configuration
 [performance]
 transaction_interval = "30s"      # Duration between transaction checks

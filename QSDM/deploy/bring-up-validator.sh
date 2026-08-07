@@ -271,6 +271,13 @@ enable_tls  = false
 tls_cert_file = ""
 tls_key_file  = ""
 
+[consensus]
+# Upgrade every validator first. Then set both values to one operator-approved
+# future height across the entire validator set; see SIGNED_CONSENSUS_ROLLOUT.md.
+require_signed_votes = false
+signed_message_activation_height = 0
+signer_key_path = "qsdm_consensus_signer.json"
+
 [performance]
 transaction_interval = "1h"
 health_check_interval = "30s"

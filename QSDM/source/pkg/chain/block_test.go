@@ -234,6 +234,20 @@ func TestBlockProducer_TryAppendExternalBlockGenesis(t *testing.T) {
 	}
 }
 
+func TestBlockProducer_TryAppendExternalBlockRejectsBadSignature(t *testing.T) {
+	bp := NewBlockProducer(mempool.New(mempool.DefaultConfig()), NewAccountStore(), DefaultProducerConfig())
+	signer, _ := newBFTKey(t)
+	blk := &Block{Height: 0, Timestamp: time.Unix(1700000000, 0), StateRoot: "root"}
+	blk.Hash = computeBlockHash(blk)
+	if err := SignBlock(blk, signer); err != nil {
+		t.Fatal(err)
+	}
+	blk.ProducerAuth.Signature[0] ^= 0xff
+	if err := bp.TryAppendExternalBlock(blk); !errors.Is(err, ErrBlockBadSignature) {
+		t.Fatalf("external append must reject invalid producer authentication, got %v", err)
+	}
+}
+
 func TestBlockProducer_TryAppendExternalBlockReplayApplier(t *testing.T) {
 	ta := newTestApplier()
 	pool := mempool.New(mempool.DefaultConfig())
@@ -515,12 +529,12 @@ func TestBlockProducer_PreSealRestoresPoolOnHookError(t *testing.T) {
 func TestBlockProducer_PreSealCommitsBeforeAppend(t *testing.T) {
 	as := NewAccountStore()
 	as.Credit("alice", 10000)
+	signer, address := newBFTKey(t)
 	vs := NewValidatorSet(DefaultValidatorSetConfig())
-	_ = vs.Register("v1", 100)
-	_ = vs.Register("v2", 100)
-	_ = vs.Register("v3", 100)
+	_ = vs.Register(address, 100)
 	bc := NewBFTConsensus(vs, DefaultConsensusConfig())
 	ex := NewBFTExecutor(bc)
+	ex.SetVoteSigner(signer)
 	pool := mempool.New(mempool.DefaultConfig())
 	bp := NewBlockProducer(pool, as, DefaultProducerConfig())
 	bp.SetPreSealBFTRound(func(tent *Block) error {
