@@ -30,6 +30,7 @@ type analyzeOptions struct {
 	ChainPath        string
 	EnrollmentPath   string
 	StakingPath      string
+	BaselinePath     string
 	ActivationHeight uint64
 	MinNoticeBlocks  uint64
 	Now              time.Time
@@ -119,19 +120,33 @@ type activationSummary struct {
 	Blockers               []string `json:"blockers"`
 }
 
+type comparisonSummary struct {
+	BaselineManifest           fileEvidence `json:"baseline_manifest"`
+	BaselineGeneratedAt        string       `json:"baseline_generated_at"`
+	BaselineTipHeight          uint64       `json:"baseline_tip_height"`
+	HeightDelta                string       `json:"height_delta"`
+	ChainIssuedDeltaDust       string       `json:"chain_issued_delta_dust"`
+	AccountedSupplyDeltaDust   string       `json:"accounted_supply_delta_dust"`
+	AccountedExcessDeltaDust   string       `json:"accounted_excess_delta_dust"`
+	AccountedExcessTrend       string       `json:"accounted_excess_trend"`
+	BaselineLedgerChecksPassed bool         `json:"baseline_ledger_checks_passed"`
+	CurrentLedgerChecksPassed  bool         `json:"current_ledger_checks_passed"`
+}
+
 type manifest struct {
-	SchemaVersion    int               `json:"schema_version"`
-	Mode             string            `json:"mode"`
-	GeneratedAt      string            `json:"generated_at"`
-	Privacy          string            `json:"privacy"`
-	Inputs           []fileEvidence    `json:"inputs"`
-	Accounts         accountSummary    `json:"accounts"`
-	Chain            chainSummary      `json:"chain"`
-	Locked           lockedSummary     `json:"locked"`
-	Supply           supplySummary     `json:"supply"`
-	Checks           []checkResult     `json:"checks"`
-	LedgerChecksPass bool              `json:"ledger_checks_pass"`
-	Activation       activationSummary `json:"activation"`
+	SchemaVersion    int                `json:"schema_version"`
+	Mode             string             `json:"mode"`
+	GeneratedAt      string             `json:"generated_at"`
+	Privacy          string             `json:"privacy"`
+	Inputs           []fileEvidence     `json:"inputs"`
+	Accounts         accountSummary     `json:"accounts"`
+	Chain            chainSummary       `json:"chain"`
+	Locked           lockedSummary      `json:"locked"`
+	Supply           supplySummary      `json:"supply"`
+	Checks           []checkResult      `json:"checks"`
+	LedgerChecksPass bool               `json:"ledger_checks_pass"`
+	Comparison       *comparisonSummary `json:"comparison,omitempty"`
+	Activation       activationSummary  `json:"activation"`
 }
 
 type analysisState struct {
@@ -266,8 +281,21 @@ func analyze(opts analyzeOptions) (manifest, error) {
 		AccountedExcessDust:        dustString(excess),
 		RemainingIssueCapacityDust: dustString(remaining),
 	}
+	if opts.BaselinePath != "" {
+		comparison, checks, err := compareManifest(opts.BaselinePath, s.manifest)
+		if err != nil {
+			return manifest{}, fmt.Errorf("compare baseline manifest: %w", err)
+		}
+		s.manifest.Comparison = &comparison
+		for _, check := range checks {
+			s.check(check.Name, check.Passed, check.Detail)
+		}
+	}
 
 	s.manifest.LedgerChecksPass = !s.failed
+	if s.manifest.Comparison != nil {
+		s.manifest.Comparison.CurrentLedgerChecksPassed = s.manifest.LedgerChecksPass
+	}
 	earliest, noticeOverflow := safeAdd(chainData.summary.TipHeight, opts.MinNoticeBlocks)
 	heightOK := !noticeOverflow && opts.ActivationHeight != 0 && opts.ActivationHeight >= earliest
 	blockers := []string{
