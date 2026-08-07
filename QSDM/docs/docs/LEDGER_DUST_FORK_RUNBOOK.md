@@ -7,8 +7,9 @@ capped issuance ledger.
 
 ## Read-only assessment
 
-Stop one validator cleanly, copy these four files from the same committed
-snapshot, and run the planner against the copies:
+Stop one validator cleanly. Then use the snapshot command to prove that the
+validator has released its state lock and copy the four reconciliation files
+into one new private directory:
 
 ```text
 qsdm_accounts.json
@@ -18,12 +19,33 @@ qsdm_staking.json
 ```
 
 ```bash
+go run ./cmd/qsdm-ledger-snapshot \
+  --state-dir /opt/qsdm \
+  --out /safe-copy/ledger-2026-08-08
+```
+
+The command uses the same `qsdm-validator.state.lock` held by the validator. It
+fails if the validator is still running, if any required file is absent or
+changes during capture, if the destination already exists, or if the source
+and destination overlap. Copied files are mode `0600` inside a mode `0700`
+directory. `ledger-snapshot.json` records only file names, sizes, and SHA-256
+hashes; it omits source paths and state identifiers. The lock file itself is
+not copied. Preserve the directory as immutable evidence after capture.
+
+Do not work around a lock refusal by copying live files. The chain journal is
+persisted before account and enrollment snapshots, while staking is flushed on
+graceful shutdown. A filesystem copy taken while blocks are being sealed can
+therefore be individually readable but represent different committed heights.
+
+Run the planner against the verified copies:
+
+```bash
 go run ./cmd/qsdm-ledger-fork-plan \
-  --accounts /safe-copy/qsdm_accounts.json \
-  --chain /safe-copy/qsdm_chain.ndjson \
-  --enrollment /safe-copy/qsdm_enrollment.json \
-  --staking /safe-copy/qsdm_staking.json \
-  --out /safe-copy/ledger-fork-plan.json
+  --accounts /safe-copy/ledger-2026-08-08/qsdm_accounts.json \
+  --chain /safe-copy/ledger-2026-08-08/qsdm_chain.ndjson \
+  --enrollment /safe-copy/ledger-2026-08-08/qsdm_enrollment.json \
+  --staking /safe-copy/ledger-2026-08-08/qsdm_staking.json \
+  --out /safe-copy/ledger-2026-08-08/ledger-fork-plan.json
 ```
 
 The command is read-only and refuses to overwrite an existing manifest. It
