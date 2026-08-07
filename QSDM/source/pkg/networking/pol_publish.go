@@ -30,6 +30,10 @@ func PublishPolAfterBlockSeal(log *logging.Logger, relay *PolP2PRelay, polFollow
 		markPublished()
 		return
 	}
+	if _, err := chain.ValidateSyntheticBFTSigner(bftExec, vs); err != nil {
+		log.Warn("POL publish refused unauthenticated synthetic round", "height", h, "error", err)
+		return
+	}
 
 	polRelayOk := relay != nil
 
@@ -77,6 +81,8 @@ func PublishPolAfterBlockSeal(log *logging.Logger, relay *PolP2PRelay, polFollow
 		_ = bc.FailRound(h)
 		markPublished()
 		return
+	} else if !preparePrevoteLockProof(log, bftExec, proof) {
+		return
 	} else if polRelayOk {
 		if err := relay.PublishPrevoteLockProof(proof); err != nil {
 			log.Warn("POL gossip publish prevote_lock failed", "error", err)
@@ -97,6 +103,8 @@ func PublishPolAfterBlockSeal(log *logging.Logger, relay *PolP2PRelay, polFollow
 	}
 	if cert, err := bc.BuildRoundCertificate(h); err != nil {
 		log.Debug("POL publish skip: round certificate", "height", h, "error", err)
+	} else if !prepareRoundCertificate(log, bftExec, cert) {
+		return
 	} else if polRelayOk {
 		if err := relay.PublishRoundCertificate(cert); err != nil {
 			log.Warn("POL gossip publish round_certificate failed", "error", err)
@@ -131,6 +139,8 @@ func publishPolAfterAlreadyCommitted(
 	}
 	if proof, err := bc.BuildPrevoteLockProof(h); err != nil {
 		log.Debug("POL publish skip: lock proof (already committed)", "height", h, "error", err)
+	} else if !preparePrevoteLockProof(log, bftExec, proof) {
+		return
 	} else if polRelayOk {
 		if err := relay.PublishPrevoteLockProof(proof); err != nil {
 			log.Warn("POL gossip publish prevote_lock failed", "error", err)
@@ -141,10 +151,52 @@ func publishPolAfterAlreadyCommitted(
 	}
 	if cert, err := bc.BuildRoundCertificate(h); err != nil {
 		log.Debug("POL publish skip: round certificate (already committed)", "height", h, "error", err)
+	} else if !prepareRoundCertificate(log, bftExec, cert) {
+		return
 	} else if polRelayOk {
 		if err := relay.PublishRoundCertificate(cert); err != nil {
 			log.Warn("POL gossip publish round_certificate failed", "error", err)
 		}
 	}
 	markPublished()
+}
+
+func preparePrevoteLockProof(log *logging.Logger, exec *chain.BFTExecutor, proof *chain.PrevoteLockProof) bool {
+	if proof == nil {
+		return false
+	}
+	if exec != nil {
+		if signer := exec.VoteSigner(); signer != nil {
+			if err := chain.SignPrevoteLockProof(proof, signer); err != nil {
+				log.Warn("POL gossip signing prevote_lock failed", "height", proof.Height, "error", err)
+				return false
+			}
+			return true
+		}
+	}
+	if chain.SignedCertificatesRequiredAt(proof.Height) {
+		log.Warn("POL gossip refused unsigned prevote_lock", "height", proof.Height)
+		return false
+	}
+	return true
+}
+
+func prepareRoundCertificate(log *logging.Logger, exec *chain.BFTExecutor, cert *chain.RoundCertificate) bool {
+	if cert == nil {
+		return false
+	}
+	if exec != nil {
+		if signer := exec.VoteSigner(); signer != nil {
+			if err := chain.SignRoundCertificate(cert, signer); err != nil {
+				log.Warn("POL gossip signing round_certificate failed", "height", cert.Height, "error", err)
+				return false
+			}
+			return true
+		}
+	}
+	if chain.SignedCertificatesRequiredAt(cert.Height) {
+		log.Warn("POL gossip refused unsigned round_certificate", "height", cert.Height)
+		return false
+	}
+	return true
 }

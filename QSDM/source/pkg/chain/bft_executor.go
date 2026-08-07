@@ -23,6 +23,10 @@ type BFTExecutor struct {
 
 	// requireSignedVotes rejects unsigned inbound consensus messages.
 	requireSignedVotes atomic.Bool
+	// signedVoteActivationHeight preserves unsigned historical traffic below
+	// a coordinated rollout height. Zero retains immediate enforcement for
+	// direct callers and legacy tests.
+	signedVoteActivationHeight atomic.Uint64
 
 	commitNotified map[uint64]struct{}
 	pending        *PendingProposalStore
@@ -290,13 +294,39 @@ func (e *BFTExecutor) RequireSignedVotes() bool {
 	return e.requireSignedVotes.Load()
 }
 
+// SetSignedVoteActivationHeight sets the first height where unsigned votes
+// are rejected when RequireSignedVotes is enabled. Every validator must use
+// the same non-zero height in production.
+func (e *BFTExecutor) SetSignedVoteActivationHeight(height uint64) {
+	if e == nil {
+		return
+	}
+	e.signedVoteActivationHeight.Store(height)
+}
+
+// SignedVoteActivationHeight reports the configured activation height.
+func (e *BFTExecutor) SignedVoteActivationHeight() uint64 {
+	if e == nil {
+		return 0
+	}
+	return e.signedVoteActivationHeight.Load()
+}
+
+func (e *BFTExecutor) signedVotesRequiredAt(height uint64) bool {
+	if !e.RequireSignedVotes() {
+		return false
+	}
+	activation := e.SignedVoteActivationHeight()
+	return activation == 0 || height >= activation
+}
+
 // checkInboundAuth applies the configured signature policy. When a message
 // carries an authenticator it is ALWAYS verified — a present-but-invalid
 // signature is a hard error regardless of policy, because the only reason to
 // send one is to be checked. The policy flag governs unsigned messages.
-func (e *BFTExecutor) checkInboundAuth(signed bool, verify func() error) error {
+func (e *BFTExecutor) checkInboundAuth(height uint64, signed bool, verify func() error) error {
 	if !signed {
-		if e.RequireSignedVotes() {
+		if e.signedVotesRequiredAt(height) {
 			return ErrBFTUnsigned
 		}
 		return nil
@@ -454,7 +484,7 @@ func (e *BFTExecutor) ApplyInbound(payload []byte) error {
 		if err := validateInboundProposeBlock(&m); err != nil {
 			return err
 		}
-		if err := e.checkInboundAuth(m.Auth.Signed(), func() error { return VerifyPropose(m) }); err != nil {
+		if err := e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPropose(m) }); err != nil {
 			return err
 		}
 		if _, err := e.bc.Propose(m.Height, m.Round, m.Proposer, m.BlockHash); err != nil {
@@ -476,7 +506,7 @@ func (e *BFTExecutor) ApplyInbound(payload []byte) error {
 		if err := json.Unmarshal(raw, &m); err != nil {
 			return err
 		}
-		if err := e.checkInboundAuth(m.Auth.Signed(), func() error { return VerifyPrevote(m) }); err != nil {
+		if err := e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPrevote(m) }); err != nil {
 			return err
 		}
 		if err := e.bc.PreVote(m.Height, m.Validator, m.BlockHash); err != nil {
@@ -491,7 +521,7 @@ func (e *BFTExecutor) ApplyInbound(payload []byte) error {
 		if err := json.Unmarshal(raw, &m); err != nil {
 			return err
 		}
-		if err := e.checkInboundAuth(m.Auth.Signed(), func() error { return VerifyPrecommit(m) }); err != nil {
+		if err := e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPrecommit(m) }); err != nil {
 			return err
 		}
 		if err := e.bc.PreCommit(m.Height, m.Validator, m.BlockHash); err != nil {
@@ -502,6 +532,45 @@ func (e *BFTExecutor) ApplyInbound(payload []byte) error {
 		}
 		e.checkCommitted(m.Height)
 		return nil
+	default:
+		return fmt.Errorf("bft wire: unknown kind %q", kind)
+	}
+}
+
+// ValidateInboundAuthentication checks a BFT gossip payload without mutating
+// consensus. Catch-up replicas use this path so they can reject and avoid
+// relaying forged traffic even though they intentionally do not apply votes
+// to their local singleton validator set.
+func (e *BFTExecutor) ValidateInboundAuthentication(payload []byte) error {
+	if e == nil {
+		return nil
+	}
+	kind, raw, err := UnmarshalBFTWire(payload)
+	if err != nil {
+		return err
+	}
+	switch kind {
+	case BFTWirePropose:
+		var m BFTWireProposeMsg
+		if err := json.Unmarshal(raw, &m); err != nil {
+			return err
+		}
+		if err := validateInboundProposeBlock(&m); err != nil {
+			return err
+		}
+		return e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPropose(m) })
+	case BFTWirePrevote:
+		var m BFTWirePrevoteMsg
+		if err := json.Unmarshal(raw, &m); err != nil {
+			return err
+		}
+		return e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPrevote(m) })
+	case BFTWirePrecommit:
+		var m BFTWirePrecommitMsg
+		if err := json.Unmarshal(raw, &m); err != nil {
+			return err
+		}
+		return e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPrecommit(m) })
 	default:
 		return fmt.Errorf("bft wire: unknown kind %q", kind)
 	}

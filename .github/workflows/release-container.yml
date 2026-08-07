@@ -410,11 +410,12 @@ jobs:
           cp QSDM/deploy/validator-package/install-or-update.sh "$stage/"
           cp QSDM/deploy/validator-package/rollback.sh "$stage/"
           cp QSDM/deploy/validator-package/README.md "$stage/"
+          cp QSDM/docs/docs/SIGNED_CONSENSUS_ROLLOUT.md "$stage/"
           cp QSDM/config/qsdm.toml.example "$stage/"
           chmod 0755 "$stage/qsdm-validator" "$stage/install-or-update.sh" "$stage/rollback.sh"
           (
             cd "$stage"
-            sha256sum qsdm-validator install-or-update.sh rollback.sh README.md qsdm.toml.example > SHA256SUMS.txt
+            sha256sum qsdm-validator install-or-update.sh rollback.sh README.md SIGNED_CONSENSUS_ROLLOUT.md qsdm.toml.example > SHA256SUMS.txt
           )
           tar -C "${RUNNER_TEMP}/validator-package" -czf "$assets/${folder}.tar.gz" "$folder"
           (
@@ -439,8 +440,9 @@ jobs:
           Copy-Item QSDM\deploy\validator-package\install-or-update.ps1 $stage
           Copy-Item QSDM\deploy\validator-package\rollback.ps1 $stage
           Copy-Item QSDM\deploy\validator-package\README.md $stage
+          Copy-Item QSDM\docs\docs\SIGNED_CONSENSUS_ROLLOUT.md $stage
           Copy-Item QSDM\config\qsdm.toml.example $stage
-          $names = @('qsdm-validator.exe', 'install-or-update.ps1', 'rollback.ps1', 'README.md', 'qsdm.toml.example')
+          $names = @('qsdm-validator.exe', 'install-or-update.ps1', 'rollback.ps1', 'README.md', 'SIGNED_CONSENSUS_ROLLOUT.md', 'qsdm.toml.example')
           $lines = foreach ($name in $names) {
             $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $stage $name)).Hash.ToLowerInvariant()
             "$hash  $name"

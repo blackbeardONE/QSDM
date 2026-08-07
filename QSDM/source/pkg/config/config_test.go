@@ -313,6 +313,8 @@ port = 4001
 
 [consensus]
 require_signed_votes = true
+signed_message_activation_height = 500000
+signer_key_path = "validator-signing.json"
 `
 	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -323,6 +325,12 @@ require_signed_votes = true
 	}
 	if !cfg.RequireSignedVotes {
 		t.Fatal("expected RequireSignedVotes from [consensus] require_signed_votes")
+	}
+	if cfg.SignedConsensusActivationHeight != 500000 {
+		t.Fatalf("expected signed activation height 500000, got %d", cfg.SignedConsensusActivationHeight)
+	}
+	if cfg.ConsensusSignerKeyPath != "validator-signing.json" {
+		t.Fatalf("unexpected signer key path %q", cfg.ConsensusSignerKeyPath)
 	}
 }
 
@@ -338,10 +346,38 @@ func TestApplyDefaults_RequireSignedVotes_defaultsOff(t *testing.T) {
 
 func TestApplyEnvOverrides_RequireSignedVotes(t *testing.T) {
 	t.Setenv("QSDM_REQUIRE_SIGNED_VOTES", "1")
+	t.Setenv("QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT", "500000")
+	t.Setenv("QSDM_CONSENSUS_SIGNER_KEY_PATH", "consensus.json")
 	cfg := &Config{}
 	applyEnvOverrides(cfg)
 	if !cfg.RequireSignedVotes {
 		t.Fatal("QSDM_REQUIRE_SIGNED_VOTES=1 should enable enforcement")
+	}
+	if cfg.SignedConsensusActivationHeight != 500000 || cfg.ConsensusSignerKeyPath != "consensus.json" {
+		t.Fatalf("signed consensus env overrides not applied: %#v", cfg)
+	}
+}
+
+func TestValidate_SignedConsensusNeedsCoordinatedHeight(t *testing.T) {
+	base := Config{NetworkPort: 4001, DashboardPort: 8081, LogViewerPort: 9000, APIPort: 8080, StorageType: "file"}
+
+	missingHeight := base
+	missingHeight.RequireSignedVotes = true
+	if err := missingHeight.Validate(); err == nil || !strings.Contains(err.Error(), "signed_message_activation_height") {
+		t.Fatalf("expected missing activation height error, got %v", err)
+	}
+
+	orphanHeight := base
+	orphanHeight.SignedConsensusActivationHeight = 500000
+	if err := orphanHeight.Validate(); err == nil || !strings.Contains(err.Error(), "require_signed_votes=false") {
+		t.Fatalf("expected orphan activation height error, got %v", err)
+	}
+
+	coordinated := base
+	coordinated.RequireSignedVotes = true
+	coordinated.SignedConsensusActivationHeight = 500000
+	if err := coordinated.Validate(); err != nil {
+		t.Fatalf("coordinated signed consensus config should validate: %v", err)
 	}
 }
 

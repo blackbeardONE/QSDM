@@ -7,6 +7,11 @@ wire-compatible ML-DSA-87 implementation used by current QSDM nodes.
 The package does not contain a wallet, validator identity, chain database, or
 secrets. Keep those operator-owned files outside release archives.
 
+The validator creates a stable, consensus-only ML-DSA key in its state
+directory on first start. Back up `qsdm_consensus_signer.json`; do not fund it,
+share it between validators, or include it in release archives. See
+`SIGNED_CONSENSUS_ROLLOUT.md` before enabling signed-message enforcement.
+
 Use a unique install directory, service/task name, config, identity, and data
 directory for every validator. A standby is useful only after it has connected
 to an approved bootstrap peer and its chain height has converged.
@@ -98,7 +103,8 @@ For a second Windows validator, use distinct `-InstallDir`, `-DataDir`,
 ## Safety Boundaries
 
 - Install/update scripts never edit or remove databases, block journals,
-  wallet keystores, validator identities, or recovery archives.
+  wallet keystores, consensus signer keys, validator identities, or recovery
+  archives.
 - The current executable is timestamp-backed-up before replacement.
 - Install state and executable backups remain root-managed and checksummed;
   the unprivileged service can write only its separate runtime data directory.

@@ -198,6 +198,13 @@ bootstrap_peers = [
 type        = "sqlite"
 sqlite_path = "/app/data/qsdm.db"
 
+[consensus]
+# Every upgraded validator signs immediately. Keep enforcement off until all
+# validators agree on one future activation height.
+require_signed_votes = false
+signed_message_activation_height = 0
+signer_key_path = "qsdm_consensus_signer.json"
+
 [logging]
 log_file  = "/app/logs/qsdm.log"
 log_level = "info"
@@ -220,6 +227,11 @@ QSDM: Node role: validator (build profile: validator_only, mining_enabled=false)
 If you see an error mentioning `roleguard`, re-read §1 of
 [`NODE_ROLES.md`](./NODE_ROLES.md); it means your config tried to enable
 mining in a validator binary, which is unsupported.
+
+Back up /app/data/qsdm_consensus_signer.json after first start. It is a
+validator-only hot key, not a CELL wallet. Follow
+[SIGNED_CONSENSUS_ROLLOUT.md](./SIGNED_CONSENSUS_ROLLOUT.md) before enabling
+signature enforcement.
 
 ---
 

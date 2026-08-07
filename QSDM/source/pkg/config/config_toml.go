@@ -154,6 +154,13 @@ type ConsensusConfigTOML struct {
 	// on once every validator runs a build that signs its votes.
 	RequireSignedVotes bool `toml:"require_signed_votes" yaml:"require_signed_votes"`
 
+	// SignedMessageActivationHeight is the first height where unsigned
+	// consensus traffic is rejected. All validators must use the same value.
+	SignedMessageActivationHeight uint64 `toml:"signed_message_activation_height" yaml:"signed_message_activation_height"`
+
+	// SignerKeyPath stores the validator-only ML-DSA consensus hot key.
+	SignerKeyPath string `toml:"signer_key_path" yaml:"signer_key_path"`
+
 	// ForkDustHeight is a reserved consensus parameter. Config validation
 	// currently rejects every non-zero value because the live capped-issuance
 	// transition is not implemented. Unset (0) keeps the unsafe path disabled.

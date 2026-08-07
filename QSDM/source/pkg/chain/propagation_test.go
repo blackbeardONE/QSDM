@@ -69,6 +69,12 @@ func TestBlockP2PMessage_MarshalUnmarshal(t *testing.T) {
 
 func TestBlockPropagator_ValidateBlock(t *testing.T) {
 	bp := &BlockPropagator{seen: make(map[string]time.Time)}
+	SetRequireSignedBlocks(false)
+	SetSignedBlockActivationHeight(0)
+	t.Cleanup(func() {
+		SetRequireSignedBlocks(false)
+		SetSignedBlockActivationHeight(0)
+	})
 
 	block := makeBlock(1)
 	block.Hash = computeBlockHash(block)
@@ -89,6 +95,25 @@ func TestBlockPropagator_ValidateBlock(t *testing.T) {
 	noHash.Hash = ""
 	if bp.validateBlock(noHash) {
 		t.Fatal("block with empty hash should fail")
+	}
+
+	signer, _ := newBFTKey(t)
+	signed := makeBlock(4)
+	signed.Hash = computeBlockHash(signed)
+	if err := SignBlock(signed, signer); err != nil {
+		t.Fatal(err)
+	}
+	signed.ProducerAuth.Signature[0] ^= 0xff
+	if bp.validateBlock(signed) {
+		t.Fatal("block propagation must reject a present but invalid signature")
+	}
+
+	unsignedAtActivation := makeBlock(10)
+	unsignedAtActivation.Hash = computeBlockHash(unsignedAtActivation)
+	SetSignedBlockActivationHeight(10)
+	SetRequireSignedBlocks(true)
+	if bp.validateBlock(unsignedAtActivation) {
+		t.Fatal("block propagation must reject unsigned blocks at activation")
 	}
 }
 

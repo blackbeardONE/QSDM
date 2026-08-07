@@ -788,6 +788,26 @@ func main() {
 		}
 	}()
 	logger.Info("Validator state directory lock acquired", "path", stateLockPath)
+	consensusSignerKeyPath := strings.TrimSpace(cfg.ConsensusSignerKeyPath)
+	if consensusSignerKeyPath == "" {
+		consensusSignerKeyPath = filepath.Join(stateDir, "qsdm_consensus_signer.json")
+	} else if !filepath.IsAbs(consensusSignerKeyPath) {
+		consensusSignerKeyPath = filepath.Join(stateDir, consensusSignerKeyPath)
+	}
+	consensusSigner, consensusSignerCreated, signerErr := chain.LoadOrCreateBFTSigner(consensusSignerKeyPath)
+	if signerErr != nil {
+		log.Fatalf("validator consensus signer: %v", signerErr)
+	}
+	logger.Info("Validator consensus signer ready",
+		"validator", consensusSigner.Address(),
+		"path", consensusSignerKeyPath,
+		"created", consensusSignerCreated,
+		"purpose", "consensus-only hot key; do not fund")
+	if consensusSignerCreated {
+		logger.Warn("Back up the validator consensus signer before coordinated signature activation",
+			"path", consensusSignerKeyPath,
+			"impact", "losing this file changes validator identity")
+	}
 	if strings.TrimSpace(os.Getenv("QSDM_TASK_ACTION_LOG_PATH")) == "" {
 		taskActionLogPath := filepath.Join(stateDir, "qsdm_task_actions.ndjson")
 		if err := os.Setenv("QSDM_TASK_ACTION_LOG_PATH", taskActionLogPath); err != nil {
@@ -1107,8 +1127,8 @@ func main() {
 
 	nodeValidatorSet := chain.NewValidatorSet(chain.DefaultValidatorSetConfig())
 	minValStake := chain.DefaultValidatorSetConfig().MinStake
-	if err := nodeValidatorSet.Register("bootstrap", minValStake); err != nil {
-		logger.Warn("Bootstrap validator registration", "error", err)
+	if err := nodeValidatorSet.Register(consensusSigner.Address(), minValStake); err != nil {
+		log.Fatalf("register validator consensus identity: %v", err)
 	}
 	nodeEvidenceManager := chain.NewEvidenceManager(nodeValidatorSet)
 
@@ -1171,23 +1191,6 @@ func main() {
 		healthChecker.UpdateComponentHealth("wallet", monitoring.HealthStatusHealthy, "Wallet service initialized")
 	}
 
-	if walletService != nil {
-		if err := nodeValidatorSet.Register(walletService.GetAddress(), minValStake); err != nil {
-			logger.Warn("Wallet validator registration", "error", err)
-		}
-	}
-
-	// consensusSigner authenticates this node's BFT votes. The wallet
-	// address is SHA256(ML-DSA public key) in hex, which is exactly the
-	// identity chain.BFTValidatorAddress derives, so votes signed with this
-	// key self-certify as coming from the validator registered above.
-	var consensusSigner chain.BFTSigner
-	if walletService != nil {
-		if s := walletService.ConsensusSigner(); s != nil {
-			consensusSigner = s
-		}
-	}
-
 	nodeTxRep := networking.NewReputationTracker(networking.DefaultReputationConfig())
 	nodeEvidenceRep := networking.NewReputationTracker(networking.ReputationConfigForEvidence())
 
@@ -1228,36 +1231,38 @@ func main() {
 			"env_var", "QSDM_NETWORKED_CATCHUP_MODE")
 	}
 	bftIngress := networking.NewBFTGossipIngress(networking.DefaultBFTGossipConfig(), bftIngressExec)
+	if networkedCatchupMode {
+		bftIngress.SetAuthenticationExecutor(bftExec)
+	}
 	bftIngress.SetReputationTracker(nodeTxRep)
 	bftExec.SetEvidenceManager(nodeEvidenceManager)
 
 	// Authenticate outbound consensus messages. Without a signer, prevotes
 	// and precommits go out unauthenticated and any gossip peer can forge
 	// votes for any validator — i.e. manufacture a quorum.
-	if consensusSigner != nil {
-		bftExec.SetVoteSigner(consensusSigner)
-		logger.Info("BFT vote signing enabled",
-			"validator", chain.BFTValidatorAddress(consensusSigner.GetPublicKey()))
-	} else {
-		logger.Warn("BFT vote signing disabled (no wallet key)",
-			"impact", "this node's consensus messages are unauthenticated")
-	}
+	bftExec.SetVoteSigner(consensusSigner)
+	logger.Info("BFT vote signing enabled", "validator", consensusSigner.Address())
 	// Inbound enforcement is opt-in so a mixed-version validator set can
 	// roll forward: signed builds emit signatures immediately, and the
 	// operator turns rejection on once every peer is upgraded. A
 	// present-but-invalid signature is always rejected regardless.
+	bftExec.SetSignedVoteActivationHeight(cfg.SignedConsensusActivationHeight)
 	bftExec.SetRequireSignedVotes(cfg.RequireSignedVotes)
 	// The same switch governs POL certificates / lock proofs and block
 	// producer signatures: they are all part of one consensus-authentication
 	// rollout, so flipping them independently would leave a gap that is
 	// easy to misconfigure and hard to notice.
+	chain.SetSignedCertificateActivationHeight(cfg.SignedConsensusActivationHeight)
+	chain.SetSignedBlockActivationHeight(cfg.SignedConsensusActivationHeight)
+	chain.SetEvidenceProofActivationHeight(cfg.SignedConsensusActivationHeight)
 	chain.SetRequireSignedCertificates(cfg.RequireSignedVotes)
 	chain.SetRequireSignedBlocks(cfg.RequireSignedVotes)
 	chain.SetRequireEvidenceProof(cfg.RequireSignedVotes)
 	logger.Info("consensus message authentication enforcement",
 		"required", cfg.RequireSignedVotes,
+		"activation_height", cfg.SignedConsensusActivationHeight,
 		"covers", "bft votes, pol certificates, block producer signatures, equivocation proofs",
-		"hint", "set [consensus] require_signed_votes or QSDM_REQUIRE_SIGNED_VOTES=1 once all validators are upgraded")
+		"hint", "set require_signed_votes and one shared future signed_message_activation_height only after every validator is upgraded")
 	var bftRelay *networking.BFTP2PRelay
 	if br, bftErr := networking.NewBFTP2PRelay(net, bftIngress, net.Host.ID().String()); bftErr != nil {
 		logger.Warn("BFT gossip relay not started", "error", bftErr)
@@ -1413,9 +1418,7 @@ func main() {
 	// Authenticate blocks we seal. SignBlock derives ProducerID from the
 	// key, so a producer identity that disagrees with the signing key can
 	// never be sealed.
-	if consensusSigner != nil {
-		adminProducer.SetBlockSigner(consensusSigner)
-	}
+	adminProducer.SetBlockSigner(consensusSigner)
 	adminProducer.SetPolFollower(polFollower)
 	// Local block production has two explicit roles. Solo mode is isolated;
 	// network-producer mode is the one configured leader that seals and

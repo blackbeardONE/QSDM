@@ -616,6 +616,9 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 	if want := computeBlockHash(blk); blk.Hash != want {
 		return fmt.Errorf("chain: external block has invalid hash")
 	}
+	if err := VerifyBlockSignature(blk); err != nil {
+		return fmt.Errorf("chain: external block authentication: %w", err)
+	}
 	ra, ok := bp.applier.(ChainReplayApplier)
 	if !ok {
 		return ErrExternalAppendNeedsAccountStore

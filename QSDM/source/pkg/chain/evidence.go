@@ -208,7 +208,7 @@ func validateEvidence(ev ConsensusEvidence) error {
 			if err := ev.Proof.Verify(ev.Validator); err != nil {
 				return err
 			}
-		} else if requireEvidenceProof.Load() {
+		} else if evidenceProofRequiredAt(ev.Height) {
 			return ErrEvidenceProofMissing
 		}
 	case EvidenceInvalidVote:
@@ -247,4 +247,3 @@ func evidenceID(ev ConsensusEvidence) string {
 	sum := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(sum[:])
 }
-
