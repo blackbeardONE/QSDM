@@ -188,6 +188,51 @@ func TestMigrateToDust_refusesUnrepresentableGenesisAllocation(t *testing.T) {
 	}
 }
 
+func TestMigrateToDust_failureIsAtomic(t *testing.T) {
+	as := NewAccountStore()
+	// Sorted iteration sees aaa first. The later overflow must not leave aaa
+	// partially converted when the transition fails.
+	as.Credit("aaa", 1.25)
+	as.Credit("zzz", 1e15)
+	beforeSmall, _ := as.Get("aaa")
+	beforeLarge, _ := as.Get("zzz")
+
+	if _, err := as.MigrateToDust(); err == nil {
+		t.Fatal("expected the unrepresentable balance to reject migration")
+	}
+	afterSmall, _ := as.Get("aaa")
+	afterLarge, _ := as.Get("zzz")
+	if *afterSmall != *beforeSmall || *afterLarge != *beforeLarge {
+		t.Fatalf("failed migration mutated accounts: small=%+v large=%+v", afterSmall, afterLarge)
+	}
+	if as.DustMigrated() {
+		t.Fatal("failed migration must not mark the store migrated")
+	}
+}
+
+func TestAccountStore_cloneAndRestorePreserveDustMigrationState(t *testing.T) {
+	SetForkDustHeight(100)
+	t.Cleanup(func() { SetForkDustHeight(math.MaxUint64) })
+
+	as := NewAccountStore()
+	as.Credit("alice", 2)
+	if _, err := as.MigrateToDust(); err != nil {
+		t.Fatal(err)
+	}
+	as.SetHeightFn(func() uint64 { return 100 })
+
+	clone := as.Clone()
+	if !clone.DustMigrated() || !clone.dustActive() {
+		t.Fatal("clone lost the migrated marker or fork height source")
+	}
+
+	restored := NewAccountStore()
+	restored.RestoreFrom(clone)
+	if !restored.DustMigrated() {
+		t.Fatal("rollback restore lost the migrated marker")
+	}
+}
+
 // Migration is deterministic: the same input state yields the same result on
 // every node, which is what makes a coordinated fork safe.
 func TestMigrateToDust_deterministic(t *testing.T) {

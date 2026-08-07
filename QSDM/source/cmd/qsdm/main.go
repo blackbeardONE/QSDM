@@ -1399,22 +1399,15 @@ func main() {
 
 	adminProducer := chain.NewBlockProducer(adminPool, v2Wired.StateApplier, prodCfg)
 	v2Wired.AttachToProducer(adminProducer)
-	// Integer-dust accounting fork. This changes both the balance
-	// arithmetic and the state-root encoding, so it is a consensus
-	// parameter: every validator must configure the same height or the
-	// network splits at activation. Wired here because the height source
-	// is the producer's tip.
-	if cfg.ForkDustHeight > 0 {
-		chain.SetForkDustHeight(cfg.ForkDustHeight)
-		adminAccounts.SetHeightFn(adminProducer.TipHeight)
-		logger.Info("integer-dust accounting fork armed",
-			"activation_height", cfg.ForkDustHeight,
-			"warning", "every validator must be configured with this exact height")
-	} else {
-		logger.Info("integer-dust accounting fork disabled",
-			"impact", "balances keep float64 arithmetic, which destroys ~0.06 CELL per reward block",
-			"hint", "set [consensus] fork_dust_height once genesis is re-derived to the 90M/10M split")
+	// Defense in depth: Config.Validate rejects this already. Keep the process
+	// entrypoint fail-closed too, so a future alternate config loader cannot arm
+	// an incomplete consensus transition and zero legacy balances at the fork.
+	if cfg.ForkDustHeight != 0 {
+		log.Fatalf("refusing unsafe integer-dust activation at height %d: run qsdm-ledger-fork-plan and implement the capped-issuance transition first", cfg.ForkDustHeight)
 	}
+	logger.Info("integer-dust accounting fork locked",
+		"activation_ready", false,
+		"next", "reconcile a fork manifest and implement the capped-issuance transition")
 
 	adminProducer.SetAppendReceiptStore(adminReceipts)
 	// Authenticate blocks we seal. SignBlock derives ProducerID from the

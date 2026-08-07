@@ -154,10 +154,9 @@ type ConsensusConfigTOML struct {
 	// on once every validator runs a build that signs its votes.
 	RequireSignedVotes bool `toml:"require_signed_votes" yaml:"require_signed_votes"`
 
-	// ForkDustHeight activates integer-dust account accounting at the
-	// given height. Unset (0) leaves it disabled forever. Every validator
-	// MUST agree on this value — it changes the state-root encoding and
-	// the balance arithmetic, so a node with a different height forks.
+	// ForkDustHeight is a reserved consensus parameter. Config validation
+	// currently rejects every non-zero value because the live capped-issuance
+	// transition is not implemented. Unset (0) keeps the unsafe path disabled.
 	ForkDustHeight uint64 `toml:"fork_dust_height" yaml:"fork_dust_height"`
 }
 

@@ -140,10 +140,10 @@ type Config struct {
 	// unauthenticated peer can still forge votes for any validator.
 	RequireSignedVotes bool
 
-	// ForkDustHeight activates integer-dust account accounting at the given
-	// chain height, fixing the float64 balance arithmetic that destroys
-	// ~0.06 CELL per reward block (~190k CELL/year) and the %f state-root
-	// encoding that cannot represent the protocol's 1e-8 unit.
+	// ForkDustHeight is reserved for the coordinated integer-dust accounting
+	// transition. Config parsing retains the field so operators can inspect old
+	// files, but Validate rejects every non-zero value until the deterministic
+	// capped-issuance transition and its governance manifest are implemented.
 	//
 	// Zero (the default) means never active, leaving the legacy float64
 	// behaviour bit-for-bit intact. This is a CONSENSUS parameter: every
@@ -858,6 +858,12 @@ func (c *Config) Validate() error {
 	}
 	if c.NodeRole.IsMiner() && !c.MiningEnabled {
 		return fmt.Errorf("node.role=%q but mining_enabled=false: miner role requires mining_enabled=true (env QSDM_MINING_ENABLED=true)", c.NodeRole)
+	}
+	if c.ForkDustHeight != 0 {
+		return fmt.Errorf(
+			"consensus fork_dust_height=%d is not activation-ready: leave it at 0 until the synthetic funder is replaced by a persisted capped-issuance ledger and validators approve one reconciled migration manifest",
+			c.ForkDustHeight,
+		)
 	}
 
 	if c.NetworkPort < 1 || c.NetworkPort > 65535 {

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -382,5 +383,23 @@ func TestApplyEnvOverrides_ForkDustHeight(t *testing.T) {
 	applyEnvOverrides(cfg)
 	if cfg.ForkDustHeight != 777 {
 		t.Fatalf("expected 777 from env, got %d", cfg.ForkDustHeight)
+	}
+}
+
+func TestValidate_ForkDustHeightFailsClosed(t *testing.T) {
+	cfg := &Config{
+		NetworkPort:    4001,
+		DashboardPort:  8081,
+		LogViewerPort:  9000,
+		APIPort:        8080,
+		StorageType:    "file",
+		ForkDustHeight: 777,
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("non-zero fork_dust_height must be rejected until the transition is implemented")
+	}
+	if !strings.Contains(err.Error(), "not activation-ready") {
+		t.Fatalf("unexpected refusal: %v", err)
 	}
 }
