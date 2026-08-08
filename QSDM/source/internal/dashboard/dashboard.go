@@ -203,6 +203,28 @@ func (d *Dashboard) buildHandler() (http.Handler, error) {
 			return nil, fmt.Errorf("invalid api backend URL %q: %w", d.apiBackendURL, perr)
 		}
 		authAPIProxy = httputil.NewSingleHostReverseProxy(backend)
+		// Strip the browser's Origin before forwarding.
+		//
+		// This hop is server-to-server: the dashboard received a request
+		// from the browser and is now calling the API itself. Forwarding
+		// the browser's Origin verbatim made the API apply its *browser*
+		// CORS policy to a server-side call, so a plain same-machine login
+		// (dashboard on :8081, API on :8080) was rejected with
+		// "origin not allowed" whenever QSDM_CORS_ALLOWED_ORIGINS did not
+		// happen to list the dashboard's own origin — which it does not by
+		// default. An absent Origin is exactly what a non-browser client
+		// sends, and CORSMiddleware passes those through.
+		//
+		// This does not weaken the API's CORS posture: that policy exists
+		// to stop a malicious *web page* calling the API directly in a
+		// browser, and such a page still cannot reach the API this way —
+		// it would have to go through the dashboard's own auth and CSRF
+		// checks first.
+		baseDirector := authAPIProxy.Director
+		authAPIProxy.Director = func(req *http.Request) {
+			baseDirector(req)
+			req.Header.Del("Origin")
+		}
 		log.Printf("Dashboard auth proxy: POST /api/v1/auth/login and /api/v1/auth/register -> %s", d.apiBackendURL)
 	} else {
 		log.Printf("Dashboard: no API backend URL — POST /api/v1/auth/login and /register return 503 until configured")
