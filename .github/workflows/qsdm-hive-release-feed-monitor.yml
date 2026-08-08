@@ -1,0 +1,67 @@
+name: Monitor QSDM Hive release feed
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/qsdm-hive-release-feed-monitor.yml"
+      - "QSDM/deploy/releases/hive-release-request.json"
+      - "scripts/check_hive_release_feed.py"
+      - "scripts/test_check_hive_release_feed.py"
+  pull_request:
+    paths:
+      - ".github/workflows/qsdm-hive-release-feed-monitor.yml"
+      - "QSDM/deploy/releases/hive-release-request.json"
+      - "scripts/check_hive_release_feed.py"
+      - "scripts/test_check_hive_release_feed.py"
+
+concurrency:
+  group: qsdm-hive-release-feed-monitor
+  cancel-in-progress: true
+
+jobs:
+  verify-production-feed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Test feed verifier
+        run: python -m unittest scripts.test_check_hive_release_feed
+
+      - name: Read approved Hive release
+        id: release
+        shell: bash
+        env:
+          REQUEST_FILE: QSDM/deploy/releases/hive-release-request.json
+        run: |
+          set -euo pipefail
+          test "$(jq -r '.schema' "$REQUEST_FILE")" = \
+            "qsdm.hive.release-request.v1"
+          version="$(jq -r '.version' "$REQUEST_FILE")"
+          commit="$(jq -r '.source_commit' "$REQUEST_FILE")"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          {
+            echo "version=$version"
+            echo "commit=$commit"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify live updater channels and signed envelopes
+        if: github.event_name != 'pull_request'
+        run: |
+          python scripts/check_hive_release_feed.py \
+            --expected-version "${{ steps.release.outputs.version }}" \
+            --expected-commit "${{ steps.release.outputs.commit }}"
