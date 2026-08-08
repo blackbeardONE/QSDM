@@ -144,6 +144,9 @@ jobs:
             ! -name ARTIFACTS-SHA256SUMS.txt -print0 | sort -z | \
             xargs -0 sha256sum > release-assets/ARTIFACTS-SHA256SUMS.txt
 
+      - name: Test production feed checker
+        run: python -m unittest scripts.test_check_hive_release_feed
+
       - name: Publish GitHub release
         shell: bash
         env:
@@ -188,3 +191,13 @@ jobs:
           fi
 
           gh release view "$TAG" --json tagName,isDraft,isPrerelease,url,assets
+      - name: Require production updater feed parity
+        shell: bash
+        env:
+          VERSION: ${{ steps.request.outputs.version }}
+          SOURCE_COMMIT: ${{ steps.request.outputs.source_commit }}
+        run: |
+          set -euo pipefail
+          python scripts/check_hive_release_feed.py \
+            --expected-version "$VERSION" \
+            --expected-commit "$SOURCE_COMMIT"

@@ -355,6 +355,14 @@ Publish versioned, immutable artifacts first. Update the `latest` pointer only
 after remote checksum/signature verification and smoke tests pass. Attach or
 retain:
 
+The GitHub release workflow intentionally has no production-server or release
+signing credentials. Its final production-feed parity gate therefore remains
+red until the release owner creates both local ML-DSA envelopes and runs
+`publish_hive_dual_platform_release.sh` against `qsdm.tech`. Rerun the failed
+workflow after that atomic publication. A GitHub release is not complete, and
+must not be announced, while this gate is red; otherwise installed Hive clients
+will continue to see the previous `latest.yml` version.
+
 - release notes and migration/rollback instructions;
 - artifact manifest and SHA-256 checksums;
 - both QSDM-native signed release envelopes generated from the pinned release
