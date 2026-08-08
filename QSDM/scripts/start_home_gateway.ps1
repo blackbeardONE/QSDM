@@ -74,6 +74,30 @@ function Stop-ExistingGateway {
     }
 }
 
+function Import-WindowsSecurityModule {
+    if (-not ($IsWindows -or $env:OS -eq "Windows_NT")) {
+        return
+    }
+
+    if (Get-Module -Name Microsoft.PowerShell.Security) {
+        return
+    }
+
+    # A long-lived pwsh watchdog can pass its PSModulePath to a Windows
+    # PowerShell child. Import by absolute path so key ACL hardening does not
+    # depend on inherited module-discovery state.
+    $modulePath = Join-Path $PSHOME `
+        "Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1"
+    if (-not (Test-Path -LiteralPath $modulePath -PathType Leaf)) {
+        throw "Windows security module was not found at $modulePath"
+    }
+    try {
+        Import-Module -Name $modulePath -ErrorAction Stop
+    } catch {
+        throw "Unable to load the Windows security module from ${modulePath}: $($_.Exception.Message)"
+    }
+}
+
 function Test-GatewayKeyFileProtected {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -117,6 +141,7 @@ function Protect-GatewayKeyFile {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     if ($IsWindows -or $env:OS -eq "Windows_NT") {
+        Import-WindowsSecurityModule
         if (Test-GatewayKeyFileProtected -Path $Path) {
             return
         }
