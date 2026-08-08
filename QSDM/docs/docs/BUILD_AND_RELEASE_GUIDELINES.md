@@ -367,7 +367,9 @@ The read-only `Monitor QSDM Hive release feed` workflow repeats the same check
 hourly against the approved release request. Treat any scheduled failure as a
 production incident: do not weaken or bypass the check, and do not republish
 mutable versioned artifacts. Restore the approved atomic release or publish a
-new version through the normal release process.
+new version through the normal release process. The monitor maintains one
+deduplicated `production-incident` GitHub issue, adds evidence on repeated
+failures, and closes it after the public feed passes again.
 
 - release notes and migration/rollback instructions;
 - artifact manifest and SHA-256 checksums;
