@@ -15,12 +15,16 @@ on:
       - "QSDM/deploy/releases/hive-release-request.json"
       - "scripts/check_hive_release_feed.py"
       - "scripts/test_check_hive_release_feed.py"
+      - "scripts/report_hive_release_feed_incident.py"
+      - "scripts/test_report_hive_release_feed_incident.py"
   pull_request:
     paths:
       - ".github/workflows/qsdm-hive-release-feed-monitor.yml"
       - "QSDM/deploy/releases/hive-release-request.json"
       - "scripts/check_hive_release_feed.py"
       - "scripts/test_check_hive_release_feed.py"
+      - "scripts/report_hive_release_feed_incident.py"
+      - "scripts/test_report_hive_release_feed_incident.py"
 
 concurrency:
   group: qsdm-hive-release-feed-monitor
@@ -39,7 +43,10 @@ jobs:
           python-version: "3.12"
 
       - name: Test feed verifier
-        run: python -m unittest scripts.test_check_hive_release_feed
+        run: |
+          python -m unittest \
+            scripts.test_check_hive_release_feed \
+            scripts.test_report_hive_release_feed_incident
 
       - name: Read approved Hive release
         id: release
@@ -76,44 +83,19 @@ jobs:
       issues: write
 
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
       - name: Open, update, or resolve the updater-feed incident
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ needs.verify-production-feed.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          TITLE: "[Production] QSDM Hive updater feed unhealthy"
-          LABEL: "production-incident"
         run: |
-          set -euo pipefail
-
-          gh label create "$LABEL" --repo "$GITHUB_REPOSITORY" \
-            --color B60205 \
-            --description "Automated production service incident" \
-            --force
-
-          issue_number="$(
-            gh issue list --repo "$GITHUB_REPOSITORY" --state open \
-              --label "$LABEL" --limit 100 --json number,title |
-              jq -r --arg title "$TITLE" \
-                '.[] | select(.title == $title) | .number' |
-              head -n 1
-          )"
-          checked_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-
-          if [[ "$RESULT" == "failure" ]]; then
-            message="Production updater-feed verification failed at ${checked_at}.\n\nRun: ${RUN_URL}\n\nInstalled Hive clients may be unable to discover or authenticate the approved release. Do not bypass the verifier; restore the approved atomic release or publish a new version."
-            if [[ -n "$issue_number" ]]; then
-              printf '%b\n' "$message" | \
-                gh issue comment "$issue_number" --repo "$GITHUB_REPOSITORY" \
-                  --body-file -
-            else
-              printf '%b\n' "$message" | \
-                gh issue create --repo "$GITHUB_REPOSITORY" \
-                  --title "$TITLE" --label "$LABEL" --body-file -
-            fi
-          elif [[ "$RESULT" == "success" && -n "$issue_number" ]]; then
-            gh issue close "$issue_number" --repo "$GITHUB_REPOSITORY" \
-              --reason completed \
-              --comment "Production updater-feed verification recovered at ${checked_at}. Run: ${RUN_URL}"
-          fi
+          python scripts/report_hive_release_feed_incident.py \
+            --result "$RESULT" \
+            --repository "$GITHUB_REPOSITORY" \
+            --run-url "$RUN_URL"
