@@ -71,18 +71,20 @@
 		if (btn) btn.disabled = true;
 
 		var formData = new FormData(form);
-		var cred = { credentials: 'include' };
-
 		try {
 			if (stEl) stEl.textContent = 'Signing in…';
-			var response = await fetch('/api/v1/auth/login', Object.assign({
+			// Keep the API access token server-side. The dashboard endpoint
+			// authenticates against the API, stores the token in its session
+			// table, and returns only the small HttpOnly session cookie.
+			var response = await fetch('/api/auth/login', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+				credentials: 'include',
 				body: JSON.stringify({
 					address: String(formData.get('address') || '').trim(),
 					password: formData.get('password')
 				})
-			}, cred));
+			});
 
 			var rawLogin = await response.text();
 			var data = parseJsonSafe(rawLogin);
@@ -92,29 +94,8 @@
 				return;
 			}
 
-			if (!response.ok || !data.access_token) {
+			if (!response.ok) {
 				errEl.textContent = errFromBody(response, rawLogin) || 'Login failed';
-				if (stEl) stEl.textContent = '';
-				return;
-			}
-
-			if (stEl) stEl.textContent = 'Starting dashboard session…';
-			var sess;
-			try {
-				sess = await fetch('/api/auth/session', Object.assign({
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-					body: JSON.stringify({ access_token: data.access_token })
-				}, cred));
-			} catch (err2) {
-				errEl.textContent = 'Could not reach /api/auth/session (network error). Check server logs.';
-				if (stEl) stEl.textContent = '';
-				return;
-			}
-
-			if (!sess.ok) {
-				var rawSess = await sess.text();
-				errEl.textContent = 'Session step failed: ' + errFromBody(sess, rawSess);
 				if (stEl) stEl.textContent = '';
 				return;
 			}

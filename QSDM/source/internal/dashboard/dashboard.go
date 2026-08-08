@@ -1080,7 +1080,7 @@ func (d *Dashboard) serveLoginPage(w http.ResponseWriter, r *http.Request) {
 		<div id="status" class="status" aria-live="polite"></div>
 		<div id="error" class="error" role="alert"></div>
 	</form>
-	<script src="/static/login.js?v=6"></script>
+	<script src="/static/login.js?v=7"></script>
 </body>
 </html>`, branding.Name, branding.Name)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

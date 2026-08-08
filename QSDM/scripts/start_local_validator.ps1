@@ -848,6 +848,21 @@ $env:QSDM_NETWORKED_CATCHUP_MODE = if ($Networked) { "1" } else { "0" }
 $env:QSDM_PRODUCTION_MODE = "true"
 $env:QSDM_V2_ACTIVE = "1"
 $env:QSDM_REQUIRE_SQLITE_STORAGE = "1"
+$dashboardPort = if ([string]::IsNullOrWhiteSpace($env:DASHBOARD_PORT)) { "8081" } else { $env:DASHBOARD_PORT.Trim() }
+$localDashboardOrigins = @(
+    "http://127.0.0.1:$dashboardPort",
+    "http://localhost:$dashboardPort",
+    "http://[::1]:$dashboardPort"
+)
+$configuredCorsOrigins = @(
+    $env:QSDM_CORS_ALLOWED_ORIGINS -split ',' |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ }
+)
+$env:QSDM_CORS_ALLOWED_ORIGINS = @(
+    $configuredCorsOrigins + $localDashboardOrigins |
+        Sort-Object -Unique
+) -join ','
 $requiredNoProxy = @("127.0.0.1", "localhost")
 if ($Networked -and -not [string]::IsNullOrWhiteSpace($ChainSyncUrls)) {
     foreach ($syncUrl in @($ChainSyncUrls -split ',')) {

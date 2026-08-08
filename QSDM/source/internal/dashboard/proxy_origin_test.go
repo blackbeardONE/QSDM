@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,23 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/api"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 )
+
+func TestLoginPageKeepsAccessTokenServerSide(t *testing.T) {
+	raw, err := fs.ReadFile(staticFiles, "static/login.js")
+	if err != nil {
+		t.Fatalf("read embedded login script: %v", err)
+	}
+	script := string(raw)
+	if !strings.Contains(script, "fetch('/api/auth/login'") {
+		t.Fatal("login script must use the dashboard's server-side login endpoint")
+	}
+	if strings.Contains(script, "fetch('/api/v1/auth/login'") {
+		t.Fatal("login script must not request an API access token directly")
+	}
+	if strings.Contains(script, "data.access_token") {
+		t.Fatal("login script must not expose the API access token to page JavaScript")
+	}
+}
 
 // TestAuthProxy_stripsBrowserOriginBeforeForwarding reproduces the login
 // failure operators hit on a stock local stack:
