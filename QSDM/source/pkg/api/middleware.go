@@ -268,6 +268,17 @@ func isPublicEndpoint(path string) bool {
 		// abuse; `result=signature_invalid` / `result=sender_mismatch`
 		// counters surface a misbehaving caller.
 		"/api/v1/wallet/submit-signed",
+		// /api/v1/staking/submit-signed is validator bonding. Public for
+		// exactly the reason /wallet/submit-signed is: the cryptographic
+		// identity IS the envelope's public_key, with
+		// sender = hex(sha256(public_key)) verified inside the handler
+		// before anything is admitted, so an envelope can only ever bond
+		// the signer's own funds. Requiring a JWT or CSRF token on top
+		// would force a server-side session identity that has no bearing
+		// on the on-chain bond — and would make bonding impossible for the
+		// self-custody clients that need it most, which is the whole point
+		// of letting a home node join the validator set.
+		"/api/v1/staking/submit-signed",
 		// /api/v1/wallet/nonce is the v0.4.1 (Session 100) public-read
 		// helper that lets a self-custody client fetch the next
 		// envelope nonce without an authenticated session. Symmetric

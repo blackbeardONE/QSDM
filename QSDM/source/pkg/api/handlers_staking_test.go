@@ -224,3 +224,21 @@ func TestStakingSubmitSigned_duplicateIsIdempotent(t *testing.T) {
 }
 
 var _ = sha256.Sum256
+
+// The endpoint must be reachable by a self-custody client with no session.
+//
+// It is authenticated by the envelope signature (sender ==
+// hex(sha256(public_key)), checked in the handler), so demanding a JWT or
+// CSRF token on top would force a server-side session identity irrelevant
+// to the on-chain bond — and would make bonding impossible for exactly the
+// clients that need it, defeating the purpose of letting a home node join.
+func TestStakingSubmitSigned_isPublicSoSelfCustodyClientsCanBond(t *testing.T) {
+	if !isPublicEndpoint("/api/v1/staking/submit-signed") {
+		t.Fatal("staking submission must be public: it is self-authenticating, " +
+			"and requiring CSRF/JWT blocks the self-custody clients it exists for")
+	}
+	// Sanity: the sibling self-custody endpoint has the same posture.
+	if !isPublicEndpoint("/api/v1/wallet/submit-signed") {
+		t.Fatal("precondition: /wallet/submit-signed should already be public")
+	}
+}
