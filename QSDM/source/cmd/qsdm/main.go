@@ -1412,6 +1412,10 @@ func main() {
 	// drift visible and prevents a validator from serving signed task actions
 	// with a nil process-wide submitter.
 	api.SetTaskActionMempool(adminPool)
+	// Admit qsdm/staking/v1 submissions. Without this the endpoint reports
+	// 503 rather than accepting a bond it cannot deliver, and validator
+	// membership can never become chain-derived because nothing can bond.
+	api.SetStakingMempool(adminPool)
 	api.SetWalletTransferMempool(adminPool)
 	if !api.TaskActionMempoolReady() {
 		log.Fatal("signed task-action mempool wiring failed")
