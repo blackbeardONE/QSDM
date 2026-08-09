@@ -264,8 +264,26 @@ function Start-Validator {
             $argString += " -BlockProducer"
         }
     }
+    # Launch the validator with the SAME PowerShell host this watchdog is
+    # running under, rather than hard-coding powershell.exe.
+    #
+    # The watchdog runs under pwsh 7. Spawning Windows PowerShell from it
+    # meant the child inherited pwsh's PSModulePath, which breaks Windows
+    # PowerShell's module autoloading — so Get-FileHash was "not recognized"
+    # and Resolve-ActiveValidatorBinary threw before the launcher logged
+    # anything. Observed as a tight loop of:
+    #
+    #   validator not ready failure=2 process_count=0; starting validator
+    #   validator launcher exited code=1
+    #
+    # i.e. the watchdog could never actually recover a down validator. The
+    # same script starts fine when invoked under pwsh directly.
+    $psHost = (Get-Process -Id $PID).Path
+    if ([string]::IsNullOrWhiteSpace($psHost) -or -not (Test-Path -LiteralPath $psHost)) {
+        $psHost = "powershell.exe"
+    }
     $process = Start-Process `
-        -FilePath "powershell.exe" `
+        -FilePath $psHost `
         -ArgumentList $argString `
         -WorkingDirectory $QsdmRoot `
         -WindowStyle Hidden `
