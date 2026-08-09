@@ -1208,6 +1208,27 @@ func main() {
 	}
 	bftIngress := networking.NewBFTGossipIngress(networking.DefaultBFTGossipConfig(), bftIngressExec)
 	bftIngress.SetReputationTracker(nodeTxRep)
+	// Participation follows DERIVED MEMBERSHIP, not a boot-time env var.
+	//
+	// QSDM_NETWORKED_CATCHUP_MODE remains an explicit operator override for
+	// a node that should only mirror the chain. Absent that override, this
+	// node applies consensus messages exactly when it is itself in the
+	// validator set derived from committed chain state — so a home node
+	// that bonds stake starts participating on the next reconcile instead
+	// of staying a replica until someone restarts it.
+	//
+	// Either way the ingress still validates, dedupes and relays, so a
+	// non-participating node remains useful for propagation.
+	bftIngress.SetParticipationGate(func() bool {
+		if networkedCatchupMode {
+			return false
+		}
+		if walletService == nil {
+			return false
+		}
+		_, isMember := nodeValidatorSet.GetValidator(walletService.GetAddress())
+		return isMember
+	})
 	bftExec.SetEvidenceManager(nodeEvidenceManager)
 
 	// Authenticate outbound consensus messages. Without a signer, prevotes

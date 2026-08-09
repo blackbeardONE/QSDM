@@ -65,6 +65,8 @@ func main() {
 		err = cli.miningEnroll(args)
 	case "unenroll":
 		err = cli.miningUnenroll(args)
+	case "stake-helper":
+		err = cli.stakeHelper(args)
 	case "slash":
 		err = cli.miningSlash(args)
 	case "enrollment-status":

@@ -47,6 +47,9 @@ type BFTGossipStats struct {
 type BFTGossipIngress struct {
 	exec *chain.BFTExecutor
 	rep  *ReputationTracker
+	// participates gates whether inbound consensus messages are applied
+	// or only validated and relayed. See SetParticipationGate.
+	participates func() bool
 
 	mu          sync.Mutex
 	seenIDs     map[string]time.Time
@@ -162,7 +165,15 @@ func (g *BFTGossipIngress) HandlePeerMessage(peerID string, payload []byte) erro
 	g.evictSeenIfNeededLocked()
 	g.mu.Unlock()
 
-	if g.exec != nil {
+	// Apply only when this node is a participating validator. A replica
+	// still validated, deduped and relayed the message above, which is the
+	// useful work it can do for the network without being in the set.
+	//
+	// Previously this was decided once at construction by nil-ing the
+	// executor whenever QSDM_NETWORKED_CATCHUP_MODE was set, so a node that
+	// later bonded stake and joined the validator set kept behaving as a
+	// replica until an operator restarted it.
+	if g.exec != nil && g.participating() {
 		g.exec.SetLastInboundBFTGossipPeer(peerID)
 		if err := g.exec.ApplyInbound(payload); err != nil {
 			g.statApplyErrors.Add(1)
@@ -238,4 +249,44 @@ func (g *BFTGossipIngress) evictSeenIfNeededLocked() {
 		}
 		delete(g.seenIDs, oldestID)
 	}
+}
+
+// SetParticipationGate installs a predicate deciding whether inbound BFT
+// consensus messages are APPLIED (true) or merely validated and relayed
+// (false).
+//
+// This replaces nil-ing the executor at construction, which cmd/qsdm did
+// whenever QSDM_NETWORKED_CATCHUP_MODE was set. That was a static, boot-time
+// decision: a node started as a catch-up replica stayed one for the life of
+// the process, even after it bonded stake and legitimately joined the
+// validator set. Since validator membership is now derived from committed
+// chain state and reconciled on every commit
+// (pkg/chain/validator_registry_chainstate.go), participation has to be able
+// to follow it without a restart.
+//
+// A nil gate means "apply", preserving the behaviour of a full validator.
+// Wire-level validation, dedupe and relay run regardless of the gate, so a
+// non-participating node still helps propagate consensus traffic — which is
+// what makes a home replica useful to the network even before it bonds.
+func (g *BFTGossipIngress) SetParticipationGate(fn func() bool) {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.participates = fn
+}
+
+// participating reports whether inbound consensus messages should be applied.
+func (g *BFTGossipIngress) participating() bool {
+	if g == nil {
+		return false
+	}
+	g.mu.Lock()
+	fn := g.participates
+	g.mu.Unlock()
+	if fn == nil {
+		return true
+	}
+	return fn()
 }

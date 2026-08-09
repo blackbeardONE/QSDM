@@ -82,3 +82,60 @@ func TestGossipIngress_allowsUnbannedPeer(t *testing.T) {
 		t.Fatalf("unbanned peer must not be refused as banned: %v", err)
 	}
 }
+
+// TestBFTGossipIngress_participationGate covers the change from a static
+// boot-time catch-up decision to one that follows derived membership.
+//
+// cmd/qsdm used to nil the executor whenever QSDM_NETWORKED_CATCHUP_MODE was
+// set, so a node started as a replica stayed one for the life of the
+// process — even after it bonded stake and legitimately joined the validator
+// set. Participation now follows membership, which is reconciled on every
+// commit, so a home node that bonds starts participating without a restart.
+func TestBFTGossipIngress_participationGate(t *testing.T) {
+	participating := false
+	g := NewBFTGossipIngress(DefaultBFTGossipConfig(), nil)
+	g.SetParticipationGate(func() bool { return participating })
+
+	if g.participating() {
+		t.Fatal("gate should report non-participating while the predicate is false")
+	}
+
+	participating = true
+	if !g.participating() {
+		t.Fatal("gate must follow the predicate without reconstruction")
+	}
+}
+
+// A nil gate means "participate", preserving full-validator behaviour for
+// callers that never set one.
+func TestBFTGossipIngress_nilGateParticipates(t *testing.T) {
+	g := NewBFTGossipIngress(DefaultBFTGossipConfig(), nil)
+	if !g.participating() {
+		t.Fatal("a nil participation gate must default to participating")
+	}
+}
+
+// Validation, dedupe and relay must run regardless of participation, so a
+// replica still helps propagate consensus traffic.
+func TestBFTGossipIngress_nonParticipantStillValidates(t *testing.T) {
+	g := NewBFTGossipIngress(DefaultBFTGossipConfig(), nil)
+	g.SetParticipationGate(func() bool { return false })
+
+	// Malformed payload must still be rejected at the wire layer.
+	if err := g.HandlePeerMessage("peer", []byte("not-json")); err == nil {
+		t.Fatal("a non-participating node must still validate wire framing")
+	}
+	if g.Stats().RejectedWire == 0 {
+		t.Fatal("wire rejection should be counted even when not participating")
+	}
+
+	// A well-formed message is accepted (validated + deduped) without error.
+	good := []byte(`{"kind":"bft_prevote","payload":"e30="}`)
+	if err := g.HandlePeerMessage("peer", good); err != nil {
+		t.Fatalf("well-formed gossip should pass validation on a replica: %v", err)
+	}
+	// And the duplicate is dropped, proving dedupe ran.
+	if err := g.HandlePeerMessage("peer", good); err == nil {
+		t.Fatal("dedupe must run on a non-participating node too")
+	}
+}
