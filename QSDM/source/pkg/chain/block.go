@@ -422,6 +422,13 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 		}
 	}
 
+	// Feeds the dashboard's blocks_sealed / block_transactions figures.
+	// Recorded only once the block is actually appended, so a run that
+	// bailed out above (POL/BFT gate, failed pre-seal, empty pool) does not
+	// register as production. Block production previously touched no
+	// metric at all.
+	metrics().RecordBlockSealed(len(block.Transactions))
+
 	bp.chain = append(bp.chain, block)
 	bp.tipHeight.Store(block.Height)
 	bp.tipHeightSet.Store(true)

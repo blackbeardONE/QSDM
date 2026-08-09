@@ -104,6 +104,13 @@ type MetricsRecorder interface {
 	// when a miner address is placed under the §8.3 fraud quarantine.
 	RecordQuarantineTriggered()
 
+	// RecordBlockSealed counts a sealed block and the transactions it
+	// carried. Kept distinct from the Transactions* counters, which fire
+	// on the inbound-gossip / wallet-ingest path -- folding sealing into
+	// those would double-count any tx that both arrived over gossip and
+	// landed in a block.
+	RecordBlockSealed(txCount int)
+
 	// RecordGovParamRejected increments the
 	// `qsdm_gov_param_rejected_total{reason}` counter.
 	RecordGovParamRejected(reason string)
@@ -195,6 +202,7 @@ func (noopRecorder) RecordGovAuthorityRejected(string)          {}
 func (noopRecorder) RecordConsensusProposal()                   {}
 func (noopRecorder) RecordConsensusVote()                       {}
 func (noopRecorder) RecordQuarantineTriggered()                 {}
+func (noopRecorder) RecordBlockSealed(int)                      {}
 
 // recorderHolder wraps a MetricsRecorder so atomic.Value's
 // "all stored values must share an identical concrete type"

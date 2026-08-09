@@ -326,3 +326,5 @@ func TestEnrollmentApplier_Emits_RejectedDecodeReason(t *testing.T) {
 func (r *recordingRecorder) RecordConsensusProposal()   {}
 func (r *recordingRecorder) RecordConsensusVote()       {}
 func (r *recordingRecorder) RecordQuarantineTriggered() {}
+
+func (r *recordingRecorder) RecordBlockSealed(int) {}

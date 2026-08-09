@@ -104,3 +104,7 @@ func (chainMetricsAdapter) RecordConsensusVote() {
 func (chainMetricsAdapter) RecordQuarantineTriggered() {
 	GetMetrics().IncrementQuarantinesTriggered()
 }
+
+func (chainMetricsAdapter) RecordBlockSealed(txCount int) {
+	GetMetrics().RecordBlockSealed(txCount)
+}

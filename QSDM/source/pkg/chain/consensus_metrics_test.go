@@ -3,6 +3,8 @@ package chain
 import (
 	"sync"
 	"testing"
+
+	"github.com/blackbeardONE/QSDM/pkg/mempool"
 )
 
 // countingRecorder counts the dashboard-facing consensus events.
@@ -117,5 +119,78 @@ func TestConsensus_countersIgnoreDuplicates(t *testing.T) {
 	}
 	if _, v := rec.counts(); v != 1 {
 		t.Fatalf("a rejected duplicate vote must not be counted, got %d", v)
+	}
+}
+
+// blockRecorder counts sealed blocks and their transactions.
+type blockRecorder struct {
+	noopRecorder
+	mu     sync.Mutex
+	blocks int
+	txs    int
+}
+
+func (b *blockRecorder) RecordBlockSealed(txCount int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.blocks++
+	b.txs += txCount
+}
+
+// TestBlockProducer_recordsSealedBlocks covers the last of the four
+// dashboard figures that had no producer: pkg/chain/block.go and
+// internal/blockdriver touched no metric at all, so a node that had sealed
+// 464k blocks reported nothing about any of them.
+//
+// Kept separate from the Transactions* counters on purpose. Those fire on
+// the inbound-gossip / wallet-ingest path, so reusing them here would
+// double-count any transaction that both arrived over gossip and landed in
+// a block — a confidently wrong number, which is worse than a missing one.
+func TestBlockProducer_recordsSealedBlocks(t *testing.T) {
+	rec := &blockRecorder{}
+	SetChainMetricsRecorder(rec)
+	t.Cleanup(func() { SetChainMetricsRecorder(noopRecorder{}) })
+
+	as := NewAccountStore()
+	as.Credit("alice", 1000)
+	pool := mempool.New(mempool.DefaultConfig())
+	bp := NewBlockProducer(pool, as, DefaultProducerConfig())
+
+	pool.Add(&mempool.Tx{ID: "t1", Sender: "alice", Recipient: "bob", Amount: 1, Fee: 0, Nonce: 0})
+	if _, err := bp.ProduceBlock(); err != nil {
+		t.Fatalf("ProduceBlock: %v", err)
+	}
+
+	rec.mu.Lock()
+	blocks, txs := rec.blocks, rec.txs
+	rec.mu.Unlock()
+	if blocks != 1 {
+		t.Fatalf("a sealed block must be counted, got %d", blocks)
+	}
+	if txs != 1 {
+		t.Fatalf("the block's transactions must be counted, got %d", txs)
+	}
+}
+
+// A production attempt that fails must not register as a sealed block.
+func TestBlockProducer_doesNotCountFailedProduction(t *testing.T) {
+	rec := &blockRecorder{}
+	SetChainMetricsRecorder(rec)
+	t.Cleanup(func() { SetChainMetricsRecorder(noopRecorder{}) })
+
+	as := NewAccountStore()
+	pool := mempool.New(mempool.DefaultConfig())
+	bp := NewBlockProducer(pool, as, DefaultProducerConfig())
+
+	// Empty pool -> no block.
+	if _, err := bp.ProduceBlock(); err == nil {
+		t.Fatal("expected production to fail with an empty pool")
+	}
+
+	rec.mu.Lock()
+	blocks := rec.blocks
+	rec.mu.Unlock()
+	if blocks != 0 {
+		t.Fatalf("a failed production must not count as sealed, got %d", blocks)
 	}
 }

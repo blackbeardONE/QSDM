@@ -34,6 +34,22 @@ type Metrics struct {
 	StorageErrors         int64
 	DatabaseConnections   int64
 
+	// Block-production observability.
+	//
+	// Deliberately separate from the Transactions* counters rather than
+	// folded into them. Those fire on the inbound-P2P / wallet-ingest path
+	// (cmd/qsdm/main.go's pubsub handler and cmd/qsdm/transaction), so a
+	// transaction that arrives over gossip AND is later included in a
+	// sealed block would be counted twice if sealing reused them. A
+	// double-counted figure is worse than a missing one: it looks
+	// authoritative and is wrong.
+	//
+	// Before these existed, pkg/chain/block.go and internal/blockdriver
+	// touched no metric at all, so a node that had sealed 464k blocks
+	// reported nothing about any of them.
+	BlocksSealed      int64
+	BlockTransactions int64
+
 	// Hot-reload observability (updated by config.HotReloader and admin dry-run handler)
 	HotReloadApplySuccess int64
 	HotReloadApplyFailure int64
@@ -129,6 +145,17 @@ func (m *Metrics) IncrementNetworkMessagesRecv() {
 }
 
 // IncHotReloadApply records a successful or failed hot-reload apply attempt.
+// RecordBlockSealed counts one sealed block and the transactions it
+// carried. Called from the block producer via chain.MetricsRecorder.
+func (m *Metrics) RecordBlockSealed(txCount int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.BlocksSealed++
+	if txCount > 0 {
+		m.BlockTransactions += int64(txCount)
+	}
+}
+
 func (m *Metrics) IncHotReloadApply(success bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -178,6 +205,8 @@ func (m *Metrics) GetStats() map[string]interface{} {
 		"validity_rate_percent":    validityRate,
 		"proposals_created":        m.ProposalsCreated,
 		"votes_cast":               m.VotesCast,
+		"blocks_sealed":            m.BlocksSealed,
+		"block_transactions":       m.BlockTransactions,
 		"quarantines_triggered":    m.QuarantinesTriggered,
 		"reputation_updates":       m.ReputationUpdates,
 		"network_messages_sent":    m.NetworkMessagesSent,
