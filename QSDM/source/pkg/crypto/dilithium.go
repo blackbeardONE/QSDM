@@ -260,6 +260,55 @@ func NewDilithium() *Dilithium {
 	return d
 }
 
+// NewDilithiumFromKeyPair rebuilds a signer handle from key material
+// previously returned by GetPublicKey / GetPrivateKey.
+//
+// This is what makes a node's cryptographic identity survive a restart.
+// Without it the only constructor was NewDilithium, which calls
+// OQS_SIG_keypair and therefore mints a fresh identity on every start — so a
+// validator got a new address, a zero balance, and a new consensus identity
+// each time it launched.
+//
+// Both halves are required: liboqs offers no way to derive a public key from
+// a secret key, so the caller must persist and supply both. Key lengths are
+// validated against the algorithm handle, which is the only consistency
+// check available in this backend (unlike the pure-Go backend, which can
+// additionally confirm the pair matches).
+//
+// Returns nil on malformed input. Caller must call Free.
+func NewDilithiumFromKeyPair(pk, sk []byte) *Dilithium {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("ERROR: Dilithium key-load panic: %v\n", r)
+		}
+	}()
+	if len(pk) == 0 || len(sk) == 0 {
+		return nil
+	}
+
+	cname := C.CString("ML-DSA-87")
+	defer C.free(unsafe.Pointer(cname))
+	sig := C.OQS_SIG_new(cname)
+	if sig == nil {
+		fmt.Println("ERROR: OQS_SIG_new returned nil - liboqs initialization failed")
+		return nil
+	}
+
+	if len(pk) != int(sig.length_public_key) || len(sk) != int(sig.length_secret_key) {
+		C.OQS_SIG_free(sig)
+		fmt.Printf("ERROR: ML-DSA-87 key length mismatch (pk=%d want %d, sk=%d want %d)\n",
+			len(pk), int(sig.length_public_key), len(sk), int(sig.length_secret_key))
+		return nil
+	}
+
+	d := &Dilithium{sig: sig}
+	d.pk = make([]byte, len(pk))
+	copy(d.pk, pk)
+	d.sk = make([]byte, len(sk))
+	copy(d.sk, sk)
+	return d
+}
+
 // NewDilithiumVerifyOnly creates an ML-DSA-87 algorithm handle for verification only (no keypair).
 // Use VerifyWithPublicKey; caller must call Free.
 func NewDilithiumVerifyOnly() *Dilithium {

@@ -584,7 +584,25 @@ func main() {
 	metrics = monitoring.GetMetrics()
 	healthChecker = monitoring.NewHealthChecker(metrics)
 
-	// Register components for health monitoring
+	// Register components for health monitoring.
+	//
+	// Two kinds of component here, and the distinction matters:
+	//
+	//   - "network" and "storage" have real runtime liveness that can
+	//     change after boot (peers come and go, a disk fills, a DB file
+	//     gets locked). Probes are attached at their construction sites
+	//     below via SetComponentProbe, so CheckHealth reports what is true
+	//     now.
+	//   - "consensus", "governance" and "wallet" record a boot-time
+	//     outcome — either quantum-safe crypto initialised or it did not.
+	//     That fact does not change while the process runs, so they carry
+	//     no probe and are exempt from the staleness rule. Attaching a
+	//     can-never-fail probe here would be theatre: it would refresh the
+	//     timestamp without checking anything.
+	//
+	// Previously every component was subject to staleness, and five of the
+	// six were never refreshed after boot — so the node reported DEGRADED
+	// about ten minutes after every start regardless of actual health.
 	healthChecker.RegisterComponent("network")
 	healthChecker.RegisterComponent("storage")
 	healthChecker.RegisterComponent("consensus")
@@ -725,6 +743,20 @@ func main() {
 		log.Fatalf("Failed to setup libp2p: %v", err)
 	}
 	healthChecker.UpdateComponentHealth("network", monitoring.HealthStatusHealthy, "Network initialized")
+	// Real liveness: the libp2p host must still be up. Peer count is
+	// reported but deliberately does NOT gate health — a validator with no
+	// peers is isolated, not broken, and this stack legitimately runs
+	// solo (BootstrapPeers is empty by default).
+	healthChecker.SetComponentProbe("network", func() (monitoring.HealthStatus, string) {
+		if net == nil || net.Host == nil {
+			return monitoring.HealthStatusUnhealthy, "libp2p host is not running"
+		}
+		peers := net.PeerCount()
+		if peers == 0 {
+			return monitoring.HealthStatusHealthy, "libp2p host up; no peers connected (running isolated)"
+		}
+		return monitoring.HealthStatusHealthy, fmt.Sprintf("libp2p host up; %d peer(s) connected", peers)
+	})
 
 	// Start explicit bootstrap dialing for WAN peer finding.
 	//
@@ -821,6 +853,19 @@ func main() {
 	fmt.Fprintln(os.Stdout, branding.LogPrefix+"Storage initialized")
 	os.Stdout.Sync()
 	defer storageBackend.Close()
+	// Real liveness: Ready() is the same dependency check the orchestration
+	// readiness probe uses (/api/v1/health/ready), so the dashboard and
+	// Kubernetes agree on what "storage is up" means. This genuinely
+	// changes at runtime — a full disk or a locked DB file fails here.
+	healthChecker.SetComponentProbe("storage", func() (monitoring.HealthStatus, string) {
+		if storageBackend == nil {
+			return monitoring.HealthStatusUnhealthy, "storage backend is not configured"
+		}
+		if err := storageBackend.Ready(); err != nil {
+			return monitoring.HealthStatusUnhealthy, "storage not ready: " + err.Error()
+		}
+		return monitoring.HealthStatusHealthy, "storage ready"
+	})
 
 	// Initialize consensus with error handling
 	fmt.Fprintln(os.Stdout, branding.LogPrefix+"Initializing consensus (quantum-safe)...")
@@ -1080,15 +1125,28 @@ func main() {
 	monitor := quarantine.NewMonitor(quarantineManager, logger, 30*time.Second)
 	monitor.Start()
 
-	// Initialize wallet service for creating transactions
-	walletService, err := wallet.NewWalletService()
+	// Initialize wallet service for creating transactions.
+	//
+	// The key is loaded from (or created at) a stable path so the node keeps
+	// one identity across restarts. Previously every start minted a fresh
+	// ML-DSA-87 keypair, which meant a new address, a permanently zero
+	// balance, stranded rewards at the old address, and — since this key
+	// also signs BFT votes — a consensus identity that churned every boot.
+	walletKeyPath := cfg.WalletKeyPath
+	if strings.TrimSpace(walletKeyPath) == "" {
+		walletKeyPath = filepath.Join(stateDir, "qsdm_validator_wallet.key")
+	}
+	walletService, err := wallet.LoadOrCreateWalletService(walletKeyPath)
 	if err != nil {
 		logger.Warn("Failed to initialize wallet service", "error", err)
 		logger.Info("Node will operate in receive-only mode")
 		healthChecker.UpdateComponentHealth("wallet", monitoring.HealthStatusDegraded,
 			"Wallet service unavailable: "+err.Error()+". Node operating in receive-only mode. This is expected if liboqs/quantum-safe crypto is not available.")
 	} else {
-		logger.Info("Wallet service initialized", "address", walletService.GetAddress(), "balance", walletService.GetBalance())
+		logger.Info("Wallet service initialized",
+			"address", walletService.GetAddress(),
+			"balance", walletService.GetBalance(),
+			"key_path", walletKeyPath)
 		healthChecker.UpdateComponentHealth("wallet", monitoring.HealthStatusHealthy, "Wallet service initialized")
 	}
 

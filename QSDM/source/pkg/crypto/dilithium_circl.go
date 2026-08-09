@@ -48,6 +48,7 @@
 package crypto
 
 import (
+	"bytes"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -90,6 +91,44 @@ func NewDilithium() *Dilithium {
 		return nil
 	}
 	return &Dilithium{signKey: sk, verifyKey: pk}
+}
+
+// NewDilithiumFromKeyPair rebuilds a signer handle from key material
+// previously returned by GetPublicKey / GetPrivateKey.
+//
+// This is what makes a node's cryptographic identity survive a restart.
+// Without it the only constructor was NewDilithium, which generates a fresh
+// keypair on every call — so a validator got a new address, a zero balance,
+// and a new consensus identity every time it started.
+//
+// Both halves are required because the CGO/liboqs backend cannot derive a
+// public key from a secret key; taking both keeps one signature working
+// across both backends. This backend additionally verifies that the pair
+// actually matches, so a truncated or mismatched key file fails loudly here
+// rather than producing signatures nobody can verify.
+//
+// Returns nil on malformed or mismatched input, matching the constructor
+// contract used by the rest of the package.
+func NewDilithiumFromKeyPair(pk, sk []byte) *Dilithium {
+	if len(sk) == 0 || len(pk) == 0 {
+		return nil
+	}
+	priv := new(mldsa87.PrivateKey)
+	if err := priv.UnmarshalBinary(sk); err != nil {
+		return nil
+	}
+	derived, ok := priv.Public().(*mldsa87.PublicKey)
+	if !ok || derived == nil {
+		return nil
+	}
+	derivedBytes, err := derived.MarshalBinary()
+	if err != nil {
+		return nil
+	}
+	if !bytes.Equal(derivedBytes, pk) {
+		return nil
+	}
+	return &Dilithium{signKey: priv, verifyKey: derived}
 }
 
 // NewDilithiumVerifyOnly returns a verify-capable handle with

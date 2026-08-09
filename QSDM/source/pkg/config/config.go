@@ -125,6 +125,19 @@ type Config struct {
 	// Wallet
 	InitialBalance float64
 
+	// WalletKeyPath is where the validator's ML-DSA-87 identity key is
+	// stored so it survives restarts. Empty (the default) resolves to
+	// <state_dir>/qsdm_validator_wallet.key.
+	//
+	// This key is the node's wallet address AND its consensus signing
+	// identity. Without persistence every restart mints a new keypair, so
+	// the balance is always zero and anything credited to the previous
+	// address is stranded. Back this file up; losing it loses the identity
+	// and any CELL held by it.
+	//
+	// Env override: QSDM_WALLET_KEY_PATH.
+	WalletKeyPath string
+
 	// Governance
 	ProposalFile string
 
@@ -616,6 +629,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if val := getEnvString("BOOTSTRAP_PEERS", ""); val != "" {
 		cfg.BootstrapPeers = getEnvStringSlice("BOOTSTRAP_PEERS", cfg.BootstrapPeers)
+	}
+	if val := strings.TrimSpace(getEnvString("QSDM_WALLET_KEY_PATH", "")); val != "" {
+		cfg.WalletKeyPath = val
 	}
 	if val := getEnvString("QSDM_GOVERNANCE_AUTHORITIES", ""); val != "" {
 		cfg.GovernanceAuthorities = getEnvStringSlice("QSDM_GOVERNANCE_AUTHORITIES", cfg.GovernanceAuthorities)

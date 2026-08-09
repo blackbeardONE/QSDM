@@ -121,16 +121,20 @@ func NewWalletService() (*WalletService, error) {
 		return nil, fmt.Errorf("failed to initialize Dilithium: liboqs/OpenSSL may not be available")
 	}
 
-	// Generate address from public key (hash of public key)
-	publicKey := dilithium.GetPublicKey()
-	hash := sha256.Sum256(publicKey)
-	address := hex.EncodeToString(hash[:])
+	return newWalletServiceFromDilithium(dilithium), nil
+}
 
+// newWalletServiceFromDilithium wraps an existing key handle. Shared by the
+// generate-fresh path above and the load-from-disk path in persist.go so the
+// address derivation (SHA256 of the public key) lives in exactly one place.
+func newWalletServiceFromDilithium(d *crypto.Dilithium) *WalletService {
+	publicKey := d.GetPublicKey()
+	hash := sha256.Sum256(publicKey)
 	return &WalletService{
-		address:   address,
-		dilithium: dilithium,
+		address:   hex.EncodeToString(hash[:]),
+		dilithium: d,
 		balance:   0, // Balances come only from canonical ledger state.
-	}, nil
+	}
 }
 
 // GetAddress returns the wallet address
