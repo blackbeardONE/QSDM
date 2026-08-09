@@ -207,3 +207,29 @@ func applyStakingDelegationWeights(vs *ValidatorSet, sl *StakingLedger) {
 		_ = vs.SetStake(val, v.Stake+pow)
 	}
 }
+
+// BondedByValidator returns a copy of validator -> total bonded stake.
+//
+// This is what makes the staking ledger usable as the source of truth for
+// validator MEMBERSHIP (see validator_registry_chainstate.go), not just for
+// re-weighting an already-declared set. A copy is returned so callers cannot
+// mutate ledger state through the map, and so the derivation reads a stable
+// snapshot rather than racing concurrent delegations.
+func (s *StakingLedger) BondedByValidator() map[string]float64 {
+	if s == nil {
+		return map[string]float64{}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[string]float64, len(s.delegated))
+	for validator, amount := range s.delegated {
+		if amount <= 0 {
+			continue
+		}
+		out[validator] = amount
+	}
+	return out
+}
+
+// Compile-time guard that the ledger can drive membership derivation.
+var _ ValidatorMembershipSource = (*StakingLedger)(nil)
