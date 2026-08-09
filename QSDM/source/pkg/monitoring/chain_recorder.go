@@ -87,3 +87,20 @@ func (chainMetricsAdapter) RecordGovAuthorityActivated(op string, postCount uint
 func (chainMetricsAdapter) RecordGovAuthorityRejected(reason string) {
 	RecordGovAuthorityRejected(reason)
 }
+
+// The three counters below feed the operator dashboard's
+// proposals_created / votes_cast / quarantines_triggered figures.
+// Metrics.Increment* methods existed for all three and GetStats
+// surfaced their values, but nothing in the tree ever called them, so
+// they read 0 forever no matter how much work the node did.
+func (chainMetricsAdapter) RecordConsensusProposal() {
+	GetMetrics().IncrementProposalsCreated()
+}
+
+func (chainMetricsAdapter) RecordConsensusVote() {
+	GetMetrics().IncrementVotesCast()
+}
+
+func (chainMetricsAdapter) RecordQuarantineTriggered() {
+	GetMetrics().IncrementQuarantinesTriggered()
+}

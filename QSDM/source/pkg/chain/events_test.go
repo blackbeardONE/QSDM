@@ -319,3 +319,10 @@ func TestEnrollmentApplier_Emits_RejectedDecodeReason(t *testing.T) {
 		t.Errorf("expected one enroll-rejected event, got %+v", pub.enroll)
 	}
 }
+
+// Consensus + quarantine counters feeding the operator dashboard. This
+// double predates them, so satisfy the interface without disturbing the
+// existing assertions.
+func (r *recordingRecorder) RecordConsensusProposal()   {}
+func (r *recordingRecorder) RecordConsensusVote()       {}
+func (r *recordingRecorder) RecordQuarantineTriggered() {}

@@ -85,6 +85,25 @@ type MetricsRecorder interface {
 	// new value. Fires once per Promote-driven activation.
 	RecordGovParamActivated(param string, value uint64)
 
+	// RecordConsensusProposal / RecordConsensusVote feed the
+	// `proposals_created` and `votes_cast` figures the operator
+	// dashboard renders from monitoring.Metrics.GetStats().
+	//
+	// Those two fields, plus `quarantines_triggered`, had their
+	// Increment* methods defined and their values surfaced on the
+	// dashboard, but NOTHING in the tree ever called them — a
+	// tree-wide search for production callers returned zero for all
+	// three. So a node that had produced 464k blocks, every one of
+	// which involved a proposal and a round of votes, still displayed
+	// 0 proposals and 0 votes. The counters were structurally
+	// incapable of being anything but zero.
+	RecordConsensusProposal()
+	RecordConsensusVote()
+
+	// RecordQuarantineTriggered feeds `quarantines_triggered`. Fires
+	// when a miner address is placed under the §8.3 fraud quarantine.
+	RecordQuarantineTriggered()
+
 	// RecordGovParamRejected increments the
 	// `qsdm_gov_param_rejected_total{reason}` counter.
 	RecordGovParamRejected(reason string)
@@ -173,6 +192,9 @@ func (noopRecorder) RecordGovAuthorityVoted(string)             {}
 func (noopRecorder) RecordGovAuthorityCrossed(string)           {}
 func (noopRecorder) RecordGovAuthorityActivated(string, uint64) {}
 func (noopRecorder) RecordGovAuthorityRejected(string)          {}
+func (noopRecorder) RecordConsensusProposal()                   {}
+func (noopRecorder) RecordConsensusVote()                       {}
+func (noopRecorder) RecordQuarantineTriggered()                 {}
 
 // recorderHolder wraps a MetricsRecorder so atomic.Value's
 // "all stored values must share an identical concrete type"

@@ -172,6 +172,9 @@ func (s *ProofIDSet) Size() int {
 type QuarantineSet struct {
 	mu          sync.Mutex
 	quarantinedUntil map[string]uint64
+	// onQuarantine, when set, is fired once per newly-quarantined
+	// address. See SetOnQuarantine.
+	onQuarantine func(addr string, until uint64)
 }
 
 // DefaultQuarantineBlocks is `Q` from MINING_PROTOCOL.md §8.3.
@@ -186,11 +189,32 @@ func NewQuarantineSet() *QuarantineSet {
 // quarantined with a later deadline, the later deadline wins.
 func (q *QuarantineSet) Add(addr string, until uint64) {
 	q.mu.Lock()
-	defer q.mu.Unlock()
+	newly := false
 	cur, ok := q.quarantinedUntil[addr]
 	if !ok || until > cur {
 		q.quarantinedUntil[addr] = until
+		newly = !ok
 	}
+	hook := q.onQuarantine
+	q.mu.Unlock()
+
+	// Fire outside the lock so an observer cannot deadlock the verifier.
+	// Only a genuinely new quarantine counts — extending an existing
+	// deadline is not a second offence.
+	if newly && hook != nil {
+		hook(addr, until)
+	}
+}
+
+// SetOnQuarantine installs an observer fired once per newly-quarantined
+// address. pkg/mining does not import pkg/monitoring (the dependency arrow
+// runs the other way), so the wiring lives in the composition root, which
+// forwards to the dashboard's quarantines_triggered counter — a figure that
+// previously had no producer anywhere in the tree and so read 0 forever.
+func (q *QuarantineSet) SetOnQuarantine(fn func(addr string, until uint64)) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.onQuarantine = fn
 }
 
 // IsQuarantined reports whether addr is quarantined at the given height.

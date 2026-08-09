@@ -194,6 +194,10 @@ func (bc *BFTConsensus) Propose(height uint64, round uint32, proposer, blockHash
 		}
 	}
 	bc.rounds[height] = cr
+	// Feeds the dashboard's proposals_created figure. Counted only on a
+	// newly-accepted proposal, not on the idempotent re-propose path above,
+	// so a retried gossip message does not inflate the count.
+	metrics().RecordConsensusProposal()
 	return cr, nil
 }
 
@@ -282,6 +286,10 @@ func (bc *BFTConsensus) PreVote(height uint64, validator, blockHash string) erro
 		Type:      VotePreVote,
 		Timestamp: time.Now(),
 	})
+	// Feeds the dashboard's votes_cast figure. Recorded after the
+	// duplicate-vote guard above, so a validator can only ever move the
+	// counter once per round.
+	metrics().RecordConsensusVote()
 
 	if locked, ok := bc.pickLockedPrevoteHash(cr); ok {
 		cr.LockedBlockHash = locked
@@ -345,6 +353,9 @@ func (bc *BFTConsensus) PreCommit(height uint64, validator, blockHash string) er
 		Type:      VotePreCommit,
 		Timestamp: time.Now(),
 	})
+	// Precommits are votes too, and count toward votes_cast. Recorded
+	// after the duplicate guard for the same reason as prevotes.
+	metrics().RecordConsensusVote()
 
 	if bc.hasQuorum(cr.Commits, cr.BlockHash) {
 		cr.Status = StatusCommitted

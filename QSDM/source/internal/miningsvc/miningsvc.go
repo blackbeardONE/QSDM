@@ -287,7 +287,7 @@ func New(cfg Config) (*Service, error) {
 		Addresses:        addrs,
 		Batches:          batches,
 		Dedup:            mining.NewProofIDSet(dedupCap),
-		Quarantine:       mining.NewQuarantineSet(),
+		Quarantine:       newObservedQuarantineSet(),
 		DAGProvider:      svc.dagFor,
 		WorkSetProvider:  svc.workSetFor,
 		DifficultyAt:     svc.difficultyFor,
