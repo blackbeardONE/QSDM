@@ -249,6 +249,47 @@ func (d *Dashboard) buildHandler() (http.Handler, error) {
 	mux.HandleFunc("/api/v1/auth/login", proxyV1Auth)
 	mux.HandleFunc("/api/v1/auth/register", proxyV1Auth)
 
+	// Read-only passthrough for the public API endpoints the dashboard page
+	// fetches directly.
+	//
+	// dashboard.js calls fetch('/api/v1/status') and
+	// fetch('/api/v1/trust/attestations/summary') with RELATIVE URLs, so they
+	// resolve against the dashboard's own origin (:8081) rather than the API
+	// (:8080). Neither path was registered here, so both fell through to the
+	// auth-required catch-all and returned 302. Both call sites swallow
+	// failures in a .catch() that deliberately leaves the panels in their
+	// loading state, so the errors were invisible and the UI simply showed
+	// "—" forever:
+	//
+	//   Network: —   Role: —   Coin: —
+	//   Tokenomics: current supply —, block reward —, epoch —, halving —, cap —
+	//
+	// The data was there the whole time; :8080 returns a full tokenomics
+	// snapshot. Only the routing was missing.
+	//
+	// These are already public on the API (pkg/api/middleware.go's
+	// isPublicEndpoint allow-list), so proxying them exposes nothing new —
+	// it just lets the page reach what it was always meant to read.
+	proxyPublicV1 := func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if authAPIProxy == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":   "Service Unavailable",
+				"message": "Dashboard is not configured with an API backend URL.",
+				"status":  http.StatusServiceUnavailable,
+			})
+			return
+		}
+		authAPIProxy.ServeHTTP(w, r)
+	}
+	mux.HandleFunc("/api/v1/status", proxyPublicV1)
+	mux.HandleFunc("/api/v1/trust/attestations/summary", proxyPublicV1)
+
 	// Contract / bridge dashboard proxy -> API backend
 	proxyAPIDashboard := func(w http.ResponseWriter, r *http.Request) {
 		if authAPIProxy == nil {
@@ -1062,10 +1103,11 @@ func (d *Dashboard) serveLoginPage(w http.ResponseWriter, r *http.Request) {
 <html>
 <head>
 	<title>%s Dashboard Login</title>
-	<link rel="stylesheet" href="/static/login.css?v=6">
+	<link rel="stylesheet" href="/static/login.css?v=7">
 </head>
 <body>
 	<h1>%s Dashboard Login</h1>
+	<p id="modeHelp" class="mode-help">Sign in with a dashboard account registered on this validator. This password is separate from your QSDM wallet passphrase.</p>
 	<noscript><div class="info"><strong>JavaScript is disabled.</strong> Login still works via normal form POST.</div></noscript>
 	<form id="loginForm" method="post" action="/api/auth/login">
 		<div class="form-group">
@@ -1076,11 +1118,17 @@ func (d *Dashboard) serveLoginPage(w http.ResponseWriter, r *http.Request) {
 			<label>Password:</label>
 			<input type="password" name="password" autocomplete="current-password" required>
 		</div>
+		<div class="form-group" id="confirmPasswordGroup" hidden>
+			<label>Confirm password:</label>
+			<input type="password" name="confirmPassword" autocomplete="new-password">
+		</div>
+		<p id="passwordPolicy" class="password-policy" hidden>Use 12–256 characters with at least one uppercase letter, lowercase letter, number, and symbol.</p>
 		<button type="submit" id="loginSubmit">Login</button>
+		<button type="button" id="registerToggle" class="secondary-button">Create dashboard login</button>
 		<div id="status" class="status" aria-live="polite"></div>
 		<div id="error" class="error" role="alert"></div>
 	</form>
-	<script src="/static/login.js?v=7"></script>
+	<script src="/static/login.js?v=9"></script>
 </body>
 </html>`, branding.Name, branding.Name)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

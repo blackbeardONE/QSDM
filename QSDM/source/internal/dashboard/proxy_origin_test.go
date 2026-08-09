@@ -28,6 +28,29 @@ func TestLoginPageKeepsAccessTokenServerSide(t *testing.T) {
 	}
 }
 
+func TestLoginPageOffersPersistentDashboardRegistration(t *testing.T) {
+	raw, err := fs.ReadFile(staticFiles, "static/login.js")
+	if err != nil {
+		t.Fatalf("read embedded login script: %v", err)
+	}
+	script := string(raw)
+	if !strings.Contains(script, "fetch('/api/v1/auth/register'") {
+		t.Fatal("login script must expose the validator's persistent registration endpoint")
+	}
+	if !strings.Contains(script, "Create dashboard login") {
+		t.Fatal("login script must give first-time operators a clear registration path")
+	}
+	if !strings.Contains(script, "passwords do not match") {
+		t.Fatal("registration must confirm the dashboard password before submission")
+	}
+	if !strings.Contains(script, "registrationPasswordError") || !strings.Contains(script, "at least 12 characters") {
+		t.Fatal("registration must reject invalid passwords before consuming an API rate-limit attempt")
+	}
+	if !strings.Contains(script, "Retry-After") || !strings.Contains(script, "Try again in") {
+		t.Fatal("login must explain and honor the server's rate-limit retry window")
+	}
+}
+
 // TestAuthProxy_stripsBrowserOriginBeforeForwarding reproduces the login
 // failure operators hit on a stock local stack:
 //
@@ -130,5 +153,80 @@ func TestCORSMiddleware_emptyAllowlistRejectsAnyOrigin(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "origin not allowed") {
 		t.Fatalf("expected the origin-not-allowed message, got %s", rec.Body.String())
+	}
+}
+
+// TestDashboard_proxiesPublicV1Endpoints is the regression test for the
+// header pills and Tokenomics panel rendering as em-dashes.
+//
+// dashboard.js fetches '/api/v1/status' and
+// '/api/v1/trust/attestations/summary' with RELATIVE URLs, so they resolve
+// against the dashboard origin (:8081), not the API (:8080). Neither path
+// was registered on the dashboard mux, so both fell through to the
+// auth-required catch-all and returned 302. Both call sites swallow errors
+// in a .catch() that deliberately leaves the panels in their loading state,
+// so the failure was invisible and the UI showed:
+//
+//	Network: —  Role: —  Coin: —
+//	Tokenomics: supply —, block reward —, epoch —, halving —, cap —
+//
+// while :8080 was serving a complete tokenomics snapshot the whole time.
+func TestDashboard_proxiesPublicV1Endpoints(t *testing.T) {
+	var gotPaths []string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPaths = append(gotPaths, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"network":"QSDM","node_role":"validator","tokenomics":{"cap_cell":"90000000.00000000"}}`))
+	}))
+	defer backend.Close()
+
+	metrics := monitoring.GetMetrics()
+	d := NewDashboard(
+		metrics, monitoring.NewHealthChecker(metrics), "0", false,
+		DashboardNvidiaLock{}, "", "", false, backend.URL, nil,
+	)
+	handler, err := d.buildHandler()
+	if err != nil {
+		t.Fatalf("buildHandler: %v", err)
+	}
+
+	for _, path := range []string{
+		"/api/v1/status",
+		"/api/v1/trust/attestations/summary",
+	} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s must be proxied to the API, got %d (302 = fell through to the auth catch-all)",
+				path, rec.Code)
+		}
+		if !strings.Contains(rec.Body.String(), "tokenomics") {
+			t.Fatalf("%s should return the backend payload, got %s", path, rec.Body.String())
+		}
+	}
+
+	if len(gotPaths) != 2 {
+		t.Fatalf("both endpoints should reach the backend, saw %v", gotPaths)
+	}
+}
+
+// Non-GET must not be proxied through the public passthrough.
+func TestDashboard_publicV1RejectsNonGet(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("a non-GET request must not reach the backend")
+	}))
+	defer backend.Close()
+
+	metrics := monitoring.GetMetrics()
+	d := NewDashboard(
+		metrics, monitoring.NewHealthChecker(metrics), "0", false,
+		DashboardNvidiaLock{}, "", "", false, backend.URL, nil,
+	)
+	handler, _ := d.buildHandler()
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/status", nil))
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("want 405 for POST, got %d", rec.Code)
 	}
 }
