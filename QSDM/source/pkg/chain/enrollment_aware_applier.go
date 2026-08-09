@@ -81,6 +81,9 @@ type EnrollmentAwareApplier struct {
 	gov        *GovApplier
 	tasks      *TaskStateStore
 	recovery   *RecoveryCapsuleStateStore
+	// staking backs qsdm/staking/v1 validator bonding, which is what
+	// makes chain-derived validator membership reachable in practice.
+	staking    *StakingLedger
 
 	mu       sync.RWMutex
 	heightFn func() uint64
@@ -198,6 +201,19 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 			return ErrRecoveryCapsuleStateNotWired
 		}
 		return recovery.ApplyEconomicTx(tx, a.accounts)
+	}
+	if tx.ContractID == StakingContractID {
+		staking := a.StakingLedger()
+		if staking == nil {
+			return ErrStakingNotWired
+		}
+		// Height is required so begin_unbond can schedule maturity
+		// deterministically; a delegate does not use it but shares the path.
+		h, ok := a.currentHeight()
+		if !ok {
+			return ErrEnrollmentHeightUnset
+		}
+		return ApplyStakingTx(staking, a.accounts, tx, h)
 	}
 	if tx.ContractID == WalletTransferContractID {
 		return ApplyWalletTransferTx(a.accounts, tx)
@@ -607,4 +623,26 @@ func (a *EnrollmentAwareApplier) RestoreFromChainReplay(from ChainReplayApplier)
 		}
 	}
 	return nil
+}
+
+// SetStakingLedger installs (or clears) the validator staking ledger.
+// qsdm/staking/v1 transactions are rejected with ErrStakingNotWired until
+// this is attached.
+func (a *EnrollmentAwareApplier) SetStakingLedger(sl *StakingLedger) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.staking = sl
+}
+
+// StakingLedger returns the attached staking ledger, or nil.
+func (a *EnrollmentAwareApplier) StakingLedger() *StakingLedger {
+	if a == nil {
+		return nil
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.staking
 }

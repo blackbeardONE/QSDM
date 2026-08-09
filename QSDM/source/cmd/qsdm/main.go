@@ -1400,6 +1400,19 @@ func main() {
 	}
 	logger.Info("Signed task-action mempool ready", "audit_row", "task-actions")
 
+	// Route qsdm/staking/v1 transactions to the staking ledger. Without
+	// this the contract is rejected with ErrStakingNotWired, nobody can
+	// bond, and validator membership can never become chain-derived in
+	// practice — it would fall back to the node-local bootstrap pair
+	// forever.
+	if aware, ok := v2Wired.StateApplier.(*chain.EnrollmentAwareApplier); ok {
+		aware.SetStakingLedger(stakingLedger)
+		logger.Info("Validator staking wired", "contract", chain.StakingContractID)
+	} else {
+		logger.Warn("Validator staking NOT wired: applier is not enrollment-aware",
+			"impact", "qsdm/staking/v1 txs will be rejected and membership stays node-local")
+	}
+
 	adminProducer := chain.NewBlockProducer(adminPool, v2Wired.StateApplier, prodCfg)
 	v2Wired.AttachToProducer(adminProducer)
 	// Integer-dust accounting fork. This changes both the balance
