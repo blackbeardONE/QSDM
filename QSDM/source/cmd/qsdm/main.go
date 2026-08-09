@@ -1287,6 +1287,30 @@ func main() {
 	}
 	stakingLedger.SetPersistPath(stakingPath)
 	nodeEvidenceManager.SetStakingLedger(stakingLedger)
+
+	// Adopt chain-state-derived validator membership when the ledger has
+	// any bonded stake.
+	//
+	// nodeValidatorSet was seeded above with the genesis bootstrap pair
+	// (the literal "bootstrap" plus this node's own wallet). That seeding
+	// is node-LOCAL: every node computes a different set, so no two peers
+	// can agree on quorum and no home node can ever become a canonical
+	// validator. See pkg/chain/validator_registry_chainstate.go.
+	//
+	// Once anyone has bonded, membership becomes a pure function of
+	// committed state and every node derives the same set. Until then the
+	// reconcile refuses (it will not produce an empty set) and we keep the
+	// bootstrap pair, so a fresh chain still starts.
+	if admitted, exited, err := chain.ReconcileValidatorMembership(nodeValidatorSet, stakingLedger); err != nil {
+		logger.Info("Validator set: using genesis bootstrap membership",
+			"reason", err.Error(),
+			"note", "membership becomes chain-derived once stake is bonded")
+	} else {
+		logger.Info("Validator set: derived from committed chain state",
+			"admitted", admitted,
+			"exited", exited,
+			"size", nodeValidatorSet.Size())
+	}
 	polTipSnap := struct {
 		mu        sync.RWMutex
 		height    uint64
@@ -1474,6 +1498,17 @@ func main() {
 			bftExec.PrunePendingHeight(blk.Height)
 			adminFinality.TrackBlockWithMeta(blk.Height, blk.Hash, blk.StateRoot)
 			adminFinality.UpdateTip(blk.Height)
+		}
+		// Re-derive membership from committed state before re-weighting, so
+		// a validator that bonded in (or unbonded out) takes effect without
+		// a restart. SyncValidatorStakesFromCommittedTip only re-weights
+		// addresses already in the set — it never admits one — so without
+		// this the set stays frozen at whatever the process started with.
+		if admitted, exited, err := chain.ReconcileValidatorMembership(nodeValidatorSet, stakingLedger); err == nil {
+			if len(admitted) > 0 || len(exited) > 0 {
+				logger.Info("Validator set membership changed",
+					"admitted", admitted, "exited", exited, "size", nodeValidatorSet.Size())
+			}
 		}
 		chain.SyncValidatorStakesFromCommittedTip(nodeValidatorSet, adminAccounts, adminProducer, stakingLedger)
 	}
