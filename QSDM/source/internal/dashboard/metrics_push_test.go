@@ -61,8 +61,17 @@ func TestMetricsPusher_PushNowIncludesSnapshot(t *testing.T) {
 		if err := json.Unmarshal(raw, &msg); err != nil {
 			t.Fatalf("unmarshal ws message: %v", err)
 		}
-		if msg.Type != "metrics" {
-			t.Fatalf("expected metrics message, got %s", msg.Type)
+		// MUST NOT be "metrics": that type is already used by
+		// dashboard.go for Metrics.GetStats(), and the page's
+		// applyMetrics() reads GetStats' field names. Broadcasting this
+		// differently-shaped snapshot under the same name made every
+		// counter fall back to `|| 0`, zeroing Uptime, Processed,
+		// Messages Sent, Proposals Created and the rest on each push.
+		if msg.Type != WSTypeChainSnapshot {
+			t.Fatalf("expected %s message, got %s", WSTypeChainSnapshot, msg.Type)
+		}
+		if msg.Type == "metrics" {
+			t.Fatal("the chain snapshot must not reuse the counter payload's message type")
 		}
 		data, ok := msg.Data.(map[string]interface{})
 		if !ok {
@@ -108,3 +117,54 @@ func TestDashboard_StartWSPush_UsesMetricsPusherWhenConfigured(t *testing.T) {
 	d.wsMetricsPusher.Stop()
 }
 
+
+// TestWSMetricsTypes_doNotCollide pins the invariant that broke the
+// dashboard's Transaction / Network / Governance / System panels.
+//
+// dashboard.go broadcasts Metrics.GetStats() as "metrics", and the page's
+// applyMetrics() reads that struct's field names (uptime_seconds,
+// transactions_processed, network_messages_sent, proposals_created,
+// quarantines_triggered, reputation_updates). MetricsPusher was broadcasting
+// a completely different struct under the SAME type, so applyMetrics found
+// none of its fields, fell back to `|| 0` on every one, and each push wiped
+// the values the HTTP poll had just rendered.
+//
+// The symptom was "Uptime 0s" on a node that had been running for over an
+// hour — impossible for a real payload, since GetStats derives uptime from
+// Metrics.StartTime which GetMetrics always sets.
+func TestWSMetricsTypes_doNotCollide(t *testing.T) {
+	if WSTypeChainSnapshot == "metrics" {
+		t.Fatal("chain snapshot must not share the counter payload's WS type")
+	}
+
+	// The counter payload must actually carry what applyMetrics reads, so a
+	// future refactor cannot silently drop these field names.
+	stats := monitoring.GetMetrics().GetStats()
+	for _, field := range []string{
+		"uptime_seconds",
+		"transactions_processed",
+		"network_messages_sent",
+		"proposals_created",
+		"quarantines_triggered",
+		"reputation_updates",
+	} {
+		if _, ok := stats[field]; !ok {
+			t.Fatalf("GetStats must expose %q — the dashboard reads it and renders 0 when absent", field)
+		}
+	}
+
+	// And the snapshot must NOT carry them, which is exactly why it needs a
+	// separate type rather than being merged into the counter payload.
+	snap := MetricsSnapshot{}
+	raw, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var asMap map[string]interface{}
+	if err := json.Unmarshal(raw, &asMap); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := asMap["uptime_seconds"]; ok {
+		t.Fatal("snapshot unexpectedly carries uptime_seconds; the two payloads would be mergeable")
+	}
+}

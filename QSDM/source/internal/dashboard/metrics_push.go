@@ -97,9 +97,32 @@ func (mp *MetricsPusher) PushCount() int {
 	return mp.pushCount
 }
 
+// WSTypeChainSnapshot is the WebSocket message type for the advanced
+// chain/finality snapshot below.
+//
+// It used to be broadcast as "metrics", colliding with
+// dashboard.go's Broadcast("metrics", d.metrics.GetStats()). Both landed on
+// the page's applyMetrics(), which reads uptime_seconds,
+// transactions_processed, network_messages_sent, proposals_created,
+// quarantines_triggered and reputation_updates. MetricsSnapshot contains
+// none of those fields, so every lookup missed, the `|| 0` fallbacks fired,
+// and each push wiped the real counters the HTTP poll had just rendered:
+//
+//	Uptime 0s   Processed 0   Messages Sent 0   Proposals Created 0
+//
+// "Uptime 0s" was the tell — GetStats derives it from Metrics.StartTime,
+// which GetMetrics always sets, so a genuine payload can never report 0 on a
+// node that has been up for over an hour.
+//
+// The snapshot's own fields (chain_height, mempool_size, peer_count, ...)
+// are not read by any dashboard script today, so this rename costs nothing
+// and stops the clobbering. Give it a distinct type rather than deleting the
+// pusher, so the data stays available for a future panel.
+const WSTypeChainSnapshot = "chain_snapshot"
+
 func (mp *MetricsPusher) push() {
 	snapshot := mp.collectSnapshot()
-	mp.hub.Broadcast("metrics", snapshot)
+	mp.hub.Broadcast(WSTypeChainSnapshot, snapshot)
 
 	mp.mu.Lock()
 	mp.pushCount++
