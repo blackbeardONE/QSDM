@@ -42,3 +42,32 @@ func TestResolveBlockProductionRole(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateBlockProductionConfiguration(t *testing.T) {
+	tests := []struct {
+		name    string
+		role    blockProductionRole
+		catchup bool
+		wantErr bool
+	}{
+		{name: "solo", role: blockProductionRoleSolo},
+		{name: "network follower catchup", role: blockProductionRoleNetworkFollower, catchup: true},
+		{name: "network follower voting", role: blockProductionRoleNetworkFollower},
+		{name: "network producer active", role: blockProductionRoleNetworkProducer},
+		{
+			name:    "network producer cannot be catchup only",
+			role:    blockProductionRoleNetworkProducer,
+			catchup: true,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateBlockProductionConfiguration(tt.role, tt.catchup)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateBlockProductionConfiguration() error = %v, wantErr %t", err, tt.wantErr)
+			}
+		})
+	}
+}

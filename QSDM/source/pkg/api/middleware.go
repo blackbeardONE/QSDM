@@ -226,6 +226,9 @@ func isPublicEndpoint(path string) bool {
 		"/api/v1/health/live",
 		"/api/v1/health/ready",
 		"/api/v1/status",
+		// Public chain membership projection used by explorers and
+		// qsdmcli stake-helper show. It contains no account or admin state.
+		"/api/v1/validators",
 		// Public API version catalogue. Read-only SDK discovery surface;
 		// see versioning.go.
 		"/api/v1/versions",

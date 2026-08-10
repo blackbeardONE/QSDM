@@ -220,6 +220,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 
 	// Public node status (node_role, coin metadata, branding). Unauthenticated.
 	mux.HandleFunc("/api/v1/status", handlers.StatusHandler)
+	// Public validator membership derived from committed staking state.
+	mux.HandleFunc("/api/v1/validators", handlers.ValidatorsHandler)
 	// Read-only full block feed for bounded ledger catch-up. Receivers must
 	// still replay and verify hashes/state roots before appending.
 	mux.HandleFunc("/api/v1/chain/blocks", handlers.ChainBlocksHandler)

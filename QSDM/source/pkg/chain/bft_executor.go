@@ -31,9 +31,10 @@ type BFTExecutor struct {
 	commitNotified map[uint64]struct{}
 	pending        *PendingProposalStore
 
-	appendOK       atomic.Uint64
-	appendSkip     atomic.Uint64
-	appendConflict atomic.Uint64
+	appendOK        atomic.Uint64
+	appendSkip      atomic.Uint64
+	appendConflict  atomic.Uint64
+	peerVoteCommits atomic.Uint64
 
 	evidence atomic.Pointer[EvidenceManager]
 
@@ -452,18 +453,19 @@ func (e *BFTExecutor) BroadcastPrecommit(height uint64, round uint32, validator,
 	return e.emit(b)
 }
 
-func (e *BFTExecutor) maybeNotifyCommit(height uint64, round uint32, blockHash string) {
+func (e *BFTExecutor) maybeNotifyCommit(height uint64, round uint32, blockHash string) bool {
 	e.mu.Lock()
 	fn := e.onCommit
 	if _, dup := e.commitNotified[height]; dup {
 		e.mu.Unlock()
-		return
+		return false
 	}
 	e.commitNotified[height] = struct{}{}
 	e.mu.Unlock()
 	if fn != nil {
 		fn(height, round, blockHash)
 	}
+	return true
 }
 
 // ApplyInbound decodes a gossip payload and applies it to consensus (idempotent for benign duplicates).
@@ -530,7 +532,9 @@ func (e *BFTExecutor) ApplyInbound(payload []byte) error {
 			}
 			return err
 		}
-		e.checkCommitted(m.Height)
+		if e.checkCommitted(m.Height) {
+			e.peerVoteCommits.Add(1)
+		}
 		return nil
 	default:
 		return fmt.Errorf("bft wire: unknown kind %q", kind)
@@ -576,15 +580,15 @@ func (e *BFTExecutor) ValidateInboundAuthentication(payload []byte) error {
 	}
 }
 
-func (e *BFTExecutor) checkCommitted(height uint64) {
+func (e *BFTExecutor) checkCommitted(height uint64) bool {
 	if e.bc == nil || !e.bc.IsCommitted(height) {
-		return
+		return false
 	}
 	cr, ok := e.bc.GetCommitted(height)
 	if !ok || cr == nil {
-		return
+		return false
 	}
-	e.maybeNotifyCommit(cr.Height, cr.Round, cr.BlockHash)
+	return e.maybeNotifyCommit(cr.Height, cr.Round, cr.BlockHash)
 }
 
 // NotifyFromConsensus runs the commit callback if consensus already committed this height (local drive).
@@ -593,6 +597,15 @@ func (e *BFTExecutor) NotifyFromConsensus(height uint64) {
 		return
 	}
 	e.checkCommitted(height)
+}
+
+// PeerVoteCommitCount reports commits first observed while applying an inbound
+// precommit. Synthetic singleton preseal never increments this counter.
+func (e *BFTExecutor) PeerVoteCommitCount() uint64 {
+	if e == nil {
+		return 0
+	}
+	return e.peerVoteCommits.Load()
 }
 
 func validateInboundProposeBlock(m *BFTWireProposeMsg) error {

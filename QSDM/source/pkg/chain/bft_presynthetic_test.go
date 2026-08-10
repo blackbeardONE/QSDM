@@ -6,6 +6,7 @@ import (
 )
 
 func TestRunSyntheticBFTRoundWithExecutor(t *testing.T) {
+	before := CurrentSyntheticPresealStats()
 	signer, address := newBFTKey(t)
 	vs := NewValidatorSet(DefaultValidatorSetConfig())
 	if err := vs.Register(address, DefaultValidatorSetConfig().MinStake); err != nil {
@@ -26,12 +27,24 @@ func TestRunSyntheticBFTRoundWithExecutor(t *testing.T) {
 	if !bc.IsCommitted(1) {
 		t.Fatal("expected height 1 committed")
 	}
+	after := CurrentSyntheticPresealStats()
+	if after.Attempts != before.Attempts+1 || after.Commits != before.Commits+1 {
+		t.Fatalf("synthetic stats = %+v, before %+v", after, before)
+	}
+	if ex.PeerVoteCommitCount() != 0 {
+		t.Fatal("synthetic preseal must not increment peer-vote commits")
+	}
 	if err := RunSyntheticBFTRoundWithExecutor(ex, vs, blk); err != nil {
 		t.Fatalf("second call should noop committed height: %v", err)
+	}
+	afterNoop := CurrentSyntheticPresealStats()
+	if afterNoop.Attempts != after.Attempts+1 || afterNoop.Commits != after.Commits {
+		t.Fatalf("idempotent synthetic stats = %+v, before %+v", afterNoop, after)
 	}
 }
 
 func TestRunSyntheticBFTRoundRefusesToImpersonateValidators(t *testing.T) {
+	before := CurrentSyntheticPresealStats()
 	signer, address := newBFTKey(t)
 	vs := NewValidatorSet(DefaultValidatorSetConfig())
 	if err := vs.Register(address, DefaultValidatorSetConfig().MinStake); err != nil {
@@ -45,6 +58,11 @@ func TestRunSyntheticBFTRoundRefusesToImpersonateValidators(t *testing.T) {
 	blk := &Block{Height: 1, StateRoot: "root"}
 	if err := RunSyntheticBFTRoundWithExecutor(ex, vs, blk); err == nil {
 		t.Fatal("synthetic round must not impersonate a validator whose key is unavailable")
+	}
+	after := CurrentSyntheticPresealStats()
+	if after.RejectedMultivalidator != before.RejectedMultivalidator+1 {
+		t.Fatalf("multi-validator rejection counter = %d, want %d",
+			after.RejectedMultivalidator, before.RejectedMultivalidator+1)
 	}
 }
 

@@ -22,9 +22,11 @@ if ([string]::IsNullOrWhiteSpace($QsdmRoot)) {
 
 $ErrorActionPreference = "Stop"
 
-if ($BlockProducer -and -not $Networked) {
-    throw "-BlockProducer requires -Networked. Solo mode already owns local block production."
-}
+$roleHelperPath = Join-Path $PSScriptRoot "validator_role_env.ps1"
+. $roleHelperPath
+$roleEnvironment = Resolve-QsdmValidatorRoleEnvironment `
+    -Networked:$Networked `
+    -BlockProducer:$BlockProducer
 
 $LocalRoot = Join-Path $QsdmRoot "source\.cache\local-validator"
 $ModeConfigPath = Join-Path $LocalRoot "validator-mode.json"
@@ -840,11 +842,11 @@ if (-not (Test-Path -LiteralPath $ConfigPath)) {
     throw "Missing validator config: $ConfigPath"
 }
 
-$env:QSDM_SOLO_VALIDATOR_MODE = if ($Networked) { "0" } else { "1" }
-$env:QSDM_NETWORK_BLOCK_PRODUCER = if ($Networked -and $BlockProducer) { "1" } else { "0" }
+$env:QSDM_SOLO_VALIDATOR_MODE = $roleEnvironment.QSDM_SOLO_VALIDATOR_MODE
+$env:QSDM_NETWORK_BLOCK_PRODUCER = $roleEnvironment.QSDM_NETWORK_BLOCK_PRODUCER
 Import-TreasuryConfig -Path $TreasuryConfigPath
 
-$env:QSDM_NETWORKED_CATCHUP_MODE = if ($Networked) { "1" } else { "0" }
+$env:QSDM_NETWORKED_CATCHUP_MODE = $roleEnvironment.QSDM_NETWORKED_CATCHUP_MODE
 $env:QSDM_PRODUCTION_MODE = "true"
 $env:QSDM_V2_ACTIVE = "1"
 $env:QSDM_REQUIRE_SQLITE_STORAGE = "1"

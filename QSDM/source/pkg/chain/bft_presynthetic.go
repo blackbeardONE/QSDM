@@ -1,6 +1,32 @@
 package chain
 
-import "fmt"
+import (
+	"fmt"
+	"sync/atomic"
+)
+
+var syntheticPresealMetrics struct {
+	attempts               atomic.Uint64
+	commits                atomic.Uint64
+	rejectedMultivalidator atomic.Uint64
+}
+
+// SyntheticPresealStats distinguishes locally manufactured singleton quorum
+// from commits completed by votes received from peers.
+type SyntheticPresealStats struct {
+	Attempts               uint64
+	Commits                uint64
+	RejectedMultivalidator uint64
+}
+
+// CurrentSyntheticPresealStats returns process-lifetime synthetic preseal counters.
+func CurrentSyntheticPresealStats() SyntheticPresealStats {
+	return SyntheticPresealStats{
+		Attempts:               syntheticPresealMetrics.attempts.Load(),
+		Commits:                syntheticPresealMetrics.commits.Load(),
+		RejectedMultivalidator: syntheticPresealMetrics.rejectedMultivalidator.Load(),
+	}
+}
 
 // RunSyntheticBFTRoundWithExecutor runs a full local propose → prevote → precommit round for height,
 // gossiping each step via exec when non-nil. Used before the block is appended (pre-seal).
@@ -9,6 +35,10 @@ import "fmt"
 func RunSyntheticBFTRoundWithExecutor(exec *BFTExecutor, vs *ValidatorSet, tentative *Block) error {
 	if exec == nil || vs == nil || tentative == nil {
 		return fmt.Errorf("chain: RunSyntheticBFTRoundWithExecutor needs executor, validator set, and tentative block")
+	}
+	syntheticPresealMetrics.attempts.Add(1)
+	if len(vs.ActiveValidators()) != 1 {
+		syntheticPresealMetrics.rejectedMultivalidator.Add(1)
 	}
 	bc := exec.Consensus()
 	if bc == nil {
@@ -60,6 +90,7 @@ func RunSyntheticBFTRoundWithExecutor(exec *BFTExecutor, vs *ValidatorSet, tenta
 		return fmt.Errorf("chain: BFT height %d did not commit after synthetic round", height)
 	}
 	exec.NotifyFromConsensus(height)
+	syntheticPresealMetrics.commits.Add(1)
 	return nil
 }
 

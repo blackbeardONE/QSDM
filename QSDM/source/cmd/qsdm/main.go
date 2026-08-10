@@ -1491,7 +1491,26 @@ func main() {
 	if productionRoleErr != nil {
 		log.Fatalf("invalid block production role: %v", productionRoleErr)
 	}
+	if err := validateBlockProductionConfiguration(productionRole, networkedCatchupMode); err != nil {
+		log.Fatalf("invalid block production configuration: %v", err)
+	}
 	localBlockProduction := productionRole.localProductionEnabled()
+	const peerVoteReactorReady = false
+	monitoring.GlobalScrapePrometheusExporter().RegisterCollector(
+		"consensus_diagnostics",
+		monitoring.ConsensusDiagnosticsCollector(
+			string(productionRole),
+			func() int { return len(nodeValidatorSet.ActiveValidators()) },
+			chain.CurrentSyntheticPresealStats,
+			bftExec.PeerVoteCommitCount,
+			peerVoteReactorReady,
+		),
+	)
+	logger.Info("Consensus provenance diagnostics enabled",
+		"role", productionRole,
+		"active_validators", len(nodeValidatorSet.ActiveValidators()),
+		"synthetic_singleton_allowed", len(nodeValidatorSet.ActiveValidators()) == 1,
+		"peer_vote_reactor_ready", peerVoteReactorReady)
 	if productionRole == blockProductionRoleSolo {
 		logger.Info("Solo validator mode: BFT seal gate and pre-seal synthetic round disabled",
 			"env_var", "QSDM_SOLO_VALIDATOR_MODE",
@@ -1868,6 +1887,8 @@ func main() {
 	// zero-balance wallet from selecting deferred bonding.
 	api.SetMiningAccountProbe(accountProbe)
 	logger.Info("/api/v1/mining/account canonical balance probe wired")
+	api.SetValidatorSetProvider(nodeValidatorSet)
+	logger.Info("/api/v1/validators committed validator membership probe wired")
 	// Signed wallet transfers are admitted to adminPool above and mutate the
 	// account store only when their containing block commits. Never wire the
 	// legacy direct-write ledger here: it bypasses persistence and peer replay.

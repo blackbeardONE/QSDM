@@ -23,6 +23,13 @@ func resolveBlockProductionRole(solo, networkProducer bool) (blockProductionRole
 	return blockProductionRoleNetworkFollower, nil
 }
 
+func validateBlockProductionConfiguration(role blockProductionRole, networkedCatchup bool) error {
+	if role == blockProductionRoleNetworkProducer && networkedCatchup {
+		return fmt.Errorf("QSDM_NETWORK_BLOCK_PRODUCER and QSDM_NETWORKED_CATCHUP_MODE cannot both be enabled")
+	}
+	return nil
+}
+
 func (r blockProductionRole) localProductionEnabled() bool {
 	return r == blockProductionRoleSolo || r == blockProductionRoleNetworkProducer
 }
