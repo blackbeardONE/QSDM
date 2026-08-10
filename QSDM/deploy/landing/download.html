@@ -420,10 +420,10 @@
           copying a keystore or passphrase into the browser. Install QSDM Hive
           1.4.16 or newer first. The extension shows the current CELL balance,
           receiving address, and wallet-to-wallet transfer controls while Hive
-          keeps the signing keys and approves every transfer. Choose your browser below. Consumer installation will use each
+          keeps the signing keys and approves every transfer. Choose your browser below. Consumer installation uses each
           browser's own store, with no ZIP extraction or shared generic download.
-          The listings are being prepared and remain unavailable until the
-          browser vendors approve them.
+          Chrome and Brave install from the approved Chrome Web Store listing;
+          the Edge and Firefox listings remain in review.
         </p>
 
         <div class="browser-options" aria-label="Browser extension stores">
@@ -436,7 +436,7 @@
               </div>
               <span class="browser-recommended" data-browser-recommended hidden>Recommended</span>
             </div>
-            <p class="browser-option-copy">One-click Chrome installation after store approval.</p>
+            <p class="browser-option-copy">One-click Chrome installation from the Chrome Web Store.</p>
             <div class="browser-option-actions">
               <a class="site-btn site-btn-solid" data-browser-install hidden rel="noopener">Install in Chrome</a>
               <span class="browser-store-state" data-browser-pending>Store listing pending</span>
@@ -495,12 +495,18 @@
         <details class="package-options">
           <summary>Advanced manual installation</summary>
           <p>
-            Store review is pending. The ZIP files below are advanced manual and
-            store-review packages. Normal Chrome on Windows and macOS accepts
-            consumer extensions only from the Chrome Web Store, and normal Firefox
-            requires a Mozilla-signed XPI.
+            Chrome and Brave users should install from the store listing above.
+            The packages here are for development and for the browsers still in
+            review. Use the <strong>Chromium manual package</strong> for hands-on
+            testing: it keeps the pinned extension identity that the Hive
+            native-messaging bridge binds to. The per-store packages omit that
+            identity because store validators reject it, so they are for review
+            portals rather than manual loading. Normal Chrome on Windows and macOS
+            accepts consumer extensions only from the Chrome Web Store, and normal
+            Firefox requires a Mozilla-signed XPI.
           </p>
           <div class="actions">
+            <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.5.1-chromium.zip" download>Chromium manual package</a>
             <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.5.1-chrome.zip" download>Chrome review package</a>
             <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.5.1-edge.zip" download>Edge review package</a>
             <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.5.1-brave.zip" download>Brave review package</a>

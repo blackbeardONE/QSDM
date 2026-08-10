@@ -3,9 +3,9 @@
   "version": "0.5.1",
   "channels": {
     "chrome": {
-      "state": "pending",
+      "state": "published",
       "store": "Chrome Web Store",
-      "install_url": null
+      "install_url": "https://chromewebstore.google.com/detail/qsdm-hive-wallet/homapjeinjlbdjhhdegcbnldkpkodepo"
     },
     "edge": {
       "state": "pending",
@@ -13,9 +13,9 @@
       "install_url": null
     },
     "brave": {
-      "state": "pending",
+      "state": "published",
       "store": "Chrome Web Store",
-      "install_url": null
+      "install_url": "https://chromewebstore.google.com/detail/qsdm-hive-wallet/homapjeinjlbdjhhdegcbnldkpkodepo"
     },
     "firefox": {
       "state": "pending",
