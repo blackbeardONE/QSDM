@@ -24,9 +24,10 @@
   guide at
   https://developers.google.com/search/docs/appearance/structured-data/dataset.
 
-  Three Distribution / ImageObject entries cover every machine-
-  readable surface the page already publishes for SDK consumers
-  and embedders:
+  Two DataDownload entries cover the machine-readable dataset
+  surfaces published for SDK consumers. The SVG badge is exposed
+  separately through Dataset.image because Google requires every
+  Dataset.distribution item to be a DataDownload:
 
     - /api/v1/audit/summary    → application/json  (score + bucket counts)
     - /api/v1/audit/items      → application/json  (per-row full list)
@@ -79,7 +80,7 @@
   "isAccessibleForFree": true,
   "creativeWorkStatus": "Published",
   "inLanguage": "en",
-  "dateModified": "2026-05-17",
+  "dateModified": "2026-08-10",
   "temporalCoverage": "2026-04-22/..",
   "publisher": {
     "@type": "Organization",
@@ -108,15 +109,15 @@
       "description": "Full per-row checklist with status, severity, category, notes, evidence pointers, and reviewer timestamps.",
       "encodingFormat": "application/json",
       "contentUrl": "https://qsdm.tech/api/v1/audit/items"
-    },
-    {
-      "@type": "ImageObject",
-      "name": "Audit score badge (SVG)",
-      "description": "Server-rendered shields.io-style SVG badge — embeddable in third-party READMEs, dashboards, and exchange listings. Same endpoint the homepage trust strip and every product landing page render.",
-      "encodingFormat": "image/svg+xml",
-      "contentUrl": "https://qsdm.tech/api/v1/audit/badge.svg"
     }
   ],
+  "image": {
+    "@type": "ImageObject",
+    "name": "QSDM public audit score badge",
+    "description": "Server-rendered SVG badge for the current QSDM public audit score.",
+    "encodingFormat": "image/svg+xml",
+    "contentUrl": "https://qsdm.tech/api/v1/audit/badge.svg"
+  },
   "variableMeasured": [
     {
       "@type": "PropertyValue",
