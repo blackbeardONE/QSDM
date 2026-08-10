@@ -3,6 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -430,4 +433,83 @@ func keysOf(m map[string]any) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// ---------------------------------------------------------------------------
+// mining-path probe
+//
+// The probe exists because every other assertion in this binary reads a
+// surface the public validator serves directly, so all of them stayed green
+// for three weeks while /api/v1/mining/* returned 502 on every request. These
+// cases pin the status codes that outage actually produced.
+// ---------------------------------------------------------------------------
+
+func miningProbeResult(t *testing.T, status int, body string) result {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/mining/work" {
+			t.Errorf("probe requested %q, want /api/v1/mining/work", r.URL.Path)
+		}
+		if r.Method != http.MethodGet {
+			t.Errorf("probe used %s, want GET (the probe must not mutate a live network)", r.Method)
+		}
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	rs := &results{}
+	validateMiningPath(srv.Client(), srv.URL, rs)
+	if len(rs.rows) != 1 {
+		t.Fatalf("expected exactly one assertion row, got %d", len(rs.rows))
+	}
+	return rs.rows[0]
+}
+
+func TestValidateMiningPath_ServedWorkPasses(t *testing.T) {
+	row := miningProbeResult(t, http.StatusOK, `{"epoch":7,"work_set_root":"ab","difficulty":65536}`)
+	if !row.ok {
+		t.Fatalf("expected a served work payload to pass, got failure: %s", row.msg)
+	}
+}
+
+func TestValidateMiningPath_GatewayCannotReachValidator(t *testing.T) {
+	// The exact shape of the live outage: qsdm-home-gateway answers, its
+	// backend does not. Body is the gateway's own ErrorHandler string.
+	row := miningProbeResult(t, http.StatusBadGateway, "local validator unavailable\n")
+	if row.ok {
+		t.Fatal("expected HTTP 502 to fail the probe — this is the outage it exists to catch")
+	}
+	if !strings.Contains(row.msg, "502") {
+		t.Errorf("failure message should name the status so an operator can triage: %s", row.msg)
+	}
+}
+
+func TestValidateMiningPath_ReadOnlyFollowerFails(t *testing.T) {
+	// miningsvc returns ErrMiningUnavailable when ReadOnly, which is set
+	// from !localBlockProduction. Distinguished from 502 because the fix
+	// is a role change, not a restart.
+	row := miningProbeResult(t, http.StatusServiceUnavailable, `{"error":"mining unavailable"}`)
+	if row.ok {
+		t.Fatal("expected HTTP 503 to fail the probe")
+	}
+	if !strings.Contains(row.msg, "503") {
+		t.Errorf("failure message should name the status: %s", row.msg)
+	}
+}
+
+func TestValidateMiningPath_NonJSONBodyDoesNotPassOnStatusAlone(t *testing.T) {
+	// A caching proxy or captive portal can answer 200 with HTML in the
+	// validator's place; a status-only check would call that healthy.
+	row := miningProbeResult(t, http.StatusOK, "<html>proxy error</html>")
+	if row.ok {
+		t.Fatal("expected a 200 with a non-JSON body to fail")
+	}
+}
+
+func TestValidateMiningPath_EmptyObjectFails(t *testing.T) {
+	row := miningProbeResult(t, http.StatusOK, `{}`)
+	if row.ok {
+		t.Fatal("expected a 200 with an empty JSON object to fail")
+	}
 }

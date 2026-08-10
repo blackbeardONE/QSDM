@@ -114,6 +114,15 @@ func main() {
 	// sources wants an alarm the moment that number drops. The default
 	// 0 disables the check so existing users see no behaviour change.
 	minAttested := flag.Int("min-attested", 0, "Minimum summary.attested count required to pass (0 = disabled).")
+	// The trust endpoints are served by the public validator directly, so
+	// they stay green while the mining and write path — which Caddy routes
+	// through the relay to a home validator — is dead. That is not
+	// hypothetical: the write path returned 502 continuously for three
+	// weeks while this probe reported healthy every 30 minutes, because
+	// every assertion above reads a surface that does not traverse it.
+	// Defaults off so third-party users see no behaviour change, matching
+	// --min-attested; QSDM's own external probe enables it explicitly.
+	checkMiningPath := flag.Bool("check-mining-path", false, "Also assert that the mining work endpoint is reachable end to end (exercises the relay -> home gateway -> validator path).")
 	showVersion := flag.Bool("version", false, "Print build metadata (release tag, git SHA, build date, runtime) and exit.")
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
@@ -171,10 +180,74 @@ func main() {
 		validateRecent(recent, summary, rs)
 	}
 
+	if *checkMiningPath {
+		validateMiningPath(client, cleanBase, rs)
+	}
+
 	emit(rs, summary, recent, *jsonOut)
 
 	if !rs.allOK() {
 		os.Exit(2)
+	}
+}
+
+// validateMiningPath asserts the public mining surface is actually reachable.
+//
+// GET /mining/work is deliberately the probe: it is non-mutating, needs no
+// credentials, and Caddy routes every /api/v1/mining/* request down the same
+// chain as a proof submission (relay -> tunnel -> qsdm-home-gateway ->
+// local validator). A submit-shaped POST would exercise the identical hops
+// while writing to a live network, so it buys nothing and costs correctness.
+//
+// The status codes are distinguished because they fail in different places
+// and need different operator action:
+//
+//	502 — the gateway answered but could not reach its backend validator.
+//	503 — the validator answered but mining is unavailable, which is the
+//	      normal state of a read-only follower (ReadOnly is set from
+//	      !localBlockProduction), not a crash.
+func validateMiningPath(c *http.Client, base string, rs *results) {
+	const name = "mining-path-reachable"
+
+	req, err := http.NewRequest(http.MethodGet, base+"/api/v1/mining/work", nil)
+	if err != nil {
+		rs.fail(name, err.Error())
+		return
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.Do(req)
+	if err != nil {
+		rs.fail(name, err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		rs.fail(name, fmt.Sprintf("HTTP %d but body could not be read: %v", resp.StatusCode, readErr))
+		return
+	}
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// A 200 carrying something other than a JSON object means a proxy
+		// or error page answered in the validator's place, which would
+		// otherwise pass a status-only check.
+		var payload map[string]json.RawMessage
+		if err := json.Unmarshal(body, &payload); err != nil {
+			rs.fail(name, fmt.Sprintf("HTTP 200 but body is not a JSON object: %s", snippet(body)))
+			return
+		}
+		if len(payload) == 0 {
+			rs.fail(name, "HTTP 200 with an empty JSON object — no work payload was served")
+			return
+		}
+		rs.pass(name)
+	case http.StatusBadGateway:
+		rs.fail(name, fmt.Sprintf("HTTP 502 — relay reached the home gateway but the gateway could not reach its local validator: %s", snippet(body)))
+	case http.StatusServiceUnavailable:
+		rs.fail(name, fmt.Sprintf("HTTP 503 — validator reachable but mining is unavailable (read-only follower, or still starting): %s", snippet(body)))
+	default:
+		rs.fail(name, fmt.Sprintf("unexpected HTTP %d: %s", resp.StatusCode, snippet(body)))
 	}
 }
 
