@@ -74,6 +74,39 @@ class SecretScannerTests(unittest.TestCase):
         self.assertIn("literal-personal-unix-home", rules)
         self.assertIn("consumer-email-address", rules)
 
+    def test_rejects_structured_secret_literals(self) -> None:
+        # Built by concatenation so this file does not itself trip the scanner.
+        secret = "hunter2" * 2
+        colon, equals = ":" + " ", " " + "=" + " "
+        lines = [
+            "password" + colon + f'"{secret}"',
+            '"passphrase"' + colon + f'"{secret}"',
+            "'client_secret'" + colon + f"'{secret}'",
+            "api_key" + equals + f'"{secret}"',
+            # A suffixed key carries no quotes of its own and must still match.
+            "user_password" + colon + f'"{secret}"',
+        ]
+        findings = content_findings("config.json", "\n".join(lines).encode())
+        self.assertEqual([finding.line for finding in findings], [1, 2, 3, 4, 5])
+        self.assertEqual(
+            {finding.rule for finding in findings}, {"literal-structured-secret"}
+        )
+
+    def test_allows_hyphenated_html_autocomplete_tokens(self) -> None:
+        # A ternary over autocomplete tokens reads like `password': '...'`.
+        # The key's quoting is unbalanced there, so it must not be treated as
+        # a `name: "value"` pair.
+        content = (
+            "passwordInput.autocomplete = "
+            "registering ? 'new-password' : 'current-password';\n"
+        )
+        self.assertEqual(
+            content_findings(
+                "QSDM/source/internal/dashboard/static/login.js", content.encode()
+            ),
+            [],
+        )
+
     def test_allows_portable_script_placeholders(self) -> None:
         content = (
             "C:" + "\\Users\\<you>\\.qsdm\\wallet.json\n"
