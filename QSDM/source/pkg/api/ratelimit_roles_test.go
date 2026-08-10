@@ -163,6 +163,73 @@ func TestRoleRateLimiter_HealthBypass(t *testing.T) {
 	}
 }
 
+func TestRoleRateLimiter_AuthEndpointsDoNotShareAnonymousTrafficBucket(t *testing.T) {
+	cfg := RoleRateLimiterConfig{
+		Admin:     RoleTier{MaxRequests: 10, Window: time.Minute},
+		User:      RoleTier{MaxRequests: 5, Window: time.Minute},
+		Anonymous: RoleTier{MaxRequests: 1, Window: time.Minute},
+	}
+	rl := NewRoleRateLimiter(cfg)
+
+	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Ordinary anonymous traffic consumes the shared role bucket.
+	publicReq := httptest.NewRequest(http.MethodGet, "/api/v1/tasks", nil)
+	publicReq.RemoteAddr = "127.0.0.1:1234"
+	publicRec := httptest.NewRecorder()
+	handler.ServeHTTP(publicRec, publicReq)
+	if publicRec.Code != http.StatusOK {
+		t.Fatalf("first anonymous request should pass, got %d", publicRec.Code)
+	}
+
+	blockedReq := httptest.NewRequest(http.MethodGet, "/api/v1/tasks", nil)
+	blockedReq.RemoteAddr = "127.0.0.1:5678"
+	blockedRec := httptest.NewRecorder()
+	handler.ServeHTTP(blockedRec, blockedReq)
+	if blockedRec.Code != http.StatusTooManyRequests {
+		t.Fatalf("shared anonymous bucket should be exhausted, got %d", blockedRec.Code)
+	}
+
+	// Authentication remains reachable from the same IP. The outer
+	// endpoint-specific limiter and account lockout still protect it.
+	for _, path := range []string{"/api/v1/auth/login", "/api/v1/auth/register"} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.RemoteAddr = "127.0.0.1:9012"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s must not be starved by public polling, got %d", path, rec.Code)
+		}
+	}
+}
+
+func TestAuthBypassStillUsesEndpointSpecificPreAuthLimit(t *testing.T) {
+	roleLimiter := NewRoleRateLimiter(RoleRateLimiterConfig{
+		Admin:     RoleTier{MaxRequests: 1, Window: time.Minute},
+		User:      RoleTier{MaxRequests: 1, Window: time.Minute},
+		Anonymous: RoleTier{MaxRequests: 1, Window: time.Minute},
+	})
+	preAuthLimiter := NewRateLimiter(100, time.Minute)
+	handler := preAuthLimiter.RateLimitMiddleware(roleLimiter.Middleware(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) },
+	)))
+
+	for i := 0; i < 6; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+		req.RemoteAddr = "127.0.0.1:1234"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if i < 5 && rec.Code != http.StatusOK {
+			t.Fatalf("login request %d should pass dedicated 5/min limit, got %d", i+1, rec.Code)
+		}
+		if i == 5 && rec.Code != http.StatusTooManyRequests {
+			t.Fatalf("sixth login request must still be rate-limited, got %d", rec.Code)
+		}
+	}
+}
+
 func TestRoleRateLimiter_MiningBypass(t *testing.T) {
 	// Mining endpoints are designed for high-frequency miner
 	// traffic and have their own consensus-level abuse

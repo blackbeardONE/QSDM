@@ -109,6 +109,17 @@ func (rl *RoleRateLimiter) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// Login and registration already have tighter, endpoint-specific
+		// pre-auth limits in RateLimiter (5/min and 3/min respectively), and
+		// failed passwords are additionally covered by per-account lockout.
+		// Do not also charge them to the shared anonymous role bucket. A local
+		// Hive installation legitimately polls several public task endpoints;
+		// those requests can exhaust the anonymous bucket and otherwise prevent
+		// the operator from signing in with correct credentials.
+		if r.URL.Path == "/api/v1/auth/login" || r.URL.Path == "/api/v1/auth/register" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		// Mining-protocol endpoints are designed for high-
 		// frequency miner traffic (the canonical /work poll
 		// is every ~2s, /challenge is every accepted proof,
