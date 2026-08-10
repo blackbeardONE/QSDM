@@ -145,6 +145,27 @@ public static class QsdmProcessTimes
     return [QsdmProcessTimes]::GetStartTimeUtc($ProcessIdentifier)
 }
 
+# Same reasoning as start_local_validator.ps1: Get-FileHash is PS 4.0+ and is
+# unresolvable in some hosts this stack is launched from. A throw here kills
+# the supervisor itself, after which nothing restarts the validator or the
+# gateway -- so the dependency is removed even though this path has not failed
+# in production yet.
+function Get-QsdmFileSha256 {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        try {
+            $bytes = $sha.ComputeHash($stream)
+        } finally {
+            $stream.Close()
+        }
+    } finally {
+        $sha.Dispose()
+    }
+    return ([BitConverter]::ToString($bytes) -replace '-', '').ToLowerInvariant()
+}
+
 function Write-WatchdogIdentity {
     $process = Get-Process -Id $PID -ErrorAction Stop
     $identity = [ordered]@{
@@ -153,7 +174,7 @@ function Write-WatchdogIdentity {
         process_start_utc = (Get-NativeProcessStartUtc -ProcessIdentifier $PID).ToString("o")
         process_path = $process.Path
         script = [IO.Path]::GetFullPath($PSCommandPath)
-        script_sha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        script_sha256 = Get-QsdmFileSha256 -Path $PSCommandPath
         qsdm_root = $QsdmRoot
         written_at_utc = [DateTime]::UtcNow.ToString("o")
     }

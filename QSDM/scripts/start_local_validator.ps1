@@ -63,6 +63,36 @@ function Select-NewestExistingPath {
         Select-Object -First 1 -ExpandProperty FullName
 }
 
+# Deliberately avoids Get-FileHash, which is documented as PS 4.0+ but is
+# absent on stripped Windows SKUs and in constrained-language hosts.
+# build_release.ps1 dropped the same dependency for the same reason.
+#
+# This is not theoretical here. When watch_local_stack.ps1 spawned this script
+# the cmdlet was unresolvable in the child host, and the observed failure was:
+#
+#   Get-FileHash : The term 'Get-FileHash' is not recognized as the name of a
+#   cmdlet ... at start_local_validator.ps1:100
+#
+# The integrity check below never got to throw -- the function died with
+# CommandNotFoundException, so the validator never started and the home gateway
+# answered "local validator unavailable" for three weeks. SHA256 has been in
+# .NET since 4.0 and resolves in every host this script can be launched from.
+function Get-QsdmFileSha256 {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        try {
+            $bytes = $sha.ComputeHash($stream)
+        } finally {
+            $stream.Close()
+        }
+    } finally {
+        $sha.Dispose()
+    }
+    return ([BitConverter]::ToString($bytes) -replace '-', '').ToLowerInvariant()
+}
+
 function Resolve-ActiveValidatorBinary {
     if (-not (Test-Path -LiteralPath $ActiveBinaryStatePath)) {
         return ""
@@ -99,7 +129,7 @@ function Resolve-ActiveValidatorBinary {
     if ((Get-Item -LiteralPath $candidate -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
         throw "Refusing a reparse-point active validator binary: $candidate"
     }
-    $actualHash = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actualHash = Get-QsdmFileSha256 -Path $candidate
     if ($actualHash -ne $expectedHash) {
         throw "Active validator binary checksum mismatch: $candidate"
     }
@@ -201,7 +231,7 @@ function Write-ValidatorProcessIdentity {
         pid = $Process.Id
         process_start_utc = $Process.StartTime.ToUniversalTime().ToString("o")
         binary = [IO.Path]::GetFullPath($BinaryPath)
-        sha256 = (Get-FileHash -LiteralPath $BinaryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        sha256 = Get-QsdmFileSha256 -Path $BinaryPath
         launcher_pid = $PID
         written_at_utc = [DateTime]::UtcNow.ToString("o")
     }
