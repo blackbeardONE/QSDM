@@ -2488,6 +2488,26 @@ func main() {
 		// nonce=0 → ApplyTx rejects → "all transactions failed
 		// state application" → tip never advances past 0.
 		soloDriver.SyncFunderNonce()
+		// Adopt the current tip as BFT-committed before production starts.
+		//
+		// The seal gate refuses to extend unless IsCommitted(tipHeight),
+		// and that entry only exists if THIS node voted the height
+		// through. A node that restarts with a persisted chain, or that is
+		// already caught up and therefore appends nothing during sync, has
+		// no such entry and is blocked forever:
+		//
+		//   blockdriver: ProduceBlock failed
+		//   error="BFT extension blocked until the current tip height is
+		//          committed in BFT"
+		//
+		// Doing it here rather than only on append is deliberate: gating
+		// the marking on "appended > 0" misses the most common case of
+		// all, a node that is simply already in sync.
+		if tip, ok := adminProducer.LatestBlock(); ok && tip != nil {
+			liveBFT.AdoptExternalCommit(tip.Height, tip.StateRoot, tip.ProducerID)
+			logger.Info("Adopted current tip as BFT-committed for production",
+				"height", tip.Height)
+		}
 		// Use a fresh background context so the driver
 		// outlives any request-scoped contexts. Stop is
 		// triggered by the existing graceful-shutdown handler
@@ -3320,13 +3340,6 @@ func startHTTPChainSync(
 					"count", appended,
 					"tip_height", producer.TipHeight(),
 					"remote_tip", remoteTip)
-				// Record the synced tip as committed locally, or the seal
-				// gate blocks this node from ever extending the chain it
-				// just caught up to. Marking the tip is sufficient: the
-				// gate only consults IsCommitted(tipHeight).
-				if tip, ok := producer.LatestBlock(); ok && tip != nil {
-					adoptSyncedTipCommit(tip)
-				}
 			}
 			if producer.HasTip() && producer.TipHeight() >= remoteTip {
 				if appended > 0 {
