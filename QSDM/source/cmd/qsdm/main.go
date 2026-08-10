@@ -1809,12 +1809,30 @@ func main() {
 				if _, member := nodeValidatorSet.GetValidator(me); !member {
 					return false, "not in the validator set (bond stake to join)"
 				}
-				proposer, err := liveBFT.ProposerForRound(0)
+				// Use the CURRENT round for the height we are about to
+				// seal, not round 0.
+				//
+				// proposerForRoundLocked selects idx = round % len(active),
+				// so round 0 always resolves to the highest-staked
+				// validator. Hardcoding 0 would mean only that one node
+				// ever produces, and if it went offline the chain would
+				// halt with every other validator politely declining
+				// forever — reintroducing exactly the single point of
+				// failure this work exists to remove.
+				//
+				// NextRoundAfterTimeout advances when a round's deadline
+				// passes without a commit, which is the failover path:
+				// duty rotates to the next validator until someone seals.
+				nextHeight := adminProducer.TipHeight() + 1
+				round := liveBFT.NextRoundAfterTimeout(nextHeight)
+				proposer, err := liveBFT.ProposerForRound(round)
 				if err != nil {
 					return false, "no proposer for this round: " + err.Error()
 				}
 				if proposer != me {
-					return false, "not the proposer this round (proposer=" + proposer + ")"
+					return false, fmt.Sprintf(
+						"not the proposer for height %d round %d (proposer=%s)",
+						nextHeight, round, proposer)
 				}
 				return true, ""
 			}
