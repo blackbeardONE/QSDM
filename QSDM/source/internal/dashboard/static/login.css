@@ -4,6 +4,18 @@ body {
 	margin: 100px auto;
 	padding: 20px;
 }
+.mode-help {
+	color: #444;
+	font-size: 14px;
+	line-height: 1.45;
+	margin: 0 0 20px;
+}
+.password-policy {
+	color: #555;
+	font-size: 13px;
+	line-height: 1.4;
+	margin: -4px 0 14px;
+}
 .form-group {
 	margin-bottom: 15px;
 }
@@ -26,6 +38,15 @@ button {
 }
 button:hover {
 	background: #0056b3;
+}
+.secondary-button {
+	margin-top: 10px;
+	background: transparent;
+	color: #0056b3;
+	border: 1px solid #8cbbea;
+}
+.secondary-button:hover {
+	background: #eef6ff;
 }
 .error {
 	color: #c62828;
