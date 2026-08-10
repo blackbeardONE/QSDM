@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/tyler-smith/go-bip39"
 )
 
 func TestGenerateRestoreRoundTrip(t *testing.T) {
@@ -87,10 +89,22 @@ func TestRestoreRejectsBadChecksum(t *testing.T) {
 	defer generated.ZeroSecrets()
 
 	parts := strings.Fields(generated.Words)
-	parts[len(parts)-1] = parts[0]
-	if _, err := Restore(strings.Join(parts, " ")); err == nil {
-		t.Fatal("expected checksum error")
+	originalLastWord := parts[len(parts)-1]
+	for _, replacement := range bip39.GetWordList() {
+		if replacement == originalLastWord {
+			continue
+		}
+		parts[len(parts)-1] = replacement
+		candidate := strings.Join(parts, " ")
+		if bip39.IsMnemonicValid(candidate) {
+			continue
+		}
+		if _, err := Restore(candidate); err == nil {
+			t.Fatal("expected checksum error")
+		}
+		return
 	}
+	t.Fatal("could not construct an invalid-checksum mnemonic")
 }
 
 func TestWordsFromEntropy(t *testing.T) {

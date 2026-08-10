@@ -45,8 +45,9 @@ type BFTGossipStats struct {
 
 // BFTGossipIngress validates inbound BFT gossip (decode envelope, dedupe, rate limits) and applies to executor.
 type BFTGossipIngress struct {
-	exec *chain.BFTExecutor
-	rep  *ReputationTracker
+	exec     *chain.BFTExecutor
+	authExec *chain.BFTExecutor
+	rep      *ReputationTracker
 	// participates gates whether inbound consensus messages are applied
 	// or only validated and relayed. See SetParticipationGate.
 	participates func() bool
@@ -59,11 +60,11 @@ type BFTGossipIngress struct {
 	maxPerPeer  int
 	peerBuckets map[string][]time.Time
 
-	statIngressOK     atomic.Uint64
-	statDedupe        atomic.Uint64
-	statRateLimited   atomic.Uint64
-	statRejectedWire  atomic.Uint64
-	statApplyErrors   atomic.Uint64
+	statIngressOK    atomic.Uint64
+	statDedupe       atomic.Uint64
+	statRateLimited  atomic.Uint64
+	statRejectedWire atomic.Uint64
+	statApplyErrors  atomic.Uint64
 }
 
 // Stats returns ingress counters since process start.
@@ -96,6 +97,7 @@ func NewBFTGossipIngress(cfg BFTGossipConfig, exec *chain.BFTExecutor) *BFTGossi
 	}
 	return &BFTGossipIngress{
 		exec:        exec,
+		authExec:    exec,
 		rep:         nil,
 		seenIDs:     make(map[string]time.Time),
 		maxSeen:     cfg.MaxSeenEntries,
@@ -104,6 +106,15 @@ func NewBFTGossipIngress(cfg BFTGossipConfig, exec *chain.BFTExecutor) *BFTGossi
 		maxPerPeer:  cfg.MaxPerWindow,
 		peerBuckets: make(map[string][]time.Time),
 	}
+}
+
+// SetAuthenticationExecutor installs signature validation for receive-only
+// relays. It does not cause the executor to apply messages to consensus.
+func (g *BFTGossipIngress) SetAuthenticationExecutor(exec *chain.BFTExecutor) {
+	if g == nil {
+		return
+	}
+	g.authExec = exec
 }
 
 // SetReputationTracker optionally penalizes peers who relay provable BFT equivocation payloads.
@@ -183,6 +194,11 @@ func (g *BFTGossipIngress) HandlePeerMessage(peerID string, payload []byte) erro
 			if rep != nil && errors.Is(err, chain.ErrBFTEquivocation) {
 				rep.RecordEvent(peerID, EventProtocolViolation, 0)
 			}
+			return err
+		}
+	} else if g.authExec != nil {
+		if err := g.authExec.ValidateInboundAuthentication(payload); err != nil {
+			g.statApplyErrors.Add(1)
 			return err
 		}
 	}

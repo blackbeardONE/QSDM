@@ -359,6 +359,7 @@ type Wired struct {
 	GovParams       *chainparams.InMemoryParamStore
 	GovAuthVotes    *chainparams.InMemoryAuthorityVoteStore
 	TaskState       *chain.TaskStateStore
+	StreamState     *chain.StreamStateStore
 	RecoveryState   *chain.RecoveryCapsuleStateStore
 
 	// RecentRejections is the bounded ring of §4.6 attestation
@@ -403,6 +404,8 @@ func Wire(cfg Config) (*Wired, error) {
 	aware := chain.NewEnrollmentAwareApplier(cfg.Accounts, enrollAp)
 	taskState := chain.NewTaskStateStore()
 	aware.SetTaskStateStore(taskState)
+	streamState := chain.NewStreamStateStore()
+	aware.SetStreamStateStore(streamState)
 	recoveryState := chain.NewRecoveryCapsuleStateStore()
 	aware.SetRecoveryCapsuleStateStore(recoveryState)
 
@@ -629,6 +632,7 @@ func Wire(cfg Config) (*Wired, error) {
 	//
 	//   - slashing.AdmissionChecker  (slash txs)
 	//   - enrollment.AdmissionChecker (enroll/unenroll txs)
+	//   - chain.StreamAdmissionChecker (CELL stream signatures)
 	//   - chain.RecoveryCapsuleAdmissionChecker (legacy-wallet recovery)
 	//   - cfg.BaseAdmit                (everything else: POL/BFT)
 	//
@@ -642,7 +646,8 @@ func Wire(cfg Config) (*Wired, error) {
 		chainparams.AdmissionChecker(
 			slashing.AdmissionChecker(
 				enrollment.AdmissionChecker(
-					chain.RecoveryCapsuleAdmissionChecker(cfg.BaseAdmit)))))
+					chain.StreamAdmissionChecker(
+						chain.RecoveryCapsuleAdmissionChecker(cfg.BaseAdmit))))))
 
 	// HTTP handler hookup. All four mining endpoints
 	//
@@ -663,6 +668,8 @@ func Wire(cfg Config) (*Wired, error) {
 	api.SetSlashMempool(cfg.Pool)
 	api.SetTaskActionMempool(cfg.Pool)
 	api.SetTaskStateProvider(taskState)
+	api.SetStreamActionMempool(cfg.Pool)
+	api.SetStreamStateProvider(streamState)
 	api.SetRecoveryCapsuleMempool(cfg.Pool)
 	api.SetRecoveryCapsuleStateProvider(recoveryState)
 	api.SetEnrollmentRegistry(state)
@@ -753,6 +760,7 @@ func Wire(cfg Config) (*Wired, error) {
 		GovParams:        govStore,
 		GovAuthVotes:     govVotes,
 		TaskState:        taskState,
+		StreamState:      streamState,
 		RecoveryState:    recoveryState,
 		RecentRejections: rejectionStore,
 		SealedBlockHook:  hook,
@@ -1017,7 +1025,7 @@ func ReinstallAdmissionGate(pool *mempool.Mempool, prev func(*mempool.Tx) error)
 	if pool == nil {
 		return
 	}
-	// Mirror Wire()'s stack: gov > slashing > enrollment > recovery > prev.
+	// Mirror Wire()'s stack: gov > slashing > enrollment > streams > recovery > prev.
 	// Each layer only intercepts its own ContractID, so the
 	// order is structurally safe but kept stable for
 	// readability and ease of comparison with Wire().
@@ -1025,7 +1033,8 @@ func ReinstallAdmissionGate(pool *mempool.Mempool, prev func(*mempool.Tx) error)
 		chainparams.AdmissionChecker(
 			slashing.AdmissionChecker(
 				enrollment.AdmissionChecker(
-					chain.RecoveryCapsuleAdmissionChecker(prev)))))
+					chain.StreamAdmissionChecker(
+						chain.RecoveryCapsuleAdmissionChecker(prev))))))
 }
 
 // AttachToProducer wires the post-construction half of the

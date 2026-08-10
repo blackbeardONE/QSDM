@@ -23,11 +23,15 @@
 #   - `CHANGELOG.md`               → publish-history record
 #
 # External requirement:
-#   - `NPM_TOKEN` repository secret with publish rights on the `qsdm-sdk`
-#     package. Provenance is enabled (`publishConfig.provenance: true`
-#     plus `id-token: write` permission below) so each release on the
-#     registry carries a Sigstore attestation linking the tarball to the
-#     exact GitHub Actions run that produced it.
+#   - Preferred: configure npm trusted publishing for `qsdm-sdk` with
+#     GitHub owner `blackbeardONE`, repository `QSDM`, and workflow file
+#     `sdk-javascript-publish.yml`.
+#   - Transitional fallback: an `NPM_TOKEN` repository secret belonging to
+#     the package owner (`anachronoa`) with publish rights on `qsdm-sdk`.
+#     The fallback is intentionally identity-checked before use.
+#
+# Trusted publishing uses the `id-token: write` permission below and creates
+# provenance without storing a long-lived npm credential in GitHub.
 name: Publish JavaScript SDK to npm
 
 on:
@@ -60,11 +64,19 @@ jobs:
         working-directory: QSDM/source/sdk/javascript
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # A manual rerun must publish the requested immutable tag, never
+          # whatever happens to be at the default branch at rerun time.
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "20"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
+
+      - name: Install trusted-publishing npm CLI
+        run: npm install --global npm@12.0.2
 
       - name: Resolve tag
         id: tag
@@ -88,10 +100,7 @@ jobs:
             echo "::error::tag suffix '$EXPECTED' does not match package.json version '$ACTUAL'"
             exit 1
           fi
-          echo "Publishing qsdm@${ACTUAL} from tag ${TAG}"
-
-      - name: Install (no production deps; this is a zero-dep package)
-        run: npm ci --ignore-scripts || npm install --ignore-scripts --no-audit --no-fund
+          echo "Publishing qsdm-sdk@${ACTUAL} from tag ${TAG}"
 
       - name: Run tests (also gated by prepublishOnly)
         run: npm test
@@ -103,13 +112,45 @@ jobs:
           npm pack
           ls -la *.tgz
 
-      - name: Publish to npm with provenance
+      - name: Publish to npm
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "::error::NPM_TOKEN secret is not set; cannot publish."
+
+          # npm trusted publishing exchanges GitHub's short-lived OIDC token
+          # for publish authority. Ignore setup-node's token-oriented npmrc so
+          # a stale NODE_AUTH_TOKEN cannot shadow the OIDC path.
+          set +e
+          OIDC_OUTPUT="$({
+            NPM_CONFIG_USERCONFIG=/dev/null npm publish \
+              --registry=https://registry.npmjs.org \
+              --access public
+          } 2>&1)"
+          OIDC_STATUS=$?
+          set -e
+          printf '%s\n' "$OIDC_OUTPUT"
+          if [ "$OIDC_STATUS" -eq 0 ]; then
+            exit 0
+          fi
+
+          # Only authentication/authorization failures may use the temporary
+          # compatibility path. Build, package, and version errors stay fatal.
+          if ! printf '%s\n' "$OIDC_OUTPUT" | grep -Eqi \
+            'ENEEDAUTH|E401|E403|E404|need auth|unable to authenticate|not found'; then
+            exit "$OIDC_STATUS"
+          fi
+
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "::error::npm trusted publishing is not configured and NPM_TOKEN is absent. Configure qsdm-sdk for blackbeardONE/QSDM using sdk-javascript-publish.yml."
             exit 1
           fi
-          npm publish --provenance --access public
+
+          TOKEN_IDENTITY="$(NODE_AUTH_TOKEN="$NPM_TOKEN" npm whoami 2>/dev/null || true)"
+          if [ "$TOKEN_IDENTITY" != "anachronoa" ]; then
+            echo "::error::NPM_TOKEN does not authenticate as the qsdm-sdk owner 'anachronoa' (reported identity: '${TOKEN_IDENTITY:-none}')."
+            exit 1
+          fi
+
+          echo "OIDC is not configured; using the verified anachronoa token fallback."
+          NODE_AUTH_TOKEN="$NPM_TOKEN" npm publish --provenance --access public

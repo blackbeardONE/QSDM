@@ -92,12 +92,67 @@ and rollback scripts. Download them from the matching GitHub release:
 ```text
 qsdm-validator-<version>-linux-amd64.tar.gz
 qsdm-validator-<version>-windows-amd64.zip
+qsdm-home-gateway-linux-amd64
+qsdm-home-gateway-windows-amd64.exe
 ```
 
 Verify the archive against the release-level `SHA256SUMS` and Sigstore
 certificate before unpacking. Then read the package `README.md`. The scripts
 replace only the executable and preserve chain state, identity material,
 wallets, configuration, and timestamped rollback binaries.
+
+The separately signed home-gateway binary is optional. It provides the narrow
+outbound tunnel used by a home validator without exposing the validator,
+dashboard, wallet, or admin API directly.
+
+### Updating the source-checkout home validator on Windows
+
+Home-server checkouts use `scripts/update_local_validator.ps1` instead of the
+administrator-only package installer. First perform a verification-only run:
+
+```powershell
+pwsh -NoProfile -File .\scripts\update_local_validator.ps1 `
+  -PackageArchivePath C:\QSDM-Release\qsdm-validator-v0.4.7-rc.10-windows-amd64.zip `
+  -ReleaseManifestPath C:\QSDM-Release\SHA256SUMS `
+  -ReleaseManifestSignaturePath C:\QSDM-Release\SHA256SUMS.sig `
+  -ReleaseManifestCertificatePath C:\QSDM-Release\SHA256SUMS.cert.pem `
+  -ExpectedVersion v0.4.7-rc.10 `
+  -ExpectedRevision REPLACE_WITH_RELEASE_REVISION `
+  -CosignPath C:\Tools\cosign.exe `
+  -VerifyOnly
+```
+
+Use patched Cosign `2.6.2+` or `3.0.4+`. The updater rejects older Cosign
+versions. When verification succeeds, run the same command without
+`-VerifyOnly`.
+
+The update path is deliberately bounded:
+
+- it verifies the Sigstore identity of the release-level `SHA256SUMS`, the
+  archive hash, the package's inner binary hash, and embedded version/revision;
+- it takes an exclusive update lock and stops only PIDs recorded by the
+  managed validator and watchdog;
+- it records the selected executable in `validator-active.json`, so file
+  timestamps cannot silently select another binary;
+- it preserves chain state, node identity, configuration, wallets, and task
+  state;
+- it gives every process and health check a deadline;
+- it restores the previous verified binary automatically if readiness, node
+  identity, chain height, peers, task actions, executable path, or checksum do
+  not match;
+- it restarts the watchdog directly and does not query, recreate, or start a
+  Windows scheduled task during the update.
+
+The latest machine-readable outcome is stored at
+`source\.cache\local-validator\update-results\latest.json`. Timestamped
+rollback evidence is under `source\.cache\local-validator\release-backups`.
+Use `-PruneExpiredBackups` only when the default five-backup and 30-day
+retention rule is appropriate.
+
+Scheduled-task installation and repair remain separate operator actions in
+`scripts/install_local_stack_task.ps1`. Keeping that work outside the binary
+replacement transaction prevents a slow or unavailable Task Scheduler API
+from leaving an update open indefinitely.
 
 ---
 
@@ -143,6 +198,13 @@ bootstrap_peers = [
 type        = "sqlite"
 sqlite_path = "/app/data/qsdm.db"
 
+[consensus]
+# Every upgraded validator signs immediately. Keep enforcement off until all
+# validators agree on one future activation height.
+require_signed_votes = false
+signed_message_activation_height = 0
+signer_key_path = "qsdm_consensus_signer.json"
+
 [logging]
 log_file  = "/app/logs/qsdm.log"
 log_level = "info"
@@ -165,6 +227,11 @@ QSDM: Node role: validator (build profile: validator_only, mining_enabled=false)
 If you see an error mentioning `roleguard`, re-read §1 of
 [`NODE_ROLES.md`](./NODE_ROLES.md); it means your config tried to enable
 mining in a validator binary, which is unsupported.
+
+Back up /app/data/qsdm_consensus_signer.json after first start. It is a
+validator-only hot key, not a CELL wallet. Follow
+[SIGNED_CONSENSUS_ROLLOUT.md](./SIGNED_CONSENSUS_ROLLOUT.md) before enabling
+signature enforcement.
 
 ---
 

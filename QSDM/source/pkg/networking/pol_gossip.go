@@ -95,6 +95,9 @@ func (p *PolGossipIngress) HandlePeerMessage(peerID string, payload []byte) erro
 		if pl.Height == 0 || pl.LockedBlockHash == "" {
 			return fmt.Errorf("pol gossip prevote_lock invalid fields")
 		}
+		if err := chain.VerifyPrevoteLockProof(pl); err != nil {
+			return fmt.Errorf("pol gossip prevote_lock authentication: %w", err)
+		}
 		if p.follower != nil {
 			if err := p.follower.IngestPrevoteLockProof(pl); err != nil {
 				return err
@@ -107,6 +110,9 @@ func (p *PolGossipIngress) HandlePeerMessage(peerID string, payload []byte) erro
 		}
 		if cert.Height == 0 || cert.CommitDigest == "" {
 			return fmt.Errorf("pol gossip round_certificate invalid fields")
+		}
+		if err := chain.VerifyRoundCertificate(&cert); err != nil {
+			return fmt.Errorf("pol gossip round_certificate authentication: %w", err)
 		}
 		if p.follower != nil {
 			if err := p.follower.IngestRoundCertificate(&cert); err != nil {

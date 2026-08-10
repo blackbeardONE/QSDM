@@ -86,6 +86,10 @@
     "icon": "assets/icon.ico",
     "extraResources": [
       {
+        "from": "assets/app-update.yml",
+        "to": "app-update.yml"
+      },
+      {
         "from": "native/windows/x64",
         "to": "edge",
         "filter": [

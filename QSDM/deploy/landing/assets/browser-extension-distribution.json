@@ -1,0 +1,26 @@
+{
+  "schema": "qsdm.wallet-extension-distribution.v1",
+  "version": "0.5.1",
+  "channels": {
+    "chrome": {
+      "state": "pending",
+      "store": "Chrome Web Store",
+      "install_url": null
+    },
+    "edge": {
+      "state": "pending",
+      "store": "Microsoft Edge Add-ons",
+      "install_url": null
+    },
+    "brave": {
+      "state": "pending",
+      "store": "Chrome Web Store",
+      "install_url": null
+    },
+    "firefox": {
+      "state": "pending",
+      "store": "Firefox Add-ons",
+      "install_url": null
+    }
+  }
+}

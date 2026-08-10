@@ -26,7 +26,7 @@ export function MainSettings() {
         />
 
         <SwitchWrapper
-          title="Automatic Updates"
+          title="Required Updates"
           switchComponent={AutoUpdates}
           className="w-[220px]"
         />

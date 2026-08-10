@@ -18,6 +18,16 @@ does not ship a separate consumer GUI miner.
 3. Write down the 24 QSDM Recovery Words and back up the encrypted JSON.
 4. Run CELL tasks, integrations, or qualifying mining work.
 
+## Required updates
+
+Hive supports only the latest approved production version. It verifies the
+QSDM-signed release record one second after startup, checks again every 30
+minutes, and retries a temporary failure after one minute. When a newer
+approved release exists, Hive downloads and verifies it automatically, brings
+the app forward, and displays **Update and Restart**. An older or unapproved
+newer build remains blocked until its version exactly matches the approved
+release. Required updates cannot be disabled in settings.
+
 ## Linux x86-64
 
 Linux Hive connects directly to the production QSDM Network gateway for ledger,
@@ -84,7 +94,7 @@ only local Hive data. See [QSDM Wallet Recovery](WALLET_RECOVERY.md).
 
 ## QSDM Wallet browser extension
 
-The QSDM Wallet extension gives Chromium websites a small `window.qsdm`
+The QSDM Wallet extension gives Chrome, Edge, and Firefox websites a small `window.qsdm`
 provider without copying a wallet into the browser. Create or import the wallet
 once in **Settings > Wallet** and keep Hive running in the notification area.
 The extension uses that same active wallet and sees only its public address;
@@ -97,16 +107,46 @@ Hive comes to the foreground and shows the exact site and operation before each
 approval. HTTP is accepted only for local development on `localhost` or
 `127.0.0.1`.
 
-Hive 1.4.0 automatically registers the secure native bridge for the current
-user on Chrome, Edge, Chromium, and Brave without administrator access. The
-official extension has a stable pinned ID. The bridge listens only on loopback,
-authenticates each browser-host request with an ephemeral 256-bit token, and is
-not a public network API.
+Hive 1.4.12 automatically registers separate secure native bridges for the
+current user on Chrome, Edge, Chromium, Brave, and Firefox without administrator
+access. The official Chromium and Firefox packages each have a stable pinned
+identity. The bridge listens only on loopback, authenticates each browser-host
+request with an ephemeral 256-bit token, and is not a public network API.
 
-Download the versioned extension package from the QSDM download page, verify
-its SHA-256 checksum, unzip it, and load that folder once from the browser's
-extension page. Browser-store installation will replace this one-time setup
-after the extension is approved by the relevant stores.
+The QSDM download page now separates Google Chrome, Microsoft Edge, Brave, and
+Mozilla Firefox. Each primary install action is reserved for that browser's
+approved store listing, so consumers will not be sent a generic ZIP. Until the
+stores approve those listings, unsigned ZIPs remain under **Advanced manual
+installation** for developers and reviewers only. Chromium manual packages
+must be extracted and loaded in Developer mode; normal Firefox requires a
+Mozilla-signed XPI.
+
+Extension 0.4.0 added the first-run wallet handoff. A supported site requests
+`qsdm_openOnboarding`; the extension background worker opens its own
+`home.html#/onboarding/welcome?login=new` route. Sites never hard-code a
+`chrome-extension://` or `moz-extension://` address. If the provider is not
+detected, `https://qsdm.tech/wallet-start.html?login=new` continues to the
+official download page.
+
+Extension 0.4.1 connects the Telegram and email choices to the QSDM Account
+dashboard. Email uses a one-time link rather than a reusable password. Telegram
+uses Authorization Code + PKCE with server-side ID-token verification. QSDM
+Account stores verified identity and linked public wallet addresses only. It
+does not receive or replace the Hive-held wallet key, and website permissions
+remain local to Hive. See the [QSDM Account guide](QSDM_ACCOUNT.md).
+
+Extension 0.5.0 adds a CELL wallet dashboard. The extension popup displays the
+active wallet's live balance, while the full extension page and signed-in QSDM
+Account dashboard can copy the address and request a wallet-to-wallet CELL
+transfer. Hive still owns the key and presents every exact recipient and amount
+for approval. The extension's trusted internal page can read the active balance
+and request that transfer, but it cannot request arbitrary message signatures.
+These surfaces support CELL only.
+
+Extension 0.5.1 adds a direct QSDM Account action to the compact popup, while
+Hive 1.4.12 exposes the same trusted dashboard from Wallet settings. Onboarding
+shows only production-enabled sign-in methods; Telegram is active today, and
+email remains hidden until outbound email delivery is configured.
 
 ## Tasks in Hive
 

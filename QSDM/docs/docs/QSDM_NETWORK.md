@@ -2,8 +2,12 @@
 
 **Status:** Live public network
 
-**Deployed Core candidate:** `v0.4.7-rc.4` (`f362829`)
+**Latest Core candidate:** `v0.4.7-rc.9` (`ee1d5e2`)
 **Public gateway:** `https://api.qsdm.tech/api/v1`
+
+The latest downloadable candidate and a running validator can differ during a
+staged update. The public status endpoint reports the version and revision that
+are actually running.
 
 QSDM Network provides public access to the CELL ledger. It lets QSDM Hive,
 supported websites, and integrations read accepted CELL balances and chain

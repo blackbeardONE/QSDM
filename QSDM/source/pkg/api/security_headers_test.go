@@ -20,12 +20,12 @@ func TestSecurityHeaders_Baseline(t *testing.T) {
 	h.ServeHTTP(w, req)
 
 	required := map[string]string{
-		"X-Content-Type-Options":        "nosniff",
-		"X-Frame-Options":               "DENY",
-		"X-XSS-Protection":              "1; mode=block",
-		"Referrer-Policy":               "strict-origin-when-cross-origin",
-		"Cross-Origin-Opener-Policy":    "same-origin",
-		"Cross-Origin-Resource-Policy":  "same-origin",
+		"X-Content-Type-Options":       "nosniff",
+		"X-Frame-Options":              "DENY",
+		"X-XSS-Protection":             "1; mode=block",
+		"Referrer-Policy":              "strict-origin-when-cross-origin",
+		"Cross-Origin-Opener-Policy":   "same-origin",
+		"Cross-Origin-Resource-Policy": "same-origin",
 	}
 	for name, want := range required {
 		if got := w.Header().Get(name); got != want {

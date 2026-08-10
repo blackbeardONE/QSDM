@@ -31,6 +31,8 @@ test('QSDMClient and helpers are exported', () => {
     assert.equal(typeof qsdm.ApiError, 'function');
     assert.equal(typeof qsdm.isNotFound, 'function');
     assert.equal(typeof qsdm.isUnauthorized, 'function');
+    assert.equal(typeof qsdm.CellStreamWallet, 'function');
+    assert.equal(typeof qsdm.CellStreamServiceMeter, 'function');
 });
 
 test('ApiError carries status / url / body and supports the type guards', () => {
@@ -76,6 +78,54 @@ test('getBalance issues a GET to /api/v1/wallet/balance and unwraps the JSON', a
         const c = new qsdm.QSDMClient(baseURL);
         const v = await c.getBalance('addr-1');
         assert.equal(v, 1.23);
+    } finally {
+        await stopServer(srv);
+    }
+});
+
+test('getWalletNonce returns the next wallet action nonce', async () => {
+    const address = '11'.repeat(32);
+    const { srv, baseURL } = await startServer((req, res) => {
+        assert.equal(
+            req.url,
+            `/api/v1/wallet/nonce?sender=${address}`
+        );
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ sender: address, nonce: 8, next: 9 }));
+    });
+    try {
+        const client = new qsdm.QSDMClient(baseURL);
+        const out = await client.getWalletNonce(address);
+        assert.equal(out.sender, address);
+        assert.equal(out.nonce, 8);
+        assert.equal(out.next, 9);
+    } finally {
+        await stopServer(srv);
+    }
+});
+
+test('getStreamActionNonce returns the current contract action nonce', async () => {
+    const address = '22'.repeat(32);
+    const { srv, baseURL } = await startServer((req, res) => {
+        assert.equal(
+            req.url,
+            `/api/v1/streams/nonce?sender=${address}`
+        );
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
+            runtime: 'qsdm-native',
+            source: 'chain',
+            sender: address,
+            action_nonce: 0,
+            present: false,
+        }));
+    });
+    try {
+        const client = new qsdm.QSDMClient(baseURL);
+        const out = await client.getStreamActionNonce(address);
+        assert.equal(out.sender, address);
+        assert.equal(out.action_nonce, 0);
+        assert.equal(out.present, false);
     } finally {
         await stopServer(srv);
     }
@@ -135,6 +185,42 @@ test('getRecentTransactions passes address + limit query params', async () => {
         const out = await c.getRecentTransactions('addr-9', 25);
         assert.ok(out && Array.isArray(out.transactions));
         assert.equal(out.transactions.length, 2);
+    } finally {
+        await stopServer(srv);
+    }
+});
+
+test('CELL stream methods use the public stream endpoints', async () => {
+    const seen = [];
+    const { srv, baseURL } = await startServer((req, res) => {
+        let body = '';
+        req.on('data', (chunk) => { body += chunk; });
+        req.on('end', () => {
+            seen.push({ method: req.method, url: req.url, body });
+            res.setHeader('Content-Type', 'application/json');
+            if (req.method === 'POST') {
+                res.end(JSON.stringify({ status: 'accepted', action_id: 'a1' }));
+            } else if (req.url.startsWith('/api/v1/streams/stream-1')) {
+                res.end(JSON.stringify({ stream: { stream_id: 'stream-1' } }));
+            } else {
+                res.end(JSON.stringify({ streams: [] }));
+            }
+        });
+    });
+    try {
+        const client = new qsdm.QSDMClient(baseURL);
+        await client.getStreams({ payer: 'payer 1', status: 'active', serviceId: 'qsdm-vpn' });
+        await client.getStream('stream-1');
+        const envelope = { action: { id: 'a1' }, signature: 'aa', public_key: 'bb' };
+        await client.submitStreamAction(envelope);
+        assert.equal(seen[0].method, 'GET');
+        assert.ok(seen[0].url.includes('/api/v1/streams?'));
+        assert.ok(seen[0].url.includes('payer=payer%201'));
+        assert.ok(seen[0].url.includes('service_id=qsdm-vpn'));
+        assert.equal(seen[1].url, '/api/v1/streams/stream-1');
+        assert.equal(seen[2].method, 'POST');
+        assert.equal(seen[2].url, '/api/v1/streams/actions/submit-signed');
+        assert.deepEqual(JSON.parse(seen[2].body), envelope);
     } finally {
         await stopServer(srv);
     }

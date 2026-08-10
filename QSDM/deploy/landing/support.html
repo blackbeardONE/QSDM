@@ -3,169 +3,55 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>QSDM Hive Wallet Support</title>
-  <meta name="description" content="Support, setup, privacy, and troubleshooting for the QSDM Hive Wallet browser extension." />
   <meta name="theme-color" content="#061116" />
-  <link rel="canonical" href="https://qsdm.tech/support.html" />
+  <title>Support | QSDM</title>
+  <meta name="description" content="Support and security reporting paths for QSDM Hive, QSDM Account, wallets, and the CELL network." />
   <link rel="icon" href="/assets/qsdm-hive-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/assets/site.css" />
-  <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; }
-    .shell { width: min(72rem, calc(100% - 2rem)); margin: 0 auto; }
-    .support-hero { padding: 5rem 0 4rem; border-bottom: 1px solid var(--border); }
-    .eyebrow {
-      margin: 0 0 1rem; color: var(--teal); font-family: var(--mono);
-      font-size: 0.8rem; font-weight: 500;
-    }
-    h1, h2, h3, p { letter-spacing: 0; }
-    h1 { max-width: 760px; margin: 0; font-size: 3.8rem; line-height: 1.05; font-weight: 600; }
-    .lead { max-width: 690px; margin: 1.25rem 0 0; color: var(--text-2); font-size: 1.08rem; line-height: 1.65; }
-    .actions { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-top: 1.75rem; }
-    .band { padding: 4rem 0; border-bottom: 1px solid var(--border); }
-    .band-alt { background: #091b21; }
-    .section-head { max-width: 720px; margin-bottom: 2rem; }
-    .section-head h2 { margin: 0 0 0.7rem; font-size: 2.15rem; font-weight: 600; }
-    .section-head p { margin: 0; color: var(--text-2); line-height: 1.65; }
-    .steps { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--border-2); }
-    .step { padding: 1.35rem 1.5rem 0 0; }
-    .step + .step { padding-left: 1.5rem; border-left: 1px solid var(--border); }
-    .step-index { color: var(--gold); font-family: var(--mono); font-size: 0.8rem; }
-    .step h3 { margin: 0.75rem 0 0.45rem; font-size: 1.1rem; }
-    .step p { margin: 0; color: var(--text-2); line-height: 1.6; }
-    .issue-list { margin: 0; border-top: 1px solid var(--border-2); }
-    .issue-row { display: grid; grid-template-columns: minmax(190px, 0.35fr) 1fr; gap: 2rem; padding: 1.15rem 0; border-bottom: 1px solid var(--border); }
-    .issue-row dt { color: var(--text); font-weight: 600; }
-    .issue-row dd { margin: 0; color: var(--text-2); line-height: 1.6; }
-    .contact-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 3.5rem; }
-    .contact-block { border-top: 1px solid var(--border-2); padding-top: 1.25rem; }
-    .contact-block h3 { margin: 0 0 0.65rem; font-size: 1.15rem; }
-    .contact-block p { margin: 0 0 1rem; color: var(--text-2); line-height: 1.65; }
-    .warning { color: var(--warn); }
-    @media (max-width: 760px) {
-      .support-hero { padding: 3.5rem 0 3rem; }
-      h1 { font-size: 2.55rem; }
-      .steps, .contact-layout { grid-template-columns: 1fr; }
-      .step, .step + .step { padding: 1.2rem 0; border-left: 0; border-bottom: 1px solid var(--border); }
-      .issue-row { grid-template-columns: 1fr; gap: 0.4rem; }
-    }
-  </style>
+  <link rel="stylesheet" href="/assets/legal.css" />
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to content</a>
-  <header class="site-header">
-    <div class="site-header-inner">
-      <a class="site-brand" href="/">
-        <img src="/assets/qsdm-hive-icon.png" alt="" />
-        <span>QSDM</span>
-      </a>
-      <nav class="site-nav" aria-label="Primary">
-        <div class="site-nav-item">
-          <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">Network <span class="site-nav-chevron" aria-hidden="true"></span></button>
-          <div class="site-nav-panel" role="menu">
-            <a href="/network.html" role="menuitem">Overview<span class="site-nav-hint">Live CELL network</span></a>
-            <a href="/explorer.html" role="menuitem">Explorer<span class="site-nav-hint">Search + chain tip</span></a>
-            <a href="/api.html" role="menuitem">API<span class="site-nav-hint">HTTP v1 overview</span></a>
-            <a href="/validators.html" role="menuitem">Validators<span class="site-nav-hint">Bootstrap peers</span></a>
-          </div>
-        </div>
-        <div class="site-nav-item">
-          <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">Hive <span class="site-nav-chevron" aria-hidden="true"></span></button>
-          <div class="site-nav-panel" role="menu">
-            <a href="/download.html" role="menuitem">Download Hive<span class="site-nav-hint">Windows + Linux app</span></a>
-            <a href="/wallet.html" role="menuitem">Web wallet<span class="site-nav-hint">Browser self-custody</span></a>
-            <a href="/support.html" role="menuitem">Wallet support<span class="site-nav-hint">Extension help</span></a>
-          </div>
-        </div>
-        <a href="/docs/">Docs</a>
-        <div class="site-nav-item">
-          <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">Trust <span class="site-nav-chevron" aria-hidden="true"></span></button>
-          <div class="site-nav-panel" role="menu">
-            <a href="/audit.html" role="menuitem">Public audit<span class="site-nav-hint">Live checklist</span></a>
-            <a href="/trust.html" role="menuitem">Attestations<span class="site-nav-hint">NVIDIA feed</span></a>
-          </div>
-        </div>
-      </nav>
-      <div class="site-actions">
-        <a class="site-btn site-btn-solid" href="/download.html">Download</a>
-        <button class="site-menu-toggle" type="button" id="siteMenuToggle" aria-label="Open menu" aria-expanded="false">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 7H4V5H20V7ZM20 13H4V11H20V13ZM20 19H4V17H20V19Z"/></svg>
-        </button>
-      </div>
-    </div>
-    <div class="site-mobile-nav" id="siteMobileNav">
-      <div class="site-mobile-group"><div class="site-mobile-label">Network</div><a href="/network.html">Overview</a><a href="/explorer.html">Explorer</a><a href="/api.html">API</a></div>
-      <div class="site-mobile-group"><div class="site-mobile-label">Hive</div><a href="/download.html">Download Hive</a><a href="/wallet.html">Web wallet</a><a href="/support.html">Wallet support</a></div>
-      <div class="site-mobile-group"><div class="site-mobile-label">Learn</div><a href="/docs/">Docs</a><a href="/audit.html">Public audit</a><a href="/trust.html">Attestations</a></div>
+  <header class="legal-header">
+    <div class="legal-header-inner">
+      <a class="legal-brand" href="/"><img src="/assets/qsdm-hive-icon.png" alt="" /><span>QSDM</span></a>
+      <nav aria-label="Primary"><a href="/account/">Account</a><a href="/privacy.html">Privacy</a><a href="/docs/">Docs</a></nav>
     </div>
   </header>
-
-  <main id="main">
-    <section class="support-hero">
-      <div class="shell">
-        <p class="eyebrow">QSDM HIVE WALLET EXTENSION</p>
-        <h1>Wallet connection support</h1>
-        <p class="lead">Help for connecting supported websites to the wallet secured by QSDM Hive. The extension never stores your keystore JSON, passphrase, or private key.</p>
-        <div class="actions">
-          <a class="site-btn site-btn-solid" href="/download.html">Download QSDM Hive</a>
-          <a class="site-btn site-btn-ghost" href="/docs/#/qsdm-hive">Read the Hive guide</a>
-          <a class="site-btn site-btn-ghost" href="mailto:ops@qsdm.tech?subject=QSDM%20Hive%20Wallet%20support">Email support</a>
-        </div>
-      </div>
-    </section>
-
-    <section class="band">
-      <div class="shell">
-        <div class="section-head">
-          <h2>Start here</h2>
-          <p>The extension is a bridge to Hive, not a separate wallet. Hive must be installed, running, and unlocked before a website can connect.</p>
-        </div>
-        <div class="steps">
-          <div class="step"><span class="step-index">01</span><h3>Open Hive</h3><p>Install the latest QSDM Hive release and open or import your QSDM wallet.</p></div>
-          <div class="step"><span class="step-index">02</span><h3>Open the website</h3><p>Visit a supported HTTPS website and select its QSDM wallet connection command.</p></div>
-          <div class="step"><span class="step-index">03</span><h3>Approve locally</h3><p>Open the extension, connect the current site, and approve the request in Hive.</p></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="band band-alt">
-      <div class="shell">
-        <div class="section-head"><h2>Common fixes</h2><p>Use these checks before reinstalling either component.</p></div>
-        <dl class="issue-list">
-          <div class="issue-row"><dt>Hive is not running</dt><dd>Start or restart QSDM Hive and wait until the wallet status is ready. Then reopen the extension popup.</dd></div>
-          <div class="issue-row"><dt>Site is not connected</dt><dd>Open the website first, select the extension, and choose <strong>Connect This Site</strong>. Complete the approval window in Hive.</dd></div>
-          <div class="issue-row"><dt>Approval did not appear</dt><dd>Bring Hive to the foreground and check for a pending wallet request. Signing and CELL transfers always require a separate approval.</dd></div>
-          <div class="issue-row"><dt>Connection stopped after an update</dt><dd>Update Hive and the extension to their current releases, restart the browser, and reconnect the website. Store and development builds use different trusted extension identities.</dd></div>
-          <div class="issue-row"><dt>Wrong website shown</dt><dd>Make the intended HTTPS tab active before opening the extension. Local development is allowed only on <code>localhost</code> or <code>127.0.0.1</code>.</dd></div>
-        </dl>
-      </div>
-    </section>
-
-    <section class="band">
-      <div class="shell contact-layout">
-        <div class="contact-block">
-          <h3>General support</h3>
-          <p>Describe the browser, operating system, Hive version, extension version, and the visible error. Never attach wallet secrets.</p>
-          <a class="site-btn site-btn-solid" href="mailto:ops@qsdm.tech?subject=QSDM%20Hive%20Wallet%20support">ops@qsdm.tech</a>
-        </div>
-        <div class="contact-block">
-          <h3>Privacy and security</h3>
-          <p class="warning">Never send a keystore JSON file, passphrase, private key, recovery material, or approval code in a support request.</p>
-          <div class="actions">
-            <a class="site-btn site-btn-ghost" href="/privacy.html">Privacy policy</a>
-            <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/SECURITY.md" rel="noopener" target="_blank">Security reporting</a>
-          </div>
-        </div>
-      </div>
-    </section>
+  <main class="legal-main">
+    <div class="legal-intro">
+      <p class="legal-eyebrow">SUPPORT</p>
+      <h1>Get the right kind of help.</h1>
+      <p class="legal-lead">Use public support for ordinary defects and a private channel for security issues. Never share wallet recovery material.</p>
+    </div>
+    <div class="legal-content">
+      <section>
+        <h2>Product support</h2>
+        <p>For Hive, extension, account, validator, or documentation problems, search the documentation first. If the issue remains, open a GitHub issue with the affected version, operating system, expected result, and redacted logs.</p>
+        <div class="legal-actions"><a class="site-btn site-btn-solid" href="/docs/#/troubleshooting">Troubleshooting</a><a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/issues" rel="noopener" target="_blank">GitHub issues</a></div>
+      </section>
+      <section>
+        <h2>Account and privacy requests</h2>
+        <p>Email <a href="mailto:ops@qsdm.tech">ops@qsdm.tech</a> for QSDM Account access or deletion requests and general website support. Send the request from the verified account email when possible.</p>
+      </section>
+      <section>
+        <h2>Security vulnerabilities</h2>
+        <p>Use GitHub's private vulnerability-reporting page. Do not open a public issue with exploit details, credentials, private keys, wallet backups, or personal information.</p>
+        <div class="legal-actions"><a class="site-btn site-btn-solid" href="https://github.com/blackbeardONE/QSDM/security" rel="noopener" target="_blank">Report privately</a><a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/SECURITY.md" rel="noopener" target="_blank">Security policy</a></div>
+      </section>
+      <section>
+        <h2>What support will never ask for</h2>
+        <ul>
+          <li>wallet private keys or recovery phrases;</li>
+          <li>keystore JSON files or passphrases;</li>
+          <li>remote desktop access to move funds; or</li>
+          <li>payment to unlock an account or wallet.</li>
+        </ul>
+      </section>
+    </div>
   </main>
-
-  <footer class="site-footer">
-    <div class="shell"><div class="site-footer-row"><span>QSDM Hive Wallet support</span><div class="site-footer-links"><a href="/">Home</a><a href="/download.html">Download</a><a href="/docs/">Docs</a><a href="/support.html">Support</a><a href="/privacy.html">Privacy</a></div></div></div>
-  </footer>
-  <script src="/assets/site-nav.js"></script>
+  <footer class="legal-footer"><p>QSDM open-source project</p><nav><a href="/privacy.html">Privacy</a><a href="/support.html">Support</a><a href="/docs/">Documentation</a></nav></footer>
 </body>
 </html>

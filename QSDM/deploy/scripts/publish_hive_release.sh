@@ -11,8 +11,14 @@ hive_version="$2"
 agent_version="$3"
 webroot="${4:-/var/www/qsdm}"
 downloads="$webroot/downloads"
-wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.2.0}"
+wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.5.1}"
 wallet_extension="qsdm-hive-wallet-extension-${wallet_extension_version}.zip"
+wallet_extension_crx="qsdm-hive-wallet-extension-${wallet_extension_version}.crx"
+wallet_extension_chromium="qsdm-hive-wallet-extension-${wallet_extension_version}-chromium.zip"
+wallet_extension_chrome="qsdm-hive-wallet-extension-${wallet_extension_version}-chrome.zip"
+wallet_extension_edge="qsdm-hive-wallet-extension-${wallet_extension_version}-edge.zip"
+wallet_extension_brave="qsdm-hive-wallet-extension-${wallet_extension_version}-brave.zip"
+wallet_extension_firefox="qsdm-hive-wallet-extension-${wallet_extension_version}-firefox.zip"
 wallet_extension_checksums="qsdm-hive-wallet-extension-${wallet_extension_version}-SHA256SUMS.txt"
 
 if [[ ! "$hive_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -32,6 +38,11 @@ immutable_downloads=(
   "SHA256SUMS-win.txt"
   "qsdm-hive-${hive_version}-linux-SHA256SUMS.txt"
   "$wallet_extension"
+  "$wallet_extension_chromium"
+  "$wallet_extension_chrome"
+  "$wallet_extension_edge"
+  "$wallet_extension_brave"
+  "$wallet_extension_firefox"
   "$wallet_extension_checksums"
   "qsdm-edge-agent-${agent_version}-windows-x86_64.zip"
   "qsdm-edge-agent-${agent_version}-linux-x86_64.tar.gz"
@@ -43,6 +54,9 @@ immutable_downloads=(
   "qsdm-edge-gpu-helper-${agent_version}-linux-x86_64"
   "qsdm-edge-agent-${agent_version}-SHA256SUMS.txt"
 )
+if [[ -f "$stage_dir/downloads/$wallet_extension_crx" ]]; then
+  immutable_downloads+=("$wallet_extension_crx")
+fi
 update_manifests=(
   latest.yml
   alpha.yml
@@ -78,8 +92,16 @@ done
 windows_payload="$(sed -n 's/.*"manifest_base64": "\([^"]*\)".*/\1/p' \
   "$stage_dir/downloads/qsdm-hive-release-windows.json")"
 test -n "$windows_payload"
-printf '%s' "$windows_payload" | base64 --decode | \
-  grep -q '"name": "'"${wallet_extension}"'"'
+windows_manifest_json="$(printf '%s' "$windows_payload" | base64 --decode)"
+grep -q '"name": "'"${wallet_extension}"'"' <<<"$windows_manifest_json"
+if [[ -f "$stage_dir/downloads/$wallet_extension_crx" ]]; then
+  grep -q '"name": "'"${wallet_extension_crx}"'"' <<<"$windows_manifest_json"
+fi
+grep -q '"name": "'"${wallet_extension_chromium}"'"' <<<"$windows_manifest_json"
+grep -q '"name": "'"${wallet_extension_chrome}"'"' <<<"$windows_manifest_json"
+grep -q '"name": "'"${wallet_extension_edge}"'"' <<<"$windows_manifest_json"
+grep -q '"name": "'"${wallet_extension_brave}"'"' <<<"$windows_manifest_json"
+grep -q '"name": "'"${wallet_extension_firefox}"'"' <<<"$windows_manifest_json"
 for manifest in "${signed_release_manifests[@]}"; do
   grep -q '"schema": "qsdm.signed-release.v1"' "$stage_dir/downloads/$manifest"
   grep -q '"key_id": "10ab9c5710761d4c9dca59d42446e9ea0e3315d15cdc3715df1dcb8c96fa07a1"' \
@@ -87,8 +109,8 @@ for manifest in "${signed_release_manifests[@]}"; do
   manifest_payload="$(sed -n 's/.*"manifest_base64": "\([^"]*\)".*/\1/p' \
     "$stage_dir/downloads/$manifest")"
   test -n "$manifest_payload"
-  printf '%s' "$manifest_payload" | base64 --decode | \
-    grep -q '"version": "'"${hive_version}"'"'
+  manifest_json="$(printf '%s' "$manifest_payload" | base64 --decode)"
+  grep -q '"version": "'"${hive_version}"'"' <<<"$manifest_json"
 done
 
 install -d -o caddy -g caddy -m 0755 "$webroot" "$downloads" "$webroot/docs"
@@ -112,12 +134,21 @@ for file in \
   "qsdm-hive-${hive_version}-linux-x86_64.AppImage" \
   "qsdm-hive-${hive_version}-linux-x64.tar.gz" \
   "$wallet_extension" \
+  "$wallet_extension_chromium" \
+  "$wallet_extension_chrome" \
+  "$wallet_extension_edge" \
+  "$wallet_extension_brave" \
+  "$wallet_extension_firefox" \
   "$wallet_extension_checksums" \
   "qsdm-edge-agent-${agent_version}-windows-x86_64.zip" \
   "qsdm-edge-agent-${agent_version}-linux-x86_64.tar.gz"; do
   curl --fail --silent --show-error --head --max-time 30 \
     "https://qsdm.tech/downloads/$file" >/dev/null
 done
+if [[ -f "$stage_dir/downloads/$wallet_extension_crx" ]]; then
+  curl --fail --silent --show-error --head --max-time 30 \
+    "https://qsdm.tech/downloads/$wallet_extension_crx" >/dev/null
+fi
 
 atomic_install "$stage_dir/index.html" "$webroot/index.html"
 atomic_install "$stage_dir/download.html" "$webroot/download.html"
@@ -132,14 +163,16 @@ for file in "${signed_release_manifests[@]}"; do
   atomic_install "$stage_dir/downloads/$file" "$downloads/$file"
 done
 
-curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/downloads/latest.yml" | grep -qx "version: ${hive_version}"
+public_latest="$(curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/downloads/latest.yml")"
+grep -qx "version: ${hive_version}" <<<"$public_latest"
 for manifest in "${signed_release_manifests[@]}"; do
-  curl --fail --silent --show-error --max-time 30 \
-    "https://qsdm.tech/downloads/$manifest" | \
-    grep -q '"schema": "qsdm.signed-release.v1"'
+  public_envelope="$(curl --fail --silent --show-error --max-time 30 \
+    "https://qsdm.tech/downloads/$manifest")"
+  grep -q '"schema": "qsdm.signed-release.v1"' <<<"$public_envelope"
 done
-curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/download.html" | grep -q "Agent and Relay utilities"
+public_download_page="$(curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/download.html")"
+grep -q "Agent and Relay utilities" <<<"$public_download_page"
 
 echo "Published QSDM Hive ${hive_version} with Agent ${agent_version}."

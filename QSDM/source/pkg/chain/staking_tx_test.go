@@ -3,6 +3,8 @@ package chain
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
@@ -262,5 +264,41 @@ func TestEnrollmentAwareApplier_routesStakingContract(t *testing.T) {
 	}
 	if sl.DelegatedPower("home-pc") != 300 {
 		t.Fatalf("expected 300 bonded via the applier, got %v", sl.DelegatedPower("home-pc"))
+	}
+}
+
+func TestEnrollmentAwareApplier_stakingReplayIsIsolatedAndRestorable(t *testing.T) {
+	as := NewAccountStore()
+	as.Credit("operator", 1000)
+	aware := NewEnrollmentAwareApplier(as, nil)
+	aware.SetHeightFn(func() uint64 { return 7 })
+
+	stakingPath := filepath.Join(t.TempDir(), "staking.json")
+	sl := NewStakingLedger()
+	sl.SetPersistPath(stakingPath)
+	aware.SetStakingLedger(sl)
+
+	spec := aware.ChainReplayClone().(*EnrollmentAwareApplier)
+	tx := stakingTx(t, "operator", StakingPayload{
+		Action: StakingActionDelegate, Validator: "home-pc", Amount: 300,
+	})
+	if err := spec.ApplyTx(tx); err != nil {
+		t.Fatalf("speculative staking apply: %v", err)
+	}
+	if got := sl.DelegatedPower("home-pc"); got != 0 {
+		t.Fatalf("speculative replay mutated live staking: got %v", got)
+	}
+	if _, err := os.Stat(stakingPath); !os.IsNotExist(err) {
+		t.Fatalf("speculative replay wrote live persistence path: %v", err)
+	}
+
+	if err := aware.RestoreFromChainReplay(spec); err != nil {
+		t.Fatalf("restore staking replay: %v", err)
+	}
+	if got := sl.DelegatedPower("home-pc"); got != 300 {
+		t.Fatalf("restored staking power = %v, want 300", got)
+	}
+	if _, err := os.Stat(stakingPath); err != nil {
+		t.Fatalf("restored live staking was not persisted: %v", err)
 	}
 }

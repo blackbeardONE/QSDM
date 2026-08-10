@@ -117,7 +117,6 @@ func TestDashboard_StartWSPush_UsesMetricsPusherWhenConfigured(t *testing.T) {
 	d.wsMetricsPusher.Stop()
 }
 
-
 // TestWSMetricsTypes_doNotCollide pins the invariant that broke the
 // dashboard's Transaction / Network / Governance / System panels.
 //

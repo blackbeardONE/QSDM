@@ -7,6 +7,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+import { getQsdmCellAccount } from 'main/controllers/qsdm/getQsdmCellAccount';
+
 import {
   getQsdmWalletProviderPermissions,
   handleWalletProviderRequest,
@@ -58,6 +60,11 @@ const request = (method: string, params?: unknown) => ({
   params,
 });
 
+const internalRequest = (method: string, params?: unknown) => ({
+  ...request(method, params),
+  origin: 'qsdm-extension://wallet-popup',
+});
+
 describe('qsdmWalletProviderBroker', () => {
   let appDataPath = '';
 
@@ -71,11 +78,13 @@ describe('qsdmWalletProviderBroker', () => {
       sender,
     });
     mockGetQsdmTaskActionSender.mockReturnValue(sender);
+    mockSignQsdmMessageWithCli.mockClear();
     mockSignQsdmMessageWithCli.mockResolvedValue({
       address: sender,
       public_key: 'public-key',
       signature: 'signature',
     });
+    mockSubmitQsdmWalletTransferIntent.mockClear();
     mockSubmitQsdmWalletTransferIntent.mockResolvedValue({
       transaction_id: 'transaction-id',
       status: 'accepted',
@@ -84,6 +93,12 @@ describe('qsdmWalletProviderBroker', () => {
     (dialog.showMessageBox as jest.Mock).mockResolvedValue({ response: 0 });
     options.openWallet.mockReset();
     options.showHive.mockReset();
+    (getQsdmCellAccount as jest.Mock).mockClear();
+    (getQsdmCellAccount as jest.Mock).mockResolvedValue({
+      balance: 42.5,
+      tokenSymbol: 'CELL',
+      reachable: true,
+    });
   });
 
   afterEach(() => {
@@ -181,5 +196,84 @@ describe('qsdmWalletProviderBroker', () => {
     ).rejects.toThrow('valid QSDM wallet address');
     expect(dialog.showMessageBox).not.toHaveBeenCalled();
     expect(mockSubmitQsdmWalletTransferIntent).not.toHaveBeenCalled();
+  });
+
+  it('accepts CELL precision up to eight decimals and rejects finer values', async () => {
+    await handleWalletProviderRequest(request('qsdm_requestAccounts'), options);
+    (dialog.showMessageBox as jest.Mock).mockClear();
+
+    await expect(
+      handleWalletProviderRequest(
+        request('qsdm_sendTransaction', {
+          recipient: sender,
+          amount: 0.000000001,
+        }),
+        options
+      )
+    ).rejects.toThrow('no more than 8 decimal places');
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+
+    await expect(
+      handleWalletProviderRequest(
+        request('qsdm_sendTransaction', {
+          recipient: sender,
+          amount: 0.00000001,
+        }),
+        options
+      )
+    ).resolves.toEqual({
+      transaction_id: 'transaction-id',
+      status: 'accepted',
+    });
+    expect(mockSubmitQsdmWalletTransferIntent).toHaveBeenCalledWith({
+      recipient: sender,
+      amount: 0.00000001,
+    });
+  });
+
+  it('lets the trusted extension read the active balance without a site grant', async () => {
+    await expect(
+      handleWalletProviderRequest(internalRequest('qsdm_getBalance'), options)
+    ).resolves.toEqual({
+      address: sender,
+      balance: 42.5,
+      token: 'CELL',
+      reachable: true,
+    });
+    expect(getQsdmWalletProviderPermissions().permissions).toEqual([]);
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('lets the trusted extension request a transfer only after Hive approval', async () => {
+    await expect(
+      handleWalletProviderRequest(
+        internalRequest('qsdm_sendTransaction', {
+          recipient: sender,
+          amount: 1.25,
+        }),
+        options
+      )
+    ).resolves.toEqual({
+      transaction_id: 'transaction-id',
+      status: 'accepted',
+    });
+    expect(options.showHive).toHaveBeenCalledTimes(1);
+    expect(dialog.showMessageBox).toHaveBeenCalledTimes(1);
+    expect(mockSubmitQsdmWalletTransferIntent).toHaveBeenCalledWith({
+      recipient: sender,
+      amount: 1.25,
+    });
+    expect(getQsdmWalletProviderPermissions().permissions).toEqual([]);
+  });
+
+  it('continues to reject internal message-signing requests', async () => {
+    await expect(
+      handleWalletProviderRequest(
+        internalRequest('qsdm_signMessage', { message: 'do not sign' }),
+        options
+      )
+    ).rejects.toThrow('cannot request wallet signatures');
+    expect(mockSignQsdmMessageWithCli).not.toHaveBeenCalled();
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
   });
 });

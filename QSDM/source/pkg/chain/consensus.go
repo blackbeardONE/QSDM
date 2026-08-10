@@ -60,10 +60,10 @@ const (
 
 // ConsensusRound tracks votes for a single block at a given height/round.
 type ConsensusRound struct {
-	Height    uint64          `json:"height"`
-	Round     uint32          `json:"round"`
-	Proposer  string          `json:"proposer"`
-	BlockHash string          `json:"block_hash"`
+	Height    uint64 `json:"height"`
+	Round     uint32 `json:"round"`
+	Proposer  string `json:"proposer"`
+	BlockHash string `json:"block_hash"`
 	// LockedBlockHash is the value locked by a ⅔ prevote polka (may differ from
 	// BlockHash if the round is equivocating; empty until a prevote quorum exists).
 	LockedBlockHash string          `json:"locked_block_hash,omitempty"`

@@ -2,6 +2,7 @@ package networking
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/blackbeardONE/QSDM/pkg/chain"
@@ -11,6 +12,42 @@ func TestBFTGossipIngress_InvalidPayload(t *testing.T) {
 	g := NewBFTGossipIngress(DefaultBFTGossipConfig(), nil)
 	if err := g.HandlePeerMessage("p1", []byte(`{}`)); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestBFTGossipIngress_ReceiveOnlyStillAuthenticates(t *testing.T) {
+	validators := chain.NewValidatorSet(chain.DefaultValidatorSetConfig())
+	authExec := chain.NewBFTExecutor(chain.NewBFTConsensus(validators, chain.DefaultConsensusConfig()))
+	authExec.SetRequireSignedVotes(true)
+	authExec.SetSignedVoteActivationHeight(10)
+	ingress := NewBFTGossipIngress(DefaultBFTGossipConfig(), nil)
+	ingress.SetAuthenticationExecutor(authExec)
+
+	unsigned, err := chain.MarshalBFTWire(chain.BFTWirePrevote, chain.BFTWirePrevoteMsg{
+		Height: 10, Validator: "forged", BlockHash: "root",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ingress.HandlePeerMessage("peer", unsigned); !errors.Is(err, chain.ErrBFTUnsigned) {
+		t.Fatalf("receive-only ingress must reject unsigned votes at activation, got %v", err)
+	}
+
+	signer, _, err := chain.LoadOrCreateBFTSigner(filepath.Join(t.TempDir(), "consensus.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := chain.BFTWirePrevoteMsg{Height: 11, Validator: signer.Address(), BlockHash: "root"}
+	if err := chain.SignPrevote(&msg, signer); err != nil {
+		t.Fatal(err)
+	}
+	msg.Auth.Signature[0] ^= 0xff
+	badSignature, err := chain.MarshalBFTWire(chain.BFTWirePrevote, msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ingress.HandlePeerMessage("peer", badSignature); !errors.Is(err, chain.ErrBFTBadSignature) {
+		t.Fatalf("receive-only ingress must reject invalid signatures, got %v", err)
 	}
 }
 

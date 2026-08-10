@@ -14,6 +14,17 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **QSDM Hive 1.4.14 recovery activation for older wallets (2026-08-05).**
+  Existing random-key ML-DSA wallets can opt into 24 QSDM Recovery Words
+  without changing their address, CELL balance, stakes, or task ownership.
+  Hive verifies the existing passphrase, saves the words privately, preserves
+  the original encrypted keystore as a backup, and registers only an
+  AES-256-GCM encrypted recovery capsule through a wallet-signed QSDM Core
+  action. Restore accepts the 24 words plus the replicated capsule and lets the
+  owner choose a new local passphrase. Activation requires the original JSON
+  and passphrase to remain usable once; neither Hive nor QSDM Core can recreate
+  a wallet whose original credentials were already lost.
+
 - **QSDM Core v0.4.7-rc.3 native validator release path (2026-07-20).**
   Releases now include production-capable SQLite validator packages for Linux
   amd64 and Windows amd64, with embedded build identity, inner and release-level
@@ -44,6 +55,20 @@ attempt to retroactively enumerate that history.
 - **QSDM Hive 1.3.94 Virtual Compute Runtime (2026-07-09).** Mother Hive now discovers live pooled CPU, NVIDIA GPU, and RAM capacity; provides bounded workload controls; shows queue, Agent assignment, duration, cancellation, and verified receipt state; and keeps the private loopback gateway token outside renderer code. The gateway adds authenticated `/v1/resources` and `/v1/workloads` discovery routes while preserving the fixed-workload, no-remote-shell security boundary. A separate design specifies opt-in, wallet-authenticated, one-hop Mother Hive federation across locations without exposing Agent or private Mother credentials.
 
 ### Changed
+
+- **QSDM Core v0.4.7-rc.7 home-node reliability and gateway security
+  (2026-07-30).** Validator startup now recovers verified checkpoint state and
+  any fully appended journal tail without repeatedly rebuilding or restarting
+  the same node. Block acceptance and persistence are serialized to keep saved
+  state aligned with the accepted chain. Windows launchers and the watchdog
+  now use bounded startup grace and duplicate-restart protection.
+
+- **Home Gateway release and secret handling (2026-07-30).** Every tagged Core
+  release now includes checksummed and Sigstore-signed Home Gateway binaries
+  for Windows, Linux, and macOS with the same embedded release identity as
+  Core. Gateway relay keys can be read from protected files so production
+  secrets no longer need to appear in process arguments. Inline key input
+  remains temporarily available only as a deprecated compatibility path.
 
 - **QSDM Core v0.4.7-rc.4 Windows release compatibility (2026-07-20).**
   Native Windows validator packaging now provisions a pinned MSYS2 action and

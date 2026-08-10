@@ -54,11 +54,36 @@
 		return 'HTTP ' + response.status;
 	}
 
+	function retryAfterMessage(response) {
+		var retryAfter = response.headers.get('Retry-After');
+		return retryAfter ? ' Try again in ' + retryAfter + ' seconds.' : '';
+	}
+
 	showFromQuery();
+	showIfBouncedFromLogin();
 
 	var form = document.getElementById('loginForm');
 	if (!form) {
 		return;
+	}
+	var registerToggle = document.getElementById('registerToggle');
+	var confirmPasswordGroup = document.getElementById('confirmPasswordGroup');
+	var passwordPolicy = document.getElementById('passwordPolicy');
+	var modeHelp = document.getElementById('modeHelp');
+	var registering = false;
+
+	if (registerToggle) {
+		registerToggle.addEventListener('click', function () {
+			registering = !registering;
+			if (confirmPasswordGroup) confirmPasswordGroup.hidden = !registering;
+			if (passwordPolicy) passwordPolicy.hidden = !registering;
+			registerToggle.textContent = registering ? 'Back to login' : 'Create dashboard login';
+			if (modeHelp) {
+				modeHelp.textContent = registering
+					? 'Create a persistent dashboard account on this validator.'
+					: 'Sign in with a dashboard account registered on this validator. This password is separate from your QSDM wallet passphrase.';
+			}
+		});
 	}
 
 	form.addEventListener('submit', async function (e) {
@@ -71,7 +96,48 @@
 		if (btn) btn.disabled = true;
 
 		var formData = new FormData(form);
+		var address = String(formData.get('address') || '').trim();
+		var password = String(formData.get('password') || '');
 		try {
+			if (registering) {
+				var confirmation = String(formData.get('confirmPassword') || '');
+				var registrationPasswordError = '';
+				if (password !== confirmation) {
+					registrationPasswordError = 'passwords do not match';
+				} else if (
+					password.length < 12 ||
+					password.length > 256 ||
+					!/[A-Z]/.test(password) ||
+					!/[a-z]/.test(password) ||
+					!/[0-9]/.test(password) ||
+					!/[^A-Za-z0-9]/.test(password)
+				) {
+					registrationPasswordError =
+						'Password must be at least 12 characters and include uppercase, lowercase, number, and symbol.';
+				}
+				if (registrationPasswordError) {
+					errEl.textContent = registrationPasswordError;
+					return;
+				}
+
+				if (stEl) stEl.textContent = 'Creating dashboard login…';
+				var registration = await fetch('/api/v1/auth/register', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+					credentials: 'include',
+					body: JSON.stringify({ address: address, password: password })
+				});
+				var rawRegistration = await registration.text();
+				if (!registration.ok) {
+					errEl.textContent =
+						(errFromBody(registration, rawRegistration) || 'Registration failed') +
+						retryAfterMessage(registration);
+					if (stEl) stEl.textContent = '';
+					return;
+				}
+				registering = false;
+			}
+
 			if (stEl) stEl.textContent = 'Signing in…';
 			// Keep the API access token server-side. The dashboard endpoint
 			// authenticates against the API, stores the token in its session
@@ -81,8 +147,8 @@
 				headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
 				credentials: 'include',
 				body: JSON.stringify({
-					address: String(formData.get('address') || '').trim(),
-					password: formData.get('password')
+					address: address,
+					password: password
 				})
 			});
 
@@ -95,7 +161,9 @@
 			}
 
 			if (!response.ok) {
-				errEl.textContent = errFromBody(response, rawLogin) || 'Login failed';
+				errEl.textContent =
+					(errFromBody(response, rawLogin) || 'Login failed') +
+					retryAfterMessage(response);
 				if (stEl) stEl.textContent = '';
 				return;
 			}

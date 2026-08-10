@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -104,6 +105,67 @@ func TestBlockProducer_ProduceBlock(t *testing.T) {
 	}
 }
 
+func TestBlockProducerSerializesPostSealHooksBeforeNextBlock(t *testing.T) {
+	pool := mempool.New(mempool.DefaultConfig())
+	if err := pool.Add(makeTx("first", 0)); err != nil {
+		t.Fatal(err)
+	}
+	bp := NewBlockProducer(pool, newTestApplier(), DefaultProducerConfig())
+
+	firstHookEntered := make(chan struct{})
+	releaseFirstHook := make(chan struct{})
+	secondHookEntered := make(chan struct{})
+	var closeSecond sync.Once
+	bp.OnSealedBlock = func(block *Block) {
+		switch block.Height {
+		case 0:
+			close(firstHookEntered)
+			<-releaseFirstHook
+		case 1:
+			closeSecond.Do(func() { close(secondHookEntered) })
+		}
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := bp.ProduceBlock()
+		firstDone <- err
+	}()
+	select {
+	case <-firstHookEntered:
+	case <-time.After(time.Second):
+		t.Fatal("first block did not enter its post-seal hook")
+	}
+
+	if err := pool.Add(makeTx("second", 0)); err != nil {
+		t.Fatal(err)
+	}
+	secondDone := make(chan error, 1)
+	go func() {
+		_, err := bp.ProduceBlock()
+		secondDone <- err
+	}()
+
+	select {
+	case <-secondHookEntered:
+		t.Fatal("second block reached its post-seal hook before the first hook completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(releaseFirstHook)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first ProduceBlock: %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second ProduceBlock: %v", err)
+	}
+	select {
+	case <-secondHookEntered:
+	case <-time.After(time.Second):
+		t.Fatal("second block did not enter its post-seal hook")
+	}
+}
+
 func TestBlockProducer_OrdersSameSenderByNonce(t *testing.T) {
 	pool := mempool.New(mempool.DefaultConfig())
 	accounts := NewAccountStore()
@@ -169,6 +231,20 @@ func TestBlockProducer_TryAppendExternalBlockGenesis(t *testing.T) {
 	}
 	if err := bp.TryAppendExternalBlock(blk); err != nil {
 		t.Fatalf("idempotent second append: %v", err)
+	}
+}
+
+func TestBlockProducer_TryAppendExternalBlockRejectsBadSignature(t *testing.T) {
+	bp := NewBlockProducer(mempool.New(mempool.DefaultConfig()), NewAccountStore(), DefaultProducerConfig())
+	signer, _ := newBFTKey(t)
+	blk := &Block{Height: 0, Timestamp: time.Unix(1700000000, 0), StateRoot: "root"}
+	blk.Hash = computeBlockHash(blk)
+	if err := SignBlock(blk, signer); err != nil {
+		t.Fatal(err)
+	}
+	blk.ProducerAuth.Signature[0] ^= 0xff
+	if err := bp.TryAppendExternalBlock(blk); !errors.Is(err, ErrBlockBadSignature) {
+		t.Fatalf("external append must reject invalid producer authentication, got %v", err)
 	}
 }
 
@@ -453,12 +529,12 @@ func TestBlockProducer_PreSealRestoresPoolOnHookError(t *testing.T) {
 func TestBlockProducer_PreSealCommitsBeforeAppend(t *testing.T) {
 	as := NewAccountStore()
 	as.Credit("alice", 10000)
+	signer, address := newBFTKey(t)
 	vs := NewValidatorSet(DefaultValidatorSetConfig())
-	_ = vs.Register("v1", 100)
-	_ = vs.Register("v2", 100)
-	_ = vs.Register("v3", 100)
+	_ = vs.Register(address, 100)
 	bc := NewBFTConsensus(vs, DefaultConsensusConfig())
 	ex := NewBFTExecutor(bc)
+	ex.SetVoteSigner(signer)
 	pool := mempool.New(mempool.DefaultConfig())
 	bp := NewBlockProducer(pool, as, DefaultProducerConfig())
 	bp.SetPreSealBFTRound(func(tent *Block) error {

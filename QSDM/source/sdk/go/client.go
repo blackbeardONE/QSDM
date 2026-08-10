@@ -95,6 +95,28 @@ func (c *Client) GetBalanceContext(ctx context.Context, address string) (float64
 	return resp.Balance, nil
 }
 
+type WalletNonceResponse struct {
+	Sender string `json:"sender"`
+	Nonce  uint64 `json:"nonce"`
+	Next   uint64 `json:"next"`
+}
+
+// GetWalletNonce returns the last applied and next required nonce for a wallet.
+func (c *Client) GetWalletNonce(address string) (*WalletNonceResponse, error) {
+	return c.GetWalletNonceContext(context.Background(), address)
+}
+
+// GetWalletNonceContext is GetWalletNonce with an explicit context.
+func (c *Client) GetWalletNonceContext(ctx context.Context, address string) (*WalletNonceResponse, error) {
+	q := url.Values{}
+	q.Set("sender", address)
+	var response WalletNonceResponse
+	if err := c.do(ctx, http.MethodGet, "/api/v1/wallet/nonce?"+q.Encode(), nil, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
 // SendTransaction sends a transaction and returns its ID.
 func (c *Client) SendTransaction(from, to string, amount float64) (string, error) {
 	return c.SendTransactionContext(context.Background(), from, to, amount)
@@ -110,6 +132,180 @@ func (c *Client) SendTransactionContext(ctx context.Context, from, to string, am
 		return "", err
 	}
 	return resp.TransactionID, nil
+}
+
+// StreamUsageReceipt is a payer-session-signed cumulative active-use receipt.
+type StreamUsageReceipt struct {
+	StreamID                string `json:"stream_id"`
+	Sequence                uint64 `json:"sequence"`
+	CumulativeActiveSeconds uint64 `json:"cumulative_active_seconds"`
+	ObservedAt              string `json:"observed_at"`
+	Signature               string `json:"signature,omitempty"`
+}
+
+// StreamAction is the canonical action signed by a QSDM wallet.
+type StreamAction struct {
+	ID                 string              `json:"id"`
+	Sender             string              `json:"sender"`
+	StreamID           string              `json:"stream_id"`
+	Action             string              `json:"action"`
+	Provider           string              `json:"provider,omitempty"`
+	ServiceID          string              `json:"service_id,omitempty"`
+	DeviceIDHash       string              `json:"device_id_hash,omitempty"`
+	SessionPublicKey   string              `json:"session_public_key,omitempty"`
+	PriceDust          uint64              `json:"price_dust,omitempty"`
+	PricePeriodSeconds uint64              `json:"price_period_seconds,omitempty"`
+	BudgetDust         uint64              `json:"budget_dust,omitempty"`
+	MaxActiveSeconds   uint64              `json:"max_active_seconds,omitempty"`
+	ExpiresAt          string              `json:"expires_at,omitempty"`
+	Receipt            *StreamUsageReceipt `json:"receipt,omitempty"`
+	Nonce              uint64              `json:"nonce,omitempty"`
+	Timestamp          string              `json:"timestamp"`
+}
+
+type StreamActionEnvelope struct {
+	Action    StreamAction `json:"action"`
+	Signature string       `json:"signature"`
+	PublicKey string       `json:"public_key"`
+}
+
+type StreamState struct {
+	StreamID                string `json:"stream_id"`
+	Payer                   string `json:"payer"`
+	Provider                string `json:"provider"`
+	ServiceID               string `json:"service_id"`
+	DeviceIDHash            string `json:"device_id_hash"`
+	SessionPublicKey        string `json:"session_public_key"`
+	PriceDust               uint64 `json:"price_dust"`
+	PricePeriodSeconds      uint64 `json:"price_period_seconds"`
+	BudgetDust              uint64 `json:"budget_dust"`
+	MaxActiveSeconds        uint64 `json:"max_active_seconds"`
+	ExpiresAt               string `json:"expires_at"`
+	Status                  string `json:"status"`
+	CumulativeActiveSeconds uint64 `json:"cumulative_active_seconds"`
+	PausedDurationSeconds   uint64 `json:"paused_duration_seconds"`
+	LastReceiptSequence     uint64 `json:"last_receipt_sequence"`
+	LastReceiptObservedAt   string `json:"last_receipt_observed_at,omitempty"`
+	AccruedDust             uint64 `json:"accrued_dust"`
+	SettledDust             uint64 `json:"settled_dust"`
+	RefundedDust            uint64 `json:"refunded_dust"`
+	RemainingBudgetDust     uint64 `json:"remaining_budget_dust"`
+	UnsettledDust           uint64 `json:"unsettled_dust"`
+	OpenedAt                string `json:"opened_at"`
+	LastPausedAt            string `json:"last_paused_at,omitempty"`
+	LastResumedAt           string `json:"last_resumed_at,omitempty"`
+	ClosedAt                string `json:"closed_at,omitempty"`
+	LastAction              string `json:"last_action"`
+	LastActionID            string `json:"last_action_id"`
+	LastActionAt            string `json:"last_action_at"`
+	ActionCount             uint64 `json:"action_count"`
+}
+
+type StreamsResponse struct {
+	Runtime   string        `json:"runtime"`
+	Source    string        `json:"source"`
+	StateRoot string        `json:"state_root"`
+	Streams   []StreamState `json:"streams"`
+}
+
+type StreamResponse struct {
+	Runtime   string      `json:"runtime"`
+	Source    string      `json:"source"`
+	StateRoot string      `json:"state_root"`
+	Stream    StreamState `json:"stream"`
+}
+
+type StreamActionSubmitResponse struct {
+	ActionID      string `json:"action_id"`
+	StreamID      string `json:"stream_id"`
+	Action        string `json:"action"`
+	Sender        string `json:"sender"`
+	Status        string `json:"status"`
+	MempoolStatus string `json:"mempool_status"`
+}
+
+// StreamActionNonceResponse contains the exact current nonce required by the
+// sender's next qsdm/streams/v1 action.
+type StreamActionNonceResponse struct {
+	Runtime     string `json:"runtime"`
+	Source      string `json:"source"`
+	Sender      string `json:"sender"`
+	ActionNonce uint64 `json:"action_nonce"`
+	Present     bool   `json:"present"`
+}
+
+type StreamFilters struct {
+	Payer     string
+	Provider  string
+	Status    string
+	ServiceID string
+}
+
+func (c *Client) GetStreamActionNonce(address string) (*StreamActionNonceResponse, error) {
+	return c.GetStreamActionNonceContext(context.Background(), address)
+}
+
+func (c *Client) GetStreamActionNonceContext(ctx context.Context, address string) (*StreamActionNonceResponse, error) {
+	query := url.Values{}
+	query.Set("sender", address)
+	var response StreamActionNonceResponse
+	if err := c.do(ctx, http.MethodGet, "/api/v1/streams/nonce?"+query.Encode(), nil, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
+func (c *Client) GetStreams(filters StreamFilters) (*StreamsResponse, error) {
+	return c.GetStreamsContext(context.Background(), filters)
+}
+
+func (c *Client) GetStreamsContext(ctx context.Context, filters StreamFilters) (*StreamsResponse, error) {
+	query := url.Values{}
+	if filters.Payer != "" {
+		query.Set("payer", filters.Payer)
+	}
+	if filters.Provider != "" {
+		query.Set("provider", filters.Provider)
+	}
+	if filters.Status != "" {
+		query.Set("status", filters.Status)
+	}
+	if filters.ServiceID != "" {
+		query.Set("service_id", filters.ServiceID)
+	}
+	path := "/api/v1/streams"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var response StreamsResponse
+	if err := c.do(ctx, http.MethodGet, path, nil, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
+func (c *Client) GetStream(streamID string) (*StreamResponse, error) {
+	return c.GetStreamContext(context.Background(), streamID)
+}
+
+func (c *Client) GetStreamContext(ctx context.Context, streamID string) (*StreamResponse, error) {
+	var response StreamResponse
+	if err := c.do(ctx, http.MethodGet, "/api/v1/streams/"+url.PathEscape(streamID), nil, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
+func (c *Client) SubmitStreamAction(envelope StreamActionEnvelope) (*StreamActionSubmitResponse, error) {
+	return c.SubmitStreamActionContext(context.Background(), envelope)
+}
+
+func (c *Client) SubmitStreamActionContext(ctx context.Context, envelope StreamActionEnvelope) (*StreamActionSubmitResponse, error) {
+	var response StreamActionSubmitResponse
+	if err := c.do(ctx, http.MethodPost, "/api/v1/streams/actions/submit-signed", envelope, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
 }
 
 // GetTransaction retrieves a transaction by ID.
@@ -168,8 +364,8 @@ func (c *Client) GetReadiness(ctx context.Context) (*HealthStatus, error) {
 // live Tokenomics block-emission snapshot. These fields are populated when
 // present but the older minimal fields remain backwards-compatible.
 type NodeStatus struct {
-	NodeID    string `json:"node_id,omitempty"`
-	Version   string `json:"version,omitempty"`
+	NodeID  string `json:"node_id,omitempty"`
+	Version string `json:"version,omitempty"`
 	// GitSHA is the short git commit SHA the running binary was
 	// built from. Populated when the validator binary was built
 	// with `-ldflags -X pkg/buildinfo.GitSHA=<short-sha>` (the

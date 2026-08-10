@@ -1,9 +1,87 @@
-## [Unreleased]
+## [1.4.16]
+
+- Earlier update detection: Hive registers updater listeners and begins the signed release check before wallet, task, and Core bootstrap can delay it.
+- Honest forced-update status: when Electron cannot offer the required installer, Hive stops showing a false downloading state and presents the verified manual installer path instead.
+- Release visibility: the new application version ensures installed `1.4.15` clients can detect, download, verify, and install this release.
+
+## [1.4.15]
+
+- Recovery identity safety: Hive verifies that the active signer matches the selected legacy keystore before asking where to save recovery words.
+- Defense in depth: `qsdmcli wallet enable-recovery` independently rejects an unexpected wallet address before creating words, submitting a capsule, backing up, or replacing the keystore.
+- Migration assurance: Regression coverage proves that a signer mismatch leaves the legacy wallet and filesystem unchanged.
+
+## [1.4.14]
+
+- Existing-wallet recovery: Legacy QSDM wallets can opt into a new 24-word recovery phrase without changing their ML-DSA address, CELL balance, stakes, or tasks.
+- Encrypted recovery: Hive encrypts the existing private key locally and QSDM Core stores only the signed, opaque recovery capsule needed to restore it on another machine.
+- Guided migration: Wallet settings can enable recovery after one JSON-and-passphrase confirmation, and the restore flow accepts the recovery phrase plus a new local passphrase.
+- Release consistency: Hive packaging now rejects mismatched application and runtime versions before producing Windows or Linux artifacts.
+
+## [1.4.13]
+
+- Persistent system tasks: QSDM system tasks no longer stop when their Hive bounty is empty.
+- Edge Worker reliability: CPU, GPU, and RAM workers stay active while sponsor pools are unfunded and retry when funding becomes available.
+- Hosted task safety: ordinary hosted tasks still stop and remain blocked when their bounty cannot cover another round.
+
+## [1.4.12]
+
+- Mandatory updates: Hive checks one second after startup and every 30 minutes, then retries temporary failures after one minute.
+- Visible installation: approved releases always reach the version gate and dashboard, bring Hive forward, and show a foreground **Update and Restart** prompt after installer verification.
+- Reliable listeners: each update subscriber now removes only its own callback, so onboarding, notifications, and settings cannot silence one another.
+- Exact-version policy: required security releases download automatically; the obsolete user switch that could appear to disable mandatory updates has been removed.
+
+## [1.4.11]
+
+- Browser transfers: CELL sends from the QSDM Wallet extension and web account dashboard are serialized so simultaneous approvals cannot reuse one wallet nonce.
+- Pending blocks: Hive recognizes QSDM Core's pending-transaction HTTP 409 response, waits for the committed nonce to advance, rebuilds the envelope, and retries safely.
+- Clear recovery: A nonce that remains occupied now produces a bounded, actionable message instead of a raw Axios HTTP 409 error.
+
+## [1.4.10]
+
+- Account access: Hive Wallet settings and the browser-extension popup now open the trusted QSDM Account dashboard directly.
+- Provider clarity: Wallet onboarding shows only sign-in methods enabled in production; email stays hidden until outbound email delivery is configured.
+- Browser QA: Acceptance coverage verifies the popup Account destination and captures the compact wallet surface.
+
+## [1.4.9]
+
+- Wallet dashboard: The QSDM Wallet extension can show the active Hive wallet, copy its address, refresh its live CELL balance, and request wallet-to-wallet transfers.
+- Account dashboard: A signed-in QSDM Account can display the active local Hive wallet and request the same visibly approved CELL transfer without receiving wallet secrets.
+- Transfer safety: Internal extension transfers require the exact recipient and amount to be approved in Hive; the extension remains unable to request arbitrary message signatures.
+- Stable refresh: Balance updates retain the last verified address and balance instead of briefly blanking the wallet after a transfer.
+- Browser QA: Acceptance coverage now exercises extension and account dashboards on desktop and mobile without broadcasting real CELL.
+
+## [1.4.8]
+
+- Browser wallet distribution: Hive now authorizes the Chrome Web Store and separately signed interim CRX identities alongside the pinned development and Firefox identities.
+- Interim installation: Linux Chromium and enterprise-managed Chromium can use the public CRX while browser-store review is pending.
+- Release safety: The CRX packer validates the protected signing key, removes localhost development access, strips cross-browser manifest fields, and emits a self-update feed.
+
+## [1.4.7]
+
+- Web wallet: qsdm.tech can connect to the active Hive wallet, display its public address and balance, and request an explicitly approved CELL transfer without receiving wallet secrets.
+- Browser support: The QSDM Wallet extension now ships reproducible universal, Chromium, and Firefox packages with stable browser identities.
+- Native bridge: Hive registers separate least-privilege native-messaging manifests for Chrome, Edge, Brave, Chromium, and Firefox on Windows and Linux.
+- Restart reliability: Browser requests reload the authenticated local broker state once when Hive restarts, avoiding stale-port failures while preserving bounded timeouts.
+- Transaction precision: Browser transfers enforce QSDM's eight-decimal CELL precision before Hive presents the approval prompt.
+
+## [1.4.6]
 
 - Wallet recovery: New QSDM wallets can be restored from 24 checksum-protected recovery words while retaining their ML-DSA-87 address.
 - Safer custody: Recovery material is encrypted separately inside the QSDM keystore and never passed through command-line arguments or application logs.
 - Wallet management: Hive can create, restore, and export recovery-enabled wallets, and clearly identifies legacy JSON-plus-passphrase wallets.
 - Compatibility: Existing wallets continue to work unchanged; moving a legacy wallet to recovery words requires creating a new wallet and transferring its assets and task ownership.
+
+## [1.4.5]
+
+- Windows updater repair: Packaged Hive now always includes the trusted generic updater configuration required by `electron-updater`.
+- Release validation: Windows builds reject a missing or altered updater URL and verify that the same configuration is embedded inside the final NSIS installer.
+- Upgrade path: Hive 1.4.4 remains immutable but is superseded; affected older Windows installations require this one verified manual upgrade before automatic updates can resume.
+
+## [1.4.4]
+
+- Stake confirmation: Hive now verifies signed task actions against the same main QSDM Core that accepted them before consulting a local validator or home-gateway fallback.
+- Sync resilience: A reachable but lagging validator can no longer make a confirmed stake appear missing or prompt the user to stake repeatedly.
+- Release validation: Linux and Windows packaging gates now exercise endpoint selection and native stake-state regression tests.
 
 ## [1.4.3]
 

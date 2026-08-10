@@ -4,6 +4,7 @@ import { useQuery } from 'react-query';
 import { LoadingScreen } from 'renderer/components';
 import {
   QueryKeys,
+  checkAppUpdate,
   getHiveVersionPolicy,
   openBrowserWindow,
   quitApp,
@@ -16,6 +17,13 @@ type Props = {
 
 const FALLBACK_DOWNLOAD_URL = 'https://qsdm.tech/download.html';
 const VERSION_POLICY_POLL_MS = 60 * 1000;
+type UpdateStage =
+  | 'idle'
+  | 'checking'
+  | 'downloading'
+  | 'ready'
+  | 'manual'
+  | 'error';
 
 export function HiveVersionGate({ children }: Props): JSX.Element {
   const {
@@ -37,6 +45,74 @@ export function HiveVersionGate({ children }: Props): JSX.Element {
   );
 
   const [isDownloading, setIsDownloading] = React.useState(false);
+  const [updateStage, setUpdateStage] = React.useState<UpdateStage>('idle');
+  const [updateError, setUpdateError] = React.useState('');
+  const attemptedPolicy = React.useRef('');
+
+  React.useEffect(() => {
+    const removeAvailableListener = window.main.onAppUpdate(() => {
+      setUpdateStage('downloading');
+      setUpdateError('');
+    });
+    const removeDownloadedListener = window.main.onAppDownloaded(() => {
+      setUpdateStage('ready');
+      setUpdateError('');
+    });
+
+    return () => {
+      removeAvailableListener();
+      removeDownloadedListener();
+    };
+  }, []);
+
+  const startAutomaticUpdate = React.useCallback(async () => {
+    setUpdateStage('checking');
+    setUpdateError('');
+    try {
+      const result = await checkAppUpdate();
+      if (!result?.isUpdateAvailable) {
+        setUpdateStage('manual');
+        setUpdateError(
+          'The automatic updater did not offer the required release. Use Download Installer below.'
+        );
+        return;
+      }
+      setUpdateStage((current) =>
+        current === 'ready' ? 'ready' : 'downloading'
+      );
+    } catch (error) {
+      setUpdateStage('error');
+      setUpdateError(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!policy) {
+      return;
+    }
+    if (policy.compatible) {
+      attemptedPolicy.current = '';
+      setUpdateStage('idle');
+      setUpdateError('');
+      return;
+    }
+
+    const policyKey = `${policy.currentVersion}:${policy.requiredVersion}`;
+    const versionRelation = compareHiveVersions(
+      policy.currentVersion,
+      policy.requiredVersion
+    );
+    if (policy.reason !== 'version-mismatch' || versionRelation !== -1) {
+      setUpdateStage('manual');
+      return;
+    }
+    if (attemptedPolicy.current === policyKey) {
+      return;
+    }
+
+    attemptedPolicy.current = policyKey;
+    startAutomaticUpdate();
+  }, [policy, startAutomaticUpdate]);
 
   const handleDownload = async () => {
     setIsDownloading(true);
@@ -50,6 +126,11 @@ export function HiveVersionGate({ children }: Props): JSX.Element {
         );
       });
     }, 800);
+  };
+
+  const handleRetry = () => {
+    attemptedPolicy.current = '';
+    startAutomaticUpdate();
   };
 
   if (isLoading) {
@@ -67,6 +148,10 @@ export function HiveVersionGate({ children }: Props): JSX.Element {
     policy?.reason === 'manifest-unavailable'
       ? 'Hive could not verify the approved release manifest.'
       : 'This Hive build does not match the approved release.';
+  const canInstallAutomatically =
+    policy?.reason === 'version-mismatch' &&
+    compareHiveVersions(policy.currentVersion, policy.requiredVersion) === -1;
+  const updateStatus = getUpdateStatus(updateStage, requiredVersion);
 
   return (
     <main className="qsdm-cell-screen flex min-h-screen flex-col items-center justify-center px-6 text-white">
@@ -100,13 +185,34 @@ export function HiveVersionGate({ children }: Props): JSX.Element {
           </p>
         )}
 
+        {canInstallAutomatically && (
+          <p
+            className={`mb-6 rounded border p-3 text-sm ${
+              updateStage === 'error'
+                ? 'border-[#ff8a8a]/30 bg-[#401820] text-[#ffb4b4]'
+                : 'border-[#9fe3e6]/30 bg-[#092a34] text-white/90'
+            }`}
+          >
+            {updateStatus}
+            {updateError ? ` ${updateError}` : ''}
+          </p>
+        )}
+
         <div className="flex flex-wrap gap-3">
+          {canInstallAutomatically && updateStage === 'error' && (
+            <button
+              className="h-11 rounded bg-[#9fe3e6] px-6 font-semibold text-[#062832]"
+              onClick={handleRetry}
+            >
+              Retry Automatic Update
+            </button>
+          )}
           <button
-            className="h-11 rounded bg-[#9fe3e6] px-6 font-semibold text-[#062832] disabled:opacity-60"
+            className="h-11 rounded border border-white/25 px-6 font-semibold text-white disabled:opacity-60"
             disabled={isDownloading}
             onClick={handleDownload}
           >
-            {isDownloading ? 'Opening download...' : 'Download Latest Hive'}
+            {isDownloading ? 'Opening download...' : 'Download Installer'}
           </button>
           <button
             className="h-11 rounded border border-white/25 px-6 font-semibold text-white disabled:opacity-60"
@@ -119,4 +225,45 @@ export function HiveVersionGate({ children }: Props): JSX.Element {
       </section>
     </main>
   );
+}
+
+function compareHiveVersions(
+  currentVersion?: string | null,
+  requiredVersion?: string | null
+) {
+  const current = parseHiveVersion(currentVersion);
+  const required = parseHiveVersion(requiredVersion);
+  if (!current || !required) {
+    return null;
+  }
+
+  for (let index = 0; index < current.length; index += 1) {
+    if (current[index] < required[index]) return -1;
+    if (current[index] > required[index]) return 1;
+  }
+  return 0;
+}
+
+function parseHiveVersion(version?: string | null) {
+  if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
+    return null;
+  }
+  return version.split('.').map(Number);
+}
+
+function getUpdateStatus(stage: UpdateStage, requiredVersion: string) {
+  switch (stage) {
+    case 'checking':
+      return 'Checking the signed QSDM Hive release...';
+    case 'downloading':
+      return `Downloading and verifying QSDM Hive ${requiredVersion}. The restart prompt will appear when it is ready.`;
+    case 'ready':
+      return 'The update is verified and ready. Approve the Update and Restart prompt.';
+    case 'error':
+      return 'Automatic update failed and will retry in one minute.';
+    case 'manual':
+      return 'Automatic installation is unavailable for this release.';
+    default:
+      return 'Starting the required automatic update...';
+  }
 }

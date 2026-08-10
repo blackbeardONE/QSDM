@@ -23,6 +23,8 @@
 #   Binaries (attached to the GitHub Release as assets):
 #     qsdm-validator-<tag>-linux-amd64.tar.gz — SQLite validator + safe updater/rollback
 #     qsdm-validator-<tag>-windows-amd64.zip   — SQLite validator + safe updater/rollback
+#     qsdmcli-<os>-<arch>[.exe]               — operator wallet and signed-action CLI
+#     qsdm-home-gateway-<os>-<arch>[.exe]     — outbound-only public gateway
 #     qsdmminer-console-<os>-<arch>[.exe]    — friendly console miner (wizard + live panel); ONLY shipped miner since v0.3.2 (NVIDIA-locked v2 protocol)
 #     trustcheck-<os>-<arch>[.exe]           — black-box transparency scraper
 #     genesis-ceremony-<os>-<arch>[.exe]     — mainnet genesis dry-run tool
@@ -139,8 +141,9 @@ jobs:
           BUILD_DATE: ${{ steps.meta.outputs.date }}
         run: |
           set -euo pipefail
-          # Three public release binaries are shipped from this job:
-          # qsdmminer-console, trustcheck, genesis-ceremony. All three
+          # Five public release binaries are shipped from this job:
+          # qsdmcli, qsdm-home-gateway, qsdmminer-console, trustcheck, and
+          # genesis-ceremony. All five
           # cross-compile cleanly to every matrix target (CGO=0, stdlib
           # + a few small pure-Go deps: golang.org/x/crypto for the
           # ceremony, golang.org/x/term for the console's TTY detection,
@@ -160,9 +163,10 @@ jobs:
           # -ldflags -X embeds the release tag, short git SHA, and
           # build date into pkg/buildinfo so every binary's --version
           # output maps back to a specific commit + release pair.
-          # All three release artefacts consume these same vars (see
-          # cmd/qsdmminer-console, cmd/trustcheck, cmd/genesis-ceremony
-          # — each has a --version flag wired to pkg/buildinfo.String).
+          # All five release artefacts consume these same vars (see
+          # cmd/qsdmcli, cmd/qsdm-home-gateway, cmd/qsdmminer-console,
+          # cmd/trustcheck, cmd/genesis-ceremony — each has a --version flag
+          # wired to pkg/buildinfo.String).
           mkdir -p /tmp/artefacts
           suffix="${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
 
@@ -170,6 +174,12 @@ jobs:
             -X github.com/blackbeardONE/QSDM/pkg/buildinfo.Version=${RELEASE_TAG} \
             -X github.com/blackbeardONE/QSDM/pkg/buildinfo.GitSHA=${BUILD_SHA} \
             -X github.com/blackbeardONE/QSDM/pkg/buildinfo.BuildDate=${BUILD_DATE}"
+
+          go build -trimpath -ldflags="${LDFLAGS}" \
+            -o "/tmp/artefacts/qsdmcli-${suffix}" ./cmd/qsdmcli
+
+          go build -trimpath -ldflags="${LDFLAGS}" \
+            -o "/tmp/artefacts/qsdm-home-gateway-${suffix}" ./cmd/qsdm-home-gateway
 
           go build -trimpath -ldflags="${LDFLAGS}" \
             -o "/tmp/artefacts/qsdmminer-console-${suffix}" ./cmd/qsdmminer-console
@@ -222,6 +232,8 @@ jobs:
           set -euo pipefail
           suffix="${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
           python scripts/check_binary_strip.py \
+            "/tmp/artefacts/qsdmcli-${suffix}" \
+            "/tmp/artefacts/qsdm-home-gateway-${suffix}" \
             "/tmp/artefacts/qsdmminer-console-${suffix}" \
             "/tmp/artefacts/trustcheck-${suffix}" \
             "/tmp/artefacts/genesis-ceremony-${suffix}"
@@ -239,7 +251,7 @@ jobs:
         run: |
           set -euo pipefail
           suffix="${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
-          for bin in qsdmminer-console trustcheck genesis-ceremony; do
+          for bin in qsdmcli qsdm-home-gateway qsdmminer-console trustcheck genesis-ceremony; do
             out="$(/tmp/artefacts/${bin}-${suffix} --version)"
             echo "${bin}: ${out}"
             echo "${out}" | grep -Fq "$RELEASE_TAG" \
@@ -259,6 +271,8 @@ jobs:
         with:
           name: binaries-${{ matrix.os }}-${{ matrix.arch }}
           path: |
+            /tmp/artefacts/qsdmcli-*
+            /tmp/artefacts/qsdm-home-gateway-*
             /tmp/artefacts/qsdmminer-console-*
             /tmp/artefacts/trustcheck-*
             /tmp/artefacts/genesis-ceremony-*
@@ -396,11 +410,12 @@ jobs:
           cp QSDM/deploy/validator-package/install-or-update.sh "$stage/"
           cp QSDM/deploy/validator-package/rollback.sh "$stage/"
           cp QSDM/deploy/validator-package/README.md "$stage/"
+          cp QSDM/docs/docs/SIGNED_CONSENSUS_ROLLOUT.md "$stage/"
           cp QSDM/config/qsdm.toml.example "$stage/"
           chmod 0755 "$stage/qsdm-validator" "$stage/install-or-update.sh" "$stage/rollback.sh"
           (
             cd "$stage"
-            sha256sum qsdm-validator install-or-update.sh rollback.sh README.md qsdm.toml.example > SHA256SUMS.txt
+            sha256sum qsdm-validator install-or-update.sh rollback.sh README.md SIGNED_CONSENSUS_ROLLOUT.md qsdm.toml.example > SHA256SUMS.txt
           )
           tar -C "${RUNNER_TEMP}/validator-package" -czf "$assets/${folder}.tar.gz" "$folder"
           (
@@ -425,8 +440,9 @@ jobs:
           Copy-Item QSDM\deploy\validator-package\install-or-update.ps1 $stage
           Copy-Item QSDM\deploy\validator-package\rollback.ps1 $stage
           Copy-Item QSDM\deploy\validator-package\README.md $stage
+          Copy-Item QSDM\docs\docs\SIGNED_CONSENSUS_ROLLOUT.md $stage
           Copy-Item QSDM\config\qsdm.toml.example $stage
-          $names = @('qsdm-validator.exe', 'install-or-update.ps1', 'rollback.ps1', 'README.md', 'qsdm.toml.example')
+          $names = @('qsdm-validator.exe', 'install-or-update.ps1', 'rollback.ps1', 'README.md', 'SIGNED_CONSENSUS_ROLLOUT.md', 'qsdm.toml.example')
           $lines = foreach ($name in $names) {
             $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $stage $name)).Hash.ToLowerInvariant()
             "$hash  $name"
@@ -519,7 +535,7 @@ jobs:
       - name: Install cosign (keyless Sigstore signer)
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
         with:
-          cosign-release: v2.4.1
+          cosign-release: v2.6.2
 
       - name: Resolve release tag
         id: tag
@@ -558,7 +574,7 @@ jobs:
         run: |
           set -euo pipefail
           cd /tmp/assets
-          for f in qsdm-validator-* qsdmminer-console-* trustcheck-* genesis-ceremony-* SHA256SUMS qsdm-source-sbom.spdx.json; do
+          for f in qsdm-validator-* qsdmcli-* qsdm-home-gateway-* qsdmminer-console-* trustcheck-* genesis-ceremony-* SHA256SUMS qsdm-source-sbom.spdx.json; do
             # Skip already-produced .sig / .pem so a re-run is idempotent.
             case "$f" in
               *.sig|*.pem) continue ;;
@@ -638,7 +654,7 @@ jobs:
       - name: Install cosign (keyless image signer)
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
         with:
-          cosign-release: v2.4.1
+          cosign-release: v2.6.2
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -791,7 +807,7 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
         with:
-          cosign-release: v2.4.1
+          cosign-release: v2.6.2
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -903,7 +919,7 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
         with:
-          cosign-release: v2.4.1
+          cosign-release: v2.6.2
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3

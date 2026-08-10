@@ -34,20 +34,20 @@ func enrollmentContractIDForTest() string {
 type recordingRecorder struct {
 	mu sync.Mutex
 
-	slashApplied       []slashAppliedRec
-	slashRewards       []slashRewardRec
-	slashRejected      []string
-	slashAutoRevoked   []string
-	enrollApplied      int
-	unenrollApplied    int
-	enrollRejected     []string
-	unenrollRejected   []string
-	enrollSwept        uint64
+	slashApplied     []slashAppliedRec
+	slashRewards     []slashRewardRec
+	slashRejected    []string
+	slashAutoRevoked []string
+	enrollApplied    int
+	unenrollApplied  int
+	enrollRejected   []string
+	unenrollRejected []string
+	enrollSwept      uint64
 }
 
 type slashAppliedRec struct {
-	Kind         string
-	DrainedDust  uint64
+	Kind        string
+	DrainedDust uint64
 }
 
 type slashRewardRec struct {
@@ -109,13 +109,13 @@ func (r *recordingRecorder) RecordEnrollmentUnbondSwept(count uint64) {
 	r.mu.Unlock()
 }
 
-func (r *recordingRecorder) RecordGovParamStaged(string)               {}
-func (r *recordingRecorder) RecordGovParamActivated(string, uint64)    {}
-func (r *recordingRecorder) RecordGovParamRejected(string)             {}
-func (r *recordingRecorder) RecordGovAuthorityVoted(string)            {}
-func (r *recordingRecorder) RecordGovAuthorityCrossed(string)          {}
+func (r *recordingRecorder) RecordGovParamStaged(string)                {}
+func (r *recordingRecorder) RecordGovParamActivated(string, uint64)     {}
+func (r *recordingRecorder) RecordGovParamRejected(string)              {}
+func (r *recordingRecorder) RecordGovAuthorityVoted(string)             {}
+func (r *recordingRecorder) RecordGovAuthorityCrossed(string)           {}
 func (r *recordingRecorder) RecordGovAuthorityActivated(string, uint64) {}
-func (r *recordingRecorder) RecordGovAuthorityRejected(string)         {}
+func (r *recordingRecorder) RecordGovAuthorityRejected(string)          {}
 
 // recordingPublisher captures every event for inspection.
 type recordingPublisher struct {

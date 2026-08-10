@@ -100,12 +100,12 @@ describe('QSDM signed release manifest', () => {
     const manifest = buildManifest();
     manifest.artifacts.push(
       artifact(
-        'qsdm-hive-wallet-extension-0.2.0.zip',
+        'qsdm-hive-wallet-extension-0.3.0.zip',
         'portable-archive',
         Buffer.from('extension')
       ),
       artifact(
-        'qsdm-hive-wallet-extension-0.2.0-SHA256SUMS.txt',
+        'qsdm-hive-wallet-extension-0.3.0-SHA256SUMS.txt',
         'checksums',
         Buffer.from('extension checksum')
       )
@@ -120,11 +120,11 @@ describe('QSDM signed release manifest', () => {
     expect(parsed.artifacts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          name: 'qsdm-hive-wallet-extension-0.2.0.zip',
+          name: 'qsdm-hive-wallet-extension-0.3.0.zip',
           role: 'portable-archive',
         }),
         expect.objectContaining({
-          name: 'qsdm-hive-wallet-extension-0.2.0-SHA256SUMS.txt',
+          name: 'qsdm-hive-wallet-extension-0.3.0-SHA256SUMS.txt',
           role: 'checksums',
         }),
       ])

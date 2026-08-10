@@ -24,15 +24,15 @@ type Metrics struct {
 	LastErrorTime         time.Time
 	LastError             string
 	// Storage operation metrics
-	StorageOperations     int64
-	StorageGetBalanceOps  int64
-	StorageUpdateBalanceOps int64
-	StorageSetBalanceOps  int64
-	StorageGetBalanceLatency time.Duration
+	StorageOperations           int64
+	StorageGetBalanceOps        int64
+	StorageUpdateBalanceOps     int64
+	StorageSetBalanceOps        int64
+	StorageGetBalanceLatency    time.Duration
 	StorageUpdateBalanceLatency time.Duration
-	StorageSetBalanceLatency time.Duration
-	StorageErrors         int64
-	DatabaseConnections   int64
+	StorageSetBalanceLatency    time.Duration
+	StorageErrors               int64
+	DatabaseConnections         int64
 
 	// Block-production observability.
 	//
@@ -51,10 +51,10 @@ type Metrics struct {
 	BlockTransactions int64
 
 	// Hot-reload observability (updated by config.HotReloader and admin dry-run handler)
-	HotReloadApplySuccess int64
-	HotReloadApplyFailure int64
-	HotReloadDryRunTotal  int64
-	LastHotReloadDryRunAt time.Time
+	HotReloadApplySuccess       int64
+	HotReloadApplyFailure       int64
+	HotReloadDryRunTotal        int64
+	LastHotReloadDryRunAt       time.Time
 	LastHotReloadDryRunChanged  bool
 	LastHotReloadDryRunPolicyOK bool
 	LastHotReloadDryRunLoadOK   bool
@@ -197,25 +197,25 @@ func (m *Metrics) GetStats() map[string]interface{} {
 	}
 
 	stats := map[string]interface{}{
-		"uptime_seconds":           uptime.Seconds(),
-		"transactions_processed":   m.TransactionsProcessed,
-		"transactions_valid":       m.TransactionsValid,
-		"transactions_invalid":     m.TransactionsInvalid,
-		"transactions_stored":      m.TransactionsStored,
-		"validity_rate_percent":    validityRate,
-		"proposals_created":        m.ProposalsCreated,
-		"votes_cast":               m.VotesCast,
-		"blocks_sealed":            m.BlocksSealed,
-		"block_transactions":       m.BlockTransactions,
-		"quarantines_triggered":    m.QuarantinesTriggered,
-		"reputation_updates":       m.ReputationUpdates,
-		"network_messages_sent":    m.NetworkMessagesSent,
+		"uptime_seconds":            uptime.Seconds(),
+		"transactions_processed":    m.TransactionsProcessed,
+		"transactions_valid":        m.TransactionsValid,
+		"transactions_invalid":      m.TransactionsInvalid,
+		"transactions_stored":       m.TransactionsStored,
+		"validity_rate_percent":     validityRate,
+		"proposals_created":         m.ProposalsCreated,
+		"votes_cast":                m.VotesCast,
+		"blocks_sealed":             m.BlocksSealed,
+		"block_transactions":        m.BlockTransactions,
+		"quarantines_triggered":     m.QuarantinesTriggered,
+		"reputation_updates":        m.ReputationUpdates,
+		"network_messages_sent":     m.NetworkMessagesSent,
 		"network_messages_received": m.NetworkMessagesRecv,
-		"last_transaction_time":    m.LastTransactionTime,
-		"last_error_time":          m.LastErrorTime,
-		"last_error":               m.LastError,
+		"last_transaction_time":     m.LastTransactionTime,
+		"last_error_time":           m.LastErrorTime,
+		"last_error":                m.LastError,
 	}
-	
+
 	// Add storage stats
 	storageStats := m.GetStorageStats()
 	for k, v := range storageStats {
@@ -259,7 +259,7 @@ func (m *Metrics) RecordStorageOperation(operation string, latency time.Duration
 		m.LastError = fmt.Sprintf("Storage %s failed: %v", operation, err)
 		m.LastErrorTime = time.Now()
 	}
-	
+
 	switch operation {
 	case "GetBalance":
 		m.StorageGetBalanceOps++
@@ -277,32 +277,32 @@ func (m *Metrics) RecordStorageOperation(operation string, latency time.Duration
 func (m *Metrics) GetStorageStats() map[string]interface{} {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	avgGetBalance := float64(0)
 	if m.StorageGetBalanceOps > 0 {
 		avgGetBalance = m.StorageGetBalanceLatency.Seconds() * 1000 // Convert to ms
 	}
-	
+
 	avgUpdateBalance := float64(0)
 	if m.StorageUpdateBalanceOps > 0 {
 		avgUpdateBalance = m.StorageUpdateBalanceLatency.Seconds() * 1000
 	}
-	
+
 	avgSetBalance := float64(0)
 	if m.StorageSetBalanceOps > 0 {
 		avgSetBalance = m.StorageSetBalanceLatency.Seconds() * 1000
 	}
-	
+
 	return map[string]interface{}{
-		"storage_operations_total":     m.StorageOperations,
-		"storage_get_balance_ops":      m.StorageGetBalanceOps,
-		"storage_update_balance_ops":    m.StorageUpdateBalanceOps,
-		"storage_set_balance_ops":       m.StorageSetBalanceOps,
-		"storage_get_balance_latency_ms": avgGetBalance,
+		"storage_operations_total":          m.StorageOperations,
+		"storage_get_balance_ops":           m.StorageGetBalanceOps,
+		"storage_update_balance_ops":        m.StorageUpdateBalanceOps,
+		"storage_set_balance_ops":           m.StorageSetBalanceOps,
+		"storage_get_balance_latency_ms":    avgGetBalance,
 		"storage_update_balance_latency_ms": avgUpdateBalance,
-		"storage_set_balance_latency_ms": avgSetBalance,
-		"storage_errors":               m.StorageErrors,
-		"database_connections":          m.DatabaseConnections,
+		"storage_set_balance_latency_ms":    avgSetBalance,
+		"storage_errors":                    m.StorageErrors,
+		"database_connections":              m.DatabaseConnections,
 	}
 }
 
@@ -338,4 +338,3 @@ func (m *Metrics) Reset() {
 	m.LastHotReloadDryRunPolicyOK = false
 	m.LastHotReloadDryRunLoadOK = false
 }
-

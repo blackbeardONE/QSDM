@@ -1,0 +1,203 @@
+name: Publish QSDM Hive release assets
+
+permissions:
+  contents: write
+  actions: read
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/qsdm-hive-publish-release.yml"
+      - "QSDM/deploy/releases/hive-release-request.json"
+
+concurrency:
+  group: qsdm-hive-publish-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Read and validate release request
+        id: request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUEST_FILE: QSDM/deploy/releases/hive-release-request.json
+        run: |
+          set -euo pipefail
+          test "$(jq -r '.schema' "$REQUEST_FILE")" = "qsdm.hive.release-request.v1"
+          version="$(jq -r '.version' "$REQUEST_FILE")"
+          tag="$(jq -r '.tag' "$REQUEST_FILE")"
+          source_commit="$(jq -r '.source_commit' "$REQUEST_FILE")"
+          windows_run_id="$(jq -r '.windows.run_id' "$REQUEST_FILE")"
+          linux_run_id="$(jq -r '.linux.run_id' "$REQUEST_FILE")"
+
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$tag" = "hive-v${version}"
+          [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$windows_run_id" =~ ^[0-9]+$ ]]
+          [[ "$linux_run_id" =~ ^[0-9]+$ ]]
+
+          ref_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}")"
+          tag_type="$(jq -r '.object.type' <<<"$ref_json")"
+          tag_commit="$(jq -r '.object.sha' <<<"$ref_json")"
+          if [[ "$tag_type" == "tag" ]]; then
+            tag_commit="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_commit}" --jq '.object.sha')"
+          fi
+          test "$tag_commit" = "$source_commit"
+
+          for run_id in "$windows_run_id" "$linux_run_id"; do
+            run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}")"
+            test "$(jq -r '.status' <<<"$run_json")" = "completed"
+            test "$(jq -r '.conclusion' <<<"$run_json")" = "success"
+            test "$(jq -r '.head_sha' <<<"$run_json")" = "$source_commit"
+            test "$(jq -r '.head_branch' <<<"$run_json")" = "$tag"
+          done
+
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "source_commit=$source_commit"
+            echo "windows_run_id=$windows_run_id"
+            echo "linux_run_id=$linux_run_id"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download verified workflow artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUEST_FILE: QSDM/deploy/releases/hive-release-request.json
+          WINDOWS_RUN_ID: ${{ steps.request.outputs.windows_run_id }}
+          LINUX_RUN_ID: ${{ steps.request.outputs.linux_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets/windows release-assets/linux \
+            release-assets/evidence release-assets/extension
+
+          gh run download "$WINDOWS_RUN_ID" \
+            --name "$(jq -r '.windows.artifact' "$REQUEST_FILE")" \
+            --dir release-assets/windows
+          gh run download "$WINDOWS_RUN_ID" \
+            --name "$(jq -r '.windows.evidence_artifact' "$REQUEST_FILE")" \
+            --dir release-assets/evidence
+          gh run download "$WINDOWS_RUN_ID" \
+            --name "$(jq -r '.wallet_extension.artifact' "$REQUEST_FILE")" \
+            --dir release-assets/extension
+          gh run download "$LINUX_RUN_ID" \
+            --name "$(jq -r '.linux.artifact' "$REQUEST_FILE")" \
+            --dir release-assets/linux
+
+      - name: Verify release files
+        shell: bash
+        env:
+          VERSION: ${{ steps.request.outputs.version }}
+        run: |
+          set -euo pipefail
+          EXTENSION_VERSION="$(node -p "require('./apps/qsdm-hive-wallet-extension/manifest.json').version")"
+
+          windows_installer="release-assets/windows/qsdm-hive-${VERSION}-win-x64.exe"
+          linux_appimage="release-assets/linux/qsdm-hive-${VERSION}-linux-x86_64.AppImage"
+          linux_archive="release-assets/linux/qsdm-hive-${VERSION}-linux-x64.tar.gz"
+
+          test -f "$windows_installer"
+          test -f "${windows_installer}.blockmap"
+          test -f release-assets/windows/latest.yml
+          test -f release-assets/windows/SHA256SUMS-win.txt
+          test -f "$linux_appimage"
+          test -f "$linux_archive"
+          test -f release-assets/linux/latest-linux.yml
+          test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}.zip"
+          test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}-chromium.zip"
+          test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}-chrome.zip"
+          test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}-edge.zip"
+          test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}-brave.zip"
+          test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}-firefox.zip"
+          test -f "release-assets/extension/qsdm-hive-wallet-extension-${EXTENSION_VERSION}-SHA256SUMS.txt"
+
+          grep -qx "version: ${VERSION}" release-assets/windows/latest.yml
+          grep -qx "version: ${VERSION}" release-assets/linux/latest-linux.yml
+          (
+            cd release-assets/windows
+            sha256sum -c SHA256SUMS-win.txt
+          )
+          (
+            cd release-assets/extension
+            sha256sum -c "qsdm-hive-wallet-extension-${EXTENSION_VERSION}-SHA256SUMS.txt"
+          )
+          (
+            cd release-assets/linux
+            sha256sum \
+              "qsdm-hive-${VERSION}-linux-x86_64.AppImage" \
+              "qsdm-hive-${VERSION}-linux-x64.tar.gz" \
+              > "qsdm-hive-${VERSION}-linux-SHA256SUMS.txt"
+          )
+
+          find release-assets -type f \
+            ! -name ARTIFACTS-SHA256SUMS.txt -print0 | sort -z | \
+            xargs -0 sha256sum > release-assets/ARTIFACTS-SHA256SUMS.txt
+
+      - name: Test production feed checker
+        run: python -m unittest scripts.test_check_hive_release_feed
+
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.request.outputs.tag }}
+          VERSION: ${{ steps.request.outputs.version }}
+          SOURCE_COMMIT: ${{ steps.request.outputs.source_commit }}
+        run: |
+          set -euo pipefail
+
+          awk -v version="$VERSION" '
+            $0 == "## [" version "]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' apps/qsdm-hive/qsdm-hive-main/CHANGELOG.md > release-changes.md
+          if [[ ! -s release-changes.md ]]; then
+            echo "::error file=apps/qsdm-hive/qsdm-hive-main/CHANGELOG.md::Missing or empty release notes for Hive ${VERSION}. Add a '## [${VERSION}]' section before publishing."
+            exit 1
+          fi
+
+          {
+            echo "## QSDM Hive ${VERSION}"
+            echo
+            cat release-changes.md
+            echo
+            echo "Source commit: \`${SOURCE_COMMIT}\`"
+            echo
+            echo "The Windows installer is not Authenticode-signed yet. Verify release"
+            echo "checksums before installation. QSDM's ML-DSA release envelopes remain"
+            echo "the authoritative application-level signature on qsdm.tech."
+          } > release-notes.md
+
+          mapfile -d '' assets < <(find release-assets -type f -print0 | sort -z)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${assets[@]}" --clobber
+            gh release edit "$TAG" --title "QSDM Hive ${VERSION}" \
+              --notes-file release-notes.md --latest
+          else
+            gh release create "$TAG" "${assets[@]}" --verify-tag \
+              --title "QSDM Hive ${VERSION}" --notes-file release-notes.md \
+              --latest
+          fi
+
+          gh release view "$TAG" --json tagName,isDraft,isPrerelease,url,assets
+      - name: Require production updater feed parity
+        shell: bash
+        env:
+          VERSION: ${{ steps.request.outputs.version }}
+          SOURCE_COMMIT: ${{ steps.request.outputs.source_commit }}
+        run: |
+          set -euo pipefail
+          python scripts/check_hive_release_feed.py \
+            --expected-version "$VERSION" \
+            --expected-commit "$SOURCE_COMMIT"

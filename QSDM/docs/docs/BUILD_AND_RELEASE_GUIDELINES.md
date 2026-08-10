@@ -108,6 +108,26 @@ Private one-off helpers belong under `scripts/local/`, `scripts/private/`,
 also rejects those paths if they are force-added, and checks public scripts for
 literal personal home paths and consumer email addresses.
 
+### Website deployment
+
+Build the production `qsdm.tech` package from a clean commit that is already on
+`origin/main`. Do not deploy a branch-only website snapshot, even when that
+branch has a newer layout. Merge the layout into `main` first so product facts,
+wallet flows, documentation, and deployment checks move together.
+
+Before replacing public files, the website installer must compare the staged
+pages with the versions already approved by production:
+
+- QSDM Core version from the live `/api/v1/status` response;
+- QSDM Hive version from `downloads/latest.yml`;
+- newest published Chromium QSDM Wallet extension archive;
+- required wallet-provider, onboarding, documentation, and navigation assets.
+
+Reject the package before backup or installation when any advertised version or
+required asset is stale. Keep the previous website backup, verify every
+advertised download, and compare important live files with the reviewed package
+after deployment.
+
 ### 3. Run the assurance gates
 
 1. Review the full committed and working-tree delta for security, compatibility,
@@ -216,9 +236,31 @@ Direct `npm run release` publishing is intentionally blocked: publish only the
 joint, verified Windows/Linux artifact set through
 `QSDM/deploy/scripts/publish_hive_release.sh`. When Edge Agent artifacts are
 unchanged, use `publish_hive_dual_platform_release.sh`; it publishes both Hive
-platform payloads and the versioned browser-extension package before moving
+platform payloads and the versioned browser-extension packages before moving
 either exact-version pointer. The Windows ML-DSA release envelope must include
-the extension ZIP and its versioned checksum file.
+the universal and legacy Chromium archives, the separately named Chrome, Edge,
+Brave, and Firefox store-submission archives, and their versioned checksum file.
+
+Browser stores are the consumer installation path. Keep one clearly labeled
+download route per browser, and publish a store link only after that listing is
+approved. ZIP archives are reviewer/developer submission artifacts and belong
+under Advanced manual installation; do not present a ZIP as the normal install
+button. Never rename a ZIP to `.crx` or `.xpi`, generate a replacement Chromium
+key to manufacture an ID, or ask users to weaken browser policy. If a store
+assigns a different extension ID, add it to Hive's native-host allowlist and
+release that compatible Hive build before activating the store listing.
+
+Agent and Relay files are immutable, versioned release artifacts even though
+their local build output is excluded from Git because of its size. The normal
+joint Hive publisher validates and publishes them with Hive. If an already
+approved Agent release is missing from production, rebuild it from the matching
+source revision, run the Edge tests and Linux smoke test, then use
+`QSDM/deploy/scripts/publish_edge_release.sh <stage-dir> <agent-version>`.
+That repair publisher validates every checksum and binary version, refuses to
+replace a different same-version file, installs each file atomically, and
+checks every public URL. Do not repair this condition with ad hoc file copies.
+The website installer also checks every `/downloads/` link advertised by
+`download.html` and must fail deployment when any target is unavailable.
 
 Agent and Relay files are immutable, versioned release artifacts even though
 their local build output is excluded from Git because of its size. The normal
@@ -325,6 +367,22 @@ Publish versioned, immutable artifacts first. Update the `latest` pointer only
 after remote checksum/signature verification and smoke tests pass. Attach or
 retain:
 
+The GitHub release workflow intentionally has no production-server or release
+signing credentials. Its final production-feed parity gate therefore remains
+red until the release owner creates both local ML-DSA envelopes and runs
+`publish_hive_dual_platform_release.sh` against `qsdm.tech`. Rerun the failed
+workflow after that atomic publication. A GitHub release is not complete, and
+must not be announced, while this gate is red; otherwise installed Hive clients
+will continue to see the previous `latest.yml` version.
+
+The read-only `Monitor QSDM Hive release feed` workflow repeats the same check
+hourly against the approved release request. Treat any scheduled failure as a
+production incident: do not weaken or bypass the check, and do not republish
+mutable versioned artifacts. Restore the approved atomic release or publish a
+new version through the normal release process. The monitor maintains one
+deduplicated `production-incident` GitHub issue, adds evidence on repeated
+failures, and closes it after the public feed passes again.
+
 - release notes and migration/rollback instructions;
 - artifact manifest and SHA-256 checksums;
 - both QSDM-native signed release envelopes generated from the pinned release
@@ -346,6 +404,17 @@ exact version as current.
 
 - A failed gate blocks promotion; it is not converted to a warning merely to
   finish a release.
+- Windows home-validator updates must use the tracked bounded updater. The
+  update transaction must verify the signed release hash tree, use recorded
+  PIDs, preserve node identity and state, write a machine-readable result, and
+  restore the previous verified binary on any failed post-start check.
+- Do not install, query, recreate, or start Windows scheduled tasks from the
+  binary replacement transaction. Scheduled-task maintenance is a separate
+  install/repair workflow and must not block validator rollback.
+- Every process stop, child command, API request, readiness poll, lock wait,
+  and watchdog restoration must have an explicit deadline. Never add an
+  unbounded `Wait-Process`, recursive machine-wide search, CIM process sweep,
+  or Task Scheduler query to the hot update path.
 - Never replace bytes behind an existing version or tag. Fix the issue and bump
   the version.
 - Keep the previous immutable artifacts available for investigation, but do not

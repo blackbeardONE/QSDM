@@ -143,12 +143,12 @@ func (hc *HealthChecker) GetOverallHealth() HealthStatus {
 // GetHealthReport returns a comprehensive health report
 func (hc *HealthChecker) GetHealthReport() map[string]interface{} {
 	hc.mu.RLock()
-	
+
 	// Calculate overall health while holding the lock
 	hasUnhealthy := false
 	hasDegraded := false
 	components := make(map[string]interface{})
-	
+
 	for name, comp := range hc.components {
 		components[name] = map[string]interface{}{
 			"status":     comp.Status,
@@ -162,7 +162,7 @@ func (hc *HealthChecker) GetHealthReport() map[string]interface{} {
 			hasDegraded = true
 		}
 	}
-	
+
 	var overallStatus HealthStatus
 	if hasUnhealthy {
 		overallStatus = HealthStatusUnhealthy
@@ -171,7 +171,7 @@ func (hc *HealthChecker) GetHealthReport() map[string]interface{} {
 	} else {
 		overallStatus = HealthStatusHealthy
 	}
-	
+
 	hc.mu.RUnlock()
 
 	report := make(map[string]interface{})
@@ -241,4 +241,3 @@ func (hc *HealthChecker) CheckHealth() {
 		}
 	}
 }
-

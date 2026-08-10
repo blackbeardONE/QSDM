@@ -1,12 +1,7 @@
-import { Event } from 'electron';
+import { UpdateCheckResult } from 'electron-updater';
 
-import { autoUpdater, UpdateCheckResult } from 'electron-updater';
+import { checkForUpdates } from '../../AppUpdater';
 
-import { ensureAppUpdaterConfigured } from '../../AppUpdater';
-
-export const checkAppUpdate = async (
-  event: Event
-): Promise<UpdateCheckResult | null> => {
-  await ensureAppUpdaterConfigured();
-  return autoUpdater.checkForUpdates();
+export const checkAppUpdate = async (): Promise<UpdateCheckResult | null> => {
+  return checkForUpdates();
 };

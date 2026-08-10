@@ -2,6 +2,7 @@ package networking
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -54,6 +55,29 @@ func TestPolGossipIngress_ValidRoundCertificate(t *testing.T) {
 	}
 	if err := ing.HandlePeerMessage("peer2", body); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPolGossipIngress_ReceiveOnlyStillAuthenticates(t *testing.T) {
+	chain.SetRequireSignedCertificates(true)
+	chain.SetSignedCertificateActivationHeight(5)
+	t.Cleanup(func() {
+		chain.SetRequireSignedCertificates(false)
+		chain.SetSignedCertificateActivationHeight(0)
+	})
+
+	cert := chain.RoundCertificate{Height: 5, CommitDigest: "digest"}
+	inner, err := json.Marshal(cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(polGossipWire{Kind: polKindRoundCertificate, Payload: inner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ingress := NewPolGossipIngress(DefaultPolGossipConfig(), nil)
+	if err := ingress.HandlePeerMessage("peer", body); !errors.Is(err, chain.ErrCertUnsigned) {
+		t.Fatalf("receive-only POL ingress must reject unsigned certificates at activation, got %v", err)
 	}
 }
 

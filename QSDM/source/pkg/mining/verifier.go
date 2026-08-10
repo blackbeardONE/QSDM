@@ -170,7 +170,7 @@ func (s *ProofIDSet) Size() int {
 // QuarantineSet tracks miner addresses that have submitted a fraudulent
 // batch and must sit out for Q blocks.
 type QuarantineSet struct {
-	mu          sync.Mutex
+	mu               sync.Mutex
 	quarantinedUntil map[string]uint64
 	// onQuarantine, when set, is fired once per newly-quarantined
 	// address. See SetOnQuarantine.
@@ -233,20 +233,20 @@ func (q *QuarantineSet) IsQuarantined(addr string, atHeight uint64) bool {
 // VerifierConfig aggregates all the inputs a Verifier needs. Callers
 // assemble one per validator process and reuse it across proofs.
 type VerifierConfig struct {
-	EpochParams    EpochParams
+	EpochParams      EpochParams
 	DifficultyParams DifficultyAdjusterParams
 
-	Chain          ChainView
-	Addresses      AddressValidator
-	Batches        BatchValidator // may be nil; in that case step 11 is skipped
+	Chain     ChainView
+	Addresses AddressValidator
+	Batches   BatchValidator // may be nil; in that case step 11 is skipped
 
-	Dedup          *ProofIDSet
-	Quarantine     *QuarantineSet
+	Dedup      *ProofIDSet
+	Quarantine *QuarantineSet
 
 	// DAGProvider returns the fully-built DAG for a given mining-epoch.
 	// In production this is a weak-references cache of the two most
 	// recent epochs (see pkg/mining/dagstore, Phase 4.3 wiring).
-	DAGProvider   func(epoch uint64) (DAG, error)
+	DAGProvider func(epoch uint64) (DAG, error)
 
 	// WorkSetProvider returns the canonical WorkSet for a given mining-
 	// epoch. Both miner and validator MUST agree on this derivation.
@@ -255,7 +255,7 @@ type VerifierConfig struct {
 	// DifficultyAt returns the difficulty active at the given block
 	// height. Validators keep a per-height difficulty record because the
 	// retarget schedule is deterministic.
-	DifficultyAt  func(height uint64) (*big.Int, error)
+	DifficultyAt func(height uint64) (*big.Int, error)
 
 	// GraceWindow overrides the default of 6 blocks. Zero means use the
 	// default.

@@ -10,7 +10,7 @@ stage_dir="$(cd "$1" && pwd)"
 hive_version="$2"
 webroot="${3:-/var/www/qsdm}"
 downloads="$webroot/downloads"
-wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.2.0}"
+wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.5.1}"
 
 if [[ ! "$hive_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "invalid Hive version: $hive_version" >&2
@@ -22,6 +22,12 @@ linux_appimage="qsdm-hive-${hive_version}-linux-x86_64.AppImage"
 linux_archive="qsdm-hive-${hive_version}-linux-x64.tar.gz"
 linux_checksums="qsdm-hive-${hive_version}-linux-SHA256SUMS.txt"
 wallet_extension="qsdm-hive-wallet-extension-${wallet_extension_version}.zip"
+wallet_extension_crx="qsdm-hive-wallet-extension-${wallet_extension_version}.crx"
+wallet_extension_chromium="qsdm-hive-wallet-extension-${wallet_extension_version}-chromium.zip"
+wallet_extension_chrome="qsdm-hive-wallet-extension-${wallet_extension_version}-chrome.zip"
+wallet_extension_edge="qsdm-hive-wallet-extension-${wallet_extension_version}-edge.zip"
+wallet_extension_brave="qsdm-hive-wallet-extension-${wallet_extension_version}-brave.zip"
+wallet_extension_firefox="qsdm-hive-wallet-extension-${wallet_extension_version}-firefox.zip"
 wallet_extension_checksums="qsdm-hive-wallet-extension-${wallet_extension_version}-SHA256SUMS.txt"
 
 immutable_downloads=(
@@ -33,11 +39,24 @@ immutable_downloads=(
   "$linux_appimage"
   "$linux_archive"
   "$linux_checksums"
-  "qsdm-hive-${hive_version}-linux-release-provenance.json"
-  "qsdm-hive-${hive_version}-linux-payload-evidence.json"
   "$wallet_extension"
+  "$wallet_extension_chromium"
+  "$wallet_extension_chrome"
+  "$wallet_extension_edge"
+  "$wallet_extension_brave"
+  "$wallet_extension_firefox"
   "$wallet_extension_checksums"
 )
+for optional_linux_evidence in \
+  "qsdm-hive-${hive_version}-linux-release-provenance.json" \
+  "qsdm-hive-${hive_version}-linux-payload-evidence.json"; do
+  if [[ -f "$stage_dir/downloads/$optional_linux_evidence" ]]; then
+    immutable_downloads+=("$optional_linux_evidence")
+  fi
+done
+if [[ -f "$stage_dir/downloads/$wallet_extension_crx" ]]; then
+  immutable_downloads+=("$wallet_extension_crx")
+fi
 pointer_downloads=(
   "SHA256SUMS-win.txt"
   "latest.yml"
@@ -61,7 +80,6 @@ grep -qx "version: ${hive_version}" "$stage_dir/downloads/latest.yml"
 grep -qx "version: ${hive_version}" "$stage_dir/downloads/latest-linux.yml"
 grep -q "url: ${windows_installer}" "$stage_dir/downloads/latest.yml"
 grep -q "url: ${linux_appimage}" "$stage_dir/downloads/latest-linux.yml"
-grep -q "$wallet_extension" "$stage_dir/download.html"
 grep -q "Version ${hive_version}" "$stage_dir/download.html"
 
 for platform in windows linux; do
@@ -71,13 +89,19 @@ for platform in windows linux; do
     "$envelope"
   payload="$(sed -n 's/.*"manifest_base64": "\([^"]*\)".*/\1/p' "$envelope")"
   test -n "$payload"
-  printf '%s' "$payload" | base64 --decode | \
-    grep -q '"version": "'"${hive_version}"'"'
+  manifest_json="$(printf '%s' "$payload" | base64 --decode)"
+  grep -q '"version": "'"${hive_version}"'"' <<<"$manifest_json"
   if [[ "$platform" == "windows" ]]; then
-    printf '%s' "$payload" | base64 --decode | \
-      grep -q '"name": "'"${wallet_extension}"'"'
-    printf '%s' "$payload" | base64 --decode | \
-      grep -q '"name": "'"${wallet_extension_checksums}"'"'
+    grep -q '"name": "'"${wallet_extension}"'"' <<<"$manifest_json"
+    if [[ -f "$stage_dir/downloads/$wallet_extension_crx" ]]; then
+      grep -q '"name": "'"${wallet_extension_crx}"'"' <<<"$manifest_json"
+    fi
+    grep -q '"name": "'"${wallet_extension_chromium}"'"' <<<"$manifest_json"
+    grep -q '"name": "'"${wallet_extension_chrome}"'"' <<<"$manifest_json"
+    grep -q '"name": "'"${wallet_extension_edge}"'"' <<<"$manifest_json"
+    grep -q '"name": "'"${wallet_extension_brave}"'"' <<<"$manifest_json"
+    grep -q '"name": "'"${wallet_extension_firefox}"'"' <<<"$manifest_json"
+    grep -q '"name": "'"${wallet_extension_checksums}"'"' <<<"$manifest_json"
   fi
 done
 
@@ -114,26 +138,36 @@ for file in "${immutable_downloads[@]}"; do
 done
 
 for file in "$windows_installer" "$linux_appimage" "$linux_archive" \
-  "$wallet_extension" "$wallet_extension_checksums"; do
+  "$wallet_extension" "$wallet_extension_chromium" \
+  "$wallet_extension_chrome" "$wallet_extension_edge" \
+  "$wallet_extension_brave" \
+  "$wallet_extension_firefox" "$wallet_extension_checksums"; do
   curl --fail --silent --show-error --head --max-time 30 \
     "https://qsdm.tech/downloads/$file" >/dev/null
 done
+if [[ -f "$stage_dir/downloads/$wallet_extension_crx" ]]; then
+  curl --fail --silent --show-error --head --max-time 30 \
+    "https://qsdm.tech/downloads/$wallet_extension_crx" >/dev/null
+fi
 
 install_pointer "$stage_dir/download.html" "$webroot/download.html"
 for file in "${pointer_downloads[@]}"; do
   install_pointer "$stage_dir/downloads/$file" "$downloads/$file"
 done
 
-curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/downloads/latest.yml" | grep -qx "version: ${hive_version}"
-curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/downloads/latest-linux.yml" | grep -qx "version: ${hive_version}"
+public_latest_windows="$(curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/downloads/latest.yml")"
+grep -qx "version: ${hive_version}" <<<"$public_latest_windows"
+public_latest_linux="$(curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/downloads/latest-linux.yml")"
+grep -qx "version: ${hive_version}" <<<"$public_latest_linux"
 for platform in windows linux; do
-  curl --fail --silent --show-error --max-time 30 \
-    "https://qsdm.tech/downloads/qsdm-hive-release-${platform}.json" | \
-    grep -q '"schema": "qsdm.signed-release.v1"'
+  public_envelope="$(curl --fail --silent --show-error --max-time 30 \
+    "https://qsdm.tech/downloads/qsdm-hive-release-${platform}.json")"
+  grep -q '"schema": "qsdm.signed-release.v1"' <<<"$public_envelope"
 done
-curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/download.html" | grep -q "Version ${hive_version}"
+public_download_page="$(curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/download.html")"
+grep -q "Version ${hive_version}" <<<"$public_download_page"
 
 echo "Published QSDM Hive ${hive_version} for Windows and Linux atomically."

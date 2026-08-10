@@ -145,7 +145,11 @@ func TestValidateEvidence_proofPolicy(t *testing.T) {
 	}
 
 	SetRequireEvidenceProof(false)
-	t.Cleanup(func() { SetRequireEvidenceProof(false) })
+	SetEvidenceProofActivationHeight(0)
+	t.Cleanup(func() {
+		SetRequireEvidenceProof(false)
+		SetEvidenceProofActivationHeight(0)
+	})
 	if err := validateEvidence(bare); err != nil {
 		t.Fatalf("unproven evidence should pass while proofs are optional: %v", err)
 	}
@@ -153,6 +157,14 @@ func TestValidateEvidence_proofPolicy(t *testing.T) {
 	SetRequireEvidenceProof(true)
 	if err := validateEvidence(bare); !errors.Is(err, ErrEvidenceProofMissing) {
 		t.Fatalf("want ErrEvidenceProofMissing once proofs are required, got %v", err)
+	}
+	SetEvidenceProofActivationHeight(10)
+	if err := validateEvidence(bare); err != nil {
+		t.Fatalf("historical evidence below activation should pass: %v", err)
+	}
+	bare.Height = 10
+	if err := validateEvidence(bare); !errors.Is(err, ErrEvidenceProofMissing) {
+		t.Fatalf("proof must be present at activation, got %v", err)
 	}
 
 	// A proof naming someone else is rejected even with policy off.

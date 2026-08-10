@@ -265,7 +265,7 @@ type Driver struct {
 	// lastSkipLog throttles the skip log so a non-proposer does not emit a
 	// line every Period forever.
 	lastSkipLog atomic.Int64
-	proofsPaid   atomic.Uint64
+	proofsPaid  atomic.Uint64
 
 	// rewardPenalty is the resolved penalty source. Always
 	// non-nil after New (defaulted to noopRewardPenalty

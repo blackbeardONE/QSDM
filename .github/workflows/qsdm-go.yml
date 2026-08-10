@@ -93,6 +93,23 @@ jobs:
               [ref]$null,
               [ref]$errors
             ) | Out-Null
+            foreach ($script in @(
+              "QSDM/scripts/start_local_validator.ps1",
+              "QSDM/scripts/start_treasury_signer.ps1",
+              "QSDM/scripts/watch_local_stack.ps1",
+              "QSDM/scripts/update_local_validator.ps1",
+              "QSDM/scripts/test_local_validator_updater.ps1",
+              "QSDM/scripts/test_local_validator_update_role_persistence.ps1",
+              "QSDM/scripts/test_local_validator_updater_transaction.ps1",
+              "QSDM/scripts/test_local_validator_updater_transaction_supervised.ps1",
+              "QSDM/scripts/test_treasury_signer_process_identity.ps1"
+            )) {
+              [System.Management.Automation.Language.Parser]::ParseFile(
+                (Resolve-Path $script),
+                [ref]$null,
+                [ref]$errors
+              ) | Out-Null
+            }
             if ($errors.Count) { throw ($errors | Out-String) }
           '
 
@@ -148,6 +165,41 @@ jobs:
           if ($version -notmatch '^qsdm dev ') {
             throw "unexpected validator version output: $version"
           }
+
+      - name: Test bounded local validator updater
+        shell: pwsh
+        run: |
+          $result = & .\QSDM\scripts\test_local_validator_updater.ps1 |
+            ConvertFrom-Json
+          if (-not $result.success) {
+            throw "Local validator updater harness did not pass."
+          }
+
+      - name: Test validator update role persistence
+        shell: pwsh
+        run: |
+          $result = & .\QSDM\scripts\test_local_validator_update_role_persistence.ps1 |
+            ConvertFrom-Json
+          if (-not $result.success -or -not $result.producer_argument_forwarded) {
+            throw "Validator update role persistence test did not pass."
+          }
+
+      - name: Test treasury signer stale PID protection
+        shell: pwsh
+        run: .\QSDM\scripts\test_treasury_signer_process_identity.ps1
+
+      - name: Test transactional local validator update and rollback
+        shell: pwsh
+        run: |
+          $output = & .\QSDM\scripts\test_local_validator_updater_transaction_supervised.ps1
+          $result = (($output -join "`n") -split "`r?`n") |
+            Where-Object { $_ -like '{*' } |
+            Select-Object -Last 1 |
+            ConvertFrom-Json
+          if (-not $result.success -or -not $result.rollback_succeeded) {
+            throw "Local validator updater transaction rehearsal did not pass."
+          }
+          $result | ConvertTo-Json -Compress
 
   # Rust wasm_module + wazero validate_raw preflight (no CGO).
   wasm-preflight-smoke:

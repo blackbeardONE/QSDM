@@ -8,7 +8,7 @@ import (
 // StakingLedger holds delegated voting power, per-delegator bonds, and unbonding queues.
 type StakingLedger struct {
 	mu             sync.RWMutex
-	delegated      map[string]float64             // validator -> total delegated (denormalized)
+	delegated      map[string]float64            // validator -> total delegated (denormalized)
 	delegatorIndex map[string]map[string]float64 // delegator -> validator -> amount
 	unbond         []unbondEntry
 	persistPath    string
@@ -229,6 +229,48 @@ func (s *StakingLedger) BondedByValidator() map[string]float64 {
 		out[validator] = amount
 	}
 	return out
+}
+
+// chainReplayClone returns an isolated staking snapshot for speculative block
+// replay. The clone deliberately has no persist path: pre-seal validation and
+// external-block verification must never write speculative state to disk.
+func (s *StakingLedger) chainReplayClone() *StakingLedger {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	clone := NewStakingLedger()
+	for validator, amount := range s.delegated {
+		clone.delegated[validator] = amount
+	}
+	for delegator, bonds := range s.delegatorIndex {
+		copied := make(map[string]float64, len(bonds))
+		for validator, amount := range bonds {
+			copied[validator] = amount
+		}
+		clone.delegatorIndex[delegator] = copied
+	}
+	clone.unbond = append([]unbondEntry(nil), s.unbond...)
+	return clone
+}
+
+// restoreFromChainReplay replaces live staking state from an isolated replay
+// snapshot while preserving the live persistence destination.
+func (s *StakingLedger) restoreFromChainReplay(other *StakingLedger) error {
+	if s == nil || other == nil {
+		return fmt.Errorf("chain: staking replay restore requires non-nil ledgers")
+	}
+
+	snapshot := other.chainReplayClone()
+	s.mu.Lock()
+	s.delegated = snapshot.delegated
+	s.delegatorIndex = snapshot.delegatorIndex
+	s.unbond = snapshot.unbond
+	s.mu.Unlock()
+	s.persist()
+	return nil
 }
 
 // Compile-time guard that the ledger can drive membership derivation.

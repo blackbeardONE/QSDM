@@ -115,9 +115,14 @@ type ChainReplayApplier interface {
 
 // BlockProducer assembles blocks from the mempool.
 type BlockProducer struct {
-	mu          sync.Mutex
-	pool        *mempool.Mempool
-	applier     StateApplier
+	mu sync.Mutex
+	// sealLifecycleMu keeps each accepted block and its post-seal hooks in one
+	// ordered lifecycle. Without it, concurrent HTTP and pubsub catch-up could
+	// accept N and N+1 in memory, then persist N+1 before N after bp.mu was
+	// released.
+	sealLifecycleMu sync.Mutex
+	pool            *mempool.Mempool
+	applier         StateApplier
 
 	// blockSigner authenticates sealed blocks. Guarded by signerMu, not
 	// mu, because ProduceBlock holds mu when it signs. See block_sig.go.
@@ -248,6 +253,9 @@ func (bp *BlockProducer) SetSealGuard(fn func() error) {
 // the hook commits BFT for the pending height, then the same txs are applied to the live store and the
 // block is appended. Otherwise BFT is driven only after append via OnSealed.
 func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
+	bp.sealLifecycleMu.Lock()
+	defer bp.sealLifecycleMu.Unlock()
+
 	bp.mu.Lock()
 	runSealedHook := false
 	// outcomes is captured inline below as txs are applied; it
@@ -422,11 +430,9 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 		}
 	}
 
-	// Feeds the dashboard's blocks_sealed / block_transactions figures.
-	// Recorded only once the block is actually appended, so a run that
-	// bailed out above (POL/BFT gate, failed pre-seal, empty pool) does not
-	// register as production. Block production previously touched no
-	// metric at all.
+	// Record production only after every seal gate and signature step has
+	// succeeded. Inbound transaction counters remain separate to avoid
+	// double-counting transactions that were both received and included.
 	metrics().RecordBlockSealed(len(block.Transactions))
 
 	bp.chain = append(bp.chain, block)
@@ -609,8 +615,14 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 	if bp == nil || blk == nil {
 		return fmt.Errorf("chain: nil producer or block")
 	}
+	bp.sealLifecycleMu.Lock()
+	defer bp.sealLifecycleMu.Unlock()
+
 	if want := computeBlockHash(blk); blk.Hash != want {
 		return fmt.Errorf("chain: external block has invalid hash")
+	}
+	if err := VerifyBlockSignature(blk); err != nil {
+		return fmt.Errorf("chain: external block authentication: %w", err)
 	}
 	ra, ok := bp.applier.(ChainReplayApplier)
 	if !ok {

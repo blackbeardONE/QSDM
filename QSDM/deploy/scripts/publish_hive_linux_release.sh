@@ -25,8 +25,6 @@ required_downloads=(
   "$appimage"
   "$archive"
   "$checksums"
-  "$provenance"
-  "$evidence"
   "latest-linux.yml"
   "qsdm-hive-release-linux.json"
 )
@@ -49,8 +47,8 @@ grep -q '"key_id": "10ab9c5710761d4c9dca59d42446e9ea0e3315d15cdc3715df1dcb8c96fa
 manifest_payload="$(sed -n 's/.*"manifest_base64": "\([^"]*\)".*/\1/p' \
   "$stage_dir/downloads/qsdm-hive-release-linux.json")"
 test -n "$manifest_payload"
-printf '%s' "$manifest_payload" | base64 --decode | \
-  grep -q '"version": "'"${hive_version}"'"'
+manifest_json="$(printf '%s' "$manifest_payload" | base64 --decode)"
+grep -q '"version": "'"${hive_version}"'"' <<<"$manifest_json"
 
 install -d -o caddy -g caddy -m 0755 "$webroot" "$downloads"
 
@@ -80,9 +78,15 @@ install_pointer() {
   mv -f "$temporary" "$destination"
 }
 
-# Immutable packages and their evidence become public before any pointer moves.
-for file in "$appimage" "$archive" "$provenance" "$evidence"; do
+# Immutable packages and any available evidence become public before any pointer moves.
+for file in "$appimage" "$archive"; do
   atomic_install "$stage_dir/downloads/$file" "$downloads/$file"
+done
+for optional_evidence in "$provenance" "$evidence"; do
+  if [[ -f "$stage_dir/downloads/$optional_evidence" ]]; then
+    atomic_install "$stage_dir/downloads/$optional_evidence" \
+      "$downloads/$optional_evidence"
+  fi
 done
 install_pointer "$stage_dir/downloads/$checksums" "$downloads/$checksums"
 
@@ -98,12 +102,15 @@ install_pointer "$stage_dir/downloads/latest-linux.yml" "$downloads/latest-linux
 install_pointer "$stage_dir/downloads/qsdm-hive-release-linux.json" \
   "$downloads/qsdm-hive-release-linux.json"
 
-curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/downloads/latest-linux.yml" | grep -qx "version: ${hive_version}"
-curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/downloads/qsdm-hive-release-linux.json" | \
-  grep -q '"schema": "qsdm.signed-release.v1"'
-curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/download.html" | grep -q "qsdm-hive-${hive_version}-linux-x86_64.AppImage"
+public_latest="$(curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/downloads/latest-linux.yml")"
+grep -qx "version: ${hive_version}" <<<"$public_latest"
+public_envelope="$(curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/downloads/qsdm-hive-release-linux.json")"
+grep -q '"schema": "qsdm.signed-release.v1"' <<<"$public_envelope"
+public_download_page="$(curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/download.html")"
+grep -q "qsdm-hive-${hive_version}-linux-x86_64.AppImage" \
+  <<<"$public_download_page"
 
 echo "Published QSDM Hive ${hive_version} for Linux. Windows manifest unchanged."

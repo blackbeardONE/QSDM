@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#061116" />
+  <meta name="robots" content="noindex,follow" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; img-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'"
+  />
+  <title>Open QSDM Wallet</title>
+  <meta
+    name="description"
+    content="Open QSDM Wallet onboarding when the browser extension is installed, or continue to the official QSDM download page."
+  />
+  <link rel="icon" href="/assets/qsdm-hive-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="/assets/site.css" />
+  <link rel="stylesheet" href="/assets/wallet-start.css" integrity="sha384-u4GVeVLqLw970kTA037at7INb80N1pgPTaZ7LOBjr7BhKKKA02nzBdYBpWdJOlTr" crossorigin="anonymous" />
+</head>
+<body>
+  <header class="handoff-header">
+    <nav class="handoff-nav" aria-label="QSDM Wallet">
+      <a class="handoff-brand" href="/"><img src="/assets/qsdm-hive-icon.png" alt="" />QSDM Wallet</a>
+      <a href="/download.html#wallet-extension-title">Downloads</a>
+    </nav>
+  </header>
+  <main>
+    <section class="handoff" aria-labelledby="handoff-title">
+      <img src="/assets/qsdm-hive-icon.png" alt="QSDM" />
+      <p class="eyebrow">SECURE WALLET HANDOFF</p>
+      <h1 id="handoff-title">Opening QSDM Wallet</h1>
+      <p class="lede">
+        Installed extensions open onboarding automatically. If QSDM Wallet is
+        not detected, this page continues to the official download.
+      </p>
+      <div class="progress" aria-hidden="true"><span></span></div>
+      <p class="status" id="wallet-handoff-status" role="status">Checking this browser...</p>
+      <div class="actions">
+        <button class="action primary" id="wallet-handoff-open" type="button">Open QSDM Wallet</button>
+        <a class="action" href="/download.html#wallet-extension-title">Download extension</a>
+      </div>
+      <p class="detail">Wallet keys remain in QSDM Hive. Websites receive only approved account access.</p>
+    </section>
+  </main>
+  <script src="/wallet-start.js" integrity="sha384-VFreAzm9b8W09/afgziLA2TcnAvBeOmmfDFN7G5Jpmsl6ODpTAHm2dJScFGzZyso" crossorigin="anonymous"></script>
+</body>
+</html>

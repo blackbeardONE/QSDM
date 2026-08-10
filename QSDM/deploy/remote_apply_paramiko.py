@@ -169,18 +169,21 @@ echo 'active'
 
 echo '===[ landing sync (deploy/landing/ -> /var/www/qsdm/) ]==='
 # Caddy serves the corporate site from /var/www/qsdm (see Caddyfile).
-# The tarball extract puts the latest HTML under /root/QSDM/deploy/landing/,
-# but Caddy does not read from there. Mirror the files over with
-# install -m0644 (preserves mode, owner = root) so updates to
-# landing/index.html + landing/trust.html appear on qsdm.tech without a
-# separate scp step. Idempotent: re-running copies the same bytes.
+# The tarball extract puts the latest site under /root/QSDM/deploy/landing/,
+# but Caddy does not read from there. Mirror every tracked static asset except
+# release downloads and private installer helpers. Nested products such as
+# /account/, /assets/, and /docs/ must be copied with their directory shape.
+# Idempotent: re-running installs the same bytes and does not delete releases.
 if [ -d /root/QSDM/deploy/landing ] && [ -d /var/www/qsdm ]; then
-  for src in /root/QSDM/deploy/landing/*.html /root/QSDM/deploy/landing/*.css /root/QSDM/deploy/landing/*.js /root/QSDM/deploy/landing/*.svg; do
-    [ -f "$src" ] || continue
-    base=$(basename "$src")
-    install -m0644 -o root -g root "$src" "/var/www/qsdm/$base"
-    echo "  synced $base"
-  done
+  while IFS= read -r -d '' src; do
+    rel=${src#/root/QSDM/deploy/landing/}
+    install -D -m0644 -o root -g root "$src" "/var/www/qsdm/$rel"
+    echo "  synced $rel"
+  done < <(
+    find /root/QSDM/deploy/landing -type f \
+      ! -path '/root/QSDM/deploy/landing/downloads/*' \
+      ! -name '_*' -print0
+  )
 else
   echo "  (skipped: /var/www/qsdm or /root/QSDM/deploy/landing missing)"
 fi

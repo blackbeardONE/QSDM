@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -76,13 +77,13 @@ strict_secrets = true
 
 func TestValidate_NvidiaLockGateP2PRequiresLock(t *testing.T) {
 	c := &Config{
-		NetworkPort:        4001,
-		DashboardPort:      8081,
-		LogViewerPort:      9000,
-		APIPort:            8080,
-		StorageType:        "file",
-		NvidiaLockEnabled:  false,
-		NvidiaLockGateP2P:  true,
+		NetworkPort:       4001,
+		DashboardPort:     8081,
+		LogViewerPort:     9000,
+		APIPort:           8080,
+		StorageType:       "file",
+		NvidiaLockEnabled: false,
+		NvidiaLockGateP2P: true,
 	}
 	if err := c.Validate(); err == nil {
 		t.Fatal("expected error when gate_p2p without nvidia_lock")
@@ -107,8 +108,8 @@ func TestApplyEnvOverrides_StrictSecrets(t *testing.T) {
 func TestResolvedSubmeshConfigPath_relativeToMainConfig(t *testing.T) {
 	base := filepath.Join(t.TempDir(), "repo", "qsdm.toml")
 	cfg := &Config{
-		ConfigFileUsed:      base,
-		SubmeshConfigPath:   "config/micropayments.toml",
+		ConfigFileUsed:    base,
+		SubmeshConfigPath: "config/micropayments.toml",
 	}
 	want := filepath.Join(filepath.Dir(base), "config", "micropayments.toml")
 	if got := cfg.ResolvedSubmeshConfigPath(); got != want {
@@ -312,6 +313,8 @@ port = 4001
 
 [consensus]
 require_signed_votes = true
+signed_message_activation_height = 500000
+signer_key_path = "validator-signing.json"
 `
 	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -322,6 +325,12 @@ require_signed_votes = true
 	}
 	if !cfg.RequireSignedVotes {
 		t.Fatal("expected RequireSignedVotes from [consensus] require_signed_votes")
+	}
+	if cfg.SignedConsensusActivationHeight != 500000 {
+		t.Fatalf("expected signed activation height 500000, got %d", cfg.SignedConsensusActivationHeight)
+	}
+	if cfg.ConsensusSignerKeyPath != "validator-signing.json" {
+		t.Fatalf("unexpected signer key path %q", cfg.ConsensusSignerKeyPath)
 	}
 }
 
@@ -337,10 +346,47 @@ func TestApplyDefaults_RequireSignedVotes_defaultsOff(t *testing.T) {
 
 func TestApplyEnvOverrides_RequireSignedVotes(t *testing.T) {
 	t.Setenv("QSDM_REQUIRE_SIGNED_VOTES", "1")
+	t.Setenv("QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT", "500000")
+	t.Setenv("QSDM_CONSENSUS_SIGNER_KEY_PATH", "consensus.json")
 	cfg := &Config{}
 	applyEnvOverrides(cfg)
 	if !cfg.RequireSignedVotes {
 		t.Fatal("QSDM_REQUIRE_SIGNED_VOTES=1 should enable enforcement")
+	}
+	if cfg.SignedConsensusActivationHeight != 500000 || cfg.ConsensusSignerKeyPath != "consensus.json" {
+		t.Fatalf("signed consensus env overrides not applied: %#v", cfg)
+	}
+}
+
+func TestApplyEnvOverrides_WalletKeyPath(t *testing.T) {
+	t.Setenv("QSDM_WALLET_KEY_PATH", "wallet.key")
+	cfg := &Config{}
+	applyEnvOverrides(cfg)
+	if cfg.WalletKeyPath != "wallet.key" {
+		t.Fatalf("wallet key path env override = %q, want wallet.key", cfg.WalletKeyPath)
+	}
+}
+
+func TestValidate_SignedConsensusNeedsCoordinatedHeight(t *testing.T) {
+	base := Config{NetworkPort: 4001, DashboardPort: 8081, LogViewerPort: 9000, APIPort: 8080, StorageType: "file"}
+
+	missingHeight := base
+	missingHeight.RequireSignedVotes = true
+	if err := missingHeight.Validate(); err == nil || !strings.Contains(err.Error(), "signed_message_activation_height") {
+		t.Fatalf("expected missing activation height error, got %v", err)
+	}
+
+	orphanHeight := base
+	orphanHeight.SignedConsensusActivationHeight = 500000
+	if err := orphanHeight.Validate(); err == nil || !strings.Contains(err.Error(), "require_signed_votes=false") {
+		t.Fatalf("expected orphan activation height error, got %v", err)
+	}
+
+	coordinated := base
+	coordinated.RequireSignedVotes = true
+	coordinated.SignedConsensusActivationHeight = 500000
+	if err := coordinated.Validate(); err != nil {
+		t.Fatalf("coordinated signed consensus config should validate: %v", err)
 	}
 }
 
@@ -382,5 +428,23 @@ func TestApplyEnvOverrides_ForkDustHeight(t *testing.T) {
 	applyEnvOverrides(cfg)
 	if cfg.ForkDustHeight != 777 {
 		t.Fatalf("expected 777 from env, got %d", cfg.ForkDustHeight)
+	}
+}
+
+func TestValidate_ForkDustHeightFailsClosed(t *testing.T) {
+	cfg := &Config{
+		NetworkPort:    4001,
+		DashboardPort:  8081,
+		LogViewerPort:  9000,
+		APIPort:        8080,
+		StorageType:    "file",
+		ForkDustHeight: 777,
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("non-zero fork_dust_height must be rejected until the transition is implemented")
+	}
+	if !strings.Contains(err.Error(), "not activation-ready") {
+		t.Fatalf("unexpected refusal: %v", err)
 	}
 }

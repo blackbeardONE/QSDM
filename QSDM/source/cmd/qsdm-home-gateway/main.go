@@ -11,14 +11,14 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/blackbeardONE/QSDM/pkg/buildinfo"
 	"github.com/blackbeardONE/QSDM/pkg/tunnel"
 )
-
-var buildVersion = "dev"
 
 func main() {
 	os.Exit(run())
@@ -28,7 +28,8 @@ func run() int {
 	var (
 		relay           = flag.String("relay", envString("QSDM_HOME_GATEWAY_RELAY", ""), "Relay origin URL, e.g. https://api.qsdm.tech")
 		slot            = flag.String("slot", envString("QSDM_HOME_GATEWAY_SLOT", ""), "Relay slot ID for this home validator")
-		keyHex          = flag.String("key-hex", envString("QSDM_HOME_GATEWAY_KEY_HEX", ""), "Hex HMAC key shared with the relay slot allowlist")
+		keyFile         = flag.String("key-file", envString("QSDM_HOME_GATEWAY_KEY_FILE", ""), "Path to a protected file containing the hex HMAC key shared with the relay slot allowlist")
+		keyHex          = flag.String("key-hex", envString("QSDM_HOME_GATEWAY_KEY_HEX", ""), "Legacy inline hex HMAC key; prefer --key-file so the secret is not exposed in process arguments")
 		backend         = flag.String("backend", envString("QSDM_HOME_GATEWAY_BACKEND", "http://127.0.0.1:8080"), "Local validator API backend")
 		signerID        = flag.String("signer-id", envString("QSDM_HOME_GATEWAY_SIGNER_ID", defaultSignerID()), "Gateway signer/log identity")
 		allowEnrollment = flag.Bool("allow-enrollment", envBool("QSDM_HOME_GATEWAY_ALLOW_ENROLLMENT", false), "Expose mining enrollment endpoints in addition to the default mining/status allowlist")
@@ -39,7 +40,7 @@ func run() int {
 	flag.Parse()
 
 	if *version {
-		fmt.Println("qsdm-home-gateway", buildVersion)
+		fmt.Println(gatewayVersion())
 		return 0
 	}
 	if *printKey {
@@ -64,10 +65,14 @@ func run() int {
 		log.Printf("FATAL: invalid slot %q (allowed chars: %s)", *slot, tunnel.AllowedSlotChars)
 		return 2
 	}
-	key, err := hex.DecodeString(strings.TrimSpace(*keyHex))
-	if err != nil || len(key) < 16 {
-		log.Printf("FATAL: --key-hex must decode to at least 16 bytes (use --generate-key)")
+	key, err := loadGatewayKey(*keyFile, *keyHex)
+	if err != nil {
+		log.Printf("FATAL: %v", err)
 		return 2
+	}
+	defer clear(key)
+	if strings.TrimSpace(*keyHex) != "" {
+		log.Print("WARN: --key-hex/QSDM_HOME_GATEWAY_KEY_HEX is deprecated; use a protected --key-file instead")
 	}
 	backendURL, err := url.Parse(strings.TrimSpace(*backend))
 	if err != nil || backendURL.Scheme == "" || backendURL.Host == "" {
@@ -101,6 +106,51 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+func gatewayVersion() string {
+	return buildinfo.String("qsdm-home-gateway")
+}
+
+func loadGatewayKey(keyFile, keyHex string) ([]byte, error) {
+	keyFile = strings.TrimSpace(keyFile)
+	keyHex = strings.TrimSpace(keyHex)
+	if keyFile != "" && keyHex != "" {
+		return nil, fmt.Errorf("configure exactly one of --key-file or the legacy --key-hex")
+	}
+	if keyFile == "" {
+		if keyHex == "" {
+			return nil, fmt.Errorf("--key-file or QSDM_HOME_GATEWAY_KEY_FILE is required (use --generate-key to create a key)")
+		}
+		return decodeGatewayKey(keyHex, "--key-hex")
+	}
+
+	info, err := os.Stat(keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("read --key-file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("--key-file must be a regular file")
+	}
+	if info.Size() > 4096 {
+		return nil, fmt.Errorf("--key-file is unexpectedly large")
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("--key-file permissions are too open; use chmod 600")
+	}
+	raw, err := os.ReadFile(keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("read --key-file: %w", err)
+	}
+	return decodeGatewayKey(strings.TrimSpace(string(raw)), "--key-file")
+}
+
+func decodeGatewayKey(value, source string) ([]byte, error) {
+	key, err := hex.DecodeString(strings.TrimSpace(value))
+	if err != nil || len(key) < 16 {
+		return nil, fmt.Errorf("%s must contain a hex key of at least 16 bytes", source)
+	}
+	return key, nil
 }
 
 func envString(name, fallback string) string {

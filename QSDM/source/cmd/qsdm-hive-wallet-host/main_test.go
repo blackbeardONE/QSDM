@@ -3,9 +3,16 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestNativeMessageRoundTrip(t *testing.T) {
@@ -37,7 +44,7 @@ func TestNativeMessageRejectsOversizedInput(t *testing.T) {
 func TestLoadBrokerStateRejectsInvalidToken(t *testing.T) {
 	directory := t.TempDir()
 	statePath := filepath.Join(directory, "broker.json")
-	state := []byte(`{"version":"qsdm-hive-wallet-provider/v1","host":"127.0.0.1","port":1234,"token":"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"}`)
+	state := []byte(`{"version":"qsdm-hive-wallet-provider/v1","host":"127.0.0.1","port":1234,"token":"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz","pid":123,"startedAt":"2026-08-01T00:00:00Z"}`)
 	if err := os.WriteFile(statePath, state, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -45,6 +52,63 @@ func TestLoadBrokerStateRejectsInvalidToken(t *testing.T) {
 
 	if _, err := loadBrokerState(); err == nil {
 		t.Fatal("expected invalid broker token to be rejected")
+	}
+}
+
+func TestForwardToHiveReloadsBrokerStateDuringRestart(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	serverPort, err := strconv.Atoi(server.URL[strings.LastIndex(server.URL, ":")+1:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stalePort := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
+	directory := t.TempDir()
+	statePath := filepath.Join(directory, "broker.json")
+	t.Setenv("QSDM_HIVE_BROKER_STATE", statePath)
+	writeState := func(port int, token string) error {
+		raw, marshalErr := json.Marshal(brokerState{
+			Version:   providerVersion,
+			Host:      "127.0.0.1",
+			Port:      port,
+			Token:     token,
+			PID:       os.Getpid(),
+			StartedAt: time.Now().UTC().Format(time.RFC3339),
+		})
+		if marshalErr != nil {
+			return marshalErr
+		}
+		return os.WriteFile(statePath, raw, 0o600)
+	}
+	token := strings.Repeat("a", 64)
+	if err := writeState(stalePort, token); err != nil {
+		t.Fatal(err)
+	}
+	stateWrite := make(chan error, 1)
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		stateWrite <- writeState(serverPort, token)
+	}()
+
+	result, err := forwardToHive([]byte(`{"id":"restart-race"}`))
+	if writeErr := <-stateWrite; writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	if err != nil {
+		t.Fatalf("forwardToHive: %v", err)
+	}
+	if string(result) != `{"ok":true}` {
+		t.Fatalf("unexpected response: %s", result)
 	}
 }
 

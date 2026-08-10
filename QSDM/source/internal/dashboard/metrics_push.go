@@ -26,12 +26,12 @@ type MetricsSource struct {
 // MetricsPusher periodically collects metrics from all subsystems and
 // broadcasts them to connected WebSocket clients.
 type MetricsPusher struct {
-	mu       sync.Mutex
-	hub      *WSHub
-	source   MetricsSource
-	interval time.Duration
-	stopCh   chan struct{}
-	started  bool
+	mu        sync.Mutex
+	hub       *WSHub
+	source    MetricsSource
+	interval  time.Duration
+	stopCh    chan struct{}
+	started   bool
 	pushCount int
 }
 
@@ -131,19 +131,19 @@ func (mp *MetricsPusher) push() {
 
 // MetricsSnapshot is the data pushed to the dashboard on each interval.
 type MetricsSnapshot struct {
-	Timestamp       time.Time              `json:"timestamp"`
-	ChainHeight     uint64                 `json:"chain_height"`
-	AccountCount    int                    `json:"account_count"`
-	MempoolSize     int                    `json:"mempool_size"`
-	ValidatorsActive int                   `json:"validators_active"`
-	ValidatorsTotal int                    `json:"validators_total"`
-	PendingBlocks   int                    `json:"pending_blocks"`
-	FinalizedBlocks int                    `json:"finalized_blocks"`
-	ReceiptStats    map[string]interface{} `json:"receipt_stats,omitempty"`
-	PeerCount       int                    `json:"peer_count"`
-	BannedPeers     int                    `json:"banned_peers"`
-	WSClients       int                    `json:"ws_clients"`
-	PrometheusMetrics []monitoring.Metric  `json:"prometheus_metrics,omitempty"`
+	Timestamp         time.Time              `json:"timestamp"`
+	ChainHeight       uint64                 `json:"chain_height"`
+	AccountCount      int                    `json:"account_count"`
+	MempoolSize       int                    `json:"mempool_size"`
+	ValidatorsActive  int                    `json:"validators_active"`
+	ValidatorsTotal   int                    `json:"validators_total"`
+	PendingBlocks     int                    `json:"pending_blocks"`
+	FinalizedBlocks   int                    `json:"finalized_blocks"`
+	ReceiptStats      map[string]interface{} `json:"receipt_stats,omitempty"`
+	PeerCount         int                    `json:"peer_count"`
+	BannedPeers       int                    `json:"banned_peers"`
+	WSClients         int                    `json:"ws_clients"`
+	PrometheusMetrics []monitoring.Metric    `json:"prometheus_metrics,omitempty"`
 }
 
 func (mp *MetricsPusher) collectSnapshot() MetricsSnapshot {

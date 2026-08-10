@@ -15,26 +15,24 @@ export const QSDM_WALLET_EXTENSION_PUBLIC_KEY =
   'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsHFgzuSZnQ2vWQ8EvlpUWU52nITYq9niLfQh7Qf/O4x9xFzM4dyypGl3gqqkcyc85lUZ//FH4xNd6kYB8PxKgR0NwhlHTMWOgFrHWRpsSvvRSMakpgVewVymn0DnvJOj0Pl8wIshbSh2XAYNI0xyMi5zuWK4kIPABhTh1VFLzd45g27fyz36Yyj+ZI7XCOPiRL5qNPJ+Ou9oBvPEnuBhFdQQrKR8pGYqKl/o8nb4Ynv+5wtooh8D1nZwoR2YA6JjwiFN6tzmc1egtNmAiIYG3Cn58jItYANsA6f9Gq8PwR0HjodGRgDXOWq525Q/dOAmnwLjAt/9L1HW5NBy5xrYhQIDAQAB';
 
 export const QSDM_WALLET_EXTENSION_ID = 'habkkkednignfkoffhpbjahcjbikkahh';
-
-// Chrome Web Store item ID assigned during the first production upload.
-// Store packages cannot include manifest.key, so Chromium assigns an ID that
-// differs from the pinned development/bundled build above.
 export const QSDM_WALLET_STORE_EXTENSION_ID =
   'homapiejinlbjdhhdegcbnldkpkodepo';
-
-// Temporary self-hosted CRX identity for Linux and managed Chromium installs
-// while the Chrome Web Store item is under review.
 export const QSDM_WALLET_INTERIM_CRX_EXTENSION_ID =
   'nmmhneekhgaegpmbnhiacglhoncicflc';
-
 export const QSDM_WALLET_TRUSTED_EXTENSION_IDS = [
   QSDM_WALLET_EXTENSION_ID,
   QSDM_WALLET_STORE_EXTENSION_ID,
   QSDM_WALLET_INTERIM_CRX_EXTENSION_ID,
 ] as const;
+export const QSDM_WALLET_FIREFOX_EXTENSION_ID = 'qsdm-wallet@qsdm.tech';
 
 interface ExtensionManifest {
   key?: unknown;
+  browser_specific_settings?: {
+    gecko?: {
+      id?: unknown;
+    };
+  };
 }
 
 interface NativeHostRegistrationOptions {
@@ -51,6 +49,7 @@ export interface NativeHostRegistrationResult {
   installed: boolean;
   extensionId: string;
   manifestPath?: string;
+  firefoxManifestPath?: string;
   browsers: string[];
   reason?: string;
 }
@@ -110,6 +109,12 @@ const validatePackagedExtension = (manifestPath: string) => {
   if (extensionId !== QSDM_WALLET_EXTENSION_ID) {
     throw new Error('Packaged QSDM wallet extension ID failed validation');
   }
+  if (
+    manifest.browser_specific_settings?.gecko?.id !==
+    QSDM_WALLET_FIREFOX_EXTENSION_ID
+  ) {
+    throw new Error('Packaged QSDM wallet Firefox ID failed validation');
+  }
 };
 
 export const registerQsdmWalletProviderNativeHost = (
@@ -148,13 +153,20 @@ export const registerQsdmWalletProviderNativeHost = (
   validatePackagedExtension(extensionManifestPath);
 
   const appDataPath = options.appDataPath || getAppDataPath(false);
-  const sharedManifestPath = path.join(
+  const chromiumManifestPath = path.join(
     appDataPath,
     'wallet-provider',
     'native-messaging',
     `${NATIVE_HOST_NAME}.json`
   );
-  const nativeManifest = {
+  const firefoxManifestPath = path.join(
+    appDataPath,
+    'wallet-provider',
+    'native-messaging',
+    'firefox',
+    `${NATIVE_HOST_NAME}.json`
+  );
+  const chromiumManifest = {
     name: NATIVE_HOST_NAME,
     description: 'QSDM Wallet secure native bridge',
     path: nativeHostPath,
@@ -163,7 +175,15 @@ export const registerQsdmWalletProviderNativeHost = (
       (extensionId) => `chrome-extension://${extensionId}/`
     ),
   };
-  writePrivateJson(sharedManifestPath, nativeManifest);
+  const firefoxManifest = {
+    name: NATIVE_HOST_NAME,
+    description: 'QSDM Wallet secure native bridge',
+    path: nativeHostPath,
+    type: 'stdio',
+    allowed_extensions: [QSDM_WALLET_FIREFOX_EXTENSION_ID],
+  };
+  writePrivateJson(chromiumManifestPath, chromiumManifest);
+  writePrivateJson(firefoxManifestPath, firefoxManifest);
 
   if (platform === 'win32') {
     const registryWriter = options.registryWriter || defaultRegistryWriter;
@@ -171,19 +191,27 @@ export const registerQsdmWalletProviderNativeHost = (
       [
         'Chrome',
         `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${NATIVE_HOST_NAME}`,
+        chromiumManifestPath,
       ],
       [
         'Edge',
         `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${NATIVE_HOST_NAME}`,
+        chromiumManifestPath,
+      ],
+      [
+        'Firefox',
+        `HKCU\\Software\\Mozilla\\NativeMessagingHosts\\${NATIVE_HOST_NAME}`,
+        firefoxManifestPath,
       ],
     ] as const;
-    registryTargets.forEach(([, registryPath]) =>
-      registryWriter(registryPath, sharedManifestPath)
+    registryTargets.forEach(([, registryPath, manifestPath]) =>
+      registryWriter(registryPath, manifestPath)
     );
     return {
       installed: true,
       extensionId: QSDM_WALLET_EXTENSION_ID,
-      manifestPath: sharedManifestPath,
+      manifestPath: chromiumManifestPath,
+      firefoxManifestPath,
       browsers: registryTargets.map(([browser]) => browser),
     };
   }
@@ -198,13 +226,22 @@ export const registerQsdmWalletProviderNativeHost = (
   browserDirectories.forEach(([, relativeDirectory]) => {
     writePrivateJson(
       path.join(homeDirectory, relativeDirectory, `${NATIVE_HOST_NAME}.json`),
-      nativeManifest
+      chromiumManifest
     );
   });
+  writePrivateJson(
+    path.join(
+      homeDirectory,
+      '.mozilla/native-messaging-hosts',
+      `${NATIVE_HOST_NAME}.json`
+    ),
+    firefoxManifest
+  );
   return {
     installed: true,
     extensionId: QSDM_WALLET_EXTENSION_ID,
-    manifestPath: sharedManifestPath,
-    browsers: browserDirectories.map(([browser]) => browser),
+    manifestPath: chromiumManifestPath,
+    firefoxManifestPath,
+    browsers: [...browserDirectories.map(([browser]) => browser), 'Firefox'],
   };
 };

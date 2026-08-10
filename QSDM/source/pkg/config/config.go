@@ -124,18 +124,9 @@ type Config struct {
 
 	// Wallet
 	InitialBalance float64
-
-	// WalletKeyPath is where the validator's ML-DSA-87 identity key is
-	// stored so it survives restarts. Empty (the default) resolves to
-	// <state_dir>/qsdm_validator_wallet.key.
-	//
-	// This key is the node's wallet address AND its consensus signing
-	// identity. Without persistence every restart mints a new keypair, so
-	// the balance is always zero and anything credited to the previous
-	// address is stranded. Back this file up; losing it loses the identity
-	// and any CELL held by it.
-	//
-	// Env override: QSDM_WALLET_KEY_PATH.
+	// WalletKeyPath persists the node wallet identity across restarts. It is
+	// separate from ConsensusSignerKeyPath: the consensus key is a dedicated
+	// hot key and must never hold user funds. Empty resolves under stateDir.
 	WalletKeyPath string
 
 	// Governance
@@ -153,10 +144,23 @@ type Config struct {
 	// unauthenticated peer can still forge votes for any validator.
 	RequireSignedVotes bool
 
-	// ForkDustHeight activates integer-dust account accounting at the given
-	// chain height, fixing the float64 balance arithmetic that destroys
-	// ~0.06 CELL per reward block (~190k CELL/year) and the %f state-root
-	// encoding that cannot represent the protocol's 1e-8 unit.
+	// SignedConsensusActivationHeight is the first block height at which
+	// unsigned votes, blocks, POL artifacts, and equivocation evidence are
+	// rejected. A shared future height lets upgraded nodes emit signatures
+	// before every validator begins enforcing them at the same point.
+	// It must be non-zero exactly when RequireSignedVotes is true.
+	SignedConsensusActivationHeight uint64
+
+	// ConsensusSignerKeyPath is the validator-only ML-DSA hot key used to
+	// authenticate consensus traffic. It is not a wallet and must never hold
+	// user or treasury funds. Empty resolves to a file under the node state
+	// directory in cmd/qsdm.
+	ConsensusSignerKeyPath string
+
+	// ForkDustHeight is reserved for the coordinated integer-dust accounting
+	// transition. Config parsing retains the field so operators can inspect old
+	// files, but Validate rejects every non-zero value until the deterministic
+	// capped-issuance transition and its governance manifest are implemented.
 	//
 	// Zero (the default) means never active, leaving the legacy float64
 	// behaviour bit-for-bit intact. This is a CONSENSUS parameter: every
@@ -379,6 +383,8 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.ProposalFile = tomlCfg.Governance.ProposalFile
 		cfg.GovernanceAuthorities = tomlCfg.Governance.Authorities
 		cfg.RequireSignedVotes = tomlCfg.Consensus.RequireSignedVotes
+		cfg.SignedConsensusActivationHeight = tomlCfg.Consensus.SignedMessageActivationHeight
+		cfg.ConsensusSignerKeyPath = strings.TrimSpace(tomlCfg.Consensus.SignerKeyPath)
 		cfg.ForkDustHeight = tomlCfg.Consensus.ForkDustHeight
 		if tomlCfg.Performance.TransactionInterval != "" {
 			if d, err := time.ParseDuration(tomlCfg.Performance.TransactionInterval); err == nil {
@@ -476,6 +482,8 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.ProposalFile = yamlCfg.Governance.ProposalFile
 		cfg.GovernanceAuthorities = yamlCfg.Governance.Authorities
 		cfg.RequireSignedVotes = yamlCfg.Consensus.RequireSignedVotes
+		cfg.SignedConsensusActivationHeight = yamlCfg.Consensus.SignedMessageActivationHeight
+		cfg.ConsensusSignerKeyPath = strings.TrimSpace(yamlCfg.Consensus.SignerKeyPath)
 		cfg.ForkDustHeight = yamlCfg.Consensus.ForkDustHeight
 		if yamlCfg.Performance.TransactionInterval != "" {
 			if d, err := time.ParseDuration(yamlCfg.Performance.TransactionInterval); err == nil {
@@ -643,6 +651,14 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if getEnvString("QSDM_REQUIRE_SIGNED_VOTES", "") != "" {
 		cfg.RequireSignedVotes = envcompat.Truthy("QSDM_REQUIRE_SIGNED_VOTES", "QSDM_REQUIRE_SIGNED_VOTES")
+	}
+	if v := strings.TrimSpace(getEnvString("QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT", "")); v != "" {
+		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
+			cfg.SignedConsensusActivationHeight = h
+		}
+	}
+	if v := strings.TrimSpace(getEnvString("QSDM_CONSENSUS_SIGNER_KEY_PATH", "")); v != "" {
+		cfg.ConsensusSignerKeyPath = v
 	}
 	if val := strings.TrimSpace(envPreferred("QSDM_NETWORK_HOST_KEY_PATH", "QSDM_NETWORK_HOST_KEY_PATH")); val != "" {
 		cfg.NetworkHostKeyPath = val
@@ -874,6 +890,18 @@ func (c *Config) Validate() error {
 	}
 	if c.NodeRole.IsMiner() && !c.MiningEnabled {
 		return fmt.Errorf("node.role=%q but mining_enabled=false: miner role requires mining_enabled=true (env QSDM_MINING_ENABLED=true)", c.NodeRole)
+	}
+	if c.ForkDustHeight != 0 {
+		return fmt.Errorf(
+			"consensus fork_dust_height=%d is not activation-ready: leave it at 0 until the synthetic funder is replaced by a persisted capped-issuance ledger and validators approve one reconciled migration manifest",
+			c.ForkDustHeight,
+		)
+	}
+	if c.RequireSignedVotes && c.SignedConsensusActivationHeight == 0 {
+		return fmt.Errorf("consensus require_signed_votes=true requires a non-zero signed_message_activation_height shared by every validator")
+	}
+	if !c.RequireSignedVotes && c.SignedConsensusActivationHeight != 0 {
+		return fmt.Errorf("consensus signed_message_activation_height=%d is set while require_signed_votes=false; either enable coordinated enforcement or clear the height", c.SignedConsensusActivationHeight)
 	}
 
 	if c.NetworkPort < 1 || c.NetworkPort > 65535 {

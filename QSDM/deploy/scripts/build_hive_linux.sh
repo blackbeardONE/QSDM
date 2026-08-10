@@ -27,7 +27,12 @@ export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 cd "$source_dir"
 
+package_version="$(node -p "require('./package.json').version")"
 hive_version="$(node -p "require('./release/app/package.json').version")"
+if [[ "$package_version" != "$hive_version" ]]; then
+  echo "Hive package version $package_version does not match runtime version $hive_version. Update both manifests before packaging." >&2
+  exit 65
+fi
 edge_agent_version="$(tr -d '[:space:]' < "$source_dir/../../qsdm-edge-agent/VERSION")"
 miner_git_sha="$(git -C "$qsdm_source_dir" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 miner_build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

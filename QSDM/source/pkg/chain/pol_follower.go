@@ -185,12 +185,30 @@ func (f *PolFollower) IngestPrevoteLockProof(p *PrevoteLockProof) error {
 	if f == nil || f.vs == nil || p == nil {
 		return fmt.Errorf("pol follower: nil input")
 	}
+	if err := VerifyPrevoteLockProof(p); err != nil {
+		return fmt.Errorf("pol follower: lock proof authentication: %w", err)
+	}
+	if p.Auth.Signed() {
+		validator, ok := f.vs.GetValidator(p.Signer)
+		if !ok || validator.Status != ValidatorActive {
+			return fmt.Errorf("pol follower: lock proof signer %q is not an active validator", p.Signer)
+		}
+		if len(p.Prevotes) != 1 {
+			return fmt.Errorf("pol follower: signed lock proof must contain exactly one authenticated prevote")
+		}
+		for _, vote := range p.Prevotes {
+			if vote.Validator != p.Signer {
+				return fmt.Errorf("pol follower: signed lock proof cannot attest vote for validator %q", vote.Validator)
+			}
+		}
+	}
 	if p.Height == 0 || p.LockedBlockHash == "" {
 		return fmt.Errorf("pol follower: invalid proof fields")
 	}
 	if len(p.Prevotes) == 0 {
 		return fmt.Errorf("pol follower: empty prevotes")
 	}
+	seenPrevoters := make(map[string]struct{}, len(p.Prevotes))
 	for _, vote := range p.Prevotes {
 		if vote.Height != p.Height || vote.Round != p.Round {
 			return fmt.Errorf("pol follower: prevote height/round mismatch")
@@ -198,6 +216,10 @@ func (f *PolFollower) IngestPrevoteLockProof(p *PrevoteLockProof) error {
 		if vote.Type != VotePreVote && vote.Type != "" {
 			return fmt.Errorf("pol follower: vote is not prevote")
 		}
+		if _, duplicate := seenPrevoters[vote.Validator]; duplicate {
+			return fmt.Errorf("pol follower: duplicate prevote from validator %q", vote.Validator)
+		}
+		seenPrevoters[vote.Validator] = struct{}{}
 	}
 	total := f.totalActiveStake()
 	if total <= 0 {
@@ -231,13 +253,36 @@ func (f *PolFollower) IngestRoundCertificate(c *RoundCertificate) error {
 	if f == nil || f.vs == nil || c == nil {
 		return fmt.Errorf("pol follower: nil input")
 	}
+	if err := VerifyRoundCertificate(c); err != nil {
+		return fmt.Errorf("pol follower: certificate authentication: %w", err)
+	}
+	if c.Auth.Signed() {
+		validator, ok := f.vs.GetValidator(c.Signer)
+		if !ok || validator.Status != ValidatorActive {
+			return fmt.Errorf("pol follower: certificate signer %q is not an active validator", c.Signer)
+		}
+		// RoundCertificate does not yet carry individually authenticated
+		// commits. Until it does, accepting a signed multi-validator summary
+		// would let one signer manufacture votes for the others.
+		if c.Proposer != c.Signer || len(c.ValidatorSet) != 1 || c.ValidatorSet[0] != c.Signer || c.CommitCount != 1 || c.NilCommitCount != 0 {
+			return fmt.Errorf("pol follower: signed certificate is not a singleton certificate from its proposer")
+		}
+	}
 	if c.Height == 0 || c.CommitDigest == "" {
 		return fmt.Errorf("pol follower: invalid certificate fields")
 	}
 	if c.CommitCount < 1 || len(c.ValidatorSet) == 0 {
 		return fmt.Errorf("pol follower: certificate missing validators or commits")
 	}
+	if c.NilCommitCount < 0 || c.CommitCount+c.NilCommitCount > len(c.ValidatorSet) {
+		return fmt.Errorf("pol follower: certificate commit counts exceed validator set")
+	}
+	seenValidators := make(map[string]struct{}, len(c.ValidatorSet))
 	for _, addr := range c.ValidatorSet {
+		if _, duplicate := seenValidators[addr]; duplicate {
+			return fmt.Errorf("pol follower: duplicate validator %q in certificate", addr)
+		}
+		seenValidators[addr] = struct{}{}
 		v, ok := f.vs.GetValidator(addr)
 		if !ok {
 			return fmt.Errorf("pol follower: unknown validator %q in certificate", addr)

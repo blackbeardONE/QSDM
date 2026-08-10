@@ -74,6 +74,46 @@ api.qsdm.tech, node.qsdm.tech {
 		}
 	}
 
+	# NGC proof ingest is node-local trust telemetry, not a ledger write. Keep
+	# it on the public follower so its trust summary records every sidecar;
+	# forwarding it to the producer would mix verifier state and can also fail
+	# at the home gateway before the producer sees the shared-secret header.
+	@localNGCProof {
+		method POST
+		path /api/v1/monitoring/ngc-proof
+	}
+	handle @localNGCProof {
+		reverse_proxy 127.0.0.1:8443 {
+			header_up X-Forwarded-Proto https
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# The public Core is a read-only network follower. Mining work/challenges
+	# and every state-changing API call must reach the configured producer;
+	# otherwise a follower could acknowledge a proof or transaction that it
+	# will never seal. The relay expects /<slot>/<path>.
+	@producerMining path /api/v1/mining/*
+	handle @producerMining {
+		rewrite * /home-validator{uri}
+		reverse_proxy 127.0.0.1:7710 {
+			header_up X-Forwarded-Proto https
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	@producerWrites {
+		method POST PUT PATCH DELETE
+		path /api/v1/*
+	}
+	handle @producerWrites {
+		rewrite * /home-validator{uri}
+		reverse_proxy 127.0.0.1:7710 {
+			header_up X-Forwarded-Proto https
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
 	handle {
 		reverse_proxy 127.0.0.1:8443 {
 			header_up X-Forwarded-Proto https
@@ -128,9 +168,21 @@ qsdm.tech {
 	encode zstd gzip
 	root * /var/www/qsdm
 
+	# QSDM Account is a separate identity-only service. It stores no wallet
+	# keys and is intentionally not part of the validator API process.
+	handle /api/account/* {
+		reverse_proxy 127.0.0.1:8092 {
+			header_up X-Forwarded-Proto https
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
 	# Release binaries must download instead of being rendered as documents.
 	@hive_linux_packages path /downloads/*.AppImage /downloads/*.tar.gz
 	header @hive_linux_packages Content-Disposition "attachment"
+	@browser_extension_crx path /downloads/*.crx
+	header @browser_extension_crx Content-Type "application/x-chrome-extension"
 	@hive_preview_packages path /downloads/unsigned-preview/*.exe
 	header @hive_preview_packages Content-Disposition "attachment"
 
@@ -163,6 +215,8 @@ qsdm.tech {
 	# Public wallet short path. Without this, /wallet can fall through to the
 	# apex landing if /var/www/qsdm/wallet/index.html is not present.
 	redir /wallet /wallet.html 302
+	redir /wallet/ /wallet.html 302
+	redir /account /account/ 302
 
 	# Public API pass-through (login/register/wallet/health) -> qsdm :8443
 	@api path /api/v1/* /api/metrics

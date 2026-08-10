@@ -34,6 +34,7 @@ var ErrBlockBadSignature = errors.New("chain: block producer signature invalid")
 // requireSignedBlocks gates inbound enforcement for rolling upgrades.
 // Invalid signatures are always fatal.
 var requireSignedBlocks atomic.Bool
+var signedBlockActivationHeight atomic.Uint64
 
 // SetRequireSignedBlocks controls whether unsigned blocks are accepted from
 // peers. Enable once every producer signs its blocks.
@@ -41,6 +42,25 @@ func SetRequireSignedBlocks(require bool) { requireSignedBlocks.Store(require) }
 
 // RequireSignedBlocks reports the current policy.
 func RequireSignedBlocks() bool { return requireSignedBlocks.Load() }
+
+// SetSignedBlockActivationHeight sets the first height where an unsigned
+// block is rejected. Zero means immediate enforcement for compatibility
+// with direct callers; production configuration requires a future height.
+func SetSignedBlockActivationHeight(height uint64) {
+	signedBlockActivationHeight.Store(height)
+}
+
+// SignedBlockActivationHeight reports the configured activation height.
+func SignedBlockActivationHeight() uint64 { return signedBlockActivationHeight.Load() }
+
+// SignedBlocksRequiredAt reports whether unsigned blocks are forbidden at height.
+func SignedBlocksRequiredAt(height uint64) bool {
+	if !RequireSignedBlocks() {
+		return false
+	}
+	activation := SignedBlockActivationHeight()
+	return activation == 0 || height >= activation
+}
 
 // SetBlockSigner installs the key used to authenticate blocks this producer
 // seals. When nil, blocks are emitted unsigned — which peers running with
@@ -116,7 +136,7 @@ func VerifyBlockSignature(b *Block) error {
 		return errors.New("chain: nil block")
 	}
 	if !b.ProducerAuth.Signed() {
-		if requireSignedBlocks.Load() {
+		if SignedBlocksRequiredAt(b.Height) {
 			return ErrBlockUnsigned
 		}
 		return nil

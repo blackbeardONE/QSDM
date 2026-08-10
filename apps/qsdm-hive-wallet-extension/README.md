@@ -6,71 +6,113 @@ JSON, or passphrase.
 
 ## User flow
 
-1. Create or import a wallet once in **QSDM Hive > Settings > Wallet**.
-2. Keep Hive running in the notification area.
-3. Open a supported website and select **Connect QSDM Wallet**.
-4. Open the QSDM extension once if the site is outside the QSDM, QSDM Online,
-   or Sky Fang domains.
-5. Approve the website once in Hive.
+1. A supported website opens `https://qsdm.tech/wallet-start.html?login=new`.
+2. When the provider is installed, the website asks the extension to open
+   `home.html#/onboarding/welcome?login=new`. It never hard-codes or navigates
+   to a browser-specific extension ID.
+3. If the provider is missing, the handoff opens the official QSDM extension
+   download instead.
+4. Select **Use QSDM Hive Wallet** and approve the requesting website in Hive.
 
-The website remains connected to that wallet until the user disconnects it in
-the extension or revokes it under **Hive > Settings > Wallet > Connected
+The website remains connected to that public address until the user disconnects
+it in the extension or revokes it under **Hive > Settings > Wallet > Connected
 Sites**. Signatures and CELL transfers always require a fresh Hive approval.
 
 There is no separate extension account, password, recovery phrase, or wallet
 import. This avoids creating another copy of the user's wallet secrets.
 
+The onboarding page offers the sign-in methods currently enabled by the HTTPS
+QSDM Account dashboard. Production currently uses **Telegram** with
+Authorization Code + PKCE and server-side ID-token verification. Email will use
+a short-lived one-time link instead of a reusable password once a production
+outbound sender is configured. The extension itself collects neither
+identifier and never embeds Telegram, SMTP, or account-service credentials.
+Google and Apple login are not included.
+
+QSDM Account synchronizes verified identity and linked public wallet addresses.
+The extension opens the production providers exposed by QSDM Account. Telegram
+is the currently enabled sign-in method; email sign-in remains hidden until a
+production outbound email sender is configured.
+It does not synchronize site approvals, private keys, keystores, passphrases,
+or recovery phrases. Those remain local to Hive.
+
+## Wallet dashboard
+
+Extension 0.5.1 provides the everyday wallet functions without moving custody into
+the browser:
+
+- the popup shows the active Hive wallet and its live CELL balance;
+- **Open Wallet Dashboard** opens `home.html#/wallet`;
+- **Open QSDM Account** opens the trusted production account dashboard from
+  both the popup and full wallet dashboard;
+- the dashboard copies the receiving address, refreshes the balance, and
+  requests wallet-to-wallet CELL transfers; and
+- the signed-in QSDM Account dashboard can show the same active wallet and
+  request the same Hive-approved transfer.
+
+Every transfer displays the exact recipient and amount in QSDM Hive before it
+is signed. Closing Hive makes balance and transfer actions unavailable. The
+extension cannot export a key, recovery phrase, keystore, or passphrase, and
+its internal dashboard is not allowed to request arbitrary message signatures.
+QSDM currently supports CELL on these wallet surfaces; other currencies or
+tokens are not implied by the interface.
+
 ## Installation
 
 Packaged Hive releases register the native browser bridge automatically for
 the current user. This requires no administrator access. The extension has the
-stable Chromium ID `habkkkednignfkoffhpbjahcjbikkahh`.
+stable Chromium ID `habkkkednignfkoffhpbjahcjbikkahh` and Firefox ID
+`qsdm-wallet@qsdm.tech`.
 
-Until the extension is published in browser stores, install it once:
+The consumer release path is one named browser-store listing per browser:
+
+- Google Chrome: Chrome Web Store
+- Microsoft Edge: Microsoft Edge Add-ons
+- Brave: the approved Chrome Web Store listing
+- Mozilla Firefox: Firefox Add-ons
+
+Those listings are not published yet. Until approval, Chrome, Edge, Chromium,
+and Brave developers can download the advanced Chromium ZIP and install it
+once:
 
 1. Open the browser extensions page and enable developer mode.
-2. Choose **Load unpacked** and select the bundled `wallet-extension` folder.
+2. Extract the ZIP, choose **Load unpacked**, and select the extracted folder.
 3. Start or restart QSDM Hive.
 
-Chrome, Edge, Chromium, and Brave are supported. Users upgrading from the old
-random-ID development build should remove it and load the current bundled
-extension once. Daily use is automatic after that migration.
+Chrome, Edge, Chromium, and Brave are supported through that manual flow.
+Firefox 128 or newer is supported by the Firefox package, but normal Firefox
+releases require Mozilla signing for a persistent installation. The unsigned
+Firefox ZIP is a store-submission and temporary-testing artifact, not a normal
+consumer installer. Users upgrading from the old random-ID Chromium build
+should remove it and load the current package once.
 
-The scripts in `native-host` remain available for development diagnostics;
-normal packaged installs do not require running them manually.
-
-Official QSDM, QSDM Online, and Sky Fang pages receive the provider
-automatically. Other HTTPS pages receive temporary access only after the user
-clicks the extension for that tab. The store build does not request blanket
-access to every website.
-
-### Chrome Web Store package
-
-Create the upload ZIP with:
-
-```powershell
-pwsh -NoProfile -File .\package-extension.ps1
-```
-
-The source manifest keeps a development key so **Load unpacked** has a stable
-ID. The packaging script removes that key because Chrome Web Store assigns its
-own production ID and rejects upload packages containing `manifest.key`.
+`package-extension.ps1` produces a universal development ZIP, a legacy
+Chromium ZIP, explicit Chrome, Edge, and Brave store-submission ZIPs, and a
+Firefox store-submission ZIP. The three Chromium-family submission files have
+the same verified payload but distinct names so an operator cannot confuse the
+target store. The browser-specific packages omit manifest keys that belong only
+to the other browser family. See [STORE_SUBMISSION.md](STORE_SUBMISSION.md).
 
 The Chrome Web Store assigned production ID
 `homapiejinlbjdhhdegcbnldkpkodepo` during the first upload. Hive authorizes
-that ID, the pinned development ID, and interim self-hosted CRX ID
-`nmmhneekhgaegpmbnhiacglhoncicflc` explicitly. Do not add wildcard or
-operator-supplied origins to the native-host allowlist; accepting arbitrary
-extension IDs would weaken the wallet boundary.
+that ID, the pinned development ID, and interim CRX ID
+`nmmhneekhgaegpmbnhiacglhoncicflc` explicitly. Never add a wildcard or an
+operator-supplied origin to the native-host manifest.
 
-The CRX is only for Linux Chromium or managed-browser deployment. Normal
-Windows and macOS Chrome installations must use the Chrome Web Store. Build
-the CRX with the separately protected private key; never commit that key:
+A self-hosted CRX is not the general Windows installer: consumer Chrome on
+Windows and macOS accepts direct extension installation only through the Chrome
+Web Store. Edge and managed Chromium deployments can use CRX packages, while
+normal Firefox releases require a Mozilla-signed XPI. QSDM therefore keeps ZIP
+archives under Advanced manual installation and activates each named store
+button only after that store has approved the release.
 
-```powershell
-pwsh -NoProfile -File .\package-crx.ps1 `
-  -PrivateKeyPath C:\secure\qsdm-wallet-interim.pem
-```
+The separately signed interim CRX is for Linux Chromium and managed-browser
+deployment only. Build it with `package-crx.ps1` and a protected private key;
+never commit or publish the PEM file. Its Linux self-update feed is
+`https://qsdm.tech/downloads/qsdm-hive-wallet-extension-updates.xml`.
+
+The scripts in `native-host` remain available for development diagnostics;
+normal packaged installs do not require running them manually.
 
 ## Website API
 
@@ -83,11 +125,21 @@ const signature = await window.qsdm.request({
   method: "qsdm_signMessage",
   params: { message: "QSDM ownership challenge" },
 });
+
+const transfer = await window.qsdm.request({
+  method: "qsdm_sendTransaction",
+  params: {
+    recipient: "QSDM_RECIPIENT_ADDRESS",
+    amount: 1.25,
+  },
+});
 ```
 
-Supported methods are `qsdm_requestAccounts`, `qsdm_accounts`,
+Supported website methods are `qsdm_requestAccounts`, `qsdm_accounts`,
 `qsdm_getBalance`, `qsdm_signMessage`, `qsdm_sendTransaction`, and
-`qsdm_disconnect`.
+`qsdm_disconnect`. `qsdm_openOnboarding` is an extension-local navigation
+request: it opens the internal onboarding page and never reaches Hive or QSDM
+Core.
 
 ## Verification
 

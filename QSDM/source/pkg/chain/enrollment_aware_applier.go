@@ -80,9 +80,8 @@ type EnrollmentAwareApplier struct {
 	slasher    *SlashApplier
 	gov        *GovApplier
 	tasks      *TaskStateStore
+	streams    *StreamStateStore
 	recovery   *RecoveryCapsuleStateStore
-	// staking backs qsdm/staking/v1 validator bonding, which is what
-	// makes chain-derived validator membership reachable in practice.
 	staking    *StakingLedger
 
 	mu       sync.RWMutex
@@ -195,6 +194,13 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 		h, _ := a.currentHeight()
 		return tasks.ApplyEconomicTxAtHeight(tx, a.accounts, h)
 	}
+	if tx.ContractID == StreamContractID {
+		streams := a.StreamStateStore()
+		if streams == nil {
+			return ErrStreamStateNotWired
+		}
+		return streams.ApplyEconomicTx(tx, a.accounts)
+	}
 	if tx.ContractID == RecoveryCapsuleContractID {
 		recovery := a.RecoveryCapsuleStateStore()
 		if recovery == nil {
@@ -208,7 +214,7 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 			return ErrStakingNotWired
 		}
 		// Height is required so begin_unbond can schedule maturity
-		// deterministically; a delegate does not use it but shares the path.
+		// deterministically; delegate shares the same transaction path.
 		h, ok := a.currentHeight()
 		if !ok {
 			return ErrEnrollmentHeightUnset
@@ -245,6 +251,27 @@ func (a *EnrollmentAwareApplier) TaskStateStore() *TaskStateStore {
 	return a.tasks
 }
 
+// SetStreamStateStore installs (or clears) the qsdm/streams/v1 state store.
+// Stream transactions fail closed until a store is attached.
+func (a *EnrollmentAwareApplier) SetStreamStateStore(streams *StreamStateStore) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.streams = streams
+}
+
+// StreamStateStore returns the configured CELL stream state store.
+func (a *EnrollmentAwareApplier) StreamStateStore() *StreamStateStore {
+	if a == nil {
+		return nil
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.streams
+}
+
 // SetRecoveryCapsuleStateStore installs (or clears) the encrypted legacy
 // wallet recovery-capsule state store.
 func (a *EnrollmentAwareApplier) SetRecoveryCapsuleStateStore(recovery *RecoveryCapsuleStateStore) {
@@ -264,6 +291,27 @@ func (a *EnrollmentAwareApplier) RecoveryCapsuleStateStore() *RecoveryCapsuleSta
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.recovery
+}
+
+// SetStakingLedger installs (or clears) the qsdm/staking/v1 ledger.
+// Staking transactions fail closed until a ledger is attached.
+func (a *EnrollmentAwareApplier) SetStakingLedger(staking *StakingLedger) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.staking = staking
+}
+
+// StakingLedger returns the configured validator staking ledger.
+func (a *EnrollmentAwareApplier) StakingLedger() *StakingLedger {
+	if a == nil {
+		return nil
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.staking
 }
 
 // SetGovApplier installs (or clears) the governance applier.
@@ -327,23 +375,31 @@ func (a *EnrollmentAwareApplier) SlashApplier() *SlashApplier {
 	return a.slasher
 }
 
-// StateRoot implements StateApplier. The legacy no-task path
-// remains the bare account root for compatibility. Once a task
-// action has landed, the deterministic task state root is folded
-// in so qsdm/tasks/v1 blocks commit to both CELL ledger movement
-// and task lifecycle state.
+// StateRoot implements StateApplier. Legacy roots remain byte-for-byte stable
+// while their corresponding feature state is empty. Once task or stream state
+// exists, each deterministic feature root is folded into the prior root.
 func (a *EnrollmentAwareApplier) StateRoot() string {
 	if a == nil || a.accounts == nil {
 		return ""
 	}
 	accountRoot := a.accounts.StateRoot()
+	tasks := a.TaskStateStore()
 	root := accountRoot
-	if tasks := a.TaskStateStore(); tasks != nil && tasks.Count() > 0 {
+	if tasks != nil && tasks.Count() > 0 {
 		h := sha256.New()
 		h.Write([]byte("accounts:"))
 		h.Write([]byte(accountRoot))
 		h.Write([]byte("\ntasks:"))
 		h.Write([]byte(tasks.StateRoot()))
+		root = hex.EncodeToString(h.Sum(nil))
+	}
+	streams := a.StreamStateStore()
+	if streams != nil && streams.Count() > 0 {
+		h := sha256.New()
+		h.Write([]byte("state:"))
+		h.Write([]byte(root))
+		h.Write([]byte("\nstreams:"))
+		h.Write([]byte(streams.StateRoot()))
 		root = hex.EncodeToString(h.Sum(nil))
 	}
 	recovery := a.RecoveryCapsuleStateStore()
@@ -469,6 +525,10 @@ var (
 	// tx arrives at a node that has no TaskStateStore configured.
 	ErrTaskStateNotWired = errors.New("chain: task action tx received but no TaskStateStore is wired")
 
+	// ErrStreamStateNotWired is returned when a qsdm/streams/v1 transaction
+	// arrives at a node that has no StreamStateStore configured.
+	ErrStreamStateNotWired = errors.New("chain: CELL stream tx received but no StreamStateStore is wired")
+
 	// ErrRecoveryCapsuleStateNotWired is returned when a signed recovery
 	// capsule transaction reaches a node that has not installed its store.
 	ErrRecoveryCapsuleStateNotWired = errors.New("chain: wallet recovery capsule tx received but no RecoveryCapsuleStateStore is wired")
@@ -526,14 +586,22 @@ func (a *EnrollmentAwareApplier) ChainReplayClone() ChainReplayApplier {
 	a.mu.RLock()
 	liveSlasher := a.slasher
 	liveTasks := a.tasks
+	liveStreams := a.streams
 	liveRecovery := a.recovery
+	liveStaking := a.staking
 	clone.heightFn = a.heightFn
 	a.mu.RUnlock()
 	if liveTasks != nil {
 		clone.tasks = liveTasks.ChainReplayClone().(*TaskStateStore)
 	}
+	if liveStreams != nil {
+		clone.streams = liveStreams.ChainReplayClone().(*StreamStateStore)
+	}
 	if liveRecovery != nil {
 		clone.recovery = liveRecovery.ChainReplayClone().(*RecoveryCapsuleStateStore)
+	}
+	if liveStaking != nil {
+		clone.staking = liveStaking.chainReplayClone()
 	}
 	if liveSlasher != nil {
 		sm, ok := sharedMutator.(SlasherStateMutator)
@@ -612,6 +680,16 @@ func (a *EnrollmentAwareApplier) RestoreFromChainReplay(from ChainReplayApplier)
 			return err
 		}
 	}
+	liveStreams := a.StreamStateStore()
+	otherStreams := other.StreamStateStore()
+	if (liveStreams == nil) != (otherStreams == nil) {
+		return errors.New("chain: RestoreFromChainReplay stream state presence mismatch")
+	}
+	if liveStreams != nil {
+		if err := liveStreams.RestoreFromChainReplay(otherStreams); err != nil {
+			return err
+		}
+	}
 	liveRecovery := a.RecoveryCapsuleStateStore()
 	otherRecovery := other.RecoveryCapsuleStateStore()
 	if (liveRecovery == nil) != (otherRecovery == nil) {
@@ -622,27 +700,15 @@ func (a *EnrollmentAwareApplier) RestoreFromChainReplay(from ChainReplayApplier)
 			return err
 		}
 	}
+	liveStaking := a.StakingLedger()
+	otherStaking := other.StakingLedger()
+	if (liveStaking == nil) != (otherStaking == nil) {
+		return errors.New("chain: RestoreFromChainReplay staking ledger presence mismatch")
+	}
+	if liveStaking != nil {
+		if err := liveStaking.restoreFromChainReplay(otherStaking); err != nil {
+			return err
+		}
+	}
 	return nil
-}
-
-// SetStakingLedger installs (or clears) the validator staking ledger.
-// qsdm/staking/v1 transactions are rejected with ErrStakingNotWired until
-// this is attached.
-func (a *EnrollmentAwareApplier) SetStakingLedger(sl *StakingLedger) {
-	if a == nil {
-		return
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.staking = sl
-}
-
-// StakingLedger returns the attached staking ledger, or nil.
-func (a *EnrollmentAwareApplier) StakingLedger() *StakingLedger {
-	if a == nil {
-		return nil
-	}
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.staking
 }

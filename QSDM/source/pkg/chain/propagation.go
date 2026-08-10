@@ -292,7 +292,10 @@ func (bp *BlockPropagator) validateBlock(block *Block) bool {
 	}
 
 	recomputed := recomputeHash(block)
-	return recomputed == block.Hash
+	if recomputed != block.Hash {
+		return false
+	}
+	return VerifyBlockSignature(block) == nil
 }
 
 func (bp *BlockPropagator) responseLimit(requested uint64) uint64 {

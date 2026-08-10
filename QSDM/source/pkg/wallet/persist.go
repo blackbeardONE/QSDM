@@ -20,17 +20,16 @@ import (
 //	02:11:05  Wallet service initialized  address=5aa5d9f5…  balance=0
 //	03:30:24  Wallet service initialized  address=4b28fb63…  balance=0
 //
-// Three consequences, all of which look like "the node is broken":
+// Two consequences, both of which look like "the node is broken":
 //
 //  1. The wallet balance is always 0, because the address is brand new and
 //     the canonical ledger has never seen it.
 //  2. Any CELL previously credited to the node — mining rewards, faucet,
 //     transfers — is stranded at an address whose key no longer exists
 //     anywhere. That is unrecoverable value loss, not a display bug.
-//  3. The same key backs the node's consensus identity (cmd/qsdm wires
-//     walletService.ConsensusSigner into BFT vote signing), so the
-//     validator's identity churned on every restart and could never hold a
-//     stable place in a validator set.
+//
+// Consensus identity uses a separate persisted signer key; keeping these
+// roles separate prevents a hot consensus key from holding user funds.
 //
 // The key is stored unencrypted with 0600 permissions, matching the existing
 // convention for unattended node key material (.qsdm/attester.key,

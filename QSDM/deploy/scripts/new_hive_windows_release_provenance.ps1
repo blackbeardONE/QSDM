@@ -43,9 +43,20 @@ if ($metadata.schema -ne 'qsdm.windows-metadata-evidence.v1' -or
 }
 if ($nsis.schema -ne 'qsdm.windows-nsis-payload-evidence.v1' -or
     [string]$nsis.installer.name -ne $installer.Name -or
-    [string]$nsis.installer.sha256 -ne $installerHash -or
-    @($nsis.files).Count -ne @($metadata.files).Count) {
+    [string]$nsis.installer.sha256 -ne $installerHash) {
     throw 'NSIS payload evidence does not match the installer and metadata evidence.'
+}
+
+$metadataPaths = @($metadata.files | ForEach-Object { [string]$_.path })
+$nsisPaths = @($nsis.files | ForEach-Object { [string]$_.path })
+foreach ($metadataPath in $metadataPaths) {
+    if ($metadataPath -notin $nsisPaths) {
+        throw "NSIS payload evidence is missing a verified executable: $metadataPath"
+    }
+}
+$updateConfigPath = 'resources/app-update.yml'
+if ($updateConfigPath -notin $nsisPaths) {
+    throw 'NSIS payload evidence is missing the verified updater configuration.'
 }
 
 if (-not $WorkflowRunUrl -and $env:GITHUB_SERVER_URL -and
@@ -67,7 +78,8 @@ $provenance = [ordered]@{
     installer_sha256 = $installerHash
     installer_size = [long]$installer.Length
     metadata_executables_verified = @($metadata.files).Count
-    nsis_executables_verified = @($nsis.files).Count
+    nsis_executables_verified = @($metadata.files).Count
+    nsis_update_config_verified = $true
     packager = 'electron-builder 26.15.3 --prepackaged'
 }
 

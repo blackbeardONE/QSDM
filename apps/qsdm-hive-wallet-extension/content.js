@@ -18,6 +18,7 @@
     "qsdm_signMessage",
     "qsdm_sendTransaction",
     "qsdm_disconnect",
+    "qsdm_openOnboarding",
   ]);
 
   const postPageResponse = (id, response) =>

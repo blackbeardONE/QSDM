@@ -78,9 +78,9 @@ curl --fail --silent --show-error --head --max-time 30 \
 atomic_install "$stage_dir/download.html" "$webroot/download.html"
 atomic_install "$stage_preview/latest.yml" "$preview_downloads/latest.yml"
 
-curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/downloads/unsigned-preview/latest.yml" | \
-  grep -qx "version: ${preview_version}"
+public_preview="$(curl --fail --silent --show-error --max-time 30 \
+  "https://qsdm.tech/downloads/unsigned-preview/latest.yml")"
+grep -qx "version: ${preview_version}" <<<"$public_preview"
 
 stable_hash_after="$(sha256sum "$stable_manifest" | cut -d' ' -f1)"
 if [[ "$stable_hash_before" != "$stable_hash_after" ]]; then

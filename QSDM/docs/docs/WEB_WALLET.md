@@ -4,20 +4,20 @@ Public URL: <https://qsdm.tech/wallet/>
 Source:    `QSDM/source/wasm_modules/wallet/cmd/qsdm-wallet/main.go`
             `QSDM/deploy/landing/wallet.html`
             `QSDM/deploy/landing/wallet.js`
+            `QSDM/deploy/landing/wallet-provider.js`
 Sibling:   `qsdmcli wallet new|show|inspect|sign` (CLI · same keystore format)
 
-The web wallet is a static page that generates and operates ML-DSA-87
-(FIPS 204) wallets entirely client-side. QSDM validators play no role in
-keystore creation or storage. Create, import, unlock, and sign load only the
-static wallet assets. Balance lookup reads the public QSDM API, and Send posts
-only an already-signed transaction envelope; neither path sends the private
-key or passphrase.
+The web wallet has two self-custody paths. Its standalone tools generate and
+operate ML-DSA-87 (FIPS 204) keystores entirely client-side. Its QSDM Hive panel
+uses the browser extension's `window.qsdm` provider to connect the active Hive
+wallet, read its public address and balance, and request a CELL transfer. The
+panel never receives the keystore or passphrase; Hive presents the site origin
+and transaction for approval before signing.
 
-The current web wallet does not have a QSDM Account login. Email/password and
-Telegram login require a separate consumer identity service and an encrypted
-vault-sync boundary; validator-dashboard authentication is not suitable for
-that purpose. The accepted design and release gates are documented in
-[QSDM Account and Wallet Sync](WALLET_ACCOUNT_SYNC.md).
+Validators play no role in keystore creation or storage. Network traffic is
+limited to loading the static wallet assets, public Core reads, signed
+transaction submission, and the authenticated local Hive bridge when the user
+chooses that path.
 
 This document is the reference for what the page does, how, and why.
 
@@ -230,15 +230,15 @@ signature copy-paste is no longer the normal path:
 qsdm-hive://skyfang-link?challenge_url=<url>&submit_url=<url>&return_url=<url>
 ```
 
-Current player flow:
+Current deep-link player flow:
 
 1. Player opens `https://skyfang.xyz/dashboard/qsdm` and signs in to Sky Fang.
-2. Player clicks **Confirm with QSDM Hive** on the Windows PC that has Hive
+2. Player clicks **Confirm with QSDM Hive** on the computer that has Hive
    installed. Hive signs the Sky Fang challenge locally and posts
    `{code, public_key, signature}` back to Sky Fang.
 
 The Android game can open the same Sky Fang page for status and handoff, but
-the wallet signature still happens in QSDM Hive on Windows because that is
+the wallet signature still happens in QSDM Hive on Windows or Linux because that is
 where the QSDM keystore lives. The flow stays on `skyfang.xyz`; the
 `qsdm.tech/wallet` page is no longer part of the normal player path.
 The legacy mobile entry point `https://skyfang.xyz/link-wallet` is kept as a
@@ -254,20 +254,57 @@ https://skyfang.xyz/api/qsdm/link-confirm?code=<short-code>
 That page also shows **Confirm with QSDM Hive** and opens the
 `qsdm-hive://skyfang-link...` deep link.
 
-Why this is the best quick path:
+Why the deep-link path remains supported:
 
 - QSDM Hive registers the `qsdm-hive://` protocol.
 - `qsdmcli wallet sign` already signs arbitrary messages with ML-DSA-87.
 - The private key stays in the local wallet/keystore; Sky Fang never sees it.
-- No Chrome Web Store review, no extension key custody, and no new browser
-  security model for v1.
+- It also works when the browser extension is not installed.
 
-A browser extension can still be a phase-2 product, but it is more work:
+Hive 1.4.12 supports the QSDM Wallet extension for Chrome, Edge,
+Chromium, Brave, and Firefox. Supported HTTPS sites can use its `window.qsdm`
+provider for account connection, balance reads, message signing, and approved
+CELL transfers. The extension is not a second wallet: it stores no keystore,
+private key, or passphrase. It talks to Hive through the authenticated native
+messaging bridge and exact-origin permissions, while Hive displays every
+signing or transfer approval.
 
-- It needs a secure extension keystore and unlock UX.
-- It needs ML-DSA-87 signing in WASM inside the extension.
-- It must mediate origin permissions for `skyfang.xyz` and `qsdm.tech`.
-- It requires packaging/signing/review and ongoing update management.
+Until browser-store review is complete, Chrome, Edge, Chromium, and Brave users
+download the Chromium package once from <https://qsdm.tech/download.html>,
+extract it, and load the folder from their browser's extension page. Normal
+Firefox releases require a Mozilla-signed XPI; the published Firefox ZIP is a
+submission and temporary-testing artifact until that signing step is complete.
+The Sky Fang deep link and the extension are complementary transport paths to
+the same Hive-held wallet, not separate accounts.
+
+First-run links now use <https://qsdm.tech/wallet-start.html?login=new>. An
+installed provider asks its own background worker to open
+`home.html#/onboarding/welcome?login=new`; a missing provider is sent to the
+official extension download. This avoids browser-specific extension URLs in
+websites. Extension 0.5.1 sends enabled sign-in methods to the HTTPS QSDM
+Account dashboard and exposes that dashboard directly from its popup. Telegram
+is currently enabled in production and is verified with Authorization Code +
+PKCE and server-side ID-token checks. Email remains hidden until production
+outbound email delivery is configured. The extension never receives provider
+credentials.
+
+The extension popup now shows the active wallet's current CELL balance and
+opens a full wallet dashboard. That dashboard can copy the receiving address,
+refresh the balance, and request a CELL transfer. The signed-in QSDM Account
+dashboard offers the same active-wallet view. Both transfer surfaces call the
+local Hive bridge, and Hive must show and approve the exact recipient and
+amount before signing. They do not support other currencies or tokens yet.
+Hive queues approved transfers from the active wallet. If QSDM Core reports
+that the next wallet nonce is still waiting for a block, Hive waits for the
+committed nonce to advance and rebuilds the transfer instead of exposing a raw
+HTTP 409 error or reusing the occupied nonce.
+
+An account session can view verified identity and linked public wallet
+addresses. The session itself cannot sign, spend CELL, recover a wallet, or
+inherit a site's Hive permission. When Hive and the extension are available,
+the dashboard may request a fresh Hive-approved transfer; that authority is
+never stored in the account session. Linking a wallet requires a fresh ML-DSA
+ownership signature approved in Hive. See the [QSDM Account guide](QSDM_ACCOUNT.md).
 
 The wallet page's manual Sign tab is a developer/emergency diagnostic fallback
 only. For players, install QSDM Hive and use the one-click Sky Fang confirmation
@@ -277,10 +314,13 @@ page.
 
 ## 7. Known limitations / roadmap
 
-- The wallet page does not currently broadcast signed transactions; it
-  produces the signature and leaves transport to the operator (curl,
-  qsdmcli tx, SDK). A "send transaction" tab is planned for v0.4.0
-  once the v2 mining payload format settles.
+- The standalone web-wallet tools produce signatures locally and leave
+  submission to the operator (`curl`, `qsdmcli tx`, or an SDK). When the page
+  is connected to Hive through the extension, its Hive panel can request and
+  submit a CELL transfer after Hive shows a fresh user approval.
+- Browser-store publication is still pending. Versioned Chromium and Firefox
+  packages are available from the QSDM download page, but users must perform a
+  one-time manual extension installation until store distribution is approved.
 - WebCrypto's PBKDF2 implementation is constant-iteration; on slower
   hardware (mobile browsers) the encrypt step can take 2-3 seconds.
   The page spinners through it but the UX is not great. Argon2

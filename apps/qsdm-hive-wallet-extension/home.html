@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'"
+    />
+    <title>Welcome to QSDM Wallet</title>
+    <link rel="stylesheet" href="home.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <img src="qsdm-hive-icon.png" alt="" width="36" height="36" />
+        <span>QSDM Wallet</span>
+      </div>
+      <label class="language">
+        <span class="sr-only">Language</span>
+        <select aria-label="Language">
+          <option>English</option>
+        </select>
+      </label>
+    </header>
+
+    <main>
+      <section id="onboarding-view" class="welcome" aria-labelledby="welcome-title">
+        <img
+          class="welcome-mark"
+          src="qsdm-hive-icon.png"
+          alt="QSDM"
+          width="76"
+          height="76"
+        />
+        <p class="eyebrow">CELL WALLET</p>
+        <h1 id="welcome-title">One wallet across QSDM</h1>
+        <p class="intro">
+          Use your active Hive wallet on supported websites. Private keys stay
+          inside QSDM Hive.
+        </p>
+
+        <div class="choices" aria-label="Account choices">
+          <button class="choice" id="telegram-login" type="button">
+            <span class="choice-icon" aria-hidden="true">T</span>
+            Continue with Telegram
+          </button>
+
+          <div class="divider"><span>or</span></div>
+
+          <button class="choice primary" id="use-hive" type="button" disabled>
+            Use QSDM Hive Wallet
+          </button>
+          <button class="text-button" id="open-hive" type="button">
+            Open wallet management
+          </button>
+        </div>
+
+        <section class="wallet-state" aria-live="polite">
+          <span id="state-label">Checking QSDM Hive...</span>
+          <strong id="wallet-address"></strong>
+          <small id="requesting-site"></small>
+        </section>
+
+        <p class="notice" id="notice" role="status"></p>
+        <p class="legal">
+          Account login stores identity and linked public wallet addresses only.
+          Wallet keys and passphrases stay in QSDM Hive.
+        </p>
+      </section>
+
+      <section id="wallet-dashboard" class="wallet-dashboard" aria-labelledby="wallet-title" hidden>
+        <div class="dashboard-heading">
+          <div>
+            <p class="eyebrow">ACTIVE HIVE WALLET</p>
+            <h1 id="wallet-title">Send and receive CELL</h1>
+            <p class="intro">Hive keeps the key. This page reads the live balance and sends only after you approve the exact transfer in Hive.</p>
+          </div>
+          <button id="refresh-balance" class="icon-button" type="button" title="Refresh balance" aria-label="Refresh balance">&#8635;</button>
+        </div>
+
+        <div class="wallet-summary">
+          <div class="summary-item address-item">
+            <span>Wallet address</span>
+            <strong id="dashboard-address">Checking...</strong>
+            <button id="copy-address" class="text-button compact" type="button" disabled>Copy address</button>
+          </div>
+          <div class="summary-item">
+            <span>Available balance</span>
+            <strong id="dashboard-balance">Unavailable</strong>
+            <small id="balance-state">Waiting for Hive</small>
+          </div>
+        </div>
+
+        <form id="send-form" class="send-form">
+          <fieldset id="send-fields" disabled>
+            <legend>Send CELL</legend>
+            <label for="send-recipient">Recipient wallet address</label>
+            <input id="send-recipient" name="recipient" type="text" autocomplete="off" spellcheck="false" placeholder="QSDM wallet address" required />
+            <label for="send-amount">Amount</label>
+            <div class="amount-field">
+              <input id="send-amount" name="amount" type="number" min="0.00000001" step="0.00000001" inputmode="decimal" placeholder="0.00" required />
+              <span>CELL</span>
+            </div>
+            <button id="send-cell" class="choice primary" type="submit">Review in Hive</button>
+          </fieldset>
+        </form>
+
+        <p id="transfer-status" class="notice" role="status"></p>
+        <div class="dashboard-actions">
+          <button id="open-account" class="text-button" type="button">Open QSDM Account</button>
+          <button id="dashboard-open-hive" class="text-button" type="button">Open Hive wallet management</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="home.js"></script>
+  </body>
+</html>

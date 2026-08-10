@@ -302,7 +302,11 @@ func (as *AccountStore) ApplyTx(tx *mempool.Tx) error {
 func (as *AccountStore) Clone() *AccountStore {
 	as.mu.RLock()
 	defer as.mu.RUnlock()
-	out := &AccountStore{accounts: make(map[string]*Account, len(as.accounts))}
+	out := &AccountStore{
+		accounts:     make(map[string]*Account, len(as.accounts)),
+		heightFn:     as.heightFn,
+		dustMigrated: as.dustMigrated,
+	}
 	for k, v := range as.accounts {
 		cp := *v
 		out.accounts[k] = &cp
@@ -342,10 +346,12 @@ func (as *AccountStore) RestoreFrom(snap *AccountStore) {
 		cp := *v
 		out[k] = &cp
 	}
+	dustMigrated := snap.dustMigrated
 	snap.mu.RUnlock()
 	as.mu.Lock()
 	defer as.mu.Unlock()
 	as.accounts = out
+	as.dustMigrated = dustMigrated
 }
 
 // StateRoot computes a deterministic hash of all account states.

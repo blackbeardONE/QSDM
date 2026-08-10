@@ -55,6 +55,12 @@
           badge: "new"
         },
         {
+          slug: "cell-streams",
+          title: "CELL Streams",
+          repoPath: DOCS_PREFIX_REPO + "/CELL_STREAMS.md",
+          badge: "new"
+        },
+        {
           slug: "qsdm-network",
           title: "QSDM Network",
           repoPath: DOCS_PREFIX_REPO + "/QSDM_NETWORK.md",
@@ -106,6 +112,7 @@
     {
       title: "Wallet (self-custody)",
       items: [
+        { slug: "qsdm-account",       title: "QSDM Account",                   repoPath: DOCS_PREFIX_REPO + "/QSDM_ACCOUNT.md", badge: "new" },
         { slug: "wallet-recovery",    title: "Wallet recovery",                 repoPath: DOCS_PREFIX_REPO + "/WALLET_RECOVERY.md", badge: "new" },
         { slug: "web-wallet",         title: "Web wallet",                       repoPath: DOCS_PREFIX_REPO + "/WEB_WALLET.md" },
         { slug: "wallet-explanation", title: "How the wallet works",             repoPath: DOCS_PREFIX_REPO + "/WALLET_EXPLANATION.md" },
@@ -444,7 +451,7 @@
       + cardHtml("home-gateway",       "Home gateway",       "Publish mining/status without exposing wallet or admin APIs.")
       + cardHtml("miner-quickstart",   "Mine on NVIDIA",     "Protocol v2 miner path for Turing-or-newer GPUs.")
       + cardHtml("edge-pool",          "Edge pool",          "Agent → Relay → Mother Hive → Core settlement model.")
-      + cardHtml("web-wallet",         "Web wallet",         "ML-DSA-87 self-custody in the browser, with an optional Hive extension path.")
+      + cardHtml("web-wallet",         "Web wallet",         "ML-DSA-87 self-custody in the browser, no extension.")
       + cardHtml("api-reference",      "API reference",      "Public HTTP endpoints with auth + replay semantics.")
       + cardHtml("runbooks/index",     "Runbooks",           "Incident response, on-call procedures, recovery.")
       + "</div>"
@@ -622,7 +629,7 @@
           if (status.git_sha) {
             pill.setAttribute("href", "https://github.com/" + GH_USER + "/" + GH_REPO + "/commit/" + encodeURIComponent(status.git_sha));
           }
-          pill.setAttribute("title", "Deployed QSDM Network Core: " + status.version);
+          pill.setAttribute("title", "Running QSDM Network Core: " + status.version);
         }
       })
       .catch(function () { /* offline — keep the static deployed value */ });

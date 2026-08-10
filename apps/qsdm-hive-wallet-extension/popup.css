@@ -52,6 +52,18 @@ section {
   background: #0d2a35;
 }
 
+.balance-card strong {
+  color: #55dfc1;
+  font-size: 18px;
+}
+
+.balance-card small {
+  display: block;
+  margin-top: 4px;
+  color: #8eb4be;
+  font-size: 10px;
+}
+
 .site-row {
   display: flex;
   align-items: center;

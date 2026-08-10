@@ -19,13 +19,14 @@ import (
 // HTTP wire layer. It owns a single workset and DAG so tests can solve a
 // real proof against it.
 type fakeService struct {
-	epoch  uint64
-	height uint64
-	header [32]byte
-	diff   *big.Int
-	ws     mining.WorkSet
-	dag    mining.DAG
-	verify *mining.Verifier
+	epoch     uint64
+	height    uint64
+	header    [32]byte
+	diff      *big.Int
+	ws        mining.WorkSet
+	dag       mining.DAG
+	verify    *mining.Verifier
+	submitErr error
 }
 
 func (s *fakeService) WorkAt(height uint64) (*MiningWork, error) {
@@ -35,6 +36,9 @@ func (s *fakeService) WorkAt(height uint64) (*MiningWork, error) {
 	return WorkFromMiningCore(s.epoch, s.height, s.header, s.diff, s.dag.N(), s.ws, mining.DefaultBlocksPerMiningEpoch)
 }
 func (s *fakeService) Submit(raw []byte) ([32]byte, error) {
+	if s.submitErr != nil {
+		return [32]byte{}, s.submitErr
+	}
 	return s.verify.Verify(raw, s.height)
 }
 func (s *fakeService) TipHeight() uint64 { return s.height }
@@ -679,6 +683,21 @@ func TestMiningSubmitReturns503WhenServiceAbsent(t *testing.T) {
 	h.MiningSubmitHandler(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("want 503, got %d", rec.Code)
+	}
+}
+
+func TestMiningSubmitReturns503WhenServiceIsReadOnly(t *testing.T) {
+	svc := buildFakeService(t)
+	svc.submitErr = ErrMiningUnavailable
+	SetMiningService(svc)
+	t.Cleanup(func() { SetMiningService(nil) })
+
+	h := &Handlers{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/mining/submit", bytes.NewReader([]byte(`{}`)))
+	h.MiningSubmitHandler(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

@@ -230,6 +230,11 @@ func isPublicEndpoint(path string) bool {
 		// see versioning.go.
 		"/api/v1/versions",
 		"/api/v1/tasks",
+		"/api/v1/streams",
+		// CELL stream writes are authenticated by the ML-DSA wallet signature
+		// inside the envelope; a dashboard JWT would add identity unrelated to
+		// the payer/provider account.
+		"/api/v1/streams/actions/submit-signed",
 		"/api/v1/auth/login",
 		"/api/v1/auth/register",
 		// CSRF token issuer. Public so a fresh browser session can
@@ -431,6 +436,12 @@ func isPublicEndpoint(path string) bool {
 	// task marketplace metadata is non-secret and Hive needs to
 	// discover it before the user has a dashboard session.
 	if strings.HasPrefix(path, "/api/v1/tasks/") {
+		return true
+	}
+	// Stream state is public ledger data. The only write path under this
+	// prefix is explicitly listed above and performs consensus signature
+	// verification before mempool admission.
+	if strings.HasPrefix(path, "/api/v1/streams/") {
 		return true
 	}
 	if strings.HasPrefix(path, "/api/v1/wallet/recovery/capsules/") {

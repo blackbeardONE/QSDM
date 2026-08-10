@@ -19,6 +19,11 @@
         <span class="label">Signed in wallet</span>
         <strong id="wallet-address">Not connected</strong>
       </section>
+      <section class="balance-card">
+        <span class="label">Available balance</span>
+        <strong id="wallet-balance">Unavailable</strong>
+        <small>CELL on the current QSDM ledger</small>
+      </section>
       <section>
         <span class="label">Current site</span>
         <div class="site-row">
@@ -32,8 +37,14 @@
       </p>
       <p class="notice" id="notice" role="status"></p>
       <button id="connect-site" type="button">Connect Current Site</button>
+      <button id="open-dashboard" class="secondary" type="button" disabled>
+        Open Wallet Dashboard
+      </button>
+      <button id="open-account" class="secondary" type="button">
+        Open QSDM Account
+      </button>
       <button id="open-wallet" class="secondary" type="button">
-        Open QSDM Hive
+        Open Hive Wallet Management
       </button>
     </main>
     <script src="popup.js"></script>

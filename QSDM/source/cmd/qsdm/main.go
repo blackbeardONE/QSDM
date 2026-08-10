@@ -104,6 +104,28 @@ func replayTaskStateFromBlocks(taskState *chain.TaskStateStore, blocks []*chain.
 	return replayed, nil
 }
 
+func replayStreamStateFromBlocks(streamState *chain.StreamStateStore, blocks []*chain.Block) (int, error) {
+	if streamState == nil {
+		return 0, nil
+	}
+	replayed := 0
+	for _, blk := range blocks {
+		if blk == nil {
+			continue
+		}
+		for _, tx := range blk.Transactions {
+			if tx == nil || tx.ContractID != chain.StreamContractID {
+				continue
+			}
+			if err := streamState.ApplyHistoricalTx(tx, blk.Height); err != nil {
+				return replayed, fmt.Errorf("height %d tx %s: %w", blk.Height, tx.ID, err)
+			}
+			replayed++
+		}
+	}
+	return replayed, nil
+}
+
 func replayRecoveryCapsuleStateFromBlocks(recoveryState *chain.RecoveryCapsuleStateStore, blocks []*chain.Block) (int, error) {
 	if recoveryState == nil {
 		return 0, nil
@@ -130,10 +152,13 @@ type persistedStateRestore struct {
 	blocks          []*chain.Block
 	taskState       *chain.TaskStateStore
 	taskActions     int
+	streamState     *chain.StreamStateStore
+	streamActions   int
 	recoveryState   *chain.RecoveryCapsuleStateStore
 	recoveryActions int
 	stateRoot       string
 	backupPath      string
+	discardedTail   int
 	recovered       bool
 }
 
@@ -146,6 +171,11 @@ func evaluatePersistedState(accounts *chain.AccountStore, blocks []*chain.Block)
 	if err != nil {
 		return persistedStateRestore{}, err
 	}
+	streams := chain.NewStreamStateStore()
+	streamActions, err := replayStreamStateFromBlocks(streams, blocks)
+	if err != nil {
+		return persistedStateRestore{}, err
+	}
 	recovery := chain.NewRecoveryCapsuleStateStore()
 	recoveryActions, err := replayRecoveryCapsuleStateFromBlocks(recovery, blocks)
 	if err != nil {
@@ -153,21 +183,62 @@ func evaluatePersistedState(accounts *chain.AccountStore, blocks []*chain.Block)
 	}
 	aware := chain.NewEnrollmentAwareApplier(accounts, nil)
 	aware.SetTaskStateStore(tasks)
+	aware.SetStreamStateStore(streams)
 	aware.SetRecoveryCapsuleStateStore(recovery)
 	return persistedStateRestore{
 		blocks:          blocks,
 		taskState:       tasks,
 		taskActions:     taskActions,
+		streamState:     streams,
+		streamActions:   streamActions,
 		recoveryState:   recovery,
 		recoveryActions: recoveryActions,
 		stateRoot:       aware.StateRoot(),
 	}, nil
 }
 
-// reconcilePersistedStateTail handles the only safe automatic crash gap: the
-// chain journal contains one fully written block whose account snapshot was
-// never committed. The saved accounts plus replayed task state must match the
-// immediately preceding block exactly. Any wider mismatch remains fail-closed.
+func findPersistedSnapshotBlock(
+	accounts *chain.AccountStore,
+	blocks []*chain.Block,
+) (int, error) {
+	if accounts == nil {
+		return -1, errors.New("persisted state scan requires an account snapshot")
+	}
+	tasks := chain.NewTaskStateStore()
+	streams := chain.NewStreamStateStore()
+	recovery := chain.NewRecoveryCapsuleStateStore()
+	aware := chain.NewEnrollmentAwareApplier(accounts, nil)
+	aware.SetTaskStateStore(tasks)
+	aware.SetStreamStateStore(streams)
+	aware.SetRecoveryCapsuleStateStore(recovery)
+
+	match := -1
+	for index, blk := range blocks {
+		if blk == nil {
+			return -1, fmt.Errorf("persisted state scan has a nil block at index %d", index)
+		}
+		if _, err := replayTaskStateFromBlocks(tasks, []*chain.Block{blk}); err != nil {
+			return -1, fmt.Errorf("replay task state at height %d: %w", blk.Height, err)
+		}
+		if _, err := replayStreamStateFromBlocks(streams, []*chain.Block{blk}); err != nil {
+			return -1, fmt.Errorf("replay CELL stream state at height %d: %w", blk.Height, err)
+		}
+		if _, err := replayRecoveryCapsuleStateFromBlocks(recovery, []*chain.Block{blk}); err != nil {
+			return -1, fmt.Errorf("replay wallet recovery capsule state at height %d: %w", blk.Height, err)
+		}
+		if aware.StateRoot() == blk.StateRoot {
+			match = index
+		}
+	}
+	return match, nil
+}
+
+// reconcilePersistedStateTail repairs a journal that advanced after its
+// account snapshot was last committed. The saved accounts plus task and stream
+// actions replayed through an earlier block must reproduce that block's
+// published state root exactly. The highest exact match wins, the full journal
+// is archived, and only the unmatched tail is removed. No matching root means
+// startup remains fail-closed.
 func reconcilePersistedStateTail(chainPath string, accounts *chain.AccountStore, blocks []*chain.Block, now time.Time) (persistedStateRestore, error) {
 	if len(blocks) == 0 {
 		return persistedStateRestore{}, errors.New("persisted state restore requires at least one block")
@@ -190,28 +261,36 @@ func reconcilePersistedStateTail(chainPath string, accounts *chain.AccountStore,
 			tip.Height, tip.Hash, current.stateRoot, tip.StateRoot)
 	}
 
-	priorBlocks := blocks[:len(blocks)-1]
-	priorTip := priorBlocks[len(priorBlocks)-1]
-	if priorTip == nil {
-		return persistedStateRestore{}, fmt.Errorf("persisted state restore has a nil preceding block at index %d", len(priorBlocks)-1)
-	}
-	prior, err := evaluatePersistedState(accounts, priorBlocks)
+	matchIndex, err := findPersistedSnapshotBlock(accounts, blocks)
 	if err != nil {
-		return persistedStateRestore{}, fmt.Errorf("replay preceding tip height %d: %w", priorTip.Height, err)
+		return persistedStateRestore{}, err
 	}
-	if prior.stateRoot != priorTip.StateRoot {
+	if matchIndex < 0 {
 		return persistedStateRestore{}, fmt.Errorf(
-			"persisted state matches neither canonical tip nor its predecessor (tip_height=%d snapshot_root=%s tip_root=%s predecessor_height=%d predecessor_snapshot_root=%s predecessor_root=%s); refusing automatic recovery",
-			tip.Height, current.stateRoot, tip.StateRoot, priorTip.Height, prior.stateRoot, priorTip.StateRoot)
+			"persisted state matches no block in the canonical journal (tip_height=%d snapshot_root=%s tip_root=%s); refusing automatic recovery",
+			tip.Height, current.stateRoot, tip.StateRoot)
+	}
+
+	matchingBlocks := blocks[:matchIndex+1]
+	matchingTip := matchingBlocks[len(matchingBlocks)-1]
+	matching, err := evaluatePersistedState(accounts, matchingBlocks)
+	if err != nil {
+		return persistedStateRestore{}, fmt.Errorf("replay matching tip height %d: %w", matchingTip.Height, err)
+	}
+	if matching.stateRoot != matchingTip.StateRoot {
+		return persistedStateRestore{}, fmt.Errorf(
+			"persisted state scan selected height %d but replay root changed (snapshot_root=%s block_root=%s)",
+			matchingTip.Height, matching.stateRoot, matchingTip.StateRoot)
 	}
 
 	backupPath := fmt.Sprintf("%s.uncommitted-tail-%s.bak", chainPath, now.UTC().Format("20060102T150405.000000000Z"))
-	if err := chain.ReplaceChainFile(chainPath, backupPath, priorBlocks); err != nil {
-		return persistedStateRestore{}, fmt.Errorf("archive one-block uncommitted journal tail: %w", err)
+	if err := chain.ReplaceChainFile(chainPath, backupPath, matchingBlocks); err != nil {
+		return persistedStateRestore{}, fmt.Errorf("archive unmatched journal tail: %w", err)
 	}
-	prior.backupPath = backupPath
-	prior.recovered = true
-	return prior, nil
+	matching.backupPath = backupPath
+	matching.discardedTail = len(blocks) - len(matchingBlocks)
+	matching.recovered = true
+	return matching, nil
 }
 
 func canonicalPersistedChain(blocks []*chain.Block) ([]*chain.Block, int) {
@@ -584,25 +663,7 @@ func main() {
 	metrics = monitoring.GetMetrics()
 	healthChecker = monitoring.NewHealthChecker(metrics)
 
-	// Register components for health monitoring.
-	//
-	// Two kinds of component here, and the distinction matters:
-	//
-	//   - "network" and "storage" have real runtime liveness that can
-	//     change after boot (peers come and go, a disk fills, a DB file
-	//     gets locked). Probes are attached at their construction sites
-	//     below via SetComponentProbe, so CheckHealth reports what is true
-	//     now.
-	//   - "consensus", "governance" and "wallet" record a boot-time
-	//     outcome — either quantum-safe crypto initialised or it did not.
-	//     That fact does not change while the process runs, so they carry
-	//     no probe and are exempt from the staleness rule. Attaching a
-	//     can-never-fail probe here would be theatre: it would refresh the
-	//     timestamp without checking anything.
-	//
-	// Previously every component was subject to staleness, and five of the
-	// six were never refreshed after boot — so the node reported DEGRADED
-	// about ten minutes after every start regardless of actual health.
+	// Register components for health monitoring
 	healthChecker.RegisterComponent("network")
 	healthChecker.RegisterComponent("storage")
 	healthChecker.RegisterComponent("consensus")
@@ -727,6 +788,26 @@ func main() {
 		}
 	}()
 	logger.Info("Validator state directory lock acquired", "path", stateLockPath)
+	consensusSignerKeyPath := strings.TrimSpace(cfg.ConsensusSignerKeyPath)
+	if consensusSignerKeyPath == "" {
+		consensusSignerKeyPath = filepath.Join(stateDir, "qsdm_consensus_signer.json")
+	} else if !filepath.IsAbs(consensusSignerKeyPath) {
+		consensusSignerKeyPath = filepath.Join(stateDir, consensusSignerKeyPath)
+	}
+	consensusSigner, consensusSignerCreated, signerErr := chain.LoadOrCreateBFTSigner(consensusSignerKeyPath)
+	if signerErr != nil {
+		log.Fatalf("validator consensus signer: %v", signerErr)
+	}
+	logger.Info("Validator consensus signer ready",
+		"validator", consensusSigner.Address(),
+		"path", consensusSignerKeyPath,
+		"created", consensusSignerCreated,
+		"purpose", "consensus-only hot key; do not fund")
+	if consensusSignerCreated {
+		logger.Warn("Back up the validator consensus signer before coordinated signature activation",
+			"path", consensusSignerKeyPath,
+			"impact", "losing this file changes validator identity")
+	}
 	if strings.TrimSpace(os.Getenv("QSDM_TASK_ACTION_LOG_PATH")) == "" {
 		taskActionLogPath := filepath.Join(stateDir, "qsdm_task_actions.ndjson")
 		if err := os.Setenv("QSDM_TASK_ACTION_LOG_PATH", taskActionLogPath); err != nil {
@@ -743,10 +824,6 @@ func main() {
 		log.Fatalf("Failed to setup libp2p: %v", err)
 	}
 	healthChecker.UpdateComponentHealth("network", monitoring.HealthStatusHealthy, "Network initialized")
-	// Real liveness: the libp2p host must still be up. Peer count is
-	// reported but deliberately does NOT gate health — a validator with no
-	// peers is isolated, not broken, and this stack legitimately runs
-	// solo (BootstrapPeers is empty by default).
 	healthChecker.SetComponentProbe("network", func() (monitoring.HealthStatus, string) {
 		if net == nil || net.Host == nil {
 			return monitoring.HealthStatusUnhealthy, "libp2p host is not running"
@@ -853,10 +930,6 @@ func main() {
 	fmt.Fprintln(os.Stdout, branding.LogPrefix+"Storage initialized")
 	os.Stdout.Sync()
 	defer storageBackend.Close()
-	// Real liveness: Ready() is the same dependency check the orchestration
-	// readiness probe uses (/api/v1/health/ready), so the dashboard and
-	// Kubernetes agree on what "storage is up" means. This genuinely
-	// changes at runtime — a full disk or a locked DB file fails here.
 	healthChecker.SetComponentProbe("storage", func() (monitoring.HealthStatus, string) {
 		if storageBackend == nil {
 			return monitoring.HealthStatusUnhealthy, "storage backend is not configured"
@@ -1073,8 +1146,8 @@ func main() {
 
 	nodeValidatorSet := chain.NewValidatorSet(chain.DefaultValidatorSetConfig())
 	minValStake := chain.DefaultValidatorSetConfig().MinStake
-	if err := nodeValidatorSet.Register("bootstrap", minValStake); err != nil {
-		logger.Warn("Bootstrap validator registration", "error", err)
+	if err := nodeValidatorSet.Register(consensusSigner.Address(), minValStake); err != nil {
+		log.Fatalf("register validator consensus identity: %v", err)
 	}
 	nodeEvidenceManager := chain.NewEvidenceManager(nodeValidatorSet)
 
@@ -1125,16 +1198,13 @@ func main() {
 	monitor := quarantine.NewMonitor(quarantineManager, logger, 30*time.Second)
 	monitor.Start()
 
-	// Initialize wallet service for creating transactions.
-	//
-	// The key is loaded from (or created at) a stable path so the node keeps
-	// one identity across restarts. Previously every start minted a fresh
-	// ML-DSA-87 keypair, which meant a new address, a permanently zero
-	// balance, stranded rewards at the old address, and — since this key
-	// also signs BFT votes — a consensus identity that churned every boot.
-	walletKeyPath := cfg.WalletKeyPath
-	if strings.TrimSpace(walletKeyPath) == "" {
+	// Keep the node wallet stable across restarts. This remains separate from
+	// the dedicated consensus signer above, which must never hold funds.
+	walletKeyPath := strings.TrimSpace(cfg.WalletKeyPath)
+	if walletKeyPath == "" {
 		walletKeyPath = filepath.Join(stateDir, "qsdm_validator_wallet.key")
+	} else if !filepath.IsAbs(walletKeyPath) {
+		walletKeyPath = filepath.Join(stateDir, walletKeyPath)
 	}
 	walletService, err := wallet.LoadOrCreateWalletService(walletKeyPath)
 	if err != nil {
@@ -1148,23 +1218,6 @@ func main() {
 			"balance", walletService.GetBalance(),
 			"key_path", walletKeyPath)
 		healthChecker.UpdateComponentHealth("wallet", monitoring.HealthStatusHealthy, "Wallet service initialized")
-	}
-
-	if walletService != nil {
-		if err := nodeValidatorSet.Register(walletService.GetAddress(), minValStake); err != nil {
-			logger.Warn("Wallet validator registration", "error", err)
-		}
-	}
-
-	// consensusSigner authenticates this node's BFT votes. The wallet
-	// address is SHA256(ML-DSA public key) in hex, which is exactly the
-	// identity chain.BFTValidatorAddress derives, so votes signed with this
-	// key self-certify as coming from the validator registered above.
-	var consensusSigner chain.BFTSigner
-	if walletService != nil {
-		if s := walletService.ConsensusSigner(); s != nil {
-			consensusSigner = s
-		}
 	}
 
 	nodeTxRep := networking.NewReputationTracker(networking.DefaultReputationConfig())
@@ -1194,6 +1247,13 @@ func main() {
 
 	liveBFT := chain.NewBFTConsensus(nodeValidatorSet, chain.DefaultConsensusConfig())
 	bftExec := chain.NewBFTExecutor(liveBFT)
+	adoptSyncedTipCommitFn = func(blk *chain.Block) {
+		if blk != nil {
+			// BFT's legacy BlockHash field carries the committed state root
+			// throughout the wire protocol (see validateInboundProposeBlock).
+			liveBFT.AdoptExternalCommit(blk.Height, blk.StateRoot, blk.ProducerID)
+		}
+	}
 	bftIngressExec := bftExec
 	if networkedCatchupMode {
 		// A catch-up replica replays the pinned canonical chain but is not a
@@ -1207,62 +1267,45 @@ func main() {
 			"env_var", "QSDM_NETWORKED_CATCHUP_MODE")
 	}
 	bftIngress := networking.NewBFTGossipIngress(networking.DefaultBFTGossipConfig(), bftIngressExec)
+	if networkedCatchupMode {
+		bftIngress.SetAuthenticationExecutor(bftExec)
+	}
 	bftIngress.SetReputationTracker(nodeTxRep)
-	// Participation follows DERIVED MEMBERSHIP, not a boot-time env var.
-	//
-	// QSDM_NETWORKED_CATCHUP_MODE remains an explicit operator override for
-	// a node that should only mirror the chain. Absent that override, this
-	// node applies consensus messages exactly when it is itself in the
-	// validator set derived from committed chain state — so a home node
-	// that bonds stake starts participating on the next reconcile instead
-	// of staying a replica until someone restarts it.
-	//
-	// Either way the ingress still validates, dedupes and relays, so a
-	// non-participating node remains useful for propagation.
 	bftIngress.SetParticipationGate(func() bool {
 		if networkedCatchupMode {
 			return false
 		}
-		if walletService == nil {
-			return false
-		}
-		_, isMember := nodeValidatorSet.GetValidator(walletService.GetAddress())
+		_, isMember := nodeValidatorSet.GetValidator(consensusSigner.Address())
 		return isMember
 	})
 	bftExec.SetEvidenceManager(nodeEvidenceManager)
-	// Let HTTP chain catch-up record its synced tip as committed, or the
-	// seal gate blocks this node from extending the chain it just synced.
-	adoptSyncedTipCommitFn = func(blk *chain.Block) {
-		liveBFT.AdoptExternalCommit(blk.Height, blk.StateRoot, blk.ProducerID)
-	}
 
 	// Authenticate outbound consensus messages. Without a signer, prevotes
 	// and precommits go out unauthenticated and any gossip peer can forge
 	// votes for any validator — i.e. manufacture a quorum.
-	if consensusSigner != nil {
-		bftExec.SetVoteSigner(consensusSigner)
-		logger.Info("BFT vote signing enabled",
-			"validator", chain.BFTValidatorAddress(consensusSigner.GetPublicKey()))
-	} else {
-		logger.Warn("BFT vote signing disabled (no wallet key)",
-			"impact", "this node's consensus messages are unauthenticated")
-	}
+	bftExec.SetVoteSigner(consensusSigner)
+	logger.Info("BFT vote signing enabled", "validator", consensusSigner.Address())
 	// Inbound enforcement is opt-in so a mixed-version validator set can
 	// roll forward: signed builds emit signatures immediately, and the
 	// operator turns rejection on once every peer is upgraded. A
 	// present-but-invalid signature is always rejected regardless.
+	bftExec.SetSignedVoteActivationHeight(cfg.SignedConsensusActivationHeight)
 	bftExec.SetRequireSignedVotes(cfg.RequireSignedVotes)
 	// The same switch governs POL certificates / lock proofs and block
 	// producer signatures: they are all part of one consensus-authentication
 	// rollout, so flipping them independently would leave a gap that is
 	// easy to misconfigure and hard to notice.
+	chain.SetSignedCertificateActivationHeight(cfg.SignedConsensusActivationHeight)
+	chain.SetSignedBlockActivationHeight(cfg.SignedConsensusActivationHeight)
+	chain.SetEvidenceProofActivationHeight(cfg.SignedConsensusActivationHeight)
 	chain.SetRequireSignedCertificates(cfg.RequireSignedVotes)
 	chain.SetRequireSignedBlocks(cfg.RequireSignedVotes)
 	chain.SetRequireEvidenceProof(cfg.RequireSignedVotes)
 	logger.Info("consensus message authentication enforcement",
 		"required", cfg.RequireSignedVotes,
+		"activation_height", cfg.SignedConsensusActivationHeight,
 		"covers", "bft votes, pol certificates, block producer signatures, equivocation proofs",
-		"hint", "set [consensus] require_signed_votes or QSDM_REQUIRE_SIGNED_VOTES=1 once all validators are upgraded")
+		"hint", "set require_signed_votes and one shared future signed_message_activation_height only after every validator is upgraded")
 	var bftRelay *networking.BFTP2PRelay
 	if br, bftErr := networking.NewBFTP2PRelay(net, bftIngress, net.Host.ID().String()); bftErr != nil {
 		logger.Warn("BFT gossip relay not started", "error", bftErr)
@@ -1313,26 +1356,12 @@ func main() {
 	}
 	stakingLedger.SetPersistPath(stakingPath)
 	nodeEvidenceManager.SetStakingLedger(stakingLedger)
-
-	// Adopt chain-state-derived validator membership when the ledger has
-	// any bonded stake.
-	//
-	// nodeValidatorSet was seeded above with the genesis bootstrap pair
-	// (the literal "bootstrap" plus this node's own wallet). That seeding
-	// is node-LOCAL: every node computes a different set, so no two peers
-	// can agree on quorum and no home node can ever become a canonical
-	// validator. See pkg/chain/validator_registry_chainstate.go.
-	//
-	// Once anyone has bonded, membership becomes a pure function of
-	// committed state and every node derives the same set. Until then the
-	// reconcile refuses (it will not produce an empty set) and we keep the
-	// bootstrap pair, so a fresh chain still starts.
 	if admitted, exited, err := chain.ReconcileValidatorMembership(nodeValidatorSet, stakingLedger); err != nil {
 		logger.Info("Validator set: using genesis bootstrap membership",
 			"reason", err.Error(),
 			"note", "membership becomes chain-derived once stake is bonded")
 	} else {
-		logger.Info("Validator set: derived from committed chain state",
+		logger.Info("Validator set: derived from committed staking state",
 			"admitted", admitted,
 			"exited", exited,
 			"size", nodeValidatorSet.Size())
@@ -1417,9 +1446,6 @@ func main() {
 	// drift visible and prevents a validator from serving signed task actions
 	// with a nil process-wide submitter.
 	api.SetTaskActionMempool(adminPool)
-	// Admit qsdm/staking/v1 submissions. Without this the endpoint reports
-	// 503 rather than accepting a bond it cannot deliver, and validator
-	// membership can never become chain-derived because nothing can bond.
 	api.SetStakingMempool(adminPool)
 	api.SetWalletTransferMempool(adminPool)
 	if !api.TaskActionMempoolReady() {
@@ -1430,67 +1456,57 @@ func main() {
 	}
 	logger.Info("Signed task-action mempool ready", "audit_row", "task-actions")
 
-	// Route qsdm/staking/v1 transactions to the staking ledger. Without
-	// this the contract is rejected with ErrStakingNotWired, nobody can
-	// bond, and validator membership can never become chain-derived in
-	// practice — it would fall back to the node-local bootstrap pair
-	// forever.
-	if aware, ok := v2Wired.StateApplier.(*chain.EnrollmentAwareApplier); ok {
-		aware.SetStakingLedger(stakingLedger)
-		logger.Info("Validator staking wired", "contract", chain.StakingContractID)
-	} else {
-		logger.Warn("Validator staking NOT wired: applier is not enrollment-aware",
-			"impact", "qsdm/staking/v1 txs will be rejected and membership stays node-local")
+	aware, ok := v2Wired.StateApplier.(*chain.EnrollmentAwareApplier)
+	if !ok {
+		log.Fatal("validator staking wiring requires an enrollment-aware state applier")
 	}
+	aware.SetStakingLedger(stakingLedger)
+	logger.Info("Validator staking wired", "contract", chain.StakingContractID)
 
 	adminProducer := chain.NewBlockProducer(adminPool, v2Wired.StateApplier, prodCfg)
 	v2Wired.AttachToProducer(adminProducer)
-	// Integer-dust accounting fork. This changes both the balance
-	// arithmetic and the state-root encoding, so it is a consensus
-	// parameter: every validator must configure the same height or the
-	// network splits at activation. Wired here because the height source
-	// is the producer's tip.
-	if cfg.ForkDustHeight > 0 {
-		chain.SetForkDustHeight(cfg.ForkDustHeight)
-		adminAccounts.SetHeightFn(adminProducer.TipHeight)
-		logger.Info("integer-dust accounting fork armed",
-			"activation_height", cfg.ForkDustHeight,
-			"warning", "every validator must be configured with this exact height")
-	} else {
-		logger.Info("integer-dust accounting fork disabled",
-			"impact", "balances keep float64 arithmetic, which destroys ~0.06 CELL per reward block",
-			"hint", "set [consensus] fork_dust_height once genesis is re-derived to the 90M/10M split")
+	// Defense in depth: Config.Validate rejects this already. Keep the process
+	// entrypoint fail-closed too, so a future alternate config loader cannot arm
+	// an incomplete consensus transition and zero legacy balances at the fork.
+	if cfg.ForkDustHeight != 0 {
+		log.Fatalf("refusing unsafe integer-dust activation at height %d: run qsdm-ledger-fork-plan and implement the capped-issuance transition first", cfg.ForkDustHeight)
 	}
+	logger.Info("integer-dust accounting fork locked",
+		"activation_ready", false,
+		"next", "reconcile a fork manifest and implement the capped-issuance transition")
 
 	adminProducer.SetAppendReceiptStore(adminReceipts)
 	// Authenticate blocks we seal. SignBlock derives ProducerID from the
 	// key, so a producer identity that disagrees with the signing key can
 	// never be sealed.
-	if consensusSigner != nil {
-		adminProducer.SetBlockSigner(consensusSigner)
-	}
+	adminProducer.SetBlockSigner(consensusSigner)
 	adminProducer.SetPolFollower(polFollower)
-	// Solo-validator mode (QSDM_SOLO_VALIDATOR_MODE=1):
-	// without peers there is no BFT quorum to commit blocks
-	// or POL gossip to publish round certificates, so the
-	// production gates would refuse to extend past genesis.
-	// Skip SetBFTSealGate and SetPreSealBFTRound in solo
-	// mode; internal/blockdriver drives ProduceBlock directly
-	// against an unguarded producer. When a peer joins, flip
-	// the env var off and these gates are restored on the
-	// next process restart — there is no consensus-relevant
-	// state to migrate because the solo chain is treated as
-	// a clean testnet origin, not a fork to merge.
+	// Local block production has two explicit roles. Solo mode is isolated;
+	// network-producer mode is the one configured leader that seals and
+	// broadcasts blocks to append-only followers. Never infer producer status
+	// from peer count: doing so could create two independent histories.
 	soloValidatorMode := envcompat.Truthy("QSDM_SOLO_VALIDATOR_MODE", "QSDM_SOLO_VALIDATOR_MODE")
-	if !soloValidatorMode {
+	networkBlockProducerMode := envcompat.Truthy("QSDM_NETWORK_BLOCK_PRODUCER", "QSDM_NETWORK_BLOCK_PRODUCER")
+	productionRole, productionRoleErr := resolveBlockProductionRole(soloValidatorMode, networkBlockProducerMode)
+	if productionRoleErr != nil {
+		log.Fatalf("invalid block production role: %v", productionRoleErr)
+	}
+	localBlockProduction := productionRole.localProductionEnabled()
+	if productionRole == blockProductionRoleSolo {
+		logger.Info("Solo validator mode: BFT seal gate and pre-seal synthetic round disabled",
+			"env_var", "QSDM_SOLO_VALIDATOR_MODE",
+			"reason", "no peer validators to drive BFT quorum; internal/blockdriver will own block production")
+	} else {
 		adminProducer.SetBFTSealGate(liveBFT)
 		adminProducer.SetPreSealBFTRound(func(blk *chain.Block) error {
 			return chain.RunSyntheticBFTRoundWithExecutor(bftExec, nodeValidatorSet, blk)
 		})
-	} else {
-		logger.Info("Solo validator mode: BFT seal gate and pre-seal synthetic round disabled",
-			"env_var", "QSDM_SOLO_VALIDATOR_MODE",
-			"reason", "no peer validators to drive BFT quorum; internal/blockdriver will own block production")
+		if productionRole == blockProductionRoleNetworkProducer {
+			logger.Info("Network producer mode: local block driver is proposer-gated and BFT-sealed",
+				"env_var", "QSDM_NETWORK_BLOCK_PRODUCER",
+				"role", productionRole,
+				"reason", "only the selected proposer may attempt a locally sealed block")
+		}
 	}
 	// Compose the admission gate. v2wiring.Wire() already
 	// installed enrollment.AdmissionChecker(nil); we replace it
@@ -1518,14 +1534,12 @@ func main() {
 		}
 		return nil
 	}
-	if soloValidatorMode {
-		// Solo: ignore the BFT/POL extension predicate
-		// because liveBFT.IsCommitted always returns false
-		// without peer votes, which would otherwise reject
-		// every solo-mode reward tx.
+	if productionRole == blockProductionRoleSolo {
+		// Solo mode has no peer quorum, so its local driver owns extension.
 		v2wiring.ReinstallAdmissionGate(adminPool, nil)
-		logger.Info("Solo validator mode: admission gate now ignores BFT/POL predicates",
-			"reason", "no peers to vote → liveBFT.IsCommitted permanently false")
+		logger.Info("Solo block producer admission gate ignores peer-driven BFT/POL predicates",
+			"role", productionRole,
+			"reason", "no peer quorum exists in isolated mode")
 	} else {
 		v2wiring.ReinstallAdmissionGate(adminPool, baseAdmit)
 	}
@@ -1542,15 +1556,12 @@ func main() {
 			adminFinality.TrackBlockWithMeta(blk.Height, blk.Hash, blk.StateRoot)
 			adminFinality.UpdateTip(blk.Height)
 		}
-		// Re-derive membership from committed state before re-weighting, so
-		// a validator that bonded in (or unbonded out) takes effect without
-		// a restart. SyncValidatorStakesFromCommittedTip only re-weights
-		// addresses already in the set — it never admits one — so without
-		// this the set stays frozen at whatever the process started with.
 		if admitted, exited, err := chain.ReconcileValidatorMembership(nodeValidatorSet, stakingLedger); err == nil {
 			if len(admitted) > 0 || len(exited) > 0 {
 				logger.Info("Validator set membership changed",
-					"admitted", admitted, "exited", exited, "size", nodeValidatorSet.Size())
+					"admitted", admitted,
+					"exited", exited,
+					"size", nodeValidatorSet.Size())
 			}
 		}
 		chain.SyncValidatorStakesFromCommittedTip(nodeValidatorSet, adminAccounts, adminProducer, stakingLedger)
@@ -1580,13 +1591,13 @@ func main() {
 	// promoted to operator-tunable config keys once we have a
 	// second validator that needs to agree on them. Until
 	// then, hardcoding keeps consensus byte-identical.
-	// soloDriver is constructed AFTER specCheck so the
+	// blockDriver is constructed AFTER specCheck so the
 	// optional Tier-3 RewardPenalty can be wired in at New
 	// time (the Driver field is read-only after construction
 	// to keep the buildTxs hot path branch-free). The
 	// declaration stays here so the rest of the boot code
 	// can reference it; the construction itself is below.
-	var soloDriver *blockdriver.Driver
+	var blockDriver *blockdriver.Driver
 
 	// v2 attestation dispatcher. Wired UNCONDITIONALLY (whether
 	// or not QSDM_V2_ACTIVE is set) because:
@@ -1766,26 +1777,11 @@ func main() {
 		"fork_v2_active", v2Active,
 		"effect_when_active", "post-fork proofs require nvidia-cc-v1 or nvidia-hmac-v1 attestation")
 
-	// The block-production loop runs in BOTH modes.
-	//
-	// It used to be constructed only under `if soloValidatorMode`, and
-	// ProduceBlock's only other caller is the one-shot genesis seal. So
-	// turning solo mode off left the chain with NO producer whatsoever —
-	// not a stalled one, an absent one. That is exactly how this network
-	// halted at height 464,829 while the process stayed healthy and kept
-	// serving HTTP: nothing was broken, nothing was making blocks.
-	//
-	// The difference between the modes is now a gate, not existence:
-	//
-	//   solo       — no gate; this node is by definition the only validator
-	//   networked  — produce only when we are the round's proposer, and the
-	//                BFT seal gate + pre-seal round on adminProducer
-	//                enforce the actual consensus rules
-	{
-		// In solo mode the blockdriver is the miningsvc
+	if localBlockProduction {
+		// For the configured producer, the blockdriver is the miningsvc
 		// reward sink. Tier-3 reward downgrade is wired here
 		// (the deferred construction is the whole reason
-		// the soloDriver var was declared earlier instead of
+		// the blockDriver var was declared earlier instead of
 		// allocated inline). Pre-Tier-3 deployments leave
 		// RewardPenalty nil → noopRewardPenalty inside the
 		// driver, byte-identical to before.
@@ -1795,39 +1791,14 @@ func main() {
 			Accounts: adminAccounts,
 			Logger:   logger,
 		}
-		if !soloValidatorMode {
-			// Networked: seal only when this node is the round's
-			// proposer. Every validator ticking unguarded would race to
-			// produce at the same height; all but one block would be
-			// discarded, and each attempt would burn a funder nonce on the
-			// way, which is far worse than simply waiting our turn.
-			//
-			// This gate answers only "is it my turn to try?". The actual
-			// consensus rules are enforced inside ProduceBlock by the BFT
-			// seal gate and pre-seal round installed above, so they are
-			// not restated — and cannot drift — here.
+		if productionRole == blockProductionRoleNetworkProducer {
+			blockdriverCfg.ProducerID = "qsdm-network-producer"
 			blockdriverCfg.ProduceGate = func() (bool, string) {
-				if walletService == nil {
-					return false, "no wallet key: cannot be a proposer"
-				}
-				me := walletService.GetAddress()
+				me := consensusSigner.Address()
 				if _, member := nodeValidatorSet.GetValidator(me); !member {
-					return false, "not in the validator set (bond stake to join)"
+					return false, "local consensus signer is not in the validator set"
 				}
-				// Use the CURRENT round for the height we are about to
-				// seal, not round 0.
-				//
-				// proposerForRoundLocked selects idx = round % len(active),
-				// so round 0 always resolves to the highest-staked
-				// validator. Hardcoding 0 would mean only that one node
-				// ever produces, and if it went offline the chain would
-				// halt with every other validator politely declining
-				// forever — reintroducing exactly the single point of
-				// failure this work exists to remove.
-				//
-				// NextRoundAfterTimeout advances when a round's deadline
-				// passes without a commit, which is the failover path:
-				// duty rotates to the next validator until someone seals.
+
 				nextHeight := adminProducer.TipHeight() + 1
 				round := liveBFT.NextRoundAfterTimeout(nextHeight)
 				proposer, err := liveBFT.ProposerForRound(round)
@@ -1849,21 +1820,22 @@ func main() {
 			// structural interface check makes this a no-
 			// op assignment at runtime.
 			blockdriverCfg.RewardPenalty = specCheck.Penalty
-			logger.Info("solo blockdriver: Tier-3 reward downgrade wired",
+			logger.Info("blockdriver: Tier-3 reward downgrade wired",
+				"role", productionRole,
 				"window_size", specCheck.Penalty.Config().WindowSize,
 				"threshold_pct", specCheck.Penalty.Config().MismatchThresholdPct,
 				"multiplier", specCheck.Penalty.Config().PenaltyMultiplier)
 		}
 		drv, drvErr := blockdriver.New(blockdriverCfg)
 		if drvErr != nil {
-			log.Fatalf("solo blockdriver wiring failed: %v", drvErr)
+			log.Fatalf("%s blockdriver wiring failed: %v", productionRole, drvErr)
 		}
-		soloDriver = drv
+		blockDriver = drv
 		// Publish the driver to the Tier-3 monitoring probe
 		// so /metrics surfaces blockdriver-side withheld-dust
 		// counters. Safe to call even when Tier-3 is off —
 		// the probe is nil-checked at scrape time.
-		SetSoloDriverForMonitoring(soloDriver)
+		SetSoloDriverForMonitoring(blockDriver)
 	}
 
 	miningSvcCfg := miningsvc.Config{
@@ -1873,9 +1845,10 @@ func main() {
 		Difficulty:     new(big.Int).Set(mining.DefaultMinDifficulty),
 		BlocksPerEpoch: mining.DefaultBlocksPerMiningEpoch,
 		Attestation:    v2Dispatcher,
+		ReadOnly:       !localBlockProduction,
 	}
-	if soloDriver != nil {
-		miningSvcCfg.RewardSink = soloDriver
+	if blockDriver != nil {
+		miningSvcCfg.RewardSink = blockDriver
 	}
 	miningSvc, miningErr := miningsvc.New(miningSvcCfg)
 	if miningErr != nil {
@@ -1924,7 +1897,8 @@ func main() {
 		"dag_size", uint32(1024),
 		"difficulty", mining.DefaultMinDifficulty.String(),
 		"blocks_per_epoch", mining.DefaultBlocksPerMiningEpoch,
-		"reward_sink_wired", soloDriver != nil,
+		"reward_sink_wired", blockDriver != nil,
+		"block_production_role", productionRole,
 		"endpoints", "/api/v1/mining/work, /api/v1/mining/submit")
 
 	// Chain + accounts persistence (Phase 2c-vii follow-up).
@@ -1947,8 +1921,8 @@ func main() {
 	// Order matters during hydrate: read CHAIN first, then load
 	// ACCOUNTS before installing either into the live producer.
 	// This lets startup prove the account/task snapshot matches
-	// the journal tip and recover one fully appended but
-	// uncommitted tail block after a crash or disk-full event. If
+	// the journal tip and remove a fully appended but uncommitted
+	// journal tail after a crash or disk-full event. If
 	// the chain shows blocks but the accounts file is missing, we fail-fast
 	// rather than boot a half-restored state where balances
 	// are zero but tip is non-zero — that combination would
@@ -1995,9 +1969,10 @@ func main() {
 		}
 		restoreBlocks = restoredState.blocks
 		if restoredState.recovered {
-			logger.Warn("chain restore: recovered one fully appended block whose account snapshot was not committed",
+			logger.Warn("chain restore: removed journal tail newer than the committed account snapshot",
 				"recovered_tip_height", restoreBlocks[len(restoreBlocks)-1].Height,
-				"discarded_height", discardedTailHeight,
+				"discarded_through_height", discardedTailHeight,
+				"discarded_blocks", restoredState.discardedTail,
 				"chain_path", chainStatePath,
 				"backup_path", restoredState.backupPath)
 		}
@@ -2008,10 +1983,14 @@ func main() {
 		if err := v2Wired.TaskState.RestoreFromChainReplay(restoredState.taskState); err != nil {
 			log.Fatalf("chain restore: install replayed task state from %s: %v", chainStatePath, err)
 		}
+		if err := v2Wired.StreamState.RestoreFromChainReplay(restoredState.streamState); err != nil {
+			log.Fatalf("chain restore: install replayed CELL stream state from %s: %v", chainStatePath, err)
+		}
 		if err := v2Wired.RecoveryState.RestoreFromChainReplay(restoredState.recoveryState); err != nil {
 			log.Fatalf("chain restore: install replayed wallet recovery capsule state from %s: %v", chainStatePath, err)
 		}
 		loadedTaskActions := restoredState.taskActions
+		loadedStreamActions := restoredState.streamActions
 		loadedRecoveryActions := restoredState.recoveryActions
 		if tip, ok := adminProducer.LatestBlock(); ok {
 			if stateRoot := v2Wired.StateApplier.StateRoot(); stateRoot != tip.StateRoot {
@@ -2100,6 +2079,7 @@ func main() {
 			"accounts_loaded", loadedAccounts,
 			"enrollments_loaded", loadedEnrollments,
 			"task_actions_replayed", loadedTaskActions,
+			"stream_actions_replayed", loadedStreamActions,
 			"recovery_capsules_replayed", loadedRecoveryActions,
 			"receipts_loaded", loadedReceipts,
 			"chain_path", chainStatePath,
@@ -2257,22 +2237,6 @@ func main() {
 		if err := adminProducer.TryAppendExternalBlock(blk); err != nil {
 			return err
 		}
-		// Record the adopted height as committed locally.
-		//
-		// The seal gate refuses to extend unless IsCommitted(tipHeight).
-		// A node that gets its tip from sync never voted that height
-		// through, so without this its `committed` map has no entry and it
-		// can NEVER produce — observed in production as
-		// "BFT extension blocked until the current tip height is committed
-		// in BFT" repeating every tick on a node whose chain was perfectly
-		// in sync. Only a validator present since genesis could ever seal,
-		// which defeats the point of letting peers join.
-		//
-		// TryAppendExternalBlock has already validated hash linkage and
-		// replayed state, so the block is committed as a matter of fact;
-		// this records that fact. AdoptExternalCommit is a no-op when the
-		// height is already committed, so a locally-voted commit is never
-		// overwritten.
 		liveBFT.AdoptExternalCommit(blk.Height, blk.StateRoot, blk.ProducerID)
 		return nil
 	}); bpErr != nil {
@@ -2335,7 +2299,8 @@ func main() {
 			}
 		}()
 	}
-	if syncURLs := chainSyncURLsFromEnv(); len(syncURLs) > 0 {
+	syncURLs := chainSyncURLsFromEnv()
+	if len(syncURLs) > 0 {
 		startHTTPChainSync(ctx, logger, adminProducer, adminAccounts, syncURLs)
 	}
 
@@ -2360,10 +2325,15 @@ func main() {
 	// synthetic BFT round is unnecessary at genesis (the BFT
 	// and POL gates aren't active yet anyway) so skipping it
 	// is safe.
-	if !adminProducer.HasTip() && networkedCatchupMode && len(cfg.BootstrapPeers) > 0 {
-		logger.Info("Networked catch-up mode: deferring local genesis seal; waiting for blocks from bootstrap peers",
-			"env_var", "QSDM_NETWORKED_CATCHUP_MODE",
+	if productionRole == blockProductionRoleNetworkProducer && !adminProducer.HasTip() {
+		log.Fatal("network producer requires an existing synchronized chain tip; start this node as a follower, let it catch up, then enable QSDM_NETWORK_BLOCK_PRODUCER")
+	}
+	if !adminProducer.HasTip() && !productionRole.localGenesisEnabled() {
+		logger.Info("Network follower: deferring local genesis seal; waiting for a canonical block source",
+			"producer_env_var", "QSDM_NETWORK_BLOCK_PRODUCER",
+			"catchup_mode", networkedCatchupMode,
 			"bootstrap_peers", len(cfg.BootstrapPeers),
+			"http_sync_sources", len(syncURLs),
 			"block_topic", chain.BlockTopicName)
 	} else if !adminProducer.HasTip() {
 		// In solo mode, fund and use the blockdriver's
@@ -2423,7 +2393,7 @@ func main() {
 		// re-set it on the off chance the caller flips solo
 		// mode mid-boot via another goroutine.
 		var preSealRestore func(blk *chain.Block) error
-		if !soloValidatorMode {
+		if !localBlockProduction {
 			preSealRestore = func(blk *chain.Block) error {
 				return chain.RunSyntheticBFTRoundWithExecutor(bftExec, nodeValidatorSet, blk)
 			}
@@ -2474,12 +2444,12 @@ func main() {
 		}
 	}
 
-	// Start the solo-mode block driver after genesis has
+	// Start the configured block driver after genesis has
 	// settled. If the genesis seal failed (e.g. mempool
 	// admission rejected the seed for an unexpected reason),
 	// the driver will still try every Period — its own
 	// heartbeat tx funds the chain forward.
-	if soloDriver != nil {
+	if blockDriver != nil {
 		// Re-sync the driver's funder nonce. The genesis seal
 		// above used the same funder account at nonce=0, so
 		// the AccountStore now has funder.Nonce=1 but the
@@ -2487,38 +2457,25 @@ func main() {
 		// call the very first tick would issue a reward tx at
 		// nonce=0 → ApplyTx rejects → "all transactions failed
 		// state application" → tip never advances past 0.
-		soloDriver.SyncFunderNonce()
-		// Adopt the current tip as BFT-committed before production starts.
-		//
-		// The seal gate refuses to extend unless IsCommitted(tipHeight),
-		// and that entry only exists if THIS node voted the height
-		// through. A node that restarts with a persisted chain, or that is
-		// already caught up and therefore appends nothing during sync, has
-		// no such entry and is blocked forever:
-		//
-		//   blockdriver: ProduceBlock failed
-		//   error="BFT extension blocked until the current tip height is
-		//          committed in BFT"
-		//
-		// Doing it here rather than only on append is deliberate: gating
-		// the marking on "appended > 0" misses the most common case of
-		// all, a node that is simply already in sync.
-		if tip, ok := adminProducer.LatestBlock(); ok && tip != nil {
-			liveBFT.AdoptExternalCommit(tip.Height, tip.StateRoot, tip.ProducerID)
-			logger.Info("Adopted current tip as BFT-committed for production",
-				"height", tip.Height)
+		blockDriver.SyncFunderNonce()
+		if productionRole == blockProductionRoleNetworkProducer {
+			if tip, ok := adminProducer.LatestBlock(); ok && tip != nil {
+				liveBFT.AdoptExternalCommit(tip.Height, tip.StateRoot, tip.ProducerID)
+				logger.Info("Adopted current tip as BFT-committed for network production",
+					"height", tip.Height)
+			}
 		}
 		// Use a fresh background context so the driver
 		// outlives any request-scoped contexts. Stop is
 		// triggered by the existing graceful-shutdown handler
-		// (SIGINT/SIGTERM); see the deferred soloDriver.Stop()
+		// (SIGINT/SIGTERM); see the deferred blockDriver.Stop()
 		// registered just below.
-		soloDriver.Start(context.Background())
+		blockDriver.Start(context.Background())
 		// Best-effort hook into the existing shutdown path —
 		// the validator's main shutdown closure runs on Ctrl-C
 		// and SIGTERM and should drain in-flight ticks before
 		// closing the network.
-		defer soloDriver.Stop()
+		defer blockDriver.Stop()
 	}
 
 	bftExec.SetOnCommitted(func(height uint64, round uint32, blockHash string) {
@@ -2968,11 +2925,11 @@ func main() {
 
 		// Stop block production before closing storage or returning from main.
 		// Calling os.Exit from this goroutine used to bypass the deferred
-		// soloDriver.Stop and could leave qsdm_chain.ndjson one block ahead of
+		// blockDriver.Stop and could leave qsdm_chain.ndjson one block ahead of
 		// the accounts/enrollment snapshots during a systemd restart.
-		if soloDriver != nil {
-			soloDriver.Stop()
-			logger.Info("Solo block driver stopped and in-flight persistence drained")
+		if blockDriver != nil {
+			blockDriver.Stop()
+			logger.Info("Block driver stopped and in-flight persistence drained", "role", productionRole)
 		}
 		cancel()
 
@@ -3062,10 +3019,6 @@ func main() {
 //
 // HTTP chain catch-up helpers. These let a validator follow a gateway-exposed
 // chain feed when direct libp2p reachability is unavailable.
-// adoptSyncedTipCommitFn records a synced tip as BFT-committed. Set from
-// main() once liveBFT exists; a package-level hook because the HTTP
-// chain-sync helpers are standalone functions with no access to that scope.
-// Nil until wired, so tests and pre-consensus boot paths are unaffected.
 var adoptSyncedTipCommitFn func(*chain.Block)
 
 func adoptSyncedTipCommit(blk *chain.Block) {
@@ -3094,6 +3047,10 @@ func chainSyncURLsFromEnv() []string {
 		out = append(out, u)
 	}
 	return out
+}
+
+func shouldDeferLocalGenesis(networkedCatchupMode bool, bootstrapPeers, syncURLs []string) bool {
+	return networkedCatchupMode && (len(bootstrapPeers) > 0 || len(syncURLs) > 0)
 }
 
 type httpChainBlocksResponse struct {
@@ -3214,6 +3171,7 @@ func syncHTTPChainSource(
 			if err := producer.TryAppendExternalBlock(&blk); err != nil {
 				return totalAppended, remoteTip, err
 			}
+			adoptSyncedTipCommit(&blk)
 			appendedThisWindow++
 			expectedHeight++
 		}

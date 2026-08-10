@@ -72,12 +72,15 @@ func (as *AccountStore) MigrateToDust() (droppedDust uint64, err error) {
 	}
 	sort.Strings(addrs)
 
+	// Validate and calculate the complete transition before mutating any
+	// account. An overflow discovered late in sorted order must not leave an
+	// earlier account converted while the store still reports not migrated.
+	pending := make(map[string]uint64, len(addrs))
 	var totalDropped float64
 	for _, addr := range addrs {
 		acc := as.accounts[addr]
 		if acc.Balance <= 0 || math.IsNaN(acc.Balance) {
-			acc.BalanceDust = 0
-			acc.Balance = 0
+			pending[addr] = 0
 			continue
 		}
 		scaled := acc.Balance * float64(DustPerCellInt)
@@ -92,6 +95,12 @@ func (as *AccountStore) MigrateToDust() (droppedDust uint64, err error) {
 		}
 		dust := uint64(math.Floor(scaled))
 		totalDropped += scaled - math.Floor(scaled)
+		pending[addr] = dust
+	}
+
+	for _, addr := range addrs {
+		acc := as.accounts[addr]
+		dust := pending[addr]
 		acc.BalanceDust = dust
 		// Keep the float mirror consistent with the authoritative dust so
 		// JSON consumers and pre-fork readers agree.

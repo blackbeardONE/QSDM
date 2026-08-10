@@ -34,6 +34,7 @@ var ErrCertBadSignature = errors.New("chain: consensus certificate signature inv
 // requireSignedCertificates gates inbound enforcement, mirroring the vote
 // rollout switch. Invalid signatures are always fatal.
 var requireSignedCertificates atomic.Bool
+var signedCertificateActivationHeight atomic.Uint64
 
 // SetRequireSignedCertificates controls whether unsigned POL certificates
 // and lock proofs are accepted. Enable once every validator emits signed
@@ -42,6 +43,27 @@ func SetRequireSignedCertificates(require bool) { requireSignedCertificates.Stor
 
 // RequireSignedCertificates reports the current policy.
 func RequireSignedCertificates() bool { return requireSignedCertificates.Load() }
+
+// SetSignedCertificateActivationHeight sets the first height where unsigned
+// POL certificates and lock proofs are rejected. Zero means immediate.
+func SetSignedCertificateActivationHeight(height uint64) {
+	signedCertificateActivationHeight.Store(height)
+}
+
+// SignedCertificateActivationHeight reports the configured activation height.
+func SignedCertificateActivationHeight() uint64 {
+	return signedCertificateActivationHeight.Load()
+}
+
+// SignedCertificatesRequiredAt reports whether unsigned POL artifacts are
+// forbidden at height.
+func SignedCertificatesRequiredAt(height uint64) bool {
+	if !RequireSignedCertificates() {
+		return false
+	}
+	activation := SignedCertificateActivationHeight()
+	return activation == 0 || height >= activation
+}
 
 // writeTagged appends a length-prefixed, tagged field so no two distinct
 // field tuples can collide into one pre-image.
@@ -127,7 +149,7 @@ func VerifyRoundCertificate(c *RoundCertificate) error {
 		return errors.New("chain: nil round certificate")
 	}
 	if !c.Auth.Signed() {
-		if requireSignedCertificates.Load() {
+		if SignedCertificatesRequiredAt(c.Height) {
 			return ErrCertUnsigned
 		}
 		return nil
@@ -158,7 +180,7 @@ func VerifyPrevoteLockProof(p *PrevoteLockProof) error {
 		return errors.New("chain: nil prevote lock proof")
 	}
 	if !p.Auth.Signed() {
-		if requireSignedCertificates.Load() {
+		if SignedCertificatesRequiredAt(p.Height) {
 			return ErrCertUnsigned
 		}
 		return nil

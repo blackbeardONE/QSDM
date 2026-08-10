@@ -1,4 +1,7 @@
-import { buildQsdmTaskActionReadUrls, QSDM_CELL_DECIMALS } from 'config/qsdm';
+import {
+  buildQsdmTaskActionReadUrls,
+  QSDM_CELL_DECIMALS,
+} from 'config/qsdm';
 import {
   QsdmTaskResponse,
   QsdmTaskStateParticipant,
@@ -71,7 +74,10 @@ export const getQsdmTaskParticipantBySender = (
   }
 
   return Object.entries(participants).find(([participantKey, participant]) => {
-    const participantSender = getParticipantSender(participantKey, participant);
+    const participantSender = getParticipantSender(
+      participantKey,
+      participant
+    );
     return participantSender.toLowerCase() === normalizedSender;
   })?.[1];
 };
@@ -187,7 +193,9 @@ export const getConfirmedQsdmTaskStakeInDenomination = async (
   taskId: string,
   sender = getQsdmTaskActionSender()
 ) =>
-  qsdmCellToDenomination(await getConfirmedQsdmTaskStakeInCell(taskId, sender));
+  qsdmCellToDenomination(
+    await getConfirmedQsdmTaskStakeInCell(taskId, sender)
+  );
 
 export const getQsdmTaskStakeOwnership = async (
   taskId: string,
