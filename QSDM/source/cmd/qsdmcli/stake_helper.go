@@ -11,26 +11,25 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/chain"
 )
 
-// stake-helper builds validated qsdm/staking/v1 payloads.
+// stake-helper: validator bonding for qsdm/staking/v1.
 //
-// Deliberately mirrors gov-helper: it emits a payload rather than signing
-// and submitting, because there is currently no generic contract-tx
-// submission path. `qsdmcli tx` only builds plain transfers (sender,
-// recipient, amount, fee) and the self-custody envelope
-// wallet.TransactionData carries no ContractID or Payload field, so a
-// contract transaction cannot travel over /wallet/submit-signed at all. Each
-// contract that needs submission today has its own signed endpoint (see
-// /api/v1/tasks/actions/submit-signed).
+// Two surfaces:
 //
-// Emitting a validated payload is therefore the honest surface: it is
-// exactly what the operator needs, and it does not imply a submission path
-// that does not exist. The payload is round-tripped through the same
-// decoder the chain applier uses, so anything this prints is guaranteed to
-// be accepted by ApplyStakingTx rather than failing at apply time.
+//   - delegate / unbond emit a validated payload for operators who sign and
+//     submit through their own tooling (mirrors gov-helper). Useful because
+//     `qsdmcli tx` builds only plain transfers, and wallet.TransactionData —
+//     the envelope /wallet/submit-signed accepts — has no ContractID or
+//     Payload field, so a contract tx cannot travel over it.
+//   - submit-delegate / submit-unbond sign with the local ML-DSA-87 keystore
+//     and POST to /api/v1/staking/submit-signed. See stake_submit.go.
+//
+// Payloads are round-tripped through the same decoder the chain applier
+// uses, so anything printed or submitted here is accepted at apply time
+// rather than failing after it has already cost a block.
 
 func (c *CLI) stakeHelper(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: qsdmcli stake-helper <delegate|unbond|show> [flags]")
+		return errors.New("usage: qsdmcli stake-helper <delegate|unbond|show|submit-delegate|submit-unbond> [flags]")
 	}
 	switch args[0] {
 	case "delegate":
@@ -39,8 +38,14 @@ func (c *CLI) stakeHelper(args []string) error {
 		return c.stakeHelperBuild(chain.StakingActionUnbond, args[1:])
 	case "show":
 		return c.stakeHelperShow(args[1:])
+	case "submit-delegate":
+		return c.stakeHelperSubmit(chain.StakingActionDelegate, args[1:])
+	case "submit-unbond":
+		return c.stakeHelperSubmit(chain.StakingActionUnbond, args[1:])
 	default:
-		return fmt.Errorf("unknown stake-helper subcommand %q (want delegate|unbond|show)", args[0])
+		return fmt.Errorf(
+			"unknown stake-helper subcommand %q (want delegate|unbond|show|submit-delegate|submit-unbond)",
+			args[0])
 	}
 }
 
