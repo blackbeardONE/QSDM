@@ -213,6 +213,10 @@ stop-qsdm-local.ps1
 /QSDM/scripts/**/*.local.*
 /QSDM/scripts/**/*.private.*
 
+# Google Apps Script that walks a Drive folder for operator reporting.
+# Per-workstation scratch, and it hard-codes a private Drive folder ID.
+/optimized_unique_operator_scan.gs
+
 
 # ------------------------------------------------------------
 # 4) Projects unrelated to the QSDM ledger
@@ -229,6 +233,11 @@ apps/game-integration/
 /Archived/
 /QSDM-source-office-copy-*/
 /QSDM-source-office-copy-*.zip
+
+# Third-party project (MIT, (c) Majid Manzarpour) checked out inside this
+# working copy. It carries its own LICENSE and package.json; committing it
+# would vendor another author's repository and mix its licensing into ours.
+/threejs-game-skills-main/
 
 
 # ------------------------------------------------------------
