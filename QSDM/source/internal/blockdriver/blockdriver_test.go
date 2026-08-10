@@ -710,3 +710,105 @@ func TestConcurrentOnAcceptedProof_NoRace(t *testing.T) {
 		t.Fatalf("queue depth: got %d want %d", got, 8*200)
 	}
 }
+
+// TestProduceGate_skipsWithoutConsumingState is the core guarantee of the
+// networked production path.
+//
+// The driver used to be constructed only under `if soloValidatorMode`, and
+// ProduceBlock's only other caller is the one-shot genesis seal. Turning
+// solo mode off therefore left the chain with NO producer at all — which is
+// how a network halts at a fixed height while the process stays healthy and
+// keeps serving HTTP.
+//
+// Running the driver under consensus requires a gate: only the round's
+// proposer may seal, or every validator races at the same height and all
+// but one block is discarded, burning funder nonces on the way. A declined
+// tick must therefore be a true no-op — no drain, no nonce consumed, no
+// transaction built — so the queued proofs survive until it IS our turn.
+func TestProduceGate_skipsWithoutConsumingState(t *testing.T) {
+	cfg := validCfg(t)
+	allow := false
+	cfg.ProduceGate = func() (bool, string) {
+		if allow {
+			return true, ""
+		}
+		return false, "not the proposer this round"
+	}
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Queue a proof, then tick while the gate declines.
+	d.OnAcceptedProof("miner-1")
+	sealedBefore := d.Stats().BlocksSealed
+	funderBefore, _ := cfg.Accounts.Get(FunderAddress)
+
+	d.tick()
+
+	if d.TicksSkipped() != 1 {
+		t.Fatalf("declined tick should be counted, got %d", d.TicksSkipped())
+	}
+	if got := d.Stats().BlocksSealed; got != sealedBefore {
+		t.Fatalf("a declined tick must not seal a block: sealed %d -> %d", sealedBefore, got)
+	}
+	funderAfter, _ := cfg.Accounts.Get(FunderAddress)
+	if funderAfter.Nonce != funderBefore.Nonce {
+		t.Fatalf("a declined tick must not consume a funder nonce: %d -> %d",
+			funderBefore.Nonce, funderAfter.Nonce)
+	}
+
+	// The proof must still be queued, so it pays out when our turn comes.
+	allow = true
+	d.tick()
+	if d.TicksSkipped() != 1 {
+		t.Fatalf("an allowed tick must not count as skipped, got %d", d.TicksSkipped())
+	}
+	if d.Stats().BlocksSealed != sealedBefore+1 {
+		t.Fatalf("an allowed tick should have sealed exactly one block, sealed=%d",
+			d.Stats().BlocksSealed)
+	}
+	if d.Stats().ProofsPaid == 0 {
+		t.Fatal("the proof queued during the declined tick must survive and pay out")
+	}
+}
+
+// A nil gate preserves solo behaviour exactly: produce unconditionally.
+func TestProduceGate_nilGateProducesUnconditionally(t *testing.T) {
+	cfg := validCfg(t)
+	cfg.ProduceGate = nil
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d.tick()
+
+	if d.TicksSkipped() != 0 {
+		t.Fatalf("a nil gate must never skip, got %d", d.TicksSkipped())
+	}
+	if d.Stats().BlocksSealed != 1 {
+		t.Fatalf("solo mode must still seal with no gate configured, sealed=%d",
+			d.Stats().BlocksSealed)
+	}
+}
+
+// Repeated declines stay cheap and keep counting — the normal steady state
+// for a validator that is not the current proposer.
+func TestProduceGate_repeatedSkipsAreCounted(t *testing.T) {
+	cfg := validCfg(t)
+	cfg.ProduceGate = func() (bool, string) { return false, "not proposer" }
+	d, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ {
+		d.tick()
+	}
+	if d.TicksSkipped() != 5 {
+		t.Fatalf("expected 5 skipped ticks, got %d", d.TicksSkipped())
+	}
+	if d.Stats().BlocksSealed != 0 {
+		t.Fatalf("no block should be sealed while declining, got %d", d.Stats().BlocksSealed)
+	}
+}

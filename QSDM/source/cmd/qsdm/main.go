@@ -1761,7 +1761,22 @@ func main() {
 		"fork_v2_active", v2Active,
 		"effect_when_active", "post-fork proofs require nvidia-cc-v1 or nvidia-hmac-v1 attestation")
 
-	if soloValidatorMode {
+	// The block-production loop runs in BOTH modes.
+	//
+	// It used to be constructed only under `if soloValidatorMode`, and
+	// ProduceBlock's only other caller is the one-shot genesis seal. So
+	// turning solo mode off left the chain with NO producer whatsoever —
+	// not a stalled one, an absent one. That is exactly how this network
+	// halted at height 464,829 while the process stayed healthy and kept
+	// serving HTTP: nothing was broken, nothing was making blocks.
+	//
+	// The difference between the modes is now a gate, not existence:
+	//
+	//   solo       — no gate; this node is by definition the only validator
+	//   networked  — produce only when we are the round's proposer, and the
+	//                BFT seal gate + pre-seal round on adminProducer
+	//                enforce the actual consensus rules
+	{
 		// In solo mode the blockdriver is the miningsvc
 		// reward sink. Tier-3 reward downgrade is wired here
 		// (the deferred construction is the whole reason
@@ -1774,6 +1789,35 @@ func main() {
 			Pool:     adminPool,
 			Accounts: adminAccounts,
 			Logger:   logger,
+		}
+		if !soloValidatorMode {
+			// Networked: seal only when this node is the round's
+			// proposer. Every validator ticking unguarded would race to
+			// produce at the same height; all but one block would be
+			// discarded, and each attempt would burn a funder nonce on the
+			// way, which is far worse than simply waiting our turn.
+			//
+			// This gate answers only "is it my turn to try?". The actual
+			// consensus rules are enforced inside ProduceBlock by the BFT
+			// seal gate and pre-seal round installed above, so they are
+			// not restated — and cannot drift — here.
+			blockdriverCfg.ProduceGate = func() (bool, string) {
+				if walletService == nil {
+					return false, "no wallet key: cannot be a proposer"
+				}
+				me := walletService.GetAddress()
+				if _, member := nodeValidatorSet.GetValidator(me); !member {
+					return false, "not in the validator set (bond stake to join)"
+				}
+				proposer, err := liveBFT.ProposerForRound(0)
+				if err != nil {
+					return false, "no proposer for this round: " + err.Error()
+				}
+				if proposer != me {
+					return false, "not the proposer this round (proposer=" + proposer + ")"
+				}
+				return true, ""
+			}
 		}
 		if specCheck != nil && specCheck.Penalty != nil {
 			// Cast: telemetrycheck.PerMinerStats already

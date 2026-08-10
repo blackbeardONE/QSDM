@@ -126,6 +126,30 @@ type Config struct {
 	// Period is the tick interval. Zero uses DefaultPeriod.
 	Period time.Duration
 
+	// ProduceGate, when non-nil, is consulted at the top of every tick.
+	// Returning false skips this tick entirely — nothing is drained, no
+	// nonce is consumed, no transaction is built — and the reason is
+	// logged at debug volume.
+	//
+	// This is what lets the driver run in NETWORKED mode. Solo mode leaves
+	// it nil and produces unconditionally, because it is by definition the
+	// only validator. Under consensus a node must only seal when it is the
+	// designated proposer for the round; otherwise every validator would
+	// race to produce at the same height and all but one block would be
+	// discarded, burning funder nonces on the way.
+	//
+	// Without this the driver was constructed only inside
+	// `if soloValidatorMode`, so turning solo off left the chain with NO
+	// producer at all — ProduceBlock's only other caller is the one-shot
+	// genesis seal. That is exactly how the network came to a halt at
+	// height 464,829 with a perfectly healthy process still serving HTTP.
+	//
+	// The consensus rules themselves are NOT re-implemented here: when the
+	// producer has a BFT seal gate and pre-seal round installed (which
+	// cmd/qsdm does whenever solo mode is off), ProduceBlock enforces
+	// them. This gate only answers "is it my turn to try?".
+	ProduceGate func() (ok bool, reason string)
+
 	// EmissionSchedule, when non-nil, is the canonical
 	// §8 emission curve used to compute the per-block reward
 	// at the height being sealed. Nil falls back to
@@ -235,6 +259,12 @@ type Driver struct {
 	// readers don't need to hold mu.
 	blocksSealed atomic.Uint64
 	blocksFailed atomic.Uint64
+	// ticksSkipped counts ticks declined by ProduceGate — normal and
+	// expected on a validator that is not this round's proposer.
+	ticksSkipped atomic.Uint64
+	// lastSkipLog throttles the skip log so a non-proposer does not emit a
+	// line every Period forever.
+	lastSkipLog atomic.Int64
 	proofsPaid   atomic.Uint64
 
 	// rewardPenalty is the resolved penalty source. Always
@@ -479,6 +509,19 @@ func (d *Driver) run(ctx context.Context) {
 // block. All errors are logged but never panic — the goal is
 // "keep the chain advancing through transient hiccups".
 func (d *Driver) tick() {
+	// Gate BEFORE draining. Draining first and then declining to produce
+	// would strand the proofs for a tick and, worse, would have already
+	// consumed the queue that the requeue path exists to protect.
+	if gate := d.cfg.ProduceGate; gate != nil {
+		if ok, reason := gate(); !ok {
+			d.ticksSkipped.Add(1)
+			if d.shouldLogSkip() {
+				d.cfg.Logger.Info("blockdriver: skipping production", "reason", reason)
+			}
+			return
+		}
+	}
+
 	d.mu.Lock()
 	drained := d.queue
 	drainedCount := d.queued
@@ -739,4 +782,27 @@ func (d *Driver) buildTxs(queue map[string]int, total int, rewardCell float64, s
 		})
 	}
 	return out
+}
+
+// TicksSkipped returns how many ticks ProduceGate declined. On a healthy
+// multi-validator network this climbs steadily on every node that is not the
+// current proposer, so a flat zero on ALL nodes means nobody considers
+// themselves eligible — which is the shape of a stalled chain.
+func (d *Driver) TicksSkipped() uint64 {
+	if d == nil {
+		return 0
+	}
+	return d.ticksSkipped.Load()
+}
+
+// shouldLogSkip rate-limits the "skipping production" line to at most once
+// per minute. A non-proposer validator skips every Period (10s by default);
+// logging each one would bury real failures in noise.
+func (d *Driver) shouldLogSkip() bool {
+	now := time.Now().Unix()
+	last := d.lastSkipLog.Load()
+	if now-last < 60 {
+		return false
+	}
+	return d.lastSkipLog.CompareAndSwap(last, now)
 }
