@@ -522,3 +522,52 @@ func (bc *BFTConsensus) validatePreCommitAgainstLock(cr *ConsensusRound, blockHa
 	}
 	return nil
 }
+
+// AdoptExternalCommit records that `height` is committed on the canonical
+// chain because this node ADOPTED a block for it (via sync or block
+// propagation) rather than voting it through locally.
+//
+// Why this is needed:
+//
+// BlockProducer's seal gate refuses to extend unless IsCommitted(tipHeight).
+// A node that joins late, restarts, or simply follows the chain gets its tip
+// from sync — it never participated in the BFT round that committed that
+// height, so its local `committed` map has no entry and the gate blocks it
+// forever. Observed in production as:
+//
+//	blockdriver: ProduceBlock failed
+//	error="chain: BFT extension blocked until the current tip height is
+//	       committed in BFT"
+//
+// repeating every tick on a node whose chain was perfectly in sync. Without
+// this, only a validator that has been present since genesis can ever
+// produce, which defeats the point of letting peers join.
+//
+// Trust boundary: this does NOT bypass validation. The caller has already
+// accepted the block into the canonical chain (TryAppendExternalBlock
+// verifies hash linkage and replays state), so the block is committed as a
+// matter of fact; this records that fact locally. It is deliberately a
+// no-op when the height is already committed, so a locally-voted commit is
+// never overwritten by an adopted one.
+func (bc *BFTConsensus) AdoptExternalCommit(height uint64, blockHash, proposer string) {
+	if bc == nil {
+		return
+	}
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+	if _, exists := bc.committed[height]; exists {
+		return
+	}
+	now := time.Now()
+	bc.committed[height] = &ConsensusRound{
+		Height:    height,
+		Round:     0,
+		Proposer:  proposer,
+		BlockHash: blockHash,
+		Status:    StatusCommitted,
+		StartTime: now,
+		EndTime:   now,
+	}
+	delete(bc.rounds, height)
+	delete(bc.nextRound, height)
+}

@@ -201,3 +201,61 @@ func TestMultiValidator_agreementSurvivesMembershipChange(t *testing.T) {
 		t.Fatalf("round 0 should follow the new highest stake, got %s", p)
 	}
 }
+
+// TestAdoptExternalCommit_unblocksASyncedNode covers the defect that stopped
+// a fully-synced node from ever producing.
+//
+// The seal gate refuses to extend unless IsCommitted(tipHeight). A node that
+// gets its tip from sync never voted that height through, so its committed
+// map has no entry and the gate blocks it forever. Observed live as
+// "BFT extension blocked until the current tip height is committed in BFT"
+// repeating every tick on a node whose chain was perfectly in sync, meaning
+// only a validator present since genesis could ever seal.
+func TestAdoptExternalCommit_unblocksASyncedNode(t *testing.T) {
+	bc := NewBFTConsensus(setFromState(t, fakeBonded{"home-pc": 250}), DefaultConsensusConfig())
+
+	const syncedTip = uint64(464829)
+	if bc.IsCommitted(syncedTip) {
+		t.Fatal("precondition: a synced height must not already be committed")
+	}
+
+	bc.AdoptExternalCommit(syncedTip, "state-root-abc", "remote-producer")
+
+	if !bc.IsCommitted(syncedTip) {
+		t.Fatal("an adopted block must count as committed, or the node can never extend")
+	}
+	got, ok := bc.GetCommitted(syncedTip)
+	if !ok || got.BlockHash != "state-root-abc" {
+		t.Fatalf("adopted commit should record the block, got %+v", got)
+	}
+}
+
+// Adoption must never overwrite a commit this node voted through itself.
+func TestAdoptExternalCommit_doesNotOverwriteLocalCommit(t *testing.T) {
+	bc := NewBFTConsensus(setFromState(t, fakeBonded{"home-pc": 250}), DefaultConsensusConfig())
+
+	const height = uint64(1)
+	proposer, err := bc.ProposerForRound(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bc.Propose(height, 0, proposer, "locally-voted"); err != nil {
+		t.Fatal(err)
+	}
+	if err := bc.PreVote(height, "home-pc", "locally-voted"); err != nil {
+		t.Fatal(err)
+	}
+	if err := bc.PreCommit(height, "home-pc", "locally-voted"); err != nil {
+		t.Fatal(err)
+	}
+	if !bc.IsCommitted(height) {
+		t.Fatal("precondition: the lone validator should have committed locally")
+	}
+
+	bc.AdoptExternalCommit(height, "adopted-different", "someone-else")
+
+	got, _ := bc.GetCommitted(height)
+	if got.BlockHash != "locally-voted" {
+		t.Fatalf("adoption must not overwrite a locally-voted commit, got %q", got.BlockHash)
+	}
+}

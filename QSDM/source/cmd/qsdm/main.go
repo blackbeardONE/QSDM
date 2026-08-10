@@ -1230,6 +1230,11 @@ func main() {
 		return isMember
 	})
 	bftExec.SetEvidenceManager(nodeEvidenceManager)
+	// Let HTTP chain catch-up record its synced tip as committed, or the
+	// seal gate blocks this node from extending the chain it just synced.
+	adoptSyncedTipCommitFn = func(blk *chain.Block) {
+		liveBFT.AdoptExternalCommit(blk.Height, blk.StateRoot, blk.ProducerID)
+	}
 
 	// Authenticate outbound consensus messages. Without a signer, prevotes
 	// and precommits go out unauthenticated and any gossip peer can forge
@@ -2249,7 +2254,27 @@ func main() {
 	}
 
 	if bp, bpErr := chain.NewBlockPropagator(net, net.Host.ID().String(), func(blk *chain.Block) error {
-		return adminProducer.TryAppendExternalBlock(blk)
+		if err := adminProducer.TryAppendExternalBlock(blk); err != nil {
+			return err
+		}
+		// Record the adopted height as committed locally.
+		//
+		// The seal gate refuses to extend unless IsCommitted(tipHeight).
+		// A node that gets its tip from sync never voted that height
+		// through, so without this its `committed` map has no entry and it
+		// can NEVER produce — observed in production as
+		// "BFT extension blocked until the current tip height is committed
+		// in BFT" repeating every tick on a node whose chain was perfectly
+		// in sync. Only a validator present since genesis could ever seal,
+		// which defeats the point of letting peers join.
+		//
+		// TryAppendExternalBlock has already validated hash linkage and
+		// replayed state, so the block is committed as a matter of fact;
+		// this records that fact. AdoptExternalCommit is a no-op when the
+		// height is already committed, so a locally-voted commit is never
+		// overwritten.
+		liveBFT.AdoptExternalCommit(blk.Height, blk.StateRoot, blk.ProducerID)
+		return nil
 	}); bpErr != nil {
 		logger.Warn("Block propagation failed to start", "error_str", bpErr.Error())
 	} else {
@@ -3017,6 +3042,18 @@ func main() {
 //
 // HTTP chain catch-up helpers. These let a validator follow a gateway-exposed
 // chain feed when direct libp2p reachability is unavailable.
+// adoptSyncedTipCommitFn records a synced tip as BFT-committed. Set from
+// main() once liveBFT exists; a package-level hook because the HTTP
+// chain-sync helpers are standalone functions with no access to that scope.
+// Nil until wired, so tests and pre-consensus boot paths are unaffected.
+var adoptSyncedTipCommitFn func(*chain.Block)
+
+func adoptSyncedTipCommit(blk *chain.Block) {
+	if fn := adoptSyncedTipCommitFn; fn != nil && blk != nil {
+		fn(blk)
+	}
+}
+
 func chainSyncURLsFromEnv() []string {
 	raw := strings.TrimSpace(os.Getenv("QSDM_CHAIN_SYNC_URLS"))
 	if raw == "" {
@@ -3283,6 +3320,13 @@ func startHTTPChainSync(
 					"count", appended,
 					"tip_height", producer.TipHeight(),
 					"remote_tip", remoteTip)
+				// Record the synced tip as committed locally, or the seal
+				// gate blocks this node from ever extending the chain it
+				// just caught up to. Marking the tip is sufficient: the
+				// gate only consults IsCommitted(tipHeight).
+				if tip, ok := producer.LatestBlock(); ok && tip != nil {
+					adoptSyncedTipCommit(tip)
+				}
 			}
 			if producer.HasTip() && producer.TipHeight() >= remoteTip {
 				if appended > 0 {
