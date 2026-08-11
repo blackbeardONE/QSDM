@@ -172,3 +172,47 @@ describe('qsdmWalletProviderNativeHost', () => {
     ).toThrow('extension key does not match Hive');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Standalone native-host installers
+//
+// Hive registers the native messaging host itself with every trusted ID, but
+// the extension also ships install-linux.sh / install-windows.ps1 for manual
+// setup. Those wrote a single ID, so a host registered through them accepted
+// only the manually loaded Chromium build and Chrome refused the Web Store
+// wallet -- the same defect class as the pinned-ID mismatch, one file over.
+// These assertions fail if either script drifts from the trusted set again.
+// ---------------------------------------------------------------------------
+
+const nativeHostInstallerDir = path.resolve(
+  __dirname,
+  '../../../../../qsdm-hive-wallet-extension/native-host'
+);
+
+describe('standalone native-host installers', () => {
+  it.each([['install-linux.sh'], ['install-windows.ps1']])(
+    '%s lists every trusted extension ID',
+    (installer) => {
+      const source = fs.readFileSync(
+        path.join(nativeHostInstallerDir, installer),
+        'utf8'
+      );
+      for (const extensionId of QSDM_WALLET_TRUSTED_EXTENSION_IDS) {
+        expect(source).toContain(extensionId);
+      }
+    }
+  );
+
+  it.each([['install-linux.sh'], ['install-windows.ps1']])(
+    '%s does not hard-code a single-origin allowlist',
+    (installer) => {
+      const source = fs.readFileSync(
+        path.join(nativeHostInstallerDir, installer),
+        'utf8'
+      );
+      // The original defect shape: exactly one interpolated origin.
+      expect(source).not.toContain('["chrome-extension://$extension_id/"]');
+      expect(source).not.toContain('@("chrome-extension://$ExtensionId/")');
+    }
+  );
+});

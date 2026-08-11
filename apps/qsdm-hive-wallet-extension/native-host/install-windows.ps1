@@ -1,5 +1,5 @@
 param(
-    [string]$ExtensionId = 'habkkkednignfkoffhpbjahcjbikkahh',
+    [string]$ExtensionId = '',
     [string]$FirefoxExtensionId = 'qsdm-wallet@qsdm.tech',
     [string]$HostPath = ""
 )
@@ -7,8 +7,33 @@ param(
 $ErrorActionPreference = 'Stop'
 $extensionIdPattern = '^[a-p]{32}$'
 $firefoxExtensionIdPattern = '^[A-Za-z0-9._+@-]{1,128}$'
-if ($ExtensionId -notmatch $extensionIdPattern) {
-    throw 'ExtensionId must be the 32-character Chrome or Edge extension ID.'
+
+# Every extension Hive trusts must be listed, because Chrome refuses a native
+# messaging connection from any extension absent from allowed_origins. This
+# must stay in step with QSDM_WALLET_TRUSTED_EXTENSION_IDS in
+# apps/qsdm-hive/qsdm-hive-main/src/main/services/qsdmWalletProviderNativeHost.ts;
+# a spec in that file asserts this script lists all of them.
+#
+# Writing a single ID was a real defect: a host registered by this script
+# accepted only the manually loaded Chromium build, so a wallet installed from
+# the Chrome Web Store was refused even though Hive itself trusted it.
+$qsdmTrustedExtensionIds = @(
+    'habkkkednignfkoffhpbjahcjbikkahh' # manually loaded Chromium build (pinned key)
+    'homapjeinjlbdjhhdegcbnldkpkodepo' # Chrome Web Store listing
+    'nmmhneekhgaegpmbnhiacglhoncicflc' # interim CRX
+)
+
+# An explicitly supplied ID is ADDED to the trusted set rather than replacing
+# it, so registering a development build cannot silently disconnect the
+# shipped ones.
+if ($ExtensionId) {
+    $qsdmTrustedExtensionIds += $ExtensionId
+}
+$qsdmTrustedExtensionIds = @($qsdmTrustedExtensionIds | Select-Object -Unique)
+foreach ($id in $qsdmTrustedExtensionIds) {
+    if ($id -notmatch $extensionIdPattern) {
+        throw 'ExtensionId must be the 32-character Chrome or Edge extension ID.'
+    }
 }
 if ($FirefoxExtensionId -notmatch $firefoxExtensionIdPattern) {
     throw 'FirefoxExtensionId contains unsupported characters.'
@@ -26,7 +51,7 @@ $chromiumManifest = [ordered]@{
     description = 'QSDM Hive Wallet native bridge'
     path = $HostPath
     type = 'stdio'
-    allowed_origins = @("chrome-extension://$ExtensionId/")
+    allowed_origins = @($qsdmTrustedExtensionIds | ForEach-Object { "chrome-extension://$_/" })
 }
 $firefoxManifest = [ordered]@{
     name = 'tech.qsdm.hive_wallet'
@@ -49,4 +74,4 @@ foreach ($target in $registryTargets) {
     New-Item -Force -Path $registryPath | Out-Null
     Set-Item -LiteralPath $registryPath -Value $target[1]
 }
-Write-Host "QSDM Wallet bridge registered for Chromium $ExtensionId and Firefox $FirefoxExtensionId"
+Write-Host "QSDM Wallet bridge registered for Chromium $($qsdmTrustedExtensionIds -join ', ') and Firefox $FirefoxExtensionId"
