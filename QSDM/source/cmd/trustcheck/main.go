@@ -203,9 +203,13 @@ func main() {
 // and need different operator action:
 //
 //	502 — the gateway answered but could not reach its backend validator.
-//	503 — the validator answered but mining is unavailable, which is the
-//	      normal state of a read-only follower (ReadOnly is set from
-//	      !localBlockProduction), not a crash.
+//	503 — the validator answered but its mining service reports unavailable
+//	      (miningsvc returns ErrMiningUnavailable when readOnly).
+//
+// Do not read 503 as "this node is a follower, therefore expected". A
+// networked catch-up node was measured serving submissions normally, so the
+// follower/producer role does not by itself predict this response; treat 503
+// as a real fault until the specific node's wiring says otherwise.
 func validateMiningPath(c *http.Client, base string, rs *results) {
 	const name = "mining-path-reachable"
 
@@ -245,7 +249,7 @@ func validateMiningPath(c *http.Client, base string, rs *results) {
 	case http.StatusBadGateway:
 		rs.fail(name, fmt.Sprintf("HTTP 502 — relay reached the home gateway but the gateway could not reach its local validator: %s", snippet(body)))
 	case http.StatusServiceUnavailable:
-		rs.fail(name, fmt.Sprintf("HTTP 503 — validator reachable but mining is unavailable (read-only follower, or still starting): %s", snippet(body)))
+		rs.fail(name, fmt.Sprintf("HTTP 503 — validator reachable but its mining service reports unavailable (read-only wiring, or still starting): %s", snippet(body)))
 	default:
 		rs.fail(name, fmt.Sprintf("unexpected HTTP %d: %s", resp.StatusCode, snippet(body)))
 	}
