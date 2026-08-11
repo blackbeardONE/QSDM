@@ -1,5 +1,6 @@
 param(
     [string]$QsdmRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
+    [string]$TaskUser = "",
     [switch]$NoPause
 )
 
@@ -17,11 +18,19 @@ function Quote-Arg {
 }
 
 $QsdmRoot = (Resolve-Path $QsdmRoot).Path
+$TaskUser = $TaskUser.Trim()
+if ([string]::IsNullOrWhiteSpace($TaskUser)) {
+    $TaskUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+}
 $Installer = Join-Path $QsdmRoot "scripts\install_local_stack_task.ps1"
 $LogPath = Join-Path $QsdmRoot "source\.cache\local-validator\local-stack-task-install.log"
 
 if (-not (Test-IsAdmin)) {
-    $args = "-NoProfile -ExecutionPolicy Bypass -NoExit -File $(Quote-Arg $PSCommandPath) -QsdmRoot $(Quote-Arg $QsdmRoot)"
+    $keepOpen = if ($NoPause) { "" } else { "-NoExit " }
+    $args = "-NoProfile -ExecutionPolicy Bypass ${keepOpen}-File $(Quote-Arg $PSCommandPath) -QsdmRoot $(Quote-Arg $QsdmRoot) -TaskUser $(Quote-Arg $TaskUser)"
+    if ($NoPause) {
+        $args += " -NoPause"
+    }
     Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList $args
     Write-Host "Windows administrator prompt requested."
     exit 0
@@ -33,6 +42,7 @@ try {
     }
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Installer `
         -QsdmRoot $QsdmRoot `
+        -TaskUser $TaskUser `
         -Relay "https://api.qsdm.tech" `
         -Slot "home-validator" `
         -Highest `

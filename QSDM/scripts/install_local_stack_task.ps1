@@ -3,6 +3,7 @@ param(
     [string]$Relay = "https://api.qsdm.tech",
     [string]$Slot = "home-validator",
     [string]$TaskName = "QSDM-Local-Stack",
+    [string]$TaskUser = "",
     [int]$IntervalSeconds = 30,
     [int]$RestartAfterFailures = 10,
     [int]$GatewayRestartAfterFailures = 3,
@@ -16,6 +17,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 $QsdmRoot = (Resolve-Path $QsdmRoot).Path
+$TaskUser = $TaskUser.Trim()
+if ([string]::IsNullOrWhiteSpace($TaskUser)) {
+    $TaskUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+}
 $WatchdogScript = Join-Path $QsdmRoot "scripts\watch_local_stack.ps1"
 $LocalRoot = Join-Path $QsdmRoot "source\.cache\local-validator"
 $LogPath = Join-Path $LocalRoot "local-stack-task-install.log"
@@ -39,20 +44,26 @@ if (-not $NoPublicGatewayCheck) {
 }
 $taskRun = "powershell.exe $watchdogArgs"
 
-Write-InstallLog "install requested task=$TaskName highest=$Highest root=$QsdmRoot check_public_gateway=$(-not $NoPublicGatewayCheck.IsPresent)"
+Write-InstallLog "install requested task=$TaskName user=$TaskUser trigger=startup logon_type=S4U highest=$Highest root=$QsdmRoot check_public_gateway=$(-not $NoPublicGatewayCheck.IsPresent)"
 
 try {
     $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $watchdogArgs -WorkingDirectory $QsdmRoot
-    $trigger = New-ScheduledTaskTrigger -AtLogOn
+    # AtLogOn tasks and Startup-folder launchers both require an interactive
+    # user session. A boot trigger with S4U keeps the stack supervised after a
+    # headless restart without storing the user's Windows password.
+    $trigger = New-ScheduledTaskTrigger -AtStartup
     $settings = New-ScheduledTaskSettingsSet `
         -AllowStartIfOnBatteries `
         -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable `
+        -RestartCount 999 `
+        -RestartInterval (New-TimeSpan -Minutes 1) `
         -ExecutionTimeLimit ([TimeSpan]::Zero) `
         -MultipleInstances IgnoreNew
     $runLevel = if ($Highest) { "Highest" } else { "Limited" }
     $principal = New-ScheduledTaskPrincipal `
-        -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) `
-        -LogonType Interactive `
+        -UserId $TaskUser `
+        -LogonType S4U `
         -RunLevel $runLevel
 
     Register-ScheduledTask `
@@ -64,11 +75,21 @@ try {
         -Force `
         -ErrorAction Stop | Out-Null
 
-    if (-not (Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop)) {
+    $registeredTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+    if (-not $registeredTask) {
         throw "Scheduled task registration returned without creating $TaskName"
     }
+    $hasBootTrigger = @($registeredTask.Triggers | Where-Object {
+        $_.CimClass.CimClassName -eq "MSFT_TaskBootTrigger"
+    }).Count -gt 0
+    if (-not $hasBootTrigger) {
+        throw "Scheduled task $TaskName was created without an AtStartup trigger"
+    }
+    if ([string]$registeredTask.Principal.LogonType -ne "S4U") {
+        throw "Scheduled task $TaskName was created with logon type $($registeredTask.Principal.LogonType), expected S4U"
+    }
 
-    Write-InstallLog "registered scheduled task run_level=$runLevel"
+    Write-InstallLog "registered scheduled task user=$TaskUser trigger=startup logon_type=S4U run_level=$runLevel"
 } catch {
     Write-InstallLog "scheduled task registration failed: $($_.Exception.Message)"
     if ($NoStartupFallback) {
