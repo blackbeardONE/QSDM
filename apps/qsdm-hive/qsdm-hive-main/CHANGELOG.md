@@ -1,3 +1,9 @@
+## [1.4.17]
+
+- Chrome Web Store compatibility: the store listing is assigned a different extension ID than the manually loaded Chromium build, and the ID pinned in Hive's native-messaging allowlist did not match it. Store installations were therefore absent from the native host's `allowed_origins`, and Chrome refused every connection, so balance, receiving address, and transfer controls could not reach the wallet.
+- Verified pinning: the store extension ID is now asserted against its published value rather than only its shape, so a future edit fails the test instead of silently disconnecting store users.
+- Manual installs were unaffected and remain so; the Chromium archive keeps the pinned identity Hive already trusted.
+
 ## [1.4.16]
 
 - Earlier update detection: Hive registers updater listeners and begins the signed release check before wallet, task, and Core bootstrap can delay it.

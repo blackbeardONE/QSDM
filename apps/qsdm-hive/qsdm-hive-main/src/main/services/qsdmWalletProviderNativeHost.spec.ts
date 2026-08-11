@@ -47,6 +47,12 @@ describe('qsdmWalletProviderNativeHost', () => {
       QSDM_WALLET_EXTENSION_ID
     );
     expect(QSDM_WALLET_STORE_EXTENSION_ID).toMatch(/^[a-p]{32}$/);
+    // Pinned to the published Chrome Web Store listing. A shape-only check
+    // let a wrong value ship here, which silently kept every store install
+    // out of the native host's allowed_origins.
+    expect(QSDM_WALLET_STORE_EXTENSION_ID).toBe(
+      'homapjeinjlbdjhhdegcbnldkpkodepo'
+    );
     expect(QSDM_WALLET_STORE_EXTENSION_ID).not.toBe(
       QSDM_WALLET_EXTENSION_ID
     );
