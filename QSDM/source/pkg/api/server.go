@@ -185,18 +185,18 @@ func NewServer(cfg *config.Config, logger *logging.Logger, walletService *wallet
 	authManager.SetRevocationStore(revocations)
 
 	return &Server{
-		config:         cfg,
-		logger:         logger,
-		authManager:    authManager,
-		userStore:      userStore,
+		config:          cfg,
+		logger:          logger,
+		authManager:     authManager,
+		userStore:       userStore,
 		rateLimiter:     rateLimiter,
 		roleRateLimiter: roleRateLimiter,
-		requestSigner:  requestSigner,
-		walletService:  walletService,
-		storage:        storage,
-		submeshManager: submeshManager,
-		csrfManager:    csrfManager,
-		revocations:    revocations,
+		requestSigner:   requestSigner,
+		walletService:   walletService,
+		storage:         storage,
+		submeshManager:  submeshManager,
+		csrfManager:     csrfManager,
+		revocations:     revocations,
 	}, nil
 }
 
@@ -483,7 +483,8 @@ func (s *Server) SetPeerCountSource(fn func() int) {
 //
 //	wire → SecurityHeaders → CORS → AuditLog → DeprecationMiddleware
 //	     → RequestTimeout → RateLimit → CSRF → RequestSigning
-//	     → AuthMiddleware → AdminAccessMiddleware → mux
+//	     → AuthMiddleware → AdminAccessMiddleware
+//	     → FollowerReadOnlyMiddleware → mux
 //
 // SecurityHeaders is OUTERMOST so even an early-rejection 4xx response
 // (e.g. CORS denial) still carries HSTS/CSP/etc. — without this,
@@ -493,6 +494,11 @@ func (s *Server) SetPeerCountSource(fn func() int) {
 // rate-limited cannot also pin a worker via the deadline; conversely it
 // sits outside CSRF/Auth so handler logic always runs under the deadline.
 func (s *Server) setupMiddleware(handler http.Handler) http.Handler {
+	// A network follower validates and serves the synchronized ledger but must
+	// never acknowledge writes that it cannot seal. Authentication and local
+	// monitoring remain available; ledger mutations must target the producer.
+	handler = FollowerReadOnlyMiddleware(envcompat.Truthy("QSDM_API_READ_ONLY", "QSDM_API_READ_ONLY"))(handler)
+
 	// 9. Optional stricter /api/admin access (role + mTLS)
 	handler = AdminAccessMiddleware(s.config, s.logger)(handler)
 

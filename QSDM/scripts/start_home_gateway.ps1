@@ -5,6 +5,7 @@ param(
     [string]$KeyPath = (Join-Path (Resolve-Path (Join-Path $PSScriptRoot "..\source\.cache\local-validator")).Path "home-gateway.key"),
     [switch]$AllowEnrollment,
     [switch]$DisableHive,
+    [switch]$ReadOnly,
     [switch]$Restart,
     [int]$StartupWaitSeconds = 5
 )
@@ -12,6 +13,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $LocalValidatorPath = (Resolve-Path (Join-Path $PSScriptRoot "..\source\.cache\local-validator")).Path
+$ModeConfigPath = Join-Path $LocalValidatorPath "validator-mode.json"
 $PreferredNewExePath = Join-Path $LocalValidatorPath "qsdm-home-gateway-hive.new.exe"
 $PreferredExePath = Join-Path $LocalValidatorPath "qsdm-home-gateway-hive.exe"
 $FallbackExePath = Join-Path $LocalValidatorPath "qsdm-home-gateway.exe"
@@ -50,6 +52,24 @@ if ([string]::IsNullOrWhiteSpace($Relay)) {
 }
 if ([string]::IsNullOrWhiteSpace($Slot)) {
     throw "Slot is required. Pass -Slot your-slot-id or set QSDM_HOME_GATEWAY_SLOT."
+}
+
+if (Test-Path -LiteralPath $ModeConfigPath -PathType Leaf) {
+    try {
+        $modeConfig = Get-Content -LiteralPath $ModeConfigPath -Raw | ConvertFrom-Json
+        $modeBlockProducer = $false
+        if ($null -ne $modeConfig.PSObject.Properties["blockProducer"]) {
+            $modeBlockProducer = [bool]$modeConfig.blockProducer
+        }
+        if ([string]$modeConfig.mode -eq "networked" -and -not $modeBlockProducer) {
+            $ReadOnly = $true
+        }
+    } catch {
+        throw "Invalid validator mode config at ${ModeConfigPath}: $($_.Exception.Message)"
+    }
+}
+if ($ReadOnly -and $AllowEnrollment) {
+    throw "-AllowEnrollment cannot be combined with follower read-only mode. Enrollment belongs on the authoritative Core."
 }
 
 function Write-GatewayLauncherLog {
@@ -208,6 +228,9 @@ $args = @(
 if ($AllowEnrollment) {
     $args += "--allow-enrollment"
 }
+if ($ReadOnly) {
+    $args += "--read-only"
+}
 if (-not $DisableHive) {
     $args += "--allow-hive"
 }
@@ -232,7 +255,7 @@ try {
 }
 
 Set-Content -LiteralPath $PidFile -Value $process.Id
-Write-GatewayLauncherLog "started gateway pid=$($process.Id) exe=$ExePath relay=$Relay slot=$Slot backend=$Backend"
+Write-GatewayLauncherLog "started gateway pid=$($process.Id) exe=$ExePath relay=$Relay slot=$Slot backend=$Backend read_only=$([bool]$ReadOnly)"
 
 $waitSeconds = [Math]::Max(1, [Math]::Min($StartupWaitSeconds, 10))
 Start-Sleep -Seconds $waitSeconds

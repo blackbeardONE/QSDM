@@ -34,6 +34,7 @@ func run() int {
 		signerID        = flag.String("signer-id", envString("QSDM_HOME_GATEWAY_SIGNER_ID", defaultSignerID()), "Gateway signer/log identity")
 		allowEnrollment = flag.Bool("allow-enrollment", envBool("QSDM_HOME_GATEWAY_ALLOW_ENROLLMENT", false), "Expose mining enrollment endpoints in addition to the default mining/status allowlist")
 		allowHive       = flag.Bool("allow-hive", envBool("QSDM_HOME_GATEWAY_ALLOW_HIVE", false), "Expose the consumer-safe QSDM Hive API allowlist")
+		readOnly        = flag.Bool("read-only", envBool("QSDM_HOME_GATEWAY_READ_ONLY", false), "Expose only read operations; required when the local Core is a follower")
 		printKey        = flag.Bool("generate-key", false, "Print a fresh 32-byte relay slot key and exit")
 		version         = flag.Bool("version", false, "Print version and exit")
 	)
@@ -84,7 +85,11 @@ func run() int {
 		return 2
 	}
 
-	handler := newGatewayHandler(backendURL, *allowEnrollment, *allowHive)
+	if *readOnly && *allowEnrollment {
+		log.Print("FATAL: --read-only cannot be combined with --allow-enrollment")
+		return 2
+	}
+	handler := newGatewayHandler(backendURL, *allowEnrollment, *allowHive, *readOnly)
 	handlerWithTimeouts := http.TimeoutHandler(handler, 35*time.Second, "gateway timeout")
 
 	client := tunnel.Client{
@@ -99,8 +104,8 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log.Printf("home-gateway: starting relay=%s slot=%s backend=%s allow_enrollment=%t allow_hive=%t",
-		client.RelayURL, client.SlotID, backendURL.String(), *allowEnrollment, *allowHive)
+	log.Printf("home-gateway: starting relay=%s slot=%s backend=%s allow_enrollment=%t allow_hive=%t read_only=%t",
+		client.RelayURL, client.SlotID, backendURL.String(), *allowEnrollment, *allowHive, *readOnly)
 	if err := client.Run(ctx); err != nil {
 		log.Printf("FATAL: gateway stopped: %v", err)
 		return 1

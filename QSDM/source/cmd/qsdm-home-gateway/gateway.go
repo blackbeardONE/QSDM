@@ -11,14 +11,16 @@ type gatewayHandler struct {
 	backend         *url.URL
 	allowEnrollment bool
 	allowHive       bool
+	readOnly        bool
 	proxy           *httputil.ReverseProxy
 }
 
-func newGatewayHandler(backend *url.URL, allowEnrollment bool, allowHive bool) *gatewayHandler {
+func newGatewayHandler(backend *url.URL, allowEnrollment bool, allowHive bool, readOnly bool) *gatewayHandler {
 	g := &gatewayHandler{
 		backend:         backend,
 		allowEnrollment: allowEnrollment,
 		allowHive:       allowHive,
+		readOnly:        readOnly,
 	}
 	g.proxy = httputil.NewSingleHostReverseProxy(backend)
 	origDirector := g.proxy.Director
@@ -48,6 +50,9 @@ func (g *gatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (g *gatewayHandler) allowed(method, path string) bool {
 	if strings.Contains(path, "..") {
+		return false
+	}
+	if g.readOnly && method != http.MethodGet && method != http.MethodHead {
 		return false
 	}
 

@@ -25,8 +25,10 @@ $ErrorActionPreference = "Stop"
 if ($BlockProducer -and -not $Networked) {
     throw "-BlockProducer requires -Networked. Solo mode already owns local block production."
 }
+$RunTreasurySigners = (-not $Networked) -or $BlockProducer
 
 $LocalRoot = Join-Path $QsdmRoot "source\.cache\local-validator"
+$MaintenanceMarkerPath = Join-Path $LocalRoot "maintenance.active"
 $ModeConfigPath = Join-Path $LocalRoot "validator-mode.json"
 $ActiveBinaryStatePath = Join-Path $LocalRoot "validator-active.json"
 $RunDirName = if ($Networked) { "run-networked" } else { "run-v2" }
@@ -59,6 +61,27 @@ function Select-NewestExistingPath {
     $items |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1 -ExpandProperty FullName
+}
+
+function Get-FileSha256Hex {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $stream = [IO.File]::Open(
+        $Path,
+        [IO.FileMode]::Open,
+        [IO.FileAccess]::Read,
+        [IO.FileShare]::Read
+    )
+    try {
+        $sha256 = [Security.Cryptography.SHA256]::Create()
+        try {
+            return ([BitConverter]::ToString($sha256.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
+        } finally {
+            $sha256.Dispose()
+        }
+    } finally {
+        $stream.Dispose()
+    }
 }
 
 function Resolve-ActiveValidatorBinary {
@@ -97,7 +120,7 @@ function Resolve-ActiveValidatorBinary {
     if ((Get-Item -LiteralPath $candidate -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
         throw "Refusing a reparse-point active validator binary: $candidate"
     }
-    $actualHash = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actualHash = Get-FileSha256Hex -Path $candidate
     if ($actualHash -ne $expectedHash) {
         throw "Active validator binary checksum mismatch: $candidate"
     }
@@ -105,7 +128,7 @@ function Resolve-ActiveValidatorBinary {
 }
 
 $ValidatorProcessNames = @(
-    "qsdm-local-validator",
+    "qsdm-local-validator*",
     "qsdm-local-validator-sqlite*",
     "qsdm-local-validator-task-catalog",
     "qsdm-local-validator-treasury",
@@ -123,6 +146,9 @@ $DiscoveredSQLiteExePaths = @(
         Select-Object -ExpandProperty FullName
 )
 $ExePath = Resolve-ActiveValidatorBinary
+if ($Networked -and -not $ExePath) {
+    throw "Networked validator mode requires a checksummed active binary in $ActiveBinaryStatePath. Run the transactional validator updater or activate a verified binary first."
+}
 if (-not $ExePath) {
     $ExePath = Select-NewestExistingPath -Paths (@(
         $LocalValidatorTreasuryExePath,
@@ -169,8 +195,11 @@ if ([string]::IsNullOrWhiteSpace($TaskActionLogPath)) {
 }
 
 New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
-if ($Networked) {
-    $modeConfig = [ordered]@{
+if (Test-Path -LiteralPath $MaintenanceMarkerPath -PathType Leaf) {
+    throw "QSDM local stack maintenance mode is active at $MaintenanceMarkerPath. Remove it deliberately before starting the validator."
+}
+$modeConfig = if ($Networked) {
+    [ordered]@{
         mode = "networked"
         chainSyncUrls = $ChainSyncUrls
         bootstrapPeers = $BootstrapPeers
@@ -178,9 +207,18 @@ if ($Networked) {
         blockProducer = $BlockProducer.IsPresent
         updatedAtUtc = [DateTime]::UtcNow.ToString("o")
     }
-    $modeJson = $modeConfig | ConvertTo-Json
-    [IO.File]::WriteAllText($ModeConfigPath, $modeJson, [Text.UTF8Encoding]::new($false))
+} else {
+    [ordered]@{
+        mode = "solo"
+        chainSyncUrls = ""
+        bootstrapPeers = ""
+        publicP2P = $false
+        blockProducer = $true
+        updatedAtUtc = [DateTime]::UtcNow.ToString("o")
+    }
 }
+$modeJson = $modeConfig | ConvertTo-Json
+[IO.File]::WriteAllText($ModeConfigPath, $modeJson, [Text.UTF8Encoding]::new($false))
 
 function Write-LauncherLog {
     param([string]$Message)
@@ -199,7 +237,7 @@ function Write-ValidatorProcessIdentity {
         pid = $Process.Id
         process_start_utc = $Process.StartTime.ToUniversalTime().ToString("o")
         binary = [IO.Path]::GetFullPath($BinaryPath)
-        sha256 = (Get-FileHash -LiteralPath $BinaryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        sha256 = Get-FileSha256Hex -Path $BinaryPath
         launcher_pid = $PID
         written_at_utc = [DateTime]::UtcNow.ToString("o")
     }
@@ -816,7 +854,9 @@ if ($Networked -and (Test-QsdmReady) -and -not $Restart) {
 
 if ((Test-QsdmReady) -and -not $Restart) {
     Write-LauncherLog "validator already healthy at $HealthUrl"
-    Ensure-TreasurySigners
+    if ($RunTreasurySigners) {
+        Ensure-TreasurySigners
+    }
     Release-LauncherLock
     exit 0
 }
@@ -842,7 +882,19 @@ if (-not (Test-Path -LiteralPath $ConfigPath)) {
 
 $env:QSDM_SOLO_VALIDATOR_MODE = if ($Networked) { "0" } else { "1" }
 $env:QSDM_NETWORK_BLOCK_PRODUCER = if ($Networked -and $BlockProducer) { "1" } else { "0" }
-Import-TreasuryConfig -Path $TreasuryConfigPath
+$env:QSDM_API_READ_ONLY = if ($Networked -and -not $BlockProducer) { "1" } else { "0" }
+if ($RunTreasurySigners) {
+    Import-TreasuryConfig -Path $TreasuryConfigPath
+} else {
+    $env:QSDM_REFERRAL_CLAIMS_ENABLED = "0"
+    $env:QSDM_LOCAL_CELL_FAUCET = "0"
+    Remove-Item Env:QSDM_REFERRAL_TREASURY_SIGNER_URL -ErrorAction SilentlyContinue
+    Remove-Item Env:QSDM_REFERRAL_TREASURY_SIGNER_TOKEN -ErrorAction SilentlyContinue
+    Remove-Item Env:QSDM_REFERRAL_TREASURY_SIGNER_TOKEN_FILE -ErrorAction SilentlyContinue
+    Remove-Item Env:QSDM_FAUCET_TREASURY_SIGNER_URL -ErrorAction SilentlyContinue
+    Remove-Item Env:QSDM_FAUCET_TREASURY_SIGNER_TOKEN -ErrorAction SilentlyContinue
+    Remove-Item Env:QSDM_FAUCET_TREASURY_SIGNER_TOKEN_FILE -ErrorAction SilentlyContinue
+}
 
 $env:QSDM_NETWORKED_CATCHUP_MODE = if ($Networked) { "1" } else { "0" }
 $env:QSDM_PRODUCTION_MODE = "true"
@@ -950,7 +1002,9 @@ while ((Get-Date) -lt $healthDeadline) {
     }
     if (Test-QsdmReady) {
         Write-LauncherLog "validator ready at $HealthUrl"
-        Ensure-TreasurySigners
+        if ($RunTreasurySigners) {
+            Ensure-TreasurySigners
+        }
         Release-LauncherLock
         exit 0
     }

@@ -71,6 +71,12 @@ Run after the relay slot is configured:
 .\scripts\start_home_gateway.ps1 -Relay https://relay.example -Slot your-slot-id
 ```
 
+When `validator-mode.json` identifies the local Core as a network follower,
+the launcher forces the gateway into read-only mode. Status, chain, task, and
+mining-work reads remain available, but proof submissions, signed wallet/task
+actions, enrollment, and every other mutation must go directly to the
+authoritative Core. `-AllowEnrollment` is rejected in follower mode.
+
 The launcher restricts the key file to the current user, the operating system,
 and local administrators. It passes only the file path to the gateway through
 `QSDM_HOME_GATEWAY_KEY_FILE`; the key itself is not placed in process

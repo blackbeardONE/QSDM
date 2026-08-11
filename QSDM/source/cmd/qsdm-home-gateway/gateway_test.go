@@ -19,7 +19,7 @@ func TestGatewayAllowlist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := newGatewayHandler(u, false, false)
+	g := newGatewayHandler(u, false, false, false)
 
 	tests := []struct {
 		name   string
@@ -63,7 +63,7 @@ func TestGatewayOptionalEnrollment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := newGatewayHandler(u, true, false)
+	g := newGatewayHandler(u, true, false, false)
 
 	for _, tc := range []struct {
 		method string
@@ -92,7 +92,7 @@ func TestGatewayOptionalHiveConsumerAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := newGatewayHandler(u, false, true)
+	g := newGatewayHandler(u, false, true, false)
 
 	for _, tc := range []struct {
 		name   string
@@ -124,6 +124,41 @@ func TestGatewayOptionalHiveConsumerAPI(t *testing.T) {
 		{"auth blocked", http.MethodPost, "/api/v1/auth/login", http.StatusForbidden},
 		{"mint blocked", http.MethodPost, "/api/v1/wallet/mint", http.StatusForbidden},
 		{"enroll still blocked", http.MethodPost, "/api/v1/mining/enroll", http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader("{}"))
+			rec := httptest.NewRecorder()
+			g.ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, tc.want, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestGatewayReadOnlyFollowerMode(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer backend.Close()
+
+	u, err := url.Parse(backend.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := newGatewayHandler(u, false, true, true)
+
+	for _, tc := range []struct {
+		name   string
+		method string
+		path   string
+		want   int
+	}{
+		{"status remains visible", http.MethodGet, "/api/v1/status", http.StatusAccepted},
+		{"tasks remain visible", http.MethodGet, "/api/v1/tasks", http.StatusAccepted},
+		{"mining submit blocked", http.MethodPost, "/api/v1/mining/submit", http.StatusForbidden},
+		{"signed wallet submit blocked", http.MethodPost, "/api/v1/wallet/submit-signed", http.StatusForbidden},
+		{"signed task action blocked", http.MethodPost, "/api/v1/tasks/actions/submit-signed", http.StatusForbidden},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader("{}"))

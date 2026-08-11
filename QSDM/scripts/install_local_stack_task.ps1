@@ -8,12 +8,19 @@ param(
     [int]$GatewayRestartAfterFailures = 3,
     [switch]$NoPublicGatewayCheck,
     [switch]$Highest,
+    [switch]$AtStartup,
+    [switch]$AsSystem,
     [switch]$RemoveStartupFallback,
     [switch]$NoStartupFallback,
     [switch]$NoRunNow
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($AsSystem) {
+    $AtStartup = $true
+    $Highest = $true
+}
 
 $QsdmRoot = (Resolve-Path $QsdmRoot).Path
 $WatchdogScript = Join-Path $QsdmRoot "scripts\watch_local_stack.ps1"
@@ -39,26 +46,40 @@ if (-not $NoPublicGatewayCheck) {
 }
 $taskRun = "powershell.exe $watchdogArgs"
 
-Write-InstallLog "install requested task=$TaskName highest=$Highest root=$QsdmRoot check_public_gateway=$(-not $NoPublicGatewayCheck.IsPresent)"
+Write-InstallLog "install requested task=$TaskName highest=$Highest at_startup=$AtStartup as_system=$AsSystem root=$QsdmRoot check_public_gateway=$(-not $NoPublicGatewayCheck.IsPresent)"
 
 try {
     $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $watchdogArgs -WorkingDirectory $QsdmRoot
-    $trigger = New-ScheduledTaskTrigger -AtLogOn
+    $triggers = @()
+    if ($AtStartup) {
+        $triggers += New-ScheduledTaskTrigger -AtStartup
+    }
+    if (-not $AsSystem) {
+        $triggers += New-ScheduledTaskTrigger -AtLogOn
+    }
     $settings = New-ScheduledTaskSettingsSet `
         -AllowStartIfOnBatteries `
         -DontStopIfGoingOnBatteries `
         -ExecutionTimeLimit ([TimeSpan]::Zero) `
         -MultipleInstances IgnoreNew
-    $runLevel = if ($Highest) { "Highest" } else { "Limited" }
-    $principal = New-ScheduledTaskPrincipal `
-        -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) `
-        -LogonType Interactive `
-        -RunLevel $runLevel
+    if ($AsSystem) {
+        $runLevel = "Highest"
+        $principal = New-ScheduledTaskPrincipal `
+            -UserId "SYSTEM" `
+            -LogonType ServiceAccount `
+            -RunLevel Highest
+    } else {
+        $runLevel = if ($Highest) { "Highest" } else { "Limited" }
+        $principal = New-ScheduledTaskPrincipal `
+            -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) `
+            -LogonType Interactive `
+            -RunLevel $runLevel
+    }
 
     Register-ScheduledTask `
         -TaskName $TaskName `
         -Action $action `
-        -Trigger $trigger `
+        -Trigger $triggers `
         -Settings $settings `
         -Principal $principal `
         -Force `
@@ -68,7 +89,7 @@ try {
         throw "Scheduled task registration returned without creating $TaskName"
     }
 
-    Write-InstallLog "registered scheduled task run_level=$runLevel"
+    Write-InstallLog "registered scheduled task run_level=$runLevel principal=$($principal.UserId) trigger_count=$($triggers.Count)"
 } catch {
     Write-InstallLog "scheduled task registration failed: $($_.Exception.Message)"
     if ($NoStartupFallback) {

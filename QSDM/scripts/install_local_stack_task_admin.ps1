@@ -36,6 +36,8 @@ try {
         -Relay "https://api.qsdm.tech" `
         -Slot "home-validator" `
         -Highest `
+        -AtStartup `
+        -AsSystem `
         -RemoveStartupFallback `
         -NoStartupFallback
 

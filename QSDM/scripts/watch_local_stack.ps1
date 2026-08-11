@@ -34,13 +34,18 @@ $ErrorActionPreference = "Stop"
 
 $QsdmRoot = (Resolve-Path $QsdmRoot).Path
 $LocalRoot = Join-Path $QsdmRoot "source\.cache\local-validator"
+$MaintenanceMarkerPath = Join-Path $LocalRoot "maintenance.active"
 $ModeConfigPath = Join-Path $LocalRoot "validator-mode.json"
-$ValidatorMode = "solo"
+$ValidatorMode = ""
 $ValidatorChainSyncUrls = "https://api.qsdm.tech/api/v1"
 $ValidatorBootstrapPeers = ""
 $ValidatorPublicP2P = $false
 $ValidatorBlockProducer = $false
-if (Test-Path -LiteralPath $ModeConfigPath) {
+if (Test-Path -LiteralPath $MaintenanceMarkerPath -PathType Leaf) {
+    Write-Host "QSDM local stack maintenance mode is active; watchdog will not start services."
+    exit 0
+}
+if (Test-Path -LiteralPath $ModeConfigPath -PathType Leaf) {
     try {
         $modeConfig = Get-Content -Raw -LiteralPath $ModeConfigPath | ConvertFrom-Json
         if ([string]$modeConfig.mode -eq "networked") {
@@ -53,10 +58,17 @@ if (Test-Path -LiteralPath $ModeConfigPath) {
             if ($null -ne $modeConfig.PSObject.Properties["blockProducer"]) {
                 $ValidatorBlockProducer = [bool]$modeConfig.blockProducer
             }
+        } elseif ([string]$modeConfig.mode -eq "solo") {
+            $ValidatorMode = "solo"
+            $ValidatorBlockProducer = $true
+        } else {
+            throw "mode must be 'networked' or 'solo'"
         }
     } catch {
         throw "Invalid validator mode config at ${ModeConfigPath}: $($_.Exception.Message)"
     }
+} else {
+    throw "Missing validator role config at $ModeConfigPath. Run start_local_validator.ps1 explicitly once; the watchdog will not infer a producer role."
 }
 $RunDirName = if ($ValidatorMode -eq "networked") { "run-networked" } else { "run-v2" }
 $RunDir = Join-Path $LocalRoot $RunDirName
@@ -72,7 +84,7 @@ $PublicUrl = "$PublicBaseUrl/status"
 $QsdmCli = Join-Path $QsdmRoot "source\qsdmcli.exe"
 $PublicGatewayCheckEnabled = -not $NoPublicGatewayCheck.IsPresent
 $ValidatorProcessNames = @(
-    "qsdm-local-validator",
+    "qsdm-local-validator*",
     "qsdm-local-validator-sqlite*",
     "qsdm-local-validator-task-catalog",
     "qsdm-local-validator-treasury",
@@ -244,6 +256,10 @@ function Stop-StackProcesses {
 }
 
 function Start-Validator {
+    if (Test-Path -LiteralPath $MaintenanceMarkerPath -PathType Leaf) {
+        Write-WatchdogLog "maintenance mode active; validator start suppressed"
+        return
+    }
     if (-not (Test-Path -LiteralPath $ValidatorScript)) {
         Write-WatchdogLog "missing validator script: $ValidatorScript"
         return
@@ -288,6 +304,10 @@ function Quote-Arg {
 }
 
 function Start-Gateway {
+    if (Test-Path -LiteralPath $MaintenanceMarkerPath -PathType Leaf) {
+        Write-WatchdogLog "maintenance mode active; home gateway start suppressed"
+        return $false
+    }
     if (-not (Test-Path -LiteralPath $GatewayScript)) {
         Write-WatchdogLog "missing gateway script: $GatewayScript"
         return $false
@@ -295,6 +315,9 @@ function Start-Gateway {
     $stdout = Join-Path $LocalRoot "home-gateway.out.log"
     $stderr = Join-Path $LocalRoot "home-gateway.err.log"
     $argString = "-NoProfile -ExecutionPolicy Bypass -File $(Quote-Arg $GatewayScript) -Relay $(Quote-Arg $Relay) -Slot $(Quote-Arg $Slot) -Backend $(Quote-Arg $Backend)"
+    if ($ValidatorMode -eq "networked" -and -not $ValidatorBlockProducer) {
+        $argString += " -ReadOnly"
+    }
     Write-WatchdogLog "starting home gateway relay=$Relay slot=$Slot"
     try {
         $process = Start-Process `
@@ -380,6 +403,10 @@ try {
     Write-WatchdogLog "watchdog started root=$QsdmRoot relay=$Relay slot=$Slot check_public_gateway=$PublicGatewayCheckEnabled validator_startup_grace_seconds=$ValidatorStartupGraceSeconds gateway_retry_initial_seconds=$GatewayRetryInitialSeconds gateway_retry_max_seconds=$GatewayRetryMaxSeconds once=$Once"
     do {
         try {
+            if (Test-Path -LiteralPath $MaintenanceMarkerPath -PathType Leaf) {
+                Write-WatchdogLog "maintenance mode became active; watchdog is leaving services untouched and stopping"
+                break
+            }
             if (((Get-Date) - $lastCacheMaintenance).TotalMinutes -ge $CacheMaintenanceMinutes) {
                 Invoke-GeneratedCacheMaintenance
                 $lastCacheMaintenance = Get-Date
