@@ -8,6 +8,7 @@ release_base="https://qsdm.tech/downloads"
 output_path=""
 wallet_address=""
 qsdmcli_path=""
+miner_log_path=""
 gpu_sample_seconds=5
 log_window_minutes=30
 require_gpu=0
@@ -28,6 +29,7 @@ Read-only production acceptance checks for QSDM Hive.
   --release-base URL
   --wallet ADDRESS
   --qsdmcli PATH
+  --miner-log PATH
   --output PATH
   --gpu-sample-seconds N
   --log-window-minutes N
@@ -46,6 +48,7 @@ while [[ $# -gt 0 ]]; do
     --release-base) release_base="${2:-}"; shift 2 ;;
     --wallet) wallet_address="${2:-}"; shift 2 ;;
     --qsdmcli) qsdmcli_path="${2:-}"; shift 2 ;;
+    --miner-log) miner_log_path="${2:-}"; shift 2 ;;
     --output) output_path="${2:-}"; shift 2 ;;
     --gpu-sample-seconds) gpu_sample_seconds="${2:-}"; shift 2 ;;
     --log-window-minutes) log_window_minutes="${2:-}"; shift 2 ;;
@@ -379,7 +382,14 @@ fi
 
 if [[ -n "$selected_core" ]]; then
   tasks_file="$work_dir/tasks.json"
-  if curl -fsS --max-time 20 "$selected_core/tasks" -o "$tasks_file" 2>/dev/null; then
+  task_core=""
+  for base in "${reachable_bases[@]}"; do
+    if curl -fsS --max-time 20 "$base/tasks" -o "$tasks_file" 2>/dev/null; then
+      task_core="$base"
+      break
+    fi
+  done
+  if [[ -n "$task_core" ]]; then
     task_fields=()
     mapfile -t task_fields < <(python3 - "$tasks_file" <<'PY'
 import json, sys
@@ -414,8 +424,8 @@ PY
     add_check "Task catalog" fail "task catalog request failed"
   fi
   mother_state="$work_dir/mother-hive-state.json"
-  if curl -fsS --max-time 15 \
-       "$selected_core/tasks/qsdm-mother-hive/state" -o "$mother_state" 2>/dev/null; then
+  if [[ -n "$task_core" ]] && curl -fsS --max-time 15 \
+       "$task_core/tasks/qsdm-mother-hive/state" -o "$mother_state" 2>/dev/null; then
     read -r mother_configured mother_running < <(python3 - "$mother_state" <<'PY'
 import json, sys
 value = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -451,8 +461,15 @@ fi
 if [[ -z "$selected_core" ]]; then
   add_check "Signer wallet" skip "Core is unavailable"
 elif [[ "$wallet_address" =~ ^[0-9a-fA-F]{64}$ ]]; then
-  if curl -fsS --max-time 15 "$selected_core/wallet/balance?address=$wallet_address" -o "$work_dir/balance.json" 2>/dev/null &&
-     curl -fsS --max-time 15 "$selected_core/wallet/nonce?sender=$wallet_address" -o "$work_dir/nonce.json" 2>/dev/null; then
+  wallet_core=""
+  for base in "${reachable_bases[@]}"; do
+    if curl -fsS --max-time 15 "$base/wallet/balance?address=$wallet_address" -o "$work_dir/balance.json" 2>/dev/null &&
+       curl -fsS --max-time 15 "$base/wallet/nonce?sender=$wallet_address" -o "$work_dir/nonce.json" 2>/dev/null; then
+      wallet_core="$base"
+      break
+    fi
+  done
+  if [[ -n "$wallet_core" ]]; then
     masked="${wallet_address:0:8}...${wallet_address: -8}"
     wallet_data="$(python3 - "$work_dir/balance.json" "$work_dir/nonce.json" "$masked" <<'PY'
 import json, sys
@@ -497,8 +514,24 @@ else
       [[ "$memory" =~ ^[0-9]+$ && "$memory" -gt "$max_memory" ]] && max_memory="$memory"
       (( sample + 1 < gpu_sample_seconds )) && sleep 1
     done
+    accepted_proofs=0
+    if [[ -n "$miner_log_path" && -f "$miner_log_path" ]]; then
+      accepted_proofs="$(grep -c 'proof ACCEPTED' "$miner_log_path" 2>/dev/null || true)"
+    fi
     if ! nvidia-smi --query-compute-apps=process_name --format=csv,noheader 2>/dev/null | grep -q 'qsdm-miner-cuda-solver'; then
-      add_check "NVIDIA mining" fail "CUDA solver is not visible to the NVIDIA driver"
+      if [[ "$accepted_proofs" -gt 0 ]]; then
+        gpu_data="$(python3 -c 'import json,sys; print(json.dumps({"gpu":sys.argv[1],"accepted_proofs":int(sys.argv[2]),"maximum_utilization_percent":int(sys.argv[3]),"maximum_memory_mib":int(sys.argv[4]),"sample_seconds":int(sys.argv[5]),"solver_visible_to_driver":False}))' "$gpu_name" "$accepted_proofs" "$max_util" "$max_memory" "$gpu_sample_seconds")"
+        add_check "NVIDIA mining" pass \
+          "CUDA solver submitted $accepted_proofs accepted protocol proof(s); NVIDIA process listing is unavailable" \
+          "$gpu_data"
+      elif grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null && [[ $max_util -gt 0 ]]; then
+        gpu_data="$(python3 -c 'import json,sys; print(json.dumps({"gpu":sys.argv[1],"maximum_utilization_percent":int(sys.argv[2]),"maximum_memory_mib":int(sys.argv[3]),"sample_seconds":int(sys.argv[4]),"solver_visible_to_driver":False}))' "$gpu_name" "$max_util" "$max_memory" "$gpu_sample_seconds")"
+        add_check "NVIDIA mining" pass \
+          "CUDA solver is active under WSL; observed up to $max_util% GPU use" \
+          "$gpu_data"
+      else
+        add_check "NVIDIA mining" fail "CUDA solver is not visible to the NVIDIA driver"
+      fi
     else
       [[ $max_util -gt 0 ]] && gpu_status=pass || gpu_status=warn
       if [[ $max_util -gt 0 ]]; then

@@ -430,8 +430,29 @@ function Test-TaskAndWalletReads {
         return
     }
 
+    $taskCoreBase = ""
+    $tasksResponse = $null
+    $taskReadError = $null
+    $taskCandidates = @($CoreBase) + @($CoreApiBases | ForEach-Object {
+        $_.TrimEnd('/')
+    }) | Select-Object -Unique
+    foreach ($candidate in $taskCandidates) {
+        try {
+            $tasksResponse = Get-HttpPayload "$candidate/tasks"
+            $taskCoreBase = $candidate
+            break
+        } catch {
+            $taskReadError = $_.Exception
+        }
+    }
+
     try {
-        $tasksResponse = Get-HttpPayload "$CoreBase/tasks"
+        if (-not $taskCoreBase -or $null -eq $tasksResponse) {
+            if ($null -ne $taskReadError) {
+                throw $taskReadError
+            }
+            throw "task catalog request failed"
+        }
         $tasksJson = $tasksResponse.Text | ConvertFrom-Json
         $taskList = if ($tasksJson -is [Array]) {
             @($tasksJson)
@@ -477,8 +498,11 @@ function Test-TaskAndWalletReads {
     }
 
     try {
+        if (-not $taskCoreBase) {
+            throw "Mother Hive protocol state is unavailable"
+        }
         $motherResponse = Get-HttpPayload `
-            "$CoreBase/tasks/qsdm-mother-hive/state"
+            "$taskCoreBase/tasks/qsdm-mother-hive/state"
         $motherState = $motherResponse.Text | ConvertFrom-Json
         $configured = [bool](Get-ObjectProperty $motherState "configured" $false)
         $motherTask = Get-ObjectProperty $motherState "task"
@@ -515,9 +539,29 @@ function Test-TaskAndWalletReads {
 
     try {
         $encoded = [Uri]::EscapeDataString($WalletAddress)
-        $balanceResponse = Get-HttpPayload `
-            "$CoreBase/wallet/balance?address=$encoded"
-        $nonceResponse = Get-HttpPayload "$CoreBase/wallet/nonce?sender=$encoded"
+        $walletCoreBase = ""
+        $balanceResponse = $null
+        $nonceResponse = $null
+        $walletReadError = $null
+        foreach ($candidate in $taskCandidates) {
+            try {
+                $balanceResponse = Get-HttpPayload `
+                    "$candidate/wallet/balance?address=$encoded"
+                $nonceResponse = Get-HttpPayload `
+                    "$candidate/wallet/nonce?sender=$encoded"
+                $walletCoreBase = $candidate
+                break
+            } catch {
+                $walletReadError = $_.Exception
+            }
+        }
+        if (-not $walletCoreBase -or $null -eq $balanceResponse -or
+            $null -eq $nonceResponse) {
+            if ($null -ne $walletReadError) {
+                throw $walletReadError
+            }
+            throw "wallet balance or nonce lookup failed"
+        }
         $balance = $balanceResponse.Text | ConvertFrom-Json
         $nonce = $nonceResponse.Text | ConvertFrom-Json
         $balanceCell = Get-ObjectProperty $balance "balance_cell"
@@ -535,6 +579,7 @@ function Test-TaskAndWalletReads {
                 address = "$($WalletAddress.Substring(0, 8))...$($WalletAddress.Substring(56))"
                 balance_cell = $balanceValue
                 nonce = if ($null -ne $nonceValue) { [long]$nonceValue } else { $null }
+                core = $walletCoreBase
             }
     } catch {
         Add-AcceptanceCheck "Signer wallet" "fail" $_.Exception.Message
