@@ -165,6 +165,13 @@ type ConsensusConfigTOML struct {
 	// currently rejects every non-zero value because the live capped-issuance
 	// transition is not implemented. Unset (0) keeps the unsafe path disabled.
 	ForkDustHeight uint64 `toml:"fork_dust_height" yaml:"fork_dust_height"`
+
+	// AuthorizedBlockProducers pins the producer IDs whose blocks this node
+	// appends from the `qsdm-blocks` topic. Empty accepts any producer, which
+	// is the pre-existing behaviour. Populate it with the operator's known
+	// producer -- the same peer ID used as the bootstrap peer -- to close the
+	// path where an arbitrary peer injects a block that every node replays.
+	AuthorizedBlockProducers []string `toml:"authorized_block_producers" yaml:"authorized_block_producers"`
 }
 
 type PerformanceConfig struct {

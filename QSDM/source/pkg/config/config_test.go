@@ -439,3 +439,24 @@ func TestValidate_ForkDustHeightFailsClosed(t *testing.T) {
 		t.Fatalf("unexpected refusal: %v", err)
 	}
 }
+
+func TestApplyDefaults_AuthorizedBlockProducers_defaultsEmpty(t *testing.T) {
+	// Empty means "accept any producer", which is the pre-existing behaviour.
+	// Defaulting to anything else would stop a node following the chain.
+	cfg := &Config{}
+	applyDefaults(cfg)
+	if len(cfg.AuthorizedBlockProducers) != 0 {
+		t.Fatalf("expected an empty allowlist by default, got %v", cfg.AuthorizedBlockProducers)
+	}
+}
+
+func TestApplyEnvOverrides_AuthorizedBlockProducers(t *testing.T) {
+	t.Setenv("QSDM_AUTHORIZED_BLOCK_PRODUCERS", "peer-a,peer-b")
+	cfg := &Config{}
+	applyEnvOverrides(cfg)
+	if len(cfg.AuthorizedBlockProducers) != 2 ||
+		cfg.AuthorizedBlockProducers[0] != "peer-a" ||
+		cfg.AuthorizedBlockProducers[1] != "peer-b" {
+		t.Fatalf("unexpected allowlist from env: %v", cfg.AuthorizedBlockProducers)
+	}
+}

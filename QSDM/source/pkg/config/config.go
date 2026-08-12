@@ -177,6 +177,22 @@ type Config struct {
 	// governance arm wired in internal/v2wiring.
 	GovernanceAuthorities []string
 
+	// AuthorizedBlockProducers pins the producer IDs whose blocks this node will
+	// append from the `qsdm-blocks` gossip topic. Empty -- the default -- accepts
+	// any producer, which is the pre-existing behaviour and is why this defaults
+	// off rather than fail-closed: enabling it wrongly would stop the node
+	// following the chain.
+	//
+	// It matters because TryAppendExternalBlock authenticates the block but not
+	// the right to produce one: VerifyBlockSignature returns nil for an unsigned
+	// block below the signed-blocks activation height (the deployed posture), and
+	// is self-certifying when signed. Pin the operator's known producer, which is
+	// the same peer ID already used as the bootstrap peer.
+	//
+	// Set via `[consensus] authorized_block_producers` or
+	// QSDM_AUTHORIZED_BLOCK_PRODUCERS (comma-separated).
+	AuthorizedBlockProducers []string
+
 	// Performance
 	TransactionInterval     time.Duration
 	HealthCheckInterval     time.Duration
@@ -378,6 +394,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.InitialBalance = tomlCfg.Wallet.InitialBalance
 		cfg.ProposalFile = tomlCfg.Governance.ProposalFile
 		cfg.GovernanceAuthorities = tomlCfg.Governance.Authorities
+		cfg.AuthorizedBlockProducers = tomlCfg.Consensus.AuthorizedBlockProducers
 		cfg.RequireSignedVotes = tomlCfg.Consensus.RequireSignedVotes
 		cfg.SignedConsensusActivationHeight = tomlCfg.Consensus.SignedMessageActivationHeight
 		cfg.ConsensusSignerKeyPath = strings.TrimSpace(tomlCfg.Consensus.SignerKeyPath)
@@ -477,6 +494,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.InitialBalance = yamlCfg.Wallet.InitialBalance
 		cfg.ProposalFile = yamlCfg.Governance.ProposalFile
 		cfg.GovernanceAuthorities = yamlCfg.Governance.Authorities
+		cfg.AuthorizedBlockProducers = yamlCfg.Consensus.AuthorizedBlockProducers
 		cfg.RequireSignedVotes = yamlCfg.Consensus.RequireSignedVotes
 		cfg.SignedConsensusActivationHeight = yamlCfg.Consensus.SignedMessageActivationHeight
 		cfg.ConsensusSignerKeyPath = strings.TrimSpace(yamlCfg.Consensus.SignerKeyPath)
@@ -524,6 +542,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.GovernanceAuthorities == nil {
 		cfg.GovernanceAuthorities = []string{}
+	}
+	if cfg.AuthorizedBlockProducers == nil {
+		cfg.AuthorizedBlockProducers = []string{}
 	}
 	if cfg.StorageType == "" {
 		cfg.StorageType = "sqlite"
@@ -636,6 +657,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if val := getEnvString("QSDM_GOVERNANCE_AUTHORITIES", ""); val != "" {
 		cfg.GovernanceAuthorities = getEnvStringSlice("QSDM_GOVERNANCE_AUTHORITIES", cfg.GovernanceAuthorities)
+	}
+	if val := getEnvString("QSDM_AUTHORIZED_BLOCK_PRODUCERS", ""); val != "" {
+		cfg.AuthorizedBlockProducers = getEnvStringSlice("QSDM_AUTHORIZED_BLOCK_PRODUCERS", cfg.AuthorizedBlockProducers)
 	}
 	if v := getEnvString("QSDM_FORK_DUST_HEIGHT", ""); v != "" {
 		if h, err := strconv.ParseUint(v, 10, 64); err == nil {

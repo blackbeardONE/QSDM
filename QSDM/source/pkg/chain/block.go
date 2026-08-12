@@ -141,6 +141,10 @@ type BlockProducer struct {
 	// persistence fail closed after an I/O error instead of creating more blocks
 	// that cannot be durably journaled.
 	sealGuard func() error
+	// externalAuthz restricts which producers may inject blocks through
+	// TryAppendExternalBlock. Empty by default, which accepts any producer and
+	// is the pre-existing behaviour. See block_external_authz.go.
+	externalAuthz externalProducerAllowlist
 	// OnSealed runs after a block is appended and the producer lock is released (best-effort hooks).
 	OnSealed func()
 	// OnSealedBlock runs after a block is appended and bp.mu is
@@ -612,6 +616,17 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 	}
 	bp.sealLifecycleMu.Lock()
 	defer bp.sealLifecycleMu.Unlock()
+
+	// Authorization comes first. Every other guard below establishes that the
+	// block is well-formed and consistent with our state; none establishes that
+	// the sender was allowed to produce it. VerifyBlockSignature in particular
+	// accepts an unsigned block below the signed-blocks activation height, and
+	// is self-certifying when signed, so without this an arbitrary peer can
+	// inject a block whose transactions we then replay. Rejecting here also
+	// avoids spending a full clone-and-replay on unauthorized input.
+	if err := bp.externalAuthz.check(blk.ProducerID); err != nil {
+		return err
+	}
 
 	if want := computeBlockHash(blk); blk.Hash != want {
 		return fmt.Errorf("chain: external block has invalid hash")

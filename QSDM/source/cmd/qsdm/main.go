@@ -1420,6 +1420,24 @@ func main() {
 	// never be sealed.
 	adminProducer.SetBlockSigner(consensusSigner)
 	adminProducer.SetPolFollower(polFollower)
+	// Restrict who may inject a block through the `qsdm-blocks` topic.
+	// TryAppendExternalBlock authenticates the block but not the right to
+	// produce one, so with this unset any peer that reaches the topic can build
+	// a block on our tip and have us replay its transactions. Empty preserves
+	// that pre-existing behaviour rather than failing closed, because a wrong
+	// value here stops the node following the chain -- so the open posture is
+	// logged at WARN to keep it visible instead of silently permissive.
+	adminProducer.SetAuthorizedBlockProducers(cfg.AuthorizedBlockProducers)
+	if adminProducer.ExternalProducerGateEnforced() {
+		logger.Info("External block producer allowlist enforced",
+			"producer_count", len(adminProducer.AuthorizedBlockProducers()),
+			"producers", strings.Join(adminProducer.AuthorizedBlockProducers(), ","))
+	} else {
+		logger.Warn("External block producer allowlist is empty: any peer may inject blocks on the qsdm-blocks topic",
+			"config", "[consensus] authorized_block_producers",
+			"env", "QSDM_AUTHORIZED_BLOCK_PRODUCERS",
+			"hint", "pin the producer peer ID you already use as the bootstrap peer")
+	}
 	// Local block production has two explicit roles. Solo mode is isolated;
 	// network-producer mode is the one configured leader that seals and
 	// broadcasts blocks to append-only followers. Never infer producer status
