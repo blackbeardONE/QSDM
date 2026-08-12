@@ -126,6 +126,15 @@ func (rl *RoleRateLimiter) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// Public read-only transparency surface. The anonymous tier is 30/min
+		// and every unauthenticated caller shares one bucket keyed on the TLS
+		// terminator's address, so this tier -- not the pre-auth limiter -- is
+		// what returns 429 to the external probe first. See
+		// ratelimit_transparency.go. Must stay mirrored in RateLimiter.
+		if isPublicTransparencyRead(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 
 		role := "anonymous"
 		identifier := clientIP(r)
