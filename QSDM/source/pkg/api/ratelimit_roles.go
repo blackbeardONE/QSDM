@@ -135,6 +135,16 @@ func (rl *RoleRateLimiter) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// NGC attestation ingest. These carry a shared-secret header rather
+		// than claims, so they are "anonymous" here and were being starved out
+		// of the single 30/min bucket by unrelated traffic -- which is what
+		// dropped the trust surface to 0 fresh attestations. Their sized
+		// per-path caps in RateLimiter are the correct gate and still apply.
+		// See ratelimit_ngc.go.
+		if isNGCMonitoringIngest(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 
 		role := "anonymous"
 		identifier := clientIP(r)
