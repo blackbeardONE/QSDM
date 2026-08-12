@@ -160,30 +160,67 @@ func (rl *RoleRateLimiter) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// trustProxyHeaders controls whether X-Forwarded-For is honoured when
-// deriving a client IP. It defaults to false: X-Forwarded-For is
-// caller-supplied, so trusting it unconditionally lets any client rotate
-// its own rate-limit bucket exactly like the removed X-API-Key path did.
-// Operators terminating TLS behind a reverse proxy that overwrites the
-// header opt in with QSDM_TRUST_PROXY_HEADERS=1.
+// trustProxyHeaders controls whether proxy-supplied client identity is
+// honoured. It defaults to false, because a caller-supplied header used as a
+// bucket key is a key the caller can rotate -- the same defect that made the
+// removed X-API-Key path unbounded.
+//
+// When enabled, identity is taken from X-Real-IP first. That header is SET by
+// the trusted proxy (Caddy: `header_up X-Real-IP {remote_host}` on every
+// route), so a client-supplied value is overwritten and cannot survive.
+// X-Forwarded-For is only a fallback, and only its RIGHTMOST entry is used,
+// because a reverse proxy APPENDS the peer address: everything to the left is
+// whatever the client sent. Reading the leftmost entry -- as this function
+// previously did -- would have let any caller mint a fresh bucket per request
+// simply by sending its own X-Forwarded-For.
+//
+// Enable only where the API port is unreachable except through that proxy.
 var trustProxyHeaders atomic.Bool
 
 // SetTrustProxyHeaders declares whether this node sits behind a trusted
-// reverse proxy that rewrites X-Forwarded-For. Enable it ONLY when the
-// proxy strips client-supplied values; otherwise rate limiting becomes
-// bypassable by header rotation.
+// reverse proxy that sets X-Real-IP. Enable it ONLY when the API port is
+// unreachable except through that proxy; otherwise a direct caller supplies
+// its own identity and rate limiting becomes bypassable by header rotation.
 func SetTrustProxyHeaders(trust bool) { trustProxyHeaders.Store(trust) }
 
 // TrustProxyHeaders reports the current setting.
 func TrustProxyHeaders() bool { return trustProxyHeaders.Load() }
 
+// parseClientIP normalises one candidate address, rejecting anything that is
+// not a valid IP. Normalising through net.IP means "1.2.3.4", " 1.2.3.4" and
+// "::ffff:1.2.3.4" cannot be spent as three separate buckets.
+func parseClientIP(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if ip := net.ParseIP(raw); ip != nil {
+		return ip.String()
+	}
+	if host, _, err := net.SplitHostPort(raw); err == nil {
+		if ip := net.ParseIP(strings.TrimSpace(host)); ip != nil {
+			return ip.String()
+		}
+	}
+	return ""
+}
+
 func clientIP(r *http.Request) string {
 	if trustProxyHeaders.Load() {
+		// Set, not appended, by the trusted proxy.
+		if ip := parseClientIP(r.Header.Get("X-Real-IP")); ip != "" {
+			return ip
+		}
+		// Fallback. The rightmost entry is the one our own proxy appended;
+		// everything left of it is client-controlled.
 		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-			if first := strings.TrimSpace(strings.Split(forwarded, ",")[0]); first != "" {
-				return first
+			parts := strings.Split(forwarded, ",")
+			if ip := parseClientIP(parts[len(parts)-1]); ip != "" {
+				return ip
 			}
 		}
+		// Unparseable proxy headers fall through to RemoteAddr, which is the
+		// proxy itself: one shared bucket, i.e. today's behaviour.
 	}
 	// RemoteAddr is host:port; strip the port so a client cannot mint a
 	// new bucket per source port.
