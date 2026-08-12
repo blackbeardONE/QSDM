@@ -36,6 +36,24 @@ wallet:
 governance:
   proposal_file: "proposals.json"
 
+# Consensus Configuration
+consensus:
+  # Producers whose blocks this node will append from the `qsdm-blocks` gossip
+  # topic. Leaving this empty accepts a block from ANY peer that reaches the
+  # topic: TryAppendExternalBlock authenticates the block but not the right to
+  # produce one, and live blocks are unsigned, so an arbitrary peer could build
+  # a block on the current tip and have this node replay its transactions.
+  #
+  # The value below is the reference network's sole block producer, and is the
+  # same peer ID already pinned as the bootstrap peer in
+  # QSDM/scripts/start_local_validator.ps1. Verified against the live chain:
+  # every recent block on api.qsdm.tech carries this producer_id.
+  #
+  # If you run your own producer, replace this with its peer ID. An entry that
+  # does not match your producer stops this node following the chain.
+  authorized_block_producers:
+    - "12D3KooWRH4MGiaRYMZEr9LvdxYrpePT5LPbNqLTMGukD32yhkZ8"
+
 # Performance Configuration
 performance:
   demo_transactions: false
