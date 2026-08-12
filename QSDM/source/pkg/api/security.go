@@ -189,6 +189,14 @@ func (rl *RateLimiter) RateLimitMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// Public read-only transparency surface. Shares the same bucket as the
+		// rest of the internet because clientIP resolves to the TLS terminator,
+		// so page traffic starves the external probe. See
+		// ratelimit_transparency.go. Must stay mirrored in RoleRateLimiter.
+		if isPublicTransparencyRead(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		// Get client identifier (IP address or API key)
 		identifier := rl.getClientIdentifier(r)
 
