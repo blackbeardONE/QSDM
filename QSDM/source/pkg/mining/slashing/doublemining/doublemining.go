@@ -152,6 +152,17 @@ func (v *Verifier) Verify(p slashing.SlashPayload, currentHeight uint64) (uint64
 	if v == nil {
 		return 0, errors.New("doublemining: nil verifier")
 	}
+
+	// Fail closed before any other work. This offence can only be established
+	// by attributing an nvidia-hmac-v1 bundle to its claimed producer, and
+	// that is impossible while EnrollmentRecord.HMACKey is public chain state:
+	// a valid MAC can be computed by any chain-state reader, and an invalid
+	// one can be manufactured by anyone against any victim. Slashing on
+	// unattributable evidence is a bond-theft primitive, not a deterrent.
+	// See pkg/mining/slashing/attribution.go.
+	if err := slashing.GuardAttestationAttribution(); err != nil {
+		return 0, err
+	}
 	if v.Registry == nil {
 		return 0, errors.New("doublemining: verifier.Registry is nil")
 	}
