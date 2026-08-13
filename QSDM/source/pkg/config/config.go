@@ -96,7 +96,13 @@ type Config struct {
 	// Env: QSDM_DASHBOARD_METRICS_SCRAPE_SECRET (the pre-rebrand QSDMPLUS_DASHBOARD_METRICS_SCRAPE_SECRET
 	// env var is no longer read; pkg/envcompat is now a no-op trim helper after db9b590).
 	DashboardMetricsScrapeSecret string
-	// DashboardStrictAuth: when true ([monitoring] strict_dashboard_auth or QSDM_DASHBOARD_STRICT_AUTH),
+	// DashboardStrictAuth: DEPRECATED and no longer read for its original
+	// purpose. Protected dashboard routes now return 503 whenever the auth
+	// manager failed to initialise, unconditionally -- serving them
+	// unauthenticated was never a safe fallback, so it is no longer opt-out.
+	// The key is still accepted so deployments that set it keep parsing.
+	//
+	// Formerly: when true ([monitoring] strict_dashboard_auth or QSDM_DASHBOARD_STRICT_AUTH),
 	// JWT routes return 503 if auth manager failed to init; Prometheus still works if
 	// metrics_scrape_secret is set. (The pre-rebrand QSDMPLUS_DASHBOARD_STRICT_AUTH env var is no
 	// longer read; see pkg/envcompat godoc.)

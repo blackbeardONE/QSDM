@@ -179,6 +179,17 @@ func (p *EquivocationProof) VerifyBinding(ev ConsensusEvidence) error {
 		return fmt.Errorf("%w: envelope names %q, exhibits name %q and %q",
 			ErrEvidenceProofInvalid, ev.Validator, p.VoteA.Validator, p.VoteB.Validator)
 	}
+	// Agreeing with each other is not enough. verifyAuth compares the derived
+	// address to the claimed signer with EqualFold (bft_sig.go), so all three
+	// fields can carry the same NON-canonical casing, satisfy the check above,
+	// verify their signatures, and still miss ValidatorSet's exact-case map
+	// (validator.go:113,137) -- dropping a real offence exactly as before.
+	// Require the canonical form BFTValidatorAddress produces, which is what
+	// the registry is keyed on.
+	if ev.Validator != strings.ToLower(ev.Validator) {
+		return fmt.Errorf("%w: validator %q is not the canonical lower-case address form",
+			ErrEvidenceProofInvalid, ev.Validator)
+	}
 	if ev.Height != p.VoteA.Height || ev.Round != p.VoteA.Round {
 		return fmt.Errorf("%w: envelope claims height %d round %d, proof shows height %d round %d",
 			ErrEvidenceProofInvalid, ev.Height, ev.Round, p.VoteA.Height, p.VoteA.Round)

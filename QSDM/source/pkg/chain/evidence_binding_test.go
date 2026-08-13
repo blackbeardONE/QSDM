@@ -330,3 +330,40 @@ func TestVerifyBinding_ValidatorCaseMustMatchExactly(t *testing.T) {
 		t.Errorf("exact casing must still bind: %v", err)
 	}
 }
+
+// Self-consistency is not canonicality. Review found that the exact-match check
+// only forces the envelope and both exhibits to AGREE; if all three carry the
+// same non-canonical casing they agree, verifyAuth's EqualFold accepts the
+// signatures, and vs.Slash still misses the exact-case registry map -- the
+// original bug, one step further in. Identity must be canonical, not merely
+// consistent.
+func TestVerifyBinding_ValidatorMustBeCanonical(t *testing.T) {
+	signer, offender := newBFTKey(t)
+	if offender != strings.ToLower(offender) {
+		t.Fatalf("BFTValidatorAddress should produce lower-case hex, got %q", offender)
+	}
+	upper := strings.ToUpper(offender)
+	if upper == offender {
+		t.Skip("address has no case to vary")
+	}
+
+	// Every field consistently non-canonical: envelope AND both exhibits.
+	ev, err := BuildEquivocationEvidence(upper,
+		signedExhibit(t, signer, upper, BFTWirePrevote, 9, 1, "value-a"),
+		signedExhibit(t, signer, upper, BFTWirePrevote, 9, 1, "value-b"))
+	if err != nil {
+		t.Fatalf("building consistently non-canonical evidence: %v", err)
+	}
+
+	// The signatures really do verify -- EqualFold in verifyAuth -- so this
+	// case reaches binding rather than being refused earlier.
+	if err := ev.Proof.Verify(ev.Validator); err != nil {
+		t.Fatalf("expected the proof to verify under EqualFold: %v", err)
+	}
+	if err := ev.Proof.VerifyBinding(ev); err == nil {
+		t.Error("VerifyBinding accepted a self-consistent but non-canonical validator")
+	}
+	if err := ValidateUntrustedEvidence(ev); err == nil {
+		t.Error("the untrusted gate accepted a non-canonical validator")
+	}
+}
