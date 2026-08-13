@@ -177,6 +177,30 @@ type k8sManifest struct {
 	} `yaml:"spec"`
 }
 
+// decodeK8sManifests decodes a multi-document manifest stream. io.EOF ends the
+// stream; any OTHER error is a malformed document and is RETURNED rather than
+// treated as the end, because breaking on it would stop scanning the rest of
+// the file while still reporting a pass -- the silent-truncation defect this
+// guard exists to catch, which review found in the guard itself.
+//
+// Shared so the fixture test below exercises THIS loop. The first attempt at
+// that fixture kept its own copy, so reverting this function left the fixture
+// green: it pinned a duplicate, not the guard.
+func decodeK8sManifests(stream string) ([]k8sManifest, error) {
+	dec := yaml.NewDecoder(strings.NewReader(stream))
+	var out []k8sManifest
+	for {
+		var m k8sManifest
+		if err := dec.Decode(&m); err != nil {
+			if errors.Is(err, io.EOF) {
+				return out, nil
+			}
+			return out, err
+		}
+		out = append(out, m)
+	}
+}
+
 func TestKubernetesProbesTargetAServedRoute(t *testing.T) {
 	topOut, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
@@ -204,19 +228,11 @@ func TestKubernetesProbesTargetAServedRoute(t *testing.T) {
 			t.Errorf("read %s: %v", rel, err)
 			continue
 		}
-		dec := yaml.NewDecoder(strings.NewReader(string(raw)))
-		for {
-			var m k8sManifest
-			// io.EOF ends the stream. Any OTHER error is a malformed document,
-			// and breaking on it would stop scanning the rest of the file while
-			// still reporting a pass -- the same silent-truncation defect this
-			// guard exists to catch, which is exactly how review found it here.
-			if err := dec.Decode(&m); err != nil {
-				if !errors.Is(err, io.EOF) {
-					t.Errorf("%s: malformed YAML document, remaining documents unchecked: %v", rel, err)
-				}
-				break
-			}
+		docs, decErr := decodeK8sManifests(string(raw))
+		if decErr != nil {
+			t.Errorf("%s: malformed YAML document, remaining documents unchecked: %v", rel, decErr)
+		}
+		for _, m := range docs {
 			for _, c := range m.Spec.Template.Spec.Containers {
 				for kind, pr := range map[string]*k8sProbe{
 					"livenessProbe": c.LivenessProbe, "readinessProbe": c.ReadinessProbe,
@@ -245,10 +261,9 @@ func TestKubernetesProbesTargetAServedRoute(t *testing.T) {
 }
 
 // The truncation defect was verified by hand and the artefact thrown away, so
-// nothing stopped it coming back. This pins it with an in-memory fixture: a
-// valid document, then a malformed one, then a document carrying a bad probe
-// route. Decoding must report the malformed document rather than treating it
-// as end-of-stream and silently skipping everything after it.
+// nothing stopped it coming back. This pins it against the SHARED decoder the
+// guard above uses -- an earlier version of this test carried its own copy of
+// the loop, so reverting the real one left this green. It pinned a duplicate.
 func TestKubernetesDecode_MalformedDocumentIsReportedNotSkipped(t *testing.T) {
 	const stream = `kind: ConfigMap
 metadata:
@@ -268,34 +283,24 @@ spec:
           httpGet:
             path: /not/public
 `
-	dec := yaml.NewDecoder(strings.NewReader(stream))
-	var docs int
-	var decodeErr error
-	for {
-		var m k8sManifest
-		if err := dec.Decode(&m); err != nil {
-			if !errors.Is(err, io.EOF) {
-				decodeErr = err
-			}
-			break
-		}
-		docs++
+	docs, err := decodeK8sManifests(stream)
+	if err == nil {
+		t.Fatal("a malformed document must be returned as an error; if this passes, " +
+			"the decoder swallowed it and every later document would be skipped in silence")
 	}
-
-	if decodeErr == nil {
-		t.Fatal("a malformed document must surface as a non-EOF error; if this " +
-			"passes, the decoder swallowed it and later documents would be " +
-			"skipped in silence")
-	}
-	if errors.Is(decodeErr, io.EOF) {
+	if errors.Is(err, io.EOF) {
 		t.Error("the malformed document was reported as EOF")
 	}
-	// The point of the fixture: the bad probe lives AFTER the malformed
-	// document, so a scan that stops at the error never sees it.
-	if docs >= 3 {
-		t.Errorf("expected the stream to stop before the third document, decoded %d", docs)
+	// The bad probe lives AFTER the malformed document, so a scan that stops
+	// silently at the error never sees it. Fewer than three documents come
+	// back, which is exactly why the error must not be swallowed.
+	if len(docs) >= 3 {
+		t.Errorf("expected decoding to stop before the third document, got %d", len(docs))
 	}
-	if !strings.Contains(stream[strings.Index(stream, "kind: Deployment"):], "/not/public") {
-		t.Fatal("fixture no longer contains the trailing bad route it exists to represent")
+
+	// And the well-formed prefix is still returned, so callers can report what
+	// they did manage to check rather than discarding everything.
+	if len(docs) == 0 {
+		t.Error("documents before the malformed one should still be returned")
 	}
 }

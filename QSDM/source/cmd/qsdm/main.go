@@ -1260,10 +1260,20 @@ func main() {
 	// so nothing ever cleared one. A round that stalled blocked its height
 	// permanently, with recovery only via a local FailRound.
 	//
-	// This is deliberately local-only: TickRoundTimeouts changes nothing about
-	// what this node ACCEPTS from peers, it only stops the node waiting forever
-	// on a round the network has moved past. It carries the prevote lock
-	// forward (consensus.go:226-228), so escalation preserves POL safety.
+	// This DOES change what the node accepts, and the trade is deliberate.
+	// ApplyInbound applies inbound Propose/PreVote/PreCommit to this same
+	// instance, so once a round is expired here, a peer's in-flight vote for it
+	// is refused with "no active round for height N", classified benign
+	// (bft_executor.go isBenignBFTErr) and dropped rather than counted. The
+	// result is a wall-clock-bounded window after RoundTimeout in which votes
+	// for the expired round stop being counted -- bought in exchange for a
+	// height that no longer stalls forever, which is the whole point.
+	//
+	// What it does NOT do: kill a round that reached quorum. PreCommit moves a
+	// committing round into bc.committed and deletes it from bc.rounds under
+	// the same mutex this takes (consensus.go), so a concurrent tick cannot
+	// observe it. And it carries the prevote lock forward
+	// (consensus.go:226-228), so escalation preserves POL safety.
 	go func() {
 		// The SAME config the instance above was built with. Calling
 		// DefaultConsensusConfig() a second time happens to return an
