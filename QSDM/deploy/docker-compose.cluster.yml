@@ -39,7 +39,7 @@ services:
       - ENABLE_TLS=false
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/v1/health/live"]
+      test: ["CMD", "wget", "-q", "-t", "1", "-O", "/dev/null", "http://localhost:8080/api/v1/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -86,7 +86,7 @@ services:
     depends_on:
       - qsdm-node1
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/v1/health/live"]
+      test: ["CMD", "wget", "-q", "-t", "1", "-O", "/dev/null", "http://localhost:8080/api/v1/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -134,7 +134,7 @@ services:
       - qsdm-node1
       - qsdm-node2
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/v1/health/live"]
+      test: ["CMD", "wget", "-q", "-t", "1", "-O", "/dev/null", "http://localhost:8080/api/v1/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3

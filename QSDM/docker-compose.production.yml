@@ -31,7 +31,7 @@ services:
       # Dashboard /api/health is behind requireAuth (dashboard.go:294); it
       # only answered 200 because a nil auth manager used to fall through
       # unauthenticated. Probe the API's public liveness route instead.
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/v1/health/live"]
+      test: ["CMD", "wget", "-q", "-t", "1", "-O", "/dev/null", "http://localhost:8080/api/v1/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -67,7 +67,7 @@ services:
       # Dashboard /api/health is behind requireAuth (dashboard.go:294); it
       # only answered 200 because a nil auth manager used to fall through
       # unauthenticated. Probe the API's public liveness route instead.
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/v1/health/live"]
+      test: ["CMD", "wget", "-q", "-t", "1", "-O", "/dev/null", "http://localhost:8080/api/v1/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -103,7 +103,7 @@ services:
       # Dashboard /api/health is behind requireAuth (dashboard.go:294); it
       # only answered 200 because a nil auth manager used to fall through
       # unauthenticated. Probe the API's public liveness route instead.
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/v1/health/live"]
+      test: ["CMD", "wget", "-q", "-t", "1", "-O", "/dev/null", "http://localhost:8080/api/v1/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3
