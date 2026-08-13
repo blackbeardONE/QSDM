@@ -293,3 +293,40 @@ func TestEvidenceID_DistinctOffencesStayDistinct(t *testing.T) {
 		t.Error("two different validators' equivocations collapsed onto one identity")
 	}
 }
+
+// Verify compares the accused with EqualFold; ValidatorSet keys its map on the
+// exact string. Evidence whose Validator differed only in case therefore
+// verified and then failed to slash, dropping a real offence. Reported by
+// review as a latent inconsistency rather than a live exploit -- fixed because
+// two components disagreeing on what an identity is will not stay latent.
+func TestVerifyBinding_ValidatorCaseMustMatchExactly(t *testing.T) {
+	signer, offender := newBFTKey(t)
+	ev, err := BuildEquivocationEvidence(offender,
+		signedExhibit(t, signer, offender, BFTWirePrevote, 9, 1, "value-a"),
+		signedExhibit(t, signer, offender, BFTWirePrevote, 9, 1, "value-b"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	folded := ev
+	folded.Validator = strings.ToUpper(ev.Validator)
+	if folded.Validator == ev.Validator {
+		t.Skip("validator address has no case to vary")
+	}
+
+	// It still passes Verify -- that is the point.
+	if err := folded.Proof.Verify(folded.Validator); err != nil {
+		t.Fatalf("Verify is case-insensitive by design, expected it to pass: %v", err)
+	}
+	if err := folded.Proof.VerifyBinding(folded); err == nil {
+		t.Error("VerifyBinding accepted an envelope naming a differently-cased validator")
+	}
+	if err := ValidateUntrustedEvidence(folded); err == nil {
+		t.Error("the untrusted gate accepted a differently-cased validator")
+	}
+
+	// And the honest casing still works.
+	if err := ev.Proof.VerifyBinding(ev); err != nil {
+		t.Errorf("exact casing must still bind: %v", err)
+	}
+}

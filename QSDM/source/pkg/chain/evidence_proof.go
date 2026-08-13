@@ -168,6 +168,17 @@ func (p *EquivocationProof) VerifyBinding(ev ConsensusEvidence) error {
 	if p == nil {
 		return ErrEvidenceProofMissing
 	}
+	// Verify compares the accused against the exhibits with EqualFold, but
+	// ValidatorSet keys its map on the exact address string
+	// (validator.go:113,137) -- so evidence whose Validator differs only in
+	// case from the registered address passes Verify and then fails Slash with
+	// ErrNotRegistered, silently dropping a real offence. Requiring exact
+	// equality here removes the ambiguity instead of leaving two components
+	// disagreeing about what a validator identity is.
+	if ev.Validator != p.VoteA.Validator || ev.Validator != p.VoteB.Validator {
+		return fmt.Errorf("%w: envelope names %q, exhibits name %q and %q",
+			ErrEvidenceProofInvalid, ev.Validator, p.VoteA.Validator, p.VoteB.Validator)
+	}
 	if ev.Height != p.VoteA.Height || ev.Round != p.VoteA.Round {
 		return fmt.Errorf("%w: envelope claims height %d round %d, proof shows height %d round %d",
 			ErrEvidenceProofInvalid, ev.Height, ev.Round, p.VoteA.Height, p.VoteA.Round)
