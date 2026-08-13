@@ -1,8 +1,11 @@
 package chain
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync/atomic"
 )
@@ -140,6 +143,68 @@ func (p *EquivocationProof) Verify(accused string) error {
 		return fmt.Errorf("%w: second exhibit: %v", ErrEvidenceProofInvalid, err)
 	}
 	return nil
+}
+
+// VerifyBinding checks that the proof actually proves what the surrounding
+// envelope claims.
+//
+// Verify establishes that the two exhibits are a genuine equivocation by the
+// accused, but it is blind to the ConsensusEvidence wrapped around it: nothing
+// tied the envelope's Height, Round or BlockHashes to the votes inside. Since
+// evidenceID hashes only those outer fields, one genuine proof could be
+// resubmitted under arbitrary height/round/hash values, each variant producing
+// a fresh dedupe ID and each one slashing the accused again. ValidatorSet.Slash
+// refuses only ValidatorExited, not ValidatorJailed, so the replay had no
+// bound: a peer holding a single real proof -- or the accused's one genuine
+// equivocation, which is public by definition once reported -- could grind that
+// validator and its delegators toward zero, 64 submissions per minute per peer
+// identity, using nothing but arithmetic on the envelope fields.
+//
+// Callers must apply this wherever a proof is verified. Verify alone is not
+// sufficient.
+func (p *EquivocationProof) VerifyBinding(ev ConsensusEvidence) error {
+	if p == nil {
+		return ErrEvidenceProofMissing
+	}
+	if ev.Height != p.VoteA.Height || ev.Round != p.VoteA.Round {
+		return fmt.Errorf("%w: envelope claims height %d round %d, proof shows height %d round %d",
+			ErrEvidenceProofInvalid, ev.Height, ev.Round, p.VoteA.Height, p.VoteA.Round)
+	}
+	// Order does not matter -- evidenceID sorts the hashes -- but the set must
+	// be exactly the two values the accused signed. Anything else lets the
+	// envelope assert a conflict the proof does not show.
+	want := []string{p.VoteA.BlockHash, p.VoteB.BlockHash}
+	got := append([]string(nil), ev.BlockHashes...)
+	sort.Strings(want)
+	sort.Strings(got)
+	if len(got) != len(want) {
+		return fmt.Errorf("%w: envelope carries %d block hashes, proof shows 2",
+			ErrEvidenceProofInvalid, len(got))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return fmt.Errorf("%w: envelope block hashes do not match the signed votes",
+				ErrEvidenceProofInvalid)
+		}
+	}
+	return nil
+}
+
+// fingerprint returns a stable digest of the signatures the proof carries. It
+// is folded into evidenceID so that dedupe keys on the offence being proven
+// rather than on envelope fields an attacker chooses freely.
+func (p *EquivocationProof) fingerprint() string {
+	if p == nil {
+		return ""
+	}
+	h := sha256.New()
+	for _, x := range []SignedVoteExhibit{p.VoteA, p.VoteB} {
+		h.Write(x.Auth.PublicKey)
+		h.Write([]byte{0})
+		h.Write(x.Auth.Signature)
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // BuildEquivocationEvidence assembles proof-carrying equivocation evidence

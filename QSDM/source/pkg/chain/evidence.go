@@ -208,6 +208,12 @@ func validateEvidence(ev ConsensusEvidence) error {
 			if err := ev.Proof.Verify(ev.Validator); err != nil {
 				return err
 			}
+			// Verify shows the exhibits are a genuine equivocation; it says
+			// nothing about the envelope wrapped around them. Without this
+			// one proof replays under arbitrary height/round/hashes.
+			if err := ev.Proof.VerifyBinding(ev); err != nil {
+				return err
+			}
 		} else if evidenceProofRequiredAt(ev.Height) {
 			return ErrEvidenceProofMissing
 		}
@@ -278,6 +284,18 @@ func StableEvidenceID(ev ConsensusEvidence) string {
 func evidenceID(ev ConsensusEvidence) string {
 	hashes := append([]string(nil), ev.BlockHashes...)
 	sort.Strings(hashes)
+	// Proof-carrying evidence is identified by the OFFENCE, not by the
+	// envelope around it. VerifyBinding already forces Height, Round and
+	// BlockHashes to match the signed votes, but Details is free-form and
+	// unbindable -- there is nothing in a signature that could commit to a
+	// human-readable note. Including it would let one genuine proof mint
+	// unlimited distinct IDs by varying a comment, defeating dedupe at both
+	// the gossip and manager layers and slashing the accused once per variant.
+	if ev.Proof != nil {
+		data := fmt.Sprintf("%s|%s|%s", ev.Type, ev.Validator, ev.Proof.fingerprint())
+		sum := sha256.Sum256([]byte(data))
+		return hex.EncodeToString(sum[:])
+	}
 	data := fmt.Sprintf("%s|%s|%d|%d|%v|%s", ev.Type, ev.Validator, ev.Height, ev.Round, hashes, ev.Details)
 	sum := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(sum[:])

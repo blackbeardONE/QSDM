@@ -58,6 +58,9 @@ func ValidateUntrustedEvidence(ev ConsensusEvidence) error {
 		if err := ev.Proof.Verify(ev.Validator); err != nil {
 			return fmt.Errorf("equivocation proof does not establish the offence: %w", err)
 		}
+		if err := ev.Proof.VerifyBinding(ev); err != nil {
+			return fmt.Errorf("equivocation proof does not match its envelope: %w", err)
+		}
 		return nil
 
 	case EvidenceInvalidVote:
