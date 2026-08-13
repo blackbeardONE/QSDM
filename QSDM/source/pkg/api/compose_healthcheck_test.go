@@ -291,16 +291,20 @@ spec:
 	if errors.Is(err, io.EOF) {
 		t.Error("the malformed document was reported as EOF")
 	}
-	// The bad probe lives AFTER the malformed document, so a scan that stops
-	// silently at the error never sees it. Fewer than three documents come
-	// back, which is exactly why the error must not be swallowed.
-	if len(docs) >= 3 {
-		t.Errorf("expected decoding to stop before the third document, got %d", len(docs))
+	// The well-formed prefix is still returned, so a caller can report what it
+	// did manage to check instead of discarding everything.
+	//
+	// An earlier version also asserted len(docs) < 3 here. That was
+	// tautological: decoding stops at the first non-EOF error whether the error
+	// is returned or swallowed, so exactly one document comes back either way
+	// and the assertion could not distinguish the fixed decoder from the broken
+	// one. Removed. The assertion that carries the weight is the error check
+	// above -- it is the only thing that changes between the two behaviours.
+	if len(docs) != 1 {
+		t.Fatalf("expected the one well-formed document before the error, got %d", len(docs))
 	}
-
-	// And the well-formed prefix is still returned, so callers can report what
-	// they did manage to check rather than discarding everything.
-	if len(docs) == 0 {
-		t.Error("documents before the malformed one should still be returned")
+	if docs[0].Spec.Template.Spec.Containers != nil {
+		t.Errorf("first document should be the container-less ConfigMap, got containers: %v",
+			docs[0].Spec.Template.Spec.Containers)
 	}
 }

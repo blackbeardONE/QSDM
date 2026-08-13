@@ -1265,9 +1265,21 @@ func main() {
 	// instance, so once a round is expired here, a peer's in-flight vote for it
 	// is refused with "no active round for height N", classified benign
 	// (bft_executor.go isBenignBFTErr) and dropped rather than counted. The
-	// result is a wall-clock-bounded window after RoundTimeout in which votes
-	// for the expired round stop being counted -- bought in exchange for a
-	// height that no longer stalls forever, which is the whole point.
+	// result is a window after RoundTimeout in which votes for the expired
+	// round stop being counted -- bought in exchange for a height that no
+	// longer stalls forever, which is the whole point.
+	//
+	// That window is NOT simply "closed by wall clock". Propose rejects only a
+	// round number BELOW whatever currently occupies bc.rounds[height], and
+	// never consults bc.nextRound (consensus.go Propose). Once the tick has
+	// deleted the round, that slot is empty -- so a retransmitted propose for
+	// the SAME, already-expired round number is accepted again, builds a fresh
+	// ConsensusRound, and discards the vote set accumulated before the
+	// timeout. The window really closes only when some node's escalation
+	// actually occupies the slot with round+1. This is pre-existing Propose /
+	// FailRound behaviour, not introduced by the ticker, but the ticker makes
+	// it reachable on a timer rather than only via an explicit FailRound, so
+	// it belongs in the description of what this loop causes.
 	//
 	// What it does NOT do: kill a round that reached quorum. PreCommit moves a
 	// committing round into bc.committed and deletes it from bc.rounds under

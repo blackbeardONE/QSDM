@@ -98,3 +98,63 @@ func TestRoundTimeout_CarriesThePrevoteLock(t *testing.T) {
 		t.Errorf("prevote lock not carried across the timeout: got %q, want %q", carried, locked)
 	}
 }
+
+// Expiring a round does not permanently close it.
+//
+// Propose rejects only a round number BELOW whatever occupies bc.rounds[height]
+// and never consults bc.nextRound. After TickRoundTimeouts deletes the round,
+// that slot is empty -- so a retransmitted propose for the SAME, already-expired
+// round number is accepted, builds a fresh round, and discards the votes
+// accumulated before the timeout.
+//
+// This is pre-existing Propose/FailRound behaviour, not something the ticker
+// introduced, but the ticker reaches it on a timer rather than only via an
+// explicit FailRound. Pinned here because it was found by review and described
+// in a comment, and a behaviour that lives only in a comment is not held by
+// anything.
+func TestRoundTimeout_ExpiredRoundCanBeReopenedAndLosesItsVotes(t *testing.T) {
+	vs := NewValidatorSet(DefaultValidatorSetConfig())
+	for _, a := range []string{"v1", "v2", "v3"} {
+		if err := vs.Register(a, 100); err != nil {
+			t.Fatalf("register %s: %v", a, err)
+		}
+	}
+	cfg := DefaultConsensusConfig()
+	cfg.RoundTimeout = 20 * time.Millisecond
+	bc := NewBFTConsensus(vs, cfg)
+
+	prop, err := bc.ProposerForRound(0)
+	if err != nil {
+		t.Fatalf("proposer: %v", err)
+	}
+	first, err := bc.Propose(11, 0, prop, "value-a")
+	if err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	if err := bc.PreVote(11, "v1", "value-a"); err != nil {
+		t.Fatalf("prevote: %v", err)
+	}
+	votesBefore := len(first.PreVotes)
+	if votesBefore == 0 {
+		t.Fatal("expected the prevote to be recorded before the timeout")
+	}
+
+	if got := bc.TickRoundTimeouts(time.Now().Add(cfg.RoundTimeout * 4)); len(got) != 1 {
+		t.Fatalf("expected height 11 to time out, got %v", got)
+	}
+
+	// The same round number, proposed again. If this is refused, the comment in
+	// cmd/qsdm/main.go describing the reopen path is wrong and should change.
+	reopened, err := bc.Propose(11, 0, prop, "value-a")
+	if err != nil {
+		t.Fatalf("a retransmitted propose for the expired round was refused: %v -- "+
+			"if this is now intended, update the round-timeout comment in cmd/qsdm/main.go", err)
+	}
+	if len(reopened.PreVotes) != 0 {
+		t.Errorf("reopened round kept %d prevote(s); the vote set should start empty",
+			len(reopened.PreVotes))
+	}
+	if reopened == first {
+		t.Error("expected a fresh round object, not the expired one")
+	}
+}
