@@ -1,6 +1,7 @@
 package chain
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -178,5 +179,51 @@ func TestRoundTimeout_RetiredRoundCannotBeReoccupied(t *testing.T) {
 	}
 	if _, err := bc2.Propose(12, 3, far, "y"); err != nil {
 		t.Errorf("a round above the successor must be accepted, got: %v", err)
+	}
+}
+
+// A retransmitted propose for a retired round is expected on every round
+// timeout, so the gossip path must treat it as benign. isBenignBFTErr decides
+// that, and it matches every other expected consensus rejection by SUBSTRING --
+// which is exactly why it silently failed to recognise this error when it was
+// introduced: nobody remembers to extend a list. Review caught it; the fix is a
+// typed sentinel, and this pins the classification rather than the string.
+func TestRetiredRoundError_IsBenignForGossip(t *testing.T) {
+	vs := NewValidatorSet(DefaultValidatorSetConfig())
+	for _, a := range []string{"v1", "v2", "v3"} {
+		if err := vs.Register(a, 100); err != nil {
+			t.Fatalf("register %s: %v", a, err)
+		}
+	}
+	cfg := DefaultConsensusConfig()
+	cfg.RoundTimeout = 20 * time.Millisecond
+	bc := NewBFTConsensus(vs, cfg)
+
+	prop, err := bc.ProposerForRound(0)
+	if err != nil {
+		t.Fatalf("proposer: %v", err)
+	}
+	if _, err := bc.Propose(13, 0, prop, "v"); err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	bc.TickRoundTimeouts(time.Now().Add(cfg.RoundTimeout * 4))
+
+	_, err = bc.Propose(13, 0, prop, "v")
+	if err == nil {
+		t.Fatal("the retired round must be refused")
+	}
+	if !errors.Is(err, ErrBFTRoundRetired) {
+		t.Errorf("error should wrap ErrBFTRoundRetired so callers can classify it: %v", err)
+	}
+	if !isBenignBFTErr(err) {
+		t.Errorf("a retired-round refusal must be benign for the gossip path; "+
+			"treating it as an application error inflates statApplyErrors and logs "+
+			"on every round timeout: %v", err)
+	}
+
+	// Guard the other direction: equivocation must NOT be swept up as benign,
+	// or this classification becomes a way to silence a real fault.
+	if isBenignBFTErr(ErrBFTEquivocation) {
+		t.Error("equivocation must not be classified benign")
 	}
 }

@@ -637,6 +637,13 @@ func isBenignBFTErr(err error) bool {
 	if err == nil {
 		return true
 	}
+	// A retransmitted propose for a round this node has already retired is
+	// expected on every round timeout, not an application error. Matched by
+	// sentinel rather than substring: the list below is exactly the mechanism
+	// that failed to notice this error when it was introduced.
+	if errors.Is(err, ErrBFTRoundRetired) {
+		return true
+	}
 	s := err.Error()
 	return strings.Contains(s, "already committed") ||
 		strings.Contains(s, "already pre-voted") ||
