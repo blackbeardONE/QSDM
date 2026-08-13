@@ -2,9 +2,11 @@ package chain
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -193,18 +195,45 @@ func (p *EquivocationProof) VerifyBinding(ev ConsensusEvidence) error {
 // fingerprint returns a stable digest of the signatures the proof carries. It
 // is folded into evidenceID so that dedupe keys on the offence being proven
 // rather than on envelope fields an attacker chooses freely.
+//
+// The two exhibits are digested individually and then combined in sorted
+// order, so which vote occupies VoteA is not part of the identity. Verify and
+// VerifyBinding are both symmetric in A/B -- neither cares about the order --
+// so without canonicalisation an attacker could resubmit one genuine proof
+// with the exhibits swapped, get a different fingerprint, a different
+// evidenceID, and a second slash. Two honest reporters who observed the same
+// equivocation in opposite orders would also have produced two "different"
+// pieces of evidence for one offence.
+//
+// This mirrors pkg/mining/slashing/doublemining, whose encoder canonicalises
+// (ProofA, ProofB) lexicographically for exactly the same reason.
 func (p *EquivocationProof) fingerprint() string {
 	if p == nil {
 		return ""
 	}
-	h := sha256.New()
+	digests := make([]string, 0, 2)
 	for _, x := range []SignedVoteExhibit{p.VoteA, p.VoteB} {
-		h.Write(x.Auth.PublicKey)
-		h.Write([]byte{0})
-		h.Write(x.Auth.Signature)
-		h.Write([]byte{0})
+		h := sha256.New()
+		// Length-prefix each field so a pubkey/signature boundary cannot be
+		// shifted to produce a colliding digest.
+		writeLenPrefixed(h, x.Auth.PublicKey)
+		writeLenPrefixed(h, x.Auth.Signature)
+		digests = append(digests, hex.EncodeToString(h.Sum(nil)))
 	}
-	return hex.EncodeToString(h.Sum(nil))
+	sort.Strings(digests)
+
+	outer := sha256.New()
+	for _, d := range digests {
+		writeLenPrefixed(outer, []byte(d))
+	}
+	return hex.EncodeToString(outer.Sum(nil))
+}
+
+func writeLenPrefixed(h io.Writer, b []byte) {
+	var n [8]byte
+	binary.BigEndian.PutUint64(n[:], uint64(len(b)))
+	_, _ = h.Write(n[:])
+	_, _ = h.Write(b)
 }
 
 // BuildEquivocationEvidence assembles proof-carrying equivocation evidence
