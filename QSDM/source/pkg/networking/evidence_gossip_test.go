@@ -16,11 +16,12 @@ func TestEvidenceGossipIngress_AcceptAndDedupe(t *testing.T) {
 	eg := NewEvidenceGossipIngress(em, rep, cfg)
 
 	ev := chain.ConsensusEvidence{
-		Type:        chain.EvidenceInvalidVote,
+		Type:        chain.EvidenceForkWitness,
 		Validator:   "v1",
 		Height:      1,
 		Round:       0,
 		Details:     "bad vote",
+		BlockHashes: []string{"gossip-a", "gossip-b"},
 		Timestamp:   time.Now(),
 	}
 	payload, _ := json.Marshal(ev)
@@ -43,12 +44,13 @@ func TestEvidenceGossipIngress_RateLimit(t *testing.T) {
 
 	for i := 0; i < 2; i++ {
 		ev := chain.ConsensusEvidence{
-			Type:      chain.EvidenceInvalidVote,
-			Validator: "v1",
-			Height:    uint64(100 + i),
-			Round:     0,
-			Details:   "spam",
-			Timestamp: time.Now(),
+			Type:        chain.EvidenceForkWitness,
+			Validator:   "v1",
+			Height:      uint64(100 + i),
+			Round:       0,
+			Details:     "spam",
+			BlockHashes: []string{"gossip-a", "gossip-b"},
+			Timestamp:   time.Now(),
 		}
 		b, _ := json.Marshal(ev)
 		if err := eg.HandlePeerMessage("spammer", b); err != nil {
@@ -56,12 +58,13 @@ func TestEvidenceGossipIngress_RateLimit(t *testing.T) {
 		}
 	}
 	ev3 := chain.ConsensusEvidence{
-		Type:      chain.EvidenceInvalidVote,
-		Validator: "v1",
-		Height:    103,
-		Round:     0,
-		Details:   "spam",
-		Timestamp: time.Now(),
+		Type:        chain.EvidenceForkWitness,
+		Validator:   "v1",
+		Height:      103,
+		Round:       0,
+		Details:     "spam",
+		BlockHashes: []string{"gossip-a", "gossip-b"},
+		Timestamp:   time.Now(),
 	}
 	b3, _ := json.Marshal(ev3)
 	if err := eg.HandlePeerMessage("spammer", b3); err == nil {

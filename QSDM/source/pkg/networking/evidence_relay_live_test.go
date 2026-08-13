@@ -69,13 +69,20 @@ func TestLiveEvidenceRelay_Propagation(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 
+	// This exercises relay propagation, not evidence semantics, so the type
+	// only needs to be one the manager accepts. fork_witness is used because
+	// it validates without a registered validator and does not slash.
+	// It must NOT be invalid_vote: that type is rejected unconditionally as
+	// unprovable (see ErrEvidenceInvalidVoteUnprovable), so the evidence would
+	// never be processed and this test would time out rather than fail loudly.
 	ev := chain.ConsensusEvidence{
-		Type:      chain.EvidenceInvalidVote,
-		Validator: "v1",
-		Height:    9,
-		Round:     0,
-		Details:   "live relay test",
-		Timestamp: time.Now().UTC(),
+		Type:        chain.EvidenceForkWitness,
+		Validator:   "v1",
+		Height:      9,
+		Round:       0,
+		Details:     "live relay test",
+		BlockHashes: []string{"relay-hash-a", "relay-hash-b"},
+		Timestamp:   time.Now().UTC(),
 	}
 	payload, _ := json.Marshal(ev)
 	if err := topicA.Publish(ctx, payload); err != nil {
