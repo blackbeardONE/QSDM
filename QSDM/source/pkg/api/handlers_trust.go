@@ -532,10 +532,12 @@ func (m *MonitoringLocalSource) LocalLatest() (PeerAttestation, bool) {
 	}
 	row := rows[len(rows)-1]
 	p := PeerAttestation{
-		NodeID:       m.NodeID,
-		RegionHint:   m.RegionHint,
-		GPUAvailable: true, // presence of a proof implies a GPU was present
-		NGCHMACOK:    true, // ingest path validates HMAC before storage in strict mode
+		NodeID:     m.NodeID,
+		RegionHint: m.RegionHint,
+		NGCHMACOK:  true, // ingest path validates HMAC before storage in strict mode
+	}
+	if available, ok := row["gpu_available"].(bool); ok {
+		p.GPUAvailable = available
 	}
 	if m.ArchOverride != "" {
 		p.GPUArchitecture = m.ArchOverride
@@ -583,7 +585,7 @@ func (m *MonitoringLocalSource) LocalDistinctAttestations() []PeerAttestation {
 			NodeID:       r.NodeID,
 			AttestedAt:   at.UTC(),
 			RegionHint:   m.RegionHint,
-			GPUAvailable: true, // presence of a proof implies a GPU claim
+			GPUAvailable: r.GPUAvailable,
 			NGCHMACOK:    true, // ingest path validates HMAC in strict mode
 		}
 		switch {

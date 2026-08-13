@@ -121,6 +121,11 @@ func NGCProofSummaries() []map[string]interface{} {
 		if v, ok := m["execution_seconds"]; ok {
 			row["execution_seconds"] = v
 		}
+		if gp, ok := m["gpu_fingerprint"].(map[string]interface{}); ok {
+			if available, ok := gp["available"].(bool); ok {
+				row["gpu_available"] = available
+			}
+		}
 		out = append(out, row)
 	}
 	return out
