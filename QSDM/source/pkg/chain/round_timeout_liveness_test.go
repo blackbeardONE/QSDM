@@ -221,6 +221,17 @@ func TestRetiredRoundError_IsBenignForGossip(t *testing.T) {
 			"on every round timeout: %v", err)
 	}
 
+	// The sentinel must not swallow the diagnostics. Returning the bare
+	// sentinel would satisfy every assertion above -- errors.Is, the benign
+	// classification, the equivocation guard -- while leaving an operator with
+	// "BFT round retired" and no way to tell WHICH round at WHICH height. That
+	// gap was found by review, not by this test, so it is pinned now.
+	for _, want := range []string{"round 0", "height 13", "next round is 1"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lost the %q detail an operator needs: %v", want, err)
+		}
+	}
+
 	// Guard the other direction: equivocation must NOT be swept up as benign,
 	// or this classification becomes a way to silence a real fault.
 	if isBenignBFTErr(ErrBFTEquivocation) {
