@@ -25,6 +25,13 @@ services:
       - NETWORK_PORT=4001
       - API_PORT=8080
       - DASHBOARD_PORT=8081
+      # Bind the dashboard to all interfaces INSIDE the container. The
+      # process default is 127.0.0.1, which is correct on bare metal but
+      # unreachable here: Docker's published port and Kubernetes' Service
+      # both route to the container's non-loopback interface, not into its
+      # loopback namespace. The isolation boundary is the container network,
+      # not this listener.
+      - QSDM_DASHBOARD_BIND_ADDRESS=0.0.0.0
       - LOG_VIEWER_PORT=9000
       - STORAGE_TYPE=sqlite
       - SQLITE_PATH=/app/data/qsdm.db

@@ -121,7 +121,11 @@ func NewDashboard(metrics *monitoring.Metrics, healthChecker *monitoring.HealthC
 }
 
 // NewDashboardWithBindAddress creates a dashboard bound to a specific local
-// address. Empty bindAddress preserves the historical all-interfaces listener.
+// address. An empty bindAddress resolves to 127.0.0.1 (see defaultBindAddress);
+// it used to mean all interfaces, and exposing the dashboard is now an explicit
+// 0.0.0.0 choice. Containerised deployments set QSDM_DASHBOARD_BIND_ADDRESS to
+// 0.0.0.0, because there the isolation boundary is the container network rather
+// than this listener.
 func NewDashboardWithBindAddress(metrics *monitoring.Metrics, healthChecker *monitoring.HealthChecker, port string, bindAddress string, ngcIngestConfigured bool, nvidiaLock DashboardNvidiaLock, jwtHMACSecret string, metricsScrapeSecret string, strictDashboardAuth bool, apiBackendURL string, sharedAuth *api.AuthManager) *Dashboard {
 	var authManager *api.AuthManager
 	if sharedAuth != nil {
