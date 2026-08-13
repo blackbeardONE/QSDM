@@ -60,6 +60,14 @@ var ErrEvidenceProofMissing = errors.New("chain: equivocation evidence carries n
 // establish equivocation by the accused validator.
 var ErrEvidenceProofInvalid = errors.New("chain: equivocation proof is invalid")
 
+// ErrEvidenceInvalidVoteUnprovable is returned for invalid_vote evidence,
+// which is rejected unconditionally. The accusation carries no verifiable
+// witness -- an invalid vote is simply dropped by its receiver, leaving
+// nothing a third party can re-check -- and the only proof type in this
+// package establishes equivocation, a different offence. See the
+// EvidenceInvalidVote branch in validateEvidence.
+var ErrEvidenceInvalidVoteUnprovable = errors.New("chain: invalid_vote evidence is unprovable and is not accepted")
+
 // SignedVoteExhibit is one authenticated vote used as evidence.
 type SignedVoteExhibit struct {
 	Kind      string      `json:"kind"` // BFTWirePrevote or BFTWirePrecommit
