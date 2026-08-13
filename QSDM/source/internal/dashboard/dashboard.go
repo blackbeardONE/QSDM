@@ -342,10 +342,8 @@ func (d *Dashboard) Start() error {
 			log.Printf("Metrics scrape secret: configured (use %s [legacy %s also accepted] or Authorization: Bearer for /api/metrics/prometheus)",
 				branding.MetricsScrapeSecretHeaderPreferred, branding.MetricsScrapeSecretHeaderLegacy)
 		}
-	} else if d.strictDashboardAuth {
-		log.Printf("Dashboard authentication: UNAVAILABLE (JWT init failed); strict_dashboard_auth=true — protected routes return 503; set metrics_scrape_secret for Prometheus-only scrape")
 	} else {
-		log.Printf("Dashboard authentication: DISABLED (INSECURE - development only)")
+		log.Printf("Dashboard authentication: UNAVAILABLE (JWT init failed) — protected routes return 503; set metrics_scrape_secret for Prometheus-only scrape")
 	}
 	log.Printf("Dashboard will be available at http://localhost:%s", d.port)
 	log.Printf("API endpoints: /api/metrics, /api/metrics/prometheus, /api/health, /api/topology, /api/mesh3d-viz, /api/ngc-proofs, /api/audit/summary, /api/audit/items (require authentication)")
@@ -596,7 +594,10 @@ func (d *Dashboard) requireMetricsScrapeOrAuth(next http.HandlerFunc) http.Handl
 				return
 			}
 		}
-		if d.strictDashboardAuth && d.authManager == nil {
+		if d.authManager == nil {
+			// Same reasoning as requireAuth: a missing authenticator is a
+			// 503, not a licence to serve. Reached only when the scrape
+			// secret was absent or wrong.
 			writeDashboardAuthUnavailable(w)
 			return
 		}
@@ -637,12 +638,22 @@ func (d *Dashboard) setupMiddleware(handler http.Handler) http.Handler {
 func (d *Dashboard) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if d.authManager == nil {
-			if d.strictDashboardAuth {
-				writeDashboardAuthUnavailable(w)
-				return
-			}
-			log.Printf("WARNING: Dashboard access without authentication (auth manager not available)")
-			next(w, r)
+			// Fail closed, regardless of strictDashboardAuth.
+			//
+			// authManager is nil only when no AuthManager was shared in AND
+			// api.NewAuthManager() returned an error (see
+			// NewDashboardWithBindAddress). That is an infrastructure failure,
+			// and the response to "the authenticator could not be built" must
+			// not be "serve the protected route to whoever asked". This used to
+			// log a warning and call next(w, r) unless an operator had opted
+			// into strict mode -- and strictDashboardAuth comes from
+			// cfg.DashboardStrictAuth, which defaults false, so the safe
+			// behaviour was the one you had to ask for.
+			//
+			// A dashboard that refuses to serve is a visible, diagnosable
+			// outage. A dashboard that serves without authentication is a
+			// silent one.
+			writeDashboardAuthUnavailable(w)
 			return
 		}
 
