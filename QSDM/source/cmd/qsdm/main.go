@@ -1248,6 +1248,41 @@ func main() {
 	// present-but-invalid signature is always rejected regardless.
 	bftExec.SetSignedVoteActivationHeight(cfg.SignedConsensusActivationHeight)
 	bftExec.SetRequireSignedVotes(cfg.RequireSignedVotes)
+
+	// Expire stalled BFT rounds.
+	//
+	// BFTConsensus.Propose stamps every round with a deadline
+	// (consensus.go:177, RoundTimeout, default 30s) and refuses a higher round
+	// while one is active at that height ("timeout or fail before proposing").
+	// TickRoundTimeouts is what clears an expired round and bumps the counter
+	// so the next proposer can take over -- and it had ZERO production callers,
+	// so nothing ever cleared one. A round that stalled blocked its height
+	// permanently, with recovery only via a local FailRound.
+	//
+	// This is deliberately local-only: TickRoundTimeouts changes nothing about
+	// what this node ACCEPTS from peers, it only stops the node waiting forever
+	// on a round the network has moved past. It carries the prevote lock
+	// forward (consensus.go:226-228), so escalation preserves POL safety.
+	go func() {
+		interval := chain.DefaultConsensusConfig().RoundTimeout / 3
+		if interval <= 0 {
+			interval = 5 * time.Second
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if timedOut := liveBFT.TickRoundTimeouts(time.Now()); len(timedOut) > 0 {
+					logger.Warn("BFT round timed out; escalating proposer rotation",
+						"heights", timedOut,
+						"next_round", liveBFT.NextRoundAfterTimeout(timedOut[0]))
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 	// The same switch governs POL certificates / lock proofs and block
 	// producer signatures: they are all part of one consensus-authentication
 	// rollout, so flipping them independently would leave a gap that is
