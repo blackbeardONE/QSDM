@@ -316,7 +316,7 @@ Environment="QSDM_LOG_STDOUT=false"
 # binds loopback by default and /ws now requires authentication, so this is
 # defence in depth rather than the only control; set it to the operator's
 # real dashboard origin when fronting the node with a reverse proxy.
-Environment="QSDM_WS_ALLOWED_ORIGINS=http://127.0.0.1:8081,http://localhost:8081"
+Environment="QSDM_WS_ALLOWED_ORIGINS=http://127.0.0.1:${DASHBOARD_PORT},http://localhost:${DASHBOARD_PORT}"
 # QSDM_CONFIG_FILE is set ahead of a future Go-side migration that
 # would teach pkg/config/config.go to read it before falling back to
 # the bare CONFIG_FILE name. As of today the binary ONLY reads

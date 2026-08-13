@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -205,8 +207,15 @@ func TestKubernetesProbesTargetAServedRoute(t *testing.T) {
 		dec := yaml.NewDecoder(strings.NewReader(string(raw)))
 		for {
 			var m k8sManifest
+			// io.EOF ends the stream. Any OTHER error is a malformed document,
+			// and breaking on it would stop scanning the rest of the file while
+			// still reporting a pass -- the same silent-truncation defect this
+			// guard exists to catch, which is exactly how review found it here.
 			if err := dec.Decode(&m); err != nil {
-				break // EOF, or a document this shape does not model
+				if !errors.Is(err, io.EOF) {
+					t.Errorf("%s: malformed YAML document, remaining documents unchecked: %v", rel, err)
+				}
+				break
 			}
 			for _, c := range m.Spec.Template.Spec.Containers {
 				for kind, pr := range map[string]*k8sProbe{
