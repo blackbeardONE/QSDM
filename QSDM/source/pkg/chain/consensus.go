@@ -159,6 +159,28 @@ func (bc *BFTConsensus) Propose(height uint64, round uint32, proposer, blockHash
 		}
 	}
 
+	// A retired round number cannot be reoccupied.
+	//
+	// bc.rounds is keyed by HEIGHT, not (height, round), so the checks above
+	// only bind while an entry exists. TickRoundTimeouts and FailRound delete
+	// it and record the successor in bc.nextRound -- and until this check
+	// existed, nothing consulted that, so a propose for the already-retired
+	// round number rebuilt it with an empty vote slate.
+	//
+	// Today that discards the votes gathered before the timeout. It becomes far
+	// worse the moment a node originates its own votes: the same validator
+	// would vote twice for one (validator, height, round) with different
+	// values, which is equivocation, self-generated. Adversarial critique of
+	// the vote-origination design identified this as a prerequisite for that
+	// work, not a cleanup to follow it.
+	//
+	// The cost is liveness, and it is bounded: a node whose clock retired round
+	// N early will refuse further round-N proposes and wait for N+1, which the
+	// rotated proposer emits once its own deadline passes.
+	if next, ok := bc.nextRound[height]; ok && round < next {
+		return nil, fmt.Errorf("round %d at height %d was retired; next round is %d", round, height, next)
+	}
+
 	expected, err := bc.proposerForRoundLocked(round)
 	if err != nil {
 		return nil, err

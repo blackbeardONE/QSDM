@@ -1,6 +1,7 @@
 package chain
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -99,20 +100,24 @@ func TestRoundTimeout_CarriesThePrevoteLock(t *testing.T) {
 	}
 }
 
-// Expiring a round does not permanently close it.
+// A retired round number cannot be reoccupied.
 //
-// Propose rejects only a round number BELOW whatever occupies bc.rounds[height]
-// and never consults bc.nextRound. After TickRoundTimeouts deletes the round,
-// that slot is empty -- so a retransmitted propose for the SAME, already-expired
-// round number is accepted, builds a fresh round, and discards the votes
-// accumulated before the timeout.
+// bc.rounds is keyed by HEIGHT, not (height, round), so the duplicate checks in
+// Propose only bind while an entry exists. TickRoundTimeouts deletes it, and
+// until Propose consulted bc.nextRound a retransmitted propose for the SAME,
+// already-expired round number rebuilt it with an empty vote slate.
 //
-// This is pre-existing Propose/FailRound behaviour, not something the ticker
-// introduced, but the ticker reaches it on a timer rather than only via an
-// explicit FailRound. Pinned here because it was found by review and described
-// in a comment, and a behaviour that lives only in a comment is not held by
-// anything.
-func TestRoundTimeout_ExpiredRoundCanBeReopenedAndLosesItsVotes(t *testing.T) {
+// That cost vote loss on its own. With vote origination it would be
+// equivocation -- one validator, two votes, one (height, round), different
+// values -- so adversarial critique of the reactor design named this a
+// prerequisite for that work rather than a follow-up to it.
+//
+// This test previously asserted the OPPOSITE, pinning the reopen as observed
+// behaviour with a failure message pointing at the comment to update if it ever
+// tightened. It tightened, the test failed exactly there, and this is the
+// update. That is the whole reason a behaviour described only in a comment is
+// worth putting under test.
+func TestRoundTimeout_RetiredRoundCannotBeReoccupied(t *testing.T) {
 	vs := NewValidatorSet(DefaultValidatorSetConfig())
 	for _, a := range []string{"v1", "v2", "v3"} {
 		if err := vs.Register(a, 100); err != nil {
@@ -127,34 +132,51 @@ func TestRoundTimeout_ExpiredRoundCanBeReopenedAndLosesItsVotes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("proposer: %v", err)
 	}
-	first, err := bc.Propose(11, 0, prop, "value-a")
-	if err != nil {
+	if _, err := bc.Propose(11, 0, prop, "value-a"); err != nil {
 		t.Fatalf("propose: %v", err)
 	}
 	if err := bc.PreVote(11, "v1", "value-a"); err != nil {
 		t.Fatalf("prevote: %v", err)
 	}
-	votesBefore := len(first.PreVotes)
-	if votesBefore == 0 {
-		t.Fatal("expected the prevote to be recorded before the timeout")
-	}
 
 	if got := bc.TickRoundTimeouts(time.Now().Add(cfg.RoundTimeout * 4)); len(got) != 1 {
 		t.Fatalf("expected height 11 to time out, got %v", got)
 	}
+	if r := bc.NextRoundAfterTimeout(11); r != 1 {
+		t.Fatalf("next round after timeout = %d, want 1", r)
+	}
 
-	// The same round number, proposed again. If this is refused, the comment in
-	// cmd/qsdm/main.go describing the reopen path is wrong and should change.
-	reopened, err := bc.Propose(11, 0, prop, "value-a")
+	// The retired round number, proposed again -- a retransmit, a duplicate
+	// delivery, or a proposer that has not yet observed the timeout.
+	if _, err := bc.Propose(11, 0, prop, "value-a"); err == nil {
+		t.Error("a propose for the retired round number must be refused; " +
+			"accepting it rebuilds the round with an empty vote slate, which " +
+			"becomes self-equivocation once the node originates its own votes")
+	} else if !strings.Contains(err.Error(), "retired") {
+		t.Errorf("refused for an unexpected reason: %v", err)
+	}
+
+	// Escalation still works: the successor round is proposable.
+	next, err := bc.ProposerForRound(1)
 	if err != nil {
-		t.Fatalf("a retransmitted propose for the expired round was refused: %v -- "+
-			"if this is now intended, update the round-timeout comment in cmd/qsdm/main.go", err)
+		t.Fatalf("proposer for round 1: %v", err)
 	}
-	if len(reopened.PreVotes) != 0 {
-		t.Errorf("reopened round kept %d prevote(s); the vote set should start empty",
-			len(reopened.PreVotes))
+	if _, err := bc.Propose(11, 1, next, "value-b"); err != nil {
+		t.Fatalf("the successor round must still be proposable: %v", err)
 	}
-	if reopened == first {
-		t.Error("expected a fresh round object, not the expired one")
+
+	// And a round beyond the successor is fine too -- the check refuses only
+	// what is BELOW nextRound, so it cannot stall an escalating network.
+	bc2 := NewBFTConsensus(vs, cfg)
+	if _, err := bc2.Propose(12, 0, prop, "x"); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	bc2.TickRoundTimeouts(time.Now().Add(cfg.RoundTimeout * 4))
+	far, err := bc2.ProposerForRound(3)
+	if err != nil {
+		t.Fatalf("proposer for round 3: %v", err)
+	}
+	if _, err := bc2.Propose(12, 3, far, "y"); err != nil {
+		t.Errorf("a round above the successor must be accepted, got: %v", err)
 	}
 }
