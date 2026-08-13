@@ -43,15 +43,15 @@ import (
 // state via enrollment.NewStateBackedRegistry. Tests can mutate
 // the returned proof to introduce specific faults.
 type forgedFixture struct {
-	accounts    *AccountStore
-	state       *enrollment.InMemoryState
-	dispatcher  *slashing.Dispatcher
-	slasher     *SlashApplier
-	enrollKey   []byte
-	enrolledID  string
+	accounts     *AccountStore
+	state        *enrollment.InMemoryState
+	dispatcher   *slashing.Dispatcher
+	slasher      *SlashApplier
+	enrollKey    []byte
+	enrolledID   string
 	enrolledUUID string
-	offender    string
-	slasherAddr string
+	offender     string
+	slasherAddr  string
 }
 
 func buildForgedFixture(t *testing.T, rewardBPS uint16) *forgedFixture {
@@ -426,3 +426,67 @@ func mustEncodeSlashPayload(t *testing.T, p slashing.SlashPayload) []byte {
 	return raw
 }
 
+// The production posture, asserted on the SIDE EFFECT rather than on a returned
+// error. A guard that refused the slash but still drained the bond would satisfy
+// an error-only assertion, which is exactly the failure mode the rubric names --
+// and which the first version of the gate tests committed, using a nil-Registry
+// verifier whose "0 dust" result was inert.
+//
+// This drives the full block-apply path (ApplySlashTx) with real forged
+// evidence and the gate in its shipped state, and checks that nothing moved:
+// the victim keeps their bond, the victim's balance is untouched, and the
+// slasher is not paid.
+func TestSlashE2E_AttributionGateClosed_NoDrainNoPayout(t *testing.T) {
+	// Not parallel, and not covered by the package TestMain default: this test
+	// owns the flag for its duration and restores it.
+	prev := slashing.HMACAttestationAttributable()
+	slashing.SetHMACAttestationAttributable(false)
+	t.Cleanup(func() { slashing.SetHMACAttestationAttributable(prev) })
+
+	const rewardBPS uint16 = 1000
+	fx := buildForgedFixture(t, rewardBPS)
+
+	preStake := fx.lookupStake(t)
+	preSlasher := fx.balanceOf(fx.slasherAddr)
+	preOffender := fx.balanceOf("offender-addr")
+	if preStake == 0 {
+		t.Fatal("fixture invariant: enrolled stake should be non-zero")
+	}
+
+	evBlob, err := forgedattest.EncodeEvidence(forgedattest.Evidence{
+		Proof:      buildForgedProof(t, fx),
+		FaultClass: forgedattest.FaultHMACMismatch,
+		Memo:       "unattributable by construction: the HMAC key is public chain state",
+	})
+	if err != nil {
+		t.Fatalf("encode evidence: %v", err)
+	}
+
+	slashTx := &mempool.Tx{
+		Sender:     fx.slasherAddr,
+		Nonce:      0,
+		Fee:        0.01,
+		ContractID: slashing.ContractID,
+		Payload: mustEncodeSlashPayload(t, slashing.SlashPayload{
+			NodeID:          fx.enrolledID,
+			EvidenceKind:    slashing.EvidenceKindForgedAttestation,
+			EvidenceBlob:    evBlob,
+			SlashAmountDust: forgedattest.DefaultMaxSlashDust,
+			Memo:            "gate-closed e2e",
+		}),
+	}
+
+	if err := fx.slasher.ApplySlashTx(slashTx, 250); err == nil {
+		t.Fatal("gated slash must be refused on the block-apply path")
+	}
+
+	if got := fx.lookupStake(t); got != preStake {
+		t.Fatalf("victim bond moved despite a refused slash: %d -> %d", preStake, got)
+	}
+	if got := fx.balanceOf(fx.slasherAddr); got != preSlasher {
+		t.Fatalf("slasher was paid for a refused slash: %v -> %v", preSlasher, got)
+	}
+	if got := fx.balanceOf("offender-addr"); got != preOffender {
+		t.Fatalf("victim balance moved despite a refused slash: %v -> %v", preOffender, got)
+	}
+}

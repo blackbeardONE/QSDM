@@ -190,10 +190,23 @@ func (c *CLI) slashHelper(args []string) error {
 	sub := args[0]
 	rest := args[1:]
 	switch sub {
-	case "forged-attestation":
-		return c.slashHelperForgedAttestation(rest)
-	case "double-mining":
-		return c.slashHelperDoubleMining(rest)
+	case "forged-attestation", "double-mining":
+		// Refuse up front rather than letting an operator build evidence,
+		// pay a fee and have consensus reject it. Both offences are
+		// established by attributing an nvidia-hmac-v1 bundle to its
+		// producer, which is impossible while EnrollmentRecord.HMACKey is a
+		// symmetric key held in public chain state: a valid MAC can be
+		// computed by any chain-state reader, and an invalid one
+		// manufactured against any victim. The verifiers fail closed —
+		// see pkg/mining/slashing/attribution.go.
+		return fmt.Errorf(
+			"slash-helper %s is disabled: the offence cannot be attributed while the "+
+				"attestation HMAC key is public chain state, so both verifiers reject "+
+				"these slashes on the block-apply path. Note freshness-cheat is also "+
+				"refused today -- its production witness is RejectAllWitness pending BFT "+
+				"finality -- so no slash kind is currently accepted. `qsdmcli slash` "+
+				"refuses all three before spending a fee",
+			sub)
 	case "freshness-cheat":
 		return c.slashHelperFreshnessCheat(rest)
 	case "inspect":

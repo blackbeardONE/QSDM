@@ -30,13 +30,17 @@ func TestVerify_GateClosedByDefault(t *testing.T) {
 	slashing.SetHMACAttestationAttributable(false)
 	t.Cleanup(func() { slashing.SetHMACAttestationAttributable(true) })
 
+	// Asserts the refusal only. The inert "0 dust" check that used to sit
+	// here was removed rather than annotated: a nil-Registry verifier returns
+	// 0 regardless of the gate, so it could never fail and reads as coverage
+	// that does not exist.
+	//
+	// The SIDE EFFECT -- bond unmoved, slasher unpaid -- is asserted where it
+	// is real, on the block-apply path, by
+	// TestSlashE2E_AttributionGateClosed_NoDrainNoPayout in pkg/chain.
 	v := NewVerifier(nil, 0)
-	dust, err := v.Verify(slashing.SlashPayload{}, 0)
-	if !errors.Is(err, slashing.ErrAttestationUnattributable) {
+	if _, err := v.Verify(slashing.SlashPayload{}, 0); !errors.Is(err, slashing.ErrAttestationUnattributable) {
 		t.Fatalf("expected ErrAttestationUnattributable, got %v", err)
-	}
-	if dust != 0 {
-		t.Fatalf("a gated verifier must slash nothing, got %d dust", dust)
 	}
 }
 

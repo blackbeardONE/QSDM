@@ -349,7 +349,34 @@ This starts the 7-day unbond window. The bond is **not** released immediately �
 
 ### Submit slashing evidence
 
-If you observe a peer forging an attestation or double-mining, post evidence so the chain can punish them:
+> **No slash kind is currently accepted by consensus.** The commands and
+> examples in this section describe the intended workflow, but every kind is
+> refused on the block-apply path today, for two different reasons:
+>
+> - `forged-attestation` and `double-mining` — the offence is established by
+>   attributing an nvidia-hmac-v1 bundle to its producer, which is impossible
+>   while `EnrollmentRecord.HMACKey` is a **symmetric key held in public chain
+>   state**: a valid MAC can be computed by any chain-state reader, and an
+>   invalid one manufactured against any victim. Both verifiers fail closed.
+>   See `pkg/mining/slashing/attribution.go`.
+> - `freshness-cheat` — the production witness is `RejectAllWitness`, wired with
+>   a nil witness at `internal/v2wiring/v2wiring.go:430`, pending the BFT-finality
+>   dependency (`MINING_PROTOCOL_V2.md` §12.3). Every freshness-cheat slash is
+>   rejected too.
+>
+> `qsdmcli slash` refuses all three before spending a fee, and `slash-helper`
+> refuses the two HMAC kinds. Read what follows as the design, not as something
+> you can run today.
+>
+> The HMAC refusal lifts once attestation becomes asymmetric, with enrollment
+> registering a public key so a valid signature attributes and an invalid one
+> cannot be forged against someone else. The freshness-cheat refusal lifts when a
+> real witness is wired in place of `RejectAllWitness`.
+
+
+If you observe a peer forging an attestation or double-mining, the intended flow is
+to post evidence so the chain can punish them. **This command exits with an error
+today** — see the refusal note above:
 
 ```bash
 ./qsdmcli slash \
@@ -363,9 +390,14 @@ If you observe a peer forging an attestation or double-mining, post evidence so 
 
 `--evidence-kind` ∈ `{forged-attestation, double-mining, freshness-cheat}`. Use `--evidence-file -` to read evidence bytes from stdin (handy for piping a slasher tool's output) or `--evidence-hex=<HEX>` for short inline blobs.
 
-The reward (`SlashRewardCap = 200 bps` of the slashed amount, capped) is credited to your sender on inclusion. If the offender's bond falls below `mining.MinEnrollStakeDust` after the slash, `RevokeIfUnderBonded` automatically transitions the record to `revoked` so they cannot keep mining on a stub bond.
+Once a kind is accepted again, the reward (`SlashRewardCap = 200 bps` of the slashed
+amount, capped) is credited to your sender on inclusion. If the offender's bond falls below `mining.MinEnrollStakeDust` after the slash, `RevokeIfUnderBonded` automatically transitions the record to `revoked` so they cannot keep mining on a stub bond.
 
 ### Building evidence with `slash-helper`
+
+`slash-helper` is offline and free, but it also refuses the two HMAC kinds, so the
+`forged-attestation` and `double-mining` invocations below error out today. Only
+`inspect` still runs.
 
 The `--evidence-file` argument above expects raw, canonical-JSON-wrapped bytes that the chain-side `forgedattest` / `doublemining` decoders will accept. Building those by hand is a footgun: a `json.Marshal(proof)` silently drops four binary fields (`HeaderHash`, `BatchRoot`, `Nonce`, `MixDigest` are all tagged `json:"-"`), so the wrong helper produces evidence that admits-fine but ends up rejected mid-flight as `verifier_failed`, costing you the submission fee with nothing to show for it.
 
