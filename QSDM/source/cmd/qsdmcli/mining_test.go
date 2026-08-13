@@ -264,9 +264,18 @@ func TestMiningSlash_BuildsCanonicalEnvelope(t *testing.T) {
 		"--nonce", "0", "--fee", "0.001",
 		"--id", "tx-slash-1",
 	}
-	if err := cs.cli().miningSlash(args); err != nil {
-		t.Fatalf("miningSlash: %v", err)
+	// Drives submitSlash rather than miningSlash: every slash kind is
+	// currently refused by consensus, so miningSlash now declines before
+	// building anything. The envelope construction below is still the wire
+	// format the chain consumes, so it stays under test.
+	if err := cs.cli().submitSlash(slashArgs{
+		sender: "watcher", nodeID: "rig-77", kind: "forged-attestation",
+		evidenceHex: evidenceHex, amount: 500000000,
+		memo: "caught red-handed", nonce: 0, fee: 0.001, txID: "tx-slash-1",
+	}); err != nil {
+		t.Fatalf("submitSlash: %v", err)
 	}
+	_ = args
 	if cs.path != "/api/v1/mining/slash" {
 		t.Errorf("path: got %s, want /api/v1/mining/slash", cs.path)
 	}
@@ -593,5 +602,30 @@ func TestMiningEnrollmentsList_PropagatesHTTPError(t *testing.T) {
 	err := cs.cli().miningEnrollmentsList(nil)
 	if err == nil || !strings.Contains(err.Error(), "503") {
 		t.Errorf("503 not propagated: %v", err)
+	}
+}
+
+// Every slash kind is refused today, for two different reasons. miningSlash
+// must decline BEFORE posting, because that command spends a fee -- refusing
+// only in slash-helper left the costly path open, since slash-helper is
+// offline and free.
+func TestMiningSlash_RefusesKindsConsensusRejects(t *testing.T) {
+	for _, kind := range []string{"forged-attestation", "double-mining", "freshness-cheat"} {
+		cs := newCaptureServer(t, http.StatusAccepted, `{"tx_id":"s1"}`)
+		err := cs.cli().miningSlash([]string{
+			"--sender", "watcher", "--node-id", "rig-77",
+			"--evidence-kind", kind,
+			"--evidence-hex", hex.EncodeToString([]byte("x")),
+			"--amount", "1",
+		})
+		if err == nil {
+			t.Errorf("%s: must be refused before spending a fee", kind)
+		} else if !strings.Contains(err.Error(), "refused by consensus") {
+			t.Errorf("%s: error should say why, got: %v", kind, err)
+		}
+		if cs.path != "" {
+			t.Errorf("%s: nothing may be posted, but hit %s", kind, cs.path)
+		}
+		cs.close()
 	}
 }
