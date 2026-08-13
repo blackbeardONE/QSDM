@@ -1216,7 +1216,8 @@ func main() {
 		logger.Info("Evidence P2P relay started", "topic", networking.EvidenceTopicName)
 	}
 
-	liveBFT := chain.NewBFTConsensus(nodeValidatorSet, chain.DefaultConsensusConfig())
+	liveConsensusCfg := chain.DefaultConsensusConfig()
+	liveBFT := chain.NewBFTConsensus(nodeValidatorSet, liveConsensusCfg)
 	bftExec := chain.NewBFTExecutor(liveBFT)
 	bftIngressExec := bftExec
 	if networkedCatchupMode {
@@ -1264,7 +1265,12 @@ func main() {
 	// on a round the network has moved past. It carries the prevote lock
 	// forward (consensus.go:226-228), so escalation preserves POL safety.
 	go func() {
-		interval := chain.DefaultConsensusConfig().RoundTimeout / 3
+		// The SAME config the instance above was built with. Calling
+		// DefaultConsensusConfig() a second time happens to return an
+		// identical struct today, but nothing tied the two together, so
+		// making RoundTimeout configurable at one site and not the other
+		// would silently desync the tick from the deadline it polls.
+		interval := liveConsensusCfg.RoundTimeout / 3
 		if interval <= 0 {
 			interval = 5 * time.Second
 		}

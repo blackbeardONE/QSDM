@@ -243,3 +243,59 @@ func TestKubernetesProbesTargetAServedRoute(t *testing.T) {
 	}
 	t.Logf("checked %d kubernetes probe(s)", probes)
 }
+
+// The truncation defect was verified by hand and the artefact thrown away, so
+// nothing stopped it coming back. This pins it with an in-memory fixture: a
+// valid document, then a malformed one, then a document carrying a bad probe
+// route. Decoding must report the malformed document rather than treating it
+// as end-of-stream and silently skipping everything after it.
+func TestKubernetesDecode_MalformedDocumentIsReportedNotSkipped(t *testing.T) {
+	const stream = `kind: ConfigMap
+metadata:
+  name: fine
+---
+kind: ConfigMap
+data:
+  broken: [unclosed
+---
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: late
+        livenessProbe:
+          httpGet:
+            path: /not/public
+`
+	dec := yaml.NewDecoder(strings.NewReader(stream))
+	var docs int
+	var decodeErr error
+	for {
+		var m k8sManifest
+		if err := dec.Decode(&m); err != nil {
+			if !errors.Is(err, io.EOF) {
+				decodeErr = err
+			}
+			break
+		}
+		docs++
+	}
+
+	if decodeErr == nil {
+		t.Fatal("a malformed document must surface as a non-EOF error; if this " +
+			"passes, the decoder swallowed it and later documents would be " +
+			"skipped in silence")
+	}
+	if errors.Is(decodeErr, io.EOF) {
+		t.Error("the malformed document was reported as EOF")
+	}
+	// The point of the fixture: the bad probe lives AFTER the malformed
+	// document, so a scan that stops at the error never sees it.
+	if docs >= 3 {
+		t.Errorf("expected the stream to stop before the third document, decoded %d", docs)
+	}
+	if !strings.Contains(stream[strings.Index(stream, "kind: Deployment"):], "/not/public") {
+		t.Fatal("fixture no longer contains the trailing bad route it exists to represent")
+	}
+}
