@@ -14,7 +14,13 @@ services:
     ports:
       - "4001:4001"
       - "8080:8080"
-      - "8081:8081"
+      # Host loopback only. The container binds 0.0.0.0 (see
+      # QSDM_DASHBOARD_BIND_ADDRESS below) because Docker routes to the
+      # container's non-loopback interface -- but publishing without a host
+      # IP would then expose the dashboard on every host NIC, which on the
+      # "typical small VPS" this file targets means the public internet.
+      # Front it with the Caddyfile in this directory for remote access.
+      - "127.0.0.1:8081:8081"
       - "9000:9000"
     volumes:
       - qsdm-data:/app/data

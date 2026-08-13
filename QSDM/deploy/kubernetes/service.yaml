@@ -39,7 +39,15 @@ metadata:
     app: qsdm
     component: dashboard
 spec:
-  type: LoadBalancer
+  # ClusterIP, not LoadBalancer. On most cloud providers LoadBalancer
+  # provisions a public IP routing straight to the dashboard. That was
+  # only ever non-public if the cluster's CNI enforces the default-deny
+  # NetworkPolicy in networkpolicy.yaml -- and that file's own header warns
+  # the vanilla kindnet CNI does not enforce it, so the manifest validates
+  # but does nothing at runtime. Reaching the dashboard from outside the
+  # cluster should be an explicit choice: kubectl port-forward, an Ingress
+  # with authentication, or changing this back deliberately.
+  type: ClusterIP
   ports:
   - name: dashboard
     port: 8081
