@@ -96,6 +96,22 @@ type dashboardLoginRequest struct {
 	Password string `json:"password"`
 }
 
+// defaultBindAddress resolves an unset bind address to loopback.
+//
+// Start passes this to net.JoinHostPort, and an empty host yields ":8081" --
+// every interface. QSDM/qsdm.yaml sets 127.0.0.1, but that is the local-dev
+// reference config: neither deploy/bring-up-validator.sh nor
+// deploy/install-ubuntu-vps.sh sets dashboard_bind_address, and pkg/config
+// applies no default, so the scripts that build a VPS node published the
+// dashboard publicly. An operator who wants that must now say so explicitly
+// by setting 0.0.0.0.
+func defaultBindAddress(bindAddress string) string {
+	if trimmed := strings.TrimSpace(bindAddress); trimmed != "" {
+		return trimmed
+	}
+	return "127.0.0.1"
+}
+
 // NewDashboard creates a new dashboard instance.
 // ngcIngestConfigured mirrors whether the API node has NGC ingest secret set (QSDM_NGC_INGEST_SECRET; the pre-rebrand QSDMPLUS_NGC_INGEST_SECRET env var is no longer read, see pkg/audit/checklist.go rebrand-02).
 // If sharedAuth is non-nil, it is used for JWT validation (must match api.Server's AuthManager when using ML-DSA / CGO).
@@ -141,7 +157,7 @@ func NewDashboardWithBindAddress(metrics *monitoring.Metrics, healthChecker *mon
 		healthChecker:       healthChecker,
 		topologyMonitor:     nil, // Will be set via SetNetwork
 		port:                port,
-		bindAddress:         strings.TrimSpace(bindAddress),
+		bindAddress:         defaultBindAddress(bindAddress),
 		authManager:         authManager,
 		rateLimiter:         rateLimiter,
 		ngcIngestConfigured: ngcIngestConfigured,
@@ -317,8 +333,15 @@ func (d *Dashboard) buildHandler() (http.Handler, error) {
 	// Role / identity
 	mux.HandleFunc("/api/whoami", d.requireAuth(d.handleWhoAmI))
 
-	// WebSocket for real-time push updates
-	mux.HandleFunc("/ws", d.handleWS)
+	// WebSocket for real-time push updates.
+	//
+	// requireAuth, not bare: StartWSPush broadcasts metrics, health and
+	// network topology to every connected client on a timer, and ServeWS
+	// upgraded without checking any credential. Browsers cannot set headers
+	// on a WebSocket handshake, but they DO send cookies -- and extractToken
+	// already reads the session cookie -- so the dashboard UI authenticates
+	// here exactly as it does on every other route.
+	mux.HandleFunc("/ws", d.requireAuth(d.handleWS))
 
 	return d.setupMiddleware(mux), nil
 }
