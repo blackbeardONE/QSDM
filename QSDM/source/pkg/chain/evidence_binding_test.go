@@ -177,3 +177,119 @@ func TestEvidenceManager_SwappedExhibitsCannotSlashTwice(t *testing.T) {
 		t.Errorf("swapped resubmission slashed again: %d -> %d", afterFirst.SlashCount, after.SlashCount)
 	}
 }
+
+// Signing is randomized (FIPS 204 6.1 randomized variant, see
+// pkg/crypto/dilithium_circl.go), so one vote signed twice yields two
+// different, both-valid signatures. If evidence identity depended on those
+// bytes, the same offence re-signed would look like a new offence and slash
+// again -- 1000 -> 950 -> 902.5. Identity must follow what the votes say.
+func TestEvidenceID_ResigningTheSameOffenceIsNotANewOffence(t *testing.T) {
+	signer, offender := newBFTKey(t)
+
+	build := func() ConsensusEvidence {
+		t.Helper()
+		ev, err := BuildEquivocationEvidence(
+			offender,
+			signedExhibit(t, signer, offender, BFTWirePrevote, 9, 1, "value-a"),
+			signedExhibit(t, signer, offender, BFTWirePrevote, 9, 1, "value-b"),
+		)
+		if err != nil {
+			t.Fatalf("building evidence: %v", err)
+		}
+		return ev
+	}
+
+	first, second := build(), build()
+
+	// Guard the premise: if signing were deterministic this test would pass
+	// for the wrong reason, and would keep passing if identity regressed to
+	// keying on signature bytes.
+	if equalAuth(first.Proof.VoteA.Auth, second.Proof.VoteA.Auth) {
+		t.Skip("signing is deterministic in this build; the re-signing case cannot arise")
+	}
+
+	if first.Proof.fingerprint() != second.Proof.fingerprint() {
+		t.Error("re-signing the same votes changed the proof fingerprint")
+	}
+	if evidenceID(first) != evidenceID(second) {
+		t.Errorf("re-signing the same offence changed its identity: first %s, second %s",
+			evidenceID(first), evidenceID(second))
+	}
+
+	// And end to end: the second submission must not take more stake.
+	vs := NewValidatorSet(DefaultValidatorSetConfig())
+	if err := vs.Register(offender, 1000); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	em := NewEvidenceManager(vs)
+	if _, err := em.Process(first); err != nil {
+		t.Fatalf("the genuine report must be accepted: %v", err)
+	}
+	v, ok := vs.GetValidator(offender)
+	if !ok {
+		t.Fatal("offender vanished")
+	}
+	afterFirst := *v
+
+	if _, err := em.Process(second); err == nil {
+		t.Error("the same offence, re-signed, must not be processed again")
+	}
+	after, ok := vs.GetValidator(offender)
+	if !ok {
+		t.Fatal("offender vanished")
+	}
+	if after.Stake != afterFirst.Stake {
+		t.Errorf("re-signed resubmission took more stake: %v -> %v", afterFirst.Stake, after.Stake)
+	}
+	if after.SlashCount != afterFirst.SlashCount {
+		t.Errorf("re-signed resubmission slashed again: %d -> %d", afterFirst.SlashCount, after.SlashCount)
+	}
+}
+
+// Identity must still separate genuinely different offences, or the fix above
+// would suppress real slashes instead of duplicate ones.
+func TestEvidenceID_DistinctOffencesStayDistinct(t *testing.T) {
+	signer, offender := newBFTKey(t)
+	base, err := BuildEquivocationEvidence(offender,
+		signedExhibit(t, signer, offender, BFTWirePrevote, 9, 1, "value-a"),
+		signedExhibit(t, signer, offender, BFTWirePrevote, 9, 1, "value-b"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	others := map[string]ConsensusEvidence{}
+	mk := func(name string, kind string, h uint64, r uint32, va, vb string) {
+		t.Helper()
+		ev, err := BuildEquivocationEvidence(offender,
+			signedExhibit(t, signer, offender, kind, h, r, va),
+			signedExhibit(t, signer, offender, kind, h, r, vb))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		others[name] = ev
+	}
+	mk("different height", BFTWirePrevote, 10, 1, "value-a", "value-b")
+	mk("different round", BFTWirePrevote, 9, 2, "value-a", "value-b")
+	mk("different values", BFTWirePrevote, 9, 1, "value-c", "value-d")
+	mk("one shared value", BFTWirePrevote, 9, 1, "value-a", "value-c")
+	mk("different vote kind", BFTWirePrecommit, 9, 1, "value-a", "value-b")
+
+	baseID := evidenceID(base)
+	for name, ev := range others {
+		if evidenceID(ev) == baseID {
+			t.Errorf("%s collapsed onto the base offence's identity", name)
+		}
+	}
+
+	// A second offender signing the identical votes is a different offence.
+	otherSigner, otherOffender := newBFTKey(t)
+	byOther, err := BuildEquivocationEvidence(otherOffender,
+		signedExhibit(t, otherSigner, otherOffender, BFTWirePrevote, 9, 1, "value-a"),
+		signedExhibit(t, otherSigner, otherOffender, BFTWirePrevote, 9, 1, "value-b"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evidenceID(byOther) == baseID {
+		t.Error("two different validators' equivocations collapsed onto one identity")
+	}
+}

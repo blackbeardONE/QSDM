@@ -192,21 +192,31 @@ func (p *EquivocationProof) VerifyBinding(ev ConsensusEvidence) error {
 	return nil
 }
 
-// fingerprint returns a stable digest of the signatures the proof carries. It
-// is folded into evidenceID so that dedupe keys on the offence being proven
-// rather than on envelope fields an attacker chooses freely.
+// fingerprint returns a stable digest of the OFFENCE the proof establishes.
 //
-// The two exhibits are digested individually and then combined in sorted
-// order, so which vote occupies VoteA is not part of the identity. Verify and
-// VerifyBinding are both symmetric in A/B -- neither cares about the order --
-// so without canonicalisation an attacker could resubmit one genuine proof
-// with the exhibits swapped, get a different fingerprint, a different
-// evidenceID, and a second slash. Two honest reporters who observed the same
-// equivocation in opposite orders would also have produced two "different"
-// pieces of evidence for one offence.
+// It digests each exhibit's semantic content -- kind, height, round, validator
+// and block hash -- and combines the two in sorted order. It deliberately does
+// NOT digest the signature bytes.
 //
-// This mirrors pkg/mining/slashing/doublemining, whose encoder canonicalises
-// (ProofA, ProofB) lexicographically for exactly the same reason.
+// Signature bytes are not canonical. This build signs with the randomized
+// variant of FIPS 204 6.1 (pkg/crypto/dilithium_circl.go:129, randomized=true),
+// so signing one vote twice with one key yields two different, both-valid
+// signatures. An earlier version of this function digested Auth.PublicKey and
+// Auth.Signature, which meant a semantically identical pair of exhibits, freshly
+// signed, produced a different fingerprint, a different evidenceID, and a second
+// slash of the same offence: 1000 -> 950 -> 902.5. Keying on what the votes SAY
+// rather than on the bytes that authenticate them makes one offence one
+// identity, however many times it is signed.
+//
+// Sorting the two exhibit digests keeps exhibit order out of the identity:
+// Verify and VerifyBinding are both symmetric in A/B, and two honest reporters
+// who observed one equivocation in opposite orders must agree on its identity.
+// Same reasoning as pkg/mining/slashing/doublemining, whose encoder
+// canonicalises (ProofA, ProofB) lexicographically.
+//
+// Collision safety does not rest on this digest alone: evidence only reaches
+// dedupe after Verify has checked real signatures from the accused, so an
+// attacker cannot manufacture a colliding proof without that validator's key.
 func (p *EquivocationProof) fingerprint() string {
 	if p == nil {
 		return ""
@@ -214,10 +224,13 @@ func (p *EquivocationProof) fingerprint() string {
 	digests := make([]string, 0, 2)
 	for _, x := range []SignedVoteExhibit{p.VoteA, p.VoteB} {
 		h := sha256.New()
-		// Length-prefix each field so a pubkey/signature boundary cannot be
-		// shifted to produce a colliding digest.
-		writeLenPrefixed(h, x.Auth.PublicKey)
-		writeLenPrefixed(h, x.Auth.Signature)
+		// Length-prefixed so no field boundary can be shifted to collide,
+		// e.g. a validator name absorbing the start of a block hash.
+		writeLenPrefixed(h, []byte(x.Kind))
+		writeLenPrefixed(h, []byte(strings.ToLower(x.Validator)))
+		writeUint64Prefixed(h, x.Height)
+		writeUint64Prefixed(h, uint64(x.Round))
+		writeLenPrefixed(h, []byte(x.BlockHash))
 		digests = append(digests, hex.EncodeToString(h.Sum(nil)))
 	}
 	sort.Strings(digests)
@@ -227,6 +240,12 @@ func (p *EquivocationProof) fingerprint() string {
 		writeLenPrefixed(outer, []byte(d))
 	}
 	return hex.EncodeToString(outer.Sum(nil))
+}
+
+func writeUint64Prefixed(h io.Writer, v uint64) {
+	var b [8]byte
+	binary.BigEndian.PutUint64(b[:], v)
+	writeLenPrefixed(h, b[:])
 }
 
 func writeLenPrefixed(h io.Writer, b []byte) {
