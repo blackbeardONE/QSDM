@@ -20,7 +20,7 @@ func TestEvidenceGossipIngress_AcceptAndDedupe(t *testing.T) {
 		Validator:   "v1",
 		Height:      1,
 		Round:       0,
-		Details:     "bad vote",
+		Details:     "observed fork",
 		BlockHashes: []string{"gossip-a", "gossip-b"},
 		Timestamp:   time.Now(),
 	}

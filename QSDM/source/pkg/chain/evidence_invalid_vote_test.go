@@ -114,20 +114,82 @@ func TestInvalidVoteEvidence_RejectedRegardlessOfFields(t *testing.T) {
 
 // The genuinely provable offence must keep working, so this change removes an
 // attack rather than the ability to report faults.
-func TestEquivocationEvidence_StillSlashesWithConflictingHashes(t *testing.T) {
+//
+// This pins the PROVABLE path deliberately. An earlier version of this test
+// submitted a proofless accusation -- just a validator name and two invented
+// hashes -- and asserted it still slashed. That passes today, because
+// evidenceProofRequiredAt is gated on RequireSignedVotes which defaults false
+// and is set false in both shipped deploy scripts. But writing it that way
+// encoded a forgeable slash as expected behaviour, which is the same defect
+// this commit fixes for invalid_vote, one evidence type over. See the note on
+// TestEquivocationEvidence_ProoflessAccusationIsStillAccepted below.
+func TestEquivocationEvidence_StillSlashesWithVerifiedProof(t *testing.T) {
+	em, vs, _ := registerVictim(t, 1000)
+
+	// The accused must be the key holder: a real equivocation is two
+	// conflicting votes both carrying that validator's own signature.
+	signer, offender := newBFTKey(t)
+	if err := vs.Register(offender, 1000); err != nil {
+		t.Fatalf("register offender: %v", err)
+	}
+	before := stakeOf(t, vs, offender)
+
+	ev, err := BuildEquivocationEvidence(
+		offender,
+		signedExhibit(t, signer, offender, BFTWirePrevote, 9, 1, "value-a"),
+		signedExhibit(t, signer, offender, BFTWirePrevote, 9, 1, "value-b"),
+	)
+	if err != nil {
+		t.Fatalf("building proof-carrying evidence: %v", err)
+	}
+
+	if _, err := em.Process(ev); err != nil {
+		t.Fatalf("proven equivocation must still be accepted: %v", err)
+	}
+	if after := stakeOf(t, vs, offender); after >= before {
+		t.Fatalf("proven equivocation should slash: %v -> %v", before, after)
+	}
+}
+
+// Documents a hole this commit does NOT close, so nobody reads the invalid_vote
+// fix as having shut the gossip stake-drain.
+//
+// The identical attack survives by changing one word in the JSON: an
+// unauthenticated peer sends {"type":"equivocation","validator":"<victim>",
+// "block_hashes":["made-up-a","made-up-b"]} and the victim loses 5% of stake
+// plus 5% of delegated stake. Proof is only demanded when
+// evidenceProofRequiredAt says so, and RequireSignedVotes defaults false
+// (pkg/config/config.go) and is explicitly false in both
+// QSDM/deploy/bring-up-validator.sh and install-ubuntu-vps.sh.
+//
+// It cannot simply be flipped on: the only producer of equivocation evidence,
+// BFTExecutor.maybeRecordProposerEquivocation, reports PROPOSER equivocation
+// and emits no proof, while EquivocationProof accepts only BFTWirePrevote and
+// BFTWirePrecommit exhibits. Requiring proof today would break the one honest
+// reporter. Closing it needs a propose-exhibit kind -- VerifyPropose already
+// exists in bft_sig.go -- then a proof-carrying producer, then the default
+// flipped, in that order.
+//
+// This test asserts the CURRENT behaviour so the hole is visible and so the
+// day someone closes it, this fails and points at the follow-up work.
+func TestEquivocationEvidence_ProoflessAccusationIsStillAccepted(t *testing.T) {
+	if RequireEvidenceProof() {
+		t.Skip("proof is required in this configuration; the hole is closed here")
+	}
 	em, vs, victim := registerVictim(t, 1000)
 	before := stakeOf(t, vs, victim)
 
 	if _, err := em.Process(ConsensusEvidence{
 		Type:        EvidenceEquivocation,
 		Validator:   victim,
-		BlockHashes: []string{"hash-a", "hash-b"},
-		Details:     "conflicting proposals",
+		BlockHashes: []string{"made-up-a", "made-up-b"},
+		Details:     "fabricated: no proof attached",
 	}); err != nil {
-		t.Fatalf("equivocation evidence must still be accepted: %v", err)
+		t.Fatalf("precondition changed -- proofless equivocation now rejected: %v", err)
 	}
 	if after := stakeOf(t, vs, victim); after >= before {
-		t.Fatalf("equivocation should still slash: %v -> %v", before, after)
+		t.Fatal("precondition changed: proofless equivocation no longer slashes. " +
+			"If that was deliberate, delete this test and the note above it")
 	}
 }
 

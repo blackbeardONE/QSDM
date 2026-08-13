@@ -119,9 +119,11 @@ func TestEvidenceManager_ValidateErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected insufficient hash error")
 	}
+	// Not "missing details" any more: invalid_vote is refused outright, so
+	// this asserts the sentinel rather than passing for a stale reason.
 	_, err = em.Process(ConsensusEvidence{Type: EvidenceInvalidVote, Validator: "v1"})
-	if err == nil {
-		t.Fatal("expected missing details error")
+	if !errors.Is(err, ErrEvidenceInvalidVoteUnprovable) {
+		t.Fatalf("expected ErrEvidenceInvalidVoteUnprovable, got %v", err)
 	}
 }
 
