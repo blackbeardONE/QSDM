@@ -2,93 +2,235 @@ package api
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Six consecutive commits shipped a broken container healthcheck, each for a
 // different reason: an authenticated route, a tool absent from the image, a
-// method the handler rejects, and finally a URL with no handler at all. Each
-// fix was verified in isolation and each missed a sibling file.
+// method the handler rejects, and a URL with no handler at all. Each fix was
+// verified in isolation and each missed a sibling.
 //
-// The common cause is that nothing ever compared what the probes request
-// against what the API actually serves. This test does, so the next mistake in
-// that family fails here rather than in a deployment.
+// The first version of this guard scanned the compose files as TEXT, and review
+// defeated it three ways: a CMD-SHELL probe whose `curl` was unquoted, a
+// `wget --method=HEAD`, and -- worst -- a block scalar (`test: |` with the
+// command on the following line), which the line filter dropped silently while
+// still reporting a pass. A guard that validates one rendering of the YAML
+// rather than its meaning is the same defect it exists to catch.
+//
+// So this parses the YAML and inspects the healthcheck command as tokens.
+
+type composeFile struct {
+	Services map[string]struct {
+		Healthcheck struct {
+			Test yaml.Node `yaml:"test"`
+		} `yaml:"healthcheck"`
+	} `yaml:"services"`
+}
+
+// probeTokens flattens a compose `test:` value into argv-ish tokens. It accepts
+// every form compose allows: a sequence (["CMD", ...] / ["CMD-SHELL", ...]) and
+// a string, including block scalars, which are shell and so are split on
+// whitespace.
+func probeTokens(n *yaml.Node) []string {
+	switch n.Kind {
+	case yaml.SequenceNode:
+		var out []string
+		for _, c := range n.Content {
+			out = append(out, probeTokens(c)...)
+		}
+		return out
+	case yaml.ScalarNode:
+		return strings.Fields(n.Value)
+	}
+	return nil
+}
+
 func TestComposeHealthchecksProbeAServedRoute(t *testing.T) {
-	// pkg/api -> source -> QSDM
-	root := filepath.Join("..", "..", "..")
-	files := []string{
-		"docker-compose.yml",
-		"docker-compose.production.yml",
-		filepath.Join("deploy", "docker-compose.single.yml"),
-		filepath.Join("deploy", "docker-compose.cluster.yml"),
+	// The REPOSITORY root, not QSDM/: a fifth tracked compose file lives under
+	// apps/ and was invisible to a search rooted at QSDM/, which is how the
+	// first version of this guard came to cover four files and miss it.
+	topOut, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		t.Skipf("git unavailable: %v", err)
 	}
+	root := strings.TrimSpace(string(topOut))
 
-	// Routes the API serves without authentication, i.e. the only ones a
-	// container healthcheck can legitimately use. Kept explicit rather than
-	// derived, so widening it is a visible decision.
+	// Derived from git, not hardcoded, so a compose file added later cannot be
+	// silently outside the guard.
+	out, err := exec.Command("git", "-C", root, "ls-files", "*docker-compose*.yml", "*docker-compose*.yaml").Output()
+	if err != nil {
+		t.Skipf("git ls-files unavailable: %v", err)
+	}
+	var files []string
+	for _, f := range strings.Fields(string(out)) {
+		files = append(files, f)
+	}
+	if len(files) == 0 {
+		t.Fatal("git ls-files matched no compose files; the pattern is wrong")
+	}
+	t.Logf("compose files discovered: %v", files)
+
+	// The only routes a container healthcheck may use: registered AND public.
+	// Explicit so that widening it is a visible decision in a diff.
 	publicProbeRoutes := map[string]bool{
-		"/api/v1/health":       true,
-		"/api/v1/health/live":  true,
-		"/api/v1/health/ready": true,
+		"/api/v1/health": true, "/api/v1/health/live": true, "/api/v1/health/ready": true,
 	}
-
-	urlRe := regexp.MustCompile(`https?://[^"'\s\]]+`)
+	urlRe := regexp.MustCompile(`https?://[^\s"']+`)
 	pathRe := regexp.MustCompile(`^https?://[^/]+(/[^?#]*)?`)
+	// Word-boundary, so an unquoted curl inside a CMD-SHELL string is caught.
+	curlRe := regexp.MustCompile(`(^|[\s/;&|])curl($|[\s;&|])`)
 
-	checked := 0
+	probes := 0
 	for _, rel := range files {
-		path := filepath.Join(root, rel)
-		raw, err := os.ReadFile(path) // #nosec G304 -- fixed in-repo paths
+		raw, err := os.ReadFile(filepath.Join(root, rel)) // #nosec G304 -- git-tracked paths
 		if err != nil {
-			if os.IsNotExist(err) {
-				t.Logf("%s not present, skipping", rel)
-				continue
-			}
-			t.Fatalf("read %s: %v", rel, err)
+			t.Errorf("read %s: %v", rel, err)
+			continue
 		}
-
-		for i, line := range strings.Split(string(raw), "\n") {
-			if !strings.Contains(line, "test:") || !strings.Contains(line, "healthcheck") &&
-				!strings.Contains(line, "wget") && !strings.Contains(line, "curl") {
+		var cf composeFile
+		if err := yaml.Unmarshal(raw, &cf); err != nil {
+			t.Errorf("%s: parse: %v", rel, err)
+			continue
+		}
+		for name, svc := range cf.Services {
+			toks := probeTokens(&svc.Healthcheck.Test)
+			if len(toks) == 0 {
 				continue
 			}
-			for _, u := range urlRe.FindAllString(line, -1) {
+			probes++
+			joined := strings.Join(toks, " ")
+			where := rel + " service " + name
+
+			if curlRe.MatchString(" " + joined + " ") {
+				t.Errorf("%s: probes with curl, which QSDM/Dockerfile does not install (it installs wget only)", where)
+			}
+			// Every way of asking wget for a HEAD. HealthLive 405s on non-GET.
+			for _, head := range []string{"--spider", "--method=HEAD", "-I", "--head", "--request=HEAD"} {
+				if strings.Contains(joined, head) {
+					t.Errorf("%s: probe uses %s, which issues HEAD; the health handlers accept GET only", where, head)
+				}
+			}
+			urls := urlRe.FindAllString(joined, -1)
+			if len(urls) == 0 {
+				t.Errorf("%s: healthcheck has no URL: %q", where, joined)
+				continue
+			}
+			for _, u := range urls {
 				m := pathRe.FindStringSubmatch(u)
-				if m == nil {
-					continue
+				route := "/"
+				if m != nil && m[1] != "" {
+					route = m[1]
 				}
-				route := m[1]
-				if route == "" {
-					route = "/"
-				}
-				checked++
 				if !publicProbeRoutes[route] {
-					t.Errorf("%s:%d probes %q, which is not a public API route. "+
-						"A healthcheck must target a route the API serves without "+
-						"authentication; %q is either unregistered or behind auth.",
-						rel, i+1, route, route)
+					t.Errorf("%s: probes %q, which is not a registered public API route; "+
+						"a healthcheck must target a route served without authentication", where, route)
 				}
-			}
-
-			// HEAD-issuing probes fail against HealthLive, which 405s on
-			// non-GET. See TestHealthLive_MethodsThatProbesUse.
-			if strings.Contains(line, "--spider") || strings.Contains(line, `"-I"`) ||
-				strings.Contains(line, "--head") {
-				t.Errorf("%s:%d issues a HEAD request; the health handlers accept GET only", rel, i+1)
-			}
-			// curl is not installed in the runtime image (QSDM/Dockerfile
-			// installs wget only), so a curl probe cannot execute.
-			if strings.Contains(line, `"curl"`) {
-				t.Errorf("%s:%d uses curl, which is not present in the runtime image", rel, i+1)
 			}
 		}
 	}
 
-	if checked == 0 {
-		t.Fatal("no healthcheck URLs were examined; the parser or the file list is wrong")
+	if probes == 0 {
+		t.Fatal("no healthchecks were examined; the parser or the file discovery is broken")
 	}
-	t.Logf("checked %d healthcheck URL(s)", checked)
+	t.Logf("checked %d healthcheck(s)", probes)
+}
+
+// Kubernetes probes are the sibling mechanism the compose guard does not cover.
+// They use native httpGet rather than a shell command, so the tool and method
+// classes cannot arise -- kubelet always issues a GET -- but the ROUTE class
+// can, and that is the one that caused two of the six incidents. Review flagged
+// these manifests as currently correct with zero test coverage, which is
+// precisely the state each of the six defects was in beforehand.
+
+type k8sHTTPGet struct {
+	Path   string `yaml:"path"`
+	Port   string `yaml:"port"`
+	Scheme string `yaml:"scheme"`
+}
+
+type k8sProbe struct {
+	HTTPGet *k8sHTTPGet `yaml:"httpGet"`
+}
+
+type k8sContainer struct {
+	Name           string    `yaml:"name"`
+	LivenessProbe  *k8sProbe `yaml:"livenessProbe"`
+	ReadinessProbe *k8sProbe `yaml:"readinessProbe"`
+	StartupProbe   *k8sProbe `yaml:"startupProbe"`
+}
+
+type k8sManifest struct {
+	Spec struct {
+		Template struct {
+			Spec struct {
+				Containers []k8sContainer `yaml:"containers"`
+			} `yaml:"spec"`
+		} `yaml:"template"`
+	} `yaml:"spec"`
+}
+
+func TestKubernetesProbesTargetAServedRoute(t *testing.T) {
+	topOut, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		t.Skipf("git unavailable: %v", err)
+	}
+	root := strings.TrimSpace(string(topOut))
+
+	out, err := exec.Command("git", "-C", root, "ls-files", "*kubernetes/*.yaml", "*kubernetes/*.yml").Output()
+	if err != nil {
+		t.Skipf("git ls-files unavailable: %v", err)
+	}
+	files := strings.Fields(string(out))
+	if len(files) == 0 {
+		t.Skip("no kubernetes manifests tracked")
+	}
+
+	publicProbeRoutes := map[string]bool{
+		"/api/v1/health": true, "/api/v1/health/live": true, "/api/v1/health/ready": true,
+	}
+
+	probes := 0
+	for _, rel := range files {
+		raw, err := os.ReadFile(filepath.Join(root, rel)) // #nosec G304 -- git-tracked paths
+		if err != nil {
+			t.Errorf("read %s: %v", rel, err)
+			continue
+		}
+		dec := yaml.NewDecoder(strings.NewReader(string(raw)))
+		for {
+			var m k8sManifest
+			if err := dec.Decode(&m); err != nil {
+				break // EOF, or a document this shape does not model
+			}
+			for _, c := range m.Spec.Template.Spec.Containers {
+				for kind, pr := range map[string]*k8sProbe{
+					"livenessProbe": c.LivenessProbe, "readinessProbe": c.ReadinessProbe,
+					"startupProbe": c.StartupProbe,
+				} {
+					if pr == nil || pr.HTTPGet == nil {
+						continue
+					}
+					probes++
+					if !publicProbeRoutes[pr.HTTPGet.Path] {
+						t.Errorf("%s: container %q %s probes %q, which is not a registered public API route",
+							rel, c.Name, kind, pr.HTTPGet.Path)
+					}
+					if sc := pr.HTTPGet.Scheme; sc != "" && !strings.EqualFold(sc, "HTTP") {
+						t.Errorf("%s: container %q %s uses scheme %q; the API serves plaintext HTTP by default",
+							rel, c.Name, kind, sc)
+					}
+				}
+			}
+		}
+	}
+	if probes == 0 {
+		t.Skip("no httpGet probes found in tracked manifests")
+	}
+	t.Logf("checked %d kubernetes probe(s)", probes)
 }
