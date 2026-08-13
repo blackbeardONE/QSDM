@@ -175,12 +175,32 @@ func (e *BFTExecutor) SetEvidenceManager(em *EvidenceManager) {
 	e.evidence.Store(em)
 }
 
-func (e *BFTExecutor) maybeRecordProposerEquivocation(err error) {
+// maybeRecordProposerEquivocation converts a detected propose conflict into
+// slashable evidence -- but only when the conflicting message was signed.
+//
+// attributable reports whether the propose carried a verified signature from
+// the validator it names. When votes are not yet required to be signed
+// (checkInboundAuth, and cfg.RequireSignedVotes, which both shipped bring-up
+// scripts set to false), the Proposer field is self-asserted: any peer on the
+// gossip topic can emit two unsigned proposes at one height and round naming
+// the round's legitimate proposer, with different block hashes. Acting on that
+// would jail an innocent validator and burn its bond plus its delegators',
+// from two messages that cost the attacker nothing.
+//
+// An unsigned conflict is still a good reason to drop the message -- Propose
+// already returns the error and ApplyInbound propagates it. It is not a good
+// reason to move money, so evidence is withheld rather than fabricated. This
+// costs nothing once require_signed_votes is on, because then every propose
+// that reaches here is signed.
+func (e *BFTExecutor) maybeRecordProposerEquivocation(err error, attributable bool) {
 	if e == nil || err == nil {
 		return
 	}
 	var pe *ProposerEquivocationError
 	if !errors.As(err, &pe) {
+		return
+	}
+	if !attributable {
 		return
 	}
 	em := e.evidence.Load()
@@ -488,7 +508,9 @@ func (e *BFTExecutor) ApplyInbound(payload []byte) error {
 			return err
 		}
 		if _, err := e.bc.Propose(m.Height, m.Round, m.Proposer, m.BlockHash); err != nil {
-			e.maybeRecordProposerEquivocation(err)
+			// checkInboundAuth above ran VerifyPropose iff the message was
+			// signed, so Signed() here means "verified against m.Proposer".
+			e.maybeRecordProposerEquivocation(err, m.Auth.Signed())
 			if isBenignBFTErr(err) {
 				return nil
 			}
