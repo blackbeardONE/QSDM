@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/blackbeardONE/QSDM/pkg/wallet"
+	"github.com/blackbeardONE/QSDM/pkg/crypto"
 )
 
 // Task actions are verified at the HTTP boundary and then the proof is thrown
@@ -117,11 +117,22 @@ func VerifyTaskActionSignature(a TaskAction, sigHex, pubHex string, height uint6
 		return fmt.Errorf("%w: canonicalise: %v", ErrTaskActionBadSignature, err)
 	}
 
-	ws, err := wallet.NewWalletService()
-	if err != nil {
-		return fmt.Errorf("%w: wallet service unavailable: %v", ErrTaskActionBadSignature, err)
+	// Verify-only, matching the sibling pattern at txsig.go:281.
+	//
+	// The first version routed through wallet.NewWalletService(), which
+	// GENERATES a fresh ML-DSA-87 keypair (crypto.NewDilithium ->
+	// mldsa87.GenerateKey) purely to satisfy a non-nil guard on a stateless
+	// verify. The key was never used. On the block-apply path that is a full
+	// keygen per task action -- but the real problem is determinism: a keygen
+	// that fails on entropy would make this node reject a validly-signed action
+	// that its peers accept, which is a fork, not a slow path.
+	d := crypto.NewDilithiumVerifyOnly()
+	if d == nil {
+		return fmt.Errorf("%w: ML-DSA verifier unavailable", ErrTaskActionBadSignature)
 	}
-	ok, verr := ws.VerifySignature(canonical, sigBytes, pubBytes)
+	defer d.Free()
+
+	ok, verr := d.VerifyWithPublicKey(canonical, sigBytes, pubBytes)
 	if verr != nil || !ok {
 		return ErrTaskActionBadSignature
 	}
