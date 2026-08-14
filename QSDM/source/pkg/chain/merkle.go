@@ -118,14 +118,20 @@ func VerifyProof(proof *MerkleProof, expectedRoot string) bool {
 // Use VerifyTxContentInBlock there, which needs the transaction rather than
 // just its ID.
 //
-// The height check below is DOCUMENTATION, not a guard, and it is worth being
-// precise about that: removing it changes no behaviour and fails no test,
-// because a content-root leaf never equals hashLeaf(txID) anyway, so the
-// comparison already returns false. An earlier version of this comment claimed
-// the check prevents "a silent wrong answer" -- it does not, the answer is
-// false either way. It is kept because it states the precondition at the point
-// of use and would catch a future change that made the two leaf formats
-// collide.
+// The height check below IS load-bearing, and the route to it is narrow enough
+// that this comment has now been wrong twice in opposite directions.
+//
+// First it claimed the check prevents "a silent wrong answer" -- overstated,
+// since for an ordinary ID the leaf simply does not match and the result is
+// false either way. Then it claimed the check is documentation only, because "a
+// content-root leaf never equals hashLeaf(txID)" -- also wrong, because
+// mempool.Tx.ID is an unconstrained string. A caller may pass an ID that IS the
+// content digest of a real transaction in the block, and without this check the
+// proof then verifies and the function answers TRUE: a false positive on an
+// inclusion check, which is the direction that actually costs something.
+//
+// TestVerifyTxInBlock_RefusesADigestShapedID covers exactly that case, because
+// neutering the check passed every other test in the package.
 func VerifyTxInBlock(txID string, proof *MerkleProof, header BlockHeader) bool {
 	if txContentRootActiveAt(header.Height) {
 		// The caller holds only an ID, so the correct leaf cannot be built.
@@ -144,8 +150,8 @@ func VerifyTxInBlock(txID string, proof *MerkleProof, header BlockHeader) bool {
 // SAYS, not merely that some transaction with that ID was in the block.
 //
 // Valid at or above the activation height. Below it the root merkleizes IDs, so
-// this refuses there -- again documentation rather than a guard, for the same
-// reason as above: the leaf would not match regardless.
+// this refuses there rather than relying on the leaf failing to match -- the
+// same reasoning as the check above, which turned out to matter.
 func VerifyTxContentInBlock(tx *mempool.Tx, proof *MerkleProof, header BlockHeader) bool {
 	if tx == nil || !txContentRootActiveAt(header.Height) {
 		return false
