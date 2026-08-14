@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/blackbeardONE/QSDM/pkg/chain"
@@ -125,30 +127,56 @@ func TestScan_MalformedLineIsAnErrorNotAShortCount(t *testing.T) {
 
 // A chain file we could not read must never yield a suggested height.
 //
-// An empty file, a wrong --chain path, an unmounted volume, or a state dir that
-// has not synced all produce zero blocks. Zero blocks and a genuinely fresh
-// chain print the same confident advice, so the count alone cannot tell an
-// operator which one they have. The tool's own commit message called this the
-// central risk and the first version still exited 0 here; review found it.
-func TestScan_EmptyChainYieldsZeroBlocks(t *testing.T) {
+// This calls run(), NOT scanChain. The first version of this test called
+// scanChain and asserted it returned zeros -- which it did before the guard
+// existed, so neutering the guard left every test passing and a reviewer
+// reproduced the original bug against the neutered binary. The guard is the
+// entire point of the change, so the test has to reach it.
+func TestRun_RefusesToAdviseOnAnUnreadChain(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "empty.ndjson")
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
-	got, err := scanChain(path)
-	if err != nil {
-		t.Fatalf("an empty file should scan cleanly and report nothing, got: %v", err)
+	var out, errOut bytes.Buffer
+	code := run(path, 1000, &out, &errOut)
+
+	if code == 0 {
+		t.Error("an unread chain must not exit 0: automation would treat it as success")
 	}
-	if got.blocks != 0 {
-		t.Fatalf("blocks = %d, want 0", got.blocks)
+	if strings.Contains(out.String(), "suggested") {
+		t.Errorf("no activation height may be suggested for a chain we did not read; got:\n%s", out.String())
 	}
-	// main() must refuse on this. The guard is asserted here rather than by
-	// running the binary, so the invariant is stated next to the scan it
-	// depends on: blocks == 0 means "do not advise".
-	if got.taskActions != 0 || got.haveUnsigned {
-		t.Errorf("an unread chain must not report findings: %+v", got)
+	if !strings.Contains(errOut.String(), "REFUSING TO ADVISE") {
+		t.Errorf("the refusal must say why on stderr; got:\n%s", errOut.String())
+	}
+}
+
+// ...and it must NOT refuse on a legitimate chain, or the guard is just a
+// tool that never works.
+func TestRun_AdvisesOnARealChain(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "chain.ndjson")
+	writeFixture(t, path, []*chain.Block{
+		{Height: 0},
+		{Height: 1, Transactions: []*mempool.Tx{
+			{ID: "unsigned", ContractID: chain.TaskContractID},
+		}},
+	})
+
+	var out, errOut bytes.Buffer
+	code := run(path, 100, &out, &errOut)
+
+	if code != 0 {
+		t.Fatalf("a real chain must advise, got exit %d, stderr:\n%s", code, errOut.String())
+	}
+	// tip 1, last unsigned 1, margin 100 -> 101.
+	if !strings.Contains(out.String(), "suggested task_action_signature_activation_height = 101") {
+		t.Errorf("wrong or missing suggestion:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "would reject them and stop this node") {
+		t.Errorf("an existing unsigned action must carry the warning:\n%s", out.String())
 	}
 }
 
