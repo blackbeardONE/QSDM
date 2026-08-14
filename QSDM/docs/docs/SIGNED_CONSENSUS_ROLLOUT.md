@@ -67,6 +67,39 @@ append errors, POL conflicts, and signature rejection metrics. Do not
 unilaterally disable enforcement after activation; a validator with different
 settings can diverge from the network.
 
+## Task-action signatures
+
+Separate from the signed-vote rollout above, and separately gated.
+
+`/api/v1/tasks/actions/submit-signed` has always verified the ML-DSA envelope
+at admission. Until recently the mempool transaction dropped the signature
+afterwards, so consensus replay re-checked nothing and a proposer could inject
+task actions against any account. The proof is now carried and re-verified at
+apply time (`chain.VerifyTaskActionSignature`).
+
+Two behaviours, only one of which is on by default:
+
+- **Always on.** A signature that is PRESENT is verified at every height, and a
+  bad one is refused. This carries no replay risk: a historical unsigned action
+  has nothing to verify and is unaffected.
+- **Off by default.** Whether a signature is REQUIRED is governed by
+  `[consensus] task_action_signature_activation_height` (env:
+  `QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT`). Zero, the default, requires
+  nothing -- an unsigned task action is accepted at any height. The node logs a
+  WARNING at startup while this is the case.
+
+### Before enabling it
+
+Setting the height rejects any unsigned task action at or above it. If your
+chain already contains one above the value you choose, replay diverges and the
+node cannot follow.
+
+So pick a height ABOVE your current tip, and confirm your history first:
+count `qsdm/tasks/v1` transactions in the chain journal and check the greatest
+height carrying an unsigned one. Set the activation height above that, and
+above the tip, so the boundary is in the future for every node. Every validator
+must agree on the value, as with `signed_message_activation_height`.
+
 ## Current boundary
 
 The current runtime uses one configured block producer with append-only
