@@ -417,6 +417,12 @@ func qsdmTaskActionMempoolTx(env QSDMTaskActionEnvelope) (*mempool.Tx, error) {
 		Nonce:      env.Nonce,
 		Payload:    payload,
 		ContractID: chain.TaskContractID,
+		// Carry the proof. This handler verifies the envelope and used to
+		// drop these two fields, so consensus replay had nothing to
+		// re-check and a proposer could inject task actions against any
+		// account. See chain.VerifyTaskActionSignature.
+		Signature: env.Signature,
+		PublicKey: env.PublicKey,
 	}, nil
 }
 

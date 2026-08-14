@@ -191,6 +191,19 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 			return ErrTaskStateNotWired
 		}
 		h, _ := a.currentHeight()
+		// Authenticate before applying. Admission verified this envelope at
+		// the HTTP boundary and then discarded the proof, so until now
+		// nothing re-checked it here -- and admission is not a consensus
+		// rule. A present signature is always verified; an absent one is
+		// refused only at or above the configured activation height, so
+		// historical unsigned actions still replay.
+		action, decErr := DecodeTaskActionTx(tx)
+		if decErr != nil {
+			return decErr
+		}
+		if err := VerifyTaskActionSignature(action, tx.Signature, tx.PublicKey, h); err != nil {
+			return err
+		}
 		return tasks.ApplyEconomicTxAtHeight(tx, a.accounts, h)
 	}
 	if tx.ContractID == StreamContractID {
