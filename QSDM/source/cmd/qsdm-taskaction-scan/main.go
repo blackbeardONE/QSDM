@@ -45,6 +45,21 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
+
+	// Refuse to advise on a chain we did not read.
+	//
+	// An empty file, a wrong --chain path, an unmounted volume or a state dir
+	// that has not synced all produce zero blocks -- and a zero-block report is
+	// indistinguishable at a glance from a genuinely fresh chain, because both
+	// print a confident suggested height. That is the silent zero this tool
+	// exists to avoid, and the first version of it exited 0 here.
+	if res.blocks == 0 {
+		fmt.Fprintf(os.Stderr, "REFUSING TO ADVISE: no blocks were read from %s\n", *chainPath)
+		fmt.Fprintln(os.Stderr, "An empty or unreadable chain file looks exactly like a clean chain here.")
+		fmt.Fprintln(os.Stderr, "Check the path, that the volume is mounted, and that the node has synced.")
+		os.Exit(1)
+	}
+
 	blocks, tipHeight := res.blocks, res.tipHeight
 	taskActions, unsigned := res.taskActions, res.unsigned
 	lastUnsignedAt, haveUnsigned := res.lastUnsignedAt, res.haveUnsigned

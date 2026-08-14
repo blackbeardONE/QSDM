@@ -122,3 +122,57 @@ func TestScan_MalformedLineIsAnErrorNotAShortCount(t *testing.T) {
 			"a short count yields a too-low activation height, which rejects real transactions")
 	}
 }
+
+// A chain file we could not read must never yield a suggested height.
+//
+// An empty file, a wrong --chain path, an unmounted volume, or a state dir that
+// has not synced all produce zero blocks. Zero blocks and a genuinely fresh
+// chain print the same confident advice, so the count alone cannot tell an
+// operator which one they have. The tool's own commit message called this the
+// central risk and the first version still exited 0 here; review found it.
+func TestScan_EmptyChainYieldsZeroBlocks(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.ndjson")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	got, err := scanChain(path)
+	if err != nil {
+		t.Fatalf("an empty file should scan cleanly and report nothing, got: %v", err)
+	}
+	if got.blocks != 0 {
+		t.Fatalf("blocks = %d, want 0", got.blocks)
+	}
+	// main() must refuse on this. The guard is asserted here rather than by
+	// running the binary, so the invariant is stated next to the scan it
+	// depends on: blocks == 0 means "do not advise".
+	if got.taskActions != 0 || got.haveUnsigned {
+		t.Errorf("an unread chain must not report findings: %+v", got)
+	}
+}
+
+// Blank lines are legitimate in an NDJSON file and must not be mistaken for an
+// unread chain -- otherwise the guard above would fire on a real chain.
+func TestScan_BlankLinesAreNotBlocks(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "chain.ndjson")
+	writeFixture(t, path, []*chain.Block{{Height: 0}, {Height: 1}})
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := f.WriteString("\n\n   \n"); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	f.Close()
+
+	got, err := scanChain(path)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if got.blocks != 2 {
+		t.Errorf("blocks = %d, want 2: blank lines must not count as blocks, "+
+			"nor cause a parse error", got.blocks)
+	}
+}

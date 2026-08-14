@@ -98,13 +98,17 @@ So pick a height ABOVE your current tip, and confirm your history first. There
 is a command for this:
 
 ```
-go build -o qsdm-taskaction-scan ./cmd/qsdm-taskaction-scan
+go build -tags dilithium_circl -o qsdm-taskaction-scan ./cmd/qsdm-taskaction-scan
 ./qsdm-taskaction-scan --chain /opt/qsdm/qsdm_chain.ndjson
 ```
 
 It is read-only. It reports the tip, how many `qsdm/tasks/v1` transactions the
 chain carries, how many of those are unsigned, the greatest height carrying an
 unsigned one, and a suggested activation height above both that and the tip.
+
+If it reports `REFUSING TO ADVISE: no blocks were read`, the path is wrong or
+the volume is not mounted. It exits non-zero rather than suggesting a height,
+because an unread chain and a clean chain otherwise look identical.
 
 Run it on EVERY node. They should agree; if they do not, that disagreement
 matters more than the number. Every validator must then be set to the same
