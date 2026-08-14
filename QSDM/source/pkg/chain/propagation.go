@@ -2,8 +2,6 @@ package chain
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"log"
 	"sync"
@@ -328,27 +326,20 @@ func clampBlockRequestTo(from, to, limit uint64) uint64 {
 	return to
 }
 
+// recomputeHash independently re-derives a block's hash during propagation
+// validation.
+//
+// It delegates to computeBlockHash rather than reimplementing it. It used to
+// carry its own copy, including its own tx-root loop that merkleized tx.ID
+// unconditionally -- so when computeTxRoot gained the height-gated content
+// root, this copy did not. Activating that gate would then have made the
+// producer's canonical hash and this validator's recomputed hash disagree for
+// every block at or above the activation height, and every node would have
+// rejected every valid block: a network-wide propagation halt, caused by the
+// mechanism meant to close a consensus defect.
+//
+// Duplicating a hash derivation is the whole problem. One definition, so the
+// two cannot drift again.
 func recomputeHash(b *Block) string {
-	txRoot := ""
-	if len(b.Transactions) > 0 {
-		ids := make([]string, len(b.Transactions))
-		for i, tx := range b.Transactions {
-			ids[i] = tx.ID
-		}
-		tree := BuildMerkleTree(ids)
-		txRoot = tree.Root
-	} else {
-		txRoot = emptyHash()
-	}
-
-	data, _ := json.Marshal(struct {
-		Height    uint64    `json:"h"`
-		PrevHash  string    `json:"p"`
-		StateRoot string    `json:"s"`
-		TxRoot    string    `json:"t"`
-		Time      time.Time `json:"ts"`
-		Producer  string    `json:"pr"`
-	}{b.Height, b.PrevHash, b.StateRoot, txRoot, b.Timestamp, b.ProducerID})
-	h := sha256.Sum256(data)
-	return hex.EncodeToString(h[:])
+	return computeBlockHash(b)
 }

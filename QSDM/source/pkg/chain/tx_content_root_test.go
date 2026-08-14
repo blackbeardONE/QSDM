@@ -111,3 +111,43 @@ func TestComputeTxRoot_ContentRootIsHeightGated(t *testing.T) {
 		t.Error("enabling the gate changed a below-activation root; that would invalidate history")
 	}
 }
+
+// Block validation during propagation must derive the SAME hash the producer
+// signed, at every height on both sides of the activation boundary.
+//
+// recomputeHash (propagation.go) used to carry its own copy of the hash
+// derivation, including its own tx-root loop over tx.ID. When computeTxRoot
+// gained the height gate, that copy did not follow. Activating the gate would
+// then have made every node reject every valid block at or above the
+// activation height -- a network-wide propagation halt caused by the mechanism
+// meant to close a consensus defect. Review found it by computing both hashes;
+// nothing in the suite compared them.
+func TestRecomputeHash_MatchesTheProducerHashAcrossActivation(t *testing.T) {
+	prev := TxContentRootActivationHeight()
+	t.Cleanup(func() { SetTxContentRootActivationHeight(prev) })
+
+	mk := func(height uint64) *Block {
+		return &Block{
+			Height: height, PrevHash: "prev", StateRoot: "sr",
+			ProducerID: "producer", Timestamp: time.Unix(1700000000, 0).UTC(),
+			Transactions: []*mempool.Tx{
+				{ID: "a", Sender: "s1", Recipient: "r1", Amount: 1, Nonce: 1},
+				{ID: "b", Sender: "s2", Recipient: "r2", Amount: 2, Nonce: 2},
+			},
+		}
+	}
+
+	for _, activation := range []uint64{0, 100} {
+		SetTxContentRootActivationHeight(activation)
+		for _, height := range []uint64{1, 99, 100, 101} {
+			b := mk(height)
+			canonical := computeBlockHash(b)
+			validated := recomputeHash(b)
+			if canonical != validated {
+				t.Errorf("activation=%d height=%d: the propagation validator derives a different "+
+					"hash than the producer signed -- every node would reject this block\n"+
+					"  producer  %s\n  validator %s", activation, height, canonical, validated)
+			}
+		}
+	}
+}

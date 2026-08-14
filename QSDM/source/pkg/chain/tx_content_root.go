@@ -20,11 +20,13 @@ import (
 // verifying. The audit has carried this since it was written and nothing in
 // this session touched it.
 //
-// Fixing it changes every block hash, so it is gated on a height exactly like
-// forkDustHeight (dustfork.go): below the activation the legacy ID-only root is
-// produced, at or above it the content root is. Zero, the default, never
-// activates -- so this file changes nothing until an operator coordinates a
-// fork height across the network.
+// Fixing it changes every block hash, so it is gated on a height in the same
+// spirit as forkDustHeight (dustfork.go), though not identically: that one
+// defaults its threshold to MaxUint64 in init(), this uses the atomic's zero
+// value with an explicit h != 0 check. Both are inert until set. Below the
+// activation the legacy ID-only root is produced, at or above it the content
+// root is. Zero, the default, never activates -- so this changes nothing until
+// an operator coordinates a fork height across the network.
 
 // txContentRootHeight is the first height whose tx root commits transaction
 // contents rather than IDs. Zero disables it.
