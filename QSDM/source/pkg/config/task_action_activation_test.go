@@ -66,3 +66,52 @@ func TestTaskActionSignatureActivationHeight_DefaultsOff(t *testing.T) {
 		t.Errorf("default must be 0 (not required), got %d", cfg.TaskActionSignatureActivationHeight)
 	}
 }
+
+// The content-root gate had the same defect the task-action gate did: the
+// mechanism existed and nothing could switch it on. An independent audit found
+// SetTxContentRootActivationHeight reachable only from Go code -- no config
+// key, no env var, no caller in main.go.
+func TestTxContentRootActivationHeight_IsConfigurable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "qsdm.toml")
+	if err := os.WriteFile(path, []byte("[consensus]\ntx_content_root_activation_height = 777000\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("CONFIG_FILE", path)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.TxContentRootActivationHeight != 777000 {
+		t.Errorf("config key not read: got %d, want 777000", cfg.TxContentRootActivationHeight)
+	}
+}
+
+func TestTxContentRootActivationHeight_EnvOverrideAndDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "qsdm.toml")
+	if err := os.WriteFile(path, []byte("[consensus]\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("CONFIG_FILE", path)
+
+	// Default must stay zero: a non-zero default would change block hashes on
+	// every existing chain the moment this binary shipped.
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.TxContentRootActivationHeight != 0 {
+		t.Fatalf("default must be 0 (legacy root), got %d", cfg.TxContentRootActivationHeight)
+	}
+
+	t.Setenv("QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT", "888000")
+	cfg, err = LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.TxContentRootActivationHeight != 888000 {
+		t.Errorf("env override not applied: got %d, want 888000", cfg.TxContentRootActivationHeight)
+	}
+}

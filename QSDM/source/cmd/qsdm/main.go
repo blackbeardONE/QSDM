@@ -1324,6 +1324,22 @@ func main() {
 	// nothing -- but a signature that IS present is verified at every height
 	// regardless of this setting.
 	chain.SetTaskActionSignatureActivationHeight(cfg.TaskActionSignatureActivationHeight)
+	// Transaction-content root. Changing this changes BLOCK HASHES from the
+	// height onward, so unlike every other gate here it is not merely a local
+	// policy: a node with a different value computes different hashes and
+	// forks. Zero, the default, keeps the legacy ID-only root, which does not
+	// bind transaction contents.
+	chain.SetTxContentRootActivationHeight(cfg.TxContentRootActivationHeight)
+	if cfg.TxContentRootActivationHeight > 0 {
+		logger.Info("Block tx root commits transaction contents",
+			"from_height", cfg.TxContentRootActivationHeight,
+			"warning", "every node must use this exact value or block hashes diverge")
+	} else {
+		logger.Warn("Block tx root commits transaction IDs only: contents are not bound by the block hash",
+			"config", "[consensus] tx_content_root_activation_height",
+			"env", "QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT",
+			"note", "enabling this is a coordinated fork; every node must agree on the height")
+	}
 	if cfg.TaskActionSignatureActivationHeight > 0 {
 		logger.Info("Task-action signatures required",
 			"from_height", cfg.TaskActionSignatureActivationHeight)

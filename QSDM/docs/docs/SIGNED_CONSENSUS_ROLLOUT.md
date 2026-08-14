@@ -100,6 +100,38 @@ height carrying an unsigned one. Set the activation height above that, and
 above the tip, so the boundary is in the future for every node. Every validator
 must agree on the value, as with `signed_message_activation_height`.
 
+## Transaction-content root (coordinated fork)
+
+`computeTxRoot` merkleizes transaction IDs only, and the block hash signs over
+that root. So any field a transaction carries that the state root does not
+independently distinguish -- amount, recipient, contract, payload, the
+signature itself -- can be rewritten in flight with the block hash, the
+producer signature and the state root all still verifying.
+
+`[consensus] tx_content_root_activation_height` (env:
+`QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT`) sets the first height whose tx root
+commits contents instead. Zero, the default, keeps the legacy root; the node
+logs a WARNING at startup while that is so.
+
+### This one is different from every other gate here
+
+The other activation heights change what a node ACCEPTS. This changes what a
+node COMPUTES: block hashes differ from the activation height onward. A node
+with a different value derives different hashes for the same blocks and forks
+immediately.
+
+So: pick a height comfortably above the current tip, set the identical value on
+every node, and restart them all before the chain reaches it. Verify with
+`grep tx_content_root_activation_height` across your fleet, not from memory.
+A node that misses the change will reject every block from the activation
+height onward.
+
+Producer and validator derive the hash through one function
+(`computeBlockHash`); `recomputeHash` in the propagation path delegates to it
+rather than carrying its own copy, so there is no second derivation to keep in
+step. That was not true before commit `bee8da4`, and activating the gate
+against a build without it would halt propagation network-wide.
+
 ## Current boundary
 
 The current runtime uses one configured block producer with append-only

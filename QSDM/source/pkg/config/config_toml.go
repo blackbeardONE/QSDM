@@ -166,6 +166,13 @@ type ConsensusConfigTOML struct {
 	// A signature that IS present is verified at every height regardless.
 	TaskActionSignatureActivationHeight uint64 `toml:"task_action_signature_activation_height" yaml:"task_action_signature_activation_height"`
 
+	// TxContentRootActivationHeight is the first height whose block tx root
+	// commits transaction CONTENTS rather than IDs. Zero leaves the legacy
+	// ID-only root, which does not bind contents. Setting it changes block
+	// hashes from that height on, so EVERY node must agree on the value --
+	// a node with a different setting computes different hashes and forks.
+	TxContentRootActivationHeight uint64 `toml:"tx_content_root_activation_height" yaml:"tx_content_root_activation_height"`
+
 	// SignerKeyPath stores the validator-only ML-DSA consensus hot key.
 	SignerKeyPath string `toml:"signer_key_path" yaml:"signer_key_path"`
 
