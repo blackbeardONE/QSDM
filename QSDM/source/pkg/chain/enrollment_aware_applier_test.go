@@ -210,7 +210,9 @@ func TestEnrollmentAwareApplier_ApplyTx_NilInputs(t *testing.T) {
 }
 
 func TestEnrollmentAwareApplier_ApplyTx_TaskActionPath(t *testing.T) {
-	aware, _, _ := awareFixture(t, 100, nil)
+	// See the note in TestEnrollmentAwareApplier_StateRoot_FoldsTaskStateWhenPresent:
+	// the task branch now requires a wired heightFn.
+	aware, _, _ := awareFixture(t, 100, func() uint64 { return 1 })
 	tasks := NewTaskStateStore()
 	aware.SetTaskStateStore(tasks)
 
@@ -289,7 +291,11 @@ func TestEnrollmentAwareApplier_StateRoot_DelegatesToAccounts(t *testing.T) {
 }
 
 func TestEnrollmentAwareApplier_StateRoot_FoldsTaskStateWhenPresent(t *testing.T) {
-	aware, accounts, _ := awareFixture(t, 100, nil)
+	// A height is required now that the task branch refuses an unwired
+	// heightFn rather than authenticating at 0. This test is about StateRoot
+	// folding task state, so any height serves; it is below the (unset)
+	// activation height either way.
+	aware, accounts, _ := awareFixture(t, 100, func() uint64 { return 1 })
 	tasks := NewTaskStateStore()
 	aware.SetTaskStateStore(tasks)
 

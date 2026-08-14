@@ -76,6 +76,38 @@ func TestApplyTx_AcceptsGenuineTaskAction(t *testing.T) {
 	t.Logf("post-authentication result: %v", err)
 }
 
+// An unwired heightFn must refuse, not authenticate at height 0.
+//
+// Every other test in this file calls SetHeightFn, so none of them could see
+// this: the task branch took `h, _ := a.currentHeight()` and dropped the bool,
+// while the enrollment, slashing and governance branches beside it all return
+// ErrEnrollmentHeightUnset. Height 0 is below every non-zero activation height,
+// so the unsigned-refusal gate returned nil for the exact input it exists to
+// reject -- on every node whose heightFn was never installed, at every height.
+//
+// The assertion is the sentinel rather than "some error", because before the
+// fix this path did not error at all on the auth check; it fell through to
+// state application, which fails for unrelated reasons and would satisfy a
+// looser assertion.
+func TestApplyTx_RefusesTaskActionWhenHeightIsUnwired(t *testing.T) {
+	prev := TaskActionSignatureActivationHeight()
+	t.Cleanup(func() { SetTaskActionSignatureActivationHeight(prev) })
+	SetTaskActionSignatureActivationHeight(500)
+
+	// Deliberately no SetHeightFn -- this is the wiring bug being modelled.
+	a := NewEnrollmentAwareApplier(NewAccountStore(), nil)
+	a.SetTaskStateStore(NewTaskStateStore())
+
+	action := TaskAction{
+		ID: "unwired-1", Sender: hex.EncodeToString([]byte("some-sender")),
+		TaskID: "t", Action: "start", Timestamp: "ts",
+	}
+	if err := a.ApplyTx(taskTx(t, action, "", "")); !errors.Is(err, ErrEnrollmentHeightUnset) {
+		t.Fatalf("an unsigned task action on a node with no heightFn must be refused, "+
+			"not authenticated at height 0; want ErrEnrollmentHeightUnset, got: %v", err)
+	}
+}
+
 // Historical unsigned actions must still replay below the activation height,
 // or turning this on would fork every chain that has one.
 func TestApplyTx_UnsignedReplaysBelowActivationHeight(t *testing.T) {
