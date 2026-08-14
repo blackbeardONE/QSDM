@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+
+	"github.com/blackbeardONE/QSDM/pkg/mempool"
 )
 
 // MerkleTree builds a binary hash tree over a list of data items.
@@ -48,10 +50,10 @@ func BuildMerkleTree(items []string) *MerkleTree {
 
 // MerkleProof is an inclusion proof for a leaf in the tree.
 type MerkleProof struct {
-	LeafHash string       `json:"leaf_hash"`
-	Index    int          `json:"index"`
-	Siblings []ProofNode  `json:"siblings"`
-	Root     string       `json:"root"`
+	LeafHash string      `json:"leaf_hash"`
+	Index    int         `json:"index"`
+	Siblings []ProofNode `json:"siblings"`
+	Root     string      `json:"root"`
 }
 
 // ProofNode is one sibling in the proof path.
@@ -109,9 +111,46 @@ func VerifyProof(proof *MerkleProof, expectedRoot string) bool {
 }
 
 // VerifyTxInBlock verifies that a transaction ID is included in a block header.
+//
+// Only meaningful BELOW the transaction-content-root activation height. The tx
+// root merkleizes tx.ID below that height and TxContentDigest at or above it
+// (computeTxRoot), so an ID-keyed proof cannot verify against a content root.
+// Use VerifyTxContentInBlock there, which needs the transaction rather than
+// just its ID.
+//
+// The height check below is DOCUMENTATION, not a guard, and it is worth being
+// precise about that: removing it changes no behaviour and fails no test,
+// because a content-root leaf never equals hashLeaf(txID) anyway, so the
+// comparison already returns false. An earlier version of this comment claimed
+// the check prevents "a silent wrong answer" -- it does not, the answer is
+// false either way. It is kept because it states the precondition at the point
+// of use and would catch a future change that made the two leaf formats
+// collide.
 func VerifyTxInBlock(txID string, proof *MerkleProof, header BlockHeader) bool {
+	if txContentRootActiveAt(header.Height) {
+		// The caller holds only an ID, so the correct leaf cannot be built.
+		return false
+	}
 	expectedLeaf := hashLeaf(txID)
 	if proof.LeafHash != expectedLeaf {
+		return false
+	}
+	return VerifyProof(proof, header.TxRoot)
+}
+
+// VerifyTxContentInBlock verifies inclusion against a content-committing tx
+// root. It needs the whole transaction, because the leaf is TxContentDigest --
+// which is the point of the content root: the proof binds what the transaction
+// SAYS, not merely that some transaction with that ID was in the block.
+//
+// Valid at or above the activation height. Below it the root merkleizes IDs, so
+// this refuses there -- again documentation rather than a guard, for the same
+// reason as above: the leaf would not match regardless.
+func VerifyTxContentInBlock(tx *mempool.Tx, proof *MerkleProof, header BlockHeader) bool {
+	if tx == nil || !txContentRootActiveAt(header.Height) {
+		return false
+	}
+	if proof.LeafHash != hashLeaf(TxContentDigest(tx)) {
 		return false
 	}
 	return VerifyProof(proof, header.TxRoot)
