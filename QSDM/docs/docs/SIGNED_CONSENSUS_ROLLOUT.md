@@ -94,11 +94,21 @@ Setting the height rejects any unsigned task action at or above it. If your
 chain already contains one above the value you choose, replay diverges and the
 node cannot follow.
 
-So pick a height ABOVE your current tip, and confirm your history first:
-count `qsdm/tasks/v1` transactions in the chain journal and check the greatest
-height carrying an unsigned one. Set the activation height above that, and
-above the tip, so the boundary is in the future for every node. Every validator
-must agree on the value, as with `signed_message_activation_height`.
+So pick a height ABOVE your current tip, and confirm your history first. There
+is a command for this:
+
+```
+go build -o qsdm-taskaction-scan ./cmd/qsdm-taskaction-scan
+./qsdm-taskaction-scan --chain /opt/qsdm/qsdm_chain.ndjson
+```
+
+It is read-only. It reports the tip, how many `qsdm/tasks/v1` transactions the
+chain carries, how many of those are unsigned, the greatest height carrying an
+unsigned one, and a suggested activation height above both that and the tip.
+
+Run it on EVERY node. They should agree; if they do not, that disagreement
+matters more than the number. Every validator must then be set to the same
+value, as with `signed_message_activation_height`.
 
 ## Transaction-content root (coordinated fork)
 
