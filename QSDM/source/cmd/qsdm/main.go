@@ -1317,6 +1317,22 @@ func main() {
 	chain.SetSignedCertificateActivationHeight(cfg.SignedConsensusActivationHeight)
 	chain.SetSignedBlockActivationHeight(cfg.SignedConsensusActivationHeight)
 	chain.SetEvidenceProofActivationHeight(cfg.SignedConsensusActivationHeight)
+	// Task-action signature enforcement. Separate from the signed-consensus
+	// rollout on purpose: this one rejects unsigned qsdm/tasks/v1 actions at
+	// or above the height, so an operator must first confirm their own chain
+	// carries none above the value they set. Zero, the default, requires
+	// nothing -- but a signature that IS present is verified at every height
+	// regardless of this setting.
+	chain.SetTaskActionSignatureActivationHeight(cfg.TaskActionSignatureActivationHeight)
+	if cfg.TaskActionSignatureActivationHeight > 0 {
+		logger.Info("Task-action signatures required",
+			"from_height", cfg.TaskActionSignatureActivationHeight)
+	} else {
+		logger.Warn("Task-action signatures are NOT required: an unsigned task action is accepted at any height",
+			"config", "[consensus] task_action_signature_activation_height",
+			"env", "QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT",
+			"note", "a signature that is present is still verified; this gate only governs whether one is required")
+	}
 	chain.SetRequireSignedCertificates(cfg.RequireSignedVotes)
 	chain.SetRequireSignedBlocks(cfg.RequireSignedVotes)
 	chain.SetRequireEvidenceProof(cfg.RequireSignedVotes)

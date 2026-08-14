@@ -153,6 +153,12 @@ type Config struct {
 	// It must be non-zero exactly when RequireSignedVotes is true.
 	SignedConsensusActivationHeight uint64
 
+	// TaskActionSignatureActivationHeight is the first height at which a task
+	// action must carry a signature ([consensus] or
+	// QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT). Zero leaves the
+	// requirement off. See chain.VerifyTaskActionSignature.
+	TaskActionSignatureActivationHeight uint64
+
 	// ConsensusSignerKeyPath is the validator-only ML-DSA hot key used to
 	// authenticate consensus traffic. It is not a wallet and must never hold
 	// user or treasury funds. Empty resolves to a file under the node state
@@ -403,6 +409,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.AuthorizedBlockProducers = tomlCfg.Consensus.AuthorizedBlockProducers
 		cfg.RequireSignedVotes = tomlCfg.Consensus.RequireSignedVotes
 		cfg.SignedConsensusActivationHeight = tomlCfg.Consensus.SignedMessageActivationHeight
+		cfg.TaskActionSignatureActivationHeight = tomlCfg.Consensus.TaskActionSignatureActivationHeight
 		cfg.ConsensusSignerKeyPath = strings.TrimSpace(tomlCfg.Consensus.SignerKeyPath)
 		cfg.ForkDustHeight = tomlCfg.Consensus.ForkDustHeight
 		if tomlCfg.Performance.TransactionInterval != "" {
@@ -503,6 +510,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.AuthorizedBlockProducers = yamlCfg.Consensus.AuthorizedBlockProducers
 		cfg.RequireSignedVotes = yamlCfg.Consensus.RequireSignedVotes
 		cfg.SignedConsensusActivationHeight = yamlCfg.Consensus.SignedMessageActivationHeight
+		cfg.TaskActionSignatureActivationHeight = yamlCfg.Consensus.TaskActionSignatureActivationHeight
 		cfg.ConsensusSignerKeyPath = strings.TrimSpace(yamlCfg.Consensus.SignerKeyPath)
 		cfg.ForkDustHeight = yamlCfg.Consensus.ForkDustHeight
 		if yamlCfg.Performance.TransactionInterval != "" {
@@ -678,6 +686,11 @@ func applyEnvOverrides(cfg *Config) {
 	if v := strings.TrimSpace(getEnvString("QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT", "")); v != "" {
 		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
 			cfg.SignedConsensusActivationHeight = h
+		}
+	}
+	if v := strings.TrimSpace(getEnvString("QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT", "")); v != "" {
+		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
+			cfg.TaskActionSignatureActivationHeight = h
 		}
 	}
 	if v := strings.TrimSpace(getEnvString("QSDM_CONSENSUS_SIGNER_KEY_PATH", "")); v != "" {
