@@ -204,3 +204,44 @@ func TestScan_BlankLinesAreNotBlocks(t *testing.T) {
 			"nor cause a parse error", got.blocks)
 	}
 }
+
+// The suggested height uses the tip as its floor, which is only sound because
+// the highest unsigned task action can never sit above the tip: both are block
+// heights from the same scan and tipHeight is their running maximum.
+//
+// That invariant is what makes the arithmetic a one-liner. If the scanner ever
+// reads a height range, several files, or blocks out of order, it could break
+// silently and the suggestion would land below a real unsigned action --
+// rejecting it on replay. So it is asserted rather than assumed.
+func TestScan_LastUnsignedNeverExceedsTip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "chain.ndjson")
+	writeFixture(t, path, []*chain.Block{
+		{Height: 0},
+		{Height: 1, Transactions: []*mempool.Tx{
+			{ID: "u1", ContractID: chain.TaskContractID},
+		}},
+		{Height: 2},
+		{Height: 3, Transactions: []*mempool.Tx{
+			{ID: "u2", ContractID: chain.TaskContractID},
+		}},
+		{Height: 4},
+	})
+
+	got, err := scanChain(path)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if got.tipHeight != 4 {
+		t.Fatalf("tip = %d, want 4", got.tipHeight)
+	}
+	if got.lastUnsignedAt != 3 {
+		t.Fatalf("last unsigned = %d, want 3", got.lastUnsignedAt)
+	}
+	if got.lastUnsignedAt > got.tipHeight {
+		t.Fatalf("INVARIANT BROKEN: last unsigned (%d) is above the tip (%d). "+
+			"The suggested activation height uses the tip as its floor and would "+
+			"now land below a real unsigned action, rejecting it on replay.",
+			got.lastUnsignedAt, got.tipHeight)
+	}
+}

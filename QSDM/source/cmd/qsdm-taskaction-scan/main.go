@@ -79,14 +79,24 @@ func run(chainPath string, margin uint64, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "  highest unsigned at     none\n")
 	}
 
-	floor := res.tipHeight
-	if res.haveUnsigned && res.lastUnsignedAt > floor {
-		floor = res.lastUnsignedAt
-	}
-	suggested := floor + margin
+	// The floor is the tip, full stop.
+	//
+	// This used to be max(tip, lastUnsignedAt), and the output said "above the
+	// tip and above the last unsigned task action" -- which implies the last
+	// unsigned one could sit above the tip. It cannot: lastUnsignedAt is some
+	// block's height and tipHeight is the running maximum of those same
+	// heights, so lastUnsignedAt <= tipHeight always and the max() branch was
+	// unreachable. A reviewer found the test could not distinguish the two
+	// formulas; the reason it could not is that they are the same formula.
+	//
+	// Removed rather than given a contrived fixture, and asserted in
+	// TestScan_LastUnsignedNeverExceedsTip so a future change -- scanning a
+	// height range, or several files -- cannot quietly break the invariant
+	// this now depends on.
+	suggested := res.tipHeight + margin
 	fmt.Fprintln(stdout)
 	fmt.Fprintf(stdout, "suggested task_action_signature_activation_height = %d\n", suggested)
-	fmt.Fprintf(stdout, "  (above the tip and above the last unsigned task action, plus %d blocks of headroom)\n", margin)
+	fmt.Fprintf(stdout, "  (tip %d plus %d blocks of headroom)\n", res.tipHeight, margin)
 	fmt.Fprintln(stdout)
 	fmt.Fprintln(stdout, "Set the SAME value on every node before the chain reaches it.")
 	fmt.Fprintln(stdout, "A node with a different value will diverge on replay.")

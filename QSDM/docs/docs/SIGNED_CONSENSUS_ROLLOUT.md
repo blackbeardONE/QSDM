@@ -104,7 +104,10 @@ go build -tags dilithium_circl -o qsdm-taskaction-scan ./cmd/qsdm-taskaction-sca
 
 It is read-only. It reports the tip, how many `qsdm/tasks/v1` transactions the
 chain carries, how many of those are unsigned, the greatest height carrying an
-unsigned one, and a suggested activation height above both that and the tip.
+unsigned one, and a suggested activation height: the tip plus a headroom
+margin. The highest unsigned action is always at or below the tip, so the tip
+is the floor -- the report shows the unsigned height so you can confirm that
+for yourself rather than take it on trust.
 
 If it reports `REFUSING TO ADVISE: no blocks were read`, the path is wrong or
 the volume is not mounted. It exits non-zero rather than suggesting a height,
