@@ -238,3 +238,93 @@ func TestRetiredRoundError_IsBenignForGossip(t *testing.T) {
 		t.Error("equivocation must not be classified benign")
 	}
 }
+
+// The retired-round floor may be cleared by a commit, and by nothing else.
+//
+// Propose refuses a round below bc.nextRound[height]. Anything that deletes
+// that entry reopens the path this guard closed: an expired round rebuilt with
+// an empty vote slate, which becomes self-equivocation once a node originates
+// its own votes. ClearNextRound did exactly that, had zero callers, and its doc
+// comment invited use "after successful commit elsewhere" -- so it was removed.
+//
+// The legitimate case it named is real, and PreCommit already handles it: once
+// a height commits there is nothing left to escalate, so the floor goes. Both
+// halves are pinned here because deleting the function is only safe if the
+// commit path really does clear it.
+func TestNextRoundFloor_ClearedOnlyByCommit(t *testing.T) {
+	vs := NewValidatorSet(DefaultValidatorSetConfig())
+	for _, a := range []string{"v1", "v2", "v3"} {
+		if err := vs.Register(a, 100); err != nil {
+			t.Fatalf("register %s: %v", a, err)
+		}
+	}
+	cfg := DefaultConsensusConfig()
+	cfg.RoundTimeout = 20 * time.Millisecond
+	bc := NewBFTConsensus(vs, cfg)
+
+	prop, err := bc.ProposerForRound(0)
+	if err != nil {
+		t.Fatalf("proposer: %v", err)
+	}
+	if _, err := bc.Propose(21, 0, prop, "value-a"); err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+
+	// A timeout raises the floor and it must STAY raised.
+	if got := bc.TickRoundTimeouts(time.Now().Add(cfg.RoundTimeout * 4)); len(got) != 1 {
+		t.Fatalf("expected height 21 to time out, got %v", got)
+	}
+	if bc.NextRoundAfterTimeout(21) != 1 {
+		t.Fatalf("floor should be 1 after the timeout, got %d", bc.NextRoundAfterTimeout(21))
+	}
+	if _, err := bc.Propose(21, 0, prop, "value-a"); err == nil {
+		t.Error("the retired round must stay refused while the floor stands")
+	}
+
+	// Height 22 must first HAVE a floor, or the assertion below is vacuous: a
+	// height that never timed out has no entry, and NextRoundAfterTimeout
+	// returns 0 whether or not the commit path clears anything. Neutering the
+	// clear left an earlier version of this test green for exactly that reason.
+	if _, err := bc.Propose(22, 0, prop, "value-b0"); err != nil {
+		t.Fatalf("propose at another height: %v", err)
+	}
+	if got := bc.TickRoundTimeouts(time.Now().Add(cfg.RoundTimeout * 4)); len(got) != 1 {
+		t.Fatalf("expected height 22 to time out, got %v", got)
+	}
+	if bc.NextRoundAfterTimeout(22) != 1 {
+		t.Fatalf("height 22 needs a floor before the clear can be observed, got %d",
+			bc.NextRoundAfterTimeout(22))
+	}
+
+	// Now commit height 22 at the escalated round.
+	next, err := bc.ProposerForRound(1)
+	if err != nil {
+		t.Fatalf("proposer for round 1: %v", err)
+	}
+	if _, err := bc.Propose(22, 1, next, "value-b"); err != nil {
+		t.Fatalf("propose escalated round: %v", err)
+	}
+	for _, v := range vs.ActiveValidators() {
+		_ = bc.PreVote(22, v.Address, "value-b")
+	}
+	for _, v := range vs.ActiveValidators() {
+		_ = bc.PreCommit(22, v.Address, "value-b")
+	}
+	if !bc.IsCommitted(22) {
+		t.Fatalf("height 22 must commit for this assertion to mean anything")
+	}
+
+	// The committed height's floor is gone -- the case ClearNextRound claimed
+	// to serve, already handled by PreCommit.
+	if bc.NextRoundAfterTimeout(22) != 0 {
+		t.Errorf("committing height 22 should clear its own floor, got %d",
+			bc.NextRoundAfterTimeout(22))
+	}
+
+	// And it did NOT clear height 21's, or committing anywhere would reopen
+	// every retired round in the map.
+	if bc.NextRoundAfterTimeout(21) != 1 {
+		t.Errorf("a commit at height 22 must not clear the floor at height 21, got %d",
+			bc.NextRoundAfterTimeout(21))
+	}
+}

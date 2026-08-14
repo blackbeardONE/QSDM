@@ -272,12 +272,19 @@ func (bc *BFTConsensus) NextRoundAfterTimeout(height uint64) uint32 {
 	return bc.nextRound[height]
 }
 
-// ClearNextRound resets the escalated round counter (e.g. after successful commit elsewhere).
-func (bc *BFTConsensus) ClearNextRound(height uint64) {
-	bc.mu.Lock()
-	defer bc.mu.Unlock()
-	delete(bc.nextRound, height)
-}
+// ClearNextRound was removed deliberately. It deleted bc.nextRound[height],
+// which is the floor Propose consults to refuse a retired round number -- so
+// calling it would have reopened the round-reopen path: an expired round
+// rebuilt with an empty vote slate, and, once a node originates its own votes,
+// the same validator voting twice for one (validator, height, round). Its own
+// doc comment invited exactly that ("e.g. after successful commit elsewhere").
+//
+// It had zero callers. The legitimate case it named is already handled:
+// PreCommit deletes the entry itself once a height commits, which is why a
+// committed height cannot later meet a stale floor.
+//
+// TestNextRoundFloor_ClearedOnlyByCommit pins both halves.
+
 
 // PreVote records a pre-vote from a validator.
 func (bc *BFTConsensus) PreVote(height uint64, validator, blockHash string) error {
