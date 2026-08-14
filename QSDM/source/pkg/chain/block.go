@@ -92,7 +92,7 @@ func (b *Block) Header() BlockHeader {
 		PrevHash:  b.PrevHash,
 		Hash:      b.Hash,
 		StateRoot: b.StateRoot,
-		TxRoot:    computeTxRoot(b.Transactions),
+		TxRoot:    computeTxRoot(b.Transactions, b.Height),
 		Timestamp: b.Timestamp,
 		TxCount:   len(b.Transactions),
 	}
@@ -927,19 +927,35 @@ func computeBlockHash(b *Block) string {
 		TxRoot    string    `json:"t"`
 		Time      time.Time `json:"ts"`
 		Producer  string    `json:"pr"`
-	}{b.Height, b.PrevHash, b.StateRoot, computeTxRoot(b.Transactions), b.Timestamp, b.ProducerID})
+	}{b.Height, b.PrevHash, b.StateRoot, computeTxRoot(b.Transactions, b.Height), b.Timestamp, b.ProducerID})
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])
 }
 
-func computeTxRoot(txs []*mempool.Tx) string {
+// computeTxRoot merkleizes the block's transactions.
+//
+// Below the content-root activation height it merkleizes tx.ID only, which is
+// the legacy behaviour and does NOT bind transaction contents: anything the
+// state root does not independently distinguish can be rewritten in flight with
+// the block hash and producer signature still verifying.
+//
+// At or above the activation height it merkleizes TxContentDigest, which binds
+// every consensus-relevant field. That changes block hashes, which is why it is
+// height-gated and defaults off -- see tx_content_root.go.
+func computeTxRoot(txs []*mempool.Tx, height uint64) string {
 	if len(txs) == 0 {
 		return emptyHash()
 	}
-	ids := make([]string, len(txs))
-	for i, tx := range txs {
-		ids[i] = tx.ID
+	leaves := make([]string, len(txs))
+	if txContentRootActiveAt(height) {
+		for i, tx := range txs {
+			leaves[i] = TxContentDigest(tx)
+		}
+	} else {
+		for i, tx := range txs {
+			leaves[i] = tx.ID
+		}
 	}
-	tree := BuildMerkleTree(ids)
+	tree := BuildMerkleTree(leaves)
 	return tree.Root
 }
