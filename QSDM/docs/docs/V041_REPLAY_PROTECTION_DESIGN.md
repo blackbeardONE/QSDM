@@ -9,13 +9,26 @@
 > `api.SetWalletTransferMempool(adminPool)` (`cmd/qsdm/main.go:1494`) is
 > unconditional, and the mempool branch in `SubmitSignedTransaction`
 > (`pkg/api/handlers.go:1498`) returns for every signed transfer — so the
-> `ApplyTransferAtomic` call at `handlers.go:1567` is unreachable there. It is
-> still exercised by `cmd/v041smoke`, which is why its tests stay green.
+> `ApplyTransferAtomic` call at `handlers.go:1567` is unreachable there.
+>
+> The tests covering it stay green because they run with the package-level
+> wallet-transfer mempool holder at its zero value: `setupTestHandlersWithSubmesh`
+> never installs one, and `pkg/api/handlers_test.go:1026` is the first test that
+> does, resetting it to nil in `t.Cleanup` at 1032. So every earlier test in that
+> file takes the non-mempool path that production no longer takes. (An earlier
+> version of this banner credited `cmd/v041smoke` for this. That was wrong twice
+> over: it has no `_test.go` and so runs under no test framework at all, and it
+> is an HTTP probe hardcoded against `https://api.qsdm.tech`, which by the
+> paragraph above does not reach `ApplyTransferAtomic` either.)
 >
 > **Replay protection was not lost, it moved.** On the live path a transfer is
 > admitted to the mempool and applied during block replay, where
-> `AccountStore.ApplyTx` requires `tx.Nonce == sender.Nonce`
-> (`pkg/chain/account.go:249-252`) and increments on success. A replayed
+> a wallet transfer dispatches through `ApplyWalletTransferTx`
+> (`pkg/chain/wallet_transfer.go:21-50`, selected by `ContractID ==
+> WalletTransferContractID` at `enrollment_aware_applier.go:240-242`), which
+> verifies the envelope and then delegates to `accounts.ApplyTx` — where
+> `tx.Nonce == sender.Nonce` is required (`pkg/chain/account.go:249-252`) and
+> incremented on success, on both the dust and float branches. A replayed
 > transaction therefore carries a stale nonce and is rejected. `tx_id`
 > uniqueness for pending transactions comes from `mempool.ErrDuplicateTx`, and
 > debit/credit atomicity from applying both sides under one `AccountStore` lock.
