@@ -109,16 +109,17 @@ start a new chain on upgrade.
 
 #### Go
 
-The existing package identifier `qsdm` at `sdk/go/` is kept; a new preferred
-package is available at `sdk/go/qsdm/`:
+The package identifier is `qsdm`.
+
+> **CORRECTION (2026-08-16).** This section previously offered a "preferred"
+> import at `sdk/go/qsdm/`. No such package exists -- the repository contains
+> only `QSDM/source/sdk/go` -- and the path it gave for the legacy import was
+> also wrong. The module path is doubled because the SDK is a nested module
+> inside a repository named `QSDM`; see `QSDM/source/sdk/go/go.mod`. The
+> single importable path is below.
 
 ```go
-// Legacy import (still supported during the deprecation window):
-import qsdm "github.com/blackbeardONE/QSDM/sdk/go"
-c := qsdm.NewClient("http://node:8080")
-
-// Preferred import:
-import "github.com/blackbeardONE/QSDM/sdk/go/qsdm"
+import qsdm "github.com/blackbeardONE/QSDM/QSDM/source/sdk/go"
 c := qsdm.NewClient("http://node:8080")
 ```
 
@@ -273,8 +274,9 @@ For each running node:
    to `qsdm.*` at your next scheduled maintenance window; no other change is
    required.
 6. When updating SDK consumers:
-   - Go: switch imports from `github.com/blackbeardONE/QSDM/sdk/go` to
-     `github.com/blackbeardONE/QSDM/sdk/go/qsdm`.
+   - Go: the import path is
+     `github.com/blackbeardONE/QSDM/QSDM/source/sdk/go`. The previously
+     advertised `.../sdk/go/qsdm` package was never created.
    - JavaScript: switch from `require('qsdm')` to `require('qsdm')`, and
      from `QSDMClient` to `QSDMClient`.
 

@@ -495,14 +495,20 @@
 );
 <span class="kw">const</span> status = <span class="kw">await</span> res.<span class="fn">json</span>();
 <span class="fn">console</span>.log(status.version, status.height);</pre>
-            <pre id="code-go" hidden aria-hidden="true"><span class="kw">import</span> (
+            <pre id="code-go" hidden aria-hidden="true"><span class="kw">package</span> main
+
+<span class="kw">import</span> (
+  <span class="str">"context"</span>
   <span class="str">"fmt"</span>
+
   qsdm <span class="str">"github.com/blackbeardONE/QSDM/QSDM/source/sdk/go"</span>
 )
 
-client := qsdm.<span class="fn">NewClient</span>(<span class="str">"https://api.qsdm.tech"</span>)
-st, _ := client.<span class="fn">GetNodeStatus</span>(ctx)
-<span class="fn">fmt</span>.Println(st.Version)</pre>
+<span class="kw">func</span> <span class="fn">main</span>() {
+  client := qsdm.<span class="fn">NewClient</span>(<span class="str">"https://api.qsdm.tech"</span>)
+  st, _ := client.<span class="fn">GetNodeStatus</span>(<span class="fn">context</span>.Background())
+  <span class="fn">fmt</span>.Println(st.Version)
+}</pre>
           </div>
         </div>
       </div>

@@ -12,10 +12,18 @@ import (
 // called qsdm.New (the constructor is NewClient) and client.Status (no such
 // method has ever existed). The sample could not compile at any line.
 //
-// Nothing connected the page to this module, so the drift was invisible. This
-// test IS that snippet. It does not make a network call -- the point is purely
-// that these identifiers exist with these shapes, so a rename breaks the build
-// here and names the file that must change with it.
+// Nothing connected the page to this module, so the drift was invisible.
+//
+// What this test is and is NOT: it pins the IDENTIFIERS the snippet uses, so a
+// rename breaks the build here and names the file that must change with it. It
+// is not the snippet itself -- a test lives in a func with its own ctx, while
+// the page shows a standalone program. A reviewer correctly called out an
+// earlier version of this comment for claiming otherwise; the snippet's own
+// compilability is a separate property, fixed by making the page show a
+// complete `package main` rather than loose statements.
+//
+// It makes no network call: GetNodeStatus is handed an already-cancelled
+// context, so client.do returns the context error before any dial.
 //
 // Source of truth: QSDM/deploy/landing/index.html, the `code-go` <pre> block.
 // If you change this test to follow the code, change that block to match.
@@ -33,11 +41,20 @@ func TestLandingPageGoSnippetCompiles(t *testing.T) {
 	// asserts the method's existence and result shape, not the endpoint.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
+
+	// The result is deliberately ignored beyond its shape. A cancelled context
+	// means err is always non-nil and st always nil, so any branch guarded on
+	// err == nil is dead -- an earlier version had two such branches and a
+	// reviewer flagged them as reading like runtime coverage while being none.
+	// Referencing the field in a compile-only position keeps st.Version pinned
+	// without pretending the call succeeded.
 	st, err := client.GetNodeStatus(ctx)
-	if err == nil && st != nil {
-		_ = st.Version // the field the snippet prints
+	_ = err
+	var _ = func(s *NodeStatus) string {
+		if s == nil {
+			return ""
+		}
+		return s.Version // the field the snippet prints
 	}
-	if st != nil {
-		_ = st.Version
-	}
+	_ = st
 }
