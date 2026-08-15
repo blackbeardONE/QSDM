@@ -1379,6 +1379,10 @@ func main() {
 			"env_var", "QSDM_NETWORKED_CATCHUP_MODE")
 	}
 	polIngress := networking.NewPolGossipIngress(networking.DefaultPolGossipConfig(), polIngressFollower)
+	// Same tracker the tx and BFT ingresses use (nodeTxRep). Without this the
+	// POL ingress has no tracker and cannot refuse a banned peer at all --
+	// unlike the other three, which at least held one.
+	polIngress.SetReputationTracker(nodeTxRep)
 	var polRelay *networking.PolP2PRelay
 	if pr, polErr := networking.NewPolP2PRelay(net, polIngress, net.Host.ID().String()); polErr != nil {
 		logger.Warn("POL gossip relay not started", "error", polErr)

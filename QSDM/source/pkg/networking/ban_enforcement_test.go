@@ -129,13 +129,23 @@ func TestTryConsumeGossip_leavesNonTransactionGossipAlone(t *testing.T) {
 			"even from a banned peer; consuming it widens a tx ban to block relay")
 	}
 
-	// And an honest peer must not be penalised for that same message.
-	before := rt.IsBanned("good-peer")
+	// The honest peer must not be SCORED for relaying it.
+	//
+	// This asserted IsBanned in its first version and was worthless: EventInvalidTx
+	// is -10 against an initial score of 100 and a ban threshold of -200
+	// (reputation.go:57-66), so one spurious event moves the score to 90 and bans
+	// nobody. A reviewer reintroduced the exact regression this test names -- a
+	// RecordEvent(EventInvalidTx) in the non-tx fallthrough -- and all three tests
+	// still passed. The observable effect of ONE event is the score, so that is
+	// what this now reads.
+	before := rt.GetScore("good-peer")
 	if ti.TryConsumeGossip("good-peer", blockish) {
 		t.Error("non-transaction gossip from an honest peer must fall through")
 	}
-	if !before && rt.IsBanned("good-peer") {
-		t.Error("relaying a non-transaction message must not count as an invalid tx")
+	if after := rt.GetScore("good-peer"); after != before {
+		t.Errorf("relaying a non-transaction message must not be scored: %v -> %v. "+
+			"Penalising the pubsub loop's cross-topic traffic bans honest peers for "+
+			"relaying blocks", before, after)
 	}
 }
 
@@ -163,5 +173,44 @@ func TestTryConsumeGossip_stillProcessesUnbannedPeers(t *testing.T) {
 	ti.TryConsumeGossip("good-peer", []byte(`{"tx":{"id":"x","sender":"alice"}}`))
 	if rt.IsBanned("good-peer") {
 		t.Error("a single unadmitted transaction must not ban an honest peer")
+	}
+}
+
+// PolGossipIngress had no ReputationTracker field at all, so unlike the other
+// three ingresses it could not refuse a banned peer even in principle -- while
+// being fully live via PolP2PRelay's read loop (pol_relay.go:63), wired from
+// cmd/qsdm/main.go. The audit recorded this ("pol_gossip.go has no check at
+// all") and the first pass at ban enforcement fixed the tx ingress and left it,
+// which a reviewer caught.
+//
+// Refusing before the decode is correct here, unlike in TryConsumeGossip: this
+// ingress is reached only from a loop subscribed to the POL topic alone, so
+// there is no cross-topic traffic to mis-penalise.
+func TestPolGossipIngress_refusesBannedPeer(t *testing.T) {
+	rt := banTracker(t, "bad-peer")
+	p := NewPolGossipIngress(DefaultPolGossipConfig(), nil)
+	p.SetReputationTracker(rt)
+
+	err := p.HandlePeerMessage("bad-peer", []byte(`{"kind":"prevote_lock","payload":{}}`))
+	if err == nil {
+		t.Fatal("a banned peer's POL gossip must be refused")
+	}
+	if !strings.Contains(err.Error(), "banned") {
+		t.Fatalf("expected a ban refusal, got %v", err)
+	}
+}
+
+// And the honest path must still be reachable, or the guard above is satisfied
+// by an ingress that refuses everything.
+func TestPolGossipIngress_allowsUnbannedPeer(t *testing.T) {
+	rt := NewReputationTracker(DefaultReputationConfig())
+	p := NewPolGossipIngress(DefaultPolGossipConfig(), nil)
+	p.SetReputationTracker(rt)
+
+	// Malformed on purpose: the assertion is that it is judged on its contents
+	// rather than short-circuited by a ban, so the error must NOT be a refusal.
+	err := p.HandlePeerMessage("good-peer", []byte(`{"kind":"prevote_lock","payload":{}}`))
+	if err != nil && strings.Contains(err.Error(), "banned") {
+		t.Fatalf("an unbanned peer must not be refused as banned: %v", err)
 	}
 }

@@ -42,7 +42,8 @@ func DefaultPolGossipConfig() PolGossipConfig {
 
 // PolGossipIngress validates inbound POL / round-certificate gossip (decode, dedupe, rate limits).
 type PolGossipIngress struct {
-	follower *chain.PolFollower
+	follower    *chain.PolFollower
+	rep         *ReputationTracker
 	mu          sync.Mutex
 	seenIDs     map[string]time.Time
 	maxSeen     int
@@ -77,8 +78,36 @@ func NewPolGossipIngress(cfg PolGossipConfig, follower *chain.PolFollower) *PolG
 	}
 }
 
+// SetReputationTracker attaches the tracker whose bans this ingress honours.
+//
+// Unlike the tx, BFT and evidence ingresses, this one had no tracker field at
+// all, so it could not refuse a banned peer even in principle. Added as a
+// setter rather than a constructor argument to match SetReputationTracker on
+// BFTGossipIngress and leave existing callers compiling.
+func (p *PolGossipIngress) SetReputationTracker(rt *ReputationTracker) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.rep = rt
+}
+
 // HandlePeerMessage decodes a POL gossip envelope, enforces dedupe and rate limits.
+//
+// Unlike TxGossipIngress.TryConsumeGossip, refusing before the decode is
+// correct here: this ingress is reached only from PolP2PRelay's own read loop
+// (pol_relay.go:63), which is subscribed to the POL topic alone, so every
+// payload arriving is meant to be POL gossip. There is no cross-topic traffic
+// to mis-penalise.
 func (p *PolGossipIngress) HandlePeerMessage(peerID string, payload []byte) error {
+	p.mu.Lock()
+	rep := p.rep
+	p.mu.Unlock()
+	if rep != nil && rep.IsBanned(peerID) {
+		return fmt.Errorf("pol gossip refused: peer %s is banned", peerID)
+	}
+
 	var wire polGossipWire
 	if err := json.Unmarshal(payload, &wire); err != nil {
 		return fmt.Errorf("pol gossip decode: %w", err)
