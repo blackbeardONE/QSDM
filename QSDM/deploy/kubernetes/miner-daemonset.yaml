@@ -53,27 +53,7 @@ spec:
         # CI publishes ghcr.io/<owner>/qsdm-miner (hyphen), not the
         # Docker Hub-style qsdm/miner path this used to reference — that
         # name does not exist and produced ImagePullBackOff on every apply.
-        # Must match what CI actually publishes (see
-        # .github/workflows/release-container.yml). Two separate defects here,
-        # in order:
-        #
-        #   1. The bare `qsdm:latest` this originally carried resolved to
-        #      Docker Hub and does not exist, so every apply ended in
-        #      ImagePullBackOff. Fixed by adding the ghcr.io/ prefix.
-        #   2. `ghcr.io/...:latest` then looked correct but is mutable. The
-        #      release workflow sets no `flavor:` block, so
-        #      docker/metadata-action's default `latest=auto` applies -- which
-        #      publishes `latest` for NON-prerelease semver only. v0.4.3 is the
-        #      newest such tag (everything since is -rc.N), so `:latest`
-        #      silently resolved to 0.4.3. A stale deploy, not a loud failure.
-        #      The audit carried defect 1's ImagePullBackOff description after
-        #      the prefix fix had already made it stale.
-        #
-        # 0.4.3 is therefore exactly what `:latest` already ran: this pin
-        # changes WHAT runs not at all, it only makes it explicit and
-        # reproducible. Moving to a 0.4.7-rc.N image is a release decision for
-        # the operator, not a cleanup, and is deliberately not made here.
-        image: ghcr.io/blackbeardone/qsdm-miner:0.4.3
+        image: ghcr.io/blackbeardone/qsdm-miner:latest
         imagePullPolicy: IfNotPresent
         ports:
         - name: network
