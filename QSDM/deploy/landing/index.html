@@ -497,11 +497,11 @@
 <span class="fn">console</span>.log(status.version, status.height);</pre>
             <pre id="code-go" hidden aria-hidden="true"><span class="kw">import</span> (
   <span class="str">"fmt"</span>
-  qsdm <span class="str">"github.com/blackbeardONE/QSDM/sdk/go"</span>
+  qsdm <span class="str">"github.com/blackbeardONE/QSDM/QSDM/source/sdk/go"</span>
 )
 
-client := qsdm.<span class="fn">New</span>(<span class="str">"https://api.qsdm.tech"</span>)
-st, _ := client.<span class="fn">Status</span>(ctx)
+client := qsdm.<span class="fn">NewClient</span>(<span class="str">"https://api.qsdm.tech"</span>)
+st, _ := client.<span class="fn">GetNodeStatus</span>(ctx)
 <span class="fn">fmt</span>.Println(st.Version)</pre>
           </div>
         </div>
