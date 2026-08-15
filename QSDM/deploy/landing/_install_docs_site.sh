@@ -105,14 +105,21 @@ if [[ -z "$core_version" ]]; then
   exit 1
 fi
 
+# Accepts BOTH the legacy `-chromium` artifact name and the per-browser
+# `-chrome` one the download page now uses. This globbed `-chromium` only, so
+# once the page moved to per-browser builds the array came back empty and the
+# installer exited 1 before staging anything. Accepting either means the install
+# works whichever naming the webroot currently holds, instead of encoding a
+# guess about a directory this repository cannot see.
 mapfile -t extension_versions < <(
   find "$WEBROOT/downloads" -maxdepth 1 -type f \
-    -name 'qsdm-hive-wallet-extension-*-chromium.zip' -printf '%f\n' |
-    sed -n 's/^qsdm-hive-wallet-extension-\(.*\)-chromium\.zip$/\1/p' |
-    sort -V
+    \( -name 'qsdm-hive-wallet-extension-*-chromium.zip' \
+       -o -name 'qsdm-hive-wallet-extension-*-chrome.zip' \) -printf '%f\n' |
+    sed -n 's/^qsdm-hive-wallet-extension-\(.*\)-\(chromium\|chrome\)\.zip$/\1/p' |
+    sort -Vu
 )
 if [[ ${#extension_versions[@]} -eq 0 ]]; then
-  echo "no published Chromium wallet extension was found" >&2
+  echo "no published Chromium/Chrome wallet extension was found" >&2
   exit 1
 fi
 extension_version="${extension_versions[-1]}"
@@ -122,11 +129,15 @@ require_staged_marker docs/index.html "$core_version"
 require_staged_marker download.html "Core $core_version"
 require_staged_marker download.html "Hive $hive_version"
 require_staged_marker download.html "Version $extension_version"
-require_staged_marker download.html \
-  "qsdm-hive-wallet-extension-$extension_version-chromium.zip"
-require_staged_marker download.html \
-  "qsdm-hive-wallet-extension-$extension_version-firefox.zip"
+# One zip marker per browser the page actually ships. This demanded a
+# `-chromium.zip` filename that download.html has not contained since it moved
+# to per-browser cards (it ships chrome, edge, brave and firefox), so the marker
+# check aborted the install even when the page was correct. Folding it into the
+# loop below means the zip names, the card markers and the distribution manifest
+# are all driven off one browser list and cannot drift apart again.
 for browser in chrome edge brave firefox; do
+  require_staged_marker download.html \
+    "qsdm-hive-wallet-extension-$extension_version-$browser.zip"
   require_staged_marker download.html \
     "data-wallet-browser-card=\"$browser\""
   require_staged_marker assets/browser-extension-distribution.json \
