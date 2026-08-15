@@ -1207,6 +1207,18 @@ func main() {
 	defer nodeTxRep.Stop()
 	defer nodeEvidenceRep.Stop()
 
+	// Enforce bans at the transport, not only in each ingress. Without this a
+	// banned peer keeps its connection, its stream slots and its pubsub fan-out,
+	// and every ingress has to remember to check it again -- which POL gossip did
+	// not, and the tx path did not before that.
+	//
+	// Wired to nodeTxRep because that is the tracker the tx, BFT and POL
+	// ingresses share. nodeEvidenceRep is deliberately NOT wired: it uses a
+	// harsher config (ReputationConfigForEvidence, -150 per violation) scoped to
+	// evidence handling, and letting it sever transport connections would give one
+	// subsystem's threshold authority over the whole node's connectivity.
+	net.SetReputationGate(nodeTxRep)
+
 	var evidenceRelay *networking.EvidenceP2PRelay
 	evIng := networking.NewEvidenceGossipIngress(nodeEvidenceManager, nodeEvidenceRep, networking.DefaultEvidenceGossipConfig())
 	if er, evErr := networking.NewEvidenceP2PRelay(net, evIng, net.Host.ID().String()); evErr != nil {

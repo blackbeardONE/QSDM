@@ -96,6 +96,7 @@ type ReputationTracker struct {
 	peers  map[string]*PeerRecord
 	cfg    ReputationConfig
 	stopCh chan struct{}
+	onBan  func(peerID string)
 }
 
 // NewReputationTracker creates a tracker with the given config.
@@ -107,9 +108,32 @@ func NewReputationTracker(cfg ReputationConfig) *ReputationTracker {
 	}
 }
 
+// SetOnBan installs a callback invoked once, at the moment a peer crosses the
+// ban threshold. Passing nil clears it.
+//
+// The callback runs AFTER the tracker's lock is released. That is not a
+// stylistic choice: the only intended use is closing the peer's transport
+// connection, and a libp2p ClosePeer can synchronously drive disconnect
+// notifications back into code that reads this tracker. Firing under the write
+// lock would deadlock the receive path the first time a peer was banned.
+func (rt *ReputationTracker) SetOnBan(fn func(peerID string)) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.onBan = fn
+}
+
 // RecordEvent applies a behavioural event to a peer's reputation score.
 // For EventLatencyReport, value is the observed latency in milliseconds.
 func (rt *ReputationTracker) RecordEvent(peerID string, event PeerEvent, value float64) {
+	newlyBanned, hook := rt.recordEvent(peerID, event, value)
+	if newlyBanned && hook != nil {
+		hook(peerID)
+	}
+}
+
+// recordEvent does the locked half and reports whether this call is the one
+// that banned the peer, along with the hook to run once the lock is dropped.
+func (rt *ReputationTracker) recordEvent(peerID string, event PeerEvent, value float64) (bool, func(string)) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 
@@ -152,7 +176,9 @@ func (rt *ReputationTracker) RecordEvent(peerID string, event PeerEvent, value f
 	if rec.Score <= rt.cfg.BanThreshold && !rec.Banned {
 		rec.Banned = true
 		rec.BannedAt = time.Now()
+		return true, rt.onBan
 	}
+	return false, nil
 }
 
 // GetScore returns the current score for a peer.
