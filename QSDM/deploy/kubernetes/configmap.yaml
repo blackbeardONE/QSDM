@@ -12,6 +12,25 @@ data:
   storage_type: "sqlite"
   sqlite_path: "/app/data/qsdm.db"
   
+  # WebSocket origin allowlist for the dashboard.
+  #
+  # initialiseWSAllowedOriginsFromEnv (internal/dashboard/websocket.go) returns
+  # early when neither QSDM_WS_ALLOWED_ORIGINS nor QSDM_CORS_ALLOWED_ORIGINS is
+  # set, leaving CheckOrigin permissive -- against that file's own stated
+  # requirement. The bare-metal unit sets it (config/qsdm.service:26); no
+  # container or Kubernetes asset did.
+  #
+  # The correct value is the origin the BROWSER sends, which depends on how you
+  # expose the dashboard. The Service is ClusterIP, so the default below covers
+  # `kubectl port-forward svc/qsdm-dashboard 8081:8081` only.
+  #
+  # CHANGE THIS if you front the dashboard with an Ingress or LoadBalancer --
+  # set it to that hostname (e.g. "https://qsdm.example.com"). Leaving the
+  # port-forward default in place behind an Ingress will REJECT the websocket
+  # upgrade, which surfaces as a dashboard that loads but never receives live
+  # metrics.
+  ws_allowed_origins: "http://127.0.0.1:8081,http://localhost:8081"
+
   # Monitoring configuration
   dashboard_port: "8081"
   log_viewer_port: "9000"

@@ -30,6 +30,10 @@ services:
       # loopback namespace. The isolation boundary is the container network,
       # not this listener.
       - QSDM_DASHBOARD_BIND_ADDRESS=0.0.0.0
+      # WebSocket origin allowlist. See docker-compose.single.yml for why this
+      # is required; the value is the HOST-published dashboard port for THIS
+      # node (each node publishes a different one), not DASHBOARD_PORT.
+      - QSDM_WS_ALLOWED_ORIGINS=http://127.0.0.1:8081,http://localhost:8081
       - LOG_VIEWER_PORT=9000
       - STORAGE_TYPE=sqlite
       - SQLITE_PATH=/app/data/qsdm.db
@@ -75,6 +79,10 @@ services:
       # loopback namespace. The isolation boundary is the container network,
       # not this listener.
       - QSDM_DASHBOARD_BIND_ADDRESS=0.0.0.0
+      # WebSocket origin allowlist. See docker-compose.single.yml for why this
+      # is required; the value is the HOST-published dashboard port for THIS
+      # node (each node publishes a different one), not DASHBOARD_PORT.
+      - QSDM_WS_ALLOWED_ORIGINS=http://127.0.0.1:8082,http://localhost:8082
       - LOG_VIEWER_PORT=9000
       - STORAGE_TYPE=sqlite
       - SQLITE_PATH=/app/data/qsdm.db
@@ -122,6 +130,10 @@ services:
       # loopback namespace. The isolation boundary is the container network,
       # not this listener.
       - QSDM_DASHBOARD_BIND_ADDRESS=0.0.0.0
+      # WebSocket origin allowlist. See docker-compose.single.yml for why this
+      # is required; the value is the HOST-published dashboard port for THIS
+      # node (each node publishes a different one), not DASHBOARD_PORT.
+      - QSDM_WS_ALLOWED_ORIGINS=http://127.0.0.1:8084,http://localhost:8084
       - LOG_VIEWER_PORT=9000
       - STORAGE_TYPE=sqlite
       - SQLITE_PATH=/app/data/qsdm.db

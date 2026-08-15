@@ -20,6 +20,10 @@ services:
       # default of 127.0.0.1 would be unreachable. Host-side exposure is
       # controlled by the 127.0.0.1 prefix on the port publish above.
       - QSDM_DASHBOARD_BIND_ADDRESS=0.0.0.0
+      # WebSocket origin allowlist. See docker-compose.single.yml for why this
+      # is required; the value is the HOST-published dashboard port for THIS
+      # node (each node publishes a different one), not DASHBOARD_PORT.
+      - QSDM_WS_ALLOWED_ORIGINS=http://127.0.0.1:8081,http://localhost:8081
       - STORAGE_TYPE=sqlite
       - STORAGE_PATH=/data/qsdm.db
       - LOG_LEVEL=info
@@ -56,6 +60,10 @@ services:
       # default of 127.0.0.1 would be unreachable. Host-side exposure is
       # controlled by the 127.0.0.1 prefix on the port publish above.
       - QSDM_DASHBOARD_BIND_ADDRESS=0.0.0.0
+      # WebSocket origin allowlist. See docker-compose.single.yml for why this
+      # is required; the value is the HOST-published dashboard port for THIS
+      # node (each node publishes a different one), not DASHBOARD_PORT.
+      - QSDM_WS_ALLOWED_ORIGINS=http://127.0.0.1:8083,http://localhost:8083
       - STORAGE_TYPE=sqlite
       - STORAGE_PATH=/data/qsdm.db
       - LOG_LEVEL=info
@@ -92,6 +100,10 @@ services:
       # default of 127.0.0.1 would be unreachable. Host-side exposure is
       # controlled by the 127.0.0.1 prefix on the port publish above.
       - QSDM_DASHBOARD_BIND_ADDRESS=0.0.0.0
+      # WebSocket origin allowlist. See docker-compose.single.yml for why this
+      # is required; the value is the HOST-published dashboard port for THIS
+      # node (each node publishes a different one), not DASHBOARD_PORT.
+      - QSDM_WS_ALLOWED_ORIGINS=http://127.0.0.1:8085,http://localhost:8085
       - STORAGE_TYPE=sqlite
       - STORAGE_PATH=/data/qsdm.db
       - LOG_LEVEL=info
