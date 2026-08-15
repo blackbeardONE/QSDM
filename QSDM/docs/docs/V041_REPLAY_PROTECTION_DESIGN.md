@@ -1,5 +1,30 @@
 # v0.4.1 Design — Replay protection + atomic balance debit
 
+> ### SCOPE CORRECTION (2026-08-16) — this is no longer the validator transfer path
+>
+> Everything below is accurate as shipped, and the code still exists and still
+> works. But `ApplyTransferAtomic` **is not reached on a node running
+> `cmd/qsdm`**, and has not been since the validator mempool path landed.
+>
+> `api.SetWalletTransferMempool(adminPool)` (`cmd/qsdm/main.go:1494`) is
+> unconditional, and the mempool branch in `SubmitSignedTransaction`
+> (`pkg/api/handlers.go:1498`) returns for every signed transfer — so the
+> `ApplyTransferAtomic` call at `handlers.go:1567` is unreachable there. It is
+> still exercised by `cmd/v041smoke`, which is why its tests stay green.
+>
+> **Replay protection was not lost, it moved.** On the live path a transfer is
+> admitted to the mempool and applied during block replay, where
+> `AccountStore.ApplyTx` requires `tx.Nonce == sender.Nonce`
+> (`pkg/chain/account.go:249-252`) and increments on success. A replayed
+> transaction therefore carries a stale nonce and is rejected. `tx_id`
+> uniqueness for pending transactions comes from `mempool.ErrDuplicateTx`, and
+> debit/credit atomicity from applying both sides under one `AccountStore` lock.
+>
+> Read this document as the design of the **storage-backend** transfer
+> primitive, not as a description of what protects a validator today. If you are
+> changing replay protection for the live chain, the nonce rule in
+> `AccountStore.ApplyTx` is the thing to reason about.
+
 > **Status**: SHIPPED + DEPLOYED across Sessions 99–100
 > (2026-05-13 → 2026-05-14). All client + server + tooling
 > components landed, `v0.4.1` tag pushed,
