@@ -1217,7 +1217,14 @@ func main() {
 	// harsher config (ReputationConfigForEvidence, -150 per violation) scoped to
 	// evidence handling, and letting it sever transport connections would give one
 	// subsystem's threshold authority over the whole node's connectivity.
-	net.SetReputationGate(nodeTxRep)
+	// Bootstrap peers are exempt from the TRANSPORT gate only. A ban is
+	// permanent for the process lifetime -- DecayAll moves the score but never
+	// clears the Banned flag, and Unban has no production caller -- so a false
+	// positive against the peers this node needs in order to be on the network
+	// would partition it until restart. They remain fully banned at every
+	// ingress, so a misbehaving bootstrap peer is still ignored; it just cannot
+	// lock the node out while doing it.
+	net.SetReputationGate(nodeTxRep, networking.BootstrapPeerIDs(cfg.BootstrapPeers)...)
 
 	var evidenceRelay *networking.EvidenceP2PRelay
 	evIng := networking.NewEvidenceGossipIngress(nodeEvidenceManager, nodeEvidenceRep, networking.DefaultEvidenceGossipConfig())

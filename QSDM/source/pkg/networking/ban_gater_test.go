@@ -153,3 +153,46 @@ func TestSetOnBan_runsWithoutHoldingTheLock(t *testing.T) {
 			"deadlock this split exists to prevent")
 	}
 }
+
+// A ban is permanent for the process lifetime: DecayAll moves the score but
+// never clears the Banned flag, and Unban has no production caller. Before the
+// transport gate that only meant payloads were dropped. Now it severs the
+// connection and refuses the redial -- so a false positive against a bootstrap
+// peer would partition the node until restart. Bootstrap peers are therefore
+// exempt from the transport gate specifically.
+func TestBanGater_exemptPeerIsNotRefusedAtTransport(t *testing.T) {
+	g, _ := banGaterFor(t, "bad-peer")
+	p := testPeer("bad-peer")
+
+	// Still banned in the tracker -- the exemption is transport-only.
+	if !g.rep.IsBanned(p.String()) {
+		t.Fatal("precondition: peer should still be banned in the tracker")
+	}
+	if g.InterceptPeerDial(p) {
+		t.Fatal("precondition: a banned, non-exempt peer must be refused")
+	}
+
+	g.SetExemptPeers([]string{p.String()})
+
+	if !g.InterceptPeerDial(p) {
+		t.Error("an exempt peer must remain dialable despite being banned")
+	}
+	if !g.InterceptSecured(network.DirInbound, p, nil) {
+		t.Error("an exempt peer's inbound connection must be allowed despite the ban")
+	}
+	if !g.rep.IsBanned(p.String()) {
+		t.Error("exemption must not clear the ban itself: every ingress should still " +
+			"drop this peer's payloads")
+	}
+}
+
+// The exemption must not become a blanket bypass: a peer that is not on the
+// list is still refused after SetExemptPeers is called.
+func TestBanGater_exemptionIsScopedToListedPeers(t *testing.T) {
+	g, _ := banGaterFor(t, "bad-peer")
+	g.SetExemptPeers([]string{testPeer("someone-else").String()})
+
+	if g.InterceptPeerDial(testPeer("bad-peer")) {
+		t.Error("a banned peer that is not exempt must still be refused")
+	}
+}
