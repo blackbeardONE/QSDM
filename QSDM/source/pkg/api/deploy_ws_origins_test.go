@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -257,4 +258,76 @@ func TestKubernetesWorkloadsPinWSOrigins(t *testing.T) {
 		t.Fatal("no Kubernetes workload configuring the dashboard was found; this guard checked nothing")
 	}
 	t.Logf("dashboard-configuring Kubernetes containers checked: %d", checked)
+}
+
+// Kubernetes manifests must pin an immutable image tag that the release
+// workflow can actually produce.
+//
+// The audit recorded these as pinning `:latest`, "which no workflow
+// publishes", concluding `kubectl apply` yields ImagePullBackOff. That
+// conclusion was wrong in a way worth pinning down: release-container.yml sets
+// no `flavor:` block, so docker/metadata-action's default `latest=auto`
+// applies, and that DOES publish `latest` -- for non-prerelease semver only.
+// Non-prerelease tags exist (v0.4.3 and earlier), so `:latest` resolves to
+// 0.4.3 and the failure mode was never a loud pull error. It was a silent
+// deploy of a stale build, which is worse.
+//
+// This guard asserts the tag is immutable and corresponds to a git tag that
+// exists, so a manifest cannot drift back to a mutable tag or reference a
+// version that was never released.
+func TestKubernetesImagesPinAnImmutableReleasedTag(t *testing.T) {
+	root := repoRootForDeployGuard(t)
+	files := gitLsFiles(t, root, "QSDM/deploy/kubernetes/*.yaml", "QSDM/deploy/kubernetes/*.yml")
+	if len(files) == 0 {
+		t.Fatal("git ls-files matched no Kubernetes manifests; the pattern is wrong")
+	}
+
+	tagOut, err := exec.Command("git", "-C", root, "tag").Output()
+	if err != nil {
+		t.Skipf("git tag unavailable: %v", err)
+	}
+	released := map[string]bool{}
+	for _, tg := range strings.Fields(string(tagOut)) {
+		released[strings.TrimPrefix(tg, "v")] = true // metadata-action strips the leading v
+	}
+	if len(released) == 0 {
+		t.Skip("repository has no tags; nothing to validate against")
+	}
+
+	imageRe := regexp.MustCompile(`(?m)^\s*image:\s*(\S+)`)
+	checked := 0
+	for _, rel := range files {
+		raw, err := os.ReadFile(filepath.Join(root, rel)) // #nosec G304 -- git-tracked paths
+		if err != nil {
+			t.Errorf("read %s: %v", rel, err)
+			continue
+		}
+		for _, m := range imageRe.FindAllStringSubmatch(string(raw), -1) {
+			ref := strings.Trim(m[1], `"'`)
+			if !strings.Contains(ref, "/qsdm") {
+				continue // third-party sidecars are not ours to pin
+			}
+			checked++
+			at := strings.LastIndex(ref, ":")
+			if at < 0 || strings.Contains(ref[at:], "/") {
+				t.Errorf("%s: image %q has no tag; an untagged image means :latest", rel, ref)
+				continue
+			}
+			tag := ref[at+1:]
+			if tag == "latest" {
+				t.Errorf("%s: image %q pins the mutable tag :latest. It resolves to the newest "+
+					"NON-prerelease release, so this silently deploys an old build rather than "+
+					"failing loudly", rel, ref)
+				continue
+			}
+			if !released[tag] {
+				t.Errorf("%s: image %q pins tag %q, which matches no git tag in this repository, "+
+					"so the release workflow never published it", rel, ref, tag)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no QSDM image reference was found in the Kubernetes manifests; this guard checked nothing")
+	}
+	t.Logf("QSDM image references checked: %d", checked)
 }
