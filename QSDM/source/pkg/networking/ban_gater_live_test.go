@@ -2,12 +2,14 @@ package networking
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	libp2p "github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/p2p/net/swarm"
 )
 
 // Everything in ban_gater_test.go exercises the gater's predicates directly.
@@ -113,8 +115,76 @@ func TestBanGate_refusesReconnectFromBannedPeer(t *testing.T) {
 		t.Fatal("precondition: peer should be banned")
 	}
 
-	if err := h1.Connect(ctx, peer.AddrInfo{ID: h2.ID(), Addrs: h2.Addrs()}); err == nil {
+	err = h1.Connect(ctx, peer.AddrInfo{ID: h2.ID(), Addrs: h2.Addrs()})
+	if err == nil {
 		t.Fatal("dialling a banned peer must be refused by the connection gater")
+	}
+	// Assert the gater is WHY, not merely that the dial failed. Both hosts are
+	// in-process on loopback so an unrelated failure is unlikely, but "the dial
+	// errored" is satisfied by a broken fixture just as well as by the gate.
+	if !errors.Is(err, swarm.ErrGaterDisallowedConnection) {
+		t.Fatalf("dial must fail because the gater refused it, got: %v", err)
+	}
+}
+
+// A peer exempt from the transport gate must NOT have its live connection
+// closed when it is banned.
+//
+// The OnBan hook skips exempt peers so the node does not flap: closing the
+// connection while InterceptPeerDial still admits the redial would produce an
+// endless close/reconnect cycle against exactly the bootstrap peers the node
+// depends on. A reviewer removed that skip and the entire package stayed green,
+// so the behaviour the previous commit claimed was asserted nowhere. This is
+// the eleventh test-shaped defect of this session and the second in the same
+// file, both the same shape: a guard whose purpose was stated in prose and
+// checked by nothing.
+func TestBanGate_doesNotCloseExemptPeersConnection(t *testing.T) {
+	if testing.Short() {
+		t.Skip("two-host libp2p ban-gate integration is slow")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	h1, err := libp2p.New(libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = h1.Close() })
+	h2, err := libp2p.New(libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = h2.Close() })
+
+	if err := h1.Connect(ctx, peer.AddrInfo{ID: h2.ID(), Addrs: h2.Addrs()}); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+
+	rt := NewReputationTracker(DefaultReputationConfig())
+	net := &Network{Host: h1, banGater: &banGater{}}
+	target := h2.ID().String()
+	net.SetReputationGate(rt, target) // exempt
+
+	for i := 0; i < 40 && !rt.IsBanned(target); i++ {
+		rt.RecordEvent(target, EventInvalidTx, 0)
+	}
+	if !rt.IsBanned(target) {
+		t.Fatal("precondition: peer should be banned in the tracker")
+	}
+
+	// Give the hook the same window the closing test allows, then require the
+	// connection to have survived.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if h1.Network().Connectedness(h2.ID()) != network.Connected {
+			t.Fatal("an exempt peer's connection must NOT be closed on ban: closing it " +
+				"while the gater still admits the redial makes the node flap against " +
+				"the bootstrap peers it depends on")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !rt.IsBanned(target) {
+		t.Error("exemption must not clear the ban itself; ingresses still drop this peer")
 	}
 }
 
