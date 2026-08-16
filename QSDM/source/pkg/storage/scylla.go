@@ -401,11 +401,33 @@ func (s *ScyllaStorage) storeTransactionWithOptions(data []byte, applyBalance bo
 	}
 
 	if applyBalance && sender != "" && recipient != "" && amount > 0 {
+		// The credit is skipped when the debit fails.
+		//
+		// These were two independent calls, each logging its failure and
+		// continuing, so a failed debit still credited the recipient -- value
+		// created from nothing. The same defect was fixed in the SQLite backend
+		// (7cfa488); this is its sibling, found by a reviewer after I fixed one
+		// implementation and left the other, having already listed both.
+		//
+		// SCOPE, stated because the fix here is weaker than the SQLite one.
+		// SQLite got a SAVEPOINT, so debit and credit are genuinely atomic in
+		// both directions. Scylla has no savepoints; the equivalent is a LOGGED
+		// BATCH, and there is no Scylla instance in this environment -- the
+		// behavioural tests skip without SCYLLA_HOSTS -- so a batch rewrite of a
+		// live money path could not be verified by neutering it and watching a
+		// test fail. Shipping unverified changes to this path is how the defects
+		// this session keeps finding got written.
+		//
+		// So this closes only the direction that CREATES value. The reverse --
+		// debit succeeds, credit fails, value destroyed -- remains open, along
+		// with the absence of any non-negative guard on this backend
+		// (UpdateBalance below is a CAS insert then a plain
+		// `SET balance = balance + ?`, with no CHECK equivalent to the one
+		// migrateBalancesToV041 adds on SQLite). Both are recorded in the audit.
 		if err := s.UpdateBalance(sender, -amount); err != nil {
-			log.Printf("Warning: failed to update sender balance: %v", err)
-		}
-		if err := s.UpdateBalance(recipient, amount); err != nil {
-			log.Printf("Warning: failed to update recipient balance: %v", err)
+			log.Printf("Warning: failed to update sender balance, credit NOT applied: %v", err)
+		} else if err := s.UpdateBalance(recipient, amount); err != nil {
+			log.Printf("Warning: sender debited but recipient credit failed: %v", err)
 		}
 	}
 
