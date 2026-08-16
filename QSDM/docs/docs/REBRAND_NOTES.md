@@ -123,8 +123,21 @@ import qsdm "github.com/blackbeardONE/QSDM/QSDM/source/sdk/go"
 c := qsdm.NewClient("http://node:8080")
 ```
 
-Type aliases `QSDMClient = Client` and `QSDMClient = Client` are exported from
-both packages so existing code continues to compile.
+> **CORRECTION (2026-08-16).** This sentence was wrong twice. There is one Go
+> package, not two (see the correction above), and **no `QSDMClient` alias
+> exists in the Go SDK at all** -- `grep -rn QSDMClient QSDM/source/sdk/go/`
+> returns nothing. `QSDMClient` is a JavaScript class
+> (`QSDM/source/sdk/javascript/qsdm.js:40`), covered in the next section. The
+> Go SDK exports `Client`, constructed with `NewClient`.
+
+> **READ THIS SECTION WITH CARE.** A global search-and-replace has collapsed
+> every "preferred vs legacy" pair in this document into the same string --
+> "the npm package `qsdm` is superseded by `qsdm`", "`QSDMClient` is preferred;
+> `QSDMClient` is a legacy alias", "`qsdm-go.yml` | `qsdm-go.yml`", and 16
+> more. The original legacy names are not recoverable from this file, so the
+> migration instructions it gives cannot be followed as written. Verify any
+> name here against the source before acting on it. Not repaired here because
+> inventing the lost half would be worse than flagging it.
 
 #### JavaScript
 
