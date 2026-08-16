@@ -1304,31 +1304,18 @@ func main() {
 	// the same mutex this takes (consensus.go), so a concurrent tick cannot
 	// observe it. And it carries the prevote lock forward
 	// (consensus.go:226-228), so escalation preserves POL safety.
-	go func() {
-		// The SAME config the instance above was built with. Calling
-		// DefaultConsensusConfig() a second time happens to return an
-		// identical struct today, but nothing tied the two together, so
-		// making RoundTimeout configurable at one site and not the other
-		// would silently desync the tick from the deadline it polls.
-		interval := liveConsensusCfg.RoundTimeout / 3
-		if interval <= 0 {
-			interval = 5 * time.Second
-		}
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				if timedOut := liveBFT.TickRoundTimeouts(time.Now()); len(timedOut) > 0 {
-					logger.Warn("BFT round timed out; escalating proposer rotation",
-						"heights", timedOut,
-						"next_round", liveBFT.NextRoundAfterTimeout(timedOut[0]))
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	// The loop body lives in chain.StartRoundTimeoutLoop so it can be tested.
+	// As an anonymous goroutine here it was unreachable by any test -- every
+	// round-timeout test drives TickRoundTimeouts directly -- so removing or
+	// gating this wiring would have compiled green while restoring the
+	// stuck-round bug. Passing liveConsensusCfg by value keeps the tick tied to
+	// the same RoundTimeout the instance above was built with.
+	go chain.StartRoundTimeoutLoop(ctx, liveBFT, liveConsensusCfg,
+		func(heights []uint64, nextRound uint32) {
+			logger.Warn("BFT round timed out; escalating proposer rotation",
+				"heights", heights,
+				"next_round", nextRound)
+		})
 	// The same switch governs POL certificates / lock proofs and block
 	// producer signatures: they are all part of one consensus-authentication
 	// rollout, so flipping them independently would leave a gap that is
