@@ -1398,6 +1398,13 @@ func main() {
 	}
 
 	adminAccounts := chain.NewAccountStore()
+	// Report how much CELL exists. Nothing measured this before: the scrape
+	// carried peers, blocks, reputation and storage latency and said nothing
+	// about the money, while the float64 balance path is known to destroy value
+	// on transfer (the funder debit quantises to a 0.125-CELL ULP, the miner
+	// credit does not). Measurement only -- SupplyLedger's capped issuance stays
+	// unreachable until the dust transition, which is gated on an overflow.
+	monitoring.RegisterSupplyProvider(adminAccounts)
 	adminPool := mempool.New(mempool.DefaultConfig())
 	// New constructs the queue but deliberately does not start its background
 	// lifecycle. Without the sweeper, an uncommitted transaction can reserve a
