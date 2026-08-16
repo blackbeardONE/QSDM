@@ -2,6 +2,8 @@ package chain
 
 import (
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
@@ -110,5 +112,71 @@ func TestSupplySnapshot_negativeBalancesAreRefusedNotCounted(t *testing.T) {
 	}
 	if snap.TotalCELL != 10 {
 		t.Errorf("a refused debit must not move the total, got %v", snap.TotalCELL)
+	}
+}
+
+// The negative-balance counter must actually fire, and there is a real path
+// that reaches it.
+//
+// Every guarded write refuses a negative balance, so an earlier version of this
+// file only asserted the guards and never exercised the increment -- a reviewer
+// disabled `NegativeAccounts++` entirely and all five tests stayed green. The
+// counter was a canary nothing proved could sing.
+//
+// The reachable path is Load: it unmarshals persisted state and writes it
+// straight into the account map (account.go:453-469) with no validation of any
+// kind, and it runs against the live store at cmd/qsdm/main.go:2001. So a
+// corrupted, truncated or tampered accounts state file injects balances that
+// bypass Debit and ApplyTx completely. That is exactly the condition this gauge
+// exists to surface, and it is why the counter is justified rather than dead
+// weight.
+func TestSupplySnapshot_countsNegativeBalanceInjectedByLoad(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "accounts.json")
+
+	// A state file a healthy node would never write, but nothing rejects.
+	payload := `[{"address":"solvent","balance":100,"nonce":0},
+	             {"address":"underwater","balance":-42.5,"nonce":0}]`
+	if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+
+	as := NewAccountStore()
+	n, err := as.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("loaded %d accounts, want 2", n)
+	}
+
+	snap := as.SupplySnapshot()
+	if snap.NegativeAccounts != 1 {
+		t.Errorf("NegativeAccounts = %d, want 1: Load accepted a negative balance and the "+
+			"counter is the only thing that would surface it", snap.NegativeAccounts)
+	}
+	if snap.TotalCELL != 57.5 {
+		t.Errorf("TotalCELL = %v, want 57.5 (100 + -42.5)", snap.TotalCELL)
+	}
+}
+
+// Load performs no validation whatsoever. Pinned so the gap is visible in the
+// test suite rather than only in a comment: if someone later makes Load reject
+// negative balances, this test fails and tells them the supply canary above may
+// no longer have a reachable path.
+func TestAccountStore_LoadDoesNotValidateBalances(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "accounts.json")
+	if err := os.WriteFile(path, []byte(`[{"address":"a","balance":-1,"nonce":0}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	as := NewAccountStore()
+	if _, err := as.Load(path); err != nil {
+		t.Fatalf("Load currently accepts negative balances without error; it returned %v. "+
+			"If that changed deliberately, update TestSupplySnapshot_countsNegativeBalanceInjectedByLoad "+
+			"which relies on this path to reach the counter.", err)
+	}
+	acc, ok := as.Get("a")
+	if !ok || acc.Balance != -1 {
+		t.Errorf("expected the negative balance to be stored verbatim, got %+v (found=%v)", acc, ok)
 	}
 }
