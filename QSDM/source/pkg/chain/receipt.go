@@ -77,6 +77,26 @@ func (rs *ReceiptStore) Store(receipt *TxReceipt) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 
+	// Re-storing a TxID REPLACES it everywhere rather than appending again.
+	//
+	// byTxID is a map and was always last-write-wins, but byBlock, byContract
+	// and order appended unconditionally -- so storing one receipt twice left
+	// GetByBlock returning the same transaction twice, and Save writes from
+	// `order`, so the duplication round-tripped and survived every subsequent
+	// restart. Measured before this fix: two Stores of one receipt gave
+	// order=2, byBlock=2, and a save/load cycle preserved both.
+	//
+	// LoadNDJSON's own doc comment asserted "the Store call dedupes by TxID, so
+	// re-loading the same NDJSON twice has the same final state as loading it
+	// once", and invited operators to call it twice to merge log segments. That
+	// claim was false: measured, a second load of the same file grew order 1->2
+	// and byBlock 1->2. Making it true here is cheaper than correcting the
+	// comment, and fixes the invited operation rather than documenting it as
+	// unsafe.
+	if _, exists := rs.byTxID[receipt.TxID]; exists {
+		rs.replaceLocked(receipt)
+		return
+	}
 	rs.byTxID[receipt.TxID] = receipt
 	rs.byBlock[receipt.BlockHeight] = append(rs.byBlock[receipt.BlockHeight], receipt)
 	if receipt.ContractID != "" {
@@ -255,10 +275,37 @@ func (rs *ReceiptStore) Load(path string) (int, error) {
 		return 0, fmt.Errorf("unmarshal receipts: %w", err)
 	}
 
+	// Deduplicate by TxID at the file boundary, and report distinct receipts.
+	//
+	// Store is append-only for its secondary indexes: byTxID is a map and
+	// last-write-wins, but byBlock, byContract and order all append
+	// unconditionally (receipt.go:76-86). So loading a file that carries the
+	// same TxID twice made GetByBlock return the SAME TRANSACTION TWICE, and
+	// Save writes from `order`, so the duplication round-tripped and persisted
+	// across every subsequent restart. Measured before fixing: two Stores of one
+	// receipt gave order=2, byBlock=2, and a save/load cycle preserved both.
+	//
+	// Fixed here rather than in Store because duplicates do not arise in normal
+	// operation -- the two production Store call sites (blockreceipts.go:90 and
+	// :113) are mutually exclusive within a block, so each receipt is stored
+	// once. The reachable source is a file: a hand-edited, merged or corrupted
+	// receipts JSON. Guarding the boundary leaves runtime behaviour untouched.
+	//
+	// The count matches AccountStore.Load's fix in the same spirit: it feeds a
+	// boot log field ("receipts_loaded"), and reporting file entries rather than
+	// stored receipts overstated what was restored.
+	seen := make(map[string]struct{}, len(receipts))
 	for _, r := range receipts {
+		if r == nil {
+			continue
+		}
+		if _, dup := seen[r.TxID]; dup {
+			continue
+		}
+		seen[r.TxID] = struct{}{}
 		rs.Store(r)
 	}
-	return len(receipts), nil
+	return len(seen), nil
 }
 
 // AppendBlockNDJSON appends every receipt in the receiver whose
@@ -385,4 +432,75 @@ func (rs *ReceiptStore) LoadNDJSON(path string) (int, error) {
 		return loaded, fmt.Errorf("chain.ReceiptStore.LoadNDJSON: scan %s: %w", path, err)
 	}
 	return loaded, nil
+}
+
+// replaceLocked swaps an already-stored receipt in place across every index.
+// Caller must hold rs.mu.
+//
+// Kept separate from Store so the common path (a receipt seen for the first
+// time) stays a plain append and pays nothing for this. The scans are bounded
+// by the receipts in ONE block and ONE contract, not by the whole store.
+func (rs *ReceiptStore) replaceLocked(receipt *TxReceipt) {
+	prev := rs.byTxID[receipt.TxID]
+	rs.byTxID[receipt.TxID] = receipt
+
+	// A re-stored receipt may carry a different BlockHeight than the one it
+	// replaces (ProduceBlock stores a receipt before the block hash is known
+	// and again afterwards). Drop it from the old bucket before adding to the
+	// new one, or the stale bucket keeps a pointer to a receipt that no longer
+	// claims that height.
+	if prev != nil && prev.BlockHeight != receipt.BlockHeight {
+		rs.byBlock[prev.BlockHeight] = removeReceipt(rs.byBlock[prev.BlockHeight], receipt.TxID)
+	}
+	rs.byBlock[receipt.BlockHeight] = upsertReceipt(rs.byBlock[receipt.BlockHeight], receipt)
+
+	if prev != nil && prev.ContractID != "" && prev.ContractID != receipt.ContractID {
+		rs.byContract[prev.ContractID] = removeReceipt(rs.byContract[prev.ContractID], receipt.TxID)
+	}
+	if receipt.ContractID != "" {
+		rs.byContract[receipt.ContractID] = upsertReceipt(rs.byContract[receipt.ContractID], receipt)
+	}
+	// rs.order already holds this TxID exactly once; leave its position alone
+	// so Save preserves original arrival ordering.
+}
+
+// upsertReceipt returns a bucket with receipt in place of any entry sharing
+// its TxID, COPYING rather than writing through.
+//
+// The copy is the point. GetByBlock and GetByContract hand out the store's
+// live slice (receipt.go:117-128), so a caller can still be reading it after
+// the RLock has been released -- pkg/api/handlers_admin.go:182 marshals
+// exactly that slice with no lock held. Appending never disturbed such a
+// reader, because its slice header pins the old length. Writing list[i] in
+// place does, and the first version of this function did: a reviewer
+// reproduced a genuine DATA RACE under -race against that handler's access
+// pattern. Pre-fix Store only ever appended, so this hazard was introduced
+// by the dedupe fix rather than uncovered by it.
+//
+// Restoring the invariant, not documenting it: entries visible to an
+// already-returned slice are never mutated.
+func upsertReceipt(list []*TxReceipt, receipt *TxReceipt) []*TxReceipt {
+	for i, r := range list {
+		if r != nil && r.TxID == receipt.TxID {
+			out := make([]*TxReceipt, len(list))
+			copy(out, list)
+			out[i] = receipt
+			return out
+		}
+	}
+	return append(list, receipt)
+}
+
+// removeReceipt returns a bucket without txID, as a fresh slice. The obvious
+// `out := list[:0]` compaction reuses the caller's backing array and would
+// corrupt a slice a reader already holds -- same hazard as upsertReceipt.
+func removeReceipt(list []*TxReceipt, txID string) []*TxReceipt {
+	out := make([]*TxReceipt, 0, len(list))
+	for _, r := range list {
+		if r == nil || r.TxID == txID {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
 }
