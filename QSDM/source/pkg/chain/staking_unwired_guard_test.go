@@ -2,29 +2,21 @@ package chain
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/go/packages"
 )
 
-// stakingGuardedArity is the parameter count of each guarded method as declared
-// today. Arity narrows a bare name match to something much closer to the real
-// method without type-checking the repo:
-//
-//	Delegate(as, delegator, validator, amount)
-//	BeginUnbond(as, delegator, validator, amount, currentHeight, unbondBlocks)
-//
-// It is also the guard's most dangerous moving part, so it is pinned by
-// TestStakingLedger_guardedArityMatchesDeclaredSignatures below. Adding the
-// Signature/PublicKey parameters this guard's own failure message recommends
-// would change these numbers and, unpinned, would silently stop matching the
-// very methods being guarded -- disarming the check at the exact moment someone
-// is touching them. Raised by review; it is a silent failure, so it gets a test
-// rather than a comment.
-var stakingGuardedArity = map[string]int{"Delegate": 4, "BeginUnbond": 6}
+// stakingGuardedMethods are the StakingLedger methods that move CELL.
+var stakingGuardedMethods = map[string]bool{"Delegate": true, "BeginUnbond": true}
+
+const stakingLedgerType = "github.com/blackbeardONE/QSDM/pkg/chain.StakingLedger"
 
 // Critical #2 in the capability audit -- "staking txs unauthenticated at apply"
 // -- names code that does not exist on main's lineage.
@@ -37,144 +29,78 @@ var stakingGuardedArity = map[string]int{"Delegate": 4, "BeginUnbond": 6}
 // production callers. There is no staking transaction to authenticate because
 // there is no staking transaction.
 //
-// A reviewer took that further: ValidatorSet.Register (validator.go:109) has
-// exactly one production caller in the tree, cmd/qsdm/main.go:1130, which
-// registers only this node's own consensusSigner.Address() at startup. So the
-// audit's "membership seats anyone with 100 CELL" scenario has no path to occur
-// at all, not merely no path through the Sync* functions.
+// ValidatorSet.Register (validator.go:109) likewise has exactly one production
+// caller, cmd/qsdm/main.go:1130, registering only this node's own signer at
+// startup. So the audit's "membership seats anyone with 100 CELL" scenario has
+// no path to occur at all, not merely no path through the Sync* functions.
 //
 // That makes the row unreachable rather than open, and this file is the
 // evidence for saying so. But "unreachable today" is exactly the state 2b was
-// in before someone wired it: an unauthenticated mutator sitting in the tree,
-// waiting for a caller. Delegate and BeginUnbond take a delegator address as a
-// plain string and move CELL out of that account with no signature, no public
-// key and no nonce bump. Wiring either to a transaction type or an HTTP handler
-// without adding authentication first would reintroduce the critical in its
-// original form.
+// in before someone wired it: an unauthenticated mutator waiting for a caller.
+// Delegate and BeginUnbond take a delegator address as a plain string and move
+// CELL out of that account with no signature, no public key and no nonce bump.
 //
-// So this guard fails the moment a production caller appears.
+// # Why this resolves types instead of matching names
 //
-// # Why this parses instead of grepping
+// Four earlier versions of this guard matched names, and five review rounds
+// broke it five times:
 //
-// The first version scanned `git ls-files` output with a line regex, and a
-// reviewer broke it twice in ways that matter:
+//  1. an untracked .go file escaped a `git ls-files` scan;
+//  2. a call split across lines escaped a line regex;
+//  3. a method value (`f := s.Delegate`) escaped a call-site-only AST match;
+//  4. reflect.MethodByName("Delegate") escaped every name match, then
+//     reflect.Value.Method(i) by INDEX escaped the literal-name match;
+//  5. a caller reaching the type through a re-exported alias
+//     (`type SL = chain.StakingLedger`) escaped an import-path scope check,
+//     because that file never imports pkg/chain at all.
 //
-//   - An untracked .go file calling Delegate compiled into the build and the
-//     guard passed, because `git ls-files` lists only tracked files. A file is
-//     untracked for exactly as long as it takes to write it and forget to add
-//     it -- and that window is when someone is wiring something new.
-//   - A call split across lines (`s.` on one line, `Delegate(...)` on the next)
-//     passed, because the regex matched per line. gofmt itself breaks long
-//     chained calls that way, so it was not a contrived case.
+// Each fix closed the demonstrated variant and left the next. That is not five
+// unlucky misses: an AST scan reasons about IDENTIFIERS -- names, import paths,
+// literal arguments -- and every one of these evasions moves the call through a
+// layer of the type system that identifiers do not describe. The approach could
+// only ever be handed a longer list of shapes to distrust.
 //
-// Both holes came from inspecting a proxy for the build rather than the build.
-// This version walks the filesystem -- what the compiler actually reads -- and
-// parses each file, so neither the index nor the line breaks matter.
+// So this resolves types. go/packages type-checks the module and every selection
+// is compared against the actual declared method on *chain.StakingLedger,
+// however the receiver got into scope -- alias, embedding, method value, or a
+// plain call. Aliases and embedding stop being special cases because the checker
+// has already resolved them.
+//
+// Known limits, stated rather than implied away:
+//   - Reflection is invisible to the type checker, so it keeps a separate
+//     name-based scan below.
+//   - Only this module is loaded. sdk/go and wasmer-go-patched are separate
+//     modules; sdk/go does not import pkg/chain today, verified.
+//   - A call through an interface resolves to the interface's method, not to
+//     StakingLedger's. No such interface exists in this tree today, and
+//     TestStakingLedger_guardedMethodsStillExist would not catch one appearing.
 func TestStakingLedger_valueMoversHaveNoProductionCallers(t *testing.T) {
-	guarded := stakingGuardedArity
+	pkgs := loadModuleForStakingGuard(t)
 
 	var offenders []string
-	for _, path := range productionGoFiles(t) {
-		fset := token.NewFileSet()
-		f, err := parser.ParseFile(fset, path, nil, 0)
-		if err != nil {
-			// A file that does not parse cannot be hiding a compiling call.
-			continue
+	packages.Visit(pkgs, nil, func(p *packages.Package) {
+		if p.TypesInfo == nil {
+			return
 		}
-		if !canReachStakingLedger(f) {
-			continue
+		for expr, sel := range p.TypesInfo.Selections {
+			fn, ok := sel.Obj().(*types.Func)
+			if !ok || !stakingGuardedMethods[fn.Name()] {
+				continue
+			}
+			sig, ok := fn.Type().(*types.Signature)
+			if !ok || sig.Recv() == nil {
+				continue
+			}
+			// The receiver is the real thing or it is not; no name heuristics.
+			recv := strings.TrimPrefix(sig.Recv().Type().String(), "*")
+			if recv != stakingLedgerType {
+				continue
+			}
+			pos := p.Fset.Position(expr.Pos())
+			offenders = append(offenders, fn.Name()+" reached in "+p.PkgPath+" at "+
+				filepath.ToSlash(pos.Filename)+":"+itoaForStakingGuard(pos.Line))
 		}
-
-		// Arity is only knowable at a call site. A METHOD VALUE has no
-		// arguments to count -- `f := s.Delegate` then `f(as, a, b, amt)` is a
-		// real, compiling call that a call-site-only scan never sees, which is
-		// how a reviewer walked through the previous version of this test. So
-		// collect the call sites first, then treat every remaining reference to
-		// the name as a hit regardless of context.
-		callArity := map[*ast.SelectorExpr]int{}
-		ast.Inspect(f, func(n ast.Node) bool {
-			if call, ok := n.(*ast.CallExpr); ok {
-				if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-					callArity[sel] = len(call.Args)
-				}
-			}
-			return true
-		})
-
-		ast.Inspect(f, func(n ast.Node) bool {
-			sel, ok := n.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			want, guardedName := guarded[sel.Sel.Name]
-			if !guardedName {
-				return true
-			}
-			how := "referenced as a value at "
-			if got, isCall := callArity[sel]; isCall {
-				// A direct call whose arity cannot be this method is some other
-				// type's same-named method; leaving those out keeps the guard
-				// usable. A non-call reference gets no such benefit of the
-				// doubt, because there is no arity to judge it by.
-				if got != want {
-					return true
-				}
-				how = "called at "
-			}
-			pos := fset.Position(sel.Sel.Pos())
-			offenders = append(offenders, sel.Sel.Name+" "+how+
-				filepath.ToSlash(path)+":"+itoaForStakingGuard(pos.Line))
-			return true
-		})
-
-		// Reflection defeats every name match above, because the name stops
-		// being a name: reflect.ValueOf(s).MethodByName("Delegate").Call(args)
-		// compiles, moves CELL, and contains no SelectorExpr called Delegate --
-		// only a string literal. A reviewer confirmed the guard passed it.
-		//
-		// Matching only a literal name was still too narrow. reflect selects a
-		// method by INDEX too -- v.Method(i).Call(args) -- and an integer offers
-		// no name for any name match to see. A reviewer built that, inside
-		// package chain, and this guard passed it. Fourth round, and each round
-		// I had closed the one variant demonstrated and left the next.
-		//
-		// So the rule is inverted here: flag every reflective method lookup in a
-		// scanned file, and exempt only the ones PROVABLY not reaching a guarded
-		// method -- a string literal naming something else. A non-literal
-		// argument cannot be judged, so it does not get the benefit of the doubt.
-		// That is deliberately the opposite trade from the SelectorExpr scan
-		// above, because reflection is rare in this tree while same-named methods
-		// are common, so here silence costs more than noise.
-		ast.Inspect(f, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok || len(call.Args) == 0 {
-				return true
-			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			switch sel.Sel.Name {
-			case "Method", "MethodByName", "FieldByName":
-			default:
-				return true
-			}
-			detail := "reached by reflection (argument is not a literal, so it "
-			detail += "cannot be ruled out) at "
-			if lit, isLit := call.Args[0].(*ast.BasicLit); isLit && lit.Kind == token.STRING {
-				name := strings.Trim(lit.Value, "`\"")
-				if _, guardedName := guarded[name]; !guardedName {
-					// Provably naming some other method.
-					return true
-				}
-				detail = name + " reached by reflection at "
-			}
-			pos := fset.Position(call.Lparen)
-			offenders = append(offenders, detail+
-				filepath.ToSlash(path)+":"+itoaForStakingGuard(pos.Line))
-			return true
-		})
-	}
+	})
 
 	if len(offenders) > 0 {
 		t.Fatalf("StakingLedger.Delegate/BeginUnbond now have production callers:\n  %s\n\n"+
@@ -182,100 +108,182 @@ func TestStakingLedger_valueMoversHaveNoProductionCallers(t *testing.T) {
 			"with no signature check, no public key and no nonce bump. Before wiring them, "+
 			"authenticate the caller the way wallet_transfer.go:41-48 and enrollment_apply.go:202 "+
 			"do at replay -- carry Signature/PublicKey through to apply and use DebitAndBumpNonce "+
-			"(account.go:93). Then update audit critical #2, which this test is the evidence for.\n\n"+
-			"If one of these is an unrelated method that merely shares a name and arity, this "+
-			"guard is name-based and cannot tell them apart -- narrow it, do not delete it.",
+			"(account.go:93). Then update audit critical #2, which this test is the evidence for.",
 			strings.Join(offenders, "\n  "))
 	}
 }
 
-// canReachStakingLedger reports whether a file could possibly hold a reference
-// to a *StakingLedger method: it is either in package chain itself, or it
-// imports the chain package. You cannot obtain a *StakingLedger without one of
-// those, so this loses no reachable caller.
+// Reflection is the one reach the type checker cannot see: the method name stops
+// being a name. Both of these compile and move CELL, and neither leaves a
+// resolvable selection behind:
 //
-// It exists because the scan flags non-call references by bare name, with no
-// type awareness, across every .go file under the module root -- and Delegate
-// is a common name. A reviewer proved the cost: wasmer-go-patched declares its
-// own `Delegate = 9` opcode constant (wasmer/config_opcodes.go:18), in a
-// separate module that merely happens to sit inside the walked tree. It is
-// currently unreferenced, so nothing fails today, but one line of debug code
-// writing wasmer.Delegate in a non-call expression would have failed this test
-// for reasons with nothing to do with staking. A guard that cries wolf gets
-// deleted, which would be a worse outcome than the hole it was closing.
+//	reflect.ValueOf(s).MethodByName("Delegate").Call(args)
+//	reflect.ValueOf(s).Method(idx).Call(args)
 //
-// Deliberately NOT done by excluding nested modules: sdk/go is a separate
-// module inside this tree that could legitimately import pkg/chain and wire a
-// real caller. Filtering on the import keeps that in scope while dropping
-// wasmer, which cannot reference chain at all.
-func canReachStakingLedger(f *ast.File) bool {
-	if f.Name != nil && f.Name.Name == "chain" {
+// So the rule here is inverted relative to the type scan: flag every reflective
+// method lookup in a file that could hold a *StakingLedger, and exempt only what
+// is PROVABLY harmless -- a string literal naming some other method. A
+// non-literal argument cannot be judged and gets no benefit of the doubt.
+// Reflection is rare in this tree, so noise is cheap here; silence is not.
+func TestStakingLedger_valueMoversNotReachedByReflection(t *testing.T) {
+	pkgs := loadModuleForStakingGuard(t)
+
+	var offenders []string
+	packages.Visit(pkgs, nil, func(p *packages.Package) {
+		if !packageCanHoldStakingLedger(p) {
+			return
+		}
+		for _, f := range p.Syntax {
+			ast.Inspect(f, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok || len(call.Args) == 0 {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				switch sel.Sel.Name {
+				case "Method", "MethodByName", "FieldByName":
+				default:
+					return true
+				}
+				detail := "a reflective lookup whose argument is not a literal, so it " +
+					"cannot be ruled out, at "
+				if lit, isLit := call.Args[0].(*ast.BasicLit); isLit && lit.Kind == token.STRING {
+					name := strings.Trim(lit.Value, "`\"")
+					if !stakingGuardedMethods[name] {
+						return true // provably naming some other method
+					}
+					detail = name + " reached by reflection at "
+				}
+				pos := p.Fset.Position(call.Lparen)
+				offenders = append(offenders, detail+
+					filepath.ToSlash(pos.Filename)+":"+itoaForStakingGuard(pos.Line))
+				return true
+			})
+		}
+	})
+
+	if len(offenders) > 0 {
+		t.Fatalf("reflective method lookups in packages that can hold a *StakingLedger:\n  %s\n\n"+
+			"Reflection defeats the type-resolved guard above, so these are flagged on sight. "+
+			"If the lookup provably cannot reach Delegate or BeginUnbond, name the method with a "+
+			"string literal and this test will exempt it.",
+			strings.Join(offenders, "\n  "))
+	}
+}
+
+// packageCanHoldStakingLedger keeps the reflection scan off packages that could
+// not obtain the receiver in the first place. Unlike the import-path check this
+// replaces, it asks the type checker, so an alias or an indirect path counts.
+func packageCanHoldStakingLedger(p *packages.Package) bool {
+	if p.PkgPath == "github.com/blackbeardONE/QSDM/pkg/chain" {
 		return true
 	}
-	for _, imp := range f.Imports {
-		if imp.Path == nil {
+	for path := range p.Imports {
+		if path == "github.com/blackbeardONE/QSDM/pkg/chain" {
+			return true
+		}
+	}
+	if p.TypesInfo == nil {
+		return false
+	}
+	for _, tv := range p.TypesInfo.Types {
+		if tv.Type == nil {
 			continue
 		}
-		path := strings.Trim(imp.Path.Value, "`\"")
-		if path == "github.com/blackbeardONE/QSDM/pkg/chain" ||
-			strings.HasSuffix(path, "/pkg/chain") {
+		if strings.Contains(strings.TrimPrefix(tv.Type.String(), "*"), stakingLedgerType) {
 			return true
 		}
 	}
 	return false
 }
 
-// productionGoFiles walks the module from disk rather than asking git, so a
-// file that is new, untracked, ignored or staged-but-uncommitted is still
-// scanned. The compiler does not consult the index and neither should this.
-func productionGoFiles(t *testing.T) []string {
+// If a guarded method is renamed or removed, the scan above stops matching it
+// and goes quiet -- passing for the wrong reason. Fail loudly here instead.
+//
+// This replaces an arity pin that guarded the old name-and-arity matching. Arity
+// no longer decides anything, but existence still does.
+func TestStakingLedger_guardedMethodsStillExist(t *testing.T) {
+	pkgs := loadModuleForStakingGuard(t)
+	var chainPkg *packages.Package
+	packages.Visit(pkgs, nil, func(p *packages.Package) {
+		if p.PkgPath == "github.com/blackbeardONE/QSDM/pkg/chain" {
+			chainPkg = p
+		}
+	})
+	if chainPkg == nil || chainPkg.Types == nil {
+		t.Fatal("could not load pkg/chain's types; the guard above would match nothing")
+	}
+
+	named, ok := chainPkg.Types.Scope().Lookup("StakingLedger").(*types.TypeName)
+	if !ok {
+		t.Fatal("StakingLedger no longer declared in pkg/chain -- the caller scan is matching nothing")
+	}
+	ptr := types.NewPointer(named.Type())
+	ms := types.NewMethodSet(ptr)
+
+	found := map[string]bool{}
+	for i := 0; i < ms.Len(); i++ {
+		found[ms.At(i).Obj().Name()] = true
+	}
+	for name := range stakingGuardedMethods {
+		if !found[name] {
+			t.Errorf("StakingLedger.%s no longer exists. If it was renamed, update "+
+				"stakingGuardedMethods -- TestStakingLedger_valueMoversHaveNoProductionCallers "+
+				"matches on it and is silently matching nothing right now. If the method was "+
+				"removed outright, say so in audit critical #2.", name)
+		}
+	}
+}
+
+// loadModuleForStakingGuard type-checks this module.
+//
+// packages.Load shells out to `go list`, and the `go` on PATH in this
+// environment is a trimmed shim that does not work -- so PATH is prefixed with
+// the toolchain actually running this test. CGO_CFLAGS/CGO_LDFLAGS are cleared
+// for the same reason the build scripts clear them.
+//
+// Errors are fatal, never skipped: a guard that skips is indistinguishable from
+// a guard that passes, and this one is the evidence for closing a critical.
+func loadModuleForStakingGuard(t *testing.T) []*packages.Package {
 	t.Helper()
 
-	// Walk up from the package directory to the go.mod rather than shelling out
-	// to `go list`: the `go` on PATH in this environment is a trimmed shim that
-	// does not work, and a Skip on a guard is indistinguishable from a pass.
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("cannot locate module root: %v", err)
+	env := append(os.Environ(),
+		"PATH="+filepath.Join(runtime.GOROOT(), "bin")+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"CGO_CFLAGS=", "CGO_LDFLAGS=")
+
+	cfg := &packages.Config{
+		Mode: packages.NeedName | packages.NeedSyntax | packages.NeedTypes |
+			packages.NeedTypesInfo | packages.NeedDeps | packages.NeedImports,
+		Env:        env,
+		BuildFlags: []string{"-tags", "dilithium_circl"},
+		Dir:        "..", // module root, so ./... covers cmd/ and every pkg/
+		Tests:      false,
 	}
-	for {
-		if _, statErr := os.Stat(filepath.Join(dir, "go.mod")); statErr == nil {
-			break
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatalf("no go.mod above %s -- cannot scope the guard", dir)
-		}
-		dir = parent
+	pkgs, err := packages.Load(cfg, "./...")
+	if err != nil {
+		t.Fatalf("type-check the module: %v", err)
+	}
+	if len(pkgs) == 0 {
+		t.Fatal("loaded zero packages -- the guard would pass vacuously")
 	}
 
-	var out []string
-	err = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
+	var loadErrs []string
+	packages.Visit(pkgs, nil, func(p *packages.Package) {
+		for _, e := range p.Errors {
+			loadErrs = append(loadErrs, p.PkgPath+": "+e.Error())
 		}
-		if d.IsDir() {
-			// .cache holds detached worktrees of other branches, which DO carry
-			// the staking module. They are not this tree and are not built.
-			switch d.Name() {
-			case ".cache", ".git", "vendor", "testdata", "node_modules":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
-			out = append(out, path)
-		}
-		return nil
 	})
-	if err != nil {
-		t.Skipf("walk module: %v", err)
+	if len(loadErrs) > 0 {
+		// A package that fails to type-check contributes no selections, so
+		// tolerating errors here would let a caller hide behind an unrelated
+		// compile failure.
+		t.Fatalf("packages failed to type-check, so the scan would be blind to them:\n  %s",
+			strings.Join(loadErrs, "\n  "))
 	}
-	if len(out) == 0 {
-		t.Fatalf("scanned zero production .go files under %s -- the guard would pass "+
-			"vacuously", dir)
-	}
-	return out
+	return pkgs
 }
 
 // The audit says grep Signature returns 0 hits in the staking files. That was
@@ -284,7 +292,7 @@ func productionGoFiles(t *testing.T) []string {
 //
 // Bare relative names are safe here: the test binary's working directory is
 // always the package source directory, and a rename makes os.ReadFile fail into
-// t.Fatalf rather than pass vacuously. Both confirmed by review.
+// t.Fatalf rather than pass vacuously.
 func TestStakingLedger_shippedFilesCarryNoSignatureHandling(t *testing.T) {
 	for _, name := range []string{"staking_ledger.go", "staking_persist.go", "staking_registry.go"} {
 		b, err := os.ReadFile(name)
@@ -311,53 +319,4 @@ func itoaForStakingGuard(n int) string {
 		n /= 10
 	}
 	return string(buf[i:])
-}
-
-// If the declared signatures drift from stakingGuardedArity, fail here -- where
-// the message can say what happened -- instead of letting the caller scan go
-// quietly blind.
-func TestStakingLedger_guardedArityMatchesDeclaredSignatures(t *testing.T) {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "staking_ledger.go", nil, 0)
-	if err != nil {
-		t.Fatalf("parse staking_ledger.go: %v", err)
-	}
-
-	found := map[string]int{}
-	for _, d := range f.Decls {
-		fn, ok := d.(*ast.FuncDecl)
-		if !ok || fn.Recv == nil || fn.Type.Params == nil {
-			continue
-		}
-		if _, guarded := stakingGuardedArity[fn.Name.Name]; !guarded {
-			continue
-		}
-		n := 0
-		for _, field := range fn.Type.Params.List {
-			// `a, b string` is one field carrying two names.
-			if len(field.Names) == 0 {
-				n++
-				continue
-			}
-			n += len(field.Names)
-		}
-		found[fn.Name.Name] = n
-	}
-
-	for name, want := range stakingGuardedArity {
-		got, ok := found[name]
-		if !ok {
-			t.Errorf("StakingLedger.%s no longer declared in staking_ledger.go. If it moved or "+
-				"was renamed, update stakingGuardedArity -- the caller scan matches on name and "+
-				"is silently matching nothing right now.", name)
-			continue
-		}
-		if got != want {
-			t.Errorf("StakingLedger.%s now takes %d parameters, stakingGuardedArity says %d. "+
-				"TestStakingLedger_valueMoversHaveNoProductionCallers filters direct calls by "+
-				"arity, so until this map is updated it will not flag a real call. If the extra "+
-				"parameters are Signature/PublicKey, authentication may now exist -- say so in "+
-				"audit critical #2 rather than only bumping the number.", name, got, want)
-		}
-	}
 }
