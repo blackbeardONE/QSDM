@@ -305,24 +305,31 @@ func loadModuleForStakingGuardOnce() ([]*packages.Package, string) {
 		}
 	})
 	// Coverage is the whole point, so assert it rather than trusting ./... to
-	// mean what it looks like it means. The previous version passed Dir: ".."
-	// with a comment claiming that was the module root; from the test's cwd of
-	// pkg/chain it is pkg/, and cmd/ and internal/ were never type-checked. A
-	// plain unauthenticated call added to cmd/qsdm compiled into the shipped
-	// binary and the guard passed it. Counting packages is not checking them.
-	var sawCmd, sawInternal bool
+	// mean what it looks like it means. A previous version passed Dir: ".."
+	// with a comment calling it the module root; from the test's cwd of
+	// pkg/chain that is pkg/, and cmd/ was never type-checked. A plain
+	// unauthenticated call added to cmd/qsdm compiled into the shipped binary
+	// and the guard passed it. Counting packages is not checking them.
+	//
+	// cmd/ specifically, and not internal/. The first version of this assertion
+	// required both, which read as two independent signals and was not: every
+	// one of pkg/api, pkg/consensus, pkg/governance, pkg/networking,
+	// pkg/quarantine and pkg/reputation imports internal/, so NeedDeps pulls it
+	// in transitively as soon as anything under pkg/ loads. A reviewer measured
+	// it against the buggy Dir and got sawInternal=true with sawCmd=false -- the
+	// internal/ half would have been satisfied by the very bug it was meant to
+	// detect. Nothing under pkg/ or internal/ imports cmd/, so sawCmd is only
+	// true when the root is scoped correctly.
+	var sawCmd bool
 	packages.Visit(pkgs, nil, func(p *packages.Package) {
-		switch {
-		case strings.Contains(p.PkgPath, "/QSDM/cmd/"):
+		if strings.Contains(p.PkgPath, "/QSDM/cmd/") {
 			sawCmd = true
-		case strings.Contains(p.PkgPath, "/QSDM/internal/"):
-			sawInternal = true
 		}
 	})
-	if !sawCmd || !sawInternal {
-		return nil, fmt.Sprintf("loaded %d packages but reached cmd/=%v internal/=%v -- the scan is blind to "+
-			"the wiring layer, which is exactly where a caller would be added (cmd/qsdm/main.go "+
-			"is named in this file as the production entrypoint)", len(pkgs), sawCmd, sawInternal)
+	if !sawCmd {
+		return nil, fmt.Sprintf("loaded %d packages but reached no cmd/ package -- the scan is "+
+			"blind to the wiring layer, which is exactly where a caller would be added "+
+			"(cmd/qsdm/main.go is named in this file as the production entrypoint)", len(pkgs))
 	}
 
 	if len(loadErrs) > 0 {
