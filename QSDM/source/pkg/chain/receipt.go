@@ -449,11 +449,18 @@ func (rs *ReceiptStore) replaceLocked(receipt *TxReceipt) {
 	// the stale height keeps serving a receipt that no longer claims it.
 	//
 	// The trigger is a transaction re-submitted and landing in a different
-	// block. NOT ProduceBlock storing twice -- an earlier version of this
-	// comment said that, and it is false: blockreceipts.go:90 and :113 are
-	// mutually exclusive within one call (the first is inside the
-	// all-transactions-failed early return), and BlockHeight is set once and
-	// never reassigned.
+	// block: a tx that fails to apply is dropped from the mempool without
+	// advancing the sender nonce, so an identical resubmission is admitted and
+	// can later succeed at a new height.
+	//
+	// NOT a block producer storing the same receipt twice -- an earlier version
+	// of this comment said that, and it is false on both producer paths.
+	// ReceiptProducer.ProduceBlockWithReceipts stores at blockreceipts.go:90
+	// and :113, which are mutually exclusive within one call (the first is
+	// inside the all-transactions-failed early return), and BlockHeight is set
+	// once at :59 and never reassigned. BlockProducer.ProduceBlock (block.go:259)
+	// stores via storeProduceBlockReceipts (block.go:517), whose failure branch
+	// continues the loop -- one Store per TxID per call.
 	if prev != nil && prev.BlockHeight != receipt.BlockHeight {
 		rs.byBlock[prev.BlockHeight] = removeReceipt(rs.byBlock[prev.BlockHeight], receipt.TxID)
 	}
