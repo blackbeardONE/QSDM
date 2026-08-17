@@ -81,6 +81,9 @@ func TestStakingLedger_valueMoversHaveNoProductionCallers(t *testing.T) {
 			// A file that does not parse cannot be hiding a compiling call.
 			continue
 		}
+		if !canReachStakingLedger(f) {
+			continue
+		}
 
 		// Arity is only knowable at a call site. A METHOD VALUE has no
 		// arguments to count -- `f := s.Delegate` then `f(as, a, b, amt)` is a
@@ -123,6 +126,36 @@ func TestStakingLedger_valueMoversHaveNoProductionCallers(t *testing.T) {
 				filepath.ToSlash(path)+":"+itoaForStakingGuard(pos.Line))
 			return true
 		})
+
+		// Reflection defeats every name match above, because the name stops
+		// being a name: reflect.ValueOf(s).MethodByName("Delegate").Call(args)
+		// compiles, moves CELL, and contains no SelectorExpr called Delegate --
+		// only a string literal. A reviewer confirmed the guard passed it.
+		//
+		// Matched narrowly, on a MethodByName-style call taking a guarded name
+		// as a literal, rather than on any string equal to "Delegate" anywhere.
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || len(call.Args) == 0 {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || (sel.Sel.Name != "MethodByName" && sel.Sel.Name != "FieldByName") {
+				return true
+			}
+			lit, ok := call.Args[0].(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			name := strings.Trim(lit.Value, "`\"")
+			if _, guardedName := guarded[name]; !guardedName {
+				return true
+			}
+			pos := fset.Position(lit.Pos())
+			offenders = append(offenders, name+" reached by reflection at "+
+				filepath.ToSlash(path)+":"+itoaForStakingGuard(pos.Line))
+			return true
+		})
 	}
 
 	if len(offenders) > 0 {
@@ -136,6 +169,42 @@ func TestStakingLedger_valueMoversHaveNoProductionCallers(t *testing.T) {
 			"guard is name-based and cannot tell them apart -- narrow it, do not delete it.",
 			strings.Join(offenders, "\n  "))
 	}
+}
+
+// canReachStakingLedger reports whether a file could possibly hold a reference
+// to a *StakingLedger method: it is either in package chain itself, or it
+// imports the chain package. You cannot obtain a *StakingLedger without one of
+// those, so this loses no reachable caller.
+//
+// It exists because the scan flags non-call references by bare name, with no
+// type awareness, across every .go file under the module root -- and Delegate
+// is a common name. A reviewer proved the cost: wasmer-go-patched declares its
+// own `Delegate = 9` opcode constant (wasmer/config_opcodes.go:18), in a
+// separate module that merely happens to sit inside the walked tree. It is
+// currently unreferenced, so nothing fails today, but one line of debug code
+// writing wasmer.Delegate in a non-call expression would have failed this test
+// for reasons with nothing to do with staking. A guard that cries wolf gets
+// deleted, which would be a worse outcome than the hole it was closing.
+//
+// Deliberately NOT done by excluding nested modules: sdk/go is a separate
+// module inside this tree that could legitimately import pkg/chain and wire a
+// real caller. Filtering on the import keeps that in scope while dropping
+// wasmer, which cannot reference chain at all.
+func canReachStakingLedger(f *ast.File) bool {
+	if f.Name != nil && f.Name.Name == "chain" {
+		return true
+	}
+	for _, imp := range f.Imports {
+		if imp.Path == nil {
+			continue
+		}
+		path := strings.Trim(imp.Path.Value, "`\"")
+		if path == "github.com/blackbeardONE/QSDM/pkg/chain" ||
+			strings.HasSuffix(path, "/pkg/chain") {
+			return true
+		}
+	}
+	return false
 }
 
 // productionGoFiles walks the module from disk rather than asking git, so a
