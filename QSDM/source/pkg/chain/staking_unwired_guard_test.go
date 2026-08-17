@@ -132,27 +132,45 @@ func TestStakingLedger_valueMoversHaveNoProductionCallers(t *testing.T) {
 		// compiles, moves CELL, and contains no SelectorExpr called Delegate --
 		// only a string literal. A reviewer confirmed the guard passed it.
 		//
-		// Matched narrowly, on a MethodByName-style call taking a guarded name
-		// as a literal, rather than on any string equal to "Delegate" anywhere.
+		// Matching only a literal name was still too narrow. reflect selects a
+		// method by INDEX too -- v.Method(i).Call(args) -- and an integer offers
+		// no name for any name match to see. A reviewer built that, inside
+		// package chain, and this guard passed it. Fourth round, and each round
+		// I had closed the one variant demonstrated and left the next.
+		//
+		// So the rule is inverted here: flag every reflective method lookup in a
+		// scanned file, and exempt only the ones PROVABLY not reaching a guarded
+		// method -- a string literal naming something else. A non-literal
+		// argument cannot be judged, so it does not get the benefit of the doubt.
+		// That is deliberately the opposite trade from the SelectorExpr scan
+		// above, because reflection is rare in this tree while same-named methods
+		// are common, so here silence costs more than noise.
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok || len(call.Args) == 0 {
 				return true
 			}
 			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || (sel.Sel.Name != "MethodByName" && sel.Sel.Name != "FieldByName") {
+			if !ok {
 				return true
 			}
-			lit, ok := call.Args[0].(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
+			switch sel.Sel.Name {
+			case "Method", "MethodByName", "FieldByName":
+			default:
 				return true
 			}
-			name := strings.Trim(lit.Value, "`\"")
-			if _, guardedName := guarded[name]; !guardedName {
-				return true
+			detail := "reached by reflection (argument is not a literal, so it "
+			detail += "cannot be ruled out) at "
+			if lit, isLit := call.Args[0].(*ast.BasicLit); isLit && lit.Kind == token.STRING {
+				name := strings.Trim(lit.Value, "`\"")
+				if _, guardedName := guarded[name]; !guardedName {
+					// Provably naming some other method.
+					return true
+				}
+				detail = name + " reached by reflection at "
 			}
-			pos := fset.Position(lit.Pos())
-			offenders = append(offenders, name+" reached by reflection at "+
+			pos := fset.Position(call.Lparen)
+			offenders = append(offenders, detail+
 				filepath.ToSlash(path)+":"+itoaForStakingGuard(pos.Line))
 			return true
 		})
