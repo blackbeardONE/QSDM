@@ -445,10 +445,15 @@ func (rs *ReceiptStore) replaceLocked(receipt *TxReceipt) {
 	rs.byTxID[receipt.TxID] = receipt
 
 	// A re-stored receipt may carry a different BlockHeight than the one it
-	// replaces (ProduceBlock stores a receipt before the block hash is known
-	// and again afterwards). Drop it from the old bucket before adding to the
-	// new one, or the stale bucket keeps a pointer to a receipt that no longer
-	// claims that height.
+	// replaces. Drop it from the old bucket before adding to the new one, or
+	// the stale height keeps serving a receipt that no longer claims it.
+	//
+	// The trigger is a transaction re-submitted and landing in a different
+	// block. NOT ProduceBlock storing twice -- an earlier version of this
+	// comment said that, and it is false: blockreceipts.go:90 and :113 are
+	// mutually exclusive within one call (the first is inside the
+	// all-transactions-failed early return), and BlockHeight is set once and
+	// never reassigned.
 	if prev != nil && prev.BlockHeight != receipt.BlockHeight {
 		rs.byBlock[prev.BlockHeight] = removeReceipt(rs.byBlock[prev.BlockHeight], receipt.TxID)
 	}

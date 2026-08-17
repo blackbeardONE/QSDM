@@ -33,9 +33,13 @@ func TestReceiptStore_reStoreReplacesAcrossAllIndexes(t *testing.T) {
 	}
 }
 
-// The ProduceBlock path stores a receipt before the block hash is known and
-// again afterwards, so a replace must carry the newer field values rather than
-// keeping the first write.
+// A replace must carry the newer field values rather than keeping the first
+// write, whatever caused the re-store.
+//
+// An earlier version of this comment attributed it to ProduceBlock storing a
+// receipt before and after the block hash is known. That is false --
+// blockreceipts.go:90 and :113 are mutually exclusive within one call. The
+// invariant is worth pinning regardless of which caller re-stores.
 func TestReceiptStore_reStoreKeepsLatestFields(t *testing.T) {
 	rs := NewReceiptStore()
 	rs.Store(&TxReceipt{TxID: "tx1", BlockHeight: 5})
