@@ -180,3 +180,63 @@ func TestAccountStore_LoadDoesNotValidateBalances(t *testing.T) {
 		t.Errorf("expected the negative balance to be stored verbatim, got %+v (found=%v)", acc, ok)
 	}
 }
+
+// Load must report how many DISTINCT accounts it contributed, not how many
+// entries the file held.
+//
+// It returned len(accounts), so a file carrying the same address twice reported
+// two. That number is logged at boot as "accounts_loaded"
+// (cmd/qsdm/main.go:2120), so the inflation was operator-facing: the log claimed
+// more state was restored than the store actually held. Found by a reviewer
+// while checking a different claim.
+func TestAccountStore_LoadCountsDistinctAddresses(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dupes.json")
+	payload := `[{"address":"a","balance":10,"nonce":0},
+	             {"address":"a","balance":25,"nonce":1},
+	             {"address":"b","balance":5,"nonce":0}]`
+	if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	as := NewAccountStore()
+	n, err := as.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("Load reported %d accounts, want 2 distinct (the file has 3 entries, "+
+			"two sharing one address)", n)
+	}
+	// Last write wins, which is pre-existing behaviour this pins rather than changes.
+	acc, ok := as.Get("a")
+	if !ok || acc.Balance != 25 {
+		t.Errorf("duplicate address should last-write-win to 25, got %+v (found=%v)", acc, ok)
+	}
+	if snap := as.SupplySnapshot(); snap.Accounts != 2 {
+		t.Errorf("supply snapshot Accounts = %d, want 2", snap.Accounts)
+	}
+}
+
+// The count must reflect THIS file, not the whole store. A store already
+// holding accounts from genesis or an earlier restore would otherwise inflate
+// the number a second way -- which is the bug I introduced while fixing the
+// first one, by returning len(as.accounts).
+func TestAccountStore_LoadCountIsPerFileNotPerStore(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "one.json")
+	if err := os.WriteFile(path, []byte(`[{"address":"new","balance":1,"nonce":0}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	as := NewAccountStore()
+	as.Credit("pre-existing-1", 100)
+	as.Credit("pre-existing-2", 100)
+
+	n, err := as.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("Load reported %d, want 1: the store already held 2 unrelated accounts, "+
+			"so returning the store size would report 3", n)
+	}
+}

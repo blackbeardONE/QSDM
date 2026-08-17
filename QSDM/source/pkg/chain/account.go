@@ -451,6 +451,26 @@ func (as *AccountStore) Save(path string) error {
 }
 
 // Load restores accounts from a JSON file.
+//
+// Returns the number of accounts actually STORED, which is not necessarily the
+// number of entries in the file: duplicate addresses last-write-wins, and the
+// count used to be len(accounts), so a file carrying the same address twice
+// reported more accounts than the store held. That number is logged at boot as
+// "accounts_loaded" (cmd/qsdm/main.go:2120), so the inflation was operator-
+// facing.
+//
+// NOTE ON VALIDATION. This performs none beyond JSON well-formedness, so a
+// restored file can carry balances no runtime path would produce -- Debit's
+// insufficient-balance refusal, ApplyTx's pre-debit check and the SQLite
+// CHECK(balance >= 0) all guard the LIVE ledger, not this one. That is less
+// alarming than it first looks: Load runs only on the restore path, and both
+// state-root comparisons there (main.go:270 and main.go:2038) fold every
+// balance into SHA-256, so accidental corruption changes the root and the node
+// refuses to boot rather than running on it. A negative balance is therefore
+// only reachable by someone who can also forge a matching root -- and such an
+// adversary can write a non-negative balance just as easily, which is why this
+// logs rather than refuses. qsdm_cell_supply_negative_total reports the same
+// condition at scrape time.
 func (as *AccountStore) Load(path string) (int, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -462,9 +482,33 @@ func (as *AccountStore) Load(path string) (int, error) {
 	}
 	as.mu.Lock()
 	defer as.mu.Unlock()
+	var negative []string
+	// Distinct addresses THIS FILE contributed. Not len(as.accounts): the store
+	// may already hold accounts from genesis or an earlier restore, so the total
+	// store size is a different number again -- I wrote that first while fixing
+	// the len(accounts) miscount, which would have replaced one wrong count with
+	// another.
+	seen := make(map[string]struct{}, len(accounts))
 	for _, acc := range accounts {
 		cp := acc
 		as.accounts[acc.Address] = &cp
+		seen[acc.Address] = struct{}{}
+		if cp.Balance < 0 {
+			negative = append(negative, cp.Address)
+		}
 	}
-	return len(accounts), nil
+	if len(negative) > 0 {
+		// Not fatal, deliberately: see the note above. Surfaced because a
+		// balance this file should never contain is worth a line in the boot
+		// log, not only a gauge someone has to go looking for.
+		shown := negative
+		if len(shown) > 5 {
+			shown = shown[:5]
+		}
+		fmt.Fprintf(os.Stderr,
+			"WARNING: restored account state contains %d negative balance(s) from %s (e.g. %v); "+
+				"no runtime path produces these -- see qsdm_cell_supply_negative_total\n",
+			len(negative), path, shown)
+	}
+	return len(seen), nil
 }
