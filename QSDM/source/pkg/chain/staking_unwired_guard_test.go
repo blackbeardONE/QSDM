@@ -1,6 +1,7 @@
 package chain
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"golang.org/x/tools/go/packages"
@@ -247,8 +249,34 @@ func TestStakingLedger_guardedMethodsStillExist(t *testing.T) {
 //
 // Errors are fatal, never skipped: a guard that skips is indistinguishable from
 // a guard that passes, and this one is the evidence for closing a critical.
+var (
+	stakingGuardOnce sync.Once
+	stakingGuardPkgs []*packages.Package
+	stakingGuardFail string
+)
+
+// loadModuleForStakingGuard type-checks the module once per test binary. Three
+// guard tests need it, and at several seconds a load, paying three times on
+// every `go test ./pkg/chain/` is a cost someone would eventually delete the
+// guard to avoid.
 func loadModuleForStakingGuard(t *testing.T) []*packages.Package {
 	t.Helper()
+	stakingGuardOnce.Do(func() {
+		stakingGuardPkgs, stakingGuardFail = loadModuleForStakingGuardOnce()
+	})
+	if stakingGuardFail != "" {
+		// Fatal, never Skip: a skipped guard is indistinguishable from a
+		// passing one, and this one is the evidence for closing a critical.
+		t.Fatal(stakingGuardFail)
+	}
+	return stakingGuardPkgs
+}
+
+func loadModuleForStakingGuardOnce() ([]*packages.Package, string) {
+	root, rootErr := stakingGuardModuleRoot()
+	if rootErr != "" {
+		return nil, rootErr
+	}
 
 	env := append(os.Environ(),
 		"PATH="+filepath.Join(runtime.GOROOT(), "bin")+string(os.PathListSeparator)+os.Getenv("PATH"),
@@ -259,15 +287,15 @@ func loadModuleForStakingGuard(t *testing.T) []*packages.Package {
 			packages.NeedTypesInfo | packages.NeedDeps | packages.NeedImports,
 		Env:        env,
 		BuildFlags: []string{"-tags", "dilithium_circl"},
-		Dir:        "..", // module root, so ./... covers cmd/ and every pkg/
+		Dir:        root,
 		Tests:      false,
 	}
 	pkgs, err := packages.Load(cfg, "./...")
 	if err != nil {
-		t.Fatalf("type-check the module: %v", err)
+		return nil, "type-check the module: " + err.Error()
 	}
 	if len(pkgs) == 0 {
-		t.Fatal("loaded zero packages -- the guard would pass vacuously")
+		return nil, "loaded zero packages -- the guard would pass vacuously"
 	}
 
 	var loadErrs []string
@@ -276,14 +304,35 @@ func loadModuleForStakingGuard(t *testing.T) []*packages.Package {
 			loadErrs = append(loadErrs, p.PkgPath+": "+e.Error())
 		}
 	})
+	// Coverage is the whole point, so assert it rather than trusting ./... to
+	// mean what it looks like it means. The previous version passed Dir: ".."
+	// with a comment claiming that was the module root; from the test's cwd of
+	// pkg/chain it is pkg/, and cmd/ and internal/ were never type-checked. A
+	// plain unauthenticated call added to cmd/qsdm compiled into the shipped
+	// binary and the guard passed it. Counting packages is not checking them.
+	var sawCmd, sawInternal bool
+	packages.Visit(pkgs, nil, func(p *packages.Package) {
+		switch {
+		case strings.Contains(p.PkgPath, "/QSDM/cmd/"):
+			sawCmd = true
+		case strings.Contains(p.PkgPath, "/QSDM/internal/"):
+			sawInternal = true
+		}
+	})
+	if !sawCmd || !sawInternal {
+		return nil, fmt.Sprintf("loaded %d packages but reached cmd/=%v internal/=%v -- the scan is blind to "+
+			"the wiring layer, which is exactly where a caller would be added (cmd/qsdm/main.go "+
+			"is named in this file as the production entrypoint)", len(pkgs), sawCmd, sawInternal)
+	}
+
 	if len(loadErrs) > 0 {
 		// A package that fails to type-check contributes no selections, so
 		// tolerating errors here would let a caller hide behind an unrelated
 		// compile failure.
-		t.Fatalf("packages failed to type-check, so the scan would be blind to them:\n  %s",
-			strings.Join(loadErrs, "\n  "))
+		return nil, "packages failed to type-check, so the scan would be blind to them:\n  " +
+			strings.Join(loadErrs, "\n  ")
 	}
-	return pkgs
+	return pkgs, ""
 }
 
 // The audit says grep Signature returns 0 hits in the staking files. That was
@@ -319,4 +368,24 @@ func itoaForStakingGuard(n int) string {
 		n /= 10
 	}
 	return string(buf[i:])
+}
+
+// stakingGuardModuleRoot walks up to the go.mod. Passing a relative Dir is what
+// broke the previous version: `go test` runs with cwd = the package directory,
+// so ".." was pkg/, not the module root.
+func stakingGuardModuleRoot() (string, string) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", "cannot locate module root: " + err.Error()
+	}
+	for {
+		if _, statErr := os.Stat(filepath.Join(dir, "go.mod")); statErr == nil {
+			return dir, ""
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", "no go.mod above " + dir + " -- cannot scope the guard"
+		}
+		dir = parent
+	}
 }
