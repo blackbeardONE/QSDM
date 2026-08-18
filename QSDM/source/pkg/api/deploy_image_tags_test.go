@@ -43,30 +43,55 @@ func TestKubernetesManifestsReferenceOnlyPublishedImages(t *testing.T) {
 		t.Fatal("no workflows found -- this guard would pass vacuously")
 	}
 
-	// What the workflows can publish. metadata-action is given a bare
-	// `images:` list, so match the image repository rather than any tag.
+	// Derive the publishable set from EXECUTABLE publish steps only.
+	//
+	// The first version of this grepped every ghcr.io occurrence in a workflow
+	// and skipped any match containing "{". Every real publish ref here is
+	// templated -- `images: ghcr.io/${{ github.repository_owner }}/qsdm`
+	// (qsdm-go.yml:487) and `echo "ref=ghcr.io/${OWNER_LC}/qsdm-validator"`
+	// (release-container.yml:679,824,936) -- so that filter excluded ALL of
+	// them, and the entire set came from a prose comment at
+	// release-container.yml:14-16 listing the artefact layout.
+	//
+	// A reviewer showed what that costs both ways: planting a doc comment
+	// naming an image nothing builds made the guard ACCEPT a manifest pointing
+	// at it, and stripping the comment made every legitimate manifest fail. The
+	// guard was reading documentation and calling it CI.
+	//
+	// So: comments are skipped, and a line only contributes if it is an
+	// `images:` input to metadata-action or a `ref=` assignment feeding one.
+	// The templated owner segment is discarded rather than used to reject the
+	// match, because the owner is not what a manifest has to agree on -- the
+	// image name is.
 	published := map[string]string{}
-	imagesLine := regexp.MustCompile(`ghcr\.io/[^\s"',}]+`)
+	// A templated owner segment contains a space and braces, so it must be
+	// collapsed BEFORE matching or the reference is truncated at the template
+	// and every real publish step is discarded -- which is how the first version
+	// ended up deriving its whole set from a prose comment.
+	template := regexp.MustCompile(`\$\{\{[^}]*\}\}|\$\{[^}]*\}`)
+	publishLine := regexp.MustCompile(`(?:images:|ref=)\s*"?(ghcr\.io/[^\s"',]+)`)
 	for _, rel := range workflows {
 		b, err := os.ReadFile(filepath.Join(root, rel))
 		if err != nil {
 			continue
 		}
-		for _, m := range imagesLine.FindAllString(string(b), -1) {
-			// Strip a templated owner and any tag, keeping the trailing name.
-			name := m
-			if i := strings.LastIndex(name, "/"); i >= 0 {
-				name = name[i+1:]
+		for _, line := range strings.Split(string(b), "\n") {
+			trimmed := strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+			if strings.HasPrefix(trimmed, "#") {
+				continue // documentation is not a publish step
 			}
-			name = strings.SplitN(name, ":", 2)[0]
-			if name != "" && !strings.Contains(name, "{") {
+			m := publishLine.FindStringSubmatch(template.ReplaceAllString(trimmed, "owner"))
+			if m == nil {
+				continue
+			}
+			if name := imageRepoName(m[1]); name != "" && !strings.Contains(name, "{") {
 				published[name] = rel
 			}
 		}
 	}
 	if len(published) == 0 {
-		t.Fatal("parsed zero publishable image names from the workflows -- the guard would " +
-			"pass vacuously against any manifest")
+		t.Fatal("parsed zero publishable image names from the workflows' publish steps -- the " +
+			"guard would pass vacuously against any manifest")
 	}
 
 	imageRef := regexp.MustCompile(`(?m)^\s*image:\s*["']?([^\s"']+)`)
@@ -83,8 +108,7 @@ func TestKubernetesManifestsReferenceOnlyPublishedImages(t *testing.T) {
 					"to Docker Hub, where these images do not exist (§10a records this exact bug)")
 				continue
 			}
-			name := ref[strings.LastIndex(ref, "/")+1:]
-			name = strings.SplitN(name, ":", 2)[0]
+			name := imageRepoName(ref)
 			if _, ok := published[name]; !ok {
 				problems = append(problems, rel+": "+ref+" names an image no workflow publishes")
 			}
@@ -108,4 +132,17 @@ func keysOf(m map[string]string) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// imageRepoName reduces a reference to its bare repository name.
+//
+// Splits on "@" before ":", so a digest pin (ghcr.io/owner/qsdm@sha256:...)
+// yields "qsdm" and not "qsdm@sha256". The first version did not, which
+// rejected digest pinning -- one of the two remediations audit §10a names for
+// closing critical #10. A guard that blocks the fix for the thing it guards is
+// worse than no guard.
+func imageRepoName(ref string) string {
+	name := ref[strings.LastIndex(ref, "/")+1:]
+	name = strings.SplitN(name, "@", 2)[0]
+	return strings.SplitN(name, ":", 2)[0]
 }
