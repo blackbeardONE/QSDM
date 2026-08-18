@@ -902,26 +902,36 @@ func main() {
 				}
 				logger.Info("Using file storage (SQLite not available without CGO)")
 				storageBackend = fileStorage
-				logger.Error("STORAGE BACKEND CANNOT SETTLE TRANSFERS: FileStorage.ApplyTransferAtomic refuses by construction (file_storage.go). Both wallet write endpoints settle through that primitive and return 501 on this node. SQLite is the only backend that implements atomic transfers today. Set QSDM_REQUIRE_SETTLEABLE_STORAGE=1 to refuse to start instead.")
-				if requireSettleableStorage {
-					log.Fatalf("QSDM_REQUIRE_SETTLEABLE_STORAGE=1 and the selected backend (file storage) cannot settle transfers: ApplyTransferAtomic refuses by construction")
+				if msg := settlementFile.OperatorWarning(); msg != "" {
+					logger.Error(msg)
 				}
-				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusDegraded,
-					"File storage initialized, but it cannot settle transfers: ApplyTransferAtomic refuses")
+				if msg := settlementFile.FatalMessage(requireSettleableStorage); msg != "" {
+					log.Fatalf("%s", msg)
+				}
+				if settlementFile.HealthDegraded() {
+					healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusDegraded, settlementFile.HealthDetail())
+				} else {
+					healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, settlementFile.HealthDetail())
+				}
 			} else {
 				logger.Info("Using SQLite storage")
 				storageBackend = sqliteStorage
-				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, "SQLite storage initialized")
+				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, settlementSQLite.HealthDetail())
 			}
 		} else {
 			logger.Info("Using ScyllaDB storage")
 			storageBackend = &scyllaStorageAdapter{scyllaStorage}
-			logger.Error("STORAGE BACKEND CANNOT SETTLE TRANSFERS: ScyllaStorage.ApplyTransferAtomic is a stub (scylla.go, v0.4.1 3.2 CQL LWT pending). Both wallet write endpoints settle through that primitive, so /wallet/send and /wallet/submit-signed return 501 on this node. SQLite is the only backend that implements atomic transfers today. Set QSDM_REQUIRE_SETTLEABLE_STORAGE=1 to refuse to start instead of serving an endpoint that cannot work.")
-			if requireSettleableStorage {
-				log.Fatalf("QSDM_REQUIRE_SETTLEABLE_STORAGE=1 and the selected backend (ScyllaDB) cannot settle transfers: ApplyTransferAtomic is unimplemented")
+			if msg := settlementScylla.OperatorWarning(); msg != "" {
+				logger.Error(msg)
 			}
-			healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusDegraded,
-				"ScyllaDB storage initialized, but it cannot settle transfers: ApplyTransferAtomic is unimplemented")
+			if msg := settlementScylla.FatalMessage(requireSettleableStorage); msg != "" {
+				log.Fatalf("%s", msg)
+			}
+			if settlementScylla.HealthDegraded() {
+				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusDegraded, settlementScylla.HealthDetail())
+			} else {
+				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, settlementScylla.HealthDetail())
+			}
 		}
 	} else {
 		sqliteStorage, err := storage.NewStorage(cfg.SQLitePath)
@@ -937,11 +947,21 @@ func main() {
 			}
 			logger.Info("Using file storage (SQLite not available without CGO)")
 			storageBackend = fileStorage
-			healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, "File-based storage initialized")
+			if msg := settlementFile.OperatorWarning(); msg != "" {
+				logger.Error(msg)
+			}
+			if msg := settlementFile.FatalMessage(requireSettleableStorage); msg != "" {
+				log.Fatalf("%s", msg)
+			}
+			if settlementFile.HealthDegraded() {
+				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusDegraded, settlementFile.HealthDetail())
+			} else {
+				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, settlementFile.HealthDetail())
+			}
 		} else {
 			logger.Info("Using SQLite storage")
 			storageBackend = sqliteStorage
-			healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, "SQLite storage initialized")
+			healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, settlementSQLite.HealthDetail())
 		}
 	}
 	fmt.Fprintln(os.Stdout, branding.LogPrefix+"Storage initialized")
