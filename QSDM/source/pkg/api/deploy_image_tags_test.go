@@ -154,11 +154,19 @@ func publishedImageNames(content string) []string {
 
 	var out []string
 	for _, line := range strings.Split(content, "\n") {
-		line = strings.TrimSuffix(line, "\r")
+		// Collapse templates BEFORE cutting the comment. Order is the whole
+		// fix: `#` is also bash strip-prefix syntax, so `${OWNER_LC#qsdm-}` in
+		// a real publish line would otherwise be truncated mid-expression and
+		// the ref dropped -- shrinking the published set and raising a false
+		// alarm against a legitimate manifest. Collapsing first consumes the
+		// expansion whole, taking its `#` with it. The repo already contains
+		// `${GITHUB_REF#refs/tags/}` (sdk-javascript-publish.yml:88), so this
+		// is a live construct here, just not yet on an image line.
+		line = template.ReplaceAllString(strings.TrimSuffix(line, "\r"), "owner")
 		if i := strings.Index(line, "#"); i >= 0 {
 			line = line[:i]
 		}
-		m := publishLine.FindStringSubmatch(template.ReplaceAllString(strings.TrimSpace(line), "owner"))
+		m := publishLine.FindStringSubmatch(strings.TrimSpace(line))
 		if m == nil {
 			continue
 		}
@@ -205,9 +213,27 @@ func TestPublishedImageNames_parsesOnlyExecutablePublishSteps(t *testing.T) {
 			want:    nil,
 		},
 		{
-			name:    "indirect images: value yields no name",
+			// filter below. A reviewer caught that this case sat next to
+			// Fails the ghcr.io match after collapsing, so it never reaches the "{"
+			// that filter implying it tested it: deleting the filter leaves this passing.
+			name:    "indirect images: value leaks no name (via the ghcr.io match, not the brace filter)",
 			content: "          images: ${{ steps.imgbase.outputs.ref }}\n",
 			want:    nil,
+		},
+		{
+			// This one DOES reach the brace filter: an unterminated ${{ is not matched
+			// by the collapse regex, so a literal "{" survives into the captured name
+			// and only the filter rejects it. Deleting the filter makes this fail.
+			name:    "unterminated template leaves a brace, which the filter rejects",
+			content: "          images: ghcr.io/owner/${{ broken\n",
+			want:    nil,
+		},
+		{
+			// Bash strip-prefix inside a real publish line. Cutting at "#" before
+			// collapsing templates truncated this mid-expression and dropped the ref.
+			name:    "shell strip-prefix expansion does not eat the ref",
+			content: "          echo \"ref=ghcr.io/${OWNER_LC#qsdm-}/qsdm-validator\" >> \"$GITHUB_OUTPUT\"\n",
+			want:    []string{"qsdm-validator"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
