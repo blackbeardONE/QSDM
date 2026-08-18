@@ -86,7 +86,7 @@ func TestBFT_retiredRoundGuardSurvivesLaterHeightCommit(t *testing.T) {
 // A reviewer caught that the test above pins only one of the two maps audit §9b
 // names. carryPrevoteLock is the POL-style lock carry: TickRoundTimeouts stores
 // a round's LockedBlockHash at consensus.go:257, and a round>0 Propose seeds
-// cr.LockedBlockHash from it at :221-223. validatePreCommitAgainstLock (:544) is
+// cr.LockedBlockHash from it at :221-223. validatePreCommitAgainstLock (:538-541) is
 // a NO-OP when LockedBlockHash is empty, so losing the carry does not error --
 // it silently stops checking. A precommit quorum could then form on a value the
 // lock should have refused, which is a safety violation rather than the
@@ -150,7 +150,7 @@ func TestBFT_prevoteLockCarrySurvivesLaterHeightCommit(t *testing.T) {
 		t.Fatalf("round 1 at height 13 lost the carried prevote lock (got %q, want %q) after "+
 			"height 14 committed. If this is a fix for the unbounded growth in audit §9b, it is "+
 			"a SAFETY regression, not just a liveness one: validatePreCommitAgainstLock "+
-			"(consensus.go:544) is a no-op on an empty LockedBlockHash, so it stops refusing "+
+			"(consensus.go:539) is a no-op on an empty LockedBlockHash, so it stops refusing "+
 			"precommits that conflict with the locked value instead of erroring. Bound "+
 			"bc.committed instead -- it is never deleted from at all.", cr.LockedBlockHash, locked)
 	}
