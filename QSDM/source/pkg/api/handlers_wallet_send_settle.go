@@ -48,6 +48,24 @@ func (h *Handlers) writeWalletSendApplyError(w http.ResponseWriter, txID string,
 		monitoring.RecordWalletSend(monitoring.WalletSendResultNonceConflict)
 		writeErrorResponse(w, http.StatusConflict,
 			"nonce conflict: concurrent submit raced; retry after re-reading nonce")
+	case errors.Is(err, storage.ErrAtomicTransferUnsupported):
+		// The backend cannot settle a transfer at all -- FileStorage refuses by
+		// construction, ScyllaStorage is a stub. Retrying will never help, so
+		// this is not a 500: it is a capability gap in the deployment.
+		//
+		// Reported explicitly because moving this endpoint onto
+		// ApplyTransferAtomic newly broke it on those two backends. It used to
+		// settle through StoreTransaction, which they both implement -- while
+		// under-charging the fee. Failing closed is the right trade on a money
+		// path, but an operator seeing a generic 500 has no way to learn that
+		// the endpoint can never work on their backend. A reviewer caught that
+		// I had made this regression without disclosing or testing it.
+		monitoring.RecordWalletSend(monitoring.WalletSendResultStoreFailed)
+		h.logger.Error("wallet send refused: storage backend cannot settle transfers",
+			"error", err, "tx_id", txID)
+		writeErrorResponse(w, http.StatusNotImplemented,
+			"this node's storage backend cannot settle transfers; only the SQLite backend "+
+				"implements atomic transfer settlement (see startup log)")
 	default:
 		monitoring.RecordWalletSend(monitoring.WalletSendResultStoreFailed)
 		h.logger.Error("wallet send ApplyTransferAtomic failed", "error", err, "tx_id", txID)

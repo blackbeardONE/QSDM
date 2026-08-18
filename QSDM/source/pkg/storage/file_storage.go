@@ -187,5 +187,5 @@ func (fs *FileStorage) ApplyTransferAtomic(
 	txID string,
 	rawEnvelope []byte,
 ) error {
-	return fmt.Errorf("FileStorage.ApplyTransferAtomic: file storage does not support atomic transfers -- use SQLite, which is the only backend that implements this today; ScyllaStorage.ApplyTransferAtomic is still a stub (scylla.go:817-825)")
+	return fmt.Errorf("FileStorage.ApplyTransferAtomic: file storage cannot settle transfers -- use SQLite, the only backend that implements this today; ScyllaStorage.ApplyTransferAtomic is still a stub: %w", ErrAtomicTransferUnsupported)
 }

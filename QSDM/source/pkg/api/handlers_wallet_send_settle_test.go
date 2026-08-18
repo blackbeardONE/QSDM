@@ -3,10 +3,13 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/blackbeardONE/QSDM/pkg/storage"
 	"github.com/blackbeardONE/QSDM/pkg/submesh"
 	"github.com/blackbeardONE/QSDM/pkg/wallet"
 )
@@ -104,5 +107,53 @@ func TestWalletSend_refusesWhenFeePushesOverBalance(t *testing.T) {
 	}
 	if got, _ := ms.GetBalance(sender); got != 1.0 {
 		t.Errorf("a refused send must not move the balance, got %v want 1", got)
+	}
+}
+
+// A backend that cannot settle transfers must say so, not return a bare 500.
+//
+// Moving /wallet/send onto ApplyTransferAtomic newly broke it on FileStorage and
+// ScyllaStorage: both implement StoreTransaction (which is why the endpoint used
+// to work there, while under-charging the fee) and neither implements
+// ApplyTransferAtomic. Failing closed is correct on a money path. Failing closed
+// with an opaque 500 is not -- the operator cannot tell a transient error from
+// an endpoint that can never work on their deployment.
+//
+// A reviewer caught that I shipped that regression without disclosing or testing
+// it. This pins the disclosure.
+func TestWalletSend_backendCannotSettle_reports501NotOpaque500(t *testing.T) {
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Fatalf("wallet service: %v", err)
+	}
+	dm := submesh.NewDynamicSubmeshManager()
+	dm.AddOrUpdateSubmesh(&submesh.DynamicSubmesh{
+		Name: "us", FeeThreshold: 0, PriorityLevel: 1, GeoTags: []string{"US"}, MaxPayloadBytes: 1_000_000,
+	})
+	h := setupTestHandlersWithSubmesh(dm, ws)
+	ms := h.storage.(*mockStorage)
+	ms.SetBalance(ws.GetAddress(), 1000)
+	// Exactly what FileStorage and ScyllaStorage return.
+	ms.applyTransferErr = fmt.Errorf("backend stub: %w", storage.ErrAtomicTransferUnsupported)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"recipient": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		"amount":    1.0, "fee": 0.25, "geotag": "US",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/send", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(ContextWithClaims(req.Context(), &Claims{Address: ws.GetAddress(), Role: "user"}))
+	w := httptest.NewRecorder()
+	h.SendTransaction(w, req)
+
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("expected 501 when the backend cannot settle, got %d %s -- a 500 here is the "+
+			"opaque failure this test exists to prevent", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "cannot settle transfers") {
+		t.Errorf("the response must name the cause so an operator can act on it, got %s", w.Body.String())
+	}
+	if got, _ := ms.GetBalance(ws.GetAddress()); got != 1000 {
+		t.Errorf("a refused send must not move the balance, got %v want 1000", got)
 	}
 }

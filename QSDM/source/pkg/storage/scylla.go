@@ -822,7 +822,7 @@ func (s *ScyllaStorage) ApplyTransferAtomic(
 	txID string,
 	rawEnvelope []byte,
 ) error {
-	return fmt.Errorf("ScyllaStorage.ApplyTransferAtomic: not yet implemented (v0.4.1 §3.2 — CQL LWT pending)")
+	return fmt.Errorf("ScyllaStorage.ApplyTransferAtomic: not yet implemented (v0.4.1 §3.2 — CQL LWT pending): %w", ErrAtomicTransferUnsupported)
 }
 
 // Ready runs a lightweight cluster query.
