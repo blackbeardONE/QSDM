@@ -79,3 +79,79 @@ func TestBFT_retiredRoundGuardSurvivesLaterHeightCommit(t *testing.T) {
 			"height commits; got %v", err)
 	}
 }
+
+// carryPrevoteLock must survive a later height committing too, and for a
+// different reason than nextRound.
+//
+// A reviewer caught that the test above pins only one of the two maps audit §9b
+// names. carryPrevoteLock is the POL-style lock carry: TickRoundTimeouts stores
+// a round's LockedBlockHash at consensus.go:257, and a round>0 Propose seeds
+// cr.LockedBlockHash from it at :221-223. validatePreCommitAgainstLock (:544) is
+// a NO-OP when LockedBlockHash is empty, so losing the carry does not error --
+// it silently stops checking. A precommit quorum could then form on a value the
+// lock should have refused, which is a safety violation rather than the
+// liveness/equivocation cost of losing nextRound.
+//
+// The reviewer demonstrated the gap by sweeping carryPrevoteLock alone, leaving
+// nextRound intact: the entire pkg/chain suite passed, this file included.
+func TestBFT_prevoteLockCarrySurvivesLaterHeightCommit(t *testing.T) {
+	bc, _ := setupBFT(t)
+	cfg := bc.cfg
+	const locked = "locked-at-13"
+
+	prop0, err := bc.ProposerForRound(0)
+	if err != nil {
+		t.Fatalf("proposer round 0: %v", err)
+	}
+	if _, err := bc.Propose(13, 0, prop0, locked); err != nil {
+		t.Fatalf("propose 13: %v", err)
+	}
+	// A prevote polka is what creates the lock in the first place.
+	for _, v := range []string{"v1", "v2"} {
+		if err := bc.PreVote(13, v, locked); err != nil {
+			t.Fatalf("prevote 13 by %s: %v", v, err)
+		}
+	}
+	if cr, ok := bc.GetRound(13); !ok || cr.LockedBlockHash != locked {
+		t.Fatalf("precondition: a 2/3 prevote polka must lock the value, got %+v (found=%v)", cr, ok)
+	}
+	bc.TickRoundTimeouts(time.Now().Add(cfg.RoundTimeout * 4))
+
+	// A later height commits, exercising the delete path at consensus.go:388-391.
+	if _, err := bc.Propose(14, 0, prop0, "hash-14"); err != nil {
+		t.Fatalf("propose 14: %v", err)
+	}
+	for _, v := range []string{"v1", "v2", "v3"} {
+		if err := bc.PreVote(14, v, "hash-14"); err != nil {
+			t.Fatalf("prevote 14 by %s: %v", v, err)
+		}
+	}
+	for _, v := range []string{"v1", "v2", "v3"} {
+		if err := bc.PreCommit(14, v, "hash-14"); err != nil {
+			t.Fatalf("precommit 14 by %s: %v", v, err)
+		}
+	}
+	if !bc.IsCommitted(14) {
+		t.Fatal("precondition: height 14 must commit for this test to exercise the delete path")
+	}
+
+	// The point of the test: round 1 at height 13 must still inherit the lock.
+	// Asserted through the behaviour that depends on it rather than by reading
+	// the map, so the test still means something if the carry is refactored.
+	prop1, err := bc.ProposerForRound(1)
+	if err != nil {
+		t.Fatalf("proposer round 1: %v", err)
+	}
+	cr, err := bc.Propose(13, 1, prop1, "some-other-value")
+	if err != nil {
+		t.Fatalf("propose 13 round 1: %v", err)
+	}
+	if cr.LockedBlockHash != locked {
+		t.Fatalf("round 1 at height 13 lost the carried prevote lock (got %q, want %q) after "+
+			"height 14 committed. If this is a fix for the unbounded growth in audit §9b, it is "+
+			"a SAFETY regression, not just a liveness one: validatePreCommitAgainstLock "+
+			"(consensus.go:544) is a no-op on an empty LockedBlockHash, so it stops refusing "+
+			"precommits that conflict with the locked value instead of erroring. Bound "+
+			"bc.committed instead -- it is never deleted from at all.", cr.LockedBlockHash, locked)
+	}
+}
