@@ -64,29 +64,13 @@ func TestKubernetesManifestsReferenceOnlyPublishedImages(t *testing.T) {
 	// match, because the owner is not what a manifest has to agree on -- the
 	// image name is.
 	published := map[string]string{}
-	// A templated owner segment contains a space and braces, so it must be
-	// collapsed BEFORE matching or the reference is truncated at the template
-	// and every real publish step is discarded -- which is how the first version
-	// ended up deriving its whole set from a prose comment.
-	template := regexp.MustCompile(`\$\{\{[^}]*\}\}|\$\{[^}]*\}`)
-	publishLine := regexp.MustCompile(`(?:images:|ref=)\s*"?(ghcr\.io/[^\s"',]+)`)
 	for _, rel := range workflows {
 		b, err := os.ReadFile(filepath.Join(root, rel))
 		if err != nil {
 			continue
 		}
-		for _, line := range strings.Split(string(b), "\n") {
-			trimmed := strings.TrimSpace(strings.TrimSuffix(line, "\r"))
-			if strings.HasPrefix(trimmed, "#") {
-				continue // documentation is not a publish step
-			}
-			m := publishLine.FindStringSubmatch(template.ReplaceAllString(trimmed, "owner"))
-			if m == nil {
-				continue
-			}
-			if name := imageRepoName(m[1]); name != "" && !strings.Contains(name, "{") {
-				published[name] = rel
-			}
+		for _, name := range publishedImageNames(string(b)) {
+			published[name] = rel
 		}
 	}
 	if len(published) == 0 {
@@ -145,4 +129,97 @@ func imageRepoName(ref string) string {
 	name := ref[strings.LastIndex(ref, "/")+1:]
 	name = strings.SplitN(name, "@", 2)[0]
 	return strings.SplitN(name, ":", 2)[0]
+}
+
+// publishedImageNames extracts the image repository names a workflow can
+// actually push. Split out of the guard so it is directly testable: three
+// versions of this parser have now been wrong, and the first two failures were
+// invisible to the guard's own suite because only the end-to-end result was
+// asserted.
+//
+// Rules, each one paid for:
+//   - Templates are collapsed BEFORE matching. Every real ref here is
+//     `ghcr.io/${{ github.repository_owner }}/qsdm` or `ghcr.io/${OWNER_LC}/...`,
+//     and a matcher that stops at the brace sees none of them.
+//   - Only `images:` inputs and `ref=` assignments count, not any ghcr.io
+//     mention.
+//   - Comments are cut at the FIRST `#` anywhere in the line, not just at
+//     column 0. A trailing comment is still a comment: `echo "x" #
+//     ref=ghcr.io/owner/fake` fed the previous version a name nothing
+//     publishes. Cutting is deliberately conservative -- it can only shrink the
+//     published set, which risks a false alarm, never a silent pass.
+func publishedImageNames(content string) []string {
+	template := regexp.MustCompile(`\$\{\{[^}]*\}\}|\$\{[^}]*\}`)
+	publishLine := regexp.MustCompile(`(?:images:|ref=)\s*"?(ghcr\.io/[^\s"',]+)`)
+
+	var out []string
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		if i := strings.Index(line, "#"); i >= 0 {
+			line = line[:i]
+		}
+		m := publishLine.FindStringSubmatch(template.ReplaceAllString(strings.TrimSpace(line), "owner"))
+		if m == nil {
+			continue
+		}
+		if name := imageRepoName(m[1]); name != "" && !strings.Contains(name, "{") {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// Direct table test of the parser. The first two versions of this guard were
+// wrong in ways its own suite could not see, because only the end-to-end verdict
+// was asserted and that verdict happened to be correct for the wrong reason.
+// Each case below is a defect a review actually found.
+func TestPublishedImageNames_parsesOnlyExecutablePublishSteps(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+		want    []string
+	}{
+		{
+			name:    "templated owner in an images: input (qsdm-go.yml:487)",
+			content: "          images: ghcr.io/${{ github.repository_owner }}/qsdm\n",
+			want:    []string{"qsdm"},
+		},
+		{
+			name:    "shell-built ref= (release-container.yml:824)",
+			content: "          echo \"ref=ghcr.io/${OWNER_LC}/qsdm-validator\" >> \"$GITHUB_OUTPUT\"\n",
+			want:    []string{"qsdm-validator"},
+		},
+		{
+			name:    "whole-line comment is not a publish step",
+			content: "#     ghcr.io/<owner>/qsdm-miner:<semver> — GPU miner image\n",
+			want:    nil,
+		},
+		{
+			name:    "TRAILING comment is not a publish step either",
+			content: "          echo \"no-op\" # ref=ghcr.io/owner/qsdm-totally-fake\n",
+			want:    nil,
+		},
+		{
+			name:    "a bare ghcr.io mention outside images:/ref= does not count",
+			content: "          docker pull ghcr.io/blackbeardone/qsdm-scanner:v1\n",
+			want:    nil,
+		},
+		{
+			name:    "indirect images: value yields no name",
+			content: "          images: ${{ steps.imgbase.outputs.ref }}\n",
+			want:    nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := publishedImageNames(tc.content)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("got %v, want %v", got, tc.want)
+				}
+			}
+		})
+	}
 }
