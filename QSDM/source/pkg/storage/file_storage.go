@@ -163,8 +163,13 @@ func (fs *FileStorage) GetTransaction(txID string) (map[string]interface{}, erro
 //                                                          the pre-fix v0.4.1)
 //   POST /wallet/submit-signed  → 500 store_failed         (same as before
 //                                                          the fix — settlement
-//                                                          path always required
-//                                                          SQLite or Scylla)
+//                                                          always required
+//                                                          SQLite; see below)
+//
+// "or Scylla" was wrong here and is corrected: ScyllaStorage.ApplyTransferAtomic
+// is itself a stub (scylla.go:817-825), so SQLite is the only backend that can
+// settle a transfer today. Both wallet write endpoints now route through that
+// primitive, so a FileStorage- or Scylla-backed node fails closed on transfers.
 //
 // This keeps the READ surface consistent across backends and
 // pushes the WRITE-side limitation onto a single, named result
@@ -182,5 +187,5 @@ func (fs *FileStorage) ApplyTransferAtomic(
 	txID string,
 	rawEnvelope []byte,
 ) error {
-	return fmt.Errorf("FileStorage.ApplyTransferAtomic: file storage does not support atomic transfers (use SQLite or Scylla for v0.4.1)")
+	return fmt.Errorf("FileStorage.ApplyTransferAtomic: file storage does not support atomic transfers -- use SQLite, which is the only backend that implements this today; ScyllaStorage.ApplyTransferAtomic is still a stub (scylla.go:817-825)")
 }

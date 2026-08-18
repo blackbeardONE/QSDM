@@ -885,7 +885,9 @@ func main() {
 				}
 				logger.Info("Using file storage (SQLite not available without CGO)")
 				storageBackend = fileStorage
-				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, "File-based storage initialized")
+				logger.Error("STORAGE BACKEND CANNOT SETTLE TRANSFERS: FileStorage.ApplyTransferAtomic refuses by construction (file_storage.go:177-186). Both wallet write endpoints settle through that primitive and will fail closed on this node. SQLite is the only backend that implements atomic transfers today.")
+				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusDegraded,
+					"File storage initialized, but it cannot settle transfers: ApplyTransferAtomic refuses")
 			} else {
 				logger.Info("Using SQLite storage")
 				storageBackend = sqliteStorage
@@ -894,7 +896,9 @@ func main() {
 		} else {
 			logger.Info("Using ScyllaDB storage")
 			storageBackend = &scyllaStorageAdapter{scyllaStorage}
-			healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, "ScyllaDB storage initialized")
+			logger.Error("STORAGE BACKEND CANNOT SETTLE TRANSFERS: ScyllaStorage.ApplyTransferAtomic is a stub (scylla.go:817-825, v0.4.1 3.2 CQL LWT pending). Both wallet write endpoints settle through that primitive, so /wallet/send and /wallet/submit-signed will fail closed on this node. SQLite is the only backend that implements atomic transfers today. Set QSDM_REQUIRE_SQLITE_STORAGE=1 to refuse to start on a backend that cannot settle, rather than discovering it per-request.")
+			healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusDegraded,
+				"ScyllaDB storage initialized, but it cannot settle transfers: ApplyTransferAtomic is unimplemented")
 		}
 	} else {
 		sqliteStorage, err := storage.NewStorage(cfg.SQLitePath)
