@@ -1221,11 +1221,46 @@ func (h *Handlers) SendTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store transaction
-	if err := h.storage.StoreTransaction(txBytes); err != nil {
+	// Settle through the SAME primitive /wallet/submit-signed uses.
+	//
+	// This used to call storage.StoreTransaction, which is precisely the v0.4.0
+	// sequence ApplyTransferAtomic was built to replace -- sqlite_v041.go's
+	// header names it, and the comment at the submit-signed call site below
+	// spells the sequence out. The v0.4.1 replay-protection integration landed
+	// on submit-signed and stopped there, leaving this endpoint behind.
+	//
+	// Three concrete changes, each verified against sqlite.go:
+	//
+	//   - THE FEE IS NOW DEBITED. StoreTransaction parses `amount` out of the
+	//     transaction JSON (sqlite.go:125) and debits only that (sqlite.go:213).
+	//     The fee was charged to nobody.
+	//   - The balance check becomes `>= amount + fee` rather than a
+	//     CHECK(balance >= 0) that only caught a debit going negative.
+	//   - tx_id uniqueness is enforced by the primitive instead of a COUNT(*)
+	//     whose fallback keys on the SENDER ADDRESS for a transaction carrying
+	//     no id (sqlite.go:120-121), under which two id-less sends from one
+	//     sender collide and the second is silently dropped.
+	//
+	// envelopeNonce is 0 deliberately: this endpoint builds an unsigned
+	// transaction from the node's own wallet and carries no envelope nonce. Per
+	// the interface contract (server.go:98-102) that selects the legacy path --
+	// no nonce check, no nonce bump -- while the balance and tx_id checks still
+	// fire. Giving this path a real nonce needs the wallet service to carry one,
+	// which is a larger change than this fix.
+	txID := parseWalletTxID(txBytes)
+	if txID == "" {
 		monitoring.RecordWalletSend(monitoring.WalletSendResultStoreFailed)
-		h.logger.Error("Failed to store transaction", "error", err)
-		writeErrorResponse(w, http.StatusInternalServerError, "failed to store transaction")
+		h.logger.Error("wallet send: transaction carries no id, refusing to settle")
+		writeErrorResponse(w, http.StatusInternalServerError, "transaction has no id")
+		return
+	}
+	if err := h.storage.ApplyTransferAtomic(
+		r.Context(),
+		h.walletService.GetAddress(), req.Recipient,
+		float64(req.Amount), req.Fee,
+		0, txID, txBytes,
+	); err != nil {
+		h.writeWalletSendApplyError(w, txID, err)
 		return
 	}
 
