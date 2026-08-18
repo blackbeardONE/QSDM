@@ -1631,6 +1631,24 @@ func (h *Handlers) walletLastNonce(sender string) (uint64, error) {
 
 func (h *Handlers) writeSubmitSignedApplyError(w http.ResponseWriter, env wallet.TransactionData, err error) {
 	switch {
+	case errors.Is(err, storage.ErrAtomicTransferUnsupported):
+		// Same capability gap /wallet/send reports, and this endpoint needed it
+		// MORE: /wallet/submit-signed is public (middleware.go publicPaths),
+		// while /wallet/send sits behind a session. I added the mapping to the
+		// authenticated endpoint and not the public one -- the same
+		// fix-one-sibling-and-stop asymmetry this whole sequence exists to
+		// correct, reproduced while correcting it. A reviewer proved it by
+		// injecting the sentinel here and getting 500.
+		//
+		// The message is deliberately vaguer than /wallet/send's. That one names
+		// SQLite because its caller is authenticated; an unauthenticated caller
+		// gets the fact without the backend inventory. The detail goes to the
+		// operator's log, where it belongs.
+		monitoring.RecordWalletSend(monitoring.WalletSendResultStoreFailed)
+		h.logger.Error("submit-signed refused: storage backend cannot settle transfers",
+			"error", err, "tx_id", env.ID, "sender", env.Sender)
+		writeErrorResponse(w, http.StatusNotImplemented,
+			"this node cannot settle transfers; contact the operator")
 	case errors.Is(err, storage.ErrTxAlreadyExists):
 		monitoring.RecordWalletSend(monitoring.WalletSendResultDuplicate)
 		writeJSONResponse(w, http.StatusConflict, SubmitSignedTransactionResponse{

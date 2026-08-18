@@ -157,3 +157,34 @@ func TestWalletSend_backendCannotSettle_reports501NotOpaque500(t *testing.T) {
 		t.Errorf("a refused send must not move the balance, got %v want 1000", got)
 	}
 }
+
+// /wallet/submit-signed must report the capability gap too, and it needed it
+// MORE than /wallet/send: submit-signed is public (middleware.go publicPaths)
+// while send sits behind a session.
+//
+// I added the mapping to the authenticated endpoint and stopped -- the same
+// fix-one-sibling-and-stop asymmetry the whole /wallet/send fix was correcting,
+// reproduced while correcting it. A reviewer proved it by injecting the sentinel
+// and getting a bare 500 from the public endpoint.
+func TestSubmitSigned_backendCannotSettle_reports501(t *testing.T) {
+	h := setupTestHandlers()
+	ms := h.storage.(*mockStorage)
+	ms.applyTransferErr = fmt.Errorf("backend stub: %w", storage.ErrAtomicTransferUnsupported)
+
+	env := wallet.TransactionData{
+		ID: "abc123", Sender: "sender-addr", Recipient: "recipient-addr",
+		Amount: 1, Fee: 0.25, Nonce: 1,
+	}
+	w := httptest.NewRecorder()
+	h.writeSubmitSignedApplyError(w, env, ms.applyTransferErr)
+
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("expected 501 from the public endpoint when the backend cannot settle, got %d %s",
+			w.Code, w.Body.String())
+	}
+	// The public response must NOT enumerate backends. /wallet/send names SQLite
+	// because its caller is authenticated; this one carries the fact only.
+	if strings.Contains(w.Body.String(), "SQLite") {
+		t.Errorf("the public endpoint must not disclose the backend inventory, got %s", w.Body.String())
+	}
+}

@@ -862,6 +862,23 @@ func main() {
 	requireSQLiteStorage := strings.EqualFold(strings.TrimSpace(os.Getenv("QSDM_REQUIRE_SQLITE_STORAGE")), "1") ||
 		strings.EqualFold(strings.TrimSpace(os.Getenv("QSDM_REQUIRE_SQLITE_STORAGE")), "true") ||
 		strings.EqualFold(strings.TrimSpace(os.Getenv("QSDM_REQUIRE_SQLITE_STORAGE")), "yes")
+	// QSDM_REQUIRE_SETTLEABLE_STORAGE is a SEPARATE opt-in from
+	// QSDM_REQUIRE_SQLITE_STORAGE, deliberately.
+	//
+	// QSDM_REQUIRE_SQLITE_STORAGE is only consulted inside the Scylla-init
+	// FAILURE fallback below. An earlier version of the warning further down
+	// told operators to set it to "refuse to start on a backend that cannot
+	// settle" -- on the branch where Scylla connected SUCCESSFULLY, where that
+	// flag is never read. The instruction was inert: an operator who followed
+	// it got no protection at all. Caught in review.
+	//
+	// Widening the existing flag would have been worse: someone who set it for
+	// its documented meaning would suddenly find a healthy Scylla node refusing
+	// to boot. So the capability requirement gets its own name, and defaults
+	// off.
+	requireSettleableStorage := strings.EqualFold(strings.TrimSpace(os.Getenv("QSDM_REQUIRE_SETTLEABLE_STORAGE")), "1") ||
+		strings.EqualFold(strings.TrimSpace(os.Getenv("QSDM_REQUIRE_SETTLEABLE_STORAGE")), "true") ||
+		strings.EqualFold(strings.TrimSpace(os.Getenv("QSDM_REQUIRE_SETTLEABLE_STORAGE")), "yes")
 	if cfg.UseScylla() {
 		scyllaExtra := storage.ScyllaClusterConfigFromAuthTLS(
 			cfg.ScyllaUsername, cfg.ScyllaPassword,
@@ -885,7 +902,10 @@ func main() {
 				}
 				logger.Info("Using file storage (SQLite not available without CGO)")
 				storageBackend = fileStorage
-				logger.Error("STORAGE BACKEND CANNOT SETTLE TRANSFERS: FileStorage.ApplyTransferAtomic refuses by construction (file_storage.go:177-186). Both wallet write endpoints settle through that primitive and will fail closed on this node. SQLite is the only backend that implements atomic transfers today.")
+				logger.Error("STORAGE BACKEND CANNOT SETTLE TRANSFERS: FileStorage.ApplyTransferAtomic refuses by construction (file_storage.go). Both wallet write endpoints settle through that primitive and return 501 on this node. SQLite is the only backend that implements atomic transfers today. Set QSDM_REQUIRE_SETTLEABLE_STORAGE=1 to refuse to start instead.")
+				if requireSettleableStorage {
+					log.Fatalf("QSDM_REQUIRE_SETTLEABLE_STORAGE=1 and the selected backend (file storage) cannot settle transfers: ApplyTransferAtomic refuses by construction")
+				}
 				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusDegraded,
 					"File storage initialized, but it cannot settle transfers: ApplyTransferAtomic refuses")
 			} else {
@@ -896,7 +916,10 @@ func main() {
 		} else {
 			logger.Info("Using ScyllaDB storage")
 			storageBackend = &scyllaStorageAdapter{scyllaStorage}
-			logger.Error("STORAGE BACKEND CANNOT SETTLE TRANSFERS: ScyllaStorage.ApplyTransferAtomic is a stub (scylla.go:817-825, v0.4.1 3.2 CQL LWT pending). Both wallet write endpoints settle through that primitive, so /wallet/send and /wallet/submit-signed will fail closed on this node. SQLite is the only backend that implements atomic transfers today. Set QSDM_REQUIRE_SQLITE_STORAGE=1 to refuse to start on a backend that cannot settle, rather than discovering it per-request.")
+			logger.Error("STORAGE BACKEND CANNOT SETTLE TRANSFERS: ScyllaStorage.ApplyTransferAtomic is a stub (scylla.go, v0.4.1 3.2 CQL LWT pending). Both wallet write endpoints settle through that primitive, so /wallet/send and /wallet/submit-signed return 501 on this node. SQLite is the only backend that implements atomic transfers today. Set QSDM_REQUIRE_SETTLEABLE_STORAGE=1 to refuse to start instead of serving an endpoint that cannot work.")
+			if requireSettleableStorage {
+				log.Fatalf("QSDM_REQUIRE_SETTLEABLE_STORAGE=1 and the selected backend (ScyllaDB) cannot settle transfers: ApplyTransferAtomic is unimplemented")
+			}
 			healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusDegraded,
 				"ScyllaDB storage initialized, but it cannot settle transfers: ApplyTransferAtomic is unimplemented")
 		}
