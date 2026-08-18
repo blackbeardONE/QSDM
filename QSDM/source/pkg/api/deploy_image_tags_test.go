@@ -149,7 +149,6 @@ func imageRepoName(ref string) string {
 //     publishes. Cutting is deliberately conservative -- it can only shrink the
 //     published set, which risks a false alarm, never a silent pass.
 func publishedImageNames(content string) []string {
-	template := regexp.MustCompile(`\$\{\{[^}]*\}\}|\$\{[^}]*\}`)
 	publishLine := regexp.MustCompile(`(?:images:|ref=)\s*"?(ghcr\.io/[^\s"',]+)`)
 
 	var out []string
@@ -162,7 +161,7 @@ func publishedImageNames(content string) []string {
 		// expansion whole, taking its `#` with it. The repo already contains
 		// `${GITHUB_REF#refs/tags/}` (sdk-javascript-publish.yml:88), so this
 		// is a live construct here, just not yet on an image line.
-		line = template.ReplaceAllString(strings.TrimSuffix(line, "\r"), "owner")
+		line = collapseExpansions(strings.TrimSuffix(line, "\r"))
 		if i := strings.Index(line, "#"); i >= 0 {
 			line = line[:i]
 		}
@@ -235,6 +234,16 @@ func TestPublishedImageNames_parsesOnlyExecutablePublishSteps(t *testing.T) {
 			content: "          echo \"ref=ghcr.io/${OWNER_LC#qsdm-}/qsdm-validator\" >> \"$GITHUB_OUTPUT\"\n",
 			want:    []string{"qsdm-validator"},
 		},
+		{
+			// Nested expansion in the NAME position. The regex this replaced used
+			// [^}]* and stopped at the INNER closing brace, leaving a stray "}" that
+			// became part of the extracted name. Deliberately nested in the name and
+			// not the owner: imageRepoName keeps only what follows the last "/", so
+			// mangling the owner segment is invisible and would not discriminate.
+			name:    "nested expansion in the name collapses as one unit",
+			content: "          images: ghcr.io/owner/${IMAGE:-${DEFAULT}}\n",
+			want:    []string{"owner"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := publishedImageNames(tc.content)
@@ -248,4 +257,49 @@ func TestPublishedImageNames_parsesOnlyExecutablePublishSteps(t *testing.T) {
 			}
 		})
 	}
+}
+
+// collapseExpansions replaces every ${...} / ${{...}} span with a placeholder,
+// matching braces by COUNTING rather than by regex.
+//
+// This replaces `\$\{\{[^}]*\}\}|\$\{[^}]*\}`, whose `[^}]*` stops at the first
+// `}` rather than the matching one. On a nested expansion --
+// `${IMAGE:-${DEFAULT}}`, ordinary bash for a fallback -- that truncated at the
+// inner brace and left a stray `}` behind. A reviewer found it: the fifth defect
+// in this parser, and the fourth caused by a regex meeting a construct regexes
+// cannot express. Counting fixes the class rather than the instance.
+//
+// An UNTERMINATED expansion is deliberately left alone rather than consumed to
+// end-of-line. Consuming it would turn `images: ghcr.io/owner/${{ broken` into a
+// clean-looking `ghcr.io/owner/owner` and FABRICATE a published name -- turning
+// a shrink-direction bug into a silent pass, the one direction this guard must
+// never fail in. Left intact, the literal brace survives and the caller's filter
+// rejects it.
+func collapseExpansions(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if s[i] == '$' && i+1 < len(s) && s[i+1] == '{' {
+			depth, j := 0, i+1
+			for ; j < len(s); j++ {
+				if s[j] == '{' {
+					depth++
+				} else if s[j] == '}' {
+					if depth--; depth == 0 {
+						j++
+						break
+					}
+				}
+			}
+			if depth != 0 {
+				b.WriteString(s[i:]) // unbalanced: leave it so the brace shows
+				return b.String()
+			}
+			b.WriteString("owner")
+			i = j
+			continue
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
 }
