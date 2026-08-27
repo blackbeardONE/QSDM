@@ -53,23 +53,24 @@ fi
 #      graph. Filtering on this field alone yields 100+ false positives.
 #
 #   2. {"finding": {"osv": "GO-...", ...}} -- a module, package, or
-#      symbol finding. A module-only notice has a one-frame trace containing
-#      module/version but no package. Package and symbol findings include a
-#      package path and demonstrate that affected code enters QSDM's build.
+#      symbol finding. Module/package notices can be reported when QSDM imports
+#      an affected version but does not call the vulnerable symbol. Symbol
+#      findings include a non-empty function and demonstrate reachable affected
+#      code.
 #
-# Only package/symbol records from (2) should gate CI. The earlier versions
-# keyed off either (1) or any non-empty trace; the latter incorrectly counted
-# module-only notices emitted by newer scanners.
-findings_jq='select(any(.finding.trace[]?; (.package // "") != "")) | .finding.osv'
+# Only symbol-reachable records from (2) should gate CI. The earlier versions
+# keyed off either (1), any non-empty trace, or package paths; those incorrectly
+# counted module/package notices emitted by newer scanners.
+findings_jq='select(any(.finding.trace[]?; (.function // "") != "")) | .finding.osv'
 
-# Human-readable re-render of affected package/symbol findings for the log.
-echo "==== govulncheck affected package/symbol findings ===="
+# Human-readable re-render of affected symbol findings for the log.
+echo "==== govulncheck affected symbol findings ===="
 if command -v jq >/dev/null 2>&1; then
   # Pair each finding id with the first OSV summary we saw for it, so
   # the log is self-explanatory without having to cross-reference.
   jq -r --slurp '
     (map(select(.osv))     | map({(.osv.id): (.osv.summary // "(no summary)")}) | add) as $summaries
-    | (map(select(any(.finding.trace[]?; (.package // "") != ""))) | map(.finding.osv) | unique) as $hits
+    | (map(select(any(.finding.trace[]?; (.function // "") != ""))) | map(.finding.osv) | unique) as $hits
     | $hits[] | . + "  " + ($summaries[.] // "(no summary)")
   ' "${raw_out}" || true
 else
@@ -89,7 +90,7 @@ if [ "${rc}" -ne 0 ] && [ "${rc}" -ne 3 ]; then
   exit "${rc}"
 fi
 
-# Collect unique OSV ids that reach an imported package (not the raw catalog).
+# Collect unique OSV ids that reach a vulnerable symbol (not the raw catalog).
 if command -v jq >/dev/null 2>&1; then
   reported="$(jq -r "${findings_jq}" "${raw_out}" | sort -u)"
 else

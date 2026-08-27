@@ -218,18 +218,18 @@ jobs:
           # govulncheck -json emits one OSV record per finding under
           # a top-level "osv" key, but the stream is one JSON object
           # per line (NDJSON). A module-level notice has a one-frame trace
-          # containing only module/version. Package and symbol findings add
-          # a non-empty package path; those are the findings that show QSDM
-          # actually imports affected code and therefore count here.
+          # containing only module/version. Package/import-only findings can
+          # still be reported as not called. Symbol findings add a non-empty
+          # function; those are the findings that prove reachable affected code.
           if [ ! -s govulncheck.json ]; then
             echo "::error::govulncheck produced no output -- network failure?"
             exit 1
           fi
-          ACTUAL=$(jq -r 'select(any(.finding.trace[]?; (.package // "") != "")) | .finding.osv' govulncheck.json \
+          ACTUAL=$(jq -r 'select(any(.finding.trace[]?; (.function // "") != "")) | .finding.osv' govulncheck.json \
                      | sort -u | grep -c '^GO-' || true)
-          echo "govulncheck affected package/symbol vulnerabilities: actual=$ACTUAL baseline=$BASELINE"
+          echo "govulncheck affected symbol vulnerabilities: actual=$ACTUAL baseline=$BASELINE"
           if [ "$ACTUAL" -gt "$BASELINE" ]; then
-            echo "::error::govulncheck affected-code count ($ACTUAL) exceeds baseline ($BASELINE)."
+            echo "::error::govulncheck affected-symbol count ($ACTUAL) exceeds baseline ($BASELINE)."
             echo "::error::Review the govulncheck.txt output above. Either upgrade the affected"
             echo "::error::dependency, refactor away the reachable call site, or, if the new"
             echo "::error::finding has no upstream fix (e.g. another GO-XXXX-3218 case), update"
