@@ -45,7 +45,7 @@ jobs:
           set -euo pipefail
           caddyfile=QSDM/deploy/Caddyfile
           ngc_line=$(grep -n 'handle @localNGCProof' "$caddyfile" | cut -d: -f1)
-          writes_line=$(grep -n 'handle @producerWrites' "$caddyfile" | cut -d: -f1)
+          writes_line=$(grep -n 'handle @authoritativeWrites' "$caddyfile" | cut -d: -f1)
           test -n "$ngc_line"
           test -n "$writes_line"
           test "$ngc_line" -lt "$writes_line"
