@@ -36,6 +36,7 @@ $QsdmRoot = (Resolve-Path $QsdmRoot).Path
 $LocalRoot = Join-Path $QsdmRoot "source\.cache\local-validator"
 $MaintenanceMarkerPath = Join-Path $LocalRoot "maintenance.active"
 $ModeConfigPath = Join-Path $LocalRoot "validator-mode.json"
+$ActiveBinaryStatePath = Join-Path $LocalRoot "validator-active.json"
 $ValidatorMode = ""
 $ValidatorChainSyncUrls = "https://api.qsdm.tech/api/v1"
 $ValidatorBootstrapPeers = ""
@@ -240,6 +241,37 @@ function Get-StackProcesses {
     return @($seen.Values)
 }
 
+function Get-ProcessStartTimeSafe {
+    param([Parameter(Mandatory)]$Process)
+
+    try {
+        return $Process.StartTime
+    } catch {
+        try {
+            return (Get-NativeProcessStartUtc -ProcessIdentifier $Process.Id).ToLocalTime()
+        } catch {
+            return [DateTime]::MinValue
+        }
+    }
+}
+
+function Get-ExpectedValidatorProcessName {
+    if (-not (Test-Path -LiteralPath $ActiveBinaryStatePath -PathType Leaf)) {
+        return ""
+    }
+    try {
+        $state = Get-Content -Raw -LiteralPath $ActiveBinaryStatePath | ConvertFrom-Json
+        $binary = [string]$state.binary
+        if ([string]::IsNullOrWhiteSpace($binary)) {
+            return ""
+        }
+        return [IO.Path]::GetFileNameWithoutExtension($binary)
+    } catch {
+        Write-WatchdogLog "could not read active validator state: $($_.Exception.Message)"
+        return ""
+    }
+}
+
 function Stop-StackProcess {
     param([string]$Name)
     Get-Process -Name $Name -ErrorAction SilentlyContinue | ForEach-Object {
@@ -267,7 +299,7 @@ function Start-Validator {
     Write-WatchdogLog "starting validator mode=$ValidatorMode block_producer=$ValidatorBlockProducer"
     $stdout = Join-Path $LocalRoot "watchdog-validator-start.out.log"
     $stderr = Join-Path $LocalRoot "watchdog-validator-start.err.log"
-    $argString = "-NoProfile -ExecutionPolicy Bypass -File $(Quote-Arg $ValidatorScript) -QsdmRoot $(Quote-Arg $QsdmRoot) -HealthWaitSeconds $ValidatorStartupGraceSeconds"
+    $argString = "-NoProfile -ExecutionPolicy Bypass -File $(Quote-Arg $ValidatorScript) -QsdmRoot $(Quote-Arg $QsdmRoot) -HealthWaitSeconds $ValidatorStartupGraceSeconds -LockWaitSeconds 30"
     if ($ValidatorMode -eq "networked") {
         $argString += " -Networked -ChainSyncUrls $(Quote-Arg $ValidatorChainSyncUrls)"
         if (-not [string]::IsNullOrWhiteSpace($ValidatorBootstrapPeers)) {
@@ -414,6 +446,20 @@ try {
             $validatorReady = Test-HttpOk -Url $ReadyUrl -TimeoutSeconds 5
             if ($validatorReady) {
                 $validatorFailures = 0
+                $expectedValidatorProcess = Get-ExpectedValidatorProcessName
+                if (-not [string]::IsNullOrWhiteSpace($expectedValidatorProcess)) {
+                    $validatorProcesses = @(Get-StackProcesses -Names $ValidatorProcessNames)
+                    $runningValidatorNames = @($validatorProcesses | ForEach-Object { $_.Name })
+                    $matchingValidator = @($validatorProcesses | Where-Object { $_.Name -eq $expectedValidatorProcess })
+                    if ($validatorProcesses.Count -gt 0 -and $matchingValidator.Count -eq 0) {
+                        Write-WatchdogLog "validator binary mismatch expected_process=$expectedValidatorProcess running=$($runningValidatorNames -join ','); restarting"
+                        Stop-StackProcesses -Names $ValidatorProcessNames
+                        Start-Validator
+                        Start-Sleep -Seconds 2
+                        $validatorReady = Test-HttpOk -Url $ReadyUrl -TimeoutSeconds 5
+                        $validatorFailures = if ($validatorReady) { 0 } else { 1 }
+                    }
+                }
             } else {
                 $validatorFailures++
                 $validatorProcesses = @(Get-StackProcesses -Names $ValidatorProcessNames)
@@ -426,7 +472,7 @@ try {
                     $validatorFailures = if ($validatorReady) { 0 } else { 1 }
                 } else {
                     $newestStartTime = @($validatorProcesses | ForEach-Object {
-                        try { $_.StartTime } catch { [DateTime]::MinValue }
+                        Get-ProcessStartTimeSafe -Process $_
                     } | Sort-Object -Descending | Select-Object -First 1)
                     $startupAgeSeconds = if ($newestStartTime.Count -eq 1 -and $newestStartTime[0] -ne [DateTime]::MinValue) {
                         [int]((Get-Date) - $newestStartTime[0]).TotalSeconds
@@ -449,7 +495,7 @@ try {
                 }
             }
 
-            $gatewayProcesses = @(Get-StackProcesses -Names $GatewayProcessNames | Sort-Object StartTime -Descending)
+            $gatewayProcesses = @(Get-StackProcesses -Names $GatewayProcessNames | Sort-Object -Property @{ Expression = { Get-ProcessStartTimeSafe -Process $_ }; Descending = $true })
             $gatewayCount = $gatewayProcesses.Count
             if ($validatorReady -and $gatewayCount -eq 0) {
                 if ((Get-Date) -ge $nextGatewayLaunchAt) {

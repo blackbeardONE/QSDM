@@ -44,15 +44,16 @@ consensus:
   # produce one, and live blocks are unsigned, so an arbitrary peer could build
   # a block on the current tip and have this node replay its transactions.
   #
-  # The value below is the reference network's sole block producer, and is the
-  # same peer ID already pinned as the bootstrap peer in
-  # QSDM/scripts/start_local_validator.ps1. Verified against the live chain:
-  # every recent block on api.qsdm.tech carries this producer_id.
+  # The value below is the reference network's current signed block producer.
+  # This is NOT the libp2p bootstrap peer ID; signed blocks derive ProducerID
+  # from the validator signing key. Verify against:
+  #   GET /api/v1/chain/blocks?from=<recent-height>&limit=1
   #
-  # If you run your own producer, replace this with its peer ID. An entry that
-  # does not match your producer stops this node following the chain.
+  # If you run your own producer, replace this with the producer_id shown in
+  # its signed blocks. An entry that does not match the producer stops this node
+  # following the chain.
   authorized_block_producers:
-    - "12D3KooWRH4MGiaRYMZEr9LvdxYrpePT5LPbNqLTMGukD32yhkZ8"
+    - "42d05e653f004d0aa71ae9cebc7b2a5b5d0dc7bb41b219a8e99d7c29229c438b"
 
 # Performance Configuration
 performance:
