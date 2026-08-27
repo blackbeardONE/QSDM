@@ -147,4 +147,4 @@ QSDM/deploy/Caddyfile                (CSP `connect-src` + `img-src` +
 - Added `CAPABILITY_SNAPSHOT.md` to the docs source and exposed it as `#/capability-snapshot` in the docs portal.
 - Updated the docs welcome cards so readers can reach the readiness percentages without digging through old phase-completion reports.
 - The curated table of contents is now 79 entries. Hash-fragment docs routes remain intentionally omitted from `sitemap.xml`; crawlers index `/docs/`, while humans deep-link through the SPA sidebar.
-- Historical completion reports now carry a current capability note so old `production-ready` language is not mistaken for today's whole-project status.
+- The tracked performance report now carries a current capability note and no longer uses benchmark results as a whole-project production-readiness claim.

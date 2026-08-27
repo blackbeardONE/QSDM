@@ -335,7 +335,7 @@ All optimizations are **working as expected**:
 - ✅ **Optimized storage** (435 GB with compression)
 - ✅ **Quantum-safe** (256-bit security)
 
-**Verdict:** All optimizations are **working correctly** and providing **expected improvements**. QSDM is **production-ready** with competitive performance.
+**Verdict:** All measured optimizations are **working correctly** and providing **expected improvements** for the benchmarked scope. Use [Capability Snapshot](CAPABILITY_SNAPSHOT.md) for whole-project readiness and remaining production blockers.
 
 ---
 
