@@ -8,6 +8,15 @@ import (
 	"time"
 )
 
+// requestTimeoutForTests is deliberately generous. These tests exercise the
+// status and pay round trips against a local httptest server; the client
+// timeout is not what they assert. At the previous 1s it failed intermittently
+// inside a full `go test ./...` run -- the observed failure took 1.01s, i.e.
+// the deadline expiring under load, not a real fault. A flaky gate is worse
+// than a slow one: it blocks on noise and can pass a real failure on a lucky
+// run. Production uses 10s (cmd/qsdm/treasury_payout.go:95).
+const requestTimeoutForTests = 30 * time.Second
+
 func TestHTTPTreasuryPayoutStatusAndPay(t *testing.T) {
 	address := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	mux := http.NewServeMux()
@@ -36,7 +45,7 @@ func TestHTTPTreasuryPayoutStatusAndPay(t *testing.T) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	service, err := NewHTTPTreasuryPayoutService(server.URL, "secret", time.Second)
+	service, err := NewHTTPTreasuryPayoutService(server.URL, "secret", requestTimeoutForTests)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +102,7 @@ func TestHTTPTreasuryPayoutRefusesRedirects(t *testing.T) {
 	}))
 	defer signer.Close()
 
-	service, err := NewHTTPTreasuryPayoutService(signer.URL, "secret", time.Second)
+	service, err := NewHTTPTreasuryPayoutService(signer.URL, "secret", requestTimeoutForTests)
 	if err != nil {
 		t.Fatal(err)
 	}

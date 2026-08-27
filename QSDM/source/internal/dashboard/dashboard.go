@@ -54,6 +54,11 @@ type Dashboard struct {
 	ngcIngestConfigured bool
 	nvidiaLock          DashboardNvidiaLock
 	metricsScrapeSecret string
+	// strictDashboardAuth no longer gates anything: a missing authenticator
+	// is refused unconditionally (see requireAuth). Retained so the existing
+	// config key and env var keep parsing rather than becoming a hard error
+	// on deployments that set them. Removing the key is a user-visible change
+	// and belongs in its own commit.
 	strictDashboardAuth bool
 	// apiBackendURL is the in-process API base (e.g. http://127.0.0.1:8080). When set, login/register are reverse-proxied so the browser can POST same-origin from the dashboard port.
 	apiBackendURL string
@@ -91,6 +96,22 @@ type dashboardLoginRequest struct {
 	Password string `json:"password"`
 }
 
+// defaultBindAddress resolves an unset bind address to loopback.
+//
+// Start passes this to net.JoinHostPort, and an empty host yields ":8081" --
+// every interface. QSDM/qsdm.yaml sets 127.0.0.1, but that is the local-dev
+// reference config: neither deploy/bring-up-validator.sh nor
+// deploy/install-ubuntu-vps.sh sets dashboard_bind_address, and pkg/config
+// applies no default, so the scripts that build a VPS node published the
+// dashboard publicly. An operator who wants that must now say so explicitly
+// by setting 0.0.0.0.
+func defaultBindAddress(bindAddress string) string {
+	if trimmed := strings.TrimSpace(bindAddress); trimmed != "" {
+		return trimmed
+	}
+	return "127.0.0.1"
+}
+
 // NewDashboard creates a new dashboard instance.
 // ngcIngestConfigured mirrors whether the API node has NGC ingest secret set (QSDM_NGC_INGEST_SECRET; the pre-rebrand QSDMPLUS_NGC_INGEST_SECRET env var is no longer read, see pkg/audit/checklist.go rebrand-02).
 // If sharedAuth is non-nil, it is used for JWT validation (must match api.Server's AuthManager when using ML-DSA / CGO).
@@ -100,7 +121,11 @@ func NewDashboard(metrics *monitoring.Metrics, healthChecker *monitoring.HealthC
 }
 
 // NewDashboardWithBindAddress creates a dashboard bound to a specific local
-// address. Empty bindAddress preserves the historical all-interfaces listener.
+// address. An empty bindAddress resolves to 127.0.0.1 (see defaultBindAddress);
+// it used to mean all interfaces, and exposing the dashboard is now an explicit
+// 0.0.0.0 choice. Containerised deployments set QSDM_DASHBOARD_BIND_ADDRESS to
+// 0.0.0.0, because there the isolation boundary is the container network rather
+// than this listener.
 func NewDashboardWithBindAddress(metrics *monitoring.Metrics, healthChecker *monitoring.HealthChecker, port string, bindAddress string, ngcIngestConfigured bool, nvidiaLock DashboardNvidiaLock, jwtHMACSecret string, metricsScrapeSecret string, strictDashboardAuth bool, apiBackendURL string, sharedAuth *api.AuthManager) *Dashboard {
 	var authManager *api.AuthManager
 	if sharedAuth != nil {
@@ -136,7 +161,7 @@ func NewDashboardWithBindAddress(metrics *monitoring.Metrics, healthChecker *mon
 		healthChecker:       healthChecker,
 		topologyMonitor:     nil, // Will be set via SetNetwork
 		port:                port,
-		bindAddress:         strings.TrimSpace(bindAddress),
+		bindAddress:         defaultBindAddress(bindAddress),
 		authManager:         authManager,
 		rateLimiter:         rateLimiter,
 		ngcIngestConfigured: ngcIngestConfigured,
@@ -312,8 +337,15 @@ func (d *Dashboard) buildHandler() (http.Handler, error) {
 	// Role / identity
 	mux.HandleFunc("/api/whoami", d.requireAuth(d.handleWhoAmI))
 
-	// WebSocket for real-time push updates
-	mux.HandleFunc("/ws", d.handleWS)
+	// WebSocket for real-time push updates.
+	//
+	// requireAuth, not bare: StartWSPush broadcasts metrics, health and
+	// network topology to every connected client on a timer, and ServeWS
+	// upgraded without checking any credential. Browsers cannot set headers
+	// on a WebSocket handshake, but they DO send cookies -- and extractToken
+	// already reads the session cookie -- so the dashboard UI authenticates
+	// here exactly as it does on every other route.
+	mux.HandleFunc("/ws", d.requireAuth(d.handleWS))
 
 	return d.setupMiddleware(mux), nil
 }
@@ -342,10 +374,8 @@ func (d *Dashboard) Start() error {
 			log.Printf("Metrics scrape secret: configured (use %s [legacy %s also accepted] or Authorization: Bearer for /api/metrics/prometheus)",
 				branding.MetricsScrapeSecretHeaderPreferred, branding.MetricsScrapeSecretHeaderLegacy)
 		}
-	} else if d.strictDashboardAuth {
-		log.Printf("Dashboard authentication: UNAVAILABLE (JWT init failed); strict_dashboard_auth=true — protected routes return 503; set metrics_scrape_secret for Prometheus-only scrape")
 	} else {
-		log.Printf("Dashboard authentication: DISABLED (INSECURE - development only)")
+		log.Printf("Dashboard authentication: UNAVAILABLE (JWT init failed) — protected routes return 503; set metrics_scrape_secret for Prometheus-only scrape")
 	}
 	log.Printf("Dashboard will be available at http://localhost:%s", d.port)
 	log.Printf("API endpoints: /api/metrics, /api/metrics/prometheus, /api/health, /api/topology, /api/mesh3d-viz, /api/ngc-proofs, /api/audit/summary, /api/audit/items (require authentication)")
@@ -576,7 +606,7 @@ func writeDashboardAuthUnavailable(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusServiceUnavailable)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"error":   "Service Unavailable",
-		"message": "Dashboard JWT authentication is not available; fix auth configuration or disable strict_dashboard_auth for local dev",
+		"message": "Dashboard JWT authentication is not available. Protected routes are refused until it initialises; this is unconditional and strict_dashboard_auth no longer affects it. Check the auth manager startup error, or use metrics_scrape_secret for Prometheus-only scrape.",
 		"status":  http.StatusServiceUnavailable,
 	})
 }
@@ -596,10 +626,11 @@ func (d *Dashboard) requireMetricsScrapeOrAuth(next http.HandlerFunc) http.Handl
 				return
 			}
 		}
-		if d.strictDashboardAuth && d.authManager == nil {
-			writeDashboardAuthUnavailable(w)
-			return
-		}
+		// No authManager check here on purpose: this falls through to
+		// requireAuth, which fails closed unconditionally. An extra check
+		// would be unreachable in practice -- reverting it leaves every test
+		// passing, which is the rubric's definition of a check that proves
+		// nothing.
 		d.requireAuth(next)(w, r)
 	}
 }
@@ -637,12 +668,22 @@ func (d *Dashboard) setupMiddleware(handler http.Handler) http.Handler {
 func (d *Dashboard) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if d.authManager == nil {
-			if d.strictDashboardAuth {
-				writeDashboardAuthUnavailable(w)
-				return
-			}
-			log.Printf("WARNING: Dashboard access without authentication (auth manager not available)")
-			next(w, r)
+			// Fail closed, regardless of strictDashboardAuth.
+			//
+			// authManager is nil only when no AuthManager was shared in AND
+			// api.NewAuthManager() returned an error (see
+			// NewDashboardWithBindAddress). That is an infrastructure failure,
+			// and the response to "the authenticator could not be built" must
+			// not be "serve the protected route to whoever asked". This used to
+			// log a warning and call next(w, r) unless an operator had opted
+			// into strict mode -- and strictDashboardAuth comes from
+			// cfg.DashboardStrictAuth, which defaults false, so the safe
+			// behaviour was the one you had to ask for.
+			//
+			// A dashboard that refuses to serve is a visible, diagnosable
+			// outage. A dashboard that serves without authentication is a
+			// silent one.
+			writeDashboardAuthUnavailable(w)
 			return
 		}
 

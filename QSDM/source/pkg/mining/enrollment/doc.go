@@ -2,7 +2,7 @@
 // rules for the nvidia-hmac-v1 operator registry
 // (MINING_PROTOCOL_V2.md §5.2, §5.4).
 //
-// SECURITY MODEL — READ THIS FIRST
+// # SECURITY MODEL — READ THIS FIRST
 //
 // The nvidia-hmac-v1 attestation type is HMAC-based, which means
 // the symmetric key MUST be known to both the miner AND every
@@ -13,30 +13,43 @@
 // This is by design. The ratified trust-anchor model is tiered
 // (§5 of the spec):
 //
-//     datacenter GPUs -> nvidia-cc-v1  (real AIK crypto,
-//                                       Phase 2c-iv)
-//     consumer GPUs   -> nvidia-hmac-v1 (public HMAC key +
-//                                        economic deterrence)
+//	datacenter GPUs -> nvidia-cc-v1  (real AIK crypto,
+//	                                  Phase 2c-iv)
+//	consumer GPUs   -> nvidia-hmac-v1 (public HMAC key +
+//	                                   economic deterrence)
 //
 // The security of the HMAC path is NOT anti-forgery via key
 // secrecy. It is:
 //
-//   1. Identity pinning: the HMAC key is bound at enrollment to
-//      a (node_id, gpu_uuid, owner-address) triple. Forgeries
-//      necessarily route reward to the enrolled owner, not to
-//      the forger.
+//  1. Identity pinning: the HMAC key is bound at enrollment to
+//     a (node_id, gpu_uuid, owner-address) triple. Forgeries
+//     necessarily route reward to the enrolled owner, not to
+//     the forger.
 //
-//   2. Stake bond: enrollment requires MinEnrollStakeDust (10
-//      CELL as of fork height, governance-adjustable). The
-//      stake is locked until Unenroll + UnbondWindow. Misuse of
-//      a node_id's key — regardless of WHO used it — costs the
-//      owner their stake via the slash path.
+//  2. Stake bond: enrollment requires MinEnrollStakeDust (10
+//     CELL as of fork height, governance-adjustable). The
+//     stake is locked until Unenroll + UnbondWindow.
 //
-//   3. Rate limiting: a single node_id can submit only one proof
-//      per block (enforced upstream at proof-verification time).
-//      A forger racing to steal a block from an enrolled owner
-//      wins at most one block, and the owner's next-block proof
-//      displaces the forger's in the dedup cache.
+//     CORRECTION: this used to read "misuse of a node_id's key
+//     — regardless of WHO used it — costs the owner their stake
+//     via the slash path". That is no longer true, and stating
+//     it invited re-opening the gate described below.
+//
+//     Because the key is public (see below), an accusation of
+//     HMAC misuse cannot be attributed: a valid MAC proves
+//     nothing, since any chain-state reader can compute one,
+//     and an invalid MAC proves nothing either, since anyone
+//     can emit bytes naming any victim. The forged-attestation
+//     and double-mining slash paths therefore fail closed —
+//     see pkg/mining/slashing/attribution.go. The bond is still
+//     locked and still gates enrollment; it is simply no longer
+//     slashable on either of those two grounds.
+//
+//  3. Rate limiting: a single node_id can submit only one proof
+//     per block (enforced upstream at proof-verification time).
+//     A forger racing to steal a block from an enrolled owner
+//     wins at most one block, and the owner's next-block proof
+//     displaces the forger's in the dedup cache.
 //
 // So: yes, an adversary who reads the chain can produce valid
 // bundles for any enrolled node_id. But the reward goes to the
@@ -53,19 +66,19 @@
 //
 // PUBLIC SURFACE OF THIS PACKAGE
 //
-//   EnrollPayload     — wire format of the enroll transaction
-//                       payload (encoded into mempool.Tx.Payload)
-//   UnenrollPayload   — wire format of the unenroll transaction
-//   EnrollmentRecord  — on-chain state entry for an enrolled node
-//   EnrollmentState   — read-only view the rest of the system
-//                       uses to query enrolled nodes
-//   StateBackedRegistry — adapts EnrollmentState to the
-//                       hmac.Registry interface the attestation
-//                       verifier consumes
-//   ValidateEnrollPayload / ValidateUnenrollPayload —
-//                       stateless + state-dependent consensus
-//                       checks ready to drop into the chain's
-//                       tx handler
+//	EnrollPayload     — wire format of the enroll transaction
+//	                    payload (encoded into mempool.Tx.Payload)
+//	UnenrollPayload   — wire format of the unenroll transaction
+//	EnrollmentRecord  — on-chain state entry for an enrolled node
+//	EnrollmentState   — read-only view the rest of the system
+//	                    uses to query enrolled nodes
+//	StateBackedRegistry — adapts EnrollmentState to the
+//	                    hmac.Registry interface the attestation
+//	                    verifier consumes
+//	ValidateEnrollPayload / ValidateUnenrollPayload —
+//	                    stateless + state-dependent consensus
+//	                    checks ready to drop into the chain's
+//	                    tx handler
 //
 // NOT IN SCOPE for this commit (follow-on work):
 //

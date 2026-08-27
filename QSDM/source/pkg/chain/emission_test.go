@@ -204,14 +204,24 @@ func TestRemainingSupplyAtGenesisIsCap(t *testing.T) {
 
 func TestNextHalvingHeightAndETA(t *testing.T) {
 	s := DefaultEmissionSchedule()
-	// Mid of epoch 0: next halving is at BlocksPerEpoch+1 boundary -> height BPE.
+	// Epoch 0 spans heights 1..B, so the next halving is the FIRST block of
+	// epoch 1, which is B+1. The previous version of this test said exactly
+	// that in its comment -- "next halving is at BlocksPerEpoch+1 boundary" --
+	// and then asserted BlocksPerEpoch, pinning the off-by-one it had just
+	// described. B is the last block of epoch 0, not a halving boundary.
 	mid := s.BlocksPerEpoch / 2
 	next := s.NextHalvingHeight(mid)
-	if next != s.BlocksPerEpoch {
-		t.Errorf("next halving from mid epoch 0 = %d, want %d", next, s.BlocksPerEpoch)
+	wantNext := s.BlocksPerEpoch + 1
+	if next != wantNext {
+		t.Errorf("next halving from mid epoch 0 = %d, want %d", next, wantNext)
+	}
+	if got := s.EpochForHeight(next); got != 1 {
+		t.Errorf("the reported next-halving height %d is in epoch %d, want epoch 1: "+
+			"a halving height that is still inside the current epoch is not a boundary",
+			next, got)
 	}
 	eta := s.NextHalvingETA(mid)
-	wantETA := (s.BlocksPerEpoch - mid) * s.TargetBlockTimeSeconds
+	wantETA := (wantNext - mid) * s.TargetBlockTimeSeconds
 	if eta != wantETA {
 		t.Errorf("ETA from mid epoch 0 = %d, want %d", eta, wantETA)
 	}

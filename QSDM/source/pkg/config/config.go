@@ -96,7 +96,13 @@ type Config struct {
 	// Env: QSDM_DASHBOARD_METRICS_SCRAPE_SECRET (the pre-rebrand QSDMPLUS_DASHBOARD_METRICS_SCRAPE_SECRET
 	// env var is no longer read; pkg/envcompat is now a no-op trim helper after db9b590).
 	DashboardMetricsScrapeSecret string
-	// DashboardStrictAuth: when true ([monitoring] strict_dashboard_auth or QSDM_DASHBOARD_STRICT_AUTH),
+	// DashboardStrictAuth: DEPRECATED and no longer read for its original
+	// purpose. Protected dashboard routes now return 503 whenever the auth
+	// manager failed to initialise, unconditionally -- serving them
+	// unauthenticated was never a safe fallback, so it is no longer opt-out.
+	// The key is still accepted so deployments that set it keep parsing.
+	//
+	// Formerly: when true ([monitoring] strict_dashboard_auth or QSDM_DASHBOARD_STRICT_AUTH),
 	// JWT routes return 503 if auth manager failed to init; Prometheus still works if
 	// metrics_scrape_secret is set. (The pre-rebrand QSDMPLUS_DASHBOARD_STRICT_AUTH env var is no
 	// longer read; see pkg/envcompat godoc.)
@@ -146,6 +152,18 @@ type Config struct {
 	// before every validator begins enforcing them at the same point.
 	// It must be non-zero exactly when RequireSignedVotes is true.
 	SignedConsensusActivationHeight uint64
+
+	// TaskActionSignatureActivationHeight is the first height at which a task
+	// action must carry a signature ([consensus] or
+	// QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT). Zero leaves the
+	// requirement off. See chain.VerifyTaskActionSignature.
+	TaskActionSignatureActivationHeight uint64
+
+	// TxContentRootActivationHeight is the first height whose block tx root
+	// commits transaction contents ([consensus] or
+	// QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT). Zero keeps the legacy ID-only
+	// root. Changing it changes block hashes; every node must agree.
+	TxContentRootActivationHeight uint64
 
 	// ConsensusSignerKeyPath is the validator-only ML-DSA hot key used to
 	// authenticate consensus traffic. It is not a wallet and must never hold
@@ -397,6 +415,8 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.AuthorizedBlockProducers = tomlCfg.Consensus.AuthorizedBlockProducers
 		cfg.RequireSignedVotes = tomlCfg.Consensus.RequireSignedVotes
 		cfg.SignedConsensusActivationHeight = tomlCfg.Consensus.SignedMessageActivationHeight
+		cfg.TaskActionSignatureActivationHeight = tomlCfg.Consensus.TaskActionSignatureActivationHeight
+		cfg.TxContentRootActivationHeight = tomlCfg.Consensus.TxContentRootActivationHeight
 		cfg.ConsensusSignerKeyPath = strings.TrimSpace(tomlCfg.Consensus.SignerKeyPath)
 		cfg.ForkDustHeight = tomlCfg.Consensus.ForkDustHeight
 		if tomlCfg.Performance.TransactionInterval != "" {
@@ -497,6 +517,8 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.AuthorizedBlockProducers = yamlCfg.Consensus.AuthorizedBlockProducers
 		cfg.RequireSignedVotes = yamlCfg.Consensus.RequireSignedVotes
 		cfg.SignedConsensusActivationHeight = yamlCfg.Consensus.SignedMessageActivationHeight
+		cfg.TaskActionSignatureActivationHeight = yamlCfg.Consensus.TaskActionSignatureActivationHeight
+		cfg.TxContentRootActivationHeight = yamlCfg.Consensus.TxContentRootActivationHeight
 		cfg.ConsensusSignerKeyPath = strings.TrimSpace(yamlCfg.Consensus.SignerKeyPath)
 		cfg.ForkDustHeight = yamlCfg.Consensus.ForkDustHeight
 		if yamlCfg.Performance.TransactionInterval != "" {
@@ -672,6 +694,16 @@ func applyEnvOverrides(cfg *Config) {
 	if v := strings.TrimSpace(getEnvString("QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT", "")); v != "" {
 		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
 			cfg.SignedConsensusActivationHeight = h
+		}
+	}
+	if v := strings.TrimSpace(getEnvString("QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT", "")); v != "" {
+		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
+			cfg.TaskActionSignatureActivationHeight = h
+		}
+	}
+	if v := strings.TrimSpace(getEnvString("QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT", "")); v != "" {
+		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
+			cfg.TxContentRootActivationHeight = h
 		}
 	}
 	if v := strings.TrimSpace(getEnvString("QSDM_CONSENSUS_SIGNER_KEY_PATH", "")); v != "" {

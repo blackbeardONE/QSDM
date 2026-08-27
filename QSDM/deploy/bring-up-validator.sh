@@ -309,6 +309,14 @@ Environment="CGO_ENABLED=1"
 Environment="LD_LIBRARY_PATH=${INSTALL_DIR}/liboqs_install/lib:${INSTALL_DIR}/liboqs_install/lib64:/usr/local/lib64:/usr/local/lib"
 Environment="CONFIG_FILE=${CONFIG_FILE}"
 Environment="QSDM_LOG_STDOUT=false"
+# Restrict WebSocket origins. initialiseWSAllowedOriginsFromEnv
+# (internal/dashboard/websocket.go) returns early when neither this nor
+# QSDM_CORS_ALLOWED_ORIGINS is set, leaving CheckOrigin permissive -- that
+# file's own comment says production wiring MUST call it. The dashboard
+# binds loopback by default and /ws now requires authentication, so this is
+# defence in depth rather than the only control; set it to the operator's
+# real dashboard origin when fronting the node with a reverse proxy.
+Environment="QSDM_WS_ALLOWED_ORIGINS=http://127.0.0.1:${DASHBOARD_PORT},http://localhost:${DASHBOARD_PORT}"
 # QSDM_CONFIG_FILE is set ahead of a future Go-side migration that
 # would teach pkg/config/config.go to read it before falling back to
 # the bare CONFIG_FILE name. As of today the binary ONLY reads

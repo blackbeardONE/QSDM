@@ -402,7 +402,7 @@ deprecation window — see `REBRAND_NOTES.md`.
 ### Go
 
 ```go
-import "github.com/blackbeardONE/QSDM/sdk/go"
+import qsdm "github.com/blackbeardONE/QSDM/QSDM/source/sdk/go"
 
 client := qsdm.NewClient("https://localhost:8443")
 client.SetToken("<jwt>")

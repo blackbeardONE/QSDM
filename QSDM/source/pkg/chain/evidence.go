@@ -208,13 +208,54 @@ func validateEvidence(ev ConsensusEvidence) error {
 			if err := ev.Proof.Verify(ev.Validator); err != nil {
 				return err
 			}
+			// Verify shows the exhibits are a genuine equivocation; it says
+			// nothing about the envelope wrapped around them. Without this
+			// one proof replays under arbitrary height/round/hashes.
+			if err := ev.Proof.VerifyBinding(ev); err != nil {
+				return err
+			}
 		} else if evidenceProofRequiredAt(ev.Height) {
 			return ErrEvidenceProofMissing
 		}
 	case EvidenceInvalidVote:
-		if ev.Details == "" {
-			return fmt.Errorf("invalid_vote evidence requires details")
-		}
+		// Rejected outright. This is not a hardening of the previous check;
+		// the accusation is unprovable as specified, so there is nothing to
+		// harden.
+		//
+		// What it used to do: the entire validation was `Details != ""`. A
+		// non-empty string then reached Process, which calls
+		// vs.Slash(ev.Validator, SlashInvalidBlock) -- taking SlashFraction
+		// (5%) of the accused's stake, jailing them -- and
+		// sl.SlashDelegated(ev.Validator, frac), destroying 5% of their
+		// delegators' stake too. Evidence arrives over gossip
+		// (EvidenceGossipIngress.HandlePeerMessage), which checks peer bans,
+		// dedupe and a per-peer rate limit but performs NO signature
+		// verification. So any peer could destroy any validator's stake by
+		// sending {"type":"invalid_vote","validator":"<victim>","details":"x"}.
+		//
+		// It was also repeatable without bound: evidenceID hashes Details, so
+		// changing one character yields a fresh ID that defeats dedupe, and
+		// Slash refuses only ValidatorExited -- so a jailed validator can be
+		// slashed again. N messages leave stake * 0.95^N.
+		//
+		// Why rejection rather than requiring a proof. ConsensusEvidence.Proof
+		// is an *EquivocationProof, and its Verify establishes equivocation
+		// specifically: two conflicting signed votes at one height and round.
+		// It cannot express "this validator cast an invalid vote", so
+		// demanding it here would require proving a different offence.
+		//
+		// Nor is the type in use: EvidenceInvalidVote has no producer anywhere
+		// in non-test code. The only submitter is bft_executor.go, which
+		// reports EvidenceEquivocation with real conflicting hashes. So
+		// rejecting removes no capability -- it removes an attack.
+		//
+		// An invalid vote IS provable in principle, by exhibiting the accused's
+		// own signed message alongside the rule it violates (a precommit
+		// against a held lock, say). That needs a new exhibit type and its own
+		// verifier, mirroring EquivocationProof. Until someone builds it,
+		// accepting the bare accusation is strictly worse than accepting
+		// nothing.
+		return ErrEvidenceInvalidVoteUnprovable
 	case EvidenceForkWitness:
 		if ev.Details == "" {
 			return fmt.Errorf("fork_witness requires details")
@@ -243,6 +284,18 @@ func StableEvidenceID(ev ConsensusEvidence) string {
 func evidenceID(ev ConsensusEvidence) string {
 	hashes := append([]string(nil), ev.BlockHashes...)
 	sort.Strings(hashes)
+	// Proof-carrying evidence is identified by the OFFENCE, not by the
+	// envelope around it. VerifyBinding already forces Height, Round and
+	// BlockHashes to match the signed votes, but Details is free-form and
+	// unbindable -- there is nothing in a signature that could commit to a
+	// human-readable note. Including it would let one genuine proof mint
+	// unlimited distinct IDs by varying a comment, defeating dedupe at both
+	// the gossip and manager layers and slashing the accused once per variant.
+	if ev.Proof != nil {
+		data := fmt.Sprintf("%s|%s|%s", ev.Type, ev.Validator, ev.Proof.fingerprint())
+		sum := sha256.Sum256([]byte(data))
+		return hex.EncodeToString(sum[:])
+	}
 	data := fmt.Sprintf("%s|%s|%d|%d|%v|%s", ev.Type, ev.Validator, ev.Height, ev.Round, hashes, ev.Details)
 	sum := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(sum[:])

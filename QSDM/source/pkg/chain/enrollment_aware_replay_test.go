@@ -121,6 +121,11 @@ func TestChainReplayClone_ClonesAndRestoresTaskState(t *testing.T) {
 	accounts := NewAccountStore()
 	accounts.Credit(fxAlice, 10)
 	aware := NewEnrollmentAwareApplier(accounts, nil)
+	// Required now that the task branch refuses an unwired heightFn. The
+	// clone must carry it too, which ChainReplayClone already does
+	// (clone.heightFn = a.heightFn) -- if it stopped doing so, the clone's
+	// ApplyTx below would fail here rather than silently applying at 0.
+	aware.SetHeightFn(func() uint64 { return 1 })
 	tasks := NewTaskStateStore()
 	aware.SetTaskStateStore(tasks)
 

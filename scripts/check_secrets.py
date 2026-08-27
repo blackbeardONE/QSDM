@@ -111,9 +111,18 @@ SECRET_ASSIGNMENT = re.compile(
     r"\s*=\s*(?P<value>[^#\r\n]+?)\s*$"
 )
 
+# The key's own quoting must be balanced: either both quotes or neither.
+# An unbalanced trailing quote let the *closing* quote of an unrelated string
+# stand in for the key's, so a ternary such as
+#   autocomplete = registering ? 'new-password' : 'current-password'
+# parsed as `password': 'current-password'` and reported as a literal secret.
+# Requiring the closing quote to match the opening one rejects that while still
+# catching suffixed keys like `user_password: "..."`, which carry no quotes.
 STRUCTURED_SECRET = re.compile(
-    r"[\"']?(?P<name>password|passphrase|client_secret|private_key|api_key|bearer_token)"
-    r"[\"']?\s*[:=]\s*[\"'](?P<value>[^\"']{8,})[\"']",
+    r"(?P<quote>[\"'])?"
+    r"(?P<name>password|passphrase|client_secret|private_key|api_key|bearer_token)"
+    r"(?(quote)(?P=quote)|)"
+    r"\s*[:=]\s*[\"'](?P<value>[^\"']{8,})[\"']",
     re.IGNORECASE,
 )
 

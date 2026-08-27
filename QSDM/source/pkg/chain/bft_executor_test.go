@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/blackbeardONE/QSDM/pkg/crypto"
 )
 
 func TestBFTExecutor_ApplyInboundCommits(t *testing.T) {
@@ -77,22 +79,49 @@ func TestBFTExecutor_ApplyInboundBenignDuplicate(t *testing.T) {
 	}
 }
 
+// This test used to send UNSIGNED proposes, which pinned the defect fixed in
+// bft_equivocation_attribution_test.go: it asserted that two messages any peer
+// could forge produced slashable evidence. Each validator now holds a key and
+// the conflicting proposes are signed, so the test still covers the
+// executor -> EvidenceManager wiring without requiring the forgeable path.
 func TestBFTExecutor_EquivocationSubmitsEvidence(t *testing.T) {
+	signers := map[string]*crypto.Dilithium{}
 	vs := NewValidatorSet(DefaultValidatorSetConfig())
-	_ = vs.Register("v1", 100)
-	_ = vs.Register("v2", 100)
-	_ = vs.Register("v3", 100)
+	for i := 0; i < 3; i++ {
+		signer, addr := newBFTKey(t)
+		if err := vs.Register(addr, 100); err != nil {
+			t.Fatalf("register %s: %v", addr, err)
+		}
+		signers[addr] = signer
+	}
 	bc := NewBFTConsensus(vs, DefaultConsensusConfig())
 	em := NewEvidenceManager(vs)
 	ex := NewBFTExecutor(bc)
 	ex.SetEvidenceManager(em)
-	prop, _ := bc.ProposerForRound(0)
-	b1, _ := MarshalBFTWire(BFTWirePropose, BFTWireProposeMsg{Height: 3, Round: 0, Proposer: prop, BlockHash: "aa"})
-	if err := ex.ApplyInbound(b1); err != nil {
+
+	prop, err := bc.ProposerForRound(0)
+	if err != nil {
+		t.Fatalf("proposer for round 0: %v", err)
+	}
+	signer, ok := signers[prop]
+	if !ok {
+		t.Fatalf("round-0 proposer %q is not one of the registered keys", prop)
+	}
+	send := func(hash string) error {
+		m := BFTWireProposeMsg{Height: 3, Round: 0, Proposer: prop, BlockHash: hash}
+		if err := SignPropose(&m, signer); err != nil {
+			t.Fatalf("sign %s: %v", hash, err)
+		}
+		b, err := MarshalBFTWire(BFTWirePropose, m)
+		if err != nil {
+			t.Fatalf("marshal %s: %v", hash, err)
+		}
+		return ex.ApplyInbound(b)
+	}
+	if err := send("aa"); err != nil {
 		t.Fatal(err)
 	}
-	b2, _ := MarshalBFTWire(BFTWirePropose, BFTWireProposeMsg{Height: 3, Round: 0, Proposer: prop, BlockHash: "bb"})
-	if err := ex.ApplyInbound(b2); err == nil {
+	if err := send("bb"); err == nil {
 		t.Fatal("expected error")
 	}
 	lst := em.List()

@@ -141,3 +141,10 @@ QSDM/deploy/Caddyfile                (CSP `connect-src` + `img-src` +
 - Service-worker cache so the SPA + recently-viewed docs work offline.
 - A subagent that re-validates the 78 TOC entries on every push to
   `main` and opens a PR if any 404.
+
+## 2026-08-27 capability snapshot addendum
+
+- Added `CAPABILITY_SNAPSHOT.md` to the docs source and exposed it as `#/capability-snapshot` in the docs portal.
+- Updated the docs welcome cards so readers can reach the readiness percentages without digging through old phase-completion reports.
+- The curated table of contents is now 79 entries. Hash-fragment docs routes remain intentionally omitted from `sitemap.xml`; crawlers index `/docs/`, while humans deep-link through the SPA sidebar.
+- The tracked performance report now carries a current capability note and no longer uses benchmark results as a whole-project production-readiness claim.

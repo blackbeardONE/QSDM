@@ -1,8 +1,13 @@
 package chain
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"sort"
 	"strings"
 	"sync/atomic"
 )
@@ -59,6 +64,14 @@ var ErrEvidenceProofMissing = errors.New("chain: equivocation evidence carries n
 // ErrEvidenceProofInvalid is returned when a supplied proof does not
 // establish equivocation by the accused validator.
 var ErrEvidenceProofInvalid = errors.New("chain: equivocation proof is invalid")
+
+// ErrEvidenceInvalidVoteUnprovable is returned for invalid_vote evidence,
+// which is rejected unconditionally. The accusation carries no verifiable
+// witness -- an invalid vote is simply dropped by its receiver, leaving
+// nothing a third party can re-check -- and the only proof type in this
+// package establishes equivocation, a different offence. See the
+// EvidenceInvalidVote branch in validateEvidence.
+var ErrEvidenceInvalidVoteUnprovable = errors.New("chain: invalid_vote evidence is unprovable and is not accepted")
 
 // SignedVoteExhibit is one authenticated vote used as evidence.
 type SignedVoteExhibit struct {
@@ -132,6 +145,136 @@ func (p *EquivocationProof) Verify(accused string) error {
 		return fmt.Errorf("%w: second exhibit: %v", ErrEvidenceProofInvalid, err)
 	}
 	return nil
+}
+
+// VerifyBinding checks that the proof actually proves what the surrounding
+// envelope claims.
+//
+// Verify establishes that the two exhibits are a genuine equivocation by the
+// accused, but it is blind to the ConsensusEvidence wrapped around it: nothing
+// tied the envelope's Height, Round or BlockHashes to the votes inside. Since
+// evidenceID hashes only those outer fields, one genuine proof could be
+// resubmitted under arbitrary height/round/hash values, each variant producing
+// a fresh dedupe ID and each one slashing the accused again. ValidatorSet.Slash
+// refuses only ValidatorExited, not ValidatorJailed, so the replay had no
+// bound: a peer holding a single real proof -- or the accused's one genuine
+// equivocation, which is public by definition once reported -- could grind that
+// validator and its delegators toward zero, 64 submissions per minute per peer
+// identity, using nothing but arithmetic on the envelope fields.
+//
+// Callers must apply this wherever a proof is verified. Verify alone is not
+// sufficient.
+func (p *EquivocationProof) VerifyBinding(ev ConsensusEvidence) error {
+	if p == nil {
+		return ErrEvidenceProofMissing
+	}
+	// Verify compares the accused against the exhibits with EqualFold, but
+	// ValidatorSet keys its map on the exact address string
+	// (validator.go:113,137) -- so evidence whose Validator differs only in
+	// case from the registered address passes Verify and then fails Slash with
+	// ErrNotRegistered, silently dropping a real offence. Requiring exact
+	// equality here removes the ambiguity instead of leaving two components
+	// disagreeing about what a validator identity is.
+	if ev.Validator != p.VoteA.Validator || ev.Validator != p.VoteB.Validator {
+		return fmt.Errorf("%w: envelope names %q, exhibits name %q and %q",
+			ErrEvidenceProofInvalid, ev.Validator, p.VoteA.Validator, p.VoteB.Validator)
+	}
+	// Agreeing with each other is not enough. verifyAuth compares the derived
+	// address to the claimed signer with EqualFold (bft_sig.go), so all three
+	// fields can carry the same NON-canonical casing, satisfy the check above,
+	// verify their signatures, and still miss ValidatorSet's exact-case map
+	// (validator.go:113,137) -- dropping a real offence exactly as before.
+	// Require the canonical form BFTValidatorAddress produces, which is what
+	// the registry is keyed on.
+	if ev.Validator != strings.ToLower(ev.Validator) {
+		return fmt.Errorf("%w: validator %q is not the canonical lower-case address form",
+			ErrEvidenceProofInvalid, ev.Validator)
+	}
+	if ev.Height != p.VoteA.Height || ev.Round != p.VoteA.Round {
+		return fmt.Errorf("%w: envelope claims height %d round %d, proof shows height %d round %d",
+			ErrEvidenceProofInvalid, ev.Height, ev.Round, p.VoteA.Height, p.VoteA.Round)
+	}
+	// Order does not matter -- evidenceID sorts the hashes -- but the set must
+	// be exactly the two values the accused signed. Anything else lets the
+	// envelope assert a conflict the proof does not show.
+	want := []string{p.VoteA.BlockHash, p.VoteB.BlockHash}
+	got := append([]string(nil), ev.BlockHashes...)
+	sort.Strings(want)
+	sort.Strings(got)
+	if len(got) != len(want) {
+		return fmt.Errorf("%w: envelope carries %d block hashes, proof shows 2",
+			ErrEvidenceProofInvalid, len(got))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return fmt.Errorf("%w: envelope block hashes do not match the signed votes",
+				ErrEvidenceProofInvalid)
+		}
+	}
+	return nil
+}
+
+// fingerprint returns a stable digest of the OFFENCE the proof establishes.
+//
+// It digests each exhibit's semantic content -- kind, height, round, validator
+// and block hash -- and combines the two in sorted order. It deliberately does
+// NOT digest the signature bytes.
+//
+// Signature bytes are not canonical. This build signs with the randomized
+// variant of FIPS 204 6.1 (pkg/crypto/dilithium_circl.go:129, randomized=true),
+// so signing one vote twice with one key yields two different, both-valid
+// signatures. An earlier version of this function digested Auth.PublicKey and
+// Auth.Signature, which meant a semantically identical pair of exhibits, freshly
+// signed, produced a different fingerprint, a different evidenceID, and a second
+// slash of the same offence: 1000 -> 950 -> 902.5. Keying on what the votes SAY
+// rather than on the bytes that authenticate them makes one offence one
+// identity, however many times it is signed.
+//
+// Sorting the two exhibit digests keeps exhibit order out of the identity:
+// Verify and VerifyBinding are both symmetric in A/B, and two honest reporters
+// who observed one equivocation in opposite orders must agree on its identity.
+// Same reasoning as pkg/mining/slashing/doublemining, whose encoder
+// canonicalises (ProofA, ProofB) lexicographically.
+//
+// Collision safety does not rest on this digest alone: evidence only reaches
+// dedupe after Verify has checked real signatures from the accused, so an
+// attacker cannot manufacture a colliding proof without that validator's key.
+func (p *EquivocationProof) fingerprint() string {
+	if p == nil {
+		return ""
+	}
+	digests := make([]string, 0, 2)
+	for _, x := range []SignedVoteExhibit{p.VoteA, p.VoteB} {
+		h := sha256.New()
+		// Length-prefixed so no field boundary can be shifted to collide,
+		// e.g. a validator name absorbing the start of a block hash.
+		writeLenPrefixed(h, []byte(x.Kind))
+		writeLenPrefixed(h, []byte(strings.ToLower(x.Validator)))
+		writeUint64Prefixed(h, x.Height)
+		writeUint64Prefixed(h, uint64(x.Round))
+		writeLenPrefixed(h, []byte(x.BlockHash))
+		digests = append(digests, hex.EncodeToString(h.Sum(nil)))
+	}
+	sort.Strings(digests)
+
+	outer := sha256.New()
+	for _, d := range digests {
+		writeLenPrefixed(outer, []byte(d))
+	}
+	return hex.EncodeToString(outer.Sum(nil))
+}
+
+func writeUint64Prefixed(h io.Writer, v uint64) {
+	var b [8]byte
+	binary.BigEndian.PutUint64(b[:], v)
+	writeLenPrefixed(h, b[:])
+}
+
+func writeLenPrefixed(h io.Writer, b []byte) {
+	var n [8]byte
+	binary.BigEndian.PutUint64(n[:], uint64(len(b)))
+	_, _ = h.Write(n[:])
+	_, _ = h.Write(b)
 }
 
 // BuildEquivocationEvidence assembles proof-carrying equivocation evidence

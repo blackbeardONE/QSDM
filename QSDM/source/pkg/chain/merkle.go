@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+
+	"github.com/blackbeardONE/QSDM/pkg/mempool"
 )
 
 // MerkleTree builds a binary hash tree over a list of data items.
@@ -48,10 +50,10 @@ func BuildMerkleTree(items []string) *MerkleTree {
 
 // MerkleProof is an inclusion proof for a leaf in the tree.
 type MerkleProof struct {
-	LeafHash string       `json:"leaf_hash"`
-	Index    int          `json:"index"`
-	Siblings []ProofNode  `json:"siblings"`
-	Root     string       `json:"root"`
+	LeafHash string      `json:"leaf_hash"`
+	Index    int         `json:"index"`
+	Siblings []ProofNode `json:"siblings"`
+	Root     string      `json:"root"`
 }
 
 // ProofNode is one sibling in the proof path.
@@ -109,9 +111,52 @@ func VerifyProof(proof *MerkleProof, expectedRoot string) bool {
 }
 
 // VerifyTxInBlock verifies that a transaction ID is included in a block header.
+//
+// Only meaningful BELOW the transaction-content-root activation height. The tx
+// root merkleizes tx.ID below that height and TxContentDigest at or above it
+// (computeTxRoot), so an ID-keyed proof cannot verify against a content root.
+// Use VerifyTxContentInBlock there, which needs the transaction rather than
+// just its ID.
+//
+// The height check below IS load-bearing, and the route to it is narrow enough
+// that this comment has now been wrong twice in opposite directions.
+//
+// First it claimed the check prevents "a silent wrong answer" -- overstated,
+// since for an ordinary ID the leaf simply does not match and the result is
+// false either way. Then it claimed the check is documentation only, because "a
+// content-root leaf never equals hashLeaf(txID)" -- also wrong, because
+// mempool.Tx.ID is an unconstrained string. A caller may pass an ID that IS the
+// content digest of a real transaction in the block, and without this check the
+// proof then verifies and the function answers TRUE: a false positive on an
+// inclusion check, which is the direction that actually costs something.
+//
+// TestVerifyTxInBlock_RefusesADigestShapedID covers exactly that case, because
+// neutering the check passed every other test in the package.
 func VerifyTxInBlock(txID string, proof *MerkleProof, header BlockHeader) bool {
+	if txContentRootActiveAt(header.Height) {
+		// The caller holds only an ID, so the correct leaf cannot be built.
+		return false
+	}
 	expectedLeaf := hashLeaf(txID)
 	if proof.LeafHash != expectedLeaf {
+		return false
+	}
+	return VerifyProof(proof, header.TxRoot)
+}
+
+// VerifyTxContentInBlock verifies inclusion against a content-committing tx
+// root. It needs the whole transaction, because the leaf is TxContentDigest --
+// which is the point of the content root: the proof binds what the transaction
+// SAYS, not merely that some transaction with that ID was in the block.
+//
+// Valid at or above the activation height. Below it the root merkleizes IDs, so
+// this refuses there rather than relying on the leaf failing to match -- the
+// same reasoning as the check above, which turned out to matter.
+func VerifyTxContentInBlock(tx *mempool.Tx, proof *MerkleProof, header BlockHeader) bool {
+	if tx == nil || !txContentRootActiveAt(header.Height) {
+		return false
+	}
+	if proof.LeafHash != hashLeaf(TxContentDigest(tx)) {
 		return false
 	}
 	return VerifyProof(proof, header.TxRoot)

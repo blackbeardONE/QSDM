@@ -1,0 +1,330 @@
+package chain
+
+import (
+	"errors"
+	"strings"
+	"testing"
+	"time"
+)
+
+// A stalled round used to block its height forever.
+//
+// Propose stamps each round with a deadline (RoundTimeout, default 30s) and
+// refuses a higher round while one is active: "round N still active at height
+// H; timeout or fail before proposing". TickRoundTimeouts is what clears the
+// expired round and bumps the counter so the next proposer can take over --
+// and it had zero production callers, so nothing ever cleared one. The only
+// recovery was a local FailRound.
+//
+// This asserts the liveness property directly: after the deadline passes, a
+// later round becomes proposable, and it does NOT before.
+func TestRoundTimeout_UnblocksHeightForTheNextProposer(t *testing.T) {
+	vs := NewValidatorSet(DefaultValidatorSetConfig())
+	for _, a := range []string{"v1", "v2", "v3"} {
+		if err := vs.Register(a, 100); err != nil {
+			t.Fatalf("register %s: %v", a, err)
+		}
+	}
+	cfg := DefaultConsensusConfig()
+	cfg.RoundTimeout = 50 * time.Millisecond
+	bc := NewBFTConsensus(vs, cfg)
+
+	prop, err := bc.ProposerForRound(0)
+	if err != nil {
+		t.Fatalf("proposer for round 0: %v", err)
+	}
+	if _, err := bc.Propose(7, 0, prop, "hash-r0"); err != nil {
+		t.Fatalf("first propose: %v", err)
+	}
+
+	// Before the deadline, round 1 must be refused -- otherwise the test would
+	// pass whether or not the timeout mechanism works.
+	next, err := bc.ProposerForRound(1)
+	if err != nil {
+		t.Fatalf("proposer for round 1: %v", err)
+	}
+	if _, err := bc.Propose(7, 1, next, "hash-r1"); err == nil {
+		t.Fatal("a higher round must be refused while the current one is still active")
+	}
+
+	// Nothing has expired yet, so a tick at "now" must be a no-op.
+	if got := bc.TickRoundTimeouts(time.Now()); len(got) != 0 {
+		t.Fatalf("tick before the deadline expired %v", got)
+	}
+
+	// Past the deadline, the tick must release the height.
+	timedOut := bc.TickRoundTimeouts(time.Now().Add(cfg.RoundTimeout * 4))
+	if len(timedOut) != 1 || timedOut[0] != 7 {
+		t.Fatalf("expected height 7 to time out, got %v", timedOut)
+	}
+	if r := bc.NextRoundAfterTimeout(7); r != 1 {
+		t.Errorf("next round after timeout = %d, want 1", r)
+	}
+	if _, err := bc.Propose(7, 1, next, "hash-r1"); err != nil {
+		t.Fatalf("after the timeout the next proposer must be able to propose: %v", err)
+	}
+}
+
+// Escalation must not discard the prevote lock, or timing out would become a
+// way to unlock a validator that had already locked on a value.
+func TestRoundTimeout_CarriesThePrevoteLock(t *testing.T) {
+	vs := NewValidatorSet(DefaultValidatorSetConfig())
+	for _, a := range []string{"v1", "v2", "v3"} {
+		if err := vs.Register(a, 100); err != nil {
+			t.Fatalf("register %s: %v", a, err)
+		}
+	}
+	cfg := DefaultConsensusConfig()
+	cfg.RoundTimeout = 25 * time.Millisecond
+	bc := NewBFTConsensus(vs, cfg)
+
+	prop, _ := bc.ProposerForRound(0)
+	round, err := bc.Propose(9, 0, prop, "locked-value")
+	if err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	// Drive a lock the way the consensus does, if this build exposes it.
+	for _, v := range vs.ActiveValidators() {
+		_ = bc.PreVote(9, v.Address, "locked-value")
+	}
+	locked := round.LockedBlockHash
+
+	if got := bc.TickRoundTimeouts(time.Now().Add(cfg.RoundTimeout * 4)); len(got) != 1 {
+		t.Fatalf("expected the round to time out, got %v", got)
+	}
+
+	if locked == "" {
+		t.Skip("this build did not establish a prevote lock; carry-forward is untestable here")
+	}
+	if carried := bc.carryPrevoteLock[9]; carried != locked {
+		t.Errorf("prevote lock not carried across the timeout: got %q, want %q", carried, locked)
+	}
+}
+
+// A retired round number cannot be reoccupied.
+//
+// bc.rounds is keyed by HEIGHT, not (height, round), so the duplicate checks in
+// Propose only bind while an entry exists. TickRoundTimeouts deletes it, and
+// until Propose consulted bc.nextRound a retransmitted propose for the SAME,
+// already-expired round number rebuilt it with an empty vote slate.
+//
+// That cost vote loss on its own. With vote origination it would be
+// equivocation -- one validator, two votes, one (height, round), different
+// values -- so adversarial critique of the reactor design named this a
+// prerequisite for that work rather than a follow-up to it.
+//
+// This test previously asserted the OPPOSITE, pinning the reopen as observed
+// behaviour with a failure message pointing at the comment to update if it ever
+// tightened. It tightened, the test failed exactly there, and this is the
+// update. That is the whole reason a behaviour described only in a comment is
+// worth putting under test.
+func TestRoundTimeout_RetiredRoundCannotBeReoccupied(t *testing.T) {
+	vs := NewValidatorSet(DefaultValidatorSetConfig())
+	for _, a := range []string{"v1", "v2", "v3"} {
+		if err := vs.Register(a, 100); err != nil {
+			t.Fatalf("register %s: %v", a, err)
+		}
+	}
+	cfg := DefaultConsensusConfig()
+	cfg.RoundTimeout = 20 * time.Millisecond
+	bc := NewBFTConsensus(vs, cfg)
+
+	prop, err := bc.ProposerForRound(0)
+	if err != nil {
+		t.Fatalf("proposer: %v", err)
+	}
+	if _, err := bc.Propose(11, 0, prop, "value-a"); err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	if err := bc.PreVote(11, "v1", "value-a"); err != nil {
+		t.Fatalf("prevote: %v", err)
+	}
+
+	if got := bc.TickRoundTimeouts(time.Now().Add(cfg.RoundTimeout * 4)); len(got) != 1 {
+		t.Fatalf("expected height 11 to time out, got %v", got)
+	}
+	if r := bc.NextRoundAfterTimeout(11); r != 1 {
+		t.Fatalf("next round after timeout = %d, want 1", r)
+	}
+
+	// The retired round number, proposed again -- a retransmit, a duplicate
+	// delivery, or a proposer that has not yet observed the timeout.
+	if _, err := bc.Propose(11, 0, prop, "value-a"); err == nil {
+		t.Error("a propose for the retired round number must be refused; " +
+			"accepting it rebuilds the round with an empty vote slate, which " +
+			"becomes self-equivocation once the node originates its own votes")
+	} else if !strings.Contains(err.Error(), "retired") {
+		t.Errorf("refused for an unexpected reason: %v", err)
+	}
+
+	// Escalation still works: the successor round is proposable.
+	next, err := bc.ProposerForRound(1)
+	if err != nil {
+		t.Fatalf("proposer for round 1: %v", err)
+	}
+	if _, err := bc.Propose(11, 1, next, "value-b"); err != nil {
+		t.Fatalf("the successor round must still be proposable: %v", err)
+	}
+
+	// And a round beyond the successor is fine too -- the check refuses only
+	// what is BELOW nextRound, so it cannot stall an escalating network.
+	bc2 := NewBFTConsensus(vs, cfg)
+	if _, err := bc2.Propose(12, 0, prop, "x"); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	bc2.TickRoundTimeouts(time.Now().Add(cfg.RoundTimeout * 4))
+	far, err := bc2.ProposerForRound(3)
+	if err != nil {
+		t.Fatalf("proposer for round 3: %v", err)
+	}
+	if _, err := bc2.Propose(12, 3, far, "y"); err != nil {
+		t.Errorf("a round above the successor must be accepted, got: %v", err)
+	}
+}
+
+// A retransmitted propose for a retired round is expected on every round
+// timeout, so the gossip path must treat it as benign. isBenignBFTErr decides
+// that, and it matches every other expected consensus rejection by SUBSTRING --
+// which is exactly why it silently failed to recognise this error when it was
+// introduced: nobody remembers to extend a list. Review caught it; the fix is a
+// typed sentinel, and this pins the classification rather than the string.
+func TestRetiredRoundError_IsBenignForGossip(t *testing.T) {
+	vs := NewValidatorSet(DefaultValidatorSetConfig())
+	for _, a := range []string{"v1", "v2", "v3"} {
+		if err := vs.Register(a, 100); err != nil {
+			t.Fatalf("register %s: %v", a, err)
+		}
+	}
+	cfg := DefaultConsensusConfig()
+	cfg.RoundTimeout = 20 * time.Millisecond
+	bc := NewBFTConsensus(vs, cfg)
+
+	prop, err := bc.ProposerForRound(0)
+	if err != nil {
+		t.Fatalf("proposer: %v", err)
+	}
+	if _, err := bc.Propose(13, 0, prop, "v"); err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	bc.TickRoundTimeouts(time.Now().Add(cfg.RoundTimeout * 4))
+
+	_, err = bc.Propose(13, 0, prop, "v")
+	if err == nil {
+		t.Fatal("the retired round must be refused")
+	}
+	if !errors.Is(err, ErrBFTRoundRetired) {
+		t.Errorf("error should wrap ErrBFTRoundRetired so callers can classify it: %v", err)
+	}
+	if !isBenignBFTErr(err) {
+		t.Errorf("a retired-round refusal must be benign for the gossip path; "+
+			"treating it as an application error inflates statApplyErrors and logs "+
+			"on every round timeout: %v", err)
+	}
+
+	// The sentinel must not swallow the diagnostics. Returning the bare
+	// sentinel would satisfy every assertion above -- errors.Is, the benign
+	// classification, the equivocation guard -- while leaving an operator with
+	// "BFT round retired" and no way to tell WHICH round at WHICH height. That
+	// gap was found by review, not by this test, so it is pinned now.
+	for _, want := range []string{"round 0", "height 13", "next round is 1"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lost the %q detail an operator needs: %v", want, err)
+		}
+	}
+
+	// Guard the other direction: equivocation must NOT be swept up as benign,
+	// or this classification becomes a way to silence a real fault.
+	if isBenignBFTErr(ErrBFTEquivocation) {
+		t.Error("equivocation must not be classified benign")
+	}
+}
+
+// The retired-round floor may be cleared by a commit, and by nothing else.
+//
+// Propose refuses a round below bc.nextRound[height]. Anything that deletes
+// that entry reopens the path this guard closed: an expired round rebuilt with
+// an empty vote slate, which becomes self-equivocation once a node originates
+// its own votes. ClearNextRound did exactly that, had zero callers, and its doc
+// comment invited use "after successful commit elsewhere" -- so it was removed.
+//
+// The legitimate case it named is real, and PreCommit already handles it: once
+// a height commits there is nothing left to escalate, so the floor goes. Both
+// halves are pinned here because deleting the function is only safe if the
+// commit path really does clear it.
+func TestNextRoundFloor_ClearedOnlyByCommit(t *testing.T) {
+	vs := NewValidatorSet(DefaultValidatorSetConfig())
+	for _, a := range []string{"v1", "v2", "v3"} {
+		if err := vs.Register(a, 100); err != nil {
+			t.Fatalf("register %s: %v", a, err)
+		}
+	}
+	cfg := DefaultConsensusConfig()
+	cfg.RoundTimeout = 20 * time.Millisecond
+	bc := NewBFTConsensus(vs, cfg)
+
+	prop, err := bc.ProposerForRound(0)
+	if err != nil {
+		t.Fatalf("proposer: %v", err)
+	}
+	if _, err := bc.Propose(21, 0, prop, "value-a"); err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+
+	// A timeout raises the floor and it must STAY raised.
+	if got := bc.TickRoundTimeouts(time.Now().Add(cfg.RoundTimeout * 4)); len(got) != 1 {
+		t.Fatalf("expected height 21 to time out, got %v", got)
+	}
+	if bc.NextRoundAfterTimeout(21) != 1 {
+		t.Fatalf("floor should be 1 after the timeout, got %d", bc.NextRoundAfterTimeout(21))
+	}
+	if _, err := bc.Propose(21, 0, prop, "value-a"); err == nil {
+		t.Error("the retired round must stay refused while the floor stands")
+	}
+
+	// Height 22 must first HAVE a floor, or the assertion below is vacuous: a
+	// height that never timed out has no entry, and NextRoundAfterTimeout
+	// returns 0 whether or not the commit path clears anything. Neutering the
+	// clear left an earlier version of this test green for exactly that reason.
+	if _, err := bc.Propose(22, 0, prop, "value-b0"); err != nil {
+		t.Fatalf("propose at another height: %v", err)
+	}
+	if got := bc.TickRoundTimeouts(time.Now().Add(cfg.RoundTimeout * 4)); len(got) != 1 {
+		t.Fatalf("expected height 22 to time out, got %v", got)
+	}
+	if bc.NextRoundAfterTimeout(22) != 1 {
+		t.Fatalf("height 22 needs a floor before the clear can be observed, got %d",
+			bc.NextRoundAfterTimeout(22))
+	}
+
+	// Now commit height 22 at the escalated round.
+	next, err := bc.ProposerForRound(1)
+	if err != nil {
+		t.Fatalf("proposer for round 1: %v", err)
+	}
+	if _, err := bc.Propose(22, 1, next, "value-b"); err != nil {
+		t.Fatalf("propose escalated round: %v", err)
+	}
+	for _, v := range vs.ActiveValidators() {
+		_ = bc.PreVote(22, v.Address, "value-b")
+	}
+	for _, v := range vs.ActiveValidators() {
+		_ = bc.PreCommit(22, v.Address, "value-b")
+	}
+	if !bc.IsCommitted(22) {
+		t.Fatalf("height 22 must commit for this assertion to mean anything")
+	}
+
+	// The committed height's floor is gone -- the case ClearNextRound claimed
+	// to serve, already handled by PreCommit.
+	if bc.NextRoundAfterTimeout(22) != 0 {
+		t.Errorf("committing height 22 should clear its own floor, got %d",
+			bc.NextRoundAfterTimeout(22))
+	}
+
+	// And it did NOT clear height 21's, or committing anywhere would reopen
+	// every retired round in the map.
+	if bc.NextRoundAfterTimeout(21) != 1 {
+		t.Errorf("a commit at height 22 must not clear the floor at height 21, got %d",
+			bc.NextRoundAfterTimeout(21))
+	}
+}

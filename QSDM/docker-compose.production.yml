@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"  # Network port
-      - "8081:8081"  # Dashboard
+      - "127.0.0.1:8081:8081"  # Dashboard (host loopback only)
     volumes:
       - qsdm-data1:/data
       - qsdm-logs1:/logs
@@ -15,6 +15,15 @@ services:
       - NODE_ID=node1
       - NETWORK_PORT=8080
       - DASHBOARD_PORT=8081
+      # Bind the dashboard to all interfaces INSIDE the container: Docker
+      # routes to the container's non-loopback interface, so the process
+      # default of 127.0.0.1 would be unreachable. Host-side exposure is
+      # controlled by the 127.0.0.1 prefix on the port publish above.
+      - QSDM_DASHBOARD_BIND_ADDRESS=0.0.0.0
+      # WebSocket origin allowlist. See docker-compose.single.yml for why this
+      # is required; the value is the HOST-published dashboard port for THIS
+      # node (each node publishes a different one), not DASHBOARD_PORT.
+      - QSDM_WS_ALLOWED_ORIGINS=http://127.0.0.1:8081,http://localhost:8081
       - STORAGE_TYPE=sqlite
       - STORAGE_PATH=/data/qsdm.db
       - LOG_LEVEL=info
@@ -23,7 +32,10 @@ services:
     networks:
       - qsdm-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/api/health"]
+      # Dashboard /api/health is behind requireAuth (dashboard.go:294); it
+      # only answered 200 because a nil auth manager used to fall through
+      # unauthenticated. Probe the API's public liveness route instead.
+      test: ["CMD", "wget", "-q", "-t", "1", "-O", "/dev/null", "http://localhost:8080/api/v1/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -35,7 +47,7 @@ services:
     restart: unless-stopped
     ports:
       - "8082:8080"  # Network port
-      - "8083:8081"  # Dashboard
+      - "127.0.0.1:8083:8081"  # Dashboard (host loopback only)
     volumes:
       - qsdm-data2:/data
       - qsdm-logs2:/logs
@@ -43,6 +55,15 @@ services:
       - NODE_ID=node2
       - NETWORK_PORT=8080
       - DASHBOARD_PORT=8081
+      # Bind the dashboard to all interfaces INSIDE the container: Docker
+      # routes to the container's non-loopback interface, so the process
+      # default of 127.0.0.1 would be unreachable. Host-side exposure is
+      # controlled by the 127.0.0.1 prefix on the port publish above.
+      - QSDM_DASHBOARD_BIND_ADDRESS=0.0.0.0
+      # WebSocket origin allowlist. See docker-compose.single.yml for why this
+      # is required; the value is the HOST-published dashboard port for THIS
+      # node (each node publishes a different one), not DASHBOARD_PORT.
+      - QSDM_WS_ALLOWED_ORIGINS=http://127.0.0.1:8083,http://localhost:8083
       - STORAGE_TYPE=sqlite
       - STORAGE_PATH=/data/qsdm.db
       - LOG_LEVEL=info
@@ -51,7 +72,10 @@ services:
     networks:
       - qsdm-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/api/health"]
+      # Dashboard /api/health is behind requireAuth (dashboard.go:294); it
+      # only answered 200 because a nil auth manager used to fall through
+      # unauthenticated. Probe the API's public liveness route instead.
+      test: ["CMD", "wget", "-q", "-t", "1", "-O", "/dev/null", "http://localhost:8080/api/v1/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -63,7 +87,7 @@ services:
     restart: unless-stopped
     ports:
       - "8084:8080"  # Network port
-      - "8085:8081"  # Dashboard
+      - "127.0.0.1:8085:8081"  # Dashboard (host loopback only)
     volumes:
       - qsdm-data3:/data
       - qsdm-logs3:/logs
@@ -71,6 +95,15 @@ services:
       - NODE_ID=node3
       - NETWORK_PORT=8080
       - DASHBOARD_PORT=8081
+      # Bind the dashboard to all interfaces INSIDE the container: Docker
+      # routes to the container's non-loopback interface, so the process
+      # default of 127.0.0.1 would be unreachable. Host-side exposure is
+      # controlled by the 127.0.0.1 prefix on the port publish above.
+      - QSDM_DASHBOARD_BIND_ADDRESS=0.0.0.0
+      # WebSocket origin allowlist. See docker-compose.single.yml for why this
+      # is required; the value is the HOST-published dashboard port for THIS
+      # node (each node publishes a different one), not DASHBOARD_PORT.
+      - QSDM_WS_ALLOWED_ORIGINS=http://127.0.0.1:8085,http://localhost:8085
       - STORAGE_TYPE=sqlite
       - STORAGE_PATH=/data/qsdm.db
       - LOG_LEVEL=info
@@ -79,7 +112,10 @@ services:
     networks:
       - qsdm-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/api/health"]
+      # Dashboard /api/health is behind requireAuth (dashboard.go:294); it
+      # only answered 200 because a nil auth manager used to fall through
+      # unauthenticated. Probe the API's public liveness route instead.
+      test: ["CMD", "wget", "-q", "-t", "1", "-O", "/dev/null", "http://localhost:8080/api/v1/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3

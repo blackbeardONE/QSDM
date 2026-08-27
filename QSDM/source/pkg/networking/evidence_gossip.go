@@ -86,6 +86,16 @@ func (eg *EvidenceGossipIngress) HandlePeerMessage(peerID string, payload []byte
 		return fmt.Errorf("evidence gossip decode: %w", err)
 	}
 
+	// This message came from a stranger, so it has to prove itself before it
+	// can cost anyone their bond. Checked before dedupe so an unprovable
+	// accusation never occupies a seenIDs slot.
+	if err := chain.ValidateUntrustedEvidence(ev); err != nil {
+		if eg.rep != nil {
+			eg.rep.RecordEvent(peerID, EventProtocolViolation, 0)
+		}
+		return fmt.Errorf("evidence gossip refused from peer %s: %w", peerID, err)
+	}
+
 	id := chain.StableEvidenceID(ev)
 	now := time.Now()
 

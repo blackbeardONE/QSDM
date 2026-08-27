@@ -204,6 +204,25 @@ func (pm *PEXManager) BuildResponse(requesterID string) PEXMessage {
 
 // HandleMessage processes an incoming PEX message.
 // Returns a response message (only for requests) and count of new peers learned.
+// HandleMessage processes an inbound PEX message.
+//
+// NOT WIRED, AND NOT BAN-CHECKED. This has no production caller today. Every
+// other inbound path on this node consults the shared ReputationTracker before
+// acting on a peer's message -- tx_gossip.go:144, bft_gossip.go:135,
+// evidence_gossip.go:77, pol_gossip.go:107, plus the transport gate in
+// ban_gater.go -- and this one does not, because PEXManager holds no tracker.
+//
+// Whoever wires this up MUST add that check first. A peer-exchange handler is
+// a worse place than most to skip it: AddPeer below writes straight into the
+// peer store, so a banned peer would be able to keep seeding addresses to a
+// node that has already decided to stop talking to it, and would re-enter
+// discovery through the one door that never asks.
+//
+// Recorded here rather than implemented because adding a tracker field and a
+// check to a function nothing calls is speculative work on an unexercised
+// path; the sibling ingresses above are the pattern to copy. Found by a
+// whole-branch review after four ingresses were individually fixed and this
+// one was never in any of their diffs.
 func (pm *PEXManager) HandleMessage(msg PEXMessage) (*PEXMessage, int) {
 	switch msg.Type {
 	case PEXRequest:

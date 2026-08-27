@@ -242,12 +242,24 @@ func (s EmissionSchedule) RemainingSupplyDust(height uint64) uint64 {
 // will occur (i.e. the first block of the epoch following the one that
 // contains `height`). Returns 0 if height is already past the final halving
 // boundary (MaxHalvings).
+//
+// Heights are 1-indexed with respect to epochs: EpochForHeight uses
+// (height-1)/BlocksPerEpoch, so epoch 0 spans heights 1..B and epoch 1 begins
+// at B+1. This returned (currentEpoch+1)*B, which is the LAST block of the
+// current epoch rather than the first of the next -- off by one at every
+// boundary, and still inside the epoch it claimed to have left.
+//
+// Reporting only: the three production readers are handlers_status.go:253,
+// the mining snapshot built at cmd/qsdm/main.go:3439, and NextHalvingETA
+// below, which inherited the error and under-reported by one block. No reward
+// computation consults it, so correcting it changes no consensus outcome --
+// it stops the node publishing a height that is not a halving boundary.
 func (s EmissionSchedule) NextHalvingHeight(height uint64) uint64 {
 	currentEpoch := s.EpochForHeight(height)
 	if currentEpoch >= MaxHalvings {
 		return 0
 	}
-	return uint64(currentEpoch+1) * s.BlocksPerEpoch
+	return uint64(currentEpoch+1)*s.BlocksPerEpoch + 1
 }
 
 // NextHalvingETA returns the number of seconds until the next halving, at

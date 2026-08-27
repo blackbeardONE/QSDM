@@ -158,6 +158,21 @@ type ConsensusConfigTOML struct {
 	// consensus traffic is rejected. All validators must use the same value.
 	SignedMessageActivationHeight uint64 `toml:"signed_message_activation_height" yaml:"signed_message_activation_height"`
 
+	// TaskActionSignatureActivationHeight is the first height at which a
+	// qsdm/tasks/v1 action must carry a signature. Zero leaves the
+	// requirement off, which is the shipped default: turning it on rejects
+	// any unsigned task action at or above the height, so an operator must
+	// first confirm their own chain carries none above the value they pick.
+	// A signature that IS present is verified at every height regardless.
+	TaskActionSignatureActivationHeight uint64 `toml:"task_action_signature_activation_height" yaml:"task_action_signature_activation_height"`
+
+	// TxContentRootActivationHeight is the first height whose block tx root
+	// commits transaction CONTENTS rather than IDs. Zero leaves the legacy
+	// ID-only root, which does not bind contents. Setting it changes block
+	// hashes from that height on, so EVERY node must agree on the value --
+	// a node with a different setting computes different hashes and forks.
+	TxContentRootActivationHeight uint64 `toml:"tx_content_root_activation_height" yaml:"tx_content_root_activation_height"`
+
 	// SignerKeyPath stores the validator-only ML-DSA consensus hot key.
 	SignerKeyPath string `toml:"signer_key_path" yaml:"signer_key_path"`
 

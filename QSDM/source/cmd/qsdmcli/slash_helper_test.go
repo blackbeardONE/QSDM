@@ -208,8 +208,7 @@ func TestSlashHelperForgedAttestation_HappyPath(t *testing.T) {
 	outPath := filepath.Join(dir, "evidence.bin")
 
 	stderr := captureStderr(t, func() {
-		err := cli.slashHelper([]string{
-			"forged-attestation",
+		err := cli.slashHelperForgedAttestation([]string{
 			"--proof", proofPath,
 			"--fault-class", string(forgedattest.FaultHMACMismatch),
 			"--memo", "watcher-bot caught it",
@@ -258,8 +257,7 @@ func TestSlashHelperForgedAttestation_StdoutWrite(t *testing.T) {
 		// Helper writes a stderr summary which we ignore here;
 		// the test cares about stdout staying pure.
 		_ = captureStderr(t, func() {
-			if err := cli.slashHelper([]string{
-				"forged-attestation",
+			if err := cli.slashHelperForgedAttestation([]string{
 				"--proof", proofPath,
 			}); err != nil {
 				t.Fatalf("slashHelper: %v", err)
@@ -285,8 +283,7 @@ func TestSlashHelperForgedAttestation_PrintCmd(t *testing.T) {
 	outPath := filepath.Join(dir, "evidence.bin")
 
 	stderr := captureStderr(t, func() {
-		if err := cli.slashHelper([]string{
-			"forged-attestation",
+		if err := cli.slashHelperForgedAttestation([]string{
 			"--proof", proofPath,
 			"--node-id", tNodeID,
 			"--out", outPath,
@@ -314,7 +311,7 @@ func TestSlashHelperForgedAttestation_PrintCmd(t *testing.T) {
 // than panic in os.ReadFile.
 func TestSlashHelperForgedAttestation_RejectsMissingProof(t *testing.T) {
 	cli := &CLI{}
-	if err := cli.slashHelper([]string{"forged-attestation"}); err == nil {
+	if err := cli.slashHelperForgedAttestation([]string{}); err == nil {
 		t.Fatal("missing --proof accepted")
 	}
 }
@@ -344,7 +341,7 @@ func TestSlashHelperForgedAttestation_RejectsV1Proof(t *testing.T) {
 		t.Fatalf("write proof: %v", err)
 	}
 
-	err = cli.slashHelper([]string{"forged-attestation", "--proof", path})
+	err = cli.slashHelperForgedAttestation([]string{"--proof", path})
 	if err == nil || !strings.Contains(err.Error(), "pre-v2") {
 		t.Errorf("v1 proof should be rejected with 'pre-v2' message; got %v", err)
 	}
@@ -360,8 +357,7 @@ func TestSlashHelperForgedAttestation_RejectsNodeIDMismatch(t *testing.T) {
 	p := buildSignedProofForCLI(t, 0, 100, 0x44)
 	proofPath := writeProof(t, p)
 
-	err := cli.slashHelper([]string{
-		"forged-attestation",
+	err := cli.slashHelperForgedAttestation([]string{
 		"--proof", proofPath,
 		"--node-id", "wrong-node-id",
 	})
@@ -380,8 +376,7 @@ func TestSlashHelperForgedAttestation_RejectsUnknownFaultClass(t *testing.T) {
 	p := buildSignedProofForCLI(t, 0, 100, 0x55)
 	proofPath := writeProof(t, p)
 
-	err := cli.slashHelper([]string{
-		"forged-attestation",
+	err := cli.slashHelperForgedAttestation([]string{
 		"--proof", proofPath,
 		"--fault-class", "made-up-class",
 	})
@@ -409,8 +404,7 @@ func TestSlashHelperDoubleMining_HappyPath(t *testing.T) {
 	outPath := filepath.Join(dir, "evidence.bin")
 
 	_ = captureStderr(t, func() {
-		err := cli.slashHelper([]string{
-			"double-mining",
+		err := cli.slashHelperDoubleMining([]string{
 			"--proof-a", pathA,
 			"--proof-b", pathB,
 			"--node-id", tNodeID,
@@ -456,11 +450,11 @@ func TestSlashHelperDoubleMining_StableEncoding(t *testing.T) {
 		out  string
 		args []string
 	}{
-		{outAB, []string{"double-mining", "--proof-a", pathA, "--proof-b", pathB, "--out", outAB}},
-		{outBA, []string{"double-mining", "--proof-a", pathB, "--proof-b", pathA, "--out", outBA}},
+		{outAB, []string{"--proof-a", pathA, "--proof-b", pathB, "--out", outAB}},
+		{outBA, []string{"--proof-a", pathB, "--proof-b", pathA, "--out", outBA}},
 	} {
 		_ = captureStderr(t, func() {
-			if err := cli.slashHelper(run.args); err != nil {
+			if err := cli.slashHelperDoubleMining(run.args); err != nil {
 				t.Fatalf("slashHelper: %v", err)
 			}
 		})
@@ -483,8 +477,7 @@ func TestSlashHelperDoubleMining_RejectsHeightMismatch(t *testing.T) {
 	pathA := writeProof(t, pa)
 	pathB := writeProof(t, pb)
 
-	err := cli.slashHelper([]string{
-		"double-mining",
+	err := cli.slashHelperDoubleMining([]string{
 		"--proof-a", pathA,
 		"--proof-b", pathB,
 	})
@@ -505,8 +498,7 @@ func TestSlashHelperDoubleMining_RejectsIdenticalProofs(t *testing.T) {
 	// compares canonical bytes, not file paths.
 	pathB := writeProof(t, pa)
 
-	err := cli.slashHelper([]string{
-		"double-mining",
+	err := cli.slashHelperDoubleMining([]string{
 		"--proof-a", pathA,
 		"--proof-b", pathB,
 	})
@@ -520,8 +512,7 @@ func TestSlashHelperDoubleMining_RejectsIdenticalProofs(t *testing.T) {
 // stdin inputs are nonsensical and would block forever.
 func TestSlashHelperDoubleMining_RejectsBothStdin(t *testing.T) {
 	cli := &CLI{}
-	err := cli.slashHelper([]string{
-		"double-mining",
+	err := cli.slashHelperDoubleMining([]string{
 		"--proof-a", "-",
 		"--proof-b", "-",
 	})
@@ -534,7 +525,7 @@ func TestSlashHelperDoubleMining_RejectsBothStdin(t *testing.T) {
 // constructor's both-required check.
 func TestSlashHelperDoubleMining_RejectsMissingFlags(t *testing.T) {
 	cli := &CLI{}
-	if err := cli.slashHelper([]string{"double-mining"}); err == nil {
+	if err := cli.slashHelperDoubleMining([]string{}); err == nil {
 		t.Fatal("missing --proof-a/--proof-b accepted")
 	}
 }
@@ -953,5 +944,28 @@ func TestReadProofFile_RejectsEmpty(t *testing.T) {
 func TestReadProofFile_RejectsMissing(t *testing.T) {
 	if _, err := readProofFile(""); err == nil {
 		t.Error("empty path accepted")
+	}
+}
+
+// The two HMAC-attributed kinds are refused at dispatch so an operator does not
+// build evidence and pay a fee for a transaction consensus will reject. The
+// builders above are still exercised directly, because they become useful again
+// once attestation is asymmetric.
+func TestSlashHelper_HMACKindsRefusedAtDispatch(t *testing.T) {
+	cli := &CLI{}
+	for _, kind := range []string{"forged-attestation", "double-mining"} {
+		err := cli.slashHelper([]string{kind, "--proof", "irrelevant.json"})
+		if err == nil {
+			t.Fatalf("%s must be refused at dispatch", kind)
+		}
+		if !strings.Contains(err.Error(), "cannot be attributed") {
+			t.Errorf("%s: error should explain why, got: %v", kind, err)
+		}
+	}
+	// freshness-cheat attributes via a witness, not the MAC, so it must still
+	// reach its builder rather than being swept up by the refusal.
+	if err := cli.slashHelper([]string{"freshness-cheat"}); err != nil &&
+		strings.Contains(err.Error(), "cannot be attributed") {
+		t.Error("freshness-cheat must not be refused as unattributable")
 	}
 }

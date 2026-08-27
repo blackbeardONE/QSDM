@@ -11,6 +11,13 @@ import (
 // ErrBFTEquivocation is returned when the same proposer issues a second Propose for the same height and round with a different block_hash (double-sign).
 var ErrBFTEquivocation = errors.New("chain: BFT proposer equivocation (conflicting block_hash at same height and round)")
 
+// ErrBFTRoundRetired is returned by Propose for a round number that a timeout
+// or FailRound has already retired at that height. A typed sentinel rather than
+// a bare message so callers classify it with errors.Is -- isBenignBFTErr
+// matches every other expected consensus rejection by substring, which silently
+// misses any new error nobody remembers to add to the list.
+var ErrBFTRoundRetired = errors.New("chain: BFT round retired")
+
 // ProposerEquivocationError carries structured context for evidence / diagnostics (unwraps to ErrBFTEquivocation).
 type ProposerEquivocationError struct {
 	Height       uint64
@@ -159,6 +166,28 @@ func (bc *BFTConsensus) Propose(height uint64, round uint32, proposer, blockHash
 		}
 	}
 
+	// A retired round number cannot be reoccupied.
+	//
+	// bc.rounds is keyed by HEIGHT, not (height, round), so the checks above
+	// only bind while an entry exists. TickRoundTimeouts and FailRound delete
+	// it and record the successor in bc.nextRound -- and until this check
+	// existed, nothing consulted that, so a propose for the already-retired
+	// round number rebuilt it with an empty vote slate.
+	//
+	// Today that discards the votes gathered before the timeout. It becomes far
+	// worse the moment a node originates its own votes: the same validator
+	// would vote twice for one (validator, height, round) with different
+	// values, which is equivocation, self-generated. Adversarial critique of
+	// the vote-origination design identified this as a prerequisite for that
+	// work, not a cleanup to follow it.
+	//
+	// The cost is liveness, and it is bounded: a node whose clock retired round
+	// N early will refuse further round-N proposes and wait for N+1, which the
+	// rotated proposer emits once its own deadline passes.
+	if next, ok := bc.nextRound[height]; ok && round < next {
+		return nil, fmt.Errorf("%w: round %d at height %d; next round is %d", ErrBFTRoundRetired, round, height, next)
+	}
+
 	expected, err := bc.proposerForRoundLocked(round)
 	if err != nil {
 		return nil, err
@@ -243,12 +272,19 @@ func (bc *BFTConsensus) NextRoundAfterTimeout(height uint64) uint32 {
 	return bc.nextRound[height]
 }
 
-// ClearNextRound resets the escalated round counter (e.g. after successful commit elsewhere).
-func (bc *BFTConsensus) ClearNextRound(height uint64) {
-	bc.mu.Lock()
-	defer bc.mu.Unlock()
-	delete(bc.nextRound, height)
-}
+// ClearNextRound was removed deliberately. It deleted bc.nextRound[height],
+// which is the floor Propose consults to refuse a retired round number -- so
+// calling it would have reopened the round-reopen path: an expired round
+// rebuilt with an empty vote slate, and, once a node originates its own votes,
+// the same validator voting twice for one (validator, height, round). Its own
+// doc comment invited exactly that ("e.g. after successful commit elsewhere").
+//
+// It had zero callers. The legitimate case it named is already handled:
+// PreCommit deletes the entry itself once a height commits, which is why a
+// committed height cannot later meet a stale floor.
+//
+// TestNextRoundFloor_ClearedOnlyByCommit pins both halves.
+
 
 // PreVote records a pre-vote from a validator.
 func (bc *BFTConsensus) PreVote(height uint64, validator, blockHash string) error {

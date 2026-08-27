@@ -124,10 +124,39 @@ func (s *Storage) StoreTransaction(data []byte) (resErr error) {
 		recipient, _ := txMap["recipient"].(string)
 		amount, _ := txMap["amount"].(float64)
 
+		// The duplicate check, the insert and both balance updates run in ONE
+		// transaction.
+		//
+		// They used to be four separate db.Exec/QueryRow calls, which produced
+		// two distinct money bugs:
+		//
+		//   - Partial application. The insert could succeed and either balance
+		//     update fail; both failures were logged with log.Printf("Warning:
+		//     ...") and StoreTransaction returned nil anyway. A sender debit
+		//     that landed beside a recipient credit that did not destroys value
+		//     in the balances table while the API reports success.
+		//   - Double application. The idempotency check read COUNT(*) outside
+		//     any transaction, so two concurrent ingests of the same tx_id --
+		//     the mesh companion and the raw JSON, or an HTTP send racing gossip
+		//     -- could both observe zero and both apply the balances.
+		//
+		// A rollback now undoes the insert too, so a stored transaction always
+		// has its balance effects applied, and never has them applied twice.
+		tx, err := s.db.Begin()
+		if err != nil {
+			return errors.NewStorageError("StoreTransactionBegin", err)
+		}
+		committed := false
+		defer func() {
+			if !committed {
+				_ = tx.Rollback()
+			}
+		}()
+
 		// Idempotent ingest: same tx_id (e.g. mesh companion + raw JSON) must not double-apply balances.
 		if txID != "" {
 			var n int64
-			if err := s.db.QueryRow(`SELECT COUNT(*) FROM transactions WHERE tx_id = ?`, txID).Scan(&n); err == nil && n > 0 {
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM transactions WHERE tx_id = ?`, txID).Scan(&n); err == nil && n > 0 {
 				log.Printf("StoreTransaction: skip duplicate tx_id=%s", txID)
 				return nil
 			}
@@ -154,20 +183,53 @@ func (s *Storage) StoreTransaction(data []byte) (resErr error) {
 		compressedData := b.Bytes()
 
 		insertSQL := `INSERT INTO transactions (data, tx_id, sender, recipient, amount) VALUES (?, ?, ?, ?, ?)`
-		_, err = s.db.Exec(insertSQL, compressedData, txID, sender, recipient, amount)
+		_, err = tx.Exec(insertSQL, compressedData, txID, sender, recipient, amount)
 		if err != nil {
 			return errors.NewStorageError("StoreTransaction", err)
 		}
 
-		// Update balances
+		// Balances: the debit and the credit apply together or not at all.
+		//
+		// Deliberately NOT fatal to the insert. StoreTransaction is also the
+		// ingest path for transactions this node did not originate -- gossip,
+		// replay, the mesh companion -- where the local balances table may not
+		// have funded the sender at all. Refusing to RECORD such a transaction
+		// would be a worse bug than the one being fixed, and an earlier version
+		// of this change did exactly that: it made the whole write fail and
+		// broke TestForEachStoredTransaction_roundTrip, whose sender has no
+		// balance row.
+		//
+		// So the pair runs inside a SAVEPOINT. Either both land or neither
+		// does, and the transaction row survives either way. What is no longer
+		// possible is the case that used to be routine: the debit failing the
+		// `CHECK(balance >= 0)` constraint added by the v0.4.1 migration, being
+		// logged as a warning and ignored, and the recipient being credited
+		// anyway -- which creates CELL out of nothing in the balances table.
 		if sender != "" && recipient != "" && amount > 0 {
-			if err := s.UpdateBalance(sender, -amount); err != nil {
-				log.Printf("Warning: failed to update sender balance for %s: %v", sender, err)
+			if _, spErr := tx.Exec(`SAVEPOINT balance_pair`); spErr != nil {
+				return errors.NewStorageError("StoreTransactionSavepoint", spErr)
 			}
-			if err := s.UpdateBalance(recipient, amount); err != nil {
-				log.Printf("Warning: failed to update recipient balance for %s: %v", recipient, err)
+			debitErr := updateBalanceTx(tx, sender, -amount)
+			var creditErr error
+			if debitErr == nil {
+				creditErr = updateBalanceTx(tx, recipient, amount)
+			}
+			if debitErr != nil || creditErr != nil {
+				if _, rbErr := tx.Exec(`ROLLBACK TO SAVEPOINT balance_pair`); rbErr != nil {
+					return errors.NewStorageError("StoreTransactionBalanceRollback", rbErr)
+				}
+				log.Printf("StoreTransaction: balances NOT applied for tx_id=%s (debit=%v credit=%v); "+
+					"transaction row retained, both sides rolled back together", txID, debitErr, creditErr)
+			}
+			if _, relErr := tx.Exec(`RELEASE SAVEPOINT balance_pair`); relErr != nil {
+				return errors.NewStorageError("StoreTransactionSavepointRelease", relErr)
 			}
 		}
+
+		if err := tx.Commit(); err != nil {
+			return errors.NewStorageError("StoreTransactionCommit", err)
+		}
+		committed = true
 
 		log.Println("Stored encrypted and compressed transaction data")
 		return nil
@@ -253,14 +315,10 @@ func (s *Storage) UpdateBalance(address string, amount float64) error {
 		}
 	}()
 
-	// Use INSERT OR REPLACE to atomically update balance
-	_, err = s.db.Exec(`
-		INSERT INTO balances (address, balance, updated_at) 
-		VALUES (?, COALESCE((SELECT balance FROM balances WHERE address = ?), 0.0) + ?, CURRENT_TIMESTAMP)
-		ON CONFLICT(address) DO UPDATE SET 
-			balance = balance + ?,
-			updated_at = CURRENT_TIMESTAMP
-	`, address, address, amount, amount)
+	// Delegates to the same statement the transactional path uses, so the two
+	// cannot drift. A duplicated derivation is how chain/propagation.go came to
+	// carry its own copy of the block hash and miss a change made to the other.
+	err = updateBalanceExec(s.db, address, amount)
 	if err != nil {
 		metrics := monitoring.GetMetrics()
 		metrics.RecordError(fmt.Sprintf("UpdateBalance failed for address %s, amount %.2f: %v", address, amount, err))
@@ -479,4 +537,36 @@ func (s *Storage) Ready() (resErr error) {
 
 func (s *Storage) Close() error {
 	return s.db.Close()
+}
+
+// balanceExecer is satisfied by both *sql.DB and *sql.Tx, so the balance
+// statement has exactly one definition regardless of whether the caller is
+// inside a transaction.
+type balanceExecer interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+}
+
+// updateBalanceExec applies a signed delta to an address's balance.
+//
+// NOTE ON SIGN: there is deliberately no non-negative constraint here. Adding
+// one would change behaviour for callers this commit did not audit -- mining
+// rewards, the synthetic funder, and the migration paths all route through
+// UpdateBalance -- and whether a balance row may go negative is a policy
+// question, not a bug fix. It is recorded as open in the audit rather than
+// decided here. What this commit does fix is that a debit and its matching
+// credit now succeed or fail together.
+func updateBalanceExec(db balanceExecer, address string, amount float64) error {
+	_, err := db.Exec(`
+		INSERT INTO balances (address, balance, updated_at) 
+		VALUES (?, COALESCE((SELECT balance FROM balances WHERE address = ?), 0.0) + ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(address) DO UPDATE SET 
+			balance = balance + ?,
+			updated_at = CURRENT_TIMESTAMP
+	`, address, address, amount, amount)
+	return err
+}
+
+// updateBalanceTx is the in-transaction form used by StoreTransaction.
+func updateBalanceTx(tx *sql.Tx, address string, amount float64) error {
+	return updateBalanceExec(tx, address, amount)
 }

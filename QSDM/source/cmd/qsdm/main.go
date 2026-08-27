@@ -862,6 +862,23 @@ func main() {
 	requireSQLiteStorage := strings.EqualFold(strings.TrimSpace(os.Getenv("QSDM_REQUIRE_SQLITE_STORAGE")), "1") ||
 		strings.EqualFold(strings.TrimSpace(os.Getenv("QSDM_REQUIRE_SQLITE_STORAGE")), "true") ||
 		strings.EqualFold(strings.TrimSpace(os.Getenv("QSDM_REQUIRE_SQLITE_STORAGE")), "yes")
+	// QSDM_REQUIRE_SETTLEABLE_STORAGE is a SEPARATE opt-in from
+	// QSDM_REQUIRE_SQLITE_STORAGE, deliberately.
+	//
+	// QSDM_REQUIRE_SQLITE_STORAGE is only consulted inside the Scylla-init
+	// FAILURE fallback below. An earlier version of the warning further down
+	// told operators to set it to "refuse to start on a backend that cannot
+	// settle" -- on the branch where Scylla connected SUCCESSFULLY, where that
+	// flag is never read. The instruction was inert: an operator who followed
+	// it got no protection at all. Caught in review.
+	//
+	// Widening the existing flag would have been worse: someone who set it for
+	// its documented meaning would suddenly find a healthy Scylla node refusing
+	// to boot. So the capability requirement gets its own name, and defaults
+	// off.
+	requireSettleableStorage := strings.EqualFold(strings.TrimSpace(os.Getenv("QSDM_REQUIRE_SETTLEABLE_STORAGE")), "1") ||
+		strings.EqualFold(strings.TrimSpace(os.Getenv("QSDM_REQUIRE_SETTLEABLE_STORAGE")), "true") ||
+		strings.EqualFold(strings.TrimSpace(os.Getenv("QSDM_REQUIRE_SETTLEABLE_STORAGE")), "yes")
 	if cfg.UseScylla() {
 		scyllaExtra := storage.ScyllaClusterConfigFromAuthTLS(
 			cfg.ScyllaUsername, cfg.ScyllaPassword,
@@ -885,16 +902,36 @@ func main() {
 				}
 				logger.Info("Using file storage (SQLite not available without CGO)")
 				storageBackend = fileStorage
-				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, "File-based storage initialized")
+				if msg := settlementFile.OperatorWarning(); msg != "" {
+					logger.Error(msg)
+				}
+				if msg := settlementFile.FatalMessage(requireSettleableStorage); msg != "" {
+					log.Fatalf("%s", msg)
+				}
+				if settlementFile.HealthDegraded() {
+					healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusDegraded, settlementFile.HealthDetail())
+				} else {
+					healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, settlementFile.HealthDetail())
+				}
 			} else {
 				logger.Info("Using SQLite storage")
 				storageBackend = sqliteStorage
-				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, "SQLite storage initialized")
+				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, settlementSQLite.HealthDetail())
 			}
 		} else {
 			logger.Info("Using ScyllaDB storage")
 			storageBackend = &scyllaStorageAdapter{scyllaStorage}
-			healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, "ScyllaDB storage initialized")
+			if msg := settlementScylla.OperatorWarning(); msg != "" {
+				logger.Error(msg)
+			}
+			if msg := settlementScylla.FatalMessage(requireSettleableStorage); msg != "" {
+				log.Fatalf("%s", msg)
+			}
+			if settlementScylla.HealthDegraded() {
+				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusDegraded, settlementScylla.HealthDetail())
+			} else {
+				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, settlementScylla.HealthDetail())
+			}
 		}
 	} else {
 		sqliteStorage, err := storage.NewStorage(cfg.SQLitePath)
@@ -910,11 +947,21 @@ func main() {
 			}
 			logger.Info("Using file storage (SQLite not available without CGO)")
 			storageBackend = fileStorage
-			healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, "File-based storage initialized")
+			if msg := settlementFile.OperatorWarning(); msg != "" {
+				logger.Error(msg)
+			}
+			if msg := settlementFile.FatalMessage(requireSettleableStorage); msg != "" {
+				log.Fatalf("%s", msg)
+			}
+			if settlementFile.HealthDegraded() {
+				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusDegraded, settlementFile.HealthDetail())
+			} else {
+				healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, settlementFile.HealthDetail())
+			}
 		} else {
 			logger.Info("Using SQLite storage")
 			storageBackend = sqliteStorage
-			healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, "SQLite storage initialized")
+			healthChecker.UpdateComponentHealth("storage", monitoring.HealthStatusHealthy, settlementSQLite.HealthDetail())
 		}
 	}
 	fmt.Fprintln(os.Stdout, branding.LogPrefix+"Storage initialized")
@@ -1207,6 +1254,25 @@ func main() {
 	defer nodeTxRep.Stop()
 	defer nodeEvidenceRep.Stop()
 
+	// Enforce bans at the transport, not only in each ingress. Without this a
+	// banned peer keeps its connection, its stream slots and its pubsub fan-out,
+	// and every ingress has to remember to check it again -- which POL gossip did
+	// not, and the tx path did not before that.
+	//
+	// Wired to nodeTxRep because that is the tracker the tx, BFT and POL
+	// ingresses share. nodeEvidenceRep is deliberately NOT wired: it uses a
+	// harsher config (ReputationConfigForEvidence, -150 per violation) scoped to
+	// evidence handling, and letting it sever transport connections would give one
+	// subsystem's threshold authority over the whole node's connectivity.
+	// Bootstrap peers are exempt from the TRANSPORT gate only. A ban is
+	// permanent for the process lifetime -- DecayAll moves the score but never
+	// clears the Banned flag, and Unban has no production caller -- so a false
+	// positive against the peers this node needs in order to be on the network
+	// would partition it until restart. They remain fully banned at every
+	// ingress, so a misbehaving bootstrap peer is still ignored; it just cannot
+	// lock the node out while doing it.
+	net.SetReputationGate(nodeTxRep, networking.BootstrapPeerIDs(cfg.BootstrapPeers)...)
+
 	var evidenceRelay *networking.EvidenceP2PRelay
 	evIng := networking.NewEvidenceGossipIngress(nodeEvidenceManager, nodeEvidenceRep, networking.DefaultEvidenceGossipConfig())
 	if er, evErr := networking.NewEvidenceP2PRelay(net, evIng, net.Host.ID().String()); evErr != nil {
@@ -1216,7 +1282,8 @@ func main() {
 		logger.Info("Evidence P2P relay started", "topic", networking.EvidenceTopicName)
 	}
 
-	liveBFT := chain.NewBFTConsensus(nodeValidatorSet, chain.DefaultConsensusConfig())
+	liveConsensusCfg := chain.DefaultConsensusConfig()
+	liveBFT := chain.NewBFTConsensus(nodeValidatorSet, liveConsensusCfg)
 	bftExec := chain.NewBFTExecutor(liveBFT)
 	bftIngressExec := bftExec
 	if networkedCatchupMode {
@@ -1248,6 +1315,54 @@ func main() {
 	// present-but-invalid signature is always rejected regardless.
 	bftExec.SetSignedVoteActivationHeight(cfg.SignedConsensusActivationHeight)
 	bftExec.SetRequireSignedVotes(cfg.RequireSignedVotes)
+
+	// Expire stalled BFT rounds.
+	//
+	// BFTConsensus.Propose stamps every round with a deadline
+	// (consensus.go:177, RoundTimeout, default 30s) and refuses a higher round
+	// while one is active at that height ("timeout or fail before proposing").
+	// TickRoundTimeouts is what clears an expired round and bumps the counter
+	// so the next proposer can take over -- and it had ZERO production callers,
+	// so nothing ever cleared one. A round that stalled blocked its height
+	// permanently, with recovery only via a local FailRound.
+	//
+	// This DOES change what the node accepts, and the trade is deliberate.
+	// ApplyInbound applies inbound Propose/PreVote/PreCommit to this same
+	// instance, so once a round is expired here, a peer's in-flight vote for it
+	// is refused with "no active round for height N", classified benign
+	// (bft_executor.go isBenignBFTErr) and dropped rather than counted. The
+	// result is a window after RoundTimeout in which votes for the expired
+	// round stop being counted -- bought in exchange for a height that no
+	// longer stalls forever, which is the whole point.
+	//
+	// The window closes for good. Propose now refuses any round number below
+	// bc.nextRound[height] (consensus.go), which TickRoundTimeouts sets when it
+	// retires a round -- so a retransmitted propose for the already-expired
+	// round number is rejected rather than rebuilding it with an empty vote
+	// slate. That reopen path used to exist and used to discard the votes
+	// gathered before the timeout; worse, it would have become
+	// self-equivocation the moment this node originated its own votes, since
+	// the same validator could then vote twice for one (height, round) with
+	// different values. Adversarial critique of the vote-origination design
+	// identified closing it as a prerequisite for that work.
+	//
+	// What it does NOT do: kill a round that reached quorum. PreCommit moves a
+	// committing round into bc.committed and deletes it from bc.rounds under
+	// the same mutex this takes (consensus.go), so a concurrent tick cannot
+	// observe it. And it carries the prevote lock forward
+	// (consensus.go:226-228), so escalation preserves POL safety.
+	// The loop body lives in chain.StartRoundTimeoutLoop so it can be tested.
+	// As an anonymous goroutine here it was unreachable by any test -- every
+	// round-timeout test drives TickRoundTimeouts directly -- so removing or
+	// gating this wiring would have compiled green while restoring the
+	// stuck-round bug. Passing liveConsensusCfg by value keeps the tick tied to
+	// the same RoundTimeout the instance above was built with.
+	go chain.StartRoundTimeoutLoop(ctx, liveBFT, liveConsensusCfg,
+		func(heights []uint64, nextRound uint32) {
+			logger.Warn("BFT round timed out; escalating proposer rotation",
+				"heights", heights,
+				"next_round", nextRound)
+		})
 	// The same switch governs POL certificates / lock proofs and block
 	// producer signatures: they are all part of one consensus-authentication
 	// rollout, so flipping them independently would leave a gap that is
@@ -1255,6 +1370,38 @@ func main() {
 	chain.SetSignedCertificateActivationHeight(cfg.SignedConsensusActivationHeight)
 	chain.SetSignedBlockActivationHeight(cfg.SignedConsensusActivationHeight)
 	chain.SetEvidenceProofActivationHeight(cfg.SignedConsensusActivationHeight)
+	// Task-action signature enforcement. Separate from the signed-consensus
+	// rollout on purpose: this one rejects unsigned qsdm/tasks/v1 actions at
+	// or above the height, so an operator must first confirm their own chain
+	// carries none above the value they set. Zero, the default, requires
+	// nothing -- but a signature that IS present is verified at every height
+	// regardless of this setting.
+	chain.SetTaskActionSignatureActivationHeight(cfg.TaskActionSignatureActivationHeight)
+	// Transaction-content root. Changing this changes BLOCK HASHES from the
+	// height onward, so unlike every other gate here it is not merely a local
+	// policy: a node with a different value computes different hashes and
+	// forks. Zero, the default, keeps the legacy ID-only root, which does not
+	// bind transaction contents.
+	chain.SetTxContentRootActivationHeight(cfg.TxContentRootActivationHeight)
+	if cfg.TxContentRootActivationHeight > 0 {
+		logger.Info("Block tx root commits transaction contents",
+			"from_height", cfg.TxContentRootActivationHeight,
+			"warning", "every node must use this exact value or block hashes diverge")
+	} else {
+		logger.Warn("Block tx root commits transaction IDs only: contents are not bound by the block hash",
+			"config", "[consensus] tx_content_root_activation_height",
+			"env", "QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT",
+			"note", "enabling this is a coordinated fork; every node must agree on the height")
+	}
+	if cfg.TaskActionSignatureActivationHeight > 0 {
+		logger.Info("Task-action signatures required",
+			"from_height", cfg.TaskActionSignatureActivationHeight)
+	} else {
+		logger.Warn("Task-action signatures are NOT required: an unsigned task action is accepted at any height",
+			"config", "[consensus] task_action_signature_activation_height",
+			"env", "QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT",
+			"note", "a signature that is present is still verified; this gate only governs whether one is required")
+	}
 	chain.SetRequireSignedCertificates(cfg.RequireSignedVotes)
 	chain.SetRequireSignedBlocks(cfg.RequireSignedVotes)
 	chain.SetRequireEvidenceProof(cfg.RequireSignedVotes)
@@ -1285,6 +1432,10 @@ func main() {
 			"env_var", "QSDM_NETWORKED_CATCHUP_MODE")
 	}
 	polIngress := networking.NewPolGossipIngress(networking.DefaultPolGossipConfig(), polIngressFollower)
+	// Same tracker the tx and BFT ingresses use (nodeTxRep). Without this the
+	// POL ingress has no tracker and cannot refuse a banned peer at all --
+	// unlike the other three, which at least held one.
+	polIngress.SetReputationTracker(nodeTxRep)
 	var polRelay *networking.PolP2PRelay
 	if pr, polErr := networking.NewPolP2PRelay(net, polIngress, net.Host.ID().String()); polErr != nil {
 		logger.Warn("POL gossip relay not started", "error", polErr)
@@ -1294,6 +1445,13 @@ func main() {
 	}
 
 	adminAccounts := chain.NewAccountStore()
+	// Report how much CELL exists. Nothing measured this before: the scrape
+	// carried peers, blocks, reputation and storage latency and said nothing
+	// about the money, while the float64 balance path is known to destroy value
+	// on transfer (the funder debit quantises to a 0.125-CELL ULP, the miner
+	// credit does not). Measurement only -- SupplyLedger's capped issuance stays
+	// unreachable until the dust transition, which is gated on an overflow.
+	monitoring.RegisterSupplyProvider(adminAccounts)
 	adminPool := mempool.New(mempool.DefaultConfig())
 	// New constructs the queue but deliberately does not start its background
 	// lifecycle. Without the sweeper, an uncommitted transaction can reserve a

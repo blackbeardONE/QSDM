@@ -41,6 +41,19 @@ spec:
           containerPort: 9000
           protocol: TCP
         env:
+        # Bind the dashboard to all interfaces INSIDE the pod. The process
+        # default is 127.0.0.1, correct on bare metal but unreachable here:
+        # the Service and kube-proxy route to the pod's non-loopback
+        # interface, not into its loopback namespace.
+        - name: QSDM_DASHBOARD_BIND_ADDRESS
+          value: "0.0.0.0"
+        # WebSocket origin allowlist; see configmap.yaml for how to pick the
+        # value. Without it CheckOrigin stays permissive.
+        - name: QSDM_WS_ALLOWED_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              name: qsdm-config
+              key: ws_allowed_origins
         - name: NODE_ID
           valueFrom:
             fieldRef:

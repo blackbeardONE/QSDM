@@ -584,6 +584,17 @@ func TestSendTransaction_meshCompanionSecondBroadcast(t *testing.T) {
 		Name: "us", FeeThreshold: 0, PriorityLevel: 1, GeoTags: []string{"US"}, MaxPayloadBytes: 1_000_000,
 	})
 	h := setupTestHandlersWithSubmesh(dm, ws)
+	// Fund the sender in the STORAGE ledger, not just the wallet cache.
+	//
+	// setupTestHandlersWithSubmesh primes only the wallet's preflight cache
+	// via SyncBalanceFromLedger. Settlement checks the storage balance, and
+	// this fixture never funded it -- invisible while /wallet/send settled
+	// through StoreTransaction, which debits only `amount` and never checks
+	// `amount + fee`. The moment the endpoint moved to ApplyTransferAtomic
+	// this correctly returned 402: the test had been passing because the fee
+	// was never charged. Funded here rather than in the shared helper, which
+	// would change the ledger other tests assert against.
+	h.storage.(*mockStorage).SetBalance(ws.GetAddress(), 1000)
 
 	var payloads [][]byte
 	h.SetP2PTxBroadcast(func(b []byte) error {

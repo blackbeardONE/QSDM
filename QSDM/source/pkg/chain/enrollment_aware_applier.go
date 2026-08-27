@@ -190,7 +190,37 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 		if tasks == nil {
 			return ErrTaskStateNotWired
 		}
-		h, _ := a.currentHeight()
+		// Refuse rather than default to height 0. The three branches above
+		// already do this; this one discarded the bool, and the consequence
+		// was specific to what the height is used for here. h feeds the
+		// activation gate in VerifyTaskActionSignature, whose rule is
+		// "required at or above height H". Height 0 is below every non-zero
+		// H, so an unwired heightFn made the unsigned-refusal silently
+		// inert -- the gate reported no error for the one input it exists
+		// to reject, at every height, forever. A misconfiguration that
+		// disables an authentication check is the fail-open shape this
+		// audit names in 8b; it is not acceptable in the fix for it.
+		//
+		// h also feeds ApplyEconomicTxAtHeight, so a nil heightFn was
+		// already applying height-dependent economics at 0 on this path.
+		// Refusing is consistent with the siblings and strictly safer.
+		h, ok := a.currentHeight()
+		if !ok {
+			return ErrEnrollmentHeightUnset
+		}
+		// Authenticate before applying. Admission verified this envelope at
+		// the HTTP boundary and then discarded the proof, so until now
+		// nothing re-checked it here -- and admission is not a consensus
+		// rule. A present signature is always verified; an absent one is
+		// refused only at or above the configured activation height, so
+		// historical unsigned actions still replay.
+		action, decErr := DecodeTaskActionTx(tx)
+		if decErr != nil {
+			return decErr
+		}
+		if err := VerifyTaskActionSignature(action, tx.Signature, tx.PublicKey, h); err != nil {
+			return err
+		}
 		return tasks.ApplyEconomicTxAtHeight(tx, a.accounts, h)
 	}
 	if tx.ContractID == StreamContractID {

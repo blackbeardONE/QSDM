@@ -1,6 +1,9 @@
 package chain
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func makeEvidenceManager(t *testing.T) (*EvidenceManager, *ValidatorSet) {
 	t.Helper()
@@ -70,6 +73,12 @@ func TestEvidenceManager_ProcessEquivocation(t *testing.T) {
 	}
 }
 
+// This test previously asserted the OPPOSITE -- that a bare invalid_vote
+// accusation is accepted and processed -- which encoded the vulnerability as
+// expected behaviour. Any peer could then slash an arbitrary validator by
+// gossiping a non-empty Details string. The expectation is inverted here so
+// the old behaviour cannot be reintroduced as a "fix" for a failing test.
+// Stake-level consequences are covered in evidence_invalid_vote_test.go.
 func TestEvidenceManager_ProcessInvalidVote(t *testing.T) {
 	em, _ := makeEvidenceManager(t)
 	rec, err := em.Process(ConsensusEvidence{
@@ -79,11 +88,11 @@ func TestEvidenceManager_ProcessInvalidVote(t *testing.T) {
 		Round:     2,
 		Details:   "signed malformed commit",
 	})
-	if err != nil {
-		t.Fatalf("expected success: %v", err)
+	if !errors.Is(err, ErrEvidenceInvalidVoteUnprovable) {
+		t.Fatalf("expected ErrEvidenceInvalidVoteUnprovable, got %v", err)
 	}
-	if !rec.Processed {
-		t.Fatal("expected processed")
+	if rec != nil && rec.Processed {
+		t.Fatal("unprovable evidence must not be marked processed")
 	}
 }
 
@@ -110,9 +119,11 @@ func TestEvidenceManager_ValidateErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected insufficient hash error")
 	}
+	// Not "missing details" any more: invalid_vote is refused outright, so
+	// this asserts the sentinel rather than passing for a stale reason.
 	_, err = em.Process(ConsensusEvidence{Type: EvidenceInvalidVote, Validator: "v1"})
-	if err == nil {
-		t.Fatal("expected missing details error")
+	if !errors.Is(err, ErrEvidenceInvalidVoteUnprovable) {
+		t.Fatalf("expected ErrEvidenceInvalidVoteUnprovable, got %v", err)
 	}
 }
 
@@ -171,4 +182,3 @@ func TestEvidenceManager_SlashesStakingDelegation(t *testing.T) {
 		t.Fatalf("expected jailed validator, got %s", v.Status)
 	}
 }
-

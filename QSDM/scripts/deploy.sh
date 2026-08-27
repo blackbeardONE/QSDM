@@ -35,7 +35,12 @@ sleep 10
 # Check health
 echo "Checking service health..."
 for i in {1..30}; do
-    if curl -f http://localhost:8081/api/health >/dev/null 2>&1; then
+    # Probe the API liveness route, not the dashboard. /api/health is
+    # requireAuth-wrapped (dashboard.go:294) and now fails closed, and
+    # requireAuth REDIRECTS unauthenticated non-JSON requests to the login
+    # page -- which `curl -f` does not treat as an error. The gate would
+    # have passed on a 302 and verified nothing at all.
+    if curl -fsS http://localhost:8080/api/v1/health/live >/dev/null 2>&1; then
         echo "✓ Node 1 is healthy"
         break
     fi

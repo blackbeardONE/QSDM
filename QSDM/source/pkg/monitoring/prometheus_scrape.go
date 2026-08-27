@@ -65,6 +65,14 @@ func GlobalScrapePrometheusExporter() *PrometheusExporter {
 		// repmetrics leaf. Emits nothing when no tracker has
 		// been registered (test/dev scrapes).
 		globalScrapeExporter.RegisterCollector("qsdm_reputation", reputationPrometheusMetrics)
+		// qsdm_cell_supply_* reports how much CELL exists, summed
+		// from the account store at scrape time. Nothing measured
+		// this before: a node reported peers, blocks, reputation
+		// and storage latency, and reported nothing about the
+		// money -- while the float64 balance path is known to
+		// destroy value on every transfer. Emits nothing when no
+		// account store has been registered.
+		globalScrapeExporter.RegisterCollector("qsdm_cell_supply", supplyPrometheusMetrics)
 		// qsdm_binary_capabilities is a single info-metric
 		// (value=1) labelled with the build-tag-determined
 		// backend choices for dilithium / wasm / mesh3d. Lets

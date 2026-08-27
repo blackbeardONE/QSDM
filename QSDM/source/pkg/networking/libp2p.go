@@ -67,6 +67,7 @@ type Network struct {
 	txGossip   *TxGossipIngress
 	mu         sync.Mutex
 	logger     *logging.Logger
+	banGater   *banGater
 
 	peerStatusMu sync.Mutex
 	peerStatus   map[peer.ID]time.Time
@@ -129,6 +130,14 @@ func SetupLibP2PWithPortBindAndKey(ctx context.Context, logger *logging.Logger, 
 			opts = append(opts, libp2p.Identity(priv))
 		}
 	}
+	// Transport-level ban gate. Constructed inert (nil tracker) because the
+	// reputation tracker does not exist yet at host-build time; SetReputationGate
+	// attaches it later. Passing the gater here rather than wiring it afterwards
+	// is required -- libp2p takes the ConnectionGater as a construction option
+	// and there is no setter on a live host.
+	gater := &banGater{}
+	opts = append(opts, libp2p.ConnectionGater(gater))
+
 	h, err := libp2p.New(opts...)
 	if err != nil {
 		return nil, err
@@ -178,6 +187,7 @@ func SetupLibP2PWithPortBindAndKey(ctx context.Context, logger *logging.Logger, 
 		ctx:          networkCtx,
 		cancel:       cancel,
 		logger:       logger,
+		banGater:     gater,
 		peerStatus:   make(map[peer.ID]time.Time),
 		peerMsgCount: make(map[peer.ID]int64),
 	}

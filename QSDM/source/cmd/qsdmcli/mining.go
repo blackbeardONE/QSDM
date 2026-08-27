@@ -359,32 +359,71 @@ func (c *CLI) miningSlash(args []string) error {
 		fs.Usage()
 		return fmt.Errorf("--sender, --node-id, --evidence-kind, --amount are required (and amount > 0)")
 	}
-	evidence, err := readEvidenceBytes(*evidenceFile, *evidenceHex)
+	// Refuse kinds consensus will reject, BEFORE the fee is spent. This is
+	// the command that actually posts a transaction and pays -- slash-helper
+	// is offline and free, so refusing only there left the costly path open.
+	//
+	// All three kinds are currently refused on the block-apply path, for two
+	// different reasons:
+	//   forged-attestation, double-mining -- the offence rests on attributing
+	//     an nvidia-hmac-v1 bundle to its producer, impossible while
+	//     EnrollmentRecord.HMACKey is a symmetric key in public chain state
+	//     (pkg/mining/slashing/attribution.go);
+	//   freshness-cheat -- the production witness is RejectAllWitness, wired
+	//     with a nil witness at internal/v2wiring/v2wiring.go:430, pending the
+	//     BFT-finality dependency (MINING_PROTOCOL_V2.md 12.3).
+	if reason, refused := slashKindRefused(slashing.EvidenceKind(*kind)); refused {
+		return fmt.Errorf("evidence kind %q is currently refused by consensus, so this "+
+			"transaction would cost you a fee and be rejected: %s", *kind, reason)
+	}
+
+	return c.submitSlash(slashArgs{
+		sender: *sender, nodeID: *nodeID, kind: *kind,
+		evidenceFile: *evidenceFile, evidenceHex: *evidenceHex,
+		amount: *amount, memo: *memo, nonce: *nonce, fee: *fee, txID: *txID,
+	})
+}
+
+// slashArgs carries the parsed flags for a slash submission.
+type slashArgs struct {
+	sender, nodeID, kind      string
+	evidenceFile, evidenceHex string
+	amount, nonce             uint64
+	memo, txID                string
+	fee                       float64
+}
+
+// submitSlash encodes the payload and posts it. Split out from miningSlash so
+// the wire envelope stays under test: every slash kind is currently refused by
+// consensus, so a test driving miningSlash end to end could only ever assert
+// the refusal, and the envelope construction below would go uncovered.
+func (c *CLI) submitSlash(a slashArgs) error {
+	evidence, err := readEvidenceBytes(a.evidenceFile, a.evidenceHex)
 	if err != nil {
 		return err
 	}
 
 	payload := slashing.SlashPayload{
-		NodeID:          *nodeID,
-		EvidenceKind:    slashing.EvidenceKind(*kind),
+		NodeID:          a.nodeID,
+		EvidenceKind:    slashing.EvidenceKind(a.kind),
 		EvidenceBlob:    evidence,
-		SlashAmountDust: *amount,
-		Memo:            *memo,
+		SlashAmountDust: a.amount,
+		Memo:            a.memo,
 	}
 	raw, err := slashing.EncodeSlashPayload(payload)
 	if err != nil {
 		return fmt.Errorf("encode payload: %w", err)
 	}
 
-	id := *txID
+	id := a.txID
 	if id == "" {
 		id = generateTxID()
 	}
 	body, err := c.post("/mining/slash", envelope{
 		"id":          id,
-		"sender":      *sender,
-		"nonce":       *nonce,
-		"fee":         *fee,
+		"sender":      a.sender,
+		"nonce":       a.nonce,
+		"fee":         a.fee,
 		"contract_id": slashing.ContractID,
 		"payload_b64": base64.StdEncoding.EncodeToString(raw),
 	})
@@ -558,4 +597,24 @@ func (c *CLI) miningSlashReceipt(args []string) error {
 	}
 	prettyPrint(body)
 	return nil
+}
+
+// slashKindRefused reports whether a slash of this kind can currently be
+// accepted at all. Kept next to the submit path so the check cannot drift from
+// the command that pays the fee.
+//
+// This is deliberately a denylist of what is known-refused rather than an
+// allowlist: if a fourth kind is added and wired, it should work without
+// anyone remembering to edit this.
+func slashKindRefused(kind slashing.EvidenceKind) (string, bool) {
+	switch kind {
+	case slashing.EvidenceKindForgedAttestation, slashing.EvidenceKindDoubleMining:
+		return "the offence cannot be attributed while the attestation HMAC key is " +
+			"public chain state, so both verifiers fail closed", true
+	case slashing.EvidenceKindFreshnessCheat:
+		return "the production witness is RejectAllWitness pending BFT finality, so " +
+			"every freshness-cheat slash is rejected", true
+	default:
+		return "", false
+	}
 }
