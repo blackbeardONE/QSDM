@@ -70,9 +70,7 @@ func TestComposeHealthchecksProbeAServedRoute(t *testing.T) {
 		t.Skipf("git ls-files unavailable: %v", err)
 	}
 	var files []string
-	for _, f := range strings.Fields(string(out)) {
-		files = append(files, f)
-	}
+	files = append(files, strings.Fields(string(out))...)
 	if len(files) == 0 {
 		t.Fatal("git ls-files matched no compose files; the pattern is wrong")
 	}
