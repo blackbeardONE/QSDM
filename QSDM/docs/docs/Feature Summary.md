@@ -1,8 +1,10 @@
 # Feature Summary — QSDM
 
-**Last Updated:** August 2026 · Latest Core candidate **v0.4.7-rc.9** · Hive **1.4.7** · Edge Control **1.3.7**
+**Last Updated:** August 2026 · Latest Core candidate **v0.4.7-rc.9** · Hive **1.4.17** · Edge Control **1.3.7**
 
 QSDM (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger whose native coin is **Cell (CELL)**. Validators run PoE + BFT consensus; miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
+
+For the current engineering readiness percentages, see [Capability Snapshot](CAPABILITY_SNAPSHOT.md).
 
 **QSDM Network** provides the production gateway, chain
 status, explorer, HTTP API, trust feeds, and audit evidence. It lets ordinary

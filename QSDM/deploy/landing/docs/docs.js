@@ -43,6 +43,7 @@
         { slug: "architecture",       title: "Architecture explained",           repoPath: DOCS_PREFIX_REPO + "/ARCHITECTURE_EXPLAINED.md" },
         { slug: "node-roles",         title: "Node roles",                       repoPath: DOCS_PREFIX_REPO + "/NODE_ROLES.md" },
         { slug: "feature-summary",    title: "Feature summary",                  repoPath: DOCS_PREFIX_REPO + "/Feature Summary.md" },
+        { slug: "capability-snapshot", title: "Capability snapshot",             repoPath: DOCS_PREFIX_REPO + "/CAPABILITY_SNAPSHOT.md" },
       ],
     },
     {
@@ -444,6 +445,7 @@
       + 'connect through QSDM Network, use QSDM VPN, mine on NVIDIA hardware, run Mother Hive edge pools, operate a home gateway, or run a validator.</p>'
       + '<div class="welcome-cards">'
       + cardHtml("feature-summary",    "Feature summary",    "Current shipped capabilities across Core, Hive, mining, and edge.")
+      + cardHtml("capability-snapshot", "Capability snapshot", "Readiness percentages, blockers, and what is safe to claim today.")
       + cardHtml("qsdm-vpn",           "QSDM VPN",           "Android private access, assigned profiles, quotas, and operator dashboard.")
       + cardHtml("qsdm-network",       "QSDM Network",       "Public CELL network, gateway, explorer, API, and wallet safety boundary.")
       + cardHtml("operator-guide",     "Operator guide",     "Pick a role, hardware path, and bootstrap peer.")
