@@ -135,6 +135,13 @@ func (rl *RoleRateLimiter) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// High-frequency public reads are polled by Hive, validators, explorers,
+		// and status widgets. Do not spend the small anonymous role bucket here;
+		// the pre-auth RateLimiter keeps a sized per-path ceiling.
+		if isHighFrequencyPublicRead(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		// NGC attestation ingest. These carry a shared-secret header rather
 		// than claims, so they are "anonymous" here and were being starved out
 		// of the single 30/min bucket by unrelated traffic -- which is what

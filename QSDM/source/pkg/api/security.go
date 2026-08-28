@@ -254,6 +254,10 @@ func (rl *RateLimiter) AllowWithLimit(identifier string, limit int) bool {
 
 // getEndpointLimit returns endpoint-specific rate limit
 func (rl *RateLimiter) getEndpointLimit(path, method string) int {
+	if limit := highFrequencyPublicReadLimit(path, method); limit > 0 {
+		return limit
+	}
+
 	// Sensitive endpoints have lower limits
 	sensitiveEndpoints := map[string]int{
 		"/api/v1/auth/login":    5,  // 5 requests per minute for login
