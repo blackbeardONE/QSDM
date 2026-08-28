@@ -43,6 +43,13 @@
 #   --skip-firewall       Do not touch ufw.
 #   --health-timeout SEC  How long to wait for ready + peer-count>=1.
 #                         Default: 180
+#   --require-signed-votes
+#                         Write require_signed_votes=true. Must be paired with
+#                         --signed-message-activation-height set to the same
+#                         future height on every validator.
+#   --signed-message-activation-height HEIGHT
+#                         Shared future height for signed consensus enforcement.
+#                         Default: $QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT or 0.
 #   --dry-run             Print what would happen; do not mutate the system.
 #   -h, --help            Show this help and exit.
 #
@@ -86,6 +93,8 @@ SKIP_BUILD=0
 SKIP_FIREWALL=0
 HEALTH_TIMEOUT_SEC=180
 DRY_RUN=0
+REQUIRE_SIGNED_VOTES="${QSDM_REQUIRE_SIGNED_VOTES:-false}"
+SIGNED_MESSAGE_ACTIVATION_HEIGHT="${QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT:-0}"
 
 # --- arg parsing ------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
@@ -99,6 +108,8 @@ while [[ $# -gt 0 ]]; do
         --skip-build)       SKIP_BUILD=1; shift ;;
         --skip-firewall)    SKIP_FIREWALL=1; shift ;;
         --health-timeout)   HEALTH_TIMEOUT_SEC="$2"; shift 2 ;;
+        --require-signed-votes) REQUIRE_SIGNED_VOTES=true; shift ;;
+        --signed-message-activation-height) SIGNED_MESSAGE_ACTIVATION_HEIGHT="$2"; shift 2 ;;
         --dry-run)          DRY_RUN=1; shift ;;
         -h|--help)
             # Print everything between the shebang and the first blank line
@@ -109,6 +120,21 @@ while [[ $# -gt 0 ]]; do
         *) die "Unknown flag: $1 (try --help)" ;;
     esac
 done
+
+case "$(printf '%s' "$REQUIRE_SIGNED_VOTES" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) REQUIRE_SIGNED_VOTES=true ;;
+    0|false|no|off|"") REQUIRE_SIGNED_VOTES=false ;;
+    *) die "Invalid require-signed-votes value: $REQUIRE_SIGNED_VOTES" ;;
+esac
+if ! [[ "$SIGNED_MESSAGE_ACTIVATION_HEIGHT" =~ ^[0-9]+$ ]]; then
+    die "Invalid signed-message activation height: $SIGNED_MESSAGE_ACTIVATION_HEIGHT"
+fi
+if [[ "$REQUIRE_SIGNED_VOTES" == "true" && "$SIGNED_MESSAGE_ACTIVATION_HEIGHT" == "0" ]]; then
+    die "--require-signed-votes requires --signed-message-activation-height set to a shared future height"
+fi
+if [[ "$REQUIRE_SIGNED_VOTES" == "false" && "$SIGNED_MESSAGE_ACTIVATION_HEIGHT" != "0" ]]; then
+    die "--signed-message-activation-height must be 0 unless --require-signed-votes is set"
+fi
 
 # --- pre-flight -------------------------------------------------------------
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -272,10 +298,11 @@ tls_cert_file = ""
 tls_key_file  = ""
 
 [consensus]
-# Upgrade every validator first. Then set both values to one operator-approved
-# future height across the entire validator set; see SIGNED_CONSENSUS_ROLLOUT.md.
-require_signed_votes = false
-signed_message_activation_height = 0
+# Consensus messages are signed by every modern validator. Enforce rejection of
+# unsigned messages only at one operator-approved future height shared by the
+# entire validator set; see SIGNED_CONSENSUS_ROLLOUT.md.
+require_signed_votes = ${REQUIRE_SIGNED_VOTES}
+signed_message_activation_height = ${SIGNED_MESSAGE_ACTIVATION_HEIGHT}
 signer_key_path = "qsdm_consensus_signer.json"
 
 [performance]

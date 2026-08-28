@@ -16,6 +16,30 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
+SIGNED_VOTES_RAW="${QSDM_REQUIRE_SIGNED_VOTES:-false}"
+case "$(printf '%s' "$SIGNED_VOTES_RAW" | tr '[:upper:]' '[:lower:]')" in
+  1|true|yes|on) QSDM_REQUIRE_SIGNED_VOTES_VALUE=true ;;
+  0|false|no|off|"") QSDM_REQUIRE_SIGNED_VOTES_VALUE=false ;;
+  *)
+    echo "Invalid QSDM_REQUIRE_SIGNED_VOTES=${SIGNED_VOTES_RAW}; use true or false" >&2
+    exit 1
+    ;;
+esac
+
+QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT_VALUE="${QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT:-0}"
+if ! [[ "$QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT_VALUE" =~ ^[0-9]+$ ]]; then
+  echo "Invalid QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT=${QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT_VALUE}; use an integer block height" >&2
+  exit 1
+fi
+if [[ "$QSDM_REQUIRE_SIGNED_VOTES_VALUE" == "true" && "$QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT_VALUE" == "0" ]]; then
+  echo "QSDM_REQUIRE_SIGNED_VOTES=true requires QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT to be a shared future height" >&2
+  exit 1
+fi
+if [[ "$QSDM_REQUIRE_SIGNED_VOTES_VALUE" == "false" && "$QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT_VALUE" != "0" ]]; then
+  echo "QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT must be 0 while QSDM_REQUIRE_SIGNED_VOTES=false" >&2
+  exit 1
+fi
+
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get upgrade -y
@@ -70,7 +94,7 @@ if [[ -d ./liboqs_install ]]; then
 fi
 
 # Production config: HTTP API without TLS to avoid cert requirement; paths under /opt
-cat > /tmp/qsdm.production.toml <<'EOF'
+cat > /tmp/qsdm.production.toml <<EOF
 [network]
 port = 4001
 bootstrap_peers = []
@@ -98,9 +122,12 @@ initial_balance = 1000.0
 proposal_file = "/opt/qsdm/proposals.json"
 
 [consensus]
-# Keep compatibility mode until every validator runs a signing-capable build.
-require_signed_votes = false
-signed_message_activation_height = 0
+# Consensus messages are signed by every modern validator. Enforce rejection of
+# unsigned messages only at one operator-approved future height shared by the
+# entire validator set. Set QSDM_REQUIRE_SIGNED_VOTES=true and
+# QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT=<height> before running this installer.
+require_signed_votes = ${QSDM_REQUIRE_SIGNED_VOTES_VALUE}
+signed_message_activation_height = ${QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT_VALUE}
 signer_key_path = "qsdm_consensus_signer.json"
 
 [performance]
