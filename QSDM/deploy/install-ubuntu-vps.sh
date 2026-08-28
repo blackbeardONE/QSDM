@@ -31,6 +31,16 @@ if ! [[ "$QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT_VALUE" =~ ^[0-9]+$ ]]; then
   echo "Invalid QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT=${QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT_VALUE}; use an integer block height" >&2
   exit 1
 fi
+QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT_VALUE="${QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT:-625000}"
+if ! [[ "$QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT_VALUE" =~ ^[0-9]+$ ]]; then
+  echo "Invalid QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT=${QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT_VALUE}; use an integer block height" >&2
+  exit 1
+fi
+QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT_VALUE="${QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT:-625000}"
+if ! [[ "$QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT_VALUE" =~ ^[0-9]+$ ]]; then
+  echo "Invalid QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT=${QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT_VALUE}; use an integer block height" >&2
+  exit 1
+fi
 if [[ "$QSDM_REQUIRE_SIGNED_VOTES_VALUE" == "true" && "$QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT_VALUE" == "0" ]]; then
   echo "QSDM_REQUIRE_SIGNED_VOTES=true requires QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT to be a shared future height" >&2
   exit 1
@@ -128,6 +138,8 @@ proposal_file = "/opt/qsdm/proposals.json"
 # QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT=<height> before running this installer.
 require_signed_votes = ${QSDM_REQUIRE_SIGNED_VOTES_VALUE}
 signed_message_activation_height = ${QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT_VALUE}
+task_action_signature_activation_height = ${QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT_VALUE}
+tx_content_root_activation_height = ${QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT_VALUE}
 signer_key_path = "qsdm_consensus_signer.json"
 
 [performance]

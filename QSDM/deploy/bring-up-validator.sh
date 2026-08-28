@@ -50,6 +50,12 @@
 #   --signed-message-activation-height HEIGHT
 #                         Shared future height for signed consensus enforcement.
 #                         Default: $QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT or 0.
+#   --task-action-signature-activation-height HEIGHT
+#                         Shared height where qsdm/tasks/v1 actions must be signed.
+#                         Default: $QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT or 625000.
+#   --tx-content-root-activation-height HEIGHT
+#                         Shared height where block tx roots commit transaction contents.
+#                         Default: $QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT or 625000.
 #   --dry-run             Print what would happen; do not mutate the system.
 #   -h, --help            Show this help and exit.
 #
@@ -95,6 +101,8 @@ HEALTH_TIMEOUT_SEC=180
 DRY_RUN=0
 REQUIRE_SIGNED_VOTES="${QSDM_REQUIRE_SIGNED_VOTES:-false}"
 SIGNED_MESSAGE_ACTIVATION_HEIGHT="${QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT:-0}"
+TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT="${QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT:-625000}"
+TX_CONTENT_ROOT_ACTIVATION_HEIGHT="${QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT:-625000}"
 
 # --- arg parsing ------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
@@ -110,6 +118,8 @@ while [[ $# -gt 0 ]]; do
         --health-timeout)   HEALTH_TIMEOUT_SEC="$2"; shift 2 ;;
         --require-signed-votes) REQUIRE_SIGNED_VOTES=true; shift ;;
         --signed-message-activation-height) SIGNED_MESSAGE_ACTIVATION_HEIGHT="$2"; shift 2 ;;
+        --task-action-signature-activation-height) TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT="$2"; shift 2 ;;
+        --tx-content-root-activation-height) TX_CONTENT_ROOT_ACTIVATION_HEIGHT="$2"; shift 2 ;;
         --dry-run)          DRY_RUN=1; shift ;;
         -h|--help)
             # Print everything between the shebang and the first blank line
@@ -128,6 +138,12 @@ case "$(printf '%s' "$REQUIRE_SIGNED_VOTES" | tr '[:upper:]' '[:lower:]')" in
 esac
 if ! [[ "$SIGNED_MESSAGE_ACTIVATION_HEIGHT" =~ ^[0-9]+$ ]]; then
     die "Invalid signed-message activation height: $SIGNED_MESSAGE_ACTIVATION_HEIGHT"
+fi
+if ! [[ "$TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT" =~ ^[0-9]+$ ]]; then
+    die "Invalid task-action signature activation height: $TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT"
+fi
+if ! [[ "$TX_CONTENT_ROOT_ACTIVATION_HEIGHT" =~ ^[0-9]+$ ]]; then
+    die "Invalid tx-content-root activation height: $TX_CONTENT_ROOT_ACTIVATION_HEIGHT"
 fi
 if [[ "$REQUIRE_SIGNED_VOTES" == "true" && "$SIGNED_MESSAGE_ACTIVATION_HEIGHT" == "0" ]]; then
     die "--require-signed-votes requires --signed-message-activation-height set to a shared future height"
@@ -303,6 +319,8 @@ tls_key_file  = ""
 # entire validator set; see SIGNED_CONSENSUS_ROLLOUT.md.
 require_signed_votes = ${REQUIRE_SIGNED_VOTES}
 signed_message_activation_height = ${SIGNED_MESSAGE_ACTIVATION_HEIGHT}
+task_action_signature_activation_height = ${TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT}
+tx_content_root_activation_height = ${TX_CONTENT_ROOT_ACTIVATION_HEIGHT}
 signer_key_path = "qsdm_consensus_signer.json"
 
 [performance]
