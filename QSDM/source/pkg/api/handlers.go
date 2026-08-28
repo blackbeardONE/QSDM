@@ -60,9 +60,10 @@ type Handlers struct {
 
 	// Status endpoint wiring (Major Update Phase 2.2). These are populated by
 	// the server at startup; the status handler tolerates nil sources.
-	nodeRole        string
-	peerCountSource func() int
-	chainTipSource  func() uint64
+	nodeRole             string
+	peerCountSource      func() int
+	chainTipSource       func() uint64
+	consensusAuthPosture consensusAuthPosture
 
 	// csrfManager is the (optional) issuer/validator used by the
 	// GET /api/v1/csrf-token endpoint. The server populates it via
@@ -185,6 +186,12 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	}
 	if s.config != nil {
 		handlers.SetNodeRole(s.config.NodeRole)
+		handlers.SetConsensusAuthPosture(
+			s.config.RequireSignedVotes,
+			s.config.SignedConsensusActivationHeight,
+			s.config.TaskActionSignatureActivationHeight,
+			s.config.TxContentRootActivationHeight,
+		)
 	}
 	if s.csrfManager != nil {
 		handlers.SetCSRFManager(s.csrfManager)

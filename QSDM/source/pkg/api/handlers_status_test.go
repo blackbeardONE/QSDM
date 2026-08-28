@@ -172,3 +172,82 @@ func TestStatusHandler_InvalidRoleCoerced(t *testing.T) {
 		t.Errorf("NodeRole = %q, want validator (invalid values must be coerced)", resp.NodeRole)
 	}
 }
+
+func TestStatusHandler_ReportsConsensusAuthDefaults(t *testing.T) {
+	h := setupTestHandlers()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	rec := httptest.NewRecorder()
+	h.StatusHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var resp StatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.ConsensusAuth.SignedConsensusSupported {
+		t.Fatal("SignedConsensusSupported = false, want true")
+	}
+	if resp.ConsensusAuth.RequireSignedVotes {
+		t.Fatal("RequireSignedVotes = true by default, want false")
+	}
+	if resp.ConsensusAuth.SignedConsensusActive {
+		t.Fatal("SignedConsensusActive = true by default, want false")
+	}
+	if !resp.ConsensusAuth.UnsignedConsensusTrafficAccepted {
+		t.Fatal("UnsignedConsensusTrafficAccepted = false before enforcement, want true")
+	}
+	if resp.ConsensusAuth.TaskActionSignaturesActive {
+		t.Fatal("TaskActionSignaturesActive = true by default, want false")
+	}
+	if resp.ConsensusAuth.TxContentRootActive {
+		t.Fatal("TxContentRootActive = true by default, want false")
+	}
+}
+
+func TestStatusHandler_ReportsConsensusAuthActivationBoundary(t *testing.T) {
+	h := setupTestHandlers()
+	h.SetConsensusAuthPosture(true, 625000, 625000, 625000)
+	h.SetChainTipSource(func() uint64 { return 624999 })
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	rec := httptest.NewRecorder()
+	h.StatusHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var before StatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &before); err != nil {
+		t.Fatalf("decode before: %v", err)
+	}
+	if before.ConsensusAuth.SignedConsensusActive || before.ConsensusAuth.TaskActionSignaturesActive || before.ConsensusAuth.TxContentRootActive {
+		t.Fatalf("consensus gates active before activation: %#v", before.ConsensusAuth)
+	}
+	if !before.ConsensusAuth.UnsignedConsensusTrafficAccepted {
+		t.Fatalf("unsigned consensus traffic should still be accepted before activation: %#v", before.ConsensusAuth)
+	}
+
+	h.SetChainTipSource(func() uint64 { return 625000 })
+	rec = httptest.NewRecorder()
+	h.StatusHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 after activation; body=%s", rec.Code, rec.Body.String())
+	}
+	var after StatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &after); err != nil {
+		t.Fatalf("decode after: %v", err)
+	}
+	if !after.ConsensusAuth.RequireSignedVotes || after.ConsensusAuth.SignedMessageActivationHeight != 625000 {
+		t.Fatalf("signed consensus config not reported: %#v", after.ConsensusAuth)
+	}
+	if !after.ConsensusAuth.SignedConsensusActive || !after.ConsensusAuth.TaskActionSignaturesActive || !after.ConsensusAuth.TxContentRootActive {
+		t.Fatalf("consensus gates not active at activation: %#v", after.ConsensusAuth)
+	}
+	if after.ConsensusAuth.UnsignedConsensusTrafficAccepted {
+		t.Fatalf("unsigned consensus traffic still reported accepted after activation: %#v", after.ConsensusAuth)
+	}
+}
