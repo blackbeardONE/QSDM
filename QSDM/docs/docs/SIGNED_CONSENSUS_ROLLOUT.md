@@ -30,12 +30,19 @@ Environment equivalents are `QSDM_CONSENSUS_SIGNER_KEY_PATH`,
 `QSDM_REQUIRE_SIGNED_VOTES`, and
 `QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT`.
 
+The production deploy scripts require an explicit paired posture. If
+`QSDM_REQUIRE_SIGNED_VOTES=true`, `QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT`
+must be one shared future height. If enforcement is off, the activation height
+must remain `0`. A half-configured rollout is refused before a config file is
+written.
+
 ## Phase 1: upgrade and observe
 
 1. Back up every validator's state directory.
 2. Upgrade every validator to the same signing-capable release.
-3. Keep `require_signed_votes = false` and
-   `signed_message_activation_height = 0`.
+3. Keep enforcement off with activation height `0`, or omit both rollout
+   variables so the deploy script writes that compatibility posture
+   deliberately.
 4. Restart each validator twice and confirm the same address appears in the
    `Validator consensus signer ready` log entry after both starts.
 5. Confirm each node emits signed BFT traffic and remains synchronized.
@@ -53,6 +60,18 @@ same values everywhere:
 [consensus]
 require_signed_votes = true
 signed_message_activation_height = 600000
+```
+
+For scripted deployments, pass the same posture explicitly:
+
+```bash
+QSDM_REQUIRE_SIGNED_VOTES=true \
+QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT=600000 \
+./deploy/install-ubuntu-vps.sh
+
+./deploy/bring-up-validator.sh \
+  --require-signed-votes \
+  --signed-message-activation-height 600000
 ```
 
 The node refuses to start when only one of these settings is active. Blocks and
