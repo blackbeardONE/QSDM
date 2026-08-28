@@ -331,7 +331,7 @@ The validator returns HTTP 202 Accepted with a `tx_id`. The bond is debited from
 Returns the sanitized `EnrollmentRecordView`:
 
 - `phase`: `active`, `pending_unbond`, or `revoked`
-- `slashable`: whether the bond is still locked (and therefore the rig can still be punished)
+- `slashable`: whether the bond is still locked and eligible for a future enabled slashing rollout. Current production still rejects every slash kind.
 - `gpu_uuid`, `owner`, `enrolled_height`, `bond_dust`, `unbond_height`
 
 `hmac_key` is omitted by design — the value is public chain state, but the read endpoint follows least-privilege defaults so a casual `curl` does not surface live operator secrets.
@@ -812,7 +812,7 @@ The `v2 enroll` row is painted by the **background enrollment poller**, which po
 | Phase | Color | Meaning |
 |---|---|---|
 | `active` | green | Bond is locked, validator will accept v2 proofs from this node_id. |
-| `pending_unbond` | yellow | Manual unbond initiated — stake still slashable until `unbond_matures_at_height`. |
+| `pending_unbond` | yellow | Manual unbond initiated. Stake stays locked until `unbond_matures_at_height`; `slashable` means eligible for a future enabled slashing rollout. |
 | `revoked` | red | Slashed, fully drained, or unbond matured. **Mining will be rejected.** |
 | `not_found` | red | Validator has no record for this `node_id`. Either the enroll tx hasn't been mined yet or you typed the wrong tag. |
 | `unconfigured` | cyan | Validator is v1-only (503 from `/enrollment/`); the read endpoint isn't wired here. |
