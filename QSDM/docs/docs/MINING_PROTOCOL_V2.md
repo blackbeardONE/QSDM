@@ -100,13 +100,15 @@ single validator.
    physical card can be re-enrolled by a fresh `node_id` after
    the original record retires. Implementation in
    `pkg/mining/enrollment/`.
-6. **On-chain slashing.** A `qsdm/slash/v1` transaction can
-   drain bonded stake by submitting verifier-checked evidence.
-   All three evidence kinds now ship with concrete verifiers:
-   `forged-attestation`, `double-mining`, and `freshness-cheat`
-   (the last gated on a `BlockInclusionWitness`; the production
-   default `RejectAllWitness` rejects all such slashes pending
-   BFT finality — see §12.3). Implementation in
+6. **On-chain slashing.** The `qsdm/slash/v1` transaction
+   surface, admission gate, receipts, and verifiers ship, but
+   production acceptance is fail-closed today. HMAC-dependent
+   `forged-attestation` and `double-mining` cannot attribute a
+   bundle while `EnrollmentRecord.HMACKey` is public symmetric
+   chain state. `freshness-cheat` rejects through
+   `RejectAllWitness` until BFT finality supplies a real
+   inclusion witness. Slash attempts therefore produce rejection
+   receipts instead of draining stake. Implementation in
    `pkg/mining/slashing/` and the chain-side applier in
    `pkg/chain/slash_apply.go`.
 7. **Miner UX.** `cmd/qsdmminer-console` ships an opt-in v2 path
@@ -686,10 +688,12 @@ This catches the **lazy spoof** — an attacker who flips
 `gpu_arch=hopper` but forgot to also lie about the
 `nvidia-smi` name on their consumer Ada card. The
 **determined spoof** (operator colluding with a non-NVIDIA or
-wrong-arch card and lying about both fields) is still trapped
+wrong-arch card and lying about both fields) is still constrained
 by the on-chain registry's `(gpu_uuid, hmac_key)` pairing
-(§5.2) and economically by §5.4 stake bonding plus §8 slashing
-risk (`forged-attestation`, `freshness-cheat`).
+(§5.2) and economically by §5.4 stake bonding. HMAC-based
+slashing remains fail-closed until attestation becomes asymmetric,
+so this is a bond-and-rate-limit deterrent rather than an
+attributable slash today.
 
 This check fires in the HMAC verifier
 ([`pkg/mining/attest/hmac/verifier.go`](../../source/pkg/mining/attest/hmac/verifier.go))
@@ -869,8 +873,10 @@ that reports a fake `gpu_uuid`. The verifier cannot distinguish.
 This is an *economic* lock, not a *cryptographic* one for
 consumer cards: the Tensor-Core PoW mixin (§4) makes the AMD
 bypass uneconomic, and the stake-at-enrollment makes Sybil
-attacks expensive (10 CELL × N keys, plus `freshness-cheat`/
-`forged-attestation`/`double-mining` slashing risk).
+attacks expensive (10 CELL x N keys). HMAC-key misuse is not
+slashable today because public symmetric keys cannot attribute
+who produced a bundle; asymmetric enrollment is the planned
+upgrade that would make those offences slashable again.
 
 ### 5.3 Deny-list
 
@@ -970,7 +976,7 @@ registry mapping `Attestation.Type` to a concrete
 | [`pkg/mining/attest/dispatcher.go`](../../source/pkg/mining/attest/dispatcher.go) | Type-keyed verifier registry | **Shipped.** |
 | [`pkg/mining/challenge/`](../../source/pkg/mining/challenge/) | Validator-issued nonce challenge crypto | **Shipped.** |
 | [`pkg/mining/enrollment/`](../../source/pkg/mining/enrollment/) | On-chain operator registry, admission gate, sweep | **Shipped.** |
-| [`pkg/mining/slashing/`](../../source/pkg/mining/slashing/) | Slashing data model + dispatcher + admission | **Shipped** (`forged-attestation` + `double-mining` + `freshness-cheat`); the freshness-cheat verifier ships with a `BlockInclusionWitness` abstraction whose production default rejects pending BFT finality (§12.3). |
+| [`pkg/mining/slashing/`](../../source/pkg/mining/slashing/) | Slashing data model + dispatcher + admission | **Shipped, fail-closed in production.** HMAC-dependent kinds refuse attribution through `pkg/mining/slashing/attribution.go`; `freshness-cheat` rejects through the production `RejectAllWitness` pending BFT finality (§12.3). |
 | [`pkg/governance/chainparams/`](../../source/pkg/governance/chainparams/) | `qsdm/gov/v1` parameter-tuning tx type, registry, ParamStore, admission | **Shipped.** Three tunables: `reward_bps`, `auto_revoke_min_stake_dust`, `fork_v2_tc_height`. See §9.4 + §4 / §12.2. |
 | [`pkg/chain/gov_apply.go`](../../source/pkg/chain/gov_apply.go) | Chain-side `GovApplier` adapter routing `qsdm/gov/v1` txs | **Shipped.** Stages → promotes via `SealedBlockHook`. |
 
@@ -1052,6 +1058,14 @@ re-enrollment.
 
 ### 8.2 Slashing
 
+The slashing transaction path is implemented, observable, and
+receipt-producing, but no slash kind is accepted by production
+consensus today. This is intentional. HMAC-based evidence cannot
+prove who produced a bundle while the enrolled key is public
+chain state, and freshness-cheat still needs a BFT-backed
+inclusion witness. Until those two dependencies land, slash
+submissions are expected to reject without draining miner stake.
+
 Wire types in
 [`pkg/mining/slashing/types.go`](../../source/pkg/mining/slashing/types.go):
 
@@ -1079,8 +1093,8 @@ Concrete `EvidenceVerifier` implementations:
 
 | Kind | Detects | Status |
 |---|---|---|
-| `forged-attestation` | An HMAC bundle whose MAC fails verification, whose `gpu_uuid` mismatches the enrolled record, whose `challenge_bind` mismatches the proof, or whose `gpu_name` matches the deny-list. | **Shipped** in [`pkg/mining/slashing/forgedattest`](../../source/pkg/mining/slashing/forgedattest/). |
-| `double-mining` | Two distinct accepted proofs from the same `(node_id, epoch, height)`, both crypto-valid under the registered HMAC key. | **Shipped** in [`pkg/mining/slashing/doublemining`](../../source/pkg/mining/slashing/doublemining/). Encoder canonicalises proof order so two slashers observing the same equivocation produce byte-identical evidence. |
+| `forged-attestation` | An HMAC bundle whose MAC fails verification, whose `gpu_uuid` mismatches the enrolled record, whose `challenge_bind` mismatches the proof, or whose `gpu_name` matches the deny-list. | **Verifier shipped; production slash acceptance disabled.** The verifier returns `ErrAttestationUnattributable` through `pkg/mining/slashing/attribution.go` because public HMAC keys cannot attribute the producer. |
+| `double-mining` | Two distinct accepted proofs from the same `(node_id, epoch, height)`, both crypto-valid under the registered HMAC key. | **Verifier shipped; production slash acceptance disabled.** The encoder canonicalises proof order, but the verifier still refuses attribution until enrollment stores an asymmetric public key instead of a shared HMAC key. |
 | `freshness-cheat` | A proof whose `bundle.issued_at` is older than `FRESHNESS_WINDOW + grace` (default 60 s + 30 s) when measured against the chain block-time of the inclusion height, i.e. retroactive evidence of validator collusion or clock skew. | **Shipped** in [`pkg/mining/slashing/freshnesscheat`](../../source/pkg/mining/slashing/freshnesscheat/). The verifier is fully implemented; on-chain acceptance is gated on the injected `BlockInclusionWitness`. Production binaries ship `RejectAllWitness` (every slash rejected with a kind-specific `ErrEvidenceVerification`), pending the BFT-finality dependency in §12.3. Testnets MAY wire `TrustingTestWitness` to exercise the path end-to-end. |
 
 Production dispatcher:
@@ -1828,12 +1842,13 @@ governance ever wants to re-enable non-NVIDIA mining.
    mixin lands. Pre-mixin: rejected on attestation alone.
 2. **AMD / Intel GPU with forged `nvidia-smi` output.** The
    verifier does not trust `nvidia-smi` output directly; it
-   trusts the HMAC over it. The HMAC key binds to a registered
-   `(node_id, gpu_uuid)`. To mine from an AMD GPU the attacker
-   needs a real registered NVIDIA GPU's HMAC key. If they have
-   that, the registered operator is running two miners from one
-   key — detectable as `double-mining` evidence (§8.2) and
-   slashable.
+   checks a bundle bound to an enrolled `(node_id, gpu_uuid)`.
+   In the current HMAC path the key is public chain state, so
+   the HMAC is an enrollment/routing check, not proof of a
+   secret. Rewards still route to the enrolled owner, and one
+   node_id can only submit one accepted proof per block. This is
+   not slashable until asymmetric enrollment gives each miner a
+   private signing key and validators store only the public key.
 3. **Nonce replay.** Prevented by `FRESHNESS_WINDOW` and the
    validator's nonce ring buffer (§6).
 4. **Stale proof.** Same mitigation.
@@ -1844,10 +1859,11 @@ governance ever wants to re-enable non-NVIDIA mining.
    attestation rule.
 6. **Sybil enrollment.** `MinEnrollStakeDust` puts a Cell cost
    on creating many fake `node_id`s.
-7. **HMAC key leak / rental.** Detectable as `forged-
-   attestation` (gpu_uuid mismatch) or `double-mining`
-   (equivocation under the same key) and slashable. Stake bonds
-   the key to honest behaviour.
+7. **HMAC key leak / rental.** The key is already public through
+   chain state, so leak/rental is not the right security model.
+   The current protection is reward routing plus rate limits; a
+   future asymmetric attestation type is required before
+   forged-attestation or double-mining can be safely slashable.
 
 ### 11.2 Out-of-scope threats
 

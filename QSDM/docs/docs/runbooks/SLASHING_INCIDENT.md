@@ -21,9 +21,15 @@ is needed.
 
 ## 1. What is a "slashing incident"?
 
-QSDM's v2-mining protocol enforces NVIDIA-locked attestation honesty by
-debiting an offender's stake when their proofs are forged, double-mined,
-or stale. The chain-side path is in
+QSDM's v2-mining protocol has the slashing transaction path,
+receipt store, metrics, and verifiers wired, but production
+acceptance is fail-closed today. `forged-attestation` and
+`double-mining` cannot safely attribute an nvidia-hmac-v1 bundle
+while the HMAC key is public chain state, and `freshness-cheat`
+rejects through `RejectAllWitness` until BFT finality provides a
+real inclusion witness. A successful slash on current production is
+therefore a regression or an explicitly-enabled future rollout, not
+the expected steady state. The chain-side path is in
 [`pkg/chain/slash_apply.go`](../../../source/pkg/chain/slash_apply.go);
 operator-facing receipts are stored in
 [`pkg/chain/slash_receipts.go`](../../../source/pkg/chain/slash_receipts.go);
@@ -36,19 +42,18 @@ which are "incidents" in the malicious-activity sense:
 
 | Mode | Alert                            | Scenario                                                                        | Action class            |
 | ---- | -------------------------------- | ------------------------------------------------------------------------------- | ----------------------- |
-| **A** | `QSDMMiningSlashApplied`        | One or more honest slashes applied — a real cheater was caught                  | Confirm + ratify        |
-| **B** | `QSDMMiningSlashedDustBurst`    | Mass-slash event (≥50 CELL drained in 15m). Coordinated ring **OR** verifier regression | Ratify or rollback     |
-| **C** | `QSDMMiningSlashRejectionsBurst` | Outsider probing the slash endpoint, slasher-tool bug, or replay flood          | Identify and rate-limit |
-| **D** | `QSDMMiningAutoRevokeBurst`     | Multiple miners pushed under `MIN_ENROLL_STAKE` simultaneously                  | Likely escalates Mode B |
+| **A** | `QSDMMiningSlashApplied`        | Unexpected on current production; slash acceptance should be fail-closed        | Confirm rollout posture, then rollback or ratify only if intentionally enabled |
+| **B** | `QSDMMiningSlashedDustBurst`    | Critical current-production regression, or future enabled-slashing incident     | Stop the drain, then diagnose evidence/verifier state |
+| **C** | `QSDMMiningSlashRejectionsBurst` | Outsider probing the slash endpoint, slasher-tool bug, replay flood, or expected fail-closed HMAC/freshness attempts | Identify and rate-limit |
+| **D** | `QSDMMiningAutoRevokeBurst`     | Unexpected on current production because slashes should not apply               | Escalate as Mode B unless a future rollout intentionally enabled slashing |
 
-Mode A is the **happy path** for a chain that's working — the protocol
-caught a cheater and the operator's job is to confirm, not to roll
-anything back. Modes B and D are the truly dangerous ones because the
-"verifier regression" branch involves rolling back a release; a wrong
-call here loses real money for honest miners. Mode C is rarely an
-emergency on its own but is a leading indicator for the other three when
-a sophisticated attacker is probing the slasher endpoint to learn its
-admission gate behaviour.
+For the current production rollout, Mode A/B/D should stay at zero.
+Mode A only becomes a happy path after a future asymmetric-attestation
+or BFT-witness rollout explicitly enables an evidence kind. Until then,
+any applied slash or auto-revoke is treated as a possible consensus-path
+regression because it can lose real money for honest miners. Mode C is
+the normal observable surface for rejected probes and fail-closed slash
+attempts, but a sudden burst still deserves triage.
 
 ---
 
@@ -154,16 +159,18 @@ A single slash transaction landed. Walk the receipt:
    Or via the CLI: `qsdmcli slash-receipt <tx-id>`.
 
 2. Confirm the EvidenceKind:
-   - `forged-attestation` — CC-AIK signature did not validate. Real
-     forgery, OR (rare) a verifier regression. Distinguish by Mode B
-     vs. Mode A: Mode A means it's an isolated rig.
-   - `double-mining` — same proof submitted to two parents. Real
-     double-spending; almost never a false positive.
-   - `freshness-cheat` — proof staler than the freshness window. Real
-     replay; almost never a false positive.
+   - `forged-attestation` — on current production this HMAC-dependent
+     kind should reject as `ErrAttestationUnattributable`; an applied
+     slash means the attribution gate was reopened or a future
+     asymmetric rollout is active.
+   - `double-mining` — same current-production rule: it should reject
+     until enrollment stores a public key and miners sign with a
+     private key.
+   - `freshness-cheat` — should reject through `RejectAllWitness` until
+     a real BFT-backed `BlockInclusionWitness` is wired.
 
 3. Confirm the offender's NodeID matches a registered rig you would
-   expect to be slashable (i.e. `phase=active` at slash time, not in
+   expect to carry locked stake (i.e. `phase=active` at slash time, not in
    unbond). Cross-check at:
 
    ```bash
@@ -176,21 +183,25 @@ A single slash transaction landed. Walk the receipt:
    - `true` — offender pushed under `MIN_ENROLL_STAKE`; record moved to
      unbond. Expect Mode D to fire if 3+ revokes happen in 15m.
 
-5. **No action required if all four checks pass.** A Mode A page is the
-   alert system saying "the chain caught a cheater, here's the receipt"
-   — file the tx_id with the ops journal and resolve the alert.
+5. **Only resolve as expected if an enabled-slashing rollout is active.**
+   On current production, a Mode A page means the chain applied a slash
+   despite the fail-closed posture. Capture the receipt, confirm the
+   binary/config that enabled it, and roll back before resolving.
 
 ### 3.2 Mode B — `QSDMMiningSlashedDustBurst`
 
-≥50 CELL drained in a 15m window across multiple receipts. This is the
-hard one. Two scenarios:
+≥50 CELL drained in a 15m window across multiple receipts. On current
+production this should not happen. Treat it first as a consensus-path
+regression; only consider real coordinated cheating after confirming an
+explicit future slashing rollout is active. Two scenarios:
 
-**B1: Coordinated cheat ring.** Several rigs are independently forging
-and the protocol is correctly slashing them all. EvidenceKinds will
-be **mixed** (forged + double-mining + freshness, with no single kind
-dominating). Top-3 slashed NodeIDs will be a small set of clearly-malicious
-rigs. **Action: ratify and continue.** File an ops journal entry; the
-chain's working as designed.
+**B1: Future enabled-slashing cheat ring.** Several rigs are
+independently cheating and an intentionally-enabled slashing rollout is
+correctly draining them. EvidenceKinds will be **mixed** (forged +
+double-mining + freshness, with no single kind dominating). Top-3 slashed
+NodeIDs will be a small set of clearly-malicious rigs. **Action: ratify
+and continue only after confirming the rollout posture.** File an ops
+journal entry; otherwise treat it as B2.
 
 **B2: Verifier regression.** A recent release of the verifier produced
 false-positive rejections, and now the slasher is incorrectly converting
