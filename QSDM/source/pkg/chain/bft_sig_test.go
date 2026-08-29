@@ -144,16 +144,25 @@ func TestBFTExecutor_inboundAuthPolicy(t *testing.T) {
 	if called {
 		t.Fatal("verifier should not run for an unsigned message")
 	}
+	if stats := e.AuthStats(); stats.UnsignedAccepted != 1 || stats.SignedAccepted != 0 || stats.UnsignedRejected != 0 || stats.BadSignatureRejected != 0 {
+		t.Fatalf("auth stats after unsigned compatibility pass = %+v", stats)
+	}
 
 	// Enforcement off + signed-but-bad => still rejected.
 	if err := e.checkInboundAuth(1, true, verify); !errors.Is(err, ErrBFTBadSignature) {
 		t.Fatalf("an invalid signature must be fatal regardless of policy, got %v", err)
+	}
+	if stats := e.AuthStats(); stats.BadSignatureRejected != 1 || stats.SignedAccepted != 0 {
+		t.Fatalf("auth stats after bad signed message = %+v", stats)
 	}
 
 	// Enforcement on + unsigned => rejected.
 	e.SetRequireSignedVotes(true)
 	if err := e.checkInboundAuth(1, false, verify); !errors.Is(err, ErrBFTUnsigned) {
 		t.Fatalf("want ErrBFTUnsigned once enforcement is on, got %v", err)
+	}
+	if stats := e.AuthStats(); stats.UnsignedRejected != 1 {
+		t.Fatalf("auth stats after unsigned rejection = %+v", stats)
 	}
 
 	e.SetSignedVoteActivationHeight(10)
@@ -162,6 +171,12 @@ func TestBFTExecutor_inboundAuthPolicy(t *testing.T) {
 	}
 	if err := e.checkInboundAuth(10, false, verify); !errors.Is(err, ErrBFTUnsigned) {
 		t.Fatalf("unsigned vote at activation must fail, got %v", err)
+	}
+	if err := e.checkInboundAuth(10, true, func() error { return nil }); err != nil {
+		t.Fatalf("signed message with valid auth should pass: %v", err)
+	}
+	if stats := e.AuthStats(); stats.SignedAccepted != 1 || stats.UnsignedAccepted != 2 || stats.UnsignedRejected != 2 || stats.BadSignatureRejected != 1 {
+		t.Fatalf("final auth stats = %+v", stats)
 	}
 }
 

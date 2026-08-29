@@ -2645,12 +2645,17 @@ func main() {
 		))
 		pe.RegisterCollector("node_bft_gossip", func() []monitoring.Metric {
 			s := bftIngress.Stats()
+			auth := bftExec.AuthStats()
 			return []monitoring.Metric{
 				{Name: "qsdm_bft_gossip_ingress_ok_total", Help: "BFT gossip messages accepted (dedupe passed, apply ok or no executor)", Type: monitoring.MetricCounter, Value: float64(s.IngressOK)},
 				{Name: "qsdm_bft_gossip_dedupe_drops_total", Help: "BFT gossip duplicate payloads dropped", Type: monitoring.MetricCounter, Value: float64(s.DedupeDropped)},
 				{Name: "qsdm_bft_gossip_rate_limited_total", Help: "BFT gossip messages rejected by per-peer rate limit", Type: monitoring.MetricCounter, Value: float64(s.RateLimited)},
 				{Name: "qsdm_bft_gossip_rejected_wire_total", Help: "BFT gossip wire rejects (decode / empty / unknown kind)", Type: monitoring.MetricCounter, Value: float64(s.RejectedWire)},
 				{Name: "qsdm_bft_gossip_apply_errors_total", Help: "BFT gossip executor apply errors after validation", Type: monitoring.MetricCounter, Value: float64(s.ApplyErrors)},
+				{Name: "qsdm_bft_auth_signed_accepted_total", Help: "BFT consensus messages whose ML-DSA authenticator verified", Type: monitoring.MetricCounter, Value: float64(auth.SignedAccepted)},
+				{Name: "qsdm_bft_auth_unsigned_accepted_total", Help: "Unsigned BFT consensus messages accepted while compatibility mode is still open", Type: monitoring.MetricCounter, Value: float64(auth.UnsignedAccepted)},
+				{Name: "qsdm_bft_auth_unsigned_rejected_total", Help: "Unsigned BFT consensus messages rejected after signed-vote enforcement", Type: monitoring.MetricCounter, Value: float64(auth.UnsignedRejected)},
+				{Name: "qsdm_bft_auth_bad_signature_rejected_total", Help: "Signed BFT consensus messages rejected because the authenticator was invalid", Type: monitoring.MetricCounter, Value: float64(auth.BadSignatureRejected)},
 			}
 		})
 		pe.RegisterCollector("node_bft_follower", func() []monitoring.Metric {
