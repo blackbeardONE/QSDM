@@ -51,6 +51,12 @@ type StatusResponse struct {
 	// partially wired validator without attempting a state-changing action.
 	TaskActionsReady bool `json:"task_actions_ready"`
 
+	// ConsensusAuth advertises which consensus-authentication gates this
+	// process supports, which ones the operator configured, and which are
+	// active at the reported chain tip. It is public, read-only posture data:
+	// no signing keys, peer addresses, or certificates are exposed here.
+	ConsensusAuth ConsensusAuthInfo `json:"consensus_auth"`
+
 	// Mining is the consensus-visible mining-protocol state. Miners
 	// MUST inspect this block at startup to decide which protocol to
 	// submit proofs under — submitting v1 against a validator whose
@@ -60,6 +66,28 @@ type StatusResponse struct {
 	// scalars, so SDK callers can rely on `mining.fork_v2_active`
 	// being present whenever `mining` itself is.
 	Mining *MiningInfo `json:"mining,omitempty"`
+}
+
+type consensusAuthPosture struct {
+	requireSignedVotes                  bool
+	signedMessageActivationHeight       uint64
+	taskActionSignatureActivationHeight uint64
+	txContentRootActivationHeight       uint64
+}
+
+// ConsensusAuthInfo is the public consensus-authentication posture embedded in
+// GET /api/v1/status. Height zero means the corresponding gate is not scheduled,
+// except signed consensus where enforcement also requires RequireSignedVotes.
+type ConsensusAuthInfo struct {
+	SignedConsensusSupported            bool   `json:"signed_consensus_supported"`
+	RequireSignedVotes                  bool   `json:"require_signed_votes"`
+	SignedMessageActivationHeight       uint64 `json:"signed_message_activation_height"`
+	SignedConsensusActive               bool   `json:"signed_consensus_active"`
+	UnsignedConsensusTrafficAccepted    bool   `json:"unsigned_consensus_traffic_accepted"`
+	TaskActionSignatureActivationHeight uint64 `json:"task_action_signature_activation_height"`
+	TaskActionSignaturesActive          bool   `json:"task_action_signatures_active"`
+	TxContentRootActivationHeight       uint64 `json:"tx_content_root_activation_height"`
+	TxContentRootActive                 bool   `json:"tx_content_root_active"`
 }
 
 // MiningInfo advertises the validator's mining-consensus posture so
@@ -230,6 +258,7 @@ func (h *Handlers) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		NodeRole:         role.String(),
 		Network:          branding.NetworkLabel(),
 		TaskActionsReady: TaskActionSubmissionReady(),
+		ConsensusAuth:    h.buildConsensusAuthInfo(chainTip),
 		Coin: CoinInfo{
 			Name:         branding.CoinName,
 			Symbol:       branding.CoinSymbol,
@@ -308,6 +337,41 @@ func (h *Handlers) SetPeerCountSource(fn func() int) {
 // The callback must be safe for concurrent use and should return quickly.
 func (h *Handlers) SetChainTipSource(fn func() uint64) {
 	h.chainTipSource = fn
+}
+
+// SetConsensusAuthPosture records the operator's consensus-authentication
+// configuration for the public status endpoint.
+func (h *Handlers) SetConsensusAuthPosture(requireSignedVotes bool, signedMessageActivationHeight, taskActionSignatureActivationHeight, txContentRootActivationHeight uint64) {
+	h.consensusAuthPosture = consensusAuthPosture{
+		requireSignedVotes:                  requireSignedVotes,
+		signedMessageActivationHeight:       signedMessageActivationHeight,
+		taskActionSignatureActivationHeight: taskActionSignatureActivationHeight,
+		txContentRootActivationHeight:       txContentRootActivationHeight,
+	}
+}
+
+func (h *Handlers) buildConsensusAuthInfo(chainTip uint64) ConsensusAuthInfo {
+	posture := h.consensusAuthPosture
+	signedConsensusActive := posture.requireSignedVotes && signedConsensusRequiredAt(chainTip, posture.signedMessageActivationHeight)
+	return ConsensusAuthInfo{
+		SignedConsensusSupported:            true,
+		RequireSignedVotes:                  posture.requireSignedVotes,
+		SignedMessageActivationHeight:       posture.signedMessageActivationHeight,
+		SignedConsensusActive:               signedConsensusActive,
+		UnsignedConsensusTrafficAccepted:    !signedConsensusActive,
+		TaskActionSignatureActivationHeight: posture.taskActionSignatureActivationHeight,
+		TaskActionSignaturesActive:          activationReached(chainTip, posture.taskActionSignatureActivationHeight),
+		TxContentRootActivationHeight:       posture.txContentRootActivationHeight,
+		TxContentRootActive:                 activationReached(chainTip, posture.txContentRootActivationHeight),
+	}
+}
+
+func signedConsensusRequiredAt(chainTip, activation uint64) bool {
+	return activation == 0 || chainTip >= activation
+}
+
+func activationReached(chainTip, activation uint64) bool {
+	return activation > 0 && chainTip >= activation
 }
 
 // formatDustAsCell converts a dust amount into a CELL-denominated decimal
