@@ -50,6 +50,26 @@ written.
 Present but invalid signatures are rejected even during this compatibility
 phase. Only missing signatures remain accepted.
 
+### Public status check
+
+`GET /api/v1/status` includes `consensus_auth` so operators can confirm the
+live posture without reading local config files. During Phase 1 the expected
+compatibility posture is:
+
+```json
+{
+  "signed_consensus_supported": true,
+  "require_signed_votes": false,
+  "signed_message_activation_height": 0,
+  "signed_consensus_active": false,
+  "unsigned_consensus_traffic_accepted": true
+}
+```
+
+On 2026-08-29, `node.qsdm.tech` was verified on commit `238a0e9` with this
+compatibility posture, while task-action signatures and transaction-content
+roots were already active from height `625000`.
+
 ## Phase 2: choose one height
 
 After every validator is upgraded, operators approve one future activation
@@ -85,6 +105,20 @@ At the boundary, monitor chain height, peer count, BFT commits, follower
 append errors, POL conflicts, and signature rejection metrics. Do not
 unilaterally disable enforcement after activation; a validator with different
 settings can diverge from the network.
+
+After activation, every validator should report the same values at the same
+chain height:
+
+```json
+{
+  "require_signed_votes": true,
+  "signed_consensus_active": true,
+  "unsigned_consensus_traffic_accepted": false
+}
+```
+
+Treat activation as complete only when all validators agree on both the config
+values and the chain height at which enforcement turned on.
 
 ## Task-action signatures
 

@@ -80,8 +80,11 @@ an operator-granted session:
 - `/api/v1/receipts`, `/api/v1/receipts/{tx_id}`
 - `/api/v1/streams`, `/api/v1/streams/{stream_id}`, `/api/v1/streams/nonce`
 
-All remain rate-limited per-IP by the same limiter that protects
-authenticated routes.
+Most remain rate-limited by the same limiter that protects authenticated
+routes. Health checks and public trust/audit transparency reads are exempt so
+probes and static widgets cannot starve the trust surface. High-frequency
+public reads such as `/status`, `/versions`, `/chain/blocks`, and task catalog
+reads use a larger per-path cap.
 
 `POST /api/v1/streams/actions/submit-signed` is also reachable without a
 dashboard JWT because the canonical action carries its own ML-DSA wallet
@@ -117,13 +120,18 @@ the `X-CSRF-Token` header. Server-to-server callers using JWT
 bearer auth do not need this — the CSRF middleware applies only to
 cookie-authenticated browser flows.
 
-### `X-API-Key` (rate-limit identifier — not authentication)
+### Rate-limit client identity
 
-The optional `X-API-Key` header is **not** an authentication
-credential — it's an opaque per-client identifier the rate limiter
-uses to group requests under a stable key (instead of the source
-IP). Authentication is JWT Bearer; granting access never relies on
-the key value. Source: `pkg/api/security.go::getClientIdentifier`.
+Authentication is JWT Bearer or endpoint-specific ML-DSA envelopes; rate
+limits do not grant access. The pre-auth limiter keys by client IP only.
+`X-API-Key` is not an authentication credential and is not used to mint a
+separate anonymous bucket.
+
+When `QSDM_TRUST_PROXY_HEADERS=1` is enabled behind a trusted reverse proxy,
+QSDM reads `X-Real-IP` first and falls back to the rightmost
+`X-Forwarded-For` entry. The proxy must overwrite `X-Real-IP` with the real
+remote host. Do not enable this flag if callers can reach the API port
+directly or can inject trusted proxy headers themselves.
 
 ---
 
@@ -377,17 +385,19 @@ pinned tighter in `pkg/api/security.go` — for example
 and `/api/v1/health/*`
 are exempt so probes are not throttled.
 
-Every response carries the standard limit headers:
+Rate-limited responses return `429` and include `Retry-After`. The role-aware
+limiter also includes `X-RateLimit-Limit`:
 
 ```
-X-RateLimit-Limit:     100
-X-RateLimit-Remaining: 95
-X-RateLimit-Reset:     <unix-timestamp>
+Retry-After:       60
+X-RateLimit-Limit: 30
 ```
 
-The client identifier is `X-API-Key` if present, else the source IP
-(via the first hop of `X-Forwarded-For` if proxied, else
-`r.RemoteAddr`).
+The client identifier is the source IP. When
+`QSDM_TRUST_PROXY_HEADERS=1` is enabled behind a trusted reverse proxy, QSDM
+uses the proxy-provided real client address (`X-Real-IP`, then the rightmost
+`X-Forwarded-For`). The public deployment must keep the API port reachable only
+through the proxy when this flag is active.
 
 Operator override: `[api] rate_limit_max_requests` /
 `rate_limit_window` in the config file, or

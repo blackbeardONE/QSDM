@@ -14,13 +14,13 @@ info:
     - TLS 1.3 encryption
     - Quantum-safe JWT tokens (CRYSTALS-Dilithium)
     - Request signing with quantum-safe signatures
-    - Rate limiting: default **100 requests per client per minute** (`[api] rate_limit_max_requests` / `rate_limit_window` or `QSDM_API_RATE_LIMIT_MAX` / `QSDM_API_RATE_LIMIT_WINDOW`; the legacy `QSDM_*` env vars continue to be accepted during the deprecation window, see `REBRAND_NOTES.md`). Some routes are stricter (e.g. GET /monitoring/ngc-challenge at 15/min). **GET /health** and **/health/*** are exempt so probes are not throttled.
+    - Rate limiting: default **100 requests per client per minute** (`[api] rate_limit_max_requests` / `rate_limit_window` or `QSDM_API_RATE_LIMIT_MAX` / `QSDM_API_RATE_LIMIT_WINDOW`; the legacy `QSDM_*` env vars continue to be accepted during the deprecation window, see `REBRAND_NOTES.md`). Some routes are stricter (e.g. GET /monitoring/ngc-challenge at 15/min). Health checks and public trust/audit transparency reads are exempt so probes and public widgets are not throttled.
     - Replay attack protection
     - Role-based access control
     
     **Submesh policy (optional):** When the node loads `[network] submesh_config` / `QSDM_SUBMESH_CONFIG` (legacy alias: `QSDM_SUBMESH_CONFIG`), some ledger routes may return **422 Unprocessable Entity** if fee+geotag do not match a profile or the serialized payload exceeds `max_tx_size` (wallet send), or mint/token-create exceeds the strictest profile cap. See main README “Submesh profiles”.
 
-    **Public read (transparency) endpoints — v1.1.0 catch-up.** A growing set of read-only routes is intentionally unauthenticated so SDK clients, third-party aggregators, and the public landing page widget at `https://qsdm.tech/trust` can scrape verifiable signals without an operator-granted session: `/status`, `/versions`, `/wallet/balance`, `/wallet/nonce`, `/tokens/list`, `/audit/summary`, `/audit/items`, `/audit/badge.svg`, `/trust/attestations/summary`, `/trust/attestations/recent`, `/attest/recent-rejections`, `/receipts`, `/receipts/{tx_id}`, `/streams`, `/streams/{stream_id}`, `/streams/nonce`. The signed stream write `/streams/actions/submit-signed` is public because its canonical action carries its own ML-DSA wallet authorization. All are rate-limited per-IP by the same limiter that protects authenticated routes; the audit checklist text is already public from the open-source repo, and the trust posture is "always show X of Y, never just X" (see `NVIDIA_LOCK_CONSENSUS_SCOPE.md`).
+    **Public read (transparency) endpoints — v1.1.0 catch-up.** A growing set of read-only routes is intentionally unauthenticated so SDK clients, third-party aggregators, and the public landing page widget at `https://qsdm.tech/trust` can scrape verifiable signals without an operator-granted session: `/status`, `/versions`, `/wallet/balance`, `/wallet/nonce`, `/tokens/list`, `/audit/summary`, `/audit/items`, `/audit/badge.svg`, `/trust/attestations/summary`, `/trust/attestations/recent`, `/attest/recent-rejections`, `/receipts`, `/receipts/{tx_id}`, `/streams`, `/streams/{stream_id}`, `/streams/nonce`. The signed stream write `/streams/actions/submit-signed` is public because its canonical action carries its own ML-DSA wallet authorization. Most public reads are rate-limited by the same limiter that protects authenticated routes; health checks and public trust/audit transparency reads are exempt so probes and static widgets cannot starve the trust surface. The trust posture is "always show X of Y, never just X" (see `NVIDIA_LOCK_CONSENSUS_SCOPE.md`).
   version: 1.1.0
   contact:
     name: QSDM Development Team
@@ -1119,9 +1119,9 @@ paths:
         Unauthenticated public-read endpoint surfacing the `node_role`
         (`validator`/`miner`), build profile, mining flag, the native
         coin metadata (Cell / CELL / 8 decimals), branding strings,
-        and a snapshot of the §8 emission schedule. Powers the SDK
-        client's "what kind of node am I talking to?" probe and the
-        dashboard's network/role/coin pills.
+        a snapshot of the §8 emission schedule, and the `consensus_auth`
+        rollout posture. Powers the SDK client's "what kind of node am I
+        talking to?" probe and the dashboard's network/role/coin pills.
       operationId: nodeStatus
       responses:
         '200':
@@ -2202,9 +2202,56 @@ components:
           type: object
           description: Snapshot of the §8 emission schedule (current epoch, reward, halving height, supply cap)
           additionalProperties: true
+        consensus_auth:
+          $ref: '#/components/schemas/ConsensusAuthInfo'
         version:
           type: string
           description: Semver of the running binary
+
+    ConsensusAuthInfo:
+      type: object
+      description: Public consensus-authentication rollout posture reported by GET /status.
+      required:
+        - signed_consensus_supported
+        - require_signed_votes
+        - signed_message_activation_height
+        - signed_consensus_active
+        - unsigned_consensus_traffic_accepted
+        - task_action_signature_activation_height
+        - task_action_signatures_active
+        - tx_content_root_activation_height
+        - tx_content_root_active
+      properties:
+        signed_consensus_supported:
+          type: boolean
+          description: True when the binary can sign and verify consensus messages.
+        require_signed_votes:
+          type: boolean
+          description: Configured enforcement flag for signed BFT and consensus artifacts.
+        signed_message_activation_height:
+          type: integer
+          format: int64
+          description: Height where unsigned consensus artifacts stop being accepted; 0 means inactive.
+        signed_consensus_active:
+          type: boolean
+          description: True once signed consensus enforcement is active at the current chain height.
+        unsigned_consensus_traffic_accepted:
+          type: boolean
+          description: True while compatibility mode still accepts missing consensus signatures.
+        task_action_signature_activation_height:
+          type: integer
+          format: int64
+          description: Height where signed task actions became required.
+        task_action_signatures_active:
+          type: boolean
+          description: True when task-action signatures are required and verified during apply.
+        tx_content_root_activation_height:
+          type: integer
+          format: int64
+          description: Height where transaction content roots became required.
+        tx_content_root_active:
+          type: boolean
+          description: True when block transaction-content roots are enforced.
 
     # ------------------------------------------------------------------
     # Audit checklist (Session 77 / v0.4.2)
