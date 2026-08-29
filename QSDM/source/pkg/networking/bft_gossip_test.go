@@ -49,11 +49,17 @@ func TestBFTGossipIngress_ReceiveOnlyStillAuthenticates(t *testing.T) {
 	if err := ingress.HandlePeerMessage("peer", badSignature); !errors.Is(err, chain.ErrBFTBadSignature) {
 		t.Fatalf("receive-only ingress must reject invalid signatures, got %v", err)
 	}
+	if stats := authExec.AuthStats(); stats.UnsignedRejected != 1 || stats.BadSignatureRejected != 1 || stats.SignedAccepted != 0 || stats.UnsignedAccepted != 0 {
+		t.Fatalf("receive-only auth stats = %+v", stats)
+	}
 }
 
 func TestBFTGossipIngress_StatsDedupe(t *testing.T) {
 	vs := chain.NewValidatorSet(chain.DefaultValidatorSetConfig())
-	for _, reg := range []struct{ addr string; stake float64 }{
+	for _, reg := range []struct {
+		addr  string
+		stake float64
+	}{
 		{"v1", 100}, {"v2", 100}, {"v3", 100},
 	} {
 		if err := vs.Register(reg.addr, reg.stake); err != nil {
@@ -79,7 +85,10 @@ func TestBFTGossipIngress_StatsDedupe(t *testing.T) {
 
 func TestBFTGossipIngress_Apply(t *testing.T) {
 	vs := chain.NewValidatorSet(chain.DefaultValidatorSetConfig())
-	for _, reg := range []struct{ addr string; stake float64 }{
+	for _, reg := range []struct {
+		addr  string
+		stake float64
+	}{
 		{"v1", 100}, {"v2", 100}, {"v3", 100},
 	} {
 		if err := vs.Register(reg.addr, reg.stake); err != nil {
@@ -117,7 +126,10 @@ func TestBFTGossipIngress_Apply(t *testing.T) {
 
 func TestBFTGossipIngress_EquivocationReputation(t *testing.T) {
 	vs := chain.NewValidatorSet(chain.DefaultValidatorSetConfig())
-	for _, reg := range []struct{ addr string; stake float64 }{
+	for _, reg := range []struct {
+		addr  string
+		stake float64
+	}{
 		{"v1", 100}, {"v2", 100}, {"v3", 100},
 	} {
 		if err := vs.Register(reg.addr, reg.stake); err != nil {

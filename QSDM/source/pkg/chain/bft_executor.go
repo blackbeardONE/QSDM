@@ -28,8 +28,14 @@ type BFTExecutor struct {
 	// direct callers and legacy tests.
 	signedVoteActivationHeight atomic.Uint64
 
-	commitNotified map[uint64]struct{}
-	pending        *PendingProposalStore
+	// Auth counters let operators observe remaining unsigned compatibility
+	// traffic before choosing a coordinated enforcement height.
+	authSignedAccepted       atomic.Uint64
+	authUnsignedAccepted     atomic.Uint64
+	authUnsignedRejected     atomic.Uint64
+	authBadSignatureRejected atomic.Uint64
+	commitNotified           map[uint64]struct{}
+	pending                  *PendingProposalStore
 
 	appendOK       atomic.Uint64
 	appendSkip     atomic.Uint64
@@ -332,6 +338,27 @@ func (e *BFTExecutor) SignedVoteActivationHeight() uint64 {
 	return e.signedVoteActivationHeight.Load()
 }
 
+// BFTAuthStats reports cumulative inbound authentication outcomes.
+type BFTAuthStats struct {
+	SignedAccepted       uint64
+	UnsignedAccepted     uint64
+	UnsignedRejected     uint64
+	BadSignatureRejected uint64
+}
+
+// AuthStats returns a snapshot of inbound BFT authentication outcomes.
+func (e *BFTExecutor) AuthStats() BFTAuthStats {
+	if e == nil {
+		return BFTAuthStats{}
+	}
+	return BFTAuthStats{
+		SignedAccepted:       e.authSignedAccepted.Load(),
+		UnsignedAccepted:     e.authUnsignedAccepted.Load(),
+		UnsignedRejected:     e.authUnsignedRejected.Load(),
+		BadSignatureRejected: e.authBadSignatureRejected.Load(),
+	}
+}
+
 func (e *BFTExecutor) signedVotesRequiredAt(height uint64) bool {
 	if !e.RequireSignedVotes() {
 		return false
@@ -347,11 +374,18 @@ func (e *BFTExecutor) signedVotesRequiredAt(height uint64) bool {
 func (e *BFTExecutor) checkInboundAuth(height uint64, signed bool, verify func() error) error {
 	if !signed {
 		if e.signedVotesRequiredAt(height) {
+			e.authUnsignedRejected.Add(1)
 			return ErrBFTUnsigned
 		}
+		e.authUnsignedAccepted.Add(1)
 		return nil
 	}
-	return verify()
+	if err := verify(); err != nil {
+		e.authBadSignatureRejected.Add(1)
+		return err
+	}
+	e.authSignedAccepted.Add(1)
+	return nil
 }
 
 // PendingBlock returns a gossip-cached block body for this height and vote value (e.g. StateRoot), if known.
