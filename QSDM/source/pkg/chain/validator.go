@@ -9,42 +9,45 @@ import (
 )
 
 var (
-	ErrAlreadyRegistered  = errors.New("validator already registered")
-	ErrNotRegistered      = errors.New("validator not registered")
-	ErrInsufficientStake  = errors.New("insufficient stake")
-	ErrAlreadySlashed     = errors.New("validator already slashed")
-	ErrValidatorJailed    = errors.New("validator is jailed")
+	ErrAlreadyRegistered = errors.New("validator already registered")
+	ErrNotRegistered     = errors.New("validator not registered")
+	ErrInsufficientStake = errors.New("insufficient stake")
+	ErrAlreadySlashed    = errors.New("validator already slashed")
+	ErrValidatorJailed   = errors.New("validator is jailed")
 )
 
 // ValidatorStatus represents a validator's lifecycle state.
 type ValidatorStatus string
 
 const (
-	ValidatorActive  ValidatorStatus = "active"
-	ValidatorJailed  ValidatorStatus = "jailed"
-	ValidatorExited  ValidatorStatus = "exited"
+	ValidatorActive ValidatorStatus = "active"
+	ValidatorJailed ValidatorStatus = "jailed"
+	ValidatorExited ValidatorStatus = "exited"
 )
 
 // SlashReason describes why a validator was slashed.
 type SlashReason string
 
 const (
-	SlashDoubleSign    SlashReason = "double_sign"
-	SlashDowntime      SlashReason = "downtime"
-	SlashInvalidBlock  SlashReason = "invalid_block"
+	SlashDoubleSign   SlashReason = "double_sign"
+	SlashDowntime     SlashReason = "downtime"
+	SlashInvalidBlock SlashReason = "invalid_block"
 )
 
 // Validator represents a registered block producer.
 type Validator struct {
-	Address      string          `json:"address"`
-	Stake        float64         `json:"stake"`
-	Status       ValidatorStatus `json:"status"`
-	RegisteredAt time.Time       `json:"registered_at"`
-	JailedUntil  time.Time       `json:"jailed_until,omitempty"`
-	SlashCount   int             `json:"slash_count"`
-	TotalSlashed float64         `json:"total_slashed"`
-	BlocksProduced uint64        `json:"blocks_produced"`
-	LastBlockAt  time.Time       `json:"last_block_at,omitempty"`
+	Address string `json:"address"`
+	// SelfStake is the validator's own locked bond. Stake remains the effective
+	// voting power after temporary derived weights are applied.
+	SelfStake      float64         `json:"self_stake"`
+	Stake          float64         `json:"stake"`
+	Status         ValidatorStatus `json:"status"`
+	RegisteredAt   time.Time       `json:"registered_at"`
+	JailedUntil    time.Time       `json:"jailed_until,omitempty"`
+	SlashCount     int             `json:"slash_count"`
+	TotalSlashed   float64         `json:"total_slashed"`
+	BlocksProduced uint64          `json:"blocks_produced"`
+	LastBlockAt    time.Time       `json:"last_block_at,omitempty"`
 }
 
 // SlashEvent records a slashing incident.
@@ -58,12 +61,12 @@ type SlashEvent struct {
 
 // ValidatorSetConfig configures the validator set.
 type ValidatorSetConfig struct {
-	MinStake       float64       `json:"min_stake"`
-	MaxValidators  int           `json:"max_validators"`
-	EpochBlocks    uint64        `json:"epoch_blocks"`     // blocks per epoch
-	JailDuration   time.Duration `json:"jail_duration"`
-	SlashFraction  float64       `json:"slash_fraction"`   // fraction of stake slashed (0.0–1.0)
-	DowntimeSlash  float64       `json:"downtime_slash"`   // fraction for downtime
+	MinStake      float64       `json:"min_stake"`
+	MaxValidators int           `json:"max_validators"`
+	EpochBlocks   uint64        `json:"epoch_blocks"` // blocks per epoch
+	JailDuration  time.Duration `json:"jail_duration"`
+	SlashFraction float64       `json:"slash_fraction"` // fraction of stake slashed (0.0–1.0)
+	DowntimeSlash float64       `json:"downtime_slash"` // fraction for downtime
 }
 
 // DefaultValidatorSetConfig returns sensible defaults.
@@ -80,12 +83,12 @@ func DefaultValidatorSetConfig() ValidatorSetConfig {
 
 // ValidatorSet manages the active set of validators.
 type ValidatorSet struct {
-	mu          sync.RWMutex
-	validators  map[string]*Validator
-	slashLog    []SlashEvent
-	config      ValidatorSetConfig
+	mu           sync.RWMutex
+	validators   map[string]*Validator
+	slashLog     []SlashEvent
+	config       ValidatorSetConfig
 	currentEpoch uint64
-	blockCount  uint64
+	blockCount   uint64
 }
 
 // NewValidatorSet creates a validator set with the given config.
@@ -122,6 +125,7 @@ func (vs *ValidatorSet) Register(address string, stake float64) error {
 
 	vs.validators[address] = &Validator{
 		Address:      address,
+		SelfStake:    stake,
 		Stake:        stake,
 		Status:       ValidatorActive,
 		RegisteredAt: time.Now(),
@@ -141,6 +145,7 @@ func (vs *ValidatorSet) AddStake(address string, amount float64) error {
 	if v.Status == ValidatorExited {
 		return fmt.Errorf("cannot stake on exited validator")
 	}
+	v.SelfStake += amount
 	v.Stake += amount
 	return nil
 }
@@ -178,6 +183,10 @@ func (vs *ValidatorSet) Slash(address string, reason SlashReason) (*SlashEvent, 
 	}
 	amount := v.Stake * fraction
 	v.Stake -= amount
+	v.SelfStake -= v.SelfStake * fraction
+	if v.SelfStake < 1e-12 {
+		v.SelfStake = 0
+	}
 	v.TotalSlashed += amount
 	v.SlashCount++
 	v.Status = ValidatorJailed
@@ -298,7 +307,22 @@ func (vs *ValidatorSet) RegisteredAddresses() []string {
 	return out
 }
 
-// SetStake sets absolute bonded stake for a known validator (e.g. synced from account balances).
+// ResetEffectiveStake restores a validator's voting power to its locked self-stake.
+func (vs *ValidatorSet) ResetEffectiveStake(address string) error {
+	vs.mu.Lock()
+	defer vs.mu.Unlock()
+	v, ok := vs.validators[address]
+	if !ok {
+		return ErrNotRegistered
+	}
+	if v.Status == ValidatorExited {
+		return fmt.Errorf("cannot reset stake on exited validator")
+	}
+	v.Stake = v.SelfStake
+	return nil
+}
+
+// SetStake sets absolute effective voting power for a known validator.
 // Values below MinStake are clamped up to MinStake for active/jailed validators.
 func (vs *ValidatorSet) SetStake(address string, stake float64) error {
 	vs.mu.Lock()

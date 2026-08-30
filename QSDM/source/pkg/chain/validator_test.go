@@ -50,6 +50,9 @@ func TestValidatorSet_AddStake(t *testing.T) {
 	if v.Stake != 250 {
 		t.Fatalf("expected stake 250, got %f", v.Stake)
 	}
+	if v.SelfStake != 250 {
+		t.Fatalf("expected self stake 250, got %f", v.SelfStake)
+	}
 }
 
 func TestValidatorSet_Slash(t *testing.T) {
@@ -73,6 +76,9 @@ func TestValidatorSet_Slash(t *testing.T) {
 	}
 	if v.Stake != 900 {
 		t.Fatalf("expected 900 remaining, got %f", v.Stake)
+	}
+	if v.SelfStake != 900 {
+		t.Fatalf("expected self stake 900 remaining, got %f", v.SelfStake)
 	}
 }
 
@@ -195,5 +201,28 @@ func TestValidatorSet_CannotSlashExited(t *testing.T) {
 	_, err := vs.Slash("v1", SlashDoubleSign)
 	if err == nil {
 		t.Fatal("expected error slashing exited validator")
+	}
+}
+
+func TestValidatorSet_ResetEffectiveStakeUsesLockedSelfStake(t *testing.T) {
+	vs := NewValidatorSet(DefaultValidatorSetConfig())
+	if err := vs.Register("val1", 200); err != nil {
+		t.Fatal(err)
+	}
+	if err := vs.SetStake("val1", 750); err != nil {
+		t.Fatal(err)
+	}
+
+	weighted, _ := vs.GetValidator("val1")
+	if weighted.Stake != 750 || weighted.SelfStake != 200 {
+		t.Fatalf("pre-reset stake = %+v, want effective 750 with locked self stake 200", weighted)
+	}
+
+	if err := vs.ResetEffectiveStake("val1"); err != nil {
+		t.Fatal(err)
+	}
+	reset, _ := vs.GetValidator("val1")
+	if reset.Stake != 200 || reset.SelfStake != 200 {
+		t.Fatalf("post-reset stake = %+v, want effective and self stake both 200", reset)
 	}
 }
