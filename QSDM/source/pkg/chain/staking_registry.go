@@ -26,7 +26,7 @@ func countProducerBlocks(bp *BlockProducer) map[string]int {
 // SyncValidatorStakesFromCommittedChain resets voting power to locked self-stake, then
 // applies optional producer weight from sealed blocks when producerBonus is nonzero.
 func SyncValidatorStakesFromCommittedChain(vs *ValidatorSet, as *AccountStore, bp *BlockProducer, producerBonus float64) {
-	if vs == nil || as == nil {
+	if vs == nil {
 		return
 	}
 	SyncValidatorStakesFromAccounts(vs, as)

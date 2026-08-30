@@ -59,6 +59,23 @@ func TestSyncValidatorStakesFromCommittedChain_DefaultIgnoresBalancesAndBlocks(t
 	}
 }
 
+func TestSyncValidatorStakesFromCommittedChain_WorksWithoutAccountStore(t *testing.T) {
+	vs := NewValidatorSet(DefaultValidatorSetConfig())
+	if err := vs.Register("val-a", 125); err != nil {
+		t.Fatal(err)
+	}
+	if err := vs.SetStake("val-a", 900); err != nil {
+		t.Fatal(err)
+	}
+
+	SyncValidatorStakesFromCommittedChain(vs, nil, nil, DefaultProducerBlockStakeBonus)
+
+	v, _ := vs.GetValidator("val-a")
+	if v.Stake != 125 || v.SelfStake != 125 {
+		t.Fatalf("stake = %+v, want reset to locked self stake 125 without account store", v)
+	}
+}
+
 func TestSyncValidatorStakesFromCommittedChain_ExplicitProducerBonusIsIdempotent(t *testing.T) {
 	pid := "val-a"
 	as := NewAccountStore()
