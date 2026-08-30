@@ -1,8 +1,9 @@
 package chain
 
-// DefaultProducerBlockStakeBonus is voting weight added per sealed block where the
-// validator appears as ProducerID (committed-chain staking proxy until a full module exists).
-const DefaultProducerBlockStakeBonus = 0.25
+// DefaultProducerBlockStakeBonus is the voting weight added per sealed block by the
+// default sync path. Production defaults to zero so validators do not gain voting
+// power merely by producing blocks.
+const DefaultProducerBlockStakeBonus = 0
 
 func countProducerBlocks(bp *BlockProducer) map[string]int {
 	out := make(map[string]int)
@@ -22,10 +23,10 @@ func countProducerBlocks(bp *BlockProducer) map[string]int {
 	return out
 }
 
-// SyncValidatorStakesFromCommittedChain sets base stake from account balances, then adds
-// producer weight from all sealed blocks in bp (on-chain registry proxy).
+// SyncValidatorStakesFromCommittedChain resets voting power to locked self-stake, then
+// applies optional producer weight from sealed blocks when producerBonus is nonzero.
 func SyncValidatorStakesFromCommittedChain(vs *ValidatorSet, as *AccountStore, bp *BlockProducer, producerBonus float64) {
-	if vs == nil || as == nil {
+	if vs == nil {
 		return
 	}
 	SyncValidatorStakesFromAccounts(vs, as)

@@ -71,8 +71,13 @@ func TestSyncValidatorStakesFromCommittedTip_MergesDelegation(t *testing.T) {
 	}
 	SyncValidatorStakesFromCommittedTip(vs, as, bp, sl)
 	v, _ := vs.GetValidator(pid)
-	if v.Stake < 100+100 {
-		t.Fatalf("expected delegation merged into stake, got %v", v.Stake)
+	if v.Stake != 200 || v.SelfStake != 100 {
+		t.Fatalf("expected delegation merged once into stake, got %+v", v)
+	}
+	SyncValidatorStakesFromCommittedTip(vs, as, bp, sl)
+	v2, _ := vs.GetValidator(pid)
+	if v2.Stake != 200 || v2.SelfStake != 100 {
+		t.Fatalf("repeat sync drifted delegated stake, got %+v", v2)
 	}
 }
 
