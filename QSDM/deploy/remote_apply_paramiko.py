@@ -40,9 +40,9 @@
 #
 # Rollback plan: the previous binary is copied to
 # /opt/qsdm/qsdm.prev before `install` overwrites it. If the new
-# build refuses to start (systemctl is-active != active), the script
-# restores the previous binary and re-enables the unit before exiting
-# non-zero.
+# build refuses to start or the JSON API does not become ready, the
+# script restores the previous binary and re-enables the unit before
+# exiting non-zero.
 import os
 import socket
 import sys
@@ -148,24 +148,59 @@ fi
 systemctl daemon-reload
 systemctl start qsdm
 
+wait_for_http_ok() {
+  url="$1"
+  label="$2"
+  timeout="${3:-180}"
+  elapsed=0
+  code=000
+  while [ "$elapsed" -lt "$timeout" ]; do
+    code=$(curl -sS -o /tmp/qsdm_ready_probe.out -m 5 -w '%{http_code}' "$url" || echo 000)
+    if [ "$code" = "200" ]; then
+      echo "  $label: ready after ${elapsed}s"
+      return 0
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+  echo "FAIL: $label did not become ready after ${timeout}s (last HTTP $code)"
+  head -c 400 /tmp/qsdm_ready_probe.out 2>/dev/null || true
+  echo
+  return 1
+}
+
+rollback_qsdm() {
+  echo 'FAIL: qsdm did not become production-ready; rolling back to previous binary'
+  if [ -f /opt/qsdm/qsdm.prev ]; then
+    systemctl stop qsdm || true
+    install -m0755 -o qsdm -g qsdm /opt/qsdm/qsdm.prev /opt/qsdm/qsdm
+    systemctl restart qsdm || true
+  fi
+  systemctl status qsdm --no-pager -l | sed -n '1,40p' || true
+  journalctl -u qsdm -n 80 --no-pager || true
+}
+
 # Backup cron (idempotent).
 (crontab -l 2>/dev/null | grep -v vps-sqlite-backup || true; \
  echo "0 3 * * * /opt/qsdm/vps-sqlite-backup.sh") | crontab -
 
 sleep 3
 
-echo '===[ systemctl is-active ]==='
+echo '===[ qsdm service readiness ]==='
 if ! systemctl is-active --quiet qsdm; then
-  echo 'FAIL: qsdm did not come up; rolling back to previous binary'
-  if [ -f /opt/qsdm/qsdm.prev ]; then
-    install -m0755 -o qsdm -g qsdm /opt/qsdm/qsdm.prev /opt/qsdm/qsdm
-    systemctl restart qsdm || true
-  fi
-  systemctl status qsdm --no-pager -l | sed -n '1,40p'
-  journalctl -u qsdm -n 50 --no-pager
+  rollback_qsdm
   exit 1
 fi
 echo 'active'
+
+# The process can be systemd-active while it is still replaying chain state.
+# Wait for the actual JSON API before publishing static files or reporting
+# success; this is the difference between a clean restart and a confusing
+# temporary public 502 during /api/v1/status warm-up.
+if ! wait_for_http_ok http://127.0.0.1:8443/api/v1/status 'api /status' 240; then
+  rollback_qsdm
+  exit 1
+fi
 
 echo '===[ landing sync (deploy/landing/ -> /var/www/qsdm/) ]==='
 # Caddy serves the corporate site from /var/www/qsdm (see Caddyfile).
@@ -208,13 +243,9 @@ echo '===[ local HTTP probes ]==='
 #
 # TrustAggregator warm-up: the /api/v1/trust/attestations/* routes answer
 # 503 {"error":"trust aggregator warming up"} until the first refresh tick
-# fires (~10s cadence, configurable in [trust] refresh_interval). The
-# earlier probe invocation landed inside that window and reported 503 in
-# the deploy log even though the redeploy was healthy. Wait out the tick
-# once here; real requests through Caddy get the right answer without a
-# synthetic sleep because the edge only sees traffic after DNS propagates
-# + user clicks.
-sleep 15
+# fires (~10s cadence, configurable in [trust] refresh_interval). Wait on
+# the actual endpoint so a slow replay does not look like a broken deploy.
+wait_for_http_ok http://127.0.0.1:8443/api/v1/trust/attestations/summary 'trust summary' 90 || true
 for url in \
   http://127.0.0.1:8443/api/v1/health/live \
   http://127.0.0.1:8443/api/v1/health/ready \
