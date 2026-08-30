@@ -3,6 +3,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=health-url.sh
+source "${SCRIPT_DIR}/health-url.sh"
 SOURCE_BINARY="${SCRIPT_DIR}/qsdm-validator"
 CHECKSUM_FILE="${SCRIPT_DIR}/SHA256SUMS.txt"
 INSTALL_DIR="/opt/qsdm"
@@ -13,7 +15,7 @@ SERVICE_NAME="qsdm"
 SERVICE_EXPLICIT=0
 SERVICE_USER="qsdm"
 USER_EXPLICIT=0
-HEALTH_URL="http://127.0.0.1:8080/api/v1/health/live"
+HEALTH_URL=""
 HEALTH_EXPLICIT=0
 HEALTH_TIMEOUT=120
 NO_START=0
@@ -31,7 +33,7 @@ Options:
   --config PATH            TOML/YAML config. Required for a fresh install.
   --service NAME           systemd unit name without .service (default: qsdm)
   --user NAME              service account for a fresh install (default: qsdm)
-  --health-url URL         liveness URL (default: local API port 8080)
+  --health-url URL         liveness URL (default: derived from [api].port)
   --health-timeout SEC     rollback deadline after restart (default: 120)
   --no-start               install/update without starting the service
   -h, --help               show this help
@@ -138,12 +140,7 @@ esac
 case "$DATA_DIR/" in
   "$INSTALL_DIR/"*) die "--data-dir cannot be inside the root-managed install directory" ;;
 esac
-if [[ "$HEALTH_URL" =~ ^https?://(127\.0\.0\.1|localhost|\[::1\]):([0-9]{1,5})(/[A-Za-z0-9._~/%-]*)?$ ]]; then
-  HEALTH_PORT=$((10#${BASH_REMATCH[2]}))
-else
-  die "--health-url must be an explicit loopback HTTP(S) URL with a port"
-fi
-(( HEALTH_PORT >= 1 && HEALTH_PORT <= 65535 )) || die "--health-url port is out of range"
+
 UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
 if systemctl cat "${SERVICE_NAME}.service" >/dev/null 2>&1 && [[ ! -f "$STATE_FILE" ]]; then
   die "refusing to adopt an existing service without QSDM install state"
@@ -176,6 +173,12 @@ fi
 if [[ -z "$CONFIG_SOURCE" ]]; then
   [[ -f "$CONFIG_TARGET" ]] || die "validator config is missing: $CONFIG_TARGET"
 fi
+
+if [[ "$HEALTH_EXPLICIT" -eq 0 && -z "$HEALTH_URL" ]]; then
+  HEALTH_URL="$(qsdm_derive_health_url_from_config "$CONFIG_TARGET")"
+fi
+qsdm_health_port_from_url HEALTH_PORT "$HEALTH_URL" || die "--health-url must be an explicit loopback HTTP(S) URL with a port"
+(( HEALTH_PORT >= 1 && HEALTH_PORT <= 65535 )) || die "--health-url port is out of range"
 
 if ! getent passwd "$SERVICE_USER" >/dev/null 2>&1; then
   useradd --system --user-group --home-dir "$INSTALL_DIR" --shell /usr/sbin/nologin "$SERVICE_USER"

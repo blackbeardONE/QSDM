@@ -2,10 +2,14 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=health-url.sh
+source "${SCRIPT_DIR}/health-url.sh"
+
 INSTALL_DIR="/opt/qsdm"
 SERVICE_NAME="qsdm"
 SERVICE_EXPLICIT=0
-HEALTH_URL="http://127.0.0.1:8080/api/v1/health/live"
+HEALTH_URL=""
 HEALTH_EXPLICIT=0
 HEALTH_TIMEOUT=120
 
@@ -50,12 +54,14 @@ if [[ "$HEALTH_EXPLICIT" -eq 0 ]]; then
   recorded_health="$(awk -F= '$1 == "health" {print substr($0, index($0, "=") + 1); exit}' "$STATE_FILE")"
   [[ -z "$recorded_health" ]] || HEALTH_URL="$recorded_health"
 fi
-if [[ "$HEALTH_URL" =~ ^https?://(127\.0\.0\.1|localhost|\[::1\]):([0-9]{1,5})(/[A-Za-z0-9._~/%-]*)?$ ]]; then
-  HEALTH_PORT=$((10#${BASH_REMATCH[2]}))
-else
-  die "--health-url must be an explicit loopback HTTP(S) URL with a port"
+config="$(awk -F= '$1 == "config" {print substr($0, index($0, "=") + 1); exit}' "$STATE_FILE")"
+
+if [[ "$HEALTH_EXPLICIT" -eq 0 && -z "$HEALTH_URL" ]]; then
+  HEALTH_URL="$(qsdm_derive_health_url_from_config "$config")"
 fi
+qsdm_health_port_from_url HEALTH_PORT "$HEALTH_URL" || die "--health-url must be an explicit loopback HTTP(S) URL with a port"
 (( HEALTH_PORT >= 1 && HEALTH_PORT <= 65535 )) || die "--health-url port is out of range"
+
 service_user="$(awk -F= '$1 == "user" {print substr($0, index($0, "=") + 1); exit}' "$STATE_FILE")"
 data_dir="$(awk -F= '$1 == "data" {print substr($0, index($0, "=") + 1); exit}' "$STATE_FILE")"
 [[ "$service_user" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] || die "invalid service user in install state"
@@ -129,7 +135,6 @@ while (( SECONDS < deadline )); do
       sleep 2
       continue
     fi
-    config="$(awk -F= '$1 == "config" {print substr($0, index($0, "=") + 1); exit}' "$STATE_FILE")"
     failed_hash="$(sha256sum "$failed" | awk '{print tolower($1)}')"
     state_tmp="$STATE_FILE.tmp.$$"
     {
