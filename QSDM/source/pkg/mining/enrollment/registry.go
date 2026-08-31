@@ -86,10 +86,11 @@ func (r *StateBackedRegistry) Lookup(nodeID string) (*hmac.Entry, error) {
 	keyCopy := make([]byte, len(rec.HMACKey))
 	copy(keyCopy, rec.HMACKey)
 	return &hmac.Entry{
-		NodeID:  rec.NodeID,
-		Owner:   rec.Owner,
-		GPUUUID: rec.GPUUUID,
-		HMACKey: keyCopy,
+		NodeID:            rec.NodeID,
+		Owner:             rec.Owner,
+		OperatorPublicKey: rec.OperatorPublicKey,
+		GPUUUID:           rec.GPUUUID,
+		HMACKey:           keyCopy,
 	}, nil
 }
 

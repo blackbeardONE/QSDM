@@ -14,12 +14,13 @@ func TestStateBackedRegistry_Lookup_Active(t *testing.T) {
 	s := NewInMemoryState()
 	key := bytes.Repeat([]byte{0xAA}, 32)
 	if err := s.ApplyEnroll(EnrollmentRecord{
-		NodeID:           "alice",
-		Owner:            "q1",
-		GPUUUID:          "GPU-1",
-		HMACKey:          key,
-		StakeDust:        1_000_000_000,
-		EnrolledAtHeight: 10,
+		NodeID:            "alice",
+		Owner:             "q1",
+		OperatorPublicKey: "operator-pubkey-hex",
+		GPUUUID:           "GPU-1",
+		HMACKey:           key,
+		StakeDust:         1_000_000_000,
+		EnrolledAtHeight:  10,
 	}); err != nil {
 		t.Fatalf("ApplyEnroll: %v", err)
 	}
@@ -28,7 +29,7 @@ func TestStateBackedRegistry_Lookup_Active(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}
-	if entry.NodeID != "alice" || entry.Owner != "q1" || entry.GPUUUID != "GPU-1" {
+	if entry.NodeID != "alice" || entry.Owner != "q1" || entry.OperatorPublicKey != "operator-pubkey-hex" || entry.GPUUUID != "GPU-1" {
 		t.Fatalf("bad entry: %+v", entry)
 	}
 	if !bytes.Equal(entry.HMACKey, key) {

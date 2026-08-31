@@ -36,12 +36,13 @@ func newFakeRegistryWithActive(t *testing.T) *fakeRegistry {
 	t.Helper()
 	return &fakeRegistry{records: map[string]*enrollment.EnrollmentRecord{
 		"rig-77": {
-			NodeID:           "rig-77",
-			Owner:            "alice",
-			GPUUUID:          "GPU-12345678-1234-1234-1234-123456789abc",
-			HMACKey:          []byte("hot-secret-32-bytes-............."),
-			StakeDust:        10 * 100_000_000,
-			EnrolledAtHeight: 42,
+			NodeID:            "rig-77",
+			Owner:             "alice",
+			OperatorPublicKey: "operator-pubkey-hex",
+			GPUUUID:           "GPU-12345678-1234-1234-1234-123456789abc",
+			HMACKey:           []byte("hot-secret-32-bytes-............."),
+			StakeDust:         10 * 100_000_000,
+			EnrolledAtHeight:  42,
 		},
 	}}
 }
@@ -93,6 +94,9 @@ func TestEnrollmentQuery_HappyPath_Active(t *testing.T) {
 	var view EnrollmentRecordView
 	if err := json.NewDecoder(rec.Body).Decode(&view); err != nil {
 		t.Fatalf("decode: %v", err)
+	}
+	if view.OperatorPublicKey != "operator-pubkey-hex" {
+		t.Errorf("operator_public_key: got %q, want fixture", view.OperatorPublicKey)
 	}
 	if view.NodeID != "rig-77" || view.Phase != "active" || !view.Slashable {
 		t.Errorf("view: %+v", view)

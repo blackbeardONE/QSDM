@@ -94,18 +94,24 @@ single validator.
    only NVIDIA-locking surface that is consensus-active today.
 5. **On-chain enrollment.** Operators register
    `(node_id, owner, gpu_uuid, hmac_key)` tuples by submitting a
-   `qsdm/enroll/v1` transaction that locks `MIN_ENROLL_STAKE = 10
-   CELL`. Unenroll bonds the stake for `UnbondWindow`
+   signed `qsdm/enroll/v2` transaction that locks
+   `MIN_ENROLL_STAKE = 10 CELL` or selects deferred bond accrual.
+   Legacy `qsdm/enroll/v1` records remain replay-valid only below
+   `SignedContractActivationHeight`. Unenroll bonds the stake for `UnbondWindow`
    (default 30 d) and the `gpu_uuid` releases at maturity, so a
    physical card can be re-enrolled by a fresh `node_id` after
-   the original record retires. Implementation in
-   `pkg/mining/enrollment/`.
+   the original record retires. Signed `qsdm/enroll/v2`
+   transactions can also retain the operator's ML-DSA public key
+   after `OperatorPublicKeyRetentionHeight`; that fork gate is
+   disabled by default for deterministic rollout. Implementation
+   in `pkg/mining/enrollment/`.
 6. **On-chain slashing.** The `qsdm/slash/v1` transaction
    surface, admission gate, receipts, and verifiers ship, but
    production acceptance is fail-closed today. HMAC-dependent
    `forged-attestation` and `double-mining` cannot attribute a
    bundle while `EnrollmentRecord.HMACKey` is public symmetric
-   chain state. `freshness-cheat` rejects through
+   chain state and proofs do not yet carry an operator wallet
+   signature. `freshness-cheat` rejects through
    `RejectAllWitness` until BFT finality supplies a real
    inclusion witness. Slash attempts therefore produce rejection
    receipts instead of draining stake. Implementation in
@@ -844,7 +850,9 @@ Schema (`pkg/mining/enrollment/types.go`):
 node_id:     UTF-8 string, ≤ 64 bytes
 owner:       reward wallet address that receives mining rewards
 gpu_uuid:    exact UUID string from `nvidia-smi --query-gpu=uuid`
-pub_key:     ed25519 public key of the operator
+operator_public_key:
+             ML-DSA public key from signed enrollment; retained
+             only after OperatorPublicKeyRetentionHeight
 hmac_key:    32 random bytes, shared secret operator↔registry
 stake_dust:  uint64; ≥ MinEnrollStakeDust at enrollment
 ```
@@ -853,14 +861,14 @@ Enrollment lifecycle:
 
 1. Operator generates an HMAC key locally (e.g. via
    `qsdmminer-console --gen-hmac-key=PATH`).
-2. Operator submits `qsdm/enroll/v1` transaction carrying
-   `(node_id, gpu_uuid, pub_key, hmac_key_commitment)` and
-   locking `MinEnrollStakeDust` at the validator's
+2. Operator submits a signed `qsdm/enroll/v2` transaction carrying
+   `(node_id, gpu_uuid, hmac_key)` and locking `MinEnrollStakeDust`
+   or selecting deferred bond accrual at the validator's
    `EnrollmentApplier`. Mempool admission: stateless validation
    via `enrollment.AdmissionChecker` in
    [`pkg/mining/enrollment/admit.go`](../../source/pkg/mining/enrollment/admit.go);
    chain-side state mutation in
-   [`pkg/chain.EnrollmentApplier`](../../source/pkg/chain/enroll_apply.go).
+   [`pkg/chain.EnrollmentApplier`](../../source/pkg/chain/enrollment_apply.go).
 3. From then on, every proof the miner emits carries a
    `nvidia-hmac-v1` bundle signed with that key.
 4. Operators or governance can revoke a `node_id` via
@@ -878,8 +886,10 @@ consumer cards: the Tensor-Core PoW mixin (§4) makes the AMD
 bypass uneconomic, and the stake-at-enrollment makes Sybil
 attacks expensive (10 CELL x N keys). HMAC-key misuse is not
 slashable today because public symmetric keys cannot attribute
-who produced a bundle; asymmetric enrollment is the planned
-upgrade that would make those offences slashable again.
+who produced a bundle. Signed enrollment public-key retention is
+the migration rail, but HMAC offences become safely slashable
+only after that gate is active and proof submissions carry
+operator wallet signatures.
 
 ### 5.3 Deny-list
 
@@ -1019,26 +1029,35 @@ Wire types in
 
 ```go
 type EnrollPayload struct {
-    NodeID     string
-    GPUUUID    string
-    PubKey     []byte // ed25519
-    HMACKey    []byte // 32 random bytes
-    StakeDust  uint64 // ≥ MinEnrollStakeDust
-    ContractID = "qsdm/enroll/v1"
+    Kind      PayloadKind
+    NodeID    string
+    GPUUUID   string
+    HMACKey   []byte // 32 random bytes
+    StakeDust uint64 // ≥ MinEnrollStakeDust, or 0 for deferred bond
+    BondMode  BondMode
+    WorkNonce uint64 // required for deferred bond
+    Memo      string
+    ContractID = "qsdm/enroll/v2"
 }
 
 type UnenrollPayload struct {
-    NodeID     string
-    ContractID = "qsdm/unenroll/v1"
+    Kind   PayloadKind
+    NodeID string
+    Reason string
+    ContractID = "qsdm/enroll/v2"
 }
 
 type EnrollmentRecord struct {
     NodeID, GPUUUID, Owner string
-    PubKey, HMACKey        []byte
+    OperatorPublicKey      string // ML-DSA, retained after fork gate
+    HMACKey                []byte
     StakeDust              uint64
+    BondMode               BondMode
+    RequiredStakeDust      uint64
     EnrolledAtHeight       uint64
     RevokedAtHeight        uint64 // 0 == active
     UnbondMaturesAtHeight  uint64 // 0 == active
+    Memo                   string
 }
 ```
 
@@ -1047,7 +1066,7 @@ Stateless mempool admission:
 (`AdmissionChecker`).
 
 Stateful chain-side applier:
-[`pkg/chain/enroll_apply.go`](../../source/pkg/chain/enroll_apply.go)
+[`pkg/chain/enrollment_apply.go`](../../source/pkg/chain/enrollment_apply.go)
 (`EnrollmentApplier`), composed via
 [`pkg/chain/applier.go`](../../source/pkg/chain/applier.go)
 (`EnrollmentAwareApplier`) into the block producer's state
@@ -1097,7 +1116,7 @@ Concrete `EvidenceVerifier` implementations:
 | Kind | Detects | Status |
 |---|---|---|
 | `forged-attestation` | An HMAC bundle whose MAC fails verification, whose `gpu_uuid` mismatches the enrolled record, whose `challenge_bind` mismatches the proof, or whose `gpu_name` matches the deny-list. | **Verifier shipped; production slash acceptance disabled.** The verifier returns `ErrAttestationUnattributable` through `pkg/mining/slashing/attribution.go` because public HMAC keys cannot attribute the producer. |
-| `double-mining` | Two distinct accepted proofs from the same `(node_id, epoch, height)`, both crypto-valid under the registered HMAC key. | **Verifier shipped; production slash acceptance disabled.** The encoder canonicalises proof order, but the verifier still refuses attribution until enrollment stores an asymmetric public key instead of a shared HMAC key. |
+| `double-mining` | Two distinct accepted proofs from the same `(node_id, epoch, height)`, both crypto-valid under the registered HMAC key. | **Verifier shipped; production slash acceptance disabled.** The encoder canonicalises proof order, but the verifier still refuses attribution until signed enrollment public-key retention is active and proof submissions carry a wallet signature checkable against that key. |
 | `freshness-cheat` | A proof whose `bundle.issued_at` is older than `FRESHNESS_WINDOW + grace` (default 60 s + 30 s) when measured against the chain block-time of the inclusion height, i.e. retroactive evidence of validator collusion or clock skew. | **Shipped** in [`pkg/mining/slashing/freshnesscheat`](../../source/pkg/mining/slashing/freshnesscheat/). The verifier is fully implemented; on-chain acceptance is gated on the injected `BlockInclusionWitness`. Production binaries ship `RejectAllWitness` (every slash rejected with a kind-specific `ErrEvidenceVerification`), pending the BFT-finality dependency in §12.3. Testnets MAY wire `TrustingTestWitness` to exercise the path end-to-end. |
 
 Production dispatcher:
@@ -1864,9 +1883,11 @@ governance ever wants to re-enable non-NVIDIA mining.
    on creating many fake `node_id`s.
 7. **HMAC key leak / rental.** The key is already public through
    chain state, so leak/rental is not the right security model.
-   The current protection is reward routing plus rate limits; a
-   future asymmetric attestation type is required before
-   forged-attestation or double-mining can be safely slashable.
+   The current protection is reward routing plus rate limits.
+   Signed enrollment can retain the operator public key behind a
+   fork gate, but a future proof signature field is still required
+   before forged-attestation or double-mining can be safely
+   slashable.
 
 ### 11.2 Out-of-scope threats
 
@@ -2105,7 +2126,9 @@ Two `Attestation.Type` values land: `nvidia-cc-v1` and
 
 > Initial enrollment stake required to register a
 > `(node_id, gpu_uuid, hmac_key)` tuple in the
-> `nvidia-hmac-v1` operator registry.
+> `nvidia-hmac-v1` operator registry. Signed v2 enrollment can
+> additionally retain the operator ML-DSA public key behind its
+> fork gate.
 
 Ratified 2026-04-24: **10 CELL.** Encoded as
 `MinEnrollStake = 10 * 10^8` dust in the v2 genesis ceremony
@@ -2177,7 +2200,7 @@ existing activation plan.
   - [`pkg/mining/enrollment/`](../../source/pkg/mining/enrollment/)
     (`types.go`, `registry.go`, `admit.go`, `stats_test.go`,
     `revoke_underbonded_test.go`).
-  - Chain-side applier: [`pkg/chain/enroll_apply.go`](../../source/pkg/chain/enroll_apply.go),
+  - Chain-side applier: [`pkg/chain/enrollment_apply.go`](../../source/pkg/chain/enrollment_apply.go),
     [`pkg/chain/applier.go`](../../source/pkg/chain/applier.go).
 - Slashing:
   - Data model: [`pkg/mining/slashing/types.go`](../../source/pkg/mining/slashing/types.go).

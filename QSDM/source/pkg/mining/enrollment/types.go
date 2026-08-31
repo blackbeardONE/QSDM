@@ -211,6 +211,11 @@ type EnrollmentRecord struct {
 	// node_id. The authority for Unenroll / Revoke operations.
 	Owner string `json:"owner"`
 
+	// OperatorPublicKey is the ML-DSA public key that proved ownership of
+	// Owner when the signed enrollment envelope was accepted. Empty for legacy
+	// records and for networks that have not activated public-key retention.
+	OperatorPublicKey string `json:"operator_public_key,omitempty"`
+
 	// GPUUUID is copied from the Enroll payload. See the
 	// hmac.Registry contract — bundle.gpu_uuid MUST match this
 	// or the proof is rejected.

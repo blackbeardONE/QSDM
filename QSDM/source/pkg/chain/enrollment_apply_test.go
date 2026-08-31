@@ -687,3 +687,63 @@ func TestIntegration_EnrollUnenrollMatureSweep(t *testing.T) {
 		t.Errorf("re-enroll after mature sweep should succeed: %v", err)
 	}
 }
+
+func TestApplyEnrollmentTx_SignedOperatorPublicKeyRetentionIsForkGated(t *testing.T) {
+	prev := enrollment.OperatorPublicKeyRetentionHeight()
+	enrollment.SetOperatorPublicKeyRetentionHeight(math.MaxUint64)
+	t.Cleanup(func() { enrollment.SetOperatorPublicKeyRetentionHeight(prev) })
+
+	height := enrollment.SignedContractActivationHeight
+	tx, sender := fxSignedEnrollTx(t, 0)
+	accounts := NewAccountStore()
+	accounts.Credit(sender, 100)
+	state := enrollment.NewInMemoryState()
+	a := NewEnrollmentApplier(accounts, state)
+	if err := a.ApplyEnrollmentTx(tx, height); err != nil {
+		t.Fatalf("signed enrollment before retention: %v", err)
+	}
+	rec, err := state.Lookup(fxNodeID)
+	if err != nil || rec == nil {
+		t.Fatalf("lookup before retention: rec=%v err=%v", rec, err)
+	}
+	if rec.OperatorPublicKey != "" {
+		t.Fatalf("operator_public_key should stay empty before activation, got %q", rec.OperatorPublicKey)
+	}
+
+	enrollment.SetOperatorPublicKeyRetentionHeight(height)
+	tx, sender = fxSignedEnrollTx(t, 0)
+	accounts = NewAccountStore()
+	accounts.Credit(sender, 100)
+	state = enrollment.NewInMemoryState()
+	a = NewEnrollmentApplier(accounts, state)
+	if err := a.ApplyEnrollmentTx(tx, height); err != nil {
+		t.Fatalf("signed enrollment at retention: %v", err)
+	}
+	rec, err = state.Lookup(fxNodeID)
+	if err != nil || rec == nil {
+		t.Fatalf("lookup at retention: rec=%v err=%v", rec, err)
+	}
+	if rec.OperatorPublicKey != tx.PublicKey {
+		t.Fatalf("operator_public_key = %q, want signed envelope public key %q", rec.OperatorPublicKey, tx.PublicKey)
+	}
+}
+
+func TestApplyEnrollmentTx_LegacyEnrollmentNeverRetainsOperatorPublicKey(t *testing.T) {
+	prev := enrollment.OperatorPublicKeyRetentionHeight()
+	enrollment.SetOperatorPublicKeyRetentionHeight(0)
+	t.Cleanup(func() { enrollment.SetOperatorPublicKeyRetentionHeight(prev) })
+
+	a := aliceWallet(t, 100)
+	tx := fxEnrollTx(t, fxAlice, 0)
+	tx.PublicKey = "not-a-signed-v2-key"
+	if err := a.ApplyEnrollmentTx(tx, 42); err != nil {
+		t.Fatalf("legacy enrollment: %v", err)
+	}
+	rec, err := a.State.Lookup(fxNodeID)
+	if err != nil || rec == nil {
+		t.Fatalf("lookup legacy enrollment: rec=%v err=%v", rec, err)
+	}
+	if rec.OperatorPublicKey != "" {
+		t.Fatalf("legacy enrollment wrote operator_public_key %q", rec.OperatorPublicKey)
+	}
+}
