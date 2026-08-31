@@ -25,12 +25,16 @@ for any `GOOS`/`GOARCH` target Go supports.
 trustcheck [flags]
 
 Flags:
-  -base string          Base URL of the validator HTTP surface (default "https://api.qsdm.tech")
-  -timeout duration     HTTP timeout per request (default 10s)
-  -limit int            limit query for /recent endpoint (default 50)
-  -allow-warmup         Treat HTTP 503 "aggregator warming up" as success (exit 0)
-  -allow-disabled       Treat HTTP 404 "operator opted out" as success (exit 0)
-  -json                 Emit machine-readable JSON instead of a checklist
+  -base string                  Base URL of the validator HTTP surface (default "https://api.qsdm.tech")
+  -timeout duration             HTTP timeout per request (default 10s)
+  -limit int                    limit query for /recent endpoint (default 50)
+  -allow-warmup                 Treat HTTP 503 "aggregator warming up" as success (exit 0)
+  -allow-disabled               Treat HTTP 404 "operator opted out" as success (exit 0)
+  -json                         Emit machine-readable JSON instead of a checklist
+  -min-attested int             Minimum summary.attested count required to pass (default 0)
+  -check-mining-path            Assert that /mining/work is reachable end to end
+  -require-signed-consensus     Assert that signed consensus enforcement is active
+  -version                      Print build metadata and exit
 
 Exit codes:
   0  all assertions passed
@@ -67,6 +71,24 @@ On `/api/v1/trust/attestations/recent?limit=N`:
 - `fresh_age_seconds ≥ 0` and monotonically non-decreasing across rows
   (rows must be ordered newest-first, per §8.5.3).
 
+When `-check-mining-path` is set:
+
+- `/mining/work` returns JSON through the public mining route. This catches
+  relay, gateway, and validator routing failures that the trust endpoints do
+  not exercise.
+
+When `-require-signed-consensus` is set, `/api/v1/status` must report:
+
+- `consensus_auth` is present.
+- `signed_consensus_supported == true`.
+- `require_signed_votes == true`.
+- `signed_message_activation_height > 0`.
+- `signed_consensus_active == true`.
+- `unsigned_consensus_traffic_accepted == false`.
+
+Keep this flag off during staged rollout. It is a production enforcement gate
+for after every validator has crossed the agreed activation height.
+
 Every assertion is surfaced in the checklist output so failures are
 immediately identifiable.
 
@@ -77,6 +99,13 @@ immediately identifiable.
   run: |
     ./trustcheck -base https://validator.example.tld -json > trust.json
     cat trust.json | jq -e '.pass'
+
+- name: Validate post-activation production posture
+  run: |
+    ./trustcheck -base https://validator.example.tld \
+      -min-attested 2 \
+      -check-mining-path \
+      -require-signed-consensus
 ```
 
 ## Security note
