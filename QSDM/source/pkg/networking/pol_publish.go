@@ -8,14 +8,18 @@ import (
 // PublishPolAfterBlockSeal runs a synthetic BFT round aligned with the sealed block height,
 // gossips propose/prevote/precommit on the BFT topic when bftExec has a publisher, and
 // gossips PrevoteLockProof + RoundCertificate when the POL relay is non-nil.
-// polFollower records the local state root after a successful sidecar Propose (POL alignment);
-// MarkLocalRoundCertificatePublished is set when gossip succeeds, the sidecar commits, or POL
-// simulation fails after the block is already sealed (liveness for anchored finality).
+// polFollower records the local state root before POL publishing can return so
+// anchored finality cannot fail open when proof generation or signing is refused.
+// MarkLocalRoundCertificatePublished is set when gossip succeeds, the sidecar
+// commits, or POL simulation fails after the block is already sealed.
 func PublishPolAfterBlockSeal(log *logging.Logger, relay *PolP2PRelay, polFollower *chain.PolFollower, bftExec *chain.BFTExecutor, bc *chain.BFTConsensus, vs *chain.ValidatorSet, blk *chain.Block) {
 	if blk == nil || log == nil {
 		return
 	}
 	h := blk.Height
+	if polFollower != nil {
+		polFollower.RecordLocalSealedBlock(h, blk.StateRoot)
+	}
 
 	markPublished := func() {
 		if polFollower != nil {
@@ -24,9 +28,6 @@ func PublishPolAfterBlockSeal(log *logging.Logger, relay *PolP2PRelay, polFollow
 	}
 
 	if bc == nil || vs == nil {
-		if polFollower != nil {
-			polFollower.RecordLocalSealedBlock(h, blk.StateRoot)
-		}
 		markPublished()
 		return
 	}
@@ -46,25 +47,16 @@ func PublishPolAfterBlockSeal(log *logging.Logger, relay *PolP2PRelay, polFollow
 	prop, err := bc.ProposerForRound(round)
 	if err != nil {
 		log.Debug("POL publish skip: proposer", "error", err)
-		if polFollower != nil {
-			polFollower.RecordLocalSealedBlock(h, blk.StateRoot)
-		}
 		markPublished()
 		return
 	}
 	if _, err := bc.Propose(h, round, prop, blk.StateRoot); err != nil {
 		log.Debug("POL publish skip: propose", "height", h, "error", err)
-		if polFollower != nil {
-			polFollower.RecordLocalSealedBlock(h, blk.StateRoot)
-		}
 		markPublished()
 		return
 	}
 	if bftExec != nil {
 		_ = bftExec.BroadcastPropose(h, round, prop, blk.StateRoot, blk)
-	}
-	if polFollower != nil {
-		polFollower.RecordLocalSealedBlock(h, blk.StateRoot)
 	}
 	for _, v := range vs.ActiveValidators() {
 		if v.Status != chain.ValidatorActive {
@@ -134,9 +126,6 @@ func publishPolAfterAlreadyCommitted(
 	markPublished func(),
 ) {
 	h := blk.Height
-	if polFollower != nil {
-		polFollower.RecordLocalSealedBlock(h, blk.StateRoot)
-	}
 	if proof, err := bc.BuildPrevoteLockProof(h); err != nil {
 		log.Debug("POL publish skip: lock proof (already committed)", "height", h, "error", err)
 	} else if !preparePrevoteLockProof(log, bftExec, proof) {
