@@ -28,7 +28,7 @@ func TestStateBackedRegistry_Lookup_Active(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}
-	if entry.NodeID != "alice" || entry.GPUUUID != "GPU-1" {
+	if entry.NodeID != "alice" || entry.Owner != "q1" || entry.GPUUUID != "GPU-1" {
 		t.Fatalf("bad entry: %+v", entry)
 	}
 	if !bytes.Equal(entry.HMACKey, key) {

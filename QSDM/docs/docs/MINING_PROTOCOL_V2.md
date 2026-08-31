@@ -93,7 +93,7 @@ single validator.
    under the legacy double-SHA256 PoW, so attestation is the
    only NVIDIA-locking surface that is consensus-active today.
 5. **On-chain enrollment.** Operators register
-   `(node_id, gpu_uuid, hmac_key)` tuples by submitting a
+   `(node_id, owner, gpu_uuid, hmac_key)` tuples by submitting a
    `qsdm/enroll/v1` transaction that locks `MIN_ENROLL_STAKE = 10
    CELL`. Unenroll bonds the stake for `UnbondWindow`
    (default 30 d) and the `gpu_uuid` releases at maturity, so a
@@ -340,7 +340,9 @@ order is alphabetical on the JSON key** — `challenge_sig` and
 2. Recompute H(miner_addr || batch_root || mix_digest) from the
    enclosing Proof; assert it matches bundle.challenge_bind.
 3. Look up bundle.node_id in the on-chain operator registry
-   (§5.2). If absent or revoked → reject.
+   (§5.2). If absent or revoked -> reject. Production also
+   asserts `Proof.MinerAddr == EnrollmentRecord.Owner`, so
+   accepted rewards route only to the enrolled owner.
 4. Fetch the HMAC key associated with that node_id from the
    registry. Recompute HMAC-SHA256 over canonical-JSON minus
    the hmac field. Reject on mismatch.
@@ -840,6 +842,7 @@ Schema (`pkg/mining/enrollment/types.go`):
 
 ```
 node_id:     UTF-8 string, ≤ 64 bytes
+owner:       reward wallet address that receives mining rewards
 gpu_uuid:    exact UUID string from `nvidia-smi --query-gpu=uuid`
 pub_key:     ed25519 public key of the operator
 hmac_key:    32 random bytes, shared secret operator↔registry
@@ -1874,8 +1877,10 @@ governance ever wants to re-enable non-NVIDIA mining.
 2. **Operator leaks their HMAC key publicly.** Revocable
    on-chain. Before revocation clears, the attacker mines from
    the operator's identity; the operator loses reputation and
-   staked Cell. The attacker can't redirect rewards because
-   `miner_addr` is HMAC'd over.
+   staked Cell. The attacker cannot redirect rewards in
+   production because the verifier also requires
+   `miner_addr == EnrollmentRecord.Owner`; `miner_addr` being
+   HMAC-bound only prevents post-signature substitution.
 3. **Side-channel attack on an operator's TPM / key storage.**
    Out of scope for consensus; same issue as every PoS chain's
    validator key.

@@ -89,10 +89,10 @@ func buildFixture(t *testing.T, now time.Time) (*InMemoryRegistry, mining.Proof,
 		MixDigest:  mix,
 		MinerAddr:  minerAddr,
 		Attestation: mining.Attestation{
-			Type:         mining.AttestationTypeHMAC,
-			GPUArch:      "ada",
-			Nonce:        nonce,
-			IssuedAt:     now.Unix(),
+			Type:     mining.AttestationTypeHMAC,
+			GPUArch:  "ada",
+			Nonce:    nonce,
+			IssuedAt: now.Unix(),
 		},
 	}
 
@@ -158,6 +158,51 @@ func TestVerify_Accepts_Valid(t *testing.T) {
 	if err := v.VerifyAttestation(p, now); err != nil {
 		t.Fatalf("happy-path rejected: %v", err)
 	}
+}
+
+func TestVerify_Accepts_OwnerBoundProofWhenRequired(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	_, p, _ := buildFixture(t, now)
+	reg := NewInMemoryRegistry()
+	if err := reg.EnrollWithOwner(fixtureNodeID, p.MinerAddr, fixtureGPUUUID, fixtureHMACKey); err != nil {
+		t.Fatalf("EnrollWithOwner: %v", err)
+	}
+
+	v := NewVerifier(reg)
+	v.RequireOwnerBinding = true
+	if err := v.VerifyAttestation(p, now); err != nil {
+		t.Fatalf("owner-bound proof rejected: %v", err)
+	}
+}
+
+func TestVerify_Rejects_MissingOwnerWhenRequired(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	reg, p, _ := buildFixture(t, now)
+	v := NewVerifier(reg)
+	v.RequireOwnerBinding = true
+
+	mustReject(t, v.VerifyAttestation(p, now), mining.ErrAttestationSignatureInvalid)
+}
+
+func TestVerify_Rejects_OwnerMismatchWhenRequired(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	_, p, b := buildFixture(t, now)
+	registeredOwner := p.MinerAddr
+
+	reg := NewInMemoryRegistry()
+	if err := reg.EnrollWithOwner(fixtureNodeID, registeredOwner, fixtureGPUUUID, fixtureHMACKey); err != nil {
+		t.Fatalf("EnrollWithOwner: %v", err)
+	}
+
+	// Model the dangerous path: the bundle is self-consistent and re-signed,
+	// but rewards are redirected away from the enrolled owner.
+	p.MinerAddr = "qsdm1attacker"
+	b.ChallengeBind = HexChallengeBind(p.MinerAddr, p.BatchRoot, p.MixDigest)
+	reSign(t, &p, b, fixtureHMACKey)
+
+	v := NewVerifier(reg)
+	v.RequireOwnerBinding = true
+	mustReject(t, v.VerifyAttestation(p, now), mining.ErrAttestationSignatureInvalid)
 }
 
 // ----- dispatch guard ----------------------------------------------
@@ -692,4 +737,3 @@ func TestVerify_Rejects_SignatureBoundToDifferentNonce(t *testing.T) {
 	v.ChallengeVerifier = sv
 	mustReject(t, v.VerifyAttestation(p, now), mining.ErrAttestationSignatureInvalid)
 }
-

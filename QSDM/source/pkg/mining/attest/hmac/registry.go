@@ -25,13 +25,16 @@ import (
 // Registry
 // -----------------------------------------------------------------------------
 
-// Entry is one registered (node_id, gpu_uuid, hmac_key) tuple. The
-// HMACKey is the raw secret — length is a registry-implementation
-// detail (in-memory impl enforces 32 bytes minimum to match the
-// reference enrollment flow). The verifier treats it as opaque
-// bytes and hands it to crypto/hmac.
+// Entry is one registered (node_id, owner, gpu_uuid, hmac_key) tuple. The
+// Owner is the enrolled reward wallet. Empty Owner is permitted for legacy
+// and test registries; production verification rejects it when reward-owner
+// binding is required. HMACKey is the raw secret - length is a registry-
+// implementation detail (in-memory impl enforces 32 bytes minimum to match
+// the reference enrollment flow). The verifier treats it as opaque bytes and
+// hands it to crypto/hmac.
 type Entry struct {
 	NodeID  string
+	Owner   string
 	GPUUUID string
 	HMACKey []byte
 }
@@ -66,9 +69,9 @@ var (
 //
 // Safe for concurrent use.
 type InMemoryRegistry struct {
-	mu       sync.RWMutex
-	entries  map[string]*Entry
-	revoked  map[string]struct{}
+	mu      sync.RWMutex
+	entries map[string]*Entry
+	revoked map[string]struct{}
 }
 
 // NewInMemoryRegistry returns an empty registry ready for
@@ -80,13 +83,21 @@ func NewInMemoryRegistry() *InMemoryRegistry {
 	}
 }
 
-// Enroll registers a new (node_id, gpu_uuid, hmac_key) tuple.
+// Enroll registers a new (node_id, gpu_uuid, hmac_key) tuple without an owner.
+// It is retained for older tests and local-mode callers that do not model
+// wallet ownership. Production paths should use EnrollWithOwner or
+// StateBackedRegistry.
+func (r *InMemoryRegistry) Enroll(nodeID, gpuUUID string, hmacKey []byte) error {
+	return r.EnrollWithOwner(nodeID, "", gpuUUID, hmacKey)
+}
+
+// EnrollWithOwner registers a new (node_id, owner, gpu_uuid, hmac_key) tuple.
 // Returns an error if node_id is empty, already enrolled, or
 // hmac_key is shorter than 32 bytes. Enforcing a minimum key
-// length here is defence-in-depth — the enrollment transaction
+// length here is defence-in-depth - the enrollment transaction
 // handler already validates keys, but we want a test-time stub
 // that matches the production invariant.
-func (r *InMemoryRegistry) Enroll(nodeID, gpuUUID string, hmacKey []byte) error {
+func (r *InMemoryRegistry) EnrollWithOwner(nodeID, owner, gpuUUID string, hmacKey []byte) error {
 	if nodeID == "" {
 		return errors.New("hmac: Enroll requires non-empty node_id")
 	}
@@ -108,6 +119,7 @@ func (r *InMemoryRegistry) Enroll(nodeID, gpuUUID string, hmacKey []byte) error 
 	copy(keyCopy, hmacKey)
 	r.entries[nodeID] = &Entry{
 		NodeID:  nodeID,
+		Owner:   owner,
 		GPUUUID: gpuUUID,
 		HMACKey: keyCopy,
 	}
@@ -143,6 +155,7 @@ func (r *InMemoryRegistry) Lookup(nodeID string) (*Entry, error) {
 	copy(keyCopy, e.HMACKey)
 	return &Entry{
 		NodeID:  e.NodeID,
+		Owner:   e.Owner,
 		GPUUUID: e.GPUUUID,
 		HMACKey: keyCopy,
 	}, nil

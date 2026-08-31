@@ -172,6 +172,7 @@ func NewProductionDispatcher(cfg ProductionConfig) (*Dispatcher, error) {
 
 	// HMAC verifier (consumer GPU path)
 	hmacV := hmac.NewVerifier(cfg.Registry)
+	hmacV.RequireOwnerBinding = true
 	hmacV.NonceStore = cfg.NonceStore
 	hmacV.ChallengeVerifier = cfg.ChallengeVerifier
 	if cfg.DenyList != nil {
