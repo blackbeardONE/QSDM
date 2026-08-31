@@ -3137,6 +3137,7 @@ const (
 	httpChainSyncWindowBlocks     = 64
 	httpChainSyncMaxWindowsPerRun = 32
 	httpChainSyncPollInterval     = 2 * time.Second
+	qsdmStagingRemoteGenesisEnv   = "QSDM_STAGING_ALLOW_REMOTE_GENESIS"
 
 	qsdmCanonicalGenesisHash      = "b6119386bb6918d0716ab9d7f51864b58c20d542e6beab261151e8d4f9a8feb6"
 	qsdmCanonicalGenesisStateRoot = "1667aa6937305e49b2bf489aec03dbb6a12ecddef89c1ad884ebe368d29c3998"
@@ -3238,7 +3239,7 @@ func syncHTTPChainSource(
 			}
 			if blk.Height == 0 && !producer.HasTip() && prepareGenesis != nil {
 				if err := prepareGenesis(&blk); err != nil {
-					return totalAppended, remoteTip, fmt.Errorf("prepare canonical genesis replay: %w", err)
+					return totalAppended, remoteTip, fmt.Errorf("prepare genesis replay: %w", err)
 				}
 			}
 			if err := producer.TryAppendExternalBlock(&blk); err != nil {
@@ -3319,6 +3320,66 @@ func prepareCanonicalGenesisReplay(accounts *chain.AccountStore, blk *chain.Bloc
 	return nil
 }
 
+func prepareStagingRemoteGenesisReplay(accounts *chain.AccountStore, blk *chain.Block) error {
+	if accounts == nil {
+		return fmt.Errorf("account store is nil")
+	}
+	if blk == nil {
+		return fmt.Errorf("genesis block is nil")
+	}
+	if blk.Height != 0 || blk.PrevHash != "" {
+		return fmt.Errorf("block is not genesis")
+	}
+	if strings.TrimSpace(blk.Hash) == "" || strings.TrimSpace(blk.StateRoot) == "" {
+		return fmt.Errorf("staging genesis must include a hash and state root")
+	}
+	if accounts.Count() != 0 {
+		return fmt.Errorf("local account state must be empty before staging genesis catch-up")
+	}
+	if len(blk.Transactions) == 0 {
+		return fmt.Errorf("staging genesis must include at least one transaction")
+	}
+
+	openingBySender := make(map[string]float64)
+	for i, tx := range blk.Transactions {
+		if tx == nil {
+			return fmt.Errorf("staging genesis transaction %d is nil", i)
+		}
+		if strings.TrimSpace(tx.Sender) == "" {
+			return fmt.Errorf("staging genesis transaction %d has an empty sender", i)
+		}
+		if tx.Amount < 0 || tx.Fee < 0 {
+			return fmt.Errorf("staging genesis transaction %d has a negative amount or fee", i)
+		}
+		openingBySender[tx.Sender] += tx.Amount + tx.Fee
+	}
+
+	for sender, required := range openingBySender {
+		opening := required + qsdmCanonicalGenesisReserve
+		if sender == blockdriver.FunderAddress {
+			opening += blockdriver.DefaultFunderBalance
+		}
+		openingBySender[sender] = opening
+	}
+
+	seeded := chain.NewAccountStore()
+	for sender, opening := range openingBySender {
+		seeded.Credit(sender, opening)
+	}
+	for i, tx := range blk.Transactions {
+		if err := seeded.ApplyTx(tx); err != nil {
+			return fmt.Errorf("verify staging genesis transaction %d: %w", i, err)
+		}
+	}
+	if got := seeded.StateRoot(); got != blk.StateRoot {
+		return fmt.Errorf("staging opening allocation root mismatch: got %s want %s", got, blk.StateRoot)
+	}
+
+	for sender, opening := range openingBySender {
+		accounts.Credit(sender, opening)
+	}
+	return nil
+}
 func startHTTPChainSync(
 	ctx context.Context,
 	logger *logging.Logger,
@@ -3337,6 +3398,21 @@ func startHTTPChainSync(
 		"max_windows_per_run", httpChainSyncMaxWindowsPerRun,
 		"poll_interval", httpChainSyncPollInterval.String())
 
+	prepareGenesis := func(blk *chain.Block) error {
+		return prepareCanonicalGenesisReplay(accounts, blk)
+	}
+	if envcompat.Truthy(qsdmStagingRemoteGenesisEnv, qsdmStagingRemoteGenesisEnv) {
+		if envcompat.Truthy("QSDM_PRODUCTION_MODE", "QSDM_PRODUCTION_MODE") {
+			log.Fatalf("%s is staging-only and cannot be enabled with QSDM_PRODUCTION_MODE", qsdmStagingRemoteGenesisEnv)
+		}
+		logger.Warn("HTTP chain catch-up will trust a non-production remote genesis for local staging only",
+			"env_var", qsdmStagingRemoteGenesisEnv,
+			"production_mode", false,
+			"warning", "do not set this on a public validator")
+		prepareGenesis = func(blk *chain.Block) error {
+			return prepareStagingRemoteGenesisReplay(accounts, blk)
+		}
+	}
 	syncOnce := func() {
 		for _, base := range bases {
 			appended, remoteTip, err := syncHTTPChainSource(
@@ -3345,9 +3421,7 @@ func startHTTPChainSync(
 				producer,
 				base,
 				httpChainSyncMaxWindowsPerRun,
-				func(blk *chain.Block) error {
-					return prepareCanonicalGenesisReplay(accounts, blk)
-				},
+				prepareGenesis,
 			)
 			if err != nil {
 				var conflict *chain.ExternalAppendConflictError
