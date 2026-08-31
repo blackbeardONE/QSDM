@@ -1037,9 +1037,22 @@ func (c *Config) Validate() error {
 		if err := validateProductionSecret("QSDM_DASHBOARD_METRICS_SCRAPE_SECRET", c.DashboardMetricsScrapeSecret); err != nil {
 			return err
 		}
+		if c.NodeRole.IsValidator() && authorizedBlockProducerCount(c.AuthorizedBlockProducers) == 0 {
+			return fmt.Errorf("consensus authorized_block_producers must include at least one pinned producer when strict_secrets=true for a validator")
+		}
 	}
 
 	return nil
+}
+
+func authorizedBlockProducerCount(producers []string) int {
+	count := 0
+	for _, producer := range producers {
+		if strings.TrimSpace(producer) != "" {
+			count++
+		}
+	}
+	return count
 }
 
 func validateProductionSecret(label, value string) error {

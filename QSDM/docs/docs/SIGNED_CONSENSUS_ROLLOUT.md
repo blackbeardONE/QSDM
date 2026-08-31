@@ -36,6 +36,11 @@ must be one shared future height. If enforcement is off, the activation height
 must remain `0`. A half-configured rollout is refused before a config file is
 written.
 
+Strict production mode also refuses a validator config with an empty
+`authorized_block_producers` list. Development nodes may still use the
+compatibility default, but production validators should pin the known block
+producer IDs that are allowed to publish onto the `qsdm-blocks` gossip topic.
+
 ## Phase 1: upgrade and observe
 
 1. Back up every validator's state directory.
