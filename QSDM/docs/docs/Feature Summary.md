@@ -2,7 +2,7 @@
 
 **Last Updated:** August 2026 · Latest Core candidate **v0.4.7-rc.9** · Hive **1.4.17** · Edge Control **1.3.7**
 
-QSDM (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger whose native coin is **Cell (CELL)**. Validators run PoE + BFT consensus; miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
+QSDM (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger whose native coin is **Cell (CELL)**. The live public network currently runs through a configured QSDM Core block producer with append-only followers while signed PoE/BFT validator rollout is staged. Miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
 
 For the current engineering readiness percentages, see [Capability Snapshot](CAPABILITY_SNAPSHOT.md).
 
@@ -21,7 +21,7 @@ it is not the CELL network gateway or another Hive client.
 
 ## Ledger & consensus
 
-- **Proof-of-Entanglement (PoE) + BFT** on a dynamic mesh (not a linear blockchain).
+- **Proof-of-Entanglement (PoE) + BFT** components for signed validator rollout; live production is currently pinned to a configured producer/follower topology.
 - **ML-DSA-87** transaction signatures (NIST FIPS 204) with Zstd compression and batch signing.
 - **3D mesh validation**, rule-based quarantine, and staked reputation penalties.
 - **Dynamic submeshes** with fee thresholds, priority routing, and geotags.
@@ -36,7 +36,7 @@ it is not the CELL network gateway or another Hive client.
 
 ## Node roles (enforced)
 
-- **Validator** — CPU-only, `mining_enabled=false`, public REST API, consensus.
+- **Validator** — CPU-only, `mining_enabled=false`, public REST API, configured producer or append-only follower role.
 - **Miner** — separate process/machine, NVIDIA GPU, HTTPS to validator `/api/v1/mining/*`.
 - No combined full-node mode.
 
