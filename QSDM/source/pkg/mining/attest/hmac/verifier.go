@@ -31,6 +31,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/mining"
 	"github.com/blackbeardONE/QSDM/pkg/mining/attest/archcheck"
 	"github.com/blackbeardONE/QSDM/pkg/mining/challenge"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
 // Verifier implements mining.AttestationVerifier for the
@@ -81,6 +82,13 @@ type Verifier struct {
 	// enrollment. Production validators enable this so a valid
 	// node/GPU HMAC cannot be redirected to a different wallet.
 	RequireOwnerBinding bool
+
+	// RequireOperatorSignature rejects proofs unless the bundle carries an
+	// ML-DSA signature made by the operator key retained from the signed
+	// enrollment transaction. This is off during migration; once enrollment-key
+	// retention is active and miners can emit operator_sig, validators can enable
+	// it to stop relying on the public HMAC key as the sole attribution rail.
+	RequireOperatorSignature bool
 
 	// OnAccept, if non-nil, is invoked exactly ONCE per
 	// successful VerifyAttestation, just before the function
@@ -198,6 +206,16 @@ func (v *Verifier) VerifyAttestation(p mining.Proof, now time.Time) error {
 	wantMAC := ComputeMAC(entry.HMACKey, canonical)
 	if !hmac.Equal(gotMAC, wantMAC) {
 		return fmt.Errorf("hmac: hmac mismatch for node %q: %w", bundle.NodeID, mining.ErrAttestationSignatureInvalid)
+	}
+
+	// Step 4b: optional operator-signature rail. The HMAC proves knowledge of
+	// the enrollment-time shared key. This asymmetric signature proves the same
+	// proof came from the enrolled operator key, not merely from anyone who can
+	// read HMACKey from public chain state.
+	if v.RequireOperatorSignature {
+		if err := verifyOperatorSignature(entry.OperatorPublicKey, bundle.OperatorSig, bundle, p); err != nil {
+			return err
+		}
 	}
 
 	// Step 5: GPU UUID binding. The registry records the GPU
@@ -331,6 +349,38 @@ func (v *Verifier) VerifyAttestation(p mining.Proof, now time.Time) error {
 		safeOnAccept(v.OnAccept, bundle, p, now)
 	}
 
+	return nil
+}
+
+func verifyOperatorSignature(operatorPublicKeyHex, operatorSigHex string, bundle Bundle, p mining.Proof) error {
+	if strings.TrimSpace(operatorPublicKeyHex) == "" {
+		return fmt.Errorf("hmac: operator public key missing for node %q: %w",
+			bundle.NodeID, mining.ErrAttestationSignatureInvalid)
+	}
+	publicKeyBytes, err := hex.DecodeString(operatorPublicKeyHex)
+	if err != nil || len(publicKeyBytes) != mldsa87.PublicKeySize {
+		return fmt.Errorf("hmac: operator_public_key must be %d-byte hex for node %q: %w",
+			mldsa87.PublicKeySize, bundle.NodeID, mining.ErrAttestationSignatureInvalid)
+	}
+	operatorSigBytes, err := hex.DecodeString(operatorSigHex)
+	if err != nil || len(operatorSigBytes) != mldsa87.SignatureSize {
+		return fmt.Errorf("hmac: operator_sig must be %d-byte hex: %w",
+			mldsa87.SignatureSize, mining.ErrAttestationBundleMalformed)
+	}
+	var publicKey mldsa87.PublicKey
+	if err := publicKey.UnmarshalBinary(publicKeyBytes); err != nil {
+		return fmt.Errorf("hmac: decode operator public key for node %q: %w: %w",
+			bundle.NodeID, err, mining.ErrAttestationSignatureInvalid)
+	}
+	canonical, err := bundle.CanonicalForOperatorSignature(p)
+	if err != nil {
+		return fmt.Errorf("hmac: operator signature canonical encode: %v: %w",
+			err, mining.ErrAttestationBundleMalformed)
+	}
+	if !mldsa87.Verify(&publicKey, canonical, nil, operatorSigBytes) {
+		return fmt.Errorf("hmac: operator signature mismatch for node %q: %w",
+			bundle.NodeID, mining.ErrAttestationSignatureInvalid)
+	}
 	return nil
 }
 

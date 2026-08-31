@@ -72,14 +72,14 @@ func TestNodeRole_Helpers(t *testing.T) {
 
 func baseValidConfig() *Config {
 	return &Config{
-		NodeRole:       NodeRoleValidator,
-		MiningEnabled:  false,
-		NetworkPort:    4001,
-		DashboardPort:  8081,
-		LogViewerPort:  9000,
-		APIPort:        8080,
-		StorageType:    "file",
-		InitialBalance: 0,
+		NodeRole:                NodeRoleValidator,
+		MiningEnabled:           false,
+		NetworkPort:             4001,
+		DashboardPort:           8081,
+		LogViewerPort:           9000,
+		APIPort:                 8080,
+		StorageType:             "file",
+		InitialBalance:          0,
 		APIRateLimitMaxRequests: 100,
 	}
 }
@@ -148,6 +148,7 @@ func TestLoadConfigFile_TOML_NodeRole(t *testing.T) {
 [node]
 role = "miner"
 mining_enabled = true
+require_mining_operator_signatures = true
 
 [network]
 port = 4001
@@ -175,6 +176,9 @@ port = 8080
 	if !cfg.MiningEnabled {
 		t.Fatal("MiningEnabled should be true")
 	}
+	if !cfg.RequireMiningOperatorSignatures {
+		t.Fatal("RequireMiningOperatorSignatures should be true")
+	}
 }
 
 func TestLoadConfigFile_YAML_NodeRole(t *testing.T) {
@@ -183,6 +187,7 @@ func TestLoadConfigFile_YAML_NodeRole(t *testing.T) {
 node:
   role: validator
   mining_enabled: false
+  require_mining_operator_signatures: true
 network:
   port: 4001
 storage:
@@ -206,11 +211,15 @@ api:
 	if cfg.MiningEnabled {
 		t.Fatal("MiningEnabled should be false")
 	}
+	if !cfg.RequireMiningOperatorSignatures {
+		t.Fatal("RequireMiningOperatorSignatures should be true")
+	}
 }
 
 func TestApplyEnvOverrides_NodeRole(t *testing.T) {
 	t.Setenv("QSDM_NODE_ROLE", "miner")
 	t.Setenv("QSDM_MINING_ENABLED", "true")
+	t.Setenv("QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES", "true")
 	cfg := &Config{NodeRole: NodeRoleValidator, MiningEnabled: false}
 	applyEnvOverrides(cfg)
 	if cfg.NodeRole != NodeRoleMiner {
@@ -218,6 +227,9 @@ func TestApplyEnvOverrides_NodeRole(t *testing.T) {
 	}
 	if !cfg.MiningEnabled {
 		t.Fatal("MiningEnabled should be true after env override")
+	}
+	if !cfg.RequireMiningOperatorSignatures {
+		t.Fatal("RequireMiningOperatorSignatures should be true after env override")
 	}
 }
 

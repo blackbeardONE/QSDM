@@ -5,15 +5,15 @@
 // is pkg/mining/attest/cc (Hopper/Blackwell CC GPUs, shipped in
 // Phase 2c-iv — see §3.2 of the same doc).
 //
-// The package is deliberately light on external dependencies — the
-// only crypto primitives used are crypto/hmac, crypto/sha256, and
-// encoding/hex. No cgo, no external libraries. That keeps this
-// verifier easy to audit, easy to port, and free of supply-chain
-// surface area, which matters because it sits on the consensus
-// critical path once FORK_V2 activates.
+// The package is deliberately light on external dependencies. The
+// legacy MAC path uses only crypto/hmac, crypto/sha256, and
+// encoding/hex; the optional operator-signature rail verifies an
+// ML-DSA enrollment key through circl. Both paths stay cgo-free,
+// which keeps the verifier portable and easier to audit because it
+// sits on the consensus-critical path once FORK_V2 activates.
 //
 // Bundle wire format (spec §3.2.2, extended in Phase 2c-iii with
-// challenge_sig / challenge_signer_id):
+// challenge_sig / challenge_signer_id, and later operator_sig):
 //
 //	{
 //	  "challenge_bind":       "<64-hex>",  // sha256(miner_addr || batch_root || mix_digest)
@@ -27,7 +27,8 @@
 //	  "hmac":                 "<64-hex>",   // HMAC-SHA256 over canonical JSON without this field
 //	  "issued_at":            1700000000,
 //	  "node_id":              "alice-rtx4090-01",
-//	  "nonce":                "<64-hex, same 32 bytes as Attestation.Nonce>"
+//	  "nonce":                "<64-hex, same 32 bytes as Attestation.Nonce>",
+//	  "operator_sig":         "<hex ML-DSA signature, optional until rollout>"
 //	}
 //
 // challenge_sig + challenge_signer_id are Phase 2c-iii additions
@@ -41,8 +42,9 @@
 // anti-replay defence. Production deployments MUST wire one in.
 //
 // The canonical form used for the HMAC is a JSON object with the
-// first 9 fields in strict alphabetical order (the `hmac` field is
-// excluded). This is emitted by Bundle.CanonicalForMAC. Miners who
+// MAC-covered fields in strict alphabetical order (`hmac` and
+// `operator_sig` are excluded).
+// This is emitted by Bundle.CanonicalForMAC. Miners who
 // emit a different byte ordering will still be accepted as long as
 // their HMAC was computed over THIS canonical form — the verifier
 // recomputes it from the unmarshalled struct before checking.
@@ -57,6 +59,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+
+	"github.com/blackbeardONE/QSDM/pkg/mining"
 )
 
 // Bundle is the decoded contents of a nvidia-hmac-v1 attestation
@@ -78,6 +83,7 @@ type Bundle struct {
 	IssuedAt          int64  `json:"issued_at"`
 	NodeID            string `json:"node_id"`
 	Nonce             string `json:"nonce"`
+	OperatorSig       string `json:"operator_sig,omitempty"`
 }
 
 // ParseBundle decodes a base64-encoded bundle into a Bundle
@@ -109,7 +115,7 @@ func ParseBundle(bundleBase64 string) (Bundle, error) {
 // canonicalBundleForMAC is the struct whose JSON serialization is
 // the input to HMAC-SHA256. It intentionally omits the HMAC field
 // so the MAC is computed over "everything but the MAC itself."
-// The field order matches Bundle minus HMAC — alphabetical — so
+// The field order matches the MAC-covered bundle fields — alphabetical — so
 // json.Marshal emits bytes identical to the spec's canonical form.
 type canonicalBundleForMAC struct {
 	ChallengeBind     string `json:"challenge_bind"`
@@ -143,6 +149,64 @@ func (b Bundle) CanonicalForMAC() ([]byte, error) {
 		IssuedAt:          b.IssuedAt,
 		NodeID:            b.NodeID,
 		Nonce:             b.Nonce,
+	})
+}
+
+const operatorSignatureDomain = "qsdm:mining:nvidia-hmac-v1:operator-signature:v1"
+
+type canonicalOperatorSignature struct {
+	Domain              string                `json:"domain"`
+	ProofVersion        uint32                `json:"proof_version"`
+	ProofEpoch          string                `json:"proof_epoch"`
+	ProofHeight         string                `json:"proof_height"`
+	ProofHeaderHash     string                `json:"proof_header_hash"`
+	ProofMinerAddr      string                `json:"proof_miner_addr"`
+	ProofBatchRoot      string                `json:"proof_batch_root"`
+	ProofBatchCount     uint32                `json:"proof_batch_count"`
+	ProofNonce          string                `json:"proof_nonce"`
+	ProofMixDigest      string                `json:"proof_mix_digest"`
+	AttestationType     string                `json:"attestation_type"`
+	AttestationGPUArch  string                `json:"attestation_gpu_arch"`
+	AttestationNonce    string                `json:"attestation_nonce"`
+	AttestationIssuedAt int64                 `json:"attestation_issued_at"`
+	Bundle              canonicalBundleForMAC `json:"bundle"`
+}
+
+// CanonicalForOperatorSignature returns the byte sequence signed by the
+// operator's ML-DSA enrollment key when the post-HMAC signature rail is enabled.
+// It intentionally excludes Bundle.HMAC and Bundle.OperatorSig so the asymmetric
+// signature stands on the operator key, while binding both the bundle semantics
+// and the outer proof identity fields that challenge_bind alone does not cover.
+func (b Bundle) CanonicalForOperatorSignature(p mining.Proof) ([]byte, error) {
+	bundle := canonicalBundleForMAC{
+		ChallengeBind:     b.ChallengeBind,
+		ChallengeSig:      b.ChallengeSig,
+		ChallengeSignerID: b.ChallengeSignerID,
+		ComputeCap:        b.ComputeCap,
+		CUDAVersion:       b.CUDAVersion,
+		DriverVer:         b.DriverVer,
+		GPUName:           b.GPUName,
+		GPUUUID:           b.GPUUUID,
+		IssuedAt:          b.IssuedAt,
+		NodeID:            b.NodeID,
+		Nonce:             b.Nonce,
+	}
+	return json.Marshal(canonicalOperatorSignature{
+		Domain:              operatorSignatureDomain,
+		ProofVersion:        p.Version,
+		ProofEpoch:          strconv.FormatUint(p.Epoch, 10),
+		ProofHeight:         strconv.FormatUint(p.Height, 10),
+		ProofHeaderHash:     hex.EncodeToString(p.HeaderHash[:]),
+		ProofMinerAddr:      p.MinerAddr,
+		ProofBatchRoot:      hex.EncodeToString(p.BatchRoot[:]),
+		ProofBatchCount:     p.BatchCount,
+		ProofNonce:          hex.EncodeToString(p.Nonce[:]),
+		ProofMixDigest:      hex.EncodeToString(p.MixDigest[:]),
+		AttestationType:     p.Attestation.Type,
+		AttestationGPUArch:  p.Attestation.GPUArch,
+		AttestationNonce:    hex.EncodeToString(p.Attestation.Nonce[:]),
+		AttestationIssuedAt: p.Attestation.IssuedAt,
+		Bundle:              bundle,
 	})
 }
 
