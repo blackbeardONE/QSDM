@@ -71,7 +71,7 @@ launching a sovereign mainnet instance:
 ```
 ┌──────────────────────────────────────────┐
 │  Validator (VPS, qsdm/validator:latest) │
-│  ─ BFT + PoE consensus                  │
+│  ─ configured producer/follower role    │
 │  ─ Public REST/JSON-RPC on :8080        │
 │  ─ libp2p peer on :4001                 │
 └──────────────────┬───────────────────────┘
