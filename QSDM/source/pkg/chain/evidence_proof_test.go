@@ -7,11 +7,18 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/crypto"
 )
 
-// signedExhibit builds an authenticated vote exhibit from a real key.
+// signedExhibit builds an authenticated BFT exhibit from a real key.
 func signedExhibit(t *testing.T, signer *crypto.Dilithium, validator, kind string, h uint64, r uint32, value string) SignedVoteExhibit {
 	t.Helper()
 	x := SignedVoteExhibit{Kind: kind, Height: h, Round: r, Validator: validator, BlockHash: value}
 	switch kind {
+	case BFTWirePropose:
+		m := BFTWireProposeMsg{Height: h, Round: r, Proposer: validator, BlockHash: value}
+		if err := SignPropose(&m, signer); err != nil {
+			t.Fatal(err)
+		}
+		x.BodyHash = proposeBodyHash(m.Block)
+		x.Auth = m.Auth
 	case BFTWirePrevote:
 		m := BFTWirePrevoteMsg{Height: h, Round: r, Validator: validator, BlockHash: value}
 		if err := SignPrevote(&m, signer); err != nil {
@@ -41,12 +48,34 @@ func TestEquivocationProof_realEquivocationVerifies(t *testing.T) {
 	}
 }
 
+func TestEquivocationProof_signedProposeEquivocationVerifies(t *testing.T) {
+	signer, addr := newBFTKey(t)
+	a := signedExhibit(t, signer, addr, BFTWirePropose, 12, 2, "proposal-a")
+	b := signedExhibit(t, signer, addr, BFTWirePropose, 12, 2, "proposal-b")
+
+	ev, err := BuildEquivocationEvidence(addr, a, b)
+	if err != nil {
+		t.Fatalf("signed propose equivocation should build: %v", err)
+	}
+	if ev.Proof == nil {
+		t.Fatal("signed propose evidence must carry its proof")
+	}
+	if err := validateEvidence(ev); err != nil {
+		t.Fatalf("signed propose evidence should validate: %v", err)
+	}
+
+	tampered := *ev.Proof
+	tampered.VoteA.BodyHash = "not-the-signed-body"
+	if err := tampered.Verify(addr); err == nil {
+		t.Fatal("tampering with a proposal body hash must invalidate the proof")
+	}
+}
+
 // TestEquivocationProof_cannotFrameAnInnocentValidator is the regression
 // test for fabricated equivocation evidence. validateEvidence used to accept
-// an accusation on asserted fields alone — a validator name plus two
-// differing hashes — with nothing binding those hashes to the accused. Any
-// peer could therefore drive a slash against a validator that never
-// equivocated.
+// an accusation on asserted fields alone: a validator name plus two differing
+// hashes, with nothing binding those hashes to the accused. Any peer could
+// therefore drive a slash against a validator that never equivocated.
 func TestEquivocationProof_cannotFrameAnInnocentValidator(t *testing.T) {
 	attacker, _ := newBFTKey(t)
 	_, victim := newBFTKey(t)
@@ -133,9 +162,9 @@ func TestBuildEquivocationEvidence_refusesUnprovableAccusation(t *testing.T) {
 	}
 }
 
-// An invalid proof is fatal regardless of policy; a missing proof is fatal
-// only once proofs are mandatory.
-func TestValidateEvidence_proofPolicy(t *testing.T) {
+// Missing equivocation proof is always fatal. The old rollout flags are kept
+// for diagnostics only and must not reopen proofless slashing.
+func TestValidateEvidence_requiresProofAlways(t *testing.T) {
 	signer, addr := newBFTKey(t)
 	_, other := newBFTKey(t)
 
@@ -144,30 +173,21 @@ func TestValidateEvidence_proofPolicy(t *testing.T) {
 		Height: 9, Round: 1, BlockHashes: []string{"a", "b"},
 	}
 
-	SetRequireEvidenceProof(false)
-	SetEvidenceProofActivationHeight(0)
 	t.Cleanup(func() {
 		SetRequireEvidenceProof(false)
 		SetEvidenceProofActivationHeight(0)
 	})
-	if err := validateEvidence(bare); err != nil {
-		t.Fatalf("unproven evidence should pass while proofs are optional: %v", err)
+	for _, require := range []bool{false, true} {
+		SetRequireEvidenceProof(require)
+		for _, activation := range []uint64{0, 10} {
+			SetEvidenceProofActivationHeight(activation)
+			if err := validateEvidence(bare); !errors.Is(err, ErrEvidenceProofMissing) {
+				t.Fatalf("require=%v activation=%d: want ErrEvidenceProofMissing, got %v", require, activation, err)
+			}
+		}
 	}
 
-	SetRequireEvidenceProof(true)
-	if err := validateEvidence(bare); !errors.Is(err, ErrEvidenceProofMissing) {
-		t.Fatalf("want ErrEvidenceProofMissing once proofs are required, got %v", err)
-	}
-	SetEvidenceProofActivationHeight(10)
-	if err := validateEvidence(bare); err != nil {
-		t.Fatalf("historical evidence below activation should pass: %v", err)
-	}
-	bare.Height = 10
-	if err := validateEvidence(bare); !errors.Is(err, ErrEvidenceProofMissing) {
-		t.Fatalf("proof must be present at activation, got %v", err)
-	}
-
-	// A proof naming someone else is rejected even with policy off.
+	// A proof naming someone else is rejected even with the old policy flag off.
 	SetRequireEvidenceProof(false)
 	mismatched := bare
 	mismatched.Proof = &EquivocationProof{
