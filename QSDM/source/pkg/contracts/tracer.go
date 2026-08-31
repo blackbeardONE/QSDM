@@ -2,13 +2,15 @@ package contracts
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/blackbeardONE/QSDM/pkg/fileutil"
 )
 
 // TraceOp represents a single operation within a contract execution trace.
@@ -25,17 +27,17 @@ type TraceOp struct {
 
 // CallTrace is the complete trace of a single contract call.
 type CallTrace struct {
-	TraceID      string    `json:"trace_id"`
-	ContractID   string    `json:"contract_id"`
-	FunctionName string    `json:"function_name"`
-	Caller       string    `json:"caller"`
-	StartTime    time.Time `json:"start_time"`
-	EndTime      time.Time `json:"end_time"`
-	DurationMs   float64   `json:"duration_ms"`
-	TotalGas     int64     `json:"total_gas"`
-	Success      bool      `json:"success"`
-	Error        string    `json:"error,omitempty"`
-	Ops          []TraceOp `json:"ops"`
+	TraceID      string                 `json:"trace_id"`
+	ContractID   string                 `json:"contract_id"`
+	FunctionName string                 `json:"function_name"`
+	Caller       string                 `json:"caller"`
+	StartTime    time.Time              `json:"start_time"`
+	EndTime      time.Time              `json:"end_time"`
+	DurationMs   float64                `json:"duration_ms"`
+	TotalGas     int64                  `json:"total_gas"`
+	Success      bool                   `json:"success"`
+	Error        string                 `json:"error,omitempty"`
+	Ops          []TraceOp              `json:"ops"`
 	InputArgs    map[string]interface{} `json:"input_args,omitempty"`
 	Output       interface{}            `json:"output,omitempty"`
 }
@@ -217,35 +219,17 @@ func (ct *CallTracer) CompactPersistedTraces() error {
 	if path == "" {
 		return fmt.Errorf("persist path not configured")
 	}
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, "traces-compact-*.ndjson")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
+	var buf bytes.Buffer
 	for _, id := range ct.order {
 		tr := ct.traces[id]
 		if tr == nil {
 			continue
 		}
-		b, err := json.Marshal(tr)
-		if err != nil {
-			_ = tmp.Close()
-			_ = os.Remove(tmpPath)
-			return err
-		}
-		if _, err := tmp.Write(append(b, '\n')); err != nil {
-			_ = tmp.Close()
-			_ = os.Remove(tmpPath)
+		if err := json.NewEncoder(&buf).Encode(tr); err != nil {
 			return err
 		}
 	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return err
-	}
-	_ = os.Remove(path)
-	return os.Rename(tmpPath, path)
+	return fileutil.WriteFileAtomic(path, buf.Bytes(), 0644)
 }
 
 // StartTraceCompactionLoop runs until ctx is cancelled. Each tick it optionally prunes
