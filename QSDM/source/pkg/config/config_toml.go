@@ -65,6 +65,10 @@ type NodeConfig struct {
 	// proofs unless operator_sig verifies against the retained enrollment ML-DSA
 	// public key. Env override: QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES. Default: false.
 	RequireMiningOperatorSignatures bool `toml:"require_mining_operator_signatures" yaml:"require_mining_operator_signatures"`
+	// MiningOperatorPublicKeyRetentionHeight: first height where signed mining
+	// enrollments retain the operator ML-DSA public key. Zero keeps retention
+	// disabled. Env override: QSDM_MINING_OPERATOR_PUBLIC_KEY_RETENTION_HEIGHT.
+	MiningOperatorPublicKeyRetentionHeight uint64 `toml:"mining_operator_public_key_retention_height" yaml:"mining_operator_public_key_retention_height"`
 }
 
 type NetworkConfig struct {

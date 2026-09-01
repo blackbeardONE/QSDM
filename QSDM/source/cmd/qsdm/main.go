@@ -1129,6 +1129,12 @@ func main() {
 			"env_var", "QSDM_V2_ACTIVE",
 			"to_activate", "set QSDM_V2_ACTIVE=1 (chain reset required per §10.3)")
 	}
+	if cfg.MiningOperatorPublicKeyRetentionHeight > 0 {
+		enrollment.SetOperatorPublicKeyRetentionHeight(cfg.MiningOperatorPublicKeyRetentionHeight)
+		logger.Info("Mining enrollment operator public key retention scheduled",
+			"height", cfg.MiningOperatorPublicKeyRetentionHeight,
+			"effect", "signed mining enrollments retain operator ML-DSA public keys for proof verification")
+	}
 	// User store persistence: fall back to <stateDir>/qsdm_users.json
 	// when nothing was set explicitly (config file or env). This matches
 	// the sibling staking/bridge JSON files and keeps all ledger-local

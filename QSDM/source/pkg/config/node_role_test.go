@@ -149,6 +149,7 @@ func TestLoadConfigFile_TOML_NodeRole(t *testing.T) {
 role = "miner"
 mining_enabled = true
 require_mining_operator_signatures = true
+mining_operator_public_key_retention_height = 123
 
 [network]
 port = 4001
@@ -179,6 +180,9 @@ port = 8080
 	if !cfg.RequireMiningOperatorSignatures {
 		t.Fatal("RequireMiningOperatorSignatures should be true")
 	}
+	if cfg.MiningOperatorPublicKeyRetentionHeight != 123 {
+		t.Fatalf("MiningOperatorPublicKeyRetentionHeight = %d, want 123", cfg.MiningOperatorPublicKeyRetentionHeight)
+	}
 }
 
 func TestLoadConfigFile_YAML_NodeRole(t *testing.T) {
@@ -188,6 +192,7 @@ node:
   role: validator
   mining_enabled: false
   require_mining_operator_signatures: true
+  mining_operator_public_key_retention_height: 456
 network:
   port: 4001
 storage:
@@ -214,12 +219,16 @@ api:
 	if !cfg.RequireMiningOperatorSignatures {
 		t.Fatal("RequireMiningOperatorSignatures should be true")
 	}
+	if cfg.MiningOperatorPublicKeyRetentionHeight != 456 {
+		t.Fatalf("MiningOperatorPublicKeyRetentionHeight = %d, want 456", cfg.MiningOperatorPublicKeyRetentionHeight)
+	}
 }
 
 func TestApplyEnvOverrides_NodeRole(t *testing.T) {
 	t.Setenv("QSDM_NODE_ROLE", "miner")
 	t.Setenv("QSDM_MINING_ENABLED", "true")
 	t.Setenv("QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES", "true")
+	t.Setenv("QSDM_MINING_OPERATOR_PUBLIC_KEY_RETENTION_HEIGHT", "789")
 	cfg := &Config{NodeRole: NodeRoleValidator, MiningEnabled: false}
 	applyEnvOverrides(cfg)
 	if cfg.NodeRole != NodeRoleMiner {
@@ -230,6 +239,30 @@ func TestApplyEnvOverrides_NodeRole(t *testing.T) {
 	}
 	if !cfg.RequireMiningOperatorSignatures {
 		t.Fatal("RequireMiningOperatorSignatures should be true after env override")
+	}
+	if cfg.MiningOperatorPublicKeyRetentionHeight != 789 {
+		t.Fatalf("MiningOperatorPublicKeyRetentionHeight = %d, want 789", cfg.MiningOperatorPublicKeyRetentionHeight)
+	}
+}
+
+func TestValidate_RequireMiningOperatorSignaturesRequiresRetentionHeight(t *testing.T) {
+	c := baseValidConfig()
+	c.RequireMiningOperatorSignatures = true
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("expected error: operator signature enforcement without retention height")
+	}
+	if !strings.Contains(err.Error(), "mining_operator_public_key_retention_height") {
+		t.Fatalf("expected error to mention retention height, got %v", err)
+	}
+}
+
+func TestValidate_MiningOperatorSignatureRolloutHappy(t *testing.T) {
+	c := baseValidConfig()
+	c.RequireMiningOperatorSignatures = true
+	c.MiningOperatorPublicKeyRetentionHeight = 123
+	if err := c.Validate(); err != nil {
+		t.Fatalf("operator signature rollout config should be valid: %v", err)
 	}
 }
 
