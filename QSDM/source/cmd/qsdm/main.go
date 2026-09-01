@@ -1399,6 +1399,17 @@ func main() {
 			"env", "QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT",
 			"note", "enabling this is a coordinated fork; every node must agree on the height")
 	}
+	chain.SetEnrollmentStateRootActivationHeight(cfg.EnrollmentStateRootActivationHeight)
+	if cfg.EnrollmentStateRootActivationHeight > 0 {
+		logger.Info("Block state root commits mining enrollment side state",
+			"from_height", cfg.EnrollmentStateRootActivationHeight,
+			"warning", "every node must use this exact value or block roots diverge")
+	} else {
+		logger.Warn("Block state root does not yet commit mining enrollment side state",
+			"config", "[consensus] enrollment_state_root_activation_height",
+			"env", "QSDM_ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT",
+			"note", "enabling this is a coordinated fork; every node must agree on the height")
+	}
 	if cfg.TaskActionSignatureActivationHeight > 0 {
 		logger.Info("Task-action signatures required",
 			"from_height", cfg.TaskActionSignatureActivationHeight)

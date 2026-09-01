@@ -113,6 +113,16 @@ type ChainReplayApplier interface {
 	RestoreFromChainReplay(from ChainReplayApplier) error
 }
 
+type stateRootHeightAware interface {
+	SetStateRootHeight(height uint64)
+}
+
+func setStateRootHeight(applier StateApplier, height uint64) {
+	if aware, ok := applier.(stateRootHeightAware); ok {
+		aware.SetStateRootHeight(height)
+	}
+}
+
 // BlockProducer assembles blocks from the mempool.
 type BlockProducer struct {
 	mu sync.Mutex
@@ -338,6 +348,7 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 	var stateRoot string
 	var tentative *Block
 
+	setStateRootHeight(bp.applier, height)
 	if bp.preSealBFTRound != nil {
 		// Speculative execution needs an isolated copy of live state, not
 		// specifically an *AccountStore. Requiring the concrete type here
@@ -349,6 +360,7 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 		// ChainReplayApplier, which provides exactly the clone semantics
 		// this path needs.
 		spec := bp.applier.(ChainReplayApplier).ChainReplayClone()
+		setStateRootHeight(spec, height)
 		for _, tx := range txs {
 			if err := spec.ApplyTx(tx); err != nil {
 				outcomes = append(outcomes, localTxOutcome{Tx: tx, ApplyErr: err})
@@ -363,6 +375,7 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 			bp.pool.RestoreTransactions(txs)
 			return nil, fmt.Errorf("all transactions failed state application")
 		}
+		setStateRootHeight(spec, height)
 		stateRoot = spec.StateRoot()
 		now := time.Now()
 		tentative = &Block{
@@ -380,12 +393,14 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 			bp.pool.RestoreTransactions(txs)
 			return nil, err
 		}
+		setStateRootHeight(bp.applier, height)
 		for _, tx := range included {
 			if err := bp.applier.ApplyTx(tx); err != nil {
 				bp.pool.RestoreTransactions(txs)
 				return nil, fmt.Errorf("chain: live apply after pre-seal failed on %s: %w", tx.ID, err)
 			}
 		}
+		setStateRootHeight(bp.applier, height)
 		if got := bp.applier.StateRoot(); got != stateRoot {
 			bp.pool.RestoreTransactions(txs)
 			return nil, fmt.Errorf("chain: state root mismatch after pre-seal (live %s vs spec %s)", got, stateRoot)
@@ -405,6 +420,7 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 			bp.pool.RestoreTransactions(txs)
 			return nil, fmt.Errorf("all transactions failed state application")
 		}
+		setStateRootHeight(bp.applier, height)
 		stateRoot = bp.applier.StateRoot()
 	}
 
@@ -674,6 +690,7 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 	bp.mu.Unlock()
 
 	spec := ra.ChainReplayClone()
+	setStateRootHeight(spec, blk.Height)
 	for _, tx := range blk.Transactions {
 		if tx == nil {
 			continue
@@ -682,6 +699,7 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 			return fmt.Errorf("chain: external block replay (spec): %w", err)
 		}
 	}
+	setStateRootHeight(spec, blk.Height)
 	if spec.StateRoot() != blk.StateRoot {
 		return fmt.Errorf("chain: external block state_root mismatch after replay")
 	}
@@ -706,6 +724,7 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 	}
 	backup := ra.ChainReplayClone()
 	live := bp.applier.(ChainReplayApplier)
+	setStateRootHeight(live, blk.Height)
 	for _, tx := range blk.Transactions {
 		if tx == nil {
 			continue
@@ -716,6 +735,7 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 			return fmt.Errorf("chain: external block live apply: %w", err)
 		}
 	}
+	setStateRootHeight(live, blk.Height)
 	if live.StateRoot() != blk.StateRoot {
 		_ = live.RestoreFromChainReplay(backup)
 		bp.mu.Unlock()
