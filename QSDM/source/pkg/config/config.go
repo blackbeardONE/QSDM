@@ -31,6 +31,12 @@ type Config struct {
 	// Env overrides: QSDM_NODE_ROLE, QSDM_MINING_ENABLED.
 	NodeRole      NodeRole
 	MiningEnabled bool
+	// RequireMiningOperatorSignatures makes validators reject nvidia-hmac-v1
+	// proofs unless they carry operator_sig signed by the retained enrollment
+	// ML-DSA public key. Default false for staged miner rollout.
+	// TOML/YAML: [node] require_mining_operator_signatures; env:
+	// QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES.
+	RequireMiningOperatorSignatures bool
 
 	// Network
 	NetworkPort        int
@@ -362,6 +368,7 @@ func loadConfigFile(path string, cfg *Config) error {
 			return fmt.Errorf("invalid [node] role: %w", err)
 		}
 		cfg.MiningEnabled = tomlCfg.Node.MiningEnabled
+		cfg.RequireMiningOperatorSignatures = tomlCfg.Node.RequireMiningOperatorSignatures
 		cfg.NetworkPort = tomlCfg.Network.Port
 		cfg.NetworkBindAddress = strings.TrimSpace(tomlCfg.Network.BindAddress)
 		cfg.BootstrapPeers = tomlCfg.Network.BootstrapPeers
@@ -458,6 +465,7 @@ func loadConfigFile(path string, cfg *Config) error {
 			return fmt.Errorf("invalid node.role: %w", err)
 		}
 		cfg.MiningEnabled = yamlCfg.Node.MiningEnabled
+		cfg.RequireMiningOperatorSignatures = yamlCfg.Node.RequireMiningOperatorSignatures
 		cfg.NetworkPort = yamlCfg.Network.Port
 		cfg.NetworkBindAddress = strings.TrimSpace(yamlCfg.Network.BindAddress)
 		cfg.BootstrapPeers = yamlCfg.Network.BootstrapPeers
@@ -667,6 +675,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if val := strings.TrimSpace(envPreferred("QSDM_MINING_ENABLED", "QSDM_MINING_ENABLED")); val != "" {
 		cfg.MiningEnabled = envcompat.Truthy("QSDM_MINING_ENABLED", "QSDM_MINING_ENABLED")
+	}
+	if val := strings.TrimSpace(envPreferred("QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES", "QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES")); val != "" {
+		cfg.RequireMiningOperatorSignatures = envcompat.Truthy("QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES", "QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES")
 	}
 	if val := getEnvString("NETWORK_PORT", ""); val != "" {
 		cfg.NetworkPort = getEnvInt("NETWORK_PORT", cfg.NetworkPort)

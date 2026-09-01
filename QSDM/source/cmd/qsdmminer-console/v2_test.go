@@ -39,9 +39,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blackbeardONE/QSDM/pkg/keystore"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
+	attesthmac "github.com/blackbeardONE/QSDM/pkg/mining/attest/hmac"
 	"github.com/blackbeardONE/QSDM/pkg/mining/challenge"
 	"github.com/blackbeardONE/QSDM/pkg/mining/v2client"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
 // -----------------------------------------------------------------------------
@@ -55,6 +58,41 @@ func writeHexKey(t *testing.T, dir, name string, raw []byte) string {
 		t.Fatalf("write %s: %v", p, err)
 	}
 	return p
+}
+func writeOperatorKeystore(t *testing.T, dir string, passphrase []byte) (walletPath, passphrasePath, address, publicKeyHex string) {
+	t.Helper()
+	publicKey, privateKey, err := mldsa87.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	publicBytes, err := publicKey.MarshalBinary()
+	if err != nil {
+		t.Fatalf("public MarshalBinary: %v", err)
+	}
+	privateBytes, err := privateKey.MarshalBinary()
+	if err != nil {
+		t.Fatalf("private MarshalBinary: %v", err)
+	}
+	defer zeroSensitive(privateBytes)
+
+	ks, err := keystore.Encrypt(publicBytes, privateBytes, passphrase)
+	if err != nil {
+		t.Fatalf("keystore Encrypt: %v", err)
+	}
+	data, err := keystore.Marshal(ks)
+	if err != nil {
+		t.Fatalf("keystore Marshal: %v", err)
+	}
+	walletPath = filepath.Join(dir, "wallet.json")
+	if err := os.WriteFile(walletPath, data, 0o600); err != nil {
+		t.Fatalf("write wallet: %v", err)
+	}
+	passphrasePath = filepath.Join(dir, "wallet.pass")
+	passphraseWithNewline := append(append([]byte(nil), passphrase...), '\n')
+	if err := os.WriteFile(passphrasePath, passphraseWithNewline, 0o600); err != nil {
+		t.Fatalf("write passphrase: %v", err)
+	}
+	return walletPath, passphrasePath, ks.Address, ks.PublicKey
 }
 
 func TestLoadHMACKeyFromFile_OK(t *testing.T) {
@@ -189,6 +227,49 @@ func TestLoadV2Context_EnabledHappyPath(t *testing.T) {
 	}
 	if !equalBytes(ctx.HMACKey, key) {
 		t.Error("HMACKey not loaded correctly")
+	}
+}
+func TestLoadV2Context_OperatorSignerHappyPath(t *testing.T) {
+	dir := t.TempDir()
+	key := make([]byte, 32)
+	_, _ = rand.Read(key)
+	keyPath := writeHexKey(t, dir, "op.hex", key)
+	walletPath, passphrasePath, address, publicKeyHex := writeOperatorKeystore(t, dir, []byte("correct horse battery staple"))
+
+	ctx, err := LoadV2Context(V2Config{
+		Protocol:               "v2",
+		NodeID:                 "alice-rtx4090-01",
+		GPUUUID:                "GPU-abcd1234",
+		HMACKeyPath:            keyPath,
+		OperatorKeystorePath:   walletPath,
+		OperatorPassphraseFile: passphrasePath,
+	})
+	if err != nil {
+		t.Fatalf("LoadV2Context: %v", err)
+	}
+	if ctx.OperatorSigner == nil {
+		t.Fatal("OperatorSigner should be loaded")
+	}
+	if ctx.OperatorSigner.Address != strings.ToLower(address) {
+		t.Fatalf("operator address: got %s want %s", ctx.OperatorSigner.Address, address)
+	}
+	if ctx.OperatorSigner.PublicKeyHex != strings.ToLower(publicKeyHex) {
+		t.Fatalf("operator public key not retained")
+	}
+}
+
+func TestLoadV2Context_OperatorSignerRequiresPassphraseFile(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := writeHexKey(t, dir, "op.hex", make([]byte, 32))
+	_, err := LoadV2Context(V2Config{
+		Protocol:             "v2",
+		NodeID:               "alice-rtx4090-01",
+		GPUUUID:              "GPU-abcd1234",
+		HMACKeyPath:          keyPath,
+		OperatorKeystorePath: filepath.Join(dir, "wallet.json"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "passphrase file") {
+		t.Fatalf("want passphrase-file error, got %v", err)
 	}
 }
 
@@ -393,6 +474,77 @@ func TestV2PrepareAttestation_HappyPath(t *testing.T) {
 		t.Error("Attestation.IssuedAt should be set to challenge issue time")
 	}
 }
+func TestV2PrepareAttestation_OperatorSignedPath(t *testing.T) {
+	sigKey := make([]byte, 32)
+	_, _ = rand.Read(sigKey)
+	signer, err := challenge.NewHMACSigner("validator-1", sigKey)
+	if err != nil {
+		t.Fatalf("NewHMACSigner: %v", err)
+	}
+	srv := newFakeChallengeServer(t, signer)
+	defer srv.Close()
+
+	dir := t.TempDir()
+	key := make([]byte, 32)
+	_, _ = rand.Read(key)
+	keyPath := writeHexKey(t, dir, "op.hex", key)
+	walletPath, passphrasePath, _, publicKeyHex := writeOperatorKeystore(t, dir, []byte("correct horse battery staple"))
+	v2, err := LoadV2Context(V2Config{
+		Protocol:               "v2",
+		NodeID:                 "alice-rtx4090-01",
+		GPUUUID:                "GPU-abcd1234",
+		GPUName:                "NVIDIA GeForce RTX 4090",
+		GPUArch:                "ada",
+		ComputeCap:             "8.9",
+		CUDAVersion:            "12.8",
+		DriverVer:              "572.16",
+		HMACKeyPath:            keyPath,
+		OperatorKeystorePath:   walletPath,
+		OperatorPassphraseFile: passphrasePath,
+	})
+	if err != nil {
+		t.Fatalf("LoadV2Context: %v", err)
+	}
+	proof := &mining.Proof{
+		Version:    mining.ProtocolVersion,
+		Epoch:      7,
+		Height:     42,
+		HeaderHash: [32]byte{0xAA},
+		MinerAddr:  "qsdm1test",
+		BatchRoot:  [32]byte{0xBB},
+		BatchCount: 1,
+		Nonce:      [16]byte{0xCC},
+		MixDigest:  [32]byte{0xDD},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	fetcher, fErr := v2client.NewMultiFetcher(&http.Client{Timeout: 2 * time.Second}, []string{srv.URL})
+	if fErr != nil {
+		t.Fatalf("NewMultiFetcher: %v", fErr)
+	}
+	if err := V2PrepareAttestation(ctx, fetcher, v2, proof); err != nil {
+		t.Fatalf("V2PrepareAttestation: %v", err)
+	}
+
+	bundle, err := attesthmac.ParseBundle(proof.Attestation.BundleBase64)
+	if err != nil {
+		t.Fatalf("ParseBundle: %v", err)
+	}
+	if bundle.OperatorSig == "" {
+		t.Fatal("operator_sig should be present")
+	}
+	reg := attesthmac.NewInMemoryRegistry()
+	if err := reg.EnrollWithOperatorPublicKey(v2.NodeID, proof.MinerAddr, publicKeyHex, v2.GPUUUID, v2.HMACKey); err != nil {
+		t.Fatalf("EnrollWithOperatorPublicKey: %v", err)
+	}
+	verifier := attesthmac.NewVerifier(reg)
+	verifier.RequireOwnerBinding = true
+	verifier.RequireOperatorSignature = true
+	if err := verifier.VerifyAttestation(*proof, time.Unix(proof.Attestation.IssuedAt, 0)); err != nil {
+		t.Fatalf("signed proof rejected: %v", err)
+	}
+}
 
 func TestV2PrepareAttestation_DisabledReturnsError(t *testing.T) {
 	proof := &mining.Proof{MinerAddr: "x"}
@@ -454,20 +606,23 @@ func TestV2PrepareAttestation_ChallengeFailureSurfaces(t *testing.T) {
 
 func TestConfig_V2Config_CopiesAllFields(t *testing.T) {
 	c := Config{
-		Protocol:    "v2",
-		NodeID:      "n",
-		GPUUUID:     "g",
-		GPUName:     "gn",
-		GPUArch:     "a",
-		ComputeCap:  "cc",
-		CUDAVersion: "cv",
-		DriverVer:   "dv",
-		HMACKeyPath: "/tmp/k",
+		Protocol:               "v2",
+		NodeID:                 "n",
+		GPUUUID:                "g",
+		GPUName:                "gn",
+		GPUArch:                "a",
+		ComputeCap:             "cc",
+		CUDAVersion:            "cv",
+		DriverVer:              "dv",
+		HMACKeyPath:            "/tmp/k",
+		OperatorKeystorePath:   "/tmp/wallet.json",
+		OperatorPassphraseFile: "/tmp/wallet.pass",
 	}
 	v := c.v2Config()
 	if v.Protocol != "v2" || v.NodeID != "n" || v.GPUUUID != "g" ||
 		v.GPUName != "gn" || v.GPUArch != "a" || v.ComputeCap != "cc" ||
-		v.CUDAVersion != "cv" || v.DriverVer != "dv" || v.HMACKeyPath != "/tmp/k" {
+		v.CUDAVersion != "cv" || v.DriverVer != "dv" || v.HMACKeyPath != "/tmp/k" ||
+		v.OperatorKeystorePath != "/tmp/wallet.json" || v.OperatorPassphraseFile != "/tmp/wallet.pass" {
 		t.Errorf("v2Config did not copy all fields: %+v", v)
 	}
 }

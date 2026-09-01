@@ -1803,9 +1803,10 @@ func main() {
 
 	hmacNonceStore := hmac.NewInMemoryNonceStore(2 * mining.FreshnessWindow)
 	attestProdCfg := attest.ProductionConfig{
-		Registry:          enrollment.NewStateBackedRegistry(v2Wired.EnrollmentState),
-		ChallengeVerifier: chSignerVerifier,
-		NonceStore:        hmacNonceStore,
+		Registry:                 enrollment.NewStateBackedRegistry(v2Wired.EnrollmentState),
+		ChallengeVerifier:        chSignerVerifier,
+		NonceStore:               hmacNonceStore,
+		RequireOperatorSignature: cfg.RequireMiningOperatorSignatures,
 		// DenyList nil → hmac.EmptyDenyList (genesis posture).
 		// FreshnessWindow / AllowedFutureSkew zero → spec defaults.
 	}
@@ -1881,6 +1882,7 @@ func main() {
 	logger.Info("v2 attestation dispatcher wired",
 		"hmac_path_active", true,
 		"cc_path_active", attestProdCfg.CCConfig != nil,
+		"operator_signature_required", attestProdCfg.RequireOperatorSignature,
 		"fork_v2_active", v2Active,
 		"effect_when_active", "post-fork proofs require nvidia-cc-v1 or nvidia-hmac-v1 attestation")
 

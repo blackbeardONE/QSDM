@@ -122,6 +122,11 @@ type ProductionConfig struct {
 	//	prodCfg.CCConfig = ccCfg // nil if RootPaths was empty
 	CCConfig *cc.VerifierConfig
 
+	// RequireOperatorSignature enables the post-HMAC ML-DSA operator-signature
+	// rail for nvidia-hmac-v1 proofs. Leave false until enrollment public-key
+	// retention is active and miners have shipped operator_sig support.
+	RequireOperatorSignature bool
+
 	// HMACOnAccept, if non-nil, is wired onto the constructed
 	// hmac.Verifier as its OnAccept hook. Pass a closure that
 	// feeds the bundle into the Tier-2 telemetry checker (or
@@ -173,6 +178,7 @@ func NewProductionDispatcher(cfg ProductionConfig) (*Dispatcher, error) {
 	// HMAC verifier (consumer GPU path)
 	hmacV := hmac.NewVerifier(cfg.Registry)
 	hmacV.RequireOwnerBinding = true
+	hmacV.RequireOperatorSignature = cfg.RequireOperatorSignature
 	hmacV.NonceStore = cfg.NonceStore
 	hmacV.ChallengeVerifier = cfg.ChallengeVerifier
 	if cfg.DenyList != nil {

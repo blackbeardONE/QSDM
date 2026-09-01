@@ -35,6 +35,7 @@ import (
 
 	"github.com/blackbeardONE/QSDM/pkg/mining"
 	"github.com/blackbeardONE/QSDM/pkg/mining/challenge"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
 // ----- fixtures ----------------------------------------------------
@@ -136,6 +137,34 @@ func reSign(t *testing.T, p *mining.Proof, b Bundle, key []byte) {
 	p.Attestation.BundleBase64 = b64
 }
 
+func mustOperatorKey(t *testing.T) (string, *mldsa87.PrivateKey) {
+	t.Helper()
+	publicKey, privateKey, err := mldsa87.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	publicKeyBytes, err := publicKey.MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary: %v", err)
+	}
+	return hex.EncodeToString(publicKeyBytes), privateKey
+}
+
+func signOperatorBundle(t *testing.T, p *mining.Proof, b Bundle, hmacKey []byte, privateKey *mldsa87.PrivateKey) Bundle {
+	t.Helper()
+	canonical, err := b.CanonicalForOperatorSignature(*p)
+	if err != nil {
+		t.Fatalf("operator canonical: %v", err)
+	}
+	sig := make([]byte, mldsa87.SignatureSize)
+	if err := mldsa87.SignTo(privateKey, canonical, nil, true, sig); err != nil {
+		t.Fatalf("operator sign: %v", err)
+	}
+	b.OperatorSig = hex.EncodeToString(sig)
+	reSign(t, p, b, hmacKey)
+	return b
+}
+
 // mustReject asserts that VerifyAttestation returned an error
 // wrapping `want`. On mismatch it fails with the full error chain
 // so diagnostics are useful.
@@ -203,6 +232,130 @@ func TestVerify_Rejects_OwnerMismatchWhenRequired(t *testing.T) {
 	v := NewVerifier(reg)
 	v.RequireOwnerBinding = true
 	mustReject(t, v.VerifyAttestation(p, now), mining.ErrAttestationSignatureInvalid)
+}
+
+func TestVerify_Accepts_OperatorSignedProofWhenRequired(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	_, p, b := buildFixture(t, now)
+	operatorPublicKey, operatorPrivateKey := mustOperatorKey(t)
+	reg := NewInMemoryRegistry()
+	if err := reg.EnrollWithOperatorPublicKey(fixtureNodeID, p.MinerAddr, operatorPublicKey, fixtureGPUUUID, fixtureHMACKey); err != nil {
+		t.Fatalf("EnrollWithOperatorPublicKey: %v", err)
+	}
+	signOperatorBundle(t, &p, b, fixtureHMACKey, operatorPrivateKey)
+
+	v := NewVerifier(reg)
+	v.RequireOwnerBinding = true
+	v.RequireOperatorSignature = true
+	if err := v.VerifyAttestation(p, now); err != nil {
+		t.Fatalf("operator-signed proof rejected: %v", err)
+	}
+}
+
+func TestVerify_Accepts_UnsignedProofWhenOperatorSignatureNotRequired(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	operatorPublicKey, _ := mustOperatorKey(t)
+	_, p, _ := buildFixture(t, now)
+	reg := NewInMemoryRegistry()
+	if err := reg.EnrollWithOperatorPublicKey(fixtureNodeID, p.MinerAddr, operatorPublicKey, fixtureGPUUUID, fixtureHMACKey); err != nil {
+		t.Fatalf("EnrollWithOperatorPublicKey: %v", err)
+	}
+
+	v := NewVerifier(reg)
+	v.RequireOwnerBinding = true
+	if err := v.VerifyAttestation(p, now); err != nil {
+		t.Fatalf("legacy unsigned proof should pass until the rail is required: %v", err)
+	}
+}
+
+func TestVerify_Rejects_MissingOperatorPublicKeyWhenRequired(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	_, p, b := buildFixture(t, now)
+	_, operatorPrivateKey := mustOperatorKey(t)
+	reg := NewInMemoryRegistry()
+	if err := reg.EnrollWithOwner(fixtureNodeID, p.MinerAddr, fixtureGPUUUID, fixtureHMACKey); err != nil {
+		t.Fatalf("EnrollWithOwner: %v", err)
+	}
+	signOperatorBundle(t, &p, b, fixtureHMACKey, operatorPrivateKey)
+
+	v := NewVerifier(reg)
+	v.RequireOwnerBinding = true
+	v.RequireOperatorSignature = true
+	mustReject(t, v.VerifyAttestation(p, now), mining.ErrAttestationSignatureInvalid)
+}
+
+func TestVerify_Rejects_MissingOperatorSignatureWhenRequired(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	_, p, _ := buildFixture(t, now)
+	operatorPublicKey, _ := mustOperatorKey(t)
+	reg := NewInMemoryRegistry()
+	if err := reg.EnrollWithOperatorPublicKey(fixtureNodeID, p.MinerAddr, operatorPublicKey, fixtureGPUUUID, fixtureHMACKey); err != nil {
+		t.Fatalf("EnrollWithOperatorPublicKey: %v", err)
+	}
+
+	v := NewVerifier(reg)
+	v.RequireOwnerBinding = true
+	v.RequireOperatorSignature = true
+	mustReject(t, v.VerifyAttestation(p, now), mining.ErrAttestationBundleMalformed)
+}
+
+func TestVerify_Rejects_TamperedOperatorSignatureWhenRequired(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	_, p, b := buildFixture(t, now)
+	operatorPublicKey, operatorPrivateKey := mustOperatorKey(t)
+	reg := NewInMemoryRegistry()
+	if err := reg.EnrollWithOperatorPublicKey(fixtureNodeID, p.MinerAddr, operatorPublicKey, fixtureGPUUUID, fixtureHMACKey); err != nil {
+		t.Fatalf("EnrollWithOperatorPublicKey: %v", err)
+	}
+	b = signOperatorBundle(t, &p, b, fixtureHMACKey, operatorPrivateKey)
+	sigBytes, err := hex.DecodeString(b.OperatorSig)
+	if err != nil {
+		t.Fatalf("decode operator sig: %v", err)
+	}
+	sigBytes[0] ^= 0x01
+	b.OperatorSig = hex.EncodeToString(sigBytes)
+	b64, err := b.MarshalBase64()
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	p.Attestation.BundleBase64 = b64
+
+	v := NewVerifier(reg)
+	v.RequireOwnerBinding = true
+	v.RequireOperatorSignature = true
+	mustReject(t, v.VerifyAttestation(p, now), mining.ErrAttestationSignatureInvalid)
+}
+
+func TestVerify_Rejects_OperatorSignatureBoundToDifferentProof(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	_, p, b := buildFixture(t, now)
+	operatorPublicKey, operatorPrivateKey := mustOperatorKey(t)
+	reg := NewInMemoryRegistry()
+	if err := reg.EnrollWithOperatorPublicKey(fixtureNodeID, p.MinerAddr, operatorPublicKey, fixtureGPUUUID, fixtureHMACKey); err != nil {
+		t.Fatalf("EnrollWithOperatorPublicKey: %v", err)
+	}
+	signOperatorBundle(t, &p, b, fixtureHMACKey, operatorPrivateKey)
+	p.Height++
+
+	v := NewVerifier(reg)
+	v.RequireOwnerBinding = true
+	v.RequireOperatorSignature = true
+	mustReject(t, v.VerifyAttestation(p, now), mining.ErrAttestationSignatureInvalid)
+}
+
+func TestInMemoryRegistry_RetainsOperatorPublicKey(t *testing.T) {
+	reg := NewInMemoryRegistry()
+	operatorPublicKey := strings.Repeat("ab", mldsa87.PublicKeySize)
+	if err := reg.EnrollWithOperatorPublicKey(fixtureNodeID, "qsdm1owner", operatorPublicKey, fixtureGPUUUID, fixtureHMACKey); err != nil {
+		t.Fatalf("EnrollWithOperatorPublicKey: %v", err)
+	}
+	entry, err := reg.Lookup(fixtureNodeID)
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if entry.OperatorPublicKey != operatorPublicKey {
+		t.Fatalf("operator public key dropped: got %q want %q", entry.OperatorPublicKey, operatorPublicKey)
+	}
 }
 
 // ----- dispatch guard ----------------------------------------------

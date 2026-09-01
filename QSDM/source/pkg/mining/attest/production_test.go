@@ -332,6 +332,27 @@ func TestNewProductionDispatcher_HMACVerifier_RejectsRewardOwnerMismatch(t *test
 	}
 }
 
+func TestNewProductionDispatcher_HMACVerifier_WiresOperatorSignatureRequirement(t *testing.T) {
+	cfg := validProdConfig()
+	cfg.RequireOperatorSignature = true
+
+	d, err := NewProductionDispatcher(cfg)
+	if err != nil {
+		t.Fatalf("NewProductionDispatcher: %v", err)
+	}
+
+	verifier, ok := d.verifiers[mining.AttestationTypeHMAC].(*hmac.Verifier)
+	if !ok {
+		t.Fatalf("hmac verifier has unexpected type %T", d.verifiers[mining.AttestationTypeHMAC])
+	}
+	if !verifier.RequireOperatorSignature {
+		t.Fatal("expected production dispatcher to require operator signatures")
+	}
+	if !verifier.RequireOwnerBinding {
+		t.Fatal("production dispatcher must keep owner binding enabled")
+	}
+}
+
 // TestNewProductionDispatcher_HMACOnAcceptHookFires confirms
 // the optional HMACOnAccept hook on ProductionConfig is
 // plumbed all the way down into the hmac.Verifier and fires

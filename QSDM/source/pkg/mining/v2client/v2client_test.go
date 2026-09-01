@@ -8,15 +8,19 @@ package v2client
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/api"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
+	attesthmac "github.com/blackbeardONE/QSDM/pkg/mining/attest/hmac"
 	"github.com/blackbeardONE/QSDM/pkg/mining/challenge"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
 // TestChallengeWireMatchesAPI is the build-time guard against
@@ -267,6 +271,100 @@ func TestBuildHMACAttestation_Rejects_BadInputs(t *testing.T) {
 	_, err := BuildHMACAttestation(BundleInputs{}, "")
 	if err == nil {
 		t.Fatal("empty inputs should error")
+	}
+}
+func TestBuildSignedHMACAttestation_AddsOperatorSigAndVerifies(t *testing.T) {
+	var nonce [32]byte
+	for i := range nonce {
+		nonce[i] = byte(0xA0 + i)
+	}
+	in := BundleInputs{
+		NodeID:      "alice-rtx4090-01",
+		GPUUUID:     "GPU-01234567-89ab-cdef-0123-456789abcdef",
+		GPUName:     "NVIDIA GeForce RTX 4090",
+		ComputeCap:  "8.9",
+		CUDAVersion: "12.8",
+		DriverVer:   "572.16",
+		HMACKey:     bytes.Repeat([]byte{0x42}, 32),
+		MinerAddr:   "qsdm1signedminer",
+		BatchRoot:   [32]byte{0xAA},
+		MixDigest:   [32]byte{0xBB},
+		Challenge: challenge.Challenge{
+			Nonce:     nonce,
+			IssuedAt:  1_700_000_000,
+			SignerID:  "validator-01",
+			Signature: []byte{0xDE, 0xAD, 0xBE, 0xEF},
+		},
+	}
+	proof := mining.Proof{
+		Version:    mining.ProtocolVersion,
+		Epoch:      7,
+		Height:     42,
+		HeaderHash: [32]byte{0x11},
+		MinerAddr:  in.MinerAddr,
+		BatchRoot:  in.BatchRoot,
+		BatchCount: 1,
+		Nonce:      [16]byte{0x22},
+		MixDigest:  in.MixDigest,
+	}
+
+	publicKey, privateKey, err := mldsa87.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	publicKeyBytes, err := publicKey.MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary: %v", err)
+	}
+
+	att, err := BuildSignedHMACAttestation(proof, in, "ada", func(proof mining.Proof, bundle attesthmac.Bundle) (string, error) {
+		canonical, err := bundle.CanonicalForOperatorSignature(proof)
+		if err != nil {
+			return "", err
+		}
+		sig := make([]byte, mldsa87.SignatureSize)
+		if err := mldsa87.SignTo(privateKey, canonical, nil, true, sig); err != nil {
+			return "", err
+		}
+		return hex.EncodeToString(sig), nil
+	})
+	if err != nil {
+		t.Fatalf("BuildSignedHMACAttestation: %v", err)
+	}
+	if err := AttachToProof(&proof, att); err != nil {
+		t.Fatalf("AttachToProof: %v", err)
+	}
+
+	bundle, err := attesthmac.ParseBundle(proof.Attestation.BundleBase64)
+	if err != nil {
+		t.Fatalf("ParseBundle: %v", err)
+	}
+	if bundle.OperatorSig == "" {
+		t.Fatal("operator_sig should be present")
+	}
+
+	reg := attesthmac.NewInMemoryRegistry()
+	if err := reg.EnrollWithOperatorPublicKey(
+		in.NodeID,
+		in.MinerAddr,
+		hex.EncodeToString(publicKeyBytes),
+		in.GPUUUID,
+		in.HMACKey,
+	); err != nil {
+		t.Fatalf("EnrollWithOperatorPublicKey: %v", err)
+	}
+	verifier := attesthmac.NewVerifier(reg)
+	verifier.RequireOwnerBinding = true
+	verifier.RequireOperatorSignature = true
+	if err := verifier.VerifyAttestation(proof, time.Unix(in.Challenge.IssuedAt, 0)); err != nil {
+		t.Fatalf("signed attestation rejected: %v", err)
+	}
+}
+
+func TestBuildSignedHMACAttestation_RejectsNilSigner(t *testing.T) {
+	_, err := BuildSignedHMACAttestation(mining.Proof{}, BundleInputs{}, "", nil)
+	if err == nil {
+		t.Fatal("nil operator signer should error")
 	}
 }
 
