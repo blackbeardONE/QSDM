@@ -37,6 +37,12 @@ type Config struct {
 	// TOML/YAML: [node] require_mining_operator_signatures; env:
 	// QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES.
 	RequireMiningOperatorSignatures bool
+	// MiningOperatorPublicKeyRetentionHeight is the first block height where
+	// signed mining enrollments retain their operator ML-DSA public key for
+	// later proof verification. Zero keeps retention disabled.
+	// TOML/YAML: [node] mining_operator_public_key_retention_height; env:
+	// QSDM_MINING_OPERATOR_PUBLIC_KEY_RETENTION_HEIGHT.
+	MiningOperatorPublicKeyRetentionHeight uint64
 
 	// Network
 	NetworkPort        int
@@ -369,6 +375,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		}
 		cfg.MiningEnabled = tomlCfg.Node.MiningEnabled
 		cfg.RequireMiningOperatorSignatures = tomlCfg.Node.RequireMiningOperatorSignatures
+		cfg.MiningOperatorPublicKeyRetentionHeight = tomlCfg.Node.MiningOperatorPublicKeyRetentionHeight
 		cfg.NetworkPort = tomlCfg.Network.Port
 		cfg.NetworkBindAddress = strings.TrimSpace(tomlCfg.Network.BindAddress)
 		cfg.BootstrapPeers = tomlCfg.Network.BootstrapPeers
@@ -466,6 +473,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		}
 		cfg.MiningEnabled = yamlCfg.Node.MiningEnabled
 		cfg.RequireMiningOperatorSignatures = yamlCfg.Node.RequireMiningOperatorSignatures
+		cfg.MiningOperatorPublicKeyRetentionHeight = yamlCfg.Node.MiningOperatorPublicKeyRetentionHeight
 		cfg.NetworkPort = yamlCfg.Network.Port
 		cfg.NetworkBindAddress = strings.TrimSpace(yamlCfg.Network.BindAddress)
 		cfg.BootstrapPeers = yamlCfg.Network.BootstrapPeers
@@ -678,6 +686,11 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if val := strings.TrimSpace(envPreferred("QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES", "QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES")); val != "" {
 		cfg.RequireMiningOperatorSignatures = envcompat.Truthy("QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES", "QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES")
+	}
+	if v := strings.TrimSpace(getEnvString("QSDM_MINING_OPERATOR_PUBLIC_KEY_RETENTION_HEIGHT", "")); v != "" {
+		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
+			cfg.MiningOperatorPublicKeyRetentionHeight = h
+		}
 	}
 	if val := getEnvString("NETWORK_PORT", ""); val != "" {
 		cfg.NetworkPort = getEnvInt("NETWORK_PORT", cfg.NetworkPort)
@@ -962,6 +975,9 @@ func (c *Config) Validate() error {
 	}
 	if !c.RequireSignedVotes && c.SignedConsensusActivationHeight != 0 {
 		return fmt.Errorf("consensus signed_message_activation_height=%d is set while require_signed_votes=false; either enable coordinated enforcement or clear the height", c.SignedConsensusActivationHeight)
+	}
+	if c.RequireMiningOperatorSignatures && c.MiningOperatorPublicKeyRetentionHeight == 0 {
+		return fmt.Errorf("node require_mining_operator_signatures=true requires non-zero mining_operator_public_key_retention_height shared by every validator")
 	}
 
 	if c.NetworkPort < 1 || c.NetworkPort > 65535 {
