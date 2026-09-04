@@ -12,23 +12,21 @@ import (
 	"sync/atomic"
 )
 
-// requireEvidenceProof, when set, makes a cryptographic proof mandatory for
-// equivocation evidence. Defaults to false so a validator set mid-rollout
-// (where not every peer signs its votes yet) can still report equivocation.
-// An invalid proof is rejected either way.
+// requireEvidenceProof is retained as observable rollout state for older
+// callers. Equivocation evidence now always requires a cryptographic proof.
 var requireEvidenceProof atomic.Bool
 var evidenceProofActivationHeight atomic.Uint64
 
-// SetRequireEvidenceProof controls whether equivocation evidence must carry
-// a verifiable proof. Enable once every validator signs its votes; until
-// then, unproven accusations remain accepted and are forgeable.
+// SetRequireEvidenceProof records the operator's configured proof posture for
+// diagnostics. It no longer weakens validation: bare equivocation accusations
+// are always rejected.
 func SetRequireEvidenceProof(require bool) { requireEvidenceProof.Store(require) }
 
-// RequireEvidenceProof reports the current policy.
+// RequireEvidenceProof reports the configured proof posture.
 func RequireEvidenceProof() bool { return requireEvidenceProof.Load() }
 
-// SetEvidenceProofActivationHeight sets the first height where bare
-// equivocation accusations are rejected. Zero means immediate enforcement.
+// SetEvidenceProofActivationHeight records the configured activation height
+// for diagnostics. Bare equivocation accusations are rejected at every height.
 func SetEvidenceProofActivationHeight(height uint64) {
 	evidenceProofActivationHeight.Store(height)
 }
@@ -37,11 +35,7 @@ func SetEvidenceProofActivationHeight(height uint64) {
 func EvidenceProofActivationHeight() uint64 { return evidenceProofActivationHeight.Load() }
 
 func evidenceProofRequiredAt(height uint64) bool {
-	if !RequireEvidenceProof() {
-		return false
-	}
-	activation := EvidenceProofActivationHeight()
-	return activation == 0 || height >= activation
+	return true
 }
 
 // Cryptographic equivocation proofs.
@@ -73,19 +67,23 @@ var ErrEvidenceProofInvalid = errors.New("chain: equivocation proof is invalid")
 // EvidenceInvalidVote branch in validateEvidence.
 var ErrEvidenceInvalidVoteUnprovable = errors.New("chain: invalid_vote evidence is unprovable and is not accepted")
 
-// SignedVoteExhibit is one authenticated vote used as evidence.
+// SignedVoteExhibit is one authenticated BFT message used as evidence.
 type SignedVoteExhibit struct {
-	Kind      string      `json:"kind"` // BFTWirePrevote or BFTWirePrecommit
+	Kind      string      `json:"kind"` // BFTWirePropose, BFTWirePrevote, or BFTWirePrecommit
 	Height    uint64      `json:"height"`
 	Round     uint32      `json:"round"`
 	Validator string      `json:"validator"`
 	BlockHash string      `json:"block_hash"`
+	BodyHash  string      `json:"body_hash,omitempty"`
 	Auth      BFTWireAuth `json:"auth"`
 }
 
 // verify checks the exhibit's own signature.
 func (x SignedVoteExhibit) verify() error {
 	switch x.Kind {
+	case BFTWirePropose:
+		return verifyAuth(x.Auth, bftVoteDigest(
+			BFTWirePropose, x.Height, x.Round, x.Validator, x.BlockHash, x.BodyHash), x.Validator)
 	case BFTWirePrevote:
 		return VerifyPrevote(BFTWirePrevoteMsg{
 			Height: x.Height, Round: x.Round,
@@ -101,7 +99,7 @@ func (x SignedVoteExhibit) verify() error {
 	}
 }
 
-// EquivocationProof is two conflicting authenticated votes from one
+// EquivocationProof is two conflicting authenticated BFT messages from one
 // validator at the same height and round.
 type EquivocationProof struct {
 	VoteA SignedVoteExhibit `json:"vote_a"`
@@ -110,7 +108,7 @@ type EquivocationProof struct {
 
 // Verify establishes that `accused` equivocated. It is deliberately strict:
 // every field that would let two honest votes look like equivocation must
-// match, and the two vote values must genuinely differ.
+// match, and the two consensus values must genuinely differ.
 func (p *EquivocationProof) Verify(accused string) error {
 	if p == nil {
 		return ErrEvidenceProofMissing
@@ -121,8 +119,7 @@ func (p *EquivocationProof) Verify(accused string) error {
 		return fmt.Errorf("%w: exhibits do not both name the accused validator", ErrEvidenceProofInvalid)
 	}
 	if a.Kind != b.Kind {
-		// A prevote and a precommit for different values is normal
-		// protocol behaviour, not equivocation.
+		// Different message kinds may legally carry different values.
 		return fmt.Errorf("%w: exhibits are different vote kinds", ErrEvidenceProofInvalid)
 	}
 	if a.Height != b.Height || a.Round != b.Round {
@@ -216,9 +213,10 @@ func (p *EquivocationProof) VerifyBinding(ev ConsensusEvidence) error {
 
 // fingerprint returns a stable digest of the OFFENCE the proof establishes.
 //
-// It digests each exhibit's semantic content -- kind, height, round, validator
-// and block hash -- and combines the two in sorted order. It deliberately does
-// NOT digest the signature bytes.
+// It digests each exhibit's semantic content -- kind, height, round,
+// validator, block hash, and proposal body hash when present -- and combines
+// the two in sorted order. It deliberately does NOT digest the signature
+// bytes.
 //
 // Signature bytes are not canonical. This build signs with the randomized
 // variant of FIPS 204 6.1 (pkg/crypto/dilithium_circl.go:129, randomized=true),
@@ -253,6 +251,7 @@ func (p *EquivocationProof) fingerprint() string {
 		writeUint64Prefixed(h, x.Height)
 		writeUint64Prefixed(h, uint64(x.Round))
 		writeLenPrefixed(h, []byte(x.BlockHash))
+		writeLenPrefixed(h, []byte(x.BodyHash))
 		digests = append(digests, hex.EncodeToString(h.Sum(nil)))
 	}
 	sort.Strings(digests)
@@ -285,12 +284,16 @@ func BuildEquivocationEvidence(accused string, a, b SignedVoteExhibit) (Consensu
 	if err := proof.Verify(accused); err != nil {
 		return ConsensusEvidence{}, err
 	}
-	return ConsensusEvidence{
+	ev := ConsensusEvidence{
 		Type:        EvidenceEquivocation,
 		Validator:   accused,
 		Height:      a.Height,
 		Round:       a.Round,
 		BlockHashes: []string{a.BlockHash, b.BlockHash},
 		Proof:       proof,
-	}, nil
+	}
+	if err := proof.VerifyBinding(ev); err != nil {
+		return ConsensusEvidence{}, err
+	}
+	return ev, nil
 }

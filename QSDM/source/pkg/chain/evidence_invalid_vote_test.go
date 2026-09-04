@@ -114,15 +114,6 @@ func TestInvalidVoteEvidence_RejectedRegardlessOfFields(t *testing.T) {
 
 // The genuinely provable offence must keep working, so this change removes an
 // attack rather than the ability to report faults.
-//
-// This pins the PROVABLE path deliberately. An earlier version of this test
-// submitted a proofless accusation -- just a validator name and two invented
-// hashes -- and asserted it still slashed. That passes today, because
-// evidenceProofRequiredAt is gated on RequireSignedVotes which defaults false
-// and is set false in both shipped deploy scripts. But writing it that way
-// encoded a forgeable slash as expected behaviour, which is the same defect
-// this commit fixes for invalid_vote, one evidence type over. See the note on
-// TestEquivocationEvidence_ProoflessAccusationIsStillAccepted below.
 func TestEquivocationEvidence_StillSlashesWithVerifiedProof(t *testing.T) {
 	em, vs, _ := registerVictim(t, 1000)
 
@@ -151,45 +142,40 @@ func TestEquivocationEvidence_StillSlashesWithVerifiedProof(t *testing.T) {
 	}
 }
 
-// Documents a hole this commit does NOT close, so nobody reads the invalid_vote
-// fix as having shut the gossip stake-drain.
-//
-// The identical attack survives by changing one word in the JSON: an
-// unauthenticated peer sends {"type":"equivocation","validator":"<victim>",
-// "block_hashes":["made-up-a","made-up-b"]} and the victim loses 5% of stake
-// plus 5% of delegated stake. Proof is only demanded when
-// evidenceProofRequiredAt says so, and RequireSignedVotes defaults false
-// (pkg/config/config.go) and is explicitly false in both
-// QSDM/deploy/bring-up-validator.sh and install-ubuntu-vps.sh.
-//
-// It cannot simply be flipped on: the only producer of equivocation evidence,
-// BFTExecutor.maybeRecordProposerEquivocation, reports PROPOSER equivocation
-// and emits no proof, while EquivocationProof accepts only BFTWirePrevote and
-// BFTWirePrecommit exhibits. Requiring proof today would break the one honest
-// reporter. Closing it needs a propose-exhibit kind -- VerifyPropose already
-// exists in bft_sig.go -- then a proof-carrying producer, then the default
-// flipped, in that order.
-//
-// This test asserts the CURRENT behaviour so the hole is visible and so the
-// day someone closes it, this fails and points at the follow-up work.
-func TestEquivocationEvidence_ProoflessAccusationIsStillAccepted(t *testing.T) {
-	if RequireEvidenceProof() {
-		t.Skip("proof is required in this configuration; the hole is closed here")
-	}
+// The same stake-drain that used to exist for invalid_vote also existed for
+// bare equivocation: a peer could send a victim name plus two made-up hashes.
+// Equivocation now needs a proof, so this path must fail without moving money.
+func TestEquivocationEvidence_ProoflessAccusationRejectedWithoutSlashing(t *testing.T) {
 	em, vs, victim := registerVictim(t, 1000)
 	before := stakeOf(t, vs, victim)
 
-	if _, err := em.Process(ConsensusEvidence{
+	rec, err := em.Process(ConsensusEvidence{
 		Type:        EvidenceEquivocation,
 		Validator:   victim,
 		BlockHashes: []string{"made-up-a", "made-up-b"},
 		Details:     "fabricated: no proof attached",
-	}); err != nil {
-		t.Fatalf("precondition changed -- proofless equivocation now rejected: %v", err)
+	})
+	if !errors.Is(err, ErrEvidenceProofMissing) {
+		t.Fatalf("expected ErrEvidenceProofMissing, got %v", err)
 	}
-	if after := stakeOf(t, vs, victim); after >= before {
-		t.Fatal("precondition changed: proofless equivocation no longer slashes. " +
-			"If that was deliberate, delete this test and the note above it")
+	if after := stakeOf(t, vs, victim); after != before {
+		t.Fatalf("proofless equivocation slashed stake: %v -> %v", before, after)
+	}
+	v, _ := vs.GetValidator(victim)
+	if v.Status == ValidatorJailed {
+		t.Fatal("victim was jailed by proofless equivocation")
+	}
+	if v.SlashCount != 0 {
+		t.Fatalf("expected no slash events, got SlashCount=%d", v.SlashCount)
+	}
+	if rec != nil && rec.Processed {
+		t.Fatal("proofless evidence must not be marked processed")
+	}
+	if rec != nil && rec.SlashEvent != nil {
+		t.Fatal("no slash event may be recorded")
+	}
+	if len(vs.SlashLog()) != 0 {
+		t.Fatalf("slash log must stay empty, got %d entries", len(vs.SlashLog()))
 	}
 }
 

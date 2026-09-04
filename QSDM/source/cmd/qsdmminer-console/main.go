@@ -109,15 +109,17 @@ type Config struct {
 	// ,omitempty so miner.toml files written by the v1 wizard
 	// stay clean — only operators who have already enrolled
 	// and edited the file ever see these keys.
-	Protocol    string `toml:"protocol,omitempty"`
-	NodeID      string `toml:"node_id,omitempty"`
-	GPUUUID     string `toml:"gpu_uuid,omitempty"`
-	GPUName     string `toml:"gpu_name,omitempty"`
-	GPUArch     string `toml:"gpu_arch,omitempty"`
-	ComputeCap  string `toml:"compute_cap,omitempty"`
-	CUDAVersion string `toml:"cuda_version,omitempty"`
-	DriverVer   string `toml:"driver_ver,omitempty"`
-	HMACKeyPath string `toml:"hmac_key_path,omitempty"`
+	Protocol               string `toml:"protocol,omitempty"`
+	NodeID                 string `toml:"node_id,omitempty"`
+	GPUUUID                string `toml:"gpu_uuid,omitempty"`
+	GPUName                string `toml:"gpu_name,omitempty"`
+	GPUArch                string `toml:"gpu_arch,omitempty"`
+	ComputeCap             string `toml:"compute_cap,omitempty"`
+	CUDAVersion            string `toml:"cuda_version,omitempty"`
+	DriverVer              string `toml:"driver_ver,omitempty"`
+	HMACKeyPath            string `toml:"hmac_key_path,omitempty"`
+	OperatorKeystorePath   string `toml:"operator_keystore_path,omitempty"`
+	OperatorPassphraseFile string `toml:"operator_passphrase_file,omitempty"`
 
 	// AllowV1 lets the operator opt-OUT of the preflight gate that
 	// otherwise refuses to start a v1 miner against a v2-active
@@ -138,15 +140,17 @@ type Config struct {
 // miner.toml fixture.
 func (c Config) v2Config() V2Config {
 	return V2Config{
-		Protocol:    c.Protocol,
-		NodeID:      c.NodeID,
-		GPUUUID:     c.GPUUUID,
-		GPUName:     c.GPUName,
-		GPUArch:     c.GPUArch,
-		ComputeCap:  c.ComputeCap,
-		CUDAVersion: c.CUDAVersion,
-		DriverVer:   c.DriverVer,
-		HMACKeyPath: c.HMACKeyPath,
+		Protocol:               c.Protocol,
+		NodeID:                 c.NodeID,
+		GPUUUID:                c.GPUUUID,
+		GPUName:                c.GPUName,
+		GPUArch:                c.GPUArch,
+		ComputeCap:             c.ComputeCap,
+		CUDAVersion:            c.CUDAVersion,
+		DriverVer:              c.DriverVer,
+		HMACKeyPath:            c.HMACKeyPath,
+		OperatorKeystorePath:   c.OperatorKeystorePath,
+		OperatorPassphraseFile: c.OperatorPassphraseFile,
 	}
 }
 
@@ -803,15 +807,17 @@ func runSetup(path string, cur Config) (Config, error) {
 		// them, so an operator re-running --setup just to bump
 		// the validator URL doesn't lose their existing v2
 		// configuration.
-		Protocol:    cur.Protocol,
-		NodeID:      cur.NodeID,
-		GPUUUID:     cur.GPUUUID,
-		GPUName:     cur.GPUName,
-		GPUArch:     cur.GPUArch,
-		ComputeCap:  cur.ComputeCap,
-		CUDAVersion: cur.CUDAVersion,
-		DriverVer:   cur.DriverVer,
-		HMACKeyPath: cur.HMACKeyPath,
+		Protocol:               cur.Protocol,
+		NodeID:                 cur.NodeID,
+		GPUUUID:                cur.GPUUUID,
+		GPUName:                cur.GPUName,
+		GPUArch:                cur.GPUArch,
+		ComputeCap:             cur.ComputeCap,
+		CUDAVersion:            cur.CUDAVersion,
+		DriverVer:              cur.DriverVer,
+		HMACKeyPath:            cur.HMACKeyPath,
+		OperatorKeystorePath:   cur.OperatorKeystorePath,
+		OperatorPassphraseFile: cur.OperatorPassphraseFile,
 	}
 
 	// Optional v2 sub-wizard. We ask up-front because the
@@ -907,6 +913,13 @@ func runV2SetupSubwizard(configDir string, cur Config) (Config, error) {
 		"CUDA toolkit/runtime version (optional, e.g. 12.8)", cur.CUDAVersion))
 	driverVer := strings.TrimSpace(prompt(
 		"NVIDIA driver version (optional, e.g. 572.16)", cur.DriverVer))
+	operatorKeystorePath := strings.TrimSpace(prompt(
+		"Operator keystore for signed proofs (optional)", cur.OperatorKeystorePath))
+	operatorPassphraseFile := strings.TrimSpace(prompt(
+		"Operator passphrase file for signed proofs (optional)", cur.OperatorPassphraseFile))
+	if operatorKeystorePath != "" && operatorPassphraseFile == "" {
+		return cur, errors.New("operator passphrase file is required when operator keystore is set")
+	}
 
 	cur.Protocol = "v2"
 	cur.NodeID = nodeID
@@ -917,6 +930,8 @@ func runV2SetupSubwizard(configDir string, cur Config) (Config, error) {
 	cur.CUDAVersion = cudaVersion
 	cur.DriverVer = driverVer
 	cur.HMACKeyPath = keyPath
+	cur.OperatorKeystorePath = operatorKeystorePath
+	cur.OperatorPassphraseFile = operatorPassphraseFile
 	return cur, nil
 }
 
@@ -942,6 +957,12 @@ func printEnrollHint(cfg Config) {
 	fmt.Printf("  qsdmcli enroll \\\n")
 	fmt.Printf("    --validator %s \\\n", cfg.ValidatorURL)
 	fmt.Printf("    --sender   %s \\\n", cfg.RewardAddr)
+	if cfg.OperatorKeystorePath != "" {
+		fmt.Printf("    --in       %s \\\n", cfg.OperatorKeystorePath)
+	}
+	if cfg.OperatorPassphraseFile != "" {
+		fmt.Printf("    --passphrase-file %s \\\n", cfg.OperatorPassphraseFile)
+	}
 	fmt.Printf("    --node-id  %s \\\n", cfg.NodeID)
 	fmt.Printf("    --gpu-uuid %s \\\n", cfg.GPUUUID)
 	if keyHex != "" {
@@ -1071,17 +1092,19 @@ func realMain(parentCtx context.Context) int {
 		// and makes the remaining fields required. Kept in a
 		// separate group in --help output via the comment so
 		// operators who aren't on v2 yet aren't confused.
-		protocol    = flag.String("protocol", "", "override config: 'v2' enables NVIDIA-locked attestation, default (empty) keeps v1")
-		nodeID      = flag.String("node-id", "", "v2 only: enrolled node_id (matches pkg/mining/enrollment record)")
-		gpuUUID     = flag.String("gpu-uuid", "", "v2 only: nvidia-smi GPU UUID matching the enrollment record")
-		gpuName     = flag.String("gpu-name", "", "v2 only: human-readable GPU name (e.g. 'NVIDIA GeForce RTX 4090')")
-		gpuArch     = flag.String("gpu-arch", "", "v2 only: GPU arch tag (ada/ampere/hopper/blackwell)")
-		computeCap  = flag.String("compute-cap", "", "v2 only: CUDA compute capability (e.g. '8.9')")
-		cudaVersion = flag.String("cuda-version", "", "v2 only: CUDA toolkit/runtime version (e.g. '12.8')")
-		driverVer   = flag.String("driver-ver", "", "v2 only: NVIDIA driver version (e.g. '572.16')")
-		hmacKeyPath = flag.String("hmac-key-path", "", "v2 only: path to a file containing the operator HMAC key as a single line of hex")
-		genHMACKey  = flag.String("gen-hmac-key", "", "generate a fresh 32-byte HMAC key, write it as hex to this path (0o600), print the matching qsdmcli enroll snippet, and exit")
-		enrollPoll  = flag.Duration("enrollment-poll", DefaultEnrollmentPollInterval, "v2 only: cadence the background poller re-fetches the on-chain enrollment record (set to 0 to disable; <5s rounded up to 5s)")
+		protocol               = flag.String("protocol", "", "override config: 'v2' enables NVIDIA-locked attestation, default (empty) keeps v1")
+		nodeID                 = flag.String("node-id", "", "v2 only: enrolled node_id (matches pkg/mining/enrollment record)")
+		gpuUUID                = flag.String("gpu-uuid", "", "v2 only: nvidia-smi GPU UUID matching the enrollment record")
+		gpuName                = flag.String("gpu-name", "", "v2 only: human-readable GPU name (e.g. 'NVIDIA GeForce RTX 4090')")
+		gpuArch                = flag.String("gpu-arch", "", "v2 only: GPU arch tag (ada/ampere/hopper/blackwell)")
+		computeCap             = flag.String("compute-cap", "", "v2 only: CUDA compute capability (e.g. '8.9')")
+		cudaVersion            = flag.String("cuda-version", "", "v2 only: CUDA toolkit/runtime version (e.g. '12.8')")
+		driverVer              = flag.String("driver-ver", "", "v2 only: NVIDIA driver version (e.g. '572.16')")
+		hmacKeyPath            = flag.String("hmac-key-path", "", "v2 only: path to a file containing the operator HMAC key as a single line of hex")
+		operatorKeystorePath   = flag.String("operator-keystore", "", "v2 only: QSDM keystore used to add operator signatures (default: ~/.qsdm/wallet.json when passphrase file is set)")
+		operatorPassphraseFile = flag.String("operator-passphrase-file", "", "v2 only: file containing the operator keystore passphrase for unattended proof signing")
+		genHMACKey             = flag.String("gen-hmac-key", "", "generate a fresh 32-byte HMAC key, write it as hex to this path (0o600), print the matching qsdmcli enroll snippet, and exit")
+		enrollPoll             = flag.Duration("enrollment-poll", DefaultEnrollmentPollInterval, "v2 only: cadence the background poller re-fetches the on-chain enrollment record (set to 0 to disable; <5s rounded up to 5s)")
 
 		// --allow-v1 is the operator override for the preflight
 		// gate. We expose it via flag and via the persistent
@@ -1293,6 +1316,10 @@ func realMain(parentCtx context.Context) int {
 			cfg.DriverVer = *driverVer
 		case "hmac-key-path":
 			cfg.HMACKeyPath = *hmacKeyPath
+		case "operator-keystore":
+			cfg.OperatorKeystorePath = *operatorKeystorePath
+		case "operator-passphrase-file":
+			cfg.OperatorPassphraseFile = *operatorPassphraseFile
 		}
 	})
 
@@ -1315,6 +1342,9 @@ func realMain(parentCtx context.Context) int {
 		}
 		if v2ctx.GPUArch != "" {
 			fmt.Fprintf(os.Stderr, "  gpu_arch = %s\n", v2ctx.GPUArch)
+		}
+		if v2ctx.OperatorSigner != nil {
+			fmt.Fprintf(os.Stderr, "  operator_signature = enabled (%s)\n", v2ctx.OperatorSigner.Address)
 		}
 	}
 

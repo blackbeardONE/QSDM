@@ -103,7 +103,13 @@ single validator.
    the original record retires. Signed `qsdm/enroll/v2`
    transactions can also retain the operator's ML-DSA public key
    after `OperatorPublicKeyRetentionHeight`; that fork gate is
-   disabled by default for deterministic rollout. Implementation
+   disabled by default for deterministic rollout. Operators schedule
+   retention with `[node] mining_operator_public_key_retention_height`
+   or `QSDM_MINING_OPERATOR_PUBLIC_KEY_RETENTION_HEIGHT`. Only after
+   enrolled records carry operator public keys should validators enable
+   `[node] require_mining_operator_signatures` /
+   `QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES`; startup refuses that
+   enforcement flag without a non-zero retention height. Implementation
    in `pkg/mining/enrollment/`.
 6. **On-chain slashing.** The `qsdm/slash/v1` transaction
    surface, admission gate, receipts, and verifiers ship, but
@@ -1885,9 +1891,13 @@ governance ever wants to re-enable non-NVIDIA mining.
    chain state, so leak/rental is not the right security model.
    The current protection is reward routing plus rate limits.
    Signed enrollment can retain the operator public key behind a
-   fork gate, but a future proof signature field is still required
-   before forged-attestation or double-mining can be safely
-   slashable.
+   fork gate. That gate is configured with
+   `mining_operator_public_key_retention_height` /
+   `QSDM_MINING_OPERATOR_PUBLIC_KEY_RETENTION_HEIGHT`. Proof
+   signature enforcement is configured separately with
+   `require_mining_operator_signatures` /
+   `QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES` and must only be enabled
+   after validator operators agree on the retention height.
 
 ### 11.2 Out-of-scope threats
 
