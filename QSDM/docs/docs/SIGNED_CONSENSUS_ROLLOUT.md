@@ -120,6 +120,20 @@ chain height:
 Treat activation as complete only when all validators agree on both the config
 values and the chain height at which enforcement turned on.
 
+After the activation height has passed, run the external posture check from a
+machine outside the validator host:
+
+```bash
+trustcheck -base https://api.qsdm.tech \
+  -min-attested 2 \
+  -check-mining-path \
+  -require-signed-consensus
+```
+
+This check must fail before activation. It is intended to prove that production
+has stopped accepting unsigned consensus traffic, not to monitor compatibility
+mode.
+
 ## Task-action signatures
 
 Separate from the signed-vote rollout above, and separately gated.

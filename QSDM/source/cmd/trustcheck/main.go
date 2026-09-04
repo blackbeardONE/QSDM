@@ -66,6 +66,22 @@ type trustRecent struct {
 	Attestations []trustAttestation `json:"attestations"`
 }
 
+// nodeStatus mirrors only the /api/v1/status fields trustcheck needs for
+// optional production-posture probes. It deliberately omits operational
+// detail so the black-box scraper stays stable as status grows.
+type nodeStatus struct {
+	ChainTip      uint64             `json:"chain_tip"`
+	ConsensusAuth *consensusAuthInfo `json:"consensus_auth"`
+}
+
+type consensusAuthInfo struct {
+	SignedConsensusSupported         bool   `json:"signed_consensus_supported"`
+	RequireSignedVotes               bool   `json:"require_signed_votes"`
+	SignedMessageActivationHeight    uint64 `json:"signed_message_activation_height"`
+	SignedConsensusActive            bool   `json:"signed_consensus_active"`
+	UnsignedConsensusTrafficAccepted bool   `json:"unsigned_consensus_traffic_accepted"`
+}
+
 // Fixed scope-note string required by Major Update §8.5.2 to appear
 // verbatim on every summary response.
 const expectedScopeNote = "NVIDIA-lock is an opt-in, per-operator API policy — not a consensus rule. See NVIDIA_LOCK_CONSENSUS_SCOPE.md."
@@ -123,6 +139,7 @@ func main() {
 	// Defaults off so third-party users see no behaviour change, matching
 	// --min-attested; QSDM's own external probe enables it explicitly.
 	checkMiningPath := flag.Bool("check-mining-path", false, "Also assert that the mining work endpoint is reachable end to end (exercises the relay -> home gateway -> validator path).")
+	requireSignedConsensus := flag.Bool("require-signed-consensus", false, "Also assert that /api/v1/status reports signed consensus enforcement active and unsigned consensus traffic rejected (default allows rollout compatibility).")
 	showVersion := flag.Bool("version", false, "Print build metadata (release tag, git SHA, build date, runtime) and exit.")
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
@@ -182,6 +199,15 @@ func main() {
 
 	if *checkMiningPath {
 		validateMiningPath(client, cleanBase, rs)
+	}
+
+	if *requireSignedConsensus {
+		status, statusErr := fetchStatus(client, cleanBase)
+		if statusErr != nil {
+			rs.fail("status-fetch", statusErr.Error())
+		} else {
+			validateSignedConsensusStatus(status, rs)
+		}
 	}
 
 	emit(rs, summary, recent, *jsonOut)
@@ -288,6 +314,18 @@ func fetchRecent(c *http.Client, base string, limit int) (*trustRecent, int, err
 		return nil, status, fmt.Errorf("unmarshal recent: %w; body=%q", err, string(body))
 	}
 	return &r, status, nil
+}
+
+func fetchStatus(c *http.Client, base string) (*nodeStatus, error) {
+	body, _, err := getJSON(c, base+"/api/v1/status")
+	if err != nil {
+		return nil, err
+	}
+	var status nodeStatus
+	if err := json.Unmarshal(body, &status); err != nil {
+		return nil, fmt.Errorf("unmarshal status: %w; body=%q", err, string(body))
+	}
+	return &status, nil
 }
 
 func getJSON(c *http.Client, u string) ([]byte, int, error) {
@@ -421,6 +459,45 @@ func validateMinAttested(s *trustSummary, minAttested int, rs *results) {
 		return
 	}
 	rs.pass(name)
+}
+
+func validateSignedConsensusStatus(status *nodeStatus, rs *results) {
+	if status == nil {
+		rs.fail("status/consensus-auth-present", "status is nil; cannot evaluate signed consensus posture")
+		return
+	}
+	if status.ConsensusAuth == nil {
+		rs.fail("status/consensus-auth-present", "consensus_auth is missing from /api/v1/status")
+		return
+	}
+	rs.pass("status/consensus-auth-present")
+
+	auth := status.ConsensusAuth
+	if !auth.SignedConsensusSupported {
+		rs.fail("status/signed-consensus-supported", "signed_consensus_supported=false")
+	} else {
+		rs.pass("status/signed-consensus-supported")
+	}
+	if !auth.RequireSignedVotes {
+		rs.fail("status/signed-consensus-required", "require_signed_votes=false; unsigned votes are still accepted until enforcement is enabled")
+	} else {
+		rs.pass("status/signed-consensus-required")
+	}
+	if auth.SignedMessageActivationHeight == 0 {
+		rs.fail("status/signed-consensus-activation-height", "signed_message_activation_height=0")
+	} else {
+		rs.pass("status/signed-consensus-activation-height")
+	}
+	if !auth.SignedConsensusActive {
+		rs.fail("status/signed-consensus-active", fmt.Sprintf("signed_consensus_active=false at chain_tip=%d activation_height=%d", status.ChainTip, auth.SignedMessageActivationHeight))
+	} else {
+		rs.pass("status/signed-consensus-active")
+	}
+	if auth.UnsignedConsensusTrafficAccepted {
+		rs.fail("status/unsigned-consensus-rejected", "unsigned_consensus_traffic_accepted=true")
+	} else {
+		rs.pass("status/unsigned-consensus-rejected")
+	}
 }
 
 func validateRecent(r *trustRecent, s *trustSummary, rs *results) {
