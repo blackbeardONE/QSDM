@@ -6,4 +6,5 @@ cd "$ROOT/source"
 export CGO_ENABLED=0
 export QSDM_METRICS_REGISTER_STRICT=1
 unset CGO_CFLAGS CGO_LDFLAGS 2>/dev/null || true
+bash "$ROOT/scripts/go-mod-download-retry.sh"
 go test ./... -short -count=1 -timeout 15m

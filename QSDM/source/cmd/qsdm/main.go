@@ -1129,6 +1129,12 @@ func main() {
 			"env_var", "QSDM_V2_ACTIVE",
 			"to_activate", "set QSDM_V2_ACTIVE=1 (chain reset required per §10.3)")
 	}
+	if cfg.MiningOperatorPublicKeyRetentionHeight > 0 {
+		enrollment.SetOperatorPublicKeyRetentionHeight(cfg.MiningOperatorPublicKeyRetentionHeight)
+		logger.Info("Mining enrollment operator public key retention scheduled",
+			"height", cfg.MiningOperatorPublicKeyRetentionHeight,
+			"effect", "signed mining enrollments retain operator ML-DSA public keys for proof verification")
+	}
 	// User store persistence: fall back to <stateDir>/qsdm_users.json
 	// when nothing was set explicitly (config file or env). This matches
 	// the sibling staking/bridge JSON files and keeps all ledger-local
@@ -1391,6 +1397,17 @@ func main() {
 		logger.Warn("Block tx root commits transaction IDs only: contents are not bound by the block hash",
 			"config", "[consensus] tx_content_root_activation_height",
 			"env", "QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT",
+			"note", "enabling this is a coordinated fork; every node must agree on the height")
+	}
+	chain.SetEnrollmentStateRootActivationHeight(cfg.EnrollmentStateRootActivationHeight)
+	if cfg.EnrollmentStateRootActivationHeight > 0 {
+		logger.Info("Block state root commits mining enrollment side state",
+			"from_height", cfg.EnrollmentStateRootActivationHeight,
+			"warning", "every node must use this exact value or block roots diverge")
+	} else {
+		logger.Warn("Block state root does not yet commit mining enrollment side state",
+			"config", "[consensus] enrollment_state_root_activation_height",
+			"env", "QSDM_ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT",
 			"note", "enabling this is a coordinated fork; every node must agree on the height")
 	}
 	if cfg.TaskActionSignatureActivationHeight > 0 {
@@ -1803,9 +1820,10 @@ func main() {
 
 	hmacNonceStore := hmac.NewInMemoryNonceStore(2 * mining.FreshnessWindow)
 	attestProdCfg := attest.ProductionConfig{
-		Registry:          enrollment.NewStateBackedRegistry(v2Wired.EnrollmentState),
-		ChallengeVerifier: chSignerVerifier,
-		NonceStore:        hmacNonceStore,
+		Registry:                 enrollment.NewStateBackedRegistry(v2Wired.EnrollmentState),
+		ChallengeVerifier:        chSignerVerifier,
+		NonceStore:               hmacNonceStore,
+		RequireOperatorSignature: cfg.RequireMiningOperatorSignatures,
 		// DenyList nil → hmac.EmptyDenyList (genesis posture).
 		// FreshnessWindow / AllowedFutureSkew zero → spec defaults.
 	}
@@ -1881,6 +1899,7 @@ func main() {
 	logger.Info("v2 attestation dispatcher wired",
 		"hmac_path_active", true,
 		"cc_path_active", attestProdCfg.CCConfig != nil,
+		"operator_signature_required", attestProdCfg.RequireOperatorSignature,
 		"fork_v2_active", v2Active,
 		"effect_when_active", "post-fork proofs require nvidia-cc-v1 or nvidia-hmac-v1 attestation")
 

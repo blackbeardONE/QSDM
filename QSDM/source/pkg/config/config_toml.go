@@ -2,16 +2,16 @@ package config
 
 // ConfigTOML represents the TOML structure for configuration file
 type ConfigTOML struct {
-	Node        NodeConfig        `toml:"node" yaml:"node"`
-	Network     NetworkConfig     `toml:"network"`
-	Storage     StorageConfig     `toml:"storage"`
-	Monitoring  MonitoringConfig  `toml:"monitoring"`
-	API         APIConfig         `toml:"api"`
-	Wallet      WalletConfig      `toml:"wallet"`
-	Governance  GovernanceConfig  `toml:"governance"`
+	Node        NodeConfig          `toml:"node" yaml:"node"`
+	Network     NetworkConfig       `toml:"network"`
+	Storage     StorageConfig       `toml:"storage"`
+	Monitoring  MonitoringConfig    `toml:"monitoring"`
+	API         APIConfig           `toml:"api"`
+	Wallet      WalletConfig        `toml:"wallet"`
+	Governance  GovernanceConfig    `toml:"governance"`
 	Consensus   ConsensusConfigTOML `toml:"consensus" yaml:"consensus"`
-	Performance PerformanceConfig `toml:"performance"`
-	Trust       TrustConfigTOML   `toml:"trust" yaml:"trust"`
+	Performance PerformanceConfig   `toml:"performance"`
+	Trust       TrustConfigTOML     `toml:"trust" yaml:"trust"`
 }
 
 // TrustConfigTOML controls the opt-in attestation transparency surface
@@ -61,6 +61,14 @@ type NodeConfig struct {
 	// MiningEnabled: must be true only for miner nodes. Env override:
 	// QSDM_MINING_ENABLED (accepts "true" / "1" / "yes"). Default: false.
 	MiningEnabled bool `toml:"mining_enabled" yaml:"mining_enabled"`
+	// RequireMiningOperatorSignatures: when true, validators reject nvidia-hmac-v1
+	// proofs unless operator_sig verifies against the retained enrollment ML-DSA
+	// public key. Env override: QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES. Default: false.
+	RequireMiningOperatorSignatures bool `toml:"require_mining_operator_signatures" yaml:"require_mining_operator_signatures"`
+	// MiningOperatorPublicKeyRetentionHeight: first height where signed mining
+	// enrollments retain the operator ML-DSA public key. Zero keeps retention
+	// disabled. Env override: QSDM_MINING_OPERATOR_PUBLIC_KEY_RETENTION_HEIGHT.
+	MiningOperatorPublicKeyRetentionHeight uint64 `toml:"mining_operator_public_key_retention_height" yaml:"mining_operator_public_key_retention_height"`
 }
 
 type NetworkConfig struct {
@@ -172,6 +180,11 @@ type ConsensusConfigTOML struct {
 	// hashes from that height on, so EVERY node must agree on the value --
 	// a node with a different setting computes different hashes and forks.
 	TxContentRootActivationHeight uint64 `toml:"tx_content_root_activation_height" yaml:"tx_content_root_activation_height"`
+
+	// EnrollmentStateRootActivationHeight is the first height whose block state
+	// root commits mining enrollment/slashing side state. Zero leaves the legacy
+	// root. Setting it changes block roots, so every node must agree on it.
+	EnrollmentStateRootActivationHeight uint64 `toml:"enrollment_state_root_activation_height" yaml:"enrollment_state_root_activation_height"`
 
 	// SignerKeyPath stores the validator-only ML-DSA consensus hot key.
 	SignerKeyPath string `toml:"signer_key_path" yaml:"signer_key_path"`

@@ -92,6 +92,9 @@ proposal_file = "proposals.json"
 [consensus]
 require_signed_votes = false
 signed_message_activation_height = 0
+task_action_signature_activation_height = 625000
+tx_content_root_activation_height = 625000
+enrollment_state_root_activation_height = 625000
 signer_key_path = "qsdm_consensus_signer.json"
 
 # Performance Configuration

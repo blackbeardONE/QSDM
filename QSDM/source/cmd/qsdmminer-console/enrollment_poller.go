@@ -139,6 +139,7 @@ type EnrollmentStatus struct {
 type enrollmentRecordWire struct {
 	NodeID                string `json:"node_id"`
 	Owner                 string `json:"owner"`
+	OperatorPublicKey     string `json:"operator_public_key,omitempty"`
 	GPUUUID               string `json:"gpu_uuid"`
 	StakeDust             uint64 `json:"stake_dust"`
 	BondMode              string `json:"bond_mode"`

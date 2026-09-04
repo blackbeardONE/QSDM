@@ -52,6 +52,7 @@ func (rp *ReceiptProducer) ProduceBlockWithReceipts() (*Block, []*TxReceipt, err
 		prevHash = last.Hash
 		height = last.Height + 1
 	}
+	setStateRootHeight(rp.producer.applier, height)
 
 	for i, tx := range txs {
 		receipt := &TxReceipt{
@@ -92,6 +93,7 @@ func (rp *ReceiptProducer) ProduceBlockWithReceipts() (*Block, []*TxReceipt, err
 		return nil, blockReceipts, fmt.Errorf("all transactions failed state application")
 	}
 
+	setStateRootHeight(rp.producer.applier, height)
 	stateRoot := rp.producer.applier.StateRoot()
 
 	block := &Block{

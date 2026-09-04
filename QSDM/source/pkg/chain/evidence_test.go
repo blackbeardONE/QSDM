@@ -7,11 +7,30 @@ import (
 
 func makeEvidenceManager(t *testing.T) (*EvidenceManager, *ValidatorSet) {
 	t.Helper()
+	return makeEvidenceManagerForValidator(t, "v1")
+}
+
+func makeEvidenceManagerForValidator(t *testing.T, validator string) (*EvidenceManager, *ValidatorSet) {
+	t.Helper()
 	vs := NewValidatorSet(DefaultValidatorSetConfig())
-	if err := vs.Register("v1", 500); err != nil {
+	if err := vs.Register(validator, 500); err != nil {
 		t.Fatal(err)
 	}
 	return NewEvidenceManager(vs), vs
+}
+
+func makeProofEvidence(t *testing.T, height uint64, round uint32) (ConsensusEvidence, string) {
+	t.Helper()
+	signer, offender := newBFTKey(t)
+	ev, err := BuildEquivocationEvidence(
+		offender,
+		signedExhibit(t, signer, offender, BFTWirePrevote, height, round, "a"),
+		signedExhibit(t, signer, offender, BFTWirePrevote, height, round, "b"),
+	)
+	if err != nil {
+		t.Fatalf("build proof evidence: %v", err)
+	}
+	return ev, offender
 }
 
 func TestEvidenceManager_ForkWitnessRecordedWithoutSlash(t *testing.T) {
@@ -36,14 +55,8 @@ func TestEvidenceManager_ForkWitnessRecordedWithoutSlash(t *testing.T) {
 }
 
 func TestEvidenceManager_SubmitEvidenceBestEffortDuplicateIgnored(t *testing.T) {
-	em, _ := makeEvidenceManager(t)
-	ev := ConsensusEvidence{
-		Type:        EvidenceEquivocation,
-		Validator:   "v1",
-		Height:      99,
-		Round:       0,
-		BlockHashes: []string{"a", "b"},
-	}
+	ev, offender := makeProofEvidence(t, 99, 0)
+	em, _ := makeEvidenceManagerForValidator(t, offender)
 	em.SubmitEvidenceBestEffort(ev)
 	em.SubmitEvidenceBestEffort(ev)
 	stats := em.Stats()
@@ -53,21 +66,16 @@ func TestEvidenceManager_SubmitEvidenceBestEffortDuplicateIgnored(t *testing.T) 
 }
 
 func TestEvidenceManager_ProcessEquivocation(t *testing.T) {
-	em, vs := makeEvidenceManager(t)
-	rec, err := em.Process(ConsensusEvidence{
-		Type:        EvidenceEquivocation,
-		Validator:   "v1",
-		Height:      10,
-		Round:       1,
-		BlockHashes: []string{"h1", "h2"},
-	})
+	ev, offender := makeProofEvidence(t, 10, 1)
+	em, vs := makeEvidenceManagerForValidator(t, offender)
+	rec, err := em.Process(ev)
 	if err != nil {
 		t.Fatalf("expected success: %v", err)
 	}
 	if !rec.Processed || rec.SlashEvent == nil {
 		t.Fatal("expected processed with slash event")
 	}
-	v, _ := vs.GetValidator("v1")
+	v, _ := vs.GetValidator(offender)
 	if v.SlashCount != 1 {
 		t.Fatalf("expected slash count 1, got %d", v.SlashCount)
 	}
@@ -97,14 +105,8 @@ func TestEvidenceManager_ProcessInvalidVote(t *testing.T) {
 }
 
 func TestEvidenceManager_DuplicateEvidence(t *testing.T) {
-	em, _ := makeEvidenceManager(t)
-	ev := ConsensusEvidence{
-		Type:        EvidenceEquivocation,
-		Validator:   "v1",
-		Height:      10,
-		Round:       1,
-		BlockHashes: []string{"h1", "h2"},
-	}
+	ev, offender := makeProofEvidence(t, 10, 1)
+	em, _ := makeEvidenceManagerForValidator(t, offender)
 	if _, err := em.Process(ev); err != nil {
 		t.Fatal(err)
 	}
@@ -128,17 +130,12 @@ func TestEvidenceManager_ValidateErrors(t *testing.T) {
 }
 
 func TestEvidenceManager_StatsAndList(t *testing.T) {
-	em, _ := makeEvidenceManager(t)
-	_, _ = em.Process(ConsensusEvidence{
-		Type:        EvidenceEquivocation,
-		Validator:   "v1",
-		Height:      1,
-		Round:       0,
-		BlockHashes: []string{"a", "b"},
-	})
+	ev, offender := makeProofEvidence(t, 1, 0)
+	em, _ := makeEvidenceManagerForValidator(t, offender)
+	_, _ = em.Process(ev)
 	_, _ = em.Process(ConsensusEvidence{
 		Type:      EvidenceInvalidVote,
-		Validator: "v1",
+		Validator: offender,
 		Height:    2,
 		Round:     0,
 		Details:   "bad signature",
@@ -153,31 +150,26 @@ func TestEvidenceManager_StatsAndList(t *testing.T) {
 }
 
 func TestEvidenceManager_SlashesStakingDelegation(t *testing.T) {
-	em, vs := makeEvidenceManager(t)
+	ev, offender := makeProofEvidence(t, 3, 0)
+	em, vs := makeEvidenceManagerForValidator(t, offender)
 	as := NewAccountStore()
 	as.Credit("del", 1000)
 	sl := NewStakingLedger()
-	if err := sl.Delegate(as, "del", "v1", 200); err != nil {
+	if err := sl.Delegate(as, "del", offender, 200); err != nil {
 		t.Fatal(err)
 	}
 	em.SetStakingLedger(sl)
-	if sl.DelegatedPower("v1") != 200 {
-		t.Fatalf("delegated: %v", sl.DelegatedPower("v1"))
+	if sl.DelegatedPower(offender) != 200 {
+		t.Fatalf("delegated: %v", sl.DelegatedPower(offender))
 	}
-	_, err := em.Process(ConsensusEvidence{
-		Type:        EvidenceEquivocation,
-		Validator:   "v1",
-		Height:      3,
-		Round:       0,
-		BlockHashes: []string{"a", "b"},
-	})
+	_, err := em.Process(ev)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sl.DelegatedPower("v1"); got > 191 || got < 189 {
+	if got := sl.DelegatedPower(offender); got > 191 || got < 189 {
 		t.Fatalf("expected ~190 delegated after 5%% slash, got %v", got)
 	}
-	v, _ := vs.GetValidator("v1")
+	v, _ := vs.GetValidator(offender)
 	if v.Status != ValidatorJailed {
 		t.Fatalf("expected jailed validator, got %s", v.Status)
 	}

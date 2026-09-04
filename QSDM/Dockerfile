@@ -24,7 +24,7 @@
 # The inline build below intentionally mirrors Dockerfile.validator; keep the
 # two in sync when modifying.
 
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26.6-alpine AS builder
 
 RUN apk update && apk add --no-cache \
     ca-certificates \
@@ -47,7 +47,12 @@ RUN git clone --depth 1 https://github.com/open-quantum-safe/liboqs.git && \
 
 WORKDIR /app
 COPY source ./source
-RUN cd source && go mod download
+RUN cd source && \
+    for attempt in 1 2 3; do \
+        go mod download && break; \
+        if [ "$attempt" = 3 ]; then exit 1; fi; \
+        sleep $((attempt * 5)); \
+    done
 
 # Default build here is validator_only so accidentally running the legacy
 # image in a production environment does not silently attempt to mine.

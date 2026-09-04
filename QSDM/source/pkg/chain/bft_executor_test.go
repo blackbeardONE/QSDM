@@ -131,6 +131,12 @@ func TestBFTExecutor_EquivocationSubmitsEvidence(t *testing.T) {
 	if lst[0].Evidence.Type != EvidenceEquivocation {
 		t.Fatalf("evidence type %v", lst[0].Evidence.Type)
 	}
+	if lst[0].Evidence.Proof == nil {
+		t.Fatal("executor must submit proof-carrying equivocation evidence")
+	}
+	if err := lst[0].Evidence.Proof.VerifyBinding(lst[0].Evidence); err != nil {
+		t.Fatalf("recorded proof should match its evidence envelope: %v", err)
+	}
 }
 
 func TestBFTExecutor_ApplyInboundProposeEquivocationRejected(t *testing.T) {

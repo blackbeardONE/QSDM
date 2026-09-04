@@ -68,7 +68,9 @@ compatibility posture is:
 
 On 2026-08-29, `node.qsdm.tech` was verified on commit `238a0e9` with this
 compatibility posture, while task-action signatures and transaction-content
-roots were already active from height `625000`.
+roots were already active from height `625000`. Mining enrollment/slashing
+state-root commitment is staged for the same height in current deployment
+scripts.
 
 ## Phase 2: choose one height
 
@@ -87,11 +89,17 @@ For scripted deployments, pass the same posture explicitly:
 ```bash
 QSDM_REQUIRE_SIGNED_VOTES=true \
 QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT=600000 \
+QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT=600000 \
+QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT=600000 \
+QSDM_ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT=600000 \
 ./deploy/install-ubuntu-vps.sh
 
 ./deploy/bring-up-validator.sh \
   --require-signed-votes \
-  --signed-message-activation-height 600000
+  --signed-message-activation-height 600000 \
+  --task-action-signature-activation-height 600000 \
+  --tx-content-root-activation-height 600000 \
+  --enrollment-state-root-activation-height 600000
 ```
 
 The node refuses to start when only one of these settings is active. Blocks and
@@ -201,6 +209,23 @@ Producer and validator derive the hash through one function
 rather than carrying its own copy, so there is no second derivation to keep in
 step. That was not true before commit `bee8da4`, and activating the gate
 against a build without it would halt propagation network-wide.
+
+## Enrollment state root (coordinated fork)
+
+Mining enrollment, operator binding, and slashing records live outside the
+transaction list. Before the coordinated gate, two nodes could replay the same
+blocks while disagreeing about that side state. That made later reward and
+slash decisions depend on local database history rather than the block stream.
+
+`[consensus] enrollment_state_root_activation_height` (env:
+`QSDM_ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT`) sets the first height whose
+state root also commits the mining enrollment/slashing snapshot. Zero keeps
+legacy state-root derivation; current deployment scripts default it to
+`625000` alongside the task-action and transaction-content gates.
+
+This is another COMPUTES gate. Every validator must use the exact same height
+before the chain reaches it. A node with a different value derives a different
+state root for the same block and stops following at the activation height.
 
 ## Current boundary
 

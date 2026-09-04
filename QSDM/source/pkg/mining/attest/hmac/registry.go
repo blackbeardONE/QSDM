@@ -25,18 +25,20 @@ import (
 // Registry
 // -----------------------------------------------------------------------------
 
-// Entry is one registered (node_id, owner, gpu_uuid, hmac_key) tuple. The
-// Owner is the enrolled reward wallet. Empty Owner is permitted for legacy
-// and test registries; production verification rejects it when reward-owner
-// binding is required. HMACKey is the raw secret - length is a registry-
-// implementation detail (in-memory impl enforces 32 bytes minimum to match
-// the reference enrollment flow). The verifier treats it as opaque bytes and
-// hands it to crypto/hmac.
+// Entry is one registered (node_id, owner, operator_public_key, gpu_uuid,
+// hmac_key) tuple. The Owner is the enrolled reward wallet. Empty Owner is
+// permitted for legacy and test registries; production verification rejects it
+// when reward-owner binding is required. OperatorPublicKey is empty for legacy
+// records until the network activates key retention. HMACKey is the raw secret
+// - length is a registry-implementation detail (in-memory impl enforces 32
+// bytes minimum to match the reference enrollment flow). The verifier treats it
+// as opaque bytes and hands it to crypto/hmac.
 type Entry struct {
-	NodeID  string
-	Owner   string
-	GPUUUID string
-	HMACKey []byte
+	NodeID            string
+	Owner             string
+	OperatorPublicKey string
+	GPUUUID           string
+	HMACKey           []byte
 }
 
 // Registry is the subset of the on-chain operator registry the
@@ -98,6 +100,14 @@ func (r *InMemoryRegistry) Enroll(nodeID, gpuUUID string, hmacKey []byte) error 
 // handler already validates keys, but we want a test-time stub
 // that matches the production invariant.
 func (r *InMemoryRegistry) EnrollWithOwner(nodeID, owner, gpuUUID string, hmacKey []byte) error {
+	return r.EnrollWithOperatorPublicKey(nodeID, owner, "", gpuUUID, hmacKey)
+}
+
+// EnrollWithOperatorPublicKey registers a new
+// (node_id, owner, operator_public_key, gpu_uuid, hmac_key) tuple. It exists so
+// tests and local-mode networks can exercise the post-HMAC operator-signature
+// rail with the same registry field that production gets from enrollment state.
+func (r *InMemoryRegistry) EnrollWithOperatorPublicKey(nodeID, owner, operatorPublicKey, gpuUUID string, hmacKey []byte) error {
 	if nodeID == "" {
 		return errors.New("hmac: Enroll requires non-empty node_id")
 	}
@@ -118,10 +128,11 @@ func (r *InMemoryRegistry) EnrollWithOwner(nodeID, owner, gpuUUID string, hmacKe
 	keyCopy := make([]byte, len(hmacKey))
 	copy(keyCopy, hmacKey)
 	r.entries[nodeID] = &Entry{
-		NodeID:  nodeID,
-		Owner:   owner,
-		GPUUUID: gpuUUID,
-		HMACKey: keyCopy,
+		NodeID:            nodeID,
+		Owner:             owner,
+		OperatorPublicKey: operatorPublicKey,
+		GPUUUID:           gpuUUID,
+		HMACKey:           keyCopy,
 	}
 	return nil
 }
@@ -154,10 +165,11 @@ func (r *InMemoryRegistry) Lookup(nodeID string) (*Entry, error) {
 	keyCopy := make([]byte, len(e.HMACKey))
 	copy(keyCopy, e.HMACKey)
 	return &Entry{
-		NodeID:  e.NodeID,
-		Owner:   e.Owner,
-		GPUUUID: e.GPUUUID,
-		HMACKey: keyCopy,
+		NodeID:            e.NodeID,
+		Owner:             e.Owner,
+		OperatorPublicKey: e.OperatorPublicKey,
+		GPUUUID:           e.GPUUUID,
+		HMACKey:           keyCopy,
 	}, nil
 }
 
