@@ -11,6 +11,8 @@ package enrollment
 // (Lookup-only); EnrollmentState may grow as needed.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
@@ -696,6 +698,74 @@ func (s *InMemoryState) EvidenceSeen(hash [32]byte) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.seenEvidence[hash]
+}
+
+// Count reports the number of consensus entries currently held by the
+// registry. It includes replay-protection evidence hashes because they are
+// consensus state too: forgetting one after replay can allow the same slash
+// evidence to be accepted twice.
+func (s *InMemoryState) Count() int {
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.byNodeID) + len(s.seenEvidence)
+}
+
+// StateRoot returns a deterministic commitment to all enrollment-side chain
+// state. Empty state returns an empty string so callers can keep legacy account
+// roots byte-for-byte stable until this feature is explicitly activated.
+func (s *InMemoryState) StateRoot() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.byNodeID) == 0 && len(s.seenEvidence) == 0 {
+		return ""
+	}
+
+	h := sha256.New()
+	_, _ = fmt.Fprintf(h, "qsdm-enrollment-state-v1\nrecords=%d\n", len(s.byNodeID))
+	keys := make([]string, 0, len(s.byNodeID))
+	for nodeID := range s.byNodeID {
+		keys = append(keys, nodeID)
+	}
+	sort.Strings(keys)
+	for _, nodeID := range keys {
+		rec := s.byNodeID[nodeID]
+		if rec == nil {
+			_, _ = fmt.Fprintf(h, "record:%s:<nil>\n", nodeID)
+			continue
+		}
+		_, _ = fmt.Fprintf(h,
+			"record\x00node=%s\x00owner=%s\x00operator=%s\x00gpu=%s\x00hmac=%s\x00stake=%d\x00bond=%s\x00required=%d\x00enrolled=%d\x00revoked=%d\x00matures=%d\x00memo=%s\n",
+			rec.NodeID,
+			rec.Owner,
+			rec.OperatorPublicKey,
+			rec.GPUUUID,
+			hex.EncodeToString(rec.HMACKey),
+			rec.StakeDust,
+			rec.NormalizedBondMode(),
+			rec.RequiredBondDust(),
+			rec.EnrolledAtHeight,
+			rec.RevokedAtHeight,
+			rec.UnbondMaturesAtHeight,
+			rec.Memo,
+		)
+	}
+
+	evidence := make([]string, 0, len(s.seenEvidence))
+	for hash := range s.seenEvidence {
+		evidence = append(evidence, hex.EncodeToString(hash[:]))
+	}
+	sort.Strings(evidence)
+	_, _ = fmt.Fprintf(h, "evidence=%d\n", len(evidence))
+	for _, hash := range evidence {
+		_, _ = fmt.Fprintf(h, "evidence:%s\n", hash)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // CloneableState is the optional extension EnrollmentState

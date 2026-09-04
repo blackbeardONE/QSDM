@@ -60,7 +60,12 @@ RUN git clone --depth 1 https://github.com/open-quantum-safe/liboqs.git && \
 # added in Phase 4). We do NOT set the validator_only tag here.
 WORKDIR /app
 COPY source ./source
-RUN cd source && go mod download
+RUN cd source && \
+    for attempt in 1 2 3; do \
+        go mod download && break; \
+        if [ "$attempt" = 3 ]; then exit 1; fi; \
+        sleep $((attempt * 5)); \
+    done
 
 # Compile the CUDA kernel library that pkg/mesh3d/cuda.go links against.
 # Without this step `go build -tags cuda` dies with

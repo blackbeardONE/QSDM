@@ -45,7 +45,12 @@ RUN git clone --depth 1 https://github.com/open-quantum-safe/liboqs.git && \
 # Build QSDM validator binary (validator_only build profile).
 WORKDIR /app
 COPY source ./source
-RUN cd source && go mod download
+RUN cd source && \
+    for attempt in 1 2 3; do \
+        go mod download && break; \
+        if [ "$attempt" = 3 ]; then exit 1; fi; \
+        sleep $((attempt * 5)); \
+    done
 
 RUN cd source && CGO_ENABLED=1 \
     CGO_CFLAGS="-I/usr/local/include" \

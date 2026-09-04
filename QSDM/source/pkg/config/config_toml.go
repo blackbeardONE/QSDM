@@ -181,6 +181,11 @@ type ConsensusConfigTOML struct {
 	// a node with a different setting computes different hashes and forks.
 	TxContentRootActivationHeight uint64 `toml:"tx_content_root_activation_height" yaml:"tx_content_root_activation_height"`
 
+	// EnrollmentStateRootActivationHeight is the first height whose block state
+	// root commits mining enrollment/slashing side state. Zero leaves the legacy
+	// root. Setting it changes block roots, so every node must agree on it.
+	EnrollmentStateRootActivationHeight uint64 `toml:"enrollment_state_root_activation_height" yaml:"enrollment_state_root_activation_height"`
+
 	// SignerKeyPath stores the validator-only ML-DSA consensus hot key.
 	SignerKeyPath string `toml:"signer_key_path" yaml:"signer_key_path"`
 
