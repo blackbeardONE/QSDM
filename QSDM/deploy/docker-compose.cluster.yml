@@ -1,5 +1,5 @@
 # QSDM Multi-Node Cluster Deployment
-# This compose file sets up a 3-node QSDM cluster for testing and development
+# This compose file sets up a 3-node QSDM service cluster for smoke testing. It validates service wiring and port separation; it is not a production BFT/failover proof by itself.
 
 services:
   # Node 1 - Bootstrap node
