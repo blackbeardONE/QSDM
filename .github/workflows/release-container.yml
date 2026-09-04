@@ -690,7 +690,7 @@ jobs:
 
       - name: Build and push (legacy qsdm name)
         id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: QSDM
           file: QSDM/Dockerfile
@@ -835,7 +835,7 @@ jobs:
 
       - name: Build and push validator image
         id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: QSDM
           file: QSDM/Dockerfile.validator
@@ -947,7 +947,7 @@ jobs:
 
       - name: Build and push miner image
         id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: QSDM
           file: QSDM/Dockerfile.miner
