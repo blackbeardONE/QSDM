@@ -7,8 +7,10 @@ is **explicitly split into two node roles**:
 
 | Role      | Manifest                          | Hardware | Runs                                    |
 |-----------|-----------------------------------|----------|-----------------------------------------|
-| Validator | [`validator-statefulset.yaml`](./validator-statefulset.yaml) | CPU-only | BFT + PoE consensus, transaction fees   |
+| Validator | [`validator-statefulset.yaml`](./validator-statefulset.yaml) | CPU-only | Configured producer or append-only follower today; signed BFT + PoE rollout target |
 | Miner     | [`miner-daemonset.yaml`](./miner-daemonset.yaml)             | GPU      | Additive Proof-of-Work emission for Cell |
+
+The manifests are role-separated deployment references. They do not by themselves prove producer rotation, multi-validator BFT commit, or failover; run the dedicated two-node staging rehearsal before enabling signed consensus enforcement across a validator set.
 
 > The original `statefulset.yaml` / `deployment.yaml` predate the Major Update
 > and deploy the combined legacy image. They are retained for operators who

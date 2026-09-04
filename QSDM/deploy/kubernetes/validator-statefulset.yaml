@@ -1,12 +1,12 @@
 # QSDM validator StatefulSet
 # ---------------------------
 # Deploys the validator-only QSDM image (built from QSDM/Dockerfile.validator
-# with -tags validator_only). Validators run the BFT + PoE consensus and MUST
-# be scheduled on CPU-only hardware.
+# with -tags validator_only). Validators run as configured producers or
+# append-only followers today and MUST be scheduled on CPU-only hardware.
 #
 # Important guarantees encoded in this manifest:
 #
-#   - `nodeSelector` pins validators to CPU-only nodes. The canonical label is
+#   - `nodeSelector` pins validators to CPU-only nodes. The standard label is
 #     `qsdm.tech/node-class=cpu`; cluster operators should apply this label to
 #     their validator node pool and MUST NOT apply it to any GPU node.
 #   - A negative-tolerations stance: we do NOT tolerate the GPU taint so the

@@ -259,3 +259,94 @@ func TestPrepareCanonicalGenesisReplayRejectsUnknownManifest(t *testing.T) {
 		t.Fatalf("rejected genesis mutated %d accounts", got)
 	}
 }
+func TestPrepareStagingRemoteGenesisReplaySeedsOnlyAfterStateRootMatches(t *testing.T) {
+	tx := &mempool.Tx{
+		ID:        "staging-genesis-seed",
+		Sender:    blockdriver.FunderAddress,
+		Recipient: "staging-recipient",
+		Amount:    3,
+		Fee:       0.25,
+		Nonce:     0,
+	}
+	openingBalance := blockdriver.DefaultFunderBalance + tx.Amount + tx.Fee + qsdmCanonicalGenesisReserve
+	sourceAccounts := chain.NewAccountStore()
+	sourceAccounts.Credit(blockdriver.FunderAddress, openingBalance)
+	if err := sourceAccounts.ApplyTx(tx); err != nil {
+		t.Fatalf("apply source genesis: %v", err)
+	}
+	blk := &chain.Block{
+		Height:       0,
+		Hash:         "staging-hash",
+		StateRoot:    sourceAccounts.StateRoot(),
+		Transactions: []*mempool.Tx{tx},
+	}
+
+	accounts := chain.NewAccountStore()
+	if err := prepareStagingRemoteGenesisReplay(accounts, blk); err != nil {
+		t.Fatalf("prepare staging genesis replay: %v", err)
+	}
+	funder, ok := accounts.Get(blockdriver.FunderAddress)
+	if !ok {
+		t.Fatal("staging funder was not seeded")
+	}
+	if funder.Balance != openingBalance || funder.Nonce != 0 {
+		t.Fatalf("unexpected opening funder: balance=%v nonce=%d", funder.Balance, funder.Nonce)
+	}
+
+	replay := accounts.Clone()
+	if err := replay.ApplyTx(tx); err != nil {
+		t.Fatalf("apply staging genesis: %v", err)
+	}
+	if got := replay.StateRoot(); got != blk.StateRoot {
+		t.Fatalf("state root=%s want=%s", got, blk.StateRoot)
+	}
+}
+
+func TestPrepareStagingRemoteGenesisReplayRejectsStateRootMismatchWithoutMutation(t *testing.T) {
+	accounts := chain.NewAccountStore()
+	blk := &chain.Block{
+		Height:    0,
+		Hash:      "staging-hash",
+		StateRoot: "not-the-root",
+		Transactions: []*mempool.Tx{{
+			ID:        "staging-genesis-seed",
+			Sender:    blockdriver.FunderAddress,
+			Recipient: "staging-recipient",
+			Amount:    3,
+			Fee:       0,
+			Nonce:     0,
+		}},
+	}
+
+	if err := prepareStagingRemoteGenesisReplay(accounts, blk); err == nil {
+		t.Fatal("expected mismatched staging genesis root to be rejected")
+	}
+	if got := accounts.Count(); got != 0 {
+		t.Fatalf("rejected staging genesis mutated %d accounts", got)
+	}
+}
+
+func TestPrepareStagingRemoteGenesisReplayRejectsNonEmptyStore(t *testing.T) {
+	accounts := chain.NewAccountStore()
+	accounts.Credit("existing-account", 1)
+	blk := &chain.Block{
+		Height:    0,
+		Hash:      "staging-hash",
+		StateRoot: "not-checked-because-store-is-not-empty",
+		Transactions: []*mempool.Tx{{
+			ID:        "staging-genesis-seed",
+			Sender:    blockdriver.FunderAddress,
+			Recipient: "staging-recipient",
+			Amount:    1,
+			Fee:       0,
+			Nonce:     0,
+		}},
+	}
+
+	if err := prepareStagingRemoteGenesisReplay(accounts, blk); err == nil {
+		t.Fatal("expected non-empty local account store to be rejected")
+	}
+	if got := accounts.Count(); got != 1 {
+		t.Fatalf("non-empty rejection changed account count to %d", got)
+	}
+}
