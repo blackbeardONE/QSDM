@@ -49,11 +49,13 @@ func TestPublishPolRefusesSyntheticMultiValidatorRound(t *testing.T) {
 	bc := chain.NewBFTConsensus(vs, chain.DefaultConsensusConfig())
 	exec := chain.NewBFTExecutor(bc)
 	exec.SetVoteSigner(signer)
+	follower := chain.NewPolFollower(vs, 2.0/3.0)
+	follower.SetAnchorFinality(true)
 
 	PublishPolAfterBlockSeal(
 		logging.NewLogger("", false),
 		nil,
-		nil,
+		follower,
 		exec,
 		bc,
 		vs,
@@ -61,5 +63,8 @@ func TestPublishPolRefusesSyntheticMultiValidatorRound(t *testing.T) {
 	)
 	if bc.IsCommitted(9) {
 		t.Fatal("POL publisher must not manufacture a quorum for validators whose keys are unavailable")
+	}
+	if follower.CanExtendFromTip(9, "root") {
+		t.Fatal("anchored finality must not fail open after refusing an unauthenticated POL round")
 	}
 }
