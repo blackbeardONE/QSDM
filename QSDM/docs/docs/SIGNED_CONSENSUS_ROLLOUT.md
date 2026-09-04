@@ -74,7 +74,24 @@ roots were already active from height `625000`.
 
 After every validator is upgraded, operators approve one future activation
 height with enough time to update and restart every node. Configure the exact
-same values everywhere:
+same values everywhere.
+
+Use the rollout preflight before choosing the height. It reads each node's
+public `/api/v1/status` response, verifies that every node advertises signed
+consensus support, rejects mixed or half-configured posture, catches duplicate
+node IDs, and suggests one shared future height above the highest observed tip:
+
+```bash
+go run ./cmd/qsdm-consensus-rollout \
+  --node https://api.qsdm.tech/api/v1 \
+  --node https://second-validator.example/api/v1
+```
+
+For automation, add `--json`. To validate an operator-chosen height instead of
+using the suggestion, pass `--activation-height <height>`. A height at or below
+the current highest tip is refused.
+
+Configure the exact same values everywhere:
 
 ```toml
 [consensus]
