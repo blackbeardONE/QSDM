@@ -25,18 +25,20 @@ import (
 // Registry
 // -----------------------------------------------------------------------------
 
-// Entry is one registered (node_id, owner, gpu_uuid, hmac_key) tuple. The
-// Owner is the enrolled reward wallet. Empty Owner is permitted for legacy
-// and test registries; production verification rejects it when reward-owner
-// binding is required. HMACKey is the raw secret - length is a registry-
-// implementation detail (in-memory impl enforces 32 bytes minimum to match
-// the reference enrollment flow). The verifier treats it as opaque bytes and
-// hands it to crypto/hmac.
+// Entry is one registered (node_id, owner, operator_public_key, gpu_uuid,
+// hmac_key) tuple. The Owner is the enrolled reward wallet. Empty Owner is
+// permitted for legacy and test registries; production verification rejects it
+// when reward-owner binding is required. OperatorPublicKey is empty for legacy
+// records until the network activates key retention. HMACKey is the raw secret
+// - length is a registry-implementation detail (in-memory impl enforces 32
+// bytes minimum to match the reference enrollment flow). The verifier treats it
+// as opaque bytes and hands it to crypto/hmac.
 type Entry struct {
-	NodeID  string
-	Owner   string
-	GPUUUID string
-	HMACKey []byte
+	NodeID            string
+	Owner             string
+	OperatorPublicKey string
+	GPUUUID           string
+	HMACKey           []byte
 }
 
 // Registry is the subset of the on-chain operator registry the

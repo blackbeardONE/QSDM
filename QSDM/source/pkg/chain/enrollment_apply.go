@@ -340,6 +340,9 @@ func (a *EnrollmentApplier) applyEnroll(tx *mempool.Tx, height uint64) error {
 		RequiredStakeDust: mining.MinEnrollStakeDust,
 		EnrolledAtHeight:  height,
 	}
+	if tx.ContractID == enrollment.SignedContractID && enrollment.RetainOperatorPublicKey(height) {
+		rec.OperatorPublicKey = tx.PublicKey
+	}
 	if err := a.State.ApplyEnroll(rec); err != nil {
 		// Roll back the STAKE only. Fee remains burned (validator
 		// work was performed). Credit is mutex-safe and never
