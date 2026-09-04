@@ -151,7 +151,7 @@ func TestNewProductionDispatcher_HMACVerifier_WiredThrough(t *testing.T) {
 	chgKey := bytes.Repeat([]byte{0xC1}, 32)
 
 	reg := hmac.NewInMemoryRegistry()
-	if err := reg.Enroll(nodeID, gpuUUID, operatorKey); err != nil {
+	if err := reg.EnrollWithOwner(nodeID, minerAddr, gpuUUID, operatorKey); err != nil {
 		t.Fatalf("Enroll: %v", err)
 	}
 
@@ -206,11 +206,11 @@ func TestNewProductionDispatcher_HMACVerifier_WiredThrough(t *testing.T) {
 	}
 
 	proof := mining.Proof{
-		Version:    mining.ProtocolVersionV2,
-		Height:     100,
-		BatchRoot:  batchRoot,
-		MixDigest:  mix,
-		MinerAddr:  minerAddr,
+		Version:   mining.ProtocolVersionV2,
+		Height:    100,
+		BatchRoot: batchRoot,
+		MixDigest: mix,
+		MinerAddr: minerAddr,
 		Attestation: mining.Attestation{
 			Type:         mining.AttestationTypeHMAC,
 			BundleBase64: b64,
@@ -242,6 +242,96 @@ func TestNewProductionDispatcher_HMACVerifier_WiredThrough(t *testing.T) {
 	}
 }
 
+func TestNewProductionDispatcher_HMACVerifier_RejectsRewardOwnerMismatch(t *testing.T) {
+	const nodeID = "alice-rtx4090-01"
+	const gpuUUID = "GPU-deadbeef-0000-0000-0000-000000000077"
+	const registeredOwner = "qsdm1alice"
+	const attackerAddr = "qsdm1attacker"
+	const signerID = "validator-01"
+
+	operatorKey := bytes.Repeat([]byte{0xAA}, 32)
+	chgKey := bytes.Repeat([]byte{0xC1}, 32)
+
+	reg := hmac.NewInMemoryRegistry()
+	if err := reg.EnrollWithOwner(nodeID, registeredOwner, gpuUUID, operatorKey); err != nil {
+		t.Fatalf("EnrollWithOwner: %v", err)
+	}
+
+	chgSV := challenge.NewHMACSignerVerifier()
+	if err := chgSV.Register(signerID, chgKey); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	chgSigner, err := challenge.NewHMACSigner(signerID, chgKey)
+	if err != nil {
+		t.Fatalf("NewHMACSigner: %v", err)
+	}
+	issueAt := time.Unix(1_700_000_000, 0)
+	iss, err := challenge.NewIssuer(chgSigner, challenge.WithClock(func() time.Time { return issueAt }))
+	if err != nil {
+		t.Fatalf("NewIssuer: %v", err)
+	}
+	chg, err := iss.Issue()
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	var batchRoot [32]byte
+	for i := range batchRoot {
+		batchRoot[i] = byte(i)
+	}
+	var mix [32]byte
+	for i := range mix {
+		mix[i] = byte(0xFF - i)
+	}
+	bundle := hmac.Bundle{
+		ChallengeBind:     hmac.HexChallengeBind(attackerAddr, batchRoot, mix),
+		ChallengeSig:      hex.EncodeToString(chg.Signature),
+		ChallengeSignerID: chg.SignerID,
+		ComputeCap:        "8.9",
+		CUDAVersion:       "12.8",
+		DriverVer:         "572.16",
+		GPUName:           "NVIDIA GeForce RTX 4090",
+		GPUUUID:           gpuUUID,
+		IssuedAt:          chg.IssuedAt,
+		NodeID:            nodeID,
+		Nonce:             hex.EncodeToString(chg.Nonce[:]),
+	}
+	signed, err := bundle.Sign(operatorKey)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	b64, err := signed.MarshalBase64()
+	if err != nil {
+		t.Fatalf("MarshalBase64: %v", err)
+	}
+	proof := mining.Proof{
+		Version:   mining.ProtocolVersionV2,
+		Height:    100,
+		BatchRoot: batchRoot,
+		MixDigest: mix,
+		MinerAddr: attackerAddr,
+		Attestation: mining.Attestation{
+			Type:         mining.AttestationTypeHMAC,
+			BundleBase64: b64,
+			GPUArch:      "ada",
+			Nonce:        chg.Nonce,
+			IssuedAt:     chg.IssuedAt,
+		},
+	}
+
+	d, err := NewProductionDispatcher(ProductionConfig{
+		Registry:          reg,
+		ChallengeVerifier: chgSV,
+		NonceStore:        hmac.NewInMemoryNonceStore(2 * mining.FreshnessWindow),
+	})
+	if err != nil {
+		t.Fatalf("NewProductionDispatcher: %v", err)
+	}
+	if err := d.VerifyAttestation(proof, issueAt); !errors.Is(err, mining.ErrAttestationSignatureInvalid) {
+		t.Fatalf("expected reward-owner mismatch rejection, got %v", err)
+	}
+}
+
 // TestNewProductionDispatcher_HMACOnAcceptHookFires confirms
 // the optional HMACOnAccept hook on ProductionConfig is
 // plumbed all the way down into the hmac.Verifier and fires
@@ -258,7 +348,7 @@ func TestNewProductionDispatcher_HMACOnAcceptHookFires(t *testing.T) {
 	chgKey := bytes.Repeat([]byte{0xC1}, 32)
 
 	reg := hmac.NewInMemoryRegistry()
-	if err := reg.Enroll(nodeID, gpuUUID, operatorKey); err != nil {
+	if err := reg.EnrollWithOwner(nodeID, minerAddr, gpuUUID, operatorKey); err != nil {
 		t.Fatalf("Enroll: %v", err)
 	}
 	chgSV := challenge.NewHMACSignerVerifier()

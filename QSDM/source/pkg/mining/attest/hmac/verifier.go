@@ -76,6 +76,12 @@ type Verifier struct {
 	// but NEVER for production.
 	ChallengeVerifier challenge.SignerVerifier
 
+	// RequireOwnerBinding rejects proofs whose reward wallet
+	// (Proof.MinerAddr) differs from the wallet owner stored at
+	// enrollment. Production validators enable this so a valid
+	// node/GPU HMAC cannot be redirected to a different wallet.
+	RequireOwnerBinding bool
+
 	// OnAccept, if non-nil, is invoked exactly ONCE per
 	// successful VerifyAttestation, just before the function
 	// returns nil. Its purpose is to feed accepted-claim data
@@ -167,6 +173,16 @@ func (v *Verifier) VerifyAttestation(p mining.Proof, now time.Time) error {
 	}
 	if entry == nil {
 		return fmt.Errorf("hmac: registry returned nil entry for %q: %w", bundle.NodeID, mining.ErrAttestationSignatureInvalid)
+	}
+	if v.RequireOwnerBinding {
+		if entry.Owner == "" {
+			return fmt.Errorf("hmac: registry entry for node %q has no owner for reward binding: %w",
+				bundle.NodeID, mining.ErrAttestationSignatureInvalid)
+		}
+		if p.MinerAddr != entry.Owner {
+			return fmt.Errorf("hmac: miner address %q != registered owner %q for node %q: %w",
+				p.MinerAddr, entry.Owner, bundle.NodeID, mining.ErrAttestationSignatureInvalid)
+		}
 	}
 
 	// Step 4: HMAC check. Recompute the MAC over the canonical
