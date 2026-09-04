@@ -1,6 +1,6 @@
 module github.com/blackbeardONE/QSDM
 
-go 1.25.13
+go 1.26.6
 
 replace github.com/wasmerio/wasmer-go-patched => ./wasmer-go-patched
 
@@ -27,7 +27,7 @@ require (
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/tetratelabs/wazero v1.11.0
 	github.com/tyler-smith/go-bip39 v1.1.0
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.45.0
 	golang.org/x/tools v0.48.0
