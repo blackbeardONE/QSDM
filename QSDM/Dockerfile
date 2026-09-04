@@ -24,7 +24,7 @@
 # The inline build below intentionally mirrors Dockerfile.validator; keep the
 # two in sync when modifying.
 
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26.6-alpine AS builder
 
 RUN apk update && apk add --no-cache \
     ca-certificates \

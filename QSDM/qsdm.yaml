@@ -40,6 +40,7 @@ governance:
 consensus:
   task_action_signature_activation_height: 625000
   tx_content_root_activation_height: 625000
+  enrollment_state_root_activation_height: 625000
 
   # Producers whose blocks this node will append from the `qsdm-blocks` gossip
   # topic. Leaving this empty accepts a block from ANY peer that reaches the
