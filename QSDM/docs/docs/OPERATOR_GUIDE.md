@@ -61,20 +61,48 @@ plays two roles right now:
    validator, publish a competing REST hostname, and point traffic at
    it — the protocol has no preference.
 
-If `api.qsdm.tech` went offline tomorrow:
+If `api.qsdm.tech` went offline tomorrow, the outcome depends on the
+individual node:
 
-- Validators already in the mesh would keep finalising blocks.
-- New joiners would just need a different peer's multiaddr in
-  `bootstrap_peers`.
-- Miners pointing at `api.qsdm.tech` would switch to any other
-  validator they trust (`--validator=https://your-node.example/`).
+- A validator that already has live peer sessions can continue processing the
+  blocks it receives from those peers.
+- A follower whose only bootstrap peer and chain-sync URL are the VPS will lose
+  catch-up and may have zero peers. It does not automatically become a block
+  producer.
+- Hive, miners, and websites configured only with the VPS endpoint will not
+  automatically discover a replacement API. They need an alternate trusted
+  endpoint configured in advance.
 
-So the honest answer to *"do I have to connect and sync to your VPS?"*
-is: **no, you connect and sync to *the mesh*.** Our VPS happens to be
-one of the peers in that mesh today, and it is the one we recommend
-for Phase 4 testnet bootstrap because it is the genesis validator. Once
-you publish your own validator, it is peer-equal to ours.
+Therefore the current deployment is a peer-to-peer network with a single
+reference server, not automatic high availability. A VPS outage does not erase
+local state, but it can make a follower stale and can stop clients that have no
+alternate endpoint.
 
+For VPS-independent operation, prepare at least one additional validator that
+is outside the VPS failure domain. Give this machine both of the following in
+its persisted network profile:
+
+1. A non-VPS libp2p multiaddr in `bootstrap_peers`.
+2. A non-VPS HTTPS API in `QSDM_CHAIN_SYNC_URLS`.
+
+Keep the machine in `network-follower` mode until it has caught up and reports
+at least one live peer. Public P2P also requires an inbound TCP `4001` path
+through the router, firewall, or a trusted relay. A private address such as
+`192.168.x.x` is not an internet address, and carrier-grade NAT may make
+inbound forwarding impossible.
+
+When CGNAT is outside your control, use the home-gateway fallback instead of
+continuing router retries. On Windows, `scripts/enable_cgnat_fallback.ps1`
+records `connectivityMode: relay-fallback`, starts the read-only outbound
+gateway, and lets the verifier report fallback readiness separately from full
+VPS independence. This is a public service fallback, not a producer failover
+mechanism.
+
+Promotion is a separate, manual incident procedure. Stop and fence the
+current producer first, verify this node's chain tip and signer configuration,
+then promote exactly one network producer. Do not enable solo mode and do not
+promote two nodes at once: this codebase does not yet provide quorum-based
+leader election or automatic split-brain prevention.
 ### 0.3 Where miners fit
 
 Miners do **not** join the libp2p mesh. They speak plain HTTPS to one

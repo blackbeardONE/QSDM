@@ -1,7 +1,7 @@
 param(
     [string]$QsdmRoot = "",
-    [string]$Relay = "https://api.qsdm.tech",
-    [string]$Slot = "home-validator",
+    [string]$Relay = "",
+    [string]$Slot = "",
     [string]$Backend = "http://127.0.0.1:8080",
     [int]$IntervalSeconds = 30,
     [int]$RestartAfterFailures = 10,
@@ -33,14 +33,18 @@ if ([string]::IsNullOrWhiteSpace($QsdmRoot)) {
 $ErrorActionPreference = "Stop"
 
 $QsdmRoot = (Resolve-Path $QsdmRoot).Path
+. (Join-Path $QsdmRoot "scripts\lib\qsdm-endpoints.ps1")
+$Relay = Resolve-QsdmEndpointValue -Value $Relay -Name "home_gateway_relay" -EnvVar "QSDM_HOME_GATEWAY_RELAY"
+$Slot = Resolve-QsdmEndpointValue -Value $Slot -Name "home_gateway_slot" -EnvVar "QSDM_HOME_GATEWAY_SLOT"
 $LocalRoot = Join-Path $QsdmRoot "source\.cache\local-validator"
 $MaintenanceMarkerPath = Join-Path $LocalRoot "maintenance.active"
 $ModeConfigPath = Join-Path $LocalRoot "validator-mode.json"
 $ActiveBinaryStatePath = Join-Path $LocalRoot "validator-active.json"
 $ValidatorMode = ""
-$ValidatorChainSyncUrls = "https://api.qsdm.tech/api/v1"
+$ValidatorChainSyncUrls = Get-QsdmEndpointValue -Name "core_api_base" -EnvVar "QSDM_CHAIN_SYNC_URLS"
 $ValidatorBootstrapPeers = ""
 $ValidatorPublicP2P = $false
+$ValidatorCgNatFallback = $false
 $ValidatorBlockProducer = $false
 if (Test-Path -LiteralPath $MaintenanceMarkerPath -PathType Leaf) {
     Write-Host "QSDM local stack maintenance mode is active; watchdog will not start services."
@@ -56,6 +60,9 @@ if (Test-Path -LiteralPath $ModeConfigPath -PathType Leaf) {
             }
             $ValidatorBootstrapPeers = [string]$modeConfig.bootstrapPeers
             $ValidatorPublicP2P = [bool]$modeConfig.publicP2P
+            if ($null -ne $modeConfig.PSObject.Properties["cgnatFallback"]) {
+                $ValidatorCgNatFallback = [bool]$modeConfig.cgnatFallback
+            }
             if ($null -ne $modeConfig.PSObject.Properties["blockProducer"]) {
                 $ValidatorBlockProducer = [bool]$modeConfig.blockProducer
             }
@@ -101,7 +108,7 @@ $GatewayProcessNames = @("qsdm-home-gateway*")
 $env:HTTP_PROXY = ""
 $env:HTTPS_PROXY = ""
 $env:ALL_PROXY = ""
-$env:NO_PROXY = "127.0.0.1,localhost,api.qsdm.tech"
+$env:NO_PROXY = Get-QsdmNoProxyList -EndpointValues @($Relay, $ValidatorChainSyncUrls)
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 New-Item -ItemType Directory -Force -Path $LocalRoot, $RunDir | Out-Null
@@ -110,6 +117,39 @@ function Write-WatchdogLog {
     param([string]$Message)
     $stamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssK"
     Add-Content -LiteralPath $LogPath -Value "$stamp $Message"
+}
+
+function Refresh-ValidatorRoleConfig {
+    if (-not (Test-Path -LiteralPath $ModeConfigPath -PathType Leaf)) {
+        throw "Missing validator role config at $ModeConfigPath"
+    }
+    try {
+        $latest = Get-Content -Raw -LiteralPath $ModeConfigPath | ConvertFrom-Json
+        $latestMode = [string]$latest.mode
+        if ($latestMode -ne "networked" -and $latestMode -ne "solo") {
+            throw "mode must be 'networked' or 'solo'"
+        }
+        $script:ValidatorMode = $latestMode
+        $script:ValidatorChainSyncUrls = if ([string]::IsNullOrWhiteSpace([string]$latest.chainSyncUrls)) {
+            (Get-QsdmEndpointValue -Name "core_api_base" -EnvVar "QSDM_CHAIN_SYNC_URLS")
+        } else {
+            [string]$latest.chainSyncUrls
+        }
+        $script:ValidatorBootstrapPeers = [string]$latest.bootstrapPeers
+        $script:ValidatorPublicP2P = if ($latestMode -eq "networked") { [bool]$latest.publicP2P } else { $false }
+        $script:ValidatorCgNatFallback = if ($latestMode -eq "networked" -and $null -ne $latest.PSObject.Properties["cgnatFallback"]) { [bool]$latest.cgnatFallback } else { $false }
+        $script:ValidatorBlockProducer = if ($latestMode -eq "solo") {
+            $true
+        } elseif ($null -ne $latest.PSObject.Properties["blockProducer"]) {
+            [bool]$latest.blockProducer
+        } else {
+            $false
+        }
+        return $true
+    } catch {
+        Write-WatchdogLog "validator role config refresh failed: $($_.Exception.Message)"
+        return $false
+    }
 }
 
 function Get-NativeProcessStartUtc {
@@ -158,6 +198,22 @@ public static class QsdmProcessTimes
     return [QsdmProcessTimes]::GetStartTimeUtc($ProcessIdentifier)
 }
 
+function Get-QsdmFileSha256 {
+    param([Parameter(Mandatory = $true)][string]$LiteralPath)
+
+    $stream = [IO.File]::OpenRead($LiteralPath)
+    try {
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try {
+            return ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
+        } finally {
+            $sha.Dispose()
+        }
+    } finally {
+        $stream.Dispose()
+    }
+}
+
 function Write-WatchdogIdentity {
     $process = Get-Process -Id $PID -ErrorAction Stop
     $identity = [ordered]@{
@@ -166,7 +222,7 @@ function Write-WatchdogIdentity {
         process_start_utc = (Get-NativeProcessStartUtc -ProcessIdentifier $PID).ToString("o")
         process_path = $process.Path
         script = [IO.Path]::GetFullPath($PSCommandPath)
-        script_sha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        script_sha256 = Get-QsdmFileSha256 -LiteralPath $PSCommandPath
         qsdm_root = $QsdmRoot
         written_at_utc = [DateTime]::UtcNow.ToString("o")
     }
@@ -192,6 +248,36 @@ function Test-HttpOk {
     }
 }
 
+function Test-ValidatorP2PBinding {
+    param([bool]$PublicP2P)
+
+    # A persisted publicP2P flag is not enough: a stale validator can remain
+    # bound to loopback after the role profile changes. Let the elevated
+    # watchdog reconcile the requested bind with the live listener.
+    try {
+        $validatorProcesses = @(Get-StackProcesses -Names $ValidatorProcessNames)
+        if ($validatorProcesses.Count -eq 0) {
+            return $false
+        }
+        $validatorPids = @($validatorProcesses | ForEach-Object { [int]$_.Id })
+        $listeners = @(Get-NetTCPConnection -LocalPort 4001 -State Listen -ErrorAction Stop |
+            Where-Object { $validatorPids -contains [int]$_.OwningProcess })
+        if ($listeners.Count -eq 0) {
+            return $false
+        }
+        if (-not $PublicP2P) {
+            return $true
+        }
+        return (@($listeners | Where-Object {
+            $_.LocalAddress -in @('0.0.0.0', '::', '*')
+        }).Count -gt 0)
+    } catch {
+        # Do not turn a missing/unsupported networking cmdlet into a restart
+        # loop. The validator's readiness check remains authoritative.
+        Write-WatchdogLog "could not inspect validator P2P binding: $($_.Exception.Message)"
+        return $true
+    }
+}
 function Test-PublicGatewayOk {
     # Windows PowerShell's Schannel can fail before sending an HTTPS request on
     # otherwise healthy hosts (SEC_E_NO_CREDENTIALS). qsdmcli uses Go's TLS
@@ -296,7 +382,7 @@ function Start-Validator {
         Write-WatchdogLog "missing validator script: $ValidatorScript"
         return
     }
-    Write-WatchdogLog "starting validator mode=$ValidatorMode block_producer=$ValidatorBlockProducer"
+    Write-WatchdogLog "starting validator mode=$ValidatorMode block_producer=$ValidatorBlockProducer cgnat_fallback=$ValidatorCgNatFallback"
     $stdout = Join-Path $LocalRoot "watchdog-validator-start.out.log"
     $stderr = Join-Path $LocalRoot "watchdog-validator-start.err.log"
     $argString = "-NoProfile -ExecutionPolicy Bypass -File $(Quote-Arg $ValidatorScript) -QsdmRoot $(Quote-Arg $QsdmRoot) -HealthWaitSeconds $ValidatorStartupGraceSeconds -LockWaitSeconds 30"
@@ -308,10 +394,14 @@ function Start-Validator {
         if ($ValidatorPublicP2P) {
             $argString += " -PublicP2P"
         }
+        if ($ValidatorCgNatFallback) {
+            $argString += " -CgNatFallback"
+        }
         if ($ValidatorBlockProducer) {
             $argString += " -BlockProducer"
         }
     }
+    Write-WatchdogLog "validator launch args=$argString"
     $process = Start-Process `
         -FilePath "powershell.exe" `
         -ArgumentList $argString `
@@ -439,6 +529,10 @@ try {
                 Write-WatchdogLog "maintenance mode became active; watchdog is leaving services untouched and stopping"
                 break
             }
+            if (-not (Refresh-ValidatorRoleConfig)) {
+                Start-Sleep -Seconds $IntervalSeconds
+                continue
+            }
             if (((Get-Date) - $lastCacheMaintenance).TotalMinutes -ge $CacheMaintenanceMinutes) {
                 Invoke-GeneratedCacheMaintenance
                 $lastCacheMaintenance = Get-Date
@@ -459,6 +553,15 @@ try {
                         $validatorReady = Test-HttpOk -Url $ReadyUrl -TimeoutSeconds 5
                         $validatorFailures = if ($validatorReady) { 0 } else { 1 }
                     }
+                }
+                if ($validatorReady -and $ValidatorMode -eq "networked" -and
+                    -not (Test-ValidatorP2PBinding -PublicP2P:$ValidatorPublicP2P)) {
+                    Write-WatchdogLog "validator P2P binding does not match requested publicP2P=$ValidatorPublicP2P; restarting"
+                    Stop-StackProcesses -Names $ValidatorProcessNames
+                    Start-Validator
+                    Start-Sleep -Seconds 2
+                    $validatorReady = Test-HttpOk -Url $ReadyUrl -TimeoutSeconds 5
+                    $validatorFailures = if ($validatorReady) { 0 } else { 1 }
                 }
             } else {
                 $validatorFailures++
@@ -535,7 +638,13 @@ try {
                     $gatewayFailures = 0
                 } else {
                     $gatewayFailures++
-                    if ($gatewayFailures -ge $GatewayRestartAfterFailures) {
+                    if ($ValidatorCgNatFallback) {
+                        if ($gatewayFailures -eq 1) {
+                            Write-WatchdogLog "gateway public check failed in CGNAT fallback failure=$gatewayFailures url=$PublicUrl; keeping gateway alive for its internal reconnect loop"
+                        } elseif (($gatewayFailures % $GatewayRestartAfterFailures) -eq 0) {
+                            Write-WatchdogLog "gateway public check still failing in CGNAT fallback failure=$gatewayFailures url=$PublicUrl; upstream relay or outbound TCP 443 is unavailable"
+                        }
+                    } elseif ($gatewayFailures -ge $GatewayRestartAfterFailures) {
                         Write-WatchdogLog "gateway public check failed failure=$gatewayFailures url=$PublicUrl; restarting stale tunnel"
                         Stop-StackProcesses -Names $GatewayProcessNames
                         $gatewayStarted = Start-Gateway

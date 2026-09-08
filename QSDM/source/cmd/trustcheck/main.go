@@ -100,8 +100,17 @@ func (rs *results) allOK() bool {
 // main
 // ---------------------------------------------------------------------------
 
+func defaultTrustcheckBaseURL() string {
+	for _, key := range []string{"QSDM_TRUSTCHECK_BASE_URL", "QSDM_PUBLIC_API_BASE_URL"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return strings.TrimRight(value, "/")
+		}
+	}
+	return "https://api.qsdm.tech"
+}
+
 func main() {
-	base := flag.String("base", "https://api.qsdm.tech", "Base URL of the validator HTTP surface (no trailing slash).")
+	base := flag.String("base", defaultTrustcheckBaseURL(), "Base URL of the validator HTTP surface (no trailing slash).")
 	timeout := flag.Duration("timeout", 10*time.Second, "HTTP timeout per request.")
 	limit := flag.Int("limit", 50, "limit query parameter for the /recent endpoint (server clamps to [1,200]).")
 	allowWarmup := flag.Bool("allow-warmup", false, "Exit 0 instead of 3 when the aggregator is still warming up (503).")

@@ -379,8 +379,13 @@ function Read-PidFile {
 
 try {
     Write-Host "phase=fixture-setup"
-    New-Item -ItemType Directory -Force -Path $FakeScripts, $RunDir | Out-Null
+    $fakeScriptLibrary = Join-Path $FakeScripts "lib"
+    New-Item -ItemType Directory -Force -Path $FakeScripts, $fakeScriptLibrary, $RunDir | Out-Null
     Copy-Item -LiteralPath $Launcher -Destination (Join-Path $FakeScripts "start_local_validator.ps1")
+    Copy-Item `
+        -LiteralPath (Join-Path $QsdmRoot "scripts\lib\qsdm-endpoints.ps1") `
+        -Destination (Join-Path $fakeScriptLibrary "qsdm-endpoints.ps1") `
+        -Force
     New-FakeWatchdog -Path (Join-Path $FakeScripts "watch_local_stack.ps1")
     [IO.File]::WriteAllText((Join-Path $FakeRoot "qsdm.yaml"), "{}`n", [Text.UTF8Encoding]::new($false))
     New-FakeCosign

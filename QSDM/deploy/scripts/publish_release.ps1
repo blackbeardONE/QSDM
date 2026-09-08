@@ -22,9 +22,9 @@
 #   -Tag         the release tag, e.g. "v0.0.0+689fbf7". If
 #                empty (default), reads the most recent
 #                MANIFEST.json from release/v*/ on disk.
-#   -SshTarget   ssh destination, default root@node.qsdm.tech.
-#                node.qsdm.tech is the documented DNS for the
-#                BLR1 host (vps.txt §1).
+#   -SshTarget   ssh destination. Defaults in order:
+#                QSDM_RELEASE_SSH_TARGET, config/public-endpoints.json,
+#                then root@node.qsdm.tech for the current VPS.
 #   -Webroot     server-side root, default /var/www/qsdm
 #                (matches QSDM/deploy/Caddyfile's `root *`).
 #   -DryRun      print every scp/ssh invocation but execute
@@ -54,7 +54,7 @@
 [CmdletBinding()]
 param(
     [string]$Tag = "",
-    [string]$SshTarget = "root@node.qsdm.tech",
+    [string]$SshTarget = "",
     [string]$Webroot = "/var/www/qsdm",
     [switch]$DryRun,
     [switch]$BumpLatest,
@@ -86,6 +86,8 @@ $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $DeployDir   = Split-Path -Parent $ScriptDir
 $RepoRoot    = Split-Path -Parent $DeployDir
 $WorkspaceRoot = Split-Path -Parent $RepoRoot
+. (Join-Path $RepoRoot "scripts\lib\qsdm-endpoints.ps1")
+$SshTarget = Resolve-QsdmEndpointValue -Value $SshTarget -Name "vps_ssh_target" -EnvVar "QSDM_RELEASE_SSH_TARGET"
 
 # 1) Resolve the release dir.
 $releaseRoot = Join-Path $WorkspaceRoot 'release'

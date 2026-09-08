@@ -46,6 +46,10 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $QsdmRoot = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $QsdmRoot).Path)
+. (Join-Path $QsdmRoot "scripts\lib\qsdm-endpoints.ps1")
+$DefaultCoreApiBase = Get-QsdmEndpointValue -Name "core_api_base" -EnvVar "QSDM_CHAIN_SYNC_URLS"
+$DefaultHomeGatewayRelay = Get-QsdmEndpointValue -Name "home_gateway_relay" -EnvVar "QSDM_HOME_GATEWAY_RELAY"
+$DefaultHomeGatewaySlot = Get-QsdmEndpointValue -Name "home_gateway_slot" -EnvVar "QSDM_HOME_GATEWAY_SLOT"
 $LocalRoot = Join-Path $QsdmRoot "source\.cache\local-validator"
 $ModeConfigPath = Join-Path $LocalRoot "validator-mode.json"
 $ActiveBinaryStatePath = Join-Path $LocalRoot "validator-active.json"
@@ -662,7 +666,7 @@ function Get-ReleasePackage {
 function Get-ValidatorMode {
     $mode = [ordered]@{
         mode = "solo"
-        chainSyncUrls = "https://api.qsdm.tech/api/v1"
+        chainSyncUrls = $DefaultCoreApiBase
         bootstrapPeers = ""
         publicP2P = $false
         blockProducer = $false
@@ -1055,8 +1059,8 @@ function Start-Watchdog {
         "-WindowStyle", "Hidden",
         "-File", $WatchdogScript,
         "-QsdmRoot", $QsdmRoot,
-        "-Relay", "https://api.qsdm.tech",
-        "-Slot", "home-validator",
+        "-Relay", $DefaultHomeGatewayRelay,
+        "-Slot", $DefaultHomeGatewaySlot,
         "-Backend", $BackendBaseUrl,
         "-IntervalSeconds", "30",
         "-RestartAfterFailures", "10",

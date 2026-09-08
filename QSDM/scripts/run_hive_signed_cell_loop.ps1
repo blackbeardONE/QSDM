@@ -15,6 +15,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+. (Join-Path $RepoRoot "QSDM\scripts\lib\qsdm-endpoints.ps1")
 $LocalRoot = Join-Path $RepoRoot "QSDM\source\.cache\local-validator"
 $SignerRoot = Join-Path $LocalRoot "hive-signer"
 
@@ -36,7 +37,7 @@ $ApiUrl = $ApiUrl.TrimEnd("/")
 $env:HTTP_PROXY = ""
 $env:HTTPS_PROXY = ""
 $env:ALL_PROXY = ""
-$env:NO_PROXY = "127.0.0.1,localhost,api.qsdm.tech"
+$env:NO_PROXY = Get-QsdmNoProxyList -EndpointValues @($ApiUrl)
 
 if ([string]::IsNullOrWhiteSpace($Sender)) {
     $walletInfo = & $CliPath wallet show --in $WalletPath --json | ConvertFrom-Json

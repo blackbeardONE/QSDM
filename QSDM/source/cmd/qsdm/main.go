@@ -562,6 +562,22 @@ func SetupNetwork(ctx context.Context, logger *logging.Logger, port int, bindAdd
 	return networking.SetupLibP2PWithPortBindAndKey(ctx, logger, port, bindAddress, hostKeyPath)
 }
 
+// SetupNetworkPublic enables the explicit public-P2P path. The NAT option is
+// paired with the all-interface bind selected by the launcher; it maps only
+// the libp2p peer port and leaves the validator APIs on loopback.
+func SetupNetworkPublic(ctx context.Context, logger *logging.Logger, port int, bindAddress string, hostKeyPath string) (*networking.Network, error) {
+	return networking.SetupLibP2PWithPortBindAndKeyAndNAT(ctx, logger, port, bindAddress, hostKeyPath, true)
+}
+
+func isPublicP2PBind(bindAddress string) bool {
+	switch strings.TrimSpace(strings.ToLower(bindAddress)) {
+	case "0.0.0.0", "::", "[::]":
+		return true
+	default:
+		return false
+	}
+}
+
 func HandleTransaction(logger *logging.Logger, msg []byte, dynamicManager *submesh.DynamicSubmeshManager, wasmSdk *wasm.WASMSDK, consensus *consensus.ProofOfEntanglement, storage Storage, nvidiaP2PGate *monitoring.NvidiaLockP2PGate) {
 	transaction.HandleTransaction(logger, msg, dynamicManager, wasmSdk, consensus, storage, nvidiaP2PGate)
 }
@@ -816,7 +832,12 @@ func main() {
 		logger.Info("Signed task-action log configured", "path", taskActionLogPath)
 	}
 
-	net, err := SetupNetwork(ctx, logger, cfg.NetworkPort, cfg.NetworkBindAddress, networkHostKeyPath)
+	setupNetwork := SetupNetwork
+	if isPublicP2PBind(cfg.NetworkBindAddress) {
+		setupNetwork = SetupNetworkPublic
+		logger.Info("Public P2P mode enabled", "nat_port_mapping", true, "hole_punching", true, "network_port", cfg.NetworkPort)
+	}
+	net, err := setupNetwork(ctx, logger, cfg.NetworkPort, cfg.NetworkBindAddress, networkHostKeyPath)
 	if err != nil {
 		logger.Error("Failed to setup libp2p", "error", err)
 		metrics.RecordError("Network setup failed: " + err.Error())

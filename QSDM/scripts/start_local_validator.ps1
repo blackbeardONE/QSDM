@@ -5,10 +5,12 @@ param(
     [string]$TaskActionLogPath = "",
     [switch]$Networked,
     [string]$BootstrapPeers = "",
-    [string]$ChainSyncUrls = "https://api.qsdm.tech/api/v1",
+    [string]$ChainSyncUrls = "",
     [switch]$PublicP2P,
+    [switch]$CgNatFallback,
     [switch]$BlockProducer,
     [switch]$Restart,
+    [switch]$UpdateProfileOnly,
     [string]$TreasuryConfigPath = "",
     [ValidateRange(3, 900)]
     [int]$HealthWaitSeconds = 300,
@@ -21,6 +23,8 @@ if ([string]::IsNullOrWhiteSpace($QsdmRoot)) {
 }
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $QsdmRoot "scripts\lib\qsdm-endpoints.ps1")
+$ChainSyncUrls = Resolve-QsdmEndpointValue -Value $ChainSyncUrls -Name "core_api_base" -EnvVar "QSDM_CHAIN_SYNC_URLS"
 
 if ($BlockProducer -and -not $Networked) {
     throw "-BlockProducer requires -Networked. Solo mode already owns local block production."
@@ -34,7 +38,7 @@ $ActiveBinaryStatePath = Join-Path $LocalRoot "validator-active.json"
 $RunDirName = if ($Networked) { "run-networked" } else { "run-v2" }
 $RunDir = Join-Path $LocalRoot $RunDirName
 $NetworkHostKeyPath = Join-Path $RunDir "qsdm_network_host.key"
-$DefaultBootstrapPeer = "/dns4/api.qsdm.tech/tcp/4001/p2p/12D3KooWRH4MGiaRYMZEr9LvdxYrpePT5LPbNqLTMGukD32yhkZ8"
+$DefaultBootstrapPeer = Get-QsdmEndpointValue -Name "reference_bootstrap_peer" -EnvVar "QSDM_REFERENCE_BOOTSTRAP_PEER"
 $PrimaryExePath = Join-Path $LocalRoot "qsdm.exe"
 $CandidateExePath = Join-Path $LocalRoot "qsdm-new.exe"
 $LocalValidatorSQLiteHotfixExePath = Join-Path $LocalRoot "qsdm-local-validator-sqlite.hotfix.exe"
@@ -204,6 +208,8 @@ $modeConfig = if ($Networked) {
         chainSyncUrls = $ChainSyncUrls
         bootstrapPeers = $BootstrapPeers
         publicP2P = $PublicP2P.IsPresent
+        cgnatFallback = $CgNatFallback.IsPresent
+        connectivityMode = if ($CgNatFallback) { "relay-fallback" } elseif ($PublicP2P) { "public-p2p" } else { "local-only" }
         blockProducer = $BlockProducer.IsPresent
         updatedAtUtc = [DateTime]::UtcNow.ToString("o")
     }
@@ -213,6 +219,8 @@ $modeConfig = if ($Networked) {
         chainSyncUrls = ""
         bootstrapPeers = ""
         publicP2P = $false
+        cgnatFallback = $false
+        connectivityMode = "local-producer"
         blockProducer = $true
         updatedAtUtc = [DateTime]::UtcNow.ToString("o")
     }
@@ -224,6 +232,12 @@ function Write-LauncherLog {
     param([string]$Message)
     $stamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssK"
     Add-Content -LiteralPath $LauncherLog -Value "$stamp $Message"
+}
+
+if ($UpdateProfileOnly) {
+    Write-LauncherLog "updated validator role profile only networked=$($Networked.IsPresent) public_p2p=$($PublicP2P.IsPresent) cgnat_fallback=$($CgNatFallback.IsPresent) block_producer=$($BlockProducer.IsPresent)"
+    Write-Host "Updated QSDM validator role profile at $ModeConfigPath"
+    exit 0
 }
 
 function Write-ValidatorProcessIdentity {
@@ -935,7 +949,7 @@ if ($Networked) {
         $resolvedBootstrapPeers = $DefaultBootstrapPeer
     }
     $env:BOOTSTRAP_PEERS = $resolvedBootstrapPeers
-    $env:NETWORK_BIND_ADDRESS = if ($PublicP2P) { "0.0.0.0" } else { "127.0.0.1" }
+    $env:QSDM_NETWORK_BIND_ADDRESS = if ($PublicP2P) { "0.0.0.0" } else { "127.0.0.1" }
     if (-not [string]::IsNullOrWhiteSpace($ChainSyncUrls)) {
         $env:QSDM_CHAIN_SYNC_URLS = $ChainSyncUrls
     } else {
@@ -944,7 +958,7 @@ if ($Networked) {
     Remove-Item Env:QSDM_PREFUND_ACCOUNTS -ErrorAction SilentlyContinue
     Remove-Item Env:QSDM_GENESIS_PREFUND_ADDR -ErrorAction SilentlyContinue
     Remove-Item Env:QSDM_GENESIS_PREFUND_AMOUNT_CELL -ErrorAction SilentlyContinue
-    Write-LauncherLog "networked validator mode enabled run_dir=$RunDir bootstrap_peers=$resolvedBootstrapPeers chain_sync_urls=$ChainSyncUrls public_p2p=$($PublicP2P.IsPresent) block_producer=$($BlockProducer.IsPresent)"
+    Write-LauncherLog "networked validator mode enabled run_dir=$RunDir bootstrap_peers=$resolvedBootstrapPeers chain_sync_urls=$ChainSyncUrls public_p2p=$($PublicP2P.IsPresent) cgnat_fallback=$($CgNatFallback.IsPresent) block_producer=$($BlockProducer.IsPresent)"
 } else {
     Remove-Item Env:QSDM_CHAIN_SYNC_URLS -ErrorAction SilentlyContinue
     if ($env:QSDM_LOCAL_CELL_FAUCET -eq "1") {

@@ -44,6 +44,41 @@ The QSDM Hive browser extension is a small bridge to the running Hive wallet.
 It does not store the keystore JSON or passphrase. A supported website receives
 the public wallet address and only signatures the user explicitly approves.
 
+## VPS-independent operation
+
+QSDM Hive and validators can keep local state when the public reference server
+is unavailable, but independence is not automatic failover. A follower needs a
+second trusted validator for both peer bootstrap and chain catch-up. Clients
+need a second API endpoint as well; a single public URL cannot be made
+redundant by desktop configuration alone.
+
+A prepared standby should:
+
+- use `networked` follower mode with a persistent network host key;
+- listen on TCP `4001` only when its operator has a real inbound path;
+- configure at least one non-VPS `bootstrap_peers` multiaddr and one non-VPS
+  HTTPS `QSDM_CHAIN_SYNC_URLS` source;
+- retain its own consensus signer and SQLite state; and
+- remain a follower until it is caught up and the current producer is fenced.
+
+QSDM currently has no automatic proposer election or split-brain lease. A
+manual producer handoff is required, and two simultaneous producers can create
+conflicting histories. See [`runbooks/HOME_STANDBY.md`](runbooks/HOME_STANDBY.md)
+for the operator checklist.
+
+### CGNAT fallback
+
+If a home or office ISP blocks inbound TCP with carrier-grade NAT, the supported
+fallback is the QSDM home gateway. The local validator remains a networked
+follower, keeps its Core API on `127.0.0.1`, and publishes only the restricted
+status/mining/Hive routes through an outbound relay. This is enough to keep a
+home node usable behind CGNAT, but it does not replace a second reachable peer
+for validator-to-validator redundancy.
+
+Use `scripts/enable_cgnat_fallback.ps1` on Windows to record the fallback
+profile and restart the read-only gateway tunnel. Use
+`scripts/validate_vps_independence.ps1 -AcceptFallback` to distinguish
+`operational_posture: relay-fallback` from true `independence_ready`.
 ## What stays private
 
 **Stays on your device:**

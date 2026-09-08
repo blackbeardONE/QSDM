@@ -9,6 +9,8 @@ $ErrorActionPreference = "Stop"
 
 $ArtifactRoot = (Resolve-Path $ArtifactRoot).Path
 $QsdmRoot = (Resolve-Path $QsdmRoot).Path
+
+. (Join-Path $QsdmRoot "scripts\lib\qsdm-endpoints.ps1")
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
     $OutputPath = Join-Path $ArtifactRoot "SMOKE_RESULTS.json"
 }
@@ -87,7 +89,11 @@ function Invoke-LocalGuiSmoke {
         HTTP_PROXY               = ""
         HTTPS_PROXY              = ""
         ALL_PROXY                = ""
-        NO_PROXY                 = "127.0.0.1,localhost,api.qsdm.tech"
+        NO_PROXY                 = Get-QsdmNoProxyList -EndpointValues @(
+            "http://127.0.0.1:8080",
+            (Get-QsdmEndpointValue -Name "core_api_base" -EnvVar "QSDM_CHAIN_SYNC_URLS"),
+            (Get-QsdmEndpointValue -Name "home_gateway_relay" -EnvVar "QSDM_HOME_GATEWAY_RELAY")
+        )
     }
 
     $process = $null
