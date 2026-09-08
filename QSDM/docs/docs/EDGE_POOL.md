@@ -154,6 +154,18 @@ sudo QSDM_EDGE_RELAY_VERSION=1.3.4 \
   bash QSDM/deploy/scripts/install_edge_relay.sh
 ```
 
+For a VPS migration or a differently named public endpoint, tell the installer
+which single Caddy site block owns the Relay route. These labels must match the
+hosts on one Caddy site declaration exactly; the installer deliberately refuses
+to guess or add the public route to another site.
+
+```bash
+sudo QSDM_EDGE_RELAY_CADDY_SITE_LABELS='api.next.example,node.next.example' \
+  QSDM_EDGE_RELAY_VERSION=<version> \
+  QSDM_EDGE_RELAY_SHA256=<sha256> \
+  bash QSDM/deploy/scripts/install_edge_relay.sh
+```
+
 The installer verifies the binary before replacing it, keeps existing Agent
 and Mother credentials, stores durable jobs and receipts below
 `/var/lib/qsdm-edge`, validates Caddy before reload, and fails if the Relay
