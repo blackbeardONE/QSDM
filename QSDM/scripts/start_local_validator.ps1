@@ -39,6 +39,10 @@ $RunDirName = if ($Networked) { "run-networked" } else { "run-v2" }
 $RunDir = Join-Path $LocalRoot $RunDirName
 $NetworkHostKeyPath = Join-Path $RunDir "qsdm_network_host.key"
 $DefaultBootstrapPeer = Get-QsdmEndpointValue -Name "reference_bootstrap_peer" -EnvVar "QSDM_REFERENCE_BOOTSTRAP_PEER"
+$ResolvedBootstrapPeers = $BootstrapPeers.Trim()
+if ($Networked -and [string]::IsNullOrWhiteSpace($ResolvedBootstrapPeers)) {
+    $ResolvedBootstrapPeers = $DefaultBootstrapPeer.Trim()
+}
 $PrimaryExePath = Join-Path $LocalRoot "qsdm.exe"
 $CandidateExePath = Join-Path $LocalRoot "qsdm-new.exe"
 $LocalValidatorSQLiteHotfixExePath = Join-Path $LocalRoot "qsdm-local-validator-sqlite.hotfix.exe"
@@ -206,7 +210,7 @@ $modeConfig = if ($Networked) {
     [ordered]@{
         mode = "networked"
         chainSyncUrls = $ChainSyncUrls
-        bootstrapPeers = $BootstrapPeers
+        bootstrapPeers = $ResolvedBootstrapPeers
         publicP2P = $PublicP2P.IsPresent
         cgnatFallback = $CgNatFallback.IsPresent
         connectivityMode = if ($CgNatFallback) { "relay-fallback" } elseif ($PublicP2P) { "public-p2p" } else { "local-only" }
@@ -944,11 +948,7 @@ Remove-Item Env:QSDM_ALLOW_DEVELOPMENT_PREFUND -ErrorAction SilentlyContinue
 Remove-Item Env:QSDM_GENESIS_PREFUND_ADDR -ErrorAction SilentlyContinue
 Remove-Item Env:QSDM_GENESIS_PREFUND_AMOUNT_CELL -ErrorAction SilentlyContinue
 if ($Networked) {
-    $resolvedBootstrapPeers = $BootstrapPeers
-    if ([string]::IsNullOrWhiteSpace($resolvedBootstrapPeers)) {
-        $resolvedBootstrapPeers = $DefaultBootstrapPeer
-    }
-    $env:BOOTSTRAP_PEERS = $resolvedBootstrapPeers
+    $env:BOOTSTRAP_PEERS = $ResolvedBootstrapPeers
     $env:QSDM_NETWORK_BIND_ADDRESS = if ($PublicP2P) { "0.0.0.0" } else { "127.0.0.1" }
     if (-not [string]::IsNullOrWhiteSpace($ChainSyncUrls)) {
         $env:QSDM_CHAIN_SYNC_URLS = $ChainSyncUrls
@@ -958,7 +958,7 @@ if ($Networked) {
     Remove-Item Env:QSDM_PREFUND_ACCOUNTS -ErrorAction SilentlyContinue
     Remove-Item Env:QSDM_GENESIS_PREFUND_ADDR -ErrorAction SilentlyContinue
     Remove-Item Env:QSDM_GENESIS_PREFUND_AMOUNT_CELL -ErrorAction SilentlyContinue
-    Write-LauncherLog "networked validator mode enabled run_dir=$RunDir bootstrap_peers=$resolvedBootstrapPeers chain_sync_urls=$ChainSyncUrls public_p2p=$($PublicP2P.IsPresent) cgnat_fallback=$($CgNatFallback.IsPresent) block_producer=$($BlockProducer.IsPresent)"
+    Write-LauncherLog "networked validator mode enabled run_dir=$RunDir bootstrap_peers=$ResolvedBootstrapPeers chain_sync_urls=$ChainSyncUrls public_p2p=$($PublicP2P.IsPresent) cgnat_fallback=$($CgNatFallback.IsPresent) block_producer=$($BlockProducer.IsPresent)"
 } else {
     Remove-Item Env:QSDM_CHAIN_SYNC_URLS -ErrorAction SilentlyContinue
     if ($env:QSDM_LOCAL_CELL_FAUCET -eq "1") {
