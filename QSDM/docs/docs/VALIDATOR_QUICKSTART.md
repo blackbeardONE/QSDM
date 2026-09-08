@@ -1,9 +1,11 @@
 # Validator Quickstart — VPS operator runbook
 
 This runbook takes a VPS operator from a fresh Ubuntu 22.04 host to a
-running QSDM validator node in about 25 minutes. The validator is CPU-only,
-participates in BFT + Proof-of-Entanglement consensus, and earns transaction
-fees in Cell (`dust`-denominated).
+running QSDM validator node in about 25 minutes. The validator is CPU-only
+and runs as a configured block producer or append-only follower in the
+current public rollout. Signed BFT + Proof-of-Entanglement participation is
+part of the coordinated validator rollout. Validators earn transaction fees
+in Cell (`dust`-denominated).
 
 > **Scope.** This is the runbook for the **validator** role only. It will
 > not help you mine Cell. For mining, see `MINER_QUICKSTART.md` (Phase 4

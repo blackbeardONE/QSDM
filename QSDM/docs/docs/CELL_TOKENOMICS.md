@@ -1,17 +1,18 @@
 # Cell (CELL) — Tokenomics
 
-> **Status:** Ratified per the Major Update Phase 0 recommendation, awaiting
-> counsel review before mainnet genesis. The values in this document are the
-> authoritative in-repo numbers used by `pkg/branding` constants,
+> **Status:** Engineering tokenomics target for QSDM. It is not yet an enforceable
+> supply guarantee on the live ledger. Counsel review is required before public
+> offering or exchange-facing materials. The values in this document are the
+> in-repo design numbers used by `pkg/branding` constants,
 > `pkg/chain/emission` (Phase 3.3), and the tokenomics dashboard panel. They
 > MUST NOT be changed in isolation; any change requires a corresponding
 > update to `QSDM/docs/docs/REBRAND_NOTES.md` and a new entry in
 > `NEXT_STEPS.md`.
 
-This document is the normative reference for the Cell coin's supply,
-emission, and fee model. It is **not** a legal offering document, it is not
-an investment prospectus, and it is not a commitment until counsel has
-signed off. See §8 ("Legal posture") below.
+This document is the design reference for the Cell coin's intended supply,
+emission, and fee model. It is **not** a proof that the current ledger enforces
+those values, a legal offering document, an investment prospectus, or a
+commitment until counsel has signed off. See the legal posture section below.
 
 ---
 
@@ -184,16 +185,18 @@ Phase-0 follow-up.
 | Decimals | 8 | 8 |
 | Halving period | every 210,000 blocks (~4 years at 10-min blocks) | every 12,614,400 blocks (~4 years at 10-sec blocks) |
 | Block time | ~10 min | 10 sec (target) |
-| Initial reward | 50 BTC | 1.4280 CELL |
+| Initial reward | 50 BTC | 3.56490987 CELL |
 | Founder / insider allocation | 0 | 0 |
 | Treasury | none | 10% vested linearly over 48 months |
-| Consensus | pure PoW | PoE + BFT **for consensus**, additive PoW **for emission only** |
+| Consensus | pure PoW | Configured QSDM Core production today; PoE + BFT signed validator rollout, additive PoW **for emission only** |
 
 The structural difference from Bitcoin is that Cell's PoW layer is
 explicitly *additive* — it exists solely to meter coin emission. Consensus
-does not depend on PoW. If all miners went offline tomorrow, the validators
-would continue producing blocks; the only thing that would stop is new
-supply creation.
+does not depend on PoW. The current public network is intentionally pinned to
+a configured QSDM Core producer with append-only followers while signed
+multi-validator rollout is tested. If all miners went offline tomorrow, block
+production could continue; the only thing that would stop is new supply
+creation.
 
 ---
 
@@ -240,7 +243,8 @@ distribution, marketing, and jurisdiction-specific obligations before a
 production launch.
 
 This is a posture, not a guarantee. Counsel review is required before
-mainnet genesis and before any promotional language is published on
+public offering or exchange-facing rollout, and before any promotional
+language is published on
 `qsdm.tech` or elsewhere. The phrases "investment", "returns", "profit",
 and "yield" are forbidden in all project communications (see
 `QSDM/docs/docs/COPY_FILTERS.md`, Phase 5.4 deliverable).

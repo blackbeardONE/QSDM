@@ -1,18 +1,18 @@
 # Capability Snapshot
 
-Status date: 2026-08-29
+Status date: 2026-09-09
 
-This snapshot summarizes the current project files, test evidence, and the local
-capability audit. It is an engineering readiness view, not a marketing claim.
-The percentage estimates answer one question: how much of each domain is
-implemented, tested, and safe to describe as working today?
+This is an engineering readiness view, not a marketing claim. The percentages
+estimate how much of each area is implemented, tested, and safe to describe as
+working for its intended scope. They do not turn incomplete consensus or
+economic mechanisms into production guarantees.
 
-## Overall
+## Current Scope
 
-| Scope | Completion | Meaning |
+| Scope | Completion | Plain reading |
 | --- | ---: | --- |
-| Current checkout | ~55% | Many user-facing paths work, but consensus, token accounting, and settlement still have hard blockers. |
-| Public main / deployed state | ~55% | Main and the VPS are aligned at `238a0e9` for the status/consensus-auth posture fix; deeper consensus and economics work remain incomplete. |
+| Public `main` | ~60% | QSDM has a usable single-producer network, Hive desktop client, wallets, task surfaces, trust reporting, and operator tooling. It is not yet a production-ready independent multi-validator BFT network or a fully conserved CELL economy. |
+| Strict validator setup | ~80% | A validator started in strict mode must pin one or more allowed producer IDs. The deployment scripts now fail before provisioning when those IDs are missing, rather than leaving an unprotected empty allowlist. |
 
 Completion bands:
 
@@ -28,64 +28,99 @@ Completion bands:
 
 | Domain | Completion | Status | Plain reading |
 | --- | ---: | --- | --- |
-| Ledger core and consensus | 40% | Partial | Blocks, storage, signed gossip, mempool, solo/follower behavior, and public consensus-auth posture reporting work. Multi-validator commit safety, vote enforcement, and final BFT flow remain the main risk. |
-| Crypto and wallet | 73% | Working | ML-DSA wallets, keystore JSON, qsdmcli, Hive signing, recovery-enabled wallets, and submit-signed actions are strong. Browser recovery and cross-device wallet sync are not complete. |
-| Storage and networking | 73% | Working | SQLite, health endpoints, metrics, rate limiting, trusted-proxy client buckets, libp2p bootstrap, and replay controls are usable. Scylla/FileStorage parity and peer exchange remain incomplete. |
-| Mining | 50% | Partial | Mining APIs, console miner path, rejection tracking, CUDA plumbing, challenge flow, and deferred bond logic exist. Full NVIDIA enforcement, fraud proofs, retargeting, and production hashrate evidence still need more proof. |
-| Tokenomics, tasks, and governance | 35% | Partial | Task catalog, task actions, staking helpers, emissions, and rewards are present. Conserved integer accounting, governance activation, bridge maturity, and supply invariants remain unfinished. |
-| Edge pool and Mother Hive | 46% | Partial | Agent -> Relay -> Mother Hive control, resource caps, receipts, and local workbench exist. Core-enforced leases, escrow settlement, quotas, and public federation are not finished. |
-| QSDM Hive desktop | 64% | Working | Hive, wallet management, tasks, extension bridge, updater gate, packaging, miner integration, and Mother Hive UI are usable. Test coverage, generic task runtime, and some lifecycle edges still need tightening. |
-| Operator, gateway, and trust | 68% | Working | Trustcheck, home gateway, public audit pages, attester ingest, GPU truth reporting, and per-client proxy quota behavior are working. Deeper consensus safety is still open. |
-| Website, SDK, and release | 70% | Working | qsdm.tech, docs, downloads, browser extension packages, SRI checks, Go SDK, and JS SDK are in good shape. Release signing, OpenAPI publication, and CI parity still need work. |
+| Ledger core and consensus | 48% | Partial | Blocks, storage, signed gossip support, mempool, single-producer mode, follower append, producer allowlisting, task-action signatures, and transaction-content roots exist. Dynamic validator membership, peer-vote origination, proposer rotation, multi-node BFT commit, and failover are not production-finished. |
+| Crypto and wallet | 74% | Working | ML-DSA wallets, keystore JSON, Hive and CLI signing, wallet import, recovery-enabled new wallets, website account login, and browser-extension linking work. Wallet custody remains local-first rather than cloud-synced. |
+| Storage and networking | 74% | Working | SQLite, health and readiness endpoints, metrics, rate limits, static bootstrap, local discovery, replay controls, and the home gateway are usable. Scylla parity, peer exchange, and multi-site validator staging still need hardening. |
+| Mining | 55% | Partial | Console mining, Hive task control, NVIDIA visibility, challenge flow, rejection tracking, deferred stake deduction, and NGC transparency are implemented. The public-HMAC enrollment model weakens hardware identity, so earning must be judged from accepted proofs rather than a running task switch. |
+| Tokenomics, tasks, and governance | 41% | Partial | Task catalog, signed task actions, staking helpers, rewards, treasury documentation, faucet/referral paths, and self-stake separation exist. Conserved integer accounting, dust-fork activation, governance rollout, and enforceable settlement payouts remain unfinished. |
+| Edge pool and Mother Hive | 50% | Partial | Agent-to-Relay-to-Mother-Hive pairing, caps, receipts, resource dashboards, and local workbench exist. They are schedulable QSDM job capacity, not transparent operating-system CPU, RAM, or GPU devices. Core-enforced leases, escrow settlement, quotas, and internet federation remain roadmap work. |
+| QSDM Hive desktop | 68% | Working | Hive task UI, wallet management, extension bridge, updater gate, packaging, miner integration, Mother Hive UI, and Windows/Linux flows are usable. Test coverage and lifecycle edges need further work before calling the client mature. |
+| Operator, gateway, and trust | 75% | Working | Trustcheck, home gateway, public audit surfaces, attester ingest, GPU truth reporting, trusted-proxy configuration, and readiness waits are implemented. Their availability still depends on a correctly deployed public operator. |
+| Website, SDK, docs, and release | 72% | Working | qsdm.tech, docs, downloads, browser-extension packages, SRI checks, Go SDK, JS SDK, release policy, and privacy/support pages are in place. Windows publisher signing, npm publication, stale archive cleanup, and CI parity remain open. |
 
-Weighted current estimate: **~55% complete**.
+Weighted current estimate: **~60% complete on public `main`**.
+
+## Feature Scorecard
+
+| Feature | Completion | Working now | Main limitation |
+| --- | ---: | --- | --- |
+| Single-producer QSDM Network | 78% | Yes | It is intentionally one configured producer plus followers, not a decentralized validator set. |
+| External block append authorization | 82% | Yes in strict configuration | Strict validator setup requires an explicit producer allowlist. Non-strict nodes must also configure an allowlist before they should be treated as protected. |
+| Signed consensus messages | 65% | Supported | Fleet-wide enforcement is a coordinated rollout step; `require_signed_votes` remains off by default for compatibility. |
+| Transaction-content root | 70% | Configured for a future activation in deployment templates | It changes block hashes, so every validator must use the same reviewed activation height. |
+| Task-action signatures | 78% | Configured for a future activation in deployment templates | Historical unsigned actions remain valid below the shared activation height. |
+| POL finality guard | 70% | Local sealed blocks are recorded before synthetic proof work | This prevents an authenticated proof-generation refusal from reopening anchored local finality; it does not complete multi-validator BFT. |
+| Hive consumer app | 68% | Yes | Release signing and complete automated desktop coverage remain thin. |
+| Hive browser wallet extension | 62% | Yes | Store review, browser-specific packaging, and account-dashboard polish remain. |
+| QSDM Account web login | 58% | Yes | Email/Telegram login exists, but account recovery and role management need hardening. |
+| QSDM Miner | 55% | Yes | GPU utilization and accepted-proof evidence must be monitored per machine. |
+| Edge Agent / Edge Control | 55% | Yes locally | Internet federation and settlement are not yet enforceable by Core. |
+| Mother Hive pooled resources | 50% | Yes as QSDM job capacity | It does not make remote hardware appear as local OS devices. |
+| Sky Fang integration | 72% | Yes | Rewards depend on reliable Sky Fang link verification and task economics. |
+| Treasury / faucet / referral economics | 45% | Partial | Needs funded wallets, payout policy, abuse caps, and auditable Core records. |
+| Public trust and explorer surfaces | 76% | Yes when deployed | More checks must validate real behavior, not only response shape. |
 
 ## What Is Solid Today
 
-- CELL wallet creation, import, backup, and local signing through QSDM Hive and qsdmcli.
-- Browser and website wallet linking through QSDM Hive, with per-action approval and origin checks.
-- Public qsdm.tech documentation, downloads, privacy/support pages, explorer, trust pages, and SRI linting.
+- CELL wallet creation, import, backup, and local signing through QSDM Hive and
+  `qsdmcli`.
+- Browser and website wallet linking through QSDM Hive, with per-action approval
+  and origin checks.
+- Public `qsdm.tech` documentation, downloads, privacy/support pages, explorer,
+  trust pages, and SRI linting.
 - Local validator, gateway, monitor, attester, and Hive process visibility.
 - QSDM Miner and Edge Worker task surfaces in Hive.
-- Edge Agent -> Relay -> Mother Hive pairing and local receipt visibility.
-- Read-only production trust probes after the rate-limit and GPU-reporting fixes.
-- Public `/api/v1/status` consensus-auth posture reporting on the VPS.
-- Trusted-proxy rate-limit buckets verified through Caddy without allowing client header spoofing.
+- Edge Agent-to-Relay-to-Mother-Hive pairing and local receipt visibility.
+- Strict validator deployment checks that require explicit producer pinning.
+- Public status and trust-reporting surfaces when an operator deploys them.
 
 ## What Must Not Be Overclaimed
 
-- The chain is not yet fully BFT-safe across a real validator set.
-- Mining is not proven just because the UI task is running; the release gate must include real NVIDIA utilization and accepted proof evidence.
-- Edge pooled resources are schedulable QSDM job capacity, not transparent local operating-system CPU, RAM, or GPU devices.
-- Referral, faucet, and edge settlement require funded treasury paths and enforceable Core records before they should be described as automatic public economics.
-- Windows Hive releases remain unsigned until a trusted publisher certificate is available. Users must verify published hashes.
+- The chain is not fully BFT-safe across a real dynamic validator set.
+- The current public topology is one configured producer plus followers, not
+  VPS-independent automatic consensus or failover.
+- Signed-vote enforcement is supported but not enabled by default. It must be
+  activated at one reviewed future height across every validator.
+- Mining is not proven just because the UI task is running; release evidence
+  must include real NVIDIA utilization and accepted proof records.
+- Edge pooled resources are schedulable QSDM job capacity, not transparent local
+  operating-system CPU, RAM, or GPU devices.
+- Referral, faucet, and edge settlement require funded treasury paths and
+  enforceable Core records before they can be described as automatic public
+  economics.
+- Windows Hive releases remain unsigned until a trusted publisher certificate is
+  available. Users must verify published hashes.
 
 ## Highest-Value Next Work
 
-1. Close consensus safety: transaction-content commitments, signed vote checks, validator membership agreement, and multi-validator commit tests.
-2. Finish conserved CELL accounting: integer dust accounting, supply invariants, and the dust fork activation plan.
-3. Harden mining economics: replace public HMAC identity, prove real GPU work, and strengthen fraud/retarget evidence.
-4. Enable enforceable edge settlement: leases, receipts, escrow, quotas, and replay-safe payout rules in QSDM Core.
-5. Tighten Hive release quality: Node 22 local install, full Hive test suite, updater smoke tests, extension acceptance tests, and signed release path when a publisher identity is available.
-6. Clean stale documentation that still claims old production-ready states from archived phase reports.
+1. Run a two-node staging rehearsal: producer rotation, follower agreement,
+   signed gossip behavior, chain catch-up, and failover.
+2. Use that rehearsal to choose and validate one shared signed-consensus
+   activation height before enabling `require_signed_votes` anywhere.
+3. Complete conserved CELL accounting: integer dust accounting, supply
+   invariants, and the dust-fork activation plan.
+4. Replace public-HMAC mining identity with a private, attestable hardware or
+   operator credential path.
+5. Enable enforceable edge settlement: leases, receipts, escrow, quotas, and
+   replay-safe payout rules in QSDM Core.
+6. Tighten Hive release quality: Node 22 local install, full Hive test suite,
+   updater smoke tests, extension acceptance tests, and a signed release path
+   when a publisher identity is available.
+7. Reconcile stale archive reports before publishing a broader capability audit.
 
 ## Verification Snapshot
 
-Recent local checks:
+Recent checks behind this snapshot:
 
 | Check | Result |
 | --- | --- |
-| QSDM Core Go tests | `pkg/api`, `pkg/config`, `pkg/chain`, and `pkg/networking` passed for the consensus-auth status change. |
-| Go SDK tests | Passed. |
-| JS SDK tests | 29/29 passed. |
-| Python tooling tests | 24/24 passed. |
-| Production trustcheck | `16/16` passed against `https://api.qsdm.tech` with `--min-attested 2 --check-mining-path`; summary was `2 of 3` attested. |
-| VPS deploy | `238a0e9` deployed from a Linux CGO build; public and local API both reported tip `628146` during verification. |
-| VPS storage check | Fresh logs showed `Using SQLite storage`; no new SQLite/file-storage/panic/fork/divergence errors after restart. |
-| Trusted proxy check | Direct VPS bucket: same IP hit `429` at request 31, different IP stayed `200`; public spoofed `X-Real-IP` rotation still hit `429` at request 31. |
-| Secret scanner | Passed across tracked files. |
-| Website SRI lint | Passed. |
-| GitHub Actions pin check | Passed. |
-| Hive tests | Not run locally because `node_modules` is incomplete and local Node is below the required 22.12 floor. |
+| Strict validator configuration | `go test ./pkg/config` passed after the strict producer-allowlist guard was added. |
+| Deployment scripts | `deploy/scripts/test_authorized_block_producers.sh` passed for empty, duplicate, malformed, and explicit producer inputs. |
+| Producer authorization | `qsdm.yaml` pins a reference producer for the checked-in development profile; strict production deployments require operators to provide their own reviewed pin set. |
+| Signed consensus defaults | `require_signed_votes` remains false unless operators schedule an agreed non-zero activation height. |
+| Transaction and task-action activation templates | New deployment scripts default their activation settings to height `625000`; operators must verify that height against every participating chain before relying on it. |
+| Trust surfaces | Code and tests exist for public status, attestation, and mining-path checks; reachability is verified separately against a deployed operator. |
+| Secret scanner posture | Tracked files are guarded; local/private scripts are excluded by policy. |
 
-The untracked deep audit file remains the best raw evidence source until it is reviewed and published.
+The deep audit remains useful raw evidence, but it must be reconciled with the
+current source and deployment configuration before publication.
