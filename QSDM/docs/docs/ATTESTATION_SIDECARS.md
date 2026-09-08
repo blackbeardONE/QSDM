@@ -97,6 +97,11 @@ The script reads the running `QSDM_NGC_INGEST_SECRET` out of the
 existing `qsdm.service` systemd env, writes
 `/opt/qsdm/ngc-sidecar/ngc.env` (mode 0600), installs
 `qsdm-ngc-attest.service` + `.timer`, and starts the timer. Idempotent.
+Its SSH destination comes from `QSDM_ENDPOINTS_FILE` (or
+`QSDM/config/public-endpoints.json`) rather than a hard-coded VPS. The public
+verification calls use the same file's `public_api_base`; an operator can
+stage a replacement with `QSDM_PUBLIC_API_BASE_URL=https://api.next.example`
+or `--public-api-base https://api.next.example`.
 
 ### OCI A1.Flex or E5.Flex (systemd timer, non-root)
 
@@ -111,6 +116,11 @@ python QSDM/deploy/install_ngc_sidecar_oci.py `
     --user ubuntu `
     --node-id qsdm-oci-ap-singapore-1
 ```
+
+Unless `--report-url` is supplied, the OCI installer posts to
+`<public_api_base>/api/v1/monitoring/ngc-proof` and verifies the same public
+API after installation. Use `--public-api-base` during a staged VPS migration
+so attestation traffic cannot silently continue to the retired API.
 
 ## Verifying the new source counts
 
