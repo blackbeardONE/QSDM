@@ -53,9 +53,9 @@ function Invoke-ProfileOnly {
     if (-not $hostExecutable) {
         throw "Could not find a PowerShell host executable under $PSHOME."
     }
-    & $hostExecutable @arguments
+    $profileOutput = @(& $hostExecutable @arguments 2>&1)
     if ($LASTEXITCODE -ne 0) {
-        throw "Profile-only launcher fixture failed with exit code $LASTEXITCODE."
+        throw "Profile-only launcher fixture failed with exit code $LASTEXITCODE. $($profileOutput | Out-String)"
     }
 }
 
