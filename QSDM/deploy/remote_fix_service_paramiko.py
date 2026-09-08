@@ -5,21 +5,23 @@ from pathlib import Path
 
 import paramiko
 
-from _deploy_host import host as _host, user as _user
+from _deploy_host import host as _host, port as _port, require_root_user as _require_root_user, user as _user
 
 HOST = _host()
 USER = _user()
+PORT = _port()
 SERVICE = Path(__file__).resolve().parent.parent / "config" / "qsdm.service"
 
 
 def main() -> int:
+    _require_root_user("remote_fix_service_paramiko.py")
     pw = os.environ.get("QSDM_VPS_PASS") or (sys.argv[1] if len(sys.argv) > 1 else "")
     if not pw:
         print("Set QSDM_VPS_PASS", file=sys.stderr)
         return 1
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect(HOST, username=USER, password=pw, timeout=30, allow_agent=False, look_for_keys=False)
+    c.connect(HOST, port=PORT, username=USER, password=pw, timeout=30, allow_agent=False, look_for_keys=False)
     raw = SERVICE.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
     sftp = c.open_sftp()
     try:

@@ -4,7 +4,8 @@ Usage:
     QSDM_VPS_PASS=... python remote_verify_paramiko.py
 
 Optionally set QSDM_VPS_HOST to target a different node than the
-reference validator (defaults to 206.189.132.232 / api.qsdm.tech).
+configured reference target. ``QSDM_RELEASE_SSH_TARGET`` and
+``QSDM_ENDPOINTS_FILE`` use the same shared resolution path.
 """
 import os
 import socket
@@ -12,9 +13,11 @@ import sys
 import paramiko
 from paramiko import Transport
 
-from _deploy_host import host as _host
+from _deploy_host import host as _host, port as _port, require_root_user as _require_root_user, user as _user
 
 HOST = _host()
+USER = _user()
+PORT = _port()
 
 CHECKS = r"""
 set +e
@@ -136,16 +139,15 @@ echo
 
 
 def main() -> int:
+    _require_root_user("remote_verify_paramiko.py")
     pw = os.environ.get("QSDM_VPS_PASS") or (sys.argv[1] if len(sys.argv) > 1 else "")
     if not pw:
         print("Set QSDM_VPS_PASS", file=sys.stderr)
         return 1
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(30)
-    sock.connect((HOST, 22))
+    sock = socket.create_connection((HOST, PORT), timeout=30)
     t = Transport(sock)
     t.start_client(timeout=30)
-    t.auth_password("root", pw)
+    t.auth_password(USER, pw)
     ch = t.open_session()
     ch.exec_command("bash -s")
     ch.sendall(CHECKS.encode())
