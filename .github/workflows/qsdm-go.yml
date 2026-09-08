@@ -80,6 +80,7 @@ jobs:
           bash QSDM/deploy/landing/test_install_docs_site_public_api_override.sh
           bash QSDM/deploy/scripts/test_install_edge_relay_caddy_site.sh
           python3 QSDM/deploy/test_deploy_host.py
+          python3 -m py_compile QSDM/deploy/install_ngc_sidecar_vps.py QSDM/deploy/install_ngc_sidecar_oci.py
           bash -n QSDM/deploy/scripts/publish_edge_release.sh
           bash -n QSDM/deploy/validator-package/install-or-update.sh
           bash -n QSDM/deploy/validator-package/rollback.sh

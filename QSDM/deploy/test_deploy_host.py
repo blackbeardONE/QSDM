@@ -17,6 +17,7 @@ _ENV_KEYS = (
     "QSDM_VPS_HOST",
     "QSDM_VPS_USER",
     "QSDM_VPS_PORT",
+    "QSDM_PUBLIC_API_BASE_URL",
 )
 
 
@@ -36,9 +37,13 @@ class DeploymentHostTests(unittest.TestCase):
             else:
                 os.environ[name] = value
 
-    def write_config(self, target: str) -> None:
-        self.config.write_text(json.dumps({"vps_ssh_target": target}), encoding="utf-8")
+    def write_config(self, target: str | None = None, **values: str) -> None:
+        payload = dict(values)
+        if target is not None:
+            payload["vps_ssh_target"] = target
+        self.config.write_text(json.dumps(payload), encoding="utf-8")
         os.environ["QSDM_ENDPOINTS_FILE"] = str(self.config)
+
 
     def test_config_target_supports_user_and_port(self) -> None:
         self.write_config("root@next-vps.example:2202")
@@ -65,6 +70,12 @@ class DeploymentHostTests(unittest.TestCase):
             _deploy_host.DeploymentTarget("staging-vps.example", "qsdm-deploy", 2203),
         )
 
+    def test_direct_target_overrides_support_cli_host_user_and_port(self) -> None:
+        self.write_config("root@old-vps.example")
+        self.assertEqual(
+            _deploy_host.target("next-vps.example", "root", "2204"),
+            _deploy_host.DeploymentTarget("next-vps.example", "root", 2204),
+        )
     def test_explicit_missing_config_is_not_silently_ignored(self) -> None:
         os.environ["QSDM_ENDPOINTS_FILE"] = str(self.config)
         with self.assertRaisesRegex(_deploy_host.DeploymentTargetError, "was not found"):
@@ -114,6 +125,34 @@ class DeploymentHostTests(unittest.TestCase):
         with self.assertRaisesRegex(_deploy_host.DeploymentTargetError, "requires root SSH access"):
             _deploy_host.require_root_user("remote_apply_paramiko.py")
 
+
+    def test_public_api_base_uses_shared_endpoint_config(self) -> None:
+        self.write_config(public_api_base="https://staging-api.qsdm.example/")
+        self.assertEqual(_deploy_host.public_api_base(), "https://staging-api.qsdm.example")
+        self.assertEqual(
+            _deploy_host.ngc_proof_ingest_url(),
+            "https://staging-api.qsdm.example/api/v1/monitoring/ngc-proof",
+        )
+
+    def test_public_api_environment_override_wins(self) -> None:
+        self.write_config(public_api_base="https://old-api.qsdm.example")
+        os.environ["QSDM_PUBLIC_API_BASE_URL"] = "https://new-api.qsdm.example:9443"
+        self.assertEqual(_deploy_host.public_api_base(), "https://new-api.qsdm.example:9443")
+
+    def test_public_api_base_rejects_non_origin_or_cleartext_values(self) -> None:
+        for value in ("http://api.qsdm.example", "https://api.qsdm.example/api/v1", "https://user@api.qsdm.example"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(_deploy_host.DeploymentTargetError, "HTTPS origin"):
+                    _deploy_host.normalize_public_api_base(value)
+
+    def test_ngc_installers_use_shared_public_api_resolution(self) -> None:
+        deploy_dir = Path(__file__).resolve().parent
+        for filename in ("install_ngc_sidecar_vps.py", "install_ngc_sidecar_oci.py"):
+            source = (deploy_dir / filename).read_text(encoding="utf-8")
+            self.assertIn("public_api_base", source, filename)
+            self.assertNotIn("https://api.qsdm.tech/api/v1", source, filename)
+        vps_source = (deploy_dir / "install_ngc_sidecar_vps.py").read_text(encoding="utf-8")
+        self.assertIn("port=resolved_target.port", vps_source)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
