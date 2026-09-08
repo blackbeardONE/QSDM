@@ -39,6 +39,10 @@
 #
 # Override the instance label used in Prometheus external_labels:
 #   QSDM_INSTANCE=validator-blr1 sudo bash install_observability.sh
+#
+# Override the workstation SSH destination printed after installation. This is
+# useful while a VPS migration is in progress:
+#   QSDM_OBSERVABILITY_SSH_TARGET=root@new-vps.example sudo bash install_observability.sh
 
 set -euo pipefail
 
@@ -46,6 +50,7 @@ PROM_VERSION="${PROM_VERSION:-2.55.1}"
 AM_VERSION="${AM_VERSION:-0.27.0}"
 QSDM_INSTANCE="${QSDM_INSTANCE:-validator}"
 QSDM_CLUSTER="${QSDM_CLUSTER:-default}"
+QSDM_OBSERVABILITY_SSH_TARGET="${QSDM_OBSERVABILITY_SSH_TARGET:-${QSDM_RELEASE_SSH_TARGET:-root@node.qsdm.tech}}"
 
 # Resolve the deploy tree: prefer ${DEPLOY_DIR} env override, then the repo
 # layout (script lives at QSDM/deploy/scripts/), then /opt/qsdm-deploy/.
@@ -414,7 +419,7 @@ curl -sS -u "admin:$ADMIN_PW" 'http://127.0.0.1:3000/api/datasources' | python3 
 echo
 echo "==== Done ===="
 echo "Loopback access (SSH tunnel from your workstation):"
-echo "  ssh -L 9090:127.0.0.1:9090 -L 9093:127.0.0.1:9093 -L 3000:127.0.0.1:3000 root@206.189.132.232"
+echo "  ssh -L 9090:127.0.0.1:9090 -L 9093:127.0.0.1:9093 -L 3000:127.0.0.1:3000 $QSDM_OBSERVABILITY_SSH_TARGET"
 echo "Then open in browser:"
 echo "  Prometheus: http://localhost:9090"
 echo "  Alertmanager: http://localhost:9093"

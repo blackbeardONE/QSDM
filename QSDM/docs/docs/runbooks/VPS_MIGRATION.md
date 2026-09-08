@@ -62,6 +62,9 @@ Use these when you need a one-off override without changing the shared file:
 | Variable | Purpose |
 |---|---|
 | `QSDM_ENDPOINTS_FILE` | Path to a JSON file with endpoint defaults |
+| `QSDM_VPS_HOST` | One-off SSH host override for legacy Paramiko deployment helpers |
+| `QSDM_VPS_USER` | One-off SSH user override for legacy Paramiko deployment helpers |
+| `QSDM_VPS_PORT` | One-off SSH port override for legacy Paramiko deployment helpers |
 | `QSDM_PUBLIC_API_BASE_URL` | Public API root, usually `https://api.qsdm.tech` |
 | `QSDM_CHAIN_SYNC_URLS` | Comma-separated `/api/v1` sync endpoints |
 | `QSDM_HOME_GATEWAY_RELAY` | Home gateway relay root |
@@ -74,6 +77,13 @@ Use these when you need a one-off override without changing the shared file:
 
 Environment values win over `public-endpoints.json`; the JSON file wins over
 built-in defaults.
+
+The legacy Paramiko deployment helpers use the same SSH target resolution as
+the release publisher: `QSDM_VPS_HOST`, then `QSDM_RELEASE_SSH_TARGET`, then
+`vps_ssh_target`. They also accept `QSDM_VPS_USER` and `QSDM_VPS_PORT` for a
+one-off target. The installer, service, Caddy, hardening, and verification
+helpers write root-owned paths and intentionally require `root` today; do not
+point them at an unreviewed sudo account and assume it is equivalent.
 
 ## Required Checks Before DNS Cutover
 
