@@ -1,12 +1,12 @@
 # QSDM Use Cases
 
-**Last Updated:** July 2026
+**Last Updated:** September 2026
 
 ---
 
 ## Overview
 
-**QSDM** (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger with native coin **Cell (CELL)**. The live public network currently uses one configured QSDM Core block producer with append-only followers while signed PoE/BFT validator rollout is staged. Miners mint CELL with NVIDIA-attested Proof-of-Work. **QSDM Hive** is the Windows/Linux client for wallets, signed tasks, mining, and integrations. This document lists where the stack fits today.
+**QSDM** (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger with native coin **Cell (CELL)**. The current network design uses one configured QSDM Core producer with append-only followers while signed PoE/BFT validator rollout is staged. QSDM includes NVIDIA-targeted Proof-of-Work paths, whose results should be assessed from accepted proofs rather than task state alone. **QSDM Hive** is the Windows/Linux client for wallets, signed tasks, mining, and integrations. This document lists where the stack fits today.
 
 ---
 
@@ -51,7 +51,7 @@ Services that need long-term security against cryptographically relevant quantum
 GPU operators mint CELL under Mining Protocol v2.
 
 ### Why QSDM?
-- NVIDIA-attested proofs (Turing+)
+- NVIDIA-targeted proof paths (Turing+) with accepted-proof verification
 - On-chain enrollment with slashable bond
 - Hive Miner task for consumers; `qsdmminer-console` for operators
 

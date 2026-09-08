@@ -1,18 +1,18 @@
 # Cell (CELL) — Tokenomics
 
-> **Status:** Production tokenomics reference for the current QSDM network,
-> with counsel review still required before public offering or exchange-facing
-> materials. The values in this document are the
-> authoritative in-repo numbers used by `pkg/branding` constants,
+> **Status:** Engineering tokenomics target for QSDM. It is not yet an enforceable
+> supply guarantee on the live ledger. Counsel review is required before public
+> offering or exchange-facing materials. The values in this document are the
+> in-repo design numbers used by `pkg/branding` constants,
 > `pkg/chain/emission` (Phase 3.3), and the tokenomics dashboard panel. They
 > MUST NOT be changed in isolation; any change requires a corresponding
 > update to `QSDM/docs/docs/REBRAND_NOTES.md` and a new entry in
 > `NEXT_STEPS.md`.
 
-This document is the normative reference for the Cell coin's supply,
-emission, and fee model. It is **not** a legal offering document, it is not
-an investment prospectus, and it is not a commitment until counsel has
-signed off. See §8 ("Legal posture") below.
+This document is the design reference for the Cell coin's intended supply,
+emission, and fee model. It is **not** a proof that the current ledger enforces
+those values, a legal offering document, an investment prospectus, or a
+commitment until counsel has signed off. See the legal posture section below.
 
 ---
 

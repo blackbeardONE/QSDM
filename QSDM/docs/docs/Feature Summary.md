@@ -1,15 +1,12 @@
 # Feature Summary — QSDM
 
-**Last Updated:** August 2026 · Latest Core candidate **v0.4.7-rc.9** · Hive **1.4.17** · Edge Control **1.3.7**
+**Last Updated:** September 2026. Check the published Downloads page for current Hive, Agent, and Relay release numbers.
 
-QSDM (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger whose native coin is **Cell (CELL)**. The live public network currently runs through a configured QSDM Core block producer with append-only followers while signed PoE/BFT validator rollout is staged. Miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
+QSDM (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger whose native coin is **Cell (CELL)**. The current network design uses a configured QSDM Core producer with append-only followers while signed PoE/BFT validator rollout is staged. QSDM includes an NVIDIA-targeted mining path, whose results must be assessed from accepted proofs rather than a task toggle. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
 
 For the current engineering readiness percentages, see [Capability Snapshot](CAPABILITY_SNAPSHOT.md).
 
-**QSDM Network** provides the production gateway, chain
-status, explorer, HTTP API, trust feeds, and audit evidence. It lets ordinary
-Hive users connect without operating a local Core while keeping wallet keys and
-signing on their own device.
+**QSDM Network** can provide a public gateway, chain status, explorer, HTTP API, trust feeds, and audit evidence when an operator deploys those services. It lets Hive users connect without operating a local Core while keeping wallet keys and signing on their own device.
 
 **QSDM VPN** is the separate private-network-access product at
 `https://qsdm.online/`. Its current public surface includes an Android client,
@@ -30,7 +27,7 @@ it is not the CELL network gateway or another Hive client.
 
 ## CELL tokenomics
 
-- **100M hard cap**, **0% founder allocation**, **10% genesis treasury** (48-month vesting), **90% mining emission** with 4-year halvings.
+- **100M target supply design**, **0% founder allocation**, **10% planned genesis treasury** (48-month vesting), **90% planned mining emission** with 4-year halvings. These are design values until integer accounting and supply invariants are activated and verified.
 - Validators earn **transaction fees only** (no block subsidy).
 - Tokenomics surface on `GET /api/v1/status` and the operator dashboard.
 
@@ -42,7 +39,7 @@ it is not the CELL network gateway or another Hive client.
 
 ## Mining (protocol v2)
 
-- NVIDIA-locked proofs (`nvidia-cc-v1`, `nvidia-hmac-v1`); Turing-or-newer GPU required for protocol mining.
+- NVIDIA-targeted proof paths (`nvidia-cc-v1`, `nvidia-hmac-v1`); Turing-or-newer GPU is required for protocol mining. The current public-HMAC enrollment model is not a complete hardware-identity guarantee.
 - Public mining API: work, challenge, submit, enrollment, emission, blocks, slash.
 - On-chain enrollment with **10 CELL** slashable bond; Hashcash anti-spam.
 - Consumer path: **QSDM Hive** Miner task (CUDA solver bundled). Miners can start from zero liquid CELL by choosing deferred bond from accepted mining earnings.
