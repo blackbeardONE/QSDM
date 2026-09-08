@@ -3,6 +3,10 @@
 # See docs/docs/UBUNTU_DEPLOYMENT.md. Run: bash install-ubuntu-vps.sh
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=scripts/authorized-block-producers.sh
+source "${SCRIPT_DIR}/scripts/authorized-block-producers.sh"
+
 QSDM_HOME="${QSDM_HOME:-$HOME/QSDM}"
 QSDM_GIT="${QSDM_GIT:-https://github.com/blackbeardONE/QSDM.git}"
 GO_TGZ="${GO_TGZ:-https://go.dev/dl/go1.23.4.linux-amd64.tar.gz}"
@@ -52,6 +56,15 @@ if [[ "$QSDM_REQUIRE_SIGNED_VOTES_VALUE" == "true" && "$QSDM_SIGNED_MESSAGE_ACTI
 fi
 if [[ "$QSDM_REQUIRE_SIGNED_VOTES_VALUE" == "false" && "$QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT_VALUE" != "0" ]]; then
   echo "QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT must be 0 while QSDM_REQUIRE_SIGNED_VOTES=false" >&2
+  exit 1
+fi
+
+QSDM_STRICT_SECRETS_VALUE="$(qsdm_normalize_bool "QSDM_STRICT_SECRETS" "${QSDM_STRICT_SECRETS:-false}")"
+QSDM_AUTHORIZED_BLOCK_PRODUCERS_VALUE="${QSDM_AUTHORIZED_BLOCK_PRODUCERS:-}"
+AUTHORIZED_BLOCK_PRODUCERS_TOML="$(qsdm_render_authorized_block_producers_toml "$QSDM_AUTHORIZED_BLOCK_PRODUCERS_VALUE")"
+AUTHORIZED_BLOCK_PRODUCER_COUNT="$(qsdm_authorized_block_producer_count "$QSDM_AUTHORIZED_BLOCK_PRODUCERS_VALUE")"
+if [[ "$QSDM_STRICT_SECRETS_VALUE" == "true" && "$AUTHORIZED_BLOCK_PRODUCER_COUNT" == "0" ]]; then
+  echo "QSDM_STRICT_SECRETS=true requires QSDM_AUTHORIZED_BLOCK_PRODUCERS to pin at least one producer ID" >&2
   exit 1
 fi
 
@@ -129,6 +142,7 @@ port = 8443
 enable_tls = false
 tls_cert_file = ""
 tls_key_file = ""
+strict_secrets = ${QSDM_STRICT_SECRETS_VALUE}
 
 [wallet]
 initial_balance = 1000.0
@@ -147,6 +161,7 @@ task_action_signature_activation_height = ${QSDM_TASK_ACTION_SIGNATURE_ACTIVATIO
 tx_content_root_activation_height = ${QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT_VALUE}
 enrollment_state_root_activation_height = ${QSDM_ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT_VALUE}
 signer_key_path = "qsdm_consensus_signer.json"
+${AUTHORIZED_BLOCK_PRODUCERS_TOML}
 
 [performance]
 # Demo/auto-txgen cadence; production should be long or a real client

@@ -28,7 +28,9 @@ signed_message_activation_height = 0
 
 Environment equivalents are `QSDM_CONSENSUS_SIGNER_KEY_PATH`,
 `QSDM_REQUIRE_SIGNED_VOTES`, and
-`QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT`.
+`QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT`. Strict deployments also use
+`QSDM_STRICT_SECRETS=true` and a comma-separated
+`QSDM_AUTHORIZED_BLOCK_PRODUCERS` list.
 
 The production deploy scripts require an explicit paired posture. If
 `QSDM_REQUIRE_SIGNED_VOTES=true`, `QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT`
@@ -38,8 +40,24 @@ written.
 
 Strict production mode also refuses a validator config with an empty
 `authorized_block_producers` list. Development nodes may still use the
-compatibility default, but production validators should pin the known block
+compatibility default, but production validators must pin the known block
 producer IDs that are allowed to publish onto the `qsdm-blocks` gossip topic.
+
+Both Linux installers render the list from
+`QSDM_AUTHORIZED_BLOCK_PRODUCERS`, for example:
+
+```bash
+QSDM_STRICT_SECRETS=true \
+QSDM_AUTHORIZED_BLOCK_PRODUCERS="<producer-id-1>,<producer-id-2>" \
+./deploy/install-ubuntu-vps.sh
+```
+
+For additional validators, use `--strict-secrets` and one repeatable
+`--authorized-block-producer <producer-id>` argument for each producer. Copy
+IDs from reviewed block metadata or the approved network manifest; a bootstrap
+multiaddr is not automatically a producer authorization. Do not turn on strict
+mode with a guessed or stale ID, because that safely stops the node from
+following that producer.
 
 ## Phase 1: upgrade and observe
 
@@ -92,6 +110,8 @@ signed_message_activation_height = 600000
 For scripted deployments, pass the same posture explicitly:
 
 ```bash
+QSDM_STRICT_SECRETS=true \
+QSDM_AUTHORIZED_BLOCK_PRODUCERS="<producer-id-1>,<producer-id-2>" \
 QSDM_REQUIRE_SIGNED_VOTES=true \
 QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT=600000 \
 QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT=600000 \
@@ -100,6 +120,9 @@ QSDM_ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT=600000 \
 ./deploy/install-ubuntu-vps.sh
 
 ./deploy/bring-up-validator.sh \
+  --strict-secrets \
+  --authorized-block-producer <producer-id-1> \
+  --authorized-block-producer <producer-id-2> \
   --require-signed-votes \
   --signed-message-activation-height 600000 \
   --task-action-signature-activation-height 600000 \

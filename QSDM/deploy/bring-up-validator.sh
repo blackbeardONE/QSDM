@@ -59,6 +59,12 @@
 #   --enrollment-state-root-activation-height HEIGHT
 #                         Shared height where enrollment/slashing state is committed.
 #                         Default: $QSDM_ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT or 625000.
+#   --strict-secrets      Enable strict production validation for this validator.
+#                         Requires at least one pinned producer ID.
+#   --authorized-block-producer ID
+#                         Add one permitted external block producer ID. Repeat for
+#                         every known producer. Defaults to comma-separated
+#                         QSDM_AUTHORIZED_BLOCK_PRODUCERS when omitted.
 #   --dry-run             Print what would happen; do not mutate the system.
 #   -h, --help            Show this help and exit.
 #
@@ -71,6 +77,10 @@
 #     enabled. Each run generates a fresh key on first boot.
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=scripts/authorized-block-producers.sh
+source "${SCRIPT_DIR}/scripts/authorized-block-producers.sh"
 
 # --- colors / log helpers ---------------------------------------------------
 if [[ -t 1 ]]; then
@@ -107,6 +117,8 @@ SIGNED_MESSAGE_ACTIVATION_HEIGHT="${QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT:-0}"
 TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT="${QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT:-625000}"
 TX_CONTENT_ROOT_ACTIVATION_HEIGHT="${QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT:-625000}"
 ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT="${QSDM_ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT:-625000}"
+STRICT_SECRETS="${QSDM_STRICT_SECRETS:-false}"
+AUTHORIZED_BLOCK_PRODUCERS="${QSDM_AUTHORIZED_BLOCK_PRODUCERS:-}"
 
 # --- arg parsing ------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
@@ -125,6 +137,16 @@ while [[ $# -gt 0 ]]; do
         --task-action-signature-activation-height) TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT="$2"; shift 2 ;;
         --tx-content-root-activation-height) TX_CONTENT_ROOT_ACTIVATION_HEIGHT="$2"; shift 2 ;;
         --enrollment-state-root-activation-height) ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT="$2"; shift 2 ;;
+        --strict-secrets)   STRICT_SECRETS=true; shift ;;
+        --authorized-block-producer)
+            [[ $# -ge 2 ]] || die "--authorized-block-producer requires an ID"
+            if [[ -n "$AUTHORIZED_BLOCK_PRODUCERS" ]]; then
+                AUTHORIZED_BLOCK_PRODUCERS+=",$2"
+            else
+                AUTHORIZED_BLOCK_PRODUCERS="$2"
+            fi
+            shift 2
+            ;;
         --dry-run)          DRY_RUN=1; shift ;;
         -h|--help)
             # Print everything between the shebang and the first blank line
@@ -158,6 +180,12 @@ if [[ "$REQUIRE_SIGNED_VOTES" == "true" && "$SIGNED_MESSAGE_ACTIVATION_HEIGHT" =
 fi
 if [[ "$REQUIRE_SIGNED_VOTES" == "false" && "$SIGNED_MESSAGE_ACTIVATION_HEIGHT" != "0" ]]; then
     die "--signed-message-activation-height must be 0 unless --require-signed-votes is set"
+fi
+STRICT_SECRETS="$(qsdm_normalize_bool "QSDM_STRICT_SECRETS" "$STRICT_SECRETS")"
+AUTHORIZED_BLOCK_PRODUCERS_TOML="$(qsdm_render_authorized_block_producers_toml "$AUTHORIZED_BLOCK_PRODUCERS")"
+AUTHORIZED_BLOCK_PRODUCER_COUNT="$(qsdm_authorized_block_producer_count "$AUTHORIZED_BLOCK_PRODUCERS")"
+if [[ "$STRICT_SECRETS" == "true" && "$AUTHORIZED_BLOCK_PRODUCER_COUNT" == "0" ]]; then
+    die "--strict-secrets requires at least one --authorized-block-producer (or QSDM_AUTHORIZED_BLOCK_PRODUCERS)"
 fi
 
 # --- pre-flight -------------------------------------------------------------
@@ -194,6 +222,8 @@ printf "    api port         = %s/tcp (loopback only)\n" "$API_PORT"
 printf "    dashboard port   = %s/tcp (loopback only)\n" "$DASHBOARD_PORT"
 printf "    bootstrap        = %s\n" "$BOOTSTRAP"
 printf "    qsdm_home        = %s\n" "$QSDM_HOME"
+printf "    strict_secrets   = %s\n" "$STRICT_SECRETS"
+printf "    producer pins    = %s\n" "$AUTHORIZED_BLOCK_PRODUCER_COUNT"
 printf "    dry_run          = %s\n" "$DRY_RUN"
 
 # Guard against running against the index-1 primary by mistake.
@@ -320,6 +350,7 @@ port        = ${API_PORT}
 enable_tls  = false
 tls_cert_file = ""
 tls_key_file  = ""
+strict_secrets = ${STRICT_SECRETS}
 
 [consensus]
 # Consensus messages are signed by every modern validator. Enforce rejection of
@@ -331,6 +362,7 @@ task_action_signature_activation_height = ${TASK_ACTION_SIGNATURE_ACTIVATION_HEI
 tx_content_root_activation_height = ${TX_CONTENT_ROOT_ACTIVATION_HEIGHT}
 enrollment_state_root_activation_height = ${ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT}
 signer_key_path = "qsdm_consensus_signer.json"
+${AUTHORIZED_BLOCK_PRODUCERS_TOML}
 
 [performance]
 transaction_interval = "1h"
