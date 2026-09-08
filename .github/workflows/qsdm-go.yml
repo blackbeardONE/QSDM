@@ -77,6 +77,7 @@ jobs:
           set -euo pipefail
           bash -n .github/scripts/resolve-release-tag.sh
           bash -n QSDM/deploy/landing/_install_docs_site.sh
+          bash QSDM/deploy/landing/test_install_docs_site_public_api_override.sh
           bash -n QSDM/deploy/scripts/publish_edge_release.sh
           bash -n QSDM/deploy/validator-package/install-or-update.sh
           bash -n QSDM/deploy/validator-package/rollback.sh
