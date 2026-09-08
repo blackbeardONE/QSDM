@@ -17,6 +17,14 @@ BACKUP_ROOT="/var/backups/qsdm-site"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 BACKUP_DIR="$BACKUP_ROOT/$STAMP"
 CADDY_CHANGED=false
+PUBLIC_API_BASE="${QSDM_PUBLIC_API_BASE_URL:-https://api.qsdm.tech}"
+PUBLIC_API_BASE="${PUBLIC_API_BASE%/}"
+PUBLIC_API_BASE="${PUBLIC_API_BASE%/api/v1}"
+if [[ "$PUBLIC_API_BASE" != https://* ]]; then
+  echo "QSDM_PUBLIC_API_BASE_URL must use https://" >&2
+  exit 1
+fi
+CORE_STATUS_URL="${PUBLIC_API_BASE}/api/v1/status"
 
 cleanup() {
   rm -rf "$STAGE"
@@ -98,7 +106,7 @@ if [[ -z "$hive_version" ]]; then
 fi
 
 core_status="$(curl --fail --silent --show-error --max-time 15 \
-  https://api.qsdm.tech/api/v1/status)"
+  "$CORE_STATUS_URL")"
 core_version="$(sed -n 's/.*"version":"\([^"]*\)".*/\1/p' <<<"$core_status")"
 if [[ -z "$core_version" ]]; then
   echo "could not read the current Core version" >&2

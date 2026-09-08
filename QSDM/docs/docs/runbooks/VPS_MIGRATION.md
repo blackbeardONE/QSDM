@@ -43,6 +43,18 @@ and `home_gateway_relay` unchanged. If you are testing a staging hostname first,
 point those fields to the staging hostname and switch DNS only after the staging
 checks pass.
 
+When installing the public website on the staging host, point its release
+alignment probe at that host instead of the existing public API:
+
+```bash
+QSDM_PUBLIC_API_BASE_URL="https://api.staging.example" \
+  bash /tmp/_install_docs_site.sh
+```
+
+The installer accepts either the public API root or a value ending in `/api/v1`.
+It requires HTTPS and retains `https://api.qsdm.tech` as the default when no
+override is supplied.
+
 ## Environment Overrides
 
 Use these when you need a one-off override without changing the shared file:
