@@ -88,6 +88,106 @@ function Get-QsdmEndpointHost {
     }
 }
 
+function Normalize-QsdmEndpointHost {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return ""
+    }
+    return $Value.Trim().Trim('[', ']').TrimEnd('.').ToLowerInvariant()
+}
+
+function Get-QsdmBootstrapPeerHost {
+    param([string]$Multiaddr)
+
+    if ([string]::IsNullOrWhiteSpace($Multiaddr)) {
+        return ""
+    }
+
+    $parts = @($Multiaddr.Trim().Split('/') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    for ($index = 0; $index -lt ($parts.Count - 1); $index += 2) {
+        $protocol = $parts[$index].ToLowerInvariant()
+        if ($protocol -in @('dns', 'dns4', 'dns6', 'dnsaddr', 'ip4', 'ip6')) {
+            return Normalize-QsdmEndpointHost -Value $parts[$index + 1]
+        }
+    }
+    return ""
+}
+
+function Get-QsdmSshTargetHost {
+    param([string]$Target)
+
+    if ([string]::IsNullOrWhiteSpace($Target)) {
+        return ""
+    }
+
+    $value = $Target.Trim()
+    if ($value -match '^[A-Za-z][A-Za-z0-9+.-]*://') {
+        return Normalize-QsdmEndpointHost -Value (Get-QsdmEndpointHost -Value $value)
+    }
+
+    $atIndex = $value.LastIndexOf('@')
+    if ($atIndex -ge 0) {
+        $value = $value.Substring($atIndex + 1)
+    }
+    if ($value.StartsWith('[')) {
+        $closingIndex = $value.IndexOf(']')
+        if ($closingIndex -gt 1) {
+            return Normalize-QsdmEndpointHost -Value $value.Substring(1, $closingIndex - 1)
+        }
+    }
+    if ($value -match '^(?<host>[^:]+):\d+$') {
+        return Normalize-QsdmEndpointHost -Value $Matches.host
+    }
+    return Normalize-QsdmEndpointHost -Value $value
+}
+
+function Get-QsdmReferenceEndpointHosts {
+    param(
+        [string[]]$CoreApiBases = @(),
+        [string[]]$Relays = @(),
+        [string[]]$BootstrapPeers = @(),
+        [string[]]$SshTargets = @()
+    )
+
+    $hosts = @()
+    foreach ($value in $CoreApiBases + $Relays) {
+        $hostName = Normalize-QsdmEndpointHost -Value (Get-QsdmEndpointHost -Value $value)
+        if (-not [string]::IsNullOrWhiteSpace($hostName)) {
+            $hosts += $hostName
+        }
+    }
+    foreach ($value in $BootstrapPeers) {
+        $hostName = Get-QsdmBootstrapPeerHost -Multiaddr $value
+        if (-not [string]::IsNullOrWhiteSpace($hostName)) {
+            $hosts += $hostName
+        }
+    }
+    foreach ($value in $SshTargets) {
+        $hostName = Get-QsdmSshTargetHost -Target $value
+        if (-not [string]::IsNullOrWhiteSpace($hostName)) {
+            $hosts += $hostName
+        }
+    }
+    return @($hosts | Sort-Object -Unique)
+}
+
+function Test-QsdmNonReferenceEndpointHost {
+    param(
+        [string]$CandidateHost,
+        [string[]]$ReferenceHosts = @()
+    )
+
+    $candidate = Normalize-QsdmEndpointHost -Value $CandidateHost
+    if ([string]::IsNullOrWhiteSpace($candidate)) {
+        return $false
+    }
+    $normalizedReferences = @($ReferenceHosts | ForEach-Object {
+        Normalize-QsdmEndpointHost -Value $_
+    } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    return ($normalizedReferences -notcontains $candidate)
+}
+
 function Get-QsdmNoProxyList {
     param([string[]]$EndpointValues = @())
 

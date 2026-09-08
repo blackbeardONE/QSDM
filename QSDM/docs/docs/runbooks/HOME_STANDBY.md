@@ -31,8 +31,14 @@ A machine is not VPS-independent until all of these are true:
 5. Hive, miners, and websites have an alternate API endpoint. A local standby
    alone cannot make a single public URL redundant.
 
-If the only values are `api.qsdm.tech`, the machine is a standby for that VPS,
-not an independent source.
+The verifier compares bootstrap and sync hosts with every configured public
+reference host: the Core API, gateway relay, reference bootstrap peer, and
+release SSH target. This prevents a hostname-only VPS migration from being
+mistaken for an independent source. It is a configuration-level check, not a
+proof that two different hostnames are operated by different organizations.
+
+If every source resolves to the configured public infrastructure, the machine
+is a standby for that infrastructure, not an independent source.
 
 ## Prepare the follower
 

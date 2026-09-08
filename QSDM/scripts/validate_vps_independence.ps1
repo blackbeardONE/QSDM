@@ -17,6 +17,32 @@ $localRoot = Join-Path $QsdmRoot "source\.cache\local-validator"
 $modePath = Join-Path $localRoot "validator-mode.json"
 $checks = [ordered]@{}
 
+$referenceCoreApiBases = @(
+    (Get-QsdmEndpointValue -Name "core_api_base" -EnvVar "QSDM_PUBLIC_API_BASE_URL") -split ',' |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ }
+)
+$referenceBootstrapPeers = @(
+    (Get-QsdmEndpointValue -Name "reference_bootstrap_peer" -EnvVar "QSDM_REFERENCE_BOOTSTRAP_PEER") -split ',' |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ }
+)
+$referenceSshTargets = @(
+    (Get-QsdmEndpointValue -Name "vps_ssh_target" -EnvVar "QSDM_RELEASE_SSH_TARGET") -split ',' |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ }
+)
+$referenceHosts = @(Get-QsdmReferenceEndpointHosts `
+    -CoreApiBases $referenceCoreApiBases `
+    -Relays @($Relay) `
+    -BootstrapPeers $referenceBootstrapPeers `
+    -SshTargets $referenceSshTargets)
+$referenceHostDetail = if ($referenceHosts.Count -gt 0) {
+    $referenceHosts -join ', '
+} else {
+    'none'
+}
+
 function Add-Check {
     param([string]$Name, [bool]$Passed, [string]$Detail)
     $checks[$Name] = [ordered]@{ passed = $Passed; detail = $Detail }
@@ -51,8 +77,8 @@ if (-not (Test-Path -LiteralPath $modePath -PathType Leaf)) {
     Add-Check "role_profile" $false "Missing validator-mode.json"
     Add-Check "public_p2p_requested" $false "publicP2P=False"
     Add-Check "cgnat_fallback_enabled" $false "cgnatFallback=False"
-    Add-Check "alternate_bootstrap" $false "non-VPS bootstrap peers=0"
-    Add-Check "alternate_chain_sync" $false "non-VPS HTTPS sources=0"
+    Add-Check "alternate_bootstrap" $false "non-reference bootstrap peers=0; reference hosts=$referenceHostDetail"
+    Add-Check "alternate_chain_sync" $false "non-reference HTTPS sources=0; reference hosts=$referenceHostDetail"
 } else {
     try {
         $mode = Get-Content -Raw -LiteralPath $modePath | ConvertFrom-Json
@@ -81,11 +107,17 @@ if (-not (Test-Path -LiteralPath $modePath -PathType Leaf)) {
         Add-Check "public_p2p_requested" $publicP2P ("publicP2P={0}" -f $publicP2P)
         Add-Check "cgnat_fallback_enabled" $cgnatFallback ("cgnatFallback={0}, connectivityMode={1}" -f $cgnatFallback, $connectivityMode)
         $bootstrap = @([string]$mode.bootstrapPeers -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-        $independentBootstrap = @($bootstrap | Where-Object { $_ -notmatch '(?i)api\.qsdm\.tech' -and $_ -match '/p2p/' })
-        Add-Check "alternate_bootstrap" ($independentBootstrap.Count -gt 0) ("non-VPS bootstrap peers={0}" -f $independentBootstrap.Count)
+        $independentBootstrap = @($bootstrap | Where-Object {
+            $bootstrapHost = Get-QsdmBootstrapPeerHost -Multiaddr $_
+            $_ -match '/p2p/' -and (Test-QsdmNonReferenceEndpointHost -CandidateHost $bootstrapHost -ReferenceHosts $referenceHosts)
+        })
+        Add-Check "alternate_bootstrap" ($independentBootstrap.Count -gt 0) ("non-reference bootstrap peers={0}; reference hosts={1}" -f $independentBootstrap.Count, $referenceHostDetail)
         $sync = @([string]$mode.chainSyncUrls -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-        $independentSync = @($sync | Where-Object { $_ -notmatch '(?i)api\.qsdm\.tech' -and $_ -match '^https://' })
-        Add-Check "alternate_chain_sync" ($independentSync.Count -gt 0) ("non-VPS HTTPS sources={0}" -f $independentSync.Count)
+        $independentSync = @($sync | Where-Object {
+            $syncHost = Get-QsdmEndpointHost -Value $_
+            $_ -match '^https://' -and (Test-QsdmNonReferenceEndpointHost -CandidateHost $syncHost -ReferenceHosts $referenceHosts)
+        })
+        Add-Check "alternate_chain_sync" ($independentSync.Count -gt 0) ("non-reference HTTPS sources={0}; reference hosts={1}" -f $independentSync.Count, $referenceHostDetail)
     } catch {
         Add-Check "role_profile" $false "Invalid validator-mode.json: $($_.Exception.Message)"
         Add-Check "public_p2p_requested" $false "Cannot read publicP2P"
@@ -153,6 +185,7 @@ $posture = if ($independenceReady) {
     cgnat_fallback_ready = $fallbackReady
     operational_posture = $posture
     fallback_accepted_for_exit = [bool]$AcceptFallback
+    reference_hosts = $referenceHosts
     checks = $checks
 } | ConvertTo-Json -Depth 6
 

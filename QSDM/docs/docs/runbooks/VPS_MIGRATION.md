@@ -83,6 +83,12 @@ qsdmcli trustcheck --base https://<new-api-host> --min-attested 2 --check-mining
 The node should report a matching chain identity, advancing height, healthy
 `/api/v1/status`, and a working `/api/v1/mining/work` path before the DNS move.
 
+The independence verifier derives its public reference-host set from all four
+endpoint fields above. Keep `core_api_base`, `home_gateway_relay`,
+`reference_bootstrap_peer`, and `vps_ssh_target` aligned in the temporary file
+before using its result. A new hostname alone is not evidence of independent
+infrastructure; add a separately operated peer and sync API for that.
+
 ## CGNAT Fallback
 
 A home or office machine behind CGNAT can still publish restricted routes
