@@ -755,6 +755,15 @@ func shortAge(d time.Duration) string {
 	}
 }
 
+func defaultValidatorURL() string {
+	for _, key := range []string{"QSDM_MINER_DEFAULT_VALIDATOR_URL", "QSDM_PUBLIC_API_BASE_URL"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return strings.TrimRight(value, "/")
+		}
+	}
+	return "https://api.qsdm.tech"
+}
+
 func truncateForLine(s string, max int) string {
 	if len(s) <= max {
 		return s
@@ -781,7 +790,7 @@ func runSetup(path string, cur Config) (Config, error) {
 	fmt.Println()
 
 	validator := prompt("Validator URL",
-		orDefault(cur.ValidatorURL, "https://testnet.qsdm.tech"))
+		orDefault(cur.ValidatorURL, defaultValidatorURL()))
 	validator = strings.TrimRight(strings.TrimSpace(validator), "/")
 
 	addr := prompt("Reward address ("+branding.CoinSymbol+")",
@@ -1179,7 +1188,7 @@ func realMain(parentCtx context.Context) int {
 		fmt.Println("Next: bond the key on-chain so validators will accept your v2 proofs.")
 		fmt.Println("Example (replace placeholders):")
 		fmt.Printf("  qsdmcli enroll \\\n")
-		fmt.Printf("    --validator https://testnet.qsdm.tech \\\n")
+		fmt.Printf("    --validator %s \\\n", defaultValidatorURL())
 		fmt.Printf("    --sender   <YOUR_REWARD_ADDRESS> \\\n")
 		fmt.Printf("    --node-id  <NODE_ID>          \\\n")
 		fmt.Printf("    --gpu-uuid <GPU_UUID>         \\\n")

@@ -64,6 +64,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/keystore"
@@ -108,6 +109,15 @@ type nonceResponse struct {
 	Next   uint64 `json:"next"`
 }
 
+func defaultWalletAPIURL() string {
+	for _, key := range []string{"QSDM_WALLET_API_URL", "QSDM_PUBLIC_API_BASE_URL"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return strings.TrimRight(value, "/")
+		}
+	}
+	return "https://api.qsdm.tech"
+}
+
 func (c *CLI) walletSignTx(args []string) error {
 	fs := flag.NewFlagSet("wallet sign-tx", flag.ContinueOnError)
 	in := fs.String("in", "", "keystore path (default: ~/.qsdm/wallet.json)")
@@ -115,7 +125,7 @@ func (c *CLI) walletSignTx(args []string) error {
 	envelopeFile := fs.String("envelope-file", "-", "JSON envelope to sign ('-' for stdin)")
 	nonceFlag := fs.Uint64("nonce", 0, "v0.4.1 nonce to stamp on the envelope (mutually exclusive with --auto-nonce)")
 	autoNonce := fs.Bool("auto-nonce", false, "fetch the next nonce from --api-url before signing")
-	apiURL := fs.String("api-url", "https://api.qsdm.tech", "validator base URL for --auto-nonce (no trailing slash)")
+	apiURL := fs.String("api-url", defaultWalletAPIURL(), "validator base URL for --auto-nonce (no trailing slash)")
 	timeout := fs.Duration("api-timeout", 10*time.Second, "HTTP timeout for --auto-nonce lookup")
 	if err := fs.Parse(args); err != nil {
 		return err

@@ -19,10 +19,18 @@ export type QsdmCoreConnectionMode = 'local' | 'gateway' | 'custom';
 
 export const QSDM_DEFAULT_LOCAL_CORE_API_URL = 'http://127.0.0.1:8080/api/v1';
 
-export const QSDM_OFFICIAL_GATEWAY_API_URL =
-  'https://api.qsdm.tech/attest/home-validator/api/v1';
+export const QSDM_PUBLIC_API_BASE_URL = trimTrailingSlash(
+  readEnv('QSDM_PUBLIC_API_BASE_URL', 'https://api.qsdm.tech')
+);
 
-export const QSDM_OFFICIAL_CANONICAL_API_URL = 'https://api.qsdm.tech/api/v1';
+export const QSDM_HOME_GATEWAY_SLOT = readEnv(
+  'QSDM_HOME_GATEWAY_SLOT',
+  'home-validator'
+);
+
+export const QSDM_OFFICIAL_GATEWAY_API_URL = `${QSDM_PUBLIC_API_BASE_URL}/attest/${QSDM_HOME_GATEWAY_SLOT}/api/v1`;
+
+export const QSDM_OFFICIAL_CANONICAL_API_URL = `${QSDM_PUBLIC_API_BASE_URL}/api/v1`;
 
 export const QSDM_CANONICAL_GENESIS_HASH =
   'b6119386bb6918d0716ab9d7f51864b58c20d542e6beab261151e8d4f9a8feb6';
