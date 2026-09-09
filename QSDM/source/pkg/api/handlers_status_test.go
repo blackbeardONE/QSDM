@@ -297,3 +297,52 @@ func TestServerAppliesPendingValidatorSetSourceAtRouteRegistration(t *testing.T)
 		t.Fatalf("validator-set snapshot = %#v, want active_count=2 and fingerprint", got)
 	}
 }
+
+func TestStatusHandler_ReportsBlockProductionPosture(t *testing.T) {
+	h := setupTestHandlers()
+	h.SetBlockProductionPosture(BlockProductionInfo{
+		Role:                    "network-producer",
+		MultiValidatorConsensus: false,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	rec := httptest.NewRecorder()
+	h.StatusHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var resp StatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.BlockProduction == nil {
+		t.Fatal("block_production missing")
+	}
+	if resp.BlockProduction.Role != "network-producer" || resp.BlockProduction.MultiValidatorConsensus {
+		t.Fatalf("block_production = %#v, want network-producer with multi-validator consensus disabled", resp.BlockProduction)
+	}
+}
+
+func TestServerAppliesPendingBlockProductionPostureAtRouteRegistration(t *testing.T) {
+	s := &Server{config: &config.Config{}}
+	s.SetBlockProductionPosture(BlockProductionInfo{
+		Role:                    "network-follower",
+		MultiValidatorConsensus: false,
+	})
+	if s.pendingBlockProduction == nil {
+		t.Fatal("pre-start block-production posture was not retained")
+	}
+
+	s.registerRoutes(http.NewServeMux())
+	if s.handlers == nil {
+		t.Fatal("route registration did not create handlers")
+	}
+	if s.pendingBlockProduction != nil {
+		t.Fatal("pending block-production posture was not applied")
+	}
+	got := s.handlers.snapshotBlockProduction()
+	if got == nil || got.Role != "network-follower" || got.MultiValidatorConsensus {
+		t.Fatalf("block-production snapshot = %#v, want network-follower with multi-validator consensus disabled", got)
+	}
+}

@@ -63,7 +63,9 @@ Every public endpoint lives under `/api/v1/*`. This includes:
   - `GET  /api/v1/health` — liveness probe (200 OK if up).
   - `GET  /api/v1/status` — node id, chain tip, peer count,
     mining posture (includes `protocol_versions_accepted`), consensus-auth
-    posture, and a local active-validator count plus membership fingerprint.
+    posture, a local active-validator count plus membership fingerprint, and
+    the node's block-production role. `block_production.multi_validator_consensus`
+    remains false until QSDM has a quorum-backed multi-validator block-commit path.
 
 The `v1` in the URL is the API URL prefix, not a deprecation flag.
 It signals stable wire compatibility — any change that would break a

@@ -63,6 +63,10 @@ type StatusResponse struct {
 	// quorum or an instruction to activate signed voting.
 	ValidatorSet ValidatorSetInfo `json:"validator_set"`
 
+	// BlockProduction states the node's current block-production topology.
+	// It is observability data, not a finality proof.
+	BlockProduction *BlockProductionInfo `json:"block_production,omitempty"`
+
 	// Mining is the consensus-visible mining-protocol state. Miners
 	// MUST inspect this block at startup to decide which protocol to
 	// submit proofs under — submitting v1 against a validator whose
@@ -80,6 +84,14 @@ type StatusResponse struct {
 type ValidatorSetInfo struct {
 	ActiveCount int    `json:"active_count"`
 	Fingerprint string `json:"fingerprint,omitempty"`
+}
+
+// BlockProductionInfo describes how this node participates in block
+// production. MultiValidatorConsensus remains false until QSDM has a
+// chain-committed membership and quorum-backed block commit path.
+type BlockProductionInfo struct {
+	Role                    string `json:"role"`
+	MultiValidatorConsensus bool   `json:"multi_validator_consensus"`
 }
 
 type consensusAuthPosture struct {
@@ -246,6 +258,7 @@ func (h *Handlers) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	peers := h.snapshotPeerCount()
 	chainTip := h.snapshotChainTip()
 	validatorSet := h.snapshotValidatorSet()
+	blockProduction := h.snapshotBlockProduction()
 
 	role := config.NodeRoleValidator
 	if h.nodeRole != "" {
@@ -275,6 +288,7 @@ func (h *Handlers) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		TaskActionsReady: TaskActionSubmissionReady(),
 		ConsensusAuth:    h.buildConsensusAuthInfo(chainTip),
 		ValidatorSet:     validatorSet,
+		BlockProduction:  blockProduction,
 		Coin: CoinInfo{
 			Name:         branding.CoinName,
 			Symbol:       branding.CoinSymbol,
@@ -344,6 +358,16 @@ func (h *Handlers) snapshotValidatorSet() ValidatorSetInfo {
 	return snapshot
 }
 
+// snapshotBlockProduction returns a copy so callers cannot mutate the
+// handler's configured startup posture.
+func (h *Handlers) snapshotBlockProduction() *BlockProductionInfo {
+	if h.blockProduction == nil {
+		return nil
+	}
+	posture := *h.blockProduction
+	return &posture
+}
+
 // SetNodeRole records the operator-declared node role. Called once at server
 // startup from registerRoutes. The role string is validated and normalised;
 // an unknown value is silently coerced to "validator" so the endpoint never
@@ -373,6 +397,12 @@ func (h *Handlers) SetChainTipSource(fn func() uint64) {
 // quickly because it runs on every status hit.
 func (h *Handlers) SetValidatorSetSource(fn func() ValidatorSetInfo) {
 	h.validatorSetSource = fn
+}
+
+// SetBlockProductionPosture records the static block-production topology for
+// the public status response. Call during startup before serving requests.
+func (h *Handlers) SetBlockProductionPosture(posture BlockProductionInfo) {
+	h.blockProduction = &posture
 }
 
 // SetConsensusAuthPosture records the operator's consensus-authentication

@@ -2885,6 +2885,10 @@ func main() {
 					Fingerprint: fingerprint,
 				}
 			})
+			apiServer.SetBlockProductionPosture(api.BlockProductionInfo{
+				Role:                    string(productionRole),
+				MultiValidatorConsensus: false,
+			})
 			apiServer.SetTxGossipBroadcast(func(b []byte) error {
 				if txGossipRelay != nil {
 					return txGossipRelay.MaybePublishOpaque(b)

@@ -1119,8 +1119,9 @@ paths:
         Unauthenticated public-read endpoint surfacing the `node_role`
         (`validator`/`miner`), build profile, mining flag, the native
         coin metadata (Cell / CELL / 8 decimals), branding strings,
-        a snapshot of the §8 emission schedule, and the `consensus_auth`
-        rollout posture. Powers the SDK client's "what kind of node am I
+        a snapshot of the §8 emission schedule, the `consensus_auth` rollout
+        posture, the local `validator_set` snapshot, and the current
+        `block_production` topology. Powers the SDK client's "what kind of node am I
         talking to?" probe and the dashboard's network/role/coin pills.
       operationId: nodeStatus
       responses:
@@ -2204,6 +2205,10 @@ components:
           additionalProperties: true
         consensus_auth:
           $ref: '#/components/schemas/ConsensusAuthInfo'
+        validator_set:
+          $ref: '#/components/schemas/ValidatorSetInfo'
+        block_production:
+          $ref: '#/components/schemas/BlockProductionInfo'
         version:
           type: string
           description: Semver of the running binary
@@ -2252,6 +2257,35 @@ components:
         tx_content_root_active:
           type: boolean
           description: True when block transaction-content roots are enforced.
+
+    ValidatorSetInfo:
+      type: object
+      description: Local active-validator membership snapshot for rollout comparison; it is not a quorum proof.
+      required:
+        - active_count
+      properties:
+        active_count:
+          type: integer
+          minimum: 0
+          description: Number of active validators in this node's local snapshot.
+        fingerprint:
+          type: string
+          description: Stable hash of active member addresses for cross-node comparison.
+
+    BlockProductionInfo:
+      type: object
+      description: Current block-production topology. It is observability data, not a finality proof.
+      required:
+        - role
+        - multi_validator_consensus
+      properties:
+        role:
+          type: string
+          enum: [solo, network-producer, network-follower]
+          description: Whether this node is a local solo producer, the configured network producer, or a network follower.
+        multi_validator_consensus:
+          type: boolean
+          description: True only when the running topology uses a quorum-backed multi-validator block-commit path.
 
     # ------------------------------------------------------------------
     # Audit checklist (Session 77 / v0.4.2)
