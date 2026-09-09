@@ -17,7 +17,7 @@ import (
 
 const (
 	persistentBFTSignerKeyVersion = 1
-	maxBFTSignerKeyFileSize      = 64 << 10
+	maxBFTSignerKeyFileSize       = 64 << 10
 )
 
 type persistentBFTSignerKeyFile struct {
@@ -103,6 +103,33 @@ func LoadOrCreateBFTSigner(path string) (*PersistentBFTSigner, bool, error) {
 	return newPersistentBFTSigner(privateKey, publicBytes), true, nil
 }
 
+// LoadBFTSigner loads an existing validator consensus key without creating a
+// new one. Callers that only need to publish a validator's public identity
+// should use this instead of LoadOrCreateBFTSigner so a typo cannot silently
+// generate a different validator identity.
+func LoadBFTSigner(path string) (*PersistentBFTSigner, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, errors.New("chain: consensus signer key path is empty")
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("chain: consensus signer key %q does not exist", path)
+		}
+		return nil, fmt.Errorf("chain: stat consensus signer key %q: %w", path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("chain: consensus signer key %q must not be a symlink", path)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("chain: consensus signer key %q is not a regular file", path)
+	}
+	if info.Size() > maxBFTSignerKeyFileSize {
+		return nil, fmt.Errorf("chain: consensus signer key %q exceeds %d bytes", path, maxBFTSignerKeyFileSize)
+	}
+	return loadBFTSigner(path)
+}
 func loadBFTSigner(path string) (*PersistentBFTSigner, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
