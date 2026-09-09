@@ -112,6 +112,10 @@ go run ./cmd/qsdm-consensus-rollout \
   --node https://second-validator.example/api/v1
 ```
 
+The preflight requires two distinct validator node IDs by default. Its
+`--allow-single-node` option is only for inspecting one node during setup; it
+never declares a rollout ready and never emits a shared activation height.
+
 For automation, add `--json`. To validate an operator-chosen height instead of
 using the suggestion, pass `--activation-height <height>`. A height at or below
 the current highest tip is refused.

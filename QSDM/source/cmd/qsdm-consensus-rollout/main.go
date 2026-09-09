@@ -39,6 +39,7 @@ type options struct {
 	activationHeight uint64
 	timeout          time.Duration
 	jsonOutput       bool
+	allowSingleNode  bool
 }
 
 type statusResponse struct {
@@ -107,7 +108,7 @@ func main() {
 		}, opts.jsonOutput)
 	}
 
-	v := evaluate(reports, opts.headroomBlocks, opts.activationHeight)
+	v := evaluate(reports, opts.headroomBlocks, opts.activationHeight, opts.allowSingleNode)
 	if opts.jsonOutput {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -128,6 +129,7 @@ func parseFlags(args []string) options {
 	fs.Uint64Var(&opts.activationHeight, "activation-height", 0, "Optional operator-chosen activation height to validate instead of only suggesting one.")
 	fs.DurationVar(&opts.timeout, "timeout", 10*time.Second, "Total timeout for all status requests.")
 	fs.BoolVar(&opts.jsonOutput, "json", false, "Emit machine-readable JSON.")
+	fs.BoolVar(&opts.allowSingleNode, "allow-single-node", false, "Allow a diagnostic-only single-node inspection; never treats one node as rollout readiness.")
 	_ = fs.Parse(args)
 	return opts
 }
@@ -221,7 +223,7 @@ func reportFromStatus(statusURL string, st statusResponse) nodeReport {
 	}
 }
 
-func evaluate(reports []nodeReport, headroomBlocks, activationHeight uint64) verdict {
+func evaluate(reports []nodeReport, headroomBlocks, activationHeight uint64, allowSingleNode bool) verdict {
 	v := verdict{
 		OK:      true,
 		State:   "ready_to_schedule",
@@ -295,6 +297,13 @@ func evaluate(reports []nodeReport, headroomBlocks, activationHeight uint64) ver
 		}
 	}
 
+	if len(reports) == 1 && !allowSingleNode {
+		v.Errors = append(v.Errors, "a multi-validator rollout needs at least two distinct node reports; add another --node URL")
+	}
+	if len(reports) > 1 && len(seenNodeIDs) < 2 {
+		v.Errors = append(v.Errors, "a multi-validator rollout needs at least two distinct node_ids")
+	}
+
 	if requireTrue > 0 && requireFalse > 0 {
 		v.Errors = append(v.Errors, "mixed rollout posture: some nodes require signed votes and some still accept unsigned votes")
 	}
@@ -338,6 +347,13 @@ func evaluate(reports []nodeReport, headroomBlocks, activationHeight uint64) ver
 		v.OK = false
 		v.State = "blocked"
 		v.Message = "signed consensus enforcement is not safe to schedule from this snapshot"
+		return v
+	}
+	if len(reports) == 1 && allowSingleNode {
+		v.State = "single_node_diagnostic"
+		v.Message = "single-node diagnostic completed; it does not prove multi-validator rollout readiness"
+		v.SuggestedActivationHeight = 0
+		v.Warnings = append(v.Warnings, "no shared activation height is emitted from a single-node diagnostic")
 	}
 	return v
 }
