@@ -99,11 +99,41 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\hive_production_acceptan
 ```
 
 ```powershell
-qsdmcli trustcheck --base https://<new-api-host> --min-attested 2 --check-mining-path
+trustcheck --base https://<new-api-host> --min-attested 0 --check-mining-path
 ```
 
 The node should report a matching chain identity, advancing height, healthy
 `/api/v1/status`, and a working `/api/v1/mining/work` path before the DNS move.
+
+`trustcheck` is a separate released binary, not a `qsdmcli` subcommand. The
+zero attestation floor above is intentional during initial staging: it proves
+the public read and mining paths without pretending that independent attesters
+already exist. After cutover, restore the production floor appropriate to the
+network (currently two):
+
+```powershell
+trustcheck --base https://api.qsdm.tech --min-attested 2 --check-mining-path
+```
+
+Run the public checks from at least two distinct networks: one may be the new
+VPS, but the other must be outside that VPS provider. A successful loopback,
+LAN, or same-provider request cannot prove that public DNS, TLS, and firewall
+rules work for users.
+
+## Public Edge Verification
+
+Before any DNS change, use a temporary HTTPS hostname on the new VPS and
+confirm all of the following without mutating chain state:
+
+```powershell
+curl.exe --fail --silent --show-error https://<new-api-host>/api/v1/status
+trustcheck --base https://<new-api-host> --min-attested 0 --check-mining-path
+```
+
+Then repeat those checks from an independent network. The scheduled GitHub
+Actions **Trust transparency external probe** is an additional independent
+observer after public DNS points to the new host. Treat a timeout there as a
+public-edge incident, not as a harmless CI failure.
 
 The independence verifier derives its public reference-host set from all four
 endpoint fields above. Keep `core_api_base`, `home_gateway_relay`,
@@ -133,13 +163,21 @@ API.
 
 ## Cutover Order
 
-1. Build and smoke-test the new VPS binary.
-2. Start the new VPS as a follower and let it catch up.
-3. Confirm trust, audit, mining, wallet, and Hive reads all work on the new API.
-4. Stop and fence the old producer before promoting another producer.
-5. Update DNS for `api.qsdm.tech` and `node.qsdm.tech` only after checks pass.
-6. Re-run trustcheck and Hive production acceptance through the public domains.
-7. Keep the old VPS data and binary available for rollback until the new node
+1. Record the current DNS records, chain tip, binary hash, and a rollback
+   contact for the old provider.
+2. Build and smoke-test the new VPS binary.
+3. Start the new VPS as a follower and let it catch up from a trusted source.
+4. Confirm trust, audit, mining, wallet, and Hive reads through a temporary
+   HTTPS hostname from two independent networks.
+5. Stop and fence the old producer before promoting another producer. If the
+   old host is unreachable, use the provider control plane to power it off or
+   block its network access; a failed SSH connection is not proof that it has
+   stopped producing blocks.
+6. Update DNS for `api.qsdm.tech` and `node.qsdm.tech` only after all checks
+   pass.
+7. Re-run trustcheck and Hive production acceptance through the public domains,
+   then confirm the next scheduled external trustcheck succeeds.
+8. Keep the old VPS data and binary available for rollback until the new node
    has survived at least one release cycle.
 
 Do not expose wallet passphrases, keystore JSON, dashboard secrets, or local
