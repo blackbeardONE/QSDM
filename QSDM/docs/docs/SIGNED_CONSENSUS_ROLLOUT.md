@@ -5,7 +5,11 @@ proofs, round certificates, and equivocation evidence with ML-DSA-87. Signature
 enforcement is height-gated so validators can be upgraded before the network
 switches policy at one shared block height.
 
-This is a validator-set operation. Never enable it on only one validator.
+This is a validator-set operation. Never enable it on only one validator. A
+network that intends to tolerate one faulty validator needs at least four
+active validators with the same effective set. Two- and three-validator
+checks are useful for a laboratory, but they are not proof of one-fault BFT
+readiness.
 
 ## Validator identity
 
@@ -112,9 +116,16 @@ go run ./cmd/qsdm-consensus-rollout \
   --node https://second-validator.example/api/v1
 ```
 
-The preflight requires two distinct validator node IDs by default. Its
-`--allow-single-node` option is only for inspecting one node during setup; it
-never declares a rollout ready and never emits a shared activation height.
+The preflight requires two distinct validator node IDs by default. It also
+requires every checked node to report the same non-empty
+`validator_set.fingerprint` and the same `validator_set.active_count` of at
+least two. This is a membership-snapshot check: it does not prove quorum,
+create validator membership, or activate enforcement. A node that has not
+been upgraded to report this snapshot blocks the preflight instead of being
+silently treated as compatible.
+
+Its `--allow-single-node` option is only for inspecting one node during setup;
+it never declares a rollout ready and never emits a shared activation height.
 
 For automation, add `--json`. To validate an operator-chosen height instead of
 using the suggestion, pass `--activation-height <height>`. A height at or below
