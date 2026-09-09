@@ -185,6 +185,61 @@ func TestBFT_GetCommitted(t *testing.T) {
 	}
 }
 
+func TestBFT_GetCommittedReturnsIsolatedSnapshot(t *testing.T) {
+	bc, _ := setupBFT(t)
+	bc.Propose(1, 0, "v1", "hash-1")
+	bc.PreVote(1, "v1", "hash-1")
+	bc.PreVote(1, "v2", "hash-1")
+	bc.PreCommit(1, "v1", "hash-1")
+	bc.PreCommit(1, "v2", "hash-1")
+
+	snapshot, ok := bc.GetCommitted(1)
+	if !ok {
+		t.Fatal("expected committed round")
+	}
+	snapshot.BlockHash = "tampered"
+	snapshot.PreVotes[0].BlockHash = "tampered-prevote"
+	snapshot.Commits[0].Validator = "tampered-commit"
+
+	fresh, ok := bc.GetCommitted(1)
+	if !ok {
+		t.Fatal("expected committed round after snapshot mutation")
+	}
+	if fresh.BlockHash != "hash-1" {
+		t.Fatalf("committed block hash mutated through snapshot: %q", fresh.BlockHash)
+	}
+	if fresh.PreVotes[0].BlockHash != "hash-1" {
+		t.Fatalf("committed prevote mutated through snapshot: %q", fresh.PreVotes[0].BlockHash)
+	}
+	if fresh.Commits[0].Validator != "v1" {
+		t.Fatalf("committed precommit mutated through snapshot: %q", fresh.Commits[0].Validator)
+	}
+}
+
+func TestBFT_GetRoundReturnsIsolatedSnapshot(t *testing.T) {
+	bc, _ := setupBFT(t)
+	bc.Propose(1, 0, "v1", "hash-1")
+	bc.PreVote(1, "v1", "hash-1")
+
+	snapshot, ok := bc.GetRound(1)
+	if !ok {
+		t.Fatal("expected active round")
+	}
+	snapshot.BlockHash = "tampered"
+	snapshot.PreVotes[0].BlockHash = "tampered-prevote"
+
+	fresh, ok := bc.GetRound(1)
+	if !ok {
+		t.Fatal("expected active round after snapshot mutation")
+	}
+	if fresh.BlockHash != "hash-1" {
+		t.Fatalf("active block hash mutated through snapshot: %q", fresh.BlockHash)
+	}
+	if fresh.PreVotes[0].BlockHash != "hash-1" {
+		t.Fatalf("active prevote mutated through snapshot: %q", fresh.PreVotes[0].BlockHash)
+	}
+}
+
 func TestBFT_StakeWeightedQuorum(t *testing.T) {
 	vs := NewValidatorSet(DefaultValidatorSetConfig())
 	vs.Register("big", 1000)   // 2/3 of total stake
