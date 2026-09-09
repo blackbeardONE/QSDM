@@ -62,7 +62,8 @@ Every public endpoint lives under `/api/v1/*`. This includes:
 - **Health and live posture.**
   - `GET  /api/v1/health` — liveness probe (200 OK if up).
   - `GET  /api/v1/status` — node id, chain tip, peer count,
-    mining posture (includes `protocol_versions_accepted`).
+    mining posture (includes `protocol_versions_accepted`), consensus-auth
+    posture, and a local active-validator count plus membership fingerprint.
 
 The `v1` in the URL is the API URL prefix, not a deprecation flag.
 It signals stable wire compatibility — any change that would break a

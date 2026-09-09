@@ -63,6 +63,7 @@ type Handlers struct {
 	nodeRole             string
 	peerCountSource      func() int
 	chainTipSource       func() uint64
+	validatorSetSource   func() ValidatorSetInfo
 	consensusAuthPosture consensusAuthPosture
 
 	// csrfManager is the (optional) issuer/validator used by the
@@ -209,6 +210,10 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	if s.pendingPeerCountSource != nil {
 		handlers.SetPeerCountSource(s.pendingPeerCountSource)
 		s.pendingPeerCountSource = nil
+	}
+	if s.pendingValidatorSetSource != nil {
+		handlers.SetValidatorSetSource(s.pendingValidatorSetSource)
+		s.pendingValidatorSetSource = nil
 	}
 
 	if s.tokenRegistryPath != "" {

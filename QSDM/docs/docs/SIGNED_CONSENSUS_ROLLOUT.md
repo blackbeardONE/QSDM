@@ -89,6 +89,21 @@ compatibility posture is:
 }
 ```
 
+The same response also includes a `validator_set` summary:
+
+```json
+{
+  "active_count": 2,
+  "fingerprint": "<stable hash of the active member set>"
+}
+```
+
+Every validator involved in a rollout must report the same non-empty
+fingerprint and an `active_count` of at least two before operators schedule a
+shared activation height. This is a local membership-snapshot check only: it
+does not create validator membership, prove a quorum, or activate signed
+consensus by itself.
+
 On 2026-08-29, `node.qsdm.tech` was verified on commit `238a0e9` with this
 compatibility posture, while task-action signatures and transaction-content
 roots were already active from height `625000`. Mining enrollment/slashing

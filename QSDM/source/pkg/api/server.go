@@ -54,8 +54,9 @@ type Server struct {
 	// apply at registerRoutes time. Without this stash, every
 	// SetChainTipSource call before Start would silently
 	// no-op against the nil s.handlers.
-	pendingChainTipSource  func() uint64
-	pendingPeerCountSource func() int
+	pendingChainTipSource     func() uint64
+	pendingPeerCountSource    func() int
+	pendingValidatorSetSource func() ValidatorSetInfo
 }
 
 // StorageInterface defines the storage interface for the API
@@ -469,6 +470,20 @@ func (s *Server) SetPeerCountSource(fn func() int) {
 		return
 	}
 	s.pendingPeerCountSource = fn
+}
+
+// SetValidatorSetSource is the matching accessor for the public active
+// validator-set status summary. Same concurrency and Start contract as
+// SetChainTipSource.
+func (s *Server) SetValidatorSetSource(fn func() ValidatorSetInfo) {
+	if s == nil {
+		return
+	}
+	if s.handlers != nil {
+		s.handlers.SetValidatorSetSource(fn)
+		return
+	}
+	s.pendingValidatorSetSource = fn
 }
 
 // setupMiddleware configures all security middleware.

@@ -226,3 +226,44 @@ func TestValidatorSet_ResetEffectiveStakeUsesLockedSelfStake(t *testing.T) {
 		t.Fatalf("post-reset stake = %+v, want effective and self stake both 200", reset)
 	}
 }
+
+func TestValidatorSet_ActiveSetFingerprintTracksMembershipNotRegistrationOrder(t *testing.T) {
+	first := NewValidatorSet(DefaultValidatorSetConfig())
+	if err := first.Register("validator-b", 200); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Register("validator-a", 200); err != nil {
+		t.Fatal(err)
+	}
+
+	second := NewValidatorSet(DefaultValidatorSetConfig())
+	if err := second.Register("validator-a", 200); err != nil {
+		t.Fatal(err)
+	}
+	if err := second.Register("validator-b", 200); err != nil {
+		t.Fatal(err)
+	}
+
+	firstCount, firstFingerprint := first.ActiveSetFingerprint()
+	secondCount, secondFingerprint := second.ActiveSetFingerprint()
+	if firstCount != 2 || secondCount != 2 {
+		t.Fatalf("active counts = %d, %d; want 2, 2", firstCount, secondCount)
+	}
+	if firstFingerprint == "" {
+		t.Fatal("active validator fingerprint is empty")
+	}
+	if firstFingerprint != secondFingerprint {
+		t.Fatalf("fingerprint depends on registration order: %q != %q", firstFingerprint, secondFingerprint)
+	}
+
+	if _, err := second.Exit("validator-b"); err != nil {
+		t.Fatal(err)
+	}
+	countAfterExit, fingerprintAfterExit := second.ActiveSetFingerprint()
+	if countAfterExit != 1 {
+		t.Fatalf("active count after exit = %d, want 1", countAfterExit)
+	}
+	if fingerprintAfterExit == firstFingerprint {
+		t.Fatal("fingerprint did not change after active membership changed")
+	}
+}
