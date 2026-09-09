@@ -49,6 +49,12 @@ type statusResponse struct {
 	ChainTip      uint64            `json:"chain_tip"`
 	Peers         int               `json:"peers"`
 	ConsensusAuth consensusAuthInfo `json:"consensus_auth"`
+	ValidatorSet  validatorSetInfo  `json:"validator_set"`
+}
+
+type validatorSetInfo struct {
+	ActiveCount int    `json:"active_count"`
+	Fingerprint string `json:"fingerprint"`
 }
 
 type consensusAuthInfo struct {
@@ -71,6 +77,8 @@ type nodeReport struct {
 	SignedMessageActivationHeight    uint64 `json:"signed_message_activation_height"`
 	SignedConsensusActive            bool   `json:"signed_consensus_active"`
 	UnsignedConsensusTrafficAccepted bool   `json:"unsigned_consensus_traffic_accepted"`
+	ValidatorSetActiveCount          int    `json:"validator_set_active_count"`
+	ValidatorSetFingerprint          string `json:"validator_set_fingerprint,omitempty"`
 }
 
 type verdict struct {
@@ -220,6 +228,8 @@ func reportFromStatus(statusURL string, st statusResponse) nodeReport {
 		SignedMessageActivationHeight:    st.ConsensusAuth.SignedMessageActivationHeight,
 		SignedConsensusActive:            st.ConsensusAuth.SignedConsensusActive,
 		UnsignedConsensusTrafficAccepted: st.ConsensusAuth.UnsignedConsensusTrafficAccepted,
+		ValidatorSetActiveCount:          st.ValidatorSet.ActiveCount,
+		ValidatorSetFingerprint:          strings.TrimSpace(st.ValidatorSet.Fingerprint),
 	}
 }
 
@@ -247,6 +257,8 @@ func evaluate(reports []nodeReport, headroomBlocks, activationHeight uint64, all
 	seenURLs := map[string]struct{}{}
 	var requireTrue, requireFalse int
 	var commonActivation *uint64
+	var commonValidatorSetCount *int
+	var commonValidatorSetFingerprint string
 	minTip := ^uint64(0)
 	for _, r := range reports {
 		if _, ok := seenURLs[r.URL]; ok {
@@ -294,6 +306,24 @@ func evaluate(reports []nodeReport, headroomBlocks, activationHeight uint64, all
 		}
 		if r.SignedConsensusActive && r.UnsignedConsensusTrafficAccepted {
 			v.Errors = append(v.Errors, fmt.Sprintf("%s reports signed consensus active while still accepting unsigned traffic", r.URL))
+		}
+		if len(reports) > 1 {
+			if r.ValidatorSetActiveCount < 2 {
+				v.Errors = append(v.Errors, fmt.Sprintf("%s reports validator_set.active_count=%d; a multi-validator rollout needs at least 2 active validators", r.URL, r.ValidatorSetActiveCount))
+			}
+			if r.ValidatorSetFingerprint == "" {
+				v.Errors = append(v.Errors, fmt.Sprintf("%s did not report validator_set.fingerprint", r.URL))
+			} else if commonValidatorSetFingerprint == "" {
+				commonValidatorSetFingerprint = r.ValidatorSetFingerprint
+			} else if commonValidatorSetFingerprint != r.ValidatorSetFingerprint {
+				v.Errors = append(v.Errors, fmt.Sprintf("%s reports a different validator_set.fingerprint", r.URL))
+			}
+			if commonValidatorSetCount == nil {
+				count := r.ValidatorSetActiveCount
+				commonValidatorSetCount = &count
+			} else if *commonValidatorSetCount != r.ValidatorSetActiveCount {
+				v.Errors = append(v.Errors, fmt.Sprintf("%s reports validator_set.active_count=%d; expected %d", r.URL, r.ValidatorSetActiveCount, *commonValidatorSetCount))
+			}
 		}
 	}
 
@@ -372,13 +402,15 @@ func printHuman(v verdict) {
 		fmt.Println()
 		fmt.Println("Nodes:")
 		for _, n := range v.Nodes {
-			fmt.Printf("- %s tip=%d require_signed_votes=%t activation=%d active=%t unsigned_accepted=%t node_id=%s\n",
+			fmt.Printf("- %s tip=%d require_signed_votes=%t activation=%d active=%t unsigned_accepted=%t validators=%d set=%s node_id=%s\n",
 				n.URL,
 				n.ChainTip,
 				n.RequireSignedVotes,
 				n.SignedMessageActivationHeight,
 				n.SignedConsensusActive,
 				n.UnsignedConsensusTrafficAccepted,
+				n.ValidatorSetActiveCount,
+				shortID(n.ValidatorSetFingerprint),
 				shortID(n.NodeID),
 			)
 		}
