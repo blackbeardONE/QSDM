@@ -140,6 +140,8 @@
       title: "Validators & operators",
       items: [
         { slug: "validator-quickstart", title: "Validator quickstart",           repoPath: DOCS_PREFIX_REPO + "/VALIDATOR_QUICKSTART.md" },
+        { slug: "signed-consensus-rollout", title: "Signed consensus rollout",    repoPath: DOCS_PREFIX_REPO + "/SIGNED_CONSENSUS_ROLLOUT.md" },
+        { slug: "real-multi-validator-consensus", title: "Real multi-validator plan", repoPath: DOCS_PREFIX_REPO + "/REAL_MULTI_VALIDATOR_CONSENSUS.md" },
         { slug: "attester-quickstart",  title: "Attester quickstart",            repoPath: DOCS_PREFIX_REPO + "/ATTESTER_QUICKSTART.md" },
         { slug: "operator-guide",       title: "Operator guide",                 repoPath: DOCS_PREFIX_REPO + "/OPERATOR_GUIDE.md" },
         { slug: "home-gateway",         title: "Home gateway",                   repoPath: DOCS_PREFIX_REPO + "/HOME_GATEWAY.md", badge: "new" },
