@@ -152,3 +152,16 @@ func TestStatusEndpointNormalizesCommonInputs(t *testing.T) {
 		}
 	}
 }
+
+func TestStatusEndpointRejectsUnusableURLs(t *testing.T) {
+	for _, input := range []string{
+		"ftp://validator.example",
+		"https://operator:secret@validator.example",
+		"https://validator.example?probe=1",
+		"https://validator.example#status",
+	} {
+		if _, err := statusEndpoint(input); err == nil {
+			t.Fatalf("statusEndpoint(%q) succeeded; expected URL to be rejected", input)
+		}
+	}
+}

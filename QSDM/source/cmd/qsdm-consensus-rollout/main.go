@@ -188,6 +188,12 @@ func statusEndpoint(raw string) (string, error) {
 	if u.Scheme == "" || u.Host == "" {
 		return "", fmt.Errorf("%q: expected absolute http(s) URL", raw)
 	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("%q: expected http or https URL", raw)
+	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("%q: node URL must not include credentials, a query, or a fragment", raw)
+	}
 	if strings.HasSuffix(u.Path, "/api/v1/status") {
 		return u.String(), nil
 	}
