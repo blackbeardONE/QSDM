@@ -2878,6 +2878,17 @@ func main() {
 				}
 				return len(net.Host.Network().Peers())
 			})
+			apiServer.SetValidatorSetSource(func() api.ValidatorSetInfo {
+				activeCount, fingerprint := nodeValidatorSet.ActiveSetFingerprint()
+				return api.ValidatorSetInfo{
+					ActiveCount: activeCount,
+					Fingerprint: fingerprint,
+				}
+			})
+			apiServer.SetBlockProductionPosture(api.BlockProductionInfo{
+				Role:                    string(productionRole),
+				MultiValidatorConsensus: false,
+			})
 			apiServer.SetTxGossipBroadcast(func(b []byte) error {
 				if txGossipRelay != nil {
 					return txGossipRelay.MaybePublishOpaque(b)

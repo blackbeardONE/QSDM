@@ -54,8 +54,10 @@ type Server struct {
 	// apply at registerRoutes time. Without this stash, every
 	// SetChainTipSource call before Start would silently
 	// no-op against the nil s.handlers.
-	pendingChainTipSource  func() uint64
-	pendingPeerCountSource func() int
+	pendingChainTipSource     func() uint64
+	pendingPeerCountSource    func() int
+	pendingValidatorSetSource func() ValidatorSetInfo
+	pendingBlockProduction    *BlockProductionInfo
 }
 
 // StorageInterface defines the storage interface for the API
@@ -469,6 +471,34 @@ func (s *Server) SetPeerCountSource(fn func() int) {
 		return
 	}
 	s.pendingPeerCountSource = fn
+}
+
+// SetValidatorSetSource is the matching accessor for the public active
+// validator-set status summary. Same concurrency and Start contract as
+// SetChainTipSource.
+func (s *Server) SetValidatorSetSource(fn func() ValidatorSetInfo) {
+	if s == nil {
+		return
+	}
+	if s.handlers != nil {
+		s.handlers.SetValidatorSetSource(fn)
+		return
+	}
+	s.pendingValidatorSetSource = fn
+}
+
+// SetBlockProductionPosture wires a static block-production summary into
+// GET /api/v1/status. It follows the same pre-Start stashing contract as the
+// status-source callbacks.
+func (s *Server) SetBlockProductionPosture(posture BlockProductionInfo) {
+	if s == nil {
+		return
+	}
+	if s.handlers != nil {
+		s.handlers.SetBlockProductionPosture(posture)
+		return
+	}
+	s.pendingBlockProduction = &posture
 }
 
 // setupMiddleware configures all security middleware.
