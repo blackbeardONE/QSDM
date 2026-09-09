@@ -9,7 +9,7 @@ const testValidatorSetFingerprint = "aa9c67f2d5f5a9b7e1c48b9827e09f929513e19fbd5
 
 func withMatchingValidatorSet(reports []nodeReport) []nodeReport {
 	for i := range reports {
-		reports[i].ValidatorSetActiveCount = 2
+		reports[i].ValidatorSetActiveCount = minimumBFTValidatorSetSize
 		reports[i].ValidatorSetFingerprint = testValidatorSetFingerprint
 	}
 	return reports
@@ -190,6 +190,43 @@ func TestEvaluateAllowsSingleNodeDiagnosticWithoutActivationHeight(t *testing.T)
 	}
 }
 
+func TestEvaluateRejectsSmallValidatorSetByDefault(t *testing.T) {
+	reports := withMatchingValidatorSet([]nodeReport{
+		{URL: "https://a.example/api/v1/status", NodeID: "validator-a", ChainTip: 1000, SignedConsensusSupported: true, UnsignedConsensusTrafficAccepted: true},
+		{URL: "https://b.example/api/v1/status", NodeID: "validator-b", ChainTip: 1001, SignedConsensusSupported: true, UnsignedConsensusTrafficAccepted: true},
+	})
+	for i := range reports {
+		reports[i].ValidatorSetActiveCount = 2
+	}
+	v := evaluate(reports, 50, 0, false)
+	if v.OK || v.State != "blocked" {
+		t.Fatalf("expected two-validator set to be blocked for BFT readiness, got %#v", v)
+	}
+	if !hasText(v.Errors, "at least 4 active validators") {
+		t.Fatalf("expected one-fault BFT size error, got %#v", v.Errors)
+	}
+}
+
+func TestEvaluateAllowsSmallValidatorSetDiagnostic(t *testing.T) {
+	reports := withMatchingValidatorSet([]nodeReport{
+		{URL: "https://a.example/api/v1/status", NodeID: "validator-a", ChainTip: 1000, SignedConsensusSupported: true, UnsignedConsensusTrafficAccepted: true},
+		{URL: "https://b.example/api/v1/status", NodeID: "validator-b", ChainTip: 1001, SignedConsensusSupported: true, UnsignedConsensusTrafficAccepted: true},
+	})
+	for i := range reports {
+		reports[i].ValidatorSetActiveCount = 2
+	}
+	v := evaluateWithOptions(reports, 50, 0, false, true)
+	if !v.OK || v.State != "small_validator_set_diagnostic" {
+		t.Fatalf("expected small-set diagnostic verdict, got %#v", v)
+	}
+	if v.SuggestedActivationHeight != 0 {
+		t.Fatalf("small-set diagnostic suggested activation height %d", v.SuggestedActivationHeight)
+	}
+	if !hasText(v.Warnings, "diagnostic-only") {
+		t.Fatalf("expected diagnostic-only warning, got %#v", v.Warnings)
+	}
+}
+
 func hasText(values []string, want string) bool {
 	for _, value := range values {
 		if strings.Contains(value, want) {
@@ -203,9 +240,13 @@ func TestParseFlagsAllowsSingleNodeDiagnostic(t *testing.T) {
 	opts := parseFlags([]string{
 		"--node", "https://a.example/api/v1",
 		"--allow-single-node",
+		"--allow-small-validator-set",
 	})
 	if !opts.allowSingleNode {
 		t.Fatal("allow-single-node was not parsed")
+	}
+	if !opts.allowSmallSet {
+		t.Fatal("allow-small-validator-set was not parsed")
 	}
 }
 func TestStatusEndpointNormalizesCommonInputs(t *testing.T) {

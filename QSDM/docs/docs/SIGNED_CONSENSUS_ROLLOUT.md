@@ -5,7 +5,11 @@ proofs, round certificates, and equivocation evidence with ML-DSA-87. Signature
 enforcement is height-gated so validators can be upgraded before the network
 switches policy at one shared block height.
 
-This is a validator-set operation. Never enable it on only one validator.
+This is a validator-set operation. Never enable it on only one validator. A
+network that intends to tolerate one faulty validator needs at least four
+active validators with the same effective set. Two- and three-validator
+checks are useful for a laboratory, but they are not proof of one-fault BFT
+readiness.
 
 ## Validator identity
 

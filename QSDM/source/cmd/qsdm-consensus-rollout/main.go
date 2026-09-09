@@ -15,7 +15,10 @@ import (
 	"time"
 )
 
-const defaultHeadroomBlocks uint64 = 720
+const (
+	defaultHeadroomBlocks      uint64 = 720
+	minimumBFTValidatorSetSize        = 4
+)
 
 type nodeList []string
 
@@ -40,6 +43,7 @@ type options struct {
 	timeout          time.Duration
 	jsonOutput       bool
 	allowSingleNode  bool
+	allowSmallSet    bool
 }
 
 type statusResponse struct {
@@ -116,7 +120,7 @@ func main() {
 		}, opts.jsonOutput)
 	}
 
-	v := evaluate(reports, opts.headroomBlocks, opts.activationHeight, opts.allowSingleNode)
+	v := evaluateWithOptions(reports, opts.headroomBlocks, opts.activationHeight, opts.allowSingleNode, opts.allowSmallSet)
 	if opts.jsonOutput {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -138,6 +142,7 @@ func parseFlags(args []string) options {
 	fs.DurationVar(&opts.timeout, "timeout", 10*time.Second, "Total timeout for all status requests.")
 	fs.BoolVar(&opts.jsonOutput, "json", false, "Emit machine-readable JSON.")
 	fs.BoolVar(&opts.allowSingleNode, "allow-single-node", false, "Allow a diagnostic-only single-node inspection; never treats one node as rollout readiness.")
+	fs.BoolVar(&opts.allowSmallSet, "allow-small-validator-set", false, "Allow a diagnostic-only two or three validator inspection; never treats it as BFT rollout readiness.")
 	_ = fs.Parse(args)
 	return opts
 }
@@ -234,6 +239,10 @@ func reportFromStatus(statusURL string, st statusResponse) nodeReport {
 }
 
 func evaluate(reports []nodeReport, headroomBlocks, activationHeight uint64, allowSingleNode bool) verdict {
+	return evaluateWithOptions(reports, headroomBlocks, activationHeight, allowSingleNode, false)
+}
+
+func evaluateWithOptions(reports []nodeReport, headroomBlocks, activationHeight uint64, allowSingleNode, allowSmallSet bool) verdict {
 	v := verdict{
 		OK:      true,
 		State:   "ready_to_schedule",
@@ -259,6 +268,7 @@ func evaluate(reports []nodeReport, headroomBlocks, activationHeight uint64, all
 	var commonActivation *uint64
 	var commonValidatorSetCount *int
 	var commonValidatorSetFingerprint string
+	smallValidatorSetObserved := false
 	minTip := ^uint64(0)
 	for _, r := range reports {
 		if _, ok := seenURLs[r.URL]; ok {
@@ -310,6 +320,13 @@ func evaluate(reports []nodeReport, headroomBlocks, activationHeight uint64, all
 		if len(reports) > 1 {
 			if r.ValidatorSetActiveCount < 2 {
 				v.Errors = append(v.Errors, fmt.Sprintf("%s reports validator_set.active_count=%d; a multi-validator rollout needs at least 2 active validators", r.URL, r.ValidatorSetActiveCount))
+			} else if r.ValidatorSetActiveCount < minimumBFTValidatorSetSize {
+				smallValidatorSetObserved = true
+				if allowSmallSet {
+					v.Warnings = append(v.Warnings, fmt.Sprintf("%s reports validator_set.active_count=%d; this is diagnostic-only because one-fault BFT needs at least %d active validators", r.URL, r.ValidatorSetActiveCount, minimumBFTValidatorSetSize))
+				} else {
+					v.Errors = append(v.Errors, fmt.Sprintf("%s reports validator_set.active_count=%d; a one-fault BFT rollout needs at least %d active validators", r.URL, r.ValidatorSetActiveCount, minimumBFTValidatorSetSize))
+				}
 			}
 			if r.ValidatorSetFingerprint == "" {
 				v.Errors = append(v.Errors, fmt.Sprintf("%s did not report validator_set.fingerprint", r.URL))
@@ -384,6 +401,11 @@ func evaluate(reports []nodeReport, headroomBlocks, activationHeight uint64, all
 		v.Message = "single-node diagnostic completed; it does not prove multi-validator rollout readiness"
 		v.SuggestedActivationHeight = 0
 		v.Warnings = append(v.Warnings, "no shared activation height is emitted from a single-node diagnostic")
+	} else if smallValidatorSetObserved && allowSmallSet {
+		v.State = "small_validator_set_diagnostic"
+		v.Message = "small-validator-set diagnostic completed; it does not prove one-fault BFT rollout readiness"
+		v.SuggestedActivationHeight = 0
+		v.Warnings = append(v.Warnings, "no shared activation height is emitted from a two or three validator diagnostic")
 	}
 	return v
 }
