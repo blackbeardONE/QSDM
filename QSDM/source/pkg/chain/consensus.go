@@ -82,6 +82,22 @@ type ConsensusRound struct {
 	Deadline        time.Time       `json:"deadline,omitempty"` // round timeout (set when proposed)
 }
 
+// cloneConsensusRound returns an isolated observation of consensus state.
+//
+// ConsensusRound contains vote slices, so returning the engine's stored pointer
+// lets a caller mutate consensus state without holding bc.mu. The engine uses
+// these snapshots for its read accessors; mutations must only happen through
+// the consensus methods that enforce the BFT transition rules.
+func cloneConsensusRound(cr *ConsensusRound) *ConsensusRound {
+	if cr == nil {
+		return nil
+	}
+	clone := *cr
+	clone.PreVotes = append([]BlockVote(nil), cr.PreVotes...)
+	clone.Commits = append([]BlockVote(nil), cr.Commits...)
+	return &clone
+}
+
 // ConsensusConfig tunes the BFT parameters.
 type ConsensusConfig struct {
 	QuorumFraction float64       // fraction of total stake needed (typically 2/3)
@@ -402,20 +418,20 @@ func (bc *BFTConsensus) IsCommitted(height uint64) bool {
 	return ok
 }
 
-// GetCommitted returns the committed round for a height.
+// GetCommitted returns an isolated snapshot of the committed round for a height.
 func (bc *BFTConsensus) GetCommitted(height uint64) (*ConsensusRound, bool) {
 	bc.mu.RLock()
 	defer bc.mu.RUnlock()
 	cr, ok := bc.committed[height]
-	return cr, ok
+	return cloneConsensusRound(cr), ok
 }
 
-// GetRound returns the current active round for a height.
+// GetRound returns an isolated snapshot of the current active round for a height.
 func (bc *BFTConsensus) GetRound(height uint64) (*ConsensusRound, bool) {
 	bc.mu.RLock()
 	defer bc.mu.RUnlock()
 	cr, ok := bc.rounds[height]
-	return cr, ok
+	return cloneConsensusRound(cr), ok
 }
 
 // FailRound marks the current round as failed (e.g. timeout).
