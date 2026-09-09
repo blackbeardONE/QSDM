@@ -26,6 +26,19 @@ func baseSummary() *trustSummary {
 	}
 }
 
+func baseStatus() *nodeStatus {
+	return &nodeStatus{
+		ChainTip: 600000,
+		ConsensusAuth: &consensusAuthInfo{
+			SignedConsensusSupported:         true,
+			RequireSignedVotes:               true,
+			SignedMessageActivationHeight:    500000,
+			SignedConsensusActive:            true,
+			UnsignedConsensusTrafficAccepted: false,
+		},
+	}
+}
+
 func TestValidateSummary_Pass(t *testing.T) {
 	rs := &results{}
 	validateSummary(baseSummary(), rs)
@@ -139,6 +152,76 @@ func TestValidateMinAttested_NilSummaryIsHardFail(t *testing.T) {
 	if rs.allOK() || len(rs.rows) != 1 {
 		t.Fatalf("expected single FAIL row for nil summary; got %+v", rs.rows)
 	}
+}
+
+func TestValidateSignedConsensusStatus_PassWhenActive(t *testing.T) {
+	rs := &results{}
+	validateSignedConsensusStatus(baseStatus(), rs)
+	if !rs.allOK() || len(rs.rows) != 6 {
+		t.Fatalf("expected six passing signed-consensus rows, got %+v", rs.rows)
+	}
+}
+
+func TestValidateSignedConsensusStatus_MissingStatusFailsCleanly(t *testing.T) {
+	rs := &results{}
+	validateSignedConsensusStatus(nil, rs)
+	if rs.allOK() || len(rs.rows) != 1 || rs.rows[0].name != "status/consensus-auth-present" {
+		t.Fatalf("expected one clean missing-status failure, got %+v", rs.rows)
+	}
+}
+
+func TestValidateSignedConsensusStatus_MissingConsensusAuthFailsCleanly(t *testing.T) {
+	rs := &results{}
+	validateSignedConsensusStatus(&nodeStatus{ChainTip: 600000}, rs)
+	if rs.allOK() || len(rs.rows) != 1 || rs.rows[0].name != "status/consensus-auth-present" {
+		t.Fatalf("expected one missing-consensus-auth failure, got %+v", rs.rows)
+	}
+}
+
+func TestValidateSignedConsensusStatus_CompatibilityModeFailsWhenRequired(t *testing.T) {
+	status := baseStatus()
+	status.ConsensusAuth.RequireSignedVotes = false
+	status.ConsensusAuth.SignedMessageActivationHeight = 0
+	status.ConsensusAuth.SignedConsensusActive = false
+	status.ConsensusAuth.UnsignedConsensusTrafficAccepted = true
+	rs := &results{}
+	validateSignedConsensusStatus(status, rs)
+	if rs.allOK() {
+		t.Fatal("expected compatibility mode to fail when --require-signed-consensus is enabled")
+	}
+	wantFailures := []string{
+		"status/signed-consensus-required",
+		"status/signed-consensus-activation-height",
+		"status/signed-consensus-active",
+		"status/unsigned-consensus-rejected",
+	}
+	for _, want := range wantFailures {
+		if !hasFailedRow(rs, want) {
+			t.Fatalf("missing failure row %q in %+v", want, rs.rows)
+		}
+	}
+}
+
+func TestValidateSignedConsensusStatus_UnsignedAcceptedFailsEvenIfActiveClaimsTrue(t *testing.T) {
+	status := baseStatus()
+	status.ConsensusAuth.UnsignedConsensusTrafficAccepted = true
+	rs := &results{}
+	validateSignedConsensusStatus(status, rs)
+	if rs.allOK() {
+		t.Fatal("unsigned traffic acceptance must fail the signed-consensus production gate")
+	}
+	if !hasFailedRow(rs, "status/unsigned-consensus-rejected") {
+		t.Fatalf("expected unsigned-consensus failure, got %+v", rs.rows)
+	}
+}
+
+func hasFailedRow(rs *results, name string) bool {
+	for _, row := range rs.rows {
+		if row.name == name && !row.ok {
+			return true
+		}
+	}
+	return false
 }
 
 func TestValidateRecent_Pass(t *testing.T) {
