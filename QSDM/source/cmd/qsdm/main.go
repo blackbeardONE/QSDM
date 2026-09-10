@@ -2691,6 +2691,7 @@ func main() {
 				{Name: "qsdm_bft_gossip_dedupe_drops_total", Help: "BFT gossip duplicate payloads dropped", Type: monitoring.MetricCounter, Value: float64(s.DedupeDropped)},
 				{Name: "qsdm_bft_gossip_rate_limited_total", Help: "BFT gossip messages rejected by per-peer rate limit", Type: monitoring.MetricCounter, Value: float64(s.RateLimited)},
 				{Name: "qsdm_bft_gossip_rejected_wire_total", Help: "BFT gossip wire rejects (decode / empty / unknown kind)", Type: monitoring.MetricCounter, Value: float64(s.RejectedWire)},
+				{Name: "qsdm_bft_gossip_publisher_rejected_total", Help: "BFT gossip messages rejected because the authenticated publisher did not match active consensus membership", Type: monitoring.MetricCounter, Value: float64(s.PublisherRejected)},
 				{Name: "qsdm_bft_gossip_apply_errors_total", Help: "BFT gossip executor apply errors after validation", Type: monitoring.MetricCounter, Value: float64(s.ApplyErrors)},
 				{Name: "qsdm_bft_auth_signed_accepted_total", Help: "BFT consensus messages whose ML-DSA authenticator verified", Type: monitoring.MetricCounter, Value: float64(auth.SignedAccepted)},
 				{Name: "qsdm_bft_auth_unsigned_accepted_total", Help: "Unsigned BFT consensus messages accepted while compatibility mode is still open", Type: monitoring.MetricCounter, Value: float64(auth.UnsignedAccepted)},

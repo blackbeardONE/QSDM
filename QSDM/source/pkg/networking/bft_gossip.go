@@ -36,11 +36,12 @@ func DefaultBFTGossipConfig() BFTGossipConfig {
 
 // BFTGossipStats is a snapshot of ingress counters (for Prometheus / ops).
 type BFTGossipStats struct {
-	IngressOK     uint64
-	DedupeDropped uint64
-	RateLimited   uint64
-	RejectedWire  uint64
-	ApplyErrors   uint64
+	IngressOK         uint64
+	DedupeDropped     uint64
+	RateLimited       uint64
+	RejectedWire      uint64
+	PublisherRejected uint64
+	ApplyErrors       uint64
 }
 
 // BFTGossipIngress validates inbound BFT gossip (decode envelope, dedupe, rate limits) and applies to executor.
@@ -48,6 +49,9 @@ type BFTGossipIngress struct {
 	exec     *chain.BFTExecutor
 	authExec *chain.BFTExecutor
 	rep      *ReputationTracker
+	// peerOriginPolicy is intentionally optional until every validator has a
+	// matching membership schedule and StrictSign publisher identity path.
+	peerOriginPolicy atomic.Pointer[chain.BFTPeerOriginPolicy]
 
 	mu          sync.Mutex
 	seenIDs     map[string]time.Time
@@ -57,11 +61,12 @@ type BFTGossipIngress struct {
 	maxPerPeer  int
 	peerBuckets map[string][]time.Time
 
-	statIngressOK     atomic.Uint64
-	statDedupe        atomic.Uint64
-	statRateLimited   atomic.Uint64
-	statRejectedWire  atomic.Uint64
-	statApplyErrors   atomic.Uint64
+	statIngressOK         atomic.Uint64
+	statDedupe            atomic.Uint64
+	statRateLimited       atomic.Uint64
+	statRejectedWire      atomic.Uint64
+	statPublisherRejected atomic.Uint64
+	statApplyErrors       atomic.Uint64
 }
 
 // Stats returns ingress counters since process start.
@@ -70,11 +75,12 @@ func (g *BFTGossipIngress) Stats() BFTGossipStats {
 		return BFTGossipStats{}
 	}
 	return BFTGossipStats{
-		IngressOK:     g.statIngressOK.Load(),
-		DedupeDropped: g.statDedupe.Load(),
-		RateLimited:   g.statRateLimited.Load(),
-		RejectedWire:  g.statRejectedWire.Load(),
-		ApplyErrors:   g.statApplyErrors.Load(),
+		IngressOK:         g.statIngressOK.Load(),
+		DedupeDropped:     g.statDedupe.Load(),
+		RateLimited:       g.statRateLimited.Load(),
+		RejectedWire:      g.statRejectedWire.Load(),
+		PublisherRejected: g.statPublisherRejected.Load(),
+		ApplyErrors:       g.statApplyErrors.Load(),
 	}
 }
 
@@ -114,6 +120,17 @@ func (g *BFTGossipIngress) SetAuthenticationExecutor(exec *chain.BFTExecutor) {
 	g.authExec = exec
 }
 
+// SetPeerOriginPolicy enables or disables verification that the original,
+// StrictSign-authenticated pubsub publisher matches the libp2p peer ID
+// committed for the signed BFT validator. The immediate relay peer remains
+// intentionally separate for rate limits and reputation.
+func (g *BFTGossipIngress) SetPeerOriginPolicy(policy *chain.BFTPeerOriginPolicy) {
+	if g == nil {
+		return
+	}
+	g.peerOriginPolicy.Store(policy)
+}
+
 // SetReputationTracker optionally penalizes peers who relay provable BFT equivocation payloads.
 func (g *BFTGossipIngress) SetReputationTracker(rt *ReputationTracker) {
 	if g == nil {
@@ -124,8 +141,23 @@ func (g *BFTGossipIngress) SetReputationTracker(rt *ReputationTracker) {
 	g.rep = rt
 }
 
-// HandlePeerMessage validates a raw GossipSub payload and forwards it to the executor.
+// HandlePeerMessage validates a raw GossipSub payload and forwards it to the
+// executor. It is retained for callers that do not have a verified publisher
+// identity. An active peer-origin policy will reject an enforced-height
+// message received through this compatibility entry point.
 func (g *BFTGossipIngress) HandlePeerMessage(peerID string, payload []byte) error {
+	return g.handlePeerMessage(peerID, "", payload)
+}
+
+// HandlePeerMessageFromPublisher validates a raw GossipSub payload. relayPeerID
+// is the immediate transport relay and is used only for rate limiting and
+// reputation. publisherPeerID must be the original publisher from a
+// StrictSign-verified pubsub.Message.GetFrom value.
+func (g *BFTGossipIngress) HandlePeerMessageFromPublisher(relayPeerID, publisherPeerID string, payload []byte) error {
+	return g.handlePeerMessage(relayPeerID, publisherPeerID, payload)
+}
+
+func (g *BFTGossipIngress) handlePeerMessage(peerID, publisherPeerID string, payload []byte) error {
 	// Refuse banned peers up front. This ingress already penalizes provable
 	// equivocation via RecordEvent, but nothing consulted the resulting ban,
 	// so an equivocating peer kept getting its consensus messages applied.
@@ -172,6 +204,13 @@ func (g *BFTGossipIngress) HandlePeerMessage(peerID string, payload []byte) erro
 	g.seenIDs[id] = now
 	g.evictSeenIfNeededLocked()
 	g.mu.Unlock()
+
+	if policy := g.peerOriginPolicy.Load(); policy != nil {
+		if err := chain.ValidateBFTWirePeerOrigin(policy, publisherPeerID, payload); err != nil {
+			g.statPublisherRejected.Add(1)
+			return fmt.Errorf("bft gossip authenticated publisher: %w", err)
+		}
+	}
 
 	if g.exec != nil {
 		g.exec.SetLastInboundBFTGossipPeer(peerID)

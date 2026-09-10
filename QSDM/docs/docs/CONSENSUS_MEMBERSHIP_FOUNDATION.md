@@ -190,3 +190,21 @@ peer session before it can enforce a production peer policy.
 
 The current runtime does not create, distribute, or enforce these proofs.
 They are a testable prerequisite for that later chain-approved transition.
+
+## Authenticated Publisher Policy
+
+QSDM libp2p GossipSub uses `StrictSign`: libp2p verifies the original
+publisher before delivering a message to a subscription. `Message.GetFrom`
+therefore identifies that authenticated publisher, while `ReceivedFrom`
+identifies only the immediate relay hop. The two values may differ and must
+not be conflated.
+
+`BFTPeerOriginPolicy` is an opt-in ingress gate. At its activation height it
+requires each signed BFT message's `GetFrom` peer ID to equal the peer ID
+committed for the message's validator in the active membership snapshot.
+Relay identity remains available only for rate limiting and reputation.
+
+The current node runtime does not install this policy. Activating it requires
+every validator to share the same membership schedule, use `StrictSign`, and
+roll out a common activation height. The live three-host regression test
+covers the important case where the publisher and relay are different peers.
