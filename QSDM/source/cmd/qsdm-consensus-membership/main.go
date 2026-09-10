@@ -4,7 +4,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,8 +17,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-const maxMembershipFileSize = 4 << 20
-
 type membershipResult struct {
 	SchemaVersion             uint32 `json:"schema_version"`
 	NetworkID                 string `json:"network_id"`
@@ -30,6 +27,12 @@ type membershipResult struct {
 	MembershipFingerprint     string `json:"membership_fingerprint"`
 }
 
+type scheduleResult struct {
+	SchemaVersion uint32             `json:"schema_version"`
+	NetworkID     string             `json:"network_id"`
+	SnapshotCount int                `json:"snapshot_count"`
+	Snapshots     []membershipResult `json:"snapshots"`
+}
 type identityResult struct {
 	Address               string `json:"address"`
 	ConsensusPublicKeyHex string `json:"consensus_public_key_hex"`
@@ -47,6 +50,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("qsdm-consensus-membership", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	inputPath := flags.String("in", "", "Membership JSON file to validate.")
+	schedulePath := flags.String("schedule", "", "Membership schedule JSON file to validate.")
 	identityKeyPath := flags.String("identity-key", "", "Existing private consensus signer key to inspect without creating one.")
 	p2pPeerID := flags.String("p2p-peer-id", "", "Canonical libp2p peer ID for --identity-key output.")
 	jsonOutput := flags.Bool("json", false, "Write JSON output.")
@@ -58,14 +62,23 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 
 	inputPathValue := strings.TrimSpace(*inputPath)
+	schedulePathValue := strings.TrimSpace(*schedulePath)
 	identityKeyPathValue := strings.TrimSpace(*identityKeyPath)
+	modeCount := 0
+	for _, path := range []string{inputPathValue, schedulePathValue, identityKeyPathValue} {
+		if path != "" {
+			modeCount++
+		}
+	}
 	switch {
-	case inputPathValue == "" && identityKeyPathValue == "":
-		return errors.New("provide exactly one of --in or --identity-key")
-	case inputPathValue != "" && identityKeyPathValue != "":
-		return errors.New("--in and --identity-key cannot be used together")
+	case modeCount == 0:
+		return errors.New("provide exactly one of --in, --schedule, or --identity-key")
+	case modeCount > 1:
+		return errors.New("--in, --schedule, and --identity-key cannot be used together")
 	case inputPathValue != "":
 		return inspectMembership(inputPathValue, *jsonOutput, stdout)
+	case schedulePathValue != "":
+		return inspectSchedule(schedulePathValue, *jsonOutput, stdout)
 	default:
 		return inspectIdentity(identityKeyPathValue, strings.TrimSpace(*p2pPeerID), *jsonOutput, stdout)
 	}
@@ -112,6 +125,55 @@ func inspectMembership(path string, jsonOutput bool, stdout io.Writer) error {
 	return err
 }
 
+func inspectSchedule(path string, jsonOutput bool, stdout io.Writer) error {
+	schedule, err := chain.LoadConsensusMembershipScheduleFile(path)
+	if err != nil {
+		return err
+	}
+	snapshots := schedule.Snapshots()
+	result := scheduleResult{
+		SchemaVersion: chain.ConsensusMembershipScheduleFileSchemaVersion,
+		NetworkID:     schedule.NetworkID(),
+		SnapshotCount: len(snapshots),
+		Snapshots:     make([]membershipResult, 0, len(snapshots)),
+	}
+	for _, membership := range snapshots {
+		total, err := membership.TotalVotingPower()
+		if err != nil {
+			return err
+		}
+		quorum, err := membership.RequiredQuorumVotingPower()
+		if err != nil {
+			return err
+		}
+		fingerprint, err := membership.Fingerprint()
+		if err != nil {
+			return err
+		}
+		result.Snapshots = append(result.Snapshots, membershipResult{
+			SchemaVersion:             membership.SchemaVersion,
+			NetworkID:                 membership.NetworkID,
+			EffectiveHeight:           membership.EffectiveHeight,
+			MemberCount:               len(membership.Members),
+			TotalVotingPower:          total,
+			RequiredQuorumVotingPower: quorum,
+			MembershipFingerprint:     fingerprint,
+		})
+	}
+	if jsonOutput {
+		return json.NewEncoder(stdout).Encode(result)
+	}
+	if _, err := fmt.Fprintf(stdout, "Membership schedule is valid.\nNetwork: %s\nSnapshots: %d\n", result.NetworkID, result.SnapshotCount); err != nil {
+		return err
+	}
+	for _, snapshot := range result.Snapshots {
+		if _, err := fmt.Fprintf(stdout, "- Height %d: %d members, quorum %d, fingerprint %s\n", snapshot.EffectiveHeight, snapshot.MemberCount, snapshot.RequiredQuorumVotingPower, snapshot.MembershipFingerprint); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func inspectIdentity(path, p2pPeerID string, jsonOutput bool, stdout io.Writer) error {
 	if p2pPeerID == "" {
 		return errors.New("--p2p-peer-id is required with --identity-key")
@@ -142,37 +204,5 @@ func inspectIdentity(path, p2pPeerID string, jsonOutput bool, stdout io.Writer) 
 }
 
 func readMembership(path string) (chain.ConsensusMembership, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return chain.ConsensusMembership{}, fmt.Errorf("read membership %q: %w", path, err)
-	}
-	if !info.Mode().IsRegular() {
-		return chain.ConsensusMembership{}, fmt.Errorf("membership %q is not a regular file", path)
-	}
-	if info.Size() > maxMembershipFileSize {
-		return chain.ConsensusMembership{}, fmt.Errorf("membership %q exceeds %d bytes", path, maxMembershipFileSize)
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return chain.ConsensusMembership{}, fmt.Errorf("read membership %q: %w", path, err)
-	}
-	if len(raw) > maxMembershipFileSize {
-		return chain.ConsensusMembership{}, fmt.Errorf("membership %q exceeds %d bytes", path, maxMembershipFileSize)
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	var membership chain.ConsensusMembership
-	if err := decoder.Decode(&membership); err != nil {
-		return chain.ConsensusMembership{}, fmt.Errorf("parse membership %q: %w", path, err)
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return chain.ConsensusMembership{}, fmt.Errorf("parse membership %q: multiple JSON values", path)
-		}
-		return chain.ConsensusMembership{}, fmt.Errorf("parse membership %q: %w", path, err)
-	}
-	if err := membership.Validate(); err != nil {
-		return chain.ConsensusMembership{}, err
-	}
-	return membership, nil
+	return chain.LoadConsensusMembershipFile(path)
 }

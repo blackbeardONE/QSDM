@@ -122,6 +122,30 @@ That solves the deterministic lookup rule needed for replay and recovery:
 rule: today no chain transaction creates or persists this schedule. A future
 membership change must be approved by the old set, committed to the chain, and
 reconstructed from chain history before the schedule may control BFT voting.
+
+### Validating A Schedule File
+
+For a proposed transition with more than one snapshot, create one JSON object
+with exactly three fields: `schema_version` (currently `1`), `network_id`, and
+a non-empty `snapshots` array. Every item in `snapshots` must be a complete
+membership object in the format above. A saved schedule must not contain
+comments or placeholder fields.
+
+Validate it before operators approve it:
+
+```powershell
+qsdm-consensus-membership --schedule proposed-schedule.json --json
+```
+
+The command rejects unknown fields, extra JSON values, mismatched network IDs,
+duplicate heights, invalid member identities, and files larger than 4 MiB. It
+prints each snapshot in activation order with its fingerprint.
+
+This command only validates a proposed schedule. It does not enroll a
+validator, modify chain state, or activate a membership policy on a node. A
+future chain-approved transition and coordinated operator rollout are still
+required before any schedule can govern production consensus.
+
 ## Opt-In BFT Wire Gate
 
 The BFT executor can now be given an immutable membership schedule and an

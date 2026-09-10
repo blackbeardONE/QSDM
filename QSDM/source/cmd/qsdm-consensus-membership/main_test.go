@@ -42,6 +42,41 @@ func TestRunInspectsValidatedMembership(t *testing.T) {
 	}
 }
 
+func TestRunInspectsValidatedMembershipSchedule(t *testing.T) {
+	first := testMembership()
+	first.EffectiveHeight = 77
+	second := testMembership()
+	second.EffectiveHeight = 100
+	second.Members[0] = testMember(8, 8, 3)
+	document := chain.ConsensusMembershipScheduleFile{
+		SchemaVersion: chain.ConsensusMembershipScheduleFileSchemaVersion,
+		NetworkID:     first.NetworkID,
+		Snapshots:     []chain.ConsensusMembership{second, first},
+	}
+	raw, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "schedule.json")
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	if err := run([]string{"--schedule", path, "--json"}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	var result scheduleResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.NetworkID != first.NetworkID || result.SnapshotCount != 2 {
+		t.Fatalf("unexpected schedule result: %+v", result)
+	}
+	if result.Snapshots[0].EffectiveHeight != 77 || result.Snapshots[1].EffectiveHeight != 100 {
+		t.Fatalf("schedule order = %+v, want heights [77 100]", result.Snapshots)
+	}
+}
 func TestReadMembershipRejectsUnknownFields(t *testing.T) {
 	membership := testMembership()
 	raw, err := json.Marshal(membership)
