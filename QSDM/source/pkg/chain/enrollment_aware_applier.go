@@ -582,8 +582,8 @@ var (
 )
 
 // ChainReplayClone implements ChainReplayApplier. Returns a new
-// EnrollmentAwareApplier whose AccountStore and EnrollmentState
-// are deep copies of the receiver's. Mutations on the clone do
+// EnrollmentAwareApplier whose AccountStore, enrollment state, and governance
+// state are deep copies of the receiver's. Mutations on the clone do
 // NOT affect the live applier; abandoning the clone (no Restore)
 // is the speculative-rollback path.
 //
@@ -627,6 +627,7 @@ func (a *EnrollmentAwareApplier) ChainReplayClone() ChainReplayApplier {
 	// deterministic / stateless so they pass through by value.
 	a.mu.RLock()
 	liveSlasher := a.slasher
+	liveGov := a.gov
 	liveTasks := a.tasks
 	liveStreams := a.streams
 	liveRecovery := a.recovery
@@ -667,6 +668,13 @@ func (a *EnrollmentAwareApplier) ChainReplayClone() ChainReplayApplier {
 			liveSlasher.Dispatcher,
 			liveSlasher.RewardBPS,
 		)
+	}
+	if liveGov != nil {
+		if liveGov.Accounts != a.accounts {
+			panic("chain: EnrollmentAwareApplier.ChainReplayClone: " +
+				"wired GovApplier must share the EnrollmentAwareApplier AccountStore")
+		}
+		clone.gov = liveGov.ChainReplayCloneWithAccounts(clone.accounts)
 	}
 	return clone
 }
@@ -735,6 +743,19 @@ func (a *EnrollmentAwareApplier) RestoreFromChainReplay(from ChainReplayApplier)
 	}
 	if liveRecovery != nil {
 		if err := liveRecovery.RestoreFromChainReplay(otherRecovery); err != nil {
+			return err
+		}
+	}
+	liveGov := a.GovApplier()
+	otherGov := other.GovApplier()
+	if (liveGov == nil) != (otherGov == nil) {
+		return errors.New("chain: RestoreFromChainReplay governance applier presence mismatch")
+	}
+	if liveGov != nil {
+		if liveGov.Accounts != a.accounts || otherGov.Accounts != other.accounts {
+			return errors.New("chain: RestoreFromChainReplay governance AccountStore wiring mismatch")
+		}
+		if err := liveGov.RestoreFromGovernanceReplay(otherGov); err != nil {
 			return err
 		}
 	}
