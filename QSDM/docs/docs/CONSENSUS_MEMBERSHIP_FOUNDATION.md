@@ -143,3 +143,20 @@ building block, not proof that QSDM currently has multi-validator BFT
 finality. It does not replace chain-committed membership, authenticated
 peer-to-signer transport binding, integer quorum accounting, or verified
 multi-node proposer rotation.
+## Staging Integer Voting View
+
+The membership foundation also provides an immutable integer-only voting view
+for a selected snapshot, or for the snapshot active at a selected height. It:
+
+- preserves the snapshot fingerprint and canonical address order;
+- sums only distinct, exact member addresses;
+- rejects unknown and duplicate voters instead of silently treating them as
+  zero voting power; and
+- calculates the smallest integer strictly greater than two thirds of total
+  voting power.
+
+The view has a simple address-order rotation for the multi-node staging
+harness. That rotation is deliberately not a production weighted proposer
+algorithm and is not connected to the current node runtime. It exists to make
+membership, quorum accounting, and failover tests deterministic before any
+chain-committed BFT transition is proposed.
