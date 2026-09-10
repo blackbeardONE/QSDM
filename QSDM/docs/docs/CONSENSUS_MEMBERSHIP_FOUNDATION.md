@@ -122,3 +122,24 @@ That solves the deterministic lookup rule needed for replay and recovery:
 rule: today no chain transaction creates or persists this schedule. A future
 membership change must be approved by the old set, committed to the chain, and
 reconstructed from chain history before the schedule may control BFT voting.
+## Opt-In BFT Wire Gate
+
+The BFT executor can now be given an immutable membership schedule and an
+activation height by an embedding application. At and after that height it:
+
+- requires every outbound vote to carry the active membership fingerprint;
+- signs that fingerprint as part of the vote digest; and
+- rejects inbound signed votes whose fingerprint, validator address, or public
+  key differs from the active snapshot.
+
+Before the configured activation height, the gate emits no membership
+fingerprint and continues to verify the existing signed BFT wire format. This
+allows a coordinated upgrade without making historical signed messages
+unreadable.
+
+This gate is deliberately **not installed by the current QSDM node runtime or
+enabled through production configuration**. It is an isolated enforcement
+building block, not proof that QSDM currently has multi-validator BFT
+finality. It does not replace chain-committed membership, authenticated
+peer-to-signer transport binding, integer quorum accounting, or verified
+multi-node proposer rotation.

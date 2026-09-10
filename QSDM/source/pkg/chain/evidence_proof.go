@@ -69,13 +69,14 @@ var ErrEvidenceInvalidVoteUnprovable = errors.New("chain: invalid_vote evidence 
 
 // SignedVoteExhibit is one authenticated BFT message used as evidence.
 type SignedVoteExhibit struct {
-	Kind      string      `json:"kind"` // BFTWirePropose, BFTWirePrevote, or BFTWirePrecommit
-	Height    uint64      `json:"height"`
-	Round     uint32      `json:"round"`
-	Validator string      `json:"validator"`
-	BlockHash string      `json:"block_hash"`
-	BodyHash  string      `json:"body_hash,omitempty"`
-	Auth      BFTWireAuth `json:"auth"`
+	Kind           string      `json:"kind"` // BFTWirePropose, BFTWirePrevote, or BFTWirePrecommit
+	Height         uint64      `json:"height"`
+	Round          uint32      `json:"round"`
+	Validator      string      `json:"validator"`
+	BlockHash      string      `json:"block_hash"`
+	MembershipRoot string      `json:"membership_root,omitempty"`
+	BodyHash       string      `json:"body_hash,omitempty"`
+	Auth           BFTWireAuth `json:"auth"`
 }
 
 // verify checks the exhibit's own signature.
@@ -83,16 +84,16 @@ func (x SignedVoteExhibit) verify() error {
 	switch x.Kind {
 	case BFTWirePropose:
 		return verifyAuth(x.Auth, bftVoteDigest(
-			BFTWirePropose, x.Height, x.Round, x.Validator, x.BlockHash, x.BodyHash), x.Validator)
+			BFTWirePropose, x.Height, x.Round, x.Validator, x.BlockHash, x.BodyHash, x.MembershipRoot), x.Validator)
 	case BFTWirePrevote:
 		return VerifyPrevote(BFTWirePrevoteMsg{
 			Height: x.Height, Round: x.Round,
-			Validator: x.Validator, BlockHash: x.BlockHash, Auth: x.Auth,
+			Validator: x.Validator, BlockHash: x.BlockHash, MembershipRoot: x.MembershipRoot, Auth: x.Auth,
 		})
 	case BFTWirePrecommit:
 		return VerifyPrecommit(BFTWirePrecommitMsg{
 			Height: x.Height, Round: x.Round,
-			Validator: x.Validator, BlockHash: x.BlockHash, Auth: x.Auth,
+			Validator: x.Validator, BlockHash: x.BlockHash, MembershipRoot: x.MembershipRoot, Auth: x.Auth,
 		})
 	default:
 		return fmt.Errorf("%w: unsupported exhibit kind %q", ErrEvidenceProofInvalid, x.Kind)
@@ -125,6 +126,11 @@ func (p *EquivocationProof) Verify(accused string) error {
 	if a.Height != b.Height || a.Round != b.Round {
 		// Voting differently at different heights/rounds is legal.
 		return fmt.Errorf("%w: exhibits are not from the same height and round", ErrEvidenceProofInvalid)
+	}
+	if a.MembershipRoot != b.MembershipRoot {
+		// Votes under different membership snapshots do not prove a
+		// double-vote in one consensus context.
+		return fmt.Errorf("%w: exhibits commit to different membership roots", ErrEvidenceProofInvalid)
 	}
 	if a.BlockHash == b.BlockHash {
 		return fmt.Errorf("%w: exhibits agree, so no equivocation is shown", ErrEvidenceProofInvalid)
@@ -252,6 +258,12 @@ func (p *EquivocationProof) fingerprint() string {
 		writeUint64Prefixed(h, uint64(x.Round))
 		writeLenPrefixed(h, []byte(x.BlockHash))
 		writeLenPrefixed(h, []byte(x.BodyHash))
+		// Keep the stable identity of legacy rootless evidence unchanged.
+		// A membership-bound vote always has a non-empty root, which is then
+		// part of the per-exhibit digest and separates consensus contexts.
+		if x.MembershipRoot != "" {
+			writeLenPrefixed(h, []byte(x.MembershipRoot))
+		}
 		digests = append(digests, hex.EncodeToString(h.Sum(nil)))
 	}
 	sort.Strings(digests)
