@@ -109,3 +109,16 @@ channel. Do not accept a new set merely because one node generated the file.
 - A peer ID identifies network transport, not voting permission by itself.
 - A valid membership file is a review artifact until a future chain update
   commits and enforces it.
+
+## Height-Indexed Schedules
+
+QSDM also has an immutable in-memory schedule that resolves the membership
+snapshot applicable to a given chain height. A schedule sorts snapshots by their
+activation height, rejects duplicate activation heights and network mismatches,
+and returns defensive copies to readers.
+
+That solves the deterministic lookup rule needed for replay and recovery:
+"which set applies at height H?" It does not yet solve the source-of-truth
+rule: today no chain transaction creates or persists this schedule. A future
+membership change must be approved by the old set, committed to the chain, and
+reconstructed from chain history before the schedule may control BFT voting.
