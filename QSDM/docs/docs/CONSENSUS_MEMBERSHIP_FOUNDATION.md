@@ -160,3 +160,16 @@ harness. That rotation is deliberately not a production weighted proposer
 algorithm and is not connected to the current node runtime. It exists to make
 membership, quorum accounting, and failover tests deterministic before any
 chain-committed BFT transition is proposed.
+
+## In-Memory Four-Node Staging Test
+
+`TestBFTMembershipFourNodeStagingClusterCommitsAfterFailover` runs four
+independent consensus/executor instances against the same immutable membership
+snapshot. It relays membership-bound signed messages to every instance,
+deliberately retires the first round, and verifies that the rotated proposer
+and a full signed quorum commit the same value on every instance.
+
+It is a regression harness, not a network deployment. It does not test real
+libp2p transport, peer-to-signer identity binding, process recovery, or a
+chain-committed transition. Those require a separate two-or-more-process
+staging network before production BFT can be considered.
