@@ -146,6 +146,10 @@ validator, modify chain state, or activate a membership policy on a node. A
 future chain-approved transition and coordinated operator rollout are still
 required before any schedule can govern production consensus.
 
+See [Consensus Membership Transition Design](CONSENSUS_MEMBERSHIP_TRANSITION_DESIGN.md)
+for the required chain-state authority, approval rule, and release gates. The
+design is deliberately not active code today.
+
 ## Opt-In BFT Wire Gate
 
 The BFT executor can now be given an immutable membership schedule and an
