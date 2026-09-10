@@ -173,3 +173,20 @@ It is a regression harness, not a network deployment. It does not test real
 libp2p transport, peer-to-signer identity binding, process recovery, or a
 chain-committed transition. Those require a separate two-or-more-process
 staging network before production BFT can be considered.
+
+## Validator Peer Binding Proof
+
+`ConsensusPeerBinding` is a separate public proof that binds a membership
+member's ML-DSA consensus signer to its declared libp2p peer identity. Both
+private keys sign the same membership-fingerprint-specific challenge, so a
+proof cannot be copied to another membership snapshot or substituted with an
+uncommitted key.
+
+The proof deliberately does not treat the network peer that relays a message
+as the validator that originated it. Gossip relays may differ from the vote
+originator. It proves key possession for the identity pair committed in the
+snapshot; a future transport handshake must still bind that proof to a live
+peer session before it can enforce a production peer policy.
+
+The current runtime does not create, distribute, or enforce these proofs.
+They are a testable prerequisite for that later chain-approved transition.
