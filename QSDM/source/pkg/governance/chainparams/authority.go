@@ -144,6 +144,16 @@ type AuthorityVoteStore interface {
 	RecomputeCrossed(authorityCount int, currentHeight uint64) []AuthorityProposal
 }
 
+// AuthorityVoteStoreReplayCloner is the optional snapshot/restore capability
+// needed when authority-rotation votes participate in speculative chain
+// replay. The vote tally is consensus-relevant state; it must not alias the
+// live store while a candidate block is being evaluated.
+type AuthorityVoteStoreReplayCloner interface {
+	AuthorityVoteStore
+	CloneAuthorityVoteStoreForReplay() AuthorityVoteStore
+	RestoreAuthorityVoteStoreFromReplay(AuthorityVoteStore) error
+}
+
 // AuthorityThreshold returns the M-of-N threshold for an
 // authority list of size n. See the package-level threshold
 // rationale comment above. Exported so the CLI / API can
@@ -176,6 +186,49 @@ func NewInMemoryAuthorityVoteStore() *InMemoryAuthorityVoteStore {
 	return &InMemoryAuthorityVoteStore{
 		proposals: make(map[AuthorityVoteKey]AuthorityProposal),
 	}
+}
+
+// CloneAuthorityVoteStoreForReplay implements
+// AuthorityVoteStoreReplayCloner. Proposal voters are copied too, so a
+// speculative vote cannot leak into the live tally.
+func (s *InMemoryAuthorityVoteStore) CloneAuthorityVoteStoreForReplay() AuthorityVoteStore {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	clone := NewInMemoryAuthorityVoteStore()
+	for key, proposal := range s.proposals {
+		clone.proposals[key] = cloneProposal(proposal)
+	}
+	return clone
+}
+
+// RestoreAuthorityVoteStoreFromReplay implements
+// AuthorityVoteStoreReplayCloner. Only a compatible in-memory snapshot is
+// accepted so replay cannot silently combine two storage implementations.
+func (s *InMemoryAuthorityVoteStore) RestoreAuthorityVoteStoreFromReplay(from AuthorityVoteStore) error {
+	if s == nil {
+		return fmt.Errorf("chainparams: nil InMemoryAuthorityVoteStore")
+	}
+	other, ok := from.(*InMemoryAuthorityVoteStore)
+	if !ok || other == nil {
+		return fmt.Errorf("chainparams: replay restore expects *InMemoryAuthorityVoteStore snapshot")
+	}
+	if other == s {
+		return nil
+	}
+	other.mu.RLock()
+	proposals := make(map[AuthorityVoteKey]AuthorityProposal, len(other.proposals))
+	for key, proposal := range other.proposals {
+		proposals[key] = cloneProposal(proposal)
+	}
+	other.mu.RUnlock()
+
+	s.mu.Lock()
+	s.proposals = proposals
+	s.mu.Unlock()
+	return nil
 }
 
 // RecordVote implements AuthorityVoteStore.
@@ -417,5 +470,8 @@ func sortProposals(ps []AuthorityProposal) {
 	})
 }
 
-// Compile-time assertion.
-var _ AuthorityVoteStore = (*InMemoryAuthorityVoteStore)(nil)
+// Compile-time assertions.
+var (
+	_ AuthorityVoteStore             = (*InMemoryAuthorityVoteStore)(nil)
+	_ AuthorityVoteStoreReplayCloner = (*InMemoryAuthorityVoteStore)(nil)
+)

@@ -525,3 +525,163 @@ func TestEnrollmentAwareApplier_RejectsGovTxWhenNotWired(t *testing.T) {
 		t.Errorf("err=%v, want ErrGovernanceNotWired", err)
 	}
 }
+func TestEnrollmentAwareApplier_ChainReplayCloneIsolatesGovernance(t *testing.T) {
+	fx := buildGovFixture(t, []string{"authority-1"})
+	aware := NewEnrollmentAwareApplier(fx.accounts, nil)
+	aware.SetGovApplier(fx.applier)
+	aware.SetHeightFn(func() uint64 { return 50 })
+
+	clone := aware.ChainReplayClone().(*EnrollmentAwareApplier)
+	if clone.GovApplier() == nil {
+		t.Fatal("replay clone lost its governance applier")
+	}
+	if clone.GovApplier() == fx.applier {
+		t.Fatal("replay clone aliases the live governance applier")
+	}
+	if clone.GovApplier().Accounts == fx.accounts {
+		t.Fatal("replay governance applier aliases the live AccountStore")
+	}
+
+	tx := buildGovTx(fx.authority, 0, 0.01, chainparams.ParamSetPayload{
+		Kind:            chainparams.PayloadKindParamSet,
+		Param:           string(chainparams.ParamRewardBPS),
+		Value:           2500,
+		EffectiveHeight: 100,
+	})
+	if err := clone.ApplyTx(tx); err != nil {
+		t.Fatalf("speculative ApplyTx: %v", err)
+	}
+	if _, ok := fx.store.Pending(string(chainparams.ParamRewardBPS)); ok {
+		t.Fatal("speculative governance change leaked into live parameter store")
+	}
+	if account, _ := fx.accounts.Get(fx.authority); account.Nonce != 0 {
+		t.Fatalf("speculative governance fee leaked into live account nonce=%d", account.Nonce)
+	}
+	if len(fx.publisher.events) != 0 {
+		t.Fatalf("speculative governance replay emitted live events: %#v", fx.publisher.events)
+	}
+
+	if err := aware.RestoreFromChainReplay(clone); err != nil {
+		t.Fatalf("restore governance replay snapshot: %v", err)
+	}
+	if _, ok := fx.store.Pending(string(chainparams.ParamRewardBPS)); !ok {
+		t.Fatal("restored governance snapshot lost staged parameter")
+	}
+	if account, _ := fx.accounts.Get(fx.authority); account.Nonce != 1 {
+		t.Fatalf("restored governance account nonce=%d, want 1", account.Nonce)
+	}
+	if len(fx.publisher.events) != 0 {
+		t.Fatalf("restoring a snapshot emitted live events: %#v", fx.publisher.events)
+	}
+}
+
+func TestEnrollmentAwareApplier_ChainReplayCloneIsolatesAuthorityVotes(t *testing.T) {
+	fx := buildGovFixture(t, []string{"authority-1"})
+	fx.applier.SetAuthorityVoteStore(chainparams.NewInMemoryAuthorityVoteStore())
+	aware := NewEnrollmentAwareApplier(fx.accounts, nil)
+	aware.SetGovApplier(fx.applier)
+	aware.SetHeightFn(func() uint64 { return 50 })
+
+	payload := chainparams.AuthoritySetPayload{
+		Kind:            chainparams.PayloadKindAuthoritySet,
+		Op:              chainparams.AuthorityOpAdd,
+		Address:         "authority-2",
+		EffectiveHeight: 100,
+	}
+	raw, err := chainparams.EncodeAuthoritySet(payload)
+	if err != nil {
+		t.Fatalf("encode authority payload: %v", err)
+	}
+	tx := &mempool.Tx{
+		ID:         "replay-authority-vote",
+		Sender:     fx.authority,
+		Nonce:      0,
+		Fee:        0.01,
+		ContractID: chainparams.ContractID,
+		Payload:    raw,
+	}
+	clone := aware.ChainReplayClone().(*EnrollmentAwareApplier)
+	if err := clone.ApplyTx(tx); err != nil {
+		t.Fatalf("speculative authority vote: %v", err)
+	}
+	key := chainparams.AuthorityVoteKey{
+		Op:              payload.Op,
+		Address:         payload.Address,
+		EffectiveHeight: payload.EffectiveHeight,
+	}
+	if _, ok := fx.applier.AuthorityVotes.Lookup(key); ok {
+		t.Fatal("speculative authority vote leaked into live vote store")
+	}
+	if _, ok := clone.GovApplier().AuthorityVotes.Lookup(key); !ok {
+		t.Fatal("replay clone did not retain its authority vote")
+	}
+	if len(fx.publisher.authEvents) != 0 {
+		t.Fatalf("speculative authority replay emitted live events: %#v", fx.publisher.authEvents)
+	}
+
+	if err := aware.RestoreFromChainReplay(clone); err != nil {
+		t.Fatalf("restore authority replay snapshot: %v", err)
+	}
+	if _, ok := fx.applier.AuthorityVotes.Lookup(key); !ok {
+		t.Fatal("restored authority vote snapshot lost the vote")
+	}
+	if account, _ := fx.accounts.Get(fx.authority); account.Nonce != 1 {
+		t.Fatalf("restored authority vote account nonce=%d, want 1", account.Nonce)
+	}
+	if len(fx.publisher.authEvents) != 0 {
+		t.Fatalf("restoring authority replay emitted live events: %#v", fx.publisher.authEvents)
+	}
+}
+
+func TestGovApplier_ExternalBlockReplayPreservesGovernanceState(t *testing.T) {
+	const currentHeight uint64 = 50
+
+	source := buildGovFixture(t, []string{"authority-1"})
+	sourceAware := NewEnrollmentAwareApplier(source.accounts, nil)
+	sourceAware.SetGovApplier(source.applier)
+	sourceAware.SetHeightFn(func() uint64 { return currentHeight })
+	sourcePool := mempool.New(mempool.DefaultConfig())
+	defer sourcePool.Stop()
+
+	tx := buildGovTx(source.authority, 0, 0.01, chainparams.ParamSetPayload{
+		Kind:            chainparams.PayloadKindParamSet,
+		Param:           string(chainparams.ParamRewardBPS),
+		Value:           2500,
+		EffectiveHeight: 100,
+	})
+	tx.ID = "external-governance-param"
+	if err := sourcePool.Add(tx); err != nil {
+		t.Fatalf("add governance transaction: %v", err)
+	}
+
+	sourceProducer := NewBlockProducer(sourcePool, sourceAware, DefaultProducerConfig())
+	blk, err := sourceProducer.ProduceBlock()
+	if err != nil {
+		t.Fatalf("produce governance block: %v", err)
+	}
+	if len(blk.Transactions) != 1 || blk.Transactions[0].ID != tx.ID {
+		t.Fatalf("produced governance block transactions=%#v", blk.Transactions)
+	}
+
+	follower := buildGovFixture(t, []string{"authority-1"})
+	followerAware := NewEnrollmentAwareApplier(follower.accounts, nil)
+	followerAware.SetGovApplier(follower.applier)
+	followerAware.SetHeightFn(func() uint64 { return currentHeight })
+	followerPool := mempool.New(mempool.DefaultConfig())
+	defer followerPool.Stop()
+	followerProducer := NewBlockProducer(followerPool, followerAware, DefaultProducerConfig())
+
+	if err := followerProducer.TryAppendExternalBlock(blk); err != nil {
+		t.Fatalf("replay governance block on follower: %v", err)
+	}
+	pending, ok := follower.store.Pending(string(chainparams.ParamRewardBPS))
+	if !ok || pending.Value != 2500 || pending.EffectiveHeight != 100 {
+		t.Fatalf("follower pending governance state=%+v ok=%v", pending, ok)
+	}
+	if account, _ := follower.accounts.Get(follower.authority); account.Nonce != 1 {
+		t.Fatalf("follower governance nonce=%d, want 1", account.Nonce)
+	}
+	if len(follower.publisher.events) != 1 || follower.publisher.events[0].Kind != GovParamEventStaged {
+		t.Fatalf("follower governance events=%#v, want one live staged event", follower.publisher.events)
+	}
+}
