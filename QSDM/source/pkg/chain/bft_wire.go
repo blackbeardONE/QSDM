@@ -22,21 +22,23 @@ type BFTWireEnvelope struct {
 // BlockHash is the BFT vote id (this codebase uses the sealed StateRoot for that role).
 // Block, when set, carries the full block body so followers can execute fork-choice without local execution.
 type BFTWireProposeMsg struct {
-	Height    uint64 `json:"height"`
-	Round     uint32 `json:"round"`
-	Proposer  string `json:"proposer"`
-	BlockHash string `json:"block_hash"`
-	Block     *Block `json:"block,omitempty"`
+	Height         uint64 `json:"height"`
+	Round          uint32 `json:"round"`
+	Proposer       string `json:"proposer"`
+	BlockHash      string `json:"block_hash"`
+	MembershipRoot string `json:"membership_root,omitempty"`
+	Block          *Block `json:"block,omitempty"`
 	// Auth authenticates the proposer. See bft_sig.go.
 	Auth BFTWireAuth `json:"auth,omitempty"`
 }
 
 // BFTWirePrevoteMsg is a prevote from a validator.
 type BFTWirePrevoteMsg struct {
-	Height    uint64 `json:"height"`
-	Round     uint32 `json:"round"`
-	Validator string `json:"validator"`
-	BlockHash string `json:"block_hash"`
+	Height         uint64 `json:"height"`
+	Round          uint32 `json:"round"`
+	Validator      string `json:"validator"`
+	BlockHash      string `json:"block_hash"`
+	MembershipRoot string `json:"membership_root,omitempty"`
 	// Auth authenticates the validator. Without it any gossip peer can
 	// forge a prevote for any validator. See bft_sig.go.
 	Auth BFTWireAuth `json:"auth,omitempty"`
@@ -44,10 +46,11 @@ type BFTWirePrevoteMsg struct {
 
 // BFTWirePrecommitMsg is a precommit from a validator.
 type BFTWirePrecommitMsg struct {
-	Height    uint64 `json:"height"`
-	Round     uint32 `json:"round"`
-	Validator string `json:"validator"`
-	BlockHash string `json:"block_hash"`
+	Height         uint64 `json:"height"`
+	Round          uint32 `json:"round"`
+	Validator      string `json:"validator"`
+	BlockHash      string `json:"block_hash"`
+	MembershipRoot string `json:"membership_root,omitempty"`
 	// Auth authenticates the validator. Without it any gossip peer can
 	// forge a precommit for any validator — i.e. manufacture a quorum.
 	// See bft_sig.go.

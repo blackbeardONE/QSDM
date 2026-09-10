@@ -66,9 +66,14 @@ func BFTValidatorAddress(publicKey []byte) string {
 // the vote value. Fields are length-prefixed via the separator-free
 // strconv encoding plus explicit '|' delimiters between typed segments, so
 // no two distinct field tuples can produce the same pre-image.
-func bftVoteDigest(kind string, height uint64, round uint32, signer, blockHash, bodyHash string) []byte {
+func bftVoteDigest(kind string, height uint64, round uint32, signer, blockHash, bodyHash, membershipRoot string) []byte {
 	var b strings.Builder
-	b.WriteString("qsdm/bft/v1|")
+	if membershipRoot == "" {
+		// Preserve verification of legacy signed messages during rollout.
+		b.WriteString("qsdm/bft/v1|")
+	} else {
+		b.WriteString("qsdm/bft/v2|")
+	}
 	b.WriteString(kind)
 	b.WriteString("|h:")
 	b.WriteString(strconv.FormatUint(height, 10))
@@ -86,6 +91,12 @@ func bftVoteDigest(kind string, height uint64, round uint32, signer, blockHash, 
 	b.WriteString(strconv.Itoa(len(bodyHash)))
 	b.WriteString(":")
 	b.WriteString(bodyHash)
+	if membershipRoot != "" {
+		b.WriteString("|m:")
+		b.WriteString(strconv.Itoa(len(membershipRoot)))
+		b.WriteString(":")
+		b.WriteString(membershipRoot)
+	}
 	sum := sha256.Sum256([]byte(b.String()))
 	return sum[:]
 }
@@ -154,7 +165,7 @@ func SignPropose(m *BFTWireProposeMsg, signer BFTSigner) error {
 		return errors.New("chain: nil propose message")
 	}
 	auth, err := signAuth(signer, bftVoteDigest(
-		BFTWirePropose, m.Height, m.Round, m.Proposer, m.BlockHash, proposeBodyHash(m.Block)))
+		BFTWirePropose, m.Height, m.Round, m.Proposer, m.BlockHash, proposeBodyHash(m.Block), m.MembershipRoot))
 	if err != nil {
 		return err
 	}
@@ -165,7 +176,7 @@ func SignPropose(m *BFTWireProposeMsg, signer BFTSigner) error {
 // VerifyPropose checks a proposal's authenticator.
 func VerifyPropose(m BFTWireProposeMsg) error {
 	return verifyAuth(m.Auth, bftVoteDigest(
-		BFTWirePropose, m.Height, m.Round, m.Proposer, m.BlockHash, proposeBodyHash(m.Block)), m.Proposer)
+		BFTWirePropose, m.Height, m.Round, m.Proposer, m.BlockHash, proposeBodyHash(m.Block), m.MembershipRoot), m.Proposer)
 }
 
 // SignPrevote attaches an authenticator to a prevote.
@@ -174,7 +185,7 @@ func SignPrevote(m *BFTWirePrevoteMsg, signer BFTSigner) error {
 		return errors.New("chain: nil prevote message")
 	}
 	auth, err := signAuth(signer, bftVoteDigest(
-		BFTWirePrevote, m.Height, m.Round, m.Validator, m.BlockHash, ""))
+		BFTWirePrevote, m.Height, m.Round, m.Validator, m.BlockHash, "", m.MembershipRoot))
 	if err != nil {
 		return err
 	}
@@ -185,7 +196,7 @@ func SignPrevote(m *BFTWirePrevoteMsg, signer BFTSigner) error {
 // VerifyPrevote checks a prevote's authenticator.
 func VerifyPrevote(m BFTWirePrevoteMsg) error {
 	return verifyAuth(m.Auth, bftVoteDigest(
-		BFTWirePrevote, m.Height, m.Round, m.Validator, m.BlockHash, ""), m.Validator)
+		BFTWirePrevote, m.Height, m.Round, m.Validator, m.BlockHash, "", m.MembershipRoot), m.Validator)
 }
 
 // SignPrecommit attaches an authenticator to a precommit.
@@ -194,7 +205,7 @@ func SignPrecommit(m *BFTWirePrecommitMsg, signer BFTSigner) error {
 		return errors.New("chain: nil precommit message")
 	}
 	auth, err := signAuth(signer, bftVoteDigest(
-		BFTWirePrecommit, m.Height, m.Round, m.Validator, m.BlockHash, ""))
+		BFTWirePrecommit, m.Height, m.Round, m.Validator, m.BlockHash, "", m.MembershipRoot))
 	if err != nil {
 		return err
 	}
@@ -205,7 +216,7 @@ func SignPrecommit(m *BFTWirePrecommitMsg, signer BFTSigner) error {
 // VerifyPrecommit checks a precommit's authenticator.
 func VerifyPrecommit(m BFTWirePrecommitMsg) error {
 	return verifyAuth(m.Auth, bftVoteDigest(
-		BFTWirePrecommit, m.Height, m.Round, m.Validator, m.BlockHash, ""), m.Validator)
+		BFTWirePrecommit, m.Height, m.Round, m.Validator, m.BlockHash, "", m.MembershipRoot), m.Validator)
 }
 
 // equalAuth is a helper for tests and dedupe paths.

@@ -53,9 +53,13 @@ func (r *BFTP2PRelay) readLoop() {
 		if msg.ReceivedFrom.String() == r.selfID {
 			continue
 		}
-		peer := msg.ReceivedFrom.String()
-		if err := r.ingress.HandlePeerMessage(peer, msg.Data); err != nil {
-			log.Printf("[bft-relay] ingress from %s: %v", peer, err)
+		relayPeer := msg.ReceivedFrom.String()
+		// ReceivedFrom identifies the immediate gossip relay. GetFrom is the
+		// original publisher whose libp2p envelope is verified by StrictSign
+		// before a subscription can receive it. Keep both identities distinct.
+		publisherPeer := msg.GetFrom().String()
+		if err := r.ingress.HandlePeerMessageFromPublisher(relayPeer, publisherPeer, msg.Data); err != nil {
+			log.Printf("[bft-relay] ingress relay=%s publisher=%s: %v", relayPeer, publisherPeer, err)
 		}
 	}
 }
