@@ -37,6 +37,21 @@ replay use independent state. Its state root contribution must be enabled at a
 coordinated network height. A transition that is not in the state root is not a
 consensus transition.
 
+## Current Foundation Implementation
+
+`ConsensusMembershipState` now models the required transition data in an
+isolated chain package: an active snapshot, a bounded queue of complete
+replacement proposals, signed approvals from the active old set, an integer
+more-than-two-thirds quorum, exact-height resolution, bounded audit history,
+and deterministic state-root bytes. It also has typed clone and restore helpers
+so the model can be exercised without shared mutable state.
+
+It is deliberately **not active in the live chain**. It does not accept a
+transaction, contribute to the current block state root, alter the runtime
+validator set, or permit `qsdm/gov/v1` to change membership. Those links must
+be introduced together behind a coordinated activation plan; connecting only
+one of them would create a fork risk rather than BFT safety.
+
 ## Approval Rule
 
 A proposed replacement set must be approved by the currently active set, not
