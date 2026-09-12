@@ -157,6 +157,8 @@
         { slug: "treasury-policy",       title: "Treasury policy",               repoPath: DOCS_PREFIX_REPO + "/TREASURY_POLICY.md" },
         { slug: "cryptography",          title: "Cryptography comparison",       repoPath: DOCS_PREFIX_REPO + "/CRYPTOGRAPHY_COMPARISON.md" },
         { slug: "attestation-sidecars",  title: "Attestation sidecars",          repoPath: DOCS_PREFIX_REPO + "/ATTESTATION_SIDECARS.md" },
+        { slug: "consensus-membership",   title: "Consensus membership transition", repoPath: DOCS_PREFIX_REPO + "/CONSENSUS_MEMBERSHIP_TRANSITION_DESIGN.md", badge: "staged" },
+        { slug: "consensus-durability",   title: "Consensus durability staging", repoPath: DOCS_PREFIX_REPO + "/CONSENSUS_DURABILITY_STAGING.md", badge: "staged" },
         { slug: "wasm-interfaces",       title: "WASM module interfaces",        repoPath: DOCS_PREFIX_REPO + "/WASM_MODULE_INTERFACES.md" },
         { slug: "wasm-integration",      title: "WASM integration testing",      repoPath: DOCS_PREFIX_REPO + "/WASM_INTEGRATION_TESTING.md" },
         { slug: "roadmap",               title: "Roadmap",                       repoPath: DOCS_PREFIX_REPO + "/ROADMAP.md" },
