@@ -29,9 +29,10 @@ var (
 	ErrBFTRoundRecoveryFull          = errors.New("chain: BFT round recovery capacity reached")
 )
 
-// BFTRecoveryChain must be a quiescent canonical chain whose blocks and account
-// state have already been verified by the caller. These lookups reconcile local
-// safety guards; they are not a substitute for chain/state verification.
+// BFTRecoveryChain must be a quiescent, verified canonical chain view.
+// ConfigureRoundRecovery also requires account state verified by the caller;
+// ConfigureAccountCommitRecovery instead reconciles its bound account files.
+// These lookups and local guards are not substitutes for finality verification.
 type BFTRecoveryChain interface {
 	GetBlock(height uint64) (*Block, bool)
 	LatestBlock() (*Block, bool)
@@ -63,12 +64,13 @@ type bftRoundRecoveryFile struct {
 // Owned by BFTConsensus.mu. The process lock covers the stable sibling path,
 // not the inode replaced on each strict atomic write.
 type bftRoundRecovery struct {
-	path       string
-	lock       *StateLock
-	file       bftRoundRecoveryFile
-	guards     map[uint64]bftRecoveryGuard
-	validators []Validator
-	writeFile  func(string, []byte, fs.FileMode) error
+	path           string
+	lock           *StateLock
+	file           bftRoundRecoveryFile
+	guards         map[uint64]bftRecoveryGuard
+	validators     []Validator
+	writeFile      func(string, []byte, fs.FileMode) error
+	accountCommits *bftAccountCommitJournal
 }
 
 // ConfigureRoundRecovery is an opt-in, fixed-validator-set library path. Call
@@ -78,6 +80,10 @@ type bftRoundRecovery struct {
 // ApplyInbound is disabled in this mode. Direct consensus callers are trusted
 // to authenticate and round-bind every vote before applying it.
 func (e *BFTExecutor) ConfigureRoundRecovery(chain BFTRecoveryChain) error {
+	return e.configureRoundRecovery(chain, nil)
+}
+
+func (e *BFTExecutor) configureRoundRecovery(chain BFTRecoveryChain, paths *bftAccountCommitPaths) error {
 	if e == nil || e.bc == nil {
 		return ErrBFTRoundRecoveryUnavailable
 	}
@@ -121,7 +127,7 @@ func (e *BFTExecutor) ConfigureRoundRecovery(chain BFTRecoveryChain) error {
 	if err != nil {
 		return fail(err)
 	}
-	recovery, err := openBFTRoundRecovery(e.signingJournal, rules, chain)
+	recovery, err := openBFTRoundRecovery(e.signingJournal, rules, chain, paths)
 	if err != nil {
 		return fail(err)
 	}
@@ -166,7 +172,7 @@ func bftRecoveryRules(cfg ConsensusConfig, validators []Validator) (string, erro
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func openBFTRoundRecovery(journal *BFTSigningJournal, rules string, chain BFTRecoveryChain) (_ *bftRoundRecovery, err error) {
+func openBFTRoundRecovery(journal *BFTSigningJournal, rules string, chain BFTRecoveryChain, paths *bftAccountCommitPaths) (_ *bftRoundRecovery, err error) {
 	if chain == nil {
 		return nil, ErrBFTRoundRecoveryChainMismatch
 	}
@@ -194,8 +200,18 @@ func openBFTRoundRecovery(journal *BFTSigningJournal, rules string, chain BFTRec
 	defer func() {
 		if err != nil {
 			_ = r.lock.Close()
+			if r.accountCommits != nil {
+				_ = r.accountCommits.close()
+			}
 		}
 	}()
+	if paths == nil {
+		for _, suffix := range []string{".commit", ".commit.binding"} {
+			if _, statErr := os.Lstat(r.path + suffix); !errors.Is(statErr, os.ErrNotExist) {
+				return nil, fmt.Errorf("%w: account commit reconciliation is required", ErrBFTRoundRecoveryUnavailable)
+			}
+		}
+	}
 	marker := []byte("qsdm-bft-round-recovery-v1\n")
 	savedMarker, markerErr := readBFTRecoveryFile(r.path+".binding", int64(len(marker)))
 	if markerErr != nil && !errors.Is(markerErr, os.ErrNotExist) {
@@ -211,6 +227,11 @@ func openBFTRoundRecovery(journal *BFTSigningJournal, rules string, chain BFTRec
 	if errors.Is(readErr, os.ErrNotExist) {
 		if markerErr == nil || len(journal.Records()) != 0 {
 			return nil, fmt.Errorf("%w: missing initialized state or unsupported signing-history migration", ErrBFTRoundRecoveryCorrupt)
+		}
+		for _, suffix := range []string{".commit", ".commit.binding"} {
+			if _, statErr := os.Lstat(r.path + suffix); !errors.Is(statErr, os.ErrNotExist) {
+				return nil, fmt.Errorf("%w: account commit journal requires existing round guards", ErrBFTRoundRecoveryCorrupt)
+			}
 		}
 	} else {
 		r.file = bftRoundRecoveryFile{}
@@ -231,18 +252,36 @@ func openBFTRoundRecovery(journal *BFTSigningJournal, rules string, chain BFTRec
 			return nil, fmt.Errorf("%w: checkpoint is not in the restored chain", ErrBFTRoundRecoveryChainMismatch)
 		}
 		for _, guard := range r.file.Guards {
-			if guard.CommittedValue != "" {
-				block, ok := chain.GetBlock(guard.Height)
-				if guard.Height > tip.Height || !ok || !validRecoveryBlock(block, guard.Height) || block.StateRoot != guard.CommittedValue {
-					return nil, fmt.Errorf("%w: local commit at height %d is absent or conflicting", ErrBFTRoundRecoveryChainMismatch, guard.Height)
-				}
-			}
 			r.guards[guard.Height] = guard
 		}
 		for _, signed := range journal.Records() {
 			guard, ok := r.guards[signed.Intent.Height]
 			if !ok || guard.NextRound <= uint64(signed.Intent.Round) {
 				return nil, fmt.Errorf("%w: signing history is ahead of round guards", ErrBFTRoundRecoveryCorrupt)
+			}
+		}
+	}
+	if paths != nil {
+		if errors.Is(readErr, os.ErrNotExist) {
+			// Materialize the round half before creating its commit companion.
+			// A configuration crash must not leave an orphaned commit journal.
+			r.file.Checkpoint = bftRecoveryCheckpoint{tip.Height, tip.Hash}
+			if err := r.persist(r.guards); err != nil {
+				return nil, err
+			}
+		}
+		r.accountCommits, err = openBFTAccountCommitJournal(journal, rules, chain, *paths, r.guards)
+		if err != nil {
+			return nil, err
+		}
+		chain = r.accountCommits
+		tip, _ = chain.LatestBlock()
+	}
+	for _, guard := range r.guards {
+		if guard.CommittedValue != "" {
+			block, ok := chain.GetBlock(guard.Height)
+			if guard.Height > tip.Height || !ok || !validRecoveryBlock(block, guard.Height) || block.StateRoot != guard.CommittedValue {
+				return nil, fmt.Errorf("%w: local commit at height %d is absent or conflicting", ErrBFTRoundRecoveryChainMismatch, guard.Height)
 			}
 		}
 	}
@@ -259,7 +298,15 @@ func openBFTRoundRecovery(journal *BFTSigningJournal, rules string, chain BFTRec
 }
 
 func validRecoveryBlock(block *Block, height uint64) bool {
-	return block != nil && block.Height == height && block.Hash != "" && block.Hash == ComputeBlockHash(block)
+	if block == nil || block.Height != height || block.Hash == "" {
+		return false
+	}
+	for _, tx := range block.Transactions {
+		if tx == nil {
+			return false
+		}
+	}
+	return block.Hash == ComputeBlockHash(block)
 }
 
 func readBFTRecoveryFile(path string, limit int64) ([]byte, error) {
@@ -365,6 +412,9 @@ func (bc *BFTConsensus) recoveryReadyLocked() error {
 	if bc.roundRecoveryRequired && bc.roundRecovery == nil {
 		return ErrBFTRoundRecoveryUnavailable
 	}
+	if bc.roundRecovery != nil && bc.roundRecovery.accountCommits != nil && ForkDustHeight() != math.MaxUint64 {
+		return fmt.Errorf("%w: account commit rules changed", ErrBFTRoundRecoveryUnavailable)
+	}
 	return nil
 }
 
@@ -387,9 +437,25 @@ func (bc *BFTConsensus) persistRecoveryRoundLocked(cr *ConsensusRound) error {
 		guards[height] = saved
 	}
 	guards[cr.Height] = guard
+	if r.accountCommits != nil && cr.Status == StatusCommitted {
+		if err := r.accountCommits.stage(cr); err != nil {
+			bc.roundRecoveryErr = fmt.Errorf("%w: %w", ErrBFTRoundRecoveryUnavailable, err)
+			return bc.roundRecoveryErr
+		}
+	}
 	if err := r.persist(guards); err != nil {
 		bc.roundRecoveryErr = fmt.Errorf("%w: %w", ErrBFTRoundRecoveryUnavailable, err)
 		return bc.roundRecoveryErr
+	}
+	if r.accountCommits != nil && cr.Status == StatusCommitted {
+		if err := r.accountCommits.at("decision"); err != nil {
+			bc.roundRecoveryErr = fmt.Errorf("%w: %w", ErrBFTRoundRecoveryUnavailable, err)
+			return bc.roundRecoveryErr
+		}
+		if err := r.accountCommits.finish(); err != nil {
+			bc.roundRecoveryErr = fmt.Errorf("%w: %w", ErrBFTRoundRecoveryUnavailable, err)
+			return bc.roundRecoveryErr
+		}
 	}
 	return nil
 }
@@ -426,9 +492,13 @@ func (bc *BFTConsensus) closeRoundRecoveryLocked() error {
 	if bc.roundRecovery == nil || bc.roundRecovery.lock == nil {
 		return nil
 	}
+	var commitErr error
+	if bc.roundRecovery.accountCommits != nil {
+		commitErr = bc.roundRecovery.accountCommits.close()
+	}
 	err := bc.roundRecovery.lock.Close()
 	bc.roundRecovery.lock = nil
-	return err
+	return errors.Join(err, commitErr)
 }
 
 func (bc *BFTConsensus) recoverySigningGuardLocked(intent BFTSigningIntent) error {
@@ -460,6 +530,11 @@ func (bc *BFTConsensus) recoverySigningGuardLocked(intent BFTSigningIntent) erro
 		if intent.Kind == BFTWirePrecommit {
 			if cr.Status != StatusPreVoted {
 				return errors.New("chain: recovered precommit requires a fresh prevote quorum")
+			}
+			if store := bc.roundRecovery.accountCommits; store != nil && intent.BlockHash != NilVoteHash {
+				if err := store.matchesPrepared(cr); err != nil {
+					return err
+				}
 			}
 			return bc.validatePreCommitAgainstLock(cr, intent.BlockHash)
 		}

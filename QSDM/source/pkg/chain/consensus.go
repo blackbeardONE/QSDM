@@ -150,6 +150,12 @@ func (bc *BFTConsensus) Propose(height uint64, round uint32, proposer, blockHash
 		return nil, err
 	}
 	if bc.roundRecovery != nil {
+		if store := bc.roundRecovery.accountCommits; store != nil {
+			tip, _ := store.LatestBlock()
+			if tip.Height == math.MaxUint64 || height != tip.Height+1 {
+				return nil, fmt.Errorf("%w: account commit must extend the durable tip", ErrBFTRoundRetired)
+			}
+		}
 		if height <= bc.roundRecovery.file.Checkpoint.Height {
 			return nil, fmt.Errorf("%w: height %d is already in the restored chain", ErrBFTRoundRetired, height)
 		}

@@ -75,7 +75,7 @@ func (e *BFTExecutor) ConfigureSigningJournal(path string, binding BFTSigningJou
 	if err != nil {
 		return fail(err)
 	}
-	for _, suffix := range []string{".rounds", ".rounds.binding"} {
+	for _, suffix := range []string{".rounds", ".rounds.binding", ".rounds.commit", ".rounds.commit.binding"} {
 		if _, err := os.Lstat(path + suffix); errors.Is(err, os.ErrNotExist) {
 			continue
 		}
