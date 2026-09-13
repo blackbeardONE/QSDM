@@ -93,6 +93,11 @@ blocks recovery. This includes a crash after local consensus commit but before
 the block was sealed. No block or certificate is fabricated to bridge that gap.
 Integration with the chain commit journal is still required to resolve it.
 
+The separate [account-only commit reconciliation path](BFT_ACCOUNT_COMMIT_STAGING.md)
+can resolve this window for isolated plain-transfer staging chains. It requires
+`ConfigureAccountCommitRecovery` instead of this configuration API and is not
+compatible with the node's composite account/enrollment/governance callbacks.
+
 ## Limits and Verification
 
 The journal is bounded at 4 MiB and 4,096 height guards. It retains old guards;
