@@ -1312,6 +1312,10 @@ func main() {
 	liveConsensusCfg := chain.DefaultConsensusConfig()
 	liveBFT := chain.NewBFTConsensus(nodeValidatorSet, liveConsensusCfg)
 	bftExec := chain.NewBFTExecutor(liveBFT)
+	if err := prepareConsensusJournalGate(bftExec, stateDir, cfg.ConsensusSigningJournal); err != nil {
+		log.Fatalf("consensus signing journal: %v", err)
+	}
+	defer bftExec.CloseSigningJournal()
 	bftIngressExec := bftExec
 	if networkedCatchupMode {
 		// A catch-up replica replays the pinned canonical chain but is not a
@@ -1335,7 +1339,7 @@ func main() {
 	// and precommits go out unauthenticated and any gossip peer can forge
 	// votes for any validator — i.e. manufacture a quorum.
 	bftExec.SetVoteSigner(consensusSigner)
-	logger.Info("BFT vote signing enabled", "validator", consensusSigner.Address())
+	logger.Info("BFT vote signer configured", "validator", consensusSigner.Address(), "signing_journal_required", cfg.ConsensusSigningJournal)
 	// Inbound enforcement is opt-in so a mixed-version validator set can
 	// roll forward: signed builds emit signatures immediately, and the
 	// operator turns rejection on once every peer is upgraded. A
@@ -2218,6 +2222,15 @@ func main() {
 	} else {
 		logger.Info("No persisted chain found; genesis seal will run on a fresh chain",
 			"chain_path", chainStatePath)
+	}
+
+	genesisForSigning, _ := adminProducer.GetBlock(0)
+	if err := configureConsensusJournal(bftExec, stateDir, genesisForSigning, cfg, liveConsensusCfg); err != nil {
+		log.Fatalf("consensus signing journal: %v", err)
+	}
+	if cfg.ConsensusSigningJournal {
+		logger.Info("Durable BFT signing journal ready", "path", filepath.Join(stateDir, consensusSigningJournalFile),
+			"scope", "local signing only; round recovery and multi-validator activation remain disabled")
 	}
 
 	var journalTip *chain.Block

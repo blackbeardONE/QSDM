@@ -25,9 +25,20 @@ var (
 // overwrites thereafter; critical state callers pair those writes with a
 // separately validated .last-good snapshot.
 func WriteFileAtomic(path string, data []byte, perm fs.FileMode) error {
+	return writeFileAtomic(path, data, perm, false)
+}
+
+// WriteFileAtomicStrict never falls back to truncating the destination. It
+// syncs the parent directory on platforms that support it; Windows replacement
+// already uses MOVEFILE_WRITE_THROUGH. Errors require caller reconciliation.
+func WriteFileAtomicStrict(path string, data []byte, perm fs.FileMode) error {
+	return writeFileAtomic(path, data, perm, true)
+}
+
+func writeFileAtomic(path string, data []byte, perm fs.FileMode, strict bool) error {
 	dir := filepath.Dir(path)
 	directWriteKey := filepath.Clean(dir)
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" && !strict {
 		if _, direct := directWriteDirectories.Load(directWriteKey); direct {
 			if err := writeFileSyncedSerialized(path, data, perm); err != nil {
 				return fmt.Errorf("direct synced write %q: %w", path, err)
@@ -68,6 +79,9 @@ func WriteFileAtomic(path string, data []byte, perm fs.FileMode) error {
 	for attempt := 0; attempt < 8; attempt++ {
 		if replaceErr = replaceFileForWrite(tmpName, path); replaceErr == nil {
 			cleanup = false
+			if strict {
+				return syncParentDirectory(dir)
+			}
 			return nil
 		}
 		if !retryableReplaceError(replaceErr) {
@@ -75,7 +89,7 @@ func WriteFileAtomic(path string, data []byte, perm fs.FileMode) error {
 		}
 		time.Sleep(time.Duration(attempt+1) * 25 * time.Millisecond)
 	}
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" && !strict {
 		// Some operator workspaces deny delete/rename while still allowing
 		// writes. Critical state users keep a separately validated .last-good
 		// snapshot before calling this for the primary, so a synced overwrite

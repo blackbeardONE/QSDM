@@ -21,6 +21,13 @@ type BFTExecutor struct {
 	// voteSigner authenticates outbound consensus messages (guarded by mu).
 	voteSigner BFTSigner
 
+	signingMu              sync.Mutex
+	signingJournalRequired bool
+	signingStarted         bool
+	signingJournal         *BFTSigningJournal
+	signingJournalLock     *StateLock
+	signingJournalErr      error
+
 	// requireSignedVotes rejects unsigned inbound consensus messages.
 	requireSignedVotes atomic.Bool
 	// signedVoteActivationHeight preserves unsigned historical traffic below
@@ -349,19 +356,30 @@ func (e *BFTExecutor) BroadcastPropose(height uint64, round uint32, proposer, bl
 	msg := BFTWireProposeMsg{
 		Height: height, Round: round, Proposer: proposer, BlockHash: blockHash, MembershipRoot: membershipRoot, Block: body,
 	}
-	if signer := e.VoteSigner(); signer != nil {
-		if err := SignPropose(&msg, signer); err != nil {
-			return err
+	b, err := e.prepareOutbound(BFTSigningIntentForPropose(msg), func(signer BFTSigner) ([]byte, error) {
+		if signer != nil {
+			if err := SignPropose(&msg, signer); err != nil {
+				return nil, err
+			}
 		}
-	}
-	if err := e.validateOutboundMembership(height, proposer, membershipRoot, msg.Auth); err != nil {
-		return err
-	}
-	e.recordProposeExhibit(msg)
-	b, err := MarshalBFTWire(BFTWirePropose, msg)
+		if err := e.validateOutboundMembership(height, proposer, membershipRoot, msg.Auth); err != nil {
+			return nil, err
+		}
+		return MarshalBFTWire(BFTWirePropose, msg)
+	})
 	if err != nil {
 		return err
 	}
+	// A recovered envelope may contain the prior signature rather than msg.Auth.
+	_, raw, err := UnmarshalBFTWire(b)
+	if err != nil {
+		return err
+	}
+	msg = BFTWireProposeMsg{}
+	if err := json.Unmarshal(raw, &msg); err != nil {
+		return err
+	}
+	e.recordProposeExhibit(msg)
 	return e.emit(b)
 }
 
@@ -372,6 +390,8 @@ func (e *BFTExecutor) SetVoteSigner(s BFTSigner) {
 	if e == nil {
 		return
 	}
+	e.signingMu.Lock()
+	defer e.signingMu.Unlock()
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.voteSigner = s
@@ -570,15 +590,17 @@ func (e *BFTExecutor) BroadcastPrevote(height uint64, round uint32, validator, b
 	msg := BFTWirePrevoteMsg{
 		Height: height, Round: round, Validator: validator, BlockHash: blockHash, MembershipRoot: membershipRoot,
 	}
-	if signer := e.VoteSigner(); signer != nil {
-		if err := SignPrevote(&msg, signer); err != nil {
-			return err
+	b, err := e.prepareOutbound(BFTSigningIntentForPrevote(msg), func(signer BFTSigner) ([]byte, error) {
+		if signer != nil {
+			if err := SignPrevote(&msg, signer); err != nil {
+				return nil, err
+			}
 		}
-	}
-	if err := e.validateOutboundMembership(height, validator, membershipRoot, msg.Auth); err != nil {
-		return err
-	}
-	b, err := MarshalBFTWire(BFTWirePrevote, msg)
+		if err := e.validateOutboundMembership(height, validator, membershipRoot, msg.Auth); err != nil {
+			return nil, err
+		}
+		return MarshalBFTWire(BFTWirePrevote, msg)
+	})
 	if err != nil {
 		return err
 	}
@@ -597,15 +619,17 @@ func (e *BFTExecutor) BroadcastPrecommit(height uint64, round uint32, validator,
 	msg := BFTWirePrecommitMsg{
 		Height: height, Round: round, Validator: validator, BlockHash: blockHash, MembershipRoot: membershipRoot,
 	}
-	if signer := e.VoteSigner(); signer != nil {
-		if err := SignPrecommit(&msg, signer); err != nil {
-			return err
+	b, err := e.prepareOutbound(BFTSigningIntentForPrecommit(msg), func(signer BFTSigner) ([]byte, error) {
+		if signer != nil {
+			if err := SignPrecommit(&msg, signer); err != nil {
+				return nil, err
+			}
 		}
-	}
-	if err := e.validateOutboundMembership(height, validator, membershipRoot, msg.Auth); err != nil {
-		return err
-	}
-	b, err := MarshalBFTWire(BFTWirePrecommit, msg)
+		if err := e.validateOutboundMembership(height, validator, membershipRoot, msg.Auth); err != nil {
+			return nil, err
+		}
+		return MarshalBFTWire(BFTWirePrecommit, msg)
+	})
 	if err != nil {
 		return err
 	}

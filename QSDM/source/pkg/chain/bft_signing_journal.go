@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	bftSigningJournalVersion      = 1
+	bftSigningJournalVersion      = 2
 	maxBFTSigningJournalBytes     = 4 << 20
 	maxBFTSigningJournalRecords   = 4096
 	bftSigningJournalFileMode     = 0o600
@@ -63,6 +63,9 @@ type BFTSigningJournalBinding struct {
 	SignerAddress              string `json:"signer_address"`
 	SignerPublicKeyFingerprint string `json:"signer_public_key_fingerprint"`
 	ConsensusConfigFingerprint string `json:"consensus_config_fingerprint"`
+	// AllowLegacyMembership records the actual empty root on compatibility
+	// traffic. It does not authorize a membership snapshot or enable BFT.
+	AllowLegacyMembership bool `json:"allow_legacy_membership,omitempty"`
 }
 
 // NewBFTSigningJournalBinding constructs a binding for a local validator
@@ -187,6 +190,9 @@ func (i BFTSigningIntent) validate(binding BFTSigningJournalBinding) (string, er
 		{"block hash", i.BlockHash},
 		{"membership root", i.MembershipRoot},
 	} {
+		if field.name == "membership root" && field.value == "" && binding.AllowLegacyMembership {
+			continue
+		}
 		if err := validateBFTSigningJournalString(field.name, field.value); err != nil {
 			return "", err
 		}
@@ -225,6 +231,7 @@ type BFTSigningJournalRecord struct {
 	ReservedAt         time.Time        `json:"reserved_at"`
 	SignedAt           time.Time        `json:"signed_at,omitempty"`
 	SignedEnvelopeHash string           `json:"signed_envelope_hash,omitempty"`
+	SignedEnvelope     string           `json:"signed_envelope,omitempty"`
 }
 
 func (r BFTSigningJournalRecord) validate(binding BFTSigningJournalBinding) error {
@@ -239,7 +246,7 @@ func (r BFTSigningJournalRecord) validate(binding BFTSigningJournalBinding) erro
 		return fmt.Errorf("chain: BFT signing journal record has no reservation timestamp")
 	}
 	if r.SignedEnvelopeHash == "" {
-		if !r.SignedAt.IsZero() {
+		if !r.SignedAt.IsZero() || r.SignedEnvelope != "" {
 			return fmt.Errorf("chain: BFT signing journal record has a signed timestamp without an envelope hash")
 		}
 		return nil
@@ -253,6 +260,13 @@ func (r BFTSigningJournalRecord) validate(binding BFTSigningJournalBinding) erro
 	if !isLowerHexFingerprint(r.SignedEnvelopeHash) {
 		return fmt.Errorf("chain: BFT signing journal signed envelope hash is not a SHA-256 fingerprint")
 	}
+	sum := sha256.Sum256([]byte(r.SignedEnvelope))
+	if hex.EncodeToString(sum[:]) != r.SignedEnvelopeHash {
+		return fmt.Errorf("chain: BFT signing journal signed envelope hash mismatch")
+	}
+	if err := validateBFTSigningJournalEnvelope(r.Intent, []byte(r.SignedEnvelope)); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -263,9 +277,9 @@ type bftSigningJournalFile struct {
 	Integrity string                    `json:"integrity"`
 }
 
-// BFTSigningJournal is an inactive persistence foundation for local vote
-// safety. It is intentionally not wired to BFTExecutor or validator startup.
-// A caller must reserve a tuple before it asks an ML-DSA signer to emit a vote.
+// BFTSigningJournal persists local signing intentions and signed envelopes.
+// Direct callers must provide exclusive file ownership. BFTExecutor's
+// ConfigureSigningJournal acquires the process lock before opening a journal.
 type BFTSigningJournal struct {
 	mu      sync.Mutex
 	path    string
@@ -403,7 +417,12 @@ func (j *BFTSigningJournal) MarkSigned(intent BFTSigningIntent, envelope []byte)
 	}
 	sum := sha256.Sum256(envelope)
 	record.SignedEnvelopeHash = hex.EncodeToString(sum[:])
+	record.SignedEnvelope = string(envelope)
 	record.SignedAt = time.Now().UTC()
+	if record.SignedAt.Before(record.ReservedAt) {
+		// Wall-clock corrections must not create an unreadable durable record.
+		record.SignedAt = record.ReservedAt
+	}
 	candidate := j.cloneRecordsLocked()
 	candidate[key] = record
 	if err := j.persistLocked(candidate); err != nil {
@@ -446,7 +465,10 @@ func (j *BFTSigningJournal) persistLocked(records map[bftSigningJournalKey]BFTSi
 	if err != nil {
 		return err
 	}
-	if err := fileutil.WriteFileAtomic(j.path, raw, bftSigningJournalFileMode); err != nil {
+	if len(raw) > maxBFTSigningJournalBytes {
+		return fmt.Errorf("%w: encoded journal exceeds %d bytes", ErrBFTSigningJournalFull, maxBFTSigningJournalBytes)
+	}
+	if err := fileutil.WriteFileAtomicStrict(j.path, raw, bftSigningJournalFileMode); err != nil {
 		return fmt.Errorf("chain: persist BFT signing journal %q: %w", j.path, err)
 	}
 	if err := os.Chmod(j.path, bftSigningJournalFileMode); err != nil {

@@ -189,6 +189,9 @@ type Config struct {
 	// user or treasury funds. Empty resolves to a file under the node state
 	// directory in cmd/qsdm.
 	ConsensusSignerKeyPath string
+	// ConsensusSigningJournal enables staged write-ahead BFT signing. It is
+	// off by default and requires a restored genesis before signing can start.
+	ConsensusSigningJournal bool
 
 	// ForkDustHeight is reserved for the coordinated integer-dust accounting
 	// transition. Config parsing retains the field so operators can inspect old
@@ -440,6 +443,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.TxContentRootActivationHeight = tomlCfg.Consensus.TxContentRootActivationHeight
 		cfg.EnrollmentStateRootActivationHeight = tomlCfg.Consensus.EnrollmentStateRootActivationHeight
 		cfg.ConsensusSignerKeyPath = strings.TrimSpace(tomlCfg.Consensus.SignerKeyPath)
+		cfg.ConsensusSigningJournal = tomlCfg.Consensus.SigningJournal
 		cfg.ForkDustHeight = tomlCfg.Consensus.ForkDustHeight
 		if tomlCfg.Performance.TransactionInterval != "" {
 			if d, err := time.ParseDuration(tomlCfg.Performance.TransactionInterval); err == nil {
@@ -545,6 +549,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.TxContentRootActivationHeight = yamlCfg.Consensus.TxContentRootActivationHeight
 		cfg.EnrollmentStateRootActivationHeight = yamlCfg.Consensus.EnrollmentStateRootActivationHeight
 		cfg.ConsensusSignerKeyPath = strings.TrimSpace(yamlCfg.Consensus.SignerKeyPath)
+		cfg.ConsensusSigningJournal = yamlCfg.Consensus.SigningJournal
 		cfg.ForkDustHeight = yamlCfg.Consensus.ForkDustHeight
 		if yamlCfg.Performance.TransactionInterval != "" {
 			if d, err := time.ParseDuration(yamlCfg.Performance.TransactionInterval); err == nil {
@@ -746,6 +751,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := strings.TrimSpace(getEnvString("QSDM_CONSENSUS_SIGNER_KEY_PATH", "")); v != "" {
 		cfg.ConsensusSignerKeyPath = v
+	}
+	if v := strings.TrimSpace(getEnvString("QSDM_CONSENSUS_SIGNING_JOURNAL", "")); v != "" {
+		cfg.ConsensusSigningJournal = envcompat.Truthy("QSDM_CONSENSUS_SIGNING_JOURNAL", "QSDM_CONSENSUS_SIGNING_JOURNAL")
 	}
 	if val := strings.TrimSpace(envPreferred("QSDM_NETWORK_HOST_KEY_PATH", "QSDM_NETWORK_HOST_KEY_PATH")); val != "" {
 		cfg.NetworkHostKeyPath = val
