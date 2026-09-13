@@ -201,8 +201,6 @@ func (g *BFTGossipIngress) handlePeerMessage(peerID, publisherPeerID string, pay
 		g.statRateLimited.Add(1)
 		return fmt.Errorf("bft gossip rate limited for peer %s", peerID)
 	}
-	g.seenIDs[id] = now
-	g.evictSeenIfNeededLocked()
 	g.mu.Unlock()
 
 	if policy := g.peerOriginPolicy.Load(); policy != nil {
@@ -211,6 +209,19 @@ func (g *BFTGossipIngress) handlePeerMessage(peerID, publisherPeerID string, pay
 			return fmt.Errorf("bft gossip authenticated publisher: %w", err)
 		}
 	}
+
+	// A rejected publisher must not mark a copied vote as seen before its
+	// authorized publisher arrives. Recheck under the lock after verification
+	// so concurrent authorized deliveries still apply the message only once.
+	g.mu.Lock()
+	if _, dup := g.seenIDs[id]; dup {
+		g.mu.Unlock()
+		g.statDedupe.Add(1)
+		return fmt.Errorf("duplicate bft gossip")
+	}
+	g.seenIDs[id] = now
+	g.evictSeenIfNeededLocked()
+	g.mu.Unlock()
 
 	if g.exec != nil {
 		g.exec.SetLastInboundBFTGossipPeer(peerID)
