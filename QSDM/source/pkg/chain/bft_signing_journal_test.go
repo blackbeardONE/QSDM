@@ -148,6 +148,40 @@ func TestBFTSigningJournalConcurrentConflictsFailClosed(t *testing.T) {
 		t.Fatalf("concurrent conflicts wrote %d records, want 1: %+v", len(records), records)
 	}
 }
+func TestBFTSigningJournalRefusesToPersistPastCapacity(t *testing.T) {
+	binding := testBFTSigningJournalBinding()
+	journal, err := OpenBFTSigningJournal(filepath.Join(t.TempDir(), "journal.json"), binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < maxBFTSigningJournalRecords; index++ {
+		journal.records[bftSigningJournalKey{
+			Kind:      BFTWirePrevote,
+			Height:    uint64(index + 1),
+			Validator: binding.SignerAddress,
+		}] = BFTSigningJournalRecord{}
+	}
+	intent := testBFTSigningJournalIntent(binding, BFTWirePrevote)
+	intent.Height = uint64(maxBFTSigningJournalRecords + 1)
+	if _, _, err := journal.Reserve(intent); !errors.Is(err, ErrBFTSigningJournalFull) {
+		t.Fatalf("Reserve() at capacity error = %v, want journal full", err)
+	}
+	if got := len(journal.records); got != maxBFTSigningJournalRecords {
+		t.Fatalf("Reserve() at capacity changed records to %d, want %d", got, maxBFTSigningJournalRecords)
+	}
+
+	overCapacity := make(map[bftSigningJournalKey]BFTSigningJournalRecord, maxBFTSigningJournalRecords+1)
+	for index := 0; index <= maxBFTSigningJournalRecords; index++ {
+		overCapacity[bftSigningJournalKey{
+			Kind:      BFTWirePrevote,
+			Height:    uint64(index + 1),
+			Validator: binding.SignerAddress,
+		}] = BFTSigningJournalRecord{}
+	}
+	if err := journal.persistLocked(overCapacity); !errors.Is(err, ErrBFTSigningJournalFull) {
+		t.Fatalf("persistLocked() over capacity error = %v, want journal full", err)
+	}
+}
 func TestBFTSigningJournalRequiresReservationBeforeSignedRecord(t *testing.T) {
 	dir := t.TempDir()
 	signer, _, err := LoadOrCreateBFTSigner(filepath.Join(dir, "consensus-signer.json"))

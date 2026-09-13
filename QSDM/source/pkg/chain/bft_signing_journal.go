@@ -43,6 +43,10 @@ var (
 	// ErrBFTSigningJournalEnvelopeInvalid means a caller tried to mark an
 	// intent signed with a malformed or unauthenticated BFT wire envelope.
 	ErrBFTSigningJournalEnvelopeInvalid = errors.New("chain: BFT signing journal envelope invalid")
+	// ErrBFTSigningJournalFull means the journal reached its fixed safe
+	// capacity. Callers must fail closed until a future chain-tip-aware
+	// compaction design exists.
+	ErrBFTSigningJournalFull = errors.New("chain: BFT signing journal capacity reached")
 )
 
 // BFTSigningJournalBinding identifies the one consensus context permitted to
@@ -350,6 +354,9 @@ func (j *BFTSigningJournal) Reserve(intent BFTSigningIntent) (BFTSigningJournalR
 		}
 		return BFTSigningJournalRecord{}, false, fmt.Errorf("%w: %s height=%d round=%d validator=%s", ErrBFTSigningJournalConflict, intent.Kind, intent.Height, intent.Round, intent.Validator)
 	}
+	if len(j.records) >= maxBFTSigningJournalRecords {
+		return BFTSigningJournalRecord{}, false, fmt.Errorf("%w: %d records", ErrBFTSigningJournalFull, maxBFTSigningJournalRecords)
+	}
 	record := BFTSigningJournalRecord{
 		Intent:     intent,
 		Digest:     digest,
@@ -427,6 +434,9 @@ func (j *BFTSigningJournal) cloneRecordsLocked() map[bftSigningJournalKey]BFTSig
 }
 
 func (j *BFTSigningJournal) persistLocked(records map[bftSigningJournalKey]BFTSigningJournalRecord) error {
+	if len(records) > maxBFTSigningJournalRecords {
+		return fmt.Errorf("%w: %d records (max %d)", ErrBFTSigningJournalFull, len(records), maxBFTSigningJournalRecords)
+	}
 	stored := bftSigningJournalFile{
 		Version: bftSigningJournalVersion,
 		Binding: j.binding,
