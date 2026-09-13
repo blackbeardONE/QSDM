@@ -3,6 +3,7 @@ package chain
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -105,8 +106,9 @@ type BFTConsensus struct {
 	cfg        ConsensusConfig
 	rounds     map[uint64]*ConsensusRound // height -> current round
 	committed  map[uint64]*ConsensusRound // height -> committed round
-	// nextRound is the next round index to use at each height after a timeout/failure.
-	nextRound map[uint64]uint32
+	// nextRound is the retirement floor after timeout/failure. It must hold
+	// MaxUint32+1 so exhausting the wire round range never reopens round zero.
+	nextRound map[uint64]uint64
 	// carryPrevoteLock seeds LockedBlockHash on round>0 after a prior round ended with a lock
 	// (timeout / fail) without commit — POL-style carry between rounds at the same height.
 	carryPrevoteLock map[uint64]string
@@ -122,7 +124,7 @@ func NewBFTConsensus(validators *ValidatorSet, cfg ConsensusConfig) *BFTConsensu
 		cfg:              cfg,
 		rounds:           make(map[uint64]*ConsensusRound),
 		committed:        make(map[uint64]*ConsensusRound),
-		nextRound:        make(map[uint64]uint32),
+		nextRound:        make(map[uint64]uint64),
 		carryPrevoteLock: make(map[uint64]string),
 	}
 }
@@ -184,7 +186,7 @@ func (bc *BFTConsensus) Propose(height uint64, round uint32, proposer, blockHash
 	// The cost is liveness, and it is bounded: a node whose clock retired round
 	// N early will refuse further round-N proposes and wait for N+1, which the
 	// rotated proposer emits once its own deadline passes.
-	if next, ok := bc.nextRound[height]; ok && round < next {
+	if next, ok := bc.nextRound[height]; ok && uint64(round) < next {
 		return nil, fmt.Errorf("%w: round %d at height %d; next round is %d", ErrBFTRoundRetired, round, height, next)
 	}
 
@@ -237,7 +239,7 @@ func (bc *BFTConsensus) proposerForRoundLocked(round uint32) (string, error) {
 		}
 		return active[i].Address < active[j].Address
 	})
-	idx := int(round) % len(active)
+	idx := int(uint64(round) % uint64(len(active)))
 	return active[idx].Address, nil
 }
 
@@ -259,17 +261,23 @@ func (bc *BFTConsensus) TickRoundTimeouts(now time.Time) []uint64 {
 		cr.Status = StatusFailed
 		cr.EndTime = now
 		delete(bc.rounds, height)
-		bc.nextRound[height] = cr.Round + 1
+		bc.nextRound[height] = uint64(cr.Round) + 1
 		timedOut = append(timedOut, height)
 	}
 	return timedOut
 }
 
 // NextRoundAfterTimeout returns the round index to use after the last timeout at height.
+// It saturates at MaxUint32 when no wire round remains; Propose then rejects
+// every round with ErrBFTRoundRetired. The retirement floor itself never wraps.
 func (bc *BFTConsensus) NextRoundAfterTimeout(height uint64) uint32 {
 	bc.mu.RLock()
 	defer bc.mu.RUnlock()
-	return bc.nextRound[height]
+	next := bc.nextRound[height]
+	if next > math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(next)
 }
 
 // ClearNextRound was removed deliberately. It deleted bc.nextRound[height],
@@ -432,7 +440,7 @@ func (bc *BFTConsensus) FailRound(height uint64) error {
 	cr.Status = StatusFailed
 	cr.EndTime = time.Now()
 	delete(bc.rounds, height)
-	bc.nextRound[height] = cr.Round + 1
+	bc.nextRound[height] = uint64(cr.Round) + 1
 	return nil
 }
 
