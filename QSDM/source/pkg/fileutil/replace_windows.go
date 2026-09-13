@@ -31,3 +31,5 @@ func retryableReplaceError(err error) bool {
 func atomicReplaceUnavailable(err error) bool {
 	return errors.Is(err, windows.ERROR_ACCESS_DENIED)
 }
+
+func syncParentDirectory(string) error { return nil }

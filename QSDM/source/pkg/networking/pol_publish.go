@@ -39,6 +39,12 @@ func PublishPolAfterBlockSeal(log *logging.Logger, relay *PolP2PRelay, polFollow
 	}
 
 	polRelayOk := relay != nil
+	if bftExec != nil && bftExec.SigningJournalRequired() && !bc.IsCommitted(h) {
+		if err := chain.RunSyntheticBFTRoundWithExecutor(bftExec, vs, blk); err != nil {
+			log.Warn("POL publish refused failed journaled round", "height", h, "error", err)
+			return
+		}
+	}
 
 	if bc.IsCommitted(h) {
 		publishPolAfterAlreadyCommitted(log, relay, polFollower, bftExec, bc, blk, polRelayOk, markPublished)

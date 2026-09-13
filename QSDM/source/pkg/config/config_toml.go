@@ -188,6 +188,8 @@ type ConsensusConfigTOML struct {
 
 	// SignerKeyPath stores the validator-only ML-DSA consensus hot key.
 	SignerKeyPath string `toml:"signer_key_path" yaml:"signer_key_path"`
+	// SigningJournal is a disabled-by-default local signing safety gate.
+	SigningJournal bool `toml:"signing_journal" yaml:"signing_journal"`
 
 	// ForkDustHeight is a reserved consensus parameter. Config validation
 	// currently rejects every non-zero value because the live capped-issuance

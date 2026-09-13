@@ -21,6 +21,8 @@ func (e *BFTExecutor) SetMembershipPolicy(policy *BFTMembershipPolicy) {
 	if e == nil {
 		return
 	}
+	e.signingMu.Lock()
+	defer e.signingMu.Unlock()
 	e.membershipPolicy.Store(policy)
 }
 

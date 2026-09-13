@@ -30,16 +30,28 @@ func RunSyntheticBFTRoundWithExecutor(exec *BFTExecutor, vs *ValidatorSet, tenta
 	if _, err := bc.Propose(height, round, prop, stateRoot); err != nil {
 		return err
 	}
-	_ = exec.BroadcastPropose(height, round, prop, stateRoot, tentative)
+	journaled := exec.SigningJournalRequired()
+	if err := exec.BroadcastPropose(height, round, prop, stateRoot, tentative); err != nil && journaled {
+		_ = bc.FailRound(height)
+		return fmt.Errorf("chain: journaled propose: %w", err)
+	}
 	for _, v := range vs.ActiveValidators() {
 		if v.Status != ValidatorActive {
 			continue
+		}
+		if journaled {
+			if err := exec.BroadcastPrevote(height, round, v.Address, stateRoot); err != nil {
+				_ = bc.FailRound(height)
+				return fmt.Errorf("chain: journaled prevote: %w", err)
+			}
 		}
 		if err := bc.PreVote(height, v.Address, stateRoot); err != nil {
 			_ = bc.FailRound(height)
 			return fmt.Errorf("chain: prevote %s: %w", v.Address, err)
 		}
-		_ = exec.BroadcastPrevote(height, round, v.Address, stateRoot)
+		if !journaled {
+			_ = exec.BroadcastPrevote(height, round, v.Address, stateRoot)
+		}
 	}
 	if _, err := bc.BuildPrevoteLockProof(height); err != nil {
 		_ = bc.FailRound(height)
@@ -49,11 +61,19 @@ func RunSyntheticBFTRoundWithExecutor(exec *BFTExecutor, vs *ValidatorSet, tenta
 		if v.Status != ValidatorActive {
 			continue
 		}
+		if journaled {
+			if err := exec.BroadcastPrecommit(height, round, v.Address, stateRoot); err != nil {
+				_ = bc.FailRound(height)
+				return fmt.Errorf("chain: journaled precommit: %w", err)
+			}
+		}
 		if err := bc.PreCommit(height, v.Address, stateRoot); err != nil {
 			_ = bc.FailRound(height)
 			return fmt.Errorf("chain: precommit %s: %w", v.Address, err)
 		}
-		_ = exec.BroadcastPrecommit(height, round, v.Address, stateRoot)
+		if !journaled {
+			_ = exec.BroadcastPrecommit(height, round, v.Address, stateRoot)
+		}
 	}
 	if !bc.IsCommitted(height) {
 		_ = bc.FailRound(height)

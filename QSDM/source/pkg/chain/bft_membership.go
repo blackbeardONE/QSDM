@@ -116,6 +116,11 @@ func (p *BFTMembershipPolicy) ValidateSignedMember(height uint64, membershipRoot
 	if !auth.Signed() {
 		return ErrBFTUnsigned
 	}
+	return p.validateMemberKey(height, membershipRoot, validator, auth.PublicKey)
+}
+
+// validateMemberKey permits checking local signing authority before signing.
+func (p *BFTMembershipPolicy) validateMemberKey(height uint64, membershipRoot, validator string, publicKey []byte) error {
 	membership, ok := p.schedule.ForHeight(height)
 	if !ok {
 		return fmt.Errorf("%w: height %d", ErrBFTMembershipUnknown, height)
@@ -135,7 +140,7 @@ func (p *BFTMembershipPolicy) ValidateSignedMember(height uint64, membershipRoot
 		if err != nil {
 			return fmt.Errorf("chain: active BFT membership contains invalid public key: %w", err)
 		}
-		if !bytes.Equal(auth.PublicKey, wantKey) {
+		if !bytes.Equal(publicKey, wantKey) {
 			return fmt.Errorf("%w: validator %s", ErrBFTMembershipKeyMismatch, validator)
 		}
 		return nil
