@@ -642,7 +642,7 @@ func (e *BFTExecutor) ApplyInbound(payload []byte) error {
 		if err := e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPrevote(m) }); err != nil {
 			return err
 		}
-		if err := e.bc.PreVote(m.Height, m.Validator, m.BlockHash); err != nil {
+		if err := e.bc.PreVoteForRound(m.Height, m.Round, m.Validator, m.BlockHash); err != nil {
 			if isBenignBFTErr(err) {
 				return nil
 			}
@@ -657,7 +657,7 @@ func (e *BFTExecutor) ApplyInbound(payload []byte) error {
 		if err := e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPrecommit(m) }); err != nil {
 			return err
 		}
-		if err := e.bc.PreCommit(m.Height, m.Validator, m.BlockHash); err != nil {
+		if err := e.bc.PreCommitForRound(m.Height, m.Round, m.Validator, m.BlockHash); err != nil {
 			if isBenignBFTErr(err) {
 				return nil
 			}
@@ -753,6 +753,11 @@ func isBenignBFTErr(err error) bool {
 	// sentinel rather than substring: the list below is exactly the mechanism
 	// that failed to notice this error when it was introduced.
 	if errors.Is(err, ErrBFTRoundRetired) {
+		return true
+	}
+	// Delayed or early votes cannot count toward the current round, but are
+	// expected on gossip and do not indicate a transport failure.
+	if errors.Is(err, ErrBFTVoteRoundMismatch) {
 		return true
 	}
 	s := err.Error()

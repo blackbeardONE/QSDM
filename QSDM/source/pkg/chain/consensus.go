@@ -18,6 +18,9 @@ var ErrBFTEquivocation = errors.New("chain: BFT proposer equivocation (conflicti
 // misses any new error nobody remembers to add to the list.
 var ErrBFTRoundRetired = errors.New("chain: BFT round retired")
 
+// ErrBFTVoteRoundMismatch rejects a vote for a different consensus round.
+var ErrBFTVoteRoundMismatch = errors.New("chain: BFT vote round mismatch")
+
 // ProposerEquivocationError carries structured context for evidence / diagnostics (unwraps to ErrBFTEquivocation).
 type ProposerEquivocationError struct {
 	Height       uint64
@@ -286,14 +289,28 @@ func (bc *BFTConsensus) NextRoundAfterTimeout(height uint64) uint32 {
 // TestNextRoundFloor_ClearedOnlyByCommit pins both halves.
 
 
-// PreVote records a pre-vote from a validator.
+// PreVote records a local pre-vote for the active round. Messages carrying a
+// round number must use PreVoteForRound instead.
 func (bc *BFTConsensus) PreVote(height uint64, validator, blockHash string) error {
+	return bc.preVote(height, nil, validator, blockHash)
+}
+
+// PreVoteForRound checks the vote's round and records it under the same lock,
+// so a concurrent timeout cannot move the vote into a different round.
+func (bc *BFTConsensus) PreVoteForRound(height uint64, round uint32, validator, blockHash string) error {
+	return bc.preVote(height, &round, validator, blockHash)
+}
+
+func (bc *BFTConsensus) preVote(height uint64, round *uint32, validator, blockHash string) error {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
 
 	cr, ok := bc.rounds[height]
 	if !ok {
 		return fmt.Errorf("no active round for height %d", height)
+	}
+	if round != nil && *round != cr.Round {
+		return fmt.Errorf("%w: prevote round %d at height %d; active round is %d", ErrBFTVoteRoundMismatch, *round, height, cr.Round)
 	}
 	if cr.Status != StatusProposed && cr.Status != StatusPreVoted {
 		return fmt.Errorf("round at height %d is in status %s, cannot prevote", height, cr.Status)
@@ -333,8 +350,19 @@ func (bc *BFTConsensus) PreVote(height uint64, validator, blockHash string) erro
 	return nil
 }
 
-// PreCommit records a pre-commit from a validator. Requires prevote quorum first.
+// PreCommit records a local pre-commit for the active round after prevote quorum.
+// Messages carrying a round number must use PreCommitForRound instead.
 func (bc *BFTConsensus) PreCommit(height uint64, validator, blockHash string) error {
+	return bc.preCommit(height, nil, validator, blockHash)
+}
+
+// PreCommitForRound checks the vote's round and records it under the same lock.
+// Late precommits must also match the committed round.
+func (bc *BFTConsensus) PreCommitForRound(height uint64, round uint32, validator, blockHash string) error {
+	return bc.preCommit(height, &round, validator, blockHash)
+}
+
+func (bc *BFTConsensus) preCommit(height uint64, round *uint32, validator, blockHash string) error {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
 
@@ -342,6 +370,9 @@ func (bc *BFTConsensus) PreCommit(height uint64, validator, blockHash string) er
 	if !ok {
 		// Quorum can finalize and delete the active round while remaining validators still send precommits.
 		if done, okDone := bc.committed[height]; okDone {
+			if round != nil && *round != done.Round {
+				return fmt.Errorf("%w: precommit round %d at height %d; committed round is %d", ErrBFTVoteRoundMismatch, *round, height, done.Round)
+			}
 			if blockHash != done.BlockHash {
 				return fmt.Errorf("late precommit at height %d for %q, committed %q", height, blockHash, done.BlockHash)
 			}
@@ -353,6 +384,9 @@ func (bc *BFTConsensus) PreCommit(height uint64, validator, blockHash string) er
 			return nil
 		}
 		return fmt.Errorf("no active round for height %d", height)
+	}
+	if round != nil && *round != cr.Round {
+		return fmt.Errorf("%w: precommit round %d at height %d; active round is %d", ErrBFTVoteRoundMismatch, *round, height, cr.Round)
 	}
 	if cr.Status != StatusPreVoted {
 		return fmt.Errorf("round at height %d needs prevote quorum before commits (status: %s)", height, cr.Status)
