@@ -42,6 +42,8 @@ func (e *BFTExecutor) SigningJournalRequired() bool {
 // ConfigureSigningJournal binds an executor once, before its first signing
 // attempt. The OS lock survives atomic file replacement and is released on
 // process exit. Errors leave signing blocked for this executor's lifetime.
+// Existing round-recovery files also block consensus/signing until a successful
+// ConfigureRoundRecovery call; omitting that call cannot downgrade recovery.
 func (e *BFTExecutor) ConfigureSigningJournal(path string, binding BFTSigningJournalBinding) error {
 	if e == nil {
 		return ErrBFTSigningUnavailable
@@ -72,6 +74,18 @@ func (e *BFTExecutor) ConfigureSigningJournal(path string, binding BFTSigningJou
 	path, err := filepath.Abs(strings.TrimSpace(path))
 	if err != nil {
 		return fail(err)
+	}
+	for _, suffix := range []string{".rounds", ".rounds.binding"} {
+		if _, err := os.Lstat(path + suffix); errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if e.bc == nil {
+			return fail(ErrBFTRoundRecoveryUnavailable)
+		}
+		e.bc.mu.Lock()
+		e.bc.roundRecoveryRequired = true
+		e.bc.mu.Unlock()
+		break
 	}
 	lock, err := AcquireStateLock(path + ".lock")
 	if err != nil {
@@ -140,16 +154,22 @@ func (e *BFTExecutor) CloseSigningJournal() error {
 	}
 	e.signingMu.Lock()
 	defer e.signingMu.Unlock()
+	var recoveryErr error
+	if e.bc != nil {
+		e.bc.mu.Lock()
+		recoveryErr = e.bc.closeRoundRecoveryLocked()
+		e.bc.mu.Unlock()
+	}
 	if !e.signingJournalRequired {
-		return nil
+		return recoveryErr
 	}
 	e.signingJournalErr = fmt.Errorf("%w: journal closed", ErrBFTSigningUnavailable)
 	if e.signingJournalLock == nil {
-		return nil
+		return recoveryErr
 	}
 	err := e.signingJournalLock.Close()
 	e.signingJournalLock = nil
-	return err
+	return errors.Join(err, recoveryErr)
 }
 
 // prepareOutbound serializes signer selection, reservation, signing and durable
@@ -158,6 +178,21 @@ func (e *BFTExecutor) CloseSigningJournal() error {
 func (e *BFTExecutor) prepareOutbound(intent BFTSigningIntent, encode func(BFTSigner) ([]byte, error)) ([]byte, error) {
 	e.signingMu.Lock()
 	defer e.signingMu.Unlock()
+	if e.bc != nil {
+		e.bc.mu.Lock()
+		if e.bc.roundRecoveryRequired {
+			// Keep timeouts and quorum changes out of the check/sign/persist window.
+			defer e.bc.mu.Unlock()
+			if err := e.bc.recoverySigningGuardLocked(intent); err != nil {
+				return nil, err
+			}
+			if e.MembershipPolicy() != nil {
+				return nil, ErrBFTRoundRecoveryUnavailable
+			}
+		} else {
+			e.bc.mu.Unlock()
+		}
+	}
 	signer := e.VoteSigner()
 	if !e.signingJournalRequired {
 		e.signingStarted = e.signingStarted || signer != nil

@@ -45,11 +45,14 @@ type RoundCertificate struct {
 func (bc *BFTConsensus) BuildRoundCertificate(height uint64) (*RoundCertificate, error) {
 	bc.mu.RLock()
 	defer bc.mu.RUnlock()
+	if err := bc.recoveryReadyLocked(); err != nil {
+		return nil, err
+	}
 	cr, ok := bc.committed[height]
 	if !ok || cr == nil {
 		return nil, fmt.Errorf("no committed round at height %d", height)
 	}
-	active := bc.validators.ActiveValidators()
+	active := bc.activeValidatorsLocked()
 	vals := make([]string, 0, len(active))
 	for _, v := range active {
 		vals = append(vals, v.Address)
@@ -94,6 +97,9 @@ func (bc *BFTConsensus) BuildRoundCertificate(height uint64) (*RoundCertificate,
 func (bc *BFTConsensus) BuildPrevoteLockProof(height uint64) (*PrevoteLockProof, error) {
 	bc.mu.RLock()
 	defer bc.mu.RUnlock()
+	if err := bc.recoveryReadyLocked(); err != nil {
+		return nil, err
+	}
 	cr := bc.rounds[height]
 	if cr == nil {
 		cr = bc.committed[height]
@@ -103,6 +109,11 @@ func (bc *BFTConsensus) BuildPrevoteLockProof(height uint64) (*PrevoteLockProof,
 	}
 	if cr.LockedBlockHash == "" {
 		return nil, fmt.Errorf("no prevote lock at height %d", height)
+	}
+	if bc.roundRecovery != nil {
+		if lock, ok := bc.pickLockedPrevoteHash(cr); !ok || lock != cr.LockedBlockHash {
+			return nil, fmt.Errorf("chain: recovered lock at height %d has no fresh prevote quorum", height)
+		}
 	}
 	prevotes := make([]BlockVote, len(cr.PreVotes))
 	copy(prevotes, cr.PreVotes)

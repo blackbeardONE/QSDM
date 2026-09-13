@@ -84,7 +84,9 @@ func writeFileAtomic(path string, data []byte, perm fs.FileMode, strict bool) er
 			}
 			return nil
 		}
-		if !retryableReplaceError(replaceErr) {
+		// Strict state writers have no fallback. Retry the same atomic replace
+		// on transient Windows access denial, without weakening permanent errors.
+		if !retryableReplaceError(replaceErr) && !(strict && atomicReplaceUnavailable(replaceErr)) {
 			break
 		}
 		time.Sleep(time.Duration(attempt+1) * 25 * time.Millisecond)

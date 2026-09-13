@@ -11,6 +11,10 @@ separate consensus and recovery gates are complete.
 The default is unchanged: `consensus.signing_journal = false`. No production
 deployment or shared activation setting is changed by this implementation.
 
+An additional [fixed-set round-recovery library path](BFT_ROUND_RECOVERY_STAGING.md)
+is available for isolated tests. Node startup does not invoke it, and enabling
+the signing-journal setting alone does not enable round or lock recovery.
+
 ## Startup Gate
 
 On an existing staging chain, set the following in the node's TOML or YAML

@@ -655,6 +655,14 @@ func (e *BFTExecutor) ApplyInbound(payload []byte) error {
 	if e == nil || e.bc == nil {
 		return nil
 	}
+	e.bc.mu.RLock()
+	recoveryRequired := e.bc.roundRecoveryRequired
+	e.bc.mu.RUnlock()
+	if recoveryRequired {
+		// Recovery currently accepts only explicitly validated local driving.
+		// Authenticated, round-bound ingress/replay is a separate activation gate.
+		return fmt.Errorf("%w: recovered gossip ingress is not enabled", ErrBFTRoundRecoveryUnavailable)
+	}
 	kind, raw, err := UnmarshalBFTWire(payload)
 	if err != nil {
 		return err

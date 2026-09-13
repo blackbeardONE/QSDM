@@ -111,7 +111,10 @@ type BFTConsensus struct {
 	nextRound map[uint64]uint64
 	// carryPrevoteLock seeds LockedBlockHash on round>0 after a prior round ended with a lock
 	// (timeout / fail) without commit — POL-style carry between rounds at the same height.
-	carryPrevoteLock map[uint64]string
+	carryPrevoteLock      map[uint64]string
+	roundRecoveryRequired bool
+	roundRecoveryErr      error
+	roundRecovery         *bftRoundRecovery
 }
 
 // NewBFTConsensus creates a consensus engine backed by the given validator set.
@@ -143,6 +146,20 @@ func (bc *BFTConsensus) ProposerForRound(round uint32) (string, error) {
 func (bc *BFTConsensus) Propose(height uint64, round uint32, proposer, blockHash string) (*ConsensusRound, error) {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
+	if err := bc.recoveryReadyLocked(); err != nil {
+		return nil, err
+	}
+	if bc.roundRecovery != nil {
+		if height <= bc.roundRecovery.file.Checkpoint.Height {
+			return nil, fmt.Errorf("%w: height %d is already in the restored chain", ErrBFTRoundRetired, height)
+		}
+		if err := validateBFTSigningJournalString("proposal value", blockHash); err != nil {
+			return nil, err
+		}
+		if blockHash == NilVoteHash {
+			return nil, errors.New("chain: recovery proposal must name a concrete value")
+		}
+	}
 
 	if _, ok := bc.committed[height]; ok {
 		return nil, fmt.Errorf("height %d already committed", height)
@@ -154,6 +171,9 @@ func (bc *BFTConsensus) Propose(height uint64, round uint32, proposer, blockHash
 			return nil, fmt.Errorf("round %d is behind active round %d at height %d", round, existing.Round, height)
 		case round == existing.Round:
 			if proposer == existing.Proposer && blockHash == existing.BlockHash {
+				if bc.roundRecovery != nil {
+					return cloneRecoveryRound(existing), nil
+				}
 				return existing, nil
 			}
 			if proposer == existing.Proposer && blockHash != existing.BlockHash {
@@ -199,8 +219,7 @@ func (bc *BFTConsensus) Propose(height uint64, round uint32, proposer, blockHash
 	}
 
 	// Verify proposer is an active validator
-	v, ok := bc.validators.GetValidator(proposer)
-	if !ok || v.Status != ValidatorActive {
+	if !bc.activeValidatorLocked(proposer) {
 		return nil, fmt.Errorf("proposer %s is not an active validator", proposer)
 	}
 
@@ -224,12 +243,18 @@ func (bc *BFTConsensus) Propose(height uint64, round uint32, proposer, blockHash
 			cr.LockedBlockHash = lock
 		}
 	}
+	if err := bc.persistRecoveryRoundLocked(cr); err != nil {
+		return nil, err
+	}
 	bc.rounds[height] = cr
+	if bc.roundRecovery != nil {
+		return cloneRecoveryRound(cr), nil
+	}
 	return cr, nil
 }
 
 func (bc *BFTConsensus) proposerForRoundLocked(round uint32) (string, error) {
-	active := bc.validators.ActiveValidators()
+	active := bc.activeValidatorsLocked()
 	if len(active) == 0 {
 		return "", fmt.Errorf("no active validators")
 	}
@@ -248,11 +273,17 @@ func (bc *BFTConsensus) proposerForRoundLocked(round uint32) (string, error) {
 func (bc *BFTConsensus) TickRoundTimeouts(now time.Time) []uint64 {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
+	if bc.recoveryReadyLocked() != nil {
+		return nil
+	}
 
 	var timedOut []uint64
 	for height, cr := range bc.rounds {
 		if cr.Deadline.IsZero() || now.Before(cr.Deadline) {
 			continue
+		}
+		if err := bc.persistRecoveryRoundLocked(cr); err != nil {
+			return timedOut
 		}
 		// Preserve prevote lock for the next round at this height (POL-style carry across timeouts).
 		if cr.LockedBlockHash != "" {
@@ -298,6 +329,9 @@ func (bc *BFTConsensus) NextRoundAfterTimeout(height uint64) uint32 {
 func (bc *BFTConsensus) PreVote(height uint64, validator, blockHash string) error {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
+	if err := bc.recoveryReadyLocked(); err != nil {
+		return err
+	}
 
 	cr, ok := bc.rounds[height]
 	if !ok {
@@ -307,8 +341,7 @@ func (bc *BFTConsensus) PreVote(height uint64, validator, blockHash string) erro
 		return fmt.Errorf("round at height %d is in status %s, cannot prevote", height, cr.Status)
 	}
 
-	v, vOk := bc.validators.GetValidator(validator)
-	if !vOk || v.Status != ValidatorActive {
+	if !bc.activeValidatorLocked(validator) {
 		return fmt.Errorf("validator %s is not active", validator)
 	}
 
@@ -318,6 +351,10 @@ func (bc *BFTConsensus) PreVote(height uint64, validator, blockHash string) erro
 		}
 	}
 
+	original := cr
+	if bc.roundRecovery != nil {
+		cr = cloneRecoveryRound(cr)
+	}
 	cr.PreVotes = append(cr.PreVotes, BlockVote{
 		Validator: validator,
 		BlockHash: blockHash,
@@ -329,13 +366,19 @@ func (bc *BFTConsensus) PreVote(height uint64, validator, blockHash string) erro
 
 	if locked, ok := bc.pickLockedPrevoteHash(cr); ok {
 		cr.LockedBlockHash = locked
-		if locked == NilVoteHash {
-			// Nil-polka clears carried proposal lock for subsequent rounds at this height.
-			delete(bc.carryPrevoteLock, height)
-		}
 		if cr.Status == StatusProposed {
 			cr.Status = StatusPreVoted
 		}
+	}
+	if err := bc.persistRecoveryRoundLocked(cr); err != nil {
+		return err
+	}
+	if cr.LockedBlockHash == NilVoteHash {
+		// Nil-polka clears carried proposal lock only after durable recording.
+		delete(bc.carryPrevoteLock, height)
+	}
+	if original != cr {
+		*original = *cr
 	}
 
 	return nil
@@ -345,6 +388,9 @@ func (bc *BFTConsensus) PreVote(height uint64, validator, blockHash string) erro
 func (bc *BFTConsensus) PreCommit(height uint64, validator, blockHash string) error {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
+	if err := bc.recoveryReadyLocked(); err != nil {
+		return err
+	}
 
 	cr, ok := bc.rounds[height]
 	if !ok {
@@ -370,8 +416,7 @@ func (bc *BFTConsensus) PreCommit(height uint64, validator, blockHash string) er
 		return err
 	}
 
-	v, vOk := bc.validators.GetValidator(validator)
-	if !vOk || v.Status != ValidatorActive {
+	if !bc.activeValidatorLocked(validator) {
 		return fmt.Errorf("validator %s is not active", validator)
 	}
 
@@ -381,6 +426,10 @@ func (bc *BFTConsensus) PreCommit(height uint64, validator, blockHash string) er
 		}
 	}
 
+	original := cr
+	if bc.roundRecovery != nil {
+		cr = cloneRecoveryRound(cr)
+	}
 	cr.Commits = append(cr.Commits, BlockVote{
 		Validator: validator,
 		BlockHash: blockHash,
@@ -393,6 +442,15 @@ func (bc *BFTConsensus) PreCommit(height uint64, validator, blockHash string) er
 	if bc.hasQuorum(cr.Commits, cr.BlockHash) {
 		cr.Status = StatusCommitted
 		cr.EndTime = time.Now()
+	}
+	if err := bc.persistRecoveryRoundLocked(cr); err != nil {
+		return err
+	}
+	if original != cr {
+		*original = *cr
+		cr = original
+	}
+	if cr.Status == StatusCommitted {
 		bc.committed[height] = cr
 		delete(bc.rounds, height)
 		delete(bc.nextRound, height)
@@ -415,6 +473,9 @@ func (bc *BFTConsensus) GetCommitted(height uint64) (*ConsensusRound, bool) {
 	bc.mu.RLock()
 	defer bc.mu.RUnlock()
 	cr, ok := bc.committed[height]
+	if bc.roundRecovery != nil {
+		return cloneRecoveryRound(cr), ok
+	}
 	return cr, ok
 }
 
@@ -423,6 +484,9 @@ func (bc *BFTConsensus) GetRound(height uint64) (*ConsensusRound, bool) {
 	bc.mu.RLock()
 	defer bc.mu.RUnlock()
 	cr, ok := bc.rounds[height]
+	if bc.roundRecovery != nil {
+		return cloneRecoveryRound(cr), ok
+	}
 	return cr, ok
 }
 
@@ -430,9 +494,15 @@ func (bc *BFTConsensus) GetRound(height uint64) (*ConsensusRound, bool) {
 func (bc *BFTConsensus) FailRound(height uint64) error {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
+	if err := bc.recoveryReadyLocked(); err != nil {
+		return err
+	}
 	cr, ok := bc.rounds[height]
 	if !ok {
 		return fmt.Errorf("no active round for height %d", height)
+	}
+	if err := bc.persistRecoveryRoundLocked(cr); err != nil {
+		return err
 	}
 	if cr.LockedBlockHash != "" {
 		bc.carryPrevoteLock[height] = cr.LockedBlockHash
@@ -465,7 +535,7 @@ func (bc *BFTConsensus) CommittedCount() int {
 
 // hasQuorum checks if votes matching blockHash represent >= QuorumFraction of total active stake.
 func (bc *BFTConsensus) hasQuorum(votes []BlockVote, blockHash string) bool {
-	active := bc.validators.ActiveValidators()
+	active := bc.activeValidatorsLocked()
 	if len(active) == 0 {
 		return false
 	}
@@ -491,7 +561,7 @@ func (bc *BFTConsensus) hasQuorum(votes []BlockVote, blockHash string) bool {
 // the unique hash with ≥ quorum stake, preferring the proposed BlockHash on ties,
 // then the hash with the greatest prevote stake, then lexicographically smallest.
 func (bc *BFTConsensus) pickLockedPrevoteHash(cr *ConsensusRound) (string, bool) {
-	active := bc.validators.ActiveValidators()
+	active := bc.activeValidatorsLocked()
 	if len(active) == 0 {
 		return "", false
 	}
