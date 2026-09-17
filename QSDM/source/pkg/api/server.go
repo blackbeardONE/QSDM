@@ -27,6 +27,7 @@ func getEnvForCORS(name string) string { return os.Getenv(name) }
 // Server represents the HTTP API server
 type Server struct {
 	config            *config.Config
+	writeAdmission    followerWriteAdmission
 	logger            *logging.Logger
 	authManager       *AuthManager
 	userStore         *UserStore
@@ -114,8 +115,11 @@ type StorageInterface interface {
 // If sharedAuth is non-nil, it is used as the API AuthManager (must be the same instance as the dashboard so JWTs verify; each NewAuthManager generates a new ML-DSA keypair).
 // If sharedAuth is nil, a new AuthManager is created (tests and standalone API).
 func NewServer(cfg *config.Config, logger *logging.Logger, walletService *wallet.WalletService, storage StorageInterface, submeshManager *submesh.DynamicSubmeshManager, sharedAuth *AuthManager) (*Server, error) {
+	writeAdmission, err := loadFollowerWriteAdmission()
+	if err != nil {
+		return nil, fmt.Errorf("invalid API write admission: %w", err)
+	}
 	var authManager *AuthManager
-	var err error
 	if sharedAuth != nil {
 		authManager = sharedAuth
 	} else {
@@ -186,6 +190,7 @@ func NewServer(cfg *config.Config, logger *logging.Logger, walletService *wallet
 
 	return &Server{
 		config:          cfg,
+		writeAdmission:  writeAdmission,
 		logger:          logger,
 		authManager:     authManager,
 		userStore:       userStore,
@@ -497,7 +502,7 @@ func (s *Server) setupMiddleware(handler http.Handler) http.Handler {
 	// A network follower validates and serves the synchronized ledger but must
 	// never acknowledge writes that it cannot seal. Authentication and local
 	// monitoring remain available; ledger mutations must target the producer.
-	handler = FollowerReadOnlyMiddleware(envcompat.Truthy("QSDM_API_READ_ONLY", "QSDM_API_READ_ONLY"))(handler)
+	handler = s.writeAdmission.middleware(handler)
 
 	// 9. Optional stricter /api/admin access (role + mTLS)
 	handler = AdminAccessMiddleware(s.config, s.logger)(handler)

@@ -49,10 +49,11 @@ type Service struct {
 	logger   *log.Logger
 	verifier *qcrypto.Dilithium
 
-	challengeMu sync.Mutex
-	challenges  map[string]walletChallenge
-	rateMu      sync.Mutex
-	rates       map[string]rateWindow
+	challengeMu     sync.Mutex
+	challenges      map[string]walletChallenge
+	loginChallenges map[string]walletLoginChallenge
+	rateMu          sync.Mutex
+	rates           map[string]rateWindow
 }
 
 func NewService(cfg Config, mailer Mailer, logger *log.Logger) (*Service, error) {
@@ -64,13 +65,14 @@ func NewService(cfg Config, mailer Mailer, logger *log.Logger) (*Service, error)
 		logger = log.Default()
 	}
 	service := &Service{
-		cfg:        cfg,
-		store:      store,
-		mailer:     mailer,
-		logger:     logger,
-		verifier:   qcrypto.NewDilithiumVerifyOnly(),
-		challenges: make(map[string]walletChallenge),
-		rates:      make(map[string]rateWindow),
+		cfg:             cfg,
+		store:           store,
+		mailer:          mailer,
+		logger:          logger,
+		verifier:        qcrypto.NewDilithiumVerifyOnly(),
+		challenges:      make(map[string]walletChallenge),
+		loginChallenges: make(map[string]walletLoginChallenge),
+		rates:           make(map[string]rateWindow),
 	}
 	if cfg.EmailEnabled() && service.mailer == nil {
 		service.mailer = NewSMTPMailer(cfg)
@@ -88,6 +90,8 @@ func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/account/health", s.health)
 	mux.HandleFunc("/api/account/config", s.publicConfig)
+	mux.HandleFunc("/api/account/wallet-login/challenge", s.createWalletLoginChallenge)
+	mux.HandleFunc("/api/account/wallet-login/confirm", s.confirmWalletLogin)
 	mux.HandleFunc("/api/account/email/start", s.startEmail)
 	mux.HandleFunc("/api/account/email/verify", s.verifyEmail)
 	mux.HandleFunc("/api/account/telegram/start", s.startTelegram)
@@ -211,6 +215,7 @@ func (s *Service) publicConfig(w http.ResponseWriter, r *http.Request) {
 		"login": map[string]bool{
 			"email":    s.cfg.EmailEnabled(),
 			"telegram": s.cfg.TelegramEnabled(),
+			"wallet":   s.cfg.WalletLoginEnabled,
 		},
 		"custody": "local_wallet_only",
 	})
@@ -527,12 +532,13 @@ func (s *Service) me(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true,
 		"account": map[string]interface{}{
-			"id":            account.ID,
-			"email":         email,
-			"telegram":      telegram,
-			"wallets":       account.Wallets,
-			"created_at":    account.CreatedAt,
-			"last_login_at": account.LastLoginAt,
+			"id":              account.ID,
+			"email":           email,
+			"telegram":        telegram,
+			"wallets":         account.Wallets,
+			"wallet_identity": account.WalletIdentity,
+			"created_at":      account.CreatedAt,
+			"last_login_at":   account.LastLoginAt,
 		},
 		"csrf_token": csrf,
 	})
@@ -767,6 +773,10 @@ func (s *Service) unlinkWallet(w http.ResponseWriter, r *http.Request) {
 	address := strings.ToLower(strings.TrimSpace(request.Address))
 	if !walletAddressPattern.MatchString(address) {
 		writeAPIError(w, http.StatusBadRequest, "invalid_wallet", "Enter a valid QSDM wallet address.")
+		return
+	}
+	if account.WalletIdentity == address {
+		writeAPIError(w, http.StatusConflict, "sign_in_wallet", "The sign-in wallet cannot be unlinked. Delete the account profile to remove its identity.")
 		return
 	}
 	unlinked, err := s.store.UnlinkWallet(account.ID, address)

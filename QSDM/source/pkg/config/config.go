@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/blackbeardONE/QSDM/pkg/envcompat"
+	"github.com/blackbeardONE/QSDM/pkg/producerpolicy"
 )
 
 // envPreferred is a thin local alias for envcompat.Lookup kept so the large
@@ -229,6 +230,8 @@ type Config struct {
 	// Set via `[consensus] authorized_block_producers` or
 	// QSDM_AUTHORIZED_BLOCK_PRODUCERS (comma-separated).
 	AuthorizedBlockProducers []string
+	// ProducerTransition supersedes the flat allowlist only when explicitly configured.
+	ProducerTransition *producerpolicy.Transition
 
 	// Performance
 	TransactionInterval     time.Duration
@@ -434,6 +437,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.ProposalFile = tomlCfg.Governance.ProposalFile
 		cfg.GovernanceAuthorities = tomlCfg.Governance.Authorities
 		cfg.AuthorizedBlockProducers = tomlCfg.Consensus.AuthorizedBlockProducers
+		cfg.ProducerTransition = tomlCfg.Consensus.ProducerTransition
 		cfg.RequireSignedVotes = tomlCfg.Consensus.RequireSignedVotes
 		cfg.SignedConsensusActivationHeight = tomlCfg.Consensus.SignedMessageActivationHeight
 		cfg.TaskActionSignatureActivationHeight = tomlCfg.Consensus.TaskActionSignatureActivationHeight
@@ -539,6 +543,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.ProposalFile = yamlCfg.Governance.ProposalFile
 		cfg.GovernanceAuthorities = yamlCfg.Governance.Authorities
 		cfg.AuthorizedBlockProducers = yamlCfg.Consensus.AuthorizedBlockProducers
+		cfg.ProducerTransition = yamlCfg.Consensus.ProducerTransition
 		cfg.RequireSignedVotes = yamlCfg.Consensus.RequireSignedVotes
 		cfg.SignedConsensusActivationHeight = yamlCfg.Consensus.SignedMessageActivationHeight
 		cfg.TaskActionSignatureActivationHeight = yamlCfg.Consensus.TaskActionSignatureActivationHeight
@@ -966,6 +971,9 @@ func (c *Config) ResolvedSubmeshConfigPath() string {
 
 // Validate validates the configuration
 func (c *Config) Validate() error {
+	if err := c.ProducerTransition.Validate(); err != nil {
+		return err
+	}
 	if c.NodeRole == "" {
 		c.NodeRole = NodeRoleValidator
 	}

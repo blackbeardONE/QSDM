@@ -91,3 +91,19 @@ func TestConfigRejectsUniformDataKey(t *testing.T) {
 		t.Fatalf("uniform account data key was accepted: %v", err)
 	}
 }
+
+func TestConfigWalletOnlyRequiresExplicitOptIn(t *testing.T) {
+	setValidConfigEnv(t)
+	for _, name := range []string{"QSDM_ACCOUNT_SMTP_HOST", "QSDM_ACCOUNT_SMTP_FROM", "QSDM_ACCOUNT_SMTP_USERNAME", "QSDM_ACCOUNT_SMTP_PASSWORD"} {
+		t.Setenv(name, "")
+	}
+	t.Setenv("QSDM_ACCOUNT_WALLET_LOGIN_ENABLED", "false")
+	if _, err := LoadConfigFromEnv(); err == nil {
+		t.Fatal("provider-free account service started without wallet opt-in")
+	}
+	t.Setenv("QSDM_ACCOUNT_WALLET_LOGIN_ENABLED", "true")
+	cfg, err := LoadConfigFromEnv()
+	if err != nil || !cfg.WalletLoginEnabled || cfg.EmailEnabled() || cfg.TelegramEnabled() {
+		t.Fatalf("wallet-only account service rejected: %v", err)
+	}
+}

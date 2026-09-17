@@ -50,6 +50,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/mining/roleguard"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 	"github.com/blackbeardONE/QSDM/pkg/networking"
+	"github.com/blackbeardONE/QSDM/pkg/producerpolicy"
 	"github.com/blackbeardONE/QSDM/pkg/quarantine"
 	"github.com/blackbeardONE/QSDM/pkg/storage"
 	"github.com/blackbeardONE/QSDM/pkg/submesh"
@@ -163,6 +164,10 @@ type persistedStateRestore struct {
 }
 
 func evaluatePersistedState(accounts *chain.AccountStore, blocks []*chain.Block) (persistedStateRestore, error) {
+	return evaluatePersistedStateWithEnrollment(accounts, blocks, nil, 0)
+}
+
+func evaluatePersistedStateWithEnrollment(accounts *chain.AccountStore, blocks []*chain.Block, enrollmentState *enrollment.InMemoryState, rootHeight uint64) (persistedStateRestore, error) {
 	if accounts == nil {
 		return persistedStateRestore{}, errors.New("persisted state restore requires an account snapshot")
 	}
@@ -181,7 +186,12 @@ func evaluatePersistedState(accounts *chain.AccountStore, blocks []*chain.Block)
 	if err != nil {
 		return persistedStateRestore{}, err
 	}
-	aware := chain.NewEnrollmentAwareApplier(accounts, nil)
+	var enrollApplier *chain.EnrollmentApplier
+	if enrollmentState != nil {
+		enrollApplier = chain.NewEnrollmentApplier(accounts, enrollmentState)
+	}
+	aware := chain.NewEnrollmentAwareApplier(accounts, enrollApplier)
+	aware.SetStateRootHeight(rootHeight)
 	aware.SetTaskStateStore(tasks)
 	aware.SetStreamStateStore(streams)
 	aware.SetRecoveryCapsuleStateStore(recovery)
@@ -195,6 +205,44 @@ func evaluatePersistedState(accounts *chain.AccountStore, blocks []*chain.Block)
 		recoveryActions: recoveryActions,
 		stateRoot:       aware.StateRoot(),
 	}, nil
+}
+
+// transitionStateRootHeight preserves the immutable legacy checkpoint root.
+// Every new suffix uses its actual height and the configured enrollment-root
+// activation, so restart verifies precisely the state that new blocks commit.
+func transitionStateRootHeight(policy *producerpolicy.Transition, tip *chain.Block) uint64 {
+	if policy != nil && tip != nil && tip.Height >= policy.EffectiveHeight {
+		return tip.Height
+	}
+	return 0
+}
+
+func evaluateTransitionPersistedState(accounts *chain.AccountStore, blocks []*chain.Block, state *enrollment.InMemoryState, policy *producerpolicy.Transition) (persistedStateRestore, error) {
+	if policy == nil || state == nil || len(blocks) == 0 || blocks[len(blocks)-1] == nil {
+		return persistedStateRestore{}, errors.New("producer transition: persisted state requires policy, enrollment snapshot and chain tip")
+	}
+	return evaluatePersistedStateWithEnrollment(accounts, blocks, state, transitionStateRootHeight(policy, blocks[len(blocks)-1]))
+}
+
+// Transition recovery must never replace corrupt primary state with an older
+// last-good snapshot implicitly. Validate primary JSON before the legacy loader.
+func loadTransitionEnrollmentSnapshot(state *enrollment.InMemoryState, path string) (int, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return 0, fmt.Errorf("producer transition: required enrollment snapshot: %w", err)
+	}
+	var snapshot struct {
+		Records         []enrollment.EnrollmentRecord `json:"records"`
+		SeenEvidenceHex []string                      `json:"seen_evidence_hex"`
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		return 0, errors.New("producer transition: enrollment snapshot is invalid JSON/schema; automatic last-good recovery is disabled")
+	}
+	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil || fields["records"] == nil {
+		return 0, errors.New("producer transition: enrollment snapshot is missing its records field; automatic last-good recovery is disabled")
+	}
+	return state.Load(path)
 }
 
 func findPersistedSnapshotBlock(
@@ -616,6 +664,11 @@ func main() {
 		return
 	}
 
+	// Reject inconsistent recovery admission before loading or modifying node state.
+	if err := api.ValidateRecoverySignedTransfersEnvironment(); err != nil {
+		log.Fatalf("API recovery admission: %v", err)
+	}
+
 	// Early console output to verify the application starts
 	// Use os.Stdout directly and flush to ensure output appears immediately
 	fmt.Fprintln(os.Stdout, branding.LogPrefix+"Starting application...")
@@ -631,6 +684,9 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
+	if err := cfg.ProducerTransition.ValidateJournalPrefix(filepath.Join(filepath.Dir(cfg.SQLitePath), "qsdm_chain.ndjson")); err != nil {
+		log.Fatalf("producer transition preflight: %v", err)
+	}
 	fmt.Fprintf(os.Stdout, "%sConfiguration loaded successfully\n", branding.LogPrefix)
 	os.Stdout.Sync()
 	fmt.Fprintf(os.Stdout, "%sLog file: %s\n", branding.LogPrefix, cfg.LogFile)
@@ -804,11 +860,19 @@ func main() {
 		}
 	}()
 	logger.Info("Validator state directory lock acquired", "path", stateLockPath)
+	if err := cfg.ProducerTransition.ValidateJournalPrefix(filepath.Join(stateDir, "qsdm_chain.ndjson")); err != nil {
+		log.Fatalf("producer transition locked preflight: %v", err)
+	}
 	consensusSignerKeyPath := strings.TrimSpace(cfg.ConsensusSignerKeyPath)
 	if consensusSignerKeyPath == "" {
 		consensusSignerKeyPath = filepath.Join(stateDir, "qsdm_consensus_signer.json")
 	} else if !filepath.IsAbs(consensusSignerKeyPath) {
 		consensusSignerKeyPath = filepath.Join(stateDir, consensusSignerKeyPath)
+	}
+	if cfg.ProducerTransition != nil && envcompat.Truthy("QSDM_NETWORK_BLOCK_PRODUCER", "QSDM_NETWORK_BLOCK_PRODUCER") {
+		if info, err := os.Stat(consensusSignerKeyPath); err != nil || !info.Mode().IsRegular() {
+			log.Fatal("producer transition: replacement signer must be provisioned as an existing regular file before startup")
+		}
 	}
 	consensusSigner, consensusSignerCreated, signerErr := chain.LoadOrCreateBFTSigner(consensusSignerKeyPath)
 	if signerErr != nil {
@@ -1589,7 +1653,6 @@ func main() {
 	// drift visible and prevents a validator from serving signed task actions
 	// with a nil process-wide submitter.
 	api.SetTaskActionMempool(adminPool)
-	api.SetWalletTransferMempool(adminPool)
 	if !api.TaskActionMempoolReady() {
 		log.Fatal("signed task-action mempool wiring failed")
 	}
@@ -1600,6 +1663,9 @@ func main() {
 
 	adminProducer := chain.NewBlockProducer(adminPool, v2Wired.StateApplier, prodCfg)
 	v2Wired.AttachToProducer(adminProducer)
+	// Serialize wallet admission with block application so balance and nonce
+	// validation sees committed state, including while the pool is drained.
+	api.SetWalletTransferMempool(adminProducer.WalletTransferSubmitter())
 	// Defense in depth: Config.Validate rejects this already. Keep the process
 	// entrypoint fail-closed too, so a future alternate config loader cannot arm
 	// an incomplete consensus transition and zero legacy balances at the fork.
@@ -1624,6 +1690,12 @@ func main() {
 	// value here stops the node following the chain -- so the open posture is
 	// logged at WARN to keep it visible instead of silently permissive.
 	adminProducer.SetAuthorizedBlockProducers(cfg.AuthorizedBlockProducers)
+	if err := adminProducer.SetProducerTransition(cfg.ProducerTransition); err != nil {
+		log.Fatalf("producer transition: %v", err)
+	}
+	if p := cfg.ProducerTransition; p != nil {
+		logger.Info("Checkpoint-bound producer transition enforced", "checkpoint_height", p.CheckpointHeight, "checkpoint_hash", p.CheckpointHash, "effective_height", p.EffectiveHeight, "replacement_producer", p.ReplacementProducer)
+	}
 	if adminProducer.ExternalProducerGateEnforced() {
 		logger.Info("External block producer allowlist enforced",
 			"producer_count", len(adminProducer.AuthorizedBlockProducers()),
@@ -1645,6 +1717,9 @@ func main() {
 		log.Fatalf("invalid block production role: %v", productionRoleErr)
 	}
 	localBlockProduction := productionRole.localProductionEnabled()
+	if cfg.ProducerTransition != nil && localBlockProduction && consensusSigner.Address() != cfg.ProducerTransition.ReplacementProducer {
+		log.Fatal("producer transition: configured local signer is not the approved replacement producer")
+	}
 	if !localBlockProduction {
 		adminProducer.SetBFTSealGate(liveBFT)
 		adminProducer.SetPreSealBFTRound(func(blk *chain.Block) error {
@@ -2069,7 +2144,15 @@ func main() {
 	if persistedBlocks, restoreErr := chain.LoadChainNDJSON(chainStatePath); restoreErr != nil {
 		log.Fatalf("chain restore: read %s: %v", chainStatePath, restoreErr)
 	} else if len(persistedBlocks) > 0 {
+		if cfg.ProducerTransition != nil {
+			if err := adminProducer.ValidateProducerTransitionChain(persistedBlocks); err != nil {
+				log.Fatalf("producer transition persisted chain: %v", err)
+			}
+		}
 		restoreBlocks, droppedForkBlocks := canonicalPersistedChain(persistedBlocks)
+		if cfg.ProducerTransition != nil && droppedForkBlocks != 0 {
+			log.Fatal("producer transition: automatic journal canonicalization is disabled; preserve immutable history and review the suffix")
+		}
 		if droppedForkBlocks > 0 {
 			logger.Warn("chain restore: ignored forked duplicate persisted blocks",
 				"loaded_blocks", len(persistedBlocks),
@@ -2090,8 +2173,25 @@ func main() {
 			log.Fatalf("chain restore: accounts file %s missing or unreadable while chain has %d blocks (%v) — refusing to boot a half-restored state. Either restore the matching accounts file or wipe %s to reset the chain.",
 				accountsStatePath, len(restoreBlocks), loadErr, chainStatePath)
 		}
+		loadedEnrollments := 0
+		var enrollErr error
+		if cfg.ProducerTransition != nil {
+			loadedEnrollments, enrollErr = loadTransitionEnrollmentSnapshot(v2Wired.EnrollmentState, enrollmentStatePath)
+			if enrollErr != nil {
+				log.Fatalf("producer transition: enrollment restore: %v", enrollErr)
+			}
+		}
 		discardedTailHeight := restoreBlocks[len(restoreBlocks)-1].Height
-		restoredState, reconcileErr := reconcilePersistedStateTail(chainStatePath, adminAccounts, restoreBlocks, time.Now())
+		var restoredState persistedStateRestore
+		var reconcileErr error
+		if cfg.ProducerTransition != nil {
+			restoredState, reconcileErr = evaluateTransitionPersistedState(adminAccounts, restoreBlocks, v2Wired.EnrollmentState, cfg.ProducerTransition)
+			if reconcileErr == nil && restoredState.stateRoot != restoreBlocks[len(restoreBlocks)-1].StateRoot {
+				reconcileErr = errors.New("producer transition: account snapshot does not match journal tip; automatic tail truncation is disabled")
+			}
+		} else {
+			restoredState, reconcileErr = reconcilePersistedStateTail(chainStatePath, adminAccounts, restoreBlocks, time.Now())
+		}
 		if reconcileErr != nil {
 			log.Fatalf("chain restore: %v", reconcileErr)
 		}
@@ -2121,6 +2221,9 @@ func main() {
 		loadedStreamActions := restoredState.streamActions
 		loadedRecoveryActions := restoredState.recoveryActions
 		if tip, ok := adminProducer.LatestBlock(); ok {
+			if cfg.ProducerTransition != nil {
+				v2Wired.Aware.SetStateRootHeight(transitionStateRootHeight(cfg.ProducerTransition, tip))
+			}
 			if stateRoot := v2Wired.StateApplier.StateRoot(); stateRoot != tip.StateRoot {
 				log.Fatalf("chain restore: reconciled state does not match canonical tip height=%d hash=%s (snapshot_root=%s tip_root=%s). Refusing to produce on an inconsistent ledger.",
 					tip.Height, tip.Hash, stateRoot, tip.StateRoot)
@@ -2133,7 +2236,9 @@ func main() {
 		// enrollments without resetting the chain) — the
 		// validator boots with an empty registry and any v2
 		// proof rejects until the operator re-enrolls.
-		loadedEnrollments, enrollErr := v2Wired.EnrollmentState.Load(enrollmentStatePath)
+		if cfg.ProducerTransition == nil {
+			loadedEnrollments, enrollErr = v2Wired.EnrollmentState.Load(enrollmentStatePath)
+		}
 		if enrollErr != nil {
 			log.Fatalf("chain restore: enrollment file %s unreadable (%v) — refusing to boot. Either restore the file or remove it (the chain will continue without enrollments and v2 proofs will reject).",
 				enrollmentStatePath, enrollErr)

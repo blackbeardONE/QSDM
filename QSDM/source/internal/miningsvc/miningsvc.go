@@ -158,10 +158,9 @@ type Config struct {
 	// guarded by a mutex.
 	RewardSink RewardSink
 
-	// ReadOnly prevents this service from accepting proofs. Followers may
-	// still serve mining metadata, but accepting a proof without a reward
-	// sink would acknowledge work that can never be included in a producer's
-	// payout queue.
+	// ReadOnly prevents this service from issuing work or accepting proofs.
+	// Followers cannot include proofs in a producer's payout queue, so
+	// issuing work would waste miners' resources on unpayable proofs.
 	ReadOnly bool
 
 	// Attestation is the v2 NVIDIA-locked attestation verifier
@@ -316,11 +315,11 @@ func New(cfg Config) (*Service, error) {
 // the verifier's step 5 cross-checks header_hash against the
 // chain).
 //
-// Returns api.ErrMiningUnavailable when the chain has no
-// blocks (genesis-only) or when the requested height has no
+// Returns api.ErrMiningUnavailable when the service is read-only, the
+// chain has no blocks (genesis-only), or the requested height has no
 // block on file.
 func (s *Service) WorkAt(height uint64) (*api.MiningWork, error) {
-	if !s.producer.HasTip() {
+	if s.readOnly || !s.producer.HasTip() {
 		return nil, api.ErrMiningUnavailable
 	}
 	tip := s.producer.TipHeight()

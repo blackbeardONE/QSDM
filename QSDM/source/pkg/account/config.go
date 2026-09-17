@@ -18,10 +18,11 @@ import (
 // is deliberately absent: the service stores identities, sessions, and linked
 // public wallet addresses, but never a keystore, private key, or passphrase.
 type Config struct {
-	ListenAddress string
-	PublicBaseURL string
-	StorePath     string
-	DataKey       []byte
+	ListenAddress      string
+	PublicBaseURL      string
+	StorePath          string
+	DataKey            []byte
+	WalletLoginEnabled bool
 
 	SessionTTL   time.Duration
 	MagicLinkTTL time.Duration
@@ -140,6 +141,7 @@ func LoadConfigFromEnv() (Config, error) {
 		PublicBaseURL:        baseURL,
 		StorePath:            env("QSDM_ACCOUNT_STORE_PATH"),
 		DataKey:              key,
+		WalletLoginEnabled:   envBool("QSDM_ACCOUNT_WALLET_LOGIN_ENABLED", false),
 		SessionTTL:           sessionTTL,
 		MagicLinkTTL:         magicTTL,
 		OIDCFlowTTL:          flowTTL,
@@ -195,8 +197,8 @@ func LoadConfigFromEnv() (Config, error) {
 	if (cfg.TelegramClientID == "") != (cfg.TelegramClientSecret == "") {
 		return Config{}, errors.New("Telegram client ID and secret must be configured together")
 	}
-	if !cfg.EmailEnabled() && !cfg.TelegramEnabled() {
-		return Config{}, errors.New("configure SMTP or Telegram OIDC before starting qsdm-account")
+	if !cfg.EmailEnabled() && !cfg.TelegramEnabled() && !cfg.WalletLoginEnabled {
+		return Config{}, errors.New("configure SMTP, Telegram OIDC, or explicit wallet sign-in before starting qsdm-account")
 	}
 	return cfg, nil
 }

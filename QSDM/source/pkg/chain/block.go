@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
+	"github.com/blackbeardONE/QSDM/pkg/producerpolicy"
 )
 
 // ErrPolExtensionBlocked is returned when POL anchoring blocks sealing another block until the tip is POL-clear.
@@ -155,6 +156,8 @@ type BlockProducer struct {
 	// TryAppendExternalBlock. Empty by default, which accepts any producer and
 	// is the pre-existing behaviour. See block_external_authz.go.
 	externalAuthz externalProducerAllowlist
+	// Configured before initialization; guarded by mu and sealLifecycleMu.
+	producerTransition *producerpolicy.Transition
 	// OnSealed runs after a block is appended and the producer lock is released (best-effort hooks).
 	OnSealed func()
 	// OnSealedBlock runs after a block is appended and bp.mu is
@@ -328,6 +331,11 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 		}
 	}
 
+	sealSigner := bp.BlockSigner()
+	if err := bp.checkTransitionSealLocked(sealSigner); err != nil {
+		return nil, err
+	}
+
 	txs := bp.pool.Drain(bp.maxTxBlock)
 	if len(txs) == 0 {
 		return nil, fmt.Errorf("no transactions to include")
@@ -443,8 +451,8 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 	// Authenticate the block as ours. SignBlock rewrites ProducerID to the
 	// identity the key derives and recomputes the hash, so a producerID
 	// that disagrees with the signing key cannot be sealed.
-	if signer := bp.BlockSigner(); signer != nil {
-		if err := SignBlock(block, signer); err != nil {
+	if sealSigner != nil {
+		if err := SignBlock(block, sealSigner); err != nil {
 			bp.pool.RestoreTransactions(txs)
 			return nil, fmt.Errorf("chain: sign produced block: %w", err)
 		}
@@ -640,7 +648,11 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 	// is self-certifying when signed, so without this an arbitrary peer can
 	// inject a block whose transactions we then replay. Rejecting here also
 	// avoids spending a full clone-and-replay on unauthorized input.
-	if err := bp.externalAuthz.check(blk.ProducerID); err != nil {
+	if bp.producerTransition != nil {
+		if err := validateTransitionBlock(bp.producerTransition, blk); err != nil {
+			return err
+		}
+	} else if err := bp.externalAuthz.check(blk.ProducerID); err != nil {
 		return err
 	}
 
@@ -657,6 +669,10 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 
 	var runSealedHook bool
 	bp.mu.Lock()
+	if err := bp.checkTransitionExtensionLocked(blk.Height); err != nil {
+		bp.mu.Unlock()
+		return err
+	}
 	if bp.sealGuard != nil {
 		if guardErr := bp.sealGuard(); guardErr != nil {
 			bp.mu.Unlock()
@@ -892,6 +908,9 @@ func (bp *BlockProducer) RestoreChain(blocks []*Block) error {
 	defer bp.mu.Unlock()
 	if len(bp.chain) != 0 {
 		return fmt.Errorf("chain: RestoreChain called on a non-empty producer (have %d blocks)", len(bp.chain))
+	}
+	if err := bp.validateProducerTransitionChainLocked(blocks); err != nil {
+		return err
 	}
 	if len(blocks) == 0 {
 		return nil
