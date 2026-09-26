@@ -2050,9 +2050,6 @@ func main() {
 		Attestation:    v2Dispatcher,
 		ReadOnly:       !localBlockProduction,
 	}
-	if blockDriver != nil {
-		miningSvcCfg.RewardSink = blockDriver
-	}
 	miningSvc, miningErr := miningsvc.New(miningSvcCfg)
 	if miningErr != nil {
 		// Mining wiring failure is operator-actionable; refuse
