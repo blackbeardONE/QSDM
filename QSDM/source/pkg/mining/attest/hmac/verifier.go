@@ -291,19 +291,21 @@ func (v *Verifier) VerifyAttestation(p mining.Proof, now time.Time) error {
 	}
 
 	// Step 6c: replay check against the nonce store. Only
-	// consulted if the caller wired one in.
+	// consulted if the caller wired one in. The check and the
+	// claim are one atomic TryRecord, so concurrent submissions
+	// sharing a nonce cannot all observe it as unseen.
+	//
+	// Claim AFTER the preceding checks pass so a half-failing
+	// proof can still be replayed once the attacker fixes the
+	// other defects — but that only helps if their fix keeps
+	// the HMAC valid, which requires the operator key.
 	if v.NonceStore != nil {
 		var nonceBuf [32]byte
 		copy(nonceBuf[:], bundleNonce)
-		if v.NonceStore.Seen(bundle.NodeID, nonceBuf) {
+		if !v.NonceStore.TryRecord(bundle.NodeID, nonceBuf, now) {
 			return fmt.Errorf("hmac: nonce already used by node %q: %w",
 				bundle.NodeID, mining.ErrAttestationNonceMismatch)
 		}
-		// Record AFTER all other checks pass so a half-failing
-		// proof can still be replayed once the attacker fixes the
-		// other defects — but that only helps if their fix keeps
-		// the HMAC valid, which requires the operator key.
-		v.NonceStore.Record(bundle.NodeID, nonceBuf, now)
 	}
 
 	// Step 7: deny-list.
