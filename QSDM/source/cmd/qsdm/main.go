@@ -685,6 +685,13 @@ func main() {
 		os.Stderr.Sync()
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
+	// HL1 R-C4 (design rev 4 §4.7, §5 "Replay mode"): qsdm --hl1-tail-replay
+	// is the offline tail replay (hl1_replay.go). It takes the state lock
+	// itself (S0) and exits 0, 78 or 86; it never starts the node.
+	if hl1ReplayRequested(os.Args[1:]) {
+		hl1ReplayMain(cfg, os.Args[1:])
+		return
+	}
 
 	if err := cfg.ProducerTransition.ValidateJournalPrefix(filepath.Join(filepath.Dir(cfg.SQLitePath), "qsdm_chain.ndjson")); err != nil {
 		log.Fatalf("producer transition preflight: %v", err)
