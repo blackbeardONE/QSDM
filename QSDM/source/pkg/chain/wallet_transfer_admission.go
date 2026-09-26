@@ -3,7 +3,15 @@ package chain
 import (
 	"fmt"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
+	"strings"
 )
+
+// Tx ID prefixes reserved for the producer's own mining reward and heartbeat
+// transactions (HL1, internal/legacymining RewardIDPrefix and
+// HeartbeatIDPrefix, which this package cannot import). Wallet admission
+// refuses them so no user transfer can take an ID the producer will use.
+// Admission only: block replay and apply rules are unchanged.
+var reservedWalletTransferIDPrefixes = [...]string{"solo-reward-", "solo-heartbeat-"}
 
 // walletTransferSubmitter serializes new wallet ingress with the complete block
 // lifecycle, including receipt creation and persistence. It does not change
@@ -26,6 +34,11 @@ func (s *walletTransferSubmitter) Add(tx *mempool.Tx) error {
 	}
 	if tx.ContractID != WalletTransferContractID {
 		return fmt.Errorf("chain: wallet transfer admission requires contract_id %q", WalletTransferContractID)
+	}
+	for _, prefix := range reservedWalletTransferIDPrefixes {
+		if strings.HasPrefix(tx.ID, prefix) {
+			return fmt.Errorf("chain: wallet transfer ID uses reserved prefix %q: %w", prefix, mempool.ErrDuplicateTx)
+		}
 	}
 	bp := s.producer
 	bp.sealLifecycleMu.Lock()

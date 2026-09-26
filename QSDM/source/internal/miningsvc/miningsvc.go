@@ -16,10 +16,16 @@
 // Scope of this package:
 //
 //   - Implements api.MiningService (WorkAt, Submit,
-//     TipHeight) against a *chain.BlockProducer and a
+//     TipHeight) against a legacymining.ChainView and a
 //     pre-built *mining.Verifier. Stateless aside from the
 //     verifier's internal Dedup/Quarantine sets and our DAG
 //     cache.
+//
+//   - HL1 (hardened legacy mining, design rev 4 §2, §4.1): a
+//     writable service admits proofs only through the canary
+//     Guard, commits each accepted proof to the durable Store
+//     and hands it to the payout ledger (Sink). The volatile
+//     RewardSink path is gone; New refuses it.
 //
 //   - Owns a small DAG cache (default cap = 2 epochs) so
 //     repeated Submit calls within a mining-epoch don't
@@ -69,10 +75,12 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"reflect"
 	"sync"
+	"time"
 
+	"github.com/blackbeardONE/QSDM/internal/legacymining"
 	"github.com/blackbeardONE/QSDM/pkg/api"
-	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
 )
 
@@ -83,12 +91,15 @@ import (
 // itself reads. Bigger plumbing surfaces (the producer's
 // applier, the mempool, etc.) come in via the producer.
 type Config struct {
-	// Producer is the live block producer the service queries
-	// for tip height and historical block headers. REQUIRED.
-	// The producer's GetBlock and TipHeight are called from
-	// any goroutine via the HTTP handler; both are
-	// concurrency-safe in pkg/chain.
-	Producer *chain.BlockProducer
+	// Producer is the chain view the service queries for tip
+	// height and historical block headers. REQUIRED. It serves
+	// WorkAt, the verifier's HeaderHashAt and the accept height.
+	// cmd/qsdm passes its durable view, which clamps all three
+	// to the durable tip (W5); *chain.BlockProducer also
+	// satisfies the interface. Its methods are called from any
+	// goroutine via the HTTP handler and must be
+	// concurrency-safe.
+	Producer legacymining.ChainView
 
 	// WorkSet is the deterministic parent-cell set served to
 	// every miner. REQUIRED. New canonicalises a defensive
@@ -146,22 +157,33 @@ type Config struct {
 	// traffic at testnet block rates.
 	DedupCapacity uint64
 
-	// RewardSink, when non-nil, is notified of every
-	// successfully-verified proof's miner address so the host
-	// process can credit a reward at the next block boundary.
-	// Nil leaves miningsvc as a pure verifier with no
-	// economic side-effects (the previous bring-up posture).
-	// The sink is called from the goroutine that handles the
-	// HTTP /api/v1/mining/submit request, so implementations
-	// MUST be non-blocking; the canonical implementation in
-	// internal/blockdriver enqueues into an in-memory map
-	// guarded by a mutex.
+	// RewardSink is the pre-HL1 volatile payout callback. New
+	// refuses any non-nil value: an in-memory queue loses
+	// accepted proofs on restart and cannot prove exactly-once
+	// payment. The field remains only so old wiring fails at
+	// New instead of compiling into a silently different
+	// service.
 	RewardSink RewardSink
 
 	// ReadOnly prevents this service from issuing work or accepting proofs.
 	// Followers cannot include proofs in a producer's payout queue, so
 	// issuing work would waste miners' resources on unpayable proofs.
 	ReadOnly bool
+
+	// Store, Guard and Sink are the HL1 admission collaborators
+	// (design rev 4 §4.1). A writable service requires all
+	// three; New refuses it otherwise. A read-only service
+	// ignores them.
+	//
+	//   - Store commits every accepted proof (W1) before
+	//     Submit returns 200.
+	//   - Guard gates work and admission and owns the caps,
+	//     the allowlist and the FREEZE latch.
+	//   - Sink is the submit side of the payout ledger:
+	//     pending plus in-flight count and Enqueue.
+	Store legacymining.Store
+	Guard legacymining.Guard
+	Sink  legacymining.Sink
 
 	// Attestation is the v2 NVIDIA-locked attestation verifier
 	// the miningsvc passes through to mining.VerifierConfig.
@@ -181,10 +203,9 @@ type Config struct {
 	Attestation mining.AttestationVerifier
 }
 
-// RewardSink is the narrow contract a host process implements
-// to be notified of accepted proofs. Implementations should
-// queue work and return quickly — the HTTP path waits on this
-// before responding to the miner.
+// RewardSink is the pre-HL1 volatile callback for accepted
+// proofs. New refuses a Config that sets it, and Submit never
+// calls it. The type remains only for source compatibility.
 type RewardSink interface {
 	// OnAcceptedProof is called once per accepted /submit
 	// with the proof's miner_addr field. Empty addresses are
@@ -202,9 +223,11 @@ type RewardSink interface {
 //
 // Safe for concurrent use: WorkAt, Submit, and TipHeight may
 // all run from any goroutine. The DAG cache uses RWMutex; the
-// verifier itself is documented as concurrent-safe.
+// verifier itself is documented as concurrent-safe. submitMu
+// serialises §4.1 steps 6-9 (lock order submitMu -> ledger.mu
+// -> guard.mu -> store, §4.5).
 type Service struct {
-	producer       *chain.BlockProducer
+	producer       legacymining.ChainView
 	ws             mining.WorkSet
 	dagSize        uint32
 	difficulty     *big.Int // owned copy; never mutated
@@ -213,10 +236,26 @@ type Service struct {
 	dagMu    sync.RWMutex
 	dagCache map[uint64]mining.DAG // keyed by epoch; cap = 2
 
-	verifier   *mining.Verifier
-	rewardSink RewardSink // optional; see Config.RewardSink
-	readOnly   bool
+	verifier *mining.Verifier
+	readOnly bool
+
+	// HL1 admission collaborators; all nil when readOnly.
+	store legacymining.Store
+	guard legacymining.Guard
+	sink  legacymining.Sink
+
+	submitMu sync.Mutex
 }
+
+// pinnedTestCollaborators is nil in every binary: only a
+// _test.go file of this package assigns it. The pinned
+// pre-HL1 tests (miningsvc_test.go, miningsvc_v2_test.go)
+// build writable Configs with none of Store, Guard and Sink,
+// and some set RewardSink. For such a Config only, New lets
+// this hook substitute permissive test doubles, so those tests
+// still run the §4.1 path. The hook must clear RewardSink; New
+// refuses it afterwards like any other Config.
+var pinnedTestCollaborators func(cfg *Config)
 
 // dagCacheCap bounds the DAG map's resident size. Two is the
 // minimum that lets a miner straddle an epoch boundary
@@ -229,10 +268,28 @@ const dagCacheCap = 2
 // New validates cfg and returns a ready-to-install Service.
 // Returns an error if any required collaborator is missing
 // or a structural invariant is violated (DAGSize < 2,
-// Difficulty <= 0, etc.).
+// Difficulty <= 0, etc.). It refuses RewardSink in every mode,
+// and a writable Config without all of Store, Guard and Sink.
 func New(cfg Config) (*Service, error) {
-	if cfg.Producer == nil {
+	if isNil(cfg.Producer) {
 		return nil, errors.New("miningsvc: Config.Producer is required")
+	}
+	if !cfg.ReadOnly && cfg.Store == nil && cfg.Guard == nil && cfg.Sink == nil && pinnedTestCollaborators != nil {
+		pinnedTestCollaborators(&cfg)
+	}
+	if cfg.RewardSink != nil {
+		return nil, errors.New("miningsvc: Config.RewardSink is not supported; accepted proofs go to Config.Store and Config.Sink")
+	}
+	if !cfg.ReadOnly {
+		if isNil(cfg.Store) {
+			return nil, errors.New("miningsvc: a writable service requires Config.Store")
+		}
+		if isNil(cfg.Guard) {
+			return nil, errors.New("miningsvc: a writable service requires Config.Guard")
+		}
+		if isNil(cfg.Sink) {
+			return nil, errors.New("miningsvc: a writable service requires Config.Sink")
+		}
 	}
 	if cfg.DAGSize < 2 {
 		return nil, fmt.Errorf("miningsvc: Config.DAGSize=%d must be >= 2", cfg.DAGSize)
@@ -283,8 +340,10 @@ func New(cfg Config) (*Service, error) {
 		difficulty:     new(big.Int).Set(cfg.Difficulty),
 		blocksPerEpoch: bpe,
 		dagCache:       make(map[uint64]mining.DAG, dagCacheCap),
-		rewardSink:     cfg.RewardSink,
 		readOnly:       cfg.ReadOnly,
+	}
+	if !cfg.ReadOnly {
+		svc.store, svc.guard, svc.sink = cfg.Store, cfg.Guard, cfg.Sink
 	}
 
 	v, err := mining.NewVerifier(mining.VerifierConfig{
@@ -316,10 +375,11 @@ func New(cfg Config) (*Service, error) {
 // chain).
 //
 // Returns api.ErrMiningUnavailable when the service is read-only, the
-// chain has no blocks (genesis-only), or the requested height has no
-// block on file.
+// Guard does not report admission open, the chain view has no tip
+// (genesis-only, or no durable tip yet), or the requested height has
+// no block on file.
 func (s *Service) WorkAt(height uint64) (*api.MiningWork, error) {
-	if s.readOnly || !s.producer.HasTip() {
+	if s.readOnly || !s.guard.AdmissionOpen() || !s.producer.HasTip() {
 		return nil, api.ErrMiningUnavailable
 	}
 	tip := s.producer.TipHeight()
@@ -351,40 +411,132 @@ func (s *Service) WorkAt(height uint64) (*api.MiningWork, error) {
 	return work, nil
 }
 
-// Submit implements api.MiningService. Forwards to the
-// underlying verifier with the current tip as the
-// acceptHeight. Rejection reasons are the standard
-// pkg/mining sentinels and propagate to the HTTP layer
-// untouched.
+// Submit implements api.MiningService in the HL1 admission
+// order (design rev 4 §4.1; step 2 is the api middleware):
 //
-// On acceptance, the configured RewardSink (if any) is
-// notified with the proof's miner_addr field so the host
-// process can queue a payout for the next sealed block. The
-// notification happens BEFORE Submit returns so a misbehaving
-// sink that takes too long will be visible in /submit
-// latency metrics — the alternative (fire-and-forget
-// goroutines) was rejected as harder to debug and easier to
-// silently lose payouts on a panic.
+//	3  Guard.Admit: closed, KILLED or FROZEN          -> 503
+//	4  Guard.Precheck: parse, allowlists, att. type   -> 400
+//	5  Guard.TakeRate: per-minute cap                 -> 503
+//	   lock submitMu
+//	6  Sink.Outstanding() >= MaxPending               -> 503
+//	7  Verify at the chain view's (durable) tip; it
+//	   claims the proof ID and HMAC nonce atomically  -> 400
+//	8  Store.Accept commits the row (W1). A UNIQUE
+//	   hit is a 400; any other error trips FREEZE     -> 503
+//	9  Sink.Enqueue; an error trips FREEZE            -> 503
+//	10 unlock submitMu; 200
+//
+// Only Enqueue grows Outstanding, and it runs under submitMu,
+// so the step-6 check still holds at step 9. Errors from steps
+// 7 and 8 feed Guard.ObserveRejection. Every 503 wraps
+// api.ErrMiningUnavailable, which the handler maps to 503 with
+// Retry-After; a 400 unwraps to a *mining.RejectError. Nothing
+// here waits on the seal lifecycle (L3).
 func (s *Service) Submit(rawProofJSON []byte) ([32]byte, error) {
+	var none [32]byte
 	if s.readOnly {
-		return [32]byte{}, api.ErrMiningUnavailable
+		return none, api.ErrMiningUnavailable
+	}
+	if err := s.guard.Admit(); err != nil {
+		return none, unavailable(err)
+	}
+	cand, err := s.guard.Precheck(rawProofJSON)
+	if err != nil {
+		return none, classify(err)
+	}
+	if cand.Proof == nil {
+		return none, unavailable(errors.New("miningsvc: precheck returned no proof"))
+	}
+	if err := s.guard.TakeRate(); err != nil {
+		return none, unavailable(err)
+	}
+
+	s.submitMu.Lock()
+	defer s.submitMu.Unlock()
+
+	if limit := s.guard.Config().MaxPending; s.sink.Outstanding() >= limit {
+		return none, unavailable(&legacymining.Rejection{
+			Kind:   legacymining.KindPendingFull,
+			Detail: fmt.Sprintf("pending plus in-flight >= %d", limit),
+		})
+	}
+	if !s.producer.HasTip() {
+		return none, fmt.Errorf("%w: no durable tip", api.ErrMiningUnavailable)
 	}
 	tip := s.producer.TipHeight()
 	id, err := s.verifier.Verify(rawProofJSON, tip)
 	if err != nil {
-		return id, err
+		s.guard.ObserveRejection(err)
+		return none, classify(err)
 	}
-	if s.rewardSink != nil {
-		// Re-parse the proof for its miner_addr. The verifier
-		// already canonicalised + accepted the bytes so this
-		// can't fail on a happy path; we still check err to
-		// avoid a panic if an unexpected version of the proof
-		// schema lands here.
-		if p, perr := mining.ParseProof(rawProofJSON); perr == nil {
-			s.rewardSink.OnAcceptedProof(p.MinerAddr)
+	rec := legacymining.Record{
+		ProofID:      id,
+		MinerAddr:    cand.Proof.MinerAddr,
+		NodeID:       cand.NodeID,
+		AttNonce:     cand.AttNonce,
+		WorkHeight:   cand.Proof.Height,
+		AcceptTip:    tip,
+		AcceptedNS:   time.Now().UnixNano(),
+		ConfigSHA256: s.guard.ConfigHash(),
+		ProofJSON:    append([]byte(nil), rawProofJSON...),
+	}
+	if err := s.store.Accept(rec); err != nil {
+		s.guard.ObserveRejection(err)
+		switch legacymining.RejectKindOf(err) {
+		case legacymining.KindDuplicate, legacymining.KindNonceConflict:
+			return none, err
 		}
+		s.guard.Freeze(legacymining.CauseAcceptIO + ":" + err.Error())
+		return none, unavailable(&legacymining.Rejection{
+			Kind:   legacymining.KindUnavailable,
+			Detail: "proof store failed; mining frozen",
+		})
+	}
+	if err := s.sink.Enqueue(rec); err != nil {
+		// The Ledger has already tripped FREEZE; tripping again
+		// is idempotent and keeps the first cause. The row stays
+		// committed and is reloaded at the next S13.
+		s.guard.Freeze(legacymining.CauseEnqueue + ":" + err.Error())
+		return none, unavailable(&legacymining.Rejection{
+			Kind:   legacymining.KindUnavailable,
+			Detail: "payout ledger refused the proof; mining frozen",
+		})
 	}
 	return id, nil
+}
+
+// unavailable returns err as a 503: wrapped with
+// api.ErrMiningUnavailable unless it already matches it.
+func unavailable(err error) error {
+	if errors.Is(err, api.ErrMiningUnavailable) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", api.ErrMiningUnavailable, err)
+}
+
+// classify makes err a 503 when it matches
+// legacymining.ErrUnavailable and returns it unchanged
+// otherwise, so a 400 *legacymining.Rejection or
+// *mining.RejectError reaches the handler as a 400.
+func classify(err error) error {
+	if errors.Is(err, legacymining.ErrUnavailable) {
+		return unavailable(err)
+	}
+	return err
+}
+
+// isNil reports whether v is nil, including a typed nil
+// pointer (or other nilable value) inside a non-nil interface.
+func isNil(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return rv.IsNil()
+	}
+	return false
 }
 
 // TipHeight implements api.MiningService.
@@ -445,13 +597,19 @@ func (s *Service) difficultyFor(_ uint64) (*big.Int, error) {
 // the verifier maps to ReasonHeaderMismatch — the right
 // rejection reason because a proof claiming a height the
 // chain doesn't recognise is exactly a header-mismatch
-// rejection.
+// rejection. The adapter wraps a legacymining.ChainView and
+// itself refuses heights above the view's tip, so nothing
+// above the durable tip is used for verification (W5) even if
+// the view's GetBlock were not clamped.
 type chainAdapter struct {
-	producer *chain.BlockProducer
+	producer legacymining.ChainView
 }
 
 func (c chainAdapter) TipHeight() uint64 { return c.producer.TipHeight() }
 func (c chainAdapter) HeaderHashAt(h uint64) ([32]byte, bool) {
+	if !c.producer.HasTip() || h > c.producer.TipHeight() {
+		return [32]byte{}, false
+	}
 	blk, ok := c.producer.GetBlock(h)
 	if !ok {
 		return [32]byte{}, false

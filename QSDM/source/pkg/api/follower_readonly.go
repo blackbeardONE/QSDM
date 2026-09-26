@@ -5,12 +5,39 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"sync/atomic"
 
 	"github.com/blackbeardONE/QSDM/pkg/envcompat"
 )
 
 const recoverySignedTransfersEnv = "QSDM_RECOVERY_SIGNED_TRANSFERS_ENABLED"
 const recoverySignedTransferPath = "/api/v1/wallet/submit-signed"
+const miningCanarySubmitPath = "/api/v1/mining/submit"
+
+// miningCanaryAdmission holds the predicate installed by
+// SetMiningCanaryAdmission; nil means closed.
+var miningCanaryAdmission atomic.Pointer[func() bool]
+
+// SetMiningCanaryAdmission installs the HL1 mining canary admission predicate
+// (design rev 4 §4.1 step 2), normally the legacy-mining Guard's
+// AdmissionOpen. While it returns true, the signed-transfers-only recovery
+// policy also admits the exact canonical POST /api/v1/mining/submit. The
+// predicate runs on every such request. nil removes it, which closes the
+// route again; it is closed by default. Other policies are unaffected: a
+// read-only follower still refuses the route, and an unrestricted API already
+// admits it.
+func SetMiningCanaryAdmission(open func() bool) {
+	if open == nil {
+		miningCanaryAdmission.Store(nil)
+		return
+	}
+	miningCanaryAdmission.Store(&open)
+}
+
+func miningCanaryAdmissionOpen() bool {
+	open := miningCanaryAdmission.Load()
+	return open != nil && (*open)()
+}
 
 // followerWriteAdmission is captured at server construction so changing the
 // environment cannot change the admission policy of a running server.
@@ -98,6 +125,9 @@ func recoverySignedTransfersAllows(r *http.Request) bool {
 			return true
 		}
 	}
+	if isMiningCanarySubmitRequest(r) {
+		return miningCanaryAdmissionOpen()
+	}
 	return isRecoverySignedTransferRequest(r)
 }
 
@@ -113,6 +143,14 @@ func isRecoverySignedTransferRequest(r *http.Request) bool {
 	return r.Method == http.MethodPost && r.URL.Path == recoverySignedTransferPath &&
 		(r.URL.RawPath == "" || r.URL.RawPath == recoverySignedTransferPath) &&
 		r.URL.EscapedPath() == recoverySignedTransferPath
+}
+
+// isMiningCanarySubmitRequest applies the checks of
+// isRecoverySignedTransferRequest to the mining submit route.
+func isMiningCanarySubmitRequest(r *http.Request) bool {
+	return r.Method == http.MethodPost && r.URL.Path == miningCanarySubmitPath &&
+		(r.URL.RawPath == "" || r.URL.RawPath == miningCanarySubmitPath) &&
+		r.URL.EscapedPath() == miningCanarySubmitPath
 }
 
 func followerReadOnlyAllows(method, path string) bool {
