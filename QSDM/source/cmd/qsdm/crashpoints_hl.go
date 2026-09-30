@@ -9,6 +9,9 @@ package main
 //	QSDM_HL1_CRASH=<point>[@<n>][,...]   self-SIGKILL at the n-th hit (default 1)
 //	QSDM_HL1_FAULT=<point>:<errno>[,...] the point fails with errno (for
 //	                                     example ENOSPC, EIO or a number)
+//	QSDM_HL1_FSTRACE=1                   log every hl1OSFS SyncFile, SyncDir
+//	                                     and WriteFileDurable ("hl1 fstrace:
+//	                                     <op> <base name>"), in call order
 //
 // Points are named in the code that calls hl1Crashpoint, hl1Fault and
 // hl1CrashInsideD1, for example persist:H3, persist:after-H4 and
@@ -42,6 +45,7 @@ var (
 	hl1CrashOnce   sync.Once
 	hl1CrashPoints map[string]*hl1CrashSpec
 	hl1FaultPoints map[string]syscall.Errno
+	hl1FSTraceOn   bool
 )
 
 var hl1ErrnoNames = map[string]syscall.Errno{
@@ -59,6 +63,7 @@ func hl1LoadCrashpoints() {
 	hl1CrashOnce.Do(func() {
 		hl1CrashPoints = map[string]*hl1CrashSpec{}
 		hl1FaultPoints = map[string]syscall.Errno{}
+		hl1FSTraceOn = os.Getenv("QSDM_HL1_FSTRACE") == "1"
 		for _, item := range strings.Split(os.Getenv("QSDM_HL1_CRASH"), ",") {
 			item = strings.TrimSpace(item)
 			if item == "" {
@@ -98,8 +103,8 @@ func hl1LoadCrashpoints() {
 			}
 			hl1FaultPoints[name] = e
 		}
-		if len(hl1CrashPoints)+len(hl1FaultPoints) > 0 {
-			log.Printf("hl1 crashpoints: ACTIVE (test build): crash=%v fault=%v", keysOf(hl1CrashPoints), hl1FaultPoints)
+		if len(hl1CrashPoints)+len(hl1FaultPoints) > 0 || hl1FSTraceOn {
+			log.Printf("hl1 crashpoints: ACTIVE (test build): crash=%v fault=%v fstrace=%v", keysOf(hl1CrashPoints), hl1FaultPoints, hl1FSTraceOn)
 		}
 	})
 }
@@ -133,6 +138,15 @@ func hl1Fault(point string) error {
 		return fmt.Errorf("hl1 injected fault at %s: %w", point, e)
 	}
 	return nil
+}
+
+// hl1FSTrace logs a durability operation of hl1OSFS when QSDM_HL1_FSTRACE=1,
+// so a process-level test can assert the fsync order from the child's output.
+func hl1FSTrace(op, name string) {
+	hl1LoadCrashpoints()
+	if hl1FSTraceOn {
+		log.Printf("hl1 fstrace: %s %s", op, filepath.Base(name))
+	}
 }
 
 // hl1CrashInsideD1 emulates a SIGKILL inside a D1 write of dir/name (§4.6 C9):

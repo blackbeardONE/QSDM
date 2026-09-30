@@ -15,4 +15,6 @@ func hl1Fault(string) error { return nil }
 
 func hl1CrashInsideD1(string, string, string) {}
 
+func hl1FSTrace(string, string) {}
+
 func hl1CrashpointStore(s legacymining.Store) legacymining.Store { return s }

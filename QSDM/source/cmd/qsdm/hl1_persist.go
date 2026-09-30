@@ -174,12 +174,18 @@ func (hl1OSFS) Remove(name string) error                  { return os.Remove(nam
 func (hl1OSFS) Link(oldname, newname string) error        { return os.Link(oldname, newname) }
 func (hl1OSFS) Lstat(name string) (fs.FileInfo, error)    { return os.Lstat(name) }
 func (hl1OSFS) ReadDir(dir string) ([]fs.DirEntry, error) { return os.ReadDir(dir) }
-func (hl1OSFS) SyncDir(dir string) error                  { return legacymining.SyncDir(dir) }
+func (hl1OSFS) SyncDir(dir string) error {
+	hl1FSTrace("SyncDir", dir)
+	return legacymining.SyncDir(dir)
+}
+
 func (hl1OSFS) WriteFileDurable(d, n string, b []byte) error {
+	hl1FSTrace("WriteFileDurable", n)
 	return legacymining.WriteFileDurable(d, n, b)
 }
 
 func (hl1OSFS) SyncFile(name string) error {
+	hl1FSTrace("SyncFile", name)
 	f, err := os.OpenFile(name, os.O_WRONLY, 0)
 	if err != nil {
 		return err

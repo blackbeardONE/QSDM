@@ -9,6 +9,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"go/ast"
@@ -23,7 +25,9 @@ import (
 	"github.com/blackbeardONE/QSDM/internal/legacymining"
 	"github.com/blackbeardONE/QSDM/internal/logging"
 	"github.com/blackbeardONE/QSDM/pkg/chain"
+	"github.com/blackbeardONE/QSDM/pkg/mempool"
 	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
 // hl1rTraceFS records the S4r/S5 file-system operations and can fail the
@@ -275,8 +279,10 @@ func TestHL1S4rCompletesTipReceipts(t *testing.T) {
 	}
 }
 
-// Complete receipts are never touched: H5 ran before a failed H6 (tip = W+1),
-// and a boot at tip = W.
+// Complete receipts are never rewritten: H5 ran before a failed H6 (tip =
+// W+1), and a boot at tip = W. At tip = W+1 they are still made durable before
+// S5 writes W := N, because a kill between an append and its fsync (inside
+// H5, or at boot:S4r:after-append) can leave them in the page cache only.
 func TestHL1S4rLeavesCompleteReceiptsAlone(t *testing.T) {
 	if testing.Short() {
 		t.Skip("state-directory recovery test")
@@ -286,19 +292,62 @@ func TestHL1S4rLeavesCompleteReceiptsAlone(t *testing.T) {
 	receipts := f.path(hl1ReceiptsName)
 	before := hl1rRead(t, receipts)
 	replays := hl1S4rScratchReplays.Load()
-	_, s4r, s5, err := hl1rBootWith(t, f.dir, nil, hl1OSFS{}, nil)
-	if err != nil || !s4r.Gate || len(s4r.Regenerated) != 0 || !s5.Wrote || s5.DurableTip != n {
+	fsys := &hl1rTraceFS{}
+	_, s4r, s5, err := hl1rBootWith(t, f.dir, nil, fsys, nil)
+	if err != nil || !s4r.Gate || len(s4r.Regenerated) != 0 || s4r.Written != 0 || !s5.Wrote || s5.DurableTip != n {
 		t.Fatalf("boot with complete receipts at N: %+v %+v %v", s4r, s5, err)
 	}
 	if !bytes.Equal(hl1rRead(t, receipts), before) || hl1S4rScratchReplays.Load() != replays {
 		t.Fatal("S4r changed complete receipts or ran a scratch replay")
 	}
-	_, s4r, s5, err = hl1rBootWith(t, f.dir, nil, hl1OSFS{}, nil)
+	iF, iD, iW := fsys.index("SyncFile "+hl1ReceiptsName), fsys.index("SyncDir"), fsys.index("WriteFileDurable "+legacymining.WatermarkFile)
+	if iF < 0 || iD < iF || iW < iD {
+		t.Fatalf("file-system order %q: want the receipts fsync, then the directory fsync, then W", fsys.ops)
+	}
+
+	fsys = &hl1rTraceFS{}
+	_, s4r, s5, err = hl1rBootWith(t, f.dir, nil, fsys, nil)
 	if err != nil || s4r.Gate || s5.Wrote || s5.DurableTip != n {
 		t.Fatalf("boot at tip = W: %+v %+v %v", s4r, s5, err)
 	}
-	if !bytes.Equal(hl1rRead(t, receipts), before) || hl1S4rScratchReplays.Load() != replays {
-		t.Fatal("S4r ran at tip = W")
+	if !bytes.Equal(hl1rRead(t, receipts), before) || hl1S4rScratchReplays.Load() != replays || len(fsys.ops) != 0 {
+		t.Fatalf("S4r ran at tip = W (file-system operations %q)", fsys.ops)
+	}
+}
+
+// An I/O error while making complete receipts durable exits 78 through the
+// I/O route with W and the receipts unchanged; the next boot finishes.
+func TestHL1S4rCompleteReceiptsFsyncErrors(t *testing.T) {
+	if testing.Short() {
+		t.Skip("state-directory recovery test")
+	}
+	const n = 4
+	for _, tc := range []struct {
+		name string
+		fsys *hl1rTraceFS
+		want string
+	}{
+		{"EIO in the receipts fsync", &hl1rTraceFS{failSyncFile: true}, "fsync receipts"},
+		{"EIO in the directory fsync", &hl1rTraceFS{failSyncDir: true}, "fsync state directory"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := hl1rCrash(t, false, n, "H6")
+			before := hl1rTreeHash(t, f.dir)
+			_, _, _, err := hl1rBootWith(t, f.dir, nil, tc.fsys, nil)
+			if err == nil || !strings.Contains(err.Error(), hl1S4rRouteC6IO) || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want %q and the I/O route", err, tc.want)
+			}
+			if hl1rTreeHash(t, f.dir) != before || tc.fsys.index("WriteFileDurable "+legacymining.WatermarkFile) >= 0 {
+				t.Fatalf("an S4r fsync error changed the state directory or wrote W (%q)", tc.fsys.ops)
+			}
+			if w := hl1rW(t, f.dir); w.Height != n-1 {
+				t.Fatalf("W = %+v after an S4r fsync error", w)
+			}
+			_, s4r, s5, err := hl1rBootWith(t, f.dir, nil, hl1OSFS{}, nil)
+			if err != nil || len(s4r.Regenerated) != 0 || !s5.Wrote || s5.DurableTip != n {
+				t.Fatalf("the next boot: %+v %+v %v", s4r, s5, err)
+			}
+		})
 	}
 }
 
@@ -319,6 +368,257 @@ func TestHL1S4rKeepsLocalFailedDrop(t *testing.T) {
 	lines := hl1rReceiptsAt(t, f.path(hl1ReceiptsName), n)
 	if len(lines) != len(f.blkJ.Transactions)+1 || lines[0].TxID != drop.TxID {
 		t.Fatalf("receipts at N = %+v", lines)
+	}
+}
+
+// hl1rSelfTransfer is the default tx of hl1rCore.seal.
+func hl1rSelfTransfer(sender string, nonce uint64) *mempool.Tx {
+	return &mempool.Tx{ID: fmt.Sprintf("hl1r-%s-%d", sender, nonce), Sender: sender, Recipient: sender, Nonce: nonce}
+}
+
+// hl1rCheckReceiptsAtN checks that every tx of block N has exactly one
+// receipts line at N, with status 1 and equal (timestamps aside) to the
+// crashed core's receipt, and that the in-memory store holds them.
+func hl1rCheckReceiptsAtN(t *testing.T, f *hl1rFixture, st *hl1ReplayStack) {
+	t.Helper()
+	n := f.blkJ.Height
+	core := map[string]*chain.TxReceipt{}
+	for _, r := range f.core.st.receipts.GetByBlock(n) {
+		core[r.TxID] = r
+	}
+	lines := hl1rReceiptsAt(t, f.path(hl1ReceiptsName), n)
+	if len(lines) != len(f.blkJ.Transactions) {
+		t.Fatalf("%d receipts lines at N, want %d", len(lines), len(f.blkJ.Transactions))
+	}
+	seen := map[string]bool{}
+	for i := range lines {
+		r := &lines[i]
+		c := core[r.TxID]
+		if seen[r.TxID] || c == nil {
+			t.Fatalf("receipt of %s at N: duplicate, or not the core's", r.TxID)
+		}
+		seen[r.TxID] = true
+		if r.Status != chain.ReceiptSuccess || hl1rNoTS(t, r) != hl1rNoTS(t, c) {
+			t.Fatalf("receipt of %s:\n  disk %s\n  core %s", r.TxID, hl1rNoTS(t, r), hl1rNoTS(t, c))
+		}
+	}
+	if got := len(st.receipts.GetByBlock(n)); got != len(f.blkJ.Transactions) {
+		t.Fatalf("the in-memory store has %d receipts at N, want %d", got, len(f.blkJ.Transactions))
+	}
+}
+
+// Every pass of the replay sees height N (step e). A task action without a
+// signature applies below the activation height and is refused at or above
+// it; with the activation at N+1, block N holds one that applied. The
+// canonical tip+1 height closure gave the receipt passes N+1 (the new tip is
+// stored before storeExternalAppendReceipts), so S4r wrote a status-0
+// receipt for a tx the block applied. The regenerated receipt must be the
+// producer's (status 1); the reference follower cannot be the oracle here,
+// because its v2wiring closure has the same off-by-one. If a receipt pass
+// ever sees another height again, the status backstop refuses (R-C6, route
+// R-X) and writes nothing.
+func TestHL1S4rPinsTheBlockHeight(t *testing.T) {
+	if testing.Short() {
+		t.Skip("state-directory recovery test")
+	}
+	const n = 5
+	prev := chain.TaskActionSignatureActivationHeight()
+	chain.SetTaskActionSignatureActivationHeight(n + 1)
+	t.Cleanup(func() { chain.SetTaskActionSignatureActivationHeight(prev) })
+	action := chain.TaskAction{ID: "hl1r-task-stake", TaskID: "hl1r-task", Action: "stake", Amount: 4, Timestamp: "2026-09-30T00:00:00Z"}
+	if chain.VerifyTaskActionSignature(action, "", "", n) != nil || chain.VerifyTaskActionSignature(action, "", "", n+1) == nil {
+		t.Fatal("the fixture's task action is not height-sensitive at N")
+	}
+	plan := func(h uint64, sender string, nonce uint64) []*mempool.Tx {
+		if h != n || sender != hl1rSenders[0] {
+			return nil
+		}
+		a := action
+		a.Sender, a.Nonce = sender, nonce+1
+		payload, err := json.Marshal(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return []*mempool.Tx{hl1rSelfTransfer(sender, nonce),
+			{ID: a.ID, Sender: sender, Nonce: a.Nonce, Amount: a.Amount, Payload: payload, ContractID: chain.TaskContractID}}
+	}
+	for _, transition := range []bool{false, true} {
+		t.Run(fmt.Sprintf("transition=%v", transition), func(t *testing.T) {
+			f := hl1rCrashPlan(t, transition, n, "H5", plan)
+			if r, ok := f.core.st.receipts.Get(action.ID); !ok || r.BlockHeight != n || r.Status != chain.ReceiptSuccess || len(f.blkJ.Transactions) != 3 {
+				t.Fatalf("the producer's receipt of the task action: %+v (block N has %d txs)", r, len(f.blkJ.Transactions))
+			}
+
+			// A receipt pass at N+1 (the old closure) is refused.
+			before := hl1rTreeHash(t, f.dir)
+			_, _, _, err := hl1rBootWith(t, f.dir, f.policy, hl1OSFS{}, func(o *hl1RepairOptions) {
+				o.scratchHeight = func(_ uint64, tip func() uint64) uint64 { return tip() + 1 }
+			})
+			if err == nil || !strings.Contains(err.Error(), "regenerated tx "+action.ID+" with status 0") || !strings.Contains(err.Error(), "follow "+hl1S4rRouteC6RX) {
+				t.Fatalf("err = %v, want the status backstop (%s)", err, hl1S4rRouteC6RX)
+			}
+			if hl1rTreeHash(t, f.dir) != before || hl1rW(t, f.dir).Height != n-1 {
+				t.Fatal("a refused S4r changed the state directory")
+			}
+
+			st, s4r, s5, err := hl1rBootWith(t, f.dir, f.policy, hl1OSFS{}, nil)
+			if err != nil || len(s4r.Regenerated) != 3 || !s5.Wrote || s5.DurableTip != n {
+				t.Fatalf("boot: %+v %+v %v", s4r, s5, err)
+			}
+			hl1rCheckReceiptsAtN(t, f, st)
+		})
+	}
+}
+
+// A receipt of a tx of N at another height does not count as present (step
+// b): the tx failed at N-1 (a nonce gap: a local failed-drop, status 0, index
+// past the block) and applied at N as the identical resubmission. S4r keeps
+// the N-1 line and writes the tx's status-1 line at N.
+func TestHL1S4rReceiptAtAnotherHeightIsMissing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("state-directory recovery test")
+	}
+	const n = 5
+	const retry = "hl1r-retry"
+	plan := func(h uint64, sender string, nonce uint64) []*mempool.Tx {
+		if sender != hl1rSenders[0] {
+			return nil
+		}
+		switch h {
+		case n - 1: // nonce+2: one ahead of the self-transfer, so it fails
+			return []*mempool.Tx{hl1rSelfTransfer(sender, nonce), {ID: retry, Sender: sender, Recipient: sender, Nonce: nonce + 2}}
+		case n:
+			return []*mempool.Tx{hl1rSelfTransfer(sender, nonce), {ID: retry, Sender: sender, Recipient: sender, Nonce: nonce + 1}}
+		}
+		return nil
+	}
+	f := hl1rCrashPlan(t, false, n, "H5", plan)
+	receipts := f.path(hl1ReceiptsName)
+	var drop *chain.TxReceipt
+	for _, r := range hl1rReceiptsAt(t, receipts, n-1) {
+		if r.TxID == retry {
+			r := r
+			drop = &r
+		}
+	}
+	if drop == nil || drop.Status != chain.ReceiptFailed || drop.IndexInBlock < 2 || len(hl1rReceiptsAt(t, receipts, n)) != 0 {
+		t.Fatalf("crash state: failed-drop at N-1 = %+v", drop)
+	}
+	before := hl1rRead(t, receipts)
+	st, s4r, s5, err := hl1rBootWith(t, f.dir, nil, hl1OSFS{}, nil)
+	if err != nil || len(s4r.Regenerated) != len(f.blkJ.Transactions) || !s5.Wrote {
+		t.Fatalf("boot: %+v %+v %v", s4r, s5, err)
+	}
+	after := hl1rRead(t, receipts)
+	if !bytes.HasPrefix(after, before) {
+		t.Fatal("S4r did not append after the existing receipts bytes")
+	}
+	hl1rCheckReceiptsAtN(t, f, st)
+	if r, ok := st.receipts.Get(retry); !ok || r.BlockHeight != n || r.Status != chain.ReceiptSuccess {
+		t.Fatalf("in memory the retried tx is %+v", r)
+	}
+}
+
+// The Hashcash work nonces (enrollment.FindDeferredBondWork, 22 bits) of the
+// two deferred-bond enrollment payloads below.
+const (
+	hl1rDeferredEnrollNonceA = 1724045
+	hl1rDeferredEnrollNonceB = 3811538
+)
+
+// S4r runs the state half of H0, the enrollment sweep, on the replayed N
+// (step f). A deferred-bond enrollment (zero stake), unenrolled so that its
+// unbond matures at N, is deleted by N's sweep; the sweep credits zero, so
+// the accounts and the state root are unchanged and S4 accepts the state.
+// Without the sweep, the replayed enrollment state would keep the record and
+// S4r would refuse a good C6a state. A second enrollment stays active across
+// N, so the replayed state must also start from the .h<N-1> enrollment
+// records (without the transition, S4r loads them after the pair check).
+// (A sweep that credits a stake changes the accounts snapshot at N after N's
+// root was computed; S4 already refuses that state at its root check, before
+// S4r.)
+func TestHL1S4rSweepsTheReplayedBlock(t *testing.T) {
+	if testing.Short() {
+		t.Skip("state-directory recovery test")
+	}
+	const n = 7
+	prev := enrollment.UnbondWindow
+	enrollment.UnbondWindow = 2 // unenroll at N-2 matures at N
+	t.Cleanup(func() { enrollment.UnbondWindow = prev })
+	pk, sk, err := mldsa87.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub, err := pk.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(pub)
+	owner := hex.EncodeToString(sum[:])
+	signed := func(id string, nonce uint64, payload []byte) *mempool.Tx {
+		tx := &mempool.Tx{ID: id, Sender: owner, Nonce: nonce, Payload: payload, ContractID: enrollment.SignedContractID}
+		env, err := enrollment.EnvelopeFromTransaction(tx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		canonical, err := env.CanonicalBytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		sig := make([]byte, mldsa87.SignatureSize)
+		if err := mldsa87.SignTo(sk, canonical, nil, true, sig); err != nil {
+			t.Fatal(err)
+		}
+		tx.PublicKey, tx.Signature = hex.EncodeToString(pub), hex.EncodeToString(sig)
+		return tx
+	}
+	deferred := func(node, gpu string, work uint64) []byte {
+		raw, err := enrollment.EncodeEnrollPayload(enrollment.EnrollPayload{NodeID: node, GPUUUID: gpu,
+			HMACKey: bytes.Repeat([]byte{0xAB}, 32), BondMode: enrollment.BondModeMiningRewards, WorkNonce: work})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	enrollA := deferred("hl1r-deferred-node", "GPU-hl1r-0000-deferred", hl1rDeferredEnrollNonceA)
+	enrollB := deferred("hl1r-deferred-node-b", "GPU-hl1r-0000-deferred-b", hl1rDeferredEnrollNonceB)
+	unenrollA, err := enrollment.EncodeUnenrollPayload(enrollment.UnenrollPayload{NodeID: "hl1r-deferred-node", Reason: "retiring"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := func(h uint64, sender string, nonce uint64) []*mempool.Tx {
+		if sender != hl1rSenders[0] {
+			return nil
+		}
+		switch h {
+		case n - 3: // zero stake and zero fee: the owner account is created
+			return []*mempool.Tx{hl1rSelfTransfer(sender, nonce), signed("hl1r-deferred-enroll-a", 0, enrollA)}
+		case n - 2:
+			return []*mempool.Tx{hl1rSelfTransfer(sender, nonce), signed("hl1r-deferred-unenroll-a", 1, unenrollA)}
+		case n - 1:
+			return []*mempool.Tx{hl1rSelfTransfer(sender, nonce), signed("hl1r-deferred-enroll-b", 2, enrollB)}
+		}
+		return nil
+	}
+	for _, transition := range []bool{false, true} {
+		t.Run(fmt.Sprintf("transition=%v", transition), func(t *testing.T) {
+			f := hl1rCrashPlan(t, transition, n, "H5", plan)
+			records := func(path string) int {
+				s := enrollment.NewInMemoryState()
+				if _, err := s.Load(path); err != nil {
+					t.Fatal(err)
+				}
+				return s.Count()
+			}
+			if a, b := records(hl1GenerationLink(f.path(hl1EnrollmentName), n-1)), records(f.path(hl1EnrollmentName)); a != 2 || b != 1 {
+				t.Fatalf("enrollment records: %d at N-1, %d at N; want N's sweep to delete one of two", a, b)
+			}
+			st, s4r, s5, err := hl1rBootWith(t, f.dir, f.policy, hl1OSFS{}, nil)
+			if err != nil || len(s4r.Regenerated) != len(f.blkJ.Transactions) || !s5.Wrote || s5.DurableTip != n {
+				t.Fatalf("boot: %+v %+v %v", s4r, s5, err)
+			}
+			hl1rCheckReceiptsAtN(t, f, st)
+		})
 	}
 }
 
@@ -386,6 +686,15 @@ func TestHL1S4rRefusals(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, nil, []string{"generation link", "is missing", hl1S4rRouteC6RX}},
+		{"enrollment generation link is a directory", "H5", func(t *testing.T, f *hl1rFixture) {
+			link := hl1GenerationLink(f.path(hl1EnrollmentName), n-1)
+			if err := os.Remove(link); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(link, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}, nil, []string{"generation link", "is not a regular file", hl1S4rRouteC6RX}},
 		{"tampered accounts generation: pair root mismatch", "H5", func(t *testing.T, f *hl1rFixture) {
 			link := hl1GenerationLink(f.path(hl1AccountsName), n-1)
 			var accs []chain.Account

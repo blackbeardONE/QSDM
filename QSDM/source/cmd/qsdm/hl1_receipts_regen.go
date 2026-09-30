@@ -14,18 +14,24 @@ package main
 // the tip N (hl1S5Decide), it:
 //
 //	a. checks the receipts invariants (R-X on failure);
-//	b. finds the txs of N without a receipt at height N; none: done, nothing
-//	   is written (C6b, C7);
+//	b. finds the txs of N without a receipt at height N; none: nothing is
+//	   written (C6b, C7), but the receipts file and the state directory are
+//	   fsynced, because a kill between an append and its fsync (inside H5, or
+//	   at boot:S4r:after-append) can leave N's lines in the page cache only;
 //	c. loads the .h<N-1> pair into fresh stores and requires it to reproduce
 //	   block N-1's state root (hl1EvaluatePair);
 //	d. builds a scratch applier, a clone of the live applier restored to the
 //	   N-1 state (no v2wiring.Wire, so no second set of api/monitoring/mining
-//	   globals, and no GovApplier, like every follower and R-C4 clone);
+//	   globals, and no GovApplier, like every follower and R-C4 clone), whose
+//	   height is pinned to N;
 //	e. replays N on a scratch producer with TryAppendExternalBlock, the
-//	   follower and R-C4 path, which regenerates N's receipts;
+//	   follower and R-C4 path, which regenerates N's receipts; the spec, live
+//	   and receipt passes all see height N, as the producer's did;
 //	f. compares the replayed post-state with the durable N state: roots,
-//	   accounts bytes, canonical enrollment, and every receipt already present
-//	   at N (timestamps ignored);
+//	   accounts bytes, canonical enrollment; every tx of N must regenerate with
+//	   status 1 (a sealed block holds only txs that applied), and every receipt
+//	   already present at N must equal its regenerated one (timestamps
+//	   ignored);
 //	g. appends only the missing receipts with the H5 writer, fsyncs the file
 //	   and the state directory, then stores them in memory.
 //
@@ -101,6 +107,9 @@ type hl1RepairOptions struct {
 	// mutatePost, when set (tests), runs on the replayed applier after the
 	// sweep and before the post-state comparison.
 	mutatePost func(*chain.EnrollmentAwareApplier)
+	// scratchHeight, when set (tests), replaces the scratch applier's pinned
+	// height N; tip is the scratch producer's tip height.
+	scratchHeight func(n uint64, tip func() uint64) uint64
 }
 
 // hl1RepairResult reports an S4r run.
@@ -188,7 +197,24 @@ func hl1RepairTipReceipts(o hl1RepairOptions) (res hl1RepairResult, err error) {
 		}
 	}
 	if len(missing) == 0 {
-		log.Info("hl1 S4r: the tip block above W has all its receipts; nothing to do",
+		// Nothing to write, but the lines may be in the page cache only: a
+		// kill between an append and its fsync (inside H5, or at
+		// boot:S4r:after-append) leaves them complete and not durable, and S5
+		// is about to write W := N (§3.2: fsync(receipts) before W). The bytes
+		// do not change.
+		_, serr := fsys.Lstat(o.ReceiptsPath)
+		switch {
+		case serr == nil:
+			serr = hl1S4rSyncReceipts(o, fsys, n, true)
+		case errors.Is(serr, fs.ErrNotExist):
+			serr = hl1S4rSyncReceipts(o, fsys, n, false)
+		default:
+			serr = hl1S4rErr(hl1S4rRouteC6IO, "block %d: stat %s: %v", n, o.ReceiptsPath, serr)
+		}
+		if serr != nil {
+			return res, serr
+		}
+		log.Info("hl1 S4r: the tip block above W has all its receipts; made them durable, nothing to write",
 			"height", n, "hash", blkN.Hash, "watermark_height", w.Height, "receipts", len(present))
 		return res, nil
 	}
@@ -237,14 +263,8 @@ func hl1RepairTipReceipts(o hl1RepairOptions) (res hl1RepairResult, err error) {
 		return res, hl1S4rErr(hl1S4rRouteC6IO, "block %d: append %d receipt(s) (%d written): %v", n, len(res.Regenerated), res.Written, err)
 	}
 	hl1Crashpoint("boot:S4r:after-append")
-	if err := hl1Fault("boot:S4r:fsync"); err != nil {
-		return res, hl1S4rErr(hl1S4rRouteC6IO, "block %d: fsync receipts: %v", n, err)
-	}
-	if err := fsys.SyncFile(o.ReceiptsPath); err != nil {
-		return res, hl1S4rErr(hl1S4rRouteC6IO, "block %d: fsync receipts: %v", n, err)
-	}
-	if err := fsys.SyncDir(o.StateDir); err != nil {
-		return res, hl1S4rErr(hl1S4rRouteC6IO, "block %d: fsync state directory: %v", n, err)
+	if err := hl1S4rSyncReceipts(o, fsys, n, true); err != nil {
+		return res, err
 	}
 	for _, r := range out.GetByBlock(n) {
 		o.Receipts.Store(r)
@@ -253,6 +273,24 @@ func hl1RepairTipReceipts(o hl1RepairOptions) (res hl1RepairResult, err error) {
 		"height", n, "hash", blkN.Hash, "tx_ids", strings.Join(res.Regenerated, ","),
 		"written", res.Written, "kept", len(present), "elapsed_ms", now().Sub(start).Milliseconds())
 	return res, nil
+}
+
+// hl1S4rSyncReceipts makes N's receipts lines durable before S5 writes W:
+// fsync(receipts) (file: the receipts file exists), then fsync(stateDir),
+// which also covers a newly created file (§3.2).
+func hl1S4rSyncReceipts(o hl1RepairOptions, fsys hl1FS, n uint64, file bool) error {
+	if err := hl1Fault("boot:S4r:fsync"); err != nil {
+		return hl1S4rErr(hl1S4rRouteC6IO, "block %d: fsync receipts: %v", n, err)
+	}
+	if file {
+		if err := fsys.SyncFile(o.ReceiptsPath); err != nil {
+			return hl1S4rErr(hl1S4rRouteC6IO, "block %d: fsync receipts: %v", n, err)
+		}
+	}
+	if err := fsys.SyncDir(o.StateDir); err != nil {
+		return hl1S4rErr(hl1S4rRouteC6IO, "block %d: fsync state directory: %v", n, err)
+	}
+	return nil
 }
 
 // hl1S4rCheckInvariants is S4r step a.
@@ -414,7 +452,18 @@ func hl1S4rReplay(o hl1RepairOptions, fsys hl1FS, blocks []*chain.Block, blkW, b
 	if err := scratch.SetProducerTransition(o.Transition); err != nil {
 		return nil, nil, hl1S4rErr(hl1S4rRouteC6RX, "block %d: scratch producer transition: %v", n, err)
 	}
-	pre.SetHeightFn(func() uint64 { return scratch.TipHeight() + 1 })
+	// The height is pinned to N, the one block replayed. The canonical
+	// tip+1 closure would give the receipt passes N+1:
+	// TryAppendExternalBlock stores the new tip before
+	// storeExternalAppendReceipts re-applies the txs on the backup clone,
+	// which shares this closure. The producer's spec, live and receipt
+	// passes (storeProduceBlockReceipts) all saw N, and height-dependent txs
+	// (enrollment, slash, task actions) can apply at N and fail at N+1.
+	height := func() uint64 { return n }
+	if o.scratchHeight != nil {
+		height = func() uint64 { return o.scratchHeight(n, scratch.TipHeight) }
+	}
+	pre.SetHeightFn(height)
 	if err := scratch.RestoreChain(prefix); err != nil {
 		return nil, nil, hl1S4rErr(hl1S4rRouteC6RX, "block %d: scratch producer hydrate (%d blocks): %v", n, len(prefix), err)
 	}
@@ -484,6 +533,14 @@ func hl1S4rCompare(o hl1RepairOptions, log *logging.Logger, pre *chain.Enrollmen
 		g := regen[tx.ID]
 		if g == nil {
 			return nil, hl1S4rErr(hl1S4rRouteC6RX, "block %d: the replay produced no receipt for tx %s", n, tx.ID)
+		}
+		// Every tx of N applied (a local seal includes only txs that
+		// applied, and the replay's spec and live passes just applied them
+		// all), so each has a status-1 receipt. A failed one means a receipt
+		// pass disagreed with them (for example at another height): never
+		// write it.
+		if g.Status != chain.ReceiptSuccess {
+			return nil, hl1S4rErr(hl1S4rRouteC6RX, "block %d: the replay regenerated tx %s with status %d (%s), but every tx of the block applied", n, tx.ID, g.Status, g.Error)
 		}
 		p := present[tx.ID]
 		if p == nil {

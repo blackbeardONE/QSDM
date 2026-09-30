@@ -132,15 +132,19 @@ func hl1rWantExit(t *testing.T, what string, code int, out string, want int, con
 }
 
 // The S4r fault points fail the boot with the I/O route and leave W alone;
-// the next boot completes N without duplicates.
+// the next boot completes N without duplicates. boot:S4r:fsync also guards
+// the fsync of complete receipts (an H6 failure: nothing to write).
 func TestHL1S4rInjectedFaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("state-directory recovery test")
 	}
 	const n = 4
-	for _, point := range []string{"boot:S4r:append", "boot:S4r:fsync"} {
-		t.Run(point, func(t *testing.T) {
-			f := hl1rCrash(t, false, n, "H5")
+	for _, tc := range []struct{ point, fault string }{
+		{"boot:S4r:append", "H5"}, {"boot:S4r:fsync", "H5"}, {"boot:S4r:fsync", "H6"},
+	} {
+		point := tc.point
+		t.Run(point+" after "+tc.fault, func(t *testing.T) {
+			f := hl1rCrash(t, false, n, tc.fault)
 			wBefore := hl1rRead(t, f.path(legacymining.WatermarkFile))
 			t.Setenv("QSDM_HL1_FAULT", point+":EIO")
 			t.Setenv("QSDM_HL1_CRASH", "")
@@ -168,6 +172,35 @@ func TestHL1S4rInjectedFaults(t *testing.T) {
 // hl1rKilled is the exit code of a crash point: SIGKILL on Unix (-1),
 // TerminateProcess(1) on Windows. Checked through the crash point's log line.
 const hl1rKilled = -2
+
+// hl1rFSTraceOrder checks, in a child's QSDM_HL1_FSTRACE=1 output, that the
+// boot fsyncs the receipts file, then the state directory, before its first
+// write of W.
+func hl1rFSTraceOrder(t *testing.T, dir, out string) {
+	t.Helper()
+	var ops []string
+	for _, l := range strings.Split(out, "\n") {
+		if _, op, ok := strings.Cut(l, "hl1 fstrace: "); ok {
+			ops = append(ops, strings.TrimSpace(op))
+		}
+	}
+	iF, iD, iW := -1, -1, -1
+	for i, op := range ops {
+		switch {
+		case iF < 0 && op == "SyncFile "+hl1ReceiptsName:
+			iF = i
+		case iF >= 0 && iD < 0 && op == "SyncDir "+filepath.Base(dir):
+			iD = i
+		}
+		if iW < 0 && op == "WriteFileDurable "+legacymining.WatermarkFile {
+			iW = i
+		}
+	}
+	if iF < 0 || iD < 0 || iW < iD {
+		t.Fatalf("file-system order %q: want the receipts fsync, then the directory fsync, then W", ops)
+	}
+	t.Logf("boot file-system order: %q", ops)
+}
 
 func TestHL1S4rProcessCrashRecovery(t *testing.T) {
 	if testing.Short() {
@@ -219,8 +252,9 @@ func TestHL1S4rProcessCrashRecovery(t *testing.T) {
 				}
 			}
 
-			code, out = hl1rRunProducer(t, dir, stop)
+			code, out = hl1rRunProducer(t, dir, stop, "QSDM_HL1_FSTRACE=1")
 			hl1rWantExit(t, "restart", code, out, hl1rKilled, "SIGKILL at produce:seal-guard", "served watermark verified")
+			hl1rFSTraceOrder(t, dir, out)
 			tip := hl1rCoverage(t, dir)
 			wantLog := "hl1 S4r: receipts regenerated"
 			if strings.HasPrefix(tc.name, "SIGKILL inside S4r") {

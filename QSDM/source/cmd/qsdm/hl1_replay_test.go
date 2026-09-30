@@ -76,7 +76,15 @@ type hl1rCore struct {
 	// block's receipts, then fail (an EIO after a partial append).
 	failReceipts   bool
 	receiptsPrefix int
+
+	// plan, when set, returns the txs a sender submits to the block at
+	// height h in place of its self-transfer (nil keeps the self-transfer).
+	plan hl1rPlan
 }
+
+// hl1rPlan chooses a sender's txs for the block at height h; nonce is the
+// sender's account nonce before the block.
+type hl1rPlan func(h uint64, sender string, nonce uint64) []*mempool.Tx
 
 func hl1rSigner(t *testing.T) *chain.PersistentBFTSigner {
 	t.Helper()
@@ -160,25 +168,46 @@ func hl1rStartCore(t *testing.T, dir string, policy *producerpolicy.Transition, 
 	return c
 }
 
-// seal produces one block with a self-transfer from every sender.
+// seal produces one block with a self-transfer from every sender (or the
+// txs of the plan).
 func (c *hl1rCore) seal() *chain.Block {
 	c.t.Helper()
+	var h uint64
+	if c.st.producer.HasTip() {
+		h = c.st.producer.TipHeight() + 1
+	}
+	want := 0
 	for _, a := range hl1rSenders {
 		acc, ok := c.st.accounts.Get(a)
 		if !ok {
 			c.t.Fatalf("sender %s missing", a)
 		}
-		tx := &mempool.Tx{ID: fmt.Sprintf("hl1r-%s-%d", a, acc.Nonce), Sender: a, Recipient: a, Nonce: acc.Nonce}
-		if err := c.st.pool.Add(tx); err != nil {
-			c.t.Fatal(err)
+		var txs []*mempool.Tx
+		if c.plan != nil {
+			txs = c.plan(h, a, acc.Nonce)
 		}
+		if txs == nil {
+			txs = []*mempool.Tx{{ID: fmt.Sprintf("hl1r-%s-%d", a, acc.Nonce), Sender: a, Recipient: a, Nonce: acc.Nonce}}
+		}
+		for _, tx := range txs {
+			if err := c.st.pool.Add(tx); err != nil {
+				c.t.Fatal(err)
+			}
+		}
+		want += len(txs)
 	}
 	blk, err := c.st.producer.ProduceBlock()
 	if err != nil {
 		c.t.Fatalf("ProduceBlock: %v", err)
 	}
-	if len(blk.Transactions) != len(hl1rSenders) {
-		c.t.Fatalf("block %d has %d txs", blk.Height, len(blk.Transactions))
+	dropped := 0 // local failed-drop receipts: a planned tx that did not apply
+	for _, r := range c.st.receipts.GetByBlock(blk.Height) {
+		if r.Status == chain.ReceiptFailed {
+			dropped++
+		}
+	}
+	if len(blk.Transactions)+dropped != want {
+		c.t.Fatalf("block %d has %d txs and %d failed-drop receipts, want %d txs in all", blk.Height, len(blk.Transactions), dropped, want)
 	}
 	return blk
 }
@@ -250,6 +279,13 @@ type hl1rFixture struct {
 
 func hl1rCrash(t *testing.T, transition bool, j uint64, fault string) *hl1rFixture {
 	t.Helper()
+	return hl1rCrashPlan(t, transition, j, fault, nil)
+}
+
+// hl1rCrashPlan is hl1rCrash with a tx plan for the blocks after the
+// historical prefix (see hl1rCore.plan).
+func hl1rCrashPlan(t *testing.T, transition bool, j uint64, fault string, plan hl1rPlan) *hl1rFixture {
+	t.Helper()
 	f := &hl1rFixture{dir: t.TempDir()}
 	if transition {
 		policy, repl := hl1rTransitionPrefix(t, f.dir, 2)
@@ -258,6 +294,7 @@ func hl1rCrash(t *testing.T, transition bool, j uint64, fault string) *hl1rFixtu
 		f.signer = hl1rSigner(t)
 	}
 	c := hl1rStartCore(t, f.dir, f.policy, f.signer)
+	c.plan = plan
 	for !c.st.producer.HasTip() || c.st.producer.TipHeight() < j-1 {
 		c.seal()
 	}
