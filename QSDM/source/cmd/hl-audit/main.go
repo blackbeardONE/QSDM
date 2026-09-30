@@ -26,9 +26,12 @@
 //   - oracle 3 (W regression): the served high-water mark of the -prev report
 //     and every retired watermark is still in the journal with the same hash,
 //     and W is not below the previous high-water mark;
-//   - with -canary-config: emitted_H <= budget_cell, proofs_H <=
-//     max_proofs_total and every reward in the window pays an allowlisted
-//     address;
+//   - with -canary-config, for that config: emitted_H <= budget_cell,
+//     proofs_H <= max_proofs_total, and every reward sealed under the config
+//     pays its allowlisted address. emitted_H sums the rewards in the config's
+//     window, from its config_windows first_height up to the height where the
+//     next config took over (the tip for the active config), so every config,
+//     not only the active one, can be audited on its own;
 //   - receipts coverage (errata E7): every chain tx at or above
 //     -receipts-from (default meta.h0) has a receipts line at its height with
 //     its block hash. Without -receipts-from and without a DB the check is
@@ -199,7 +202,12 @@ func printSummary(w io.Writer, r *Report) {
 	p := r.Payments
 	fmt.Fprintf(w, "payments: %d reward txs, %d payload IDs, %d distinct, %v CELL\n", p.RewardTxs, p.PayloadIDs, p.DistinctIDs, p.Emitted)
 	if cs := r.Canary; cs != nil {
-		fmt.Fprintf(w, "canary %s: emitted %v of %d CELL, %d of %d proofs\n", cs.ConfigSHA256, cs.Emitted, cs.BudgetCell, cs.Proofs, cs.MaxProofsTotal)
+		win := "no window"
+		if cs.Window != nil {
+			win = "window " + cs.Window.String()
+		}
+		fmt.Fprintf(w, "canary %s: %s, emitted %v of %d CELL in %d reward txs, %d of %d proofs\n",
+			cs.ConfigSHA256, win, cs.Emitted, cs.BudgetCell, cs.RewardTxs, cs.Proofs, cs.MaxProofsTotal)
 	}
 	if hw := r.ServedHighWater; hw != nil {
 		fmt.Fprintf(w, "served high-water: %d %s\n", hw.Height, hw.Hash)

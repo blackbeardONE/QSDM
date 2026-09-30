@@ -6,8 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -56,21 +58,28 @@ func rewardTx(nonce uint64, addr string, amount float64, ids ...legacymining.Pro
 
 // fixture is a copy of a producer state directory.
 type fixture struct {
-	t        *testing.T
-	dir      string
-	blocks   []*chain.Block
-	h0       uint64
-	window   uint64
-	cfg      []byte
-	cfgHash  legacymining.ConfigHash
+	t       *testing.T
+	dir     string
+	origin  uint64 // the height of blocks[0]
+	blocks  []*chain.Block
+	h0      uint64
+	window  uint64
+	cfg     []byte
+	cfgHash legacymining.ConfigHash
+	// boots are the S11 activations applied to the DB, in order; nil means
+	// one activation of cfgHash at window.
+	boots    []legacymining.ConfigWindow
+	events   []legacymining.Event // extra events rows, written after the boots
 	rows     []legacymining.Record
 	payments []legacymining.Payment
 	noDB     bool
 }
 
-func canaryConfig(budget, maxTotal uint64) []byte {
+func canaryConfig(budget, maxTotal uint64) []byte { return canaryConfigFor(minerA, budget, maxTotal) }
+
+func canaryConfigFor(addr string, budget, maxTotal uint64) []byte {
 	return []byte(fmt.Sprintf(`{"version":1,"allowed":[{"miner_addr":%q,"node_id":%q}],"max_proofs_per_min":60,"max_proofs_total":%d,"max_pending":600,"budget_cell":%d,"expires_unix":1790000000}`+"\n",
-		minerA, nodeID, maxTotal, budget))
+		addr, nodeID, maxTotal, budget))
 }
 
 // newFixture builds the clean scenario: blocks 0..12 with a heartbeat each,
@@ -92,42 +101,48 @@ func newFixture(t *testing.T) *fixture {
 	return f
 }
 
-// chain replaces the blocks with heights 0..tip, keeping the transactions
-// already placed at heights that remain.
+// chain replaces the blocks with heights origin..tip, keeping the
+// transactions already placed at heights that remain.
 func (f *fixture) chain(tip uint64, salt string) {
 	old := f.blocks
 	f.blocks = nil
 	prev := ""
-	for hgt := uint64(0); hgt <= tip; hgt++ {
+	if f.origin > 0 {
+		prev = blockHash(salt, f.origin-1)
+	}
+	for hgt := f.origin; hgt <= tip; hgt++ {
 		b := &chain.Block{Height: hgt, PrevHash: prev, Hash: blockHash(salt, hgt), Transactions: []*mempool.Tx{heartbeat(hgt)}}
-		if hgt < uint64(len(old)) {
-			b.Transactions = old[hgt].Transactions
+		if i := hgt - f.origin; i < uint64(len(old)) {
+			b.Transactions = old[i].Transactions
 		}
 		f.blocks = append(f.blocks, b)
 		prev = b.Hash
 	}
 }
 
+// at returns the block at height.
+func (f *fixture) at(height uint64) *chain.Block { return f.blocks[height-f.origin] }
+
 // rehash gives every block from height `from` a new hash (a replaced branch).
 func (f *fixture) rehash(from uint64, salt string) {
-	for i := from; i < uint64(len(f.blocks)); i++ {
-		f.blocks[i].Hash = blockHash(salt, i)
-		if i > 0 {
-			f.blocks[i].PrevHash = f.blocks[i-1].Hash
+	for i := from; i < f.origin+uint64(len(f.blocks)); i++ {
+		f.at(i).Hash = blockHash(salt, i)
+		if i > f.origin {
+			f.at(i).PrevHash = f.at(i - 1).Hash
 		}
 	}
 }
 
 func (f *fixture) pay(height, nonce uint64, addr string, ids ...legacymining.ProofID) *mempool.Tx {
 	tx := rewardTx(nonce, addr, legacymining.DefaultRewardCell(height), ids...)
-	f.blocks[height].Transactions = append(f.blocks[height].Transactions, tx)
+	f.at(height).Transactions = append(f.at(height).Transactions, tx)
 	return tx
 }
 
 // markPaid records the DB side of the payment in block height.
 func (f *fixture) markPaid(height uint64, ids ...legacymining.ProofID) {
 	var tx *mempool.Tx
-	for _, c := range f.blocks[height].Transactions {
+	for _, c := range f.at(height).Transactions {
 		if c.ContractID == chain.MiningRewardContractID {
 			tx = c
 		}
@@ -184,8 +199,19 @@ func (f *fixture) writeDB() {
 		f.t.Fatal(err)
 	}
 	defer st.Close()
-	if _, err := st.ApplyReconcile(legacymining.Reconciliation{Window: legacymining.ConfigWindow{ConfigSHA256: f.cfgHash, FirstHeight: f.window, ActivatedNS: 1}}); err != nil {
-		f.t.Fatal(err)
+	boots := f.boots
+	if boots == nil {
+		boots = []legacymining.ConfigWindow{{ConfigSHA256: f.cfgHash, FirstHeight: f.window, ActivatedNS: 1}}
+	}
+	for _, w := range boots {
+		if _, err := st.ApplyReconcile(legacymining.Reconciliation{Window: w}); err != nil {
+			f.t.Fatal(err)
+		}
+	}
+	for _, ev := range f.events {
+		if err := st.Event(ev); err != nil {
+			f.t.Fatal(err)
+		}
 	}
 	for _, r := range f.rows {
 		if err := st.Accept(r); err != nil {
@@ -574,6 +600,9 @@ func TestCanaryWindow(t *testing.T) {
 		if cs == nil || cs.FirstHeight == nil || *cs.FirstHeight != 5 || cs.Proofs != 4 || cs.BudgetCell != 1291 || !(cs.Emitted > 0) {
 			t.Fatalf("canary %+v", cs)
 		}
+		if cs.Window == nil || cs.Window.String() != "[5, tip]" || ranges(cs.Active) != "[5, tip]" || cs.RewardTxs != 2 {
+			t.Fatalf("canary window %v active %v reward txs %d", cs.Window, cs.Active, cs.RewardTxs)
+		}
 	})
 	t.Run("budget and proof totals exceeded", func(t *testing.T) {
 		f := newFixture(t)
@@ -601,6 +630,416 @@ func TestCanaryWindow(t *testing.T) {
 		f.write()
 		wantFail(t, f.audit(func(o *Options) { o.CanaryConfig = []byte(`{"version":2}`) }), CodeCanaryConfig)
 	})
+}
+
+// canaryCfg is one canary config of a multi-window fixture.
+type canaryCfg struct {
+	data []byte
+	hash legacymining.ConfigHash
+}
+
+func newCanaryCfg(addr string, budget, maxTotal uint64) canaryCfg {
+	data := canaryConfigFor(addr, budget, maxTotal)
+	return canaryCfg{data: data, hash: sha256.Sum256(data)}
+}
+
+// boot records an S11 activation of c at height first (tip+1 at that boot).
+func (f *fixture) boot(c canaryCfg, first uint64) {
+	f.boots = append(f.boots, legacymining.ConfigWindow{ConfigSHA256: c.hash, FirstHeight: first, ActivatedNS: int64(len(f.boots) + 1)})
+}
+
+// accept adds a new unpaid proof of addr accepted under c at tip height-1.
+func (f *fixture) accept(height uint64, c canaryCfg, addr string) legacymining.ProofID {
+	n := len(f.rows)
+	id := legacymining.ProofID(sha256.Sum256([]byte(fmt.Sprintf("proof/%d", n))))
+	f.rows = append(f.rows, legacymining.Record{
+		ProofID: id, MinerAddr: addr, NodeID: nodeID, AttNonce: sha256.Sum256([]byte(fmt.Sprintf("nonce/%d", n))),
+		WorkHeight: height - 1, AcceptTip: height - 1, AcceptedNS: int64(1_000_000 + n), ConfigSHA256: c.hash, ProofJSON: []byte(`{}`),
+	})
+	return id
+}
+
+// settle accepts a new proof of addr under c and pays it, one full block
+// reward, in the block at height.
+func (f *fixture) settle(height uint64, c canaryCfg, addr string) {
+	id := f.accept(height, c, addr)
+	f.pay(height, 1000+uint64(len(f.rows)), addr, id)
+	f.markPaid(height, id)
+}
+
+// rewardSum adds the reward amounts in the blocks [from, to), in block and
+// tx order.
+func (f *fixture) rewardSum(from, to uint64) (sum float64, n int) {
+	for _, b := range f.blocks {
+		if b.Height < from || b.Height >= to {
+			continue
+		}
+		for _, tx := range b.Transactions {
+			if tx.ContractID == chain.MiningRewardContractID {
+				sum += tx.Amount
+				n++
+			}
+		}
+	}
+	return sum, n
+}
+
+func (f *fixture) auditCfg(c canaryCfg) *Report {
+	f.t.Helper()
+	return f.audit(func(o *Options) { o.CanaryConfig = c.data })
+}
+
+func ranges(rs []HeightRange) string {
+	s := make([]string, len(rs))
+	for i, r := range rs {
+		s[i] = r.String()
+	}
+	return strings.Join(s, ",")
+}
+
+// windowsFixture builds three consecutive config windows over blocks 0..30
+// with h0 = 5, a canary whose config was changed twice:
+//
+//	A allowlists minerA, window [5, 12):  rewards to minerA at 6, 8, 10
+//	B allowlists minerB, window [12, 20): rewards to minerB at 13, 15, 17, 19
+//	C allowlists minerA, window [20, 30]: rewards to minerA at 22, 26
+//
+// B also restarted at 16 under the same config. Every reward is one full
+// block reward (about 3.565 CELL) paying one proof accepted under the
+// window's config, and max_proofs_total is the window's proof count.
+// budget[i] is the budget_cell of config i.
+func windowsFixture(t *testing.T, budget [3]uint64) (*fixture, [3]canaryCfg) {
+	f := &fixture{t: t, dir: t.TempDir(), h0: 5}
+	cs := [3]canaryCfg{
+		newCanaryCfg(minerA, budget[0], 3),
+		newCanaryCfg(minerB, budget[1], 4),
+		newCanaryCfg(minerA, budget[2], 2),
+	}
+	f.chain(30, "main")
+	f.boot(cs[0], 5)
+	f.boot(cs[1], 12)
+	f.boot(cs[1], 16)
+	f.boot(cs[2], 20)
+	for _, hgt := range []uint64{6, 8, 10} {
+		f.settle(hgt, cs[0], minerA)
+	}
+	for _, hgt := range []uint64{13, 15, 17, 19} {
+		f.settle(hgt, cs[1], minerB)
+	}
+	for _, hgt := range []uint64{22, 26} {
+		f.settle(hgt, cs[2], minerA)
+	}
+	return f, cs
+}
+
+// TestCanaryConsecutiveWindows checks that the budget and proof totals of a
+// config count only its own window, [first_height, next first_height), and
+// that the last window runs to the tip.
+func TestCanaryConsecutiveWindows(t *testing.T) {
+	t.Run("each window within its budget", func(t *testing.T) {
+		f, cs := windowsFixture(t, [3]uint64{11, 15, 8})
+		f.events = []legacymining.Event{{AtNS: 1, Kind: "freeze", Detail: "not a reconcile event"}}
+		f.write()
+		for i, want := range []struct {
+			window   string
+			from, to uint64
+			proofs   uint64
+		}{
+			{"[5, 12)", 5, 12, 3},
+			{"[12, 20)", 12, 20, 4},
+			{"[20, tip]", 20, 31, 2},
+		} {
+			r := f.auditCfg(cs[i])
+			wantPass(t, r)
+			if len(r.Findings) != 0 {
+				t.Fatalf("config %d: findings %v", i, r.Findings)
+			}
+			c := r.Canary
+			sum, n := f.rewardSum(want.from, want.to)
+			if c.Window.String() != want.window || ranges(c.Active) != want.window || c.RewardTxs != n || c.Emitted != sum || c.Proofs != want.proofs {
+				t.Fatalf("config %d: window %v active %v, %d reward txs %v CELL (want %d, %v), %d proofs", i, c.Window, c.Active, c.RewardTxs, c.Emitted, n, sum, c.Proofs)
+			}
+			// Summed up to the tip, as before, A and B were over budget.
+			if all, _ := f.rewardSum(want.from, 31); i < 2 && !(all > float64(c.BudgetCell)) {
+				t.Fatalf("config %d: fixture: %v CELL from %d to the tip is within budget %d", i, all, want.from, c.BudgetCell)
+			}
+		}
+	})
+	t.Run("an over-budget window still fails", func(t *testing.T) {
+		f, cs := windowsFixture(t, [3]uint64{11, 14, 8}) // B emits 4 rewards, about 14.26 CELL
+		f.write()
+		wantPass(t, f.auditCfg(cs[0]))
+		wantPass(t, f.auditCfg(cs[2]))
+		r := f.auditCfg(cs[1])
+		wantFail(t, r, CodeBudgetExceeded)
+		if len(r.Findings) != 1 || !strings.Contains(r.Findings[0].Detail, "[12, 20)") {
+			t.Fatalf("findings %v", r.Findings)
+		}
+	})
+	t.Run("an extra reward fails only its window", func(t *testing.T) {
+		f, cs := windowsFixture(t, [3]uint64{11, 15, 8})
+		f.settle(18, cs[1], minerB) // B: 5 rewards, about 17.82 CELL
+		f.write()
+		wantPass(t, f.auditCfg(cs[0]))
+		wantPass(t, f.auditCfg(cs[2]))
+		r := f.auditCfg(cs[1])
+		wantFail(t, r, CodeBudgetExceeded)
+		wantFail(t, r, CodeProofsTotal) // 5 proofs, max_proofs_total 4
+		if r.Canary.RewardTxs != 5 {
+			t.Fatalf("canary %+v", r.Canary)
+		}
+	})
+	t.Run("a last window over budget fails", func(t *testing.T) {
+		f, cs := windowsFixture(t, [3]uint64{11, 15, 7}) // C emits 2 rewards, about 7.13 CELL
+		f.write()
+		wantPass(t, f.auditCfg(cs[0]))
+		wantPass(t, f.auditCfg(cs[1]))
+		wantFail(t, f.auditCfg(cs[2]), CodeBudgetExceeded)
+	})
+	t.Run("pending proofs count toward their config", func(t *testing.T) {
+		f, cs := windowsFixture(t, [3]uint64{11, 15, 8})
+		f.accept(20, cs[1], minerB) // accepted under B, unpaid
+		f.write()
+		wantPass(t, f.auditCfg(cs[0]))
+		wantPass(t, f.auditCfg(cs[2]))
+		r := f.auditCfg(cs[1])
+		wantFail(t, r, CodeProofsTotal)
+		if r.Has(CodeBudgetExceeded) {
+			t.Fatalf("findings %v", codes(r))
+		}
+	})
+}
+
+// TestCanaryWindowAllowlists checks every reward against the allowlist of
+// the config it was sealed under, and only that one.
+func TestCanaryWindowAllowlists(t *testing.T) {
+	t.Run("each window has its own allowlist", func(t *testing.T) {
+		f, cs := windowsFixture(t, [3]uint64{11, 15, 8})
+		f.write()
+		for i, c := range cs {
+			if r := f.auditCfg(c); r.Has(CodeNotAllowlisted) || r.Failed() {
+				t.Fatalf("config %d: findings %v", i, r.Findings)
+			}
+		}
+	})
+	for _, c := range []struct {
+		name   string
+		height uint64
+		cfg    int
+		addr   string
+	}{
+		{"minerB paid in A's window", 9, 0, minerB},
+		{"minerA paid in B's window", 14, 1, minerA},
+		{"minerB paid in C's window", 28, 2, minerB},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f, cs := windowsFixture(t, [3]uint64{20, 20, 20})
+			f.settle(c.height, cs[c.cfg], c.addr)
+			f.write()
+			for i := range cs {
+				r := f.auditCfg(cs[i])
+				if i != c.cfg {
+					wantPass(t, r)
+					continue
+				}
+				wantFail(t, r, CodeNotAllowlisted)
+				var at []uint64
+				for _, x := range r.Findings {
+					if x.Code == CodeNotAllowlisted && x.Height != nil {
+						at = append(at, *x.Height)
+					}
+				}
+				if len(at) != 1 || at[0] != c.height || r.Has(CodeBudgetExceeded) {
+					t.Fatalf("findings %v", r.Findings)
+				}
+			}
+		})
+	}
+}
+
+// TestCanaryReactivatedConfig: a config started again after another one
+// keeps its config_windows row, so core's emitted_H (S12) counts from its
+// first window through the configs in between. The budget does the same;
+// the allowlist applies only where the config was active.
+func TestCanaryReactivatedConfig(t *testing.T) {
+	build := func(t *testing.T, budgetA uint64) (*fixture, canaryCfg, canaryCfg) {
+		f := &fixture{t: t, dir: t.TempDir(), h0: 5}
+		a, b := newCanaryCfg(minerA, budgetA, 10), newCanaryCfg(minerB, 100, 10)
+		f.chain(30, "main")
+		f.boot(a, 5)
+		f.boot(b, 12)
+		f.boot(a, 20)
+		for _, hgt := range []uint64{6, 8, 10} {
+			f.settle(hgt, a, minerA)
+		}
+		for _, hgt := range []uint64{13, 15} {
+			f.settle(hgt, b, minerB)
+		}
+		for _, hgt := range []uint64{22, 26} {
+			f.settle(hgt, a, minerA)
+		}
+		f.write()
+		return f, a, b
+	}
+	t.Run("windows", func(t *testing.T) {
+		f, a, b := build(t, 30)
+		r := f.auditCfg(a)
+		wantPass(t, r)
+		sum, n := f.rewardSum(5, 31)
+		if c := r.Canary; c.Window.String() != "[5, tip]" || ranges(c.Active) != "[5, 12),[20, tip]" || c.RewardTxs != n || n != 7 || c.Emitted != sum || c.Proofs != 5 {
+			t.Fatalf("canary %+v window %v active %v", c, c.Window, c.Active)
+		}
+		r = f.auditCfg(b)
+		wantPass(t, r)
+		if c := r.Canary; c.Window.String() != "[12, 20)" || ranges(c.Active) != "[12, 20)" || c.RewardTxs != 2 {
+			t.Fatalf("canary %+v window %v active %v", c, c.Window, c.Active)
+		}
+	})
+	t.Run("budget counts the configs in between", func(t *testing.T) {
+		f, a, _ := build(t, 20) // A's own 5 rewards are about 17.82 CELL, with B's 2 about 24.95
+		wantFail(t, f.auditCfg(a), CodeBudgetExceeded)
+	})
+}
+
+// TestCanaryRollbackAcrossConfigChange: B was activated at 20, the chain was
+// rolled back to 12 and B booted again at 13. The blocks from 13 on were
+// sealed under B, so they are not in A's window.
+func TestCanaryRollbackAcrossConfigChange(t *testing.T) {
+	f := &fixture{t: t, dir: t.TempDir(), h0: 5}
+	a, b := newCanaryCfg(minerA, 11, 3), newCanaryCfg(minerB, 11, 3)
+	f.chain(30, "main")
+	f.boot(a, 5)
+	f.boot(b, 20)
+	f.boot(b, 13)
+	for _, hgt := range []uint64{6, 8, 10} {
+		f.settle(hgt, a, minerA)
+	}
+	for _, hgt := range []uint64{14, 16, 22} {
+		f.settle(hgt, b, minerB)
+	}
+	f.write()
+	r := f.auditCfg(a)
+	wantPass(t, r)
+	if c := r.Canary; c.Window.String() != "[5, 13)" || ranges(c.Active) != "[5, 13)" || c.RewardTxs != 3 {
+		t.Fatalf("canary %+v window %v active %v", c, c.Window, c.Active)
+	}
+	r = f.auditCfg(b)
+	wantPass(t, r)
+	if c := r.Canary; *c.FirstHeight != 20 || c.Window.String() != "[13, tip]" || ranges(c.Active) != "[13, tip]" || c.RewardTxs != 3 {
+		t.Fatalf("canary %+v window %v active %v", c, c.Window, c.Active)
+	}
+}
+
+// TestCanaryHistoryFallback: reconcile events that do not match
+// config_windows are reported, and the windows then follow config_windows.
+func TestCanaryHistoryFallback(t *testing.T) {
+	unknown := sha256.Sum256([]byte("unknown config"))
+	for _, c := range []struct{ name, detail string }{
+		{"undecodable detail", `{"config_sha256":`},
+		{"incomplete detail", `{"paid":0}`},
+		{"config without a window", fmt.Sprintf(`{"paid":0,"updated":0,"reset":0,"window_inserted":false,"config_sha256":%q,"first_height":25}`, hex.EncodeToString(unknown[:]))},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f, cs := windowsFixture(t, [3]uint64{11, 15, 8})
+			f.events = []legacymining.Event{{AtNS: 1, Kind: reconcileEventKind, Detail: c.detail}}
+			f.write()
+			for i, want := range []string{"[5, 12)", "[12, 20)", "[20, tip]"} {
+				r := f.auditCfg(cs[i])
+				wantPass(t, r)
+				if !r.Has(CodeCanaryHistory) || r.Canary.Window.String() != want {
+					t.Fatalf("config %d: window %v findings %v", i, r.Canary.Window, codes(r))
+				}
+			}
+		})
+	}
+}
+
+func TestSegments(t *testing.T) {
+	var a, b, c legacymining.ConfigHash
+	a[0], b[0], c[0] = 1, 2, 3
+	for _, tc := range []struct {
+		name string
+		acts []activation
+		want []segment
+	}{
+		{"none", nil, nil},
+		{"consecutive, with restarts", []activation{{a, 5}, {a, 9}, {b, 12}, {b, 15}, {c, 20}},
+			[]segment{{a, 5, 12}, {b, 12, 20}, {c, 20, openEnd}}},
+		{"re-activation", []activation{{a, 5}, {b, 12}, {a, 20}},
+			[]segment{{a, 5, 12}, {b, 12, 20}, {a, 20, openEnd}}},
+		{"rollback across a config change", []activation{{a, 5}, {b, 20}, {b, 13}},
+			[]segment{{a, 5, 13}, {b, 13, openEnd}}},
+		{"rollback into the previous config", []activation{{a, 5}, {b, 20}, {a, 15}},
+			[]segment{{a, 5, openEnd}}},
+		{"replaced before sealing", []activation{{a, 5}, {b, 5}},
+			[]segment{{b, 5, openEnd}}},
+		{"rollback below every window", []activation{{a, 5}, {b, 12}, {c, 3}},
+			[]segment{{c, 3, openEnd}}},
+	} {
+		if got := segments(tc.acts); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestCanaryRehearsalFalseAlarm replays the tail of the crash-rollback
+// rehearsal (evidence crash-rollback-triggers/final/window-budget.json).
+// Config 16774144... (budget_cell 40) was active for [666956, 666989) and
+// paid 10 rewards, 35.6490987 CELL; config 9a95b0ae... (budget_cell 1000,
+// max_proofs_total 30) took over at 666989 and paid 7 more, 24.95436909
+// CELL, up to the tip 667018. hl-audit summed 16774144's rewards from 666956
+// to the tip, 60.60346779 CELL, and failed it with budget-exceeded.
+func TestCanaryRehearsalFalseAlarm(t *testing.T) {
+	const tip = 667018
+	f := &fixture{t: t, dir: t.TempDir(), origin: 666770, h0: 666783}
+	f.chain(tip, "rehearsal")
+	prev := newCanaryCfg(minerA, 1291, 3000) // f3610b23...: [666783, 666956)
+	c40 := newCanaryCfg(minerA, 40, 3000)    // 16774144...: [666956, 666989)
+	last := newCanaryCfg(minerA, 1000, 30)   // 9a95b0ae...: [666989, tip]
+	f.boot(prev, 666783)
+	f.boot(c40, 666956)
+	f.boot(last, 666989)
+	for _, hgt := range []uint64{666800, 666850, 666900} {
+		f.settle(hgt, prev, minerA)
+	}
+	for i := uint64(0); i < 10; i++ {
+		f.settle(666957+3*i, c40, minerA)
+	}
+	for _, hgt := range []uint64{666990, 666993, 666996, 666999, 667002, 667005, 667007} {
+		f.settle(hgt, last, minerA)
+	}
+	f.write()
+
+	near := func(x, y float64) bool { return math.Abs(x-y) < 1e-9 }
+	if all, n := f.rewardSum(666956, tip+1); n != 17 || !near(all, 60.60346779) {
+		t.Fatalf("fixture: %d rewards, %v CELL from 666956 to the tip", n, all)
+	}
+	for _, want := range []struct {
+		cfg     canaryCfg
+		window  string
+		txs     int
+		emitted float64
+	}{
+		{c40, "[666956, 666989)", 10, 35.6490987},
+		{last, "[666989, tip]", 7, 24.95436909},
+		{prev, "[666783, 666956)", 3, 3 * legacymining.DefaultRewardCell(666800)},
+	} {
+		r := f.auditCfg(want.cfg)
+		wantPass(t, r)
+		if c := r.Canary; c.Window.String() != want.window || c.RewardTxs != want.txs || !near(c.Emitted, want.emitted) || c.Proofs != uint64(want.txs) {
+			t.Fatalf("canary %+v window %v, want %s %d txs %v CELL", c, c.Window, want.window, want.txs, want.emitted)
+		}
+	}
+
+	cfgPath := filepath.Join(t.TempDir(), "mining-canary.json")
+	if err := os.WriteFile(cfgPath, c40.data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var so, se bytes.Buffer
+	if code := run([]string{"-state-dir", f.dir, "-canary-config", cfgPath, "-temp-dir", t.TempDir()}, &so, &se); code != exitPass ||
+		!strings.Contains(so.String(), "window [666956, 666989), emitted 35.649") {
+		t.Fatalf("exit %d\n%s%s", code, so.String(), se.String())
+	}
 }
 
 // TestCanaryConfigExamples parses the committed canary config examples

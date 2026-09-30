@@ -90,6 +90,7 @@ const (
 	CodeBudgetExceeded     = "budget-exceeded"      // emitted_H > B
 	CodeProofsTotal        = "proofs-total-exceeded"
 	CodeNotAllowlisted     = "recipient-not-allowlisted"
+	CodeCanaryHistory      = "canary-history-inconsistent" // warn: the reconcile events disagree with config_windows
 )
 
 // Options are the audit inputs. Paths refer to copies, never to live state.
@@ -171,14 +172,37 @@ type PaymentSummary struct {
 	Emitted         float64 `json:"emitted_cell"`
 }
 
-// CanarySummary describes the active canary window.
+// HeightRange is the block heights [First, End). A nil End means up to and
+// including the journal tip.
+type HeightRange struct {
+	First uint64  `json:"first"`
+	End   *uint64 `json:"end,omitempty"`
+}
+
+func (r HeightRange) String() string {
+	if r.End == nil {
+		return fmt.Sprintf("[%d, tip]", r.First)
+	}
+	return fmt.Sprintf("[%d, %d)", r.First, *r.End)
+}
+
+// CanarySummary describes the window of the audited canary config.
 type CanarySummary struct {
-	ConfigSHA256   string  `json:"config_sha256"`
-	FirstHeight    *uint64 `json:"window_first_height,omitempty"`
-	Emitted        float64 `json:"emitted_cell"`
-	BudgetCell     uint64  `json:"budget_cell"`
-	Proofs         uint64  `json:"proofs"`
-	MaxProofsTotal uint64  `json:"max_proofs_total"`
+	ConfigSHA256 string `json:"config_sha256"`
+	// FirstHeight is the config's config_windows.first_height.
+	FirstHeight *uint64 `json:"window_first_height,omitempty"`
+	// Window holds the heights whose rewards make up Emitted. It ends where
+	// the next config took over; a nil End means the config is the active
+	// one and the window runs to the journal tip.
+	Window *HeightRange `json:"window,omitempty"`
+	// Active lists the heights sealed under the config. Every reward in
+	// them must pay the config's allowlisted address.
+	Active         []HeightRange `json:"active,omitempty"`
+	RewardTxs      int           `json:"reward_txs"`
+	Emitted        float64       `json:"emitted_cell"`
+	BudgetCell     uint64        `json:"budget_cell"`
+	Proofs         uint64        `json:"proofs"`
+	MaxProofsTotal uint64        `json:"max_proofs_total"`
 }
 
 // Report is the audit result. Its JSON form is the -out file and the -prev
@@ -684,10 +708,30 @@ type dbRow struct {
 	paidTxID   string
 }
 
+// dbWindow is one config_windows row.
+type dbWindow struct {
+	config      legacymining.ConfigHash
+	firstHeight uint64
+	activatedNS int64
+}
+
+// reconcileEvent is one S11 "reconcile" events row: the boot activated
+// config at height first (its tip+1), inserting the config_windows row when
+// inserted is true.
+type reconcileEvent struct {
+	id       int64
+	config   legacymining.ConfigHash
+	first    uint64
+	inserted bool
+}
+
 type dbData struct {
-	meta    legacymining.Meta
-	rows    []dbRow // ordered by proof_id
-	windows map[legacymining.ConfigHash]uint64
+	meta       legacymining.Meta
+	rows       []dbRow // ordered by proof_id
+	windows    map[legacymining.ConfigHash]dbWindow
+	windowList []dbWindow       // ordered by first_height, activated_ns, config_sha256
+	events     []reconcileEvent // ordered by events.id
+	eventsErr  error            // the first reconcile event that does not decode
 }
 
 func (a *auditor) readDB() error {
@@ -773,7 +817,7 @@ func loadDBCopy(src, tempRoot string) (*dbData, error) {
 	if _, err := db.Exec(`PRAGMA query_only = 1`); err != nil {
 		return nil, fmt.Errorf("db read: %w", err)
 	}
-	d := &dbData{meta: meta, windows: make(map[legacymining.ConfigHash]uint64)}
+	d := &dbData{meta: meta, windows: make(map[legacymining.ConfigHash]dbWindow)}
 	rows, err := db.Query(`SELECT proof_id, miner_addr, config_sha256, paid_height, paid_tx_id FROM proofs ORDER BY proof_id`)
 	if err != nil {
 		return nil, fmt.Errorf("db read: %w", err)
@@ -801,27 +845,92 @@ func loadDBCopy(src, tempRoot string) (*dbData, error) {
 		return nil, fmt.Errorf("db read: %w", err)
 	}
 	rows.Close()
-	wrows, err := db.Query(`SELECT config_sha256, first_height FROM config_windows`)
+	wrows, err := db.Query(`SELECT config_sha256, first_height, activated_ns FROM config_windows`)
 	if err != nil {
 		return nil, fmt.Errorf("db read: %w", err)
 	}
-	defer wrows.Close()
 	for wrows.Next() {
 		var (
 			cfg []byte
 			fh  int64
-			k   legacymining.ConfigHash
+			w   dbWindow
 		)
-		if err := wrows.Scan(&cfg, &fh); err != nil {
+		if err := wrows.Scan(&cfg, &fh, &w.activatedNS); err != nil {
+			wrows.Close()
 			return nil, fmt.Errorf("db read: %w", err)
 		}
-		copy(k[:], cfg)
-		d.windows[k] = uint64(fh)
+		copy(w.config[:], cfg)
+		w.firstHeight = uint64(fh) // CHECK(first_height>=0)
+		d.windows[w.config] = w
+		d.windowList = append(d.windowList, w)
 	}
 	if err := wrows.Err(); err != nil {
+		wrows.Close()
+		return nil, fmt.Errorf("db read: %w", err)
+	}
+	wrows.Close()
+	sort.Slice(d.windowList, func(i, j int) bool {
+		x, y := d.windowList[i], d.windowList[j]
+		if x.firstHeight != y.firstHeight {
+			return x.firstHeight < y.firstHeight
+		}
+		if x.activatedNS != y.activatedNS {
+			return x.activatedNS < y.activatedNS
+		}
+		return bytes.Compare(x.config[:], y.config[:]) < 0
+	})
+
+	erows, err := db.Query(`SELECT id, detail FROM events WHERE kind = ? ORDER BY id`, reconcileEventKind)
+	if err != nil {
+		return nil, fmt.Errorf("db read: %w", err)
+	}
+	defer erows.Close()
+	for erows.Next() {
+		var (
+			id     int64
+			detail string
+		)
+		if err := erows.Scan(&id, &detail); err != nil {
+			return nil, fmt.Errorf("db read: %w", err)
+		}
+		ev, err := parseReconcileEvent(id, detail)
+		if err != nil {
+			if d.eventsErr == nil {
+				d.eventsErr = err
+			}
+			continue
+		}
+		d.events = append(d.events, ev)
+	}
+	if err := erows.Err(); err != nil {
 		return nil, fmt.Errorf("db read: %w", err)
 	}
 	return d, nil
+}
+
+// reconcileEventKind is the events.kind that Store.ApplyReconcile (S11)
+// writes, in the same transaction as the config_windows insert.
+const reconcileEventKind = "reconcile"
+
+// parseReconcileEvent decodes the detail of a reconcile event.
+func parseReconcileEvent(id int64, detail string) (reconcileEvent, error) {
+	var v struct {
+		ConfigSHA256   string  `json:"config_sha256"`
+		FirstHeight    *uint64 `json:"first_height"`
+		WindowInserted *bool   `json:"window_inserted"`
+	}
+	ev := reconcileEvent{id: id}
+	if err := json.Unmarshal([]byte(detail), &v); err != nil {
+		return ev, fmt.Errorf("reconcile event %d: %v", id, err)
+	}
+	if !isLowerHex(v.ConfigSHA256, 64) || v.FirstHeight == nil || v.WindowInserted == nil {
+		return ev, fmt.Errorf("reconcile event %d: detail lacks config_sha256, first_height or window_inserted", id)
+	}
+	if _, err := hex.Decode(ev.config[:], []byte(v.ConfigSHA256)); err != nil {
+		return ev, fmt.Errorf("reconcile event %d: %v", id, err)
+	}
+	ev.first, ev.inserted = *v.FirstHeight, *v.WindowInserted
+	return ev, nil
 }
 
 func sqliteURI(path string) string {
@@ -886,7 +995,7 @@ func (a *auditor) checkDB() {
 }
 
 // -----------------------------------------------------------------------------
-// Canary window (§6.1, §6.3, §6.6)
+// Canary windows (§6.1, §6.3, §6.5, §6.6; S11, S12)
 // -----------------------------------------------------------------------------
 
 func (a *auditor) readCanaryConfig() (*legacymining.Config, legacymining.ConfigHash) {
@@ -902,6 +1011,128 @@ func (a *auditor) readCanaryConfig() (*legacymining.Config, legacymining.ConfigH
 	return &cfg, hash
 }
 
+// The config windows. Every boot that reaches S11 activates its config hash
+// H at tip+1: in one DB transaction it inserts config_windows(H, tip+1) if H
+// is new and appends a reconcile event naming H and tip+1. Every journal
+// block at or above that height was sealed at that boot or a later one, so
+// the block at height x was sealed under the config of the last activation
+// at or below x. This splits the journal into segments, one per run of a
+// config (segments).
+//
+// For the audited config H (checkCanary):
+//   - the allowlist applies to the rewards in H's own segments: I6 checks a
+//     recipient against the config active at seal time;
+//   - emitted_cell sums the rewards from H's config_windows first_height (the
+//     start of S12's emitted_H), or from H's first segment if a rollback put
+//     it lower, to the end of H's last segment: the first height sealed under
+//     the next config, or the journal tip while H is active. Only a new hash
+//     resets core's counters, so a re-activated H keeps its row and core's
+//     emitted_H also counts the rewards sealed under the configs in between;
+//     the audit counts them too;
+//   - proofs counts the DB rows accepted under H (proofs.config_sha256), as
+//     S12's proofs_H does.
+//
+// Without a re-activation or a rollback across a config change, H's window
+// is [first_height, the next config_windows row's first_height), and the
+// last window runs to the journal tip.
+
+// openEnd is the end of a segment that runs to the journal tip.
+const openEnd = math.MaxUint64
+
+// activation is one boot through S11: config is active from height first.
+type activation struct {
+	config legacymining.ConfigHash
+	first  uint64
+}
+
+// segment is the heights [from, to) sealed under config; to == openEnd runs
+// to the journal tip.
+type segment struct {
+	config   legacymining.ConfigHash
+	from, to uint64
+}
+
+func (s segment) has(height uint64) bool { return height >= s.from && height < s.to }
+
+func (s segment) heightRange() HeightRange {
+	r := HeightRange{First: s.from}
+	if s.to != openEnd {
+		r.End = h(s.to)
+	}
+	return r
+}
+
+// segments splits the heights among the activations, given in boot order.
+// The segments are in height order and never empty.
+func segments(acts []activation) []segment {
+	var segs []segment
+	for _, ac := range acts {
+		// The blocks at or above ac.first were rolled back before this boot.
+		for len(segs) > 0 && segs[len(segs)-1].from >= ac.first {
+			segs = segs[:len(segs)-1]
+		}
+		if n := len(segs); n > 0 {
+			if segs[n-1].config == ac.config { // a restart under the same config
+				segs[n-1].to = openEnd
+				continue
+			}
+			segs[n-1].to = ac.first
+		}
+		segs = append(segs, segment{config: ac.config, from: ac.first, to: openEnd})
+	}
+	return segs
+}
+
+// eventActivations returns the activations recorded by the reconcile
+// events. They must agree with config_windows: every row is inserted, with
+// its first_height, by the first event of its config, and every event names
+// a config that has a row.
+func (d *dbData) eventActivations() ([]activation, error) {
+	if d.eventsErr != nil {
+		return nil, d.eventsErr
+	}
+	seen := make(map[legacymining.ConfigHash]bool, len(d.windows))
+	acts := make([]activation, 0, len(d.events))
+	for _, ev := range d.events {
+		w, ok := d.windows[ev.config]
+		firstRun := !seen[ev.config]
+		switch {
+		case !ok:
+			return nil, fmt.Errorf("reconcile event %d names config %x, which has no config_windows row", ev.id, ev.config[:])
+		case firstRun && !ev.inserted:
+			return nil, fmt.Errorf("reconcile event %d first activates config %x but did not insert its window", ev.id, ev.config[:])
+		case !firstRun && ev.inserted:
+			return nil, fmt.Errorf("reconcile event %d inserts the window of config %x again", ev.id, ev.config[:])
+		case firstRun && ev.first != w.firstHeight:
+			return nil, fmt.Errorf("reconcile event %d inserts config %x at height %d, config_windows says %d", ev.id, ev.config[:], ev.first, w.firstHeight)
+		}
+		seen[ev.config] = true
+		acts = append(acts, activation{config: ev.config, first: ev.first})
+	}
+	for _, w := range d.windowList {
+		if !seen[w.config] {
+			return nil, fmt.Errorf("config %x has a config_windows row but no reconcile event", w.config[:])
+		}
+	}
+	return acts, nil
+}
+
+// activations returns the activation history: the reconcile events or, if
+// they disagree with config_windows, the config_windows rows in
+// (first_height, activated_ns) order.
+func (a *auditor) activations() []activation {
+	acts, err := a.db.eventActivations()
+	if err == nil {
+		return acts
+	}
+	a.rep.add(CodeCanaryHistory, sevWarn, nil, "%v; the config windows follow config_windows alone, so a re-activated config is not seen", err)
+	acts = make([]activation, len(a.db.windowList))
+	for i, w := range a.db.windowList {
+		acts[i] = activation{config: w.config, first: w.firstHeight}
+	}
+	return acts
+}
+
 func (a *auditor) checkCanary(cfg *legacymining.Config, hash legacymining.ConfigHash) {
 	if cfg == nil {
 		return
@@ -912,23 +1143,45 @@ func (a *auditor) checkCanary(cfg *legacymining.Config, hash legacymining.Config
 		a.rep.add(CodeCanaryWindow, sevWarn, nil, "no DB: the config window cannot be located")
 		return
 	}
-	first, ok := a.db.windows[hash]
+	win, ok := a.db.windows[hash]
 	if !ok {
 		a.rep.add(CodeCanaryWindow, sevWarn, nil, "config %x has no config_windows row", hash[:])
 		return
 	}
-	cs.FirstHeight = h(first)
+	cs.FirstHeight = h(win.firstHeight)
+
+	var own []segment
+	for _, s := range segments(a.activations()) {
+		if s.config == hash {
+			own = append(own, s)
+			cs.Active = append(cs.Active, s.heightRange())
+		}
+	}
+	window := segment{config: hash, from: win.firstHeight, to: win.firstHeight} // empty: nothing sealed under it
+	if len(own) > 0 {
+		window.from = min(window.from, own[0].from)
+		window.to = own[len(own)-1].to
+	}
+	wr := window.heightRange()
+	cs.Window = &wr
+
 	allowed := make(map[string]bool, len(cfg.Allowed))
 	for _, e := range cfg.Allowed {
 		allowed[e.MinerAddr] = true
 	}
 	for _, rw := range a.rewards {
-		if rw.height < first {
+		if window.has(rw.height) {
+			cs.RewardTxs++
+			cs.Emitted += rw.amount
+		}
+		if allowed[rw.recipient] {
 			continue
 		}
-		cs.Emitted += rw.amount
-		if !allowed[rw.recipient] {
-			a.rep.add(CodeNotAllowlisted, sevFail, h(rw.height), "reward to %s, which the config does not allowlist", rw.recipient)
+		for _, s := range own {
+			if s.has(rw.height) {
+				a.rep.add(CodeNotAllowlisted, sevFail, h(rw.height), "reward to %s, sealed under the config, which does not allowlist it", rw.recipient)
+				break
+			}
 		}
 	}
 	for _, r := range a.db.rows {
@@ -937,10 +1190,10 @@ func (a *auditor) checkCanary(cfg *legacymining.Config, hash legacymining.Config
 		}
 	}
 	if cs.Emitted > float64(cfg.BudgetCell) {
-		a.rep.add(CodeBudgetExceeded, sevFail, nil, "emitted %v CELL in the window, above budget_cell %d", cs.Emitted, cfg.BudgetCell)
+		a.rep.add(CodeBudgetExceeded, sevFail, nil, "emitted %v CELL in the window %s, above budget_cell %d", cs.Emitted, wr, cfg.BudgetCell)
 	}
 	if cs.Proofs > cfg.MaxProofsTotal {
-		a.rep.add(CodeProofsTotal, sevFail, nil, "%d proofs in the window, above max_proofs_total %d", cs.Proofs, cfg.MaxProofsTotal)
+		a.rep.add(CodeProofsTotal, sevFail, nil, "%d proofs accepted under the config, above max_proofs_total %d", cs.Proofs, cfg.MaxProofsTotal)
 	}
 }
 
