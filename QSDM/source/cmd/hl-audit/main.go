@@ -5,13 +5,15 @@
 //
 //	hl-audit -state-dir /path/to/copy [-prev earlier-report.json]
 //	         [-canary-config mining-canary.json] [-require-watermark]
+//	         [-receipts-from H] [-require-receipts]
 //	         [-out report.json] [-json]
 //
 // The copy supplies qsdm_chain.ndjson, hl1-served-watermark.json, any
-// hl1-served-watermark.json.retired-* files and legacy-mining/legacy-mining.db
-// (each can be overridden with -journal, -watermark and -db; "-db none" skips
-// the DB). The audit never writes to its inputs: the DB is copied to a private
-// temporary directory before SQLite opens it.
+// hl1-served-watermark.json.retired-* files, legacy-mining/legacy-mining.db
+// and qsdm_receipts.ndjson (each can be overridden with -journal, -watermark,
+// -db and -receipts; "-db none" and "-receipts none" skip them). The audit
+// never writes to its inputs: the DB is copied to a private temporary
+// directory before SQLite opens it.
 //
 // It checks, among others:
 //   - oracle 1: no proof ID appears in two LMP1 payloads (double pay);
@@ -26,7 +28,12 @@
 //     and W is not below the previous high-water mark;
 //   - with -canary-config: emitted_H <= budget_cell, proofs_H <=
 //     max_proofs_total and every reward in the window pays an allowlisted
-//     address.
+//     address;
+//   - receipts coverage (errata E7): every chain tx at or above
+//     -receipts-from (default meta.h0) has a receipts line at its height with
+//     its block hash. Without -receipts-from and without a DB the check is
+//     skipped with a warning; an absent receipts file is a warning unless
+//     -require-receipts.
 //
 // Exit status: 0 PASS, 1 FAIL (at least one fail finding), 2 usage or input
 // error. The JSON report written with -out is the -prev input of the next
@@ -40,6 +47,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/blackbeardONE/QSDM/internal/legacymining"
 )
@@ -66,6 +74,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		out       = fl.String("out", "", "write the JSON report to this new file")
 		asJSON    = fl.Bool("json", false, "print the JSON report instead of the summary")
 		tempDir   = fl.String("temp-dir", "", "directory for the private DB copy (default: system temp)")
+		receipts  = fl.String("receipts", "", `receipts NDJSON (default <state-dir>/`+ReceiptsFile+`; "none" skips the coverage check)`)
+		rcptFrom  = fl.String("receipts-from", "", "first height whose txs must have receipts (default meta.h0)")
+		requireR  = fl.Bool("require-receipts", false, "fail when the receipts file is absent")
 	)
 	if err := fl.Parse(args); err != nil {
 		return exitUsage
@@ -80,6 +91,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 	o.RetiredDir = *stateDir
 	if *dbPath != "none" {
 		o.DBPath = pick(*dbPath, *stateDir, filepath.Join(legacymining.LegacyDirName, legacymining.DBFile))
+	}
+	if *receipts != "none" {
+		o.ReceiptsPath = pick(*receipts, *stateDir, ReceiptsFile)
+	}
+	o.RequireReceipts = *requireR
+	if *rcptFrom != "" {
+		v, err := strconv.ParseUint(*rcptFrom, 10, 64)
+		if err != nil {
+			fmt.Fprintf(stderr, "hl-audit: -receipts-from: %v\n", err)
+			return exitUsage
+		}
+		o.ReceiptsFrom = &v
 	}
 	if o.JournalPath == "" {
 		fmt.Fprintln(stderr, "hl-audit: -state-dir or -journal is required")
@@ -180,6 +203,9 @@ func printSummary(w io.Writer, r *Report) {
 	}
 	if hw := r.ServedHighWater; hw != nil {
 		fmt.Fprintf(w, "served high-water: %d %s\n", hw.Height, hw.Hash)
+	}
+	if rs := r.Receipts; rs != nil {
+		fmt.Fprintf(w, "receipts: %d of %d chain txs from height %d covered (%d lines)\n", rs.Covered, rs.ChainTxs, rs.FromHeight, rs.Lines)
 	}
 	for _, f := range r.Findings {
 		at := ""

@@ -752,6 +752,10 @@ type hl1S5Result struct {
 //  6. tip > W.height -> D1 W := (tip, tip.hash, boot). The durable tip is
 //     the restored tip.
 //
+// Rules 3-5 and the rule 6 decision are hl1S5Decide. In the producer role
+// main() runs S4r (hl1RepairTipReceipts) before S5, so rule 6 advances W
+// only over a block whose receipts are complete (errata E7).
+//
 // Follower role: W is neither read nor written; the durable tip is the
 // restored tip.
 func hl1StartupWatermark(fsys hl1FS, stateDir string, producerRole bool, tip *chain.Block, blockAt func(uint64) (*chain.Block, bool), now time.Time) (hl1S5Result, error) {
@@ -767,23 +771,11 @@ func hl1StartupWatermark(fsys hl1FS, stateDir string, producerRole bool, tip *ch
 		return res, err
 	}
 	res.Watermark = w
-	if tip == nil {
-		return res, fmt.Errorf("watermark height %d is above the restored tip (empty chain); follow R-W", w.Height)
+	advance, err := hl1S5Decide(w, tip, blockAt)
+	if err != nil {
+		return res, err
 	}
-	if w.Height > tip.Height {
-		return res, fmt.Errorf("watermark height %d is above the restored tip %d; follow R-W", w.Height, tip.Height)
-	}
-	at, ok := blockAt(w.Height)
-	if !ok || at == nil {
-		return res, fmt.Errorf("restored chain has no block at watermark height %d; follow R-W", w.Height)
-	}
-	if at.Hash != w.Hash {
-		return res, fmt.Errorf("restored block %d has hash %s, watermark has %s; follow R-W", w.Height, at.Hash, w.Hash)
-	}
-	if tip.Height > w.Height+1 {
-		return res, fmt.Errorf("restored tip %d is more than one block above watermark %d: blocks were sealed without HL1; follow R-H", tip.Height, w.Height)
-	}
-	if tip.Height > w.Height {
+	if advance {
 		nw := legacymining.Watermark{
 			Version:   legacymining.WatermarkVersion,
 			Height:    tip.Height,
@@ -798,6 +790,30 @@ func hl1StartupWatermark(fsys hl1FS, stateDir string, producerRole bool, tip *ch
 	}
 	res.DurableTip, res.DurableTipSet = tip.Height, true
 	return res, nil
+}
+
+// hl1S5Decide is S5 rules 3-5 for a valid W against the restored chain, and
+// the rule 6 decision: advance reports tip = W.height+1. It is pure: S5 and
+// the boot step S4r (hl1RepairTipReceipts) both call it, so S4r runs exactly
+// when S5 rule 6 is about to write W := tip. tip is nil for an empty chain.
+func hl1S5Decide(w legacymining.Watermark, tip *chain.Block, blockAt func(uint64) (*chain.Block, bool)) (advance bool, err error) {
+	if tip == nil {
+		return false, fmt.Errorf("watermark height %d is above the restored tip (empty chain); follow R-W", w.Height)
+	}
+	if w.Height > tip.Height {
+		return false, fmt.Errorf("watermark height %d is above the restored tip %d; follow R-W", w.Height, tip.Height)
+	}
+	at, ok := blockAt(w.Height)
+	if !ok || at == nil {
+		return false, fmt.Errorf("restored chain has no block at watermark height %d; follow R-W", w.Height)
+	}
+	if at.Hash != w.Hash {
+		return false, fmt.Errorf("restored block %d has hash %s, watermark has %s; follow R-W", w.Height, at.Hash, w.Hash)
+	}
+	if tip.Height > w.Height+1 {
+		return false, fmt.Errorf("restored tip %d is more than one block above watermark %d: blocks were sealed without HL1; follow R-H", tip.Height, w.Height)
+	}
+	return tip.Height > w.Height, nil
 }
 
 // hl1RequireFinalNewline is the S4 check for the journal and the receipts

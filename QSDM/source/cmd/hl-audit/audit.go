@@ -112,6 +112,14 @@ type Options struct {
 	RewardCell func(uint64) float64
 	// TempDir is where the DB copy is made; "" means os.TempDir.
 	TempDir string
+	// ReceiptsPath is the receipts NDJSON; "" skips the coverage check
+	// (receipts.go).
+	ReceiptsPath string
+	// ReceiptsFrom is the first height whose txs must have receipts; nil
+	// means meta.h0 (the check is skipped with a warning without a DB).
+	ReceiptsFrom *uint64
+	// RequireReceipts turns an absent receipts file into a failure.
+	RequireReceipts bool
 }
 
 // Finding is one audit result.
@@ -185,6 +193,7 @@ type Report struct {
 	Payments        PaymentSummary  `json:"payments"`
 	Canary          *CanarySummary  `json:"canary,omitempty"`
 	ServedHighWater *Point          `json:"served_high_water,omitempty"`
+	Receipts        *ReceiptSummary `json:"receipts,omitempty"`
 	Findings        []Finding       `json:"findings"`
 	FindingsDropped int             `json:"findings_dropped,omitempty"`
 	failed          bool            // any fail finding, including dropped ones
@@ -253,6 +262,9 @@ type auditor struct {
 	paid    map[legacymining.ProofID]payment
 	rewards []reward
 	haveTip bool
+
+	rcptFrom uint64                // receipts coverage bound; math.MaxUint64: off
+	chainTxs map[receiptKey]string // chain txs at or above rcptFrom -> block hash
 }
 
 // Audit runs the offline audit. It returns an error only when an input cannot
@@ -285,6 +297,7 @@ func Audit(o Options) (*Report, error) {
 	if err := a.readDB(); err != nil {
 		return nil, err
 	}
+	a.receiptsFrom()
 	cfg, cfgHash := a.readCanaryConfig()
 
 	var points []Point
@@ -300,6 +313,9 @@ func Audit(o Options) (*Report, error) {
 	}
 
 	if err := a.scan(); err != nil {
+		return nil, err
+	}
+	if err := a.checkReceipts(); err != nil {
 		return nil, err
 	}
 	a.checkServed(w, retired)
@@ -529,13 +545,17 @@ func (a *auditor) scan() error {
 		if _, ok := a.wanted[lb.Height]; ok {
 			a.wanted[lb.Height] = lb.Hash
 		}
-		if lb.Height >= a.h0 || bytes.Contains(line, tagB64) || bytes.Contains(line, rewardContractJSON) {
+		lmp1 := lb.Height >= a.h0 || bytes.Contains(line, tagB64) || bytes.Contains(line, rewardContractJSON)
+		if lmp1 || lb.Height >= a.rcptFrom {
 			var blk chain.Block
 			if err := json.Unmarshal(line, &blk); err != nil {
 				a.rep.add(CodeJournalParse, sevFail, h(lb.Height), "line %d: %v; the audit stops here", lineNo, err)
 				break
 			}
-			a.scanBlock(&blk)
+			if lmp1 {
+				a.scanBlock(&blk)
+			}
+			a.noteTxs(&blk)
 		}
 		prev = lb
 		n++

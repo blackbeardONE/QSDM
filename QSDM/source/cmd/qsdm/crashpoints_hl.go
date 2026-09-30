@@ -12,7 +12,8 @@ package main
 //
 // Points are named in the code that calls hl1Crashpoint, hl1Fault and
 // hl1CrashInsideD1, for example persist:H3, persist:after-H4 and
-// persist:H7:d1.
+// persist:H7:d1, and the boot step S4r's boot:S4r:append, boot:S4r:fsync
+// (faults) and boot:S4r:after-append (crash).
 
 import (
 	"crypto/rand"

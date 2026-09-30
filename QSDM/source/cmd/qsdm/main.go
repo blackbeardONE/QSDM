@@ -2345,6 +2345,30 @@ func main() {
 			"enrollment_path", enrollmentStatePath,
 			"receipts_path", receiptsNDJSONPath,
 			"genesis_seal_will_skip", true)
+		// HL1 S4r (errata E7): in the producer role, when S5 rule 6 is about
+		// to advance W over the tip N (tip = W+1), complete N's receipts
+		// first. A crash after H3/H4 (C5, C6a) or an I/O error at H5 (F1)
+		// leaves N durable without them. S4r replays N onto the .h<N-1>
+		// generation in scratch state, checks the result against the durable
+		// N state and appends only the missing receipts (fsynced). It never
+		// writes W; every refusal exits 78 with W still at N-1 (R-C6).
+		hl1LiveApplier, _ := v2Wired.StateApplier.(chain.ChainReplayApplier)
+		if _, err := hl1RepairTipReceipts(hl1RepairOptions{
+			ProducerRole:   localBlockProduction,
+			StateDir:       stateDir,
+			AccountsPath:   accountsStatePath,
+			EnrollmentPath: enrollmentStatePath,
+			ReceiptsPath:   receiptsNDJSONPath,
+			Transition:     cfg.ProducerTransition,
+			Authorized:     cfg.AuthorizedBlockProducers,
+			Blocks:         hl1RestoredBlocks,
+			Live:           hl1LiveApplier,
+			Receipts:       adminReceipts,
+			FS:             hl1OSFS{},
+			Log:            logger,
+		}); err != nil {
+			fatalRestore("hl1 S4r: %v", err)
+		}
 	} else {
 		logger.Info("No persisted chain found; genesis seal will run on a fresh chain",
 			"chain_path", chainStatePath)

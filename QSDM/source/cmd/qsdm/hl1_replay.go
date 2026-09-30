@@ -434,25 +434,9 @@ func (s *hl1ReplayStack) restore(blocks []*chain.Block, accountsPath, enrollment
 		return errors.New("no blocks to restore")
 	}
 	tip := blocks[len(blocks)-1]
-	if _, err := s.accounts.Load(accountsPath); err != nil {
-		return fmt.Errorf("accounts snapshot %s: %w", accountsPath, err)
-	}
-	var restored persistedStateRestore
-	var err error
-	if s.transition != nil {
-		if _, err := loadTransitionEnrollmentSnapshot(s.v2.EnrollmentState, enrollmentPath); err != nil {
-			return fmt.Errorf("enrollment snapshot %s: %w", enrollmentPath, err)
-		}
-		restored, err = evaluateTransitionPersistedState(s.accounts, blocks, s.v2.EnrollmentState, s.transition)
-	} else {
-		restored, err = evaluatePersistedState(s.accounts, blocks)
-	}
+	restored, err := hl1EvaluatePair(s.accounts, s.v2.EnrollmentState, s.transition, blocks, accountsPath, enrollmentPath)
 	if err != nil {
 		return err
-	}
-	if restored.stateRoot != tip.StateRoot {
-		return fmt.Errorf("the snapshot pair (%s, %s) does not reproduce block %d's state root (snapshot_root=%s block_root=%s)",
-			filepath.Base(accountsPath), filepath.Base(enrollmentPath), tip.Height, restored.stateRoot, tip.StateRoot)
 	}
 	if err := s.producer.RestoreChain(blocks); err != nil {
 		return fmt.Errorf("producer hydrate (%d blocks): %w", len(blocks), err)
@@ -488,4 +472,39 @@ func (s *hl1ReplayStack) restore(blocks []*chain.Block, accountsPath, enrollment
 		return fmt.Errorf("receipts: %w", err)
 	}
 	return nil
+}
+
+// hl1EvaluatePair loads the snapshot pair into accounts (and, under the
+// producer transition, enroll), replays the task/stream/recovery state of
+// blocks and requires the pair to reproduce the state root of the last block
+// exactly (no tail reconciliation). Without the transition the enrollment
+// snapshot is not read here: the caller loads it after the root check, as
+// main() does. Used by replay (restore) and by the boot step S4r
+// (hl1RepairTipReceipts).
+func hl1EvaluatePair(accounts *chain.AccountStore, enroll *enrollment.InMemoryState, transition *producerpolicy.Transition, blocks []*chain.Block, accountsPath, enrollmentPath string) (persistedStateRestore, error) {
+	if len(blocks) == 0 {
+		return persistedStateRestore{}, errors.New("no blocks to restore")
+	}
+	tip := blocks[len(blocks)-1]
+	if _, err := accounts.Load(accountsPath); err != nil {
+		return persistedStateRestore{}, fmt.Errorf("accounts snapshot %s: %w", accountsPath, err)
+	}
+	var restored persistedStateRestore
+	var err error
+	if transition != nil {
+		if _, err := loadTransitionEnrollmentSnapshot(enroll, enrollmentPath); err != nil {
+			return persistedStateRestore{}, fmt.Errorf("enrollment snapshot %s: %w", enrollmentPath, err)
+		}
+		restored, err = evaluateTransitionPersistedState(accounts, blocks, enroll, transition)
+	} else {
+		restored, err = evaluatePersistedState(accounts, blocks)
+	}
+	if err != nil {
+		return persistedStateRestore{}, err
+	}
+	if restored.stateRoot != tip.StateRoot {
+		return persistedStateRestore{}, fmt.Errorf("the snapshot pair (%s, %s) does not reproduce block %d's state root (snapshot_root=%s block_root=%s)",
+			filepath.Base(accountsPath), filepath.Base(enrollmentPath), tip.Height, restored.stateRoot, tip.StateRoot)
+	}
+	return restored, nil
 }

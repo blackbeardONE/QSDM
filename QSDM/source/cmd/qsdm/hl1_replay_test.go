@@ -72,6 +72,10 @@ type hl1rCore struct {
 	causes  []string
 
 	failJournal, failAccounts, failEnroll bool
+	// failReceipts makes H5 write receiptsPrefix complete lines of the
+	// block's receipts, then fail (an EIO after a partial append).
+	failReceipts   bool
+	receiptsPrefix int
 }
 
 func hl1rSigner(t *testing.T) *chain.PersistentBFTSigner {
@@ -141,7 +145,12 @@ func hl1rStartCore(t *testing.T, dir string, policy *producerpolicy.Transition, 
 			}
 			return st.v2.EnrollmentState.Save(p)
 		},
-		AppendReceipts:   st.receipts.AppendBlockNDJSON,
+		AppendReceipts: func(p string, h uint64) (int, error) {
+			if c.failReceipts {
+				return hl1rAppendPrefix(t, st.receipts, p, h, c.receiptsPrefix)
+			}
+			return st.receipts.AppendBlockNDJSON(p, h)
+		},
 		FailStop:         func(_ int, cause string) { c.causes = append(c.causes, cause) },
 		OnFailStopReturn: func(error) {},
 		Log:              logging.NewSilentLogger(),
@@ -200,8 +209,37 @@ func hl1rTransitionPrefix(t *testing.T, dir string, checkpoint uint64) (*produce
 	}, repl
 }
 
+// hl1rAppendPrefix appends the first k receipts of height h to path as H5
+// would, then fails: an I/O error after k complete lines.
+func hl1rAppendPrefix(t *testing.T, rs *chain.ReceiptStore, path string, h uint64, k int) (int, error) {
+	t.Helper()
+	recs := rs.GetByBlock(h)
+	if k > len(recs) {
+		t.Fatalf("height %d has %d receipts, cannot write %d", h, len(recs), k)
+	}
+	var buf bytes.Buffer
+	for _, r := range recs[:k] {
+		data, err := json.Marshal(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf.Write(append(data, '\n'))
+	}
+	fh, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fh.Close()
+	if _, err := fh.Write(buf.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	return k, fmt.Errorf("%w after %d line(s)", errHL1rFault, k)
+}
+
 // hl1rFixture is a crash state: blocks 0..j-1 sealed normally, then block j
-// sealed with the hook failing at step fault (H2, H3, H4 or H6).
+// sealed with the hook failing at step fault: H2, H3 (C4), H4 (C5), H5 (H5
+// fails before writing: the C6a/F1 state), H5p (H5 writes one complete line,
+// then fails) or H6.
 type hl1rFixture struct {
 	dir    string
 	policy *producerpolicy.Transition
@@ -230,6 +268,10 @@ func hl1rCrash(t *testing.T, transition bool, j uint64, fault string) *hl1rFixtu
 		c.failAccounts = true
 	case "H4":
 		c.failEnroll = true
+	case "H5":
+		c.failReceipts = true
+	case "H5p":
+		c.failReceipts, c.receiptsPrefix = true, 1
 	case "H6":
 		c.fsys.syncDirCalls, c.fsys.failSyncDirCall = 0, 2
 	default:
@@ -237,8 +279,9 @@ func hl1rCrash(t *testing.T, transition bool, j uint64, fault string) *hl1rFixtu
 	}
 	f.blkJ = c.seal()
 	c.crash()
-	if len(c.causes) != 1 || !strings.HasPrefix(c.causes[0], legacymining.CausePersistPrefix+fault+":") {
-		t.Fatalf("fail-stop causes = %q, want one persist:%s", c.causes, fault)
+	step := strings.TrimSuffix(fault, "p")
+	if len(c.causes) != 1 || !strings.HasPrefix(c.causes[0], legacymining.CausePersistPrefix+step+":") {
+		t.Fatalf("fail-stop causes = %q, want one persist:%s", c.causes, step)
 	}
 	f.core = c
 	if f.blkJ.Height != j {
@@ -249,52 +292,97 @@ func hl1rCrash(t *testing.T, transition bool, j uint64, fault string) *hl1rFixtu
 
 func (f *hl1rFixture) path(name string) string { return filepath.Join(f.dir, name) }
 
-// hl1rBoot is main()'s S4 restore block and S5 in the producer role, in
-// process: the journal must end with "\n" and load; the main snapshot pair
-// must reproduce the tip's state root (the non-transition path also runs
+// hl1rBoot is main()'s S4 restore block, S4r and S5 in the producer role,
+// in process: the journal must end with "\n" and load; the main snapshot
+// pair must reproduce the tip's state root (the non-transition path also runs
 // main()'s reconcilePersistedStateTail, which must keep the tip); the
-// receipts must end with "\n" and load; then hl1StartupWatermark. A
-// non-nil error is a boot refusal (exit 78).
+// receipts must end with "\n" and load; then hl1RepairTipReceipts and
+// hl1StartupWatermark. A non-nil error is a boot refusal (exit 78).
 func hl1rBoot(t *testing.T, dir string, policy *producerpolicy.Transition) (*hl1ReplayStack, hl1S5Result, error) {
+	t.Helper()
+	st, _, s5, err := hl1rBootWith(t, dir, policy, hl1OSFS{}, nil)
+	return st, s5, err
+}
+
+// hl1rRestore is main()'s S4 restore block (see hl1rBoot). It returns the
+// restored stack and blocks.
+func hl1rRestore(t *testing.T, dir string, policy *producerpolicy.Transition) (*hl1ReplayStack, []*chain.Block, error) {
 	t.Helper()
 	journal := filepath.Join(dir, hl1JournalName)
 	if err := hl1RequireFinalNewline(hl1OSFS{}, journal); err != nil {
-		return nil, hl1S5Result{}, err
+		return nil, nil, err
 	}
 	blocks, err := chain.LoadChainNDJSON(journal)
 	if err != nil {
-		return nil, hl1S5Result{}, err
+		return nil, nil, err
 	}
 	if len(blocks) == 0 {
-		return nil, hl1S5Result{}, errors.New("empty journal")
+		return nil, nil, errors.New("empty journal")
 	}
 	st, err := hl1NewReplayStack(dir, nil, nil, policy, logging.NewSilentLogger())
 	if err != nil {
-		return nil, hl1S5Result{}, err
+		return nil, nil, err
 	}
 	if err := st.producer.ValidateProducerTransitionChain(blocks); err != nil {
-		return nil, hl1S5Result{}, err
+		return nil, nil, err
 	}
 	if _, dropped := canonicalPersistedChain(blocks); dropped != 0 {
-		return nil, hl1S5Result{}, errors.New("forked journal")
+		return nil, nil, errors.New("forked journal")
 	}
 	accounts := filepath.Join(dir, hl1AccountsName)
 	if err := st.restore(blocks, accounts, filepath.Join(dir, hl1EnrollmentName), filepath.Join(dir, hl1ReceiptsName)); err != nil {
-		return nil, hl1S5Result{}, err
+		return nil, nil, err
 	}
 	if policy == nil {
 		acc := chain.NewAccountStore()
 		if _, err := acc.Load(accounts); err != nil {
-			return nil, hl1S5Result{}, err
+			return nil, nil, err
 		}
 		r, err := reconcilePersistedStateTail(journal, acc, blocks, time.Now())
 		if err != nil || r.recovered {
-			return nil, hl1S5Result{}, fmt.Errorf("reconcilePersistedStateTail: recovered=%v err=%v", r.recovered, err)
+			return nil, nil, fmt.Errorf("reconcilePersistedStateTail: recovered=%v err=%v", r.recovered, err)
 		}
 	}
+	return st, blocks, nil
+}
+
+// hl1rRepairOptions are main()'s S4r options for a restored stack.
+func hl1rRepairOptions(dir string, policy *producerpolicy.Transition, st *hl1ReplayStack, blocks []*chain.Block, fsys hl1FS) hl1RepairOptions {
+	return hl1RepairOptions{
+		ProducerRole:   true,
+		StateDir:       dir,
+		AccountsPath:   filepath.Join(dir, hl1AccountsName),
+		EnrollmentPath: filepath.Join(dir, hl1EnrollmentName),
+		ReceiptsPath:   filepath.Join(dir, hl1ReceiptsName),
+		Transition:     policy,
+		Blocks:         blocks,
+		Live:           st.v2.StateApplier.(chain.ChainReplayApplier),
+		Receipts:       st.receipts,
+		FS:             fsys,
+		Now:            func() time.Time { return hl1rNow },
+		Log:            logging.NewSilentLogger(),
+	}
+}
+
+// hl1rBootWith is hl1rBoot with the file-system surface of S4r and S5, and
+// a hook that edits the S4r options.
+func hl1rBootWith(t *testing.T, dir string, policy *producerpolicy.Transition, fsys hl1FS, mod func(*hl1RepairOptions)) (*hl1ReplayStack, hl1RepairResult, hl1S5Result, error) {
+	t.Helper()
+	st, blocks, err := hl1rRestore(t, dir, policy)
+	if err != nil {
+		return nil, hl1RepairResult{}, hl1S5Result{}, err
+	}
+	o := hl1rRepairOptions(dir, policy, st, blocks, fsys)
+	if mod != nil {
+		mod(&o)
+	}
+	s4r, err := hl1RepairTipReceipts(o)
+	if err != nil {
+		return nil, s4r, hl1S5Result{}, err
+	}
 	tip, _ := st.producer.LatestBlock()
-	s5, err := hl1StartupWatermark(hl1OSFS{}, dir, true, tip, st.producer.GetBlock, hl1rNow)
-	return st, s5, err
+	s5, err := hl1StartupWatermark(fsys, dir, true, tip, st.producer.GetBlock, hl1rNow)
+	return st, s4r, s5, err
 }
 
 type hl1rExit struct{ code int }
@@ -500,9 +588,13 @@ func TestHL1ReplayRecoversC4AndC5(t *testing.T) {
 			// C4 (accounts behind the journal) never boots. In C5 only the
 			// enrollment snapshot is behind, and the boot's root check sees
 			// that only when block J changed root-covered enrollment state;
-			// these blocks do not, so C5 is not asserted here.
-			if _, _, err := hl1rBoot(t, f.dir, f.policy); tc.fault == "H3" && err == nil {
-				t.Fatal("the C4 crash state boots although the journal is ahead of the snapshots")
+			// these blocks do not, so the C5 boot is not refused: S4r
+			// completes J's receipts and S5 advances W (TestHL1S4r*). Replay
+			// runs here on the raw C5 crash state.
+			if tc.fault == "H3" {
+				if _, _, err := hl1rBoot(t, f.dir, f.policy); err == nil {
+					t.Fatal("the C4 crash state boots although the journal is ahead of the snapshots")
+				}
 			}
 			journalBefore := hl1rRead(t, f.path(hl1JournalName))
 
@@ -848,12 +940,22 @@ func TestHL1TornReceiptsAtWMinus1(t *testing.T) {
 	if code, out := hl1rTail(t, f.dir, "trim-fragment", "--file", "receipts"); code != 0 {
 		t.Fatalf("R-C3 receipts: exit %d\n%s", code, out)
 	}
+	trimmed := hl1rRead(t, receipts)
 	_, s5, err := hl1rBoot(t, f.dir, nil)
 	if err != nil || !s5.Wrote || s5.DurableTip != n {
 		t.Fatalf("boot after R-C3: %+v %v", s5, err)
 	}
 	if w := hl1rW(t, f.dir); w.Height != n || w.Hash != f.blkJ.Hash || w.Source != legacymining.WatermarkSourceBoot {
 		t.Fatalf("W after the boot = %+v, want N (boot)", w)
+	}
+	// Errata E7: the trim left N's receipts incomplete; S4r appended the rest
+	// after the kept bytes before S5 advanced W.
+	if after := hl1rRead(t, receipts); !bytes.HasPrefix(after, trimmed) || len(after) == len(trimmed) {
+		t.Fatal("S4r did not append to the receipts bytes kept by R-C3")
+	}
+	heights, terminated := hl1rReceiptHeights(t, receipts)
+	if !terminated || heights[n] != len(f.blkJ.Transactions) || heights[n-1] != len(hl1rSenders) {
+		t.Fatalf("receipts per height after the boot = %v (terminated %v), want every tx of N once", heights, terminated)
 	}
 }
 
