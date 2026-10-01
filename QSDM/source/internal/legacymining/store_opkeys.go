@@ -1,7 +1,8 @@
 package legacymining
 
-// store_opkeys.go (HL2 WP-C): schema version 2 of legacy-mining.db, the
-// operator_keys table, and the version 1 -> 2 migration.
+// store_opkeys.go (HL2 WP-C, WP-D): schema version 2 of legacy-mining.db,
+// the operator_keys table, the proofs_owner index, and the version 1 -> 2
+// migration.
 //
 // Migration safety on the live HL1 DB:
 //   - Only a store from NewSQLiteStoreV2 migrates, and cmd/qsdm builds one
@@ -9,7 +10,8 @@ package legacymining
 //     binary in its stage deploy) keeps a byte-identical version 1 DB.
 //   - Open first verifies the version 1 DB exactly as HL1 does (identity,
 //     exact schema, quick_check, meta row). Only then does it migrate.
-//   - The migration is purely additive (one table, two triggers) and runs in
+//   - The migration is purely additive (one table, two triggers, one index
+//     on proofs) and runs in
 //     one BEGIN IMMEDIATE transaction together with PRAGMA user_version = 2
 //     and an events row. SQLite journals the header change with the rest of
 //     the transaction, so a crash leaves either the complete version 1 DB or
@@ -39,8 +41,10 @@ import (
 // storeEventSchemaMigrate is the events.kind written by storeMigrateV2.
 const storeEventSchemaMigrate = "schema-migrate"
 
-// storeSchemaOperatorKeys is what version 2 adds to storeSchema. Any edit
-// needs a new user_version.
+// storeSchemaOperatorKeys is what version 2 adds to storeSchema: the
+// operator_keys table (WP-C) and the proofs_owner index (WP-D, the per-owner
+// OwnerCounts query). Version 2 was amended by WP-D before any deployment;
+// from now on any edit needs a new user_version.
 var storeSchemaOperatorKeys = []struct{ typ, name, sql string }{
 	{"table", "operator_keys", `CREATE TABLE operator_keys (
  owner TEXT PRIMARY KEY NOT NULL CHECK(typeof(owner)='text' AND length(owner)=64 AND owner NOT GLOB '*[^0-9a-f]*'),
@@ -51,7 +55,10 @@ var storeSchemaOperatorKeys = []struct{ typ, name, sql string }{
 )`},
 	{"trigger", "operator_keys_no_update", `CREATE TRIGGER operator_keys_no_update BEFORE UPDATE ON operator_keys BEGIN SELECT RAISE(ABORT, 'operator_keys rows are immutable'); END`},
 	{"trigger", "operator_keys_no_delete", `CREATE TRIGGER operator_keys_no_delete BEFORE DELETE ON operator_keys BEGIN SELECT RAISE(ABORT, 'operator_keys rows are permanent'); END`},
+	{"index", "proofs_owner", `CREATE INDEX proofs_owner ON proofs(config_sha256, miner_addr)`},
 }
+
+var _ OwnerStore = (*SQLiteStore)(nil)
 
 // storeSchemaV2 is the exact version 2 schema.
 var storeSchemaV2 = append(append([]struct{ typ, name, sql string }{}, storeSchema...), storeSchemaOperatorKeys...)
@@ -122,7 +129,7 @@ func storeMigrateV2Tx(tx *sql.Tx, nowNS int64, hook func() error) error {
 		return fmt.Errorf("legacymining: migrate database: %w", err)
 	}
 	if err := storeInsertEvent(tx, Event{AtNS: nowNS, Kind: storeEventSchemaMigrate,
-		Detail: fmt.Sprintf("user_version %d -> %d: operator_keys", StoreUserVersion, StoreUserVersionOperatorKeys)}); err != nil {
+		Detail: fmt.Sprintf("user_version %d -> %d: operator_keys, proofs_owner", StoreUserVersion, StoreUserVersionOperatorKeys)}); err != nil {
 		return fmt.Errorf("legacymining: migrate database: %w", err)
 	}
 	if hook != nil {
@@ -215,6 +222,32 @@ func (s *SQLiteStore) OperatorKeys() ([]OperatorKey, error) {
 			}
 			k.Height = uint64(h)
 			out = append(out, k)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// OwnerCounts implements OwnerStore. On a version 2 DB the proofs_owner index
+// serves it; on version 1 it scans proofs_config.
+func (s *SQLiteStore) OwnerCounts(h ConfigHash) (map[string]OwnerCount, error) {
+	out := make(map[string]OwnerCount)
+	err := s.inTx(func(tx *sql.Tx) error {
+		rows, err := tx.Query(`SELECT miner_addr, count(*), count(paid_height) FROM proofs WHERE config_sha256=? GROUP BY miner_addr`, h[:])
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var owner string
+			var proofs, paid int64
+			if err := rows.Scan(&owner, &proofs, &paid); err != nil {
+				return err
+			}
+			out[owner] = OwnerCount{Proofs: uint64(proofs), Paid: uint64(paid)}
 		}
 		return rows.Err()
 	})

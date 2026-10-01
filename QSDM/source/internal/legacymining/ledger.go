@@ -4,6 +4,18 @@ package legacymining
 // pending-plus-in-flight count, per-ID missedSeals, the §6.3 pre-seal checks,
 // the §6.4 post-persist invariants I1-I6 and the I7 family audit. Section
 // references are to the HL1 design rev 4.
+//
+// HL2 WP-D (version 2 configs only; a v1 config runs exactly the HL1 paths):
+//   - per-owner outstanding counts (OutstandingFor), reported to the
+//     OwnerGuard at Init (ResetOwnerOutstanding) and after every change
+//     (SetOwnerOutstanding), and enforced again at Enqueue like MaxPending;
+//   - I6 is "each paid ID's row miner_addr is the recipient" (the row's
+//     miner_addr is the enrollment owner Precheck attributed at admission),
+//     not the allowlist. The current enrollment is never consulted, so an
+//     unenroll between accept and seal cannot FREEZE;
+//   - the per-owner emitted amount of the current owner epoch
+//     (OwnerEpochBlocks) and the owner_epoch_cap_cell admission check
+//     (CheckOwnerEpoch).
 
 import (
 	"bytes"
@@ -26,6 +38,8 @@ type LedgerConfig struct {
 	Store Store
 	// Guard is tripped by the Ledger, and supplies the state (stall pause),
 	// the config (allowlist, MaxPending, BudgetCell) and the config hash.
+	// With a version 2 config it must also be an OwnerGuard (HL2 WP-D): the
+	// Ledger reports per-owner outstanding counts to it.
 	Guard Guard
 	// Accounts is the live account store. At H8 the Ledger reads the
 	// funder's nonce and balance from it (I4, I5).
@@ -95,6 +109,13 @@ type PayoutLedger struct {
 	funderNonce uint64  // expected funder nonce (I4, PreSeal)
 	nextCell    float64 // rewardCell(tip+1) after the last durable block
 	haveNext    bool
+
+	// HL2 WP-D, version 2 configs only (owners is nil with v1).
+	v2         bool
+	owners     OwnerGuard
+	ownerCount map[string]int     // owner -> pending plus in-flight
+	epoch      uint64             // the owner epoch of the next block
+	epochCell  map[string]float64 // owner -> emitted in epoch
 }
 
 type ledgerEntry struct {
@@ -132,14 +153,24 @@ func NewLedger(cfg LedgerConfig) (*PayoutLedger, error) {
 	if rc == nil {
 		rc = DefaultRewardCell
 	}
-	return &PayoutLedger{
+	l := &PayoutLedger{
 		store:      cfg.Store,
 		guard:      cfg.Guard,
 		accounts:   cfg.Accounts,
 		rewardCell: rc,
 		entries:    make(map[ProofID]*ledgerEntry),
 		paid:       make(map[ProofID]uint64),
-	}, nil
+		ownerCount: make(map[string]int),
+		epochCell:  make(map[string]float64),
+	}
+	if cfg.Guard.Config().Version == ConfigVersion2 {
+		og, ok := cfg.Guard.(OwnerGuard)
+		if !ok {
+			return nil, errors.New("legacymining: NewLedger: a version 2 config requires a Guard that implements OwnerGuard")
+		}
+		l.v2, l.owners = true, og
+	}
+	return l, nil
 }
 
 // tripLocked trips FREEZE with "<cause>:<detail>".
@@ -171,6 +202,7 @@ func (l *PayoutLedger) Init(s LedgerInit) error {
 		return fail("funder balance %v or emitted %v is not a finite amount", s.FunderBalance, s.Totals.Emitted)
 	}
 	entries := make(map[ProofID]*ledgerEntry, len(s.Pending))
+	counts := make(map[string]int)
 	for i, rec := range s.Pending {
 		switch {
 		case rec.PaidTxID != "":
@@ -181,8 +213,23 @@ func (l *PayoutLedger) Init(s LedgerInit) error {
 			return fail("pending record %x is repeated", rec.ProofID)
 		}
 		entries[rec.ProofID] = &ledgerEntry{minerAddr: rec.MinerAddr, seq: uint64(i) + 1}
+		counts[rec.MinerAddr]++
+	}
+	epochCell := make(map[string]float64)
+	if l.v2 {
+		for owner, cell := range s.OwnerEmitted {
+			if !ledgerFinite(cell) || cell < 0 {
+				return fail("owner %s emitted %v in the owner epoch is not a finite amount", owner, cell)
+			}
+			if cell > 0 {
+				epochCell[owner] = cell
+			}
+		}
 	}
 	l.entries = entries
+	l.ownerCount = counts
+	l.epoch = OwnerEpochOf(s.Tip + 1)
+	l.epochCell = epochCell
 	l.seq = uint64(len(s.Pending))
 	l.inFlight = 0
 	l.bound = nil
@@ -190,6 +237,13 @@ func (l *PayoutLedger) Init(s LedgerInit) error {
 	l.funderBal = s.FunderBalance
 	l.funderNonce = s.FunderNonce
 	l.initialized = true
+	if l.v2 {
+		snapshot := make(map[string]int, len(counts))
+		for owner, n := range counts {
+			snapshot[owner] = n
+		}
+		l.owners.ResetOwnerOutstanding(snapshot)
+	}
 	return nil
 }
 
@@ -198,6 +252,45 @@ func (l *PayoutLedger) Outstanding() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return len(l.entries)
+}
+
+// OutstandingFor implements OwnerSink: owner's pending plus in-flight.
+func (l *PayoutLedger) OutstandingFor(owner string) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.ownerCount[owner]
+}
+
+// CheckOwnerEpoch implements OwnerSink (HL2 WP-D).
+func (l *PayoutLedger) CheckOwnerEpoch(owner string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.v2 {
+		return nil
+	}
+	limit := l.guard.Config().OwnerEpochCapCell
+	if got := l.epochCell[owner]; got >= float64(limit) {
+		first := l.epoch * OwnerEpochBlocks
+		return &Rejection{Kind: KindOwnerRateLimited, Detail: fmt.Sprintf(
+			"owner epoch cap: %v of %d CELL emitted in owner epoch %d (heights %d..%d); admission resumes at height %d",
+			got, limit, l.epoch, first, first+OwnerEpochBlocks-1, first+OwnerEpochBlocks)}
+	}
+	return nil
+}
+
+// OwnerEpochEmitted returns the current owner epoch and the amount emitted to
+// owner in it (always 0 with a v1 config). For status and metrics.
+func (l *PayoutLedger) OwnerEpochEmitted(owner string) (epoch uint64, cell float64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.epoch, l.epochCell[owner]
+}
+
+// setOwnerLocked reports owner's count to the OwnerGuard (v2 only).
+func (l *PayoutLedger) setOwnerLocked(owner string) {
+	if l.v2 {
+		l.owners.SetOwnerOutstanding(owner, l.ownerCount[owner])
+	}
 }
 
 // Enqueue implements Sink. Besides an uninitialised Ledger and a held ID, it
@@ -227,6 +320,11 @@ func (l *PayoutLedger) Enqueue(rec Record) error {
 		detail = fmt.Sprintf("record config %x is not the active window %x", rec.ConfigSHA256, l.totals.ConfigSHA256)
 	case len(l.entries) >= l.guard.Config().MaxPending:
 		detail = fmt.Sprintf("pending plus in-flight %d is at max_pending", len(l.entries))
+	case l.v2 && l.ownerCount[rec.MinerAddr] >= l.guard.Config().MaxPendingPerOwner:
+		// miningsvc checked the guard's copy of this count under submitMu
+		// (CheckOwnerPending), so it still holds here unless the two
+		// disagree: an invariant violation, like max_pending above.
+		detail = fmt.Sprintf("owner %s pending plus in-flight %d is at max_pending_per_owner", rec.MinerAddr, l.ownerCount[rec.MinerAddr])
 	}
 	if detail != "" {
 		l.tripLocked(CauseEnqueue, fmt.Sprintf("%x: %s", rec.ProofID, detail))
@@ -234,6 +332,8 @@ func (l *PayoutLedger) Enqueue(rec Record) error {
 	}
 	l.seq++
 	l.entries[rec.ProofID] = &ledgerEntry{minerAddr: rec.MinerAddr, seq: l.seq}
+	l.ownerCount[rec.MinerAddr]++
+	l.setOwnerLocked(rec.MinerAddr)
 	l.totals.Proofs++
 	l.guard.ObserveTotals(l.totals, l.observeCellLocked())
 	return nil
@@ -310,8 +410,9 @@ func (l *PayoutLedger) Take() []Claim {
 // each tx to be a well-formed reward from the funder (contract, sender, zero
 // fee, the derived RewardIDFormat ID, a strict LMP1 payload), nonces
 // consecutive from the expected funder nonce, one tx per recipient, an
-// allowlisted recipient (I6 before sealing), and rewardCell within
-// RewardCell(height).
+// allowlisted recipient (I6 before sealing; with a v2 config, I6 is that
+// every ID's row miner_addr is the recipient, which PreSeal checks for every
+// version), and rewardCell within RewardCell(height).
 func (l *PayoutLedger) PreSeal(height uint64, rewardCell float64, txs []*mempool.Tx) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -362,7 +463,9 @@ func (l *PayoutLedger) preSealLocked(height uint64, rewardCell float64, txs []*m
 			bad = fmt.Sprintf("share %v is not positive", tx.Amount)
 		case tx.Nonce != l.funderNonce+uint64(i):
 			bad = fmt.Sprintf("nonce %d, want %d", tx.Nonce, l.funderNonce+uint64(i))
-		case !ledgerAllowlisted(cfg, tx.Recipient):
+		case !l.v2 && !ledgerAllowlisted(cfg, tx.Recipient):
+			// I6 before sealing. With a v2 config I6 is the per-ID row
+			// check below ("belongs to ..., not the recipient").
 			bad = fmt.Sprintf("recipient %s is not allowlisted", tx.Recipient)
 		case recipients[tx.Recipient]:
 			bad = fmt.Sprintf("recipient %s has more than one tx", tx.Recipient)
@@ -487,7 +590,9 @@ func (l *PayoutLedger) OnDurableBlock(blk *chain.Block, local bool) error {
 	}
 
 	// W3: the chain is the record of payment.
+	l.rollEpochLocked(blk.Height)
 	var pays []Payment
+	touched := make(map[string]bool)
 	for _, r := range rewards {
 		if r.err != nil {
 			continue
@@ -502,11 +607,23 @@ func (l *PayoutLedger) OnDurableBlock(blk *chain.Block, local bool) error {
 					l.inFlight--
 				}
 				delete(l.entries, id)
+				l.ownerCount[e.minerAddr]--
+				if l.ownerCount[e.minerAddr] <= 0 {
+					delete(l.ownerCount, e.minerAddr)
+				}
+				touched[e.minerAddr] = true
 				pays = append(pays, Payment{ProofID: id, MinerAddr: r.tx.Recipient, Height: blk.Height, TxID: r.tx.ID})
 			}
 		}
 		l.totals.Emitted += r.tx.Amount
+		if l.v2 {
+			l.epochCell[r.tx.Recipient] += r.tx.Amount
+		}
 	}
+	for owner := range touched {
+		l.setOwnerLocked(owner)
+	}
+	l.rollEpochLocked(blk.Height + 1)
 
 	if !local {
 		l.tripLocked(CauseNonLocalBlock, fmt.Sprintf("height %d", blk.Height))
@@ -575,7 +692,17 @@ func (l *PayoutLedger) checkRewardsLocked(blk *chain.Block, rewards []ledgerRewa
 			}
 			seenID[id] = true
 		}
-		if !ledgerAllowlisted(cfg, tx.Recipient) {
+		if l.v2 {
+			// HL2 I6: the recipient is the row miner_addr of every ID it is
+			// paid for, the owner Precheck attributed at admission. Current
+			// enrollment is not consulted, so an unenroll between accept and
+			// seal cannot trip this.
+			for _, id := range r.ids {
+				if e := l.entries[id]; e != nil && e.minerAddr != tx.Recipient {
+					add(6, "ID %x in tx %s belongs to %s, not the recipient %s", id, tx.ID, e.minerAddr, tx.Recipient)
+				}
+			}
+		} else if !ledgerAllowlisted(cfg, tx.Recipient) {
 			add(6, "recipient %s of tx %s is not allowlisted", tx.Recipient, tx.ID)
 		}
 		sum += tx.Amount
@@ -645,6 +772,19 @@ func (l *PayoutLedger) countMissedLocked() {
 	}
 	if worst.missed >= StallSeals {
 		l.tripLocked(CauseStall, fmt.Sprintf("%x missed %d consecutive local durable seals", worstID, worst.missed))
+	}
+}
+
+// rollEpochLocked starts a new owner epoch when height is in a later one
+// than the current (v2 only). Heights only grow at H8, so the epoch never
+// moves back.
+func (l *PayoutLedger) rollEpochLocked(height uint64) {
+	if !l.v2 {
+		return
+	}
+	if e := OwnerEpochOf(height); e > l.epoch {
+		l.epoch = e
+		clear(l.epochCell)
 	}
 }
 

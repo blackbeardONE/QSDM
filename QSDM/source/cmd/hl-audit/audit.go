@@ -1169,12 +1169,16 @@ func (a *auditor) checkCanary(cfg *legacymining.Config, hash legacymining.Config
 	for _, e := range cfg.Allowed {
 		allowed[e.MinerAddr] = true
 	}
+	// HL2 (WP-D): with a version 2 config, I6 is "the recipient is each
+	// paid proof's row miner_addr" (checkDB, CodeRecipientMismatch), not
+	// the allowlist, which is optional and may be empty in public mode.
+	v2 := cfg.Version == legacymining.ConfigVersion2
 	for _, rw := range a.rewards {
 		if window.has(rw.height) {
 			cs.RewardTxs++
 			cs.Emitted += rw.amount
 		}
-		if allowed[rw.recipient] {
+		if v2 || allowed[rw.recipient] {
 			continue
 		}
 		for _, s := range own {

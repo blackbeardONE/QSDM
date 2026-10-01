@@ -190,6 +190,8 @@ type Config struct {
 	// in [0.0, 1.0]. Wired by the validator binary when
 	// QSDM_SPEC_PENALTY_ENABLED is set; nil leaves rewards
 	// at their full per-proof share (the pre-Tier-3 posture).
+	// New refuses it with a version 2 legacy-mining Guard
+	// (HL2 WP-D, reward rule R4).
 	//
 	// The penalty layer is OFF the consensus path — the
 	// proofs that earn rewards have already passed every
@@ -318,6 +320,13 @@ func New(cfg Config) (*Driver, error) {
 	}
 	if (cfg.Ledger == nil) != (cfg.Guard == nil) {
 		return nil, errors.New("blockdriver: Config.Ledger and Config.Guard must be set together")
+	}
+	if cfg.RewardPenalty != nil && cfg.Guard != nil && cfg.Guard.Config().Version == legacymining.ConfigVersion2 {
+		// HL2 WP-D, reward rule R4: with N miners, emission is exactly
+		// the pro-rata split of rewardCell per non-empty block, and a
+		// multiplier of 0 would make a zero share, which PreSeal turns
+		// into a global FREEZE. cmd/qsdm refuses this pairing at S2.
+		return nil, errors.New("blockdriver: Config.RewardPenalty (Tier-3) is not supported with a version 2 legacy-mining config (HL2 reward rule R4)")
 	}
 	if cfg.Period <= 0 {
 		cfg.Period = DefaultPeriod

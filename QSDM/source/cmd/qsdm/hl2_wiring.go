@@ -6,8 +6,9 @@ package main
 //
 // None of this runs for a version 1 config: hl1NewCanary builds exactly the
 // HL1 Guard and Store then. A version 2 config still never boots (S2,
-// legacymining.CheckSupported, exit 78) until WP-D and WP-E land; tests drive
-// these functions directly.
+// legacymining.CheckSupported, exit 78) until WP-E lands; tests drive these
+// functions directly. ModePublic takes the same path as a v2 canary (HL2
+// WP-D: hl1BootConfig.Canary is "mode is not off").
 
 import (
 	"sort"

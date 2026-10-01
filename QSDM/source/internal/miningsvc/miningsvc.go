@@ -246,6 +246,9 @@ type Service struct {
 	// owner is the guard's per-owner surface, set only for a
 	// version 2 config (HL2 WP-B). nil keeps the HL1 path.
 	owner legacymining.OwnerGuard
+	// ownerSink is the Ledger's per-owner surface, set exactly
+	// when owner is (HL2 WP-D).
+	ownerSink legacymining.OwnerSink
 
 	submitMu sync.Mutex
 }
@@ -352,7 +355,11 @@ func New(cfg Config) (*Service, error) {
 			if !ok {
 				return nil, errors.New("miningsvc: a version 2 legacy-mining config requires a Guard that implements legacymining.OwnerGuard")
 			}
-			svc.owner = og
+			osk, ok := cfg.Sink.(legacymining.OwnerSink)
+			if !ok {
+				return nil, errors.New("miningsvc: a version 2 legacy-mining config requires a Sink that implements legacymining.OwnerSink")
+			}
+			svc.owner, svc.ownerSink = og, osk
 		}
 	}
 
@@ -446,9 +453,10 @@ func (s *Service) WorkAt(height uint64) (*api.MiningWork, error) {
 // With a version 2 config (HL2 WP-B) step 5 is
 // OwnerGuard.TakeOwnerRate (owner cooldown, owner bucket, then
 // the global bucket), step 6 adds OwnerGuard.CheckOwnerPending
-// after the global cap, and steps 7 and 8 feed
-// OwnerGuard.ObserveOwnerRejection. A v1 config runs exactly
-// the HL1 calls.
+// after the global cap and then OwnerSink.CheckOwnerEpoch (the
+// owner_epoch_cap_cell hold, 503; HL2 WP-D), and steps 7 and 8
+// feed OwnerGuard.ObserveOwnerRejection. A v1 config runs
+// exactly the HL1 calls.
 func (s *Service) Submit(rawProofJSON []byte) ([32]byte, error) {
 	var none [32]byte
 	if s.readOnly {
@@ -483,6 +491,9 @@ func (s *Service) Submit(rawProofJSON []byte) ([32]byte, error) {
 	}
 	if s.owner != nil {
 		if err := s.owner.CheckOwnerPending(cand.Owner); err != nil {
+			return none, unavailable(err)
+		}
+		if err := s.ownerSink.CheckOwnerEpoch(cand.Owner); err != nil {
 			return none, unavailable(err)
 		}
 	}

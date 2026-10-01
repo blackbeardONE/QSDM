@@ -4101,7 +4101,8 @@ type hl1CanaryParts struct {
 	store  *legacymining.SQLiteStore
 	guard  *legacymining.CanaryGuard
 	ledger *legacymining.PayoutLedger
-	reason string // why the canary is not enabled
+	reason string            // why the canary is not enabled
+	mode   legacymining.Mode // canary or public when enabled
 
 	// HL2 WP-C, version 2 configs only (nil with a v1 config).
 	view *hl2EnrollmentView
@@ -4114,6 +4115,9 @@ func (c *hl1CanaryParts) enabled() bool {
 
 func (c *hl1CanaryParts) status() string {
 	if c.enabled() {
+		if c.mode == legacymining.ModePublic {
+			return "public"
+		}
 		return "canary"
 	}
 	if c == nil || c.reason == "" {
@@ -4122,9 +4126,9 @@ func (c *hl1CanaryParts) status() string {
 	return c.reason
 }
 
-// hl1NewCanary builds the Guard, Store and Ledger in canary mode with local
-// block production. The Store is not opened here: Reconcile opens it after
-// S5 (S7).
+// hl1NewCanary builds the Guard, Store and Ledger in canary mode, or (HL2
+// WP-D) in public mode, with local block production. The Store is not
+// opened here: Reconcile opens it after S5 (S7).
 //
 // With a version 2 config (HL2 WP-C) it also passes the mode, an
 // EnrollmentView over the consensus enrollment state, the default
@@ -4185,6 +4189,7 @@ func hl1NewCanary(boot hl1BootConfig, producerRole bool, accounts *chain.Account
 	}
 	c.store, c.guard, c.ledger = store, guard, ledger
 	c.view, c.keys = view, keys
+	c.mode = boot.Env.Mode
 	return c
 }
 
@@ -4222,6 +4227,11 @@ func hl1ReconcileCanary(c *hl1CanaryParts, boot hl1BootConfig, blocks []*chain.B
 		hl1Logger().Info("hl1: legacy-mining reconciliation clean",
 			"tip", rep.Tip, "created", rep.Created, "h0", rep.Meta.H0, "paid", rep.Paid,
 			"pending", rep.Pending, "proofs_total", rep.Totals.Proofs, "emitted_cell", rep.Totals.Emitted)
+		if c.guard.Config().Version == legacymining.ConfigVersion2 {
+			hl1Logger().Info("hl2: per-owner reconciliation",
+				"owner_epoch", rep.OwnerEpoch, "owners_with_rows", len(rep.Owners),
+				"owners_paid_in_epoch", len(rep.OwnerEmitted))
+		}
 	}
 	return rep
 }

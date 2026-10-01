@@ -44,10 +44,10 @@ const (
 	ModeCanary Mode = "canary"
 	// ModePublic (HL2) admits proofs from any enrolled, fully bonded owner
 	// that signs its submissions, subject to per-owner caps. It requires a
-	// v2 config (see CheckModeConfig). Until HL2 WP-D and WP-E land, every
-	// boot in this mode is refused with ErrNotImplemented (exit
-	// ExitFatalRestore); the Guard side (WP-B) and the operator keys and
-	// cmd/qsdm wiring (WP-C) are implemented.
+	// v2 config (see CheckModeConfig). Until HL2 WP-E lands, every boot in
+	// this mode is refused with ErrNotImplemented (exit ExitFatalRestore);
+	// the Guard side (WP-B), the operator keys and cmd/qsdm wiring (WP-C)
+	// and the Ledger side (WP-D) are implemented.
 	ModePublic Mode = "public"
 )
 
@@ -151,10 +151,24 @@ const (
 	MaxDifficultyBits    = 48   // 2^48 hashes per proof; a typo guard, far above any useful setting
 	MaxBondedSlotCap     = 64   // k_max
 
-	// OwnerEpoch is the window of Config.OwnerEpochCapCell (HL2 §2 M3). WP-D
-	// defines the epoch boundaries.
+	// OwnerEpoch is the nominal length of the window of
+	// Config.OwnerEpochCapCell (HL2 §2 M3). The boundaries are block heights
+	// (OwnerEpochBlocks, HL2 WP-D), not wall-clock times.
 	OwnerEpoch = 24 * time.Hour
+
+	// OwnerEpochBlocks is the length of one owner epoch in blocks: OwnerEpoch
+	// at the driver's 10 s block period (blockdriver.DefaultPeriod). Epoch e
+	// is the heights [e*OwnerEpochBlocks, (e+1)*OwnerEpochBlocks), aligned to
+	// height 0 (OwnerEpochOf). Height boundaries need no clock and no durable
+	// state: the epoch of a block, and so every owner's emitted amount in it,
+	// is a function of the chain alone, rebuilt at every boot (S12) and
+	// recomputable by an auditor from the journal. A stalled producer only
+	// stretches the epoch in wall-clock time; it never shortens it.
+	OwnerEpochBlocks = 8640
 )
+
+// OwnerEpochOf returns the owner epoch of height (see OwnerEpochBlocks).
+func OwnerEpochOf(height uint64) uint64 { return height / OwnerEpochBlocks }
 
 // -----------------------------------------------------------------------------
 // Reward transactions and the LMP1 payload (§2 blockdriver, §3.4)
@@ -884,6 +898,54 @@ type LedgerInit struct {
 	Totals        Totals   // from S12
 	FunderBalance float64  // expected funder balance for I5, read from the restored chain
 	FunderNonce   uint64   // expected funder nonce for I4
+
+	// HL2 WP-D (version 2 configs; ignored with v1). Tip is the restored
+	// tip: the Ledger's owner epoch starts as OwnerEpochOf(Tip+1), the epoch
+	// of the next block. OwnerEmitted is, per reward recipient, the float64
+	// sum in block and tx order of the LMP1 reward amounts in the blocks of
+	// that epoch at or above the config window's FirstHeight (S12, from the
+	// chain like Totals.Emitted). nil means none.
+	Tip          uint64
+	OwnerEmitted map[string]float64
+}
+
+// OwnerSink is the per-owner side of a version 2 Ledger (HL2 WP-D).
+// *PayoutLedger implements it for every config version; with a v1 config
+// CheckOwnerEpoch returns nil. miningsvc requires it for a v2 config and
+// calls it under submitMu (the lock order allows submitMu -> ledger.mu).
+type OwnerSink interface {
+	Sink
+
+	// OutstandingFor returns owner's pending plus in-flight count. The
+	// Ledger reports the same count to OwnerGuard.SetOwnerOutstanding after
+	// every change, so the guard's CheckOwnerPending sees it.
+	OutstandingFor(owner string) int
+
+	// CheckOwnerEpoch is the owner_epoch_cap_cell admission check (§4.1
+	// step 6, after CheckOwnerPending): a KindOwnerRateLimited *Rejection
+	// (503) whose Detail starts with "owner epoch cap" once the amount
+	// emitted to owner in the current owner epoch is >= OwnerEpochCapCell.
+	// The cap holds admission, never payouts: proofs already accepted are
+	// still paid, so an owner can end an epoch above the cap by at most the
+	// shares of two blocks (the block that crosses it and the next, which
+	// pays the proofs admitted while the first was sealed), i.e. less than
+	// 2*rewardCell. Admission resumes at the first height of the next epoch.
+	CheckOwnerEpoch(owner string) error
+}
+
+// OwnerStore is the per-owner query of a version 2 legacy-mining.db (HL2
+// WP-D). *SQLiteStore implements it for both schema versions; version 2 has
+// the index proofs_owner on (config_sha256, miner_addr) for it.
+type OwnerStore interface {
+	// OwnerCounts returns, per miner_addr, the rows accepted under config h
+	// and how many of them are paid.
+	OwnerCounts(h ConfigHash) (map[string]OwnerCount, error)
+}
+
+// OwnerCount is one owner's row counts in a config window (OwnerStore).
+type OwnerCount struct {
+	Proofs uint64
+	Paid   uint64
 }
 
 // FamilyViolation is one I7 failure (§6.4): a tx in a local block that is not
@@ -1179,7 +1241,7 @@ var (
 	ErrConfigHash = errors.New("legacymining: canary config sha256 mismatch")
 	// ErrNotImplemented refuses a mode or config version that the contract
 	// defines but this binary does not enforce yet (HL2 WP-A: ModePublic, and
-	// v2 configs, until WP-D and WP-E). The caller exits ExitFatalRestore.
+	// v2 configs, until WP-E). The caller exits ExitFatalRestore.
 	ErrNotImplemented = errors.New("legacymining: not yet implemented")
 	// ErrOperatorKey means an owner/public key pair fails CheckOperatorKey
 	// (HL2 WP-C).

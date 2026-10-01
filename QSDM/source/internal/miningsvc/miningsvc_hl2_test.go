@@ -82,6 +82,29 @@ func TestHL2NewV2ConfigRequiresOwnerGuard(t *testing.T) {
 	}
 }
 
+// HL2 WP-D: a version 2 service also needs the Ledger's OwnerSink.
+func TestHL2NewV2ConfigRequiresOwnerSink(t *testing.T) {
+	withoutPinnedCompat(t)
+	f := newHL1Fixture(t, 1, 0)
+	g := newFakeOwnerGuard(f.log)
+	f.cfg.Guard = g
+	f.cfg.Sink = plainSink{f.sink}
+	if svc, err := New(f.cfg); err == nil || svc != nil || !strings.Contains(err.Error(), "OwnerSink") {
+		t.Fatalf("New(v2, plain Sink) = %v, %v; want refusal", svc, err)
+	}
+	// A v1 config never needs it.
+	f.cfg.Guard = f.guard
+	if _, err := New(f.cfg); err != nil {
+		t.Fatalf("v1 with a plain Sink: %v", err)
+	}
+}
+
+// plainSink hides the fake's OwnerSink methods.
+type plainSink struct{ k *fakeSink }
+
+func (p plainSink) Outstanding() int                      { return p.k.Outstanding() }
+func (p plainSink) Enqueue(rec legacymining.Record) error { return p.k.Enqueue(rec) }
+
 func hl2Service(t *testing.T) (*hl1Fixture, *fakeOwnerGuard, *Service) {
 	t.Helper()
 	f := newHL1Fixture(t, 2, 0)
@@ -103,7 +126,7 @@ func TestHL2SubmitUsesOwnerSurface(t *testing.T) {
 	}
 	want := []call{
 		{"Admit", false}, {"Precheck", false}, {"TakeOwnerRate", false},
-		{"Outstanding", true}, {"CheckOwnerPending", true}, {"GetBlock", true}, {"Accept", true}, {"Enqueue", true},
+		{"Outstanding", true}, {"CheckOwnerPending", true}, {"CheckOwnerEpoch", true}, {"GetBlock", true}, {"Accept", true}, {"Enqueue", true},
 	}
 	var got []call
 	for _, c := range f.log.snapshot() {
@@ -114,8 +137,8 @@ func TestHL2SubmitUsesOwnerSurface(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("call order\n got %v\nwant %v", got, want)
 	}
-	if !reflect.DeepEqual(g.owners, []string{"qsdm1owner"}) {
-		t.Fatalf("CheckOwnerPending owners %v", g.owners)
+	if !reflect.DeepEqual(g.owners, []string{"qsdm1owner"}) || !reflect.DeepEqual(f.sink.epochOwners, []string{"qsdm1owner"}) {
+		t.Fatalf("CheckOwnerPending owners %v, CheckOwnerEpoch owners %v", g.owners, f.sink.epochOwners)
 	}
 
 	// A step 7 rejection goes to ObserveOwnerRejection with the candidate,
@@ -149,12 +172,19 @@ func TestHL2SubmitOwnerRejectionsAre503(t *testing.T) {
 		{"owner pending", func(g *fakeOwnerGuard) {
 			g.pendingErr = &legacymining.Rejection{Kind: legacymining.KindOwnerPendingFull}
 		}, legacymining.KindOwnerPendingFull, []string{"Admit", "Precheck", "TakeOwnerRate", "Outstanding", "CheckOwnerPending"}},
+		// HL2 WP-D: the owner_epoch_cap_cell hold is the Ledger's.
+		{"owner epoch cap", nil, legacymining.KindOwnerRateLimited,
+			[]string{"Admit", "Precheck", "TakeOwnerRate", "Outstanding", "CheckOwnerPending", "CheckOwnerEpoch"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f, g, svc := hl2Service(t)
 			tip := svc.TipHeight()
 			raw := newProofSolver(t, svc).solve(t, tip, headerAt(t, f.bp, tip), "qsdm1owner")
-			tc.set(g)
+			if tc.set != nil {
+				tc.set(g)
+			} else {
+				f.sink.epochErr = &legacymining.Rejection{Kind: legacymining.KindOwnerRateLimited, Detail: "owner epoch cap: test"}
+			}
 			f.log.reset()
 			_, err := svc.Submit(raw)
 			if !errors.Is(err, api.ErrMiningUnavailable) || legacymining.RejectKindOf(err) != tc.kind || tc.kind.HTTPStatus() != http.StatusServiceUnavailable {

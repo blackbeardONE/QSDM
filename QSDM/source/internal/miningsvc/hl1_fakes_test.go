@@ -329,6 +329,8 @@ type fakeSink struct {
 	enqueued    []legacymining.Record
 	enqueueErr  error
 	onEnqueue   func(legacymining.Record)
+	epochErr    error    // CheckOwnerEpoch result
+	epochOwners []string // CheckOwnerEpoch arguments
 }
 
 func newFakeSink(log *callLog) *fakeSink { return &fakeSink{log: log} }
@@ -372,7 +374,30 @@ func (k *fakeSink) records() []legacymining.Record {
 	return append([]legacymining.Record(nil), k.enqueued...)
 }
 
-var _ legacymining.Sink = (*fakeSink)(nil)
+// OutstandingFor and CheckOwnerEpoch make the fake an OwnerSink (HL2
+// WP-D); only a version 2 service calls them.
+func (k *fakeSink) OutstandingFor(owner string) int {
+	k.log.add("OutstandingFor")
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	n := 0
+	for _, r := range k.enqueued {
+		if r.MinerAddr == owner {
+			n++
+		}
+	}
+	return n
+}
+
+func (k *fakeSink) CheckOwnerEpoch(owner string) error {
+	k.log.add("CheckOwnerEpoch")
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	k.epochOwners = append(k.epochOwners, owner)
+	return k.epochErr
+}
+
+var _ legacymining.OwnerSink = (*fakeSink)(nil)
 
 // ---- durable chain view -----------------------------------------------------
 

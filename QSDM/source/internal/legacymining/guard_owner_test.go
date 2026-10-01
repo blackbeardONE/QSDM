@@ -732,7 +732,7 @@ func TestNewGuardV2Options(t *testing.T) {
 	if _, err := NewGuard(o); !errors.Is(err, ErrConfig) {
 		t.Errorf("public v1: %v", err)
 	}
-	// The S2 gate still refuses every v2 boot until WP-D and WP-E.
+	// The S2 gate still refuses every v2 boot until WP-E.
 	for _, m := range []Mode{ModeCanary, ModePublic} {
 		if err := CheckSupported(m, v2Config()); !errors.Is(err, ErrNotImplemented) {
 			t.Errorf("CheckSupported(%s, v2) = %v", m, err)

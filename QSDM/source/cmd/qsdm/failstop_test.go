@@ -384,7 +384,7 @@ func TestHL1LoadBootConfig(t *testing.T) {
 		text string
 	}{
 		"public v2":                 {cfgWith("public", v2Path, v2Pin), legacymining.ErrNotImplemented, "not yet implemented"},
-		"public v2 no allowlist":    {cfgWith("public", v2Open, v2OpenPin), legacymining.ErrNotImplemented, "WP-D and WP-E"},
+		"public v2 no allowlist":    {cfgWith("public", v2Open, v2OpenPin), legacymining.ErrNotImplemented, "WP-E"},
 		"public v1":                 {cfgWith("public", cfgPath, pin), legacymining.ErrConfig, "version 1, want 2"},
 		"public v2 no operator sig": {cfgWith("public", v2NoSig, v2NoSigPin), legacymining.ErrConfig, "require_operator_sig"},
 		"public v2 not bonded":      {cfgWith("public", v2NoBond, v2NoBondPin), legacymining.ErrConfig, "require_fully_bonded"},

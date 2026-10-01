@@ -172,11 +172,14 @@ func (f *hl1FailStopper) Stop(code int, cause string) {
 // hl1BootConfig is the S2 result.
 type hl1BootConfig struct {
 	Env    legacymining.Env
-	Config legacymining.Config // valid only in ModeCanary (ModePublic never passes S2 yet)
+	Config legacymining.Config // valid whenever Canary() (ModePublic does not pass S2 until HL2 WP-E)
 }
 
-// Canary reports whether the canary environment is set.
-func (b hl1BootConfig) Canary() bool { return b.Env.Mode == legacymining.ModeCanary }
+// Canary reports whether legacy mining is on: ModeCanary or (HL2 WP-D)
+// ModePublic. Both build the same machinery (the Guard, the Store and the
+// Ledger); the mode and config version select the per-owner paths inside
+// it. CheckSupported still refuses ModePublic at S2 until WP-E.
+func (b hl1BootConfig) Canary() bool { return b.Env.Mode != legacymining.ModeOff }
 
 // hl1RefuseFailStop is S1: a tripped FAILSTOP.json refuses every boot until
 // R-FS removes it.
@@ -195,9 +198,10 @@ func hl1RefuseFailStop(stateDir string) error {
 
 // hl1LoadBootConfig is S2. getenv is os.Getenv in production, and syncURLs is
 // chainSyncURLsFromEnv(). After the config loads, the mode/version rules
-// (CheckModeConfig, ErrConfig) and the HL2 WP-A gate (CheckSupported,
+// (CheckModeConfig, ErrConfig), the HL2 WP-D reward-rule check
+// (hl2CheckRewardPenalty, ErrConfig) and the HL2 WP-A gate (CheckSupported,
 // ErrNotImplemented) run: ModePublic and v2 configs are refused until HL2
-// WP-D and WP-E land (WP-A..C are in), so the caller exits 78.
+// WP-E lands (WP-A..D are in), so the caller exits 78.
 func hl1LoadBootConfig(getenv func(string) string, syncURLs []string) (hl1BootConfig, error) {
 	env, err := legacymining.LoadEnv(getenv)
 	if err != nil {
@@ -214,6 +218,9 @@ func hl1LoadBootConfig(getenv func(string) string, syncURLs []string) (hl1BootCo
 	if err := legacymining.CheckModeConfig(env.Mode, cfg); err != nil {
 		return hl1BootConfig{}, err
 	}
+	if err := hl2CheckRewardPenalty(cfg, getenv); err != nil {
+		return hl1BootConfig{}, err
+	}
 	if err := legacymining.CheckSupported(env.Mode, cfg); err != nil {
 		return hl1BootConfig{}, err
 	}
@@ -222,6 +229,21 @@ func hl1LoadBootConfig(getenv func(string) string, syncURLs []string) (hl1BootCo
 		return hl1BootConfig{}, err
 	}
 	return out, nil
+}
+
+// hl2CheckRewardPenalty refuses the Tier-3 reward penalty
+// (QSDM_SPEC_PENALTY_ENABLED) with a version 2 config (HL2 WP-D). Reward rule
+// R4 pays exactly the pro-rata split of rewardCell per non-empty block; a
+// multiplier would withhold part of it, a multiplier of 0 would make a zero
+// share that PreSeal turns into a global FREEZE, and the penalty's input is
+// self-reported telemetry. Refusing the pairing at boot is the fail-closed
+// choice: no per-tick drop or requeue path exists that a penalised miner
+// could turn into a stall FREEZE. A version 1 config is unaffected.
+func hl2CheckRewardPenalty(cfg legacymining.Config, getenv func(string) string) error {
+	if cfg.Version == legacymining.ConfigVersion2 && specPenaltyEnabledIn(getenv) {
+		return fmt.Errorf("%w: a version 2 config (HL2 reward rule R4) refuses the Tier-3 reward penalty; unset QSDM_SPEC_PENALTY_ENABLED", legacymining.ErrConfig)
+	}
+	return nil
 }
 
 // hl1CheckSyncURLs refuses HTTP chain sync whenever legacy mining is on

@@ -114,7 +114,7 @@ const storeRecordColumns = `proof_id, miner_addr, node_id, att_nonce, work_heigh
 //
 // Schema versions (HL2 WP-C): user_version 1 is the HL1 schema (storeSchema);
 // user_version 2 (StoreUserVersionOperatorKeys) adds the operator_keys table
-// (storeSchemaOperatorKeys). A store from NewSQLiteStore never writes the
+// and the proofs_owner index (storeSchemaOperatorKeys). A store from NewSQLiteStore never writes the
 // schema of an existing DB: it opens a version 1 DB exactly as HL1 does, and
 // also a version 2 DB (read paths such as hl-audit, and a v2-to-v1 config
 // rollback on an HL2 binary). A store from NewSQLiteStoreV2 creates version 2

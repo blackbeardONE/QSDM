@@ -107,7 +107,8 @@ func (r *failStopRecorder) snapshot() []failStopCall {
 	return append([]failStopCall(nil), r.calls...)
 }
 
-// fakeGuard implements the two Guard methods the driver uses.
+// fakeGuard implements the Guard methods the driver uses (State,
+// Freeze, and Config in New).
 // Any other method panics through the nil embedded interface.
 type fakeGuard struct {
 	legacymining.Guard
@@ -116,9 +117,16 @@ type fakeGuard struct {
 	state      legacymining.State
 	causes     []string
 	stateCalls int
+	cfg        legacymining.Config // Version 0 unless a test sets it
 }
 
 func newFakeGuard() *fakeGuard { return &fakeGuard{state: legacymining.StateOpen} }
+
+func (g *fakeGuard) Config() legacymining.Config {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.cfg
+}
 
 func (g *fakeGuard) State() legacymining.State {
 	g.mu.Lock()

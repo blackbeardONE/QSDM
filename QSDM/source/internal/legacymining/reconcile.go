@@ -86,6 +86,14 @@ type ReconcileReport struct {
 	Totals Totals
 	// Pending is the number of records loaded into the Ledger (S13).
 	Pending int
+	// HL2 WP-D, version 2 configs only (zero with v1). OwnerEpoch is the
+	// owner epoch of tip+1, and OwnerEmitted the per-recipient emitted
+	// amount in it (S12, passed to Ledger.Init). Owners is the per-owner row
+	// count of the active window (OwnerStore), whose sum S12 checks against
+	// Totals.Proofs.
+	OwnerEpoch   uint64
+	OwnerEmitted map[string]float64
+	Owners       map[string]OwnerCount
 	// Anomalies lists the S9 and S10 findings, at most
 	// reconcileMaxAnomalies of them. AnomalyCount is their total number.
 	Anomalies    []string
@@ -109,7 +117,10 @@ type ReconcileReport struct {
 //     a positive finite Amount and a zero Fee, and every block's reward sum
 //     must be within the schedule (RewardCell(h)*(1+RewardSumSlack), as I3).
 //     Every paid proof ID must be unique on the chain and stored with
-//     miner_addr == Recipient. An LMP1 payload outside the reward contract,
+//     miner_addr == Recipient (with several recipients per block, each
+//     payload is checked against its own tx's Recipient). With a v2 config
+//     a block must also carry at most one reward per recipient (as PreSeal
+//     requires). An LMP1 payload outside the reward contract,
 //     or in a block below H0, is also an anomaly.
 //   - S11: Store.ApplyReconcile with every payment and the window (config
 //     hash, tip+1, now).
@@ -117,7 +128,10 @@ type ReconcileReport struct {
 //     block and tx order, of the LMP1 reward amounts in [FirstHeight, tip].
 //     The window must start at or below tip+1. Guard.ObserveTotals applies
 //     the graceful thresholds, and a reached expiry stops admission
-//     (CauseExpired).
+//     (CauseExpired). With a v2 config (HL2 WP-D) it also derives, per
+//     recipient, the emitted amount of the owner epoch of tip+1 (the blocks
+//     of that epoch at or above FirstHeight, summed the same way), and
+//     requires the OwnerStore's per-owner row counts to sum to proofs_H.
 //   - S13: Ledger.Init with Store.Pending, the totals and the funder's
 //     balance and nonce from Accounts.
 //   - S14: Guard.PreArm, after every outcome. A failure trips CausePreArm.
@@ -134,7 +148,7 @@ func Reconcile(c ReconcileConfig) (ReconcileReport, error) {
 	if c.Guard == nil {
 		return ReconcileReport{}, errors.New("legacymining: Reconcile requires a Guard")
 	}
-	r := &reconciler{c: c, rewardCell: c.RewardCell, now: c.Now}
+	r := &reconciler{c: c, rewardCell: c.RewardCell, now: c.Now, v2: c.Guard.Config().Version == ConfigVersion2}
 	if r.rewardCell == nil {
 		r.rewardCell = DefaultRewardCell
 	}
@@ -192,10 +206,11 @@ func (f *reconcileFailure) Unwrap() []error {
 	return []error{ErrReconcile, f.err}
 }
 
-// reconcileReward is one LMP1 reward found by S10, for the S12 sum.
+// reconcileReward is one LMP1 reward found by S10, for the S12 sums.
 type reconcileReward struct {
-	height uint64
-	amount float64
+	height    uint64
+	amount    float64
+	recipient string
 }
 
 type reconciler struct {
@@ -205,6 +220,7 @@ type reconciler struct {
 	rep        ReconcileReport
 	tip        uint64
 	rewards    []reconcileReward // S10: every LMP1 reward in [H0, tip], in chain order
+	v2         bool              // the Guard's config is version 2 (HL2 WP-D)
 }
 
 func (r *reconciler) fail(step, cause, detail string, err error) *reconcileFailure {
@@ -282,6 +298,11 @@ func (r *reconciler) run() *reconcileFailure {
 	}
 	tot := Totals{ConfigSHA256: hash, Proofs: ctr.Proofs, Emitted: emitted}
 	r.rep.Window, r.rep.Totals = ctr.Window, tot
+	if r.v2 {
+		if f := r.owners(hash, ctr); f != nil {
+			return f
+		}
+	}
 	c.Guard.ObserveTotals(tot, r.rewardCell(r.tip+1))
 	if cfg := c.Guard.Config(); r.now().Unix() >= cfg.ExpiresUnix {
 		c.Guard.StopAdmission(fmt.Sprintf("%s:expires_unix=%d", CauseExpired, cfg.ExpiresUnix))
@@ -297,10 +318,45 @@ func (r *reconciler) run() *reconcileFailure {
 		return r.fail("S13", CauseReconcile, fmt.Sprintf("funder account %s is missing from the restored account store",
 			chain.MiningRewardFunderAddress), nil)
 	}
-	if err := c.Ledger.Init(LedgerInit{Pending: pending, Totals: tot, FunderBalance: acc.Balance, FunderNonce: acc.Nonce}); err != nil {
+	in := LedgerInit{Pending: pending, Totals: tot, FunderBalance: acc.Balance, FunderNonce: acc.Nonce}
+	if r.v2 {
+		in.Tip, in.OwnerEmitted = r.tip, r.rep.OwnerEmitted
+	}
+	if err := c.Ledger.Init(in); err != nil {
 		return r.fail("S13", CauseReconcile, "ledger init", err)
 	}
 	r.rep.Pending = len(pending)
+	return nil
+}
+
+// owners is the v2 part of S12: the per-recipient emitted amount of the owner
+// epoch of tip+1, and the per-owner row counts.
+func (r *reconciler) owners(hash ConfigHash, ctr Counters) *reconcileFailure {
+	epoch := OwnerEpochOf(r.tip + 1)
+	from := max(epoch*OwnerEpochBlocks, ctr.Window.FirstHeight)
+	emitted := make(map[string]float64)
+	for _, rw := range r.rewards {
+		if rw.height >= from {
+			emitted[rw.recipient] += rw.amount
+		}
+	}
+	r.rep.OwnerEpoch, r.rep.OwnerEmitted = epoch, emitted
+	ost, ok := r.c.Store.(OwnerStore)
+	if !ok {
+		return nil
+	}
+	counts, err := ost.OwnerCounts(hash)
+	if err != nil {
+		return r.fail("S12", CauseReconcile, "owner counts", err)
+	}
+	var sum uint64
+	for _, n := range counts {
+		sum += n.Proofs
+	}
+	if sum != ctr.Proofs {
+		return r.fail("S12", CauseReconcile, fmt.Sprintf("per-owner rows of config %x sum to %d, proofs_H is %d", hash[:], sum, ctr.Proofs), nil)
+	}
+	r.rep.Owners = counts
 	return nil
 }
 
@@ -394,6 +450,10 @@ func (r *reconciler) scan(h0 uint64) ([]Payment, *reconcileFailure) {
 	for _, b := range r.c.Blocks {
 		var sum float64
 		rewards := 0
+		var paidTo map[string]bool // v2: recipients with a reward in b
+		if r.v2 {
+			paidTo = make(map[string]bool)
+		}
 		for _, tx := range b.Transactions {
 			if tx == nil {
 				continue
@@ -415,9 +475,15 @@ func (r *reconciler) scan(h0 uint64) ([]Payment, *reconcileFailure) {
 				r.note("height %d tx %q: %s", b.Height, tx.ID, bad)
 				continue
 			}
+			if paidTo != nil {
+				if paidTo[tx.Recipient] {
+					r.note("height %d tx %q: a second reward to %s in one block", b.Height, tx.ID, tx.Recipient)
+				}
+				paidTo[tx.Recipient] = true
+			}
 			rewards++
 			sum += tx.Amount
-			r.rewards = append(r.rewards, reconcileReward{height: b.Height, amount: tx.Amount})
+			r.rewards = append(r.rewards, reconcileReward{height: b.Height, amount: tx.Amount, recipient: tx.Recipient})
 			for _, id := range ids {
 				if p, dup := first[id]; dup {
 					r.note("height %d tx %q: proof %x is paid again (first paid at height %d by tx %q)", b.Height, tx.ID, id[:], p.Height, p.TxID)

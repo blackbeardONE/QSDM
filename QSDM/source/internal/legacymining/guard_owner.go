@@ -16,8 +16,8 @@ package legacymining
 // returns; it is forgery-proof when the OwnerAuth (WP-C: OperatorSigAuth,
 // opkeys.go) rejects such bundles, which it does before any per-owner
 // accounting. A v2 config with require_operator_sig cannot build a Guard
-// without an OwnerAuth, and S2 refuses every v2 boot until WP-D and WP-E
-// land.
+// without an OwnerAuth, and S2 refuses every v2 boot until WP-E
+// lands.
 //
 // Locks: cmu stays a leaf. EnrollmentView, OwnerAuth, Store.Event and logf
 // are called with no guard lock held.

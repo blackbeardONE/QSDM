@@ -372,25 +372,22 @@ func CheckModeConfig(mode Mode, c Config) error {
 // NewGuard accepts a v2 config); WP-C, the operator_sig OwnerAuth
 // (OperatorSigAuth over OperatorKeys from the chain and operator_keys), the
 // version 2 Store and its migration, and the cmd/qsdm wiring of
-// GuardOptions.Mode, Enrollments, SlotPolicy and OwnerAuth. Still missing
-// before this gate may open:
-//   - WP-D: the Ledger's per-owner outstanding hooks
-//     (OwnerGuard.SetOwnerOutstanding), I6 against the row's miner_addr,
-//     owner_epoch_cap_cell and the zero-multiplier PreSeal rule;
+// GuardOptions.Mode, Enrollments, SlotPolicy and OwnerAuth; WP-D, the
+// Ledger's per-owner outstanding hooks and pending cap, I6 against the row's
+// miner_addr, owner_epoch_cap_cell (OwnerSink.CheckOwnerEpoch), the S2
+// refusal of the Tier-3 reward penalty with a v2 config (no zero share can
+// reach PreSeal), and ModePublic through the cmd/qsdm canary plumbing. Still
+// missing before this gate may open:
 //   - WP-E: difficulty_bits into miningsvc.
 //
-// Whoever opens the gate must also let ModePublic through the cmd/qsdm
-// canary plumbing (hl1BootConfig.Canary is ModeCanary only, so a public boot
-// would build no Guard, Store or Ledger today).
-//
-// Booting a v2 config before then would silently ignore those fields, so
+// Booting a v2 config before then would silently ignore difficulty_bits, so
 // only ModeCanary with a v1 config passes, exactly as in HL1.
 func CheckSupported(mode Mode, c Config) error {
 	switch {
 	case mode == ModePublic:
-		return fmt.Errorf("%w: %s=%q needs HL2 work packages WP-D and WP-E; this binary refuses to boot it", ErrNotImplemented, EnvMode, mode)
+		return fmt.Errorf("%w: %s=%q needs HL2 work package WP-E (difficulty_bits); this binary refuses to boot it", ErrNotImplemented, EnvMode, mode)
 	case c.Version != ConfigVersion1:
-		return fmt.Errorf("%w: config version %d is not enforced by this binary until HL2 WP-D and WP-E; use a version %d config", ErrNotImplemented, c.Version, ConfigVersion1)
+		return fmt.Errorf("%w: config version %d is not enforced by this binary until HL2 WP-E (difficulty_bits); use a version %d config", ErrNotImplemented, c.Version, ConfigVersion1)
 	}
 	return nil
 }

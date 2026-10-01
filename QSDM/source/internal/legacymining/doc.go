@@ -82,9 +82,64 @@
 //     FullyBondedSlotPolicy and (with require_operator_sig) OperatorSigAuth,
 //     and fills the key index after S14 ("S14b", hl2HydrateOperatorKeys).
 //
+// # Contract revision HL2 (WP-D): the N-miner Ledger
+//
+// Additive; a v1 config runs exactly the HL1 Ledger, Reconcile and Store
+// paths (the v2 branches key on Guard.Config().Version):
+//   - OwnerSink (api.go), implemented by *PayoutLedger: OutstandingFor and
+//     CheckOwnerEpoch. NewLedger type-asserts a v2 Guard to OwnerGuard and
+//     reports per-owner pending plus in-flight counts to it
+//     (ResetOwnerOutstanding at Init, SetOwnerOutstanding after Enqueue and
+//     OnDurableBlock), so CheckOwnerPending fires. Enqueue re-checks
+//     max_pending_per_owner like max_pending (FREEZE CauseEnqueue: the step
+//     6 check must still hold at step 9).
+//   - I6 for v2, in PreSeal and at H8: every paid ID's row miner_addr is the
+//     recipient. The row's miner_addr is the enrollment owner Precheck
+//     attributed at admission; cfg.Allowed (empty in public mode) is not
+//     used, and current enrollment is never consulted, so an unenroll
+//     between accept and seal pays the proofs and does not FREEZE. v1 I6
+//     (the allowlist) is unchanged.
+//   - Owner epochs (OwnerEpochBlocks, OwnerEpochOf): 8640-block windows
+//     aligned to height 0, so an epoch is a function of the chain alone:
+//     crash-safe without new durable state, and auditable from the journal.
+//     Per-owner emitted CELL per epoch comes from the chain, like
+//     emitted_H: Reconcile derives it at S12 for the epoch of tip+1
+//     (LedgerInit.Tip, LedgerInit.OwnerEmitted) and OnDurableBlock adds
+//     every reward. The DB holds no amounts, so it cannot be the source of
+//     CELL; its per-owner query is OwnerStore.OwnerCounts, served by the
+//     proofs_owner index on (config_sha256, miner_addr), which S12 checks
+//     against proofs_H. The index is part of schema version 2 (amended, not
+//     a version 3: version 2 was never deployed).
+//   - owner_epoch_cap_cell: CheckOwnerEpoch returns KindOwnerRateLimited
+//     (503) with Detail "owner epoch cap: ..." while the owner's emitted
+//     amount in the current epoch is >= the cap. It holds admission only;
+//     accepted proofs are still paid (holding them would trip the global
+//     stall FREEZE), so an epoch can end above the cap by less than
+//     2*rewardCell. miningsvc calls it after CheckOwnerPending.
+//   - Reward rule R4 (operator decision): the d7 pro-rata split by admitted
+//     proofs per block (blockdriver), so emission is rewardCell per
+//     non-empty block up to float rounding (the PreSeal and I3 bound
+//     rewardCell*(1+RewardSumSlack)). A v2 config refuses the Tier-3 reward
+//     penalty: cmd/qsdm exits 78 at S2 with QSDM_SPEC_PENALTY_ENABLED set,
+//     and blockdriver.New refuses a RewardPenalty with a v2 Guard. So no
+//     multiplier, and in particular no multiplier <= 0, can produce a zero
+//     share and a global PreSeal FREEZE; the penalty's input is self-reported
+//     telemetry anyway (HL2 §1 Q1 (d)). Dropping zero-share claims and
+//     requeueing them was rejected: requeued IDs would trip the global stall
+//     FREEZE after StallSeals.
+//   - Reconcile S10 also refuses a second reward to one recipient in a block
+//     (v2), and S12 reports OwnerEpoch, OwnerEmitted and Owners.
+//   - Deferred-bond tier: not enabled (operator decision pending). A tier
+//     is a SlotPolicy (WP-B) that gives deferred-bond nodes a weight below
+//     SlotUnit, run with require_fully_bonded false; in public mode that
+//     also needs CheckModeConfig to stop requiring require_fully_bonded (a
+//     config rule). No schema, Ledger or reconcile change: they key on the
+//     owner and the row's miner_addr, never on bond state.
+//   - cmd/qsdm builds the Guard, Store and Ledger for ModePublic too
+//     (hl1BootConfig.Canary means "legacy mining is on").
+//
 // Still refused at S2 (CheckSupported, exit 78): ModePublic and every v2
-// config, until WP-D (the Ledger calls the outstanding hooks; I6, the owner
-// epoch cap, the zero-multiplier rule) and WP-E (difficulty_bits) land.
+// config, until WP-E (difficulty_bits into miningsvc) lands.
 //
 // Implementations and the functions they must export:
 //
@@ -99,7 +154,7 @@
 //	guard_owner.go    HL2 WP-B: the v2 per-owner admission path (OwnerGuard).
 //	opkeys.go         HL2 WP-C: operator keys and the operator_sig OwnerAuth.
 //	store_opkeys.go   HL2 WP-C: schema version 2 (operator_keys), migration.
-//	ledger.go    WP5  Ledger (and so Sink), I1-I6 and the I7 family audit,
+//	ledger.go    WP5  Ledger (and so Sink; HL2 WP-D: OwnerSink), I1-I6 and the I7 family audit,
 //	                  which runs in every mode without a Ledger:
 //	                    func AuditTxFamilies(blk *chain.Block) []FamilyViolation
 //	reconcile.go WP8  Startup steps S8-S13 (§5), including counter derivation.
@@ -126,8 +181,9 @@
 // open and the Guard is loaded; otherwise miningsvc is ReadOnly.
 //
 // ModePublic (HL2): defined by the contract, refused at S2 with
-// ErrNotImplemented until HL2 WP-D and WP-E land (the WP-B Guard and the
-// WP-C operator keys are in place).
+// ErrNotImplemented until HL2 WP-E lands (the WP-B Guard, the WP-C operator
+// keys and the WP-D Ledger are in place, and cmd/qsdm wires a public boot
+// like a canary one).
 //
 // # Lock order (§4.5)
 //
@@ -166,7 +222,8 @@
 //
 // With a v2 config (HL2 WP-B) step 5 is OwnerGuard.TakeOwnerRate, step 6
 // adds OwnerGuard.CheckOwnerPending(Candidate.Owner) after the global cap,
-// and steps 7 and 8 feed OwnerGuard.ObserveOwnerRejection.
+// then (WP-D) OwnerSink.CheckOwnerEpoch(Candidate.Owner), and steps 7 and 8
+// feed OwnerGuard.ObserveOwnerRejection.
 //
 // # Tick (§4.2, blockdriver)
 //
