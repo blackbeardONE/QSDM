@@ -58,11 +58,33 @@
 //   - Constants OwnerCooldown, OwnerBadLimit, GlobalDuplicateAlarm,
 //     UnattributableAlarm and SlotUnit; cause CauseBadSubmissions.
 //
+// # Contract revision HL2 (WP-C): operator keys (design §2 M1)
+//
+// Additive; a v1 config never reaches any of it:
+//   - OperatorKey, OperatorKeySize, OperatorKeyStore and ErrOperatorKey
+//     (api.go); CheckOperatorKey, OperatorKeys (the in-memory owner -> key
+//     index), OperatorKeysFromBlocks, HydrateOperatorKeys,
+//     VerifyOperatorSig and OperatorSigAuth, the OwnerAuthFunc (opkeys.go).
+//     An owner's key is any ML-DSA-87 public key with
+//     owner == hex(sha256(pk)), found in chain history (normally the
+//     owner's signed qsdm/enroll/v2 tx) or in operator_keys; the binding is
+//     re-checked on every load. There is no registration endpoint.
+//   - OperatorSigAuth rejects a missing key, a missing operator_sig or one
+//     that does not verify over Bundle.CanonicalForOperatorSignature with
+//     KindBadOperatorSig (400). The Guard runs it in Precheck, before any
+//     per-owner accounting (WP-B ordering).
+//   - legacy-mining.db schema version 2 (StoreUserVersionOperatorKeys) adds
+//     the immutable operator_keys table (store_opkeys.go). NewSQLiteStoreV2
+//     creates version 2 and migrates a version 1 DB at Open in one
+//     transaction; NewSQLiteStore never migrates and opens either version.
+//     cmd/qsdm uses the V2 store only for a version 2 config.
+//   - cmd/qsdm passes Mode, an EnrollmentView over the enrollment state,
+//     FullyBondedSlotPolicy and (with require_operator_sig) OperatorSigAuth,
+//     and fills the key index after S14 ("S14b", hl2HydrateOperatorKeys).
+//
 // Still refused at S2 (CheckSupported, exit 78): ModePublic and every v2
-// config, until WP-C (OwnerAuth from operator keys, cmd/qsdm wiring of
-// Mode/Enrollments/OwnerAuth), WP-D (the Ledger calls the outstanding
-// hooks; I6, the owner epoch cap, the zero-multiplier rule) and WP-E
-// (difficulty_bits) land.
+// config, until WP-D (the Ledger calls the outstanding hooks; I6, the owner
+// epoch cap, the zero-multiplier rule) and WP-E (difficulty_bits) land.
 //
 // Implementations and the functions they must export:
 //
@@ -75,6 +97,8 @@
 //	                  D1/D2 durable-write primitives (§3.2). cmd/qsdm and
 //	                  cmd/hl1-tail reuse D1/D2 instead of re-implementing them.
 //	guard_owner.go    HL2 WP-B: the v2 per-owner admission path (OwnerGuard).
+//	opkeys.go         HL2 WP-C: operator keys and the operator_sig OwnerAuth.
+//	store_opkeys.go   HL2 WP-C: schema version 2 (operator_keys), migration.
 //	ledger.go    WP5  Ledger (and so Sink), I1-I6 and the I7 family audit,
 //	                  which runs in every mode without a Ledger:
 //	                    func AuditTxFamilies(blk *chain.Block) []FamilyViolation
@@ -102,7 +126,8 @@
 // open and the Guard is loaded; otherwise miningsvc is ReadOnly.
 //
 // ModePublic (HL2): defined by the contract, refused at S2 with
-// ErrNotImplemented until HL2 WP-C..E land (the WP-B Guard is in place).
+// ErrNotImplemented until HL2 WP-D and WP-E land (the WP-B Guard and the
+// WP-C operator keys are in place).
 //
 // # Lock order (§4.5)
 //

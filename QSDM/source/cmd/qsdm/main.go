@@ -2721,6 +2721,9 @@ func main() {
 	// SyncFunderNonce and the driver start. Every anomaly or failure trips
 	// FREEZE and never exits; admission then never opens in this process.
 	hl1Reconciled := hl1ReconcileCanary(hl1Mining, hl1Boot, hl1RestoredBlocks, adminAccounts)
+	// HL2 WP-C "S14b": a version 2 config indexes the owners' operator keys
+	// from the restored chain and operator_keys before admission can open.
+	hl2HydrateOperatorKeys(hl1Mining, hl1RestoredBlocks, hl1Reconciled.StoreOpen)
 	go hl1LegacyMiningHealthLoop(ctx, healthChecker, hl1Mining)
 	// HL1 (a): the mining service. It is writable only in canary mode with
 	// local block production, an open Store and a loaded Guard. Otherwise it
@@ -4099,6 +4102,10 @@ type hl1CanaryParts struct {
 	guard  *legacymining.CanaryGuard
 	ledger *legacymining.PayoutLedger
 	reason string // why the canary is not enabled
+
+	// HL2 WP-C, version 2 configs only (nil with a v1 config).
+	view *hl2EnrollmentView
+	keys *legacymining.OperatorKeys
 }
 
 func (c *hl1CanaryParts) enabled() bool {
@@ -4118,6 +4125,14 @@ func (c *hl1CanaryParts) status() string {
 // hl1NewCanary builds the Guard, Store and Ledger in canary mode with local
 // block production. The Store is not opened here: Reconcile opens it after
 // S5 (S7).
+//
+// With a version 2 config (HL2 WP-C) it also passes the mode, an
+// EnrollmentView over the consensus enrollment state, the default
+// FullyBondedSlotPolicy and, when require_operator_sig is set, the
+// operator_sig OwnerAuth over an operator-key index that
+// hl2HydrateOperatorKeys fills after S14; and it uses a version 2 Store
+// (NewSQLiteStoreV2), which migrates an HL1 DB at S7. A version 1 config
+// gets exactly the HL1 Guard and Store, and its DB is never migrated.
 func hl1NewCanary(boot hl1BootConfig, producerRole bool, accounts *chain.AccountStore, enroll *enrollment.InMemoryState) *hl1CanaryParts {
 	c := &hl1CanaryParts{}
 	switch {
@@ -4130,7 +4145,7 @@ func hl1NewCanary(boot hl1BootConfig, producerRole bool, accounts *chain.Account
 		return c
 	}
 	store := legacymining.NewSQLiteStore()
-	guard, err := legacymining.NewGuard(legacymining.GuardOptions{
+	opts := legacymining.GuardOptions{
 		Dir:              boot.Env.LegacyDir(),
 		Config:           boot.Config,
 		ConfigHash:       boot.Env.ConfigSHA256,
@@ -4141,7 +4156,22 @@ func hl1NewCanary(boot hl1BootConfig, producerRole bool, accounts *chain.Account
 		Logf: func(format string, args ...any) {
 			hl1Logger().Warn(fmt.Sprintf(format, args...))
 		},
-	})
+	}
+	var view *hl2EnrollmentView
+	var keys *legacymining.OperatorKeys
+	if boot.Config.Version == legacymining.ConfigVersion2 {
+		store = legacymining.NewSQLiteStoreV2()
+		view = newHL2EnrollmentView(enroll)
+		keys = legacymining.NewOperatorKeys()
+		opts.Store = store
+		opts.Mode = boot.Env.Mode
+		opts.Enrollments = view
+		opts.SlotPolicy = legacymining.FullyBondedSlotPolicy
+		if boot.Config.RequireOperatorSig {
+			opts.OwnerAuth = legacymining.OperatorSigAuth(keys)
+		}
+	}
+	guard, err := legacymining.NewGuard(opts)
 	if err != nil {
 		c.reason = "legacy-mining directory refused; mining closed: " + err.Error()
 		hl1Logger().Error("hl1: "+c.reason, "dir", boot.Env.LegacyDir())
@@ -4154,6 +4184,7 @@ func hl1NewCanary(boot hl1BootConfig, producerRole bool, accounts *chain.Account
 		return c
 	}
 	c.store, c.guard, c.ledger = store, guard, ledger
+	c.view, c.keys = view, keys
 	return c
 }
 

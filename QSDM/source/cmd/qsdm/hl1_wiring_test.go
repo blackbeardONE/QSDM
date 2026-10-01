@@ -114,6 +114,10 @@ func TestHL1WiringStartupOrder(t *testing.T) {
 	s.before(t, "hl1ReconcileCanary", "blockDriver.SyncFunderNonce")
 	s.before(t, "blockDriver.Start", "hl1Mining.guard.Activate")
 	s.before(t, "hl1ReconcileCanary", "miningsvc.New")
+	// HL2 WP-C S14b: operator keys after S7-S14, before S15 and S16.
+	s.before(t, "hl1ReconcileCanary", "hl2HydrateOperatorKeys")
+	s.before(t, "hl2HydrateOperatorKeys", "blockDriver.SyncFunderNonce")
+	s.before(t, "hl2HydrateOperatorKeys", "hl1Mining.guard.Activate")
 	s.before(t, "miningsvc.New", "api.NewServer")
 }
 

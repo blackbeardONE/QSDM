@@ -351,6 +351,6 @@ func TestConfigV2Example(t *testing.T) {
 		t.Fatalf("v2 example, public: %v", err)
 	}
 	if !errors.Is(CheckSupported(ModePublic, c), ErrNotImplemented) {
-		t.Fatal("v2 example must not be bootable before WP-B..E")
+		t.Fatal("v2 example must not be bootable before WP-D and WP-E")
 	}
 }

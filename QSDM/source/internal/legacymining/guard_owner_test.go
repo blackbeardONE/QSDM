@@ -260,13 +260,13 @@ func TestV2MisbehavingOwnersAreIsolated(t *testing.T) {
 	wantKind(t, "dup sender in cooldown", err, KindOwnerCooldown)
 	honestOK(5)
 
-	// 3. The forger names the victim's node. Before WP-C the HMAC key is
-	// public and nothing distinguishes the forger from the victim, so the
-	// submission is attributed to the victim and spends the victim's quota.
-	// This is the documented pre-WP-C gap; TestV2ForgeryRejectedByOwnerAuth
-	// shows the WP-C hook closing it. The forger cannot redirect the reward:
-	// miner_addr must be the victim (owner binding), and naming its own
-	// address is not-enrolled.
+	// 3. The forger names the victim's node. Without an OwnerAuth the HMAC
+	// key is public and nothing distinguishes the forger from the victim, so
+	// the submission is attributed to the victim and spends the victim's
+	// quota. TestV2ForgeryRejectedByOwnerAuth (opkeys_test.go) shows the WP-C
+	// operator_sig check closing this gap. The forger cannot redirect the
+	// reward: miner_addr must be the victim (owner binding), and naming its
+	// own address is not-enrolled.
 	_, err = e.submit(t, otForger, "victim-1")
 	wantKind(t, "forger's own address on the victim's node", err, KindNotEnrolled)
 	if e.tokens(otVictim) != -1 || e.tokens(otForger) != -1 {
@@ -311,53 +311,6 @@ func TestV2MisbehavingOwnersAreIsolated(t *testing.T) {
 	}
 	if gtExists(t, filepath.Join(e.dir, AdmissionStoppedFile)) {
 		t.Fatal("ADMISSION_STOPPED latched")
-	}
-}
-
-// TODO(WP-C): replace the stub with the real operator_sig verifier
-// (VerifyOperatorSig against the owner's ML-DSA-87 key). The hook already
-// runs before any per-owner accounting, so a forgery for a victim's node
-// spends none of the victim's quota and feeds none of its cooldowns.
-func TestV2ForgeryRejectedByOwnerAuth(t *testing.T) {
-	view := newOTView().add("victim-1", otVictim, true)
-	signed := map[[32]byte]bool{} // attestation nonces the victim "signed"
-	var mu sync.Mutex
-	auth := func(p *mining.Proof, node, owner string) error {
-		mu.Lock()
-		defer mu.Unlock()
-		if !signed[p.Attestation.Nonce] {
-			return errors.New("operator_sig does not verify (stub)")
-		}
-		return nil
-	}
-	e := otNew(t, gtDir(t), otPublicConfig(), view, otOptions{auth: auth})
-	e.open(t)
-
-	for i := 0; i < 5*DuplicateLimit; i++ {
-		_, err := e.submit(t, otVictim, "victim-1")
-		wantKind(t, "forgery", err, KindBadOperatorSig)
-		var re *mining.RejectError
-		if !errors.As(err, &re) || re.Reason != mining.ReasonAttestation {
-			t.Fatalf("forgery is not a 400 attestation rejection: %v", err)
-		}
-	}
-	if e.tokens(otVictim) != -1 || e.cooling(otVictim) {
-		t.Fatal("forgeries touched the victim's owner state")
-	}
-	e.requireNoLatch(t)
-
-	// The victim still has its whole bucket.
-	for i := 0; i < otPublicConfig().MaxProofsPerMinPerOwner; i++ {
-		raw, p, _ := gtProof(t, e.clock.Now(), otVictim, "victim-1", mining.AttestationTypeHMAC)
-		mu.Lock()
-		signed[p.Attestation.Nonce] = true
-		mu.Unlock()
-		if c, err := e.submitRaw(raw); err != nil || c.Owner != otVictim {
-			t.Fatalf("victim submission %d: %+v, %v", i, c, err)
-		}
-	}
-	if st := e.g.Stats(); st.Rejections[KindBadOperatorSig.String()] != 5*DuplicateLimit {
-		t.Fatalf("stats %+v", st)
 	}
 }
 
@@ -779,7 +732,7 @@ func TestNewGuardV2Options(t *testing.T) {
 	if _, err := NewGuard(o); !errors.Is(err, ErrConfig) {
 		t.Errorf("public v1: %v", err)
 	}
-	// The S2 gate still refuses every v2 boot until WP-C..E.
+	// The S2 gate still refuses every v2 boot until WP-D and WP-E.
 	for _, m := range []Mode{ModeCanary, ModePublic} {
 		if err := CheckSupported(m, v2Config()); !errors.Is(err, ErrNotImplemented) {
 			t.Errorf("CheckSupported(%s, v2) = %v", m, err)

@@ -56,8 +56,9 @@ const (
 // in WAL mode; if one appears it must still be a safe regular file.
 var storeSidecars = []string{"-wal", "-shm", "-journal"}
 
-// storeSchema is the exact schema. Open compares sqlite_master against it,
-// so any edit here needs a new StoreUserVersion.
+// storeSchema is the exact version 1 schema. Open compares sqlite_master
+// against it (or against storeSchemaFor(2), store_opkeys.go), so any edit
+// here needs a new user_version.
 var storeSchema = []struct{ typ, name, sql string }{
 	{"table", "meta", `CREATE TABLE meta (
  id INTEGER PRIMARY KEY NOT NULL CHECK(id=1),
@@ -110,16 +111,49 @@ const storeRecordColumns = `proof_id, miner_addr, node_id, att_nonce, work_heigh
 // SQLiteStore is the Store (§3.3). The zero value is a closed store; Open it
 // before use. It is safe for concurrent use: a mutex serialises every method
 // on the single connection.
+//
+// Schema versions (HL2 WP-C): user_version 1 is the HL1 schema (storeSchema);
+// user_version 2 (StoreUserVersionOperatorKeys) adds the operator_keys table
+// (storeSchemaOperatorKeys). A store from NewSQLiteStore never writes the
+// schema of an existing DB: it opens a version 1 DB exactly as HL1 does, and
+// also a version 2 DB (read paths such as hl-audit, and a v2-to-v1 config
+// rollback on an HL2 binary). A store from NewSQLiteStoreV2 creates version 2
+// and migrates a version 1 DB to version 2 at Open (storeMigrateV2).
 type SQLiteStore struct {
-	mu  sync.Mutex
-	db  *sql.DB
-	now func() time.Time // nil means time.Now; replaced in tests
+	mu      sync.Mutex
+	db      *sql.DB
+	now     func() time.Time // nil means time.Now; replaced in tests
+	v2      bool             // create version 2 and migrate version 1 at Open
+	version int64            // user_version of the open DB
+
+	// migrateHook, if set (tests), runs inside the migration transaction
+	// after the schema statements and before the commit; an error aborts it.
+	migrateHook func() error
 }
 
 var _ Store = (*SQLiteStore)(nil)
+var _ OperatorKeyStore = (*SQLiteStore)(nil)
 
-// NewSQLiteStore returns a closed store.
+// NewSQLiteStore returns a closed store that never changes the schema version
+// of an existing DB and creates version 1 (HL1).
 func NewSQLiteStore() *SQLiteStore { return &SQLiteStore{} }
+
+// NewSQLiteStoreV2 returns a closed store for a version 2 legacy-mining config
+// (HL2 WP-C). It creates a version 2 DB, and Open migrates a version 1 DB to
+// version 2 in one transaction (see storeMigrateV2). cmd/qsdm uses it only
+// when the loaded config is version 2, so an HL1 deployment's DB is never
+// migrated.
+func NewSQLiteStoreV2() *SQLiteStore { return &SQLiteStore{v2: true} }
+
+// SchemaVersion returns the user_version of the open DB (0 when closed).
+func (s *SQLiteStore) SchemaVersion() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil {
+		return 0
+	}
+	return int(s.version)
+}
 
 func (s *SQLiteStore) clock() time.Time {
 	if s.now != nil {
@@ -169,9 +203,17 @@ func (s *SQLiteStore) Open(path string, create *Meta) error {
 	if err != nil {
 		return err
 	}
-	if err := storeVerify(db); err != nil {
+	version, err := storeVerify(db)
+	if err != nil {
 		_ = db.Close()
 		return err
+	}
+	if s.v2 && version == StoreUserVersion {
+		if err := storeMigrateV2(db, s.clock().UnixNano(), s.migrateHook); err != nil {
+			_ = db.Close()
+			return err
+		}
+		version = StoreUserVersionOperatorKeys
 	}
 	// SQLite has now created -wal and -shm; they inherit the DB file's mode.
 	if err := storeCheckFiles(path); err != nil {
@@ -183,6 +225,7 @@ func (s *SQLiteStore) Open(path string, create *Meta) error {
 		return err
 	}
 	s.db = db
+	s.version = version
 	return nil
 }
 
@@ -552,9 +595,13 @@ func (s *SQLiteStore) create(dir, path string, m Meta) error {
 	if err != nil {
 		return err
 	}
-	err = storeInit(db, m)
+	version := int64(StoreUserVersion)
+	if s.v2 {
+		version = StoreUserVersionOperatorKeys
+	}
+	err = storeInit(db, m, version)
 	if err == nil {
-		err = storeVerify(db)
+		_, err = storeVerify(db)
 	}
 	if err == nil {
 		var busy, logFrames, done int
@@ -590,7 +637,7 @@ func (s *SQLiteStore) create(dir, path string, m Meta) error {
 }
 
 // storeInit writes the identity, schema and meta row in one transaction.
-func storeInit(db *sql.DB, m Meta) error {
+func storeInit(db *sql.DB, m Meta, version int64) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -598,9 +645,9 @@ func storeInit(db *sql.DB, m Meta) error {
 	defer func() { _ = tx.Rollback() }()
 	stmts := []string{
 		fmt.Sprintf(`PRAGMA application_id = %d`, StoreApplicationID),
-		fmt.Sprintf(`PRAGMA user_version = %d`, StoreUserVersion),
+		fmt.Sprintf(`PRAGMA user_version = %d`, version),
 	}
-	for _, o := range storeSchema {
+	for _, o := range storeSchemaFor(version) {
 		stmts = append(stmts, o.sql)
 	}
 	for _, q := range stmts {
@@ -651,8 +698,10 @@ func storeOpenDB(path string) (*sql.DB, error) {
 	return db, nil
 }
 
-// storeVerify checks identity, schema, settings, integrity and the meta row.
-func storeVerify(db *sql.DB) error {
+// storeVerify checks identity, schema, settings, integrity and the meta row,
+// and returns the schema version: user_version 1 with exactly storeSchema, or
+// user_version 2 with exactly storeSchemaFor(2).
+func storeVerify(db *sql.DB) (int64, error) {
 	var appID, userVersion, syncMode, foreignKeys int64
 	var journal string
 	for _, p := range []struct {
@@ -666,19 +715,20 @@ func storeVerify(db *sql.DB) error {
 		{`PRAGMA foreign_keys`, &foreignKeys},
 	} {
 		if err := db.QueryRow(p.q).Scan(p.dest); err != nil {
-			return fmt.Errorf("%w: %s: %w", ErrSchema, p.q, err)
+			return 0, fmt.Errorf("%w: %s: %w", ErrSchema, p.q, err)
 		}
 	}
-	if appID != StoreApplicationID || userVersion != StoreUserVersion {
-		return fmt.Errorf("%w: application_id %#x user_version %d", ErrSchema, appID, userVersion)
+	schema := storeSchemaFor(userVersion)
+	if appID != StoreApplicationID || schema == nil {
+		return 0, fmt.Errorf("%w: application_id %#x user_version %d", ErrSchema, appID, userVersion)
 	}
 	if journal != "wal" || syncMode != 2 || foreignKeys != 1 {
-		return fmt.Errorf("%w: journal_mode %s synchronous %d foreign_keys %d", ErrSchema, journal, syncMode, foreignKeys)
+		return 0, fmt.Errorf("%w: journal_mode %s synchronous %d foreign_keys %d", ErrSchema, journal, syncMode, foreignKeys)
 	}
 
 	rows, err := db.Query(`SELECT type, name, sql FROM sqlite_master WHERE substr(name, 1, 7) <> 'sqlite_'`)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrSchema, err)
+		return 0, fmt.Errorf("%w: %w", ErrSchema, err)
 	}
 	found := map[string]string{}
 	for rows.Next() {
@@ -686,56 +736,56 @@ func storeVerify(db *sql.DB) error {
 		var q sql.NullString
 		if err := rows.Scan(&typ, &name, &q); err != nil {
 			rows.Close()
-			return fmt.Errorf("%w: %w", ErrSchema, err)
+			return 0, fmt.Errorf("%w: %w", ErrSchema, err)
 		}
 		found[typ+":"+name] = strings.TrimSpace(q.String)
 	}
 	if err := rows.Close(); err != nil {
-		return fmt.Errorf("%w: %w", ErrSchema, err)
+		return 0, fmt.Errorf("%w: %w", ErrSchema, err)
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("%w: %w", ErrSchema, err)
+		return 0, fmt.Errorf("%w: %w", ErrSchema, err)
 	}
-	if len(found) != len(storeSchema) {
-		return fmt.Errorf("%w: %d schema objects, want %d", ErrSchema, len(found), len(storeSchema))
+	if len(found) != len(schema) {
+		return 0, fmt.Errorf("%w: %d schema objects, want %d", ErrSchema, len(found), len(schema))
 	}
-	for _, o := range storeSchema {
+	for _, o := range schema {
 		if found[o.typ+":"+o.name] != o.sql {
-			return fmt.Errorf("%w: %s %s differs", ErrSchema, o.typ, o.name)
+			return 0, fmt.Errorf("%w: %s %s differs", ErrSchema, o.typ, o.name)
 		}
 	}
 
 	rows, err = db.Query(`PRAGMA quick_check`)
 	if err != nil {
-		return fmt.Errorf("%w: quick_check: %w", ErrSchema, err)
+		return 0, fmt.Errorf("%w: quick_check: %w", ErrSchema, err)
 	}
 	var results []string
 	for rows.Next() {
 		var line string
 		if err := rows.Scan(&line); err != nil {
 			rows.Close()
-			return fmt.Errorf("%w: quick_check: %w", ErrSchema, err)
+			return 0, fmt.Errorf("%w: quick_check: %w", ErrSchema, err)
 		}
 		results = append(results, line)
 	}
 	if err := rows.Close(); err != nil {
-		return fmt.Errorf("%w: quick_check: %w", ErrSchema, err)
+		return 0, fmt.Errorf("%w: quick_check: %w", ErrSchema, err)
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("%w: quick_check: %w", ErrSchema, err)
+		return 0, fmt.Errorf("%w: quick_check: %w", ErrSchema, err)
 	}
 	if len(results) != 1 || results[0] != "ok" {
-		return fmt.Errorf("%w: quick_check: %s", ErrSchema, strings.Join(results, "; "))
+		return 0, fmt.Errorf("%w: quick_check: %s", ErrSchema, strings.Join(results, "; "))
 	}
 
 	var metaRows int
 	if err := db.QueryRow(`SELECT count(*) FROM meta`).Scan(&metaRows); err != nil {
-		return fmt.Errorf("%w: meta: %w", ErrSchema, err)
+		return 0, fmt.Errorf("%w: meta: %w", ErrSchema, err)
 	}
 	if metaRows != 1 {
-		return fmt.Errorf("%w: %d meta rows", ErrSchema, metaRows)
+		return 0, fmt.Errorf("%w: %d meta rows", ErrSchema, metaRows)
 	}
-	return nil
+	return userVersion, nil
 }
 
 // storeCheckPath validates the DB path and its directory, and returns the
@@ -806,7 +856,10 @@ func storeCheckHeader(path string) error {
 	if !bytes.Equal(h[:16], []byte("SQLite format 3\x00")) {
 		return fmt.Errorf("%w: not an SQLite database", ErrSchema)
 	}
-	if id, v := binary.BigEndian.Uint32(h[68:72]), binary.BigEndian.Uint32(h[60:64]); id != StoreApplicationID || v != StoreUserVersion {
+	// A migration to version 2 commits user_version 2 in the WAL first, so
+	// the main file may still say 1 after a crash; storeVerify then reads
+	// the committed version through SQLite.
+	if id, v := binary.BigEndian.Uint32(h[68:72]), binary.BigEndian.Uint32(h[60:64]); id != StoreApplicationID || storeSchemaFor(int64(v)) == nil {
 		return fmt.Errorf("%w: header application_id %#x user_version %d", ErrSchema, id, v)
 	}
 	return nil

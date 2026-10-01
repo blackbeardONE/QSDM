@@ -44,9 +44,10 @@ const (
 	ModeCanary Mode = "canary"
 	// ModePublic (HL2) admits proofs from any enrolled, fully bonded owner
 	// that signs its submissions, subject to per-owner caps. It requires a
-	// v2 config (see CheckModeConfig). Until HL2 WP-C..E land, every boot in
-	// this mode is refused with ErrNotImplemented (exit ExitFatalRestore);
-	// the Guard side (WP-B) is implemented.
+	// v2 config (see CheckModeConfig). Until HL2 WP-D and WP-E land, every
+	// boot in this mode is refused with ErrNotImplemented (exit
+	// ExitFatalRestore); the Guard side (WP-B) and the operator keys and
+	// cmd/qsdm wiring (WP-C) are implemented.
 	ModePublic Mode = "public"
 )
 
@@ -506,7 +507,50 @@ const (
 	StoreApplicationID = 0x514C4D31
 	// StoreUserVersion is PRAGMA user_version.
 	StoreUserVersion = 1
+	// StoreUserVersionOperatorKeys (HL2 WP-C) is the user_version of a DB
+	// with the operator_keys table. Only a store for a version 2 config
+	// (NewSQLiteStoreV2) creates it or migrates a version 1 DB to it.
+	StoreUserVersionOperatorKeys = 2
 )
+
+// -----------------------------------------------------------------------------
+// HL2 operator keys (WP-C, design §2 M1)
+// -----------------------------------------------------------------------------
+
+// OperatorKeySize is the size of an ML-DSA-87 public key, the only owner key
+// type M1 accepts (every enrolled owner today; hl1/HL2_OWNER_KEYS.md).
+const OperatorKeySize = 2592
+
+// OperatorKey binds an owner address to its ML-DSA-87 public key. The binding
+// is cryptographic: Owner == hex(sha256(PublicKey)) (the wallet address rule,
+// pkg/keystore AddressFromPublicKey), so a key needs no consensus state and no
+// trust in where it was found. Every reader re-checks it (CheckOperatorKey).
+type OperatorKey struct {
+	Owner     string // 64 lowercase hex
+	PublicKey []byte // OperatorKeySize bytes
+	// Source says where the key was learned, for example
+	// "chain:qsdm/enroll/v2:<tx id>". 1..256 bytes.
+	Source string
+	// Height is the block height of the source tx, 0 if not from a block.
+	Height uint64
+	// AddedNS is when the store first saved the key (set by the store).
+	AddedNS int64
+}
+
+// OperatorKeyStore is the durable side of the operator-key index: the
+// operator_keys table of a version 2 legacy-mining.db (*SQLiteStore). Rows
+// are immutable and permanent. Both methods return an error wrapping
+// ErrSchema on a version 1 DB, and ErrClosed when the store is closed.
+type OperatorKeyStore interface {
+	// PutOperatorKeys inserts keys in one transaction and returns how many
+	// were new. Each key must pass CheckOperatorKey. A key whose owner is
+	// already stored with the same public key is skipped; a different
+	// public key for a stored owner is an error and nothing is written.
+	PutOperatorKeys(keys []OperatorKey) (added int, err error)
+	// OperatorKeys returns every stored row, ordered by owner. Rows are not
+	// re-checked here; HydrateOperatorKeys does that.
+	OperatorKeys() ([]OperatorKey, error)
+}
 
 // -----------------------------------------------------------------------------
 // Guard (§6, guard.go, WP4)
@@ -1135,8 +1179,11 @@ var (
 	ErrConfigHash = errors.New("legacymining: canary config sha256 mismatch")
 	// ErrNotImplemented refuses a mode or config version that the contract
 	// defines but this binary does not enforce yet (HL2 WP-A: ModePublic, and
-	// v2 configs, until WP-B..E). The caller exits ExitFatalRestore.
+	// v2 configs, until WP-D and WP-E). The caller exits ExitFatalRestore.
 	ErrNotImplemented = errors.New("legacymining: not yet implemented")
+	// ErrOperatorKey means an owner/public key pair fails CheckOperatorKey
+	// (HL2 WP-C).
+	ErrOperatorKey = errors.New("legacymining: invalid operator key")
 
 	ErrDBMissing    = errors.New("legacymining: database missing")
 	ErrUnsafePath   = errors.New("legacymining: unsafe legacy-mining path")

@@ -197,7 +197,7 @@ func hl1RefuseFailStop(stateDir string) error {
 // chainSyncURLsFromEnv(). After the config loads, the mode/version rules
 // (CheckModeConfig, ErrConfig) and the HL2 WP-A gate (CheckSupported,
 // ErrNotImplemented) run: ModePublic and v2 configs are refused until HL2
-// WP-B..E land, so the caller exits 78.
+// WP-D and WP-E land (WP-A..C are in), so the caller exits 78.
 func hl1LoadBootConfig(getenv func(string) string, syncURLs []string) (hl1BootConfig, error) {
 	env, err := legacymining.LoadEnv(getenv)
 	if err != nil {

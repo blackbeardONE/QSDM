@@ -368,23 +368,29 @@ func CheckModeConfig(mode Mode, c Config) error {
 //   - ModePublic;
 //   - a v2 config in any mode.
 //
-// WP-B landed the Guard side (per-owner Precheck, buckets and cooldowns;
-// NewGuard accepts a v2 config). Still missing before this gate may open:
-//   - WP-C: the OwnerAuthFunc (operator_sig against the owner's key) and the
-//     cmd/qsdm wiring of GuardOptions.Mode, Enrollments and OwnerAuth;
+// Landed: WP-B, the Guard side (per-owner Precheck, buckets and cooldowns;
+// NewGuard accepts a v2 config); WP-C, the operator_sig OwnerAuth
+// (OperatorSigAuth over OperatorKeys from the chain and operator_keys), the
+// version 2 Store and its migration, and the cmd/qsdm wiring of
+// GuardOptions.Mode, Enrollments, SlotPolicy and OwnerAuth. Still missing
+// before this gate may open:
 //   - WP-D: the Ledger's per-owner outstanding hooks
 //     (OwnerGuard.SetOwnerOutstanding), I6 against the row's miner_addr,
 //     owner_epoch_cap_cell and the zero-multiplier PreSeal rule;
 //   - WP-E: difficulty_bits into miningsvc.
+//
+// Whoever opens the gate must also let ModePublic through the cmd/qsdm
+// canary plumbing (hl1BootConfig.Canary is ModeCanary only, so a public boot
+// would build no Guard, Store or Ledger today).
 //
 // Booting a v2 config before then would silently ignore those fields, so
 // only ModeCanary with a v1 config passes, exactly as in HL1.
 func CheckSupported(mode Mode, c Config) error {
 	switch {
 	case mode == ModePublic:
-		return fmt.Errorf("%w: %s=%q needs HL2 work packages WP-B..E; this binary refuses to boot it", ErrNotImplemented, EnvMode, mode)
+		return fmt.Errorf("%w: %s=%q needs HL2 work packages WP-D and WP-E; this binary refuses to boot it", ErrNotImplemented, EnvMode, mode)
 	case c.Version != ConfigVersion1:
-		return fmt.Errorf("%w: config version %d is not enforced by this binary (HL2 WP-B..E); use a version %d config", ErrNotImplemented, c.Version, ConfigVersion1)
+		return fmt.Errorf("%w: config version %d is not enforced by this binary until HL2 WP-D and WP-E; use a version %d config", ErrNotImplemented, c.Version, ConfigVersion1)
 	}
 	return nil
 }
@@ -639,9 +645,10 @@ type GuardOptions struct {
 	// SlotPolicy weighs each enrollment for the per-owner caps. nil means
 	// FullyBondedSlotPolicy.
 	SlotPolicy SlotPolicy
-	// OwnerAuth authenticates the owner of a v2 submission (WP-C). Required
-	// when the v2 config sets require_operator_sig; NewGuard refuses with
-	// ErrNotImplemented otherwise.
+	// OwnerAuth authenticates the owner of a v2 submission (WP-C:
+	// OperatorSigAuth). Required when the v2 config sets
+	// require_operator_sig; NewGuard refuses with ErrNotImplemented
+	// otherwise.
 	OwnerAuth OwnerAuthFunc
 	// Now is the clock. nil means time.Now.
 	Now func() time.Time
@@ -729,7 +736,7 @@ func NewGuard(o GuardOptions) (*CanaryGuard, error) {
 	}
 	v2 := o.Config.Version == ConfigVersion2
 	if v2 && o.Config.RequireOperatorSig && o.OwnerAuth == nil {
-		return nil, fmt.Errorf("%w: require_operator_sig needs an OwnerAuth (HL2 WP-C)", ErrNotImplemented)
+		return nil, fmt.Errorf("%w: require_operator_sig needs an OwnerAuth (OperatorSigAuth)", ErrNotImplemented)
 	}
 	switch {
 	case !v2 && (o.FailStop == nil || o.EnrollmentActive == nil):

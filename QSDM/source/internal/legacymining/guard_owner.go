@@ -10,13 +10,14 @@ package legacymining
 // Global triggers that reflect producer health are unchanged and stay in
 // guard.go: KILL, FREEZE (TRIPPED), expiry, the proof total and the budget.
 //
-// Attribution caveat: until the OwnerAuthFunc of WP-C verifies operator_sig,
-// a bundle naming a victim's node is attributed to the victim, because the
-// HMAC keys are public chain state (design §1 Q1). The per-owner state below
-// is keyed on the owner Precheck returns; it becomes forgery-proof exactly
-// when OwnerAuth rejects such bundles, which it does before any per-owner
+// Attribution: without an OwnerAuth a bundle naming a victim's node is
+// attributed to the victim, because the HMAC keys are public chain state
+// (design §1 Q1). The per-owner state below is keyed on the owner Precheck
+// returns; it is forgery-proof when the OwnerAuth (WP-C: OperatorSigAuth,
+// opkeys.go) rejects such bundles, which it does before any per-owner
 // accounting. A v2 config with require_operator_sig cannot build a Guard
-// without an OwnerAuth, and S2 refuses every v2 boot until WP-C..E land.
+// without an OwnerAuth, and S2 refuses every v2 boot until WP-D and WP-E
+// land.
 //
 // Locks: cmu stays a leaf. EnrollmentView, OwnerAuth, Store.Event and logf
 // are called with no guard lock held.
