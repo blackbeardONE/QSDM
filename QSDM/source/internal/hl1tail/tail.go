@@ -335,11 +335,11 @@ func (e *Env) finish(name string, err error) int {
 
 // hl1Dirs are the HL1 directories whose stale D1 temps are removed: the
 // state directory, <stateDir>/legacy-mining and, when the canary environment
-// names another one, its legacy-mining directory. A missing, symlinked or
+// names another one (canary or public), its legacy-mining directory. A missing, symlinked or
 // non-directory legacy-mining path is left alone (as S3 does).
 func (t *tool) hl1Dirs() []string {
 	dirs := []string{t.dir, filepath.Join(t.dir, legacymining.LegacyDirName)}
-	if env, err := legacymining.LoadEnv(t.env.Getenv); err == nil && env.Mode == legacymining.ModeCanary {
+	if env, err := legacymining.LoadEnv(t.env.Getenv); err == nil && env.Mode != legacymining.ModeOff {
 		if d := env.LegacyDir(); filepath.Clean(d) != filepath.Clean(dirs[1]) {
 			dirs = append(dirs, d)
 		}

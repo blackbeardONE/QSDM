@@ -10,6 +10,31 @@
 // names, signatures and documented semantics do not change after WP1; a
 // change needs a coordinated contract revision across every consumer.
 //
+// # Contract revision HL2 (WP-A)
+//
+// The first coordinated revision is HL2 public mining
+// (hl1/HL2_PUBLIC_MODE_DESIGN.md §4, WP-A). It is additive; nothing existing
+// is renamed or changes meaning for an HL1 deployment:
+//   - ModePublic ("public") is a new EnvMode value. LoadEnv accepts it, and
+//     every other mode still exits ExitFatalRestore.
+//   - Config gains version 2 (ConfigVersion2) with per-owner caps,
+//     difficulty_bits, require_operator_sig, require_fully_bonded and
+//     bonded_slot_cap, and 0..MaxAllowedEntries allowed entries. Version 1
+//     decodes and validates exactly as in HL1, against the HL1 field set,
+//     and its ConfigHash is still the SHA-256 of the raw file bytes, so a
+//     deployed v1 file keeps its pin and its counter window.
+//   - CheckModeConfig holds the mode/version rules: canary takes v1 or v2
+//     (v2 with at least one allowed entry); public takes only v2 with
+//     require_operator_sig and require_fully_bonded both true.
+//   - CheckSupported is the fail-closed gate: until WP-B..E land, ModePublic
+//     and every v2 config are refused with ErrNotImplemented (exit 78), and
+//     NewGuard refuses a v2 config. Only canary with a v1 config boots, as
+//     in HL1.
+//   - Five reject kinds are added after KindNonceConflict, so existing kind
+//     values are unchanged: KindOwnerRateLimited, KindOwnerPendingFull and
+//     KindOwnerCooldown (503), KindNotEnrolled and KindBadOperatorSig (400,
+//     reason attestation). No code produces them yet.
+//
 // Implementations and the functions they must export:
 //
 //	store.go     WP3  Store (SQLite, §3.3).
@@ -45,6 +70,9 @@
 // ModeCanary (Stage B): exactly one Store, Guard and Ledger per process.
 // Mining is writable only when local block production is on, the Store is
 // open and the Guard is loaded; otherwise miningsvc is ReadOnly.
+//
+// ModePublic (HL2): defined by the contract, refused at S2 with
+// ErrNotImplemented until HL2 WP-B..E land.
 //
 // # Lock order (§4.5)
 //

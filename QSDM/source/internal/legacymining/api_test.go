@@ -31,6 +31,11 @@ func TestRejectionClasses(t *testing.T) {
 		{KindAttestationType, http.StatusBadRequest, mining.ReasonAttestation},
 		{KindDuplicate, http.StatusBadRequest, mining.ReasonDuplicate},
 		{KindNonceConflict, http.StatusBadRequest, mining.ReasonAttestation},
+		{KindOwnerRateLimited, http.StatusServiceUnavailable, ""},
+		{KindOwnerPendingFull, http.StatusServiceUnavailable, ""},
+		{KindNotEnrolled, http.StatusBadRequest, mining.ReasonAttestation},
+		{KindBadOperatorSig, http.StatusBadRequest, mining.ReasonAttestation},
+		{KindOwnerCooldown, http.StatusServiceUnavailable, ""},
 		{0, http.StatusServiceUnavailable, ""},
 		{250, http.StatusServiceUnavailable, ""},
 	}
@@ -56,12 +61,36 @@ func TestRejectionClasses(t *testing.T) {
 		} else if isRej || !isUnavail {
 			t.Errorf("%v: As RejectError=%v Is ErrUnavailable=%v, want false/true", c.kind, isRej, isUnavail)
 		}
-		if c.kind >= KindAdmissionClosed && c.kind <= KindNonceConflict {
+		if c.kind >= KindAdmissionClosed && c.kind <= KindOwnerCooldown {
 			label := c.kind.String()
 			if label == "invalid" || labels[label] != 0 {
 				t.Errorf("%v: label %q invalid or reused", c.kind, label)
 			}
 			labels[label] = c.kind
+		}
+	}
+	if len(labels) != int(KindOwnerCooldown) {
+		t.Errorf("%d labelled kinds, want %d: every kind needs a case", len(labels), KindOwnerCooldown)
+	}
+	if (KindOwnerCooldown + 1).String() != "invalid" {
+		t.Error("a kind past KindOwnerCooldown has a label; add it to this table")
+	}
+	// The HL1 kinds keep their numeric values (they are appended, never
+	// inserted).
+	if KindNonceConflict != 10 || KindOwnerRateLimited != 11 || KindOwnerCooldown != 15 {
+		t.Errorf("kind values moved: NonceConflict=%d OwnerRateLimited=%d OwnerCooldown=%d",
+			KindNonceConflict, KindOwnerRateLimited, KindOwnerCooldown)
+	}
+	wantLabels := map[RejectKind]string{
+		KindOwnerRateLimited: "owner-rate-limited",
+		KindOwnerPendingFull: "owner-pending-full",
+		KindNotEnrolled:      "not-enrolled",
+		KindBadOperatorSig:   "bad-operator-sig",
+		KindOwnerCooldown:    "owner-cooldown",
+	}
+	for k, w := range wantLabels {
+		if k.String() != w {
+			t.Errorf("kind %d label %q, want %q", k, k.String(), w)
 		}
 	}
 	if RejectKindOf(errors.New("plain")) != 0 || RejectKindOf(nil) != 0 {

@@ -50,9 +50,9 @@ func (e Env) LegacyDir() string { return filepath.Dir(e.DBPath) }
 // unset it returns ModeOff (Stage A). Otherwise every failure below is an S2
 // refusal, and the caller exits ExitFatalRestore:
 //   - a partial set wraps ErrEnvPartial;
-//   - a mode other than ModeCanary, a DB path that is not a clean absolute
-//     .../LegacyDirName/DBFile path, or a config path that is not clean and
-//     absolute wraps ErrConfig;
+//   - a mode other than ModeCanary or ModePublic, a DB path that is not a
+//     clean absolute .../LegacyDirName/DBFile path, or a config path that is
+//     not clean and absolute wraps ErrConfig;
 //   - a pin that is not 64 hex characters wraps ErrConfigHash.
 func LoadEnv(getenv func(string) string) (Env, error) {
 	names := [...]string{EnvMode, EnvDB, EnvCanaryConfig, EnvCanaryConfigSHA256}
@@ -73,8 +73,8 @@ func LoadEnv(getenv func(string) string) (Env, error) {
 		return Env{}, fmt.Errorf("%w: set %s; unset %s", ErrEnvPartial, strings.Join(set, ","), strings.Join(unset, ","))
 	}
 	e := Env{Mode: Mode(vals[0]), DBPath: vals[1], ConfigPath: vals[2]}
-	if e.Mode != ModeCanary {
-		return Env{}, fmt.Errorf("%w: %s=%q, want %q", ErrConfig, EnvMode, vals[0], ModeCanary)
+	if e.Mode != ModeCanary && e.Mode != ModePublic {
+		return Env{}, fmt.Errorf("%w: %s=%q, want %q or %q", ErrConfig, EnvMode, vals[0], ModeCanary, ModePublic)
 	}
 	if !cleanAbs(e.DBPath) || filepath.Base(e.DBPath) != DBFile || filepath.Base(e.LegacyDir()) != LegacyDirName {
 		return Env{}, fmt.Errorf("%w: %s=%q is not an absolute .../%s/%s path", ErrConfig, EnvDB, e.DBPath, LegacyDirName, DBFile)
@@ -114,21 +114,97 @@ func LoadConfig(path string, pin ConfigHash) (Config, error) {
 	return ParseConfig(data, pin)
 }
 
+// configV1Wire is the exact HL1 field set: a v1 file is decoded strictly
+// against it, so a v2-only field in a v1 file is an unknown field.
+type configV1Wire struct {
+	Version         int          `json:"version"`
+	Allowed         []AllowEntry `json:"allowed"`
+	MaxProofsPerMin int          `json:"max_proofs_per_min"`
+	MaxProofsTotal  uint64       `json:"max_proofs_total"`
+	MaxPending      int          `json:"max_pending"`
+	BudgetCell      uint64       `json:"budget_cell"`
+	ExpiresUnix     int64        `json:"expires_unix"`
+}
+
+// configV2Wire is the v2 field set.
+type configV2Wire struct {
+	Version                 int          `json:"version"`
+	Allowed                 []AllowEntry `json:"allowed"`
+	MaxProofsPerMin         int          `json:"max_proofs_per_min"`
+	MaxProofsPerMinPerOwner int          `json:"max_proofs_per_min_per_owner"`
+	MaxProofsTotal          uint64       `json:"max_proofs_total"`
+	MaxPending              int          `json:"max_pending"`
+	MaxPendingPerOwner      int          `json:"max_pending_per_owner"`
+	OwnerEpochCapCell       uint64       `json:"owner_epoch_cap_cell"`
+	DifficultyBits          int          `json:"difficulty_bits"`
+	RequireOperatorSig      bool         `json:"require_operator_sig"`
+	RequireFullyBonded      bool         `json:"require_fully_bonded"`
+	BondedSlotCap           int          `json:"bonded_slot_cap"`
+	BudgetCell              uint64       `json:"budget_cell"`
+	ExpiresUnix             int64        `json:"expires_unix"`
+}
+
+// decodeStrict decodes exactly one JSON value from data into v, rejecting
+// unknown fields and trailing data.
+func decodeStrict(data []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return fmt.Errorf("%w: %v", ErrConfig, err)
+	}
+	if err := dec.Decode(new(json.RawMessage)); err != io.EOF {
+		return fmt.Errorf("%w: trailing data after the config object", ErrConfig)
+	}
+	return nil
+}
+
 // ParseConfig checks sha256(data) against pin (ErrConfigHash), decodes data
-// strictly (unknown fields and trailing data are rejected) and validates the
-// result with ValidateConfig. Decode and validation failures wrap ErrConfig.
+// strictly against the field set of its version (unknown fields and trailing
+// data are rejected) and validates the result with ValidateConfig. Decode
+// and validation failures wrap ErrConfig. The hash is always over the raw
+// bytes, before any decoding, so a v1 file's pin is unchanged from HL1.
+//
+// The version is read first with a lenient decode of the "version" member
+// only; the strict decode against configV1Wire or configV2Wire follows. A
+// v1 file is therefore accepted or refused exactly as by HL1.
 func ParseConfig(data []byte, pin ConfigHash) (Config, error) {
 	if sum := sha256.Sum256(data); sum != pin {
 		return Config{}, fmt.Errorf("%w: file %x, pinned %x", ErrConfigHash, sum, pin)
 	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	var c Config
-	if err := dec.Decode(&c); err != nil {
+	var probe struct {
+		Version int `json:"version"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(data)).Decode(&probe); err != nil {
 		return Config{}, fmt.Errorf("%w: %v", ErrConfig, err)
 	}
-	if err := dec.Decode(new(json.RawMessage)); err != io.EOF {
-		return Config{}, fmt.Errorf("%w: trailing data after the config object", ErrConfig)
+	var c Config
+	switch probe.Version {
+	case ConfigVersion1:
+		var w configV1Wire
+		if err := decodeStrict(data, &w); err != nil {
+			return Config{}, err
+		}
+		c = Config{
+			Version: w.Version, Allowed: w.Allowed, MaxProofsPerMin: w.MaxProofsPerMin,
+			MaxProofsTotal: w.MaxProofsTotal, MaxPending: w.MaxPending, BudgetCell: w.BudgetCell,
+			ExpiresUnix: w.ExpiresUnix,
+		}
+	case ConfigVersion2:
+		var w configV2Wire
+		if err := decodeStrict(data, &w); err != nil {
+			return Config{}, err
+		}
+		c = Config{
+			Version: w.Version, Allowed: w.Allowed, MaxProofsPerMin: w.MaxProofsPerMin,
+			MaxProofsTotal: w.MaxProofsTotal, MaxPending: w.MaxPending, BudgetCell: w.BudgetCell,
+			ExpiresUnix:             w.ExpiresUnix,
+			MaxProofsPerMinPerOwner: w.MaxProofsPerMinPerOwner, MaxPendingPerOwner: w.MaxPendingPerOwner,
+			OwnerEpochCapCell: w.OwnerEpochCapCell, DifficultyBits: w.DifficultyBits,
+			RequireOperatorSig: w.RequireOperatorSig, RequireFullyBonded: w.RequireFullyBonded,
+			BondedSlotCap: w.BondedSlotCap,
+		}
+	default:
+		return Config{}, fmt.Errorf("%w: version %d, want %d or %d", ErrConfig, probe.Version, ConfigVersion1, ConfigVersion2)
 	}
 	if err := ValidateConfig(c); err != nil {
 		return Config{}, err
@@ -136,14 +212,30 @@ func ParseConfig(data []byte, pin ConfigHash) (Config, error) {
 	return c, nil
 }
 
-// ValidateConfig applies the Config rules documented in api.go. A failure
-// wraps ErrConfig and lists every violated rule. Expiry is not checked here:
-// it is a graceful ADMISSION_STOP trigger, not a load failure.
+// ValidateConfig applies the Config rules documented in api.go for
+// c.Version. A failure wraps ErrConfig and lists every violated rule. Expiry
+// is not checked here: it is a graceful ADMISSION_STOP trigger, not a load
+// failure. The mode rules are separate (CheckModeConfig).
 func ValidateConfig(c Config) error {
 	var bad []string
-	if c.Version != ConfigVersion {
-		bad = append(bad, fmt.Sprintf("version %d, want %d", c.Version, ConfigVersion))
+	switch c.Version {
+	case ConfigVersion1:
+		bad = validateV1(c)
+	case ConfigVersion2:
+		bad = validateV2(c)
+	default:
+		bad = []string{fmt.Sprintf("version %d, want %d or %d", c.Version, ConfigVersion1, ConfigVersion2)}
 	}
+	if len(bad) != 0 {
+		return fmt.Errorf("%w: %s", ErrConfig, strings.Join(bad, "; "))
+	}
+	return nil
+}
+
+// validateV1 is the HL1 rule set, unchanged, plus the rule that a v1 Config
+// sets no v2-only field (a v1 file cannot).
+func validateV1(c Config) []string {
+	var bad []string
 	if len(c.Allowed) != 1 {
 		bad = append(bad, fmt.Sprintf("%d allowed entries, want exactly 1", len(c.Allowed)))
 	} else {
@@ -169,8 +261,124 @@ func ValidateConfig(c Config) error {
 	if c.ExpiresUnix <= 0 {
 		bad = append(bad, "expires_unix must be > 0")
 	}
-	if len(bad) != 0 {
-		return fmt.Errorf("%w: %s", ErrConfig, strings.Join(bad, "; "))
+	if c.MaxProofsPerMinPerOwner != 0 || c.MaxPendingPerOwner != 0 || c.OwnerEpochCapCell != 0 || c.DifficultyBits != 0 ||
+		c.RequireOperatorSig || c.RequireFullyBonded || c.BondedSlotCap != 0 {
+		bad = append(bad, "a version 1 config sets a version 2 field")
+	}
+	return bad
+}
+
+// validateV2 is the HL2 rule set (api.go Config).
+func validateV2(c Config) []string {
+	var bad []string
+	if len(c.Allowed) > MaxAllowedEntries {
+		bad = append(bad, fmt.Sprintf("%d allowed entries, want at most %d", len(c.Allowed), MaxAllowedEntries))
+	}
+	nodes := make(map[string]int, len(c.Allowed))
+	for i, e := range c.Allowed {
+		if !isLowerHex64(e.MinerAddr) {
+			bad = append(bad, fmt.Sprintf("allowed[%d].miner_addr is not 64 lowercase hex characters", i))
+		}
+		if e.NodeID == "" {
+			bad = append(bad, fmt.Sprintf("allowed[%d].node_id is empty", i))
+		} else if j, dup := nodes[e.NodeID]; dup {
+			bad = append(bad, fmt.Sprintf("allowed[%d].node_id repeats allowed[%d]", i, j))
+		} else {
+			nodes[e.NodeID] = i
+		}
+	}
+	if c.MaxProofsPerMin <= 0 || c.MaxProofsPerMin > MaxProofsPerMinLimit {
+		bad = append(bad, fmt.Sprintf("max_proofs_per_min %d outside 1..%d", c.MaxProofsPerMin, MaxProofsPerMinLimit))
+	}
+	if c.MaxProofsPerMinPerOwner <= 0 || c.MaxProofsPerMinPerOwner > c.MaxProofsPerMin {
+		bad = append(bad, fmt.Sprintf("max_proofs_per_min_per_owner %d outside 1..max_proofs_per_min", c.MaxProofsPerMinPerOwner))
+	}
+	if c.MaxProofsTotal == 0 {
+		bad = append(bad, "max_proofs_total must be > 0")
+	}
+	if c.MaxPending <= 0 || c.MaxPending > MaxPendingLimit {
+		bad = append(bad, fmt.Sprintf("max_pending %d outside 1..%d", c.MaxPending, MaxPendingLimit))
+	}
+	if c.MaxPendingPerOwner <= 0 || c.MaxPendingPerOwner > c.MaxPending {
+		bad = append(bad, fmt.Sprintf("max_pending_per_owner %d outside 1..max_pending", c.MaxPendingPerOwner))
+	}
+	if c.BudgetCell == 0 {
+		bad = append(bad, "budget_cell must be > 0")
+	}
+	if c.OwnerEpochCapCell == 0 || c.OwnerEpochCapCell > c.BudgetCell {
+		bad = append(bad, fmt.Sprintf("owner_epoch_cap_cell %d outside 1..budget_cell", c.OwnerEpochCapCell))
+	}
+	if c.DifficultyBits < MinDifficultyBits || c.DifficultyBits > MaxDifficultyBits {
+		bad = append(bad, fmt.Sprintf("difficulty_bits %d outside %d..%d", c.DifficultyBits, MinDifficultyBits, MaxDifficultyBits))
+	}
+	if c.BondedSlotCap <= 0 || c.BondedSlotCap > MaxBondedSlotCap {
+		bad = append(bad, fmt.Sprintf("bonded_slot_cap %d outside 1..%d", c.BondedSlotCap, MaxBondedSlotCap))
+	}
+	if c.ExpiresUnix <= 0 {
+		bad = append(bad, "expires_unix must be > 0")
+	}
+	return bad
+}
+
+// CheckModeConfig validates c (ValidateConfig) and then the mode/version
+// rules. A failure wraps ErrConfig, and the boot exits ExitFatalRestore:
+//   - ModeCanary accepts v1 or v2. A v2 canary needs at least one Allowed
+//     entry: the canary is an allowlist.
+//   - ModePublic requires v2 with RequireOperatorSig and RequireFullyBonded
+//     (operator decisions M1 and M3). Allowed is optional (0..K).
+//   - every other mode, including ModeOff, has no config and is refused.
+//
+// Passing these rules does not mean the binary enforces the config: see
+// CheckSupported.
+func CheckModeConfig(mode Mode, c Config) error {
+	if err := ValidateConfig(c); err != nil {
+		return err
+	}
+	switch mode {
+	case ModeCanary:
+		if c.Version == ConfigVersion2 && len(c.Allowed) == 0 {
+			return fmt.Errorf("%w: mode %q with a version 2 config needs at least one allowed entry", ErrConfig, mode)
+		}
+		return nil
+	case ModePublic:
+		var bad []string
+		if c.Version != ConfigVersion2 {
+			bad = append(bad, fmt.Sprintf("version %d, want %d", c.Version, ConfigVersion2))
+		} else {
+			if !c.RequireOperatorSig {
+				bad = append(bad, "require_operator_sig must be true")
+			}
+			if !c.RequireFullyBonded {
+				bad = append(bad, "require_fully_bonded must be true")
+			}
+		}
+		if len(bad) != 0 {
+			return fmt.Errorf("%w: mode %q: %s", ErrConfig, mode, strings.Join(bad, "; "))
+		}
+		return nil
+	}
+	return fmt.Errorf("%w: mode %q takes no config; want %q or %q", ErrConfig, mode, ModeCanary, ModePublic)
+}
+
+// CheckSupported is the HL2 WP-A fail-closed gate. It returns an error
+// wrapping ErrNotImplemented for every mode/config pair that the contract
+// defines but this binary does not enforce yet, and the boot exits
+// ExitFatalRestore:
+//   - ModePublic (needs WP-B..E: per-owner admission, operator keys, the
+//     per-owner ledger and the configurable difficulty);
+//   - a v2 config in any mode, because the Guard, Ledger and miningsvc
+//     still enforce only the v1 fields. Booting one would silently ignore
+//     its per-owner caps, difficulty_bits, require_operator_sig and
+//     require_fully_bonded.
+//
+// Only ModeCanary with a v1 config passes, exactly as in HL1. Each HL2 work
+// package narrows this gate when its enforcement lands.
+func CheckSupported(mode Mode, c Config) error {
+	switch {
+	case mode == ModePublic:
+		return fmt.Errorf("%w: %s=%q needs HL2 work packages WP-B..E; this binary refuses to boot it", ErrNotImplemented, EnvMode, mode)
+	case c.Version != ConfigVersion1:
+		return fmt.Errorf("%w: config version %d is not enforced by this binary (HL2 WP-B..E); use a version %d config", ErrNotImplemented, c.Version, ConfigVersion1)
 	}
 	return nil
 }
@@ -475,6 +683,11 @@ var _ Guard = (*CanaryGuard)(nil)
 // latches left by earlier boots. KILL is read by State on every call.
 func NewGuard(o GuardOptions) (*CanaryGuard, error) {
 	if err := ValidateConfig(o.Config); err != nil {
+		return nil, err
+	}
+	// The CanaryGuard enforces the v1 (single allowlisted pair) rules only
+	// (HL2 WP-A; WP-B lifts this).
+	if err := CheckSupported(ModeCanary, o.Config); err != nil {
 		return nil, err
 	}
 	if o.FailStop == nil || o.EnrollmentActive == nil {

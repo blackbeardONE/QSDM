@@ -383,6 +383,11 @@ func TestLoadEnv(t *testing.T) {
 		e.LegacyDir() != filepath.Join(root, LegacyDirName) {
 		t.Fatalf("full: %+v, %v", e, err)
 	}
+	// HL2: "public" is a known mode at the env level (S2 refuses it later,
+	// see CheckSupported).
+	if e, err := LoadEnv(with(map[string]string{EnvMode: "public"})); err != nil || e.Mode != ModePublic || e.DBPath != db {
+		t.Fatalf("public: %+v, %v", e, err)
+	}
 	for _, k := range []string{EnvMode, EnvDB, EnvCanaryConfig, EnvCanaryConfigSHA256} {
 		if _, err := LoadEnv(with(map[string]string{k: ""})); !errors.Is(err, ErrEnvPartial) {
 			t.Errorf("%s unset: %v, want ErrEnvPartial", k, err)
@@ -402,6 +407,9 @@ func TestLoadEnv(t *testing.T) {
 		want error
 	}{
 		{map[string]string{EnvMode: "off"}, ErrConfig},
+		{map[string]string{EnvMode: "Public"}, ErrConfig},
+		{map[string]string{EnvMode: "public "}, ErrConfig},
+		{map[string]string{EnvMode: "open"}, ErrConfig},
 		{map[string]string{EnvMode: "Canary"}, ErrConfig},
 		{map[string]string{EnvMode: " canary"}, ErrConfig},
 		{map[string]string{EnvDB: filepath.Join(LegacyDirName, DBFile)}, ErrConfig},
@@ -467,7 +475,11 @@ func TestLoadConfig(t *testing.T) {
 		"trailing garbage":   {good + `x`, "trailing data"},
 		"not an object":      {`[]`, "cannot unmarshal"},
 		"null":               {`null`, "version 0"},
-		"version 2":          {edit(`"version":1`, `"version":2`), "version 2"},
+		"version 3":          {edit(`"version":1`, `"version":3`), "version 3, want 1 or 2"},
+		"version 0":          {edit(`"version":1`, `"version":0`), "version 0, want 1 or 2"},
+		"no version":         {edit(`"version":1,`, ``), "version 0, want 1 or 2"},
+		"string version":     {edit(`"version":1`, `"version":"1"`), "cannot unmarshal"},
+		"v1 doc as v2":       {edit(`"version":1`, `"version":2`), "max_proofs_per_min_per_owner"},
 		"no allowed":         {edit(entry, `[]`), "0 allowed entries"},
 		"null allowed":       {edit(entry, `null`), "0 allowed entries"},
 		"two allowed":        {edit(entry, two), "2 allowed entries"},

@@ -210,6 +210,34 @@ func TestHL1BootPartialLegacyMiningEnvExits78(t *testing.T) {
 	}
 }
 
+// HL2 WP-A: a binary that knows ModePublic but does not implement it yet
+// refuses the boot at S2 with exit 78 and a "not yet implemented" message,
+// and never reaches S3 (no stale-temp cleanup, no new FAILSTOP.armed).
+func TestHL1BootPublicModeExits78(t *testing.T) {
+	if testing.Short() {
+		t.Skip("process-level boot test")
+	}
+	dir, stale := hl1StateFixture(t)
+	cfgPath, pin := hl1V2ConfigFile(t, t.TempDir(), "mining-public.json", nil)
+	code, out := hl1RunMain(t, dir,
+		legacymining.EnvMode+"=public",
+		legacymining.EnvDB+"="+filepath.Join(dir, legacymining.LegacyDirName, legacymining.DBFile),
+		legacymining.EnvCanaryConfig+"="+cfgPath,
+		legacymining.EnvCanaryConfigSHA256+"="+pin,
+	)
+	if code != legacymining.ExitFatalRestore || !strings.Contains(out, "hl1 S2") || !strings.Contains(out, "not yet implemented") {
+		t.Fatalf("exit = %d, want 78 at S2 (not yet implemented)\n%s", code, out)
+	}
+	for _, p := range stale {
+		if _, err := os.Lstat(p); err != nil {
+			t.Fatalf("public refusal ran the S3 cleanup: %v", err)
+		}
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, legacymining.FailStopArmedFile)); err != nil || string(b) != `{"release":"old"}` {
+		t.Fatalf("public refusal re-armed FAILSTOP: %q, %v", b, err)
+	}
+}
+
 func TestHL1BootConfigLoadFailureStaysExit1(t *testing.T) {
 	if testing.Short() {
 		t.Skip("process-level boot test")

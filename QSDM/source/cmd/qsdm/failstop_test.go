@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -281,6 +282,36 @@ func hl1CanaryConfigFile(t *testing.T, dir string) (string, string) {
 	return p, hex.EncodeToString(sum[:])
 }
 
+// hl1V2ConfigFile writes a valid HL2 v2 config (public-mode compatible
+// unless mutated) and returns its path and pin.
+func hl1V2ConfigFile(t *testing.T, dir, name string, mut func(*legacymining.Config)) (string, string) {
+	t.Helper()
+	cfg := legacymining.Config{
+		Version:                 2,
+		Allowed:                 []legacymining.AllowEntry{{MinerAddr: strings.Repeat("ab", 32), NodeID: "node-1"}},
+		MaxProofsPerMin:         120,
+		MaxProofsPerMinPerOwner: 10,
+		MaxProofsTotal:          72000,
+		MaxPending:              600,
+		MaxPendingPerOwner:      100,
+		OwnerEpochCapCell:       2000,
+		DifficultyBits:          24,
+		RequireOperatorSig:      true,
+		RequireFullyBonded:      true,
+		BondedSlotCap:           2,
+		BudgetCell:              30808,
+		ExpiresUnix:             4102444800,
+	}
+	if mut != nil {
+		mut(&cfg)
+	}
+	data, _ := json.Marshal(cfg)
+	p := filepath.Join(dir, name)
+	hl1WriteFile(t, p, string(data))
+	sum := sha256.Sum256(data)
+	return p, hex.EncodeToString(sum[:])
+}
+
 func TestHL1LoadBootConfig(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath, pin := hl1CanaryConfigFile(t, dir)
@@ -335,6 +366,58 @@ func TestHL1LoadBootConfig(t *testing.T) {
 		})
 	}
 
+	// HL2 WP-A: the mode/version matrix at S2. Only canary + v1 boots;
+	// public and every v2 config are refused (exit 78 through S1-S3).
+	v2Path, v2Pin := hl1V2ConfigFile(t, dir, "v2.json", nil)
+	v2NoSig, v2NoSigPin := hl1V2ConfigFile(t, dir, "v2-nosig.json", func(c *legacymining.Config) { c.RequireOperatorSig = false })
+	v2NoBond, v2NoBondPin := hl1V2ConfigFile(t, dir, "v2-nobond.json", func(c *legacymining.Config) { c.RequireFullyBonded = false })
+	v2Open, v2OpenPin := hl1V2ConfigFile(t, dir, "v2-open.json", func(c *legacymining.Config) { c.Allowed = nil })
+	cfgWith := func(mode, path, pin string) map[string]string {
+		m := with(legacymining.EnvMode, mode)
+		m[legacymining.EnvCanaryConfig] = path
+		m[legacymining.EnvCanaryConfigSHA256] = pin
+		return m
+	}
+	for name, tc := range map[string]struct {
+		env  map[string]string
+		want error
+		text string
+	}{
+		"public v2":                 {cfgWith("public", v2Path, v2Pin), legacymining.ErrNotImplemented, "not yet implemented"},
+		"public v2 no allowlist":    {cfgWith("public", v2Open, v2OpenPin), legacymining.ErrNotImplemented, "WP-B..E"},
+		"public v1":                 {cfgWith("public", cfgPath, pin), legacymining.ErrConfig, "version 1, want 2"},
+		"public v2 no operator sig": {cfgWith("public", v2NoSig, v2NoSigPin), legacymining.ErrConfig, "require_operator_sig"},
+		"public v2 not bonded":      {cfgWith("public", v2NoBond, v2NoBondPin), legacymining.ErrConfig, "require_fully_bonded"},
+		"public hash mismatch":      {cfgWith("public", v2Path, pin), legacymining.ErrConfigHash, ""},
+		"canary v2":                 {cfgWith("canary", v2Path, v2Pin), legacymining.ErrNotImplemented, "config version 2"},
+		"canary v2 no allowlist":    {cfgWith("canary", v2Open, v2OpenPin), legacymining.ErrConfig, "allowed entry"},
+		"unknown mode":              {cfgWith("solo", v2Path, v2Pin), legacymining.ErrConfig, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := hl1LoadBootConfig(env(tc.env), nil)
+			if !errors.Is(err, tc.want) || !strings.Contains(fmt.Sprint(err), tc.text) {
+				t.Fatalf("err = %v, want %v containing %q", err, tc.want, tc.text)
+			}
+		})
+	}
+	// Public mode never reaches S3: exit 78 at S2, naming the reason.
+	for k, v := range cfgWith("public", v2Path, v2Pin) {
+		t.Setenv(k, v)
+	}
+	if code := hl1CatchExit(t, func() { hl1BootS1S3(t.TempDir(), "r") }); code != 78 {
+		t.Fatalf("public through hl1BootS1S3: exit = %d, want 78", code)
+	}
+	// A v2 canary config is refused the same way.
+	for k, v := range cfgWith("canary", v2Path, v2Pin) {
+		t.Setenv(k, v)
+	}
+	if code := hl1CatchExit(t, func() { hl1BootS1S3(t.TempDir(), "r") }); code != 78 {
+		t.Fatalf("canary v2 through hl1BootS1S3: exit = %d, want 78", code)
+	}
+	for _, k := range []string{legacymining.EnvMode, legacymining.EnvDB, legacymining.EnvCanaryConfig, legacymining.EnvCanaryConfigSHA256} {
+		t.Setenv(k, "")
+	}
+
 	// The same refusals exit 78 through S1-S3.
 	t.Setenv(legacymining.EnvMode, "canary")
 	if code := hl1CatchExit(t, func() { hl1BootS1S3(t.TempDir(), "r") }); code != 78 {
@@ -362,6 +445,9 @@ func TestHL1SyncURLsNotStartedInProducerRole(t *testing.T) {
 	}
 	if err := hl1CheckSyncURLs(legacymining.ModeOff, urls); err != nil {
 		t.Fatalf("Stage A refuses sync URLs: %v", err)
+	}
+	if err := hl1CheckSyncURLs(legacymining.ModePublic, urls); err == nil {
+		t.Fatal("public mode accepted HTTP chain sync")
 	}
 	if err := hl1CheckSyncURLs(legacymining.ModeCanary, urls); err == nil {
 		t.Fatal("canary accepts sync URLs")

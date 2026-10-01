@@ -1,7 +1,8 @@
 package legacymining
 
-// FROZEN CONTRACT (WP1). See doc.go. Section references (§, S, H, I, W, L)
-// are to the HL1 design rev 4.
+// FROZEN CONTRACT (WP1), revised once for HL2 (WP-A). See doc.go. Section
+// references (§, S, H, I, W, L) are to the HL1 design rev 4; "HL2 §n" refers
+// to hl1/HL2_PUBLIC_MODE_DESIGN.md.
 
 import (
 	"errors"
@@ -22,8 +23,9 @@ import (
 // payload.
 type ProofID [32]byte
 
-// ConfigHash is the SHA-256 of the canary config file bytes (§6.1), pinned by
-// EnvCanaryConfigSHA256. It keys proofs.config_sha256 and the counter window
+// ConfigHash is the SHA-256 of the config file bytes (§6.1), pinned by
+// EnvCanaryConfigSHA256. It is the hash of the raw bytes for every config
+// version, so a v1 file keeps the hash it had under HL1. It keys proofs.config_sha256 and the counter window
 // (config_windows). Only a new ConfigHash resets the counters.
 type ConfigHash [32]byte
 
@@ -37,14 +39,23 @@ type Mode string
 const (
 	// ModeOff means all four Env* variables are unset (Stage A).
 	ModeOff Mode = ""
-	// ModeCanary admits proofs from the single allowlisted miner (Stage B).
+	// ModeCanary admits proofs from the allowlisted miners (Stage B). With a
+	// v1 config that is exactly one (miner, node) pair, as in HL1.
 	ModeCanary Mode = "canary"
+	// ModePublic (HL2) admits proofs from any enrolled, fully bonded owner
+	// that signs its submissions, subject to per-owner caps. It requires a
+	// v2 config (see CheckModeConfig). Until HL2 WP-B..E land, every boot in
+	// this mode is refused with ErrNotImplemented (exit ExitFatalRestore).
+	ModePublic Mode = "public"
 )
 
 // Environment variables. Either all four are set or none is. Each of these
 // exits ExitFatalRestore (S2): a partial set (ErrEnvPartial), a mode other
-// than ModeCanary, a config SHA-256 mismatch (ErrConfigHash) or an invalid
-// config (ErrConfig).
+// than ModeCanary or ModePublic, a config SHA-256 mismatch (ErrConfigHash),
+// an invalid config or a mode/version mismatch (ErrConfig), or a mode or
+// config version this binary does not enforce yet (ErrNotImplemented).
+// EnvCanaryConfig and EnvCanaryConfigSHA256 name the config file in every
+// mode; the names are kept from HL1.
 const (
 	EnvMode               = "QSDM_LEGACY_MINING_MODE"
 	EnvDB                 = "QSDM_LEGACY_MINING_DB"
@@ -52,18 +63,46 @@ const (
 	EnvCanaryConfigSHA256 = "QSDM_LEGACY_MINING_CANARY_CONFIG_SHA256"
 )
 
-// Config is the canary config file (§6.1). It is decoded strictly: unknown
-// fields and trailing data are rejected. The validation rules below live in
-// guard.go, and a failure wraps ErrConfig:
-//   - Version == ConfigVersion;
+// Config is the config file (§6.1; HL2 §4 WP-A). Two versions exist. The
+// file is decoded strictly against the field set of its own version: the
+// "version" member selects the version, then unknown fields (including the
+// other version's fields) and trailing data are rejected. The validation
+// rules below live in guard.go (ValidateConfig), and a failure wraps
+// ErrConfig. Expiry is a §6.6 trigger (graceful ADMISSION_STOP), not a load
+// failure, so a restart after expiry still boots the chain.
+//
+// Version 1 (ConfigVersion1, HL1) has exactly the HL1 fields and rules,
+// unchanged:
 //   - exactly one Allowed entry, whose MinerAddr is 64 lowercase hex and
 //     whose NodeID is non-empty;
 //   - MaxProofsPerMin > 0, MaxProofsTotal > 0 and BudgetCell > 0;
 //   - 0 < MaxPending <= MaxPendingLimit;
-//   - ExpiresUnix > 0.
+//   - ExpiresUnix > 0;
+//   - every v2-only field is zero (a v1 file cannot set them; this rule
+//     only matters for a Config built in code).
 //
-// Expiry is a §6.6 trigger (graceful ADMISSION_STOP), not a load failure, so
-// a restart after expiry still boots the chain.
+// Version 2 (ConfigVersion2, HL2) has every field. Its rules are:
+//   - 0..MaxAllowedEntries Allowed entries, each valid as in v1, with no
+//     NodeID listed twice. Whether an empty list is allowed depends on the
+//     mode (CheckModeConfig);
+//   - 0 < MaxProofsPerMin <= MaxProofsPerMinLimit (the global bucket);
+//   - 0 < MaxProofsPerMinPerOwner <= MaxProofsPerMin. This is the per-owner
+//     rate per bonded slot: an owner's bucket is MaxProofsPerMinPerOwner *
+//     min(bonded active nodes of the owner, BondedSlotCap) (HL2 §2 M3), and
+//     the global bucket still applies;
+//   - MaxProofsTotal > 0 (the global proof-total ADMISSION_STOP stays);
+//   - 0 < MaxPending <= MaxPendingLimit;
+//   - 0 < MaxPendingPerOwner <= MaxPending. A flat per-owner cap, not scaled
+//     by slots;
+//   - 0 < OwnerEpochCapCell <= BudgetCell. A flat per-owner cap, in whole
+//     CELL, on the amount emitted to the owner per OwnerEpoch;
+//   - MinDifficultyBits <= DifficultyBits <= MaxDifficultyBits. The
+//     admission difficulty is 2^DifficultyBits (HL2 §2 M4);
+//   - 0 < BondedSlotCap <= MaxBondedSlotCap;
+//   - BudgetCell > 0 and ExpiresUnix > 0, as in v1.
+//
+// RequireOperatorSig and RequireFullyBonded are free booleans in v2; the
+// mode rules (CheckModeConfig) require both in ModePublic.
 type Config struct {
 	Version         int          `json:"version"`
 	Allowed         []AllowEntry `json:"allowed"`
@@ -72,6 +111,17 @@ type Config struct {
 	MaxPending      int          `json:"max_pending"`      // pending plus in-flight cap
 	BudgetCell      uint64       `json:"budget_cell"`      // B, in whole CELL
 	ExpiresUnix     int64        `json:"expires_unix"`
+
+	// Version 2 only (zero in v1). The omitempty tags keep json.Marshal of a
+	// v1 Config identical to HL1. Decoding never uses these tags directly:
+	// ParseConfig decodes into a per-version wire struct.
+	MaxProofsPerMinPerOwner int    `json:"max_proofs_per_min_per_owner,omitempty"` // per bonded slot
+	MaxPendingPerOwner      int    `json:"max_pending_per_owner,omitempty"`
+	OwnerEpochCapCell       uint64 `json:"owner_epoch_cap_cell,omitempty"` // whole CELL per OwnerEpoch
+	DifficultyBits          int    `json:"difficulty_bits,omitempty"`
+	RequireOperatorSig      bool   `json:"require_operator_sig,omitempty"`
+	RequireFullyBonded      bool   `json:"require_fully_bonded,omitempty"`
+	BondedSlotCap           int    `json:"bonded_slot_cap,omitempty"` // k_max
 }
 
 // AllowEntry is one allowlisted (miner address, node) pair.
@@ -81,11 +131,27 @@ type AllowEntry struct {
 }
 
 const (
-	// ConfigVersion is the only accepted Config.Version.
-	ConfigVersion = 1
+	// ConfigVersion1 is the HL1 config version.
+	ConfigVersion1 = 1
+	// ConfigVersion2 is the HL2 config version.
+	ConfigVersion2 = 2
+	// ConfigVersion is the HL1 name of ConfigVersion1, kept for HL1 callers.
+	ConfigVersion = ConfigVersion1
+
 	// MaxPendingLimit bounds Config.MaxPending. The cap counts pending plus
 	// in-flight IDs, so the whole backlog always fits in one payload (§3.4).
 	MaxPendingLimit = MaxPayloadIDs
+
+	// Version 2 bounds (see Config).
+	MaxAllowedEntries    = 64   // K: Allowed entries in a v2 config
+	MaxProofsPerMinLimit = 6000 // global proofs per minute (100/s)
+	MinDifficultyBits    = 16   // 2^16 = D_min, the HL1 static difficulty; never easier
+	MaxDifficultyBits    = 48   // 2^48 hashes per proof; a typo guard, far above any useful setting
+	MaxBondedSlotCap     = 64   // k_max
+
+	// OwnerEpoch is the window of Config.OwnerEpochCapCell (HL2 §2 M3). WP-D
+	// defines the epoch boundaries.
+	OwnerEpoch = 24 * time.Hour
 )
 
 // -----------------------------------------------------------------------------
@@ -159,6 +225,30 @@ const (
 	// att_nonce) was hit (step 8). Reason: attestation. It counts toward the
 	// duplicate trigger.
 	KindNonceConflict
+
+	// HL2 kinds (contract revision WP-A). They are declared and classified
+	// here, but no code path produces them yet; the HL2 work packages that do
+	// (WP-B, WP-C, WP-D) add their per-owner metrics. None of them may feed a
+	// global latch (HL2 §1 Q4).
+
+	// KindOwnerRateLimited means the submitting owner's bucket
+	// (MaxProofsPerMinPerOwner times its bonded slots) is empty. 503.
+	KindOwnerRateLimited
+	// KindOwnerPendingFull means the owner's pending plus in-flight count is
+	// >= MaxPendingPerOwner. 503.
+	KindOwnerPendingFull
+	// KindNotEnrolled means the bundle node_id is not an active enrollment
+	// owned by miner_addr, or it fails the bond policy (RequireFullyBonded).
+	// Reason: attestation.
+	KindNotEnrolled
+	// KindBadOperatorSig means operator_sig is missing or does not verify
+	// against the owner's ML-DSA-87 key (RequireOperatorSig). Reason:
+	// attestation.
+	KindBadOperatorSig
+	// KindOwnerCooldown means the owner is in a per-owner, non-latching
+	// cooldown after misbehaviour (duplicates, nonce conflicts, bursts). 503
+	// with Retry-After.
+	KindOwnerCooldown
 )
 
 // String returns the kind's stable label, which is used in logs, metrics and
@@ -185,6 +275,16 @@ func (k RejectKind) String() string {
 		return "duplicate"
 	case KindNonceConflict:
 		return "nonce-conflict"
+	case KindOwnerRateLimited:
+		return "owner-rate-limited"
+	case KindOwnerPendingFull:
+		return "owner-pending-full"
+	case KindNotEnrolled:
+		return "not-enrolled"
+	case KindBadOperatorSig:
+		return "bad-operator-sig"
+	case KindOwnerCooldown:
+		return "owner-cooldown"
 	}
 	return "invalid"
 }
@@ -197,7 +297,7 @@ func (k RejectKind) rejectReason() (mining.RejectReason, bool) {
 		return mining.ReasonNonCanonical, true
 	case KindMinerNotAllowed:
 		return mining.ReasonBadAddr, true
-	case KindNodeNotAllowed, KindAttestationType, KindNonceConflict:
+	case KindNodeNotAllowed, KindAttestationType, KindNonceConflict, KindNotEnrolled, KindBadOperatorSig:
 		return mining.ReasonAttestation, true
 	case KindDuplicate:
 		return mining.ReasonDuplicate, true
@@ -863,6 +963,10 @@ var (
 	ErrEnvPartial = errors.New("legacymining: partial QSDM_LEGACY_MINING_* environment")
 	ErrConfig     = errors.New("legacymining: invalid canary config")
 	ErrConfigHash = errors.New("legacymining: canary config sha256 mismatch")
+	// ErrNotImplemented refuses a mode or config version that the contract
+	// defines but this binary does not enforce yet (HL2 WP-A: ModePublic, and
+	// v2 configs, until WP-B..E). The caller exits ExitFatalRestore.
+	ErrNotImplemented = errors.New("legacymining: not yet implemented")
 
 	ErrDBMissing    = errors.New("legacymining: database missing")
 	ErrUnsafePath   = errors.New("legacymining: unsafe legacy-mining path")

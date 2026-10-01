@@ -172,7 +172,7 @@ func (f *hl1FailStopper) Stop(code int, cause string) {
 // hl1BootConfig is the S2 result.
 type hl1BootConfig struct {
 	Env    legacymining.Env
-	Config legacymining.Config // valid only in ModeCanary
+	Config legacymining.Config // valid only in ModeCanary (ModePublic never passes S2 yet)
 }
 
 // Canary reports whether the canary environment is set.
@@ -194,18 +194,27 @@ func hl1RefuseFailStop(stateDir string) error {
 }
 
 // hl1LoadBootConfig is S2. getenv is os.Getenv in production, and syncURLs is
-// chainSyncURLsFromEnv().
+// chainSyncURLsFromEnv(). After the config loads, the mode/version rules
+// (CheckModeConfig, ErrConfig) and the HL2 WP-A gate (CheckSupported,
+// ErrNotImplemented) run: ModePublic and v2 configs are refused until HL2
+// WP-B..E land, so the caller exits 78.
 func hl1LoadBootConfig(getenv func(string) string, syncURLs []string) (hl1BootConfig, error) {
 	env, err := legacymining.LoadEnv(getenv)
 	if err != nil {
 		return hl1BootConfig{}, err
 	}
 	out := hl1BootConfig{Env: env}
-	if env.Mode != legacymining.ModeCanary {
+	if env.Mode == legacymining.ModeOff {
 		return out, nil
 	}
 	cfg, err := legacymining.LoadConfig(env.ConfigPath, env.ConfigSHA256)
 	if err != nil {
+		return hl1BootConfig{}, err
+	}
+	if err := legacymining.CheckModeConfig(env.Mode, cfg); err != nil {
+		return hl1BootConfig{}, err
+	}
+	if err := legacymining.CheckSupported(env.Mode, cfg); err != nil {
 		return hl1BootConfig{}, err
 	}
 	out.Config = cfg
@@ -215,20 +224,22 @@ func hl1LoadBootConfig(getenv func(string) string, syncURLs []string) (hl1BootCo
 	return out, nil
 }
 
-// hl1CheckSyncURLs refuses HTTP chain sync in canary mode (§2 (d), S2). The
-// production core.env sets QSDM_CHAIN_SYNC_URLS empty.
+// hl1CheckSyncURLs refuses HTTP chain sync whenever legacy mining is on
+// (canary or public; §2 (d), S2). The production core.env sets
+// QSDM_CHAIN_SYNC_URLS empty.
 func hl1CheckSyncURLs(mode legacymining.Mode, syncURLs []string) error {
-	if mode == legacymining.ModeCanary && len(syncURLs) > 0 {
-		return fmt.Errorf("legacy mining canary refuses QSDM_CHAIN_SYNC_URLS (%d source(s) configured); clear it", len(syncURLs))
+	if mode != legacymining.ModeOff && len(syncURLs) > 0 {
+		return fmt.Errorf("legacy mining %s refuses QSDM_CHAIN_SYNC_URLS (%d source(s) configured); clear it", mode, len(syncURLs))
 	}
 	return nil
 }
 
 // hl1LegacyDirs returns the legacy-mining directories whose stale temps S3
-// removes: <stateDir>/legacy-mining and, in canary mode, Env.LegacyDir().
+// removes: <stateDir>/legacy-mining and, when legacy mining is on,
+// Env.LegacyDir().
 func hl1LegacyDirs(stateDir string, env legacymining.Env) []string {
 	dirs := []string{filepath.Join(stateDir, legacymining.LegacyDirName)}
-	if env.Mode == legacymining.ModeCanary && filepath.Clean(env.LegacyDir()) != filepath.Clean(dirs[0]) {
+	if env.Mode != legacymining.ModeOff && filepath.Clean(env.LegacyDir()) != filepath.Clean(dirs[0]) {
 		dirs = append(dirs, env.LegacyDir())
 	}
 	return dirs
