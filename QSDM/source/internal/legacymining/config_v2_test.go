@@ -323,8 +323,9 @@ func TestModeVersionMatrix(t *testing.T) {
 	}
 }
 
-// NewGuard enforces v1 only, so it refuses a valid v2 config instead of
-// silently ignoring its per-owner fields.
+// NewGuard refuses a valid v2 config with require_operator_sig until an
+// OwnerAuth exists (WP-C), instead of silently ignoring the field. WP-B's
+// v2 guard options are tested in guard_owner_test.go.
 func TestNewGuardRefusesV2(t *testing.T) {
 	_, err := NewGuard(GuardOptions{
 		Dir: gtDir(t), Config: v2Config(), FailStop: func(int, string) {},

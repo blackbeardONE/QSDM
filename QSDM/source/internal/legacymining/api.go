@@ -44,8 +44,9 @@ const (
 	ModeCanary Mode = "canary"
 	// ModePublic (HL2) admits proofs from any enrolled, fully bonded owner
 	// that signs its submissions, subject to per-owner caps. It requires a
-	// v2 config (see CheckModeConfig). Until HL2 WP-B..E land, every boot in
-	// this mode is refused with ErrNotImplemented (exit ExitFatalRestore).
+	// v2 config (see CheckModeConfig). Until HL2 WP-C..E land, every boot in
+	// this mode is refused with ErrNotImplemented (exit ExitFatalRestore);
+	// the Guard side (WP-B) is implemented.
 	ModePublic Mode = "public"
 )
 
@@ -226,10 +227,12 @@ const (
 	// duplicate trigger.
 	KindNonceConflict
 
-	// HL2 kinds (contract revision WP-A). They are declared and classified
-	// here, but no code path produces them yet; the HL2 work packages that do
-	// (WP-B, WP-C, WP-D) add their per-owner metrics. None of them may feed a
-	// global latch (HL2 §1 Q4).
+	// HL2 kinds (contract revision WP-A). The Guard produces them for a
+	// version 2 config (WP-B): KindNotEnrolled in Precheck,
+	// KindOwnerRateLimited and KindOwnerCooldown in TakeOwnerRate,
+	// KindOwnerPendingFull in CheckOwnerPending. KindBadOperatorSig comes
+	// from the OwnerAuthFunc (WP-C). None of them feeds a global latch (HL2
+	// §1 Q4); GuardStats counts them.
 
 	// KindOwnerRateLimited means the submitting owner's bucket
 	// (MaxProofsPerMinPerOwner times its bonded slots) is empty. 503.
@@ -238,7 +241,8 @@ const (
 	// >= MaxPendingPerOwner. 503.
 	KindOwnerPendingFull
 	// KindNotEnrolled means the bundle node_id is not an active enrollment
-	// owned by miner_addr, or it fails the bond policy (RequireFullyBonded).
+	// owned by miner_addr, or it fails the bond policy: RequireFullyBonded
+	// and the node is not fully bonded, or the SlotPolicy gives it weight 0.
 	// Reason: attestation.
 	KindNotEnrolled
 	// KindBadOperatorSig means operator_sig is missing or does not verify
@@ -547,6 +551,140 @@ type Candidate struct {
 	Proof    *mining.Proof
 	NodeID   string   // from the HMAC bundle; allowlisted
 	AttNonce [32]byte // the attestation challenge nonce (bundle nonce)
+	// Owner (HL2 WP-B, version 2 configs only; "" with a v1 config) is the
+	// enrollment owner of NodeID, which Precheck has checked equals
+	// Proof.MinerAddr. It keys every per-owner bucket, cooldown and cap. A
+	// Candidate exists only for an attributed submission: Precheck rejects
+	// before an owner is known without touching any owner's state.
+	Owner string
+}
+
+// -----------------------------------------------------------------------------
+// HL2 per-owner admission (WP-B)
+// -----------------------------------------------------------------------------
+
+// EnrollmentInfo is the guard's view of one enrollment record
+// (pkg/mining/enrollment EnrollmentRecord). It carries no HMAC key.
+type EnrollmentInfo struct {
+	NodeID       string
+	Owner        string
+	Active       bool   // RevokedAtHeight == 0
+	FullyBonded  bool   // EnrollmentRecord.FullyBonded()
+	StakeDust    uint64 // for a future reduced-cap tier (SlotPolicy)
+	RequiredDust uint64 // EnrollmentRecord.RequiredBondDust()
+}
+
+// EnrollmentView is the read-only enrollment state a version 2 Guard looks up
+// per submission (HL2 §1 Q4: Precheck and the per-owner slots). cmd/qsdm
+// adapts *enrollment.InMemoryState (WP-C wiring). Both methods must be safe
+// for concurrent use; the guard never calls them with one of its locks held.
+type EnrollmentView interface {
+	// Lookup returns the record of nodeID, or false if there is none.
+	Lookup(nodeID string) (EnrollmentInfo, bool)
+	// OwnerNodes returns every record (active or not) owned by owner.
+	OwnerNodes(owner string) []EnrollmentInfo
+}
+
+// SlotUnit is one full bonded slot in SlotPolicy units.
+const SlotUnit = 1000
+
+// SlotPolicy returns the per-owner cap weight of one active enrollment, in
+// SlotUnit units (SlotUnit = one full slot; values are clamped to
+// 0..SlotUnit). A node of weight 0 is not admitted (KindNotEnrolled). An
+// owner's per-minute bucket is MaxProofsPerMinPerOwner * min(sum of the
+// weights of its active nodes, BondedSlotCap*SlotUnit) / SlotUnit.
+//
+// The policy is the plug-in point for a reduced-cap tier for deferred-bond
+// nodes (operator decision pending). The default is FullyBondedSlotPolicy.
+// RequireFullyBonded is applied before the policy: with it, a node that is
+// not fully bonded is rejected whatever weight the policy would give it.
+type SlotPolicy func(e EnrollmentInfo) int
+
+// FullyBondedSlotPolicy is the default SlotPolicy: a fully bonded node is
+// one slot, any other node is not admitted. With it, require_fully_bonded
+// false admits nothing more than true does.
+func FullyBondedSlotPolicy(e EnrollmentInfo) int {
+	if e.FullyBonded {
+		return SlotUnit
+	}
+	return 0
+}
+
+// OwnerAuthFunc authenticates a submission as coming from owner (HL2 §2
+// M1): WP-C verifies operator_sig against the owner's ML-DSA-87 key. It runs
+// in Precheck after the enrollment lookup and before any per-owner
+// accounting, so a forged submission for a victim's node never spends the
+// victim's quota nor feeds the victim's cooldowns. It returns a
+// KindBadOperatorSig *Rejection (any other error is wrapped as one). It must
+// be safe for concurrent use. A v2 config with require_operator_sig cannot
+// build a Guard without one (ErrNotImplemented).
+type OwnerAuthFunc func(p *mining.Proof, nodeID, owner string) error
+
+// OwnerGuard is the per-owner surface of a version 2 Guard (HL2 WP-B).
+// *CanaryGuard implements it for every config version; with a v1 config each
+// method keeps the HL1 behaviour noted below. miningsvc calls the admission
+// methods only for a v2 config; the Ledger calls the outstanding hooks
+// (WP-D). The lock order is unchanged: the guard holds only its leaf lock and
+// never calls the Ledger.
+type OwnerGuard interface {
+	Guard
+
+	// TakeOwnerRate replaces TakeRate (§4.1 step 5) for a v2 config. In
+	// order it returns:
+	//   - KindOwnerCooldown while c.Owner is in a cooldown;
+	//   - KindOwnerCooldown when this submission starts one (the owner's
+	//     rate-burst trigger: more than RateBurstFactor times its per-minute
+	//     rate in each of RateBurstMinutes consecutive minutes);
+	//   - KindOwnerRateLimited when the owner's token bucket is empty;
+	//   - KindRateLimited when the global MaxProofsPerMin bucket is full (the
+	//     owner's token is refunded).
+	// All are 503 and none latches. With a v1 config it is TakeRate.
+	TakeOwnerRate(c Candidate) error
+
+	// ObserveOwnerRejection replaces ObserveRejection for a v2 config (every
+	// non-nil error of §4.1 steps 7 and 8). Duplicates and nonce conflicts
+	// (as counted by ObserveRejection) above DuplicateLimit in TriggerWindow,
+	// and bad submissions (Verify rejections an honest miner does not
+	// produce; see countsAsBad) above OwnerBadLimit, start an OwnerCooldown
+	// for c.Owner. It never latches a global state; a global duplicate rate
+	// above GlobalDuplicateAlarm only logs. With a v1 config it is
+	// ObserveRejection(err).
+	ObserveOwnerRejection(c Candidate, err error)
+
+	// CheckOwnerPending is §4.1 step 6 for one owner (under submitMu, after
+	// the global MaxPending check): KindOwnerPendingFull (503) when the
+	// owner's outstanding count last reported by the Ledger is >=
+	// MaxPendingPerOwner. With a v1 config it returns nil.
+	CheckOwnerPending(owner string) error
+
+	// SetOwnerOutstanding and ResetOwnerOutstanding are the Ledger's
+	// accounting hooks (WP-D): the owner's pending plus in-flight count after
+	// every change (Enqueue, OnDurableBlock), and the full map at Init. The
+	// counts are absolute, so a repeated report is harmless; n <= 0 clears
+	// the owner. With a v1 config they do nothing.
+	SetOwnerOutstanding(owner string, n int)
+	ResetOwnerOutstanding(counts map[string]int)
+}
+
+// GuardStats is a snapshot of the guard's HL2 counters for metrics and logs
+// (WP-H exports them). All counters are since boot. Only a v2 config counts.
+type GuardStats struct {
+	// Rejections counts the guard's own rejections by RejectKind label.
+	Rejections map[string]uint64
+	// Unattributable counts Precheck rejections made before an owner was
+	// known (malformed, attestation type, not allowlisted, not enrolled,
+	// bad operator signature). They touch no owner's state.
+	Unattributable uint64
+	// CooldownsStarted counts per-owner cooldowns, by cause.
+	CooldownsStarted map[string]uint64
+	// OwnersInCooldown is the number of owners in a cooldown now.
+	OwnersInCooldown int
+	// Alarms count the log-only global ceilings that replaced HL1's
+	// ADMISSION_STOP triggers for v2: rate-burst, duplicates and
+	// unattributable rejections.
+	RateBurstAlarms      uint64
+	DuplicateAlarms      uint64
+	UnattributableAlarms uint64
 }
 
 // Guard is the canary control plane (§6): config, allowlist, caps, latched
@@ -577,8 +715,9 @@ type Guard interface {
 	//   - QuietPeriod has elapsed since Activate;
 	//   - QuietSeals local durable seals have been observed;
 	//   - the config is unexpired;
-	//   - the allowlisted node_id is an active enrollment owned by the
-	//     allowlisted miner_addr.
+	//   - v1 config only: the allowlisted node_id is an active enrollment
+	//     owned by the allowlisted miner_addr. A v2 config has no global
+	//     enrollment condition; Precheck checks each submission's node.
 	// It is the predicate for pkg/api SetMiningCanaryAdmission and for
 	// miningsvc WorkAt.
 	AdmissionOpen() bool
@@ -596,7 +735,8 @@ type Guard interface {
 
 	// Admit is §4.1 step 3. It records the submission for the rate-burst
 	// trigger, then returns a KindAdmissionClosed *Rejection unless
-	// AdmissionOpen.
+	// AdmissionOpen. With a v2 config the global rate-burst trigger only
+	// logs and counts an alarm (GuardStats); it never stops admission.
 	Admit() error
 
 	// Precheck is §4.1 step 4 and touches no nonce state. It runs ParseProof,
@@ -605,10 +745,23 @@ type Guard interface {
 	// allowlist. It returns a 400 *Rejection (KindMalformed,
 	// KindMinerNotAllowed, KindAttestationType or KindNodeNotAllowed), and it
 	// counts its own non-allowlisted rejections toward the §6.6 trigger.
+	//
+	// With a v2 config the order is: ParseProof, attestation type,
+	// hmac.ParseBundle and the bundle nonce (KindMalformed,
+	// KindAttestationType); then, only if Allowed is non-empty, the node_id
+	// must be listed (KindNodeNotAllowed) with this miner_addr
+	// (KindMinerNotAllowed); then EnrollmentView.Lookup: an unknown or
+	// inactive node, an owner other than miner_addr, a node that is not fully
+	// bonded under RequireFullyBonded, or a SlotPolicy weight of 0 is
+	// KindNotEnrolled; then the OwnerAuthFunc (KindBadOperatorSig). All of
+	// these are unattributable: they count in GuardStats only and touch no
+	// owner's bucket, cooldown or count, and no global latch. On success
+	// Candidate.Owner is set.
 	Precheck(rawProofJSON []byte) (Candidate, error)
 
 	// TakeRate is §4.1 step 5. It takes one slot of MaxProofsPerMin in the
-	// current minute, or returns a KindRateLimited *Rejection.
+	// current minute, or returns a KindRateLimited *Rejection. A v2 config
+	// uses OwnerGuard.TakeOwnerRate instead.
 	TakeRate() error
 
 	// ObserveRejection feeds the §6.6 duplicate/nonce-conflict trigger. Call
@@ -617,7 +770,9 @@ type Guard interface {
 	//   - KindDuplicate and KindNonceConflict;
 	//   - a *mining.RejectError with ReasonDuplicate;
 	//   - an HMAC nonce replay.
-	// It ignores everything else.
+	// It ignores everything else. With a v2 config (where miningsvc calls
+	// OwnerGuard.ObserveOwnerRejection instead) an unattributed call only
+	// feeds the log-only GlobalDuplicateAlarm; it never stops admission.
 	ObserveRejection(err error)
 
 	// ObserveSeal is called at H8 for every durable block. A local seal
@@ -911,6 +1066,16 @@ const (
 
 	BudgetStopMarginCells = 2               // ADMISSION_STOP at Emitted >= B - 2*rewardCell(h)
 	RewardSumSlack        = 1.0 / (1 << 40) // §6.3: sum of amounts <= rewardCell(h)*(1+2^-40)
+
+	// HL2 (version 2 configs). The submitter-driven triggers above become
+	// per-owner cooldowns, never a global latch (HL2 §1 Q4).
+	OwnerCooldown        = 10 * time.Minute // a per-owner cooldown lasts this long; in memory, not latched
+	OwnerBadLimit        = 20               // cooldown above this many bad submissions of one owner in TriggerWindow
+	GlobalDuplicateAlarm = 10 * DuplicateLimit
+	// UnattributableAlarm logs once per TriggerWindow when this many
+	// unattributable rejections arrived in it. Per-client limits are nginx's
+	// (WP-F): Submit has no client identity.
+	UnattributableAlarm = 100
 )
 
 // -----------------------------------------------------------------------------
@@ -943,6 +1108,11 @@ const (
 	CauseProofsTotal    = "proofs-total" // graceful
 	CauseBudget         = "budget"       // graceful
 	CauseExpired        = "expired"      // graceful
+
+	// Per-owner cooldown only (HL2, v2): bad submissions of one owner.
+	// CauseDuplicates and CauseRateBurst are also per-owner cooldown causes
+	// with a v2 config.
+	CauseBadSubmissions = "bad-submissions"
 
 	// FAILSTOP (FailStopFunc).
 	CauseMarkerIO        = "marker-io"

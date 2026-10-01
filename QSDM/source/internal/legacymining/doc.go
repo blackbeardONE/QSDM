@@ -33,7 +33,36 @@
 //   - Five reject kinds are added after KindNonceConflict, so existing kind
 //     values are unchanged: KindOwnerRateLimited, KindOwnerPendingFull and
 //     KindOwnerCooldown (503), KindNotEnrolled and KindBadOperatorSig (400,
-//     reason attestation). No code produces them yet.
+//     reason attestation). WP-B produces all but KindBadOperatorSig.
+//
+// # Contract revision HL2 (WP-B): the N-miner guard
+//
+// Additive again; a v1 config runs exactly the HL1 code paths:
+//   - Candidate.Owner, EnrollmentInfo, EnrollmentView, SlotPolicy (default
+//     FullyBondedSlotPolicy, the plug-in point for a deferred-bond tier),
+//     OwnerAuthFunc (the WP-C hook), GuardStats, and OwnerGuard, the
+//     per-owner surface of the Guard (TakeOwnerRate, ObserveOwnerRejection,
+//     CheckOwnerPending, and the Ledger hooks SetOwnerOutstanding and
+//     ResetOwnerOutstanding). Guard itself is unchanged.
+//   - GuardOptions gains Mode, Enrollments, SlotPolicy and OwnerAuth.
+//     NewGuard accepts a v2 config (CheckModeConfig against Mode); with
+//     require_operator_sig it needs an OwnerAuth (else ErrNotImplemented).
+//   - With a v2 config: Precheck looks up each submission's enrollment
+//     (no global Allowed[0] predicate) and rejects unattributable input
+//     without touching any owner; per-owner token buckets scale with bonded
+//     slots; the HL1 submitter triggers (not-allowlisted, duplicates,
+//     rate-burst) and bad submissions become per-owner, non-latching
+//     OwnerCooldowns or log-only alarms. KILL, FREEZE, expiry, the proof
+//     total and the budget stay global.
+//   - miningsvc calls the OwnerGuard methods only for a v2 config.
+//   - Constants OwnerCooldown, OwnerBadLimit, GlobalDuplicateAlarm,
+//     UnattributableAlarm and SlotUnit; cause CauseBadSubmissions.
+//
+// Still refused at S2 (CheckSupported, exit 78): ModePublic and every v2
+// config, until WP-C (OwnerAuth from operator keys, cmd/qsdm wiring of
+// Mode/Enrollments/OwnerAuth), WP-D (the Ledger calls the outstanding
+// hooks; I6, the owner epoch cap, the zero-multiplier rule) and WP-E
+// (difficulty_bits) land.
 //
 // Implementations and the functions they must export:
 //
@@ -45,6 +74,7 @@
 //	guard.go     WP4  Guard, config and env loading, markers, and the
 //	                  D1/D2 durable-write primitives (§3.2). cmd/qsdm and
 //	                  cmd/hl1-tail reuse D1/D2 instead of re-implementing them.
+//	guard_owner.go    HL2 WP-B: the v2 per-owner admission path (OwnerGuard).
 //	ledger.go    WP5  Ledger (and so Sink), I1-I6 and the I7 family audit,
 //	                  which runs in every mode without a Ledger:
 //	                    func AuditTxFamilies(blk *chain.Block) []FamilyViolation
@@ -72,7 +102,7 @@
 // open and the Guard is loaded; otherwise miningsvc is ReadOnly.
 //
 // ModePublic (HL2): defined by the contract, refused at S2 with
-// ErrNotImplemented until HL2 WP-B..E land.
+// ErrNotImplemented until HL2 WP-C..E land (the WP-B Guard is in place).
 //
 // # Lock order (§4.5)
 //
@@ -108,6 +138,10 @@
 // and returns KindUnavailable. Before an error leaves miningsvc, any error
 // matching ErrUnavailable is wrapped with api.ErrMiningUnavailable. WorkAt
 // returns 503 unless Guard.AdmissionOpen.
+//
+// With a v2 config (HL2 WP-B) step 5 is OwnerGuard.TakeOwnerRate, step 6
+// adds OwnerGuard.CheckOwnerPending(Candidate.Owner) after the global cap,
+// and steps 7 and 8 feed OwnerGuard.ObserveOwnerRejection.
 //
 // # Tick (§4.2, blockdriver)
 //

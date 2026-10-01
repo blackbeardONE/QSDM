@@ -3,7 +3,8 @@ package legacymining
 // guard.go (WP4): the canary environment and config loader (§6.1, S2), the
 // D1/D2 durable-write primitives (§3.2), and CanaryGuard, the Guard (§6):
 // allowlist, caps, pre-armed markers, latched states and the automatic
-// triggers of §6.6.
+// triggers of §6.6. The HL2 version 2 (per-owner) admission path is in
+// guard_owner.go (WP-B).
 
 import (
 	"bytes"
@@ -360,19 +361,24 @@ func CheckModeConfig(mode Mode, c Config) error {
 	return fmt.Errorf("%w: mode %q takes no config; want %q or %q", ErrConfig, mode, ModeCanary, ModePublic)
 }
 
-// CheckSupported is the HL2 WP-A fail-closed gate. It returns an error
+// CheckSupported is the HL2 fail-closed boot gate (S2). It returns an error
 // wrapping ErrNotImplemented for every mode/config pair that the contract
-// defines but this binary does not enforce yet, and the boot exits
-// ExitFatalRestore:
-//   - ModePublic (needs WP-B..E: per-owner admission, operator keys, the
-//     per-owner ledger and the configurable difficulty);
-//   - a v2 config in any mode, because the Guard, Ledger and miningsvc
-//     still enforce only the v1 fields. Booting one would silently ignore
-//     its per-owner caps, difficulty_bits, require_operator_sig and
-//     require_fully_bonded.
+// defines but this binary does not enforce end to end yet, and the boot
+// exits ExitFatalRestore:
+//   - ModePublic;
+//   - a v2 config in any mode.
 //
-// Only ModeCanary with a v1 config passes, exactly as in HL1. Each HL2 work
-// package narrows this gate when its enforcement lands.
+// WP-B landed the Guard side (per-owner Precheck, buckets and cooldowns;
+// NewGuard accepts a v2 config). Still missing before this gate may open:
+//   - WP-C: the OwnerAuthFunc (operator_sig against the owner's key) and the
+//     cmd/qsdm wiring of GuardOptions.Mode, Enrollments and OwnerAuth;
+//   - WP-D: the Ledger's per-owner outstanding hooks
+//     (OwnerGuard.SetOwnerOutstanding), I6 against the row's miner_addr,
+//     owner_epoch_cap_cell and the zero-multiplier PreSeal rule;
+//   - WP-E: difficulty_bits into miningsvc.
+//
+// Booting a v2 config before then would silently ignore those fields, so
+// only ModeCanary with a v1 config passes, exactly as in HL1.
 func CheckSupported(mode Mode, c Config) error {
 	switch {
 	case mode == ModePublic:
@@ -620,8 +626,23 @@ type GuardOptions struct {
 	// marker cannot be made durable (CauseMarkerIO).
 	FailStop FailStopFunc
 	// EnrollmentActive reports whether nodeID is an active enrollment owned
-	// by owner (S16). Required. Admission stays closed while it is false.
+	// by owner (S16). Required with a v1 config. Admission stays closed while
+	// it is false. A v2 config does not use it.
 	EnrollmentActive func(nodeID, owner string) bool
+
+	// HL2 (WP-B). Mode is the EnvMode; "" means ModeCanary (HL1 callers).
+	// NewGuard checks the config against it (CheckModeConfig).
+	Mode Mode
+	// Enrollments is the per-submission enrollment lookup. Required with a
+	// v2 config.
+	Enrollments EnrollmentView
+	// SlotPolicy weighs each enrollment for the per-owner caps. nil means
+	// FullyBondedSlotPolicy.
+	SlotPolicy SlotPolicy
+	// OwnerAuth authenticates the owner of a v2 submission (WP-C). Required
+	// when the v2 config sets require_operator_sig; NewGuard refuses with
+	// ErrNotImplemented otherwise.
+	OwnerAuth OwnerAuthFunc
 	// Now is the clock. nil means time.Now.
 	Now func() time.Time
 	// Logf logs trips and latches. nil means log.Printf.
@@ -675,6 +696,20 @@ type CanaryGuard struct {
 	burstRun   int
 	notAllowed triggerWindow
 	duplicates triggerWindow
+
+	// HL2 version 2 (guard_owner.go). The maps are under cmu.
+	v2       bool
+	mode     Mode
+	enroll   EnrollmentView
+	slots    SlotPolicy
+	auth     OwnerAuthFunc
+	allow    map[string]string // node_id -> miner_addr; empty: no allowlist
+	owners   map[string]*ownerState
+	pending  map[string]int // owner -> outstanding, from the Ledger
+	gdups    triggerWindow  // GlobalDuplicateAlarm
+	anonFrom int64          // start of the current unattributable window
+	anonN    int
+	stats    ownerStats
 }
 
 var _ Guard = (*CanaryGuard)(nil)
@@ -685,13 +720,22 @@ func NewGuard(o GuardOptions) (*CanaryGuard, error) {
 	if err := ValidateConfig(o.Config); err != nil {
 		return nil, err
 	}
-	// The CanaryGuard enforces the v1 (single allowlisted pair) rules only
-	// (HL2 WP-A; WP-B lifts this).
-	if err := CheckSupported(ModeCanary, o.Config); err != nil {
+	mode := o.Mode
+	if mode == ModeOff {
+		mode = ModeCanary
+	}
+	if err := CheckModeConfig(mode, o.Config); err != nil {
 		return nil, err
 	}
-	if o.FailStop == nil || o.EnrollmentActive == nil {
+	v2 := o.Config.Version == ConfigVersion2
+	if v2 && o.Config.RequireOperatorSig && o.OwnerAuth == nil {
+		return nil, fmt.Errorf("%w: require_operator_sig needs an OwnerAuth (HL2 WP-C)", ErrNotImplemented)
+	}
+	switch {
+	case !v2 && (o.FailStop == nil || o.EnrollmentActive == nil):
 		return nil, errors.New("legacymining: NewGuard: FailStop and EnrollmentActive are required")
+	case v2 && (o.FailStop == nil || o.Enrollments == nil):
+		return nil, errors.New("legacymining: NewGuard: FailStop and Enrollments are required with a version 2 config")
 	}
 	if err := checkLegacyDir(o.Dir); err != nil {
 		return nil, err
@@ -712,6 +756,9 @@ func NewGuard(o GuardOptions) (*CanaryGuard, error) {
 	}
 	if g.logf == nil {
 		g.logf = log.Printf
+	}
+	if v2 {
+		g.initOwner(mode, o)
 	}
 	g.base = g.now()
 	g.marker, _ = json.Marshal(ArmedMarker{Release: o.Release, BootNS: g.base.UnixNano(), PID: os.Getpid()})
@@ -842,6 +889,11 @@ func (g *CanaryGuard) closedReason(now time.Time) string {
 	case now.Unix() >= g.cfg.ExpiresUnix:
 		return "expired"
 	}
+	if g.v2 {
+		// No global enrollment predicate: Precheck looks up each
+		// submission's node (HL2 §1 Q4).
+		return ""
+	}
 	if e := g.cfg.Allowed[0]; !g.enrolled(e.NodeID, e.MinerAddr) {
 		return "enrollment-inactive"
 	}
@@ -910,6 +962,13 @@ func (g *CanaryGuard) recordSubmission(now time.Time) {
 		trip = g.burstRun >= RateBurstMinutes
 	}
 	g.cmu.Unlock()
+	if trip && g.v2 {
+		// Global over-rate is DoS, not one submitter's misbehaviour; nginx
+		// absorbs it per IP (WP-F). Alarm only (HL2 §1 Q4).
+		g.stats.rateBurstAlarms.Add(1)
+		g.logf("legacymining: alarm %s: >%d submissions/min for %d consecutive minutes (v2: no admission stop)", CauseRateBurst, limit, RateBurstMinutes)
+		return
+	}
 	if trip {
 		g.StopAdmission(fmt.Sprintf("%s:>%d/min for %d consecutive minutes", CauseRateBurst, limit, RateBurstMinutes))
 	}
@@ -917,6 +976,9 @@ func (g *CanaryGuard) recordSubmission(now time.Time) {
 
 // Precheck implements Guard (§4.1 step 4).
 func (g *CanaryGuard) Precheck(raw []byte) (Candidate, error) {
+	if g.v2 {
+		return g.precheckV2(raw)
+	}
 	p, err := mining.ParseProof(raw)
 	if err != nil {
 		return Candidate{}, &Rejection{Kind: KindMalformed, Detail: err.Error()}
@@ -1006,6 +1068,10 @@ func countsAsDuplicate(err error) bool {
 // a 400 that only counts toward ADMISSION_STOP.
 func (g *CanaryGuard) ObserveRejection(err error) {
 	if !countsAsDuplicate(err) {
+		return
+	}
+	if g.v2 {
+		g.observeGlobalDuplicate()
 		return
 	}
 	now := g.mono(g.now())

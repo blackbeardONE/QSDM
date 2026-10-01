@@ -243,6 +243,9 @@ type Service struct {
 	store legacymining.Store
 	guard legacymining.Guard
 	sink  legacymining.Sink
+	// owner is the guard's per-owner surface, set only for a
+	// version 2 config (HL2 WP-B). nil keeps the HL1 path.
+	owner legacymining.OwnerGuard
 
 	submitMu sync.Mutex
 }
@@ -344,6 +347,13 @@ func New(cfg Config) (*Service, error) {
 	}
 	if !cfg.ReadOnly {
 		svc.store, svc.guard, svc.sink = cfg.Store, cfg.Guard, cfg.Sink
+		if cfg.Guard.Config().Version == legacymining.ConfigVersion2 {
+			og, ok := cfg.Guard.(legacymining.OwnerGuard)
+			if !ok {
+				return nil, errors.New("miningsvc: a version 2 legacy-mining config requires a Guard that implements legacymining.OwnerGuard")
+			}
+			svc.owner = og
+		}
 	}
 
 	v, err := mining.NewVerifier(mining.VerifierConfig{
@@ -432,6 +442,13 @@ func (s *Service) WorkAt(height uint64) (*api.MiningWork, error) {
 // api.ErrMiningUnavailable, which the handler maps to 503 with
 // Retry-After; a 400 unwraps to a *mining.RejectError. Nothing
 // here waits on the seal lifecycle (L3).
+//
+// With a version 2 config (HL2 WP-B) step 5 is
+// OwnerGuard.TakeOwnerRate (owner cooldown, owner bucket, then
+// the global bucket), step 6 adds OwnerGuard.CheckOwnerPending
+// after the global cap, and steps 7 and 8 feed
+// OwnerGuard.ObserveOwnerRejection. A v1 config runs exactly
+// the HL1 calls.
 func (s *Service) Submit(rawProofJSON []byte) ([32]byte, error) {
 	var none [32]byte
 	if s.readOnly {
@@ -447,7 +464,11 @@ func (s *Service) Submit(rawProofJSON []byte) ([32]byte, error) {
 	if cand.Proof == nil {
 		return none, unavailable(errors.New("miningsvc: precheck returned no proof"))
 	}
-	if err := s.guard.TakeRate(); err != nil {
+	if s.owner != nil {
+		if err := s.owner.TakeOwnerRate(cand); err != nil {
+			return none, unavailable(err)
+		}
+	} else if err := s.guard.TakeRate(); err != nil {
 		return none, unavailable(err)
 	}
 
@@ -460,13 +481,18 @@ func (s *Service) Submit(rawProofJSON []byte) ([32]byte, error) {
 			Detail: fmt.Sprintf("pending plus in-flight >= %d", limit),
 		})
 	}
+	if s.owner != nil {
+		if err := s.owner.CheckOwnerPending(cand.Owner); err != nil {
+			return none, unavailable(err)
+		}
+	}
 	if !s.producer.HasTip() {
 		return none, fmt.Errorf("%w: no durable tip", api.ErrMiningUnavailable)
 	}
 	tip := s.producer.TipHeight()
 	id, err := s.verifier.Verify(rawProofJSON, tip)
 	if err != nil {
-		s.guard.ObserveRejection(err)
+		s.observeRejection(cand, err)
 		return none, classify(err)
 	}
 	rec := legacymining.Record{
@@ -481,7 +507,7 @@ func (s *Service) Submit(rawProofJSON []byte) ([32]byte, error) {
 		ProofJSON:    append([]byte(nil), rawProofJSON...),
 	}
 	if err := s.store.Accept(rec); err != nil {
-		s.guard.ObserveRejection(err)
+		s.observeRejection(cand, err)
 		switch legacymining.RejectKindOf(err) {
 		case legacymining.KindDuplicate, legacymining.KindNonceConflict:
 			return none, err
@@ -503,6 +529,16 @@ func (s *Service) Submit(rawProofJSON []byte) ([32]byte, error) {
 		})
 	}
 	return id, nil
+}
+
+// observeRejection feeds a step 7 or 8 error to the guard: per
+// owner for a version 2 config, as in HL1 otherwise.
+func (s *Service) observeRejection(cand legacymining.Candidate, err error) {
+	if s.owner != nil {
+		s.owner.ObserveOwnerRejection(cand, err)
+		return
+	}
+	s.guard.ObserveRejection(err)
 }
 
 // unavailable returns err as a 503: wrapped with
