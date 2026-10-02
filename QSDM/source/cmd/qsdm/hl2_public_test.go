@@ -2,11 +2,13 @@ package main
 
 // HL2 WP-D wiring: ModePublic through the canary plumbing (hl1BootConfig.Canary
 // is "mode is not off"), the v2 Ledger as the mining service's OwnerSink, and
-// the S2 refusal of the Tier-3 reward penalty with a version 2 config. The S2
-// gate (CheckSupported) still refuses ModePublic until WP-E.
+// the S2 refusal of the Tier-3 reward penalty with a version 2 config. HL2
+// WP-E: the S2 gate (CheckSupported) passes v2 configs, and the mining
+// service takes the config's difficulty.
 
 import (
 	"errors"
+	"math/big"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -65,6 +67,9 @@ func TestHL2PublicModeWiring(t *testing.T) {
 	if mcfg.ReadOnly || mcfg.Sink != legacymining.Sink(parts.ledger) {
 		t.Fatalf("mining config %+v", mcfg)
 	}
+	if want := new(big.Int).Lsh(big.NewInt(1), uint(cfg.DifficultyBits)); mcfg.Difficulty.Cmp(want) != 0 {
+		t.Fatalf("mining difficulty %v, want 2^%d", mcfg.Difficulty, cfg.DifficultyBits)
+	}
 	if _, err := miningsvc.New(mcfg); err != nil {
 		t.Fatalf("miningsvc.New(public): %v", err)
 	}
@@ -90,9 +95,9 @@ func TestHL2RewardPenaltyRefusedAtS2(t *testing.T) {
 				t.Fatalf("%s v2 with QSDM_SPEC_PENALTY_ENABLED=%s: %v", mode, on, err)
 			}
 		}
-		// Without the penalty the v2 config still meets the WP-E gate.
-		if _, err := hl1LoadBootConfig(env(mode, v2Path, v2Pin, "0"), nil); !errors.Is(err, legacymining.ErrNotImplemented) {
-			t.Fatalf("%s v2 without the penalty: %v", mode, err)
+		// Without the penalty the v2 config boots (HL2 WP-E).
+		if b, err := hl1LoadBootConfig(env(mode, v2Path, v2Pin, "0"), nil); err != nil || !b.Canary() || b.Config.Version != 2 {
+			t.Fatalf("%s v2 without the penalty: %+v, %v", mode, b, err)
 		}
 	}
 	// A v1 canary keeps Tier-3 (HL1 behaviour).

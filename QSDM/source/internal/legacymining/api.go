@@ -42,12 +42,13 @@ const (
 	// ModeCanary admits proofs from the allowlisted miners (Stage B). With a
 	// v1 config that is exactly one (miner, node) pair, as in HL1.
 	ModeCanary Mode = "canary"
-	// ModePublic (HL2) admits proofs from any enrolled, fully bonded owner
-	// that signs its submissions, subject to per-owner caps. It requires a
-	// v2 config (see CheckModeConfig). Until HL2 WP-E lands, every boot in
-	// this mode is refused with ErrNotImplemented (exit ExitFatalRestore);
-	// the Guard side (WP-B), the operator keys and cmd/qsdm wiring (WP-C)
-	// and the Ledger side (WP-D) are implemented.
+	// ModePublic (HL2) admits proofs from any enrolled owner that signs its
+	// submissions, subject to per-owner caps: fully bonded nodes, plus
+	// deferred-bond nodes at a reduced weight when the config sets
+	// deferred_slot_weight_permille. It requires a v2 config with
+	// require_operator_sig (CheckModeConfig, CheckSupported). HL2 WP-A..E
+	// are implemented: the Guard (WP-B), the operator keys (WP-C), the
+	// Ledger (WP-D) and difficulty_bits (WP-E).
 	ModePublic Mode = "public"
 )
 
@@ -99,12 +100,34 @@ const (
 //   - 0 < OwnerEpochCapCell <= BudgetCell. A flat per-owner cap, in whole
 //     CELL, on the amount emitted to the owner per OwnerEpoch;
 //   - MinDifficultyBits <= DifficultyBits <= MaxDifficultyBits. The
-//     admission difficulty is 2^DifficultyBits (HL2 §2 M4);
+//     admission difficulty is 2^DifficultyBits (HL2 §2 M4, WP-E;
+//     ConfigDifficulty): miningsvc advertises it in /work and Verify
+//     rejects a proof whose PoW hash does not meet the target. A v1 config
+//     keeps the HL1 difficulty, mining.DefaultMinDifficulty (2^16);
 //   - 0 < BondedSlotCap <= MaxBondedSlotCap;
+//   - 0 <= DeferredSlotWeightPermille <= MaxDeferredSlotWeightPermille
+//     (the deferred-bond tier; an absent field is 0). A value above 0
+//     needs RequireFullyBonded false, since with it the tier could never
+//     admit a node;
 //   - BudgetCell > 0 and ExpiresUnix > 0, as in v1.
 //
-// RequireOperatorSig and RequireFullyBonded are free booleans in v2; the
-// mode rules (CheckModeConfig) require both in ModePublic.
+// RequireOperatorSig and RequireFullyBonded are free booleans in v2. The
+// mode rules (CheckModeConfig) require RequireOperatorSig in ModePublic, and
+// RequireFullyBonded there unless the deferred-bond tier is on.
+//
+// The deferred-bond tier (HL2 operator decision A): with
+// DeferredSlotWeightPermille = w > 0, an active deferred-bond enrollment
+// (bond_mode mining_rewards) that is not yet fully bonded counts as w/1000
+// of a slot (ConfigSlotPolicy), so it adds MaxProofsPerMinPerOwner*w/1000
+// to its owner's per-minute bucket. Its proofs are paid like any other; the
+// chain withholds the owner's rewards into the bond (pkg/chain
+// ApplyMiningRewardTx -> enrollment AccrueBondFromReward) until it reaches
+// RequiredBondDust (10 CELL), and from the next submission after that block
+// the node is a full slot. The owner's pending and epoch caps are flat and
+// do not depend on the tier; owner_epoch_cap_cell counts the gross reward,
+// including the part withheld into the bond. w = 0 excludes deferred-bond
+// nodes. An upfront-bond node that is not fully bonded (for example after a
+// slash) is never in the tier.
 type Config struct {
 	Version         int          `json:"version"`
 	Allowed         []AllowEntry `json:"allowed"`
@@ -124,6 +147,10 @@ type Config struct {
 	RequireOperatorSig      bool   `json:"require_operator_sig,omitempty"`
 	RequireFullyBonded      bool   `json:"require_fully_bonded,omitempty"`
 	BondedSlotCap           int    `json:"bonded_slot_cap,omitempty"` // k_max
+	// DeferredSlotWeightPermille is the slot weight, in SlotUnit (1/1000
+	// slot) units, of a deferred-bond node that is not yet fully bonded; 0
+	// excludes such nodes (HL2 operator decision A).
+	DeferredSlotWeightPermille int `json:"deferred_slot_weight_permille,omitempty"`
 }
 
 // AllowEntry is one allowlisted (miner address, node) pair.
@@ -150,6 +177,9 @@ const (
 	MinDifficultyBits    = 16   // 2^16 = D_min, the HL1 static difficulty; never easier
 	MaxDifficultyBits    = 48   // 2^48 hashes per proof; a typo guard, far above any useful setting
 	MaxBondedSlotCap     = 64   // k_max
+	// MaxDeferredSlotWeightPermille bounds DeferredSlotWeightPermille: one
+	// full slot.
+	MaxDeferredSlotWeightPermille = SlotUnit
 
 	// OwnerEpoch is the nominal length of the window of
 	// Config.OwnerEpochCapCell (HL2 §2 M3). The boundaries are block heights
@@ -628,8 +658,12 @@ type EnrollmentInfo struct {
 	Owner        string
 	Active       bool   // RevokedAtHeight == 0
 	FullyBonded  bool   // EnrollmentRecord.FullyBonded()
-	StakeDust    uint64 // for a future reduced-cap tier (SlotPolicy)
+	StakeDust    uint64 // EnrollmentRecord.StakeDust: the bond locked so far
 	RequiredDust uint64 // EnrollmentRecord.RequiredBondDust()
+	// DeferredBond (HL2 tier A) is EnrollmentRecord.NormalizedBondMode() ==
+	// BondModeMiningRewards: the bond accrues from mining rewards. Only such
+	// a node can be in the deferred-bond tier.
+	DeferredBond bool
 }
 
 // EnrollmentView is the read-only enrollment state a version 2 Guard looks up
@@ -652,10 +686,16 @@ const SlotUnit = 1000
 // owner's per-minute bucket is MaxProofsPerMinPerOwner * min(sum of the
 // weights of its active nodes, BondedSlotCap*SlotUnit) / SlotUnit.
 //
-// The policy is the plug-in point for a reduced-cap tier for deferred-bond
-// nodes (operator decision pending). The default is FullyBondedSlotPolicy.
-// RequireFullyBonded is applied before the policy: with it, a node that is
-// not fully bonded is rejected whatever weight the policy would give it.
+// The policy is the plug-in point for the reduced-cap deferred-bond tier
+// (operator decision A): ConfigSlotPolicy selects DeferredBondSlotPolicy
+// when the config sets DeferredSlotWeightPermille, else
+// FullyBondedSlotPolicy. RequireFullyBonded is applied before the policy:
+// with it, a node that is not fully bonded is rejected whatever weight the
+// policy would give it.
+//
+// The guard evaluates the policy on every submission against the live
+// EnrollmentView, so a bond change on chain (a deferred-bond node becoming
+// fully bonded, a revocation) takes effect at the next submission.
 type SlotPolicy func(e EnrollmentInfo) int
 
 // FullyBondedSlotPolicy is the default SlotPolicy: a fully bonded node is
@@ -666,6 +706,39 @@ func FullyBondedSlotPolicy(e EnrollmentInfo) int {
 		return SlotUnit
 	}
 	return 0
+}
+
+// DeferredBondSlotPolicy is the deferred-bond tier (operator decision A): a
+// fully bonded node is one slot, a deferred-bond node (DeferredBond) that is
+// not yet fully bonded is weight units (clamped to 0..SlotUnit), and any
+// other node is not admitted. Weight 0 is FullyBondedSlotPolicy.
+func DeferredBondSlotPolicy(weight int) SlotPolicy {
+	if weight < 0 {
+		weight = 0
+	}
+	if weight > SlotUnit {
+		weight = SlotUnit
+	}
+	return func(e EnrollmentInfo) int {
+		switch {
+		case e.FullyBonded:
+			return SlotUnit
+		case e.DeferredBond:
+			return weight
+		}
+		return 0
+	}
+}
+
+// ConfigSlotPolicy is the SlotPolicy a config selects: for a version 2 config
+// with DeferredSlotWeightPermille > 0, DeferredBondSlotPolicy of that
+// weight; otherwise FullyBondedSlotPolicy. cmd/qsdm passes it, and NewGuard
+// uses it when GuardOptions.SlotPolicy is nil.
+func ConfigSlotPolicy(c Config) SlotPolicy {
+	if c.Version == ConfigVersion2 && c.DeferredSlotWeightPermille > 0 {
+		return DeferredBondSlotPolicy(c.DeferredSlotWeightPermille)
+	}
+	return FullyBondedSlotPolicy
 }
 
 // OwnerAuthFunc authenticates a submission as coming from owner (HL2 §2
@@ -1239,9 +1312,10 @@ var (
 	ErrEnvPartial = errors.New("legacymining: partial QSDM_LEGACY_MINING_* environment")
 	ErrConfig     = errors.New("legacymining: invalid canary config")
 	ErrConfigHash = errors.New("legacymining: canary config sha256 mismatch")
-	// ErrNotImplemented refuses a mode or config version that the contract
-	// defines but this binary does not enforce yet (HL2 WP-A: ModePublic, and
-	// v2 configs, until WP-E). The caller exits ExitFatalRestore.
+	// ErrNotImplemented refuses a mode/config pair that the contract defines
+	// but this binary does not enforce (CheckSupported; before HL2 WP-E it
+	// refused ModePublic and every v2 config). The caller exits
+	// ExitFatalRestore.
 	ErrNotImplemented = errors.New("legacymining: not yet implemented")
 	// ErrOperatorKey means an owner/public key pair fails CheckOperatorKey
 	// (HL2 WP-C).

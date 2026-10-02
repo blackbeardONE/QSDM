@@ -366,12 +366,16 @@ func TestHL1LoadBootConfig(t *testing.T) {
 		})
 	}
 
-	// HL2 WP-A: the mode/version matrix at S2. Only canary + v1 boots;
-	// public and every v2 config are refused (exit 78 through S1-S3).
+	// HL2: the mode/version matrix at S2. Since WP-E canary v1, canary v2 and
+	// public v2 with require_operator_sig boot; the other pairs are refused
+	// (exit 78 through S1-S3).
 	v2Path, v2Pin := hl1V2ConfigFile(t, dir, "v2.json", nil)
 	v2NoSig, v2NoSigPin := hl1V2ConfigFile(t, dir, "v2-nosig.json", func(c *legacymining.Config) { c.RequireOperatorSig = false })
 	v2NoBond, v2NoBondPin := hl1V2ConfigFile(t, dir, "v2-nobond.json", func(c *legacymining.Config) { c.RequireFullyBonded = false })
 	v2Open, v2OpenPin := hl1V2ConfigFile(t, dir, "v2-open.json", func(c *legacymining.Config) { c.Allowed = nil })
+	v2Tier, v2TierPin := hl1V2ConfigFile(t, dir, "v2-tier.json", func(c *legacymining.Config) {
+		c.Allowed, c.RequireFullyBonded, c.DeferredSlotWeightPermille = nil, false, 100
+	})
 	cfgWith := func(mode, path, pin string) map[string]string {
 		m := with(legacymining.EnvMode, mode)
 		m[legacymining.EnvCanaryConfig] = path
@@ -383,13 +387,10 @@ func TestHL1LoadBootConfig(t *testing.T) {
 		want error
 		text string
 	}{
-		"public v2":                 {cfgWith("public", v2Path, v2Pin), legacymining.ErrNotImplemented, "not yet implemented"},
-		"public v2 no allowlist":    {cfgWith("public", v2Open, v2OpenPin), legacymining.ErrNotImplemented, "WP-E"},
 		"public v1":                 {cfgWith("public", cfgPath, pin), legacymining.ErrConfig, "version 1, want 2"},
 		"public v2 no operator sig": {cfgWith("public", v2NoSig, v2NoSigPin), legacymining.ErrConfig, "require_operator_sig"},
 		"public v2 not bonded":      {cfgWith("public", v2NoBond, v2NoBondPin), legacymining.ErrConfig, "require_fully_bonded"},
 		"public hash mismatch":      {cfgWith("public", v2Path, pin), legacymining.ErrConfigHash, ""},
-		"canary v2":                 {cfgWith("canary", v2Path, v2Pin), legacymining.ErrNotImplemented, "config version 2"},
 		"canary v2 no allowlist":    {cfgWith("canary", v2Open, v2OpenPin), legacymining.ErrConfig, "allowed entry"},
 		"unknown mode":              {cfgWith("solo", v2Path, v2Pin), legacymining.ErrConfig, ""},
 	} {
@@ -400,19 +401,28 @@ func TestHL1LoadBootConfig(t *testing.T) {
 			}
 		})
 	}
-	// Public mode never reaches S3: exit 78 at S2, naming the reason.
-	for k, v := range cfgWith("public", v2Path, v2Pin) {
+	for name, tc := range map[string]struct {
+		env  map[string]string
+		mode legacymining.Mode
+	}{
+		"public v2":               {cfgWith("public", v2Path, v2Pin), legacymining.ModePublic},
+		"public v2 no allowlist":  {cfgWith("public", v2Open, v2OpenPin), legacymining.ModePublic},
+		"public v2 deferred tier": {cfgWith("public", v2Tier, v2TierPin), legacymining.ModePublic},
+		"canary v2":               {cfgWith("canary", v2Path, v2Pin), legacymining.ModeCanary},
+	} {
+		t.Run(name, func(t *testing.T) {
+			b, err := hl1LoadBootConfig(env(tc.env), nil)
+			if err != nil || !b.Canary() || b.Env.Mode != tc.mode || b.Config.Version != legacymining.ConfigVersion2 {
+				t.Fatalf("%+v, %v; want a %s v2 boot", b, err, tc.mode)
+			}
+		})
+	}
+	// A refused public config never reaches S3: exit 78 at S2.
+	for k, v := range cfgWith("public", v2NoSig, v2NoSigPin) {
 		t.Setenv(k, v)
 	}
 	if code := hl1CatchExit(t, func() { hl1BootS1S3(t.TempDir(), "r") }); code != 78 {
-		t.Fatalf("public through hl1BootS1S3: exit = %d, want 78", code)
-	}
-	// A v2 canary config is refused the same way.
-	for k, v := range cfgWith("canary", v2Path, v2Pin) {
-		t.Setenv(k, v)
-	}
-	if code := hl1CatchExit(t, func() { hl1BootS1S3(t.TempDir(), "r") }); code != 78 {
-		t.Fatalf("canary v2 through hl1BootS1S3: exit = %d, want 78", code)
+		t.Fatalf("unsigned public through hl1BootS1S3: exit = %d, want 78", code)
 	}
 	for _, k := range []string{legacymining.EnvMode, legacymining.EnvDB, legacymining.EnvCanaryConfig, legacymining.EnvCanaryConfigSHA256} {
 		t.Setenv(k, "")

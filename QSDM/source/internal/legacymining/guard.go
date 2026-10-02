@@ -141,8 +141,10 @@ type configV2Wire struct {
 	RequireOperatorSig      bool         `json:"require_operator_sig"`
 	RequireFullyBonded      bool         `json:"require_fully_bonded"`
 	BondedSlotCap           int          `json:"bonded_slot_cap"`
-	BudgetCell              uint64       `json:"budget_cell"`
-	ExpiresUnix             int64        `json:"expires_unix"`
+	// Optional: an absent field is 0 (no deferred-bond tier).
+	DeferredSlotWeightPermille int    `json:"deferred_slot_weight_permille"`
+	BudgetCell                 uint64 `json:"budget_cell"`
+	ExpiresUnix                int64  `json:"expires_unix"`
 }
 
 // decodeStrict decodes exactly one JSON value from data into v, rejecting
@@ -202,7 +204,7 @@ func ParseConfig(data []byte, pin ConfigHash) (Config, error) {
 			MaxProofsPerMinPerOwner: w.MaxProofsPerMinPerOwner, MaxPendingPerOwner: w.MaxPendingPerOwner,
 			OwnerEpochCapCell: w.OwnerEpochCapCell, DifficultyBits: w.DifficultyBits,
 			RequireOperatorSig: w.RequireOperatorSig, RequireFullyBonded: w.RequireFullyBonded,
-			BondedSlotCap: w.BondedSlotCap,
+			BondedSlotCap: w.BondedSlotCap, DeferredSlotWeightPermille: w.DeferredSlotWeightPermille,
 		}
 	default:
 		return Config{}, fmt.Errorf("%w: version %d, want %d or %d", ErrConfig, probe.Version, ConfigVersion1, ConfigVersion2)
@@ -263,7 +265,7 @@ func validateV1(c Config) []string {
 		bad = append(bad, "expires_unix must be > 0")
 	}
 	if c.MaxProofsPerMinPerOwner != 0 || c.MaxPendingPerOwner != 0 || c.OwnerEpochCapCell != 0 || c.DifficultyBits != 0 ||
-		c.RequireOperatorSig || c.RequireFullyBonded || c.BondedSlotCap != 0 {
+		c.RequireOperatorSig || c.RequireFullyBonded || c.BondedSlotCap != 0 || c.DeferredSlotWeightPermille != 0 {
 		bad = append(bad, "a version 1 config sets a version 2 field")
 	}
 	return bad
@@ -315,6 +317,11 @@ func validateV2(c Config) []string {
 	if c.BondedSlotCap <= 0 || c.BondedSlotCap > MaxBondedSlotCap {
 		bad = append(bad, fmt.Sprintf("bonded_slot_cap %d outside 1..%d", c.BondedSlotCap, MaxBondedSlotCap))
 	}
+	if c.DeferredSlotWeightPermille < 0 || c.DeferredSlotWeightPermille > MaxDeferredSlotWeightPermille {
+		bad = append(bad, fmt.Sprintf("deferred_slot_weight_permille %d outside 0..%d", c.DeferredSlotWeightPermille, MaxDeferredSlotWeightPermille))
+	} else if c.DeferredSlotWeightPermille > 0 && c.RequireFullyBonded {
+		bad = append(bad, "deferred_slot_weight_permille > 0 needs require_fully_bonded false")
+	}
 	if c.ExpiresUnix <= 0 {
 		bad = append(bad, "expires_unix must be > 0")
 	}
@@ -325,8 +332,13 @@ func validateV2(c Config) []string {
 // rules. A failure wraps ErrConfig, and the boot exits ExitFatalRestore:
 //   - ModeCanary accepts v1 or v2. A v2 canary needs at least one Allowed
 //     entry: the canary is an allowlist.
-//   - ModePublic requires v2 with RequireOperatorSig and RequireFullyBonded
-//     (operator decisions M1 and M3). Allowed is optional (0..K).
+//   - ModePublic requires v2 with RequireOperatorSig (operator decision M1)
+//     and RequireFullyBonded (M3), except that RequireFullyBonded may be
+//     false when DeferredSlotWeightPermille > 0 (the deferred-bond tier,
+//     operator decision A; ValidateConfig then requires it false). A public
+//     config with RequireFullyBonded false and no tier is refused: it would
+//     admit exactly what true admits, so the false is a mistake. Allowed is
+//     optional (0..K).
 //   - every other mode, including ModeOff, has no config and is refused.
 //
 // Passing these rules does not mean the binary enforces the config: see
@@ -349,8 +361,8 @@ func CheckModeConfig(mode Mode, c Config) error {
 			if !c.RequireOperatorSig {
 				bad = append(bad, "require_operator_sig must be true")
 			}
-			if !c.RequireFullyBonded {
-				bad = append(bad, "require_fully_bonded must be true")
+			if !c.RequireFullyBonded && c.DeferredSlotWeightPermille == 0 {
+				bad = append(bad, "require_fully_bonded must be true unless deferred_slot_weight_permille is set")
 			}
 		}
 		if len(bad) != 0 {
@@ -362,34 +374,44 @@ func CheckModeConfig(mode Mode, c Config) error {
 }
 
 // CheckSupported is the HL2 fail-closed boot gate (S2). It returns an error
-// wrapping ErrNotImplemented for every mode/config pair that the contract
-// defines but this binary does not enforce end to end yet, and the boot
-// exits ExitFatalRestore:
-//   - ModePublic;
-//   - a v2 config in any mode.
+// wrapping ErrNotImplemented for every mode/config pair that this binary
+// does not enforce end to end, and the boot exits ExitFatalRestore. It runs
+// after CheckModeConfig and passes exactly:
+//   - ModeCanary with a version 1 config (HL1, unchanged);
+//   - ModeCanary with a version 2 config;
+//   - ModePublic with a version 2 config that sets require_operator_sig
+//     (CheckModeConfig already requires it; repeated here so that no
+//     unsigned public mode can boot even if the mode rules change).
 //
-// Landed: WP-B, the Guard side (per-owner Precheck, buckets and cooldowns;
-// NewGuard accepts a v2 config); WP-C, the operator_sig OwnerAuth
-// (OperatorSigAuth over OperatorKeys from the chain and operator_keys), the
-// version 2 Store and its migration, and the cmd/qsdm wiring of
-// GuardOptions.Mode, Enrollments, SlotPolicy and OwnerAuth; WP-D, the
-// Ledger's per-owner outstanding hooks and pending cap, I6 against the row's
-// miner_addr, owner_epoch_cap_cell (OwnerSink.CheckOwnerEpoch), the S2
-// refusal of the Tier-3 reward penalty with a v2 config (no zero share can
-// reach PreSeal), and ModePublic through the cmd/qsdm canary plumbing. Still
-// missing before this gate may open:
-//   - WP-E: difficulty_bits into miningsvc.
+// ModeOff has no config and passes (S2 never calls it then). Every other
+// mode or version is refused.
 //
-// Booting a v2 config before then would silently ignore difficulty_bits, so
-// only ModeCanary with a v1 config passes, exactly as in HL1.
+// Every v2 field is enforced: WP-B, the Guard side (per-owner Precheck,
+// buckets and cooldowns, the SlotPolicy); WP-C, the operator_sig OwnerAuth
+// and the version 2 Store; WP-D, the Ledger's per-owner pending cap, I6
+// against the row's miner_addr, owner_epoch_cap_cell, and the S2 refusal of
+// the Tier-3 reward penalty; WP-E, difficulty_bits (ConfigDifficulty, which
+// cmd/qsdm passes to miningsvc, and miningsvc.New refuses a writable v2
+// service whose difficulty differs from it); and the deferred-bond tier
+// (ConfigSlotPolicy).
 func CheckSupported(mode Mode, c Config) error {
-	switch {
-	case mode == ModePublic:
-		return fmt.Errorf("%w: %s=%q needs HL2 work package WP-E (difficulty_bits); this binary refuses to boot it", ErrNotImplemented, EnvMode, mode)
-	case c.Version != ConfigVersion1:
-		return fmt.Errorf("%w: config version %d is not enforced by this binary until HL2 WP-E (difficulty_bits); use a version %d config", ErrNotImplemented, c.Version, ConfigVersion1)
+	switch mode {
+	case ModeOff:
+		return nil
+	case ModeCanary:
+		if c.Version == ConfigVersion1 || c.Version == ConfigVersion2 {
+			return nil
+		}
+	case ModePublic:
+		switch {
+		case c.Version != ConfigVersion2:
+			return fmt.Errorf("%w: %s=%q needs a version %d config, got version %d", ErrNotImplemented, EnvMode, mode, ConfigVersion2, c.Version)
+		case !c.RequireOperatorSig:
+			return fmt.Errorf("%w: %s=%q without require_operator_sig is not supported", ErrNotImplemented, EnvMode, mode)
+		}
+		return nil
 	}
-	return nil
+	return fmt.Errorf("%w: %s=%q with config version %d is not supported by this binary", ErrNotImplemented, EnvMode, mode, c.Version)
 }
 
 func isLowerHex64(s string) bool {
@@ -640,7 +662,8 @@ type GuardOptions struct {
 	// v2 config.
 	Enrollments EnrollmentView
 	// SlotPolicy weighs each enrollment for the per-owner caps. nil means
-	// FullyBondedSlotPolicy.
+	// ConfigSlotPolicy(Config): FullyBondedSlotPolicy unless the config
+	// sets deferred_slot_weight_permille.
 	SlotPolicy SlotPolicy
 	// OwnerAuth authenticates the owner of a v2 submission (WP-C:
 	// OperatorSigAuth). Required when the v2 config sets

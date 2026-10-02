@@ -379,8 +379,8 @@ func TestV2SlotPolicyTier(t *testing.T) {
 	}
 	view := newOTView().add("b", otHonest, true).add("d1", otHonest, false).add("d2", otHonest, false)
 
-	// require_fully_bonded false is a canary-only setting, and a canary v2
-	// needs an allowlist.
+	// require_fully_bonded false without deferred_slot_weight_permille is a
+	// canary-only setting, and a canary v2 needs an allowlist.
 	cfg := otPublicConfig()
 	cfg.RequireFullyBonded = false
 	cfg.Allowed = []AllowEntry{{MinerAddr: otHonest, NodeID: "b"}, {MinerAddr: otHonest, NodeID: "d1"}, {MinerAddr: otHonest, NodeID: "d2"}}
@@ -732,9 +732,9 @@ func TestNewGuardV2Options(t *testing.T) {
 	if _, err := NewGuard(o); !errors.Is(err, ErrConfig) {
 		t.Errorf("public v1: %v", err)
 	}
-	// The S2 gate still refuses every v2 boot until WP-E.
+	// Since WP-E the S2 gate passes v2 in both modes.
 	for _, m := range []Mode{ModeCanary, ModePublic} {
-		if err := CheckSupported(m, v2Config()); !errors.Is(err, ErrNotImplemented) {
+		if err := CheckSupported(m, v2Config()); err != nil {
 			t.Errorf("CheckSupported(%s, v2) = %v", m, err)
 		}
 	}

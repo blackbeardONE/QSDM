@@ -30,6 +30,9 @@ type fakeOwnerGuard struct {
 func newFakeOwnerGuard(log *callLog) *fakeOwnerGuard {
 	g := &fakeOwnerGuard{fakeGuard: newFakeGuard(log)}
 	g.cfg.Version = legacymining.ConfigVersion2
+	// HL2 WP-E: 2^1 = the fixture's Config.Difficulty (2), which a v2
+	// service must equal. Real configs have difficulty_bits >= 16.
+	g.cfg.DifficultyBits = 1
 	return g
 }
 

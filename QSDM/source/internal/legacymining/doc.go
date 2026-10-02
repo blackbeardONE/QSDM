@@ -29,7 +29,7 @@
 //   - CheckSupported is the fail-closed gate: until WP-B..E land, ModePublic
 //     and every v2 config are refused with ErrNotImplemented (exit 78), and
 //     NewGuard refuses a v2 config. Only canary with a v1 config boots, as
-//     in HL1.
+//     in HL1. (WP-E opened the gate; see below.)
 //   - Five reject kinds are added after KindNonceConflict, so existing kind
 //     values are unchanged: KindOwnerRateLimited, KindOwnerPendingFull and
 //     KindOwnerCooldown (503), KindNotEnrolled and KindBadOperatorSig (400,
@@ -129,17 +129,100 @@
 //     FREEZE after StallSeals.
 //   - Reconcile S10 also refuses a second reward to one recipient in a block
 //     (v2), and S12 reports OwnerEpoch, OwnerEmitted and Owners.
-//   - Deferred-bond tier: not enabled (operator decision pending). A tier
-//     is a SlotPolicy (WP-B) that gives deferred-bond nodes a weight below
-//     SlotUnit, run with require_fully_bonded false; in public mode that
-//     also needs CheckModeConfig to stop requiring require_fully_bonded (a
-//     config rule). No schema, Ledger or reconcile change: they key on the
-//     owner and the row's miner_addr, never on bond state.
+//   - Deferred-bond tier: see "Contract revision HL2 (tier A)" below. No
+//     schema, Ledger or reconcile change: they key on the owner and the
+//     row's miner_addr, never on bond state.
 //   - cmd/qsdm builds the Guard, Store and Ledger for ModePublic too
 //     (hl1BootConfig.Canary means "legacy mining is on").
 //
-// Still refused at S2 (CheckSupported, exit 78): ModePublic and every v2
-// config, until WP-E (difficulty_bits into miningsvc) lands.
+// # Contract revision HL2 (WP-E): difficulty_bits (design §2 M4)
+//
+// Additive; a v1 config serves and enforces exactly the HL1 difficulty:
+//   - ConfigDifficulty (difficulty.go): mining.DefaultMinDifficulty (2^16)
+//     for v1, 2^difficulty_bits (16..48, so never below 2^16) for v2.
+//     cmd/qsdm (hl1MiningServiceConfig) sets miningsvc Config.Difficulty
+//     to it for a writable service; a read-only service (Stage A, a
+//     follower, a canary whose Store did not open) keeps 2^16 and serves no
+//     work. miningsvc.New refuses a writable v2 service whose Difficulty is
+//     not ConfigDifficulty(Guard.Config()), so difficulty_bits can never be
+//     silently ignored.
+//   - /work advertises the difficulty (api.MiningWork.Difficulty, decimal),
+//     and mining.Verifier step 10 rejects a proof whose PoW hash does not
+//     meet the target (400, reason work, "hash does not meet target"); with
+//     a v2 config that rejection feeds the owner's bad-submission cooldown.
+//     The reference miners re-read the difficulty from every /work
+//     (cmd/qsdmminer-console runLoop: api.WorkToMiningCore ->
+//     mining.TargetFromDifficulty -> Solve), so they adapt without a
+//     change; the CUDA backend takes the same target.
+//   - The difficulty is producer-local (traced for WP-E, design §1 Q2
+//     "replay paths not traced"). mining.Verifier is constructed only by
+//     internal/miningsvc (miningsvc.go New) and the miner CLIs' self-tests;
+//     the target check is pkg/mining/verifier.go:534-545, reached only from
+//     miningsvc.Submit, which is read-only (503) on every node that is not
+//     the canary/public producer (cmd/qsdm hl1NewCanary !producerRole,
+//     hl1MiningServiceConfig ReadOnly). Reward txs carry only LMP1 proof
+//     IDs (internal/blockdriver/blockdriver.go:975, 984-995). Followers
+//     append blocks through BlockProducer.TryAppendExternalBlock
+//     (pkg/chain/block.go:637-785): authorisation, hash, signature, then
+//     every tx through the state applier and a state-root check; a reward
+//     tx goes to EnrollmentApplier.ApplyMiningRewardTx
+//     (pkg/chain/enrollment_aware_applier.go:175-179,
+//     pkg/chain/mining_reward.go:21-56), which checks only the contract,
+//     sender, fee, amount and recipient. Boot restore, hl1 replay
+//     (cmd/qsdm/hl1_replay.go:418) and receipts regeneration use the same
+//     appliers. No file in pkg/chain, the block header or gossip
+//     validation mentions a difficulty or target, and the slashing
+//     verifiers parse embedded proofs (doublemining.go:400-404,
+//     forgedattest.go:426, freshnesscheat.go:462) without any target
+//     check. So difficulty_bits changes need a new config (hash), never a
+//     fork, and followers stay in parity whatever the producer's setting.
+//   - Planning helpers (difficulty.go): BlockPeriod, GraceDuration,
+//     ExpectedProofsPerMinute, ExpectedSolveTime, LandedProofsPerMinute
+//     (the grace-window loss of a miner that solves each height to
+//     completion), SuggestDifficultyBits; BenchmarkPoWAttemptCPU measures
+//     the CPU hashrate; hl1/tools/difficulty-estimate.py is the operator
+//     version.
+//   - CheckSupported opens: canary v1, canary v2, and public v2 with
+//     require_operator_sig boot; any other mode/version pair is still
+//     refused with ErrNotImplemented (exit 78). Every other S2 gate
+//     (CheckModeConfig, the Tier-3 penalty refusal, the sync-URL refusal)
+//     is unchanged.
+//
+// # Contract revision HL2 (tier A): deferred-bond slots (operator decision A)
+//
+// Additive; v1 never reaches it and a v2 config without the new field
+// behaves as before:
+//   - Config.DeferredSlotWeightPermille (v2 "deferred_slot_weight_permille",
+//     optional, 0..SlotUnit, default 0) with MaxDeferredSlotWeightPermille;
+//     EnrollmentInfo.DeferredBond (bond_mode mining_rewards);
+//     DeferredBondSlotPolicy and ConfigSlotPolicy. A weight above 0 needs
+//     require_fully_bonded false (ValidateConfig), and public mode accepts
+//     require_fully_bonded false only with a weight above 0
+//     (CheckModeConfig).
+//   - The tier: a deferred-bond node that is not fully bonded counts as
+//     weight/1000 of a slot in its owner's bucket; a fully bonded node is a
+//     full slot; any other node (including an upfront-bond node below its
+//     bond after a slash) is not admitted. Weight 0 excludes deferred-bond
+//     nodes. NewGuard uses ConfigSlotPolicy when GuardOptions.SlotPolicy is
+//     nil, and cmd/qsdm passes it explicitly.
+//   - Bond credit (verified): the LMP1 reward txs are
+//     chain.MiningRewardContractID transfers from the funder, and every
+//     node (producer and followers) applies them through
+//     EnrollmentApplier.ApplyMiningRewardTx, which first calls
+//     enrollment.InMemoryState.AccrueBondFromReward: the owner's reward is
+//     locked into its active, not yet fully bonded mining_rewards
+//     enrollments (lexical node order) until each reaches RequiredBondDust,
+//     and only the rest is credited liquid. The Guard's EnrollmentView
+//     reads that same live state, so the block that completes a bond makes
+//     the node a full slot at the next submission, with no restart. The
+//     accrual is per owner, not per node: any reward to the owner
+//     (including one earned by its fully bonded nodes) fills its deferred
+//     bonds first. owner_epoch_cap_cell and emitted_H count the gross
+//     reward, including the withheld part; the Ledger's I4/I5 read only
+//     the funder, so withholding changes no invariant.
+//
+// ModePublic is accepted at S2 with a version 2 config that sets
+// require_operator_sig (CheckSupported).
 //
 // Implementations and the functions they must export:
 //
@@ -153,6 +236,7 @@
 //	                  cmd/hl1-tail reuse D1/D2 instead of re-implementing them.
 //	guard_owner.go    HL2 WP-B: the v2 per-owner admission path (OwnerGuard).
 //	opkeys.go         HL2 WP-C: operator keys and the operator_sig OwnerAuth.
+//	difficulty.go     HL2 WP-E: ConfigDifficulty and the planning helpers.
 //	store_opkeys.go   HL2 WP-C: schema version 2 (operator_keys), migration.
 //	ledger.go    WP5  Ledger (and so Sink; HL2 WP-D: OwnerSink), I1-I6 and the I7 family audit,
 //	                  which runs in every mode without a Ledger:
@@ -180,10 +264,11 @@
 // Mining is writable only when local block production is on, the Store is
 // open and the Guard is loaded; otherwise miningsvc is ReadOnly.
 //
-// ModePublic (HL2): defined by the contract, refused at S2 with
-// ErrNotImplemented until HL2 WP-E lands (the WP-B Guard, the WP-C operator
-// keys and the WP-D Ledger are in place, and cmd/qsdm wires a public boot
-// like a canary one).
+// ModePublic (HL2): one Store, Guard and Ledger, wired like a canary boot,
+// with a version 2 config that sets require_operator_sig (CheckModeConfig,
+// CheckSupported). Admission is per enrollment and per owner (WP-B..D), at
+// the config's difficulty (WP-E), for fully bonded nodes plus, with
+// deferred_slot_weight_permille, deferred-bond nodes at a reduced weight.
 //
 // # Lock order (§4.5)
 //

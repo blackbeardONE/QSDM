@@ -102,7 +102,8 @@ func TestConfigV1RejectsV2Fields(t *testing.T) {
 	for _, f := range []string{
 		`"max_proofs_per_min_per_owner":10`, `"max_pending_per_owner":100`, `"owner_epoch_cap_cell":100`,
 		`"difficulty_bits":20`, `"require_operator_sig":true`, `"require_operator_sig":false`,
-		`"require_fully_bonded":true`, `"bonded_slot_cap":1`,
+		`"require_fully_bonded":true`, `"bonded_slot_cap":1`, `"deferred_slot_weight_permille":0`,
+		`"deferred_slot_weight_permille":100`,
 	} {
 		doc := strings.Replace(goldenPhase1, `"version": 1,`, `"version": 1, `+f+`,`, 1)
 		_, err := ParseConfig([]byte(doc), sha256.Sum256([]byte(doc)))
@@ -120,6 +121,11 @@ func TestConfigV1RejectsV2Fields(t *testing.T) {
 	c.RequireOperatorSig = true
 	if err := ValidateConfig(c); !errors.Is(err, ErrConfig) {
 		t.Errorf("v1 Config with require_operator_sig: %v", err)
+	}
+	c = gtConfig()
+	c.DeferredSlotWeightPermille = 100
+	if err := ValidateConfig(c); !errors.Is(err, ErrConfig) || !strings.Contains(err.Error(), "version 2 field") {
+		t.Errorf("v1 Config with deferred_slot_weight_permille: %v", err)
 	}
 }
 
@@ -181,6 +187,8 @@ func TestConfigV2StrictDecode(t *testing.T) {
 		"negative cap":     {edit(`"owner_epoch_cap_cell":5000`, `"owner_epoch_cap_cell":-1`), "cannot unmarshal"},
 		"missing per-own":  {edit(`"max_proofs_per_min_per_owner":20,`, ``), "max_proofs_per_min_per_owner 0"},
 		"missing bits":     {edit(`"difficulty_bits":24,`, ``), "difficulty_bits 0"},
+		"fractional tier":  {edit(`"bonded_slot_cap":4,`, `"bonded_slot_cap":4,"deferred_slot_weight_permille":0.5,`), "cannot unmarshal"},
+		"tier with bond":   {edit(`"bonded_slot_cap":4,`, `"bonded_slot_cap":4,"deferred_slot_weight_permille":100,`), "needs require_fully_bonded false"},
 		"array":            {`[]`, "cannot unmarshal"},
 	} {
 		_, err := ParseConfig([]byte(c.doc), sha256.Sum256([]byte(c.doc)))
@@ -192,8 +200,14 @@ func TestConfigV2StrictDecode(t *testing.T) {
 	min := edit(`"require_operator_sig":true,"require_fully_bonded":true,`, ``)
 	min = strings.Replace(min, `"allowed":[{"miner_addr":"`+gtMiner+`","node_id":"`+gtNode+`"},{"miner_addr":"`+gtOther+`","node_id":"n2"}],`, ``, 1)
 	c2, err := ParseConfig([]byte(min), sha256.Sum256([]byte(min)))
-	if err != nil || c2.RequireOperatorSig || c2.RequireFullyBonded || len(c2.Allowed) != 0 {
+	if err != nil || c2.RequireOperatorSig || c2.RequireFullyBonded || len(c2.Allowed) != 0 || c2.DeferredSlotWeightPermille != 0 {
 		t.Fatalf("minimal v2: %+v, %v", c2, err)
+	}
+	// The deferred-bond tier field decodes (HL2 operator decision A).
+	tier := edit(`"require_fully_bonded":true,"bonded_slot_cap":4,`, `"require_fully_bonded":false,"bonded_slot_cap":4,"deferred_slot_weight_permille":250,`)
+	c3, err := ParseConfig([]byte(tier), sha256.Sum256([]byte(tier)))
+	if err != nil || c3.DeferredSlotWeightPermille != 250 || c3.RequireFullyBonded {
+		t.Fatalf("tier v2: %+v, %v", c3, err)
 	}
 }
 
@@ -243,6 +257,11 @@ func TestValidateConfigV2(t *testing.T) {
 		"zero expiry":           {func(c *Config) { c.ExpiresUnix = 0 }, "expires_unix must be > 0"},
 		"expired loads":         {func(c *Config) { c.ExpiresUnix = 1 }, ""},
 		"no sig, no bond":       {func(c *Config) { c.RequireOperatorSig, c.RequireFullyBonded = false, false }, ""},
+		"tier 1":                {func(c *Config) { c.RequireFullyBonded, c.DeferredSlotWeightPermille = false, 1 }, ""},
+		"tier 1000":             {func(c *Config) { c.RequireFullyBonded, c.DeferredSlotWeightPermille = false, SlotUnit }, ""},
+		"tier 1001":             {func(c *Config) { c.RequireFullyBonded, c.DeferredSlotWeightPermille = false, 1001 }, "deferred_slot_weight_permille 1001 outside 0..1000"},
+		"tier negative":         {func(c *Config) { c.RequireFullyBonded, c.DeferredSlotWeightPermille = false, -1 }, "deferred_slot_weight_permille -1"},
+		"tier with full bond":   {func(c *Config) { c.DeferredSlotWeightPermille = 100 }, "needs require_fully_bonded false"},
 		"version 3":             {func(c *Config) { c.Version = 3 }, "version 3, want 1 or 2"},
 	} {
 		cfg := v2Config()
@@ -266,8 +285,9 @@ func TestValidateConfigV2(t *testing.T) {
 	}
 }
 
-// The mode/version matrix (CheckModeConfig) and the WP-A gate
-// (CheckSupported). Only canary + v1 boots in this binary.
+// The mode/version matrix (CheckModeConfig) and the S2 gate
+// (CheckSupported). Since WP-E canary v1, canary v2 and public v2 with
+// require_operator_sig boot.
 func TestModeVersionMatrix(t *testing.T) {
 	v1 := gtConfig()
 	v2 := v2Config()
@@ -281,6 +301,10 @@ func TestModeVersionMatrix(t *testing.T) {
 	v2CanaryNoReq.RequireOperatorSig, v2CanaryNoReq.RequireFullyBonded = false, false
 	invalid := gtConfig()
 	invalid.MaxPending = 0
+	v2Tier := v2Config()
+	v2Tier.RequireFullyBonded, v2Tier.DeferredSlotWeightPermille = false, 100
+	v2TierNoSig := v2Tier
+	v2TierNoSig.RequireOperatorSig = false
 
 	type want struct{ mode, supported error }
 	for _, c := range []struct {
@@ -290,17 +314,21 @@ func TestModeVersionMatrix(t *testing.T) {
 		want want
 	}{
 		{"canary v1", ModeCanary, v1, want{nil, nil}},
-		{"canary v2", ModeCanary, v2, want{nil, ErrNotImplemented}},
-		{"canary v2 without sig/bond", ModeCanary, v2CanaryNoReq, want{nil, ErrNotImplemented}},
-		{"canary v2 empty allowlist", ModeCanary, v2Open, want{ErrConfig, ErrNotImplemented}},
+		{"canary v2", ModeCanary, v2, want{nil, nil}},
+		{"canary v2 without sig/bond", ModeCanary, v2CanaryNoReq, want{nil, nil}},
+		{"canary v2 empty allowlist", ModeCanary, v2Open, want{ErrConfig, nil}},
+		{"canary v2 tier", ModeCanary, v2Tier, want{nil, nil}},
 		{"canary invalid v1", ModeCanary, invalid, want{ErrConfig, nil}},
-		{"public v2", ModePublic, v2, want{nil, ErrNotImplemented}},
-		{"public v2 no allowlist", ModePublic, v2Open, want{nil, ErrNotImplemented}},
+		{"public v2", ModePublic, v2, want{nil, nil}},
+		{"public v2 no allowlist", ModePublic, v2Open, want{nil, nil}},
+		{"public v2 deferred tier", ModePublic, v2Tier, want{nil, nil}},
 		{"public v1", ModePublic, v1, want{ErrConfig, ErrNotImplemented}},
 		{"public v2 no operator sig", ModePublic, v2NoSig, want{ErrConfig, ErrNotImplemented}},
-		{"public v2 not fully bonded", ModePublic, v2NoBond, want{ErrConfig, ErrNotImplemented}},
+		{"public v2 tier no operator sig", ModePublic, v2TierNoSig, want{ErrConfig, ErrNotImplemented}},
+		{"public v2 not fully bonded", ModePublic, v2NoBond, want{ErrConfig, nil}},
 		{"off v1", ModeOff, v1, want{ErrConfig, nil}},
 		{"unknown v2", Mode("open"), v2, want{ErrConfig, ErrNotImplemented}},
+		{"canary version 3", ModeCanary, Config{Version: 3}, want{ErrConfig, ErrNotImplemented}},
 	} {
 		err := CheckModeConfig(c.mode, c.cfg)
 		if (c.want.mode == nil) != (err == nil) || (c.want.mode != nil && !errors.Is(err, c.want.mode)) {
@@ -311,12 +339,15 @@ func TestModeVersionMatrix(t *testing.T) {
 			t.Errorf("%s: CheckSupported = %v, want %v", c.name, err, c.want.supported)
 		}
 	}
-	err := CheckSupported(ModePublic, v2)
-	if err == nil || !strings.Contains(err.Error(), "not yet implemented") || !strings.Contains(err.Error(), "public") {
-		t.Errorf("public refusal must say why: %v", err)
+	err := CheckSupported(ModePublic, v2NoSig)
+	if err == nil || !strings.Contains(err.Error(), "not yet implemented") || !strings.Contains(err.Error(), "require_operator_sig") {
+		t.Errorf("unsigned public refusal must say why: %v", err)
 	}
 	if err := CheckModeConfig(ModePublic, v2NoSig); err == nil || !strings.Contains(err.Error(), "require_operator_sig must be true") {
 		t.Errorf("public without operator sig: %v", err)
+	}
+	if err := CheckModeConfig(ModePublic, v2NoBond); err == nil || !strings.Contains(err.Error(), "require_fully_bonded must be true unless deferred_slot_weight_permille is set") {
+		t.Errorf("public not fully bonded without the tier: %v", err)
 	}
 	if err := CheckModeConfig(ModePublic, v1); err == nil || !strings.Contains(err.Error(), "version 1, want 2") {
 		t.Errorf("public v1: %v", err)
@@ -350,7 +381,10 @@ func TestConfigV2Example(t *testing.T) {
 	if err := CheckModeConfig(ModePublic, c); err != nil {
 		t.Fatalf("v2 example, public: %v", err)
 	}
-	if !errors.Is(CheckSupported(ModePublic, c), ErrNotImplemented) {
-		t.Fatal("v2 example must not be bootable before WP-E")
+	if err := CheckSupported(ModePublic, c); err != nil {
+		t.Fatalf("v2 example must be bootable since WP-E: %v", err)
+	}
+	if d := ConfigDifficulty(c); d == nil || d.BitLen()-1 != c.DifficultyBits {
+		t.Fatalf("v2 example difficulty %v, bits %d", d, c.DifficultyBits)
 	}
 }

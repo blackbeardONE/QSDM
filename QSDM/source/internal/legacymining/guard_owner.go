@@ -16,8 +16,13 @@ package legacymining
 // returns; it is forgery-proof when the OwnerAuth (WP-C: OperatorSigAuth,
 // opkeys.go) rejects such bundles, which it does before any per-owner
 // accounting. A v2 config with require_operator_sig cannot build a Guard
-// without an OwnerAuth, and S2 refuses every v2 boot until WP-E
-// lands.
+// without an OwnerAuth, and S2 (CheckSupported) refuses a public boot
+// without require_operator_sig.
+//
+// Bond policy: the SlotPolicy (default ConfigSlotPolicy) is evaluated on
+// every Precheck and every OwnerRate against the live EnrollmentView, so a
+// deferred-bond node that becomes fully bonded on chain is a full slot from
+// the next submission on, with no restart.
 //
 // Locks: cmu stays a leaf. EnrollmentView, OwnerAuth, Store.Event and logf
 // are called with no guard lock held.
@@ -76,7 +81,7 @@ func (g *CanaryGuard) initOwner(mode Mode, o GuardOptions) {
 	g.enroll = o.Enrollments
 	g.slots = o.SlotPolicy
 	if g.slots == nil {
-		g.slots = FullyBondedSlotPolicy
+		g.slots = ConfigSlotPolicy(g.cfg)
 	}
 	g.auth = o.OwnerAuth
 	g.allow = make(map[string]string, len(g.cfg.Allowed))

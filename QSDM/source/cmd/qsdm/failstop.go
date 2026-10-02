@@ -172,13 +172,14 @@ func (f *hl1FailStopper) Stop(code int, cause string) {
 // hl1BootConfig is the S2 result.
 type hl1BootConfig struct {
 	Env    legacymining.Env
-	Config legacymining.Config // valid whenever Canary() (ModePublic does not pass S2 until HL2 WP-E)
+	Config legacymining.Config // valid whenever Canary()
 }
 
 // Canary reports whether legacy mining is on: ModeCanary or (HL2 WP-D)
 // ModePublic. Both build the same machinery (the Guard, the Store and the
 // Ledger); the mode and config version select the per-owner paths inside
-// it. CheckSupported still refuses ModePublic at S2 until WP-E.
+// it. CheckSupported (S2) passes canary v1, canary v2 and public v2 with
+// require_operator_sig (HL2 WP-E).
 func (b hl1BootConfig) Canary() bool { return b.Env.Mode != legacymining.ModeOff }
 
 // hl1RefuseFailStop is S1: a tripped FAILSTOP.json refuses every boot until
@@ -200,8 +201,8 @@ func hl1RefuseFailStop(stateDir string) error {
 // chainSyncURLsFromEnv(). After the config loads, the mode/version rules
 // (CheckModeConfig, ErrConfig), the HL2 WP-D reward-rule check
 // (hl2CheckRewardPenalty, ErrConfig) and the HL2 WP-A gate (CheckSupported,
-// ErrNotImplemented) run: ModePublic and v2 configs are refused until HL2
-// WP-E lands (WP-A..D are in), so the caller exits 78.
+// ErrNotImplemented) run. Since HL2 WP-E the gate passes canary v1, canary
+// v2 and public v2 with require_operator_sig; every refusal exits 78.
 func hl1LoadBootConfig(getenv func(string) string, syncURLs []string) (hl1BootConfig, error) {
 	env, err := legacymining.LoadEnv(getenv)
 	if err != nil {

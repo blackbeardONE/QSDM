@@ -5,10 +5,10 @@ package main
 // the operator-key index the OwnerAuth reads.
 //
 // None of this runs for a version 1 config: hl1NewCanary builds exactly the
-// HL1 Guard and Store then. A version 2 config still never boots (S2,
-// legacymining.CheckSupported, exit 78) until WP-E lands; tests drive these
-// functions directly. ModePublic takes the same path as a v2 canary (HL2
-// WP-D: hl1BootConfig.Canary is "mode is not off").
+// HL1 Guard and Store then. Since HL2 WP-E a version 2 config boots in canary
+// mode, and in public mode with require_operator_sig (S2,
+// legacymining.CheckSupported). ModePublic takes the same path as a v2
+// canary (HL2 WP-D: hl1BootConfig.Canary is "mode is not off").
 
 import (
 	"sort"
@@ -62,6 +62,7 @@ func hl2EnrollmentInfo(r *enrollment.EnrollmentRecord) legacymining.EnrollmentIn
 		FullyBonded:  r.FullyBonded(),
 		StakeDust:    r.StakeDust,
 		RequiredDust: r.RequiredBondDust(),
+		DeferredBond: r.NormalizedBondMode() == enrollment.BondModeMiningRewards,
 	}
 }
 

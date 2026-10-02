@@ -127,6 +127,13 @@ type Config struct {
 	// will replace this with a chain-state-driven retarget
 	// (mining.DifficultyAdjuster + per-block timestamps);
 	// bring-up posture uses a constant.
+	//
+	// HL2 WP-E: cmd/qsdm sets it to
+	// legacymining.ConfigDifficulty of the legacy-mining config
+	// (2^16 for v1, 2^difficulty_bits for v2). A writable
+	// service with a version 2 config refuses any other value.
+	// The difficulty is producer-local: no follower or block
+	// validation path re-verifies proofs.
 	Difficulty *big.Int
 
 	// BlocksPerEpoch overrides the default mining-epoch length.
@@ -360,6 +367,13 @@ func New(cfg Config) (*Service, error) {
 				return nil, errors.New("miningsvc: a version 2 legacy-mining config requires a Sink that implements legacymining.OwnerSink")
 			}
 			svc.owner, svc.ownerSink = og, osk
+			// HL2 WP-E: the config's difficulty_bits is the difficulty
+			// served in /work and enforced by Verify. Refuse a wiring
+			// that would silently serve another one.
+			want := legacymining.ConfigDifficulty(cfg.Guard.Config())
+			if want == nil || want.Cmp(cfg.Difficulty) != 0 {
+				return nil, fmt.Errorf("miningsvc: Config.Difficulty %s is not the version 2 legacy-mining difficulty 2^%d (difficulty_bits)", cfg.Difficulty, cfg.Guard.Config().DifficultyBits)
+			}
 		}
 	}
 

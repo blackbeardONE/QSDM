@@ -1826,6 +1826,9 @@ func main() {
 	//     hashes, so neither the CPU nor CUDA solver performed meaningful
 	//     proof search. Retargeting still needs chain-state wiring, but no
 	//     public node may advertise a target below the consensus floor.
+	//     HL2 WP-E: a writable legacy-mining service takes the config's
+	//     difficulty instead (hl1MiningServiceConfig: 2^16 for a v1
+	//     config, 2^difficulty_bits >= 2^16 for v2).
 	//
 	// All three values are static for now. They can be
 	// promoted to operator-tunable config keys once we have a
@@ -2752,7 +2755,8 @@ func main() {
 	}
 	logger.Info("Mining service installed",
 		"dag_size", uint32(1024),
-		"difficulty", mining.DefaultMinDifficulty.String(),
+		"difficulty", miningSvcCfg.Difficulty.String(),
+		"difficulty_bits", miningSvcCfg.Difficulty.BitLen()-1,
 		"blocks_per_epoch", mining.DefaultBlocksPerMiningEpoch,
 		"read_only", miningSvcCfg.ReadOnly,
 		"legacy_mining", hl1Mining.status(),
@@ -4131,8 +4135,10 @@ func (c *hl1CanaryParts) status() string {
 // opened here: Reconcile opens it after S5 (S7).
 //
 // With a version 2 config (HL2 WP-C) it also passes the mode, an
-// EnrollmentView over the consensus enrollment state, the default
-// FullyBondedSlotPolicy and, when require_operator_sig is set, the
+// EnrollmentView over the consensus enrollment state, the config's
+// SlotPolicy (legacymining.ConfigSlotPolicy: FullyBondedSlotPolicy, or the
+// deferred-bond tier when deferred_slot_weight_permille is set) and, when
+// require_operator_sig is set, the
 // operator_sig OwnerAuth over an operator-key index that
 // hl2HydrateOperatorKeys fills after S14; and it uses a version 2 Store
 // (NewSQLiteStoreV2), which migrates an HL1 DB at S7. A version 1 config
@@ -4170,7 +4176,7 @@ func hl1NewCanary(boot hl1BootConfig, producerRole bool, accounts *chain.Account
 		opts.Store = store
 		opts.Mode = boot.Env.Mode
 		opts.Enrollments = view
-		opts.SlotPolicy = legacymining.FullyBondedSlotPolicy
+		opts.SlotPolicy = legacymining.ConfigSlotPolicy(boot.Config)
 		if boot.Config.RequireOperatorSig {
 			opts.OwnerAuth = legacymining.OperatorSigAuth(keys)
 		}
@@ -4239,7 +4245,8 @@ func hl1ReconcileCanary(c *hl1CanaryParts, boot hl1BootConfig, blocks []*chain.B
 // hl1MiningServiceConfig finishes the mining service config (§2 (a)). The
 // chain view is durable (W5) and RewardSink is never set. The service is
 // writable only with the canary machinery and an open Store; otherwise it is
-// read-only.
+// read-only. A writable service gets the config's difficulty
+// (legacymining.ConfigDifficulty, HL2 WP-E).
 func hl1MiningServiceConfig(base miningsvc.Config, view legacymining.ChainView, c *hl1CanaryParts, storeOpen bool) miningsvc.Config {
 	cfg := base
 	cfg.Producer = view
@@ -4251,6 +4258,10 @@ func hl1MiningServiceConfig(base miningsvc.Config, view legacymining.ChainView, 
 		cfg.Store = hl1CrashpointStore(c.store)
 		cfg.Guard = c.guard
 		cfg.Sink = c.ledger
+		// HL2 WP-E: the served and verified difficulty comes from the
+		// config: 2^16 (mining.DefaultMinDifficulty) for v1, exactly as
+		// in HL1, and 2^difficulty_bits for v2.
+		cfg.Difficulty = legacymining.ConfigDifficulty(c.guard.Config())
 	}
 	return cfg
 }

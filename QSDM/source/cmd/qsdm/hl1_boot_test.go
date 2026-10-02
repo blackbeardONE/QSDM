@@ -210,23 +210,24 @@ func TestHL1BootPartialLegacyMiningEnvExits78(t *testing.T) {
 	}
 }
 
-// HL2 WP-A: a binary that knows ModePublic but does not implement it yet
-// refuses the boot at S2 with exit 78 and a "not yet implemented" message,
-// and never reaches S3 (no stale-temp cleanup, no new FAILSTOP.armed).
+// HL2: a public config without require_operator_sig is refused at S2 with
+// exit 78 and the reason, and never reaches S3 (no stale-temp cleanup, no
+// new FAILSTOP.armed). Before WP-E every public boot ended here; since WP-E
+// a signed public v2 config passes S2 (TestHL1LoadBootConfig).
 func TestHL1BootPublicModeExits78(t *testing.T) {
 	if testing.Short() {
 		t.Skip("process-level boot test")
 	}
 	dir, stale := hl1StateFixture(t)
-	cfgPath, pin := hl1V2ConfigFile(t, t.TempDir(), "mining-public.json", nil)
+	cfgPath, pin := hl1V2ConfigFile(t, t.TempDir(), "mining-public.json", func(c *legacymining.Config) { c.RequireOperatorSig = false })
 	code, out := hl1RunMain(t, dir,
 		legacymining.EnvMode+"=public",
 		legacymining.EnvDB+"="+filepath.Join(dir, legacymining.LegacyDirName, legacymining.DBFile),
 		legacymining.EnvCanaryConfig+"="+cfgPath,
 		legacymining.EnvCanaryConfigSHA256+"="+pin,
 	)
-	if code != legacymining.ExitFatalRestore || !strings.Contains(out, "hl1 S2") || !strings.Contains(out, "not yet implemented") {
-		t.Fatalf("exit = %d, want 78 at S2 (not yet implemented)\n%s", code, out)
+	if code != legacymining.ExitFatalRestore || !strings.Contains(out, "hl1 S2") || !strings.Contains(out, "require_operator_sig must be true") {
+		t.Fatalf("exit = %d, want 78 at S2 (require_operator_sig)\n%s", code, out)
 	}
 	for _, p := range stale {
 		if _, err := os.Lstat(p); err != nil {
