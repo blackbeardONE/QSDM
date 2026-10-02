@@ -173,6 +173,35 @@ func TestV2OwnerEpochCap(t *testing.T) {
 	})
 }
 
+// A re-activated config: core's counter after the re-activation also counts
+// the other config's rewards, so it holds admission earlier, but proofs
+// pending at that boot are paid; a breach of the bound on the config's own
+// rewards is only a warning there.
+func TestV2OwnerEpochCapReactivated(t *testing.T) {
+	x := v2Cfg(t, func(c *legacymining.Config) { c.OwnerEpochCapCell = 4 })
+	y := v2Cfg(t, func(c *legacymining.Config) { c.OwnerEpochCapCell = 4; c.ExpiresUnix++ })
+	f := &fixture{t: t, dir: t.TempDir(), h0: 5}
+	f.chain(30, "main")
+	f.boot(x, 5)
+	f.boot(y, 12)
+	f.boot(x, 20)
+	for _, hgt := range []uint64{6, 8, 10, 22} {
+		f.settle(hgt, x, minerA)
+	}
+	for _, hgt := range []uint64{13, 15, 17} {
+		f.settle(hgt, y, minerA)
+	}
+	f.writeV2()
+	r := f.audit(func(o *Options) { o.CanaryConfig = x.data; o.MoreCanaryConfigs = [][]byte{y.data} })
+	wantPass(t, r)
+	if !r.Has(CodeOwnerEpochCap) || ranges(r.Canary.Active) != "[5, 12),[20, tip]" {
+		t.Fatalf("findings %v active %v", codes(r), r.Canary.Active)
+	}
+	if a := ownerOf(t, r.Canary, minerA); a.RewardTxs != 7 || a.PeakEpochEmitted != 4*legacymining.DefaultRewardCell(6) {
+		t.Fatalf("owner A %+v", a)
+	}
+}
+
 func TestV2Pending(t *testing.T) {
 	t.Run("per owner", func(t *testing.T) {
 		f := v2FixtureWith(t, v2Cfg(t, func(c *legacymining.Config) { c.MaxPendingPerOwner = 1 }))

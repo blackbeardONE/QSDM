@@ -1268,7 +1268,7 @@ func (a *auditor) checkCanary(cfg *legacymining.Config, hash legacymining.Config
 		a.rep.add(CodeProofsTotal, sevFail, nil, "%d proofs accepted under the config, above max_proofs_total %d", cs.Proofs, cfg.MaxProofsTotal)
 	}
 	if v2 {
-		a.checkOwners(cs, cfg, hash, window)
+		a.checkOwners(cs, cfg, hash, window, own)
 	}
 	return cs
 }
@@ -1282,11 +1282,15 @@ func (a *auditor) checkCanary(cfg *legacymining.Config, hash legacymining.Config
 // covers a proof paid to two owners; I6 by row: every paid ID's recipient
 // is its row's miner_addr, CodeRecipientMismatch):
 //   - owner epochs (legacymining.OwnerEpochOf, 8640 blocks from height 0):
-//     the rewards to one owner in one epoch, counted inside the config's
-//     window as core's S12 counts them (from max(epoch start, the window's
-//     first height)), are at most owner_epoch_cap_cell + 2*rewardCell(h)
-//     (the cap holds admission only, so accepted proofs may overshoot it
-//     by less than two block rewards; legacymining doc.go, WP-D);
+//     the rewards to one owner in one epoch, sealed under the config, are
+//     at most owner_epoch_cap_cell + 2*rewardCell(h) (the cap holds
+//     admission only, so accepted proofs may overshoot it by less than two
+//     block rewards; legacymining doc.go, WP-D). Core's counter starts at
+//     max(epoch start, the window's first height) (S12), so for a config
+//     run once this is exactly its counter. A re-activated config's counter
+//     also includes the rewards sealed under the configs in between, which
+//     only holds admission earlier, but proofs pending at the re-activation
+//     boot are still paid; a breach is then a warning, not a failure;
 //   - pending: the config's rows that are unpaid on the chain and in the DB
 //     are at most max_pending in total and max_pending_per_owner per owner
 //     (the Ledger's outstanding counts include them, and both caps are
@@ -1301,7 +1305,7 @@ func (a *auditor) checkCanary(cfg *legacymining.Config, hash legacymining.Config
 // deferred-bond withholding (amounts are gross; the bond accrual happens
 // when a node applies the reward tx, and core's caps count gross too).
 
-func (a *auditor) checkOwners(cs *CanarySummary, cfg *legacymining.Config, hash legacymining.ConfigHash, window segment) {
+func (a *auditor) checkOwners(cs *CanarySummary, cfg *legacymining.Config, hash legacymining.ConfigHash, window segment, own []segment) {
 	oa := &OwnerAudit{
 		ConfigVersion: cfg.Version, OwnerEpochCapCell: cfg.OwnerEpochCapCell, MaxPending: cfg.MaxPending,
 		MaxPendingPerOwner: cfg.MaxPendingPerOwner, DifficultyBits: cfg.DifficultyBits,
@@ -1329,13 +1333,24 @@ func (a *auditor) checkOwners(cs *CanarySummary, cfg *legacymining.Config, hash 
 	}
 	epochCell := make(map[ownerEpoch]float64)
 	epochLast := make(map[ownerEpoch]uint64) // highest reward height, for rewardCell
-	for _, rw := range a.rewards {           // block and tx order, as core sums
+	sealedUnder := func(height uint64) bool {
+		for _, sg := range own {
+			if sg.has(height) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, rw := range a.rewards { // block and tx order, as core sums
 		if !window.has(rw.height) {
 			continue
 		}
 		s := get(rw.recipient)
 		s.RewardTxs++
 		s.Emitted += rw.amount
+		if !sealedUnder(rw.height) {
+			continue
+		}
 		k := ownerEpoch{rw.recipient, legacymining.OwnerEpochOf(rw.height)}
 		epochCell[k] += rw.amount
 		epochLast[k] = max(epochLast[k], rw.height)
@@ -1359,8 +1374,12 @@ func (a *auditor) checkOwners(cs *CanarySummary, cfg *legacymining.Config, hash 
 		limit := float64(cfg.OwnerEpochCapCell) + 2*a.cell(epochLast[k])*(1+legacymining.RewardSumSlack)
 		if !(cell <= limit) {
 			first := k.epoch * legacymining.OwnerEpochBlocks
-			a.rep.add(CodeOwnerEpochCap, sevFail, h(epochLast[k]), "owner %s received %v CELL in owner epoch %d (heights %d..%d) in the window %s, above owner_epoch_cap_cell %d + 2*rewardCell = %v",
-				k.owner, cell, k.epoch, first, first+legacymining.OwnerEpochBlocks-1, window.heightRange(), cfg.OwnerEpochCapCell, limit)
+			sev, why := sevFail, ""
+			if len(own) > 1 {
+				sev, why = sevWarn, " (re-activated config: proofs pending at a re-activation boot are paid past the cap)"
+			}
+			a.rep.add(CodeOwnerEpochCap, sev, h(epochLast[k]), "owner %s received %v CELL in owner epoch %d (heights %d..%d) sealed under the config, above owner_epoch_cap_cell %d + 2*rewardCell = %v%s",
+				k.owner, cell, k.epoch, first, first+legacymining.OwnerEpochBlocks-1, cfg.OwnerEpochCapCell, limit, why)
 		}
 	}
 
