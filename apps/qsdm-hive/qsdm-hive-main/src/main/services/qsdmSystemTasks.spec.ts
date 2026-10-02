@@ -11,6 +11,8 @@ import { QSDM_MINER_UNLOCK_WALLET_MESSAGE } from './qsdmMinerOperatorSigning';
 import {
   assertQsdmMinerOperatorSigningReady,
   getQsdmMinerOperatorSigningPlan,
+  getQsdmMinerOperatorSigningStatus,
+  resetQsdmMinerOperatorSigningStatusCacheForTests,
   createQsdmEdgeWorkerSystemTask,
   createQsdmEdgeWorkerScript,
   createQsdmGPUWorkerSystemTask,
@@ -359,6 +361,7 @@ describe('qsdmSystemTasks', () => {
       (app.getPath as jest.Mock).mockReturnValue(path.join(root, 'appdata'));
       mockGetQsdmTaskActionSignerStatus.mockReset();
       mockGetQsdmTaskActionSignerStatus.mockReturnValue(signerStatus());
+      resetQsdmMinerOperatorSigningStatusCacheForTests();
     });
 
     afterEach(() => {
@@ -529,6 +532,26 @@ describe('qsdmSystemTasks', () => {
         `--operator-passphrase-file=${sessionPassphraseFile}`,
       ]);
       expect(fs.readFileSync(configPath, 'utf8')).toBe(before);
+    });
+
+    it('reports operator signing to the Miner panel without paths and caches it briefly', () => {
+      const now = 1_000_000;
+      const first = getQsdmMinerOperatorSigningStatus(now);
+
+      expect(first).toEqual({
+        mode: 'hive',
+        ready: true,
+        address: signer,
+        message: `Operator signing: enabled automatically with the Hive wallet ${signer}.`,
+      });
+      expect(JSON.stringify(first)).not.toContain(sessionPassphraseFile);
+      mockGetQsdmTaskActionSignerStatus.mockReturnValue(
+        signerStatus({ ready: false })
+      );
+      expect(getQsdmMinerOperatorSigningStatus(now + 1000)).toEqual(first);
+      expect(getQsdmMinerOperatorSigningStatus(now + 6000)?.mode).toBe(
+        'locked'
+      );
     });
 
     it('redacts secrets from the miner log tail while keeping file paths and adds the unlock hint', () => {

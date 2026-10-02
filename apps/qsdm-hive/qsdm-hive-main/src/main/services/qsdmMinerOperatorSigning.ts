@@ -271,6 +271,27 @@ export const summarizeQsdmMinerOperatorSigning = (
   message: plan.message,
 });
 
+// qsdmminer-console exits with code 2 when it cannot open the operator key.
+// With --log-file it may not record why when the passphrase does not decrypt
+// the keystore, so add the likely remedy to Hive's startup error.
+export const addQsdmMinerOperatorSigningStartupHint = (
+  message: string,
+  plan?: QsdmMinerOperatorSigningPlan
+) => {
+  if (
+    !plan?.ready ||
+    !/exited during startup with code 2\b/.test(message) ||
+    message.includes(QSDM_MINER_UNLOCK_WALLET_MESSAGE)
+  ) {
+    return message;
+  }
+  const hint =
+    plan.mode === 'hive'
+      ? `Operator signing: Hive gave the miner its wallet (${plan.address}). If the wallet file or its passphrase changed outside Hive, the miner cannot open the signing key. ${QSDM_MINER_UNLOCK_WALLET_MESSAGE} Open Settings > Wallet, unlock the wallet again, then start the QSDM Miner.`
+      : `Operator signing: the miner uses operator_keystore_path / operator_passphrase_file from miner.toml (wallet ${plan.address}). Check that the passphrase file still opens that wallet, or unlock your QSDM wallet in Hive so Hive signs automatically.`;
+  return `${message}\n${hint}`;
+};
+
 // Defense in depth for text that reaches task.log, error dialogs or crash
 // output: miner stdout/stderr, the miner.log tail and the launch command.
 // Paths (including --operator-passphrase-file=<path> and

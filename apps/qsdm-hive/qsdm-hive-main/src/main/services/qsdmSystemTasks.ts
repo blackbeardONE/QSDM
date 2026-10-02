@@ -69,6 +69,7 @@ import {
   prepareQsdmMinerV2Config,
 } from 'main/services/qsdmMinerEnrollment';
 import {
+  addQsdmMinerOperatorSigningStartupHint,
   buildQsdmMinerOperatorSigningArgs,
   describeAdoptedQsdmMinerOperatorSigning,
   QSDM_MINER_UNLOCK_WALLET_MESSAGE,
@@ -2954,9 +2955,33 @@ export const getQsdmMinerOperatorSigningPlan = (
   });
 };
 
-export const getQsdmMinerOperatorSigningStatus = () => {
+// The Miner panel polls this every few seconds; signer discovery touches the
+// file system, so reuse a fresh summary briefly. Starting the miner always
+// resolves the plan again (assertQsdmMinerOperatorSigningReady).
+const QSDM_MINER_OPERATOR_SIGNING_STATUS_CACHE_MS = 5000;
+let cachedOperatorSigningStatus:
+  | { at: number; value: ReturnType<typeof summarizeQsdmMinerOperatorSigning> }
+  | undefined;
+
+export const resetQsdmMinerOperatorSigningStatusCacheForTests = () => {
+  cachedOperatorSigningStatus = undefined;
+};
+
+export const getQsdmMinerOperatorSigningStatus = (now = Date.now()) => {
+  if (
+    cachedOperatorSigningStatus &&
+    now - cachedOperatorSigningStatus.at >= 0 &&
+    now - cachedOperatorSigningStatus.at <
+      QSDM_MINER_OPERATOR_SIGNING_STATUS_CACHE_MS
+  ) {
+    return cachedOperatorSigningStatus.value;
+  }
   try {
-    return summarizeQsdmMinerOperatorSigning(getQsdmMinerOperatorSigningPlan());
+    const value = summarizeQsdmMinerOperatorSigning(
+      getQsdmMinerOperatorSigningPlan()
+    );
+    cachedOperatorSigningStatus = { at: now, value };
+    return value;
   } catch {
     return undefined;
   }
@@ -2968,6 +2993,10 @@ export const assertQsdmMinerOperatorSigningReady = (
   configPath = getMinerConfigPath()
 ) => {
   const plan = getQsdmMinerOperatorSigningPlan(configPath);
+  cachedOperatorSigningStatus = {
+    at: Date.now(),
+    value: summarizeQsdmMinerOperatorSigning(plan),
+  };
   if (!plan.ready) {
     writeTaskLog(QSDM_MINER_SYSTEM_TASK_ID, plan.message);
     plan.warnings.forEach((warning) =>
@@ -4389,7 +4418,17 @@ export const startQsdmMinerSystemProcess = async (): Promise<{
     )
   );
 
-  await waitForChildProcessStartup(child, 'QSDM Miner', logPath);
+  try {
+    await waitForChildProcessStartup(child, 'QSDM Miner', logPath);
+  } catch (error: any) {
+    const message =
+      error instanceof Error
+        ? addQsdmMinerOperatorSigningStartupHint(error.message, operatorSigning)
+        : '';
+    if (!message || message === error.message) throw error;
+    writeTaskLog(QSDM_MINER_SYSTEM_TASK_ID, message.split('\n').pop() || '');
+    throw new Error(message);
+  }
 
   try {
     writeQsdmMinerLaunchRecord(

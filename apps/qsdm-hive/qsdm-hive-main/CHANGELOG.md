@@ -4,7 +4,7 @@
 - Precedence: the miner gives command-line flags priority over `miner.toml`, so Hive's wallet signs whenever it is unlocked (it is the enrollment owner and reward address by construction). Existing `operator_keystore_path` / `operator_passphrase_file` lines are never edited; they are used only while the Hive wallet is locked and only if they point at the same wallet. A separately saved operator passphrase file is no longer needed.
 - Fail closed: if nothing can sign, Hive does not start a miner whose proofs would be rejected. Starting the miner shows "Unlock your QSDM wallet in Hive to mine." and the Miner panel shows the operator-signing state.
 - Secret hygiene: only file paths reach the miner command line. Miner output, the launch command and startup error log tails pass through a redactor for labelled HMAC keys, passphrases, private keys and long hex key material before reaching `task.log` or error dialogs.
-- Diagnostics: Hive records (without secrets) whether it launched the miner with operator signing and reports in the task log when it adopts a miner process it cannot confirm is signing.
+- Diagnostics: Hive records (without secrets) whether it launched the miner with operator signing and reports in the task log when it adopts a miner process it cannot confirm is signing. If the miner cannot open the signing key at startup (exit code 2), the error now says how to fix it.
 
 ## [1.4.17]
 

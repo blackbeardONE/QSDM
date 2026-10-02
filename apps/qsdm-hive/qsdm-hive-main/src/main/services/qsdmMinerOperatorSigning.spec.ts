@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 
 import {
+  addQsdmMinerOperatorSigningStartupHint,
   buildQsdmMinerOperatorSigningArgs,
   describeAdoptedQsdmMinerOperatorSigning,
   QSDM_MINER_UNLOCK_WALLET_MESSAGE,
@@ -284,6 +285,52 @@ describe('qsdmMinerOperatorSigning', () => {
       expect(redacted).toContain('QSDM_OPERATOR_PASSPHRASE=[redacted]');
       expect(redacted).toContain('"passphrase": "[redacted]"');
       expect(redacted).toContain('[redacted-hex]');
+    });
+  });
+
+  describe('addQsdmMinerOperatorSigningStartupHint', () => {
+    const exitCode2 =
+      'QSDM Miner exited during startup with code 2 and signal null. The QSDM Miner configuration is incomplete or invalid. Log: C:\\Users\\miner\\.qsdm\\miner.log.';
+
+    it('explains a code 2 exit when Hive passed its wallet to the miner', () => {
+      const message = addQsdmMinerOperatorSigningStartupHint(
+        exitCode2,
+        resolve()
+      );
+
+      expect(message.startsWith(exitCode2)).toBe(true);
+      expect(message).toContain(QSDM_MINER_UNLOCK_WALLET_MESSAGE);
+      expect(message).toContain(signer);
+      expect(message).not.toContain('passphrase.txt');
+    });
+
+    it('points manual miner.toml setups at their own passphrase file', () => {
+      const plan = resolve({
+        signerStatus: { ...readySigner, ready: false },
+        minerConfig: `operator_keystore_path = '${hiveKeystore}'\noperator_passphrase_file = '${manualPassphrase}'\n`,
+        existing: [hiveKeystore, manualPassphrase],
+      });
+
+      expect(addQsdmMinerOperatorSigningStartupHint(exitCode2, plan)).toContain(
+        'operator_passphrase_file from miner.toml'
+      );
+    });
+
+    it('leaves other exits, locked plans and existing hints unchanged', () => {
+      const exitCode3 = exitCode2.replace('code 2', 'code 3');
+      const locked = resolve({ existing: [hiveKeystore] });
+      const alreadyHinted = `${exitCode2} ${QSDM_MINER_UNLOCK_WALLET_MESSAGE}`;
+
+      expect(addQsdmMinerOperatorSigningStartupHint(exitCode3, resolve())).toBe(
+        exitCode3
+      );
+      expect(addQsdmMinerOperatorSigningStartupHint(exitCode2, locked)).toBe(
+        exitCode2
+      );
+      expect(addQsdmMinerOperatorSigningStartupHint(exitCode2)).toBe(exitCode2);
+      expect(
+        addQsdmMinerOperatorSigningStartupHint(alreadyHinted, resolve())
+      ).toBe(alreadyHinted);
     });
   });
 
