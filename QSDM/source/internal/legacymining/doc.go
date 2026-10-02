@@ -221,6 +221,25 @@
 //     reward, including the withheld part; the Ledger's I4/I5 read only
 //     the funder, so withholding changes no invariant.
 //
+// # Contract revision HL2 (WP-H): ops
+//
+// Additive; v1 never reaches it:
+//   - OwnerEpochStats (api.go) and PayoutLedger.OwnerEpochStats: the
+//     current owner epoch over all owners in aggregate (owners with
+//     emission, total, max, owners at the cap), so metrics need no
+//     per-owner series. cmd/qsdm (hl2_metrics.go) exports it with
+//     GuardStats and the S14b operator-key report as hl2_* metrics, and
+//     registers that collector only for a version 2 config.
+//   - ReleaseOwnerCooldown stays unexposed. A cooldown lasts OwnerCooldown
+//     (10 min), is in memory and never latches, so the runbook waits it
+//     out; a restart also clears every cooldown (hl1/OPS.md, "HL2 public
+//     mining"). No admin endpoint is added to the producer.
+//   - cmd/hl-audit audits a version 2 config per owner (owner epoch cap,
+//     per-owner and total pending, a set allowlist on the config's rows,
+//     one reward per recipient per block) and takes several configs in one
+//     run; hl1/tools/hl2-db-rollback.py undoes schema version 2 offline for
+//     a rollback to an HL1 binary (store_opkeys.go "Rollback").
+//
 // ModePublic is accepted at S2 with a version 2 config that sets
 // require_operator_sig (CheckSupported).
 //

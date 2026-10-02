@@ -818,6 +818,17 @@ type GuardStats struct {
 	UnattributableAlarms uint64
 }
 
+// OwnerEpochStats is an aggregate of the Ledger's per-owner emitted amounts
+// in the current owner epoch (HL2 WP-H, for metrics: bounded, no per-owner
+// series). All zero with a v1 config.
+type OwnerEpochStats struct {
+	Epoch  uint64  // the Ledger's current owner epoch (OwnerEpochOf)
+	Owners int     // owners with a positive emitted amount in Epoch
+	Total  float64 // sum over owners, CELL (gross)
+	Max    float64 // the largest owner's amount, CELL (gross)
+	AtCap  int     // owners whose amount is >= owner_epoch_cap_cell (admission held)
+}
+
 // Guard is the canary control plane (§6): config, allowlist, caps, latched
 // states, pre-armed markers and automatic triggers. Exactly one Guard exists,
 // and only in ModeCanary. It is safe for concurrent use.

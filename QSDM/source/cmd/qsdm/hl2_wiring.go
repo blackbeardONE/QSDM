@@ -182,6 +182,7 @@ func hl2HydrateOperatorKeys(c *hl1CanaryParts, blocks []*chain.Block, storeOpen 
 			missing++
 		}
 	}
+	hl2RecordOperatorKeys(len(owners), missing, rep)
 	log := hl1Logger()
 	if err != nil {
 		log.Error("hl2: operator keys: store step failed; using the keys found in memory",

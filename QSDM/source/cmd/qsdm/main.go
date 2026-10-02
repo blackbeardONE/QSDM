@@ -2727,6 +2727,11 @@ func main() {
 	// HL2 WP-C "S14b": a version 2 config indexes the owners' operator keys
 	// from the restored chain and operator_keys before admission can open.
 	hl2HydrateOperatorKeys(hl1Mining, hl1RestoredBlocks, hl1Reconciled.StoreOpen)
+	// HL2 WP-H: the v2 guard, owner-epoch and operator-key metrics. A v1
+	// config registers nothing, so an HL1 boot exports the HL1 set only.
+	if hl2IsV2(hl1Mining) {
+		monitoring.GlobalScrapePrometheusExporter().RegisterCollector("hl2", hl2MetricsCollector(hl1Mining))
+	}
 	go hl1LegacyMiningHealthLoop(ctx, healthChecker, hl1Mining)
 	// HL1 (a): the mining service. It is writable only in canary mode with
 	// local block production, an open Store and a loaded Guard. Otherwise it

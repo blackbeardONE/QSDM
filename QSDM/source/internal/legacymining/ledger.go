@@ -286,6 +286,30 @@ func (l *PayoutLedger) OwnerEpochEmitted(owner string) (epoch uint64, cell float
 	return l.epoch, l.epochCell[owner]
 }
 
+// OwnerEpochStats aggregates the current owner epoch over every owner (HL2
+// WP-H metrics). With a v1 config it is the zero value.
+func (l *PayoutLedger) OwnerEpochStats() OwnerEpochStats {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.v2 {
+		return OwnerEpochStats{}
+	}
+	s := OwnerEpochStats{Epoch: l.epoch}
+	limit := float64(l.guard.Config().OwnerEpochCapCell)
+	for _, cell := range l.epochCell {
+		if !(cell > 0) {
+			continue
+		}
+		s.Owners++
+		s.Total += cell
+		s.Max = max(s.Max, cell)
+		if cell >= limit {
+			s.AtCap++
+		}
+	}
+	return s
+}
+
 // setOwnerLocked reports owner's count to the OwnerGuard (v2 only).
 func (l *PayoutLedger) setOwnerLocked(owner string) {
 	if l.v2 {
