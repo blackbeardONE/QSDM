@@ -54,11 +54,11 @@ func hl2MetricsCollector(c *hl1CanaryParts) monitoring.MetricCollector {
 		if !hl2IsV2(c) {
 			return nil
 		}
-		return hl2Metrics(c.guard.Stats(), c.ledger.OwnerEpochStats(), c.guard.Config())
+		return hl2Metrics(c.guard.Stats(), c.ledger.OwnerEpochStats(), c.ledger.Outstanding(), c.guard.Config())
 	}
 }
 
-func hl2Metrics(gs legacymining.GuardStats, es legacymining.OwnerEpochStats, cfg legacymining.Config) []monitoring.Metric {
+func hl2Metrics(gs legacymining.GuardStats, es legacymining.OwnerEpochStats, outstanding int, cfg legacymining.Config) []monitoring.Metric {
 	counter := func(name, help string, v uint64, labels map[string]string) monitoring.Metric {
 		return monitoring.Metric{Name: name, Help: help, Type: monitoring.MetricCounter, Value: float64(v), Labels: labels}
 	}
@@ -101,6 +101,7 @@ func hl2Metrics(gs legacymining.GuardStats, es legacymining.OwnerEpochStats, cfg
 	}
 
 	out = append(out,
+		gauge("hl2_ledger_outstanding", "Accepted proofs not yet paid (pending plus in flight), all owners; 0 means drained", float64(outstanding)),
 		gauge("hl2_owner_epoch", "Current owner epoch (8640-block windows from height 0)", float64(es.Epoch)),
 		gauge("hl2_owner_epoch_cap_cell", "owner_epoch_cap_cell of the config", float64(cfg.OwnerEpochCapCell)),
 		gauge("hl2_owner_epoch_owners", "Owners with a positive emitted amount in the current owner epoch", float64(es.Owners)),

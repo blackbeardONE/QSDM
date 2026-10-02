@@ -96,6 +96,7 @@ func TestHL2MetricsCollector(t *testing.T) {
 		"hl2_guard_alarms_total{alarm=rate-burst}":                 0,
 		"hl2_guard_alarms_total{alarm=duplicates}":                 0,
 		"hl2_guard_alarms_total{alarm=unattributable}":             0,
+		"hl2_ledger_outstanding":                                   0,
 		"hl2_owner_epoch_cap_cell":                                 10,
 		"hl2_owner_epoch_owners":                                   0,
 		"hl2_owner_epoch_owners_at_cap":                            0,
@@ -113,7 +114,7 @@ func TestHL2MetricsCollector(t *testing.T) {
 		t.Fatal("hl2_owner_epoch missing")
 	}
 	// Bounded: one series per reject kind, cause and alarm, nothing per owner.
-	if n := len(got); n != int(legacymining.KindOwnerCooldown)+1+3+1+3+6+3 {
+	if n := len(got); n != int(legacymining.KindOwnerCooldown)+1+3+1+3+7+3 {
 		t.Fatalf("%d series: %v", n, got)
 	}
 }
