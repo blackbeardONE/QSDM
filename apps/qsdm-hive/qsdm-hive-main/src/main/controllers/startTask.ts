@@ -33,6 +33,7 @@ import {
   prepareQsdmMinerV2Config,
 } from 'main/services/qsdmMinerEnrollment';
 import {
+  assertQsdmMinerOperatorSigningReady,
   assertQsdmMotherHiveConfigured,
   isQsdmEdgeWorkerSystemTask,
   isQsdmMinerSystemTask,
@@ -201,6 +202,9 @@ const startTask = async (
 
   if (isQsdmNativeTaskRuntime && isSystemMinerTask) {
     try {
+      // Public mining only accepts proofs signed by the enrollment owner's
+      // wallet. Ask for an unlocked wallet before any enrollment prompt.
+      assertQsdmMinerOperatorSigningReady();
       await prepareQsdmMinerV2Config();
       let enrollment = await getQsdmMinerEnrollmentStatus();
       if (!enrollment.ready) {

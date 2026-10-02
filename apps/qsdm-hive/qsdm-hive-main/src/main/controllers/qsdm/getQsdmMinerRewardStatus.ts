@@ -2,6 +2,7 @@ import { QSDM_MINER_SYSTEM_TASK_ID } from 'config/qsdmSystemTasks';
 import { getQsdmMinerProtocolRewardInfo } from 'main/services/qsdmMinerProtocolRewards';
 import { getQsdmMinerEnrollmentStatus } from 'main/services/qsdmMinerEnrollment';
 import {
+  getQsdmMinerOperatorSigningStatus,
   getQsdmMinerRewardAddressInfo,
   getQsdmMinerSystemProcessInfo,
 } from 'main/services/qsdmSystemTasks';
@@ -18,6 +19,7 @@ export const getQsdmMinerRewardStatus =
     const minerProcess = await getQsdmMinerSystemProcessInfo();
     enrollment.computeBackend = 'cuda';
     enrollment.gpuComputeActive = Boolean(minerProcess);
+    const operatorSigning = getQsdmMinerOperatorSigningStatus();
 
     if (!rewardAddressInfo) {
       return {
@@ -27,6 +29,7 @@ export const getQsdmMinerRewardStatus =
         warning:
           'QSDM Miner reward address is not configured. Configure a QSDM signer or miner reward_address before relying on mining rewards.',
         checkedAt,
+        operatorSigning,
         enrollment,
       };
     }
@@ -55,6 +58,7 @@ export const getQsdmMinerRewardStatus =
           ? undefined
           : 'Mining rewards are paid to the configured miner reward address, which is different from the active Hive signer.',
         checkedAt,
+        operatorSigning,
         enrollment,
       };
     } catch (error: any) {
@@ -71,6 +75,7 @@ export const getQsdmMinerRewardStatus =
           : 'Mining rewards are paid to the configured miner reward address, which is different from the active Hive signer.',
         error: error?.message || String(error),
         checkedAt,
+        operatorSigning,
         enrollment,
       };
     }

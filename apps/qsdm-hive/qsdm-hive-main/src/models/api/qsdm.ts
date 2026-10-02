@@ -232,6 +232,16 @@ export interface QsdmMinerRewardStatusResponse {
   warning?: string;
   error?: string;
   checkedAt: string;
+  /**
+   * How the miner signs proofs for public mining. Paths and secrets are never
+   * included; "locked" means Hive will refuse to start the miner.
+   */
+  operatorSigning?: {
+    mode: 'hive' | 'miner-config' | 'locked';
+    ready: boolean;
+    address?: string;
+    message: string;
+  };
   enrollment?: {
     configured: boolean;
     eligible: boolean;

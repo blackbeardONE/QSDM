@@ -69,6 +69,16 @@ import {
   prepareQsdmMinerV2Config,
 } from 'main/services/qsdmMinerEnrollment';
 import {
+  buildQsdmMinerOperatorSigningArgs,
+  describeAdoptedQsdmMinerOperatorSigning,
+  QSDM_MINER_UNLOCK_WALLET_MESSAGE,
+  QsdmMinerOperatorSigningPlan,
+  redactQsdmMinerSecrets,
+  resolveQsdmMinerOperatorSigning,
+  summarizeQsdmMinerOperatorSigning,
+  writeQsdmMinerLaunchRecord,
+} from 'main/services/qsdmMinerOperatorSigning';
+import {
   getEdgeRelayConnectionConfig,
   getEdgeRelayFederationContext,
   getEdgeRelayMotherContext,
@@ -76,7 +86,10 @@ import {
   getDefaultEdgeRelayURL,
 } from 'main/services/qsdmMotherHiveRelayConfig';
 import { submitQsdmTaskActionIntent } from 'main/services/qsdmTaskActions';
-import { getQsdmTaskActionSender } from 'main/services/qsdmTaskActionSigner';
+import {
+  getQsdmTaskActionSender,
+  getQsdmTaskActionSignerStatus,
+} from 'main/services/qsdmTaskActionSigner';
 import { RawTaskData, RequirementType, TaskMetadata } from 'models';
 import {
   QsdmMiningAccountResponse,
@@ -2870,6 +2883,7 @@ type QsdmMinerLaunchArgsOptions = {
   configPath: string;
   logPath: string;
   env?: NodeJS.ProcessEnv;
+  operatorSigning?: QsdmMinerOperatorSigningPlan;
 };
 
 const isEnabledEnvironmentFlag = (value?: string) =>
@@ -2878,10 +2892,14 @@ const isEnabledEnvironmentFlag = (value?: string) =>
 // The Hive miner uses the packaged CUDA proof solver. --idle-only watches the
 // same GPU and can intentionally pause proof work while another application is
 // active, so retain it as an explicit operator opt-in rather than a default.
+// With an unlocked Hive wallet, the operator signing flags point the miner at
+// Hive's signer keystore and Hive's per-launch passphrase FILE. They are paths
+// only and override operator_* lines in miner.toml (miner CLI precedence).
 export const buildQsdmMinerLaunchArgs = ({
   configPath,
   logPath,
   env = process.env,
+  operatorSigning,
 }: QsdmMinerLaunchArgsOptions) => {
   const args = [
     `--config=${configPath}`,
@@ -2890,6 +2908,7 @@ export const buildQsdmMinerLaunchArgs = ({
     '--log-keep=5',
     '--plain',
     '--compute-backend=cuda',
+    ...buildQsdmMinerOperatorSigningArgs(operatorSigning),
   ];
 
   if (isEnabledEnvironmentFlag(env.QSDM_MINER_IDLE_ONLY)) {
@@ -2905,6 +2924,59 @@ const getMinerConfigPath = () =>
 
 const getMinerLogPath = () =>
   process.env.QSDM_MINER_LOG || path.join(os.homedir(), '.qsdm', 'miner.log');
+
+const getMinerLaunchRecordPath = () =>
+  path.join(
+    getAppDataPath(),
+    'namespace',
+    QSDM_MINER_SYSTEM_TASK_ID,
+    'miner-launch.json'
+  );
+
+// Decides how this launch signs proofs: the unlocked Hive wallet (flags), a
+// manual miner.toml setup for the same wallet while Hive is locked, or not at
+// all ("locked"). Reads miner.toml and signer paths only, never secrets.
+export const getQsdmMinerOperatorSigningPlan = (
+  configPath = getMinerConfigPath()
+): QsdmMinerOperatorSigningPlan => {
+  let minerConfig = '';
+  try {
+    if (fs.existsSync(configPath)) {
+      minerConfig = fs.readFileSync(configPath, 'utf8');
+    }
+  } catch {
+    minerConfig = '';
+  }
+
+  return resolveQsdmMinerOperatorSigning({
+    signerStatus: getQsdmTaskActionSignerStatus(),
+    minerConfig,
+  });
+};
+
+export const getQsdmMinerOperatorSigningStatus = () => {
+  try {
+    return summarizeQsdmMinerOperatorSigning(getQsdmMinerOperatorSigningPlan());
+  } catch {
+    return undefined;
+  }
+};
+
+// Public mining rejects unsigned proofs, so never launch a miner that cannot
+// sign. The message starts with "Unlock your QSDM wallet in Hive to mine."
+export const assertQsdmMinerOperatorSigningReady = (
+  configPath = getMinerConfigPath()
+) => {
+  const plan = getQsdmMinerOperatorSigningPlan(configPath);
+  if (!plan.ready) {
+    writeTaskLog(QSDM_MINER_SYSTEM_TASK_ID, plan.message);
+    plan.warnings.forEach((warning) =>
+      writeTaskLog(QSDM_MINER_SYSTEM_TASK_ID, warning)
+    );
+    throw new Error(plan.message);
+  }
+  return plan;
+};
 
 export const resolveQsdmMinerValidatorBaseUrl = ({
   runtimeApiUrl = getQsdmRuntimeCoreApiUrl(),
@@ -3388,6 +3460,14 @@ export const adoptQsdmMinerSystemProcess = (
     `Adopting existing QSDM Miner process pid=${processInfo.pid} path="${
       processInfo.executablePath || 'unknown'
     }"`
+  );
+  writeTaskLog(
+    QSDM_MINER_SYSTEM_TASK_ID,
+    describeAdoptedQsdmMinerOperatorSigning(
+      getMinerLaunchRecordPath(),
+      processInfo.pid,
+      processInfo.commandLine
+    )
   );
 
   return {
@@ -4174,7 +4254,7 @@ const readProcessLogTail = (logPath: string, maxLines = 12) => {
       return '';
     }
 
-    return (
+    return redactQsdmMinerSecrets(
       fs
         .readFileSync(logPath, 'utf8')
         // eslint-disable-next-line no-control-regex
@@ -4184,9 +4264,7 @@ const readProcessLogTail = (logPath: string, maxLines = 12) => {
         .filter(Boolean)
         .slice(-maxLines)
         .join('\n')
-        .replace(/(hmac(?:[_ -]?key)?\s*[=:]\s*)\S+/gi, '$1[redacted]')
-        .slice(-2000)
-    );
+    ).slice(-2000);
   } catch {
     return '';
   }
@@ -4205,9 +4283,14 @@ export const buildProcessStartupExitDetail = (
       ? ' The QSDM Miner configuration is incomplete or invalid.'
       : '';
   const logTail = readProcessLogTail(logPath);
+  const operatorSigningDetail =
+    label === 'QSDM Miner' &&
+    /operator (?:signer|keystore|passphrase)/i.test(logTail)
+      ? ` The miner could not load the operator signing key from the Hive wallet. ${QSDM_MINER_UNLOCK_WALLET_MESSAGE} Open Settings > Wallet, unlock the wallet with its passphrase, then start the QSDM Miner again.`
+      : '';
   const logDetail = logTail ? `\nMiner log tail:\n${logTail}` : '';
 
-  return `${label} exited during startup with code ${code} and signal ${signal}.${protocolDetail} Log: ${logPath}.${logDetail}`;
+  return `${label} exited during startup with code ${code} and signal ${signal}.${protocolDetail}${operatorSigningDetail} Log: ${logPath}.${logDetail}`;
 };
 
 export const startQsdmMinerSystemProcess = async (): Promise<{
@@ -4216,6 +4299,10 @@ export const startQsdmMinerSystemProcess = async (): Promise<{
   logPath: string;
   executablePath: string;
 }> => {
+  // Public mining rejects unsigned proofs. Refuse before touching miner.toml,
+  // the network or the GPU when neither the Hive wallet nor a matching manual
+  // miner.toml setup can sign.
+  const operatorSigning = assertQsdmMinerOperatorSigningReady();
   await prepareQsdmMinerV2Config();
   await assertQsdmMinerEnrollmentReady();
   const executablePath = getMinerExecutablePath();
@@ -4230,13 +4317,27 @@ export const startQsdmMinerSystemProcess = async (): Promise<{
     );
   }
 
+  if (
+    operatorSigning.address &&
+    configUpdate.signer &&
+    operatorSigning.address.toLowerCase() !== configUpdate.signer.toLowerCase()
+  ) {
+    const message = `Operator signing wallet ${operatorSigning.address} does not match the miner reward address ${configUpdate.signer}. Hive will not start a miner whose proofs would be rejected.`;
+    writeTaskLog(QSDM_MINER_SYSTEM_TASK_ID, message);
+    throw new Error(message);
+  }
+
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
   fs.mkdirSync(
     path.join(getAppDataPath(), 'namespace', QSDM_MINER_SYSTEM_TASK_ID),
     { recursive: true }
   );
 
-  const args = buildQsdmMinerLaunchArgs({ configPath, logPath });
+  const args = buildQsdmMinerLaunchArgs({
+    configPath,
+    logPath,
+    operatorSigning,
+  });
 
   writeTaskLog(
     QSDM_MINER_SYSTEM_TASK_ID,
@@ -4248,10 +4349,18 @@ export const startQsdmMinerSystemProcess = async (): Promise<{
       'Continuous CUDA solving enabled. Set QSDM_MINER_IDLE_ONLY=1 only if mining should pause while other GPU applications are active.'
     );
   }
+  writeTaskLog(QSDM_MINER_SYSTEM_TASK_ID, operatorSigning.message);
+  operatorSigning.warnings.forEach((warning) =>
+    writeTaskLog(QSDM_MINER_SYSTEM_TASK_ID, warning)
+  );
 
+  // The command line carries only paths (never the passphrase itself); it is
+  // still passed through the secret redactor before reaching task.log.
   writeTaskLog(
     QSDM_MINER_SYSTEM_TASK_ID,
-    `Starting QSDM Miner in user mode: "${executablePath}" ${args.join(' ')}`
+    `Starting QSDM Miner in user mode: "${executablePath}" ${redactQsdmMinerSecrets(
+      args.join(' ')
+    )}`
   );
 
   const child = spawn(executablePath, args, {
@@ -4262,19 +4371,38 @@ export const startQsdmMinerSystemProcess = async (): Promise<{
   });
 
   child.stdout?.on('data', (data) =>
-    writeTaskLog(QSDM_MINER_SYSTEM_TASK_ID, data.toString().trimEnd())
+    writeTaskLog(
+      QSDM_MINER_SYSTEM_TASK_ID,
+      redactQsdmMinerSecrets(data.toString().trimEnd())
+    )
   );
   child.stderr?.on('data', (data) =>
-    writeTaskLog(QSDM_MINER_SYSTEM_TASK_ID, data.toString().trimEnd())
+    writeTaskLog(
+      QSDM_MINER_SYSTEM_TASK_ID,
+      redactQsdmMinerSecrets(data.toString().trimEnd())
+    )
   );
   child.on('error', (error) =>
     writeTaskLog(
       QSDM_MINER_SYSTEM_TASK_ID,
-      `Miner process error: ${error.message}`
+      `Miner process error: ${redactQsdmMinerSecrets(error.message)}`
     )
   );
 
   await waitForChildProcessStartup(child, 'QSDM Miner', logPath);
+
+  try {
+    writeQsdmMinerLaunchRecord(
+      getMinerLaunchRecordPath(),
+      child.pid,
+      operatorSigning
+    );
+  } catch (error: any) {
+    writeTaskLog(
+      QSDM_MINER_SYSTEM_TASK_ID,
+      `Could not record the miner launch state: ${error?.message || error}`
+    );
+  }
 
   return {
     child,

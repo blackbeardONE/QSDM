@@ -722,6 +722,27 @@ export function TaskInfo({
               {minerRewardStatus?.enrollment?.nodeId || 'not configured'}
             </div>
           </div>
+          <div>
+            <span className="text-finnieTeal-100">Operator signing</span>
+            <div>
+              {isLoadingMinerRewardStatus
+                ? 'checking...'
+                : !minerRewardStatus?.operatorSigning
+                ? 'unknown'
+                : !minerRewardStatus.operatorSigning.ready
+                ? 'Wallet locked'
+                : minerRewardStatus.operatorSigning.mode === 'hive'
+                ? 'Automatic (Hive wallet)'
+                : 'miner.toml'}
+            </div>
+          </div>
+          {!isLoadingMinerRewardStatus &&
+            minerRewardStatus?.operatorSigning &&
+            !minerRewardStatus.operatorSigning.ready && (
+              <div className="basis-full text-finnieOrange">
+                {minerRewardStatus.operatorSigning.message}
+              </div>
+            )}
           {!isLoadingMinerRewardStatus &&
             minerRewardStatus?.enrollment?.computeBackend === 'cuda' &&
             !minerRewardStatus.enrollment.gpuComputeActive && (
