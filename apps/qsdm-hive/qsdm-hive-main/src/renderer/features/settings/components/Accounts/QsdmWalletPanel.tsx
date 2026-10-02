@@ -228,15 +228,20 @@ export function QsdmWalletPanel() {
           result && typeof result === 'object' && 'transaction_id' in result
             ? result.transaction_id
             : '';
-        const message = txId
-          ? `Sent ${sentAmount} ${NATIVE_TOKEN_SYMBOL} to ${formatAddress(
+        const isPending =
+          result &&
+          typeof result === 'object' &&
+          (result.status === 'pending' || result.broadcast === 'block-pending');
+        const message = isPending
+          ? `Transfer submitted: ${sentAmount} ${NATIVE_TOKEN_SYMBOL} to ${formatAddress(
               sentRecipient
-            )}. Tx: ${txId}`
-          : `Sent ${sentAmount} ${NATIVE_TOKEN_SYMBOL} to ${formatAddress(
+            )}. Awaiting block confirmation.`
+          : `Transfer accepted: ${sentAmount} ${NATIVE_TOKEN_SYMBOL} to ${formatAddress(
               sentRecipient
             )}.`;
-        setTransferMessage(message);
-        toast.success(message);
+        const messageWithTxId = txId ? `${message} Tx: ${txId}` : message;
+        setTransferMessage(messageWithTxId);
+        toast.success(messageWithTxId);
         setRecipient('');
         setAmount('');
         await queryClient.invalidateQueries([QueryKeys.QsdmCellAccount]);

@@ -9,6 +9,7 @@ export type QsdmCanonicalChainState =
 
 export type QsdmCanonicalChainReason =
   | 'canonical-source-unavailable'
+  | 'invalid-response'
   | 'status-unavailable'
   | 'genesis-unavailable'
   | 'genesis-mismatch'
@@ -37,6 +38,23 @@ export interface QsdmCanonicalChainSafety {
   canonicalBlockHash?: string;
   genesisHash?: string;
   checkedAt: string;
+  backupRead?: QsdmBackupReadStatus;
+}
+
+export interface QsdmBackupReadStatus {
+  sourceApiUrl: string;
+  checkpointHeight: number;
+  checkpointHash: string;
+  confirmedAt: string;
+  checkedAt: string;
+  reportedTip: number;
+  peers: number;
+  blocks: Array<{
+    height: number;
+    hash: string;
+    stateRoot?: string;
+    timestamp?: string;
+  }>;
 }
 
 export interface QsdmNodeStatusResponse {

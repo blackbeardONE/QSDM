@@ -214,7 +214,7 @@ const submitQsdmWalletTransfer = async ({
   amount,
   fee = 0,
 }: QsdmWalletTransferParams): Promise<QsdmSubmitSignedTransactionResponse> => {
-  await assertQsdmCanonicalChainSafety();
+  await assertQsdmCanonicalChainSafety({ forceRefresh: true });
   assertWalletSignerConfigured();
   const sender = getQsdmTaskActionSender();
   if (!sender) {
@@ -235,8 +235,11 @@ const submitQsdmWalletTransfer = async ({
     };
 
     const signedEnvelope = await signQsdmWalletTransferWithCli(envelope);
+    // Recheck after signing and on every nonce retry, then retain that endpoint.
+    const safety = await assertQsdmCanonicalChainSafety({ forceRefresh: true });
+    const verifiedApiUrl = safety.effectiveApiUrl.replace(/\/+$/, '');
     const response = await axios.post<QsdmSubmitSignedTransactionResponse>(
-      buildQsdmCoreApiUrl('/wallet/submit-signed'),
+      `${verifiedApiUrl}/wallet/submit-signed`,
       signedEnvelope,
       { timeout: 10000 }
     );

@@ -155,6 +155,7 @@
     "fpm": ["--rpm-rpmbuild-define=_build_id_links none"]
   },
   "afterSign": ".erb/scripts/notarize.js",
+  "beforePack": ".erb/scripts/beforePack.js",
   "afterPack": ".erb/scripts/afterPack.js",
   "publish": [
     {
