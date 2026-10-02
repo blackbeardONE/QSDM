@@ -91,6 +91,12 @@ const (
 	CodeProofsTotal        = "proofs-total-exceeded"
 	CodeNotAllowlisted     = "recipient-not-allowlisted"
 	CodeCanaryHistory      = "canary-history-inconsistent" // warn: the reconcile events disagree with config_windows
+
+	// HL2 (WP-H), version 2 configs only.
+	CodeOwnerEpochCap     = "owner-epoch-cap-exceeded" // an owner's epoch emission above owner_epoch_cap_cell + 2*rewardCell
+	CodeOwnerPending      = "owner-pending-exceeded"   // an owner's unpaid proofs above max_pending_per_owner
+	CodePendingExceeded   = "pending-exceeded"         // unpaid proofs of the config above max_pending
+	CodeOwnerRewardRepeat = "owner-reward-repeated"    // two rewards to one recipient in one block (v2 S10)
 )
 
 // Options are the audit inputs. Paths refer to copies, never to live state.
@@ -107,6 +113,10 @@ type Options struct {
 	Prev *Report
 	// CanaryConfig is the canary config file bytes; nil skips the budget checks.
 	CanaryConfig []byte
+	// MoreCanaryConfigs are further config files (HL2 WP-H: a v1 window
+	// followed by v2 windows, for example), each audited like CanaryConfig
+	// and reported in Report.OtherCanaries.
+	MoreCanaryConfigs [][]byte
 	// RequireWatermark turns an absent W into a failure.
 	RequireWatermark bool
 	// RewardCell is the float-CELL schedule; nil means legacymining.DefaultRewardCell.
@@ -203,25 +213,60 @@ type CanarySummary struct {
 	BudgetCell     uint64        `json:"budget_cell"`
 	Proofs         uint64        `json:"proofs"`
 	MaxProofsTotal uint64        `json:"max_proofs_total"`
+	// HL2 is the per-owner audit of a version 2 config (nil for version 1).
+	HL2 *OwnerAudit `json:"hl2,omitempty"`
+}
+
+// OwnerAudit is the version 2 (HL2) part of a CanarySummary.
+type OwnerAudit struct {
+	ConfigVersion              int    `json:"config_version"`
+	OwnerEpochCapCell          uint64 `json:"owner_epoch_cap_cell"`
+	MaxPending                 int    `json:"max_pending"`
+	MaxPendingPerOwner         int    `json:"max_pending_per_owner"`
+	DifficultyBits             int    `json:"difficulty_bits"`
+	DeferredSlotWeightPermille int    `json:"deferred_slot_weight_permille"`
+	// Pending counts the config's rows that are unpaid in the DB and on the
+	// chain.
+	Pending int            `json:"pending"`
+	Owners  []OwnerSummary `json:"owners"`
+	// Notes are what the audit cannot check, or reads differently, for v2.
+	Notes []string `json:"notes"`
+}
+
+// OwnerSummary is one owner (reward recipient, row miner_addr) of a version
+// 2 config: its rows accepted under the config and its rewards in the
+// config's window.
+type OwnerSummary struct {
+	Owner     string  `json:"owner"`
+	Proofs    uint64  `json:"proofs"`
+	Pending   int     `json:"pending"`
+	RewardTxs int     `json:"reward_txs"`
+	Emitted   float64 `json:"emitted_cell"`
+	// PeakEpoch is the owner epoch (legacymining.OwnerEpochOf) with the
+	// largest emission to the owner in the window, and PeakEpochEmitted that
+	// amount (gross, as core counts it).
+	PeakEpoch        uint64  `json:"peak_epoch"`
+	PeakEpochEmitted float64 `json:"peak_epoch_emitted_cell"`
 }
 
 // Report is the audit result. Its JSON form is the -out file and the -prev
 // input of the next audit.
 type Report struct {
-	Format          string          `json:"format"`
-	Result          string          `json:"result"`
-	Chain           ChainSummary    `json:"chain"`
-	Watermark       *Point          `json:"watermark,omitempty"`
-	Retired         []Point         `json:"retired_watermarks,omitempty"`
-	DB              *DBSummary      `json:"db,omitempty"`
-	Payments        PaymentSummary  `json:"payments"`
-	Canary          *CanarySummary  `json:"canary,omitempty"`
-	ServedHighWater *Point          `json:"served_high_water,omitempty"`
-	Receipts        *ReceiptSummary `json:"receipts,omitempty"`
-	Findings        []Finding       `json:"findings"`
-	FindingsDropped int             `json:"findings_dropped,omitempty"`
-	failed          bool            // any fail finding, including dropped ones
-	counts          map[string]bool // codes seen
+	Format          string           `json:"format"`
+	Result          string           `json:"result"`
+	Chain           ChainSummary     `json:"chain"`
+	Watermark       *Point           `json:"watermark,omitempty"`
+	Retired         []Point          `json:"retired_watermarks,omitempty"`
+	DB              *DBSummary       `json:"db,omitempty"`
+	Payments        PaymentSummary   `json:"payments"`
+	Canary          *CanarySummary   `json:"canary,omitempty"`
+	OtherCanaries   []*CanarySummary `json:"other_canaries,omitempty"`
+	ServedHighWater *Point           `json:"served_high_water,omitempty"`
+	Receipts        *ReceiptSummary  `json:"receipts,omitempty"`
+	Findings        []Finding        `json:"findings"`
+	FindingsDropped int              `json:"findings_dropped,omitempty"`
+	failed          bool             // any fail finding, including dropped ones
+	counts          map[string]bool  // codes seen
 }
 
 // Failed reports whether any fail-severity finding was recorded.
@@ -322,7 +367,18 @@ func Audit(o Options) (*Report, error) {
 		return nil, err
 	}
 	a.receiptsFrom()
-	cfg, cfgHash := a.readCanaryConfig()
+	type canaryInput struct {
+		cfg  *legacymining.Config
+		hash legacymining.ConfigHash
+	}
+	var canaries []canaryInput
+	for _, data := range append([][]byte{o.CanaryConfig}, o.MoreCanaryConfigs...) {
+		if data == nil {
+			continue
+		}
+		cfg, hash := a.readCanaryConfig(data)
+		canaries = append(canaries, canaryInput{cfg, hash})
+	}
 
 	var points []Point
 	if w != nil {
@@ -344,7 +400,20 @@ func Audit(o Options) (*Report, error) {
 	}
 	a.checkServed(w, retired)
 	a.checkDB()
-	a.checkCanary(cfg, cfgHash)
+	v2 := false
+	for i, c := range canaries {
+		cs := a.checkCanary(c.cfg, c.hash)
+		switch {
+		case i == 0 && o.CanaryConfig != nil:
+			a.rep.Canary = cs
+		case cs != nil:
+			a.rep.OtherCanaries = append(a.rep.OtherCanaries, cs)
+		}
+		v2 = v2 || (c.cfg != nil && c.cfg.Version == legacymining.ConfigVersion2)
+	}
+	if v2 {
+		a.checkOwnerRewards()
+	}
 
 	if a.rep.failed {
 		a.rep.Result = resultFail
@@ -702,6 +771,7 @@ func rewardID(nonce uint64, addr string, payload []byte) string {
 type dbRow struct {
 	id         legacymining.ProofID
 	minerAddr  string
+	nodeID     string
 	config     legacymining.ConfigHash
 	paid       bool
 	paidHeight uint64
@@ -818,7 +888,7 @@ func loadDBCopy(src, tempRoot string) (*dbData, error) {
 		return nil, fmt.Errorf("db read: %w", err)
 	}
 	d := &dbData{meta: meta, windows: make(map[legacymining.ConfigHash]dbWindow)}
-	rows, err := db.Query(`SELECT proof_id, miner_addr, config_sha256, paid_height, paid_tx_id FROM proofs ORDER BY proof_id`)
+	rows, err := db.Query(`SELECT proof_id, miner_addr, node_id, config_sha256, paid_height, paid_tx_id FROM proofs ORDER BY proof_id`)
 	if err != nil {
 		return nil, fmt.Errorf("db read: %w", err)
 	}
@@ -829,7 +899,7 @@ func loadDBCopy(src, tempRoot string) (*dbData, error) {
 			ph      sql.NullInt64
 			ptx     sql.NullString
 		)
-		if err := rows.Scan(&id, &r.minerAddr, &cfg, &ph, &ptx); err != nil {
+		if err := rows.Scan(&id, &r.minerAddr, &r.nodeID, &cfg, &ph, &ptx); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("db read: %w", err)
 		}
@@ -998,12 +1068,9 @@ func (a *auditor) checkDB() {
 // Canary windows (§6.1, §6.3, §6.5, §6.6; S11, S12)
 // -----------------------------------------------------------------------------
 
-func (a *auditor) readCanaryConfig() (*legacymining.Config, legacymining.ConfigHash) {
-	if a.o.CanaryConfig == nil {
-		return nil, legacymining.ConfigHash{}
-	}
-	hash := legacymining.ConfigHash(sha256.Sum256(a.o.CanaryConfig))
-	cfg, err := legacymining.ParseConfig(a.o.CanaryConfig, hash)
+func (a *auditor) readCanaryConfig(data []byte) (*legacymining.Config, legacymining.ConfigHash) {
+	hash := legacymining.ConfigHash(sha256.Sum256(data))
+	cfg, err := legacymining.ParseConfig(data, hash)
 	if err != nil {
 		a.rep.add(CodeCanaryConfig, sevFail, nil, "%v", err)
 		return nil, hash
@@ -1133,20 +1200,19 @@ func (a *auditor) activations() []activation {
 	return acts
 }
 
-func (a *auditor) checkCanary(cfg *legacymining.Config, hash legacymining.ConfigHash) {
+func (a *auditor) checkCanary(cfg *legacymining.Config, hash legacymining.ConfigHash) *CanarySummary {
 	if cfg == nil {
-		return
+		return nil
 	}
 	cs := &CanarySummary{ConfigSHA256: hex.EncodeToString(hash[:]), BudgetCell: cfg.BudgetCell, MaxProofsTotal: cfg.MaxProofsTotal}
-	a.rep.Canary = cs
 	if a.db == nil {
 		a.rep.add(CodeCanaryWindow, sevWarn, nil, "no DB: the config window cannot be located")
-		return
+		return cs
 	}
 	win, ok := a.db.windows[hash]
 	if !ok {
 		a.rep.add(CodeCanaryWindow, sevWarn, nil, "config %x has no config_windows row", hash[:])
-		return
+		return cs
 	}
 	cs.FirstHeight = h(win.firstHeight)
 
@@ -1171,7 +1237,9 @@ func (a *auditor) checkCanary(cfg *legacymining.Config, hash legacymining.Config
 	}
 	// HL2 (WP-D): with a version 2 config, I6 is "the recipient is each
 	// paid proof's row miner_addr" (checkDB, CodeRecipientMismatch), not
-	// the allowlist, which is optional and may be empty in public mode.
+	// the allowlist, which is optional and may be empty in public mode. A
+	// v2 allowlist is an admission rule, checked on the config's rows
+	// (checkOwners).
 	v2 := cfg.Version == legacymining.ConfigVersion2
 	for _, rw := range a.rewards {
 		if window.has(rw.height) {
@@ -1198,6 +1266,160 @@ func (a *auditor) checkCanary(cfg *legacymining.Config, hash legacymining.Config
 	}
 	if cs.Proofs > cfg.MaxProofsTotal {
 		a.rep.add(CodeProofsTotal, sevFail, nil, "%d proofs accepted under the config, above max_proofs_total %d", cs.Proofs, cfg.MaxProofsTotal)
+	}
+	if v2 {
+		a.checkOwners(cs, cfg, hash, window)
+	}
+	return cs
+}
+
+// -----------------------------------------------------------------------------
+// HL2 per-owner checks (WP-H; version 2 configs)
+// -----------------------------------------------------------------------------
+
+// The version 2 (HL2) rules the audit adds for a v2 config, on top of the
+// checks every version gets (oracle 1 double pay by proof ID, which also
+// covers a proof paid to two owners; I6 by row: every paid ID's recipient
+// is its row's miner_addr, CodeRecipientMismatch):
+//   - owner epochs (legacymining.OwnerEpochOf, 8640 blocks from height 0):
+//     the rewards to one owner in one epoch, counted inside the config's
+//     window as core's S12 counts them (from max(epoch start, the window's
+//     first height)), are at most owner_epoch_cap_cell + 2*rewardCell(h)
+//     (the cap holds admission only, so accepted proofs may overshoot it
+//     by less than two block rewards; legacymining doc.go, WP-D);
+//   - pending: the config's rows that are unpaid on the chain and in the DB
+//     are at most max_pending in total and max_pending_per_owner per owner
+//     (the Ledger's outstanding counts include them, and both caps are
+//     checked under submitMu and again at Enqueue);
+//   - a v2 allowlist, when set, is an admission rule: every row accepted
+//     under the config is an allowlisted (miner_addr, node_id) pair;
+//   - checkOwnerRewards: at most one reward per recipient per block (core
+//     S10 for a v2 config).
+//
+// Not auditable here, and reported as notes: difficulty_bits (the chain
+// carries only LMP1 proof IDs, and difficulty is producer-local), and the
+// deferred-bond withholding (amounts are gross; the bond accrual happens
+// when a node applies the reward tx, and core's caps count gross too).
+
+func (a *auditor) checkOwners(cs *CanarySummary, cfg *legacymining.Config, hash legacymining.ConfigHash, window segment) {
+	oa := &OwnerAudit{
+		ConfigVersion: cfg.Version, OwnerEpochCapCell: cfg.OwnerEpochCapCell, MaxPending: cfg.MaxPending,
+		MaxPendingPerOwner: cfg.MaxPendingPerOwner, DifficultyBits: cfg.DifficultyBits,
+		DeferredSlotWeightPermille: cfg.DeferredSlotWeightPermille, Owners: []OwnerSummary{},
+	}
+	cs.HL2 = oa
+	oa.Notes = []string{
+		fmt.Sprintf("difficulty_bits %d (target 2^%d) is producer-local and not auditable from the chain: reward txs carry only LMP1 proof IDs, and no follower or replay path checks a proof's target", cfg.DifficultyBits, cfg.DifficultyBits),
+		"amounts are gross: a reward to an owner with a deferred-bond node below its bond is partly withheld into the bond when the reward tx is applied (AccrueBondFromReward); budget_cell and owner_epoch_cap_cell count the gross amount, as core does",
+		"per-owner rate limits and cooldowns are in-memory admission state and leave no record on the chain or in the DB",
+	}
+
+	owners := make(map[string]*OwnerSummary)
+	get := func(o string) *OwnerSummary {
+		s := owners[o]
+		if s == nil {
+			s = &OwnerSummary{Owner: o}
+			owners[o] = s
+		}
+		return s
+	}
+	type ownerEpoch struct {
+		owner string
+		epoch uint64
+	}
+	epochCell := make(map[ownerEpoch]float64)
+	epochLast := make(map[ownerEpoch]uint64) // highest reward height, for rewardCell
+	for _, rw := range a.rewards {           // block and tx order, as core sums
+		if !window.has(rw.height) {
+			continue
+		}
+		s := get(rw.recipient)
+		s.RewardTxs++
+		s.Emitted += rw.amount
+		k := ownerEpoch{rw.recipient, legacymining.OwnerEpochOf(rw.height)}
+		epochCell[k] += rw.amount
+		epochLast[k] = max(epochLast[k], rw.height)
+	}
+	keys := make([]ownerEpoch, 0, len(epochCell))
+	for k := range epochCell {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].owner != keys[j].owner {
+			return keys[i].owner < keys[j].owner
+		}
+		return keys[i].epoch < keys[j].epoch
+	})
+	for _, k := range keys {
+		cell := epochCell[k]
+		s := owners[k.owner]
+		if cell > s.PeakEpochEmitted {
+			s.PeakEpoch, s.PeakEpochEmitted = k.epoch, cell
+		}
+		limit := float64(cfg.OwnerEpochCapCell) + 2*a.cell(epochLast[k])*(1+legacymining.RewardSumSlack)
+		if !(cell <= limit) {
+			first := k.epoch * legacymining.OwnerEpochBlocks
+			a.rep.add(CodeOwnerEpochCap, sevFail, h(epochLast[k]), "owner %s received %v CELL in owner epoch %d (heights %d..%d) in the window %s, above owner_epoch_cap_cell %d + 2*rewardCell = %v",
+				k.owner, cell, k.epoch, first, first+legacymining.OwnerEpochBlocks-1, window.heightRange(), cfg.OwnerEpochCapCell, limit)
+		}
+	}
+
+	allowed := make(map[legacymining.AllowEntry]bool, len(cfg.Allowed))
+	for _, e := range cfg.Allowed {
+		allowed[e] = true
+	}
+	for _, r := range a.db.rows {
+		if r.config != hash {
+			continue
+		}
+		s := get(r.minerAddr)
+		s.Proofs++
+		if _, chainPaid := a.paid[r.id]; !r.paid && !chainPaid {
+			s.Pending++
+			oa.Pending++
+		}
+		if len(allowed) > 0 && !allowed[legacymining.AllowEntry{MinerAddr: r.minerAddr, NodeID: r.nodeID}] {
+			a.rep.add(CodeNotAllowlisted, sevFail, nil, "proof %x of %s on node %q was accepted under the config, which does not allowlist that pair", r.id[:], r.minerAddr, r.nodeID)
+		}
+	}
+	if oa.Pending > cfg.MaxPending {
+		a.rep.add(CodePendingExceeded, sevFail, nil, "%d proofs accepted under the config are unpaid, above max_pending %d", oa.Pending, cfg.MaxPending)
+	}
+
+	for _, s := range owners {
+		oa.Owners = append(oa.Owners, *s)
+	}
+	sort.Slice(oa.Owners, func(i, j int) bool {
+		x, y := oa.Owners[i], oa.Owners[j]
+		if x.Emitted != y.Emitted {
+			return x.Emitted > y.Emitted
+		}
+		return x.Owner < y.Owner
+	})
+	for _, s := range oa.Owners { // sorted, so the findings are deterministic
+		if s.Pending > cfg.MaxPendingPerOwner {
+			a.rep.add(CodeOwnerPending, sevFail, nil, "owner %s has %d unpaid proofs accepted under the config, above max_pending_per_owner %d", s.Owner, s.Pending, cfg.MaxPendingPerOwner)
+		}
+	}
+}
+
+// checkOwnerRewards is the version 2 S10 rule: at most one reward per
+// recipient in a block, over every reward at or above h0 (as core checks
+// with a v2 config). HL1 Take groups the claims by address, so a v1-era
+// block passes too.
+func (a *auditor) checkOwnerRewards() {
+	type key struct {
+		height    uint64
+		recipient string
+	}
+	seen := make(map[key]bool, len(a.rewards))
+	for _, rw := range a.rewards {
+		k := key{rw.height, rw.recipient}
+		if seen[k] {
+			a.rep.add(CodeOwnerRewardRepeat, sevFail, h(rw.height), "a second reward to %s in one block", rw.recipient)
+			continue
+		}
+		seen[k] = true
 	}
 }
 

@@ -32,6 +32,17 @@
 //     window, from its config_windows first_height up to the height where the
 //     next config took over (the tip for the active config), so every config,
 //     not only the active one, can be audited on its own;
+//   - with a version 2 (HL2) config, also per owner: the rewards to one
+//     owner in one 8640-block owner epoch within the window are at most
+//     owner_epoch_cap_cell + 2*rewardCell; the config's unpaid proofs are
+//     within max_pending and max_pending_per_owner; a set allowlist covers
+//     every row accepted under the config; and no block pays one recipient
+//     twice. difficulty_bits is producer-local and not auditable from the
+//     chain, and amounts are gross (deferred-bond withholding is not
+//     visible); the report says both;
+//   - -canary-config may be repeated (for example the v1 window of a canary
+//     followed by its v2 windows); each config is audited on its own window,
+//     the first in "canary", the rest in "other_canaries";
 //   - receipts coverage (errata E7): every chain tx at or above
 //     -receipts-from (default meta.h0) has a receipts line at its height with
 //     its block hash. Without -receipts-from and without a DB the check is
@@ -44,13 +55,16 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/blackbeardONE/QSDM/internal/legacymining"
 )
@@ -72,7 +86,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		watermark = fl.String("watermark", "", "served watermark (default <state-dir>/"+legacymining.WatermarkFile+")")
 		dbPath    = fl.String("db", "", `legacy-mining.db (default <state-dir>/legacy-mining/legacy-mining.db; "none" skips it)`)
 		prev      = fl.String("prev", "", "previous hl-audit JSON report")
-		canary    = fl.String("canary-config", "", "canary config file (enables the budget checks)")
+		canary    multiFlag
 		requireW  = fl.Bool("require-watermark", false, "fail when the watermark is absent")
 		out       = fl.String("out", "", "write the JSON report to this new file")
 		asJSON    = fl.Bool("json", false, "print the JSON report instead of the summary")
@@ -81,6 +95,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		rcptFrom  = fl.String("receipts-from", "", "first height whose txs must have receipts (default meta.h0)")
 		requireR  = fl.Bool("require-receipts", false, "fail when the receipts file is absent")
 	)
+	fl.Var(&canary, "canary-config", "canary config file (enables the budget checks); repeat it to audit several config windows")
 	if err := fl.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -122,13 +137,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return exitUsage
 		}
 	}
-	if *canary != "" {
-		data, err := os.ReadFile(*canary)
+	seen := map[[32]byte]string{}
+	for i, path := range canary {
+		data, err := os.ReadFile(path)
 		if err != nil {
 			fmt.Fprintf(stderr, "hl-audit: %v\n", err)
 			return exitUsage
 		}
-		o.CanaryConfig = data
+		sum := sha256.Sum256(data)
+		if prev, dup := seen[sum]; dup {
+			fmt.Fprintf(stderr, "hl-audit: -canary-config %s has the same content as %s\n", path, prev)
+			return exitUsage
+		}
+		seen[sum] = path
+		if i == 0 {
+			o.CanaryConfig = data
+		} else {
+			o.MoreCanaryConfigs = append(o.MoreCanaryConfigs, data)
+		}
 	}
 
 	rep, err := Audit(o)
@@ -157,6 +183,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitFail
 	}
 	return exitPass
+}
+
+// multiFlag is a repeatable string flag.
+type multiFlag []string
+
+func (m *multiFlag) String() string { return strings.Join(*m, ",") }
+
+func (m *multiFlag) Set(v string) error {
+	if v == "" {
+		return errors.New("empty path")
+	}
+	*m = append(*m, v)
+	return nil
 }
 
 // pick returns explicit if set, else <dir>/<name> if dir is set, else "".
@@ -202,12 +241,10 @@ func printSummary(w io.Writer, r *Report) {
 	p := r.Payments
 	fmt.Fprintf(w, "payments: %d reward txs, %d payload IDs, %d distinct, %v CELL\n", p.RewardTxs, p.PayloadIDs, p.DistinctIDs, p.Emitted)
 	if cs := r.Canary; cs != nil {
-		win := "no window"
-		if cs.Window != nil {
-			win = "window " + cs.Window.String()
-		}
-		fmt.Fprintf(w, "canary %s: %s, emitted %v of %d CELL in %d reward txs, %d of %d proofs\n",
-			cs.ConfigSHA256, win, cs.Emitted, cs.BudgetCell, cs.RewardTxs, cs.Proofs, cs.MaxProofsTotal)
+		printCanary(w, cs)
+	}
+	for _, cs := range r.OtherCanaries {
+		printCanary(w, cs)
 	}
 	if hw := r.ServedHighWater; hw != nil {
 		fmt.Fprintf(w, "served high-water: %d %s\n", hw.Height, hw.Hash)
@@ -224,6 +261,36 @@ func printSummary(w io.Writer, r *Report) {
 	}
 	if r.FindingsDropped > 0 {
 		fmt.Fprintf(w, "... %d more findings not listed\n", r.FindingsDropped)
+	}
+}
+
+// summaryOwners bounds the owner lines per config in the summary; the JSON
+// report lists every owner.
+const summaryOwners = 20
+
+func printCanary(w io.Writer, cs *CanarySummary) {
+	win := "no window"
+	if cs.Window != nil {
+		win = "window " + cs.Window.String()
+	}
+	fmt.Fprintf(w, "canary %s: %s, emitted %v of %d CELL in %d reward txs, %d of %d proofs\n",
+		cs.ConfigSHA256, win, cs.Emitted, cs.BudgetCell, cs.RewardTxs, cs.Proofs, cs.MaxProofsTotal)
+	oa := cs.HL2
+	if oa == nil {
+		return
+	}
+	fmt.Fprintf(w, "  v%d: %d owners, %d of %d pending (%d per owner), owner_epoch_cap_cell %d, difficulty_bits %d, deferred_slot_weight_permille %d\n",
+		oa.ConfigVersion, len(oa.Owners), oa.Pending, oa.MaxPending, oa.MaxPendingPerOwner, oa.OwnerEpochCapCell, oa.DifficultyBits, oa.DeferredSlotWeightPermille)
+	for i, s := range oa.Owners {
+		if i == summaryOwners {
+			fmt.Fprintf(w, "  ... %d more owners in the JSON report\n", len(oa.Owners)-i)
+			break
+		}
+		fmt.Fprintf(w, "  owner %s: %v CELL in %d reward txs (peak owner epoch %d: %v CELL), %d proofs, %d pending\n",
+			s.Owner, s.Emitted, s.RewardTxs, s.PeakEpoch, s.PeakEpochEmitted, s.Proofs, s.Pending)
+	}
+	for _, n := range oa.Notes {
+		fmt.Fprintf(w, "  note: %s\n", n)
 	}
 }
 
