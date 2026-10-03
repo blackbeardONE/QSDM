@@ -23,22 +23,19 @@ export function InternalStakeInfoBox() {
     isLoading: isRecovering,
     isSuccess,
     error,
-  } = useMutation(
-    () => withdrawStake(QSDM_HIVE_INTERNAL_TASK_ID, 'CELL'),
-    {
-      onSuccess: async () => {
-        await queryClient.invalidateQueries([
-          QueryKeys.TaskStake,
-          QSDM_HIVE_INTERNAL_TASK_ID,
-        ]);
-        await queryClient.invalidateQueries([QueryKeys.taskNodeInfo]);
-        await queryClient.invalidateQueries([QueryKeys.QsdmCellAccount]);
-        await queryClient.invalidateQueries([QueryKeys.availableTaskList]);
-        await queryClient.invalidateQueries([QueryKeys.myTaskList]);
-        await refetch();
-      },
-    }
-  );
+  } = useMutation(() => withdrawStake(QSDM_HIVE_INTERNAL_TASK_ID, 'CELL'), {
+    onSuccess: async () => {
+      await queryClient.invalidateQueries([
+        QueryKeys.TaskStake,
+        QSDM_HIVE_INTERNAL_TASK_ID,
+      ]);
+      await queryClient.invalidateQueries([QueryKeys.taskNodeInfo]);
+      await queryClient.invalidateQueries([QueryKeys.QsdmCellAccount]);
+      await queryClient.invalidateQueries([QueryKeys.availableTaskList]);
+      await queryClient.invalidateQueries([QueryKeys.myTaskList]);
+      await refetch();
+    },
+  });
 
   if (isLoading || internalStake <= 0) {
     return null;
@@ -47,13 +44,12 @@ export function InternalStakeInfoBox() {
   return (
     <InfoBox className="flex flex-col justify-center min-h-[168px] xl:p-4 overflow-hidden gap-3">
       <div className="flex flex-col gap-1">
-        <span className="text-sm text-green-2">Internal Stake</span>
-        <div className="flex flex-col items-start justify-center bg-purple-5 p-2 rounded-md">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-qsdm-muted">
+          Internal Stake
+        </span>
+        <div className="flex flex-col items-start justify-center bg-black/20 border border-qsdm-border px-3 py-2 rounded-lg">
           <span className="text-sm">
-            <CountQsdmHive
-              value={internalStake}
-              ticker={NATIVE_TOKEN_SYMBOL}
-            />
+            <CountQsdmHive value={internalStake} ticker={NATIVE_TOKEN_SYMBOL} />
           </span>
         </div>
       </div>

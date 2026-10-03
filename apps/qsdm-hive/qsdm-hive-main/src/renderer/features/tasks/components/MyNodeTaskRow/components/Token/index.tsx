@@ -1,6 +1,6 @@
 import React from 'react';
 
-import NativeTokenLogo from 'assets/svgs/qsdm-hive-logo.svg';
+import NativeTokenLogo from 'assets/svgs/qsdm-token-logo.svg';
 import TokenPlaceholder from 'assets/svgs/token_placeholder.png';
 import { buildExplorerAddressUrl } from 'config/explorer';
 import { NATIVE_TOKEN_SYMBOL } from 'config/nativeToken';
@@ -51,7 +51,7 @@ export function Token({
           />
         </button>
       ) : (
-        <NativeTokenLogo className="w-[38px] h-[38px] rounded-full flex justify-center items-center -ml-1 cursor-auto" />
+        <NativeTokenLogo className="w-[34px] h-[34px] flex justify-center items-center -ml-1 cursor-auto" />
       )}
     </Popover>
   );

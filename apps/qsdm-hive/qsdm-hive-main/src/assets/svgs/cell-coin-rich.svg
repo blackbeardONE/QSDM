@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<defs><linearGradient id="qsdmCellRichRim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFE7A3"/><stop offset=".5" stop-color="#F7C948"/><stop offset="1" stop-color="#B9861F"/></linearGradient><radialGradient id="qsdmCellRichCore" cx=".4" cy=".35" r=".7"><stop offset="0" stop-color="#123643"/><stop offset="1" stop-color="#06141B"/></radialGradient></defs>
+<circle cx="128" cy="128" r="120" fill="url(#qsdmCellRichCore)"/>
+<circle cx="128" cy="128" r="86" fill="none" stroke="#9ED7DC" stroke-opacity=".2" stroke-width="2"/>
+<path d="M213.2 187.7A104 104 0 1 1 213.2 68.3" fill="none" stroke="url(#qsdmCellRichRim)" stroke-width="24"/>
+<path d="M128 76L128 180M173 102L83 154M173 154L83 102" stroke="#9ED7DC" stroke-width="7" stroke-opacity=".75"/>
+<path d="M128 76L173 102L173 154L128 180L83 154L83 102Z" fill="none" stroke="#9ED7DC" stroke-width="12" stroke-linejoin="round"/>
+<circle cx="128" cy="128" r="14" fill="url(#qsdmCellRichRim)"/>
+</svg>

@@ -120,15 +120,15 @@ export function Unlock() {
   return (
     <div className="qsdm-cell-screen flex flex-col items-center justify-center h-full gap-5 overflow-y-auto text-white">
       <div className="qsdm-cell-card relative z-10 grid h-[156px] w-[156px] place-items-center rounded-2xl">
-        <Icon source={BrandLogo} className="h-[118px] w-[118px]" />
+        <Icon source={BrandLogo} size={104} className="h-[104px] w-[104px]" />
       </div>
-      <div className="relative z-10 text-xs font-bold uppercase text-[#f7bf42]">
+      <div className="relative z-10 text-xs font-semibold uppercase tracking-[0.12em] text-qsdm-gold">
         QSDM Hive / CELL Network
       </div>
       <h1 className="text-[40px] leading-[48px] text-center font-semibold text-white relative z-10">
         Welcome to {cachedBrandingConfig?.appName || 'QSDM Hive'}
       </h1>
-      <h2 className="text-lg text-center font-semibold relative z-10">
+      <h2 className="text-lg text-center font-medium text-qsdm-text-2 relative z-10">
         Decentralized node operations for everyday operators
       </h2>
       <p className="text-lg text-center relative z-10">

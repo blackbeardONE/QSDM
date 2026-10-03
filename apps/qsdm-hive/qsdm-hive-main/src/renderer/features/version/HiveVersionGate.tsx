@@ -1,6 +1,7 @@
 import React from 'react';
 import { useQuery } from 'react-query';
 
+import QsdmLogo from 'assets/svgs/qsdm-hive-logo.svg';
 import { LoadingScreen } from 'renderer/components';
 import {
   QueryKeys,
@@ -155,42 +156,57 @@ export function HiveVersionGate({ children }: Props): JSX.Element {
 
   return (
     <main className="qsdm-cell-screen flex min-h-screen flex-col items-center justify-center px-6 text-white">
-      <section className="relative z-10 w-full max-w-[620px] rounded-lg border border-white/15 bg-[#0c3a46]/95 p-8 shadow-2xl">
-        <p className="mb-3 text-xs font-bold uppercase tracking-[0.22em] text-[#f7bf42]">
-          QSDM Hive Update Required
-        </p>
+      <section className="relative z-10 w-full max-w-[620px] rounded-xl border border-qsdm-border bg-qsdm-panel p-8 shadow-qsdm-card">
+        <div className="mb-4 flex items-center gap-3">
+          <QsdmLogo className="h-9 w-9 shrink-0" aria-hidden="true" />
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-qsdm-gold">
+            QSDM Hive Update Required
+          </p>
+        </div>
         <h1 className="mb-4 text-[32px] font-semibold leading-tight">
           Install the current Hive before continuing.
         </h1>
-        <p className="mb-6 text-base leading-7 text-white/85">
+        <p className="mb-6 text-base leading-7 text-qsdm-text-2">
           {reason} QSDM Hive only unlocks when the installed version exactly
           matches the current approved version. Older and newer builds are both
           blocked to protect wallet, task, and CELL action compatibility.
         </p>
 
         <div className="mb-6 grid gap-3 sm:grid-cols-2">
-          <div className="rounded border border-white/10 bg-[#092a34] p-4">
-            <div className="text-xs uppercase text-white/60">Installed</div>
-            <div className="mt-1 text-xl font-semibold">{currentVersion}</div>
+          <div className="rounded-lg border border-qsdm-border bg-black/20 p-4">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-qsdm-muted">
+              Installed
+            </div>
+            <div className="mt-1 font-mono text-xl font-medium">
+              {currentVersion}
+            </div>
           </div>
-          <div className="rounded border border-white/10 bg-[#092a34] p-4">
-            <div className="text-xs uppercase text-white/60">Required</div>
-            <div className="mt-1 text-xl font-semibold">{requiredVersion}</div>
+          <div className="rounded-lg border border-qsdm-border bg-black/20 p-4">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-qsdm-muted">
+              Required
+            </div>
+            <div
+              className={`mt-1 text-xl font-medium ${
+                formatHiveVersion(policy?.requiredVersion) ? 'font-mono' : ''
+              }`}
+            >
+              {requiredVersion}
+            </div>
           </div>
         </div>
 
         {policy?.error && (
-          <p className="mb-6 rounded border border-[#ff8a8a]/30 bg-[#401820] p-3 text-sm text-[#ffb4b4]">
+          <p className="mb-6 rounded-lg border border-qsdm-danger/40 bg-qsdm-danger/10 p-3 text-sm text-[#ffb4b4]">
             {policy.error}
           </p>
         )}
 
         {canInstallAutomatically && (
           <p
-            className={`mb-6 rounded border p-3 text-sm ${
+            className={`mb-6 rounded-lg border p-3 text-sm ${
               updateStage === 'error'
-                ? 'border-[#ff8a8a]/30 bg-[#401820] text-[#ffb4b4]'
-                : 'border-[#9fe3e6]/30 bg-[#092a34] text-white/90'
+                ? 'border-qsdm-danger/40 bg-qsdm-danger/10 text-[#ffb4b4]'
+                : 'border-qsdm-teal/30 bg-qsdm-teal/5 text-qsdm-text'
             }`}
           >
             {updateStatus}
@@ -201,21 +217,21 @@ export function HiveVersionGate({ children }: Props): JSX.Element {
         <div className="flex flex-wrap gap-3">
           {canInstallAutomatically && updateStage === 'error' && (
             <button
-              className="h-11 rounded bg-[#9fe3e6] px-6 font-semibold text-[#062832]"
+              className="h-11 rounded-lg border border-qsdm-teal/40 bg-qsdm-teal px-6 font-semibold text-qsdm-bg transition hover:brightness-105"
               onClick={handleRetry}
             >
               Retry Automatic Update
             </button>
           )}
           <button
-            className="h-11 rounded border border-white/25 px-6 font-semibold text-white disabled:opacity-60"
+            className="h-11 rounded-lg border border-qsdm-gold/60 bg-qsdm-gold px-6 font-semibold text-qsdm-bg transition hover:brightness-105 disabled:opacity-60"
             disabled={isDownloading}
             onClick={handleDownload}
           >
             {isDownloading ? 'Opening download...' : 'Download Installer'}
           </button>
           <button
-            className="h-11 rounded border border-white/25 px-6 font-semibold text-white disabled:opacity-60"
+            className="h-11 rounded-lg border border-qsdm-teal/30 bg-qsdm-panel-2 px-6 font-semibold text-qsdm-text transition hover:border-qsdm-teal/60 disabled:opacity-60"
             disabled={isFetching || isDownloading}
             onClick={() => refetch()}
           >

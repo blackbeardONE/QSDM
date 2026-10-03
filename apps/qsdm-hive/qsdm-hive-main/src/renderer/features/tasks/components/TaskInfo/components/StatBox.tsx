@@ -29,9 +29,11 @@ export function StatBox({ label, value, fullValue }: PropsType) {
   const content = getContent();
 
   return (
-    <div className="flex flex-col p-2 2xl:p-4 text-white rounded-lg bg-finnieBlue-light-transparent w-[15%] overflow-hidden">
-      <div className="mb-1 text-base">{label}</div>
-      <div className="text-2xl xl:text-3xl">{content}</div>
+    <div className="flex flex-col p-3 2xl:p-4 text-white rounded-lg border border-qsdm-border bg-qsdm-panel w-[15%] overflow-hidden">
+      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-qsdm-muted">
+        {label}
+      </div>
+      <div className="font-mono text-xl xl:text-2xl font-medium">{content}</div>
     </div>
   );
 }

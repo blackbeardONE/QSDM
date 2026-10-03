@@ -43,7 +43,7 @@ Referral tracking is active; CELL referral rewards become claimable after fundin
   return (
     <Popover tooltipContent={tooltipContent}>
       <div
-        className="flex flex-col text-white w-[186px] xl:w-[230px] md2:w-[350px] xl1:w-[450px] xl2:w-[550px] rounded border-2 border-finnieBlue-light-secondary transition-all duration-300 ease-in-out"
+        className="flex flex-col text-white w-[186px] xl:w-[230px] md2:w-[350px] xl1:w-[450px] xl2:w-[550px] overflow-hidden rounded-lg border border-qsdm-border bg-qsdm-panel transition-all duration-300 ease-in-out"
         role="button"
         onClick={handleCopy}
         onKeyDown={handleKeyDown(handleCopy)}
@@ -51,12 +51,12 @@ Referral tracking is active; CELL referral rewards become claimable after fundin
       >
         <div
           className={`transition-all duration-300 ease-in-out flex h-[40px] lgh2:h-14 ${
-            isCopied ? 'bg-purple-5/[0.5]' : 'bg-transparent'
+            isCopied ? 'bg-qsdm-teal/10' : 'bg-transparent'
           }`}
         >
           <div
             className={`transition-all duration-300 ease-in-out ${
-              isCopied ? 'bg-purple-5' : 'bg-finnieBlue-light-secondary'
+              isCopied ? 'bg-qsdm-teal/20' : 'bg-qsdm-panel-2'
             }`}
           >
             <div className="flex items-center justify-center h-full gap-1 px-1 xl:px-3 md2:px-5 transition-all duration-300 ease-in-out">
@@ -71,7 +71,7 @@ Referral tracking is active; CELL referral rewards become claimable after fundin
             </div>
           </div>
           <div className="flex overflow-hidden items-center justify-center m-auto">
-            <p className="px-1 overflow-hidden text-xs xl:text-sm w-fit whitespace-nowrap text-ellipsis">
+            <p className="px-1 overflow-hidden font-mono text-xs xl:text-sm w-fit whitespace-nowrap text-ellipsis">
               {referralCode}
             </p>
           </div>
