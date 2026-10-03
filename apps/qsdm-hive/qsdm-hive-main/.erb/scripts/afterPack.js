@@ -50,7 +50,7 @@ exports.default = async function afterPack(context) {
     );
     const expectedUpdateConfig = [
       'provider: generic',
-      'url: https://qsdm.tech/downloads',
+      'url: https://qsdm.tech/downloads/hive-v2',
       'updaterCacheDirName: qsdm-hive-runtime-updater',
       '',
     ].join('\n');

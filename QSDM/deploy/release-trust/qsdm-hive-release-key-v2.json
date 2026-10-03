@@ -1,0 +1,10 @@
+{
+  "schema": "qsdm.release-trust-key.v1",
+  "placeholder": true,
+  "note": "PLACEHOLDER. Replace this whole file with release-signing-public.json written by deployment-audit/hive-release-key-rotation/New-HiveReleaseKey.ps1 before building Hive 1.4.21+. A build from this placeholder fails in webpack (verify-release-trust-key.cjs) and, if forced, Hive fails closed.",
+  "key_id": "",
+  "algorithm": "ML-DSA-87",
+  "public_key": "",
+  "address": "",
+  "created_at": ""
+}

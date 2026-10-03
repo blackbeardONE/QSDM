@@ -61,7 +61,10 @@ $SigningDirectory = (Resolve-Path -LiteralPath $SigningDirectory).Path
 $keystorePath = Join-Path $SigningDirectory 'release-signing-wallet.json'
 $protectedPassphrasePath = Join-Path $SigningDirectory 'release-signing-passphrase.dpapi'
 $publicMetadataPath = Join-Path $SigningDirectory 'release-signing-public.json'
-$pinnedTrustKeyPath = Join-Path $workspace 'QSDM\deploy\release-trust\qsdm-hive-release-key.json'
+# Hive 1.4.21+ pins the v2 release key: the Hive release-signing key was
+# rotated (new v2 key), and this script signs v2 envelopes only. Hive 1.4.20
+# cannot verify the new key, so moving to 1.4.21 is a one-time manual install.
+$pinnedTrustKeyPath = Join-Path $workspace 'QSDM\deploy\release-trust\qsdm-hive-release-key-v2.json'
 
 foreach ($path in @(
     $keystorePath,
@@ -98,6 +101,9 @@ if ($Commit -notmatch '^[0-9a-fA-F]{40}$') {
 
 $publicMetadata = Get-Content -Raw -LiteralPath $publicMetadataPath | ConvertFrom-Json
 $pinnedTrustKey = Get-Content -Raw -LiteralPath $pinnedTrustKeyPath | ConvertFrom-Json
+if ($pinnedTrustKey.PSObject.Properties.Name -contains 'placeholder' -and $pinnedTrustKey.placeholder -eq $true) {
+    throw 'The pinned v2 release trust root is still the placeholder; drop in release-signing-public.json and rebuild Hive first.'
+}
 if ($publicMetadata.schema -ne 'qsdm.release-trust-key.v1' -or
     $publicMetadata.algorithm -ne 'ML-DSA-87' -or
     [string]$publicMetadata.key_id -notmatch '^[0-9a-f]{64}$') {
@@ -111,7 +117,7 @@ if ($pinnedTrustKey.schema -ne 'qsdm.release-trust-key.v1' -or
 }
 
 if ($Platform -eq 'windows') {
-    $manifestName = 'qsdm-hive-release-windows.json'
+    $manifestName = 'qsdm-hive-release-windows-v2.json'
     $specs = @(
         @{ Name = 'latest.yml'; Role = 'updater-manifest'; Required = $true },
         @{ Name = "qsdm-hive-$Version-win-x64.exe"; Role = 'installer'; Required = $true },
@@ -133,7 +139,7 @@ if ($Platform -eq 'windows') {
         @{ Name = "qsdm-hive-wallet-extension-$WalletExtensionVersion-SHA256SUMS.txt"; Role = 'checksums'; Required = $true }
     )
 } else {
-    $manifestName = 'qsdm-hive-release-linux.json'
+    $manifestName = 'qsdm-hive-release-linux-v2.json'
     $specs = @(
         @{ Name = 'latest-linux.yml'; Role = 'updater-manifest'; Required = $true },
         @{ Name = "qsdm-hive-$Version-linux-x86_64.AppImage"; Role = 'installer'; Required = $true },

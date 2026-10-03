@@ -160,7 +160,7 @@
   "publish": [
     {
       "provider": "generic",
-      "url": "https://qsdm.tech/downloads"
+      "url": "https://qsdm.tech/downloads/hive-v2"
     }
   ]
 }

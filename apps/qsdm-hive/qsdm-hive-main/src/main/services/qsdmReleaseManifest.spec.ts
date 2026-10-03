@@ -1,12 +1,47 @@
 import crypto from 'crypto';
 
 import {
+  getQsdmHiveReleaseManifestUrl,
   getQsdmReleaseTrustKey,
   getVerifiedQsdmHiveRelease,
   parseAndValidateQsdmHiveReleaseManifest,
+  QSDM_HIVE_RELEASE_BASE_URL,
   QsdmReleaseArtifact,
   resetVerifiedQsdmHiveReleaseCacheForTests,
 } from './qsdmReleaseManifest';
+
+const TRUST_ROOT_MODULE =
+  '../../../../../../QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json';
+
+// The repository ships a placeholder trust root until the operator drops in
+// the new public key. Tests use synthetic public key bytes of the right shape
+// (signature checks are stubbed); they are not a real signing key.
+jest.mock(
+  '../../../../../../QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json',
+  () => {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-var-requires
+    const nodeCrypto = require('crypto');
+    const publicKey = nodeCrypto
+      .createHash('sha512')
+      .update('qsdm-test-only')
+      .digest()
+      .toString('hex')
+      .repeat(41)
+      .slice(0, 5184);
+    const keyId = nodeCrypto
+      .createHash('sha256')
+      .update(Buffer.from(publicKey, 'hex'))
+      .digest('hex');
+    return {
+      schema: 'qsdm.release-trust-key.v1',
+      key_id: keyId,
+      algorithm: 'ML-DSA-87',
+      public_key: publicKey,
+      address: keyId,
+      created_at: '2026-10-04T00:00:00.000Z',
+    };
+  }
+);
 
 const updaterMetadata = Buffer.from(
   [
@@ -159,5 +194,112 @@ describe('QSDM signed release manifest', () => {
         },
       })
     ).rejects.toThrow('size does not match');
+  });
+
+  it('reads the v2 envelopes from the v2 release directory', () => {
+    expect(QSDM_HIVE_RELEASE_BASE_URL).toBe(
+      'https://qsdm.tech/downloads/hive-v2'
+    );
+    expect(getQsdmHiveReleaseManifestUrl('win32')).toBe(
+      'https://qsdm.tech/downloads/hive-v2/qsdm-hive-release-windows-v2.json'
+    );
+    expect(getQsdmHiveReleaseManifestUrl('linux')).toBe(
+      'https://qsdm.tech/downloads/hive-v2/qsdm-hive-release-linux-v2.json'
+    );
+  });
+
+  it('resolves latest.yml and the installer inside the v2 directory', async () => {
+    const manifestBytes = Buffer.from(JSON.stringify(buildManifest()));
+    const envelope = Buffer.from(
+      JSON.stringify({
+        schema: 'qsdm.signed-release.v1',
+        algorithm: 'ML-DSA-87',
+        key_id: getQsdmReleaseTrustKey().key_id,
+        manifest_base64: manifestBytes.toString('base64'),
+        signature: '00'.repeat(4627),
+      })
+    );
+    const fetchBytes = jest
+      .fn()
+      .mockResolvedValueOnce(envelope)
+      .mockResolvedValueOnce(updaterMetadata);
+
+    const release = await getVerifiedQsdmHiveRelease({
+      platform: 'win32',
+      forceRefresh: true,
+      dependencies: {
+        fetchBytes,
+        verifySignature: async () => undefined,
+        now: new Date('2026-07-19T00:00:00.000Z'),
+      },
+    });
+
+    expect(fetchBytes.mock.calls.map((call) => call[0])).toEqual([
+      'https://qsdm.tech/downloads/hive-v2/qsdm-hive-release-windows-v2.json',
+      'https://qsdm.tech/downloads/hive-v2/latest.yml',
+    ]);
+    expect(release.installerUrl).toBe(
+      'https://qsdm.tech/downloads/hive-v2/qsdm-hive-1.3.96-win-x64.exe'
+    );
+  });
+
+  it('rejects an envelope signed by the previous (v1) release key', async () => {
+    const v1KeyId =
+      '10ab9c5710761d4c9dca59d42446e9ea0e3315d15cdc3715df1dcb8c96fa07a1';
+    const manifest = { ...buildManifest(), key_id: v1KeyId };
+    const envelope = Buffer.from(
+      JSON.stringify({
+        schema: 'qsdm.signed-release.v1',
+        algorithm: 'ML-DSA-87',
+        key_id: v1KeyId,
+        manifest_base64: Buffer.from(JSON.stringify(manifest)).toString(
+          'base64'
+        ),
+        signature: '00'.repeat(4627),
+      })
+    );
+    const verifySignature = jest.fn(async () => undefined);
+
+    await expect(
+      getVerifiedQsdmHiveRelease({
+        platform: 'win32',
+        forceRefresh: true,
+        dependencies: {
+          fetchBytes: jest.fn().mockResolvedValueOnce(envelope),
+          verifySignature,
+          now: new Date('2026-07-19T00:00:00.000Z'),
+        },
+      })
+    ).rejects.toThrow('envelope identity is invalid');
+    expect(verifySignature).not.toHaveBeenCalled();
+  });
+
+  it('fails closed without network access when built from the placeholder trust root', async () => {
+    const fetchBytes = jest.fn();
+    // resetModules drops the already-instantiated synthetic trust root mock.
+    jest.resetModules();
+    jest.doMock(TRUST_ROOT_MODULE, () => ({
+      schema: 'qsdm.release-trust-key.v1',
+      placeholder: true,
+      key_id: '',
+      algorithm: 'ML-DSA-87',
+      public_key: '',
+      address: '',
+      created_at: '',
+    }));
+    // eslint-disable-next-line global-require
+    const isolated: typeof import('./qsdmReleaseManifest') = require('./qsdmReleaseManifest');
+
+    expect(() => isolated.getQsdmReleaseTrustKey()).toThrow(
+      'placeholder trust root'
+    );
+    await expect(
+      isolated.getVerifiedQsdmHiveRelease({
+        platform: 'win32',
+        forceRefresh: true,
+        dependencies: { fetchBytes, verifySignature: async () => undefined },
+      })
+    ).rejects.toThrow('placeholder trust root');
+    expect(fetchBytes).not.toHaveBeenCalled();
   });
 });

@@ -5,6 +5,7 @@
 - Fail closed: if nothing can sign, Hive does not start a miner whose proofs would be rejected. Starting the miner shows "Unlock your QSDM wallet in Hive to mine." and the Miner panel shows the operator-signing state.
 - Secret hygiene: only file paths reach the miner command line. Miner output, the launch command and startup error log tails pass through a redactor for labelled HMAC keys, passphrases, private keys and long hex key material before reaching `task.log` or error dialogs.
 - Diagnostics: Hive records (without secrets) whether it launched the miner with operator signing and reports in the task log when it adopts a miner process it cannot confirm is signing. If the miner cannot open the signing key at startup (exit code 2), the error now says how to fix it.
+- Release-signing key rotation: Hive 1.4.21 trusts a new ML-DSA-87 release key (v2) instead of key `10ab9c57...` and reads its signed release from a separate channel, `https://qsdm.tech/downloads/hive-v2/` (`qsdm-hive-release-windows-v2.json` / `qsdm-hive-release-linux-v2.json`, with that directory's `latest.yml` / `latest-linux.yml` and installers). The v1 files under `/downloads/` stay as they are, so Hive 1.4.20 keeps working until its signed manifest expires; moving from 1.4.20 to 1.4.21 is a one-time manual install from the download page. The trust root is `QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json`; the repository holds a placeholder, a production main bundle is refused while it is a placeholder, and a build that still contains one fails closed.
 
 ## [1.4.17]
 
