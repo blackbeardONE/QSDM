@@ -296,6 +296,7 @@ func TestV2ForgeryRejectedByOwnerAuth(t *testing.T) {
 // The operator_keys table survives a restart, a key in it whose hash is not
 // its owner is skipped, and a restart with no chain keys still has them.
 func TestOperatorKeysPersistAcrossRestart(t *testing.T) {
+	requireHLSQLite(t)
 	a, b := newOpSigner(t), newOpSigner(t)
 	dir := stDir(t)
 	s := NewSQLiteStoreV2()
@@ -389,6 +390,7 @@ func opOpen(t *testing.T, s *SQLiteStore, path string) *SQLiteStore {
 }
 
 func TestStoreMigrationFromHL1(t *testing.T) {
+	requireHLSQLite(t)
 	path, rec := opHL1Fixture(t)
 	before := stFileSum(t, path)
 
@@ -457,6 +459,7 @@ func TestStoreMigrationFromHL1(t *testing.T) {
 // A migration that fails before its commit leaves the HL1 DB at version 1,
 // intact; the next open migrates.
 func TestStoreMigrationAbortIsAtomic(t *testing.T) {
+	requireHLSQLite(t)
 	path, rec := opHL1Fixture(t)
 	s := NewSQLiteStoreV2()
 	s.now = func() time.Time { return stClock }
@@ -487,6 +490,7 @@ func TestStoreMigrationAbortIsAtomic(t *testing.T) {
 // the main file's header at version 1 and the commit in the WAL. Both store
 // kinds open that state as version 2, and nothing migrates twice.
 func TestStoreMigrationCrashAfterCommit(t *testing.T) {
+	requireHLSQLite(t)
 	path, _ := opHL1Fixture(t)
 	db, err := storeOpenDB(path)
 	if err != nil {
@@ -529,6 +533,7 @@ func TestStoreMigrationCrashAfterCommit(t *testing.T) {
 }
 
 func TestStoreSchemaVersionRefusals(t *testing.T) {
+	requireHLSQLite(t)
 	for name, stmts := range map[string][]string{
 		"user_version 3":                {`PRAGMA user_version = 3`},
 		"v1 schema with user_version 2": {`PRAGMA user_version = 2`},

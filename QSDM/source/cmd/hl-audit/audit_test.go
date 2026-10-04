@@ -285,6 +285,7 @@ func wantFail(t *testing.T, r *Report, code string) {
 }
 
 func TestCleanAudit(t *testing.T) {
+	requireHLSQLite(t)
 	f := newFixture(t)
 	f.write()
 	r := f.audit(nil)
@@ -310,6 +311,7 @@ func TestCleanAudit(t *testing.T) {
 // TestDoublePayDetected is the WP11 acceptance "the audit detects injected
 // double pay" (oracle 1).
 func TestDoublePayDetected(t *testing.T) {
+	requireHLSQLite(t)
 	t.Run("later block", func(t *testing.T) {
 		f := newFixture(t)
 		f.pay(10, 102, minerA, pid(3)) // P3 was paid at 8
@@ -343,6 +345,7 @@ func TestDoublePayDetected(t *testing.T) {
 // TestWatermarkRegressionDetected is the WP11 acceptance "the audit detects
 // injected W regression" (oracle 3).
 func TestWatermarkRegressionDetected(t *testing.T) {
+	requireHLSQLite(t)
 	baseline := func(t *testing.T) (*fixture, *Report) {
 		f := newFixture(t)
 		f.write()
@@ -409,6 +412,7 @@ func TestWatermarkRegressionDetected(t *testing.T) {
 }
 
 func TestWatermarkAgainstJournal(t *testing.T) {
+	requireHLSQLite(t)
 	cases := []struct {
 		name string
 		mut  func(f *fixture)
@@ -463,6 +467,7 @@ func TestWatermarkAgainstJournal(t *testing.T) {
 }
 
 func TestChainAgainstDB(t *testing.T) {
+	requireHLSQLite(t)
 	t.Run("orphan payment", func(t *testing.T) {
 		f := newFixture(t)
 		f.pay(9, 102, minerA, pid(9))
@@ -560,6 +565,7 @@ func TestChainAgainstDB(t *testing.T) {
 }
 
 func TestJournalShape(t *testing.T) {
+	requireHLSQLite(t)
 	t.Run("torn tail", func(t *testing.T) {
 		f := newFixture(t)
 		f.write()
@@ -591,6 +597,7 @@ func TestJournalShape(t *testing.T) {
 }
 
 func TestCanaryWindow(t *testing.T) {
+	requireHLSQLite(t)
 	t.Run("within budget", func(t *testing.T) {
 		f := newFixture(t)
 		f.write()
@@ -736,6 +743,7 @@ func windowsFixture(t *testing.T, budget [3]uint64) (*fixture, [3]canaryCfg) {
 // config count only its own window, [first_height, next first_height), and
 // that the last window runs to the tip.
 func TestCanaryConsecutiveWindows(t *testing.T) {
+	requireHLSQLite(t)
 	t.Run("each window within its budget", func(t *testing.T) {
 		f, cs := windowsFixture(t, [3]uint64{11, 15, 8})
 		f.events = []legacymining.Event{{AtNS: 1, Kind: "freeze", Detail: "not a reconcile event"}}
@@ -813,6 +821,7 @@ func TestCanaryConsecutiveWindows(t *testing.T) {
 // TestCanaryWindowAllowlists checks every reward against the allowlist of
 // the config it was sealed under, and only that one.
 func TestCanaryWindowAllowlists(t *testing.T) {
+	requireHLSQLite(t)
 	t.Run("each window has its own allowlist", func(t *testing.T) {
 		f, cs := windowsFixture(t, [3]uint64{11, 15, 8})
 		f.write()
@@ -862,6 +871,7 @@ func TestCanaryWindowAllowlists(t *testing.T) {
 // first window through the configs in between. The budget does the same;
 // the allowlist applies only where the config was active.
 func TestCanaryReactivatedConfig(t *testing.T) {
+	requireHLSQLite(t)
 	build := func(t *testing.T, budgetA uint64) (*fixture, canaryCfg, canaryCfg) {
 		f := &fixture{t: t, dir: t.TempDir(), h0: 5}
 		a, b := newCanaryCfg(minerA, budgetA, 10), newCanaryCfg(minerB, 100, 10)
@@ -905,6 +915,7 @@ func TestCanaryReactivatedConfig(t *testing.T) {
 // rolled back to 12 and B booted again at 13. The blocks from 13 on were
 // sealed under B, so they are not in A's window.
 func TestCanaryRollbackAcrossConfigChange(t *testing.T) {
+	requireHLSQLite(t)
 	f := &fixture{t: t, dir: t.TempDir(), h0: 5}
 	a, b := newCanaryCfg(minerA, 11, 3), newCanaryCfg(minerB, 11, 3)
 	f.chain(30, "main")
@@ -933,6 +944,7 @@ func TestCanaryRollbackAcrossConfigChange(t *testing.T) {
 // TestCanaryHistoryFallback: reconcile events that do not match
 // config_windows are reported, and the windows then follow config_windows.
 func TestCanaryHistoryFallback(t *testing.T) {
+	requireHLSQLite(t)
 	unknown := sha256.Sum256([]byte("unknown config"))
 	for _, c := range []struct{ name, detail string }{
 		{"undecodable detail", `{"config_sha256":`},
@@ -990,6 +1002,7 @@ func TestSegments(t *testing.T) {
 // CELL, up to the tip 667018. hl-audit summed 16774144's rewards from 666956
 // to the tip, 60.60346779 CELL, and failed it with budget-exceeded.
 func TestCanaryRehearsalFalseAlarm(t *testing.T) {
+	requireHLSQLite(t)
 	const tip = 667018
 	f := &fixture{t: t, dir: t.TempDir(), origin: 666770, h0: 666783}
 	f.chain(tip, "rehearsal")
@@ -1069,6 +1082,7 @@ func TestCanaryConfigExamples(t *testing.T) {
 
 // TestInputsUnchanged checks that the audit never writes to the copy it reads.
 func TestInputsUnchanged(t *testing.T) {
+	requireHLSQLite(t)
 	f := newFixture(t)
 	f.write()
 	before := snapshot(t, f.dir)
@@ -1081,6 +1095,7 @@ func TestInputsUnchanged(t *testing.T) {
 // TestDBWithUncheckpointedWAL audits a copy taken while the store was open:
 // committed rows that live only in -wal must be seen.
 func TestDBWithUncheckpointedWAL(t *testing.T) {
+	requireHLSQLite(t)
 	f := newFixture(t)
 	f.write()
 	st := legacymining.NewSQLiteStore()
@@ -1127,6 +1142,7 @@ func snapshot(t *testing.T, root string) string {
 }
 
 func TestRunCLI(t *testing.T) {
+	requireHLSQLite(t)
 	f := newFixture(t)
 	f.write()
 	out := filepath.Join(t.TempDir(), "audit-1.json")

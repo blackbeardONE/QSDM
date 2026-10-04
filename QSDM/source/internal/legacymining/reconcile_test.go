@@ -374,6 +374,7 @@ func rcSameFloat(t *testing.T, what string, got, want float64) {
 // -----------------------------------------------------------------------------
 
 func TestReconcileCreatesDBOnUntaggedChain(t *testing.T) {
+	requireHLSQLite(t)
 	w := newRCWorld(t, 12)
 	b := w.bootHash(rcHash1)
 	b.mustClean()
@@ -420,6 +421,7 @@ func TestReconcileCreatesDBOnUntaggedChain(t *testing.T) {
 }
 
 func TestReconcileAbsentDBWithTaggedChain(t *testing.T) {
+	requireHLSQLite(t)
 	t.Run("reward", func(t *testing.T) {
 		w := newRCWorld(t, 9)
 		b1 := w.bootHash(rcHash1)
@@ -459,6 +461,7 @@ func TestReconcileAbsentDBWithTaggedChain(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestReconcileRestartDerivesPaymentsAndCounters(t *testing.T) {
+	requireHLSQLite(t)
 	w := newRCWorld(t, 9)
 	b1 := w.bootHash(rcHash1)
 	b1.mustClean()
@@ -499,6 +502,7 @@ func TestReconcileRestartDerivesPaymentsAndCounters(t *testing.T) {
 // paid from the chain (S11); a row paid by another tx at another height is
 // corrected.
 func TestReconcileRecordsChainPayments(t *testing.T) {
+	requireHLSQLite(t)
 	w := newRCWorld(t, 9)
 	b1 := w.bootHash(rcHash1)
 	b1.mustClean()
@@ -531,6 +535,7 @@ func TestReconcileRecordsChainPayments(t *testing.T) {
 // A truncated journal tail above the DB's knowledge: rows the chain no longer
 // pays are reset to unpaid and paid again, once.
 func TestReconcileTruncatedTail(t *testing.T) {
+	requireHLSQLite(t)
 	w := newRCWorld(t, 9)
 	b1 := w.bootHash(rcHash1)
 	b1.mustClean()
@@ -576,6 +581,7 @@ func TestReconcileTruncatedTail(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestReconcileAnomalyMatrix(t *testing.T) {
+	requireHLSQLite(t)
 	type fixture struct {
 		w       *rcWorld
 		paid    Record   // paid by block 10
@@ -723,6 +729,7 @@ func TestReconcileAnomalyMatrix(t *testing.T) {
 }
 
 func TestReconcileAnomalyListIsBounded(t *testing.T) {
+	requireHLSQLite(t)
 	w := newRCWorld(t, 9)
 	w.bootHash(rcHash1).mustClean()
 	n := w.funderNonce()
@@ -744,6 +751,7 @@ func TestReconcileAnomalyListIsBounded(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestReconcileCountersPerConfigHash(t *testing.T) {
+	requireHLSQLite(t)
 	w := newRCWorld(t, 9)
 
 	// Phase 1 (H1): window [10, ...).
@@ -829,6 +837,7 @@ func TestReconcileCountersPerConfigHash(t *testing.T) {
 // S12 applies the graceful ADMISSION_STOP triggers to the derived counters.
 // They latch but do not make reconciliation unclean: payouts continue.
 func TestReconcileCounterStops(t *testing.T) {
+	requireHLSQLite(t)
 	setup := func(t *testing.T) *rcWorld {
 		w := newRCWorld(t, 9)
 		b := w.bootHash(rcHash1)
@@ -905,6 +914,7 @@ func TestReconcileCounterStops(t *testing.T) {
 // tip+1 of the boot that inserted it, and W keeps later chains at least that
 // long), so a later start is an anomaly.
 func TestReconcileWindowAboveTip(t *testing.T) {
+	requireHLSQLite(t)
 	w := newRCWorld(t, 9)
 	b1 := w.bootHash(rcHash1)
 	b1.mustClean()
@@ -998,6 +1008,7 @@ func (s *rcFaultStore) Pending() ([]Record, error) {
 }
 
 func TestReconcileStoreFailures(t *testing.T) {
+	requireHLSQLite(t)
 	for _, tc := range []struct {
 		method, step, prefix string
 		injected             bool
@@ -1073,6 +1084,7 @@ func TestReconcileInputs(t *testing.T) {
 }
 
 func TestReconcileLedgerInitFailures(t *testing.T) {
+	requireHLSQLite(t)
 	t.Run("funder missing", func(t *testing.T) {
 		w := newRCWorld(t, 9)
 		b := w.boot(rcOpts{edit: func(c *ReconcileConfig) { c.Accounts = chain.NewAccountStore() }})
@@ -1104,6 +1116,7 @@ type rcPreArmFails struct{ *CanaryGuard }
 func (rcPreArmFails) PreArm() error { return errGTNoSpace }
 
 func TestReconcilePreArm(t *testing.T) {
+	requireHLSQLite(t)
 	t.Run("failure after a clean reconcile", func(t *testing.T) {
 		w := newRCWorld(t, 9)
 		b := w.boot(rcOpts{guard: func(g *CanaryGuard) Guard { return rcPreArmFails{g} }})

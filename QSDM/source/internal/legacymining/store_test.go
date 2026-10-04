@@ -239,6 +239,7 @@ func stWriteFile(t *testing.T, path string, data []byte) {
 }
 
 func TestStoreOpenCreateReopen(t *testing.T) {
+	requireHLSQLite(t)
 	dir := stDir(t)
 	path := stPath(dir)
 	s := stNewStore(t)
@@ -362,6 +363,7 @@ func TestStoreCreateRefusals(t *testing.T) {
 }
 
 func TestStorePathRefusals(t *testing.T) {
+	requireHLSQLite(t)
 	dir := stDir(t)
 	s := stCreate(t, dir)
 	if err := s.Close(); err != nil {
@@ -464,6 +466,7 @@ func TestStorePermissionRefusals(t *testing.T) {
 }
 
 func TestStoreSymlinkRefusals(t *testing.T) {
+	requireHLSQLite(t)
 	realDir := stDir(t)
 	realPath := stPath(realDir)
 	s := stCreate(t, realDir)
@@ -511,6 +514,7 @@ func TestStoreSymlinkRefusals(t *testing.T) {
 }
 
 func TestStoreIdentityRefusals(t *testing.T) {
+	requireHLSQLite(t)
 	cases := []struct {
 		name  string
 		build func(t *testing.T, path string)
@@ -587,6 +591,7 @@ func storeSchemaSQL(t *testing.T, name string) string {
 // (node_id, att_nonce) is a 400 nonce conflict; neither trips FREEZE, and
 // both count toward the §6.6 trigger.
 func TestStoreUniqueAfterRestartIs400(t *testing.T) {
+	requireHLSQLite(t)
 	dir := stDir(t)
 	s := stCreate(t, dir)
 	stWindow(t, s, stCfg1, 101)
@@ -646,6 +651,7 @@ func TestStoreUniqueAfterRestartIs400(t *testing.T) {
 // Errors that are not UNIQUE hits are plain errors, which the caller turns
 // into FREEZE (§4.1 step 8).
 func TestStoreAcceptNonUniqueErrors(t *testing.T) {
+	requireHLSQLite(t)
 	dir := stDir(t)
 	s := stCreate(t, dir)
 	stWindow(t, s, stCfg1, 101)
@@ -687,6 +693,7 @@ func TestStoreAcceptNonUniqueErrors(t *testing.T) {
 // §7 Race: 200 goroutines on the same proof, and separately on one shared
 // nonce, give exactly one Accept.
 func TestStoreAcceptRace(t *testing.T) {
+	requireHLSQLite(t)
 	const n = 200
 	s := stCreate(t, stDir(t))
 	stWindow(t, s, stCfg1, 101)
@@ -737,6 +744,7 @@ func TestStoreAcceptRace(t *testing.T) {
 }
 
 func TestStorePendingLookupMarkPaid(t *testing.T) {
+	requireHLSQLite(t)
 	dir := stDir(t)
 	s := stCreate(t, dir)
 	stWindow(t, s, stCfg1, 101)
@@ -827,6 +835,7 @@ func TestStorePendingLookupMarkPaid(t *testing.T) {
 // by its first reconciliation, survives restarts, and only a new hash starts
 // a new window.
 func TestStoreReconcileAndConfigWindows(t *testing.T) {
+	requireHLSQLite(t)
 	dir := stDir(t)
 	s := stCreate(t, dir)
 
@@ -946,6 +955,7 @@ func TestStoreReconcileAndConfigWindows(t *testing.T) {
 }
 
 func TestStoreEventsAndImmutability(t *testing.T) {
+	requireHLSQLite(t)
 	s := stCreate(t, stDir(t))
 	stWindow(t, s, stCfg1, 101)
 	r := stRecord(t, 1, stNonce(1))
@@ -1004,6 +1014,7 @@ func TestStoreEventsAndImmutability(t *testing.T) {
 // Every store method runs in BEGIN IMMEDIATE (§3.3): the write lock is held
 // from the start of the transaction, before any statement has run.
 func TestStoreBeginImmediate(t *testing.T) {
+	requireHLSQLite(t)
 	dir := stDir(t)
 	s := stCreate(t, dir)
 	other, err := sql.Open("sqlite3", storeDSN(stPath(dir), 0))
@@ -1033,6 +1044,7 @@ func TestStoreBeginImmediate(t *testing.T) {
 // The DB path becomes a file: URI; characters with a URI meaning must not
 // change which file SQLite opens.
 func TestStoreURIEscaping(t *testing.T) {
+	requireHLSQLite(t)
 	root := filepath.Join(t.TempDir(), "a b#c%20d&e=f")
 	if err := os.Mkdir(root, 0o700); err != nil {
 		t.Fatal(err)

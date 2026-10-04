@@ -52,6 +52,7 @@ func rbRun(t *testing.T, py string, args ...string) (int, string) {
 }
 
 func TestHL2DBRollbackTool(t *testing.T) {
+	requireHLSQLite(t)
 	py := rbPython(t)
 
 	// The tool's idea of version 2 is exactly the Go schema.
@@ -192,6 +193,7 @@ func TestHL2DBRollbackTool(t *testing.T) {
 
 // The tool refuses anything that is not a known legacy-mining.db version.
 func TestHL2DBRollbackToolRefusals(t *testing.T) {
+	requireHLSQLite(t)
 	py := rbPython(t)
 	path, _ := opHL1Fixture(t)
 	// A version 2 DB missing an object (here: proofs_owner) is not touched.

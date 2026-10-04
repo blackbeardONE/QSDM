@@ -63,6 +63,7 @@ func (f *fixture) writeV2() {
 }
 
 func TestV2CanaryRecipients(t *testing.T) {
+	requireHLSQLite(t)
 	t.Run("three recipients, no allowlist: clean", func(t *testing.T) {
 		f := v2Fixture(t)
 		f.writeV2()

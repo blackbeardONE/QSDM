@@ -155,6 +155,7 @@ func hl2LegacyDir(t *testing.T) string {
 // Precheck, and the victim's own signed bundle is attributed to it. A version
 // 1 config keeps the HL1 wiring and does not migrate.
 func TestHL2NewCanaryV2Wiring(t *testing.T) {
+	requireHLSQLite(t)
 	victim, forger := newHL2Wallet(t), newHL2Wallet(t)
 	st := enrollment.NewInMemoryState()
 	hl2Enroll(t, st, "victim-1", victim.owner, "GPU-v1", mining.MinEnrollStakeDust)

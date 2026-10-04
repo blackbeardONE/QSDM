@@ -50,6 +50,7 @@ func withReceipts(f *fixture, mut func(*Options)) func(*Options) {
 }
 
 func TestReceiptsCoverage(t *testing.T) {
+	requireHLSQLite(t)
 	const txsFromH0 = 10 // heartbeats at 5..12 and the rewards at 6 and 8
 	t.Run("complete from h0", func(t *testing.T) {
 		f := newFixture(t)
@@ -138,6 +139,7 @@ func TestReceiptsCoverage(t *testing.T) {
 }
 
 func TestReceiptsCLI(t *testing.T) {
+	requireHLSQLite(t)
 	f := newFixture(t)
 	f.write()
 	var so, se bytes.Buffer

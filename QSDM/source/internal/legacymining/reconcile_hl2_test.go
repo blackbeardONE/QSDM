@@ -159,6 +159,7 @@ func (b *rcBoot) mustPaidOnce(recs []Record) {
 // A block pays three miners (one LMP1 tx each); the restart derives the
 // payments, the per-owner rows and the owner epoch amounts from the chain.
 func TestReconcileV2MultiAddressPayloads(t *testing.T) {
+	requireHLSQLite(t)
 	w := newRCWorld(t, 9)
 	b1 := w.bootV2(rcV2Hash, nil)
 	b1.mustClean()
@@ -203,6 +204,7 @@ func TestReconcileV2MultiAddressPayloads(t *testing.T) {
 // The crash classes of rev 4 §4.6 with three miners pending: the restart pays
 // every proof exactly once, to its own miner, whatever the crash point.
 func TestReconcileV2CrashClassesThreeMiners(t *testing.T) {
+	requireHLSQLite(t)
 	type crash struct {
 		name string
 		// run leaves the world in the crash state after the six proofs
@@ -281,6 +283,7 @@ func TestReconcileV2CrashClassesThreeMiners(t *testing.T) {
 // of that epoch in the config window, and the cap holds admission across a
 // restart.
 func TestReconcileV2OwnerEpochAcrossBoundary(t *testing.T) {
+	requireHLSQLite(t)
 	w := newRCWorld(t, OwnerEpochBlocks-4) // tip 8636
 	capped := func(cfg *Config) { cfg.OwnerEpochCapCell = 5 }
 	b1 := w.bootV2(rcV2Hash, capped)
@@ -333,6 +336,7 @@ func TestReconcileV2OwnerEpochAcrossBoundary(t *testing.T) {
 
 // S10 with several recipients per block.
 func TestReconcileV2Anomalies(t *testing.T) {
+	requireHLSQLite(t)
 	setup := func(t *testing.T) (*rcWorld, []Record, uint64) {
 		w := newRCWorld(t, 9)
 		b := w.bootV2(rcV2Hash, nil)
@@ -376,6 +380,7 @@ func TestReconcileV2Anomalies(t *testing.T) {
 // window's pending rows are paid to their own miner (v2 I6 checks rows, not
 // an allowlist), and the new window's owner counts start empty.
 func TestReconcileV1ToV2Upgrade(t *testing.T) {
+	requireHLSQLite(t)
 	w := newRCWorld(t, 9)
 	b1 := w.bootHash(rcHash1)
 	b1.mustClean()

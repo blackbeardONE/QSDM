@@ -62,6 +62,7 @@ func ownerOf(t *testing.T, cs *CanarySummary, owner string) OwnerSummary {
 }
 
 func TestV2OwnerSummary(t *testing.T) {
+	requireHLSQLite(t)
 	f := v2Fixture(t)
 	f.writeV2()
 	r := f.audit(func(o *Options) { o.CanaryConfig = f.cfg })
@@ -87,6 +88,7 @@ func TestV2OwnerSummary(t *testing.T) {
 }
 
 func TestV2OwnerEpochCap(t *testing.T) {
+	requireHLSQLite(t)
 	// minerA receives two full rewards (6, 8) and a third of one (10):
 	// about 8.32 CELL in owner epoch 0.
 	t.Run("within cap + 2 rewards", func(t *testing.T) {
@@ -178,6 +180,7 @@ func TestV2OwnerEpochCap(t *testing.T) {
 // pending at that boot are paid; a breach of the bound on the config's own
 // rewards is only a warning there.
 func TestV2OwnerEpochCapReactivated(t *testing.T) {
+	requireHLSQLite(t)
 	x := v2Cfg(t, func(c *legacymining.Config) { c.OwnerEpochCapCell = 4 })
 	y := v2Cfg(t, func(c *legacymining.Config) { c.OwnerEpochCapCell = 4; c.ExpiresUnix++ })
 	f := &fixture{t: t, dir: t.TempDir(), h0: 5}
@@ -203,6 +206,7 @@ func TestV2OwnerEpochCapReactivated(t *testing.T) {
 }
 
 func TestV2Pending(t *testing.T) {
+	requireHLSQLite(t)
 	t.Run("per owner", func(t *testing.T) {
 		f := v2FixtureWith(t, v2Cfg(t, func(c *legacymining.Config) { c.MaxPendingPerOwner = 1 }))
 		f.accept(12, canaryCfg{f.cfg, f.cfgHash}, minerA) // A: pid(4) and this one unpaid
@@ -237,6 +241,7 @@ func TestV2Pending(t *testing.T) {
 }
 
 func TestV2Allowlist(t *testing.T) {
+	requireHLSQLite(t)
 	pairs := []legacymining.AllowEntry{
 		{MinerAddr: minerA, NodeID: nodeID}, {MinerAddr: minerA, NodeID: "node-aaaa"},
 		{MinerAddr: minerB, NodeID: "node-bbbb"}, {MinerAddr: minerC, NodeID: "node-cccc"},
@@ -265,6 +270,7 @@ func TestV2Allowlist(t *testing.T) {
 }
 
 func TestV2RewardRepeat(t *testing.T) {
+	requireHLSQLite(t)
 	f := v2Fixture(t)
 	id := f.accept(10, canaryCfg{f.cfg, f.cfgHash}, minerB)
 	tx := rewardTx(500, minerB, 0.001, id) // a second reward to B at 10
@@ -305,6 +311,7 @@ func v1ThenV2(t *testing.T) (*fixture, canaryCfg, canaryCfg) {
 }
 
 func TestV1ThenV2Windows(t *testing.T) {
+	requireHLSQLite(t)
 	f, a, b := v1ThenV2(t)
 	f.writeV2()
 
@@ -368,6 +375,7 @@ func (f *fixture) writeV2Fresh() {
 // TestRunCLIV1ThenV2 chains a v1 report into a v1+v2 audit with -prev, and
 // checks the repeated -canary-config flag and the summary.
 func TestRunCLIV1ThenV2(t *testing.T) {
+	requireHLSQLite(t)
 	f, a, b := v1ThenV2(t)
 	f.writeV2()
 	dir := t.TempDir()

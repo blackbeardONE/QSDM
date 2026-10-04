@@ -34,6 +34,7 @@ func stOwnerRecords(t *testing.T, s *SQLiteStore, h ConfigHash, seq0 uint64, own
 }
 
 func TestStoreOwnerIndexAndCounts(t *testing.T) {
+	requireHLSQLite(t)
 	t.Run("created version 2", func(t *testing.T) {
 		dir := stDir(t)
 		s := NewSQLiteStoreV2()

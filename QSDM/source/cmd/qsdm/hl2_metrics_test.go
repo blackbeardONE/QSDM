@@ -39,6 +39,7 @@ func hl2Collect(c *hl1CanaryParts) map[string]float64 {
 }
 
 func TestHL2MetricsCollector(t *testing.T) {
+	requireHLSQLite(t)
 	victim, keyless := newHL2Wallet(t), newHL2Wallet(t)
 	st := enrollment.NewInMemoryState()
 	hl2Enroll(t, st, "victim-1", victim.owner, "GPU-v1", mining.MinEnrollStakeDust)

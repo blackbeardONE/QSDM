@@ -448,6 +448,7 @@ func TestV2PrecheckEnrollment(t *testing.T) {
 // Canary v2 requires allowlist membership; public enforces a non-empty
 // allowlist too. Allowlist misses are unattributable and never latch.
 func TestV2Allowlist(t *testing.T) {
+	requireHLSQLite(t)
 	view := newOTView().add("listed", otHonest, true).add("unlisted", otHonest, true).add("other", otFlood, true)
 	cfg := otPublicConfig()
 	cfg.Allowed = []AllowEntry{{MinerAddr: otHonest, NodeID: "listed"}, {MinerAddr: otVictim, NodeID: "other"}}
