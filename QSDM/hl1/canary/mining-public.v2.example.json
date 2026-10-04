@@ -1,0 +1,26 @@
+{
+ "version": 2,
+ "allowed": [
+  {
+   "miner_addr": "1111111111111111111111111111111111111111111111111111111111111111",
+   "node_id": "EXAMPLE-NODE-A"
+  },
+  {
+   "miner_addr": "2222222222222222222222222222222222222222222222222222222222222222",
+   "node_id": "EXAMPLE-NODE-B"
+  }
+ ],
+ "max_proofs_per_min": 120,
+ "max_proofs_per_min_per_owner": 10,
+ "max_proofs_total": 72000,
+ "max_pending": 600,
+ "max_pending_per_owner": 100,
+ "owner_epoch_cap_cell": 2000,
+ "difficulty_bits": 24,
+ "require_operator_sig": true,
+ "require_fully_bonded": true,
+ "bonded_slot_cap": 2,
+ "deferred_slot_weight_permille": 0,
+ "budget_cell": 30808,
+ "expires_unix": 1790086400
+}

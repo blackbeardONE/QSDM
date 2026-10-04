@@ -1,0 +1,14 @@
+{
+ "version": 1,
+ "allowed": [
+  {
+   "miner_addr": "0000000000000000000000000000000000000000000000000000000000000000",
+   "node_id": "EXAMPLE-NODE-ID"
+  }
+ ],
+ "max_proofs_per_min": 60,
+ "max_proofs_total": 3000,
+ "max_pending": 600,
+ "budget_cell": 1291,
+ "expires_unix": 1790003600
+}
