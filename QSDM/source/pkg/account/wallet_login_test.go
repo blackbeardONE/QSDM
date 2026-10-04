@@ -282,7 +282,7 @@ func TestWalletIdentityStoreRejectsAmbiguousOrLegacyIdentity(t *testing.T) {
 func TestWalletLoginRateLimitAndStrictFields(t *testing.T) {
 	service, _ := testService(t)
 	service.cfg.WalletLoginEnabled = true
-	response := walletLoginRequest(t, service, "challenge", map[string]string{"address": strings.Repeat("a", 64), "private_key": "never-accepted"}, nil, service.cfg.PublicBaseURL)
+	response := walletLoginRequest(t, service, "challenge", map[string]string{"address": strings.Repeat("a", 64), "private_key": "fake-never-accepted"}, nil, service.cfg.PublicBaseURL)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("unexpected fields accepted: %d", response.Code)
 	}

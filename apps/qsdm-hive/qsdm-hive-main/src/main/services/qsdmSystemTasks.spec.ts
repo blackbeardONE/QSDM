@@ -562,7 +562,7 @@ describe('qsdmSystemTasks', () => {
           'qsdmminer-console --operator-passphrase-file=C:\\Temp\\qsdm-hive-signer-1-a\\passphrase.txt',
           'v2 protocol config: v2: load operator signer: decrypt operator keystore: cipher: message authentication failed',
           'passphrase=hunter2-do-not-display',
-          '{"passphrase":"json-secret-do-not-display"}',
+          '{"passphrase":"fake-json-secret-do-not-display"}',
           'private_key=deadbeef-do-not-display',
           `key dump ${'ab'.repeat(300)}`,
           'hmac_key=hmac-do-not-display',

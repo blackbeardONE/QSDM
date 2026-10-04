@@ -24,7 +24,7 @@ const hiveKeystore =
   'C:\\Users\\miner\\AppData\\Roaming\\QSDM-Hive\\hive-signer\\wallet.json';
 const sessionPassphrase =
   'C:\\Users\\miner\\AppData\\Local\\Temp\\qsdm-hive-signer-42-x\\passphrase.txt';
-const manualPassphrase = 'C:\\Users\\miner\\.qsdm\\operator-passphrase.txt';
+const manualPassphraseFile = 'C:\\Users\\miner\\.qsdm\\operator-passphrase.txt';
 const otherKeystore = 'D:\\wallets\\other.json';
 
 const readySigner = {
@@ -65,7 +65,7 @@ describe('qsdmMinerOperatorSigning', () => {
         'C:\\Users\\miner\\wallet.json'
       );
       expect(readQsdmMinerTomlString(config, 'operator_passphrase_file')).toBe(
-        manualPassphrase
+        manualPassphraseFile
       );
       expect(readQsdmMinerTomlString(config, 'node_id')).toBe('hive-node-1');
       expect(readQsdmMinerTomlString(config, 'protocol')).toBe('v2');
@@ -106,8 +106,8 @@ describe('qsdmMinerOperatorSigning', () => {
 
     it('overrides operator_* lines in miner.toml for the same wallet and notes it', () => {
       const plan = resolve({
-        minerConfig: `operator_keystore_path = '${hiveKeystore}'\noperator_passphrase_file = '${manualPassphrase}'\n`,
-        existing: [hiveKeystore, sessionPassphrase, manualPassphrase],
+        minerConfig: `operator_keystore_path = '${hiveKeystore}'\noperator_passphrase_file = '${manualPassphraseFile}'\n`,
+        existing: [hiveKeystore, sessionPassphrase, manualPassphraseFile],
       });
 
       expect(plan.mode).toBe('hive');
@@ -119,12 +119,12 @@ describe('qsdmMinerOperatorSigning', () => {
 
     it('warns when miner.toml points at a wallet that is not the enrollment owner', () => {
       const plan = resolve({
-        minerConfig: `operator_keystore_path = '${otherKeystore}'\noperator_passphrase_file = '${manualPassphrase}'\n`,
+        minerConfig: `operator_keystore_path = '${otherKeystore}'\noperator_passphrase_file = '${manualPassphraseFile}'\n`,
         existing: [
           hiveKeystore,
           sessionPassphrase,
           otherKeystore,
-          manualPassphrase,
+          manualPassphraseFile,
         ],
         addresses: { [hiveKeystore]: signer, [otherKeystore]: otherWallet },
       });
@@ -190,8 +190,8 @@ describe('qsdmMinerOperatorSigning', () => {
     it('falls back to a complete manual miner.toml setup for the same wallet while Hive is locked', () => {
       const plan = resolve({
         signerStatus: { ...readySigner, ready: false },
-        minerConfig: `operator_keystore_path = '${hiveKeystore}'\noperator_passphrase_file = '${manualPassphrase}'\n`,
-        existing: [hiveKeystore, manualPassphrase],
+        minerConfig: `operator_keystore_path = '${hiveKeystore}'\noperator_passphrase_file = '${manualPassphraseFile}'\n`,
+        existing: [hiveKeystore, manualPassphraseFile],
       });
 
       expect(plan).toMatchObject({
@@ -199,7 +199,7 @@ describe('qsdmMinerOperatorSigning', () => {
         ready: true,
         address: signer,
         keystorePath: hiveKeystore,
-        passphraseFile: manualPassphrase,
+        passphraseFile: manualPassphraseFile,
       });
       expect(buildQsdmMinerOperatorSigningArgs(plan)).toEqual([]);
     });
@@ -212,8 +212,8 @@ describe('qsdmMinerOperatorSigning', () => {
       );
       const plan = resolve({
         signerStatus: { ...readySigner, ready: false },
-        minerConfig: `operator_passphrase_file = '${manualPassphrase}'\n`,
-        existing: [hiveKeystore, defaultWallet, manualPassphrase],
+        minerConfig: `operator_passphrase_file = '${manualPassphraseFile}'\n`,
+        existing: [hiveKeystore, defaultWallet, manualPassphraseFile],
         addresses: { [hiveKeystore]: signer, [defaultWallet]: signer },
       });
 
@@ -224,8 +224,8 @@ describe('qsdmMinerOperatorSigning', () => {
     it('does not fall back to a miner.toml wallet that is not the enrollment owner', () => {
       const plan = resolve({
         signerStatus: { ...readySigner, ready: false },
-        minerConfig: `operator_keystore_path = '${otherKeystore}'\noperator_passphrase_file = '${manualPassphrase}'\n`,
-        existing: [hiveKeystore, otherKeystore, manualPassphrase],
+        minerConfig: `operator_keystore_path = '${otherKeystore}'\noperator_passphrase_file = '${manualPassphraseFile}'\n`,
+        existing: [hiveKeystore, otherKeystore, manualPassphraseFile],
         addresses: { [hiveKeystore]: signer, [otherKeystore]: otherWallet },
       });
 
@@ -260,7 +260,7 @@ describe('qsdmMinerOperatorSigning', () => {
     it('keeps passphrase file paths readable', () => {
       const text = [
         `--operator-passphrase-file=${sessionPassphrase}`,
-        `operator_passphrase_file = '${manualPassphrase}'`,
+        `operator_passphrase_file = '${manualPassphraseFile}'`,
         'read operator passphrase: open C:\\missing\\passphrase.txt: The system cannot find the file specified.',
         'hmac_key_path = "C:\\Users\\miner\\.qsdm\\miner-hmac.key"',
       ].join('\n');
@@ -271,9 +271,9 @@ describe('qsdmMinerOperatorSigning', () => {
     it('redacts labelled secrets and long hex key material', () => {
       const redacted = redactQsdmMinerSecrets(
         [
-          'passphrase = "quoted secret one"',
+          'passphrase = "fake quoted secret one"',
           'QSDM_OPERATOR_PASSPHRASE=env-secret-two',
-          '{"passphrase": "json-secret-three"}',
+          '{"passphrase": "fake-json-secret-three"}',
           'private key: hex-secret-four',
           'hmac=hmac-secret-five',
           `${'0f'.repeat(2448)}`,
@@ -307,8 +307,8 @@ describe('qsdmMinerOperatorSigning', () => {
     it('points manual miner.toml setups at their own passphrase file', () => {
       const plan = resolve({
         signerStatus: { ...readySigner, ready: false },
-        minerConfig: `operator_keystore_path = '${hiveKeystore}'\noperator_passphrase_file = '${manualPassphrase}'\n`,
-        existing: [hiveKeystore, manualPassphrase],
+        minerConfig: `operator_keystore_path = '${hiveKeystore}'\noperator_passphrase_file = '${manualPassphraseFile}'\n`,
+        existing: [hiveKeystore, manualPassphraseFile],
       });
 
       expect(addQsdmMinerOperatorSigningStartupHint(exitCode2, plan)).toContain(
