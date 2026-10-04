@@ -14,6 +14,48 @@ attempt to retroactively enumerate that history.
 
 ### Added
 
+- **QSDM Hive 1.4.21 (2026-10-03/04).** Automatic miner operator signing:
+  when the Hive wallet is unlocked, Hive starts the bundled miner with the
+  wallet as its ML-DSA-87 operator key, so mining proofs carry an
+  `operator_sig` from the enrollment owner without manual `miner.toml`
+  setup; Hive fails closed (does not start a miner) when nothing can sign,
+  and redacts secrets from miner logs. Hive 1.4.21 trusts a new ML-DSA-87
+  release-signing key (v2, key_id `4081bf2c...`, pinned in
+  `QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json`) and reads its
+  signed releases from a new feed,
+  [qsdm.tech/downloads/hive-v2/](https://qsdm.tech/downloads/hive-v2/). The
+  v1 files under `/downloads/` are unchanged, so Hive 1.4.20 keeps working
+  until its signed manifest expires; moving to 1.4.21 is a one-time manual
+  install. The desktop app also adopts the new QSDM brand (visual only).
+  Windows and Linux builds are published.
+
+- **HL2 public hardened-legacy mining (2026-10-02, release
+  `hardened-legacy-20261002-d7ffcd4-hl2`).** Opens the hardened-legacy
+  mining path to the public in time-boxed windows: per-owner admission with
+  buckets and cooldowns, an N-miner payout ledger with a per-owner epoch
+  cap, owner-signed proofs (`operator_sig` from the enrollment owner's
+  ML-DSA-87 key, required or not per window configuration), bonded existing
+  enrollments only, configurable difficulty, deferred-bond slots, v2
+  metrics, per-owner checks in `hl-audit`, an offline schema rollback tool
+  for an HL1 binary, and a public nginx variant of the mining front door.
+  Public mining reopened on 2026-10-02.
+
+- **HL1 hardened-legacy mining (2026-09-26 to 2026-09-30).** A hardened
+  version of the existing (legacy) mining reward path, built on the deployed
+  d7ffcd4 source rather than the unreleased successor work: atomic proof-ID
+  and attestation-nonce claims, a durable SQLite legacy-mining store with a
+  strict codec, a canary guard, a payout ledger with post-persist
+  invariants, startup reconciliation, fail-stop on block-save failure, boot
+  step S4r that completes the tip block's receipts after a crash, tail
+  replay and `hl1-tail` recovery tools, and the `hl-audit` checker. It ran
+  as a one-miner canary (Stage A/B) before HL2 opened mining to the public.
+
+- **Recovery hot-patches (2026-09-16/17).** Producer transition policy
+  (`pkg/producerpolicy`, producer transition in `pkg/chain`), wallet
+  transfer admission and follower read-only gating in the API, wallet
+  login in `pkg/account`, and a mining service fix. These were deployed on
+  top of d7ffcd4 in September and are now committed here.
+
 - **QSDM Hive 1.4.14 recovery activation for older wallets (2026-08-05).**
   Existing random-key ML-DSA wallets can opt into 24 QSDM Recovery Words
   without changing their address, CELL balance, stakes, or task ownership.
@@ -55,6 +97,28 @@ attempt to retroactively enumerate that history.
 - **QSDM Hive 1.3.94 Virtual Compute Runtime (2026-07-09).** Mother Hive now discovers live pooled CPU, NVIDIA GPU, and RAM capacity; provides bounded workload controls; shows queue, Agent assignment, duration, cancellation, and verified receipt state; and keeps the private loopback gateway token outside renderer code. The gateway adds authenticated `/v1/resources` and `/v1/workloads` discovery routes while preserving the fixed-workload, no-remote-shell security boundary. A separate design specifies opt-in, wallet-authenticated, one-hop Mother Hive federation across locations without exposing Agent or private Mother credentials.
 
 ### Changed
+
+- **Chain restart (2026-09-27).** The chain was stopped on 2026-09-22 and
+  restarted with the unchanged deployed release on 2026-09-27, with a single
+  block producer during recovery and a backup node following the chain.
+  Mining stayed closed until the HL1 canary and the HL2 public windows.
+
+- **Website redesign (2026-10-04).** qsdm.tech has a new shared site shell,
+  home, downloads, mining, network and API pages, an explorer over the
+  public read API, a reworked web wallet (safety checklist, local QR,
+  on-chain activity, send review, strict CSP), self-hosted fonts, and the
+  new QSDM and CELL logos. The download page now offers Hive 1.4.21 from
+  the hive-v2 feed. `QSDM/deploy/landing/` is synced with the live site.
+
+- **Documentation accuracy (2026-10-04).** Public docs now use one status
+  term: a public pilot network (pre-mainnet) run by a single block producer
+  during recovery. Post-quantum claims are scoped to what is true: CELL
+  wallet transactions are signed with ML-DSA-87; the generic peer-to-peer
+  transaction verifier also still accepts Ed25519; signed consensus messages
+  are supported but not active. The max supply is stated as 90,000,000 CELL
+  from mining; a 10,000,000 CELL genesis treasury is a mainnet proposal and
+  is not part of the current chain. Four obsolete comparison and readiness
+  documents moved to `QSDM/docs/archive/`, with pointers at the old paths.
 
 - **QSDM Core v0.4.7-rc.7 home-node reliability and gateway security
   (2026-07-30).** Validator startup now recovers verified checkpoint state and
