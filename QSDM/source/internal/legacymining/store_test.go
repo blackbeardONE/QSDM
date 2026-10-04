@@ -407,6 +407,7 @@ func TestStorePathRefusals(t *testing.T) {
 }
 
 func TestStorePermissionRefusals(t *testing.T) {
+	requireHLSQLite(t)
 	if !legacyStorePOSIX {
 		t.Skip("mode and owner checks run on Unix only")
 	}
