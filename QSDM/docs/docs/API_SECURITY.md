@@ -1,8 +1,18 @@
-# QSDM HTTP API - Military-Grade Security
+# QSDM HTTP API - security reference (node software)
+
+> [!IMPORTANT]
+> **Public network today.** This page describes the security features of the
+> node's HTTP API as built from source. On the public pilot network
+> (pre-mainnet), registration/login (`/api/v1/auth/*`) and the custodial wallet
+> routes (`/api/v1/wallet/create`, `/api/v1/wallet/send`) are not publicly
+> reachable. Public wallet transfers use ML-DSA-87 signed wallet transactions
+> sent to `POST /api/v1/wallet/submit-signed`. See the
+> [API reference](API_REFERENCE.md) for the routes that are available and the
+> [security model](SECURITY_MODEL.md) for what is and is not protected.
 
 ## Overview
 
-The QSDM HTTP API provides a secure REST interface for wallet and validator operations with **military-grade security** features.
+The QSDM HTTP API provides a REST interface for wallet and validator operations. The security features below apply to a node built from this repository.
 
 ## Security Features
 
@@ -15,14 +25,14 @@ The QSDM HTTP API provides a secure REST interface for wallet and validator oper
 - **Key Exchange**: X25519, CurveP256, CurveP384
 - **Certificate**: 4096-bit RSA keys (self-signed for development, CA-signed for production)
 
-### 2. **Quantum-Safe Authentication**
+### 2. **Post-Quantum Token Signing**
 - **JWT Tokens**: Signed with ML-DSA-87 / CRYSTALS-Dilithium in CGO builds (HMAC-SHA256 fallback in non-CGO builds)
 - **Token Types**: Access tokens (15 min) and refresh tokens (7 days)
 - **Nonce Protection**: Prevents replay attacks
 - **Token Expiration**: Automatic expiration and validation
 
 ### 3. **Request Signing**
-- **Quantum-Safe Signatures**: All POST/PUT/DELETE requests must be signed
+- **Signed Requests**: POST/PUT/DELETE requests to authenticated routes must be signed (ML-DSA-87 where supported)
 - **Timestamp Validation**: 5-minute window to prevent replay
 - **Nonce Required**: Unique nonce per request
 - **Signature Headers**: `X-Timestamp`, `X-Nonce`, `X-Signature`
@@ -112,7 +122,7 @@ All authenticated endpoints require:
 - **Request Signing** (for POST/PUT/DELETE):
   - `X-Timestamp`: Unix timestamp
   - `X-Nonce`: Unique nonce
-  - `X-Signature`: Quantum-safe signature
+  - `X-Signature`: ML-DSA request signature
 
 #### `POST /api/v1/wallet/create`
 Create a new wallet.
@@ -309,15 +319,12 @@ ENABLE_TLS=false API_PORT=8080 ./qsdm.exe
 ENABLE_TLS=true API_PORT=8443 TLS_CERT_FILE=/path/to/cert.pem TLS_KEY_FILE=/path/to/key.pem ./qsdm.exe
 ```
 
-## Compliance
+## Certification
 
-This API implementation follows:
-- **NIST Cybersecurity Framework**
-- **OWASP Top 10** protection
-- **PCI DSS** requirements (for payment processing)
-- **FIPS 140-2** cryptographic standards (via liboqs)
+This page makes no certification or compliance claim. The API has not been
+independently audited; see the [internal security review](SECURITY_AUDIT.md).
 
 ---
 
-**Note**: This API is designed for military-grade security. All security features are enabled by default. Disable only for development/testing purposes.
+**Note**: Security features are enabled by default. Disable them only for development/testing purposes.
 

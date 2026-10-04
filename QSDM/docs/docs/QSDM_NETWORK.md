@@ -1,8 +1,8 @@
 # QSDM Network
 
-**Status:** Live public network
+**Status:** Public pilot network (pre-mainnet), single block producer during recovery
 
-**Latest Core candidate:** `v0.4.7-rc.9` (`ee1d5e2`)
+**Running release:** reported live by `https://api.qsdm.tech/api/v1/status` (`hardened-legacy-20261002-d7ffcd4-hl2` as of October 2026)
 **Public gateway:** `https://api.qsdm.tech/api/v1`
 
 The latest downloadable candidate and a running validator can differ during a
@@ -44,7 +44,7 @@ The QSDM Hive browser extension is a small bridge to the running Hive wallet.
 It does not store the keystore JSON or passphrase. A supported website receives
 the public wallet address and only signatures the user explicitly approves.
 
-## VPS-independent operation
+## Operating without the reference server
 
 QSDM Hive and validators can keep local state when the public reference server
 is unavailable, but independence is not automatic failover. A follower needs a
@@ -56,15 +56,15 @@ A prepared standby should:
 
 - use `networked` follower mode with a persistent network host key;
 - listen on TCP `4001` only when its operator has a real inbound path;
-- configure at least one non-VPS `bootstrap_peers` multiaddr and one non-VPS
+- configure at least one independent `bootstrap_peers` multiaddr and one independent
   HTTPS `QSDM_CHAIN_SYNC_URLS` source;
 - retain its own consensus signer and SQLite state; and
 - remain a follower until it is caught up and the current producer is fenced.
 
 QSDM currently has no automatic proposer election or split-brain lease. A
 manual producer handoff is required, and two simultaneous producers can create
-conflicting histories. See [`runbooks/HOME_STANDBY.md`](runbooks/HOME_STANDBY.md)
-for the operator checklist.
+conflicting histories. The handoff procedure is part of the operators' private
+runbooks.
 
 ### CGNAT fallback
 
@@ -128,4 +128,5 @@ status directly from the production status endpoint.
 - [Web wallet](WEB_WALLET.md)
 - [Validator quickstart](VALIDATOR_QUICKSTART.md)
 - [Home gateway](HOME_GATEWAY.md)
-- [Security audit](SECURITY_AUDIT.md)
+- [Network status](NETWORK_STATUS.md)
+- [Internal security review](SECURITY_AUDIT.md) (no independent external audit has been completed)

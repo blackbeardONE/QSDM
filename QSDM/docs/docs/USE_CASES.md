@@ -1,12 +1,12 @@
 # QSDM Use Cases
 
-**Last Updated:** July 2026
+**Last Updated:** October 2026
 
 ---
 
 ## Overview
 
-**QSDM** (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger with native coin **Cell (CELL)**. Validators run PoE + BFT consensus; miners mint CELL with NVIDIA-attested Proof-of-Work. **QSDM Hive** is the Windows/Linux client for wallets, signed tasks, mining, and integrations. This document lists where the stack fits today.
+**QSDM** (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger with native coin **Cell (CELL)**. Validators are designed to run PoE + BFT consensus (today a single block producer runs the pilot network (pre-mainnet) during recovery); miners mint CELL with NVIDIA-attested Proof-of-Work. **QSDM Hive** is the Windows/Linux client for wallets, signed tasks, mining, and integrations. This document lists where the stack fits today.
 
 ---
 
@@ -16,7 +16,7 @@
 Electronic cash with post-quantum (ML-DSA-87) wallet signatures, designed for decentralized operation (currently a pre-mainnet pilot network).
 
 ### Characteristics
-- Quantum-safe transactions — ML-DSA-87 (NIST FIPS 204)
+- Post-quantum wallet signatures: ML-DSA-87 (NIST FIPS 204)
 - Self-custody browser wallet and Hive desktop wallets
 - Public receipts and explorer for verification
 - Compressed signatures with Zstd
@@ -28,7 +28,7 @@ Electronic cash with post-quantum (ML-DSA-87) wallet signatures, designed for de
 
 ---
 
-## 2. Quantum-Safe Financial Services
+## 2. Post-Quantum Financial Services
 
 ### Use case
 Services that need long-term security against cryptographically relevant quantum adversaries.
@@ -94,6 +94,8 @@ Trusted LAN or lab pools of CPU, NVIDIA GPU, and RAM capacity settled in CELL.
 - Office batch jobs via Application Compute Gateway (`127.0.0.1:7742`)
 - Bounded CUDA helper work separate from protocol mining
 
+> **Status (October 2026):** the public QSDM edge Relay is read-only during network recovery; pooled settlement on the public network is paused. Private LAN pilots are unaffected.
+
 ---
 
 ## 6. Game & App Integrations
@@ -107,7 +109,7 @@ External apps bind accounts to QSDM wallets and pay earn-only CELL rewards.
 - Public wallet and receipt surfaces for verification
 
 ### Applications
-- **Sky Fang Online** — play-to-earn MMORPG wallet link
+- **Sky Fang Online** — MMORPG wallet link with earn-only CELL rewards (the Sky Fang task is not currently published in the on-chain catalog)
 - Future games/apps via HTTP API and SDKs
 
 ---
@@ -123,7 +125,7 @@ Run a CPU validator at home without exposing wallet/admin APIs.
 - Loopback-bound Core with optional public mining/status only
 
 ### Applications
-- Bootstrap peers for Phase 4 testnet
+- Bootstrap peers for the pilot network
 - Private validators that still accept mining work
 - Operator hygiene with tray status snapshots
 
@@ -149,7 +151,7 @@ Token-weighted parameter and submesh rule changes without black-box automation.
 ## 9. Cross-Chain Bridge Flows
 
 ### Use case
-Atomic lock / redeem / refund swaps with audited secret handling.
+Atomic lock / redeem / refund swaps with reviewed secret handling (no independent external audit yet).
 
 ### Why QSDM?
 - Bridge package with expiry and fee integrity checks

@@ -1,219 +1,61 @@
-# QSDM Quick Start Guide
+# Quick start
 
-**Last Updated:** December 2024  
-**Version:** QSDM with ML-DSA-87 Optimizations
+Five minutes from nothing to a CELL wallet on the QSDM pilot network
+(pre-mainnet). Pick the path that fits you.
 
----
+## 1. Look at the network (no install)
 
-## Overview
+- Open the [explorer](https://qsdm.tech/explorer.html) to see blocks as they
+  arrive (about one every 10 seconds).
+- Or ask the API directly:
 
-**QSDM** (Quantum-Secure Dynamic Mesh Ledger) is a ledger whose wallet transactions are signed with ML-DSA-87 (NIST FIPS 204, security category 5 — the highest ML-DSA level, comparable to AES-256). It currently runs as a public pilot network (pre-mainnet). This guide will help you get started quickly.
+  ```bash
+  curl -s https://api.qsdm.tech/api/v1/status
+  ```
 
----
+  [Network status](NETWORK_STATUS.md) explains every field.
 
-## Prerequisites
+## 2. Get a wallet
 
-### Required
-- **Windows 10+** (Linux/macOS in development)
-- **Go 1.20+**
-- **Git**
-- **PowerShell 5.1+**
+**In the browser:** open the [web wallet](https://qsdm.tech/wallet.html), create
+a wallet and choose a strong passphrase. Your ML-DSA-87 key is generated and
+encrypted on your device. Download the encrypted backup and keep it safe.
+More: [Web wallet](WEB_WALLET.md).
 
-### Optional (for full features)
-- **OpenSSL 3.x** (for liboqs)
-- **liboqs** (automatically built by `build.ps1`)
+**On the desktop:** install QSDM Hive 1.4.21 for Windows or Linux from the
+[download page](https://qsdm.tech/download.html), check the file hash
+([how](DOWNLOADS_AND_VERIFICATION.md)), then open **Settings → Wallet → Create
+New Wallet** and write down the 24 recovery words.
 
----
+Your address is 64 hexadecimal characters. Share it to receive CELL.
 
-## Quick Start (5 minutes)
+## 3. Check a balance
 
-### 1. Clone and Build
-
-```powershell
-# Clone the repository
-git clone https://github.com/blackbeardONE/QSDM.git
-cd QSDM
-
-# Build with all optimizations
-.\scripts\build.ps1
-
-# Run the node
-.\scripts\run.ps1
+```bash
+curl -s "https://api.qsdm.tech/api/v1/wallet/balance?address=<your address>"
 ```
 
-The node will:
-- Initialize quantum-safe cryptography (ML-DSA-87)
-- Start libp2p networking
-- Create SQLite database
-- Launch monitoring dashboard (http://localhost:8081)
-- Start log viewer (http://localhost:8080)
+## 4. Send CELL
 
----
+Use **Send** in the web wallet or in Hive. The wallet fetches your next nonce,
+signs the transfer with ML-DSA-87 and submits it; it is included in the next
+block. Developers can do the same through `POST /api/v1/wallet/submit-signed`
+([API reference](API_REFERENCE.md#post-walletsubmit-signed)).
 
-## What's New: Performance Optimizations
+## 5. Mine (NVIDIA GPU)
 
-### Signing Performance
-- **Regular Signing**: 0.50 ms
-- **Optimized Signing**: 0.45-0.475 ms (5-10% faster) ✅
-- **Batch Signing**: 0.025-0.10 ms per signature (10-100x faster) ✅
+Mining runs in QSDM Hive on NVIDIA GPUs (Turing or newer). New enrollments are
+paused during recovery; see [Mining today](MINING_TODAY.md) for the current
+state and the full walkthrough.
 
-### Verification Performance
-- **QSDM Verification**: 0.19 ms ✅
-- **ECDSA (Bitcoin/Ethereum)**: 0.33 ms
-- **QSDM is 1.76x faster!** ✅
+## Before you store value
 
-### Signature Compression
-- **Original Size**: 4,627 bytes
-- **Compressed Size**: 2,314 bytes
-- **50% reduction** ✅
+QSDM is a pilot network run by a single block producer during recovery, and it
+has not had an independent external audit. Read the
+[Security model](SECURITY_MODEL.md).
 
-### Storage Compression
-- **Compression Ratio**: 60-70%
-- **10-year storage**: 435-580 GB (vs 1.45 TB uncompressed)
-- **70% reduction** ✅
+## Building the node from source
 
----
-
-## Key Features
-
-### 1. Quantum-Safe Cryptography
-- **Algorithm**: ML-DSA-87 (NIST FIPS 204)
-- **Security Level**: NIST category 5 (post-quantum, comparable to AES-256)
-- **Performance**: Optimized with memory pooling
-
-### 2. Optimized Storage
-- **Database**: SQLite with WAL mode
-- **Compression**: zstd (best compression level)
-- **Encryption**: AES-GCM
-
-### 3. Monitoring
-- **Dashboard**: http://localhost:8081
-- **Log Viewer**: http://localhost:8080
-- **Metrics**: Storage operations, transaction throughput, error tracking
-
-### 4. Performance Features
-- **Memory Pooling**: Reduces allocations
-- **Batch Operations**: Parallel signing
-- **Compression**: Reduces storage and bandwidth
-
----
-
-## Configuration
-
-### Environment Variables
-
-```powershell
-# Network
-$env:NETWORK_PORT = "4001"
-$env:BOOTSTRAP_PEERS = "peer1,peer2"
-
-# Storage
-$env:STORAGE_TYPE = "sqlite"
-$env:SQLITE_PATH = "qsdm.db"
-
-# Monitoring
-$env:DASHBOARD_PORT = "8081"
-$env:LOG_VIEWER_PORT = "8080"
-$env:LOG_FILE = "qsdm.log"
-$env:LOG_LEVEL = "INFO"
-
-# API
-$env:API_PORT = "8443"
-$env:ENABLE_TLS = "true"
-```
-
-### Default Ports
-- **Network**: 4001
-- **Dashboard**: 8081
-- **Log Viewer**: 8080
-- **API**: 8443
-
----
-
-## Usage Examples
-
-### Check Node Status
-
-```powershell
-# View logs
-Get-Content qsdm.log -Tail 50
-
-# Check dashboard
-Start-Process "http://localhost:8081"
-```
-
-### Monitor Performance
-
-Access the dashboard at http://localhost:8081 to view:
-- Transaction throughput
-- Storage operation metrics
-- Error rates
-- System health
-
----
-
-## Troubleshooting
-
-### Common Issues
-
-#### 1. "Dilithium not initialized"
-**Solution:**
-- Ensure OpenSSL DLLs are in PATH
-- Run `.\run.ps1` (sets up PATH correctly)
-- Check `liboqs.dll` is available
-
-#### 2. "Storage operation failed"
-**Solution:**
-- Check disk space
-- Verify database file permissions
-- Check SQLite is installed
-
-#### 3. "Port already in use"
-**Solution:**
-- Change port in environment variables
-- Stop conflicting services
-- Check firewall settings
-
-### Getting Help
-
-- **Documentation**: See `docs/` directory
-- **Performance Report**: `docs/PERFORMANCE_BENCHMARK_REPORT.md`
-- **Next Steps**: `docs/NEXT_STEPS.md`
-
----
-
-## Performance Tips
-
-1. **Use Optimized Signing**: Automatically enabled
-2. **Batch Operations**: Use `SignBatchOptimized()` for multiple transactions
-3. **Compression**: Enabled by default (50% signature reduction)
-4. **Storage**: WAL mode enabled for better concurrency
-
----
-
-## What's Next?
-
-See [docs/NEXT_STEPS.md](NEXT_STEPS.md) for:
-- Production readiness checklist
-- Feature development roadmap
-- Testing and validation
-
----
-
-## Performance Comparison
-
-| Metric | QSDM (Optimized) | Bitcoin/Ethereum |
-|--------|----------------|------------------|
-| **Signing** | 0.45-0.475 ms | 0.14 ms |
-| **Verification** | **0.19 ms** ✅ | 0.33 ms |
-| **Signature Size** | 2.3 KB (compressed) | 70 bytes |
-| **Security** | **NIST category 5, post-quantum** ✅ | 128-bit classical |
-
-**QSDM Advantages:**
-- ✅ Post-quantum signatures (designed to resist known quantum attacks)
-- ✅ Faster verification than ECDSA
-- ✅ Optimized storage and signatures
-
----
-
-*Happy coding! 🚀*
+Developers who want to build and run the Go node locally should start with the
+repository [README](https://github.com/blackbeardONE/QSDM/blob/main/QSDM/README.md)
+and the [Operator guide](OPERATOR_GUIDE.md).

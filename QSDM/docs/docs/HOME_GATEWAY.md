@@ -3,6 +3,10 @@
 `qsdm-home-gateway` lets a home validator publish a narrow public mining/status
 surface without exposing the local computer, dashboard, wallet, or admin API.
 
+Use this only for your own validator. Independent validators do not take part in
+consensus on the public pilot network (pre-mainnet) yet; see
+[Network status](NETWORK_STATUS.md).
+
 ## Shape
 
 ```
@@ -119,7 +123,7 @@ key_hex = "<the 64 hex chars generated on the home machine>"
 note = "home validator gateway"
 ```
 
-Then run `qsdm-relay` as described in `TUNNEL_QUICKSTART.md`.
+Then run `qsdm-relay` (see `source/cmd/qsdm-relay`).
 
 ## Security Rules
 

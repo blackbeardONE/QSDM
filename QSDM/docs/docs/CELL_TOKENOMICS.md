@@ -6,7 +6,11 @@
 > `pkg/chain/emission` (Phase 3.3), and the tokenomics dashboard panel. They
 > MUST NOT be changed in isolation; any change requires a corresponding
 > update to `QSDM/docs/docs/REBRAND_NOTES.md` and a new entry in
-> `NEXT_STEPS.md`.
+> `NEXT_STEPS.md` (not yet published).
+>
+> The chain running today is a pilot network (pre-mainnet), run by a single
+> block producer during recovery. Live values are reported by
+> `GET https://api.qsdm.tech/api/v1/status`.
 
 This document is the normative reference for the Cell coin's supply,
 emission, and fee model. It is **not** a legal offering document, it is not
@@ -23,7 +27,7 @@ signed off. See §8 ("Legal posture") below.
 | Symbol | `CELL` | `pkg/branding.CoinSymbol` |
 | Decimals | `8` | `pkg/branding.CoinDecimals` |
 | Smallest unit | `dust` (1 CELL = 10^8 dust) | `pkg/branding.SmallestUnitName` |
-| Issued by | QSDM mainnet, PoW emission layer | see §3 |
+| Issued by | QSDM pilot network (pre-mainnet), PoW emission layer | see §3 |
 | Non-issuance paths | validator fees (never mint new supply) | see §5 |
 
 The 8-decimal choice intentionally mirrors Bitcoin UX: wallet developers,
@@ -46,14 +50,14 @@ output (`amount: 12345 dust`).
 | Validator block subsidy | **0** — validators earn only transaction fees |
 | Base-fee burn | **undecided** — EIP-1559-style burn is *optional*; decision due before genesis (Phase 0 follow-up item) |
 
-### 2.1 Treasury address
+### 2.1 Treasury address (mainnet proposal)
 
-The treasury address is committed in the genesis block. Its balance is
-public and its spend policy is enforced by a WASM contract (bound at
-genesis) that releases (total_alloc / 48) CELL per month to a
+If the proposed genesis treasury is adopted for mainnet, its address would be
+committed in the genesis block. Its balance would be public and its spend
+policy enforced by a WASM contract (bound at genesis) that releases (total_alloc / 48) CELL per month to a
 multisig-controlled spend address. The contract address, the multisig
-membership, and the spend policy are published in
-`QSDM/docs/docs/GENESIS.md` (Phase 0 deliverable, pending counsel review).
+membership, and the spend policy would be published in
+`QSDM/docs/docs/GENESIS.md` (not yet published; pending counsel review).
 
 ### 2.2 No founder or insider premine
 
@@ -68,7 +72,7 @@ not part of the current chain. If it is adopted, it would be minted at
 genesis. In broad industry usage
 that is a premine/genesis allocation, even though it is not assigned to a
 founder or insider. QSDM uses the precise phrase **genesis protocol treasury
-allocation** and publishes its address, lock, vesting, and spending policy.
+allocation** and would publish its address, lock, vesting, and spending policy.
 
 ---
 
@@ -174,8 +178,8 @@ The project leans toward adopting an EIP-1559-style split (base fee burned,
 priority fee to the validator) because it adds a deflationary pressure
 component that offsets emission during epochs 1–4, and because it is the
 mechanism users and exchanges already understand. The decision is **open**
-and must be made before genesis. It is tracked in `NEXT_STEPS.md` as a
-Phase-0 follow-up.
+and must be made before genesis. It is tracked in `NEXT_STEPS.md` (not yet
+published) as a Phase-0 follow-up.
 
 ---
 
@@ -185,17 +189,18 @@ Phase-0 follow-up.
 |---|---|---|
 | Max supply | 21,000,000 BTC | 90,000,000 CELL (from mining) |
 | Decimals | 8 | 8 |
-| Halving period | every 210,000 blocks (~4 years at 10-min blocks) | every 12,614,400 blocks (~4 years at 10-sec blocks) |
+| Halving period | every 210,000 blocks (~4 years at 10-min blocks) | every 12,623,040 blocks (~4 years at 10-sec blocks) |
 | Block time | ~10 min | 10 sec (target) |
-| Initial reward | 50 BTC | 1.4280 CELL |
+| Initial reward | 50 BTC | 3.56490987 CELL |
 | Founder / insider allocation | 0 | 0 |
 | Treasury | none | none on the current chain; a 10,000,000 CELL genesis treasury is a mainnet proposal |
-| Consensus | pure PoW | PoE + BFT **for consensus**, additive PoW **for emission only** |
+| Consensus | pure PoW | PoE + BFT **for consensus** (design target; today a single block producer), additive PoW **for emission only** |
 
 The structural difference from Bitcoin is that Cell's PoW layer is
 explicitly *additive* — it exists solely to meter coin emission. Consensus
-does not depend on PoW. If all miners went offline tomorrow, the validators
-would continue producing blocks; the only thing that would stop is new
+does not depend on PoW (design target; today a single block producer runs
+the pilot network during recovery). If all miners went offline tomorrow, the
+validators would continue producing blocks; the only thing that would stop is new
 supply creation.
 
 ---
@@ -203,15 +208,13 @@ supply creation.
 ## 7. Distribution philosophy
 
 **Fair launch, utility-first.** There is no presale, no ICO, no public sale,
-no private sale, no airdrop of founder tokens. The treasury allocation is
-published on-chain at genesis, time-locked by a WASM contract, and spent
-only under the public [Treasury Policy](TREASURY_POLICY.md).
+no private sale, no airdrop of founder tokens. If the proposed genesis treasury is adopted for mainnet, it would be published at genesis, time-locked, and spent only under the public [Treasury Policy](TREASURY_POLICY.md). The current chain has no treasury allocation.
 
 Earning paths at launch are:
-- **Mining**: buy a GPU, run `qsdm-miner`, earn Cell by producing valid
+- **Mining**: run Hive (NVIDIA GPU), earn Cell by producing valid
   proofs.
 - **Validating**: operate a VPS validator node, earn transaction fees in
-  Cell.
+  Cell (not yet open on the pilot network).
 - **Using**: use Cell to pay transaction fees on a service you care about.
 
 ### 7.1 Bond from mining earnings
@@ -246,7 +249,7 @@ This is a posture, not a guarantee. Counsel review is required before
 mainnet genesis and before any promotional language is published on
 `qsdm.tech` or elsewhere. The phrases "investment", "returns", "profit",
 and "yield" are forbidden in all project communications (see
-`QSDM/docs/docs/COPY_FILTERS.md`, Phase 5.4 deliverable).
+`QSDM/docs/docs/COPY_FILTERS.md`, not yet published).
 
 ---
 

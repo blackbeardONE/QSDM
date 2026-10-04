@@ -1,486 +1,470 @@
-# QSDM API Reference
+# API reference
 
-> **Primary reference.** This document is a curated, tutorial-style
-> reference designed to onboard new SDK and integration authors. The
-> complete machine-readable specification — every endpoint, every
-> request and response shape, every error code — is
-> [`openapi.yaml`](openapi.yaml) (currently v1.1.0). When the two
-> ever disagree, `openapi.yaml` is authoritative; please open an
-> issue so the drift can be fixed here.
+The public HTTP API of the QSDM pilot network. Every endpoint on this page can
+be called from the internet today. Examples are real responses from the live
+network (October 2026), trimmed for length.
 
-## Overview
+> [!NOTE]
+> QSDM is a pilot network (pre-mainnet) with a single block producer during
+> recovery. While the recovery lasts, the API accepts reads, signed wallet
+> transfers and mining submissions; other writes are paused. See
+> [Network status](NETWORK_STATUS.md).
 
-QSDM exposes a path-versioned REST API mounted under `/api/v1`. Every
-public endpoint is documented in `openapi.yaml`; this file walks
-through the most common ones and explains the cross-cutting concerns
-(authentication, rate limiting, transparency surface, deprecation
-flow, SDKs, WebSocket).
+## Base URL
 
-**Local-dev base URLs:**
-
-- HTTPS (TLS 1.3, default): `https://localhost:8443/api/v1`
-- HTTP  (insecure):          `http://localhost:8080/api/v1`
-
-The HTTP listener is intended for local development only. Production
-traffic terminates TLS at the operator's reverse proxy.
-
----
-
-## Authentication
-
-All write operations and most reads require a JWT Bearer token.
-Acquire one via `POST /api/v1/auth/login`:
-
-```
-POST /api/v1/auth/login
-Content-Type: application/json
-
-{ "address": "<wallet-address>", "password": "<your-strong-password>" }
+```text
+https://api.qsdm.tech/api/v1
 ```
 
-The response carries the access/refresh pair (no `csrf_token` field —
-CSRF tokens are issued by a separate endpoint, see below):
+`https://qsdm.tech/api/v1` serves the same read endpoints for pages on
+qsdm.tech. **Mining endpoints are served only on `api.qsdm.tech`.**
+
+| Convention | Detail |
+|---|---|
+| Format | JSON (`Content-Type: application/json`) unless noted. Request bodies are limited to 64 KiB on the public write routes. |
+| Authentication | None for the endpoints on this page. Writes are authorised by an ML-DSA-87 signature inside the request body, not by a login. |
+| Addresses | 64 lowercase hex characters: `hex(sha256(ML-DSA-87 public key))`. |
+| Amounts | Fields named `*_cell` or `balance`/`amount` are CELL (8 decimals). Fields named `*_dust` are integers; 1 CELL = 100,000,000 dust. |
+| Heights and times | Block heights are integers. Timestamps are RFC 3339; `/chain/blocks` uses the server's local offset, the other endpoints use UTC (`Z`). |
+| Versioning | All routes live under `/api/v1`; see `GET /versions` and [API versioning](API_VERSIONING.md). |
+
+### Rate limits
+
+Limits are per client IP address. When you exceed one you get **HTTP 429**,
+sometimes with a `Retry-After` header; wait and retry with backoff.
+
+| Group | Limit |
+|---|---|
+| `/status`, `/versions`, `/chain/blocks`, `/tasks*` | 600 requests per minute |
+| Most other read endpoints | 100 requests per minute |
+| `POST /wallet/submit-signed` | 10 requests per minute |
+| Mining endpoints on `api.qsdm.tech` | Limited per IP at the edge (bursts allowed); `POST /mining/submit` about 60 per minute |
+
+Health endpoints are not rate-limited. Do not poll faster than you need: a new
+block arrives about every 10 seconds.
+
+### Errors
+
+Most errors use this JSON shape:
+
+```json
+{ "error": "Bad Request", "message": "recipient must be a lowercase 64-character wallet address", "status": 400 }
+```
+
+Some endpoints answer differently, so check the HTTP status first:
+
+- mining, receipt and block endpoints may return a **plain-text** body;
+- a paused mining service returns `503 {"error":"mining_unavailable","detail":"…"}` with `Retry-After`;
+- routes paused during recovery return `503 {"status":"read_only","message":"…"}`;
+- unknown or blocked paths return an HTML 404 or 405 page.
+
+| Status | Meaning |
+|---|---|
+| 200 / 202 | OK / accepted for the next block |
+| 400 | Malformed request or failed validation |
+| 401 | The route needs operator credentials and is not public |
+| 402 | Not enough CELL for amount + fee |
+| 404 | Not found |
+| 405 | Wrong HTTP method |
+| 409 | Duplicate transaction, or a nonce replay or gap |
+| 422 | Signature does not verify |
+| 429 | Rate limit |
+| 503 | Paused during recovery, or the service is busy; retry later |
+
+## Endpoint summary
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/status` | Node, chain, supply, consensus and mining flags |
+| GET | `/health`, `/health/live`, `/health/ready` | Health checks |
+| GET | `/versions` | API version catalogue |
+| GET | `/mining/blocks` | Recent block headers |
+| GET | `/chain/blocks` | Full blocks with transactions |
+| GET | `/receipts`, `/receipts/{tx_id}` | Transaction receipts |
+| GET | `/mining/emission` | Supply and reward schedule |
+| GET | `/wallet/balance` | CELL balance of an address |
+| GET | `/wallet/nonce` | Last used nonce of an address |
+| GET | `/mining/account` | Balance and nonce in one call |
+| POST | `/wallet/submit-signed` | Submit an ML-DSA-87 signed transfer |
+| GET | `/wallet/recovery/capsules`, `/wallet/recovery/capsules/{locator}`, `/wallet/recovery/nonce` | Encrypted recovery capsules (read) |
+| GET | `/mining/work` | Current mining work (`api.qsdm.tech` only) |
+| GET | `/mining/challenge` | Fresh signed challenge for attestation |
+| POST | `/mining/submit` | Submit a mining proof (`api.qsdm.tech` only) |
+| GET | `/mining/enrollments`, `/mining/enrollment/{node_id}` | Miner enrollment registry |
+| GET | `/tasks`, `/tasks/state`, `/tasks/{task_id}`, `/tasks/actions` | Task registry (read) |
+| GET | `/streams`, `/streams/{stream_id}`, `/streams/nonce` | CELL Streams (read) |
+| GET | `/trust/attestations/summary`, `/trust/attestations/recent` | Attestation transparency |
+| GET | `/audit/summary`, `/audit/items`, `/audit/badge.svg` | Internal checklist |
+| GET | `/referrals/reward-pool`, `/referrals/status` | Referral pool status |
+
+## Status and health
+
+### `GET /status`
+
+The single best endpoint for "what is the network doing". Also described field by
+field on [Network status](NETWORK_STATUS.md).
+
+```bash
+curl -s https://api.qsdm.tech/api/v1/status
+```
 
 ```json
 {
-  "access_token":  "<jwt>",
-  "refresh_token": "<jwt>",
-  "expires_in":    900
+  "node_id": "12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum",
+  "version": "hardened-legacy-20261002-d7ffcd4-hl2",
+  "git_sha": "d7ffcd4e80f69c3db3f2bbcf4c7f34e08cc49d25",
+  "build_date": "2026-10-02T05:23:22Z",
+  "uptime": "4h43m36s",
+  "chain_tip": 755940,
+  "peers": 0,
+  "node_role": "validator",
+  "network": "QSDM · CELL",
+  "coin": { "name": "Cell", "symbol": "CELL", "decimals": 8, "smallest_unit": "dust" },
+  "tokenomics": {
+    "cap_dust": 9000000000000000,
+    "cap_cell": "90000000.00000000",
+    "emitted_cell": "2694857.96712780",
+    "block_reward_cell": "3.56490987",
+    "current_epoch": 0,
+    "next_halving_height": 12623041,
+    "target_block_time_seconds": 10,
+    "blocks_per_epoch": 12623040
+  },
+  "task_actions_ready": true,
+  "consensus_auth": {
+    "signed_consensus_supported": true,
+    "require_signed_votes": false,
+    "signed_consensus_active": false,
+    "unsigned_consensus_traffic_accepted": true,
+    "task_action_signatures_active": true,
+    "tx_content_root_active": true
+  },
+  "mining": {
+    "protocol_versions_accepted": [2],
+    "fork_v2_active": true,
+    "fork_v2_tc_active": false,
+    "attestation_types_required": ["nvidia-cc-v1", "nvidia-hmac-v1"],
+    "min_enroll_stake_dust": 1000000000,
+    "enrollment_contract": "qsdm/enroll/v2",
+    "signed_enrollment_required": true,
+    "deferred_bond_from_rewards": true
+  }
 }
 ```
 
-Include the access token on subsequent requests:
+`tokenomics.blocks_per_epoch` is the **halving** epoch (12,623,040 blocks, about
+four years). It is not the same as the mining epoch in `/mining/work`.
 
-```
-Authorization: Bearer <access_token>
-```
+### `GET /health`, `GET /health/live`, `GET /health/ready`
 
-Tokens are quantum-safe (CRYSTALS-Dilithium / ML-DSA-87 signatures)
-and short-lived (15 minutes). Use `refresh_token` to obtain a new
-access token. Revoke the current token at any time via
-**`POST /api/v1/auth/logout`** — subsequent requests presenting the
-revoked token are rejected with `401`.
-
-### Public-read endpoints
-
-A growing set of read-only routes is intentionally unauthenticated so
-SDK clients, third-party aggregators, and the landing-page widgets
-at `https://qsdm.tech/trust` can scrape verifiable signals without
-an operator-granted session:
-
-- `/api/v1/status`
-- `/api/v1/versions`
-- `/api/v1/wallet/balance`
-- `/api/v1/wallet/nonce`
-- `/api/v1/audit/summary`
-- `/api/v1/audit/items`
-- `/api/v1/audit/badge.svg`
-- `/api/v1/trust/attestations/summary`, `.../recent`
-- `/api/v1/attest/recent-rejections`
-- `/api/v1/receipts`, `/api/v1/receipts/{tx_id}`
-- `/api/v1/streams`, `/api/v1/streams/{stream_id}`, `/api/v1/streams/nonce`
-
-Most remain rate-limited by the same limiter that protects authenticated
-routes. Health checks and public trust/audit transparency reads are exempt so
-probes and static widgets cannot starve the trust surface. High-frequency
-public reads such as `/status`, `/versions`, `/chain/blocks`, and task catalog
-reads use a larger per-path cap.
-
-`POST /api/v1/streams/actions/submit-signed` is also reachable without a
-dashboard JWT because the canonical action carries its own ML-DSA wallet
-authorization. It remains rate-limited and is verified before mempool
-admission.
-
-### Request signing
-
-`POST` / `PUT` / `DELETE` requests carry three additional headers
-over a canonical payload:
-
-```
-X-Timestamp: <RFC 3339 UTC>
-X-Nonce:     <opaque>
-X-Signature: <base64url ML-DSA-87 signature, or HMAC fallback>
+```json
+{"status":"healthy","product":"QSDM","version":"hardened-legacy-20261002-d7ffcd4-hl2","git_sha":"d7ffcd4e80f69c3db3f2bbcf4c7f34e08cc49d25","build_date":"2026-10-02T05:23:22Z","timestamp":1791115518}
 ```
 
-Replay protection is enforced by the storage layer on submit; see
-`pkg/api/security.go` and `openapi.yaml` for the full rules.
+`/health/live` returns `{"status":"alive",…}`. `/health/ready` returns
+`{"status":"ready","checks":{"storage":"ok","wallet_service":"ok"}}`, or HTTP 503
+when storage is not ready.
 
-### CSRF tokens
+### `GET /versions`
 
-Browser-originated state-changing requests pass a CSRF token via
-double-submit (cookie + header). Issue one via:
-
-```
-GET /api/v1/csrf-token
+```json
+{"current":"v1","versions":[{"name":"v1","prefix":"/api/v1","status":"active"}]}
 ```
 
-The response carries the token in JSON and also sets the
-`qsdm_csrf` cookie. Echo the token on state-changing requests via
-the `X-CSRF-Token` header. Server-to-server callers using JWT
-bearer auth do not need this — the CSRF middleware applies only to
-cookie-authenticated browser flows.
+## Blocks and transactions
 
-### Rate-limit client identity
+### `GET /mining/blocks`
 
-Authentication is JWT Bearer or endpoint-specific ML-DSA envelopes; rate
-limits do not grant access. The pre-auth limiter keys by client IP only.
-`X-API-Key` is not an authentication credential and is not used to mint a
-separate anonymous bucket.
+Recent block headers, newest last. Query: `from`, `to` (heights), `limit`
+(default 20, max 200).
 
-When `QSDM_TRUST_PROXY_HEADERS=1` is enabled behind a trusted reverse proxy,
-QSDM reads `X-Real-IP` first and falls back to the rightmost
-`X-Forwarded-For` entry. The proxy must overwrite `X-Real-IP` with the real
-remote host. Do not enable this flag if callers can reach the API port
-directly or can inject trusted proxy headers themselves.
-
----
-
-## Endpoints (curated quick reference)
-
-Exhaustive list: [`openapi.yaml`](openapi.yaml). The selection below
-covers the most common integration paths.
-
-### Wallet
-
-#### Get balance (public read)
-
-**GET** `/api/v1/wallet/balance?address=<address>`
+```bash
+curl -s "https://api.qsdm.tech/api/v1/mining/blocks?limit=3"
+```
 
 ```json
 {
-  "balance": 1000.0,
-  "address": "wallet_address_123"
-}
-```
-
-#### Read next nonce (public read)
-
-**GET** `/api/v1/wallet/nonce?address=<address>`
-
-Returns the next acceptable transaction nonce for the address.
-Symmetric with `/wallet/balance`: read-only, no JWT, no signing.
-
-#### Send transaction (authenticated)
-
-**POST** `/api/v1/wallet/send`
-
-Submits a transaction via the operator-managed wallet path. Returns
-the network-assigned `transaction_id` and an initial `pending` status.
-See `openapi.yaml` for the submesh-`422` and NVIDIA-lock-`403`
-response shapes.
-
-#### Self-custody signed submission (authenticated)
-
-**POST** `/api/v1/wallet/submit-signed`
-
-The v0.4.0+ self-custody path: client signs a `wallet.TransactionData`
-envelope locally and submits it. The server verifies the
-ML-DSA-87 signature over the canonical payload and never falls
-back to a validator-side keypair. Replay protection comes from the
-per-address monotonic nonce — fetch the next acceptable value via
-`GET /api/v1/wallet/nonce` first.
-
-#### Native CELL coin metadata
-
-QSDM's public ecosystem is currently **CELL-only**. Treat Cell
-(`CELL`) as the network's native coin, not as a secondary token. The
-public wallet/account surfaces are `/wallet/balance`,
-`/wallet/nonce`, `/receipts`, `/mining/blocks`, and
-`/status`.
-
-The codebase still contains early secondary-token scaffolding under
-`/api/v1/tokens/*`, but those routes are not part of the public
-explorer or Sky Fang integration surface. Do not build product flows
-or user messaging around secondary tokens until QSDM ships a real token
-standard, token balances, transfers, and explorer support.
-
-### Transactions
-
-#### Get transaction by id
-
-**GET** `/api/v1/transactions/{tx_id}`
-
-Note plural `transactions`; the path uses the brace-syntax form in
-the spec. Returns the full record including settlement status,
-block reference, and attestation metadata.
-
-#### Recent transactions (public read)
-
-**GET** `/api/v1/receipts`
-
-Paginated recent transactions feed used by the chain dashboard.
-Per-tx outcome probes are available at
-`GET /api/v1/receipts/{tx_id}`.
-
-### CELL Streams
-
-CELL Streams provide bounded, active-use billing without submitting one chain
-transaction per second. The payer escrows a maximum budget, a temporary session
-key signs cumulative active-second receipts, and the provider settles earned
-CELL in batches.
-
-#### Submit a signed stream action (public signed write)
-
-**POST** `/api/v1/streams/actions/submit-signed`
-
-The body contains `action`, `signature`, and `public_key`. The signature is an
-ML-DSA-87 signature over the canonical action JSON. The validator verifies the
-envelope before admitting it to the mempool and verifies it again during block
-application.
-
-Supported actions are `open`, `receipt`, `pause`, `resume`, `settle`, and
-`close`.
-
-#### Get the required stream action nonce (public read)
-
-**GET** `/api/v1/streams/nonce?sender=<address>`
-
-Returns `action_nonce`, the exact consensus nonce the sender must place in its
-next signed stream action. This is intentionally separate from
-`/wallet/nonce.next`, whose one-based wire value is used by wallet transfers.
-Unknown accounts return `action_nonce: 0` and `present: false`.
-
-The signed submit route returns `422 Unprocessable Entity` for a stale or
-future action nonce and `503 Service Unavailable` when live consensus account
-state cannot be read. It never guesses a nonce from cached state.
-
-#### List streams (public read)
-
-**GET** `/api/v1/streams`
-
-Optional filters are `payer`, `provider`, `service_id`, and `status`. Each view
-includes the consensus projection plus `remaining_budget_dust` and
-`unsettled_dust`.
-
-#### Get one stream (public read)
-
-**GET** `/api/v1/streams/{stream_id}`
-
-See [CELL Streams](CELL_STREAMS.md) for exact pricing, pause behavior,
-signatures, settlement, and service-integration requirements.
-
-### Authentication
-
-#### Login
-
-See **Authentication** above for the request and response shapes.
-
-#### Logout
-
-**POST** `/api/v1/auth/logout`
-
-Revokes the caller's current access token. Subsequent requests
-presenting the same token are rejected with `401` by the auth
-middleware.
-
-### Transparency
-
-- `GET /api/v1/audit/summary` — checklist score + bucket breakdown
-  (filterable to evidence provenance; pinned by
-  `TestAuditAPI_WireParity_DashboardAndAPI`).
-- `GET /api/v1/audit/items` — full filterable item list with
-  closed-enum query validation.
-- `GET /api/v1/audit/badge.svg` — server-rendered shields.io-style
-  SVG status pill (suitable for embedding as
-  `<img src="https://api.qsdm.tech/api/v1/audit/badge.svg">`);
-  cached 60 s.
-- `GET /api/v1/trust/attestations/summary`, `.../recent` — NGC
-  attestation transparency surface (Major Update §8.5).
-- `GET /api/v1/attest/recent-rejections` — v2 mining attestation
-  rejection ring.
-
-### Network
-
-#### Get network topology (authenticated)
-
-**GET** `/api/v1/network/topology`
-
-Live JSON projection of the current peer set, suitable for the
-dashboard's WebGL renderer. Returns an empty topology (`200`) on
-cold-start when no `TopologyProvider` is wired.
-
-### Health
-
-- `GET /api/v1/health`        — full health snapshot.
-- `GET /api/v1/health/live`   — liveness probe (always `200` if
-                                 the process is alive).
-- `GET /api/v1/health/ready`  — readiness probe; non-`200` means
-                                 the node is not ready to serve.
-
-These are **exempt from rate limiting** so probes are not throttled.
-
-### Versioning catalogue
-
-#### List API versions (public read)
-
-**GET** `/api/v1/versions`
-
-```json
-{
-  "current": "v1",
-  "versions": [
-    { "name": "v1", "prefix": "/api/v1", "status": "active" }
+  "tip": 755940, "from": 755938, "to": 755940,
+  "headers": [
+    {
+      "height": 755940,
+      "hash": "841ad935f29bca0a84232b875b2576583a672a5d24a172194efd895c2a84eb4c",
+      "prev_hash": "112f9d90145acd60a25a4e2d8ce5094516f46f5863cffebae645366b9ff8f30d",
+      "state_root": "595e6f74257d225f39155d1b4617764f77396527ec79052aea914d3db80345a6",
+      "tx_root": "670cfebaab21130148ad8c414fca03b4afee957603c5dcac30c6b2532f9386eb",
+      "tx_count": 1,
+      "timestamp": "2026-10-04T12:05:11Z",
+      "producer_id": "1cf60b16cf9aee5e8eaf67a8518a2b2ba7bc54f2dd607f05bc5a861b7a94c859"
+    }
   ]
 }
 ```
 
-The `status` enum is `active` / `deprecated` / `sunset`. SDKs use
-this to render deprecation banners without scraping every endpoint
-response for `Deprecation` / `Sunset` headers.
+### `GET /chain/blocks`
 
-The deprecation flow itself is implemented in `DeprecationMiddleware`
-(see `pkg/api/versioning.go`):
-
-- **Active** — pass through unchanged.
-- **Deprecated** — responses carry `Deprecation: true|<RFC1123>` and
-  (when set) `Sunset: <RFC1123>`, plus
-  `Link rel="successor-version"` and `Link rel="deprecation"`
-  pointing at the migration guide.
-- **Sunset** — middleware short-circuits with **410 Gone** plus a
-  JSON body pointing at the migration guide.
-
----
-
-## Error responses
-
-Per `pkg/api/error_sanitize.go` (audit row `api-04`), error responses
-are sanitized — they never leak stack traces, file paths, or
-internal state. Wire shape (from `pkg/api/middleware.go::writeErrorResponse`):
+Full blocks including transactions and the producer's block signature. Query:
+`from`, `to`, `limit` (default 16, max 64). Responses can be large.
 
 ```json
 {
-  "error":   "Unauthorized",
-  "message": "missing authentication",
-  "status":  401
+  "tip": 755941, "from": 755941, "to": 755941,
+  "blocks": [{
+    "height": 755941,
+    "hash": "15b625ee5f5b2d87d11633da20af83bda630a52980fceb4d40f63180f4a4754b",
+    "prev_hash": "841ad935…eb4c",
+    "timestamp": "2026-10-04T14:05:22.091217912+02:00",
+    "transactions": [{
+      "ID": "solo-heartbeat-2203456-1791115521997698505",
+      "Sender": "qsdm-system-funder", "Recipient": "qsdm-system-funder",
+      "Amount": 0, "Fee": 0, "Nonce": 2203456
+    }],
+    "state_root": "bfce3feb…916f",
+    "total_fees": 0, "gas_used": 0,
+    "producer_id": "1cf60b16…c859",
+    "producer_auth": { "public_key": "…" }
+  }]
 }
 ```
 
-`error` is the standard `http.StatusText` string for the status
-code; `message` is a sanitized human-readable detail; `status` is
-the numeric HTTP status (mirrors the response status line for
-clients that lose it).
+Blocks without user activity carry a zero-value producer heartbeat transaction,
+as above.
 
-### Common HTTP status codes
+### `GET /receipts` and `GET /receipts/{tx_id}`
 
-| Code | Meaning                                                                |
-|------|------------------------------------------------------------------------|
-| 200, 201 | Success                                                            |
-| 400  | Invalid request parameters or malformed body                           |
-| 401  | Authentication required or invalid                                     |
-| 403  | Insufficient permissions (or NVIDIA-lock blocked)                      |
-| 404  | Resource not found                                                     |
-| 405  | Method not allowed                                                     |
-| 410  | Sunset API version (see `/versions`)                                   |
-| 422  | Submesh policy violation (when submesh profiles are loaded)            |
-| 429  | Rate limit exceeded                                                    |
-| 503  | Service not configured (e.g. wallet service did not initialize)        |
+Receipts for recent transactions (query `from`, `to`, `limit`), or for one
+transaction id. An unknown id returns a plain-text 404.
 
----
-
-## Rate limiting
-
-Default: **100 requests per client per minute**. Specific routes are
-pinned tighter in `pkg/api/security.go` — for example
-`/monitoring/ngc-challenge` is pinned at 15/min. `GET /api/v1/health`
-and `/api/v1/health/*`
-are exempt so probes are not throttled.
-
-Rate-limited responses return `429` and include `Retry-After`. The role-aware
-limiter also includes `X-RateLimit-Limit`:
-
-```
-Retry-After:       60
-X-RateLimit-Limit: 30
+```json
+{
+  "tx_id": "solo-heartbeat-2203456-1791115521997698505",
+  "block_height": 755941,
+  "block_hash": "15b625ee5f5b2d87d11633da20af83bda630a52980fceb4d40f63180f4a4754b",
+  "status": 1,
+  "gas_used": 0,
+  "fee": 0,
+  "logs": [{ "topic": "TxApplied", "data": { "amount": 0, "recipient": "qsdm-system-funder", "sender": "qsdm-system-funder" }, "index": 0 }],
+  "timestamp": "2026-10-04T12:05:22.093619088Z",
+  "index_in_block": 0
+}
 ```
 
-The client identifier is the source IP. When
-`QSDM_TRUST_PROXY_HEADERS=1` is enabled behind a trusted reverse proxy, QSDM
-uses the proxy-provided real client address (`X-Real-IP`, then the rightmost
-`X-Forwarded-For`). The public deployment must keep the API port reachable only
-through the proxy when this flag is active.
+Use `/receipts/{tx_id}` to follow a transfer you submitted. (`/transactions` and
+`/transactions/{id}` exist in the code but need operator credentials.)
 
-Operator override: `[api] rate_limit_max_requests` /
-`rate_limit_window` in the config file, or
-`QSDM_API_RATE_LIMIT_MAX` / `QSDM_API_RATE_LIMIT_WINDOW` env vars.
-The legacy `QSDM_*` env vars continue to be accepted during the
-deprecation window — see `REBRAND_NOTES.md`.
+### `GET /mining/emission`
 
----
-
-## SDKs
-
-### Go
-
-```go
-import qsdm "github.com/blackbeardONE/QSDM/QSDM/source/sdk/go"
-
-client := qsdm.NewClient("https://localhost:8443")
-client.SetToken("<jwt>")
-
-balance, err := client.GetBalance("wallet_address_123")
+```json
+{
+  "chain_tip": 755941,
+  "mining_cap_dust": 9000000000000000,
+  "blocks_per_epoch": 12623040,
+  "target_block_time_seconds": 10,
+  "current_epoch": 0,
+  "block_reward_dust": 356490987,
+  "block_reward_cell": "3.56490987",
+  "emitted_dust": 269486153203767,
+  "emitted_cell": "2694861.53203767",
+  "remaining_dust": 8730513846796233,
+  "next_halving_height": 12623041,
+  "next_halving_eta_seconds": 118671000
+}
 ```
 
-Module: `github.com/blackbeardONE/QSDM`. The Go SDK package lives
-under `QSDM/source/sdk/go/`; the SDK ships in the same module as
-the server so a single `go get` brings both. Package name: `qsdm`.
+## Wallet
 
-### JavaScript
+### `GET /wallet/balance?address={address}`
 
-NPM package: **`qsdm-sdk`**.
-
-```javascript
-import QSDMClient from 'qsdm-sdk';
-
-const client = new QSDMClient('https://localhost:8443');
-client.setToken('<jwt>');
-
-const balance = await client.getBalance('wallet_address_123');
+```json
+{"address":"5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7","balance":20.494531481334427,"source":"mining-ledger"}
 ```
 
-See `QSDM/source/sdk/javascript/README.md` for the full method
-catalogue. Publish workflow:
-`.github/workflows/sdk-javascript-publish.yml`.
+`balance` is in CELL. `source` says which ledger answered (`mining-ledger` is the
+chain account store).
 
----
+### `GET /wallet/nonce?sender={address}`
 
-## WebSocket
+The query parameter is **`sender`** (not `address`). `nonce` is the last nonce
+already used; sign your next transfer with `next`.
 
-`GET /api/v1/contracts/traces/ws` streams recent contract traces
-over a WebSocket connection (used by the dashboard and dev tools).
-The endpoint is exempt from request-timeout middleware so a
-long-running stream can outlive any HTTP deadline (see
-`pkg/api/request_timeout.go`). Future real-time streaming endpoints
-will follow the same `/api/v1/.../ws` convention.
+```json
+{"sender":"5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7","nonce":1,"next":2}
+```
 
----
+### `GET /mining/account?address={address}`
 
-## Versioning
+Balance and nonce in one call:
 
-The API is versioned by URL path (`/api/v1/...`). New majors get a
-sibling prefix (`/api/v2`) and the old prefix stays live until its
-sunset date. Minor changes are strictly additive — new fields, new
-endpoints, looser validation — and never break a v1 client.
+```json
+{"address":"5d28b825…20e7","balance":20.494531481334427,"nonce":1,"present":true}
+```
 
-Current major: `v1`. See **Versioning catalogue** above for the live
-catalogue and the deprecation-header contract.
+### `POST /wallet/submit-signed`
 
----
+Submits a CELL transfer that you signed yourself with ML-DSA-87. No login is
+needed: the signature authorises the transfer. QSDM Hive, the
+[web wallet](WEB_WALLET.md) and `qsdmcli` build this envelope for you.
 
-## Support
+Request body:
 
-For issues, documentation gaps, or differences from the OpenAPI specification, open an
-issue on [GitHub](https://github.com/blackbeardONE/QSDM) or refer to
-the project documentation under `QSDM/docs/docs/` — particularly
-[`openapi.yaml`](openapi.yaml) for the machine-readable spec.
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | Unique transaction id chosen by the client |
+| `sender` | string | Must equal `hex(sha256(public_key))` |
+| `recipient` | string | 64 lowercase hex characters |
+| `amount` | number | CELL, greater than 0 |
+| `fee` | number | CELL, 0 or more |
+| `geotag` | string | Optional, may be empty |
+| `parent_cells` | array of strings | Optional, may be empty |
+| `nonce` | integer | Required, must be `next` from `/wallet/nonce` |
+| `timestamp` | string | RFC 3339 |
+| `public_key` | string | Hex ML-DSA-87 public key (not signed) |
+| `signature` | string | Hex ML-DSA-87 signature |
 
-For security disclosure, see the RFC 9116 `security.txt` file
-deployed at <https://qsdm.tech/.well-known/security.txt> (and the
-matching legacy-compatibility location at
-<https://qsdm.tech/security.txt>), source-of-truth in
-`QSDM/deploy/landing/.well-known/security.txt`.
+What is signed: the JSON encoding of the envelope with `signature` set to `""`
+and `public_key` removed, fields in the order of the table above (Go
+`encoding/json` output). Third-party signers must reproduce it byte for byte;
+see [Signed transfers](V040_WALLET_SEND_DESIGN.md) and
+[Replay protection](V041_REPLAY_PROTECTION_DESIGN.md).
 
----
+Responses:
 
-*Last verified: 2026-05-18 against `pkg/api/handlers.go`,
-`pkg/api/middleware.go`, `pkg/api/security.go`,
-`pkg/api/versioning.go`, and `openapi.yaml` v1.1.0.*
+| Status | Body | Meaning |
+|---|---|---|
+| 202 | `{"transaction_id":"…","status":"pending","broadcast":"…"}` | Queued for the next block. Follow it with `/receipts/{tx_id}`. |
+| 409 | `{"transaction_id":"…","status":"duplicate",…}` | Same transaction already submitted |
+| 409 | error JSON, `nonce replay` / `nonce gap` | Fetch `/wallet/nonce` again and re-sign |
+| 400 | error JSON | Validation failed (for example nonce 0, bad address or hex) |
+| 402 | error JSON | Balance below amount + fee |
+| 422 | error JSON | Signature does not verify |
+| 503 | error JSON | Transaction queue full; retry after the next block |
+
+### Wallet recovery capsules
+
+`GET /wallet/recovery/capsules?owner={address}`,
+`GET /wallet/recovery/capsules/{locator}` and
+`GET /wallet/recovery/nonce?sender={address}` read the encrypted recovery
+capsules used by Hive's recovery-phrase feature
+(see [Wallet recovery](WALLET_RECOVERY.md)). Registering new capsules is
+paused during recovery.
+
+## Mining
+
+These endpoints are used by QSDM Hive and the command-line miner. Most users do
+not need to call them directly; see [Mining today](MINING_TODAY.md). The proof
+format is defined in [Mining protocol v2](MINING_PROTOCOL_V2.md). Base URL:
+`https://api.qsdm.tech/api/v1`; every mining route is rate-limited per IP.
+
+| Method | Path | Status today |
+|---|---|---|
+| GET | `/mining/work` | Live on `api.qsdm.tech` |
+| GET | `/mining/challenge` | Live |
+| POST | `/mining/submit` | Live on `api.qsdm.tech` for enrolled miners |
+| GET | `/mining/enrollments`, `/mining/enrollment/{node_id}` | Live |
+| POST | `/mining/enroll`, `/mining/unenroll` | **Paused** during recovery |
+
+### `GET /mining/work`
+
+The current work package. Optional query `height`. The work-set fields are
+described in Mining protocol v2 and are left out below.
+
+```json
+{"epoch":12,"height":755942,"header_hash":"a1cedad2…d080","difficulty":"16777216","blocks_per_epoch":60480,"…":"…"}
+```
+
+Here `blocks_per_epoch` is the **mining** epoch (60,480 blocks), not the halving
+epoch in `/status`. When mining is closed the endpoint returns
+`503 {"error":"mining_unavailable",…}`.
+
+### `GET /mining/challenge`
+
+A fresh, signed, single-use challenge that the miner binds into its attestation.
+Not cacheable (`Cache-Control: no-store`); it expires after about 60 seconds.
+
+```json
+{"nonce":"b144c302a35ee8e28f88d09203255f9de150c771552eb5f77fc8a5d89a34986b","issued_at":1791115543,"signer_id":"validator-483c814995ccf802","signature":"eab7de98d392e3a869fa06b744e77f6c9184d294a03c1dc6448ced7cfe92d093"}
+```
+
+### `POST /mining/submit`
+
+Body: one proof as canonical JSON per Mining protocol v2, including its
+`attestation` object (`type` is `nvidia-hmac-v1` or `nvidia-cc-v1`). The
+`miner_addr` must be the owner of an active enrollment. Hive 1.4.21 also adds
+the owner's ML-DSA-87 signature.
+
+| Status | Body |
+|---|---|
+| 200 | `{"accepted":true,"proof_id":"…"}` |
+| 400 | `{"accepted":false,"reject_reason":"…","detail":"…"}` |
+| 429 | Rate limit |
+| 503 | `{"error":"mining_unavailable",…}`: mining window closed |
+
+### `GET /mining/enrollments` and `GET /mining/enrollment/{node_id}`
+
+The enrollment registry. List query: `cursor`, `limit`, `phase`
+(`active`, `pending_unbond`, `revoked`). Private enrollment keys are never
+returned.
+
+```json
+{
+  "records": [{
+    "node_id": "clore-3090-01",
+    "owner": "5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7",
+    "gpu_uuid": "GPU-0856d89a-074f-adbd-781d-1f5e7673d569",
+    "stake_dust": 1000000000,
+    "bond_mode": "mining_rewards",
+    "required_stake_dust": 1000000000,
+    "bond_remaining_dust": 0,
+    "fully_bonded": true,
+    "enrolled_at_height": 326831,
+    "phase": "active",
+    "slashable": true
+  }],
+  "next_cursor": "hive-2696v3-0b65af9f0525",
+  "has_more": true,
+  "total_matches": 55
+}
+```
+
+## Tasks and streams
+
+Read-only during recovery; signed task and stream actions are paused.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /tasks` | Task catalogue from the chain: `runtime`, `catalog_source`, `catalog_state_root`, `tasks[]` |
+| `GET /tasks/state` | On-chain task state (stakes, participants, submissions). Can be large. |
+| `GET /tasks/{task_id}` | One task (`/state` and `/submissions` sub-paths are also available) |
+| `GET /tasks/actions` | Task action log (query `limit`, `task_id`, `sender`) |
+| `GET /streams` | CELL Streams (query `payer`, `provider`, `status`, `service_id`) |
+| `GET /streams/{stream_id}` | One stream |
+| `GET /streams/nonce?sender={address}` | Next stream action nonce |
+
+See [Task registry](QSDM_TASK_REGISTRY.md) and [CELL Streams](CELL_STREAMS.md).
+
+## Transparency
+
+| Endpoint | Returns |
+|---|---|
+| `GET /trust/attestations/summary` | How many public nodes have a fresh NVIDIA attestation, with a scope note |
+| `GET /trust/attestations/recent` | Recent attestations (query `limit`) |
+| `GET /audit/summary`, `GET /audit/items`, `GET /audit/badge.svg` | The project's **internal, self-maintained checklist**. It is not an independent audit. |
+| `GET /referrals/reward-pool` | Referral pool state (currently `enabled: false`) |
+
+## Not public
+
+These exist in the source code but are not reachable for public clients during
+the pilot. They are listed so nobody builds on them by mistake:
+
+- Login and accounts (`/auth/*`): new registration is disabled during
+  recovery and the API has no public login. The optional QSDM Account at
+  `https://qsdm.tech/api/account/` uses wallet sign-in; see [QSDM Account](QSDM_ACCOUNT.md).
+- Operator routes that need credentials: `/transactions*`, `/network/topology`,
+  `/governance/*`, `/attest/recent-rejections`, `/mining/slash*`, `/tokens/*`,
+  `/contracts/*`, `/bridge/*`, `/wallet/send`, `/validator/*`, `/monitoring/*`.
+- Administrative routes (`/api/admin/*`) and certificate issuance are not exposed.
+- No public metrics endpoint.
+
+## Machine-readable spec
+
+[`openapi.yaml`](openapi.yaml) is being brought in line with this page. Where
+they differ, this page and the live responses are correct.

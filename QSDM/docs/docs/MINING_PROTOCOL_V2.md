@@ -44,7 +44,7 @@
 1. What changes relative to v1
 2. What does NOT change
 3. Wire format
-4. Tensor-Core PoW mixin (deferred)
+4. Architecture checks
 5. Trust anchors
 6. Freshness window & nonce issuance
 7. Verifier
@@ -61,9 +61,7 @@
 ## 0. Executive summary
 
 QSDM v2 is the production mining protocol. It locks mining to
-NVIDIA GPUs along two axes — **cryptographic** (mandatory
-attestation) and **economic** (Tensor-Core-biased PoW, deferred)
-— and adds an on-chain enrollment / slashing layer that makes the
+NVIDIA GPUs through **mandatory attestation** and adds an on-chain enrollment / slashing layer that makes the
 NVIDIA lock observable and enforceable without trusting any
 single validator.
 
@@ -86,19 +84,14 @@ single validator.
      canonical-JSON bundle, bound to a stake-locked operator
      entry in the on-chain registry. Implementation shipped in
      `pkg/mining/attest/hmac/`.
-4. **Tensor-Core PoW mixin.** Specified in §4. **Not yet
-   implemented** — gated behind a future `FORK_V2_TC_HEIGHT`
-   that activates as a soft-tightening fork once
-   `cmd/qsdm-miner-cuda` lands. Pre-mixin, v2 proofs validate
-   under the legacy double-SHA256 PoW, so attestation is the
-   only NVIDIA-locking surface that is consensus-active today.
+4. **Future changes.** Future protocol changes will be announced in the changelog.
 5. **On-chain enrollment.** Operators register
    `(node_id, owner, gpu_uuid, hmac_key)` tuples by submitting a
    signed `qsdm/enroll/v2` transaction that locks
    `MIN_ENROLL_STAKE = 10 CELL` or selects deferred bond accrual.
    Legacy `qsdm/enroll/v1` records remain replay-valid only below
    `SignedContractActivationHeight`. Unenroll bonds the stake for `UnbondWindow`
-   (default 30 d) and the `gpu_uuid` releases at maturity, so a
+   (201,600 blocks (about 23 days at 10-second blocks)) and the `gpu_uuid` releases at maturity, so a
    physical card can be re-enrolled by a fresh `node_id` after
    the original record retires. Signed `qsdm/enroll/v2`
    transactions can also retain the operator's ML-DSA public key
@@ -127,11 +120,7 @@ single validator.
    (`--protocol=v2`) that drives the full enrollment → challenge
    → HMAC-bundle → submit loop, with a built-in setup wizard, a
    live `v2 NVIDIA` panel row, and a background enrollment
-   poller. The CPU-only PoW kernel is preserved purely for
-   testnet attestation participation; once
-   `FORK_V2_TC_HEIGHT` activates, this binary is no longer
-   profitable. The CUDA-native miner (`cmd/qsdm-miner-cuda`) is
-   the deferred replacement (§12.2).
+   poller.
 
 The rest of this document is the normative wire spec
 (§§1–4), the implementation contract (§§5–9), activation
@@ -153,8 +142,8 @@ paths under `QSDM/source/`.
 | `Proof.Version` | `1` | `2` (`mining.ProtocolVersionV2`). |
 | `Attestation.Type` whitelist | `"ngc-v1"` (informational only). | `"nvidia-cc-v1"` (datacenter CC) and `"nvidia-hmac-v1"` (consumer GPUs). Whitelist enforced at the verifier dispatcher. |
 | Trust anchor | None — `Verifier.Verify` never reads `Attestation`. | Genesis-pinned NVIDIA CC root material + on-chain operator registry (HMAC path). See §5. |
-| PoW hash | SHA3-256 in a 64-step DAG walk (`pkg/mining/pow.go::ComputeMixDigest`). | SHA3-256 + Tensor-Core FP16 matmul mixin per DAG step (§4). **Deferred** — gated behind `FORK_V2_TC_HEIGHT`. |
-| Validator SLO | Verify any single proof in < 100 ms single-core, batch 1000 in < 2 s (`§1.1(4)`). | Unchanged. The Tensor-Core mixin runs only on the miner side; the validator re-hashes via a deterministic CPU reference. |
+| PoW hash | Defined by the v1 spec and the reference implementation. | Unchanged in this spec. Future protocol changes will be announced in the changelog. |
+| Validator SLO | Verify any single proof in < 100 ms single-core, batch 1000 in < 2 s (`§1.1(4)`). | Unchanged. |
 | Attestation endpoint `/api/v1/monitoring/ngc-proof` | Monitoring-only sink, never feeds consensus. | Unchanged role. v2 attestations travel inline on the proof. The legacy ingest endpoint remains for dashboards; it is no longer the consensus path. |
 
 ---
@@ -434,208 +423,11 @@ type Proof struct {
 
 ---
 
-## 4. Tensor-Core PoW mixin
+## 4. Architecture checks
 
-> **Status as of this revision:** byte-exact validator-side reference
-> shipped in `pkg/mining/pow/v2/`, wired into the verifier and
-> reference solver behind a runtime-settable height gate
-> (`pkg/mining.SetForkV2TCHeight`, default `math.MaxUint64` =
-> disabled), AND exposed as the `fork_v2_tc_height` governance
-> parameter so the activation height is operator-tunable post-launch
-> via `qsdm/gov/v1` `param-set` transactions. Production networks
-> bake the genesis activation height into chain config via
-> `v2wiring.Config.ForkV2TCHeight`; subsequent moves (defer the
-> fork, advance it, or revert to disabled) require an M-of-N
-> AuthorityList vote per §9.4.7. Pre-fork, a `Version=2` proof is
-> accepted under the legacy v1 walk in
-> `pkg/mining/pow.go::ComputeMixDigest`. Post-fork (block height ≥
-> `ForkV2TCHeight()`), validators switch to
-> `powv2.ComputeMixDigestV2`. The two algorithms produce different
-> 32-byte mix-digests for identical inputs, so a proof mined under
-> the wrong algorithm fails Step 10 (`mix_digest mismatch`) — the
-> soft-tightening fork behaviour. No chain reset, no proof-format
-> change. Tracking: §12.2.
-
-### 4.1 Why a PoW mixin at all
-
-The attestation gate (§3) is the consensus rule. A rogue
-validator that ignores it could accept proofs from anybody.
-Economic lock: make the proof itself uneconomic to produce
-without a Tensor Core, so a fork that bypasses the attestation
-rule also gets no hashrate advantage from CPU miners.
-
-### 4.2 The mixin
-
-v1 hash (`pkg/mining/pow.go::ComputeMixDigest`):
-
-```
-seed := SHA3-256(header_hash || nonce)
-mix  := seed
-for s in 0..64:
-    idx := uint32(BE(mix[0..4])) mod N
-    mix := SHA3-256(mix || D_e[idx])
-return mix
-```
-
-v2 hash (reference: `pkg/mining/pow/v2/`):
-
-```
-seed := SHA3-256(header_hash || nonce)
-mix  := seed
-for s in 0..64:
-    idx   := uint32(BE(mix[0..4])) mod N
-    entry := D_e[idx]
-    M     := MatrixFromMix(mix)        // 16x16 FP16, see §4.2.1
-    v     := VectorFromEntry(entry)    // 16 FP16 elements, see §4.2.2
-    r     := TensorMul(M, v)           // 16 FP16 elements, see §4.2.3
-    tc    := PackFP16VectorBE(r)       // 32 bytes
-    mix   := SHA3-256(mix || entry || tc)
-return mix
-```
-
-The matmul output is deterministic IEEE-754 FP16 with a pinned
-rounding mode (`round-to-nearest-even`), so the validator's CPU
-reference produces bit-identical `tc` to a compliant miner. The
-following four byte-exact decisions (locked, hard-fork-only to
-change) make the spec testable across CPU, CUDA, and any future
-accelerator:
-
-#### 4.2.1 Matrix expansion (mix → 16×16 FP16)
-
-```
-M_bytes := SHAKE256("qsdm/pow/v2/matrix\x00" || mix), read 512 bytes
-for i,j in 0..16:
-    M[i][j] := DecodeFP16BE(M_bytes[ 2*(16*i + j) : 2*(16*i + j) + 2 ])
-```
-
-The 32-byte mix is too small to fill a 16×16 FP16 matrix
-(4096 bits) directly; SHAKE256 is the FIPS-202 XOF used to fan
-it out. The domain-separator byte string keeps this expansion
-disjoint from every other SHA3 use in the protocol.
-
-#### 4.2.2 Vector unpack (entry → 16 FP16)
-
-```
-for k in 0..16:
-    v[k] := DecodeFP16BE(D_e[idx][ 2k : 2k+2 ])
-```
-
-The 32-byte DAG entry is exactly 16 FP16 elements wide, so no
-expansion is needed.
-
-#### 4.2.3 Matmul (per output element r[i])
-
-```
-acc := float32(0)                                      // +0, IEEE-754 FP32
-for j in 0..16:
-    acc = acc + (float32(M[i][j]) * float32(v[j]))     // RNE, left-to-right
-r[i] := Float32ToFP16RNE(acc)                          // RNE down-convert
-```
-
-* FP16×FP16 multiplication is performed by widening both
-  operands to FP32 (exact, since 22-bit products fit in FP32's
-  24-bit mantissa) and using the platform's IEEE-754 FP32
-  multiply.
-* Accumulation is **strict left-to-right in FP32**, NOT
-  tree-reduction. This is the most common point of divergence
-  from naive CUDA WMMA implementations; miners using the WMMA
-  fast-path must emulate this loop's reduction order in software
-  (one mac per thread) to stay bit-compatible. The validator is
-  authoritative.
-* Final FP16 down-convert uses round-to-nearest, ties-to-even,
-  with the canonical NaN payload of §4.2.4.
-
-#### 4.2.4 NaN canonicalization
-
-IEEE-754 leaves the NaN payload (1022 distinct FP16 patterns,
-millions of FP32 patterns) implementation-defined; CUDA, x86,
-and ARM each emit different ones, so we cannot allow them
-through to SHA3-256. Therefore, at every encode boundary
-(`DecodeFP16BE`, `EncodeFP16BE`, `Float32ToFP16RNE`):
-
-* Any FP16 NaN is rewritten to `FP16Qnan = 0x7E00` (sign 0,
-  exp all-ones, mantissa `1100000000`).
-* Any FP32 NaN is rewritten to `FP32Qnan = 0x7FC00000`.
-
-Subnormals and signed zero are **preserved**, no flush-to-zero,
-no -0 collapse — these are determinable bit patterns and matter
-when the matmul output happens to land near 2^-14.
-
-### 4.3 Validator cost
-
-Single-proof CPU verify budget on a Sandy Bridge-era Xeon E5-2670
-(2.6 GHz, 2012-vintage), measured by
-`pkg/mining/pow/v2/bench_test.go`:
-
-| Stage                      | Per-step | × 64 | Share |
-|----------------------------|----------|------|-------|
-| `MatrixFromMix` (SHAKE256) | 3.17 µs  | 203 µs | 68 %  |
-| `TensorMul`                | 0.53 µs  | 34 µs  | 11 %  |
-| `SHA3-256` step body + DAG | ~0.95 µs | 61 µs  | 21 %  |
-| **Total `ComputeMixDigestV2`** | — | **~298 µs** | 100 % |
-
-That's well inside the original §1.1(4) `< 100 ms` SLO and inside
-this protocol's tighter ~700 µs informal budget by a factor of two
-on a 13-year-old CPU. Newer hardware (post-Skylake) cuts the total
-roughly in half again.
-
-The reference implementation is pure Go, no CGO, no assembly, no
-build tags. The two non-trivial micro-optimizations are:
-
-* **`fp16ToFP32LUT`** — a 256 KB read-only table populated at
-  package init from the unrolled IEEE-754 reference
-  (`fp16ToFloat32Slow`). `FP16ToFloat32(x)` is then a single
-  indexed load, ~2 ns vs ~7 ns for the branch-tree version.
-  An init-time self-check panics if the table disagrees with the
-  reference on a hand-picked set of boundary inputs; an
-  exhaustive 65,536-entry equivalence test
-  (`TestFP16ToFP32_LUTMatchesSlow`) is the regression bar in CI.
-* Stack-friendly per-step SHAKE256 allocation. Earlier attempts
-  to "reuse" the SHAKE state across the 64 outer-loop iterations
-  via a struct caused the underlying Keccak state to escape to
-  the heap (132 allocs/op) and net out slower; the current
-  per-call form keeps allocations to a single 32-byte digest
-  copy on the entire 64-step walk.
-
-A future SIMD/BLAS-backed fast-path (e.g. AVX-512 F16C, Apple
-NEON `vcvt_f32_f16`, or a CGO-bridged `gonum/blas` for batch
-verification) MUST be byte-exact-equivalent to the reference;
-the frozen golden vector in
-`pkg/mining/pow/v2/mixdigest_test.go` is the conformance bar.
-
-### 4.4 Miner cost
-
-On an RTX 4090 Tensor Core: 16×16 FP16 matmul per dispatched
-thread completes in ~20 ns, ~250x faster than CPU. H100 with
-FP16 Tensor Cores: ~8 ns. Expected hashrate: ~5 MH/s on RTX
-4090, ~20-40 MH/s on H100. CPU miner: ~0.02 MH/s. That is the
-economic lock.
-
-### 4.5 Backward compatibility
-
-The v1 function `pkg/mining.ComputeMixDigest` stays in-tree
-unchanged for replaying pre-fork blocks (audit), protocol-
-conformance tests, and any future soft-unlock if governance ever
-wants to re-enable non-NVIDIA mining. Selection between v1 and
-v2 is height-gated on `FORK_V2_TC_HEIGHT`; nothing about the
-proof wire format changes (the existing `Proof.Version=2` field
-already covers it — pre-fork v2 proofs simply happen to use the
-v1 walk for `mix_digest`).
+Future protocol changes will be announced in the changelog.
 
 ### 4.6 Arch-spoof rejection (§3.3 step 8)
-
-> **Correction (2026-04-29):** an earlier draft of this section
-> proposed using a "matmul rounding fingerprint" to detect
-> arch-spoof — i.e. inferring the actual GPU architecture from
-> arch-specific FP16 rounding artefacts in the mix digest. That
-> approach was abandoned when §4.3's byte-exact IEEE-754 RNE
-> + canonical-NaN + left-to-right FP32 accumulation rules were
-> ratified: those rules deliberately make `ComputeMixDigestV2`
-> produce **the same digest on every architecture that can
-> run the spec**. Without that conformance bar, byte-exact
-> validation across heterogeneous miner hardware would be
-> impossible. Consequently there IS no rounding fingerprint to
-> lean on, and the v2 ship of step 8 takes a different shape.
 
 Step 8 ("`mix_digest` consistent with claimed `gpu_arch`") is
 implemented today as **two cross-checks against the parts of
@@ -813,12 +605,10 @@ metric:
 #### 4.6.6 Activation height
 
 This whole section is gated by `FORK_V2_HEIGHT` (the v2
-attestation flow), **not** `FORK_V2_TC_HEIGHT`. The
-arch-spoof checks are part of the attestation surface, so
-they must be active wherever the attestation surface is
-active — which is from v2 launch onwards. The TC-mixin fork
-height is independent (it controls only the §10 PoW algorithm
-selection).
+attestation flow). The arch-spoof checks are part of the
+attestation surface, so they are active wherever the
+attestation surface is active — which is from v2 launch
+onwards.
 
 ---
 
@@ -878,24 +668,22 @@ Enrollment lifecycle:
 3. From then on, every proof the miner emits carries a
    `nvidia-hmac-v1` bundle signed with that key.
 4. Operators or governance can revoke a `node_id` via
-   `qsdm/unenroll/v1`. Stake bonds for `UnbondWindow` (default
-   30 d at v2 genesis); `BlockProducer.OnSealedBlock` auto-
+   `qsdm/unenroll/v1`. Stake bonds for `UnbondWindow`
+   (201,600 blocks (about 23 days at 10-second blocks)); `BlockProducer.OnSealedBlock` auto-
    sweeps matured records and releases the `gpu_uuid` so the
    physical card can be re-enrolled by a fresh `node_id`.
 
 **Why this is not cryptographically airtight.** An operator with
 a legitimately-registered `(node_id, gpu_uuid, hmac_key)` tuple
-can lend their HMAC key to an accomplice running on an AMD GPU
-that reports a fake `gpu_uuid`. The verifier cannot distinguish.
-This is an *economic* lock, not a *cryptographic* one for
-consumer cards: the Tensor-Core PoW mixin (§4) makes the AMD
-bypass uneconomic, and the stake-at-enrollment makes Sybil
-attacks expensive (10 CELL x N keys). HMAC-key misuse is not
-slashable today because public symmetric keys cannot attribute
-who produced a bundle. Signed enrollment public-key retention is
-the migration rail, but HMAC offences become safely slashable
-only after that gate is active and proof submissions carry
-operator wallet signatures.
+can lend their HMAC key to an accomplice whose hardware reports a
+fake `gpu_uuid`. The verifier cannot distinguish. For consumer
+cards this is an *economic* lock, not a *cryptographic* one: the
+stake-at-enrollment makes Sybil attacks expensive (10 CELL x N
+keys). HMAC-key misuse is not slashable today because public
+symmetric keys cannot attribute who produced a bundle. Signed
+enrollment public-key retention is the migration rail, but HMAC
+offences become safely slashable only after that gate is active
+and proof submissions carry operator wallet signatures.
 
 ### 5.3 Deny-list
 
@@ -996,7 +784,7 @@ registry mapping `Attestation.Type` to a concrete
 | [`pkg/mining/challenge/`](../../source/pkg/mining/challenge/) | Validator-issued nonce challenge crypto | **Shipped.** |
 | [`pkg/mining/enrollment/`](../../source/pkg/mining/enrollment/) | On-chain operator registry, admission gate, sweep | **Shipped.** |
 | [`pkg/mining/slashing/`](../../source/pkg/mining/slashing/) | Slashing data model + dispatcher + admission | **Shipped, fail-closed in production.** HMAC-dependent kinds refuse attribution through `pkg/mining/slashing/attribution.go`; `freshness-cheat` rejects through the production `RejectAllWitness` pending BFT finality (§12.3). |
-| [`pkg/governance/chainparams/`](../../source/pkg/governance/chainparams/) | `qsdm/gov/v1` parameter-tuning tx type, registry, ParamStore, admission | **Shipped.** Three tunables: `reward_bps`, `auto_revoke_min_stake_dust`, `fork_v2_tc_height`. See §9.4 + §4 / §12.2. |
+| [`pkg/governance/chainparams/`](../../source/pkg/governance/chainparams/) | `qsdm/gov/v1` parameter-tuning tx type, registry, ParamStore, admission | **Shipped.** Three tunables: `reward_bps`, `auto_revoke_min_stake_dust`, `fork_v2_tc_height`. See §9.4. |
 | [`pkg/chain/gov_apply.go`](../../source/pkg/chain/gov_apply.go) | Chain-side `GovApplier` adapter routing `qsdm/gov/v1` txs | **Shipped.** Stages → promotes via `SealedBlockHook`. |
 
 ### 7.3 Test vectors
@@ -1258,7 +1046,7 @@ governance-tunable at runtime:
 |---|---|---|---|
 | `reward_bps` | `SlashApplier.activeRewardBPS()` | `[0, 5000]` (clamped at `chain.SlashRewardCap`) | `cfg.SlashRewardBPS` (binary-supplied) |
 | `auto_revoke_min_stake_dust` | `SlashApplier.activeAutoRevokeMinStakeDust()` | `[1·CELL, MIN_ENROLL_STAKE]` | `MIN_ENROLL_STAKE` |
-| `fork_v2_tc_height` | runtime `pkg/mining.ForkV2TCHeight()`, repinned by `v2wiring`'s `SealedBlockHook` after each `Promote` (§4 / §12.2) | `[0, math.MaxUint64]` | `cfg.ForkV2TCHeight` (binary-supplied; `nil` = `MaxUint64` = TC disabled) |
+| `fork_v2_tc_height` | runtime `pkg/mining.ForkV2TCHeight()`, repinned by `v2wiring`'s `SealedBlockHook` after each `Promote` | `[0, math.MaxUint64]` | `cfg.ForkV2TCHeight` (binary-supplied; `nil` = `MaxUint64` = TC disabled) |
 
 Tunable parameters are an explicit whitelist
 (`chainparams.Registry`); anything else requires a binary
@@ -1706,11 +1494,8 @@ not on mainnet.
 ### 9.6 Reference miner — `cmd/qsdmminer-console`
 
 Source: [`cmd/qsdmminer-console/`](../../source/cmd/qsdmminer-console/).
-This binary is the v1 reference miner with an opt-in v2
-attestation path bolted on — sufficient for testnet
-participation pre-`FORK_V2_TC_HEIGHT`, replaced by
-`cmd/qsdm-miner-cuda` (deferred — §12.2) once the Tensor-Core
-mixin activates.
+This binary is the reference miner with the v2 attestation path
+(`--protocol=v2`). QSDM Hive bundles and drives it.
 
 Operational flow with `--protocol=v2`:
 
@@ -1834,29 +1619,9 @@ All pre-fork state is discarded. The v2 genesis block is height
 2026-04-24 owner sign-off (§13.4) that the testnet has no real
 users.
 
-### 10.4 Retirement of v1 binaries
+### 10.4 Miner binaries
 
-At the same commit that ships `cmd/qsdm-miner-cuda` (deferred —
-§12.2):
-
-- `cmd/qsdmminer/` — removed.
-- `cmd/qsdmminer-console/` — removed (current opt-in v2 path
-  retires with the binary).
-- `scripts/install-qsdmminer-console.*` — already removed in
-  Phase 0 (`19e756a`).
-- `QSDM/Dockerfile.miner-console` — already removed in Phase 0.
-- `QSDM/Dockerfile.miner` — retained, renamed to
-  `QSDM/Dockerfile.qsdm-miner-cuda`.
-- New `cmd/qsdm-miner-cuda/` ships with the fork commit.
-
-Until then, `cmd/qsdmminer-console` remains the reference miner
-for testnet v2 attestation participation (§9.6).
-
-### 10.5 Backward compatibility — `ComputeMixDigestV1`
-
-The v1 PoW is renamed `ComputeMixDigestV1` and kept in-tree for
-audit, protocol-conformance tests, and any future soft-unlock if
-governance ever wants to re-enable non-NVIDIA mining.
+`cmd/qsdmminer-console` is the reference miner (§9.6). Future protocol changes will be announced in the changelog.
 
 ---
 
@@ -1864,11 +1629,8 @@ governance ever wants to re-enable non-NVIDIA mining.
 
 ### 11.1 In-scope threats
 
-1. **CPU-only miner.** Rejected by the attestation gate; even if
-   a rogue validator accepts it, the proof takes ~250x longer to
-   compute on a CPU than on an NVIDIA GPU (§4.4) once the
-   mixin lands. Pre-mixin: rejected on attestation alone.
-2. **AMD / Intel GPU with forged `nvidia-smi` output.** The
+1. **CPU-only miner.** Rejected by the attestation gate.
+2. **Non-NVIDIA hardware with forged `nvidia-smi` output.** The
    verifier does not trust `nvidia-smi` output directly; it
    checks a bundle bound to an enrolled `(node_id, gpu_uuid)`.
    In the current HMAC path the key is public chain state, so
@@ -1942,11 +1704,9 @@ What's deferred:
   is plumbed end-to-end; ratifying the actual NVIDIA-issued
   Hopper/Blackwell root cert at v2 fork-time is a separate
   governance decision.
-- **CUDA-side miner integration.** Once `cmd/qsdm-miner-cuda`
-  ships (§12.2), it produces live CC bundles using the
-  on-host nvtrust SDK; today only `cmd/qsdmminer-console`
-  produces v2 attestations and it produces `nvidia-hmac-v1`
-  only.
+- **CC bundles from the miner.** Today only
+  `cmd/qsdmminer-console` produces v2 attestations, and it
+  produces `nvidia-hmac-v1` only.
 
 Hard external dependencies: NVIDIA NGC Attestation Service
 contract; physical Hopper / Blackwell GPU for swap-in
@@ -1954,91 +1714,9 @@ test vectors. Estimated remaining work post-hardware: **~5
 days** (down from the original ~8 — verifier pipeline is
 already done).
 
-### 12.2 Tensor-Core PoW kernel — reference + height gate shipped, CUDA deferred
+### 12.2 Proof-of-work changes
 
-Specified in §4. Three deliverables, two shipped:
-
-1. ~~A pure-Go validator-side reference impl in
-   `pkg/mining/pow/v2/`.~~ — **SHIPPED.** Locks the byte-exact
-   semantics of §4.2 (matrix expansion via SHAKE256, FP16
-   endianness, NaN canonicalization, strict left-to-right FP32
-   accumulation). Includes an exhaustive 16-bit FP16 round-trip
-   test, an identity-matmul test, a known-row hand-computed
-   matmul test, a determinism test, a v1≠v2 sanity test, an
-   avalanche/diffusion test, and a frozen golden mix-digest
-   vector that any future CUDA miner MUST match bit-exact. This
-   is the conformance bar.
-
-   ~~**Wire reference into the verifier behind
-   `FORK_V2_TC_HEIGHT`.**~~ — **SHIPPED.** A runtime-settable
-   gate (`pkg/mining.ForkV2TCHeight()` /
-   `SetForkV2TCHeight()` / `IsV2TC(height)`) routes Step 10 of
-   `Verifier.Verify` and the per-attempt loop of `Solve` through
-   either the v1 walk or the v2 mixin based on the proof's
-   block height. The default is `math.MaxUint64` (TC disabled),
-   so existing behaviour is unchanged until a network operator
-   explicitly opts in.
-
-   ~~**Operational deployment: governance + genesis-config
-   wiring for `fork_v2_tc_height`.**~~ — **SHIPPED.** The
-   activation height is now a registered governance parameter
-   (`chainparams.ParamForkV2TCHeight`, bounds `[0, MaxUint64]`,
-   default `MaxUint64`). At chain init `v2wiring.Wire()` reads
-   the active value from the `ParamStore` and pins it into
-   `pkg/mining` via `SetForkV2TCHeight`; after every
-   `PromotePending` in the `SealedBlockHook` it re-pins from
-   the (possibly just-promoted) store value, so a successful
-   `qsdm/gov/v1` `param-set` tx makes the new fork height
-   visible to the verifier on the very next sealed block —
-   without a binary restart. A genesis-seed field
-   (`v2wiring.Config.ForkV2TCHeight *uint64`) lets operators
-   bake an initial activation into the genesis config; the
-   snapshot replay path takes precedence over the seed on
-   restart so the chain's committed governance history
-   cannot be silently overwritten by a config change.
-
-   Boundary semantics
-   (`pkg/mining/verifier_v2tc_test.go`):
-
-   - **Default (TC disabled)**: every proof verifies under v1;
-     all pre-existing verifier tests keep passing untouched.
-   - **Post-TC happy path**: with `SetForkV2TCHeight(0)`, both
-     `Solve` and `Verify` route through the powv2 mixin and the
-     proof validates end-to-end.
-   - **v1 mix at post-TC height**: rejected with `ReasonWork`
-     and message `mix_digest mismatch` — soft-tightening fork
-     correct outcome.
-   - **v2 mix at pre-TC height**: rejected symmetrically.
-   - **Boundary inclusivity**: `IsV2TC(H)` is `false` at
-     `H = ForkV2TCHeight() - 1`, `true` at `H = ForkV2TCHeight()`,
-     `true` at `H = ForkV2TCHeight() + 1`.
-
-2. A CUDA kernel performing the §4.2 mixin (per nonce attempt,
-   16 dependent `mma.m16n8k16.f16` Tensor-Core ops over the
-   matrix expanded from the running mix). The CUDA fast-path
-   MUST emulate the reference impl's strict left-to-right
-   FP32 accumulation order — naive WMMA tree-reduction will
-   diverge on the last bit and produce wrong mix-digests. (See
-   §4.2.3.) **DEFERRED** until the CUDA build chain is in CI.
-
-3. A calibration suite that pins difficulty so an RTX 4090
-   hits ~1 block / 30 s on a ~1000-validator testnet (numbers
-   TBD against real hardware). **DEFERRED.**
-
-Hard external dependencies for (2)/(3): working CUDA Toolkit
-12.x in CI (self-hosted GPU runner OR cross-compile + offline
-smoke test); at least one RTX 4090 for difficulty calibration.
-The mixin is gated behind a second fork height
-(`FORK_V2_TC_HEIGHT`) so it can activate as a soft-rejection
-fork (validators get stricter), no chain reset required.
-
-`mma.m16n8k16.f16` is Ampere+ only — Turing miners (RTX
-20-series) cannot mine v2 even with a CUDA build. We owe
-miners a deprecation notice for pre-Ampere cards before the
-fork.
-
-Estimated remaining work for the CUDA kernel + calibration:
-**~10 days** post-hardware.
+Future protocol changes will be announced in the changelog.
 
 ### 12.3 `freshness-cheat` slasher — verifier shipped, witness deferred
 
@@ -2149,7 +1827,7 @@ Rationale:
 - Low enough that a miner with roughly one day of pre-mining can
   self-fund enrollment, which keeps onboarding accessible.
 - High enough that thousand-GPU Sybil enrollments cost
-  10,000 CELL locked for 30 days — comparable to the cost of
+  10,000 CELL locked for the unbonding window — comparable to the cost of
   the GPUs themselves, so not a free attack.
 
 ### 13.3 `FRESHNESS_WINDOW` — RATIFIED
@@ -2178,8 +1856,7 @@ v2 launches via genesis, so `FORK_V2_HEIGHT = 0`. Justification:
 the testnet has no real users, so resetting Cell balances has no
 custodial impact. Pre-fork wallets are invalidated.
 
-`FORK_V2_TC_HEIGHT` (the second fork that activates the §4 PoW
-mixin) remains deferred — see §12.2.
+Future protocol changes will be announced in the changelog.
 
 ### 13.5 Revocation
 

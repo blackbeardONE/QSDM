@@ -1,11 +1,18 @@
 # MINER_QUICKSTART — Mine CELL on the QSDM pilot network (v2 NVIDIA-locked)
 
+> [!IMPORTANT]
+> **Using QSDM Hive?** Follow [Mining today (Hive 1.4.21)](MINING_TODAY.md)
+> instead of this page. **New mining enrollments are paused during the current
+> recovery:** only GPUs enrolled before the recovery can mine. The enrollment
+> steps below will work again when enrollment reopens; check
+> [Network status](NETWORK_STATUS.md).
+
 > **Consumer path:** install QSDM Hive and run the QSDM Miner task there.
 > Hive manages the wallet, signed task loop, local status, and consumer mining
 > controls. This quickstart is the advanced/operator console path for
 > `qsdmminer-console`; QSDM no longer ships a separate consumer GUI miner.
 
-> **Status:** As of v0.3.2 the live QSDM chain at `https://api.qsdm.tech`
+> **Status:** The live QSDM pilot network (pre-mainnet) at `https://api.qsdm.tech`
 > runs **v2 only** at consensus (`FORK_V2_HEIGHT = 0`, see
 > [`MINING_PROTOCOL_V2.md §10.4`](./MINING_PROTOCOL_V2.md) and the
 > ratified decision record in §13.4). Every block at every height
@@ -21,7 +28,6 @@
 >     "mining": {
 >       "protocol_versions_accepted": [2],
 >       "fork_v2_active":            true,
->       "fork_v2_tc_active":         false,
 >       "attestation_types_required":["nvidia-cc-v1","nvidia-hmac-v1"],
 >       "min_enroll_stake_dust":     1000000000
 >     }
@@ -33,12 +39,14 @@
 > Both miner binaries refuse to start a v1 mining loop against a
 > v2-active validator unless `--allow-v1` is explicitly passed.
 
-> **Compute-backend disclosure:** Hive 1.3.84 packages
-> `qsdm-miner-cuda-solver` beside `qsdmminer-console`. Hive starts the miner
-> with `--compute-backend=cuda`; current SHA3/DAG nonce work therefore runs on
-> the selected NVIDIA GPU and fails closed instead of silently falling back to
-> CPU. The live `fork_v2_tc_active` flag controls a future Tensor-Core
-> consensus algorithm, not whether the current CUDA SHA3 solver is active.
+> **Compute backend:** Hive 1.4.21 runs the packaged NVIDIA CUDA solver and
+> fails closed instead of falling back to CPU. For the proof-of-work rules see
+> [Mining protocol v2](MINING_PROTOCOL_V2.md).
+
+> **Operator signing:** Public mining requires operator signing: every proof
+> must carry the enrollment owner's ML-DSA-87 operator signature. Pass
+> `--operator-keystore=<wallet.json>` and `--operator-passphrase-file=<file>`
+> to `qsdmminer-console` (Hive does this automatically).
 
 This document walks an advanced home operator through:
 
@@ -74,12 +82,12 @@ To mine on the live pilot network (pre-mainnet) you need:
 - **A reward address you own** (this doc, [§2](#2-reward-address)).
 - **A QSDM signer wallet.** Holding 10 CELL is optional. You may prepay the 10
   CELL enrollment bond, or start from zero and let accepted mining rewards
-  fill it. Unenrollment begins a 7-day unbond window.
+  fill it. Unenrollment begins the unbonding period of
+  201,600 blocks (about 23 days at 10-second blocks); see [Mining protocol v2](MINING_PROTOCOL_V2.md).
 - **Network access** to a validator HTTP endpoint you trust. For
   the live pilot network this is `https://api.qsdm.tech`; for local devnet, whatever
   your `cmd/qsdm` is bound to.
-- **~3 GiB free RAM** for the active mining-epoch DAG (see
-  `MINING_PROTOCOL.md §3.3`).
+- **About 3 GiB of free RAM** for the miner.
 
 <a id="self-detect"></a>
 
@@ -171,10 +179,11 @@ go build -o qsdmcli ./cmd/qsdmcli
 export QSDM_API_URL=https://api.qsdm.tech/api/v1
 
 ./qsdmcli enroll \
-  --sender=qsdm1YOURADDR \
+  --in=$HOME/.qsdm/wallet.json \
+  --passphrase-file=$HOME/.qsdm/pass.txt \
   --node-id=rig-77 \
   --gpu-uuid=$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -1) \
-  --hmac-key=$(cat $HOME/.qsdm/hmac.key) \
+  --hmac-key-file=$HOME/.qsdm/hmac.key \
   --nonce=<your-current-account-nonce>
 ```
 
@@ -182,12 +191,19 @@ Zero-balance alternative:
 
 ```bash
 ./qsdmcli enroll \
+  --in=$HOME/.qsdm/wallet.json \
+  --passphrase-file=$HOME/.qsdm/pass.txt \
   --node-id=rig-77 \
   --gpu-uuid=$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -1) \
-  --hmac-key=$(cat $HOME/.qsdm/hmac.key) \
+  --hmac-key-file=$HOME/.qsdm/hmac.key \
   --bond-from-rewards \
   --nonce=0
 ```
+
+`enroll` and `unenroll` sign a `qsdm/enroll/v2` envelope locally with your
+keystore (`--in`, `--passphrase-file`). `--sender` is optional; when supplied
+it is checked against the keystore address. `--hmac-key-file` is preferred over
+passing the key on the command line with `--hmac-key`.
 
 The CLI builds a canonical `EnrollPayload` through
 `pkg/mining/enrollment.EncodeEnrollPayload` (the exact codec the
@@ -231,9 +247,8 @@ cosign verify-blob \
 ./qsdmminer-console --self-test
 ```
 
-10-second smoke test: builds a synthetic 4-batch work-set + small
-in-memory DAG, solves under easy difficulty, verifies against the
-in-process `pkg/mining` verifier. Same gate that runs in CI on every
+10-second smoke test: solves a small synthetic work item under easy
+difficulty and verifies it against the in-process `pkg/mining` verifier. Same gate that runs in CI on every
 push. If this fails, **stop** — open an issue.
 
 ### 4.3 Start mining v2
@@ -241,8 +256,10 @@ push. If this fails, **stop** — open an issue.
 ```bash
 ./qsdmminer-console --protocol=v2 \
   --validator=https://api.qsdm.tech \
-  --address=qsdm1YOURADDR \
+  --address=<64-hex-address> \
   --hmac-key-path=$HOME/.qsdm/hmac.key \
+  --operator-keystore=$HOME/.qsdm/wallet.json \
+  --operator-passphrase-file=$HOME/.qsdm/pass.txt \
   --node-id=rig-77 \
   --gpu-uuid=$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -1) \
   --gpu-arch=ada \
@@ -304,17 +321,18 @@ go build -o qsdmcli ./cmd/qsdmcli
 Then point it at any validator that exposes the v2 mining HTTP surface (anything past commit `7f45be7` running `cmd/qsdm`):
 
 ```bash
-export QSDM_API_URL=https://testnet.qsdm.tech/api/v1
+export QSDM_API_URL=https://api.qsdm.tech/api/v1
 ```
 
 ### Enroll a NodeID
 
 ```bash
 ./qsdmcli enroll \
-  --sender=qsdm1YOURADDR \
+  --in=$HOME/.qsdm/wallet.json \
+  --passphrase-file=$HOME/.qsdm/pass.txt \
   --node-id=rig-77 \
   --gpu-uuid=GPU-12345678-1234-1234-1234-123456789abc \
-  --hmac-key=$(openssl rand -hex 32) \
+  --hmac-key-file=$HOME/.qsdm/hmac.key \
   --nonce=<your-current-account-nonce>
 ```
 
@@ -340,12 +358,13 @@ Returns the sanitized `EnrollmentRecordView`:
 
 ```bash
 ./qsdmcli unenroll \
-  --sender=qsdm1YOURADDR \
+  --in=$HOME/.qsdm/wallet.json \
+  --passphrase-file=$HOME/.qsdm/pass.txt \
   --node-id=rig-77 \
   --reason="upgrading to 5090"
 ```
 
-This starts the 7-day unbond window. The bond is **not** released immediately — auto-sweep happens at maturity inside the block producer's `OnSealedBlock` hook. Until the sweep, the record stays in `phase=pending_unbond` and remains `slashable=true`. After sweep, balance is credited back and the record moves to `revoked`.
+This starts the unbonding period of 201,600 blocks (about 23 days at 10-second blocks) (see [Mining protocol v2](MINING_PROTOCOL_V2.md)). The bond is **not** released immediately — auto-sweep happens at maturity inside the block producer's `OnSealedBlock` hook. Until the sweep, the record stays in `phase=pending_unbond` and remains `slashable=true`. After sweep, balance is credited back and the record moves to `revoked`.
 
 ### Submit slashing evidence
 
@@ -380,7 +399,7 @@ today** — see the refusal note above:
 
 ```bash
 ./qsdmcli slash \
-  --sender=qsdm1WATCHER \
+  --sender=<64-hex-address> \
   --node-id=rig-cheater \
   --evidence-kind=forged-attestation \
   --evidence-file=./evidence.bin \
@@ -431,7 +450,7 @@ Pass `-` as a path to read a proof or evidence blob from stdin so you can pipe d
 
 ```bash
 ./qsdmcli slash-helper forged-attestation --proof=p.json | \
-  ./qsdmcli slash --sender=qsdm1WATCHER --node-id=rig-cheater \
+  ./qsdmcli slash --sender=<64-hex-address> --node-id=rig-cheater \
                   --evidence-kind=forged-attestation --evidence-file=- \
                   --amount=1000000000
 ```
@@ -464,7 +483,7 @@ A successful applied receipt looks like:
   "outcome": "applied",
   "recorded_at": "2026-04-26T22:55:35Z",
   "height": 1421,
-  "slasher": "qsdm1WATCHER",
+  "slasher": "<64-hex-address>",
   "node_id": "rig-cheater",
   "evidence_kind": "forged-attestation",
   "slashed_dust": 500000000,
@@ -678,13 +697,13 @@ Operational notes:
   Sample human output:
 
   ```
-  2026-04-29T13:21:07Z ARCHSPOOF_REJECTION         seq=42  reason=cc_subject_mismatch  arch=ada  miner=qsdm1critical  height=9000  cert_cn=NVIDIA H100 80GB  detail=leaf cn contradicts claimed gpu_arch
+  2026-04-29T13:21:07Z ARCHSPOOF_REJECTION         seq=42  reason=cc_subject_mismatch  arch=ada  miner=<64-hex-address>  height=9000  cert_cn=NVIDIA H100 80GB  detail=leaf cn contradicts claimed gpu_arch
   ```
 
   Sample JSON-Lines output:
 
   ```json
-  {"timestamp":"2026-04-29T13:21:07Z","event":"archspoof_rejection","seq":42,"reason":"cc_subject_mismatch","arch":"ada","height":9000,"miner_addr":"qsdm1critical","cert_subject":"NVIDIA H100 80GB","detail":"leaf cn contradicts claimed gpu_arch"}
+  {"timestamp":"2026-04-29T13:21:07Z","event":"archspoof_rejection","seq":42,"reason":"cc_subject_mismatch","arch":"ada","height":9000,"miner_addr":"<64-hex-address>","cert_subject":"NVIDIA H100 80GB","detail":"leaf cn contradicts claimed gpu_arch"}
   ```
 
   `--detailed` requires a v2-aware validator with the recent-rejections store wired (every node bootstrapped via `internal/v2wiring.Wire()` qualifies). Older nodes return `503 Service Unavailable` from the endpoint and the watcher exits with a clear message hinting to drop `--detailed` for counter mode.
@@ -748,11 +767,11 @@ Operational notes:
 
 - All three write subcommands accept `--id` for an idempotent client-supplied tx id; if omitted, `qsdmcli` generates a 16-byte random hex id.
 - `--fee` defaults to `0.001 CELL` and must be `> 0` to clear the slashing admission gate.
-- The CLI does not sign envelopes today (matching the existing `qsdmcli tx` shape); the validator-side `AccountStore` identifies sender by string and enforces nonce ordering. When Dilithium-signed envelopes land (per [`MINING_PROTOCOL_V2.md §13`](./MINING_PROTOCOL_V2.md#13-historical-decision-record) and the wallet roadmap), `qsdmcli` will gain a single signing call inside `buildEnvelope()` — no flag changes.
+- `enroll` and `unenroll` sign a `qsdm/enroll/v2` envelope locally with your keystore (`--in`, `--passphrase-file`).
 
 ### 5.2 Mining v2 from the console miner (panel reference)
 
-Once your enrollment record is on-chain, `qsdmminer-console` can mine v2 directly. The full loop is wired and tested end-to-end (`v2_integration_test.go`): the console keeps network, enrollment, and attestation control while the companion CUDA process owns the epoch DAG and searches nonce batches. Every solved share is host-checked, receives a fresh `/api/v1/mining/challenge`, builds an `nvidia-hmac-v1` attestation bundle, and POSTs a `Version=2` proof.
+Once your enrollment record is on-chain, `qsdmminer-console` can mine v2 directly. The full loop is wired and tested end-to-end (`v2_integration_test.go`): the console keeps network, enrollment, and attestation control while the companion CUDA process runs the GPU proof of work (see [Mining protocol v2](MINING_PROTOCOL_V2.md)). Every solved share is host-checked, receives a fresh `/api/v1/mining/challenge`, builds an `nvidia-hmac-v1` attestation bundle, and POSTs a `Version=2` proof.
 
 ### Generating an HMAC key
 
@@ -780,12 +799,12 @@ Enable v2 NVIDIA-locked protocol? (yes/no) [no]: yes
 
 v2 mining is enabled in the config. To bond your key on-chain, run:
 
-  qsdmcli enroll \
-    --validator https://testnet.qsdm.tech \
-    --sender   qsdm1YOURADDR \
-    --node-id  rig-77 \
-    --gpu-uuid GPU-1234…abc \
-    --hmac-key 5d3a...
+  QSDM_API_URL=https://api.qsdm.tech/api/v1 qsdmcli enroll \
+    --in              ~/.qsdm/wallet.json \
+    --passphrase-file ~/.qsdm/pass.txt \
+    --node-id         rig-77 \
+    --gpu-uuid        GPU-1234…abc \
+    --hmac-key-file   ~/.qsdm/hmac.key
 ```
 
 The wizard never submits the enroll transaction itself — bonding 10 CELL is a real on-chain side effect, so it stays a deliberate manual step. After the enroll tx is mined, restart `qsdmminer-console` and it picks up `protocol = "v2"` from the saved config.
@@ -795,6 +814,8 @@ The wizard never submits the enroll transaction itself — bonding 10 CELL is a 
 ```bash
 ./qsdmminer-console --protocol=v2 \
   --hmac-key-path=$HOME/.qsdm/hmac.key \
+  --operator-keystore=$HOME/.qsdm/wallet.json \
+  --operator-passphrase-file=$HOME/.qsdm/pass.txt \
   --node-id=rig-77 --gpu-uuid=GPU-1234…abc --gpu-arch=ada
 ```
 
@@ -832,14 +853,14 @@ If the validator's `/api/v1/mining/challenge` endpoint is unreachable (503, netw
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `[preflight] REFUSING TO MINE` at startup | Validator advertises v2 active but binary was launched in v1 mode (no `--protocol=v2`, or `cmd/qsdmminer` against mainnet). | Pass `--protocol=v2` with full v2 config; OR for local audit only, pass `--allow-v1`. |
+| `[preflight] REFUSING TO MINE` at startup | Validator advertises v2 active but binary was launched in v1 mode (no `--protocol=v2`, or `cmd/qsdmminer` against the live network). | Pass `--protocol=v2` with full v2 config; OR for local audit only, pass `--allow-v1`. |
 | `v2 prepare: enrollment not active` | The `/api/v1/mining/enrollment/{node_id}` poller sees `phase != active`. | Run `qsdmcli enrollment-status <node-id>`; if `not_found`, your enroll tx hasn't mined; if `pending_unbond` / `revoked`, re-enroll. |
 | `attestation_stale` rejections from `/api/v1/mining/submit` | Local clock skew >60 s (the `FreshnessWindow`), or validator's `/challenge` endpoint is stalling. | Re-sync NTP; check the `challenge=Ns ago` figure in the live panel. |
 | `attestation_invalid` rejections | HMAC key mismatch — your enrollment record holds a different key than the file `--hmac-key-path` points at. | Verify `sha256sum $HOME/.qsdm/hmac.key` matches the enrollment record; re-enroll if mis-keyed. |
 | `self-test FAILED: solve: context deadline exceeded` | `--self-test-difficulty` is too high for this CPU. | Re-run with `--self-test-difficulty=2` (default). |
 | Every submit returns `reject_reason=wrong-epoch` | Your binary and the validator disagree on `BlocksPerEpoch`. | Confirm both sides are on the same QSDM release tag; rebuild. |
-| `fetch work: status 503` loops forever | The validator does not have mining wired up yet. | Point `--validator` at a different node, or wait for testnet staging. |
-| Miner crashes on startup with OOM | DAG size > host RAM. | Currently only the production DAG size is supported; add more RAM or wait for the `--dag-size-override` flag (tracked post-audit). |
+| `fetch work: status 503` loops forever | The validator does not have mining wired up yet. | Point `--validator` at a different node, or wait until the node enables mining. |
+| Miner crashes on startup with out-of-memory | Not enough free RAM. | Free up about 3 GiB of RAM or add more RAM. |
 
 ## 7. Reporting bugs
 
@@ -847,7 +868,7 @@ The console miner is the **protocol truth** implementation for v2 mining. Any di
 
 1. Output of `qsdmminer-console --version` — one line carrying the release tag, short git SHA, build date, Go toolchain, and OS/arch.
 2. Validator URL (may be redacted) and the `mining` block from `curl /api/v1/status`.
-3. Relevant `journalctl` / stderr extract including the failed proof and the server's reject reason.
+3. Relevant extract from `miner.log` or the terminal output including the failed proof and the server's reject reason.
 4. Whether `qsdmminer-console --self-test` still passes on the same binary.
 5. Output of `qsdmcli enrollment-status <your-node-id>` if the failure is enrollment-related.
 
@@ -866,9 +887,8 @@ Cross-reference: [`MINING_PROTOCOL_V2.md §7 (Verifier)`](./MINING_PROTOCOL_V2.m
 
 The legitimate uses for the v1 path are:
 
-- **Protocol audit.** Reading `cmd/qsdmminer` plus `pkg/mining/pow.go`
-  is the primary reference for the original SHA3-256 DAG walk
-  described in [`MINING_PROTOCOL.md`](./MINING_PROTOCOL.md). The v1
+- **Protocol audit.** `cmd/qsdmminer` is the in-tree reference for
+  the original v1 proof format. The v1
   consensus implementation stays in-tree under
   `ComputeMixDigestV1` so v1 historical blocks (if any chain ever
   produced them) remain byte-replayable.
@@ -909,7 +929,7 @@ GOOS=darwin GOARCH=arm64  go build -o qsdmminer-darwin-arm64  ./cmd/qsdmminer
 ```bash
 ./qsdmminer \
   --validator=http://127.0.0.1:8080 \
-  --address=qsdm1YOURADDR \
+  --address=<64-hex-address> \
   --batch-count=1 \
   --poll=2s
 ```
@@ -949,47 +969,6 @@ See the workflow's comment block for the rationale.
 This appendix records the old bootstrap problem for historical context. It is
 resolved for NVIDIA protocol miners by deferred-bond enrollment. Faucets and
 peer transfers remain separate wallet-funding features.
-
-### B.1 What the chain currently does
-
-- **Block emission.** A fresh `EmissionSchedule.BlockRewardDust(h)`
-  CELL is credited to the winning miner address on every block that
-  contains an accepted v2 proof. The fixed schedule has a 90 M
-  CELL cap with 4-year halvings (see `pkg/chain/emission`).
-- **System funder.** `internal/blockdriver` seeds the internal
-  `FunderAddress = "qsdm-system-funder"` account with
-  `1e15` dust (= 10,000,000 CELL) at validator startup. This account
-  is the source the block driver pays miners *from*; it is not a
-  human-controllable address and never grants balance to a
-  `qsdm1*` wallet on its own.
-- **`/api/v1/wallet/mint` — REMOVED in v0.3.3 (returns 410 Gone).**
-  In v0.3.2 and earlier this public endpoint accepted
-  `{recipient, amount}` POSTs, logged a `mint_*` transaction to
-  storage, and returned HTTP 200 with `status:"minted"` — but
-  **never credited the recipient's account balance**, because no
-  code path connected the handler to the wallet service's
-  `AddBalance` operation. A balance query on the recipient after
-  a "successful" mint POST always returned zero.
-  v0.3.3 (Session 91) replaced the handler with **HTTP 410 Gone**
-  + a structured `migration` JSON block pointing callers to CELL
-  peer-transfer routes. Secondary token minting exists only as early
-  scaffolding and is not part of the public QSDM ecosystem strategy.
-  The
-  `qsdm_wallet_mint_total{result="gone"}` Prometheus counter
-  surfaces any caller that still targets the removed endpoint.
-- **`/api/v1/wallet/balance`.** Read-only, public, returns the
-  current account balance as a `float64` CELL number. Used by the
-  browser wallet's *Check balance* tab.
-
-### B.2 Currently-shipped routes to 10 CELL
-
-| Route | Status | Notes |
-|-------|--------|-------|
-| **Initial-operator allocation** | None on the live chain as of v0.3.2. | The genesis ceremony output for the v2-reset chain did not include a multi-operator allocation. Any CELL emitted to date has gone to the single validator-operator's miner address. |
-| **Reward from your own v2 proofs** | Available with `--bond-from-rewards`. | Rewards fill the 10 CELL locked bond first; overflow is spendable. |
-| **Transfer from an existing CELL holder (validator-signed)** | Available via `POST /api/v1/wallet/send` (requires JWT). | The validator signs the transfer from **its own wallet** (`pkg/wallet/wallet.go::CreateTransaction` always sets `Sender = ws.address`), so the JWT subject is metadata only. Fine for single-operator nodes; not a self-custody path. |
-| **Transfer from an existing CELL holder (self-custody)** | Available via `POST /api/v1/wallet/submit-signed` (v0.4.0, **no JWT — the cryptographic identity is the envelope's `public_key`**). | The holder builds + ML-DSA-87-signs the envelope locally (browser wallet's *Send transaction* tab today; a `qsdmcli wallet sign-tx` subcommand is planned for v0.4.1 — meanwhile a CLI user can construct the canonical envelope JSON by hand and pipe it through `qsdmcli wallet sign --message-file -`), POSTs it to the validator, and the server verifies `sender == hex(sha256(public_key))` plus the canonical-payload signature before debiting. See [`V040_WALLET_SEND_DESIGN.md`](V040_WALLET_SEND_DESIGN.md) and audit row `api-06`. **Known v0.4.0 gaps:** no per-account nonce (cross-`tx_id` replay possible) + non-atomic debit; both close in v0.4.1 before incentivised-testnet exposure. |
-| **Public bootstrap faucet** | **NOT YET SHIPPED** as of v0.3.3. | No faucet code lives in the repo today (verified by `grep -ri faucet QSDM/`). Tracked as a v0.4.1+ item (depends on `submit-signed` gaps closing first so a faucet can't be drained by replay). |
 
 ### B.3 Practical outcome for a fresh outside operator
 

@@ -6,6 +6,8 @@ the signed referral eligibility ledger is active.
 
 ## Current status
 
+> **Status (October 2026):** the referral reward pool is not enabled or funded on the public network (`GET /api/v1/referrals/reward-pool`).
+
 - Funding source: signed QSDM wallet transfer to `QSDM_REFERRAL_REWARD_POOL_ADDRESS`.
 - Runtime source: a separately funded referral hot wallet controlled by an
   isolated signer. Legacy local seed variables are rejected.
@@ -38,7 +40,7 @@ the signed referral eligibility ledger is active.
 3. Review the minimum activity rule for the current release.
 4. Set `QSDM_REFERRAL_CLAIMS_ENABLED=1` only after the above are true.
 5. Configure a role-locked signer, per-payout cap, minimum reserve, and expected
-   wallet address as specified in `TREASURY_POLICY.md`.
+   wallet address as specified in [`TREASURY_POLICY.md`](../../../docs/docs/TREASURY_POLICY.md).
 
 ## Abuse and sabotage checks
 

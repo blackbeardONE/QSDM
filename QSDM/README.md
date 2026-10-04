@@ -11,7 +11,7 @@ or send me some love via paypal or crypto >>
 
 # Quantum-Secure Dynamic Mesh Ledger (QSDM)
 
-> **Rebrand notice (Major Update):** the platform is migrating from the transitional name **QSDM** back to **QSDM**, and introducing the native coin **Cell (CELL)**. Configuration files, environment variables, and HTTP headers that used the `qsdm` / `QSDM_*` / `X-QSDM-*` names continue to work during the deprecation window. See [`docs/docs/REBRAND_NOTES.md`](docs/docs/REBRAND_NOTES.md) for the full migration table and [`docs/docs/CELL_TOKENOMICS.md`](docs/docs/CELL_TOKENOMICS.md) for the coin specification.
+> **Docs:** the user documentation is published at [qsdm.tech/docs](https://qsdm.tech/docs/). Start with [Network status](docs/docs/NETWORK_STATUS.md) for what the live pilot network runs today. The native coin is **Cell (CELL)**; see [`docs/docs/CELL_TOKENOMICS.md`](docs/docs/CELL_TOKENOMICS.md).
 
 **QSDM** is the public product name (previously transitionally **QSDM**). Quantum-Secure Dynamic Mesh Ledger (QSDM) is a non-AI electronic cash system designed for decentralized operation, quantum resistance (ML-DSA-87 wallet signatures) and hardware-agnostic operation. Today it runs as a public pilot network (pre-mainnet) with a single block producer during recovery; see the Network status section of the root `README.md`. The native coin is **Cell (CELL)** — see `docs/docs/CELL_TOKENOMICS.md`.
 
@@ -21,7 +21,7 @@ QSDM supports both **Windows 10+** and **Linux (Ubuntu 24.04+)**. macOS support 
 QSDM is developed in phases:
 
 - **Phase 1: 2D Mesh Launch**  
-  Focus on stability and manual bootstrapping using libp2p for networking, Proof-of-Entanglement consensus, SQLite with Zstandard compression for storage, and ML-DSA-87 (NIST FIPS 204) for quantum-safe cryptography with optimized performance.
+  Focus on stability and manual bootstrapping using libp2p for networking, Proof-of-Entanglement consensus, SQLite with Zstandard compression for storage, and ML-DSA-87 (NIST FIPS 204) post-quantum signatures.
 
 - **Phase 2: Scalability & Optimization**  
   Introduces dynamic submeshes, priority-based routing, WASM SDK integration, and ScyllaDB for high throughput.
@@ -75,7 +75,7 @@ sudo apt install -y build-essential cmake git libssl-dev libsqlite3-dev golang-g
 git clone https://github.com/blackbeardONE/QSDM.git
 cd QSDM
 
-# Build liboqs (quantum-safe library)
+# Build liboqs (post-quantum signature library)
 chmod +x scripts/rebuild_liboqs.sh scripts/build.sh scripts/run.sh
 ./scripts/rebuild_liboqs.sh
 
@@ -85,26 +85,16 @@ chmod +x scripts/rebuild_liboqs.sh scripts/build.sh scripts/run.sh
 # Run the node
 ./scripts/run.sh
 ```
-<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>
-grep
 
-**For production deployment on Ubuntu VPS, see:** [docs/UBUNTU_DEPLOYMENT.md](docs/UBUNTU_DEPLOYMENT.md)
+**For running a node on Ubuntu, see:** [docs/docs/OPERATOR_GUIDE.md](docs/docs/OPERATOR_GUIDE.md)
 
 The node will start and initialize libp2p networking. Logs will be written to `qsdm.log`.
 
-**Note**: The main `build.ps1` script automatically enables CGO and liboqs for full feature support, including quantum-safe cryptography (ML-DSA-87), SQLite storage, and API server.
+**Note**: The main `build.ps1` script automatically enables CGO and liboqs for full feature support, including post-quantum signatures (ML-DSA-87), SQLite storage, and API server.
 
-## Performance Optimizations
+## Performance
 
-QSDM includes several performance optimizations:
-
-- **Memory Pool Optimization**: 5-10% faster signing through reduced allocations
-- **Signature Compression**: 50% size reduction using zstd compression
-- **Storage Compression**: 60-70% compression ratio for transaction data
-- **Batch Signing**: 10-100x faster for multiple transactions
-- **Fast Verification**: 1.76x faster than ECDSA (0.19 ms vs 0.33 ms)
-
-See [docs/PERFORMANCE_BENCHMARK_REPORT.md](docs/PERFORMANCE_BENCHMARK_REPORT.md) for detailed performance metrics.
+Older benchmark write-ups are kept in the docs archive for reference. They were measured on development builds and are not a statement about the live pilot network.
 
 ## Project Structure
 
@@ -112,13 +102,13 @@ See [docs/PERFORMANCE_BENCHMARK_REPORT.md](docs/PERFORMANCE_BENCHMARK_REPORT.md)
 - `pkg/networking/` - libp2p networking setup
 - `pkg/consensus/` - Proof-of-Entanglement consensus implementation
 - `pkg/storage/` - SQLite storage with Zstandard compression
-- `pkg/crypto/` - Quantum-safe cryptography (ML-DSA-87, optimized with memory pooling and compression)
+- `pkg/crypto/` - Post-quantum signatures (ML-DSA-87)
 - `config/` - YAML configuration for submesh templates
 - `internal/logging/` - Logging setup with rotation and levels
 
 ## Comparative Analysis
 
-See [docs/COMPARATIVE_ANALYSIS.md](docs/COMPARATIVE_ANALYSIS.md) for a detailed comparison of QSDM with Blockchain and DAG technologies.
+See [docs/docs/COMPARATIVE_ANALYSIS.md](docs/docs/COMPARATIVE_ANALYSIS.md) (historical) for a detailed comparison of QSDM with Blockchain and DAG technologies.
 
 ## Visualization of QSDM
 

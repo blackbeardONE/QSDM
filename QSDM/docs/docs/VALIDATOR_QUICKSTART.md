@@ -1,13 +1,17 @@
 # Validator Quickstart — VPS operator runbook
 
+> **Status (Oct 2026):** The public pilot network (pre-mainnet) is run by a single block producer during recovery. Independent validators cannot join consensus yet. This page describes the target setup for testing and private networks.
+>
+> The live network currently runs an untagged hardened-legacy build (reported by `GET https://api.qsdm.tech/api/v1/status`), not a tagged Core release. A node built from a tagged release may not follow the producer. See [Network status](NETWORK_STATUS.md).
+
 This runbook takes a VPS operator from a fresh Ubuntu 22.04 host to a
-running QSDM validator node in about 25 minutes. The validator is CPU-only,
-participates in BFT + Proof-of-Entanglement consensus, and earns transaction
-fees in Cell (`dust`-denominated).
+running QSDM validator node in about 25 minutes. The validator is CPU-only and
+is designed to participate in BFT + Proof-of-Entanglement consensus and earn
+transaction fees in Cell (`dust`-denominated).
 
 > **Scope.** This is the runbook for the **validator** role only. It will
-> not help you mine Cell. For mining, see `MINER_QUICKSTART.md` (Phase 4
-> deliverable) and `NODE_ROLES.md §4.2`.
+> not help you mine Cell. For mining, see [`MINER_QUICKSTART.md`](./MINER_QUICKSTART.md),
+> [Mining today](MINING_TODAY.md), and [`NODE_ROLES.md §4.2`](./NODE_ROLES.md).
 >
 > **Standing up a SECOND validator on an existing host?** Use the
 > self-contained
@@ -65,8 +69,8 @@ The validator image is the `validator_only` build (see
 mine; the CUDA path is not linked in.
 
 ```bash
-docker pull qsdm/validator:latest
-docker image inspect qsdm/validator:latest \
+docker pull ghcr.io/blackbeardone/qsdm-validator:<version>
+docker image inspect ghcr.io/blackbeardone/qsdm-validator:<version> \
   --format '{{.Config.Env}}' | tr ',' '\n'
 ```
 
@@ -213,7 +217,7 @@ log_level = "info"
 Run a config check:
 
 ```bash
-docker run --rm -v /var/lib/qsdm/config:/app/config:ro qsdm/validator:latest \
+docker run --rm -v /var/lib/qsdm/config:/app/config:ro ghcr.io/blackbeardone/qsdm-validator:<version> \
   qsdm-validator --check-config --config /app/config/config.toml
 ```
 
@@ -258,7 +262,7 @@ ExecStart=/usr/bin/docker run --rm --name qsdm-validator \
   -v /var/lib/qsdm/config:/app/config:ro \
   -e QSDM_NODE_ROLE=validator \
   -e QSDM_MINING_ENABLED=false \
-  qsdm/validator:latest \
+  ghcr.io/blackbeardone/qsdm-validator:<version> \
   qsdm-validator --config /app/config/config.toml
 ExecStop=/usr/bin/docker stop qsdm-validator
 
@@ -347,9 +351,7 @@ You should get a JSON body with `node_role: "validator"`,
 - Do NOT copy `/var/lib/qsdm/data` to a second host to "clone" a
   validator. Two validators with the same identity will both be slashed
   (double-sign) when slashing is enabled post-genesis.
-- If you rotate keys, follow the rotation procedure that will be published
-  in `VALIDATOR_KEY_ROTATION.md` (Phase 4 deliverable). Until that lands,
-  treat the validator key as immutable.
+- Key rotation is not yet documented; treat the validator key as immutable.
 
 ---
 

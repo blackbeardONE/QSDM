@@ -4,6 +4,9 @@ QSDM Hive uses a pinned ML-DSA-87 release key to authenticate its Windows and
 Linux update channel. This is an application-level trust system. It complements
 checksums and future platform signing, but it is not Microsoft Authenticode.
 
+To check a download yourself, see
+[Downloads & verification](DOWNLOADS_AND_VERIFICATION.md).
+
 ## Enforced trust chain
 
 1. A release owner builds immutable Hive artifacts from one reviewed commit.
@@ -11,10 +14,12 @@ checksums and future platform signing, but it is not Microsoft Authenticode.
    version, commit, validity window, platform, artifact names, sizes, roles, and
    SHA-256 hashes.
 3. The manifest and signature are published as one atomic
-   `qsdm.signed-release.v1` envelope:
-   - `qsdm-hive-release-windows.json`
-   - `qsdm-hive-release-linux.json`
-4. Hive verifies the envelope with its pinned ML-DSA-87 public key.
+   `qsdm.signed-release.v1` envelope on the hive-v2 release channel,
+   `https://qsdm.tech/downloads/hive-v2/`:
+   - `qsdm-hive-release-windows-v2.json`
+   - `qsdm-hive-release-linux-v2.json`
+4. Hive verifies the envelope with its pinned ML-DSA-87 public key and rejects
+   any other `key_id`.
 5. Hive verifies the updater metadata against the signed size and hash, then
    checks that its version and installer name match the signed release.
 6. After download, Hive verifies the installer filename, size, and SHA-256
@@ -24,63 +29,36 @@ Any missing, expired, malformed, mismatched, or incorrectly signed input fails
 closed. Older clients and unapproved higher-version clients remain blocked by
 the exact-version policy.
 
+Signed manifests are valid for 90 days from issue and are re-signed before
+they expire. Hive rejects a manifest that is expired, dated in the future
+beyond normal clock skew, or valid for more than 120 days.
+
+## Current release key (v2)
+
 The current public release-key ID is:
 
 ```text
-10ab9c5710761d4c9dca59d42446e9ea0e3315d15cdc3715df1dcb8c96fa07a1
+4081bf2c4755f4c5c1565b4fac75e14a7e0b52042ac3d34bf8a7f525866c64a9
 ```
 
 The public key is tracked at
-`QSDM/deploy/release-trust/qsdm-hive-release-key.json`. It contains no secret
-material.
+`QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json`. It contains no secret
+material. The `key_id` is the SHA-256 of the raw public key bytes, so it can be
+recomputed from that file.
 
-## Initialize key custody
+## Key rotation (October 2026)
 
-Run this once on the dedicated Windows signing account:
+The previous release key (`key_id`
+`10ab9c5710761d4c9dca59d42446e9ea0e3315d15cdc3715df1dcb8c96fa07a1`, file
+`QSDM/deploy/release-trust/qsdm-hive-release-key.json`) was rotated in October
+2026 and no longer signs new releases. Hive 1.4.21 is the first release that
+pins the v2 key.
 
-```powershell
-pwsh QSDM/deploy/scripts/initialize_hive_release_signing.ps1 `
-  -QsdmCliPath <reviewed-qsdmcli.exe>
-```
-
-The default private storage is `.cache/qsdm-release-signing`, which is ignored
-by Git. It contains an encrypted QSDM keystore and a passphrase protected by
-Windows DPAPI. Move that directory to encrypted offline storage and keep at
-least one tested offline backup. Do not place it in GitHub, CI, a VPS, a shared
-drive, or a normal release artifact.
-
-The signing script refuses to operate unless the private key's public half
-matches the trust root pinned in Hive.
-
-## Sign a release
-
-Build and finalize all artifacts first. Then create both platform envelopes:
-
-```powershell
-pwsh QSDM/deploy/scripts/new_hive_release_manifest.ps1 `
-  -Platform windows `
-  -Version <version> `
-  -DownloadsDirectory <staged-downloads-directory> `
-  -Commit <full-40-character-commit>
-
-pwsh QSDM/deploy/scripts/new_hive_release_manifest.ps1 `
-  -Platform linux `
-  -Version <version> `
-  -DownloadsDirectory <staged-downloads-directory> `
-  -Commit <full-40-character-commit>
-```
-
-The signer validates the updater version and installer name, hashes every
-required artifact, signs the exact manifest bytes, and immediately verifies its
-own signature through `qsdmcli wallet verify`. The Windows envelope also
-authenticates the QSDM Wallet universal and legacy Chromium archives, the
-separately named Chrome, Edge, Brave, and Firefox store-submission archives,
-and their checksum file. Browser-extension packages are never published as
-checksum-only side artifacts.
-
-Publish only through the QSDM Hive publisher scripts. They require both signed
-envelopes, verify their pinned key ID and inner version, publish immutable
-artifacts first, and move update pointers last.
+Because Hive 1.4.20 (Windows) and 1.4.17 (Linux) trust only the previous key,
+they cannot verify 1.4.21 on their own. Updating to 1.4.21 is a one-time manual
+install from the [download page](https://qsdm.tech/download.html); wallet and
+settings are kept. The previous `/downloads/` channel stays online so those
+versions keep working until their signed manifests expire.
 
 ## Security boundaries
 
@@ -99,6 +77,9 @@ Authenticode when it becomes financially practical. A release-key rotation is
 a security migration: ship a reviewed Hive version that pins the new key before
 publishing releases signed only by that key. Do not silently replace the public
 key on the website.
+
+Key custody and the release-signing procedure are documented privately for
+release owners.
 
 ## Incident response
 

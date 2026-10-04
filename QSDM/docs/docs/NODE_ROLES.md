@@ -7,12 +7,14 @@ other owns coin emission, and they never overlap in a single process.
 
 | Role | Configuration | Hardware | Responsibilities | Rewards |
 |---|---|---|---|---|
-| **Validator** | `node.role = "validator"`, `node.mining_enabled = false` | CPU-only (VPS-class) | BFT + Proof-of-Entanglement consensus, transaction ordering, block finality, serving the public JSON-RPC / REST API | Transaction fees (denominated in `dust`) |
-| **Miner** | `node.role = "miner"`, `node.mining_enabled = true` | CUDA-capable NVIDIA GPU | Producing valid PoW proofs tied to the current mesh3D epoch; submitting them to validators for inclusion in blocks | Newly-minted Cell (the 90% mining-emission pool; see [`CELL_TOKENOMICS.md`](./CELL_TOKENOMICS.md)) |
+| **Validator** | `node.role = "validator"`, `node.mining_enabled = false` | CPU-only (VPS-class) | BFT + Proof-of-Entanglement consensus (target design), transaction ordering, block finality, serving the public JSON-RPC / REST API | Transaction fees (denominated in `dust`) |
+| **Miner** | `node.role = "miner"`, `node.mining_enabled = true` | CUDA-capable NVIDIA GPU | Producing valid PoW proofs tied to the current mesh3D epoch; submitting them to validators for inclusion in blocks | Newly-minted CELL (the 90,000,000 CELL mining-emission cap; see [`CELL_TOKENOMICS.md`](./CELL_TOKENOMICS.md)) |
 
 There is **no combined "full node" mode**. An operator who wants to do both
 things runs two separate processes (different binaries, different config
 files, different machines if the validator is on a VPS).
+
+> Today the pilot network (pre-mainnet) runs a single block producer during recovery; the multi-validator BFT topology in §3.2 is the target design.
 
 ---
 
@@ -21,7 +23,7 @@ files, different machines if the validator is on a VPS).
 1. **Safety surface.** Validators hold the state machine. Any CGO linkage
    beyond the minimum required for post-quantum crypto (liboqs for
    ML-DSA-87) increases their attack surface. The validator-only build
-   (`-tags validator_only`, shipped as `qsdm/validator:latest`) removes the
+   (`-tags validator_only`, published as `ghcr.io/blackbeardone/qsdm-validator:<version>`) removes the
    CUDA mining path at link time — a validator binary literally cannot be
    made to run mining code even if misconfigured.
 2. **Economic clarity.** Validators earn fees. Miners earn emission. A
@@ -65,12 +67,11 @@ hardware*, regardless of whether the operator intends to mine or not.
 
 ### 3.1 Single validator + multiple home miners (recommended bootstrap)
 
-This is the recommended topology for Phase 4 testnets and for operators
-launching a sovereign mainnet instance:
+This is the topology of today's pilot network (pre-mainnet) and the recommended bootstrap for new deployments:
 
 ```
 ┌──────────────────────────────────────────┐
-│  Validator (VPS, qsdm/validator:latest) │
+│  Validator (VPS, qsdm-validator image)  │
 │  ─ BFT + PoE consensus                  │
 │  ─ Public REST/JSON-RPC on :8080        │
 │  ─ libp2p peer on :4001                 │
@@ -108,29 +109,27 @@ validator traffic clean of mining chatter.
 | Tier | CPU | RAM | Disk | Network | Notes |
 |---|---|---|---|---|---|
 | Minimum | 2 vCPU (x86_64, AVX2) | 4 GB | 50 GB NVMe | 10 Mbps symmetric, static IP | Testnets only |
-| Recommended | 4 vCPU | 8 GB | 100 GB NVMe | 100 Mbps symmetric, static IPv4 + IPv6 | Public mainnet validator |
+| Recommended | 4 vCPU | 8 GB | 100 GB NVMe | 100 Mbps symmetric, static IPv4 + IPv6 | Production-grade validator |
 | High-TPS | 8 vCPU | 16 GB | 500 GB NVMe + Scylla cluster | 1 Gbps | Exchange-adjacent validator, > 2 k TPS |
 
 GPU hardware provides **zero benefit** to a validator. Do not provision it.
 
 ### 4.2 Miner
 
-| Tier | GPU | VRAM | CPU | RAM | Notes |
-|---|---|---|---|---|---|
-| Entry | NVIDIA RTX 3060 / 4060 | 8 GB+ | 4-core | 16 GB | Home / hobby |
-| Mid | NVIDIA RTX 4070 / 4080 | 12 GB+ | 8-core | 32 GB | Dedicated rig |
-| Pro | NVIDIA RTX 4090 / 5090 / data-center Hopper | 24 GB+ | 16-core | 64 GB | Farms / pools |
+| Tier | GPU | CPU | RAM | Notes |
+|---|---|---|---|---|
+| Entry | NVIDIA RTX 3060 / 4060 | 4-core | 16 GB | Home / hobby |
+| Mid | NVIDIA RTX 4070 / 4080 | 8-core | 32 GB | Dedicated rig |
+| Pro | NVIDIA RTX 4090 / 5090 / data-center Hopper | 16-core | 64 GB | Farms / pools |
 
-The mining algorithm (Phase 4 design target: mesh3D-tied PoW, candidate C
-in `Major Update.md §5.2`) uses a 2–4 GB per-epoch dataset; anything below
-8 GB of VRAM will struggle as the dataset grows.
+Mining requires an NVIDIA GPU (Turing or newer); see [Mining today](MINING_TODAY.md) and the [Miner quickstart](./MINER_QUICKSTART.md) for current requirements.
 
 ---
 
 ## 5. Operator quickstart links
 
 - **Validator quickstart:** [`VALIDATOR_QUICKSTART.md`](./VALIDATOR_QUICKSTART.md)
-- **Miner quickstart (CPU reference miner; Phase 4 deliverable):** `MINER_QUICKSTART.md`
+- **Miner quickstart:** [`MINER_QUICKSTART.md`](./MINER_QUICKSTART.md)
 - **Deployment manifests:** [`../../deploy/kubernetes/README.md`](../../deploy/kubernetes/README.md)
 - **Rebrand + deprecation window:** [`REBRAND_NOTES.md`](./REBRAND_NOTES.md)
 - **Tokenomics:** [`CELL_TOKENOMICS.md`](./CELL_TOKENOMICS.md)

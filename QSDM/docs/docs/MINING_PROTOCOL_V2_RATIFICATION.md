@@ -27,5 +27,3 @@
 - **Spec version at sign-off:** `6826bc4` of
   `QSDM/docs/docs/MINING_PROTOCOL_V2_NVIDIA_LOCKED.md` (now also
   a redirect stub).
-- **Ratification channel:** Cursor chat session
-  `abae084d-c682-4845-9a7a-255cc20a943a`.
