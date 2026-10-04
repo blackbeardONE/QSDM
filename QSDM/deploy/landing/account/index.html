@@ -10,7 +10,11 @@
   />
   <title>QSDM Account</title>
   <meta name="description" content="Manage your QSDM identity, linked CELL wallets, and approved wallet devices." />
-  <link rel="icon" href="/assets/qsdm-hive-icon.png" />
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/brand/favicon-16.png" />
+  <link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -18,10 +22,11 @@
   <link rel="stylesheet" href="/account/account.css" />
 </head>
 <body>
+<div id="qsdm-migration-notice" role="status" style="position:relative;z-index:1000;padding:12px 20px;background:#fff3cd;color:#513b08;text-align:center;font:14px/1.5 system-ui,sans-serif">QSDM history through September 2, 2026 is restored. Wallet sign-in is available for new account profiles. New transactions remain unavailable during recovery. Downloads and documentation are available.</div>
   <header class="account-header">
     <div class="account-header-inner">
       <a class="account-brand" href="/">
-        <img src="/assets/qsdm-hive-icon.png" alt="" width="34" height="34" />
+        <img src="/assets/brand/qsdm-icon-small.svg" alt="" width="34" height="34" />
         <span>QSDM Account</span>
       </a>
       <nav aria-label="Account navigation">
@@ -47,7 +52,7 @@
           never receives a wallet keystore, private key, or passphrase.
         </p>
         <dl class="boundary-list">
-          <div><dt>Account</dt><dd>Email or Telegram identifies your profile.</dd></div>
+          <div><dt>Account</dt><dd>A verified wallet, email, or Telegram identifies your profile.</dd></div>
           <div><dt>Wallet</dt><dd>Hive or the browser extension approves signatures locally.</dd></div>
           <div><dt>Recovery</dt><dd>Your QSDM keystore JSON and passphrase remain the authority.</dd></div>
         </dl>
@@ -55,6 +60,8 @@
 
       <div class="login-panel">
         <h2>Sign in</h2>
+        <p id="wallet-recovery-notice" class="notice" hidden>Account profiles are being rebuilt. Sign in with your existing wallet to create a new profile. Previous email and Telegram links are unavailable. Your wallet balances come from the preserved September 2 ledger.</p>
+        <button id="wallet-sign-in" class="button primary" type="button" hidden>Continue with QSDM wallet</button>
         <button id="telegram-sign-in" class="button telegram" type="button">
           Continue with Telegram
         </button>

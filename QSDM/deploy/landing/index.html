@@ -3,309 +3,64 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>QSDM — CELL network, Hive, and private access</title>
-  <meta
-    name="description"
-    content="QSDM is the public CELL network with QSDM Hive for wallets and tasks, self-custody tools, NVIDIA mining, edge compute, and QSDM VPN."
-  />
+  <title>QSDM — Post-quantum CELL network, NVIDIA GPU mining</title>
+  <meta name="description" content="QSDM is the public network for CELL: ML-DSA-87 post-quantum signatures, 10-second blocks, a 90,000,000 CELL cap, and NVIDIA GPU mining through QSDM Hive. Live chain stats and specs." />
+  <link rel="canonical" href="https://qsdm.tech/" />
   <meta name="theme-color" content="#061116" />
-  <link rel="icon" href="/assets/qsdm-hive-icon.png" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link
-    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap"
-    rel="stylesheet"
-  />
+  <meta property="og:title" content="QSDM — Post-quantum CELL network" />
+  <meta property="og:description" content="ML-DSA-87 signatures, 10-second blocks, 90,000,000 CELL cap, NVIDIA GPU mining via QSDM Hive." />
+  <meta property="og:url" content="https://qsdm.tech/" />
+  <meta property="og:type" content="website" />
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/brand/favicon-16.png" />
+  <link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <meta property="og:image" content="https://qsdm.tech/assets/brand/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="QSDM logo: Quantum-Secure Dynamic Mesh ledger and the CELL coin" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://qsdm.tech/assets/brand/og-image.png" />
   <link rel="stylesheet" href="/assets/site.css" />
+  <link rel="stylesheet" href="/assets/site-shell.css" />
   <style>
-    :root { color-scheme: dark; font-size: 16px; }
-    * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      line-height: 1.55;
-    }
-    img { display: block; max-width: 100%; }
-    button { font: inherit; }
-
-    .hero {
-      position: relative;
-      padding: 4rem 0 4.5rem;
-      overflow: hidden;
-    }
-    .hero-inner {
-      position: relative;
-      max-width: 42rem;
-      margin: 0 auto;
-      text-align: center;
-    }
-    .announce {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-bottom: 1.75rem;
-      padding: 0.35rem 0.75rem 0.35rem 0.4rem;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      background: rgba(142, 220, 224, 0.05);
-      color: var(--muted);
-      font-size: 0.82rem;
-      font-weight: 500;
-      text-decoration: none;
-      transition: border-color 200ms var(--ease), color 200ms var(--ease);
-    }
-    .announce:hover {
-      border-color: var(--border-2);
-      color: var(--text);
-    }
-    .announce-tag {
-      padding: 0.15rem 0.45rem;
-      border-radius: 999px;
-      background: var(--gold);
-      color: var(--ink);
-      font-size: 0.7rem;
-      font-weight: 600;
-    }
-    .hero h1 {
-      margin: 0 0 1.25rem;
-      font-size: 4rem;
-      font-weight: 600;
-      letter-spacing: 0;
-      line-height: 1.05;
-      color: var(--text);
-      overflow-wrap: anywhere;
-    }
-    .hero h1 .dim { color: var(--muted); }
-    .hero-lead {
-      margin: 0 auto 2rem;
-      max-width: 34rem;
-      color: var(--muted);
-      font-size: 1.1rem;
-    }
-    .hero-actions {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 0.65rem;
-    }
-
-    .products { padding: 0 0 5rem; }
-    .product-grid {
-      display: grid;
-      gap: 0.75rem;
-      grid-template-columns: 1fr;
-    }
-    @media (min-width: 720px) {
-      .product-grid { grid-template-columns: repeat(3, 1fr); }
-    }
-    .product-card {
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-end;
-      min-height: 220px;
-      padding: 1.35rem;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--panel);
-      text-decoration: none;
-      color: inherit;
-      transition: border-color 400ms var(--ease), transform 400ms var(--ease), box-shadow 400ms var(--ease);
-    }
-    .product-card:hover {
-      border-color: var(--border-2);
-      transform: translateY(-2px);
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
-      color: inherit;
-    }
-    .product-kicker {
-      margin-bottom: 0.5rem;
-      color: rgba(173, 198, 204, 0.45);
-      font-size: 0.78rem;
-      font-weight: 500;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-    .product-card h3 {
-      margin: 0 0 0.5rem;
-      font-size: 1.35rem;
-      font-weight: 600;
-      color: var(--text);
-    }
-    .product-card p {
+    .home-hero { padding: 4rem 0 2rem; }
+    .home-hero h1 {
       margin: 0 0 1rem;
-      color: var(--muted);
-      font-size: 0.95rem;
-      max-width: 32ch;
-    }
-    .product-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      color: var(--text);
-      font-size: 0.88rem;
-      font-weight: 500;
-    }
-    .product-link span { transition: transform 200ms var(--ease); }
-    .product-card:hover .product-link span { transform: translateX(3px); }
-    .product-note {
-      margin: 1.25rem 0 0;
-      color: rgba(173, 198, 204, 0.45);
-      font-size: 0.88rem;
-      text-align: center;
-    }
-    .product-note a { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
-    .product-note a:hover { color: var(--text); }
-
-    section.band {
-      padding: 5rem 0;
-      border-top: 1px solid var(--border);
-    }
-    .section-head {
-      max-width: 40rem;
-      margin-bottom: 2.5rem;
-    }
-    .section-head.center {
-      margin-left: auto;
-      margin-right: auto;
-      text-align: center;
-    }
-    .section-head h2 {
-      margin: 0 0 0.85rem;
-      font-size: 3.25rem;
+      font-size: clamp(2.2rem, 5.5vw, 3.8rem);
       font-weight: 600;
-      line-height: 1.08;
-      color: var(--text);
+      line-height: 1.06;
+      max-width: 22ch;
     }
-    .section-head h2 .dim { color: var(--muted); }
-    .section-head p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 1.05rem;
-    }
-
-    .api-layout {
-      display: grid;
-      gap: 2rem;
-      align-items: start;
-    }
-    @media (min-width: 960px) {
-      .api-layout {
-        grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-        gap: 3rem;
-        align-items: center;
-      }
-    }
-    .stat-row {
+    .home-hero h1 .dim { color: var(--muted); }
+    .keyfacts {
       display: flex;
       flex-wrap: wrap;
-      gap: 1.75rem;
-      margin-top: 2rem;
+      gap: 0.5rem;
+      margin: 1.4rem 0 0;
+      padding: 0;
+      list-style: none;
     }
-    .stat-row div p:first-child {
-      margin: 0;
-      font-size: 0.95rem;
-      font-weight: 500;
-      color: rgba(245, 245, 245, 0.7);
-    }
-    .stat-row div p:last-child {
-      margin: 0.2rem 0 0;
-      font-size: 0.8rem;
-      color: rgba(173, 198, 204, 0.45);
-    }
-    .code-panel {
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: #080808;
-      overflow: hidden;
-    }
-    .code-tabs {
-      display: flex;
-      gap: 0.25rem;
-      padding: 0.65rem 0.75rem;
-      border-bottom: 1px solid var(--border);
-    }
-    .code-tabs button {
-      padding: 0.35rem 0.7rem;
-      border: 0;
+    .keyfacts li {
+      padding: 0.3rem 0.75rem;
+      border: 1px solid var(--border-2);
       border-radius: 999px;
-      background: transparent;
-      color: var(--muted);
-      font-size: 0.8rem;
-      font-weight: 500;
-      cursor: pointer;
+      color: var(--text-2);
+      font-size: 0.86rem;
     }
-    .code-tabs button[aria-selected="true"] {
-      background: rgba(142, 220, 224, 0.10);
-      color: var(--text);
+    .keyfacts .mono { color: var(--gold); }
+    .spec-wrap > * { max-width: 56rem; }
+    .cta {
+      padding: 3rem 1.5rem;
+      border: 1px solid var(--border-2);
+      border-radius: var(--radius);
+      background: linear-gradient(135deg, rgba(214, 183, 95, 0.10), rgba(142, 220, 224, 0.06));
+      text-align: center;
     }
-    .code-panel pre {
-      margin: 0;
-      padding: 1.1rem 1.2rem 1.35rem;
-      overflow-x: auto;
-      font-family: var(--mono);
-      font-size: 0.78rem;
-      line-height: 1.65;
-      color: rgba(245, 245, 245, 0.78);
-    }
-    .code-panel .kw { color: #f97583; }
-    .code-panel .fn { color: #79b8ff; }
-    .code-panel .str { color: #9ecbff; }
-    .code-panel .cm { color: rgba(245, 245, 245, 0.3); }
-
-    .docs-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: end;
-      gap: 1rem;
-      flex-wrap: wrap;
-      max-width: none;
-      margin-bottom: 1.5rem;
-    }
-    .docs-head h2 { margin: 0; }
-    .news-list {
-      display: grid;
-      gap: 0;
-      border-top: 1px solid var(--border);
-    }
-    .news-list a {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 1rem;
-      align-items: baseline;
-      padding: 1.15rem 0;
-      border-bottom: 1px solid var(--border);
-      color: var(--text);
-      text-decoration: none;
-      transition: color 150ms var(--ease);
-    }
-    .news-list a:hover { color: var(--gold); }
-    .news-list strong { font-weight: 550; }
-    .news-list span {
-      color: rgba(173, 198, 204, 0.45);
-      font-size: 0.85rem;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after {
-        animation: none !important;
-        transition: none !important;
-      }
-    }
-    @media (max-width: 767px) {
-      .hero h1 { font-size: 2.25rem; }
-      .hero-actions .site-btn {
-        flex: 1 1 10rem;
-        max-width: 14rem;
-      }
-      .section-head h2 { font-size: 2.5rem; }
-    }
-    @media (max-width: 479px) {
-      .hero { padding: 3rem 0 3.5rem; }
-      .hero h1 { font-size: 2rem; line-height: 1.12; }
-      .hero-lead { font-size: 1rem; }
-      .section-head h2 { font-size: 2rem; }
-    }
+    .cta h2 { margin: 0 0 0.6rem; font-size: clamp(1.6rem, 3.5vw, 2.3rem); font-weight: 600; }
+    .cta p { margin: 0 auto; max-width: 36rem; color: var(--muted); }
+    .cta .q-actions { justify-content: center; }
   </style>
   <script type="application/ld+json">
     {
@@ -319,283 +74,252 @@
     }
   </script>
 </head>
-<body>
-  <a class="skip-link" href="#main">Skip to content</a>
-
-  <header class="site-header">
-  <div class="site-header-inner">
-    <a class="site-brand" href="/">
-      <img src="/assets/qsdm-hive-icon.png" alt="" />
-      <span>QSDM</span>
-    </a>
-    <nav class="site-nav" aria-label="Primary">
-      <div class="site-nav-item">
-        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
-          Network <span class="site-nav-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="site-nav-panel" role="menu">
-          <a href="/network.html" role="menuitem">Overview<span class="site-nav-hint">Live CELL network</span></a>
-          <a href="/explorer.html" role="menuitem">Explorer<span class="site-nav-hint">Search + chain tip</span></a>
-          <a href="/api.html" role="menuitem">API<span class="site-nav-hint">HTTP v1 overview</span></a>
-          <a href="/validators.html" role="menuitem">Validators<span class="site-nav-hint">Bootstrap peers</span></a>
-        </div>
-      </div>
-      <div class="site-nav-item">
-        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
-          Hive <span class="site-nav-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="site-nav-panel" role="menu">
-          <a href="/download.html" role="menuitem">Download Hive<span class="site-nav-hint">Windows + Linux app</span></a>
-          <a href="/account/" role="menuitem">QSDM Account<span class="site-nav-hint">Identity + linked wallets</span></a>
-          <a href="/wallet.html" role="menuitem">Web wallet<span class="site-nav-hint">Browser self-custody</span></a>
-          <a href="https://qsdm.online/" role="menuitem">QSDM VPN<span class="site-nav-hint">Private Android access</span></a>
-        </div>
-      </div>
-      <a href="/docs/">Docs</a>
-      <div class="site-nav-item">
-        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
-          Trust <span class="site-nav-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="site-nav-panel" role="menu">
-          <a href="/audit.html" role="menuitem">Public audit<span class="site-nav-hint">Live checklist</span></a>
-          <a href="/trust.html" role="menuitem">Attestations<span class="site-nav-hint">NVIDIA feed</span></a>
-        </div>
-      </div>
-    </nav>
-    <div class="site-actions">
-      <a class="site-btn site-btn-ghost site-account-action" href="/account/">Account</a>
-      <a class="site-btn site-btn-solid" href="/download.html">Download</a>
-      <button class="site-menu-toggle" type="button" id="siteMenuToggle" aria-label="Open menu" aria-expanded="false">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 7H4V5H20V7ZM20 13H4V11H20V13ZM20 19H4V17H20V19Z"/></svg>
-      </button>
-    </div>
-  </div>
-  <div class="site-mobile-nav" id="siteMobileNav">
-    <div class="site-mobile-group">
-      <div class="site-mobile-label">Network</div>
-      <a href="/network.html">Overview</a>
-      <a href="/explorer.html">Explorer</a>
-      <a href="/api.html">API</a>
-      <a href="/validators.html">Validators</a>
-    </div>
-    <div class="site-mobile-group">
-      <div class="site-mobile-label">Hive</div>
-      <a href="/download.html">Download Hive</a>
-      <a href="/account/">QSDM Account</a>
-      <a href="/wallet.html">Web wallet</a>
-      <a href="https://qsdm.online/">QSDM VPN</a>
-    </div>
-    <div class="site-mobile-group">
-      <div class="site-mobile-label">Learn</div>
-      <a href="/docs/">Docs</a>
-      <a href="/audit.html">Public audit</a>
-      <a href="/trust.html">Attestations</a>
-    </div>
-  </div>
-</header>
+<body data-page="home">
+  <header id="site-header"></header>
+  <script src="/assets/site-shell.js"></script>
 
   <main id="main">
-    <section class="hero">
-      <div class="shell">
-        <div class="hero-inner">
-          <a class="announce" href="https://qsdm.online/">
-            <span class="announce-tag">Also</span>
-            QSDM VPN for Android is live
-          </a>
-          <h1>
-            QSDM<br />
-            <span class="dim">The public network for CELL.</span>
-          </h1>
-          <p class="hero-lead">
-            Read live chain data, run QSDM Hive for wallets and tasks, or build
-            on the public API. Keys stay on your device.
-          </p>
-          <div class="hero-actions">
-            <a class="site-btn site-btn-solid" href="/network.html">View Network</a>
-            <a class="site-btn site-btn-ghost" href="/download.html">Download Hive</a>
-          </div>
+    <section class="home-hero" aria-labelledby="hero-title">
+      <div class="q-wrap">
+        <span class="q-eyebrow">QSDM · CELL</span>
+        <h1 id="hero-title">A post-quantum blockchain <span class="dim">for the CELL coin, mined on NVIDIA GPUs.</span></h1>
+        <p class="lead">
+          Every CELL transaction is signed with ML-DSA-87. Blocks arrive every
+          10 seconds, supply is capped at 90,000,000 CELL, and anyone can read the
+          chain through the public API.
+        </p>
+        <ul class="keyfacts" aria-label="Key facts">
+          <li>Signatures <span class="mono">ML-DSA-87</span></li>
+          <li>Block time <span class="mono">10 s</span></li>
+          <li>Max supply <span class="mono">90,000,000 CELL</span></li>
+          <li>Mining <span class="mono">NVIDIA GPU · QSDM Hive</span></li>
+        </ul>
+        <div class="q-actions">
+          <a class="site-btn site-btn-solid" href="/download.html">Download Hive</a>
+          <a class="site-btn site-btn-ghost" href="/mining.html">Start mining</a>
+          <a class="site-btn site-btn-ghost" href="/explorer.html">Open explorer</a>
         </div>
       </div>
     </section>
 
-    <section class="products" id="products" aria-label="Products">
-      <div class="shell">
-        <div class="product-grid">
-          <a class="product-card" href="/network.html">
-            <span class="product-kicker">Public CELL network</span>
-            <h3>QSDM Network</h3>
-            <p>Live balances, explorer, API, and trust records anyone can verify.</p>
-            <span class="product-link">View live network <span>→</span></span>
-          </a>
-          <a class="product-card" href="/download.html">
-            <span class="product-kicker">Desktop client</span>
-            <h3>QSDM Hive</h3>
-            <p>Windows and Linux app for CELL wallets, tasks, NVIDIA mining, and Mother Hive.</p>
-            <span class="product-link">Download Hive <span>→</span></span>
-          </a>
-          <a class="product-card" href="https://qsdm.online/">
-            <span class="product-kicker">Private access</span>
-            <h3>QSDM VPN</h3>
-            <p>Android private access with device activation, profiles, and an operator dashboard.</p>
-            <span class="product-link">Open qsdm.online <span>→</span></span>
-          </a>
+    <section class="stats-sec" aria-labelledby="stats-title">
+      <div class="q-wrap">
+        <h2 id="stats-title" class="visually-hidden">Live network stats</h2>
+        <div class="stat-strip">
+          <div class="q-stat">
+            <span class="stat-label">Block height</span>
+            <span class="stat-value" id="s-height">—</span>
+            <span class="stat-sub">chain tip</span>
+          </div>
+          <div class="q-stat">
+            <span class="stat-label">Target block time</span>
+            <span class="stat-value" id="s-blocktime">10 s</span>
+            <span class="stat-sub">protocol target</span>
+          </div>
+          <div class="q-stat">
+            <span class="stat-label"><img class="cell-ico" src="/assets/brand/cell-coin-small.svg" alt="" width="14" height="14" />Emitted supply</span>
+            <span class="stat-value" id="s-emitted">—</span>
+            <span class="stat-sub">of <span id="s-cap">90,000,000</span> CELL cap · <span id="s-emitted-pct">—</span></span>
+            <div class="q-meter" aria-hidden="true"><span id="s-meter"></span></div>
+          </div>
+          <div class="q-stat">
+            <span class="stat-label"><img class="cell-ico" src="/assets/brand/cell-coin-small.svg" alt="" width="14" height="14" />Block reward</span>
+            <span class="stat-value" id="s-reward">3.56490987</span>
+            <span class="stat-sub">CELL per block · epoch <span id="s-epoch">0</span></span>
+          </div>
+          <div class="q-stat">
+            <span class="stat-label">Enrolled miners</span>
+            <span class="stat-value" id="s-miners">—</span>
+            <span class="stat-sub" id="s-miners-sub">NVIDIA nodes</span>
+          </div>
+          <div class="q-stat">
+            <span class="stat-label">Latest block</span>
+            <span class="stat-value" id="s-age">—</span>
+            <span class="stat-sub" id="s-age-sub">age of chain tip</span>
+          </div>
         </div>
-        <p class="product-note">
-          Need a lighter wallet in the browser?
-          <a href="/wallet.html">Open the web wallet</a>.
-          Mining and edge pool guides live in
-          <a href="/docs/#/miner-quickstart">docs</a>.
+        <p class="source-line" id="s-source">
+          Source: <code>api.qsdm.tech/api/v1</code> <code>/status</code>, <code>/mining/emission</code>,
+          <code>/mining/enrollments</code>, <code>/mining/blocks</code> · <span id="s-updated">loading…</span>
         </p>
       </div>
     </section>
 
-    <section class="band" id="api" aria-labelledby="api-title">
-      <div class="shell">
-        <div class="api-layout">
-          <div>
-            <div class="section-head">
-              <h2 id="api-title">One API.<br /><span class="dim">Public QSDM data.</span></h2>
-              <p>
-                Read status, wallets, mining, receipts, governance, and trust
-                records through the public HTTP v1 API.
-              </p>
-            </div>
-            <div class="hero-actions" style="justify-content: flex-start;">
-              <a class="site-btn site-btn-solid" href="/api.html">API overview</a>
-              <a class="site-btn site-btn-ghost" href="/docs/#/api-reference">Read docs</a>
-            </div>
-            <div class="stat-row">
-              <div>
-                <p>ML-DSA-87</p>
-                <p>Post-quantum signatures</p>
-              </div>
-              <div>
-                <p>v0.4.7-rc.9</p>
-                <p>Latest Core candidate</p>
-              </div>
-              <div>
-                <p>PoE + BFT</p>
-                <p>Mesh consensus</p>
-              </div>
-            </div>
-          </div>
-          <div class="code-panel" data-code-panel>
-            <div class="code-tabs" role="tablist" aria-label="Code language">
-              <button type="button" role="tab" aria-selected="true" data-lang="curl">cURL</button>
-              <button type="button" role="tab" aria-selected="false" data-lang="js">JavaScript</button>
-              <button type="button" role="tab" aria-selected="false" data-lang="go">Go</button>
-            </div>
-            <pre id="code-curl" aria-hidden="false"><span class="cm"># Public chain status</span>
-<span class="kw">curl</span> -sS https://api.qsdm.tech/api/v1/status | jq .
+    <section class="sec" aria-labelledby="why-title">
+      <div class="q-wrap">
+        <div class="sec-head">
+          <h2 id="why-title">Why QSDM</h2>
+          <p>Six facts, each one checkable on the live network or in the source.</p>
+        </div>
+        <ul class="facts">
+          <li><strong>Post-quantum signatures</strong><span>Wallets sign with ML-DSA-87 (NIST FIPS 204), a lattice scheme designed to resist quantum attacks.</span></li>
+          <li><strong>Fixed, published supply</strong><span>The cap is 90,000,000 CELL and the block reward halves every 12,623,040 blocks (about four years at 10 s).</span></li>
+          <li><strong>GPU mining with attestation</strong><span>Miners enroll an NVIDIA GPU through QSDM Hive and earn CELL for accepted proof-of-work in capped windows.</span></li>
+          <li><strong>Self-custody by default</strong><span>Keys are generated and kept on your device; Hive and the web wallet sign locally and send only signed transactions.</span></li>
+          <li><strong>Open, keyless API</strong><span>Status, blocks, receipts, balances and miner enrollments are public HTTP reads with no account or API key.</span></li>
+          <li><strong>Public audit</strong><span>An open checklist with live pass/pending counts is published at <a href="/audit.html">/audit.html</a>, and the source is MIT-licensed on GitHub.</span></li>
+        </ul>
+      </div>
+    </section>
 
-<span class="cm"># Recent public receipts</span>
-<span class="kw">curl</span> -sS https://api.qsdm.tech/api/v1/receipts | jq .</pre>
-            <pre id="code-js" hidden aria-hidden="true"><span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">fetch</span>(
-  <span class="str">"https://api.qsdm.tech/api/v1/status"</span>
-);
-<span class="kw">const</span> status = <span class="kw">await</span> res.<span class="fn">json</span>();
-<span class="fn">console</span>.log(status.version, status.height);</pre>
-            <pre id="code-go" hidden aria-hidden="true"><span class="kw">package</span> main
+    <section class="sec" aria-labelledby="spec-title">
+      <div class="q-wrap spec-wrap">
+        <div class="sec-head">
+          <h2 id="spec-title" class="spec-coin-head"><img src="/assets/brand/cell-coin.svg" alt="" width="40" height="40" />Specification</h2>
+          <p>Values marked <em>live</em> are read from the public API when the page loads.</p>
+        </div>
+        <table class="spec-table" aria-labelledby="spec-title">
+          <tbody>
+            <tr><th scope="row">Ticker</th><td><img class="cell-ico" src="/assets/brand/cell-coin-small.svg" alt="" width="16" height="16" /><span class="mono">CELL</span> <span class="q">(coin name: Cell)</span></td></tr>
+            <tr><th scope="row">Smallest unit</th><td><span class="mono">dust</span> <span class="q">(1 CELL = 100,000,000 dust)</span></td></tr>
+            <tr><th scope="row">Decimals</th><td><span class="mono">8</span></td></tr>
+            <tr><th scope="row">Target block time</th><td><span class="mono">10 s</span></td></tr>
+            <tr><th scope="row">Block reward</th><td><span class="mono" id="t-reward">3.56490987 CELL</span> <span class="q">(epoch <span id="t-epoch">0</span>; halves every <span class="mono">12,623,040</span> blocks; next halving at height <span class="mono" id="t-halving">12,623,041</span>, <span id="t-halving-eta">—</span>)</span></td></tr>
+            <tr><th scope="row">Max supply</th><td><span class="mono">90,000,000 CELL</span></td></tr>
+            <tr><th scope="row">Emitted <span class="q">(live)</span></th><td><span class="mono" id="t-emitted">—</span></td></tr>
+            <tr><th scope="row">Signatures</th><td><span class="mono">ML-DSA-87</span> <span class="q">(post-quantum, NIST FIPS 204)</span></td></tr>
+            <tr><th scope="row">Address format</th><td>64 hex characters = SHA-256 of the ML-DSA-87 public key <span class="q">(lowercase <span class="mono">0-9a-f</span>, no prefix)</span></td></tr>
+            <tr><th scope="row">Consensus / producer</th><td>Single block producer during recovery; a backup node follows the chain. Signed consensus votes are supported but not yet active. <a href="/network.html">Live status</a></td></tr>
+            <tr><th scope="row">Mining</th><td>NVIDIA GPU via QSDM Hive · mining protocol <span class="mono">v2</span> · attestation <span class="mono">nvidia-cc-v1</span> / <span class="mono">nvidia-hmac-v1</span></td></tr>
+            <tr><th scope="row">Enrolled miners <span class="q">(live)</span></th><td><span class="mono" id="t-miners">—</span></td></tr>
+            <tr><th scope="row">PoW difficulty</th><td><span class="mono" id="t-diff">2^24 (16,777,216)</span> <span class="q">per accepted proof, current mining window</span></td></tr>
+            <tr><th scope="row">Miner bond</th><td><span class="mono">10 CELL</span> per enrolled node <span class="q">(can be paid from mining rewards)</span></td></tr>
+            <tr><th scope="row">Node software <span class="q">(live)</span></th><td><span class="mono" id="t-version">—</span></td></tr>
+            <tr><th scope="row">API base URL</th><td><span class="mono">https://api.qsdm.tech/api/v1</span> <span class="q">(public, no auth)</span></td></tr>
+            <tr><th scope="row">Genesis block hash <span class="q">(live)</span></th><td><span class="mono" id="t-genesis">—</span> <span class="q" id="t-genesis-time"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
-<span class="kw">import</span> (
-  <span class="str">"context"</span>
-  <span class="str">"fmt"</span>
-
-  qsdm <span class="str">"github.com/blackbeardONE/QSDM/QSDM/source/sdk/go"</span>
-)
-
-<span class="kw">func</span> <span class="fn">main</span>() {
-  client := qsdm.<span class="fn">NewClient</span>(<span class="str">"https://api.qsdm.tech"</span>)
-  st, _ := client.<span class="fn">GetNodeStatus</span>(<span class="fn">context</span>.Background())
-  <span class="fn">fmt</span>.Println(st.Version)
-}</pre>
-          </div>
+    <section class="sec" aria-labelledby="start-title">
+      <div class="q-wrap">
+        <div class="sec-head">
+          <h2 id="start-title">Get started</h2>
+          <p>Everything QSDM publishes, in one place.</p>
+        </div>
+        <div class="q-grid q-grid-3">
+          <a class="card" href="/download.html"><h3>Download Hive</h3><p>Desktop app for Windows and Linux: wallet, mining and tasks.</p><span class="go">Downloads →</span></a>
+          <a class="card" href="/mining.html"><h3>Mine CELL</h3><p>Requirements and how rewards are shared in each mining window.</p><span class="go">Mining guide →</span></a>
+          <a class="card" href="/wallet.html"><h3>Web wallet</h3><p>Create a wallet, check a balance or send CELL in the browser.</p><span class="go">Open wallet →</span></a>
+          <a class="card" href="/explorer.html"><h3>Explorer</h3><p>Search blocks, transactions and addresses.</p><span class="go">Open explorer →</span></a>
+          <a class="card" href="/network.html"><h3>Network status</h3><p>Producer, backup node, block-time check and API health.</p><span class="go">View status →</span></a>
+          <a class="card" href="/api.html"><h3>Public API</h3><p>Keyless HTTP endpoints with example requests and responses.</p><span class="go">API reference →</span></a>
+          <a class="card" href="/docs/"><h3>Docs</h3><p>Hive guide, miner quickstart, operator guide.</p><span class="go">Read docs →</span></a>
+          <a class="card" href="/audit.html"><h3>Public audit</h3><p>The live checklist of what is verified and what is pending.</p><span class="go">Open audit →</span></a>
+          <a class="card" href="https://github.com/blackbeardONE/QSDM" rel="noopener"><h3 class="ext">Source code</h3><p>MIT-licensed repository on GitHub.</p><span class="go">github.com/blackbeardONE/QSDM</span></a>
         </div>
       </div>
     </section>
 
-    <section class="band" aria-labelledby="docs-title">
-      <div class="shell">
-        <div class="section-head docs-head">
-          <h2 id="docs-title">Documentation</h2>
-          <a class="site-btn site-btn-ghost" href="/docs/">All docs</a>
-        </div>
-        <div class="news-list">
-          <a href="/docs/#/operator-guide"><strong>Operator guide</strong><span>Start here</span></a>
-          <a href="/docs/#/qsdm-network"><strong>QSDM Network</strong><span>Public CELL network</span></a>
-          <a href="/docs/#/qsdm-hive"><strong>QSDM Hive</strong><span>Desktop client</span></a>
-          <a href="/docs/#/miner-quickstart"><strong>NVIDIA miner</strong><span>Mining</span></a>
-          <a href="/docs/#/api-reference"><strong>API reference</strong><span>Builders</span></a>
+    <section class="sec" aria-labelledby="cta-title">
+      <div class="q-wrap">
+        <div class="cta">
+          <h2 id="cta-title">Ready to mine CELL?</h2>
+          <p>Install QSDM Hive, enroll your NVIDIA GPU, and start earning in the current mining window.</p>
+          <div class="q-actions">
+            <a class="site-btn site-btn-solid" href="/download.html">Download Hive</a>
+            <a class="site-btn site-btn-ghost" href="/mining.html">Read the mining guide</a>
+          </div>
         </div>
       </div>
     </section>
   </main>
 
-  <footer class="site-footer">
-    <div class="shell">
-      <div class="site-footer-grid">
-        <div class="site-footer-brand">
-          <a class="site-brand" href="/">
-            <img src="/assets/qsdm-hive-icon.png" alt="" />
-            <span>QSDM</span>
-          </a>
-          <p>Quantum-secure dynamic mesh ledger. Native coin CELL.</p>
-        </div>
-        <div class="site-footer-col">
-          <h4>Product</h4>
-          <a href="/network.html">QSDM Network</a>
-          <a href="/download.html">Download Hive</a>
-          <a href="/wallet.html">Web wallet</a>
-          <a href="https://qsdm.online/">QSDM VPN</a>
-          <a href="/explorer.html">Explorer</a>
-        </div>
-        <div class="site-footer-col">
-          <h4>Developers</h4>
-          <a href="/docs/">Docs</a>
-          <a href="/api.html">API</a>
-          <a href="/validators.html">Validators</a>
-          <a href="/explorer.html#status">Chain status</a>
-        </div>
-        <div class="site-footer-col">
-          <h4>Trust</h4>
-          <a href="/audit.html">Audit</a>
-          <a href="/trust.html">Attestation feed</a>
-          <a href="/.well-known/security.txt">Security</a>
-          <a href="/privacy.html">Privacy policy</a>
-          <a href="/support.html">Support</a>
-          <a href="https://github.com/blackbeardONE/QSDM">GitHub</a>
-        </div>
-      </div>
-      <div class="site-footer-bottom">
-        <span>© 2024–2026 QSDM · <a href="https://github.com/blackbeardONE/QSDM/blob/main/LICENSE">MIT License</a></span>
-        <span>Hive · CELL · QSDM VPN · public transparency</span>
-      </div>
-    </div>
-  </footer>
+  <footer id="site-footer"></footer>
 
-  <script src="/assets/site-nav.js"></script>
   <script>
-    (() => {
-      const panel = document.querySelector("[data-code-panel]");
-      if (!panel) return;
-      const tabs = Array.from(panel.querySelectorAll("[data-lang]"));
-      const blocks = {
-        curl: document.getElementById("code-curl"),
-        js: document.getElementById("code-js"),
-        go: document.getElementById("code-go"),
-      };
-      tabs.forEach((tab) => {
-        tab.addEventListener("click", () => {
-          const lang = tab.dataset.lang;
-          tabs.forEach((t) => t.setAttribute("aria-selected", String(t === tab)));
-          Object.entries(blocks).forEach(([key, el]) => {
-            if (!el) return;
-            const on = key === lang;
-            el.hidden = !on;
-            el.setAttribute("aria-hidden", String(!on));
-          });
-        });
-      });
+    (function () {
+      "use strict";
+      var Q = window.QSDM;
+      if (!Q) return;
+      var tipTime = null;
+
+      function tickAge() {
+        if (!tipTime) return;
+        var a = Q.ageOf(tipTime);
+        Q.setText("s-age", a === null ? "—" : Q.fmtDuration(a) + " ago");
+      }
+
+      function applyTokenomics(t) {
+        if (!t) return;
+        var emitted = t.emitted_cell;
+        Q.setText("s-emitted", Q.fmtDec(emitted, 0));
+        Q.setText("t-emitted", emitted ? Q.fmtDec(emitted, 8) + " CELL" : "—");
+        var cap = Number(t.cap_dust || t.mining_cap_dust);
+        var em = Number(t.emitted_dust);
+        if (cap > 0 && isFinite(em)) {
+          var pct = (em / cap) * 100;
+          Q.setText("s-emitted-pct", pct.toFixed(2) + "%");
+          var m = document.getElementById("s-meter");
+          if (m) m.style.width = Math.min(100, pct).toFixed(2) + "%";
+          Q.setText("s-cap", Q.fmtInt(cap / 1e8));
+        }
+        if (t.block_reward_cell) {
+          Q.setText("s-reward", t.block_reward_cell);
+          Q.setText("t-reward", t.block_reward_cell + " CELL");
+        }
+        if (t.current_epoch !== undefined) {
+          Q.setText("s-epoch", String(t.current_epoch));
+          Q.setText("t-epoch", String(t.current_epoch));
+        }
+        if (t.next_halving_height) Q.setText("t-halving", Q.fmtInt(t.next_halving_height));
+        if (t.next_halving_eta_seconds) Q.setText("t-halving-eta", "in about " + Q.fmtDuration(t.next_halving_eta_seconds));
+        if (t.target_block_time_seconds) Q.setText("s-blocktime", t.target_block_time_seconds + " s");
+      }
+
+      function refresh() {
+        var stamp = function () {
+          Q.setText("s-updated", "updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+        };
+        Q.api("/status").then(function (s) {
+          Q.setText("s-height", Q.fmtInt(s.chain_tip));
+          Q.setText("t-version", s.version || "—");
+          applyTokenomics(s.tokenomics);
+          stamp();
+        }).catch(function () { Q.setText("s-updated", "API unavailable, retrying"); });
+
+        Q.api("/mining/emission").then(applyTokenomics).catch(function () {});
+
+        Q.api("/mining/enrollments?limit=200").then(function (d) {
+          var recs = d.records || d.enrollments || [];
+          var total = typeof d.total_matches === "number" ? d.total_matches : recs.length;
+          var bonded = recs.filter(function (r) { return r.fully_bonded; }).length;
+          var txt = Q.fmtInt(total) + (d.has_more ? "+" : "");
+          Q.setText("s-miners", txt);
+          Q.setText("s-miners-sub", bonded + " fully bonded");
+          Q.setText("t-miners", txt + " (" + bonded + " fully bonded, " + (recs.length - bonded) + " paying bond from rewards)");
+        }).catch(function () {});
+
+        Q.api("/mining/blocks?limit=1").then(function (d) {
+          var h = (d.headers || [])[0];
+          if (!h) return;
+          tipTime = h.timestamp;
+          Q.setText("s-age-sub", "block " + Q.fmtInt(h.height));
+          tickAge();
+        }).catch(function () {});
+      }
+
+      function once() {
+        Q.api("/chain/blocks?from=0&to=0&limit=1").then(function (d) {
+          var b = (d.blocks || [])[0];
+          if (!b || !b.hash) return;
+          Q.setText("t-genesis", b.hash);
+          if (b.timestamp) Q.setText("t-genesis-time", "(" + String(b.timestamp).slice(0, 10) + " UTC)");
+        }).catch(function () {});
+        Q.api("/mining/work").then(function (w) {
+          var d = Number(w.difficulty);
+          if (!(d > 0)) return;
+          var bits = Math.log2(d);
+          var label = Number.isInteger(bits) ? "2^" + bits + " (" + Q.fmtInt(d) + ")" : Q.fmtInt(d);
+          Q.setText("t-diff", label);
+        }).catch(function () {});
+      }
+
+      refresh();
+      once();
+      setInterval(refresh, 15000);
+      setInterval(tickAge, 1000);
     })();
   </script>
 </body>

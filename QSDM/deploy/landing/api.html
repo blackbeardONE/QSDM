@@ -1,425 +1,773 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>API status — QSDM · Cell (CELL)</title>
-<meta name="description" content="QSDM API versioning at a glance: the HTTP API is at /api/v1/* and is stable; the mining protocol is v2-only at consensus (FORK_V2_HEIGHT = 0). The two versions are independent — 'v1 deprecation' in v0.3.2 retired mining protocol v1, not the HTTP URL prefix." />
-<meta name="theme-color" content="#061116" />
-<link rel="icon" href="/assets/qsdm-hive-icon.png" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="/assets/site.css" />
-
-<style>
-  :root {
-    --bg: #061116;
-    --bg-2: #0a1f26;
-    --panel: #0c242c;
-    --panel-2: #12323c;
-    --border: rgba(142, 220, 224, 0.16);
-    --text: #f4fbfd;
-    --text-2: rgba(244, 251, 253, 0.62);
-    --muted: rgba(173, 198, 204, 0.72);
-    --gold: #d6b75f;
-    --teal: #8edce0;
-    --accent: #d6b75f;
-    --accent-2: #8edce0;
-    --accent-3: #8edce0;
-    --ink: #061116;
-    --danger: #ff6b6b;
-    --warn: #ffb454;
-    --success: #3ddc97;
-    --warning: #e8c547;
-    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    --sans: "Outfit", system-ui, -apple-system, "Segoe UI", sans-serif;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
-  a { color: var(--accent-3); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  .container { max-width: 960px; margin: 0 auto; padding: 36px 20px; }
-  header { border-bottom: 1px solid var(--border); }
-  header .container { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; }
-  .brand { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 700; letter-spacing: 0.2px; }
-  .brand svg { width: 26px; height: 26px; }
-  h1 { font-size: 36px; line-height: 1.1; margin: 0 0 12px; }
-  h2 { font-size: 22px; margin: 32px 0 10px; }
-  h3 { font-size: 16px; margin: 18px 0 8px; color: var(--text); }
-  .lede { color: var(--text-2); font-size: 17px; line-height: 1.55; max-width: 720px; }
-  p { color: var(--text-2); line-height: 1.6; }
-  code, .mono { font-family: var(--mono); font-size: 13.5px; }
-  .panel {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 22px 24px;
-  }
-  .pill {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 4px 10px; border-radius: 999px; font-size: 12px;
-    border: 1px solid var(--border); background: rgba(255,255,255,0.02);
-    color: var(--text-2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px;
-  }
-  .pill.ok { color: var(--success); border-color: rgba(61,220,151,0.35); background: rgba(61,220,151,0.05); }
-  .pill.warn { color: var(--warn); border-color: rgba(255,180,84,0.35); background: rgba(255,180,84,0.05); }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
-  .status-healthy  { background: var(--success); box-shadow: 0 0 8px var(--success); }
-  .status-degraded { background: var(--warn);    box-shadow: 0 0 8px var(--warn); }
-  .status-outage   { background: var(--danger);  box-shadow: 0 0 8px var(--danger); }
-  .status-unknown  { background: var(--muted); }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
-  th { color: var(--text-2); font-weight: 600; }
-  td.mono { font-family: var(--mono); }
-  .scope-note {
-    padding: 12px 16px; border-left: 3px solid var(--accent);
-    background: rgba(214,183,95,0.04); color: var(--text-2); font-size: 13px; line-height: 1.55;
-    margin: 20px 0;
-  }
-  .scope-note strong { color: var(--text); }
-  .grid-2 {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
-    margin: 18px 0 8px;
-  }
-  @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
-  .endpoint-row { display: flex; align-items: baseline; gap: 12px; padding: 6px 0; border-bottom: 1px dashed var(--border); }
-  .endpoint-row:last-child { border-bottom: none; }
-  .endpoint-row .method { font-family: var(--mono); font-size: 11px; color: var(--accent); font-weight: 700; min-width: 44px; }
-  .endpoint-row .path { font-family: var(--mono); font-size: 13.5px; }
-  .endpoint-row .note { color: var(--muted); font-size: 12.5px; }
-  footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
-  footer .container { padding: 20px; }
-
-  /* Audit cross-reference callout — byte-identical pattern across the
-   * seven landing pages. Same-origin badge fetch from /api/v1/audit/badge.svg
-   * means a mismatched-origin clone of this page will 404 the badge,
-   * an additional visual canary on top of the address-bar check. */
-  .audit-callout {
-    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
-    padding: 14px 18px; margin: 20px 0;
-    border: 1px solid var(--border); border-left: 3px solid var(--accent-3);
-    background: rgba(142,220,224,0.05);
-    border-radius: 8px;
-  }
-  .audit-callout .audit-callout-badge {
-    flex: 0 0 auto;
-    padding: 10px 12px;
-    background: rgba(0,0,0,.30);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    display: flex; align-items: center;
-  }
-  .audit-callout .audit-callout-badge img { display: block; height: 20px; }
-  .audit-callout .audit-callout-text { flex: 1 1 280px; color: var(--text-2); font-size: 13.5px; line-height: 1.55; }
-  .audit-callout .audit-callout-text strong { color: var(--text); }
-  .audit-callout .audit-callout-text a { color: var(--accent-3); font-weight: 600; }
-  .audit-callout .audit-callout-text code { font-family: var(--mono); background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 4px; font-size: 12px; color: var(--text); }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QSDM public API reference — CELL chain, mining and wallet endpoints</title>
+  <meta name="description" content="Public, keyless QSDM HTTP API at https://api.qsdm.tech/api/v1: status, blocks, receipts, emission, miner enrollments, balances and nonces, with example URLs, cURL commands and sample responses." />
+  <link rel="canonical" href="https://qsdm.tech/api.html" />
+  <meta name="theme-color" content="#061116" />
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/brand/favicon-16.png" />
+  <link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <meta property="og:image" content="https://qsdm.tech/assets/brand/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="QSDM logo: Quantum-Secure Dynamic Mesh ledger and the CELL coin" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://qsdm.tech/assets/brand/og-image.png" />
+  <link rel="stylesheet" href="/assets/site.css" />
+  <link rel="stylesheet" href="/assets/site-shell.css" />
+  <style>
+    .base-box { display: grid; gap: 0.6rem; max-width: 46rem; margin-top: 1.5rem; }
+    .base-box .q-pill { width: fit-content; }
+    .toc { display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; margin-top: 1.25rem; font-size: 0.92rem; }
+    .eps { display: grid; gap: 0.75rem; }
+    .ep h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem; font-size: 1rem; overflow-wrap: anywhere; }
+    .ep h3 .mono { font-size: 0.95rem; color: var(--text); }
+    .method {
+      padding: 0.1rem 0.45rem;
+      border-radius: 4px;
+      background: rgba(214, 183, 95, 0.14);
+      color: var(--gold);
+      font-family: var(--mono);
+      font-size: 0.74rem;
+      font-weight: 600;
+    }
+    .ep > p { margin: 0 0 0.9rem; }
+    .ep-label { display: flex; align-items: center; gap: 0.6rem; margin: 0.9rem 0 0.4rem; color: var(--muted); font-size: 0.74rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+    .ep-label .q { text-transform: none; letter-spacing: 0; font-weight: 400; }
+    .run-btn {
+      margin-left: auto;
+      padding: 0.2rem 0.65rem;
+      border: 1px solid var(--border-2);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--teal);
+      font-size: 0.76rem;
+      font-weight: 500;
+      text-transform: none;
+      letter-spacing: 0;
+      cursor: pointer;
+    }
+    .run-btn:hover { background: rgba(142, 220, 224, 0.1); color: var(--text); }
+    .codeline .copy-btn + .copy-btn { border-left: 1px solid var(--border); }
+    @media (max-width: 599px) {
+      .codeline { flex-wrap: wrap; }
+      .codeline code { flex-basis: 100%; white-space: normal; overflow-wrap: anywhere; }
+      .codeline .copy-btn { flex: 1 1 50%; border-left: 0; border-top: 1px solid var(--border); }
+    }
+    .audit-callout {
+      display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+      padding: 14px 18px;
+      border: 1px solid var(--border); border-left: 3px solid var(--teal);
+      background: rgba(142,220,224,0.05);
+      border-radius: 8px;
+    }
+    .audit-callout-badge { padding: 10px 12px; background: rgba(0,0,0,.30); border: 1px solid var(--border); border-radius: 8px; display: flex; }
+    .audit-callout-badge img { display: block; height: 20px; }
+    .audit-callout-text { flex: 1 1 280px; color: var(--text-2); font-size: 0.9rem; }
+  </style>
 </head>
-<body>
-<header class="site-header">
-  <div class="site-header-inner">
-    <a class="site-brand" href="/">
-      <img src="/assets/qsdm-hive-icon.png" alt="" />
-      <span>QSDM</span>
-    </a>
-    <nav class="site-nav" aria-label="Primary">
-      <div class="site-nav-item">
-        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
-          Network <span class="site-nav-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="site-nav-panel" role="menu">
-          <a href="/network.html" role="menuitem">Overview<span class="site-nav-hint">Live CELL network</span></a>
-          <a href="/explorer.html" role="menuitem">Explorer<span class="site-nav-hint">Search + chain tip</span></a>
-          <a href="/api.html" role="menuitem">API<span class="site-nav-hint">HTTP v1 overview</span></a>
-          <a href="/validators.html" role="menuitem">Validators<span class="site-nav-hint">Bootstrap peers</span></a>
+<body data-page="api">
+  <header id="site-header"></header>
+  <script src="/assets/site-shell.js"></script>
+
+  <main id="main">
+    <section class="page-hero" aria-labelledby="api-title">
+      <div class="q-wrap">
+        <span class="q-eyebrow">Developers</span>
+        <h1 id="api-title">Public API <span class="dim">reference.</span></h1>
+        <p class="lead">
+          Read the CELL chain over plain HTTP. Every endpoint below is a public
+          <span class="mono">GET</span>: no account, no API key, JSON responses.
+          For guides and the full reference, see the <a href="/docs/#/api-reference">docs</a>.
+        </p>
+        <div class="base-box">
+          <span class="q-pill ok">Public · No auth</span>
+          <div class="codeline"><code id="api-base">https://api.qsdm.tech/api/v1</code><button class="copy-btn" type="button" data-copy-target="api-base" aria-label="Copy API base URL">Copy</button></div>
+          <p class="q-note" style="margin:0">Live: <span class="mono" id="api-live">—</span></p>
         </div>
+        <nav class="toc" aria-label="Endpoint groups"><a href="#g-chain">Chain</a> · <a href="#g-supply-mining">Supply &amp; mining</a> · <a href="#g-wallet">Wallet</a> · <a href="#g-transparency">Transparency</a> · <a href="#g-submit">Submitting transactions</a> · <a href="#g-versioning">Versioning</a></nav>
       </div>
-      <div class="site-nav-item">
-        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
-          Hive <span class="site-nav-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="site-nav-panel" role="menu">
-          <a href="/download.html" role="menuitem">Download Hive<span class="site-nav-hint">Windows + Linux app</span></a>
-          <a href="/account/" role="menuitem">QSDM Account<span class="site-nav-hint">Identity + linked wallets</span></a>
-          <a href="/wallet.html" role="menuitem">Web wallet<span class="site-nav-hint">Browser self-custody</span></a>
-          <a href="https://qsdm.online/" role="menuitem">QSDM VPN<span class="site-nav-hint">Private Android access</span></a>
-        </div>
-      </div>
-      <a href="/docs/">Docs</a>
-      <div class="site-nav-item">
-        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
-          Trust <span class="site-nav-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="site-nav-panel" role="menu">
-          <a href="/audit.html" role="menuitem">Public audit<span class="site-nav-hint">Live checklist</span></a>
-          <a href="/trust.html" role="menuitem">Attestations<span class="site-nav-hint">NVIDIA feed</span></a>
-        </div>
-      </div>
-    </nav>
-    <div class="site-actions">
-      <a class="site-btn site-btn-ghost site-account-action" href="/account/">Account</a>
-      <a class="site-btn site-btn-solid" href="/download.html">Download</a>
-      <button class="site-menu-toggle" type="button" id="siteMenuToggle" aria-label="Open menu" aria-expanded="false">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 7H4V5H20V7ZM20 13H4V11H20V13ZM20 19H4V17H20V19Z"/></svg>
-      </button>
-    </div>
-  </div>
-  <div class="site-mobile-nav" id="siteMobileNav">
-    <div class="site-mobile-group">
-      <div class="site-mobile-label">Network</div>
-      <a href="/network.html">Overview</a>
-      <a href="/explorer.html">Explorer</a>
-      <a href="/api.html">API</a>
-      <a href="/validators.html">Validators</a>
-    </div>
-    <div class="site-mobile-group">
-      <div class="site-mobile-label">Hive</div>
-      <a href="/download.html">Download Hive</a>
-      <a href="/wallet.html">Web wallet</a>
-      <a href="https://qsdm.online/">QSDM VPN</a>
-    </div>
-    <div class="site-mobile-group">
-      <div class="site-mobile-label">Learn</div>
-      <a href="/docs/">Docs</a>
-      <a href="/audit.html">Public audit</a>
-      <a href="/trust.html">Attestations</a>
-    </div>
-  </div>
-</header>
-
-<main class="container">
-  <span class="pill"><span class="dot" id="status-dot"></span> <span id="status-label">loading</span></span>
-  <h1>API status</h1>
-  <p class="lede">
-    QSDM has <strong>two</strong> versioned surfaces, and they version <strong>independently</strong>.
-    The most common source of confusion: visitors see <code>/api/v1/health</code> in our footer and
-    assume the API is "old", because we shipped a "v1 deprecation" in v0.3.2.
-    It's not — that deprecation was about the <strong>mining protocol</strong>, not the
-    HTTP URL prefix.
-  </p>
-
-  <div class="scope-note">
-    <strong>TL;DR.</strong> The <strong>HTTP API is v1</strong> and stable. There is no
-    <code>/api/v2/*</code> endpoint and none planned for the v0.4.x cycle. The
-    <strong>mining protocol is v2-only</strong> at consensus
-    (<code>FORK_V2_HEIGHT&nbsp;=&nbsp;0</code>) — every v1 proof is rejected at admission, and
-    the v1 reference miner (<code>cmd/qsdmminer</code>) was dropped from the public release
-    matrix in v0.3.2. The two "v1"s are unrelated.
-  </div>
-
-  <div class="audit-callout">
-    <a class="audit-callout-badge" href="/audit.html?category=api"
-       title="Open the 6 api audit rows on audit.html">
-      <img src="/api/v1/audit/badge.svg" alt="QSDM audit score (live)" />
-    </a>
-    <div class="audit-callout-text">
-      <strong>HTTP API contract is audited.</strong>
-      Six <code>api</code> checklist rows pin URL stability, wallet submit flow,
-      replay protection, CORS, and JWT posture.
-      See <a href="/audit.html?category=api">audit.html?category=api</a>.
-    </div>
-  </div>
-
-  <h2>The two versions, side by side</h2>
-  <div class="grid-2">
-    <section class="panel">
-      <span class="pill ok">Stable</span>
-      <h3 style="margin-top: 10px;">HTTP API — <code>/api/v1/*</code></h3>
-      <p>
-        Every public endpoint lives under <code>/api/v1/*</code>. This includes the
-        wallet self-custody flow (<code>POST /api/v1/wallet/submit-signed</code>,
-        <code>GET /api/v1/wallet/nonce</code>, <code>GET /api/v1/wallet/balance</code>),
-        the trust/attestation transparency feeds, the mining work / submit / penalty
-        endpoints, and the live <code>/api/v1/status</code> health surface.
-      </p>
-      <p style="margin-top:10px;">
-        The <code>v1</code> in the URL is the API URL prefix, not a deprecation flag.
-        It signals stable wire compatibility — any change that would break a v1 client
-        ships behind a new top-level prefix; there is no plan to do that in the v0.4.x cycle.
-      </p>
-      <p style="margin-top:10px; color: var(--muted); font-size: 13px;">
-        Source: <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/API_REFERENCE.md">API_REFERENCE.md</a>,
-        <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/API_VERSIONING.md">API_VERSIONING.md</a>.
-      </p>
     </section>
-    <section class="panel">
-      <span class="pill warn">v1 retired at consensus</span>
-      <h3 style="margin-top: 10px;">Mining protocol — v2 only</h3>
-      <p>
-        The mining protocol is independent of the HTTP API. The current public network activated
-        <code>FORK_V2_HEIGHT&nbsp;=&nbsp;0</code> at the current chain reset, which means
-        every v1 proof (CPU-only PoW) is rejected at admission with
-        <code>ReasonBadVersion</code>. The v1 reference miner
-        <code>cmd/qsdmminer</code> is no longer cross-compiled or signed by
-        <code>release-container.yml</code> — only <code>qsdmminer-console --protocol=v2</code>
-        is published.
-      </p>
-      <p style="margin-top:10px;">
-        Live <code>GET /api/v1/status</code> self-advertises the posture in its
-        <code>mining</code> block: <code>protocol_versions_accepted:&nbsp;[2]</code>,
-        <code>fork_v2_active:&nbsp;true</code>. Both <code>qsdmminer</code> and
-        <code>qsdmminer-console</code> preflight this on startup and refuse to mine
-        with a v1 caller against a v2-active validator.
-      </p>
-      <p style="margin-top:10px; color: var(--muted); font-size: 13px;">
-        Source: <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINING_PROTOCOL_V2.md">MINING_PROTOCOL_V2.md</a>,
-        <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/MINER_QUICKSTART.md">MINER_QUICKSTART.md</a>.
-      </p>
+
+    <section class="sec" aria-labelledby="g-chain">
+      <div class="q-wrap">
+        <div class="sec-head"><h2 id="g-chain">Chain</h2></div>
+        <div class="eps">
+          <article class="ep card" id="ep-status" aria-labelledby="ep-status-t">
+            <h3 id="ep-status-t"><span class="method">GET</span> <span class="mono">/status</span></h3>
+            <p>Node version, chain tip, coin and tokenomics, mining and consensus flags.</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/status</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/status" aria-label="Copy URL for /status">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/status&#x27;" aria-label="Copy cURL for /status">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/status" aria-controls="ep-status-out">Run live</button></div>
+            <pre class="sample" id="ep-status-out">{
+  &quot;node_id&quot;: &quot;12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum&quot;,
+  &quot;version&quot;: &quot;hardened-legacy-20261002-d7ffcd4-hl2&quot;,
+  &quot;git_sha&quot;: &quot;d7ffcd4e80f69c3db3f2bbcf4c7f34e08cc49d25&quot;,
+  &quot;build_date&quot;: &quot;2026-10-02T05:23:22Z&quot;,
+  &quot;uptime&quot;: &quot;13h18m53s&quot;,
+  &quot;chain_tip&quot;: 749057,
+  &quot;peers&quot;: 0,
+  &quot;node_role&quot;: &quot;validator&quot;,
+  &quot;network&quot;: &quot;QSDM · CELL&quot;,
+  &quot;coin&quot;: {
+    &quot;name&quot;: &quot;Cell&quot;,
+    &quot;symbol&quot;: &quot;CELL&quot;,
+    &quot;decimals&quot;: 8,
+    &quot;smallest_unit&quot;: &quot;dust&quot;
+  },
+  &quot;branding&quot;: {
+    &quot;name&quot;: &quot;QSDM&quot;,
+    &quot;legacy_name&quot;: &quot;QSDM+&quot;,
+    &quot;full_title&quot;: &quot;Quantum-Secure Dynamic Mesh Ledger (QSDM)&quot;
+  },
+  &quot;tokenomics&quot;: {
+    &quot;cap_dust&quot;: 9000000000000000,
+    &quot;cap_cell&quot;: &quot;90000000.00000000&quot;,
+    &quot;emitted_dust&quot;: 267032069249259,
+    &quot;emitted_cell&quot;: &quot;2670320.69249259&quot;,
+    &quot;remaining_dust&quot;: 8732967930750741,
+    &quot;block_reward_dust&quot;: 356490987,
+    &quot;block_reward_cell&quot;: &quot;3.56490987&quot;,
+    &quot;current_epoch&quot;: 0,
+    &quot;next_halving_height&quot;: 12623041,
+    &quot;next_halving_eta_seconds&quot;: 118739840,
+    &quot;target_block_time_seconds&quot;: 10,
+    &quot;blocks_per_epoch&quot;: 12623040
+  },
+  &quot;task_actions_ready&quot;: true,
+  &quot;consensus_auth&quot;: {
+    &quot;signed_consensus_supported&quot;: true,
+    &quot;require_signed_votes&quot;: false,
+    &quot;signed_message_activation_height&quot;: 0,
+    &quot;signed_consensus_active&quot;: false,
+    &quot;unsigned_consensus_traffic_accepted&quot;: true,
+    &quot;task_action_signature_activation_height&quot;: 625000,
+    &quot;task_action_signatures_active&quot;: true,
+    &quot;tx_content_root_activation_height&quot;: 625000,
+    &quot;tx_content_root_active&quot;: true
+  },
+  &quot;…&quot;: &quot;…&quot;
+}</pre>
+          </article>
+          <article class="ep card" id="ep-health-live" aria-labelledby="ep-health-live-t">
+            <h3 id="ep-health-live-t"><span class="method">GET</span> <span class="mono">/health/live</span></h3>
+            <p>Liveness probe: 200 when the node process is up.</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/health/live</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/health/live" aria-label="Copy URL for /health/live">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/health/live&#x27;" aria-label="Copy cURL for /health/live">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/health/live" aria-controls="ep-health-live-out">Run live</button></div>
+            <pre class="sample" id="ep-health-live-out">{
+  &quot;product&quot;: &quot;QSDM&quot;,
+  &quot;status&quot;: &quot;alive&quot;,
+  &quot;timestamp&quot;: 1791045902
+}</pre>
+          </article>
+          <article class="ep card" id="ep-health-ready" aria-labelledby="ep-health-ready-t">
+            <h3 id="ep-health-ready-t"><span class="method">GET</span> <span class="mono">/health/ready</span></h3>
+            <p>Readiness probe with per-subsystem checks.</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/health/ready</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/health/ready" aria-label="Copy URL for /health/ready">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/health/ready&#x27;" aria-label="Copy cURL for /health/ready">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/health/ready" aria-controls="ep-health-ready-out">Run live</button></div>
+            <pre class="sample" id="ep-health-ready-out">{
+  &quot;checks&quot;: {
+    &quot;storage&quot;: &quot;ok&quot;,
+    &quot;wallet_service&quot;: &quot;ok&quot;
+  },
+  &quot;status&quot;: &quot;ready&quot;,
+  &quot;timestamp&quot;: 1791045903
+}</pre>
+          </article>
+          <article class="ep card" id="ep-versions" aria-labelledby="ep-versions-t">
+            <h3 id="ep-versions-t"><span class="method">GET</span> <span class="mono">/versions</span></h3>
+            <p>Supported HTTP API versions (currently v1).</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/versions</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/versions" aria-label="Copy URL for /versions">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/versions&#x27;" aria-label="Copy cURL for /versions">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/versions" aria-controls="ep-versions-out">Run live</button></div>
+            <pre class="sample" id="ep-versions-out">{
+  &quot;current&quot;: &quot;v1&quot;,
+  &quot;versions&quot;: [
+    {
+      &quot;name&quot;: &quot;v1&quot;,
+      &quot;prefix&quot;: &quot;/api/v1&quot;,
+      &quot;status&quot;: &quot;active&quot;,
+      &quot;deprecated_at&quot;: &quot;0001-01-01T00:00:00Z&quot;,
+      &quot;sunset_at&quot;: &quot;0001-01-01T00:00:00Z&quot;
+    }
+  ]
+}</pre>
+          </article>
+          <article class="ep card" id="ep-chain-blocks" aria-labelledby="ep-chain-blocks-t">
+            <h3 id="ep-chain-blocks-t"><span class="method">GET</span> <span class="mono">/chain/blocks?from={h}&amp;to={h}&amp;limit={n}</span></h3>
+            <p>Full blocks including transactions, by height range (max 64).</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/chain/blocks?from=0&amp;to=0&amp;limit=1</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/chain/blocks?from=0&amp;to=0&amp;limit=1" aria-label="Copy URL for /chain/blocks?from={h}&amp;to={h}&amp;limit={n}">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/chain/blocks?from=0&amp;to=0&amp;limit=1&#x27;" aria-label="Copy cURL for /chain/blocks?from={h}&amp;to={h}&amp;limit={n}">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/chain/blocks?from=0&amp;to=0&amp;limit=1" aria-controls="ep-chain-blocks-out">Run live</button></div>
+            <pre class="sample" id="ep-chain-blocks-out">{
+  &quot;tip&quot;: 749057,
+  &quot;from&quot;: 0,
+  &quot;to&quot;: 0,
+  &quot;blocks&quot;: [
+    {
+      &quot;height&quot;: 0,
+      &quot;prev_hash&quot;: &quot;&quot;,
+      &quot;hash&quot;: &quot;b6119386bb6918d0716ab9d7f51864b58c20d542e6beab261151e8d4f9a8feb6&quot;,
+      &quot;timestamp&quot;: &quot;2026-05-06T23:37:58.195855436Z&quot;,
+      &quot;transactions&quot;: [
+        {
+          &quot;ID&quot;: &quot;genesis-seed-1778110678195835285&quot;,
+          &quot;Sender&quot;: &quot;qsdm-system-funder&quot;,
+          &quot;Recipient&quot;: &quot;qsdm1miner-rtx3050&quot;,
+          &quot;Amount&quot;: 100,
+          &quot;Fee&quot;: 0,
+          &quot;GasLimit&quot;: 0,
+          &quot;Nonce&quot;: 0,
+          &quot;Payload&quot;: null,
+          &quot;AddedAt&quot;: &quot;2026-05-06T23:37:58.195837337Z&quot;
+        }
+      ],
+      &quot;state_root&quot;: &quot;1667aa6937305e49b2bf489aec03dbb6a12ecddef89c1ad884ebe368d29c3998&quot;,
+      &quot;total_fees&quot;: 0,
+      &quot;gas_used&quot;: 0,
+      &quot;producer_id&quot;: &quot;12D3KooWSf2hdqPY2BGFuNy9M84ajVK9FZe6ayg6Pjy8qwirVhBE&quot;,
+      &quot;producer_auth&quot;: {}
+    }
+  ]
+}</pre>
+          </article>
+          <article class="ep card" id="ep-mining-blocks" aria-labelledby="ep-mining-blocks-t">
+            <h3 id="ep-mining-blocks-t"><span class="method">GET</span> <span class="mono">/mining/blocks?from={h}&amp;to={h}&amp;limit={n}</span></h3>
+            <p>Block headers (hash, prev hash, roots, tx count, time, producer), newest range by default (max 200).</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/mining/blocks?limit=2</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/mining/blocks?limit=2" aria-label="Copy URL for /mining/blocks?from={h}&amp;to={h}&amp;limit={n}">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/mining/blocks?limit=2&#x27;" aria-label="Copy cURL for /mining/blocks?from={h}&amp;to={h}&amp;limit={n}">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/mining/blocks?limit=2" aria-controls="ep-mining-blocks-out">Run live</button></div>
+            <pre class="sample" id="ep-mining-blocks-out">{
+  &quot;tip&quot;: 749057,
+  &quot;from&quot;: 749056,
+  &quot;to&quot;: 749057,
+  &quot;headers&quot;: [
+    {
+      &quot;height&quot;: 749056,
+      &quot;hash&quot;: &quot;5a275ba7e00772e1de60a96e21a275d2689dad4672709870ed0ec7f603953fc1&quot;,
+      &quot;prev_hash&quot;: &quot;ad35e2607bef7635a52f9a34fa318d9f151b900eccdd67c2088eba6233e0b45b&quot;,
+      &quot;state_root&quot;: &quot;077a38ccb8a874f9a6c3a8fdd92e664052bd2d7bc3523fdf6cd7fb2e165806aa&quot;,
+      &quot;tx_root&quot;: &quot;0a43de7b997d3d4ee52ca9473c24f04a5127078dabfb9baf79fbe664ba031590&quot;,
+      &quot;tx_count&quot;: 1,
+      &quot;timestamp&quot;: &quot;2026-10-03T16:44:50Z&quot;,
+      &quot;producer_id&quot;: &quot;1cf60b16cf9aee5e8eaf67a8518a2b2ba7bc54f2dd607f05bc5a861b7a94c859&quot;
+    },
+    &quot;…&quot;
+  ]
+}</pre>
+          </article>
+          <article class="ep card" id="ep-receipts" aria-labelledby="ep-receipts-t">
+            <h3 id="ep-receipts-t"><span class="method">GET</span> <span class="mono">/receipts?limit={n}</span></h3>
+            <p>Most recent transaction receipts (default 20, max 200).</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/receipts?limit=2</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/receipts?limit=2" aria-label="Copy URL for /receipts?limit={n}">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/receipts?limit=2&#x27;" aria-label="Copy cURL for /receipts?limit={n}">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/receipts?limit=2" aria-controls="ep-receipts-out">Run live</button></div>
+            <pre class="sample" id="ep-receipts-out">{
+  &quot;tip&quot;: 749057,
+  &quot;from&quot;: 749056,
+  &quot;to&quot;: 749057,
+  &quot;limit&quot;: 2,
+  &quot;receipts&quot;: [
+    {
+      &quot;tx_id&quot;: &quot;solo-heartbeat-2196401-1791045900531968824&quot;,
+      &quot;block_height&quot;: 749057,
+      &quot;block_hash&quot;: &quot;5554dfa54290b83eeec1c6db2375f7dd0eb8b6b75a1bc575446519bf95d5a688&quot;,
+      &quot;status&quot;: 1,
+      &quot;gas_used&quot;: 0,
+      &quot;fee&quot;: 0,
+      &quot;logs&quot;: [
+        {
+          &quot;topic&quot;: &quot;TxApplied&quot;,
+          &quot;data&quot;: {
+            &quot;amount&quot;: 0,
+            &quot;recipient&quot;: &quot;qsdm-system-funder&quot;,
+            &quot;sender&quot;: &quot;qsdm-system-funder&quot;
+          },
+          &quot;index&quot;: 0
+        }
+      ],
+      &quot;timestamp&quot;: &quot;2026-10-03T16:45:00.53469029Z&quot;,
+      &quot;index_in_block&quot;: 0
+    },
+    &quot;…&quot;
+  ]
+}</pre>
+          </article>
+          <article class="ep card" id="ep-receipt" aria-labelledby="ep-receipt-t">
+            <h3 id="ep-receipt-t"><span class="method">GET</span> <span class="mono">/receipts/{tx_id}</span></h3>
+            <p>One transaction receipt by its id.</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/receipts/solo-heartbeat-2196400-1791045890531345068</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/receipts/solo-heartbeat-2196400-1791045890531345068" aria-label="Copy URL for /receipts/{tx_id}">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/receipts/solo-heartbeat-2196400-1791045890531345068&#x27;" aria-label="Copy cURL for /receipts/{tx_id}">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/receipts/solo-heartbeat-2196400-1791045890531345068" aria-controls="ep-receipt-out">Run live</button></div>
+            <pre class="sample" id="ep-receipt-out">{
+  &quot;tx_id&quot;: &quot;solo-heartbeat-2196400-1791045890531345068&quot;,
+  &quot;block_height&quot;: 749056,
+  &quot;block_hash&quot;: &quot;5a275ba7e00772e1de60a96e21a275d2689dad4672709870ed0ec7f603953fc1&quot;,
+  &quot;status&quot;: 1,
+  &quot;gas_used&quot;: 0,
+  &quot;fee&quot;: 0,
+  &quot;logs&quot;: [
+    {
+      &quot;topic&quot;: &quot;TxApplied&quot;,
+      &quot;data&quot;: {
+        &quot;amount&quot;: 0,
+        &quot;recipient&quot;: &quot;qsdm-system-funder&quot;,
+        &quot;sender&quot;: &quot;qsdm-system-funder&quot;
+      },
+      &quot;index&quot;: 0
+    }
+  ],
+  &quot;timestamp&quot;: &quot;2026-10-03T16:44:50.533760192Z&quot;,
+  &quot;index_in_block&quot;: 0
+}</pre>
+          </article>
+        </div>
+      </div>
     </section>
-  </div>
 
-  <h2>Live HTTP API</h2>
-  <p>The endpoints visitors can probe right now from any browser or
-    <code>curl</code> command — same paths an SDK would call.</p>
-  <section class="panel">
-    <div class="endpoint-row">
-      <span class="method">GET</span>
-      <a class="path" href="https://api.qsdm.tech/api/v1/health">https://api.qsdm.tech/api/v1/health</a>
-      <span class="note">— liveness; returns 200 OK if the node is up.</span>
-    </div>
-    <div class="endpoint-row">
-      <span class="method">GET</span>
-      <a class="path" href="https://api.qsdm.tech/api/v1/status">https://api.qsdm.tech/api/v1/status</a>
-      <span class="note">— node id, chain tip, peer count, mining posture.</span>
-    </div>
-    <div class="endpoint-row">
-      <span class="method">GET</span>
-      <a class="path" href="https://api.qsdm.tech/api/v1/wallet/nonce?sender=000000000000000000000000000000000000000000000000000000000000abcd">https://api.qsdm.tech/api/v1/wallet/nonce?sender=&lt;hex64&gt;</a>
-      <span class="note">— next nonce for a sender; new in v0.4.1.</span>
-    </div>
-    <div class="endpoint-row">
-      <span class="method">POST</span>
-      <span class="path">https://api.qsdm.tech/api/v1/wallet/submit-signed</span>
-      <span class="note">— self-custody signed-tx submission; v0.4.0 + replay protection in v0.4.1.</span>
-    </div>
-    <div class="endpoint-row">
-      <span class="method">GET</span>
-      <a class="path" href="https://api.qsdm.tech/api/v1/trust/attestations/summary">https://api.qsdm.tech/api/v1/trust/attestations/summary</a>
-      <span class="note">— attested-validator counts (opt-in transparency).</span>
-    </div>
-    <div class="endpoint-row">
-      <span class="method">GET</span>
-      <a class="path" href="https://api.qsdm.tech/api/v1/audit/summary">https://api.qsdm.tech/api/v1/audit/summary</a>
-      <span class="note">— audit-checklist score + blocking-findings count.</span>
-    </div>
-    <div class="endpoint-row">
-      <span class="method">GET</span>
-      <a class="path" href="https://api.qsdm.tech/api/v1/mining/work">https://api.qsdm.tech/api/v1/mining/work</a>
-      <span class="note">— work template for miners; v2 attestation gating applies.</span>
-    </div>
-  </section>
-  <p style="margin-top:14px; color: var(--muted); font-size:13px;">
-    Retired in v0.3.3: <code>POST /api/v1/wallet/mint</code> now returns <strong>HTTP 410 Gone</strong>
-    with a migration block. The supply-inflation surface from the seed-faucet era is
-    structurally closed; any client still hitting it shows up in the
-    <code>qsdm_wallet_mint_total{result="gone"}</code> counter on the dashboard.
-  </p>
-
-  <h2>Why "v1 deprecation" did not move the URL</h2>
-  <p>
-    The change in <code>v0.3.2</code> (commit <code>f727fef</code>) was a
-    <strong>posture refresh</strong> on <code>/api/v1/status</code>, a
-    preflight gate in both miners, and a documentation rewrite of
-    <code>MINER_QUICKSTART.md</code> — all about the mining-protocol version
-    selected by the miner before it asks for work. The HTTP server's URL routing
-    was untouched. Test
-    <code>TestDeriveMetricsURL_RejectsMissingV1Suffix</code> in
-    <code>cmd/qsdmcli</code> explicitly rejects <code>/api/v2</code> as a base URL —
-    no such surface exists in the running validator.
-  </p>
-
-  <h2>Live posture (auto-refresh)</h2>
-  <section class="panel">
-    <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:10px;">
-      <div>
-        <div style="color:var(--text-2); font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">HTTP API</div>
-        <div class="mono" id="http-api-line" style="font-size:18px; margin-top:6px;">—</div>
+    <section class="sec" aria-labelledby="g-supply-mining">
+      <div class="q-wrap">
+        <div class="sec-head"><h2 id="g-supply-mining">Supply &amp; mining</h2></div>
+        <div class="eps">
+          <article class="ep card" id="ep-mining-emission" aria-labelledby="ep-mining-emission-t">
+            <h3 id="ep-mining-emission-t"><span class="method">GET</span> <span class="mono">/mining/emission</span></h3>
+            <p>Emitted and remaining supply, block reward, halving height and ETA.</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/mining/emission</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/mining/emission" aria-label="Copy URL for /mining/emission">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/mining/emission&#x27;" aria-label="Copy cURL for /mining/emission">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/mining/emission" aria-controls="ep-mining-emission-out">Run live</button></div>
+            <pre class="sample" id="ep-mining-emission-out">{
+  &quot;chain_tip&quot;: 749057,
+  &quot;mining_cap_dust&quot;: 9000000000000000,
+  &quot;blocks_per_epoch&quot;: 12623040,
+  &quot;target_block_time_seconds&quot;: 10,
+  &quot;current_epoch&quot;: 0,
+  &quot;block_reward_dust&quot;: 356490987,
+  &quot;block_reward_cell&quot;: &quot;3.56490987&quot;,
+  &quot;emitted_dust&quot;: 267032069249259,
+  &quot;emitted_cell&quot;: &quot;2670320.69249259&quot;,
+  &quot;remaining_dust&quot;: 8732967930750741,
+  &quot;next_halving_height&quot;: 12623041,
+  &quot;next_halving_eta_seconds&quot;: 118739840
+}</pre>
+          </article>
+          <article class="ep card" id="ep-mining-enrollments" aria-labelledby="ep-mining-enrollments-t">
+            <h3 id="ep-mining-enrollments-t"><span class="method">GET</span> <span class="mono">/mining/enrollments?limit={n}&amp;cursor={c}&amp;phase={p}</span></h3>
+            <p>Enrolled mining nodes: owner, GPU, bond status, phase. Cursor-paginated.</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/mining/enrollments?limit=2</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/mining/enrollments?limit=2" aria-label="Copy URL for /mining/enrollments?limit={n}&amp;cursor={c}&amp;phase={p}">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/mining/enrollments?limit=2&#x27;" aria-label="Copy cURL for /mining/enrollments?limit={n}&amp;cursor={c}&amp;phase={p}">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/mining/enrollments?limit=2" aria-controls="ep-mining-enrollments-out">Run live</button></div>
+            <pre class="sample" id="ep-mining-enrollments-out">{
+  &quot;records&quot;: [
+    {
+      &quot;node_id&quot;: &quot;clore-3090-01&quot;,
+      &quot;owner&quot;: &quot;5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7&quot;,
+      &quot;gpu_uuid&quot;: &quot;GPU-0856d89a-074f-adbd-781d-1f5e7673d569&quot;,
+      &quot;stake_dust&quot;: 1000000000,
+      &quot;bond_mode&quot;: &quot;mining_rewards&quot;,
+      &quot;required_stake_dust&quot;: 1000000000,
+      &quot;bond_remaining_dust&quot;: 0,
+      &quot;fully_bonded&quot;: true,
+      &quot;enrolled_at_height&quot;: 326831,
+      &quot;phase&quot;: &quot;active&quot;,
+      &quot;slashable&quot;: true
+    },
+    &quot;…&quot;
+  ],
+  &quot;next_cursor&quot;: &quot;hive-2696v3-0b65af9f0525&quot;,
+  &quot;has_more&quot;: true,
+  &quot;total_matches&quot;: 55
+}</pre>
+          </article>
+          <article class="ep card" id="ep-mining-enrollment" aria-labelledby="ep-mining-enrollment-t">
+            <h3 id="ep-mining-enrollment-t"><span class="method">GET</span> <span class="mono">/mining/enrollment/{node_id}</span></h3>
+            <p>One enrolled node by node id.</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/mining/enrollment/clore-3090-01</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/mining/enrollment/clore-3090-01" aria-label="Copy URL for /mining/enrollment/{node_id}">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/mining/enrollment/clore-3090-01&#x27;" aria-label="Copy cURL for /mining/enrollment/{node_id}">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/mining/enrollment/clore-3090-01" aria-controls="ep-mining-enrollment-out">Run live</button></div>
+            <pre class="sample" id="ep-mining-enrollment-out">{
+  &quot;node_id&quot;: &quot;clore-3090-01&quot;,
+  &quot;owner&quot;: &quot;5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7&quot;,
+  &quot;gpu_uuid&quot;: &quot;GPU-0856d89a-074f-adbd-781d-1f5e7673d569&quot;,
+  &quot;stake_dust&quot;: 1000000000,
+  &quot;bond_mode&quot;: &quot;mining_rewards&quot;,
+  &quot;required_stake_dust&quot;: 1000000000,
+  &quot;bond_remaining_dust&quot;: 0,
+  &quot;fully_bonded&quot;: true,
+  &quot;enrolled_at_height&quot;: 326831,
+  &quot;phase&quot;: &quot;active&quot;,
+  &quot;slashable&quot;: true
+}</pre>
+          </article>
+          <article class="ep card" id="ep-mining-account" aria-labelledby="ep-mining-account-t">
+            <h3 id="ep-mining-account-t"><span class="method">GET</span> <span class="mono">/mining/account?address={address}</span></h3>
+            <p>Balance and nonce of an address from the mining ledger.</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/mining/account?address=5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/mining/account?address=5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7" aria-label="Copy URL for /mining/account?address={address}">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/mining/account?address=5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7&#x27;" aria-label="Copy cURL for /mining/account?address={address}">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/mining/account?address=5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7" aria-controls="ep-mining-account-out">Run live</button></div>
+            <pre class="sample" id="ep-mining-account-out">{
+  &quot;address&quot;: &quot;5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7&quot;,
+  &quot;balance&quot;: 20.494531481334427,
+  &quot;nonce&quot;: 1,
+  &quot;present&quot;: true
+}</pre>
+          </article>
+          <article class="ep card" id="ep-mining-work" aria-labelledby="ep-mining-work-t">
+            <h3 id="ep-mining-work-t"><span class="method">GET</span> <span class="mono">/mining/work</span></h3>
+            <p>Current proof-of-work template and difficulty. Returns an error while no mining window is open.</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/mining/work</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/mining/work" aria-label="Copy URL for /mining/work">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/mining/work&#x27;" aria-label="Copy cURL for /mining/work">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/mining/work" aria-controls="ep-mining-work-out">Run live</button></div>
+            <pre class="sample" id="ep-mining-work-out">{
+  &quot;epoch&quot;: 12,
+  &quot;height&quot;: 749057,
+  &quot;header_hash&quot;: &quot;5554dfa54290b83eeec1c6db2375f7dd0eb8b6b75a1bc575446519bf95d5a688&quot;,
+  &quot;difficulty&quot;: &quot;16777216&quot;,
+  &quot;dag_size&quot;: 1024,
+  &quot;workset_root&quot;: &quot;c48e2ccadab3455597ca53770d9eb776998f4a5e0d644be614cb71dd0155196a&quot;,
+  &quot;workset&quot;: [
+    {
+      &quot;cells&quot;: [
+        {
+          &quot;id&quot;: &quot;c0ffee016200deadbeef000000000000&quot;,
+          &quot;content_hash&quot;: &quot;6200a50000000000000000000000000000000000000000000000000000000000&quot;
+        },
+        &quot;…&quot;
+      ]
+    },
+    &quot;…&quot;
+  ],
+  &quot;batch_count_maximum&quot;: 1,
+  &quot;blocks_per_epoch&quot;: 60480
+}</pre>
+          </article>
+        </div>
       </div>
-      <div style="text-align:right;">
-        <div style="color:var(--text-2); font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">Mining protocol accepted</div>
-        <div class="mono" id="mining-protos-line" style="font-size:18px; margin-top:6px;">—</div>
+    </section>
+
+    <section class="sec" aria-labelledby="g-wallet">
+      <div class="q-wrap">
+        <div class="sec-head"><h2 id="g-wallet">Wallet</h2></div>
+        <div class="eps">
+          <article class="ep card" id="ep-wallet-balance" aria-labelledby="ep-wallet-balance-t">
+            <h3 id="ep-wallet-balance-t"><span class="method">GET</span> <span class="mono">/wallet/balance?address={address}</span></h3>
+            <p>CELL balance of an address.</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/wallet/balance?address=5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/wallet/balance?address=5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7" aria-label="Copy URL for /wallet/balance?address={address}">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/wallet/balance?address=5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7&#x27;" aria-label="Copy cURL for /wallet/balance?address={address}">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/wallet/balance?address=5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7" aria-controls="ep-wallet-balance-out">Run live</button></div>
+            <pre class="sample" id="ep-wallet-balance-out">{
+  &quot;address&quot;: &quot;5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7&quot;,
+  &quot;balance&quot;: 20.494531481334427,
+  &quot;source&quot;: &quot;mining-ledger&quot;
+}</pre>
+          </article>
+          <article class="ep card" id="ep-wallet-nonce" aria-labelledby="ep-wallet-nonce-t">
+            <h3 id="ep-wallet-nonce-t"><span class="method">GET</span> <span class="mono">/wallet/nonce?sender={address}</span></h3>
+            <p>Current and next nonce for signing a transaction from an address.</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/wallet/nonce?sender=5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/wallet/nonce?sender=5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7" aria-label="Copy URL for /wallet/nonce?sender={address}">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/wallet/nonce?sender=5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7&#x27;" aria-label="Copy cURL for /wallet/nonce?sender={address}">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/wallet/nonce?sender=5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7" aria-controls="ep-wallet-nonce-out">Run live</button></div>
+            <pre class="sample" id="ep-wallet-nonce-out">{
+  &quot;sender&quot;: &quot;5d28b82565421e3666ef7a493e0d39fc89d3450009a32cbda72aa89c7cb820e7&quot;,
+  &quot;nonce&quot;: 1,
+  &quot;next&quot;: 2
+}</pre>
+          </article>
+        </div>
       </div>
-    </div>
-    <div style="margin-top:14px; color: var(--muted); font-size: 12.5px;">
-      Source: <span class="mono">GET /api/v1/status</span>. Last checked
-      <span class="mono" id="last-checked">—</span>.
-    </div>
-  </section>
-</main>
+    </section>
 
-<footer class="site-footer">
-  <div class="shell">
-    <p class="site-footer-note">
-      Sources: <span class="mono">GET /api/v1/health</span>,
-      <span class="mono">GET /api/v1/status</span>.
-      This page refreshes every 60&nbsp;s. © <span id="y"></span> QSDM · CELL.
-    </p>
-    <div class="site-footer-row">
-      <span>QSDM public network</span>
-      <div class="site-footer-links">
-        <a href="/docs/">Docs</a>
-        <a href="/api.html">API</a>
-        <a href="/audit.html">Audit</a>
-        <a href="/trust.html">Attestations</a>
-        <a href="/.well-known/security.txt">Security</a>
-        <a href="https://github.com/blackbeardONE/QSDM">GitHub</a>
+    <section class="sec" aria-labelledby="g-transparency">
+      <div class="q-wrap">
+        <div class="sec-head"><h2 id="g-transparency">Transparency</h2></div>
+        <div class="eps">
+          <article class="ep card" id="ep-trust-summary" aria-labelledby="ep-trust-summary-t">
+            <h3 id="ep-trust-summary-t"><span class="method">GET</span> <span class="mono">/trust/attestations/summary</span></h3>
+            <p>Counts of NVIDIA-attested public validators.</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/trust/attestations/summary</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/trust/attestations/summary" aria-label="Copy URL for /trust/attestations/summary">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/trust/attestations/summary&#x27;" aria-label="Copy cURL for /trust/attestations/summary">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/trust/attestations/summary" aria-controls="ep-trust-summary-out">Run live</button></div>
+            <pre class="sample" id="ep-trust-summary-out">{
+  &quot;attested&quot;: 0,
+  &quot;total_public&quot;: 1,
+  &quot;ratio&quot;: 0,
+  &quot;fresh_within&quot;: &quot;15m0s&quot;,
+  &quot;last_attested_at&quot;: null,
+  &quot;last_checked_at&quot;: &quot;2026-10-03T16:45:07Z&quot;,
+  &quot;ngc_service_status&quot;: &quot;healthy&quot;,
+  &quot;scope_note&quot;: &quot;NVIDIA-lock is an opt-in, per-operator API policy — not a consen…&quot;
+}</pre>
+          </article>
+          <article class="ep card" id="ep-trust-recent" aria-labelledby="ep-trust-recent-t">
+            <h3 id="ep-trust-recent-t"><span class="method">GET</span> <span class="mono">/trust/attestations/recent?limit={n}</span></h3>
+            <p>Most recent attestations.</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/trust/attestations/recent?limit=5</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/trust/attestations/recent?limit=5" aria-label="Copy URL for /trust/attestations/recent?limit={n}">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/trust/attestations/recent?limit=5&#x27;" aria-label="Copy cURL for /trust/attestations/recent?limit={n}">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/trust/attestations/recent?limit=5" aria-controls="ep-trust-recent-out">Run live</button></div>
+            <pre class="sample" id="ep-trust-recent-out">{
+  &quot;fresh_within&quot;: &quot;15m0s&quot;,
+  &quot;count&quot;: 0,
+  &quot;attestations&quot;: null
+}</pre>
+          </article>
+          <article class="ep card" id="ep-audit-summary" aria-labelledby="ep-audit-summary-t">
+            <h3 id="ep-audit-summary-t"><span class="method">GET</span> <span class="mono">/audit/summary</span></h3>
+            <p>Public audit checklist score and blocking items.</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/audit/summary</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/audit/summary" aria-label="Copy URL for /audit/summary">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/audit/summary&#x27;" aria-label="Copy cURL for /audit/summary">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/audit/summary" aria-controls="ep-audit-summary-out">Run live</button></div>
+            <pre class="sample" id="ep-audit-summary-out">{
+  &quot;summary&quot;: {
+    &quot;failed&quot;: 0,
+    &quot;passed&quot;: 84,
+    &quot;pending&quot;: 4,
+    &quot;total&quot;: 88,
+    &quot;waived&quot;: 0
+  },
+  &quot;score&quot;: 95.45454545454545,
+  &quot;has_blocking_findings&quot;: true,
+  &quot;blocking_count&quot;: 2,
+  &quot;blocking_preview&quot;: [
+    {
+      &quot;id&quot;: &quot;tok-01&quot;,
+      &quot;category&quot;: &quot;tokenomics&quot;,
+      &quot;severity&quot;: &quot;critical&quot;,
+      &quot;status&quot;: &quot;pending&quot;,
+      &quot;title&quot;: &quot;Genesis policy sign-off&quot;
+    },
+    &quot;…&quot;
+  ],
+  &quot;evidence_provenance&quot;: {
+    &quot;evidence:in-tree&quot;: 30,
+    &quot;evidence:in-tree-tests&quot;: 41,
+    &quot;evidence:live-deploy&quot;: 13,
+    &quot;other&quot;: 0
+  },
+  &quot;generated_at&quot;: &quot;2026-10-03T16:45:07Z&quot;
+}</pre>
+          </article>
+          <article class="ep card" id="ep-tasks-state" aria-labelledby="ep-tasks-state-t">
+            <h3 id="ep-tasks-state-t"><span class="method">GET</span> <span class="mono">/tasks/state</span></h3>
+            <p>On-chain task runtime state.</p>
+            <div class="ep-label">Example</div>
+            <div class="codeline"><code>https://api.qsdm.tech/api/v1/tasks/state</code><button class="copy-btn" type="button" data-copy="https://api.qsdm.tech/api/v1/tasks/state" aria-label="Copy URL for /tasks/state">Copy URL</button><button class="copy-btn" type="button" data-copy="curl -s &#x27;https://api.qsdm.tech/api/v1/tasks/state&#x27;" aria-label="Copy cURL for /tasks/state">Copy cURL</button></div>
+            <div class="ep-label">Sample response <span class="q">(trimmed)</span> <button class="run-btn" type="button" data-run="/tasks/state" aria-controls="ep-tasks-state-out">Run live</button></div>
+            <pre class="sample" id="ep-tasks-state-out">{
+  &quot;runtime&quot;: &quot;qsdm-native&quot;,
+  &quot;configured&quot;: true,
+  &quot;source&quot;: &quot;chain&quot;,
+  &quot;state_root&quot;: &quot;7d485f5f9d2ca1345c73bddaac99693fadf73798664e87f7c77b78844ceef2d9&quot;,
+  &quot;tasks&quot;: [
+    {
+      &quot;task_id&quot;: &quot;qsdm-edge-worker&quot;,
+      &quot;total_stake_amount&quot;: 30,
+      &quot;reward_pool_amount&quot;: 0,
+      &quot;pending_reward_amount&quot;: 0,
+      &quot;total_reward_paid_amount&quot;: 0,
+      &quot;running_count&quot;: 1,
+      &quot;last_action&quot;: &quot;stop&quot;,
+      &quot;last_action_id&quot;: &quot;hive_stop_1787926233365_9be1df210af64cf2&quot;,
+      &quot;last_action_at&quot;: &quot;2026-08-28T14:10:33.365Z&quot;,
+      &quot;is_migrated&quot;: false,
+      &quot;participants&quot;: {
+        &quot;05417e7b4933f9004ddb230181d3df68f622fe6620eaa177b618a580f7e4145b&quot;: {
+          &quot;sender&quot;: &quot;05417e7b4933f9004ddb230181d3df68f622fe6620eaa177b618a580f7e4145b&quot;,
+          &quot;running&quot;: false,
+          &quot;stake&quot;: 2,
+          &quot;last_action&quot;: &quot;stop&quot;,
+          &quot;last_action_id&quot;: &quot;hive_stop_1785135282868_19f3175717eef4cd&quot;,
+          &quot;last_action_at&quot;: &quot;2026-07-27T06:54:42.868Z&quot;,
+          &quot;last_started_at&quot;: &quot;2026-07-26T21:34:37.977Z&quot;,
+          &quot;last_stopped_at&quot;: &quot;2026-07-27T06:54:42.868Z&quot;,
+          &quot;submission_count&quot;: 0,
+          &quot;claim_count&quot;: 0,
+          &quot;pending_reward_amount&quot;: 0,
+          &quot;total_reward_claimed_amount&quot;: 0
+        },
+        &quot;13d786706accfbe77c5ddf6fc6757e1cca07bd01aff0cad3dcf9411d92cf11c9&quot;: {
+          &quot;sender&quot;: &quot;13d786706accfbe77c5ddf6fc6757e1cca07bd01aff0cad3dcf9411d92cf11c9&quot;,
+          &quot;running&quot;: false,
+          &quot;stake&quot;: 1,
+          &quot;last_action&quot;: &quot;stop&quot;,
+          &quot;last_action_id&quot;: &quot;hive_stop_1787926233365_9be1df210af64cf2&quot;,
+          &quot;last_action_at&quot;: &quot;2026-08-28T14:10:33.365Z&quot;,
+          &quot;last_started_at&quot;: &quot;2026-08-22T03:16:20.202Z&quot;,
+          &quot;last_stopped_at&quot;: &quot;2026-08-28T14:10:33.365Z&quot;,
+          &quot;submission_count&quot;: 0,
+          &quot;claim_count&quot;: 0,
+          &quot;pending_reward_amount&quot;: 0,
+          &quot;total_reward_claimed_amount&quot;: 0
+        },
+        &quot;280ce80e10755e5cb7e53b6e4cf822610c4d67bd765517e1276fd19830ce460a&quot;: {
+          &quot;sender&quot;: &quot;280ce80e10755e5cb7e53b6e4cf822610c4d67bd765517e1276fd19830ce460a&quot;,
+          &quot;running&quot;: false,
+          &quot;stake&quot;: 0,
+          &quot;last_action&quot;: &quot;withdraw&quot;,
+          &quot;last_action_id&quot;: &quot;hive_withdraw_1784710591353_6f0d9b65a3afddb8&quot;,
+          &quot;last_action_at&quot;: &quot;2026-07-22T08:56:31.353Z&quot;,
+          &quot;last_started_at&quot;: &quot;2026-07-22T08:54:23.823Z&quot;,
+          &quot;last_stopped_at&quot;: &quot;2026-07-22T08:56:16.799Z&quot;,
+          &quot;submission_count&quot;: 0,
+          &quot;claim_count&quot;: 0,
+          &quot;pending_reward_amount&quot;: 0,
+          &quot;total_reward_claimed_amount&quot;: 0
+        },
+        &quot;3dc5a66a41f49aa738efecef70b156a82cbb542e05dbe6c09be2d8a557b925b2&quot;: {
+          &quot;sender&quot;: &quot;3dc5a66a41f49aa738efecef70b156a82cbb542e05dbe6c09be2d8a557b925b2&quot;,
+          &quot;running&quot;: false,
+          &quot;stake&quot;: 4,
+          &quot;last_action&quot;: &quot;stake&quot;,
+          &quot;last_action_id&quot;: &quot;hive_stake_1784628982021_b447f8d755bb3706&quot;,
+          &quot;last_action_at&quot;: &quot;2026-07-21T10:16:22.021Z&quot;,
+          &quot;submission_count&quot;: 0,
+          &quot;claim_count&quot;: 0,
+          &quot;pending_reward_amount&quot;: 0,
+          &quot;total_reward_claimed_amount&quot;: 0
+        },
+        &quot;531c4f2419e4c896498b0ee34a500b2bac4c09960fbcc97f66ba558cce1cff8d&quot;: {
+          &quot;sender&quot;: &quot;531c4f2419e4c896498b0ee34a500b2bac4c09960fbcc97f66ba558cce1cff8d&quot;,
+          &quot;running&quot;: false,
+          &quot;stake&quot;: 0,
+          &quot;last_action&quot;: &quot;withdraw&quot;,
+          &quot;last_action_id&quot;: &quot;hive_withdraw_1784707775352_93549ab3650bc063&quot;,
+          &quot;last_action_at&quot;: &quot;2026-07-22T08:09:35.352Z&quot;,
+          &quot;last_started_at&quot;: &quot;2026-07-22T06:43:52.717Z&quot;,
+          &quot;last_stopped_at&quot;: &quot;2026-07-22T08:09:01.861Z&quot;,
+          &quot;submission_count&quot;: 0,
+          &quot;claim_count&quot;: 0,
+          &quot;pending_reward_amount&quot;: 0,
+          &quot;total_reward_claimed_amount&quot;: 0
+        },
+        &quot;686562bdf82feda37f77b033d0ec940af1e7fabc59005bda6733c25760f7c0af&quot;: {
+          &quot;sender&quot;: &quot;686562bdf82feda37f77b033d0ec940af1e7fabc59005bda6733c25760f7c0af&quot;,
+          &quot;running&quot;: true,
+          &quot;stake&quot;: 21,
+          &quot;last_action&quot;: &quot;start&quot;,
+          &quot;last_action_id&quot;: &quot;hive_start_1784905201767_be27c5bad8eb3b63&quot;,
+          &quot;last_action_at&quot;: &quot;2026-07-24T15:00:01.767Z&quot;,
+          &quot;last_started_at&quot;: &quot;2026-07-24T15:00:01.767Z&quot;,
+          &quot;last_stopped_at&quot;: &quot;2026-07-24T07:05:32.134Z&quot;,
+          &quot;submission_count&quot;: 0,
+          &quot;claim_count&quot;: 0,
+          &quot;pending_reward_amount&quot;: 0,
+          &quot;total_reward_claimed_amount&quot;: 0
+        },
+        &quot;bd7021b490c688306ca267a96d3943dfdf66166de0a9808ababcaf27cab8caff&quot;: {
+          &quot;sender&quot;: &quot;bd7021b490c688306ca267a96d3943dfdf66166de0a9808ababcaf27cab8caff&quot;,
+          &quot;running&quot;: false,
+          &quot;stake&quot;: 1,
+          &quot;last_action&quot;: &quot;stop&quot;,
+          &quot;last_action_id&quot;: &quot;hive_stop_1785135240769_8a4bf4e00a594ad5&quot;,
+          &quot;last_action_at&quot;: &quot;2026-07-27T06:54:00.769Z&quot;,
+          &quot;last_started_at&quot;: &quot;2026-07-27T06:52:08.537Z&quot;,
+          &quot;last_stopped_at&quot;: &quot;2026-07-27T06:54:00.769Z&quot;,
+          &quot;submission_count&quot;: 0,
+          &quot;claim_count&quot;: 0,
+          &quot;pending_reward_amount&quot;: 0,
+          &quot;total_reward_claimed_amount&quot;: 0
+        },
+        &quot;c169c40df033b92d199fa809fc2d96a96ed9899daf5871aab6bf63aeba25d953&quot;: {
+          &quot;sender&quot;: &quot;c169c40df033b92d199fa809fc2d96a96ed9899daf5871aab6bf63aeba25d953&quot;,
+          &quot;running&quot;: false,
+          &quot;stake&quot;: 1,
+          &quot;last_action&quot;: &quot;stop&quot;,
+          &quot;last_action_id&quot;: &quot;hive_stop_1785659068300_9b47cb5cec10cd33&quot;,
+          &quot;last_action_at&quot;: &quot;2026-08-02T08:24:28.300Z&quot;,
+          &quot;last_started_at&quot;: &quot;2026-08-02T07:43:41.596Z&quot;,
+          &quot;last_stopped_at&quot;: &quot;2026-08-02T08:24:28.300Z&quot;,
+          &quot;submission_count&quot;: 0,
+          &quot;claim_count&quot;: 0,
+          &quot;pending_reward_amount&quot;: 0,
+          &quot;total_reward_claimed_amount&quot;: 0
+        }
+      },
+      &quot;submissions&quot;: {}
+    },
+    &quot;…&quot;
+  ]
+}</pre>
+          </article>
+        </div>
       </div>
-    </div>
-  </div>
-</footer>
+    </section>
+    <section class="sec" aria-labelledby="g-submit">
+      <div class="q-wrap">
+        <div class="sec-head">
+          <h2 id="g-submit">Submitting transactions</h2>
+          <p>Writes are signed on your device with ML-DSA-87 and posted as a signed envelope. The server never sees a private key.</p>
+        </div>
+        <article class="ep card" id="ep-submit-signed" aria-labelledby="ep-submit-signed-t">
+          <h3 id="ep-submit-signed-t"><span class="method">POST</span> <span class="mono">/wallet/submit-signed</span></h3>
+          <p>Submit a self-custody signed transaction. Get the next nonce from <a href="#ep-wallet-nonce"><span class="mono">/wallet/nonce</span></a> first; the <a href="/wallet.html">web wallet</a> and QSDM Hive build and sign this request for you.</p>
+        </article>
+        <p class="q-note" style="margin-top:1rem">
+          Retired in v0.3.3: <span class="mono">POST /api/v1/wallet/mint</span> returns <strong>HTTP 410 Gone</strong>.
+          Address-filtered transaction history, token and contract lists, and network topology require authentication and are not part of the public API.
+        </p>
+      </div>
+    </section>
 
-<script>
-(function () {
-  document.getElementById('y').textContent = new Date().getFullYear();
-  var endpoints = ['/api/v1/status', 'https://api.qsdm.tech/api/v1/status'];
+    <section class="sec" aria-labelledby="g-versioning">
+      <div class="q-wrap">
+        <div class="sec-head">
+          <h2 id="g-versioning">Versioning</h2>
+        </div>
+        <ul class="facts">
+          <li><strong>HTTP API: <span class="mono">/api/v1</span>, stable</strong><span>The <span class="mono">v1</span> in the URL is the API prefix, not a deprecation flag. There is no <span class="mono">/api/v2</span>. <a href="#ep-versions"><span class="mono">GET /versions</span></a> lists what is served.</span></li>
+          <li><strong>Mining protocol: v2 only</strong><span>Independent of the HTTP version. <span class="mono">/status</span> reports <span class="mono">mining.protocol_versions_accepted</span> (live: <span class="mono" id="mining-protos">—</span>); v1 proofs are rejected.</span></li>
+        </ul>
+        <div class="audit-callout" style="margin-top:1.25rem">
+          <a class="audit-callout-badge" href="/audit.html?category=api" title="Open the API audit rows on audit.html">
+            <img src="/api/v1/audit/badge.svg" alt="QSDM audit score (live)" />
+          </a>
+          <div class="audit-callout-text">
+            <strong>The HTTP API contract is audited.</strong>
+            Checklist rows pin URL stability, the wallet submit flow, replay protection, CORS and JWT posture.
+            See <a href="/audit.html?category=api">audit.html?category=api</a>.
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
 
-  function setStatus(state, label) {
-    var dot = document.getElementById('status-dot');
-    dot.className = 'dot status-' + (state || 'unknown');
-    document.getElementById('status-label').textContent = label || state || 'unknown';
-  }
+  <footer id="site-footer"></footer>
 
-  function fmtTime(d) {
-    if (!d) return '—';
-    var hh = String(d.getUTCHours()).padStart(2, '0');
-    var mm = String(d.getUTCMinutes()).padStart(2, '0');
-    var ss = String(d.getUTCSeconds()).padStart(2, '0');
-    return hh + ':' + mm + ':' + ss + ' UTC';
-  }
+  <script>
+    (function () {
+      "use strict";
+      var Q = window.QSDM;
+      if (!Q) return;
+      Q.api("/status").then(function (s) {
+        Q.setText("api-live", "chain tip " + Q.fmtInt(s.chain_tip) + " · " + (s.version || ""));
+        var m = s.mining || {};
+        if (Array.isArray(m.protocol_versions_accepted)) {
+          Q.setText("mining-protos", "[" + m.protocol_versions_accepted.join(", ") + "]");
+        }
+      }).catch(function () { Q.setText("api-live", "unavailable from this browser"); });
 
-  function applyStatus(j) {
-    var httpLine = '/api/v1/*  (stable)';
-    var mining = (j && j.mining) || {};
-    var accepted = Array.isArray(mining.protocol_versions_accepted)
-      ? mining.protocol_versions_accepted.join(', ')
-      : '—';
-    document.getElementById('http-api-line').textContent = httpLine;
-    document.getElementById('mining-protos-line').textContent = accepted
-      ? 'v' + accepted + (mining.fork_v2_active === true ? ' (v2 active)' : '')
-      : '—';
-    document.getElementById('last-checked').textContent = fmtTime(new Date());
-    setStatus('healthy', 'live');
-  }
-
-  function tryFetch(i) {
-    if (i >= endpoints.length) { setStatus('outage', 'unavailable'); return; }
-    fetch(endpoints[i], { headers: { 'Accept': 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (j) {
-        if (!j) { tryFetch(i + 1); return; }
-        applyStatus(j);
-      })
-      .catch(function () { tryFetch(i + 1); });
-  }
-
-  function refresh() { tryFetch(0); }
-  refresh();
-  setInterval(refresh, 60000);
-})();
-</script>
-  <script src="/assets/site-nav.js"></script>
+      document.addEventListener("click", function (e) {
+        var btn = e.target.closest && e.target.closest("[data-run]");
+        if (!btn) return;
+        var out = document.getElementById(btn.getAttribute("aria-controls"));
+        if (!out) return;
+        btn.disabled = true;
+        btn.textContent = "Running…";
+        Q.api(btn.getAttribute("data-run")).then(function (j) {
+          var txt = JSON.stringify(j, null, 2);
+          out.textContent = txt.length > 6000 ? txt.slice(0, 6000) + "\n… (truncated)" : txt;
+          btn.textContent = "Run again";
+        }).catch(function (err) {
+          out.textContent = "Request failed: " + ((err && err.message) || "unavailable");
+          btn.textContent = "Retry";
+        }).then(function () { btn.disabled = false; });
+      });
+    })();
+  </script>
 </body>
 </html>
