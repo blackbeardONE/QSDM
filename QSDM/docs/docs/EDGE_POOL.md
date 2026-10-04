@@ -6,6 +6,8 @@ QSDM pooled edge compute uses an explicit path:
 Agent computers -> QSDM Relay -> one or more QSDM Hives (Mother Hive role) -> QSDM Core
 ```
 
+> **Status (October 2026):** the public QSDM edge Relay is read-only during network recovery; private LAN Relays still work, but pooled settlement on the public network is paused.
+
 ## Topology
 
 - **Agents** are walletless, outbound-only workers that execute fixed QSDM CPU, NVIDIA GPU, or RAM jobs.
@@ -138,60 +140,17 @@ On Linux, install the Relay as a supervised user service:
 
 Restrict TCP 7740 to the private laboratory subnet. Existing coordinator receipt journals remain in place during migration.
 
-### Production Internet Relay
+### Public Internet Relay
 
-The production Relay is supervised by systemd, listens only on
-`127.0.0.1:7740`, and is exposed through the existing Caddy TLS endpoint at
-`https://node.qsdm.tech/v1/*`. Port 7740 must not be opened in the host
-firewall. An unauthenticated request must return `401`.
+The QSDM-operated public Relay route (`https://node.qsdm.tech/v1/*`) is read-only during network recovery; pooled work and settlement on the public network are paused. Private LAN Relays configured as described above still work.
 
-Install or repair that service from a verified Edge Agent release already on
-the server:
-
-```bash
-sudo QSDM_EDGE_RELAY_VERSION=1.3.4 \
-  QSDM_EDGE_RELAY_SHA256=d4d1bd9f07888e7607403458092ade5006b8c088565b6d78f38dc5d5528f2afb \
-  bash QSDM/deploy/scripts/install_edge_relay.sh
-```
-
-For a VPS migration or a differently named public endpoint, tell the installer
-which single Caddy site block owns the Relay route. These labels must match the
-hosts on one Caddy site declaration exactly; the installer deliberately refuses
-to guess or add the public route to another site.
-
-```bash
-sudo QSDM_EDGE_RELAY_CADDY_SITE_LABELS='api.next.example,node.next.example' \
-  QSDM_EDGE_RELAY_VERSION=<version> \
-  QSDM_EDGE_RELAY_SHA256=<sha256> \
-  bash QSDM/deploy/scripts/install_edge_relay.sh
-```
-
-The installer verifies the binary before replacing it, keeps existing Agent
-and Mother credentials, stores durable jobs and receipts below
-`/var/lib/qsdm-edge`, validates Caddy before reload, and fails if the Relay
-does not become healthy. Copy role credentials through the pairing workflow;
-never put either token in source control, command history, screenshots, or
-support logs.
-
-Hive reads can use a local synchronized validator or the restricted home
-gateway. Signed wallet and task actions use the production Core endpoint unless
+Hive reads can use a local synchronized validator or the QSDM Network gateway.
+Signed wallet and task actions use the production Core endpoint unless
 an operator explicitly configured a custom Core. This prevents a local
 follower outage or stale nonce reservation from creating a second task-action
 history. The local and production `/api/v1/status` chain tips and the Mother
 Hive task `state_root` should agree before an operator treats the deployment as
 healthy.
-
-Production verification is complete only when all of the following hold:
-
-- `qsdm-edge-relay.service` is active after a service restart.
-- The Relay owns only loopback port 7740; Caddy owns the public TLS listener.
-- Each connected Hive has exactly one Mother Hive child and one loopback
-  Compute Gateway on port 7742. One Relay may serve multiple Hives.
-- A bounded application job completes through port 7742 and returns a durable
-  Relay receipt.
-- Reusing its application request ID returns the same job, while changing the
-  body with that ID is rejected.
-- The completed job and receipt still exist after a Relay restart.
 
 ## Agent setup
 

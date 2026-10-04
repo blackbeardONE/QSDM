@@ -14,6 +14,8 @@ The local JSON registry remains a bootstrap and recovery input. It can mark buil
 
 A Hive update is required only when a manifest requires a newer Hive version or a new executable capability. Updating text, economics, URLs, tags, timing, or activity state does not require a client release.
 
+> **Status (October 2026):** the public catalog is currently empty while the pilot network (pre-mainnet) recovers; public write routes may be restricted.
+
 There is no required centralized task provider. A public API or home gateway is a convenient transport for clients, while catalog authority comes from replicated QSDM chain state.
 
 ## Configuration
@@ -21,7 +23,7 @@ There is no required centralized task provider. A public API or home gateway is 
 Set the registry path before starting QSDM Core:
 
 ```text
-QSDM_TASK_REGISTRY_PATH=/opt/qsdm/tasks.json
+QSDM_TASK_REGISTRY_PATH=./data/tasks.json
 ```
 
 If the variable is unset, chain-published catalog tasks are still returned. If neither bootstrap data nor chain state is available, `GET /api/v1/tasks` returns an empty, unconfigured response instead of failing startup.
@@ -29,7 +31,7 @@ If the variable is unset, chain-published catalog tasks are still returned. If n
 Set the signed task-action log path to enable native task write intents:
 
 ```text
-QSDM_TASK_ACTION_LOG_PATH=/opt/qsdm/task-actions.jsonl
+QSDM_TASK_ACTION_LOG_PATH=./data/task-actions.jsonl
 ```
 
 ## Endpoints
@@ -97,8 +99,8 @@ Registration is permissionless. The registering signer becomes the immutable man
   "round_time": 60,
   "submission_window": 30,
   "audit_window": 15,
-  "metadata_url": "https://qsdm.tech/tasks/qsdm-shared-edge",
-  "source_url": "https://qsdm.tech/docs/#/qsdm-shared-edge",
+  "metadata_url": "https://example.com/tasks/qsdm-shared-edge",
+  "source_url": "https://example.com/docs/qsdm-shared-edge",
   "authorized_relay_ids": [
     "64-character-key-derived-relay-id"
   ],

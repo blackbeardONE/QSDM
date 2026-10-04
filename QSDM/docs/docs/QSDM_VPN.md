@@ -4,7 +4,7 @@
 
 **Operator dashboard:** `https://vpn.qsdm.online/login`
 
-**Current Android release:** `1.0.0` build `7`
+**Current Android release:** see the live download page (1.0.0 build 10 as of October 2026)
 
 QSDM VPN is the QSDM private-network-access product. It gives users a focused
 Android experience for activating service, synchronizing an assigned VPN
@@ -68,8 +68,8 @@ Before release, test with disposable wallets:
 4. Activate with the token issued for the exact Device ID shown by the app.
 5. Synchronize the profile assigned to the account and device, then connect.
 
-The current public release page identifies the artifact as
-`QSDM-VPN-1.0.0-build7.apk` and provides the authoritative download link,
+The current public release page identifies the artifact (for example
+`QSDM-VPN-1.0.0-build10.apk`) and provides the authoritative download link,
 size, platform requirement, and checksum. Those values can change with a new
 release, so operators should use the live download page for the latest version.
 

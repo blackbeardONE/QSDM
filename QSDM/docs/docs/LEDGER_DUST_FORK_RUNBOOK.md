@@ -20,7 +20,7 @@ qsdm_staking.json
 
 ```bash
 go run ./cmd/qsdm-ledger-snapshot \
-  --state-dir /opt/qsdm \
+  --state-dir <state-dir> \
   --out /safe-copy/ledger-2026-08-08
 ```
 
@@ -52,7 +52,7 @@ The command is read-only and refuses to overwrite an existing manifest. It
 checks file stability, chain continuity, canonical block hashes, historical
 reward limits, funder nonce reconciliation, liquid balances, enrollment bonds,
 staking bonds, task stakes, task reward pools, pending task rewards, stream
-escrow, and the 100 million CELL supply cap. Task and stream state is replayed
+escrow, and the 90 million CELL mining cap. Task and stream state is replayed
 from the chain journal. Wallet, node, GPU, and key identifiers are omitted from
 the output.
 

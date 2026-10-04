@@ -1,6 +1,24 @@
 # QSDM Troubleshooting Guide
 
-## Common Issues and Solutions
+## Hive users
+
+Using the QSDM Hive desktop app? Start here. The full mining guide is
+[Mining today (Hive 1.4.21)](MINING_TODAY.md).
+
+| Symptom | What to do |
+|---|---|
+| "Unlock your QSDM wallet in Hive to mine." | Hive 1.4.21 signs every mining proof with your wallet. Unlock it in **Settings → Wallet** and start the QSDM Miner task again. |
+| "QSDM protocol mining requires NVIDIA Turing or newer (7.5+)." | The GPU is too old. Mining needs an NVIDIA GPU with compute capability 7.5 or higher (GeForce RTX 20 series or newer). |
+| Hive cannot read the GPU | Open a terminal and run `nvidia-smi`. If it fails, install or update the NVIDIA driver. |
+| Enrollment fails | New mining enrollments are paused during the current recovery; only GPUs enrolled before the recovery can mine. Check [Network status](NETWORK_STATUS.md). |
+| Many HTTP `429` responses in the miner log | The mining endpoints on `api.qsdm.tech` are rate-limited per IP address. Run fewer rigs behind one internet address. |
+| Hive 1.4.20 (Windows) or 1.4.17 (Linux) does not offer 1.4.21 | Expected: the release key was rotated. Download 1.4.21 from the [download page](https://qsdm.tech/download.html) and install it once by hand; your wallet and settings are kept. See [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md). |
+| Windows SmartScreen shows "Windows protected your PC" | The installer is not Authenticode-signed yet. Check the SHA-256 as described in [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md), then choose **More info → Run anyway**. |
+
+> **The rest of this page is for developers building the node from source.**
+> Some of it is older than the current code.
+
+## Common Issues and Solutions (developers)
 
 ### Build Issues
 

@@ -1,6 +1,8 @@
 # Sky Fang - MMORPG
 
-Sky Fang Online is a play-to-earn MMORPG integration powered by QSDM and CELL.
+Sky Fang Online is an MMORPG that links player accounts to QSDM wallets and can pay earn-only CELL rewards from funded QSDM task pools.
+
+> **Status (October 2026):** the Sky Fang Hive task is not currently published in the on-chain task catalog while the pilot network (pre-mainnet) recovers; wallet linking on skyfang.xyz remains available.
 
 ## User flow
 

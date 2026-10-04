@@ -238,16 +238,23 @@ values**, marked throughout the documentation as "ratified per Phase 0
 recommendation, awaiting counsel review". They are **not** binding until counsel
 sign-off per §9 Phase 0.
 
+> **Superseded values.** The Phase-0 working values below are historical. The
+> live pilot network (pre-mainnet) has a maximum supply of **90,000,000 CELL,
+> all from mining**, and no treasury allocation on chain. A 10,000,000 CELL
+> genesis treasury is a **mainnet proposal** only. GPU mining is NVIDIA today
+> under [Mining protocol v2](MINING_PROTOCOL_V2.md), where every proof must carry
+> an NVIDIA attestation. See [CELL tokenomics](CELL_TOKENOMICS.md).
+
 | Open question | Value adopted in-repo | Source |
 |---|---|---|
-| Mining algorithm candidate | **C — mesh3D-tied useful PoW**, with **A — KawPow-class** as the fallback if C is not audit-ready at launch. | §5.2, §11.1 |
-| NVIDIA-favored vs NVIDIA-exclusive | **Stance 1: NVIDIA-favored, not NVIDIA-exclusive.** AMD miners technically accepted; NGC attestation is optional and not a consensus rule. | §5.4, §10.1 |
+| Mining algorithm | Superseded: see [Mining protocol v2](MINING_PROTOCOL_V2.md). | §5.2, §11.1 |
+| NVIDIA attestation | Superseded: since mining protocol v2, every mining proof must carry an NVIDIA attestation (`nvidia-cc-v1` or `nvidia-hmac-v1`). The NGC sidecar API gate remains optional and per-operator. | §5.4, §10.1 |
 | Target block time | 10 seconds (inherits from current `pkg/chain` config). | §4.2 |
-| Total supply cap | **100,000,000 CELL.** | §4.1 |
+| Total supply cap | Phase-0 value 100,000,000 CELL, superseded. Live: **90,000,000 CELL maximum supply, all from mining.** | §4.1 |
 | Decimals | **8**, matching Bitcoin. Smallest unit named `dust` in `pkg/branding` (replaces the plan's proposal of "micell" / "cytoplasm", which were both listed as flavour alternatives). | §4.1 |
 | Pre-mine | **0%.** | §4.1 |
-| Genesis treasury allocation | **10% (10 M CELL)**, vested linearly over 48 months, locked on-chain, treasury address published in the genesis block. | §4.1 |
-| Mining emission share | **90% (90 M CELL)**, halving every 4 years. | §4.1 |
+| Genesis treasury allocation | **Mainnet proposal only:** 10,000,000 CELL, vested linearly over 48 months. Not on the current chain. | §4.1 |
+| Mining emission | **90,000,000 CELL** (the full maximum supply), halving every 4 years. | §4.1 |
 | Validator fee model | **Fee-only** (no block subsidy for validators). | §4.1 |
 | Burn policy | **Optional EIP-1559-style base-fee burn**, decision deferred to pre-genesis. | §4.1 |
 | Coin name fallback | If "Cell" fails trademark clearance the fallback order is **QCell → Cytoplasm → Vertex**. | §10.1, §11.8 |

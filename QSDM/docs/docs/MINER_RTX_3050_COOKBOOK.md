@@ -1,24 +1,30 @@
 # MINER_RTX_3050_COOKBOOK — v2 mining on a consumer Ampere card
 
+> [!IMPORTANT]
+> **Historical build-from-source notes.** This page predates QSDM Hive 1.4.21
+> and is not how most people mine today. Hive ships the miner and CUDA solver
+> for you: follow [Mining today (Hive 1.4.21)](MINING_TODAY.md). New mining
+> enrollments are paused during the current recovery; only GPUs enrolled
+> before the recovery can mine.
+
 > **Audience.** A home operator with an **NVIDIA GeForce RTX 3050** (or
 > any other Ampere card: RTX 30-series, A2/A4/A10) who wants to mine
-> Cell on the live `https://api.qsdm.tech` mainnet. Higher SKUs
+> Cell on the live `https://api.qsdm.tech` pilot network (pre-mainnet). Higher SKUs
 > (RTX 40-series Ada, RTX 50-series Blackwell consumer) follow the
 > same recipe with a different `-Arch` flag.
 >
-> **Status.** As of v0.3.2 the live validator advertises
+> **Status.** The live validator advertises
 > `attestation_types_required = ["nvidia-cc-v1", "nvidia-hmac-v1"]` —
 > the dispatcher accepts a proof carrying **either** type (see
 > `pkg/mining/attest/dispatcher.go::VerifyAttestation`), so the
 > consumer HMAC path is fully wired. Ampere is explicitly registered
-> in `pkg/mining/attest/archcheck` with `rtx 30` GPU-name patterns
-> and a `[50 KH/s, 50 MH/s]` accepted hashrate band. The kernel was
+> in `pkg/mining/attest/archcheck`. The kernel was
 > proved end-to-end on this exact silicon on 2026-04-23 — numbers in
 > [`MESH3D_GPU_BENCHMARK.md`](./MESH3D_GPU_BENCHMARK.md).
 >
 > The general v2 quickstart is [`MINER_QUICKSTART.md`](./MINER_QUICKSTART.md);
 > this page is just the RTX-3050-specific overlay (which arch flag to
-> pass to `nvcc`, what the hashrate band is, what to expect in the
+> pass to `nvcc`, what to expect in the
 > live panel). Read both.
 
 ---
@@ -127,7 +133,8 @@ SHA-256 of `(challenge || gpu_uuid || node_id || hmac_key)`.
 > **Same key, every mining session.** If you regenerate the file your
 > previous enrollment becomes useless and you have to enroll again
 > with a fresh `(node_id, gpu_uuid, hmac_key)` tuple. The previous
-> stake is recoverable after the 30-day unbond window.
+> stake is recoverable after the unbonding period of 201,600 blocks (about 23 days at 10-second blocks)
+> (see [Mining protocol v2](MINING_PROTOCOL_V2.md)).
 
 ---
 
@@ -138,36 +145,30 @@ for the keystore. Two routes; both produce a `pkg/keystore` v1 JSON
 file with a PBKDF2-HMAC-SHA-256(600 000 iter) + AES-256-GCM-wrapped
 ML-DSA-87 keypair.
 
-Then read [`MINER_QUICKSTART.md §Appendix B`](./MINER_QUICKSTART.md#appendix-b-enrollment-funding-status)
-**carefully** — the v0.3.2 chain has no public faucet, so the 10 CELL
-enrollment stake has to come from either:
-
-  1. The initial-operator genesis allocation (only the foundation has
-     this), or
-  2. A direct peer transfer from an existing CELL holder.
-
-Until [`mining-05`](../../../RELEASE_NOTES_v0.3.0.md#remaining-external-blockers)
-(incentivised testnet launch) closes, route (2) is what new operators
-actually use. Coordinate over GitHub Discussions; the foundation will
-seed the first batch of operators against a public reward address
-posted in an issue.
+You do not need CELL up front. The 10 CELL enrollment bond can be built from
+your first mining rewards (`--bond-from-rewards`, or **Use mining earnings** in
+Hive), or locked immediately if the wallet already holds at least 10.001 CELL.
+See [`MINER_QUICKSTART.md §3.3`](./MINER_QUICKSTART.md#33-choose-how-to-build-the-10-cell-bond).
 
 ---
 
 ## 5. Enroll on chain
 
 ```powershell
+$env:QSDM_API_URL = 'https://api.qsdm.tech/api/v1'
 .\bin\qsdmcli.exe enroll `
-    --node-id  '<your-libp2p-node-id>' `
-    --gpu-uuid 'GPU-39925fa6-82f0-0e13-dd28-aa4be2048287' `
-    --hmac-key-path $env:USERPROFILE\.qsdm\miner-hmac.hex `
-    --stake-dust 1000000000 `
-    --keystore $env:USERPROFILE\.qsdm\wallet.json `
-    --validator https://api.qsdm.tech
+    --in              $env:USERPROFILE\.qsdm\wallet.json `
+    --passphrase-file $env:USERPROFILE\.qsdm\pass.txt `
+    --node-id         '<your-node-id>' `
+    --gpu-uuid        'GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' `
+    --hmac-key-file   $env:USERPROFILE\.qsdm\miner-hmac.hex `
+    --nonce           <your-current-account-nonce>
+# Add --bond-from-rewards to build the bond from rewards instead of
+# locking 10 CELL now (--stake defaults to 10 CELL).
 
 # Wait for inclusion (~1 block, 10 s on the live pilot network).
-.\bin\qsdmcli.exe enrollment-status '<your-libp2p-node-id>'
-# Expect: status="active", stake_dust=1000000000, gpu_uuid_match=true
+.\bin\qsdmcli.exe enrollment-status '<your-node-id>'
+# Expect: phase: active
 ```
 
 > **`gpu-uuid`** — read straight from `nvidia-smi`:
@@ -179,9 +180,9 @@ posted in an issue.
 > Submit it verbatim, prefix and all. The validator does a
 > case-sensitive equality check against the registry record.
 
-> **`node-id`** — a libp2p peer ID. The miner picks one up from
-> `~/.qsdm/node.key` if present; first run creates a fresh one and
-> writes it there `0o600`.
+> **`node-id`** — an operator-chosen tag for this rig (Hive derives one
+> automatically from the GPU UUID and your wallet). Use the same value
+> for enrollment and mining.
 
 ---
 
@@ -189,14 +190,16 @@ posted in an issue.
 
 ```powershell
 .\bin\qsdmminer-console.exe --protocol=v2 `
-    --node-id       '<your-libp2p-node-id>' `
-    --gpu-uuid      'GPU-39925fa6-82f0-0e13-dd28-aa4be2048287' `
+    --node-id       '<your-node-id>' `
+    --gpu-uuid      'GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' `
     --gpu-arch      'ampere' `
     --gpu-name      'NVIDIA GeForce RTX 3050' `
     --compute-cap   '8.6' `
     --driver-ver    '576.28' `
     --cuda-version  '12.9' `
     --hmac-key-path $env:USERPROFILE\.qsdm\miner-hmac.hex `
+    --operator-keystore        $env:USERPROFILE\.qsdm\wallet.json `
+    --operator-passphrase-file $env:USERPROFILE\.qsdm\pass.txt `
     --address       '<your-reward-address>' `
     --validator     https://api.qsdm.tech
 ```
@@ -206,8 +209,6 @@ What you should see in the live panel within ~30 seconds:
   * `protocol = v2 (NVIDIA-locked)`
   * `attestation = nvidia-hmac-v1`
   * `gpu = NVIDIA GeForce RTX 3050 / Ampere / sm_86`
-  * `hashrate` settling somewhere in the 50 KH/s – 50 MH/s band
-    (Ampere consumer; see `archcheck.go::hashrateBands`)
   * `accepted` rising steadily, `rejected (bad-version)` = 0,
     `rejected (attestation)` = 0
   * `cell_balance` updating after each accepted block reward

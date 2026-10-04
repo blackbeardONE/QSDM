@@ -1,9 +1,16 @@
-# QSDM Security Audit Report
+# Internal security review
+
+> [!IMPORTANT]
+> **Internal, self-maintained review.** This page is QSDM's own internal security
+> review. It is **not** an independent audit; no independent external audit has
+> been completed yet. The target versions below are historical: the release
+> running the public pilot network (pre-mainnet) today is
+> `hardened-legacy-20261002-d7ffcd4-hl2` (see [Network status](NETWORK_STATUS.md)).
 
 **Date:** May 2026 (Initial: December 2024)
-**Status:** Hardening Pass Complete — Re-audit Recommended
-**Auditor:** Security Review Team
-**Target version:** v0.4.2
+**Status:** Hardening Pass Complete — independent external audit (not yet done) recommended
+**Reviewer:** QSDM project (internal)
+**Target version:** v0.4.2 (historical)
 
 > **Scope note:** this is an internal project security review, not an independent
 > third-party audit. An independent economic, consensus and custody audit is still a
@@ -31,10 +38,10 @@ All **Critical**, **High**, and **Medium** issues from the initial audit are res
 
 ## Security Strengths ✅
 
-### 1. Quantum-Safe Cryptography
+### 1. Post-Quantum Cryptography
 - ✅ **ML-DSA-87** — NIST FIPS 204 standard (256-bit security)
-- ✅ **Quantum-safe signatures** — Wallet transactions signed with ML-DSA-87 (the generic P2P transaction verifier still also accepts Ed25519)
-- ✅ **Quantum-safe tokens** — JWT tokens use ML-DSA-87 signatures (HMAC-SHA256 fallback in non-CGO builds)
+- ✅ **Post-quantum signatures** — Wallet transactions signed with ML-DSA-87 (the generic P2P transaction verifier still also accepts Ed25519)
+- ✅ **Post-quantum tokens** — JWT tokens use ML-DSA-87 signatures (HMAC-SHA256 fallback in non-CGO builds)
 
 ### 2. SQL Injection Protection
 - ✅ **Parameterized queries** — All SQL queries use prepared statements
@@ -81,7 +88,7 @@ All **Critical**, **High**, and **Medium** issues from the initial audit are res
 
 **Implementation:**
 - ✅ **Argon2id password hashing** implemented
-- ✅ Memory-hard algorithm (64MB memory, 3 iterations, 4 threads)
+- ✅ Argon2id parameters: 64 MB memory, 3 iterations, 4 threads
 - ✅ Constant-time password comparison
 - ✅ Secure salt generation (16 bytes random)
 
@@ -218,7 +225,7 @@ Subsequent POST/PUT/DELETE/PATCH (cookie-session callers):
   - At least one number
   - At least one special character
 - ✅ **Weak password detection** — common passwords blocked
-- ✅ **Argon2id hashing** (memory-hard, constant-time comparison)
+- ✅ **Argon2id password hashing** (constant-time comparison)
 - ✅ **Account lockout** — 5 failed attempts within a 15-minute window triggers a 15-minute lockout (`AccountLockoutManager` in `pkg/api/account_lockout.go`)
 - ✅ **`qsdm_security_failed_logins_total`** and **`qsdm_security_account_lockouts_total`** counters for SOC alerting on credential-stuffing waves
 
@@ -624,7 +631,7 @@ Subsequent POST/PUT/DELETE/PATCH (cookie-session callers):
 1. ✅ Review this audit with development team
 2. ✅ Prioritise fixes based on severity
 3. ✅ Implement fixes starting with critical issues
-4. **Re-audit** by an independent reviewer after this hardening pass
+4. **Independent external audit (not yet done)** after this hardening pass
 5. **Schedule regular audits** (quarterly recommended)
 6. **Wire alertmanager rules** from the `qsdm_security_*` counter thresholds in [MED-8](#med-8-missing-security-monitoring)
 
@@ -643,6 +650,6 @@ Subsequent POST/PUT/DELETE/PATCH (cookie-session callers):
 ---
 
 **Report Status:** Hardening Pass Complete
-**Next Review:** Independent re-audit recommended after the v0.4.2 release
+**Next Review:** Independent external audit (not yet done) recommended
 
 *This audit is a living document and is updated as fixes are implemented. The full list of source files touched by the May 2026 hardening pass is tracked in the v0.4.2 release evidence.*

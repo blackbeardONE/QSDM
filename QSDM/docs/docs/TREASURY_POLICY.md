@@ -1,6 +1,6 @@
 # QSDM Treasury Policy
 
-Status: production funding and custody policy
+Status: funding and custody policy (pilot network)
 
 ## 1. Non-negotiable rules
 
@@ -93,123 +93,17 @@ loopback-only for operator-managed onboarding.
 
 ## 5. Runtime configuration
 
-Build the isolated signer once and run two instances:
-
-```text
-go build -o qsdm-treasury-signer ./cmd/qsdm-game-signer
-```
-
-Referral signer environment:
-
-```text
-QSDM_SIGNER_LISTEN=127.0.0.1:8897
-QSDM_SIGNER_API_URL=http://127.0.0.1:8080
-QSDM_SIGNER_KEYSTORE=/secure/referral-wallet.json
-QSDM_SIGNER_PASSPHRASE_FILE=/secure/referral.passphrase
-QSDM_SIGNER_TOKEN_FILE=/secure/referral-signer.token
-QSDM_SIGNER_ROLE=referral
-QSDM_SIGNER_MAX_PAYOUT=5
-QSDM_SIGNER_MIN_RESERVE=25
-QSDM_SIGNER_FEE=0.001
-```
-
-Onboarding signer environment:
-
-```text
-QSDM_SIGNER_LISTEN=127.0.0.1:8898
-QSDM_SIGNER_API_URL=http://127.0.0.1:8080
-QSDM_SIGNER_KEYSTORE=/secure/onboarding-wallet.json
-QSDM_SIGNER_PASSPHRASE_FILE=/secure/onboarding.passphrase
-QSDM_SIGNER_TOKEN_FILE=/secure/onboarding-signer.token
-QSDM_SIGNER_ROLE=faucet
-QSDM_SIGNER_MAX_PAYOUT=1
-QSDM_SIGNER_MIN_RESERVE=10
-QSDM_SIGNER_FEE=0.001
-```
-
-Copy `QSDM/deploy/qsdm-treasury.example.json` to the validator run directory as
-`qsdm-treasury.json`, fill in the signer URLs, separate tokens, and actual
-wallet addresses. Prefer `signerTokenFile` paths, as shown in the example, so
-the JSON contains no bearer token. Restrict the JSON and token files to their
-respective operating-system accounts. The launcher does not log token content.
-
-On Windows, `autoStart: true` lets `start_local_validator.ps1` supervise the
-two loopback signer processes after Core is ready. Configure `keystorePath`,
-`passphraseFile`, and `signerTokenFile` as absolute paths. These fields contain
-paths only, never secret values. The launcher verifies each signer's role and
-wallet address before reporting startup success.
-
-Both signer URLs must use loopback HTTP or authenticated HTTPS. Core refuses
-to send a bearer token over plain HTTP to a non-loopback host.
+Operational custody procedures are kept in the operators' private runbooks.
+In summary: each Tier 2 payout wallet is held by its own isolated, role-locked
+signer with a per-payout cap and minimum reserve, and Core never holds a
+treasury private key.
 
 ## 6. Production network readiness
 
 Never fund a Tier 2 wallet from a validator merely because its API is healthy.
-The validator must be connected to the production network, caught up, and
-agree with the production gateway on sampled block hashes and wallet state.
-
-On Windows, start the validator in networked mode:
-
-```powershell
-pwsh -File QSDM/scripts/start_local_validator.ps1 -Networked -Restart
-```
-
-Networked mode is append-only by default. Exactly one synchronized validator
-may be assigned the temporary network block-producer role:
-
-```powershell
-pwsh -File QSDM/scripts/start_local_validator.ps1 `
-  -Networked `
-  -BlockProducer `
-  -Restart
-```
-
-`-BlockProducer` fails closed if the node has no existing synchronized chain
-tip. Start a new node as an ordinary networked follower first, wait for it to
-catch up, and only then assign the role. Never enable this switch on two nodes:
-automatic leader election is not implemented yet, so two producers could
-create competing histories. Changing the producer is a deliberate operator
-handoff: stop the old producer, verify the replacement has the same tip hash,
-then start the replacement with `-BlockProducer`.
-
-This choice is persisted in
-`QSDM/source/.cache/local-validator/validator-mode.json`, so the watchdog
-restarts the networked state after a crash or reboot instead of silently
-falling back to the retired solo ledger. The explicit block-producer role is
-persisted in the same file. Networked mode uses
-`https://api.qsdm.tech/api/v1` as its default HTTP chain source and the public
-QSDM bootstrap peer for libp2p connectivity.
-
-Run the fail-closed readiness gate before any funding transfer or payout
-activation:
-
-```powershell
-pwsh -File QSDM/scripts/test_treasury_readiness.ps1 `
-  -WalletAddress <funding-wallet-address> `
-  -OutputPath QSDM/source/.cache/local-validator/treasury-readiness.json
-```
-
-The gate requires all of the following:
-
-1. At least one live peer.
-2. Local height no more than the configured lag behind the production gateway.
-3. Matching genesis, near-tip, and tip block hashes.
-4. Matching balance and nonce for the funding, referral, and onboarding
-   wallets.
-5. Correct signer role and wallet identity on both loopback signers.
-6. Separate referral and onboarding addresses.
-7. Referral claims and onboarding payouts still locked during funding review.
-
-The historical pilot chain contains legacy state transitions that were not all
-serialized into block transactions. A clean validator therefore needs a
-trusted network checkpoint before ordinary block catch-up can continue. A
-checkpoint is acceptable only when its archive hash is verified, its tip hash
-and state root match `/api/v1/chain/blocks`, and Core's own restore-time state
-root validation succeeds. Do not import an account JSON file by itself.
-
-The previous local solo state must be retained as an archive for audit, never
-merged with the accepted production state. Balances that exist only in that
-solo archive are not spendable production CELL.
+The validator must be caught up with the network and agree with the public
+gateway on sampled block hashes and wallet state. The detailed readiness
+checks are part of the operators' private runbooks.
 
 ## 7. Funding and payout flow
 
@@ -221,31 +115,6 @@ solo archive are not spendable production CELL.
 5. The signer enforces role, maximum payout, and minimum reserve; signs a normal
    transfer; and submits it through `/api/v1/wallet/submit-signed`.
 6. Core stores the returned transaction ID in the claim receipt.
-
-The referral funding helper at `QSDM/scripts/fund_referral_reward_pool.ps1`
-uses the same signed-transfer path. Run it first without `-Submit` for a dry
-run. `QSDM/scripts/fund_treasury_wallet.ps1` provides the same dry-run-first
-flow for referral, onboarding, integration, and operations wallets.
-
-For the production pilot, the public target balances and expected funding
-wallet are stored in
-`QSDM/deploy/canonical-pilot-funding-plan.json`. On the Linux workstation that
-holds that funding wallet, run the guarded batch helper without `--submit`
-first:
-
-```bash
-bash QSDM/scripts/fund_ecosystem_wallets_linux.sh \
-  --qsdmcli /path/to/qsdmcli \
-  --keystore /secure/path/wallet.json \
-  --passphrase-file /secure/path/wallet.passphrase
-```
-
-After reviewing the exact missing balances, add `--submit`. The helper refuses
-a different source wallet, checks the public policy ceilings, transfers only
-the difference between the confirmed balance and each target, waits for each
-transfer to appear on the production ledger, and stops before the next transfer
-if confirmation is ambiguous. It intentionally does not fund Sky Fang, the
-protocol reserve, or the pooled-compute reserve.
 
 ## 8. Existing development balances
 
@@ -279,5 +148,5 @@ Before a mainnet declaration, QSDM still needs all of the following:
    migration that removes every historic development credit.
 5. Complete an independent economic, consensus, and custody audit.
 
-Until these gates close, describe the network as an incentivized production
-pilot or testnet, not a trust-minimized mainnet.
+Until these gates close, describe the network as a pilot network (pre-mainnet), not a
+trust-minimized mainnet.
