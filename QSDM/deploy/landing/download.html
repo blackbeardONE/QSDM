@@ -6,7 +6,7 @@
   <title>Download QSDM Hive for Windows and Linux — QSDM</title>
   <meta
     name="description"
-    content="Download QSDM Hive 1.4.20 for Windows or 1.4.17 for Linux, with SHA-256 checksums. CELL wallet, signed tasks, NVIDIA mining and pooled edge participation."
+    content="Download QSDM Hive 1.4.21 for Windows or Linux, with SHA-256 checksums. CELL wallet, signed tasks, NVIDIA mining and pooled edge participation."
   />
   <link rel="canonical" href="https://qsdm.tech/download.html" />
   <meta name="theme-color" content="#061116" />
@@ -186,8 +186,8 @@
           Hive remains the full desktop client.
         </p>
         <div class="release-banner" style="margin-top:1.5rem" role="note">
-          <strong>Latest release: QSDM Hive 1.4.20 · 2026-09-20</strong>
-          <span class="mono">Windows Hive 1.4.20 · Linux Hive 1.4.17 · Edge Control 1.3.7</span>
+          <strong>Latest release: QSDM Hive 1.4.21 · 2026-10-04</strong>
+          <span class="mono">Windows and Linux Hive 1.4.21 · Edge Control 1.3.7</span>
         </div>
       </div>
     </section>
@@ -199,25 +199,26 @@
           <article class="card os-card" aria-labelledby="win-title">
             <div>
               <h3 id="win-title">Windows</h3>
-              <span class="ver">Version 1.4.20 · x64 installer · published 2026-09-20</span>
+              <span class="ver">Version 1.4.21 · x64 installer · published 2026-10-04</span>
             </div>
             <p>
-              Current QSDM Hive release for Windows. Automatic update checks use the
-              normal latest-release channel. Windows SmartScreen may warn because
+              Current QSDM Hive release for Windows: automatic miner signing, new look,
+              and a new release-signing key. Windows SmartScreen may warn because
               this installer is not Authenticode-signed. No separate consumer GUI
               miner is shipped.
             </p>
+            <p class="q-note" data-qsdm-note="release-key-v2"><strong>Updating from Hive 1.4.20?</strong> Hive 1.4.21 is signed with a new release key, so 1.4.20 cannot update itself. Download and run this installer once; your wallet and settings are kept. Hive 1.4.20 stops working after 19 December 2026.</p>
             <div class="file">
               <div class="file-head">
-                <span class="file-name">qsdm-hive-1.4.20-win-x64.exe</span>
-                <span class="file-size">128.2 MB</span>
+                <span class="file-name">qsdm-hive-1.4.21-win-x64.exe</span>
+                <span class="file-size">128.6 MB</span>
               </div>
               <span class="hash-label">SHA-256</span>
-              <div class="codeline"><code class="hash" id="h-win">8bf157d4f0a5b145420780624feb951a2554aed7a3c8a2df1a592474e8473dd7</code><button class="copy-btn" type="button" data-copy-target="h-win" aria-label="Copy Windows installer SHA-256">Copy</button></div>
+              <div class="codeline"><code class="hash" id="h-win">b3f408f861eccfd03d049e3344bb6a9d49ce777b20ad8bd4bd22843b27b48e6b</code><button class="copy-btn" type="button" data-copy-target="h-win" aria-label="Copy Windows installer SHA-256">Copy</button></div>
             </div>
             <div class="q-actions">
-              <a class="site-btn site-btn-solid" href="/downloads/qsdm-hive-1.4.20-win-x64.exe" download>Download Hive 1.4.20</a>
-              <a class="site-btn site-btn-ghost" href="/downloads/SHA256SUMS-win.txt">Checksums</a>
+              <a class="site-btn site-btn-solid" href="/downloads/hive-v2/qsdm-hive-1.4.21-win-x64.exe" download>Download Hive 1.4.21</a>
+              <a class="site-btn site-btn-ghost" href="/downloads/hive-v2/SHA256SUMS-win.txt">Checksums</a>
               <a class="site-btn site-btn-ghost" href="/docs/#/qsdm-hive">Installation notes</a>
             </div>
           </article>
@@ -225,33 +226,35 @@
           <article class="card os-card" aria-labelledby="linux-title">
             <div>
               <h3 id="linux-title">Linux x86-64</h3>
-              <span class="ver">Version 1.4.17 · AppImage or tar.gz · published 2026-09-15</span>
+              <span class="ver">Version 1.4.21 · AppImage or tar.gz · published 2026-10-04</span>
             </div>
             <p>
               Use the AppImage on desktop Linux with GTK 3, or the tar package for a portable
               installation. Ordinary users do not need a local Core. Wallet keys stay local;
-              signed miner enrollment goes to the production QSDM Network.
+              signed miner enrollment goes to the production QSDM Network. Includes
+              automatic miner signing and the new release-signing key.
             </p>
+            <p class="q-note" data-qsdm-note="release-key-v2-linux"><strong>Updating from Hive 1.4.17?</strong> Hive 1.4.21 is signed with a new release key, so 1.4.17 cannot update itself. Download it once and run it in place of 1.4.17; your wallet and settings are kept. Hive 1.4.17 stops working after 9 November 2026.</p>
             <div class="file">
               <div class="file-head">
-                <span class="file-name">qsdm-hive-1.4.17-linux-x86_64.AppImage</span>
+                <span class="file-name">qsdm-hive-1.4.21-linux-x86_64.AppImage</span>
+                <span class="file-size">163.8 MB</span>
+              </div>
+              <span class="hash-label">SHA-256</span>
+              <div class="codeline"><code class="hash" id="h-appimage">25623568dc04f46ffb2e9d3b016c499ba0d7f0d013e1f713699bd130a63e9a05</code><button class="copy-btn" type="button" data-copy-target="h-appimage" aria-label="Copy AppImage SHA-256">Copy</button></div>
+            </div>
+            <div class="file">
+              <div class="file-head">
+                <span class="file-name">qsdm-hive-1.4.21-linux-x64.tar.gz</span>
                 <span class="file-size">161.6 MB</span>
               </div>
               <span class="hash-label">SHA-256</span>
-              <div class="codeline"><code class="hash" id="h-appimage">dbcb93c23c9d1a0b8a1d38f6bc156dedcdb0a92fab35769c664ca945dd375125</code><button class="copy-btn" type="button" data-copy-target="h-appimage" aria-label="Copy AppImage SHA-256">Copy</button></div>
-            </div>
-            <div class="file">
-              <div class="file-head">
-                <span class="file-name">qsdm-hive-1.4.17-linux-x64.tar.gz</span>
-                <span class="file-size">152.9 MB</span>
-              </div>
-              <span class="hash-label">SHA-256</span>
-              <div class="codeline"><code class="hash" id="h-tar">87a6b69c7f3e3ca1a8c8a1d7b14b37464c499deaa6bf90929ab915e2125cb6ca</code><button class="copy-btn" type="button" data-copy-target="h-tar" aria-label="Copy tar.gz SHA-256">Copy</button></div>
+              <div class="codeline"><code class="hash" id="h-tar">bc624e5381bf27bd17b311f1350fd5be5f39bfec37328e87eb60bbf3d4023240</code><button class="copy-btn" type="button" data-copy-target="h-tar" aria-label="Copy tar.gz SHA-256">Copy</button></div>
             </div>
             <div class="q-actions">
-              <a class="site-btn site-btn-solid" href="/downloads/qsdm-hive-1.4.17-linux-x86_64.AppImage" download>Download AppImage</a>
-              <a class="site-btn site-btn-solid" href="/downloads/qsdm-hive-1.4.17-linux-x64.tar.gz" download>Download tar.gz</a>
-              <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-1.4.17-linux-SHA256SUMS.txt">Checksums</a>
+              <a class="site-btn site-btn-solid" href="/downloads/hive-v2/qsdm-hive-1.4.21-linux-x86_64.AppImage" download>Download AppImage</a>
+              <a class="site-btn site-btn-solid" href="/downloads/hive-v2/qsdm-hive-1.4.21-linux-x64.tar.gz" download>Download tar.gz</a>
+              <a class="site-btn site-btn-ghost" href="/downloads/hive-v2/qsdm-hive-1.4.21-linux-SHA256SUMS.txt">Checksums</a>
             </div>
           </article>
         </div>
@@ -268,18 +271,18 @@
           <div class="card verify-steps">
             <div>
               <h3>Windows (PowerShell)</h3>
-              <div class="codeline"><code id="c-win">Get-FileHash -Algorithm SHA256 .\qsdm-hive-1.4.20-win-x64.exe</code><button class="copy-btn" type="button" data-copy-target="c-win" aria-label="Copy PowerShell command">Copy</button></div>
+              <div class="codeline"><code id="c-win">Get-FileHash -Algorithm SHA256 .\qsdm-hive-1.4.21-win-x64.exe</code><button class="copy-btn" type="button" data-copy-target="c-win" aria-label="Copy PowerShell command">Copy</button></div>
             </div>
-            <p class="q-note">Expected: <span class="mono">8bf157d4…8473dd7</span> (PowerShell prints it in upper case; case does not matter).</p>
+            <p class="q-note">Expected: <span class="mono">b3f408f8…b48e6b</span> (PowerShell prints it in upper case; case does not matter).</p>
           </div>
           <div class="card verify-steps">
             <div>
               <h3>Linux (terminal)</h3>
-              <div class="codeline"><code id="c-linux">sha256sum qsdm-hive-1.4.17-linux-x86_64.AppImage</code><button class="copy-btn" type="button" data-copy-target="c-linux" aria-label="Copy sha256sum command">Copy</button></div>
+              <div class="codeline"><code id="c-linux">sha256sum qsdm-hive-1.4.21-linux-x86_64.AppImage</code><button class="copy-btn" type="button" data-copy-target="c-linux" aria-label="Copy sha256sum command">Copy</button></div>
             </div>
             <div>
               <h3>Or check against the checksum file</h3>
-              <div class="codeline"><code id="c-linux-c">sha256sum -c --ignore-missing qsdm-hive-1.4.17-linux-SHA256SUMS.txt</code><button class="copy-btn" type="button" data-copy-target="c-linux-c" aria-label="Copy sha256sum -c command">Copy</button></div>
+              <div class="codeline"><code id="c-linux-c">sha256sum -c --ignore-missing qsdm-hive-1.4.21-linux-SHA256SUMS.txt</code><button class="copy-btn" type="button" data-copy-target="c-linux-c" aria-label="Copy sha256sum -c command">Copy</button></div>
             </div>
           </div>
         </div>

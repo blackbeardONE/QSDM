@@ -13,10 +13,10 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://api.qsdm.tech; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" />
 <meta name="referrer" content="strict-origin-when-cross-origin" />
-<title>QSDM Web wallet — Self-custody, quantum-secure (ML-DSA-87)</title>
+<title>QSDM Web wallet — Self-custody, post-quantum signatures (ML-DSA-87)</title>
 <meta name="description" content="Generate a self-custody QSDM wallet in your browser. ML-DSA-87 (FIPS 204) keypair generated entirely client-side; private key never leaves this tab. PBKDF2-SHA256 (600k iterations) + AES-256-GCM passphrase-encrypted keystore, byte-compatible with `qsdmcli wallet new`. Plus a read-only public-address balance lookup that queries api.qsdm.tech." />
 <meta name="theme-color" content="#061116" />
-<meta property="og:title" content="QSDM Wallet — Self-Custody, Quantum-Secure" />
+<meta property="og:title" content="QSDM Wallet — Self-Custody, Post-Quantum Signatures" />
 <meta property="og:description" content="Generate a QSDM (Cell / CELL) reward address in your browser. ML-DSA-87 keys, AES-256-GCM encrypted keystore, zero server-side custody." />
 <meta property="og:type" content="website" />
 <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
@@ -38,7 +38,7 @@
 </head>
 <body data-page="wallet">
 <a class="skip-link" href="#main">Skip to content</a>
-<div id="qsdm-migration-notice" role="status" style="position:relative;z-index:1000;padding:12px 20px;background:#fff3cd;color:#513b08;text-align:center;font:14px/1.5 system-ui,sans-serif">QSDM history through September 2, 2026 is restored. Signed wallet transfers and wallet sign-in are available. Mining is live again for enrolled QSDM Hive miners (NVIDIA, 24-hour capped windows). Paid resource work remains paused during recovery. Downloads and documentation are available.</div>
+<div id="qsdm-migration-notice" role="status" style="position:relative;z-index:1000;padding:12px 20px;background:#fff3cd;color:#513b08;text-align:center;font:14px/1.5 system-ui,sans-serif">Mining is open for enrolled QSDM Hive miners. Hive 1.4.21 is available — Hive 1.4.20 users must install it manually from the Download page before 19 December 2026. Paid resource work is still paused.</div>
 <header id="site-header"></header>
 
 <main class="container" id="main">
@@ -75,9 +75,9 @@
         <img src="/api/v1/audit/badge.svg" alt="QSDM audit score (live)" />
       </a>
       <div class="audit-callout-text">
-        <strong>Wallet crypto is audited.</strong>
+        <strong>Wallet crypto is on the internal audit checklist.</strong>
         Five <code>cryptography</code> checklist rows pin ML-DSA-87 keygen,
-        AES-GCM vault encryption, and JWT/mTLS posture.
+        AES-GCM vault encryption, and JWT/mTLS posture. This is a self-maintained checklist, not an independent audit.
         See <a href="/audit.html?category=cryptography">audit.html?category=cryptography</a>.
       </div>
     </div>

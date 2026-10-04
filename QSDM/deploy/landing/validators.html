@@ -131,9 +131,11 @@
 
 <h1>Validators &amp; bootstrap peers</h1>
 <p class="lede">
-  This page publishes the official bootstrap address for the <strong>QSDM public network</strong>. A new
-  validator uses this value once, at startup, to discover the libp2p mesh. After the handshake your node
-  gossips directly with every other peer — <code>api.qsdm.tech</code> is a bootstrap, not a hub.
+  This page publishes the official bootstrap address for the <strong>QSDM public pilot network</strong>
+  (pre-mainnet). A new validator uses this value once, at startup, to discover the libp2p mesh. After the
+  handshake your node gossips directly with the other peers — <code>api.qsdm.tech</code> is a bootstrap, not a hub.
+  Today the chain is produced by a single block producer during recovery, so the peer count below may read 0;
+  independent validators are on the roadmap.
 </p>
 
 <!-- Cross-reference to the public audit checklist. The network
@@ -147,9 +149,9 @@
     <img src="/api/v1/audit/badge.svg" alt="QSDM audit score (live)" />
   </a>
   <div class="audit-callout-text">
-    <strong>Network stack is audited.</strong>
+    <strong>Network stack is on the internal audit checklist.</strong>
     Five <code>network</code> checklist rows pin DHT, libp2p, discovery,
-    and bootstrap peers used below.
+    and bootstrap peers used below. This is a self-maintained checklist, not an independent audit.
     See <a href="/audit.html?category=network">audit.html?category=network</a>.
   </div>
 </div>
@@ -237,7 +239,7 @@ bootstrap_peers = [
 <div class="panel">
   <h2>Why only one bootstrap peer?</h2>
   <p style="color:var(--text-2);">
-    The public network is still early. <code>api.qsdm.tech</code> is currently its official bootstrap validator. As more
+    The public network is a pre-mainnet pilot. <code>api.qsdm.tech</code> is currently its official bootstrap validator. As more
     operators stand up validators, this page will list multiple bootstrap peers (any single one is enough to
     join the mesh). The protocol does not assign privileged status to the project's VPS; you are welcome to
     stand up your own validator and become an alternate bootstrap peer. To have your validator listed here,

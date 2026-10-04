@@ -137,9 +137,11 @@
 
   <div class="scope-note" id="scope-note">
     <strong>Scope:</strong> NVIDIA-lock is an <strong>opt-in, per-operator API policy</strong> —
-    not a consensus rule. Consensus runs on CPU via Proof-of-Entanglement&nbsp;+&nbsp;BFT and
-    admits validators without a GPU. A missing or stale attestation <em>never</em> causes
-    a validator to be excluded from consensus, block proposal, or finality.
+    not a consensus rule. Consensus is designed to run on CPU via Proof-of-Entanglement&nbsp;+&nbsp;BFT
+    and to admit validators without a GPU. A missing or stale attestation <em>never</em> causes
+    a validator to be excluded from consensus, block proposal, or finality. Today the pilot
+    network (pre-mainnet) runs a single block producer during recovery, so multi-validator
+    BFT is not yet active; see <a href="/network.html">live status</a>.
     See <a href="https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/NVIDIA_LOCK_CONSENSUS_SCOPE.md">NVIDIA_LOCK_CONSENSUS_SCOPE.md</a>.
   </div>
 
@@ -154,7 +156,7 @@
       <img src="/api/v1/audit/badge.svg" alt="QSDM audit score (live)" />
     </a>
     <div class="audit-callout-text">
-      <strong>Attestation API is audited.</strong>
+      <strong>Attestation API is on the internal audit checklist.</strong>
       Six <code>trust_api</code> checklist rows pin
       <code>/api/v1/trust/attestations/*</code>.
       See <a href="/audit.html?category=trust_api">audit.html?category=trust_api</a>.

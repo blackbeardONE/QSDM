@@ -8,7 +8,7 @@
 
   // ---- status banner: edit the text here; it is shown on every shell page.
   var BANNER_TEXT =
-    "QSDM history through September 2, 2026 is restored. Signed wallet transfers and wallet sign-in are available. Mining is live again for enrolled QSDM Hive miners (NVIDIA, 24-hour capped windows). Paid resource work remains paused during recovery. Downloads and documentation are available.";
+    "Mining is open for enrolled QSDM Hive miners. Hive 1.4.21 is available — Hive 1.4.20 users must install it manually from the Download page before 19 December 2026. Paid resource work is still paused.";
   var BANNER_ENABLED = true;
 
   // ---- primary nav (keep <= 7). `pages` = data-page values that light it up.
@@ -182,7 +182,7 @@
         '<div class="shell-foot-grid">' +
           '<div class="shell-foot-brand">' +
             '<a class="site-brand" href="/"><img src="' + BRAND.mark + '" alt="" width="28" height="28" /><span>QSDM</span></a>' +
-            "<p>Quantum-Secure Dynamic Mesh Ledger. Native coin CELL, signed with ML-DSA-87.</p>" +
+            "<p>Quantum-Secure Dynamic Mesh Ledger. Native coin CELL; wallet transactions signed with ML-DSA-87. Pilot network (pre-mainnet).</p>" +
             '<p class="mono">API ' + esc(PUBLIC_API) + "</p>" +
           "</div>" + cols +
         "</div>" +

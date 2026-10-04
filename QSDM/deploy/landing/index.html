@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>QSDM — Post-quantum CELL network, NVIDIA GPU mining</title>
-  <meta name="description" content="QSDM is the public network for CELL: ML-DSA-87 post-quantum signatures, 10-second blocks, a 90,000,000 CELL cap, and NVIDIA GPU mining through QSDM Hive. Live chain stats and specs." />
+  <title>QSDM — CELL pilot network: ML-DSA-87 wallet signatures, NVIDIA GPU mining</title>
+  <meta name="description" content="QSDM is the public pilot network (pre-mainnet) for CELL: ML-DSA-87 post-quantum wallet signatures, 10-second target blocks, a 90,000,000 CELL cap, and NVIDIA GPU mining through QSDM Hive. Single block producer during recovery. Live chain stats and specs." />
   <link rel="canonical" href="https://qsdm.tech/" />
   <meta name="theme-color" content="#061116" />
-  <meta property="og:title" content="QSDM — Post-quantum CELL network" />
-  <meta property="og:description" content="ML-DSA-87 signatures, 10-second blocks, 90,000,000 CELL cap, NVIDIA GPU mining via QSDM Hive." />
+  <meta property="og:title" content="QSDM — CELL pilot network with post-quantum wallet signatures" />
+  <meta property="og:description" content="Pilot network (pre-mainnet). ML-DSA-87 wallet signatures, 10-second target blocks, 90,000,000 CELL cap, NVIDIA GPU mining via QSDM Hive." />
   <meta property="og:url" content="https://qsdm.tech/" />
   <meta property="og:type" content="website" />
   <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
@@ -82,14 +82,17 @@
     <section class="home-hero" aria-labelledby="hero-title">
       <div class="q-wrap">
         <span class="q-eyebrow">QSDM · CELL</span>
-        <h1 id="hero-title">A post-quantum blockchain <span class="dim">for the CELL coin, mined on NVIDIA GPUs.</span></h1>
+        <h1 id="hero-title">Post-quantum wallet signatures <span class="dim">for the CELL coin, mined on NVIDIA GPUs.</span></h1>
         <p class="lead">
-          Every CELL transaction is signed with ML-DSA-87. Blocks arrive every
-          10 seconds, supply is capped at 90,000,000 CELL, and anyone can read the
-          chain through the public API.
+          CELL wallet transactions are signed with ML-DSA-87 (NIST FIPS 204). Blocks
+          target 10 seconds, supply is capped at 90,000,000 CELL, and anyone can read
+          the chain through the public API. QSDM is a pilot network (pre-mainnet) run by
+          a single block producer during recovery; consensus signing and independent
+          validators are on the roadmap.
         </p>
         <ul class="keyfacts" aria-label="Key facts">
-          <li>Signatures <span class="mono">ML-DSA-87</span></li>
+          <li>Wallet signatures <span class="mono">ML-DSA-87</span></li>
+          <li>Stage <span class="mono">Pilot · pre-mainnet</span></li>
           <li>Block time <span class="mono">10 s</span></li>
           <li>Max supply <span class="mono">90,000,000 CELL</span></li>
           <li>Mining <span class="mono">NVIDIA GPU · QSDM Hive</span></li>
@@ -152,12 +155,12 @@
           <p>Six facts, each one checkable on the live network or in the source.</p>
         </div>
         <ul class="facts">
-          <li><strong>Post-quantum signatures</strong><span>Wallets sign with ML-DSA-87 (NIST FIPS 204), a lattice scheme designed to resist quantum attacks.</span></li>
+          <li><strong>Post-quantum signatures</strong><span>Wallets sign transactions with ML-DSA-87 (NIST FIPS 204), a lattice scheme designed to resist quantum attacks. Signed consensus messages are supported in the node but not yet switched on.</span></li>
           <li><strong>Fixed, published supply</strong><span>The cap is 90,000,000 CELL and the block reward halves every 12,623,040 blocks (about four years at 10 s).</span></li>
           <li><strong>GPU mining with attestation</strong><span>Miners enroll an NVIDIA GPU through QSDM Hive and earn CELL for accepted proof-of-work in capped windows.</span></li>
           <li><strong>Self-custody by default</strong><span>Keys are generated and kept on your device; Hive and the web wallet sign locally and send only signed transactions.</span></li>
           <li><strong>Open, keyless API</strong><span>Status, blocks, receipts, balances and miner enrollments are public HTTP reads with no account or API key.</span></li>
-          <li><strong>Public audit</strong><span>An open checklist with live pass/pending counts is published at <a href="/audit.html">/audit.html</a>, and the source is MIT-licensed on GitHub.</span></li>
+          <li><strong>Public audit checklist</strong><span>An open internal checklist with live pass/pending counts is published at <a href="/audit.html">/audit.html</a>, and the source is MIT-licensed on GitHub. An independent external audit has not yet been completed.</span></li>
         </ul>
       </div>
     </section>
@@ -177,8 +180,9 @@
             <tr><th scope="row">Block reward</th><td><span class="mono" id="t-reward">3.56490987 CELL</span> <span class="q">(epoch <span id="t-epoch">0</span>; halves every <span class="mono">12,623,040</span> blocks; next halving at height <span class="mono" id="t-halving">12,623,041</span>, <span id="t-halving-eta">—</span>)</span></td></tr>
             <tr><th scope="row">Max supply</th><td><span class="mono">90,000,000 CELL</span></td></tr>
             <tr><th scope="row">Emitted <span class="q">(live)</span></th><td><span class="mono" id="t-emitted">—</span></td></tr>
-            <tr><th scope="row">Signatures</th><td><span class="mono">ML-DSA-87</span> <span class="q">(post-quantum, NIST FIPS 204)</span></td></tr>
+            <tr><th scope="row">Wallet transaction signatures</th><td><span class="mono">ML-DSA-87</span> <span class="q">(post-quantum, NIST FIPS 204)</span></td></tr>
             <tr><th scope="row">Address format</th><td>64 hex characters = SHA-256 of the ML-DSA-87 public key <span class="q">(lowercase <span class="mono">0-9a-f</span>, no prefix)</span></td></tr>
+            <tr><th scope="row">Network stage</th><td>Pilot network (pre-mainnet). Treat balances and history as pilot data until the genesis, multisig and independent-audit milestones are complete.</td></tr>
             <tr><th scope="row">Consensus / producer</th><td>Single block producer during recovery; a backup node follows the chain. Signed consensus votes are supported but not yet active. <a href="/network.html">Live status</a></td></tr>
             <tr><th scope="row">Mining</th><td>NVIDIA GPU via QSDM Hive · mining protocol <span class="mono">v2</span> · attestation <span class="mono">nvidia-cc-v1</span> / <span class="mono">nvidia-hmac-v1</span></td></tr>
             <tr><th scope="row">Enrolled miners <span class="q">(live)</span></th><td><span class="mono" id="t-miners">—</span></td></tr>
