@@ -1,7 +1,7 @@
 import React from 'react';
 import CountUp from 'react-countup';
 
-import NativeTokenLogo from 'assets/svgs/qsdm-hive-logo.svg';
+import NativeTokenLogo from 'assets/svgs/cell-coin-small.svg';
 import {
   displayNativeTokenSymbol,
   isNativeTokenSymbol,
@@ -30,14 +30,12 @@ export function CountQsdmHive({
   decimals = 9,
 }: PropsType) {
   const displayTicker = displayNativeTokenSymbol(ticker);
-  const roundedValue =
-    isNativeTokenSymbol(ticker)
-      ? getCellFromBaseUnits(value)
-      : value / 10 ** decimals;
-  const fullValue =
-    isNativeTokenSymbol(ticker)
-      ? getFullCellFromBaseUnits(value)
-      : value / 10 ** decimals;
+  const roundedValue = isNativeTokenSymbol(ticker)
+    ? getCellFromBaseUnits(value)
+    : value / 10 ** decimals;
+  const fullValue = isNativeTokenSymbol(ticker)
+    ? getFullCellFromBaseUnits(value)
+    : value / 10 ** decimals;
   const previousValue = usePrevious(roundedValue);
   const decimalsAmount = countDecimals(fullValue);
   const isVerySmallAmount = fullValue < 0.001 && fullValue > 0;
@@ -54,19 +52,20 @@ export function CountQsdmHive({
   return (
     <Popover tooltipContent={formatFullValue(fullValue)} theme={Theme.Light}>
       <div className="flex flex-col items-start gap-1 cursor-auto">
-        {isVerySmallAmount ? (
-          <span>{TOO_SMALL_AMOUNT_PLACEHOLDER}</span>
-        ) : (
-          <CountUp
-            decimals={trailingDecimals}
-            start={previousValue}
-            end={roundedValue}
-            duration={0.5}
-            data-testid="count-qsdm"
-          />
-        )}
-        <div className="flex gap-1 items-center">
-          <p>{displayTicker}</p>
+        <span className="font-mono text-base font-medium leading-tight text-qsdm-text">
+          {isVerySmallAmount ? (
+            <span>{TOO_SMALL_AMOUNT_PLACEHOLDER}</span>
+          ) : (
+            <CountUp
+              decimals={trailingDecimals}
+              start={previousValue}
+              end={roundedValue}
+              duration={0.5}
+              data-testid="count-qsdm"
+            />
+          )}
+        </span>
+        <div className="flex gap-1.5 items-center text-xs text-qsdm-muted">
           {!!logoURI && !!ticker && (
             <img
               src={logoURI}
@@ -75,8 +74,9 @@ export function CountQsdmHive({
             />
           )}
           {isNativeTokenSymbol(ticker) && (
-            <NativeTokenLogo className="w-[21px] h-[21px] rounded-full" />
+            <NativeTokenLogo className="w-4 h-4 shrink-0" />
           )}
+          <p>{displayTicker}</p>
         </div>
       </div>
     </Popover>

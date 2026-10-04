@@ -70,11 +70,14 @@ export const TransferFunds = create<PropsType>(function AddStake({
         result && typeof result === 'object' && 'transaction_id' in result
           ? result.transaction_id
           : '';
-      toast.success(
-        txId
-          ? `Sent ${amount} ${NATIVE_TOKEN_SYMBOL}. Tx: ${txId}`
-          : `Sent ${amount} ${NATIVE_TOKEN_SYMBOL}.`
-      );
+      const isPending =
+        result &&
+        typeof result === 'object' &&
+        (result.status === 'pending' || result.broadcast === 'block-pending');
+      const message = isPending
+        ? `Transfer submitted: ${amount} ${NATIVE_TOKEN_SYMBOL}. Awaiting block confirmation.`
+        : `Transfer accepted: ${amount} ${NATIVE_TOKEN_SYMBOL}.`;
+      toast.success(txId ? `${message} Tx: ${txId}` : message);
       await queryClient.invalidateQueries({
         queryKey: [QueryKeys.AccountBalance, destinationWallet.trim()],
       });

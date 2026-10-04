@@ -14,6 +14,8 @@ import {
   QsdmCanonicalChainSafety,
 } from 'models/api/qsdm';
 
+import { getQsdmBackupRead, recordQsdmReadCheckpoint } from './qsdmBackupRead';
+
 type CoreStatus = {
   chain_tip?: number | string;
   peers?: number | string;
@@ -75,8 +77,13 @@ const sameApiUrl = (left: string, right: string) =>
   trimTrailingSlash(left) === trimTrailingSlash(right);
 
 const asNumber = (value: number | string | undefined) => {
+  if (
+    typeof value !== 'number' &&
+    (typeof value !== 'string' || !/^\d+$/.test(value))
+  )
+    return undefined;
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
 };
 
 const getErrorMessage = (error: unknown) => {
@@ -94,6 +101,24 @@ const getErrorMessage = (error: unknown) => {
   return error instanceof Error ? error.message : String(error);
 };
 
+// Only availability errors permit historical backup reads. Invalid identity,
+// authorization and TLS verification failures must remain visible and fail closed.
+const isUnavailable = (error: unknown): boolean => {
+  if ((error as { qsdmUnavailable?: boolean })?.qsdmUnavailable) return true;
+  if (!axios.isAxiosError(error)) return false;
+  if (error.response)
+    return [408, 429, 500, 502, 503, 504].includes(error.response.status);
+  return [
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'ECONNABORTED',
+    'ENOTFOUND',
+    'EAI_AGAIN',
+    'ERR_NETWORK',
+  ].includes(error.code || '');
+};
+
 const getStatus = async (apiUrl: string): Promise<CoreStatus> => {
   const response = await axios.get<CoreStatus>(`${apiUrl}/status`, {
     timeout: REQUEST_TIMEOUT_MS,
@@ -109,11 +134,20 @@ const getBlock = async (
     `${apiUrl}/chain/blocks?from=${height}&to=${height}&limit=1`,
     { timeout: REQUEST_TIMEOUT_MS }
   );
-  const block = response.data.blocks?.find(
-    (candidate) => candidate.height === height
-  );
-  if (!block?.hash) {
-    throw new Error(`Core did not return block ${height}`);
+  const block = Array.isArray(response.data?.blocks)
+    ? response.data.blocks.find((candidate) => candidate?.height === height)
+    : undefined;
+  if (
+    !block ||
+    typeof block.hash !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(block.hash)
+  ) {
+    throw Object.assign(
+      new Error(`Core did not return a valid block ${height}`),
+      {
+        qsdmReason: 'invalid-response' as QsdmCanonicalChainReason,
+      }
+    );
   }
   return block as ChainBlock & { hash: string };
 };
@@ -125,14 +159,17 @@ const getNodeIdentity = async (apiUrl: string): Promise<NodeIdentity> => {
     status = await getStatus(normalizedApiUrl);
   } catch (error) {
     throw Object.assign(new Error(getErrorMessage(error)), {
-      qsdmReason: 'status-unavailable' as QsdmCanonicalChainReason,
+      qsdmReason: isUnavailable(error)
+        ? 'status-unavailable'
+        : 'invalid-response',
+      qsdmUnavailable: isUnavailable(error),
     });
   }
 
-  const tip = asNumber(status.chain_tip);
+  const tip = asNumber(status?.chain_tip);
   if (tip === undefined) {
     throw Object.assign(new Error('Core status did not include chain_tip'), {
-      qsdmReason: 'status-unavailable' as QsdmCanonicalChainReason,
+      qsdmReason: 'invalid-response' as QsdmCanonicalChainReason,
     });
   }
 
@@ -141,7 +178,10 @@ const getNodeIdentity = async (apiUrl: string): Promise<NodeIdentity> => {
     genesis = await getBlock(normalizedApiUrl, 0);
   } catch (error) {
     throw Object.assign(new Error(getErrorMessage(error)), {
-      qsdmReason: 'genesis-unavailable' as QsdmCanonicalChainReason,
+      qsdmReason: isUnavailable(error)
+        ? 'genesis-unavailable'
+        : 'invalid-response',
+      qsdmUnavailable: isUnavailable(error),
     });
   }
 
@@ -269,7 +309,9 @@ const verifyTargetAgainstCanonical = async (
   } catch (error) {
     return {
       ok: false,
-      reason: 'common-block-unavailable',
+      reason: isUnavailable(error)
+        ? 'common-block-unavailable'
+        : 'invalid-response',
       detail: getErrorMessage(error),
       target,
       canonical,
@@ -353,18 +395,30 @@ export const getQsdmCanonicalChainSafety = async ({
       const report = buildReport({
         result: {
           ok: false,
-          reason: 'canonical-source-unavailable',
+          reason: isUnavailable(error)
+            ? 'canonical-source-unavailable'
+            : failure.reason,
           detail: `Canonical QSDM source could not be verified: ${failure.detail}`,
         },
         effectiveApiUrl: QSDM_CORE_API_URL,
         usingGatewayFallback: false,
       });
       if (allowGatewayFallback) setQsdmRuntimeCoreApiUrl();
+      if (allowGatewayFallback && isUnavailable(error)) {
+        report.backupRead = await getQsdmBackupRead().catch(() => undefined);
+      }
       reportCache.set(cacheKey, {
         expiresAt: Date.now() + SAFETY_CACHE_MS,
         report,
       });
       return report;
+    }
+
+    if (allowGatewayFallback) {
+      // Read metadata only: this never changes write authority or routing.
+      await recordQsdmReadCheckpoint(canonical.apiUrl, canonical.tip).catch(
+        () => undefined
+      );
     }
 
     const configuredResult = await verifyTargetAgainstCanonical(

@@ -184,20 +184,26 @@ func (r *InMemoryRegistry) Lookup(nodeID string) (*Entry, error) {
 // be served identical nonce bytes from different validators;
 // binding to nodeID keeps the rejection scoped.
 //
-// Implementations MUST be safe for concurrent use.
+// Implementations MUST be safe for concurrent use. Acceptance requires an
+// atomic claim; a separate Seen followed by Record is not sufficient.
 type NonceStore interface {
+	// TryRecord evicts expired entries relative to at and atomically claims
+	// (nodeID, nonce). It returns false for a retained duplicate without
+	// refreshing its timestamp. Exactly one concurrent claimant may succeed.
+	TryRecord(nodeID string, nonce [32]byte, at time.Time) bool
 	// Seen returns true iff (nodeID, nonce) was recorded within
 	// the retention window AND is not yet evicted.
 	Seen(nodeID string, nonce [32]byte) bool
 	// Record marks (nodeID, nonce) as used at the given time.
 	// Implementations evict entries older than their retention
-	// window on Record / Seen calls.
+	// window on Record / Seen calls. Retained for compatibility;
+	// acceptance paths must use TryRecord.
 	Record(nodeID string, nonce [32]byte, at time.Time)
 }
 
 // InMemoryNonceStore is the reference NonceStore. It holds
 // entries for `retention`; older entries are lazily evicted on
-// Seen/Record calls.
+// TryRecord/Record calls.
 //
 // Safe for concurrent use.
 type InMemoryNonceStore struct {
@@ -222,7 +228,7 @@ func NewInMemoryNonceStore(retention time.Duration) *InMemoryNonceStore {
 }
 
 // Seen implements NonceStore. It does NOT perform eviction —
-// eviction is driven by Record, which has an authoritative
+// eviction is driven by TryRecord/Record, which have an authoritative
 // caller-supplied timestamp. Mixing time.Now() into Seen would
 // break tests that pin a synthetic clock (and would leak a second
 // clock source into a function whose only job is a map lookup).
@@ -231,6 +237,20 @@ func (s *InMemoryNonceStore) Seen(nodeID string, nonce [32]byte) bool {
 	defer s.mu.Unlock()
 	_, ok := s.seen[nonceKey{nodeID: nodeID, nonce: nonce}]
 	return ok
+}
+
+// TryRecord implements NonceStore as one atomic check-and-insert. Rejected
+// duplicates retain the original timestamp, so retries cannot extend retention.
+func (s *InMemoryNonceStore) TryRecord(nodeID string, nonce [32]byte, at time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.evictLocked(at)
+	key := nonceKey{nodeID: nodeID, nonce: nonce}
+	if _, exists := s.seen[key]; exists {
+		return false
+	}
+	s.seen[key] = at
+	return true
 }
 
 // Record implements NonceStore. It evicts entries older than
@@ -244,7 +264,7 @@ func (s *InMemoryNonceStore) Record(nodeID string, nonce [32]byte, at time.Time)
 }
 
 // evictLocked drops entries older than retention. Called from
-// Record (which has a caller-supplied `now`) so eviction uses a
+// TryRecord/Record (which have a caller-supplied `now`) so eviction uses a
 // single consistent clock source.
 func (s *InMemoryNonceStore) evictLocked(now time.Time) {
 	cutoff := now.Add(-s.retention)

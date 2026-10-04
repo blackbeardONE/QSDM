@@ -33,7 +33,9 @@ export function StakeInfoBox({ totalStaked = {} }: PropsType) {
     <InfoBox className="flex flex-col justify-center h-[100px] md2h:h-28 xl:p-4 overflow-hidden lgh:h-[120px]">
       <div className="flex items-center justify-center w-full">
         <div className="flex flex-col items-start gap-1 overflow-hidden w-full">
-          <span className="text-sm text-green-2">Total Staked</span>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-qsdm-muted">
+            Total Staked
+          </span>
 
           <BalancesCarousel
             cellBalance={totalStaked.CELL || 0}

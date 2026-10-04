@@ -3,6 +3,9 @@ import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
 
+import { setQsdmRuntimeCoreApiUrl } from 'config/qsdm';
+import { assertQsdmCanonicalChainSafety } from './qsdmCanonicalChain';
+
 import {
   __resetQsdmTaskActionNonceReservationsForTests,
   resolveQsdmTaskActionApiUrl,
@@ -26,8 +29,26 @@ jest.mock('./qsdmCanonicalChain', () => ({
 const mockedAxiosGet = axios.get as jest.Mock;
 const mockedAxiosPost = axios.post as jest.Mock;
 const mockedSpawn = spawn as jest.Mock;
+const mockedSafety = assertQsdmCanonicalChainSafety as jest.Mock;
+const safeReport = {
+  safe: true,
+  effectiveApiUrl: 'http://127.0.0.1:8080/api/v1',
+  canonicalApiUrl: 'https://api.qsdm.tech/api/v1',
+};
 
 const originalEnv = process.env;
+const realSetTimeout = setTimeout;
+const flushTaskSubmission = () =>
+  new Promise((resolve) => realSetTimeout(resolve, 0));
+const useTaskRetryClock = () => {
+  jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask'] });
+  jest.setSystemTime(new Date('2026-09-20T00:00:00.000Z'));
+};
+const retryAfterError = (value: unknown, status = 503) => ({
+  isAxiosError: true,
+  message: `Request failed with status code ${status}`,
+  response: { status, headers: { 'Retry-After': value } },
+});
 
 const createMockChild = () => {
   const child = new EventEmitter() as EventEmitter & {
@@ -42,6 +63,35 @@ const createMockChild = () => {
   child.kill = jest.fn();
   return child;
 };
+
+const autoSignTask = () => {
+  mockedSpawn.mockImplementation(() => {
+    const child = createMockChild();
+    const input: Buffer[] = [];
+    child.stdin.on('data', (chunk) => input.push(Buffer.from(chunk)));
+    child.stdin.on('finish', () => {
+      const envelope = JSON.parse(Buffer.concat(input).toString()) as Record<
+        string,
+        unknown
+      >;
+      queueMicrotask(() => {
+        child.stdout.end(
+          JSON.stringify({ ...envelope, signature: 'sig', public_key: 'pub' })
+        );
+        child.emit('close', 0);
+      });
+    });
+    return child;
+  });
+};
+const acceptedTask = () => ({
+  data: {
+    status: 'accepted',
+    action_id: 'accepted-id',
+    mempool_submitted: true,
+    mempool_status: 'submitted',
+  },
+});
 
 describe('qsdmTaskActions', () => {
   beforeEach(() => {
@@ -58,7 +108,13 @@ describe('qsdmTaskActions', () => {
     mockedAxiosGet.mockReset();
     mockedAxiosPost.mockReset();
     mockedSpawn.mockReset();
+    mockedSafety.mockReset().mockResolvedValue(safeReport);
+    setQsdmRuntimeCoreApiUrl();
     __resetQsdmTaskActionNonceReservationsForTests();
+    jest.useRealTimers();
+  });
+
+  afterEach(() => {
     jest.useRealTimers();
   });
 
@@ -73,22 +129,16 @@ describe('qsdmTaskActions', () => {
       'https://api.qsdm.tech/attest/home-validator/api/v1',
       'https://canonical.example/api/v1',
     ],
-    [
-      'https://canonical.example/api/v1',
-      'https://canonical.example/api/v1',
-    ],
+    ['https://canonical.example/api/v1', 'https://canonical.example/api/v1'],
     ['https://private.example/api/v1/', 'https://private.example/api/v1'],
-  ])(
-    'routes signed task actions from %s to %s',
-    (runtimeApiUrl, expected) => {
-      expect(
-        resolveQsdmTaskActionApiUrl({
-          runtimeApiUrl,
-          canonicalApiUrl: 'https://canonical.example/api/v1',
-        })
-      ).toBe(expected);
-    }
-  );
+  ])('routes signed task actions from %s to %s', (runtimeApiUrl, expected) => {
+    expect(
+      resolveQsdmTaskActionApiUrl({
+        runtimeApiUrl,
+        canonicalApiUrl: 'https://canonical.example/api/v1',
+      })
+    ).toBe(expected);
+  });
 
   it('signs with qsdmcli and posts the signed task action envelope', async () => {
     const child = createMockChild();
@@ -235,6 +285,258 @@ describe('qsdmTaskActions', () => {
       mockedAxiosPost.mock.calls[1][1]
     );
   });
+
+  it.each([
+    ['60', 503],
+    ['60', 429],
+    [60, 503],
+    ['Sun, 20 Sep 2026 00:01:00 GMT', 503],
+    ['Sunday, 20-Sep-26 00:01:00 GMT', 503],
+    ['Sun Sep 20 00:01:00 2026', 503],
+  ])(
+    'releases a long server wait (%s, %s) without another POST',
+    async (header, status) => {
+      useTaskRetryClock();
+      autoSignTask();
+      mockedAxiosGet.mockResolvedValue({ data: { nonce: 4 } });
+      mockedAxiosPost.mockRejectedValueOnce(retryAfterError(header, status));
+      await expect(
+        submitQsdmTaskActionIntent({
+          taskId: 'task-1',
+          action: 'start',
+          waitForCommit: false,
+        })
+      ).rejects.toThrow(
+        'not confirmed. The server requested a retry after 60 seconds'
+      );
+      expect(mockedAxiosPost).toHaveBeenCalledTimes(1);
+      expect(mockedSpawn).toHaveBeenCalledTimes(1);
+      expect(mockedSafety).toHaveBeenCalledTimes(2);
+      expect(jest.getTimerCount()).toBe(0);
+    }
+  );
+
+  it('interprets an obsolete two-digit HTTP year relative to the current century', async () => {
+    useTaskRetryClock();
+    autoSignTask();
+    mockedAxiosGet.mockResolvedValue({ data: { nonce: 4 } });
+    // Date.parse interprets year 50 as 1950; HTTP dates mean 2050 here.
+    mockedAxiosPost.mockRejectedValueOnce(
+      retryAfterError('Saturday, 01-Jan-50 00:00:00 GMT')
+    );
+    await expect(
+      submitQsdmTaskActionIntent({
+        taskId: 'task-1',
+        action: 'start',
+        waitForCommit: false,
+      })
+    ).rejects.toThrow('not confirmed');
+    expect(mockedAxiosPost).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('does not turn an enormous valid server wait into an immediate retry', async () => {
+    useTaskRetryClock();
+    autoSignTask();
+    mockedAxiosGet.mockResolvedValue({ data: { nonce: 4 } });
+    mockedAxiosPost.mockRejectedValueOnce(retryAfterError('9'.repeat(400)));
+    await expect(
+      submitQsdmTaskActionIntent({
+        taskId: 'task-1',
+        action: 'start',
+        waitForCommit: false,
+      })
+    ).rejects.toThrow('not confirmed');
+    expect(mockedAxiosPost).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('releases the sender queue after a long wait without resetting its nonce reservation', async () => {
+    useTaskRetryClock();
+    autoSignTask();
+    mockedAxiosGet.mockResolvedValue({ data: { nonce: 4 } });
+    mockedAxiosPost
+      .mockRejectedValueOnce(retryAfterError('60'))
+      .mockResolvedValueOnce(acceptedTask());
+    const first = submitQsdmTaskActionIntent({
+      taskId: 'task-1',
+      action: 'start',
+      waitForCommit: false,
+    });
+    const second = submitQsdmTaskActionIntent({
+      taskId: 'task-2',
+      action: 'start',
+      waitForCommit: false,
+    });
+    const results = await Promise.allSettled([first, second]);
+    expect(results.map((result) => result.status)).toEqual([
+      'rejected',
+      'fulfilled',
+    ]);
+    expect(mockedAxiosPost).toHaveBeenCalledTimes(2);
+    expect(mockedSpawn).toHaveBeenCalledTimes(2);
+    expect(mockedAxiosPost.mock.calls.map((call) => call[1].nonce)).toEqual([
+      4, 5,
+    ]);
+    expect(mockedAxiosPost.mock.calls[0][1].id).not.toBe(
+      mockedAxiosPost.mock.calls[1][1].id
+    );
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it.each(['2', 'Sun, 20 Sep 2026 00:00:02 GMT'])(
+    'honors a short server wait (%s) before retrying the same signed envelope',
+    async (header) => {
+      useTaskRetryClock();
+      autoSignTask();
+      mockedAxiosGet.mockResolvedValue({ data: { nonce: 4 } });
+      mockedAxiosPost
+        .mockRejectedValueOnce(retryAfterError(header))
+        .mockResolvedValueOnce(acceptedTask());
+      const result = submitQsdmTaskActionIntent({
+        taskId: 'task-1',
+        action: 'start',
+        waitForCommit: false,
+      });
+      await flushTaskSubmission();
+      expect(mockedAxiosPost).toHaveBeenCalledTimes(1);
+      jest.advanceTimersByTime(1999);
+      await flushTaskSubmission();
+      expect(mockedAxiosPost).toHaveBeenCalledTimes(1);
+      jest.advanceTimersByTime(1);
+      await expect(result).resolves.toMatchObject({ status: 'accepted' });
+      expect(mockedSpawn).toHaveBeenCalledTimes(1);
+      expect(mockedAxiosPost).toHaveBeenCalledTimes(2);
+      expect(mockedAxiosPost.mock.calls[0][1]).toBe(
+        mockedAxiosPost.mock.calls[1][1]
+      );
+      expect(mockedSafety.mock.calls).toEqual(
+        Array(3).fill([{ forceRefresh: true }])
+      );
+    }
+  );
+
+  it('honors an HTTP leap second across midnight instead of retrying early', async () => {
+    useTaskRetryClock();
+    jest.setSystemTime(new Date('2026-09-20T23:59:59.000Z'));
+    autoSignTask();
+    mockedAxiosGet.mockResolvedValue({ data: { nonce: 4 } });
+    mockedAxiosPost
+      .mockRejectedValueOnce(retryAfterError('Sun, 20 Sep 2026 23:59:60 GMT'))
+      .mockResolvedValueOnce(acceptedTask());
+    const result = submitQsdmTaskActionIntent({
+      taskId: 'task-1',
+      action: 'start',
+      waitForCommit: false,
+    });
+    await flushTaskSubmission();
+    jest.advanceTimersByTime(999);
+    await flushTaskSubmission();
+    expect(mockedAxiosPost).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(1);
+    await expect(result).resolves.toMatchObject({ status: 'accepted' });
+    expect(mockedAxiosPost).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the larger existing backoff when the server wait is shorter', async () => {
+    useTaskRetryClock();
+    process.env.QSDM_TASK_ACTION_SUBMIT_RETRY_BASE_MS = '1500';
+    autoSignTask();
+    mockedAxiosGet.mockResolvedValue({ data: { nonce: 4 } });
+    mockedAxiosPost
+      .mockRejectedValueOnce(retryAfterError('1'))
+      .mockResolvedValueOnce(acceptedTask());
+    const result = submitQsdmTaskActionIntent({
+      taskId: 'task-1',
+      action: 'start',
+      waitForCommit: false,
+    });
+    await flushTaskSubmission();
+    jest.advanceTimersByTime(1499);
+    await flushTaskSubmission();
+    expect(mockedAxiosPost).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(1);
+    await expect(result).resolves.toMatchObject({ status: 'accepted' });
+  });
+
+  it('stops before repeated server waits would exceed the total inline budget', async () => {
+    useTaskRetryClock();
+    autoSignTask();
+    mockedAxiosGet.mockResolvedValue({ data: { nonce: 4 } });
+    mockedAxiosPost.mockRejectedValue(retryAfterError('3'));
+    const outcome = submitQsdmTaskActionIntent({
+      taskId: 'task-1',
+      action: 'start',
+      waitForCommit: false,
+    }).catch((error) => error);
+    await flushTaskSubmission();
+    jest.advanceTimersByTime(3000);
+    const error = await outcome;
+    expect(error.message).toContain('not confirmed');
+    expect(error.message).toContain('3 seconds');
+    expect(mockedAxiosPost).toHaveBeenCalledTimes(2);
+    expect(mockedSpawn).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('stops a delayed retry if fresh canonical verification fails', async () => {
+    useTaskRetryClock();
+    autoSignTask();
+    mockedAxiosGet.mockResolvedValue({ data: { nonce: 4 } });
+    mockedSafety
+      .mockResolvedValueOnce(safeReport)
+      .mockResolvedValueOnce(safeReport)
+      .mockRejectedValueOnce(new Error('Value-bearing actions are blocked'));
+    mockedAxiosPost.mockRejectedValueOnce(retryAfterError('1'));
+    const outcome = submitQsdmTaskActionIntent({
+      taskId: 'task-1',
+      action: 'start',
+      waitForCommit: false,
+    }).catch((error) => error);
+    await flushTaskSubmission();
+    jest.advanceTimersByTime(1000);
+    const error = await outcome;
+    expect(error.message).toBe('Value-bearing actions are blocked');
+    expect(mockedAxiosPost).toHaveBeenCalledTimes(1);
+    expect(mockedSafety).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    '1.5',
+    '-1',
+    '1e3',
+    'Infinity',
+    'not a date',
+    'Sun, 31 Feb 2026 00:00:00 GMT',
+    'Sun, 20 Sep 2026 24:00:00 GMT',
+    'Sun, 20 Xxx 2026 00:00:00 GMT',
+    '',
+    undefined,
+    [],
+    false,
+  ])(
+    'retains bounded retry behavior for a malformed or missing hint (%s)',
+    async (header) => {
+      autoSignTask();
+      mockedAxiosGet.mockResolvedValue({ data: { nonce: 4 } });
+      const error = retryAfterError(header);
+      mockedAxiosPost.mockRejectedValue(error);
+      await expect(
+        submitQsdmTaskActionIntent({
+          taskId: 'task-1',
+          action: 'start',
+          waitForCommit: false,
+        })
+      ).rejects.toBe(error);
+      expect(mockedAxiosPost).toHaveBeenCalledTimes(3);
+      expect(mockedSpawn).toHaveBeenCalledTimes(1);
+      expect(
+        mockedAxiosPost.mock.calls.every(
+          (call) => call[1] === mockedAxiosPost.mock.calls[0][1]
+        )
+      ).toBe(true);
+    }
+  );
 
   it('surfaces a validator mempool rejection instead of a generic Axios 422', async () => {
     const child = createMockChild();
@@ -505,5 +807,100 @@ describe('qsdmTaskActions', () => {
     expect(firstEnvelope.nonce).toBe(69);
     expect(secondEnvelope.nonce).toBe(70);
     expect(staleResetEnvelope.nonce).toBe(69);
+  });
+
+  it('blocks a task when the canonical source fails while signing', async () => {
+    autoSignTask();
+    mockedAxiosGet.mockResolvedValue({ data: { nonce: 4 } });
+    mockedSafety
+      .mockResolvedValueOnce(safeReport)
+      .mockRejectedValueOnce(new Error('Value-bearing actions are blocked'));
+    await expect(
+      submitQsdmTaskActionIntent({
+        taskId: 'task-1',
+        action: 'start',
+        waitForCommit: false,
+      })
+    ).rejects.toThrow('Value-bearing actions are blocked');
+    expect(mockedAxiosPost).not.toHaveBeenCalled();
+    expect(mockedSafety.mock.calls).toEqual([
+      [{ forceRefresh: true }],
+      [{ forceRefresh: true }],
+    ]);
+  });
+
+  it('rechecks a queued task after an earlier submission completes', async () => {
+    autoSignTask();
+    mockedAxiosGet.mockResolvedValue({ data: { nonce: 4 } });
+    let releaseFirst: ((value: unknown) => void) | undefined;
+    mockedAxiosPost.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseFirst = resolve;
+        })
+    );
+    const first = submitQsdmTaskActionIntent({
+      taskId: 'task-1',
+      action: 'start',
+      waitForCommit: false,
+    });
+    const second = submitQsdmTaskActionIntent({
+      taskId: 'task-2',
+      action: 'start',
+      waitForCommit: false,
+    });
+    const outcomes = Promise.allSettled([first, second]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockedAxiosPost).toHaveBeenCalledTimes(1);
+    mockedSafety.mockRejectedValue(
+      new Error('Value-bearing actions are blocked')
+    );
+    releaseFirst?.(acceptedTask());
+    const results = await outcomes;
+    expect(results[0].status).toBe('fulfilled');
+    expect(results[1].status).toBe('rejected');
+    expect(mockedSpawn).toHaveBeenCalledTimes(1);
+    expect(mockedAxiosPost).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops a transient submission retry when fresh canonical verification fails', async () => {
+    autoSignTask();
+    mockedAxiosGet.mockResolvedValue({ data: { nonce: 4 } });
+    mockedSafety
+      .mockResolvedValueOnce(safeReport)
+      .mockResolvedValueOnce(safeReport)
+      .mockRejectedValueOnce(new Error('Value-bearing actions are blocked'));
+    mockedAxiosPost.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 503 },
+    });
+    await expect(
+      submitQsdmTaskActionIntent({
+        taskId: 'task-1',
+        action: 'start',
+        waitForCommit: false,
+      })
+    ).rejects.toThrow('Value-bearing actions are blocked');
+    expect(mockedAxiosPost).toHaveBeenCalledTimes(1);
+    expect(mockedSafety).toHaveBeenCalledTimes(3);
+  });
+
+  it('uses the verified task endpoint even if a status poll changes global routing', async () => {
+    autoSignTask();
+    mockedAxiosGet.mockResolvedValue({ data: { nonce: 4 } });
+    mockedSafety.mockImplementation(async () => {
+      setQsdmRuntimeCoreApiUrl('https://unverified.example/api/v1');
+      return safeReport;
+    });
+    mockedAxiosPost.mockResolvedValue(acceptedTask());
+    await submitQsdmTaskActionIntent({
+      taskId: 'task-1',
+      action: 'start',
+      waitForCommit: false,
+    });
+    expect(mockedAxiosPost.mock.calls[0][0]).toBe(
+      'https://api.qsdm.tech/api/v1/tasks/actions/submit-signed'
+    );
+    setQsdmRuntimeCoreApiUrl();
   });
 });

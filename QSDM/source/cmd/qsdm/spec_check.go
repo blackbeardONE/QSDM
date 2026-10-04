@@ -251,8 +251,12 @@ func buildSpecCheckWiring(ctx context.Context, logf func(string, ...any)) (*Spec
 // independent gates: Tier-2 (anomaly checking) can be on
 // without Tier-3 (reward downgrade), but the inverse is
 // nonsensical because Tier-3 needs verdicts to act on.
-func specPenaltyEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("QSDM_SPEC_PENALTY_ENABLED"))) {
+func specPenaltyEnabled() bool { return specPenaltyEnabledIn(os.Getenv) }
+
+// specPenaltyEnabledIn is specPenaltyEnabled over getenv. S2 uses it to
+// refuse the Tier-3 penalty with an HL2 version 2 legacy-mining config.
+func specPenaltyEnabledIn(getenv func(string) string) bool {
+	switch strings.ToLower(strings.TrimSpace(getenv("QSDM_SPEC_PENALTY_ENABLED"))) {
 	case "", "0", "false", "no", "off":
 		return false
 	}
