@@ -66,14 +66,14 @@
 
   <url>
     <loc>https://qsdm.tech/wallet.html</loc>
-    <lastmod>2026-08-04</lastmod>
+    <lastmod>2026-10-04</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
 
   <url>
     <loc>https://qsdm.tech/account/</loc>
-    <lastmod>2026-08-04</lastmod>
+    <lastmod>2026-10-04</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
@@ -122,28 +122,28 @@
 
   <url>
     <loc>https://qsdm.tech/explorer.html</loc>
-    <lastmod>2026-08-04</lastmod>
+    <lastmod>2026-10-04</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.65</priority>
   </url>
 
   <url>
     <loc>https://qsdm.tech/chain.html</loc>
-    <lastmod>2026-08-02</lastmod>
+    <lastmod>2026-10-04</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
 
   <url>
     <loc>https://qsdm.tech/.well-known/security.txt</loc>
-    <lastmod>2026-07-16</lastmod>
+    <lastmod>2026-10-04</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
 
   <url>
     <loc>https://qsdm.tech/humans.txt</loc>
-    <lastmod>2026-08-06</lastmod>
+    <lastmod>2026-10-04</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
