@@ -1,13 +1,20 @@
 # Final Comparison: QSDM (Optimized) vs Major Blockchain Protocols
 
+> **Current status note (2026-10):** This is a historical document. QSDM today is a
+> public pilot network (pre-mainnet) run by a single block producer during recovery.
+> CELL wallet transactions are signed with ML-DSA-87 (NIST FIPS 204); signed consensus
+> messages, independent validators and an independent external audit are still on the
+> roadmap. For what is safe to claim today, see [Capability Snapshot](CAPABILITY_SNAPSHOT.md)
+> and [Treasury Policy §9](TREASURY_POLICY.md#9-mainnet-release-gates).
+
 ## Executive Summary
 
 **QSDM with optimizations now offers:**
-- ✅ **256-bit quantum-safe security** (ML-DSA-87)
+- ✅ **Post-quantum wallet signatures** (ML-DSA-87, NIST category 5)
 - ✅ **50% smaller signatures** (with compression: 4.6 KB → 2.3 KB)
 - ✅ **60-70% storage compression**
 - ✅ **Faster verification than ECDSA** (0.19 ms vs 0.33 ms)
-- ✅ **Production-ready** (fully operational)
+- ✅ **Working implementation** (public pilot network, pre-mainnet)
 
 **Major protocols (Bitcoin, Ethereum, etc.):**
 - ❌ **Vulnerable to quantum attacks** (ECDSA/Ed25519)
@@ -181,10 +188,10 @@
    - ✅ No technical debt from future migration
    - ✅ First-mover advantage in quantum-safe blockchains
 
-2. **Production Ready**
-   - ✅ Fully operational
-   - ✅ All features working
-   - ✅ Ready for deployment
+2. **Working Pilot**
+   - ✅ Running as a public pilot network (pre-mainnet)
+   - ⚠️ Single block producer during recovery; independent validators on the roadmap
+   - ⚠️ Independent external audit not yet complete
 
 ---
 
@@ -217,7 +224,7 @@
 
 | Protocol | Quantum Safety | Status |
 |----------|----------------|--------|
-| **QSDM** | ✅ **Protected** | **Production Ready** |
+| **QSDM** | ✅ **Post-quantum wallet signatures** | **Pilot (pre-mainnet)** |
 | Bitcoin | ❌ Vulnerable | Research phase |
 | Ethereum | ❌ Vulnerable | Research phase |
 | Others | ❌ Vulnerable | Research phase |
@@ -262,11 +269,11 @@
 ## 11. Conclusion
 
 **QSDM with optimizations is:**
-- ✅ **More secure** than any major protocol (quantum-safe)
+- ✅ **Post-quantum wallet signatures** (major protocols still use classical ECDSA/EdDSA)
 - ✅ **Faster verification** than ECDSA (1.76x)
 - ✅ **Acceptable performance** (0.5 ms signing, 0.19 ms verification)
 - ✅ **Manageable storage** (435-580 GB compressed, ~50 GB with pruning)
-- ✅ **Production-ready** (fully operational)
+- ✅ **Working implementation** (public pilot network, pre-mainnet)
 - ✅ **Future-proof** (no migration needed)
 
 **Major protocols:**

@@ -18,11 +18,11 @@
 
 ## Introduction
 
-**QSDM** (Quantum-Secure Dynamic Mesh Ledger) is a decentralized electronic cash system that uses quantum-safe cryptography and a dynamic mesh architecture for transaction processing.
+**QSDM** (Quantum-Secure Dynamic Mesh Ledger) is an electronic cash system designed for decentralized operation. It uses post-quantum (ML-DSA-87) wallet signatures and a dynamic mesh architecture for transaction processing. It currently runs as a public pilot network (pre-mainnet) with a single block producer during recovery.
 
 ### Key Features
 
-- **Quantum-Safe Cryptography:** CRYSTALS-Dilithium signatures
+- **Post-Quantum Signatures:** ML-DSA-87 (NIST FIPS 204, the standardised form of CRYSTALS-Dilithium) for wallet transactions
 - **Dynamic Submesh Routing:** Priority-based transaction routing
 - **Governance System:** Snapshot-based voting
 - **3D Mesh Validation:** Multi-parent cell validation

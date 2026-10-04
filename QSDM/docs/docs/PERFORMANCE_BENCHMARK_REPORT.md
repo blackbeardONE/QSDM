@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-QSDM with optimizations demonstrates **competitive performance** with major blockchain protocols while providing **256-bit quantum-safe security**. Key highlights:
+QSDM with optimizations demonstrates **competitive performance** with major blockchain protocols while providing **NIST category 5 post-quantum signatures**. Key highlights:
 
 - ✅ **Verification is 1.76x faster than ECDSA** (0.19 ms vs 0.33 ms)
 - ✅ **Signing optimized to 0.45-0.475 ms** (5-10% improvement)

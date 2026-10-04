@@ -1,19 +1,38 @@
 # QSDM
 
-**QSDM** (Quantum-Secure Dynamic Mesh ledger) is a post-quantum-secure
-ledger with a two-tier node model — CPU-only validators run the PoE + BFT
-consensus, and miners run an additive, Mesh3D-tied Proof-of-Work that
+**QSDM** (Quantum-Secure Dynamic Mesh ledger) is a ledger with
+post-quantum (ML-DSA-87) wallet signatures and a two-tier node model —
+CPU-only validators are designed to run the PoE + BFT consensus, and miners run an additive, Mesh3D-tied Proof-of-Work that
 mints the native coin, **Cell (CELL)**. Consumers use **QSDM Hive**
 (Windows/Linux) for wallets, signed tasks, NVIDIA mining, and Mother Hive
 edge pools. Operators use Core plus optional home gateway, tray monitor,
 and attestation sidecars.
 
-Transaction signatures use **ML-DSA-87** (NIST FIPS 204) — the
-standardised post-quantum replacement for classical Ed25519 / Ed448 —
-so transactions signed today remain unforgeable against cryptographically
-relevant quantum adversaries tomorrow.
+Wallet transactions are signed with **ML-DSA-87** (NIST FIPS 204, via
+Cloudflare CIRCL) — the standardised post-quantum signature scheme. It is
+designed so that signatures made today stay unforgeable even against a
+future cryptographically relevant quantum computer.
 
 Latest tagged ledger release: **v0.4.3**. Public site: [qsdm.tech](https://qsdm.tech).
+
+## Network status
+
+QSDM is a **public pilot network (pre-mainnet)**. Today:
+
+- Blocks come from a **single block producer during recovery**; a backup node
+  follows the chain. Live peer count and consensus flags are published at
+  [`/api/v1/status`](https://api.qsdm.tech/api/v1/status) and
+  [qsdm.tech/network.html](https://qsdm.tech/network.html).
+- CELL wallet transactions (Hive, web wallet, `qsdmcli`) are signed with
+  ML-DSA-87. The generic peer-to-peer transaction verifier still also accepts
+  Ed25519 signatures.
+- Signed consensus messages are supported in the node but not yet active
+  (`signed_consensus_active: false`).
+- GPU mining (NVIDIA today) is open to enrolled QSDM Hive miners.
+- Consensus signing, independent validators, the Tier 0 treasury multisig, an
+  official genesis manifest and an independent external audit are on the
+  roadmap. Until those gates close, treat the chain as a pilot, not a mainnet
+  (see [`TREASURY_POLICY.md` §9](QSDM/docs/docs/TREASURY_POLICY.md#9-mainnet-release-gates)).
 
 > **Rebrand notice.** Folder names such as `apps/qsdm-landing/` and
 > configuration identifiers (`qsdm.*` configs, `QSDM_*` env vars,

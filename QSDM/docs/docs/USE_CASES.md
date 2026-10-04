@@ -13,7 +13,7 @@
 ## 1. Electronic Cash & Payments
 
 ### Primary use case
-Decentralized electronic cash with quantum-safe cryptography.
+Electronic cash with post-quantum (ML-DSA-87) wallet signatures, designed for decentralized operation (currently a pre-mainnet pilot network).
 
 ### Characteristics
 - Quantum-safe transactions — ML-DSA-87 (NIST FIPS 204)

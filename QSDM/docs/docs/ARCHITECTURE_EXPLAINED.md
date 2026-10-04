@@ -2,6 +2,15 @@
 
 **Last Updated:** December 2024
 
+> **Current status note (2026-10):** This is a historical document. QSDM today is a
+> public pilot network (pre-mainnet) run by a single block producer during recovery.
+> CELL wallet transactions are signed with ML-DSA-87 (NIST FIPS 204); signed consensus
+> messages, independent validators and an independent external audit are still on the
+> roadmap. For what is safe to claim today, see [Capability Snapshot](CAPABILITY_SNAPSHOT.md)
+> and [Treasury Policy §9](TREASURY_POLICY.md#9-mainnet-release-gates).
+> The live pilot chain produces blocks with a ~10-second target, so the
+> "not a blockchain" and "no block delays" framing below describes the original design.
+
 ---
 
 ## Is QSDM a Blockchain?
@@ -125,9 +134,9 @@ PoE validates transactions by:
    - Dynamic submesh routing for load distribution
 
 4. **Quantum-Safe by Design**
-   - ML-DSA-87 signatures (256-bit quantum-safe)
-   - Mesh structure doesn't rely on classical cryptography assumptions
-   - Future-proof against quantum attacks
+   - ML-DSA-87 wallet signatures (NIST category 5)
+   - Wallet signatures do not rely on classical elliptic-curve assumptions
+   - Designed to resist known quantum attacks on signatures
 
 ---
 
@@ -205,7 +214,7 @@ type Transaction struct {
 ## Why This Matters
 
 1. **Better Scalability:** Parallel processing vs sequential blocks
-2. **Quantum-Safe:** Future-proof cryptography
+2. **Post-Quantum Signatures:** designed to resist known quantum attacks
 3. **Flexible Architecture:** Dynamic submeshes and routing
 4. **No Block Delays:** Transactions validated immediately
 5. **Higher Throughput:** Potential for much higher TPS than blockchains

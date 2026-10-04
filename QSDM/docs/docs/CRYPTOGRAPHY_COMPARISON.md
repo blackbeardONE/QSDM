@@ -1,8 +1,15 @@
 # Cryptographic Comparison: QSDM vs Major Blockchain Protocols
 
+> **Current status note (2026-10):** This is a historical document. QSDM today is a
+> public pilot network (pre-mainnet) run by a single block producer during recovery.
+> CELL wallet transactions are signed with ML-DSA-87 (NIST FIPS 204); signed consensus
+> messages, independent validators and an independent external audit are still on the
+> roadmap. For what is safe to claim today, see [Capability Snapshot](CAPABILITY_SNAPSHOT.md)
+> and [Treasury Policy §9](TREASURY_POLICY.md#9-mainnet-release-gates).
+
 ## Executive Summary
 
-QSDM uses **ML-DSA-87** (256-bit post-quantum security), while major blockchains like Bitcoin and Ethereum use **ECDSA secp256k1** (classical cryptography, vulnerable to quantum attacks).
+QSDM signs wallet transactions with **ML-DSA-87** (NIST category 5 post-quantum security), while major blockchains like Bitcoin and Ethereum use **ECDSA secp256k1** (classical cryptography, vulnerable to quantum attacks).
 
 ---
 
@@ -12,7 +19,7 @@ QSDM uses **ML-DSA-87** (256-bit post-quantum security), while major blockchains
 
 | Protocol | Algorithm | Security Level | Quantum-Safe | Status |
 |----------|-----------|----------------|--------------|--------|
-| **QSDM** | **ML-DSA-87** | **256-bit (AES-256)** | ✅ **Yes** | **Production Ready** |
+| **QSDM** | **ML-DSA-87** | **Category 5 (comparable to AES-256)** | ✅ **Yes** | **In use for wallet transactions (pilot network)** |
 | Bitcoin | ECDSA secp256k1 | ~128-bit (classical) | ❌ No | Vulnerable to quantum computers |
 | Ethereum | ECDSA secp256k1 | ~128-bit (classical) | ❌ No | Vulnerable to quantum computers |
 | Cardano | Ed25519 | ~128-bit (classical) | ❌ No | Vulnerable to quantum computers |
