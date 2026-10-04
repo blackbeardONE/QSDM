@@ -169,3 +169,6 @@ footer nav { display: flex; gap: 18px; }
   .dialog-actions .button { width: 100%; }
   footer { flex-direction: column; }
 }
+
+/* Status banner. Styled here, not inline: the page CSP has no 'unsafe-inline' for style-src. */
+#qsdm-migration-notice { position: relative; z-index: 1000; padding: 12px 20px; background: #fff3cd; color: #513b08; text-align: center; font: 14px/1.5 system-ui, sans-serif; }

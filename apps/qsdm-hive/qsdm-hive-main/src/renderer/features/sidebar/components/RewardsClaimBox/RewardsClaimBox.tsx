@@ -55,7 +55,9 @@ export function RewardsClaimBox({
     <InfoBox className="flex flex-col items-center p-2 xl:px-4 lgh:py-4 lgh:gap-4">
       <div className="flex items-center justify-between w-full">
         <div className="flex flex-col items-start w-full">
-          <span className="text-sm text-green-2 pb-1">Rewards</span>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-qsdm-muted pb-1">
+            Rewards
+          </span>
           <BalancesCarousel
             cellBalance={rewardsToDisplay.CELL || 0}
             isLoadingCellBalance={isLoading}

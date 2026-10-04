@@ -5,6 +5,10 @@
 **Auditor:** Security Review Team
 **Target version:** v0.4.2
 
+> **Scope note:** this is an internal project security review, not an independent
+> third-party audit. An independent economic, consensus and custody audit is still a
+> mainnet gate (see [Treasury Policy §9](TREASURY_POLICY.md#9-mainnet-release-gates)).
+
 ---
 
 ## Executive Summary
@@ -29,7 +33,7 @@ All **Critical**, **High**, and **Medium** issues from the initial audit are res
 
 ### 1. Quantum-Safe Cryptography
 - ✅ **ML-DSA-87** — NIST FIPS 204 standard (256-bit security)
-- ✅ **Quantum-safe signatures** — All transactions signed with ML-DSA-87
+- ✅ **Quantum-safe signatures** — Wallet transactions signed with ML-DSA-87 (the generic P2P transaction verifier still also accepts Ed25519)
 - ✅ **Quantum-safe tokens** — JWT tokens use ML-DSA-87 signatures (HMAC-SHA256 fallback in non-CGO builds)
 
 ### 2. SQL Injection Protection

@@ -26,21 +26,23 @@ interface BrandingConfig {
 // Theme color definitions
 const themeColors = {
   // Colors ordered by depth: depth-100 (darkest) to depth-10 (lightest)
+  // QSDM brand palette (matches qsdm.tech and branding/branding.json):
+  // navy surfaces, teal accents, gold highlight.
   qsdm: {
-    base: '#171753',
-    'depth-100': '#171753',
-    'depth-90': '#353570',
-    'depth-70': '#373765',
-    'depth-80': '#403c74',
-    'depth-60': '#454580',
-    'depth-50': '#4A4A73',
-    'depth-40': '#60608f',
-    'depth-30': '#8989C7',
-    'depth-20': '#9BE7C4',
-    'depth-10': '#BEF0ED',
-    highlight: '#49CE8B',
-    'gradient-start': 'rgba(3, 3, 50, 1)',
-    'gradient-end': 'rgba(23, 23, 83, 0.85)',
+    base: '#061116',
+    'depth-100': '#061116',
+    'depth-90': '#0a1f26',
+    'depth-80': '#12323c',
+    'depth-70': '#0c242c',
+    'depth-60': '#163c47',
+    'depth-50': '#1d4a56',
+    'depth-40': '#2d6370',
+    'depth-30': '#5f9ea8',
+    'depth-20': '#9ED7DC',
+    'depth-10': '#D8F3F4',
+    highlight: '#F7C948',
+    'gradient-start': 'rgba(6, 17, 22, 1)',
+    'gradient-end': 'rgba(10, 31, 38, 1)',
   },
   vip: {
     base: '#B8860B',

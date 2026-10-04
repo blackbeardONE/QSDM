@@ -2,7 +2,7 @@
 
 **Last Updated:** August 2026 · Latest Core candidate **v0.4.7-rc.9** · Hive **1.4.17** · Edge Control **1.3.7**
 
-QSDM (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger whose native coin is **Cell (CELL)**. Validators run PoE + BFT consensus; miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
+QSDM (Quantum-Secure Dynamic Mesh) is a mesh ledger with post-quantum (ML-DSA-87) wallet signatures whose native coin is **Cell (CELL)**. It currently runs as a public pilot network (pre-mainnet) with a single block producer during recovery. Validators are designed to run PoE + BFT consensus; miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
 
 For the current engineering readiness percentages, see [Capability Snapshot](CAPABILITY_SNAPSHOT.md).
 
@@ -22,7 +22,7 @@ it is not the CELL network gateway or another Hive client.
 ## Ledger & consensus
 
 - **Proof-of-Entanglement (PoE) + BFT** on a dynamic mesh (not a linear blockchain).
-- **ML-DSA-87** transaction signatures (NIST FIPS 204) with Zstd compression and batch signing.
+- **ML-DSA-87** wallet transaction signatures (NIST FIPS 204) with Zstd compression and batch signing. The generic P2P transaction verifier still also accepts Ed25519; signed consensus messages are supported but not yet active.
 - **3D mesh validation**, rule-based quarantine, and staked reputation penalties.
 - **Dynamic submeshes** with fee thresholds, priority routing, and geotags.
 - **SQLite + Zstd** storage; **ScyllaDB** path available for high throughput.
@@ -30,7 +30,7 @@ it is not the CELL network gateway or another Hive client.
 
 ## CELL tokenomics
 
-- **100M hard cap**, **0% founder allocation**, **10% genesis treasury** (48-month vesting), **90% mining emission** with 4-year halvings.
+- **Max supply 90,000,000 CELL from mining**, **0% founder allocation**, 4-year halvings. A 10,000,000 CELL genesis treasury is a mainnet proposal (not built, not part of the current chain).
 - Validators earn **transaction fees only** (no block subsidy).
 - Tokenomics surface on `GET /api/v1/status` and the operator dashboard.
 

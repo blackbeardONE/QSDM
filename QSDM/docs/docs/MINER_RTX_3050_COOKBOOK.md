@@ -165,7 +165,7 @@ posted in an issue.
     --keystore $env:USERPROFILE\.qsdm\wallet.json `
     --validator https://api.qsdm.tech
 
-# Wait for inclusion (~1 block, 10 s on mainnet).
+# Wait for inclusion (~1 block, 10 s on the live pilot network).
 .\bin\qsdmcli.exe enrollment-status '<your-libp2p-node-id>'
 # Expect: status="active", stake_dust=1000000000, gpu_uuid_match=true
 ```

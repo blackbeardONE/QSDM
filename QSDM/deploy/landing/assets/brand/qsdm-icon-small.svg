@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="t"><title id="t">QSDM app icon, small-size version</title>
+<rect width="256" height="256" rx="48" fill="#06141B"/>
+<g transform="translate(128 128) scale(1.1) translate(-128 -128)"><path d="M128 30L128 226M212.9 79L43.1 177M212.9 177L43.1 79" fill="none" stroke="#9ED7DC" stroke-width="22" stroke-linecap="round"/>
+<path d="M128 30L212.9 79L212.9 177L128 226L43.1 177L43.1 79Z" fill="none" stroke="#9ED7DC" stroke-width="28" stroke-linejoin="round"/>
+<path d="M128 86L164.4 107L164.4 149L128 170L91.6 149L91.6 107Z" fill="#F7C948" stroke="#06141B" stroke-width="16" stroke-linejoin="round" paint-order="stroke"/></g>
+</svg>

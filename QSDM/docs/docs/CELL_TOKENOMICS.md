@@ -37,11 +37,11 @@ output (`amount: 12345 dust`).
 
 | Parameter | Value |
 |---|---|
-| Total cap | **100,000,000 CELL** (100 M) |
+| Max supply | **90,000,000 CELL**, all from mining |
 | Founder / insider allocation | **0%** |
-| Genesis protocol treasury allocation | **10%** (10,000,000 CELL) |
-| Treasury vesting | linear over 48 months, enforced on-chain, locked at genesis |
-| Mining emission | **90%** (90,000,000 CELL) over ~20 years |
+| Genesis protocol treasury | **Mainnet proposal only:** 10,000,000 CELL. Not built and not part of the current chain. |
+| Treasury vesting (proposal) | linear over 48 months, enforced on-chain, locked at genesis |
+| Mining emission | **90,000,000 CELL** over ~20 years |
 | Emission curve | halvings every 4 years (see §3) |
 | Validator block subsidy | **0** — validators earn only transaction fees |
 | Base-fee burn | **undecided** — EIP-1559-style burn is *optional*; decision due before genesis (Phase 0 follow-up item) |
@@ -63,7 +63,9 @@ must be earned by a miner producing a valid PoW proof. This is the cleanest
 distribution posture in the current design and is not negotiable without a
 public tokenomics revision and governance approval.
 
-The 10 M CELL protocol treasury is minted at genesis. In broad industry usage
+The 10 M CELL protocol treasury is a mainnet proposal: it is not built and is
+not part of the current chain. If it is adopted, it would be minted at
+genesis. In broad industry usage
 that is a premine/genesis allocation, even though it is not assigned to a
 founder or insider. QSDM uses the precise phrase **genesis protocol treasury
 allocation** and publishes its address, lock, vesting, and spending policy.
@@ -151,8 +153,9 @@ compressed-time simulation of the first halving and verify:
 Cell is **not** used to pay mining rewards out of a pre-minted pool; mining
 rewards are newly minted at block-confirmation time (a `mint` transaction
 embedded in the block by the validator who proposes, crediting the winning
-miner). After the disclosed genesis treasury allocation, this is the only path
-that creates new supply.
+miner). On the current chain this is the only path that creates new supply
+(the 10 M CELL genesis treasury is a mainnet proposal, not part of the
+current chain).
 
 ---
 
@@ -180,13 +183,13 @@ Phase-0 follow-up.
 
 | Dimension | Bitcoin | Cell |
 |---|---|---|
-| Total cap | 21,000,000 BTC | 100,000,000 CELL |
+| Max supply | 21,000,000 BTC | 90,000,000 CELL (from mining) |
 | Decimals | 8 | 8 |
 | Halving period | every 210,000 blocks (~4 years at 10-min blocks) | every 12,614,400 blocks (~4 years at 10-sec blocks) |
 | Block time | ~10 min | 10 sec (target) |
 | Initial reward | 50 BTC | 1.4280 CELL |
 | Founder / insider allocation | 0 | 0 |
-| Treasury | none | 10% vested linearly over 48 months |
+| Treasury | none | none on the current chain; a 10,000,000 CELL genesis treasury is a mainnet proposal |
 | Consensus | pure PoW | PoE + BFT **for consensus**, additive PoW **for emission only** |
 
 The structural difference from Bitcoin is that Cell's PoW layer is

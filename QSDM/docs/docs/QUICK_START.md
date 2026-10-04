@@ -7,7 +7,7 @@
 
 ## Overview
 
-**QSDM** (Quantum-Secure Dynamic Mesh Ledger) is a quantum-resistant blockchain using ML-DSA-87 (NIST FIPS 204) for 256-bit quantum-safe security. This guide will help you get started quickly.
+**QSDM** (Quantum-Secure Dynamic Mesh Ledger) is a ledger whose wallet transactions are signed with ML-DSA-87 (NIST FIPS 204, security category 5 — the highest ML-DSA level, comparable to AES-256). It currently runs as a public pilot network (pre-mainnet). This guide will help you get started quickly.
 
 ---
 
@@ -78,7 +78,7 @@ The node will:
 
 ### 1. Quantum-Safe Cryptography
 - **Algorithm**: ML-DSA-87 (NIST FIPS 204)
-- **Security Level**: 256-bit quantum-safe
+- **Security Level**: NIST category 5 (post-quantum, comparable to AES-256)
 - **Performance**: Optimized with memory pooling
 
 ### 2. Optimized Storage
@@ -207,10 +207,10 @@ See [docs/NEXT_STEPS.md](NEXT_STEPS.md) for:
 | **Signing** | 0.45-0.475 ms | 0.14 ms |
 | **Verification** | **0.19 ms** ✅ | 0.33 ms |
 | **Signature Size** | 2.3 KB (compressed) | 70 bytes |
-| **Security** | **256-bit quantum-safe** ✅ | 128-bit classical |
+| **Security** | **NIST category 5, post-quantum** ✅ | 128-bit classical |
 
 **QSDM Advantages:**
-- ✅ Quantum-safe (future-proof)
+- ✅ Post-quantum signatures (designed to resist known quantum attacks)
 - ✅ Faster verification than ECDSA
 - ✅ Optimized storage and signatures
 

@@ -2,6 +2,9 @@ import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
 
+import { setQsdmRuntimeCoreApiUrl } from 'config/qsdm';
+import { assertQsdmCanonicalChainSafety } from './qsdmCanonicalChain';
+
 import axios from 'axios';
 
 import { submitQsdmWalletTransferIntent } from './qsdmWalletTransfer';
@@ -23,6 +26,12 @@ jest.mock('./qsdmCanonicalChain', () => ({
 const mockedAxiosGet = axios.get as jest.Mock;
 const mockedAxiosPost = axios.post as jest.Mock;
 const mockedSpawn = spawn as jest.Mock;
+const mockedSafety = assertQsdmCanonicalChainSafety as jest.Mock;
+const safeReport = {
+  safe: true,
+  effectiveApiUrl: 'http://127.0.0.1:8080/api/v1',
+  canonicalApiUrl: 'https://api.qsdm.tech/api/v1',
+};
 
 const originalEnv = process.env;
 
@@ -110,6 +119,8 @@ describe('qsdmWalletTransfer', () => {
     mockedAxiosGet.mockReset();
     mockedAxiosPost.mockReset();
     mockedSpawn.mockReset();
+    mockedSafety.mockReset().mockResolvedValue(safeReport);
+    setQsdmRuntimeCoreApiUrl();
   });
 
   afterAll(() => {
@@ -319,5 +330,56 @@ describe('qsdmWalletTransfer', () => {
     await expect(second).resolves.toMatchObject({ status: 'accepted' });
     expect(mockedAxiosGet).toHaveBeenCalledTimes(2);
     expect(mockedAxiosPost).toHaveBeenCalledTimes(2);
+  });
+
+  it('blocks the transfer if canonical verification fails after signing', async () => {
+    mockCliSigner();
+    mockedAxiosGet.mockResolvedValue(nonceResponse(8));
+    mockedSafety
+      .mockResolvedValueOnce(safeReport)
+      .mockRejectedValueOnce(new Error('Value-bearing actions are blocked'));
+    await expect(
+      submitQsdmWalletTransferIntent({ recipient: 'b'.repeat(64), amount: 1 })
+    ).rejects.toThrow('Value-bearing actions are blocked');
+    expect(mockedAxiosPost).not.toHaveBeenCalled();
+    expect(mockedSafety.mock.calls).toEqual([
+      [{ forceRefresh: true }],
+      [{ forceRefresh: true }],
+    ]);
+  });
+
+  it('stops a nonce retry if canonical verification becomes unavailable', async () => {
+    mockCliSigner();
+    mockedAxiosGet
+      .mockResolvedValueOnce(nonceResponse(8))
+      .mockResolvedValueOnce(nonceResponse(9));
+    mockedAxiosPost.mockRejectedValueOnce(pendingNonceConflict);
+    mockedSafety
+      .mockResolvedValueOnce(safeReport)
+      .mockResolvedValueOnce(safeReport)
+      .mockRejectedValueOnce(new Error('Value-bearing actions are blocked'));
+    await expect(
+      submitQsdmWalletTransferIntent({ recipient: 'b'.repeat(64), amount: 1 })
+    ).rejects.toThrow('Value-bearing actions are blocked');
+    expect(mockedAxiosPost).toHaveBeenCalledTimes(1);
+    expect(mockedSafety).toHaveBeenCalledTimes(3);
+  });
+
+  it('uses the endpoint returned by fresh verification despite a global route change', async () => {
+    mockCliSigner();
+    mockedAxiosGet.mockResolvedValue(nonceResponse(8));
+    mockedAxiosPost.mockResolvedValue(acceptedResponse());
+    mockedSafety.mockImplementation(async () => {
+      setQsdmRuntimeCoreApiUrl('https://unverified.example/api/v1');
+      return safeReport;
+    });
+    await submitQsdmWalletTransferIntent({
+      recipient: 'b'.repeat(64),
+      amount: 1,
+    });
+    expect(mockedAxiosPost.mock.calls[0][0]).toBe(
+      'http://127.0.0.1:8080/api/v1/wallet/submit-signed'
+    );
+    setQsdmRuntimeCoreApiUrl();
   });
 });

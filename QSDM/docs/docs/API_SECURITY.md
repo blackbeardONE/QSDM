@@ -16,7 +16,7 @@ The QSDM HTTP API provides a secure REST interface for wallet and validator oper
 - **Certificate**: 4096-bit RSA keys (self-signed for development, CA-signed for production)
 
 ### 2. **Quantum-Safe Authentication**
-- **JWT Tokens**: Signed with CRYSTALS-Dilithium (quantum-resistant)
+- **JWT Tokens**: Signed with ML-DSA-87 / CRYSTALS-Dilithium in CGO builds (HMAC-SHA256 fallback in non-CGO builds)
 - **Token Types**: Access tokens (15 min) and refresh tokens (7 days)
 - **Nonce Protection**: Prevents replay attacks
 - **Token Expiration**: Automatic expiration and validation

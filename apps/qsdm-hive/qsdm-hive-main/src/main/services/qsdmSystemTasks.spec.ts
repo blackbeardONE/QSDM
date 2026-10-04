@@ -1,4 +1,5 @@
 // cspell:words conso healthz qsdmminer
+import { app } from 'electron';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -6,7 +7,12 @@ import vm from 'vm';
 
 import axios from 'axios';
 
+import { QSDM_MINER_UNLOCK_WALLET_MESSAGE } from './qsdmMinerOperatorSigning';
 import {
+  assertQsdmMinerOperatorSigningReady,
+  getQsdmMinerOperatorSigningPlan,
+  getQsdmMinerOperatorSigningStatus,
+  resetQsdmMinerOperatorSigningStatusCacheForTests,
   createQsdmEdgeWorkerSystemTask,
   createQsdmEdgeWorkerScript,
   createQsdmGPUWorkerSystemTask,
@@ -65,6 +71,7 @@ import {
 } from './qsdmSystemTasks';
 
 const mockGetQsdmTaskActionSender = jest.fn();
+const mockGetQsdmTaskActionSignerStatus = jest.fn();
 
 jest.mock('axios', () => ({
   get: jest.fn(),
@@ -72,6 +79,7 @@ jest.mock('axios', () => ({
 
 jest.mock('main/services/qsdmTaskActionSigner', () => ({
   getQsdmTaskActionSender: () => mockGetQsdmTaskActionSender(),
+  getQsdmTaskActionSignerStatus: () => mockGetQsdmTaskActionSignerStatus(),
 }));
 
 const mockedAxiosGet = axios.get as jest.Mock;
@@ -278,6 +286,314 @@ describe('qsdmSystemTasks', () => {
     } finally {
       fs.rmSync(directory, { recursive: true, force: true });
     }
+  });
+
+  describe('miner operator signing (public mining requires operator_sig)', () => {
+    const signer =
+      'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    // Synthetic test value only; it must never reach argv, logs or errors.
+    const passphraseContent = 'correct horse battery staple test-only';
+    let root = '';
+    let configPath = '';
+    let logPath = '';
+    let keystorePath = '';
+    let sessionPassphraseFile = '';
+    const previousMinerConfig = process.env.QSDM_MINER_CONFIG;
+
+    const baseArgs = () => [
+      `--config=${configPath}`,
+      `--log-file=${logPath}`,
+      '--log-size-mb=10',
+      '--log-keep=5',
+      '--plain',
+      '--compute-backend=cuda',
+    ];
+
+    const signerStatus = (overrides: Record<string, unknown> = {}) => ({
+      mode: 'cli',
+      configured: true,
+      ready: true,
+      localLoopEnabled: false,
+      sender: signer,
+      cliPath: 'qsdmcli',
+      keystorePath,
+      passphraseFile: sessionPassphraseFile,
+      checks: {
+        sender: true,
+        cliMode: true,
+        cliPath: true,
+        keystore: true,
+        passphrase: true,
+      },
+      ...overrides,
+    });
+
+    const readTaskLog = () =>
+      fs.readFileSync(
+        path.join(
+          root,
+          'appdata',
+          'QSDM-Hive',
+          'namespace',
+          QSDM_MINER_SYSTEM_TASK_ID,
+          'task.log'
+        ),
+        'utf8'
+      );
+
+    beforeEach(() => {
+      root = fs.mkdtempSync(path.join(os.tmpdir(), 'qsdm-hive-operator-'));
+      fs.mkdirSync(path.join(root, 'appdata'));
+      fs.mkdirSync(path.join(root, 'hive-signer'));
+      fs.mkdirSync(path.join(root, 'session'));
+      configPath = path.join(root, 'miner.toml');
+      logPath = path.join(root, 'miner.log');
+      keystorePath = path.join(root, 'hive-signer', 'wallet.json');
+      sessionPassphraseFile = path.join(root, 'session', 'passphrase.txt');
+      // Public address metadata only; no key material in test fixtures.
+      fs.writeFileSync(keystorePath, JSON.stringify({ address: signer }));
+      fs.writeFileSync(sessionPassphraseFile, passphraseContent);
+      fs.writeFileSync(
+        configPath,
+        `protocol = "v2"\nreward_address = "${signer}"\n`
+      );
+      process.env.QSDM_MINER_CONFIG = configPath;
+      (app.getPath as jest.Mock).mockReturnValue(path.join(root, 'appdata'));
+      mockGetQsdmTaskActionSignerStatus.mockReset();
+      mockGetQsdmTaskActionSignerStatus.mockReturnValue(signerStatus());
+      resetQsdmMinerOperatorSigningStatusCacheForTests();
+    });
+
+    afterEach(() => {
+      (app.getPath as jest.Mock).mockImplementation(() => process.cwd());
+      if (previousMinerConfig === undefined) {
+        delete process.env.QSDM_MINER_CONFIG;
+      } else {
+        process.env.QSDM_MINER_CONFIG = previousMinerConfig;
+      }
+      fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    it('starts the miner with the Hive signer keystore and per-launch passphrase file paths', () => {
+      const plan = assertQsdmMinerOperatorSigningReady(configPath);
+
+      expect(plan.mode).toBe('hive');
+      expect(plan.address).toBe(signer);
+      expect(plan.overridesMinerConfig).toBe(false);
+      const args = buildQsdmMinerLaunchArgs({
+        configPath,
+        logPath,
+        env: {},
+        operatorSigning: plan,
+      });
+      expect(args).toEqual([
+        ...baseArgs(),
+        `--operator-keystore=${keystorePath}`,
+        `--operator-passphrase-file=${sessionPassphraseFile}`,
+      ]);
+      expect(args.join(' ')).not.toContain(passphraseContent);
+      expect(plan.message).not.toContain(passphraseContent);
+    });
+
+    it('keeps idle gating opt-in alongside the operator signing flags', () => {
+      const plan = getQsdmMinerOperatorSigningPlan(configPath);
+
+      expect(
+        buildQsdmMinerLaunchArgs({
+          configPath,
+          logPath,
+          env: { QSDM_MINER_IDLE_ONLY: '1' },
+          operatorSigning: plan,
+        })
+      ).toEqual([
+        `--config=${configPath}`,
+        '--idle-only',
+        '--idle-threshold=10',
+        '--idle-grace=60s',
+        `--log-file=${logPath}`,
+        '--log-size-mb=10',
+        '--log-keep=5',
+        '--plain',
+        '--compute-backend=cuda',
+        `--operator-keystore=${keystorePath}`,
+        `--operator-passphrase-file=${sessionPassphraseFile}`,
+      ]);
+    });
+
+    it('refuses to start a miner that would submit unsigned proofs while the Hive wallet is locked', () => {
+      fs.rmSync(sessionPassphraseFile);
+      mockGetQsdmTaskActionSignerStatus.mockReturnValue(
+        signerStatus({
+          ready: false,
+          checks: {
+            sender: true,
+            cliMode: true,
+            cliPath: true,
+            keystore: true,
+            passphrase: false,
+          },
+          reason: 'Signer is missing: passphrase',
+        })
+      );
+
+      expect(() => assertQsdmMinerOperatorSigningReady(configPath)).toThrow(
+        QSDM_MINER_UNLOCK_WALLET_MESSAGE
+      );
+      const plan = getQsdmMinerOperatorSigningPlan(configPath);
+      expect(plan.mode).toBe('locked');
+      expect(plan.ready).toBe(false);
+      expect(plan.message.startsWith(QSDM_MINER_UNLOCK_WALLET_MESSAGE)).toBe(
+        true
+      );
+      expect(
+        buildQsdmMinerLaunchArgs({
+          configPath,
+          logPath,
+          env: {},
+          operatorSigning: plan,
+        })
+      ).toEqual(baseArgs());
+      expect(readTaskLog()).toContain(QSDM_MINER_UNLOCK_WALLET_MESSAGE);
+    });
+
+    it('also refuses when no Hive wallet is configured at all', () => {
+      mockGetQsdmTaskActionSignerStatus.mockReturnValue(
+        signerStatus({
+          ready: false,
+          sender: undefined,
+          keystorePath: undefined,
+          passphraseFile: undefined,
+        })
+      );
+
+      expect(() => assertQsdmMinerOperatorSigningReady(configPath)).toThrow(
+        'No QSDM wallet is configured in Hive.'
+      );
+    });
+
+    it('keeps a manual miner.toml operator setup for the same wallet working while Hive is locked', () => {
+      const manualPassphraseFile = path.join(root, 'operator-passphrase.txt');
+      fs.writeFileSync(manualPassphraseFile, passphraseContent);
+      fs.appendFileSync(
+        configPath,
+        `operator_keystore_path = '${keystorePath}'\noperator_passphrase_file = '${manualPassphraseFile}'\n`
+      );
+      fs.rmSync(sessionPassphraseFile);
+      mockGetQsdmTaskActionSignerStatus.mockReturnValue(
+        signerStatus({ ready: false, reason: 'Signer is missing: passphrase' })
+      );
+
+      const plan = assertQsdmMinerOperatorSigningReady(configPath);
+
+      expect(plan.mode).toBe('miner-config');
+      expect(plan.address).toBe(signer);
+      expect(plan.passphraseFile).toBe(manualPassphraseFile);
+      // No flags: the miner reads operator_* from miner.toml itself.
+      expect(
+        buildQsdmMinerLaunchArgs({
+          configPath,
+          logPath,
+          env: {},
+          operatorSigning: plan,
+        })
+      ).toEqual(baseArgs());
+    });
+
+    it('overrides miner.toml operator lines with the unlocked Hive wallet without editing them', () => {
+      const manualPassphraseFile = path.join(root, 'operator-passphrase.txt');
+      fs.writeFileSync(manualPassphraseFile, 'stale manual copy');
+      const escapeBasic = (value: string) => value.replace(/\\/g, '\\\\');
+      fs.appendFileSync(
+        configPath,
+        `operator_keystore_path = "${escapeBasic(
+          keystorePath
+        )}"\noperator_passphrase_file = "${escapeBasic(
+          manualPassphraseFile
+        )}"\n`
+      );
+      const before = fs.readFileSync(configPath, 'utf8');
+
+      const plan = assertQsdmMinerOperatorSigningReady(configPath);
+
+      expect(plan.mode).toBe('hive');
+      expect(plan.overridesMinerConfig).toBe(true);
+      expect(plan.warnings.join(' ')).toContain(
+        'overridden by the Hive wallet'
+      );
+      expect(
+        buildQsdmMinerLaunchArgs({
+          configPath,
+          logPath,
+          env: {},
+          operatorSigning: plan,
+        }).slice(-2)
+      ).toEqual([
+        `--operator-keystore=${keystorePath}`,
+        `--operator-passphrase-file=${sessionPassphraseFile}`,
+      ]);
+      expect(fs.readFileSync(configPath, 'utf8')).toBe(before);
+    });
+
+    it('reports operator signing to the Miner panel without paths and caches it briefly', () => {
+      const now = 1_000_000;
+      const first = getQsdmMinerOperatorSigningStatus(now);
+
+      expect(first).toEqual({
+        mode: 'hive',
+        ready: true,
+        address: signer,
+        message: `Operator signing: enabled automatically with the Hive wallet ${signer}.`,
+      });
+      expect(JSON.stringify(first)).not.toContain(sessionPassphraseFile);
+      mockGetQsdmTaskActionSignerStatus.mockReturnValue(
+        signerStatus({ ready: false })
+      );
+      expect(getQsdmMinerOperatorSigningStatus(now + 1000)).toEqual(first);
+      expect(getQsdmMinerOperatorSigningStatus(now + 6000)?.mode).toBe(
+        'locked'
+      );
+    });
+
+    it('redacts secrets from the miner log tail while keeping file paths and adds the unlock hint', () => {
+      fs.writeFileSync(
+        logPath,
+        [
+          "operator_passphrase_file = 'C:\\Users\\miner\\.qsdm\\operator-passphrase.txt'",
+          'qsdmminer-console --operator-passphrase-file=C:\\Temp\\qsdm-hive-signer-1-a\\passphrase.txt',
+          'v2 protocol config: v2: load operator signer: decrypt operator keystore: cipher: message authentication failed',
+          'passphrase=hunter2-do-not-display',
+          '{"passphrase":"fake-json-secret-do-not-display"}',
+          'private_key=deadbeef-do-not-display',
+          `key dump ${'ab'.repeat(300)}`,
+          'hmac_key=hmac-do-not-display',
+          '',
+        ].join('\n'),
+        'utf8'
+      );
+
+      const detail = buildProcessStartupExitDetail(
+        'QSDM Miner',
+        2,
+        null,
+        logPath
+      );
+
+      expect(detail).toContain('configuration is incomplete or invalid');
+      expect(detail).toContain(QSDM_MINER_UNLOCK_WALLET_MESSAGE);
+      expect(detail).toContain(
+        "operator_passphrase_file = 'C:\\Users\\miner\\.qsdm\\operator-passphrase.txt'"
+      );
+      expect(detail).toContain(
+        '--operator-passphrase-file=C:\\Temp\\qsdm-hive-signer-1-a\\passphrase.txt'
+      );
+      expect(detail).toContain('passphrase=[redacted]');
+      expect(detail).toContain('"passphrase":"[redacted]"');
+      expect(detail).toContain('private_key=[redacted]');
+      expect(detail).toContain('[redacted-hex]');
+      expect(detail).toContain('hmac_key=[redacted]');
+      expect(detail).not.toContain('do-not-display');
+      expect(detail).not.toContain('ab'.repeat(300));
+    });
   });
 
   it('creates a permanent QSDM miner task shape accepted by Hive task lists', () => {

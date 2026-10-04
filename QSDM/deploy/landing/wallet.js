@@ -611,7 +611,7 @@
         <div class="status-line" style="margin-top:14px">
           A balance of <code>0 CELL</code> on a freshly-generated address is normal.
           To start earning block rewards you need an enrolled NVIDIA GPU on the
-          live mainnet (v2 only). Consumers should use QSDM Hive to run eligible
+          live pilot network (pre-mainnet; mining protocol v2 only). Consumers should use QSDM Hive to run eligible
           tasks. Advanced operators can bond <strong>10 CELL</strong> with
           <code>qsdmcli enroll</code>, then run
           <code>qsdmminer-console --protocol=v2</code>.

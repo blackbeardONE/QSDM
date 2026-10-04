@@ -26,15 +26,17 @@ export function SidebarActions({
   const { showModal: showFundModal } = useFundNewAccountModal();
 
   const actionBaseClasses =
-    'flex items-center rounded-md justify-center w-full h-full cursor-pointer';
+    'flex items-center rounded-lg justify-center w-full h-full cursor-pointer transition';
   const primaryActionClasses = twMerge(
     actionBaseClasses,
     'text-white',
-    'bg-finnieBlue-light-secondary'
+    'border border-qsdm-border bg-qsdm-panel hover:bg-qsdm-panel-2'
   );
   const secondaryActionClasses = twMerge(
     actionBaseClasses,
-    showMyNodeAction ? 'bg-finnieTeal-100' : 'bg-finnieTeal'
+    showMyNodeAction
+      ? 'bg-finnieTeal-100 text-qsdm-bg'
+      : 'bg-qsdm-gold text-qsdm-bg hover:brightness-105'
   );
 
   const handleKeyDown =

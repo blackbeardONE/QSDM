@@ -5,6 +5,13 @@
 **Last Updated:** April 2026 (session 70)
 **Current Status:** Phase 1-3 Core Features Complete; in-repo scope ~99% complete. Remaining work requires external environments (auditor, real clusters, platform packaging).
 
+> **Current status note (2026-10):** This is a historical document. QSDM today is a
+> public pilot network (pre-mainnet) run by a single block producer during recovery.
+> CELL wallet transactions are signed with ML-DSA-87 (NIST FIPS 204); signed consensus
+> messages, independent validators and an independent external audit are still on the
+> roadmap. For what is safe to claim today, see [Capability Snapshot](CAPABILITY_SNAPSHOT.md)
+> and [Treasury Policy §9](TREASURY_POLICY.md#9-mainnet-release-gates).
+
 ---
 
 ## 🎯 Current Status

@@ -1,5 +1,7 @@
 import axios from 'axios';
 import { Event } from 'electron';
+import { assertQsdmCanonicalChainSafety } from 'main/services/qsdmCanonicalChain';
+import { setQsdmRuntimeCoreApiUrl } from 'config/qsdm';
 
 import { submitQsdmTaskAction } from './submitQsdmTaskAction';
 
@@ -12,10 +14,15 @@ jest.mock('main/services/qsdmCanonicalChain', () => ({
 }));
 
 const mockedAxiosPost = axios.post as jest.Mock;
+const mockedSafety = assertQsdmCanonicalChainSafety as jest.Mock;
 
 describe('submitQsdmTaskAction', () => {
   beforeEach(() => {
     mockedAxiosPost.mockReset();
+    mockedSafety.mockReset().mockImplementation(async () => {
+      setQsdmRuntimeCoreApiUrl('https://unverified.example/api/v1');
+      return { safe: true, effectiveApiUrl: 'http://127.0.0.1:8080/api/v1' };
+    });
   });
 
   it('posts a signed QSDM task action envelope to QSDM Core', async () => {
@@ -43,6 +50,8 @@ describe('submitQsdmTaskAction', () => {
 
     const response = await submitQsdmTaskAction({} as Event, envelope);
 
+    expect(mockedSafety).toHaveBeenCalledWith({ forceRefresh: true });
+    setQsdmRuntimeCoreApiUrl();
     expect(mockedAxiosPost).toHaveBeenCalledWith(
       'http://127.0.0.1:8080/api/v1/tasks/actions/submit-signed',
       envelope,
@@ -55,5 +64,18 @@ describe('submitQsdmTaskAction', () => {
       task_id: 'task-1',
       action: 'start',
     });
+  });
+
+  it('does not submit when fresh canonical verification rejects the write', async () => {
+    mockedSafety.mockRejectedValue(
+      new Error('Value-bearing actions are blocked')
+    );
+    await expect(
+      submitQsdmTaskAction(
+        {} as Event,
+        {} as Parameters<typeof submitQsdmTaskAction>[1]
+      )
+    ).rejects.toThrow('Value-bearing actions are blocked');
+    expect(mockedAxiosPost).not.toHaveBeenCalled();
   });
 });

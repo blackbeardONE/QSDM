@@ -1395,6 +1395,13 @@ func (h *Handlers) SubmitSignedTransaction(w http.ResponseWriter, r *http.Reques
 		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid recipient address: %v", err))
 		return
 	}
+	// Wallet identity is lowercase hex(SHA256(public_key)). Other accepted
+	// legacy address shapes cannot be owned by a canonical wallet signer.
+	if len(env.Recipient) != 64 || env.Recipient != strings.ToLower(env.Recipient) {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+		writeErrorResponse(w, http.StatusBadRequest, "recipient must be a lowercase 64-character wallet address")
+		return
+	}
 	if err := ValidateAmount(env.Amount); err != nil {
 		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
 		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid amount: %v", err))

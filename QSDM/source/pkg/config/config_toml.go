@@ -1,5 +1,7 @@
 package config
 
+import "github.com/blackbeardONE/QSDM/pkg/producerpolicy"
+
 // ConfigTOML represents the TOML structure for configuration file
 type ConfigTOML struct {
 	Node        NodeConfig          `toml:"node" yaml:"node"`
@@ -158,6 +160,7 @@ type GovernanceConfig struct {
 
 // ConsensusConfigTOML holds BFT consensus policy knobs.
 type ConsensusConfigTOML struct {
+	ProducerTransition *producerpolicy.Transition `toml:"producer_transition" yaml:"producer_transition"`
 	// RequireSignedVotes rejects unsigned inbound BFT messages. Turn this
 	// on once every validator runs a build that signs its votes.
 	RequireSignedVotes bool `toml:"require_signed_votes" yaml:"require_signed_votes"`

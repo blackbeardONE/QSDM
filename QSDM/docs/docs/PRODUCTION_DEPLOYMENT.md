@@ -5,7 +5,7 @@
 This guide provides step-by-step instructions for deploying QSDM in a production environment.
 
 **Last Updated:** December 14, 2025  
-**Status:** Production Ready
+**Status:** Deployment guide (the public QSDM network is a pre-mainnet pilot)
 
 ---
 
@@ -486,6 +486,6 @@ sudo ufw status  # Linux
 
 ---
 
-**Status:** Production Ready  
+**Status:** Deployment guide (the public QSDM network is a pre-mainnet pilot)  
 **Last Updated:** December 14, 2025
 

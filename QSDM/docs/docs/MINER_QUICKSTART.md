@@ -1,4 +1,4 @@
-# MINER_QUICKSTART — Mine QSDM on mainnet (v2 NVIDIA-locked)
+# MINER_QUICKSTART — Mine CELL on the QSDM pilot network (v2 NVIDIA-locked)
 
 > **Consumer path:** install QSDM Hive and run the QSDM Miner task there.
 > Hive manages the wallet, signed task loop, local status, and consumer mining
@@ -15,7 +15,7 @@
 > `ReasonBadVersion`; an empty / unparseable / stale / signature-invalid
 > attestation is rejected with `ReasonAttestation`.
 >
-> The mainnet posture is also self-advertised by
+> The live chain's mining posture is also self-advertised by
 > [`GET /api/v1/status`](#self-detect):
 >
 >     "mining": {
@@ -56,7 +56,7 @@ It assumes you have already read [`NODE_ROLES.md`](./NODE_ROLES.md) and the v2 s
 
 ## 1. Requirements
 
-To mine on mainnet you need:
+To mine on the live pilot network (pre-mainnet) you need:
 
 - **An NVIDIA GPU you control.** Either a datacenter card (Hopper /
   Blackwell with NVIDIA Confidential Compute → the `nvidia-cc-v1`
@@ -76,7 +76,7 @@ To mine on mainnet you need:
   CELL enrollment bond, or start from zero and let accepted mining rewards
   fill it. Unenrollment begins a 7-day unbond window.
 - **Network access** to a validator HTTP endpoint you trust. For
-  mainnet this is `https://api.qsdm.tech`; for local devnet, whatever
+  the live pilot network this is `https://api.qsdm.tech`; for local devnet, whatever
   your `cmd/qsdm` is bound to.
 - **~3 GiB free RAM** for the active mining-epoch DAG (see
   `MINING_PROTOCOL.md §3.3`).
@@ -857,10 +857,10 @@ Cross-reference: [`MINING_PROTOCOL_V2.md §7 (Verifier)`](./MINING_PROTOCOL_V2.m
 
 ## Appendix A. v1 audit / local-devnet builds
 
-> **Mainnet operators: this section is not for you.** It documents
+> **Live-network operators: this section is not for you.** It documents
 > how to build the in-tree v1 reference miner for protocol audit and
 > local-devnet bring-up. The v1 binary submits `Proof.Version = 1`
-> proofs, which the mainnet verifier rejects with `ReasonBadVersion`.
+> proofs, which the live verifier rejects with `ReasonBadVersion`.
 > Both miner binaries refuse to start a v1 mining loop against a
 > v2-active validator without `--allow-v1`.
 

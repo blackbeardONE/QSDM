@@ -1,19 +1,58 @@
 # QSDM
 
-**QSDM** (Quantum-Secure Dynamic Mesh ledger) is a post-quantum-secure
-ledger with a two-tier node model — CPU-only validators run the PoE + BFT
-consensus, and miners run an additive, Mesh3D-tied Proof-of-Work that
+**QSDM** (Quantum-Secure Dynamic Mesh ledger) is a ledger with
+post-quantum (ML-DSA-87) wallet signatures and a two-tier node model —
+CPU-only validators are designed to run the PoE + BFT consensus, and miners run an additive, Mesh3D-tied Proof-of-Work that
 mints the native coin, **Cell (CELL)**. Consumers use **QSDM Hive**
 (Windows/Linux) for wallets, signed tasks, NVIDIA mining, and Mother Hive
 edge pools. Operators use Core plus optional home gateway, tray monitor,
 and attestation sidecars.
 
-Transaction signatures use **ML-DSA-87** (NIST FIPS 204) — the
-standardised post-quantum replacement for classical Ed25519 / Ed448 —
-so transactions signed today remain unforgeable against cryptographically
-relevant quantum adversaries tomorrow.
+Wallet transactions are signed with **ML-DSA-87** (NIST FIPS 204, via
+Cloudflare CIRCL) — the standardised post-quantum signature scheme. It is
+designed so that signatures made today stay unforgeable even against a
+future cryptographically relevant quantum computer.
 
 Latest tagged ledger release: **v0.4.3**. Public site: [qsdm.tech](https://qsdm.tech).
+
+## Network status
+
+QSDM is a **public pilot network (pre-mainnet)**. Today:
+
+- Blocks come from a **single block producer during recovery**; a backup node
+  follows the chain. Live peer count and consensus flags are published at
+  [`/api/v1/status`](https://api.qsdm.tech/api/v1/status) and
+  [qsdm.tech/network.html](https://qsdm.tech/network.html).
+- CELL wallet transactions (Hive, web wallet, `qsdmcli`) are signed with
+  ML-DSA-87. The generic peer-to-peer transaction verifier still also accepts
+  Ed25519 signatures.
+- Signed consensus messages are supported in the node but not yet active
+  (`signed_consensus_active: false`).
+- GPU mining (NVIDIA today) is open to enrolled QSDM Hive miners.
+- Consensus signing, independent validators, the Tier 0 treasury multisig, an
+  official genesis manifest and an independent external audit are on the
+  roadmap. Until those gates close, treat the chain as a pilot, not a mainnet
+  (see [`TREASURY_POLICY.md` §9](QSDM/docs/docs/TREASURY_POLICY.md#9-mainnet-release-gates)).
+- Max supply is 90,000,000 CELL, all from mining. A 10,000,000 CELL genesis
+  treasury is a mainnet proposal; it is not built and is not part of the
+  current chain.
+
+### What is running (October 2026)
+
+- **Core:** release `hardened-legacy-20261002-d7ffcd4-hl2`, built from this
+  repository's `QSDM/source` (d7ffcd4 plus the recovery patches and the
+  HL1/HL2 hardened-legacy mining work listed in the
+  [changelog](CHANGELOG.md)). The chain was stopped on 2026-09-22 and
+  restarted on 2026-09-27; public mining reopened on 2026-10-02.
+- **Mining:** NVIDIA GPU miners enrolled through QSDM Hive, in time-boxed
+  public windows with per-owner limits. The node accepts owner-signed
+  (ML-DSA-87 `operator_sig`) proofs, and each window's configuration decides
+  whether the signature is required.
+- **Hive:** 1.4.21 for Windows and Linux, from
+  [qsdm.tech/downloads/hive-v2/](https://qsdm.tech/downloads/hive-v2/). Hive
+  1.4.21 signs mining proofs with the unlocked Hive wallet automatically.
+  Moving from 1.4.20 (Windows) or 1.4.17 (Linux) is a one-time manual install
+  from the [download page](https://qsdm.tech/download.html).
 
 > **Rebrand notice.** Folder names such as `apps/qsdm-landing/` and
 > configuration identifiers (`qsdm.*` configs, `QSDM_*` env vars,
@@ -40,6 +79,10 @@ Latest tagged ledger release: **v0.4.3**. Public site: [qsdm.tech](https://qsdm.
 - **Feature summary (current capabilities):** [`QSDM/docs/docs/Feature Summary.md`](QSDM/docs/docs/Feature%20Summary.md)
 - **Operator wiki (end-to-end):** [`QSDM/docs/docs/OPERATOR_GUIDE.md`](QSDM/docs/docs/OPERATOR_GUIDE.md) ⭐ start here if you are new
 - **Download Hive:** [qsdm.tech/download.html](https://qsdm.tech/download.html)
+  (Hive 1.4.21 and later: [qsdm.tech/downloads/hive-v2/](https://qsdm.tech/downloads/hive-v2/),
+  signed with the v2 release key pinned in
+  [`QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json`](QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json))
+- **Archived documents:** [`QSDM/docs/archive/`](QSDM/docs/archive/)
 - **Live bootstrap peers:** [qsdm.tech/validators.html](https://qsdm.tech/validators.html)
 - **Run a validator (CPU-only):** [`QSDM/docs/docs/VALIDATOR_QUICKSTART.md`](QSDM/docs/docs/VALIDATOR_QUICKSTART.md)
 - **Run a miner (Hive or console; CUDA solver bundled):** [`QSDM/docs/docs/MINER_QUICKSTART.md`](QSDM/docs/docs/MINER_QUICKSTART.md)

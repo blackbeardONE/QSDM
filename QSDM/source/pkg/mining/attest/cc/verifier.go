@@ -347,17 +347,17 @@ func (v *Verifier) VerifyAttestation(p mining.Proof, now time.Time) error {
 	// Step 7: replay cache. Keyed on (device_uuid, nonce) —
 	// distinct from the HMAC path which keys on (node_id,
 	// nonce). The CC path has no node_id; the GPU UUID is
-	// the strongest stable identity. We Record AFTER all
-	// other checks pass so half-failing proofs don't burn a
-	// nonce.
+	// the strongest stable identity. We claim AFTER the
+	// preceding checks pass so half-failing proofs don't burn a
+	// nonce. The check and the claim are one atomic TryRecord,
+	// so concurrent submissions sharing a nonce cannot all pass.
 	if v.nonceStore != nil {
 		var nonceBuf [32]byte
 		copy(nonceBuf[:], innerNonce)
-		if v.nonceStore.Seen(b.DeviceUUID, nonceBuf) {
+		if !v.nonceStore.TryRecord(b.DeviceUUID, nonceBuf, now) {
 			return fmt.Errorf("cc: nonce already used by device %s: %w",
 				b.DeviceUUID, mining.ErrAttestationNonceMismatch)
 		}
-		v.nonceStore.Record(b.DeviceUUID, nonceBuf, now)
 	}
 
 	// Step 8: PCR floor. Lex-compare with dotted-numeric

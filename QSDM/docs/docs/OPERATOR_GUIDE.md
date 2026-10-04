@@ -5,8 +5,10 @@
 > together all of the existing reference docs in the order you'll
 > actually meet them.
 >
-> **Scope.** Testnet today, mainnet when the
-> [`ROADMAP.md`](./ROADMAP.md) Phase 6 external audit closes. This
+> **Scope.** Public pilot network (pre-mainnet) today, run by a single
+> block producer during recovery. Mainnet only after the gates in
+> [`TREASURY_POLICY.md` §9](./TREASURY_POLICY.md#9-mainnet-release-gates)
+> close, including the [`ROADMAP.md`](./ROADMAP.md) Phase 6 external audit. This
 > guide never promises mainnet earnings; both difficulty and the block
 > reward are moving targets documented in
 > [`CELL_TOKENOMICS.md`](./CELL_TOKENOMICS.md).
@@ -26,6 +28,12 @@ QSDM runs on **libp2p + GossipSub**. Every validator is a full peer;
 there is no central server that holds the chain. The ledger is
 replicated byte-for-byte across every validator that has finished its
 initial sync.
+
+> **Today (pilot network):** the design above is the target. Right now the
+> chain is produced by a single block producer during recovery, with a
+> backup node following it, and `GET /api/v1/status` may report `peers: 0`.
+> Independent validators are on the roadmap; running one is how you help
+> get there.
 
 ```
                  ┌─────────────────────────────────────────────┐
@@ -158,7 +166,7 @@ end-to-end. The critical bits:
 1. Drop a `config.toml` with your desired `node.address`,
    `api.port = 8080`, `network.port = 4001`.
 2. Set `bootstrap_peers` to the **current multiaddr** of an existing
-   peer. For Phase 4 testnet that is us; the live multiaddr is
+   peer. For the current pilot network (Phase 4) that is us; the live multiaddr is
    published at [`qsdm.tech/validators.html`](https://qsdm.tech/validators.html)
    and the peer-id is always queryable live at
    `curl -s https://api.qsdm.tech/api/v1/status | jq -r .node_id`. The
@@ -307,8 +315,8 @@ binary directly.
 > The previous "one-command install" scripts
 > (`install-qsdmminer-console.sh`, `install-qsdmminer-console.ps1`) and
 > the `ghcr.io/<owner>/qsdm-miner-console` Docker image have been
-> withdrawn. Once the `v2` protocol activates, proofs from CPU-only
-> miners will no longer be accepted by mainnet validators. Plan your
+> withdrawn. The `v2` protocol is active on the live pilot network, so
+> proofs from CPU-only miners are not accepted. Plan your
 > deployment around an NVIDIA GPU with CUDA support; see
 > `Dockerfile.miner` for the GPU reference image.
 

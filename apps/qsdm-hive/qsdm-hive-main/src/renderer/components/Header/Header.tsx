@@ -53,7 +53,7 @@ function Header(): JSX.Element {
           <CurveLine
             className={`absolute top-7 h-[50%] ${
               hasSeenNewWalletsSection ? '-right-[2000px]' : '-right-[1950px]'
-            } ${theme === 'vip' ? 'text-[#FCBD4D]' : 'text-white'}`}
+            } ${theme === 'vip' ? 'text-[#FCBD4D]' : 'text-qsdm-teal/40'}`}
           />
           <Navbar />
         </div>

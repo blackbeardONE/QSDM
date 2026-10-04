@@ -101,7 +101,7 @@ export function AvailableBalanceInfoBox() {
       <div className="flex items-center justify-between w-full">
         <div className="flex flex-col items-start w-full gap-1">
           <div className="flex w-full items-center justify-between">
-            <span className="text-sm text-green-2 relative">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-qsdm-muted relative">
               Available Balance
             </span>
             <Popover
@@ -281,7 +281,7 @@ export function BalanceBox({
   isSingleItem: boolean;
   decimals?: number;
 }) {
-  const boxClasses = `flex flex-col items-start justify-center bg-purple-5 p-2 rounded-md transition-all duration-300 ease-in-out, ${
+  const boxClasses = `flex flex-col items-start justify-center bg-black/20 border border-qsdm-border px-3 py-2 rounded-lg transition-all duration-300 ease-in-out, ${
     isSingleItem
       ? 'min-w-[160px] xl:min-w-[198px] md2:min-w-[316px] xl1:min-w-[416px] xl2:min-w-[516px]'
       : 'min-w-[90px] xl:min-w-[96px]'
@@ -309,7 +309,7 @@ function ArrowScrollButton({
   onClick: () => void;
 }) {
   const positionClasses = direction === 'left' ? 'left-0' : 'right-0';
-  const buttonClasses = `focus:outline-none hover:bg-gray-600 p-1  bg-finnieBlue-light-secondary h-full absolute ${positionClasses}`;
+  const buttonClasses = `focus:outline-none hover:bg-gray-600 p-1  bg-qsdm-panel h-full absolute ${positionClasses}`;
   const arrowCharacter = direction === 'left' ? '‹' : '›';
 
   return (
