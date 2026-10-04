@@ -47,11 +47,12 @@ trustless.
 
 ## 3. Funding source
 
-The published supply cap is 100,000,000 CELL:
+The max supply is 90,000,000 CELL, all from mining:
 
 - 90,000,000 CELL is emitted through protocol mining.
-- 10,000,000 CELL is a disclosed genesis protocol-treasury allocation, locked
-  and released linearly over 48 months.
+- A 10,000,000 CELL genesis protocol-treasury allocation (locked and released
+  linearly over 48 months) is a mainnet proposal. It is not built and is not
+  part of the current chain.
 - Founder and insider allocation is 0 CELL.
 
 In broad industry terminology, CELL created for a treasury at genesis is a
@@ -60,7 +61,9 @@ therefore say "0% founder or insider premine" rather than the ambiguous "0%
 premine."
 
 If the official genesis state has not been finalized, the preferred source for
-referral and onboarding budgets is the vested 10% protocol allocation. If the
+referral and onboarding budgets is the proposed 10,000,000 CELL protocol
+allocation, if it is adopted for mainnet. The current chain has no such
+allocation. If the
 network has already launched without that allocation, do **not** mint it later.
 Fund programs from legitimately mined CELL, protocol fee revenue approved by
 governance, or disclosed sponsor revenue transferred into the Operations

@@ -33,8 +33,8 @@ the project's source code. The full normative reference is in
 
 | Parameter | Value |
 |-----------|-------|
-| Total supply cap | 100,000,000 CELL |
-| Treasury (genesis pre-fund) | 10,000,000 CELL |
+| Max supply | 90,000,000 CELL, all from mining |
+| Treasury (genesis pre-fund) | 10,000,000 CELL as a mainnet proposal; not built and not part of the current chain |
 | Mining emission | 90,000,000 CELL over ~21 years |
 | Halving cadence | every 4 years (210,000 blocks at 10 s) |
 | Block time target | 10 seconds |

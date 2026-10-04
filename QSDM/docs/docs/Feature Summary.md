@@ -30,7 +30,7 @@ it is not the CELL network gateway or another Hive client.
 
 ## CELL tokenomics
 
-- **100M hard cap**, **0% founder allocation**, **10% genesis treasury** (48-month vesting), **90% mining emission** with 4-year halvings.
+- **Max supply 90,000,000 CELL from mining**, **0% founder allocation**, 4-year halvings. A 10,000,000 CELL genesis treasury is a mainnet proposal (not built, not part of the current chain).
 - Validators earn **transaction fees only** (no block subsidy).
 - Tokenomics surface on `GET /api/v1/status` and the operator dashboard.
 

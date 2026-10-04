@@ -24,7 +24,7 @@
 
 ### 1.1 Goals (normative)
 
-1. **Fair launch emission.** All Cell enters circulation via mining rewards, except the fixed 10% treasury allocation documented in `CELL_TOKENOMICS.md`. 0% of Cell is pre-mined to validators, founders, or insiders.
+1. **Fair launch emission.** All Cell enters circulation via mining rewards (max supply 90,000,000 CELL). A 10,000,000 CELL genesis treasury is a mainnet proposal (not built, not part of the current chain); see `CELL_TOKENOMICS.md`. 0% of Cell is pre-mined to validators, founders, or insiders.
 2. **GPU-favored, NVIDIA-favored, NVIDIA-not-required.** CUDA-tuned kernels are the expected production miner. Portable OpenCL / Vulkan / CPU fallbacks MUST remain compilable and correct — they only lose economically.
 3. **ASIC resistance (soft).** The proof function is memory-hard (§5) and the work-set mutates on a cadence short enough (§3) that ASIC fabrication has negative ROI relative to the next mutation.
 4. **Cheap verification.** A validator on a modest VPS MUST verify any single proof in < 100 ms (CPU-only, single core) and batch-verify any block of ≤ 1000 proofs in < 2 s.
