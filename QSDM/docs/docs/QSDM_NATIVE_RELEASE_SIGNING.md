@@ -29,8 +29,8 @@ Any missing, expired, malformed, mismatched, or incorrectly signed input fails
 closed. Older clients and unapproved higher-version clients remain blocked by
 the exact-version policy.
 
-Signed manifests are valid for 90 days from issue and are re-signed before
-they expire. Hive rejects a manifest that is expired, dated in the future
+Signed manifests carry at most 90 days of signature validity and are re-signed
+before they expire. Hive rejects a manifest that is expired, dated in the future
 beyond normal clock skew, or valid for more than 120 days.
 
 ## Current release key (v2)
