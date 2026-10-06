@@ -15,10 +15,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 
-DEFAULT_BASE_URL = "https://qsdm.tech/downloads"
+# Hive 1.4.21+ trusts only the v2 release key and reads the self-contained
+# hive-v2 channel. The v1 files directly under /downloads serve Hive <= 1.4.20.
+DEFAULT_BASE_URL = "https://qsdm.tech/downloads/hive-v2"
 PINNED_RELEASE_KEY_ID = (
-    "10ab9c5710761d4c9dca59d42446e9ea0e3315d15cdc3715df1dcb8c96fa07a1"
+    "4081bf2c4755f4c5c1565b4fac75e14a7e0b52042ac3d34bf8a7f525866c64a9"
 )
+RELEASE_ENVELOPE_SUFFIX = "-v2"
 SEMVER_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -140,7 +143,9 @@ def verify_feed(
             )
         require_url(f"{base_url}/{expected_artifact}")
 
-        envelope_url = f"{base_url}/qsdm-hive-release-{platform}.json"
+        envelope_url = (
+            f"{base_url}/qsdm-hive-release-{platform}{RELEASE_ENVELOPE_SUFFIX}.json"
+        )
         validate_release_envelope(
             fetch_text(envelope_url),
             source=envelope_url,
