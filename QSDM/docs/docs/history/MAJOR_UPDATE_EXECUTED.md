@@ -1,5 +1,11 @@
 # Major Update — QSDM + Cell (EXECUTED)
 
+> **Historical document — superseded.** This is the original planning
+> document, kept for history only. It does not describe the current
+> network; its early mining-algorithm and hardware-vendor discussion has
+> been removed. See [Mining protocol v2](../MINING_PROTOCOL_V2.md) and the
+> [changelog](../../../../CHANGELOG.md) for the current state.
+
 > **Archive note (2026-04-22).** Phases 1–5 of this plan have been executed
 > in-repo. The wall-clock-blocked items — Phase 0 counsel sign-off,
 > trademark filings, Phase 4 incentivized testnet, Phase 6 external CUDA
@@ -9,14 +15,14 @@
 > under the new `rebrand`, `tokenomics`, `mining_audit`, and
 > `trust_api` categories.
 >
-> This file is preserved verbatim for historical reference; do **not**
-> edit it. All normative spec lives in:
+> Apart from the superseded material removed above, this file is kept as
+> written for historical reference. All normative spec lives in:
 >
 > - [`../REBRAND_NOTES.md`](../REBRAND_NOTES.md) — rebrand scope and deprecation shim.
 > - [`../CELL_TOKENOMICS.md`](../CELL_TOKENOMICS.md) — Cell supply, emission schedule, fees.
 > - [`../NODE_ROLES.md`](../NODE_ROLES.md) — validator vs miner hardware / build profile.
 > - [`../VALIDATOR_QUICKSTART.md`](../VALIDATOR_QUICKSTART.md) — VPS operator runbook.
-> - [`../MINING_PROTOCOL.md`](../MINING_PROTOCOL.md) — PoW sub-protocol (normative).
+> - [`../MINING_PROTOCOL_V2.md`](../MINING_PROTOCOL_V2.md) — mining protocol v2 (normative).
 > - [`../MINER_QUICKSTART.md`](../MINER_QUICKSTART.md) — CPU reference miner runbook.
 > - [`../NVIDIA_LOCK_CONSENSUS_SCOPE.md`](../NVIDIA_LOCK_CONSENSUS_SCOPE.md) — trust endpoint scope note.
 
@@ -34,12 +40,12 @@ QSDM becomes **QSDM**, a quantum-secure dynamic mesh ledger with a home-miner-dr
 The product identity changes along three axes at once:
 
 1. **Name change** — drop the `+` suffix. Product, repo, module path, docs, website, and dashboards become plain "QSDM".
-2. **Native coin** — introduce **Cell (CELL)** as the chain's native unit. Validators (VPS, CPU-only) earn Cell from transaction fees. Home miners (GPU, NVIDIA-favored) earn newly-emitted Cell by producing mining proofs.
+2. **Native coin** — introduce **Cell (CELL)** as the chain's native unit. Validators (VPS, CPU-only) earn Cell from transaction fees. Home miners (GPU) earn newly-emitted Cell by producing mining proofs.
 3. **Two-tier node model** — **primary / validator nodes run on VPS hardware (CPU only)** and are responsible for consensus, finality, and tx ordering. **Miners run at home on GPUs** and are responsible for the Cell emission schedule. These are distinct roles with distinct economics.
 
 The existing PoE + BFT consensus is **unchanged**. Mining is additive — a new reward track that sits alongside consensus, not a replacement for it.
 
-The "buy an NVIDIA GPU to mine Cell" pitch drives retail GPU demand. Validators' VPS sizing story remains unchanged: CPU, RAM, disk — no GPU needed.
+Validators' VPS sizing story remains unchanged: CPU, RAM, disk — no GPU needed.
 
 ---
 
@@ -51,12 +57,12 @@ The "buy an NVIDIA GPU to mine Cell" pitch drives retail GPU demand. Validators'
 | Native coin | (unnamed, functional) | **Cell (CELL)** — minted, emitted, fee-denominated |
 | Who produces blocks | Validators (PoE + BFT selection) | **Validators (VPS, CPU only)** — unchanged |
 | Who earns by securing the chain | Validators (tx fees) | **Validators** earn Cell tx fees |
-| Who earns by emitting new coins | N/A (no emission) | **Miners** (home, GPU, NVIDIA-favored) earn newly-emitted Cell |
+| Who earns by emitting new coins | N/A (no emission) | **Miners** (home, GPU) earn newly-emitted Cell |
 | Consensus security | PoE + BFT | **PoE + BFT** — unchanged |
 | GPU required on VPS? | No | **No** — explicit, documented, enforced by config defaults |
-| GPU required for miners? | N/A | **Yes** — CUDA-optimized mining algorithm |
+| GPU required for miners? | N/A | **Yes** |
 | Energy cost | PoS-class (negligible) | PoS-class for validators + GPU-mining-class for miners (bounded by emission schedule) |
-| Mining algorithm | None | Memory-hard, CUDA-tuned PoW (design detailed §5) |
+| Mining protocol | None | PoW sub-protocol (superseded — see [Mining protocol v2](../MINING_PROTOCOL_V2.md)) |
 | Public marketing story | "Quantum-secure ledger" | "Quantum-secure ledger + mine Cell with your gaming GPU at home" |
 
 ---
@@ -66,7 +72,7 @@ The "buy an NVIDIA GPU to mine Cell" pitch drives retail GPU demand. Validators'
 1. **Rename** everything user-facing from "QSDM" to "QSDM". Repo directories, Go module path, binaries, docs, dashboards, CI workflows, website, SDKs.
 2. **Introduce Cell as the native coin** with a fair-launch, fixed-supply tokenomics model. No pre-mine. No team allocation larger than 10% (with vesting).
 3. **Split node roles** explicitly into *primary/validator nodes* (VPS, CPU) and *miner nodes* (home, GPU). Document hardware profiles for both. Make it impossible to misconfigure.
-4. **Design and ship a CUDA-optimized mining algorithm** that issues Cell on a published emission schedule.
+4. **Design and ship a mining protocol** that issues Cell on a published emission schedule.
 5. **Overhaul documentation** — `ROADMAP.md`, `NEXT_STEPS_QSDM.md` → `NEXT_STEPS.md`, every `README.md`, `SCYLLA_CAPACITY.md`, `NVIDIA_LOCK_CONSENSUS_SCOPE.md`, and produce new docs for tokenomics, mining, home-miner setup, validator operator runbook.
 6. **Overhaul `qsdm.tech`** — landing page, product pitch, miner quick-start, validator quick-start, tokenomics page, block explorer, brand kit.
 
@@ -135,59 +141,30 @@ This is the new technical work. The mining layer is a bolt-on subsystem that liv
 | Goal | How it's met |
 |---|---|
 | **Home-miner friendly** | GPU-accessible, runs on Windows + Linux, single-binary miner, clear setup docs |
-| **NVIDIA-favored** | CUDA-tuned kernels with architecture-specific optimizations (tensor cores, async memory, specific shader patterns) |
-| **ASIC-resistant** | Memory-hard algorithm with large (2–4 GB) dataset per epoch, mutates periodically |
 | **Useful work (optional v2)** | Miners' proofs double as mesh3D parent-cell validators; the chain benefits from their compute |
 | **Separable from consensus** | PoE validators keep producing blocks even if mining halts — no circular dependency |
 | **Verifiable cheaply** | Validators (CPU-only VPS) must be able to verify miner proofs in <100 ms; mining is hard, verification is fast |
 
-### 5.2 Algorithm choice — three candidates
+### 5.2 Algorithm choice
 
-| Candidate | Design | Pros | Cons |
-|---|---|---|---|
-| **A. KawPow-class** (memory-hard, GPU-favored, Ravencoin's algorithm) | 3 GB epoch DAG + programmatic shader | Battle-tested, exactly the "GPU mining" UX people recognize | Mining work is not useful; pure economic lottery |
-| **B. Autolykos v2** (Ergo) | Memory-hard, solution-based, friendly to small solo miners | Small-miner friendly, well-documented | Same: work is not useful |
-| **C. Mesh3D-tied useful PoW** (custom) | Miners batch-validate mesh3D parent-cells; valid batches with lowest hash wins the block reward | Work is genuinely useful; ties directly to QSDM's mesh3D identity | Needs fresh design, audit, and validation path on VPS |
-
-**Recommendation: start with (C) as the design target, ship (A) as a v1 if (C) isn't audit-ready by launch.** (C) is the most honest story ("GPUs are doing real work for the network"). (A) is the most boring but most predictable.
+*Removed — superseded. The original candidate list does not describe the
+protocol that shipped; see [Mining protocol v2](../MINING_PROTOCOL_V2.md).*
 
 ### 5.3 Proof-and-reward flow (target design)
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ 1. Home miner (NVIDIA GPU)                                  │
-│    - Subscribes to the current epoch DAG + mesh3D work set. │
-│    - Runs CUDA kernel: finds nonce such that                │
-│      H(block_header || nonce || mesh3d_batch_root) < target │
-│    - Submits {nonce, batch_root, attestation}               │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│ 2. Primary/validator node (VPS, CPU)                        │
-│    - Verifies proof in O(1) hash ops + mesh3d batch check.  │
-│    - If valid, includes mining-reward tx paying miner.      │
-│    - Mining-reward tx mints `block_reward` CELL → miner.    │
-│    - Block enters PoE + BFT finality as normal.             │
-└─────────────────────────────────────────────────────────────┘
-```
+*Original flow diagram removed — superseded by [Mining protocol v2](../MINING_PROTOCOL_V2.md).*
 
 Validators still decide block order — mining does not decide who proposes. Miners earn by *contributing* the winning proof for a block the proposer assembles. This keeps PoE's safety properties intact.
 
-### 5.4 NVIDIA-favored, not NVIDIA-exclusive
+### 5.4 Hardware vendor stance
 
-Two stances, one recommendation:
-
-**Stance 1 — "Friendly":** Algorithm uses memory access patterns, shader instruction mixes, and (optionally) tensor-core ops that are **dramatically more efficient on NVIDIA architectures** than AMD or integrated GPUs. AMD miners can technically participate but earn ~30–60% of what an equivalent-TDP NVIDIA card earns. This is **legally defensible, ethically fine, and still drives 80%+ of purchases toward NVIDIA** in practice. This is what Ergo, Kaspa, and old Ravencoin did.
-
-**Stance 2 — "Exclusive":** Algorithm actively rejects non-NVIDIA proofs (checks CUDA runtime signatures, device IDs, attestations). **Strongly not recommended** — creates antitrust exposure in several jurisdictions, fragile against spoofing, and places the project in the category of "single-vendor chains" which historically die from lack of ecosystem support.
-
-**Recommendation: Stance 1.** Market it as "optimized for NVIDIA GPUs" — technically accurate, legally safe, and operationally identical to what people buy NVIDIA for. Plan to revisit Stance 2 only after a formal partnership with NVIDIA (not before).
+*Removed — superseded. See [Mining protocol v2](../MINING_PROTOCOL_V2.md) and the miner documentation for
+current hardware support.*
 
 ### 5.5 What this means for `pkg/mesh3d` and `pkg/monitoring/nvidia_lock`
 
-- `pkg/mesh3d/cuda.go` — becomes the **core** of the mining algorithm under design (C). Production-harden it. Today it's tagged as "reference / hardening external" in the roadmap; it moves to P0.
-- `pkg/monitoring/nvidia_lock.go` — **renamed and repurposed**. Today it gates API calls. Going forward, keep it as an *optional operator policy* for validator nodes, but the miner software uses a different, simpler GPU-attestation scheme (signed CUDA driver handshake) that's mining-specific.
+- `pkg/mesh3d/cuda.go` — *original plan removed — superseded; see [Mining protocol v2](../MINING_PROTOCOL_V2.md).*
+- `pkg/monitoring/nvidia_lock.go` — **renamed and repurposed**. Today it gates API calls. Going forward, keep it as an *optional operator policy* for validator nodes, but the miner software uses a separate, mining-specific attestation scheme.
 
 ### 5.6 New packages / binaries to build
 
@@ -326,7 +303,7 @@ Current `qsdm.tech` positions the product as a generic quantum-secure chain. Pos
 All marketing copy must clear three filters before publication:
 
 1. **No promises of financial return.** Avoid "earn X per day", "ROI in Y months", "investment opportunity". Stick to utility framing: *"Mining Cell is how new coins enter circulation. Your earnings depend on network difficulty and the current block reward."*
-2. **No GPU vendor lock-in claims that aren't true.** Say *"optimized for NVIDIA"* or *"NVIDIA-favored"* — do not say *"NVIDIA-only"* or *"AMD cannot mine"* unless Stance 2 (§5.4) is adopted after legal review.
+2. **No hardware claims that aren't true.** Describe supported hardware only as stated in the current miner documentation.
 3. **No over-claiming the attestation story.** NVIDIA-lock is an **opt-in, per-operator policy** — not a network-wide consensus rule. Marketing must say *"X% of validators have opted into NVIDIA-lock with fresh NGC attestations"* — it must **not** say *"the QSDM network is NVIDIA-attested"* or *"all validators are hardware-verified"*. See `NVIDIA_LOCK_CONSENSUS_SCOPE.md` for the boundary; §8.5 for the copy pattern that works.
 
 ### 8.5 Trust & attestation story — using NVIDIA-lock as a credibility signal
@@ -360,7 +337,7 @@ NVIDIA-lock (`pkg/monitoring/nvidia_lock.go`) is today an optional API-boundary 
 5. **Explorer integration.** Each validator page on the block explorer shows an "Attested" badge (green / amber / red) and the most recent NGC proof time.
 6. **Opt-in guide for operators.** Short config snippet + link to the validator quick-start. The carrot: "Operators who opt in get surface real-estate on the landing page and improved discoverability in the peer list."
 7. **Limitations, stated clearly.** One paragraph listing the boundary — not consensus, not a security proof, not an NVIDIA endorsement, dependent on NGC service availability.
-8. **FAQ.** Why NVIDIA specifically (we consume an existing public attestation service; no reciprocal partnership assumed). Can AMD validators be attested (not today — there is no equivalent AMD NGC-class public attestation service; if one emerges, we'll support it). What happens if NVIDIA changes NGC terms (the badge disappears until a replacement attestation path exists; consensus is unaffected).
+8. **FAQ.** Why NVIDIA specifically (we consume an existing public attestation service; no reciprocal partnership assumed). What happens if NVIDIA changes NGC terms (the badge disappears until a replacement attestation path exists; consensus is unaffected).
 
 #### 8.5.1 Backend support needed
 
@@ -697,7 +674,7 @@ publish_trust_endpoints = true
   <!-- 8. FAQ -->
   <section>
     <h2>FAQ</h2>
-    <!-- details/summary pairs covering: why NVIDIA, AMD support, NGC outage, privacy of the feed, can I verify a proof myself -->
+    <!-- details/summary pairs covering: why NVIDIA, NGC outage, privacy of the feed, can I verify a proof myself -->
   </section>
 </main>
 ```
@@ -741,8 +718,7 @@ The aggregator's `Summary` method returns the struct shape in §8.5.3; its `Rece
 ### Phase 0 — Decision + legal (Week 0, 1 week)
 
 - [ ] Review this doc end-to-end; sign off or request changes.
-- [ ] Engage counsel on: tokenomics posture (fair launch + utility framing), treasury vesting legality in target jurisdictions, "NVIDIA-favored" vs "NVIDIA-exclusive" decision, trademark clearance on "QSDM" and "Cell".
-- [ ] Decide mining-algorithm candidate: A (KawPow-class), B (Autolykos v2), or C (mesh3D-tied).
+- [ ] Engage counsel on: tokenomics posture (fair launch + utility framing), treasury vesting legality in target jurisdictions, trademark clearance on "QSDM" and "Cell".
 - [ ] Commit tokenomics numbers (the proposals in §4 become binding).
 - [ ] Announce the plan internally. Freeze new feature merges to `pkg/mesh3d` and `pkg/branding` until Phase 1 lands.
 
@@ -807,7 +783,6 @@ The aggregator's `Summary` method returns the struct shape in §8.5.3; its `Rece
 - [ ] Audit the tokenomics logic (genesis, treasury vesting, emission) — same auditor.
 - [ ] Pool software reference implementation (or bless a third-party one).
 - [ ] Block explorer hardening for real traffic.
-- [ ] Monitor real-world GPU distribution per-block for 90 days to confirm NVIDIA-favored behavior is working as intended.
 
 ---
 
@@ -816,7 +791,6 @@ The aggregator's `Summary` method returns the struct shape in §8.5.3; its `Rece
 ### 10.1 Legal / regulatory
 
 - **Securities classification.** Fair launch + utility-first framing is the strongest posture but not airtight. The treasury allocation is the most exposed piece — vesting, transparency, and spending policy are all scrutinized. **Mitigation:** counsel review in Phase 0; consider a non-profit foundation holding the treasury.
-- **Vendor tie-in.** "NVIDIA-favored" (Stance 1) is defensible. "NVIDIA-exclusive" (Stance 2) is not recommended absent a partnership. **Mitigation:** commit to Stance 1 in Phase 0.
 - **"Buy hardware to earn coin" framing.** Crossing the line from "mining is how coins are issued" to "buy NVIDIA to earn money" is the difference between utility and investment framing. Marketing must be policed. **Mitigation:** §8.4 filter, enforced by legal review before any landing-page copy ships.
 - **Trademark.** "QSDM" and "Cell" need clearance in at least US/UK/EU. "Cell" is generic; may face prior art from existing projects. **Mitigation:** trademark search in Phase 0; if "Cell" is blocked, fall back to "QCell", "CellQ", or "Cytoplasm" (fits the biology theme).
 - **"NVIDIA-attested" trust claims on the website.** Using NVIDIA-lock attestations on the landing page is a strong credibility signal, but the claim is easy to over-stretch: "our network is NVIDIA-attested" is false (attestation is opt-in and non-consensus), while "X of Y validators opted into NVIDIA attestation" is true. **Mitigation:** §8.4 filter #3 plus §8.5.2 guardrails — always show the `X of Y` ratio, never hide the widget when the count is zero, and link the `/trust` page to `NVIDIA_LOCK_CONSENSUS_SCOPE.md` for verifiable scope. **Also:** the word "NVIDIA" in marketing material needs NVIDIA-trademark counsel review before launch, independent of any partnership discussion.
@@ -826,14 +800,12 @@ The aggregator's `Summary` method returns the struct shape in §8.5.3; its `Rece
 
 - **Consensus regression from mining integration.** Mining is additive but touches block assembly. A careless design could let a miner influence block ordering. **Mitigation:** the design in §5.3 keeps the proposer path unchanged — miners attach a proof to a block the proposer assembled, they don't pick the block. Formal review required.
 - **CUDA kernel bugs.** First-version CUDA mining kernels are historically where exploits hide (fake proofs, double-solve, timing attacks). **Mitigation:** external audit; bug bounty with real CELL payouts; 4-week incentivized testnet before mainnet.
-- **ASIC drift.** Any GPU-friendly algorithm is eventually ASIC-developed. **Mitigation:** epoch-based dataset rotation (like Ethash); if ASICs appear, fork the algorithm. Budget for this — it is inevitable within 18–24 months of launch if the coin is valuable.
 - **Validator sybil under mining rewards.** If miners also run validators to bias proposer selection, security weakens. **Mitigation:** the two roles are economically separate in our design (validators earn fees, miners earn emission) — running both is allowed but unprofitable compared to specializing. Monitor in phase 6.
 
 ### 10.3 Brand / market
 
 - **"Is this a shitcoin?" perception.** Any GPU-mining launch in 2026 will face skepticism. **Mitigation:** lead with the quantum-safe story; mining is the distribution mechanism, not the thesis. The website hero line reflects this.
 - **Competition from established mined chains.** Kaspa, Ergo, Alephium all compete for the same GPU miner mindshare. **Mitigation:** quantum-safe + fair-launch + clear docs are the differentiators. Don't compete on raw hashrate or emission rate.
-- **Centralization around large home miners.** "Home" can mean 500-GPU basement farms. **Mitigation:** algorithm favors single-GPU efficiency (memory bandwidth, not raw FLOPS); document this as an explicit design goal.
 
 ---
 
@@ -841,12 +813,12 @@ The aggregator's `Summary` method returns the struct shape in §8.5.3; its `Rece
 
 Before Phase 0 ends:
 
-1. **Mining algorithm candidate** — A (KawPow-class), B (Autolykos v2), or C (mesh3D-tied useful PoW)? *My recommendation: C as the target, A as the fallback if C isn't audit-ready in 10 weeks.*
+1. *(Mining algorithm question removed — superseded; see [Mining protocol v2](../MINING_PROTOCOL_V2.md).)*
 2. **Total supply cap** — 100 M as proposed, or a different number? (21 M Bitcoin-style round would also work but makes per-block rewards smaller.)
 3. **Treasury allocation** — 10% as proposed, or smaller? (0% is cleanest legally but starves development funding.)
 4. **Halving cadence** — every 4 years as proposed, or faster/slower?
 5. **Burn mechanism** — EIP-1559-style base-fee burn, or no burn?
-6. **NVIDIA stance** — Stance 1 ("favored") or Stance 2 ("exclusive")? *My recommendation: Stance 1.*
+6. *(Hardware vendor question removed — superseded.)*
 7. **Ticker** — `CELL` as proposed, or something distinct like `QCL` / `QCELL`?
 8. **Coin name fallback** — if "Cell" fails trademark clearance, prefer `QCell`, `Cytoplasm`, or `Vertex`? (Vertex ties to mesh3D cells too.)
 9. **Launch region** — which jurisdictions do we target for the initial validator/miner community? Determines where trademark and securities review focus.
@@ -862,7 +834,6 @@ Before Phase 0 ends:
 - **≥ 50 validator VPS nodes** across ≥ 15 unique operators
 - **≥ 5 PB/day Scylla write throughput sustained across the network** (scale the ScyllaDB case study into a real number)
 - **Zero consensus incidents** (no finality reverts past `ReorgLimit`, no equivocation, no mining exploit)
-- **NVIDIA GPUs > 70% of miner-reported hardware**, confirming Stance 1 is working as designed
 - **Fair launch posture upheld**: 0 CELL sold by the team, treasury vesting on schedule and public on-chain
 
 ---
