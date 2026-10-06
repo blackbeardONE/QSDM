@@ -90,8 +90,10 @@ const (
 // races the slashing window by unenrolling the moment a bad
 // proof is detected.
 //
-// 7 days at 3-second blocks ≈ 201,600 blocks. Governance can
-// adjust post-fork — the constant here is the genesis default.
+// The value is 201,600 blocks, which is about 23 days at the
+// network's 10-second target block time. (The expression below
+// was originally sized as 7 days at 3-second blocks.) Governance
+// can adjust post-fork — the constant here is the genesis default.
 // Exported as a var rather than a const because a future fork
 // may override it via chain config, and const would require a
 // code change to adjust.

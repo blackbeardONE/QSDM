@@ -9,7 +9,23 @@ fi
 stage_dir="$(cd "$1" && pwd)"
 hive_version="$2"
 webroot="${3:-/var/www/qsdm}"
-downloads="$webroot/downloads"
+# Hive 1.4.21+ trusts only the v2 release key and reads its release from the
+# self-contained hive-v2 channel. The v1 files directly under /downloads are
+# left untouched for Hive <= 1.4.20.
+release_channel="hive-v2"
+release_key_id="4081bf2c4755f4c5c1565b4fac75e14a7e0b52042ac3d34bf8a7f525866c64a9"
+downloads="$webroot/downloads/$release_channel"
+public_downloads="https://qsdm.tech/downloads/$release_channel"
+
+# Signed envelopes and manifests are written by PowerShell ConvertTo-Json,
+# which may put more than one space after a colon. Match a JSON string field
+# exactly, whatever the whitespace. Reads the JSON text from stdin.
+json_field_is() {
+  local field="$1"
+  local escaped
+  escaped="$(printf '%s' "$2" | sed 's/[][\.*^$+?(){}|]/\\&/g')"
+  grep -Eq "\"${field}\":[[:space:]]*\"${escaped}\""
+}
 
 if [[ ! "$hive_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "invalid Hive version: $hive_version" >&2
@@ -26,7 +42,7 @@ required_downloads=(
   "$archive"
   "$checksums"
   "latest-linux.yml"
-  "qsdm-hive-release-linux.json"
+  "qsdm-hive-release-linux-v2.json"
 )
 
 for file in "${required_downloads[@]}"; do
@@ -40,17 +56,17 @@ test -f "$stage_dir/download.html"
 )
 grep -qx "version: ${hive_version}" "$stage_dir/downloads/latest-linux.yml"
 grep -q "url: ${appimage}" "$stage_dir/downloads/latest-linux.yml"
-grep -q '"schema": "qsdm.signed-release.v1"' \
-  "$stage_dir/downloads/qsdm-hive-release-linux.json"
-grep -q '"key_id": "10ab9c5710761d4c9dca59d42446e9ea0e3315d15cdc3715df1dcb8c96fa07a1"' \
-  "$stage_dir/downloads/qsdm-hive-release-linux.json"
-manifest_payload="$(sed -n 's/.*"manifest_base64": "\([^"]*\)".*/\1/p' \
-  "$stage_dir/downloads/qsdm-hive-release-linux.json")"
+grep -Eq '"schema":[[:space:]]*"qsdm\.signed-release\.v1"' \
+  "$stage_dir/downloads/qsdm-hive-release-linux-v2.json"
+json_field_is key_id "$release_key_id" \
+  <"$stage_dir/downloads/qsdm-hive-release-linux-v2.json"
+manifest_payload="$(sed -n 's/.*"manifest_base64":[[:space:]]*"\([^"]*\)".*/\1/p' \
+  "$stage_dir/downloads/qsdm-hive-release-linux-v2.json")"
 test -n "$manifest_payload"
 manifest_json="$(printf '%s' "$manifest_payload" | base64 --decode)"
-grep -q '"version": "'"${hive_version}"'"' <<<"$manifest_json"
+json_field_is version "${hive_version}" <<<"$manifest_json"
 
-install -d -o caddy -g caddy -m 0755 "$webroot" "$downloads"
+install -d -o caddy -g caddy -m 0755 "$webroot" "$webroot/downloads" "$downloads"
 
 atomic_install() {
   local source="$1"
@@ -92,22 +108,22 @@ install_pointer "$stage_dir/downloads/$checksums" "$downloads/$checksums"
 
 for file in "$appimage" "$archive" "$checksums"; do
   curl --fail --silent --show-error --head --max-time 30 \
-    "https://qsdm.tech/downloads/$file" >/dev/null
+    "$public_downloads/$file" >/dev/null
 done
 
 install_pointer "$stage_dir/download.html" "$webroot/download.html"
 
 # The Linux exact-version policy moves last. Windows latest.yml is untouched.
 install_pointer "$stage_dir/downloads/latest-linux.yml" "$downloads/latest-linux.yml"
-install_pointer "$stage_dir/downloads/qsdm-hive-release-linux.json" \
-  "$downloads/qsdm-hive-release-linux.json"
+install_pointer "$stage_dir/downloads/qsdm-hive-release-linux-v2.json" \
+  "$downloads/qsdm-hive-release-linux-v2.json"
 
 public_latest="$(curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/downloads/latest-linux.yml")"
+  "$public_downloads/latest-linux.yml")"
 grep -qx "version: ${hive_version}" <<<"$public_latest"
 public_envelope="$(curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/downloads/qsdm-hive-release-linux.json")"
-grep -q '"schema": "qsdm.signed-release.v1"' <<<"$public_envelope"
+  "$public_downloads/qsdm-hive-release-linux-v2.json")"
+grep -Eq '"schema":[[:space:]]*"qsdm\.signed-release\.v1"' <<<"$public_envelope"
 public_download_page="$(curl --fail --silent --show-error --max-time 30 \
   "https://qsdm.tech/download.html")"
 grep -q "qsdm-hive-${hive_version}-linux-x86_64.AppImage" \
