@@ -174,17 +174,30 @@ func newTestKeystore(t *testing.T) (ksPath, passPath, sender string) {
 
 func newTestSigner(t *testing.T, apiURL string) *signer {
 	t.Helper()
+	return newTestSignerWithJournal(t, apiURL, filepath.Join(t.TempDir(), "payouts.jsonl"))
+}
+
+// newTestSignerWithJournal builds a role-bound signer ("test") with generous
+// caps: max 5, recipient 20, daily 100 CELL.
+func newTestSignerWithJournal(t *testing.T, apiURL, journalPath string) *signer {
+	t.Helper()
 	ksPath, passPath, _ := newTestKeystore(t)
 	s, err := loadSigner(config{
-		apiURL:   apiURL,
-		ksPath:   ksPath,
-		passFile: passPath,
-		token:    "test-token",
-		timeout:  5_000_000_000, // 5s
+		apiURL:       apiURL,
+		ksPath:       ksPath,
+		passFile:     passPath,
+		token:        "test-token",
+		role:         "test",
+		maxPay:       5,
+		dailyCap:     100,
+		recipientCap: 20,
+		journalPath:  journalPath,
+		timeout:      5_000_000_000, // 5s
 	})
 	if err != nil {
 		t.Fatalf("loadSigner: %v", err)
 	}
+	t.Cleanup(func() { _ = s.journal.close() })
 	return s
 }
 
@@ -202,18 +215,21 @@ func TestSignAndSubmit_ProducesVerifiableEnvelope(t *testing.T) {
 	}
 
 	recipient := strings.Repeat("f", 64)
-	txID, used, duplicate, err := s.signAndSubmit("test-sign-submit-01", "test", recipient, 1.5, s.nonce)
+	wire, err := dustToWire(150_000_000)
 	if err != nil {
-		t.Fatalf("signAndSubmit: %v", err)
+		t.Fatal(err)
 	}
-	if txID == "" {
-		t.Fatal("empty txID")
+	a := &payoutAttempt{
+		RequestID: "test-sign-submit-01", Purpose: "test", Recipient: recipient,
+		AmountDust: 150_000_000, WireAmount: wire, TxID: "test-sign-submit-01",
+		Nonce: s.nonce, Timestamp: "2026-10-08T00:00:00Z",
 	}
-	if used != 1 {
-		t.Fatalf("want used nonce 1, got %d", used)
+	res, err := s.submitAttempt(a, true)
+	if err != nil {
+		t.Fatalf("submitAttempt: %v", err)
 	}
-	if duplicate {
-		t.Fatal("newly submitted transfer reported as duplicate")
+	if res.outcome != outcomeAccepted {
+		t.Fatalf("want accepted, got %+v", res)
 	}
 	if len(fn.submitted) != 1 {
 		t.Fatalf("want 1 submitted envelope, got %d", len(fn.submitted))
@@ -222,7 +238,7 @@ func TestSignAndSubmit_ProducesVerifiableEnvelope(t *testing.T) {
 	if got.Sender != s.sender {
 		t.Fatalf("sender mismatch: env=%s signer=%s", got.Sender, s.sender)
 	}
-	if got.Recipient != recipient || got.Amount != 1.5 || got.Nonce != 1 {
+	if got.Recipient != recipient || got.Amount != 1.5 || got.Nonce != 1 || got.GeoTag != "test" {
 		t.Fatalf("envelope fields wrong: %+v", got)
 	}
 }
@@ -236,7 +252,7 @@ func TestHandlePay_AuthAndNonceAdvance(t *testing.T) {
 	if err := s.resyncNonce(); err != nil {
 		t.Fatalf("resyncNonce: %v", err)
 	}
-	srv := httptest.NewServer(payMux(s))
+	srv := httptest.NewServer(s.routes())
 	defer srv.Close()
 
 	// Missing token -> 401.
@@ -253,7 +269,7 @@ func TestHandlePay_AuthAndNonceAdvance(t *testing.T) {
 	// Two authorized payouts -> nonces 1 then 2, both verify at the node.
 	for i, want := range []uint64{1, 2} {
 		recipient := fmt.Sprintf("%064x", i+1)
-		body := fmt.Sprintf(`{"recipient":%q,"amount":%d}`, recipient, i+1)
+		body := fmt.Sprintf(`{"request_id":"pay-%d","purpose":"test","recipient":%q,"amount":%d}`, i, recipient, i+1)
 		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/pay", strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer test-token")
 		req.Header.Set("Content-Type", "application/json")
@@ -285,11 +301,10 @@ func TestHandlePay_RequestIDIsIdempotent(t *testing.T) {
 
 	s := newTestSigner(t, node.URL)
 	s.role = "referral"
-	s.maxPay = 5
 	if err := s.resyncNonce(); err != nil {
 		t.Fatalf("resyncNonce: %v", err)
 	}
-	srv := httptest.NewServer(payMux(s))
+	srv := httptest.NewServer(s.routes())
 	defer srv.Close()
 
 	call := func() payResponse {
@@ -340,7 +355,7 @@ func TestHandleVerify_LinkChallenge(t *testing.T) {
 
 	// A signer with no node needed for pure verification.
 	s := newTestSigner(t, "http://127.0.0.1:0")
-	srv := httptest.NewServer(payMux(s))
+	srv := httptest.NewServer(s.routes())
 	defer srv.Close()
 
 	call := func(body string) (int, verifyResponse) {
@@ -375,15 +390,4 @@ func TestHandleVerify_LinkChallenge(t *testing.T) {
 	if code != http.StatusOK || vr.Valid {
 		t.Fatalf("want 200 valid=false for tampered message, got %d valid=%v", code, vr.Valid)
 	}
-}
-
-// payMux builds the same routes run() registers, for httptest.
-func payMux(s *signer) http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", s.handleHealth)
-	mux.HandleFunc("/v1/balance", s.handleBalance)
-	mux.HandleFunc("/v1/pay", s.requireToken(s.handlePay))
-	mux.HandleFunc("/v1/resync", s.requireToken(s.handleResync))
-	mux.HandleFunc("/v1/verify", s.requireToken(s.handleVerify))
-	return mux
 }
