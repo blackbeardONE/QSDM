@@ -7,6 +7,17 @@ import (
 	"time"
 )
 
+func expireProposal(t *testing.T, sv *SnapshotVoting, proposalID string) {
+	t.Helper()
+	sv.Mu.Lock()
+	defer sv.Mu.Unlock()
+	proposal, ok := sv.Proposals[proposalID]
+	if !ok {
+		t.Fatalf("proposal %q is missing", proposalID)
+	}
+	proposal.ExpiresAt = time.Now().Add(-time.Millisecond)
+}
+
 func TestProposalExecutor_PassedProposal(t *testing.T) {
 	dir := t.TempDir()
 	sv := NewSnapshotVoting(filepath.Join(dir, "proposals.json"))
@@ -22,9 +33,7 @@ func TestProposalExecutor_PassedProposal(t *testing.T) {
 	}
 
 	// Expire the fixture explicitly instead of relying on scheduler timing.
-	sv.Mu.Lock()
-	sv.Proposals["prop1"].ExpiresAt = time.Now().Add(-time.Millisecond)
-	sv.Mu.Unlock()
+	expireProposal(t, sv, "prop1")
 	passed, err := sv.FinalizeProposal("prop1")
 	if err != nil {
 		t.Fatalf("FinalizeProposal: %v", err)
@@ -66,24 +75,27 @@ func TestProposalExecutor_FailedProposal(t *testing.T) {
 	dir := t.TempDir()
 	sv := NewSnapshotVoting(filepath.Join(dir, "proposals.json"))
 
-	sv.AddProposal("prop_fail", "Bad idea", 200*time.Millisecond, 2)
+	sv.AddProposal("prop_fail", "Bad idea", time.Hour, 2)
 	sv.Vote("prop_fail", "voter1", 1, false)
 	sv.Vote("prop_fail", "voter2", 3, false)
-
-	time.Sleep(300 * time.Millisecond)
-	sv.FinalizeProposal("prop_fail")
+	expireProposal(t, sv, "prop_fail")
+	passed, err := sv.FinalizeProposal("prop_fail")
+	if err != nil {
+		t.Fatalf("FinalizeProposal: %v", err)
+	}
+	if passed {
+		t.Fatal("expected failed proposal")
+	}
 
 	var executed atomic.Int32
-	exec := NewProposalExecutor(sv, 50*time.Millisecond)
+	exec := NewProposalExecutor(sv, time.Hour)
 	exec.AttachAction("prop_fail", &ProposalAction{Type: ActionConfigChange})
 	exec.RegisterHandler(ActionConfigChange, func(_ string, _ map[string]interface{}) error {
 		executed.Add(1)
 		return nil
 	})
 
-	exec.Start()
-	time.Sleep(300 * time.Millisecond)
-	exec.Stop()
+	exec.pollAndExecute()
 
 	if executed.Load() != 0 {
 		t.Fatal("handler should not be called for failed proposals")
@@ -102,26 +114,35 @@ func TestProposalExecutor_NoDoubleExecution(t *testing.T) {
 	dir := t.TempDir()
 	sv := NewSnapshotVoting(filepath.Join(dir, "proposals.json"))
 
-	sv.AddProposal("prop_once", "Once only", 200*time.Millisecond, 1)
+	sv.AddProposal("prop_once", "Once only", time.Hour, 1)
 	sv.Vote("prop_once", "v1", 2, true)
-
-	time.Sleep(300 * time.Millisecond)
-	sv.FinalizeProposal("prop_once")
+	expireProposal(t, sv, "prop_once")
+	passed, err := sv.FinalizeProposal("prop_once")
+	if err != nil {
+		t.Fatalf("FinalizeProposal: %v", err)
+	}
+	if !passed {
+		t.Fatal("expected passed proposal")
+	}
 
 	var count atomic.Int32
-	exec := NewProposalExecutor(sv, 50*time.Millisecond)
+	exec := NewProposalExecutor(sv, time.Hour)
 	exec.AttachAction("prop_once", &ProposalAction{Type: ActionCustom})
 	exec.RegisterHandler(ActionCustom, func(_ string, _ map[string]interface{}) error {
 		count.Add(1)
 		return nil
 	})
 
-	exec.Start()
-	time.Sleep(300 * time.Millisecond)
-	exec.Stop()
+	// Drive the executor synchronously twice. The second pass must observe the
+	// first execution record and skip the proposal.
+	exec.pollAndExecute()
+	exec.pollAndExecute()
 
 	if count.Load() != 1 {
 		t.Fatalf("expected exactly 1 execution, got %d", count.Load())
+	}
+	if history := exec.ExecutionHistory(); len(history) != 1 || !history[0].Success {
+		t.Fatalf("expected one successful execution record, got %+v", history)
 	}
 }
 
@@ -169,23 +190,22 @@ func TestProposalExecutor_NoAction(t *testing.T) {
 func TestProposalExecutor_QuorumNotReached(t *testing.T) {
 	dir := t.TempDir()
 	sv := NewSnapshotVoting(filepath.Join(dir, "proposals.json"))
-	sv.AddProposal("low_quorum", "Need more votes", 200*time.Millisecond, 100)
+	sv.AddProposal("low_quorum", "Need more votes", time.Hour, 100)
 	sv.Vote("low_quorum", "v1", 1, true)
-
-	time.Sleep(300 * time.Millisecond)
-	sv.FinalizeProposal("low_quorum") // will fail because quorum not met
+	expireProposal(t, sv, "low_quorum")
+	if _, err := sv.FinalizeProposal("low_quorum"); err == nil {
+		t.Fatal("expected finalization to reject insufficient quorum")
+	}
 
 	var executed atomic.Int32
-	exec := NewProposalExecutor(sv, 50*time.Millisecond)
+	exec := NewProposalExecutor(sv, time.Hour)
 	exec.AttachAction("low_quorum", &ProposalAction{Type: ActionCustom})
 	exec.RegisterHandler(ActionCustom, func(_ string, _ map[string]interface{}) error {
 		executed.Add(1)
 		return nil
 	})
 
-	exec.Start()
-	time.Sleep(300 * time.Millisecond)
-	exec.Stop()
+	exec.pollAndExecute()
 
 	if executed.Load() != 0 {
 		t.Fatal("should not execute when quorum not reached")
