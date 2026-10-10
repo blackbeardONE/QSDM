@@ -125,6 +125,7 @@ func hl1ReplayConsensusSettings(cfg *config.Config) {
 	chain.SetTaskActionSignatureActivationHeight(cfg.TaskActionSignatureActivationHeight)
 	chain.SetTxContentRootActivationHeight(cfg.TxContentRootActivationHeight)
 	chain.SetEnrollmentStateRootActivationHeight(cfg.EnrollmentStateRootActivationHeight)
+	chain.SetPoEActivationHeight(cfg.PoEActivationHeight)
 	chain.SetRequireSignedCertificates(cfg.RequireSignedVotes)
 	chain.SetRequireSignedBlocks(cfg.RequireSignedVotes)
 	chain.SetRequireEvidenceProof(cfg.RequireSignedVotes)
