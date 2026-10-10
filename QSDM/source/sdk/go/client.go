@@ -379,16 +379,18 @@ type NodeStatus struct {
 	// BuildDate is the UTC RFC 3339 timestamp at which the running
 	// binary was built. Same -ldflags-injection mechanism as
 	// GitSHA; empty for dev builds. Added in v0.4.4.
-	BuildDate  string                 `json:"build_date,omitempty"`
-	Uptime     string                 `json:"uptime,omitempty"`
-	ChainTip   uint64                 `json:"chain_tip,omitempty"`
-	Peers      int                    `json:"peers,omitempty"`
-	NodeRole   string                 `json:"node_role,omitempty"`
-	Network    string                 `json:"network,omitempty"`
-	Coin       *CoinInfo              `json:"coin,omitempty"`
-	Branding   *BrandInfo             `json:"branding,omitempty"`
-	Tokenomics *TokenomicsInfo        `json:"tokenomics,omitempty"`
-	Extra      map[string]interface{} `json:"-"`
+	BuildDate       string                 `json:"build_date,omitempty"`
+	Uptime          string                 `json:"uptime,omitempty"`
+	ChainTip        uint64                 `json:"chain_tip,omitempty"`
+	Peers           int                    `json:"peers,omitempty"`
+	NodeRole        string                 `json:"node_role,omitempty"`
+	Network         string                 `json:"network,omitempty"`
+	Coin            *CoinInfo              `json:"coin,omitempty"`
+	Branding        *BrandInfo             `json:"branding,omitempty"`
+	Tokenomics      *TokenomicsInfo        `json:"tokenomics,omitempty"`
+	ValidatorSet    *ValidatorSetInfo      `json:"validator_set,omitempty"`
+	BlockProduction *BlockProductionInfo   `json:"block_production,omitempty"`
+	Extra           map[string]interface{} `json:"-"`
 }
 
 // CoinInfo mirrors the coin block on /api/v1/status.
@@ -404,6 +406,22 @@ type BrandInfo struct {
 	Name       string `json:"name"`
 	LegacyName string `json:"legacy_name,omitempty"`
 	FullTitle  string `json:"full_title,omitempty"`
+}
+
+// ValidatorSetInfo mirrors the validator_set block on /api/v1/status. It is a
+// local membership snapshot for operator comparison, not a quorum certificate
+// or finality proof.
+type ValidatorSetInfo struct {
+	ActiveCount int    `json:"active_count"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+}
+
+// BlockProductionInfo mirrors the block_production block on /api/v1/status.
+// A false MultiValidatorConsensus value means the current topology is not a
+// quorum-backed multi-validator block-commit path.
+type BlockProductionInfo struct {
+	Role                    string `json:"role"`
+	MultiValidatorConsensus bool   `json:"multi_validator_consensus"`
 }
 
 // TokenomicsInfo mirrors the tokenomics block on /api/v1/status. All
@@ -478,6 +496,22 @@ func (c *Client) GetNodeStatus(ctx context.Context) (*NodeStatus, error) {
 			var t TokenomicsInfo
 			if err := json.Unmarshal(b, &t); err == nil {
 				ns.Tokenomics = &t
+			}
+		}
+	}
+	if validators, ok := raw["validator_set"].(map[string]interface{}); ok {
+		if b, err := json.Marshal(validators); err == nil {
+			var v ValidatorSetInfo
+			if err := json.Unmarshal(b, &v); err == nil {
+				ns.ValidatorSet = &v
+			}
+		}
+	}
+	if production, ok := raw["block_production"].(map[string]interface{}); ok {
+		if b, err := json.Marshal(production); err == nil {
+			var p BlockProductionInfo
+			if err := json.Unmarshal(b, &p); err == nil {
+				ns.BlockProduction = &p
 			}
 		}
 	}

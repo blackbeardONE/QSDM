@@ -57,6 +57,16 @@ type StatusResponse struct {
 	// no signing keys, peer addresses, or certificates are exposed here.
 	ConsensusAuth ConsensusAuthInfo `json:"consensus_auth"`
 
+	// ValidatorSet is the node's local active-validator membership snapshot.
+	// The fingerprint lets operators compare independent nodes without exposing
+	// the member addresses. It is diagnostic posture data, not proof of BFT
+	// quorum or an instruction to activate signed voting.
+	ValidatorSet ValidatorSetInfo `json:"validator_set"`
+
+	// BlockProduction states the node's current block-production topology.
+	// It is observability data, not a finality proof.
+	BlockProduction *BlockProductionInfo `json:"block_production,omitempty"`
+
 	// Mining is the consensus-visible mining-protocol state. Miners
 	// MUST inspect this block at startup to decide which protocol to
 	// submit proofs under — submitting v1 against a validator whose
@@ -66,6 +76,22 @@ type StatusResponse struct {
 	// scalars, so SDK callers can rely on `mining.fork_v2_active`
 	// being present whenever `mining` itself is.
 	Mining *MiningInfo `json:"mining,omitempty"`
+}
+
+// ValidatorSetInfo is the public, non-sensitive summary of a node's local
+// active validator set. A zero value means the status server has not been
+// wired to a validator-set source yet.
+type ValidatorSetInfo struct {
+	ActiveCount int    `json:"active_count"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+}
+
+// BlockProductionInfo describes how this node participates in block
+// production. MultiValidatorConsensus remains false until QSDM has a
+// chain-committed membership and quorum-backed block commit path.
+type BlockProductionInfo struct {
+	Role                    string `json:"role"`
+	MultiValidatorConsensus bool   `json:"multi_validator_consensus"`
 }
 
 type consensusAuthPosture struct {
@@ -231,6 +257,8 @@ func (h *Handlers) StatusHandler(w http.ResponseWriter, r *http.Request) {
 
 	peers := h.snapshotPeerCount()
 	chainTip := h.snapshotChainTip()
+	validatorSet := h.snapshotValidatorSet()
+	blockProduction := h.snapshotBlockProduction()
 
 	role := config.NodeRoleValidator
 	if h.nodeRole != "" {
@@ -259,6 +287,8 @@ func (h *Handlers) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		Network:          branding.NetworkLabel(),
 		TaskActionsReady: TaskActionSubmissionReady(),
 		ConsensusAuth:    h.buildConsensusAuthInfo(chainTip),
+		ValidatorSet:     validatorSet,
+		BlockProduction:  blockProduction,
 		Coin: CoinInfo{
 			Name:         branding.CoinName,
 			Symbol:       branding.CoinSymbol,
@@ -315,6 +345,29 @@ func (h *Handlers) snapshotChainTip() uint64 {
 	return h.chainTipSource()
 }
 
+// snapshotValidatorSet returns the configured active-validator summary. The
+// source is optional so early startup and focused API tests remain available.
+func (h *Handlers) snapshotValidatorSet() ValidatorSetInfo {
+	if h.validatorSetSource == nil {
+		return ValidatorSetInfo{}
+	}
+	snapshot := h.validatorSetSource()
+	if snapshot.ActiveCount <= 0 {
+		return ValidatorSetInfo{}
+	}
+	return snapshot
+}
+
+// snapshotBlockProduction returns a copy so callers cannot mutate the
+// handler's configured startup posture.
+func (h *Handlers) snapshotBlockProduction() *BlockProductionInfo {
+	if h.blockProduction == nil {
+		return nil
+	}
+	posture := *h.blockProduction
+	return &posture
+}
+
 // SetNodeRole records the operator-declared node role. Called once at server
 // startup from registerRoutes. The role string is validated and normalised;
 // an unknown value is silently coerced to "validator" so the endpoint never
@@ -337,6 +390,19 @@ func (h *Handlers) SetPeerCountSource(fn func() int) {
 // The callback must be safe for concurrent use and should return quickly.
 func (h *Handlers) SetChainTipSource(fn func() uint64) {
 	h.chainTipSource = fn
+}
+
+// SetValidatorSetSource wires a live active-validator summary into the status
+// handler. The callback must be safe for concurrent use and should return
+// quickly because it runs on every status hit.
+func (h *Handlers) SetValidatorSetSource(fn func() ValidatorSetInfo) {
+	h.validatorSetSource = fn
+}
+
+// SetBlockProductionPosture records the static block-production topology for
+// the public status response. Call during startup before serving requests.
+func (h *Handlers) SetBlockProductionPosture(posture BlockProductionInfo) {
+	h.blockProduction = &posture
 }
 
 // SetConsensusAuthPosture records the operator's consensus-authentication

@@ -1,9 +1,11 @@
 package chain
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -258,6 +260,33 @@ func (vs *ValidatorSet) ActiveValidators() []Validator {
 	}
 	sort.Slice(active, func(i, j int) bool { return active[i].Stake > active[j].Stake })
 	return active
+}
+
+// ActiveSetFingerprint returns a deterministic snapshot of the active
+// validator membership. It deliberately commits only to active addresses, not
+// stake, keys, or mutable operational fields, so independent nodes can compare
+// whether they are looking at the same membership set without publishing it.
+//
+// The fingerprint is a rollout-observability signal, not a consensus proof:
+// matching snapshots do not establish quorum or activate signed voting.
+func (vs *ValidatorSet) ActiveSetFingerprint() (count int, fingerprint string) {
+	vs.mu.RLock()
+	defer vs.mu.RUnlock()
+
+	now := time.Now()
+	addresses := make([]string, 0, len(vs.validators))
+	for address, v := range vs.validators {
+		if v.Status == ValidatorActive || (v.Status == ValidatorJailed && now.After(v.JailedUntil)) {
+			addresses = append(addresses, address)
+		}
+	}
+	if len(addresses) == 0 {
+		return 0, ""
+	}
+
+	sort.Strings(addresses)
+	sum := sha256.Sum256([]byte("qsdm-validator-set/v1\x00" + strings.Join(addresses, "\x00")))
+	return len(addresses), fmt.Sprintf("%x", sum[:])
 }
 
 // GetValidator returns a copy of a validator's info.

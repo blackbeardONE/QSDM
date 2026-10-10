@@ -277,7 +277,15 @@ func TestClient_GetNodeStatus_MapsKnownFields(t *testing.T) {
 			"uptime":    "1h",
 			"chain_tip": 42,
 			"peers":     5,
-			"extra":     "kept-in-map",
+			"block_production": map[string]interface{}{
+				"role":                      "network-producer",
+				"multi_validator_consensus": false,
+			},
+			"validator_set": map[string]interface{}{
+				"active_count": 4,
+				"fingerprint":  "set-fingerprint",
+			},
+			"extra": "kept-in-map",
 		})
 	})
 	defer srv.Close()
@@ -291,6 +299,12 @@ func TestClient_GetNodeStatus_MapsKnownFields(t *testing.T) {
 	}
 	if ns.Extra["extra"] != "kept-in-map" {
 		t.Fatalf("extra not preserved: %+v", ns.Extra)
+	}
+	if ns.BlockProduction == nil || ns.BlockProduction.Role != "network-producer" || ns.BlockProduction.MultiValidatorConsensus {
+		t.Fatalf("block production not decoded: %+v", ns.BlockProduction)
+	}
+	if ns.ValidatorSet == nil || ns.ValidatorSet.ActiveCount != 4 || ns.ValidatorSet.Fingerprint != "set-fingerprint" {
+		t.Fatalf("validator set not decoded: %+v", ns.ValidatorSet)
 	}
 }
 
