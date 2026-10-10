@@ -319,6 +319,7 @@ PY
     --in "$KEYSTORE_PATH" \
     --envelope-file "$unsigned_path" \
     --auto-nonce \
+    --auto-parents \
     --api-url "$API_URL" \
     --passphrase-file "$PASSPHRASE_FILE" > "$signed_path" || \
     die "Signing failed for $role; no later transfers were attempted."
