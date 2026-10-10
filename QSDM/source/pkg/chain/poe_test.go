@@ -847,3 +847,32 @@ func BenchmarkPoEBlockScopeCheck(b *testing.B) {
 		}
 	}
 }
+
+// Unknown ancestry: a parent that is only pending in the mempool is not
+// committed, so admission refuses a transfer naming it. (Consensus would
+// accept it only if the parent landed earlier in the same block.)
+func TestPoEAdmission_PendingParentIsUnknown(t *testing.T) {
+	withPoEActivation(t, 2)
+	alice, bob := newPoEWallet(t), newPoEWallet(t)
+	prod := newPoENode(alice, bob)
+	prod.produce(t)
+	prod.produce(t)
+	parents := prod.recentIDs(t, 2)
+	sub := prod.bp.WalletTransferSubmitter()
+	pending := alice.transfer(t, "pending-parent-transfer1", 1, 0.01, parents)
+	if err := sub.Add(pending); err != nil {
+		t.Fatalf("pending parent not admitted: %v", err)
+	}
+	child := bob.transfer(t, "child-of-pending-000001", 1, 0.01, []string{parents[0], pending.ID})
+	if err := sub.Add(child); !errors.Is(err, poe.ErrParentUnknown) {
+		t.Fatalf("child of a mempool-only parent: err = %v, want ErrParentUnknown", err)
+	}
+	// Once the parent is committed, the same child is admitted.
+	blk := prod.produce(t)
+	if !included(blk, pending.ID) {
+		t.Fatal("pending parent was not committed")
+	}
+	if err := sub.Add(child); err != nil {
+		t.Fatalf("child of a committed parent refused: %v", err)
+	}
+}
