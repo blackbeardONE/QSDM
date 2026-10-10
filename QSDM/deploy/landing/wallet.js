@@ -710,6 +710,81 @@
     return body.next;
   }
 
+  // Proof-of-Entanglement parents. The envelope's parent_cells are covered
+  // by the signature; once the network's PoE activation height is reached,
+  // validators refuse a transfer unless it names at least two transactions
+  // committed in the last 8640 blocks. The validator's two newest committed
+  // transactions satisfy that rule before and after activation, so the
+  // wallet fetches them just before signing: GET <api>/chain/parents, or on
+  // validators that predate that route the newest successful receipts.
+  // Returns [] when the validator cannot supply them (accepted only before
+  // activation; afterwards the validator answers 422).
+  const PARENT_ID_RE = /^[0-9A-Za-z_-]{16,128}$/;
+
+  function deriveApiBase(submitSignedURL) {
+    const suffix = '/wallet/submit-signed';
+    if (submitSignedURL.endsWith(suffix)) {
+      return submitSignedURL.slice(0, -suffix.length);
+    }
+    return submitSignedURL.replace(/\/$/, '');
+  }
+
+  function pickParents(ids) {
+    const out = [];
+    for (const id of ids) {
+      if (typeof id === 'string' && PARENT_ID_RE.test(id) && !out.includes(id)) {
+        out.push(id);
+        if (out.length === 2) return out;
+      }
+    }
+    return [];
+  }
+
+  async function getJSONWithTimeout(url) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 10_000);
+    try {
+      const resp = await fetch(url, {
+        method: 'GET',
+        credentials: 'omit',
+        cache: 'no-store',
+        signal: ctl.signal,
+        headers: { 'Accept': 'application/json' },
+      });
+      let body = null;
+      if (resp.ok) {
+        body = await resp.json();
+      }
+      return { status: resp.status, ok: resp.ok, body: body };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function fetchPoEParents(submitSignedURL) {
+    const base = deriveApiBase(submitSignedURL || SEND_ENDPOINT_DEFAULT);
+    try {
+      const r = await getJSONWithTimeout(base + '/chain/parents');
+      if (r.ok) {
+        const parents = pickParents((r.body && r.body.parents) || []);
+        if (parents.length) return parents;
+      } else if (![404, 405, 501].includes(r.status)) {
+        return [];
+      }
+    } catch (_) {
+      return [];
+    }
+    try {
+      const r = await getJSONWithTimeout(base + '/receipts?limit=32');
+      if (r.ok && r.body && Array.isArray(r.body.receipts)) {
+        return pickParents(r.body.receipts
+          .filter((rc) => rc && rc.status === 1)
+          .map((rc) => rc.tx_id));
+      }
+    } catch (_) { /* fall through */ }
+    return [];
+  }
+
   // tx_id derivation matches pkg/wallet.WalletService.CreateTransaction:
   //   sha256(sender || recipient || timestamp.UnixNano)
   // first 16 bytes hex. We use Date.now() * 1e6 + sub-millisecond jitter
@@ -777,24 +852,16 @@
       setStatus('send-status', `geotag must be 2–3 letters (got "${geotag}")`, 'err');
       return;
     }
-    // parent_cells is optional; if empty we send two placeholder
-    // hex64s so the validator's ValidateParentCells gate is satisfied.
-    // pkg/wallet.CreateTransaction does the same thing server-side
-    // when called with fewer than 2 parents (the "parent1"/"parent2"
-    // strings on that path are NOT 64-hex though, so we use real
-    // hex-shaped placeholders here — the validator's regex is
-    // shape-only, no on-chain existence check).
+    // parent_cells (Proof-of-Entanglement): pasted transaction IDs are
+    // signed as given; when the field is empty the validator's two newest
+    // committed transactions are fetched just before signing (see
+    // fetchPoEParents). Placeholder parents are no longer sent: once PoE
+    // is active, validators refuse parents that are not committed.
     let parentCells = ($('send-parents').value || '')
       .split(/[,\n\s]+/).map(s => s.trim()).filter(Boolean);
-    if (parentCells.length === 0) {
-      parentCells = [
-        '00000000000000000000000000000000000000000000000000000000000000a1',
-        '00000000000000000000000000000000000000000000000000000000000000a2',
-      ];
-    }
     for (const p of parentCells) {
-      if (!/^[0-9a-f]{32,128}$/i.test(p)) {
-        setStatus('send-status', `parent cell "${p.slice(0, 16)}…" is not hex (32–128 chars)`, 'err');
+      if (!PARENT_ID_RE.test(p)) {
+        setStatus('send-status', `parent cell "${p.slice(0, 16)}…" is not a transaction id (16–128 of 0-9 A-Z a-z _ -)`, 'err');
         return;
       }
     }
@@ -852,6 +919,11 @@
         priv.fill(0);
         return;
       }
+    }
+
+    if (parentCells.length === 0) {
+      setStatusBusy('send-status', 'fetching proof-of-entanglement parents from validator…');
+      parentCells = await fetchPoEParents(endpoint);
     }
 
     setStatusBusy('send-status', `signing transaction (ML-DSA-87) with nonce=${nonce}…`);
@@ -1032,6 +1104,7 @@
     bytesToHex: bytesToHex,
     hexToBytes: hexToBytes,
     formatCell: formatCell,
+    fetchPoEParents: fetchPoEParents,
     BALANCE_ENDPOINT: BALANCE_ENDPOINT,
     isReady: function () { return wasmReady === true && window.qsdm_wallet_ready === true; },
     version: function () {

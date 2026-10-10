@@ -12,6 +12,10 @@ import {
 
 import { assertQsdmCanonicalChainSafety } from './qsdmCanonicalChain';
 import {
+  fetchQsdmPoEParents,
+  isQsdmPoEParentsRejection,
+} from './qsdmPoEParents';
+import {
   getQsdmTaskActionCliPath,
   getQsdmTaskActionKeystorePath,
   getQsdmTaskActionPassphraseFile,
@@ -222,6 +226,10 @@ const submitQsdmWalletTransfer = async ({
   }
 
   const signAndSubmit = async (nonce: number) => {
+    // Proof-of-Entanglement parents: the node's newest committed
+    // transactions, fetched for every attempt because the signature covers
+    // them.
+    const parentCells = await fetchQsdmPoEParents();
     const envelope: UnsignedQsdmWalletEnvelope = {
       id: makeTransferId(),
       sender,
@@ -229,7 +237,7 @@ const submitQsdmWalletTransfer = async ({
       amount,
       fee,
       geotag: '',
-      parent_cells: [],
+      parent_cells: parentCells,
       nonce,
       timestamp: new Date().toISOString(),
     };
@@ -252,15 +260,22 @@ const submitQsdmWalletTransfer = async ({
     try {
       return await signAndSubmit(nonce);
     } catch (error) {
-      if (!getTransferConflict(error)) {
+      const conflict = getTransferConflict(error);
+      const staleParents = isQsdmPoEParentsRejection(error);
+      if (!conflict && !staleParents) {
         throw error;
       }
       if (attempt === 2) {
         throw new Error(
-          'The CELL transfer could not reserve a wallet nonce after three attempts. Wait for the next block and try again.'
+          staleParents
+            ? 'The CELL transfer was refused because its proof-of-entanglement parents could not be confirmed. Check the node connection and try again.'
+            : 'The CELL transfer could not reserve a wallet nonce after three attempts. Wait for the next block and try again.'
         );
       }
-      nonce = await waitForAvailableNonce(sender, nonce);
+      if (conflict) {
+        nonce = await waitForAvailableNonce(sender, nonce);
+      }
+      // Stale parents: sign again at the same nonce with fresh parents.
     }
   }
 

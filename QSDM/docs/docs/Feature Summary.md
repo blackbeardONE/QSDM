@@ -21,7 +21,7 @@ it is not the CELL network gateway or another Hive client.
 
 ## Ledger & consensus
 
-- **Proof-of-Entanglement (PoE) + BFT** on a dynamic mesh is the target consensus design; today the pilot network runs a single block producer during recovery.
+- **Proof-of-Entanglement (PoE) + BFT** on a dynamic mesh is the target consensus design; today the pilot network runs a single block producer during recovery. Every node checks each transfer's signature under the sender's own key. The PoE parent rules (parents must be committed transactions) are enforced only from an activation height that has not been set yet ([details](PROOF_OF_ENTANGLEMENT.md)).
 - **ML-DSA-87** wallet transaction signatures (NIST FIPS 204) with Zstd compression and batch signing. The generic P2P transaction verifier still also accepts Ed25519; signed consensus messages are supported but not yet active.
 - **3D mesh validation**, rule-based quarantine, and staked reputation penalties.
 - **Dynamic submeshes** with fee thresholds, priority routing, and geotags.

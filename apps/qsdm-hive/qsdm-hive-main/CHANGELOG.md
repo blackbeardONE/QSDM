@@ -1,3 +1,7 @@
+## [Unreleased]
+
+- Proof-of-Entanglement parents: CELL transfers now sign the node's two newest committed transactions as `parent_cells` (from `GET /api/v1/chain/parents`, or the newest successful receipts on nodes that predate that route) instead of an empty list. Validators accept these parents today and will require them once the network's PoE activation height is reached. If the node refuses a transfer's parents (HTTP 422 `proof-of-entanglement`), Hive signs it again at the same nonce with fresh parents. A node that cannot supply parents still gets an empty list, which works until activation.
+
 ## [1.4.21]
 
 - Automatic miner operator signing: public QSDM mining only accepts proofs carrying an ML-DSA-87 `operator_sig` from the enrollment owner's wallet. When the Hive wallet is unlocked, Hive now starts the packaged `qsdmminer-console` with `--operator-keystore=<Hive signer wallet.json>` and `--operator-passphrase-file=<Hive's per-launch passphrase file>`, so miners no longer need the manual `operator_*` setup in `miner.toml`. `miner.log` reports `operator_signature = enabled (<Hive wallet address>)`.

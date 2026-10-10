@@ -10,6 +10,10 @@
 > and [Treasury Policy §9](TREASURY_POLICY.md#9-mainnet-release-gates).
 > The live pilot chain produces blocks with a ~10-second target, so the
 > "not a blockchain" and "no block delays" framing below describes the original design.
+> Proof-of-Entanglement today: each signed transfer's ML-DSA-87 signature is checked
+> under the sender's own key on every node. The parent rules (parents must be committed
+> transactions) are implemented behind an activation height that has not been set yet.
+> See [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md).
 
 ---
 
@@ -104,11 +108,16 @@ Transaction Structure:
 
 **Not Proof-of-Work or Proof-of-Stake!**
 
-PoE validates transactions by:
-1. **Checking parent cells** (2-5 previous transactions)
-2. **Verifying signatures** (ML-DSA-87 quantum-safe)
-3. **Ensuring mesh connectivity** (entanglement with network)
-4. **Validating transaction data** (amounts, addresses, etc.)
+> **Status (2026-10):** step 2 runs on every node today. Steps 1 and 3 are
+> implemented and switch on at a configured activation height that has not
+> been set yet. The full rules, the activation and the client guide are in
+> [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md).
+
+PoE validates a signed transfer by:
+1. **Checking parent cells:** 2-10 distinct IDs of transactions committed in the last 8,640 blocks, or earlier in the same block
+2. **Verifying signatures:** ML-DSA-87 under the sender's own public key, with sender = `hex(sha256(public_key))`
+3. **Ensuring entanglement:** every parent points strictly backwards in the committed chain, so the parent graph has no cycles
+4. **Validating transaction data:** amounts, addresses, nonce, balance
 
 **Key Concept:** Transactions are "entangled" with multiple previous transactions, creating a mesh network rather than a linear chain.
 
@@ -180,11 +189,11 @@ type Transaction struct {
 ### Validation Process
 
 1. **Receive transaction** with parent cell references
-2. **Fetch parent cells** from storage
-3. **Validate parent cells** (signatures, data integrity)
-4. **Verify entanglement** (check parent cell connections)
-5. **Validate transaction** (signature, amounts, addresses)
-6. **Store transaction** in mesh
+2. **Verify the signature** under the transaction's own public key (bound to the sender address)
+3. **Resolve parent cells** against the node's committed history (from the PoE activation height)
+4. **Verify entanglement**: parents are distinct, earlier and inside the reference window
+5. **Validate transaction** (amounts, addresses, nonce, balance)
+6. **Commit** it in the next block; every follower repeats steps 2-5 when it replays that block
 
 ### Storage
 

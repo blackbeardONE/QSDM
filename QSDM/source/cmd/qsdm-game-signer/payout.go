@@ -1,15 +1,18 @@
 package main
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/blackbeardONE/QSDM/pkg/poe"
 	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
@@ -85,6 +88,7 @@ const (
 	outcomeNonceReplay                       // 409 envelope nonce <= last applied
 	outcomeNonceGap                          // 409 envelope nonce > last applied + 1
 	outcomeInsufficient                      // 402
+	outcomeStaleParents                      // 422 proof-of-entanglement: parents not committed in the window
 	outcomeRejected                          // other 4xx: the node refused the envelope
 	outcomeUnknown                           // transport error, 5xx, edge 429: may or may not be held
 )
@@ -113,6 +117,8 @@ func classifySubmit(code int, body []byte, err error) submitResult {
 		res.outcome = outcomeNonceGap
 	case code == http.StatusPaymentRequired:
 		res.outcome = outcomeInsufficient
+	case code == http.StatusUnprocessableEntity && strings.Contains(lower, "proof-of-entanglement"):
+		res.outcome = outcomeStaleParents
 	case code == http.StatusTooManyRequests || code >= 500 || code == 0:
 		res.outcome = outcomeUnknown
 	case code >= 400:
@@ -128,6 +134,11 @@ func classifySubmit(code int, body []byte, err error) submitResult {
 // sign=false it reuses the journaled signature so a resubmission is
 // byte-identical to the original.
 func (s *signer) envelopeFor(a *payoutAttempt, sign bool) ([]byte, error) {
+	parents := a.ParentCells
+	if parents == nil {
+		// Attempts journaled before parents existed were signed over [].
+		parents = []string{}
+	}
 	env := txEnvelope{
 		ID:          a.TxID,
 		Sender:      s.sender,
@@ -135,7 +146,7 @@ func (s *signer) envelopeFor(a *payoutAttempt, sign bool) ([]byte, error) {
 		Amount:      a.WireAmount,
 		Fee:         a.WireFee,
 		GeoTag:      a.Purpose,
-		ParentCells: []string{},
+		ParentCells: parents,
 		Nonce:       a.Nonce,
 		Timestamp:   a.Timestamp,
 	}
@@ -156,6 +167,37 @@ func (s *signer) envelopeFor(a *payoutAttempt, sign bool) ([]byte, error) {
 	env.Signature = a.Signature
 	env.PublicKey = s.pubHex
 	return json.Marshal(env)
+}
+
+// freshParents asks the node for the Proof-of-Entanglement parents a new
+// signature should cover: its two newest committed transactions. Before the
+// network's activation height any parents are accepted, so a node that
+// cannot answer (an older release without GET /api/v1/chain/parents or
+// /api/v1/receipts) yields none, and the envelope carries [] as it always
+// has; after activation such an envelope is refused with 422 and re-signed
+// on the next probe.
+func (s *signer) freshParents() []string {
+	ctx, cancel := context.WithTimeout(context.Background(), s.http.Timeout)
+	defer cancel()
+	parents, err := poe.FetchParents(ctx, s.http, s.apiURL)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "qsdm-game-signer: no proof-of-entanglement parents from the node; signing without:", err)
+		return []string{}
+	}
+	return parents
+}
+
+// resignLocked gives a live attempt whose envelope the node refused for
+// stale parents a fresh signature over fresh parents, keeping its tx id and
+// nonce, and journals it before it is submitted. The caller has established
+// that the attempt's nonce is unconsumed.
+func (s *signer) resignLocked(a *payoutAttempt) error {
+	resigned := *a
+	resigned.ParentCells = s.freshParents()
+	if _, err := s.envelopeFor(&resigned, true); err != nil {
+		return err
+	}
+	return s.journal.recordResigned(a, resigned.Signature, resigned.ParentCells, s.now())
 }
 
 func (s *signer) submitAttempt(a *payoutAttempt, sign bool) (submitResult, error) {
@@ -205,6 +247,18 @@ func (s *signer) probeLocked(a *payoutAttempt) probeResult {
 	res, err := s.submitAttempt(a, false)
 	if err != nil {
 		return probeResult{kind: probeFailed, status: http.StatusInternalServerError, detail: err.Error()}
+	}
+	if res.outcome == outcomeStaleParents {
+		// The journaled envelope names parents that are no longer committed
+		// in the reference window (or none, from before activation). Its
+		// nonce is unconsumed (checked above), so nothing at this nonce has
+		// been applied: re-sign the same tx id and nonce with fresh parents.
+		if err := s.resignLocked(a); err != nil {
+			return probeResult{kind: probeFailed, status: http.StatusInternalServerError, detail: err.Error()}
+		}
+		if res, err = s.submitAttempt(a, false); err != nil {
+			return probeResult{kind: probeFailed, status: http.StatusInternalServerError, detail: err.Error()}
+		}
 	}
 	switch res.outcome {
 	case outcomeAccepted, outcomeDuplicate:
@@ -345,18 +399,19 @@ func (s *signer) payLocked(req payRequest, amountDust int64) (payResponse, *payE
 		return payResponse{}, &payError{status: http.StatusBadRequest, code: "invalid_amount", msg: err.Error()}
 	}
 	a := &payoutAttempt{
-		RequestID:  req.RequestID,
-		Purpose:    req.Purpose,
-		Recipient:  req.Recipient,
-		AmountDust: amountDust,
-		FeeDust:    s.feeDust,
-		WireAmount: wireAmount,
-		WireFee:    s.wireFee,
-		TxID:       deriveRequestID(s.sender, req.Purpose, req.RequestID),
-		Nonce:      next,
-		Timestamp:  now.UTC().Format(time.RFC3339),
-		State:      stateSigned,
-		SignedAt:   now,
+		RequestID:   req.RequestID,
+		Purpose:     req.Purpose,
+		Recipient:   req.Recipient,
+		AmountDust:  amountDust,
+		FeeDust:     s.feeDust,
+		WireAmount:  wireAmount,
+		WireFee:     s.wireFee,
+		TxID:        deriveRequestID(s.sender, req.Purpose, req.RequestID),
+		Nonce:       next,
+		Timestamp:   now.UTC().Format(time.RFC3339),
+		ParentCells: s.freshParents(),
+		State:       stateSigned,
+		SignedAt:    now,
 	}
 	if _, err := s.envelopeFor(a, true); err != nil {
 		return payResponse{}, &payError{status: http.StatusInternalServerError, code: "sign_error", msg: err.Error()}
@@ -385,7 +440,7 @@ func (s *signer) payLocked(req payRequest, amountDust int64) (payResponse, *payE
 	case outcomeInsufficient:
 		_ = s.journal.transition(a, stateRejected, res.status, res.body, s.now())
 		return payResponse{}, &payError{status: http.StatusPaymentRequired, code: "insufficient_balance", msg: res.body}
-	case outcomeRejected:
+	case outcomeRejected, outcomeStaleParents:
 		_ = s.journal.transition(a, stateRejected, res.status, res.body, s.now())
 		return payResponse{}, &payError{status: http.StatusBadGateway, code: "node_rejected",
 			msg: fmt.Sprintf("node refused the transfer: HTTP %d %s", res.status, res.body)}

@@ -21,7 +21,8 @@ QSDM supports both **Windows 10+** and **Linux (Ubuntu 24.04+)**. macOS support 
 QSDM is developed in phases:
 
 - **Phase 1: 2D Mesh Launch**  
-  Focus on stability and manual bootstrapping using libp2p for networking, Proof-of-Entanglement consensus, SQLite with Zstandard compression for storage, and ML-DSA-87 (NIST FIPS 204) post-quantum signatures.
+  Focus on stability and manual bootstrapping using libp2p for networking, Proof-of-Entanglement consensus, SQLite with Zstandard compression for storage, and ML-DSA-87 (NIST FIPS 204) post-quantum signatures.  
+  *Status (2026-10):* the public pilot runs one block producer. Every node checks each transfer's signature under the sender's own key. The PoE parent rules are implemented behind an activation height that has not been set yet ([details](docs/docs/PROOF_OF_ENTANGLEMENT.md)).
 
 - **Phase 2: Scalability & Optimization**  
   Introduces dynamic submeshes, priority-based routing, WASM SDK integration, and ScyllaDB for high throughput.
@@ -100,7 +101,7 @@ Older benchmark write-ups are kept in the docs archive for reference. They were 
 
 - `cmd/qsdm/` - Main application entry point
 - `pkg/networking/` - libp2p networking setup
-- `pkg/consensus/` - Proof-of-Entanglement consensus implementation
+- `pkg/consensus/` - Proof-of-Entanglement signature check (key-bound ML-DSA-87); the consensus parent rules live in `pkg/poe` and `pkg/chain/poe.go`
 - `pkg/storage/` - SQLite storage with Zstandard compression
 - `pkg/crypto/` - Post-quantum signatures (ML-DSA-87)
 - `config/` - YAML configuration for submesh templates

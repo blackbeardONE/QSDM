@@ -38,13 +38,55 @@ type validatorNode struct {
 	acceptThen500 int // accept into the mempool but answer 500 (lost response)
 	drop500       int // answer 500 without admitting
 	forceStatus   int // answer this status once without admitting
+
+	// Proof-of-Entanglement: every block commits a heartbeat; parents are
+	// the two newest committed IDs. poeWindow > 0 enforces the rules: an
+	// envelope must name two distinct IDs committed in the last poeWindow
+	// blocks, else 422 like Core.
+	height    int
+	committed map[string]int
+	poeWindow int
 }
 
 func newValidatorNode(t *testing.T) *validatorNode {
-	return &validatorNode{
+	v := &validatorNode{
 		t: t, balances: map[string]int64{}, applied: map[string]uint64{},
-		receipts: map[string]map[string]any{},
+		receipts: map[string]map[string]any{}, committed: map[string]int{},
 	}
+	v.commitHeartbeatLocked()
+	v.commitHeartbeatLocked()
+	return v
+}
+
+// commitHeartbeatLocked seals one block holding only a heartbeat.
+func (v *validatorNode) commitHeartbeatLocked() {
+	v.height++
+	v.committed[fmt.Sprintf("solo-heartbeat-%d-%019d", v.height, v.height)] = v.height
+}
+
+// parentsLocked returns the two newest committed IDs, newest first.
+func (v *validatorNode) parentsLocked() []string {
+	return []string{
+		fmt.Sprintf("solo-heartbeat-%d-%019d", v.height, v.height),
+		fmt.Sprintf("solo-heartbeat-%d-%019d", v.height-1, v.height-1),
+	}
+}
+
+// poeErrorLocked mirrors the node's PoE admission for the fake.
+func (v *validatorNode) poeErrorLocked(env txEnvelope) string {
+	if v.poeWindow <= 0 {
+		return ""
+	}
+	if len(env.ParentCells) < 2 || env.ParentCells[0] == env.ParentCells[1] {
+		return "parent count out of range"
+	}
+	for _, p := range env.ParentCells {
+		h, ok := v.committed[p]
+		if !ok || h <= v.height-v.poeWindow {
+			return "parent is not a committed transaction in the reference window: " + p
+		}
+	}
+	return ""
 }
 
 func (v *validatorNode) fund(addr string, cell float64) {
@@ -55,6 +97,12 @@ func (v *validatorNode) fund(addr string, cell float64) {
 
 func (v *validatorNode) handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/chain/parents", func(w http.ResponseWriter, r *http.Request) {
+		v.mu.Lock()
+		parents, tip := v.parentsLocked(), v.height
+		v.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]any{"tip": tip, "parents": parents})
+	})
 	mux.HandleFunc("/api/v1/wallet/nonce", func(w http.ResponseWriter, r *http.Request) {
 		sender := r.URL.Query().Get("sender")
 		v.mu.Lock()
@@ -120,6 +168,11 @@ func (v *validatorNode) handler() http.Handler {
 			_ = json.NewEncoder(w).Encode(map[string]any{"error": "insufficient canonical CELL balance for amount + fee"})
 			return
 		}
+		if msg := v.poeErrorLocked(env); msg != "" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "proof-of-entanglement: proof-of-entanglement violation: " + msg + "; sign again with parents from GET /api/v1/chain/parents"})
+			return
+		}
 		for _, p := range v.mempool {
 			if p.ID == env.ID || (p.Sender == env.Sender && p.Nonce == env.Nonce) {
 				w.WriteHeader(http.StatusConflict)
@@ -156,6 +209,7 @@ func (v *validatorNode) produceBlock() {
 	defer v.mu.Unlock()
 	pending := v.mempool
 	v.mempool = nil
+	v.commitHeartbeatLocked()
 	for _, env := range pending {
 		status, topic := 1, "TxApplied"
 		amount, fee := chainFloorDust(env.Amount), chainFloorDust(env.Fee)
@@ -166,6 +220,7 @@ func (v *validatorNode) produceBlock() {
 			v.balances[env.Recipient] += amount
 			v.applied[env.Sender] = env.Nonce
 			v.appliedTxs = append(v.appliedTxs, env)
+			v.committed[env.ID] = v.height
 		}
 		v.receipts[env.ID] = map[string]any{
 			"tx_id": env.ID, "status": status,

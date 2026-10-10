@@ -45,6 +45,9 @@ func (s *walletTransferSubmitter) Add(tx *mempool.Tx) error {
 	defer bp.sealLifecycleMu.Unlock()
 	bp.mu.Lock()
 	receipts, pool := bp.appendReceipts, bp.pool
+	// The PoE index must describe the committed tip the transfer is checked
+	// against; the lifecycle lock keeps that tip fixed until Add returns.
+	bp.ensurePoEHistoryLocked()
 	bp.mu.Unlock()
 	if receipts == nil || pool == nil {
 		return fmt.Errorf("chain: wallet transfer receipt store and mempool are required")
@@ -54,7 +57,18 @@ func (s *walletTransferSubmitter) Add(tx *mempool.Tx) error {
 	if _, exists := receipts.Get(tx.ID); exists {
 		return mempool.ErrDuplicateTx
 	}
+	// Proof-of-Entanglement parent rules against the committed tip (poe.go):
+	// the same check block production and every validator's replay apply.
+	// Before the activation height this rejects nothing; while a height is
+	// configured but not reached it counts what enforcement would reject.
+	if err := bp.CheckWalletTransferAdmission(tx); err != nil {
+		return err
+	}
 	// An admission callback may read the producer, so do not hold bp.mu here.
 	// The lifecycle lock still closes the drain-to-receipt gap.
-	return pool.Add(tx)
+	if err := pool.Add(tx); err != nil {
+		return err
+	}
+	bp.shadowCheckWalletTransfer(tx)
+	return nil
 }

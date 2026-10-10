@@ -23,7 +23,7 @@ func isHighFrequencyPublicReadPath(path, method string) bool {
 		return false
 	}
 
-	if path == "/api/v1/status" || path == "/api/v1/versions" || path == "/api/v1/chain/blocks" {
+	if path == "/api/v1/status" || path == "/api/v1/versions" || path == "/api/v1/chain/blocks" || path == "/api/v1/chain/parents" {
 		return true
 	}
 	if path == "/api/v1/tasks" || path == "/api/v1/tasks/state" || path == "/api/v1/tasks/actions" {

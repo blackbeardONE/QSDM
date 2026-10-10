@@ -416,14 +416,27 @@
         setStatus('vault-send-status', 'The wallet locked while the review was open. Unlock and try again; nothing was sent.', 'warn');
         return;
       }
+      // Proof-of-Entanglement parents: the validator's two newest committed
+      // transactions, fetched after the review so they are as fresh as
+      // possible (the signature covers them). [] if the validator cannot
+      // supply them, which validators accept only before PoE activation.
+      setStatus('vault-send-status', '<span class="spinner"></span>Fetching proof-of-entanglement parents…');
+      const parentCells = (QW.fetchPoEParents)
+        ? await QW.fetchPoEParents('https://api.qsdm.tech/api/v1/wallet/submit-signed')
+        : [];
+      if (!isUnlocked()) {
+        setStatus('vault-send-status', 'The wallet locked before signing. Unlock and try again; nothing was sent.', 'warn');
+        return;
+      }
       setStatus('vault-send-status', '<span class="spinner"></span>Signing…');
       // Build canonical envelope (same shape the existing Send tab uses).
       const timestamp = new Date().toISOString();
       const txID = (function () {
-        // Browser-side deterministic-ish tx_id: sha256 of address|recipient|amount|nonce|now
-        // The validator only cares that tx_id is unique per sender; collisions across senders
-        // are OK. We do the hash inline so we don't pull a crypto helper.
-        return 'tx-' + Math.floor(Math.random() * 1e9).toString(16) + Date.now().toString(16);
+        // Browser-side unique-per-sender tx_id. The validator only cares that
+        // tx_id is unique per sender; collisions across senders are OK. The
+        // random part is zero-padded so every id has 22 characters, long
+        // enough (16+) for later transfers to name it as a parent.
+        return 'tx-' + Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0') + Date.now().toString(16);
       })();
       const envelope = {
         id: txID,
@@ -432,7 +445,7 @@
         amount: amount,
         fee: fee,
         geotag: geotag,
-        parent_cells: [],
+        parent_cells: parentCells,
         timestamp: timestamp,
       };
       if (nonce > 0) envelope.nonce = nonce;

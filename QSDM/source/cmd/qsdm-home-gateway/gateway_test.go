@@ -103,6 +103,7 @@ func TestGatewayOptionalHiveConsumerAPI(t *testing.T) {
 		{"versions", http.MethodGet, "/api/v1/versions", http.StatusAccepted},
 		{"wallet balance", http.MethodGet, "/api/v1/wallet/balance", http.StatusAccepted},
 		{"wallet nonce", http.MethodGet, "/api/v1/wallet/nonce", http.StatusAccepted},
+		{"poe parents", http.MethodGet, "/api/v1/chain/parents", http.StatusAccepted},
 		{"mining account", http.MethodGet, "/api/v1/mining/account", http.StatusAccepted},
 		{"tasks list", http.MethodGet, "/api/v1/tasks", http.StatusAccepted},
 		{"task detail", http.MethodGet, "/api/v1/tasks/task-1", http.StatusAccepted},

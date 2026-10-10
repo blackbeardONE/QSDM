@@ -36,6 +36,15 @@ import (
 // Every state except rejected counts toward the caps. Records are written
 // BEFORE the corresponding network action, so a crash can only leave an
 // attempt in a state that is resolved by resubmitting the same envelope.
+//
+// A "resigned" record replaces the signature and Proof-of-Entanglement
+// parents of the latest attempt while keeping its tx id and nonce. It is
+// written only when the node refused the journaled envelope because its
+// parents are no longer committed inside the reference window and the
+// attempt's nonce is still unconsumed: no envelope at that nonce has been
+// applied, and at most one envelope per nonce ever can be, so re-signing
+// cannot pay twice. Signed records written before parents existed carry
+// none and are rebuilt with an empty parent list, byte for byte.
 const (
 	journalVersion = 1
 
@@ -48,6 +57,9 @@ const (
 	// eventRefused is an audit-only record of a policy refusal (caps, reserve,
 	// purpose). It never changes attempt state.
 	eventRefused = "refused"
+	// eventResigned replaces the signature and parents of the latest attempt
+	// (same tx id and nonce); the attempt becomes signed again.
+	eventResigned = "resigned"
 
 	capWindow = 24 * time.Hour
 )
@@ -71,6 +83,9 @@ type journalRecord struct {
 	Signature  string  `json:"signature,omitempty"`
 	HTTPStatus int     `json:"http_status,omitempty"`
 	Reason     string  `json:"reason,omitempty"`
+	// ParentCells are the signed Proof-of-Entanglement parents (signed and
+	// resigned records). Absent on records written before parents existed.
+	ParentCells []string `json:"parent_cells,omitempty"`
 }
 
 // payoutAttempt is the latest signed envelope for one request_id.
@@ -86,8 +101,11 @@ type payoutAttempt struct {
 	Nonce      uint64
 	Timestamp  string
 	Signature  string
-	State      string
-	SignedAt   time.Time
+	// ParentCells are the parents the signature covers; nil for attempts
+	// signed before parents were sent (their envelopes carry []).
+	ParentCells []string
+	State       string
+	SignedAt    time.Time
 	// LastSubmit is in-memory only: when this process last sent the envelope.
 	// A zero value (e.g. after a restart) makes the next probe resubmit.
 	LastSubmit time.Time
@@ -184,8 +202,20 @@ func (j *payoutJournal) applyRecord(rec journalRecord) error {
 			AmountDust: rec.AmountDust, FeeDust: rec.FeeDust,
 			WireAmount: rec.WireAmount, WireFee: rec.WireFee,
 			TxID: rec.TxID, Nonce: rec.Nonce, Timestamp: rec.Timestamp,
-			Signature: rec.Signature, State: stateSigned, SignedAt: at,
+			Signature: rec.Signature, ParentCells: rec.ParentCells, State: stateSigned, SignedAt: at,
 		}
+		return nil
+	case eventResigned:
+		a := j.byRequest[rec.RequestID]
+		if a == nil || a.TxID != rec.TxID || a.Nonce != rec.Nonce || rec.Signature == "" {
+			return fmt.Errorf("resigned record does not match the latest signed attempt for %q", rec.RequestID)
+		}
+		if !a.live() {
+			return fmt.Errorf("resigned record for %q whose attempt is %s", rec.RequestID, a.State)
+		}
+		a.Signature = rec.Signature
+		a.ParentCells = rec.ParentCells
+		a.State = stateSigned
 		return nil
 	case stateSubmitted, stateUnknown, stateApplied, stateRejected:
 		a := j.byRequest[rec.RequestID]
@@ -227,6 +257,16 @@ func (j *payoutJournal) recordSigned(a *payoutAttempt, now time.Time) error {
 		Event: stateSigned, RequestID: a.RequestID, Purpose: a.Purpose, Recipient: a.Recipient,
 		AmountDust: a.AmountDust, FeeDust: a.FeeDust, WireAmount: a.WireAmount, WireFee: a.WireFee,
 		TxID: a.TxID, Nonce: a.Nonce, Timestamp: a.Timestamp, Signature: a.Signature,
+		ParentCells: a.ParentCells,
+	}, now)
+}
+
+// recordResigned journals a new signature and parents for the live attempt
+// of a request, keeping its tx id and nonce (before it is submitted).
+func (j *payoutJournal) recordResigned(a *payoutAttempt, signature string, parents []string, now time.Time) error {
+	return j.append(journalRecord{
+		Event: eventResigned, RequestID: a.RequestID, TxID: a.TxID, Nonce: a.Nonce,
+		Signature: signature, ParentCells: parents,
 	}, now)
 }
 

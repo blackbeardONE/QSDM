@@ -88,6 +88,11 @@ type ConsensusAuthInfo struct {
 	TaskActionSignaturesActive          bool   `json:"task_action_signatures_active"`
 	TxContentRootActivationHeight       uint64 `json:"tx_content_root_activation_height"`
 	TxContentRootActive                 bool   `json:"tx_content_root_active"`
+	// PoEActivationHeight is the first height at which signed wallet
+	// transfers must name committed parents (0 = not scheduled). PoEActive
+	// reports whether the rules govern the next block.
+	PoEActivationHeight uint64 `json:"poe_activation_height"`
+	PoEActive           bool   `json:"poe_active"`
 }
 
 // MiningInfo advertises the validator's mining-consensus posture so
@@ -363,6 +368,8 @@ func (h *Handlers) buildConsensusAuthInfo(chainTip uint64) ConsensusAuthInfo {
 		TaskActionSignaturesActive:          activationReached(chainTip, posture.taskActionSignatureActivationHeight),
 		TxContentRootActivationHeight:       posture.txContentRootActivationHeight,
 		TxContentRootActive:                 activationReached(chainTip, posture.txContentRootActivationHeight),
+		PoEActivationHeight:                 chain.PoEActivationHeight(),
+		PoEActive:                           chain.PoEActiveAt(chainTip + 1),
 	}
 }
 

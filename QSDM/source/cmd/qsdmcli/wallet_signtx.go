@@ -19,6 +19,7 @@
 //	qsdmcli wallet sign-tx [--in PATH] [--passphrase-file FILE]
 //	                       [--envelope-file PATH | '-']
 //	                       [--nonce N | --auto-nonce]
+//	                       [--auto-parents]
 //	                       [--api-url URL]
 //
 // Input on stdin (default) or --envelope-file: a JSON object with at
@@ -50,6 +51,15 @@
 //     /wallet/submit-signed accepts these for the v0.4.1 → v0.4.2
 //     deprecation window; you'll see a "legacy v0.4.0 path" entry
 //     in the validator's logs but no rejection.
+//
+// --auto-parents (default OFF) replaces parent_cells with the two newest
+// committed transactions from --api-url (GET /api/v1/chain/parents, or the
+// newest successful receipts on nodes that predate it). Once the network's
+// Proof-of-Entanglement activation height is reached, validators refuse a
+// transfer whose parents are not committed transactions of the last 8640
+// blocks, so sign shortly before submitting. Committed parents are accepted
+// before activation too. Without the flag the input's parent_cells are
+// signed as given, with a warning if they could not pass the PoE rules.
 
 package main
 
@@ -68,6 +78,7 @@ import (
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/keystore"
+	"github.com/blackbeardONE/QSDM/pkg/poe"
 	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
@@ -125,8 +136,9 @@ func (c *CLI) walletSignTx(args []string) error {
 	envelopeFile := fs.String("envelope-file", "-", "JSON envelope to sign ('-' for stdin)")
 	nonceFlag := fs.Uint64("nonce", 0, "v0.4.1 nonce to stamp on the envelope (mutually exclusive with --auto-nonce)")
 	autoNonce := fs.Bool("auto-nonce", false, "fetch the next nonce from --api-url before signing")
-	apiURL := fs.String("api-url", defaultWalletAPIURL(), "validator base URL for --auto-nonce (no trailing slash)")
-	timeout := fs.Duration("api-timeout", 10*time.Second, "HTTP timeout for --auto-nonce lookup")
+	autoParents := fs.Bool("auto-parents", false, "replace parent_cells with the two newest committed transactions from --api-url (Proof-of-Entanglement)")
+	apiURL := fs.String("api-url", defaultWalletAPIURL(), "validator base URL for --auto-nonce / --auto-parents (no trailing slash)")
+	timeout := fs.Duration("api-timeout", 10*time.Second, "HTTP timeout for --auto-nonce / --auto-parents lookups")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -201,6 +213,20 @@ func (c *CLI) walletSignTx(args []string) error {
 			return fmt.Errorf("--auto-nonce: %w", err)
 		}
 		env.Nonce = next
+	}
+
+	// Proof-of-Entanglement parents. They are part of the signed bytes, so
+	// they are fixed here, before signing.
+	if *autoParents {
+		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+		parents, err := poe.FetchParents(ctx, nil, *apiURL)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("--auto-parents: %w", err)
+		}
+		env.ParentCells = parents
+	} else if err := poe.CheckShape(env.ID, env.ParentCells); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: parent_cells will be refused once Proof-of-Entanglement is active (%v); use --auto-parents\n", err)
 	}
 
 	// Build canonical bytes by clearing signature + public_key,

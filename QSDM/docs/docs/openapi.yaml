@@ -20,7 +20,7 @@ info:
     
     **Submesh policy (optional):** When the node loads `[network] submesh_config` / `QSDM_SUBMESH_CONFIG` (legacy alias: `QSDM_SUBMESH_CONFIG`), some ledger routes may return **422 Unprocessable Entity** if fee+geotag do not match a profile or the serialized payload exceeds `max_tx_size` (wallet send), or mint/token-create exceeds the strictest profile cap. See main README “Submesh profiles”.
 
-    **Public read (transparency) endpoints — v1.1.0 catch-up.** A growing set of read-only routes is intentionally unauthenticated so SDK clients, third-party aggregators, and the public landing page widget at `https://qsdm.tech/trust` can scrape verifiable signals without an operator-granted session: `/status`, `/versions`, `/wallet/balance`, `/wallet/nonce`, `/tokens/list`, `/audit/summary`, `/audit/items`, `/audit/badge.svg`, `/trust/attestations/summary`, `/trust/attestations/recent`, `/attest/recent-rejections`, `/receipts`, `/receipts/{tx_id}`, `/streams`, `/streams/{stream_id}`, `/streams/nonce`. The signed stream write `/streams/actions/submit-signed` is public because its canonical action carries its own ML-DSA wallet authorization. Most public reads are rate-limited by the same limiter that protects authenticated routes; health checks and public trust/audit transparency reads are exempt so probes and static widgets cannot starve the trust surface. The trust posture is "always show X of Y, never just X" (see `NVIDIA_LOCK_CONSENSUS_SCOPE.md`).
+    **Public read (transparency) endpoints — v1.1.0 catch-up.** A growing set of read-only routes is intentionally unauthenticated so SDK clients, third-party aggregators, and the public landing page widget at `https://qsdm.tech/trust` can scrape verifiable signals without an operator-granted session: `/status`, `/versions`, `/wallet/balance`, `/wallet/nonce`, `/tokens/list`, `/audit/summary`, `/audit/items`, `/audit/badge.svg`, `/trust/attestations/summary`, `/trust/attestations/recent`, `/attest/recent-rejections`, `/receipts`, `/receipts/{tx_id}`, `/chain/parents`, `/streams`, `/streams/{stream_id}`, `/streams/nonce`. The signed stream write `/streams/actions/submit-signed` is public because its canonical action carries its own ML-DSA wallet authorization. Most public reads are rate-limited by the same limiter that protects authenticated routes; health checks and public trust/audit transparency reads are exempt so probes and static widgets cannot starve the trust surface. The trust posture is "always show X of Y, never just X" (see `NVIDIA_LOCK_CONSENSUS_SCOPE.md`).
   version: 1.1.0
   contact:
     name: QSDM Development Team
@@ -1607,6 +1607,73 @@ paths:
   # --------------------------------------------------------------------------
   # Network — live topology projection (auth)
   # --------------------------------------------------------------------------
+
+  /chain/parents:
+    get:
+      tags:
+        - Wallet
+      summary: Proof-of-Entanglement parents for a new signed transfer
+      description: |
+        Public read. Returns the node's newest committed transaction IDs,
+        read at its durable tip, newest first. Wallets copy `parents`
+        into `parent_cells` just before signing. From the network's PoE
+        activation height (`poe_activation_height`), a signed transfer
+        must name 2-10 distinct transactions committed in the last
+        `window_blocks` blocks; these parents satisfy that rule before
+        and after activation. See `PROOF_OF_ENTANGLEMENT.md`.
+      operationId: chainParents
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Length of `recent` (clamped to 2..32)
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 32
+            default: 8
+      responses:
+        '200':
+          description: Suggested parents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tip:
+                    type: integer
+                    format: int64
+                  poe_activation_height:
+                    type: integer
+                    format: int64
+                    description: 0 means the parent rules are not scheduled
+                  poe_active:
+                    type: boolean
+                    description: Whether the rules govern the next block
+                  min_parents:
+                    type: integer
+                  max_parents:
+                    type: integer
+                  window_blocks:
+                    type: integer
+                  parents:
+                    type: array
+                    items:
+                      type: string
+                  recent:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        height:
+                          type: integer
+                          format: int64
+        '400':
+          description: Invalid limit
+        '503':
+          description: Parent source not wired, or fewer than two committed transactions
 
   /network/topology:
     get:

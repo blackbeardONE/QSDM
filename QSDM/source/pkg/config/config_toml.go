@@ -189,6 +189,15 @@ type ConsensusConfigTOML struct {
 	// root. Setting it changes block roots, so every node must agree on it.
 	EnrollmentStateRootActivationHeight uint64 `toml:"enrollment_state_root_activation_height" yaml:"enrollment_state_root_activation_height"`
 
+	// PoEActivationHeight is the first height at which signed wallet
+	// transfers must satisfy the Proof-of-Entanglement parent rules (at
+	// least two distinct parents, each a transaction committed in the last
+	// 8640 blocks or earlier in the same block). Zero, the default, never
+	// activates; blocks below the height replay exactly as before. Every
+	// validator must use the same value, and wallets must send real parents
+	// (GET /api/v1/chain/parents) before it is reached.
+	PoEActivationHeight uint64 `toml:"poe_activation_height" yaml:"poe_activation_height"`
+
 	// SignerKeyPath stores the validator-only ML-DSA consensus hot key.
 	SignerKeyPath string `toml:"signer_key_path" yaml:"signer_key_path"`
 

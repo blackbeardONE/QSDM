@@ -52,6 +52,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/mining/roleguard"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
 	"github.com/blackbeardONE/QSDM/pkg/networking"
+	poerules "github.com/blackbeardONE/QSDM/pkg/poe"
 	"github.com/blackbeardONE/QSDM/pkg/producerpolicy"
 	"github.com/blackbeardONE/QSDM/pkg/quarantine"
 	"github.com/blackbeardONE/QSDM/pkg/storage"
@@ -1523,6 +1524,23 @@ func main() {
 			"env", "QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT",
 			"note", "a signature that is present is still verified; this gate only governs whether one is required")
 	}
+	// Proof-of-Entanglement parent rules for signed wallet transfers. Separate
+	// from the signed-consensus rollout: at or above the height every
+	// transfer must name at least two distinct parents committed in the last
+	// poe.ParentWindowBlocks blocks (or earlier in its block), and this node
+	// enforces that at admission, when producing, and when replaying blocks.
+	// Zero, the default, enforces nothing and replays history unchanged.
+	chain.SetPoEActivationHeight(cfg.PoEActivationHeight)
+	if cfg.PoEActivationHeight > 0 {
+		logger.Info("Proof-of-Entanglement parent rules scheduled",
+			"from_height", cfg.PoEActivationHeight,
+			"window_blocks", poerules.ParentWindowBlocks,
+			"warning", "every validator must use this exact value; wallets must send committed parents first")
+	} else {
+		logger.Info("Proof-of-Entanglement parent rules are not enforced (no activation height)",
+			"config", "[consensus] poe_activation_height",
+			"env", "QSDM_POE_ACTIVATION_HEIGHT")
+	}
 	chain.SetRequireSignedCertificates(cfg.RequireSignedVotes)
 	chain.SetRequireSignedBlocks(cfg.RequireSignedVotes)
 	chain.SetRequireEvidenceProof(cfg.RequireSignedVotes)
@@ -1780,15 +1798,21 @@ func main() {
 		}
 		return nil
 	}
+	// The innermost admission layer applies the Proof-of-Entanglement parent
+	// rules to wallet transfers entering the pool by any path (submit-signed
+	// already checks them in WalletTransferSubmitter; follower gossip does
+	// not). It only intercepts qsdm/wallet-transfer/v1, so heartbeat, mining
+	// reward and every other transaction family pass through unchanged, and
+	// it rejects nothing below the PoE activation height.
 	if localBlockProduction {
 		// A configured local producer owns extension decisions. The current
 		// one-validator set cannot satisfy the peer-driven BFT predicate.
-		v2wiring.ReinstallAdmissionGate(adminPool, nil)
+		v2wiring.ReinstallAdmissionGate(adminPool, adminProducer.WalletTransferPoEAdmission(nil))
 		logger.Info("Local block producer admission gate ignores peer-driven BFT/POL predicates",
 			"role", productionRole,
 			"reason", "configured producer owns block extension")
 	} else {
-		v2wiring.ReinstallAdmissionGate(adminPool, baseAdmit)
+		v2wiring.ReinstallAdmissionGate(adminPool, adminProducer.WalletTransferPoEAdmission(baseAdmit))
 	}
 	adminProducer.OnSealed = func() {
 		if blk, ok := adminProducer.LatestBlock(); ok {
@@ -2115,6 +2139,8 @@ func main() {
 	logger.Info("/api/v1/mining/blocks probe wired (BlockProducer header projection, durable tip)")
 	api.SetChainBlocksProbe(blocksProbeFromProducer(adminProducer, hl1Durable))
 	logger.Info("/api/v1/chain/blocks probe wired (BlockProducer full block projection, durable tip)")
+	api.SetPoEParentSource(poeParentsProbe{producer: adminProducer, durable: hl1Durable})
+	logger.Info("/api/v1/chain/parents probe wired (recent committed transaction IDs, durable tip)")
 	api.SetMiningReceiptProbe(receiptProbeFromStore(adminReceipts))
 	logger.Info("/api/v1/receipts/{tx_id} probe wired (ReceiptStore lookup)")
 	api.SetMiningReceiptsListProbe(receiptsListProbeFromStore(adminReceipts, adminProducer, hl1Durable))
@@ -2527,6 +2553,7 @@ func main() {
 	}
 	adminProducer.OnSealedBlock = hl1Hook.OnSealedBlock
 	monitoring.GlobalScrapePrometheusExporter().RegisterCollector("hl1", hl1MetricsCollector(hl1Durable))
+	monitoring.GlobalScrapePrometheusExporter().RegisterCollector("poe", poeMetricsCollector(adminProducer))
 
 	// HL1 (d): in the producer role a gossiped block is never appended
 	// (errHL1ExternalAppendDisabled). HL1 (c): catch-up responses never carry
@@ -3149,6 +3176,7 @@ func main() {
 			Mesh3dValidator:   mesh3dValidator,
 			QuarantineManager: quarantineManager,
 			ReputationManager: reputationManager,
+			ParentCheck:       adminProducer.CheckWalletTransferParents,
 		})
 	}
 	wireTxGossip(net, localBlockProduction, txGossipIng, legacyTxTopicHandler)
@@ -3165,23 +3193,18 @@ func main() {
 			seq := 0
 			for {
 				seq++
-				// Get recent transactions for parent cells
+				// Parent cells: the two most recently committed transactions
+				// of this node's canonical chain, the same source GET
+				// /api/v1/chain/parents serves, so the parents satisfy the
+				// Proof-of-Entanglement rules on every peer.
 				var parentCells []string
-				if txStorage, ok := storageBackend.(interface {
-					GetRecentTransactions(address string, limit int) ([]map[string]interface{}, error)
-				}); ok {
-					recentTxs, err := txStorage.GetRecentTransactions(walletService.GetAddress(), 2)
-					if err == nil && len(recentTxs) >= 2 {
-						// Use recent transaction IDs as parent cells
-						for _, tx := range recentTxs {
-							if txID, ok := tx["id"].(string); ok && txID != "" {
-								parentCells = append(parentCells, txID)
-							}
-						}
-					}
+				for _, ref := range adminProducer.PoEParentCandidates(adminProducer.TipHeight(), 2) {
+					parentCells = append(parentCells, ref.ID)
 				}
 
-				// If we don't have enough parent cells, use deterministic synthetic IDs (API-valid length)
+				// Before two transactions are committed there is nothing to
+				// reference; fall back to deterministic synthetic IDs, which
+				// peers accept only below the PoE activation height.
 				if len(parentCells) < 2 {
 					a, b := wallet.StableParentCellIDs(seq, walletService.GetAddress())
 					parentCells = []string{a, b}
