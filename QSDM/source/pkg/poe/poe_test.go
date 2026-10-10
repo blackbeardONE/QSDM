@@ -22,11 +22,11 @@ func TestValidParentID(t *testing.T) {
 	}
 	bad := []string{
 		"",
-		"parent1",                              // the old CreateTransaction placeholder
-		strings.Repeat("a", MinParentIDLen-1),  // too short
-		strings.Repeat("a", MaxParentIDLen+1),  // too long
-		"solo-heartbeat-1:2-3333333333333",     // ':' not allowed
-		"0000000000000000000000000000000a1 ",   // trailing space
+		"parent1",                             // the old CreateTransaction placeholder
+		strings.Repeat("a", MinParentIDLen-1), // too short
+		strings.Repeat("a", MaxParentIDLen+1), // too long
+		"solo-heartbeat-1:2-3333333333333",    // ':' not allowed
+		"0000000000000000000000000000000a1 ",  // trailing space
 		"tx-1f2e3d4c5b6" + string(rune(0xe9)), // non-ASCII
 	}
 	for _, id := range bad {
