@@ -649,7 +649,7 @@ jobs:
           REQUESTED_TAG: ${{ inputs.tag }}
         run: bash .github/scripts/resolve-release-tag.sh
 
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Install cosign (keyless image signer)
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
@@ -802,7 +802,7 @@ jobs:
           REQUESTED_TAG: ${{ inputs.tag }}
         run: bash .github/scripts/resolve-release-tag.sh
 
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Install cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
@@ -914,7 +914,7 @@ jobs:
           REQUESTED_TAG: ${{ inputs.tag }}
         run: bash .github/scripts/resolve-release-tag.sh
 
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Install cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
