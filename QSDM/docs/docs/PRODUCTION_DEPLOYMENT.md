@@ -153,7 +153,7 @@ STORAGE_PATH=/data/qsdm.db     # SQLite database path
 SCYLLADB_HOSTS=localhost       # ScyllaDB hosts (comma-separated)
 
 # Consensus Configuration
-CONSENSUS_TYPE=poe             # Proof-of-Entanglement
+QSDM_POE_ACTIVATION_HEIGHT=0   # Proof-of-Entanglement parent rules; 0 = not enforced, same value on every validator (PROOF_OF_ENTANGLEMENT.md)
 QUANTUM_SAFE_ENABLED=true      # Enable quantum-safe crypto
 
 # Monitoring Configuration
@@ -184,8 +184,10 @@ storage:
   encryption: aes-gcm
 
 consensus:
-  type: poe
-  parent_cells_required: 2
+  # Proof-of-Entanglement parent rules (2-10 committed parents per signed
+  # transfer) apply from this height; 0 = not enforced. Every validator
+  # must use the same value. See PROOF_OF_ENTANGLEMENT.md.
+  poe_activation_height: 0
   quantum_safe: true
 
 monitoring:

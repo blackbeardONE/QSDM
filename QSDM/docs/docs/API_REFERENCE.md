@@ -251,6 +251,28 @@ transaction id. An unknown id returns a plain-text 404.
 Use `/receipts/{tx_id}` to follow a transfer you submitted. (`/transactions` and
 `/transactions/{id}` exist in the code but need operator credentials.)
 
+### `GET /chain/parents`
+
+The [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md) parent source. Wallets
+call it just before signing a transfer and copy `parents` into
+`parent_cells`. `parents` holds the node's two newest committed transaction
+IDs, read at its durable tip. Optional `limit` (default 8, maximum 32) sets
+the length of `recent`. Returns 503 until the node has two committed
+transactions.
+
+```json
+{
+  "tip": 805400,
+  "poe_activation_height": 0,
+  "poe_active": false,
+  "min_parents": 2,
+  "max_parents": 10,
+  "window_blocks": 8640,
+  "parents": ["solo-heartbeat-2253090-1791611907090994535", "solo-heartbeat-2253089-1791611897111559959"],
+  "recent": [{"id": "solo-heartbeat-2253090-1791611907090994535", "height": 805400}]
+}
+```
+
 ### `GET /mining/emission`
 
 ```json
@@ -314,7 +336,7 @@ Request body:
 | `amount` | number | CELL, greater than 0 |
 | `fee` | number | CELL, 0 or more |
 | `geotag` | string | Optional, may be empty |
-| `parent_cells` | array of strings | Optional, may be empty |
+| `parent_cells` | array of strings | Proof-of-Entanglement parents: copy `parents` from `GET /chain/parents`. May be empty until the network's PoE activation height; from then on, 2-10 transactions committed in the last 8,640 blocks ([details](PROOF_OF_ENTANGLEMENT.md)) |
 | `nonce` | integer | Required, must be `next` from `/wallet/nonce` |
 | `timestamp` | string | RFC 3339 |
 | `public_key` | string | Hex ML-DSA-87 public key (not signed) |
@@ -336,6 +358,7 @@ Responses:
 | 400 | error JSON | Validation failed (for example nonce 0, bad address or hex) |
 | 402 | error JSON | Balance below amount + fee |
 | 422 | error JSON | Signature does not verify |
+| 422 | error JSON starting `proof-of-entanglement:` | Parents are not committed in the reference window (only once PoE is active); fetch `/chain/parents` and re-sign |
 | 503 | error JSON | Transaction queue full; retry after the next block |
 
 ### Wallet recovery capsules

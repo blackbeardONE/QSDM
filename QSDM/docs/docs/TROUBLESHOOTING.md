@@ -96,16 +96,17 @@ database is locked
 **Solutions:**
 1. **Check transaction structure**:
    - Verify all required fields are present
-   - Ensure parent cells array has at least 2 elements
    - Check signature format (hex-encoded)
 
 2. **Verify signatures**:
    - Ensure transaction was signed before sending
    - Check signature matches transaction data
+   - `sender` must equal `hex(sha256(public_key))` of the signing key
 
-3. **Check parent cells**:
-   - Parent cells must exist in the ledger
-   - No duplicate parent cell IDs allowed
+3. **Check parent cells** (Proof-of-Entanglement, see [PROOF_OF_ENTANGLEMENT.md](PROOF_OF_ENTANGLEMENT.md)):
+   - Use the `parents` from `GET /api/v1/chain/parents`, fetched just before signing
+   - Once the network's PoE activation height is reached: 2-10 distinct parents, each committed in the last 8,640 blocks, none equal to the transaction's own ID
+   - An HTTP 422 starting `proof-of-entanglement:` means the parents were not accepted; fetch fresh parents and sign again (the same nonce is fine)
 
 #### Balance Mismatches
 

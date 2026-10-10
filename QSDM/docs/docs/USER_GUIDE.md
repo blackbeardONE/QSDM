@@ -64,7 +64,7 @@ Transactions in QSDM contain:
 - **Sender/Recipient:** Wallet addresses
 - **Amount:** Transaction value
 - **Fee:** Transaction fee
-- **Parent Cells:** References to previous transactions (2-5 cells)
+- **Parent Cells:** References to previously committed transactions. Wallets fill them in for you. Once the network's [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md) activation height is reached, 2-10 parents committed in the last ~24 hours are required.
 - **Signature:** Quantum-safe signature
 - **GeoTag:** Geographic region tag
 
