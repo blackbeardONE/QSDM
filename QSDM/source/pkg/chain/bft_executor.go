@@ -28,6 +28,12 @@ type BFTExecutor struct {
 	// direct callers and legacy tests.
 	signedVoteActivationHeight atomic.Uint64
 
+	// membershipPolicy, when configured, binds signed wire messages to an
+	// immutable, deterministic consensus membership schedule.
+	membershipPolicy   atomic.Pointer[BFTMembershipPolicy]
+	membershipAccepted atomic.Uint64
+	membershipRejected atomic.Uint64
+
 	// Auth counters let operators observe remaining unsigned compatibility
 	// traffic before choosing a coordinated enforcement height.
 	authSignedAccepted       atomic.Uint64
@@ -194,13 +200,14 @@ func signedProposeExhibitFromMessage(m BFTWireProposeMsg) (SignedVoteExhibit, bo
 		return SignedVoteExhibit{}, false
 	}
 	return SignedVoteExhibit{
-		Kind:      BFTWirePropose,
-		Height:    m.Height,
-		Round:     m.Round,
-		Validator: m.Proposer,
-		BlockHash: m.BlockHash,
-		BodyHash:  proposeBodyHash(m.Block),
-		Auth:      m.Auth,
+		Kind:           BFTWirePropose,
+		Height:         m.Height,
+		Round:          m.Round,
+		Validator:      m.Proposer,
+		BlockHash:      m.BlockHash,
+		MembershipRoot: m.MembershipRoot,
+		BodyHash:       proposeBodyHash(m.Block),
+		Auth:           m.Auth,
 	}, true
 }
 
@@ -335,13 +342,20 @@ func (e *BFTExecutor) BroadcastPropose(height uint64, round uint32, proposer, bl
 	if e == nil {
 		return nil
 	}
+	membershipRoot, err := e.membershipRootForOutbound(height)
+	if err != nil {
+		return err
+	}
 	msg := BFTWireProposeMsg{
-		Height: height, Round: round, Proposer: proposer, BlockHash: blockHash, Block: body,
+		Height: height, Round: round, Proposer: proposer, BlockHash: blockHash, MembershipRoot: membershipRoot, Block: body,
 	}
 	if signer := e.VoteSigner(); signer != nil {
 		if err := SignPropose(&msg, signer); err != nil {
 			return err
 		}
+	}
+	if err := e.validateOutboundMembership(height, proposer, membershipRoot, msg.Auth); err != nil {
+		return err
 	}
 	e.recordProposeExhibit(msg)
 	b, err := MarshalBFTWire(BFTWirePropose, msg)
@@ -549,13 +563,20 @@ func (e *BFTExecutor) BroadcastPrevote(height uint64, round uint32, validator, b
 	if e == nil {
 		return nil
 	}
+	membershipRoot, err := e.membershipRootForOutbound(height)
+	if err != nil {
+		return err
+	}
 	msg := BFTWirePrevoteMsg{
-		Height: height, Round: round, Validator: validator, BlockHash: blockHash,
+		Height: height, Round: round, Validator: validator, BlockHash: blockHash, MembershipRoot: membershipRoot,
 	}
 	if signer := e.VoteSigner(); signer != nil {
 		if err := SignPrevote(&msg, signer); err != nil {
 			return err
 		}
+	}
+	if err := e.validateOutboundMembership(height, validator, membershipRoot, msg.Auth); err != nil {
+		return err
 	}
 	b, err := MarshalBFTWire(BFTWirePrevote, msg)
 	if err != nil {
@@ -569,13 +590,20 @@ func (e *BFTExecutor) BroadcastPrecommit(height uint64, round uint32, validator,
 	if e == nil {
 		return nil
 	}
+	membershipRoot, err := e.membershipRootForOutbound(height)
+	if err != nil {
+		return err
+	}
 	msg := BFTWirePrecommitMsg{
-		Height: height, Round: round, Validator: validator, BlockHash: blockHash,
+		Height: height, Round: round, Validator: validator, BlockHash: blockHash, MembershipRoot: membershipRoot,
 	}
 	if signer := e.VoteSigner(); signer != nil {
 		if err := SignPrecommit(&msg, signer); err != nil {
 			return err
 		}
+	}
+	if err := e.validateOutboundMembership(height, validator, membershipRoot, msg.Auth); err != nil {
+		return err
 	}
 	b, err := MarshalBFTWire(BFTWirePrecommit, msg)
 	if err != nil {
@@ -619,6 +647,9 @@ func (e *BFTExecutor) ApplyInbound(payload []byte) error {
 		if err := e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPropose(m) }); err != nil {
 			return err
 		}
+		if err := e.checkInboundMembership(m.Height, m.Proposer, m.MembershipRoot, m.Auth); err != nil {
+			return err
+		}
 		if _, err := e.bc.Propose(m.Height, m.Round, m.Proposer, m.BlockHash); err != nil {
 			e.maybeRecordProposerEquivocation(err, m)
 			if isBenignBFTErr(err) {
@@ -642,6 +673,9 @@ func (e *BFTExecutor) ApplyInbound(payload []byte) error {
 		if err := e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPrevote(m) }); err != nil {
 			return err
 		}
+		if err := e.checkInboundMembership(m.Height, m.Validator, m.MembershipRoot, m.Auth); err != nil {
+			return err
+		}
 		if err := e.bc.PreVote(m.Height, m.Validator, m.BlockHash); err != nil {
 			if isBenignBFTErr(err) {
 				return nil
@@ -655,6 +689,9 @@ func (e *BFTExecutor) ApplyInbound(payload []byte) error {
 			return err
 		}
 		if err := e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPrecommit(m) }); err != nil {
+			return err
+		}
+		if err := e.checkInboundMembership(m.Height, m.Validator, m.MembershipRoot, m.Auth); err != nil {
 			return err
 		}
 		if err := e.bc.PreCommit(m.Height, m.Validator, m.BlockHash); err != nil {
@@ -691,19 +728,28 @@ func (e *BFTExecutor) ValidateInboundAuthentication(payload []byte) error {
 		if err := validateInboundProposeBlock(&m); err != nil {
 			return err
 		}
-		return e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPropose(m) })
+		if err := e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPropose(m) }); err != nil {
+			return err
+		}
+		return e.checkInboundMembership(m.Height, m.Proposer, m.MembershipRoot, m.Auth)
 	case BFTWirePrevote:
 		var m BFTWirePrevoteMsg
 		if err := json.Unmarshal(raw, &m); err != nil {
 			return err
 		}
-		return e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPrevote(m) })
+		if err := e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPrevote(m) }); err != nil {
+			return err
+		}
+		return e.checkInboundMembership(m.Height, m.Validator, m.MembershipRoot, m.Auth)
 	case BFTWirePrecommit:
 		var m BFTWirePrecommitMsg
 		if err := json.Unmarshal(raw, &m); err != nil {
 			return err
 		}
-		return e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPrecommit(m) })
+		if err := e.checkInboundAuth(m.Height, m.Auth.Signed(), func() error { return VerifyPrecommit(m) }); err != nil {
+			return err
+		}
+		return e.checkInboundMembership(m.Height, m.Validator, m.MembershipRoot, m.Auth)
 	default:
 		return fmt.Errorf("bft wire: unknown kind %q", kind)
 	}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -104,5 +105,24 @@ func TestLoadOrCreateBFTSignerRejectsOversizedFile(t *testing.T) {
 	}
 	if _, _, err := LoadOrCreateBFTSigner(path); err == nil {
 		t.Fatal("oversized consensus signer file should be rejected")
+	}
+}
+
+func TestLoadBFTSignerNeverCreatesANewIdentity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "validator-consensus-key.json")
+	if _, err := LoadBFTSigner(path); err == nil || !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("LoadBFTSigner(missing) error = %v, want missing-key error", err)
+	}
+
+	created, _, err := LoadOrCreateBFTSigner(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadBFTSigner(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := loaded.Address(), created.Address(); got != want {
+		t.Fatalf("LoadBFTSigner address = %s, want %s", got, want)
 	}
 }
