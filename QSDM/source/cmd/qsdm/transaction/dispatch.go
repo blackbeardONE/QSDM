@@ -47,6 +47,10 @@ type DispatchDeps struct {
 	Mesh3dValidator   *mesh3d.Mesh3DValidator
 	QuarantineManager *quarantine.QuarantineManager
 	ReputationManager *quarantine.ReputationManager
+	// ParentCheck applies this node's Proof-of-Entanglement history rules
+	// (parents must be committed transactions) after the signature and
+	// structure checks. Nil skips it.
+	ParentCheck ParentCheck
 }
 
 // DispatchInboundP2P routes a single pubsub payload to the correct handler:
@@ -68,13 +72,13 @@ func DispatchInboundP2P(d DispatchDeps) {
 			d.Logger.Warn("mesh3d wire message dropped: validator not initialized")
 			return
 		}
-		HandlePhase3MeshTx(d.Logger, tx, sub, d.Mesh3dValidator, d.QuarantineManager, d.ReputationManager, d.Consensus, d.Storage, d.NvidiaGate)
+		handlePhase3MeshTx(d.Logger, tx, sub, d.Mesh3dValidator, d.QuarantineManager, d.ReputationManager, d.Consensus, d.Storage, d.NvidiaGate, d.ParentCheck)
 		return
 	}
 
 	if json.Valid(msg) && msg[0] == '{' {
 		if _, err := ParseTransaction(msg); err == nil {
-			HandleTransaction(d.Logger, msg, d.DynamicManager, d.WasmSdk, d.Consensus, d.Storage, d.NvidiaGate)
+			handleTransaction(d.Logger, msg, d.DynamicManager, d.WasmSdk, d.Consensus, d.Storage, d.NvidiaGate, d.ParentCheck)
 			return
 		}
 	}

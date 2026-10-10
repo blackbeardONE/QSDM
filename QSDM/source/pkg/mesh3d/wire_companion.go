@@ -1,47 +1,63 @@
 package mesh3d
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 )
 
 // BuildMeshCompanionFromWalletJSON wraps a signed wallet JSON transaction in a mesh pubsub envelope
 // so mesh-aware nodes can process the same bytes via the phase-3 path.
+//
+// The wrapper's parent cells are the envelope's first two signed
+// parent_cells plus the payload digest (structure.go); parentLabels must be
+// exactly those two parents, so a companion can never claim parents its
+// payload's signature does not cover.
 func BuildMeshCompanionFromWalletJSON(walletJSON []byte, parentLabels []string, submeshKey string) ([]byte, error) {
-	if len(walletJSON) == 0 {
-		return nil, fmt.Errorf("empty wallet payload")
-	}
 	if len(parentLabels) < 2 {
 		return nil, fmt.Errorf("need at least 2 parent labels")
 	}
-	var meta struct {
-		ID string `json:"id"`
+	tx, err := CompanionFromWalletJSON(walletJSON)
+	if err != nil {
+		return nil, err
 	}
-	if err := json.Unmarshal(walletJSON, &meta); err != nil {
-		return nil, fmt.Errorf("wallet json: %w", err)
-	}
-	id := meta.ID
-	if len(id) < 32 {
-		return nil, fmt.Errorf("wallet tx id too short for mesh companion (need >= 32 chars)")
-	}
-	digest := sha256.Sum256(walletJSON)
-	thirdID := hex.EncodeToString(digest[:]) // 64 hex chars
-	parents := []ParentCell{
-		parentCellDataFromLabel(parentLabels[0]),
-		parentCellDataFromLabel(parentLabels[1]),
-		parentCellDataFromLabel(thirdID),
-	}
-	tx := &Transaction{
-		ID:          id[:32],
-		ParentCells: parents,
-		Data:        append([]byte(nil), walletJSON...),
+	if tx.ParentCells[0].ID != parentLabels[0] || tx.ParentCells[1].ID != parentLabels[1] {
+		return nil, fmt.Errorf("parent labels must be the envelope's first two signed parent_cells")
 	}
 	return EncodeMeshPubsubWire(tx, submeshKey)
 }
 
+// CompanionFromWalletJSON builds the mesh Transaction that wraps a signed
+// wallet JSON envelope: its ID is the envelope ID's first 32 characters and
+// its parent cells are the envelope's first two signed parent_cells plus the
+// payload digest, each carrying sha256 of its label.
+func CompanionFromWalletJSON(walletJSON []byte) (*Transaction, error) {
+	if len(walletJSON) == 0 {
+		return nil, fmt.Errorf("empty wallet payload")
+	}
+	var meta struct {
+		ID          string   `json:"id"`
+		ParentCells []string `json:"parent_cells"`
+	}
+	if err := json.Unmarshal(walletJSON, &meta); err != nil {
+		return nil, fmt.Errorf("wallet json: %w", err)
+	}
+	if len(meta.ID) < 32 {
+		return nil, fmt.Errorf("wallet tx id too short for mesh companion (need >= 32 chars)")
+	}
+	if len(meta.ParentCells) < 2 {
+		return nil, fmt.Errorf("wallet envelope names fewer than 2 parent_cells")
+	}
+	return &Transaction{
+		ID: meta.ID[:32],
+		ParentCells: []ParentCell{
+			parentCellDataFromLabel(meta.ParentCells[0]),
+			parentCellDataFromLabel(meta.ParentCells[1]),
+			parentCellDataFromLabel(PayloadDigest(walletJSON)),
+		},
+		Data: append([]byte(nil), walletJSON...),
+	}, nil
+}
+
 func parentCellDataFromLabel(label string) ParentCell {
-	sum := sha256.Sum256([]byte(label))
-	return ParentCell{ID: label, Data: sum[:]}
+	return ParentCell{ID: label, Data: ParentDataFor(label)}
 }

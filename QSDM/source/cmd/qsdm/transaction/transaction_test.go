@@ -2,6 +2,7 @@ package transaction
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/consensus"
 	"github.com/blackbeardONE/QSDM/pkg/mesh3d"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
+	"github.com/blackbeardONE/QSDM/pkg/poe"
 	"github.com/blackbeardONE/QSDM/pkg/quarantine"
 	"github.com/blackbeardONE/QSDM/pkg/submesh"
 	"github.com/blackbeardONE/QSDM/pkg/walletp2p"
@@ -34,59 +36,93 @@ func (s *sliceStorage) StoreTransaction(tx []byte) error {
 
 func (s *sliceStorage) Close() error { return nil }
 
-func buildP2PTestTxMessage(t *testing.T, poe *consensus.ProofOfEntanglement) []byte {
-	return buildP2PTestTxMessageWithGeo(t, poe, "")
+var (
+	testParent1 = strings.Repeat("a", 32)
+	testParent2 = strings.Repeat("b", 32)
+)
+
+func addressOf(pub []byte) string {
+	sum := sha256.Sum256(pub)
+	return hex.EncodeToString(sum[:])
 }
 
-func buildP2PTestTxMessageWithGeo(t *testing.T, poe *consensus.ProofOfEntanglement, geoTag string) []byte {
+// p2pTx describes one signed wallet envelope for the P2P tests.
+type p2pTx struct {
+	signer  *consensus.ProofOfEntanglement // signs the canonical bytes
+	keyFrom *consensus.ProofOfEntanglement // supplies public_key (default signer)
+	sender  string                         // default: address of keyFrom
+	geoTag  string
+	parents []string // default {testParent1, testParent2}
+}
+
+func buildP2PTx(t *testing.T, o p2pTx) []byte {
 	t.Helper()
 	const id32 = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
-	parent1 := strings.Repeat("a", 32)
-	parent2 := strings.Repeat("b", 32)
-	sender := strings.Repeat("1", 32)
-	recipient := strings.Repeat("2", 32)
-
-	withoutSig := Transaction{
+	if o.keyFrom == nil {
+		o.keyFrom = o.signer
+	}
+	if o.parents == nil {
+		o.parents = []string{testParent1, testParent2}
+	}
+	pub := o.keyFrom.MLDSAPublicKey()
+	if o.sender == "" {
+		o.sender = addressOf(pub)
+	}
+	env := Transaction{
 		ID:          id32,
-		Sender:      sender,
-		Recipient:   recipient,
+		Sender:      o.sender,
+		Recipient:   strings.Repeat("2", 64),
 		Amount:      1.0,
 		Fee:         0.1,
-		GeoTag:      geoTag,
-		ParentCells: []string{parent1, parent2},
-		Signature:   "",
+		GeoTag:      o.geoTag,
+		ParentCells: o.parents,
+		Nonce:       1,
 		// Fresh timestamp so MED-3 freshness validation (24h window, 30s
-		// future clock-skew) accepts the envelope. Pre-MED-3 the wire
-		// fixture used a 2010-fixed value because ParseTransaction
-		// ignored the field.
-		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		// future clock-skew) accepts the envelope.
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
-	body, err := json.Marshal(withoutSig)
+	body, err := env.CanonicalBytes()
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	var sigHex string
-	if poe != nil {
-		sig, err := poe.Sign(body)
-		if err != nil {
-			t.Fatalf("sign tx: %v", err)
-		}
-		sigHex = hex.EncodeToString(sig)
-	} else {
-		sigHex = strings.Repeat("cd", 50)
+	sig, err := o.signer.Sign(body)
+	if err != nil {
+		t.Fatalf("sign tx: %v", err)
 	}
-
-	full := withoutSig
-	full.Signature = sigHex
-	if poe != nil {
-		full.PublicKey = poe.MLDSAPublicKeyHex()
-	}
-	out, err := json.Marshal(full)
+	env.Signature = hex.EncodeToString(sig)
+	env.PublicKey = hex.EncodeToString(pub)
+	out, err := json.Marshal(env)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return out
+}
+
+func newTestPoE(t *testing.T) *consensus.ProofOfEntanglement {
+	t.Helper()
+	p := consensus.NewProofOfEntanglement()
+	if p == nil {
+		t.Skip("ProofOfEntanglement unavailable (no ML-DSA-87 backend)")
+	}
+	return p
+}
+
+func buildP2PTestTxMessage(t *testing.T, signer *consensus.ProofOfEntanglement) []byte {
+	return buildP2PTx(t, p2pTx{signer: signer})
+}
+
+func buildP2PTestTxMessageWithGeo(t *testing.T, signer *consensus.ProofOfEntanglement, geoTag string) []byte {
+	return buildP2PTx(t, p2pTx{signer: signer, geoTag: geoTag})
+}
+
+// meshCompanionOf wraps a signed wallet message the way senders do.
+func meshCompanionOf(t *testing.T, walletMsg []byte, submeshKey string) []byte {
+	t.Helper()
+	wire, err := mesh3d.BuildMeshCompanionFromWalletJSON(walletMsg, []string{testParent1, testParent2}, submeshKey)
+	if err != nil {
+		t.Fatalf("mesh companion: %v", err)
+	}
+	return wire
 }
 
 func TestHandleTransaction_P2PGate_blocksWithoutProof(t *testing.T) {
@@ -94,19 +130,15 @@ func TestHandleTransaction_P2PGate_blocksWithoutProof(t *testing.T) {
 	monitoring.ResetNGCProofsForTest()
 	t.Cleanup(monitoring.ResetNGCProofsForTest)
 
-	poe := consensus.NewProofOfEntanglement()
-	if poe == nil {
-		t.Log("ProofOfEntanglement nil (no CGO): stub validation still exercises P2P gate after parse")
-	}
-
+	signer := newTestPoE(t)
 	logger := logging.NewSilentLogger()
 	dm := submesh.NewDynamicSubmeshManager()
 	st := &sliceStorage{}
 	gate := &monitoring.NvidiaLockP2PGate{Enabled: true, MaxProofAge: 24 * time.Hour}
 
 	before := monitoring.NvidiaLockP2PRejectCount()
-	msg := buildP2PTestTxMessage(t, poe)
-	HandleTransaction(logger, msg, dm, nil, poe, st, gate)
+	msg := buildP2PTestTxMessage(t, signer)
+	HandleTransaction(logger, msg, dm, nil, signer, st, gate)
 
 	if len(st.stored) != 0 {
 		t.Fatalf("expected no store, got %d", len(st.stored))
@@ -126,15 +158,15 @@ func TestHandleTransaction_P2PGate_storesWithQualifyingProof(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	poe := consensus.NewProofOfEntanglement()
+	signer := newTestPoE(t)
 	logger := logging.NewSilentLogger()
 	dm := submesh.NewDynamicSubmeshManager()
 	st := &sliceStorage{}
 	gate := &monitoring.NvidiaLockP2PGate{Enabled: true, MaxProofAge: 24 * time.Hour}
 
-	msg := buildP2PTestTxMessage(t, poe)
+	msg := buildP2PTestTxMessage(t, signer)
 	before := monitoring.NvidiaLockP2PRejectCount()
-	HandleTransaction(logger, msg, dm, nil, poe, st, gate)
+	HandleTransaction(logger, msg, dm, nil, signer, st, gate)
 
 	if monitoring.NvidiaLockP2PRejectCount() != before {
 		t.Fatal("unexpected P2P reject")
@@ -149,28 +181,141 @@ func TestHandleTransaction_P2PGate_nilGateAlwaysStores(t *testing.T) {
 	monitoring.ResetNGCProofsForTest()
 	t.Cleanup(monitoring.ResetNGCProofsForTest)
 
-	poe := consensus.NewProofOfEntanglement()
+	signer := newTestPoE(t)
 	logger := logging.NewSilentLogger()
 	dm := submesh.NewDynamicSubmeshManager()
 	st := &sliceStorage{}
-	msg := buildP2PTestTxMessage(t, poe)
-	HandleTransaction(logger, msg, dm, nil, poe, st, nil)
+	msg := buildP2PTestTxMessage(t, signer)
+	HandleTransaction(logger, msg, dm, nil, signer, st, nil)
 	if len(st.stored) != 1 {
 		t.Fatalf("expected store, got %d", len(st.stored))
 	}
 }
 
+// The receiving node's own PoE key must play no part: a transaction signed
+// by a different wallet verifies under the wallet's key.
+func TestHandleTransaction_VerifiesUnderEnvelopeKeyNotNodeKey(t *testing.T) {
+	txTestDedupeReset(t)
+	walletKey := newTestPoE(t)
+	nodeKey := newTestPoE(t)
+	st := &sliceStorage{}
+	msg := buildP2PTx(t, p2pTx{signer: walletKey})
+	HandleTransaction(logging.NewSilentLogger(), msg, submesh.NewDynamicSubmeshManager(), nil, nodeKey, st, nil)
+	if len(st.stored) != 1 {
+		t.Fatalf("third-party wallet transaction not stored (got %d)", len(st.stored))
+	}
+}
+
+func TestHandleTransaction_RejectsWrongSignerKey(t *testing.T) {
+	txTestDedupeReset(t)
+	attacker := newTestPoE(t)
+	victim := newTestPoE(t)
+	st := &sliceStorage{}
+	// Signed by the attacker, presented with the victim's key and address.
+	msg := buildP2PTx(t, p2pTx{signer: attacker, keyFrom: victim})
+	HandleTransaction(logging.NewSilentLogger(), msg, submesh.NewDynamicSubmeshManager(), nil, attacker, st, nil)
+	if len(st.stored) != 0 {
+		t.Fatal("transaction signed by another key was stored")
+	}
+}
+
+func TestHandleTransaction_RejectsSenderKeyMismatch(t *testing.T) {
+	txTestDedupeReset(t)
+	attacker := newTestPoE(t)
+	victim := newTestPoE(t)
+	st := &sliceStorage{}
+	// Validly signed by the attacker's key, but spending from the victim.
+	msg := buildP2PTx(t, p2pTx{signer: attacker, sender: addressOf(victim.MLDSAPublicKey())})
+	HandleTransaction(logging.NewSilentLogger(), msg, submesh.NewDynamicSubmeshManager(), nil, attacker, st, nil)
+	if len(st.stored) != 0 {
+		t.Fatal("transaction whose sender is not its key's address was stored")
+	}
+}
+
+func TestHandleTransaction_RejectsMissingPublicKey(t *testing.T) {
+	txTestDedupeReset(t)
+	signer := newTestPoE(t)
+	var env Transaction
+	if err := json.Unmarshal(buildP2PTx(t, p2pTx{signer: signer}), &env); err != nil {
+		t.Fatal(err)
+	}
+	env.PublicKey = ""
+	msg, err := json.Marshal(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &sliceStorage{}
+	HandleTransaction(logging.NewSilentLogger(), msg, submesh.NewDynamicSubmeshManager(), nil, signer, st, nil)
+	if len(st.stored) != 0 {
+		t.Fatal("transaction without public_key was stored")
+	}
+}
+
+// Zero parents and one parent fail the context-free PoE rules on this path.
+func TestHandleTransaction_RejectsTooFewParents(t *testing.T) {
+	for _, parents := range [][]string{{}, {testParent1}} {
+		txTestDedupeReset(t)
+		signer := newTestPoE(t)
+		st := &sliceStorage{}
+		msg := buildP2PTx(t, p2pTx{signer: signer, parents: parents})
+		HandleTransaction(logging.NewSilentLogger(), msg, submesh.NewDynamicSubmeshManager(), nil, signer, st, nil)
+		if len(st.stored) != 0 {
+			t.Fatalf("%d parents: stored", len(parents))
+		}
+	}
+}
+
+// The chain-backed parent check runs on both P2P paths and sees the
+// envelope's signed ID and parents.
+func TestDispatchInboundP2P_ParentCheck(t *testing.T) {
+	signer := newTestPoE(t)
+	walletMsg := buildP2PTx(t, p2pTx{signer: signer})
+	for name, msg := range map[string][]byte{
+		"wallet-json":    walletMsg,
+		"mesh-companion": meshCompanionOf(t, walletMsg, "route-a"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, reject := range []bool{true, false} {
+				txTestDedupeReset(t)
+				st := &sliceStorage{}
+				var gotID string
+				var gotParents []string
+				deps := meshDeps(st, signer, submesh.NewDynamicSubmeshManager())
+				deps.Msg = msg
+				deps.ParentCheck = func(id string, parents []string) error {
+					gotID, gotParents = id, parents
+					if reject {
+						return poe.ErrParentUnknown
+					}
+					return nil
+				}
+				DispatchInboundP2P(deps)
+				if gotID != "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" || len(gotParents) != 2 || gotParents[0] != testParent1 {
+					t.Fatalf("parent check saw id=%q parents=%v", gotID, gotParents)
+				}
+				want := 1
+				if reject {
+					want = 0
+				}
+				if len(st.stored) != want {
+					t.Fatalf("reject=%v: stored %d, want %d", reject, len(st.stored), want)
+				}
+			}
+		})
+	}
+}
+
 func TestHandleTransaction_SubmeshConfigured_rejectsWhenNoRoute(t *testing.T) {
 	txTestDedupeReset(t)
-	poe := consensus.NewProofOfEntanglement()
+	signer := newTestPoE(t)
 	logger := logging.NewSilentLogger()
 	dm := submesh.NewDynamicSubmeshManager()
 	dm.AddOrUpdateSubmesh(&submesh.DynamicSubmesh{
 		Name: "mp", FeeThreshold: 0.001, PriorityLevel: 1, GeoTags: []string{"US"},
 	})
 	st := &sliceStorage{}
-	msg := buildP2PTestTxMessage(t, poe)
-	HandleTransaction(logger, msg, dm, nil, poe, st, nil)
+	msg := buildP2PTestTxMessage(t, signer)
+	HandleTransaction(logger, msg, dm, nil, signer, st, nil)
 	if len(st.stored) != 0 {
 		t.Fatalf("expected no store when geotag does not match submesh, got %d", len(st.stored))
 	}
@@ -178,18 +323,15 @@ func TestHandleTransaction_SubmeshConfigured_rejectsWhenNoRoute(t *testing.T) {
 
 func TestHandleTransaction_SubmeshConfigured_storesWhenRouteMatches(t *testing.T) {
 	txTestDedupeReset(t)
-	poe := consensus.NewProofOfEntanglement()
-	if poe == nil {
-		t.Skip("CGO / ProofOfEntanglement required for signed tx storage path")
-	}
+	signer := newTestPoE(t)
 	logger := logging.NewSilentLogger()
 	dm := submesh.NewDynamicSubmeshManager()
 	dm.AddOrUpdateSubmesh(&submesh.DynamicSubmesh{
 		Name: "mp", FeeThreshold: 0.001, PriorityLevel: 1, GeoTags: []string{"US"},
 	})
 	st := &sliceStorage{}
-	msg := buildP2PTestTxMessageWithGeo(t, poe, "US")
-	HandleTransaction(logger, msg, dm, nil, poe, st, nil)
+	msg := buildP2PTestTxMessageWithGeo(t, signer, "US")
+	HandleTransaction(logger, msg, dm, nil, signer, st, nil)
 	if len(st.stored) != 1 {
 		t.Fatalf("expected store, got %d", len(st.stored))
 	}
@@ -223,66 +365,86 @@ func TestEncodeParseMesh3DWire(t *testing.T) {
 	}
 }
 
+func meshDeps(st *sliceStorage, cons *consensus.ProofOfEntanglement, dm *submesh.DynamicSubmeshManager) DispatchDeps {
+	return DispatchDeps{
+		Logger:            logging.NewSilentLogger(),
+		DynamicManager:    dm,
+		WasmSdk:           nil,
+		Consensus:         cons,
+		Storage:           st,
+		NvidiaGate:        nil,
+		Mesh3dValidator:   mesh3d.NewMesh3DValidator(),
+		QuarantineManager: quarantine.NewQuarantineManager(0.5),
+		ReputationManager: quarantine.NewReputationManager(10, 5),
+	}
+}
+
 func TestDispatchInboundP2P_mesh3DWire(t *testing.T) {
 	txTestDedupeReset(t)
-	logger := logging.NewSilentLogger()
+	signer := newTestPoE(t)
 	st := &sliceStorage{}
-	txData := bytes.Repeat([]byte("d"), 64)
-	tx := &mesh3d.Transaction{
+	walletMsg := buildP2PTx(t, p2pTx{signer: signer})
+	deps := meshDeps(st, signer, submesh.NewDynamicSubmeshManager())
+	deps.Msg = meshCompanionOf(t, walletMsg, "route-a")
+	DispatchInboundP2P(deps)
+	if len(st.stored) != 1 || !bytes.Equal(st.stored[0], walletMsg) {
+		t.Fatalf("expected mesh payload stored, got %d stored", len(st.stored))
+	}
+}
+
+// Mesh structure failures were warnings; arbitrary payloads and parents that
+// do not match the signed envelope are now dropped.
+func TestDispatchInboundP2P_mesh3DWireStructureFailuresDropped(t *testing.T) {
+	signer := newTestPoE(t)
+	walletMsg := buildP2PTx(t, p2pTx{signer: signer})
+	digest := mesh3d.PayloadDigest(walletMsg)
+	unsigned := &mesh3d.Transaction{
 		ID: string(bytes.Repeat([]byte("y"), 32)),
 		ParentCells: []mesh3d.ParentCell{
 			{ID: "a1", Data: bytes.Repeat([]byte{1}, 32)},
 			{ID: "a2", Data: bytes.Repeat([]byte{2}, 32)},
 			{ID: "a3", Data: bytes.Repeat([]byte{3}, 32)},
 		},
-		Data: txData,
+		Data: bytes.Repeat([]byte("d"), 64),
 	}
-	msg, err := EncodeMesh3DWire(tx, "route-a")
-	if err != nil {
-		t.Fatal(err)
+	rewired := &mesh3d.Transaction{
+		ID: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+		ParentCells: []mesh3d.ParentCell{
+			{ID: "other-parent-0000000", Data: mesh3d.ParentDataFor("other-parent-0000000")},
+			{ID: testParent2, Data: mesh3d.ParentDataFor(testParent2)},
+			{ID: digest, Data: mesh3d.ParentDataFor(digest)},
+		},
+		Data: walletMsg,
 	}
-	DispatchInboundP2P(DispatchDeps{
-		Logger:            logger,
-		Msg:               msg,
-		DynamicManager:    submesh.NewDynamicSubmeshManager(),
-		WasmSdk:           nil,
-		Consensus:         consensus.NewProofOfEntanglement(),
-		Storage:           st,
-		NvidiaGate:        nil,
-		Mesh3dValidator:   mesh3d.NewMesh3DValidator(),
-		QuarantineManager: quarantine.NewQuarantineManager(0.5),
-		ReputationManager: quarantine.NewReputationManager(10, 5),
-	})
-	if len(st.stored) != 1 || !bytes.Equal(st.stored[0], txData) {
-		t.Fatalf("expected mesh payload stored, got %d stored", len(st.stored))
+	for name, tx := range map[string]*mesh3d.Transaction{"unsigned-payload": unsigned, "parents-not-signed": rewired} {
+		t.Run(name, func(t *testing.T) {
+			txTestDedupeReset(t)
+			st := &sliceStorage{}
+			wire, err := EncodeMesh3DWire(tx, "route-a")
+			if err != nil {
+				t.Fatal(err)
+			}
+			deps := meshDeps(st, signer, submesh.NewDynamicSubmeshManager())
+			deps.Msg = wire
+			DispatchInboundP2P(deps)
+			if len(st.stored) != 0 {
+				t.Fatal("invalid mesh transaction stored")
+			}
+		})
 	}
 }
 
 func TestDispatchInboundP2P_walletJSONNotMesh(t *testing.T) {
 	txTestDedupeReset(t)
-	poe := consensus.NewProofOfEntanglement()
-	if poe == nil {
-		t.Skip("CGO / ProofOfEntanglement required")
-	}
-	logger := logging.NewSilentLogger()
+	signer := newTestPoE(t)
 	st := &sliceStorage{}
 	dm := submesh.NewDynamicSubmeshManager()
 	dm.AddOrUpdateSubmesh(&submesh.DynamicSubmesh{
 		Name: "mp", FeeThreshold: 0.001, PriorityLevel: 1, GeoTags: []string{"US"},
 	})
-	msg := buildP2PTestTxMessageWithGeo(t, poe, "US")
-	DispatchInboundP2P(DispatchDeps{
-		Logger:            logger,
-		Msg:               msg,
-		DynamicManager:    dm,
-		WasmSdk:           nil,
-		Consensus:         poe,
-		Storage:           st,
-		NvidiaGate:        nil,
-		Mesh3dValidator:   mesh3d.NewMesh3DValidator(),
-		QuarantineManager: quarantine.NewQuarantineManager(0.5),
-		ReputationManager: quarantine.NewReputationManager(10, 5),
-	})
+	deps := meshDeps(st, signer, dm)
+	deps.Msg = buildP2PTestTxMessageWithGeo(t, signer, "US")
+	DispatchInboundP2P(deps)
 	if len(st.stored) != 1 {
 		t.Fatalf("expected one wallet tx stored, got %d", len(st.stored))
 	}
@@ -290,47 +452,15 @@ func TestDispatchInboundP2P_walletJSONNotMesh(t *testing.T) {
 
 func TestDispatchInboundP2P_dedupeMeshThenWalletJSON(t *testing.T) {
 	txTestDedupeReset(t)
-	poe := consensus.NewProofOfEntanglement()
-	if poe == nil {
-		t.Skip("CGO / ProofOfEntanglement required")
-	}
-	logger := logging.NewSilentLogger()
+	signer := newTestPoE(t)
 	st := &sliceStorage{}
 	dm := submesh.NewDynamicSubmeshManager()
 	dm.AddOrUpdateSubmesh(&submesh.DynamicSubmesh{
 		Name: "mp", FeeThreshold: 0.001, PriorityLevel: 1, GeoTags: []string{"US"},
 	})
-	walletMsg := buildP2PTestTxMessageWithGeo(t, poe, "US")
-	var inner struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(walletMsg, &inner); err != nil {
-		t.Fatal(err)
-	}
-	meshTx := &mesh3d.Transaction{
-		ID: inner.ID,
-		ParentCells: []mesh3d.ParentCell{
-			{ID: "p1", Data: bytes.Repeat([]byte{1}, 32)},
-			{ID: "p2", Data: bytes.Repeat([]byte{2}, 32)},
-			{ID: "p3", Data: bytes.Repeat([]byte{3}, 32)},
-		},
-		Data: walletMsg,
-	}
-	wire, err := EncodeMesh3DWire(meshTx, "route-a")
-	if err != nil {
-		t.Fatal(err)
-	}
-	deps := DispatchDeps{
-		Logger:            logger,
-		DynamicManager:    dm,
-		WasmSdk:           nil,
-		Consensus:         poe,
-		Storage:           st,
-		NvidiaGate:        nil,
-		Mesh3dValidator:   mesh3d.NewMesh3DValidator(),
-		QuarantineManager: quarantine.NewQuarantineManager(0.5),
-		ReputationManager: quarantine.NewReputationManager(10, 5),
-	}
+	walletMsg := buildP2PTestTxMessageWithGeo(t, signer, "US")
+	wire := meshCompanionOf(t, walletMsg, "route-a")
+	deps := meshDeps(st, signer, dm)
 	before := monitoring.P2PWalletIngressDedupeSkipCount()
 	deps.Msg = wire
 	DispatchInboundP2P(deps)
@@ -349,47 +479,15 @@ func TestDispatchInboundP2P_dedupeMeshThenWalletJSON(t *testing.T) {
 
 func TestDispatchInboundP2P_dedupeWalletThenMeshWire(t *testing.T) {
 	txTestDedupeReset(t)
-	poe := consensus.NewProofOfEntanglement()
-	if poe == nil {
-		t.Skip("CGO / ProofOfEntanglement required")
-	}
-	logger := logging.NewSilentLogger()
+	signer := newTestPoE(t)
 	st := &sliceStorage{}
 	dm := submesh.NewDynamicSubmeshManager()
 	dm.AddOrUpdateSubmesh(&submesh.DynamicSubmesh{
 		Name: "mp", FeeThreshold: 0.001, PriorityLevel: 1, GeoTags: []string{"US"},
 	})
-	walletMsg := buildP2PTestTxMessageWithGeo(t, poe, "US")
-	var inner struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(walletMsg, &inner); err != nil {
-		t.Fatal(err)
-	}
-	meshTx := &mesh3d.Transaction{
-		ID: inner.ID,
-		ParentCells: []mesh3d.ParentCell{
-			{ID: "p1", Data: bytes.Repeat([]byte{1}, 32)},
-			{ID: "p2", Data: bytes.Repeat([]byte{2}, 32)},
-			{ID: "p3", Data: bytes.Repeat([]byte{3}, 32)},
-		},
-		Data: walletMsg,
-	}
-	wire, err := EncodeMesh3DWire(meshTx, "route-a")
-	if err != nil {
-		t.Fatal(err)
-	}
-	deps := DispatchDeps{
-		Logger:            logger,
-		DynamicManager:    dm,
-		WasmSdk:           nil,
-		Consensus:         poe,
-		Storage:           st,
-		NvidiaGate:        nil,
-		Mesh3dValidator:   mesh3d.NewMesh3DValidator(),
-		QuarantineManager: quarantine.NewQuarantineManager(0.5),
-		ReputationManager: quarantine.NewReputationManager(10, 5),
-	}
+	walletMsg := buildP2PTestTxMessageWithGeo(t, signer, "US")
+	wire := meshCompanionOf(t, walletMsg, "route-a")
+	deps := meshDeps(st, signer, dm)
 	before := monitoring.P2PWalletIngressDedupeSkipCount()
 	deps.Msg = walletMsg
 	DispatchInboundP2P(deps)

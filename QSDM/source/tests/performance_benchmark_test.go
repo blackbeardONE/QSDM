@@ -47,15 +47,11 @@ func BenchmarkConsensusValidation(b *testing.B) {
 	}
 
 	logger := logging.NewLogger("bench.log", false)
-
-	txData := []byte("test transaction data")
-	parentCells := [][]byte{[]byte("parent1"), []byte("parent2")}
-	signature, _ := poe.Sign(txData)
-	signatures := [][]byte{signature}
+	tx := signedPoETransaction(b)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = poe.ValidateTransaction(txData, parentCells, signatures, logger)
+		_, _ = poe.ValidateTransaction(tx, logger)
 	}
 }
 
@@ -63,15 +59,7 @@ func BenchmarkConsensusValidation(b *testing.B) {
 func Benchmark3DMeshValidationCPU(b *testing.B) {
 	validator := mesh3d.NewMesh3DValidator()
 
-	tx := &mesh3d.Transaction{
-		ID: "bench_tx",
-		ParentCells: []mesh3d.ParentCell{
-			{ID: "p1", Data: make([]byte, 64)},
-			{ID: "p2", Data: make([]byte, 64)},
-			{ID: "p3", Data: make([]byte, 64)},
-		},
-		Data: make([]byte, 256),
-	}
+	tx := signedMeshCompanion(b)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -203,15 +191,7 @@ func BenchmarkTransactionThroughput(b *testing.B) {
 func CompareCUDAvsCPU(b *testing.B) {
 	validator := mesh3d.NewMesh3DValidator()
 
-	tx := &mesh3d.Transaction{
-		ID: "compare_tx",
-		ParentCells: []mesh3d.ParentCell{
-			{ID: "p1", Data: make([]byte, 64)},
-			{ID: "p2", Data: make([]byte, 64)},
-			{ID: "p3", Data: make([]byte, 64)},
-		},
-		Data: make([]byte, 256),
-	}
+	tx := signedMeshCompanion(b)
 
 	// CPU benchmark
 	b.Run("CPU", func(b *testing.B) {
