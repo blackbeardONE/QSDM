@@ -85,6 +85,20 @@ type ParamStore interface {
 	Promote(currentHeight uint64) []ParamChange
 }
 
+// ParamStoreReplayCloner is the optional snapshot/restore capability required
+// when a ParamStore participates in speculative chain replay. ParamStore alone
+// intentionally stays small for read-heavy consumers, but a store used by a
+// StateApplier must be able to provide an independent copy: otherwise a failed
+// BFT pre-seal can mutate live governance state before its block is accepted.
+//
+// Implementations must return a deep, mutation-independent copy and restore
+// from a compatible snapshot atomically from the caller's perspective.
+type ParamStoreReplayCloner interface {
+	ParamStore
+	CloneParamStoreForReplay() ParamStore
+	RestoreParamStoreFromReplay(ParamStore) error
+}
+
 // InMemoryParamStore is the reference implementation. Held
 // behind a single sync.RWMutex; the store is small (≤ a dozen
 // parameters) and contention is low (writes only on apply, in
@@ -239,5 +253,62 @@ func (s *InMemoryParamStore) Promote(currentHeight uint64) []ParamChange {
 	return promoted
 }
 
-// Compile-time assertion.
-var _ ParamStore = (*InMemoryParamStore)(nil)
+// CloneParamStoreForReplay implements ParamStoreReplayCloner. The returned
+// store shares no maps with s, so speculative transaction replay cannot stage
+// or promote parameters in the live store.
+func (s *InMemoryParamStore) CloneParamStoreForReplay() ParamStore {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	clone := &InMemoryParamStore{
+		active:  make(map[string]uint64, len(s.active)),
+		pending: make(map[string]ParamChange, len(s.pending)),
+	}
+	for name, value := range s.active {
+		clone.active[name] = value
+	}
+	for name, change := range s.pending {
+		clone.pending[name] = change
+	}
+	return clone
+}
+
+// RestoreParamStoreFromReplay implements ParamStoreReplayCloner. It accepts
+// only the reference in-memory snapshot type so a miswired custom store fails
+// closed instead of partially applying state from an incompatible source.
+func (s *InMemoryParamStore) RestoreParamStoreFromReplay(from ParamStore) error {
+	if s == nil {
+		return errors.New("chainparams: nil InMemoryParamStore")
+	}
+	other, ok := from.(*InMemoryParamStore)
+	if !ok || other == nil {
+		return errors.New("chainparams: replay restore expects *InMemoryParamStore snapshot")
+	}
+	if other == s {
+		return nil
+	}
+	other.mu.RLock()
+	active := make(map[string]uint64, len(other.active))
+	for name, value := range other.active {
+		active[name] = value
+	}
+	pending := make(map[string]ParamChange, len(other.pending))
+	for name, change := range other.pending {
+		pending[name] = change
+	}
+	other.mu.RUnlock()
+
+	s.mu.Lock()
+	s.active = active
+	s.pending = pending
+	s.mu.Unlock()
+	return nil
+}
+
+// Compile-time assertions.
+var (
+	_ ParamStore             = (*InMemoryParamStore)(nil)
+	_ ParamStoreReplayCloner = (*InMemoryParamStore)(nil)
+)

@@ -142,6 +142,104 @@ func (a *GovApplier) SetAuthorityVoteStore(s chainparams.AuthorityVoteStore) {
 	a.AuthorityVotes = s
 }
 
+// ChainReplayCloneWithAccounts returns an independent governance applier for
+// speculative block replay. Governance changes are state mutations just like
+// account debits: a candidate BFT block must never stage parameters or tally
+// authority votes on the live node before it is accepted.
+//
+// The caller supplies the already-cloned AccountStore owned by its composite
+// StateApplier. The returned applier deliberately uses a no-op publisher so
+// speculative evaluation cannot emit live audit events or metrics.
+//
+// Panics on a non-cloneable store. That is a boot/wiring failure, not a reason
+// to fall back to aliasing live governance state.
+func (a *GovApplier) ChainReplayCloneWithAccounts(accounts *AccountStore) *GovApplier {
+	if a == nil {
+		return nil
+	}
+	if accounts == nil {
+		panic("chain: GovApplier.ChainReplayCloneWithAccounts requires non-nil accounts")
+	}
+	cloner, ok := a.Store.(chainparams.ParamStoreReplayCloner)
+	if !ok {
+		panic("chain: GovApplier ParamStore does not support replay cloning")
+	}
+	store := cloner.CloneParamStoreForReplay()
+	if store == nil {
+		panic("chain: GovApplier ParamStore returned nil replay clone")
+	}
+	clone := NewGovApplier(accounts, store, a.AuthorityList())
+	if a.AuthorityVotes != nil {
+		voteCloner, ok := a.AuthorityVotes.(chainparams.AuthorityVoteStoreReplayCloner)
+		if !ok {
+			panic("chain: GovApplier AuthorityVoteStore does not support replay cloning")
+		}
+		votes := voteCloner.CloneAuthorityVoteStoreForReplay()
+		if votes == nil {
+			panic("chain: GovApplier AuthorityVoteStore returned nil replay clone")
+		}
+		clone.SetAuthorityVoteStore(votes)
+	}
+	return clone
+}
+
+// RestoreFromGovernanceReplay restores the mutable governance state from a
+// snapshot produced by ChainReplayCloneWithAccounts. Account restoration is
+// owned by the enclosing StateApplier; this method restores only the parameter
+// store, authority-vote store, and active authority set.
+func (a *GovApplier) RestoreFromGovernanceReplay(from *GovApplier) error {
+	if a == nil {
+		return errors.New("chain: nil GovApplier on governance replay restore")
+	}
+	if from == nil {
+		return errors.New("chain: nil GovApplier governance replay snapshot")
+	}
+	dstStore, ok := a.Store.(chainparams.ParamStoreReplayCloner)
+	if !ok {
+		return errors.New("chain: GovApplier ParamStore does not support replay restore")
+	}
+	srcStore, ok := from.Store.(chainparams.ParamStoreReplayCloner)
+	if !ok {
+		return errors.New("chain: replay GovApplier ParamStore does not support replay restore")
+	}
+
+	var dstVotes, srcVotes chainparams.AuthorityVoteStoreReplayCloner
+	if (a.AuthorityVotes == nil) != (from.AuthorityVotes == nil) {
+		return errors.New("chain: governance replay authority vote store presence mismatch")
+	}
+	if a.AuthorityVotes != nil {
+		var ok bool
+		dstVotes, ok = a.AuthorityVotes.(chainparams.AuthorityVoteStoreReplayCloner)
+		if !ok {
+			return errors.New("chain: GovApplier AuthorityVoteStore does not support replay restore")
+		}
+		srcVotes, ok = from.AuthorityVotes.(chainparams.AuthorityVoteStoreReplayCloner)
+		if !ok {
+			return errors.New("chain: replay GovApplier AuthorityVoteStore does not support replay restore")
+		}
+	}
+
+	from.authorityMu.RLock()
+	authorities := make(map[string]struct{}, len(from.authoritySet))
+	for address := range from.authoritySet {
+		authorities[address] = struct{}{}
+	}
+	from.authorityMu.RUnlock()
+
+	if err := dstStore.RestoreParamStoreFromReplay(srcStore); err != nil {
+		return fmt.Errorf("chain: restore governance parameter replay state: %w", err)
+	}
+	if dstVotes != nil {
+		if err := dstVotes.RestoreAuthorityVoteStoreFromReplay(srcVotes); err != nil {
+			return fmt.Errorf("chain: restore governance authority vote replay state: %w", err)
+		}
+	}
+	a.authorityMu.Lock()
+	a.authoritySet = authorities
+	a.authorityMu.Unlock()
+	return nil
+}
+
 // AuthorityList returns the configured authority addresses in
 // ascending lexicographic order. Used by the CLI / API for
 // surfacing the governance set; does NOT mutate the applier.
