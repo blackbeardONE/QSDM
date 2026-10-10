@@ -4,6 +4,7 @@ import { PassThrough } from 'stream';
 
 import { setQsdmRuntimeCoreApiUrl } from 'config/qsdm';
 import { assertQsdmCanonicalChainSafety } from './qsdmCanonicalChain';
+import { fetchQsdmPoEParents } from './qsdmPoEParents';
 
 import axios from 'axios';
 
@@ -23,10 +24,20 @@ jest.mock('./qsdmCanonicalChain', () => ({
   assertQsdmCanonicalChainSafety: jest.fn().mockResolvedValue({ safe: true }),
 }));
 
+jest.mock('./qsdmPoEParents', () => ({
+  ...jest.requireActual('./qsdmPoEParents'),
+  fetchQsdmPoEParents: jest.fn(),
+}));
+
 const mockedAxiosGet = axios.get as jest.Mock;
 const mockedAxiosPost = axios.post as jest.Mock;
 const mockedSpawn = spawn as jest.Mock;
 const mockedSafety = assertQsdmCanonicalChainSafety as jest.Mock;
+const mockedParents = fetchQsdmPoEParents as jest.Mock;
+const committedParents = [
+  'solo-heartbeat-805400-1791611907090994535',
+  'solo-heartbeat-805399-1791611897090994535',
+];
 const safeReport = {
   safe: true,
   effectiveApiUrl: 'http://127.0.0.1:8080/api/v1',
@@ -120,6 +131,7 @@ describe('qsdmWalletTransfer', () => {
     mockedAxiosPost.mockReset();
     mockedSpawn.mockReset();
     mockedSafety.mockReset().mockResolvedValue(safeReport);
+    mockedParents.mockReset().mockResolvedValue(committedParents);
     setQsdmRuntimeCoreApiUrl();
   });
 
@@ -201,7 +213,7 @@ describe('qsdmWalletTransfer', () => {
       amount: 1.25,
       fee: 0,
       geotag: '',
-      parent_cells: [],
+      parent_cells: committedParents,
       nonce: 8,
     });
     expect(unsignedEnvelope.id).toMatch(/^hive_wallet_\d+_[0-9a-f]{16}$/);
@@ -215,6 +227,56 @@ describe('qsdmWalletTransfer', () => {
       { timeout: 10000 }
     );
     expect(response.status).toBe('accepted');
+  });
+
+  it('signs again with fresh parents when the node refuses stale ones', async () => {
+    const unsignedEnvelopes = mockCliSigner();
+    mockedAxiosGet.mockResolvedValue(nonceResponse(8));
+    const freshParents = [
+      'solo-heartbeat-805402-1791611927090994535',
+      'solo-heartbeat-805401-1791611917090994535',
+    ];
+    mockedParents
+      .mockResolvedValueOnce(committedParents)
+      .mockResolvedValueOnce(freshParents);
+    mockedAxiosPost
+      .mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 422,
+          data: {
+            error:
+              'proof-of-entanglement: proof-of-entanglement violation: parent is not a committed transaction in the reference window',
+          },
+        },
+      })
+      .mockResolvedValueOnce(acceptedResponse());
+
+    await expect(
+      submitQsdmWalletTransferIntent({ recipient: 'b'.repeat(64), amount: 1 })
+    ).resolves.toMatchObject({ status: 'accepted' });
+    expect(unsignedEnvelopes.map(({ nonce }) => nonce)).toEqual([8, 8]);
+    expect(unsignedEnvelopes.map((env) => env.parent_cells)).toEqual([
+      committedParents,
+      freshParents,
+    ]);
+    expect(mockedAxiosGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry other 422 refusals', async () => {
+    mockCliSigner();
+    mockedAxiosGet.mockResolvedValue(nonceResponse(8));
+    mockedAxiosPost.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 422,
+        data: { error: 'signature does not verify under envelope.public_key' },
+      },
+    });
+    await expect(
+      submitQsdmWalletTransferIntent({ recipient: 'b'.repeat(64), amount: 1 })
+    ).rejects.toMatchObject({ response: { status: 422 } });
+    expect(mockedAxiosPost).toHaveBeenCalledTimes(1);
   });
 
   it('requires the CLI signer to be configured', async () => {
