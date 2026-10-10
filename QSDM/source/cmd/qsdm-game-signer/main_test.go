@@ -33,6 +33,10 @@ type fakeNode struct {
 
 func (f *fakeNode) handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/chain/parents", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"tip": 2, "parents": []string{
+			"solo-heartbeat-2-1791611907090994535", "solo-heartbeat-1-1791611897090994535"}})
+	})
 	mux.HandleFunc("/api/v1/wallet/nonce", func(w http.ResponseWriter, r *http.Request) {
 		sender := r.URL.Query().Get("sender")
 		f.mu.Lock()
