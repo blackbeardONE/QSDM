@@ -53,6 +53,8 @@ func (rp *ReceiptProducer) ProduceBlockWithReceipts() (*Block, []*TxReceipt, err
 		height = last.Height + 1
 	}
 	setStateRootHeight(rp.producer.applier, height)
+	// Same Proof-of-Entanglement parent rules as BlockProducer.ProduceBlock.
+	poeScope := rp.producer.newPoEScopeLocked(height, txs)
 
 	for i, tx := range txs {
 		receipt := &TxReceipt{
@@ -64,7 +66,13 @@ func (rp *ReceiptProducer) ProduceBlockWithReceipts() (*Block, []*TxReceipt, err
 			IndexInBlock: i,
 		}
 
-		if err := rp.producer.applier.ApplyTx(tx); err != nil {
+		err := poeScope.check(tx)
+		if err != nil {
+			poeStats.recordReject(err)
+		} else {
+			err = rp.producer.applier.ApplyTx(tx)
+		}
+		if err != nil {
 			receipt.Status = ReceiptFailed
 			receipt.Error = err.Error()
 			failData := map[string]interface{}{"error": err.Error()}
@@ -77,6 +85,7 @@ func (rp *ReceiptProducer) ProduceBlockWithReceipts() (*Block, []*TxReceipt, err
 			}
 			applyReceiptContractFromTx(receipt, tx, okData)
 			receipt.Logs = []LogEntry{{Topic: "TxApplied", Data: okData, Index: 0}}
+			poeScope.include(tx)
 			included = append(included, tx)
 			totalFees += tx.Fee
 			totalGas += tx.GasLimit
@@ -108,6 +117,7 @@ func (rp *ReceiptProducer) ProduceBlockWithReceipts() (*Block, []*TxReceipt, err
 	}
 	block.Hash = computeBlockHash(block)
 	rp.producer.chain = append(rp.producer.chain, block)
+	rp.producer.foldPoEHistoryLocked(block)
 
 	// Update receipts with final block hash
 	for _, r := range blockReceipts {

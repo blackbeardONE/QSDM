@@ -184,6 +184,11 @@ type BlockProducer struct {
 	// TipHeight() returns 0 as a floor) from "tip height is
 	// zero" (true, genesis sealed). Atomic so reads are lock-free.
 	tipHeightSet atomic.Bool
+	// poeHist indexes the transaction IDs of the last
+	// poe.ParentWindowBlocks blocks of chain, for the Proof-of-
+	// Entanglement parent rules (poe.go). Built only while a PoE
+	// activation height is configured; it has its own lock.
+	poeHist poeHistory
 }
 
 // ProducerConfig configures the block producer.
@@ -356,6 +361,12 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 	var stateRoot string
 	var tentative *Block
 
+	// Proof-of-Entanglement parent rules (poe.go). A transfer that fails
+	// them is dropped with a TxFailed receipt like any apply failure; it
+	// never reaches the applier, so account state is untouched. Inert below
+	// the activation height.
+	poeScope := bp.newPoEScopeLocked(height, txs)
+
 	setStateRootHeight(bp.applier, height)
 	if bp.preSealBFTRound != nil {
 		// Speculative execution needs an isolated copy of live state, not
@@ -370,10 +381,16 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 		spec := bp.applier.(ChainReplayApplier).ChainReplayClone()
 		setStateRootHeight(spec, height)
 		for _, tx := range txs {
+			if err := poeScope.check(tx); err != nil {
+				poeStats.recordReject(err)
+				outcomes = append(outcomes, localTxOutcome{Tx: tx, ApplyErr: err})
+				continue
+			}
 			if err := spec.ApplyTx(tx); err != nil {
 				outcomes = append(outcomes, localTxOutcome{Tx: tx, ApplyErr: err})
 				continue
 			}
+			poeScope.include(tx)
 			outcomes = append(outcomes, localTxOutcome{Tx: tx})
 			included = append(included, tx)
 			totalFees += tx.Fee
@@ -415,10 +432,16 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 		}
 	} else {
 		for _, tx := range txs {
+			if err := poeScope.check(tx); err != nil {
+				poeStats.recordReject(err)
+				outcomes = append(outcomes, localTxOutcome{Tx: tx, ApplyErr: err})
+				continue
+			}
 			if err := bp.applier.ApplyTx(tx); err != nil {
 				outcomes = append(outcomes, localTxOutcome{Tx: tx, ApplyErr: err})
 				continue
 			}
+			poeScope.include(tx)
 			outcomes = append(outcomes, localTxOutcome{Tx: tx})
 			included = append(included, tx)
 			totalFees += tx.Fee
@@ -459,6 +482,7 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 	}
 
 	bp.chain = append(bp.chain, block)
+	bp.foldPoEHistoryLocked(block)
 	bp.tipHeight.Store(block.Height)
 	bp.tipHeightSet.Store(true)
 	runSealedHook = true
@@ -703,7 +727,16 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 		bp.mu.Unlock()
 		return fmt.Errorf("chain: external genesis must be height 0 with empty prev_hash")
 	}
+	bp.ensurePoEHistoryLocked()
 	bp.mu.Unlock()
+
+	// Proof-of-Entanglement parent rules (poe.go): the same check the
+	// producer applied, against this node's own committed history. One
+	// failing transfer invalidates the block. Inert below the activation
+	// height, so historical blocks replay unchanged.
+	if err := bp.verifyBlockPoE(blk); err != nil {
+		return fmt.Errorf("chain: external block replay (spec): %w", err)
+	}
 
 	spec := ra.ChainReplayClone()
 	setStateRootHeight(spec, blk.Height)
@@ -758,6 +791,7 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 		return fmt.Errorf("chain: live state_root mismatch after external append")
 	}
 	bp.chain = append(bp.chain, blk)
+	bp.foldPoEHistoryLocked(blk)
 	bp.tipHeight.Store(blk.Height)
 	bp.tipHeightSet.Store(true)
 	runSealedHook = true
@@ -937,6 +971,10 @@ func (bp *BlockProducer) RestoreChain(blocks []*Block) error {
 	tip := blocks[len(blocks)-1]
 	bp.tipHeight.Store(tip.Height)
 	bp.tipHeightSet.Store(true)
+	// Index the PoE reference window of the restored chain now, so the
+	// admission path (which never takes bp.mu) is ready before the first
+	// block is produced or appended. No-op without an activation height.
+	bp.ensurePoEHistoryLocked()
 	return nil
 }
 

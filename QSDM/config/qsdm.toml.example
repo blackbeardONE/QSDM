@@ -95,6 +95,10 @@ signed_message_activation_height = 0
 task_action_signature_activation_height = 625000
 tx_content_root_activation_height = 625000
 enrollment_state_root_activation_height = 625000
+# Proof-of-Entanglement parent rules for signed wallet transfers. 0 = never
+# (the default). Set the same future height on every validator only after the
+# wallets that send real parents (GET /api/v1/chain/parents) are released.
+poe_activation_height = 0
 signer_key_path = "qsdm_consensus_signer.json"
 
 # Performance Configuration
