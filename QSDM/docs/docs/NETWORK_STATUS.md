@@ -20,9 +20,10 @@ examples from October 2026, and the live values are always in the status API.
 | Wallet transactions | Signed with **ML-DSA-87** (NIST FIPS 204, Cloudflare CIRCL) by Hive, the web wallet and `qsdmcli` |
 | Other signatures | The generic peer-to-peer transaction verifier still also accepts Ed25519 |
 | Consensus messages | Signed consensus is supported in the node but **not yet enforced** (`signed_consensus_active: false`) |
-| Mining | NVIDIA GPUs today, through QSDM Hive 1.4.21 (protocol v2, enrolled miners). See [Mining today](MINING_TODAY.md). |
+| Transfer parents (Proof-of-Entanglement) | **Enforced from block 816,600** (11 October 2026): every CELL transfer names committed parents. Send with Hive 1.4.22 or newer, the web wallet, or `qsdmcli --auto-parents`. See [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md). |
+| Mining | NVIDIA GPUs today, through QSDM Hive 1.4.22 (protocol v2, enrolled miners). See [Mining today](MINING_TODAY.md). |
 | Supply | Max supply **90,000,000 CELL**, all from mining. A 10,000,000 CELL genesis treasury is a mainnet proposal and is not part of the current chain. |
-| Release | `hardened-legacy-20261002-d7ffcd4-hl2` (see [What is running](#what-is-running)) |
+| Release | `hardened-legacy-20261011-d7ffcd4-hl2-poe` (see [What is running](#what-is-running)) |
 | Independent audit | Not done yet. The [internal security review](SECURITY_AUDIT.md) is a self-maintained checklist. |
 
 ## Check it yourself
@@ -56,6 +57,8 @@ Trimmed response (October 2026):
     "signed_consensus_supported": true,
     "signed_consensus_active": false,
     "unsigned_consensus_traffic_accepted": true,
+    "poe_activation_height": 816600,
+    "poe_active": true,
     "task_action_signatures_active": true,
     "tx_content_root_active": true
   },
@@ -78,6 +81,7 @@ How to read the fields that matter most:
 | `chain_tip` | Current block height. It should rise by about 6 per minute. |
 | `peers` | Connected peer nodes. `0` is expected while a single producer runs the chain. |
 | `consensus_auth.signed_consensus_active` | `false`: consensus messages are not required to be signed yet. |
+| `consensus_auth.poe_activation_height`, `poe_active` | The block from which transfers must name committed parents, and whether that height has been reached. |
 | `consensus_auth.task_action_signatures_active` | `true`: task actions must carry a valid signature. |
 | `tokenomics.*` | Supply cap, amount mined so far, current block reward and the next halving height. Amounts are also given in dust (1 CELL = 100,000,000 dust). |
 | `mining.protocol_versions_accepted` | Only mining protocol v2 proofs are accepted. |
@@ -89,14 +93,15 @@ The [explorer](https://qsdm.tech/explorer.html) and the
 
 ## What is running
 
-- **Core release** `hardened-legacy-20261002-d7ffcd4-hl2`, built from
+- **Core release** `hardened-legacy-20261011-d7ffcd4-hl2-poe`, built from
   `QSDM/source` in this repository: the d7ffcd4 base, the September 2026
-  recovery patches and the hardened-legacy mining work (durable proof and
+  recovery patches, the hardened-legacy mining work (durable proof and
   nonce de-duplication, persistent pending rewards, and a stop-on-failure rule
-  for block storage).
+  for block storage) and the Proof-of-Entanglement parent rules (installed
+  2026-10-11, enforced from block 816,600).
 - **Timeline.** The chain was paused on 2026-09-22 and restarted on 2026-09-27
   by the same single producer. Public mining reopened on 2026-10-02.
-- **QSDM Hive 1.4.21** for Windows and Linux from
+- **QSDM Hive 1.4.22** for Windows and Linux from
   [qsdm.tech/downloads/hive-v2/](https://qsdm.tech/downloads/hive-v2/), signed
   with the rotated v2 release key. See
   [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md).
