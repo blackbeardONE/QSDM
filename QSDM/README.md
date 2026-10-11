@@ -22,7 +22,7 @@ QSDM is developed in phases:
 
 - **Phase 1: 2D Mesh Launch**  
   Focus on stability and manual bootstrapping using libp2p for networking, Proof-of-Entanglement consensus, SQLite with Zstandard compression for storage, and ML-DSA-87 (NIST FIPS 204) post-quantum signatures.  
-  *Status (2026-10):* the public pilot runs one block producer. Every node checks each transfer's signature under the sender's own key. The PoE parent rules are implemented behind an activation height that has not been set yet ([details](docs/docs/PROOF_OF_ENTANGLEMENT.md)).
+  *Status (2026-10):* the public pilot runs one block producer. Every node checks each transfer's signature under the sender's own key. The PoE parent rules are enforced from block 816,600 (11 October 2026) ([details](docs/docs/PROOF_OF_ENTANGLEMENT.md)).
 
 - **Phase 2: Scalability & Optimization**  
   Introduces dynamic submeshes, priority-based routing, WASM SDK integration, and ScyllaDB for high throughput.

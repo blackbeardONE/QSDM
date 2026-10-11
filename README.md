@@ -30,8 +30,8 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
   (`signed_consensus_active: false`).
 - Proof-of-Entanglement: every node checks each transfer's ML-DSA-87
   signature under the sender's own key. The parent rules (each transfer names
-  committed earlier transactions) are implemented, but they apply only from an
-  activation height that has not been set (`consensus_auth.poe_active` in
+  committed earlier transactions) are enforced on the public pilot from block
+  816,600 (11 October 2026; `consensus_auth.poe_active` in
   `/api/v1/status`). See
   [`PROOF_OF_ENTANGLEMENT.md`](QSDM/docs/docs/PROOF_OF_ENTANGLEMENT.md).
 - GPU mining (NVIDIA today) is open to enrolled QSDM Hive miners.

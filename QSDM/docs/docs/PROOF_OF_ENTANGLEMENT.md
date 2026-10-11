@@ -12,12 +12,15 @@ earlier transactions, carried inside the envelope the sender signs.
   queued, and every follower checks it again when it replays a block.
   `parent_cells` are part of the signed bytes, so nobody can change them
   after signing.
-- **Implemented, not yet active:** the parent rules below. Validators enforce
-  them only from a configured activation height
-  (`[consensus] poe_activation_height`, default `0` = never). Until the
-  network sets that height, parents are not checked. Every transfer on the
-  chain so far carries an empty `parent_cells` list, and blocks below the
-  activation height keep replaying with the rules they were produced under.
+- **Active on the public pilot from block 816,600 (11 October 2026):** the
+  parent rules below. The public node runs with
+  `[consensus] poe_activation_height = 816600` (the default `0` means never;
+  every validator must use the same value). Since block 816,240 its API
+  refuses a transfer without valid parents (HTTP 422), and from block 816,600
+  a block holding one is invalid. Blocks below the activation height keep
+  replaying with the rules they were produced under; the transfers committed
+  before it carry empty or placeholder `parent_cells`. `/api/v1/status`
+  reports `consensus_auth.poe_activation_height` and `poe_active`.
 - **Network shape:** QSDM runs as a single-producer pilot. Follower nodes
   replay and verify every block. Multi-validator BFT voting is not active
   yet (see [Relation to multi-validator BFT](#relation-to-multi-validator-bft)).
@@ -84,10 +87,11 @@ First-party clients that sign transfers:
 
 - **qsdmcli:** `qsdmcli wallet sign-tx --auto-parents` (the funding scripts
   pass it).
-- **Hive:** fetches parents for every transfer. On a 422
+- **Hive (1.4.22 and newer):** fetches parents for every transfer. On a 422
   `proof-of-entanglement` it signs again at the same nonce with fresh
   parents.
-- **Web wallet:** fetches parents when the parent-cells field is empty.
+- **Web wallet (qsdm.tech/wallet.html):** fetches parents when the
+  parent-cells field is empty.
 - **qsdm-game-signer:** journals the parents with each signed payout. If a
   journaled envelope's parents have expired, it signs the same transaction ID
   and nonce again over fresh parents. At most one envelope per nonce can
