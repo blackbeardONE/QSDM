@@ -1,5 +1,21 @@
 # Signed consensus rollout
 
+> **Status: live on the public pilot network.** Signed consensus has been
+> enforced since **block 827,000** (12 October 2026, 18:11 UTC). Every BFT vote
+> and consensus message must carry a valid ML-DSA signature, and unsigned
+> consensus traffic is refused. `GET /api/v1/status` reports
+> `consensus_auth.require_signed_votes: true`,
+> `signed_message_activation_height: 827000`,
+> `signed_consensus_active: true` and
+> `unsigned_consensus_traffic_accepted: false`.
+>
+> The network still has a single block producer and no independent
+> validators, so this rollout removes forged consensus messages on that path
+> but does not add new validators (see [Current boundary](#current-boundary)).
+> The rest of this page is the rollout design and runbook, kept for operators
+> who bring up additional validators. All rules in force are listed in
+> [Consensus rules](CONSENSUS_RULES.md).
+
 QSDM validators authenticate BFT votes, block producer messages, prevote-lock
 proofs, round certificates, and equivocation evidence with ML-DSA-87. Signature
 enforcement is height-gated so validators can be upgraded before the network

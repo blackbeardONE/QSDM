@@ -6,6 +6,10 @@ earlier transactions, carried inside the envelope the sender signs.
 
 ## Status (October 2026)
 
+> **Enforced from block 816,600** (11 October 2026, 13:18 UTC). The public API
+> started refusing transfers without valid parents (HTTP 422) a little
+> earlier, at block 816,240; the consensus rule itself applies from 816,600.
+
 - **Running today:** every signed wallet transfer is verified with ML-DSA-87
   under the sender's own public key, and the sender address must equal
   `hex(sha256(public_key))`. The producer checks this before a transfer is
@@ -62,6 +66,9 @@ Call the node just before signing and put `parents` into `parent_cells`:
 ```
 GET /api/v1/chain/parents
 ```
+
+This sample was taken before activation. On the live network today it reports
+`"poe_activation_height": 816600` and `"poe_active": true`.
 
 ```json
 {

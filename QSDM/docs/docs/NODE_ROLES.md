@@ -14,7 +14,7 @@ There is **no combined "full node" mode**. An operator who wants to do both
 things runs two separate processes (different binaries, different config
 files, different machines if the validator is on a VPS).
 
-> Today the pilot network (pre-mainnet) runs a single block producer during recovery; the multi-validator BFT topology in §3.2 is the target design.
+> Today the pilot network (pre-mainnet) runs a single block producer during recovery. Signed consensus is enforced from block 827,000 (every BFT vote and consensus message must carry a valid ML-DSA signature), but there are no independent validators yet; the multi-validator BFT topology in §3.2 is the target design. See [Consensus rules](CONSENSUS_RULES.md).
 
 ---
 

@@ -33,8 +33,9 @@ Details: [CELL tokenomics](CELL_TOKENOMICS.md).
 
 - Your wallet keys are yours: QSDM software creates them on your device, and
   transfers need your ML-DSA-87 signature.
-- Block production is run by the project during recovery. Signed consensus and
-  independent validators are on the [Roadmap](ROADMAP.md).
+- Block production is run by the project during recovery. Consensus messages
+  must be ML-DSA signed since block 827,000, but there is still only one
+  producer; independent validators are on the [Roadmap](ROADMAP.md).
 - No independent external audit has been completed yet.
 
 Read the [Security model](SECURITY_MODEL.md) before you store value on the

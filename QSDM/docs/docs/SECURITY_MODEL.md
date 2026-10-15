@@ -15,9 +15,9 @@ network see [Network status](NETWORK_STATUS.md).
 | Area | Protected today | Not yet / what you trust |
 |---|---|---|
 | Wallet keys | Generated and kept on your device; private keys are stored encrypted | Your device, your passphrase, and the software you installed |
-| Wallet transactions | Signed with **ML-DSA-87** (NIST FIPS 204, Cloudflare CIRCL); nonces stop replays | The generic peer-to-peer transaction verifier still also accepts Ed25519 |
+| Wallet transactions | Signed with **ML-DSA-87** (NIST FIPS 204, Cloudflare CIRCL); nonces stop replays; transfers must name committed parents (Proof-of-Entanglement, from block 816,600) | The generic peer-to-peer transaction-gossip verifier code still accepts Ed25519. It cannot be reached on the live chain today because the producer has no transaction gossip ingress; retiring it is planned |
 | Block production | One producer runs the chain; every block is stored and served publicly | You trust that producer to include valid transactions and not to censor or reorder them |
-| Consensus | Signed consensus messages are implemented | Not enforced yet (`signed_consensus_active: false`); there is no multi-validator BFT today |
+| Consensus | **Signed consensus enforced from block 827,000** (`signed_consensus_active: true`): every BFT vote and consensus message must carry a valid ML-DSA signature; unsigned consensus traffic is refused | There is only one producer and no independent validators yet, so there is no multi-validator BFT today |
 | Mining | Enrollment needs a signed enrollment and a 10 CELL bond; proofs carry NVIDIA attestation; duplicate proofs and nonces are rejected durably | Consumer-GPU attestation (`nvidia-hmac-v1`) is an economic control tied to the enrollment and its bond, not a hardware proof |
 | Software downloads | QSDM Hive releases are signed with the v2 release key and checked by Hive before updating | You trust the release key holder; the previous key was rotated in 2026 |
 | Public API | Read endpoints are public; admin and certificate routes are not exposed; write routes are limited during recovery | Rate limits and nginx rules run on infrastructure operated by the project |
@@ -46,11 +46,16 @@ network see [Network status](NETWORK_STATUS.md).
   [Replay protection](V041_REPLAY_PROTECTION_DESIGN.md).
 - ML-DSA-87 is a NIST-standardised post-quantum signature scheme (security
   category 5). It is designed to resist known quantum attacks on signatures.
-  It does not make the rest of the system "quantum-proof": transport (TLS),
-  consensus messages and Ed25519-signed peer traffic use classical
-  cryptography.
-- The generic peer-to-peer transaction verifier still accepts Ed25519
-  signatures. Wallets made by QSDM software do not produce them.
+  It does not make the rest of the system "quantum-proof": transport (TLS)
+  and some peer-to-peer traffic still use classical cryptography.
+- The generic peer-to-peer transaction-gossip verifier code still accepts
+  Ed25519 signatures. The producer runs without transaction gossip ingress, so
+  no Ed25519 transaction can reach the live chain today. Wallets, task actions
+  and consensus use ML-DSA. Retiring the Ed25519 path is on the
+  [Roadmap](ROADMAP.md).
+- From block 816,600 every transfer must name committed parent transactions
+  ([Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md)). The parents are part of
+  the signed bytes.
 
 ## Block production and consensus
 
@@ -58,8 +63,13 @@ network see [Network status](NETWORK_STATUS.md).
   the chain. The status API reports `peers: 0`.
 - That producer can, in principle, delay or leave out transactions. It cannot
   forge your ML-DSA-87 signature, so it cannot spend from your wallet.
-- Signed consensus messages are supported in the node but are not enforced.
-  Independent validators and BFT finality are on the [Roadmap](ROADMAP.md).
+- Since block 827,000 (12 October 2026, 18:11 UTC) every BFT vote and
+  consensus message must carry a valid ML-DSA signature, and unsigned
+  consensus traffic is refused. This stops forged consensus messages; it does
+  not add independent validators. Today the one producer signs them all.
+- Independent validators and BFT finality between them are the next step on
+  the [Roadmap](ROADMAP.md). The full list of rules in force is in
+  [Consensus rules](CONSENSUS_RULES.md).
 - Mainnet needs the gates in [Treasury policy §9](TREASURY_POLICY.md#9-mainnet-release-gates):
   independent validators, the treasury multisig, an official genesis manifest
   and an independent external audit.
