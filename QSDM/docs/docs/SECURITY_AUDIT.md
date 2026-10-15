@@ -5,7 +5,7 @@
 > review. It is **not** an independent audit; no independent external audit has
 > been completed yet. The target versions below are historical: the release
 > running the public pilot network (pre-mainnet) today is
-> `hardened-legacy-20261002-d7ffcd4-hl2` (see [Network status](NETWORK_STATUS.md)).
+> `hardened-legacy-20261014-d7ffcd4-hl2-edge-go1269-ids` (see [Network status](NETWORK_STATUS.md)).
 
 **Date:** May 2026 (Initial: December 2024)
 **Status:** Hardening Pass Complete — independent external audit (not yet done) recommended
