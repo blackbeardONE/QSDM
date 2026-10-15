@@ -46,5 +46,8 @@ pilot network.
 - New user: [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md), then the
   [Web wallet](WEB_WALLET.md) or Hive.
 - Miner: [Mining today](MINING_TODAY.md).
-- Developer: [API reference](API_REFERENCE.md).
+- Developer: [API reference](API_REFERENCE.md) and
+  [Consensus rules](CONSENSUS_RULES.md).
+- What changed recently: [Network upgrades](NETWORK_UPGRADES.md).
+- Unfamiliar term? See the [Glossary](GLOSSARY.md).
 - Source code: [github.com/blackbeardONE/QSDM](https://github.com/blackbeardONE/QSDM).
