@@ -6,24 +6,30 @@ GPU, or RAM participation. Agent, Relay, and Edge Control programs run in the
 background or help with local setup. They are not alternative QSDM clients and
 do not hold a user wallet.
 
-## Current version: Hive 1.4.21
+## Current version: Hive 1.4.22
 
-- Hive 1.4.21 is the current release for Windows x64 and Linux x86-64. It is
-  published on the hive-v2 release channel,
+- Hive 1.4.22 is the current release for Windows x64 and Linux x86-64
+  (published 10 October 2026). It is published on the hive-v2 release
+  channel,
   `https://qsdm.tech/downloads/hive-v2/`, and its release records are signed
   with QSDM's v2 release key. The earlier release key was rotated in October
   2026.
 - Because of the key rotation, Hive 1.4.20 (Windows) and 1.4.17 (Linux) cannot
-  update themselves to 1.4.21. Install 1.4.21 once by hand from the
+  update themselves to 1.4.22. Install 1.4.22 once by hand from the
   [download page](https://qsdm.tech/download.html); your wallet and settings
   are kept. Check the file first as described in
   [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md).
-- Hive 1.4.21 signs mining proofs automatically with your wallet (the miner
+- Edge Control ships with Hive.
+- Hive 1.4.22 adds [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md)
+  parents to every transfer, which the network requires since block 816,600.
+  Hive 1.4.20 users must install 1.4.22 by hand before 19 December 2026.
+- Hive 1.4.22 signs mining proofs automatically with your wallet (the miner
   operator signature). The wallet must be unlocked in Hive to mine; a locked
   wallet shows "Unlock your QSDM wallet in Hive to mine."
-- New mining enrollments are paused during the current recovery. GPUs enrolled
-  before the recovery can mine. See [Mining today](MINING_TODAY.md) for the
-  step-by-step mining guide.
+- Mining is open to enrolled QSDM Hive miners in 7-day (168-hour) canary
+  windows, with caps per owner per 24-hour epoch. New mining enrollments are
+  still paused during the current recovery. See [Mining today](MINING_TODAY.md)
+  for the step-by-step mining guide.
 
 ## Install path
 
@@ -45,7 +51,7 @@ minutes, and retries a temporary failure after one minute. When a newer
 approved release exists, Hive downloads and verifies it automatically, brings
 the app forward, and displays **Update and Restart**. An older or unapproved
 newer build remains blocked until its version exactly matches the approved
-release. Required updates cannot be disabled in settings. Hive 1.4.21 checks
+release. Required updates cannot be disabled in settings. Hive 1.4.21 and newer check
 release records against the v2 release key; see
 [QSDM-native release signing](QSDM_NATIVE_RELEASE_SIGNING.md).
 
@@ -171,7 +177,7 @@ the Hive wallet only; email and Telegram sign-in are turned off.
 
 ## Tasks in Hive
 
-- **QSDM Miner** requires an NVIDIA Turing-or-newer GPU (CUDA compute capability 7.5+); GPU mining is NVIDIA today. Hive runs the GPU proof of work (see [Mining protocol v2](MINING_PROTOCOL_V2.md)) through the packaged CUDA solver and refuses to start the task if that solver, a compatible driver, or the GPU is unavailable. Hive 1.4.21 signs each proof with the unlocked Hive wallet (the miner operator signature) and does not start the miner while the wallet is locked. New enrollments are paused during the current recovery; see [Mining today](MINING_TODAY.md). Windows and Linux release builds fail before publication if either mining executable is missing. Concurrent restore and startup requests share one launch operation, so one Hive task supervises one CUDA miner. On Linux it recognizes the same packaged miner across AppImage mount changes and adopts that process after an unclean Hive restart instead of launching a conflicting duplicate. It also ignores obsolete protected Windows miner services instead of adopting them as the current task. A zero-balance signer may choose **Use mining earnings**: accepted mining rewards fill the 10 CELL slashable bond first, then subsequent rewards become spendable. Operators who already hold CELL may still lock the bond immediately.
+- **QSDM Miner** requires an NVIDIA Turing-or-newer GPU (CUDA compute capability 7.5+); GPU mining is NVIDIA today. Hive runs the GPU proof of work (see [Mining protocol v2](MINING_PROTOCOL_V2.md)) through the packaged CUDA solver and refuses to start the task if that solver, a compatible driver, or the GPU is unavailable. Hive 1.4.22 signs each proof with the unlocked Hive wallet (the miner operator signature) and does not start the miner while the wallet is locked. Enrolled miners mine in 7-day canary windows; new enrollments are paused during the current recovery; see [Mining today](MINING_TODAY.md). Windows and Linux release builds fail before publication if either mining executable is missing. Concurrent restore and startup requests share one launch operation, so one Hive task supervises one CUDA miner. On Linux it recognizes the same packaged miner across AppImage mount changes and adopts that process after an unclean Hive restart instead of launching a conflicting duplicate. It also ignores obsolete protected Windows miner services instead of adopting them as the current task. A zero-balance signer may choose **Use mining earnings**: accepted mining rewards fill the 10 CELL slashable bond first, then subsequent rewards become spendable. Operators who already hold CELL may still lock the bond immediately.
 - **QSDM Edge Worker CPU** shares bounded CPU capacity locally or through an authenticated QSDM Relay.
 - **QSDM Edge Worker GPU** shares bounded NVIDIA CUDA capacity. This is pooled compute, not protocol mining.
 - **QSDM Edge Worker RAM** shares a configured memory allowance for fixed memory-backed jobs.
@@ -191,7 +197,7 @@ job count is zero.
 
 Hive 1.3.93 adds an **Application Compute Gateway** to the Mother Hive task. While the task and its paired Relay are online, native applications can submit fixed CPU, NVIDIA GPU, or RAM jobs through the authenticated loopback endpoint at `http://127.0.0.1:7742`. Hive shows its status and private credential path on the Mother Hive page. The gateway queues work durably on the Relay, returns verified results and receipts, and never accepts uploaded code, scripts, commands, or executables. Unmodified applications cannot see the pool as local hardware; they must use this API or the packaged `qsdm-edge-agent compute` commands.
 
-Hive 1.3.94 added the **Virtual Compute Runtime** workbench. Operators can select a live pooled resource, run a bounded workload, monitor queue and Agent state, cancel active work, and see verified receipts directly from the Mother Hive page. Discovery routes report available capacity and the reviewed workload catalog without exposing the private gateway credential to renderer code. Hive 1.3.95 added expiring, workload-scoped HTTPS federation invitations for fixed-trust remote Relays. Hive 1.3.96 added authentication of update metadata and installers with a QSDM ML-DSA-87 release key; Hive 1.4.21 uses the v2 release key after the earlier key was rotated. See the [pooled edge-compute guide](EDGE_POOL.md#virtual-compute-runtime), [private federation guide](EDGE_FEDERATION.md), and [QSDM-native release signing](QSDM_NATIVE_RELEASE_SIGNING.md).
+Hive 1.3.94 added the **Virtual Compute Runtime** workbench. Operators can select a live pooled resource, run a bounded workload, monitor queue and Agent state, cancel active work, and see verified receipts directly from the Mother Hive page. Discovery routes report available capacity and the reviewed workload catalog without exposing the private gateway credential to renderer code. Hive 1.3.95 added expiring, workload-scoped HTTPS federation invitations for fixed-trust remote Relays. Hive 1.3.96 added authentication of update metadata and installers with a QSDM ML-DSA-87 release key; Hive 1.4.21 and newer use the v2 release key after the earlier key was rotated. See the [pooled edge-compute guide](EDGE_POOL.md#virtual-compute-runtime), [private federation guide](EDGE_FEDERATION.md), and [QSDM-native release signing](QSDM_NATIVE_RELEASE_SIGNING.md).
 
 For an authorized Relay batch, QSDM Core atomically allocates **70% to the contributor-owner wallet, 15% to the Mother Hive operator, and 15% to the CELL ecosystem reserve** at `651a79b2b1790820dd73bda81be24057e1bc27377c1f1117c6db2ab79dc038ea`. Agents remain walletless, so the paired Hive binds the owner wallet for the trusted group. Every validator verifies the Relay's ML-DSA-87 signature, manager-approved Relay ID, payout binding, round, time window, and global proof/receipt replay state. No payout occurs unless the corresponding task reward pool already contains enough CELL.
 
@@ -219,7 +225,7 @@ Hive uses local services for the desktop app and node monitor. Public reachabili
 
 - [Download QSDM Hive](https://qsdm.tech/download.html)
 - [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md)
-- [Mining today (Hive 1.4.21)](MINING_TODAY.md)
+- [Mining today (Hive 1.4.22)](MINING_TODAY.md)
 - [CELL tokenomics](CELL_TOKENOMICS.md)
 - [Sky Fang official website](https://skyfang.xyz/)
 - [Sky Fang integration notes](https://skyfang.xyz/docs)

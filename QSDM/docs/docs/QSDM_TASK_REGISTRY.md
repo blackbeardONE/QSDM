@@ -14,7 +14,7 @@ The local JSON registry remains a bootstrap and recovery input. It can mark buil
 
 A Hive update is required only when a manifest requires a newer Hive version or a new executable capability. Updating text, economics, URLs, tags, timing, or activity state does not require a client release.
 
-> **Status (October 2026):** the public catalog is currently empty while the pilot network (pre-mainnet) recovers; public write routes may be restricted.
+> **Status (October 2026):** since the node release of 15 October 2026 the built-in system task IDs are **reserved**: only the project's owner key can register them, so nobody else can publish a task under a built-in ID. After that release the public task-action route, `POST /api/v1/tasks/actions/submit-signed`, was opened. Paid resource work (the Edge Pool CPU, GPU and RAM tasks) is in an operator-only test and is not yet open to other miners; from block 833,800 those tasks settle only through an authorized settlement relay. Read `GET /api/v1/tasks` for the live catalog. This is a pilot network (pre-mainnet).
 
 There is no required centralized task provider. A public API or home gateway is a convenient transport for clients, while catalog authority comes from replicated QSDM chain state.
 
@@ -117,7 +117,7 @@ Catalog actions are:
 
 Bootstrap trust and catalog publication are separate. A permissionless task is synchronized but unverified. Hive lists it under **Show non-verified tasks** until an operator or governance process places that task ID in the trusted bootstrap registry.
 
-`authorized_relay_ids` is optional for ordinary tasks and required for pooled CPU, GPU, or RAM settlement. Each value is the 32-byte hexadecimal ID shown by Edge Control and derived from the Relay's persistent ML-DSA-87 public key. The task manager can rotate or revoke Relay authorization only through the next signed catalog version. Core still verifies the full public key and signature in every proof; the manifest stores only its compact key-derived ID.
+`authorized_relay_ids` is optional for ordinary tasks and required for pooled CPU, GPU, or RAM settlement. On the public network this is a consensus rule from block 833,800: the paid edge tasks (`qsdm-edge-worker` and its GPU and RAM variants) settle only through an authorized settlement relay. Each value is the 32-byte hexadecimal ID shown by Edge Control and derived from the Relay's persistent ML-DSA-87 public key. The task manager can rotate or revoke Relay authorization only through the next signed catalog version. Core still verifies the full public key and signature in every proof; the manifest stores only its compact key-derived ID.
 
 ## Runtime Safety
 

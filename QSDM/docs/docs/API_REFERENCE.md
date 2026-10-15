@@ -7,7 +7,7 @@ network (October 2026), trimmed for length.
 > [!NOTE]
 > QSDM is a pilot network (pre-mainnet) with a single block producer during
 > recovery. While the recovery lasts, the API accepts reads, signed wallet
-> transfers and mining submissions; other writes are paused. See
+> transfers, signed task actions and mining submissions; other writes are paused. See
 > [Network status](NETWORK_STATUS.md).
 
 ## Base URL
@@ -67,7 +67,7 @@ Some endpoints answer differently, so check the HTTP status first:
 | 404 | Not found |
 | 405 | Wrong HTTP method |
 | 409 | Duplicate transaction, or a nonce replay or gap |
-| 422 | Signature does not verify |
+| 422 | Signature does not verify, or a transfer without valid Proof-of-Entanglement parents |
 | 429 | Rate limit |
 | 503 | Paused during recovery, or the service is busy; retry later |
 
@@ -81,6 +81,7 @@ Some endpoints answer differently, so check the HTTP status first:
 | GET | `/mining/blocks` | Recent block headers |
 | GET | `/chain/blocks` | Full blocks with transactions |
 | GET | `/receipts`, `/receipts/{tx_id}` | Transaction receipts |
+| GET | `/chain/parents` | Proof-of-Entanglement parents for the next transfer |
 | GET | `/mining/emission` | Supply and reward schedule |
 | GET | `/wallet/balance` | CELL balance of an address |
 | GET | `/wallet/nonce` | Last used nonce of an address |
@@ -92,6 +93,7 @@ Some endpoints answer differently, so check the HTTP status first:
 | POST | `/mining/submit` | Submit a mining proof (`api.qsdm.tech` only) |
 | GET | `/mining/enrollments`, `/mining/enrollment/{node_id}` | Miner enrollment registry |
 | GET | `/tasks`, `/tasks/state`, `/tasks/{task_id}`, `/tasks/actions` | Task registry (read) |
+| POST | `/tasks/actions/submit-signed` | Submit an ML-DSA signed task action (open since 2026-10-15) |
 | GET | `/streams`, `/streams/{stream_id}`, `/streams/nonce` | CELL Streams (read) |
 | GET | `/trust/attestations/summary`, `/trust/attestations/recent` | Attestation transparency |
 | GET | `/audit/summary`, `/audit/items`, `/audit/badge.svg` | Internal checklist |
@@ -111,11 +113,9 @@ curl -s https://api.qsdm.tech/api/v1/status
 ```json
 {
   "node_id": "12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum",
-  "version": "hardened-legacy-20261002-d7ffcd4-hl2",
+  "version": "hardened-legacy-20261014-d7ffcd4-hl2-edge-go1269-ids",
   "git_sha": "d7ffcd4e80f69c3db3f2bbcf4c7f34e08cc49d25",
-  "build_date": "2026-10-02T05:23:22Z",
-  "uptime": "4h43m36s",
-  "chain_tip": 755940,
+  "chain_tip": "…",
   "peers": 0,
   "node_role": "validator",
   "network": "QSDM · CELL",
@@ -123,7 +123,7 @@ curl -s https://api.qsdm.tech/api/v1/status
   "tokenomics": {
     "cap_dust": 9000000000000000,
     "cap_cell": "90000000.00000000",
-    "emitted_cell": "2694857.96712780",
+    "emitted_cell": "3045139.…",
     "block_reward_cell": "3.56490987",
     "current_epoch": 0,
     "next_halving_height": 12623041,
@@ -133,9 +133,14 @@ curl -s https://api.qsdm.tech/api/v1/status
   "task_actions_ready": true,
   "consensus_auth": {
     "signed_consensus_supported": true,
-    "require_signed_votes": false,
-    "signed_consensus_active": false,
-    "unsigned_consensus_traffic_accepted": true,
+    "require_signed_votes": true,
+    "signed_message_activation_height": 827000,
+    "signed_consensus_active": true,
+    "unsigned_consensus_traffic_accepted": false,
+    "poe_activation_height": 816600,
+    "poe_active": true,
+    "edge_relay_only_activation_height": 833800,
+    "edge_relay_only_active": true,
     "task_action_signatures_active": true,
     "tx_content_root_active": true
   },
@@ -152,13 +157,32 @@ curl -s https://api.qsdm.tech/api/v1/status
 }
 ```
 
+Sample from mid-October 2026. `chain_tip` and the amounts change every block
+(about 3.0 million CELL had been emitted), so read them live; `build_date` and
+`uptime` are left out above.
+
 `tokenomics.blocks_per_epoch` is the **halving** epoch (12,623,040 blocks, about
 four years). It is not the same as the mining epoch in `/mining/work`.
+
+#### The `consensus_auth` block
+
+It reports which consensus rules the node enforces. Each rule has an
+activation height; `*_active` turns `true` once the chain reaches it. All rules
+in one table: [Consensus rules](CONSENSUS_RULES.md).
+
+| Field | Live value | Meaning |
+|---|---|---|
+| `require_signed_votes`, `signed_message_activation_height`, `signed_consensus_active` | `true`, `827000`, `true` | Every BFT vote and consensus message must carry a valid ML-DSA signature from block 827,000. |
+| `unsigned_consensus_traffic_accepted` | `false` | Unsigned consensus traffic is refused. |
+| `poe_activation_height`, `poe_active` | `816600`, `true` | Transfers must name committed parent cells ([Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md)). |
+| `edge_relay_only_activation_height`, `edge_relay_only_active` | `833800`, `true` | Paid edge tasks settle only through an authorized settlement relay. |
+| `task_action_signatures_active` | `true` | Task actions must carry a valid ML-DSA signature (from block 625,000). |
+| `tx_content_root_active` | `true` | The block's transaction root commits transaction contents, not only IDs (from block 625,000). |
 
 ### `GET /health`, `GET /health/live`, `GET /health/ready`
 
 ```json
-{"status":"healthy","product":"QSDM","version":"hardened-legacy-20261002-d7ffcd4-hl2","git_sha":"d7ffcd4e80f69c3db3f2bbcf4c7f34e08cc49d25","build_date":"2026-10-02T05:23:22Z","timestamp":1791115518}
+{"status":"healthy","product":"QSDM","version":"hardened-legacy-20261014-d7ffcd4-hl2-edge-go1269-ids","git_sha":"d7ffcd4e80f69c3db3f2bbcf4c7f34e08cc49d25","…":"…"}
 ```
 
 `/health/live` returns `{"status":"alive",…}`. `/health/ready` returns
@@ -260,6 +284,18 @@ IDs, read at its durable tip. Optional `limit` (default 8, maximum 32) sets
 the length of `recent`. Returns 503 until the node has two committed
 transactions.
 
+| Field | Meaning |
+|---|---|
+| `tip` | Height the parents were read at |
+| `window_blocks` | Reference window: parents must be committed within the last 8,640 blocks (about 24 hours) |
+| `min_parents`, `max_parents` | A transfer names 2 to 10 parents |
+| `parents` | The IDs to copy into `parent_cells` |
+| `recent` | Recent committed transaction IDs with their heights |
+| `poe_activation_height`, `poe_active` | `816600` and `true` on the live network |
+
+The sample below was taken before activation, so it still shows
+`poe_activation_height: 0`.
+
 ```json
 {
   "tip": 805400,
@@ -336,7 +372,7 @@ Request body:
 | `amount` | number | CELL, greater than 0 |
 | `fee` | number | CELL, 0 or more |
 | `geotag` | string | Optional, may be empty |
-| `parent_cells` | array of strings | Proof-of-Entanglement parents: copy `parents` from `GET /chain/parents`. May be empty until the network's PoE activation height; from then on, 2-10 transactions committed in the last 8,640 blocks ([details](PROOF_OF_ENTANGLEMENT.md)) |
+| `parent_cells` | array of strings | **Required.** Proof-of-Entanglement parents: copy `parents` from `GET /chain/parents`. Since block 816,600, 2-10 transactions committed in the last 8,640 blocks ([details](PROOF_OF_ENTANGLEMENT.md)). A transfer without them is refused with HTTP 422. |
 | `nonce` | integer | Required, must be `next` from `/wallet/nonce` |
 | `timestamp` | string | RFC 3339 |
 | `public_key` | string | Hex ML-DSA-87 public key (not signed) |
@@ -358,7 +394,7 @@ Responses:
 | 400 | error JSON | Validation failed (for example nonce 0, bad address or hex) |
 | 402 | error JSON | Balance below amount + fee |
 | 422 | error JSON | Signature does not verify |
-| 422 | error JSON starting `proof-of-entanglement:` | Parents are not committed in the reference window (only once PoE is active); fetch `/chain/parents` and re-sign |
+| 422 | error JSON starting `proof-of-entanglement:` | Missing or invalid parents. Enforced by consensus from block 816,600 (the API began refusing at 816,240). Fetch `/chain/parents` and sign again with fresh parents at the same nonce |
 | 503 | error JSON | Transaction queue full; retry after the next block |
 
 ### Wallet recovery capsules
@@ -411,7 +447,7 @@ Not cacheable (`Cache-Control: no-store`); it expires after about 60 seconds.
 
 Body: one proof as canonical JSON per Mining protocol v2, including its
 `attestation` object (`type` is `nvidia-hmac-v1` or `nvidia-cc-v1`). The
-`miner_addr` must be the owner of an active enrollment. Hive 1.4.21 also adds
+`miner_addr` must be the owner of an active enrollment. Hive 1.4.22 also adds
 the owner's ML-DSA-87 signature.
 
 | Status | Body |
@@ -450,7 +486,21 @@ returned.
 
 ## Tasks and streams
 
-Read-only during recovery; signed task and stream actions are paused.
+The task routes below are public reads. Since 15 October 2026 signed task
+actions can also be submitted through `POST /tasks/actions/submit-signed`
+(full path `/api/v1/tasks/actions/submit-signed`). Notes:
+
+- The envelope must be ML-DSA signed by the sender, with
+  `sender == hex(sha256(public_key))`, as for wallet transfers. Task-action
+  signatures have been a consensus rule since block 625,000.
+- Built-in system task IDs are reserved: only the project's owner key can
+  register them. A catalog action from any other key that uses one is refused.
+- Paid resource work (the Edge Pool CPU, GPU and RAM tasks) is in an
+  operator-only test and is not yet open to other miners. From block 833,800
+  those tasks settle only through an authorized settlement relay.
+- Signed stream actions are still paused.
+
+Request format and catalog actions: [Task registry](QSDM_TASK_REGISTRY.md).
 
 | Endpoint | Returns |
 |---|---|

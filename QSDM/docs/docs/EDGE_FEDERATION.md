@@ -2,7 +2,7 @@
 
 Status: private federation pilot implemented in Hive/Edge Control. Public provider discovery, Core escrow leases, and marketplace settlement remain future phases.
 
-> The QSDM-operated edge route is read-only during network recovery; private pilots must use their own HTTPS Relay.
+> Paid resource work on the QSDM-operated edge route is in an operator-only test and not yet open to other miners; private pilots must use their own HTTPS Relay. From block 833,800 paid edge tasks settle only through an authorized settlement relay.
 
 ## Answer
 
@@ -34,7 +34,7 @@ A Hive can enable provider mode, consumer mode, or both. Version 1 must forbid r
 
 ## Private Pilot Flow
 
-1. The provider runs a Relay behind HTTPS, usually through a private reverse proxy (the QSDM edge route is read-only during network recovery).
+1. The provider runs a Relay behind HTTPS, usually through a private reverse proxy (paid work on the QSDM edge route is in an operator-only test).
 2. Edge Control generates a separate **Internet federation invitation** only when the Relay address is HTTPS. Current invitations use the `QSDM-EDGE-2` format and contain a derived credential, never the permanent Mother Hive key.
 3. The invitation contains the Relay URL, a dedicated Mother Hive token, workload IDs, provider name, a cryptographically random offer ID, and a 24-hour expiry. Hive and Relay reject invitations that exceed the 25-hour clock-skew ceiling.
 4. The consumer pastes that invitation into Hive's Mother Hive page.

@@ -6,7 +6,7 @@ QSDM pooled edge compute uses an explicit path:
 Agent computers -> QSDM Relay -> one or more QSDM Hives (Mother Hive role) -> QSDM Core
 ```
 
-> **Status (October 2026):** the public QSDM edge Relay is read-only during network recovery; private LAN Relays still work, but pooled settlement on the public network is paused.
+> **Status (October 2026):** paid resource work (the Edge Pool CPU, GPU and RAM tasks) is in an **operator-only test** on the public network and is not yet open to other miners. From block **833,800** (13 October 2026, 13:21 UTC) a consensus rule makes paid edge tasks (`qsdm-edge-worker` and its GPU and RAM variants) settle only through an authorized settlement relay; see [Consensus rules](CONSENSUS_RULES.md). Private LAN Relays still work.
 
 ## Topology
 
@@ -142,7 +142,7 @@ Restrict TCP 7740 to the private laboratory subnet. Existing coordinator receipt
 
 ### Public Internet Relay
 
-The QSDM-operated public Relay route (`https://node.qsdm.tech/v1/*`) is read-only during network recovery; pooled work and settlement on the public network are paused. Private LAN Relays configured as described above still work.
+Paid pooled work on the public network is in an operator-only test and is not yet open to other miners, so do not plan on the QSDM-operated public Relay route (`https://node.qsdm.tech/v1/*`) for your own work. From block **833,800** (13 October 2026, 13:21 UTC) a consensus rule makes paid edge tasks (`qsdm-edge-worker` and its GPU and RAM variants) settle only through an authorized settlement relay: a settlement that does not come from a Relay listed in the task's `authorized_relay_ids` is rejected. Private LAN Relays configured as described above still work.
 
 Hive reads can use a local synchronized validator or the QSDM Network gateway.
 Signed wallet and task actions use the production Core endpoint unless

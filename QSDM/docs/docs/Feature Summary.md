@@ -1,6 +1,6 @@
 # Feature Summary — QSDM
 
-**Last Updated:** October 2026 · Running release **hardened-legacy-20261002-d7ffcd4-hl2** · Hive **1.4.21** · Edge Control **1.3.7**
+**Last Updated:** October 2026 · Running release **hardened-legacy-20261014-d7ffcd4-hl2-edge-go1269-ids** · Hive **1.4.22** · Edge Control **1.3.7**
 
 QSDM (Quantum-Secure Dynamic Mesh) is a mesh ledger with post-quantum (ML-DSA-87) wallet signatures whose native coin is **Cell (CELL)**. It currently runs as a public pilot network (pre-mainnet) with a single block producer during recovery. Validators are designed to run PoE + BFT consensus; miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
 
@@ -22,7 +22,7 @@ it is not the CELL network gateway or another Hive client.
 ## Ledger & consensus
 
 - **Proof-of-Entanglement (PoE) + BFT** on a dynamic mesh is the target consensus design; today the pilot network runs a single block producer during recovery. Every node checks each transfer's signature under the sender's own key. The PoE parent rules (parents must be committed transactions) are enforced only from an activation height that has not been set yet ([details](PROOF_OF_ENTANGLEMENT.md)).
-- **ML-DSA-87** wallet transaction signatures (NIST FIPS 204) with Zstd compression and batch signing. The generic P2P transaction verifier still also accepts Ed25519; signed consensus messages are supported but not yet active.
+- **ML-DSA-87** wallet transaction signatures (NIST FIPS 204) with Zstd compression and batch signing. The generic P2P transaction-gossip verifier code still also accepts Ed25519, but the producer has no transaction gossip ingress, so it cannot be reached on the live chain; retirement is planned. Signed consensus is enforced from block 827,000.
 - **3D mesh validation**, rule-based quarantine, and staked reputation penalties.
 - **Dynamic submeshes** with fee thresholds, priority routing, and geotags.
 - **SQLite + Zstd** storage; **ScyllaDB** path available for high throughput.
@@ -45,7 +45,7 @@ it is not the CELL network gateway or another Hive client.
 - NVIDIA-locked proofs (`nvidia-cc-v1`, `nvidia-hmac-v1`); Turing-or-newer GPU required for protocol mining.
 - Public mining API: work, challenge, submit, enrollment, emission, blocks, slash.
 - On-chain enrollment with **10 CELL** slashable bond; Hashcash anti-spam.
-- Consumer path: **QSDM Hive** Miner task (CUDA solver bundled). Miners can start from zero liquid CELL by choosing deferred bond from accepted mining earnings. Hive 1.4.21 signs miner operator actions automatically and is published on the hive-v2 channel, signed by the v2 release key. See [Mining today](MINING_TODAY.md).
+- Consumer path: **QSDM Hive** Miner task (CUDA solver bundled). Miners can start from zero liquid CELL by choosing deferred bond from accepted mining earnings. Hive 1.4.22 signs miner operator actions automatically and is published on the hive-v2 channel, signed by the v2 release key. See [Mining today](MINING_TODAY.md).
 - Operator path: `qsdmminer-console`.
 
 ## Wallet & self-custody
@@ -81,7 +81,7 @@ it is not the CELL network gateway or another Hive client.
 - Topology: **Agent PCs → Relay → QSDM Hive (Mother) → QSDM Core**.
 - Walletless Agents; fixed algorithms only (no remote shell/scripts).
 - Separate HMAC credentials, resource caps, durable receipts.
-- The public edge Relay is read-only during network recovery; pooled work and settlement are paused.
+- Paid pooled work on the public network is in an operator-only test, not yet open to other miners. From block 833,800 paid edge tasks settle only through an authorized settlement relay.
 
 ## Home / local operator stack
 

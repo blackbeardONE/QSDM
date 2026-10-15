@@ -1,9 +1,9 @@
 # MINER_QUICKSTART — Mine CELL on the QSDM pilot network (v2 NVIDIA-locked)
 
 > [!IMPORTANT]
-> **Using QSDM Hive?** Follow [Mining today (Hive 1.4.21)](MINING_TODAY.md)
+> **Using QSDM Hive?** Follow [Mining today (Hive 1.4.22)](MINING_TODAY.md)
 > instead of this page. **New mining enrollments are paused during the current
-> recovery:** only GPUs enrolled before the recovery can mine. The enrollment
+> recovery:** only enrolled GPUs can mine, in 7-day canary windows. The enrollment
 > steps below will work again when enrollment reopens; check
 > [Network status](NETWORK_STATUS.md).
 
@@ -39,7 +39,7 @@
 > Both miner binaries refuse to start a v1 mining loop against a
 > v2-active validator unless `--allow-v1` is explicitly passed.
 
-> **Compute backend:** Hive 1.4.21 runs the packaged NVIDIA CUDA solver and
+> **Compute backend:** Hive 1.4.22 runs the packaged NVIDIA CUDA solver and
 > fails closed instead of falling back to CPU. For the proof-of-work rules see
 > [Mining protocol v2](MINING_PROTOCOL_V2.md).
 

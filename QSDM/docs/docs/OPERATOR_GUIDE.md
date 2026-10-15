@@ -243,9 +243,9 @@ Mining requires an NVIDIA GPU (Turing or newer); see [Mining today](MINING_TODAY
 
 ### 3.4 Install & run
 
-**Recommended:** install QSDM Hive 1.4.21 and run the Miner task; see
+**Recommended:** install QSDM Hive 1.4.22 and run the Miner task; see
 [Mining today](MINING_TODAY.md) and
-[Downloads and verification](DOWNLOADS_AND_VERIFICATION.md). Hive 1.4.21
+[Downloads and verification](DOWNLOADS_AND_VERIFICATION.md). Hive 1.4.22
 signs miner operator actions automatically.
 
 The command-line miners below are operator and conformance tools that

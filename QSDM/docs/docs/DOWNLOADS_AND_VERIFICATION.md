@@ -7,15 +7,15 @@ QSDM project before you run it.
 
 All downloads are linked from **[qsdm.tech/download.html](https://qsdm.tech/download.html)**.
 
-| Product | Version | Platform | File | SHA-256 |
-|---|---|---|---|---|
-| QSDM Hive | 1.4.21 | Windows x64 | `qsdm-hive-1.4.21-win-x64.exe` | `b3f408f861eccfd03d049e3344bb6a9d49ce777b20ad8bd4bd22843b27b48e6b` |
-| QSDM Hive | 1.4.21 | Linux x86-64 | `qsdm-hive-1.4.21-linux-x86_64.AppImage` | `25623568dc04f46ffb2e9d3b016c499ba0d7f0d013e1f713699bd130a63e9a05` |
-| QSDM Hive | 1.4.21 | Linux x86-64 | `qsdm-hive-1.4.21-linux-x64.tar.gz` | `bc624e5381bf27bd17b311f1350fd5be5f39bfec37328e87eb60bbf3d4023240` |
+| Product | Version | Platform | File | Size | SHA-256 |
+|---|---|---|---|---|---|
+| QSDM Hive | 1.4.22 | Windows x64 | `qsdm-hive-1.4.22-win-x64.exe` | 128.6 MB | `d2f604b6b3b8f70913510072c525544e22a4c0a10ef4c9540b36ab2a3667bfaa` |
+| QSDM Hive | 1.4.22 | Linux x86-64 | `qsdm-hive-1.4.22-linux-x86_64.AppImage` | 163.8 MB | `e5fc9084a295dd2e0cec686977a0e83f2f7639b564418ec0f47e061762fd56ae` |
+| QSDM Hive | 1.4.22 | Linux x86-64 | `qsdm-hive-1.4.22-linux-x64.tar.gz` | 161.6 MB | `abefcd1d7f69712cb306237c269e195e43948b9cdc3812ac709b5cc3690def0f` |
 
-Hive 1.4.21 files are served from the release channel
+Hive 1.4.22 (published 10 October 2026) is served from the release channel
 `https://qsdm.tech/downloads/hive-v2/`, together with checksum files
-(`SHA256SUMS-win.txt`, `qsdm-hive-1.4.21-linux-SHA256SUMS.txt`) and the signed
+(`SHA256SUMS-win.txt`, `qsdm-hive-1.4.22-linux-SHA256SUMS.txt`) and the signed
 release manifests (`qsdm-hive-release-windows-v2.json`,
 `qsdm-hive-release-linux-v2.json`).
 
@@ -25,12 +25,14 @@ validator and home gateway builds) come with their own `SHA256SUMS` files.
 > [!NOTE]
 > The Core validator package on the download page (v0.4.7-rc.9) is an operator
 > build. It is not the release that runs the public pilot network today
-> (`hardened-legacy-20261002-d7ffcd4-hl2`, see [Network status](NETWORK_STATUS.md)).
+> (`hardened-legacy-20261014-d7ffcd4-hl2-edge-go1269-ids`, see [Network status](NETWORK_STATUS.md)).
 
 > [!IMPORTANT]
-> **Upgrading from Hive 1.4.20 (Windows) or 1.4.17 (Linux):** install 1.4.21 by
+> **Upgrading from Hive 1.4.20 (Windows) or 1.4.17 (Linux):** install 1.4.22 by
 > hand once. Those versions trust the previous release key, which was rotated, so
-> they cannot verify 1.4.21 on their own. Your wallet and settings are kept.
+> they cannot verify 1.4.22 on their own. Your wallet and settings are kept.
+> Hive 1.4.17 stops working after 9 November 2026 and 1.4.20 after
+> 19 December 2026.
 
 ## Check the SHA-256 (everyone)
 
@@ -40,14 +42,14 @@ not match, delete the file and download it again from qsdm.tech.
 **Windows (PowerShell):**
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\qsdm-hive-1.4.21-win-x64.exe
+Get-FileHash -Algorithm SHA256 .\qsdm-hive-1.4.22-win-x64.exe
 ```
 
 **Linux:**
 
 ```bash
-curl -fsSLO https://qsdm.tech/downloads/hive-v2/qsdm-hive-1.4.21-linux-SHA256SUMS.txt
-sha256sum -c --ignore-missing qsdm-hive-1.4.21-linux-SHA256SUMS.txt
+curl -fsSLO https://qsdm.tech/downloads/hive-v2/qsdm-hive-1.4.22-linux-SHA256SUMS.txt
+sha256sum -c --ignore-missing qsdm-hive-1.4.22-linux-SHA256SUMS.txt
 ```
 
 ## What Hive checks for you
@@ -79,8 +81,8 @@ If any step fails, Hive does not install the update.
 The `key_id` is the SHA-256 of the raw public key bytes, so you can recompute it
 from the public key file.
 
-Signed manifests are re-issued at least every 90 days. The current Hive 1.4.21
-manifests are valid until 2 January 2027.
+Signed manifests are re-issued at least every 90 days. Each manifest states
+its own `issued_at` and `expires_at` dates; check them as described below.
 
 ## Check the signature yourself (advanced)
 

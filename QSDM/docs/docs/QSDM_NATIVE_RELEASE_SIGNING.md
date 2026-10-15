@@ -55,7 +55,8 @@ The previous release key (`key_id`
 pins the v2 key.
 
 Because Hive 1.4.20 (Windows) and 1.4.17 (Linux) trust only the previous key,
-they cannot verify 1.4.21 on their own. Updating to 1.4.21 is a one-time manual
+they cannot verify 1.4.21 or newer on their own. Updating to the current
+release (Hive 1.4.22) is a one-time manual
 install from the [download page](https://qsdm.tech/download.html); wallet and
 settings are kept. The previous `/downloads/` channel stays online so those
 versions keep working until their signed manifests expire.
