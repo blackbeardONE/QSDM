@@ -7,7 +7,7 @@ network (October 2026), trimmed for length.
 > [!NOTE]
 > QSDM is a pilot network (pre-mainnet) with a single block producer during
 > recovery. While the recovery lasts, the API accepts reads, signed wallet
-> transfers and mining submissions; other writes are paused. See
+> transfers, signed task actions and mining submissions; other writes are paused. See
 > [Network status](NETWORK_STATUS.md).
 
 ## Base URL
@@ -92,6 +92,7 @@ Some endpoints answer differently, so check the HTTP status first:
 | POST | `/mining/submit` | Submit a mining proof (`api.qsdm.tech` only) |
 | GET | `/mining/enrollments`, `/mining/enrollment/{node_id}` | Miner enrollment registry |
 | GET | `/tasks`, `/tasks/state`, `/tasks/{task_id}`, `/tasks/actions` | Task registry (read) |
+| POST | `/tasks/actions/submit-signed` | Submit an ML-DSA signed task action (open since 2026-10-15) |
 | GET | `/streams`, `/streams/{stream_id}`, `/streams/nonce` | CELL Streams (read) |
 | GET | `/trust/attestations/summary`, `/trust/attestations/recent` | Attestation transparency |
 | GET | `/audit/summary`, `/audit/items`, `/audit/badge.svg` | Internal checklist |
@@ -450,7 +451,21 @@ returned.
 
 ## Tasks and streams
 
-Read-only during recovery; signed task and stream actions are paused.
+The task routes below are public reads. Since 15 October 2026 signed task
+actions can also be submitted through `POST /tasks/actions/submit-signed`
+(full path `/api/v1/tasks/actions/submit-signed`). Notes:
+
+- The envelope must be ML-DSA signed by the sender, with
+  `sender == hex(sha256(public_key))`, as for wallet transfers. Task-action
+  signatures have been a consensus rule since block 625,000.
+- Built-in system task IDs are reserved: only the project's owner key can
+  register them. A catalog action from any other key that uses one is refused.
+- Paid resource work (the Edge Pool CPU, GPU and RAM tasks) is in an
+  operator-only test and is not yet open to other miners. From block 833,800
+  those tasks settle only through an authorized settlement relay.
+- Signed stream actions are still paused.
+
+Request format and catalog actions: [Task registry](QSDM_TASK_REGISTRY.md).
 
 | Endpoint | Returns |
 |---|---|

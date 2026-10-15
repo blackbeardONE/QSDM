@@ -81,7 +81,7 @@ it is not the CELL network gateway or another Hive client.
 - Topology: **Agent PCs → Relay → QSDM Hive (Mother) → QSDM Core**.
 - Walletless Agents; fixed algorithms only (no remote shell/scripts).
 - Separate HMAC credentials, resource caps, durable receipts.
-- The public edge Relay is read-only during network recovery; pooled work and settlement are paused.
+- Paid pooled work on the public network is in an operator-only test, not yet open to other miners. From block 833,800 paid edge tasks settle only through an authorized settlement relay.
 
 ## Home / local operator stack
 

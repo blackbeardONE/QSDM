@@ -94,7 +94,7 @@ Trusted LAN or lab pools of CPU, NVIDIA GPU, and RAM capacity settled in CELL.
 - Office batch jobs via Application Compute Gateway (`127.0.0.1:7742`)
 - Bounded CUDA helper work separate from protocol mining
 
-> **Status (October 2026):** the public QSDM edge Relay is read-only during network recovery; pooled settlement on the public network is paused. Private LAN pilots are unaffected.
+> **Status (October 2026):** paid resource work on the public network is in an operator-only test and not yet open to other miners. From block 833,800 paid edge tasks settle only through an authorized settlement relay. Private LAN pilots are unaffected.
 
 ---
 

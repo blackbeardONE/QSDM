@@ -144,7 +144,8 @@ Some public services are limited while the network finishes its recovery:
 | Mining (work, challenge, submit) on `api.qsdm.tech` | Open to GPUs enrolled before the recovery, in public windows with per-IP rate limits |
 | New mining enrollments | Paused during recovery |
 | New account registration | Disabled during recovery (HTTP 503) |
-| Edge relay settlement (Mother Hive pools) | Paused (read-only) |
+| Signed task actions (`POST /api/v1/tasks/actions/submit-signed`) | Open since 2026-10-15. Built-in system task IDs are reserved: only the project's owner key can register them. |
+| Paid resource work (Edge Pool CPU/GPU/RAM tasks) | Operator-only test; not yet open to other miners. From block 833,800 these tasks settle only through an authorized settlement relay. |
 | Operator dashboard | Private; not offered publicly |
 
 If something on this page disagrees with the status API, the API is right.
