@@ -141,7 +141,7 @@ Some public services are limited while the network finishes its recovery:
 |---|---|
 | Status, blocks, transactions, balances (read) | Available |
 | Signed wallet transfers (`POST /api/v1/wallet/submit-signed`) | Available |
-| Mining (work, challenge, submit) on `api.qsdm.tech` | Open to GPUs enrolled before the recovery, in public windows with per-IP rate limits |
+| Mining (work, challenge, submit) on `api.qsdm.tech` | Open to enrolled QSDM Hive miners in 7-day (168-hour) canary windows, with caps per owner per 24-hour epoch and per-IP rate limits. The current window started 2026-10-15; the next change is expected around 2026-10-22. |
 | New mining enrollments | Paused during recovery |
 | New account registration | Disabled during recovery (HTTP 503) |
 | Signed task actions (`POST /api/v1/tasks/actions/submit-signed`) | Open since 2026-10-15. Built-in system task IDs are reserved: only the project's owner key can register them. |

@@ -1,4 +1,4 @@
-# Mining today (QSDM Hive 1.4.21)
+# Mining today (QSDM Hive 1.4.22)
 
 How CELL mining works on the pilot network right now, for people using the QSDM
 Hive desktop app. For the protocol details see
@@ -6,31 +6,37 @@ Hive desktop app. For the protocol details see
 see the [command-line miner](MINER_QUICKSTART.md).
 
 > [!IMPORTANT]
-> **New enrollments are paused during recovery.** GPUs that were enrolled
-> before the September 2026 recovery can mine now. If your GPU is not enrolled
+> **Mining is open to enrolled QSDM Hive miners, in 7-day canary windows.**
+> Each window lasts 168 hours, with caps per owner per 24-hour epoch. The
+> current window started on 15 October 2026; the next change is expected
+> around 22 October 2026 and will be posted on [Network status](NETWORK_STATUS.md).
+>
+> **New enrollments are paused during recovery.** If your GPU is not enrolled
 > yet, you can install Hive and create your wallet today; enrollment will
-> reopen later and the date will be posted on [Network status](NETWORK_STATUS.md).
+> reopen later and the date will be posted on Network status.
 
 ## At a glance
 
 | | |
 |---|---|
 | Hardware | NVIDIA GPU, Turing or newer (compute capability 7.5 or higher): GeForce RTX 20/30/40/50 series and newer data-center GPUs |
-| Software | QSDM Hive 1.4.21 for Windows x64 or Linux x86-64 |
+| Software | QSDM Hive 1.4.22 for Windows x64 or Linux x86-64 |
 | Driver | A current NVIDIA driver with a working `nvidia-smi`. You do not need the CUDA Toolkit; Hive bundles what it needs. |
 | Linux extras | glibc 2.34 or newer; GTK 3 for the AppImage |
 | Bond | 10 CELL per enrolled GPU, paid up front or taken from your first rewards |
 | Reward | The current block reward (3.56490987 CELL per block, 10 second target) for accepted proofs; see [CELL tokenomics](CELL_TOKENOMICS.md) |
-| Network | Pilot network (pre-mainnet), single block producer during recovery. Mining reopened on 2026-10-02 in public windows with per-owner limits. |
+| Network | Pilot network (pre-mainnet), single block producer during recovery. Mining reopened on 2026-10-02; enrolled miners now mine in 7-day (168-hour) canary windows with caps per owner per 24-hour epoch. |
 
 GPU mining is NVIDIA-only today. Every proof must carry an NVIDIA attestation;
 the network rejects proofs without one.
 
-## 1. Install Hive 1.4.21
+## 1. Install Hive 1.4.22
 
 1. Download Hive from the [download page](https://qsdm.tech/download.html).
-   Version 1.4.21 is served from the new release channel
-   `https://qsdm.tech/downloads/hive-v2/`.
+   Version 1.4.22 is served from the release channel
+   `https://qsdm.tech/downloads/hive-v2/`. It also adds
+   [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md) parents to every
+   transfer, which the network requires since block 816,600.
 2. Check the SHA-256 of the file before you run it. The steps are in
    [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md).
 3. Windows: the installer is not Authenticode-signed yet, so SmartScreen may show
@@ -38,10 +44,10 @@ the network rejects proofs without one.
 
 > [!NOTE]
 > **Coming from Hive 1.4.20 (Windows) or 1.4.17 (Linux)?** Those versions
-> cannot update themselves to 1.4.21 because the release signing key was
-> rotated. Install 1.4.21 once by hand; your wallet and settings are kept.
+> cannot update themselves to 1.4.22 because the release signing key was
+> rotated. Install 1.4.22 once by hand; your wallet and settings are kept.
 > Hive 1.4.17 stops receiving updates after 9 November 2026 and 1.4.20 after
-> 19 December 2026.
+> 19 December 2026, so install by hand before those dates.
 
 ## 2. Create or restore your wallet
 
@@ -55,7 +61,7 @@ This wallet is your mining address: rewards are paid to it and it owns your
 enrollment. Wallet transactions are signed with ML-DSA-87. See
 [Wallet recovery](WALLET_RECOVERY.md) for backups.
 
-**Keep the wallet unlocked while you mine.** Hive 1.4.21 signs every mining
+**Keep the wallet unlocked while you mine.** Hive 1.4.22 signs every mining
 proof with your wallet automatically (the owner signature). If the wallet is
 locked, Hive shows "Unlock your QSDM wallet in Hive to mine." and does not
 start the miner.
@@ -122,8 +128,9 @@ Each proof says which NVIDIA attestation it carries:
 | "QSDM protocol mining requires NVIDIA Turing or newer (7.5+)." | The GPU is too old for protocol v2. |
 | Hive cannot read the GPU | Make sure `nvidia-smi` runs in a terminal; update the NVIDIA driver. |
 | Enrollment fails | New enrollments are paused during recovery. Check [Network status](NETWORK_STATUS.md). |
+| Miner reports `mining_unavailable` (HTTP 503) | The mining window is closed. Check [Network status](NETWORK_STATUS.md) for the next 7-day window. |
 | Many `429` responses in the miner log | You hit the per-IP rate limit, for example with several rigs behind one internet address. Run fewer rigs per address. |
-| 1.4.20 / 1.4.17 does not offer 1.4.21 | Expected. Install 1.4.21 by hand once. |
+| 1.4.20 / 1.4.17 does not offer 1.4.22 | Expected. Install 1.4.22 by hand once. |
 
 More help: [Hive app guide](QSDM_HIVE.md) and
 [Troubleshooting](TROUBLESHOOTING.md).

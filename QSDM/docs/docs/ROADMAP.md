@@ -15,8 +15,9 @@ ready and is announced on [Network status](NETWORK_STATUS.md) and in the
 - Chain restarted on 2026-09-27; public NVIDIA mining reopened on 2026-10-02
   with hardened mining admission (durable proof and nonce de-duplication,
   persistent pending rewards, stop-on-storage-failure).
-- QSDM Hive 1.4.21 for Windows and Linux, signed with the rotated v2 release key,
-  with automatic owner signatures on mining proofs.
+- QSDM Hive 1.4.22 for Windows and Linux, signed with the rotated v2 release key,
+  with automatic owner signatures on mining proofs and Proof-of-Entanglement
+  parents on every transfer. Enrolled miners mine in 7-day canary windows.
 - Wallet transactions signed with ML-DSA-87.
 
 ## Done in October 2026

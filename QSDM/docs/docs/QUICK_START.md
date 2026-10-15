@@ -22,7 +22,7 @@ a wallet and choose a strong passphrase. Your ML-DSA-87 key is generated and
 encrypted on your device. Download the encrypted backup and keep it safe.
 More: [Web wallet](WEB_WALLET.md).
 
-**On the desktop:** install QSDM Hive 1.4.21 for Windows or Linux from the
+**On the desktop:** install QSDM Hive 1.4.22 for Windows or Linux from the
 [download page](https://qsdm.tech/download.html), check the file hash
 ([how](DOWNLOADS_AND_VERIFICATION.md)), then open **Settings → Wallet → Create
 New Wallet** and write down the 24 recovery words.
@@ -38,15 +38,18 @@ curl -s "https://api.qsdm.tech/api/v1/wallet/balance?address=<your address>"
 ## 4. Send CELL
 
 Use **Send** in the web wallet or in Hive. The wallet fetches your next nonce,
-signs the transfer with ML-DSA-87 and submits it; it is included in the next
-block. Developers can do the same through `POST /api/v1/wallet/submit-signed`
+picks committed parent transactions
+([Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md), required since block
+816,600), signs the transfer with ML-DSA-87 and submits it; it is included in
+the next block. Use Hive 1.4.22 or newer, or the web wallet. Developers can do the same through `POST /api/v1/wallet/submit-signed`
 ([API reference](API_REFERENCE.md#post-walletsubmit-signed)).
 
 ## 5. Mine (NVIDIA GPU)
 
-Mining runs in QSDM Hive on NVIDIA GPUs (Turing or newer). New enrollments are
-paused during recovery; see [Mining today](MINING_TODAY.md) for the current
-state and the full walkthrough.
+Mining runs in QSDM Hive on NVIDIA GPUs (Turing or newer). Enrolled miners
+mine in 7-day canary windows; new enrollments are paused during recovery. See
+[Mining today](MINING_TODAY.md) for the current state and the full
+walkthrough.
 
 ## Before you store value
 

@@ -1,6 +1,6 @@
 # Feature Summary — QSDM
 
-**Last Updated:** October 2026 · Running release **hardened-legacy-20261002-d7ffcd4-hl2** · Hive **1.4.21** · Edge Control **1.3.7**
+**Last Updated:** October 2026 · Running release **hardened-legacy-20261014-d7ffcd4-hl2-edge-go1269-ids** · Hive **1.4.22** · Edge Control **1.3.7**
 
 QSDM (Quantum-Secure Dynamic Mesh) is a mesh ledger with post-quantum (ML-DSA-87) wallet signatures whose native coin is **Cell (CELL)**. It currently runs as a public pilot network (pre-mainnet) with a single block producer during recovery. Validators are designed to run PoE + BFT consensus; miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
 
@@ -45,7 +45,7 @@ it is not the CELL network gateway or another Hive client.
 - NVIDIA-locked proofs (`nvidia-cc-v1`, `nvidia-hmac-v1`); Turing-or-newer GPU required for protocol mining.
 - Public mining API: work, challenge, submit, enrollment, emission, blocks, slash.
 - On-chain enrollment with **10 CELL** slashable bond; Hashcash anti-spam.
-- Consumer path: **QSDM Hive** Miner task (CUDA solver bundled). Miners can start from zero liquid CELL by choosing deferred bond from accepted mining earnings. Hive 1.4.21 signs miner operator actions automatically and is published on the hive-v2 channel, signed by the v2 release key. See [Mining today](MINING_TODAY.md).
+- Consumer path: **QSDM Hive** Miner task (CUDA solver bundled). Miners can start from zero liquid CELL by choosing deferred bond from accepted mining earnings. Hive 1.4.22 signs miner operator actions automatically and is published on the hive-v2 channel, signed by the v2 release key. See [Mining today](MINING_TODAY.md).
 - Operator path: `qsdmminer-console`.
 
 ## Wallet & self-custody

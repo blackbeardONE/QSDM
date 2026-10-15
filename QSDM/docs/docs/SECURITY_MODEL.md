@@ -88,8 +88,9 @@ network see [Network status](NETWORK_STATUS.md).
   proof cannot be paid twice after a restart, and it stops producing blocks
   rather than continue after a storage failure. Pending rewards survive
   restarts.
-- Mining runs in public windows with per-IP rate limits. Hive 1.4.21 signs
-  proofs with the miner's wallet (owner signature) automatically.
+- Mining runs for enrolled Hive miners in 7-day (168-hour) canary windows,
+  with caps per owner per 24-hour epoch and per-IP rate limits. Hive 1.4.22
+  signs proofs with the miner's wallet (owner signature) automatically.
 
 ## Software and releases
 
