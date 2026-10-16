@@ -22,8 +22,9 @@ what runs today.
 
 ## CELL in numbers
 
-- Max supply **90,000,000 CELL**, all from mining. (A 10,000,000 CELL genesis
-  treasury is a proposal for mainnet; it is not part of the current chain.)
+- Max supply **90,000,000 CELL**, all from mining. No genesis treasury and no
+  premine. Transaction fees are burned (credited to no account) until
+  independent validators produce blocks.
 - 10 second target block time; the block reward halves about every four years.
 - 8 decimals; the smallest unit is called *dust* (1 CELL = 100,000,000 dust).
 

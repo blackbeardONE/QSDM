@@ -18,8 +18,7 @@ Status: funding and custody policy (pilot network)
 
 | Tier | Wallet | Suggested control | Purpose |
 |---|---|---|---|
-| 0 | Genesis Treasury Vault | 3-of-5 ML-DSA multisig plus 48-month on-chain vesting | Holds the disclosed protocol treasury allocation. Never connected to an application server. |
-| 1 | Operations Treasury | 2-of-3 multisig, monthly budget | Receives only vested releases approved under the public budget. Refills lower tiers. |
+| 1 | Operations Treasury | 2-of-3 multisig, monthly budget | Receives only existing CELL (mined CELL, governance-approved fee revenue, or disclosed sponsor funds) approved under the public budget. Refills lower tiers. |
 | 2A | Referral Payout Wallet | Isolated signer, maximum 5 CELL per payout, 30-day refill | Pays one qualified referral reward. |
 | 2B | Onboarding Payout Wallet | Separate isolated signer, maximum 1 CELL per payout, 7-day refill | Pays a one-time starter grant. |
 | 2C | Integration Payout Wallets | One wallet per integration | Keeps Sky Fang or future partner risk out of core treasury funds. |
@@ -39,35 +38,30 @@ The same address is consensus-bound in QSDM Core. Pooled settlement remains
 fail-closed unless the task manifest authorizes the Relay's key-derived ID and
 the task reward pool is funded.
 
-QSDM does not yet ship the Tier 0 multisig and vesting contract described by
-the tokenomics specification. Those contracts, their tests, and an external
-audit remain a mainnet gate. Until they exist, use offline key custody and
-manual multi-person approval, and do not describe the custody layer as
+There is no Tier 0 genesis treasury vault: [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md)
+withdrew the 10,000,000 CELL treasury proposal, so no treasury multisig or
+vesting contract is planned. Use offline key custody and manual multi-person
+approval for the Operations Treasury, and do not describe the custody layer as
 trustless.
 
 ## 3. Funding source
 
-The max supply is 90,000,000 CELL, all from mining:
+The max supply is 90,000,000 CELL, all from mining
+([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md)):
 
 - 90,000,000 CELL is emitted through protocol mining.
-- A 10,000,000 CELL genesis protocol-treasury allocation (locked and released
-  linearly over 48 months) is a mainnet proposal. It is not built and is not
-  part of the current chain.
-- Founder and insider allocation is 0 CELL.
+- There is no genesis treasury allocation. The earlier 10,000,000 CELL
+  treasury proposal is withdrawn.
+- Founder, insider, team, advisor, sale and airdrop allocations are 0 CELL.
 
-In broad industry terminology, CELL created for a treasury at genesis is a
-**premine/genesis allocation**, even when no founder receives it. QSDM should
-therefore say "0% founder or insider premine" rather than the ambiguous "0%
-premine."
+Any future proposal to add an allocation needs a new published policy version,
+a counsel opinion and the governance process, and it may never mint CELL on a
+chain that has already launched without it.
 
-If the official genesis state has not been finalized, the preferred source for
-referral and onboarding budgets is the proposed 10,000,000 CELL protocol
-allocation, if it is adopted for mainnet. The current chain has no such
-allocation. If the
-network has already launched without that allocation, do **not** mint it later.
 Fund programs from legitimately mined CELL, protocol fee revenue approved by
-governance, or disclosed sponsor revenue transferred into the Operations
-Treasury.
+governance (fees are burned today, so there is none until the fee destination
+changes under a new policy version), or disclosed sponsor revenue transferred
+into the Operations Treasury.
 
 Never fund a production reward with a faucet credit, an environment prefund,
 or a direct state-file edit.
@@ -127,7 +121,8 @@ Before declaring an existing ledger the production state, inventory all
 direct credits and environment prefunds. Either start from an audited genesis
 snapshot that excludes them or approve a deterministic, network-wide state
 migration. Editing one validator's JSON ledger is not an acceptable burn or
-migration.
+migration. Genesis Policy v1.0 §5 chooses the migration path: mainnet
+continues the current chain.
 
 ## 9. Mainnet release gates
 
@@ -137,15 +132,20 @@ wallets. That does not by itself make the current chain a finished mainnet.
 
 Before a mainnet declaration, QSDM still needs all of the following:
 
-1. Implement and externally audit the Tier 0 ML-DSA multisig and vesting rules.
-2. Publish one official genesis manifest containing the exact treasury
-   allocation, vesting schedule, wallet addresses, and cryptographic hash.
+1. Withdrawn: Genesis Policy v1.0 has no genesis treasury, so there is no
+   Tier 0 multisig or vesting contract to build.
+2. Publish the official, aggregate-only migration manifest, its SHA-256 and
+   the fork height (Genesis Policy v1.0 §5). It contains no treasury
+   allocation.
 3. Replace or formally redesign the solo-validator block driver's synthetic
    `qsdm-system-funder` reserve as consensus-native issuance. Its current
    oversized bookkeeping balance and BFT-bypass mode were built for solo
    testnet continuity, not adversarial mainnet operation.
-4. Start from an audited clean state or execute a deterministic, network-wide
-   migration that removes every historic development credit.
+4. Execute the deterministic, network-wide migration of Genesis Policy v1.0
+   §5: remove the synthetic funder balance, and burn or explicitly classify
+   every historic development credit. If the manifest cannot reach a "ready"
+   state, the fallback is an audited clean genesis under a new policy
+   version.
 5. Complete an independent economic, consensus, and custody audit.
 
 Until these gates close, describe the network as a pilot network (pre-mainnet), not a

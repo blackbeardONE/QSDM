@@ -137,7 +137,7 @@ rationale.
 
 | You want to… | Run this | Hardware | Reward |
 |---|---|---|---|
-| Secure the chain, earn fees (not yet open on the pilot network) | **Validator** | CPU-only VPS | Transaction fees (denominated in `dust`) |
+| Secure the chain (not yet open on the pilot network) | **Validator** | CPU-only VPS | Transaction fees once independent validators produce blocks; fees are burned today |
 | Mint new Cell supply | **Miner** | NVIDIA GPU (see §3) | Newly-issued Cell per block |
 | Do both | **Two separate machines** running two separate binaries | 1 × CPU VPS + 1 × GPU rig | Both |
 
@@ -524,7 +524,7 @@ A few practical notes:
 - [`MINING_PROTOCOL.md`](./MINING_PROTOCOL.md) — proof format,
   epochs, difficulty, acceptance window.
 - [`CELL_TOKENOMICS.md`](./CELL_TOKENOMICS.md) — emission schedule,
-  halving, treasury cap.
+  halving, supply cap.
 - [`NVIDIA_LOCK_CONSENSUS_SCOPE.md`](./NVIDIA_LOCK_CONSENSUS_SCOPE.md)
   — why NVIDIA-lock is a transparency signal, not a consensus rule.
 - [`../../../apps/qsdm-nvidia-ngc/QUICKSTART.md`](../../../apps/qsdm-nvidia-ngc/QUICKSTART.md)

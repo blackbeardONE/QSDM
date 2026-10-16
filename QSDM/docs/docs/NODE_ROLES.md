@@ -7,7 +7,7 @@ other owns coin emission, and they never overlap in a single process.
 
 | Role | Configuration | Hardware | Responsibilities | Rewards |
 |---|---|---|---|---|
-| **Validator** | `node.role = "validator"`, `node.mining_enabled = false` | CPU-only (VPS-class) | BFT + Proof-of-Entanglement consensus (target design), transaction ordering, block finality, serving the public JSON-RPC / REST API | Transaction fees (denominated in `dust`) |
+| **Validator** | `node.role = "validator"`, `node.mining_enabled = false` | CPU-only (VPS-class) | BFT + Proof-of-Entanglement consensus (target design), transaction ordering, block finality, serving the public JSON-RPC / REST API | Transaction fees (denominated in `dust`), once independent validators produce blocks. Today fees are burned (credited to no account); see [`CELL_TOKENOMICS.md` §5](./CELL_TOKENOMICS.md#5-fee-model) |
 | **Miner** | `node.role = "miner"`, `node.mining_enabled = true` | CUDA-capable NVIDIA GPU | Producing valid PoW proofs tied to the current mesh3D epoch; submitting them to validators for inclusion in blocks | Newly-minted CELL (the 90,000,000 CELL mining-emission cap; see [`CELL_TOKENOMICS.md`](./CELL_TOKENOMICS.md)) |
 
 There is **no combined "full node" mode**. An operator who wants to do both
@@ -26,7 +26,10 @@ files, different machines if the validator is on a VPS).
    (`-tags validator_only`, published as `ghcr.io/blackbeardone/qsdm-validator:<version>`) removes the
    CUDA mining path at link time — a validator binary literally cannot be
    made to run mining code even if misconfigured.
-2. **Economic clarity.** Validators earn fees. Miners earn emission. A
+2. **Economic clarity.** Validators are paid from fees, never from new
+   supply (today fees are burned until independent validators produce
+   blocks; see [`CELL_TOKENOMICS.md` §5](./CELL_TOKENOMICS.md#5-fee-model)).
+   Miners earn emission. A
    single node doing both would blur that split and invite rent-seeking
    behaviour (e.g. miner-validators front-running their own mining rewards
    into favourable block positions). Keeping them separate preserves the

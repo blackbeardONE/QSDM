@@ -1,7 +1,19 @@
 # Cell (CELL) — Tokenomics
 
-> **Status:** Ratified per the Major Update Phase 0 recommendation, awaiting
-> counsel review before mainnet genesis. The values in this document are the
+> **Status:** [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md): **ratified by
+> owner 2026-10-16, awaiting signature and counsel review.** Maximum supply
+> 90,000,000 CELL, all from mining; no genesis treasury (the earlier
+> 10,000,000 CELL treasury proposal is withdrawn); transaction fees are burned
+> (credited to no account) until independent validators produce blocks;
+> mainnet continues the current chain through a published, deterministic
+> migration. Policy SHA-256, signature, migration manifest hash and fork
+> height: not yet published (they will be recorded here). Audit row `tok-01`
+> stays **pending** until counsel's written opinion is received.
+>
+> A few code constants and tools outside the emission schedule still carry the
+> withdrawn treasury figure; aligning them is a separate, reviewed code change.
+>
+> The values in this document are the
 > authoritative in-repo numbers used by `pkg/branding` constants,
 > `pkg/chain/emission` (Phase 3.3), and the tokenomics dashboard panel. They
 > MUST NOT be changed in isolation; any change requires a corresponding
@@ -28,7 +40,7 @@ signed off. See §8 ("Legal posture") below.
 | Decimals | `8` | `pkg/branding.CoinDecimals` |
 | Smallest unit | `dust` (1 CELL = 10^8 dust) | `pkg/branding.SmallestUnitName` |
 | Issued by | QSDM pilot network (pre-mainnet), PoW emission layer | see §3 |
-| Non-issuance paths | validator fees (never mint new supply) | see §5 |
+| Non-issuance paths | transaction fees (never mint new supply; burned today) | see §5 |
 
 The 8-decimal choice intentionally mirrors Bitcoin UX: wallet developers,
 block explorers, and exchanges already know how to display 8-decimal coins
@@ -41,23 +53,24 @@ output (`amount: 12345 dust`).
 
 | Parameter | Value |
 |---|---|
-| Max supply | **90,000,000 CELL**, all from mining |
+| Max supply | **90,000,000 CELL** (9,000,000,000,000,000 dust), all from mining |
 | Founder / insider allocation | **0%** |
-| Genesis protocol treasury | **Mainnet proposal only:** 10,000,000 CELL. Not built and not part of the current chain. |
-| Treasury vesting (proposal) | linear over 48 months, enforced on-chain, locked at genesis |
+| Genesis protocol treasury | **None.** The earlier 10,000,000 CELL treasury proposal is withdrawn ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) §1). |
 | Mining emission | **90,000,000 CELL** over ~20 years |
 | Emission curve | halvings every 4 years (see §3) |
-| Validator block subsidy | **0** — validators earn only transaction fees |
-| Base-fee burn | **undecided** — EIP-1559-style burn is *optional*; decision due before genesis (Phase 0 follow-up item) |
+| Validator block subsidy | **0** |
+| Transaction fees | **Burned:** 100% of fees are credited to no account until independent validators produce blocks (see §5) |
 
-### 2.1 Treasury address (mainnet proposal)
+### 2.1 No genesis treasury
 
-If the proposed genesis treasury is adopted for mainnet, its address would be
-committed in the genesis block. Its balance would be public and its spend
-policy enforced by a WASM contract (bound at genesis) that releases (total_alloc / 48) CELL per month to a
-multisig-controlled spend address. The contract address, the multisig
-membership, and the spend policy would be published in
-`QSDM/docs/docs/GENESIS.md` (not yet published; pending counsel review).
+There is no genesis treasury allocation and no treasury address in genesis.
+The earlier proposal (10,000,000 CELL minted at genesis and released over 48
+months to a multisig) is withdrawn by
+[Genesis Policy v1.0](GENESIS_POLICY_v1.0.md). Any future proposal to add an
+allocation needs a new published policy version, a counsel opinion and the
+governance process, and it may never mint CELL on a chain that has already
+launched without it. Program budgets (referral, onboarding, grants) are funded
+only from existing CELL; see the [Treasury Policy](TREASURY_POLICY.md).
 
 ### 2.2 No founder or insider premine
 
@@ -67,12 +80,23 @@ must be earned by a miner producing a valid PoW proof. This is the cleanest
 distribution posture in the current design and is not negotiable without a
 public tokenomics revision and governance approval.
 
-The 10 M CELL protocol treasury is a mainnet proposal: it is not built and is
-not part of the current chain. If it is adopted, it would be minted at
-genesis. In broad industry usage
-that is a premine/genesis allocation, even though it is not assigned to a
-founder or insider. QSDM uses the precise phrase **genesis protocol treasury
-allocation** and would publish its address, lock, vesting, and spending policy.
+With no genesis treasury, no CELL is allocated at genesis to anyone: the
+whole 90,000,000 CELL supply is issued by mining. Historic development
+credits on the pilot chain are not an allocation; the mainnet migration in
+§2.3 burns or explicitly classifies them.
+
+### 2.3 Genesis path
+
+Mainnet continues the current chain. A deterministic, network-wide migration
+at a published fork height, announced at least 60,480 blocks (7 days) ahead,
+removes the synthetic funder balance, burns or explicitly classifies every
+historic development credit and every balance that classified issuance does
+not explain (with aggregate figures published), and keeps balances explained
+by mining rewards and ordinary signed transfers. The aggregate-only migration
+manifest and its SHA-256 are published, and every validator applies the same
+manifest hash. If the manifest cannot reach a "ready" state, the fallback is a
+clean genesis under a new policy version. Until then, treat balances and
+history as pilot data.
 
 ---
 
@@ -147,7 +171,7 @@ compressed-time simulation of the first halving and verify:
 
 | Use | Notes |
 |---|---|
-| Transaction fees | Paid to validators. Denominated in dust. |
+| Transaction fees | Denominated in dust. Burned today (credited to no account) until independent validators produce blocks; see §5. |
 | WASM contract gas | Gas price in dust/gas; already wired in `pkg/wasm`. |
 | Validator bonds | Future: validators stake CELL to participate; slashable. |
 | Miner enrollment bonds | 10 CELL, slashable. May be prepaid or accumulated from protocol mining rewards starting from a zero CELL balance. |
@@ -157,29 +181,36 @@ compressed-time simulation of the first halving and verify:
 Cell is **not** used to pay mining rewards out of a pre-minted pool; mining
 rewards are newly minted at block-confirmation time (a `mint` transaction
 embedded in the block by the validator who proposes, crediting the winning
-miner). On the current chain this is the only path that creates new supply
-(the 10 M CELL genesis treasury is a mainnet proposal, not part of the
-current chain).
+miner). This is the only path that creates new supply; there is no genesis
+treasury. On the pilot chain today, rewards are paid from the synthetic
+`qsdm-system-funder` reserve; before mainnet it is replaced by capped,
+consensus-native issuance that cannot exceed the schedule in §3 or the cap
+in §2 ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) §4).
 
 ---
 
 ## 5. Fee model
 
-Validators never dilute holders. All validator revenue comes from transaction
-fees on real user transactions. This split is enforced at the protocol
+Validators never dilute holders: there is no validator block subsidy. This
+split is enforced at the protocol
 level: a mining-reward transaction with `role = miner` is the **only**
 transaction allowed to mint new supply, and a block producer can include at
 most one such transaction. A validator that attempts to self-pay via a
 mining-reward transaction is producing an invalid block.
 
-### 5.1 Optional EIP-1559-style base-fee burn
+**Fees are burned today.** A transfer debits `amount + fee` from the sender
+and credits only `amount` to the recipient, so 100% of the fee is credited to
+no account. Under [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) §3 this stays
+so until independent validators produce blocks. Validators earn no fees on
+the pilot network today.
 
-The project leans toward adopting an EIP-1559-style split (base fee burned,
-priority fee to the validator) because it adds a deflationary pressure
-component that offsets emission during epochs 1–4, and because it is the
-mechanism users and exchanges already understand. The decision is **open**
-and must be made before genesis. It is tracked in `NEXT_STEPS.md` (not yet
-published) as a Phase-0 follow-up.
+### 5.1 Fee destination after independent validators (open)
+
+Once independent validators produce blocks, the project may propose paying
+part of each fee to the block producer, for example an EIP-1559-style split
+(base fee burned, priority fee to the validator). Any change to the fee
+destination is a consensus change: it needs a new policy version and a
+published activation height.
 
 ---
 
@@ -187,13 +218,13 @@ published) as a Phase-0 follow-up.
 
 | Dimension | Bitcoin | Cell |
 |---|---|---|
-| Max supply | 21,000,000 BTC | 90,000,000 CELL (from mining) |
+| Max supply | 21,000,000 BTC | 90,000,000 CELL (all from mining) |
 | Decimals | 8 | 8 |
 | Halving period | every 210,000 blocks (~4 years at 10-min blocks) | every 12,623,040 blocks (~4 years at 10-sec blocks) |
 | Block time | ~10 min | 10 sec (target) |
 | Initial reward | 50 BTC | 3.56490987 CELL |
 | Founder / insider allocation | 0 | 0 |
-| Treasury | none | none on the current chain; a 10,000,000 CELL genesis treasury is a mainnet proposal |
+| Treasury | none | none (no genesis treasury) |
 | Consensus | pure PoW | PoE + BFT **for consensus** (design target; today a single block producer), additive PoW **for emission only** |
 
 The structural difference from Bitcoin is that Cell's PoW layer is
@@ -208,13 +239,14 @@ supply creation.
 ## 7. Distribution philosophy
 
 **Fair launch, utility-first.** There is no presale, no ICO, no public sale,
-no private sale, no airdrop of founder tokens. If the proposed genesis treasury is adopted for mainnet, it would be published at genesis, time-locked, and spent only under the public [Treasury Policy](TREASURY_POLICY.md). The current chain has no treasury allocation.
+no private sale, no airdrop of founder tokens, and no genesis treasury. Program budgets are funded only from existing CELL under the public [Treasury Policy](TREASURY_POLICY.md).
 
 Earning paths at launch are:
 - **Mining**: run Hive (NVIDIA GPU), earn Cell by producing valid
   proofs.
-- **Validating**: operate a VPS validator node, earn transaction fees in
-  Cell (not yet open on the pilot network).
+- **Validating**: operate a VPS validator node (not yet open on the pilot
+  network). Fees are burned until independent validators produce blocks;
+  any validator fee revenue after that needs a new policy version (§5.1).
 - **Using**: use Cell to pay transaction fees on a service you care about.
 
 ### 7.1 Bond from mining earnings
@@ -239,8 +271,8 @@ allocations and does not provide market-making inventory.
 ## 8. Legal posture
 
 This document describes the intended fair-launch utility-token design: zero
-founder allocation, a disclosed and vested protocol treasury, mining emission,
-and no project token sale. It is a technical and economic specification, not a
+founder allocation, no genesis treasury, mining emission of the whole
+supply, and no project token sale. It is a technical and economic specification, not a
 legal conclusion. Counsel must review the implemented genesis, custody,
 distribution, marketing, and jurisdiction-specific obligations before a
 production launch.
@@ -258,4 +290,5 @@ and "yield" are forbidden in all project communications (see
 | Date | Change |
 |---|---|
 | Major Update Phase 3.1 | Document created; numbers adopted from Major Update §4.1–§4.4 with Phase 0 "ratified per recommendation, awaiting counsel review" status. |
+| 2026-10-16 | [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) ratified by owner, awaiting signature and counsel review: 90,000,000 CELL hard cap, all from mining; 10,000,000 CELL treasury proposal withdrawn; fees burned until independent validators; mainnet continues the current chain via a published migration. |
 

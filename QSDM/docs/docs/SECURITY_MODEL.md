@@ -71,8 +71,9 @@ network see [Network status](NETWORK_STATUS.md).
   the [Roadmap](ROADMAP.md). The full list of rules in force is in
   [Consensus rules](CONSENSUS_RULES.md).
 - Mainnet needs the gates in [Treasury policy §9](TREASURY_POLICY.md#9-mainnet-release-gates):
-  independent validators, the treasury multisig, an official genesis manifest
-  and an independent external audit.
+  independent validators, a published migration manifest
+  ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md)) and an independent external
+  audit.
 
 ## Mining
 
