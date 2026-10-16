@@ -40,7 +40,7 @@ initial sync.
                  ┌─────────────────────────────────────────────┐
                  │     The QSDM validator mesh (libp2p)        │
                  │                                             │
-  [Your new     ───►  [Seed: api.qsdm.tech]  ◄──►  [Peer B]     │
+  [Your new     ───►  [Seed validator]       ◄──►  [Peer B]     │
    validator]        (bootstrap only — NOT                      │
                       a central server)                         │
                           ▲        ▲                            │
@@ -58,13 +58,14 @@ initial sync.
 
 ### 0.2 What about `api.qsdm.tech`?
 
-`https://api.qsdm.tech/` is the reference deployment we operate. It
-plays two roles right now:
+`https://api.qsdm.tech/` is the reference deployment we operate. Right now:
 
-1. **Official bootstrap peer.** A new validator uses its libp2p
-   multiaddr to discover the mesh the first time it starts. After that
-   handshake, your validator gossips with every other validator
-   directly. Bootstrap ≠ sync.
+1. **Not a public bootstrap peer during the pilot.** The producer's
+   libp2p port (`4001`) is not reachable from the internet, so a new
+   validator or follower cannot bootstrap from it today, and there is no
+   other public P2P peer yet. Independent validators and followers are
+   planned; see [`ROADMAP.md`](./ROADMAP.md) ("Independent validators")
+   and [`NODE_ROLES.md` §3.2](./NODE_ROLES.md).
 2. **Public REST endpoint.** Miners, wallets, and Hive call
    `/api/v1/*` on this hostname. Anyone can stand up their own
    validator, publish a competing REST hostname, and point traffic at
@@ -75,7 +76,7 @@ individual node:
 
 - A validator that already has live peer sessions can continue processing the
   blocks it receives from those peers.
-- A follower whose only bootstrap peer and chain-sync URL are the reference server will lose
+- A follower whose only chain-sync URL is the reference server will lose
   catch-up and may have zero peers. It does not automatically become a block
   producer.
 - Hive, miners, and websites configured only with the reference server endpoint will not
@@ -166,23 +167,20 @@ end-to-end. The critical bits:
 
 1. Drop a `config.toml` with your desired `node.address`,
    `api.port = 8080`, `network.port = 4001`.
-2. Set `bootstrap_peers` to the **current multiaddr** of an existing
-   peer. For the current pilot network that is the reference server at
-   `api.qsdm.tech`; its peer-id is always queryable live at
-   `curl -s https://api.qsdm.tech/api/v1/status | jq -r .node_id`. The
-   multiaddr looks like:
-
-   ```
-   /dns4/api.qsdm.tech/tcp/4001/p2p/12D3KooW…
-   ```
-
-   The `12D3KooW…` peer-id changes every time the node's libp2p key
-   rotates, so don't hard-code it from a stale tutorial — always grab
-   the current value.
+2. `bootstrap_peers`: **there is no public bootstrap peer during the
+   pilot.** The producer behind `api.qsdm.tech` does not expose its
+   P2P port (`4001`) to the internet, so a follower cannot bootstrap
+   from it today; do not use a `/dns4/api.qsdm.tech/tcp/4001/...`
+   multiaddr. Independent validators and followers are planned (see
+   [`ROADMAP.md`](./ROADMAP.md) and [`NODE_ROLES.md` §3.2](./NODE_ROLES.md));
+   public peer details will be published here when they exist. Until
+   then, only point `bootstrap_peers` at nodes you operate yourself
+   (see §2.3).
 3. Start `qsdm-validator` under systemd, expose `:4001/tcp` to the
    internet, put Caddy in front of `:8080` for TLS.
-4. Watch `/api/v1/status` — once `connected_peers > 0` and `sync_lag`
-   trends down, you're mesh-resident.
+4. Watch `/api/v1/status`. With no public peer, expect `peers: 0`
+   during the pilot; `connected_peers > 0` only appears once your node
+   connects to another node (one you run, or a future public peer).
 
 ### 2.3 Running a second validator yourself
 
