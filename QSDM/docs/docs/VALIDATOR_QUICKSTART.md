@@ -193,8 +193,10 @@ port = 8081
 [network]
 port            = 4001
 bootstrap_peers = [
-  # Replace with the official bootstrap list published at
-  # https://qsdm.tech/validators once mainnet is live. For testnets, point
+  # There is no public bootstrap peer during the pilot: the producer's
+  # P2P port is not reachable from the internet (OPERATOR_GUIDE.md §2.2).
+  # An official bootstrap list will be published at
+  # https://qsdm.tech/validators once it exists. For testnets, point
   # these at the genesis validator(s) you coordinated with.
 ]
 
