@@ -12,6 +12,12 @@
 > moves from `pending` to `passed` with `Notes` referencing the
 > opinion-letter date and counsel firm.
 >
+> **Policy under review:** [Genesis Policy v1.0](../GENESIS_POLICY_v1.0.md),
+> ratified by the owner on 2026-10-16 and awaiting signature. It sets a
+> 90,000,000 CELL hard cap, all from mining, with no genesis treasury, and
+> withdraws the earlier 10,000,000 CELL treasury proposal. `tok-01` stays
+> `pending` until counsel's written opinion is received.
+>
 > **Distribution:** privileged + confidential, attorney-client work
 > product. Distribute only to engaged counsel under engagement letter.
 >
@@ -34,14 +40,15 @@ the project's source code. The full normative reference is in
 | Parameter | Value |
 |-----------|-------|
 | Max supply | 90,000,000 CELL, all from mining |
-| Treasury (genesis pre-fund) | 10,000,000 CELL as a mainnet proposal; not built and not part of the current chain |
-| Mining emission | 90,000,000 CELL over ~21 years |
-| Halving cadence | every 4 years (210,000 blocks at 10 s) |
+| Treasury (genesis pre-fund) | None. The earlier 10,000,000 CELL proposal is withdrawn (Genesis Policy v1.0 §1) |
+| Mining emission | 90,000,000 CELL over ~20 years |
+| Halving cadence | every 4 years (12,623,040 blocks at 10 s) |
 | Block time target | 10 seconds |
 | Decimals | 8 |
 | Smallest unit | "dust" (1 CELL = 10^8 dust) |
 | Issuance mechanism | useful-Proof-of-Work tied to verified GPU hashrate |
-| Validator fees | denominated in CELL; never mint new supply |
+| Transaction fees | denominated in CELL; never mint new supply; today 100% burned (credited to no account) until independent validators produce blocks |
+| Genesis path | mainnet continues the current chain through a deterministic, published migration at an announced fork height (Genesis Policy v1.0 §5) |
 
 The project is currently in **pre-mainnet** state. No CELL has been
 issued on a public mainnet. The reference implementation runs on a
@@ -62,29 +69,21 @@ configured per [`CELL_TOKENOMICS.md`](../CELL_TOKENOMICS.md):
 
 - A **security** at the moment of mining issuance? (PoW emission to
   the miner who produced the proof.)
-- A **security** at the moment of validator-fee payment? (Fees are
-  paid in already-minted CELL; no new supply is created.)
+- A **security** at the moment of fee payment? (Fees are paid in
+  already-minted CELL; no new supply is created. Today the fee is burned,
+  not credited to any validator.)
 - A **security** if traded peer-to-peer on a decentralised exchange?
 - A **security** if listed on a centralised exchange? (We are not
   presently in conversation with any centralised exchange, and the
   question is asked for forward-looking planning, not as a step we
   are about to take.)
 
-The Genesis treasury (10M CELL) is a particularly sensitive question:
-
-- The treasury allocation is held by a multisig in the QSDM project's
-  custody at genesis (see §4 of `CELL_TOKENOMICS.md`).
-- It is not sold pre-mainnet or at mainnet launch.
-- It may be deployed for grants, bug-bounty payouts, exchange listing
-  fees, ecosystem development, or sold on-market post-mainnet at the
-  project's discretion subject to community governance (see §6 of
-  `CELL_TOKENOMICS.md`).
-
-Specifically: under what (if any) Genesis-treasury-management posture
-would the treasury allocation itself constitute the offer or sale of
-a security to the project's contributors / founders / early
-participants? What carve-outs (e.g. vesting, lockups, public
-disclosure of deployments) are conventional to mitigate that risk?
+**Withdrawn (Genesis Policy v1.0, 2026-10-16).** Earlier drafts of
+this brief asked about a 10,000,000 CELL genesis treasury held by a
+project multisig. That proposal is withdrawn: there is no genesis
+treasury and no allocation of any kind at genesis, so the question no
+longer applies. Program budgets (referral, onboarding, grants) are
+paid only from existing CELL under `TREASURY_POLICY.md`.
 
 ### 2.2 Money-transmitter and money-services-business considerations
 
@@ -95,7 +94,9 @@ jurisdiction counsel deems relevant given the contributor footprint):
 - Does the QSDM project, as the originating-protocol developer,
   engage in money transmission or money services by:
   (a) operating a validator that includes mined transactions in blocks,
-  (b) operating the treasury multisig,
+  (b) operating program payout wallets (referral, onboarding) that
+      spend only existing CELL (the genesis-treasury multisig in
+      earlier drafts is withdrawn),
   (c) operating a faucet for the planned incentivized testnet
       (audit row `mining-05`),
   (d) publishing the reference wallet software (browser + CLI)?
@@ -132,10 +133,9 @@ the project's interest is in the protocol-level questions:
   at the moment of issuance, or at the moment of disposition?
   (We note IRS Rev. Rul. 2019-24 and subsequent guidance; we seek
   counsel's view on its application to QSDM specifically.)
-- The Genesis treasury (10M CELL) is held by a multisig at genesis.
-  Is the project, or are the project's contributors collectively,
-  in receipt of taxable income at the moment of mainnet launch?
-  What posture mitigates that risk?
+- **Withdrawn (Genesis Policy v1.0, 2026-10-16).** The earlier
+  question on the tax treatment of a 10,000,000 CELL genesis treasury
+  no longer applies: there is no genesis treasury.
 
 ### 2.5 Intellectual property and contributor-license posture
 
@@ -202,7 +202,7 @@ On execution of engagement letter:
 | `REBRAND_NOTES.md` §4 | Phase-0 working hypotheses on tokenomics |
 | `pkg/branding/*` source | Authoritative coin-identity constants |
 | `pkg/chain/emission.go` source | Integer-only emission calculator |
-| Treasury-multisig design doc | Genesis multisig signers, signing threshold, governance proposal — under privileged cover |
+| `GENESIS_POLICY_v1.0.md` | Owner-ratified genesis policy (supply, fees, genesis path), and the migration manifest once published |
 | Contributor list | Names + jurisdictions of regular contributors — under privileged cover |
 | Infrastructure inventory | Validators, faucet (if any), public endpoints — under privileged cover |
 | Prior counsel correspondence | If any (none expected for this engagement) |

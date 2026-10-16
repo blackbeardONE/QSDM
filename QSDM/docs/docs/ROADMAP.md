@@ -48,8 +48,9 @@ Mainnet is declared only after all of these are done (see
 
 1. Multiple independent validators in production.
 2. Signed consensus enforced (done: from block 827,000).
-3. The treasury multisig (if the genesis treasury proposal is adopted) and an
-   official, published genesis manifest.
+3. The published mainnet migration manifest and fork height
+   ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md): mainnet continues the
+   current chain; there is no genesis treasury).
 4. An **independent external security audit**, with its findings fixed and the
    report published.
 

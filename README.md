@@ -35,13 +35,15 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
   `/api/v1/status`). See
   [`PROOF_OF_ENTANGLEMENT.md`](QSDM/docs/docs/PROOF_OF_ENTANGLEMENT.md).
 - GPU mining (NVIDIA today) is open to enrolled QSDM Hive miners.
-- Consensus signing, independent validators, the Tier 0 treasury multisig, an
-  official genesis manifest and an independent external audit are on the
+- Consensus signing, independent validators, a published migration manifest
+  for mainnet and an independent external audit are on the
   roadmap. Until those gates close, treat the chain as a pilot, not a mainnet
   (see [`TREASURY_POLICY.md` §9](QSDM/docs/docs/TREASURY_POLICY.md#9-mainnet-release-gates)).
-- Max supply is 90,000,000 CELL, all from mining. A 10,000,000 CELL genesis
-  treasury is a mainnet proposal; it is not built and is not part of the
-  current chain.
+- Max supply is 90,000,000 CELL, all from mining. There is no genesis
+  treasury and no premine of any kind. Transaction fees are burned (credited
+  to no account) until independent validators produce blocks. See
+  [`GENESIS_POLICY_v1.0.md`](QSDM/docs/docs/GENESIS_POLICY_v1.0.md)
+  (ratified by the owner, awaiting signature and counsel review).
 
 ### What is running (October 2026)
 

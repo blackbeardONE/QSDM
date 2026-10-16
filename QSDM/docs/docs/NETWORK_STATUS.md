@@ -22,7 +22,7 @@ examples from October 2026, and the live values are always in the status API.
 | Consensus messages | **Signed consensus enforced from block 827,000** (12 October 2026, 18:11 UTC): every BFT vote and consensus message must carry a valid ML-DSA signature, and unsigned consensus traffic is refused (`signed_consensus_active: true`). See [Consensus rules](CONSENSUS_RULES.md). |
 | Transfer parents (Proof-of-Entanglement) | **Enforced from block 816,600** (11 October 2026): every CELL transfer names committed parents. Send with Hive 1.4.22 or newer, the web wallet, or `qsdmcli --auto-parents`. See [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md). |
 | Mining | NVIDIA GPUs today, through QSDM Hive 1.4.22 (protocol v2, enrolled miners). See [Mining today](MINING_TODAY.md). |
-| Supply | Max supply **90,000,000 CELL**, all from mining. A 10,000,000 CELL genesis treasury is a mainnet proposal and is not part of the current chain. |
+| Supply | Max supply **90,000,000 CELL**, all from mining. No genesis treasury and no premine ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md)). Transaction fees are burned (credited to no account). |
 | Release | `hardened-legacy-20261014-d7ffcd4-hl2-edge-go1269-ids`, live since 15 October 2026, 19:59 UTC (see [What is running](#what-is-running)) |
 | Independent audit | Not done yet. The [internal security review](SECURITY_AUDIT.md) is a self-maintained checklist. |
 
@@ -127,7 +127,8 @@ docs.
 - Retirement of the Ed25519 code path in the generic peer-to-peer
   transaction-gossip verifier. It cannot be reached on the live chain today
   (the producer has no transaction gossip ingress), but the code still exists.
-- The genesis treasury multisig and an official genesis manifest.
+- The published mainnet migration manifest and fork height
+  ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) §5).
 - An independent external security audit.
 
 See the [Roadmap](ROADMAP.md) for the order of work and

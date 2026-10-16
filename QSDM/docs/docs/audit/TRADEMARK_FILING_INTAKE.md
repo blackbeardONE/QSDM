@@ -71,7 +71,7 @@ classes initially:
 ### 2.3 Additional classes to discuss with counsel
 
 - **Class 36** — financial services. Whether the project's
-  operation of a Genesis treasury, a faucet, or a validator
+  operation of program payout wallets, a faucet, or a validator
   constitutes a "financial service" in the trademark sense is a
   judgment call counsel should make. The substantive question of
   whether QSDM is a money-services-business is being handled

@@ -6,8 +6,9 @@
 
 This runbook takes a VPS operator from a fresh Ubuntu 22.04 host to a
 running QSDM validator node in about 25 minutes. The validator is CPU-only and
-is designed to participate in BFT + Proof-of-Entanglement consensus and earn
-transaction fees in Cell (`dust`-denominated).
+is designed to participate in BFT + Proof-of-Entanglement consensus. Fees are
+burned (credited to no account) until independent validators produce blocks;
+see [CELL tokenomics §5](CELL_TOKENOMICS.md#5-fee-model).
 
 > **Scope.** This is the runbook for the **validator** role only. It will
 > not help you mine Cell. For mining, see [`MINER_QUICKSTART.md`](./MINER_QUICKSTART.md),

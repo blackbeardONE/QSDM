@@ -240,8 +240,8 @@ sign-off per §9 Phase 0.
 
 > **Superseded values.** The Phase-0 working values below are historical. The
 > live pilot network (pre-mainnet) has a maximum supply of **90,000,000 CELL,
-> all from mining**, and no treasury allocation on chain. A 10,000,000 CELL
-> genesis treasury is a **mainnet proposal** only. GPU mining is NVIDIA today
+> all from mining**, and no treasury allocation. The 10,000,000 CELL genesis
+> treasury proposal is **withdrawn** ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md)). GPU mining is NVIDIA today
 > under [Mining protocol v2](MINING_PROTOCOL_V2.md), where every proof must carry
 > an NVIDIA attestation. See [CELL tokenomics](CELL_TOKENOMICS.md).
 
@@ -253,12 +253,12 @@ sign-off per §9 Phase 0.
 | Total supply cap | Phase-0 value 100,000,000 CELL, superseded. Live: **90,000,000 CELL maximum supply, all from mining.** | §4.1 |
 | Decimals | **8**, matching Bitcoin. Smallest unit named `dust` in `pkg/branding` (replaces the plan's proposal of "micell" / "cytoplasm", which were both listed as flavour alternatives). | §4.1 |
 | Pre-mine | **0%.** | §4.1 |
-| Genesis treasury allocation | **Mainnet proposal only:** 10,000,000 CELL, vested linearly over 48 months. Not on the current chain. | §4.1 |
+| Genesis treasury allocation | Phase-0 value 10,000,000 CELL, superseded. **Withdrawn** by Genesis Policy v1.0: no genesis treasury. | §4.1 |
 | Mining emission | **90,000,000 CELL** (the full maximum supply), halving every 4 years. | §4.1 |
-| Validator fee model | **Fee-only** (no block subsidy for validators). | §4.1 |
-| Burn policy | **Optional EIP-1559-style base-fee burn**, decision deferred to pre-genesis. | §4.1 |
+| Validator fee model | No block subsidy for validators. Superseded: fees are **burned** (credited to no account) until independent validators produce blocks (Genesis Policy v1.0 §3). | §4.1 |
+| Burn policy | Superseded: 100% of fees burned for now; any later change of fee destination needs a new policy version. | §4.1 |
 | Coin name fallback | If "Cell" fails trademark clearance the fallback order is **QCell → Cytoplasm → Vertex**. | §10.1, §11.8 |
-| Treasury custody | Multisig held by a foundation, per §10.1 mitigation. Exact signer set is a Phase 0 decision and **not encoded in-repo**. | §10.1, §11.10 |
+| Treasury custody | Superseded: no genesis treasury. Program wallets follow `TREASURY_POLICY.md` and hold only existing CELL. | §10.1, §11.10 |
 
 Changing any of these values after Phase 3 (tokenomics doc landing) requires
 updating `CELL_TOKENOMICS.md`, the emission schedule unit tests in
