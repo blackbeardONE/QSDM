@@ -36,8 +36,11 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
   [`PROOF_OF_ENTANGLEMENT.md`](QSDM/docs/docs/PROOF_OF_ENTANGLEMENT.md).
 - GPU mining (NVIDIA today) is open to enrolled QSDM Hive miners.
 - Consensus signing, independent validators, a published migration manifest
-  for mainnet and an independent external audit are on the
-  roadmap. Until those gates close, treat the chain as a pilot, not a mainnet
+  for mainnet and a published security review are on the roadmap. The
+  security review is an open
+  [community review with a bug bounty](QSDM/docs/docs/COMMUNITY_REVIEW.md);
+  no independent audit has been completed, and a professional audit remains
+  welcome. Until those gates close, treat the chain as a pilot, not a mainnet
   (see [`TREASURY_POLICY.md` §9](QSDM/docs/docs/TREASURY_POLICY.md#9-mainnet-release-gates)).
 - Max supply is 90,000,000 CELL, all from mining. There is no genesis
   treasury and no premine of any kind. Transaction fees are burned (credited
@@ -103,6 +106,7 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
 - **Code signing policy:** [`CODE_SIGNING_POLICY.md`](CODE_SIGNING_POLICY.md)
 - **Privacy policy:** [`PRIVACY.md`](PRIVACY.md)
 - **Security reporting:** [`SECURITY.md`](SECURITY.md)
+- **Bug bounty (proposed rewards) and community review:** [`BUG_BOUNTY.md`](QSDM/docs/docs/BUG_BOUNTY.md), [`COMMUNITY_REVIEW.md`](QSDM/docs/docs/COMMUNITY_REVIEW.md)
 
 > **New?** The operator wiki answers the three questions every new node
 > operator asks: *do I need an NVIDIA GPU, do I need a paid NGC plan, and

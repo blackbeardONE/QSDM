@@ -133,6 +133,8 @@ See [Signed transfers](V040_WALLET_SEND_DESIGN.md) and
   validators. Multi-validator BFT voting is the next step and has not started
   publicly.
 - **Independent external audit.** None has been completed. The
-  [security review](SECURITY_AUDIT.md) is a self-assessment.
+  [security review](SECURITY_AUDIT.md) is a self-assessment. Review now runs as
+  an open [community review with a bug bounty](COMMUNITY_REVIEW.md), which is
+  not an audit; a professional audit remains welcome.
 
 See the [Roadmap](ROADMAP.md) and [Security model](SECURITY_MODEL.md).

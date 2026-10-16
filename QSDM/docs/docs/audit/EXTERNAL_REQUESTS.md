@@ -1,5 +1,14 @@
 # External-engagement requests — index
 
+> [!NOTE]
+> **Update 2026-10-17 (owner decision):** no paid audit firm is being engaged
+> for `mining-01`. Security review now runs as an open
+> [community review with a bug bounty](../COMMUNITY_REVIEW.md). This is not an
+> independent audit, and no independent audit has been completed. A
+> professional audit remains welcome. The `mining-01` row stays `pending`
+> until the owner decides what evidence closes it (see
+> [Community review §8](../COMMUNITY_REVIEW.md#8-relation-to-the-audit-checklist-and-mainnet-gates)).
+
 > Status board for the four wall-clock-blocked audit rows. These rows
 > cannot be flipped from `pending` to `passed` by in-tree code or
 > docs alone — they require an external party (an auditor, counsel,
@@ -25,7 +34,7 @@
 
 | Row | Severity | Wrapper | Engagement state | Target close |
 |-----|----------|---------|------------------|--------------|
-| `mining-01` | critical | [`MINING_AUDITOR_RFP.md`](./MINING_AUDITOR_RFP.md) | Drafted, awaiting project-lead sign-off + distribution list | T+14 weeks from kickoff |
+| `mining-01` | critical | [`COMMUNITY_REVIEW.md`](../COMMUNITY_REVIEW.md) (the earlier [`MINING_AUDITOR_RFP.md`](./MINING_AUDITOR_RFP.md) is not being sent) | Open community review and [bug bounty](../BUG_BOUNTY.md) published as a proposal 2026-10-17; bounty tiers awaiting owner confirmation; no reviews logged yet | Owner to define the closing evidence |
 | `tok-01` | critical | [`COUNSEL_BRIEF_TOKENOMICS.md`](./COUNSEL_BRIEF_TOKENOMICS.md) | Drafted, awaiting project-lead engagement of counsel | T+8 weeks from engagement-letter execution |
 | `mining-05` | medium | [`TESTNET_LAUNCH_PLAN.md`](./TESTNET_LAUNCH_PLAN.md) | Plan drafted; faucet + leaderboard + announcement still to build | T+14 days from public launch |
 | `rebrand-03` | medium | [`TRADEMARK_FILING_INTAKE.md`](./TRADEMARK_FILING_INTAKE.md) | Drafted, awaiting project-lead engagement of trademark counsel | T+18 months for first-tier registration |
@@ -112,12 +121,18 @@ wrapper moves states.
 | 2026-05-16 | all four | wrappers drafted under `QSDM/docs/docs/audit/` |
 | 2026-05-18 | (board-level) | total-row count refreshed from 85 → 86 after `infra-04` (RFC 9116 security.txt) was added 2026-05-17 and pre-flipped to passed; the four wall-clock-blocked rows tracked here are unchanged. Score-impact analysis above updated from 95.29% (81/85) baseline to 95.35% (82/86) and the "all four close" target updated from 85/85 to 86/86. No engagement-state changes. |
 | 2026-05-18 | (board-level) | second total-row count refresh of the day, 86 → 87 after `infra-05` (Sitemap lastmod freshness contract, script-enforced) was added in commit `80c7faf` and pre-flipped to passed. The four wall-clock-blocked rows tracked here are again unchanged. Score-impact analysis above updated from 95.35% (82/86) baseline to 95.40% (83/87) and the "all four close" target updated from 86/86 to 87/87. No engagement-state changes. |
+| 2026-10-17 | `mining-01` | Owner decision: no paid audit firm. Replaced by the open [community review](../COMMUNITY_REVIEW.md) and [bug bounty](../BUG_BOUNTY.md) (rewards proposed, owner to confirm). The RFP is not sent. Row stays `pending`; a professional audit remains welcome. |
 | (next) | | (to be filled) |
 
 ## Related artefacts
 
-- [`AUDIT_PACKET_MINING.md`](../AUDIT_PACKET_MINING.md) — technical
-  reading guide for the `mining-01` auditor.
+- [`COMMUNITY_REVIEW.md`](../COMMUNITY_REVIEW.md) — current review scope,
+  reproducible build, checklists and public review log for `mining-01`.
+- [`BUG_BOUNTY.md`](../BUG_BOUNTY.md) — scope, severity, proposed rewards and
+  safe harbour.
+- [`AUDIT_PACKET_MINING.md`](../AUDIT_PACKET_MINING.md) — earlier (pre-v2)
+  technical reading guide for the `mining-01` auditor; superseded by the
+  community review scope.
 - [`CELL_TOKENOMICS.md`](../CELL_TOKENOMICS.md) — normative
   tokenomics reference for the `tok-01` counsel.
 - [`MINING_PROTOCOL.md`](../MINING_PROTOCOL.md) — normative protocol

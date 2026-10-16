@@ -1,5 +1,13 @@
 # Request for Proposal — QSDM mining-protocol security audit
 
+> [!NOTE]
+> **Not being sent (owner decision 2026-10-17).** QSDM is not engaging a paid
+> audit firm for now. Security review runs as an open
+> [community review with a bug bounty](../COMMUNITY_REVIEW.md), which reuses
+> the October 2026 audit scope. That is not an independent audit, and no
+> independent audit has been completed. This RFP is kept for the record and in
+> case a firm or sponsor offers a professional audit, which remains welcome.
+
 > **Status:** Draft engagement letter for external security firms. Companion
 > to the technical packet at
 > [`AUDIT_PACKET_MINING.md`](../AUDIT_PACKET_MINING.md) which is the

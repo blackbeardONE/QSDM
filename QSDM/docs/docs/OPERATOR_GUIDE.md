@@ -8,7 +8,9 @@
 > **Scope.** Public pilot network (pre-mainnet) today, run by a single
 > block producer during recovery. Mainnet only after the gates in
 > [`TREASURY_POLICY.md` §9](./TREASURY_POLICY.md#9-mainnet-release-gates)
-> close, including an independent external audit. This
+> close, including a published security review (today an open
+> [community review with a bug bounty](./COMMUNITY_REVIEW.md); no
+> independent audit has been completed). This
 > guide never promises mainnet earnings; both difficulty and the block
 > reward are moving targets documented in
 > [`CELL_TOKENOMICS.md`](./CELL_TOKENOMICS.md). For the live state of the

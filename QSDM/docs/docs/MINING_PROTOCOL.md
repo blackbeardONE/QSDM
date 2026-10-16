@@ -311,7 +311,7 @@ A QSDM mining implementation is conformant iff all the following are true:
 
 ## 13. Open questions deferred to audit (Phase 6)
 
-These items are **out of scope** for Phase 4 implementation and must be answered by the external audit before mainnet Cell emission is unlocked:
+These items are **out of scope** for Phase 4 implementation and must be answered by the security review before mainnet Cell emission is unlocked. The current path is the open [community review](COMMUNITY_REVIEW.md); a professional audit remains welcome:
 
 1. Is SHA3-256 the correct choice given hardware SHA3 extensions on Ampere+? Could Keccak-f[1600] directly save 20% on kernel time without losing standards coverage?
 2. Is 2 GiB DAG still ASIC-defeating in 2026? Evidence from the Ravencoin KawPow operational record suggests yes, but the audit should confirm against the latest Bitmain disclosures.

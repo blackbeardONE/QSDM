@@ -213,8 +213,10 @@ QSDM is not currently under any specific regulatory deadline. The
 deliverable is gated by the audit-row `tok-01` blocking mainnet
 launch, which is itself gated by:
 
-- The mining-protocol audit under audit row `mining-01`
-  (`MINING_AUDITOR_RFP.md` — currently being shortlisted).
+- The mining-protocol security review under audit row `mining-01`. Since
+  2026-10-17 this is an open community review with a bug bounty
+  (`COMMUNITY_REVIEW.md`), not a paid audit firm; no independent audit has
+  been completed.
 - The incentivized testnet under audit row `mining-05`.
 
 A realistic target for counsel's opinion letter is **T+8 weeks** from

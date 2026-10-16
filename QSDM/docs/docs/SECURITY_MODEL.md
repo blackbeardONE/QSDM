@@ -21,7 +21,7 @@ network see [Network status](NETWORK_STATUS.md).
 | Mining | Enrollment needs a signed enrollment and a 10 CELL bond; proofs carry NVIDIA attestation; duplicate proofs and nonces are rejected durably | Consumer-GPU attestation (`nvidia-hmac-v1`) is an economic control tied to the enrollment and its bond, not a hardware proof |
 | Software downloads | QSDM Hive releases are signed with the v2 release key and checked by Hive before updating | You trust the release key holder; the previous key was rotated in 2026 |
 | Public API | Read endpoints are public; admin and certificate routes are not exposed; write routes are limited during recovery | Rate limits and nginx rules run on infrastructure operated by the project |
-| Review | An internal, self-maintained [security review](SECURITY_AUDIT.md) | No independent external audit yet |
+| Review | An internal, self-maintained [security review](SECURITY_AUDIT.md); an open [community review](COMMUNITY_REVIEW.md) with a [bug bounty](BUG_BOUNTY.md) | No independent audit has been completed; community review is not an audit |
 
 ## Keys and wallets
 
@@ -115,4 +115,7 @@ network see [Network status](NETWORK_STATUS.md).
 
 Please report security issues privately as described in the
 [security policy](https://github.com/blackbeardONE/QSDM/blob/main/SECURITY.md).
-Do not open a public issue for a vulnerability.
+Do not open a public issue for a vulnerability. The [bug bounty](BUG_BOUNTY.md)
+sets out the scope, the rules (test on a local node, never against other
+users' funds or the live producer), the safe harbour and the proposed
+rewards.
