@@ -11,12 +11,28 @@ funds, mining identities, treasury operations, or wallet recovery.
 Do not open a public issue containing exploit details, credentials, private
 keys, wallet backups, or personal information. Use this repository's GitHub
 Security tab to submit a private vulnerability report. If private reporting is
-unavailable, contact the repository owner through GitHub without including the
-sensitive details until a private channel is established.
+unavailable, email `admin@qsdm.tech` (the second contact in
+[`security.txt`](https://qsdm.tech/.well-known/security.txt)) or contact the
+repository owner through GitHub, without including the sensitive details until
+a private channel is established.
 
 Include the affected version, component, reproduction conditions, impact, and
 the smallest safe proof needed to validate the report. Never test against
 wallets, nodes, or accounts you do not own or have explicit permission to use.
+
+## Bug bounty and community review
+
+The [bug bounty](QSDM/docs/docs/BUG_BOUNTY.md) sets out the scope, severity
+tiers, rules of engagement (use a local node; no testing against other users'
+funds; no denial of service against the live producer), safe harbour,
+disclosure timeline (90 days) and payout process. The reward tiers and a
+50,000 CELL pool were confirmed by the owner on 17 October 2026; rewards are
+paid from the owner's own mined CELL by signed transfers and never minted.
+
+Security review runs as an open
+[community review](QSDM/docs/docs/COMMUNITY_REVIEW.md) with a public review
+log. It is not an independent professional audit, and no independent audit has
+been completed. A professional audit remains welcome.
 
 ## Repository secrecy boundary
 

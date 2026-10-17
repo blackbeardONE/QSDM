@@ -146,7 +146,11 @@ Before a mainnet declaration, QSDM still needs all of the following:
    every historic development credit. If the manifest cannot reach a "ready"
    state, the fallback is an audited clean genesis under a new policy
    version.
-5. Complete an independent economic, consensus, and custody audit.
+5. Complete and publish a security review of economics, consensus and
+   custody, with its findings fixed. Owner decision 2026-10-17: the path is
+   the open [community review and bug bounty](COMMUNITY_REVIEW.md) instead of a
+   paid audit firm. An independent professional audit remains welcome. No
+   independent audit has been completed.
 
 Until these gates close, describe the network as a pilot network (pre-mainnet), not a
 trust-minimized mainnet.

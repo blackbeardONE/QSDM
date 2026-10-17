@@ -8,13 +8,15 @@
 > `hardened-legacy-20261014-d7ffcd4-hl2-edge-go1269-ids` (see [Network status](NETWORK_STATUS.md)).
 
 **Date:** May 2026 (Initial: December 2024)
-**Status:** Hardening Pass Complete — independent external audit (not yet done) recommended
+**Status:** Hardening Pass Complete — no independent audit has been completed; security review continues as an open [community review](COMMUNITY_REVIEW.md)
 **Reviewer:** QSDM project (internal)
 **Target version:** v0.4.2 (historical)
 
 > **Scope note:** this is an internal project security review, not an independent
-> third-party audit. An independent economic, consensus and custody audit is still a
+> third-party audit. A published economic, consensus and custody review is still a
 > mainnet gate (see [Treasury Policy §9](TREASURY_POLICY.md#9-mainnet-release-gates)).
+> The current path is the open [community review and bug bounty](COMMUNITY_REVIEW.md);
+> a professional audit remains welcome.
 
 ---
 
@@ -631,7 +633,9 @@ Subsequent POST/PUT/DELETE/PATCH (cookie-session callers):
 1. ✅ Review this audit with development team
 2. ✅ Prioritise fixes based on severity
 3. ✅ Implement fixes starting with critical issues
-4. **Independent external audit (not yet done)** after this hardening pass
+4. **Open community review and bug bounty** after this hardening pass (see
+   [Community review](COMMUNITY_REVIEW.md); no independent audit has been
+   completed, and a professional audit remains welcome)
 5. **Schedule regular audits** (quarterly recommended)
 6. **Wire alertmanager rules** from the `qsdm_security_*` counter thresholds in [MED-8](#med-8-missing-security-monitoring)
 
@@ -650,6 +654,6 @@ Subsequent POST/PUT/DELETE/PATCH (cookie-session callers):
 ---
 
 **Report Status:** Hardening Pass Complete
-**Next Review:** Independent external audit (not yet done) recommended
+**Next Review:** Open [community review](COMMUNITY_REVIEW.md) (not an independent audit)
 
 *This audit is a living document and is updated as fixes are implemented. The full list of source files touched by the May 2026 hardening pass is tracked in the v0.4.2 release evidence.*

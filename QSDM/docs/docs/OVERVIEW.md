@@ -37,7 +37,8 @@ Details: [CELL tokenomics](CELL_TOKENOMICS.md).
 - Block production is run by the project during recovery. Consensus messages
   must be ML-DSA signed since block 827,000, but there is still only one
   producer; independent validators are on the [Roadmap](ROADMAP.md).
-- No independent external audit has been completed yet.
+- No independent external audit has been completed yet. Security review runs
+  as an open [community review with a bug bounty](COMMUNITY_REVIEW.md).
 
 Read the [Security model](SECURITY_MODEL.md) before you store value on the
 pilot network.
