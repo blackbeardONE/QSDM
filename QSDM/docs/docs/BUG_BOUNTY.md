@@ -1,14 +1,12 @@
 # Bug bounty
 
 > [!IMPORTANT]
-> **Proposed program. Reward amounts are proposed; the owner has to confirm them.**
+> **Reward tiers and a 50,000 CELL pool confirmed by the owner on 17 October 2026.**
 > This page sets out QSDM's bug bounty for good-faith security research. It is
 > part of the open [community security review](COMMUNITY_REVIEW.md), which is
 > the project's current path in place of a paid audit firm (owner decision,
 > 17 October 2026). **No independent security audit of QSDM has been
-> completed**, and no bounty has been paid yet. Until the owner confirms the
-> reward tiers below, reports are still welcome and are handled under this
-> policy, but the amounts are not a commitment.
+> completed**, and no bounty has been paid yet.
 
 QSDM is a public pilot network (pre-mainnet) with a single block producer. See
 [Network status](NETWORK_STATUS.md) and [Security model](SECURITY_MODEL.md) for
@@ -168,13 +166,13 @@ Informational reports (best-practice suggestions with no demonstrated impact)
 are welcome as public issues once you are sure they are not exploitable; they
 are credited in the review log but carry no reward.
 
-## 5. Rewards (proposed, owner to confirm)
+## 5. Rewards
 
-> [!WARNING]
-> **Proposed tiers, not yet confirmed by the owner.** The amounts below are a
-> proposal. They become binding only when the owner confirms them on this page.
+> [!NOTE]
+> **Confirmed by the owner on 17 October 2026:** the tiers below and a total
+> pool of **50,000 CELL**.
 
-| Severity | Proposed reward |
+| Severity | Reward |
 |---|---|
 | Critical | up to **20,000 CELL** |
 | High | up to **5,000 CELL** |
@@ -189,9 +187,9 @@ are credited in the review log but carry no reward.
 - **Amount within a tier.** Set by the demonstrated impact on the live
   configuration, the quality of the report and proof of concept, and whether a
   fix is suggested.
-- **Budget.** The owner will publish the total CELL set aside for the program
-  when confirming the tiers. If that pool runs out, the program pauses with
-  notice on this page; reports already accepted keep their award.
+- **Pool.** The total set aside for the program is **50,000 CELL**. If the
+  pool runs out, the program pauses with notice on this page; reports already
+  accepted keep their award.
 - **Value.** CELL on the pilot network has no promised value, and the project
   does not sell or buy it. A reward is not an investment.
 - **Eligibility.** You must follow §2, be the first reporter (below), and not be

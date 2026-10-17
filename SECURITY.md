@@ -25,9 +25,9 @@ wallets, nodes, or accounts you do not own or have explicit permission to use.
 The [bug bounty](QSDM/docs/docs/BUG_BOUNTY.md) sets out the scope, severity
 tiers, rules of engagement (use a local node; no testing against other users'
 funds; no denial of service against the live producer), safe harbour,
-disclosure timeline (90 days) and payout process. Reward amounts are proposed
-and await the owner's confirmation; rewards are paid from the owner's own mined
-CELL and never minted.
+disclosure timeline (90 days) and payout process. The reward tiers and a
+50,000 CELL pool were confirmed by the owner on 17 October 2026; rewards are
+paid from the owner's own mined CELL by signed transfers and never minted.
 
 Security review runs as an open
 [community review](QSDM/docs/docs/COMMUNITY_REVIEW.md) with a public review

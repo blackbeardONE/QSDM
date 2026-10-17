@@ -106,7 +106,7 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
 - **Code signing policy:** [`CODE_SIGNING_POLICY.md`](CODE_SIGNING_POLICY.md)
 - **Privacy policy:** [`PRIVACY.md`](PRIVACY.md)
 - **Security reporting:** [`SECURITY.md`](SECURITY.md)
-- **Bug bounty (proposed rewards) and community review:** [`BUG_BOUNTY.md`](QSDM/docs/docs/BUG_BOUNTY.md), [`COMMUNITY_REVIEW.md`](QSDM/docs/docs/COMMUNITY_REVIEW.md)
+- **Bug bounty (up to 20,000 CELL, 50,000 CELL pool) and community review:** [`BUG_BOUNTY.md`](QSDM/docs/docs/BUG_BOUNTY.md), [`COMMUNITY_REVIEW.md`](QSDM/docs/docs/COMMUNITY_REVIEW.md)
 
 > **New?** The operator wiki answers the three questions every new node
 > operator asks: *do I need an NVIDIA GPU, do I need a paid NGC plan, and

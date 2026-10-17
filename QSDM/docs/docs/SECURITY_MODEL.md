@@ -117,5 +117,5 @@ Please report security issues privately as described in the
 [security policy](https://github.com/blackbeardONE/QSDM/blob/main/SECURITY.md).
 Do not open a public issue for a vulnerability. The [bug bounty](BUG_BOUNTY.md)
 sets out the scope, the rules (test on a local node, never against other
-users' funds or the live producer), the safe harbour and the proposed
-rewards.
+users' funds or the live producer), the safe harbour and the rewards
+(confirmed by the owner on 17 October 2026; 50,000 CELL pool).

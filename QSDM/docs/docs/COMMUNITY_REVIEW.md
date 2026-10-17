@@ -24,7 +24,7 @@ review log.
 | Who can take part | Anyone. Reviews can be anonymous |
 | How to report a vulnerability | Privately, as described in the [bug bounty](BUG_BOUNTY.md#1-how-to-report) and [`SECURITY.md`](https://github.com/blackbeardONE/QSDM/blob/main/SECURITY.md) |
 | How to publish review notes | §6 |
-| Rewards | Proposed CELL tiers, paid from the owner's own mined holdings and never minted ([bug bounty §5](BUG_BOUNTY.md#5-rewards-proposed-owner-to-confirm); owner to confirm) |
+| Rewards | CELL tiers up to 20,000 CELL and a 50,000 CELL pool, confirmed by the owner on 17 October 2026; paid from the owner's own mined holdings by signed transfers and never minted ([bug bounty §5](BUG_BOUNTY.md#5-rewards)) |
 
 ## 2. Review scope
 
@@ -278,7 +278,7 @@ has been reviewed.
 
 | ID | Date | Who | Component(s) | Commit / release | Type | Result | Link |
 |---|---|---|---|---|---|---|---|
-| R0 | 2026-10-17 | QSDM project | All | `8d7b159` (proposed) | Program | Community review and bug bounty published as a proposal. Review export with build and follower-release tooling: **not yet published**. Bounty tiers: **owner to confirm** | This page |
+| R0 | 2026-10-17 | QSDM project | All | `8d7b159` (proposed) | Program | Community review and bug bounty published. Bounty tiers and a 50,000 CELL pool confirmed by the owner on 17 October 2026. Review export with build and follower-release tooling: **not yet published** | This page |
 
 No external reviews, build attestations or bounty reports have been logged yet.
 
