@@ -36,7 +36,8 @@ Details: [CELL tokenomics](CELL_TOKENOMICS.md).
   transfers need your ML-DSA-87 signature.
 - Block production is run by the project during recovery. Consensus messages
   must be ML-DSA signed since block 827,000, but there is still only one
-  producer; independent validators are on the [Roadmap](ROADMAP.md).
+  producer; block production by miners is on the [Roadmap](ROADMAP.md), and
+  anyone can [run a full node](RUN_A_FULL_NODE.md) that verifies every block.
 - No independent external audit has been completed yet. Security review runs
   as an open [community review with a bug bounty](COMMUNITY_REVIEW.md).
 

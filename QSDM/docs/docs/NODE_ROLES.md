@@ -1,5 +1,10 @@
 # Node roles — Validator vs. Miner
 
+> **Update (2026-10-19):** QSDM no longer plans a set of independent BFT validators. Block production will
+> move to miners, in stages; it is designed, not built (see the [Roadmap](ROADMAP.md)). The validator role
+> below is the node type of the single producer, and the target design as it was. To run a node that
+> verifies every block today, see [Run a full node](RUN_A_FULL_NODE.md).
+
 QSDM has exactly **two** node roles. This is a deliberate architectural
 decision ratified in the Major Update (see
 [`REBRAND_NOTES.md`](./REBRAND_NOTES.md)): one role owns consensus, the

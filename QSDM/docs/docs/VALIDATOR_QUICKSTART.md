@@ -1,6 +1,6 @@
 # Validator Quickstart — VPS operator runbook
 
-> **Status (Oct 2026):** The public pilot network (pre-mainnet) is run by a single block producer during recovery. Independent validators cannot join consensus yet. This page describes the target setup for testing and private networks.
+> **Status (Oct 2026):** The public pilot network (pre-mainnet) is run by a single block producer during recovery. Independent validators cannot join consensus, and since 2026-10-19 QSDM no longer plans a validator set: block production will move to miners, in stages (see the [Roadmap](ROADMAP.md)). To run a node that verifies every block, see [Run a full node](RUN_A_FULL_NODE.md). This page describes the target setup for testing and private networks.
 >
 > The live network currently runs an untagged hardened-legacy build (reported by `GET https://api.qsdm.tech/api/v1/status`), not a tagged Core release. A node built from a tagged release may not follow the producer. See [Network status](NETWORK_STATUS.md).
 

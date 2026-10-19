@@ -18,6 +18,10 @@ ready and is announced on [Network status](NETWORK_STATUS.md) and in the
 - QSDM Hive 1.4.22 for Windows and Linux, signed with the rotated v2 release key,
   with automatic owner signatures on mining proofs and Proof-of-Entanglement
   parents on every transfer. Enrolled miners mine in 7-day canary windows.
+- Mining is open to every enrolled miner since 2026-10-19 (enrollment reopened on
+  2026-10-17); every proof carries the miner's operator signature.
+- Anyone can run a full node that verifies every block: a signed full-node release,
+  a verified chain snapshot and HTTP sync ([Run a full node](RUN_A_FULL_NODE.md)).
 - Wallet transactions signed with ML-DSA-87.
 
 ## Done in October 2026
@@ -36,17 +40,17 @@ Each item is a consensus rule on the live chain. Details and dates are in
 
 | Step | What it means for you |
 |---|---|
-| **Reopen mining enrollment** | New NVIDIA GPUs can enroll through Hive again. Today only enrolled miners can mine, in 7-day windows. |
 | **Retire Ed25519** | The generic peer-to-peer transaction-gossip verifier stops accepting Ed25519 signatures. That code path cannot be reached on the live chain today (the producer has no transaction gossip ingress), but it still exists in the code. |
-| **Independent validators** | Validators run independently of the project, voting with signed consensus messages. Not started publicly. |
 | **Standby producer** | A second, independently run producer that can take over block production. |
+| **Block production by miners** | Miners produce blocks, in stages, instead of a set of independent validators (decision of 2026-10-19). The single producer's role ends with the last stage. Designed, not built; each stage is a published network upgrade with at least 7 days' notice. |
 
 ## Mainnet gates
 
 Mainnet is declared only after all of these are done (see
 [Treasury policy §9](TREASURY_POLICY.md#9-mainnet-release-gates)):
 
-1. Multiple independent validators in production.
+1. Decentralised block production: the miners-produce-blocks plan in production. (Before the
+   decision of 2026-10-19 this gate read "multiple independent validators in production".)
 2. Signed consensus enforced (done: from block 827,000).
 3. The published mainnet migration manifest and fork height
    ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md): mainnet continues the
