@@ -89,6 +89,7 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
 
 - **Feature summary (current capabilities):** [`QSDM/docs/docs/Feature Summary.md`](QSDM/docs/docs/Feature%20Summary.md)
 - **Operator wiki (end-to-end):** [`QSDM/docs/docs/OPERATOR_GUIDE.md`](QSDM/docs/docs/OPERATOR_GUIDE.md) ⭐ start here if you are new
+- **Run a full node (verify every block yourself):** [`QSDM/docs/docs/RUN_A_FULL_NODE.md`](QSDM/docs/docs/RUN_A_FULL_NODE.md) — signed release, verified snapshot, HTTP sync; values to pin on [qsdm.tech/fullnode.html](https://qsdm.tech/fullnode.html)
 - **Download Hive:** [qsdm.tech/download.html](https://qsdm.tech/download.html)
   (Hive 1.4.21 and later: [qsdm.tech/downloads/hive-v2/](https://qsdm.tech/downloads/hive-v2/),
   signed with the v2 release key pinned in
