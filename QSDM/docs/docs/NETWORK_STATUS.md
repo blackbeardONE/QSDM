@@ -123,9 +123,10 @@ These parts are designed or implemented in the code but are not switched on for
 the live network. Documents that describe them are marked **Design** in these
 docs.
 
-- Multiple independent validators and BFT finality between them. Today one
-  producer signs every consensus message; there are no independent
-  validators yet.
+- Multiple independent validators and BFT finality between them. This is in
+  the code but no longer planned: since 2026-10-19 the plan is for miners to
+  produce blocks, in stages (see the [Roadmap](ROADMAP.md)). Today one
+  producer signs every consensus message.
 - Retirement of the Ed25519 code path in the generic peer-to-peer
   transaction-gossip verifier. It cannot be reached on the live chain today
   (the producer has no transaction gossip ingress), but the code still exists.

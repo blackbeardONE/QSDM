@@ -35,8 +35,9 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
   `/api/v1/status`). See
   [`PROOF_OF_ENTANGLEMENT.md`](QSDM/docs/docs/PROOF_OF_ENTANGLEMENT.md).
 - GPU mining (NVIDIA today) is open to enrolled QSDM Hive miners.
-- Consensus signing, independent validators, a published migration manifest
-  for mainnet and a published security review are on the roadmap. The
+- Block production by miners (in place of the earlier plan for independent
+  validators), a published migration manifest for mainnet and a published
+  security review are on the roadmap. The
   security review is an open
   [community review with a bug bounty](QSDM/docs/docs/COMMUNITY_REVIEW.md);
   no independent audit has been completed, and a professional audit remains
