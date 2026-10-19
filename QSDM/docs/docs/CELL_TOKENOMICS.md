@@ -1,7 +1,7 @@
 # Cell (CELL) — Tokenomics
 
 > **Status:** [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md): **ratified by
-> owner 2026-10-16, awaiting signature and counsel review.** Maximum supply
+> owner 2026-10-16 and approved in writing 2026-10-19; counsel review pending.** Maximum supply
 > 90,000,000 CELL, all from mining; no genesis treasury (the earlier
 > 10,000,000 CELL treasury proposal is withdrawn); transaction fees are burned
 > (credited to no account) until independent validators produce blocks;
@@ -291,4 +291,5 @@ and "yield" are forbidden in all project communications (see
 |---|---|
 | Major Update Phase 3.1 | Document created; numbers adopted from Major Update §4.1–§4.4 with Phase 0 "ratified per recommendation, awaiting counsel review" status. |
 | 2026-10-16 | [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) ratified by owner, awaiting signature and counsel review: 90,000,000 CELL hard cap, all from mining; 10,000,000 CELL treasury proposal withdrawn; fees burned until independent validators; mainnet continues the current chain via a published migration. |
+| 2026-10-19 | [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) approved by the owner in writing; signature block filled in with the policy text's SHA-256 (`b6c18897...`). Counsel review is still pending, so `tok-01` stays `pending`. |
 

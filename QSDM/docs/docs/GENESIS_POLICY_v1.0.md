@@ -40,6 +40,7 @@ written opinion (D5-a).
 
 
 ---
-Signature block (owner): name ______, role ______, date ______
-SHA-256 of the text above this line: computed by `sed '/^---$/,$d' GENESIS_POLICY_v1.0.md | sha256sum`
+Signature block (owner): name Joedel Lopez Dalioan, role project owner, date 2026-10-19
+SHA-256 of the text above this line: b6c1889717afe45d52f1e89b8fee6fd27d8a40a5cf9d169915b378f34d0d3b5c, computed by `sed '/^---$/,$d' GENESIS_POLICY_v1.0.md | sha256sum`
 Signature: detached ML-DSA-87 over that hash with the owner's offline key, or an owner-signed git commit/tag (fallback).
+Approval record: the owner approved this text in writing on 2026-10-19. The detached signature has not been made yet; when it is, it will be published next to this file.
