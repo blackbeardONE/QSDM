@@ -46,7 +46,7 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
   treasury and no premine of any kind. Transaction fees are burned (credited
   to no account) until independent validators produce blocks. See
   [`GENESIS_POLICY_v1.0.md`](QSDM/docs/docs/GENESIS_POLICY_v1.0.md)
-  (ratified by the owner, awaiting signature and counsel review).
+  (ratified and approved in writing by the owner; counsel review pending).
 
 ### What is running (October 2026)
 

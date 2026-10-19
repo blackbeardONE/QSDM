@@ -13,7 +13,7 @@
 > opinion-letter date and counsel firm.
 >
 > **Policy under review:** [Genesis Policy v1.0](../GENESIS_POLICY_v1.0.md),
-> ratified by the owner on 2026-10-16 and awaiting signature. It sets a
+> ratified by the owner on 2026-10-16 and approved in writing on 2026-10-19. It sets a
 > 90,000,000 CELL hard cap, all from mining, with no genesis treasury, and
 > withdraws the earlier 10,000,000 CELL treasury proposal. `tok-01` stays
 > `pending` until counsel's written opinion is received.
