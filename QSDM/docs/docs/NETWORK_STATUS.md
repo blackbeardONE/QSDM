@@ -8,7 +8,9 @@ examples from October 2026, and the live values are always in the status API.
 > [!IMPORTANT]
 > Treat balances and history as pilot data. Mainnet needs the release gates in
 > [Treasury policy §9](TREASURY_POLICY.md#9-mainnet-release-gates) to close
-> first, including independent validators and an independent external audit.
+> first, including independent validators and a published security review
+> (today an open [community review with a bug bounty](COMMUNITY_REVIEW.md);
+> no independent audit has been completed).
 
 ## At a glance
 
@@ -24,7 +26,7 @@ examples from October 2026, and the live values are always in the status API.
 | Mining | NVIDIA GPUs today, through QSDM Hive 1.4.22 (protocol v2, enrolled miners). See [Mining today](MINING_TODAY.md). |
 | Supply | Max supply **90,000,000 CELL**, all from mining. No genesis treasury and no premine ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md)). Transaction fees are burned (credited to no account). |
 | Release | `hardened-legacy-20261014-d7ffcd4-hl2-edge-go1269-ids`, live since 15 October 2026, 19:59 UTC (see [What is running](#what-is-running)) |
-| Independent audit | Not done yet. The [internal security review](SECURITY_AUDIT.md) is a self-maintained checklist. |
+| Independent audit | None completed. Security review is an open [community review](COMMUNITY_REVIEW.md) with a [bug bounty](BUG_BOUNTY.md) (rewards confirmed by the owner on 17 October 2026; 50,000 CELL pool); a professional audit remains welcome. The [internal security review](SECURITY_AUDIT.md) is a self-maintained checklist. |
 
 ## Check it yourself
 
@@ -129,7 +131,9 @@ docs.
   (the producer has no transaction gossip ingress), but the code still exists.
 - The published mainnet migration manifest and fork height
   ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) §5).
-- An independent external security audit.
+- A published security review with its findings fixed. The current path is
+  the [community review and bug bounty](COMMUNITY_REVIEW.md); no independent
+  audit has been completed.
 
 See the [Roadmap](ROADMAP.md) for the order of work and
 [Security model](SECURITY_MODEL.md) for what this means for your funds.

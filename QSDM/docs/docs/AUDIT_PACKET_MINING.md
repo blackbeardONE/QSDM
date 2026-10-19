@@ -1,5 +1,12 @@
 # AUDIT_PACKET_MINING — external review packet for `mining-01`
 
+> [!NOTE]
+> **Superseded.** This packet describes the pre-v2 `pkg/mining` reference code
+> and does not cover the code that runs the live chain. The current review
+> scope, build instructions and checklists are in
+> [Community review](COMMUNITY_REVIEW.md). No independent audit has been
+> completed.
+
 > **Status:** Draft for external auditor consumption. Updates are appended via
 > PR with the `mining-audit` checklist label. **Not** a substitute for the
 > normative spec in [`MINING_PROTOCOL.md`](./MINING_PROTOCOL.md) — this
