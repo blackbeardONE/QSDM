@@ -17,7 +17,7 @@ examples from October 2026, and the live values are always in the status API.
 | Topic | Today |
 |---|---|
 | Stage | Pilot network (pre-mainnet) |
-| Block production | A **single block producer**. Anyone can run a full node that verifies every block itself ([Run a full node](RUN_A_FULL_NODE.md)); the producer does not accept peer-to-peer connections yet, so the status API reports `peers: 0`. |
+| Block production | A **single block producer**. Anyone can run a full node that verifies every block itself ([Run a full node](RUN_A_FULL_NODE.md)). Since 2 November 2026 the producer also accepts peer-to-peer (libp2p) connections on port 4001, with connection, stream and block-request limits (see [What is running](#what-is-running)); the status API's `peers` counts the peers connected to it. |
 | Block time | 10 second target |
 | Wallet transactions | Signed with **ML-DSA-87** (NIST FIPS 204, Cloudflare CIRCL) by Hive, the web wallet and `qsdmcli` |
 | Other signatures | **Ed25519 transactions are refused since 16 October 2026** (status API `ed25519_tx_accepted: false`): only ML-DSA-87 signed transactions reach the chain. CELL stream session keys still accept Ed25519 until a stream retirement height is set (`stream_ed25519_session_keys_retired: false`). |
@@ -116,6 +116,13 @@ The [explorer](https://qsdm.tech/explorer.html) and the
   `QSDM/source` in this repository; the release-only changes since rc1017
   (the peer-to-peer limits and the block-request budget) are not yet mirrored
   here. The other new features of the release candidates ship switched off.
+- **Peer-to-peer.** Since 2026-11-02 the producer accepts libp2p peers from
+  the internet on port 4001
+  (`/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`,
+  the host behind `api.qsdm.tech`), with connection and stream limits and the
+  block-request budget above; before that the port listened on the host only.
+  A full node does not need it: it follows the chain over HTTPS
+  ([Run a full node](RUN_A_FULL_NODE.md)).
 - **Upgrade history.** Every network upgrade, with its height, time and what
   users had to do, is listed in [Network upgrades](NETWORK_UPGRADES.md).
 - **Timeline.** The chain was paused on 2026-09-22 and restarted on 2026-09-27
