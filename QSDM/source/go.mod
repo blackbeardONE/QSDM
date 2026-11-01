@@ -7,7 +7,7 @@ replace github.com/wasmerio/wasmer-go-patched => ./wasmer-go-patched
 // replace github.com/open-quantum-safe/liboqs-go => ./liboqs-go-main // Removed - using liboqs via CGO
 
 require (
-	github.com/BurntSushi/toml v0.3.1
+	github.com/BurntSushi/toml v1.6.0
 	github.com/gocql/gocql v1.7.0
 	github.com/joho/godotenv v1.5.1
 	github.com/klauspost/compress v1.18.0
