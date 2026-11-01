@@ -98,6 +98,16 @@ attempt to retroactively enumerate that history.
 
 ### Changed
 
+- **2026-11-01: mining resumed, automatic mining windows, Genesis Policy v1.1.**
+  Mining was closed from 2026-10-22 19:56 UTC: the producer's shared host ran
+  out of disk space, the node stopped sealing blocks for 9 h 16 min to protect
+  its data, and the mining liveness rule froze mining as designed (the chain
+  resumed by itself). The ended window was audited (PASS, 0 findings, all
+  267,151 receipts) and mining reopened on 2026-11-01 07:33 UTC; each 7-day
+  window now renews automatically. Genesis Policy v1.1: the owner decided not
+  to engage counsel, and `tok-01` is closed by that decision (see
+  CELL_TOKENOMICS.md).
+
 - **Chain restart (2026-09-27).** The chain was stopped on 2026-09-22 and
   restarted with the unchanged deployed release on 2026-09-27, with a single
   block producer during recovery and a backup node following the chain.

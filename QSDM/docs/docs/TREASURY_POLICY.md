@@ -55,7 +55,7 @@ The max supply is 90,000,000 CELL, all from mining
 - Founder, insider, team, advisor, sale and airdrop allocations are 0 CELL.
 
 Any future proposal to add an allocation needs a new published policy version,
-a counsel opinion and the governance process, and it may never mint CELL on a
+the owner's written decision and the governance process, and it may never mint CELL on a
 chain that has already launched without it.
 
 Fund programs from legitimately mined CELL, protocol fee revenue approved by

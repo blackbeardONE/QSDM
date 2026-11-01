@@ -261,8 +261,8 @@ report:
 - NGC bundle verification internals → `trust-02`.
 - BFT quorum maths → separate consensus review already carried out by
   the Phase 0 cryptography consultant.
-- Tokenomics sign-off → `tok-01` (counsel & foundation, not an auditor
-  deliverable).
+- Tokenomics sign-off → `tok-01` (closed by the owner's decision of
+  2026-11-01, not an auditor deliverable).
 
 ## 9. Changelog
 
