@@ -18,6 +18,11 @@ upgrades harden that pilot network; they do not change its stage. See
 
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
+| 2026-11-01 07:33 | operations | Mining resumed after the 22 October - 1 November pause (the producer's host ran out of disk space); 7-day mining windows now renew automatically | No |
+| 2026-10-19 09:05 | mining window | Mining open to every enrolled miner (public mode); every proof must carry the owner's operator signature | **Yes**, miners need QSDM Hive 1.4.21 or newer |
+| 2026-10-18 06:38 | node release | Release candidate rc1017; its new features ship switched off (no consensus change) | No |
+| 2026-10-17 10:51 | enrollment | Miner enrollment reopened | Only new miners: enroll in Hive |
+| 2026-10-16 05:45 | node release | Ed25519 transactions retired: only ML-DSA-87 signed transactions are accepted | No (current wallets sign with ML-DSA-87) |
 | 2026-10-15 19:59 | node release | Reserved built-in task IDs; public signed task-action route opened | Only task publishers: built-in IDs are reserved |
 | 2026-10-13 13:21 | 833,800 | Relay-only settlement for paid edge tasks | No (paid resource work is an operator-only test) |
 | 2026-10-12 18:11 | 827,000 | Signed consensus enforced | No |
@@ -122,10 +127,9 @@ The same day a new 7-day mining window started for enrolled Hive miners; see
 
 ## Not yet
 
-- **Ed25519 retirement.** The generic peer-to-peer transaction-gossip verifier
-  code still accepts Ed25519. The producer runs without transaction gossip
-  ingress, so no Ed25519 transaction can reach the live chain today.
-  Retirement is planned.
-- **Independent validators.** The next step; not started publicly.
+- **Ed25519 for stream session keys.** Ed25519 transactions are refused since
+  2026-10-16 (`ed25519_tx_accepted: false`), but CELL stream session keys still
+  accept Ed25519 until a stream retirement height is set.
+- **Block production by miners (proof of work).** The next step (decision D1, 19 October 2026); not active yet.
 
 See the [Roadmap](ROADMAP.md).
