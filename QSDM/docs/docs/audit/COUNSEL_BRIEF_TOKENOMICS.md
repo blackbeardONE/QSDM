@@ -1,6 +1,6 @@
 # Counsel Brief — Cell (CELL) tokenomics sign-off
 
-> **Status:** Draft engagement brief for external legal counsel. Companion
+> **Status:** Not engaged: on 2026-11-01 the owner decided not to engage counsel ([Genesis Policy v1.1](../GENESIS_POLICY_v1.1.md)); kept for reference. Draft engagement brief for external legal counsel. Companion
 > to the technical reference at
 > [`CELL_TOKENOMICS.md`](../CELL_TOKENOMICS.md) which is the
 > *what-the-system-does* document. This brief is the

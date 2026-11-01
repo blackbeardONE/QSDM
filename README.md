@@ -46,8 +46,8 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
 - Max supply is 90,000,000 CELL, all from mining. There is no genesis
   treasury and no premine of any kind. Transaction fees are burned (credited
   to no account) until independent validators produce blocks. See
-  [`GENESIS_POLICY_v1.0.md`](QSDM/docs/docs/GENESIS_POLICY_v1.0.md)
-  (ratified and approved in writing by the owner; counsel review pending).
+  [`GENESIS_POLICY_v1.1.md`](QSDM/docs/docs/GENESIS_POLICY_v1.1.md)
+  (approved in writing by the owner; v1.1 of 2026-11-01 drops the counsel review).
 
 ### What is running (October 2026)
 

@@ -1,14 +1,14 @@
 # Cell (CELL) — Tokenomics
 
-> **Status:** [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md): **ratified by
-> owner 2026-10-16 and approved in writing 2026-10-19; counsel review pending.** Maximum supply
+> **Status:** [Genesis Policy v1.1](GENESIS_POLICY_v1.1.md): **ratified by
+> owner 2026-10-16 and approved in writing 2026-10-19; v1.1 (2026-11-01) drops the counsel review.** Maximum supply
 > 90,000,000 CELL, all from mining; no genesis treasury (the earlier
 > 10,000,000 CELL treasury proposal is withdrawn); transaction fees are burned
 > (credited to no account) until independent validators produce blocks;
 > mainnet continues the current chain through a published, deterministic
 > migration. Policy SHA-256, signature, migration manifest hash and fork
 > height: not yet published (they will be recorded here). Audit row `tok-01`
-> stays **pending** until counsel's written opinion is received.
+> is **closed by the owner's decision** of 2026-11-01 (no counsel engagement).
 >
 > A few code constants and tools outside the emission schedule still carry the
 > withdrawn treasury figure; aligning them is a separate, reviewed code change.
@@ -26,8 +26,8 @@
 
 This document is the normative reference for the Cell coin's supply,
 emission, and fee model. It is **not** a legal offering document, it is not
-an investment prospectus, and it is not a commitment until counsel has
-signed off. See §8 ("Legal posture") below.
+an investment prospectus, and it is not a commitment until the owner declares
+mainnet in writing. See §8 ("Legal posture") below.
 
 ---
 
@@ -67,7 +67,7 @@ There is no genesis treasury allocation and no treasury address in genesis.
 The earlier proposal (10,000,000 CELL minted at genesis and released over 48
 months to a multisig) is withdrawn by
 [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md). Any future proposal to add an
-allocation needs a new published policy version, a counsel opinion and the
+allocation needs a new published policy version, the owner's written decision and the
 governance process, and it may never mint CELL on a chain that has already
 launched without it. Program budgets (referral, onboarding, grants) are funded
 only from existing CELL; see the [Treasury Policy](TREASURY_POLICY.md).
@@ -273,11 +273,11 @@ allocations and does not provide market-making inventory.
 This document describes the intended fair-launch utility-token design: zero
 founder allocation, no genesis treasury, mining emission of the whole
 supply, and no project token sale. It is a technical and economic specification, not a
-legal conclusion. Counsel must review the implemented genesis, custody,
+legal conclusion. The owner reviews the implemented genesis, custody,
 distribution, marketing, and jurisdiction-specific obligations before a
-production launch.
+production launch (Genesis Policy v1.1: no counsel engagement, the owner's decision of 2026-11-01).
 
-This is a posture, not a guarantee. Counsel review is required before
+This is a posture, not a guarantee. The owner's written review is required before
 mainnet genesis and before any promotional language is published on
 `qsdm.tech` or elsewhere. The phrases "investment", "returns", "profit",
 and "yield" are forbidden in all project communications (see
@@ -292,4 +292,5 @@ and "yield" are forbidden in all project communications (see
 | Major Update Phase 3.1 | Document created; numbers adopted from Major Update §4.1–§4.4 with Phase 0 "ratified per recommendation, awaiting counsel review" status. |
 | 2026-10-16 | [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) ratified by owner, awaiting signature and counsel review: 90,000,000 CELL hard cap, all from mining; 10,000,000 CELL treasury proposal withdrawn; fees burned until independent validators; mainnet continues the current chain via a published migration. |
 | 2026-10-19 | [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) approved by the owner in writing; signature block filled in with the policy text's SHA-256 (`b6c18897...`). Counsel review is still pending, so `tok-01` stays `pending`. |
+| 2026-11-01 | [Genesis Policy v1.1](GENESIS_POLICY_v1.1.md): the owner decided not to engage counsel; the counsel opinion in clauses 1, 7 and 8 is replaced by the owner's written decision and `tok-01` is closed by it. Burn rule of the funder-removal migration decided: the 74 seed-faucet credits of 1,000 CELL each (74,000 CELL written straight into state in the faucet era and never moved) are burned; balances from mining rewards and signed transfers are kept. |
 
