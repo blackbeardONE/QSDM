@@ -60,7 +60,9 @@ network see [Network status](NETWORK_STATUS.md).
 ## Block production and consensus
 
 - Today one block producer creates every block, with a backup node that follows
-  the chain. The status API reports `peers: 0`.
+  the chain. Since 2 November 2026 its peer-to-peer port is public, with
+  connection, stream and block-request limits; the status API's `peers` counts
+  the connected peers.
 - That producer can, in principle, delay or leave out transactions. It cannot
   forge your ML-DSA-87 signature, so it cannot spend from your wallet.
 - Since block 827,000 (12 October 2026, 18:11 UTC) every BFT vote and

@@ -98,6 +98,13 @@ attempt to retroactively enumerate that history.
 
 ### Changed
 
+- **2026-11-02: public peer-to-peer on the producer.** The producer accepts
+  libp2p connections from the internet on port 4001
+  (`/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`)
+  with connection, stream and block-request limits; before, the port listened
+  on the host only. One restart; mining paused while it restarted. Full nodes
+  keep following the chain over HTTPS. No consensus change.
+
 - **2026-11-01: release rc1101.** The producer runs
   `hardened-legacy-20261101-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1101` since
   11:31 UTC (mining paused 11:17-11:33 UTC): Go 1.26.10 (GO-2026-6809) and

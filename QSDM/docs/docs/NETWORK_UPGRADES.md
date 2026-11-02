@@ -18,6 +18,7 @@ upgrades harden that pilot network; they do not change its stage. See
 
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
+| 2026-11-02 | operations | The producer accepts peer-to-peer (libp2p) connections on port 4001, with connection, stream and block-request limits; mining paused for one restart | No |
 | 2026-11-01 11:17 | node release | Release rc1101: the Go 1.26.10 security rebuild and a response budget for peer-to-peer block requests (no consensus change); mining paused 16 minutes | No |
 | 2026-11-01 07:33 | operations | Mining resumed after the 22 October - 1 November pause (the producer's host ran out of disk space); 7-day mining windows now renew automatically | No |
 | 2026-10-19 09:05 | mining window | Mining open to every enrolled miner (public mode); every proof must carry the owner's operator signature | **Yes**, miners need QSDM Hive 1.4.21 or newer |
@@ -30,6 +31,20 @@ upgrades harden that pilot network; they do not change its stage. See
 | 2026-10-11 13:18 | 816,600 | Proof-of-Entanglement enforced | **Yes**, if you send CELL with old software |
 | 2026-10-10 | Hive release | QSDM Hive 1.4.22 | **Yes**, Hive 1.4.20 / 1.4.17 users install by hand |
 | Before October 2026 | 625,000 | Signed task actions and transaction content root | No |
+
+## 2026-11-02: public peer-to-peer on the producer
+
+- **When:** 2026-11-02, one restart of the producer (still release rc1101);
+  mining paused while it restarted and reopened by itself. An operations
+  change, not an activation height.
+- **What changed:** the producer's libp2p port is reachable from the internet:
+  `/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`.
+  Before, it listened on the host only. Connection and stream limits are on,
+  and block requests are answered within the budget of release rc1101 (one per
+  peer every 2 seconds, 2 per second in total). The status API's `peers`
+  counts the connected peers.
+- **What you must do:** nothing. Full nodes keep following the chain over
+  HTTPS; miners and wallets are unaffected.
 
 ## 2026-11-01: release rc1101
 
