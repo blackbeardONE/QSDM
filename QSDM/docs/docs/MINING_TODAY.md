@@ -6,14 +6,15 @@ Hive desktop app. For the protocol details see
 see the [command-line miner](MINER_QUICKSTART.md).
 
 > [!IMPORTANT]
-> **Mining is open to enrolled QSDM Hive miners, in 7-day canary windows.**
-> Each window lasts 168 hours, with caps per owner per 24-hour epoch. The
-> current window started on 15 October 2026; the next change is expected
-> around 22 October 2026 and will be posted on [Network status](NETWORK_STATUS.md).
+> **Mining is open to every enrolled miner** (public mode since 19 October
+> 2026), in 7-day windows that renew automatically. Every proof must carry the
+> enrollment owner's operator signature, which QSDM Hive 1.4.21 or newer adds
+> by itself while your Hive wallet is unlocked. Caps apply per owner per
+> 24-hour epoch.
 >
-> **New enrollments are paused during recovery.** If your GPU is not enrolled
-> yet, you can install Hive and create your wallet today; enrollment will
-> reopen later and the date will be posted on Network status.
+> **Enrollment is open.** Install Hive, create your wallet and enroll your GPU
+> (section 3). Mining was paused from 22 October to 1 November 2026; see
+> [Network status](NETWORK_STATUS.md).
 
 ## At a glance
 
@@ -25,7 +26,7 @@ see the [command-line miner](MINER_QUICKSTART.md).
 | Linux extras | glibc 2.34 or newer; GTK 3 for the AppImage |
 | Bond | 10 CELL per enrolled GPU, paid up front or taken from your first rewards |
 | Reward | The current block reward (3.56490987 CELL per block, 10 second target) for accepted proofs; see [CELL tokenomics](CELL_TOKENOMICS.md) |
-| Network | Pilot network (pre-mainnet), single block producer during recovery. Mining reopened on 2026-10-02; enrolled miners now mine in 7-day (168-hour) canary windows with caps per owner per 24-hour epoch. |
+| Network | Pilot network (pre-mainnet), single block producer. Mining has been open to every enrolled miner since 2026-10-19, in 7-day (168-hour) windows that renew automatically, with caps per owner per 24-hour epoch. |
 
 GPU mining is NVIDIA-only today. Every proof must carry an NVIDIA attestation;
 the network rejects proofs without one.

@@ -218,16 +218,14 @@ The testnet sunsets when:
 | Difficulty retarget instability | low | medium (chain stalls or wildly oscillates) | the retarget maths is integer-only and unit-tested in `pkg/mining/difficulty_test.go`; rehearse on a fresh local chain before launch |
 | Discord raid / coordinated abuse | medium | low | community moderators + rate-limited channels + clear COC |
 | Press / community criticism over a "fake" token | low | medium | clear messaging that testnet-CELL has no value; faucet ToS reinforces this |
-| Legal challenge alleging the testnet is an unregistered offering | very low | high | the `tok-01` counsel engagement covers this question; do not launch until counsel has signed off on the testnet-CELL posture |
+| Legal challenge alleging the testnet is an unregistered offering | very low | high | the owner's decision of 2026-11-01 (Genesis Policy v1.1, no counsel engagement) covers this question; testnet-CELL is labelled as having no value |
 
 ## 7. Decision points (gate criteria)
 
 QSDM cannot launch until:
 
-- [ ] `tok-01` counsel review at least covers the testnet-CELL question
-  (does not need to cover the full mainnet question — testnet can
-  proceed once counsel has opined specifically on the testnet
-  posture).
+- [x] `tok-01`: closed by the owner's decision of 2026-11-01 (no counsel
+  engagement; [Genesis Policy v1.1](../GENESIS_POLICY_v1.1.md)).
 - [ ] `mining-01` community review scope and bug bounty are published
   (the review does not need to be complete — testnet may launch in
   parallel with it).
