@@ -44,8 +44,8 @@ QSDM is currently in **pre-mainnet, pre-Phase-6** state:
 - CUDA miner kernel exists but is gated behind Phase 6 of the project's
   Major Update plan — **not in scope for this audit**.
 - Mainnet launch is gated on this audit's clean report plus the
-  engagement separately tracked under audit row `tok-01` (counsel
-  review of tokenomics) and `mining-05` (incentivized testnet).
+  owner's tokenomics decision under audit row `tok-01` (closed 2026-11-01,
+  no counsel engagement) and `mining-05` (incentivized testnet).
 - Internal audit checklist score at time of this RFP: **95.29%
   (81/85)**. The four remaining pending rows are all wall-clock-blocked
   on external parties; `mining-01` is the most consequential of those
