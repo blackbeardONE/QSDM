@@ -17,15 +17,15 @@ examples from October 2026, and the live values are always in the status API.
 | Topic | Today |
 |---|---|
 | Stage | Pilot network (pre-mainnet) |
-| Block production | A **single block producer during recovery**, plus a backup node that follows the chain. The status API reports `peers: 0`. |
+| Block production | A **single block producer**. Anyone can run a full node that verifies every block itself ([Run a full node](RUN_A_FULL_NODE.md)). Since 2 November 2026 the producer also accepts peer-to-peer (libp2p) connections on port 4001, with connection, stream and block-request limits (see [What is running](#what-is-running)); the status API's `peers` counts the peers connected to it. |
 | Block time | 10 second target |
 | Wallet transactions | Signed with **ML-DSA-87** (NIST FIPS 204, Cloudflare CIRCL) by Hive, the web wallet and `qsdmcli` |
-| Other signatures | The generic peer-to-peer transaction-gossip verifier code still also accepts Ed25519, but the producer runs without transaction gossip ingress, so no Ed25519 transaction can reach the live chain today. Retiring that code path is planned. |
+| Other signatures | **Ed25519 transactions are refused since 16 October 2026** (status API `ed25519_tx_accepted: false`): only ML-DSA-87 signed transactions reach the chain. CELL stream session keys still accept Ed25519 until a stream retirement height is set (`stream_ed25519_session_keys_retired: false`). |
 | Consensus messages | **Signed consensus enforced from block 827,000** (12 October 2026, 18:11 UTC): every BFT vote and consensus message must carry a valid ML-DSA signature, and unsigned consensus traffic is refused (`signed_consensus_active: true`). See [Consensus rules](CONSENSUS_RULES.md). |
 | Transfer parents (Proof-of-Entanglement) | **Enforced from block 816,600** (11 October 2026): every CELL transfer names committed parents. Send with Hive 1.4.22 or newer, the web wallet, or `qsdmcli --auto-parents`. See [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md). |
-| Mining | NVIDIA GPUs today, through QSDM Hive 1.4.22 (protocol v2, enrolled miners). See [Mining today](MINING_TODAY.md). |
-| Supply | Max supply **90,000,000 CELL**, all from mining. No genesis treasury and no premine ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md)). Transaction fees are burned (credited to no account). |
-| Release | `hardened-legacy-20261014-d7ffcd4-hl2-edge-go1269-ids`, live since 15 October 2026, 19:59 UTC (see [What is running](#what-is-running)) |
+| Mining | NVIDIA GPUs through QSDM Hive 1.4.21 or newer, **open to every enrolled miner** since 19 October 2026 (protocol v2; every proof carries the enrollment owner's operator signature), in 7-day windows that renew automatically. Mining was paused from 22 October to 1 November 2026 (see [What is running](#what-is-running)). See [Mining today](MINING_TODAY.md). |
+| Supply | Max supply **90,000,000 CELL**, all from mining. No genesis treasury and no premine ([Genesis Policy v1.1](GENESIS_POLICY_v1.1.md)). Transaction fees are burned (credited to no account). |
+| Release | `hardened-legacy-20261101-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1101`, live since 1 November 2026, 11:31 UTC (see [What is running](#what-is-running)) |
 | Independent audit | None completed. Security review is an open [community review](COMMUNITY_REVIEW.md) with a [bug bounty](BUG_BOUNTY.md) (rewards confirmed by the owner on 17 October 2026; 50,000 CELL pool); a professional audit remains welcome. The [internal security review](SECURITY_AUDIT.md) is a self-maintained checklist. |
 
 ## Check it yourself
@@ -100,18 +100,39 @@ The [explorer](https://qsdm.tech/explorer.html) and the
 
 ## What is running
 
-- **Core release** `hardened-legacy-20261014-d7ffcd4-hl2-edge-go1269-ids`
-  (live since 2026-10-15 19:59 UTC), built from `QSDM/source` in this
-  repository: the d7ffcd4 base, the September 2026 recovery patches, the
+- **Core release** `hardened-legacy-20261101-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1101`
+  (live since 2026-11-01 11:31 UTC; mining paused 11:17-11:33 UTC for the
+  switch): the d7ffcd4 base, the September 2026 recovery patches, the
   hardened-legacy mining work (durable proof and nonce de-duplication,
   persistent pending rewards, and a stop-on-failure rule for block storage),
   the Proof-of-Entanglement parent rules (enforced from block 816,600),
   signed consensus (enforced from block 827,000), the relay-only rule for paid
-  edge tasks (from block 833,800) and reserved built-in task IDs.
+  edge tasks (from block 833,800), reserved built-in task IDs, the retirement
+  of Ed25519 transactions (2026-10-16) and reopened miner enrollment
+  (2026-10-17); since rc1101 also a response budget for peer-to-peer block
+  requests (one answer per peer every 2 s, 2 per second in total, duplicate
+  blocks dropped before verification), built with Go 1.26.10 (GO-2026-6809)
+  and klauspost/compress v1.18.7 (CVE-2026-63209). The base of this code is
+  `QSDM/source` in this repository; the release-only changes since rc1017
+  (the peer-to-peer limits and the block-request budget) are not yet mirrored
+  here. The other new features of the release candidates ship switched off.
+- **Peer-to-peer.** Since 2026-11-02 the producer accepts libp2p peers from
+  the internet on port 4001
+  (`/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`,
+  the host behind `api.qsdm.tech`), with connection and stream limits and the
+  block-request budget above; before that the port listened on the host only.
+  A full node does not need it: it follows the chain over HTTPS
+  ([Run a full node](RUN_A_FULL_NODE.md)).
 - **Upgrade history.** Every network upgrade, with its height, time and what
   users had to do, is listed in [Network upgrades](NETWORK_UPGRADES.md).
 - **Timeline.** The chain was paused on 2026-09-22 and restarted on 2026-09-27
-  by the same single producer. Public mining reopened on 2026-10-02.
+  by the same single producer. Public mining reopened on 2026-10-02 and has
+  been open to every enrolled miner since 2026-10-19. On 2026-10-22 the
+  producer's host ran out of disk space: the node stopped sealing blocks for
+  9 hours to protect its data, and mining froze as designed. The chain resumed
+  by itself; mining reopened on 2026-11-01 07:33 UTC after an audit of the
+  window (PASS, no findings). Since then each 7-day mining window renews
+  automatically.
 - **QSDM Hive 1.4.22** for Windows and Linux from
   [qsdm.tech/downloads/hive-v2/](https://qsdm.tech/downloads/hive-v2/), signed
   with the rotated v2 release key. See
