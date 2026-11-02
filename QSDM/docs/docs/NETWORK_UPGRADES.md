@@ -18,12 +18,49 @@ upgrades harden that pilot network; they do not change its stage. See
 
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
+| 2026-11-02 | operations | The producer accepts peer-to-peer (libp2p) connections on port 4001, with connection, stream and block-request limits; mining paused for one restart | No |
+| 2026-11-01 11:17 | node release | Release rc1101: the Go 1.26.10 security rebuild and a response budget for peer-to-peer block requests (no consensus change); mining paused 16 minutes | No |
+| 2026-11-01 07:33 | operations | Mining resumed after the 22 October - 1 November pause (the producer's host ran out of disk space); 7-day mining windows now renew automatically | No |
+| 2026-10-19 09:05 | mining window | Mining open to every enrolled miner (public mode); every proof must carry the owner's operator signature | **Yes**, miners need QSDM Hive 1.4.21 or newer |
+| 2026-10-18 06:38 | node release | Release candidate rc1017; its new features ship switched off (no consensus change) | No |
+| 2026-10-17 10:51 | enrollment | Miner enrollment reopened | Only new miners: enroll in Hive |
+| 2026-10-16 05:45 | node release | Ed25519 transactions retired: only ML-DSA-87 signed transactions are accepted | No (current wallets sign with ML-DSA-87) |
 | 2026-10-15 19:59 | node release | Reserved built-in task IDs; public signed task-action route opened | Only task publishers: built-in IDs are reserved |
 | 2026-10-13 13:21 | 833,800 | Relay-only settlement for paid edge tasks | No (paid resource work is an operator-only test) |
 | 2026-10-12 18:11 | 827,000 | Signed consensus enforced | No |
 | 2026-10-11 13:18 | 816,600 | Proof-of-Entanglement enforced | **Yes**, if you send CELL with old software |
 | 2026-10-10 | Hive release | QSDM Hive 1.4.22 | **Yes**, Hive 1.4.20 / 1.4.17 users install by hand |
 | Before October 2026 | 625,000 | Signed task actions and transaction content root | No |
+
+## 2026-11-02: public peer-to-peer on the producer
+
+- **When:** 2026-11-02, one restart of the producer (still release rc1101);
+  mining paused while it restarted and reopened by itself. An operations
+  change, not an activation height.
+- **What changed:** the producer's libp2p port is reachable from the internet:
+  `/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`.
+  Before, it listened on the host only. Connection and stream limits are on,
+  and block requests are answered within the budget of release rc1101 (one per
+  peer every 2 seconds, 2 per second in total). The status API's `peers`
+  counts the connected peers.
+- **What you must do:** nothing. Full nodes keep following the chain over
+  HTTPS; miners and wallets are unaffected.
+
+## 2026-11-01: release rc1101
+
+- **When:** node release `hardened-legacy-20261101-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1101`,
+  switched in 2026-11-01 11:17 UTC, serving again from 11:31 UTC; mining
+  reopened by itself at 11:33 UTC. A node release, not an activation height.
+- **What changed:** built with Go 1.26.10, which fixes GO-2026-6809 in
+  `crypto/x509` (reachable from the NVIDIA attestation check), and
+  klauspost/compress v1.18.7 (CVE-2026-63209). A node now answers at most one
+  peer-to-peer `block_request` per peer every 2 seconds and 2 per second in
+  total, drops copies of a block it already has before verifying them, and
+  keeps a bounded set of seen blocks. That was the last item holding the
+  producer's public peer-to-peer port closed (see
+  [Network status](NETWORK_STATUS.md)). The two release builds were
+  bit-identical; govulncheck reports no reachable vulnerability.
+- **What you must do:** nothing. Miners and wallets are unaffected.
 
 ## 2026-10-15: reserved built-in task IDs
 
@@ -122,10 +159,9 @@ The same day a new 7-day mining window started for enrolled Hive miners; see
 
 ## Not yet
 
-- **Ed25519 retirement.** The generic peer-to-peer transaction-gossip verifier
-  code still accepts Ed25519. The producer runs without transaction gossip
-  ingress, so no Ed25519 transaction can reach the live chain today.
-  Retirement is planned.
-- **Independent validators.** The next step; not started publicly.
+- **Ed25519 for stream session keys.** Ed25519 transactions are refused since
+  2026-10-16 (`ed25519_tx_accepted: false`), but CELL stream session keys still
+  accept Ed25519 until a stream retirement height is set.
+- **Block production by miners (proof of work).** The next step (decision D1, 19 October 2026); not active yet.
 
 See the [Roadmap](ROADMAP.md).

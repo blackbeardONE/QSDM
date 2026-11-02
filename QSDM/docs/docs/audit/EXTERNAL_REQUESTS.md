@@ -35,7 +35,7 @@
 | Row | Severity | Wrapper | Engagement state | Target close |
 |-----|----------|---------|------------------|--------------|
 | `mining-01` | critical | [`COMMUNITY_REVIEW.md`](../COMMUNITY_REVIEW.md) (the earlier [`MINING_AUDITOR_RFP.md`](./MINING_AUDITOR_RFP.md) is not being sent) | Open community review and [bug bounty](../BUG_BOUNTY.md) published 2026-10-17; bounty tiers and a 50,000 CELL pool confirmed by the owner on 17 October 2026; no reviews logged yet | Owner to define the closing evidence |
-| `tok-01` | critical | [`COUNSEL_BRIEF_TOKENOMICS.md`](./COUNSEL_BRIEF_TOKENOMICS.md) | Drafted, awaiting project-lead engagement of counsel | T+8 weeks from engagement-letter execution |
+| `tok-01` | critical | [`COUNSEL_BRIEF_TOKENOMICS.md`](./COUNSEL_BRIEF_TOKENOMICS.md) | Closed 2026-11-01: the owner decided not to engage counsel ([Genesis Policy v1.1](../GENESIS_POLICY_v1.1.md)); the brief is kept for reference | - |
 | `mining-05` | medium | [`TESTNET_LAUNCH_PLAN.md`](./TESTNET_LAUNCH_PLAN.md) | Plan drafted; faucet + leaderboard + announcement still to build | T+14 days from public launch |
 | `rebrand-03` | medium | [`TRADEMARK_FILING_INTAKE.md`](./TRADEMARK_FILING_INTAKE.md) | Drafted, awaiting project-lead engagement of trademark counsel | T+18 months for first-tier registration |
 

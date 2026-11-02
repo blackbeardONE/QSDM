@@ -1,6 +1,6 @@
 module github.com/blackbeardONE/QSDM
 
-go 1.26.9
+go 1.26.10
 
 replace github.com/wasmerio/wasmer-go-patched => ./wasmer-go-patched
 
@@ -10,7 +10,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/gocql/gocql v1.7.0
 	github.com/joho/godotenv v1.5.1
-	github.com/klauspost/compress v1.18.0
+	github.com/klauspost/compress v1.18.7
 	github.com/libp2p/go-libp2p v0.48.0
 	github.com/libp2p/go-libp2p-pubsub v0.16.0
 	github.com/mattn/go-sqlite3 v1.14.28

@@ -74,7 +74,7 @@ network**; see the [rules of engagement](BUG_BOUNTY.md#2-rules-of-engagement).
 |---|---|---|
 | Public HTTPS API | Any internet client | Reverse proxy; a fail-closed write allowlist on the producer (signed transfers, plus task actions and enrollment when switched on) |
 | Mining submission | Miners, enrolled or not | The admission guard, per-owner limits, invariants I1–I7 |
-| P2P (libp2p) | Peers | StrictSign pubsub, static bootstrap, reputation bans. The producer's P2P port is loopback-only today and the producer drops transaction gossip |
+| P2P (libp2p) | Peers | StrictSign pubsub, static bootstrap, reputation bans. The producer's P2P port (4001) is public since 2 November 2026, with connection, stream and block-request limits, and the producer drops transaction gossip |
 | Block acceptance on followers | The producer and any gossip or HTTP source | Producer transition and signature, the signed-consensus gate, full re-execution, Proof-of-Entanglement |
 | Edge relay settlement | Relays, workers, Mother Hive | ML-DSA-87 settlement proof, authorized relay IDs in the task manifest, replay maps |
 | Loopback-only services | LAN and internet | Edge control, the edge-agent relay, faucet, treasury signer URL and dashboard bind to loopback by default |

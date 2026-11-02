@@ -194,8 +194,9 @@ port = 8081
 [network]
 port            = 4001
 bootstrap_peers = [
-  # There is no public bootstrap peer during the pilot: the producer's
-  # P2P port is not reachable from the internet (OPERATOR_GUIDE.md §2.2).
+  # The producer is the only public peer (since 2 November 2026; it
+  # answers block requests within a budget, see OPERATOR_GUIDE.md §2.2):
+  # "/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum",
   # An official bootstrap list will be published at
   # https://qsdm.tech/validators once it exists. For testnets, point
   # these at the genesis validator(s) you coordinated with.
