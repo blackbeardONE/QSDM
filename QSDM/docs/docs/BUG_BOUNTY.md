@@ -86,7 +86,7 @@ component list below follows the [community review scope](COMMUNITY_REVIEW.md#2-
 | C7 | **Task actions and reserved IDs** | Signed task actions (from 625,000); hijacking built-in tasks; reward-ID or transaction-ID spoofing | — |
 | C8 | **Node and public API** | Authentication or write-allowlist bypass; request-size, parsing or resource bugs that crash or stall a node with a small number of requests (show it locally); information leaks of keys, tokens or private configuration; services that should be loopback-only but are reachable | Volumetric or network-level DoS (bandwidth floods); rate limits on public read endpoints with no further impact; missing security headers or TLS settings with no demonstrated impact |
 | C9 | **Release build and provenance** | Anything that lets a binary differ from the reviewed source without detection: the reproducible build, `SHA256SUMS`, the follower release verifier, Hive release signature checks | Compromise of the release owner's offline machine; GitHub or CDN account takeover |
-| C10 | **P2P networking** | libp2p configuration, gossip-topic handling, reputation bans, eclipse attacks. The producer's P2P port is not public today, so these are rated on their impact once validators are opened, and capped at High | Attacks that only work against the closed producer port from the same host |
+| C10 | **P2P networking** | libp2p configuration, gossip-topic handling, reputation bans, eclipse attacks, and the producer's P2P port (public since 2 November 2026, with connection, stream and block-request limits). Capped at High | Volumetric floods of the P2P port (as in C8); attacks that need access to the producer's host |
 
 **Producer and other key compromise paths** are in scope when they are remote or
 software-based: a path that reads, derives, logs or exports the producer
@@ -131,8 +131,9 @@ path with a greater impact than described here.
    be the same on every node.
 7. The live producer allowlist still names the earlier producer ID; the
    producer transition takes precedence.
-8. No libp2p connection or resource limits are configured; the P2P port is not
-   public.
+8. The producer's P2P port is public since 2 November 2026. Its connection,
+   stream and block-request limits come from releases rc1017 and rc1101 and are
+   not yet in `QSDM/source`.
 9. Rate limits for some routes are enforced at the reverse proxy, not in the
    node.
 10. Core releases are protected by reproducible builds and `SHA256SUMS`; a

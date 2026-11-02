@@ -98,6 +98,31 @@ attempt to retroactively enumerate that history.
 
 ### Changed
 
+- **2026-11-02: public peer-to-peer on the producer.** The producer accepts
+  libp2p connections from the internet on port 4001
+  (`/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`)
+  with connection, stream and block-request limits; before, the port listened
+  on the host only. One restart; mining paused while it restarted. Full nodes
+  keep following the chain over HTTPS. No consensus change.
+
+- **2026-11-01: release rc1101.** The producer runs
+  `hardened-legacy-20261101-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1101` since
+  11:31 UTC (mining paused 11:17-11:33 UTC): Go 1.26.10 (GO-2026-6809) and
+  klauspost/compress v1.18.7 (CVE-2026-63209), plus a response budget for
+  peer-to-peer block requests (dedupe before verification, a bounded seen
+  set), the step that public peer-to-peer access was waiting for. No consensus
+  change. The same day `QSDM/source` moved to Go 1.26.10 and compress v1.18.7.
+
+- **2026-11-01: mining resumed, automatic mining windows, Genesis Policy v1.1.**
+  Mining was closed from 2026-10-22 19:56 UTC: the producer's shared host ran
+  out of disk space, the node stopped sealing blocks for 9 h 16 min to protect
+  its data, and the mining liveness rule froze mining as designed (the chain
+  resumed by itself). The ended window was audited (PASS, 0 findings, all
+  267,151 receipts) and mining reopened on 2026-11-01 07:33 UTC; each 7-day
+  window now renews automatically. Genesis Policy v1.1: the owner decided not
+  to engage counsel, and `tok-01` is closed by that decision (see
+  CELL_TOKENOMICS.md).
+
 - **Chain restart (2026-09-27).** The chain was stopped on 2026-09-22 and
   restarted with the unchanged deployed release on 2026-09-27, with a single
   block producer during recovery and a backup node following the chain.

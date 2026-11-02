@@ -62,12 +62,16 @@ initial sync.
 
 `https://api.qsdm.tech/` is the reference deployment we operate. Right now:
 
-1. **Not a public bootstrap peer during the pilot.** The producer's
-   libp2p port (`4001`) is not reachable from the internet, so a new
-   validator or follower cannot bootstrap from it today, and there is no
-   other public P2P peer yet. Independent validators and followers are
-   planned; see [`ROADMAP.md`](./ROADMAP.md) ("Independent validators")
-   and [`NODE_ROLES.md` §3.2](./NODE_ROLES.md).
+1. **A public P2P peer since 2 November 2026.** The producer's libp2p
+   port (`4001`) accepts connections from the internet:
+   `/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`.
+   It limits connections and streams and answers block requests within a
+   budget (one per peer every 2 s, 2 per second in total), so catch up over
+   HTTPS (`QSDM_CHAIN_SYNC_URLS`, see [Run a full node](RUN_A_FULL_NODE.md))
+   rather than by P2P block requests alone. It is the only public peer;
+   independent validators and followers are planned; see
+   [`ROADMAP.md`](./ROADMAP.md) ("Independent validators") and
+   [`NODE_ROLES.md` §3.2](./NODE_ROLES.md).
 2. **Public REST endpoint.** Miners, wallets, and Hive call
    `/api/v1/*` on this hostname. Anyone can stand up their own
    validator, publish a competing REST hostname, and point traffic at
@@ -169,20 +173,18 @@ end-to-end. The critical bits:
 
 1. Drop a `config.toml` with your desired `node.address`,
    `api.port = 8080`, `network.port = 4001`.
-2. `bootstrap_peers`: **there is no public bootstrap peer during the
-   pilot.** The producer behind `api.qsdm.tech` does not expose its
-   P2P port (`4001`) to the internet, so a follower cannot bootstrap
-   from it today; do not use a `/dns4/api.qsdm.tech/tcp/4001/...`
-   multiaddr. Independent validators and followers are planned (see
-   [`ROADMAP.md`](./ROADMAP.md) and [`NODE_ROLES.md` §3.2](./NODE_ROLES.md));
-   public peer details will be published here when they exist. Until
-   then, only point `bootstrap_peers` at nodes you operate yourself
-   (see §2.3).
+2. `bootstrap_peers`: since 2 November 2026 the producer behind
+   `api.qsdm.tech` is a public peer:
+   `/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`.
+   It answers block requests within a budget (one per peer every 2 s), so
+   keep `QSDM_CHAIN_SYNC_URLS` for catching up. It is the only public
+   peer; independent validators and followers are planned (see
+   [`ROADMAP.md`](./ROADMAP.md) and [`NODE_ROLES.md` §3.2](./NODE_ROLES.md)).
+   You can add nodes you operate yourself (see §2.3).
 3. Start `qsdm-validator` under systemd, expose `:4001/tcp` to the
    internet, put Caddy in front of `:8080` for TLS.
-4. Watch `/api/v1/status`. With no public peer, expect `peers: 0`
-   during the pilot; `connected_peers > 0` only appears once your node
-   connects to another node (one you run, or a future public peer).
+4. Watch `/api/v1/status`. `connected_peers > 0` appears once your node
+   connects to another node: the producer, or one you run.
 
 ### 2.3 Running a second validator yourself
 
