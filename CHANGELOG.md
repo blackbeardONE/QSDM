@@ -98,6 +98,14 @@ attempt to retroactively enumerate that history.
 
 ### Changed
 
+- **2026-11-01: release rc1101.** The producer runs
+  `hardened-legacy-20261101-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1101` since
+  11:31 UTC (mining paused 11:17-11:33 UTC): Go 1.26.10 (GO-2026-6809) and
+  klauspost/compress v1.18.7 (CVE-2026-63209), plus a response budget for
+  peer-to-peer block requests (dedupe before verification, a bounded seen
+  set), the step that public peer-to-peer access was waiting for. No consensus
+  change. The same day `QSDM/source` moved to Go 1.26.10 and compress v1.18.7.
+
 - **2026-11-01: mining resumed, automatic mining windows, Genesis Policy v1.1.**
   Mining was closed from 2026-10-22 19:56 UTC: the producer's shared host ran
   out of disk space, the node stopped sealing blocks for 9 h 16 min to protect

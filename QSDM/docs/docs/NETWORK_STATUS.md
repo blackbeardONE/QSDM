@@ -25,7 +25,7 @@ examples from October 2026, and the live values are always in the status API.
 | Transfer parents (Proof-of-Entanglement) | **Enforced from block 816,600** (11 October 2026): every CELL transfer names committed parents. Send with Hive 1.4.22 or newer, the web wallet, or `qsdmcli --auto-parents`. See [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md). |
 | Mining | NVIDIA GPUs through QSDM Hive 1.4.21 or newer, **open to every enrolled miner** since 19 October 2026 (protocol v2; every proof carries the enrollment owner's operator signature), in 7-day windows that renew automatically. Mining was paused from 22 October to 1 November 2026 (see [What is running](#what-is-running)). See [Mining today](MINING_TODAY.md). |
 | Supply | Max supply **90,000,000 CELL**, all from mining. No genesis treasury and no premine ([Genesis Policy v1.1](GENESIS_POLICY_v1.1.md)). Transaction fees are burned (credited to no account). |
-| Release | `hardened-legacy-20261017-d7ffcd4-hl2-edge-go1269-ids-pqe-rc1017`, live since 18 October 2026, 06:38 UTC (see [What is running](#what-is-running)) |
+| Release | `hardened-legacy-20261101-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1101`, live since 1 November 2026, 11:31 UTC (see [What is running](#what-is-running)) |
 | Independent audit | None completed. Security review is an open [community review](COMMUNITY_REVIEW.md) with a [bug bounty](BUG_BOUNTY.md) (rewards confirmed by the owner on 17 October 2026; 50,000 CELL pool); a professional audit remains welcome. The [internal security review](SECURITY_AUDIT.md) is a self-maintained checklist. |
 
 ## Check it yourself
@@ -100,16 +100,22 @@ The [explorer](https://qsdm.tech/explorer.html) and the
 
 ## What is running
 
-- **Core release** `hardened-legacy-20261017-d7ffcd4-hl2-edge-go1269-ids-pqe-rc1017`
-  (live since 2026-10-18 06:38 UTC), built from `QSDM/source` in this
-  repository: the d7ffcd4 base, the September 2026 recovery patches, the
+- **Core release** `hardened-legacy-20261101-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1101`
+  (live since 2026-11-01 11:31 UTC; mining paused 11:17-11:33 UTC for the
+  switch): the d7ffcd4 base, the September 2026 recovery patches, the
   hardened-legacy mining work (durable proof and nonce de-duplication,
   persistent pending rewards, and a stop-on-failure rule for block storage),
   the Proof-of-Entanglement parent rules (enforced from block 816,600),
   signed consensus (enforced from block 827,000), the relay-only rule for paid
   edge tasks (from block 833,800), reserved built-in task IDs, the retirement
   of Ed25519 transactions (2026-10-16) and reopened miner enrollment
-  (2026-10-17). The release candidate's other new features ship switched off.
+  (2026-10-17); since rc1101 also a response budget for peer-to-peer block
+  requests (one answer per peer every 2 s, 2 per second in total, duplicate
+  blocks dropped before verification), built with Go 1.26.10 (GO-2026-6809)
+  and klauspost/compress v1.18.7 (CVE-2026-63209). The base of this code is
+  `QSDM/source` in this repository; the release-only changes since rc1017
+  (the peer-to-peer limits and the block-request budget) are not yet mirrored
+  here. The other new features of the release candidates ship switched off.
 - **Upgrade history.** Every network upgrade, with its height, time and what
   users had to do, is listed in [Network upgrades](NETWORK_UPGRADES.md).
 - **Timeline.** The chain was paused on 2026-09-22 and restarted on 2026-09-27

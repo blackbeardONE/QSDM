@@ -18,6 +18,7 @@ upgrades harden that pilot network; they do not change its stage. See
 
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
+| 2026-11-01 11:17 | node release | Release rc1101: the Go 1.26.10 security rebuild and a response budget for peer-to-peer block requests (no consensus change); mining paused 16 minutes | No |
 | 2026-11-01 07:33 | operations | Mining resumed after the 22 October - 1 November pause (the producer's host ran out of disk space); 7-day mining windows now renew automatically | No |
 | 2026-10-19 09:05 | mining window | Mining open to every enrolled miner (public mode); every proof must carry the owner's operator signature | **Yes**, miners need QSDM Hive 1.4.21 or newer |
 | 2026-10-18 06:38 | node release | Release candidate rc1017; its new features ship switched off (no consensus change) | No |
@@ -29,6 +30,22 @@ upgrades harden that pilot network; they do not change its stage. See
 | 2026-10-11 13:18 | 816,600 | Proof-of-Entanglement enforced | **Yes**, if you send CELL with old software |
 | 2026-10-10 | Hive release | QSDM Hive 1.4.22 | **Yes**, Hive 1.4.20 / 1.4.17 users install by hand |
 | Before October 2026 | 625,000 | Signed task actions and transaction content root | No |
+
+## 2026-11-01: release rc1101
+
+- **When:** node release `hardened-legacy-20261101-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1101`,
+  switched in 2026-11-01 11:17 UTC, serving again from 11:31 UTC; mining
+  reopened by itself at 11:33 UTC. A node release, not an activation height.
+- **What changed:** built with Go 1.26.10, which fixes GO-2026-6809 in
+  `crypto/x509` (reachable from the NVIDIA attestation check), and
+  klauspost/compress v1.18.7 (CVE-2026-63209). A node now answers at most one
+  peer-to-peer `block_request` per peer every 2 seconds and 2 per second in
+  total, drops copies of a block it already has before verifying them, and
+  keeps a bounded set of seen blocks. That was the last item holding the
+  producer's public peer-to-peer port closed (see
+  [Network status](NETWORK_STATUS.md)). The two release builds were
+  bit-identical; govulncheck reports no reachable vulnerability.
+- **What you must do:** nothing. Miners and wallets are unaffected.
 
 ## 2026-10-15: reserved built-in task IDs
 
