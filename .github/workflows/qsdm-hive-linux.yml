@@ -28,11 +28,13 @@ concurrency:
 
 jobs:
   package-linux:
-    runs-on: ubuntu-latest
+    # ubuntu-24.04, not ubuntu-latest: nvcc below is Ubuntu 24.04's CUDA 12.0, which needs g++-12 as its host
+    # compiler, and the newer ubuntu-latest image has no g++-12 ("g++-12: No such file or directory", 2026-11-02).
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
