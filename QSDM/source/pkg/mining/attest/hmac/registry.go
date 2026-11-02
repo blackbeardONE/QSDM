@@ -25,15 +25,20 @@ import (
 // Registry
 // -----------------------------------------------------------------------------
 
-// Entry is one registered (node_id, gpu_uuid, hmac_key) tuple. The
-// HMACKey is the raw secret — length is a registry-implementation
-// detail (in-memory impl enforces 32 bytes minimum to match the
-// reference enrollment flow). The verifier treats it as opaque
-// bytes and hands it to crypto/hmac.
+// Entry is one registered (node_id, owner, operator_public_key, gpu_uuid,
+// hmac_key) tuple. The Owner is the enrolled reward wallet. Empty Owner is
+// permitted for legacy and test registries; production verification rejects it
+// when reward-owner binding is required. OperatorPublicKey is empty for legacy
+// records until the network activates key retention. HMACKey is the raw secret
+// - length is a registry-implementation detail (in-memory impl enforces 32
+// bytes minimum to match the reference enrollment flow). The verifier treats it
+// as opaque bytes and hands it to crypto/hmac.
 type Entry struct {
-	NodeID  string
-	GPUUUID string
-	HMACKey []byte
+	NodeID            string
+	Owner             string
+	OperatorPublicKey string
+	GPUUUID           string
+	HMACKey           []byte
 }
 
 // Registry is the subset of the on-chain operator registry the
@@ -66,9 +71,9 @@ var (
 //
 // Safe for concurrent use.
 type InMemoryRegistry struct {
-	mu       sync.RWMutex
-	entries  map[string]*Entry
-	revoked  map[string]struct{}
+	mu      sync.RWMutex
+	entries map[string]*Entry
+	revoked map[string]struct{}
 }
 
 // NewInMemoryRegistry returns an empty registry ready for
@@ -80,13 +85,29 @@ func NewInMemoryRegistry() *InMemoryRegistry {
 	}
 }
 
-// Enroll registers a new (node_id, gpu_uuid, hmac_key) tuple.
+// Enroll registers a new (node_id, gpu_uuid, hmac_key) tuple without an owner.
+// It is retained for older tests and local-mode callers that do not model
+// wallet ownership. Production paths should use EnrollWithOwner or
+// StateBackedRegistry.
+func (r *InMemoryRegistry) Enroll(nodeID, gpuUUID string, hmacKey []byte) error {
+	return r.EnrollWithOwner(nodeID, "", gpuUUID, hmacKey)
+}
+
+// EnrollWithOwner registers a new (node_id, owner, gpu_uuid, hmac_key) tuple.
 // Returns an error if node_id is empty, already enrolled, or
 // hmac_key is shorter than 32 bytes. Enforcing a minimum key
-// length here is defence-in-depth — the enrollment transaction
+// length here is defence-in-depth - the enrollment transaction
 // handler already validates keys, but we want a test-time stub
 // that matches the production invariant.
-func (r *InMemoryRegistry) Enroll(nodeID, gpuUUID string, hmacKey []byte) error {
+func (r *InMemoryRegistry) EnrollWithOwner(nodeID, owner, gpuUUID string, hmacKey []byte) error {
+	return r.EnrollWithOperatorPublicKey(nodeID, owner, "", gpuUUID, hmacKey)
+}
+
+// EnrollWithOperatorPublicKey registers a new
+// (node_id, owner, operator_public_key, gpu_uuid, hmac_key) tuple. It exists so
+// tests and local-mode networks can exercise the post-HMAC operator-signature
+// rail with the same registry field that production gets from enrollment state.
+func (r *InMemoryRegistry) EnrollWithOperatorPublicKey(nodeID, owner, operatorPublicKey, gpuUUID string, hmacKey []byte) error {
 	if nodeID == "" {
 		return errors.New("hmac: Enroll requires non-empty node_id")
 	}
@@ -107,9 +128,11 @@ func (r *InMemoryRegistry) Enroll(nodeID, gpuUUID string, hmacKey []byte) error 
 	keyCopy := make([]byte, len(hmacKey))
 	copy(keyCopy, hmacKey)
 	r.entries[nodeID] = &Entry{
-		NodeID:  nodeID,
-		GPUUUID: gpuUUID,
-		HMACKey: keyCopy,
+		NodeID:            nodeID,
+		Owner:             owner,
+		OperatorPublicKey: operatorPublicKey,
+		GPUUUID:           gpuUUID,
+		HMACKey:           keyCopy,
 	}
 	return nil
 }
@@ -142,9 +165,11 @@ func (r *InMemoryRegistry) Lookup(nodeID string) (*Entry, error) {
 	keyCopy := make([]byte, len(e.HMACKey))
 	copy(keyCopy, e.HMACKey)
 	return &Entry{
-		NodeID:  e.NodeID,
-		GPUUUID: e.GPUUUID,
-		HMACKey: keyCopy,
+		NodeID:            e.NodeID,
+		Owner:             e.Owner,
+		OperatorPublicKey: e.OperatorPublicKey,
+		GPUUUID:           e.GPUUUID,
+		HMACKey:           keyCopy,
 	}, nil
 }
 
@@ -159,20 +184,26 @@ func (r *InMemoryRegistry) Lookup(nodeID string) (*Entry, error) {
 // be served identical nonce bytes from different validators;
 // binding to nodeID keeps the rejection scoped.
 //
-// Implementations MUST be safe for concurrent use.
+// Implementations MUST be safe for concurrent use. Acceptance requires an
+// atomic claim; a separate Seen followed by Record is not sufficient.
 type NonceStore interface {
+	// TryRecord evicts expired entries relative to at and atomically claims
+	// (nodeID, nonce). It returns false for a retained duplicate without
+	// refreshing its timestamp. Exactly one concurrent claimant may succeed.
+	TryRecord(nodeID string, nonce [32]byte, at time.Time) bool
 	// Seen returns true iff (nodeID, nonce) was recorded within
 	// the retention window AND is not yet evicted.
 	Seen(nodeID string, nonce [32]byte) bool
 	// Record marks (nodeID, nonce) as used at the given time.
 	// Implementations evict entries older than their retention
-	// window on Record / Seen calls.
+	// window on Record / Seen calls. Retained for compatibility;
+	// acceptance paths must use TryRecord.
 	Record(nodeID string, nonce [32]byte, at time.Time)
 }
 
 // InMemoryNonceStore is the reference NonceStore. It holds
 // entries for `retention`; older entries are lazily evicted on
-// Seen/Record calls.
+// TryRecord/Record calls.
 //
 // Safe for concurrent use.
 type InMemoryNonceStore struct {
@@ -197,7 +228,7 @@ func NewInMemoryNonceStore(retention time.Duration) *InMemoryNonceStore {
 }
 
 // Seen implements NonceStore. It does NOT perform eviction —
-// eviction is driven by Record, which has an authoritative
+// eviction is driven by TryRecord/Record, which have an authoritative
 // caller-supplied timestamp. Mixing time.Now() into Seen would
 // break tests that pin a synthetic clock (and would leak a second
 // clock source into a function whose only job is a map lookup).
@@ -206,6 +237,20 @@ func (s *InMemoryNonceStore) Seen(nodeID string, nonce [32]byte) bool {
 	defer s.mu.Unlock()
 	_, ok := s.seen[nonceKey{nodeID: nodeID, nonce: nonce}]
 	return ok
+}
+
+// TryRecord implements NonceStore as one atomic check-and-insert. Rejected
+// duplicates retain the original timestamp, so retries cannot extend retention.
+func (s *InMemoryNonceStore) TryRecord(nodeID string, nonce [32]byte, at time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.evictLocked(at)
+	key := nonceKey{nodeID: nodeID, nonce: nonce}
+	if _, exists := s.seen[key]; exists {
+		return false
+	}
+	s.seen[key] = at
+	return true
 }
 
 // Record implements NonceStore. It evicts entries older than
@@ -219,7 +264,7 @@ func (s *InMemoryNonceStore) Record(nodeID string, nonce [32]byte, at time.Time)
 }
 
 // evictLocked drops entries older than retention. Called from
-// Record (which has a caller-supplied `now`) so eviction uses a
+// TryRecord/Record (which have a caller-supplied `now`) so eviction uses a
 // single consistent clock source.
 func (s *InMemoryNonceStore) evictLocked(now time.Time) {
 	cutoff := now.Add(-s.retention)

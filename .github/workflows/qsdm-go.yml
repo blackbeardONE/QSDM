@@ -77,6 +77,10 @@ jobs:
           set -euo pipefail
           bash -n .github/scripts/resolve-release-tag.sh
           bash -n QSDM/deploy/landing/_install_docs_site.sh
+          bash QSDM/deploy/landing/test_install_docs_site_public_api_override.sh
+          bash QSDM/deploy/scripts/test_install_edge_relay_caddy_site.sh
+          python3 QSDM/deploy/test_deploy_host.py
+          python3 -m py_compile QSDM/deploy/install_ngc_sidecar_vps.py QSDM/deploy/install_ngc_sidecar_oci.py
           bash -n QSDM/deploy/scripts/publish_edge_release.sh
           bash -n QSDM/deploy/validator-package/install-or-update.sh
           bash -n QSDM/deploy/validator-package/rollback.sh
@@ -99,9 +103,11 @@ jobs:
               "QSDM/scripts/watch_local_stack.ps1",
               "QSDM/scripts/update_local_validator.ps1",
               "QSDM/scripts/test_local_validator_updater.ps1",
+              "QSDM/scripts/test_local_validator_bootstrap_profile.ps1",
               "QSDM/scripts/test_local_validator_update_role_persistence.ps1",
               "QSDM/scripts/test_local_validator_updater_transaction.ps1",
               "QSDM/scripts/test_local_validator_updater_transaction_supervised.ps1",
+              "QSDM/scripts/test_qsdm_endpoint_reference_hosts.ps1",
               "QSDM/scripts/test_treasury_signer_process_identity.ps1"
             )) {
               [System.Management.Automation.Language.Parser]::ParseFile(
@@ -173,6 +179,20 @@ jobs:
             ConvertFrom-Json
           if (-not $result.success) {
             throw "Local validator updater harness did not pass."
+          }
+
+      - name: Test persisted bootstrap and reference-host safety
+        shell: pwsh
+        run: |
+          $bootstrapProfile = & .\QSDM\scripts\test_local_validator_bootstrap_profile.ps1 |
+            ConvertFrom-Json
+          if (-not $bootstrapProfile.success -or -not $bootstrapProfile.default_bootstrap_persisted) {
+            throw "Local validator bootstrap profile test did not pass."
+          }
+          $referenceHosts = & .\QSDM\scripts\test_qsdm_endpoint_reference_hosts.ps1 |
+            ConvertFrom-Json
+          if (-not $referenceHosts.success -or -not $referenceHosts.reference_sources_derived) {
+            throw "Endpoint reference host test did not pass."
           }
 
       - name: Test validator update role persistence

@@ -7,7 +7,7 @@
 
 ## Overview
 
-This guide will help you deploy QSDM on an Ubuntu 24.04 VPS. QSDM is a quantum-safe blockchain that uses ML-DSA-87 for 256-bit quantum-resistant security.
+This guide will help you deploy QSDM on an Ubuntu 24.04 VPS. QSDM signs wallet transactions with ML-DSA-87 (NIST FIPS 204, security category 5 post-quantum signatures). The public network is currently a pre-mainnet pilot.
 
 ---
 

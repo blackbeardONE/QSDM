@@ -29,8 +29,9 @@ This document is the reference for what the page does, how, and why.
    Browser tab
    ───────────
                 ┌────────────────────────────────────────┐
-                │ wallet.html  (UI: 3 tabs)              │
-                │   Generate · Open · Sign               │
+                │ wallet.html  (UI: 5 tabs)              │
+                │   Generate · Open · Sign · Balance ·   │
+                │   Send                                 │
                 └───────────────────┬────────────────────┘
                                     │ DOM events
                                     ▼
@@ -108,9 +109,11 @@ What the wallet **does** protect against:
    `POST /api/v1/wallet/create` endpoint is intentionally **not** used by
    this page — that route returns a "ghost" address with no recoverable
    key, useful only as a write-only sink. The web wallet replaces it.
-2. **Network observers** (passive and active). The page never POSTs the
-   passphrase, the private key, or even the public address. Confirm in
-   DevTools → Network: the only requests are the four static GETs above.
+2. **Network observers** (passive and active). The page never sends the
+   passphrase or private key. Generate, Open and Sign make no network
+   requests beyond loading the static files; Balance reads public data and
+   Send posts only the signed transaction to
+   `POST /api/v1/wallet/submit-signed`.
 3. **Disk-resident attackers (offline).** The keystore on disk is
    AES-256-GCM-encrypted under a PBKDF2-derived key (600 k iterations,
    SHA-256). At commodity hardware speeds (~10⁵ guesses/sec on a
@@ -132,7 +135,7 @@ the UI call this out):
    modified to exfiltrate the private key the moment it's generated.
    Mitigations:
    - The repo publishes the WASM artefact at a known path with a
-     git-tracked SHA-256 (see `RELEASE_NOTES`).
+     git-tracked SHA-256 (published with the matching release).
    - The CLI (`qsdmcli wallet new`) is the cold-storage path that
      bypasses the website entirely.
    - Subresource Integrity (SRI) for `wallet.wasm` is a planned
@@ -163,11 +166,11 @@ A QSDM operator (you, on `blackbeardONE/QSDM`) ships the wallet by:
 3. Verifying locally:
    - `python3 -m http.server -d QSDM/deploy/landing 8088`
    - Open `http://127.0.0.1:8088/wallet.html`
-   - Confirm DevTools → Network shows GETs only for the four static files
+   - Confirm DevTools → Network shows GETs only for the static files
      and nothing else after pressing Generate.
 4. Confirming the published build matches the repo:
    - `curl -s https://qsdm.tech/wallet.wasm | sha256sum`
-   - Compare to the value in `RELEASE_NOTES_v0.3.x.md` under "wallet WASM SHA-256".
+   - Compare to the SHA-256 published with the matching release.
 
 ---
 
@@ -261,7 +264,7 @@ Why the deep-link path remains supported:
 - The private key stays in the local wallet/keystore; Sky Fang never sees it.
 - It also works when the browser extension is not installed.
 
-Hive 1.4.12 supports the QSDM Wallet extension for Chrome, Edge,
+Hive 1.4.21 supports the QSDM Wallet extension for Chrome, Edge,
 Chromium, Brave, and Firefox. Supported HTTPS sites can use its `window.qsdm`
 provider for account connection, balance reads, message signing, and approved
 CELL transfers. The extension is not a second wallet: it stores no keystore,
@@ -269,11 +272,9 @@ private key, or passphrase. It talks to Hive through the authenticated native
 messaging bridge and exact-origin permissions, while Hive displays every
 signing or transfer approval.
 
-Until browser-store review is complete, Chrome, Edge, Chromium, and Brave users
-download the Chromium package once from <https://qsdm.tech/download.html>,
-extract it, and load the folder from their browser's extension page. Normal
-Firefox releases require a Mozilla-signed XPI; the published Firefox ZIP is a
-submission and temporary-testing artifact until that signing step is complete.
+Install the extension from your browser's store where available. Manual
+Chromium and Firefox review packages remain on <https://qsdm.tech/download.html>
+for testing.
 The Sky Fang deep link and the extension are complementary transport paths to
 the same Hive-held wallet, not separate accounts.
 
@@ -281,12 +282,9 @@ First-run links now use <https://qsdm.tech/wallet-start.html?login=new>. An
 installed provider asks its own background worker to open
 `home.html#/onboarding/welcome?login=new`; a missing provider is sent to the
 official extension download. This avoids browser-specific extension URLs in
-websites. Extension 0.5.1 sends enabled sign-in methods to the HTTPS QSDM
-Account dashboard and exposes that dashboard directly from its popup. Telegram
-is currently enabled in production and is verified with Authorization Code +
-PKCE and server-side ID-token checks. Email remains hidden until production
-outbound email delivery is configured. The extension never receives provider
-credentials.
+websites. Extension 0.5.1 opens the QSDM Account dashboard from its popup.
+Sign-in currently uses the Hive wallet; email and Telegram sign-in are turned
+off. The extension never receives provider credentials.
 
 The extension popup now shows the active wallet's current CELL balance and
 opens a full wallet dashboard. That dashboard can copy the receiving address,
@@ -314,19 +312,13 @@ page.
 
 ## 7. Known limitations / roadmap
 
-- The standalone web-wallet tools produce signatures locally and leave
-  submission to the operator (`curl`, `qsdmcli tx`, or an SDK). When the page
-  is connected to Hive through the extension, its Hive panel can request and
-  submit a CELL transfer after Hive shows a fresh user approval.
-- Browser-store publication is still pending. Versioned Chromium and Firefox
-  packages are available from the QSDM download page, but users must perform a
-  one-time manual extension installation until store distribution is approved.
-- WebCrypto's PBKDF2 implementation is constant-iteration; on slower
-  hardware (mobile browsers) the encrypt step can take 2-3 seconds.
-  The page spinners through it but the UX is not great. Argon2
-  (faster + memory-hard) would be the upgrade path — it isn't in
-  WebCrypto as of late 2026, so this would require a WASM-side
-  KDF, which is itself an attack surface. Holding for upstream.
+- The Send tab signs locally in WASM and submits the signed transaction to
+  `POST /api/v1/wallet/submit-signed`. When the page is connected to Hive
+  through the extension, its Hive panel can request and submit a CELL transfer
+  after Hive shows a fresh user approval.
+- WebCrypto PBKDF2 can take 2-3 seconds on slower devices. Argon2id would be a
+  stronger KDF but is not available in WebCrypto; adding it in WASM is
+  deferred.
 - No keystore "rename / move passphrase" flow yet. Implementable: open,
   re-encrypt with a new passphrase, save. Trivial follow-up.
 - The standalone browser wallet still creates legacy random wallets whose

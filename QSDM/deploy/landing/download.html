@@ -3,87 +3,69 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Download QSDM Hive</title>
+  <title>Download QSDM Hive for Windows and Linux — QSDM</title>
   <meta
     name="description"
-    content="Download QSDM Hive for Windows or Linux. CELL wallets, signed tasks, NVIDIA mining, and pooled edge participation."
+    content="Download QSDM Hive 1.4.21 for Windows or Linux, with SHA-256 checksums. CELL wallet, signed tasks, NVIDIA mining and pooled edge participation."
   />
+  <link rel="canonical" href="https://qsdm.tech/download.html" />
   <meta name="theme-color" content="#061116" />
-  <link rel="icon" href="/assets/qsdm-hive-icon.png" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link
-    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap"
-    rel="stylesheet"
-  />
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/brand/favicon-16.png" />
+  <link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <meta property="og:image" content="https://qsdm.tech/assets/brand/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="QSDM logo: Quantum-Secure Dynamic Mesh ledger and the CELL coin" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://qsdm.tech/assets/brand/og-image.png" />
   <link rel="stylesheet" href="/assets/site.css" />
+  <link rel="stylesheet" href="/assets/site-shell.css" />
   <style>
-    :root { color-scheme: dark; font-size: 16px; }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      line-height: 1.55;
+    .release-banner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem 1.25rem;
+      padding: 0.9rem 1.1rem;
+      border: 1px solid rgba(214, 183, 95, 0.45);
+      border-radius: var(--radius);
+      background: rgba(214, 183, 95, 0.08);
     }
-    img { display: block; max-width: 100%; }
-
-    main { padding: 3.5rem 0 5rem; }
-
-    .hero {
-      max-width: 42rem;
-      margin: 0 auto 3.5rem;
-      text-align: center;
+    .release-banner strong { color: var(--gold); font-weight: 600; }
+    .release-banner .mono { font-size: 0.86rem; color: var(--text-2); }
+    .os-card { display: grid; gap: 1rem; align-content: start; }
+    .os-card h3 { margin: 0; font-size: 1.25rem; }
+    .os-card .ver { color: var(--muted); font-size: 0.86rem; }
+    .file {
+      display: grid;
+      gap: 0.45rem;
+      padding-top: 0.9rem;
+      border-top: 1px solid var(--border);
     }
-    .hero .tag {
-      display: inline-flex;
-      margin-bottom: 1.25rem;
-      padding: 0.3rem 0.7rem;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      color: var(--muted);
-      font-size: 0.8rem;
-      font-weight: 500;
-    }
-    h1 {
-      margin: 0 0 1rem;
-      font-size: 3.75rem;
-      font-weight: 600;
-      line-height: 1.05;
-      color: var(--text);
-      overflow-wrap: anywhere;
-    }
-    .lead {
-      margin: 0;
-      color: var(--muted);
-      font-size: 1.08rem;
-    }
-    .wallet-note {
-      margin: 1.15rem 0 0;
-      color: rgba(173, 198, 204, 0.45);
-      font-size: 0.9rem;
-    }
-    .wallet-note a {
-      color: var(--muted);
-      text-decoration: underline;
-      text-underline-offset: 2px;
-    }
-    .wallet-note a:hover { color: var(--text); }
+    .file-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; align-items: baseline; }
+    .file-name { font-family: var(--mono); font-size: 0.86rem; color: var(--text); overflow-wrap: anywhere; }
+    .file-size { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
+    .hash-label { color: var(--muted); font-size: 0.74rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+    .codeline code.hash { white-space: normal; overflow-wrap: anywhere; font-size: 0.76rem; }
+    .os-card .q-actions { margin-top: 0.25rem; }
+    .verify-steps { display: grid; gap: 1rem; }
+    .verify-steps h3 { margin: 0 0 0.45rem; font-size: 1rem; }
+    .integrity p { margin: 0 0 0.75rem; color: var(--muted); font-size: 0.94rem; }
+    .integrity p:last-child { margin-bottom: 0; }
 
     .panel {
       display: grid;
       gap: 1.25rem;
       padding: 1.5rem;
-      margin-bottom: 0.75rem;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background: var(--panel);
     }
-    @media (min-width: 860px) {
-      .panel {
-        grid-template-columns: minmax(0, 1fr) minmax(240px, 0.42fr);
-        align-items: center;
-      }
-    }
+    .panel h2 { margin: 0 0 0.65rem; font-size: 1.35rem; font-weight: 600; }
+    .panel p { margin: 0 0 1.1rem; color: var(--muted); font-size: 0.95rem; }
     .version {
       display: inline-flex;
       margin-bottom: 0.75rem;
@@ -94,23 +76,16 @@
       font-size: 0.78rem;
       font-weight: 500;
     }
-    h2 {
-      margin: 0 0 0.65rem;
-      font-size: 1.35rem;
-      font-weight: 600;
-      color: var(--text);
+    .checksum {
+      padding: 1rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      color: rgba(173, 198, 204, 0.6);
+      font-size: 0.8rem;
+      overflow-wrap: anywhere;
     }
-    .panel p {
-      margin: 0 0 1.1rem;
-      color: var(--muted);
-      font-size: 0.95rem;
-    }
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-    }
-
+    .checksum strong { display: block; color: var(--muted); font-weight: 500; }
     .package-options {
       margin-top: 0.8rem;
       color: var(--muted);
@@ -123,7 +98,7 @@
       color: var(--teal);
     }
 
-    .package-options .actions { margin-top: 0.65rem; }
+    .package-options .q-actions { margin-top: 0.65rem; }
 
     .wallet-extension-panel { grid-template-columns: minmax(0, 1fr); }
     .browser-options {
@@ -193,376 +168,333 @@
     }
     .wallet-extension-security { margin-top: 1rem; }
 
-    .checksum {
-      padding: 1rem;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--bg);
-      color: rgba(173, 198, 204, 0.45);
-      font-size: 0.8rem;
-      overflow-wrap: anywhere;
-    }
-    .checksum code {
-      display: block;
-      margin-top: 0.35rem;
-      color: rgba(245, 245, 245, 0.75);
-      font-family: var(--mono);
-      font-size: 0.72rem;
-      line-height: 1.5;
-    }
-    .checksum strong {
-      display: block;
-      margin-top: 0.85rem;
-      color: var(--muted);
-      font-weight: 500;
-    }
-    @media (max-width: 639px) {
-      h1 { font-size: 2.4rem; }
-    }
   </style>
 </head>
-<body>
-  <a class="skip-link" href="#main">Skip to content</a>
-  <header class="site-header">
-  <div class="site-header-inner">
-    <a class="site-brand" href="/">
-      <img src="/assets/qsdm-hive-icon.png" alt="" />
-      <span>QSDM</span>
-    </a>
-    <nav class="site-nav" aria-label="Primary">
-      <div class="site-nav-item">
-        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
-          Network <span class="site-nav-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="site-nav-panel" role="menu">
-          <a href="/network.html" role="menuitem">Overview<span class="site-nav-hint">Live CELL network</span></a>
-          <a href="/explorer.html" role="menuitem">Explorer<span class="site-nav-hint">Search + chain tip</span></a>
-          <a href="/api.html" role="menuitem">API<span class="site-nav-hint">HTTP v1 overview</span></a>
-          <a href="/validators.html" role="menuitem">Validators<span class="site-nav-hint">Bootstrap peers</span></a>
-        </div>
-      </div>
-      <div class="site-nav-item">
-        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
-          Hive <span class="site-nav-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="site-nav-panel" role="menu">
-          <a href="/download.html" role="menuitem">Download Hive<span class="site-nav-hint">Windows + Linux app</span></a>
-          <a href="/account/" role="menuitem">QSDM Account<span class="site-nav-hint">Identity + linked wallets</span></a>
-          <a href="/wallet.html" role="menuitem">Web wallet<span class="site-nav-hint">Browser self-custody</span></a>
-          <a href="https://qsdm.online/" role="menuitem">QSDM VPN<span class="site-nav-hint">Private Android access</span></a>
-        </div>
-      </div>
-      <a href="/docs/">Docs</a>
-      <div class="site-nav-item">
-        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
-          Trust <span class="site-nav-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="site-nav-panel" role="menu">
-          <a href="/audit.html" role="menuitem">Public audit<span class="site-nav-hint">Live checklist</span></a>
-          <a href="/trust.html" role="menuitem">Attestations<span class="site-nav-hint">NVIDIA feed</span></a>
-        </div>
-      </div>
-    </nav>
-    <div class="site-actions">
-      <a class="site-btn site-btn-ghost site-account-action" href="/account/">Account</a>
-      <a class="site-btn site-btn-solid" href="/download.html">Download</a>
-      <button class="site-menu-toggle" type="button" id="siteMenuToggle" aria-label="Open menu" aria-expanded="false">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 7H4V5H20V7ZM20 13H4V11H20V13ZM20 19H4V17H20V19Z"/></svg>
-      </button>
-    </div>
-  </div>
-  <div class="site-mobile-nav" id="siteMobileNav">
-    <div class="site-mobile-group">
-      <div class="site-mobile-label">Network</div>
-      <a href="/network.html">Overview</a>
-      <a href="/explorer.html">Explorer</a>
-      <a href="/api.html">API</a>
-      <a href="/validators.html">Validators</a>
-    </div>
-    <div class="site-mobile-group">
-      <div class="site-mobile-label">Hive</div>
-      <a href="/download.html">Download Hive</a>
-      <a href="/account/">QSDM Account</a>
-      <a href="/wallet.html">Web wallet</a>
-      <a href="https://qsdm.online/">QSDM VPN</a>
-    </div>
-    <div class="site-mobile-group">
-      <div class="site-mobile-label">Learn</div>
-      <a href="/docs/">Docs</a>
-      <a href="/audit.html">Public audit</a>
-      <a href="/trust.html">Attestations</a>
-    </div>
-  </div>
-</header>
+<body data-page="download">
+  <header id="site-header"></header>
+  <script src="/assets/site-shell.js"></script>
 
-  <main id="main" class="shell">
-    <section class="hero" aria-labelledby="download-title">
-      <span class="tag">Hive 1.4.17 · Edge Control 1.3.7</span>
-      <h1 id="download-title">Download QSDM Hive</h1>
-      <p class="lead">
-        Windows and Linux client for CELL wallets, signed tasks, NVIDIA mining,
-        and pooled CPU, GPU, and RAM participation.
-      </p>
-      <p class="wallet-note">
-        Prefer a lighter browser wallet for balance checks and CELL transfers?
-        Use the <a href="/wallet.html">web wallet</a>. Hive remains the full desktop client.
-      </p>
-    </section>
-
-    <section class="panel" aria-labelledby="integrity-title">
-      <div>
-        <span class="version">Release integrity</span>
-        <h2 id="integrity-title">Release integrity</h2>
-        <p>
-          QSDM Hive for Windows is currently published without Microsoft
-          Authenticode signing. The SignPath Foundation application was declined
-          for now because QSDM needs more external public adoption signals
-          before Foundation sponsorship is available.
+  <main id="main">
+    <section class="page-hero" aria-labelledby="download-title">
+      <div class="q-wrap">
+        <span class="q-eyebrow">Downloads</span>
+        <h1 id="download-title">Download QSDM Hive</h1>
+        <p class="lead">
+          Windows and Linux client for CELL wallets, signed tasks, NVIDIA mining,
+          and pooled CPU, GPU, and RAM participation. Prefer a lighter browser wallet
+          for balance checks and CELL transfers? Use the <a href="/wallet.html">web wallet</a>.
+          Hive remains the full desktop client.
         </p>
-        <p>
-          Verify the SHA-256 checksum before installing. A checksum detects
-          changed bytes; it does not make Windows show a verified publisher.
-          SmartScreen may warn until QSDM has a paid or accepted Authenticode
-          signing path.
-        </p>
-        <p>
-          QSDM also signs each release manifest and file hash with ML-DSA-87.
-          This check is separate from Microsoft Authenticode.
-        </p>
-        <div class="actions">
-          <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/CODE_SIGNING_POLICY.md" rel="noopener" target="_blank">Code signing policy</a>
-          <a class="site-btn site-btn-ghost" href="/privacy.html">Privacy policy</a>
-          <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/blob/main/SECURITY.md" rel="noopener" target="_blank">Security reporting</a>
+        <div class="release-banner" style="margin-top:1.5rem" role="note">
+          <strong>Latest release: QSDM Hive 1.4.21 · 2026-10-04</strong>
+          <span class="mono">Windows and Linux Hive 1.4.21 · Edge Control 1.3.7</span>
         </div>
-      </div>
-      <div class="checksum">
-        Current Windows builds are unsigned. Trust the release only after the
-        versioned download URL, SHA-256 checksum, and QSDM-native release
-        signature match the public manifest.
       </div>
     </section>
 
-    <section class="panel" aria-labelledby="installer-title">
-      <div>
-        <span class="version">Version 1.4.17</span>
-        <h2 id="installer-title">Windows installer</h2>
-        <p>
-          Current QSDM Hive release for Windows. Automatic update checks use the
-          normal latest-release channel. Windows SmartScreen may warn because
-          this installer is not Authenticode-signed. No separate consumer GUI
-          miner is shipped.
-        </p>
-        <div class="actions">
-          <a class="site-btn site-btn-solid" href="/downloads/qsdm-hive-1.4.17-win-x64.exe" download>Download Hive 1.4.17</a>
-          <a class="site-btn site-btn-ghost" href="/downloads/SHA256SUMS-win.txt">Checksums</a>
-          <a class="site-btn site-btn-ghost" href="/docs/#/qsdm-hive">Installation notes</a>
-        </div>
-      </div>
-      <div class="checksum">
-        <strong>Release verification</strong>
-        <code>See SHA256SUMS-win.txt</code>
-        <span>Verify the hash before running. This Windows installer is unsigned and may trigger SmartScreen.</span>
-      </div>
-    </section>
-
-    <section class="panel" aria-labelledby="linux-title">
-      <div>
-        <span class="version">Version 1.4.17</span>
-        <h2 id="linux-title">Linux x86-64</h2>
-        <p>
-          Use the AppImage on desktop Linux with GTK 3, or the tar package for a portable
-          installation. Ordinary users do not need a local Core. Wallet keys stay local;
-          signed miner enrollment goes to the production QSDM Network.
-        </p>
-        <div class="actions">
-          <a class="site-btn site-btn-solid" href="/downloads/qsdm-hive-1.4.17-linux-x86_64.AppImage" download>Download AppImage</a>
-          <a class="site-btn site-btn-solid" href="/downloads/qsdm-hive-1.4.17-linux-x64.tar.gz" download>Download tar.gz</a>
-          <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-1.4.17-linux-SHA256SUMS.txt">Checksums</a>
-        </div>
-      </div>
-      <div class="checksum">
-        <strong>Release verification</strong>
-        <code>See qsdm-hive-1.4.17-linux-SHA256SUMS.txt</code>
-        <span>Verify the package hash before running QSDM Hive.</span>
-      </div>
-    </section>
-
-    <section class="panel" aria-labelledby="core-operator-title">
-      <div>
-        <span class="version">Core v0.4.7-rc.9</span>
-        <h2 id="core-operator-title">Validator and Home Gateway</h2>
-        <p>
-          Advanced operator packages for running QSDM Core with SQLite and the
-          outbound-only Home Gateway. QSDM Hive users do not need these files.
-        </p>
-        <div class="actions">
-          <a class="site-btn site-btn-solid" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/qsdm-validator-v0.4.7-rc.9-windows-amd64.zip" rel="noopener">Windows validator</a>
-          <a class="site-btn site-btn-solid" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/qsdm-validator-v0.4.7-rc.9-linux-amd64.tar.gz" rel="noopener">Linux validator</a>
-          <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/qsdm-home-gateway-windows-amd64.exe" rel="noopener">Windows gateway</a>
-          <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/qsdm-home-gateway-linux-amd64" rel="noopener">Linux gateway</a>
-          <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/SHA256SUMS" rel="noopener">Checksums</a>
-          <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/releases/tag/v0.4.7-rc.9" rel="noopener" target="_blank">Release notes</a>
-        </div>
-      </div>
-      <div class="checksum">
-        <strong>Install together</strong>
-        <code>QSDM Core + Home Gateway v0.4.7-rc.9</code>
-        <span>Verify SHA256SUMS before installation. Keep Core on localhost and publish only the gateway's restricted routes.</span>
-      </div>
-    </section>
-
-    <section id="browser-extension" class="panel wallet-extension-panel" aria-labelledby="wallet-extension-title" data-wallet-extension-version="0.5.1">
-      <div>
-        <span class="version">Version 0.5.1</span>
-        <h2 id="wallet-extension-title">QSDM Wallet browser extension</h2>
-        <p>
-          Connect supported websites to the active wallet in QSDM Hive without
-          copying a keystore or passphrase into the browser. Install QSDM Hive
-          1.4.17 or newer first. The extension shows the current CELL balance,
-          receiving address, and wallet-to-wallet transfer controls while Hive
-          keeps the signing keys and approves every transfer. Choose your browser below. Consumer installation will use each
-          browser's own store, with no ZIP extraction or shared generic download.
-          The listings are being prepared and remain unavailable until the
-          browser vendors approve them.
-        </p>
-
-        <div class="browser-options" aria-label="Browser extension stores">
-          <article class="browser-option" data-wallet-browser-card="chrome">
-            <div class="browser-option-header">
-              <span class="browser-mark" aria-hidden="true">CH</span>
-              <div>
-                <h3>Google Chrome</h3>
-                <span class="browser-channel">Chrome Web Store</span>
-              </div>
-              <span class="browser-recommended" data-browser-recommended hidden>Recommended</span>
+    <section class="sec" aria-labelledby="os-title" style="border-top:0;padding-top:0">
+      <div class="q-wrap">
+        <h2 id="os-title" class="visually-hidden">Choose your operating system</h2>
+        <div class="q-grid q-grid-2">
+          <article class="card os-card" aria-labelledby="win-title">
+            <div>
+              <h3 id="win-title">Windows</h3>
+              <span class="ver">Version 1.4.21 · x64 installer · published 2026-10-04</span>
             </div>
-            <p class="browser-option-copy">One-click Chrome installation after store approval.</p>
-            <div class="browser-option-actions">
-              <a class="site-btn site-btn-solid" data-browser-install hidden rel="noopener">Install in Chrome</a>
-              <span class="browser-store-state" data-browser-pending>Store listing pending</span>
+            <p>
+              Current QSDM Hive release for Windows: automatic miner signing, new look,
+              and a new release-signing key. Windows SmartScreen may warn because
+              this installer is not Authenticode-signed. No separate consumer GUI
+              miner is shipped.
+            </p>
+            <p class="q-note" data-qsdm-note="release-key-v2"><strong>Updating from Hive 1.4.20?</strong> Hive 1.4.21 is signed with a new release key, so 1.4.20 cannot update itself. Download and run this installer once; your wallet and settings are kept. Hive 1.4.20 stops working after 19 December 2026.</p>
+            <div class="file">
+              <div class="file-head">
+                <span class="file-name">qsdm-hive-1.4.21-win-x64.exe</span>
+                <span class="file-size">128.6 MB</span>
+              </div>
+              <span class="hash-label">SHA-256</span>
+              <div class="codeline"><code class="hash" id="h-win">b3f408f861eccfd03d049e3344bb6a9d49ce777b20ad8bd4bd22843b27b48e6b</code><button class="copy-btn" type="button" data-copy-target="h-win" aria-label="Copy Windows installer SHA-256">Copy</button></div>
+            </div>
+            <div class="q-actions">
+              <a class="site-btn site-btn-solid" href="/downloads/hive-v2/qsdm-hive-1.4.21-win-x64.exe" download>Download Hive 1.4.21</a>
+              <a class="site-btn site-btn-ghost" href="/downloads/hive-v2/SHA256SUMS-win.txt">Checksums</a>
+              <a class="site-btn site-btn-ghost" href="/docs/#/qsdm-hive">Installation notes</a>
             </div>
           </article>
 
-          <article class="browser-option" data-wallet-browser-card="edge">
-            <div class="browser-option-header">
-              <span class="browser-mark" aria-hidden="true">ED</span>
-              <div>
-                <h3>Microsoft Edge</h3>
-                <span class="browser-channel">Microsoft Edge Add-ons</span>
+          <article class="card os-card" aria-labelledby="linux-title">
+            <div>
+              <h3 id="linux-title">Linux x86-64</h3>
+              <span class="ver">Version 1.4.21 · AppImage or tar.gz · published 2026-10-04</span>
+            </div>
+            <p>
+              Use the AppImage on desktop Linux with GTK 3, or the tar package for a portable
+              installation. Ordinary users do not need a local Core. Wallet keys stay local;
+              signed miner enrollment goes to the production QSDM Network. Includes
+              automatic miner signing and the new release-signing key.
+            </p>
+            <p class="q-note" data-qsdm-note="release-key-v2-linux"><strong>Updating from Hive 1.4.17?</strong> Hive 1.4.21 is signed with a new release key, so 1.4.17 cannot update itself. Download it once and run it in place of 1.4.17; your wallet and settings are kept. Hive 1.4.17 stops working after 9 November 2026.</p>
+            <div class="file">
+              <div class="file-head">
+                <span class="file-name">qsdm-hive-1.4.21-linux-x86_64.AppImage</span>
+                <span class="file-size">163.8 MB</span>
               </div>
-              <span class="browser-recommended" data-browser-recommended hidden>Recommended</span>
+              <span class="hash-label">SHA-256</span>
+              <div class="codeline"><code class="hash" id="h-appimage">25623568dc04f46ffb2e9d3b016c499ba0d7f0d013e1f713699bd130a63e9a05</code><button class="copy-btn" type="button" data-copy-target="h-appimage" aria-label="Copy AppImage SHA-256">Copy</button></div>
             </div>
-            <p class="browser-option-copy">One-click Edge installation after store approval.</p>
-            <div class="browser-option-actions">
-              <a class="site-btn site-btn-solid" data-browser-install hidden rel="noopener">Install in Edge</a>
-              <span class="browser-store-state" data-browser-pending>Store listing pending</span>
-            </div>
-          </article>
-
-          <article class="browser-option" data-wallet-browser-card="brave">
-            <div class="browser-option-header">
-              <span class="browser-mark" aria-hidden="true">BR</span>
-              <div>
-                <h3>Brave</h3>
-                <span class="browser-channel">Chrome Web Store</span>
+            <div class="file">
+              <div class="file-head">
+                <span class="file-name">qsdm-hive-1.4.21-linux-x64.tar.gz</span>
+                <span class="file-size">161.6 MB</span>
               </div>
-              <span class="browser-recommended" data-browser-recommended hidden>Recommended</span>
+              <span class="hash-label">SHA-256</span>
+              <div class="codeline"><code class="hash" id="h-tar">bc624e5381bf27bd17b311f1350fd5be5f39bfec37328e87eb60bbf3d4023240</code><button class="copy-btn" type="button" data-copy-target="h-tar" aria-label="Copy tar.gz SHA-256">Copy</button></div>
             </div>
-            <p class="browser-option-copy">Brave uses the approved Chrome Web Store release.</p>
-            <div class="browser-option-actions">
-              <a class="site-btn site-btn-solid" data-browser-install hidden rel="noopener">Install in Brave</a>
-              <span class="browser-store-state" data-browser-pending>Store listing pending</span>
-            </div>
-          </article>
-
-          <article class="browser-option" data-wallet-browser-card="firefox">
-            <div class="browser-option-header">
-              <span class="browser-mark" aria-hidden="true">FF</span>
-              <div>
-                <h3>Mozilla Firefox</h3>
-                <span class="browser-channel">Firefox Add-ons</span>
-              </div>
-              <span class="browser-recommended" data-browser-recommended hidden>Recommended</span>
-            </div>
-            <p class="browser-option-copy">One-click Firefox installation after Mozilla signing.</p>
-            <div class="browser-option-actions">
-              <a class="site-btn site-btn-solid" data-browser-install hidden rel="noopener">Install in Firefox</a>
-              <span class="browser-store-state" data-browser-pending>Store listing pending</span>
+            <div class="q-actions">
+              <a class="site-btn site-btn-solid" href="/downloads/hive-v2/qsdm-hive-1.4.21-linux-x86_64.AppImage" download>Download AppImage</a>
+              <a class="site-btn site-btn-solid" href="/downloads/hive-v2/qsdm-hive-1.4.21-linux-x64.tar.gz" download>Download tar.gz</a>
+              <a class="site-btn site-btn-ghost" href="/downloads/hive-v2/qsdm-hive-1.4.21-linux-SHA256SUMS.txt">Checksums</a>
             </div>
           </article>
         </div>
+      </div>
+    </section>
 
-        <details class="package-options">
-          <summary>Advanced manual installation</summary>
-          <p>
-            Store review is pending. The ZIP files below are advanced manual and
-            store-review packages. Normal Chrome on Windows and macOS accepts
-            consumer extensions only from the Chrome Web Store, and normal Firefox
-            requires a Mozilla-signed XPI.
-          </p>
-          <div class="actions">
-            <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.5.1-chrome.zip" download>Chrome review package</a>
-            <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.5.1-edge.zip" download>Edge review package</a>
-            <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.5.1-brave.zip" download>Brave review package</a>
-            <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.5.1-firefox.zip" download>Firefox review package</a>
-            <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.5.1-SHA256SUMS.txt">Checksums</a>
-            <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/tree/main/apps/qsdm-hive-wallet-extension" rel="noopener" target="_blank">Manual setup guide</a>
+    <section class="sec" aria-labelledby="verify-title" id="verify">
+      <div class="q-wrap">
+        <div class="sec-head">
+          <h2 id="verify-title">Verify your download</h2>
+          <p>Compute the SHA-256 of the file you downloaded and compare it with the value above or in the published checksum file. They must match exactly.</p>
+        </div>
+        <div class="q-grid q-grid-2">
+          <div class="card verify-steps">
+            <div>
+              <h3>Windows (PowerShell)</h3>
+              <div class="codeline"><code id="c-win">Get-FileHash -Algorithm SHA256 .\qsdm-hive-1.4.21-win-x64.exe</code><button class="copy-btn" type="button" data-copy-target="c-win" aria-label="Copy PowerShell command">Copy</button></div>
+            </div>
+            <p class="q-note">Expected: <span class="mono">b3f408f8…b48e6b</span> (PowerShell prints it in upper case; case does not matter).</p>
           </div>
-        </details>
-      </div>
-      <div class="checksum wallet-extension-security">
-        <strong>Security boundary</strong>
-        <span>Hive keeps the wallet secrets. Each website connection and every signing or CELL transfer action requires explicit approval. Store installation remains the normal consumer path; manual packages are published for review and controlled testing.</span>
-      </div>
-    </section>
+          <div class="card verify-steps">
+            <div>
+              <h3>Linux (terminal)</h3>
+              <div class="codeline"><code id="c-linux">sha256sum qsdm-hive-1.4.21-linux-x86_64.AppImage</code><button class="copy-btn" type="button" data-copy-target="c-linux" aria-label="Copy sha256sum command">Copy</button></div>
+            </div>
+            <div>
+              <h3>Or check against the checksum file</h3>
+              <div class="codeline"><code id="c-linux-c">sha256sum -c --ignore-missing qsdm-hive-1.4.21-linux-SHA256SUMS.txt</code><button class="copy-btn" type="button" data-copy-target="c-linux-c" aria-label="Copy sha256sum -c command">Copy</button></div>
+            </div>
+          </div>
+        </div>
 
-    <section class="panel" aria-labelledby="edge-agent-title">
-      <div>
-        <span class="version">Edge Control 1.3.7</span>
-        <h2 id="edge-agent-title">Agent and Relay utilities</h2>
-        <p>
-          Agent and Relay utilities for trusted lab or office computers. These are
-          support tools. QSDM Hive remains the desktop app and Mother Hive coordinator.
-        </p>
-        <div class="actions">
-          <a class="site-btn site-btn-solid" href="/downloads/qsdm-edge-agent-1.3.7-windows-x86_64.zip">Windows Agent + Relay bundle</a>
-          <a class="site-btn site-btn-solid" href="/downloads/qsdm-edge-agent-1.3.7-linux-x86_64.tar.gz">Linux Agent + Relay bundle</a>
-          <a class="site-btn site-btn-ghost" href="/downloads/qsdm-edge-agent-1.3.7-SHA256SUMS.txt">Checksums</a>
-          <a class="site-btn site-btn-ghost" href="/docs/#/edge-pool">Deployment guide</a>
+        <div class="card integrity" style="margin-top:0.75rem" aria-labelledby="integrity-title">
+          <h3 id="integrity-title">Release integrity</h3>
+          <p>
+            QSDM Hive for Windows is currently published without Microsoft
+            Authenticode signing. The SignPath Foundation application was declined
+            for now because QSDM needs more external public adoption signals
+            before Foundation sponsorship is available.
+          </p>
+          <p>
+            Verify the SHA-256 checksum before installing. A checksum detects
+            changed bytes; it does not make Windows show a verified publisher.
+            SmartScreen may warn until QSDM has a paid or accepted Authenticode
+            signing path.
+          </p>
+          <p>
+            QSDM also signs each release manifest and file hash with ML-DSA-87.
+            This check is separate from Microsoft Authenticode. Current Windows builds
+            are unsigned. Trust the release only after the versioned download URL,
+            SHA-256 checksum, and QSDM-native release signature match the public manifest.
+          </p>
+          <div class="q-actions">
+            <a class="site-btn site-btn-ghost ext" href="https://github.com/blackbeardONE/QSDM/blob/main/CODE_SIGNING_POLICY.md" rel="noopener" target="_blank">Code signing policy</a>
+            <a class="site-btn site-btn-ghost" href="/privacy.html">Privacy policy</a>
+            <a class="site-btn site-btn-ghost ext" href="https://github.com/blackbeardONE/QSDM/blob/main/SECURITY.md" rel="noopener" target="_blank">Security reporting</a>
+          </div>
         </div>
       </div>
-      <div class="checksum">
-        Agents connect outward with authentication and run only approved QSDM CPU,
-        CUDA GPU, or RAM jobs. They do not provide a remote shell.
-      </div>
     </section>
 
-    <p class="wallet-note" style="margin: 2rem 0 0; text-align: center;">
-      After install, see the
-      <a href="/docs/#/qsdm-hive">Hive guide</a>,
-      <a href="/docs/#/miner-quickstart">miner quickstart</a>,
-      and
-      <a href="/docs/#/edge-pool">edge pool</a>
-      docs.
-    </p>
+    <section class="sec" aria-labelledby="more-title">
+      <div class="q-wrap">
+        <div class="sec-head">
+          <h2 id="more-title">Other downloads</h2>
+          <p>Operator packages, the browser extension, and edge utilities. QSDM Hive users do not need these.</p>
+        </div>
+        <div class="q-grid" style="gap:0.75rem">
+          <section class="panel" aria-labelledby="core-operator-title">
+            <div>
+              <span class="version">Core v0.4.7-rc.9</span>
+              <h2 id="core-operator-title">Validator and Home Gateway</h2>
+              <p>
+                Advanced operator packages for running QSDM Core with SQLite and the
+                outbound-only Home Gateway. QSDM Hive users do not need these files.
+                Files are hosted on GitHub Releases.
+              </p>
+              <div class="q-actions">
+                <a class="site-btn site-btn-solid ext" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/qsdm-validator-v0.4.7-rc.9-windows-amd64.zip" rel="noopener">Windows validator</a>
+                <a class="site-btn site-btn-solid ext" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/qsdm-validator-v0.4.7-rc.9-linux-amd64.tar.gz" rel="noopener">Linux validator</a>
+                <a class="site-btn site-btn-ghost ext" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/qsdm-home-gateway-windows-amd64.exe" rel="noopener">Windows gateway</a>
+                <a class="site-btn site-btn-ghost ext" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/qsdm-home-gateway-linux-amd64" rel="noopener">Linux gateway</a>
+                <a class="site-btn site-btn-ghost ext" href="https://github.com/blackbeardONE/QSDM/releases/download/v0.4.7-rc.9/SHA256SUMS" rel="noopener">Checksums</a>
+                <a class="site-btn site-btn-ghost ext" href="https://github.com/blackbeardONE/QSDM/releases/tag/v0.4.7-rc.9" rel="noopener" target="_blank">Release notes</a>
+              </div>
+            </div>
+            <div class="checksum">
+              <strong>Install together</strong>
+              <code>QSDM Core + Home Gateway v0.4.7-rc.9</code>
+              <span>Verify SHA256SUMS before installation. Keep Core on localhost and publish only the gateway's restricted routes.</span>
+            </div>
+          </section>
+
+          <section id="browser-extension" class="panel wallet-extension-panel" aria-labelledby="wallet-extension-title" data-wallet-extension-version="0.5.1">
+            <div>
+              <span class="version">Version 0.5.1</span>
+              <h2 id="wallet-extension-title">QSDM Wallet browser extension</h2>
+              <p>
+                Connect supported websites to the active wallet in QSDM Hive without
+                copying a keystore or passphrase into the browser. Install QSDM Hive
+                1.4.17 or newer first. The extension shows the current CELL balance,
+                receiving address, and wallet-to-wallet transfer controls while Hive
+                keeps the signing keys and approves every transfer. Choose your browser below. Consumer installation will use each
+                browser's own store, with no ZIP extraction or shared generic download.
+                The listings are being prepared and remain unavailable until the
+                browser vendors approve them.
+              </p>
+
+              <div class="browser-options" aria-label="Browser extension stores">
+                <article class="browser-option" data-wallet-browser-card="chrome">
+                  <div class="browser-option-header">
+                    <span class="browser-mark" aria-hidden="true">CH</span>
+                    <div>
+                      <h3>Google Chrome</h3>
+                      <span class="browser-channel">Chrome Web Store</span>
+                    </div>
+                    <span class="browser-recommended" data-browser-recommended hidden>Recommended</span>
+                  </div>
+                  <p class="browser-option-copy">One-click Chrome installation after store approval.</p>
+                  <div class="browser-option-actions">
+                    <a class="site-btn site-btn-solid" data-browser-install hidden rel="noopener">Install in Chrome</a>
+                    <span class="browser-store-state" data-browser-pending>Store listing pending</span>
+                  </div>
+                </article>
+
+                <article class="browser-option" data-wallet-browser-card="edge">
+                  <div class="browser-option-header">
+                    <span class="browser-mark" aria-hidden="true">ED</span>
+                    <div>
+                      <h3>Microsoft Edge</h3>
+                      <span class="browser-channel">Microsoft Edge Add-ons</span>
+                    </div>
+                    <span class="browser-recommended" data-browser-recommended hidden>Recommended</span>
+                  </div>
+                  <p class="browser-option-copy">One-click Edge installation after store approval.</p>
+                  <div class="browser-option-actions">
+                    <a class="site-btn site-btn-solid" data-browser-install hidden rel="noopener">Install in Edge</a>
+                    <span class="browser-store-state" data-browser-pending>Store listing pending</span>
+                  </div>
+                </article>
+
+                <article class="browser-option" data-wallet-browser-card="brave">
+                  <div class="browser-option-header">
+                    <span class="browser-mark" aria-hidden="true">BR</span>
+                    <div>
+                      <h3>Brave</h3>
+                      <span class="browser-channel">Chrome Web Store</span>
+                    </div>
+                    <span class="browser-recommended" data-browser-recommended hidden>Recommended</span>
+                  </div>
+                  <p class="browser-option-copy">Brave uses the approved Chrome Web Store release.</p>
+                  <div class="browser-option-actions">
+                    <a class="site-btn site-btn-solid" data-browser-install hidden rel="noopener">Install in Brave</a>
+                    <span class="browser-store-state" data-browser-pending>Store listing pending</span>
+                  </div>
+                </article>
+
+                <article class="browser-option" data-wallet-browser-card="firefox">
+                  <div class="browser-option-header">
+                    <span class="browser-mark" aria-hidden="true">FF</span>
+                    <div>
+                      <h3>Mozilla Firefox</h3>
+                      <span class="browser-channel">Firefox Add-ons</span>
+                    </div>
+                    <span class="browser-recommended" data-browser-recommended hidden>Recommended</span>
+                  </div>
+                  <p class="browser-option-copy">One-click Firefox installation after Mozilla signing.</p>
+                  <div class="browser-option-actions">
+                    <a class="site-btn site-btn-solid" data-browser-install hidden rel="noopener">Install in Firefox</a>
+                    <span class="browser-store-state" data-browser-pending>Store listing pending</span>
+                  </div>
+                </article>
+              </div>
+
+              <details class="package-options">
+                <summary>Advanced manual installation</summary>
+                <p>
+                  Store review is pending. The ZIP files below are advanced manual and
+                  store-review packages. Normal Chrome on Windows and macOS accepts
+                  consumer extensions only from the Chrome Web Store, and normal Firefox
+                  requires a Mozilla-signed XPI.
+                </p>
+                <div class="q-actions">
+                  <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.5.1-chrome.zip" download>Chrome review package</a>
+                  <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.5.1-edge.zip" download>Edge review package</a>
+                  <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.5.1-brave.zip" download>Brave review package</a>
+                  <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.5.1-firefox.zip" download>Firefox review package</a>
+                  <a class="site-btn site-btn-ghost" href="/downloads/qsdm-hive-wallet-extension-0.5.1-SHA256SUMS.txt">Checksums</a>
+                  <a class="site-btn site-btn-ghost" href="https://github.com/blackbeardONE/QSDM/tree/main/apps/qsdm-hive-wallet-extension" rel="noopener" target="_blank">Manual setup guide</a>
+                </div>
+              </details>
+            </div>
+            <div class="checksum wallet-extension-security">
+              <strong>Security boundary</strong>
+              <span>Hive keeps the wallet secrets. Each website connection and every signing or CELL transfer action requires explicit approval. Store installation remains the normal consumer path; manual packages are published for review and controlled testing.</span>
+            </div>
+          </section>
+
+          <section class="panel" aria-labelledby="edge-agent-title">
+            <div>
+              <span class="version">Edge Control 1.3.7</span>
+              <h2 id="edge-agent-title">Agent and Relay utilities</h2>
+              <p>
+                Agent and Relay utilities for trusted lab or office computers. These are
+                support tools. QSDM Hive remains the desktop app and Mother Hive coordinator.
+                Agents connect outward with authentication and run only approved QSDM CPU,
+                CUDA GPU, or RAM jobs. They do not provide a remote shell.
+              </p>
+              <div class="file">
+                <div class="file-head"><span class="file-name">qsdm-edge-agent-1.3.7-windows-x86_64.zip</span><span class="file-size">6.7 MB</span></div>
+                <div class="codeline"><code class="hash" id="h-edge-win">85E76B1870BB6C09A617F1211E1243316E05AE03868A7E15A5FD3BE61A3E9EE0</code><button class="copy-btn" type="button" data-copy-target="h-edge-win" aria-label="Copy Windows edge bundle SHA-256">Copy</button></div>
+              </div>
+              <div class="file" style="margin-top:0.75rem">
+                <div class="file-head"><span class="file-name">qsdm-edge-agent-1.3.7-linux-x86_64.tar.gz</span><span class="file-size">6.6 MB</span></div>
+                <div class="codeline"><code class="hash" id="h-edge-linux">77D700E029DF6EDD56F97124487A7BB04071564CF55DE24B904D0D6C02EA858B</code><button class="copy-btn" type="button" data-copy-target="h-edge-linux" aria-label="Copy Linux edge bundle SHA-256">Copy</button></div>
+              </div>
+              <div class="q-actions">
+                <a class="site-btn site-btn-solid" href="/downloads/qsdm-edge-agent-1.3.7-windows-x86_64.zip">Windows Agent + Relay bundle</a>
+                <a class="site-btn site-btn-solid" href="/downloads/qsdm-edge-agent-1.3.7-linux-x86_64.tar.gz">Linux Agent + Relay bundle</a>
+                <a class="site-btn site-btn-ghost" href="/downloads/qsdm-edge-agent-1.3.7-SHA256SUMS.txt">Checksums</a>
+                <a class="site-btn site-btn-ghost" href="/docs/#/edge-pool">Deployment guide</a>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <p class="q-note" style="margin: 2rem 0 0; text-align: center;">
+          After install, see the
+          <a href="/docs/#/qsdm-hive">Hive guide</a>,
+          <a href="/mining.html">mining page</a>,
+          <a href="/docs/#/miner-quickstart">miner quickstart</a>,
+          and
+          <a href="/docs/#/edge-pool">edge pool</a>
+          docs.
+        </p>
+      </div>
+    </section>
   </main>
 
-  <footer class="site-footer">
-    <div class="shell">
-      <div class="site-footer-row">
-        <span>QSDM Hive is the recommended release for QSDM and CELL.</span>
-        <div class="site-footer-links">
-          <a href="/">Home</a>
-          <a href="/network.html">Network</a>
-          <a href="/wallet.html">Web wallet</a>
-          <a href="/docs/">Docs</a>
-          <a href="/audit.html">Audit</a>
-          <a href="https://qsdm.online/">QSDM VPN</a>
-        </div>
-      </div>
-    </div>
-  </footer>
-  <script src="/assets/site-nav.js"></script>
+  <footer id="site-footer"></footer>
   <script src="/assets/wallet-extension-install.js"></script>
 </body>
 </html>

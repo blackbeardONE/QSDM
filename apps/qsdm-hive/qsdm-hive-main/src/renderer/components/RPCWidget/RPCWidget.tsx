@@ -22,6 +22,7 @@ const QSDM_CORE_REFETCH_INTERVAL = 30 * 1000;
 
 const getQsdmCoreStatusLabel = (status?: QsdmCoreStatusResponse) => {
   if (!status) return 'Checking';
+  if (status.canonicalSafety?.backupRead) return 'Backup history only';
   if (
     !status.canonicalSafety?.safe &&
     status.canonicalSafety?.state !== 'unreachable'
@@ -73,6 +74,7 @@ const getNumericStatusValue = (
 
 const getQsdmTaskRpcLabel = (status?: QsdmCoreStatusResponse) => {
   if (!status) return 'Checking';
+  if (status.canonicalSafety?.backupRead) return 'Actions blocked';
   if (status.connectionState === 'degraded') return 'Reconnecting';
   if (!status.taskRpcHealthy) return 'Offline';
   return 'OK';
@@ -80,6 +82,9 @@ const getQsdmTaskRpcLabel = (status?: QsdmCoreStatusResponse) => {
 
 const getQsdmChainHeightLabel = (status?: QsdmCoreStatusResponse) => {
   if (!status) return 'Checking';
+  if (status.canonicalSafety?.backupRead) {
+    return `${status.canonicalSafety.backupRead.checkpointHeight} (confirmed history)`;
+  }
   const chainTip =
     getNumericStatusValue(status, ['chain_tip', 'height', 'latest_height']) ??
     getNumericStatusValue(

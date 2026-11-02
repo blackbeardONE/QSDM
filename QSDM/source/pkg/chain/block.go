@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
+	"github.com/blackbeardONE/QSDM/pkg/producerpolicy"
 )
 
 // ErrPolExtensionBlocked is returned when POL anchoring blocks sealing another block until the tip is POL-clear.
@@ -113,6 +114,16 @@ type ChainReplayApplier interface {
 	RestoreFromChainReplay(from ChainReplayApplier) error
 }
 
+type stateRootHeightAware interface {
+	SetStateRootHeight(height uint64)
+}
+
+func setStateRootHeight(applier StateApplier, height uint64) {
+	if aware, ok := applier.(stateRootHeightAware); ok {
+		aware.SetStateRootHeight(height)
+	}
+}
+
 // BlockProducer assembles blocks from the mempool.
 type BlockProducer struct {
 	mu sync.Mutex
@@ -145,6 +156,8 @@ type BlockProducer struct {
 	// TryAppendExternalBlock. Empty by default, which accepts any producer and
 	// is the pre-existing behaviour. See block_external_authz.go.
 	externalAuthz externalProducerAllowlist
+	// Configured before initialization; guarded by mu and sealLifecycleMu.
+	producerTransition *producerpolicy.Transition
 	// OnSealed runs after a block is appended and the producer lock is released (best-effort hooks).
 	OnSealed func()
 	// OnSealedBlock runs after a block is appended and bp.mu is
@@ -171,6 +184,11 @@ type BlockProducer struct {
 	// TipHeight() returns 0 as a floor) from "tip height is
 	// zero" (true, genesis sealed). Atomic so reads are lock-free.
 	tipHeightSet atomic.Bool
+	// poeHist indexes the transaction IDs of the last
+	// poe.ParentWindowBlocks blocks of chain, for the Proof-of-
+	// Entanglement parent rules (poe.go). Built only while a PoE
+	// activation height is configured; it has its own lock.
+	poeHist poeHistory
 }
 
 // ProducerConfig configures the block producer.
@@ -318,6 +336,11 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 		}
 	}
 
+	sealSigner := bp.BlockSigner()
+	if err := bp.checkTransitionSealLocked(sealSigner); err != nil {
+		return nil, err
+	}
+
 	txs := bp.pool.Drain(bp.maxTxBlock)
 	if len(txs) == 0 {
 		return nil, fmt.Errorf("no transactions to include")
@@ -338,6 +361,13 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 	var stateRoot string
 	var tentative *Block
 
+	// Proof-of-Entanglement parent rules (poe.go). A transfer that fails
+	// them is dropped with a TxFailed receipt like any apply failure; it
+	// never reaches the applier, so account state is untouched. Inert below
+	// the activation height.
+	poeScope := bp.newPoEScopeLocked(height, txs)
+
+	setStateRootHeight(bp.applier, height)
 	if bp.preSealBFTRound != nil {
 		// Speculative execution needs an isolated copy of live state, not
 		// specifically an *AccountStore. Requiring the concrete type here
@@ -349,11 +379,18 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 		// ChainReplayApplier, which provides exactly the clone semantics
 		// this path needs.
 		spec := bp.applier.(ChainReplayApplier).ChainReplayClone()
+		setStateRootHeight(spec, height)
 		for _, tx := range txs {
+			if err := poeScope.check(tx); err != nil {
+				poeStats.recordReject(err)
+				outcomes = append(outcomes, localTxOutcome{Tx: tx, ApplyErr: err})
+				continue
+			}
 			if err := spec.ApplyTx(tx); err != nil {
 				outcomes = append(outcomes, localTxOutcome{Tx: tx, ApplyErr: err})
 				continue
 			}
+			poeScope.include(tx)
 			outcomes = append(outcomes, localTxOutcome{Tx: tx})
 			included = append(included, tx)
 			totalFees += tx.Fee
@@ -363,6 +400,7 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 			bp.pool.RestoreTransactions(txs)
 			return nil, fmt.Errorf("all transactions failed state application")
 		}
+		setStateRootHeight(spec, height)
 		stateRoot = spec.StateRoot()
 		now := time.Now()
 		tentative = &Block{
@@ -380,22 +418,30 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 			bp.pool.RestoreTransactions(txs)
 			return nil, err
 		}
+		setStateRootHeight(bp.applier, height)
 		for _, tx := range included {
 			if err := bp.applier.ApplyTx(tx); err != nil {
 				bp.pool.RestoreTransactions(txs)
 				return nil, fmt.Errorf("chain: live apply after pre-seal failed on %s: %w", tx.ID, err)
 			}
 		}
+		setStateRootHeight(bp.applier, height)
 		if got := bp.applier.StateRoot(); got != stateRoot {
 			bp.pool.RestoreTransactions(txs)
 			return nil, fmt.Errorf("chain: state root mismatch after pre-seal (live %s vs spec %s)", got, stateRoot)
 		}
 	} else {
 		for _, tx := range txs {
+			if err := poeScope.check(tx); err != nil {
+				poeStats.recordReject(err)
+				outcomes = append(outcomes, localTxOutcome{Tx: tx, ApplyErr: err})
+				continue
+			}
 			if err := bp.applier.ApplyTx(tx); err != nil {
 				outcomes = append(outcomes, localTxOutcome{Tx: tx, ApplyErr: err})
 				continue
 			}
+			poeScope.include(tx)
 			outcomes = append(outcomes, localTxOutcome{Tx: tx})
 			included = append(included, tx)
 			totalFees += tx.Fee
@@ -405,6 +451,7 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 			bp.pool.RestoreTransactions(txs)
 			return nil, fmt.Errorf("all transactions failed state application")
 		}
+		setStateRootHeight(bp.applier, height)
 		stateRoot = bp.applier.StateRoot()
 	}
 
@@ -427,14 +474,15 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 	// Authenticate the block as ours. SignBlock rewrites ProducerID to the
 	// identity the key derives and recomputes the hash, so a producerID
 	// that disagrees with the signing key cannot be sealed.
-	if signer := bp.BlockSigner(); signer != nil {
-		if err := SignBlock(block, signer); err != nil {
+	if sealSigner != nil {
+		if err := SignBlock(block, sealSigner); err != nil {
 			bp.pool.RestoreTransactions(txs)
 			return nil, fmt.Errorf("chain: sign produced block: %w", err)
 		}
 	}
 
 	bp.chain = append(bp.chain, block)
+	bp.foldPoEHistoryLocked(block)
 	bp.tipHeight.Store(block.Height)
 	bp.tipHeightSet.Store(true)
 	runSealedHook = true
@@ -624,7 +672,11 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 	// is self-certifying when signed, so without this an arbitrary peer can
 	// inject a block whose transactions we then replay. Rejecting here also
 	// avoids spending a full clone-and-replay on unauthorized input.
-	if err := bp.externalAuthz.check(blk.ProducerID); err != nil {
+	if bp.producerTransition != nil {
+		if err := validateTransitionBlock(bp.producerTransition, blk); err != nil {
+			return err
+		}
+	} else if err := bp.externalAuthz.check(blk.ProducerID); err != nil {
 		return err
 	}
 
@@ -641,6 +693,10 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 
 	var runSealedHook bool
 	bp.mu.Lock()
+	if err := bp.checkTransitionExtensionLocked(blk.Height); err != nil {
+		bp.mu.Unlock()
+		return err
+	}
 	if bp.sealGuard != nil {
 		if guardErr := bp.sealGuard(); guardErr != nil {
 			bp.mu.Unlock()
@@ -671,9 +727,19 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 		bp.mu.Unlock()
 		return fmt.Errorf("chain: external genesis must be height 0 with empty prev_hash")
 	}
+	bp.ensurePoEHistoryLocked()
 	bp.mu.Unlock()
 
+	// Proof-of-Entanglement parent rules (poe.go): the same check the
+	// producer applied, against this node's own committed history. One
+	// failing transfer invalidates the block. Inert below the activation
+	// height, so historical blocks replay unchanged.
+	if err := bp.verifyBlockPoE(blk); err != nil {
+		return fmt.Errorf("chain: external block replay (spec): %w", err)
+	}
+
 	spec := ra.ChainReplayClone()
+	setStateRootHeight(spec, blk.Height)
 	for _, tx := range blk.Transactions {
 		if tx == nil {
 			continue
@@ -682,6 +748,7 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 			return fmt.Errorf("chain: external block replay (spec): %w", err)
 		}
 	}
+	setStateRootHeight(spec, blk.Height)
 	if spec.StateRoot() != blk.StateRoot {
 		return fmt.Errorf("chain: external block state_root mismatch after replay")
 	}
@@ -706,6 +773,7 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 	}
 	backup := ra.ChainReplayClone()
 	live := bp.applier.(ChainReplayApplier)
+	setStateRootHeight(live, blk.Height)
 	for _, tx := range blk.Transactions {
 		if tx == nil {
 			continue
@@ -716,12 +784,14 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 			return fmt.Errorf("chain: external block live apply: %w", err)
 		}
 	}
+	setStateRootHeight(live, blk.Height)
 	if live.StateRoot() != blk.StateRoot {
 		_ = live.RestoreFromChainReplay(backup)
 		bp.mu.Unlock()
 		return fmt.Errorf("chain: live state_root mismatch after external append")
 	}
 	bp.chain = append(bp.chain, blk)
+	bp.foldPoEHistoryLocked(blk)
 	bp.tipHeight.Store(blk.Height)
 	bp.tipHeightSet.Store(true)
 	runSealedHook = true
@@ -873,6 +943,9 @@ func (bp *BlockProducer) RestoreChain(blocks []*Block) error {
 	if len(bp.chain) != 0 {
 		return fmt.Errorf("chain: RestoreChain called on a non-empty producer (have %d blocks)", len(bp.chain))
 	}
+	if err := bp.validateProducerTransitionChainLocked(blocks); err != nil {
+		return err
+	}
 	if len(blocks) == 0 {
 		return nil
 	}
@@ -898,6 +971,10 @@ func (bp *BlockProducer) RestoreChain(blocks []*Block) error {
 	tip := blocks[len(blocks)-1]
 	bp.tipHeight.Store(tip.Height)
 	bp.tipHeightSet.Store(true)
+	// Index the PoE reference window of the restored chain now, so the
+	// admission path (which never takes bp.mu) is ready before the first
+	// block is produced or appended. No-op without an activation height.
+	bp.ensurePoEHistoryLocked()
 	return nil
 }
 

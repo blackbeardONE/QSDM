@@ -17,8 +17,8 @@ QSDM has **two** versioned surfaces, and they version **independently**:
 
 | Surface | Current version | Stability | Where the version lives |
 |---|---|---|---|
-| **HTTP API** | **v1** (stable) | Stable; no v2 planned in the v0.4.x cycle | URL prefix: `https://api.qsdm.tech/api/v1/*` |
-| **Mining protocol** | **v2 only** at consensus | v1 retired at mainnet `FORK_V2_HEIGHT = 0`; rejected at admission | Wire field on proofs / blocks; surfaced on `/api/v1/status.mining.protocol_versions_accepted` |
+| **HTTP API** | **v1** (stable) | Stable; no HTTP API v2 is planned | URL prefix: `https://api.qsdm.tech/api/v1/*` |
+| **Mining protocol** | **v2 only** at consensus | v1 retired on the pilot network (pre-mainnet) at `FORK_V2_HEIGHT = 0`; rejected at admission | Wire field on proofs / blocks; surfaced on `/api/v1/status.mining.protocol_versions_accepted` |
 
 The "v1 deprecation" shipped in `v0.3.2` (commit
 [`f727fef`](https://github.com/blackbeardONE/QSDM/commit/f727fef)) was
@@ -79,16 +79,16 @@ block since v0.3.3 (commit
 [`03edf41`](https://github.com/blackbeardONE/QSDM/commit/03edf41)).
 This was a supply-inflation surface from the seed-faucet era —
 publicly callable, returned `status:"minted"`, and did not actually
-credit the recipient. Any client still hitting it is observable on
-the dashboard via `qsdm_wallet_mint_total{result="gone"}`. The route
+credit the recipient. Any client still hitting it is visible in the node's metrics via
+`qsdm_wallet_mint_total{result="gone"}`. The route
 itself is still on `/api/v1/*`; we did not bump the API prefix to
 do the retirement.
 
 ### Mining protocol — v2 only at consensus
 
 The mining protocol is the wire format of proofs the validator accepts.
-It is independent of the HTTP API. Mainnet activated
-`FORK_V2_HEIGHT = 0` at the Phase-4 chain reset, which means every v1
+It is independent of the HTTP API. The pilot network (pre-mainnet)
+activated `FORK_V2_HEIGHT = 0` at the Phase-4 chain reset, which means every v1
 proof (CPU-only PoW) is rejected at admission with
 `ReasonBadVersion`. The v1 reference miner `cmd/qsdmminer` is no
 longer cross-compiled or signed by `release-container.yml` —
@@ -170,8 +170,8 @@ issue: <https://github.com/blackbeardONE/QSDM/issues>.
   semantics.
 - [`MINING_PROTOCOL_V2.md`](MINING_PROTOCOL_V2.md) — the mining-protocol
   v2 spec, including the `FORK_V2_HEIGHT` posture this page references.
-- [`MINER_QUICKSTART.md`](MINER_QUICKSTART.md) — the v2-mainnet
-  operator flow, including Appendix A. v1 audit / local-devnet
+- [`MINER_QUICKSTART.md`](MINER_QUICKSTART.md) — the v2
+  command-line operator flow, including Appendix A. v1 audit / local-devnet
   builds and Appendix B. Enrollment-funding status.
 - [`V041_REPLAY_PROTECTION_DESIGN.md`](V041_REPLAY_PROTECTION_DESIGN.md)
   — how the v0.4.1 envelope extension stays backwards-compatible on

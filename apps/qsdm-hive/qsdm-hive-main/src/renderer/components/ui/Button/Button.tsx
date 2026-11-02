@@ -38,7 +38,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     }
 
     const classes = twMerge(
-      'rounded w-[180px] h-[40px] bg-finnieBlue-light-secondary cursor-pointer',
+      'rounded-lg w-[180px] h-[40px] px-3 border border-qsdm-teal/30 bg-qsdm-panel-2 text-sm font-semibold transition hover:border-qsdm-teal/60 cursor-pointer',
       className
     );
 

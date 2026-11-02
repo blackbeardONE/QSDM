@@ -3,7 +3,7 @@
 
 What this does
 --------------
-On the target VPS (default: `api.qsdm.tech`, root over ed25519) we:
+On the configured QSDM VPS (root over ed25519) we:
 
   1. Create /opt/qsdm/ngc-sidecar/ (mode 0750) and upload
      apps/qsdm-nvidia-ngc/validator_phase1.py into it.
@@ -35,7 +35,7 @@ machine is online — a real uptime win for the transparency signal.
 
 Run
 ---
-    python QSDM/deploy/install_ngc_sidecar_vps.py           # api.qsdm.tech
+    python QSDM/deploy/install_ngc_sidecar_vps.py
     python QSDM/deploy/install_ngc_sidecar_vps.py --host other.qsdm.tech
 
 Requires paramiko locally (pip install paramiko) and an ed25519 key
@@ -47,9 +47,13 @@ secret, re-writes the systemd units, and restarts the timer.
 from __future__ import annotations
 import argparse
 import os
+import shlex
 import sys
 
 import paramiko
+
+from _deploy_host import DeploymentTargetError, public_api_base, target
+
 
 LOCAL_SIDECAR = "apps/qsdm-nvidia-ngc/validator_phase1.py"
 
@@ -100,20 +104,41 @@ def ssh_run(c: paramiko.SSHClient, cmd: str, check: bool = True) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default="api.qsdm.tech")
-    parser.add_argument("--user", default="root")
+    parser.add_argument("--host", help="Override the shared QSDM VPS SSH target.")
+    parser.add_argument("--user", help="Override the SSH user for --host.")
+    parser.add_argument("--port", help="Override the SSH port for --host.")
     parser.add_argument("--key",  default=os.path.expanduser("~/.ssh/id_ed25519"))
     parser.add_argument("--node-id", default="vps-blr1-validator",
                         help="Free-form label (QSDM_NGC_PROOF_NODE_ID).")
     parser.add_argument("--report-url",
                         default="http://127.0.0.1:8443/api/v1/monitoring/ngc-proof",
                         help="POST target; default is loopback on the VPS.")
+    parser.add_argument("--public-api-base",
+                        help="HTTPS API origin used for the post-install public verification.")
     args = parser.parse_args()
+
+    try:
+        resolved_target = target(args.host, args.user, args.port)
+        if resolved_target.user != "root":
+            raise DeploymentTargetError(
+                "install_ngc_sidecar_vps.py writes root-owned systemd paths and requires root SSH access."
+            )
+        api_base = public_api_base(args.public_api_base)
+    except DeploymentTargetError as exc:
+        parser.error(str(exc))
 
     key = paramiko.Ed25519Key.from_private_key_file(args.key)
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect(args.host, username=args.user, pkey=key, timeout=20, banner_timeout=20)
+    print(f"Target: {resolved_target.display()}")
+    c.connect(
+        resolved_target.host,
+        port=resolved_target.port,
+        username=resolved_target.user,
+        pkey=key,
+        timeout=20,
+        banner_timeout=20,
+    )
 
     try:
         print("=== 1. /opt/qsdm/ngc-sidecar ===")
@@ -194,11 +219,13 @@ def main() -> int:
 
         print("\n=== 8. live summary ===")
         ssh_run(c, "sleep 3")
+        summary_url = f"{api_base}/api/v1/trust/attestations/summary"
+        recent_url = f"{api_base}/api/v1/trust/attestations/recent?limit=5"
         print(ssh_run(c,
-            "curl -s https://api.qsdm.tech/api/v1/trust/attestations/summary | "
+            f"curl -fsS --max-time 15 {shlex.quote(summary_url)} | "
             "python3 -m json.tool"))
         print(ssh_run(c,
-            "curl -s 'https://api.qsdm.tech/api/v1/trust/attestations/recent?limit=5' | "
+            f"curl -fsS --max-time 15 {shlex.quote(recent_url)} | "
             "python3 -m json.tool"))
     finally:
         c.close()

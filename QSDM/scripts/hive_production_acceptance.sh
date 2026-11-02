@@ -5,6 +5,12 @@ expected_version=""
 expected_commit=""
 installed_version=""
 release_base="https://qsdm.tech/downloads"
+qsdm_public_api_base="${QSDM_PUBLIC_API_BASE_URL:-https://api.qsdm.tech}"
+qsdm_gateway_relay="${QSDM_HOME_GATEWAY_RELAY:-$qsdm_public_api_base}"
+qsdm_home_gateway_slot="${QSDM_HOME_GATEWAY_SLOT:-home-validator}"
+qsdm_chain_sync_urls="${QSDM_CHAIN_SYNC_URLS:-}"
+qsdm_core_api_base="${QSDM_CANONICAL_API_URL:-${qsdm_chain_sync_urls%%,*}}"
+qsdm_core_api_base="${qsdm_core_api_base:-${qsdm_public_api_base%/}/api/v1}"
 output_path=""
 wallet_address=""
 qsdmcli_path=""
@@ -340,8 +346,8 @@ fi
 
 core_bases=(
   "http://127.0.0.1:8080/api/v1"
-  "https://api.qsdm.tech/attest/home-validator/api/v1"
-  "https://api.qsdm.tech/api/v1"
+  "${qsdm_gateway_relay%/}/attest/${qsdm_home_gateway_slot}/api/v1"
+  "${qsdm_core_api_base%/}"
 )
 reachable_bases=()
 reachable_tips=()

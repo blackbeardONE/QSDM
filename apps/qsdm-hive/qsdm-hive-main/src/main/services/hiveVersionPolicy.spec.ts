@@ -62,19 +62,19 @@ describe('hiveVersionPolicy', () => {
 
     expect(canUseLocalHiveVersionPolicyOverrides()).toBe(false);
     expect(getHiveVersionManifestUrl()).toBe(
-      'https://qsdm.tech/downloads/latest.yml'
+      'https://qsdm.tech/downloads/hive-v2/latest.yml'
     );
   });
 
   it('uses the platform-specific electron-builder manifest', () => {
     expect(getDefaultHiveVersionManifestUrl('win32', '1.3.95')).toBe(
-      'https://qsdm.tech/downloads/latest.yml'
+      'https://qsdm.tech/downloads/hive-v2/latest.yml'
     );
     expect(getDefaultHiveVersionManifestUrl('linux', '1.3.95')).toBe(
-      'https://qsdm.tech/downloads/latest-linux.yml'
+      'https://qsdm.tech/downloads/hive-v2/latest-linux.yml'
     );
     expect(getDefaultHiveVersionManifestUrl('darwin', '1.3.95')).toBe(
-      'https://qsdm.tech/downloads/latest-mac.yml'
+      'https://qsdm.tech/downloads/hive-v2/latest-mac.yml'
     );
   });
 
@@ -96,12 +96,13 @@ describe('hiveVersionPolicy', () => {
         '  - url: qsdm-hive-1.3.46-win-x64.exe',
         'path: qsdm-hive-1.3.46-win-x64.exe',
       ].join('\n'),
-      'https://qsdm.tech/downloads/latest.yml'
+      'https://qsdm.tech/downloads/hive-v2/latest.yml'
     );
 
     expect(manifest).toEqual({
       version: '1.3.46',
-      downloadUrl: 'https://qsdm.tech/downloads/qsdm-hive-1.3.46-win-x64.exe',
+      downloadUrl:
+        'https://qsdm.tech/downloads/hive-v2/qsdm-hive-1.3.46-win-x64.exe',
     });
   });
 });

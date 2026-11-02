@@ -278,6 +278,25 @@ const server = http.createServer(async (request, response) => {
     ["/account/account.css", [accountStylePath, "text/css; charset=utf-8"]],
     ["/assets/site.css", [siteStylePath, "text/css; charset=utf-8"]],
     ["/assets/qsdm-hive-icon.png", [siteIconPath, "image/png"]],
+    [
+      "/site.webmanifest",
+      [
+        path.join(landingDirectory, "site.webmanifest"),
+        "application/manifest+json",
+      ],
+    ],
+    ...[
+      ["favicon-16.png", "image/png"],
+      ["favicon-32.png", "image/png"],
+      ["apple-touch-icon.png", "image/png"],
+      ["qsdm-icon-small.svg", "image/svg+xml"],
+      ["qsdm-icon.svg", "image/svg+xml"],
+      ["icon-192.png", "image/png"],
+      ["icon-512.png", "image/png"],
+    ].map(([name, type]) => [
+      `/assets/brand/${name}`,
+      [path.join(landingDirectory, "assets", "brand", name), type],
+    ]),
   ]);
   if (request.method === "GET" && staticFiles.has(requestUrl.pathname)) {
     const [filePath, contentType] = staticFiles.get(requestUrl.pathname);

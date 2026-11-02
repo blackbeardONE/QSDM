@@ -40,16 +40,70 @@ func TestValidate_StrictSecrets_rejectsCharming123Prefix(t *testing.T) {
 
 func TestValidate_StrictSecrets_okLongRandom(t *testing.T) {
 	c := &Config{
+		NetworkPort:              4001,
+		DashboardPort:            8081,
+		LogViewerPort:            9000,
+		APIPort:                  8080,
+		StorageType:              "file",
+		StrictProductionSecrets:  true,
+		NGCIngestSecret:          "not-the-demo-value-ok-16",
+		AuthorizedBlockProducers: []string{"producer-main"},
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidate_StrictSecrets_requiresAuthorizedProducerForValidators(t *testing.T) {
+	c := &Config{
+		NetworkPort:              4001,
+		DashboardPort:            8081,
+		LogViewerPort:            9000,
+		APIPort:                  8080,
+		StorageType:              "file",
+		StrictProductionSecrets:  true,
+		AuthorizedBlockProducers: []string{"   "},
+	}
+
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("expected strict validator config to require authorized_block_producers")
+	}
+	if !strings.Contains(err.Error(), "authorized_block_producers") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_StrictSecrets_acceptsPinnedAuthorizedProducerForValidators(t *testing.T) {
+	c := &Config{
+		NetworkPort:              4001,
+		DashboardPort:            8081,
+		LogViewerPort:            9000,
+		APIPort:                  8080,
+		StorageType:              "file",
+		StrictProductionSecrets:  true,
+		AuthorizedBlockProducers: []string{"producer-main"},
+	}
+
+	if err := c.Validate(); err != nil {
+		t.Fatalf("strict validator config with a pinned producer should validate: %v", err)
+	}
+}
+
+func TestValidate_StrictSecrets_allowsMinerWithoutAuthorizedProducer(t *testing.T) {
+	c := &Config{
+		NodeRole:                NodeRoleMiner,
+		MiningEnabled:           true,
 		NetworkPort:             4001,
 		DashboardPort:           8081,
 		LogViewerPort:           9000,
 		APIPort:                 8080,
 		StorageType:             "file",
 		StrictProductionSecrets: true,
-		NGCIngestSecret:         "not-the-demo-value-ok-16",
 	}
+
 	if err := c.Validate(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("miner nodes do not append external validator blocks and should not need a producer allowlist: %v", err)
 	}
 }
 

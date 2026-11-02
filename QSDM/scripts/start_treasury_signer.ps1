@@ -9,6 +9,10 @@ param(
     [string]$ApiUrl = "http://127.0.0.1:8080",
     [int]$Port = 0,
     [double]$MaxPayout = 0,
+    # Rolling 24h caps enforced by the signer for every role. Defaults are
+    # conservative: one maximum payout per recipient and ten per day in total.
+    [double]$RecipientDailyCap = 0,
+    [double]$DailyCap = 0,
     [double]$MinimumReserve = 0,
     [double]$FeeCell = 0.001,
     [ValidateRange(1, 60)][int]$HealthWaitSeconds = 10,
@@ -22,6 +26,11 @@ $runDir = Join-Path $sourceRoot ".cache\treasury\$Role"
 
 if ($Port -eq 0) { $Port = if ($Role -eq "referral") { 8897 } elseif ($Role -eq "faucet") { 8898 } else { 8899 } }
 if ($MaxPayout -le 0) { $MaxPayout = if ($Role -eq "referral") { 5 } elseif ($Role -eq "faucet") { 1 } else { 1 } }
+if ($RecipientDailyCap -le 0) { $RecipientDailyCap = $MaxPayout }
+if ($DailyCap -le 0) { $DailyCap = 10 * $MaxPayout }
+if ($MaxPayout -gt $RecipientDailyCap -or $RecipientDailyCap -gt $DailyCap) {
+    throw "Caps must satisfy MaxPayout <= RecipientDailyCap <= DailyCap."
+}
 if ($MinimumReserve -lt 0) { throw "MinimumReserve cannot be negative." }
 foreach ($path in @($KeystorePath, $PassphraseFile, $TokenFile)) {
     if (-not (Test-Path -LiteralPath $path)) { throw "Missing required file: $path" }
@@ -45,6 +54,8 @@ New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 $stdout = Join-Path $runDir "stdout.log"
 $stderr = Join-Path $runDir "stderr.log"
 $pidFile = Join-Path $runDir "signer.pid"
+# The payout journal holds idempotency and cap state across restarts; keep it.
+$journalFile = Join-Path $runDir "payouts.jsonl"
 $identityFile = Join-Path $runDir "signer.process.json"
 
 function Remove-SignerProcessRecords {
@@ -174,7 +185,8 @@ if ($existing) {
 $keys = @(
     "QSDM_SIGNER_LISTEN", "QSDM_SIGNER_API_URL", "QSDM_SIGNER_KEYSTORE",
     "QSDM_SIGNER_PASSPHRASE_FILE", "QSDM_SIGNER_TOKEN", "QSDM_SIGNER_TOKEN_FILE", "QSDM_SIGNER_FEE",
-    "QSDM_SIGNER_ROLE", "QSDM_SIGNER_MAX_PAYOUT", "QSDM_SIGNER_MIN_RESERVE"
+    "QSDM_SIGNER_ROLE", "QSDM_SIGNER_MAX_PAYOUT", "QSDM_SIGNER_MIN_RESERVE",
+    "QSDM_SIGNER_DAILY_CAP", "QSDM_SIGNER_RECIPIENT_DAILY_CAP", "QSDM_SIGNER_JOURNAL"
 )
 $saved = @{}
 foreach ($key in $keys) { $saved[$key] = [Environment]::GetEnvironmentVariable($key, "Process") }
@@ -189,6 +201,9 @@ try {
     $env:QSDM_SIGNER_ROLE = $Role
     $env:QSDM_SIGNER_MAX_PAYOUT = [string]$MaxPayout
     $env:QSDM_SIGNER_MIN_RESERVE = [string]$MinimumReserve
+    $env:QSDM_SIGNER_DAILY_CAP = [string]$DailyCap
+    $env:QSDM_SIGNER_RECIPIENT_DAILY_CAP = [string]$RecipientDailyCap
+    $env:QSDM_SIGNER_JOURNAL = $journalFile
     $process = Start-Process -FilePath $binary -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
     Set-Content -LiteralPath $pidFile -Value $process.Id -NoNewline -Encoding ASCII
     Write-SignerProcessIdentity -Process $process
@@ -230,4 +245,6 @@ Write-Host "  PID:       $($process.Id)"
 Write-Host "  URL:       http://127.0.0.1:$Port"
 Write-Host "  Address:   $($health.address)"
 Write-Host "  Max:       $MaxPayout CELL per payout"
+Write-Host "  Caps/24h:  $RecipientDailyCap CELL per recipient, $DailyCap CELL total"
+Write-Host "  Journal:   $journalFile"
 Write-Host "  Reserve:   $MinimumReserve CELL"

@@ -1,7 +1,6 @@
 import axios from 'axios';
 import { Event } from 'electron';
 
-import { buildQsdmCoreApiUrl } from 'config/qsdm';
 import { assertQsdmCanonicalChainSafety } from 'main/services/qsdmCanonicalChain';
 import {
   QsdmTaskActionEnvelope,
@@ -12,9 +11,10 @@ export const submitQsdmTaskAction = async (
   _: Event,
   envelope: QsdmTaskActionEnvelope
 ): Promise<QsdmTaskActionSubmitResponse> => {
-  await assertQsdmCanonicalChainSafety();
+  const safety = await assertQsdmCanonicalChainSafety({ forceRefresh: true });
+  const verifiedApiUrl = safety.effectiveApiUrl.replace(/\/+$/, '');
   const response = await axios.post<QsdmTaskActionSubmitResponse>(
-    buildQsdmCoreApiUrl('/tasks/actions/submit-signed'),
+    `${verifiedApiUrl}/tasks/actions/submit-signed`,
     envelope,
     { timeout: 10000 }
   );

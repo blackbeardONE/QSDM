@@ -7,11 +7,19 @@ import path from 'path';
 import { URL } from 'url';
 
 // This public trust root is shared deliberately with the release publisher.
+// Hive 1.4.21+ trusts the v2 release key only. The repository ships a
+// placeholder; the operator replaces it with release-signing-public.json
+// before building (enforced by .erb/scripts/verify-release-trust-key.cjs).
 // eslint-disable-next-line import/no-relative-packages
-import releaseTrustKeyJson from '../../../../../../QSDM/deploy/release-trust/qsdm-hive-release-key.json';
+import releaseTrustKeyJson from '../../../../../../QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json';
 
 // cspell:ignore blockmap
-const DEFAULT_RELEASE_BASE_URL = 'https://qsdm.tech/downloads';
+// v2 release channel (new signing key). Hive <= 1.4.20 keeps reading the
+// v1 envelope and latest.yml directly under /downloads; the two channels
+// never share a file, so neither updater can see the other's release.
+export const QSDM_HIVE_RELEASE_BASE_URL = 'https://qsdm.tech/downloads/hive-v2';
+const DEFAULT_RELEASE_BASE_URL = QSDM_HIVE_RELEASE_BASE_URL;
+const RELEASE_ENVELOPE_SUFFIX = '-v2';
 const RELEASE_CACHE_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 12_000;
 const MAX_REDIRECTS = 3;
@@ -88,7 +96,10 @@ const RELEASE_ARTIFACT_ROLES = new Set<ReleaseArtifactRole>([
   'evidence',
 ]);
 
-const releaseTrustKey = validateReleaseTrustKey(releaseTrustKeyJson);
+// Validated lazily so that a build made from the placeholder trust root still
+// starts and fails closed (every release check rejects, the version gate
+// blocks Hive) instead of crashing the main process at import time.
+let releaseTrustKey: ReleaseTrustKey | null = null;
 let cachedRelease: VerifiedQsdmHiveRelease | null = null;
 let cachedReleaseUrl = '';
 let cachedReleaseAt = 0;
@@ -99,12 +110,20 @@ export function resetVerifiedQsdmHiveReleaseCacheForTests() {
   cachedReleaseAt = 0;
 }
 
-export function getQsdmReleaseTrustKey() {
+export function getQsdmReleaseTrustKey(): ReleaseTrustKey {
+  if (!releaseTrustKey) {
+    releaseTrustKey = validateReleaseTrustKey(releaseTrustKeyJson);
+  }
   return releaseTrustKey;
 }
 
 function validateReleaseTrustKey(value: unknown): ReleaseTrustKey {
-  const key = value as Partial<ReleaseTrustKey>;
+  const key = value as Partial<ReleaseTrustKey> & { placeholder?: unknown };
+  if (key && key.placeholder === true) {
+    throw new Error(
+      'This Hive build has no QSDM release trust key (placeholder trust root).'
+    );
+  }
   if (
     !key ||
     key.schema !== 'qsdm.release-trust-key.v1' ||
@@ -138,7 +157,7 @@ export function getQsdmHiveReleaseManifestUrl(
 ) {
   const releasePlatform = normalizePlatform(platform);
   return new URL(
-    `qsdm-hive-release-${releasePlatform}.json`,
+    `qsdm-hive-release-${releasePlatform}${RELEASE_ENVELOPE_SUFFIX}.json`,
     ensureTrailingSlash(baseUrl)
   ).toString();
 }
@@ -156,6 +175,8 @@ export async function getVerifiedQsdmHiveRelease({
   qsdmCliPath?: string;
   dependencies?: VerificationDependencies;
 } = {}): Promise<VerifiedQsdmHiveRelease> {
+  // Fail closed before any network access when the build has no trust root.
+  getQsdmReleaseTrustKey();
   const manifestUrl = getQsdmHiveReleaseManifestUrl(platform, baseUrl);
   const now = dependencies.now || new Date();
   if (
@@ -226,10 +247,11 @@ function parseSignedReleaseEnvelope(envelopeBytes: Buffer) {
   } catch {
     throw new Error('QSDM signed release envelope is not valid JSON.');
   }
+  const trustKey = getQsdmReleaseTrustKey();
   if (
     envelope.schema !== 'qsdm.signed-release.v1' ||
     envelope.algorithm !== 'ML-DSA-87' ||
-    envelope.key_id !== releaseTrustKey.key_id
+    envelope.key_id !== trustKey.key_id
   ) {
     throw new Error('QSDM signed release envelope identity is invalid.');
   }
@@ -289,7 +311,7 @@ export function parseAndValidateQsdmHiveReleaseManifest(
   if (!/^[0-9a-f]{40}$/.test(manifest.commit)) {
     throw new Error('QSDM release manifest commit is invalid.');
   }
-  if (manifest.key_id !== releaseTrustKey.key_id) {
+  if (manifest.key_id !== getQsdmReleaseTrustKey().key_id) {
     throw new Error('QSDM release manifest was signed by an untrusted key.');
   }
 
@@ -465,7 +487,7 @@ async function verifyManifestWithBundledQsdmCli(
       'wallet',
       'verify',
       '--public-key',
-      releaseTrustKey.public_key,
+      getQsdmReleaseTrustKey().public_key,
       '--message-file',
       '-',
       '--signature',

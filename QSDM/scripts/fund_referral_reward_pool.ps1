@@ -119,6 +119,7 @@ $signArgs = @(
     "--in", $KeystorePath,
     "--envelope-file", $unsignedPath,
     "--auto-nonce",
+    "--auto-parents",
     "--api-url", $script:Api
 )
 if ($PassphraseFile) {

@@ -17,6 +17,9 @@ function Quote-Arg {
 }
 
 $QsdmRoot = (Resolve-Path $QsdmRoot).Path
+. (Join-Path $QsdmRoot "scripts\lib\qsdm-endpoints.ps1")
+$Relay = Get-QsdmEndpointValue -Name "home_gateway_relay" -EnvVar "QSDM_HOME_GATEWAY_RELAY"
+$Slot = Get-QsdmEndpointValue -Name "home_gateway_slot" -EnvVar "QSDM_HOME_GATEWAY_SLOT"
 $Installer = Join-Path $QsdmRoot "scripts\install_local_stack_task.ps1"
 $LogPath = Join-Path $QsdmRoot "source\.cache\local-validator\local-stack-task-install.log"
 
@@ -33,8 +36,8 @@ try {
     }
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Installer `
         -QsdmRoot $QsdmRoot `
-        -Relay "https://api.qsdm.tech" `
-        -Slot "home-validator" `
+        -Relay $Relay `
+        -Slot $Slot `
         -Highest `
         -AtStartup `
         -AsSystem `

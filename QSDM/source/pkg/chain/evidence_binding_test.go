@@ -348,11 +348,18 @@ func TestVerifyBinding_ValidatorMustBeCanonical(t *testing.T) {
 	}
 
 	// Every field consistently non-canonical: envelope AND both exhibits.
-	ev, err := BuildEquivocationEvidence(upper,
-		signedExhibit(t, signer, upper, BFTWirePrevote, 9, 1, "value-a"),
-		signedExhibit(t, signer, upper, BFTWirePrevote, 9, 1, "value-b"))
-	if err != nil {
-		t.Fatalf("building consistently non-canonical evidence: %v", err)
+	a := signedExhibit(t, signer, upper, BFTWirePrevote, 9, 1, "value-a")
+	b := signedExhibit(t, signer, upper, BFTWirePrevote, 9, 1, "value-b")
+	if _, err := BuildEquivocationEvidence(upper, a, b); err == nil {
+		t.Fatal("builder accepted self-consistent but non-canonical evidence")
+	}
+	ev := ConsensusEvidence{
+		Type:        EvidenceEquivocation,
+		Validator:   upper,
+		Height:      9,
+		Round:       1,
+		BlockHashes: []string{"value-a", "value-b"},
+		Proof:       &EquivocationProof{VoteA: a, VoteB: b},
 	}
 
 	// The signatures really do verify -- EqualFold in verifyAuth -- so this

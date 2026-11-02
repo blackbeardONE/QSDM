@@ -23,7 +23,9 @@
     "lint:fix": "npm run lint -- --fix",
     "native:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ../../../QSDM/deploy/scripts/build_hive_windows_native.ps1",
     "package": "node ./.erb/scripts/package-host.js",
-    "package:electron": "ts-node ./.erb/scripts/clean.js dist && npm run build && electron-builder build --publish never",
+    "runtime:install": "cross-env PUPPETEER_SKIP_DOWNLOAD=true PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true npm --prefix release/app ci --omit=dev --ignore-scripts --no-audit --no-fund",
+    "verify:runtime": "node ./.erb/scripts/verify-runtime-dependencies.cjs",
+    "package:electron": "npm run verify:runtime && ts-node ./.erb/scripts/clean.js dist && npm run build && electron-builder build --publish never",
     "package:linux": "bash ../../../QSDM/deploy/scripts/build_hive_linux.sh . release/build-linux",
     "package:windows": "npm run native:windows && npm run package:electron && npm run verify:windows-signature",
     "package:windows:unsigned": "npm run native:windows && npm run package:electron",
@@ -300,5 +302,5 @@
     ],
     "logLevel": "quiet"
   },
-  "version": "1.4.17"
+  "version": "1.4.21"
 }

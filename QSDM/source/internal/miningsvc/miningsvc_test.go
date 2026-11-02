@@ -2,8 +2,11 @@ package miningsvc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 
@@ -126,6 +129,58 @@ func TestNew_HappyPath(t *testing.T) {
 }
 
 // ---- WorkAt --------------------------------------------------------------
+
+func TestMiningWorkHTTPReadOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		readOnly bool
+		status   int
+	}{
+		{"read-only follower", true, http.StatusServiceUnavailable},
+		{"producer", false, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := validConfig(t)
+			cfg.ReadOnly = tc.readOnly
+			svc, err := New(cfg)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			api.SetMiningService(svc)
+			t.Cleanup(func() { api.SetMiningService(nil) })
+			for _, path := range []string{"/api/v1/mining/work", "/api/v1/mining/work?height=0"} {
+				rec := httptest.NewRecorder()
+				(&api.Handlers{}).MiningWorkHandler(rec, httptest.NewRequest(http.MethodGet, path, nil))
+				if rec.Code != tc.status {
+					t.Fatalf("%s: status = %d, want %d; body = %s", path, rec.Code, tc.status, rec.Body.String())
+				}
+				if got := rec.Header().Get("Content-Type"); got != "application/json" {
+					t.Fatalf("%s: Content-Type = %q, want application/json", path, got)
+				}
+				if tc.readOnly {
+					if got := rec.Header().Get("Retry-After"); got != "5" {
+						t.Fatalf("%s: Retry-After = %q, want 5", path, got)
+					}
+					var body map[string]string
+					if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+						t.Fatalf("%s: decode unavailable response: %v", path, err)
+					}
+					if body["error"] != "mining_unavailable" {
+						t.Fatalf("%s: error = %q, want mining_unavailable", path, body["error"])
+					}
+					continue
+				}
+				var work api.MiningWork
+				if err := json.Unmarshal(rec.Body.Bytes(), &work); err != nil {
+					t.Fatalf("%s: decode work: %v", path, err)
+				}
+				if _, _, _, err := api.WorkToMiningCore(&work); err != nil {
+					t.Fatalf("%s: invalid mining work: %v", path, err)
+				}
+			}
+		})
+	}
+}
 
 func TestWorkAt_NoTipReturns503(t *testing.T) {
 	pool := mempool.New(mempool.DefaultConfig())

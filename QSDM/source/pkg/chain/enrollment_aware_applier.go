@@ -60,6 +60,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"sync"
+	"sync/atomic"
 
 	"github.com/blackbeardONE/QSDM/pkg/governance/chainparams"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
@@ -83,8 +84,9 @@ type EnrollmentAwareApplier struct {
 	streams    *StreamStateStore
 	recovery   *RecoveryCapsuleStateStore
 
-	mu       sync.RWMutex
-	heightFn func() uint64
+	mu         sync.RWMutex
+	heightFn   func() uint64
+	rootHeight atomic.Uint64
 }
 
 // NewEnrollmentAwareApplier wires the router. `accounts` is
@@ -129,6 +131,17 @@ func (a *EnrollmentAwareApplier) SetHeightFn(fn func() uint64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.heightFn = fn
+}
+
+// SetStateRootHeight tells StateRoot which block height is being committed.
+// BlockProducer calls this before every consensus StateRoot read so gated root
+// upgrades can activate at a shared height without changing the StateApplier
+// interface used across the codebase.
+func (a *EnrollmentAwareApplier) SetStateRootHeight(height uint64) {
+	if a == nil {
+		return
+	}
+	a.rootHeight.Store(height)
 }
 
 // ApplyTx implements StateApplier. Routes on tx.ContractID:
@@ -371,8 +384,9 @@ func (a *EnrollmentAwareApplier) SlashApplier() *SlashApplier {
 }
 
 // StateRoot implements StateApplier. Legacy roots remain byte-for-byte stable
-// while their corresponding feature state is empty. Once task or stream state
-// exists, each deterministic feature root is folded into the prior root.
+// while their corresponding feature state is empty. Enrollment state is folded
+// only after EnrollmentStateRootActivationHeight so rollout can be coordinated
+// across every validator before block roots change.
 func (a *EnrollmentAwareApplier) StateRoot() string {
 	if a == nil || a.accounts == nil {
 		return ""
@@ -398,15 +412,47 @@ func (a *EnrollmentAwareApplier) StateRoot() string {
 		root = hex.EncodeToString(h.Sum(nil))
 	}
 	recovery := a.RecoveryCapsuleStateStore()
-	if recovery == nil || recovery.Count() == 0 {
-		return root
+	if recovery != nil && recovery.Count() > 0 {
+		h := sha256.New()
+		h.Write([]byte("state:"))
+		h.Write([]byte(root))
+		h.Write([]byte("\nwallet-recovery:"))
+		h.Write([]byte(recovery.StateRoot()))
+		root = hex.EncodeToString(h.Sum(nil))
 	}
-	h := sha256.New()
-	h.Write([]byte("state:"))
-	h.Write([]byte(root))
-	h.Write([]byte("\nwallet-recovery:"))
-	h.Write([]byte(recovery.StateRoot()))
-	return hex.EncodeToString(h.Sum(nil))
+	if enrollmentStateRootActiveAt(a.rootHeight.Load()) {
+		if enrollmentRoot := a.enrollmentStateRoot(); enrollmentRoot != "" {
+			h := sha256.New()
+			h.Write([]byte("state:"))
+			h.Write([]byte(root))
+			h.Write([]byte("\nenrollment:"))
+			h.Write([]byte(enrollmentRoot))
+			root = hex.EncodeToString(h.Sum(nil))
+		}
+	}
+	return root
+}
+
+func (a *EnrollmentAwareApplier) enrollmentStateRoot() string {
+	if a == nil {
+		return ""
+	}
+	type stateRooter interface {
+		StateRoot() string
+	}
+	a.mu.RLock()
+	var rooter stateRooter
+	if a.enrollment != nil {
+		rooter, _ = a.enrollment.State.(stateRooter)
+	}
+	if rooter == nil && a.slasher != nil {
+		rooter, _ = a.slasher.State.(stateRooter)
+	}
+	a.mu.RUnlock()
+	if rooter == nil {
+		return ""
+	}
+	return rooter.StateRoot()
 }
 
 // Sweep releases every enrollment whose unbond window matures
@@ -553,6 +599,7 @@ func (a *EnrollmentAwareApplier) ChainReplayClone() ChainReplayApplier {
 	clone := &EnrollmentAwareApplier{
 		accounts: a.accounts.Clone(),
 	}
+	clone.rootHeight.Store(a.rootHeight.Load())
 	// Clone the enrollment state exactly once and share it
 	// between the enrollment applier and the slasher so both
 	// routes see a single consistent snapshot. If they each
@@ -691,5 +738,6 @@ func (a *EnrollmentAwareApplier) RestoreFromChainReplay(from ChainReplayApplier)
 			return err
 		}
 	}
+	a.rootHeight.Store(other.rootHeight.Load())
 	return nil
 }

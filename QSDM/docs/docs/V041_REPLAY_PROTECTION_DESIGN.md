@@ -42,7 +42,7 @@
 > (2026-05-13 → 2026-05-14). All client + server + tooling
 > components landed, `v0.4.1` tag pushed,
 > [`release-container.yml` run 25855056638](https://github.com/blackbeardONE/QSDM/actions/runs/25855056638)
-> 10/10 green, 53 cosign-signed assets attached, and the BLR1
+> 10/10 green, 53 cosign-signed assets attached, and the production
 > validator binary swapped to v0.4.1 (sha256
 > `e7fa04b0657c5793f79f2fce06562fe67ea9191e04c09657c1e6b5274c213cfb`)
 > with `/api/v1/status` reporting `"version":"v0.4.1"`,
@@ -79,7 +79,7 @@
 >     refresh (Section 5.2); `cmd/v041smoke` 5-probe super-set
 >     of `cmd/v040smoke`.
 >
-> **Production-deploy footnote**: the BLR1 validator runs the
+> **Production-deploy footnote**: the production validator runs the
 > `FileStorage` backend, which by design does not track
 > per-account balances or nonces. v0.4.1's
 > `FileStorage.GetNonce` returns `(0, nil)` so the new public
@@ -426,9 +426,9 @@ through `qsdmcli wallet sign --message-file -`" path.
 
 1. **Pre-deploy**: cross-compile v0.4.1 binary, smoke-test
    against a local dev validator. Run the SQLite schema-
-   migration test on a copy of the BLR1 `qsdm.db` (or
+   migration test on a copy of the production `qsdm.db` (or
    equivalent file-storage / Scylla dataset).
-2. **Deploy** to BLR1: `systemctl stop qsdm` → swap binary →
+2. **Deploy** to the production validator: `systemctl stop qsdm` → swap binary →
    `systemctl start`. On start, the validator:
    - Detects v0.4.0 schema (`balances` table has no CHECK).
    - Runs the migration (Section 3.1).
@@ -494,7 +494,7 @@ paragraph from PENDING → CLOSED, with the closing anchors:
 - `pkg/storage/sqlite.go::ApplyTransferAtomic` exists; pre-flight
   `GetBalance` + `StoreTransaction(UpdateBalance)` pair removed
   from the handler.
-- BLR1's `balances` table has the new schema (`CHECK(balance >=
+- the production `balances` table has the new schema (`CHECK(balance >=
   0)`, `nonce` column, both visible via `PRAGMA table_info`).
 - `cmd/v041smoke` 5/5 PASS or 4/5 PASS (depending on whether
   the positive probe was opted in).

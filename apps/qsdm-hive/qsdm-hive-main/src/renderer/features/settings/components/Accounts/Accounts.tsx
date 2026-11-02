@@ -30,7 +30,7 @@ export function Accounts() {
             <Button
               label={showLegacyProfiles ? 'Hide Profiles' : 'Show Profiles'}
               onClick={() => setShowLegacyProfiles((value) => !value)}
-              className="h-9 w-32 bg-finnieBlue-light-secondary"
+              className="h-9 w-32"
             />
           </div>
         </div>

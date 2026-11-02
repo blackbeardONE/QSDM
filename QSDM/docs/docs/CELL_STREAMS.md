@@ -6,6 +6,8 @@ paused or disconnected session stops adding billable seconds.
 
 The first protocol version is `qsdm/streams/v1`.
 
+> **Status (October 2026):** the protocol is implemented in QSDM Core, but no production service bills through it yet, and public write routes may be restricted while the pilot network (pre-mainnet) is in recovery.
+
 ## What this solves
 
 A normal subscription charges a full period even when the service is unused.
@@ -197,7 +199,7 @@ The Go and JavaScript SDKs expose:
 - get one stream;
 - submit a signed stream action envelope.
 
-JavaScript SDK `0.3.3` also provides:
+JavaScript SDK `0.3.3` (in source; the npm registry currently publishes 0.3.0) also provides:
 
 - `CellStreamWallet`, which serializes nonce lookup, signing, submission, and
   chain confirmation; and

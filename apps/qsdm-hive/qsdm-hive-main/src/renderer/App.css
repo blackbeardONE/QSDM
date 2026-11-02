@@ -8,23 +8,31 @@
     --transition: 0.25s;
     --spark: 1.8s;
   }
+  /*! QSDM Hive bundles Outfit (Copyright 2021 The Outfit Project Authors,
+   * https://github.com/Outfitio/Outfit-Fonts) and IBM Plex Mono (Copyright 2017
+   * IBM Corp., Reserved Font Name "Plex"), both under the SIL Open Font
+   * License 1.1 (https://openfontlicense.org). Licence texts:
+   * src/assets/fonts/OFL-Outfit.txt and OFL-IBMPlexMono.txt. */
   @font-face {
-    font-family: 'Sora';
+    font-family: 'Outfit';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('../assets/fonts/outfit-latin-var.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: 'IBM Plex Mono';
     font-style: normal;
     font-weight: 400;
-    src: url('../assets/fonts/Sora-Light.ttf');
+    font-display: swap;
+    src: url('../assets/fonts/ibm-plex-mono-latin-400.woff2') format('woff2');
   }
   @font-face {
-    font-family: 'Sora';
+    font-family: 'IBM Plex Mono';
     font-style: normal;
-    font-weight: 600;
-    src: url('../assets/fonts/Sora-Medium.ttf');
-  }
-  @font-face {
-    font-family: 'Sora';
-    font-style: normal;
-    font-weight: 800;
-    src: url('../assets/fonts/Sora-SemiBold.ttf');
+    font-weight: 500 700;
+    font-display: swap;
+    src: url('../assets/fonts/ibm-plex-mono-latin-500.woff2') format('woff2');
   }
 
   @font-face {
@@ -32,10 +40,22 @@
     src: url('../assets/fonts/Roboto-Light.ttf');
   }
 
+  body {
+    @apply font-sans antialiased;
+    background-color: #061116;
+    color: #f4fbfd;
+  }
+
+  /* Amounts, addresses and IDs line up like on qsdm.tech. */
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+  }
+
   /* Scroll bar config */
   ::-webkit-scrollbar {
-    width: 2px;
-    height: 2px;
+    width: 4px;
+    height: 4px;
   }
 
   ::-webkit-scrollbar-track {
@@ -45,13 +65,13 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #5ed9d1a5;
+    background: rgba(142, 220, 224, 0.28);
     border-radius: 10000px;
     border: 0px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #405e40;
+    background: rgba(142, 220, 224, 0.5);
   }
 }
 
@@ -124,13 +144,13 @@ input[type='number'] {
   width: 28px !important;
   height: 28px !important;
   margin-right: 20px !important;
-  border: 2px solid #fff !important;
-  background-color: #4a4a73 !important;
+  border: 1px solid rgba(142, 220, 224, 0.45) !important;
+  background-color: #12323c !important;
   font-size: 24px !important;
 }
 
 .pincode-input-container .pincode-input-text:focus {
-  outline: 2px solid #5ed9d1 !important;
+  outline: 2px solid #9ed7dc !important;
 }
 
 .pincode-input-container .pincode-input-text[type='tel'] {
@@ -155,8 +175,8 @@ input[type='number'] {
   height: 18px;
   width: 18px;
   top: 3px;
-  background-color: #211c52;
-  accent-color: #8989c7;
+  background-color: #0c242c;
+  accent-color: #9ed7dc;
   border-radius: 1px;
   border: 1px solid #ffffff;
   cursor: pointer;
@@ -167,7 +187,7 @@ input[type='number'] {
   left: 4px;
   top: 2px;
   cursor: pointer;
-  content: url('data:image/svg+xml; utf8, <svg xmlns="http://www.w3.org/2000/svg" width="11" height="8" viewBox="0 0 11 8" fill="none"> <path d="M4.07115 7.05834C3.91837 7.05834 3.74377 6.99286 3.63464 6.88373L0.513558 3.74083C0.273475 3.50075 0.273475 3.10788 0.513558 2.8678C0.753641 2.62772 1.1465 2.62772 1.38659 2.8678L4.07115 5.59602L9.37481 0.292367C9.61489 0.052284 10.0078 0.052284 10.2478 0.292367C10.4879 0.53245 10.4879 0.925313 10.2478 1.1654L4.50767 6.88373C4.39854 6.99286 4.24576 7.05834 4.07115 7.05834Z" fill="rgb(137, 137, 199)"/></svg>');
+  content: url('data:image/svg+xml; utf8, <svg xmlns="http://www.w3.org/2000/svg" width="11" height="8" viewBox="0 0 11 8" fill="none"> <path d="M4.07115 7.05834C3.91837 7.05834 3.74377 6.99286 3.63464 6.88373L0.513558 3.74083C0.273475 3.50075 0.273475 3.10788 0.513558 2.8678C0.753641 2.62772 1.1465 2.62772 1.38659 2.8678L4.07115 5.59602L9.37481 0.292367C9.61489 0.052284 10.0078 0.052284 10.2478 0.292367C10.4879 0.53245 10.4879 0.925313 10.2478 1.1654L4.50767 6.88373C4.39854 6.99286 4.24576 7.05834 4.07115 7.05834Z" fill="rgb(158, 215, 220)"/></svg>');
 }
 
 @keyframes bounceDot {
@@ -216,11 +236,22 @@ input[type='number'] {
   place-items: center;
   overflow: hidden;
   color: #f4fbfd;
-  background:
-    radial-gradient(circle at 52% 38%, rgba(247, 191, 66, 0.16), transparent 16rem),
-    radial-gradient(circle at 24% 18%, rgba(80, 226, 202, 0.2), transparent 18rem),
-    radial-gradient(circle at 80% 76%, rgba(83, 166, 186, 0.18), transparent 20rem),
-    linear-gradient(135deg, #03151b 0%, #063140 48%, #0b5260 100%);
+  background: radial-gradient(
+      circle at 52% 38%,
+      rgba(247, 201, 72, 0.1),
+      transparent 16rem
+    ),
+    radial-gradient(
+      circle at 24% 18%,
+      rgba(142, 220, 224, 0.1),
+      transparent 18rem
+    ),
+    radial-gradient(
+      circle at 80% 76%,
+      rgba(142, 220, 224, 0.07),
+      transparent 20rem
+    ),
+    linear-gradient(160deg, #061116 0%, #081a20 55%, #0b222a 100%);
 }
 
 .qsdm-loading-screen::after {
@@ -228,7 +259,7 @@ input[type='number'] {
   position: absolute;
   right: clamp(28px, 8vw, 110px);
   bottom: clamp(18px, 6vw, 76px);
-  color: rgba(247, 191, 66, 0.08);
+  color: rgba(247, 201, 72, 0.08);
   font-size: clamp(84px, 16vw, 190px);
   font-weight: 800;
   letter-spacing: 0;
@@ -240,10 +271,12 @@ input[type='number'] {
   position: relative;
   overflow: hidden;
   color: #f4fbfd;
-  background:
-    linear-gradient(115deg, rgba(124, 232, 239, 0.08) 0 1px, transparent 1px 22%),
-    linear-gradient(155deg, rgba(247, 191, 66, 0.08) 0 1px, transparent 1px 24%),
-    linear-gradient(135deg, #03151b 0%, #063140 48%, #0b5260 100%);
+  background: radial-gradient(
+      circle at 50% 30%,
+      rgba(142, 220, 224, 0.07),
+      transparent 26rem
+    ),
+    linear-gradient(160deg, #061116 0%, #08181e 60%, #091c22 100%);
 }
 
 .qsdm-cell-screen::before {
@@ -251,10 +284,12 @@ input[type='number'] {
   position: absolute;
   inset: -2px;
   z-index: 0;
-  opacity: 0.32;
-  background-image:
-    linear-gradient(rgba(124, 232, 239, 0.13) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(124, 232, 239, 0.13) 1px, transparent 1px);
+  opacity: 0.22;
+  background-image: linear-gradient(
+      rgba(142, 220, 224, 0.12) 1px,
+      transparent 1px
+    ),
+    linear-gradient(90deg, rgba(142, 220, 224, 0.12) 1px, transparent 1px);
   background-size: 46px 46px;
   mask-image: radial-gradient(circle at center, black, transparent 72%);
   pointer-events: none;
@@ -266,7 +301,7 @@ input[type='number'] {
   right: clamp(28px, 8vw, 110px);
   bottom: clamp(18px, 6vw, 76px);
   z-index: 0;
-  color: rgba(247, 191, 66, 0.08);
+  color: rgba(247, 201, 72, 0.045);
   font-size: clamp(84px, 16vw, 190px);
   font-weight: 800;
   letter-spacing: 0;
@@ -280,20 +315,21 @@ input[type='number'] {
 }
 
 .qsdm-cell-card {
-  border: 1px solid rgba(126, 230, 222, 0.22);
-  background:
-    linear-gradient(135deg, rgba(8, 53, 64, 0.7), rgba(4, 19, 25, 0.42)),
-    rgba(3, 21, 27, 0.34);
-  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(142, 220, 224, 0.16);
+  border-radius: 12px;
+  background: #0c242c;
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.28);
 }
 
 .qsdm-loading-grid {
   position: absolute;
   inset: -2px;
   opacity: 0.36;
-  background-image:
-    linear-gradient(rgba(124, 232, 239, 0.13) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(124, 232, 239, 0.13) 1px, transparent 1px);
+  background-image: linear-gradient(
+      rgba(142, 220, 224, 0.13) 1px,
+      transparent 1px
+    ),
+    linear-gradient(90deg, rgba(142, 220, 224, 0.13) 1px, transparent 1px);
   background-size: 46px 46px;
   mask-image: radial-gradient(circle at center, black, transparent 72%);
 }
@@ -310,7 +346,7 @@ input[type='number'] {
   left: 12%;
   width: 260px;
   height: 260px;
-  background: rgba(124, 232, 239, 0.08);
+  background: rgba(142, 220, 224, 0.08);
 }
 
 .qsdm-loading-glow-two {
@@ -318,7 +354,7 @@ input[type='number'] {
   bottom: 14%;
   width: 220px;
   height: 220px;
-  background: rgba(247, 191, 66, 0.08);
+  background: rgba(247, 201, 72, 0.08);
 }
 
 .qsdm-loading-shell {
@@ -339,14 +375,16 @@ input[type='number'] {
   height: 126px;
   margin-bottom: 18px;
   place-items: center;
-  border: 1px solid rgba(126, 230, 222, 0.34);
+  border: 1px solid rgba(142, 220, 224, 0.34);
   border-radius: 28px;
-  background:
-    linear-gradient(135deg, rgba(4, 19, 25, 0.94), rgba(8, 53, 64, 0.82)),
-    radial-gradient(circle at 50% 50%, rgba(247, 191, 66, 0.18), transparent 64%);
-  box-shadow:
-    0 22px 70px rgba(0, 0, 0, 0.34),
-    0 0 0 12px rgba(124, 232, 239, 0.04);
+  background: linear-gradient(135deg, #0a1f26, #0c242c),
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(247, 201, 72, 0.18),
+      transparent 64%
+    );
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.34),
+    0 0 0 12px rgba(142, 220, 224, 0.04);
 }
 
 .qsdm-loading-logo {
@@ -358,20 +396,20 @@ input[type='number'] {
 
 .qsdm-loading-ring {
   position: absolute;
-  border: 1px solid rgba(126, 230, 222, 0.26);
+  border: 1px solid rgba(142, 220, 224, 0.26);
   border-radius: 999px;
 }
 
 .qsdm-loading-ring-one {
   inset: -34px;
-  border-top-color: rgba(247, 191, 66, 0.68);
-  border-right-color: rgba(247, 191, 66, 0.18);
+  border-top-color: rgba(247, 201, 72, 0.68);
+  border-right-color: rgba(247, 201, 72, 0.18);
   animation: qsdm-loading-spin 9s linear infinite;
 }
 
 .qsdm-loading-ring-two {
   inset: -18px;
-  border-left-color: rgba(124, 232, 239, 0.7);
+  border-left-color: rgba(142, 220, 224, 0.7);
   animation: qsdm-loading-spin 6s linear infinite reverse;
 }
 
@@ -381,8 +419,8 @@ input[type='number'] {
   width: 10px;
   height: 10px;
   border-radius: 999px;
-  background: #7ce8ef;
-  box-shadow: 0 0 22px rgba(124, 232, 239, 0.75);
+  background: #9ed7dc;
+  box-shadow: 0 0 22px rgba(142, 220, 224, 0.75);
 }
 
 .qsdm-loading-node-one {
@@ -393,8 +431,8 @@ input[type='number'] {
 .qsdm-loading-node-two {
   top: 58px;
   right: -29px;
-  background: #f7bf42;
-  box-shadow: 0 0 24px rgba(247, 191, 66, 0.72);
+  background: #f7c948;
+  box-shadow: 0 0 24px rgba(247, 201, 72, 0.72);
 }
 
 .qsdm-loading-node-three {
@@ -404,7 +442,7 @@ input[type='number'] {
 
 .qsdm-loading-eyebrow {
   margin: 0;
-  color: #f7bf42;
+  color: #f7c948;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0;
@@ -420,7 +458,7 @@ input[type='number'] {
 
 .qsdm-loading-subtitle {
   margin: 0;
-  color: #c8eef1;
+  color: rgba(244, 251, 253, 0.72);
   font-size: 16px;
   font-weight: 600;
   line-height: 1.5;
@@ -429,13 +467,13 @@ input[type='number'] {
 .qsdm-loading-fact {
   max-width: 560px;
   margin: 4px 0 0;
-  color: #c8eef1;
+  color: rgba(244, 251, 253, 0.72);
   font-size: 14px;
   line-height: 1.65;
 }
 
 .qsdm-loading-fact span {
-  color: #7ce8ef;
+  color: #9ed7dc;
   font-weight: 700;
 }
 
@@ -451,13 +489,13 @@ input[type='number'] {
   overflow: hidden;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(124, 232, 239, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(142, 220, 224, 0.12);
 }
 
 .qsdm-loading-progress-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #7ce8ef, #f7bf42);
+  background: linear-gradient(90deg, #9ed7dc, #f7c948);
 }
 
 @keyframes qsdm-loading-spin {

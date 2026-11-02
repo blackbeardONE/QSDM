@@ -1,6 +1,6 @@
 # QSDM Hive
 
-QSDM Hive is a desktop application for operating a decentralized task node. It provides a focused interface for running tasks, managing wallets, checking rewards, and monitoring node health.
+QSDM Hive is a desktop application for operating a QSDM task node. It provides a focused interface for running tasks, managing wallets, checking rewards, and monitoring node health.
 
 ## Prerequisites
 

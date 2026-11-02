@@ -1,6 +1,6 @@
 # QSDM Treasury Policy
 
-Status: production funding and custody policy
+Status: funding and custody policy (pilot network)
 
 ## 1. Non-negotiable rules
 
@@ -18,8 +18,7 @@ Status: production funding and custody policy
 
 | Tier | Wallet | Suggested control | Purpose |
 |---|---|---|---|
-| 0 | Genesis Treasury Vault | 3-of-5 ML-DSA multisig plus 48-month on-chain vesting | Holds the disclosed protocol treasury allocation. Never connected to an application server. |
-| 1 | Operations Treasury | 2-of-3 multisig, monthly budget | Receives only vested releases approved under the public budget. Refills lower tiers. |
+| 1 | Operations Treasury | 2-of-3 multisig, monthly budget | Receives only existing CELL (mined CELL, governance-approved fee revenue, or disclosed sponsor funds) approved under the public budget. Refills lower tiers. |
 | 2A | Referral Payout Wallet | Isolated signer, maximum 5 CELL per payout, 30-day refill | Pays one qualified referral reward. |
 | 2B | Onboarding Payout Wallet | Separate isolated signer, maximum 1 CELL per payout, 7-day refill | Pays a one-time starter grant. |
 | 2C | Integration Payout Wallets | One wallet per integration | Keeps Sky Fang or future partner risk out of core treasury funds. |
@@ -39,32 +38,30 @@ The same address is consensus-bound in QSDM Core. Pooled settlement remains
 fail-closed unless the task manifest authorizes the Relay's key-derived ID and
 the task reward pool is funded.
 
-QSDM does not yet ship the Tier 0 multisig and vesting contract described by
-the tokenomics specification. Those contracts, their tests, and an external
-audit remain a mainnet gate. Until they exist, use offline key custody and
-manual multi-person approval, and do not describe the custody layer as
+There is no Tier 0 genesis treasury vault: [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md)
+withdrew the 10,000,000 CELL treasury proposal, so no treasury multisig or
+vesting contract is planned. Use offline key custody and manual multi-person
+approval for the Operations Treasury, and do not describe the custody layer as
 trustless.
 
 ## 3. Funding source
 
-The published supply cap is 100,000,000 CELL:
+The max supply is 90,000,000 CELL, all from mining
+([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md)):
 
 - 90,000,000 CELL is emitted through protocol mining.
-- 10,000,000 CELL is a disclosed genesis protocol-treasury allocation, locked
-  and released linearly over 48 months.
-- Founder and insider allocation is 0 CELL.
+- There is no genesis treasury allocation. The earlier 10,000,000 CELL
+  treasury proposal is withdrawn.
+- Founder, insider, team, advisor, sale and airdrop allocations are 0 CELL.
 
-In broad industry terminology, CELL created for a treasury at genesis is a
-**premine/genesis allocation**, even when no founder receives it. QSDM should
-therefore say "0% founder or insider premine" rather than the ambiguous "0%
-premine."
+Any future proposal to add an allocation needs a new published policy version,
+the owner's written decision and the governance process, and it may never mint CELL on a
+chain that has already launched without it.
 
-If the official genesis state has not been finalized, the preferred source for
-referral and onboarding budgets is the vested 10% protocol allocation. If the
-network has already launched without that allocation, do **not** mint it later.
 Fund programs from legitimately mined CELL, protocol fee revenue approved by
-governance, or disclosed sponsor revenue transferred into the Operations
-Treasury.
+governance (fees are burned today, so there is none until the fee destination
+changes under a new policy version), or disclosed sponsor revenue transferred
+into the Operations Treasury.
 
 Never fund a production reward with a faucet credit, an environment prefund,
 or a direct state-file edit.
@@ -90,123 +87,17 @@ loopback-only for operator-managed onboarding.
 
 ## 5. Runtime configuration
 
-Build the isolated signer once and run two instances:
-
-```text
-go build -o qsdm-treasury-signer ./cmd/qsdm-game-signer
-```
-
-Referral signer environment:
-
-```text
-QSDM_SIGNER_LISTEN=127.0.0.1:8897
-QSDM_SIGNER_API_URL=http://127.0.0.1:8080
-QSDM_SIGNER_KEYSTORE=/secure/referral-wallet.json
-QSDM_SIGNER_PASSPHRASE_FILE=/secure/referral.passphrase
-QSDM_SIGNER_TOKEN_FILE=/secure/referral-signer.token
-QSDM_SIGNER_ROLE=referral
-QSDM_SIGNER_MAX_PAYOUT=5
-QSDM_SIGNER_MIN_RESERVE=25
-QSDM_SIGNER_FEE=0.001
-```
-
-Onboarding signer environment:
-
-```text
-QSDM_SIGNER_LISTEN=127.0.0.1:8898
-QSDM_SIGNER_API_URL=http://127.0.0.1:8080
-QSDM_SIGNER_KEYSTORE=/secure/onboarding-wallet.json
-QSDM_SIGNER_PASSPHRASE_FILE=/secure/onboarding.passphrase
-QSDM_SIGNER_TOKEN_FILE=/secure/onboarding-signer.token
-QSDM_SIGNER_ROLE=faucet
-QSDM_SIGNER_MAX_PAYOUT=1
-QSDM_SIGNER_MIN_RESERVE=10
-QSDM_SIGNER_FEE=0.001
-```
-
-Copy `QSDM/deploy/qsdm-treasury.example.json` to the validator run directory as
-`qsdm-treasury.json`, fill in the signer URLs, separate tokens, and actual
-wallet addresses. Prefer `signerTokenFile` paths, as shown in the example, so
-the JSON contains no bearer token. Restrict the JSON and token files to their
-respective operating-system accounts. The launcher does not log token content.
-
-On Windows, `autoStart: true` lets `start_local_validator.ps1` supervise the
-two loopback signer processes after Core is ready. Configure `keystorePath`,
-`passphraseFile`, and `signerTokenFile` as absolute paths. These fields contain
-paths only, never secret values. The launcher verifies each signer's role and
-wallet address before reporting startup success.
-
-Both signer URLs must use loopback HTTP or authenticated HTTPS. Core refuses
-to send a bearer token over plain HTTP to a non-loopback host.
+Operational custody procedures are kept in the operators' private runbooks.
+In summary: each Tier 2 payout wallet is held by its own isolated, role-locked
+signer with a per-payout cap and minimum reserve, and Core never holds a
+treasury private key.
 
 ## 6. Production network readiness
 
 Never fund a Tier 2 wallet from a validator merely because its API is healthy.
-The validator must be connected to the production network, caught up, and
-agree with the production gateway on sampled block hashes and wallet state.
-
-On Windows, start the validator in networked mode:
-
-```powershell
-pwsh -File QSDM/scripts/start_local_validator.ps1 -Networked -Restart
-```
-
-Networked mode is append-only by default. Exactly one synchronized validator
-may be assigned the temporary network block-producer role:
-
-```powershell
-pwsh -File QSDM/scripts/start_local_validator.ps1 `
-  -Networked `
-  -BlockProducer `
-  -Restart
-```
-
-`-BlockProducer` fails closed if the node has no existing synchronized chain
-tip. Start a new node as an ordinary networked follower first, wait for it to
-catch up, and only then assign the role. Never enable this switch on two nodes:
-automatic leader election is not implemented yet, so two producers could
-create competing histories. Changing the producer is a deliberate operator
-handoff: stop the old producer, verify the replacement has the same tip hash,
-then start the replacement with `-BlockProducer`.
-
-This choice is persisted in
-`QSDM/source/.cache/local-validator/validator-mode.json`, so the watchdog
-restarts the networked state after a crash or reboot instead of silently
-falling back to the retired solo ledger. The explicit block-producer role is
-persisted in the same file. Networked mode uses
-`https://api.qsdm.tech/api/v1` as its default HTTP chain source and the public
-QSDM bootstrap peer for libp2p connectivity.
-
-Run the fail-closed readiness gate before any funding transfer or payout
-activation:
-
-```powershell
-pwsh -File QSDM/scripts/test_treasury_readiness.ps1 `
-  -WalletAddress <funding-wallet-address> `
-  -OutputPath QSDM/source/.cache/local-validator/treasury-readiness.json
-```
-
-The gate requires all of the following:
-
-1. At least one live peer.
-2. Local height no more than the configured lag behind the production gateway.
-3. Matching genesis, near-tip, and tip block hashes.
-4. Matching balance and nonce for the funding, referral, and onboarding
-   wallets.
-5. Correct signer role and wallet identity on both loopback signers.
-6. Separate referral and onboarding addresses.
-7. Referral claims and onboarding payouts still locked during funding review.
-
-The historical pilot chain contains legacy state transitions that were not all
-serialized into block transactions. A clean validator therefore needs a
-trusted network checkpoint before ordinary block catch-up can continue. A
-checkpoint is acceptable only when its archive hash is verified, its tip hash
-and state root match `/api/v1/chain/blocks`, and Core's own restore-time state
-root validation succeeds. Do not import an account JSON file by itself.
-
-The previous local solo state must be retained as an archive for audit, never
-merged with the accepted production state. Balances that exist only in that
-solo archive are not spendable production CELL.
+The validator must be caught up with the network and agree with the public
+gateway on sampled block hashes and wallet state. The detailed readiness
+checks are part of the operators' private runbooks.
 
 ## 7. Funding and payout flow
 
@@ -219,31 +110,6 @@ solo archive are not spendable production CELL.
    transfer; and submits it through `/api/v1/wallet/submit-signed`.
 6. Core stores the returned transaction ID in the claim receipt.
 
-The referral funding helper at `QSDM/scripts/fund_referral_reward_pool.ps1`
-uses the same signed-transfer path. Run it first without `-Submit` for a dry
-run. `QSDM/scripts/fund_treasury_wallet.ps1` provides the same dry-run-first
-flow for referral, onboarding, integration, and operations wallets.
-
-For the production pilot, the public target balances and expected funding
-wallet are stored in
-`QSDM/deploy/canonical-pilot-funding-plan.json`. On the Linux workstation that
-holds that funding wallet, run the guarded batch helper without `--submit`
-first:
-
-```bash
-bash QSDM/scripts/fund_ecosystem_wallets_linux.sh \
-  --qsdmcli /path/to/qsdmcli \
-  --keystore /secure/path/wallet.json \
-  --passphrase-file /secure/path/wallet.passphrase
-```
-
-After reviewing the exact missing balances, add `--submit`. The helper refuses
-a different source wallet, checks the public policy ceilings, transfers only
-the difference between the confirmed balance and each target, waits for each
-transfer to appear on the production ledger, and stops before the next transfer
-if confirmation is ambiguous. It intentionally does not fund Sky Fang, the
-protocol reserve, or the pooled-compute reserve.
-
 ## 8. Existing development balances
 
 Earlier local launchers directly credited a 500 CELL referral account and
@@ -255,7 +121,8 @@ Before declaring an existing ledger the production state, inventory all
 direct credits and environment prefunds. Either start from an audited genesis
 snapshot that excludes them or approve a deterministic, network-wide state
 migration. Editing one validator's JSON ledger is not an acceptable burn or
-migration.
+migration. Genesis Policy v1.0 §5 chooses the migration path: mainnet
+continues the current chain.
 
 ## 9. Mainnet release gates
 
@@ -265,16 +132,25 @@ wallets. That does not by itself make the current chain a finished mainnet.
 
 Before a mainnet declaration, QSDM still needs all of the following:
 
-1. Implement and externally audit the Tier 0 ML-DSA multisig and vesting rules.
-2. Publish one official genesis manifest containing the exact treasury
-   allocation, vesting schedule, wallet addresses, and cryptographic hash.
+1. Withdrawn: Genesis Policy v1.0 has no genesis treasury, so there is no
+   Tier 0 multisig or vesting contract to build.
+2. Publish the official, aggregate-only migration manifest, its SHA-256 and
+   the fork height (Genesis Policy v1.0 §5). It contains no treasury
+   allocation.
 3. Replace or formally redesign the solo-validator block driver's synthetic
    `qsdm-system-funder` reserve as consensus-native issuance. Its current
    oversized bookkeeping balance and BFT-bypass mode were built for solo
    testnet continuity, not adversarial mainnet operation.
-4. Start from an audited clean state or execute a deterministic, network-wide
-   migration that removes every historic development credit.
-5. Complete an independent economic, consensus, and custody audit.
+4. Execute the deterministic, network-wide migration of Genesis Policy v1.0
+   §5: remove the synthetic funder balance, and burn or explicitly classify
+   every historic development credit. If the manifest cannot reach a "ready"
+   state, the fallback is an audited clean genesis under a new policy
+   version.
+5. Complete and publish a security review of economics, consensus and
+   custody, with its findings fixed. Owner decision 2026-10-17: the path is
+   the open [community review and bug bounty](COMMUNITY_REVIEW.md) instead of a
+   paid audit firm. An independent professional audit remains welcome. No
+   independent audit has been completed.
 
-Until these gates close, describe the network as an incentivized production
-pilot or testnet, not a trust-minimized mainnet.
+Until these gates close, describe the network as a pilot network (pre-mainnet), not a
+trust-minimized mainnet.

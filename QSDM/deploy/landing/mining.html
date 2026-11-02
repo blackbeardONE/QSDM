@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mine CELL with an NVIDIA GPU — QSDM Mining</title>
+  <meta name="description" content="How CELL mining works on QSDM: enroll an NVIDIA GPU with QSDM Hive, mine in capped 24-hour windows, rewards split by accepted work, 10 CELL bond. Live miner count and difficulty." />
+  <link rel="canonical" href="https://qsdm.tech/mining.html" />
+  <meta name="theme-color" content="#061116" />
+  <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/brand/favicon-16.png" />
+  <link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <meta property="og:image" content="https://qsdm.tech/assets/brand/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="QSDM logo: Quantum-Secure Dynamic Mesh ledger and the CELL coin" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://qsdm.tech/assets/brand/og-image.png" />
+  <link rel="stylesheet" href="/assets/site.css" />
+  <link rel="stylesheet" href="/assets/site-shell.css" />
+  <style>
+    .req { counter-reset: req; display: grid; gap: 0.75rem; margin: 0; padding: 0; list-style: none; }
+    @media (min-width: 860px) { .req { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    .req li { counter-increment: req; }
+    .req .card h3::before {
+      content: counter(req);
+      display: inline-grid;
+      place-items: center;
+      width: 1.6rem; height: 1.6rem;
+      margin-right: 0.55rem;
+      border-radius: 50%;
+      background: var(--gold);
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      vertical-align: 0.1em;
+    }
+    .req .card p + p { margin-top: 0.6rem; }
+  </style>
+</head>
+<body data-page="mining">
+  <header id="site-header"></header>
+  <script src="/assets/site-shell.js"></script>
+
+  <main id="main">
+    <section class="page-hero" aria-labelledby="mining-title">
+      <div class="q-wrap">
+        <span class="q-eyebrow">Mining</span>
+        <h1 id="mining-title">Mine CELL <span class="dim">with an NVIDIA GPU.</span></h1>
+        <p class="lead">
+          Mining is open to enrolled QSDM Hive nodes with an NVIDIA GPU. Work is
+          paid in capped windows, and each window's CELL is shared by accepted work.
+        </p>
+        <div class="q-actions">
+          <a class="site-btn site-btn-solid" href="/download.html">Download Hive</a>
+          <a class="site-btn site-btn-ghost" href="/network.html">Network status</a>
+          <a class="site-btn site-btn-ghost" href="/docs/#/miner-quickstart">Miner quickstart</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="stats-sec" aria-labelledby="mstats-title" style="padding-bottom:3rem">
+      <div class="q-wrap">
+        <h2 id="mstats-title" class="visually-hidden">Live mining stats</h2>
+        <div class="stat-strip">
+          <div class="q-stat"><span class="stat-label">Enrolled miners</span><span class="stat-value" id="m-miners">—</span><span class="stat-sub">active enrollments</span></div>
+          <div class="q-stat"><span class="stat-label">Fully bonded</span><span class="stat-value" id="m-bonded">—</span><span class="stat-sub">10 CELL bond paid</span></div>
+          <div class="q-stat"><span class="stat-label">Bond pending</span><span class="stat-value" id="m-deferred">—</span><span class="stat-sub">paying from rewards</span></div>
+          <div class="q-stat"><span class="stat-label">PoW difficulty</span><span class="stat-value" id="m-diff">—</span><span class="stat-sub" id="m-diff-sub">per proof</span></div>
+          <div class="q-stat"><span class="stat-label">Block reward</span><span class="stat-value" id="m-reward">—</span><span class="stat-sub">CELL per block</span></div>
+          <div class="q-stat"><span class="stat-label">Block height</span><span class="stat-value" id="m-height">—</span><span class="stat-sub">chain tip</span></div>
+        </div>
+        <p class="source-line">Source: <code>/mining/enrollments</code>, <code>/mining/work</code>, <code>/status</code> · <span id="m-updated">loading…</span> · <a href="/network.html">Full network status</a></p>
+      </div>
+    </section>
+
+    <section class="sec" aria-labelledby="req-title">
+      <div class="q-wrap">
+        <div class="sec-head">
+          <h2 id="req-title">Requirements</h2>
+          <p>Three things, all set up from inside QSDM Hive.</p>
+        </div>
+        <ol class="req">
+          <li><div class="card"><h3>An NVIDIA GPU</h3><p>Mining needs an NVIDIA GPU. The node proves it with NVIDIA attestation (<span class="mono">nvidia-cc-v1</span> or <span class="mono">nvidia-hmac-v1</span>).</p></div></li>
+          <li><div class="card"><h3>QSDM Hive</h3><p>Install Hive for <a href="/download.html">Windows (1.4.20) or Linux (1.4.17)</a>. Hive holds your wallet and runs the miner.</p></div></li>
+          <li><div class="card"><h3>An enrolled node</h3><p>Enroll the GPU from Hive. Enrollment is signed by your wallet and needs a <span class="mono">10 CELL</span> bond.</p><p>No CELL yet? The bond can be paid from your mining rewards instead (deferred bond).</p></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="sec" aria-labelledby="how-title">
+      <div class="q-wrap">
+        <div class="sec-head">
+          <h2 id="how-title">How it works</h2>
+          <p>Plain rules. The live values are on this page and on the <a href="/network.html">network status</a> page.</p>
+        </div>
+        <ul class="facts">
+          <li><strong>Capped windows</strong><span>Mining runs in windows of up to 24 hours. Each window has a fixed CELL budget; when the window ends or the budget is used, submissions stop until the next window opens.</span></li>
+          <li><strong>Proof of work</strong><span>Your GPU searches for a proof that meets the current difficulty (<span class="mono" id="h-diff">2^24</span>). A proof must arrive within about 60 seconds (6 blocks) of the block it was mined on.</span></li>
+          <li><strong>Per-owner limits</strong><span>Each wallet (owner) has limits on proofs per minute, proofs waiting for payment, and CELL earned per 24-hour epoch (8,640 blocks). Adding more nodes under one wallet does not lift these limits.</span></li>
+          <li><strong>Reward split</strong><span>The window's CELL is split by accepted work: your share equals your share of the accepted proofs.</span></li>
+          <li><strong>Deferred bond: 10% rate</strong><span>A node whose 10 CELL bond is not yet fully paid mines at 10% weight. Its rewards are locked into the bond first; once fully bonded it mines at full weight.</span></li>
+          <li><strong>Proof signing</strong><span>Signing each submitted proof is currently not required. Enrollment itself is always signed by the owner wallet.</span></li>
+          <li><strong>Bond and slashing</strong><span>The bond is slashable: a node proven to have forged its attestation, double-mined, or faked proof freshness can lose it.</span></li>
+        </ul>
+        <p class="q-note" style="margin-top:1.25rem">
+          Window times and budgets are set per window by the operator and are not fixed protocol values,
+          so this page does not list them. The status banner at the top of the site says whether mining is open.
+        </p>
+      </div>
+    </section>
+
+    <section class="sec" aria-labelledby="mstart-title">
+      <div class="q-wrap">
+        <div class="sec-head">
+          <h2 id="mstart-title">Start in four steps</h2>
+        </div>
+        <ol class="facts" style="list-style:none">
+          <li><strong>1. Install Hive</strong><span><a href="/download.html">Download</a> and verify the SHA-256, then create or open your wallet in Hive.</span></li>
+          <li><strong>2. Enroll your GPU</strong><span>Open mining in Hive and enroll the NVIDIA GPU. Choose to post the 10 CELL bond now or pay it from rewards.</span></li>
+          <li><strong>3. Start mining</strong><span>Hive fetches work, mines on the GPU and submits proofs while a window is open.</span></li>
+          <li><strong>4. Check your node</strong><span>Look up your wallet address in the <a href="/explorer.html">explorer</a>, or call <code>/api/v1/mining/enrollment/&lt;node_id&gt;</code> (see the <a href="/api.html#ep-mining-enrollment">API reference</a>).</span></li>
+        </ol>
+      </div>
+    </section>
+  </main>
+
+  <footer id="site-footer"></footer>
+
+  <script>
+    (function () {
+      "use strict";
+      var Q = window.QSDM;
+      if (!Q) return;
+      function stamp() {
+        Q.setText("m-updated", "updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+      }
+      function refresh() {
+        Q.api("/mining/enrollments?limit=200").then(function (d) {
+          var recs = d.records || d.enrollments || [];
+          var total = typeof d.total_matches === "number" ? d.total_matches : recs.length;
+          var bonded = recs.filter(function (r) { return r.fully_bonded; }).length;
+          Q.setText("m-miners", Q.fmtInt(total) + (d.has_more ? "+" : ""));
+          Q.setText("m-bonded", Q.fmtInt(bonded));
+          Q.setText("m-deferred", Q.fmtInt(recs.length - bonded));
+          stamp();
+        }).catch(function () { Q.setText("m-updated", "API unavailable, retrying"); });
+        Q.api("/status").then(function (s) {
+          Q.setText("m-height", Q.fmtInt(s.chain_tip));
+          if (s.tokenomics && s.tokenomics.block_reward_cell) Q.setText("m-reward", s.tokenomics.block_reward_cell);
+        }).catch(function () {});
+        Q.api("/mining/work").then(function (w) {
+          var d = Number(w.difficulty);
+          if (!(d > 0)) return;
+          var bits = Math.log2(d);
+          var label = Number.isInteger(bits) ? "2^" + bits : Q.fmtInt(d);
+          Q.setText("m-diff", label);
+          Q.setText("h-diff", label);
+          Q.setText("m-diff-sub", Q.fmtInt(d) + " hashes per proof (avg)");
+        }).catch(function () {
+          Q.setText("m-diff-sub", "work endpoint closed");
+        });
+      }
+      refresh();
+      setInterval(refresh, 30000);
+    })();
+  </script>
+</body>
+</html>

@@ -27,7 +27,8 @@ things only an incentivized testnet can produce:
 1. **Real-miner attack data.** External miners running unmodified
    binaries against unmodified validators produce a far broader
    profile of edge cases than internal testing. Audit row `mining-01`
-   (the external auditor) covers the spec ↔ implementation surface;
+   (the open community review, see `COMMUNITY_REVIEW.md`) covers the
+   spec ↔ implementation surface;
    `mining-05` covers the deployment ↔ ecosystem surface.
 2. **Operational practice for the validator.** The single BLR1
    validator needs to handle real-world traffic before mainnet: GPU
@@ -217,19 +218,17 @@ The testnet sunsets when:
 | Difficulty retarget instability | low | medium (chain stalls or wildly oscillates) | the retarget maths is integer-only and unit-tested in `pkg/mining/difficulty_test.go`; rehearse on a fresh local chain before launch |
 | Discord raid / coordinated abuse | medium | low | community moderators + rate-limited channels + clear COC |
 | Press / community criticism over a "fake" token | low | medium | clear messaging that testnet-CELL has no value; faucet ToS reinforces this |
-| Legal challenge alleging the testnet is an unregistered offering | very low | high | the `tok-01` counsel engagement covers this question; do not launch until counsel has signed off on the testnet-CELL posture |
+| Legal challenge alleging the testnet is an unregistered offering | very low | high | the owner's decision of 2026-11-01 (Genesis Policy v1.1, no counsel engagement) covers this question; testnet-CELL is labelled as having no value |
 
 ## 7. Decision points (gate criteria)
 
 QSDM cannot launch until:
 
-- [ ] `tok-01` counsel review at least covers the testnet-CELL question
-  (does not need to cover the full mainnet question — testnet can
-  proceed once counsel has opined specifically on the testnet
-  posture).
-- [ ] `mining-01` external audit is at least scheduled (does not
-  need to be complete — testnet may launch in parallel with the
-  audit window).
+- [x] `tok-01`: closed by the owner's decision of 2026-11-01 (no counsel
+  engagement; [Genesis Policy v1.1](../GENESIS_POLICY_v1.1.md)).
+- [ ] `mining-01` community review scope and bug bounty are published
+  (the review does not need to be complete — testnet may launch in
+  parallel with it).
 - [ ] All §3 checklist items are at least 80% complete (≥4 of 5
   rows under each subheading; faucet must be 100% complete).
 - [ ] The infrastructure freeze can be sustained for T-7 to T+14

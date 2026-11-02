@@ -1,7 +1,7 @@
 param(
     [string]$QsdmRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
-    [string]$Relay = "https://api.qsdm.tech",
-    [string]$Slot = "home-validator",
+    [string]$Relay = "",
+    [string]$Slot = "",
     [string]$TaskName = "QSDM-Local-Stack",
     [int]$IntervalSeconds = 30,
     [int]$RestartAfterFailures = 10,
@@ -23,6 +23,9 @@ if ($AsSystem) {
 }
 
 $QsdmRoot = (Resolve-Path $QsdmRoot).Path
+. (Join-Path $QsdmRoot "scripts\lib\qsdm-endpoints.ps1")
+$Relay = Resolve-QsdmEndpointValue -Value $Relay -Name "home_gateway_relay" -EnvVar "QSDM_HOME_GATEWAY_RELAY"
+$Slot = Resolve-QsdmEndpointValue -Value $Slot -Name "home_gateway_slot" -EnvVar "QSDM_HOME_GATEWAY_SLOT"
 $WatchdogScript = Join-Path $QsdmRoot "scripts\watch_local_stack.ps1"
 $LocalRoot = Join-Path $QsdmRoot "source\.cache\local-validator"
 $LogPath = Join-Path $LocalRoot "local-stack-task-install.log"

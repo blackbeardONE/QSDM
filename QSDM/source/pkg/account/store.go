@@ -14,7 +14,8 @@ import (
 
 const (
 	legacyStoreVersion          = 1
-	storeVersion                = 2
+	previousStoreVersion        = 2
+	storeVersion                = 3
 	storeKeyCheckContext        = "qsdm-account-store-key-check-v1"
 	storeKeyCheckValue          = "qsdm-account-store-key-check"
 	maxActiveSessionsPerAccount = 10
@@ -36,6 +37,7 @@ type Account struct {
 	EmailEncrypted        string       `json:"email_encrypted,omitempty"`
 	TelegramSubjectHash   string       `json:"telegram_subject_hash,omitempty"`
 	TelegramNameEncrypted string       `json:"telegram_name_encrypted,omitempty"`
+	WalletIdentity        string       `json:"wallet_identity,omitempty"`
 	Wallets               []WalletLink `json:"wallets,omitempty"`
 	CreatedAt             time.Time    `json:"created_at"`
 	LastLoginAt           time.Time    `json:"last_login_at"`
@@ -113,7 +115,7 @@ func OpenStore(path string, key []byte) (*Store, error) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return nil, fmt.Errorf("decode account store: %w", err)
 	}
-	if doc.Version != legacyStoreVersion && doc.Version != storeVersion {
+	if doc.Version != legacyStoreVersion && doc.Version != previousStoreVersion && doc.Version != storeVersion {
 		return nil, fmt.Errorf("unsupported account store version %d", doc.Version)
 	}
 	if err := validateStoreDocumentKey(doc, key); err != nil {
@@ -147,7 +149,7 @@ func OpenStore(path string, key []byte) (*Store, error) {
 }
 
 func validateStoreDocumentKey(doc storeDocument, key []byte) error {
-	if doc.Version == storeVersion {
+	if doc.Version >= previousStoreVersion {
 		if doc.KeyCheck == "" {
 			return errors.New("account store key check is missing")
 		}
@@ -209,7 +211,7 @@ func validateStoreDocumentStructure(doc storeDocument) error {
 			return errors.New("account store contains a duplicate account ID")
 		}
 		accountIDs[account.ID] = struct{}{}
-		if account.EmailHash == "" && account.TelegramSubjectHash == "" {
+		if account.EmailHash == "" && account.TelegramSubjectHash == "" && account.WalletIdentity == "" {
 			return errors.New("account store contains an account without a sign-in identity")
 		}
 		if account.EmailHash != "" {
@@ -223,6 +225,18 @@ func validateStoreDocumentStructure(doc storeDocument) error {
 				return errors.New("account store contains a duplicate Telegram identity")
 			}
 			telegramOwners[account.TelegramSubjectHash] = account.ID
+		}
+		if account.WalletIdentity != "" {
+			if doc.Version < storeVersion || !walletAddressPattern.MatchString(account.WalletIdentity) {
+				return errors.New("account store contains an invalid wallet sign-in identity")
+			}
+			found := false
+			for _, linked := range account.Wallets {
+				found = found || linked.Address == account.WalletIdentity
+			}
+			if !found {
+				return errors.New("account store wallet sign-in identity is not linked")
+			}
 		}
 		for _, wallet := range account.Wallets {
 			if wallet.Address == "" {
@@ -819,6 +833,9 @@ func (s *Store) UnlinkWallet(accountID, address string) (bool, error) {
 	account := s.accounts[accountID]
 	if account == nil {
 		return false, errors.New("account not found")
+	}
+	if account.WalletIdentity == address {
+		return false, errors.New("the sign-in wallet cannot be unlinked")
 	}
 	index := -1
 	for i, wallet := range account.Wallets {

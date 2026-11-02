@@ -94,6 +94,7 @@ func currentEnrollmentRegistry() EnrollmentRegistry {
 type EnrollmentRecordView struct {
 	NodeID                string `json:"node_id"`
 	Owner                 string `json:"owner"`
+	OperatorPublicKey     string `json:"operator_public_key,omitempty"`
 	GPUUUID               string `json:"gpu_uuid"`
 	StakeDust             uint64 `json:"stake_dust"`
 	BondMode              string `json:"bond_mode"`
@@ -135,6 +136,7 @@ func viewFromRecord(rec *enrollment.EnrollmentRecord) EnrollmentRecordView {
 	v := EnrollmentRecordView{
 		NodeID:                rec.NodeID,
 		Owner:                 rec.Owner,
+		OperatorPublicKey:     rec.OperatorPublicKey,
 		GPUUUID:               rec.GPUUUID,
 		StakeDust:             rec.StakeDust,
 		BondMode:              string(rec.NormalizedBondMode()),

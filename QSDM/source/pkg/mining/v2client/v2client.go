@@ -172,6 +172,12 @@ type BundleInputs struct {
 	Challenge challenge.Challenge
 }
 
+// OperatorSignatureFunc signs the canonical operator-signature
+// payload for a proof + bundle pair and returns a hex-encoded
+// ML-DSA signature. It is injected by binaries rather than wired
+// here so v2client stays free of keystore dependencies.
+type OperatorSignatureFunc func(proof mining.Proof, bundle hmac.Bundle) (string, error)
+
 // Validate checks BundleInputs for obviously-wrong values before
 // spending CPU on canonical-form + HMAC computation. Exposed so
 // tests can exercise the validation path without actually
@@ -215,12 +221,65 @@ func (in BundleInputs) Validate() error {
 // pass the lowercased arch tag ("ada", "ampere", "hopper",
 // "blackwell", ...). Empty string is tolerated for now.
 func BuildHMACAttestation(in BundleInputs, gpuArch string) (mining.Attestation, error) {
-	if err := in.Validate(); err != nil {
+	bundle, err := buildSignedBundle(in)
+	if err != nil {
+		return mining.Attestation{}, err
+	}
+	return attestationFromBundle(bundle, in.Challenge, gpuArch)
+}
+
+// BuildSignedHMACAttestation assembles the same HMAC bundle as
+// BuildHMACAttestation, then adds an operator_sig produced by the
+// operator's QSDM wallet key. Validators keep this rail optional
+// during rollout; once required, unsigned miners fail closed.
+func BuildSignedHMACAttestation(
+	proof mining.Proof,
+	in BundleInputs,
+	gpuArch string,
+	sign OperatorSignatureFunc,
+) (mining.Attestation, error) {
+	if sign == nil {
+		return mining.Attestation{}, errors.New("v2client: nil operator signature function")
+	}
+
+	bundle, err := buildSignedBundle(in)
+	if err != nil {
+		return mining.Attestation{}, err
+	}
+	att, err := attestationFromBundle(bundle, in.Challenge, gpuArch)
+	if err != nil {
 		return mining.Attestation{}, err
 	}
 
+	proofForSignature := proof
+	proofForSignature.Version = mining.ProtocolVersionV2
+	proofForSignature.Attestation = att
+	proofForSignature.Attestation.BundleBase64 = ""
+
+	operatorSig, err := sign(proofForSignature, bundle)
+	if err != nil {
+		return mining.Attestation{}, fmt.Errorf("v2client: sign operator bundle: %w", err)
+	}
+	bundle.OperatorSig = operatorSig
+
+	// Recompute the HMAC after attaching operator_sig. The HMAC
+	// canonical form excludes operator_sig, so this is a no-op
+	// semantically, but keeps the final bundle produced through
+	// the same helper that unsigned bundles use.
+	bundle, err = bundle.Sign(in.HMACKey)
+	if err != nil {
+		return mining.Attestation{}, fmt.Errorf("v2client: sign bundle: %w", err)
+	}
+	return attestationFromBundle(bundle, in.Challenge, gpuArch)
+}
+
+func buildSignedBundle(in BundleInputs) (hmac.Bundle, error) {
+	if err := in.Validate(); err != nil {
+		return hmac.Bundle{}, err
+	}
+
 	// Assemble the unsigned bundle. Field names must stay in
-	// alphabetical order — hmac.Bundle declares them that way
+	// alphabetical order because hmac.Bundle declares them that way
 	// and json.Marshal relies on declaration order to match the
 	// canonical form.
 	bundle := hmac.Bundle{
@@ -238,9 +297,13 @@ func BuildHMACAttestation(in BundleInputs, gpuArch string) (mining.Attestation, 
 	}
 	signed, err := bundle.Sign(in.HMACKey)
 	if err != nil {
-		return mining.Attestation{}, fmt.Errorf("v2client: sign bundle: %w", err)
+		return hmac.Bundle{}, fmt.Errorf("v2client: sign bundle: %w", err)
 	}
-	b64, err := signed.MarshalBase64()
+	return signed, nil
+}
+
+func attestationFromBundle(bundle hmac.Bundle, chg challenge.Challenge, gpuArch string) (mining.Attestation, error) {
+	b64, err := bundle.MarshalBase64()
 	if err != nil {
 		return mining.Attestation{}, fmt.Errorf("v2client: marshal bundle: %w", err)
 	}
@@ -248,8 +311,8 @@ func BuildHMACAttestation(in BundleInputs, gpuArch string) (mining.Attestation, 
 		Type:         mining.AttestationTypeHMAC,
 		BundleBase64: b64,
 		GPUArch:      gpuArch,
-		Nonce:        in.Challenge.Nonce,
-		IssuedAt:     in.Challenge.IssuedAt,
+		Nonce:        chg.Nonce,
+		IssuedAt:     chg.IssuedAt,
 	}, nil
 }
 

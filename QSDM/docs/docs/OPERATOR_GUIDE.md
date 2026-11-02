@@ -5,11 +5,16 @@
 > together all of the existing reference docs in the order you'll
 > actually meet them.
 >
-> **Scope.** Testnet today, mainnet when the
-> [`ROADMAP.md`](./ROADMAP.md) Phase 6 external audit closes. This
+> **Scope.** Public pilot network (pre-mainnet) today, run by a single
+> block producer during recovery. Mainnet only after the gates in
+> [`TREASURY_POLICY.md` §9](./TREASURY_POLICY.md#9-mainnet-release-gates)
+> close, including a published security review (today an open
+> [community review with a bug bounty](./COMMUNITY_REVIEW.md); no
+> independent audit has been completed). This
 > guide never promises mainnet earnings; both difficulty and the block
 > reward are moving targets documented in
-> [`CELL_TOKENOMICS.md`](./CELL_TOKENOMICS.md).
+> [`CELL_TOKENOMICS.md`](./CELL_TOKENOMICS.md). For the live state of the
+> network, see [Network status](NETWORK_STATUS.md).
 
 ---
 
@@ -18,7 +23,7 @@
 Before picking hardware, make sure you understand the shape of the
 network. The single biggest source of confusion from new operators is
 the assumption that "connecting to QSDM" means "connecting to our
-VPS." It doesn't.
+reference server." It doesn't.
 
 ### 0.1 QSDM is a peer-to-peer mesh
 
@@ -27,11 +32,17 @@ there is no central server that holds the chain. The ledger is
 replicated byte-for-byte across every validator that has finished its
 initial sync.
 
+> **Today (pilot network):** the design above is the target. Right now the
+> chain is produced by a single block producer during recovery, with a
+> backup node following it, and `GET /api/v1/status` may report `peers: 0`.
+> Independent validators are on the roadmap; running one is how you help
+> get there.
+
 ```
                  ┌─────────────────────────────────────────────┐
                  │     The QSDM validator mesh (libp2p)        │
                  │                                             │
-  [Your new     ───►  [Seed: api.qsdm.tech]  ◄──►  [Peer B]     │
+  [Your new     ───►  [Seed validator]       ◄──►  [Peer B]     │
    validator]        (bootstrap only — NOT                      │
                       a central server)                         │
                           ▲        ▲                            │
@@ -49,32 +60,65 @@ initial sync.
 
 ### 0.2 What about `api.qsdm.tech`?
 
-`https://api.qsdm.tech/` is the reference deployment we operate. It
-plays two roles right now:
+`https://api.qsdm.tech/` is the reference deployment we operate. Right now:
 
-1. **Official bootstrap peer.** A new validator uses its libp2p
-   multiaddr to discover the mesh the first time it starts. After that
-   handshake, your validator gossips with every other validator
-   directly. Bootstrap ≠ sync.
-2. **Public REST endpoint.** Miners, wallets, and the dashboard call
+1. **A public P2P peer since 2 November 2026.** The producer's libp2p
+   port (`4001`) accepts connections from the internet:
+   `/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`.
+   It limits connections and streams and answers block requests within a
+   budget (one per peer every 2 s, 2 per second in total), so catch up over
+   HTTPS (`QSDM_CHAIN_SYNC_URLS`, see [Run a full node](RUN_A_FULL_NODE.md))
+   rather than by P2P block requests alone. It is the only public peer;
+   independent validators and followers are planned; see
+   [`ROADMAP.md`](./ROADMAP.md) ("Independent validators") and
+   [`NODE_ROLES.md` §3.2](./NODE_ROLES.md).
+2. **Public REST endpoint.** Miners, wallets, and Hive call
    `/api/v1/*` on this hostname. Anyone can stand up their own
    validator, publish a competing REST hostname, and point traffic at
    it — the protocol has no preference.
 
-If `api.qsdm.tech` went offline tomorrow:
+If `api.qsdm.tech` went offline tomorrow, the outcome depends on the
+individual node:
 
-- Validators already in the mesh would keep finalising blocks.
-- New joiners would just need a different peer's multiaddr in
-  `bootstrap_peers`.
-- Miners pointing at `api.qsdm.tech` would switch to any other
-  validator they trust (`--validator=https://your-node.example/`).
+- A validator that already has live peer sessions can continue processing the
+  blocks it receives from those peers.
+- A follower whose only chain-sync URL is the reference server will lose
+  catch-up and may have zero peers. It does not automatically become a block
+  producer.
+- Hive, miners, and websites configured only with the reference server endpoint will not
+  automatically discover a replacement API. They need an alternate trusted
+  endpoint configured in advance.
 
-So the honest answer to *"do I have to connect and sync to your VPS?"*
-is: **no, you connect and sync to *the mesh*.** Our VPS happens to be
-one of the peers in that mesh today, and it is the one we recommend
-for Phase 4 testnet bootstrap because it is the genesis validator. Once
-you publish your own validator, it is peer-equal to ours.
+Therefore the current deployment is a peer-to-peer network with a single
+reference server, not automatic high availability. A reference-server outage does not erase
+local state, but it can make a follower stale and can stop clients that have no
+alternate endpoint.
 
+To operate independently of the reference server, prepare at least one additional validator that
+is outside the reference server's failure domain. Give this machine both of the following in
+its persisted network profile:
+
+1. An independent libp2p multiaddr in `bootstrap_peers`.
+2. An independent HTTPS API in `QSDM_CHAIN_SYNC_URLS`.
+
+Keep the machine in `network-follower` mode until it has caught up and reports
+at least one live peer. Public P2P also requires an inbound TCP `4001` path
+through the router, firewall, or a trusted relay. A private address such as
+`192.168.x.x` is not an internet address, and carrier-grade NAT may make
+inbound forwarding impossible.
+
+When CGNAT is outside your control, use the home-gateway fallback instead of
+continuing router retries. On Windows, `scripts/enable_cgnat_fallback.ps1`
+records `connectivityMode: relay-fallback`, starts the read-only outbound
+gateway, and lets the verifier report fallback readiness separately from full
+independence from the reference server. This is a public service fallback, not a producer failover
+mechanism.
+
+Promotion is a separate, manual incident procedure. Stop and fence the
+current producer first, verify this node's chain tip and signer configuration,
+then promote exactly one network producer. Do not enable solo mode and do not
+promote two nodes at once: this codebase does not yet provide quorum-based
+leader election or automatic split-brain prevention.
 ### 0.3 Where miners fit
 
 Miners do **not** join the libp2p mesh. They speak plain HTTPS to one
@@ -99,7 +143,7 @@ rationale.
 
 | You want to… | Run this | Hardware | Reward |
 |---|---|---|---|
-| Secure the chain, earn fees | **Validator** | CPU-only VPS | Transaction fees (denominated in `dust`) |
+| Secure the chain (not yet open on the pilot network) | **Validator** | CPU-only VPS | Transaction fees once independent validators produce blocks; fees are burned today |
 | Mint new Cell supply | **Miner** | NVIDIA GPU (see §3) | Newly-issued Cell per block |
 | Do both | **Two separate machines** running two separate binaries | 1 × CPU VPS + 1 × GPU rig | Both |
 
@@ -116,7 +160,7 @@ intentional, see [`NODE_ROLES.md §2`](./NODE_ROLES.md).
 - **4–8 vCPU**, 8–16 GB RAM, 200 GB NVMe, 1 Gbps symmetric.
 - Ubuntu 24.04 LTS is the reference OS. Windows 10+ works; macOS is in
   development.
-- **No GPU.** Validator builds (`qsdm/validator:latest`, or `-tags
+- **No GPU.** Validator builds (`ghcr.io/blackbeardone/qsdm-validator:<version>`, or `-tags
   validator_only` from source) do not link CUDA — a validator binary
   literally cannot run the mining path.
 - Any mainstream VPS provider works (DigitalOcean, Hetzner, OVH, AWS
@@ -129,24 +173,18 @@ end-to-end. The critical bits:
 
 1. Drop a `config.toml` with your desired `node.address`,
    `api.port = 8080`, `network.port = 4001`.
-2. Set `bootstrap_peers` to the **current multiaddr** of an existing
-   peer. For Phase 4 testnet that is us; the live multiaddr is
-   published at [`qsdm.tech/validators.html`](https://qsdm.tech/validators.html)
-   and the peer-id is always queryable live at
-   `curl -s https://api.qsdm.tech/api/v1/status | jq -r .node_id`. The
-   multiaddr looks like:
-
-   ```
-   /ip4/206.189.132.232/tcp/4001/p2p/12D3KooW…
-   ```
-
-   The `12D3KooW…` peer-id changes every time the node's libp2p key
-   rotates, so don't hard-code it from a stale tutorial — always grab
-   the current value.
+2. `bootstrap_peers`: since 2 November 2026 the producer behind
+   `api.qsdm.tech` is a public peer:
+   `/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`.
+   It answers block requests within a budget (one per peer every 2 s), so
+   keep `QSDM_CHAIN_SYNC_URLS` for catching up. It is the only public
+   peer; independent validators and followers are planned (see
+   [`ROADMAP.md`](./ROADMAP.md) and [`NODE_ROLES.md` §3.2](./NODE_ROLES.md)).
+   You can add nodes you operate yourself (see §2.3).
 3. Start `qsdm-validator` under systemd, expose `:4001/tcp` to the
    internet, put Caddy in front of `:8080` for TLS.
-4. Watch `/api/v1/status` — once `connected_peers > 0` and `sync_lag`
-   trends down, you're mesh-resident.
+4. Watch `/api/v1/status`. `connected_peers > 0` appears once your node
+   connects to another node: the producer, or one you run.
 
 ### 2.3 Running a second validator yourself
 
@@ -160,8 +198,7 @@ sudo bash QSDM/deploy/bring-up-validator.sh \
 ```
 
 This is the same systemd shape as
-`VALIDATOR_QUICKSTART.md` but skips manual config editing. It is what
-we use to bring up paired validators for blue/green deploys.
+`VALIDATOR_QUICKSTART.md` but skips manual config editing.
 
 ### 2.4 Optional: NGC attestation transparency badge
 
@@ -176,55 +213,49 @@ as a transparency signal, run the attestation sidecar — see §4.
 
 ### 3.1 Do I *need* an NVIDIA GPU?
 
-No. You can mine with CPU today and the protocol will accept your
-proofs. What you lose is the hashrate that makes your proofs
-competitive.
+Yes. The live network accepts only v2 proofs with NVIDIA attestation, so
+CPU-only miners cannot earn rewards.
 
 ### 3.2 Performance tiers
 
 The numbers below are **qualitative tiers**, not benchmark commits.
-Actual hashrate depends on driver version, power/thermal budget, DAG
-size, and the current mesh3D epoch. Treat them as where you sit in
-the queue, not what you'll earn.
+Actual hashrate depends on the GPU model, driver version, and
+power/thermal budget. They are not an earnings estimate.
 
 | Tier | Hardware | Relative hashrate | Practical use | NGC attestation eligible? |
 |---|---|---|---|---|
-| **Reference CPU** | Any x86-64 with Go 1.25+, no GPU | 1× (baseline, single-digit H/s) | Protocol conformance, self-test, occasional testnet block under low difficulty | No (no GPU to attest) |
-| **Entry NVIDIA (RTX 3050 / 3060, 8 GB VRAM)** | CUDA 11+, 8 GB+ VRAM, NVIDIA Container Toolkit | Thousands× CPU baseline (mesh3D CUDA kernels unlock) | Home miner, expected to earn occasional mainnet blocks once mainnet is live | **Yes (free NGC tier)** |
-| **Mid-range NVIDIA (RTX 3080 / 4070)** | CUDA 11+, ≥ 10 GB VRAM | Higher — scales with SM count and memory bandwidth | Serious home miner, longer profitable runway as difficulty rises | **Yes (free NGC tier)** |
-| **High-end NVIDIA (RTX 4090 / H100-class)** | CUDA 12+, ≥ 16 GB VRAM | Much higher — matches or exceeds mining-farm economics | Rack-grade, tolerates aggressive difficulty ramps, best power-per-hash | **Yes (free NGC tier)** |
-| **Non-NVIDIA GPU (AMD / Intel)** | OpenCL/ROCm, no first-party support yet | Not shipped today — requires community port of `pkg/mesh3d` kernels | Research / goodwill contributions only | No (NGC is NVIDIA-only tooling) |
+| **Reference CPU** | Any x86-64 with Go 1.25+, no GPU | Not accepted on the live network | Protocol conformance and self-test only | No (no GPU to attest) |
+| **Entry NVIDIA (RTX 3050 / 3060)** | CUDA 11+, NVIDIA Container Toolkit | Entry | Home miner | **Yes (free NGC tier)** |
+| **Mid-range NVIDIA (RTX 3080 / 4070)** | CUDA 11+ | Higher | Dedicated home miner | **Yes (free NGC tier)** |
+| **High-end NVIDIA (RTX 4090 / H100-class)** | CUDA 12+ | Highest | Rack-grade | **Yes (free NGC tier)** |
 
-The `CUDA` build of `qsdmminer` is the only GPU-accelerated path we
-publish binaries for. A CPU-parallel fallback is built in
-(`pkg/mesh3d.CPUParallelAccelerator`), which is what the CPU tier
-above uses. Until a community contributes ROCm or Level Zero kernels,
-"mining on QSDM" in practice means "mining on NVIDIA."
+Mining requires an NVIDIA GPU (Turing or newer); see [Mining today](MINING_TODAY.md).
 
-### 3.3 Why NVIDIA is the first-class tier today
+### 3.3 NVIDIA attestation
 
-- **Kernels shipped in-tree.** `pkg/mesh3d/cuda.go` links
-  `libmesh3d_kernels.so`, compiled with `nvcc` in
-  `Dockerfile.miner`. There is no equivalent shipped kernel for other
-  vendors.
-- **CI builds `miner:latest` against CUDA.** Every `main` commit
-  produces a runnable NVIDIA-GPU miner image; non-NVIDIA operators
-  have to build from source with a patched accelerator.
+- **Mining proofs require NVIDIA attestation.** The live network
+  reports the accepted attestation types in
+  `mining.attestation_types_required` on `GET /api/v1/status`.
 - **Attestation is free on NVIDIA hardware.** NGC CLI API keys are
   free at [ngc.nvidia.com/setup](https://ngc.nvidia.com/setup) — you
   do **not** need NVIDIA AI Enterprise or any paid plan. See §4.
 - **Trust-page badge visibility.** Attested miners show up in the
   public [trust summary](https://qsdm.tech/trust.html) as a
   cryptographic transparency signal tied to their specific silicon.
-  Non-attested miners are fully first-class on the network; they
-  simply don't carry the badge.
 
 ### 3.4 Install & run
 
-Follow [`MINER_QUICKSTART.md`](./MINER_QUICKSTART.md) end-to-end. Two
-CPU miner binaries ship in-tree — pick one:
+**Recommended:** install QSDM Hive 1.4.22 and run the Miner task; see
+[Mining today](MINING_TODAY.md) and
+[Downloads and verification](DOWNLOADS_AND_VERIFICATION.md). Hive 1.4.22
+signs miner operator actions automatically.
 
-- **`qsdmminer-console`** — recommended for home operators. Interactive
+The command-line miners below are operator and conformance tools that
+are being retired in favour of Hive. For them, follow
+[`MINER_QUICKSTART.md`](./MINER_QUICKSTART.md) end-to-end. Two
+command-line miner binaries ship in-tree — pick one:
+
+- **`qsdmminer-console`** — for command-line operators. Interactive
   first-run wizard asks for your reward address and validator URL,
   persists the answer to `~/.qsdm/miner.toml` (Windows:
   `%USERPROFILE%\.qsdm\miner.toml`), then opens a live console panel
@@ -232,7 +263,7 @@ CPU miner binaries ship in-tree — pick one:
   uptime. Auto-falls back to one-line-per-event logs under
   `systemd` / `journalctl` / CI (`--plain` forces log mode on a TTY).
   See [`MINER_QUICKSTART.md §2.5`](./MINER_QUICKSTART.md#25-friendly-console-miner-recommended-for-home-operators).
-- **`qsdmminer`** — the audit-clean single-file reference miner. Use
+- **`qsdmminer`** — the minimal single-file reference miner. Use
   this if you are conformance-testing against `MINING_PROTOCOL.md` or
   embedding the miner in your own tooling; the binary is intentionally
   flag-driven with no TUI so it remains readable top-to-bottom against
@@ -272,17 +303,13 @@ a consolidated `SHA256SUMS` file. If you do not want to install a Go
 toolchain, grab the matching asset, verify the hash, and run the
 binary directly.
 
-> ⚠️ **NVIDIA-lock pivot in progress.** The `qsdmminer` and
-> `qsdmminer-console` CPU binaries are being retired over the next few
-> releases in favour of the GPU-only miner described in
-> [`nvidia_locked_qsdm_blockchain_architecture.md`](../../../nvidia_locked_qsdm_blockchain_architecture.md).
+> ⚠️ Mining requires an NVIDIA GPU (Turing or newer); see
+> [Mining today](MINING_TODAY.md). The `v2` protocol is active on the
+> live pilot network, so proofs from CPU-only miners are not accepted.
 > The previous "one-command install" scripts
 > (`install-qsdmminer-console.sh`, `install-qsdmminer-console.ps1`) and
 > the `ghcr.io/<owner>/qsdm-miner-console` Docker image have been
-> withdrawn. Once the `v2` protocol activates, proofs from CPU-only
-> miners will no longer be accepted by mainnet validators. Plan your
-> deployment around an NVIDIA GPU with CUDA support; see
-> `Dockerfile.miner` for the GPU reference image.
+> withdrawn.
 
 Every release artefact accepts `--version` and prints a single line
 identifying itself, e.g.:
@@ -329,8 +356,10 @@ you turn on NGC attestation — in `/api/v1/trust/attestations/recent`.
 - Mining priority.
 - Block rewards.
 
-The protocol never rejects a block, a transaction, or a mining proof
-for a missing NGC bundle. Ever. See
+The protocol never rejects a block or a transaction for a missing NGC
+bundle. Mining proofs are different: on the live network, v2 mining
+proofs must carry NVIDIA attestation (see
+`mining.attestation_types_required` on `GET /api/v1/status`). See
 [`NVIDIA_LOCK_CONSENSUS_SCOPE.md`](./NVIDIA_LOCK_CONSENSUS_SCOPE.md)
 for the enforcement table.
 
@@ -369,14 +398,13 @@ CUDA device properties.
 
 ## 5. End-to-end: validator + miner + attestation
 
-This is the topology a serious operator ends up with. It is also the
-topology we run for the reference deployment.
+This is the topology a serious operator ends up with.
 
 ```
   ┌──────────────────────────────────────────────┐
-  │  VALIDATOR (VPS)                             │
+  │  VALIDATOR (server)                          │
   │  ─ Ubuntu 24.04, 4 vCPU, 8 GB RAM            │
-  │  ─ qsdm/validator:latest (no CUDA)           │
+  │  ─ qsdm-validator image (no CUDA)            │
   │  ─ bootstrap_peers = [api.qsdm.tech/…]      │
   │  ─ :4001 tcp libp2p + :8080 http → Caddy     │
   │  ─ QSDM_NGC_INGEST_SECRET=****           │
@@ -407,7 +435,7 @@ A few practical notes:
 
 - **The sidecar and the miner do not have to share a host.** The
   sidecar only needs a GPU to produce attestable bundles; the miner
-  needs a GPU to be competitive. If you have one GPU rig, run both.
+  needs an NVIDIA GPU to mine. If you have one GPU rig, run both.
   If you have two, run one per box.
 - **Your validator does not need a GPU.** The sidecar posts bundles
   over HTTPS — the validator only verifies HMAC and ingests.
@@ -479,13 +507,13 @@ A few practical notes:
 
 | Symptom | Likely cause | First thing to check |
 |---|---|---|
-| Validator starts but `connected_peers = 0` forever | Stale `bootstrap_peers` multiaddr | Re-fetch from `qsdm.tech/validators` or the project issue tracker; peer-ids rotate with the libp2p key |
+| Validator starts but `connected_peers = 0` forever | Stale `bootstrap_peers` multiaddr | Re-fetch the peer-id from `https://api.qsdm.tech/api/v1/status` (`node_id`); peer-ids rotate with the libp2p key |
 | Validator refuses to start, logs `roleguard` error | `mining_enabled=true` in a validator binary | See [`NODE_ROLES.md §2`](./NODE_ROLES.md); validator builds cannot enable mining |
 | Miner `--self-test` fails | Build mismatch / corrupt tree | Rebuild from a clean `git clone`, open an issue with the exit code |
 | Miner runs but no `proof ACCEPTED` | Easy: wrong validator / clock drift / too slow; hard: you ARE submitting but `too-late` | Inspect stderr rejection reasons per [`MINER_QUICKSTART.md §3.2`](./MINER_QUICKSTART.md) |
 | NGC sidecar logs `401` on POST | Ingest secret mismatch between node and sidecar | Verify both sides — secrets must be byte-identical, no trailing whitespace |
 | NGC sidecar logs `429 Retry-After` | Node is rate-limiting challenge fetches (many-validators case) | Set `QSDM_NGC_CHALLENGE_JITTER_MAX_SEC=8` per [`ngc.env.example`](../../../apps/qsdm-nvidia-ngc/ngc.env.example) |
-| Trust page shows `— of —` permanently | TrustAggregator warm-up or upstream peer unreachable | Wait 30 s after a redeploy (we `sleep 15` in `remote_apply_paramiko.py` for exactly this); then check `/api/v1/trust/attestations/summary` directly |
+| Trust page shows `— of —` permanently | TrustAggregator warm-up or upstream peer unreachable | Wait 30 s after a redeploy; then check `/api/v1/trust/attestations/summary` directly |
 
 ---
 
@@ -500,7 +528,7 @@ A few practical notes:
 - [`MINING_PROTOCOL.md`](./MINING_PROTOCOL.md) — proof format,
   epochs, difficulty, acceptance window.
 - [`CELL_TOKENOMICS.md`](./CELL_TOKENOMICS.md) — emission schedule,
-  halving, treasury cap.
+  halving, supply cap.
 - [`NVIDIA_LOCK_CONSENSUS_SCOPE.md`](./NVIDIA_LOCK_CONSENSUS_SCOPE.md)
   — why NVIDIA-lock is a transparency signal, not a consensus rule.
 - [`../../../apps/qsdm-nvidia-ngc/QUICKSTART.md`](../../../apps/qsdm-nvidia-ngc/QUICKSTART.md)

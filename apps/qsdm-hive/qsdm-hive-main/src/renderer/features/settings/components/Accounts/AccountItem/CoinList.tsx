@@ -131,7 +131,7 @@ export function CoinList({
                 {sortedTokens.map((token, index) => (
                   <motion.div
                     key={`${token.mint}-${token.name}-${index}`}
-                    className="flex items-center justify-between py-2 border-t border-purple-1"
+                    className="flex items-center justify-between py-2 border-t border-qsdm-border"
                     initial="hidden"
                     animate="visible"
                     exit="hidden"
@@ -152,7 +152,7 @@ export function CoinList({
 
                     <div className="flex flex-row items-center gap-3">
                       <div className="flex flex-col gap-1">
-                        <div className="self-end text-sm font-semibold">
+                        <div className="self-end font-mono text-sm font-medium">
                           {isBalancesHidden ? (
                             <span>••••••</span>
                           ) : (

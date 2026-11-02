@@ -1,8 +1,8 @@
 # QSDM Network
 
-**Status:** Live public network
+**Status:** Public pilot network (pre-mainnet), single block producer during recovery
 
-**Latest Core candidate:** `v0.4.7-rc.9` (`ee1d5e2`)
+**Running release:** reported live by `https://api.qsdm.tech/api/v1/status` (`hardened-legacy-20261101-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1101` since 1 November 2026)
 **Public gateway:** `https://api.qsdm.tech/api/v1`
 
 The latest downloadable candidate and a running validator can differ during a
@@ -44,6 +44,41 @@ The QSDM Hive browser extension is a small bridge to the running Hive wallet.
 It does not store the keystore JSON or passphrase. A supported website receives
 the public wallet address and only signatures the user explicitly approves.
 
+## Operating without the reference server
+
+QSDM Hive and validators can keep local state when the public reference server
+is unavailable, but independence is not automatic failover. A follower needs a
+second trusted validator for both peer bootstrap and chain catch-up. Clients
+need a second API endpoint as well; a single public URL cannot be made
+redundant by desktop configuration alone.
+
+A prepared standby should:
+
+- use `networked` follower mode with a persistent network host key;
+- listen on TCP `4001` only when its operator has a real inbound path;
+- configure at least one independent `bootstrap_peers` multiaddr and one independent
+  HTTPS `QSDM_CHAIN_SYNC_URLS` source;
+- retain its own consensus signer and SQLite state; and
+- remain a follower until it is caught up and the current producer is fenced.
+
+QSDM currently has no automatic proposer election or split-brain lease. A
+manual producer handoff is required, and two simultaneous producers can create
+conflicting histories. The handoff procedure is part of the operators' private
+runbooks.
+
+### CGNAT fallback
+
+If a home or office ISP blocks inbound TCP with carrier-grade NAT, the supported
+fallback is the QSDM home gateway. The local validator remains a networked
+follower, keeps its Core API on `127.0.0.1`, and publishes only the restricted
+status/mining/Hive routes through an outbound relay. This is enough to keep a
+home node usable behind CGNAT, but it does not replace a second reachable peer
+for validator-to-validator redundancy.
+
+Use `scripts/enable_cgnat_fallback.ps1` on Windows to record the fallback
+profile and restart the read-only gateway tunnel. Use
+`scripts/validate_vps_independence.ps1 -AcceptFallback` to distinguish
+`operational_posture: relay-fallback` from true `independence_ready`.
 ## What stays private
 
 **Stays on your device:**
@@ -93,4 +128,5 @@ status directly from the production status endpoint.
 - [Web wallet](WEB_WALLET.md)
 - [Validator quickstart](VALIDATOR_QUICKSTART.md)
 - [Home gateway](HOME_GATEWAY.md)
-- [Security audit](SECURITY_AUDIT.md)
+- [Network status](NETWORK_STATUS.md)
+- [Internal security review](SECURITY_AUDIT.md) (no independent external audit has been completed)

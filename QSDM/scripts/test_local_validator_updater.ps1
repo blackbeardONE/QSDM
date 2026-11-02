@@ -98,6 +98,12 @@ try {
     }
 
     New-Item -ItemType Directory -Force -Path $FakeQsdmRoot, $PackageRoot | Out-Null
+    $fixtureScriptLibrary = Join-Path $FakeQsdmRoot "scripts\lib"
+    New-Item -ItemType Directory -Force -Path $fixtureScriptLibrary | Out-Null
+    Copy-Item `
+        -LiteralPath (Join-Path $QsdmRoot "scripts\lib\qsdm-endpoints.ps1") `
+        -Destination (Join-Path $fixtureScriptLibrary "qsdm-endpoints.ps1") `
+        -Force
     $className = "QsdmUpdaterFixture$TestID"
     $source = @"
 using System;

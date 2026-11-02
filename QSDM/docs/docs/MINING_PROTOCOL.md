@@ -24,7 +24,7 @@
 
 ### 1.1 Goals (normative)
 
-1. **Fair launch emission.** All Cell enters circulation via mining rewards, except the fixed 10% treasury allocation documented in `CELL_TOKENOMICS.md`. 0% of Cell is pre-mined to validators, founders, or insiders.
+1. **Fair launch emission.** All Cell enters circulation via mining rewards (max supply 90,000,000 CELL). There is no genesis treasury; see `CELL_TOKENOMICS.md` and `GENESIS_POLICY_v1.0.md`. 0% of Cell is pre-mined to anyone.
 2. **GPU-favored, NVIDIA-favored, NVIDIA-not-required.** CUDA-tuned kernels are the expected production miner. Portable OpenCL / Vulkan / CPU fallbacks MUST remain compilable and correct — they only lose economically.
 3. **ASIC resistance (soft).** The proof function is memory-hard (§5) and the work-set mutates on a cadence short enough (§3) that ASIC fabrication has negative ROI relative to the next mutation.
 4. **Cheap verification.** A validator on a modest VPS MUST verify any single proof in < 100 ms (CPU-only, single core) and batch-verify any block of ≤ 1000 proofs in < 2 s.
@@ -311,7 +311,7 @@ A QSDM mining implementation is conformant iff all the following are true:
 
 ## 13. Open questions deferred to audit (Phase 6)
 
-These items are **out of scope** for Phase 4 implementation and must be answered by the external audit before mainnet Cell emission is unlocked:
+These items are **out of scope** for Phase 4 implementation and must be answered by the security review before mainnet Cell emission is unlocked. The current path is the open [community review](COMMUNITY_REVIEW.md); a professional audit remains welcome:
 
 1. Is SHA3-256 the correct choice given hardware SHA3 extensions on Ampere+? Could Keccak-f[1600] directly save 20% on kernel time without losing standards coverage?
 2. Is 2 GiB DAG still ASIC-defeating in 2026? Evidence from the Ravencoin KawPow operational record suggests yes, but the audit should confirm against the latest Bitmain disclosures.

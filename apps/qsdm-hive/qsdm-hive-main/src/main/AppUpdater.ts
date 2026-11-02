@@ -15,6 +15,7 @@ import {
 } from './services/hiveVersionPolicy';
 import {
   getVerifiedQsdmHiveRelease,
+  QSDM_HIVE_RELEASE_BASE_URL,
   VerifiedQsdmHiveRelease,
   verifyDownloadedQsdmHiveUpdate,
 } from './services/qsdmReleaseManifest';
@@ -27,7 +28,9 @@ import type {
 
 const CHECK_INTERVAL = 30 * 60 * 1000;
 const RETRY_INTERVAL = 60 * 1000;
-const QSDM_HIVE_UPDATE_FEED_URL = 'https://qsdm.tech/downloads';
+// v2 channel: latest.yml and the installer live next to the v2 envelope, so
+// Hive <= 1.4.20 (which reads /downloads/latest.yml) never sees them.
+const QSDM_HIVE_UPDATE_FEED_URL = QSDM_HIVE_RELEASE_BASE_URL;
 const QSDM_HIVE_UNSIGNED_PREVIEW_UPDATE_FEED_URL =
   'https://qsdm.tech/downloads/unsigned-preview';
 

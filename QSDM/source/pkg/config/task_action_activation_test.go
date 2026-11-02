@@ -115,3 +115,46 @@ func TestTxContentRootActivationHeight_EnvOverrideAndDefault(t *testing.T) {
 		t.Errorf("env override not applied: got %d, want 888000", cfg.TxContentRootActivationHeight)
 	}
 }
+
+func TestEnrollmentStateRootActivationHeight_IsConfigurable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "qsdm.toml")
+	if err := os.WriteFile(path, []byte("[consensus]\nenrollment_state_root_activation_height = 901000\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("CONFIG_FILE", path)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.EnrollmentStateRootActivationHeight != 901000 {
+		t.Errorf("config key not read: got %d, want 901000", cfg.EnrollmentStateRootActivationHeight)
+	}
+}
+
+func TestEnrollmentStateRootActivationHeight_EnvOverrideAndDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "qsdm.toml")
+	if err := os.WriteFile(path, []byte("[consensus]\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("CONFIG_FILE", path)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.EnrollmentStateRootActivationHeight != 0 {
+		t.Fatalf("default must be 0 (legacy state root), got %d", cfg.EnrollmentStateRootActivationHeight)
+	}
+
+	t.Setenv("QSDM_ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT", "902000")
+	cfg, err = LoadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.EnrollmentStateRootActivationHeight != 902000 {
+		t.Errorf("env override not applied: got %d, want 902000", cfg.EnrollmentStateRootActivationHeight)
+	}
+}

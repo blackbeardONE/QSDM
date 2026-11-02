@@ -756,3 +756,128 @@ func TestBlockProducer_MaxTxPerBlock(t *testing.T) {
 		t.Fatalf("expected 3 remaining in mempool, got %d", pool.Size())
 	}
 }
+
+type heightAwareReplayApplier struct {
+	balances    map[string]float64
+	rootHeights *[]uint64
+	current     uint64
+}
+
+func newHeightAwareReplayApplier() *heightAwareReplayApplier {
+	seen := make([]uint64, 0, 4)
+	return &heightAwareReplayApplier{
+		balances:    map[string]float64{"alice": 10000},
+		rootHeights: &seen,
+	}
+}
+
+func (ha *heightAwareReplayApplier) ApplyTx(tx *mempool.Tx) error {
+	if ha.balances[tx.Sender] < tx.Amount+tx.Fee {
+		return fmt.Errorf("insufficient balance")
+	}
+	ha.balances[tx.Sender] -= tx.Amount + tx.Fee
+	ha.balances[tx.Recipient] += tx.Amount
+	return nil
+}
+
+func (ha *heightAwareReplayApplier) StateRoot() string {
+	*ha.rootHeights = append(*ha.rootHeights, ha.current)
+	h := sha256.Sum256([]byte(fmt.Sprint(ha.balances)))
+	return hex.EncodeToString(h[:])
+}
+
+func (ha *heightAwareReplayApplier) SetStateRootHeight(height uint64) {
+	ha.current = height
+}
+
+func (ha *heightAwareReplayApplier) ChainReplayClone() ChainReplayApplier {
+	balances := make(map[string]float64, len(ha.balances))
+	for k, v := range ha.balances {
+		balances[k] = v
+	}
+	return &heightAwareReplayApplier{
+		balances:    balances,
+		rootHeights: ha.rootHeights,
+		current:     ha.current,
+	}
+}
+
+func (ha *heightAwareReplayApplier) RestoreFromChainReplay(from ChainReplayApplier) error {
+	other, ok := from.(*heightAwareReplayApplier)
+	if !ok || other == nil {
+		return fmt.Errorf("replay restore: expected *heightAwareReplayApplier")
+	}
+	ha.balances = make(map[string]float64, len(other.balances))
+	for k, v := range other.balances {
+		ha.balances[k] = v
+	}
+	ha.current = other.current
+	return nil
+}
+func TestBlockProducerSetsStateRootHeightForProducedBlock(t *testing.T) {
+	pool := mempool.New(mempool.DefaultConfig())
+	defer pool.Stop()
+	applier := newHeightAwareReplayApplier()
+	bp := NewBlockProducer(pool, applier, DefaultProducerConfig())
+
+	if err := pool.Add(makeTx("height-0", 0)); err != nil {
+		t.Fatalf("add tx: %v", err)
+	}
+	blk0, err := bp.ProduceBlock()
+	if err != nil {
+		t.Fatalf("ProduceBlock 0: %v", err)
+	}
+	if blk0.Height != 0 {
+		t.Fatalf("first block height = %d, want 0", blk0.Height)
+	}
+
+	if err := pool.Add(makeTx("height-1", 0)); err != nil {
+		t.Fatalf("add tx: %v", err)
+	}
+	blk1, err := bp.ProduceBlock()
+	if err != nil {
+		t.Fatalf("ProduceBlock 1: %v", err)
+	}
+	if blk1.Height != 1 {
+		t.Fatalf("second block height = %d, want 1", blk1.Height)
+	}
+
+	seen := *applier.rootHeights
+	if len(seen) < 2 {
+		t.Fatalf("StateRoot was called %d times, want at least 2", len(seen))
+	}
+	if seen[0] != 0 || seen[len(seen)-1] != 1 {
+		t.Fatalf("StateRoot heights = %v, want first 0 and latest 1", seen)
+	}
+}
+
+func TestTryAppendExternalBlockSetsStateRootHeightForReplay(t *testing.T) {
+	sourcePool := mempool.New(mempool.DefaultConfig())
+	defer sourcePool.Stop()
+	if err := sourcePool.Add(makeTx("external-height", 0)); err != nil {
+		t.Fatalf("add source tx: %v", err)
+	}
+	source := NewBlockProducer(sourcePool, newTestApplier(), DefaultProducerConfig())
+	blk, err := source.ProduceBlock()
+	if err != nil {
+		t.Fatalf("source ProduceBlock: %v", err)
+	}
+
+	targetPool := mempool.New(mempool.DefaultConfig())
+	defer targetPool.Stop()
+	applier := newHeightAwareReplayApplier()
+	target := NewBlockProducer(targetPool, applier, DefaultProducerConfig())
+	if err := target.TryAppendExternalBlock(blk); err != nil {
+		t.Fatalf("TryAppendExternalBlock: %v", err)
+	}
+
+	seen := *applier.rootHeights
+	if len(seen) < 2 {
+		t.Fatalf("StateRoot was called %d times, want spec and live checks", len(seen))
+	}
+	for _, height := range seen {
+		if height != blk.Height {
+			t.Fatalf("TryAppendExternalBlock StateRoot heights = %v, want all %d", seen, blk.Height)
+		}
+	}
+}

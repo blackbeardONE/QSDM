@@ -48,24 +48,9 @@ func TestPhase2Phase3Integration(t *testing.T) {
 		t.Errorf("Expected fastlane submesh, got %s", ds.Name)
 	}
 
-	// Simulate 3D mesh validation
-	// Parent cell data must be at least 32 bytes (mesh3d validator requirement)
-	parentData1 := make([]byte, 64)
-	copy(parentData1, "parent1_data_123456789012345678901234567890")
-	parentData2 := make([]byte, 64)
-	copy(parentData2, "parent2_data_123456789012345678901234567890")
-	parentData3 := make([]byte, 64)
-	copy(parentData3, "parent3_data_123456789012345678901234567890")
-	
-	tx := &mesh3d.Transaction{
-		ID: "tx1",
-		ParentCells: []mesh3d.ParentCell{
-			{ID: "parent1", Data: parentData1},
-			{ID: "parent2", Data: parentData2},
-			{ID: "parent3", Data: parentData3},
-		},
-		Data: []byte("tx1"),
-	}
+	// Simulate 3D mesh validation: a companion wrapping a signed wallet
+	// envelope, the only structure the validator accepts.
+	tx := signedMeshCompanion(t)
 	valid, err := validator.ValidateTransaction(tx)
 	if err != nil {
 		t.Fatalf("Validation error: %v", err)

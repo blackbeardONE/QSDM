@@ -1,17 +1,33 @@
 # Cell (CELL) — Tokenomics
 
-> **Status:** Ratified per the Major Update Phase 0 recommendation, awaiting
-> counsel review before mainnet genesis. The values in this document are the
+> **Status:** [Genesis Policy v1.1](GENESIS_POLICY_v1.1.md): **ratified by
+> owner 2026-10-16 and approved in writing 2026-10-19; v1.1 (2026-11-01) drops the counsel review.** Maximum supply
+> 90,000,000 CELL, all from mining; no genesis treasury (the earlier
+> 10,000,000 CELL treasury proposal is withdrawn); transaction fees are burned
+> (credited to no account) until independent validators produce blocks;
+> mainnet continues the current chain through a published, deterministic
+> migration. Policy SHA-256, signature, migration manifest hash and fork
+> height: not yet published (they will be recorded here). Audit row `tok-01`
+> is **closed by the owner's decision** of 2026-11-01 (no counsel engagement).
+>
+> A few code constants and tools outside the emission schedule still carry the
+> withdrawn treasury figure; aligning them is a separate, reviewed code change.
+>
+> The values in this document are the
 > authoritative in-repo numbers used by `pkg/branding` constants,
 > `pkg/chain/emission` (Phase 3.3), and the tokenomics dashboard panel. They
 > MUST NOT be changed in isolation; any change requires a corresponding
 > update to `QSDM/docs/docs/REBRAND_NOTES.md` and a new entry in
-> `NEXT_STEPS.md`.
+> `NEXT_STEPS.md` (not yet published).
+>
+> The chain running today is a pilot network (pre-mainnet), run by a single
+> block producer during recovery. Live values are reported by
+> `GET https://api.qsdm.tech/api/v1/status`.
 
 This document is the normative reference for the Cell coin's supply,
 emission, and fee model. It is **not** a legal offering document, it is not
-an investment prospectus, and it is not a commitment until counsel has
-signed off. See §8 ("Legal posture") below.
+an investment prospectus, and it is not a commitment until the owner declares
+mainnet in writing. See §8 ("Legal posture") below.
 
 ---
 
@@ -23,8 +39,8 @@ signed off. See §8 ("Legal posture") below.
 | Symbol | `CELL` | `pkg/branding.CoinSymbol` |
 | Decimals | `8` | `pkg/branding.CoinDecimals` |
 | Smallest unit | `dust` (1 CELL = 10^8 dust) | `pkg/branding.SmallestUnitName` |
-| Issued by | QSDM mainnet, PoW emission layer | see §3 |
-| Non-issuance paths | validator fees (never mint new supply) | see §5 |
+| Issued by | QSDM pilot network (pre-mainnet), PoW emission layer | see §3 |
+| Non-issuance paths | transaction fees (never mint new supply; burned today) | see §5 |
 
 The 8-decimal choice intentionally mirrors Bitcoin UX: wallet developers,
 block explorers, and exchanges already know how to display 8-decimal coins
@@ -37,23 +53,24 @@ output (`amount: 12345 dust`).
 
 | Parameter | Value |
 |---|---|
-| Total cap | **100,000,000 CELL** (100 M) |
+| Max supply | **90,000,000 CELL** (9,000,000,000,000,000 dust), all from mining |
 | Founder / insider allocation | **0%** |
-| Genesis protocol treasury allocation | **10%** (10,000,000 CELL) |
-| Treasury vesting | linear over 48 months, enforced on-chain, locked at genesis |
-| Mining emission | **90%** (90,000,000 CELL) over ~20 years |
+| Genesis protocol treasury | **None.** The earlier 10,000,000 CELL treasury proposal is withdrawn ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) §1). |
+| Mining emission | **90,000,000 CELL** over ~20 years |
 | Emission curve | halvings every 4 years (see §3) |
-| Validator block subsidy | **0** — validators earn only transaction fees |
-| Base-fee burn | **undecided** — EIP-1559-style burn is *optional*; decision due before genesis (Phase 0 follow-up item) |
+| Validator block subsidy | **0** |
+| Transaction fees | **Burned:** 100% of fees are credited to no account until independent validators produce blocks (see §5) |
 
-### 2.1 Treasury address
+### 2.1 No genesis treasury
 
-The treasury address is committed in the genesis block. Its balance is
-public and its spend policy is enforced by a WASM contract (bound at
-genesis) that releases (total_alloc / 48) CELL per month to a
-multisig-controlled spend address. The contract address, the multisig
-membership, and the spend policy are published in
-`QSDM/docs/docs/GENESIS.md` (Phase 0 deliverable, pending counsel review).
+There is no genesis treasury allocation and no treasury address in genesis.
+The earlier proposal (10,000,000 CELL minted at genesis and released over 48
+months to a multisig) is withdrawn by
+[Genesis Policy v1.0](GENESIS_POLICY_v1.0.md). Any future proposal to add an
+allocation needs a new published policy version, the owner's written decision and the
+governance process, and it may never mint CELL on a chain that has already
+launched without it. Program budgets (referral, onboarding, grants) are funded
+only from existing CELL; see the [Treasury Policy](TREASURY_POLICY.md).
 
 ### 2.2 No founder or insider premine
 
@@ -63,10 +80,23 @@ must be earned by a miner producing a valid PoW proof. This is the cleanest
 distribution posture in the current design and is not negotiable without a
 public tokenomics revision and governance approval.
 
-The 10 M CELL protocol treasury is minted at genesis. In broad industry usage
-that is a premine/genesis allocation, even though it is not assigned to a
-founder or insider. QSDM uses the precise phrase **genesis protocol treasury
-allocation** and publishes its address, lock, vesting, and spending policy.
+With no genesis treasury, no CELL is allocated at genesis to anyone: the
+whole 90,000,000 CELL supply is issued by mining. Historic development
+credits on the pilot chain are not an allocation; the mainnet migration in
+§2.3 burns or explicitly classifies them.
+
+### 2.3 Genesis path
+
+Mainnet continues the current chain. A deterministic, network-wide migration
+at a published fork height, announced at least 60,480 blocks (7 days) ahead,
+removes the synthetic funder balance, burns or explicitly classifies every
+historic development credit and every balance that classified issuance does
+not explain (with aggregate figures published), and keeps balances explained
+by mining rewards and ordinary signed transfers. The aggregate-only migration
+manifest and its SHA-256 are published, and every validator applies the same
+manifest hash. If the manifest cannot reach a "ready" state, the fallback is a
+clean genesis under a new policy version. Until then, treat balances and
+history as pilot data.
 
 ---
 
@@ -141,7 +171,7 @@ compressed-time simulation of the first halving and verify:
 
 | Use | Notes |
 |---|---|
-| Transaction fees | Paid to validators. Denominated in dust. |
+| Transaction fees | Denominated in dust. Burned today (credited to no account) until independent validators produce blocks; see §5. |
 | WASM contract gas | Gas price in dust/gas; already wired in `pkg/wasm`. |
 | Validator bonds | Future: validators stake CELL to participate; slashable. |
 | Miner enrollment bonds | 10 CELL, slashable. May be prepaid or accumulated from protocol mining rewards starting from a zero CELL balance. |
@@ -151,28 +181,36 @@ compressed-time simulation of the first halving and verify:
 Cell is **not** used to pay mining rewards out of a pre-minted pool; mining
 rewards are newly minted at block-confirmation time (a `mint` transaction
 embedded in the block by the validator who proposes, crediting the winning
-miner). After the disclosed genesis treasury allocation, this is the only path
-that creates new supply.
+miner). This is the only path that creates new supply; there is no genesis
+treasury. On the pilot chain today, rewards are paid from the synthetic
+`qsdm-system-funder` reserve; before mainnet it is replaced by capped,
+consensus-native issuance that cannot exceed the schedule in §3 or the cap
+in §2 ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) §4).
 
 ---
 
 ## 5. Fee model
 
-Validators never dilute holders. All validator revenue comes from transaction
-fees on real user transactions. This split is enforced at the protocol
+Validators never dilute holders: there is no validator block subsidy. This
+split is enforced at the protocol
 level: a mining-reward transaction with `role = miner` is the **only**
 transaction allowed to mint new supply, and a block producer can include at
 most one such transaction. A validator that attempts to self-pay via a
 mining-reward transaction is producing an invalid block.
 
-### 5.1 Optional EIP-1559-style base-fee burn
+**Fees are burned today.** A transfer debits `amount + fee` from the sender
+and credits only `amount` to the recipient, so 100% of the fee is credited to
+no account. Under [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) §3 this stays
+so until independent validators produce blocks. Validators earn no fees on
+the pilot network today.
 
-The project leans toward adopting an EIP-1559-style split (base fee burned,
-priority fee to the validator) because it adds a deflationary pressure
-component that offsets emission during epochs 1–4, and because it is the
-mechanism users and exchanges already understand. The decision is **open**
-and must be made before genesis. It is tracked in `NEXT_STEPS.md` as a
-Phase-0 follow-up.
+### 5.1 Fee destination after independent validators (open)
+
+Once independent validators produce blocks, the project may propose paying
+part of each fee to the block producer, for example an EIP-1559-style split
+(base fee burned, priority fee to the validator). Any change to the fee
+destination is a consensus change: it needs a new policy version and a
+published activation height.
 
 ---
 
@@ -180,19 +218,20 @@ Phase-0 follow-up.
 
 | Dimension | Bitcoin | Cell |
 |---|---|---|
-| Total cap | 21,000,000 BTC | 100,000,000 CELL |
+| Max supply | 21,000,000 BTC | 90,000,000 CELL (all from mining) |
 | Decimals | 8 | 8 |
-| Halving period | every 210,000 blocks (~4 years at 10-min blocks) | every 12,614,400 blocks (~4 years at 10-sec blocks) |
+| Halving period | every 210,000 blocks (~4 years at 10-min blocks) | every 12,623,040 blocks (~4 years at 10-sec blocks) |
 | Block time | ~10 min | 10 sec (target) |
-| Initial reward | 50 BTC | 1.4280 CELL |
+| Initial reward | 50 BTC | 3.56490987 CELL |
 | Founder / insider allocation | 0 | 0 |
-| Treasury | none | 10% vested linearly over 48 months |
-| Consensus | pure PoW | PoE + BFT **for consensus**, additive PoW **for emission only** |
+| Treasury | none | none (no genesis treasury) |
+| Consensus | pure PoW | PoE + BFT **for consensus** (design target; today a single block producer), additive PoW **for emission only** |
 
 The structural difference from Bitcoin is that Cell's PoW layer is
 explicitly *additive* — it exists solely to meter coin emission. Consensus
-does not depend on PoW. If all miners went offline tomorrow, the validators
-would continue producing blocks; the only thing that would stop is new
+does not depend on PoW (design target; today a single block producer runs
+the pilot network during recovery). If all miners went offline tomorrow, the
+validators would continue producing blocks; the only thing that would stop is new
 supply creation.
 
 ---
@@ -200,15 +239,14 @@ supply creation.
 ## 7. Distribution philosophy
 
 **Fair launch, utility-first.** There is no presale, no ICO, no public sale,
-no private sale, no airdrop of founder tokens. The treasury allocation is
-published on-chain at genesis, time-locked by a WASM contract, and spent
-only under the public [Treasury Policy](TREASURY_POLICY.md).
+no private sale, no airdrop of founder tokens, and no genesis treasury. Program budgets are funded only from existing CELL under the public [Treasury Policy](TREASURY_POLICY.md).
 
 Earning paths at launch are:
-- **Mining**: buy a GPU, run `qsdm-miner`, earn Cell by producing valid
+- **Mining**: run Hive (NVIDIA GPU), earn Cell by producing valid
   proofs.
-- **Validating**: operate a VPS validator node, earn transaction fees in
-  Cell.
+- **Validating**: operate a VPS validator node (not yet open on the pilot
+  network). Fees are burned until independent validators produce blocks;
+  any validator fee revenue after that needs a new policy version (§5.1).
 - **Using**: use Cell to pay transaction fees on a service you care about.
 
 ### 7.1 Bond from mining earnings
@@ -233,17 +271,17 @@ allocations and does not provide market-making inventory.
 ## 8. Legal posture
 
 This document describes the intended fair-launch utility-token design: zero
-founder allocation, a disclosed and vested protocol treasury, mining emission,
-and no project token sale. It is a technical and economic specification, not a
-legal conclusion. Counsel must review the implemented genesis, custody,
+founder allocation, no genesis treasury, mining emission of the whole
+supply, and no project token sale. It is a technical and economic specification, not a
+legal conclusion. The owner reviews the implemented genesis, custody,
 distribution, marketing, and jurisdiction-specific obligations before a
-production launch.
+production launch (Genesis Policy v1.1: no counsel engagement, the owner's decision of 2026-11-01).
 
-This is a posture, not a guarantee. Counsel review is required before
+This is a posture, not a guarantee. The owner's written review is required before
 mainnet genesis and before any promotional language is published on
 `qsdm.tech` or elsewhere. The phrases "investment", "returns", "profit",
 and "yield" are forbidden in all project communications (see
-`QSDM/docs/docs/COPY_FILTERS.md`, Phase 5.4 deliverable).
+`QSDM/docs/docs/COPY_FILTERS.md`, not yet published).
 
 ---
 
@@ -252,4 +290,7 @@ and "yield" are forbidden in all project communications (see
 | Date | Change |
 |---|---|
 | Major Update Phase 3.1 | Document created; numbers adopted from Major Update §4.1–§4.4 with Phase 0 "ratified per recommendation, awaiting counsel review" status. |
+| 2026-10-16 | [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) ratified by owner, awaiting signature and counsel review: 90,000,000 CELL hard cap, all from mining; 10,000,000 CELL treasury proposal withdrawn; fees burned until independent validators; mainnet continues the current chain via a published migration. |
+| 2026-10-19 | [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) approved by the owner in writing; signature block filled in with the policy text's SHA-256 (`b6c18897...`). Counsel review is still pending, so `tok-01` stays `pending`. |
+| 2026-11-01 | [Genesis Policy v1.1](GENESIS_POLICY_v1.1.md): the owner decided not to engage counsel; the counsel opinion in clauses 1, 7 and 8 is replaced by the owner's written decision and `tok-01` is closed by it. Burn rule of the funder-removal migration decided: the 74 seed-faucet credits of 1,000 CELL each (74,000 CELL written straight into state in the faucet era and never moved) are burned; balances from mining rewards and signed transfers are kept. |
 

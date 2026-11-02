@@ -1,13 +1,15 @@
 const colors = require('tailwindcss/colors');
 
 module.exports = {
-  content: ['./src/renderer/**/*.{js,jsx,ts,tsx,ejs}'],
+  content: ['./src/renderer/**/*.{js,jsx,ts,tsx,ejs}', './src/vendor/**/*.tsx'],
   media: false,
   theme: {
+    // QSDM brand type (matches qsdm.tech): Outfit for UI text, IBM Plex Mono
+    // for amounts, addresses and IDs. Both are bundled locally (no CDN).
     fontFamily: {
-      sans: ['Sora', 'Open Sans', 'ui-sans-serif', 'system-ui'],
+      sans: ['Outfit', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
       serif: ['ui-serif', 'Georgia'],
-      mono: ['ui-monospace', 'SFMono-Regular'],
+      mono: ['IBM Plex Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       roboto: ['Roboto', 'ui-sans-serif', 'system-ui'],
     },
     extend: {
@@ -112,6 +114,25 @@ module.exports = {
         },
       },
       colors: {
+        // QSDM brand palette (qsdm.tech site.css): dark navy, teal, gold.
+        qsdm: {
+          bg: '#061116',
+          'bg-2': '#0a1f26',
+          panel: '#0c242c',
+          'panel-2': '#12323c',
+          border: 'rgba(142, 220, 224, 0.16)',
+          'border-2': 'rgba(142, 220, 224, 0.28)',
+          text: '#f4fbfd',
+          'text-2': 'rgba(244, 251, 253, 0.62)',
+          muted: 'rgba(173, 198, 204, 0.72)',
+          teal: '#9ED7DC',
+          'teal-soft': '#8edce0',
+          gold: '#F7C948',
+          'gold-soft': '#d6b75f',
+          success: '#3ddc97',
+          warn: '#ffb454',
+          danger: '#ff6b6b',
+        },
         theme: {
           shade: 'var(--color-depth-100)',
           primary: 'var(--color-base)',
@@ -126,21 +147,21 @@ module.exports = {
           DEFAULT: 'var(--color-depth-70)',
         },
         finnieBlue: {
-          dark: '#030332',
-          'dark-secondary': '#090933',
-          light: '#211C52',
+          dark: '#040d11',
+          'dark-secondary': '#071419',
+          light: '#0a1f26',
           'light-secondary': 'var(--color-depth-70)',
           'light-tertiary': 'var(--color-depth-80)',
-          'light-4': '#54547B',
+          'light-4': '#3a5a63',
           DEFAULT: 'var(--color-depth-100)',
-          'light-transparent': 'rgba(137, 137, 199, 0.25)',
+          'light-transparent': 'rgba(142, 220, 224, 0.07)',
         },
         blue: {
-          1: '#0E0E44',
-          2: '#030332',
+          1: '#0a1f26',
+          2: '#061116',
         },
         orange: {
-          2: '#FFC78F',
+          2: '#ffb454',
         },
         finniePurple: {
           DEFAULT: 'var(--color-depth-30)',
@@ -148,10 +169,10 @@ module.exports = {
         finnieTeal: {
           100: 'var(--color-depth-10)',
           DEFAULT: 'var(--color-depth-20)',
-          700: '#237B75',
+          700: '#2a7f86',
         },
         finnieOrange: {
-          DEFAULT: '#FFC78F',
+          DEFAULT: '#ffb454',
         },
         finnieEmerald: {
           DEFAULT: 'var(--color-highlight)',
@@ -163,30 +184,30 @@ module.exports = {
           DEFAULT: '#D6D6D6',
         },
         green: {
-          dark: '#087980',
-          1: '#49CE8B',
+          dark: '#1f8f7a',
+          1: '#3ddc97',
           2: 'var(--color-depth-20)',
         },
         finnieGray: {
           DEFAULT: '#F2F2F2',
           light: '#F5F5F5',
-          secondary: '#9B9BB2',
+          secondary: '#9db4b9',
           tertiary: '#D6D6D6',
           100: '#D5D8DC',
         },
         neutral: { ...colors.neutral, 200: '#EAEAEA' },
         finnieRed: {
-          DEFAULT: '#FFA6A6',
-          500: '#FF4141',
+          DEFAULT: '#ff9b9b',
+          500: '#ff6b6b',
         },
         purple: {
           ...colors.purple,
-          1: '#8989C7',
+          1: '#7fb3ba',
           3: 'var(--color-depth-90)',
           4: 'var(--color-depth-40)',
           5: 'var(--color-depth-60)',
-          6: '#8989C733',
-          'light-transparent': 'rgba(137, 137, 199, 0.25)',
+          6: 'rgba(142, 220, 224, 0.2)',
+          'light-transparent': 'rgba(142, 220, 224, 0.12)',
         },
       },
       backgroundImage: {
@@ -248,8 +269,14 @@ module.exports = {
         'finnieSpacing-wider': '0.03em',
       },
       borderRadius: {
-        'finnie-small': '3px',
-        finnie: '4px',
+        'finnie-small': '4px',
+        finnie: '8px',
+        qsdm: '8px',
+        'qsdm-lg': '12px',
+      },
+      boxShadow: {
+        'qsdm-card':
+          '0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 12px 32px rgba(0, 0, 0, 0.28)',
       },
       gridTemplateColumns: {
         'first-task': '3.4rem repeat(16, minmax(0, 1fr)) 3rem',

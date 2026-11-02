@@ -76,8 +76,8 @@
 >   --message-file -` and assemble the envelope themselves.
 > - Cosign-signed `v0.4.0` release tag (binaries +
 >   `release-container.yml`).
-> - BLR1 production deploy (still serving v0.3.3-s91; no
->   `/wallet/submit-signed` reachable on the live mainnet yet).
+> - production deploy (still serving v0.3.3-s91; no
+>   `/wallet/submit-signed` reachable on the live network yet).
 > - Per-account nonce schema (v0.4.0 known gap #1).
 > - Atomic debit/credit storage layer (v0.4.0 known gap #2).
 
@@ -415,7 +415,7 @@ Add to `pkg/audit/checklist.go`:
  (replay possible across distinct tx_ids); UpdateBalance does
  not fail atomically on insufficient funds (warns and proceeds).
  Both must be closed before incentivised testnet (mining-05) or
- mainnet exposure."},
+ live-network exposure."},
 ```
 
 Severity is `SevHigh` because a regression on (a) or (b) lets a

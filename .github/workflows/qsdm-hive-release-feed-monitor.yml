@@ -13,6 +13,7 @@ on:
     paths:
       - ".github/workflows/qsdm-hive-release-feed-monitor.yml"
       - "QSDM/deploy/releases/hive-release-request.json"
+      - "QSDM/deploy/releases/hive-feed-approved.json"
       - "scripts/check_hive_release_feed.py"
       - "scripts/test_check_hive_release_feed.py"
       - "scripts/report_hive_release_feed_incident.py"
@@ -21,6 +22,7 @@ on:
     paths:
       - ".github/workflows/qsdm-hive-release-feed-monitor.yml"
       - "QSDM/deploy/releases/hive-release-request.json"
+      - "QSDM/deploy/releases/hive-feed-approved.json"
       - "scripts/check_hive_release_feed.py"
       - "scripts/test_check_hive_release_feed.py"
       - "scripts/report_hive_release_feed_incident.py"
@@ -53,12 +55,24 @@ jobs:
         shell: bash
         env:
           REQUEST_FILE: QSDM/deploy/releases/hive-release-request.json
+          APPROVED_FILE: QSDM/deploy/releases/hive-feed-approved.json
         run: |
           set -euo pipefail
-          test "$(jq -r '.schema' "$REQUEST_FILE")" = \
-            "qsdm.hive.release-request.v1"
-          version="$(jq -r '.version' "$REQUEST_FILE")"
-          commit="$(jq -r '.source_commit' "$REQUEST_FILE")"
+          # record FILE SCHEMA: "version commit" of one approved-release record.
+          record() {
+            [ "$(jq -r '.schema' "$1")" = "$2" ] || { echo "$1: schema is not $2" >&2; exit 1; }
+            printf '%s %s\n' "$(jq -r '.version' "$1")" "$(jq -r '.source_commit' "$1")"
+          }
+          # The GitHub release request, or a release built and signed outside that flow
+          # (APPROVED_FILE), whichever names the newer version.
+          rec="$(record "$REQUEST_FILE" qsdm.hive.release-request.v1)"
+          if [ -f "$APPROVED_FILE" ]; then
+            alt="$(record "$APPROVED_FILE" qsdm.hive.feed-approved.v1)"
+            newest="$(printf '%s\n%s\n' "${rec%% *}" "${alt%% *}" | sort -V | tail -n 1)"
+            if [ "$newest" != "${rec%% *}" ]; then rec="$alt"; fi
+          fi
+          version="${rec%% *}"
+          commit="${rec##* }"
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
           {

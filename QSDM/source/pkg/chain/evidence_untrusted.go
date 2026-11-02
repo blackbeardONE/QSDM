@@ -27,14 +27,9 @@ import (
 //     if it carries a proof this node can re-verify without trusting the
 //     sender -- which is precisely what EquivocationProof is for.
 //
-// So the gossip path demands a proof unconditionally. It deliberately does NOT
-// consult RequireEvidenceProof: that flag is bound to cfg.RequireSignedVotes
-// (cmd/qsdm/main.go) and defaults off, and both shipped bring-up scripts pin
-// it false, so honouring it here would leave the hole open on every default
-// deployment. The rollout concern that flag exists for -- a validator set
-// where not every peer signs its votes yet -- is a reason to tolerate
-// unproven *local* reports, never a reason to let a stranger take a
-// validator's bond.
+// So the gossip path demands a proof unconditionally. The local path now does
+// the same; RequireEvidenceProof remains visible for diagnostics but cannot
+// reopen proofless slashing.
 
 // ErrEvidenceUntrustedUnproven is returned when evidence from an untrusted
 // source (gossip) carries no cryptographic proof binding the offence to the

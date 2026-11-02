@@ -6,4 +6,5 @@ cd "$ROOT/source"
 export CGO_ENABLED=0
 unset CGO_CFLAGS CGO_LDFLAGS 2>/dev/null || true
 OUT="${1:-qsdm}"
+bash "$ROOT/scripts/go-mod-download-retry.sh"
 go build -o "$OUT" ./cmd/qsdm

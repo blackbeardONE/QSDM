@@ -8,7 +8,7 @@ import (
 // PublishPolAfterBlockSeal runs a synthetic BFT round aligned with the sealed block height,
 // gossips propose/prevote/precommit on the BFT topic when bftExec has a publisher, and
 // gossips PrevoteLockProof + RoundCertificate when the POL relay is non-nil.
-// polFollower records the local state root after a successful sidecar Propose (POL alignment);
+// polFollower records the local state root before any synthetic-round dependency can fail.
 // MarkLocalRoundCertificatePublished is set when gossip succeeds, the sidecar commits, or POL
 // simulation fails after the block is already sealed (liveness for anchored finality).
 func PublishPolAfterBlockSeal(log *logging.Logger, relay *PolP2PRelay, polFollower *chain.PolFollower, bftExec *chain.BFTExecutor, bc *chain.BFTConsensus, vs *chain.ValidatorSet, blk *chain.Block) {
@@ -16,6 +16,9 @@ func PublishPolAfterBlockSeal(log *logging.Logger, relay *PolP2PRelay, polFollow
 		return
 	}
 	h := blk.Height
+	if polFollower != nil {
+		polFollower.RecordLocalSealedBlock(h, blk.StateRoot)
+	}
 
 	markPublished := func() {
 		if polFollower != nil {

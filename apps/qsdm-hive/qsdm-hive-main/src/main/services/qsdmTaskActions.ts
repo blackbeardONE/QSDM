@@ -116,6 +116,7 @@ const TASK_ACTION_NONCE_COMMIT_POLL_MS = 1000;
 const TASK_ACTION_NONCE_COMMIT_WAIT_MS = 120_000;
 const TASK_ACTION_SUBMIT_MAX_ATTEMPTS = 3;
 const TASK_ACTION_SUBMIT_RETRY_BASE_MS = 750;
+const TASK_ACTION_SERVER_RETRY_WAIT_BUDGET_MS = 5000;
 
 const getTaskActionSubmitMaxAttempts = () => {
   const parsed = Number.parseInt(
@@ -157,6 +158,130 @@ const isTransientTaskActionSubmitError = (error: unknown) => {
     status === 502 ||
     status === 503 ||
     status === 504
+  );
+};
+
+// Do not let an announced maintenance window hold the sender queue open.
+// Short hints can be honored by the existing idempotent retry loop instead.
+const getTaskActionRetryAfterMs = (error: unknown): number | undefined => {
+  if (
+    !axios.isAxiosError(error) ||
+    ![429, 503].includes(error.response?.status || 0)
+  ) {
+    return undefined;
+  }
+  const headers = error.response?.headers;
+  const key =
+    headers &&
+    Object.keys(headers).find((name) => name.toLowerCase() === 'retry-after');
+  const raw = key ? headers?.[key] : undefined;
+  if (typeof raw !== 'string' && typeof raw !== 'number') return undefined;
+  const value = String(raw).trim();
+  if (/^\d+$/.test(value)) {
+    // A syntactically valid, enormous wait must also stop retries. Infinity is
+    // deliberately retained here and never passed to setTimeout.
+    return Number(value) * 1000;
+  }
+  // Accept the three HTTP-date forms without Date.parse's permissive numeric
+  // parsing or local-time interpretation of the obsolete asctime form.
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const fullWeekdays = [
+    'Sunday',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+  ];
+  const standard =
+    /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat), (\d{2}) ([A-Z][a-z]{2}) (\d{4}) (\d{2}):(\d{2}):(\d{2}) GMT$/.exec(
+      value
+    );
+  const obsolete =
+    /^(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday), (\d{2})-([A-Z][a-z]{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}) GMT$/.exec(
+      value
+    );
+  const asctime =
+    /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) ([A-Z][a-z]{2}) ([ \d]\d) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/.exec(
+      value
+    );
+  const fields =
+    standard ||
+    obsolete ||
+    (asctime && [
+      asctime[0],
+      asctime[1],
+      asctime[3],
+      asctime[2],
+      asctime[7],
+      asctime[4],
+      asctime[5],
+      asctime[6],
+    ]);
+  if (!fields) return undefined;
+  const month = months.indexOf(fields[3]);
+  const day = Number(fields[2]);
+  const hour = Number(fields[5]);
+  const minute = Number(fields[6]);
+  const second = Number(fields[7]);
+  if (
+    month < 0 ||
+    day < 1 ||
+    day > 31 ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 60
+  )
+    return undefined;
+  const now = new Date();
+  let year = Number(fields[4]);
+  if (obsolete) year += Math.floor(now.getUTCFullYear() / 100) * 100;
+  const date = new Date(0);
+  date.setUTCFullYear(year, month, day);
+  // Validate the stated calendar day before carrying a permitted leap second
+  // into the following minute or day.
+  const leapSecondMs = second === 60 ? 1000 : 0;
+  date.setUTCHours(hour, minute, Math.min(second, 59), 0);
+  if (obsolete) {
+    const futureLimit = new Date(now);
+    futureLimit.setUTCFullYear(now.getUTCFullYear() + 50);
+    if (date.getTime() + leapSecondMs > futureLimit.getTime()) {
+      year -= 100;
+      date.setUTCFullYear(year);
+    }
+  }
+  const weekday = (obsolete ? fullWeekdays : weekdays).indexOf(fields[1]);
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month ||
+    date.getUTCDate() !== day ||
+    date.getUTCDay() !== weekday
+  )
+    return undefined;
+  return Math.max(0, date.getTime() + leapSecondMs - now.getTime());
+};
+
+const taskActionRetryDeferredError = (retryAfterMs: number) => {
+  const wait = Number.isFinite(retryAfterMs)
+    ? `${Math.ceil(retryAfterMs / 1000)} seconds`
+    : 'an extended interval';
+  return new Error(
+    `QSDM task action was not confirmed. The server requested a retry after ${wait}; automatic retries stopped. Try again after the requested wait.`
   );
 };
 
@@ -522,10 +647,10 @@ export const submitQsdmTaskActionIntent = async ({
   payload,
   waitForCommit = true,
 }: SubmitQsdmTaskActionIntentParams): Promise<QsdmTaskActionSubmitResponse> => {
-  await assertQsdmCanonicalChainSafety();
   const sender = getQsdmTaskActionSender();
 
   return runQueuedTaskActionForSender(sender, async () => {
+    await assertQsdmCanonicalChainSafety({ forceRefresh: true });
     const initialNonce = reserveTaskActionNonce(
       sender,
       sender ? await getNextTaskActionNonce(sender) : undefined
@@ -546,11 +671,20 @@ export const submitQsdmTaskActionIntent = async ({
       const signedEnvelope = await signQsdmTaskActionWithCli(envelope);
       const maxAttempts = getTaskActionSubmitMaxAttempts();
       const retryBaseMs = getTaskActionSubmitRetryBaseMs();
+      let retryWaitMs = 0;
 
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
+          // Queueing, signing and retry delays can outlive a verified report.
+          const safety = await assertQsdmCanonicalChainSafety({
+            forceRefresh: true,
+          });
+          const verifiedApiUrl = resolveQsdmTaskActionApiUrl({
+            runtimeApiUrl: safety.effectiveApiUrl,
+            canonicalApiUrl: safety.canonicalApiUrl,
+          });
           const response = await axios.post<QsdmTaskActionSubmitResponse>(
-            buildQsdmTaskActionApiUrl('/tasks/actions/submit-signed'),
+            `${verifiedApiUrl}/tasks/actions/submit-signed`,
             signedEnvelope,
             { timeout: 10000 }
           );
@@ -571,6 +705,19 @@ export const submitQsdmTaskActionIntent = async ({
               client_nonce: signedEnvelope.nonce,
             };
           }
+          const retryAfterMs = getTaskActionRetryAfterMs(error);
+          const retryDelayMs = Math.max(
+            retryBaseMs * 2 ** (attempt - 1),
+            retryAfterMs || 0
+          );
+          if (
+            retryAfterMs !== undefined &&
+            (attempt === maxAttempts ||
+              retryWaitMs + retryDelayMs >
+                TASK_ACTION_SERVER_RETRY_WAIT_BUDGET_MS)
+          ) {
+            throw taskActionRetryDeferredError(retryAfterMs);
+          }
           if (
             !isTransientTaskActionSubmitError(error) ||
             attempt === maxAttempts
@@ -584,7 +731,8 @@ export const submitQsdmTaskActionIntent = async ({
           console.warn(
             `QSDM signed ${action} submission attempt ${attempt}/${maxAttempts} failed (${status}); retrying the same action ID.`
           );
-          await delay(retryBaseMs * 2 ** (attempt - 1));
+          retryWaitMs += retryDelayMs;
+          await delay(retryDelayMs);
         }
       }
 

@@ -50,14 +50,14 @@ export function RunBonusTaskNotification({
   const text =
     version === 1 ? (
       <div className="text-left">
-        <span className="text-white text-base font-bold font-['Sora'] leading-tight">
+        <span className="text-white text-base font-bold leading-tight">
           You power
         </span>
-        <span className="text-white text-base font-normal font-['Sora'] leading-tight">
+        <span className="text-white text-base font-normal leading-tight">
           {' '}
           the network, We power{' '}
         </span>
-        <span className="text-white text-base font-bold font-['Sora'] leading-tight">
+        <span className="text-white text-base font-bold leading-tight">
           your rewards!
         </span>
       </div>

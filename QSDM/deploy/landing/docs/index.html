@@ -10,87 +10,26 @@
 <meta property="og:description" content="One page. Every quickstart, runbook, design doc, and reference. Sourced live from the main branch of github.com/blackbeardONE/QSDM." />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://qsdm.tech/docs/" />
-<link rel="icon" href="/assets/qsdm-hive-icon.png" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="/assets/brand/favicon-16.png" />
+<link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png" />
+<link rel="manifest" href="/site.webmanifest" />
+<meta property="og:image" content="https://qsdm.tech/assets/brand/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="QSDM logo: Quantum-Secure Dynamic Mesh ledger and the CELL coin" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image" content="https://qsdm.tech/assets/brand/og-image.png" />
 <link rel="stylesheet" href="/assets/site.css" />
+<link rel="stylesheet" href="/assets/site-shell.css" />
 <link rel="stylesheet" href="/docs/docs.css" />
 </head>
-<body>
+<body data-page="docs">
 <a class="skip-link" href="#doc-main">Skip to content</a>
 
-<header class="site-header">
-  <div class="site-header-inner">
-    <a class="site-brand" href="/" aria-label="Back to QSDM home">
-      <img src="/assets/qsdm-hive-icon.png" alt="" />
-      <span>QSDM</span>
-    </a>
-    <nav class="site-nav" aria-label="Primary">
-      <div class="site-nav-item">
-        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
-          Network <span class="site-nav-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="site-nav-panel" role="menu">
-          <a href="/network.html" role="menuitem">Overview<span class="site-nav-hint">Live CELL network</span></a>
-          <a href="/explorer.html" role="menuitem">Explorer<span class="site-nav-hint">Search + chain tip</span></a>
-          <a href="/api.html" role="menuitem">API<span class="site-nav-hint">HTTP v1 overview</span></a>
-          <a href="/validators.html" role="menuitem">Validators<span class="site-nav-hint">Bootstrap peers</span></a>
-        </div>
-      </div>
-      <div class="site-nav-item">
-        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
-          Hive <span class="site-nav-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="site-nav-panel" role="menu">
-          <a href="/download.html" role="menuitem">Download Hive<span class="site-nav-hint">Windows + Linux app</span></a>
-          <a href="/account/" role="menuitem">QSDM Account<span class="site-nav-hint">Identity + linked wallets</span></a>
-          <a href="/wallet.html" role="menuitem">Web wallet<span class="site-nav-hint">Browser self-custody</span></a>
-          <a href="https://qsdm.online/" role="menuitem">QSDM VPN<span class="site-nav-hint">Private Android access</span></a>
-        </div>
-      </div>
-      <a href="/docs/">Docs</a>
-      <div class="site-nav-item">
-        <button class="site-nav-trigger" type="button" aria-expanded="false" aria-haspopup="true">
-          Trust <span class="site-nav-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="site-nav-panel" role="menu">
-          <a href="/audit.html" role="menuitem">Public audit<span class="site-nav-hint">Live checklist</span></a>
-          <a href="/trust.html" role="menuitem">Attestations<span class="site-nav-hint">NVIDIA feed</span></a>
-        </div>
-      </div>
-    </nav>
-    <div class="site-actions">
-      <a class="site-btn site-btn-ghost site-account-action" href="/account/">Account</a>
-      <a class="site-btn site-btn-solid" href="/download.html">Download</a>
-      <button class="site-menu-toggle" type="button" id="siteMenuToggle" aria-label="Open menu" aria-expanded="false">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 7H4V5H20V7ZM20 13H4V11H20V13ZM20 19H4V17H20V19Z"/></svg>
-      </button>
-    </div>
-  </div>
-  <div class="site-mobile-nav" id="siteMobileNav">
-    <div class="site-mobile-group">
-      <div class="site-mobile-label">Network</div>
-      <a href="/network.html">Overview</a>
-      <a href="/explorer.html">Explorer</a>
-      <a href="/api.html">API</a>
-      <a href="/validators.html">Validators</a>
-    </div>
-    <div class="site-mobile-group">
-      <div class="site-mobile-label">Hive</div>
-      <a href="/download.html">Download Hive</a>
-      <a href="/account/">QSDM Account</a>
-      <a href="/wallet.html">Web wallet</a>
-      <a href="https://qsdm.online/">QSDM VPN</a>
-    </div>
-    <div class="site-mobile-group">
-      <div class="site-mobile-label">Learn</div>
-      <a href="/docs/">Docs</a>
-      <a href="/audit.html">Public audit</a>
-      <a href="/trust.html">Attestations</a>
-    </div>
-  </div>
-</header>
+<header id="site-header"></header>
+<script src="/assets/site-shell.js"></script>
 
 <div class="docs-toolbar">
   <button class="docs-sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle documentation sidebar" aria-expanded="false">
@@ -133,7 +72,7 @@
   </main>
 </div>
 
-<script src="/assets/site-nav.js"></script>
+<footer id="site-footer"></footer>
 <script src="/docs/lib/markdown-it.min.js" integrity="sha384-wLhprpjsmjc/XYIcF+LpMxd8yS1gss6jhevOp6F6zhiIoFK6AmHtm4bGKtehTani" crossorigin="anonymous"></script>
 <script src="/docs/docs.js"></script>
 </body>

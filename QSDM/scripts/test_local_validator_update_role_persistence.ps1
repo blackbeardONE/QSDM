@@ -53,6 +53,10 @@ function Import-UpdaterFunction {
 try {
     New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
     $script:ModeConfigPath = Join-Path $testRoot "validator-mode.json"
+    # This test imports Get-ValidatorMode directly from the updater AST, so
+    # initialize the top-level endpoint default that production sets before
+    # declaring the function.
+    $script:DefaultCoreApiBase = "https://api.qsdm.tech/api/v1"
 
     $getValidatorMode = Import-UpdaterFunction -Name "Get-ValidatorMode"
     $getLauncherArguments = Import-UpdaterFunction -Name "Get-LauncherArguments"

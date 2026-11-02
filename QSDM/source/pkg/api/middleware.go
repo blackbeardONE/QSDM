@@ -316,6 +316,7 @@ func isPublicEndpoint(path string) bool {
 		// receiver still verifies hash, continuity, and state
 		// root before appending.
 		"/api/v1/chain/blocks",
+		"/api/v1/chain/parents",
 		// /mining/spec-anomalies surfaces the Tier-2
 		// telemetry advisory checker output: the most-
 		// recent N proofs whose claimed GPU specs

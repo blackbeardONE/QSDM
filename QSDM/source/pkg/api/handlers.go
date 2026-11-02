@@ -23,6 +23,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 	"github.com/blackbeardONE/QSDM/pkg/mesh3d"
 	"github.com/blackbeardONE/QSDM/pkg/monitoring"
+	"github.com/blackbeardONE/QSDM/pkg/poe"
 	"github.com/blackbeardONE/QSDM/pkg/storage"
 	"github.com/blackbeardONE/QSDM/pkg/submesh"
 	"github.com/blackbeardONE/QSDM/pkg/wallet"
@@ -230,6 +231,9 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Read-only full block feed for bounded ledger catch-up. Receivers must
 	// still replay and verify hashes/state roots before appending.
 	mux.HandleFunc("/api/v1/chain/blocks", handlers.ChainBlocksHandler)
+	// Proof-of-Entanglement parent source: recent committed transaction IDs
+	// a wallet copies into parent_cells before signing. Public, read-only.
+	mux.HandleFunc("/api/v1/chain/parents", handlers.ChainParentsHandler)
 
 	// QSDM-native task registry. Read-only and public so Hive, SDKs,
 	// and explorers can discover task metadata without a dashboard JWT.
@@ -1395,6 +1399,13 @@ func (h *Handlers) SubmitSignedTransaction(w http.ResponseWriter, r *http.Reques
 		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid recipient address: %v", err))
 		return
 	}
+	// Wallet identity is lowercase hex(SHA256(public_key)). Other accepted
+	// legacy address shapes cannot be owned by a canonical wallet signer.
+	if len(env.Recipient) != 64 || env.Recipient != strings.ToLower(env.Recipient) {
+		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+		writeErrorResponse(w, http.StatusBadRequest, "recipient must be a lowercase 64-character wallet address")
+		return
+	}
 	if err := ValidateAmount(env.Amount); err != nil {
 		monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
 		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid amount: %v", err))
@@ -1559,6 +1570,13 @@ func (h *Handlers) SubmitSignedTransaction(w http.ResponseWriter, r *http.Reques
 		}
 		if err := pool.Add(tx); err != nil {
 			switch {
+			case poe.IsViolation(err):
+				// Proof-of-Entanglement parent rules (pkg/poe): the envelope's
+				// parent_cells must name transactions already committed in the
+				// last poe.ParentWindowBlocks blocks.
+				monitoring.RecordWalletSend(monitoring.WalletSendResultInvalidRequest)
+				writeErrorResponse(w, http.StatusUnprocessableEntity,
+					"proof-of-entanglement: "+err.Error()+"; sign again with parents from GET /api/v1/chain/parents")
 			case errors.Is(err, mempool.ErrDuplicateTx), errors.Is(err, mempool.ErrNonceAlreadyPending):
 				monitoring.RecordWalletSend(monitoring.WalletSendResultDuplicate)
 				writeJSONResponse(w, http.StatusConflict, SubmitSignedTransactionResponse{

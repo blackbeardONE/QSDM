@@ -66,13 +66,13 @@ on:
         required: false
         default: "true"
   push:
+    branches:
+      - main
     # Self-edits to this file or to the tool itself should trigger a run
-    # so regressions caused by refactors of cmd/trustcheck surface on the
-    # PR that introduced them, not on the next cron tick.
-    paths:
-      - "QSDM/source/cmd/trustcheck/**"
-      - ".github/workflows/trustcheck-external.yml"
-  pull_request:
+    # after those edits land. This is a live production health probe, so it
+    # must not make a pull request red because a public endpoint is briefly
+    # slow or redeploying; cmd/trustcheck's fixture integration test covers
+    # the implementation on every pull request.
     paths:
       - "QSDM/source/cmd/trustcheck/**"
       - ".github/workflows/trustcheck-external.yml"

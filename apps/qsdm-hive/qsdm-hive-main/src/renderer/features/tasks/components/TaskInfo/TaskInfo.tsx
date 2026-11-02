@@ -2,6 +2,7 @@ import React, { RefObject, useMemo, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 
+import CellCoinIcon from 'assets/svgs/cell-coin-small.svg';
 import {
   isQsdmMinerSystemTaskId,
   isQsdmMotherHiveSystemTaskId,
@@ -49,6 +50,81 @@ const formatCell = (value?: number) => {
   return `${formatNumber(value, false)} CELL`;
 };
 
+function MinerStat({
+  label,
+  children,
+  valueClassName = '',
+}: {
+  label: string;
+  children: React.ReactNode;
+  valueClassName?: string;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-qsdm-muted">
+        {label}
+      </span>
+      <div
+        className={`break-words text-[13px] text-qsdm-text ${valueClassName}`}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function CellAmount({ value }: { value?: number }) {
+  const text = formatCell(value);
+  return (
+    <span className="inline-flex items-center gap-1.5 font-mono">
+      {text !== '-' && (
+        <CellCoinIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      )}
+      {text}
+    </span>
+  );
+}
+
+const STATUS_DOT_TONES = {
+  ok: 'bg-qsdm-success shadow-[0_0_8px_rgba(61,220,151,0.6)]',
+  warn: 'bg-qsdm-warn shadow-[0_0_8px_rgba(255,180,84,0.5)]',
+  muted: 'bg-qsdm-muted',
+};
+
+function StatusDot({
+  tone,
+  children,
+}: {
+  tone: keyof typeof STATUS_DOT_TONES;
+  children: React.ReactNode;
+}) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span
+        className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT_TONES[tone]}`}
+        aria-hidden="true"
+      />
+      {children}
+    </span>
+  );
+}
+
+function MinerNotice({
+  children,
+  className = '',
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`rounded-r-lg border-l-[3px] border-qsdm-warn bg-qsdm-warn/5 px-3 py-2 text-finnieOrange ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
 const formatMemory = (valueMiB?: number) => {
   const value = Number(valueMiB) || 0;
   return value >= 1024
@@ -70,7 +146,7 @@ function MotherHivePanel({ publicKey }: { publicKey: string }) {
   const receipts = status?.verifiedReceipts;
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg bg-finnieBlue-light-transparent px-4 py-3 text-xs">
+    <div className="flex flex-col gap-3 rounded-lg border border-qsdm-border bg-qsdm-panel px-4 py-3 text-xs">
       <div className="flex flex-wrap gap-x-8 gap-y-3">
         <div>
           <span className="text-finnieTeal-100">QSDM Hive role</span>
@@ -128,8 +204,8 @@ function MotherHivePanel({ publicKey }: { publicKey: string }) {
           <span className="text-finnieTeal-100">Relay limits</span>
           <div>
             CPU {relayPolicy?.cpuPercent ?? 0}% / GPU{' '}
-            {relayPolicy?.gpuPercent ?? 0}% / RAM{' '}
-            {relayPolicy?.ramPercent ?? 0}%
+            {relayPolicy?.gpuPercent ?? 0}% / RAM {relayPolicy?.ramPercent ?? 0}
+            %
           </div>
         </div>
         <div>
@@ -161,9 +237,7 @@ function MotherHivePanel({ publicKey }: { publicKey: string }) {
       </div>
       <div
         className={
-          policy?.settlementActive
-            ? 'text-finnieTeal-100'
-            : 'text-finnieOrange'
+          policy?.settlementActive ? 'text-finnieTeal-100' : 'text-finnieOrange'
         }
       >
         {policy?.settlementActive
@@ -346,7 +420,7 @@ function SkyFangLinkPanel({
   };
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg bg-finnieBlue-light-transparent px-4 py-3 text-xs">
+    <div className="flex flex-col gap-3 rounded-lg border border-qsdm-border bg-qsdm-panel px-4 py-3 text-xs">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap gap-x-8 gap-y-2">
           <div>
@@ -640,30 +714,25 @@ export function TaskInfo({
       </div>
 
       {isMinerTask && (
-        <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-lg bg-finnieBlue-light-transparent px-4 py-3 text-xs">
-          <div>
-            <span className="text-finnieTeal-100">Reward source</span>
-            <div>QSDM protocol mining emission</div>
-          </div>
-          <div>
-            <span className="text-finnieTeal-100">Reward address</span>
-            <div className="select-text">
-              {isLoadingMinerRewardStatus
-                ? 'checking...'
-                : shortAddress(minerRewardStatus?.rewardAddress)}
-            </div>
-          </div>
-          <div>
-            <span className="text-finnieTeal-100">Spendable balance</span>
-            <div>{formatCell(minerRewardStatus?.balanceCell)}</div>
-          </div>
-          <div>
-            <span className="text-finnieTeal-100">Earned in Hive</span>
-            <div>{formatCell(minerRewardStatus?.earnedCell)}</div>
-          </div>
-          <div>
-            <span className="text-finnieTeal-100">NVIDIA eligibility</span>
-            <div>
+        <div className="flex flex-col gap-3 rounded-lg border border-qsdm-border bg-qsdm-panel px-4 py-3 text-xs">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-x-6 gap-y-3">
+            <MinerStat label="Reward source">
+              QSDM protocol mining emission
+            </MinerStat>
+            <MinerStat label="Reward address" valueClassName="font-mono">
+              <span className="select-text">
+                {isLoadingMinerRewardStatus
+                  ? 'checking...'
+                  : shortAddress(minerRewardStatus?.rewardAddress)}
+              </span>
+            </MinerStat>
+            <MinerStat label="Spendable balance">
+              <CellAmount value={minerRewardStatus?.balanceCell} />
+            </MinerStat>
+            <MinerStat label="Earned in Hive">
+              <CellAmount value={minerRewardStatus?.earnedCell} />
+            </MinerStat>
+            <MinerStat label="NVIDIA eligibility">
               {isLoadingMinerRewardStatus
                 ? 'checking...'
                 : minerRewardStatus?.enrollment?.eligible
@@ -673,11 +742,8 @@ export function TaskInfo({
                     minerRewardStatus.enrollment.gpu?.computeCapability || '?'
                   })`
                 : 'Not eligible'}
-            </div>
-          </div>
-          <div>
-            <span className="text-finnieTeal-100">Compute backend</span>
-            <div>
+            </MinerStat>
+            <MinerStat label="Compute backend">
               {isLoadingMinerRewardStatus
                 ? 'checking...'
                 : minerRewardStatus?.enrollment?.computeBackend === 'cuda'
@@ -685,21 +751,15 @@ export function TaskInfo({
                   ? 'NVIDIA CUDA active'
                   : 'NVIDIA CUDA ready (task stopped)'
                 : 'CPU reference'}
-            </div>
-          </div>
-          <div>
-            <span className="text-finnieTeal-100">Tensor-Core fork</span>
-            <div>
+            </MinerStat>
+            <MinerStat label="Tensor-Core fork">
               {isLoadingMinerRewardStatus
                 ? 'checking...'
                 : minerRewardStatus?.enrollment?.tensorCoreForkActive
                 ? 'Active'
                 : 'Inactive'}
-            </div>
-          </div>
-          <div>
-            <span className="text-finnieTeal-100">Protocol enrollment</span>
-            <div>
+            </MinerStat>
+            <MinerStat label="Protocol enrollment" valueClassName="font-mono">
               {minerRewardStatus?.enrollment?.ready
                 ? minerRewardStatus.enrollment.bondMode === 'mining_rewards' &&
                   !minerRewardStatus.enrollment.fullyBonded
@@ -714,31 +774,60 @@ export function TaskInfo({
                 : `Required: ${formatCell(
                     minerRewardStatus?.enrollment?.requiredStakeCell
                   )} bond`}
-            </div>
+            </MinerStat>
+            <MinerStat label="Miner NodeID" valueClassName="font-mono">
+              <span className="select-text">
+                {minerRewardStatus?.enrollment?.nodeId || 'not configured'}
+              </span>
+            </MinerStat>
+            <MinerStat label="Operator signing">
+              <StatusDot
+                tone={
+                  isLoadingMinerRewardStatus ||
+                  !minerRewardStatus?.operatorSigning
+                    ? 'muted'
+                    : !minerRewardStatus.operatorSigning.ready
+                    ? 'warn'
+                    : 'ok'
+                }
+              >
+                {isLoadingMinerRewardStatus
+                  ? 'checking...'
+                  : !minerRewardStatus?.operatorSigning
+                  ? 'unknown'
+                  : !minerRewardStatus.operatorSigning.ready
+                  ? 'Wallet locked'
+                  : minerRewardStatus.operatorSigning.mode === 'hive'
+                  ? 'Automatic (Hive wallet)'
+                  : 'miner.toml'}
+              </StatusDot>
+            </MinerStat>
           </div>
-          <div>
-            <span className="text-finnieTeal-100">Miner NodeID</span>
-            <div className="select-text">
-              {minerRewardStatus?.enrollment?.nodeId || 'not configured'}
-            </div>
-          </div>
+          {!isLoadingMinerRewardStatus &&
+            minerRewardStatus?.operatorSigning &&
+            !minerRewardStatus.operatorSigning.ready && (
+              <MinerNotice>
+                {minerRewardStatus.operatorSigning.message}
+              </MinerNotice>
+            )}
           {!isLoadingMinerRewardStatus &&
             minerRewardStatus?.enrollment?.computeBackend === 'cuda' &&
             !minerRewardStatus.enrollment.gpuComputeActive && (
-              <div className="basis-full text-finnieOrange">
-                CUDA proof solving starts with the Miner task. If the task exits,
-                check the task log for a missing helper, driver, or unsupported
-                compute capability instead of silently falling back to CPU.
-              </div>
+              <MinerNotice>
+                CUDA proof solving starts with the Miner task. If the task
+                exits, check the task log for a missing helper, driver, or
+                unsupported compute capability instead of silently falling back
+                to CPU.
+              </MinerNotice>
             )}
           {minerRewardStatus?.warning && (
-            <div className="basis-full flex flex-wrap items-center gap-3 text-finnieOrange">
+            <MinerNotice className="flex flex-wrap items-center gap-3">
               <span>{minerRewardStatus.warning}</span>
               {minerRewardStatus.signerAddress &&
                 !minerRewardStatus.rewardAddressMatchesSigner && (
                   <button
                     type="button"
-                    className="rounded-md bg-finnieTeal-100 px-3 py-1 text-finnieBlue-light-secondary transition hover:bg-finnieTeal"
+                    className="rounded-lg border border-qsdm-gold/60 bg-qsdm-gold px-3 py-1 font-semibold text-qsdm-bg transition hover:brightness-105"
                     disabled={isAligningMinerRewardAddress}
                     onClick={() => alignMinerRewardAddress()}
                   >
@@ -747,17 +836,17 @@ export function TaskInfo({
                       : 'Use Hive signer'}
                   </button>
                 )}
-            </div>
+            </MinerNotice>
           )}
           {minerRewardStatus?.error && (
-            <div className="basis-full text-finnieOrange">
+            <MinerNotice>
               Miner reward lookup failed: {minerRewardStatus.error}
-            </div>
+            </MinerNotice>
           )}
           {minerRewardStatus?.enrollment?.error && (
-            <div className="basis-full text-finnieOrange">
+            <MinerNotice>
               Enrollment: {minerRewardStatus.enrollment.error}
-            </div>
+            </MinerNotice>
           )}
         </div>
       )}

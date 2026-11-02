@@ -16,7 +16,7 @@
 |---|---|
 | §1  Why these items are deferred                       | [`§12`](./MINING_PROTOCOL_V2.md#12-deferred-work-register) (preamble). |
 | §2  `nvidia-cc-v1` verifier (datacenter CC GPUs)       | [`§3.2` Wire format](./MINING_PROTOCOL_V2.md#32-attestationbundle-payload--nvidia-cc-v1) for shipped status; [`§12.1`](./MINING_PROTOCOL_V2.md#121-real-world-nvtrust-bundle-framing-for-nvidia-cc-v1) for the deferred `nvtrust` bundle framing. |
-| §3  Tensor-Core PoW kernel                             | [`§4`](./MINING_PROTOCOL_V2.md#4-tensor-core-pow-mixin-deferred) (spec) and [`§12.2`](./MINING_PROTOCOL_V2.md#122-tensor-core-pow-kernel) (deferred-work register). |
+| §3  Proof of work                                     | Future protocol changes will be announced in the changelog. |
 | §4  Concrete `EvidenceVerifier` implementations        | [`§8.2`](./MINING_PROTOCOL_V2.md#82-slashing) (shipped: `forged-attestation`, `double-mining`); [`§12.3`](./MINING_PROTOCOL_V2.md#123-freshness-cheat-slasher) (deferred: `freshness-cheat`). |
 | §5  Suggested ordering                                 | Folded into [`§12`](./MINING_PROTOCOL_V2.md#12-deferred-work-register). |
 | §5a Observability for slashing + enrollment            | [`§9.6`](./MINING_PROTOCOL_V2.md#96-observability). |
@@ -31,8 +31,8 @@
   `QSDM/source/`.
 - **What's deferred:**
   [`§12`](./MINING_PROTOCOL_V2.md#12-deferred-work-register) —
-  four registered items: `nvtrust` framing, Tensor-Core PoW
-  kernel, `freshness-cheat` slasher, and `qsdm/gov/v1` runtime
+  the registered items: `nvtrust` framing, proof-of-work changes,
+  the `freshness-cheat` slasher, and `qsdm/gov/v1` runtime
   tuning.
 - **CLI surface:**
   [`§9.2`](./MINING_PROTOCOL_V2.md#92-cli--qsdmcli) and

@@ -60,7 +60,9 @@ if (-not $Submit) {
     exit 0
 }
 
-$signArgs = @("wallet", "sign-tx", "--in", $KeystorePath, "--envelope-file", $unsignedPath, "--auto-nonce", "--api-url", $api)
+# --auto-parents: Proof-of-Entanglement parents (the two newest committed
+# transactions), required once the network's PoE activation height is reached.
+$signArgs = @("wallet", "sign-tx", "--in", $KeystorePath, "--envelope-file", $unsignedPath, "--auto-nonce", "--auto-parents", "--api-url", $api)
 if ($PassphraseFile) { $signArgs += @("--passphrase-file", $PassphraseFile) }
 $signed = & $qsdmCli @signArgs
 if ($LASTEXITCODE -ne 0) { throw "qsdmcli wallet sign-tx failed." }

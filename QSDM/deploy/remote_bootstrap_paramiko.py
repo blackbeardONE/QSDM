@@ -11,10 +11,11 @@ from pathlib import Path
 
 import paramiko
 
-from _deploy_host import host as _host, user as _user
+from _deploy_host import host as _host, port as _port, require_root_user as _require_root_user, user as _user
 
 HOST = _host()
 USER = _user()
+PORT = _port()
 REPO = Path(__file__).resolve().parent.parent
 INSTALL_SH = REPO / "deploy" / "install-ubuntu-vps.sh"
 PUB = Path(os.environ.get("USERPROFILE", ""), ".ssh", "id_ed25519.pub")
@@ -74,6 +75,7 @@ def make_qsdm_tarball(root: Path) -> Path:
 
 
 def main() -> int:
+    _require_root_user("remote_bootstrap_paramiko.py")
     pw = os.environ.get("QSDM_VPS_PASS")
     if not pw:
         print("Set QSDM_VPS_PASS (or pass as argv[1] for this run only).", file=sys.stderr)
@@ -93,6 +95,7 @@ def main() -> int:
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     c.connect(
         HOST,
+        port=PORT,
         username=USER,
         password=pw,
         timeout=30,

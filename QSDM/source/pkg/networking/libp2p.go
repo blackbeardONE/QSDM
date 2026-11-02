@@ -111,7 +111,23 @@ func SetupLibP2PWithPortAndKey(ctx context.Context, logger *logging.Logger, port
 // SetupLibP2PWithPortBindAndKey is like SetupLibP2PWithPortAndKey but can
 // restrict the listen socket to a single interface address. Empty bindAddress
 // preserves the historical all-interfaces IPv4+IPv6 listener.
+// SetupLibP2PWithPortBindAndKey creates the historical host without changing
+// router state. Public production callers should use
+// SetupLibP2PWithPortBindAndKeyAndNAT.
 func SetupLibP2PWithPortBindAndKey(ctx context.Context, logger *logging.Logger, port int, bindAddress string, hostKeyPath string) (*Network, error) {
+	return SetupLibP2PWithPortBindAndKeyAndNAT(ctx, logger, port, bindAddress, hostKeyPath, false)
+}
+
+// SetupLibP2PWithPortBindAndKeyAndNAT creates a libp2p host and, when
+// enableNAT is true, asks the local gateway to map the configured peer port
+// using libp2p native NAT support. Hole punching is enabled alongside the
+// mapping so a node behind a restrictive NAT can use a compatible relay path
+// when a direct mapping is unavailable.
+//
+// NAT mapping is deliberately opt-in. The public-P2P validator launcher is
+// the only production caller that enables it; tests and loopback-only nodes
+// keep the historical no-router-mutation behavior.
+func SetupLibP2PWithPortBindAndKeyAndNAT(ctx context.Context, logger *logging.Logger, port int, bindAddress string, hostKeyPath string, enableNAT bool) (*Network, error) {
 	var opts []libp2p.Option
 	if port < 0 || port > 65535 {
 		return nil, fmt.Errorf("invalid libp2p port: %d", port)
@@ -121,6 +137,9 @@ func SetupLibP2PWithPortBindAndKey(ctx context.Context, logger *logging.Logger, 
 		return nil, lerr
 	}
 	opts = append(opts, libp2p.ListenAddrStrings(listenAddrs...))
+	if enableNAT {
+		opts = append(opts, libp2p.NATPortMap(), libp2p.EnableHolePunching())
+	}
 	if hostKeyPath != "" {
 		priv, kerr := loadOrCreateHostKey(hostKeyPath)
 		if kerr != nil {

@@ -14,6 +14,15 @@ import deleteSourceMaps from '../scripts/delete-source-maps';
 import baseConfig from './webpack.config.base';
 import webpackPaths from './webpack.paths';
 
+// Refuse to bundle a production main process from the placeholder (or a
+// malformed) release trust root, before anything else runs. Public key
+// metadata only.
+// eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
+const trustKeyGuard = require('../scripts/verify-release-trust-key.cjs');
+
+const releaseTrustKey = trustKeyGuard.assertReleaseTrustKeyFile();
+console.log(`QSDM Hive release trust key_id ${releaseTrustKey.keyId}`);
+
 checkNodeEnv('production');
 deleteSourceMaps();
 

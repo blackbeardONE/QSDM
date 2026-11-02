@@ -22,7 +22,7 @@
 | §1  What changes relative to v1     | [`MINING_PROTOCOL_V2.md §1`](./MINING_PROTOCOL_V2.md#1-what-changes-relative-to-v1) |
 | §2  What does NOT change            | [`MINING_PROTOCOL_V2.md §2`](./MINING_PROTOCOL_V2.md#2-what-does-not-change) |
 | §3  Wire format                     | [`MINING_PROTOCOL_V2.md §3`](./MINING_PROTOCOL_V2.md#3-wire-format) |
-| §4  Tensor-Core PoW mixin           | [`MINING_PROTOCOL_V2.md §4`](./MINING_PROTOCOL_V2.md#4-tensor-core-pow-mixin-deferred) |
+| §4  Proof of work                   | Future protocol changes will be announced in the changelog. |
 | §5  Trust anchors (recommendation)  | [`MINING_PROTOCOL_V2.md §5`](./MINING_PROTOCOL_V2.md#5-trust-anchors) (the recommendation is now ratified — §13.1) |
 | §6  Freshness window                | [`MINING_PROTOCOL_V2.md §6`](./MINING_PROTOCOL_V2.md#6-freshness-window--nonce-issuance) |
 | §7  Verifier state                  | [`MINING_PROTOCOL_V2.md §7`](./MINING_PROTOCOL_V2.md#7-verifier) |

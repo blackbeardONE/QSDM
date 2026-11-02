@@ -703,3 +703,51 @@ func approxEqual(a, b float64) bool {
 	}
 	return d < eps
 }
+
+func TestEnrollmentAwareApplier_StateRoot_FoldsEnrollmentStateWhenActivated(t *testing.T) {
+	prev := EnrollmentStateRootActivationHeight()
+	t.Cleanup(func() { SetEnrollmentStateRootActivationHeight(prev) })
+	SetEnrollmentStateRootActivationHeight(100)
+
+	accounts := NewAccountStore()
+	accounts.Credit(fxAlice, 100)
+	state := enrollment.NewInMemoryState()
+	aware := NewEnrollmentAwareApplier(accounts, NewEnrollmentApplier(accounts, state))
+	if err := state.ApplyEnroll(enrollment.EnrollmentRecord{
+		NodeID:            fxNodeID,
+		Owner:             fxAlice,
+		OperatorPublicKey: "operator-root-test",
+		GPUUUID:           fxGPUUUID,
+		HMACKey:           fxHMACKey(),
+		StakeDust:         mining.MinEnrollStakeDust,
+		RequiredStakeDust: mining.MinEnrollStakeDust,
+		EnrolledAtHeight:  42,
+		Memo:              "state-root-test",
+	}); err != nil {
+		t.Fatalf("apply enroll: %v", err)
+	}
+
+	accountRoot := accounts.StateRoot()
+	aware.SetStateRootHeight(99)
+	if got := aware.StateRoot(); got != accountRoot {
+		t.Fatalf("below activation root = %q, want account root %q", got, accountRoot)
+	}
+
+	aware.SetStateRootHeight(100)
+	committedRoot := aware.StateRoot()
+	if committedRoot == accountRoot {
+		t.Fatal("activated StateRoot did not include enrollment state")
+	}
+
+	clone := aware.ChainReplayClone().(*EnrollmentAwareApplier)
+	if got := clone.StateRoot(); got != committedRoot {
+		t.Fatalf("clone root = %q, want %q", got, committedRoot)
+	}
+
+	if _, err := state.SlashStake(fxNodeID, 1); err != nil {
+		t.Fatalf("slash stake: %v", err)
+	}
+	if got := aware.StateRoot(); got == committedRoot {
+		t.Fatal("activated StateRoot did not change after enrollment stake mutation")
+	}
+}

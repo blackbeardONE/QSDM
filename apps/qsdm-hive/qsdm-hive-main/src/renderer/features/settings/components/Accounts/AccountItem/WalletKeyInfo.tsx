@@ -160,7 +160,7 @@ export function WalletKeyInfo({
           stakingKeyIsMessedUp && 'bg-finnieRed/[.25]'
         )}
       >
-        <div className="text-xs text-white w-[146px] truncate mr-auto">
+        <div className="font-mono text-xs text-white w-[146px] truncate mr-auto">
           {walletAddress.length > 16
             ? `${walletAddress.slice(0, 8)}...${walletAddress.slice(-8)}`
             : walletAddress}
@@ -178,18 +178,13 @@ export function WalletKeyInfo({
                   theme={Theme.Dark}
                 >
                   <Button
-                    icon={
-                      <KeyUnlockLine className="w-3.5 h-3.5 text-white" />
-                    }
+                    icon={<KeyUnlockLine className="w-3.5 h-3.5 text-white" />}
                     className="w-6 h-6 bg-transparent rounded-full "
                     onClick={onShowSeedPhraseModal}
                   />
                 </Popover>
               )}
-              <Popover
-                theme={Theme.Dark}
-                tooltipContent={sendTooltip}
-              >
+              <Popover theme={Theme.Dark} tooltipContent={sendTooltip}>
                 <Button
                   icon={<ShareArrowLine className="w-3.5 h-3.5 text-white" />}
                   className="w-6 h-6 bg-transparent rounded-full "

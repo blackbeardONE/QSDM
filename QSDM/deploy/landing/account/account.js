@@ -8,6 +8,8 @@
     dashboard: document.getElementById("dashboard-view"),
     signOut: document.getElementById("sign-out"),
     telegram: document.getElementById("telegram-sign-in"),
+    walletSignIn: document.getElementById("wallet-sign-in"),
+    recoveryNotice: document.getElementById("wallet-recovery-notice"),
     loginDivider: document.getElementById("login-divider"),
     loginFinePrint: document.getElementById("login-fine-print"),
     emailForm: document.getElementById("email-form"),
@@ -56,7 +58,7 @@
     keepAccount: document.getElementById("keep-account"),
   };
 
-  let config = { login: { email: false, telegram: false } };
+  let config = { login: { email: false, telegram: false, wallet: false } };
   let account = null;
   let csrfToken = "";
   let emailIdentityFormOpen = false;
@@ -229,7 +231,8 @@
       const unlink = document.createElement("button");
       unlink.className = "button quiet wallet-unlink";
       unlink.type = "button";
-      unlink.textContent = "Unlink";
+      unlink.textContent = wallet.address === account.wallet_identity ? "Sign-in wallet" : "Unlink";
+      unlink.disabled = wallet.address === account.wallet_identity;
       unlink.addEventListener("click", async () => {
         if (
           !window.confirm(
@@ -315,7 +318,7 @@
   };
 
   const renderAccount = async () => {
-    const identities = [account.email, account.telegram].filter(Boolean);
+    const identities = [account.email, account.telegram, account.wallet_identity ? `wallet ${shorten(account.wallet_identity)}` : ""].filter(Boolean);
     elements.identity.textContent = identities.length
       ? `Signed in as ${identities.join(" / ")}`
       : `Account ${shorten(account.id)}`;
@@ -377,6 +380,8 @@
   };
 
   const configureLogin = () => {
+    elements.walletSignIn.hidden = !config.login.wallet;
+    elements.recoveryNotice.hidden = !config.login.wallet;
     elements.telegram.hidden = !config.login.telegram;
     elements.emailForm.hidden = !config.login.email;
     elements.loginDivider.hidden = !(
@@ -391,11 +396,14 @@
     } else if (config.login.telegram) {
       elements.loginFinePrint.textContent =
         "No account password is stored. Telegram authorization is verified by the QSDM Account service.";
+    } else if (config.login.wallet) {
+      elements.loginFinePrint.textContent =
+        "Use the QSDM Wallet extension with Hive. Approve the sign-in message locally; the website receives only a public key and signature.";
     } else {
       elements.loginFinePrint.textContent =
         "No sign-in provider is currently available.";
     }
-    if (!config.login.email && !config.login.telegram) {
+    if (!config.login.email && !config.login.telegram && !config.login.wallet) {
       setStatus(
         elements.loginStatus,
         "QSDM Account sign-in is not configured on this server yet.",
@@ -403,6 +411,42 @@
       );
     }
   };
+
+  elements.walletSignIn.addEventListener("click", async () => {
+    elements.walletSignIn.disabled = true;
+    setStatus(elements.loginStatus, "Requesting your active QSDM wallet...");
+    try {
+      if (!window.qsdm?.request) {
+        throw new Error("Install the QSDM Wallet extension and open Hive to sign in. Unlock your wallet in Hive; never enter a private key on this website.");
+      }
+      const accounts = await window.qsdm.request({ method: "qsdm_requestAccounts" });
+      const address = Array.isArray(accounts) ? accounts[0] : "";
+      if (!/^[0-9a-f]{64}$/.test(address || "")) throw new Error("Hive did not provide a valid active wallet.");
+      const payload = await api("/wallet-login/challenge", {
+        method: "POST", body: JSON.stringify({ address }),
+      });
+      setStatus(elements.loginStatus, "Approve the QSDM Account sign-in message in Hive.");
+      const signed = await window.qsdm.request({
+        method: "qsdm_signMessage", params: { message: payload.challenge.message },
+      });
+      if (signed?.address !== address || !signed.public_key || !signed.signature) {
+        throw new Error("Hive returned an incomplete or changed wallet signature.");
+      }
+      await api("/wallet-login/confirm", {
+        method: "POST", body: JSON.stringify({
+          challenge_id: payload.challenge.id, address,
+          public_key: signed.public_key, signature: signed.signature,
+        }),
+      });
+      if (await loadSession()) {
+        setStatus(elements.dashboardStatus, "Wallet ownership verified. Your account profile is ready.", "success");
+      }
+    } catch (error) {
+      setStatus(elements.loginStatus, error.message, "error");
+    } finally {
+      elements.walletSignIn.disabled = false;
+    }
+  });
 
   elements.emailForm.addEventListener("submit", async (event) => {
     event.preventDefault();

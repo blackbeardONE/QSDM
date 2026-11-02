@@ -53,7 +53,7 @@ export function MainWalletView() {
   return (
     <Popover tooltipContent={tooltipContent}>
       <div
-        className="flex flex-col text-white w-[186px] xl:w-[230px] md2:w-[350px] xl1:w-[450px] xl2:w-[550px] rounded border-2 border-finnieBlue-light-secondary transition-all duration-300 ease-in-out"
+        className="flex flex-col text-white w-[186px] xl:w-[230px] md2:w-[350px] xl1:w-[450px] xl2:w-[550px] overflow-hidden rounded-lg border border-qsdm-border bg-qsdm-panel transition-all duration-300 ease-in-out"
         role="button"
         onClick={handleCopy}
         onKeyDown={handleKeyDown(handleCopy)}
@@ -61,12 +61,12 @@ export function MainWalletView() {
       >
         <div
           className={`transition-all duration-300 ease-in-out flex h-[40px] lgh2:h-14 ${
-            isCopied ? 'bg-purple-5/[0.5]' : 'bg-transparent'
+            isCopied ? 'bg-qsdm-teal/10' : 'bg-transparent'
           }`}
         >
           <div
             className={`transition-all duration-300 ease-in-out ${
-              isCopied ? 'bg-purple-5' : 'bg-finnieBlue-light-secondary'
+              isCopied ? 'bg-qsdm-teal/20' : 'bg-qsdm-panel-2'
             }`}
             style={{
               width: '17%',
@@ -84,7 +84,7 @@ export function MainWalletView() {
             />
           </div>
           <div className="flex items-center justify-center m-auto">
-            <p className="px-1 overflow-hidden text-xs xl:text-sm w-fit whitespace-nowrap text-ellipsis">
+            <p className="px-1 overflow-hidden font-mono text-xs xl:text-sm w-fit whitespace-nowrap text-ellipsis">
               {shortenedWalletAddress}
             </p>
           </div>

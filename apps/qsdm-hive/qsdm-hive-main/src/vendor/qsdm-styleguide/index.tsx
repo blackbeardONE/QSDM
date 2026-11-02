@@ -3,11 +3,7 @@ import { twMerge } from 'tailwind-merge';
 
 type IconProps = React.SVGProps<SVGSVGElement>;
 
-type IconSource =
-  | React.ComponentType<IconProps>
-  | string
-  | undefined
-  | null;
+type IconSource = React.ComponentType<IconProps> | string | undefined | null;
 
 type IconWrapperProps = {
   source?: IconSource;
@@ -45,6 +41,22 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   labelClassesOverrides?: string;
 };
 
+// Visual variants follow the qsdm.tech buttons (.btn / .btn-primary).
+const BUTTON_VARIANT_CLASSES: Record<string, string> = {
+  primary:
+    'border border-qsdm-gold/60 bg-qsdm-gold text-qsdm-bg hover:brightness-105',
+  secondary:
+    'border border-qsdm-teal/30 bg-qsdm-panel-2 text-qsdm-text hover:border-qsdm-teal/60 hover:bg-[#173f4a]',
+  'secondary-dark':
+    'border border-qsdm-teal/30 bg-qsdm-bg-2 text-qsdm-text hover:border-qsdm-teal/60',
+  outline:
+    'border border-qsdm-teal/40 bg-transparent text-qsdm-teal hover:bg-qsdm-teal/10',
+  ghost:
+    'border border-transparent bg-transparent text-qsdm-teal hover:bg-qsdm-teal/10',
+  danger:
+    'border border-qsdm-danger/40 bg-qsdm-danger/10 text-qsdm-danger hover:bg-qsdm-danger/20',
+};
+
 export function Button({
   label,
   children,
@@ -56,6 +68,7 @@ export function Button({
   className,
   disabled,
   type = 'button',
+  variant,
   ...props
 }: ButtonProps) {
   return (
@@ -63,8 +76,9 @@ export function Button({
       type={type}
       disabled={disabled || loading}
       className={twMerge(
-        'inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-semibold transition',
-        'bg-finnieEmerald-light text-purple-3 hover:brightness-105',
+        'inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition',
+        BUTTON_VARIANT_CLASSES[String(variant || 'primary')] ||
+          BUTTON_VARIANT_CLASSES.primary,
         'disabled:cursor-not-allowed disabled:opacity-50',
         buttonClassesOverrides,
         className
@@ -76,7 +90,11 @@ export function Button({
       ) : (
         <>
           {iconLeft}
-          {label ? <span className={labelClassesOverrides}>{label}</span> : children}
+          {label ? (
+            <span className={labelClassesOverrides}>{label}</span>
+          ) : (
+            children
+          )}
           {iconRight}
         </>
       )}
@@ -139,7 +157,12 @@ function makeLineIcon(paths: React.ReactNode) {
 function makeFillIcon(paths: React.ReactNode) {
   return function QsdmFillIcon(props: IconProps) {
     return (
-      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
+      <svg
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+        {...props}
+      >
         {paths}
       </svg>
     );

@@ -5,8 +5,8 @@
 // TryAppendExternalBlock via the BFT executor, the chain
 // stays at tip=0 forever and accepted mining proofs accrue
 // no on-chain effect. With this driver enabled, the validator
-// itself periodically seals blocks, paying out queued mining
-// rewards to the miner addresses recorded by miningsvc.
+// itself periodically seals blocks, paying out pending mining
+// rewards to the miner addresses recorded by the HL1 ledger.
 //
 // Scope:
 //
@@ -14,22 +14,27 @@
 //     gate is off, this package is dormant — the binary
 //     compiles it in but never instantiates a Driver.
 //
-//   - Implements miningsvc.RewardSink so accepted proofs
-//     accrue per-address in an in-memory queue between ticks.
+//   - HL1 (hardened legacy mining, design rev 4 §4.2-§4.3):
+//     accepted proofs live in a legacymining.Ledger, not in
+//     this package. Without a Ledger (Stage A) the driver
+//     seals heartbeats only.
 //
-//   - Each tick (default every 10s) drains the queue,
-//     issues one transfer-tx per unique miner address from a
-//     long-lived "system funder" account, and calls
+//   - Each tick (default every 10s) takes every pending proof
+//     ID, issues one transfer-tx per unique miner address
+//     from a long-lived "system funder" account carrying all
+//     of that address's IDs in an LMP1 payload, and calls
 //     producer.ProduceBlock(). The driver bypasses BFT/POL
 //     gates entirely (see cmd/qsdm/main.go for the conditional
 //     SetBFTSealGate / SetPreSealBFTRound skip in solo mode).
+//     The outcome is classified as SUCCESS, SAFE or
+//     POST-APPLY (§4.3); POST-APPLY fail-stops the process.
 //
 //   - Reward distribution is proportional: a fixed
 //     per-block reward (default 1.0 CELL) is split across
-//     unique miner addresses by their accepted-proof count
-//     in the window since the last block. A no-mining
-//     window still seals an empty heartbeat block so the
-//     chain advances; metrics still track block-time.
+//     unique miner addresses by their pending proof count.
+//     A no-mining window still seals an empty heartbeat
+//     block so the chain advances; metrics still track
+//     block-time.
 //
 // Out of scope:
 //
@@ -49,22 +54,21 @@ package blockdriver
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
-	"sort"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/blackbeardONE/QSDM/internal/legacymining"
 	"github.com/blackbeardONE/QSDM/internal/logging"
-	"github.com/blackbeardONE/QSDM/internal/miningsvc"
 	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 )
-
-// Compile-time guard: Driver implements miningsvc.RewardSink.
-// Drift here would break the cmd/qsdm wiring at boot.
-var _ miningsvc.RewardSink = (*Driver)(nil)
 
 // FunderAddress is the well-known account that funds reward
 // payouts in solo mode. Exported so the genesis-seal hook in
@@ -123,6 +127,32 @@ type Config struct {
 	// a paper-trail of the solo-mode behaviour.
 	Logger *logging.Logger
 
+	// FailStop is called with legacymining.ExitFailStop when
+	// ProduceBlock ends POST-APPLY (§4.3). REQUIRED in every
+	// mode. In production it is cmd/qsdm's failStop and never
+	// returns; if it does return (tests), the driver halts and
+	// seals nothing more.
+	FailStop legacymining.FailStopFunc
+
+	// Ledger holds the pending, in-flight and paid proof IDs
+	// (canary mode). Nil means Stage A: the driver seals
+	// heartbeats only. Ledger and Guard are both set or both
+	// nil.
+	Ledger legacymining.Ledger
+
+	// Guard is the canary guard. The driver reads State on
+	// every tick and pays only while State().PayoutsEnabled();
+	// it trips Freeze on a pre-seal failure (§6.3) or an
+	// unknown SAFE error (§4.3).
+	Guard legacymining.Guard
+
+	// LocalSeal is the local-seal flag shared with the
+	// cmd/qsdm persistence hook, which reads it at H8. The
+	// driver sets it immediately before ProduceBlock and
+	// clears it immediately after. Nil allocates a private
+	// flag.
+	LocalSeal *atomic.Bool
+
 	// Period is the tick interval. Zero uses DefaultPeriod.
 	Period time.Duration
 
@@ -160,6 +190,8 @@ type Config struct {
 	// in [0.0, 1.0]. Wired by the validator binary when
 	// QSDM_SPEC_PENALTY_ENABLED is set; nil leaves rewards
 	// at their full per-proof share (the pre-Tier-3 posture).
+	// New refuses it with a version 2 legacy-mining Guard
+	// (HL2 WP-D, reward rule R4).
 	//
 	// The penalty layer is OFF the consensus path — the
 	// proofs that earn rewards have already passed every
@@ -181,8 +213,8 @@ type Config struct {
 //
 // Implementations MUST be concurrency-safe AND MUST NOT
 // block on I/O — Driver.tick calls MultiplierFor inside
-// the queue-lock-free section but still on the single
-// block-production goroutine.
+// the lock-free section on the single block-production
+// goroutine.
 type RewardPenalty interface {
 	// MultiplierFor returns a value in [0.0, 1.0] that
 	// scales the miner's share of the next block's
@@ -198,10 +230,11 @@ type noopRewardPenalty struct{}
 
 func (noopRewardPenalty) MultiplierFor(string) float64 { return 1.0 }
 
-// Driver is the periodic block-production loop. Safe for
-// concurrent calls into OnAcceptedProof from any goroutine
-// (the HTTP handlers); single-tick from the internal
-// goroutine started by Start.
+// Driver is the periodic block-production loop. It holds no
+// mutex: the tick runs on the single goroutine started by
+// Start, and every field read elsewhere (Stats) is atomic. So
+// no driver, HL1 or chain lock is held across Pool.Add,
+// ProduceBlock or Pool.Remove (§4.5 L1).
 type Driver struct {
 	cfg Config
 
@@ -226,13 +259,19 @@ type Driver struct {
 	// from Tick because the tick goroutine is single-writer.
 	funderNonce atomic.Uint64
 
-	mu     sync.Mutex
-	queue  map[string]int // miner_addr -> proof count, drained per tick
-	queued int            // total proofs queued across all addrs
+	// localSeal is Config.LocalSeal, or a private flag.
+	localSeal *atomic.Bool
+
+	// halted is set on POST-APPLY. A halted driver never
+	// ticks again (§4.3).
+	halted atomic.Bool
+
+	// now is the tx timestamp clock (time.Now; tests pin it).
+	now func() time.Time
 
 	// blocksSealed and blocksFailed are exposed via Stats
 	// for tests and operator probes. Atomic so HTTP/metrics
-	// readers don't need to hold mu.
+	// readers need no lock.
 	blocksSealed atomic.Uint64
 	blocksFailed atomic.Uint64
 	proofsPaid   atomic.Uint64
@@ -276,6 +315,19 @@ func New(cfg Config) (*Driver, error) {
 	if cfg.Logger == nil {
 		return nil, errors.New("blockdriver: Config.Logger is required")
 	}
+	if cfg.FailStop == nil {
+		return nil, errors.New("blockdriver: Config.FailStop is required")
+	}
+	if (cfg.Ledger == nil) != (cfg.Guard == nil) {
+		return nil, errors.New("blockdriver: Config.Ledger and Config.Guard must be set together")
+	}
+	if cfg.RewardPenalty != nil && cfg.Guard != nil && cfg.Guard.Config().Version == legacymining.ConfigVersion2 {
+		// HL2 WP-D, reward rule R4: with N miners, emission is exactly
+		// the pro-rata split of rewardCell per non-empty block, and a
+		// multiplier of 0 would make a zero share, which PreSeal turns
+		// into a global FREEZE. cmd/qsdm refuses this pairing at S2.
+		return nil, errors.New("blockdriver: Config.RewardPenalty (Tier-3) is not supported with a version 2 legacy-mining config (HL2 reward rule R4)")
+	}
 	if cfg.Period <= 0 {
 		cfg.Period = DefaultPeriod
 	}
@@ -306,11 +358,16 @@ func New(cfg Config) (*Driver, error) {
 	if rp == nil {
 		rp = noopRewardPenalty{}
 	}
+	localSeal := cfg.LocalSeal
+	if localSeal == nil {
+		localSeal = new(atomic.Bool)
+	}
 
 	d := &Driver{
 		cfg:           cfg,
 		schedule:      schedule,
-		queue:         make(map[string]int, 16),
+		localSeal:     localSeal,
+		now:           time.Now,
 		stopCh:        make(chan struct{}),
 		doneCh:        make(chan struct{}),
 		rewardPenalty: rp,
@@ -357,22 +414,10 @@ func (d *Driver) SyncFunderNonce() {
 		"new_nonce", acc.Nonce)
 }
 
-// OnAcceptedProof implements miningsvc.RewardSink. Pure
-// O(1) increment under the queue mutex.
-func (d *Driver) OnAcceptedProof(minerAddr string) {
-	if minerAddr == "" {
-		return
-	}
-	d.mu.Lock()
-	d.queue[minerAddr]++
-	d.queued++
-	d.mu.Unlock()
-}
-
 // Start kicks off the tick loop in a fresh goroutine. The
-// loop runs until the supplied context is cancelled OR Stop
-// is called. Idempotent: a second Start on the same Driver
-// is a no-op (the first goroutine still owns stopCh).
+// loop runs until the supplied context is cancelled, Stop
+// is called, or a POST-APPLY outcome halts the driver. Call
+// it once per Driver.
 func (d *Driver) Start(ctx context.Context) {
 	go d.run(ctx)
 }
@@ -396,9 +441,13 @@ type Stats struct {
 	Period       time.Duration
 	BlocksSealed uint64
 	BlocksFailed uint64
-	ProofsPaid   uint64
-	QueueDepth   int
-	FunderNonce  uint64
+	// ProofsPaid counts proof IDs carried by reward txs that
+	// were included in a sealed block.
+	ProofsPaid uint64
+	// QueueDepth is the Ledger's pending plus in-flight
+	// count (0 without a Ledger).
+	QueueDepth  int
+	FunderNonce uint64
 	// EmittedDust is the running total of dust paid out to
 	// miner addresses (heartbeat-only blocks don't count).
 	// Useful in tests to confirm the schedule's cumulative
@@ -424,13 +473,16 @@ type Stats struct {
 	// PenaltyActive is true when a non-noop RewardPenalty is
 	// wired (i.e. Tier-3 is enabled).
 	PenaltyActive bool
+	// Halted is true after a POST-APPLY outcome.
+	Halted bool
 }
 
 // Stats returns a snapshot of the driver's counters.
 func (d *Driver) Stats() Stats {
-	d.mu.Lock()
-	depth := d.queued
-	d.mu.Unlock()
+	depth := 0
+	if d.cfg.Ledger != nil {
+		depth = d.cfg.Ledger.Outstanding()
+	}
 	_, isNoop := d.rewardPenalty.(noopRewardPenalty)
 	return Stats{
 		Period:           d.cfg.Period,
@@ -445,6 +497,7 @@ func (d *Driver) Stats() Stats {
 		PenalisedPayouts: d.penalisedPayouts.Load(),
 		WithheldDust:     d.withheldDust.Load(),
 		PenaltyActive:    !isNoop,
+		Halted:           d.halted.Load(),
 	}
 }
 
@@ -459,7 +512,8 @@ func (d *Driver) run(ctx context.Context) {
 		"flat_reward_cell", d.cfg.FlatRewardPerBlock,
 		"schedule_cap_dust", d.schedule.MiningCapDust,
 		"schedule_blocks_per_epoch", d.schedule.BlocksPerEpoch,
-		"schedule_epoch0_reward_dust", d.schedule.BlockRewardDust(1))
+		"schedule_epoch0_reward_dust", d.schedule.BlockRewardDust(1),
+		"payouts_wired", d.cfg.Ledger != nil)
 	for {
 		select {
 		case <-ctx.Done():
@@ -470,21 +524,22 @@ func (d *Driver) run(ctx context.Context) {
 			return
 		case <-t.C:
 			d.tick()
+			if d.halted.Load() {
+				d.cfg.Logger.Error("blockdriver: stopping (halted after POST-APPLY)")
+				return
+			}
 		}
 	}
 }
 
-// tick is the single-writer path. Drains the proof queue,
-// builds payout transactions, and asks the producer to seal a
-// block. All errors are logged but never panic — the goal is
-// "keep the chain advancing through transient hiccups".
+// tick is the single-writer path (§4.2): take the pending
+// IDs, build and pre-seal the payout transactions, and ask
+// the producer to seal a block, then classify the outcome
+// (§4.3). It takes no lock.
 func (d *Driver) tick() {
-	d.mu.Lock()
-	drained := d.queue
-	drainedCount := d.queued
-	d.queue = make(map[string]int, 16)
-	d.queued = 0
-	d.mu.Unlock()
+	if d.halted.Load() {
+		return
+	}
 
 	// rewardForHeight is computed from the height we are
 	// ABOUT to seal — that is, current tip + 1. Reading the
@@ -509,20 +564,23 @@ func (d *Driver) tick() {
 	// no later transaction can cross.
 	funder, ok := d.cfg.Accounts.Get(FunderAddress)
 	if !ok || funder == nil {
-		d.requeueProofs(drained)
 		d.cfg.Logger.Warn("blockdriver: funder account missing; retaining payouts")
 		d.blocksFailed.Add(1)
 		return
 	}
 	d.funderNonce.Store(funder.Nonce)
-	txs := d.buildTxs(drained, drainedCount, rewardCell, funder.Nonce)
+
+	// claims is non-nil exactly when txs are reward txs whose
+	// IDs are in flight; txs[i] carries claims[i].
+	txs, claims := d.planTxs(nextHeight, rewardCell, funder.Nonce)
+
 	added := make([]*mempool.Tx, 0, len(txs))
 	for _, tx := range txs {
 		if err := d.cfg.Pool.Add(tx); err != nil {
 			for _, admitted := range added {
 				d.cfg.Pool.Remove(admitted.ID)
 			}
-			d.requeueProofs(drained)
+			d.release(claims)
 			d.SyncFunderNonce()
 			d.cfg.Logger.Warn("blockdriver: pool admission failed; retaining payouts",
 				"tx_id", tx.ID,
@@ -533,33 +591,80 @@ func (d *Driver) tick() {
 		added = append(added, tx)
 	}
 
+	fp0 := d.fingerprint()
+	d.localSeal.Store(true)
 	blk, err := d.cfg.Producer.ProduceBlock()
-	if err != nil {
-		// ProduceBlock restores a failed batch to the mempool. Remove only the
-		// transactions owned by this driver, retain their proof counts, and
-		// rebuild them from the authoritative nonce on the next tick.
-		for _, tx := range txs {
-			d.cfg.Pool.Remove(tx.ID)
-		}
-		d.requeueProofs(drained)
-		d.SyncFunderNonce()
-		d.cfg.Logger.Warn("blockdriver: ProduceBlock failed",
-			"error", err.Error(),
-			"queued_payouts", len(drained))
-		d.blocksFailed.Add(1)
-		return
-	}
-	if blk == nil {
-		for _, tx := range txs {
-			d.cfg.Pool.Remove(tx.ID)
-		}
-		d.requeueProofs(drained)
-		d.SyncFunderNonce()
-		d.cfg.Logger.Warn("blockdriver: ProduceBlock returned nil block with no error")
-		d.blocksFailed.Add(1)
-		return
-	}
+	d.localSeal.Store(false)
 
+	switch classifyProduce(blk, err, fp0, d.fingerprint) {
+	case produceSuccess:
+		d.onSuccess(blk, txs, claims, rewardDust)
+	case produceSafe:
+		d.onSafe(err, txs, claims)
+	default:
+		d.onPostApply(err)
+	}
+}
+
+// planTxs is §4.2 steps 1-3. It returns a single heartbeat
+// unless payouts are wired and enabled and the Ledger has
+// pending IDs. A pre-seal failure (§6.3) trips FREEZE,
+// returns the IDs to pending and falls back to a heartbeat.
+func (d *Driver) planTxs(height uint64, rewardCell float64, startNonce uint64) ([]*mempool.Tx, []legacymining.Claim) {
+	heartbeat := func() ([]*mempool.Tx, []legacymining.Claim) {
+		return []*mempool.Tx{d.heartbeatTx(startNonce)}, nil
+	}
+	if d.cfg.Ledger == nil {
+		return heartbeat()
+	}
+	// State is read on every tick: it stats KILL and
+	// evaluates the guard's time-based triggers.
+	if state := d.cfg.Guard.State(); !state.PayoutsEnabled() {
+		return heartbeat()
+	}
+	claims := d.cfg.Ledger.Take()
+	if len(claims) == 0 {
+		return heartbeat()
+	}
+	txs, err := d.buildTxs(claims, rewardCell, startNonce)
+	if err == nil {
+		// A share <= 0 is passed through; PreSeal rejects it.
+		err = d.cfg.Ledger.PreSeal(height, rewardCell, txs)
+	}
+	if err == nil {
+		// Backstop for the share check, independent of the
+		// Ledger implementation.
+		err = checkShares(txs)
+	}
+	if err != nil {
+		// Freeze is idempotent and keeps the first cause, and
+		// Requeue is a no-op once PreSeal has already
+		// returned the IDs, so both are safe to repeat here.
+		d.cfg.Guard.Freeze(legacymining.CausePreSeal + ":" + err.Error())
+		d.cfg.Ledger.Requeue()
+		d.cfg.Logger.Error("blockdriver: pre-seal check failed; FREEZE, payouts retained, sealing heartbeat",
+			"height", height,
+			"claims", len(claims),
+			"error", err.Error())
+		return heartbeat()
+	}
+	return txs, claims
+}
+
+// release returns every in-flight ID to pending. It is a
+// no-op for heartbeat ticks. Never call it after POST-APPLY.
+func (d *Driver) release(claims []legacymining.Claim) {
+	if claims != nil {
+		d.cfg.Ledger.Requeue()
+	}
+}
+
+// onSuccess is §4.2 step 7. H8 has already moved the
+// included IDs to paid. Own txs that were not included are
+// removed from the pool before their IDs are released, so no
+// stale reward tx can be sealed later next to its
+// replacement.
+func (d *Driver) onSuccess(blk *chain.Block, txs []*mempool.Tx, claims []legacymining.Claim, rewardDust uint64) {
 	included := make(map[string]struct{}, len(blk.Transactions))
 	for _, tx := range blk.Transactions {
 		if tx != nil {
@@ -568,27 +673,33 @@ func (d *Driver) tick() {
 	}
 	paidProofs := 0
 	emittedDust := uint64(0)
-	for _, tx := range txs {
+	var notIncluded []string
+	for i, tx := range txs {
 		if _, ok := included[tx.ID]; !ok {
-			if count := drained[tx.Recipient]; count > 0 {
-				d.requeueProofs(map[string]int{tx.Recipient: count})
-			}
+			d.cfg.Pool.Remove(tx.ID)
+			notIncluded = append(notIncluded, tx.ID)
 			continue
 		}
-		if count := drained[tx.Recipient]; count > 0 {
-			paidProofs += count
+		if claims != nil {
+			paidProofs += len(claims[i].IDs)
 			emittedDust += uint64(tx.Amount * float64(chain.DustPerCell))
 		}
 	}
+	d.release(claims)
 	if acc, exists := d.cfg.Accounts.Get(FunderAddress); exists && acc != nil {
 		d.funderNonce.Store(acc.Nonce)
+	}
+	if len(notIncluded) > 0 {
+		d.cfg.Logger.Warn("blockdriver: own transactions not included; removed from pool, payouts retained",
+			"height", blk.Height,
+			"tx_ids", notIncluded)
 	}
 	d.blocksSealed.Add(1)
 	d.proofsPaid.Add(uint64(paidProofs))
 	if emittedDust > 0 {
 		// totalEmittedCell tracks dust we actually paid out
 		// (i.e. excluding heartbeat-only blocks where
-		// drainedCount==0 and the reward goes unclaimed).
+		// no IDs were pending and the reward goes unclaimed).
 		// Mirrors the "no proofs => no emission" rule
 		// CELL_TOKENOMICS implies for solo testnet bring-up.
 		d.totalEmittedCell.Add(emittedDust)
@@ -597,8 +708,8 @@ func (d *Driver) tick() {
 		"height", blk.Height,
 		"hash", blk.Hash,
 		"tx_count", len(blk.Transactions),
-		"payouts", len(drained),
-		"proofs_in_window", drainedCount,
+		"payouts", len(claims),
+		"proofs_paid", paidProofs,
 		"reward_dust", rewardDust,
 		"reward_cell", d.schedule.BlockRewardCell(blk.Height),
 		"epoch", d.schedule.EpochForHeight(blk.Height),
@@ -606,19 +717,133 @@ func (d *Driver) tick() {
 		"withheld_dust_total", d.withheldDust.Load())
 }
 
-func (d *Driver) requeueProofs(queue map[string]int) {
-	if len(queue) == 0 {
+// onSafe handles a ProduceBlock error that left the account
+// state unchanged (§4.3 SAFE). ProduceBlock may have restored
+// the drained batch to the pool, so every own tx is removed
+// before the IDs are released and the next tick rebuilds them
+// from the authoritative nonce.
+func (d *Driver) onSafe(err error, txs []*mempool.Tx, claims []legacymining.Claim) {
+	for _, tx := range txs {
+		d.cfg.Pool.Remove(tx.ID)
+	}
+	d.release(claims)
+	d.SyncFunderNonce()
+	d.blocksFailed.Add(1)
+	if isKnownSafeError(err) {
+		d.cfg.Logger.Warn("blockdriver: ProduceBlock failed (SAFE)",
+			"error", err.Error(),
+			"queued_payouts", len(claims))
 		return
 	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	for addr, count := range queue {
-		if addr == "" || count <= 0 {
-			continue
-		}
-		d.queue[addr] += count
-		d.queued += count
+	d.cfg.Logger.Error("blockdriver: ProduceBlock failed with an unknown error; state unchanged (SAFE)",
+		"error", err.Error(),
+		"queued_payouts", len(claims))
+	if d.cfg.Guard != nil {
+		d.cfg.Guard.Freeze(legacymining.CauseUnknownSafeError + ":" + err.Error())
 	}
+}
+
+// onPostApply handles §4.3 POST-APPLY: live state already
+// holds the block's effects but nothing of it was persisted.
+// Nothing is removed, released or resynced; the driver halts
+// and fail-stops, so a restart restores the last durable
+// block.
+func (d *Driver) onPostApply(err error) {
+	d.halted.Store(true)
+	d.blocksFailed.Add(1)
+	msg := "nil block with nil error"
+	if err != nil {
+		msg = err.Error()
+	}
+	cause := legacymining.CausePostApplyPrefix + msg
+	d.cfg.Logger.Error("blockdriver: ProduceBlock failed after live apply (POST-APPLY); fail-stop",
+		"cause", cause)
+	d.cfg.FailStop(legacymining.ExitFailStop, cause)
+}
+
+// produceClass is the §4.3 outcome of one ProduceBlock call.
+type produceClass int
+
+const (
+	produceSuccess produceClass = iota
+	produceSafe
+	producePostApply
+)
+
+// fingerprint is the account-state fingerprint of §4.2:
+// AccountStore.StateRoot (which hashes every nonce), plus the
+// funder's nonce and balance bits.
+type fingerprint struct {
+	stateRoot     string
+	funderExists  bool
+	funderNonce   uint64
+	funderBalance uint64 // math.Float64bits
+}
+
+func (d *Driver) fingerprint() fingerprint {
+	fp := fingerprint{stateRoot: d.cfg.Accounts.StateRoot()}
+	if acc, ok := d.cfg.Accounts.Get(FunderAddress); ok && acc != nil {
+		fp.funderExists = true
+		fp.funderNonce = acc.Nonce
+		fp.funderBalance = math.Float64bits(acc.Balance)
+	}
+	return fp
+}
+
+// classifyProduce implements the §4.3 table. after is
+// evaluated only for an error.
+func classifyProduce(blk *chain.Block, err error, before fingerprint, after func() fingerprint) produceClass {
+	if err == nil {
+		if blk != nil {
+			return produceSuccess
+		}
+		return producePostApply
+	}
+	if after() != before {
+		return producePostApply
+	}
+	return produceSafe
+}
+
+// knownSafeErrors and knownSafeMessages are the ProduceBlock
+// errors of §4.3 that return before any state mutation. Any
+// other error with an unchanged fingerprint is still SAFE but
+// trips FREEZE.
+var knownSafeErrors = []error{
+	chain.ErrSealGuardBlocked,
+	chain.ErrPolExtensionBlocked,
+	chain.ErrBFTExtensionBlocked,
+	chain.ErrPreSealRequiresAccountStore,
+	chain.ErrBlockUnsigned,
+	chain.ErrExternalProducerNotAuthorized,
+}
+
+var knownSafeMessages = map[string]struct{}{
+	"chain: local production requires approved transition checkpoint": {},
+	"chain: producer transition checkpoint is not established":        {},
+	"no transactions to include":                                      {},
+	"all transactions failed state application":                       {},
+}
+
+func isKnownSafeError(err error) bool {
+	for _, known := range knownSafeErrors {
+		if errors.Is(err, known) {
+			return true
+		}
+	}
+	_, ok := knownSafeMessages[err.Error()]
+	return ok
+}
+
+// checkShares fails when any reward amount is not a finite
+// value > 0 (§6.3; d7 silently skipped a share <= 0).
+func checkShares(txs []*mempool.Tx) error {
+	for _, tx := range txs {
+		if !(tx.Amount > 0) || math.IsInf(tx.Amount, 0) {
+			return fmt.Errorf("%w: share %v for %s is not > 0", legacymining.ErrPreSeal, tx.Amount, tx.Recipient)
+		}
+	}
+	return nil
 }
 
 // rewardDustForHeight returns the dust reward for the given
@@ -653,12 +878,33 @@ func (d *Driver) rewardCellForHeight(height uint64) float64 {
 	return float64(dust) / float64(chain.DustPerCell)
 }
 
-// buildTxs creates one transaction per unique miner address
-// (with reward proportional to that address's proof count) or
-// a single zero-amount heartbeat tx when the window had no
-// accepted proofs OR when the per-block reward has tapered to
-// 0 (cap reached). The producer's mempool refuses to seal an
-// empty block, so we always emit at least one tx.
+// heartbeatTx is the zero-amount funder self-transfer that
+// keeps the chain advancing. Its bytes are identical to d7.
+func (d *Driver) heartbeatTx(nonce uint64) *mempool.Tx {
+	now := d.now()
+	return &mempool.Tx{
+		ID:        fmt.Sprintf("solo-heartbeat-%d-%d", nonce, now.UnixNano()),
+		Sender:    FunderAddress,
+		Recipient: FunderAddress,
+		Amount:    0,
+		Fee:       0,
+		Nonce:     nonce,
+		AddedAt:   now,
+	}
+}
+
+// buildTxs creates one reward transaction per claim, i.e. per
+// unique miner address, with a reward proportional to that
+// address's number of IDs and an LMP1 payload carrying all of
+// them, or a single heartbeat when there are no claims. The
+// producer's mempool refuses to seal an empty block, so we
+// always emit at least one tx.
+//
+// The float formula and the tx shape are d7's; the reward ID
+// gains the payload hash (legacymining.RewardIDFormat) and
+// the tx gains the payload. A share <= 0 is no longer skipped:
+// the tx is built with that amount and fails the pre-seal
+// checks (§6.3).
 //
 // As of Tier-3, each per-miner share is also multiplied by
 // the operator-configured RewardPenalty before being credited.
@@ -667,29 +913,35 @@ func (d *Driver) rewardCellForHeight(height uint64) float64 {
 // redistributed to other miners. That keeps the supply cap
 // monotonically respected and makes the tokenomic effect of
 // Tier-3 strictly subtractive.
-func (d *Driver) buildTxs(queue map[string]int, total int, rewardCell float64, startNonce uint64) []*mempool.Tx {
-	now := time.Now()
-	nextNonce := startNonce
-	if total == 0 || len(queue) == 0 || rewardCell <= 0 {
-		return []*mempool.Tx{{
-			ID:        fmt.Sprintf("solo-heartbeat-%d-%d", nextNonce, now.UnixNano()),
-			Sender:    FunderAddress,
-			Recipient: FunderAddress,
-			Amount:    0,
-			Fee:       0,
-			Nonce:     nextNonce,
-			AddedAt:   now,
-		}}
+func (d *Driver) buildTxs(claims []legacymining.Claim, rewardCell float64, startNonce uint64) ([]*mempool.Tx, error) {
+	if len(claims) == 0 {
+		return []*mempool.Tx{d.heartbeatTx(startNonce)}, nil
+	}
+	total := 0
+	payloads := make([][]byte, len(claims))
+	for i, c := range claims {
+		// Take returns claims sorted by address; strictly
+		// ascending also means one tx per address.
+		if c.MinerAddr == "" {
+			return nil, fmt.Errorf("%w: claim %d has no miner address", legacymining.ErrPreSeal, i)
+		}
+		if i > 0 && c.MinerAddr <= claims[i-1].MinerAddr {
+			return nil, fmt.Errorf("%w: claims not strictly ascending by address at %q", legacymining.ErrPreSeal, c.MinerAddr)
+		}
+		payload, err := encodePayload(c.IDs)
+		if err != nil {
+			return nil, fmt.Errorf("%w: claim for %s: %w", legacymining.ErrPreSeal, c.MinerAddr, err)
+		}
+		payloads[i] = payload
+		total += len(c.IDs)
 	}
 
-	out := make([]*mempool.Tx, 0, len(queue))
-	addresses := make([]string, 0, len(queue))
-	for addr := range queue {
-		addresses = append(addresses, addr)
-	}
-	sort.Strings(addresses)
-	for _, addr := range addresses {
-		count := queue[addr]
+	now := d.now()
+	nextNonce := startNonce
+	out := make([]*mempool.Tx, 0, len(claims))
+	for i, c := range claims {
+		addr := c.MinerAddr
+		count := len(c.IDs)
 		baseShare := rewardCell * float64(count) / float64(total)
 		mult := d.rewardPenalty.MultiplierFor(addr)
 		// Defensive clamp: if a buggy MismatchPenalty
@@ -699,12 +951,9 @@ func (d *Driver) buildTxs(queue map[string]int, total int, rewardCell float64, s
 			mult = 1.0
 		}
 		share := baseShare * mult
-		// Skip 0-share or negative-share rounding artefacts —
-		// the AccountStore would reject them anyway.
-		if share <= 0 {
-			continue
-		}
-		if mult < 1.0 {
+		// A share <= 0 is a pre-seal failure; like d7, it is
+		// not counted as a penalised payout.
+		if share > 0 && mult < 1.0 {
 			d.penalisedPayouts.Add(1)
 			// withheldDust = (baseShare - share) in dust.
 			// Truncate via float→uint64 to mirror the same
@@ -714,29 +963,41 @@ func (d *Driver) buildTxs(queue map[string]int, total int, rewardCell float64, s
 				d.withheldDust.Add(withheld)
 			}
 		}
+		sum := sha256.Sum256(payloads[i])
 		out = append(out, &mempool.Tx{
-			ID:         fmt.Sprintf("solo-reward-%d-%s", nextNonce, addr),
+			ID:         fmt.Sprintf(legacymining.RewardIDFormat, nextNonce, addr, hex.EncodeToString(sum[:8])),
 			Sender:     FunderAddress,
 			Recipient:  addr,
 			Amount:     share,
 			Fee:        0,
 			Nonce:      nextNonce,
+			Payload:    payloads[i],
 			ContractID: chain.MiningRewardContractID,
 			AddedAt:    now,
 		})
 		nextNonce++
 	}
-	if len(out) == 0 {
-		// All shares rounded out — emit a heartbeat anyway.
-		out = append(out, &mempool.Tx{
-			ID:        fmt.Sprintf("solo-heartbeat-%d-%d", nextNonce, now.UnixNano()),
-			Sender:    FunderAddress,
-			Recipient: FunderAddress,
-			Amount:    0,
-			Fee:       0,
-			Nonce:     nextNonce,
-			AddedAt:   now,
-		})
+	return out, nil
+}
+
+// encodePayload is the LMP1 encoding of §3.4:
+// legacymining.PayloadTag, a u16 big-endian count
+// (1..MaxPayloadIDs), then the IDs in strictly ascending
+// order. It matches legacymining.EncodePayload (WP3); the
+// Ledger decodes every payload again in PreSeal, so a
+// mismatch fails toward FREEZE.
+func encodePayload(ids []legacymining.ProofID) ([]byte, error) {
+	if len(ids) == 0 || len(ids) > legacymining.MaxPayloadIDs {
+		return nil, fmt.Errorf("%w: %d IDs, want 1..%d", legacymining.ErrBadPayload, len(ids), legacymining.MaxPayloadIDs)
 	}
-	return out
+	out := make([]byte, 0, len(legacymining.PayloadTag)+2+len(ids)*len(ids[0]))
+	out = append(out, legacymining.PayloadTag...)
+	out = binary.BigEndian.AppendUint16(out, uint16(len(ids)))
+	for i := range ids {
+		if i > 0 && string(ids[i][:]) <= string(ids[i-1][:]) {
+			return nil, fmt.Errorf("%w: IDs not strictly ascending at index %d", legacymining.ErrBadPayload, i)
+		}
+		out = append(out, ids[i][:]...)
+	}
+	return out, nil
 }

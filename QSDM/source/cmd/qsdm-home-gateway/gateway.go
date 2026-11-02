@@ -100,6 +100,9 @@ func hiveConsumerRoute(method, path string) bool {
 		case "/api/v1/versions",
 			"/api/v1/wallet/balance",
 			"/api/v1/wallet/nonce",
+			// Proof-of-Entanglement parent source: wallets read it just
+			// before signing, like the nonce.
+			"/api/v1/chain/parents",
 			"/api/v1/mining/account",
 			"/api/v1/receipts",
 			"/api/v1/tasks",

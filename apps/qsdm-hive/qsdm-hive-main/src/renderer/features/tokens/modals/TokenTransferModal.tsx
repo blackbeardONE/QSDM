@@ -116,11 +116,15 @@ export const TokenTransferModal = create<PropsType>(
             result && typeof result === 'object' && 'transaction_id' in result
               ? result.transaction_id
               : '';
-          toast.success(
-            txId
-              ? `Sent ${amountAsCell} ${NATIVE_TOKEN_SYMBOL}. Tx: ${txId}`
-              : `Sent ${amountAsCell} ${NATIVE_TOKEN_SYMBOL}.`
-          );
+          const isPending =
+            result &&
+            typeof result === 'object' &&
+            (result.status === 'pending' ||
+              result.broadcast === 'block-pending');
+          const message = isPending
+            ? `Transfer submitted: ${amountAsCell} ${NATIVE_TOKEN_SYMBOL}. Awaiting block confirmation.`
+            : `Transfer accepted: ${amountAsCell} ${NATIVE_TOKEN_SYMBOL}.`;
+          toast.success(txId ? `${message} Tx: ${txId}` : message);
         } else {
           toast.success('Transfer submitted.');
         }
@@ -177,7 +181,8 @@ export const TokenTransferModal = create<PropsType>(
         );
       }
 
-      const exceedingAvailableBalance = transferAmountInBaseUnits > cellTokenBalance;
+      const exceedingAvailableBalance =
+        transferAmountInBaseUnits > cellTokenBalance;
 
       if (exceedingAvailableBalance) {
         setError('Not enough balance');

@@ -10,7 +10,23 @@ stage_dir="$(cd "$1" && pwd)"
 hive_version="$2"
 agent_version="$3"
 webroot="${4:-/var/www/qsdm}"
-downloads="$webroot/downloads"
+# Hive 1.4.21+ trusts only the v2 release key and reads its release from the
+# self-contained hive-v2 channel. The v1 files directly under /downloads are
+# left untouched for Hive <= 1.4.20.
+release_channel="hive-v2"
+release_key_id="4081bf2c4755f4c5c1565b4fac75e14a7e0b52042ac3d34bf8a7f525866c64a9"
+downloads="$webroot/downloads/$release_channel"
+public_downloads="https://qsdm.tech/downloads/$release_channel"
+
+# Signed envelopes and manifests are written by PowerShell ConvertTo-Json,
+# which may put more than one space after a colon. Match a JSON string field
+# exactly, whatever the whitespace. Reads the JSON text from stdin.
+json_field_is() {
+  local field="$1"
+  local escaped
+  escaped="$(printf '%s' "$2" | sed 's/[][\.*^$+?(){}|]/\\&/g')"
+  grep -Eq "\"${field}\":[[:space:]]*\"${escaped}\""
+}
 wallet_extension_version="${QSDM_HIVE_WALLET_EXTENSION_VERSION:-0.5.1}"
 wallet_extension="qsdm-hive-wallet-extension-${wallet_extension_version}.zip"
 wallet_extension_crx="qsdm-hive-wallet-extension-${wallet_extension_version}.crx"
@@ -44,6 +60,10 @@ immutable_downloads=(
   "$wallet_extension_brave"
   "$wallet_extension_firefox"
   "$wallet_extension_checksums"
+)
+# The Agent and Relay utilities are not part of the Hive updater channel and
+# stay directly under /downloads.
+agent_downloads=(
   "qsdm-edge-agent-${agent_version}-windows-x86_64.zip"
   "qsdm-edge-agent-${agent_version}-linux-x86_64.tar.gz"
   "qsdm-edge-agent-${agent_version}-windows-x86_64.exe"
@@ -66,12 +86,12 @@ update_manifests=(
   beta-linux.yml
 )
 signed_release_manifests=(
-  qsdm-hive-release-windows.json
-  qsdm-hive-release-linux.json
+  qsdm-hive-release-windows-v2.json
+  qsdm-hive-release-linux-v2.json
 )
 
-for file in "${immutable_downloads[@]}" "${update_manifests[@]}" \
-  "${signed_release_manifests[@]}"; do
+for file in "${immutable_downloads[@]}" "${agent_downloads[@]}" \
+  "${update_manifests[@]}" "${signed_release_manifests[@]}"; do
   test -f "$stage_dir/downloads/$file"
 done
 for file in index.html download.html docs/index.html docs/docs.js; do
@@ -89,31 +109,31 @@ done
 for manifest in "${update_manifests[@]}"; do
   grep -qx "version: ${hive_version}" "$stage_dir/downloads/$manifest"
 done
-windows_payload="$(sed -n 's/.*"manifest_base64": "\([^"]*\)".*/\1/p' \
-  "$stage_dir/downloads/qsdm-hive-release-windows.json")"
+windows_payload="$(sed -n 's/.*"manifest_base64":[[:space:]]*"\([^"]*\)".*/\1/p' \
+  "$stage_dir/downloads/qsdm-hive-release-windows-v2.json")"
 test -n "$windows_payload"
 windows_manifest_json="$(printf '%s' "$windows_payload" | base64 --decode)"
-grep -q '"name": "'"${wallet_extension}"'"' <<<"$windows_manifest_json"
+json_field_is name "${wallet_extension}" <<<"$windows_manifest_json"
 if [[ -f "$stage_dir/downloads/$wallet_extension_crx" ]]; then
-  grep -q '"name": "'"${wallet_extension_crx}"'"' <<<"$windows_manifest_json"
+  json_field_is name "${wallet_extension_crx}" <<<"$windows_manifest_json"
 fi
-grep -q '"name": "'"${wallet_extension_chromium}"'"' <<<"$windows_manifest_json"
-grep -q '"name": "'"${wallet_extension_chrome}"'"' <<<"$windows_manifest_json"
-grep -q '"name": "'"${wallet_extension_edge}"'"' <<<"$windows_manifest_json"
-grep -q '"name": "'"${wallet_extension_brave}"'"' <<<"$windows_manifest_json"
-grep -q '"name": "'"${wallet_extension_firefox}"'"' <<<"$windows_manifest_json"
+json_field_is name "${wallet_extension_chromium}" <<<"$windows_manifest_json"
+json_field_is name "${wallet_extension_chrome}" <<<"$windows_manifest_json"
+json_field_is name "${wallet_extension_edge}" <<<"$windows_manifest_json"
+json_field_is name "${wallet_extension_brave}" <<<"$windows_manifest_json"
+json_field_is name "${wallet_extension_firefox}" <<<"$windows_manifest_json"
 for manifest in "${signed_release_manifests[@]}"; do
-  grep -q '"schema": "qsdm.signed-release.v1"' "$stage_dir/downloads/$manifest"
-  grep -q '"key_id": "10ab9c5710761d4c9dca59d42446e9ea0e3315d15cdc3715df1dcb8c96fa07a1"' \
-    "$stage_dir/downloads/$manifest"
-  manifest_payload="$(sed -n 's/.*"manifest_base64": "\([^"]*\)".*/\1/p' \
+  grep -Eq '"schema":[[:space:]]*"qsdm\.signed-release\.v1"' "$stage_dir/downloads/$manifest"
+  json_field_is key_id "$release_key_id" \
+    <"$stage_dir/downloads/$manifest"
+  manifest_payload="$(sed -n 's/.*"manifest_base64":[[:space:]]*"\([^"]*\)".*/\1/p' \
     "$stage_dir/downloads/$manifest")"
   test -n "$manifest_payload"
   manifest_json="$(printf '%s' "$manifest_payload" | base64 --decode)"
-  grep -q '"version": "'"${hive_version}"'"' <<<"$manifest_json"
+  json_field_is version "${hive_version}" <<<"$manifest_json"
 done
 
-install -d -o caddy -g caddy -m 0755 "$webroot" "$downloads" "$webroot/docs"
+install -d -o caddy -g caddy -m 0755 "$webroot" "$webroot/downloads" "$downloads" "$webroot/docs"
 
 atomic_install() {
   local source="$1"
@@ -128,6 +148,9 @@ atomic_install() {
 for file in "${immutable_downloads[@]}"; do
   atomic_install "$stage_dir/downloads/$file" "$downloads/$file"
 done
+for file in "${agent_downloads[@]}"; do
+  atomic_install "$stage_dir/downloads/$file" "$webroot/downloads/$file"
+done
 
 for file in \
   "qsdm-hive-${hive_version}-win-x64.exe" \
@@ -139,7 +162,11 @@ for file in \
   "$wallet_extension_edge" \
   "$wallet_extension_brave" \
   "$wallet_extension_firefox" \
-  "$wallet_extension_checksums" \
+  "$wallet_extension_checksums"; do
+  curl --fail --silent --show-error --head --max-time 30 \
+    "$public_downloads/$file" >/dev/null
+done
+for file in \
   "qsdm-edge-agent-${agent_version}-windows-x86_64.zip" \
   "qsdm-edge-agent-${agent_version}-linux-x86_64.tar.gz"; do
   curl --fail --silent --show-error --head --max-time 30 \
@@ -147,7 +174,7 @@ for file in \
 done
 if [[ -f "$stage_dir/downloads/$wallet_extension_crx" ]]; then
   curl --fail --silent --show-error --head --max-time 30 \
-    "https://qsdm.tech/downloads/$wallet_extension_crx" >/dev/null
+    "$public_downloads/$wallet_extension_crx" >/dev/null
 fi
 
 atomic_install "$stage_dir/index.html" "$webroot/index.html"
@@ -164,12 +191,12 @@ for file in "${signed_release_manifests[@]}"; do
 done
 
 public_latest="$(curl --fail --silent --show-error --max-time 30 \
-  "https://qsdm.tech/downloads/latest.yml")"
+  "$public_downloads/latest.yml")"
 grep -qx "version: ${hive_version}" <<<"$public_latest"
 for manifest in "${signed_release_manifests[@]}"; do
   public_envelope="$(curl --fail --silent --show-error --max-time 30 \
-    "https://qsdm.tech/downloads/$manifest")"
-  grep -q '"schema": "qsdm.signed-release.v1"' <<<"$public_envelope"
+    "$public_downloads/$manifest")"
+  grep -Eq '"schema":[[:space:]]*"qsdm\.signed-release\.v1"' <<<"$public_envelope"
 done
 public_download_page="$(curl --fail --silent --show-error --max-time 30 \
   "https://qsdm.tech/download.html")"

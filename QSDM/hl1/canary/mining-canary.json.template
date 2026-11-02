@@ -1,0 +1,14 @@
+{
+ "version": 1,
+ "allowed": [
+  {
+   "miner_addr": "<64 lowercase hex: the canary owner's address>",
+   "node_id": "<node_id: one of the 55 active enrollments, owned by miner_addr>"
+  }
+ ],
+ "max_proofs_per_min": 60,
+ "max_proofs_total": "<T = hours * 60 * 50>",
+ "max_pending": 600,
+ "budget_cell": "<B = ceil(hours * 360 * 3.56490987 + 2 * 3.56490987)>",
+ "expires_unix": "<start + hours * 3600>"
+}

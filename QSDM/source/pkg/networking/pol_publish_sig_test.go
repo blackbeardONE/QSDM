@@ -34,6 +34,44 @@ func TestPreparePolArtifactsSignsWithConsensusKey(t *testing.T) {
 	}
 }
 
+func TestPublishPolRecordsLocalSealBeforeSyntheticAuthFailure(t *testing.T) {
+	signer, _, err := chain.LoadOrCreateBFTSigner(filepath.Join(t.TempDir(), "consensus.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	vs := chain.NewValidatorSet(chain.DefaultValidatorSetConfig())
+	if err := vs.Register(signer.Address(), chain.DefaultValidatorSetConfig().MinStake); err != nil {
+		t.Fatal(err)
+	}
+	if err := vs.Register("unavailable-validator", chain.DefaultValidatorSetConfig().MinStake); err != nil {
+		t.Fatal(err)
+	}
+	bc := chain.NewBFTConsensus(vs, chain.DefaultConsensusConfig())
+	exec := chain.NewBFTExecutor(bc)
+	exec.SetVoteSigner(signer)
+	follower := chain.NewPolFollower(vs, 2.0/3.0)
+	follower.SetAnchorFinality(true)
+
+	PublishPolAfterBlockSeal(
+		logging.NewLogger("", false),
+		nil,
+		follower,
+		exec,
+		bc,
+		vs,
+		&chain.Block{Height: 9, StateRoot: "root"},
+	)
+	if follower.CanExtendFromTip(9, "root") {
+		t.Fatal("POL anchoring must block extension after local seal recording, even when synthetic POL auth fails")
+	}
+	if follower.AllowFinalize(9, "root") {
+		t.Fatal("POL anchoring must block finality after local seal recording, even when synthetic POL auth fails")
+	}
+	if bc.IsCommitted(9) {
+		t.Fatal("POL publisher must not manufacture a quorum for validators whose keys are unavailable")
+	}
+}
+
 func TestPublishPolRefusesSyntheticMultiValidatorRound(t *testing.T) {
 	signer, _, err := chain.LoadOrCreateBFTSigner(filepath.Join(t.TempDir(), "consensus.json"))
 	if err != nil {

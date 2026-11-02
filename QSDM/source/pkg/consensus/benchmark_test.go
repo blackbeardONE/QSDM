@@ -1,51 +1,52 @@
 package consensus
 
 import (
+	"strings"
 	"testing"
-
-	"github.com/blackbeardONE/QSDM/internal/logging"
 )
 
 func BenchmarkValidateTransaction(b *testing.B) {
-	poe := NewProofOfEntanglement()
-	if poe == nil {
-		b.Skip("ProofOfEntanglement not available (CGO disabled)")
+	p := NewProofOfEntanglement()
+	if p == nil {
+		b.Skip("ProofOfEntanglement not available (no ML-DSA-87 backend)")
 	}
 
-	logger := logging.NewLogger("test.log", false)
 	txData := []byte("test transaction data for benchmarking")
-	parentCells := [][]byte{[]byte("parent1"), []byte("parent2")}
-	
-	// Sign the transaction
-	signature, err := poe.Sign(txData)
+	signature, err := p.Sign(txData)
 	if err != nil {
 		b.Fatalf("Failed to sign transaction: %v", err)
 	}
-	signatures := [][]byte{signature}
+	pub := p.MLDSAPublicKey()
+	tx := SignedTransaction{
+		ID:           "bench-transaction-0001",
+		Sender:       walletAddress(pub),
+		SigningBytes: txData,
+		ParentCells:  []string{strings.Repeat("a", 32), strings.Repeat("b", 32)},
+		Signatures:   [][]byte{signature},
+		PublicKey:    pub,
+	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := poe.ValidateTransaction(txData, parentCells, signatures, logger)
-		if err != nil {
+		if err := ValidateSignedTransaction(tx); err != nil {
 			b.Fatalf("Validation failed: %v", err)
 		}
 	}
 }
 
 func BenchmarkSignTransaction(b *testing.B) {
-	poe := NewProofOfEntanglement()
-	if poe == nil {
-		b.Skip("ProofOfEntanglement not available (CGO disabled)")
+	p := NewProofOfEntanglement()
+	if p == nil {
+		b.Skip("ProofOfEntanglement not available (no ML-DSA-87 backend)")
 	}
 
 	txData := []byte("test transaction data for benchmarking")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := poe.Sign(txData)
+		_, err := p.Sign(txData)
 		if err != nil {
 			b.Fatalf("Signing failed: %v", err)
 		}
 	}
 }
-

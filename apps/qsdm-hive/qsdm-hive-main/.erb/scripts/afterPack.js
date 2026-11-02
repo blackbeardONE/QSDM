@@ -1,12 +1,46 @@
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const {
+  runtimeDependencies,
+  assertPackagedRuntimeDependencies,
+} = require('./verify-runtime-dependencies.cjs');
 
 // cspell:ignore qsdmminer
 
 exports.default = async function afterPack(context) {
   const platform = context.electronPlatformName;
   if (platform !== 'linux' && platform !== 'win32') return;
+  const required = runtimeDependencies(
+    path.resolve(__dirname, '../../release/app')
+  );
+  assertPackagedRuntimeDependencies(
+    path.join(context.appOutDir, 'resources', 'app.asar'),
+    required
+  );
+  const packagedRuntime = path.join(
+    context.appOutDir,
+    platform === 'win32'
+      ? `${context.packager.appInfo.productFilename}.exe`
+      : 'qsdm-hive'
+  );
+  const archive = path.join(context.appOutDir, 'resources', 'app.asar');
+  const probe = `const path = require('path'); for (const name of ${JSON.stringify(
+    required
+  )}) { require(path.join(${JSON.stringify(
+    archive
+  )}, 'node_modules', name)); } console.log('QSDM_RUNTIME_DEPENDENCIES_OK');`;
+  const probeOutput = execFileSync(packagedRuntime, ['-e', probe], {
+    encoding: 'utf8',
+    timeout: 30000,
+    windowsHide: true,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+  });
+  if (!probeOutput.includes('QSDM_RUNTIME_DEPENDENCIES_OK')) {
+    throw new Error(
+      'Packaged Hive runtime dependencies did not load successfully.'
+    );
+  }
 
   if (platform === 'win32') {
     const updateConfigPath = path.join(
@@ -16,7 +50,7 @@ exports.default = async function afterPack(context) {
     );
     const expectedUpdateConfig = [
       'provider: generic',
-      'url: https://qsdm.tech/downloads',
+      'url: https://qsdm.tech/downloads/hive-v2',
       'updaterCacheDirName: qsdm-hive-runtime-updater',
       '',
     ].join('\n');

@@ -8,6 +8,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $QsdmRoot = (Resolve-Path $QsdmRoot).Path
+
+. (Join-Path $QsdmRoot "scripts\lib\qsdm-endpoints.ps1")
 $LocalRoot = Join-Path $QsdmRoot "source\.cache\local-validator"
 $UrlFile = Join-Path $LocalRoot "local-gui-persist.url"
 $OutLog = Join-Path $LocalRoot "local-gui-persist.out.log"
@@ -60,7 +62,11 @@ if ($NoOpen) {
 $env:HTTP_PROXY = ""
 $env:HTTPS_PROXY = ""
 $env:ALL_PROXY = ""
-$env:NO_PROXY = "127.0.0.1,localhost,api.qsdm.tech"
+$env:NO_PROXY = Get-QsdmNoProxyList -EndpointValues @(
+    "http://127.0.0.1:8080",
+    (Get-QsdmEndpointValue -Name "core_api_base" -EnvVar "QSDM_CHAIN_SYNC_URLS"),
+    (Get-QsdmEndpointValue -Name "home_gateway_relay" -EnvVar "QSDM_HOME_GATEWAY_RELAY")
+)
 
 $process = Start-Process `
     -FilePath $ExePath `

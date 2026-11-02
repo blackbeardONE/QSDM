@@ -1,13 +1,15 @@
 param(
     [string]$QsdmRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [string]$StateDir = "",
-    [string]$ApiUrl = "https://api.qsdm.tech/api/v1",
+    [string]$ApiUrl = "",
     [string]$CliPath = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 $QsdmRoot = (Resolve-Path $QsdmRoot).Path
+. (Join-Path $QsdmRoot "scripts\lib\qsdm-endpoints.ps1")
+$ApiUrl = Resolve-QsdmEndpointValue -Value $ApiUrl -Name "core_api_base" -EnvVar "QSDM_CHAIN_SYNC_URLS"
 if ([string]::IsNullOrWhiteSpace($StateDir)) {
     $StateDir = Join-Path $QsdmRoot "source\.cache\local-validator\run-networked"
 }
@@ -82,7 +84,7 @@ try {
     $env:HTTP_PROXY = ""
     $env:HTTPS_PROXY = ""
     $env:ALL_PROXY = ""
-    $env:NO_PROXY = "api.qsdm.tech,127.0.0.1,localhost"
+    $env:NO_PROXY = Get-QsdmNoProxyList -EndpointValues @($ApiUrl)
     $rawRegistry = (& $CliPath enrollments --all | Out-String)
     if ($LASTEXITCODE -ne 0) {
         throw "qsdmcli enrollments failed with exit code $LASTEXITCODE"

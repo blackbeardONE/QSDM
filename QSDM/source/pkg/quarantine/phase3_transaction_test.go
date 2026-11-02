@@ -1,20 +1,20 @@
 package quarantine_test
 
 import (
-	"bytes"
+	"encoding/hex"
+	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/blackbeardONE/QSDM/internal/logging"
 	"github.com/blackbeardONE/QSDM/pkg/consensus"
 	"github.com/blackbeardONE/QSDM/pkg/mesh3d"
 	"github.com/blackbeardONE/QSDM/pkg/quarantine"
 	"github.com/blackbeardONE/QSDM/pkg/storage"
+	"github.com/blackbeardONE/QSDM/pkg/wallet"
 )
-
-func parent32(b byte) []byte {
-	return bytes.Repeat([]byte{b}, 32)
-}
 
 func TestHandlePhase3Transaction(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "test_quarantine.log")
@@ -33,7 +33,7 @@ func TestHandlePhase3Transaction(t *testing.T) {
 	reputationManager := quarantine.NewReputationManager(10, 5)
 	poe := consensus.NewProofOfEntanglement()
 	if poe == nil {
-		t.Skip("ProofOfEntanglement not available (CGO disabled)")
+		t.Skip("ProofOfEntanglement not available")
 	}
 
 	st, err := storage.NewFileStorage(t.TempDir())
@@ -42,15 +42,38 @@ func TestHandlePhase3Transaction(t *testing.T) {
 	}
 	defer st.Close()
 
-	txData := bytes.Repeat([]byte("t"), 64)
-	tx := &mesh3d.Transaction{
-		ID: string(bytes.Repeat([]byte("i"), 32)),
-		ParentCells: []mesh3d.ParentCell{
-			{ID: "p1", Data: parent32(1)},
-			{ID: "p2", Data: parent32(2)},
-			{ID: "p3", Data: parent32(3)},
-		},
-		Data: txData,
+	// A wallet envelope signed by its own key, wrapped as a mesh companion.
+	ws, err := wallet.NewWalletService()
+	if err != nil {
+		t.Skipf("wallet service: %v", err)
+	}
+	env := wallet.TransactionData{
+		ID:          "phase3_" + strings.Repeat("0", 24) + "1",
+		Sender:      ws.GetAddress(),
+		Recipient:   strings.Repeat("ab", 32),
+		Amount:      1,
+		Fee:         0.01,
+		ParentCells: []string{"solo-heartbeat-100-1791611407090734188", "solo-heartbeat-101-1791611417090734188"},
+		Nonce:       1,
+		PublicKey:   hex.EncodeToString(ws.GetPublicKey()),
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+	}
+	canonical, err := env.CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	signature, err := ws.SignData(canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.Signature = hex.EncodeToString(signature)
+	raw, err := json.Marshal(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := mesh3d.CompanionFromWalletJSON(raw)
+	if err != nil {
+		t.Fatalf("companion: %v", err)
 	}
 
 	valid, err := mesh3dValidator.ValidateTransaction(tx)
@@ -64,13 +87,12 @@ func TestHandlePhase3Transaction(t *testing.T) {
 	quarantineManager.RecordTransaction("default-submesh", valid)
 	reputationManager.Reward("default-node")
 
-	signature, err := poe.Sign(tx.Data)
-	if err != nil {
-		t.Fatalf("sign: %v", err)
-	}
-	signatures := [][]byte{signature}
-
-	validConsensus, err := poe.ValidateTransaction(tx.Data, [][]byte{[]byte("parent1"), []byte("parent2")}, signatures, logger)
+	// Consensus validation verifies under the envelope's own key (this
+	// node's PoE key plays no part).
+	validConsensus, err := poe.ValidateTransaction(consensus.SignedTransaction{
+		ID: env.ID, Sender: env.Sender, SigningBytes: canonical, ParentCells: env.ParentCells,
+		Signatures: [][]byte{signature}, PublicKey: ws.GetPublicKey(),
+	}, logger)
 	if err != nil {
 		t.Fatalf("consensus validation error: %v", err)
 	}

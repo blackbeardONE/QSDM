@@ -1,6 +1,24 @@
 # QSDM Troubleshooting Guide
 
-## Common Issues and Solutions
+## Hive users
+
+Using the QSDM Hive desktop app? Start here. The full mining guide is
+[Mining today (Hive 1.4.22)](MINING_TODAY.md).
+
+| Symptom | What to do |
+|---|---|
+| "Unlock your QSDM wallet in Hive to mine." | Hive 1.4.22 signs every mining proof with your wallet. Unlock it in **Settings → Wallet** and start the QSDM Miner task again. |
+| "QSDM protocol mining requires NVIDIA Turing or newer (7.5+)." | The GPU is too old. Mining needs an NVIDIA GPU with compute capability 7.5 or higher (GeForce RTX 20 series or newer). |
+| Hive cannot read the GPU | Open a terminal and run `nvidia-smi`. If it fails, install or update the NVIDIA driver. |
+| Enrollment fails | New mining enrollments are paused during the current recovery; enrolled miners mine in 7-day canary windows. Check [Network status](NETWORK_STATUS.md). |
+| Many HTTP `429` responses in the miner log | The mining endpoints on `api.qsdm.tech` are rate-limited per IP address. Run fewer rigs behind one internet address. |
+| Hive 1.4.20 (Windows) or 1.4.17 (Linux) does not offer 1.4.22 | Expected: the release key was rotated. Download 1.4.22 from the [download page](https://qsdm.tech/download.html) and install it once by hand; your wallet and settings are kept. See [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md). |
+| Windows SmartScreen shows "Windows protected your PC" | The installer is not Authenticode-signed yet. Check the SHA-256 as described in [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md), then choose **More info → Run anyway**. |
+
+> **The rest of this page is for developers building the node from source.**
+> Some of it is older than the current code.
+
+## Common Issues and Solutions (developers)
 
 ### Build Issues
 
@@ -78,16 +96,17 @@ database is locked
 **Solutions:**
 1. **Check transaction structure**:
    - Verify all required fields are present
-   - Ensure parent cells array has at least 2 elements
    - Check signature format (hex-encoded)
 
 2. **Verify signatures**:
    - Ensure transaction was signed before sending
    - Check signature matches transaction data
+   - `sender` must equal `hex(sha256(public_key))` of the signing key
 
-3. **Check parent cells**:
-   - Parent cells must exist in the ledger
-   - No duplicate parent cell IDs allowed
+3. **Check parent cells** (Proof-of-Entanglement, see [PROOF_OF_ENTANGLEMENT.md](PROOF_OF_ENTANGLEMENT.md)):
+   - Use the `parents` from `GET /api/v1/chain/parents`, fetched just before signing
+   - Once the network's PoE activation height is reached: 2-10 distinct parents, each committed in the last 8,640 blocks, none equal to the transaction's own ID
+   - An HTTP 422 starting `proof-of-entanglement:` means the parents were not accepted; fetch fresh parents and sign again (the same nonce is fine)
 
 #### Balance Mismatches
 

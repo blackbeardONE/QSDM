@@ -139,11 +139,30 @@ func (s *ProofIDSet) Seen(id [32]byte) bool {
 	return ok
 }
 
+// TryRecord atomically claims an unseen ID and evicts stale entries relative
+// to height. It returns false without refreshing the height of an existing ID.
+// The claim lasts only while the ID remains in this in-memory retention window.
+func (s *ProofIDSet) TryRecord(id [32]byte, height uint64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, seen := s.byHeight[id]; seen {
+		return false
+	}
+	s.recordLocked(id, height)
+	return true
+}
+
 // Record inserts id at the given block height and evicts stale entries
 // relative to that height.
 func (s *ProofIDSet) Record(id [32]byte, height uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.recordLocked(id, height)
+}
+
+// recordLocked preserves Record's insertion and retention behavior. The caller
+// must hold s.mu so claiming an ID and eviction happen in one critical section.
+func (s *ProofIDSet) recordLocked(id [32]byte, height uint64) {
 	s.byHeight[id] = height
 	if height <= s.retainWindow {
 		return
@@ -170,7 +189,7 @@ func (s *ProofIDSet) Size() int {
 // QuarantineSet tracks miner addresses that have submitted a fraudulent
 // batch and must sit out for Q blocks.
 type QuarantineSet struct {
-	mu          sync.Mutex
+	mu               sync.Mutex
 	quarantinedUntil map[string]uint64
 }
 
@@ -209,20 +228,20 @@ func (q *QuarantineSet) IsQuarantined(addr string, atHeight uint64) bool {
 // VerifierConfig aggregates all the inputs a Verifier needs. Callers
 // assemble one per validator process and reuse it across proofs.
 type VerifierConfig struct {
-	EpochParams    EpochParams
+	EpochParams      EpochParams
 	DifficultyParams DifficultyAdjusterParams
 
-	Chain          ChainView
-	Addresses      AddressValidator
-	Batches        BatchValidator // may be nil; in that case step 11 is skipped
+	Chain     ChainView
+	Addresses AddressValidator
+	Batches   BatchValidator // may be nil; in that case step 11 is skipped
 
-	Dedup          *ProofIDSet
-	Quarantine     *QuarantineSet
+	Dedup      *ProofIDSet
+	Quarantine *QuarantineSet
 
 	// DAGProvider returns the fully-built DAG for a given mining-epoch.
 	// In production this is a weak-references cache of the two most
 	// recent epochs (see pkg/mining/dagstore, Phase 4.3 wiring).
-	DAGProvider   func(epoch uint64) (DAG, error)
+	DAGProvider func(epoch uint64) (DAG, error)
 
 	// WorkSetProvider returns the canonical WorkSet for a given mining-
 	// epoch. Both miner and validator MUST agree on this derivation.
@@ -231,7 +250,7 @@ type VerifierConfig struct {
 	// DifficultyAt returns the difficulty active at the given block
 	// height. Validators keep a per-height difficulty record because the
 	// retarget schedule is deterministic.
-	DifficultyAt  func(height uint64) (*big.Int, error)
+	DifficultyAt func(height uint64) (*big.Int, error)
 
 	// GraceWindow overrides the default of 6 blocks. Zero means use the
 	// default.
@@ -543,8 +562,11 @@ func (v *Verifier) Verify(rawProofJSON []byte, acceptHeight uint64) ([32]byte, e
 		}
 	}
 
-	// All checks passed. Record dedup and return.
-	v.cfg.Dedup.Record(proofID, p.Height)
+	// All checks passed. The early Seen check is only a fast path: another
+	// verifier may have accepted the same ID while these checks were running.
+	if !v.cfg.Dedup.TryRecord(proofID, p.Height) {
+		return proofID, reject(ReasonDuplicate, "proof %x already seen", proofID[:8])
+	}
 	return proofID, nil
 }
 

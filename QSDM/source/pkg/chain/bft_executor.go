@@ -50,11 +50,22 @@ type BFTExecutor struct {
 	pendingPeerMu sync.Mutex
 	pendingPeers  map[uint64]map[string]string // height -> vote_value (BlockHash field) -> peer ID
 
+	// proposeExhibits stores the first signed proposal seen for each
+	// height/round/proposer so a later conflict can carry proof.
+	proposeExhibitMu sync.Mutex
+	proposeExhibits  map[proposeExhibitKey]SignedVoteExhibit
+
 	diagMu       sync.Mutex
 	lastRecorded bool
 	lastAt       time.Time
 	lastOK       bool
 	lastErrMsg   string
+}
+
+type proposeExhibitKey struct {
+	height   uint64
+	round    uint32
+	proposer string
 }
 
 // NewBFTExecutor wraps a BFT consensus instance for networked execution.
@@ -63,9 +74,10 @@ func NewBFTExecutor(bc *BFTConsensus) *BFTExecutor {
 		return nil
 	}
 	return &BFTExecutor{
-		bc:             bc,
-		commitNotified: make(map[uint64]struct{}),
-		pending:        NewPendingProposalStore(),
+		bc:              bc,
+		commitNotified:  make(map[uint64]struct{}),
+		pending:         NewPendingProposalStore(),
+		proposeExhibits: make(map[proposeExhibitKey]SignedVoteExhibit),
 	}
 }
 
@@ -173,6 +185,80 @@ func (e *BFTExecutor) ClearPendingProposeSource(height uint64, voteValue string)
 	}
 }
 
+func proposalExhibitKey(height uint64, round uint32, proposer string) proposeExhibitKey {
+	return proposeExhibitKey{height: height, round: round, proposer: proposer}
+}
+
+func signedProposeExhibitFromMessage(m BFTWireProposeMsg) (SignedVoteExhibit, bool) {
+	if !m.Auth.Signed() {
+		return SignedVoteExhibit{}, false
+	}
+	return SignedVoteExhibit{
+		Kind:      BFTWirePropose,
+		Height:    m.Height,
+		Round:     m.Round,
+		Validator: m.Proposer,
+		BlockHash: m.BlockHash,
+		BodyHash:  proposeBodyHash(m.Block),
+		Auth:      m.Auth,
+	}, true
+}
+
+func (e *BFTExecutor) recordProposeExhibit(m BFTWireProposeMsg) {
+	if e == nil {
+		return
+	}
+	exhibit, ok := signedProposeExhibitFromMessage(m)
+	if !ok {
+		return
+	}
+	key := proposalExhibitKey(m.Height, m.Round, m.Proposer)
+	e.proposeExhibitMu.Lock()
+	defer e.proposeExhibitMu.Unlock()
+	if e.proposeExhibits == nil {
+		e.proposeExhibits = make(map[proposeExhibitKey]SignedVoteExhibit)
+	}
+	if _, exists := e.proposeExhibits[key]; !exists {
+		e.proposeExhibits[key] = exhibit
+	}
+}
+
+func (e *BFTExecutor) lookupProposeExhibit(height uint64, round uint32, proposer string) (SignedVoteExhibit, bool) {
+	if e == nil {
+		return SignedVoteExhibit{}, false
+	}
+	e.proposeExhibitMu.Lock()
+	defer e.proposeExhibitMu.Unlock()
+	exhibit, ok := e.proposeExhibits[proposalExhibitKey(height, round, proposer)]
+	return exhibit, ok
+}
+
+func (e *BFTExecutor) pruneProposeExhibitsAtHeight(height uint64) {
+	if e == nil {
+		return
+	}
+	e.proposeExhibitMu.Lock()
+	defer e.proposeExhibitMu.Unlock()
+	for key := range e.proposeExhibits {
+		if key.height == height {
+			delete(e.proposeExhibits, key)
+		}
+	}
+}
+
+func (e *BFTExecutor) pruneProposeExhibitsBelow(keepMinHeight uint64) {
+	if e == nil || keepMinHeight == 0 {
+		return
+	}
+	e.proposeExhibitMu.Lock()
+	defer e.proposeExhibitMu.Unlock()
+	for key := range e.proposeExhibits {
+		if key.height < keepMinHeight {
+			delete(e.proposeExhibits, key)
+		}
+	}
+}
+
 // SetEvidenceManager optionally submits proposer equivocation from gossip to automatic slashing.
 func (e *BFTExecutor) SetEvidenceManager(em *EvidenceManager) {
 	if e == nil {
@@ -182,23 +268,9 @@ func (e *BFTExecutor) SetEvidenceManager(em *EvidenceManager) {
 }
 
 // maybeRecordProposerEquivocation converts a detected propose conflict into
-// slashable evidence -- but only when the conflicting message was signed.
-//
-// attributable reports whether the propose carried a verified signature from
-// the validator it names. When votes are not yet required to be signed
-// (checkInboundAuth, and cfg.RequireSignedVotes, which both shipped bring-up
-// scripts set to false), the Proposer field is self-asserted: any peer on the
-// gossip topic can emit two unsigned proposes at one height and round naming
-// the round's legitimate proposer, with different block hashes. Acting on that
-// would jail an innocent validator and burn its bond plus its delegators',
-// from two messages that cost the attacker nothing.
-//
-// An unsigned conflict is still a good reason to drop the message -- Propose
-// already returns the error and ApplyInbound propagates it. It is not a good
-// reason to move money, so evidence is withheld rather than fabricated. This
-// costs nothing once require_signed_votes is on, because then every propose
-// that reaches here is signed.
-func (e *BFTExecutor) maybeRecordProposerEquivocation(err error, attributable bool) {
+// slashable evidence only when both conflicting proposals are available as
+// verified signed exhibits.
+func (e *BFTExecutor) maybeRecordProposerEquivocation(err error, msg BFTWireProposeMsg) {
 	if e == nil || err == nil {
 		return
 	}
@@ -206,22 +278,25 @@ func (e *BFTExecutor) maybeRecordProposerEquivocation(err error, attributable bo
 	if !errors.As(err, &pe) {
 		return
 	}
-	if !attributable {
+	current, ok := signedProposeExhibitFromMessage(msg)
+	if !ok {
+		return
+	}
+	previous, ok := e.lookupProposeExhibit(pe.Height, pe.Round, pe.Proposer)
+	if !ok || previous.BlockHash != pe.ExistingHash || current.BlockHash != pe.NewHash {
 		return
 	}
 	em := e.evidence.Load()
 	if em == nil {
 		return
 	}
-	em.SubmitEvidenceBestEffort(ConsensusEvidence{
-		Type:        EvidenceEquivocation,
-		Validator:   pe.Proposer,
-		Height:      pe.Height,
-		Round:       pe.Round,
-		BlockHashes: []string{pe.ExistingHash, pe.NewHash},
-		Details:     "conflicting BFT propose at same height/round",
-		Timestamp:   time.Now(),
-	})
+	ev, buildErr := BuildEquivocationEvidence(pe.Proposer, previous, current)
+	if buildErr != nil {
+		return
+	}
+	ev.Details = "conflicting signed BFT propose at same height/round"
+	ev.Timestamp = time.Now()
+	em.SubmitEvidenceBestEffort(ev)
 }
 
 // SetPublisher sets the gossip publish function (may be nil for local-only).
@@ -268,6 +343,7 @@ func (e *BFTExecutor) BroadcastPropose(height uint64, round uint32, proposer, bl
 			return err
 		}
 	}
+	e.recordProposeExhibit(msg)
 	b, err := MarshalBFTWire(BFTWirePropose, msg)
 	if err != nil {
 		return err
@@ -403,6 +479,7 @@ func (e *BFTExecutor) PrunePendingHeight(height uint64) {
 	}
 	e.pending.RemoveHeight(height)
 	e.prunePendingPeersAtHeight(height)
+	e.pruneProposeExhibitsAtHeight(height)
 }
 
 // PrunePendingBelow clears gossip caches for heights strictly below keepMinHeight (bounded retention).
@@ -412,6 +489,7 @@ func (e *BFTExecutor) PrunePendingBelow(keepMinHeight uint64) {
 	}
 	e.pending.PruneHeightsBelow(keepMinHeight)
 	e.prunePendingPeersBelow(keepMinHeight)
+	e.pruneProposeExhibitsBelow(keepMinHeight)
 }
 
 // NoteFollowerAppend records success (err == nil) or failure of TryAppendExternalBlock for metrics.
@@ -542,14 +620,13 @@ func (e *BFTExecutor) ApplyInbound(payload []byte) error {
 			return err
 		}
 		if _, err := e.bc.Propose(m.Height, m.Round, m.Proposer, m.BlockHash); err != nil {
-			// checkInboundAuth above ran VerifyPropose iff the message was
-			// signed, so Signed() here means "verified against m.Proposer".
-			e.maybeRecordProposerEquivocation(err, m.Auth.Signed())
+			e.maybeRecordProposerEquivocation(err, m)
 			if isBenignBFTErr(err) {
 				return nil
 			}
 			return err
 		}
+		e.recordProposeExhibit(m)
 		if m.Block != nil && e.pending != nil {
 			e.pending.Put(m.Height, m.BlockHash, m.Block)
 			if p := e.LastInboundBFTGossipPeer(); p != "" {

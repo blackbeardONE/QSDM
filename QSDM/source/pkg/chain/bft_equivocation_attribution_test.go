@@ -128,4 +128,13 @@ func TestEquivocation_SignedProposesStillSlash(t *testing.T) {
 	if lst[0].Evidence.Validator != addr {
 		t.Fatalf("evidence names %q, want %q", lst[0].Evidence.Validator, addr)
 	}
+	if lst[0].Evidence.Proof == nil {
+		t.Fatal("signed proposer equivocation evidence must carry a proof")
+	}
+	if err := lst[0].Evidence.Proof.Verify(addr); err != nil {
+		t.Fatalf("recorded proof should verify: %v", err)
+	}
+	if err := lst[0].Evidence.Proof.VerifyBinding(lst[0].Evidence); err != nil {
+		t.Fatalf("recorded proof should match its evidence envelope: %v", err)
+	}
 }

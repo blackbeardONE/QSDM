@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/blackbeardONE/QSDM/pkg/envcompat"
+	"github.com/blackbeardONE/QSDM/pkg/producerpolicy"
 )
 
 // envPreferred is a thin local alias for envcompat.Lookup kept so the large
@@ -31,6 +32,18 @@ type Config struct {
 	// Env overrides: QSDM_NODE_ROLE, QSDM_MINING_ENABLED.
 	NodeRole      NodeRole
 	MiningEnabled bool
+	// RequireMiningOperatorSignatures makes validators reject nvidia-hmac-v1
+	// proofs unless they carry operator_sig signed by the retained enrollment
+	// ML-DSA public key. Default false for staged miner rollout.
+	// TOML/YAML: [node] require_mining_operator_signatures; env:
+	// QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES.
+	RequireMiningOperatorSignatures bool
+	// MiningOperatorPublicKeyRetentionHeight is the first block height where
+	// signed mining enrollments retain their operator ML-DSA public key for
+	// later proof verification. Zero keeps retention disabled.
+	// TOML/YAML: [node] mining_operator_public_key_retention_height; env:
+	// QSDM_MINING_OPERATOR_PUBLIC_KEY_RETENTION_HEIGHT.
+	MiningOperatorPublicKeyRetentionHeight uint64
 
 	// Network
 	NetworkPort        int
@@ -165,6 +178,19 @@ type Config struct {
 	// root. Changing it changes block hashes; every node must agree.
 	TxContentRootActivationHeight uint64
 
+	// EnrollmentStateRootActivationHeight is the first height whose block state
+	// root commits mining enrollment/slashing side state ([consensus] or
+	// QSDM_ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT). Zero keeps the legacy
+	// account/task/stream/recovery root. Changing it changes block roots; every
+	// node must agree.
+	EnrollmentStateRootActivationHeight uint64
+
+	// PoEActivationHeight is the first height at which signed wallet
+	// transfers must satisfy the Proof-of-Entanglement parent rules
+	// ([consensus] poe_activation_height or QSDM_POE_ACTIVATION_HEIGHT).
+	// Zero keeps them off. See chain.SetPoEActivationHeight.
+	PoEActivationHeight uint64
+
 	// ConsensusSignerKeyPath is the validator-only ML-DSA hot key used to
 	// authenticate consensus traffic. It is not a wallet and must never hold
 	// user or treasury funds. Empty resolves to a file under the node state
@@ -210,6 +236,8 @@ type Config struct {
 	// Set via `[consensus] authorized_block_producers` or
 	// QSDM_AUTHORIZED_BLOCK_PRODUCERS (comma-separated).
 	AuthorizedBlockProducers []string
+	// ProducerTransition supersedes the flat allowlist only when explicitly configured.
+	ProducerTransition *producerpolicy.Transition
 
 	// Performance
 	TransactionInterval     time.Duration
@@ -362,6 +390,8 @@ func loadConfigFile(path string, cfg *Config) error {
 			return fmt.Errorf("invalid [node] role: %w", err)
 		}
 		cfg.MiningEnabled = tomlCfg.Node.MiningEnabled
+		cfg.RequireMiningOperatorSignatures = tomlCfg.Node.RequireMiningOperatorSignatures
+		cfg.MiningOperatorPublicKeyRetentionHeight = tomlCfg.Node.MiningOperatorPublicKeyRetentionHeight
 		cfg.NetworkPort = tomlCfg.Network.Port
 		cfg.NetworkBindAddress = strings.TrimSpace(tomlCfg.Network.BindAddress)
 		cfg.BootstrapPeers = tomlCfg.Network.BootstrapPeers
@@ -413,10 +443,13 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.ProposalFile = tomlCfg.Governance.ProposalFile
 		cfg.GovernanceAuthorities = tomlCfg.Governance.Authorities
 		cfg.AuthorizedBlockProducers = tomlCfg.Consensus.AuthorizedBlockProducers
+		cfg.ProducerTransition = tomlCfg.Consensus.ProducerTransition
 		cfg.RequireSignedVotes = tomlCfg.Consensus.RequireSignedVotes
 		cfg.SignedConsensusActivationHeight = tomlCfg.Consensus.SignedMessageActivationHeight
 		cfg.TaskActionSignatureActivationHeight = tomlCfg.Consensus.TaskActionSignatureActivationHeight
 		cfg.TxContentRootActivationHeight = tomlCfg.Consensus.TxContentRootActivationHeight
+		cfg.EnrollmentStateRootActivationHeight = tomlCfg.Consensus.EnrollmentStateRootActivationHeight
+		cfg.PoEActivationHeight = tomlCfg.Consensus.PoEActivationHeight
 		cfg.ConsensusSignerKeyPath = strings.TrimSpace(tomlCfg.Consensus.SignerKeyPath)
 		cfg.ForkDustHeight = tomlCfg.Consensus.ForkDustHeight
 		if tomlCfg.Performance.TransactionInterval != "" {
@@ -458,6 +491,8 @@ func loadConfigFile(path string, cfg *Config) error {
 			return fmt.Errorf("invalid node.role: %w", err)
 		}
 		cfg.MiningEnabled = yamlCfg.Node.MiningEnabled
+		cfg.RequireMiningOperatorSignatures = yamlCfg.Node.RequireMiningOperatorSignatures
+		cfg.MiningOperatorPublicKeyRetentionHeight = yamlCfg.Node.MiningOperatorPublicKeyRetentionHeight
 		cfg.NetworkPort = yamlCfg.Network.Port
 		cfg.NetworkBindAddress = strings.TrimSpace(yamlCfg.Network.BindAddress)
 		cfg.BootstrapPeers = yamlCfg.Network.BootstrapPeers
@@ -515,10 +550,13 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.ProposalFile = yamlCfg.Governance.ProposalFile
 		cfg.GovernanceAuthorities = yamlCfg.Governance.Authorities
 		cfg.AuthorizedBlockProducers = yamlCfg.Consensus.AuthorizedBlockProducers
+		cfg.ProducerTransition = yamlCfg.Consensus.ProducerTransition
 		cfg.RequireSignedVotes = yamlCfg.Consensus.RequireSignedVotes
 		cfg.SignedConsensusActivationHeight = yamlCfg.Consensus.SignedMessageActivationHeight
 		cfg.TaskActionSignatureActivationHeight = yamlCfg.Consensus.TaskActionSignatureActivationHeight
 		cfg.TxContentRootActivationHeight = yamlCfg.Consensus.TxContentRootActivationHeight
+		cfg.EnrollmentStateRootActivationHeight = yamlCfg.Consensus.EnrollmentStateRootActivationHeight
+		cfg.PoEActivationHeight = yamlCfg.Consensus.PoEActivationHeight
 		cfg.ConsensusSignerKeyPath = strings.TrimSpace(yamlCfg.Consensus.SignerKeyPath)
 		cfg.ForkDustHeight = yamlCfg.Consensus.ForkDustHeight
 		if yamlCfg.Performance.TransactionInterval != "" {
@@ -668,6 +706,14 @@ func applyEnvOverrides(cfg *Config) {
 	if val := strings.TrimSpace(envPreferred("QSDM_MINING_ENABLED", "QSDM_MINING_ENABLED")); val != "" {
 		cfg.MiningEnabled = envcompat.Truthy("QSDM_MINING_ENABLED", "QSDM_MINING_ENABLED")
 	}
+	if val := strings.TrimSpace(envPreferred("QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES", "QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES")); val != "" {
+		cfg.RequireMiningOperatorSignatures = envcompat.Truthy("QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES", "QSDM_REQUIRE_MINING_OPERATOR_SIGNATURES")
+	}
+	if v := strings.TrimSpace(getEnvString("QSDM_MINING_OPERATOR_PUBLIC_KEY_RETENTION_HEIGHT", "")); v != "" {
+		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
+			cfg.MiningOperatorPublicKeyRetentionHeight = h
+		}
+	}
 	if val := getEnvString("NETWORK_PORT", ""); val != "" {
 		cfg.NetworkPort = getEnvInt("NETWORK_PORT", cfg.NetworkPort)
 	}
@@ -704,6 +750,16 @@ func applyEnvOverrides(cfg *Config) {
 	if v := strings.TrimSpace(getEnvString("QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT", "")); v != "" {
 		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
 			cfg.TxContentRootActivationHeight = h
+		}
+	}
+	if v := strings.TrimSpace(getEnvString("QSDM_ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT", "")); v != "" {
+		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
+			cfg.EnrollmentStateRootActivationHeight = h
+		}
+	}
+	if v := strings.TrimSpace(getEnvString("QSDM_POE_ACTIVATION_HEIGHT", "")); v != "" {
+		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
+			cfg.PoEActivationHeight = h
 		}
 	}
 	if v := strings.TrimSpace(getEnvString("QSDM_CONSENSUS_SIGNER_KEY_PATH", "")); v != "" {
@@ -928,6 +984,9 @@ func (c *Config) ResolvedSubmeshConfigPath() string {
 
 // Validate validates the configuration
 func (c *Config) Validate() error {
+	if err := c.ProducerTransition.Validate(); err != nil {
+		return err
+	}
 	if c.NodeRole == "" {
 		c.NodeRole = NodeRoleValidator
 	}
@@ -951,6 +1010,9 @@ func (c *Config) Validate() error {
 	}
 	if !c.RequireSignedVotes && c.SignedConsensusActivationHeight != 0 {
 		return fmt.Errorf("consensus signed_message_activation_height=%d is set while require_signed_votes=false; either enable coordinated enforcement or clear the height", c.SignedConsensusActivationHeight)
+	}
+	if c.RequireMiningOperatorSignatures && c.MiningOperatorPublicKeyRetentionHeight == 0 {
+		return fmt.Errorf("node require_mining_operator_signatures=true requires non-zero mining_operator_public_key_retention_height shared by every validator")
 	}
 
 	if c.NetworkPort < 1 || c.NetworkPort > 65535 {
@@ -1037,9 +1099,22 @@ func (c *Config) Validate() error {
 		if err := validateProductionSecret("QSDM_DASHBOARD_METRICS_SCRAPE_SECRET", c.DashboardMetricsScrapeSecret); err != nil {
 			return err
 		}
+		if c.NodeRole.IsValidator() && authorizedBlockProducerCount(c.AuthorizedBlockProducers) == 0 {
+			return fmt.Errorf("consensus authorized_block_producers must include at least one pinned producer when strict_secrets=true for a validator")
+		}
 	}
 
 	return nil
+}
+
+func authorizedBlockProducerCount(producers []string) int {
+	count := 0
+	for _, producer := range producers {
+		if strings.TrimSpace(producer) != "" {
+			count++
+		}
+	}
+	return count
 }
 
 func validateProductionSecret(label, value string) error {

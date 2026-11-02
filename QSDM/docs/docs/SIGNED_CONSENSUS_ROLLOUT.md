@@ -1,5 +1,21 @@
 # Signed consensus rollout
 
+> **Status: live on the public pilot network.** Signed consensus has been
+> enforced since **block 827,000** (12 October 2026, 18:11 UTC). Every BFT vote
+> and consensus message must carry a valid ML-DSA signature, and unsigned
+> consensus traffic is refused. `GET /api/v1/status` reports
+> `consensus_auth.require_signed_votes: true`,
+> `signed_message_activation_height: 827000`,
+> `signed_consensus_active: true` and
+> `unsigned_consensus_traffic_accepted: false`.
+>
+> The network still has a single block producer and no independent
+> validators, so this rollout removes forged consensus messages on that path
+> but does not add new validators (see [Current boundary](#current-boundary)).
+> The rest of this page is the rollout design and runbook, kept for operators
+> who bring up additional validators. All rules in force are listed in
+> [Consensus rules](CONSENSUS_RULES.md).
+
 QSDM validators authenticate BFT votes, block producer messages, prevote-lock
 proofs, round certificates, and equivocation evidence with ML-DSA-87. Signature
 enforcement is height-gated so validators can be upgraded before the network
@@ -28,13 +44,36 @@ signed_message_activation_height = 0
 
 Environment equivalents are `QSDM_CONSENSUS_SIGNER_KEY_PATH`,
 `QSDM_REQUIRE_SIGNED_VOTES`, and
-`QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT`.
+`QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT`. Strict deployments also use
+`QSDM_STRICT_SECRETS=true` and a comma-separated
+`QSDM_AUTHORIZED_BLOCK_PRODUCERS` list.
 
 The production deploy scripts require an explicit paired posture. If
 `QSDM_REQUIRE_SIGNED_VOTES=true`, `QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT`
 must be one shared future height. If enforcement is off, the activation height
 must remain `0`. A half-configured rollout is refused before a config file is
 written.
+
+Strict production mode also refuses a validator config with an empty
+`authorized_block_producers` list. Development nodes may still use the
+compatibility default, but production validators must pin the known block
+producer IDs that are allowed to publish onto the `qsdm-blocks` gossip topic.
+
+Both Linux installers render the list from
+`QSDM_AUTHORIZED_BLOCK_PRODUCERS`, for example:
+
+```bash
+QSDM_STRICT_SECRETS=true \
+QSDM_AUTHORIZED_BLOCK_PRODUCERS="<producer-id-1>,<producer-id-2>" \
+./deploy/install-ubuntu-vps.sh
+```
+
+For additional validators, use `--strict-secrets` and one repeatable
+`--authorized-block-producer <producer-id>` argument for each producer. Copy
+IDs from reviewed block metadata or the approved network manifest; a bootstrap
+multiaddr is not automatically a producer authorization. Do not turn on strict
+mode with a guessed or stale ID, because that safely stops the node from
+following that producer.
 
 ## Phase 1: upgrade and observe
 
@@ -68,7 +107,9 @@ compatibility posture is:
 
 On 2026-08-29, `node.qsdm.tech` was verified on commit `238a0e9` with this
 compatibility posture, while task-action signatures and transaction-content
-roots were already active from height `625000`.
+roots were already active from height `625000`. Mining enrollment/slashing
+state-root commitment is staged for the same height in current deployment
+scripts.
 
 ## Phase 2: choose one height
 
@@ -85,13 +126,24 @@ signed_message_activation_height = 600000
 For scripted deployments, pass the same posture explicitly:
 
 ```bash
+QSDM_STRICT_SECRETS=true \
+QSDM_AUTHORIZED_BLOCK_PRODUCERS="<producer-id-1>,<producer-id-2>" \
 QSDM_REQUIRE_SIGNED_VOTES=true \
 QSDM_SIGNED_MESSAGE_ACTIVATION_HEIGHT=600000 \
+QSDM_TASK_ACTION_SIGNATURE_ACTIVATION_HEIGHT=600000 \
+QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT=600000 \
+QSDM_ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT=600000 \
 ./deploy/install-ubuntu-vps.sh
 
 ./deploy/bring-up-validator.sh \
+  --strict-secrets \
+  --authorized-block-producer <producer-id-1> \
+  --authorized-block-producer <producer-id-2> \
   --require-signed-votes \
-  --signed-message-activation-height 600000
+  --signed-message-activation-height 600000 \
+  --task-action-signature-activation-height 600000 \
+  --tx-content-root-activation-height 600000 \
+  --enrollment-state-root-activation-height 600000
 ```
 
 The node refuses to start when only one of these settings is active. Blocks and
@@ -201,6 +253,23 @@ Producer and validator derive the hash through one function
 rather than carrying its own copy, so there is no second derivation to keep in
 step. That was not true before commit `bee8da4`, and activating the gate
 against a build without it would halt propagation network-wide.
+
+## Enrollment state root (coordinated fork)
+
+Mining enrollment, operator binding, and slashing records live outside the
+transaction list. Before the coordinated gate, two nodes could replay the same
+blocks while disagreeing about that side state. That made later reward and
+slash decisions depend on local database history rather than the block stream.
+
+`[consensus] enrollment_state_root_activation_height` (env:
+`QSDM_ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT`) sets the first height whose
+state root also commits the mining enrollment/slashing snapshot. Zero keeps
+legacy state-root derivation; current deployment scripts default it to
+`625000` alongside the task-action and transaction-content gates.
+
+This is another COMPUTES gate. Every validator must use the exact same height
+before the chain reaches it. A node with a different value derives a different
+state root for the same block and stops following at the activation height.
 
 ## Current boundary
 

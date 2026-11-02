@@ -28,7 +28,8 @@ const facts = [
   },
   {
     bold: 'QSDM Hive keeps security local.',
-    normal: ' Your PIN unlocks access on this device without adding needless steps.',
+    normal:
+      ' Your PIN unlocks access on this device without adding needless steps.',
   },
   {
     bold: 'Task extensions can connect your node to external services.',
@@ -40,7 +41,8 @@ const facts = [
   },
   {
     bold: 'A healthy node starts with a stable connection.',
-    normal: ' Check your internet status if startup takes longer than expected.',
+    normal:
+      ' Check your internet status if startup takes longer than expected.',
   },
   {
     bold: 'QSDM Hive gives you one place to operate.',
@@ -99,12 +101,10 @@ export function LoadingScreen({ initError }: PropsType): JSX.Element {
           <span className="qsdm-loading-node qsdm-loading-node-one" />
           <span className="qsdm-loading-node qsdm-loading-node-two" />
           <span className="qsdm-loading-node qsdm-loading-node-three" />
-          <Icon source={BrandLogo} className="qsdm-loading-logo" />
+          <Icon source={BrandLogo} size={82} className="qsdm-loading-logo" />
         </div>
         <p className="qsdm-loading-eyebrow">QSDM Hive / CELL Network</p>
-        <h1 className="qsdm-loading-title">
-          Preparing your CELL workspace.
-        </h1>
+        <h1 className="qsdm-loading-title">Preparing your CELL workspace.</h1>
         <h2 className="qsdm-loading-subtitle">
           Wallet, tasks, and node health are coming online.
         </h2>

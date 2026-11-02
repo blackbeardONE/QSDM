@@ -290,16 +290,9 @@ func TestPhase3ValidationFlow(t *testing.T) {
 	nodeID := "test_node_1"
 	submeshID := "test_submesh"
 
-	// Create a valid 3D mesh transaction
-	tx := &mesh3d.Transaction{
-		ID: "tx_phase3_1",
-		ParentCells: []mesh3d.ParentCell{
-			{ID: "parent1", Data: []byte("parent1_data_123456789012345678901234567890")},
-			{ID: "parent2", Data: []byte("parent2_data_123456789012345678901234567890")},
-			{ID: "parent3", Data: []byte("parent3_data_123456789012345678901234567890")},
-		},
-		Data: []byte("transaction_data_for_phase3"),
-	}
+	// Create a valid 3D mesh transaction: a companion wrapping a signed
+	// wallet envelope (its parents, data and signature are all checked).
+	tx := signedMeshCompanion(t)
 
 	// Step 1: Validate transaction
 	valid, err := validator.ValidateTransaction(tx)

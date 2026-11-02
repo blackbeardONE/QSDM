@@ -95,7 +95,9 @@ export const getQsdmCoreStatus = async (): Promise<QsdmCoreStatusResponse> => {
     lastConfirmedCoreSnapshot = {
       confirmedAt: Date.now(),
       health: healthResult.ok ? healthResult.data : undefined,
-      status: statusResult.ok
+      status: canonicalSafety.backupRead
+        ? undefined
+        : statusResult.ok
         ? (statusResult.data as QsdmNodeStatusResponse)
         : undefined,
     };
@@ -109,14 +111,15 @@ export const getQsdmCoreStatus = async (): Promise<QsdmCoreStatusResponse> => {
     canonicalSafety.reason === 'genesis-unavailable' ||
     canonicalSafety.reason === 'common-block-unavailable';
   const canUseConfirmedSnapshot = Boolean(
-    lastConfirmedCoreSnapshot &&
+    (canonicalSafety.safe || transientSafetyFailure) &&
+      lastConfirmedCoreSnapshot &&
       Date.now() - lastConfirmedCoreSnapshot.confirmedAt <=
         CONFIRMED_STATUS_GRACE_MS &&
       (!healthResult.ok || !statusResult.ok || transientSafetyFailure)
   );
   const connectionState: QsdmCoreStatusResponse['connectionState'] = coreHealthy
     ? 'online'
-    : canUseConfirmedSnapshot
+    : canonicalSafety.backupRead || canUseConfirmedSnapshot
     ? 'degraded'
     : 'offline';
   const confirmedAt = lastConfirmedCoreSnapshot
@@ -150,13 +153,16 @@ export const getQsdmCoreStatus = async (): Promise<QsdmCoreStatusResponse> => {
       : canUseConfirmedSnapshot
       ? lastConfirmedCoreSnapshot?.health
       : undefined,
-    status: statusResult.ok
+    status: canonicalSafety.backupRead
+      ? undefined
+      : statusResult.ok
       ? (statusResult.data as QsdmNodeStatusResponse)
       : canUseConfirmedSnapshot
       ? lastConfirmedCoreSnapshot?.status
       : undefined,
     taskRpcHealthy:
-      directTaskRpcHealthy || (shouldUseCoreAsTaskRpc && coreHealthy),
+      canonicalSafety.safe &&
+      (directTaskRpcHealthy || (shouldUseCoreAsTaskRpc && coreHealthy)),
     taskRpcHealth: taskRpcHealthResult.ok
       ? taskRpcHealthResult.data
       : shouldUseCoreAsTaskRpc && healthResult.ok

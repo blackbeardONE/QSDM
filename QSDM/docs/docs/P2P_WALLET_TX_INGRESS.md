@@ -5,8 +5,10 @@ This note is for operators running `qsdm` with libp2p pubsub wallet traffic and 
 ## Parent cells (wallet JSON)
 
 - API `POST /api/v1/wallet/send` validates `parent_cells` entries like transaction IDs (length and character rules in `pkg/api/validation.go`).
-- The demo wallet loop uses recent stored transaction IDs when available; otherwise it uses deterministic synthetic IDs (`pkg/wallet/parents.go`) so they meet the same validation rules.
-- PoE / consensus uses `parent_cells` as opaque byte inputs for signature verification; keep them stable and unique per spend where possible.
+- `parent_cells` are covered by the envelope's signature. Under [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md) they must be 2-10 distinct transactions committed in the last 8,640 blocks, from the configured activation height. The legacy JSON handler and the mesh handler apply the context-free rules (count, format, no duplicates, no self-reference) at every height. Once PoE is active, they also check the parents against the node's own committed history (`ParentCheck`).
+- The signature is verified under the envelope's own `public_key`, and `sender` must equal `hex(sha256(public_key))`. Earlier builds verified under the receiving node's own key, so they could only accept data that node had signed itself.
+- The demo wallet loop names the node's two newest committed transactions, the same source as `GET /api/v1/chain/parents`. It falls back to deterministic synthetic IDs (`pkg/wallet/parents.go`) only before two transactions are committed. Peers accept those IDs only below the PoE activation height.
+- Mesh structure failures are fatal. The mesh wrapper's parent cells must be the envelope's signed parents plus the payload digest, each carrying `sha256(id)` (`pkg/mesh3d/structure.go`).
 
 ## Mesh companion (`qsdm_mesh3d_v1`)
 

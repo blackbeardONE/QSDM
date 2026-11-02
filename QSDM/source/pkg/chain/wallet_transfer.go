@@ -18,6 +18,12 @@ const WalletTransferContractID = "qsdm/wallet-transfer/v1"
 // ApplyWalletTransferTx verifies the embedded signer envelope and applies its
 // transfer to the canonical account store. Verification is repeated by every
 // validator during block replay; API admission alone is not a consensus rule.
+//
+// The signer binding is checked here at every height: the envelope's sender
+// must be hex(sha256(public_key)) and its ML-DSA-87 signature must verify
+// under that public key (wallet.VerifyTransactionData). The Proof-of-
+// Entanglement parent rules need the committed chain, so the block producer
+// applies them before calling this (see poe.go).
 func ApplyWalletTransferTx(accounts *AccountStore, tx *mempool.Tx) error {
 	if accounts == nil {
 		return errors.New("chain: wallet transfer account store is not wired")
@@ -29,13 +35,8 @@ func ApplyWalletTransferTx(accounts *AccountStore, tx *mempool.Tx) error {
 		return fmt.Errorf("chain: wallet transfer contract_id must be %q", WalletTransferContractID)
 	}
 
-	var env wallet.TransactionData
-	dec := json.NewDecoder(bytes.NewReader(tx.Payload))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&env); err != nil {
-		return fmt.Errorf("chain: decode wallet transfer envelope: %w", err)
-	}
-	if err := ensureJSONEOF(dec); err != nil {
+	env, err := decodeWalletTransferEnvelope(tx.Payload)
+	if err != nil {
 		return err
 	}
 	if err := wallet.VerifyTransactionData(env); err != nil {
@@ -47,6 +48,23 @@ func ApplyWalletTransferTx(accounts *AccountStore, tx *mempool.Tx) error {
 		return errors.New("chain: wallet transfer envelope does not match transaction fields")
 	}
 	return accounts.ApplyTx(tx)
+}
+
+// decodeWalletTransferEnvelope strictly decodes the signed envelope a wallet
+// transfer commits in tx.Payload: unknown fields and trailing JSON are
+// refused. Block application and the PoE parent rules share it, so both read
+// exactly the parent_cells the signature covers.
+func decodeWalletTransferEnvelope(payload []byte) (wallet.TransactionData, error) {
+	var env wallet.TransactionData
+	dec := json.NewDecoder(bytes.NewReader(payload))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&env); err != nil {
+		return wallet.TransactionData{}, fmt.Errorf("chain: decode wallet transfer envelope: %w", err)
+	}
+	if err := ensureJSONEOF(dec); err != nil {
+		return wallet.TransactionData{}, err
+	}
+	return env, nil
 }
 
 func ensureJSONEOF(dec *json.Decoder) error {

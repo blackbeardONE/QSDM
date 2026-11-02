@@ -127,5 +127,7 @@ func (bp *BlockProducer) ExternalProducerGateEnforced() bool {
 	if bp == nil {
 		return false
 	}
-	return bp.externalAuthz.enforced()
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+	return bp.producerTransition != nil || bp.externalAuthz.enforced()
 }

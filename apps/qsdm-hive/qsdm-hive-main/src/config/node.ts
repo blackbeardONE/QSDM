@@ -28,7 +28,10 @@ export const MAIN_WALLET_DERIVATION_PATH = "m/44'/501'/0'/0'";
 
 /** ******************************** uPnP and Dynamic DNS Stuff BEGIN ************************************* */
 
-export const DYNAMIC_DNS_URL = 'https://api.qsdm.tech';
+export const DYNAMIC_DNS_URL =
+  process.env.QSDM_DYNAMIC_DNS_URL?.trim() ||
+  process.env.QSDM_PUBLIC_API_BASE_URL?.trim() ||
+  'https://api.qsdm.tech';
 
 /** ******************************** uPnP and Dynamic DNS Stuff END ************************************* */
 // value in CELL base units

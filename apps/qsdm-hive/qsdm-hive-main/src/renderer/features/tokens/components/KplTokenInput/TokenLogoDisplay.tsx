@@ -1,6 +1,6 @@
 import React from 'react';
 
-import NativeTokenLogo from 'assets/svgs/qsdm-hive-logo.svg';
+import NativeTokenLogo from 'assets/svgs/cell-coin-small.svg';
 import { isNativeToken } from 'config/nativeToken';
 import TokenPlaceholder from 'assets/svgs/token_placeholder.png';
 

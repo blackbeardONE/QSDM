@@ -2,11 +2,7 @@ param(
     [string]$ExpectedVersion = "",
     [string]$ExpectedCommit = "",
     [string]$ReleaseBaseUrl = "https://qsdm.tech/downloads",
-    [string[]]$CoreApiBases = @(
-        "http://127.0.0.1:8080/api/v1",
-        "https://api.qsdm.tech/attest/home-validator/api/v1",
-        "https://api.qsdm.tech/api/v1"
-    ),
+    [string[]]$CoreApiBases = @(),
     [string]$WalletAddress = "",
     [string]$HiveExecutable = "",
     [string]$QsdmCliPath = "",
@@ -24,6 +20,20 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 Set-StrictMode -Version Latest
+
+$scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
+$qsdmRoot = (Resolve-Path (Join-Path $scriptDirectory "..")).Path
+. (Join-Path $qsdmRoot "scripts\lib\qsdm-endpoints.ps1")
+if ($CoreApiBases.Count -eq 0) {
+    $relayBase = (Get-QsdmEndpointValue -Name "home_gateway_relay" -EnvVar "QSDM_HOME_GATEWAY_RELAY").TrimEnd('/')
+    $slot = Get-QsdmEndpointValue -Name "home_gateway_slot" -EnvVar "QSDM_HOME_GATEWAY_SLOT"
+    $coreBase = Get-QsdmEndpointValue -Name "core_api_base" -EnvVar "QSDM_CHAIN_SYNC_URLS"
+    $CoreApiBases = @(
+        "http://127.0.0.1:8080/api/v1",
+        "$relayBase/attest/$slot/api/v1",
+        $coreBase
+    )
+}
 
 Add-Type -AssemblyName System.Net.Http -ErrorAction Stop
 

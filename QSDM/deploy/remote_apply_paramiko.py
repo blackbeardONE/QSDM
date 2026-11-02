@@ -53,10 +53,11 @@ from pathlib import Path
 import paramiko
 from paramiko import Transport
 
-from _deploy_host import host as _host, user as _user
+from _deploy_host import host as _host, port as _port, require_root_user as _require_root_user, user as _user
 
 HOST = _host()
 USER = _user()
+PORT = _port()
 BASE = Path(__file__).resolve().parent.parent  # -> QSDM/
 
 EXCLUDE_DIR_NAMES = frozenset(
@@ -327,9 +328,7 @@ def _connect() -> Transport:
     pw = os.environ.get("QSDM_VPS_PASS") or (sys.argv[1] if len(sys.argv) > 1 else "")
     key_path = Path(os.environ.get("USERPROFILE", os.environ.get("HOME", ""))) / ".ssh" / "id_ed25519"
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(30)
-    sock.connect((HOST, 22))
+    sock = socket.create_connection((HOST, PORT), timeout=30)
     t = Transport(sock)
     t.start_client(timeout=30)
 
@@ -360,6 +359,7 @@ def _connect() -> Transport:
 
 
 def main() -> int:
+    _require_root_user("remote_apply_paramiko.py")
     t = _connect()
 
     tball = make_tarball(BASE)

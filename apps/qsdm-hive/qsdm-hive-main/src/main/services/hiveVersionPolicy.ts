@@ -7,9 +7,11 @@ import { app } from '../app';
 import {
   getQsdmHiveReleaseManifestUrl,
   getVerifiedQsdmHiveRelease,
+  QSDM_HIVE_RELEASE_BASE_URL,
 } from './qsdmReleaseManifest';
 
-const DEFAULT_MANIFEST_BASE_URL = 'https://qsdm.tech/downloads';
+// v2 release channel; see qsdmReleaseManifest.ts.
+const DEFAULT_MANIFEST_BASE_URL = QSDM_HIVE_RELEASE_BASE_URL;
 const UNSIGNED_PREVIEW_MANIFEST_BASE_URL =
   'https://qsdm.tech/downloads/unsigned-preview';
 const DEFAULT_DOWNLOAD_URL = 'https://qsdm.tech/download.html';

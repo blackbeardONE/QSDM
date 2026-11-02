@@ -1,5 +1,7 @@
 import axios from 'axios';
 
+import { getQsdmCanonicalChainSafety } from 'main/services/qsdmCanonicalChain';
+
 import { clearQsdmReadCircuitState } from 'main/services/qsdmHttpRead';
 
 import {
@@ -67,6 +69,27 @@ describe('getQsdmCoreStatus', () => {
       connectionState: 'offline',
       error: 'offline',
     });
+  });
+
+  it('shows backup availability as degraded without enabling core or task actions', async () => {
+    (getQsdmCanonicalChainSafety as jest.Mock).mockResolvedValueOnce({
+      safe: false,
+      state: 'unreachable',
+      reason: 'canonical-source-unavailable',
+      backupRead: {
+        checkpointHeight: 100,
+        confirmedAt: '2026-09-02T00:00:00Z',
+      },
+    });
+    mockedAxiosGet.mockResolvedValue({ data: { chain_tip: 999999 } });
+    const response = await getQsdmCoreStatus();
+    expect(response).toMatchObject({
+      healthy: false,
+      taskRpcHealthy: false,
+      connectionState: 'degraded',
+      canonicalSafety: { safe: false, backupRead: { checkpointHeight: 100 } },
+    });
+    expect(response.status).toBeUndefined();
   });
 
   it('retains the last confirmed status while a transient read reconnects', async () => {

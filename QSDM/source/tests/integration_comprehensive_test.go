@@ -79,24 +79,35 @@ func TestFullTransactionLifecycleComprehensive(t *testing.T) {
 		t.Error("Transaction missing signature")
 	}
 
-	// Validate transaction with consensus (if available)
+	// Validate the signature under the transaction's own public key (the
+	// node's PoE key plays no part). CreateTransaction's placeholder parents
+	// ("parent1", "parent2") fail the PoE parent rules, which is the point:
+	// real wallets must name committed parents.
 	if poe != nil {
-		parentCells := [][]byte{[]byte("parent1"), []byte("parent2")}
-		sigStr, ok := tx["signature"].(string)
-		if ok {
-			signature, err := hex.DecodeString(sigStr)
-			if err == nil {
-				signatures := [][]byte{signature}
-				valid, err := poe.ValidateTransaction(txDataBytes, parentCells, signatures, logger)
-				if err != nil {
-					t.Logf("Consensus validation error (expected if signature format differs): %v", err)
-				} else if !valid {
-					t.Logf("Transaction failed consensus validation (may be expected in test mode)")
-				}
-			}
+		sigStr, _ := tx["signature"].(string)
+		pubStr, _ := tx["public_key"].(string)
+		signature, sigErr := hex.DecodeString(sigStr)
+		publicKey, pubErr := hex.DecodeString(pubStr)
+		if sigErr != nil || pubErr != nil {
+			t.Fatalf("decode signature/public_key: %v %v", sigErr, pubErr)
+		}
+		var env wallet.TransactionData
+		if err := json.Unmarshal(txDataBytes, &env); err != nil {
+			t.Fatal(err)
+		}
+		canonical, err := env.CanonicalBytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = poe.ValidateTransaction(consensus.SignedTransaction{
+			ID: env.ID, Sender: env.Sender, SigningBytes: canonical, ParentCells: env.ParentCells,
+			Signatures: [][]byte{signature}, PublicKey: publicKey,
+		}, logger)
+		if err == nil {
+			t.Fatal("placeholder parents passed the PoE parent rules")
 		}
 	} else {
-		t.Log("Consensus not available (CGO disabled), skipping consensus validation")
+		t.Log("Consensus not available, skipping consensus validation")
 	}
 
 	// Store transaction
@@ -214,16 +225,8 @@ func TestPhase3ValidationFlowComprehensive(t *testing.T) {
 	// Initialize 3D mesh validator
 	validator := mesh3d.NewMesh3DValidator()
 
-	// Create transaction with 3 parent cells
-	tx := &mesh3d.Transaction{
-		ID: "tx3d_1",
-		ParentCells: []mesh3d.ParentCell{
-			{ID: "p1", Data: make([]byte, 64)},
-			{ID: "p2", Data: make([]byte, 64)},
-			{ID: "p3", Data: make([]byte, 64)},
-		},
-		Data: []byte("transaction data"),
-	}
+	// A mesh transaction wrapping a signed wallet envelope (3 parent cells).
+	tx := signedMeshCompanion(t)
 
 	// Validate transaction
 	valid, err := validator.ValidateTransaction(tx)
@@ -280,15 +283,7 @@ func TestCUDAAcceleration(t *testing.T) {
 
 	// Check if CUDA is available (this will be nil if CUDA not available)
 	// The validator should work with or without CUDA
-	tx := &mesh3d.Transaction{
-		ID: "cuda_test",
-		ParentCells: []mesh3d.ParentCell{
-			{ID: "p1", Data: make([]byte, 64)},
-			{ID: "p2", Data: make([]byte, 64)},
-			{ID: "p3", Data: make([]byte, 64)},
-		},
-		Data: []byte("test data"),
-	}
+	tx := signedMeshCompanion(t)
 
 	valid, err := validator.ValidateTransaction(tx)
 	if err != nil {

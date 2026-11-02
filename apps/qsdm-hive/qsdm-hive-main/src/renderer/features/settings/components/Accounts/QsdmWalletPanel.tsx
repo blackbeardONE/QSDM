@@ -2,7 +2,7 @@ import React, { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 
-import NativeTokenLogo from 'assets/svgs/qsdm-hive-logo.svg';
+import NativeTokenLogo from 'assets/svgs/cell-coin-small.svg';
 import { NATIVE_TOKEN_SYMBOL } from 'config/nativeToken';
 import { QSDM_BRIDGE_CONFIG } from 'config/qsdm';
 import {
@@ -228,15 +228,20 @@ export function QsdmWalletPanel() {
           result && typeof result === 'object' && 'transaction_id' in result
             ? result.transaction_id
             : '';
-        const message = txId
-          ? `Sent ${sentAmount} ${NATIVE_TOKEN_SYMBOL} to ${formatAddress(
+        const isPending =
+          result &&
+          typeof result === 'object' &&
+          (result.status === 'pending' || result.broadcast === 'block-pending');
+        const message = isPending
+          ? `Transfer submitted: ${sentAmount} ${NATIVE_TOKEN_SYMBOL} to ${formatAddress(
               sentRecipient
-            )}. Tx: ${txId}`
-          : `Sent ${sentAmount} ${NATIVE_TOKEN_SYMBOL} to ${formatAddress(
+            )}. Awaiting block confirmation.`
+          : `Transfer accepted: ${sentAmount} ${NATIVE_TOKEN_SYMBOL} to ${formatAddress(
               sentRecipient
             )}.`;
-        setTransferMessage(message);
-        toast.success(message);
+        const messageWithTxId = txId ? `${message} Tx: ${txId}` : message;
+        setTransferMessage(messageWithTxId);
+        toast.success(messageWithTxId);
         setRecipient('');
         setAmount('');
         await queryClient.invalidateQueries([QueryKeys.QsdmCellAccount]);
@@ -411,11 +416,11 @@ export function QsdmWalletPanel() {
   };
 
   return (
-    <section className="w-[90%] p-5 mb-6 rounded-lg border border-purple-1 bg-purple-1 bg-opacity-20">
+    <section className="w-[90%] p-6 mb-6 rounded-xl border border-qsdm-border bg-qsdm-panel shadow-qsdm-card">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="text-xl font-semibold">QSDM Wallet</div>
-          <div className="pt-1 text-sm text-finnieGray-secondary">
+          <div className="pt-1 text-sm text-qsdm-text-2">
             Your QSDM account for Hive, CELL, tasks, and connected websites.
             {!signer?.ready
               ? ' Create or restore a wallet below.'
@@ -428,8 +433,8 @@ export function QsdmWalletPanel() {
           <span
             className={`rounded-full px-3 py-1 text-xs ${
               signer?.ready
-                ? 'bg-finnieEmerald-light text-finnieBlue-dark'
-                : 'bg-finnieOrange text-finnieBlue-dark'
+                ? 'border border-qsdm-success/40 bg-qsdm-success/10 text-qsdm-success'
+                : 'border border-qsdm-warn/40 bg-qsdm-warn/10 text-qsdm-warn'
             }`}
           >
             {signer?.ready ? 'Signer ready' : 'Signer setup needed'}
@@ -437,20 +442,18 @@ export function QsdmWalletPanel() {
           <Button
             label="QSDM Account"
             onClick={() => openBrowserWindow(QSDM_ACCOUNT_URL)}
-            className="h-9 w-36 bg-finnieBlue-light-secondary"
+            className="h-9 w-36"
           />
-          <Button
-            label="Refresh"
-            onClick={refresh}
-            className="w-24 h-9 bg-finnieBlue-light-secondary"
-          />
+          <Button label="Refresh" onClick={refresh} className="w-24 h-9" />
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 pt-5 md:grid-cols-3">
-        <div className="rounded-md bg-finnieBlue-light-tertiary p-4">
-          <div className="text-xs text-finnieGray-secondary">Address</div>
-          <div className="flex items-center gap-2 pt-2 text-sm font-semibold">
+        <div className="rounded-lg border border-qsdm-border bg-black/20 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-qsdm-muted">
+            Address
+          </div>
+          <div className="flex items-center gap-2 pt-2 font-mono text-sm font-medium">
             <span className="truncate">{formatAddress(address)}</span>
             {address && (
               <CopyButton
@@ -460,31 +463,41 @@ export function QsdmWalletPanel() {
             )}
           </div>
         </div>
-        <div className="rounded-md bg-finnieBlue-light-tertiary p-4">
-          <div className="text-xs text-finnieGray-secondary">Balance</div>
+        <div className="rounded-lg border border-qsdm-border bg-black/20 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-qsdm-muted">
+            Balance
+          </div>
           <div className="flex items-center gap-2 pt-2 text-2xl font-semibold">
             {cellAccountLoading ? (
               <LoadingSpinner />
             ) : (
               <>
-                {typeof balance === 'number' ? balance.toFixed(3) : '-'}{' '}
-                {NATIVE_TOKEN_SYMBOL}
-                <NativeTokenLogo className="w-8 h-8" />
+                <NativeTokenLogo className="w-7 h-7 shrink-0" />
+                <span className="font-mono font-medium">
+                  {typeof balance === 'number' ? balance.toFixed(3) : '-'}
+                </span>{' '}
+                <span className="text-base font-medium text-qsdm-muted">
+                  {NATIVE_TOKEN_SYMBOL}
+                </span>
               </>
             )}
           </div>
         </div>
-        <div className="rounded-md bg-finnieBlue-light-tertiary p-4">
-          <div className="text-xs text-finnieGray-secondary">Nonce</div>
-          <div className="pt-2 text-2xl font-semibold">
+        <div className="rounded-lg border border-qsdm-border bg-black/20 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-qsdm-muted">
+            Nonce
+          </div>
+          <div className="pt-2 font-mono text-2xl font-medium">
             {cellAccountLoading ? '-' : cellAccount?.nextNonce ?? '-'}
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 pt-3 md:grid-cols-3">
-        <div className="rounded-md bg-finnieBlue-light-tertiary p-4">
-          <div className="text-xs text-finnieGray-secondary">Recovery</div>
+        <div className="rounded-lg border border-qsdm-border bg-black/20 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-qsdm-muted">
+            Recovery
+          </div>
           <div className="pt-2 text-sm font-semibold">
             {!signer?.ready
               ? 'Not configured'
@@ -514,7 +527,7 @@ export function QsdmWalletPanel() {
               autoComplete="current-password"
               aria-label="Wallet passphrase for recovery export"
               placeholder="Passphrase to export words"
-              className="mt-3 h-9 w-full rounded-md bg-finnieBlue-dark px-3 text-xs text-white outline-none"
+              className="mt-3 h-9 w-full rounded-lg border border-qsdm-border bg-black/25 px-3 font-mono text-xs text-white outline-none transition focus:border-qsdm-teal"
             />
           )}
           {signer?.ready && !signer.recoveryEnabled && (
@@ -528,7 +541,7 @@ export function QsdmWalletPanel() {
               autoComplete="current-password"
               aria-label="Existing wallet passphrase for recovery activation"
               placeholder="Existing wallet passphrase"
-              className="mt-3 h-9 w-full rounded-md bg-finnieBlue-dark px-3 text-xs text-white outline-none"
+              className="mt-3 h-9 w-full rounded-lg border border-qsdm-border bg-black/25 px-3 font-mono text-xs text-white outline-none transition focus:border-qsdm-teal"
             />
           )}
           <div className="flex flex-wrap gap-2 pt-2">
@@ -537,7 +550,7 @@ export function QsdmWalletPanel() {
               onClick={() => backupSigner()}
               disabled={!signer?.ready || backingUpSigner}
               loading={backingUpSigner}
-              className="h-9 w-32 bg-finnieTeal-100 text-finnieBlue-dark"
+              className="h-9 w-32 border-qsdm-gold/60 bg-qsdm-gold text-qsdm-bg hover:border-qsdm-gold hover:brightness-105"
             />
             <Button
               label="Export Words"
@@ -549,7 +562,7 @@ export function QsdmWalletPanel() {
                 exportingRecoveryWords
               }
               loading={exportingRecoveryWords}
-              className="h-9 w-32 bg-finnieBlue-light-secondary"
+              className="h-9 w-32"
             />
             {signer?.ready && !signer.recoveryEnabled && (
               <Button
@@ -557,19 +570,21 @@ export function QsdmWalletPanel() {
                 onClick={() => enableLegacyRecovery()}
                 disabled={!legacyRecoveryPassphrase || enablingLegacyRecovery}
                 loading={enablingLegacyRecovery}
-                className="h-9 w-40 bg-finnieTeal-100 text-finnieBlue-dark"
+                className="h-9 w-40 border-qsdm-gold/60 bg-qsdm-gold text-qsdm-bg hover:border-qsdm-gold hover:brightness-105"
               />
             )}
           </div>
         </div>
-        <div className="rounded-md bg-finnieBlue-light-tertiary p-4">
-          <div className="text-xs text-finnieGray-secondary">Keystore JSON</div>
+        <div className="rounded-lg border border-qsdm-border bg-black/20 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-qsdm-muted">
+            Keystore JSON
+          </div>
           <div className="pt-2 text-xs font-semibold break-all">
             {formatPath(signer?.keystorePath)}
           </div>
         </div>
-        <div className="rounded-md bg-finnieBlue-light-tertiary p-4">
-          <div className="text-xs text-finnieGray-secondary">
+        <div className="rounded-lg border border-qsdm-border bg-black/20 p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-qsdm-muted">
             Local Passphrase
           </div>
           <div className="pt-2 text-xs font-semibold break-all">
@@ -578,7 +593,7 @@ export function QsdmWalletPanel() {
         </div>
       </div>
 
-      <div className="mt-5 border-t border-finnieGray-tertiary pt-5">
+      <div className="mt-5 border-t border-qsdm-border pt-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-base font-semibold">Connected Sites</div>
@@ -598,7 +613,7 @@ export function QsdmWalletPanel() {
           {providerPermissionsLoading ? (
             <LoadingSpinner />
           ) : providerPermissions?.permissions.length ? (
-            <div className="divide-y divide-finnieGray-tertiary">
+            <div className="divide-y divide-qsdm-border">
               {providerPermissions.permissions.map((permission) => {
                 const isActiveWallet =
                   permission.address.toLowerCase() === address?.toLowerCase();
@@ -628,7 +643,7 @@ export function QsdmWalletPanel() {
                         revokeProviderPermission(permission.origin)
                       }
                       disabled={revokingProviderPermission}
-                      className="h-9 w-24 bg-finnieBlue-light-secondary"
+                      className="h-9 w-24"
                     />
                   </div>
                 );
@@ -655,10 +670,10 @@ export function QsdmWalletPanel() {
       <div className="flex gap-2 pt-5" role="tablist" aria-label="Wallet setup">
         <button
           type="button"
-          className={`h-9 px-4 rounded-md text-sm font-semibold ${
+          className={`h-9 px-4 rounded-lg text-sm font-semibold transition ${
             walletSetupMode === 'create'
-              ? 'bg-finnieTeal-100 text-finnieBlue-dark'
-              : 'bg-finnieBlue-light-tertiary text-white'
+              ? 'border border-qsdm-teal/60 bg-qsdm-teal/15 text-qsdm-teal'
+              : 'border border-qsdm-border bg-black/20 text-qsdm-text-2 hover:text-white'
           }`}
           onClick={() => setWalletSetupMode('create')}
         >
@@ -666,10 +681,10 @@ export function QsdmWalletPanel() {
         </button>
         <button
           type="button"
-          className={`h-9 px-4 rounded-md text-sm font-semibold ${
+          className={`h-9 px-4 rounded-lg text-sm font-semibold transition ${
             walletSetupMode === 'restore'
-              ? 'bg-finnieTeal-100 text-finnieBlue-dark'
-              : 'bg-finnieBlue-light-tertiary text-white'
+              ? 'border border-qsdm-teal/60 bg-qsdm-teal/15 text-qsdm-teal'
+              : 'border border-qsdm-border bg-black/20 text-qsdm-text-2 hover:text-white'
           }`}
           onClick={() => setWalletSetupMode('restore')}
         >
@@ -678,10 +693,10 @@ export function QsdmWalletPanel() {
         {!!signer?.keystorePath && !signer?.ready && (
           <button
             type="button"
-            className={`h-9 px-4 rounded-md text-sm font-semibold ${
+            className={`h-9 px-4 rounded-lg text-sm font-semibold transition ${
               walletSetupMode === 'unlock'
-                ? 'bg-finnieTeal-100 text-finnieBlue-dark'
-                : 'bg-finnieBlue-light-tertiary text-white'
+                ? 'border border-qsdm-teal/60 bg-qsdm-teal/15 text-qsdm-teal'
+                : 'border border-qsdm-border bg-black/20 text-qsdm-text-2 hover:text-white'
             }`}
             onClick={() => setWalletSetupMode('unlock')}
           >
@@ -690,10 +705,10 @@ export function QsdmWalletPanel() {
         )}
         <button
           type="button"
-          className={`h-9 px-4 rounded-md text-sm font-semibold ${
+          className={`h-9 px-4 rounded-lg text-sm font-semibold transition ${
             walletSetupMode === 'import'
-              ? 'bg-finnieTeal-100 text-finnieBlue-dark'
-              : 'bg-finnieBlue-light-tertiary text-white'
+              ? 'border border-qsdm-teal/60 bg-qsdm-teal/15 text-qsdm-teal'
+              : 'border border-qsdm-border bg-black/20 text-qsdm-text-2 hover:text-white'
           }`}
           onClick={() => setWalletSetupMode('import')}
         >
@@ -720,7 +735,7 @@ export function QsdmWalletPanel() {
                 }}
                 type="password"
                 autoComplete="new-password"
-                className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none"
+                className="mt-1 h-10 w-full rounded-lg border border-qsdm-border bg-black/25 px-3 font-mono text-sm transition focus:border-qsdm-teal text-white outline-none"
                 placeholder="At least 12 characters"
               />
             </div>
@@ -740,7 +755,7 @@ export function QsdmWalletPanel() {
                 }}
                 type="password"
                 autoComplete="new-password"
-                className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none"
+                className="mt-1 h-10 w-full rounded-lg border border-qsdm-border bg-black/25 px-3 font-mono text-sm transition focus:border-qsdm-teal text-white outline-none"
               />
             </div>
             <div className="flex items-end">
@@ -749,12 +764,12 @@ export function QsdmWalletPanel() {
                 onClick={() => createSigner()}
                 disabled={!canCreateSigner || creatingSigner}
                 loading={creatingSigner}
-                className="h-10 w-full bg-finnieTeal-100 text-finnieBlue-dark"
+                className="h-10 w-full border-qsdm-gold/60 bg-qsdm-gold text-qsdm-bg hover:border-qsdm-gold hover:brightness-105"
               />
             </div>
           </div>
           {createdRecoveryWords && (
-            <div className="mt-4 border border-finnieOrange p-4">
+            <div className="mt-4 rounded-lg border border-qsdm-warn/50 bg-qsdm-warn/5 p-4">
               <div className="text-base font-semibold">
                 Write down these 24 QSDM Recovery Words
               </div>
@@ -766,7 +781,7 @@ export function QsdmWalletPanel() {
                 {createdRecoveryWords.split(' ').map((word, index) => (
                   <li
                     key={`${word}-${index}`}
-                    className="border-b border-finnieGray-tertiary py-1 text-sm"
+                    className="border-b border-qsdm-border py-1 font-mono text-sm"
                   >
                     <span className="mr-2 text-finnieGray-secondary">
                       {index + 1}.
@@ -778,7 +793,7 @@ export function QsdmWalletPanel() {
               <Button
                 label="I Saved These Words"
                 onClick={() => setCreatedRecoveryWords('')}
-                className="mt-4 h-9 w-48 bg-finnieTeal-100 text-finnieBlue-dark"
+                className="mt-4 h-9 w-48 border-qsdm-gold/60 bg-qsdm-gold text-qsdm-bg hover:border-qsdm-gold hover:brightness-105"
               />
             </div>
           )}
@@ -800,7 +815,7 @@ export function QsdmWalletPanel() {
               setRestoreMessage('');
               setRestoreRecoveryType(event.target.value as 'native' | 'legacy');
             }}
-            className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none"
+            className="mt-1 h-10 w-full rounded-lg border border-qsdm-border bg-black/25 px-3 font-mono text-sm transition focus:border-qsdm-teal text-white outline-none"
           >
             <option value="native">Newer recovery-enabled wallet</option>
             <option value="legacy">Older wallet upgraded in Hive</option>
@@ -826,7 +841,7 @@ export function QsdmWalletPanel() {
             rows={4}
             autoComplete="off"
             spellCheck={false}
-            className="mt-1 w-full resize-none rounded-md bg-finnieBlue-light-tertiary p-3 text-white outline-none"
+            className="mt-1 w-full resize-none rounded-lg border border-qsdm-border bg-black/25 p-3 font-mono text-sm text-white transition focus:border-qsdm-teal outline-none"
             placeholder="Enter all 24 words, separated by spaces"
           />
           {signer?.ready && (
@@ -860,7 +875,7 @@ export function QsdmWalletPanel() {
                 onChange={(event) => setRestorePassphrase(event.target.value)}
                 type="password"
                 autoComplete="new-password"
-                className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none"
+                className="mt-1 h-10 w-full rounded-lg border border-qsdm-border bg-black/25 px-3 font-mono text-sm transition focus:border-qsdm-teal text-white outline-none"
                 placeholder="At least 12 characters"
               />
             </div>
@@ -879,7 +894,7 @@ export function QsdmWalletPanel() {
                 }
                 type="password"
                 autoComplete="new-password"
-                className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none"
+                className="mt-1 h-10 w-full rounded-lg border border-qsdm-border bg-black/25 px-3 font-mono text-sm transition focus:border-qsdm-teal text-white outline-none"
               />
             </div>
             <div className="flex items-end">
@@ -888,7 +903,7 @@ export function QsdmWalletPanel() {
                 onClick={() => restoreSigner()}
                 disabled={!canRestoreSigner || restoringSigner}
                 loading={restoringSigner}
-                className="h-10 w-full bg-finnieTeal-100 text-finnieBlue-dark"
+                className="h-10 w-full border-qsdm-gold/60 bg-qsdm-gold text-qsdm-bg hover:border-qsdm-gold hover:brightness-105"
               />
             </div>
           </div>
@@ -913,7 +928,7 @@ export function QsdmWalletPanel() {
               }}
               type="password"
               autoComplete="current-password"
-              className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none"
+              className="mt-1 h-10 w-full rounded-lg border border-qsdm-border bg-black/25 px-3 font-mono text-sm transition focus:border-qsdm-teal text-white outline-none"
               placeholder="Passphrase for the wallet already on this device"
             />
           </div>
@@ -923,7 +938,7 @@ export function QsdmWalletPanel() {
               onClick={() => unlockSigner()}
               disabled={!canUnlockSigner || unlockingSigner}
               loading={unlockingSigner}
-              className="h-10 w-full bg-finnieTeal-100 text-finnieBlue-dark"
+              className="h-10 w-full border-qsdm-gold/60 bg-qsdm-gold text-qsdm-bg hover:border-qsdm-gold hover:brightness-105"
             />
           </div>
         </div>
@@ -943,7 +958,7 @@ export function QsdmWalletPanel() {
               type="file"
               accept=".json,application/json"
               onChange={handleKeystoreFileChange}
-              className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 py-2 text-sm text-white outline-none file:mr-3 file:rounded file:border-0 file:bg-finnieTeal-100 file:px-3 file:py-1 file:text-finnieBlue-dark"
+              className="mt-1 h-10 w-full rounded-lg border border-qsdm-border bg-black/25 px-3 font-mono text-sm transition focus:border-qsdm-teal py-2 text-sm text-white outline-none file:mr-3 file:rounded file:border-0 file:bg-finnieTeal-100 file:px-3 file:py-1 file:text-finnieBlue-dark"
             />
             {keystoreFileName && (
               <div className="pt-1 text-xs text-finnieTeal-100">
@@ -966,7 +981,7 @@ export function QsdmWalletPanel() {
                 setPassphrase(event.target.value);
               }}
               type="password"
-              className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none"
+              className="mt-1 h-10 w-full rounded-lg border border-qsdm-border bg-black/25 px-3 font-mono text-sm transition focus:border-qsdm-teal text-white outline-none"
             />
           </div>
           <div className="flex items-end">
@@ -975,7 +990,7 @@ export function QsdmWalletPanel() {
               onClick={() => importSigner()}
               disabled={!canImportSigner || importingSigner}
               loading={importingSigner}
-              className="h-10 w-full bg-finnieTeal-100 text-finnieBlue-dark"
+              className="h-10 w-full border-qsdm-gold/60 bg-qsdm-gold text-qsdm-bg hover:border-qsdm-gold hover:brightness-105"
             />
           </div>
         </div>
@@ -1101,7 +1116,7 @@ export function QsdmWalletPanel() {
             id="qsdm-recipient"
             value={recipient}
             onChange={handleRecipientChange}
-            className={`mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none ${
+            className={`mt-1 h-10 w-full rounded-lg border border-qsdm-border bg-black/25 px-3 font-mono text-sm transition focus:border-qsdm-teal text-white outline-none ${
               sendError ? 'ring-1 ring-finnieRed' : ''
             }`}
             placeholder="QSDM wallet address"
@@ -1121,7 +1136,7 @@ export function QsdmWalletPanel() {
             type="number"
             min="0"
             step="0.000000001"
-            className="mt-1 h-10 w-full rounded-md bg-finnieBlue-light-tertiary px-3 text-white outline-none"
+            className="mt-1 h-10 w-full rounded-lg border border-qsdm-border bg-black/25 px-3 font-mono text-sm transition focus:border-qsdm-teal text-white outline-none"
             placeholder="0.000"
           />
         </div>
@@ -1131,7 +1146,7 @@ export function QsdmWalletPanel() {
             onClick={() => sendCell()}
             disabled={!canSend || sending}
             loading={sending}
-            className="h-10 w-full bg-finnieTeal-100 text-finnieBlue-dark"
+            className="h-10 w-full border-qsdm-gold/60 bg-qsdm-gold text-qsdm-bg hover:border-qsdm-gold hover:brightness-105"
           />
         </div>
       </div>

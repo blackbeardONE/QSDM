@@ -103,6 +103,11 @@ type V2Context struct {
 	// A V2Context with Enabled=true but len(HMACKey)==0 is
 	// invalid and LoadV2Context refuses to build one.
 	HMACKey []byte
+
+	// OperatorSigner is optional during rollout. When configured,
+	// the miner adds operator_sig to every HMAC bundle so validators
+	// can later require the enrolled wallet key, not only the HMAC key.
+	OperatorSigner *operatorProofSigner
 }
 
 // IsEnabled is a nil-safe predicate for use in the runLoop.
@@ -151,16 +156,26 @@ func LoadV2Context(cfg V2Config) (*V2Context, error) {
 		)
 	}
 
+	var operatorSigner *operatorProofSigner
+	if cfg.OperatorKeystorePath != "" || cfg.OperatorPassphraseFile != "" {
+		loaded, err := loadOperatorProofSigner(cfg.OperatorKeystorePath, cfg.OperatorPassphraseFile)
+		if err != nil {
+			return nil, fmt.Errorf("v2: load operator signer: %w", err)
+		}
+		operatorSigner = loaded
+	}
+
 	return &V2Context{
-		Enabled:     true,
-		NodeID:      cfg.NodeID,
-		GPUUUID:     cfg.GPUUUID,
-		GPUName:     cfg.GPUName,
-		GPUArch:     strings.ToLower(cfg.GPUArch),
-		ComputeCap:  cfg.ComputeCap,
-		CUDAVersion: cfg.CUDAVersion,
-		DriverVer:   cfg.DriverVer,
-		HMACKey:     key,
+		Enabled:        true,
+		NodeID:         cfg.NodeID,
+		GPUUUID:        cfg.GPUUUID,
+		GPUName:        cfg.GPUName,
+		GPUArch:        strings.ToLower(cfg.GPUArch),
+		ComputeCap:     cfg.ComputeCap,
+		CUDAVersion:    cfg.CUDAVersion,
+		DriverVer:      cfg.DriverVer,
+		HMACKey:        key,
+		OperatorSigner: operatorSigner,
 	}, nil
 }
 
@@ -169,15 +184,17 @@ func LoadV2Context(cfg V2Config) (*V2Context, error) {
 // LoadV2Context can be unit-tested without a full
 // miner.toml fixture.
 type V2Config struct {
-	Protocol    string // "v1" (default) or "v2"
-	NodeID      string
-	GPUUUID     string
-	GPUName     string
-	GPUArch     string
-	ComputeCap  string
-	CUDAVersion string
-	DriverVer   string
-	HMACKeyPath string
+	Protocol               string // "v1" (default) or "v2"
+	NodeID                 string
+	GPUUUID                string
+	GPUName                string
+	GPUArch                string
+	ComputeCap             string
+	CUDAVersion            string
+	DriverVer              string
+	HMACKeyPath            string
+	OperatorKeystorePath   string
+	OperatorPassphraseFile string
 }
 
 // loadHMACKeyFromFile reads a hex-encoded HMAC key from disk.
@@ -322,22 +339,26 @@ func V2PrepareAttestation(
 		return fmt.Errorf("v2: fetch challenge: %w", err)
 	}
 
-	att, err := v2client.BuildHMACAttestation(
-		v2client.BundleInputs{
-			NodeID:      v2.NodeID,
-			GPUUUID:     v2.GPUUUID,
-			GPUName:     v2.GPUName,
-			ComputeCap:  v2.ComputeCap,
-			CUDAVersion: v2.CUDAVersion,
-			DriverVer:   v2.DriverVer,
-			HMACKey:     v2.HMACKey,
-			MinerAddr:   proof.MinerAddr,
-			BatchRoot:   proof.BatchRoot,
-			MixDigest:   proof.MixDigest,
-			Challenge:   chg,
-		},
-		v2.GPUArch,
-	)
+	inputs := v2client.BundleInputs{
+		NodeID:      v2.NodeID,
+		GPUUUID:     v2.GPUUUID,
+		GPUName:     v2.GPUName,
+		ComputeCap:  v2.ComputeCap,
+		CUDAVersion: v2.CUDAVersion,
+		DriverVer:   v2.DriverVer,
+		HMACKey:     v2.HMACKey,
+		MinerAddr:   proof.MinerAddr,
+		BatchRoot:   proof.BatchRoot,
+		MixDigest:   proof.MixDigest,
+		Challenge:   chg,
+	}
+
+	var att mining.Attestation
+	if v2.OperatorSigner != nil {
+		att, err = v2client.BuildSignedHMACAttestation(*proof, inputs, v2.GPUArch, v2.OperatorSigner.Sign)
+	} else {
+		att, err = v2client.BuildHMACAttestation(inputs, v2.GPUArch)
+	}
 	if err != nil {
 		return fmt.Errorf("v2: build attestation: %w", err)
 	}

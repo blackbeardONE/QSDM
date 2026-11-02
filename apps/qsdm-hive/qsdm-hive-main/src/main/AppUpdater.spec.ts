@@ -37,6 +37,7 @@ jest.mock('electron-updater', () => {
 });
 
 jest.mock('./services/qsdmReleaseManifest', () => ({
+  QSDM_HIVE_RELEASE_BASE_URL: 'https://qsdm.tech/downloads/hive-v2',
   getVerifiedQsdmHiveRelease: jest.fn(),
   verifyDownloadedQsdmHiveUpdate: jest.fn(),
 }));
@@ -72,7 +73,7 @@ const updateInfo: UpdateInfo = {
 describe('AppUpdater release channels', () => {
   it('keeps stable builds on the production feed', () => {
     expect(getQsdmHiveUpdateFeedUrl({}, '1.3.95')).toBe(
-      'https://qsdm.tech/downloads'
+      'https://qsdm.tech/downloads/hive-v2'
     );
   });
 
@@ -173,6 +174,15 @@ describe('AppUpdater mandatory update flow', () => {
     await flushPromises();
     await flushPromises();
 
+    expect(updater.setFeedURL).toHaveBeenCalledWith({
+      provider: 'generic',
+      url: 'https://qsdm.tech/downloads/hive-v2',
+    });
+    expect(getVerifiedQsdmHiveRelease).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseUrl: 'https://qsdm.tech/downloads/hive-v2',
+      })
+    );
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(1);
     expect(updater.downloadUpdate).toHaveBeenCalledTimes(1);
     expect(mainWindow.webContents.send).toHaveBeenCalledWith(
